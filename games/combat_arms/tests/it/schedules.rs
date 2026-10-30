@@ -36,9 +36,9 @@ use combat_arms::game::CombatArmsPlugins;
 const RATCHET: &[ScheduleRatchet] = &[
     ScheduleRatchet {
         schedule: "FixedUpdate",
-        server: 662,
-        client: 662,
-        opposite: 149,
+        server: 658,
+        client: 658,
+        opposite: 143,
     },
     ScheduleRatchet {
         schedule: "FixedPostUpdate",

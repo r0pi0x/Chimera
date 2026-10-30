@@ -9,7 +9,7 @@
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemState, prelude::*};
 use crate::stack::{
-    core::{MovingSolid, RoundRestarts},
+    core::MovingSolid,
     games::{
         self, cs_source,
         cs_source::{
@@ -182,7 +182,7 @@ fn cs_assault_model_doors_open_away_on_use() {
     sim.intent(p).use_key = false;
     sim.ticks(30);
     assert_eq!(door_state(&sim, lower).0, DoorState::Opening);
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     sim.ticks(1);
     assert_eq!(door_state(&sim, lower), (DoorState::Closed, 0.0));
 }
@@ -345,7 +345,7 @@ fn cs_office_projector_stops_when_shot() {
     assert!(!playing(&sim, hum), "the shot stops the projector's hum");
     assert!(id_of(&sim, glow).is_none(), "and kills its glow");
     // A new round: humming again.
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     sim.ticks(2);
     assert!(playing(&sim, hum));
     assert!(id_of(&sim, glow).is_some());

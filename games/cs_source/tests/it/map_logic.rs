@@ -5,7 +5,7 @@
 
 use bevy::prelude::*;
 use crate::stack::{
-    core::{Damage, DamageKind, Damageable, Hitgroup, Intent, MovingSolid, RoundRestarts},
+    core::{Damage, DamageKind, Damageable, Hitgroup, Intent, MovingSolid},
     games::cs_source::{
         self,
         movement::{self, SourceMovementPlugin, to_engine, to_source},
@@ -385,7 +385,7 @@ fn round_restart_puts_the_map_back() {
     // Out of the trigger, then a new round.
     sim.app.world_mut().get_mut::<Transform>(p).unwrap().translation = to_engine(Vec3::new(-300.0, 0.0, 37.0));
     sim.ticks(5);
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     sim.ticks(1);
     assert_eq!(hud(&sim), 0, "the last round's HUD message is cleared");
     assert!(exists(&sim, 1) && exists(&sim, 2), "trigger and vent re-created");
@@ -582,7 +582,7 @@ fn restored_prop_contacts_join_islands_once() {
     assert!(sim.app.world().get::<RigidBodyDisabled>(node).is_some());
 
     // A new round brings it back where it was, on the floor.
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     for i in 0..120 {
         sim.ticks(1);
         if i % 20 == 10 {

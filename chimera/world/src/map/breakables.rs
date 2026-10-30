@@ -29,7 +29,8 @@
 //! render clips the node's meshes to them), falling pane
 //! pieces (`FallingPane`: a body of the `PANE_PIECES` list that shatters on
 //! what it touches), `GlassShatter` messages for games to draw shards; at a
-//! round restart gibs and particles go and windows are whole again.
+//! round restart (`round_restart`, an observer of `core::RoundRestart`)
+//! gibs and particles go and windows are whole again.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -975,29 +976,27 @@ pub fn fly_gibs(
     }
 }
 
-/// A round restart (`core::RoundRestarts` counted up): gibs and
+/// A round restart (an observer of `core::RoundRestart`, triggered where
+/// the rules count `core::RoundRestarts` up, inside their step): gibs and
 /// particles (glass shards) go, and windows drawn as panes are whole
 /// again: their meshes uncut and their collider the brush's volumes. The
 /// logic layer puts the nodes themselves back (shown, solid, placed).
-pub fn round_restart(world: &mut World, mut seen: Local<Option<u32>>) {
-    let count = world.get_resource::<crate::core::RoundRestarts>().map_or(0, |r| r.0);
-    if seen.replace(count).is_none_or(|s| s == count) {
-        return;
+pub fn round_restart(
+    _restart: On<crate::core::RoundRestart>,
+    gibs: Query<Entity, With<FlyingGib>>,
+    windows: Query<(Entity, &super::MapBrushEntity), With<BrushPanes>>,
+    particles: Option<ResMut<super::particles::Particles>>,
+    mut commands: Commands,
+) {
+    for g in &gibs {
+        commands.entity(g).despawn();
     }
-    let gibs: Vec<Entity> = world.query_filtered::<Entity, With<FlyingGib>>().iter(world).collect();
-    for g in gibs {
-        world.entity_mut(g).despawn();
-    }
-    if let Some(mut p) = world.get_resource_mut::<super::particles::Particles>() {
+    if let Some(mut p) = particles {
         p.groups.clear();
     }
-    let windows: Vec<(Entity, usize)> = world
-        .query_filtered::<(Entity, &super::MapBrushEntity), With<BrushPanes>>()
-        .iter(world)
-        .map(|(e, n)| (e, n.0))
-        .collect();
-    for (node, index) in windows {
-        make_whole(world, node, index);
+    for (node, index) in &windows {
+        let index = index.0;
+        commands.queue(move |w: &mut World| make_whole(w, node, index));
     }
 }
 

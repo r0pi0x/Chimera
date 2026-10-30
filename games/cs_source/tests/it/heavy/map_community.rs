@@ -5,7 +5,6 @@
 
 use bevy::prelude::*;
 use crate::stack::{
-    core::RoundRestarts,
     games::{
         self, cs_source,
         cs_source::{movement::SourceMovementPlugin, weapons::CsWeaponsPlugin},
@@ -130,7 +129,7 @@ fn spawn_equipment_and_placed_weapons() {
         world.query::<(&Loose, &MapWeapon)>().iter(world).count()
     };
     assert_eq!(lying(&mut sim), placed, "every placed weapon lies there");
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     sim.ticks(2);
     assert_eq!(lying(&mut sim), placed, "put back, not doubled");
 }
@@ -905,7 +904,7 @@ fn map_ragdolls_fall_and_take_shots() {
     let v = sim.app.world().get::<avian3d::prelude::LinearVelocity>(part).unwrap().0;
     assert!(v.x > 0.1, "the shot part moves along the shot: {v}");
     // A round restart: made again where it was placed.
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     sim.ticks(3);
     let again = parts(&mut sim);
     assert!(
@@ -1094,7 +1093,7 @@ fn gungame_weapons_pick_up_equip_and_strip() {
         // A round restart puts the carried placed weapons back where the
         // map put them; the player keeps its own.
         let placed = entities.iter().filter(|e| e.classname().starts_with("weapon_")).count();
-        sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+        crate::stack::core::restart_round(sim.app.world_mut());
         sim.ticks(2);
         let world = sim.app.world_mut();
         let lying_now = world.query::<(&Loose, &MapWeapon)>().iter(world).count();

@@ -45,8 +45,9 @@
 //! `PredictedComponents` (components registered with
 //! `PredictedAppExt::predicted`, saved and restored per entity; `predicted_net`
 //! and `predicted_codec` parts also go to the client predicting them as one
-//! blob), `RoundRestarts` (counted up by the rules at each new round; the logic
-//! and map layers put the map's entities back), `FreezeTime` (the rules hold
+//! blob), `RoundRestarts` (counted up by the rules at each new round,
+//! `restart_round`, which triggers `RoundRestart`; the logic and map layers
+//! put the map's entities back), `FreezeTime` (the rules hold
 //! everyone still: a round's freeze time), the `SimSet` tick ordering (`Rules`,
 //! `Commands`, `Movement`, `Weapons`), `keep_moved_positions` (before each
 //! physics step a character's physics position is its movement's, to the bit:
@@ -1894,8 +1895,31 @@ fn register_predicted<C: Component<Mutability = bevy::ecs::component::Mutable> +
 /// starts). Each count puts the map's entities back as they spawned:
 /// the logic layer re-creates its world, the map layer makes broken
 /// brushes whole and clears gibs (Counter-Strike's round restart).
+///
+/// Count it up with `restart_round`, which also triggers `RoundRestart`
+/// for the parts that react at once (the map's breakables); the rest read
+/// the count.
 #[derive(Resource, Default, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RoundRestarts(pub u32);
+
+/// A round restart (the new `RoundRestarts` count), triggered by
+/// `restart_round` where the rules count it up (CS:S's at a new round's
+/// start, inside the round's step): its observers run there, and what
+/// they queue on `Commands` applies before the rules go on.
+#[derive(Event, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RoundRestart(pub u32);
+
+/// The rules restart the round: `RoundRestarts` counted up and
+/// `RoundRestart` triggered (its observers' commands applied at once).
+pub fn restart_round(world: &mut World) {
+    let count = {
+        let mut r = world.get_resource_or_init::<RoundRestarts>();
+        r.0 += 1;
+        r.0
+    };
+    world.trigger(RoundRestart(count));
+    world.flush();
+}
 
 /// The rules hold every character still (a round's freeze time): they
 /// may turn, look and buy, not move or shoot. The rules clear the

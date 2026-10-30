@@ -35,9 +35,9 @@ use cs_source::game::{CsSourcePlugins, player_anim::PlayerAnimPlugin, view_anim:
 const RATCHET: &[ScheduleRatchet] = &[
     ScheduleRatchet {
         schedule: "FixedUpdate",
-        server: 279,
-        client: 279,
-        opposite: 56,
+        server: 264,
+        client: 264,
+        opposite: 54,
     },
     ScheduleRatchet {
         schedule: "FixedPostUpdate",

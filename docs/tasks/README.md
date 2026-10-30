@@ -12,7 +12,7 @@ Drafts: not yet posted as issues. Rules for every task: [AGENTS.md](../../AGENTS
 | [03 Remove map-killed weapons without polling the world](03-removed-map-weapons.md) | S | no |
 | [04 Minigame runtime's per-tick work as normal systems](04-minigame-runtime-systems.md) (done) | S-M | no |
 | [05 Rules modules' join and arming as entity events](05-joined-arming-events.md) | S | no |
-| [06 Round and match lifecycle as a triggered event](06-mode-step-event.md) | S-M | no |
+| [06 Round and match lifecycle as a triggered event](06-mode-step-event.md) (done) | S-M | no |
 | [07 Map-load progress as a resource, not a static](07-load-progress-resource.md) | S | no |
 | [08 Default binds per game as a resource](08-bind-defaults-resource.md) | S | no |
 | [09 Console map names and map cycle per game, as a resource](09-console-map-names.md) | S | no |
