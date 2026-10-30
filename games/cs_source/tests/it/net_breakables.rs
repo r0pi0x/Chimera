@@ -12,7 +12,7 @@ use std::time::Duration;
 use avian3d::prelude::ColliderDisabled;
 use bevy::prelude::*;
 use crate::stack::{
-    core::{Damage, DamageKind, Hitgroup, MovingSolid, RoundRestarts},
+    core::{Damage, DamageKind, Hitgroup, MovingSolid},
     games::cs_source::movement::{self as source, SourceMovementPlugin, to_engine},
     harness::{CsSim, NetSim},
     logic::{Logic, Value},
@@ -194,8 +194,67 @@ fn clients_see_glass_break_as_the_server_breaks_it() {
     assert_eq!(client.shatters, host.shatters, "the same shards");
 
     // A round restart: whole again on the client too.
-    sim.server.app.world_mut().get_resource_or_insert_with(RoundRestarts::default).0 += 1;
+    crate::stack::core::restart_round(sim.server.app.world_mut());
     sim.ticks(64);
     assert!(panes(sim.server.app.world(), server_window).is_none(), "whole on the server");
     assert!(panes(sim.clients[0].app.world(), client_window).is_none(), "whole on the client");
+}
+
+/// A new round makes a broken window whole in the tick it starts
+/// (`map::breakables::round_restart`, an observer of `core::RoundRestart`,
+/// which CS:S's round start triggers inside the rules' step), as when the
+/// restart was polled later in that tick.
+#[test]
+fn a_new_round_makes_the_window_whole_in_its_tick() {
+    use crate::stack::{
+        console::Console,
+        core::{RoundRestarts, Team},
+        harness::Sim,
+    };
+    let mut sim = Sim::new(CsSim, glass_world);
+    let spawn = to_engine(Vec3::new(0.0, -300.0, 1.0));
+    let t = sim.spawn_character(spawn, source::ID);
+    let ct = sim.spawn_character(spawn + Vec3::X * 2.0, source::ID);
+    sim.app.world_mut().entity_mut(t).insert(Team(1));
+    sim.app.world_mut().entity_mut(ct).insert(Team(2));
+    sim.app
+        .world_mut()
+        .resource_mut::<Console>()
+        .submit("mp_freezetime 1; mp_roundtime 0.5; chimera_rounds 1");
+    sim.seconds(1.5);
+    let window = node(sim.app.world_mut(), 0);
+    sim.app.world_mut().write_message(Damage {
+        target: window,
+        attacker: None,
+        amount: 0.26,
+        point: to_engine(Vec3::new(6.0, 200.0, 42.0)),
+        dir: Vec3::Z,
+        hitgroup: Hitgroup::Generic,
+        kind: DamageKind::Bullet,
+        weapon: None,
+        force: Vec3::ZERO,
+    });
+    sim.ticks(8);
+    assert!(panes(sim.app.world(), window).is_some(), "the window broke");
+    // The terrorists win: the next round starts after the round's end.
+    sim.app.world_mut().write_message(Damage {
+        target: ct,
+        attacker: Some(t),
+        amount: 10.0,
+        point: Vec3::ZERO,
+        dir: Vec3::X,
+        hitgroup: Hitgroup::Chest,
+        kind: DamageKind::Bullet,
+        weapon: None,
+        force: Vec3::ZERO,
+    });
+    let restarts = sim.app.world().resource::<RoundRestarts>().0;
+    let mut ticks = 0;
+    while sim.app.world().resource::<RoundRestarts>().0 == restarts {
+        assert!(panes(sim.app.world(), window).is_some(), "broken until the new round");
+        ticks += 1;
+        assert!(ticks < 1000, "no new round");
+        sim.ticks(1);
+    }
+    assert!(panes(sim.app.world(), window).is_none(), "whole in the new round's first tick");
 }

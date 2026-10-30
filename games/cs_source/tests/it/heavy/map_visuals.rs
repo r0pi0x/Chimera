@@ -8,7 +8,7 @@
 use avian3d::prelude::ColliderDisabled;
 use bevy::prelude::*;
 use crate::stack::{
-    core::{LocalPlayer, MapBrushes, MovingSolid, RoundRestarts},
+    core::{LocalPlayer, MapBrushes, MovingSolid},
     games::{
         self, cs_source,
         cs_source::movement::{SourceMovementPlugin, to_engine},
@@ -100,7 +100,7 @@ fn sprites_load_with_their_entity_and_follow_the_logic() {
         glows.iter().all(|i| !parts(&sim).iter().any(|p| p.0 == *i)),
         "killed glows are gone"
     );
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     sim.ticks(1);
     assert!(
         glows.iter().all(|i| parts(&sim).iter().any(|p| p.0 == *i && p.2)),
@@ -213,7 +213,7 @@ fn a_removed_prop_stops_blocking() {
             .get::<Children>(node)
             .is_some_and(|c| c.iter().any(|c| sim.app.world().get::<ColliderDisabled>(c).is_some()));
     assert!(shot, "and shots pass it");
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     sim.ticks(1);
     assert!(
         sim.app.world().get::<MovingSolid>(node).unwrap().solid,

@@ -240,6 +240,39 @@ fn at_the_time_limit_the_highest_rung_wins() {
     assert_eq!(sim.app.world().resource::<Match>().winner, Some(team_b));
 }
 
+/// The results come with the match's end (`results::on_step`, an
+/// observer of the flow's `MatchEnd`) in the tick the match is decided,
+/// as when they were polled later in that tick: the rows, the match-end
+/// hold and the winner's match counted on its character. A new match's
+/// first step clears them.
+#[test]
+fn the_results_come_in_the_tick_the_match_is_decided() {
+    let mut sim = started(&DEF.replace("\"60s\"", "\"3s\""));
+    let a = player(&mut sim);
+    let b = player(&mut sim);
+    settle(&mut sim);
+    kill(&mut sim, a, b, DamageKind::Bullet);
+    loop {
+        assert!(phase(&sim) != Phase::MatchOver, "decided before the match over");
+        let decided = sim.app.world().resource::<Match>().result.is_some();
+        let w = sim.app.world();
+        assert_eq!(w.contains_resource::<MatchResults>(), decided, "the results with the result, not before");
+        assert_eq!(w.contains_resource::<minigame::NextMatch>(), decided, "the match-end hold with them");
+        if decided {
+            assert!(matches!(phase(&sim), Phase::Intermission { .. }), "{:?}", phase(&sim));
+            assert_eq!(w.get::<MatchesWon>(b).map(|m| m.0), Some(1), "the winner's match counted this tick");
+            break;
+        }
+        sim.ticks(1);
+    }
+    // A new match (its first step: `Prepare { first: true }`) clears them.
+    sim.app.world_mut().insert_resource(Match::default());
+    sim.ticks(3);
+    assert!(matches!(phase(&sim), Phase::Live), "{:?}", phase(&sim));
+    assert!(sim.app.world().get_resource::<MatchResults>().is_none());
+    assert!(sim.app.world().get_resource::<minigame::NextMatch>().is_none());
+}
+
 #[test]
 fn the_hud_data_shows_the_rung_the_leader_and_the_events() {
     use chimera_core::core::LocalPlayer;

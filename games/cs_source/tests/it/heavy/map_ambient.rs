@@ -6,7 +6,6 @@
 
 use bevy::prelude::*;
 use crate::stack::{
-    core::RoundRestarts,
     games::{self, cs_source, cs_source::movement::SourceMovementPlugin},
     harness::{CsSim, Sim},
     logic::{Effect, Logic, LogicWorld, NoCollision, Value},
@@ -154,7 +153,7 @@ fn cs_office_projector_plays_and_the_radio_follows_its_prop() {
     assert_eq!(news.2, SoundLevel::Db(51.0), "radius 140");
 
     // A new round: the radio stops, the projector starts again.
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     sim.ticks(2);
     let now = playing(&sim);
     assert_eq!(now.len(), 1, "{now:?}");

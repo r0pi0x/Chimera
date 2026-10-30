@@ -6,8 +6,9 @@ a5e70668, read-only. Section 4's step 1 (guards) done 2026-10-29:
 crate, DESIGN.md "ECS style" (what landed: step 1 below). Steps 2
 (single-slot hooks keyed by game), 3 (the weapon seam), 4 (a mode's
 per-tick hooks as systems), 5 (death and spawn pollers), 6 (the
-minigame runtime's per-tick work), 7 (the HUD's status as a component)
-and 10 done 2026-10-30. Next: step 8.
+minigame runtime's per-tick work), 7 (the HUD's status as a component),
+9 (round and match lifecycle events) and 10 done 2026-10-30. Next:
+step 8.
 The roadmap item's other parts (docs/backlog.md, "First: ECS cleanup
 where new games plug in") follow section 4's order. Goal (user, 2026-10-29): outcomes, not a rewrite. The
 next games (Half-Life 2: Deathmatch, Team Fortress 2, later Call of
@@ -161,7 +162,7 @@ registries) a single-slot hook resource that must follow the gameplay
 | `mode::Mode` | mode.rs:135 | `on_death`, `time_out`, `match_end` | per counted death, round end | A | rules of the mode, ordered by the flow |
 | `mode::Flow` | mode.rs:206 | `players` | every step | C (low) | `&mut World` only to build queries; CA's (`rules/flow.rs:85`) is a raw query each step; a kept state is enough |
 | | mode.rs:214, :216 | `respawn`, `length` | per round | A | |
-| | mode.rs:218 | `event` (`FlowEvent`) | each round step | B | the game's work at a step; step 9 triggers it as an event others can observe |
+| | mode.rs:218 | `event` (`FlowEvent`) | each round step | B | the game's work at a step; also triggered as `ModeStep` for others to observe (step 9, done) |
 | `mode::ModeGame` | mode.rs:263 | `chosen` | per step | A | |
 | `minigame::RulesModule` | chimera/sim/src/minigame.rs:121 | `start`, `loadout`, `no_kit` | start, each life | A | |
 | | minigame.rs:138, :142 | `joined`, `arming` | per join, per life | B | step 8 |
@@ -255,14 +256,14 @@ raw queries in the function itself.
 | chimera/net/src/net/{upnp,vote}.rs | `keep_mapping` upnp:161, `run_votes` vote:688, `show_news` vote:753 | A | |
 | chimera/net/src/net/weapon_params.rs | `send_params` 67 (q1), `receive_params` 118 | A | |
 | chimera/sim/src/minigame/hud.rs | `update` 224 (Update) | C | still exclusive (notices, callouts, moments); reads `MinigameStatus` (step 7, done) |
-| chimera/sim/src/minigame/results.rs | `record` 148 | B | reacts to the match's end; step 9 |
+| chimera/sim/src/minigame/results.rs | `record` 148 | B | reacts to the match's end; now an observer of `ModeStep` (step 9, done) |
 | chimera/sim/src/minigame/runtime.rs | `join` 367 (q1 kept), `respawn_dead` 429, `end_protection` 448 (kept), `hold_the_end` 600 (q1) | C (`join` B) | step 6 |
 | | `step_phases` 394, `handle_deaths` 488 | A | the flow's driver and its death step: they call the mode's hooks in order; keep |
 | chimera/sim/src/mode/flow.rs | `update` 98, `touches` 105 | C | dispatchers of the mode's per-tick hooks; step 4 |
 | chimera/sim/src/weapon/equip.rs | `map_equipment` 170 | A | map's spawn equipment |
 | | `remove_killed_weapons` 190 (q2) | B | reacts to deaths; step 5 |
 | chimera/sim/src/weapon/mod.rs | `give_starting_weapons` 620 (kept) | B | polls for characters without an `Inventory` each tick; the giving stays world access (it spawns weapons); step 5 |
-| chimera/world/src/map/breakables.rs | `round_restart` 982 (q2) | B | reacts to a restart; step 9 |
+| chimera/world/src/map/breakables.rs | `round_restart` 982 (q2) | B | reacts to a restart; now an observer of `core::RoundRestart` (step 9, done) |
 | games/combat_arms/src/game/bots/brain.rs | `ensure_nav` 384 (q3) | A | builds the nav once a map is in |
 | | `think` 624 | C (parked) | the brain (E3); bots are parked |
 | games/combat_arms/src/game/bots/roster.rs | `arm` 136 (q1 kept) | B | re-arms on a level or rung change; step 5 |
@@ -272,7 +273,7 @@ raw queries in the function itself.
 | games/combat_arms/src/game/death_cam.rs | `eligibility` 449 | C (low) | |
 | games/combat_arms/src/game/lobby/host.rs | `serve_standalone` 284, `client_frame` 296, `host_frame` 322 | A | lobby state machine |
 | games/combat_arms/src/game/music/mod.rs | `gather` 173 (q1) | C | per frame |
-| games/combat_arms/src/game/music/trigger.rs | `late_join` 109 (kept) | B | |
+| games/combat_arms/src/game/music/trigger.rs | `late_join` 109 (kept) | B | now an observer of `On<Add<Player>>` (step 9, done) |
 | games/combat_arms/src/game/net.rs | `write_match` 319 (q1), `apply_match` 387 (q1) | A | net |
 | games/combat_arms/src/game/objects/mod.rs | `load` 441 (q1) | A | map objects |
 | | `frame` 530, `gather` 575, `apply` 645 | C | mission objects per tick |
@@ -861,6 +862,50 @@ gone. Test: `each_players_status_lines_follow_the_ladder_in_a_component`;
 - Guards: `games/combat_arms/tests/it/missions.rs`, `music_ambience.rs`;
   `apps/party_kit/tests/it/rotation.rs`, `results_hud.rs`,
   `party_music.rs`; `games/cs_source/tests/it/net_breakables.rs`.
+- **Done 2026-10-30.** `mode::ModeStep(FlowEvent)`, an `Event` the flow
+  triggers (`world.trigger`, then `world.flush()` so what observers queue
+  applies there) right after the game's own `Flow::event` at every step
+  (`flow::emit`), on the side that steps the match; one new step,
+  `FlowEvent::MatchEnd` (the match has its result: at the end of the
+  deciding round's end, after `after_round`, the intermission on, or the
+  match over with `direct`), so the lifecycle is: the match's start
+  (`Prepare { first: true }`, `ResetStats`), a round's start
+  (`MissionStart`), its end (`RoundOver`, `RoundEnd`, `RoundEnded`), the
+  match's end (`MatchEnd`), for CS:S's rounds, Combat Arms' modes and the
+  minigames alike. `Hooks` and `Flow::event` stay. Reactions:
+  `minigame::results::on_step` (observer: `MatchEnd` collects the results,
+  counts the win and begins the match-end hold; `Prepare { first: true }`
+  clears them; the per-tick `wins::publish` a normal system with a
+  declared query in the chain where `record` was);
+  `map::breakables::round_restart` an observer of a new
+  `core::RoundRestart`, which `core::restart_round` triggers as it counts
+  `RoundRestarts` up (CS:S's `MissionStart` handler; the tests that
+  counted it up by hand call it now); Combat Arms' `music::trigger::
+  late_join` an observer of `On<Add<Player>>` (where the server takes the
+  join). **O2 checked:** each observer now runs inside the step (or the
+  join) instead of in a later system of the same tick (frame for the
+  music); the results read the match, scores, rungs and names, which
+  nothing later in the tick changes (`respawn_dead`, the dead held,
+  `end_protection` don't); the breakables clear gibs, particles and
+  panes, which only `Update` and `FixedPostUpdate` systems add; the music
+  goes out in the same frame's send. Map changes have no poller to
+  convert (`MapHooks::unload`, class A). Tests (timing):
+  `chimera_sim` `mode::an_observer_sees_each_step_of_a_match_once_in_
+  order`, `minigame::the_results_come_in_the_tick_the_match_is_decided`;
+  CS:S `rounds::rounds_steps_are_triggered_in_order_inside_the_step`,
+  `net_breakables::a_new_round_makes_the_window_whole_in_its_tick`;
+  Combat Arms `free_for_all::a_matchs_end_is_triggered_as_its_flows_
+  steps`, `music_ambience::t12_a_joiner_gets_the_looping_trigger_at_its_
+  join`. `ecs.rs` (after step 5): `chimera/sim` 5 to 4, `chimera/world`
+  1 to 0, `games/combat_arms` 17 to 16; `Flow`'s allowed reason updated.
+  **O4:** the poller was an exclusive system between the rules and
+  movement; without it the single-threaded sort reordered the tick's
+  unordered systems (before step 5: CS:S's opposite pairs 56 to 66, Combat Arms' 149 to
+  187, FixedUpdate orders dumped and diffed). An `ApplyDeferred` in its
+  place (`map::registration`: a sync point after the rules, whose
+  commands already applied before movement through the automatic ones)
+  keeps the old order: FixedUpdate ratchets (after step 5) CS:S
+  250/250/42 to 235/235/40, Combat Arms 554/554/97 to 550/550/91.
 
 ### Step 10: per-app statics into resources (S each)
 

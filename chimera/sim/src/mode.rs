@@ -20,7 +20,8 @@
 //!   how often the phases step (`frame`), who plays (`players`, in join
 //!   order) and how they respawn, the phases' lengths (`Span`), the
 //!   game's own work at each step (`FlowEvent`: its missions, map
-//!   messages, statistics, clean-up) and how the phases step
+//!   messages, statistics, clean-up; then triggered as `ModeStep` for
+//!   any part to observe: the minigame's results) and how the phases step
 //!   (`FlowOptions`: Combat Arms' missions, once per its frame, waiting
 //!   for players, an intermission after each round; CS:S's rounds, every
 //!   tick with exact comparisons, started at once, decided by the mode
@@ -228,7 +229,24 @@ pub enum FlowEvent {
     RoundEnd,
     /// The round's counters cleared, before the match's end is tested.
     RoundEnded,
+    /// The match has its result (the round's end that decided it, after
+    /// the mode's `after_round`: the intermission on, or the match over
+    /// with `FlowOptions::direct`). Once a match.
+    MatchEnd,
 }
+
+/// A step of the playing mode's flow, triggered as an event
+/// (`world.trigger`, so its observers run at once, inside the step)
+/// right after the game's own `Flow::event` handler, on the side that
+/// steps the match (a host, a standalone game; never a network client).
+/// The lifecycle others observe instead of polling the match: the
+/// match's start (`Prepare { first: true }`, `ResetStats`), a round's
+/// start (`MissionStart`), its end (`RoundOver`, `RoundEnd`,
+/// `RoundEnded`) and the match's end (`MatchEnd`); CS:S's rounds,
+/// Combat Arms' modes and the minigames alike. What its observers queue
+/// on `Commands` is applied before the step goes on.
+#[derive(Event, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ModeStep(pub FlowEvent);
 
 /// A game's side of the runtime: how its matches run, whatever the mode.
 #[derive(Clone, Copy)]

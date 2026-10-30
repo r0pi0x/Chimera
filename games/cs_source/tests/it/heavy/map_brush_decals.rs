@@ -10,7 +10,6 @@
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemState, prelude::*};
 use crate::stack::{
-    core::RoundRestarts,
     games::{
         self, cs_source,
         cs_source::{
@@ -288,7 +287,7 @@ fn a_breakables_decal_goes_when_it_breaks() {
         assert!(decals_on(&mut sim, n).is_empty());
 
         // A new round: the vent is back, unmarked.
-        sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+        crate::stack::core::restart_round(sim.app.world_mut());
         sim.ticks(3);
         assert_eq!(sim.app.world().get::<Visibility>(n), Some(&Visibility::Inherited));
         assert!(decals_on(&mut sim, n).is_empty(), "whole again without the old hole");
@@ -305,7 +304,7 @@ fn a_breakables_decal_goes_when_it_breaks() {
         });
         sim.ticks(1);
         assert_eq!(decals_on(&mut sim, n).len(), 1);
-        sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+        crate::stack::core::restart_round(sim.app.world_mut());
         sim.ticks(3);
         assert!(decals_on(&mut sim, n).is_empty(), "a round restart clears it");
         return;
@@ -357,7 +356,7 @@ fn decals_clear_on_demand_and_optionally_each_round() {
     });
     sim.ticks(1);
     assert_eq!(count(&mut sim), 3, "and a scorch");
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     sim.ticks(3);
     assert_eq!(count(&mut sim), 2, "kept through a round restart by default, the scorch gone");
     sim.app.world_mut().write_message(ClearDecals);
@@ -366,7 +365,7 @@ fn decals_clear_on_demand_and_optionally_each_round() {
 
     mark(&mut sim);
     sim.app.world_mut().resource_mut::<DecalSettings>().round_clear = 1;
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     sim.ticks(3);
     assert_eq!(count(&mut sim), 0, "chimera_round_cleardecals 1 clears at the round start");
     mark(&mut sim);
