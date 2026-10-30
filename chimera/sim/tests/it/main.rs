@@ -5,6 +5,7 @@
 //! `cargo test -p chimera_sim --features dev --test it`; where tests go:
 //! docs/OBSERVABILITY.md, section 1.
 
+mod equipment;
 mod map_lifetime;
 mod minigame;
 mod mode;

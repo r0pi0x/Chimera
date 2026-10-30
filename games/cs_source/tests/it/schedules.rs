@@ -35,9 +35,9 @@ use cs_source::game::{CsSourcePlugins, player_anim::PlayerAnimPlugin, view_anim:
 const RATCHET: &[ScheduleRatchet] = &[
     ScheduleRatchet {
         schedule: "FixedUpdate",
-        server: 279,
-        client: 279,
-        opposite: 56,
+        server: 250,
+        client: 250,
+        opposite: 42,
     },
     ScheduleRatchet {
         schedule: "FixedPostUpdate",
@@ -107,5 +107,27 @@ fn client() -> App {
 fn schedule_ratchet() {
     if let Err(report) = check_schedule_ratchet(&mut server(), &mut client(), RATCHET) {
         panic!("{report}");
+    }
+}
+
+/// Plan ecs-cleanup step 5: the weapon layer's removals, new characters'
+/// kits and the map's equips are normal systems in their old order with
+/// no sync point between them (their world work applies together, in
+/// that order, at the one before `pick_up`), so the rest of the tick
+/// keeps the order it had when the first two were exclusive.
+#[test]
+fn the_weapon_layers_givers_keep_their_place() {
+    use chimera_world::harness::schedule_systems;
+    for (name, mut app) in [("server", server()), ("client", client())] {
+        let order = schedule_systems(app.world_mut(), FixedUpdate);
+        let at = |what: &str| {
+            let full = format!("chimera_sim::weapon::{what}");
+            order.iter().position(|s| *s == full).unwrap_or_else(|| panic!("{name}: {full} not in {order:#?}"))
+        };
+        let syncs = |a: usize, b: usize| order[a + 1..b].iter().filter(|s| s.ends_with("apply_deferred")).count();
+        let chain = ["equip::map_equipment", "equip::remove_killed_weapons", "give_starting_weapons", "equip::apply_equips"].map(at);
+        assert!(chain.windows(2).all(|w| w[0] < w[1] && syncs(w[0], w[1]) == 0), "{name}: {chain:?}");
+        let pick_up = at("drop::pick_up");
+        assert!(chain[3] < pick_up && syncs(chain[3], pick_up) == 1, "{name}: one sync point before pick_up at {pick_up}");
     }
 }

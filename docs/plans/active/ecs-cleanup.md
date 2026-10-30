@@ -5,8 +5,9 @@ a5e70668, read-only. Section 4's step 1 (guards) done 2026-10-29:
 `checks/tests/it/ecs.rs` and `determinism.rs` over every simulation
 crate, DESIGN.md "ECS style" (what landed: step 1 below). Steps 2
 (single-slot hooks keyed by game), 3 (the weapon seam), 4 (a mode's
-per-tick hooks as systems), 6 (the minigame runtime's per-tick work)
-7 (the HUD's status as a component) and 10 done 2026-10-30. Next: step 5.
+per-tick hooks as systems), 5 (death and spawn pollers), 6 (the
+minigame runtime's per-tick work), 7 (the HUD's status as a component)
+and 10 done 2026-10-30. Next: step 8.
 The roadmap item's other parts (docs/backlog.md, "First: ECS cleanup
 where new games plug in") follow section 4's order. Goal (user, 2026-10-29): outcomes, not a rewrite. The
 next games (Half-Life 2: Deathmatch, Team Fortress 2, later Call of
@@ -710,6 +711,62 @@ what must pass, beyond each crate's fast tier. The guards:
   it/spawns.rs`; listen server.
 - Effect: 5 exclusive systems fewer. Deaths and spawns are one pattern
   for every game.
+- **Done 2026-10-30.** All five are normal systems with declared
+  params, in the same places; `Hooks::died` became an event.
+  - `remove_killed_weapons`: compares `RemovedWeapons` in place (no
+    per-tick clone; the logic writes it only when it changes), edits the
+    carriers' inventories at once, despawns through `Commands`.
+  - `give_starting_weapons`: a declared query (`With<Intent>, With<Health>,
+    Without<Inventory>`: an archetype filter, as cheap as an observer)
+    that queues each new character's kit (`give_kit`, world work: it
+    builds weapons). Not an observer: that would give the weapons at the
+    spawn, a tick earlier than the poller (the flag); the system keeps
+    the tick: nothing at the spawn, everything after the first tick and
+    drawn in it (`chimera_sim` `equipment::starting_weapons_come_in_the_
+    first_tick_after_the_spawn_and_are_drawn_in_it`, passing before and
+    after). The removals, the kits and `apply_equips` are chained with
+    `chain_ignore_deferred`, so their world work applies together, in
+    the old order, at the one sync point before `pick_up` that was
+    already there: an extra sync point between them moved `apply_equips`
+    after the logic's `bridge::pre` and the rounds (a map's equip a tick
+    earlier) in the first try; with none, CS:S's and Combat Arms'
+    weapon-chain orders are unchanged (dumped before and after;
+    `cs_source` `schedules::the_weapon_layers_givers_keep_their_place`).
+  - Combat Arms' `scoring::handle_deaths`: a `MessageReader<Died>` that
+    queues the deaths' handling (marking, `Mode::on_death`, the mercs,
+    assists, `ModeDeath`) in order, applied at the sync point before the
+    modes' touches and `publish` (O1); `perk_deaths`: Victory Lap's
+    counter written in place, Resourceful's decision and roll from
+    declared queries (in the deaths' order, so the rolls are the same),
+    the box spawned and Parting Gift's grenade queued through `Commands`,
+    applied before `supplies` (chained after)
+    (`schedules::the_deaths_world_work_applies_before_its_readers`).
+  - The bot roster's `arm`: declared queries writing the magazines and
+    the bot in place, in the old query's order; it acts on a bot whose
+    kit isn't set up yet (`CaBot::armed`, false in a new `CaBot`), as
+    before, so no `OnRung` observer was needed (it never re-armed on a
+    rung: only a new `CaBot` does).
+  - `Hooks::died` is gone: the death step (the minigame runtime's
+    `handle_deaths`, Combat Arms' `on_died`) triggers `mode::ModeDeath`
+    on the victim with `World::trigger` where the hook ran and flushes
+    (`mode::mode_death`), so the playing mode's observer (filtered by
+    the event's mode id) runs and its commands apply at once, after that
+    death's counting and before the next death's (O2; not a `Died`
+    reader after the step, which would run after all of a tick's deaths
+    were counted and lose the weapon of the kill the ladder's rung-up
+    swaps away). Observers: the ladder's melee demotion (declared
+    params), Combat Arms' CTF and Clan CTF flag, Bombing Run's bomb,
+    Hired Guns' pocket, Spy Hunt's intel (their world work queued)
+    (`minigame::a_modes_death_reaction_runs_after_each_deaths_counting_
+    in_order_with_the_kills_weapon`).
+  - Order (O4): CS:S's `FixedUpdate` order identical on server and
+    client; Combat Arms' moved only unordered neighbours of the two
+    death syncs (the modes' touches and `publish` after `special::
+    on_death`, `death_drops` and the ragdolls' restart, which read
+    `Died`, not `Dead`; `supplies` earlier). Ratchets: Combat Arms'
+    `FixedUpdate` ambiguous pairs 662 to 554, opposite 149 to 97; CS:S's
+    279 to 250, opposite 56 to 42 (the exclusive systems conflicted with
+    everything). `ecs.rs`: `chimera/sim` 7 to 5, Combat Arms 20 to 17.
 
 ### Step 6: the minigame runtime's per-tick work (S-M)
 

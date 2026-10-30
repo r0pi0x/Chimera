@@ -42,8 +42,9 @@
 //!   prediction holds); lifted when the next match plays.
 //! - Deaths (`handle_deaths`, after the tick's damage): the dead marked
 //!   (`Dead`, not solid), `core::Score`'s deaths and an enemy kill's kill
-//!   counted while the match counts, the mode's `on_death`, then its
-//!   `died` hook in any phase.
+//!   counted while the match counts, the mode's `on_death`, then
+//!   `mode::ModeDeath` triggered on the victim in any phase (the playing
+//!   mode's observer runs at once: the ladder's melee demotion).
 //! - `take_weapon`: a weapon out of a character's hands and inventory, for
 //!   the rules' swaps.
 //! - The per-tick work (`plugin`, in `SimSet::Rules`, chained: `join`, the
@@ -546,8 +547,8 @@ fn handle_deaths(world: &mut World, mut cursor: Local<MessageCursor<Died>>) {
 fn on_died(world: &mut World, d: &Died) {
     let Some(mode) = current_mode(world) else { return };
     // What the killer held when it killed, for the hooks: the rules' swap
-    // (a rung up) may take it before `died` runs (the ladder's melee
-    // death reads it).
+    // (a rung up) may take it before `ModeDeath` is triggered (the
+    // ladder's melee death reads it).
     let mut d = d.clone();
     if d.damage.weapon.is_none()
         && let Some(id) = d
@@ -588,7 +589,7 @@ fn on_died(world: &mut World, d: &Died) {
         };
         (mode.on_death)(world, &death);
     }
-    (mode.hooks.died)(world, d);
+    crate::mode::mode_death(world, mode.id, d);
 }
 
 fn add_score(world: &mut World, e: Entity, kills: i32, deaths: u32) {

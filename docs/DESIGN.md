@@ -258,7 +258,9 @@ schedule's existing sets gated by `gameplay_is(<its id>)` (its HUD's by
 `hud_is`, a mode's per-tick work by `mode::mode_is(<mode id>)`, chained
 where the game runs the mode runtime), its observers filtered by its
 own components (a thrown weapon's projectile: an observer of
-`grenade::Launch` that skips weapons without the game's part), and its data hooks under its own id
+`grenade::Launch` that skips weapons without the game's part; a
+mode's reaction to a death: an observer of `mode::ModeDeath` that skips
+other modes' ids), and its data hooks under its own id
 (`ModeAppExt::add_modes(game, ..)`, `WeaponDataAppExt::add_weapon_data`,
 `ViewAnimAppExt::view_anim_rules(game, ..)`, a movement by id,
 `NetAppExt::net_part`). It never inserts a single-slot hook resource

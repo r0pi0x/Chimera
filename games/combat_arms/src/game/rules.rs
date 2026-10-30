@@ -689,6 +689,11 @@ impl Plugin for CaRulesPlugin {
             .init_resource::<clan::CaClan>()
             .game_hook(super::GAME, crate::gameplay::NewGame(flow::new_game))
             .add_observer(on_leave)
+            // The modes' reactions to a death (`mode::ModeDeath`).
+            .add_observer(ctf::on_mode_death)
+            .add_observer(bombing_run::on_mode_death)
+            .add_observer(hired_guns::on_mode_death)
+            .add_observer(spy_hunt::on_mode_death)
             .add_observer(flow::number_players)
             // Everything below: while Combat Arms is the gameplay's rules
             // (`gameplay::gameplay_is`).

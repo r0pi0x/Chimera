@@ -924,34 +924,54 @@ fn active_weapon(world: &World, e: Entity) -> Option<Entity> {
 // ---------------------------------------------------------------------------
 // Deaths
 
-/// Whether `a` and `b` are enemies in the mode now.
-fn enemies(world: &World, a: Entity, b: Entity) -> bool {
-    if a == b {
-        return false;
-    }
-    let mode = world.resource::<CaMatchView>().mode.clone();
-    EVERYONE_ENEMIES.contains(&mode.as_str())
-        || world.get::<Team>(a).map(|t| t.0) != world.get::<Team>(b).map(|t| t.0)
+/// Whether `a` and `b` (teams `ta`, `tb`) are enemies in `mode` now.
+fn enemies(mode: &str, a: Entity, b: Entity, ta: Option<u8>, tb: Option<u8>) -> bool {
+    a != b && (EVERYONE_ENEMIES.contains(&mode) || ta != tb)
 }
 
-/// What a kill does for the killer's perks and the victim's.
-fn perk_deaths(world: &mut World) {
-    let mut cursor = world.remove_resource::<DeathCursor>().unwrap_or_default();
-    let deaths: Vec<Died> = {
-        let messages = world.resource::<Messages<Died>>();
-        cursor.0.read(messages).cloned().collect()
-    };
-    world.insert_resource(cursor);
-    let data = world.resource::<CaGearData>().0.clone();
-    let now = world.resource::<SimClock>().now;
-    for d in deaths {
+/// What `perk_deaths` reads of the characters.
+type Fighters<'w, 's> = Query<
+    'w,
+    's,
+    (
+        Option<&'static Team>,
+        Option<&'static CaPerks>,
+        Option<&'static Health>,
+        Option<&'static Inventory>,
+        Option<&'static Transform>,
+    ),
+>;
+
+/// What a kill does for the killer's perks and the victim's: a normal
+/// system reading the tick's `Died` (plan ecs-cleanup step 5). Victory
+/// Lap's counter is written in place and Resourceful's roll made here, in
+/// the deaths' order as before; the boxes and Parting Gift's grenade
+/// (which builds a weapon: world work) go through `Commands`, applied at
+/// the sync point before `supplies`, which is chained after.
+#[allow(clippy::too_many_arguments)]
+fn perk_deaths(
+    mut died: MessageReader<Died>,
+    gear: Res<CaGearData>,
+    clock: Res<SimClock>,
+    view: Res<CaMatchView>,
+    ca_data: Res<super::data::CaData>,
+    mut rng: ResMut<CaPerkRng>,
+    fighters: Fighters,
+    mut states: Query<&mut CaPerkState>,
+    weapons: Query<(Option<&Weapon>, Option<&Magazine>, Option<&Throwable>)>,
+    mut commands: Commands,
+) {
+    let data: &GearData = &gear.0;
+    let now = clock.now;
+    for d in died.read() {
         let victim = d.entity;
-        if let Some(killer) = d.attacker.filter(|&k| enemies(world, k, victim)) {
-            let perks = world.get::<CaPerks>(killer).cloned().unwrap_or_default();
+        let team = |e: Entity| fighters.get(e).ok().and_then(|f| f.0).map(|t| t.0);
+        if let Some(killer) = d.attacker.filter(|&k| enemies(&view.mode, k, victim, team(k), team(victim))) {
+            let perks = fighters.get(killer).ok().and_then(|f| f.1).cloned().unwrap_or_default();
             if let Some(l) = perks.level(VICTORY_LAP) {
-                let start = value(&data, VICTORY_LAP, "StartKill", l) as u32;
-                let time = value(&data, VICTORY_LAP, "Time", l) as f64;
-                if let Some(mut s) = world.get_mut::<CaPerkState>(killer) {
+                let start = value(data, VICTORY_LAP, "StartKill", l) as u32;
+                let time = value(data, VICTORY_LAP, "Time", l) as f64;
+                if let Ok(mut s) = states.get_mut(killer) {
                     s.kills = match s.last_kill {
                         // Strictly under 5000 ms (Corrections 2026-10-22, 10).
                         Some(t) if ((now - t) * 1000.0).round() < MULTI_KILL_WINDOW * 1000.0 => s.kills + 1,
@@ -963,23 +983,31 @@ fn perk_deaths(world: &mut World) {
                     }
                 }
             }
-            if let Some(l) = perks.level(RESOURCEFUL) {
-                resourceful(world, &data, killer, victim, &d, l, now);
+            if let Some(l) = perks.level(RESOURCEFUL)
+                && !view.warmup
+                && let Some(kind) = resourceful(data, &ca_data, &fighters, &weapons, &mut rng, killer, d, l)
+            {
+                let at = fighters.get(victim).ok().and_then(|f| f.4).map(|t| t.translation).unwrap_or_default();
+                commands.spawn((
+                    Name::new("Perk box"),
+                    Transform::from_translation(at),
+                    CaPerkBox {
+                        kind,
+                        owner: killer,
+                        team: team(killer).unwrap_or(0),
+                        since: now,
+                        hide: value(data, RESOURCEFUL, "BoxHideTime", l) as f64,
+                        life: value(data, RESOURCEFUL, "BoxLifeTime", l) as f64,
+                        heal: value(data, RESOURCEFUL, "HealthDrop_HP", l),
+                    },
+                ));
             }
         }
-        let perks = world.get::<CaPerks>(victim).cloned().unwrap_or_default();
+        let perks = fighters.get(victim).ok().and_then(|f| f.1).cloned().unwrap_or_default();
         if let Some(l) = perks.level(PARTING_GIFT) {
-            parting_gift(world, &data, victim, l);
+            let gear = gear.0.clone();
+            commands.queue(move |world: &mut World| parting_gift(world, &gear, victim, l));
         }
-    }
-}
-
-#[derive(Resource)]
-struct DeathCursor(bevy::ecs::message::MessageCursor<Died>);
-
-impl Default for DeathCursor {
-    fn default() -> Self {
-        Self(Default::default())
     }
 }
 
@@ -988,62 +1016,49 @@ impl Default for DeathCursor {
 /// below `HealthDrop_HP`, else an ammo box when the held weapon's ammo
 /// percentage is at most `AmmoDrop_Ammo` (a full-ammo box when a thrown
 /// weapon is out), else nothing.
-fn resourceful(world: &mut World, data: &GearData, killer: Entity, victim: Entity, d: &Died, level: usize, now: f64) {
-    if world.resource::<CaMatchView>().warmup {
-        return;
-    }
-    let held = active_weapon(world, killer);
-    let weapon_id = d.damage.weapon.or_else(|| held.and_then(|h| world.get::<Weapon>(h).map(|w| w.id)));
-    if !weapon_id.and_then(|id| gun_type(world.resource::<super::data::CaData>(), id)).is_some_and(resourceful_weapon) {
-        return;
+#[allow(clippy::too_many_arguments)]
+fn resourceful(
+    data: &GearData,
+    ca_data: &super::data::CaData,
+    fighters: &Fighters,
+    weapons: &Query<(Option<&Weapon>, Option<&Magazine>, Option<&Throwable>)>,
+    rng: &mut CaPerkRng,
+    killer: Entity,
+    d: &Died,
+    level: usize,
+) -> Option<BoxKind> {
+    let (_, _, health, inventory, _) = fighters.get(killer).ok()?;
+    let held = inventory.and_then(|i| i.active);
+    let part = |w: Entity| weapons.get(w).ok();
+    let weapon_id = d.damage.weapon.or_else(|| held.and_then(|h| part(h)?.0.map(|w| w.id)));
+    if !weapon_id.and_then(|id| gun_type(ca_data, id)).is_some_and(resourceful_weapon) {
+        return None;
     }
     let probability = value(data, RESOURCEFUL, "DropProbability", level) as u32;
-    let roll = world.resource_mut::<CaPerkRng>().roll();
-    if roll >= probability {
-        return;
+    if rng.roll() >= probability {
+        return None;
     }
-    let hp = world.get::<Health>(killer).map_or(100.0, |h| h.current * 100.0);
+    let hp = health.map_or(100.0, |h| h.current * 100.0);
     let hp_limit = value(data, RESOURCEFUL, "HealthDrop_HP", level);
     let ammo_limit = value(data, RESOURCEFUL, "AmmoDrop_Ammo", level);
     // A thrown weapon in hand counts by its own count over its maximum,
     // so a spent grenade is 0 % (Corrections 2026-10-22, 3).
-    let percent = held.and_then(|h| {
-        world
-            .get::<Magazine>(h)
-            .map(|m| {
-                let max = (m.reserve_max + m.size).max(1);
-                ((100 * (m.clip + m.reserve)) / max) as f32
-            })
-            .or_else(|| world.get::<Throwable>(h).map(|t| ((100 * t.count) / t.max.max(1)) as f32))
+    let percent = held.and_then(part).and_then(|(_, m, t)| {
+        m.map(|m| {
+            let max = (m.reserve_max + m.size).max(1);
+            ((100 * (m.clip + m.reserve)) / max) as f32
+        })
+        .or_else(|| t.map(|t| ((100 * t.count) / t.max.max(1)) as f32))
     });
-    let empty_thrown = world
-        .get::<Inventory>(killer)
-        .map(|i| i.weapons.clone())
-        .unwrap_or_default()
-        .into_iter()
-        .any(|w| world.get::<Throwable>(w).is_some_and(|t| t.count == 0));
-    let kind = if hp < hp_limit {
-        BoxKind::Medikit
+    let empty_thrown = inventory
+        .is_some_and(|i| i.weapons.iter().any(|w| part(*w).and_then(|p| p.2).is_some_and(|t| t.count == 0)));
+    if hp < hp_limit {
+        Some(BoxKind::Medikit)
     } else if percent.is_some_and(|p| p <= ammo_limit) {
-        if empty_thrown { BoxKind::FullAmmo } else { BoxKind::Ammo }
+        Some(if empty_thrown { BoxKind::FullAmmo } else { BoxKind::Ammo })
     } else {
-        return;
-    };
-    let at = world.get::<Transform>(victim).map(|t| t.translation).unwrap_or_default();
-    let team = world.get::<Team>(killer).map_or(0, |t| t.0);
-    world.spawn((
-        Name::new("Perk box"),
-        Transform::from_translation(at),
-        CaPerkBox {
-            kind,
-            owner: killer,
-            team,
-            since: now,
-            hide: value(data, RESOURCEFUL, "BoxHideTime", level) as f64,
-            life: value(data, RESOURCEFUL, "BoxLifeTime", level) as f64,
-            heal: hp_limit,
-        },
-    ));
+        None
+    }
 }
 
 /// The fuse of the perk's grenade, s (Corrections 2026-10-22, 8).
