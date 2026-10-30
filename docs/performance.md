@@ -2121,6 +2121,38 @@ The heavy tests now sum to ~5,500 s of the suite's ~7,200: with five
 heavy slots the wall time can't go much under ~1,100 s without more
 slots (memory allowed it in the last run) or cheaper map loads.
 
+### nextest on the Windows fast tier (2026-10-30)
+
+`cargo nextest run` runs test binaries in parallel; `cargo test` runs one
+binary after another. On the Windows box (Ryzen 7 7800X3D, 8 cores / 16
+threads, 32 GB), a warm target, `CARGO_BUILD_JOBS=8`, three alternating
+rounds of the same 4,020 fast-tier tests (601 heavy tests filtered out),
+one failure in both modes (Combat Arms' `inventory::t36_rate_cap`):
+
+| round | `cargo test` | `cargo nextest` |
+|---|---|---|
+| 1 | 113.75 s | 115.84 s |
+| 2 | 104.39 s | 114.29 s |
+| 3 | 104.71 s | 114.57 s |
+| median | 113.75 s | 115.84 s |
+| mean | 107.62 s | 114.90 s |
+
+No gain: by mean nextest was 7% slower, by median 2%. Load was not
+recorded; the rounds alternated so both modes saw the same conditions. The fast tier's
+wall time is a few long tests (`party_kit`'s net tests, `combat_arms`'
+inventory, `repo_checks`' architecture) and `.config/nextest.toml` caps
+it at 8 test processes, so running binaries side by side does not shorten
+it. Keep `cargo test` as the Windows default. nextest stays the Linux
+full-suite runner (above), and the affected runner's `-Nextest` option
+filters by module: `scripts/affected-tests.ps1 -Files
+chimera/client/tests/it/metrics.rs -Nextest` ran 39 tests (`repo_checks`
+plus `metrics::`), 12 heavy skipped, 5.9 s end to end once warm.
+
+Warming the `-p` configuration after a workspace-wide build cost one
+1 m 33 s rebuild of 8 workspace crates; repeats then took 5.9 s, and a
+switch back to the workspace build cost a 3.7 s `repo_checks` relink.
+That is a one-time switch per revision, not a per-run cost.
+
 ### Warm slots, a lighter commit, push first (2026-10-27)
 
 A one-line fix took ~45 minutes to land: a new worktree's first build

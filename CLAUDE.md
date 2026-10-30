@@ -49,8 +49,10 @@ cargo run --features dev       # the game, `cs_source` (apps/cs_source); day-to-
                                    # (dynamic linking + remote protocol)
 cargo run --profile devfull --features dev   # full debug info for inspecting locals
 cargo test --features dev -- --skip heavy::   # whole fast tier
-cargo nextest run --features dev   # full suite (or `cargo test --features dev`,
-                                   # 2x slower)
+cargo nextest run --features dev   # full suite, parallel binaries (on Windows
+                                   # the fast tier measured no faster;
+                                   # docs/performance.md, "nextest on the Windows
+                                   # fast tier")
 cargo run -q -p repo_checks --bin affected -- --base main   # which crates' tests
                                    # a branch can affect, and why (pre-commit
                                    # builds those and runs the changed crates'
