@@ -7,8 +7,9 @@ crate, DESIGN.md "ECS style" (what landed: step 1 below). Steps 2
 (single-slot hooks keyed by game), 3 (the weapon seam), 4 (a mode's
 per-tick hooks as systems), 5 (death and spawn pollers), 6 (the
 minigame runtime's per-tick work), 7 (the HUD's status as a component),
-9 (round and match lifecycle events) and 10 done 2026-10-30. Next:
-step 8.
+8 (rules modules' joins and armings as events), 9 (round and match
+lifecycle events) and 10 done 2026-10-30: the ECS cleanup is complete
+apart from the items under "Later, in this order" (section 4).
 The roadmap item's other parts (docs/backlog.md, "First: ECS cleanup
 where new games plug in") follow section 4's order. Goal (user, 2026-10-29): outcomes, not a rewrite. The
 next games (Half-Life 2: Deathmatch, Team Fortress 2, later Call of
@@ -165,7 +166,7 @@ registries) a single-slot hook resource that must follow the gameplay
 | | mode.rs:218 | `event` (`FlowEvent`) | each round step | B | the game's work at a step; also triggered as `ModeStep` for others to observe (step 9, done) |
 | `mode::ModeGame` | mode.rs:263 | `chosen` | per step | A | |
 | `minigame::RulesModule` | chimera/sim/src/minigame.rs:121 | `start`, `loadout`, `no_kit` | start, each life | A | |
-| | minigame.rs:138, :142 | `joined`, `arming` | per join, per life | B | step 8 |
+| | | `joined`, `arming` | gone | | now `minigame::Joined`, `Arming`, entity events the runtime triggers (step 8, done) |
 | | | `status` | gone | | now `hud::MinigameStatus`, a component `ladder::write_status` writes when a line changes (step 7, done) |
 | | minigame.rs:147, :150 | `notice`, `callout` | per event | A | pure `&World` functions |
 | `minigame::Modifier` | minigame.rs:155 | `apply` | start | A | |
@@ -197,7 +198,7 @@ registries) a single-slot hook resource that must follow the gameplay
 | `client::FrontEnd` | chimera/client/src/client/front_end.rs:18 | 6 transitions | one-off | A | shell to menus; a party app has one front end |
 | `client::AppHooks` | chimera/client/src/client/mod.rs:367 | `unload_greybox`, `respawn_greybox` (and 3 loaders) | map load | A | app-level |
 | `client::GameDebug` | chimera/client/src/client/debug_ui.rs:49 | `bot_state`, `round_status` | debug UI | A | tools |
-| `combat_arms::CaMode` | games/combat_arms/src/game/rules.rs:291 | `left` | a player leaves | B | an `on_leave` observer exists already (rules.rs:630); step 8 |
+| `combat_arms::CaMode` | | `left` | gone | | the mode's part of the `on_leave` observer, `rules::mode_left` (step 8, done) |
 
 Not world-taking but the same shape: `GameInfo` (5 fields,
 `chimera/core/src/game_registry.rs:42-59`), `MapLoader`/`MapDressing`
@@ -847,6 +848,33 @@ gone. Test: `each_players_status_lines_follow_the_ladder_in_a_component`;
   is the only one that may give weapons.
 - Guards: `rung_extras.rs`, `rung_characters.rs` (party_kit and
   chimera_sim), `gun_game.rs`, Combat Arms' `rung_character.rs`.
+- **Done 2026-10-30.** `RulesModule::joined` and `arming` are gone:
+  `minigame::Joined` and `minigame::Arming`, entity events carrying the
+  playing module's name, triggered with `World::trigger` and flushed
+  where the hooks ran (`runtime::take_in`, after the team; `runtime::
+  respawn`, after the old weapons are taken, before the kit and the
+  loadout), so observers' commands apply there (O2). The ladder's
+  observers filter by the name: `ladder::joined` (the join rung) from
+  declared params (`join_rung` takes the others' rungs), inserted
+  through `Commands`; `ladder::arming` queues `arm` (the games' `apply`
+  hooks take the world). Timing and order unchanged:
+  `minigame::a_joiners_team_rung_and_arming_come_in_one_tick_in_order`
+  (written first, passing before and after: taken in, team, join rung,
+  `OnRung` once, the rung's weapon, protection, all in the join's tick;
+  a late joiner on the others' rung with its set);
+  `a_second_observer_of_arming_runs_before_the_weapons_are_given` (it
+  sees the strip and the join rung, its queued work applies before the
+  weapons). O3: a second observer has no order against the ladder's
+  arming observer (Bevy keeps global observers in a hash map), so it may
+  not rely on the ladder's `KitMelee` or `OnRung` from the same flush;
+  what follows the ladder's arming observes `OnRung`, as before.
+  `CaMode::left` is gone: `on_leave` queues the mode's part after its
+  leaving rule, where the hook was queued (`rules::mode_left`: Last Man
+  Standing's and Hunted's round end, Hired Guns' pocket and mercenaries;
+  `mode_corrections::case_100_last_man_standing_leaving` for both,
+  `hired_guns::case_17_leaving_carrier`). `ecs.rs`: `CaMode` off the
+  allowed list; no exclusive systems or schedule pairs changed (no
+  systems were added or removed).
 
 ### Step 9: round and match lifecycle events (S-M)
 
