@@ -8,6 +8,7 @@
 #   .\scripts\build-bench.ps1 leaf-full       # edit source/formats, whole workspace
 #   .\scripts\build-bench.ps1 leaf-direct     # edit source/formats, -p only
 #   .\scripts\build-bench.ps1 leaf-affected   # edit source/formats, affected selection
+#   .\scripts\build-bench.ps1 leaf-check      # check affected tests, test only source/formats
 #   .\scripts\build-bench.ps1 bottom-full     # edit chimera/core, whole workspace
 #   .\scripts\build-bench.ps1 bottom-affected # edit chimera/core, affected selection
 #   .\scripts\build-bench.ps1 test-file-affected # edit one test file, affected selection
@@ -21,7 +22,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [ValidateSet('cold', 'seeded', 'noop', 'leaf-full', 'leaf-direct', 'leaf-affected',
+    [ValidateSet('cold', 'seeded', 'noop', 'leaf-full', 'leaf-direct', 'leaf-affected', 'leaf-check',
         'bottom-full', 'bottom-affected', 'test-file-affected',
         'fast-tier', 'fast-tier-nextest', 'run-leaf')]
     [string]$Scenario,
@@ -38,16 +39,19 @@ $env:PATH = (Split-Path -Parent $cargo) + ';' + $env:PATH
 $env:CARGO_BUILD_JOBS = "$Jobs"
 $log = Join-Path $root 'target\bench-last.log'
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log) | Out-Null
+Push-Location $root
+trap { Pop-Location; throw }
 
 $script:seconds = 0.0
 $script:exit = 0
 
-function Invoke-Cargo([string[]]$CargoArgs) {
+function Invoke-Cargo([string[]]$CargoArgs, [string]$LogPath = '') {
+    if (-not $LogPath) { $LogPath = $log }
     $eap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     $sw = [Diagnostics.Stopwatch]::StartNew()
     try {
-        & $cargo @CargoArgs *> $log
+        & $cargo @CargoArgs *> $LogPath
         $script:exit = $LASTEXITCODE
     } finally {
         $sw.Stop()
@@ -111,6 +115,33 @@ switch ($Scenario) {
             [IO.File]::WriteAllText($path, $original)
         }
     }
+    'leaf-check' {
+        # The inner-loop alternative: type-check the affected packages'
+        # tests (no codegen or link), then build and run only the edited
+        # crate's tests. It does not replace the pre-commit build of the
+        # dependents' test binaries.
+        $path = Join-Path $root 'source/formats/src/lib.rs'
+        $original = [IO.File]::ReadAllText($path)
+        $checkLog = Join-Path $root 'target\bench-check.log'
+        try {
+            [IO.File]::AppendAllText($path, "`n// bench: leaf-check`n")
+            $selected = Get-AffectedArgs 'source/formats/src/lib.rs'
+            Invoke-Cargo (@('check', '--tests') + $selected + @('--features', 'dev')) $checkLog
+            $checkSeconds = $script:seconds
+            $checkExit = $script:exit
+            Invoke-Cargo @('test', '-p', 'source_formats')
+            $testSeconds = $script:seconds
+            $testExit = $script:exit
+            $script:seconds = $checkSeconds + $testSeconds
+            if ($checkExit -ne 0) { $script:exit = $checkExit }
+            elseif ($testExit -ne 0) { $script:exit = $testExit }
+            else { $script:exit = 0 }
+            $combined = @(Get-Content $checkLog) + @(Get-Content $log)
+            $combined | Set-Content $log
+        } finally {
+            [IO.File]::WriteAllText($path, $original)
+        }
+    }
     'bottom-full' {
         Edit-And-Run 'chimera/core/src/lib.rs' @('test', '--features', 'dev', '--no-run') 'bottom-full'
     }
@@ -150,7 +181,8 @@ switch ($Scenario) {
 
 $compiled = 0
 if (Test-Path $log) {
-    $compiled = (Select-String -Path $log -Pattern '^\s*Compiling ' -ErrorAction SilentlyContinue).Count
+    # `cargo check` prints "Checking"; the build scenarios print "Compiling".
+    $compiled = (Select-String -Path $log -Pattern '^\s*(Compiling|Checking) ' -ErrorAction SilentlyContinue).Count
 }
 $row = "| {0} | {1} | {2:N1} | {3} | {4} | {5} |" -f $Label, $Scenario, $script:seconds, $compiled, $Jobs, $script:exit
 Write-Output $row
@@ -159,3 +191,4 @@ if ($script:exit -ne 0 -and (Test-Path $log)) {
     Write-Warning "exit $($script:exit); last lines of $log`:"
     Get-Content $log -Tail 12 | ForEach-Object { Write-Warning $_ }
 }
+Pop-Location

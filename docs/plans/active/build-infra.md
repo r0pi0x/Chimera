@@ -121,14 +121,35 @@ What this changes:
   line-tables dev profile (the test profile already uses line tables).
   They stay candidates, not claimed gains.
 
+### Reuse vs seeded, and the check-only inner loop (2026-10-30)
+
+The second experiment ([build-infra-reuse.md](build-infra-reuse.md)) used
+the same one-line `source/formats` edit, not a no-op:
+
+| context | seed | build | total | units |
+|---|---|---|---|---|
+| reused slot 5 (median of 6 warm runs) | - | 71.3 s | **71.3 s** | 20 |
+| new slot seeded from slot 6 (two runs) | 44.3-47.9 s | 512.3-526.6 s | **560.2-570.9 s** | 25 |
+| `cargo check --tests` + `cargo test -p source_formats` (median of 6) | - | ~31 s | **~31 s** | 20 checked, 0 downstream links |
+
+- **Fixed-path reuse is the biggest win: ~8x on the same edit.** The
+  new slot has to rebuild every workspace crate because its absolute
+  path changed; the seed only reuses the registry crates. Keep one
+  slot per agent and reuse it; seed only when a slot is empty/trimmed.
+- **`cargo check --tests` for the affected packages, then the edited
+  crate's tests, is ~2.3x faster at low load and 3-4x at load 100%.**
+  It skips the downstream test-binary links. It does not replace the
+  pre-commit build: link errors and the dependents' tests are still
+  caught by `cargo test --no-run` / the fast tier.
+
 Recommended order of work, revised by the measurement:
-Phase 0 (measure) -> Phase 1 (slot fix + seeding + always work in a
-warm slot) -> Phase 3 (affected for test runs; nextest for the full
-suite) -> Phase 4 (line tables, if bottom-edit build time still
-matters) -> Phase 5 (Defender, needs admin) -> Phase 2 (sccache, for
-targets that are trimmed or lost) -> Phase 6/7. Phase 1 and 3 delivered
-the measured wins; do not spend a day on sccache before the warm-slot
-habit is in place.
+Phase 1 (reuse a warm slot; seeding only as recovery) -> Phase 3
+(affected for test runs, then `leaf-check` for the foundational-edit
+inner loop; nextest for the full suite) -> Phase 4 (line tables, if
+bottom-edit build time still matters) -> Phase 5 (Defender, needs admin)
+-> Phase 2 (sccache, for targets that are trimmed or lost) -> Phase 6/7.
+Phase 1 and 3 delivered the measured wins; do not spend a day on
+sccache before the warm-slot habit is in place.
 
 ## Steps
 
@@ -164,14 +185,16 @@ habit is in place.
 - [x] Verify what a seed actually reuses: the seeded slot compiled 25
   units against the cold slot's 584, so the registry crates were reused
   and only the path-dependent workspace crates rebuilt.
-- [ ] Make `acquire` prefer the slot that last held the branch (as
-  `tools/agent-slot.sh` does) and record `target\` size in `status`.
-  Trim past a configurable limit (60 GB, `cargo sweep` if present).
-- [ ] Document the rule in `SESSIONS.md`: builds run in the slot, never
-  in `Chimera\`; a slot is held for the whole session and released at the
-  end. Add the seeding command next to `acquire`.
-- [ ] Verify: two consecutive sessions in the same slot; the second one's
-  leaf edit does not recompile dependencies.
+- [x] Make `acquire` prefer the slot that last held the branch (as
+  `tools/agent-slot.sh` does), so a reused slot is the default. Still
+  to do: record `target\` size in `status` and trim past a configurable
+  limit (60 GB, `cargo sweep` if present).
+- [x] Document the rule in `SESSIONS.md`: reuse one slot per agent,
+  builds run in the slot and never in `Chimera\`, seed only when the
+  slot has no target, and release at the end.
+- [x] Verify: six warm runs of the same edit in the reused slot were
+  62.8-90.3 s; two fresh seeded slots were 560.2-570.9 s including the
+  44-48 s copy (see [build-infra-reuse.md](build-infra-reuse.md)).
 
 ### Phase 2 - One shared compile cache on Windows
 
@@ -198,13 +221,19 @@ habit is in place.
 
 ### Phase 3 - Build and run only what the change can affect
 
-- [ ] Add `scripts/affected-tests.ps1`:
+- [x] Add `scripts/affected-tests.ps1`:
   `cargo run -q -p repo_checks --bin affected -- --staged --format cargo
   --skip-heavy` (or `--base upstream/main`), split its one-per-line
   output, then `cargo test <args> --features dev -- --skip heavy::`.
   This is the Windows equivalent of the pre-commit hook's selection; it
   is the difference between one changed crate's tests and all 44
   binaries.
+- [x] Add the `leaf-check` scenario to `scripts/build-bench.ps1`:
+  `cargo check --tests` for the affected packages, then
+  `cargo test -p <edited crate>`. Measured 27.6-41.1 s against 62.8-135.4 s
+  for the full affected build (see
+  [build-infra-reuse.md](build-infra-reuse.md)). It is an inner loop,
+  not a replacement for the pre-commit build.
 - [ ] Add `scripts/affected-build.ps1` for the pre-commit split: build
   the affected packages' tests (`--no-run`) but run only the `--direct`
   ones plus `repo_checks`, exactly as `.githooks/pre-commit` does.
@@ -213,12 +242,13 @@ habit is in place.
   them one after another); keep the existing `heavy` memory slots in
   mind and validate the Windows overrides on 32 GB. The fast tier can be
   `cargo nextest run --features dev -E 'not test(/^heavy::/)'`.
-- [ ] Make the Windows pre-commit path optional but available: the repo's
+- [x] Make the Windows pre-commit path optional but available: the repo's
   hook is bash and `SESSIONS.md` says not to enable it in this clone; the
   PowerShell scripts give the same selection without the identity hook.
-- [ ] Verify: one-line edit in `source_formats` runs one crate's fast
-  tier, not the workspace; one-line edit in `chimera_core` still selects
-  its dependents (expected, that is the bottom-edit cost).
+- [x] Verify: a test-file edit runs 13.5-15.4 s affected against 168.9 s
+  for the full fast tier; a `source_formats` edit runs 27.6-41.1 s with
+  `leaf-check` against 62.8-135.4 s full; `chimera_core` still selects its
+  dependents (expected, that is the bottom-edit cost).
 
 ### Phase 4 - Profiles: stop building the dependency graph twice
 
@@ -301,16 +331,15 @@ none in slot1/slot3). The before/after benchmark harness is
 `scripts\build-bench.ps1`; the before run is in
 `build-infra-before.md`.
 
-2026-10-30: first before/after run, slot 5 (empty target) and slot 6
-(seeded from slot 5). Cold 1,225.4 s / 584 units; seeded 559.9 s + 45.1 s
-copy / **25 units**. Warm `source_formats` edit 41.6 s full vs 50-58.7 s
-affected; `chimera_core` edit 43.4 s full vs 60.8 s affected. Test-file
-edit: full fast tier 120-168.9 s vs 13.5-15.4 s affected once the test
-binary is built (153.1 s the first time). No-op 0.8 s, 0 units.
-`slots.ps1` now discovers all `slotN` and has `seed`; the harness and
-`scripts/affected-tests.ps1` are committed. The measurement revised the
-priority: the empty-slot build is the pain, and `affected` is a
-test-run win rather than a build-time win.
+2026-10-30: second experiment, same one-line `source_formats` edit.
+Reused slot 5: 62.8-90.3 s (median 71.3) for 20 units. New slot seeded
+from slot 6: 44.3-47.9 s copy + 512.3-526.6 s build = 560.2-570.9 s for
+25 units. `cargo check --tests` for the affected packages + `cargo test
+-p source_formats`: 27.6-41.1 s (20 checked, no downstream links) against
+62.8-135.4 s full. Fixed-path reuse is the biggest win; `leaf-check` is
+the inner loop. `slots.ps1` now remembers a slot's last branch and
+prefers it; `SESSIONS.md` says reuse one slot per agent and seed only an
+empty one.
 
 
 ## Decision log

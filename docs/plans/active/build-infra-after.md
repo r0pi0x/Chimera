@@ -123,3 +123,13 @@ timings.
   exclusions (no administrator), nextest (not installed), and a
   line-tables dev profile (the test profile already uses line tables).
   These stay as candidates in the plan rather than claimed gains.
+
+## Reuse vs seeded, and `cargo check --tests`
+
+The follow-up experiments are in
+[build-infra-reuse.md](build-infra-reuse.md): the same one-line edit was
+**~8x faster in a reused warm slot** (71 s median vs 560-571 s in a
+fresh seeded slot including the 44-48 s copy), and
+`cargo check --tests` for the affected packages plus the edited crate's
+tests was **~2.3x faster at low load and 3-4x at load 100%** (31 s vs
+71-135 s), by skipping the downstream test-binary links.
