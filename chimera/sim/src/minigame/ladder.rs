@@ -51,8 +51,8 @@
 //! (`RungExtras::melee`, `runtime::KitMelee`) and a label after the
 //! rung's weapon in the HUD's rung line. A player is armed for its rung
 //! (`arm`: the melee, then every hook's `apply`, with its own extras or
-//! none) before a life's weapons (`RulesModule::arming`) and at each rung
-//! swap. A rung of a game without a hook draws none. The ladder's
+//! none) before a life's weapons (its observer of `minigame::Arming`)
+//! and at each rung swap. A rung of a game without a hook draws none. The ladder's
 //! **melee band** (its last rungs whose weapon is a melee weapon: the
 //! knife finale's, the power curve's melee finale) draws otherwise: such
 //! a rung keeps its own weapon unless a game's draw makes it a
@@ -158,8 +158,6 @@ pub const RULES: RulesModule = RulesModule {
     start,
     loadout,
     no_kit,
-    joined,
-    arming,
     notice,
     callout,
 };
@@ -1012,11 +1010,19 @@ pub fn follow_rungs(ladder: Option<Res<Ladder>>, players: Query<(Entity, &Rung, 
     }
 }
 
-/// A life's arming (`RulesModule::arming`): for the player's rung.
-fn arming(world: &mut World, e: Entity) {
-    let Some(ladder) = world.get_resource::<Ladder>().cloned() else { return };
-    let rung = world.get::<Rung>(e).map_or(0, |r| r.0).min(ladder.rungs.len().saturating_sub(1));
-    arm(world, e, &ladder, rung);
+/// A life's arming (`minigame::Arming`, the ladder's observer): for the
+/// player's rung (`arm`: the games' hooks take the world, so queued, and
+/// applied by the runtime's flush before the life's weapons).
+pub(super) fn arming(arming: On<super::Arming>, mut commands: Commands) {
+    if arming.rules != LADDER {
+        return;
+    }
+    let e = arming.player;
+    commands.queue(move |world: &mut World| {
+        let Some(ladder) = world.get_resource::<Ladder>().cloned() else { return };
+        let rung = world.get::<Rung>(e).map_or(0, |r| r.0).min(ladder.rungs.len().saturating_sub(1));
+        arm(world, e, &ladder, rung);
+    });
 }
 
 /// The knife-only last rung's life has no kit (the knife is its
@@ -1027,22 +1033,35 @@ fn no_kit(world: &World, e: Entity) -> bool {
     ladder.knife_only(rung) || ladder.character(rung).is_some()
 }
 
-/// A joiner's rung: in a live match the others' lowest (or average, or
-/// the first: `join_rung`), never the last; else the first (the match's
-/// start puts everyone there anyway).
-fn joined(world: &mut World, e: Entity) {
-    let Some(ladder) = world.get_resource::<Ladder>().cloned() else { return };
-    let rung = if world.resource::<Match>().counting() { join_rung(world, e, &ladder) } else { 0 };
-    world.entity_mut(e).insert(Rung(rung));
+/// A joiner's rung (`minigame::Joined`, the ladder's observer): in a live
+/// match the others' lowest (or average, or the first: `join_rung`), never
+/// the last; else the first (the match's start puts everyone there
+/// anyway). Applied by the runtime's flush, before the joiner's first
+/// spawn.
+pub(super) fn joined(
+    join: On<super::Joined>,
+    ladder: Option<Res<Ladder>>,
+    game: Option<Res<Match>>,
+    players: Query<(Entity, &Team, Option<&Rung>), runtime::Playing>,
+    mut commands: Commands,
+) {
+    let Some(ladder) = ladder.filter(|_| join.rules == LADDER) else { return };
+    let e = join.player;
+    let rung = if game.is_some_and(|m| m.counting()) {
+        let others: Vec<usize> = players
+            .iter()
+            .filter(|(p, t, _)| *p != e && crate::mode::plays(t.0))
+            .map(|(_, _, r)| r.map_or(0, |r| r.0))
+            .collect();
+        join_rung(&ladder, &others)
+    } else {
+        0
+    };
+    commands.entity(e).insert(Rung(rung));
 }
 
-/// The rung `join_rung` gives joiner `e`.
-pub fn join_rung(world: &mut World, e: Entity, ladder: &Ladder) -> usize {
-    let others: Vec<usize> = runtime::players(world)
-        .into_iter()
-        .filter(|(p, _)| *p != e)
-        .map(|(p, _)| world.get::<Rung>(p).map_or(0, |r| r.0))
-        .collect();
+/// The rung a joiner gets with the others on `others`.
+pub fn join_rung(ladder: &Ladder, others: &[usize]) -> usize {
     let rung = match (ladder.join_rung, others.is_empty()) {
         (_, true) | (JoinRung::First, _) => 0,
         (JoinRung::Lowest, false) => others.iter().copied().min().unwrap_or(0),

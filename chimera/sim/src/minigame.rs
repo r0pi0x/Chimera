@@ -13,7 +13,9 @@
 //!   definition allows, the slots' games and movement, the modifiers).
 //! - Rules modules (`RulesModule`): a mode (`mode::Mode`, its id the
 //!   module's name) plus how it reads its parameters, what it gives each
-//!   life and its own checks, registered by name
+//!   life and its own checks, registered by name; it hears of a join and
+//!   of a life's arming as entity events (`Joined`, `Arming`, triggered
+//!   by the runtime where they happen), which other parts may observe too
 //!   (`MinigameAppExt::add_minigame_rules`); built in, `chimera:ladder`
 //!   (`ladder`). A minigame the built-in modules can't express registers
 //!   its own (`games/originals`).
@@ -135,19 +137,41 @@ pub struct RulesModule {
     /// The life gets the rules' weapons alone, without the definition's
     /// kit (the ladder's knife-only last rung).
     pub no_kit: fn(&World, Entity) -> bool,
-    /// A player joins the match (`runtime::join`, its team made, before
-    /// its first spawn): the module's start for it (the ladder's join
-    /// rung).
-    pub joined: fn(&mut World, Entity),
-    /// A life is about to get its weapons (`runtime::respawn`, after the
-    /// old ones are taken, before the kit and `loadout`): the module's
-    /// arming of it (the ladder's rung extras: `ladder::arm`).
-    pub arming: fn(&mut World, Entity),
     /// A notice for the viewer from one of the module's events.
     pub notice: fn(&World, Entity, &MinigameEvent) -> Option<hud::HudLine>,
     /// A big callout for the viewer from one of the module's events
     /// (`hud::Callout`: centre screen, with a cue's sound).
     pub callout: fn(&World, Entity, &MinigameEvent) -> Option<hud::Callout>,
+}
+
+/// A player joins the match while rules module `rules` plays: triggered
+/// on it by the runtime's join (`runtime::join`, with `World::trigger`,
+/// then a flush: observers' commands apply at once) after its team was
+/// made, before its first spawn. The module's start for the player (the
+/// ladder's join rung, `ladder::joined`); anything else may observe it.
+/// The module's observer filters by `rules` (its name).
+#[derive(EntityEvent, Clone, Copy, Debug)]
+pub struct Joined {
+    #[event_target]
+    pub player: Entity,
+    /// The playing rules module's name (`mode.id`).
+    pub rules: &'static str,
+}
+
+/// A life is about to get its weapons while rules module `rules` plays:
+/// triggered on the player by `runtime::respawn` (`World::trigger`, then a
+/// flush) after its old weapons were taken, before the kit and the
+/// module's `loadout` are given. The module's arming of it (the ladder's
+/// rung extras, `ladder::arm`, the only observer that may change what the
+/// life is given); a game's look or a mode's kit may observe it too. Several
+/// observers have no order (plan ecs-cleanup O3): their queued world work
+/// all applies in the flush, before the weapons.
+#[derive(EntityEvent, Clone, Copy, Debug)]
+pub struct Arming {
+    #[event_target]
+    pub player: Entity,
+    /// The playing rules module's name (`mode.id`).
+    pub rules: &'static str,
 }
 
 /// A modifier a definition turns on by name with a value.
@@ -479,8 +503,11 @@ impl Plugin for MinigamePlugin {
             .init_resource::<Match>()
             .add_message::<MinigameEvent>()
             .add_message::<crate::core::Died>()
-            // The ladder's reaction to a death (`mode::ModeDeath`).
+            // The ladder's reaction to a death (`mode::ModeDeath`), a
+            // join (`Joined`) and a life's arming (`Arming`).
             .add_observer(ladder::died)
+            .add_observer(ladder::joined)
+            .add_observer(ladder::arming)
             .init_resource::<hud::MinigameHud>()
             .init_resource::<moments::MinigameMoments>()
             .init_resource::<wins::MatchWins>()
