@@ -8,7 +8,7 @@
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemState, prelude::*};
 use crate::stack::{
-    core::{MovingSolid, RoundRestarts},
+    core::MovingSolid,
     games::{
         self, cs_source,
         cs_source::{
@@ -190,7 +190,7 @@ fn nuke_vents_break_from_a_bullet_and_a_knife() {
             "the ray goes through the opening"
         );
         // A new round: the vent is back, whole, blocking shots again.
-        sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+        crate::stack::core::restart_round(sim.app.world_mut());
         sim.ticks(2);
         assert!(!broken(&sim, vent), "whole again");
         assert_eq!(sim.app.world().get::<Visibility>(n), Some(&Visibility::Inherited));
@@ -262,7 +262,7 @@ fn office_windows_lose_shot_panes() {
                 "a second bullet along the same line passes the hole"
             );
             // A new round: the window is whole again.
-            sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+            crate::stack::core::restart_round(sim.app.world_mut());
             sim.ticks(2);
             let Some(Class::Breakable(b)) = class(&sim, win) else {
                 panic!("window not re-created")
@@ -646,7 +646,7 @@ fn nuke_vents_block_players_again_after_a_restart() {
         assert!(w.iter().any(|(_, w)| *w > 30.0), "vent {i} lets players through: {w:?}");
     }
     for round in 0..2 {
-        sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+        crate::stack::core::restart_round(sim.app.world_mut());
         sim.ticks(3);
         for &i in &vents {
             assert!(!broken(&sim, i));

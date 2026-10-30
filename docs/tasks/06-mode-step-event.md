@@ -1,5 +1,10 @@
 # Round and match lifecycle as a triggered event
 
+**Done 2026-10-30** (docs/plans/active/ecs-cleanup.md, step 9: what
+landed; a new `FlowEvent::MatchEnd` for the match's end, the
+breakables observe `core::RoundRestart`, and Combat Arms'
+`music::late_join` followed in the same change).
+
 ## Context
 
 A mode's flow events (`mode::FlowEvent`: round start, end, match end...)
@@ -20,13 +25,13 @@ later systems: `minigame::results::record` (match end) and
 
 ## Definition of done
 
-- [ ] After the game's handler runs, the flow triggers a `ModeStep` event
+- [x] After the game's handler runs, the flow triggers a `ModeStep` event
       carrying the `FlowEvent`; `Hooks::event` stays.
-- [ ] `results::record` and `breakables::round_restart` become observers
+- [x] `results::record` and `breakables::round_restart` become observers
       of it (Combat Arms' `music::late_join` may follow in its own PR).
-- [ ] A test in `chimera/sim/tests/it/mode.rs`: an observer sees each
+- [x] A test in `chimera/sim/tests/it/mode.rs`: an observer sees each
       flow event of a short match once, in order.
-- [ ] Guards pass.
+- [x] Guards pass.
 
 ## Constraints
 

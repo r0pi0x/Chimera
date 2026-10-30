@@ -27,7 +27,8 @@
 //!   (not the warm-up), `RoundEnded`, the mode's `match_end` (after
 //!   the warm-up its `Hooks::warmup_end`, never ends by default), the
 //!   intermission (`Span::Intermission`), the mode's
-//!   `after_round`; then the next mission start or the match over.
+//!   `after_round`, `MatchEnd` when the match has its result; then the
+//!   next mission start or the match over.
 //! - The warm-up (`Mode::warmup`, when the game has a `Span::Warmup`):
 //!   the match's first round, nothing counts, no winner; the dead revived
 //!   every `Span::Revive` in the modes that do (`Mode::warmup_revives`).
@@ -44,6 +45,10 @@
 //! round number counted as rounds start (`count_at_start`: at the
 //! mission start, before `MissionStart`).
 //!
+//! Each `FlowEvent` goes to the game's `Flow::event`, then is triggered
+//! as `mode::ModeStep` (`world.trigger`: its observers run there, inside
+//! the step, and what they queue is applied before the step goes on).
+//!
 //! The system a game chains into its rules: `mission_update` (the mode's
 //! own per-tick systems before it, its touches after the tick's deaths:
 //! `mode::mode_is`); a game that does its own work around the step calls
@@ -51,7 +56,7 @@
 
 use bevy::prelude::*;
 
-use super::{Flow, FlowEvent, Mode, Span, assign_team_in, current, current_of, state::*};
+use super::{Flow, FlowEvent, Mode, ModeStep, Span, assign_team_in, current, current_of, state::*};
 use crate::core::{Dead, FreezeTime, SimClock};
 
 /// The phases' frame counter (one step per `Flow::frame`).
@@ -155,6 +160,15 @@ fn step(world: &mut World, now: f64, mode: &'static Mode, flow: Flow) {
     }
 }
 
+/// A step's event: the game's handler (`Flow::event`), then `ModeStep`
+/// triggered for its observers, whose queued commands apply here, before
+/// the step goes on.
+fn emit(world: &mut World, flow: Flow, event: FlowEvent) {
+    (flow.event)(world, event);
+    world.trigger(ModeStep(event));
+    world.flush();
+}
+
 /// The freeze on or off (`core::FreezeTime`, put in when missing).
 fn freeze(world: &mut World, on: bool) {
     match world.get_resource_mut::<FreezeTime>() {
@@ -166,7 +180,7 @@ fn freeze(world: &mut World, on: bool) {
 /// A mission start: `first`, the match's counters reset; then the round's
 /// setup.
 fn mission_start(world: &mut World, now: f64, first: bool, mode: &'static Mode, flow: Flow) {
-    (flow.event)(world, FlowEvent::Prepare { first });
+    emit(world, flow, FlowEvent::Prepare { first });
     let has_warmup = (flow.length)(world, Span::Warmup).is_some();
     {
         let mut m = world.resource_mut::<Match>();
@@ -192,9 +206,9 @@ fn mission_start(world: &mut World, now: f64, first: bool, mode: &'static Mode, 
         }
     }
     if first {
-        (flow.event)(world, FlowEvent::ResetStats);
+        emit(world, flow, FlowEvent::ResetStats);
     }
-    (flow.event)(world, FlowEvent::MissionStart);
+    emit(world, flow, FlowEvent::MissionStart);
     // Everyone in the match respawned, on the team the mode gives.
     if mode.teams != super::Teams::AsJoined {
         for (e, _) in (flow.players)(world) {
@@ -245,7 +259,7 @@ fn round_over(world: &mut World, now: f64, mode: &'static Mode, flow: Flow) {
         && let Some(w) = world.resource::<Match>().winner.filter(|w| side(*w).is_none())
         && let Some((p, _)) = (flow.players)(world).into_iter().find(|(_, t)| *t == w)
     {
-        (flow.event)(world, FlowEvent::RoundWonBy(p));
+        emit(world, flow, FlowEvent::RoundWonBy(p));
     }
     let over = (flow.length)(world, Span::RoundOver).unwrap_or(0.0);
     let mut m = world.resource_mut::<Match>();
@@ -263,14 +277,14 @@ fn round_over(world: &mut World, now: f64, mode: &'static Mode, flow: Flow) {
     m.round_ends = None;
     m.hold_until = None;
     (mode.hooks.round_over)(world);
-    (flow.event)(world, FlowEvent::RoundOver);
+    emit(world, flow, FlowEvent::RoundOver);
 }
 
 /// Round end, then the intermission (`direct`: the next mission start or
 /// the match over, now).
 fn round_end(world: &mut World, now: f64, mode: &'static Mode, flow: Flow) {
     (mode.hooks.round_end)(world);
-    (flow.event)(world, FlowEvent::RoundEnd);
+    emit(world, flow, FlowEvent::RoundEnd);
     freeze(world, false);
     world.resource_mut::<Match>().immune = false;
     let warmup = {
@@ -284,7 +298,7 @@ fn round_end(world: &mut World, now: f64, mode: &'static Mode, flow: Flow) {
         m.warmup = false;
         warmup
     };
-    (flow.event)(world, FlowEvent::RoundEnded);
+    emit(world, flow, FlowEvent::RoundEnded);
     let result = if warmup { (mode.hooks.warmup_end)(world) } else { (mode.match_end)(world) };
     if let Some(result) = result {
         world.resource_mut::<Match>().result = Some(result);
@@ -293,6 +307,7 @@ fn round_end(world: &mut World, now: f64, mode: &'static Mode, flow: Flow) {
         (mode.hooks.after_round)(world);
         if world.resource::<Match>().result.is_some() {
             world.resource_mut::<Match>().phase = Phase::MatchOver;
+            emit(world, flow, FlowEvent::MatchEnd);
         } else {
             mission_start(world, now, false, mode, flow);
         }
@@ -301,6 +316,9 @@ fn round_end(world: &mut World, now: f64, mode: &'static Mode, flow: Flow) {
     let intermission = (flow.length)(world, Span::Intermission).unwrap_or(0.0);
     world.resource_mut::<Match>().phase = Phase::Intermission { until: now + intermission };
     (mode.hooks.after_round)(world);
+    if world.resource::<Match>().result.is_some() {
+        emit(world, flow, FlowEvent::MatchEnd);
+    }
 }
 
 /// The warm-up's revive: every dead player in the match respawned.

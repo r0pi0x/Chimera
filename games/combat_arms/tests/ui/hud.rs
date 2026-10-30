@@ -607,7 +607,7 @@ fn t28_round_end_clears() {
     shot(&mut sim, me, foe);
     sim.ticks(1);
     assert_eq!(hud(&sim).crosshair.colour, HIT_CROSSHAIR);
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    chimera_core::core::restart_round(sim.app.world_mut());
     sim.ticks(1);
     assert_eq!(hud(&sim).crosshair.colour, DEFAULT_CROSSHAIR, "the next frame");
 }

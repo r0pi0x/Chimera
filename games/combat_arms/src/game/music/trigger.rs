@@ -2,7 +2,8 @@
 //! objects. `ON` (when the object's `GameType` is the running mode and
 //! it names a file) marks it on and tells every client to start the
 //! music, `OFF` marks it off and tells them to stop it; a client that
-//! comes in later gets the first trigger that is on and looping. The
+//! comes in later gets the first trigger that is on and looping, as the
+//! server takes its join (`late_join`, an observer of its `Player`). The
 //! client applies a start straight on the player (the menu layer's name
 //! is bypassed): a cross-fade from what plays when the fade is above 0.
 
@@ -105,21 +106,24 @@ fn broadcast(world: &mut World, msg: CaMusicOn) {
     }
 }
 
-/// A client came in: it gets the one trigger that is on and looping.
-pub fn late_join(world: &mut World) {
-    // A kept query state (`query_cache`; `Added` reads the world's ticks,
-    // not the state's): this runs every tick.
-    let joiners: Vec<Entity> =
-        chimera_core::query_cache::cached_query::<Entity, Added<Player>, _>(world, |q, world| q.iter(world).collect());
-    if joiners.is_empty() {
+/// A client came in (an observer of its `Player` being put on, where the
+/// server takes the join, on the authoritative side): it gets the one
+/// trigger that is on and looping.
+pub fn late_join(
+    add: On<Add<Player>>,
+    music: Option<Res<CaMapMusic>>,
+    role: Option<Res<crate::core::NetRole>>,
+    playback: Option<Res<crate::core::Playback>>,
+    mut commands: Commands,
+) {
+    if !crate::core::authoritative(role, playback) {
         return;
     }
-    let Some(msg) = world.resource::<CaMapMusic>().for_joiner().cloned() else {
+    let Some(msg) = music.and_then(|m| m.for_joiner().cloned()) else {
         return;
     };
-    for c in joiners {
-        chat::send(world, Target::Client(ClientId::Client(c)), msg.clone());
-    }
+    let client = add.entity;
+    commands.queue(move |world: &mut World| chat::send(world, Target::Client(ClientId::Client(client)), msg));
 }
 
 /// A map load clears the triggers (a new map's objects are new).

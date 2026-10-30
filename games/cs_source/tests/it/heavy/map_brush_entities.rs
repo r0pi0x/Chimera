@@ -16,7 +16,6 @@ use bevy::prelude::*;
 use crate::stack::{
     games::{self, cs_source},
     harness::{CsSim, Sim},
-    core::RoundRestarts,
     logic::{Logic, Value},
     map::{
         BrushEntityBounds, MapBrushEntity, MapData, MapPlugin,
@@ -273,7 +272,7 @@ fn brush_entities_draw_merged_until_they_change() {
         sim.seconds(1.0);
         let (after, _, _) = check_merged(&mut sim);
         assert!(after + breakables / 2 <= merged, "broken blocks left: {merged} -> {after}");
-        sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+        crate::stack::core::restart_round(sim.app.world_mut());
         sim.ticks(3);
         let (back, _, _) = check_merged(&mut sim);
         assert!(back >= merged, "a new round merges them again: {back} of {merged}");
@@ -319,7 +318,7 @@ fn brush_entities_draw_merged_until_they_change() {
     sim.seconds(6.0);
     check_merged(&mut sim);
     assert!(merged(&mut sim, door.0), "the door shut again rejoins");
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     sim.ticks(3);
     let (back, _, _) = check_merged(&mut sim);
     assert_eq!(back, start, "a new round merges the vents again");

@@ -209,10 +209,7 @@ fn both_movements_shatter_a_cracked_cs_office_window_running_through_it() {
             let out = thin * side * (size.dot(thin) / 2.0 + 2.0);
             let mut result = Vec::new();
             for movement in MOVEMENTS {
-                sim.app
-                    .world_mut()
-                    .resource_mut::<chimera_core::core::RoundRestarts>()
-                    .0 += 1;
+                chimera_core::core::restart_round(sim.app.world_mut());
                 sim.ticks(3);
                 let Some(p) = stand(
                     &mut sim,

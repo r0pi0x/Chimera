@@ -218,6 +218,7 @@ fn event(world: &mut World, event: FlowEvent) {
             map_step(world, missions::MapStep::MissionEnd);
         }
         FlowEvent::RoundEnded => super::update_team_counts(world),
+        FlowEvent::MatchEnd => {}
     }
 }
 

@@ -1391,7 +1391,7 @@ fn t56_round_end_carries_over() {
     sim.app.init_resource::<RoundRestarts>();
     let g = grenade(&mut sim, M67, None, Vec3::new(0.0, 20000.0, 0.0), Vec3::ZERO);
     sim.seconds(1.0);
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    chimera_core::core::restart_round(sim.app.world_mut());
     sim.ticks(3);
     assert!(sim.app.world().get::<CaGrenade>(g).is_some(), "carried over");
     let (_, weapon, ..) = until_boom(&mut sim, 2.0);

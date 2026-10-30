@@ -100,6 +100,67 @@ fn rounds_freeze_then_play_and_eliminations_pay() {
     assert!(sim.app.world().get::<crate::stack::rules::Dead>(ct).is_none());
 }
 
+/// CS:S's rounds reach observers as the mode runtime's steps
+/// (`chimera_sim::mode::ModeStep`), each once and in order, inside the
+/// round's step: a win's round over in the tick it is decided, and at the next
+/// round's start its end and the new round's setup in one tick, the map's
+/// round restart (`core::RoundRestarts`, `core::RoundRestart`) counted by
+/// the new round's `MissionStart`.
+#[test]
+fn rounds_steps_are_triggered_in_order_inside_the_step() {
+    use chimera_sim::mode::ModeStep;
+    use crate::stack::core::{RoundRestart, RoundRestarts, SimClock};
+    #[derive(Resource, Default)]
+    struct Steps(Vec<(u64, String, u32)>);
+    let (mut sim, t, ct, ct2) = setup();
+    sim.app
+        .init_resource::<Steps>()
+        .add_observer(|s: On<ModeStep>, c: Res<SimClock>, r: Option<Res<RoundRestarts>>, mut steps: ResMut<Steps>| {
+            steps.0.push((c.tick, format!("{:?}", s.0), r.map_or(0, |r| r.0)));
+        })
+        .add_observer(|r: On<RoundRestart>, c: Res<SimClock>, mut steps: ResMut<Steps>| {
+            steps.0.push((c.tick, "RoundRestart".into(), r.0));
+        });
+    sim.seconds(1.2);
+    assert!(matches!(phase(&sim), Phase::Live { .. }), "{:?}", phase(&sim));
+    kill(&mut sim, t, ct);
+    sim.app.world_mut().write_message(Damage {
+        force: Vec3::ZERO,
+        target: ct2,
+        attacker: Some(t),
+        amount: 10.0,
+        point: Vec3::ZERO,
+        dir: Vec3::X,
+        hitgroup: Hitgroup::Chest,
+        kind: Default::default(),
+        weapon: None,
+    });
+    while !matches!(phase(&sim), Phase::Over { .. }) {
+        sim.ticks(1);
+    }
+    let won_at = sim.app.world().resource::<SimClock>().tick;
+    let over: Vec<(u64, String)> =
+        std::mem::take(&mut sim.app.world_mut().resource_mut::<Steps>().0).into_iter().map(|(t, e, _)| (t, e)).collect();
+    assert_eq!(over, [(won_at, "RoundOver".to_string())], "the win's round over in its tick");
+    let restarts = sim.app.world().resource::<RoundRestarts>().0;
+    while sim.app.world().resource::<RoundRestarts>().0 == restarts {
+        sim.ticks(1);
+    }
+    let at = sim.app.world().resource::<SimClock>().tick;
+    let steps = std::mem::take(&mut sim.app.world_mut().resource_mut::<Steps>().0);
+    let want: Vec<(u64, String, u32)> = [
+        ("RoundEnd", restarts),
+        ("RoundEnded", restarts),
+        ("Prepare { first: false }", restarts),
+        ("RoundRestart", restarts + 1),
+        ("MissionStart", restarts + 1),
+    ]
+    .into_iter()
+    .map(|(e, r)| (at, e.to_string(), r))
+    .collect();
+    assert_eq!(steps, want, "the round's end and the next round's start in one tick");
+}
+
 /// Objectives.md Q5 (measured 2026-10-17: de_dust2 with its bomb targets
 /// removed before a restart, `mp_roundtime 1`): on a map without objectives
 /// the clock ends nothing, the round goes on until a side is dead.

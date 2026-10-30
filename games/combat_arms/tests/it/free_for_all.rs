@@ -92,6 +92,42 @@ fn case_50_win_and_suicide() {
     assert_eq!(m(&sim).result, Some(Some(team(&sim, p[0]))));
 }
 
+/// The mode's flow steps reach observers (`mode::ModeStep`), each once and
+/// in order, inside the step: the win's round over, its end and the
+/// match's end (`MatchEnd`, the result set and the intermission on).
+#[test]
+fn a_matchs_end_is_triggered_as_its_flows_steps() {
+    use chimera_sim::mode::{FlowEvent, ModeStep};
+    #[derive(Resource, Default)]
+    struct Steps(Vec<(FlowEvent, Phase, Option<Option<u8>>)>);
+    let (mut sim, p) = ffa("FFA", 2);
+    sim.app.init_resource::<Steps>().add_observer(|s: On<ModeStep>, m: Res<CaMatch>, mut steps: ResMut<Steps>| {
+        steps.0.push((s.0, m.phase, m.result));
+    });
+    sim.app.world_mut().entity_mut(p[0]).insert(CaStats {
+        kills: 29,
+        ..default()
+    });
+    kill_now(&mut sim, p[1], p[0]);
+    until(&mut sim, 7.0, |p| p == Phase::MatchOver);
+    let won = team(&sim, p[0]);
+    let steps = std::mem::take(&mut sim.app.world_mut().resource_mut::<Steps>().0);
+    let events: Vec<FlowEvent> = steps.iter().map(|s| s.0).collect();
+    assert_eq!(
+        events,
+        [
+            FlowEvent::RoundWonBy(p[0]),
+            FlowEvent::RoundOver,
+            FlowEvent::RoundEnd,
+            FlowEvent::RoundEnded,
+            FlowEvent::MatchEnd
+        ]
+    );
+    let (_, phase, result) = steps[4];
+    assert!(matches!(phase, Phase::Intermission { .. }), "{phase:?}");
+    assert_eq!(result, Some(Some(won)));
+}
+
 /// 51. 22 `FreeForAll` points, shuffled once at the map's load: one list,
 /// whatever their team, consecutive spawns take consecutive shuffled
 /// points with one shared cursor.
