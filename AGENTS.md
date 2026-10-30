@@ -72,6 +72,7 @@ cargo test --features dev -- --skip heavy::      # the whole fast tier
 cargo test -p <crate> --features dev             # one crate's tests
 cargo test -p repo_checks                        # the repository's rules (seconds)
 cargo run -q -p repo_checks --bin affected -- --base main   # which crates a branch affects
+cargo run -q -p repo_checks --bin logsum -- <log>   # a saved log: counts, first failure, tail
 .\scripts\affected-tests.ps1 -Base origin/main   # Windows: those crates' fast tier
 cargo run --features dev -- --help               # screenshot, spawn, look options
 ```
@@ -88,6 +89,12 @@ cargo run --features dev -- --help               # screenshot, spawn, look optio
 - **Live state:** with `--features dev` the game serves Bevy's remote
   protocol (JSON-RPC; tool runs log the port they took). Sections 3 and 3b
   (the console from outside).
+- **Long output:** don't print a build or test log, and don't read one whole.
+  Save it and sum it up: `cargo run -q -p repo_checks --bin logsum -- <log>`
+  prints the counts, the first failure, the tail and the repeated line shapes.
+  `cargo nextest run` prints failing tests only (`.config/nextest.toml`).
+  For a doc, read [docs/agent-index.md](docs/agent-index.md) for the line each
+  section starts at and open that section, not the file.
 - **After pushing**, `tools/post-push-tests.sh` runs everything the push can
   affect, heavy tests too. Available; not required of contributors.
 
@@ -108,7 +115,8 @@ beyond the hooks: say in the PR what you ran.
 - Docs stay true in the same commit. A file's detail lives in its `//!`
   doc ("Known shortcuts" for shortcuts); after editing one run
   `cargo run -q -p repo_checks --bin docs_index` (a test fails when the
-  generated `docs/modules.md` or `docs/tech-debt.md` is stale).
+  generated `docs/modules.md`, `docs/tech-debt.md` or `docs/agent-index.md`
+  is stale).
 - After changing a dependency: `cargo hakari generate`.
 
 ## Game files from the asset store (no install)

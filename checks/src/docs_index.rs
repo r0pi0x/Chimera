@@ -1,13 +1,18 @@
 //! The generated doc lists: `docs/modules.md` (one line per source file,
-//! from the first sentence of its `//!` doc) and the generated block of
+//! from the first sentence of its `//!` doc), the generated block of
 //! `docs/tech-debt.md` (one line per "Known shortcuts" paragraph, from its
-//! first sentence). A feature edits only its own file's `//!` doc; the lists
-//! are rebuilt, never edited by hand, so parallel branches stop conflicting
-//! on them (architecture review, T5).
+//! first sentence), and `docs/agent-index.md` (every heading of the
+//! hand-written `docs/*.md` with the line it starts at). A feature edits only
+//! its own file's `//!` doc; the lists are rebuilt, never edited by hand, so
+//! parallel branches stop conflicting on them (architecture review, T5).
 //!
 //! Regenerate with `cargo run -q -p repo_checks --bin docs_index`; with
 //! `--check` it only reports stale files. The architecture test
 //! `generated_docs_are_fresh` fails when the committed files differ.
+//!
+//! The index exists so a reader opens the section it needs instead of the
+//! file: `performance.md` is 2,000 lines and 45,354 tokens, its headings and
+//! first sentences are 1,512 (2026-10-30).
 //!
 //! Reading a doc: the `//!` lines of a file, split into paragraphs at empty
 //! ones. A file's summary is the first sentence of its first paragraph; a
@@ -38,6 +43,11 @@ pub const DEBT_END: &str = "<!-- end of generated entries -->";
 
 /// The command that rebuilds the generated docs.
 pub const COMMAND: &str = "cargo run -q -p repo_checks --bin docs_index";
+
+/// The generated index of the hand-written docs' headings.
+pub const INDEX_FILE: &str = "docs/agent-index.md";
+/// Longest section line in that index, in characters.
+pub const INDEX_LINE: usize = 140;
 
 /// A file's `//!` doc as paragraphs (each joined into one line).
 fn doc_paragraphs(code: &str) -> Vec<String> {
@@ -170,11 +180,13 @@ fn group(path: &str) -> String {
     }
 }
 
-/// What the committed docs should hold: the whole `docs/modules.md` and the
-/// generated entries of `docs/tech-debt.md` (without its markers).
+/// What the committed docs should hold: the whole `docs/modules.md`, the
+/// generated entries of `docs/tech-debt.md` (without its markers) and the
+/// whole `docs/agent-index.md`.
 pub struct Generated {
     pub modules: String,
     pub debt: String,
+    pub index: String,
 }
 
 pub fn generate(root: &Path) -> Generated {
@@ -212,7 +224,145 @@ pub fn generate(root: &Path) -> Generated {
         }
         modules.push_str(&format!("- `{path}`: {}\n", first_sentence(first, MODULE_LINE)));
     }
-    Generated { modules, debt }
+    Generated {
+        modules,
+        debt,
+        index: index(root),
+    }
+}
+
+/// The doc index: every heading of the hand-written `docs/*.md`, with the line
+/// it starts at and the first sentence under it.
+fn index(root: &Path) -> String {
+    let mut out = String::from(
+        "# Docs index\n\n\
+         Generated from the headings of `docs/*.md`: do not edit. Each entry is the\n\
+         line a section starts at, then the first sentence under it, so a reader\n\
+         opens the section it needs instead of the whole file. Regenerate with\n\
+         `cargo run -q -p repo_checks --bin docs_index`; the architecture test\n\
+         `generated_docs_are_fresh` fails when this file is stale. The per-file\n\
+         module list is `docs/modules.md`.\n",
+    );
+    for path in doc_files(root) {
+        let Ok(text) = fs::read_to_string(root.join(&path)) else {
+            continue;
+        };
+        let sections = sections(&text);
+        if sections.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("\n## {path}\n\n"));
+        for (line, heading, summary) in sections {
+            if summary.is_empty() {
+                out.push_str(&format!("- {line}: {heading}\n"));
+            } else {
+                out.push_str(&format!("- {line}: {heading} | {summary}\n"));
+            }
+        }
+    }
+    out
+}
+
+/// The hand-written docs: every top-level `docs/*.md`, sorted. The module list
+/// and this index are themselves lists, and `docs/plans/` changes with every
+/// task.
+fn doc_files(root: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let Ok(entries) = fs::read_dir(root.join("docs")) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if path.is_file() && name.ends_with(".md") && name != "modules.md" && name != "agent-index.md" {
+            out.push(format!("docs/{name}"));
+        }
+    }
+    out.sort();
+    out
+}
+
+/// A markdown file's headings outside code fences, as (line, heading, first
+/// sentence of the prose under it). A `#` line inside a fence is a comment in
+/// an example, not a section.
+fn sections(text: &str) -> Vec<(usize, String, String)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out = Vec::new();
+    let mut fence = false;
+    let mut i = 0;
+    while i < lines.len() {
+        if is_fence(lines[i]) {
+            fence = !fence;
+            i += 1;
+            continue;
+        }
+        if fence {
+            i += 1;
+            continue;
+        }
+        let Some(heading) = heading_text(lines[i]) else {
+            i += 1;
+            continue;
+        };
+        let mut prose = String::new();
+        let mut quoted = false;
+        let mut j = i + 1;
+        while j < lines.len() {
+            if is_fence(lines[j]) {
+                quoted = !quoted;
+            } else if !quoted && heading_text(lines[j]).is_some() {
+                break;
+            } else if !quoted && is_prose(lines[j]) {
+                if !prose.is_empty() {
+                    prose.push(' ');
+                }
+                prose.push_str(lines[j].trim());
+                if prose.chars().count() > INDEX_LINE * 2 {
+                    break;
+                }
+            } else if !prose.is_empty() {
+                break;
+            }
+            j += 1;
+        }
+        let summary = if prose.is_empty() {
+            String::new()
+        } else {
+            first_sentence(&prose, INDEX_LINE)
+        };
+        out.push((i + 1, heading.to_string(), summary));
+        i = j.max(i + 1);
+    }
+    out
+}
+
+fn is_fence(line: &str) -> bool {
+    let text = line.trim_start();
+    text.starts_with("```") || text.starts_with("~~~")
+}
+
+/// `line`'s heading text when it is one, levels 1 to 3.
+fn heading_text(line: &str) -> Option<&str> {
+    let text = line.trim_end();
+    let hashes = text.chars().take_while(|c| *c == '#').count();
+    if hashes == 0 || hashes > 3 {
+        return None;
+    }
+    let rest = text[hashes..].strip_prefix(' ')?.trim();
+    (!rest.is_empty()).then_some(rest)
+}
+
+/// Whether a line is prose a summary can be taken from: not a list, table,
+/// tag, quote, image, rule or indented example.
+fn is_prose(line: &str) -> bool {
+    let text = line.trim();
+    let Some(first) = text.chars().next() else {
+        return false;
+    };
+    !matches!(
+        first,
+        '|' | '<' | '!' | '[' | '*' | '+' | '-' | '>' | '#' | '`' | '=' | '_' | '~'
+    ) && !first.is_ascii_digit()
 }
 
 /// `existing` (the committed tech-debt.md) with its generated block replaced
@@ -235,6 +385,9 @@ pub fn stale(root: &Path) -> Result<Vec<(&'static str, String)>, String> {
     };
     if read("docs/modules.md") != g.modules {
         out.push(("docs/modules.md", g.modules));
+    }
+    if read(INDEX_FILE) != g.index {
+        out.push((INDEX_FILE, g.index));
     }
     let debt = read("docs/tech-debt.md");
     let new = with_debt_block(&debt, &g.debt)
@@ -291,5 +444,20 @@ mod tests {
         let doc = format!("head\n{DEBT_BEGIN}\nold\n{DEBT_END}\ntail\n");
         let new = with_debt_block(&doc, "- new\n").unwrap();
         assert_eq!(new, format!("head\n{DEBT_BEGIN}\n- new\n{DEBT_END}\ntail\n"));
+    }
+
+    #[test]
+    fn headings_in_code_fences_are_not_sections() {
+        let doc = "# Title\n\nprose here.\n\n```sh\n# not a heading\n```\n\n## Real\n\nIts sentence.\n";
+        let s = sections(doc);
+        assert_eq!(s.len(), 2);
+        assert_eq!(s[0], (1, "Title".to_string(), "prose here".to_string()));
+        assert_eq!(s[1], (9, "Real".to_string(), "Its sentence".to_string()));
+    }
+
+    #[test]
+    fn a_section_without_prose_still_gets_an_entry() {
+        let s = sections("## Table\n\n| a | b |\n|---|---|\n");
+        assert_eq!(s, [(1, "Table".to_string(), String::new())]);
     }
 }

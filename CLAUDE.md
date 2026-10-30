@@ -20,6 +20,7 @@ This file is a map. Follow the links for detail; keep it short.
 | Design decisions and why (slots, mounts, weapon model, legal rules) | [docs/DESIGN.md](docs/DESIGN.md) |
 | Code layout, layers, data flow | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Every source file, one line (generated) | [docs/modules.md](docs/modules.md) |
+| Where each doc's section starts (generated) | [docs/agent-index.md](docs/agent-index.md) |
 | How to check your work (tests, screenshots, live ECS queries) | [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
 | Current plan and progress | [docs/plans/active/](docs/plans/active/engine-split.md) |
 | What to build next (to-do list) | [docs/backlog.md](docs/backlog.md) |
@@ -87,8 +88,8 @@ source tools/agent-env.sh && agent_run cargo ...   # several agents on one box:
 tools/post-push-tests.sh   # right after each push: the affected tests (heavy too)
                                    # and build checks of what was pushed
 cargo hakari generate   # after changing a dependency (chimera/workspace-hack)
-cargo run -q -p repo_checks --bin docs_index   # regenerate docs/modules.md and the
-                                   # debt list after editing a `//!` doc
+cargo run -q -p repo_checks --bin docs_index   # regenerate docs/modules.md, the
+                                   # debt list and docs/agent-index.md
 ```
 
 Each crate's integration tests are one binary, `<crate>/tests/it/` (slow
@@ -118,8 +119,9 @@ still work.
 - When something was hard because a tool, doc or check was missing, add it.
 - Keep docs true: when code changes a fact in a doc, change the doc in the
   same commit. A file's detail lives in its `//!` doc (shortcuts under
-  "Known shortcuts"); docs/modules.md and the code part of tech-debt.md are
-  generated from those docs: after changing one, run
+  "Known shortcuts"); docs/modules.md, the code part of tech-debt.md and
+  docs/agent-index.md are generated from those docs and the doc headings:
+  after changing one, run
   `cargo run -q -p repo_checks --bin docs_index` (a test fails when stale).
 
 ## Commit identity
