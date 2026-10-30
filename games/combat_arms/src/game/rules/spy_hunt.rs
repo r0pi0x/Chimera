@@ -92,7 +92,6 @@ pub const MODE: CaMode = CaMode {
     panel: Panel::Kills,
     order: ScoreOrder::MissionPoints,
     leaving,
-    left: super::NO_LEFT,
 };
 
 /// The intel at the round's start (stage 1).

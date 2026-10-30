@@ -108,7 +108,6 @@ pub const MODE: CaMode = CaMode {
     panel: Panel::TeamScore,
     order: ScoreOrder::Captures,
     leaving: super::tdm::leaving,
-    left: super::NO_LEFT,
 };
 
 /// Who carries each team's flag (Alpha's, Bravo's) and where they last

@@ -119,7 +119,6 @@ pub const MODE: CaMode = CaMode {
     panel: Panel::RoundWins,
     order: ScoreOrder::MissionPoints,
     leaving,
-    left,
 };
 
 /// A player's bank money (M11.6); replicated (the hire menu's and the
@@ -572,8 +571,9 @@ fn leaving(m: &mut CaMatch, l: &Leaver) {
     }
 }
 
-/// A leaver's pocket drops (any phase) and its mercenaries go.
-fn left(world: &mut World, l: &LeftPlayer) {
+/// A leaver's pocket drops (any phase) and its mercenaries go (the
+/// mode's part of `rules::on_leave`).
+pub(super) fn left(world: &mut World, l: &LeftPlayer) {
     mercs::remove_of(world, l.entity);
     drop_pocket(world, None, l.at, l.carry);
     world.resource_mut::<CaHiredGuns>().prev_use.remove(&l.entity);

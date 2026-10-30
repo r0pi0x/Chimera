@@ -96,7 +96,6 @@ pub const MODE: CaMode = CaMode {
     panel: Panel::TeamScore,
     order: ScoreOrder::MissionPoints,
     leaving,
-    left: super::NO_LEFT,
 };
 
 /// Squad Match 2 (M11): Seize and Secure's rules on its own points.

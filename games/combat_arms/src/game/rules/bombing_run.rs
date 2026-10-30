@@ -85,7 +85,6 @@ pub const MODE: CaMode = CaMode {
     panel: Panel::RoundWins,
     order: ScoreOrder::ExplodeDefuse,
     leaving,
-    left: super::NO_LEFT,
 };
 
 /// The bomb's carrier and where they last were alive (the server's).

@@ -241,11 +241,6 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
         "MapScopedResource",
         "map unloading removes the map's resources",
     ),
-    (
-        "games/combat_arms/src/game/rules.rs",
-        "CaMode",
-        "B: a player leaving; to the `on_leave` observer (step 8)",
-    ),
 ];
 
 /// Files whose per-tick exclusive systems do whole-world jobs (network
