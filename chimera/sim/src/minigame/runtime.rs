@@ -8,7 +8,8 @@
 //!   (`JoinOrder`). A new one (`join`) goes on the team the mode makes
 //!   (one with no team first on the first side), comes in at once unless
 //!   the match is over, and is marked `InMinigame`; the rules module
-//!   hears of it first (`RulesModule::joined`: the ladder's join rung).
+//!   hears of it first (`minigame::Joined`, an entity event triggered and
+//!   applied there: the ladder's join rung).
 //! - The match waits (`Phase::Waiting`) until `players.min` are in; then
 //!   the runtime starts it (everyone respawned, the module's
 //!   `before_spawns` first), live at once (no setup), for `time_limit`;
@@ -17,7 +18,8 @@
 //! - Spawning (`respawn`): at a spawn point the definition's `points`
 //!   pick (`spawn_point`), revived (`spawning::revive`), the definition's
 //!   movement set, the weapons taken and the life's given (the kit, then
-//!   the rules module's `loadout`, the last drawn, after its `arming`;
+//!   the rules module's `loadout`, the last drawn, after the arming
+//!   (`minigame::Arming`, triggered and applied there);
 //!   no kit when the module says so, `RulesModule::no_kit`; a kit by game
 //!   is the loadout's last weapon's game's, `refit_kit` when the rules
 //!   swap that weapon; a `KitMelee` on the player, a ladder rung's, is
@@ -122,9 +124,11 @@ pub struct Protected {
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct SpawnCursor(pub usize);
 
+/// A character in the match (`players`' filter; with a team that plays).
+pub(crate) type Playing = (With<Intent>, With<Health>, With<InMinigame>, Without<Connecting>, Without<Spectating>, Without<Npc>);
+
 /// The players in the match, in join order.
 pub fn players(world: &mut World) -> Vec<(Entity, u8)> {
-    type Playing = (With<Intent>, With<Health>, With<InMinigame>, Without<Connecting>, Without<Spectating>, Without<Npc>);
     let mut all: Vec<(u64, Entity, u8)> =
         cached_query::<(Entity, &Team, Option<&JoinOrder>), Playing, _>(world, |q, world| {
             q.iter(world)
@@ -193,7 +197,12 @@ pub fn respawn(world: &mut World, e: Entity) {
         crate::identity::unfollow(world, e);
     }
     crate::weapon::equip::strip(world, e);
-    (active.rules.arming)(world, e);
+    // The module's arming (and anyone's): at once, before the weapons.
+    world.trigger(super::Arming {
+        player: e,
+        rules: active.rules.mode.id,
+    });
+    world.flush();
     let loadout = (active.rules.loadout)(world, e);
     let kit = if (active.rules.no_kit)(world, e) { Vec::new() } else { kit_for(world, def, e, loadout.last().copied()) };
     for id in kit.into_iter().chain(loadout) {
@@ -387,7 +396,7 @@ type Joining = (With<Intent>, With<Health>, Without<InMinigame>, Without<Connect
 
 /// New characters into the minigame: a team as the mode makes them, at
 /// once into play unless the match is over. The joiners are found by the
-/// declared query; taking them in (the mode's team, the rules' `joined`,
+/// declared query; taking them in (the mode's team, the rules' `Joined`,
 /// the spawn) is world work, queued and applied at the sync point before
 /// the phases step (`plugin`'s chain), in the query's order.
 fn join(joining: Query<(Entity, &Team), Joining>, hold: Option<Res<super::MatchHold>>, mut commands: Commands) {
@@ -413,7 +422,11 @@ fn take_in(world: &mut World, new: &[(Entity, u8)]) {
         ent.insert(InMinigame);
         mode::assign_team(world, e, false);
         if let Some(rules) = world.get_resource::<ActiveMinigame>().map(|a| a.rules) {
-            (rules.joined)(world, e);
+            world.trigger(super::Joined {
+                player: e,
+                rules: rules.mode.id,
+            });
+            world.flush();
         }
         if !over {
             respawn(world, e);

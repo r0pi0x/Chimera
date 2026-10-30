@@ -1071,3 +1071,144 @@ fn a_modes_death_reaction_runs_after_each_deaths_counting_in_order_with_the_kill
     assert_eq!((seen[1].0, seen[1].1, seen[1].2), (c, 2, 2), "c's after its own");
     assert_eq!(rung(&sim, a), 2);
 }
+
+/// What happened to whom when: (player, tick, what).
+#[derive(Resource, Default)]
+struct JoinLog(Vec<(Entity, u64, String)>);
+
+fn log_joins(app: &mut App) {
+    use chimera_sim::{minigame::ladder::OnRung, weapon::Weapon};
+    fn push(log: &mut JoinLog, clock: &SimClock, e: Entity, what: String) {
+        log.0.push((e, clock.tick, what));
+    }
+    app.init_resource::<JoinLog>()
+        .add_observer(|on: On<Insert<InMinigame>>, c: Res<SimClock>, mut log: ResMut<JoinLog>| {
+            push(&mut log, &c, on.entity, "in".into())
+        })
+        .add_observer(|on: On<Insert<Team>>, q: Query<&Team, With<InMinigame>>, c: Res<SimClock>, mut log: ResMut<JoinLog>| {
+            if let Ok(t) = q.get(on.entity) {
+                push(&mut log, &c, on.entity, format!("team {}", t.0))
+            }
+        })
+        .add_observer(|on: On<Insert<Rung>>, q: Query<&Rung>, c: Res<SimClock>, mut log: ResMut<JoinLog>| {
+            push(&mut log, &c, on.entity, format!("rung {}", q.get(on.entity).unwrap().0))
+        })
+        .add_observer(|on: On<Insert<OnRung>>, q: Query<&OnRung>, c: Res<SimClock>, mut log: ResMut<JoinLog>| {
+            push(&mut log, &c, on.entity, format!("on rung {}", q.get(on.entity).unwrap().index))
+        })
+        // A weapon has no owner yet as it is spawned: anyone's.
+        .add_observer(|on: On<Add<Weapon>>, q: Query<&Weapon>, c: Res<SimClock>, mut log: ResMut<JoinLog>| {
+            push(&mut log, &c, Entity::PLACEHOLDER, format!("weapon {}", q.get(on.entity).unwrap().id))
+        })
+        .add_observer(|on: On<Insert<Protected>>, c: Res<SimClock>, mut log: ResMut<JoinLog>| {
+            push(&mut log, &c, on.entity, "protected".into())
+        });
+}
+
+/// `p`'s log from tick `from` on, with the weapons spawned then: (tick,
+/// what).
+fn joins_of(sim: &Sim, p: Entity, from: u64) -> Vec<(u64, String)> {
+    let log = sim.app.world().resource::<JoinLog>();
+    log.0.iter().filter(|(e, t, _)| (*e == p || *e == Entity::PLACEHOLDER) && *t >= from).map(|(_, t, w)| (*t, w.clone())).collect()
+}
+
+/// A joiner is taken in in one tick, in the old order (plan ecs-cleanup
+/// step 8, the rules' `Joined` and `Arming` as events): in the minigame,
+/// its team, the ladder's join rung, then the life: armed for the rung
+/// (`OnRung`, once), the rung's weapon, protected; a late joiner gets the
+/// others' rung and its set.
+#[test]
+fn a_joiners_team_rung_and_arming_come_in_one_tick_in_order() {
+    let mut sim = started(DEF);
+    log_joins(&mut sim.app);
+    let a = player(&mut sim);
+    let joined = sim.app.world().resource::<SimClock>().tick + 1;
+    sim.ticks(1);
+    let t = |n: u64, w: &str| (n, w.to_string());
+    let team = sim.app.world().get::<Team>(a).unwrap().0;
+    assert_eq!(
+        joins_of(&sim, a, 0),
+        [
+            t(joined, "in"),
+            t(joined, &format!("team {team}")),
+            t(joined, "rung 0"),
+            t(joined, "on rung 0"),
+            t(joined, "weapon kit:pistol"),
+            t(joined, "protected"),
+        ]
+    );
+    // Late: the others on the second rung, a joiner comes in on it.
+    let b = player(&mut sim);
+    settle(&mut sim);
+    kill(&mut sim, b, a, DamageKind::Bullet);
+    settle(&mut sim);
+    kill(&mut sim, a, b, DamageKind::Bullet);
+    settle(&mut sim);
+    assert_eq!((rung(&sim, a), rung(&sim, b)), (1, 1));
+    let c = player(&mut sim);
+    let joined = sim.app.world().resource::<SimClock>().tick + 1;
+    sim.ticks(1);
+    let team = sim.app.world().get::<Team>(c).unwrap().0;
+    assert_eq!(
+        joins_of(&sim, c, joined),
+        [
+            t(joined, "in"),
+            t(joined, &format!("team {team}")),
+            t(joined, "rung 1"),
+            t(joined, "on rung 1"),
+            t(joined, "weapon kit:rifle"),
+            t(joined, "protected"),
+        ]
+    );
+    sim.ticks(5);
+    assert_eq!(joins_of(&sim, c, joined + 1), [], "nothing again");
+}
+
+/// What a second observer of `minigame::Arming` saw: (player, the rules,
+/// its rung then, weapons carried then, weapons carried when its queued
+/// work ran).
+#[derive(Resource, Default)]
+struct ArmingsSeen(Vec<(Entity, &'static str, Option<usize>, usize, usize)>);
+
+/// Anything may observe a life's arming (plan ecs-cleanup step 8): a
+/// second observer of `minigame::Arming` runs after the old weapons were
+/// taken and the ladder's join rung was set, and its queued world work
+/// applies in the runtime's flush, before the life's weapons are given.
+#[test]
+fn a_second_observer_of_arming_runs_before_the_weapons_are_given() {
+    use chimera_sim::{minigame::Arming, weapon::Inventory};
+    let mut sim = started(DEF);
+    sim.app.init_resource::<ArmingsSeen>().add_observer(
+        |arming: On<Arming>, rungs: Query<&Rung>, inv: Query<&Inventory>, mut commands: Commands| {
+            let (e, rules) = (arming.player, arming.rules);
+            let rung = rungs.get(e).ok().map(|r| r.0);
+            let now = inv.get(e).map_or(0, |i| i.weapons.len());
+            commands.queue(move |w: &mut World| {
+                let then = w.get::<Inventory>(e).map_or(0, |i| i.weapons.len());
+                w.resource_mut::<ArmingsSeen>().0.push((e, rules, rung, now, then));
+            });
+        },
+    );
+    let a = player(&mut sim);
+    sim.ticks(1);
+    let b = player(&mut sim);
+    settle(&mut sim);
+    kill(&mut sim, b, a, DamageKind::Bullet);
+    settle(&mut sim);
+    let seen = &sim.app.world().resource::<ArmingsSeen>().0;
+    let ladder = "chimera:ladder";
+    // Each joiner's first life; both again at the match's start; b's
+    // after the kill.
+    assert_eq!(
+        *seen,
+        [
+            (a, ladder, Some(0), 0, 0),
+            (b, ladder, Some(0), 0, 0),
+            (a, ladder, Some(0), 0, 0),
+            (b, ladder, Some(0), 0, 0),
+            (b, ladder, Some(0), 0, 0),
+        ],
+        "{seen:?}"
+    );
+    assert!(!sim.app.world().get::<Inventory>(b).unwrap().weapons.is_empty(), "then armed");
+}

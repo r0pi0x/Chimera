@@ -94,7 +94,6 @@ pub const MODE: CaMode = CaMode {
     panel: Panel::RoundWins,
     order: ScoreOrder::MissionOnly,
     leaving,
-    left: super::NO_LEFT,
 };
 
 /// After G rounds played, or with one player or fewer on a team (also

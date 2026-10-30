@@ -130,7 +130,6 @@ pub const MODE: CaMode = CaMode {
     panel: Panel::RoundWins,
     order: ScoreOrder::Kills,
     leaving,
-    left: super::NO_LEFT,
 };
 
 /// Clan VIP Escort (M13.8): the public rules, R rounds in all.

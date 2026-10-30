@@ -64,7 +64,6 @@ pub const MODE: CaMode = CaMode {
     panel: Panel::PlayerRoundWins,
     order: ScoreOrder::MissionPoints,
     leaving,
-    left,
 };
 
 /// A death leaving at most one player alive ends the round, that player

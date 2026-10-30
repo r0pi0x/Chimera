@@ -65,7 +65,6 @@ pub const MODE: CaMode = CaMode {
     panel: Panel::Kills,
     order: ScoreOrder::Kills,
     leaving,
-    left: super::NO_LEFT,
 };
 
 fn on_death(world: &mut World, d: &Death) {

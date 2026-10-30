@@ -96,7 +96,6 @@ pub const MODE: CaMode = CaMode {
     panel: Panel::RoundWins,
     order: ScoreOrder::ExplodeDefuse,
     leaving,
-    left: super::NO_LEFT,
 };
 
 /// S&D's hooks (Go4CA's too).

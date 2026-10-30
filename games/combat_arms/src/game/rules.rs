@@ -25,7 +25,8 @@
 //! (whether it scales friendly fire, gives assists, shows a timer, its
 //! spawn family (`Spawns`), its round length (`RoundTime`), whether firing
 //! ends protection, its death drops, its score panel and scoreboard
-//! order, what a leaver does and what a leaver's objects do). Every mode
+//! order, what a leaver does; what a leaver's objects do is the mode's
+//! part of the `on_leave` observer, `mode_left`). Every mode
 //! is registered with the runtime (`ModeAppExt::add_modes`, picked by
 //! `ca_mode`), which steps the match (`CaMatch`, the runtime's `Match`)
 //! through its phases with Combat Arms' flow (`flow::FLOW`). A mode's
@@ -217,8 +218,8 @@ pub struct Leaver {
     pub now: f64,
 }
 
-/// A player who left, for the mode's objects (`Hooks::left`): where it was
-/// and what it carried.
+/// A player who left, for the mode's objects (`on_leave`'s mode part,
+/// `mode_left`): where it was and what it carried.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LeftPlayer {
     pub entity: Entity,
@@ -320,11 +321,9 @@ pub struct CaMode {
     pub panel: Panel,
     /// The scoreboard's order.
     pub order: ScoreOrder,
-    /// A player leaves (S10).
+    /// A player leaves (S10). The mode's leaver's objects are its part
+    /// of `on_leave` (`mode_left`).
     pub leaving: fn(&mut CaMatch, &Leaver),
-    /// A player on a team left (after the leaving rule): its carried
-    /// objects and its own (Hired Guns' pocket and mercenaries).
-    pub left: fn(&mut World, &LeftPlayer),
 }
 
 impl std::ops::Deref for CaMode {
@@ -334,9 +333,6 @@ impl std::ops::Deref for CaMode {
         &self.rules
     }
 }
-
-/// No leaving hook (`CaMode::left`).
-pub const NO_LEFT: fn(&mut World, &LeftPlayer) = |_, _| {};
 
 /// Every mode, by room key.
 pub const MODES: &[CaMode] = &[
@@ -562,7 +558,8 @@ pub fn update_team_counts(world: &mut World) {
 }
 
 /// S10: a player on a team leaves (its `Team` goes as it is despawned):
-/// the mode's rule, with the leaver still counted.
+/// the mode's rule, with the leaver still counted, then the mode's part
+/// for its objects (`mode_left`, queued).
 #[allow(clippy::type_complexity)]
 fn on_leave(
     leave: On<Remove<Team>>,
@@ -619,8 +616,20 @@ fn on_leave(
         carry,
         alive: leaver.alive,
     };
-    let hook = mode.left;
-    commands.queue(move |w: &mut World| hook(w, &left));
+    if let Some(part) = mode_left(mode.id) {
+        commands.queue(move |w: &mut World| part(w, &left));
+    }
+}
+
+/// A mode's part of a leaving, after its leaving rule (world work, queued
+/// by `on_leave`): the leaver's carried objects and its own (Last Man
+/// Standing's and Hunted's round end, Hired Guns' pocket and mercenaries).
+fn mode_left(mode: &str) -> Option<fn(&mut World, &LeftPlayer)> {
+    match mode {
+        LAST_MAN_STANDING | HUNTED => Some(last_man::left),
+        HIRED_GUNS => Some(hired_guns::left),
+        _ => None,
+    }
 }
 /// This machine's player.
 fn local_player(world: &mut World) -> Option<Entity> {

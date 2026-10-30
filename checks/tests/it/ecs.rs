@@ -167,7 +167,7 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
         "chimera/sim/src/minigame.rs",
         "RulesModule",
-        "a rules module's start and kit; `joined`/`arming` to events (step 8)",
+        "a rules module's start and kit (a join and a life's arming are events: `Joined`, `Arming`)",
     ),
     (
         "chimera/sim/src/minigame/ladder.rs",
@@ -240,11 +240,6 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
         "chimera/world/src/map/mod.rs",
         "MapScopedResource",
         "map unloading removes the map's resources",
-    ),
-    (
-        "games/combat_arms/src/game/rules.rs",
-        "CaMode",
-        "B: a player leaving; to the `on_leave` observer (step 8)",
     ),
 ];
 
