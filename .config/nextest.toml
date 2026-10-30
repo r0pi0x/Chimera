@@ -8,6 +8,15 @@
 
 [profile.default]
 test-threads = 8
+# Failing tests only. A fast-tier run printed 4,417 lines, 3,929 of them
+# `... ok` for tests that passed: reading a log costs what is in it, and no
+# one decides anything from a passing test's line (measured 2026-10-30).
+# `logsum` (`cargo run -q -p repo_checks --bin logsum`) sums up a log that
+# was saved anyway.
+status-level = "fail"
+final-status-level = "fail"
+success-output = "never"
+failure-output = "immediate-final"
 # Say which tests run long, and kill a hung one. Outside `heavy::` the
 # slowest took 53 s on a busy box (load ~20 on 12 threads, 2026-10-19):
 # killed after 5 minutes. Heavy tests get 12 and the soak 30 (overrides
