@@ -11,11 +11,11 @@
 //!   warm-up (with revives), a forced setup length, how it makes teams
 //!   (`Teams`), what a counted death does (`on_death`), its time-out rule,
 //!   when the match ends, and `Hooks` on the steps: a round's setup, the
-//!   round over and its end, any death,
-//!   respawning, holding joiners (with whether the game's player count
-//!   also holds them, `counts_joiners`), before the spawns, after a round,
-//!   a live round's decision (`decide`) and the match's end after a
-//!   warm-up (`warmup_end`; none: a warm-up never ends the match).
+//!   round over and its end, respawning, holding joiners (with whether
+//!   the game's player count also holds them, `counts_joiners`), before
+//!   the spawns, after a round, a live round's decision (`decide`) and
+//!   the match's end after a warm-up (`warmup_end`; none: a warm-up never
+//!   ends the match).
 //! - `Flow`: a game's side of the runtime, the same for all its modes:
 //!   how often the phases step (`frame`), who plays (`players`, in join
 //!   order) and how they respawn, the phases' lengths (`Span`), the
@@ -40,6 +40,13 @@
 //!   update comes before the step it may decide), the touches' after the
 //!   tick's deaths (Combat Arms' `rules::mode_updates`, `mode_touches`;
 //!   the minigame runtime's ladder, `ladder::refill`, `follow_lead`).
+//! - Any death while a mode plays (its counting done, in any phase): the
+//!   death step triggers `ModeDeath` on the victim with `World::trigger`
+//!   where the mode's hook ran (plan ecs-cleanup step 5), and flushes, so
+//!   the playing mode's observer (filtered by `ModeDeath::mode`: a carried
+//!   flag, bomb or intel dropped, the ladder's melee demotion) runs and
+//!   its commands apply at once, death by death, before the next death is
+//!   counted.
 //! - `assign_team`: a player's team as the mode makes teams (two sides,
 //!   free-for-all, everyone on the first side, or the game's as joined).
 //! - `chimera_modes` lists the registered modes, the one playing marked.
@@ -76,6 +83,33 @@ pub enum Teams {
     AsJoined,
 }
 
+/// A player died while `mode` plays: triggered on the victim by the game's
+/// death step (`World::trigger`, then a flush: observers' commands apply
+/// at once) after the death was marked and, while the match counts,
+/// counted, in every phase; the step's place for the mode's own reaction.
+/// `died` is the death as the step saw it (the minigame runtime's names
+/// the weapon of the kill: the killer's held one when the damage named
+/// none, read before the counting could swap it). The playing mode's
+/// observer filters by `mode` (its id).
+#[derive(EntityEvent, Clone, Debug)]
+pub struct ModeDeath {
+    #[event_target]
+    pub victim: Entity,
+    /// The playing mode's id.
+    pub mode: &'static str,
+    pub died: Died,
+}
+
+/// `d` told to the playing `mode`'s observers (`ModeDeath`), at once.
+pub fn mode_death(world: &mut World, mode: &'static str, d: &Died) {
+    world.trigger(ModeDeath {
+        victim: d.entity,
+        mode,
+        died: d.clone(),
+    });
+    world.flush();
+}
+
 /// A mode's hooks on the runtime's steps (`NO_HOOKS` do nothing).
 #[derive(Clone, Copy)]
 pub struct Hooks {
@@ -86,8 +120,6 @@ pub struct Hooks {
     pub round_over: fn(&mut World),
     /// The round's end, before the game's clean-up.
     pub round_end: fn(&mut World),
-    /// A player died, in any phase, before the counting.
-    pub died: fn(&mut World, &Died),
     /// Whether `e` may respawn now beyond `Mode::respawns`.
     pub may_respawn: fn(&World, Entity) -> bool,
     /// A round mode holds joiners now beyond the game's rule.
@@ -119,7 +151,6 @@ pub const NO_HOOKS: Hooks = Hooks {
     setup: |_| {},
     round_over: |_| {},
     round_end: |_| {},
-    died: |_, _| {},
     may_respawn: |_, _| true,
     holds_joiner: |_| false,
     before_spawns: |_| {},

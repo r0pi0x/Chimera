@@ -63,7 +63,6 @@ pub const MODE: CaMode = CaMode {
         match_end,
         hooks: Hooks {
             setup,
-            died,
             round_over: bomb::credit_planter,
             warmup_end: match_end,
             round_end: |w| {
@@ -129,6 +128,18 @@ fn died(world: &mut World, d: &Died) {
     }
     let at = world.get::<Transform>(d.entity).map_or(Vec3::ZERO, |t| t.translation);
     drop_bomb(world, d.entity, at);
+}
+
+/// The carrier's bomb dropped where it died: the mode's `mode::ModeDeath`
+/// observer (plan ecs-cleanup step 5), its world work queued and applied by
+/// the death step's flush, so where the mode's hook ran.
+pub(super) fn on_mode_death(death: On<crate::mode::ModeDeath>, mut commands: Commands) {
+    const MODES: &[&str] = &[BOMBING_RUN];
+    if !MODES.contains(&death.mode) {
+        return;
+    }
+    let d = death.died.clone();
+    commands.queue(move |world: &mut World| died(world, &d));
 }
 
 /// The carrier kept (a leaver drops it) and the pick-up (the mode's

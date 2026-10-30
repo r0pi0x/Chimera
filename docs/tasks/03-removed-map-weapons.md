@@ -1,5 +1,10 @@
 # Remove map-killed weapons without polling the world
 
+**Done 2026-10-30** (docs/plans/active/ecs-cleanup.md, step 5: what
+landed; a normal system comparing the list in place, the test
+`chimera_sim` `equipment::weapons_the_logic_removed_leave_in_that_tick_
+loose_or_carried_and_only_once`).
+
 ## Context
 
 When map logic kills a placed weapon (`map::entities::RemovedWeapons`),
@@ -20,13 +25,13 @@ system that clones and compares the whole list every tick. Step 5 of
 
 ## Definition of done
 
-- [ ] Removal reacts to a message or an observer written where a weapon
+- [x] Removal reacts to a message or an observer written where a weapon
       is removed, or runs as a normal system gated by
       `resource_changed::<RemovedWeapons>`; no per-tick clone of the list.
-- [ ] Round restarts that re-place weapons still don't remove them again.
-- [ ] A new test in `chimera/sim/tests/it/` on the greybox: a loose map
+- [x] Round restarts that re-place weapons still don't remove them again.
+- [x] A new test in `chimera/sim/tests/it/` on the greybox: a loose map
       weapon and a carried one, both removed by id; a third untouched.
-- [ ] `checks/tests/it/ecs.rs`' exclusive-system ratchet for chimera_sim is
+- [x] `checks/tests/it/ecs.rs`' exclusive-system ratchet for chimera_sim is
       lowered by one.
 
 ## Constraints

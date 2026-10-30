@@ -187,39 +187,37 @@ pub(super) fn map_equipment(world: &mut World, mut seen: Local<(Option<usize>, u
 /// leave the world: lying loose, the item goes; carried, its carrier
 /// loses it (Source deletes the entity). Only those newly removed: the
 /// list can still name last round's while a round restart re-places them.
-pub(super) fn remove_killed_weapons(world: &mut World, mut seen: Local<Vec<usize>>) {
-    let gone = world
-        .get_resource::<crate::map::entities::RemovedWeapons>()
-        .map(|r| r.0.clone())
-        .unwrap_or_default();
-    if gone == *seen {
+/// A normal system: the list is compared in place (the logic writes it
+/// only when it changes), the inventories change at once, the despawns
+/// apply at the sync point before `pick_up` (`weapon::plugin`'s chain),
+/// so in the tick the logic removed them.
+#[allow(clippy::type_complexity)]
+pub(super) fn remove_killed_weapons(
+    removed: Option<Res<crate::map::entities::RemovedWeapons>>,
+    mut seen: Local<Vec<usize>>,
+    loose: Query<(Entity, &Loose, &MapWeapon)>,
+    weapons: Query<&Weapon>,
+    carried: Query<(Entity, &Weapon, &MapWeapon), Without<Loose>>,
+    mut inventories: Query<&mut Inventory>,
+    mut commands: Commands,
+) {
+    let gone: &[usize] = removed.as_deref().map_or(&[], |r| &r.0);
+    if gone == seen.as_slice() {
         return;
     }
     let new: Vec<usize> = gone.iter().copied().filter(|i| !seen.contains(i)).collect();
-    *seen = gone;
+    *seen = gone.to_vec();
     if new.is_empty() {
         return;
     }
-    let loose: Vec<(Entity, Entity)> = world
-        .query::<(Entity, &Loose, &MapWeapon)>()
-        .iter(world)
-        .filter(|(_, _, m)| new.contains(&m.0))
-        .map(|(e, l, _)| (e, l.weapon))
-        .collect();
-    for (e, w) in loose {
-        world.despawn(e);
-        if world.get::<Weapon>(w).is_some_and(|w| w.owner.is_none()) {
-            world.despawn(w);
+    for (e, l, _) in loose.iter().filter(|(_, _, m)| new.contains(&m.0)) {
+        commands.entity(e).try_despawn();
+        if weapons.get(l.weapon).is_ok_and(|w| w.owner.is_none()) {
+            commands.entity(l.weapon).try_despawn();
         }
     }
-    let carried: Vec<(Entity, Entity)> = world
-        .query_filtered::<(Entity, &Weapon, &MapWeapon), Without<Loose>>()
-        .iter(world)
-        .filter(|(_, w, m)| new.contains(&m.0) && w.owner.is_some())
-        .map(|(e, w, _)| (e, w.owner.unwrap()))
-        .collect();
-    for (w, owner) in carried {
-        if let Some(mut inv) = world.get_mut::<Inventory>(owner) {
+    for (w, weapon, _) in carried.iter().filter(|(_, w, m)| new.contains(&m.0) && w.owner.is_some()) {
+        if let Ok(mut inv) = inventories.get_mut(weapon.owner.unwrap()) {
             inv.weapons.retain(|x| *x != w);
             if inv.active == Some(w) {
                 inv.active = None;
@@ -229,7 +227,7 @@ pub(super) fn remove_killed_weapons(world: &mut World, mut seen: Local<Vec<usize
                 inv.last = None;
             }
         }
-        world.despawn(w);
+        commands.entity(w).try_despawn();
     }
 }
 

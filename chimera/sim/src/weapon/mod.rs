@@ -193,9 +193,14 @@ impl Plugin for WeaponPlugin {
                         // (a client hears it with its own player's state).
                         (
                             equip::map_equipment,
-                            equip::remove_killed_weapons,
-                            give_starting_weapons,
-                            equip::apply_equips,
+                            // Their world work (the removals, the kits, the
+                            // map's equips) queued in this order and applied
+                            // at the one sync point before `pick_up`, as the
+                            // exclusive pollers ran before the equips: no
+                            // sync point between them, so the rest of the
+                            // tick keeps its order (plan ecs-cleanup step 5).
+                            (equip::remove_killed_weapons, give_starting_weapons, equip::apply_equips)
+                                .chain_ignore_deferred(),
                             drop::pick_up,
                             drop::use_pick_up,
                             drop::debug_pickups,
@@ -618,36 +623,49 @@ pub fn spawn_weapon(world: &mut World, id: &str, owner: Entity) -> Option<Entity
 #[derive(Component, Clone, Debug, Default, PartialEq)]
 pub struct OwnKit(pub Vec<&'static str>);
 
-fn give_starting_weapons(world: &mut World) {
-    #[allow(clippy::type_complexity)]
-    let new: Vec<(Entity, Option<u8>, Option<OwnKit>)> = chimera_core::query_cache::cached_query::<
-        (Entity, Option<&Team>, Option<&OwnKit>),
-        (With<Intent>, With<Health>, Without<Inventory>),
-        _,
-    >(world, |q, world| q.iter(world).map(|(e, t, k)| (e, t.map(|t| t.0), k.cloned())).collect());
-    if new.is_empty() {
+/// A new character's weapons (one with an `Intent` and `Health` but no
+/// `Inventory` yet): its `OwnKit`, else the map's spawn equipment, else
+/// `StartingWeapons` for its team. Found by a declared query (an
+/// archetype filter: nothing to visit unless such a character exists) in
+/// the first tick after it appears; the giving builds weapon entities, so
+/// it is world work queued in the query's order and applied at the sync
+/// point before `pick_up` (`plugin`'s chain), before the map's equips
+/// queued by `apply_equips` and before this tick's selection draws the
+/// last one (the tick the exclusive poller gave them,
+/// plan ecs-cleanup step 5; an observer at the spawn would give them a
+/// tick earlier).
+#[allow(clippy::type_complexity)]
+fn give_starting_weapons(
+    new: Query<(Entity, Option<&Team>, Option<&OwnKit>), (With<Intent>, With<Health>, Without<Inventory>)>,
+    mut commands: Commands,
+) {
+    for (owner, team, kit) in &new {
+        let (team, kit) = (team.map(|t| t.0), kit.cloned());
+        commands.queue(move |world: &mut World| give_kit(world, owner, team, kit));
+    }
+}
+
+fn give_kit(world: &mut World, owner: Entity, team: Option<u8>, kit: Option<OwnKit>) {
+    let Ok(mut e) = world.get_entity_mut(owner) else { return };
+    if e.contains::<Inventory>() {
         return;
     }
-    let start = world.resource::<StartingWeapons>().clone();
-    let equipment = world.resource::<equip::SpawnEquipment>().0.clone();
-    for (owner, team, kit) in new {
-        world.entity_mut(owner).insert(Inventory::default());
-        if let Some(kit) = kit {
-            for id in kit.0 {
-                give(world, owner, id);
-            }
-            continue;
-        }
-        // A map's spawn equipment replaces the starting weapons.
-        if let Some(items) = &equipment {
-            for (name, count) in items {
-                equip::give_item(world, owner, name, *count);
-            }
-            continue;
-        }
-        for id in start.for_team(team) {
+    e.insert(Inventory::default());
+    if let Some(kit) = kit {
+        for id in kit.0 {
             give(world, owner, id);
         }
+        return;
+    }
+    // A map's spawn equipment replaces the starting weapons.
+    if let Some(items) = world.resource::<equip::SpawnEquipment>().0.clone() {
+        for (name, count) in &items {
+            equip::give_item(world, owner, name, *count);
+        }
+        return;
+    }
+    for id in world.resource::<StartingWeapons>().for_team(team) {
+        give(world, owner, id);
     }
 }
 

@@ -36,9 +36,9 @@ use combat_arms::game::CombatArmsPlugins;
 const RATCHET: &[ScheduleRatchet] = &[
     ScheduleRatchet {
         schedule: "FixedUpdate",
-        server: 658,
-        client: 658,
-        opposite: 143,
+        server: 550,
+        client: 550,
+        opposite: 91,
     },
     ScheduleRatchet {
         schedule: "FixedPostUpdate",
@@ -162,5 +162,34 @@ fn mode_systems_run_where_the_dispatchers_ran() {
         }
         let publish = find(&rules("publish"), last);
         assert!(last < publish);
+    }
+}
+
+/// Plan ecs-cleanup step 5: the server's death systems are normal
+/// systems reading `Died`, their world work (the marking and counting,
+/// the modes' drops; the perks' boxes and Parting Gift's grenade) queued
+/// and applied at a sync point before what reads it in the same tick (the
+/// modes' touches, `perks::supplies`), as the exclusive versions' writes
+/// were.
+#[test]
+fn the_deaths_world_work_applies_before_its_readers() {
+    use chimera_world::harness::schedule_systems;
+    let mut app = server();
+    let order = schedule_systems(app.world_mut(), FixedUpdate);
+    // The first `what` from `from` on (`publish` runs twice a tick).
+    let at = |what: &str, from: usize| {
+        let full = format!("combat_arms::game::{what}");
+        let i = order[from..].iter().position(|s| *s == full).unwrap_or_else(|| panic!("{full} not after {from} in {order:#?}"));
+        i + from
+    };
+    for (writer, reader) in [
+        ("rules::scoring::handle_deaths", "rules::hired_guns::touches"),
+        ("rules::scoring::handle_deaths", "rules::escort::touches"),
+        ("rules::scoring::handle_deaths", "rules::publish"),
+        ("perks::perk_deaths", "perks::supplies"),
+    ] {
+        let w = at(writer, 0);
+        let r = at(reader, w);
+        assert!(order[w + 1..r].iter().any(|s| s.ends_with("apply_deferred")), "{writer} at {w}, no sync point before {reader} at {r}");
     }
 }

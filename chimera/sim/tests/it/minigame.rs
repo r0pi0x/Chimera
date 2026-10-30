@@ -1020,3 +1020,54 @@ fn the_dead_respawn_on_the_tick_they_are_due() {
     let (now, dt) = (c.now, c.delta.as_secs_f64());
     assert!(now + 1e-9 >= since + 1.0 && now - dt + 1e-9 < since + 1.0, "back at {now}, due {}", since + 1.0);
 }
+
+/// What the playing mode's `ModeDeath` observer saw: the victim, the
+/// killer's kills and rung then, the event's weapon.
+#[derive(Resource, Default)]
+struct DeathsSeen(Vec<(Entity, i32, usize, Option<&'static str>)>);
+
+/// The mode's reaction to a death (`mode::ModeDeath`, plan ecs-cleanup
+/// step 5) runs where the mode's `died` hook ran: in the death step,
+/// after that death was counted and before the next one is, death by
+/// death; it carries the weapon of the kill though the counting's rung up
+/// swapped the killer's weapon before it ran.
+#[test]
+fn a_modes_death_reaction_runs_after_each_deaths_counting_in_order_with_the_kills_weapon() {
+    use chimera_sim::mode::ModeDeath;
+    let mut sim = started(DEF);
+    sim.app.init_resource::<DeathsSeen>().add_observer(
+        |death: On<ModeDeath>, scores: Query<&Score>, rungs: Query<&Rung>, mut seen: ResMut<DeathsSeen>| {
+            let k = death.died.attacker.unwrap();
+            let kills = scores.get(k).map_or(0, |s| s.kills);
+            let rung = rungs.get(k).map_or(0, |r| r.0);
+            assert_eq!(death.mode, "chimera:ladder");
+            seen.0.push((death.victim, kills, rung, death.died.damage.weapon));
+        },
+    );
+    let a = player(&mut sim);
+    let b = player(&mut sim);
+    let c = player(&mut sim);
+    settle(&mut sim);
+    assert_eq!(testkit::active_id(sim.app.world(), a), Some(PISTOL));
+    // Two kills in one tick, b's first.
+    for victim in [b, c] {
+        let at = sim.position(victim);
+        sim.app.world_mut().write_message(Damage {
+            target: victim,
+            attacker: Some(a),
+            amount: 5.0,
+            point: at,
+            dir: Vec3::NEG_Z,
+            hitgroup: Hitgroup::Chest,
+            kind: DamageKind::Bullet,
+            weapon: None,
+            force: Vec3::ZERO,
+        });
+    }
+    sim.ticks(2);
+    let seen = std::mem::take(&mut sim.app.world_mut().resource_mut::<DeathsSeen>().0);
+    assert_eq!(seen.len(), 2, "{seen:?}");
+    assert_eq!((seen[0].0, seen[0].1, seen[0].2, seen[0].3), (b, 1, 1, Some(PISTOL)), "b's death after its counting only");
+    assert_eq!((seen[1].0, seen[1].1, seen[1].2), (c, 2, 2), "c's after its own");
+    assert_eq!(rung(&sim, a), 2);
+}

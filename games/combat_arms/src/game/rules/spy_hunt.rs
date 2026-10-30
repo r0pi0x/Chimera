@@ -73,7 +73,6 @@ pub const MODE: CaMode = CaMode {
         match_end: |w| Some(w.resource::<CaMatch>().winner),
         hooks: Hooks {
             setup,
-            died,
             may_respawn: |w, _| w.resource::<CaObjectives>().stage != 2,
             ..NO_HOOKS
         },
@@ -129,6 +128,19 @@ fn died(world: &mut World, d: &Died) {
     c.intel = 0;
     objectives::set_carry(world, d.entity, c);
     world.entity_mut(d.entity).insert(Team(ALPHA));
+}
+
+/// A carrier's intel dropped where it died, the carrier back on Alpha (stage
+/// 1): the mode's `mode::ModeDeath` observer (plan ecs-cleanup step 5), its
+/// world work queued and applied by the death step's flush, so where the
+/// mode's hook ran.
+pub(super) fn on_mode_death(death: On<crate::mode::ModeDeath>, mut commands: Commands) {
+    const MODES: &[&str] = &[SPY_HUNT];
+    if !MODES.contains(&death.mode) {
+        return;
+    }
+    let d = death.died.clone();
+    commands.queue(move |world: &mut World| died(world, &d));
 }
 
 /// Pick-ups, then stage 2 when one player holds it all (the mode's
