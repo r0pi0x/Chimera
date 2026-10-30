@@ -727,7 +727,9 @@ the user's go-ahead: no Actions runs unless asked.
 - **A main menu for Ultimate Gun Game (and the other party apps).**
   Scope it after the Escape menu: play (host or join), server browser
   or direct connect, options, quit. Then add Disconnect to the Escape
-  menu, returning to it.
+  menu, returning to it. Plan:
+  [docs/plans/active/main-menu.md](plans/active/main-menu.md) (M1 menu,
+  host, join, options, Disconnect; M2 LAN browser; M3 master server).
 - **Combat Arms grenade not thrown while sprinting: matches Combat Arms.**
   Pin pulled, then sprint, then release: the throw waits until sprint
   ends. view_models.md says so ("Grenade and sprint": the cocked and
