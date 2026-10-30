@@ -211,9 +211,17 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
     // fixed tick: its order is the ratchet's, cs_source schedules.rs).
     .add_systems(PreUpdate, append_late_characters)
     .add_systems(FixedLast, pose_sim_hitboxes.in_set(SimPose))
+    // A round restart: gibs, particles and panes reset at once, inside the
+    // rules' step (an observer of `core::RoundRestart`).
+    .add_observer(breakables::round_restart)
+    // A sync point after the rules, where the round restart was polled (an
+    // exclusive system) until it became the observer: the rules' commands
+    // apply before the map logic and movement, and the single-threaded
+    // sort keeps the tick's unordered systems as they were (the schedule
+    // ratchets, cs_source and combat_arms `schedules.rs`).
     .add_systems(
         FixedUpdate,
-        breakables::round_restart
+        ApplyDeferred
             .after(crate::core::SimSet::Rules)
             .before(crate::core::SimSet::Movement),
     )

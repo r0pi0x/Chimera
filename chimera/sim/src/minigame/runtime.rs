@@ -51,8 +51,10 @@
 //!   the rules' swaps.
 //! - The per-tick work (`plugin`, in `SimSet::Rules`, chained: `join`, the
 //!   mode's update, `step_phases`, `respawn_dead`, the dead held,
-//!   `end_protection`, `results::record`, `hold_the_end`) is normal
-//!   systems with declared queries; the world work they find (a joiner
+//!   `end_protection`, `wins::publish`, `hold_the_end`) is normal
+//!   systems with declared queries (the results are an observer of the
+//!   flow's steps, `results::on_step`, at the match's end inside
+//!   `step_phases`); the world work they find (a joiner
 //!   taken in, a respawn) is queued on `Commands` and applied at the sync
 //!   point before the next system of the chain, so the order and the
 //!   tick are as before. `end_protection`'s removals apply before the
@@ -712,6 +714,7 @@ pub(super) fn plugin(app: &mut App) {
     app.init_resource::<SpawnCursor>()
         .map_scoped::<super::spawns::SpawnSpots>()
         .add_observer(number_players)
+        .add_observer(super::results::on_step)
         .add_systems(
             FixedUpdate,
             (
@@ -722,7 +725,7 @@ pub(super) fn plugin(app: &mut App) {
                     respawn_dead,
                     crate::spawning::hold_the_dead,
                     end_protection,
-                    super::results::record,
+                    super::wins::publish,
                     hold_the_end,
                 )
                     .chain()

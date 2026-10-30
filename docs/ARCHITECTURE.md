@@ -448,13 +448,15 @@ FixedFirst:   (client) drawn transforms ──> the simulation's (map::interp::r
 FixedUpdate:  bot brains, (server) each player's command for this tick ──> Intent, its view tick ──>
               lagcomp::ViewTick (before the rules, which hold it); (client) local Intent normalized
               (+ the render tick) ──> this tick's NetCmd
-              SimSet::Rules     rounds (new round ──> RoundRestarts, objectives::round_start;
+              SimSet::Rules     rounds (each step ──> mode::ModeStep observers, at once;
+                                new round ──> RoundRestarts + RoundRestart: gibs, panes reset at
+                                once (map::breakables' observer), objectives::round_start;
                                 bomb/hostage state ──> round end; FreezeTime, RoundOpen),
                                 respawn; the dead's and (freeze time) everyone's Intent held
               objectives        arming/defusing hold still; hostages follow ──> Intent
               MapControls ──> Intent (taken buttons, at controls, frozen; the buttons kept for game_ui)
               weapon selection/deploy ──> MaxSpeed           (core::Predict::Select)
-              RoundRestarts changed ──> logic world re-created, nodes back; gibs, panes reset
+              RoundRestarts changed ──> logic world re-created, nodes back
               LogicSet::Pre     thinks, movers push/carry characters, +use (Intent.use_key);
                                 (client) movers stepped to the command tick, our player carried
                                 (logic::net::place, also in each replayed command)

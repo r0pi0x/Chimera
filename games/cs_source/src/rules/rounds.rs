@@ -975,7 +975,7 @@ fn event(world: &mut World, event: FlowEvent) {
             world.resource_mut::<RoundStart>().team_killers = team_killers;
             world.insert_resource(RoundStats::default());
             // The map's entities as they spawned (logic and map layers).
-            world.get_resource_or_init::<crate::core::RoundRestarts>().0 += 1;
+            crate::core::restart_round(world);
         }
         _ => {}
     }

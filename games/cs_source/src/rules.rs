@@ -32,7 +32,8 @@
 //! `RoundEndReason` with the game's words), per-reason money and objective
 //! rewards, `BuyWindow`, `RoundOpen`, `RoundEnded` with its `RoundSummary`
 //! (MVP, fun fact, live time; counted in `RoundStats`), `mp_tkpunish`; a new
-//! round counts `core::RoundRestarts` up and calls `objectives::round_start`;
+//! round counts `core::RoundRestarts` up (`core::restart_round`, triggering
+//! `core::RoundRestart`) and calls `objectives::round_start`;
 //! `mp_restartgame <seconds>` starts the game over (in deathmatch: everyone
 //! respawns)); `game_end.rs`: the end of the game on a map (`mp_timelimit`,
 //! with rounds also `mp_maxrounds` and `mp_winlimit`, checked as a round's end

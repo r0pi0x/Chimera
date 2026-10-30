@@ -11,7 +11,6 @@ use crate::stack::{
         self, cs_source,
         cs_source::movement::{self, SourceMovementPlugin, to_engine},
     },
-    core::RoundRestarts,
     harness::{CsSim, Sim},
     logic::{Logic, movers::pusher},
     map::{MapData, MapEntity, MapPlugin},
@@ -127,7 +126,7 @@ fn doors_are_chained_rotating_pairs_that_open_on_use() {
     sim.intent(p).use_key = false;
     sim.ticks(20);
     assert!(turned(&sim).0 > 30.0, "opening");
-    sim.app.world_mut().resource_mut::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     sim.ticks(1);
     assert_eq!(turned(&sim), (0.0, 0.0), "a new round starts with them closed");
 }

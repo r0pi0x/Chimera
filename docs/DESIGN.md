@@ -241,7 +241,8 @@ Prefer, in order: components for facts about an entity, observers for
 reactions to them (`On<Insert<C>>`, `On<Discard<C>>`), messages for
 per-tick flows (hits, deaths, weapon events) read by normal systems,
 events triggered at a known moment (`world.trigger`, so the observers
-run at once, where a hook would have run), and systems with declared
+run at once, where a hook would have run: a round's or match's step,
+`mode::ModeStep`; a round restart, `core::RoundRestart`), and systems with declared
 queries gated by run conditions (`gameplay_is`, `hud_is`, `mode_is`;
 never a new set, whose flattening reorders unordered systems) for
 per-tick logic. A fact other machines must see the same way is put on

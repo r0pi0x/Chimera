@@ -12,7 +12,7 @@ use crate::common::sim;
 use bevy::{ecs::message::Messages, prelude::*};
 use crate::stack::{
     bot::{Bot, BotConfig},
-    core::{Blinded, Damage, DamageKind, Deafened, Died, Health, Hitgroup, RoundRestarts, SightBlocker, Team},
+    core::{Blinded, Damage, DamageKind, Deafened, Died, Health, Hitgroup, SightBlocker, Team},
     games::cs_source::{
         TICK_INTERVAL,
         grenades::{
@@ -596,7 +596,7 @@ fn a_new_round_clears_grenades_and_clouds() {
     place(&mut sim, HEGRENADE, Vec3::new(3.0, 0.06, 4.0), Vec3::ZERO);
     assert_eq!(clouds(&mut sim).len(), 1);
     assert!(!projectiles(&mut sim).is_empty());
-    sim.app.world_mut().get_resource_or_init::<RoundRestarts>().0 += 1;
+    crate::stack::core::restart_round(sim.app.world_mut());
     sim.ticks(2);
     assert!(clouds(&mut sim).is_empty());
     assert!(projectiles(&mut sim).is_empty());

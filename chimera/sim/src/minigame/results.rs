@@ -1,6 +1,6 @@
-//! A match's results (the end-of-match panel): once the match has its
-//! result (the intermission, then match over) `record` collects
-//! `MatchResults` on the authoritative side: each player's name, kills,
+//! A match's results (the end-of-match panel): at the match's end (the
+//! flow's `MatchEnd` step, observed: `on_step`; the intermission, then
+//! match over) `record` collects `MatchResults` on the authoritative side: each player's name, kills,
 //! deaths and, on a ladder, final rung, the winner first, then by rung,
 //! kills and fewest deaths. It is data, not drawing: `hud::MinigameHud`
 //! carries it to whichever game's HUD is up (`MatchResults::lines` words
@@ -20,7 +20,10 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::{ActiveMinigame, ladder, runtime};
-use crate::{core::Score, mode::Match};
+use crate::{
+    core::{NetRole, Playback, Score, authoritative},
+    mode::{FlowEvent, Match, ModeStep},
+};
 
 /// One player's line of the results.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, bevy::ecs::entity::MapEntities)]
@@ -143,30 +146,54 @@ pub fn collect(world: &mut World) -> Option<MatchResults> {
     })
 }
 
-/// Keeps `MatchResults` in step with the match: collected when it has its
-/// result, gone when it has none (a new match).
-pub(super) fn record(world: &mut World) {
-    let decided = world.get_resource::<Match>().is_some_and(|m| m.result.is_some());
-    let have = world.contains_resource::<MatchResults>();
-    if decided && !have {
-        if let Some(mut r) = collect(world) {
-            if let (Some(w), Some(mut wins)) = (r.winner(), world.get_resource_mut::<super::wins::MatchWins>()) {
-                wins.add(&w.name);
-                // This match counted on the winner's row.
-                for row in r.rows.iter_mut().filter(|row| row.winner) {
-                    row.wins += 1;
-                }
-            }
-            world.insert_resource(r);
-        }
-    } else if !decided && have {
-        world.remove_resource::<MatchResults>();
+/// Keeps `MatchResults` in step with the match, from its flow's steps
+/// (`mode::ModeStep`, observed at once inside the step, on the
+/// authoritative side while a minigame is the gameplay): collected at the
+/// match's end (`FlowEvent::MatchEnd`), with the match-end hold
+/// (`NextMatch`); gone when a new match starts (`Prepare { first: true }`;
+/// `minigame::restart` removes them itself).
+pub(super) fn on_step(
+    step: On<ModeStep>,
+    active: Option<Res<ActiveMinigame>>,
+    gameplay: Option<Res<chimera_core::gameplay::Gameplay>>,
+    role: Option<Res<NetRole>>,
+    playback: Option<Res<Playback>>,
+    mut commands: Commands,
+) {
+    if active.is_none() || gameplay.is_some_and(|g| g.rules != super::MINIGAME) || !authoritative(role, playback) {
+        return;
     }
-    // The match-end hold, from the match decided (the round's end, after
-    // the win's own moment): the change comes `RESULTS_HOLD` s after the
-    // match over.
-    let have_next = world.contains_resource::<NextMatch>();
-    if world.contains_resource::<MatchResults>() && !have_next {
+    match step.0 {
+        FlowEvent::MatchEnd => commands.queue(record),
+        FlowEvent::Prepare { first: true } => commands.queue(|world: &mut World| {
+            world.remove_resource::<MatchResults>();
+            world.remove_resource::<NextMatch>();
+        }),
+        _ => {}
+    }
+}
+
+/// The match's end: its results collected (the winner's match counted)
+/// and the match-end hold begun: the change comes `RESULTS_HOLD` s after
+/// the match over.
+fn record(world: &mut World) {
+    let decided = world.get_resource::<Match>().is_some_and(|m| m.result.is_some());
+    if !decided {
+        return;
+    }
+    if !world.contains_resource::<MatchResults>()
+        && let Some(mut r) = collect(world)
+    {
+        if let (Some(w), Some(mut wins)) = (r.winner(), world.get_resource_mut::<super::wins::MatchWins>()) {
+            wins.add(&w.name);
+            // This match counted on the winner's row.
+            for row in r.rows.iter_mut().filter(|row| row.winner) {
+                row.wins += 1;
+            }
+        }
+        world.insert_resource(r);
+    }
+    if world.contains_resource::<MatchResults>() && !world.contains_resource::<NextMatch>() {
         let now = world.get_resource::<crate::core::SimClock>().map_or(0.0, |c| c.now);
         let over_at = match world.resource::<Match>().phase {
             crate::mode::Phase::Intermission { until } => until,
@@ -177,14 +204,5 @@ pub(super) fn record(world: &mut World) {
             map: None,
             at: over_at + runtime::RESULTS_HOLD,
         });
-    } else if have_next && !world.contains_resource::<MatchResults>() {
-        world.remove_resource::<NextMatch>();
     }
-    // Every player's matches won, from the tally.
-    let names: Vec<(Entity, String)> = runtime::players(world)
-        .into_iter()
-        .enumerate()
-        .map(|(i, (e, _))| (e, world.get::<Name>(e).map_or_else(|| format!("Player {}", i + 1), |n| n.as_str().to_string())))
-        .collect();
-    super::wins::publish(world, &names);
 }

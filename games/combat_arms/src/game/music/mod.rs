@@ -83,7 +83,7 @@ use super::{
 };
 use crate::{
     console::ConsoleAppExt,
-    core::{Dead, Health, LocalPlayer, SimClock, Team, authoritative},
+    core::{Dead, Health, LocalPlayer, SimClock, Team},
     map::MapFile,
     net::NetAppExt,
 };
@@ -114,6 +114,7 @@ impl Plugin for CaMusicPlugin {
             .init_resource::<CaMapMusic>()
             .add_message::<CaMusicOn>()
             .add_message::<CaMusicOff>()
+            .add_observer(trigger::late_join)
             .add_systems(
                 Update,
                 (
@@ -122,7 +123,6 @@ impl Plugin for CaMusicPlugin {
                     drive,
                     trigger::hear,
                     ambient_sync,
-                    trigger::late_join.run_if(authoritative),
                 )
                     .chain()
                     .in_set(CaMusicSet),

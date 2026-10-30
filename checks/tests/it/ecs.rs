@@ -177,7 +177,7 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
         "chimera/sim/src/mode.rs",
         "Flow",
-        "the flow's respawn and length; `players` to a kept state, `event` triggered as an event (step 9)",
+        "the flow's respawn and length, and the game's own work at a step (`event`, then triggered as `ModeStep` for observers: step 9); `players` to a kept state",
     ),
     (
         "chimera/sim/src/mode.rs",
@@ -295,9 +295,8 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
 /// when you remove one; never raise one.
 const EXCLUSIVE_BASELINE: &[(&str, usize)] = &[
     ("chimera/client", 1),
-    ("chimera/sim", 5),
-    ("chimera/world", 1),
-    ("games/combat_arms", 17),
+    ("chimera/sim", 4),
+    ("games/combat_arms", 16),
     ("games/cs_source", 4),
 ];
 

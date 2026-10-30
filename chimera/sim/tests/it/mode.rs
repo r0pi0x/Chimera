@@ -17,7 +17,7 @@ use chimera_core::{
 };
 use chimera_sim::{
     mode::{
-        self, ALPHA, BRAVO, Death, DeathKind, FFA_FIRST, Flow, FlowOptions, Match, Mode, ModeAppExt, ModeGame,
+        self, ALPHA, BRAVO, Death, DeathKind, FFA_FIRST, Flow, FlowEvent, FlowOptions, Match, Mode, ModeAppExt, ModeGame,
         NO_HOOKS, Phase, Span, Teams, flow,
     },
     movement::placeholder,
@@ -254,6 +254,65 @@ fn a_match_walks_its_phases_in_order() {
     let m = sim.app.world().resource::<Match>().clone();
     assert_eq!((m.result, m.round, m.round_wins), (Some(Some(ALPHA)), 2, [2, 0]));
 }
+
+/// Each step of a match reaches an observer (`ModeStep`) once, in order,
+/// right after the game's own handler and before the step goes on (the
+/// mode's next hook); the match's end (`MatchEnd`) once, after the
+/// deciding round's `after_round`, with the result set and the
+/// intermission on, in the tick the match was decided.
+#[test]
+fn an_observer_sees_each_step_of_a_match_once_in_order() {
+    let mut sim = sim("rounds");
+    sim.app.add_observer(|s: On<mode::ModeStep>, mut commands: Commands| {
+        let e = s.0;
+        commands.queue(move |w: &mut World| {
+            let (phase, result) = {
+                let m = w.resource::<Match>();
+                (m.phase, m.result)
+            };
+            log(w, format!("step {e:?}"));
+            if e == FlowEvent::MatchEnd {
+                assert!(matches!(phase, Phase::Intermission { .. }), "{phase:?}");
+                assert_eq!(result, Some(Some(ALPHA)));
+                w.insert_resource(EndedAt(w.resource::<chimera_core::core::SimClock>().tick));
+            }
+        });
+    });
+    player(&mut sim, ALPHA);
+    player(&mut sim, BRAVO);
+    let mut decided = None;
+    while phase(&sim) != Phase::MatchOver {
+        assert!(now(&sim) < 30.0, "the match never ended");
+        sim.ticks(1);
+        if decided.is_none() && sim.app.world().resource::<Match>().result.is_some() {
+            decided = Some(sim.app.world().resource::<chimera_core::core::SimClock>().tick);
+        }
+    }
+    assert_eq!(sim.app.world().get_resource::<EndedAt>().map(|e| e.0), decided, "in the deciding tick");
+    let log = log_of(&mut sim);
+    // Every game step is followed at once by its event.
+    for (i, line) in log.iter().enumerate() {
+        if let Some(e) = line.strip_prefix("step ") {
+            assert_eq!(log[i - 1], e, "right after the game's handler: {log:?}");
+        }
+    }
+    let steps: Vec<&str> = log.iter().filter_map(|l| l.strip_prefix("step ")).collect();
+    let round = ["MissionStart", "RoundOver", "RoundEnd", "RoundEnded"];
+    let mut want = vec!["Prepare { first: true }", "ResetStats"];
+    want.extend(round);
+    for _ in 0..2 {
+        want.push("Prepare { first: false }");
+        want.extend(round);
+    }
+    want.push("MatchEnd");
+    assert_eq!(steps, want, "the warm-up, two rounds, the match's end: {log:?}");
+    let end = log.iter().position(|l| l == "step MatchEnd").unwrap();
+    assert_eq!(log[end - 2], "mode after_round", "after the deciding round's after_round");
+}
+
+/// When the match's end was seen.
+#[derive(Resource)]
+struct EndedAt(u64);
 
 #[test]
 fn a_warm_ups_end_can_end_the_match_by_the_modes_hook_only() {

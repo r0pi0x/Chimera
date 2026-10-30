@@ -780,6 +780,48 @@ fn t12_map_trigger_late_join() {
     assert_eq!(sim.app.world().resource::<CaMapMusic>().for_joiner(), None);
 }
 
+/// 5. A client that comes in gets the trigger that is on and looping as
+/// the server takes its join (`trigger::late_join`, an observer of its
+/// `Player`): sent within the update that put the `Player` on, as the
+/// polling system did later in it; one that comes in with none on gets
+/// nothing.
+#[test]
+fn t12_a_joiner_gets_the_looping_trigger_at_its_join() {
+    use bevy::ecs::message::Messages;
+    use bevy_replicon::prelude::{ClientId, SendTargets, ToClients};
+    use chimera_net::net::server::Player;
+    let objects = vec![trigger("Last", "Team Death Match", "BGM\\Last_BGM.mp3", 4.0, true)];
+    let mut sim = sim_with(objects, "TDM");
+    if !sim.app.world().contains_resource::<Messages<ToClients<CaMusicOn>>>() {
+        sim.app.add_message::<ToClients<CaMusicOn>>();
+    }
+    let join = |sim: &mut Sim| {
+        sim.app.world_mut().resource_mut::<Messages<ToClients<CaMusicOn>>>().clear();
+        let client = sim.app.world_mut().spawn(Player { name: "joiner".into(), character: Entity::PLACEHOLDER }).id();
+        let sent: Vec<CaMusicOn> = sim
+            .app
+            .world_mut()
+            .resource_mut::<Messages<ToClients<CaMusicOn>>>()
+            .drain()
+            .filter(|m| matches!(m.targets, SendTargets::Single(ClientId::Client(c)) if c == client))
+            .map(|m| m.message)
+            .collect();
+        sent
+    };
+    assert!(join(&mut sim).is_empty(), "nothing on: nothing sent");
+    send(&mut sim, "Last", "ON");
+    sim.seconds(0.2);
+    assert_eq!(
+        join(&mut sim),
+        [CaMusicOn {
+            looping: true,
+            fade: 4.0,
+            file: "BGM\\Last_BGM.mp3".into()
+        }],
+        "sent as the join is taken"
+    );
+}
+
 #[test]
 fn t13_map_trigger_wrong_mode() {
     let objects = vec![trigger(
