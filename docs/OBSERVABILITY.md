@@ -209,7 +209,12 @@ fetch) is fetched first.
   --range <base>..<pushed>`; `base` defaults to the last commit the script
   passed, else the pushed commit's first parent; it prints the selection
   and why). `CHIMERA_PUSH_TESTS=all` runs the full suite, `=0` no tests
-  (the build checks still run). It writes `.claude/post-push/<commit>.log`
+  (the build checks still run). The heavy tests that need the games'
+  installs run there too: the script points `CHIMERA_CONFIG` at the main
+  checkout's `chimera.local.toml` (or `mashup.local.toml`) when it has one
+  and the caller set none (the post-push checkout has no local config of
+  its own, and those tests used to skip there with a note, hiding their
+  failures). It writes `.claude/post-push/<commit>.log`
   (`last.log`) and a one-line `PASS`/`FAIL` summary to
   `.claude/post-push/last.txt` (and `history.txt`), exits non-zero on a
   failure, and trims its checkout's `target/` to 40 GB with `cargo sweep`.

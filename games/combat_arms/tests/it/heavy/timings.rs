@@ -6,9 +6,9 @@
 //! registry entry: every hook) and must carry its model's numbers: a gun's
 //! cycle `fire_0` / (1 + `FireAniRate`), reload `reload`, draw `select`,
 //! post-fire `postfire` (none without one) and latency (3 to 2 without a
-//! `prefire`); a spinning gun's spin-up, spin-down and loop, a round per
-//! loop key; a flame gun's loop, keys and spacing; a knife's swings and hit
-//! keys. Prints the counts (copies whose template's cycle already was their
+//! `prefire`, its whole length with one); a spinning gun's spin-up,
+//! spin-down and loop, a round per loop key; a flame gun's loop, keys and
+//! spacing; a knife's swings and hit keys. Prints the counts (copies whose template's cycle already was their
 //! own, before; read, after; post-fires, latencies, spinning, flame and
 //! knife copies, guns with a pre-fire of non-zero length; the read times)
 //! and the first few that differ.
@@ -76,6 +76,7 @@ fn every_copy_times_on_its_own_view_model() {
     }
     let mut sim = Sim::with(CaSimWith(ca.clone()), |_| {});
     let owner = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), movement::ID);
+    let tick = 1.0 / sim.tick_hz();
     let mut n = Counts::default();
     let (mut read_s, mut slowest) = (0.0f64, (0.0f64, String::new()));
     let mut wrong = Vec::new();
@@ -120,7 +121,7 @@ fn every_copy_times_on_its_own_view_model() {
         };
         // Built as the game builds it: every hook.
         let e = weapon::spawn_weapon(world, &d.id, owner).expect("registered");
-        let problem = check(world, e, d, &t, fire, &mut n);
+        let problem = check(world, e, d, &t, fire, tick, &mut n);
         if let Some(p) = problem {
             wrong.push(format!("{}: {p}", d.id));
         } else {
@@ -169,6 +170,7 @@ fn check(
     d: &chimera_sim::weapon::data::WeaponData,
     t: &AnimTimes,
     fire: f32,
+    tick: f64,
     n: &mut Counts,
 ) -> Option<String> {
     let item = world.get::<CaItem>(e);
@@ -236,8 +238,12 @@ fn check(
     if t.prefire.is_some() {
         n.long_prefire += 1;
     }
+    // A class that plays the pre-fire: an update sooner without one in
+    // the model, its whole length with one (weapon_classes.md Corrections
+    // (2026-10-30) 1: the non-spinning minigun copies' 1.33 s spin-up).
     let want_latency = match d.trigger.as_ref().map_or(0, |tr| tr.latency) {
         3 if !t.has_prefire => 2,
+        3 => timing::prefire_latency(t.prefire.unwrap_or(0.0) / rate, tick),
         l => l,
     };
     let reload = world

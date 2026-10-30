@@ -75,9 +75,10 @@ fn rss_mb() -> u64 {
 }
 
 /// A mashup's CS:S map is loaded as its world only (`MapLoadOptions::kit`):
-/// CS:S's character bodies, HUD, radio, bot names, decals, sounds, muzzle
-/// flash, shells and navigation are never read from the install, and the
-/// guns the app keeps are the ones a whole load has. Run alone with
+/// CS:S's character bodies, HUD, radio, bot names, sounds, muzzle flash,
+/// shells and navigation are never read from the install (its impact
+/// decals are: the map's impact looks'), and the guns the app keeps are
+/// the ones a whole load has. Run alone with
 /// `--nocapture` it prints the time and the process's resident memory.
 #[test]
 fn a_mashup_map_loads_only_its_world() {
@@ -94,7 +95,10 @@ fn a_mashup_map_loads_only_its_world() {
     let kept = mashup_demo::KEPT;
     let world = (cs_source::game::MAP_LOADER.load)("de_dust2", &MapLoadOptions { kit: KitLoad::Only(kept), ..default() }).unwrap();
     let kit = &world.kit;
-    assert!(kit.characters.is_empty() && kit.decals.groups.is_empty(), "no bodies, no decals");
+    assert!(kit.characters.is_empty(), "no bodies");
+    // The impact decals stay with any kit: they are the map's impact
+    // looks' (a CS:S gun's bullet holes on a CS:S map in the party apps).
+    assert!(!kit.decals.groups.is_empty(), "the map's impact decals");
     assert!(kit.hud.is_none() && kit.radio.is_none() && kit.bot_profiles.is_none() && kit.nav.is_none());
     assert!(kit.muzzle_flash.is_none() && kit.shells.is_empty() && kit.shell_physics.is_none());
     let held = |m: &MapData| -> Vec<String> { m.kit.held.iter().map(|h| h.key.clone()).filter(|k| k.starts_with("cs_source:weapon_")).collect() };

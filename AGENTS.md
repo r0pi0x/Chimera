@@ -89,7 +89,10 @@ cargo run --features dev -- --help               # screenshot, spawn, look optio
   protocol (JSON-RPC; tool runs log the port they took). Sections 3 and 3b
   (the console from outside).
 - **After pushing**, `tools/post-push-tests.sh` runs everything the push can
-  affect, heavy tests too. Available; not required of contributors.
+  affect, heavy tests too, those needing the installs with the main
+  checkout's local config (`CHIMERA_CONFIG`; run by hand in another
+  checkout, set it yourself or they skip with a note). Available; not
+  required of contributors.
 
 ## Definition of done
 

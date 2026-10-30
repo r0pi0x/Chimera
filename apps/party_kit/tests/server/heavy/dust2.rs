@@ -21,6 +21,42 @@ use chimera_world::map::LoadedMapName;
 
 use crate::support::*;
 
+/// The server's command line for these tests: the gun game on dust2,
+/// as the host's settings "Knife finale: off" and every rung extra off
+/// (the server's `gun_game::no_finale` and `plain_rungs`): the tests of
+/// the guns' ten-rung ladder predate the melee finale (on by default)
+/// and the rung extras (a drawn character or melee weapon in place of
+/// the rung's gun); the party's own tests play those.
+const PLAIN_LADDER: [&str; 12] = [
+    "+mp_knife_finale",
+    "false",
+    "+mp_rung_extras_attachments",
+    "false",
+    "+mp_rung_extras_character",
+    "false",
+    "+mp_rung_extras_melee",
+    "false",
+    "+minigame",
+    "originals:gun_game_dust2",
+    "+maxplayers",
+    "4",
+];
+
+/// Two spots in the open to duel from: dust2's first spawn point and the
+/// nearest other one more than 1.5 m away (the spawns of a side stand
+/// together in the open). The gun game spawns anywhere out of sight
+/// (`points = "random_hidden"`), so a spot a few metres from where a
+/// player came in may be behind a wall.
+fn duel_spots(spawns: &[Vec3]) -> (Vec3, Vec3) {
+    let near = spawns[1..]
+        .iter()
+        .copied()
+        .filter(|s| s.distance(spawns[0]) > 1.5)
+        .min_by(|x, y| x.distance(spawns[0]).total_cmp(&y.distance(spawns[0])))
+        .expect("another spawn point");
+    (spawns[0], near)
+}
+
 fn installs() -> bool {
     let Ok(config) = LocalConfig::load() else { return false };
     let css = config
@@ -36,7 +72,7 @@ fn the_server_runs_the_gun_game_on_dust2() {
         eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
         return;
     }
-    let Some(mut sim) = server(&["+minigame", "originals:gun_game_dust2", "+maxplayers", "4"]) else { return };
+    let Some(mut sim) = server(&PLAIN_LADDER) else { return };
     assert_eq!(sim.app.world().resource::<LoadedMapName>().0, "cs_source:de_dust2");
     assert_eq!(sim.app.world().resource::<Gameplay>().rules, MINIGAME);
     let spawns: Vec<Vec3> = {
@@ -59,13 +95,8 @@ fn the_server_runs_the_gun_game_on_dust2() {
     // a at the first point, b at the nearest other one (the spawns of a
     // side stand together in the open), protection (2 s) over.
     sim.seconds(1.5);
-    let near = spawns[1..]
-        .iter()
-        .copied()
-        .filter(|s| s.distance(spawns[0]) > 1.5)
-        .min_by(|x, y| x.distance(spawns[0]).total_cmp(&y.distance(spawns[0])))
-        .expect("another spawn point");
-    place(&mut sim, a, spawns[0]);
+    let (here, near) = duel_spots(&spawns);
+    place(&mut sim, a, here);
     place(&mut sim, b, near);
     sim.seconds(0.5);
     assert!(shoot_until_dead(&mut sim, a, b, 10.0), "the Glock kills on dust2");
@@ -86,7 +117,7 @@ fn every_rung_of_the_gun_game_has_rounds_and_kills() {
         eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
         return;
     }
-    let Some(mut sim) = server(&["+minigame", "originals:gun_game_dust2", "+maxplayers", "4"]) else { return };
+    let Some(mut sim) = server(&PLAIN_LADDER) else { return };
     let spawns: Vec<Vec3> = {
         let w = sim.app.world_mut();
         w.query_filtered::<&Transform, With<SpawnPoint>>().iter(w).map(|t| t.translation).collect()
@@ -103,8 +134,9 @@ fn every_rung_of_the_gun_game_has_rounds_and_kills() {
             }
             sim.ticks(1);
         }
-        let from = sim.position(a);
-        place(&mut sim, b, from + Vec3::new(3.0, 0.0, 0.0));
+        let (here, near) = duel_spots(&spawns);
+        place(&mut sim, a, here);
+        place(&mut sim, b, near);
         sim.seconds(1.8);
         let gun = testkit::active_id(sim.app.world(), a).expect("a gun in hand");
         let mag = {
@@ -142,7 +174,7 @@ fn every_rungs_gun_has_rounds_at_a_respawn() {
         eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
         return;
     }
-    let Some(mut sim) = server(&["+minigame", "originals:gun_game_dust2", "+maxplayers", "4"]) else { return };
+    let Some(mut sim) = server(&PLAIN_LADDER) else { return };
     let spawns: Vec<Vec3> = {
         let w = sim.app.world_mut();
         w.query_filtered::<&Transform, With<SpawnPoint>>().iter(w).map(|t| t.translation).collect()
@@ -162,8 +194,9 @@ fn every_rungs_gun_has_rounds_at_a_respawn() {
             }
             sim.ticks(1);
         }
-        let from = sim.position(b);
-        place(&mut sim, a, from + Vec3::new(3.0, 0.0, 0.0));
+        let (here, near) = duel_spots(&spawns);
+        place(&mut sim, b, here);
+        place(&mut sim, a, near);
         sim.seconds(1.0);
         assert!(shoot_until_dead(&mut sim, b, a, 10.0), "rung {rung}: b kills a");
         for _ in 0..(8.0 * sim.tick_hz()) as u32 {

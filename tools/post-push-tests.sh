@@ -15,7 +15,10 @@
 #    included (`affected --range <base>..<pushed>`; nextest when installed).
 #    [base] defaults to the last commit this script passed, else the
 #    pushed commit's first parent. CHIMERA_PUSH_TESTS=all runs the full
-#    suite, =0 skips the tests (keeping the build checks).
+#    suite, =0 skips the tests (keeping the build checks). The tests that
+#    need the games' installs use the main checkout's local config
+#    (CHIMERA_CONFIG set to its chimera.local.toml or mashup.local.toml
+#    when there is one and the caller set none; the file isn't read here).
 # Writes .claude/post-push/<commit>.log (also last.log) and a one-line
 # summary to .claude/post-push/last.txt (appended to history.txt), and
 # exits non-zero on a failure. One run at a time (a second waits).
@@ -49,6 +52,19 @@ cd "$dir" || exit 2
 # shellcheck source=/dev/null
 set +u  # agent-env.sh and its agent_run read unset variables
 . tools/agent-env.sh
+# The heavy tests that need the games' installs find them through the
+# local config, which lives in the main checkout, not this one (git-ignored):
+# point CHIMERA_CONFIG at it (never read here) unless the caller set one,
+# so those tests run instead of skipping with a note.
+if [ -z "${CHIMERA_CONFIG:-}" ] && [ -z "${MASHUP_CONFIG:-}" ]; then
+    for f in chimera.local.toml mashup.local.toml; do
+        if [ -f "$repo/$f" ]; then
+            export CHIMERA_CONFIG="$repo/$f"
+            echo "post-push: the installs from the main checkout's $f" >&2
+            break
+        fi
+    done
+fi
 ln -sf "$sha.log" "$out/last.log"
 : >"$log"
 
