@@ -182,7 +182,7 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
         "chimera/sim/src/mode.rs",
         "Hooks",
-        "a mode's steps in the flow's order (its per-tick work is systems gated by `mode_is`); `died` (step 5)",
+        "a mode's steps in the flow's order (its per-tick work is systems gated by `mode_is`, a death's reaction an observer of `ModeDeath`)",
     ),
     (
         "chimera/sim/src/mode.rs",
@@ -300,9 +300,9 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
 /// when you remove one; never raise one.
 const EXCLUSIVE_BASELINE: &[(&str, usize)] = &[
     ("chimera/client", 1),
-    ("chimera/sim", 7),
+    ("chimera/sim", 5),
     ("chimera/world", 1),
-    ("games/combat_arms", 20),
+    ("games/combat_arms", 17),
     ("games/cs_source", 4),
 ];
 

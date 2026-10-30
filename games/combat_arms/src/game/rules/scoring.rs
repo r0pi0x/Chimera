@@ -42,7 +42,7 @@ use std::collections::HashMap;
 
 use avian3d::prelude::ColliderDisabled;
 use bevy::{
-    ecs::message::{MessageCursor, MessageMutator},
+    ecs::message::MessageMutator,
     prelude::*,
 };
 
@@ -122,12 +122,21 @@ pub(super) fn scale_friendly_fire(
 }
 
 /// The deaths of this tick (`Died`, after the damage), in order: the dead
-/// marked, then counted by the mode while the match counts.
-pub(super) fn handle_deaths(world: &mut World, mut cursor: Local<MessageCursor<Died>>) {
-    let deaths: Vec<Died> = cursor.read(world.resource::<Messages<Died>>()).cloned().collect();
-    for d in deaths {
-        on_died(world, &d);
+/// marked, then counted by the mode while the match counts. A normal
+/// system reading the messages (plan ecs-cleanup step 5); the counting is
+/// the mode's world work (`Mode::on_death`, `mercs::died`), queued in the
+/// deaths' order and applied at the sync point the rules' chain puts
+/// before the modes' touches, as the exclusive version ran.
+pub(super) fn handle_deaths(mut died: MessageReader<Died>, mut commands: Commands) {
+    let deaths: Vec<Died> = died.read().cloned().collect();
+    if deaths.is_empty() {
+        return;
     }
+    commands.queue(move |world: &mut World| {
+        for d in deaths {
+            on_died(world, &d);
+        }
+    });
 }
 
 /// One death (S7).
@@ -151,7 +160,7 @@ fn on_died(world: &mut World, d: &Died) {
     let d = &d;
     let killer_team = |w: &World, e: Entity| w.get::<Team>(e).map(|t| t.0);
     let Some(victim_team) = killer_team(world, victim).filter(|t| super::state::plays(*t)) else {
-        (mode.hooks.died)(world, d);
+        crate::mode::mode_death(world, mode.id, d);
         clear_log(world, victim);
         return;
     };
@@ -175,7 +184,7 @@ fn on_died(world: &mut World, d: &Died) {
     }
     // The mode's objects (a carried flag, bomb or intel dropped), in every
     // phase.
-    (mode.hooks.died)(world, d);
+    crate::mode::mode_death(world, mode.id, d);
     // Only another player's killing blow drops the victim's sums; a
     // suicide or a fall leaves them for the next life (Corrections
     // 2026-10-22, 5).

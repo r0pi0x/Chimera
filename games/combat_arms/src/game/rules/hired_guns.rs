@@ -102,7 +102,6 @@ pub const MODE: CaMode = CaMode {
         hooks: Hooks {
             setup,
             round_over,
-            died,
             warmup_end: match_end,
             ..NO_HOOKS
         },
@@ -442,6 +441,19 @@ fn died(world: &mut World, d: &Died) {
     let carry = objectives::carry(world, d.entity);
     let at = world.get::<Transform>(d.entity).map_or(Vec3::ZERO, |t| t.translation);
     drop_pocket(world, Some(d.entity), at, carry);
+}
+
+/// A player's pocket dropped where it died (live real rounds): the mode's
+/// `mode::ModeDeath` observer (plan ecs-cleanup step 5), its world work
+/// queued and applied by the death step's flush, so where the mode's hook
+/// ran.
+pub(super) fn on_mode_death(death: On<crate::mode::ModeDeath>, mut commands: Commands) {
+    const MODES: &[&str] = &[HIRED_GUNS];
+    if !MODES.contains(&death.mode) {
+        return;
+    }
+    let d = death.died.clone();
+    commands.queue(move |world: &mut World| died(world, &d));
 }
 
 /// M11.8's counts (live real rounds).

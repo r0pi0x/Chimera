@@ -179,7 +179,6 @@ pub static MODE: Mode = Mode {
     time_out,
     match_end: |w| Some(w.resource::<Match>().winner),
     hooks: Hooks {
-        died,
         before_spawns,
         ..NO_HOOKS
     },
@@ -1248,24 +1247,42 @@ fn own_death(world: &mut World, victim: Entity) {
     });
 }
 
-/// A melee death at an enemy's hands: a rung down.
-fn died(world: &mut World, d: &Died) {
-    let Some(ladder) = world.get_resource::<Ladder>().cloned() else { return };
-    if !ladder.demote_on_melee || !world.resource::<Match>().counting() || !melee_kill(world, d) {
+/// A melee death costs the victim a rung (`demote_on = "melee_death"`,
+/// while the match counts, never below the first): the ladder's
+/// `ModeDeath` observer, run where the death step triggers it (after the
+/// counting, death by death).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn died(
+    death: On<crate::mode::ModeDeath>,
+    ladder: Option<Res<Ladder>>,
+    game: Option<Res<Match>>,
+    teams: Query<&Team>,
+    rungs: Query<&Rung>,
+    held: Query<&Inventory>,
+    weapons: Query<&Weapon>,
+    catalog: Option<Res<WeaponCatalog>>,
+    mut events: MessageWriter<MinigameEvent>,
+    mut commands: Commands,
+) {
+    let d = &death.died;
+    if death.mode != MODE.id || !ladder.is_some_and(|l| l.demote_on_melee) || !game.is_some_and(|m| m.counting()) {
         return;
     }
-    let team = |e: Entity| world.get::<Team>(e).map(|t| t.0);
+    if !melee_kill(d, &held, &weapons, catalog.as_deref()) {
+        return;
+    }
+    let team = |e: Entity| teams.get(e).ok().map(|t| t.0);
     let Some(k) = d.attacker.filter(|k| *k != d.entity) else { return };
     if team(k) == team(d.entity) {
         return;
     }
-    let rung = world.get::<Rung>(d.entity).map_or(0, |r| r.0);
+    let rung = rungs.get(d.entity).map_or(0, |r| r.0);
     if rung == 0 {
         return;
     }
     // Dead: the weapon is the next life's.
-    world.entity_mut(d.entity).insert(Rung(rung - 1));
-    world.write_message(MinigameEvent {
+    commands.entity(d.entity).insert(Rung(rung - 1));
+    events.write(MinigameEvent {
         name: "rung_down",
         player: Some(d.entity),
         value: rung as i32 - 1,
@@ -1275,19 +1292,16 @@ fn died(world: &mut World, d: &Died) {
 /// Whether `d` was a melee kill: melee damage, or a melee weapon's (the
 /// damage's weapon, else what the attacker holds; CS:S's knife deals
 /// bullet damage).
-fn melee_kill(world: &World, d: &Died) -> bool {
+fn melee_kill(d: &Died, held: &Query<&Inventory>, weapons: &Query<&Weapon>, catalog: Option<&WeaponCatalog>) -> bool {
     if d.damage.kind == DamageKind::Melee {
         return true;
     }
     let id = d.damage.weapon.or_else(|| {
-        let inv = world.get::<Inventory>(d.attacker?)?;
-        world.get::<Weapon>(inv.active?).map(|w| w.id)
+        let inv = held.get(d.attacker?).ok()?;
+        weapons.get(inv.active?).ok().map(|w| w.id)
     });
     let Some(id) = id else { return false };
-    world
-        .get_resource::<crate::weapon::data::WeaponCatalog>()
-        .and_then(|c| c.get(id))
-        .is_some_and(|w| w.melee.is_some())
+    catalog.and_then(|c| c.get(id)).is_some_and(|w| w.melee.is_some())
 }
 
 /// `e` on `rung`, holding its weapon in place of the ladder's others (on

@@ -50,7 +50,7 @@
 use bevy::prelude::*;
 
 use super::{
-    CAPTURE_THE_FLAG, CaMode, CaRuleSettings, Hooks, NO_HOOKS, Panel, RoundTime, ScoreOrder, Spawns, Teams,
+    CAPTURE_THE_FLAG, CLAN_CTF, CaMode, CaRuleSettings, Hooks, NO_HOOKS, Panel, RoundTime, ScoreOrder, Spawns, Teams,
     objectives::{self, CaCarry, CaObjectives, Edits, Flag, FlagAt, Roster, add_stats, carry_in, set_carry_in},
     objects::CaMapObjects,
     scoring::personal,
@@ -81,7 +81,6 @@ pub const MODE: CaMode = CaMode {
         match_end: |w| Some(w.resource::<CaMatch>().winner),
         hooks: Hooks {
             setup,
-            died,
             round_end: |w| {
                 let carriers = w.resource::<CaFlagCarriers>().0;
                 for (e, _) in carriers.into_iter().flatten() {
@@ -200,6 +199,19 @@ fn died(world: &mut World, d: &Died) {
     let at = world.get::<Transform>(d.entity).map_or(Vec3::ZERO, |t| t.translation);
     world.entity_mut(d.entity).remove::<CaCarry>();
     drop_flag(world, team, at, kill_zone);
+}
+
+/// A carrier's flag dropped where it died (Capture the Flag, Clan Capture the
+/// Flag): the mode's `mode::ModeDeath` observer (plan ecs-cleanup step 5),
+/// its world work queued and applied by the death step's flush, so where the
+/// mode's hook ran.
+pub(super) fn on_mode_death(death: On<crate::mode::ModeDeath>, mut commands: Commands) {
+    const MODES: &[&str] = &[CAPTURE_THE_FLAG, CLAN_CTF];
+    if !MODES.contains(&death.mode) {
+        return;
+    }
+    let d = death.died.clone();
+    commands.queue(move |world: &mut World| died(world, &d));
 }
 
 /// Carriers, return timers, touches and captures (the mode's per-tick

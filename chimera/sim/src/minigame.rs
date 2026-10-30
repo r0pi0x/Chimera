@@ -479,6 +479,8 @@ impl Plugin for MinigamePlugin {
             .init_resource::<Match>()
             .add_message::<MinigameEvent>()
             .add_message::<crate::core::Died>()
+            // The ladder's reaction to a death (`mode::ModeDeath`).
+            .add_observer(ladder::died)
             .init_resource::<hud::MinigameHud>()
             .init_resource::<moments::MinigameMoments>()
             .init_resource::<wins::MatchWins>()
