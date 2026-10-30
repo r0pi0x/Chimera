@@ -17,6 +17,7 @@ Drafts: not yet posted as issues. Rules for every task: [AGENTS.md](../../AGENTS
 | [08 Default binds per game as a resource](08-bind-defaults-resource.md) | S | no |
 | [09 Console map names and map cycle per game, as a resource](09-console-map-names.md) | S | no |
 | [10 Fewer archetype tables for characters](10-fewer-character-tables.md) | M | no |
+| [11 Heavy tier: one more slot, then a converted-map cache](11-heavy-tier-time.md) | S + L | cs_source |
 
 01-06 and 07-09 are steps of
 [plans/active/ecs-cleanup.md](../plans/active/ecs-cleanup.md) (section 4);
