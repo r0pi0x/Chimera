@@ -53,7 +53,8 @@
 //! Debugging (docs/OBSERVABILITY.md): `ca_objects [filter]` lists objects
 //! and their state, `ca_object_msg <name> <message...>` sends a message
 //! now, `ca_object_props <name>` prints an object's stored properties and
-//! a `setpos` line at it, `ca_object_cmd <command string>` runs a command string,
+//! a `setpos` line at it, `ca_object_damage <name> [hp]` damages (breaks)
+//! it, `ca_object_cmd <command string>` runs a command string,
 //! `ca_object_vars` lists the variables and pending commands.
 //!
 //! A network client steps the active world models and the running
@@ -329,6 +330,34 @@ impl Plugin for CaObjectsPlugin {
                 |w, a| {
                     let name = a.first().ok_or("usage: ca_object_props <name>")?;
                     Ok(Some(props(w, name)))
+                },
+            )
+            .console_command(
+                "ca_object_damage",
+                "ca_object_damage <name> [hit points]: damage the objects of that name now (the server's; default \
+                 enough to break them), from the local player's view direction (their death sends their debris).",
+                |w, a| {
+                    let name = a.first().ok_or("usage: ca_object_damage <name> [hit points]")?;
+                    let hp = a.get(1).and_then(|h| h.parse::<f32>().ok()).unwrap_or(1.0e6);
+                    let dir = w
+                        .query_filtered::<&Intent, With<crate::core::LocalPlayer>>()
+                        .iter(w)
+                        .next()
+                        .map_or(Vec3::Z, |i| from_engine(crate::weapon::aim_of(i.yaw, i.pitch) * Vec3::NEG_Z, 1.0).normalize_or_zero());
+                    let ids = w.resource::<CaObjects>().world.named_all(name);
+                    if ids.is_empty() {
+                        return Ok(Some(format!("no object named {name}")));
+                    }
+                    {
+                        let mut o = w.resource_mut::<CaObjects>();
+                        for id in &ids {
+                            o.world.hit_dir = dir;
+                            o.world.damage(*id, hp, Who::Nobody, false);
+                        }
+                    }
+                    apply_effects(w);
+                    let o = w.resource::<CaObjects>();
+                    Ok(Some(ids.iter().map(|i| o.world.describe(*i)).collect::<Vec<_>>().join("\n")))
                 },
             )
             .console_command(
