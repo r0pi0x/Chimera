@@ -1928,3 +1928,68 @@ fn an_emptied_magazine_reloads_once_at_any_frame_rate() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Follow-up (2026-10-31b): view-model lighting and the player-view point.
+
+/// 48. A dynamic light (radius 200) 20 u from a view-model point lights it
+/// with 1 / (1 + 19·400/40000) ≈ 0.84 of its colour; 210 u away: none.
+#[test]
+fn vm48_light_on_the_gun() {
+    let s = place::model_light_share(20.0, 200.0);
+    assert!((s - 1.0 / 1.19).abs() < 1e-5, "{s}");
+    assert_eq!(place::model_light_share(210.0, 200.0), 0.0);
+    assert_eq!(place::model_light_share(200.0, 200.0), 0.0, "cut at the radius");
+}
+
+/// 49. The camera turned 90° with the light fixed in the world: the light
+/// seen from the camera turns the other way (it isn't stuck to the camera).
+#[test]
+fn vm49_light_follows_the_camera_frame() {
+    let light = Vec3::new(0.0, 0.0, -10.0);
+    let ahead = place::light_in_camera(light, Vec3::ZERO, Quat::IDENTITY);
+    let turned = place::light_in_camera(light, Vec3::ZERO, Quat::from_rotation_y(std::f32::consts::FRAC_PI_2));
+    assert!(ahead.abs_diff_eq(Vec3::new(0.0, 0.0, -10.0), 1e-4));
+    assert!(turned.abs_diff_eq(Vec3::new(10.0, 0.0, 0.0), 1e-4), "now to the right: {turned}");
+}
+
+/// 50 and 51. In the muzzle flash group a player-view key (mode 2) sits at
+/// the flash point, its own offset not added: a light at the world flash
+/// point F, a camera-relative particle at the camera-space offset o (e.g.
+/// (6, -5, 30)); a socket-mode key is placed by its mode.
+#[test]
+fn vm50_vm51_player_view_keys_at_the_flash() {
+    use combat_arms::game::view_model::attached::{FlashKeyPoint, PLAYER_VIEW, flash_key_point};
+    let (o, f) = (Vec3::new(6.0, -5.0, 30.0), Vec3::new(2.74, -2.6, 9.259921));
+    assert_eq!(flash_key_point(Some(PLAYER_VIEW), false, o, f), Some(FlashKeyPoint::World(f)), "the light");
+    assert_eq!(flash_key_point(Some(PLAYER_VIEW), true, o, f), Some(FlashKeyPoint::Camera(o)), "the particle");
+    assert_eq!(flash_key_point(Some(4), true, o, f), None, "a socket key: its socket");
+    assert_eq!(flash_key_point(None, false, o, f), None);
+}
+
+/// 52. A player-view key in a `PVAttachFXName0` group stays at the view
+/// model's place when the group was made + its offset, whatever the sway
+/// does after; a fixed key follows the model.
+#[test]
+fn vm52_player_view_key_in_an_attached_group() {
+    use combat_arms::game::view_model::attached::{PLAYER_VIEW, key_place};
+    let model = view_model("t", &[]);
+    let made = ViewModelOffset {
+        translation: Vec3::new(0.01, 0.0, 0.0),
+        rotation: Quat::IDENTITY,
+    };
+    let swayed = ViewModelOffset {
+        translation: Vec3::new(0.05, 0.02, 0.0),
+        rotation: Quat::from_rotation_z(0.1),
+    };
+    let off = Vec3::new(0.0, 0.0, 1.0);
+    let at = |m: Mat4| m.transform_point3(Vec3::ZERO);
+    let a = at(key_place(&model, &[], &made, None, off, Some(PLAYER_VIEW), &made));
+    let b = at(key_place(&model, &[], &swayed, None, off, Some(PLAYER_VIEW), &made));
+    assert!(a.abs_diff_eq(b, 1e-6), "it doesn't follow the sway: {a} {b}");
+    let origin = made.translation + model.root.translation;
+    assert!(a.abs_diff_eq(origin + Vec3::new(0.0, 0.0, -1.0), 1e-5), "the made place + its unrotated offset: {a}");
+    let fixed_made = at(key_place(&model, &[], &made, None, off, Some(0), &made));
+    let fixed_swayed = at(key_place(&model, &[], &swayed, None, off, Some(0), &made));
+    assert!(!fixed_made.abs_diff_eq(fixed_swayed, 1e-4), "a fixed key follows the model");
+}

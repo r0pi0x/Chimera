@@ -73,6 +73,9 @@ pub struct AttachedState {
     emit: HashMap<(usize, usize), Option<f32>>,
     particles: Vec<VmParticle>,
     rng: u32,
+    /// Per effect: the model's placement when it was made (where its
+    /// player-view keys stay).
+    made: HashMap<usize, ViewModelOffset>,
 }
 
 impl AttachedState {
@@ -220,6 +223,7 @@ pub fn attached_effects(
                 state.weapon = attached.weapon;
                 state.emit.clear();
                 state.particles.clear();
+                state.made.clear();
             }
             // Hidden groups: their particles go, their emitters restart
             // where they are when shown again.
@@ -236,7 +240,16 @@ pub fn attached_effects(
                     }
                     let Some(t) = key_t(k, age, length) else { continue };
                     let attach = k.string("AttachName");
-                    let place = key_place(model, &pose, &offset, attach, Vec3::from(k.vector("Offset").unwrap_or_default()));
+                    let made = state.made.entry(i).or_insert_with(|| offset.clone()).clone();
+                    let place = key_place(
+                        model,
+                        &pose,
+                        &offset,
+                        attach,
+                        Vec3::from(k.vector("Offset").unwrap_or_default()),
+                        k.combo("UpdatePos"),
+                        &made,
+                    );
                     match k.kind.as_str() {
                         "Sprite" => {
                             let Some(sprite) = k.path("Sprite") else { continue };

@@ -667,6 +667,8 @@ fn muzzle_flash(
     let lib = library::library();
     // Without the effect file: a plain glow (no install); with it, the
     // group's particle, or nothing when the group is missing.
+    let mut at = at;
+    let mut light_at = vm.flash_point;
     let (size, color, tex, light_keys) = match lib.as_ref() {
         None => (0.016, Vec3::new(1.0, 0.75, 0.4), None, None),
         Some(lib) => {
@@ -680,6 +682,16 @@ fn muzzle_flash(
                 *qv = Visibility::Hidden;
                 return;
             };
+            // A player-view key at the flash point, its own offset not
+            // added (view_models.md Follow-up (2026-10-31b) 2); a socket
+            // key at its socket (`flash_at`).
+            use crate::game::view_model::attached::{FlashKeyPoint, flash_key_point};
+            if let Some(FlashKeyPoint::Camera(o)) = flash_key_point(p.combo("UpdatePos"), true, vm.flash_offset, vm.flash_point) {
+                at = Vec3::new(o.x, o.y, -o.z) * UNIT;
+            }
+            if let Some(FlashKeyPoint::World(f)) = l.and_then(|l| flash_key_point(l.combo("UpdatePos"), false, vm.flash_offset, vm.flash_point)) {
+                light_at = f;
+            }
             let life = p.float("MaxParticleLifeSpan").unwrap_or(0.05).max(1e-3);
             let t = (age / life).min(1.0);
             let s = sample_keys(&p.scale_keys(), t, 0.5);
@@ -706,7 +718,7 @@ fn muzzle_flash(
                 let t = (age / life.max(1e-3)).min(1.0);
                 let r = sample_keys(&radius, t, 0.0) * UNIT;
                 let ch = |i: usize| sample_keys(&color.iter().map(|(k, c)| (*k, c[i])).collect::<Vec<_>>(), t, 1.0);
-                lt.translation = vm.flash_point;
+                lt.translation = light_at;
                 pl.range = r.max(0.01);
                 pl.color = Color::srgb(ch(0), ch(1), ch(2));
                 pl.intensity = LIGHT_LUMENS;
