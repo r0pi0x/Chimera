@@ -27,7 +27,7 @@ attached effects, 4 placement in camera space, 5 projection and field of
 view, 6 bob and sway, 7 animation selection per action, 8 animation key
 events, 9 muzzle flash, 10 shell ejection, 11 visibility); Grenade timings
 settled here (grenades.md Q3 and Q5); Per-frame order; Edge cases; Quirks;
-Corrections (2026-10-22); Test cases; Open questions (including contradictions with other specs).
+Corrections (2026-10-22); Corrections (2026-10-30); Follow-up (2026-10-31b) (view-model lighting, the player-view point); Test cases; Open questions (including contradictions with other specs).
 
 This spec builds on `animation.md` (tracker, sampling, key strings, the
 done-needs-L+1 rule), `models_ltb.md` (sockets, nodes), `inventory.md`
@@ -1054,6 +1054,13 @@ From the client's effect database loader, the client weapon's attached-effect ha
    - A particle system key's particles follow its `MoveParticlesWithSystem` property: Yes (the property's default) keeps every live particle relative to the emitter, so attached particles move with the view model; No leaves particles in world space where they were emitted. The stock attached groups' values are in the effect file.
    - A key in placement mode 2 (player view): no stock attached key uses it; not traced.
 
+## Follow-up (2026-10-31b): view-model lighting and the player-view point
+
+From the renderer's model lighting, the dynamic-light effect key, the client effect manager's instance placement and the client weapon's muzzle-flash and attached-effect code. Answers Open question 18 and the player-view placement point left open in Corrections (2026-10-30) 3. Test cases 48–52.
+
+1. **A world light lights the view model** (Open question 18). Each frame the renderer gathers every dynamic light it is drawing (all effect lights, `DynaLight` keys included, while dynamic lights are on) into one list, and lights **every** model from that list, the camera-relative view model included: for a camera-relative model the light's position (and the sun's direction) is turned into camera space so the light falls on the view model where it really is relative to the camera; ambient light is looked up at the view model's world position. Only a light marked "light the world only" is skipped (no `DynaLight` key sets that; `ForceLightWorld` adds world lighting, it removes nothing). A dynamic light acts on a model as a point light of its colour and radius R with attenuation 1 / (1 + 19·d²/R²), cut at R. So the XK-2's lights, had the group existed (Corrections (2026-10-30) 1), and the muzzle flash's light do light the gun and hands; the model's light count limit and its choice of the strongest lights apply as for any model.
+2. **The point of a "player view" key** (placement mode 2). A key in that mode never places itself; only the weapon code places it, and it does so only for the **muzzle flash** group (and the left gun's): each weapon update while the flash is shown, every key of the group is given the flash point: camera-relative keys (particles, sprites) the camera-space flash offset $ec o$ (section 9; 4), world keys (lights, which can never be camera-relative) the world flash point $ec F$. The key's own `Offset` is not added. Keys of other modes in the same group are placed by their own mode right after. In a **`PVAttachFXName#`** group nothing places a mode-2 key: it stays where it was created, at the view model object's position at that moment plus its unrotated `Offset`; for a light key that point is read as a world position (near the world origin, since the view model's position is a camera-space one), so such a light is effectively lost. No stock attached group uses mode 2.
+
 ## Test cases
 
 Each case says which data it needs. **[S]** = needs the Steam install
@@ -1263,6 +1270,12 @@ Follow-up cases (Open questions 9–16):
 46. **Held weapon effect (Corrections 2026-10-30, 2).** Another player switches to a weapon with `HHAttachFXName` g → g starts looping on his held weapon on your client; he switches away → g is shut down; the same weapon in your own hands → no held-model effect, only its `PVAttachFXName#` groups.
 47. **Particles in emitter space (Corrections 2026-10-30, 3).** An attached particle key with `MoveParticlesWithSystem` Yes, the view model swaying 2 u right over 0.1 s → its live particles shift 2 u right with it; with No → they stay where emitted.
 
+48. **Light on the gun (Follow-up 2026-10-31b, 1).** A `DynaLight` key (radius 200, white) 20 u in front of the camera: the view model's faces toward it brighten; at a view-model point 20 u from the light the light's share is 1 / (1 + 19·400/40000) = 1/1.19 ≈ 0.84 of its colour; a point 210 u away gets none.
+49. **Light follows the camera frame (logic).** Turning the camera 90° while the light stays put in the world: the lit side of the gun turns with the light's direction in camera space (the light is not stuck to the camera).
+50. **Muzzle-flash light point.** `AK47_PV_Muzz`'s light key (mode 2) sits at the world flash point $\vec F$ each update while shown, its `Offset` ignored; its particle key (socket mode) at the `Flash` socket + (0, 0, 0.5).
+51. **Mode-2 particle in the flash group.** A camera-relative particle key in mode 2 is placed at $\vec o$ (camera space), e.g. (6, −5, 30) for a flash offset of that value.
+52. **Mode-2 key in an attached group.** A mode-2 key in a `PVAttachFXName0` group stays at the view model's creation position + its `Offset` for the group's whole life; it does not follow the gun's sway.
+
 ## Open questions
 
 1. **Steam build data.** Only the pistol archive of the Steam install could
@@ -1381,4 +1394,4 @@ differs; the other specs are not edited here):
   The model position gets the sum of the three draws on all axes; only the
   flash point gets them per axis (Quirk 2). No stock weapon has a non-zero
   `Recoil`, so nothing visible changes.
-18. **An attached light on the view model** (Corrections 2026-10-30, 3): whether the engine's world light from a view-model `DynaLight` key also lights the view model itself (renderer behaviour).
+18. **An attached light on the view model** (Corrections 2026-10-30, 3). Answered (Follow-up (2026-10-31b) 1): yes, every dynamic light lights the view model, placed in camera space.

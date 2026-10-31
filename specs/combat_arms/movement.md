@@ -1141,6 +1141,9 @@ one (80), not 0.9.
 
 1. (Networked play) other characters and moving world models are rewound
    to the time the player sees, for collision only; restored at the end.
+   (The world models' rewind runs only under the server's newer player-state
+   protocol; the dedicated server's default is the legacy one:
+   `world_objects.md` Follow-up (2026-10-31b) 2.2.)
 2. Note the eye volume (from the camera point of the last rendered frame;
    Volumes, "Membership") and last tick's.
 3. Update control flags from input (Input to control state, steps 1–9).

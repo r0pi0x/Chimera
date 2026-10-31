@@ -3,7 +3,7 @@
 Source basis: the client's weapon logic (trigger, animation-driven fire cycle, spread, client-side hit test), the client's view recoil, the server's vector/damage and armour logic, the shared weapon attribute manager, and the shipped attribute data (weapon/ammo table, model/skeleton table, surface table) plus the M4A1 view-model animation file, all from a reference client build. Numbers for the worked example are the reference build's data; the Steam build's data may differ (see Open questions).
 Status: draft
 
-Sections: Summary; Units and conventions; Constants; Worked example (M4A1); Behavior (trigger and fire modes, ammo, reload, hitscan, penetration, damage, hit zones, armour, spread, recoil); Per-tick order; Edge cases; Quirks; Corrections (2026-10-19); Test cases; Open questions.
+Sections: Summary; Units and conventions; Constants; Worked example (M4A1); Behavior (trigger and fire modes, ammo, reload, hitscan, penetration, damage, hit zones, armour, spread, recoil); Per-tick order; Edge cases; Quirks; Corrections (2026-10-19); Test cases; Follow-up (2026-10-31b) (shoot-through surfaces); Open questions.
 
 ---
 
@@ -640,6 +640,22 @@ M4A1 data as above unless stated. "Roll 1.0" means the damage random roll return
 67. **Zoomed jump target (Corrections 12).** Ammo `JumpPerturb` 0.7 and (for the test) `ZoomedJumpPerturb` 0.3, zoomed, airborne from a jump, μ = 1: run flag on → $S$ = 0.7; run flag off → $S$ = 0.3.
 68. **Jump clamp (Corrections 12).** Same ammo, M4A1 zoomed rates (inc 1.3), run flag off, airborne, $M$ = 0.5, μS = 0.3 → $M$ = 0.5 + 0.1125 × 1.3 = 0.64625, clamped to the plain 0.7: stays 0.64625.
 69. **Partial burst fields (Corrections 12).** Burst mode, `TripleShotMinPerturb` 0, `TripleShotMaxPerturb` 60, plain 3/100, meters 0 → cone limits 3/60, n = 3.
+
+## Follow-up (2026-10-31b): Unknown and the other shoot-through surfaces
+
+The "Penetration" table above lists only some shoot-through surfaces. The install's surface table (Steam build 26236938) also marks these, with the same pass rules:
+
+| Surface (id) | Thickness limit | Re-perturb | Range × | Damage × |
+|---|---|---|---|---|
+| Unknown (0) | 10 | 10 | 1.0 | 0.6 |
+| trussing (23) | 10 | 10 | 1.0 | 1.0 |
+| Invisible metal (206) | 0 (always) | 0 | 1.0 | 0.9 |
+| Air (1) | 0 (always) | 0 | 1.0 | 1.0 |
+| Boss3_weak (65) | 55 | 15 | 1.0 | 0.3 |
+
+Unknown is the surface of every solid polygon stored with surface type 0 (2.5 % of the level polygons and 12 % of the world-model polygons across the install) and of objects with no surface of their own, so ordinary walls of that type up to about 11 u thick are shot through at damage × 0.6 (`effects_sounds.md` Follow-up (2026-10-31b) 3, its cases 94–96). Test case 70.
+
+70. **Unknown wall.** Server ray on a surface-0 wall 8 u thick, a torso behind it: damage × 0.6; on a 12 u surface-0 wall: stopped.
 
 ## Open questions
 
