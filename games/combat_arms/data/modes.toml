@@ -440,8 +440,12 @@ family = "VIPEscort"
 vip_spawn = "VipTeleportPoint"
 # The objective's EscapeZoneTrigger: the exit's name.
 escape_zone = "EscapeZoneTrigger"
-# The exit timer (`VipExitTimer` TimeAmount, s from the round's setup).
+# The exit timer (`VipExitTimer` TimeAmount, s from the round's setup); the
+# exit opens when the timer stops itself, 1 s after that (its run-out:
+# world_objects.md Follow-up (2026-10-31b) 1.1, game_modes_2.md case 54).
 exit_time = 60.0
+# Its InTimeCommandTime: the helicopter starts to arrive (s).
+exit_arrival = 54.0
 # VIP_MISSION_END_TIME: the message hold after a deciding event (s).
 end_hold = 3.0
 # A side swap: the wait after the intermission, then the notice (s).

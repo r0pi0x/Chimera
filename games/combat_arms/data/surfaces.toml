@@ -1,11 +1,13 @@
 # Combat Arms' shoot-through surfaces: specs/combat_arms/weapon_firing.md,
-# "Penetration" (the surface table's MaxShootThroughThickness,
-# MaxShootThroughPerturb, BulletRangeDampen, BulletDamageDampen). Our
-# numbers as the spec gives them, not a file from the game. Surfaces not
-# listed (concrete, metal, ...) stop bullets.
+# "Penetration" and its Follow-up (2026-10-31b) (the surface table's
+# MaxShootThroughThickness, MaxShootThroughPerturb, BulletRangeDampen,
+# BulletDamageDampen; 19 surfaces). Our numbers as the spec gives them, not
+# a file from the game. Surfaces not listed (concrete, metal, ...) stop
+# bullets; Unknown (0), every untyped polygon and object, is listed.
 #
 # `names`: the surface names a row covers (matched without case against a
-# collider's `PropSurface`); `thickness`: the most material a bullet
+# collider's `PropSurface`, or the type name of the world's surface there);
+# `ids`: their surface type numbers, in the same order; `thickness`: the most material a bullet
 # passes, world units (0: always passes); `perturb`: the exit direction's
 # random offset, thousandths per axis; `range` and `damage`: what is left
 # of each after passing, as factors.
@@ -13,6 +15,7 @@ units = { length = 0.018 }
 
 [[surface]]
 names = ["wood"]
+ids = [30]
 thickness = 10.0
 perturb = 10.0
 range = 1.0
@@ -20,6 +23,7 @@ damage = 0.5
 
 [[surface]]
 names = ["wood door", "plywood", "chain-link fence", "ice"]
+ids = [100, 32, 9, 69]
 thickness = 10.0
 perturb = 10.0
 range = 1.0
@@ -27,6 +31,7 @@ damage = 0.6
 
 [[surface]]
 names = ["glass"]
+ids = [40]
 thickness = 10.0
 perturb = 5.0
 range = 1.0
@@ -34,6 +39,7 @@ damage = 0.9
 
 [[surface]]
 names = ["cloth"]
+ids = [81]
 thickness = 10.0
 perturb = 10.0
 range = 1.0
@@ -41,6 +47,7 @@ damage = 0.5
 
 [[surface]]
 names = ["paper"]
+ids = [53]
 thickness = 10.0
 perturb = 10.0
 range = 1.0
@@ -48,6 +55,7 @@ damage = 0.8
 
 [[surface]]
 names = ["wood ladder"]
+ids = [207]
 thickness = 10.0
 perturb = 10.0
 range = 1.0
@@ -55,6 +63,7 @@ damage = 0.7
 
 [[surface]]
 names = ["water"]
+ids = [204]
 thickness = 0.0
 perturb = 30.0
 range = 1.0
@@ -62,6 +71,7 @@ damage = 0.8
 
 [[surface]]
 names = ["flesh", "armour"]
+ids = [2, 3]
 thickness = 55.0
 perturb = 15.0
 range = 1.0
@@ -69,7 +79,49 @@ damage = 0.3
 
 [[surface]]
 names = ["can shoot through", "range target hole"]
+ids = [76, 50]
 thickness = 50.0
 perturb = 1.0
 range = 1.0
 damage = 1.0
+
+# Follow-up (2026-10-31b): the install's table also marks these.
+[[surface]]
+names = ["unknown"]
+ids = [0]
+thickness = 10.0
+perturb = 10.0
+range = 1.0
+damage = 0.6
+
+[[surface]]
+names = ["trussing"]
+ids = [23]
+thickness = 10.0
+perturb = 10.0
+range = 1.0
+damage = 1.0
+
+[[surface]]
+names = ["air"]
+ids = [1]
+thickness = 0.0
+perturb = 0.0
+range = 1.0
+damage = 1.0
+
+[[surface]]
+names = ["invisible metal"]
+ids = [206]
+thickness = 0.0
+perturb = 0.0
+range = 1.0
+damage = 0.9
+
+[[surface]]
+names = ["boss3_weak"]
+ids = [65]
+thickness = 55.0
+perturb = 15.0
+range = 1.0
+damage = 0.3

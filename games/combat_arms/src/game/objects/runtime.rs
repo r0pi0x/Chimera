@@ -32,8 +32,9 @@
 //! Known shortcuts: `SoundFX` keeps its on/off state and restart count (the
 //! client's `music::ambient` plays them); `LightGroup` keeps its on/off
 //! state and colour, which the bridge shows as the group's light style
-//! (`lights`); `Camera`, `SpecialFX` and `TargetTrigger` keep their on/off
-//! state only (map cameras and objective markers aren't drawn);
+//! (`lights`); `SpecialFX` keeps its on/off state only; the event
+//! objects (timers, use spots, captions, messages, the objective list,
+//! cameras, `TargetTrigger` markers) are `events`'s;
 //! `BGMTrigger` only reports its `ON`/`OFF` (`Fx::Music`, `music::trigger`);
 //! breakables' `Spawn`, prop debris, `WorldModelDebris` and
 //! `CreateExplosion` aren't made (only the death command and the
@@ -48,6 +49,7 @@ use bevy::prelude::*;
 
 use super::{
     commands::{self, CommandHost, CommandState, Ctx, ObjId, Who, statements, tokens},
+    events,
     geometry::{Waveform, rotation},
     keyframer::{self, Keyframer},
     movers::{self, Awm, Blocking, CharBox, Frame, Motion, Out, Pose, State},
@@ -204,6 +206,16 @@ pub enum Fx {
     },
     /// A message to a character (`msg player ...`).
     CharacterMessage { who: Who, message: String },
+    /// What every client is told about an event object (`events`).
+    Notice { id: ObjId, notice: events::Notice },
+    /// A destructible's death sends its prop debris (effects_sounds.md
+    /// Follow-up (2026-10-31b) 1): at its box centre, record `debris`
+    /// (`DebrisType`, by name), facing the death direction.
+    Debris { at: Vec3, debris: String, dir: Vec3 },
+    /// A destructible fires its weapon (`CreateExplosion` at death, `FIRE`):
+    /// weapon `weapon` (the game's id) from `at` along `dir`, going off in
+    /// place when `in_place`, damage x `factor`, by object `shooter`.
+    Fire { weapon: i32, at: Vec3, dir: Vec3, in_place: bool, factor: f32, shooter: ObjId },
     /// A line for the console's log.
     Log(String),
 }
@@ -265,6 +277,8 @@ pub struct Trigger {
     pub countdown: f32,
     /// `TargetTrigger`: shown on the radar (`ON`/`OFF`).
     pub shown: bool,
+    /// `TargetTrigger`: its marker (team, game type).
+    pub marker: Option<events::Marker>,
 }
 
 /// A generic `ActivateTrigger`'s use (game_modes.md M10): a player holding
@@ -307,6 +321,13 @@ pub enum Kind {
     /// colour (0..1); what it shows is its colour when on, black when off
     /// (`shown`).
     LightGroup { on: bool, color: Vec3 },
+    /// The event objects (`events`).
+    Timer(Box<events::Timer>),
+    LightUse(Box<events::LightUse>),
+    Caption { showtime: f32, locked: bool },
+    MessageTrigger { showtime: f32 },
+    Mission(Vec<events::Objective>),
+    Camera(Box<events::Camera>),
 }
 
 /// A `LightGroup`'s state at the map's start: `StartOn` (true) and
@@ -479,6 +500,9 @@ pub struct ObjectWorld {
     pub sound_serial: u32,
     /// Lines for the console's log (built while loading).
     pub log: Vec<String>,
+    /// The counted objectives' maxima by id (the co-op mission data for
+    /// the difficulty: `MissionTrigger`'s `ADD_POINT_MISSION`).
+    pub mission_points: std::collections::BTreeMap<String, i32>,
 }
 
 impl Default for ObjectWorld {
@@ -497,6 +521,7 @@ impl Default for ObjectWorld {
             once: Vec::new(),
             sound_serial: 0,
             log: Vec::new(),
+            mission_points: Default::default(),
         }
     }
 }
@@ -720,6 +745,7 @@ impl ObjectWorld {
             match class.as_str() {
                 "Trigger" | "TargetTrigger" => {
                     let commands = (1..=10).map(|k| p.string(&format!("Command{k}"))).collect();
+                    let target = class == "TargetTrigger";
                     kind = Kind::Trigger(Box::new(Trigger {
                         dims: p.vector("Dims").map(|d| d.abs()).unwrap_or(TRIGGER_DIMS),
                         n_activations: p.real_or("NumberOfActivations", 1.0).max(0.0) as u32,
@@ -741,6 +767,7 @@ impl ObjectWorld {
                         attach_to: p.string("AttachToObject"),
                         player_once: p.bool_or("PlayerOnceActivate", false),
                         last_attempt: f64::NEG_INFINITY,
+                        marker: target.then(|| events::Marker::of(&p)),
                         ..default()
                     }));
                 }
@@ -836,12 +863,27 @@ impl ObjectWorld {
                     }
                 }
                 "LightGroup" => kind = light_group_start(&p),
-                "SoundFX" | "Camera" | "SpecialFX" | "ScaleSprite" => {
+                "SoundFX" | "SpecialFX" | "ScaleSprite" => {
                     kind = Kind::Switchable {
-                        on: p.bool_or("StartOn", class != "Camera"),
+                        on: p.bool_or("StartOn", true),
                         plays: 0,
                     }
                 }
+                "TimerTrigger" => kind = Kind::Timer(Box::new(events::Timer::of(&p))),
+                "LightActivateTrigger" => kind = Kind::LightUse(Box::new(events::LightUse::of(&p))),
+                "CaptionTrigger" => {
+                    kind = Kind::Caption {
+                        showtime: p.real_or("Showtime", 10.0),
+                        locked: false,
+                    }
+                }
+                "MessageTrigger" => {
+                    kind = Kind::MessageTrigger {
+                        showtime: p.real_or("Showtime", 10.0),
+                    }
+                }
+                "MissionTrigger" => kind = Kind::Mission(Vec::new()),
+                "Camera" => kind = Kind::Camera(Box::new(events::Camera::of(&p))),
                 "BGMTrigger" => kind = Kind::MusicTrigger { on: false },
                 c if super::super::volumes::is_volume(c) => kind = Kind::Volume,
                 _ => {}
@@ -1426,8 +1468,13 @@ impl ObjectWorld {
                     return;
                 }
                 "CLEARPLAYERLIST" => self.once.clear(),
-                "ON" => t.shown = true,
-                "OFF" => t.shown = false,
+                "ON" | "OFF" => {
+                    t.shown = word == "ON";
+                    if let Some(m) = &mut t.marker {
+                        m.on = t.shown;
+                        self.objects[id as usize].dirty = true;
+                    }
+                }
                 _ => {}
             },
             Kind::CommandTrigger { locked, commands } => match word {
@@ -1578,7 +1625,9 @@ impl ObjectWorld {
                 }
                 _ => {}
             },
-            _ => {}
+            k => {
+                self.event_message(id, k, word, args);
+            }
         }
         self.objects[id as usize].kind = kind;
     }
@@ -2052,7 +2101,9 @@ impl ObjectWorld {
                 self.keyframer_update(id);
                 return;
             }
-            _ => {}
+            k => {
+                self.event_update(id, k);
+            }
         }
         self.objects[id as usize].kind = kind;
     }
@@ -2265,6 +2316,10 @@ impl ObjectWorld {
             Kind::Switchable { on, plays } => s += &format!(" | on {on} plays {plays}"),
             Kind::LightGroup { on, color } => s += &format!(" | on {on} colour {color}"),
             Kind::MusicTrigger { on } => s += &format!(" | music {on}"),
+            Kind::Timer(t) => s += &format!(" | timer T {} running {}", t.time, t.started.is_some()),
+            Kind::LightUse(u) => s += &format!(" | working {} done {} locked {}", u.count, u.completions, u.locked),
+            Kind::Mission(l) => s += &format!(" | objectives {l:?}"),
+            Kind::Camera(c) => s += &format!(" | live {} fov {}", c.live, c.fov),
             _ => {}
         }
         if let Some(d) = &o.hp

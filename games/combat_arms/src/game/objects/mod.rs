@@ -18,6 +18,9 @@
 //!   through `MEMORIZE`/`REMEMBER`), triggers (delays, counts, weighted,
 //!   timed), command and touch triggers, target triggers, event counters,
 //!   start-up commands, the use triggers (`ActivateTrigger`), explosions;
+//! - `events`: the event objects (timers, hold-to-use spots, captions,
+//!   messages, the objective list, cameras and their points, target
+//!   triggers' markers), whose notices to the clients are `CaObjectNotice`;
 //! - `commands`: the command-string language and its manager (variables,
 //!   `when`, delays by real frame time, 512 slots, a failure stops the
 //!   rest of its string).
@@ -61,6 +64,7 @@
 //! boxes aren't used) while the game's tests use their boxes (`movers`).
 
 pub mod commands;
+pub mod events;
 pub mod geometry;
 pub mod keyframer;
 pub mod movers;
@@ -110,8 +114,13 @@ pub const LOGIC_CLASSES: &[&str] = &[
     "SpecialFX",
     "LightGroup",
     "Camera",
+    "CameraPoint",
     "Point",
     "TimerTrigger",
+    "LightActivateTrigger",
+    "CaptionTrigger",
+    "MessageTrigger",
+    "MissionTrigger",
 ];
 
 /// Whether `game::world` passes objects of `class` through for the object
@@ -165,6 +174,15 @@ pub struct CaObjectEvent {
     pub name: String,
     pub message: String,
     pub sender: Option<Entity>,
+}
+
+/// What the server tells every client about an event object (a timer,
+/// caption, message, objective, use spot or camera: `events::Notice`).
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct CaObjectNotice {
+    pub object: ObjId,
+    pub name: String,
+    pub notice: events::Notice,
 }
 
 /// A node's object (its map entity index).
@@ -248,6 +266,7 @@ impl Plugin for CaObjectsPlugin {
         app.init_resource::<CaObjects>()
             .add_message::<CaObjectMessage>()
             .add_message::<CaObjectEvent>()
+            .add_message::<CaObjectNotice>()
             .init_resource::<sound::CaObjectSounds>()
             .add_message::<super::view_model::attached::CaLoopSound>()
             .add_systems(Update, (sound::play.before(super::effects::sounds::loops), lights::show))
@@ -835,6 +854,12 @@ fn effect(world: &mut World, f: Fx, scale: f32) {
             });
         }
         Fx::CharacterMessage { who, message } => debug!("objects: to {who:?}: {message}"),
+        Fx::Notice { id, notice } => {
+            let name = world.resource::<CaObjects>().world.objects[id as usize].name.clone();
+            info!("objects: {name}: {notice:?}");
+            world.write_message(CaObjectNotice { object: id, name, notice });
+        }
+        Fx::Debris { .. } | Fx::Fire { .. } => {}
         Fx::Log(l) => debug!("objects: {l}"),
     }
 }
