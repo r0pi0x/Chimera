@@ -1,6 +1,8 @@
 //! The store, manifests, `CachedFiles`, the packer and the recorder on our
 //! own fixture bytes (no game's files).
 
+mod service;
+
 use std::{fs, path::PathBuf, sync::Arc};
 
 use chimera_assets::{CachedFiles, Manifest, Recorder, Recording, Store, pack, read_log, store::sha256_hex};
@@ -77,7 +79,8 @@ fn packing_is_deterministic_and_dedups_by_hash() {
         outputs.push(store_files(&store.root));
     }
     assert_eq!(outputs[0], outputs[1], "same store bytes whatever the thread count");
-    let manifest = String::from_utf8(outputs[0].iter().find(|(p, _)| p.ends_with("100.txt")).unwrap().1.clone()).unwrap();
+    let manifest =
+        String::from_utf8(outputs[0].iter().find(|(p, _)| p.ends_with("100.txt")).unwrap().1.clone()).unwrap();
     assert!(manifest.contains(&format!("file {} 20 ", sha256_hex(b"from the first layer"))), "the shadowing file wins");
     assert_eq!(outputs[0].iter().filter(|(p, _)| p.starts_with("records/")).count(), 4);
     let _ = fs::remove_dir_all(&dir);
@@ -86,10 +89,7 @@ fn packing_is_deterministic_and_dedups_by_hash() {
 #[test]
 fn a_manifest_round_trips() {
     let mut m = Manifest::new("cs_source", "25338318", Some(240));
-    m.files.insert(
-        "maps/de x.bsp".into(),
-        chimera_assets::FileRecord { id: sha256_hex(b"x"), size: 1, stored: 10 },
-    );
+    m.files.insert("maps/de x.bsp".into(), chimera_assets::FileRecord { id: sha256_hex(b"x"), size: 1, stored: 10 });
     m.files.insert("a/b.txt".into(), chimera_assets::FileRecord { id: sha256_hex(b"y"), size: 2, stored: 11 });
     m.sets.entry("de_x".into()).or_default().insert("maps/de x.bsp".into());
     let text = m.to_text();

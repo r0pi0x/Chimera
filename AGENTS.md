@@ -135,7 +135,15 @@ keys needed: Combat Arms' records are stored decrypted). Settings:
 `[assets]` in `chimera.local.toml` (`store`, `use_install`, `builds`;
 `chimera.local.example.toml`), `CHIMERA_ASSET_STORE` and
 `CHIMERA_ASSET_USE_INSTALL` over it. Never copy a store, a manifest or a
-vfs log into the repository. Fetching from the dev server comes with M2.
+vfs log into the repository.
+
+Without an install, the asset service (the dev server) fills the store on
+demand: put `url` and `token` (from the server's admin) into `[assets]`
+(or `CHIMERA_ASSET_URL` / `CHIMERA_ASSET_TOKEN`), check them with
+`chimera_assets login`, and prefetch with `chimera_assets fetch cs_source
+de_dust2` (a set) or `chimera_assets fetch cs_source` (every file).
+`assets.lock` at the root, when there is one, pins each game's build and
+manifest (`chimera_assets lock` updates it).
 
 ## Design principles
 

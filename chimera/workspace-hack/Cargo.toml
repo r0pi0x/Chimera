@@ -34,7 +34,6 @@ bevy_utils = { version = "0.20", features = ["debug", "serialize", "std"] }
 bitflags = { version = "2", default-features = false, features = ["bytemuck", "serde", "std"] }
 blake3 = { version = "1" }
 bytemuck = { version = "1", default-features = false, features = ["aarch64_simd", "derive", "extern_crate_alloc", "min_const_generics", "must_cast", "wasm_simd"] }
-bytes = { version = "1" }
 constant_time_eq = { version = "0.4", default-features = false, features = ["std"] }
 crossbeam-channel = { version = "0.5" }
 crypto-common = { version = "0.1", default-features = false, features = ["getrandom", "std"] }
@@ -46,6 +45,7 @@ glam = { version = "0.33", features = ["approx", "bytemuck", "encase", "nostd-li
 half = { version = "2", features = ["bytemuck", "num-traits", "serde"] }
 harfrust = { version = "0.12" }
 hashbrown = { version = "0.17", default-features = false, features = ["default-hasher", "inline-more", "raw-entry"] }
+http = { version = "1" }
 icu_locale_core = { version = "2", default-features = false, features = ["alloc", "zerovec"] }
 icu_provider = { version = "2", default-features = false, features = ["alloc", "baked"] }
 image = { version = "0.25", default-features = false, features = ["hdr", "jpeg", "png", "tga"] }
@@ -55,7 +55,7 @@ linebender_resource_handle = { version = "0.1", default-features = false, featur
 litemap = { version = "0.8", default-features = false, features = ["alloc"] }
 log = { version = "0.4", default-features = false, features = ["std"] }
 nonmax = { version = "0.5" }
-percent-encoding = { version = "2" }
+once_cell = { version = "1" }
 petgraph = { version = "0.8", features = ["serde-1"] }
 postcard = { version = "1", default-features = false, features = ["alloc", "experimental-derive"] }
 potential_utf = { version = "0.1", default-features = false, features = ["alloc", "zerovec"] }
@@ -97,7 +97,7 @@ quote = { version = "1" }
 regex-automata = { version = "0.4" }
 regex-syntax = { version = "0.8" }
 serde_core = { version = "1", features = ["alloc"] }
-syn = { version = "3", features = ["extra-traits", "fold", "full", "visit"] }
+syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "fold", "full", "visit"] }
 toml_datetime = { version = "1", features = ["serde"] }
 toml_parser = { version = "1" }
 winnow = { version = "1" }
@@ -116,6 +116,7 @@ wayland-sys = { version = "0.31", default-features = false, features = ["client"
 [target.x86_64-unknown-linux-gnu.build-dependencies]
 libc = { version = "0.2", features = ["extra_traits"] }
 memchr = { version = "2" }
+syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full", "visit", "visit-mut"] }
 
 [target.x86_64-pc-windows-msvc.dependencies]
 getrandom = { version = "0.4", default-features = false, features = ["std", "sys_rng"] }
@@ -126,5 +127,6 @@ windows-sys = { version = "0.61", features = ["Win32_Globalization", "Win32_Secu
 [target.x86_64-pc-windows-msvc.build-dependencies]
 getrandom = { version = "0.4", default-features = false, features = ["std", "sys_rng"] }
 memchr = { version = "2" }
+syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full", "visit", "visit-mut"] }
 
 ### END HAKARI SECTION

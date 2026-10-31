@@ -1,7 +1,7 @@
 [package]
 name = "chimera_assets"
 version = "0.1.0"
-description = "Game files as content-addressed records: the store, manifests and sets, the CachedFiles mount layer and the vfs access log"
+description = "Game files as content-addressed records: the store, manifests and sets, the CachedFiles mount layer, the vfs access log, and the asset service (dev server and its HTTPS client)"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
@@ -30,12 +30,42 @@ zstd = { version = "0.13", default-features = false }
 serde.workspace = true
 # The user-wide store (`~/.cache/chimera/assets`, `%LOCALAPPDATA%\chimera\assets`).
 dirs.workspace = true
+# `[assets]` read by the CLI itself (it sits below chimera_core's config),
+# `assets.lock` and the server's accounts file.
+toml.workspace = true
+# The asset service (M2): manifests signed by the server's Ed25519 key
+# (pure Rust, the sha2 above), tokens and keys from the OS's randomness.
+ed25519-dalek = "2.2"
+getrandom = "0.3"
+# The client: HTTPS (rustls with ring, Mozilla's roots: a `*.ts.net` or
+# any public certificate) to the service; blocking, so a mount layer's
+# `read` can fetch a missing record. Builds on Linux and Windows (no
+# system TLS library).
+ureq = { version = "3.5", default-features = false, features = ["rustls"] }
+# The dev server's HTTP/1.1 listener (plain HTTP on localhost; Tailscale
+# serve or a reverse proxy adds HTTPS in front). Small and blocking.
+tiny_http = "0.12"
 
-# The store's command line: status, verify, gc (login and fetch come with
-# M2). A tool: not in releases.
+# TCP_NODELAY on the server's listening socket (accepted connections
+# inherit it): without it a record's last segment waits for the client's
+# delayed ACK, ~25 ms a request.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Networking_WinSock"] }
+
+# The store's command line: status, verify, gc, and the service's client
+# side (login, fetch, lock). A tool: not in releases.
 [[bin]]
 name = "chimera_assets"
 path = "src/bin/chimera_assets.rs"
+test = false
+
+# The dev server (docs/plans/active/asset-service.md, section 5): serves a
+# store to accounts with tokens. A host tool: not in releases.
+[[bin]]
+name = "chimera_asset_server"
+path = "src/bin/chimera_asset_server.rs"
 test = false
 
 # Integration tests as one binary (tests/it/): stores built from our own

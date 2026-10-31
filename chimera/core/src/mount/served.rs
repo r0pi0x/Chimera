@@ -15,7 +15,10 @@
 //! so far, not a whole install. `CHIMERA_VFS_LOG=<file>` wraps every layer
 //! in a `Recording`: each file read is logged with its game, size and
 //! hash (`chimera_assets::recording`), which is how `chimera_pack` gets a
-//! set.
+//! set. With an asset service set (`[assets] url` and `token`), a
+//! manifest the store lacks is fetched from it when the store serves a
+//! game alone (`AssetSettings::build`), and every `CachedFiles` fetches
+//! the records the store lacks on demand (`AssetSettings::fetcher`).
 
 use std::{io, path::Path};
 
@@ -58,11 +61,15 @@ pub fn open_with(
     open_install: fn(&Path) -> io::Result<Mount>,
 ) -> io::Result<Mount> {
     let cached = |build: &str| -> io::Result<Option<CachedFiles>> {
-        let Some(store) = assets.store.as_ref() else { return Ok(None) };
+        let Some(store) = assets.store.as_ref() else {
+            return Ok(None);
+        };
         if !store.manifest_path(game, build).is_file() {
             return Ok(None);
         }
-        CachedFiles::open(store, game, build).map(Some).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        CachedFiles::open(store, game, build)
+            .map(|c| Some(c.with_fetcher(assets.fetcher())))
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     };
     if alone_with(assets, game, install) {
         let cached = match assets.build(game) {
@@ -97,12 +104,20 @@ fn under_install(
     install: &Path,
     cached: &dyn Fn(&str) -> io::Result<Option<CachedFiles>>,
 ) -> io::Result<Option<CachedFiles>> {
-    let Some(store) = assets.store.as_ref() else { return Ok(None) };
+    let Some(store) = assets.store.as_ref() else {
+        return Ok(None);
+    };
     // The Steam app is in the store's manifests (every build of a game is
     // of the same app).
-    let Some(newest) = store.latest_build(game) else { return Ok(None) };
-    let Some(app) = cached(&newest)?.and_then(|c| c.index().app) else { return Ok(None) };
-    let Some(build) = install_build_id(install, app) else { return Ok(None) };
+    let Some(newest) = store.latest_build(game) else {
+        return Ok(None);
+    };
+    let Some(app) = cached(&newest)?.and_then(|c| c.index().app) else {
+        return Ok(None);
+    };
+    let Some(build) = install_build_id(install, app) else {
+        return Ok(None);
+    };
     if assets.builds.get(game).is_some_and(|pinned| *pinned != build) {
         return Ok(None);
     }
@@ -185,6 +200,8 @@ mod tests {
             store: Some(store.clone()),
             use_install,
             builds: pinned.map(|b| (GAME.to_string(), b.to_string())).into_iter().collect(),
+            remote: None,
+            lock: None,
         }
     }
 

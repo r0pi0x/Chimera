@@ -16,19 +16,34 @@
 //! repo. Keys never reach it: Combat Arms' files are stored decrypted by
 //! the host's packer.
 //!
-//! Known shortcuts: a read of a record that isn't in the store fails (no fetcher
-//! until M2); `verify` and `gc` read the whole store single-threaded.
+//! The asset service (M2): `server` serves a store over HTTP to the
+//! accounts `accounts` knows (an `Authenticator` per account kind;
+//! internal accounts for now), with manifests signed by the server's key
+//! (`sign`); `remote` is its client, which fetches manifests and, as a
+//! `Fetcher` behind `CachedFiles`, missing records on demand, checked
+//! before they are stored; `lock` is the repository's `assets.lock`.
+//!
+//! Known shortcuts: `verify` and `gc` read the whole store single-threaded; an
+//! on-demand fetch is one request per record (a set is fetched in batches
+//! only by `chimera_assets fetch`); no cache cap.
 
+pub mod accounts;
 pub mod cached;
 pub mod config;
+pub mod lock;
 pub mod manifest;
 pub mod pack;
 pub mod recording;
+pub mod remote;
+pub mod server;
+pub mod sign;
 pub mod store;
 
 pub use cached::CachedFiles;
 pub use config::{AssetSettings, AssetsConfig};
+pub use lock::AssetsLock;
 pub use manifest::{FileRecord, Manifest};
 pub use pack::{PackReport, pack};
 pub use recording::{LogLine, Recorder, Recording, read_log};
+pub use remote::{Fetcher, Remote, RemoteConfig};
 pub use store::{Store, sha256_hex};

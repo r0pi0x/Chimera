@@ -36,3 +36,13 @@ path = "~/games/combat-arms-classic"
 # The build to mount per game when served alone (default: the newest in
 # the store); under an install only the install's build is mounted.
 # builds = { cs_source = "25338318" }
+# The asset service (docs/plans/active/asset-service.md): files the store
+# lacks are fetched from it on demand (no install needed). The server's
+# admin gives you a token (`chimera_pack user add <name>`);
+# `chimera_assets login <url> <token>` checks it and prints these lines.
+# Over the environment: CHIMERA_ASSET_URL, CHIMERA_ASSET_TOKEN.
+# url = "https://<the server's name>"
+# token = "chimera1_..."
+# The server's public key (pinned; without it, the key the server names
+# over HTTPS is trusted).
+# key = "..."
