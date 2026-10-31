@@ -26,6 +26,7 @@ mod kill_feed;
 mod kill_icons;
 mod last_shot;
 mod listen_server;
+mod main_menu;
 mod net_gun_game;
 mod party_music;
 mod persist;

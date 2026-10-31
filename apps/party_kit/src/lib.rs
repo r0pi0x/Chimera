@@ -71,6 +71,9 @@
 //!
 //! - The host's settings and the vote to skip the map (`host`): the
 //!   Escape menu's server side (`esc_menu`, with `present`).
+//! - The main menu (`main_menu`, with `present`): Ultimate Gun Game starts
+//!   at it (`client_app_at_menu`) unless the command line plays; Lucker
+//!   Party doesn't use it.
 //!
 //! - A gun game's rung extras (`chimera_sim::minigame::ladder::RungExtras`:
 //!   Combat Arms' rungs' fitted parts, character and melee weapon and CS:S's rungs' player model,
@@ -518,9 +521,14 @@ pub mod controls;
 #[cfg(feature = "present")]
 pub mod esc_menu;
 #[cfg(feature = "present")]
+pub mod main_menu;
+#[cfg(feature = "present")]
 mod client;
 #[cfg(feature = "present")]
-pub use client::{ClientPlugin, PartyHudPlugin, PartyMousePlugin, client_app, client_hooks, joins_server, with_defaults, with_defaults_for, with_huds};
+pub use client::{
+    ClientPlugin, PartyHudPlugin, PartyMousePlugin, client_app, client_app_at_menu, client_hooks, joins_server, with_defaults,
+    with_defaults_for, with_huds,
+};
 
 #[cfg(test)]
 mod tests {

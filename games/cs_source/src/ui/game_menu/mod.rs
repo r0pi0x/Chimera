@@ -167,7 +167,7 @@ use super::options::{Place, SETTINGS, SettingKind, TABS, Tab, VALUE_ENTRIES};
 use crate::client::{
     binds,
     fonts::UiFonts,
-    front_end::{FrontEnd, FrontEndSync, MenuStatus},
+    front_end::{FrontEndSync, MenuStatus},
     widgets::{
         self, ButtonState as Btn, Caret, ComboEvent, ComboKey, ComboList, Edit, FrameSpec, SliderDrag, SliderOwner,
         SliderTrack, WindowId, Windows,
@@ -232,13 +232,17 @@ impl Plugin for GameMenuPlugin {
             .add_systems(First, sync_status.in_set(FrontEndSync))
             .add_systems(Update, sync_status.in_set(FrontEndSync).after(MenuSystems))
             .add_systems(PostUpdate, sync_status.in_set(FrontEndSync));
-        FrontEnd::register(app, |f| {
-            f.entered_game = entered_game;
-            f.left_game = left_game;
-            f.joining = joining;
-            f.show_failure = show_failure;
-            f.map_load_failed = map_load_failed;
-        });
+        {
+            use crate::client::front_end::{self as fe, on_world};
+            app.add_observer(on_world::<fe::EnteredGame>(entered_game))
+                .add_observer(on_world::<fe::LeftGame>(left_game))
+                .add_observer(|j: On<fe::Joining>, mut c: Commands| {
+                    let label = j.label.clone();
+                    c.queue(move |w: &mut World| joining(w, &label));
+                })
+                .add_observer(on_world::<fe::JoinFailed>(show_failure))
+                .add_observer(on_world::<fe::MapLoadFailed>(map_load_failed));
+        }
         crate::console::resource_cvar::<LoadingDetails, u8>(
             app,
             "chimera_loading_details",

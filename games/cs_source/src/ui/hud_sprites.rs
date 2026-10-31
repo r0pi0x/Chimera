@@ -73,11 +73,13 @@ pub fn ammo_icon(weapon: &str) -> Option<&'static str> {
 pub use crate::client::hud::additive_as_alpha;
 
 fn build(
-    hud: Res<ActiveHud>,
+    hud: Option<Res<ActiveHud>>,
     old: Query<Entity, With<SpritePart>>,
     mut images: ResMut<Assets<Image>>,
     mut commands: Commands,
 ) {
+    // Gone mid-frame (the map unloaded: back to the menu).
+    let Some(hud) = hud else { return };
     for e in &old {
         commands.entity(e).despawn();
     }
@@ -247,7 +249,7 @@ fn sides(dir: Vec3, yaw: f32) -> Vec<usize> {
 
 #[allow(clippy::type_complexity)]
 fn update(
-    hud: Res<ActiveHud>,
+    hud: Option<Res<ActiveHud>>,
     windows: Query<&Window>,
     player: Option<Single<(Option<&Inventory>, Has<Dead>), With<LocalPlayer>>>,
     weapons: Query<&Weapon>,
@@ -265,6 +267,8 @@ fn update(
     mut materials: ResMut<Assets<HudGlyphMaterial>>,
     mut commands: Commands,
 ) {
+    // Gone mid-frame (the map unloaded: back to the menu).
+    let Some(hud) = hud else { return };
     let Some(window) = windows.iter().next() else { return };
     let (w, h) = (window.width(), window.height());
     let scale = h / 480.0;

@@ -387,7 +387,7 @@ struct SelectPart(usize);
 /// Draw the row and the history: one entity per drawn part, reused.
 #[allow(clippy::too_many_arguments)]
 fn draw(
-    hud: Res<ActiveHud>,
+    hud: Option<Res<ActiveHud>>,
     fonts: Res<UiFonts>,
     menu: Res<WeaponMenu>,
     times: Res<WeaponMenuTimes>,
@@ -404,6 +404,8 @@ fn draw(
     )>,
     mut commands: Commands,
 ) {
+    // Gone mid-frame (the map unloaded: back to the menu).
+    let Some(hud) = hud else { return };
     let Some(window) = windows.iter().next() else { return };
     let (w, h) = (window.width(), window.height());
     let font = |name: &str| fonts.hud_font(name, h);

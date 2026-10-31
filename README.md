@@ -157,9 +157,11 @@ cargo run --release -p lucker_party -- --map combat_arms:warehouse
 
 Ultimate Gun Game: the ladder is built from every game's guns (seeded,
 spread across the games), the map pool from every game's maps; each gun
-makes you its game. `cargo run --release -p ultimate_gun_game` (its server:
-`-p ultimate_gun_game_server`; `ugg_new <seed>` on the console deals a new
-ladder).
+makes you its game. `cargo run --release -p ultimate_gun_game` starts at
+its main menu: Play hosts a game others can join (bots fill it), Join
+connects to an address (its server: `-p ultimate_gun_game_server`;
+`--map`, `+minigame` or `+connect` on the command line skip the menu;
+`ugg_new <seed>` on the console deals a new ladder).
 
 ### Play the gun game with friends
 

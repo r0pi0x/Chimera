@@ -338,8 +338,9 @@ measurements):
     buy, team, radio and spectator menus, the freeze cam panel
     (`freeze_cam`), `objectives_hud`, `bomb_fx`,
     `target_id`, `scoreboard`, `window_icon`. The shell reaches them
-    through `client::front_end`: `FrontEnd` hooks (entered/left a game,
-    joining, a failure, a failed map load, starting a game) and the state
+    through `client::front_end`: triggered events each front end observes
+    (`EnteredGame`, `LeftGame`, `Joining`, `JoinFailed`, `MapLoadFailed`,
+    `StartGame`) and the state
     it reads, `MenuStatus` and `Panels`, which the menus copy in
     `FrontEndSync` (First, Update after their systems, PostUpdate; the
     shell's readers saw the menus' resources directly before, so a

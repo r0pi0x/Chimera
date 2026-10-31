@@ -24,7 +24,16 @@
 //! - **Vote to skip the map** (`party_skipmap`, `host::SKIP_ISSUE`): on
 //!   everyone's menu; while a vote runs the menu shows it with Yes and No.
 //!   A refused call says why (a vote running, the caller's wait).
+//! - **Disconnect** (only in an app with the main menu, `main_menu`):
+//!   `disconnect`, back to the menu; a host with people connected is
+//!   asked first ("End the game for 2 players?", `Page::
+//!   ConfirmDisconnect`), and its clients are told the host left.
 //! - **Quit.**
+//!
+//! The entries and their order are data (data/main_menu.toml
+//! `[[escape]]`, `when` gating the host's and the main menu's). While the
+//! main menu shows (out of a game) Esc is the main menu's and this menu
+//! stays shut; `AppMenu::open` then counts the main menu too.
 //!
 //! The vote panel (`VotePanel`): while a vote runs, everyone sees a
 //! small panel ("Ann wants to skip the map", F1 yes / F2 no, the counts,
@@ -34,10 +43,10 @@
 //! `EscMenu` is the state (headless too: tests drive it by keys and by
 //! `EscMenuAction`s); drawing is Bevy UI, rebuilt when what it shows
 //! changes, in the party's panel look (the Controls page's colours).
-//! `escmenu [options|host]` (console) toggles it, for screenshots.
+//! `escmenu [options|host]` (console) toggles it and `escmenu_press
+//! <entry>` presses one, for screenshots.
 //!
-//! Known shortcuts: no Disconnect (needs a main menu); options are the
-//! data file's cvars only (each game's full options are in its own
+//! Known shortcuts: options are the data file's cvars only (each game's full options are in its own
 //! menus); no keyboard navigation of the entries.
 
 use std::collections::BTreeMap;
@@ -86,6 +95,9 @@ pub enum Page {
     /// The options' tab.
     Options(usize),
     Host,
+    /// A host's Disconnect asks first: it ends the game for the others
+    /// (how many people are connected).
+    ConfirmDisconnect(usize),
 }
 
 /// The menu's title: the app's name (`client_app`'s).
@@ -137,6 +149,11 @@ pub enum Action {
     SkipMap,
     VoteYes,
     VoteNo,
+    /// Leave the game for the main menu (`disconnect`; a host with people
+    /// connected is asked first).
+    Disconnect,
+    /// The confirm's Yes.
+    DisconnectYes,
     Quit,
 }
 
@@ -146,7 +163,7 @@ pub type EscMenuAction = Action;
 /// The settings a page shows (none on the first).
 pub fn page_settings(page: Page) -> Vec<Setting> {
     match page {
-        Page::Main => Vec::new(),
+        Page::Main | Page::ConfirmDisconnect(_) => Vec::new(),
         Page::Host => host::settings(),
         Page::Options(t) => option_tabs().into_iter().nth(t).map(|(_, s)| s).unwrap_or_default(),
     }
@@ -185,6 +202,25 @@ impl Plugin for EscMenuPlugin {
                 m.page = page;
                 Ok(None)
             })
+            .console_command(
+                "escmenu_press",
+                "escmenu_press <resume|options|host|disconnect|confirm|back|quit>: press that entry of the open \
+                 Escape menu (screenshots and tests).",
+                |w, a| {
+                    let action = match a.first().map(String::as_str) {
+                        Some("resume") => Action::Resume,
+                        Some("options") => Action::Options,
+                        Some("host") => Action::Host,
+                        Some("disconnect") => Action::Disconnect,
+                        Some("confirm") => Action::DisconnectYes,
+                        Some("back") => Action::Back,
+                        Some("quit") => Action::Quit,
+                        other => return Err(format!("no entry {other:?}")),
+                    };
+                    w.write_message(action);
+                    Ok(None)
+                },
+            )
             .add_systems(
                 Update,
                 (toggle, clicks, act, refresh_values, sync, show, show_vote)
@@ -202,10 +238,18 @@ fn toggle(
     console: Option<Res<chimera_client::client::console::ConsoleUi>>,
     chat: Option<Res<chimera_client::client::chat::ChatInput>>,
     controls: Option<Res<crate::controls::ControlsPage>>,
+    main_menu: Option<Res<crate::main_menu::PartyMenu>>,
     mut menu: ResMut<EscMenu>,
     mut console_cmds: Option<ResMut<Console>>,
 ) {
     if !keys.just_pressed(KeyCode::Escape) {
+        return;
+    }
+    // Out of a game the main menu has Esc.
+    if main_menu.is_some_and(|m| m.shown()) {
+        if menu.open {
+            menu.set_open(false);
+        }
         return;
     }
     if console.is_some_and(|c| c.open) || chat.is_some_and(|c| c.open.is_some()) || controls.is_some_and(|c| c.open) {
@@ -306,11 +350,31 @@ fn act_one(world: &mut World, action: Action) {
                 world.resource_mut::<EscMenu>().dirty = true;
             }
         }
+        Action::Disconnect => {
+            let people = people_connected(world);
+            if people > 0 && host::is_host(world) {
+                world.resource_mut::<EscMenu>().page = Page::ConfirmDisconnect(people);
+            } else {
+                leave(world);
+                world.resource_mut::<EscMenu>().set_open(false);
+                submit(world, "disconnect");
+            }
+        }
+        Action::DisconnectYes => {
+            leave(world);
+            world.resource_mut::<EscMenu>().set_open(false);
+            submit(world, "disconnect");
+        }
         Action::SkipMap => submit(world, "party_skipmap"),
         Action::VoteYes => submit(world, "vote option1"),
         Action::VoteNo => submit(world, "vote option2"),
         Action::Quit => submit(world, "quit"),
     }
+}
+
+/// The people connected to this host's server (not bots, not the host).
+pub fn people_connected(world: &mut World) -> usize {
+    world.query::<&chimera_net::net::server::Player>().iter(world).count()
 }
 
 /// While open, the values of the settings it shows; a refused vote call's
@@ -351,8 +415,10 @@ pub fn refusal_text(r: &CallRefusal) -> String {
 
 /// `AppMenu` as the menu is; the mouse freed on opening and taken back on
 /// closing; every key pressed while open captured.
+#[allow(clippy::too_many_arguments)]
 fn sync(
     menu: Res<EscMenu>,
+    main_menu: Option<Res<crate::main_menu::PartyMenu>>,
     controls: Option<Res<crate::controls::ControlsPage>>,
     console: Option<Res<chimera_client::client::console::ConsoleUi>>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -360,17 +426,18 @@ fn sync(
     mut captured: ResMut<CapturedKeys>,
     mut cursor: Query<&mut CursorOptions>,
 ) {
-    if app_menu.open != menu.open {
-        app_menu.open = menu.open;
+    let open = menu.open || main_menu.is_some_and(|m| m.shown());
+    if app_menu.open != open {
+        app_menu.open = open;
         for mut c in &mut cursor {
-            if menu.open {
+            if open {
                 release_cursor(&mut c);
             } else if !console.as_ref().is_some_and(|c| c.open) && !controls.as_ref().is_some_and(|c| c.open) {
                 capture_cursor(&mut c);
             }
         }
     }
-    if menu.open {
+    if open {
         for k in keys.get_pressed() {
             if !captured.holds(*k) {
                 captured.capture(*k);
@@ -388,6 +455,8 @@ struct Shown {
     vote: Option<(u32, u32, u32, Option<u8>, bool)>,
     host: bool,
     title: String,
+    /// The app has the main menu (Disconnect shows).
+    main_menu: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -396,6 +465,7 @@ fn show(
     title: Res<EscMenuTitle>,
     vote: Option<Res<VoteView>>,
     role: Option<Res<chimera_core::core::NetRole>>,
+    main_menu: Option<Res<crate::main_menu::PartyMenu>>,
     root: Query<Entity, With<MenuRoot>>,
     mut shown: Local<Option<Shown>>,
     mut commands: Commands,
@@ -416,6 +486,7 @@ fn show(
         vote: active.as_ref().map(|v| (v.id, v.yes, v.no, v.mine, v.may_vote)),
         host: role.as_deref().is_none_or(|r| *r != chimera_core::core::NetRole::Client),
         title: title.0.clone(),
+        main_menu: main_menu.is_some(),
     };
     if shown.as_ref() == Some(&now) {
         return;
@@ -498,6 +569,7 @@ fn spawn_menu(commands: &mut Commands, menu: &EscMenu, shown: &Shown, vote: Opti
                     Page::Main => main_page(panel, shown, vote),
                     Page::Options(tab) => options_page(panel, menu, tab),
                     Page::Host => host_page(panel, menu),
+                    Page::ConfirmDisconnect(n) => confirm_page(panel, n),
                 }
                 if let Some(n) = &menu.notice {
                     panel.spawn((Node { margin: UiRect::top(px(8.0)), ..default() }, children![text(n.clone(), 15.0, ACCENT)]));
@@ -509,11 +581,34 @@ fn spawn_menu(commands: &mut Commands, menu: &EscMenu, shown: &Shown, vote: Opti
 fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chimera_net::net::vote::VoteState>) {
     panel.spawn((Node { margin: UiRect::bottom(px(8.0)), ..default() }, children![text("Paused for you only: the match goes on", 13.0, DIM)]));
     const WIDE: f32 = 320.0;
-    panel.spawn(button("Resume", Action::Resume, BUTTON, WIDE));
-    panel.spawn(button("Options", Action::Options, BUTTON, WIDE));
-    if shown.host {
-        panel.spawn(button("Host settings", Action::Host, BUTTON, WIDE));
+    for e in crate::main_menu::MenuData::shipped().escape {
+        let visible = match e.when {
+            crate::main_menu::When::Always => true,
+            crate::main_menu::When::Host => shown.host,
+            crate::main_menu::When::MainMenu => shown.main_menu,
+        };
+        if !visible {
+            continue;
+        }
+        use crate::main_menu::EscDoes;
+        let action = match e.does {
+            EscDoes::Resume => Action::Resume,
+            EscDoes::Options => Action::Options,
+            EscDoes::Host => Action::Host,
+            EscDoes::Disconnect => Action::Disconnect,
+            EscDoes::Quit => Action::Quit,
+            EscDoes::Vote => {
+                vote_rows(panel, vote, &e.label, WIDE);
+                continue;
+            }
+        };
+        panel.spawn(button(e.label, action, BUTTON, WIDE));
     }
+}
+
+/// The vote's lines and buttons while one runs, else the button that calls
+/// the skip vote.
+fn vote_rows(panel: &mut ChildSpawnerCommands, vote: Option<&chimera_net::net::vote::VoteState>, label: &str, wide: f32) {
     match vote {
         Some(v) => {
             panel.spawn((Node { margin: UiRect::top(px(6.0)), ..default() }, children![text(vote_title(v), 15.0, TEXT)]));
@@ -530,10 +625,28 @@ fn main_page(panel: &mut ChildSpawnerCommands, shown: &Shown, vote: Option<&chim
             }
         }
         None => {
-            panel.spawn(button("Vote to skip the map", Action::SkipMap, BUTTON, WIDE));
+            panel.spawn(button(label.to_string(), Action::SkipMap, BUTTON, wide));
         }
     }
-    panel.spawn(button("Quit", Action::Quit, BUTTON, WIDE));
+}
+
+/// A host's Disconnect: it ends the game for the people connected.
+fn confirm_page(panel: &mut ChildSpawnerCommands, people: usize) {
+    let who = if people == 1 { "1 player".to_string() } else { format!("{people} players") };
+    panel.spawn((
+        Node { margin: UiRect::vertical(px(8.0)), ..default() },
+        children![text(format!("End the game for {who}?"), 17.0, TEXT)],
+    ));
+    panel.spawn((
+        Node { margin: UiRect::bottom(px(8.0)), ..default() },
+        children![text("You are the host: leaving closes the server.", 13.0, DIM)],
+    ));
+    panel
+        .spawn(Node { flex_direction: FlexDirection::Row, ..default() })
+        .with_children(|row| {
+            row.spawn(button("End the game", Action::DisconnectYes, ACTIVE, 154.0));
+            row.spawn(button("Stay", Action::Back, BUTTON, 154.0));
+        });
 }
 
 fn setting_row(panel: &mut ChildSpawnerCommands, s: &Setting, index: usize, on_host: bool, value: &str) {

@@ -65,11 +65,6 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
         "a tool: the debug window's game rows",
     ),
     (
-        "chimera/client/src/client/front_end.rs",
-        "FrontEnd",
-        "the shell's one-off transitions to the menus",
-    ),
-    (
         "chimera/client/src/client/mod.rs",
         "AppHooks",
         "the app's map loading and greybox",
@@ -256,6 +251,7 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ),
     ("apps/party_kit/src/controls.rs", "a menu"),
     ("apps/party_kit/src/esc_menu.rs", "a menu"),
+    ("apps/party_kit/src/main_menu.rs", "a menu: its clicks as console lines and cvars, the map loads it follows"),
     ("apps/party_kit/src/server.rs", "the server's level and state changes"),
     ("chimera/client/src/client/console.rs", "the console and map loading"),
     ("chimera/client/src/client/debug_ui.rs", "a tool"),

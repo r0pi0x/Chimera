@@ -35,6 +35,9 @@
 //! the client's state here is plain data, and only `ui::music` decodes
 //! and plays.
 //!
+//! An app's own menu (`AppMenuShown`: the party apps' main menu) is a
+//! menu screen: the playlist plays behind it.
+//!
 //! Debugging (docs/OBSERVABILITY.md): `ca_music` shows the player, the
 //! playlist, the current screen and the last interface sounds;
 //! `ca_ambient` lists the map's sounds and the gain at the player.
@@ -171,8 +174,24 @@ fn advance_clock(time: Res<Time<Real>>, mut clock: ResMut<MusicClock>) {
     }
 }
 
+/// An app's own menu shows over the game (the party apps' main menu,
+/// `party_kit::main_menu`): the music is the menu's (the playlist), as
+/// at Combat Arms' own lobby screens, whatever map is behind it.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AppMenuShown;
+
 /// The facts of this frame (the client's view of the match).
 fn gather(world: &mut World) {
+    if world.contains_resource::<AppMenuShown>() {
+        let facts = MusicFacts {
+            screen: Screen::Menu,
+            ..default()
+        };
+        if *world.resource::<MusicFacts>() != facts {
+            world.insert_resource(facts);
+        }
+        return;
+    }
     let loading = world.resource::<MusicLoading>().0;
     // A party match (a minigame plays): its moments, Section 10.
     if let Some(party) = world

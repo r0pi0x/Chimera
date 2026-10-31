@@ -1,7 +1,8 @@
 # Plan: the party apps' main menu
 
-Status: proposed 2026-10-30, decided 2026-10-31 (section 10), not
-started; Ultimate Gun Game only while Lucker Party is shelved. Backlog: "A main menu for
+Status: proposed 2026-10-30, decided 2026-10-31 (section 10); **M1 done
+2026-10-31** (section 11); Ultimate Gun Game only while Lucker Party is
+shelved. Backlog: "A main menu for
 Ultimate Gun Game (and the other party apps)". Comes after the asset
 service's M1 and the ECS cleanup (backlog roadmap, "Order").
 
@@ -281,3 +282,43 @@ different design is fine where copying makes no sense.
 
 Order: the asset service's M2 (the dev server with internal accounts)
 comes first, then this plan's M1.
+
+## 11. M1 as built (2026-10-31)
+
+- **Front-end events** (step 1): `chimera_client::client::front_end`'s
+  six hooks are triggered events (`EnteredGame`, `LeftGame`, `Joining`,
+  `JoinFailed`, `MapLoadFailed`, `StartGame`); CS:S's game menu and join
+  menus and Combat Arms' loading screen observe them; `FrontEnd` is off
+  the callback registries list.
+- **`party_kit::main_menu`**: Ultimate Gun Game starts at it unless the
+  command line plays (`starts_at_menu`; `client_app_at_menu`). It copies
+  CS:S's main menu with Chimera's VGUI widgets in the GameUI look of
+  CS:S's install: entries at the bottom left under the app's name (text;
+  CS:S's title font has only its logo's letters, so the scheme's menu
+  font), Play (CS:S's Create Server's place: Server and Game tabs),
+  Join, Options (the Escape menu's tabs, Binds), Quit, CS:S's loading
+  dialog and "Disconnected" box. Not CS:S's game menu itself: it is
+  CS:S's front end, with CS:S's Create Server (its maps, its bots), its
+  options and its server browser; the party's code draws the same parts.
+  Steppers stand in for combo boxes for now.
+- Data: data/main_menu.toml (`[[entry]]`, `[[escape]]` for the Escape
+  menu, `[[play]]` rows, `[background]`).
+- Background: the first `[background]` map that loads, the camera on an
+  orbit around its spawns' middle (`FreeCam` 2); the HUD hidden by
+  drawing the menu on its own UI camera while the shell's (the HUD's) is
+  off. Music: Combat Arms' menu playlist (`AppMenuShown`), silent without
+  the install. Combat Arms' own loading screen for its maps, the party's
+  panel for the others.
+- Escape menu: Disconnect (data-gated to apps with the main menu), a
+  host with people connected confirms; clients are told "The host left
+  the game." (`net::client::HOST_LEFT`, from the hang-up of a server
+  that had a host's player).
+- Tests: apps/party_kit/tests/it/main_menu.rs (startup, data, Play's
+  lines and game, a pool map, Cancel while loading and joining, Join in
+  game, a refused and a full join, Disconnect, a host's Disconnect with
+  "host left", Combat Arms' loading kept to its maps). Screenshots: the
+  playtest skill, two instances on loopback.
+- Left for later: combo boxes and check boxes as CS:S draws them; bots
+  that make room for joining people; the background after leaving keeps
+  the last minigame's rules; the camera's orbit can clip props and see
+  past a map's edge; the "New ladder" seed line on Play; M2 and M3.
