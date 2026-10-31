@@ -43,7 +43,7 @@ CS:S, 26236938 of Combat Arms, measured 2026-10-31):
 
 | | CS:S | Combat Arms |
 |---|---|---|
-| every file the game mounts (`fetch <game>`) | 47,692 records, 4.4 GB (7.5 GB plain) | 29,431 records, 3.8 GB (9.8 GB plain; music included) |
+| every file the game mounts (`fetch <game>`; CS:S: with the publisher's content cache, 89 community maps) | 47,692 records, 4.4 GB (7.5 GB plain) | 29,431 records, 3.8 GB (9.8 GB plain; music included) |
 | `base` (menus, fonts, UI sounds) | 1.5 MB | 9.7 MB |
 | `map/de_dust2`, `map/warehouse` (a client's load, HUD and kit included) | 143 MB | 93 MB |
 | `weapon/<id>` (view and world models, materials, sounds; CA: view models with hands and parts) | 29 sets, 0.7-1.9 MB each, 21 MB together | 2,363 sets, 0.4-20 MB each, 850 MB together |
@@ -95,13 +95,16 @@ and `chimera_assets lock` writes the server's newest builds into
 
 ## What still needs an install
 
-Everything that reads the game through its mount runs from the service.
-A few checks examine the install itself and skip with a note:
-`lithtech_formats`' archive tests (`.rez` files and their keys), the CS:S
-mount's own VPK and layer checks, Combat Arms' `BGM.rez`, the
-`heavy::served` tests (they pack from an install), `dump`. Maps in
-Chimera's content cache (community maps fetched from servers) and local
-demo or probe files aren't served either: those tests skip as before.
+Everything that reads the game through its mount runs from the service,
+the community maps the heavy tests load included (they are in the CS:S
+mount on the publishing machine, from its content cache, so a whole
+publish carries them). A few checks examine the install itself and skip
+with a note: `lithtech_formats`' archive tests (`.rez` files and their
+keys: the format crate reads archives, not the mount), the CS:S mount's
+own VPK and layer checks, Combat Arms' `BGM.rez`, `ATTRIBUTES.rez` and
+archive listings, the `heavy::served` tests (they pack from an install),
+`dump`. Local demo and probe files (`target/demos`, probe logs) aren't
+served either: those tests skip as they do for us without them.
 
 ## When something goes wrong
 

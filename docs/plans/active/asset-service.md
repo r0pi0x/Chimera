@@ -612,6 +612,10 @@ the same commit.
     ```
     cargo run --release --features tools --bin chimera_pack -- publish cs_source
     cargo run --release --features tools --bin chimera_pack -- publish combat_arms
+    cargo run --release --features tools --bin chimera_pack -- sets cs_source --store <server store> --sign
+    cargo run --release --features tools --bin chimera_pack -- sets combat_arms --store <server store> --sign
+    # base, map/<id>, heavy-tests from CHIMERA_VFS_LOG logs (AGENTS.md, "Game files from the asset store"):
+    cargo run --release --features tools --bin chimera_pack -- publish cs_source --from <log> --set base
     cargo run --release --features tools --bin chimera_pack -- user add <tester> --note <device>
     cargo run --release -p chimera_assets --bin chimera_asset_server    # 127.0.0.1:8731; prints the key
     tailscale serve --bg --https=443 http://127.0.0.1:8731
@@ -649,7 +653,7 @@ the same commit.
 
     | | CS:S (build 25338318) | Combat Arms (26236938) |
     |---|---|---|
-    | every file | 48,483 files, 47,692 records, 4,394 MB (7,347 plain) | 32,266 files, 29,431 records, 3,806 MB (9,348 plain) |
+    | every file (CS:S: with the publisher's content cache, 89 community maps, 2.6 GB plain) | 48,483 files, 47,692 records, 4,394 MB (7,347 plain) | 32,266 files, 29,431 records, 3,806 MB (9,348 plain) |
     | `base` (the app's main menu, `CHIMERA_VFS_LOG`) | 51 files, 1.5 MB | 1,790 files, 9.7 MB |
     | `map/de_dust2`, `map/warehouse` (the app on the map, HUD and kit) | 2,531 files, 142.7 MB | 2,428 files, 92.9 MB |
     | `weapon/<id>` (`chimera_pack sets`) | 29 sets, 0.7-1.9 MB, 21 MB together | 2,363 sets, 0.4-20 MB, 850 MB together |
@@ -699,6 +703,36 @@ the same commit.
     server on 127.0.0.1: see "Heavy tier with no install" below.
   - **Measuring and the server:** `chimera_asset_server --latency-ms`,
     `Service::with_latency`.
+  - **Heavy tier with no install (2026-10-31):** `cargo nextest run
+    --workspace --features dev` with `CHIMERA_CONFIG` holding only
+    `[assets] url/token`, an empty `CHIMERA_STEAM_ROOT`, an empty data
+    folder (no content cache), an empty asset cache, against
+    `chimera_asset_server` on 127.0.0.1 serving the whole publishes above:
+    4,662 tests, all pass, 1,072 s wall (the cache filled to 3.4 GB on
+    demand). Of the 584 heavy tests 534 ran from the service (community
+    maps included); 50 skip with a note: 36 `lithtech_formats` archive
+    tests (they open `.rez` files and keys by file name, below the
+    mount), 6 checks of Combat Arms' own archives (`BGM.rez`,
+    `ATTRIBUTES.rez`, the XML and language archives' listings, the
+    archive layers, keyless archives), 4 `heavy::served` (they pack from
+    an install), 4 that want local demo or probe files. Outside the heavy
+    tier 6 skip: the CS:S mount's own VPK and layer checks, `dump`, 3
+    sample-demo tests. Before this work, the same run had 256 tests
+    skipping (the install folder or keys asked for, community maps by
+    file) and 9 failing (tests reading the install's files by path).
+  - **Windows:** `chimera_assets` (all targets) and `chimera_core`,
+    `cs_source`, `combat_arms`, `chimera_pack` check for
+    `x86_64-pc-windows-gnu`. MSVC: nothing new; `ring` (rustls) needs the
+    MSVC C compiler (the Build Tools' `cl.exe`, as for the rest), the
+    TCP_NODELAY call goes through `windows-sys`' WinSock, and the live
+    progress line uses `\r` (works in Windows Terminal and conhost).
+  - **Left:** Combat Arms' `players` set (character models) and its
+    weapons' world models and sounds in `weapon/<id>`;
+    `lithtech_formats`' install tests read archives by path (they could
+    take the served mount through a test helper above the format crate);
+    a size cap for the cache; deployment (section "Deployment" above, plus
+    `chimera_pack sets <game> --sign` and the set publishes after
+    `publish <game>`); and what "Left" above lists.
 - **M3: mode 1, files from the game server.** The game server's
   sign-in listener and short tokens, `PlayerEntitlements`,
   `AssetRequest`/`AssetChunk` with `sv_asset_maxrate`; the client

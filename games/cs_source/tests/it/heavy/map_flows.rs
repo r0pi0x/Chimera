@@ -22,7 +22,7 @@ use crate::stack::{
         MapData, MapPlugin,
         entities::{engine_to_entity, entity_to_engine},
     },
-    mount::config::{LocalConfig, content_dir},
+    mount::config::LocalConfig,
     core::MovementState,
     rules::rounds::{Phase, RoundState},
     weapon::{Inventory, Weapon},
@@ -36,7 +36,7 @@ pub(super) fn load(name: &str) -> Option<MapData> {
         .ok()
         .and_then(|c| c.game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref()))
         .is_some_and(|p| chimera_core::mount::served::usable("cs_source", p, "cstrike"));
-    let cached = content_dir(cs_source::GAME).is_some_and(|d| d.join("maps").join(format!("{name}.bsp")).is_file());
+    let cached = ::cs_source::game::INFO.mount().is_some_and(|m| m.contains(&format!("maps/{name}.bsp")));
     if !installed || !cached {
         eprintln!("skipping: {name} not in the content cache (or no install)");
         return None;

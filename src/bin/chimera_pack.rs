@@ -9,8 +9,10 @@
 //! and enters it in the manifest of the install's build
 //! (`manifests/<game>/<build>.txt`). With `--from`, only the files of that
 //! game in a `CHIMERA_VFS_LOG` log, entered as set `<name>` too; without,
-//! every file the mount shows, and the manifest is marked `complete` (a
-//! whole install: served alone, it stands in for one), with the game's
+//! every file the mount shows (CS:S's includes the game's download
+//! folder and Chimera's content cache: the publisher's community maps go
+//! with it), and the manifest is marked `complete` (a whole install:
+//! served alone, it stands in for one), with the game's
 //! loose files outside its archives added (Combat Arms' music,
 //! `Game/BGM/`, as set `music`). Records already stored are skipped, so
 //! packing again or a new build stores only what changed. The store is

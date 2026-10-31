@@ -28,7 +28,7 @@ fn mount() -> Option<chimera_core::mount::Mount> {
 }
 
 fn has(key: &str) -> bool {
-    combat_arms::game::mount::keys().is_ok_and(|k| k.contains_key(key))
+    combat_arms::game::mount::can_read(key)
 }
 
 /// BATTLESHIP's flags (`FlagItem`, V2-keyed model) are placed with the

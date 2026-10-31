@@ -668,8 +668,7 @@ fn all_stock_maps_warnings() {
 #[test]
 fn packed_materials_resolve_case_insensitively() {
     let name = "mg_lego_multigames_v2";
-    let present = chimera_core::mount::config::content_dir(cs_source::GAME)
-        .is_some_and(|d| d.join("maps").join(format!("{name}.bsp")).is_file());
+    let present = ::cs_source::game::INFO.mount().is_some_and(|m| m.contains(&format!("maps/{name}.bsp")));
     if !installed() || !present {
         eprintln!("skipping: {name} not in the content cache");
         return;
