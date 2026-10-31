@@ -27,7 +27,12 @@ the user's go-ahead: no Actions runs unless asked.
 
 - **Order (user, 2026-10-30):** the asset service's first milestone (M1:
   per-file packer, local cache mount, recording what a load opens), then
-  the ECS cleanup, then the main menu. No PR test runner or CI for now;
+  the ECS cleanup, then the main menu. Update (user, 2026-10-31): the
+  asset service's M2 (dev server, internal accounts) before the main
+  menu; the menu is for Ultimate Gun Game only (decisions in
+  [plans/active/main-menu.md](plans/active/main-menu.md) section 10).
+  **Lucker Party is shelved for now:** no new work on it until the user
+  picks it up again. No PR test runner or CI for now;
   AGENTS.md asks contributors to test before merging (a guideline). A
   friend's test VM may come later.
 - **Console namespaces (user idea, 2026-10-30).** With several games in

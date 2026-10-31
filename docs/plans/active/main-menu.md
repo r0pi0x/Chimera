@@ -1,6 +1,7 @@
 # Plan: the party apps' main menu
 
-Status: proposed 2026-10-30, not started. Backlog: "A main menu for
+Status: proposed 2026-10-30, decided 2026-10-31 (section 10), not
+started; Ultimate Gun Game only while Lucker Party is shelved. Backlog: "A main menu for
 Ultimate Gun Game (and the other party apps)". Comes after the asset
 service's M1 and the ECS cleanup (backlog roadmap, "Order").
 
@@ -249,28 +250,28 @@ ones on `NetSim` in the lowest crate that has the pieces.
   expire on missed heartbeats, list); the Internet tab lists and joins
   one; a heavy test on the dev host if it runs there.
 
-## 10. Open questions for the user
+## 10. Decisions (user, 2026-10-31)
 
-1. **Background:** the greybox (what is loaded anyway), a static
-   picture, or a live scene (a party map with bots running, a slow
-   camera)? A live scene costs a map load at start.
-2. **Music** at the menu: none, the party playlist (`party_music`), or
-   one track? CS:S's install has no menu music; Combat Arms' has BGM.
-3. **LAN discovery in M1** or only direct connect first? (Recommended:
-   direct connect in M1, the browser in M2; the LAN scan is cheap since
-   it exists, but the lift of CS:S's model is the work.)
-4. **Branding:** a title logo or plain text? Title art for "Lucker
-   Party" and "Ultimate Gun Game" would be ours (drawn or commissioned).
-5. **Loading screen:** the party's own panel (proposed), or Combat Arms'
-   loading screen with its map pictures where the install has them?
-6. **Single player:** should Play with max players 1 still be the
-   default (bots only), or always open a listen server so friends can
-   join mid-match?
-7. **Lucker Party's minigame choice:** one minigame per game as now, or
-   a "party" playlist of minigames in M1? (A playlist is
-   `change_match`'s job; it may belong to Lucker Party's own plan.)
-8. **Master server host:** beside the asset dev server (one box, one
-   name), or separate?
-9. **Default launch:** after M1 a bare `lucker_party` opens the menu.
-   Should `scripts\playtest.ps1 lucker_party` keep going straight into
-   the gun game (pass `+minigame`), or open the menu too?
+Lucker Party is shelved for now: the menu is built for **Ultimate Gun
+Game only**. Lucker Party keeps starting straight into its minigame, and
+its playlist question and `playtest.ps1 lucker_party` wait until it is
+picked up again. Where this plan says "Lucker Party", read it as later.
+
+1. **Background:** a live map with a slow camera flight (the map load at
+   start is accepted).
+2. **Music:** the installed game's own menu music (Combat Arms' BGM),
+   silent when there is none.
+3. **LAN browser:** direct connect in M1, the browser in M2.
+4. **Branding:** a text title; a logo may replace it later.
+5. **Loading screen:** the game's own where it has one (Combat Arms'
+   loading screen with its map picture), the party panel otherwise.
+6. **Hosting default:** Play always opens a joinable listen server;
+   bots fill the empty slots.
+7. **Minigame choice:** shelved with Lucker Party (its answer was a
+   playlist).
+8. **Master server:** beside the asset dev server (one box over
+   Tailscale, the VPS together later).
+9. **Default launch:** shelved with Lucker Party.
+
+Order: the asset service's M2 (the dev server with internal accounts)
+comes first, then this plan's M1.
