@@ -19,8 +19,8 @@ fn installs() -> bool {
     let Ok(config) = LocalConfig::load() else { return false };
     let css = config
         .game_path_in(cs_source::game::GAME, cs_source::game::INFO.steam.as_ref())
-        .filter(|p| p.join("cstrike").is_dir());
-    let ca = config.game_path(combat_arms::game::GAME).filter(|p| p.join("Game").is_dir());
+        .filter(|p| chimera_core::mount::served::usable("cs_source", p, "cstrike"));
+    let ca = config.game_path(combat_arms::game::GAME).filter(|p| chimera_core::mount::served::usable("combat_arms", p, "Game"));
     css.is_some() && ca.is_some()
 }
 

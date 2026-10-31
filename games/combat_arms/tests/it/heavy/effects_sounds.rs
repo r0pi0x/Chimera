@@ -42,7 +42,7 @@ fn install() -> Option<std::path::PathBuf> {
         eprintln!("skipping: no Combat Arms install configured");
         return None;
     };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         eprintln!("skipping: no Combat Arms install at {}", install.display());
         return None;
     }
@@ -58,6 +58,10 @@ fn mount() -> Option<chimera_core::mount::Mount> {
 fn sound_and_effect_archives_read_without_keys() {
     let Some(install) = install() else { return };
     let game = install.join("Game");
+    if !game.is_dir() {
+        eprintln!("skipping: checks the install's own archives (served from the asset store here)");
+        return;
+    }
     let mut names: Vec<String> = std::fs::read_dir(&game)
         .unwrap()
         .flatten()

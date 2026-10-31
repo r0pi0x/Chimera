@@ -9,7 +9,8 @@
 //!
 //! With a service (`url` and `token`), a game's build is chosen as without
 //! one (`[assets] builds`, else `assets.lock`'s, else the newest), but a
-//! manifest the store lacks is fetched from the service (the newest
+//! manifest the store lacks, or keeps in another version than the one
+//! `assets.lock` pins, is fetched from the service (the newest
 //! there when nothing pins one), checked and kept; `fetcher` gets the
 //! records a `CachedFiles` lacks. A service that can't be reached or
 //! refuses is reported once per game and process, and the game is then
@@ -130,8 +131,14 @@ impl AssetSettings {
         let store = self.store.as_ref()?;
         let locked = self.lock.as_ref().and_then(|l| l.games.get(game));
         let pinned = self.builds.get(game).cloned().or_else(|| locked.map(|p| p.build.clone()));
+        // A kept manifest that isn't the one `assets.lock` pins is old: fetched again.
+        let stale = |b: &str| {
+            locked.filter(|p| p.build == b).is_some_and(|p| {
+                std::fs::read(store.manifest_path(game, b)).is_ok_and(|bytes| crate::sha256_hex(&bytes) != p.manifest)
+            })
+        };
         match pinned {
-            Some(b) if store.manifest_path(game, &b).is_file() => Some(b),
+            Some(b) if store.manifest_path(game, &b).is_file() && !(stale(&b) && self.remote.is_some()) => Some(b),
             Some(b) => {
                 let expect = locked.filter(|p| p.build == b).map(|p| p.manifest.clone());
                 let locked_id = expect.as_deref().map(|e| format!(", locked manifest {}", &e[..e.len().min(12)]));

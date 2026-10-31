@@ -26,7 +26,7 @@ fn load(female: bool) -> Option<Rig> {
         eprintln!("skipping: no Combat Arms install configured");
         return None;
     };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         eprintln!("skipping: no Combat Arms install at {}", install.display());
         return None;
     }
@@ -90,7 +90,7 @@ fn drawn_body_skins_in_its_frame() {
     use chimera_world::map::MapData;
     use combat_arms::game::characters::models;
     let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
     let mount = (INFO.open)(&install).unwrap();
@@ -295,7 +295,7 @@ fn t34_35_counts() {
 #[test]
 fn unkeyed_bodies_on_the_stock_skeletons() {
     let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
     let mount = (INFO.open)(&install).unwrap();
@@ -348,7 +348,7 @@ fn warehouse_players_wear_their_bodies() {
         harness::CaSim,
     };
     let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
     let mount = (INFO.open)(&install).unwrap();
@@ -392,11 +392,10 @@ fn default_bodies_wear_face_and_head() {
     use chimera_world::map::{MapAlpha, MapData};
     use combat_arms::game::characters::models;
     let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
-    let keys = combat_arms::game::mount::keys().unwrap_or_default();
-    if !(keys.contains_key("V1") && keys.contains_key("V2")) {
+    if !(combat_arms::game::mount::can_read("V1") && combat_arms::game::mount::can_read("V2")) {
         eprintln!("skipping: needs the V1 and V2 keys");
         return;
     }
@@ -528,7 +527,7 @@ fn held_weapons_point_forward() {
     use combat_arms::game::characters::models;
     use lithtech_formats::anim as lta;
     let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
     let mount = (INFO.open)(&install).unwrap();
@@ -591,7 +590,7 @@ fn bodies_draw_one_level_per_piece() {
     use chimera_world::map::MapData;
     use combat_arms::game::characters::models;
     let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
     let mount = (INFO.open)(&install).unwrap();
@@ -625,7 +624,7 @@ fn thrown_grenades_draw_their_projectile_model() {
     use chimera_world::map::MapData;
     use combat_arms::game::{characters::models, grenades};
     let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         return;
     }
     let mount = (INFO.open)(&install).unwrap();

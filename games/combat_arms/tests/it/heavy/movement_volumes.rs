@@ -27,7 +27,7 @@ fn mount() -> Option<Mount> {
         eprintln!("skipping: no Combat Arms install configured");
         return None;
     };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         eprintln!("skipping: no Combat Arms install at {}", install.display());
         return None;
     }
@@ -64,7 +64,7 @@ fn value(v: &Value) -> String {
 #[test]
 fn volume_census() {
     let Some(mount) = mount() else { return };
-    let keyed = combat_arms::game::mount::keys().is_ok_and(|k| k.contains_key("V2"));
+    let keyed = combat_arms::game::mount::can_read("V2");
     let mut per_class: std::collections::BTreeMap<String, Vec<String>> = Default::default();
     let mut read = 0;
     for name in world::map_names(&mount) {
@@ -373,7 +373,7 @@ fn twinhigh_jump_pad() {
 }
 
 fn keyed() -> bool {
-    let k = combat_arms::game::mount::keys().is_ok_and(|k| k.contains_key("V2"));
+    let k = combat_arms::game::mount::can_read("V2");
     if !k {
         eprintln!("skipping: no V2 key in chimera.local.toml");
     }

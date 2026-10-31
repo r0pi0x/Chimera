@@ -13,8 +13,12 @@ fn install_mounts_its_archives() {
         eprintln!("skipping: no Combat Arms install configured");
         return;
     };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         eprintln!("skipping: no Combat Arms install at {}", install.display());
+        return;
+    }
+    if !install.join("Game").is_dir() {
+        eprintln!("skipping: checks the install's own archives (served from the asset store here)");
         return;
     }
     let mount = (INFO.open)(&install).unwrap();
@@ -39,7 +43,7 @@ fn install_lists_its_maps_for_the_console() {
         eprintln!("skipping: no Combat Arms install configured");
         return;
     };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         eprintln!("skipping: no Combat Arms install at {}", install.display());
         return;
     }

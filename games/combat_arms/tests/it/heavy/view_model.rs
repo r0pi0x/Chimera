@@ -39,7 +39,7 @@ fn mount() -> Option<chimera_core::mount::Mount> {
         eprintln!("skipping: no Combat Arms install configured");
         return None;
     };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         eprintln!("skipping: no Combat Arms install at {}", install.display());
         return None;
     }
@@ -110,8 +110,7 @@ fn data_view_models_load_skinned() {
 #[test]
 fn keyed_view_models_with_hands() {
     let Some(mount) = mount() else { return };
-    let keys = combat_arms::game::mount::keys().unwrap();
-    if !(keys.contains_key("V1") && keys.contains_key("V2")) {
+    if !(combat_arms::game::mount::can_read("V1") && combat_arms::game::mount::can_read("V2")) {
         eprintln!("skipping: needs the V1 and V2 keys");
         return;
     }
@@ -392,8 +391,7 @@ fn m92fs_in_play() {
 #[test]
 fn m67_throw_poses_follow_the_data() {
     let Some(mount) = mount() else { return };
-    let keys = combat_arms::game::mount::keys().unwrap();
-    if !(keys.contains_key("V1") && keys.contains_key("V2")) {
+    if !(combat_arms::game::mount::can_read("V1") && combat_arms::game::mount::can_read("V2")) {
         eprintln!("skipping: needs the V1 and V2 keys");
         return;
     }

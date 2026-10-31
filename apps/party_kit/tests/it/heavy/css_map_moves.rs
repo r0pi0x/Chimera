@@ -27,10 +27,10 @@ fn party_on(id: &str) -> Option<Sim> {
     let config = LocalConfig::load().ok()?;
     let css = config
         .game_path_in(cs_source::game::GAME, cs_source::game::INFO.steam.as_ref())
-        .filter(|p| p.join("cstrike").is_dir());
+        .filter(|p| chimera_core::mount::served::usable("cs_source", p, "cstrike"));
     let ca = config
         .game_path(combat_arms::game::GAME)
-        .filter(|p| p.join("Game").is_dir());
+        .filter(|p| chimera_core::mount::served::usable("combat_arms", p, "Game"));
     if css.is_none() || ca.is_none() {
         eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
         return None;

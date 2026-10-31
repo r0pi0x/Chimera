@@ -126,7 +126,7 @@ fn de_dust2_loads_from_the_asset_service_with_no_install() {
     let mut users = Accounts::default();
     let (_, token) = users.add("heavy_test", None, "").unwrap();
     users.save(&accounts).unwrap();
-    let running = server::serve(server::Service::new(server_store).unwrap(), "127.0.0.1:0", 4).unwrap();
+    let running = server::serve(server::Service::new(server_store).unwrap().with_latency(latency()), "127.0.0.1:0", 4).unwrap();
 
     // The client: no install, an empty store, the service.
     let client = Store::new(dir.join("client"));
@@ -150,7 +150,18 @@ fn de_dust2_loads_from_the_asset_service_with_no_install() {
         took.as_secs_f64()
     );
     drop(running);
+    let log = std::fs::read_to_string(dir.join("server/server/access.log")).unwrap_or_default();
+    let (singles, batches) = (log.matches(" /r/").count(), log.matches(" /batch ").count());
+    eprintln!("  requests: {singles} single records, {batches} batches; latency {:?}", latency());
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(fetched, from_install, "the same map from fetched files");
     assert!(records > 100 && records <= report.records, "{records} records fetched");
+}
+
+/// `CHIMERA_ASSET_LATENCY_MS`: the test service delays each answer this
+/// long, to measure on-demand fetching as over a slower link (Tailscale, a
+/// VPS); with `CHIMERA_ASSET_BATCH=0` too, one request per record.
+fn latency() -> std::time::Duration {
+    let ms = std::env::var("CHIMERA_ASSET_LATENCY_MS").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+    std::time::Duration::from_millis(ms)
 }

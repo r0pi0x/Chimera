@@ -8,12 +8,24 @@ use chimera_core::mount::{FileSource, config::LocalConfig};
 
 fn install() -> Option<PathBuf> {
     let path = LocalConfig::load().ok()?.game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref())?;
-    if path.join("cstrike").is_dir() {
+    if chimera_core::mount::served::usable("cs_source", &path, "cstrike") {
         Some(path)
     } else {
         eprintln!("skipping: no CS:S install at {}", path.display());
         None
     }
+}
+
+/// The install itself, for checks of its own archives and layers (the
+/// asset store standing in for it has neither): None, with a note,
+/// otherwise.
+fn own_install() -> Option<PathBuf> {
+    let path = install()?;
+    if !path.join("cstrike").is_dir() {
+        eprintln!("skipping: checks the install's own archives (served from the asset store here)");
+        return None;
+    }
+    Some(path)
 }
 
 #[test]
@@ -29,7 +41,7 @@ fn reads_de_dust2_through_the_mount() {
 
 #[test]
 fn vpk_contents_match_their_crcs() {
-    let Some(install) = install() else { return };
+    let Some(install) = own_install() else { return };
     let vpk = Vpk::open(install.join("cstrike/cstrike_pak_dir.vpk")).unwrap();
     assert!(vpk.len() > 10_000, "only {} entries", vpk.len());
     let mut entries = vpk.entries();
@@ -49,7 +61,7 @@ fn vpk_contents_match_their_crcs() {
 
 #[test]
 fn mount_layers_shared_hl2_content() {
-    let Some(install) = install() else { return };
+    let Some(install) = own_install() else { return };
     let mount = cs_source::mount::open(&install).unwrap();
     let entries = mount.entries();
     let from_hl2 = entries

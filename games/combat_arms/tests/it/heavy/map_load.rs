@@ -38,7 +38,7 @@ fn mount() -> Option<chimera_core::mount::Mount> {
 /// Whether `path` is missing because the mount is the asset store alone
 /// (only the sets packed so far): the check is skipped with a note.
 fn not_served(mount: &chimera_core::mount::Mount, path: Option<&str>, what: &str) -> bool {
-    if INFO.served_alone() && path.is_none_or(|p| !mount.contains(p)) {
+    if INFO.served_partial() && path.is_none_or(|p| !mount.contains(p)) {
         eprintln!("skipping: {what} is not in the asset store's sets (the store alone, no install)");
         return true;
     }

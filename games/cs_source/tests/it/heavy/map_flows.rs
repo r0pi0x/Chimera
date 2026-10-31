@@ -35,7 +35,7 @@ pub(super) fn load(name: &str) -> Option<MapData> {
     let installed = LocalConfig::load()
         .ok()
         .and_then(|c| c.game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref()))
-        .is_some_and(|p| p.join("cstrike").is_dir());
+        .is_some_and(|p| chimera_core::mount::served::usable("cs_source", p, "cstrike"));
     let cached = content_dir(cs_source::GAME).is_some_and(|d| d.join("maps").join(format!("{name}.bsp")).is_file());
     if !installed || !cached {
         eprintln!("skipping: {name} not in the content cache (or no install)");

@@ -120,12 +120,14 @@ fn a_valid_token_gets_signed_manifests_and_records() {
     let id = &f.fixture.files["maps/test.bsp"].id;
     assert_eq!(remote.record(id).unwrap(), fs::read(f.server_store.record_path(id)).unwrap());
     // A batch fills the client's store.
-    let wanted: Vec<(String, u64)> = f.fixture.files.values().map(|r| (r.id.clone(), r.size)).collect();
-    let (n, bytes, failed) = remote.fill(&client, &wanted);
+    let wanted: Vec<(String, u64, u64)> = f.fixture.files.values().map(|r| (r.id.clone(), r.size, r.stored)).collect();
+    let transfer = chimera_assets::progress::Transfer::with_live("fixture", 3, 0, false);
+    let (n, bytes, failed) = remote.fill(&client, &wanted, Some(&transfer));
+    assert!(transfer.finish().contains("fetched 3 records"), "{}", transfer.finish());
     assert!(failed.is_empty(), "{failed:?}");
     assert_eq!(n, 3);
     assert!(bytes > 0);
-    assert_eq!(remote.fill(&client, &wanted).0, 0, "nothing again");
+    assert_eq!(remote.fill(&client, &wanted, None).0, 0, "nothing again");
     // The access log names the account and what it got.
     let log = fs::read_to_string(f.server_store.root.join("server/access.log")).unwrap();
     assert!(log.contains(&format!("internal:tester#1 GET /r/{id} 200 records=1 bytes=")), "{log}");
@@ -151,7 +153,14 @@ fn files_arrive_on_demand_through_the_settings_a_game_uses() {
     assert_eq!(cached.read("maps/test.bsp").unwrap().unwrap(), vec![3u8; 70_000]);
     assert_eq!(cached.read("shared.txt").unwrap().unwrap(), b"bytes both games have");
     assert!(client.has(&f.fixture.files["maps/test.bsp"].id), "kept in the store");
+    // The first miss brought its set (`all`) in the same batch.
+    let wav = &f.fixture.files["sound/a.wav"].id;
+    assert!(client.has(wav), "the rest of the set came with the first miss");
+    let log = fs::read_to_string(f.server_store.root.join("server/access.log")).unwrap();
+    assert!(log.contains("POST /batch 200 records=3"), "one batch for the set: {log}");
+    assert!(!log.contains("GET /r/"), "no record asked for alone: {log}");
     // Without the service the same mount misses.
+    fs::remove_file(client.record_path(wav)).unwrap();
     let offline = CachedFiles::open(&client, "fixture", "100").unwrap();
     assert_eq!(offline.read("sound/a.wav").unwrap().unwrap_err().kind(), ErrorKind::NotFound);
     // A locked build is fetched only with the locked manifest.
@@ -240,7 +249,7 @@ fn the_client_refuses_a_tampered_record_or_manifest() {
     let e = cached.read("sound/a.wav").unwrap().unwrap_err();
     assert_eq!(e.kind(), ErrorKind::InvalidData, "{e}");
     assert!(!client.has(&id), "a tampered record is never stored");
-    let (_, _, failed) = remote.fill(&client, &[(id.clone(), 13)]);
+    let (_, _, failed) = remote.fill(&client, &[(id.clone(), 13, 0)], None);
     assert_eq!(failed.len(), 1, "{failed:?}");
     // A manifest signed by another key than the pinned one.
     let other_key = sign::public_hex(&sign::load_or_create_key(&f.dir.join("other.key")).unwrap());

@@ -23,9 +23,11 @@
 //! `Fetcher` behind `CachedFiles`, missing records on demand, checked
 //! before they are stored; `lock` is the repository's `assets.lock`.
 //!
-//! Known shortcuts: `verify` and `gc` read the whole store single-threaded; an
-//! on-demand fetch is one request per record (a set is fetched in batches
-//! only by `chimera_assets fetch`); no cache cap.
+//! `progress` reports fetches in words people read: a live line for
+//! `chimera_assets fetch`, periodic lines while a load fetches on demand.
+//!
+//! Known shortcuts: `verify` and `gc` read the whole store single-threaded; no
+//! cache cap.
 
 pub mod accounts;
 pub mod cached;
@@ -33,6 +35,7 @@ pub mod config;
 pub mod lock;
 pub mod manifest;
 pub mod pack;
+pub mod progress;
 pub mod recording;
 pub mod remote;
 pub mod server;

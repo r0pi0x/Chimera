@@ -63,7 +63,9 @@ tools/doctor           # checks toolchain, identity, hooks, installs, ports, CRL
 Windows (PowerShell): `.\scripts\setup.ps1`, then `.\scripts\doctor.ps1`.
 Most tests need no game install; those that do skip without one. Running the
 apps needs Counter-Strike: Source (Steam app 240), the party apps also
-Combat Arms (README, "Lucker Party").
+Combat Arms (README, "Lucker Party"). Without them, an account on our asset
+service gives you both, heavy tests included:
+[docs/assets-for-developers.md](docs/assets-for-developers.md).
 
 ## Build, run, test
 
@@ -138,12 +140,19 @@ keys needed: Combat Arms' records are stored decrypted). Settings:
 vfs log into the repository.
 
 Without an install, the asset service (the dev server) fills the store on
-demand: put `url` and `token` (from the server's admin) into `[assets]`
-(or `CHIMERA_ASSET_URL` / `CHIMERA_ASSET_TOKEN`), check them with
-`chimera_assets login`, and prefetch with `chimera_assets fetch cs_source
-de_dust2` (a set) or `chimera_assets fetch cs_source` (every file).
-`assets.lock` at the root, when there is one, pins each game's build and
-manifest (`chimera_assets lock` updates it).
+demand: put `url` and `token` (from the server's admin) into `[assets]`,
+check them with `chimera_assets login`, and optionally prefetch with
+`chimera_assets fetch <game> [<set>...]`. The whole guide (setup, sets
+and sizes, the cache, updates through `assets.lock`, errors):
+[docs/assets-for-developers.md](docs/assets-for-developers.md). Tests that
+need the game's files ask `chimera_core::mount::served::usable(game, path,
+marker)` (an install with the game's folder, or the store standing in for
+it) and, for keyed Combat Arms files, `combat_arms::game::mount::can_read`;
+only checks of the install's own archives ask for the folder alone.
+Publishing (maintainers, with the installs): `chimera_pack publish <game>`
+(every file, the manifest marked complete), `publish <game> --from <vfs
+log> --set <name>` (a set from a recorded run), `chimera_pack sets <game>
+--store <server store> --sign` (the `weapon/<id>` and `players` sets).
 
 ## Design principles
 

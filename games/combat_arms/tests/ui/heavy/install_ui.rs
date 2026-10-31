@@ -19,11 +19,11 @@ fn install() -> Option<Mount> {
         eprintln!("skipping: no Combat Arms install configured");
         return None;
     };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         eprintln!("skipping: no Combat Arms install at {}", install.display());
         return None;
     }
-    if !mount::keys().is_ok_and(|k| k.contains_key("V1")) {
+    if !mount::can_read("V1") {
         eprintln!("skipping: no V1 key in chimera.local.toml");
         return None;
     }
@@ -31,15 +31,20 @@ fn install() -> Option<Mount> {
 }
 
 /// The files of the archive layer named `archive` (its file name, any
-/// case).
-fn files_of(mount: &Mount, archive: &str) -> Vec<String> {
+/// case); None, with a note, when the asset store stands in for the
+/// install (its files aren't grouped by archive).
+fn files_of(mount: &Mount, archive: &str) -> Option<Vec<String>> {
+    if INFO.served_alone() {
+        eprintln!("skipping: lists the install's {archive} (served from the asset store here)");
+        return None;
+    }
     let layer = mount
         .layers()
         .find(|l| l.name().to_lowercase().ends_with(&archive.to_lowercase()))
         .unwrap_or_else(|| panic!("no {archive}"));
     let mut files: Vec<String> = layer.entries().into_iter().map(|e| e.path).collect();
     files.sort();
-    files
+    Some(files)
 }
 
 fn utf8(bytes: &[u8]) -> String {
@@ -52,7 +57,7 @@ fn utf8(bytes: &[u8]) -> String {
 #[test]
 fn install_layouts_read() {
     let Some(mount) = install() else { return };
-    let files = files_of(&mount, "XML.rez");
+    let Some(files) = files_of(&mount, "XML.rez") else { return };
     let mut roots = std::collections::BTreeMap::<String, usize>::new();
     let (mut layouts, mut failed) = (0, Vec::new());
     for path in files.iter().filter(|p| p.ends_with(".xml")) {
@@ -222,7 +227,7 @@ fn install_ingame_menu() {
 #[test]
 fn install_string_tables_read() {
     let Some(mount) = install() else { return };
-    let files = files_of(&mount, "Language_Pack.rez");
+    let Some(files) = files_of(&mount, "Language_Pack.rez") else { return };
     eprintln!("Language_Pack.rez: {} files: {:?}", files.len(), files.iter().take(40).collect::<Vec<_>>());
     let mut tables = 0;
     for path in &files {

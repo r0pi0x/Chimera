@@ -8,8 +8,11 @@
 //! `login [<url> <token>]` checks a token and prints the `[assets]` lines
 //! with the server's key to pin; `fetch <game> [<set>...]` fetches a
 //! build's manifest (as the games choose it: `[assets] builds`,
-//! `assets.lock`, else the newest) and the records of those sets (all its
-//! files without a set) in batches; `lock [<game>...]` pins the service's
+//! `assets.lock`, else the newest; the service's copy when it changed and
+//! the lock doesn't pin the kept one) and the records of those sets (all its
+//! files without a set) in batches on a few connections, showing
+//! progress (`progress::Transfer`: a live line on a terminal, a line every
+//! 5 s otherwise, then a summary); `lock [<game>...]` pins the service's
 //! newest builds in `assets.lock` (the one in effect, else `./assets.lock`).
 //! The store is `--store <dir>`, else `CHIMERA_ASSET_STORE`, else
 //! `[assets] store`, else the user's (`~/.cache/chimera/assets`,
@@ -17,7 +20,7 @@
 
 use std::{collections::BTreeSet, process::ExitCode};
 
-use chimera_assets::{AssetSettings, AssetsLock, Manifest, Remote, Store, config, lock::Pin};
+use chimera_assets::{AssetSettings, AssetsLock, Manifest, Remote, Store, config, lock::Pin, progress::Transfer};
 
 const USAGE: &str = "\
 usage: chimera_assets [--store <dir>] <command>
@@ -156,10 +159,22 @@ fn fetch(settings: &AssetSettings, args: &[&str]) -> Result<(), String> {
     let remote = service(settings)?;
     let store = settings.store.as_ref().ok_or("no store")?;
     let build = settings.build(game).ok_or_else(|| format!("{game}: no manifest in the store or on the service"))?;
+    // The service's copy of that build, when it has changed since it was kept
+    // (sets added, a republish) and assets.lock doesn't pin the kept one.
+    let path = store.manifest_path(game, &build);
+    let kept = std::fs::read(&path).map(|b| chimera_assets::sha256_hex(&b)).unwrap_or_default();
+    let locked = settings.lock.as_ref().and_then(|l| l.games.get(*game)).is_some_and(|p| p.build == build);
+    if !locked
+        && let Some((_, _, id)) = remote.games().map_err(|e| e.to_string())?.into_iter().find(|g| g.0 == *game && g.1 == build)
+        && id != kept
+    {
+        remote.fetch_manifest(store, game, &build, Some(&id))?;
+        println!("{game} build {build}: the service's manifest is newer; updated");
+    }
     let manifest = Manifest::load(&store.manifest_path(game, &build))?;
-    let mut wanted: Vec<(String, u64)> = Vec::new();
+    let mut wanted: Vec<(String, u64, u64)> = Vec::new();
     if sets.is_empty() {
-        wanted.extend(manifest.files.values().map(|f| (f.id.clone(), f.size)));
+        wanted.extend(manifest.files.values().map(|f| (f.id.clone(), f.size, f.stored)));
     }
     for set in sets {
         let paths = manifest.sets.get(*set).ok_or_else(|| {
@@ -168,15 +183,31 @@ fn fetch(settings: &AssetSettings, args: &[&str]) -> Result<(), String> {
                 manifest.sets.keys().cloned().collect::<Vec<_>>().join(", ")
             )
         })?;
-        wanted.extend(paths.iter().map(|p| (manifest.files[p].id.clone(), manifest.files[p].size)));
+        wanted.extend(paths.iter().map(|p| {
+            let f = &manifest.files[p];
+            (f.id.clone(), f.size, f.stored)
+        }));
     }
     wanted.sort();
     wanted.dedup();
-    let have = wanted.iter().filter(|(id, _)| store.has(id)).count();
-    println!("{game} build {build}: {} records wanted, {have} in the store", wanted.len());
-    let started = std::time::Instant::now();
-    let (n, bytes, failed) = remote.fill(store, &wanted);
-    println!("fetched {n} records ({}) in {:.1} s", mb(bytes), started.elapsed().as_secs_f64());
+    let (have, need): (Vec<_>, Vec<_>) = wanted.iter().partition(|(id, _, _)| store.has(id));
+    let need_bytes: u64 = need.iter().map(|w| w.2).sum();
+    let what = if sets.is_empty() { "every file".to_string() } else { format!("set {}", sets.join(", ")) };
+    println!(
+        "{game} build {build}, {what}: {} records ({} plain), {} in the store, {} to fetch ({}) from {}",
+        wanted.len(),
+        mb(wanted.iter().map(|w| w.1).sum()),
+        have.len(),
+        need.len(),
+        mb(need_bytes),
+        remote.url()
+    );
+    if need.is_empty() {
+        return Ok(());
+    }
+    let transfer = Transfer::new(game, need.len() as u64, need_bytes);
+    let (_, _, failed) = remote.fill(store, &wanted, Some(&transfer));
+    println!("{}", transfer.finish());
     for f in failed.iter().take(20) {
         println!("FAILED {f}");
     }

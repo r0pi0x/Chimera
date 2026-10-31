@@ -100,6 +100,48 @@ fn a_manifest_round_trips() {
     let broken = text.replace("set de_x maps/de x.bsp", "set de_x maps/none.bsp");
     assert!(Manifest::parse(&broken).is_err());
     assert!(Manifest::parse("chimera-manifest 2\n").is_err());
+    // A whole install's manifest says so.
+    m.complete = true;
+    let whole = m.to_text();
+    assert!(whole.contains("\ncomplete 1\n"));
+    assert!(Manifest::parse(&whole).unwrap().complete && !Manifest::parse(&text).unwrap().complete);
+}
+
+/// A missing file's on-demand group: the smallest set holding it, from it
+/// on, without what the store has; else the files beside it of the same
+/// name before the first dot.
+#[test]
+fn a_miss_fetches_its_group() {
+    let dir = scratch("group");
+    let store = Store::new(&dir);
+    let mut m = Manifest::new("g", "1", None);
+    let mut add = |path: &str, bytes: &[u8]| {
+        let put = store.put(bytes).unwrap();
+        m.files.insert(path.into(), chimera_assets::FileRecord { id: put.id, size: bytes.len() as u64, stored: put.stored });
+    };
+    for (i, p) in ["maps/a.bsp", "materials/a1.vtf", "materials/a2.vtf", "materials/big.vtf"].iter().enumerate() {
+        add(p, format!("map a {i}").as_bytes());
+    }
+    add("models/gun.mdl", b"gun mdl");
+    add("models/gun.vvd", b"gun vvd");
+    add("models/gun.dx90.vtx", b"gun vtx");
+    add("models/gunner.mdl", b"another model");
+    let set = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<std::collections::BTreeSet<_>>();
+    m.sets.insert("map/a".into(), set(&["maps/a.bsp", "materials/a1.vtf", "materials/a2.vtf"]));
+    m.sets.insert("all".into(), m.files.keys().cloned().collect());
+    // The client's store holds only a2.
+    let client = Store::new(dir.join("client"));
+    client.put(b"map a 2").unwrap();
+    let index = chimera_assets::cached::Index::new(&m);
+    let ids = |paths: &[&str]| paths.iter().map(|p| m.files[*p].id.clone()).collect::<Vec<_>>();
+    let group = |path: &str| index.group(&client, path).into_iter().map(|g| g.0).collect::<Vec<_>>();
+    assert_eq!(group("materials/a1.vtf"), ids(&["materials/a1.vtf", "maps/a.bsp"]), "the map's set, from a1 on, wrapping");
+    let mut no_set = m.clone();
+    no_set.sets.clear();
+    let index = chimera_assets::cached::Index::new(&no_set);
+    let group: Vec<String> = index.group(&client, "models/gun.mdl").into_iter().map(|g| g.0).collect();
+    assert_eq!(group, ids(&["models/gun.mdl", "models/gun.dx90.vtx", "models/gun.vvd"]), "its companions, not gunner");
+    let _ = fs::remove_dir_all(&dir);
 }
 
 #[test]

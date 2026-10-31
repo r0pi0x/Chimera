@@ -22,7 +22,7 @@ fn mount() -> Option<chimera_core::mount::Mount> {
         eprintln!("skipping: no Combat Arms install configured");
         return None;
     };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         eprintln!("skipping: no Combat Arms install at {}", install.display());
         return None;
     }
@@ -123,7 +123,7 @@ fn check_maps_in(folder: &str) -> Option<usize> {
 
 /// The keyed maps (V2) of one archive; skipped without the key.
 fn keyed_maps(folder: &str, count: usize) {
-    if !combat_arms::game::mount::keys().is_ok_and(|k| k.contains_key("V2")) {
+    if !combat_arms::game::mount::can_read("V2") {
         eprintln!("skipping: no V2 key in chimera.local.toml");
         return;
     }
@@ -420,7 +420,7 @@ fn second_layer_census() {
 /// family's.
 #[test]
 fn hgoilrig_spawns_on_its_own_family() {
-    if !combat_arms::game::mount::keys().is_ok_and(|k| k.contains_key("V2")) {
+    if !combat_arms::game::mount::can_read("V2") {
         eprintln!("skipping: no V2 key in chimera.local.toml");
         return;
     }

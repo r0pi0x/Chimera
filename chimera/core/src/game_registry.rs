@@ -96,6 +96,13 @@ impl GameInfo {
         self.install().is_some_and(|i| crate::mount::served::alone(self.id, &i))
     }
 
+    /// Whether the mount is the asset store alone with only some sets
+    /// (`mount::served::partial`): a check of the whole install skips. A
+    /// whole publish isn't partial: files arrive on demand.
+    pub fn served_partial(&self) -> bool {
+        self.install().is_some_and(|i| crate::mount::served::partial(self.id, &i))
+    }
+
     /// Chimera's content cache for the game (imported maps).
     pub fn content_cache(&self) -> Option<PathBuf> {
         config::content_dir(self.id)

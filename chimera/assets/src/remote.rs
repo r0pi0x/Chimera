@@ -8,7 +8,12 @@
 //! the local store. As a `Fetcher` it gets a record a `CachedFiles` lacks:
 //! the bytes are checked against the id and size the manifest gives
 //! before they are stored (`Store::put_stored`), so a tampered or wrong
-//! record is refused, never handed to a loader. `batch` gets many at once
+//! record is refused, never handed to a loader; `fetch_many` gets a
+//! group of them in one batch (`CachedFiles`' on-demand fetches), and
+//! each arrival is counted for the on-demand progress lines
+//! (`progress::on_demand`). `batch_each` reads a batch answer record by
+//! record as it arrives; `fill` fetches a set's missing records in batches
+//! on a few connections at once, with a `progress::Transfer`
 //! (`chimera_assets fetch`).
 //!
 //! Tokens and files go over HTTPS only: a URL must be `https://`, except
@@ -18,15 +23,18 @@
 
 use std::{
     collections::HashMap,
-    io::{self, Read},
-    sync::{Arc, Mutex, OnceLock},
+    io::{self, BufRead, BufReader, Read},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
 use ureq::Agent;
 
 use crate::{
-    Manifest, Store, sign,
+    Manifest, Store, progress, sign,
     store::{is_id, is_name, sha256_hex, sort_builds, write_atomic},
 };
 
@@ -38,7 +46,24 @@ pub const KEY_ENV: &str = "CHIMERA_ASSET_KEY";
 pub trait Fetcher: Send + Sync {
     /// Record `id` of `size` plain bytes, checked and stored in `store`.
     fn fetch(&self, store: &Store, id: &str, size: u64) -> io::Result<Vec<u8>>;
+
+    /// Records `wanted` (id, plain size), each checked and stored; one
+    /// that fails is left out (the caller asks for it alone). Default:
+    /// one `fetch` each.
+    fn fetch_many(&self, store: &Store, wanted: &[(String, u64)]) -> io::Result<()> {
+        for (id, size) in wanted {
+            let _ = self.fetch(store, id, *size);
+        }
+        Ok(())
+    }
 }
+
+/// Records one `fill` batch asks for, at most.
+pub const FILL_BATCH: usize = 256;
+/// Stored bytes one `fill` batch asks for, about.
+pub const FILL_BATCH_BYTES: u64 = 16_000_000;
+/// Batches `fill` has in flight at once.
+pub const FILL_CONNECTIONS: usize = 4;
 
 /// Where the service is and who asks.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -155,6 +180,28 @@ impl Remote {
         Ok((status, headers, data))
     }
 
+    /// POST `body` to `path`, the answer's body as a reader (status 200),
+    /// else the error the status means.
+    fn post_stream(&self, path: &str, body: &[u8]) -> io::Result<ureq::BodyReader<'static>> {
+        let url = format!("{}{path}", self.base);
+        let auth = format!("Bearer {}", self.config.token);
+        let response = self
+            .agent
+            .post(&url)
+            .header("Authorization", &auth)
+            .header("Content-Type", "text/plain")
+            .send(body)
+            .map_err(|e| io::Error::other(format!("{url}: {e}")))?;
+        let status = response.status().as_u16();
+        let reader = response.into_body().into_reader();
+        if status != 200 {
+            let mut text = String::new();
+            let _ = reader.take(4096).read_to_string(&mut text);
+            return Err(status_error(status, path, &text));
+        }
+        Ok(reader)
+    }
+
     fn text(&self, path: &str) -> io::Result<String> {
         let (status, _, body) = self.call(path, None, &[])?;
         let body = String::from_utf8_lossy(&body).into_owned();
@@ -252,62 +299,137 @@ impl Remote {
     /// Many records at once: each id with its status and stored bytes
     /// (unchecked; empty unless 200).
     pub fn batch(&self, ids: &[String]) -> io::Result<Vec<(String, u16, Vec<u8>)>> {
-        let body = ids.join("\n");
-        let (status, _, data) = self.call("/batch", Some(body.as_bytes()), &[])?;
-        if status != 200 {
-            return Err(status_error(status, "/batch", &String::from_utf8_lossy(&data)));
-        }
-        let bad = || io::Error::new(io::ErrorKind::InvalidData, "/batch: a broken answer");
         let mut out = Vec::with_capacity(ids.len());
-        let mut rest = data.as_slice();
-        while !rest.is_empty() {
-            let nl = rest.iter().position(|b| *b == b'\n').ok_or_else(bad)?;
-            let head = std::str::from_utf8(&rest[..nl]).map_err(|_| bad())?;
-            let mut parts = head.split(' ');
-            let (Some(id), Some(status), Some(len)) = (parts.next(), parts.next(), parts.next()) else {
-                return Err(bad());
-            };
-            let status: u16 = status.parse().map_err(|_| bad())?;
-            let len: usize = len.parse().map_err(|_| bad())?;
-            let body = rest.get(nl + 1..nl + 1 + len).ok_or_else(bad)?;
-            out.push((id.to_string(), status, body.to_vec()));
-            rest = &rest[nl + 1 + len..];
-        }
+        self.batch_each(ids, |id, status, data| out.push((id.to_string(), status, data)))?;
         Ok(out)
     }
 
-    /// Fetch whichever of `wanted` (id, plain size) `store` lacks, in
-    /// batches; returns (records fetched, bytes transferred, failures).
-    pub fn fill(&self, store: &Store, wanted: &[(String, u64)]) -> (usize, u64, Vec<String>) {
-        let sizes: HashMap<&str, u64> = wanted.iter().map(|(id, s)| (id.as_str(), *s)).collect();
-        let missing: Vec<String> = wanted.iter().filter(|(id, _)| !store.has(id)).map(|(id, _)| id.clone()).collect();
-        let (mut n, mut bytes, mut failed) = (0, 0, Vec::new());
-        for chunk in missing.chunks(256) {
-            match self.batch(chunk) {
-                Ok(items) => {
-                    for (id, status, data) in items {
-                        let Some(size) = sizes.get(id.as_str()) else { continue };
-                        if status != 200 {
-                            failed.push(format!("{id}: HTTP {status}"));
-                            continue;
-                        }
-                        bytes += data.len() as u64;
-                        match store.put_stored(&id, *size, &data) {
-                            Ok(_) => n += 1,
-                            Err(e) => failed.push(e.to_string()),
-                        }
-                    }
-                }
-                Err(e) => failed.extend(chunk.iter().map(|id| format!("{id}: {e}"))),
+    /// Many records at once, each handed to `each` (id, status, stored
+    /// bytes: unchecked, empty unless 200) as soon as it has arrived.
+    pub fn batch_each(&self, ids: &[String], mut each: impl FnMut(&str, u16, Vec<u8>)) -> io::Result<()> {
+        let body = ids.join("\n");
+        let mut reader = BufReader::with_capacity(1 << 16, self.post_stream("/batch", body.as_bytes())?);
+        let bad = |why: &str| io::Error::new(io::ErrorKind::InvalidData, format!("/batch: a broken answer ({why})"));
+        let mut head = String::new();
+        loop {
+            head.clear();
+            if reader.read_line(&mut head)? == 0 {
+                return Ok(());
             }
+            let mut parts = head.trim_end().split(' ');
+            let (Some(id), Some(status), Some(len)) = (parts.next(), parts.next(), parts.next()) else {
+                return Err(bad("a frame's head"));
+            };
+            let status: u16 = status.parse().map_err(|_| bad("a status"))?;
+            let len: usize = len.parse().map_err(|_| bad("a length"))?;
+            if len > 1 << 31 {
+                return Err(bad("a length"));
+            }
+            let mut data = vec![0; len];
+            reader.read_exact(&mut data).map_err(|e| bad(&e.to_string()))?;
+            each(id, status, data);
         }
-        (n, bytes, failed)
+    }
+
+    /// Fetch whichever of `wanted` (id, plain size, stored size) `store`
+    /// lacks, in batches on `FILL_CONNECTIONS` connections, reporting to
+    /// `transfer` (when given) as records arrive; returns (records
+    /// fetched, bytes transferred, failures).
+    pub fn fill(
+        &self,
+        store: &Store,
+        wanted: &[(String, u64, u64)],
+        transfer: Option<&progress::Transfer>,
+    ) -> (usize, u64, Vec<String>) {
+        let sizes: HashMap<&str, u64> = wanted.iter().map(|(id, s, _)| (id.as_str(), *s)).collect();
+        let mut asked = std::collections::HashSet::new();
+        let missing: Vec<&(String, u64, u64)> =
+            wanted.iter().filter(|(id, _, _)| asked.insert(id.as_str()) && !store.has(id)).collect();
+        // Batches of at most FILL_BATCH records and about FILL_BATCH_BYTES.
+        let mut batches: Vec<Vec<String>> = Vec::new();
+        let mut bytes = 0;
+        for (id, _, stored) in missing {
+            if batches.last().is_none_or(|b| b.len() >= FILL_BATCH || bytes >= FILL_BATCH_BYTES) {
+                batches.push(Vec::new());
+                bytes = 0;
+            }
+            batches.last_mut().expect("pushed").push(id.clone());
+            bytes += stored;
+        }
+        let next = AtomicUsize::new(0);
+        let totals = Mutex::new((0usize, 0u64, Vec::new()));
+        std::thread::scope(|s| {
+            for _ in 0..FILL_CONNECTIONS.min(batches.len()) {
+                s.spawn(|| {
+                    while let Some(chunk) = batches.get(next.fetch_add(1, Ordering::Relaxed)) {
+                        let (mut n, mut got, mut failed) = (0, 0, Vec::new());
+                        let mut answered = std::collections::HashSet::new();
+                        let result = self.batch_each(chunk, |id, status, data| {
+                            let Some(size) = sizes.get(id) else { return };
+                            answered.insert(id.to_string());
+                            let len = data.len() as u64;
+                            let ok = if status != 200 {
+                                failed.push(format!("{id}: HTTP {status}"));
+                                false
+                            } else {
+                                match store.put_stored(id, *size, &data) {
+                                    Ok(_) => true,
+                                    Err(e) => {
+                                        failed.push(e.to_string());
+                                        false
+                                    }
+                                }
+                            };
+                            n += usize::from(ok);
+                            got += len;
+                            if let Some(t) = transfer {
+                                t.add(u64::from(ok), u64::from(!ok), len);
+                            }
+                        });
+                        if let Err(e) = result {
+                            // What the batch didn't bring.
+                            let lost: Vec<String> = chunk
+                                .iter()
+                                .filter(|id| !answered.contains(id.as_str()))
+                                .map(|id| format!("{id}: {e}"))
+                                .collect();
+                            if let Some(t) = transfer {
+                                t.add(0, lost.len() as u64, 0);
+                            }
+                            failed.extend(lost);
+                        }
+                        let mut t = totals.lock().unwrap_or_else(|e| e.into_inner());
+                        t.0 += n;
+                        t.1 += got;
+                        t.2.extend(failed);
+                    }
+                });
+            }
+        });
+        totals.into_inner().unwrap_or_else(|e| e.into_inner())
     }
 }
 
 impl Fetcher for Remote {
     fn fetch(&self, store: &Store, id: &str, size: u64) -> io::Result<Vec<u8>> {
         let packed = self.record(id)?;
-        store.put_stored(id, size, &packed)
+        let plain = store.put_stored(id, size, &packed)?;
+        progress::on_demand(self.url(), 1, packed.len() as u64);
+        Ok(plain)
+    }
+
+    fn fetch_many(&self, store: &Store, wanted: &[(String, u64)]) -> io::Result<()> {
+        let sizes: HashMap<&str, u64> = wanted.iter().map(|(id, s)| (id.as_str(), *s)).collect();
+        let ids: Vec<String> = wanted.iter().map(|w| w.0.clone()).collect();
+        for chunk in ids.chunks(crate::server::BATCH_MAX) {
+            self.batch_each(chunk, |id, status, data| {
+                if let (200, Some(size)) = (status, sizes.get(id))
+                    && store.put_stored(id, *size, &data).is_ok()
+                {
+                    progress::on_demand(&self.base, 1, data.len() as u64);
+                }
+            })?;
+        }
+        Ok(())
     }
 }

@@ -26,7 +26,7 @@ fn de_aztec_s_drums_float_at_their_depth_and_settle() {
     let installed = LocalConfig::load()
         .ok()
         .and_then(|c| c.game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref()))
-        .is_some_and(|p| p.join("cstrike").is_dir());
+        .is_some_and(|p| chimera_core::mount::served::usable("cs_source", p, "cstrike"));
     if !installed {
         eprintln!("skipping: no CS:S install configured");
         return;

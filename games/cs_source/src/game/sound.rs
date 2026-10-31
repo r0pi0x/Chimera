@@ -98,6 +98,12 @@ impl SoundScripts {
     pub fn contains(&self, name: &str) -> bool {
         self.entries.contains_key(&name.to_lowercase())
     }
+
+    /// The files entry `name` may play (its waves under `sound/`): what a
+    /// weapon's sounds read (`chimera_pack sets`).
+    pub fn waves(&self, name: &str) -> Vec<String> {
+        self.entries.get(&name.to_lowercase()).map(|e| e.waves.iter().map(|w| wave_file(w)).collect()).unwrap_or_default()
+    }
 }
 
 /// "a" or "a,b": start a, range b - a (C-style number prefixes).

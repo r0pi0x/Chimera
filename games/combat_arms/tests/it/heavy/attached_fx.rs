@@ -21,11 +21,17 @@ fn install() -> Option<(chimera_core::mount::Mount, Vec<WeaponRecord>)> {
         return None;
     };
     let rez = path.join("Game").join("ATTRIBUTES.rez");
-    if !rez.is_file() {
+    // The archive, or its files through the asset store standing in for
+    // the install (decrypted there).
+    let attrs = if rez.is_file() {
+        open_attributes(&rez)
+    } else if INFO.served_alone() {
+        combat_arms::game::data::attributes_from_mount(&INFO.mount()?)
+    } else {
         eprintln!("skipping: no {}", rez.display());
         return None;
-    }
-    let Ok(attrs) = open_attributes(&rez) else {
+    };
+    let Ok(attrs) = attrs else {
         eprintln!("skipping: the attribute files don't open (no V1 key)");
         return None;
     };

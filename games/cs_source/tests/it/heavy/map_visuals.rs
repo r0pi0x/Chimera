@@ -24,7 +24,7 @@ fn load(name: &str) -> Option<MapData> {
     let installed = LocalConfig::load()
         .ok()?
         .game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref())
-        .is_some_and(|p| p.join("cstrike").is_dir());
+        .is_some_and(|p| chimera_core::mount::served::usable("cs_source", p, "cstrike"));
     if !installed {
         eprintln!("skipping: no CS:S install configured");
         return None;
@@ -322,7 +322,7 @@ fn slime_splash_systems_load_from_the_install() {
         eprintln!("skipping: no CS:S install configured");
         return;
     };
-    if !install.join("cstrike").is_dir() {
+    if !chimera_core::mount::served::usable("cs_source", &install, "cstrike") {
         eprintln!("skipping: no CS:S install configured");
         return;
     }
