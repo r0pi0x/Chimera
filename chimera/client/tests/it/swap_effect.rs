@@ -75,3 +75,45 @@ fn on_once_per_swap() {
     set(&mut sim, other, "cs_source");
     assert_eq!(view(&sim).puffs, 1);
 }
+
+/// With the effect on, the local player's swap sounds the cue packs'
+/// `swap` cue once (the new game's pack's, else the first that has one:
+/// Combat Arms' pack has none, so a swap to Combat Arms plays CS:S's);
+/// another's swap, the effect off, or a definition's `cues = "none"`
+/// sounds nothing.
+#[test]
+fn a_local_swap_sounds_the_swap_cue_once() {
+    use chimera_client::client::{
+        callouts::{CalloutView, CalloutsPlugin},
+        swap_effect::{SWAP_CUE, swap_cue},
+    };
+    use chimera_core::cues::{CueAppExt, CuePacks};
+    let mut sim = Sim::with(SimBasePlugins, |app| {
+        app.add_plugins((GreyboxMapPlugin, SwapEffectPlugin, CalloutsPlugin));
+        app.register_cues("id = \"cs\"\nname = \"CS\"\ngame = \"cs_source\"\n[sounds]\nswap = \"sound/swap.wav\"\n");
+        app.register_cues("id = \"ca\"\nname = \"CA\"\ngame = \"combat_arms\"\n[sounds]\nrung_up = \"up.wav\"\n");
+    });
+    sim.app.world_mut().resource_mut::<SwapEffectSetting>().on = 1;
+    let w = sim.app.world_mut();
+    let me = w.spawn((LocalPlayer, GameIdentity("cs_source".into()), Transform::default(), GlobalTransform::default())).id();
+    let other = w.spawn((GameIdentity("cs_source".into()), Transform::default(), GlobalTransform::default())).id();
+    sim.ticks(2);
+    let heard = |sim: &Sim| sim.app.world().resource::<CalloutView>().heard.iter().filter(|h| *h == SWAP_CUE).count();
+    assert_eq!(heard(&sim), 0, "a first identity is no swap");
+    set(&mut sim, other, "combat_arms");
+    assert_eq!(heard(&sim), 0, "another's swap: its puff, no sound");
+    set(&mut sim, me, "combat_arms");
+    assert_eq!(heard(&sim), 1, "the local swap");
+    set(&mut sim, me, "combat_arms");
+    assert_eq!(heard(&sim), 1, "no swap, no sound");
+    set(&mut sim, me, "cs_source");
+    assert_eq!(heard(&sim), 2);
+    let packs = sim.app.world().resource::<CuePacks>().clone();
+    assert_eq!(swap_cue(&packs, None, "combat_arms").map(|p| p.id.as_str()), Some("cs"), "the first pack with one");
+    assert_eq!(swap_cue(&packs, None, "cs_source").map(|p| p.id.as_str()), Some("cs"));
+    assert!(swap_cue(&packs, Some("none"), "cs_source").is_none(), "cues = \"none\"");
+    // Off: nothing.
+    sim.app.world_mut().resource_mut::<SwapEffectSetting>().on = 0;
+    set(&mut sim, me, "combat_arms");
+    assert_eq!(heard(&sim), 2);
+}

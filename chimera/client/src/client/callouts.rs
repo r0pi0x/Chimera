@@ -25,6 +25,12 @@
 //! cues heard); the sounds (`SoundAsset`s as local interface sounds at
 //! the pack's volume) play where there is an asset server.
 //!
+//! Sized for a 720-line screen and scaled with the window's height
+//! (`fonts::overlay_scale`: 40 px for the first line, 22 for the others),
+//! in the HUD's face (`fonts::overlay_font`: the client scheme's
+//! `CenterPrintText`, CS:S's Trebuchet MS), on a band shaded as it would
+//! be blended in display space (`widgets::display_alpha`).
+//!
 //! Known shortcuts: plain text on a dark band, no animation; the
 //! files load on first use (the first cue of each kind may come up to
 //! a load late, given up after 3 s).
@@ -59,7 +65,7 @@ impl Plugin for CalloutsPlugin {
         app.init_resource::<CalloutView>()
             .init_resource::<CuePacks>()
             .add_systems(Startup, spawn)
-            .add_systems(Update, draw.after(super::hud::HudSwitch));
+            .add_systems(Update, (draw.after(super::hud::HudSwitch), size));
         crate::console::ConsoleAppExt::console_command(
             app,
             "chimera_callout",
@@ -97,6 +103,12 @@ pub struct CalloutRoot;
 #[derive(Component)]
 pub struct CalloutLine(pub usize);
 
+/// A line's font size on a 720-line screen (the first big, the others
+/// under it), scaled with the window (`fonts::overlay_scale`).
+pub fn line_size(index: usize) -> f32 {
+    if index == 0 { 40.0 } else { 22.0 }
+}
+
 fn spawn(mut commands: Commands) {
     commands
         .spawn((
@@ -124,12 +136,12 @@ fn spawn(mut commands: Commands) {
                     CalloutLine(i),
                     Text::new(""),
                     TextFont {
-                        font_size: FontSize::Px(if i == 0 { 44.0 } else { 24.0 }),
+                        font_size: FontSize::Px(line_size(i)),
                         ..default()
                     },
                     TextColor(if i == 0 { Color::srgb(1.0, 0.85, 0.3) } else { Color::WHITE }),
                     TextShadow::default(),
-                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+                    BackgroundColor(super::widgets::display_alpha(Color::srgba(0.0, 0.0, 0.0, 0.5))),
                     Node {
                         padding: UiRect::axes(px(18.0), px(4.0)),
                         ..default()
@@ -246,6 +258,28 @@ fn draw(
     }
     if view.lines != text {
         view.lines = text;
+    }
+}
+
+/// The lines' fonts and bands for the window's height, in the HUD's
+/// face (`fonts::overlay_font`): again when the window or the fonts
+/// change.
+fn size(
+    window: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    fonts: Option<Res<super::fonts::UiFonts>>,
+    mut lines: Query<(&CalloutLine, &mut TextFont, &mut Node)>,
+    mut sized: Local<Option<u32>>,
+) {
+    let height = window.iter().next().map_or(720.0, |w| w.height());
+    let s = super::fonts::overlay_scale(height);
+    let key = (s * 1000.0) as u32;
+    if *sized == Some(key) && !fonts.as_ref().is_some_and(|f| f.is_changed()) {
+        return;
+    }
+    *sized = Some(key);
+    for (line, mut font, mut node) in &mut lines {
+        *font = super::fonts::overlay_font(fonts.as_deref(), line_size(line.0) * s, line.0 == 0);
+        node.padding = UiRect::axes(px(18.0 * s), px(4.0 * s));
     }
 }
 
