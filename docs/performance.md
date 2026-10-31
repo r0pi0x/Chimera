@@ -2074,6 +2074,93 @@ de_nuke's ladders (72-96 s). Next: a converted-map cache or a headless
 load path (architecture-review.md, P4b step 2) would take most of the
 remaining third spent loading.
 
+### The heavy tier: a sixth slot, and what conversion costs (2026-10-30)
+
+Task brief [11](tasks/11-heavy-tier-time.md). The Linux dev box (12
+threads, 31 GB, ~10 GB of swap already in use by idle processes), with
+the installs (`CHIMERA_CONFIG` at the main checkout's local config, as
+`tools/post-push-tests.sh` sets it), a warm build in an agent slot, no
+other cargo or nextest process running and the 1-minute load under 4 at
+each start (checked by a loop on the process list and `/proc/loadavg`).
+`cargo nextest run --features dev --profile bench --no-fail-fast -E
+'test(/^heavy::/)'`: 579 heavy tests, 4,053 others filtered out. CPU is
+the run's children's user + system time (`times` after cargo), memory
+sampled every 2 s: the summed RSS of the slot's processes and the box's
+`MemAvailable`. A temporary line in `cs_source::bsp::load_level_bytes_with`
+(not committed) logged each CS:S map load's `LoadTimer` total per test.
+
+Every run: 572 passed, 7 failed, the same 7 each time and with five slots
+too, so not caused by the change measured (main at 5e324989; to fix
+separately): `combat_arms::it` `heavy::mount::install_mounts_its_archives`
+(109 archives, 108 expected) and `heavy::timings::every_copy_times_on_its_own_view_model`
+(4 copies); `mashup_demo::it` `heavy::dust2::a_mashup_map_loads_only_its_world`
+("no bodies, no decals"); `party_kit::server` `heavy::dust2::` (three
+gun-game tests: `combat_arms:beretta_m92fs` doesn't kill) and
+`heavy::warehouse::a_cs_source_gun_on_warehouse_has_a_cs_source_body_and_each_player_a_different_one`.
+
+| | 5 heavy slots (now) | 6 heavy slots |
+|---|---|---|
+| wall, three runs | 944.8, 940.1, 938.7 s | 801.5, 798.7, 805.7 s |
+| median wall (spread) | **940.1 s** (6.1 s) | **801.5 s** (7.0 s): -14.7% |
+| CPU (user + system), median | 4,265 s (4.5 of 12 threads busy on average) | 4,511 s |
+| heavy tests' times summed | 3,153, -, 3,119 s | 3,357, 3,345, 3,381 s |
+| peak summed RSS of the run | 20.4-21.3 GB | 20.0-23.3 GB |
+| least memory available | 2,484, 2,884, 1,988 MB | **445, 0, 3,466 MB** |
+| swap in use, start to peak | +0.1 to +1.3 GB | +1.4, +2.0, **+6.0 GB** |
+| load, start / end (1, 5, 15 min) | 0.8-2.2 / 2.1-2.2, 4.3-4.6, 5.0-5.5 | 1.5-2.6 / 2.4-2.6, 5.6-5.8, 5.8-6.3 |
+
+(The second five-slot run's per-test times weren't kept.) **Decision:
+`max-threads = 5` stays.** Six slots gave more than the 10% and far more
+than the spread, but the box ran out of available memory in two of three
+runs and swapped 6 GB in the third: the criterion was at least 4 GB
+available throughout, which even five slots miss on this box (2-2.9 GB;
+the 2026-10-14 runs had 2.8-4 GB). A machine with more memory, or the
+cache below making the map tests shorter (fewer of the big ones at
+once), may change that.
+
+The slowest tests (five slots, run 3; run 1 within 5 s of each):
+
+| test | s |
+|---|---|
+| `party_kit::server` `spawns::every_pool_map_s_spawn_spots_are_inside_it` | 122.5 |
+| `combat_arms::it` `body_skins::every_rung_bodys_skins_resolve` | 114.6 |
+| `cs_source::it` `net_soak::soak_four_clients_and_bots_over_map_changes` | 114.6 |
+| `cs_source::it` `map_de_nuke::ladders_can_be_climbed` | 47.3 |
+| `party_kit::it` `bot_cost::each_bot_costs_about_the_same` | 37.7 |
+| `combat_arms::it` `modes_part_two::bots_play_no_objective_on_grayhammer` | 36.7 |
+| `cs_source::it` `net_capacity::a_full_server_keeps_its_tick` | 33.8 |
+| `cs_source::it` `map_flows::jacks_every_game_keeps_players_in_the_map` | 33.2 |
+| `cs_source::it` `served::de_dust2_loads_from_the_store_alone` | 30.9 |
+| `cs_source::it` `map_flows::template_copies_are_drawn_and_solid` | 29.2 |
+| `party_kit::server` `spawns::the_gun_game_spawns_spread_over_dust2` | 26.9 |
+| `cs_source::it` `map_community::visual_entities_load` | 26.7 |
+| `cs_source::it` `map_sound_stock::stock_soundscapes_proxies_and_room_settings` | 26.6 |
+| `party_kit::it` `nav_bounds::bounding_keeps_every_floor_a_player_walks` | 26.0 |
+| `party_kit::it` `css_map_moves::both_movements_shatter_a_cracked_cs_office_window_running_through_it` | 25.8 |
+
+By test binary (summed, run 1): `cs_source::it` 2,000 s, `combat_arms::it`
+510, `party_kit::it` 263, `party_kit::server` 213, `mashup_demo::it` 75,
+`cs_source::ui` 51, the rest 42. The suite is shorter than on 10-14
+(3,150 s summed against 3,035-3,457 then, with ~40% more heavy tests):
+the lean load path and the courses' shorter runs.
+
+**What converting CS:S maps costs** (five slots, run 1; runs 2 and 3
+within 2%): 567 loads of 107 different maps took **999 s, 32% of the
+3,153 s** of heavy test time. Only 169 s of it is each map's first load
+in the run; **830 s is converting a map again** that an earlier test of
+the same run had already converted. de_dust2 alone: 153 loads, 256 s
+(66 of them in `map_de_dust2`, median 1.85 s each), de_nuke 40 loads 68 s,
+cs_office 32 loads 45 s. By test file: `map_community` 203 s,
+`map_de_dust2` 122, `map_courses` 112, `map_flows` 80, `map_stock` 68,
+`map_surf` 61. Each test is its own process (nextest), so the
+`OnceLock` a test file keeps its map in doesn't carry from one test to
+the next. Combat Arms' loader wasn't timed. That is what the
+converted-map cache would take back: its design is in
+[asset-service.md](plans/active/asset-service.md), section 10,
+"Converted-map cache"; the expected gain is ~15-20% off heavy wall
+(about 940 s to 750-800 s) with five slots, from that 830 s at a hit
+costing a fifth to a quarter of a conversion (to be measured).
+
 ### The push hook (2026-10-19)
 
 Pushes took 20-60 minutes: the selection fell back to the whole suite

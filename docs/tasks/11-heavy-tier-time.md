@@ -56,22 +56,29 @@ by converter version and source hashes, cold-start behaviour) before code.
 
 ## Definition of done
 
-- [ ] Baseline on an install machine, warm build, no other agent building:
+- [x] Baseline on an install machine, warm build, no other agent building:
       `.\scripts\testbench.ps1 -Scenario heavy -Repetitions 1`, three runs;
       report median wall, CPU, peak committed memory, passed/failed count,
       slowest tests and the load.
-- [ ] Repeat with `heavy = { max-threads = 6 }` (keep total
+- [x] Repeat with `heavy = { max-threads = 6 }` (keep total
       `test-threads = 8`). Keep it only if the median improves beyond the
       run-to-run spread (target > 10%) and at least 4 GB stays available
       (the criterion of the 2026-10-14 run); otherwise revert and record
       the numbers.
-- [ ] Write the cache design before implementing it: what is cached,
+- [x] Write the cache design before implementing it: what is cached,
       where it lives (per-user store, never the repo), the invalidation
       key, and which tests use it.
 - [ ] Implement the cache separately and measure it cold and warm: heavy
       wall and per-map load time before/after.
 - [ ] Tests still skip cleanly without an install; `cargo test -p
       repo_checks` passes.
+
+Done 2026-10-30 on the Linux dev box (docs/performance.md, "The heavy
+tier: a sixth slot, and what conversion costs"): five slots 940 s median
+wall, six 802 s (-15%) but out of available memory, so five stay; CS:S
+conversion 999 s of 3,153 s, 830 s of it repeated loads. The design is
+in plans/active/asset-service.md, section 10; implementing it is a
+backlog item (section 9).
 
 ## Constraints
 
