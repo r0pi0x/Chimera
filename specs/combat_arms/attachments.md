@@ -607,6 +607,17 @@ From the client weapon's part-model creation and per-frame update, the server's 
 4. **A sight's lens** (`RS\TRANSPARENT.LTB`, style index 1 of the red-dot models): texture × lit colour, **alpha-tested** (drawn where the texture's alpha > 160/255, discarded elsewhere), not blended, **two-sided** (no culling), depth written. So the `clouds.dtx` lens shows as hard-edged lit texels, not a see-through tint (`models_ltb.md` "Render styles and sprite skins").
 5. **Part models' own animations and sockets.** None: a part model is created with its file, skins and styles and left on its default (first) animation; nothing plays, reads or attaches to its sockets.
 
+## Corrections (2026-10-31): default parts outside the accepted list
+
+From the server's equipment building and weapon giving, its weapon part fitting, the client's view-model part visibility and the lobby's inventory preview; data from Steam build 26236938 (weapons and modification files).
+
+1. **A default part the weapon does not accept is not fitted** ("Fitting: when and where" 2-3 confirmed for defaults). When the player has no part of his own for a slot, the server takes the weapon's default for it (`DefaultScopeAttach` etc., looked up by attachment `Name`; a name that matches no attachment gives none). The part is then fitted by the same check as a chosen one: it must be on the weapon's accepted list (with `Integrated` non-zero), and its `Kinds` and `Type` must be valid. A default that is not on the list fails that check and the slot stays **empty**: no part model, no zoom (a sight's `ZoomLevel` comes only from a fitted sight), no stat changes. The server sends −1 for the slot and the client fits nothing. The game never fits a default "anyway".
+   - `DefaultScopeVisible` only matters when the default sight actually got fitted: the client then hides that sight's model when it is 0.
+   - Only the lobby's inventory preview of the character differs: it shows the weapon's default muzzle part and (if `DefaultScopeVisible` is not 0) default sight whenever the player has none, without checking the list. In a match the weapon has no such part.
+   - Data: 909 weapon records name a default sight; for 49 of them it is not on their accepted list (48 that name an existing attachment, plus `Advanced starshing M4A1`, whose default names no attachment at all): `INSAS_Scope` 14 (the double-barrel AR-15 variants), `MP5_SD_DOT_C` 13, `P90 sight` 11 (the P90 SE Kraken records), `Sniper Scope` 8 (`M14 Cyanide Echo` Lv.1-4 and their limited copies), `DotSight_HDS-4_SMG` 1 (`loaded R870 MCS MOD`), `DotSight_ITECH_AR` 1 (`M417 Green Chrome`). These weapons have no sight in a match unless the player fits one from their list; the M14 Cyanide Echo cannot zoom without one.
+   - Ours: whatever we do with such defaults should leave the slot empty.
+   - Expect: test cases 44-45.
+
 ## Test cases
 
 M4A1 data as in `weapon_firing.md` unless stated. "Roll 1.0" means the damage random roll returns 1. Victim: male skeleton, 100 HP, no armour, torso hit, unless stated. Distances are fire position to impact.
@@ -660,6 +671,8 @@ M4A1 data as in `weapon_firing.md` unless stated. "Roll 1.0" means the damage ra
 41. **Part frame (Corrections 2026-10-30, 1).** Socket at (10, 2, 30) with local axes x̂ = (0, 0, 1), ŷ = (0, 1, 0), ẑ = (−1, 0, 0) (yaw +90°), `MuzzlePVPosOff` (−2.2, 0, 0) and zero rotation offset → part origin at (10, 2, 27.8), its axes equal to the socket's.
 42. **Rotation offset adds angles (Corrections 2026-10-30, 1).** Socket rotation yaw 0.3, pitch 0.2, roll 0; `ScopePVRotOff` (0.1, 0, 0) → part rotation yaw 0.4, pitch 0.2, roll 0 (rebuilt yaw-pitch-roll); third person with the same numbers as `ScopeHHRotOff` → socket rotation × rotation(pitch 0, yaw 0.1, roll 0).
 43. **Lens cut-out (Corrections 2026-10-30, 4).** A lens texel with alpha 150/255 → not drawn; 170/255 → drawn opaque, from both sides.
+44. **Default outside the list (logic).** A weapon whose `DefaultScopeAttach` names an existing sight not on its accepted list, player with no sight of his own → sight slot −1, no sight model, zoom key does nothing; the same sight on the list → fitted, zoom steps from its `ZoomLevel`; on the list with `DefaultScopeVisible` 0 → fitted (zoom works) but its model hidden.
+45. **Stock cases (data).** `M14 Cyanide Echo lv.1` (default `Sniper Scope`, not accepted) → no sight in a match; `P90 SE - Kraken common` (`P90 sight`) → none; a stock `M24` (`Sniper Scope` accepted) → the scope fitted.
 
 ## Open questions
 

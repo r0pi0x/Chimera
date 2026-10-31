@@ -2304,6 +2304,13 @@ docs/plans/active/sound.md.
 
 ## 9. Performance
 
+- **Flaky: `heavy::net_big_map` under a full heavy run (2026-10-31).**
+  In a9caa3b5's after-push run, 150 MB took 133.4 s of game time against
+  the 120 s limit; alone, at the same load (~20), it passes in 8.8 s.
+  The game-time rate seems to depend on wall time when the heavy slots
+  compete. Make the measure independent of wall-clock contention (or
+  run it in a slot of its own) if it fails again.
+
 Measured and culled (docs/performance.md): `chimera_perf`, `refcmp bench`,
 PVS culling by world chunk, areaportals (closed doors hide what's behind
 them; views clipped through openings; window brushes fade in and close

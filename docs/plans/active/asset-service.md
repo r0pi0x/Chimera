@@ -766,6 +766,11 @@ process). Step 2 of P4b (architecture-review.md); task brief
 
 ## Decisions (user, 2026-10-30)
 
+- **Steam sign-in waits (user, 2026-10-31).** Don't build Steam sign-in,
+  the ownership check or the allowlist until the user says so. First make
+  sure developers can work from the service (internal accounts, M2's
+  fetching, the sets they need); the server stays private until then.
+
 - **Hosting.** The dev server runs on the dev box first, shared privately
   over Tailscale (no public ports), with Steam sign-in on top. Then it
   goes public behind a Cloudflare Tunnel (still no open ports), and later

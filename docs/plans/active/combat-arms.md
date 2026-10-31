@@ -1070,6 +1070,13 @@ of the viewer": the server's fire position is the shooter's eye, which
 effects_sounds.md 2 counts as straight up (never seen) for his own
 client, yet case 52 shows the group; ours shows it when the point is at
 the camera.
+**Answered (2026-10-31):** (a) and the smoke puffs in effects_sounds.md
+Follow-up (2026-10-31) 1-2 (cases 77-83); (b), the activate, finish and
+create sounds in special_weapons.md Corrections (2026-10-31) (cases
+58-63, replacing 52); `pv_char_b`, the styles' materials, slot 1 on
+faces, heads and parts, and world sprites in models_ltb.md Follow-up
+(2026-10-31) (R6-R10); default sights outside the accepted list in
+attachments.md Corrections (2026-10-31) (cases 44-45).
 
 ### 25. Radar and minimap
 
