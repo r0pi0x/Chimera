@@ -1248,6 +1248,10 @@ pub struct MapCollisionSet {
     /// Light passes them (glass): their collider is marked `SeeThrough`,
     /// as `see_through_hulls`' are.
     pub see_through: bool,
+    /// Their surface property, when they all share one (Combat Arms'
+    /// glass types): on their collider as `core::PropSurface`, what a
+    /// round that hits them finds.
+    pub surface: Option<String>,
 }
 
 /// A muzzle flash: view-facing additive sprites strung out along the

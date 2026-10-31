@@ -11,7 +11,8 @@
 //! `mover`, `physics`: a func_physbox's body, whose node the physics moves),
 //! entity-space helpers (Z up, `MapData::entity_scale`), `MapEntities` resource
 //! and `MapBrushEntity` nodes (mover meshes and kinematic collider, moved by
-//! the logic layer), `FireEntityOutput` (rules outside the logic layer ask an
+//! the logic layer; `BrushSurface`, the surface most of its faces have, for
+//! other games' rounds), `FireEntityOutput` (rules outside the logic layer ask an
 //! entity to fire an output; the logic bridge does); anchors
 //! (`anchor_entities`: placed weapons something is parented to; a `MapAnchor`
 //! node each that their props ride, `EntityAnchors` their poses, written in
@@ -279,6 +280,27 @@ pub struct AnchorSet;
 /// engine space); meshes and collider are its children/itself.
 #[derive(Component, Clone, Copy, Debug)]
 pub struct MapBrushEntity(pub usize);
+
+/// A brush entity's surface property, on its node: the `MapMesh::surface`
+/// most of its drawn triangles have (`brush_surface`). What another
+/// game's rounds find there (Combat Arms' shoot-through glass on a CS:S
+/// window), where the world's `sound::SurfaceGrid`, which holds the
+/// world's own triangles only, has nothing.
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub struct BrushSurface(pub String);
+
+/// The surface most of brush entity `entity`'s drawn triangles have
+/// (ties: the first in name order); None when none has one.
+pub fn brush_surface(meshes: &[super::MapMesh], entity: usize) -> Option<String> {
+    let mut counts: std::collections::BTreeMap<&str, usize> = Default::default();
+    for m in meshes.iter().filter(|m| m.entity == Some(entity) && !m.material.starts_with("decal:")) {
+        if let Some(s) = &m.surface {
+            *counts.entry(s.as_str()).or_default() += m.indices.len() / 3;
+        }
+    }
+    let most = counts.values().copied().max()?;
+    counts.into_iter().find(|(_, n)| *n == most).map(|(s, _)| s.to_string())
+}
 
 #[cfg(test)]
 mod tests {

@@ -887,12 +887,32 @@ the user's go-ahead: no Actions runs unless asked.
   `DotSightName`, special weapons' scopes and held models hold. Not
   listed there: the ammo's effect names, the rates above, the muzzle
   effect names.
-- **Can Combat Arms guns shoot through glass?** Check that a Combat Arms
-  round goes through (and breaks) glass the way Combat Arms does: CS:S
-  maps' breakable glass, and Combat Arms maps' glass surfaces. The specs
-  have a surface 41, Bullet-Proof Glass, with its own impact. What
-  Combat Arms does to rounds at glass (pass, stop, lose damage) may need
-  a spec session on the Windows PC.
+- **Can Combat Arms guns shoot through glass? Fixed, confirm in a
+  playtest.** Checked against weapon_firing.md "Penetration" (Glass,
+  surface 40: passes up to 10 u, damage x 0.9, re-perturb 5; Bullet-Proof
+  Glass, 41: not shoot-through, stops the round, its own impact
+  `Impact_Glass_BulletProof`). What differed, now fixed:
+  - CS:S maps: a Combat Arms round broke a window (func_breakable_surf)
+    or glass func_breakable but stopped there: brush entities had no
+    surface for it (the world's `SurfaceGrid` holds the world's own
+    triangles only). Their nodes now carry `map::BrushSurface` (the
+    surface most of their faces have: `glass`, Combat Arms' Glass through
+    the mashup's table), so the round breaks the pane and goes on (party
+    `cross_glass`, mashup `heavy::cs_maps::a_combat_arms_round_breaks_an_office_window_and_goes_through`).
+  - Combat Arms maps: glass was read by texture from the nearest drawn
+    triangle, typed by its solid polygons only, so non-solid glass and
+    glass world models were Unknown (stopped rounds, no glass impact).
+    The glass collision sets are now one per type with their surface
+    (`MapCollisionSet::surface`, on the collider as `PropSurface`), world
+    models' textures are typed too (nodes take theirs as `BrushSurface`),
+    and impacts read what was hit before the world (`effects::owned_surface`)
+    (combat_arms `world::glass_lets_rounds_through_and_bullet_proof_glass_stops_them`,
+    `weapon_firing::t37_*`, `effects_sounds::a_round_on_bullet_proof_glass_takes_its_impact`,
+    `heavy::world::glass_sets_and_glass_world_models_name_their_surface`).
+  Combat Arms' own glass doesn't break (only `Breakable` objects do, by
+  hit points; world_objects.md 11). Open: surface Unknown (0) is
+  shoot-through in one build's table (effects_sounds.md Open question
+  15); ours stops.
 - **Random attachments on Combat Arms rungs (user idea): fixed, confirm
   in a playtest.** Built as Chimera's per-rung extras hook
   (`ladder::RungExtrasHook`, `rung_extras` in `[rules]`) with Combat

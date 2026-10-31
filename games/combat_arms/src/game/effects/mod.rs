@@ -21,7 +21,9 @@
 //!   (`rules::TracerCounter`: yours by the last fitted part's tracer, the
 //!   ammo's when it names none, others' by the ammo's; the muzzle part's
 //!   look, else the ammo's; first ray only); per ray the impact: the surface type
-//!   (characters 6, 4 for a head hit; the world's from `SurfaceGrid`,
+//!   (characters 6, 4 for a head hit; what was hit's own surface, a
+//!   prop's, a glass set's or a brush entity's (`owned_surface`), else
+//!   the world's from `SurfaceGrid`,
 //!   meshes tagged by `library::tag_surfaces`; nothing hit: sky, no
 //!   impact), the ImpactFX's sound (the surface's list by ammo kind,
 //!   one of four slots), its own group, and when the impact is seen the
@@ -155,7 +157,7 @@ pub mod voice;
 
 use std::collections::HashMap;
 
-use avian3d::prelude::{SpatialQuery, SpatialQueryFilter};
+use avian3d::prelude::{ColliderOf, SpatialQuery, SpatialQueryFilter};
 use bevy::prelude::*;
 
 use self::{
@@ -176,6 +178,7 @@ use super::{
 use crate::{
     core::{Damage, DamageKind, Health, Hitgroup, Intent, LocalPlayer, MovementState, SOLID_LAYERS, Team, authoritative},
     map::{
+        BrushSurface, PropSurface,
         particles::{ParticleMaterials, Particles, WorldTracer},
         SurfaceNames,
         sound::SurfaceGrid,
@@ -485,16 +488,45 @@ pub const SURFACES: crate::map::impact::GameSurfaces = crate::map::impact::GameS
 
 /// The world's surfaces as Combat Arms' types (`surface_type`): the map's
 /// tagged triangles and, on another game's map, its names as Combat
-/// Arms'.
+/// Arms'; what a ray hit (`hit`): its collider's own surface first.
 #[derive(bevy::ecs::system::SystemParam)]
-pub struct Ground<'w> {
+pub struct Ground<'w, 's> {
     grid: Option<Res<'w, SurfaceGrid>>,
     names: Option<Res<'w, SurfaceNames>>,
     classes: Option<Res<'w, crate::map::impact::SurfaceClasses>>,
     impacts: Option<Res<'w, crate::map::impact::ActiveImpacts>>,
+    owned: (Query<'w, 's, &'static PropSurface>, Query<'w, 's, &'static BrushSurface>, Query<'w, 's, &'static ColliderOf>),
 }
 
-impl Ground<'_> {
+/// The surface named on collider `hit` or its body: a `PropSurface` (a
+/// prop's; the glass sets of Combat Arms' maps), else a brush entity's
+/// `BrushSurface` (a door, a breakable, a window).
+pub fn owned_surface<'a>(
+    hit: Entity,
+    props: &'a Query<&PropSurface>,
+    brushes: &'a Query<&BrushSurface>,
+    colliders: &Query<&ColliderOf>,
+) -> Option<&'a str> {
+    let body = colliders.get(hit).map_or(hit, |c| c.body);
+    props
+        .get(hit)
+        .or_else(|_| props.get(body))
+        .map(|p| p.0.as_str())
+        .or_else(|_| brushes.get(hit).or_else(|_| brushes.get(body)).map(|b| b.0.as_str()))
+        .ok()
+}
+
+impl Ground<'_, '_> {
+    /// The type of what a ray hit at `at`: its own surface
+    /// (`owned_surface`), else the world's there (`at`).
+    pub fn hit(&self, hit: Entity, at: Vec3) -> u16 {
+        let (props, brushes, colliders) = &self.owned;
+        match owned_surface(hit, props, brushes, colliders) {
+            Some(s) => self.ty(s),
+            None => self.at(at),
+        }
+    }
+
     /// The box around the world (metres), where the map has surfaces.
     pub fn bounds(&self) -> Option<(Vec3, Vec3)> {
         self.grid.as_deref()?.bounds()
@@ -1118,7 +1150,7 @@ fn shot_effects(
                 let ty = if character {
                     if heads.contains(hit) { 4 } else { 6 }
                 } else {
-                    grid.at(*to)
+                    grid.hit(*hit, *to)
                 };
                 let surface = tables.surface(ty);
                 let Some(record) = tables.impact(&wfx.impact) else { continue };
@@ -1151,7 +1183,7 @@ fn shot_effects(
                     let ty = if has_health && is_character {
                         if heads.contains(hit) { 4 } else { 6 }
                     } else {
-                        grid.at(*point)
+                        grid.hit(*hit, *point)
                     };
                     if let Some(record) = tables.impact(&wfx.impact) {
                         let seen = cam.is_some_and(|c| c.gates(*point, *point, !mine).impact_seen);

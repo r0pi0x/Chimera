@@ -485,3 +485,35 @@ fn r10_grayhammer_fans_animate() {
     eprintln!("grayhammer: {sprites} sprite sections, {playing} playing");
     assert!(playing >= 1);
 }
+
+/// Glass on the real maps (weapon_firing.md "Penetration": Glass passes,
+/// Bullet-Proof Glass stops): the static glass of each type is a
+/// collision set named with its surface (what a round reads there:
+/// crystaltower has both, in solid and ray-hit-only polygons; freezer's
+/// windows are all Bullet-Proof), and glass world models that move or
+/// break (nodes) take their type as their surface (`map::brush_surface`,
+/// crystaltower's 16 of Glass and 8 of Bullet-Proof Glass).
+#[test]
+fn glass_sets_and_glass_world_models_name_their_surface() {
+    let Some(mount) = mount() else { return };
+    let tris = |map: &MapData, name: &str| -> usize {
+        map.collision_sets.iter().filter(|c| c.name == name).map(|c| c.indices.len()).sum()
+    };
+    let crystal = world::load_world(&mount, "crystaltower").unwrap();
+    for set in ["glass (Glass)", "non-solid glass (Glass)", "glass (Bullet-Proof Glass)", "non-solid glass (Bullet-Proof Glass)"] {
+        assert!(tris(&crystal, set) > 0, "crystaltower: {set}");
+    }
+    for set in crystal.collision_sets.iter().filter(|c| c.see_through) {
+        let want = if set.name.contains("Bullet-Proof") { "Bullet-Proof Glass" } else { "Glass" };
+        assert_eq!(set.surface.as_deref(), Some(want), "{}", set.name);
+    }
+    let nodes = |ty: &str| {
+        (0..crystal.entities.len())
+            .filter(|&i| crystal.entities[i].mover)
+            .filter(|&i| chimera_world::map::entities::brush_surface(&crystal.meshes, i).as_deref() == Some(ty))
+            .count()
+    };
+    assert_eq!((nodes("40"), nodes("41")), (16, 8), "crystaltower's glass world models");
+    let freezer = world::load_world(&mount, "freezer").unwrap();
+    assert!(tris(&freezer, "glass (Bullet-Proof Glass)") > 1000 && tris(&freezer, "glass (Glass)") == 0, "freezer");
+}

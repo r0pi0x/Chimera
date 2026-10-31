@@ -377,3 +377,45 @@ fn a_combat_arms_soldier_fires_the_ak47_on_dust2() {
     assert_eq!(left + 1, full, "one round");
     assert!(now < health, "the AK-47's round hurt a Combat Arms soldier");
 }
+
+#[derive(Resource, Default)]
+struct Continued(usize);
+
+fn count_continued(mut events: MessageReader<chimera_sim::weapon::WeaponEvent>, mut n: ResMut<Continued>) {
+    n.0 += events
+        .read()
+        .filter(|e| matches!(e.kind, chimera_sim::weapon::WeaponEventKind::ShotContinued { .. }))
+        .count();
+}
+
+/// cs_office's windows (func_breakable_surf glass) under Combat Arms' M4A1
+/// (weapon_firing.md "Penetration": Glass passes): their nodes' surface
+/// is CS:S's glass (`map::BrushSurface`), Combat Arms' Glass through the
+/// mashup's table, and the round breaks a pane and goes on through it.
+#[test]
+fn a_combat_arms_round_breaks_an_office_window_and_goes_through() {
+    let Some(map) = load("cs_office") else { return };
+    let scale = map.entity_scale;
+    let windows = entities_of(&map, "func_breakable_surf", None);
+    let entities = map.entities.clone();
+    let mut sim = sim(map);
+    sim.app.init_resource::<Continued>().add_systems(Update, count_continued);
+    let names = sim.app.world().resource::<SurfaceNames>().clone();
+    let world = sim.app.world_mut();
+    let surfaces: Vec<(usize, String)> = world
+        .query::<(&MapBrushEntity, &chimera_world::map::BrushSurface)>()
+        .iter(world)
+        .filter(|(n, _)| windows.contains(&n.0))
+        .map(|(n, s)| (n.0, s.0.clone()))
+        .collect();
+    assert!(!surfaces.is_empty(), "the windows' nodes have surfaces");
+    for (i, s) in &surfaces {
+        assert_eq!(names.resolve(s), "Glass", "window {i}: {s}");
+    }
+    assert!(
+        break_one(&mut sim, &entities, &windows, scale, weapons::RIFLE).is_some(),
+        "Combat Arms' M4A1 breaks one of cs_office's {} windows",
+        windows.len()
+    );
+    assert!(sim.app.world().resource::<Continued>().0 > 0, "the round went on past the glass");
+}
