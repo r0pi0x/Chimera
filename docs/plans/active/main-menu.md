@@ -273,5 +273,11 @@ picked up again. Where this plan says "Lucker Party", read it as later.
    Tailscale, the VPS together later).
 9. **Default launch:** shelved with Lucker Party.
 
+**First iteration looks like CS:S's menu (user, 2026-10-31):** start
+from CS:S's main menu (the GameUI we already have: its layout, pages
+and dialogs), reused or copied into the party app, then iterate from
+there. This replaces "not CS:S's GameUI" in section 1 for M1; a
+different design is fine where copying makes no sense.
+
 Order: the asset service's M2 (the dev server with internal accounts)
 comes first, then this plan's M1.
