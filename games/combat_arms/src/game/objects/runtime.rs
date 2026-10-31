@@ -75,6 +75,17 @@ pub const AI_DOOR_REACH: f32 = 8.0;
 /// How far (u) switching a volume on moves the players and back
 /// (Corrections (2026-10-22) 16).
 pub const NUDGE: f32 = 10.0;
+/// How a keyframer's placement carries what stands on its objects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Carry {
+    /// A frame's move: every rider.
+    Move,
+    /// A jump (`GOTO`): `ObjectWorld::teleport`'s riders.
+    Teleport,
+}
+
+/// Riders a teleport carries, at most.
+pub const TELEPORT_RIDERS: usize = 32;
 /// A destructible dies at or below this many hit points.
 pub const BREAKABLE_DEATH_HP: f32 = 1.0;
 
@@ -1459,7 +1470,9 @@ impl ObjectWorld {
                     "INIT" => {
                         let at = a.init();
                         self.objects[id as usize].kind = kind;
-                        self.set_pose(id, Pose { pos: at, ..pose });
+                        // A teleport: it still carries what stands on it
+                        // (world_objects.md Follow-up (2026-10-31b) 2.3).
+                        self.teleport(id, Pose { pos: at, ..pose });
                         return;
                     }
                     "TRIGGERCLOSE"
@@ -2319,6 +2332,29 @@ impl ObjectWorld {
         self.objects[id as usize].kind = kind;
     }
 
+    /// A teleport of object `id` to `to` (`INIT`, ...): the characters
+    /// standing on it (a solid world model) move with it, at most
+    /// `TELEPORT_RIDERS` (Follow-up (2026-10-31b) 2.3), except the players
+    /// (a player's position follows their own client, which never carries
+    /// them on a teleport: 2.2).
+    pub fn teleport(&mut self, id: ObjId, to: Pose) {
+        let ob = &self.objects[id as usize];
+        let from = ob.pose;
+        if from != to {
+            let mut riders = Blocking {
+                chars: &self.chars,
+                solid: ob.solid && ob.is_world_model(),
+            }
+            .riders(&from);
+            // Not the players: their place is their own client's, which
+            // never carries them on a teleport.
+            riders.retain(|i| !self.chars[*i].player);
+            riders.truncate(TELEPORT_RIDERS);
+            self.carry(&riders, &from, &to);
+        }
+        self.set_pose(id, to);
+    }
+
     /// Characters standing on a world model that moved from `from` to
     /// `to` move with it (10).
     fn carry(&mut self, riders: &[usize], from: &Pose, to: &Pose) {
@@ -2371,7 +2407,7 @@ impl ObjectWorld {
             self.pass_key(id, &keys[i]);
         }
         if let Some((pos, rot)) = f.place {
-            self.place_controlled(id, pos, rot, true);
+            self.place_controlled(id, pos, rot, Carry::Move);
         }
         if let Some(c) = f.arrived.filter(|c| !c.is_empty()) {
             self.run(&c, Ctx { sender: Who::Object(id), target: Some(id), ..Ctx::default() });
@@ -2421,16 +2457,20 @@ impl ObjectWorld {
     }
 
     /// Put the controlled objects on the path point (`keyframer::
-    /// placements`); with `carry` (a frame's move, not `GOTO`'s jump)
-    /// characters standing on a solid world model among them move with it
-    /// (10: the engine carries on any move).
-    fn place_controlled(&mut self, id: ObjId, pos: Vec3, rot: Quat, carry: bool) {
+    /// placements`); characters standing on a solid world model among
+    /// them move with it (10: the engine carries on any move; a `GOTO`
+    /// jump is a teleport: `teleport`'s riders).
+    fn place_controlled(&mut self, id: ObjId, pos: Vec3, rot: Quat, carry: Carry) {
         let Kind::KeyFramer(k) = &self.objects[id as usize].kind else { return };
         let objects: Vec<(ObjId, Pose)> =
             self.controlled(k).into_iter().map(|o| (o, self.objects[o as usize].pose)).collect();
         let places = keyframer::placements(k, pos, rot, &objects, self.keyframer_target(k));
         for ((o, old), new) in objects.into_iter().zip(places) {
-            if carry && new != old {
+            if carry == Carry::Teleport {
+                self.teleport(o, new);
+                continue;
+            }
+            if new != old {
                 let ob = &self.objects[o as usize];
                 let riders = Blocking {
                     chars: &self.chars,
@@ -2494,7 +2534,9 @@ impl ObjectWorld {
         self.objects[id as usize].kind = Kind::KeyFramer(k);
         if let Some(i) = goto {
             let key = &keys[i];
-            self.place_controlled(id, key.pos, key.rot(), false);
+            // `GOTO`'s jump: a teleport, carrying riders but the players
+            // (Follow-up (2026-10-31b) 2.3).
+            self.place_controlled(id, key.pos, key.rot(), Carry::Teleport);
             self.pass_key(id, key);
         }
         self.active_sound(id);

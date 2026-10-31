@@ -42,12 +42,26 @@
 //! prediction error when the server's state arrives, corrected and eased
 //! like any other.
 //!
-//! Known shortcuts: the spec leaves the client's push and interpolation
-//! open (Open questions 6 and 14: the original pushes its own player
-//! with each server update's move and draws movers interpolated in the
-//! past, rotating ones snapped); ours follows the engine's prediction as
-//! for Source's movers instead: movers stepped to the predicted tick,
-//! the player carried and blocked there, rotating ones too. A stepped
+//! Teleports (`INIT`, `GOTO`) aren't stepped: a client takes the new pose
+//! from the server and never carries its own player with it
+//! (world_objects.md Follow-up (2026-10-31b) 2.2, 2.3), and the server
+//! carries only the other riders (bots) on a teleport, so the player's
+//! place stays its own client's.
+//!
+//! Known shortcuts (a parity decision left to review, plan item 23): the
+//! original draws sliding movers, attached volumes and keyframed objects
+//! with `PushObjects` interpolated 100 ms in the past (the server's
+//! `MaxInterpolateTime`), applies rotating movers' poses on arrival
+//! (20 Hz steps), jumps keyframed objects without `PushObjects` to each
+//! pose, and pushes or carries only its own player by each drawn step
+//! (cut back when wedged, 0.1 u lower when riding, a rotating one's push
+//! out in 1 u steps), never on a teleport (Follow-up (2026-10-31b) 2.1 to
+//! 2.3, cases 40 to 46); ours follows the engine's prediction as for
+//! Source's movers instead: movers stepped to the predicted tick, the
+//! player carried and blocked there, rotating ones too, and a keyframer
+//! without `PushObjects` carries the player on each frame's move (the
+//! original's per-frame teleport doesn't, so its rider is in effect left
+//! behind). A stepped
 //! keyframer faces its target where the client has the target when the
 //! stepping starts (no stock keyframer has one). Only our own player
 //! meets the stepped movers on the client (others are drawn in the
