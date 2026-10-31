@@ -368,6 +368,28 @@ the user's go-ahead: no Actions runs unless asked.
   - Clearer name tags when you aim at someone (their name and more),
     kept unobtrusive.
   - A flaming aura around the current leader.
+- **Characters follow the gun (user, 2026-10-31).** A rung's character
+  comes from a mapping between weapons and the characters that may hold
+  them, so the wearer fits the gun:
+  - Combat Arms guns: any Combat Arms character that can hold guns, never
+    zombies (or other characters that can't hold guns).
+  - Infected hands and other zombie weapons: zombie models only.
+  - Specialist-only guns (Combat Arms' specialist classes): those
+    specialists only.
+  - Boss- and NPC-specific guns: only that boss or NPC type's models, for
+    continuity with the game.
+  - CS:S, lighter: a gun normally bought only on T side gives a T model,
+    a CT-only gun a CT model; guns both sides buy, either.
+  Data-driven (a mapping per game, derived from the games' own data where
+  it says who holds what), with a pick among the allowed characters.
+- **Map vote on the end screen (user, 2026-10-31: build it).** Vote
+  rules, candidate maps and networking.
+- **Swap sound per game (user, 2026-10-31).** CS:S swaps keep
+  `items/battery_pickup.wav`; swaps into Combat Arms get a Combat Arms
+  sound of their own.
+- **Combat Arms movers keep client prediction (user, 2026-10-31).** The
+  original draws sliding movers 100 ms in the past and snaps rotating
+  ones; ours predicts them. Kept as a known difference.
 - **A rung's character: stats only when intrinsic (user, 2026-10-29):
   done, confirm in a playtest.** A drawn Combat Arms body keeps only its
   body type (`FigureType`: sprint, stamina, variable terms), what is its
