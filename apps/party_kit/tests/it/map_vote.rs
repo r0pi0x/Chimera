@@ -87,7 +87,6 @@ fn the_players_vote_for_the_next_map_and_the_most_votes_win() {
     sim.ticks(10);
     assert_eq!(server_vote(&sim).counts.iter().sum::<u32>(), 2, "both counted");
     minigame_net::vote_map(sim.clients[1].app.world_mut(), third).unwrap();
-    sim.clients[1].app.world_mut().resource_mut::<MapVoteChoice>().0 = Some(third);
     let ok = sim.until(300, |s| {
         let want = |c: &[u32]| c[third] == 2 && c[greybox] == 0;
         want(&server_vote(s).counts)
@@ -174,6 +173,7 @@ fn a_listen_server_host_votes_for_its_own_player() {
     minigame_net::vote_map(sim.clients[0].app.world_mut(), 1).unwrap();
     let ok = sim.until(300, |s| s.server.app.world().resource::<MapVote>().counts == [0, 1, 1]);
     assert!(ok, "the host's vote and the client's: {:?}", server_vote(&sim).counts);
+    assert_eq!(sim.server.app.world().resource::<MapVoteChoice>().0, Some(2), "the host's own choice, marked");
     let ok = sim.until(1500, |s| s.server.app.world().resource::<MapVote>().winner.is_some());
     assert!(ok, "it closes");
     let v = server_vote(&sim);

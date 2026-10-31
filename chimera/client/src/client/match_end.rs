@@ -141,10 +141,7 @@ impl MatchEndVote {
     }
 }
 
-/// The local player's vote in the open map vote (this machine's; reset
-/// when the vote goes).
-#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
-pub struct MapVoteChoice(pub Option<usize>);
+pub use chimera_net::minigame_net::MapVoteChoice;
 
 /// The line while the vote of `n` maps is open, `left` s before it closes.
 pub fn vote_line(n: usize, left: f64) -> String {
@@ -260,12 +257,11 @@ fn vote_view(v: Option<&MapVote>, mine: Option<usize>) -> Option<MatchEndVote> {
     })
 }
 
-/// A vote for candidate `i`: sent (`minigame_net::vote_map`) and kept as
-/// the local choice.
+/// A vote for candidate `i`: sent (`minigame_net::vote_map`, which keeps
+/// it as the local choice).
 fn cast(world: &mut World, i: usize) {
-    match chimera_net::minigame_net::vote_map(world, i) {
-        Ok(()) => world.resource_mut::<MapVoteChoice>().0 = Some(i),
-        Err(e) => debug!("map vote: {e}"),
+    if let Err(e) = chimera_net::minigame_net::vote_map(world, i) {
+        debug!("map vote: {e}");
     }
 }
 
@@ -339,7 +335,9 @@ struct VoteRow;
 
 const VOTE_BG: Color = Color::srgba(0.0, 0.0, 0.0, 0.5);
 const VOTE_MINE: Color = Color::srgba(0.85, 0.62, 0.1, 0.32);
-const VOTE_WON: Color = Color::srgba(1.0, 0.82, 0.25, 0.45);
+const VOTE_WON: Color = Color::srgba(1.0, 0.82, 0.25, 0.85);
+/// The winner's text, dark on its gold band.
+const WON_TEXT: Color = Color::srgb(0.08, 0.06, 0.02);
 
 /// The candidates under the standings: "1. de_dust2  2", the local
 /// choice on a gold band, the winner brighter once closed.
@@ -403,7 +401,7 @@ fn draw_vote(
             } else {
                 VOTE_BG
             };
-            let color = if won { GOLD } else if v.mine == Some(i) { LOCAL } else if v.open() { TEXT } else { DIM };
+            let color = if won { WON_TEXT } else if v.mine == Some(i) { LOCAL } else if v.open() { TEXT } else { DIM };
             r.spawn((
                 VoteButton(i),
                 super::widgets::clickable(),

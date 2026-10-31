@@ -953,10 +953,21 @@ fn close_vote(world: &mut World) -> String {
     map
 }
 
+/// This machine's player's vote in the open map vote (set by `vote_map`;
+/// the match-end screen marks it and clears it when the vote goes).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct MapVoteChoice(pub Option<usize>);
+
 /// The local player votes for candidate `choice` (from 0) of the open map
 /// vote: a client sends it to its server, a host casts it for its own
-/// player.
+/// player; either way it is this machine's `MapVoteChoice`.
 pub fn vote_map(world: &mut World, choice: usize) -> Result<(), String> {
+    cast_local(world, choice)?;
+    world.insert_resource(MapVoteChoice(Some(choice)));
+    Ok(())
+}
+
+fn cast_local(world: &mut World, choice: usize) -> Result<(), String> {
     let vote = world.get_resource::<MapVote>().ok_or("no map vote now")?;
     if !vote.open() {
         return Err("the map vote is closed".into());
