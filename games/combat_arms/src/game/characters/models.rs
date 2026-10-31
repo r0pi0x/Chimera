@@ -34,7 +34,11 @@
 //! dresses its players in) loads alone when first worn (`load_body`,
 //! `bodies_on_demand`), its own character model added after the map
 //! (`map::add_character_model`); until then (and on a server, which
-//! draws none) it poses on its skeleton's stock rig (`alias_rig`).
+//! draws none) it poses on its tree's stock rig (`alias_rig`; a body of
+//! another tree, an infected, suit or boss, on its own rig read at once).
+//! An NPC body (`AIModel#`, characters.md 13.2) is such a body too: its
+//! `Skin#` by texture slot (no camouflage or team mark), its own face,
+//! head piece (by its player tree), goggles and backpack only.
 //!
 //! Every character archive (`CHARS_*`) and the third-person guns
 //! (`GUNS_M_HH`) are V2-keyed: without the key nothing here loads (the
@@ -268,7 +272,19 @@ pub fn alias_rig(data: &CharacterData, id: i32) {
     if rig(&r.file).is_some() {
         return;
     }
-    let base = LOADED.iter().filter_map(|i| data.model(*i)).find(|b| b.skeleton == r.skeleton);
+    // A body of another tree (an infected, a suit, a boss: characters.md
+    // 13.4) has no stock rig to pose on: its own rig (the body and its
+    // library, nothing drawn) is read now, from the install's mount.
+    let Some(tree) = data.family(r).stock_rig else {
+        if let Some(mount) = super::super::world::mount() {
+            match model::load(&r.file, &|p: &str| mount.read(p).ok()) {
+                Ok(l) => register(&r.file, Arc::new(Rig::new(l.model, l.list))),
+                Err(e) => warn!("Combat Arms: body {} ({}): {e}", r.name, r.file),
+            }
+        }
+        return;
+    };
+    let base = LOADED.iter().filter_map(|i| data.model(*i)).find(|b| b.skeleton == tree);
     if let Some(stock) = base.and_then(|b| rig(&b.file)) {
         register(&r.file, stock);
     }
@@ -285,8 +301,10 @@ pub fn drawn(ca: &CaData, look: &Selection) -> Option<(String, i32)> {
     let g = groups().lock().ok()?;
     let group = g.iter().find(|g| g.records.contains(&record.id))?;
     let face = if group.faces.contains(&look.face) { look.face } else { data.default_face(record.id) };
-    let head = data.worn_head(look.head, face, record.skeleton);
-    let head = if data.head_file(head, record.skeleton).is_some() { head } else { -1 };
+    // An NPC body wears its own head piece only (13.2: no face's hair).
+    let pieces = data.piece_skeleton(record);
+    let head = if record.npc.is_some() { look.head } else { data.worn_head(look.head, face, pieces) };
+    let head = if data.head_file(head, pieces).is_some() { head } else { -1 };
     Some((
         group.name(),
         group.number_with(record.id, face, head, look.goggle, look.backpack),
@@ -591,6 +609,10 @@ pub fn append_shared(map: &mut MapData, models: &SharedModels, kit: &crate::map:
 /// 3 and 4 clan background and emblem: mark 0 without a clan, 5 on the
 /// record's additional skins).
 fn slot(data: &CharacterData, record: &ModelRecord, slot: i32, c: i32, teammate: bool) -> String {
+    // An NPC body: its `Skin#` by slot, no camouflage or mark (13.2).
+    if let Some(n) = &record.npc {
+        return usize::try_from(slot).ok().and_then(|i| n.skins.get(i)).cloned().unwrap_or_default();
+    }
     let (upper, lower) = data.skins(record, c);
     match slot {
         0 => upper.unwrap_or_default().to_string(),
@@ -713,9 +735,14 @@ fn body_group(
     }
     // Faces (part 1): this skeleton's (by model 0's face redirect), each
     // record's default first.
+    // An NPC body (13.2): its own face, head piece, goggles and backpack
+    // only.
+    let npc = base.npc.as_ref();
+    let pieces = data.piece_skeleton(base);
     let mut face_ids: Vec<i32> = Vec::new();
-    for f in group.records.iter().map(|&id| data.default_face(id)).chain(data.loadouts.faces.iter().copied()) {
-        if !face_ids.contains(&f) {
+    let pool: Vec<i32> = if npc.is_some() { Vec::new() } else { data.loadouts.faces.clone() };
+    for f in group.records.iter().map(|&id| data.default_face(id)).chain(pool) {
+        if f >= 0 && !face_ids.contains(&f) {
             face_ids.push(f);
         }
     }
@@ -733,7 +760,7 @@ fn body_group(
             face: f,
             ..Selection::default()
         };
-        if !infected.contains(&f) && data.effective(&look).0.skeleton != base.skeleton {
+        if npc.is_none() && !infected.contains(&f) && data.effective(&look).0.skeleton != base.skeleton {
             continue;
         }
         let Some(rec) = data.face(f) else { continue };
@@ -751,13 +778,19 @@ fn body_group(
     }
     // Head pieces (part 2): none first, then the pool's and the faces'.
     group.heads.push(-1);
-    let mut head_ids: Vec<i32> = data.loadouts.heads.clone();
-    head_ids.extend(group.faces.iter().filter_map(|&f| data.face(f).and_then(|r| r.hair)));
+    let head_ids: Vec<i32> = match npc {
+        Some(n) => vec![n.head],
+        None => {
+            let mut ids = data.loadouts.heads.clone();
+            ids.extend(group.faces.iter().filter_map(|&f| data.face(f).and_then(|r| r.hair)));
+            ids
+        }
+    };
     for h in head_ids {
         if group.heads.contains(&h) {
             continue;
         }
-        let Some(path) = data.head_file(h, base.skeleton) else { continue };
+        let Some(path) = data.head_file(h, pieces) else { continue };
         let Some(rec) = data.head.iter().find(|x| x.id == h) else { continue };
         match merge(&mut m, &rig_data.bones, path, scale, file) {
             Ok((lods, _)) => {
@@ -774,7 +807,11 @@ fn body_group(
     // files of the body's figure type.
     group.goggles.push(-1);
     group.backpacks.push(-1);
-    for (part, pool, records) in [(3u16, &data.loadouts.goggles, &data.goggle), (4, &data.loadouts.backpacks, &data.backpack)] {
+    let (goggle_pool, backpack_pool) = match npc {
+        Some(n) => (vec![n.goggle], vec![n.backpack]),
+        None => (data.loadouts.goggles.clone(), data.loadouts.backpacks.clone()),
+    };
+    for (part, pool, records) in [(3u16, &goggle_pool, &data.goggle), (4, &backpack_pool, &data.backpack)] {
         for &id in pool {
             let chosen = if part == 3 { &group.goggles } else { &group.backpacks };
             if chosen.contains(&id) {
@@ -819,7 +856,7 @@ fn body_group(
                         }
                         // The team mark in its mark's own style too
                         // (`[TeamMark]`'s `RenderStyle#`).
-                        Source::Body(record, 2, _) => (
+                        Source::Body(record, 2, _) if record.npc.is_none() => (
                             slot(&data, record, 2, c, teammate),
                             render_style::of_list(&data.marks.render_styles, i32::from(teammate)),
                         ),

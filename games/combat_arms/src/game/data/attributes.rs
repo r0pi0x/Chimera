@@ -1293,6 +1293,63 @@ impl BodyLook {
     }
 }
 
+/// `AIModel<N>`: an NPC body record (characters.md 13.2): read like a
+/// `Model#` record, but with its skins in texture-slot order (`Skin#`),
+/// its face, head piece, goggles and backpack named by record `Name`
+/// (`AIFace`, `AIHair`, `AIGoggle`, `AIBackpack`, each defaulting to a
+/// name no record has: none) and its own animation and death keys.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NpcLook {
+    pub name: String,
+    pub file: String,
+    /// `Skeleton`: the hit table (-1: none set).
+    pub skeleton: i32,
+    /// `Skin0..`: texture slot i.
+    pub skins: Vec<String>,
+    pub render_styles: Vec<String>,
+    /// `AttachFace` (default 1): a separate face piece is drawn.
+    pub attach_face: bool,
+    /// `AIFace`, `AIHair`, `AIGoggle`, `AIBackpack`: record names.
+    pub face: String,
+    pub hair: String,
+    pub goggle: String,
+    pub backpack: String,
+    pub figure_type: i32,
+    /// `AIOnly` (default 1) and `HumanModel` (default 1).
+    pub ai_only: bool,
+    pub human: bool,
+    /// `UseSpecialDeathAni`: a death animation that always plays.
+    pub special_death: Option<String>,
+    /// `ClientFX0..`: effect groups worn on the body.
+    pub client_fx: Vec<String>,
+    pub gear: i32,
+}
+
+impl NpcLook {
+    pub fn read(s: &Section) -> Self {
+        let list = |prefix: &str| -> Vec<String> { s.string_list(prefix).iter().map(|v| text(v)).collect() };
+        let named = |key: &str, fallback: &str| s.string(key).map(text).unwrap_or_else(|| fallback.to_string());
+        Self {
+            name: name_of(s),
+            file: s.string("ModelFile").map(text).unwrap_or_default(),
+            skeleton: s.int("Skeleton", -1),
+            skins: list("Skin"),
+            render_styles: list("RenderStyle"),
+            attach_face: s.int("AttachFace", 1) != 0,
+            face: named("AIFace", "AIFace0"),
+            hair: named("AIHair", "AIhair0"),
+            goggle: named("AIGoggle", "AIGoggle0"),
+            backpack: named("AIBackpack", "AIBackpack0"),
+            figure_type: s.int("FigureType", 0),
+            ai_only: s.int("AIOnly", 1) != 0,
+            human: s.int("HumanModel", 1) != 0,
+            special_death: s.string("UseSpecialDeathAni").map(text).filter(|d| !d.is_empty()),
+            client_fx: list("ClientFX"),
+            gear: s.int("GearID", -1),
+        }
+    }
+}
+
 /// The models file's body types, characters, head pieces and faces.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ModelsFile {
@@ -1306,11 +1363,20 @@ pub struct ModelsFile {
     pub bodies: Vec<BodyLook>,
     /// `Overidable_Model<N>`, by record index.
     pub overrides: Vec<InfectionLook>,
+    /// `AIModel<N>` (characters.md 13.2), by record index.
+    pub npcs: Vec<NpcLook>,
+    /// `AIFace<N>` (the same fields as `Face<N>`), by record index.
+    pub ai_faces: Vec<PieceRecord>,
+    /// `Skeleton<N>`: the hit tables (11, 13.6), by record index.
+    pub hit_tables: Vec<Vec<SkeletonNode>>,
 }
 
 impl ModelsFile {
     pub fn read(doc: &Document) -> Self {
         Self {
+            npcs: doc.records("AIModel").into_iter().map(NpcLook::read).collect(),
+            ai_faces: doc.records("AIFace").into_iter().map(PieceRecord::read).collect(),
+            hit_tables: doc.records("Skeleton").into_iter().map(SkeletonNode::read_all).collect(),
             figure_types: doc.records("FigureType").into_iter().map(FigureTypeRecord::read).collect(),
             models: doc.records("Model").into_iter().map(WearRecord::read).collect(),
             hair: doc.records("Hair").into_iter().map(WearRecord::read).collect(),

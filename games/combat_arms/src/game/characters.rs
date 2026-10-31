@@ -29,6 +29,16 @@
 //!   removal time.
 //! - `models`: the install's bodies and third-person weapons (2) as
 //!   Chimera's character and held models, and their rigs.
+//! - `families`: the body families (13.4; data/npc_bodies.toml): the
+//!   NPC and boss bodies (`AIModel#`, `records`) a player may wear, and
+//!   how the driver runs on each: the male and female trees unchanged,
+//!   the infected (Tanker, Assassin) on the hand class 39 and the `V`
+//!   legs whatever is held (`VD_HIT`, `VDIE`), the powered suits on the
+//!   robot classes (a gun of no suit class on the suit's own), the
+//!   bosses on a minimal mapping (idle, walk, fire, melee, hit, death);
+//!   a body's aim nodes, hit table (`Skeleton#`: ours for 0 and 1, the
+//!   install's past them, `records::table`, `weapons::hit_table`) and
+//!   feet follow it.
 //!
 //! Each tick (`FixedUpdate`, after the weapons: the spec's server runs the
 //! driver per movement frame) every living character's `CaAnim` advances
@@ -115,6 +125,18 @@
 //!
 //! Known shortcuts (docs/tech-debt.md; the most literal reading where the
 //! spec is unclear, listed for its open questions):
+//! - NPC and boss bodies (13.8): the hull stays the player's for every
+//!   body (Open question 35): a suit's or boss's body stands on the
+//!   hull's bottom (its feet where its `LST`, else its first animation,
+//!   puts them: `skeleton::Rig::new`) and rises above the hull, and shots
+//!   reach its spheres through a box widened to hold them (`weapons`); a
+//!   suit's crouch speed and eye height are the player's; a gun of no
+//!   suit class on the big suit plays its machine gun's (ours, Open
+//!   question 36); the EOD boss's `AL` pulse isn't played; a body of
+//!   another tree poses before its drawn model loads on its own rig, read
+//!   at once from the install where the rung dresses it
+//!   (`models::alias_rig`); an NPC body's `ClientFX#` are worn as its
+//!   face's are (markers over its head too).
 //! - No V2 key: no body, head piece, goggle or third-person weapon model
 //!   loads (the unkeyed corpses and zombie bodies on the stock trees
 //!   aren't player records; `heavy::characters` poses them; characters
@@ -180,6 +202,7 @@
 pub mod bodies_on_demand;
 pub mod death;
 pub mod driver;
+pub mod families;
 pub mod held_on_demand;
 pub mod models;
 pub mod records;
@@ -200,7 +223,7 @@ use super::{
     data::CaData,
     movement::CaMovement,
     rules::spawns::CaProtected,
-    weapons::{CaSpread, FEMALE, HitSpheres, Location, MALE, zoom::CaZoom},
+    weapons::{CaSpread, HitSpheres, Location, zoom::CaZoom},
 };
 use crate::{
     core::{
@@ -232,6 +255,10 @@ pub struct CaAnim {
     pub skeleton: usize,
     /// The body's rig (None: no model, the spec's skeleton).
     pub rig: Option<Arc<Rig>>,
+    /// The body's family (13.4: how the driver runs on it, `families`)
+    /// and its record's name (`Family::played`).
+    pub family: &'static families::Family,
+    pub record: String,
     /// A weapon status reported since the last update.
     pub pending: Option<Status>,
     /// The last damage was above 0.
@@ -259,13 +286,24 @@ pub struct CaAnim {
 }
 
 impl CaAnim {
+    /// A male player body's state (`with_family` for any other).
     pub fn new(body: i32, skeleton: usize, rig: Option<Arc<Rig>>) -> Self {
-        let list = rig.as_ref().map_or_else(|| driver::spec_library(skeleton == 1), |r| Arc::new(r.list.clone()));
+        let family = families::families().of("", skeleton);
+        Self::with_family(body, skeleton, rig, family, "")
+    }
+
+    /// Body `body` (record `record`) of `family` on hit table `skeleton`.
+    pub fn with_family(body: i32, skeleton: usize, rig: Option<Arc<Rig>>, family: &'static families::Family, record: &str) -> Self {
+        let list = rig.as_ref().map_or_else(|| driver::spec_library(family.aim == Some(1)), |r| Arc::new(r.list.clone()));
+        let mut driver = Driver::new(list);
+        driver.family = Some(family);
         Self {
-            driver: Driver::new(list),
+            driver,
             body,
             skeleton,
             rig,
+            family,
+            record: record.to_string(),
             pending: None,
             damaged: false,
             shot: false,
@@ -298,14 +336,20 @@ impl CaAnim {
     /// The posed skeleton now, with aim (`server`: the server's shares).
     pub fn posed(&self, crouch: f32, squash: f32, server: bool) -> Posed {
         let mut posed = self.unaimed(crouch, squash);
-        posed.aim(&records::builtin().skeleton(self.skeleton).aim, self.pitch, self.twist, server);
+        posed.aim(self.aim_nodes(), self.pitch, self.twist, server);
         posed
+    }
+
+    /// The seven aim nodes its family pitches and twists (8; none: no
+    /// aim, 13.5): the male or female player's names.
+    pub fn aim_nodes(&self) -> &'static [String] {
+        self.family.aim.map_or(&[], |a| records::table(a).aim.as_slice())
     }
 
     /// `posed` for the client's view and the server's (`posed(.., false)`,
     /// `posed(.., true)`), the layers posed once: only the aim differs.
     pub fn posed_both(&self, crouch: f32, squash: f32) -> (Posed, Posed) {
-        let aim = &records::builtin().skeleton(self.skeleton).aim;
+        let aim = self.aim_nodes();
         let mut seen = self.unaimed(crouch, squash);
         let mut server = seen.clone();
         seen.aim(aim, self.pitch, self.twist, false);
@@ -316,7 +360,7 @@ impl CaAnim {
     /// The pose before the aim.
     fn unaimed(&self, crouch: f32, squash: f32) -> Posed {
         let d = &self.driver;
-        let skel = records::builtin().skeleton(self.skeleton);
+        let skel = records::table(self.family.aim.unwrap_or(0));
         match &self.rig {
             Some(rig) => {
                 let pose = if self.death.is_some() {
@@ -455,6 +499,25 @@ impl Plugin for CaCharactersPlugin {
         look_cvars(app);
         use crate::console::ConsoleAppExt;
         app.console_command(
+            "ca_wear",
+            "ca_wear <record id or name>: wear that body (an NPC's or boss's with its own look) as a rung's look until the next rung (13.8; screenshots, checks).",
+            |w, args| {
+                let want = args.first().ok_or("ca_wear <record id or name>")?;
+                let data = w.get_resource::<CaData>().ok_or("no Combat Arms data")?.clone();
+                let ch = data.characters();
+                let record = match want.parse::<i32>() {
+                    Ok(id) => ch.model(id),
+                    Err(_) => ch.model.iter().find(|m| m.name.eq_ignore_ascii_case(want)),
+                }
+                .ok_or_else(|| format!("no body record {want}"))?;
+                let look = ch.default_look(record.id);
+                models::alias_rig(ch, record.id);
+                let me = w.query_filtered::<Entity, With<LocalPlayer>>().iter(w).next().ok_or("no player")?;
+                w.entity_mut(me).insert((CaRungLook(look), look));
+                Ok(Some(format!("{} ({}): {}", record.name, record.id, ch.family(record).name)))
+            },
+        );
+        app.console_command(
             "ca_emote",
             "Hunted only: play emote 1 Insult, 2 Surrender, 3 Insult_Dance or 4 Salute (characters.md 9; the G menu's).",
             |w, args| {
@@ -556,6 +619,12 @@ fn unit() -> f32 {
 fn body_of(data: &CaData, look: &Selection) -> (i32, usize, Option<Arc<Rig>>) {
     let (record, _) = data.characters().effective(look);
     (record.id, record.skeleton, models::rig(&record.file))
+}
+
+/// The selection's body record's family and name.
+fn family_of(data: &CaData, look: &Selection) -> (&'static families::Family, String) {
+    let (record, _) = data.characters().effective(look);
+    (data.characters().family(record), record.name.clone())
 }
 
 /// The local player's own look (characters.md 1, "The selection": what
@@ -680,10 +749,12 @@ fn setup(
     for (e, look, anim) in &characters {
         let look = look.copied().unwrap_or_default();
         let (body, skeleton, rig) = body_of(&data, &look);
+        let (family, record) = family_of(&data, &look);
+        let female = family.aim == Some(1);
         if let Some(f) = females.as_mut()
-            && f.0.contains(&e) != (skeleton == 1)
+            && f.0.contains(&e) != female
         {
-            if skeleton == 1 {
+            if female {
                 f.0.insert(e);
             } else {
                 f.0.remove(&e);
@@ -691,10 +762,10 @@ fn setup(
         }
         let same = anim.is_some_and(|a| a.body == body && a.rig.as_ref().map(Arc::as_ptr) == rig.as_ref().map(Arc::as_ptr));
         if !same {
-            let table = if skeleton == 1 { *FEMALE } else { *MALE };
+            let table = super::weapons::hit_table(skeleton);
             commands
                 .entity(e)
-                .insert((look, CaAnim::new(body, skeleton, rig), CaPose::default(), HitSpheres(table)));
+                .insert((look, CaAnim::with_family(body, skeleton, rig, family, &record), CaPose::default(), HitSpheres(table)));
         }
     }
 }
@@ -796,6 +867,9 @@ fn die(
         };
         let list = anim.driver.list.clone();
         let name = death::choose(&inputs, |n| list.find(n).is_some());
+        // A family's own death (13.8: the infected's `VDIE`, a boss's).
+        let own = anim.family.boss.as_ref().and_then(|b| b.death.clone()).or_else(|| anim.family.death.clone());
+        let name = own.filter(|n| list.find(n).is_some()).unwrap_or(name);
         if let Some(entry) = list.find(&name) {
             let main = &mut anim.driver.main;
             main.start(entry);
@@ -1034,6 +1108,9 @@ fn inputs(
     now: f64,
 ) -> Inputs {
     let look = characters.weapon(weapon.map(|w| w.0.id));
+    // The class and legs the body plays for it (13.8: the infected's
+    // hand class whatever is held, a suit's own class for another gun).
+    let (class, legs) = anim.family.played(&anim.record, look.ani_type, look.lower_ani_type);
     let reloading = weapon.and_then(|w| w.1).is_some_and(|s| s.reloading());
     // The driver's "ammo count 0" is the weapon's total ammunition
     // (Corrections 6), not the clip.
@@ -1050,7 +1127,7 @@ fn inputs(
     if !reloading {
         anim.server_reload = None;
     } else if server && anim.server_reload.is_none() {
-        let (name, _, _) = driver::upper_names(look.ani_type, driver::Posture::Reload, driver::Direction::None);
+        let (name, _, _) = driver::upper_names(class, driver::Posture::Reload, driver::Direction::None);
         let length = anim.driver.find(&name).map(|e| anim.driver.list.entries[e].length());
         let frame = look.frames.get(driver::Posture::Reload.frame_index()).copied().unwrap_or(0);
         anim.server_reload = Some((now, driver::server_reload_timer(length, 1.0, frame)));
@@ -1060,13 +1137,13 @@ fn inputs(
             .server_reload
             .is_some_and(|(since, timer)| timer.is_some_and(|t| (now - since) * 1000.0 + 1e-6 >= t as f64));
     Inputs {
-        class: look.ani_type,
-        legs: look.lower_ani_type,
+        class,
+        legs,
         status: anim.pending.take(),
         reloading,
         reload_may_finish: may_finish,
         fire: driver::fire_held(intent.fire, intent.use_key, server, magazine, reloading, empty),
-        alt_fire: intent.secondary && matches!(look.ani_type, 14 | 16),
+        alt_fire: intent.secondary && driver::has_alt_fire(class),
         empty,
         run: m.run,
         sprint: m.sprint && m.moving,
@@ -1102,7 +1179,7 @@ pub fn pose_of(
     face: Option<&[(String, String, Vec3, Quat)]>,
     held: Option<&str>,
 ) -> CaPose {
-    let skel = records::builtin().skeleton(anim.skeleton);
+    let skel = records::table(anim.skeleton);
     let body = |p: Vec3| skeleton::to_body(p, posed.feet);
     let left_foot = if anim.rig.is_some() {
         posed.node("Left_foot").map(|j| posed.globals[j].0)

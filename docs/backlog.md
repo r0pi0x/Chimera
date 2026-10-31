@@ -368,6 +368,34 @@ the user's go-ahead: no Actions runs unless asked.
   - Clearer name tags when you aim at someone (their name and more),
     kept unobtrusive.
   - A flaming aura around the current leader.
+- **NPC bodies, then NPC and boss guns on them (user, 2026-10-31):
+  done.** The install's `AIModel#` records are body records a player may
+  wear (`characters::records`, id = the `Model#` count + the index: skins
+  by slot, face, head piece and goggles by name), in body families
+  (`characters::families`, data/npc_bodies.toml): the male and female
+  trees unchanged; the Tanker and Assassin on the hand class 39 and the
+  `V` legs whatever is held; the powered suits on the robot classes (the
+  right strafe on the left names; a gun of no suit class on the SMG
+  suit's, the melee record's on the melee suit's, the big suit's on its
+  machine gun's); the bosses on a minimal idle/walk/fire/melee/hit/death
+  mapping (not the HQ raid boss's gunship, nor the dummy). Hit tables
+  2-18 are the install's, spheres on nodes or sockets. The rungs'
+  mapping (data/rung_characters.toml) carries characters.md 12's links:
+  world NPC hands on their `AIModel`s, suit sets on their suits, the HQ
+  raid boss's guns on the big suit (our stand-in), infected hands on
+  every infected type the worlds give them, the spec's guesses for
+  unlinked guns (67, 421, 561, 864, 344 and the crossbows keep the
+  derived rule). `ca_wear <record>` wears a body until the next rung.
+  Tests: combat_arms `npc_bodies`, `heavy::npc_bodies` (cases 62-89 on
+  the install), `heavy::infected`. **Left** (characters.rs Known
+  shortcuts): the hull stays the player's for every body (Open question
+  35: a suit's or boss's body rises above it; shots reach its spheres
+  through a widened box; a suit's eye height and crouch speed are the
+  player's); the EOD boss's `AL` pulse; the Shining's missing weight
+  sets (Quirk 13); case 71 (the equip-slot rule) has no code to test; the
+  install differs from the spec in two counts (113 of the 303
+  `Character#` records are `ItemType` 38, not 22; a fifth extend item,
+  44, has `SubType` 18).
 - **Characters follow the gun (user, 2026-10-31): done; a spec session
   for the rest.** A rung's character is drawn among the characters
   allowed to hold its weapon (`chimera_sim::minigame::holders`, each
@@ -393,7 +421,10 @@ the user's go-ahead: no Actions runs unless asked.
   modes (bots.md 11 leaves them out of scope) and their models; (4) any
   weapon field in the weapons file that restricts who holds it. With
   those, the data's `[weapons]` overrides take them; until then such a
-  gun on a rung is worn by any player body.
+  gun on a rung is worn by any player body. **Answered** in
+  specs/combat_arms/characters.md section 12 (holders by data link, the
+  equip-slot rule, infected hands; test cases 62–74, Open questions 24–30),
+  and taken into the data (the entry above).
 - **Map vote on the end screen (user, 2026-10-31): done.** A
   definition's `map_vote` (`chimera_sim::minigame::vote`, settings in
   chimera/sim/data/map_vote.toml: 3 candidates, 12 s, a 3 s reveal):

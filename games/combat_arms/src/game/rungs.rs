@@ -29,8 +29,14 @@
 //!   install has, specialists and mercenaries included
 //!   (`CharacterData::rung_bodies`; without the install's models file the
 //!   stock six), never a zombie; an infected's hand the infected's bodies
-//!   only (below); a definition's `rung_extras = { character = { weapons
-//!   = .. } }` overrides it; with that body's default face; it plays with the
+//!   only (below); the NPC and boss guns their own NPC bodies, the suit
+//!   weapons their suits, the HQ raid boss's guns the big suit (its
+//!   gunship is no body), an NPC infected's hand any infected type the
+//!   worlds give it (characters.md 12, 13: `AIModel#` names, `@npcs`); a
+//!   definition's `rung_extras = { character = { weapons
+//!   = .. } }` overrides it; with that body's default look (an NPC body's
+//!   own face, head piece and goggles: `CharacterData::default_look`,
+//!   drawn, not worn as gear: `gear::gear_view`); it plays with the
 //!   baseline vest and its own body type only (`gear::vest_of`: no
 //!   drawn armour or speed); a body no stock group
 //!   has loads when first worn (`characters::bodies_on_demand`) and poses
@@ -550,12 +556,16 @@ pub fn bodies_for(holders: &Holders, catalog: Option<&WeaponCatalog>, data: Opti
     let ch = data.characters();
     let mut out: Vec<i32> = Vec::new();
     for n in holders.of(weapon, derived(catalog, weapon)) {
+        // A record no player may wear (the HQ raid boss's gunship, the
+        // dummy: characters.md 13.8) is never drawn.
+        let wearable = |m: &&characters::records::ModelRecord| m.npc.is_none() || ch.family(m).wearable;
         let ids: Vec<i32> = match n.as_str() {
             "@players" => ch.rung_bodies(),
             "@infected" => ch.infected_bodies(),
+            "@npcs" => ch.npc_bodies(),
             _ => match n.parse::<i32>() {
-                Ok(id) => ch.model(id).map(|m| m.id).into_iter().collect(),
-                Err(_) => ch.model.iter().filter(|m| holders::matches(&n, &m.name)).map(|m| m.id).collect(),
+                Ok(id) => ch.model(id).filter(wearable).map(|m| m.id).into_iter().collect(),
+                Err(_) => ch.model.iter().filter(wearable).filter(|m| holders::matches(&n, &m.name)).map(|m| m.id).collect(),
             },
         };
         if ids.is_empty() {
@@ -598,13 +608,16 @@ fn draw_melee(world: &World, d: &RungDraw, rng: &mut Rng) -> Option<&'static str
     (!pool.is_empty()).then(|| pool[rng.below(pool.len())])
 }
 
-/// The look a rung's body record `id` gives: that body, its default face.
+/// The look a rung's body record `id` gives: that body with its default
+/// face (an NPC body with its own face, head piece, goggles and backpack:
+/// `CharacterData::default_look`).
 pub fn look_of(world: &World, id: i32) -> Selection {
-    let face = world.get_resource::<CaData>().map_or(0, |d| d.characters().default_face(id));
-    Selection {
-        model: id,
-        face,
-        ..Selection::default()
+    match world.get_resource::<CaData>() {
+        Some(d) => d.characters().default_look(id),
+        None => Selection {
+            model: id,
+            ..Selection::default()
+        },
     }
 }
 
