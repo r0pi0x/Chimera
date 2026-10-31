@@ -49,3 +49,27 @@ fn shown_only_while_dead_with_a_timed_respawn() {
     sim.ticks(2);
     assert_eq!(shown(&mut sim), None, "alive again");
 }
+
+/// The countdown is sized for a 720-line screen and grows with the
+/// window (it was a fixed 28 px, small on a large screen): 1.5 times at
+/// 1080 lines, twice at 1440, and again when the window changes.
+#[test]
+fn the_countdown_scales_with_the_windows_height() {
+    use bevy::window::{PrimaryWindow, WindowResolution};
+    use chimera_client::client::respawn_countdown::SIZE;
+    let mut sim = Sim::new(SimBasePlugins, (GreyboxMapPlugin, RespawnCountdownPlugin));
+    let window = sim
+        .app
+        .world_mut()
+        .spawn((Window { resolution: WindowResolution::from((1920u32, 1080u32)), ..default() }, PrimaryWindow))
+        .id();
+    sim.ticks(2);
+    let size = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        w.query_filtered::<&TextFont, With<RespawnCountdownText>>().single(w).unwrap().font_size
+    };
+    assert_eq!(size(&mut sim), FontSize::Px(SIZE * 1.5));
+    sim.app.world_mut().get_mut::<Window>(window).unwrap().resolution = WindowResolution::from((2560u32, 1440u32));
+    sim.ticks(2);
+    assert_eq!(size(&mut sim), FontSize::Px(SIZE * 2.0));
+}

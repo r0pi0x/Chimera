@@ -8,7 +8,7 @@
 //! - `KillerInfo`: `CamOn` (name, `hp`, `ap`) when the enemy view is on
 //!   or the killer is a teammate, else `CamOff` (name); `Rank` isn't
 //!   driven (no level data).
-//! - `KillerWeapon`: `name` and `weapon_img` (hidden for another game's
+//! - `KillerWeapon`: `name` (the item name, `hud::weapon_name`) and `weapon_img` (hidden for another game's
 //!   gun, which has no art in the install: the name alone); `DamageWnd`: `Damage` and
 //!   `Damage_img` (the zone's texture from the layout's own strings:
 //!   `DamagePointIcon<Zone>Tex`); `Target`: `name`, `KillCount` (the
@@ -319,6 +319,15 @@ fn load_panel(ui: Res<CaUi>, mut state: ResMut<DeathUi>) {
 
 /// The screen while the player is dead (hidden during a map camera).
 #[allow(clippy::too_many_arguments)]
+/// The killing gun by its display name, as the HUD names it
+/// (`hud::weapon_name`: the item table's, another game's from its
+/// strings, else its data's), not its id.
+pub fn name_weapon(screen: &mut DeathScreen, items: &crate::ui::hud::ItemNames, catalog: &crate::weapon::data::WeaponCatalog) {
+    if let Some(w) = screen.weapon.as_mut() {
+        w.name = crate::ui::hud::weapon_name(items, catalog, &w.id);
+    }
+}
+
 fn draw_screen(
     death: Res<CaDeathCam>,
     state: Res<DeathUi>,
@@ -331,12 +340,16 @@ fn draw_screen(
     root: Single<Entity, With<DeathRoot>>,
     mut last: Local<Option<(DeathScreen, crate::ui::hud::Screen, bool)>>,
     mut commands: Commands,
+    names: (Res<crate::ui::hud::ItemNames>, Option<Res<crate::weapon::data::WeaponCatalog>>),
 ) {
     let Some(panel) = &state.panel else { return };
     let loaded = art.as_ref().is_some_and(|a| !a.0.is_empty());
     let ours = gameplay.is_none_or(|g| g.hud == crate::game::GAME);
     let up = death.screen_up && map_view.is_empty() && ours;
-    let shown = if up { death.screen.clone() } else { DeathScreen::default() };
+    let mut shown = if up { death.screen.clone() } else { DeathScreen::default() };
+    if let Some(catalog) = names.1.as_deref() {
+        name_weapon(&mut shown, &names.0, catalog);
+    }
     if !super::rebuild(&mut last, (shown.clone(), hud.screen, loaded), *root, &mut commands) || !up {
         return;
     }

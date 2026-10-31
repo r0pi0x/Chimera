@@ -69,6 +69,29 @@ impl Plugin for FontsPlugin {
     }
 }
 
+/// The client scheme font the shell's overlays take their face from
+/// (`UiFonts::client_face`): CS:S's centre-print font (Trebuchet MS).
+pub const OVERLAY_FONT: &str = "CenterPrintText";
+
+/// The shell's overlays' scale in a window `height` pixels tall: their
+/// sizes are for a 720-line screen (as the kill feed's and the match-end
+/// screen's), never under a third of it.
+pub fn overlay_scale(height: f32) -> f32 {
+    height.max(240.0) / 720.0
+}
+
+/// An overlay's font at `em_px` (already scaled): the HUD's face where the
+/// fonts are loaded (`OVERLAY_FONT`), else Bevy's default face.
+pub fn overlay_font(fonts: Option<&UiFonts>, em_px: f32, bold: bool) -> TextFont {
+    match fonts {
+        Some(f) => f.client_face(OVERLAY_FONT, ("trebuchet ms", bold), em_px),
+        None => TextFont {
+            font_size: FontSize::Px(em_px),
+            ..default()
+        },
+    }
+}
+
 /// Which scheme a font name is looked up in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scheme {
@@ -317,6 +340,20 @@ impl UiFonts {
             .and_then(|s| s.first())
             .map(|s| (s.family.as_str(), s.bold()))
             .unwrap_or((fallback, false));
+        self.em(s.0, s.1, em_px)
+    }
+
+    /// A client scheme font's face at a size of our own (em pixels): for
+    /// the shell's overlays drawn in the HUD's face at their own sizes
+    /// (the minigame's callouts, the respawn countdown, the match-end
+    /// screen: `CenterPrintText`, CS:S's Trebuchet MS); `fallback` (family,
+    /// bold) until the scheme is read or when it lacks the font.
+    pub fn client_face(&self, name: &str, fallback: (&str, bool), em_px: f32) -> TextFont {
+        let s = self
+            .sizes(Scheme::Client, name)
+            .and_then(|s| s.first())
+            .map(|s| (s.family.as_str(), s.bold()))
+            .unwrap_or(fallback);
         self.em(s.0, s.1, em_px)
     }
 

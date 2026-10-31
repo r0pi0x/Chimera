@@ -6,9 +6,14 @@
 //! `HudRoot`), so it looks the same on CS:S's HUD, Combat Arms' and the
 //! minimal one; nothing shows when nothing respawns on a timer (plain
 //! CS:S's and Combat Arms' rules leave `RespawnDue` unset, Combat Arms'
-//! death screen has its own countdown). Part of `ClientPlugins`.
+//! death screen has its own countdown). Sized for a 720-line screen and
+//! scaled with the window's height (`SIZE`, `fonts::overlay_scale`), in
+//! the HUD's face (`fonts::overlay_font`), on a band shaded as it would be
+//! blended in display space (`widgets::display_alpha`). Its ticks sound
+//! through the match's music director (`minigame::moments`' `respawn_in`:
+//! Combat Arms' party cues). Part of `ClientPlugins`.
 //!
-//! Known shortcuts: plain text on a dark band, no gauge or sound.
+//! Known shortcuts: plain text on a dark band, no gauge.
 
 use bevy::prelude::*;
 
@@ -19,7 +24,7 @@ pub struct RespawnCountdownPlugin;
 
 impl Plugin for RespawnCountdownPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<RespawnDue>().add_systems(Startup, spawn).add_systems(Update, draw);
+        app.init_resource::<RespawnDue>().add_systems(Startup, spawn).add_systems(Update, (draw, size));
     }
 }
 
@@ -30,6 +35,10 @@ pub struct RespawnCountdownRoot;
 /// The countdown's text node.
 #[derive(Component)]
 pub struct RespawnCountdownText;
+
+/// The countdown's font size on a 720-line screen, scaled with the
+/// window (`fonts::overlay_scale`).
+pub const SIZE: f32 = 24.0;
 
 /// What the countdown says `left` seconds before the respawn.
 pub fn text(left: f64) -> String {
@@ -59,11 +68,11 @@ fn spawn(mut commands: Commands) {
                 RespawnCountdownText,
                 Text::new(""),
                 TextFont {
-                    font_size: FontSize::Px(28.0),
+                    font_size: FontSize::Px(SIZE),
                     ..default()
                 },
                 TextColor(Color::WHITE),
-                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+                BackgroundColor(super::widgets::display_alpha(Color::srgba(0.0, 0.0, 0.0, 0.55))),
                 Node {
                     padding: UiRect::axes(px(16.0), px(6.0)),
                     ..default()
@@ -90,5 +99,26 @@ fn draw(
                 t.0 = s.clone();
             }
         }
+    }
+}
+
+/// The text's font and band for the window's height, in the HUD's face
+/// (`fonts::overlay_font`): again when the window or the fonts change.
+fn size(
+    window: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    fonts: Option<Res<super::fonts::UiFonts>>,
+    mut label: Query<(&mut TextFont, &mut Node), With<RespawnCountdownText>>,
+    mut sized: Local<Option<u32>>,
+) {
+    let height = window.iter().next().map_or(720.0, |w| w.height());
+    let s = super::fonts::overlay_scale(height);
+    let key = (s * 1000.0) as u32;
+    if *sized == Some(key) && !fonts.as_ref().is_some_and(|f| f.is_changed()) {
+        return;
+    }
+    *sized = Some(key);
+    for (mut font, mut node) in &mut label {
+        *font = super::fonts::overlay_font(fonts.as_deref(), SIZE * s, true);
+        node.padding = UiRect::axes(px(16.0 * s), px(6.0 * s));
     }
 }

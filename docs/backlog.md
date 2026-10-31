@@ -1325,7 +1325,8 @@ our design. Not repeated here: what parity-gaps.md, tech-debt.md or the
 sections above already list.
 
 - **Gun game: no sound or banner for a rung up or down, the last rung,
-  a new leader or the win.** Gun game mods on CS:S servers play a
+  a new leader or the win: done (checked against the code 2026-10-31),
+  confirm in a playtest.** Gun game mods on CS:S servers play a
   level-up and level-down sound, name the new gun big, call the leader
   and the last level to everyone and play a winner sound; Combat Arms'
   Arms Race has its last-stage call-out and music. Ours writes
@@ -1349,8 +1350,16 @@ sections above already list.
   `music::director`; its text and the files of Combat Arms' level-up and
   result sounds aren't known: music_ambience.md Open question 1), so
   Combat Arms lends no cue pack yet and plain Combat Arms is unchanged.
+  (Since then Combat Arms lends one: Arms Race's interface sounds, "No
+  music in the party's matches" below.) *2026-10-31:* the shell's callout
+  was a fixed 44 px, small on a large screen: it is sized for 720 lines
+  and scales with the window (`callouts::line_size`), in the HUD's face
+  (CS:S's centre-print Trebuchet MS, `fonts::overlay_font`), its band
+  shaded as a display-space blend (`widgets::display_alpha`); test
+  chimera_client `callouts::the_callout_scales_with_the_windows_height`.
 - **Gun game: the death view fights the 2 s respawn, and there is no
-  countdown.** The dead player gets their identity's death camera: CS:S's
+  countdown: done (checked against the code 2026-10-31), confirm in a
+  playtest.** The dead player gets their identity's death camera: CS:S's
   2 s death cam, 0.7 s travel and 5 s freeze (`client::spectate`,
   `ui::freeze_cam`) or Combat Arms' 3.5 s pull-back (`game::death_cam`),
   but the minigame respawns after `delay` 2 s (`runtime::respawn_dead`),
@@ -1368,6 +1377,12 @@ sections above already list.
   camera has settled (0.7 s). Its camera and death screen now show only
   while Combat Arms' HUD is up, so a CS:S-gun death gets CS:S's view.
   Plain CS:S and Combat Arms set no `RespawnDue` and are unchanged.
+  *2026-10-31:* the countdown was a fixed 28 px (small at 1800 lines): it
+  scales with the window in the HUD's face (`respawn_countdown::SIZE`;
+  test `respawn_countdown::the_countdown_scales_with_the_windows_height`);
+  Combat Arms' death screen named the killing gun by its id
+  (`m136_at4allstar`), now by its display name (`hud::death::name_weapon`;
+  test combat_arms ui `death_screen::the_killing_gun_shows_by_its_display_name`).
 - **Kill feed and death screen show no weapon for the other game's
   guns. (Fixed 2026-10-28, confirm in a playtest: each game registers its
   icons in Chimera's `client::weapon_icons::WeaponIcons`, CS:S's font
@@ -1379,7 +1394,8 @@ sections above already list.
   art in its own install by id (`ui::install::kill_icon`), which a CS:S
   gun lacks. Fix: each feed draws the gun's own game's icon (CS:S's font
   glyph, Combat Arms' texture), else the display name.
-- **Match end is a few lines of text.** The results replace the notices
+- **Match end is a few lines of text: done (checked against the code
+  2026-10-31), confirm in a playtest.** The results replace the notices
   in the minigame panel (`minigame::results`, `hud::MinigameHud::
   results`): no full-screen winner or scoreboard, no winner sound or
   music, no "next map" line, no map vote (minigame.rs shortcut), and the
@@ -1406,7 +1422,17 @@ sections above already list.
   have no minigame and show nothing new. Follow-up: a map vote on that
   screen (the server's rotation picks the map meanwhile), and the Tab
   board's colours.
-- **Spawn protection can't be seen.** A protected player (`runtime`
+  *2026-10-31:* its shades blended in linear light left the world at
+  ~65% and the standings' panel see-through; they now cover as
+  display-space blends (`widgets::display_alpha`), the text is in the
+  HUD's face (CS:S's Trebuchet MS; the winner and the highlighted rows
+  bold), your row white on a gold band (gold on gold read poorly), and
+  the Deaths and Gun columns no longer touch. Not done: the map vote (not
+  small: the vote's rules, the candidates and their network part) and the
+  Tab board's colours.
+- **Spawn protection can't be seen: done (2026-10-29, the user's
+  decision: 2 s, see-through, shot through, firing ends it), confirm in
+  a playtest.** A protected player (`runtime`
   `Protected`, through `core::God`) looks like anyone else, to them and
   to others, so shots on them read as lost hits. CS:S has none of its
   own (deathmatch plugins tint the player); Combat Arms' look for a
@@ -1424,7 +1450,8 @@ sections above already list.
   there is no blood without damage. The visible marker came after
   (2026-10-29, the user's): the protected body draws see-through (see
   "Spawn protection: 2 s, see-through, shot through").
-- **Ladder rules players expect from gun game.** No cost for a suicide,
+- **Ladder rules players expect from gun game: done (checked against
+  the code 2026-10-31), confirm in a playtest.** No cost for a suicide,
   a fall, `kill` or one's own grenade (gun game mods take a level, so
   `kill` isn't a free reset); a late joiner starts on the first rung
   (mods give the lowest or average rung of the others); no grenade or
@@ -1442,7 +1469,13 @@ sections above already list.
   kill's stolen rung (`demote_on = "melee_death"`) stays. Grenade rungs
   were already possible (Ultimate Gun Game's). Combat Arms' Arms Race
   keeps its spec's rules (no suicide cost); plain CS:S and Combat Arms
-  are unchanged.
+  are unchanged. Since then the knife finale is on by default and its
+  melee rungs scale with the ladder (2026-10-30, "Melee finale on by
+  default" above), and a power-curve ladder ends on a grenade rung, then
+  melee (the HE-then-knife finale). Tests: chimera_sim
+  `minigame::a_suicide_or_a_fall_costs_a_rung_but_never_below_the_first`,
+  `a_late_joiner_starts_on_the_lowest_rung_the_average_or_the_first`,
+  `a_knife_finale_is_a_knife_alone_and_its_kill_wins`.
 - **Loudness and hearing range differ by game.** Each game's guns,
   footsteps and impacts play at their own levels and falloff (Combat
   Arms' nearly flat up close, CS:S's own curves), so one game's players
@@ -1486,7 +1519,8 @@ sections above already list.
   one's dominator revenge; nothing of it here (2b notes only the freeze
   panel's line). Needs the threshold, the sounds, the icons and who
   sees what.
-- **No music in the party's matches.** Combat Arms' music director
+- **No music in the party's matches: done (checked against the code
+  2026-10-31), confirm in a playtest.** Combat Arms' music director
   takes its facts from Combat Arms' match (`game::music` reads
   `CaMatchView`'s mode and phase), which a minigame doesn't run, so the
   party plays no start track, round or result sounds, and Arms Race's
@@ -1510,7 +1544,8 @@ sections above already list.
   Arms' own interface sounds still have no files (data/music.toml
   `[interface]`; the party's are `[party.interface]`): a follow-up could
   give it the same inferred files.
-- **A rung's swap is a hard cut.** Body, HUD and movement change on the
+- **A rung's swap is a hard cut: done but character choice, confirm in a
+  playtest.** Body, HUD and movement change on the
   tick (`identity`): others see the model pop from one game's character
   to the other's, the player's HUD jumps; no swap effect or sound. And
   no character choice: `character` in a definition is informational
@@ -1522,7 +1557,12 @@ sections above already list.
   white and fades over 0.3 s while the new gun draws; another player's
   swap puffs a pale sphere at its body for 0.5 s (`client::
   swap_effect`); once per swap, nothing for a first identity or a dead
-  player. No sound. Character choice still needs the user's decision.
+  player. *2026-10-31:* with it, the local swap sounds the cue packs'
+  `swap` cue (CS:S's pack: `items/battery_pickup.wav`, ours; Combat
+  Arms' pack has none, so its swaps take CS:S's; none with `cues =
+  "none"`; test chimera_client
+  `swap_effect::a_local_swap_sounds_the_swap_cue_once`). Character
+  choice still needs the user's decision.
 - **Balance across identities is unmeasured.** Speeds, sprint, hull
   height, jump, head size and one-shot ranges change with the rung's
   game; nobody has looked at whether one game's rungs are easier to win

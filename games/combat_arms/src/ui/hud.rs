@@ -492,7 +492,7 @@ fn name_of(names: &Query<NameParts>, settings: Option<&NetSettings>, e: Entity) 
 /// What the HUD calls weapon `id`: the item table's name (an app may add
 /// another game's guns' names to it: CS:S's from its strings), else its
 /// data's `hud.name`, else its id.
-fn weapon_name(items: &ItemNames, catalog: &crate::weapon::data::WeaponCatalog, id: &str) -> String {
+pub(crate) fn weapon_name(items: &ItemNames, catalog: &crate::weapon::data::WeaponCatalog, id: &str) -> String {
     items.0.get(id).cloned().unwrap_or_else(|| {
         catalog
             .get(id)
