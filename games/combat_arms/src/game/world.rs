@@ -36,7 +36,12 @@
 //!   objects say (`light_group_colours`: `StartColor` when `StartOn`,
 //!   black when not, the stored colour without an object) and add
 //!   min(255, base + ⌊colour × x⌋) to the lightmaps and vertex colours they
-//!   cover (`add_light`). The light is the game's fixed-function multiply:
+//!   cover (`add_light`); each group a `LightGroup` object names is
+//!   also a light style of the map (`light_group_styles`, 32 up: what it
+//!   adds to each texel and vertex-lit corner, lit with it at its full
+//!   colour minus without it, the other groups as they start;
+//!   vertex-lit triangles it touches get rectangles of their own), which
+//!   `objects::lights` switches as the object's messages say. The light is the game's fixed-function multiply:
 //!   2 (`Saturate`) × texture × light × `LightmapTFactor`² (`light_value`,
 //!   the stored bytes as sRGB), with the map's look untonemapped (clamped,
 //!   as the game's output).
@@ -402,6 +407,8 @@ pub fn convert_with(
         .and_then(|o| colour(o, "LightmapTFactor"))
         .unwrap_or([1.0; 3]);
     let groups = light_group_colours(world);
+    let styles = light_group_styles(world);
+    let full = light_group_full_colours(world);
     let sky = sky_object(world);
     // World models that move, hide or break: a node each (the map's first
     // entities), drawn and collided there.
@@ -422,13 +429,21 @@ pub fn convert_with(
     let lut = LightLut::new(t_factor);
     let mut atlas = Atlas::new(lut);
     let mut meshes: HashMap<String, Building> = HashMap::new();
+    let mut switched = SwitchedLight::default();
     for (render, alpha, skybox, entity) in &worlds {
         for block in &render.blocks {
-            let lit = Lighting { groups: &groups, lut };
-            add_block(block, *alpha, *skybox, *entity, &lit, &mut atlas, &mut meshes, &to_engine);
+            let lit = Lighting {
+                groups: &groups,
+                styles: &styles,
+                full: &full,
+                lut,
+            };
+            add_block(block, *alpha, *skybox, *entity, &lit, &mut atlas, &mut switched, &mut meshes, &to_engine);
         }
     }
-    let lightmap = atlas.finish();
+    let sizes: Vec<(u32, u32)> = atlas.rects.iter().map(|r| (r.0, r.1)).collect();
+    let mut lightmap = atlas.finish();
+    lightmap.map.styles = switched.styles(&sizes, &lightmap, &styles, &groups);
     let mut built: Vec<(MapMesh, Option<String>, String)> = meshes
         .into_iter()
         .map(|(key, mut b)| {
@@ -461,6 +476,14 @@ pub fn convert_with(
             || super::rules::objects::is_mode_object(&o.class, o.name())
             || super::objects::is_logic_object(&o.class)
     });
+    // Each switchable light group's style on its `LightGroup` object.
+    for e in &mut map.entities {
+        if e.classname() == "LightGroup"
+            && let Some(&style) = e.get("targetname").and_then(|n| styles.get(n))
+        {
+            e.keyvalues.push((super::objects::runtime::keys::LIGHT_STYLE.into(), style.to_string()));
+        }
+    }
     world_info(world, &mut map, scale);
     spawns(world, &mut map, &sky, &to_engine);
     start_point_feet(world, &mut map, &sky, scale, &to_engine);
@@ -602,6 +625,114 @@ pub fn light_group_colours(world: &World) -> impl Fn(&str, [f32; 3]) -> [f32; 3]
     }
 }
 
+/// Each switchable light group (one that a `LightGroup` object names and
+/// some render block lights) as a Chimera light style: 32 and up in the
+/// order of the groups' names (the map's own numbering, made here).
+pub fn light_group_styles(world: &World) -> std::collections::BTreeMap<String, u8> {
+    let mut names: Vec<&str> = world
+        .objects_of("LightGroup")
+        .filter_map(|(_, o)| o.name())
+        .filter(|n| {
+            std::iter::once(&world.render)
+                .chain(world.render.models.iter().map(|(_, w)| w))
+                .any(|r| r.blocks.iter().any(|b| b.light_groups.iter().any(|g| g.name == *n)))
+        })
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names
+        .into_iter()
+        .take(256 - 32)
+        .enumerate()
+        .map(|(i, n)| (n.to_string(), 32 + i as u8))
+        .collect()
+}
+
+/// A switchable group's colour when it is on: its object's `StartColor`
+/// /255 (white by default), whether it starts on or not.
+fn light_group_full_colours(world: &World) -> impl Fn(&str) -> [f32; 3] + '_ {
+    move |name: &str| {
+        world
+            .objects_of("LightGroup")
+            .map(|(_, o)| o)
+            .find(|o| o.name() == Some(name))
+            .and_then(|o| colour(o, "StartColor"))
+            .unwrap_or([1.0; 3])
+    }
+}
+
+/// What each switchable light group adds, gathered while the atlas is
+/// built: per style, (atlas rectangle, texel x, y in it, the light it
+/// adds there: lit with the group at its full colour minus lit without
+/// it, the other groups as at the map's start).
+#[derive(Default)]
+struct SwitchedLight(std::collections::BTreeMap<u8, Vec<(u32, u32, u32, [f32; 3])>>);
+
+impl SwitchedLight {
+    fn add(&mut self, style: u8, rect: u32, x: u32, y: u32, d: [f32; 3]) {
+        if d != [0.0; 3] {
+            self.0.entry(style).or_default().push((rect, x, y, d));
+        }
+    }
+
+    /// The styles on the laid-out atlas (`sizes`: each rectangle's size
+    /// before laying out; a halved rectangle's texel takes the mean of
+    /// what its sources add), each texel with its border copies.
+    fn styles(
+        self,
+        sizes: &[(u32, u32)],
+        laid: &LaidOut,
+        styles: &std::collections::BTreeMap<String, u8>,
+        start: &dyn Fn(&str, [f32; 3]) -> [f32; 3],
+    ) -> Vec<crate::map::MapLightStyle> {
+        let width = laid.map.width;
+        let mut out = Vec::new();
+        for (style, recs) in self.0 {
+            let mut acc: std::collections::BTreeMap<u32, [f32; 3]> = std::collections::BTreeMap::new();
+            for (rect, x, y, d) in recs {
+                let (ow, oh) = sizes[rect as usize];
+                let (w, h) = laid.sizes[rect as usize];
+                let (px, py) = laid.places[rect as usize];
+                let halved = (w, h) != (ow, oh);
+                let (fx, fy) = if halved { (x / 2, y / 2) } else { (x, y) };
+                let n = if halved {
+                    let span = |c: u32, o: u32| (2 * c..2 * c + 2).filter(|s| *s < o).count() as f32;
+                    span(fx, ow) * span(fy, oh)
+                } else {
+                    1.0
+                };
+                let xs: Vec<u32> = [Some(px + 1 + fx), (fx == 0).then_some(px), (fx + 1 == w).then_some(px + w + 1)]
+                    .into_iter()
+                    .flatten()
+                    .collect();
+                let ys: Vec<u32> = [Some(py + 1 + fy), (fy == 0).then_some(py), (fy + 1 == h).then_some(py + h + 1)]
+                    .into_iter()
+                    .flatten()
+                    .collect();
+                for &ty in &ys {
+                    for &tx in &xs {
+                        let a = acc.entry(ty * width + tx).or_default();
+                        for k in 0..3 {
+                            a[k] += d[k] / n;
+                        }
+                    }
+                }
+            }
+            let name = styles.iter().find(|(_, s)| **s == style).map(|(n, _)| n.as_str()).unwrap_or("");
+            let on = start(name, [1.0; 3]).iter().any(|c| (c * 255.0) as u32 > 0);
+            let (texels, rgb): (Vec<u32>, Vec<[f32; 3]>) = acc.into_iter().unzip();
+            out.push(crate::map::MapLightStyle {
+                style,
+                on,
+                texels,
+                rgb,
+                ..default()
+            });
+        }
+        out
+    }
+}
+
 /// A light group's addition to one channel: min(255, base + ⌊colour × x⌋).
 pub fn add_light(base: u8, colour: f32, x: u8) -> u8 {
     (base as u32 + (colour * x as f32).floor().max(0.0) as u32).min(255) as u8
@@ -639,6 +770,9 @@ impl LightLut {
 /// How light groups and the lightmap factor light a block.
 struct Lighting<'a> {
     groups: &'a dyn Fn(&str, [f32; 3]) -> [f32; 3],
+    /// The switchable groups' styles and full colours.
+    styles: &'a std::collections::BTreeMap<String, u8>,
+    full: &'a dyn Fn(&str) -> [f32; 3],
     lut: LightLut,
 }
 
@@ -656,6 +790,43 @@ impl Lighting<'_> {
 
     fn texel(&self, rgb: [u8; 3]) -> [f32; 3] {
         self.lut.get(rgb)
+    }
+
+    /// The block's groups with their colours at the map's start (black
+    /// when off) and, for a switchable one, its style and full colour.
+    fn all<'b>(&self, block: &'b lt::RenderBlock) -> Vec<(&'b lt::BlockLightGroup, [f32; 3], Option<(u8, [f32; 3])>)> {
+        block
+            .light_groups
+            .iter()
+            .map(|g| {
+                let c = (self.groups)(&g.name, g.color);
+                let c = if c.iter().any(|x| (x * 255.0) as u32 > 0) { c } else { [0.0; 3] };
+                (g, c, self.styles.get(&g.name).map(|s| (*s, (self.full)(&g.name))))
+            })
+            .collect()
+    }
+
+    /// What switchable group `g` (index into `all`) adds to a texel or
+    /// vertex: lit with it at its full colour minus lit without it, the
+    /// other groups at their start colours (`x(h)`: group h's intensity
+    /// there).
+    fn delta(
+        &self,
+        all: &[(&lt::BlockLightGroup, [f32; 3], Option<(u8, [f32; 3])>)],
+        g: usize,
+        base: [u8; 3],
+        x: &dyn Fn(usize) -> u8,
+    ) -> [f32; 3] {
+        let mut without = base;
+        for (h, (_, c, _)) in all.iter().enumerate() {
+            if h != g {
+                without = std::array::from_fn(|k| add_light(without[k], c[k], x(h)));
+            }
+        }
+        let Some((_, full)) = all[g].2 else { return [0.0; 3] };
+        let with: [u8; 3] = std::array::from_fn(|k| add_light(without[k], full[k], x(g)));
+        let (a, b) = (self.texel(with), self.texel(without));
+        std::array::from_fn(|k| a[k] - b[k])
     }
 }
 
@@ -789,10 +960,13 @@ fn add_block(
     entity: Option<(usize, Vec3)>,
     lit: &Lighting,
     atlas: &mut Atlas,
+    switched: &mut SwitchedLight,
     meshes: &mut HashMap<String, Building>,
     to_engine: &impl Fn(lt::Vec3) -> Vec3,
 ) {
     let groups = lit.on(block);
+    let all = lit.all(block);
+    let styled: Vec<usize> = (0..all.len()).filter(|&g| all[g].2.is_some()).collect();
     // Vertex colours with the light groups that are on.
     let colours: Vec<[u8; 3]> = block
         .vertices
@@ -840,6 +1014,40 @@ fn add_block(
         }
         let texels = Texels::Bytes(rgb.as_chunks::<3>().0.to_vec());
         let rect = atlas.add_texels(s.lightmap_width, s.lightmap_height, texels);
+        // What each switchable group adds where it lights this section.
+        if styled.iter().any(|&g| all[g].0.sections.get(si).is_some_and(|v| !v.is_empty())) {
+            let h = s.lightmap_height;
+            // Each group's intensity per texel of the section.
+            let grids: Vec<Vec<u8>> = all
+                .iter()
+                .map(|(group, ..)| {
+                    let mut grid = vec![0u8; (w * h) as usize];
+                    for sub in group.sections.get(si).into_iter().flatten() {
+                        for y in 0..sub.height {
+                            for x in 0..sub.width {
+                                let (tx, ty) = (sub.left + x, sub.top + y);
+                                let Some(&i) = sub.intensities.get((y * sub.width + x) as usize) else { continue };
+                                if tx < w && ty < h {
+                                    grid[(ty * w + tx) as usize] = i;
+                                }
+                            }
+                        }
+                    }
+                    grid
+                })
+                .collect();
+            for &g in &styled {
+                let Some((style, _)) = all[g].2 else { continue };
+                for t in 0..(w * h) as usize {
+                    if grids[g][t] == 0 {
+                        continue;
+                    }
+                    let base = [s.lightmap[3 * t], s.lightmap[3 * t + 1], s.lightmap[3 * t + 2]];
+                    let d = lit.delta(&all, g, base, &|k| grids[k][t]);
+                    switched.add(style, rect, t as u32 % w, t as u32 / w, d);
+                }
+            }
+        }
         for t in tris {
             let (key, r) = triangle_key(block, t);
             let uvs = std::array::from_fn(|k| block.vertices[t.indices[(k + r) % 3] as usize].uv0);
@@ -911,6 +1119,37 @@ fn add_block(
                 // Vertex lighting: a 2 x 2 rectangle whose bilinear blend
                 // over the triangle is the corners' linear one.
                 let [l0, l1, l2] = t.indices.map(|i| Vec3::from(lit.texel(colours[i as usize])));
+                // The switchable groups lighting a corner: a rectangle of
+                // its own (not a shared flat one) and what each adds.
+                let switches: Vec<(u8, [Vec3; 3])> = styled
+                    .iter()
+                    .filter(|&&g| t.indices.iter().any(|&i| all[g].0.intensities.get(i as usize).is_some_and(|x| *x > 0)))
+                    .filter_map(|&g| {
+                        let (style, _) = all[g].2?;
+                        let d = t.indices.map(|i| {
+                            let [r, gr, b, _] = block.vertices[i as usize].rgba();
+                            let x = |k: usize| all[k].0.intensities.get(i as usize).copied().unwrap_or(0);
+                            Vec3::from(lit.delta(&all, g, [r, gr, b], &x))
+                        });
+                        Some((style, d))
+                    })
+                    .collect();
+                if !switches.is_empty() {
+                    let rect = atlas.add(2, 2, vec![l0.to_array(), l1.to_array(), l2.to_array(), (l1 + l2 - l0).to_array()]);
+                    for (style, [d0, d1, d2]) in &switches {
+                        for (k, d) in [*d0, *d1, *d2, *d1 + *d2 - *d0].into_iter().enumerate() {
+                            switched.add(*style, rect, k as u32 % 2, k as u32 / 2, d.to_array());
+                        }
+                    }
+                    let lms = [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75]];
+                    let mut tri = [0u32; 3];
+                    for k in 0..3 {
+                        let c = Corner { lm: lms[k], ..corners[k] };
+                        tri[k] = push(mesh, rects, &c, rect);
+                    }
+                    mesh.indices.extend([tri[0], tri[2], tri[1]]);
+                    continue;
+                }
                 let (rect, lms) = if l0 == l1 && l1 == l2 {
                     (atlas.add_flat(l0.to_array()), [[0.5, 0.5]; 3])
                 } else {

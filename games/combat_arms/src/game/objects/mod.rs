@@ -63,6 +63,7 @@ pub mod geometry;
 pub mod keyframer;
 pub mod movers;
 mod net;
+pub mod lights;
 pub mod runtime;
 pub mod sound;
 
@@ -214,6 +215,12 @@ pub struct CaObjects {
 }
 
 impl CaObjects {
+    /// Object `i`'s state at the map's start if it is a `LightGroup`.
+    pub fn world_start_light(&self, i: usize) -> Option<Kind> {
+        let o = self.world.objects.get(i)?;
+        (o.class == "LightGroup").then(|| runtime::light_group_start(&o.props))
+    }
+
     /// The character entity of a `Who`.
     pub fn entity(who: Who) -> Option<Entity> {
         match who {
@@ -238,7 +245,7 @@ impl Plugin for CaObjectsPlugin {
             .add_message::<CaObjectEvent>()
             .init_resource::<sound::CaObjectSounds>()
             .add_message::<super::view_model::attached::CaLoopSound>()
-            .add_systems(Update, sound::play.before(super::effects::sounds::loops))
+            .add_systems(Update, (sound::play.before(super::effects::sounds::loops), lights::show))
             .add_systems(
                 FixedUpdate,
                 (load, (gather, frame).chain().run_if(authoritative), apply)

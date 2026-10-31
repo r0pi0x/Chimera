@@ -30,9 +30,10 @@
 //! sound is kept through `PAUSE`: the spec stops it only when inactive).
 //!
 //! Known shortcuts: `SoundFX` keeps its on/off state and restart count (the
-//! client's `music::ambient` plays them); `LightGroup`, `Camera`,
-//! `SpecialFX` and `TargetTrigger` keep their on/off state only
-//! (switchable lights, map cameras and objective markers aren't drawn);
+//! client's `music::ambient` plays them); `LightGroup` keeps its on/off
+//! state and colour, which the bridge shows as the group's light style
+//! (`lights`); `Camera`, `SpecialFX` and `TargetTrigger` keep their on/off
+//! state only (map cameras and objective markers aren't drawn);
 //! `BGMTrigger` only reports its `ON`/`OFF` (`Fx::Music`, `music::trigger`);
 //! breakables' `Spawn`, prop debris, `WorldModelDebris` and
 //! `CreateExplosion` aren't made (only the death command and the
@@ -106,6 +107,9 @@ pub mod keys {
     pub const RAYHIT: &str = "chimera_rayhit";
     /// A keyframer's keys chunk, hex.
     pub const KEYS: &str = "chimera_keys";
+    /// A `LightGroup`'s Chimera light style (`game::world`: its group's
+    /// share of the lightmaps).
+    pub const LIGHT_STYLE: &str = "chimera_light_style";
 }
 
 /// A map entity's keyvalues and, for a world model or a volume, its box
@@ -286,13 +290,42 @@ pub enum Kind {
     KeyFramer(Box<Keyframer>),
     Explosion { radius: f32, damage: f32, effect: String, remove: bool },
     Volume,
-    /// `SoundFX`, `LightGroup`, `Camera`, `SpecialFX`: on or off; `plays`
+    /// `SoundFX`, `Camera`, `SpecialFX`: on or off; `plays`
     /// counts how often it was (re)started (a sound plays again from its
     /// start on each: music_ambience.md 6).
     Switchable { on: bool, plays: u32 },
     /// `BGMTrigger` (music_ambience.md 5): on or off by its messages; the
     /// music itself is the bridge's (`Fx::Music`).
     MusicTrigger { on: bool },
+    /// `LightGroup` (world_dat.md "Light groups"): on or off and its
+    /// colour (0..1); what it shows is its colour when on, black when off
+    /// (`shown`).
+    LightGroup { on: bool, color: Vec3 },
+}
+
+/// A `LightGroup`'s state at the map's start: `StartOn` (true) and
+/// `StartColor`/255 (white).
+pub fn light_group_start(p: &Props) -> Kind {
+    // Colours are "r g b"; `vector` reads entity axes (x z y).
+    let c = p.vector("StartColor").map_or(Vec3::ONE, |c| Vec3::new(c.x, c.z, c.y) / 255.0);
+    Kind::LightGroup {
+        on: p.bool_or("StartOn", true),
+        color: c,
+    }
+}
+
+impl Kind {
+    /// A light group's effective colour: its colour if on, black if off
+    /// (a colour that truncates to 0 at 8 bits counts as off).
+    pub fn shown(&self) -> Option<Vec3> {
+        match self {
+            Kind::LightGroup { on, color } => {
+                let c = if *on { *color } else { Vec3::ZERO };
+                Some(if (c * 255.0).to_array().iter().any(|x| *x as u32 > 0) { c } else { Vec3::ZERO })
+            }
+            _ => None,
+        }
+    }
 }
 
 /// A sound an object plays (14): its transition sound or a keyframer's
@@ -794,7 +827,8 @@ impl ObjectWorld {
                         remove: p.bool_or("RemoveWhenDone", true),
                     }
                 }
-                "SoundFX" | "LightGroup" | "Camera" | "SpecialFX" | "ScaleSprite" => {
+                "LightGroup" => kind = light_group_start(&p),
+                "SoundFX" | "Camera" | "SpecialFX" | "ScaleSprite" => {
                     kind = Kind::Switchable {
                         on: p.bool_or("StartOn", class != "Camera"),
                         plays: 0,
@@ -1503,6 +1537,28 @@ impl ObjectWorld {
                     _ => {}
                 }
             }
+            // world_dat.md "Light groups": `COLOR v` (every channel v/255)
+            // or `COLOR r g b` (a negative value keeps that channel)
+            // changes the colour without switching the group on.
+            Kind::LightGroup { on, color } => match word {
+                "ON" => *on = true,
+                "OFF" => *on = false,
+                "TOGGLE" => *on = !*on,
+                "COLOR" => {
+                    let n: Vec<f32> = args.iter().filter_map(|a| a.parse().ok()).collect();
+                    let want = match n.as_slice() {
+                        [v] => [*v; 3],
+                        [r, g, b, ..] => [*r, *g, *b],
+                        _ => [-1.0; 3],
+                    };
+                    for (k, v) in want.into_iter().enumerate() {
+                        if v >= 0.0 {
+                            color[k] = v / 255.0;
+                        }
+                    }
+                }
+                _ => {}
+            },
             Kind::MusicTrigger { on } => match word {
                 "ON" => {
                     *on = true;
@@ -2202,6 +2258,7 @@ impl ObjectWorld {
                 s += &format!(" | keys {} active {} t {:.2} next {}", k.keys.len(), k.active, k.t, k.next)
             }
             Kind::Switchable { on, plays } => s += &format!(" | on {on} plays {plays}"),
+            Kind::LightGroup { on, color } => s += &format!(" | on {on} colour {color}"),
             Kind::MusicTrigger { on } => s += &format!(" | music {on}"),
             _ => {}
         }

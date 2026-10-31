@@ -984,3 +984,52 @@ fn hgoilrig_water_sounds_follow_their_keyframers() {
     let at = w.get::<Transform>(e).unwrap().translation;
     assert!(at.distance(to_engine(pos, o.scale)) < 0.05, "the anchor at the sound");
 }
+
+
+/// world_dat.md "Light groups" and its case 12 on the stock maps: each
+/// group a `LightGroup` object switches is a light style of the converted
+/// map that starts as the object says (SNOWSTORM's two off; GRAVITYB's
+/// `Light_Grv_01` on, `Light_Grv_02` off; RURALESTATE's fridge light
+/// off) and lights texels; the object carries its style. RURALESTATE's
+/// fridge door switches its light on as it opens and off once closed
+/// (its `OpeningCommand` and `ClosedCommand`).
+#[test]
+fn stock_light_groups() {
+    use combat_arms::game::objects::{lights, runtime::keys};
+    let Some(mount) = mount() else { return };
+    for (name, want) in [
+        ("snowstorm", &[("LightGroup_H01", false), ("LightGroup_H02", false)][..]),
+        ("gravityb", &[("Light_Grv_01", true), ("Light_Grv_02", false)][..]),
+        ("ruralestate", &[("LightFridge01", false)][..]),
+    ] {
+        let Some(data) = map(&mount, name) else { continue };
+        let l = data.lightmap.as_ref().expect("a lightmap");
+        assert_eq!(l.styles.len(), want.len(), "{name}");
+        for (group, on) in want {
+            let e = data
+                .entities
+                .iter()
+                .find(|e| e.classname() == "LightGroup" && e.get("targetname") == Some(*group))
+                .unwrap_or_else(|| panic!("{name}: {group}"));
+            let style: u8 = e.get(keys::LIGHT_STYLE).expect("its style").parse().unwrap();
+            let s = l.styles.iter().find(|s| s.style == style).expect("the style");
+            assert_eq!(s.on, *on, "{name} {group}");
+            assert!(!s.texels.is_empty(), "{name} {group} lights something");
+        }
+        if name != "ruralestate" {
+            continue;
+        }
+        let mut t = T::of(&data);
+        t.frame();
+        let style = |t: &T| lights::wanted(&t.w);
+        let fridge: u8 = l.styles[0].style;
+        assert_eq!(style(&t), [(fridge, false)]);
+        t.send("RotatingDoor0", "ACTIVATE", Who::Character(1));
+        assert_eq!(style(&t), [(fridge, true)], "on as the door opens");
+        t.frames(30);
+        t.send("RotatingDoor0", "ACTIVATE", Who::Character(1));
+        t.frames(30);
+        assert_eq!(t.state("RotatingDoor0"), State::Off);
+        assert_eq!(style(&t), [(fridge, false)], "off once it is closed");
+    }
+}

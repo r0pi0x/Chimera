@@ -67,7 +67,7 @@ fn prop(name: &str, value: Value) -> Property {
 
 /// A floor at y = 0 (±1000 u) and a wall across +Z at z = 500 facing the
 /// origin, one drawn triangle, and a JSF start point 66 u up facing +Z.
-fn small_world() -> World {
+pub(crate) fn small_world() -> World {
     let floor = (
         [0.0, 1.0, 0.0],
         [[-1000.0, 0.0, -1000.0], [-1000.0, 0.0, 1000.0], [1000.0, 0.0, 1000.0], [1000.0, 0.0, -1000.0]],
@@ -1099,4 +1099,154 @@ fn the_game_lists_its_maps_for_the_console() {
     ]));
     assert_eq!((combat_arms::game::INFO.map_names)(&mount), ["junk_flea", "warehouse"]);
     assert_eq!((combat_arms::game::INFO.map_file)("warehouse"), None, "by id and hash only: no file clients download");
+}
+
+/// `small_world` plus a lightmapped triangle (a texture pass and its
+/// 2 x 1 lightmap pass) and light group `G` over both blocks: on the
+/// vertex-lit triangle's first and third corners and on the lightmap's
+/// texels; `LightGroup` object `G` starting on or not.
+pub(crate) fn light_group_world(start_on: bool) -> World {
+    use lithtech_formats::world::{BlockLightGroup, SubLightmap};
+    let mut w = small_world();
+    w.render.blocks[0].light_groups.push(BlockLightGroup {
+        name: "G".into(),
+        color: Vec3::new(1.0, 0.9, 0.8).into(),
+        intensities: vec![100, 0, 50],
+        sections: vec![vec![]],
+    });
+    let vertex = |pos: [f32; 3], uv: [f32; 2]| RenderVertex {
+        pos,
+        uv0: uv,
+        color: 0xFF40_4040,
+        normal: [0.0, 1.0, 0.0],
+        ..default()
+    };
+    let corners = [[0.0, 0.0, 200.0], [0.0, 0.0, 300.0], [100.0, 0.0, 200.0]];
+    let uvs = [[0.0, 0.0], [0.0, 1.0], [1.0, 0.0]];
+    w.render.blocks.push(RenderBlock {
+        sections: vec![
+            Section {
+                textures: ["textures\\floor.dtx".into(), String::new()],
+                shader: shader::LIGHTMAP_TEXTURE,
+                triangle_count: 1,
+                ..default()
+            },
+            Section {
+                shader: shader::LIGHTMAP,
+                triangle_count: 1,
+                lightmap_width: 2,
+                lightmap_height: 1,
+                lightmap: vec![60, 60, 60, 200, 100, 50],
+                ..default()
+            },
+        ],
+        vertices: (0..3).map(|k| vertex(corners[k], uvs[k])).chain((0..3).map(|k| vertex(corners[k], uvs[k]))).collect(),
+        triangles: vec![
+            Triangle {
+                indices: [0, 1, 2],
+                polygon: 0,
+            },
+            Triangle {
+                indices: [3, 4, 5],
+                polygon: 0,
+            },
+        ],
+        light_groups: vec![BlockLightGroup {
+            name: "G".into(),
+            color: Vec3::ONE.into(),
+            intensities: vec![0; 6],
+            sections: vec![
+                vec![],
+                vec![SubLightmap {
+                    left: 0,
+                    top: 0,
+                    width: 2,
+                    height: 1,
+                    intensities: vec![120, 255],
+                }],
+            ],
+        }],
+        ..default()
+    });
+    w.objects.push(Object {
+        class: "LightGroup".into(),
+        properties: vec![
+            prop("Name", Value::String("G".into())),
+            prop("StartOn", Value::Bool(start_on)),
+            prop("StartColor", Value::Color([255.0; 3])),
+        ],
+    });
+    w
+}
+
+/// world_dat.md "Light groups" (switching): a group a `LightGroup`
+/// object names becomes a light style of the converted map, off or on as
+/// the object starts, whose texels add exactly what switching it adds:
+/// the map converted with the group off and relit with it on is the map
+/// converted with it on (lightmap texels with their border copies,
+/// vertex-lit corners), and the other way round; its object carries the
+/// style number.
+#[test]
+fn light_group_switches_as_a_style() {
+    use combat_arms::game::objects::runtime::keys;
+    let off = world::convert(&light_group_world(false), "lg", 0.01, &|_| None);
+    let on = world::convert(&light_group_world(true), "lg", 0.01, &|_| None);
+    let (lo, ln) = (off.lightmap.as_ref().unwrap(), on.lightmap.as_ref().unwrap());
+    assert_eq!((lo.width, lo.height), (ln.width, ln.height), "the same atlas");
+    assert_eq!(lo.styles.len(), 1);
+    let s = &lo.styles[0];
+    assert_eq!((s.style, s.on), (32, false));
+    assert_eq!(ln.styles[0].on, true);
+    // 2 x 1 lightmap texels plus their borders (4 x 3), and the vertex-lit
+    // triangle's 2 x 2 (4 x 4 with borders; its second corner adds
+    // nothing, the fourth texel is the blend).
+    assert!(s.texels.len() >= 12, "{}", s.texels.len());
+    let (relit_on, _) = lo.relit(&|_| 1.0);
+    let (relit_off, _) = ln.relit(&|_| 0.0);
+    // (Relighting clamps at 0: a vertex-lit rectangle's fourth texel, the
+    // corners' extrapolated blend, can be below.)
+    let close = |a: &[[f32; 3]], b: &[[f32; 3]]| {
+        a.iter().zip(b).all(|(x, y)| (0..3).all(|k| (x[k].max(0.0) - y[k].max(0.0)).abs() < 1e-5))
+    };
+    assert!(close(&relit_on, &ln.rgb), "off + switched on = converted on");
+    assert!(close(&relit_off, &lo.rgb), "on + switched off = converted off");
+    assert!(!close(&lo.rgb, &ln.rgb), "and it shows");
+    let group = off.entities.iter().find(|e| e.classname() == "LightGroup").expect("the object");
+    assert_eq!(group.get(keys::LIGHT_STYLE), Some("32"));
+}
+
+/// The object's messages switch the style (world_dat.md "Light groups":
+/// `ON`, `OFF`, `TOGGLE`, `COLOR` changing the colour without switching
+/// on; a colour black at 8 bits counts as off): `objects::lights::wanted`,
+/// and in play `LightStyles`, which the map relights from.
+#[test]
+fn light_group_messages_switch_the_style() {
+    use chimera_world::map::LightStyles;
+    use combat_arms::game::objects::{CaObjectMessage, CaObjects, lights};
+    let map = world::convert(&light_group_world(false), "lg", 0.01, &|_| None);
+    let mut sim = Sim::new(CaSim, MapSimPlugin::new(map));
+    sim.ticks(3);
+    let wanted = |sim: &Sim| lights::wanted(&sim.app.world().resource::<CaObjects>().world);
+    assert_eq!(wanted(&sim), [(32, false)]);
+    let mut send = |sim: &mut Sim, m: &str| {
+        sim.app.world_mut().write_message(CaObjectMessage {
+            target: "G".into(),
+            message: m.into(),
+        });
+        sim.ticks(4);
+    };
+    send(&mut sim, "on");
+    assert_eq!(wanted(&sim), [(32, true)]);
+    assert_eq!(sim.app.world().resource::<LightStyles>().styles, [(32, true)], "the map relights");
+    send(&mut sim, "toggle");
+    assert_eq!(wanted(&sim), [(32, false)]);
+    send(&mut sim, "color 0 0 0");
+    send(&mut sim, "toggle");
+    assert_eq!(wanted(&sim), [(32, false)], "on, but black");
+    send(&mut sim, "color -1 0.9 -1");
+    assert_eq!(wanted(&sim), [(32, false)], "0.9/255 truncates to 0");
+    send(&mut sim, "color 255");
+    assert_eq!(wanted(&sim), [(32, true)]);
+    send(&mut sim, "off");
+    assert_eq!(sim.app.world().resource::<LightStyles>().styles, [(32, false)]);
 }

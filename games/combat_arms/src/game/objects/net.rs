@@ -38,6 +38,17 @@ pub struct NetCaObjects {
     /// The objects' own sounds (world_objects.md 14: transition, active
     /// and placed one-shot sounds; `sound`).
     pub voices: Vec<NetVoice>,
+    /// The light groups switched or recoloured since the start (world_dat.md
+    /// "Light groups": the object sends every client its group's colour).
+    pub lights: Vec<NetLight>,
+}
+
+/// A `LightGroup`'s state.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub struct NetLight {
+    pub id: u32,
+    pub on: bool,
+    pub color: [f32; 3],
 }
 
 /// One object's sound (`runtime::ObjSound`) in a slot.
@@ -174,11 +185,26 @@ fn write(world: &mut World) {
                 .filter_map(move |(shot, s)| s.as_ref().map(|s| NetVoice::of(i as u32, shot, s)))
         })
         .collect();
+    let lights: Vec<NetLight> = o
+        .world
+        .objects
+        .iter()
+        .enumerate()
+        .filter_map(|(i, ob)| match ob.kind {
+            Kind::LightGroup { on, color } if Some(&ob.kind) != o.world_start_light(i).as_ref() => Some(NetLight {
+                id: i as u32,
+                on,
+                color: color.to_array(),
+            }),
+            _ => None,
+        })
+        .collect();
     let now = NetCaObjects {
         map,
         objects,
         sounds,
         voices,
+        lights,
     };
     let have = world.query::<(Entity, &NetCaObjects)>().iter(world).next().map(|(e, n)| (e, n.clone()));
     match have {
@@ -246,6 +272,18 @@ fn read(world: &mut World) {
             let start = o.world.objects[i].props.bool_or("StartOn", true);
             let (on, plays) = net.sounds.iter().find(|s| s.id as usize == i).map_or((start, 0), |s| (s.on, s.plays));
             o.world.objects[i].kind = Kind::Switchable { on, plays };
+        }
+        // The light groups.
+        for i in 0..o.world.objects.len() {
+            let Some(start) = o.world_start_light(i) else { continue };
+            o.world.objects[i].kind = net
+                .lights
+                .iter()
+                .find(|l| l.id as usize == i)
+                .map_or(start, |l| Kind::LightGroup {
+                    on: l.on,
+                    color: Vec3::from(l.color),
+                });
         }
         // The objects' sounds; the one-shots made before this client
         // first heard of them already played (17: a joiner doesn't get
