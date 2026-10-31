@@ -70,3 +70,34 @@ fn a_callout_shows_named_and_sounds_its_cue_once() {
     sim.ticks(2);
     assert_eq!(shown(&mut sim), None, "gone with the callout");
 }
+
+/// The callout is sized for a 720-line screen (its first line big) and
+/// grows with the window, as the match-end screen does: at 1440 lines
+/// twice the size, and again when the window changes.
+#[test]
+fn the_callout_scales_with_the_windows_height() {
+    use bevy::window::{PrimaryWindow, WindowResolution};
+    use chimera_client::client::callouts::line_size;
+    let mut sim = Sim::with(SimBasePlugins, |app| {
+        app.add_plugins((GreyboxMapPlugin, CalloutsPlugin)).init_resource::<MinigameHud>();
+    });
+    let window = sim
+        .app
+        .world_mut()
+        .spawn((Window { resolution: WindowResolution::from((2560u32, 1440u32)), ..default() }, PrimaryWindow))
+        .id();
+    sim.ticks(2);
+    let sizes = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        let mut s: Vec<(usize, FontSize)> = w.query::<(&CalloutLine, &TextFont)>().iter(w).map(|(l, f)| (l.0, f.font_size)).collect();
+        s.sort_by_key(|l| l.0);
+        s
+    };
+    let s = sizes(&mut sim);
+    assert_eq!(s[0].1, FontSize::Px(line_size(0) * 2.0), "the big line");
+    assert_eq!(s[1].1, FontSize::Px(line_size(1) * 2.0));
+    assert!(line_size(0) > line_size(1));
+    sim.app.world_mut().get_mut::<Window>(window).unwrap().resolution = WindowResolution::from((1280u32, 720u32));
+    sim.ticks(2);
+    assert_eq!(sizes(&mut sim)[0].1, FontSize::Px(line_size(0)));
+}

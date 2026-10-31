@@ -3,8 +3,9 @@
 //! install of its `game` (loaded at run time, never shipped): the keys
 //! are the minigame's callouts' (`chimera_sim::minigame::hud::Callout::
 //! cue`: `rung_up`, `rung_down`, `last_rung`, `last_rung_other`,
-//! `lead_taken`, `lead_lost`, `lead_tied`, `match_won`, `match_lost`). A
-//! key the pack lacks is silent.
+//! `lead_taken`, `lead_lost`, `lead_tied`, `match_won`, `match_lost`), and
+//! `swap` (a rung's change of game, `chimera_client::client::swap_effect`).
+//! A key the pack lacks is silent.
 //!
 //! ```toml
 //! id = "cs_source"

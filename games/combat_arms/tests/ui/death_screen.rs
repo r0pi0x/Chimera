@@ -405,3 +405,31 @@ fn case_28_name_tags_while_dead() {
     // Dead players' tags are the dead colour.
     assert_eq!(name_tag(TagInputs { alive: false, body_visible: true, ..dead_me }).unwrap().name, TAG_DEAD);
 }
+
+/// The killing gun shows by its display name, as the HUD names it (the
+/// item table's; another game's gun by the name an app gave it), not
+/// its id (a party death screen read `m136_at4allstar`); with nothing
+/// naming it, the id's last part in capitals.
+#[test]
+fn the_killing_gun_shows_by_its_display_name() {
+    use combat_arms::ui::hud::{ItemNames, death::name_weapon};
+    let screen = |id: &str| DeathScreen {
+        weapon: Some(WeaponView { name: id.rsplit(':').next().unwrap().into(), id: id.into() }),
+        ..Default::default()
+    };
+    let mut items = ItemNames::default();
+    items.0.insert("combat_arms:m136_at4allstar".into(), "AT4 All-Star".into());
+    items.0.insert("cs_source:weapon_ak47".into(), "AK-47".into());
+    let catalog = chimera_sim::weapon::data::WeaponCatalog::default();
+    let named = |id: &str| {
+        let mut s = screen(id);
+        name_weapon(&mut s, &items, &catalog);
+        s.weapon.unwrap().name
+    };
+    assert_eq!(named("combat_arms:m136_at4allstar"), "AT4 All-Star");
+    assert_eq!(named("cs_source:weapon_ak47"), "AK-47");
+    assert_eq!(named("combat_arms:unnamed_gun"), "UNNAMED GUN");
+    let mut none = DeathScreen::default();
+    name_weapon(&mut none, &items, &catalog);
+    assert!(none.weapon.is_none(), "a suicide names no gun");
+}

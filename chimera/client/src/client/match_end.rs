@@ -30,12 +30,15 @@
 //! (`MinigameHud::results_shown`): their title and status lines sat over
 //! the winner's name. Sized by the window's height (`scale`: for a
 //! 720-line screen, as the kill feed; smaller when the standings have
-//! too many rows to fit). `MatchEndView` is the state,
+//! too many rows to fit), in the HUD's face (`fonts::overlay_font`: CS:S's
+//! centre-print Trebuchet MS; the winner and the highlighted rows bold),
+//! its shades as they would be blended in display space
+//! (`widgets::display_alpha`). `MatchEndView` is the state,
 //! headless too (tests read it); drawing is Bevy UI. Nothing shows
 //! without a minigame, so plain CS:S and Combat Arms are unchanged. Part of `ClientPlugins`.
 //!
 //! Known shortcuts: no map vote (the server's rotation picks the next
-//! map); plain text and colours, no game's look or art; no music pause.
+//! map); text and colours in CS:S's face, no game's art; no music pause.
 
 use std::sync::Arc;
 
@@ -230,11 +233,13 @@ pub const MATCH_END_Z: i32 = 75;
 const TEXT: Color = Color::srgb(0.95, 0.95, 0.95);
 const DIM: Color = Color::srgb(0.7, 0.7, 0.72);
 const GOLD: Color = Color::srgb(1.0, 0.82, 0.25);
-const LOCAL: Color = Color::srgb(1.0, 0.85, 0.3);
-const LOCAL_BG: Color = Color::srgba(1.0, 0.8, 0.2, 0.18);
+/// The local player's row: white on a gold band (gold text on it read
+/// poorly).
+const LOCAL: Color = Color::WHITE;
+const LOCAL_BG: Color = Color::srgba(0.85, 0.62, 0.1, 0.32);
 /// Place, Name, Kills, Deaths, Gun, Wins (on a 720-line screen).
 pub const WIDTHS: [f32; 6] = [50.0, 240.0, 80.0, 90.0, 260.0, 80.0];
-const GAP: f32 = 10.0;
+const GAP: f32 = 18.0;
 /// A standings cell's font size on a 720-line screen.
 const CELL: f32 = 20.0;
 
@@ -280,7 +285,9 @@ fn spawn(mut commands: Commands) {
             MatchEndRoot,
             Visibility::Hidden,
             GlobalZIndex(MATCH_END_Z),
-            BackgroundColor(Color::srgba(0.02, 0.02, 0.03, 0.82)),
+            // The shades as they would cover blended in display space
+            // (`widgets::display_alpha`; Bevy's UI blends in linear light).
+            BackgroundColor(super::widgets::display_alpha(Color::srgba(0.02, 0.02, 0.03, 0.72))),
             Node {
                 position_type: PositionType::Absolute,
                 left: px(0.0),
@@ -307,7 +314,7 @@ fn spawn(mut commands: Commands) {
                     padding: UiRect::all(px(12.0)),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.45)),
+                BackgroundColor(super::widgets::display_alpha(Color::srgba(0.0, 0.0, 0.0, 0.5))),
             ));
             c.spawn(text(MatchEndPart::Next, TEXT));
         });
@@ -317,13 +324,10 @@ fn spawn(mut commands: Commands) {
 #[derive(Component)]
 struct StandingsRow;
 
-fn cell(parent: &mut ChildSpawnerCommands, text: String, width: f32, right: bool, color: Color, s: f32) {
+fn cell(parent: &mut ChildSpawnerCommands, text: String, width: f32, right: bool, color: Color, font: &TextFont, s: f32) {
     parent.spawn((
         Text::new(text),
-        TextFont {
-            font_size: FontSize::Px(CELL * s),
-            ..default()
-        },
+        font.clone(),
         TextColor(color),
         TextLayout::justify(if right { Justify::Right } else { Justify::Left }),
         Node {
@@ -345,12 +349,13 @@ fn draw(
     mut commands: Commands,
     mut drawn: Local<Option<(Option<String>, Vec<MatchEndRow>, u32)>>,
     mut sized: Local<Option<u32>>,
+    fonts: Option<Res<super::fonts::UiFonts>>,
 ) {
     let height = window.iter().next().map_or(720.0, |w| w.height());
     let s = scale(height, view.rows.len());
     // The scale as a key: the window's height and the rows' count.
     let key = (s * 1000.0) as u32;
-    let resized = *sized != Some(key);
+    let resized = *sized != Some(key) || fonts.as_ref().is_some_and(|f| f.is_changed());
     if !view.is_changed() && !resized {
         return;
     }
@@ -384,7 +389,8 @@ fn draw(
             }
         };
         if let Some(mut f) = font.filter(|_| resized) {
-            f.font_size = FontSize::Px(part.size() * s);
+            // In the HUD's face (`fonts::overlay_font`), the winner bold.
+            *f = super::fonts::overlay_font(fonts.as_deref(), part.size() * s, *part == MatchEndPart::Winner);
         }
         if let Some(mut t) = t
             && t.0 != want
@@ -394,7 +400,7 @@ fn draw(
     }
     // The standings again only when they changed (not each second).
     let now = (view.shown.then(|| view.title.clone()), view.rows.clone(), key);
-    if drawn.as_ref() == Some(&now) {
+    if drawn.as_ref() == Some(&now) && !resized {
         return;
     }
     *drawn = Some(now);
@@ -403,10 +409,12 @@ fn draw(
     }
     let Some(board) = standings.filter(|_| view.shown) else { return };
     let header = ["#", "Name", "Kills", "Deaths", "Gun", "Wins"];
+    let font = super::fonts::overlay_font(fonts.as_deref(), CELL * s, false);
+    let bold = super::fonts::overlay_font(fonts.as_deref(), CELL * s, true);
     commands.entity(board).with_children(|p| {
         p.spawn((StandingsRow, Node { column_gap: px(GAP * s), ..default() })).with_children(|r| {
             for (i, (h, w)) in header.iter().zip(WIDTHS).enumerate() {
-                cell(r, h.to_string(), w, !matches!(i, 1 | 4), DIM, s);
+                cell(r, h.to_string(), w, !matches!(i, 1 | 4), DIM, &font, s);
             }
         });
         for row in &view.rows {
@@ -430,7 +438,7 @@ fn draw(
             ))
             .with_children(|r| {
                 for ((text, right), w) in cells.into_iter().zip(WIDTHS) {
-                    cell(r, text, w, right, color, s);
+                    cell(r, text, w, right, color, if row.local || row.winner { &bold } else { &font }, s);
                 }
             });
         }

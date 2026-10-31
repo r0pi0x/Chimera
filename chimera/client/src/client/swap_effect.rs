@@ -10,18 +10,45 @@
 //! while the new gun draws (its own game's draw, which the swap already
 //! plays); another character gets a pale puff at its body that grows and
 //! fades over `PUFF_SECONDS`. `SwapEffectView` is the state, headless too
-//! (tests read it). Generic, no game's look.
+//! (tests read it). Generic, no game's look. The local swap also sounds
+//! the cue packs' `swap` cue (`chimera_core::cues`; `swap_cue`: the new
+//! game's pack's, else the first pack that has one; none with the
+//! definition's `cues = "none"`), played as the callouts' cues are
+//! (`callouts::CalloutView::to_play`). CS:S's pack lends one (a stock
+//! pickup sound: ours, CS:S has no swap); Combat Arms' none.
 //!
-//! Known shortcuts: no sound; the puff is one sphere, not particles.
+//! Known shortcuts: the puff is one sphere, not particles.
 
 use std::collections::HashMap;
 
 use bevy::prelude::*;
 
+use chimera_core::cues::{CuePack, CuePacks};
+use chimera_sim::minigame::ActiveMinigame;
+
 use crate::{
     core::{Dead, LocalPlayer},
     slots::GameIdentity,
 };
+
+/// The cue key a swap sounds (`chimera_core::cues`).
+pub const SWAP_CUE: &str = "swap";
+
+/// The pack whose `swap` cue a local swap to `game` plays: `game`'s own
+/// pack's, else the first registered pack that has one; none when the
+/// definition's `cues` is `none`, or no pack has one.
+pub fn swap_cue<'a>(packs: &'a CuePacks, choice: Option<&str>, game: &str) -> Option<&'a std::sync::Arc<CuePack>> {
+    if choice.is_some_and(|c| c.eq_ignore_ascii_case("none")) {
+        return None;
+    }
+    let has = |p: &&std::sync::Arc<CuePack>| p.sound(SWAP_CUE).is_some();
+    packs
+        .0
+        .iter()
+        .filter(has)
+        .find(|p| p.game.eq_ignore_ascii_case(game))
+        .or_else(|| packs.0.iter().find(has))
+}
 
 /// Seconds the local flash takes to fade.
 pub const FLASH_SECONDS: f32 = 0.3;
@@ -105,7 +132,9 @@ fn detect(
     materials: Option<ResMut<Assets<StandardMaterial>>>,
     mut sphere: Local<Option<Handle<Mesh>>>,
     mut commands: Commands,
+    cues: (Option<Res<CuePacks>>, Option<Res<ActiveMinigame>>, Option<ResMut<super::callouts::CalloutView>>),
 ) {
+    let (packs, active, mut callouts) = cues;
     for e in gone.read() {
         last.remove(&e);
     }
@@ -119,6 +148,14 @@ fn detect(
         if local {
             view.flash = FLASH_SECONDS;
             view.swaps += 1;
+            let choice = active.as_ref().and_then(|a| a.def.cues.as_deref());
+            if let (Some(packs), Some(callouts)) = (packs.as_deref(), callouts.as_deref_mut())
+                && let Some(pack) = swap_cue(packs, choice, &identity.0)
+                && let Some(file) = pack.sound(SWAP_CUE)
+            {
+                callouts.heard.push(SWAP_CUE.to_string());
+                callouts.to_play.push((pack.clone(), file.to_string()));
+            }
             continue;
         }
         view.puffs += 1;

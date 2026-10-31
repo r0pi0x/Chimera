@@ -653,7 +653,9 @@ game's:
   `party_swap_effect`, default 0): neither game has a swap, so a rung's
   change of game is a hard cut by default. On, the local player's screen
   flashes and fades over 0.3 s while the new gun draws, and another
-  player's body gets a brief puff, generic, no game's look.
+  player's body gets a brief puff, generic, no game's look; the local
+  swap sounds the cue packs' `swap` cue (the new game's pack's, else the
+  first that has one: CS:S's lends a stock pickup sound, our choice).
 
 ### The party apps' Escape menu
 
