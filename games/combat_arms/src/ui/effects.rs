@@ -71,6 +71,7 @@ use crate::{
         attachments::CaMods,
         effects::{
             CaShell, CaTracers,
+            debris::{CaDebrisPiece, CaDebrisTable},
             fx::CaFx,
             data::CaFxTables,
             library::{self, normalize},
@@ -94,7 +95,7 @@ impl Plugin for CaEffectsDrawPlugin {
             .insert_resource(FxImages::new(mount))
             .add_systems(
                 Update,
-                (decals, tracers, casings, muzzle_flash, super::attached_fx::attached_effects, lights)
+                (decals, tracers, casings, debris_looks, muzzle_flash, super::attached_fx::attached_effects, lights)
                     .after(crate::map::DriveAnimation)
                     .after(crate::game::effects::CaEffectsSet),
             )
@@ -475,6 +476,76 @@ fn casings(
     for (s, mut t) in &mut shells {
         let base = tables.fire(&s.fire).map_or(1.0, |f| if f.shell_scale > 0.0 { f.shell_scale } else { 1.0 });
         t.scale = Vec3::splat(base * s.scale());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Prop debris
+
+/// Debris pieces' meshes by model path, and their skins' materials' base
+/// (each piece fades on a material of its own).
+#[derive(Default)]
+struct DebrisLooks(HashMap<String, Handle<Mesh>>);
+
+/// Each new debris piece gets its record's model (the first piece of the
+/// `.ltb`; a small block without it) and skin, alpha-blended when the
+/// record's `Alpha` is below 1; every frame its fade
+/// (`game::effects::debris`).
+#[allow(clippy::too_many_arguments)]
+fn debris_looks(
+    new: Query<(Entity, &CaDebrisPiece), Without<Mesh3d>>,
+    shown: Query<(&CaDebrisPiece, &MeshMaterial3d<StandardMaterial>)>,
+    table: Option<Res<CaDebrisTable>>,
+    server: Res<AssetServer>,
+    mut fx_images: ResMut<FxImages>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut looks: Local<DebrisLooks>,
+    mut commands: Commands,
+) {
+    let Some(table) = table else { return };
+    for (e, p) in &new {
+        let Some(r) = table.get(p.record) else { continue };
+        let Some(model) = r.models.get(p.piece.model) else {
+            // A record without models (`None`): nothing drawn.
+            commands.entity(e).insert((Mesh3d(Handle::default()), Visibility::Hidden));
+            continue;
+        };
+        let mesh = looks
+            .0
+            .entry(model.clone())
+            .or_insert_with(|| {
+                fx_images
+                    .mount()
+                    .and_then(|m| casing_mesh(model, &m))
+                    .map(|m| meshes.add(m))
+                    .unwrap_or_else(|| meshes.add(Cuboid::new(0.05, 0.01, 0.05)))
+            })
+            .clone();
+        let tex = r.skins.first().filter(|s| !s.is_empty()).and_then(|s| fx_images.get(s, &server));
+        let alpha = p.piece.alpha;
+        let material = materials.add(StandardMaterial {
+            base_color: if tex.is_some() { Color::srgba(1.0, 1.0, 1.0, alpha) } else { Color::srgba(0.7, 0.75, 0.8, alpha) },
+            base_color_texture: tex,
+            alpha_mode: if alpha < 1.0 { AlphaMode::Blend } else { AlphaMode::Opaque },
+            double_sided: true,
+            cull_mode: None,
+            perceptual_roughness: 0.5,
+            ..default()
+        });
+        commands.entity(e).insert((Mesh3d(mesh), MeshMaterial3d(material), Visibility::default()));
+    }
+    for (p, m) in &shown {
+        let Some(r) = table.get(p.record) else { continue };
+        let a = p.piece.alpha_now(r.fade);
+        if let Some(mut mat) = materials.get_mut(&m.0)
+            && (mat.base_color.alpha() - a).abs() > 1e-3
+        {
+            mat.base_color.set_alpha(a);
+            if a < 1.0 {
+                mat.alpha_mode = AlphaMode::Blend;
+            }
+        }
     }
 }
 

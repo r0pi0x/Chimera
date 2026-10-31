@@ -80,6 +80,7 @@ mod world_objects;
 mod world_objects_play;
 mod world_events;
 mod world_markers;
+mod debris;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {

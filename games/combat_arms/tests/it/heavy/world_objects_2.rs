@@ -246,3 +246,88 @@ fn stock_vip_exit_timers() {
     }
     eprintln!("{seen} exit timers");
 }
+
+/// effects_sounds.md 84: the install's `ATTRIBUTES\DEBRIS.TXT` gives the
+/// six records of the spec's table, ours (data/debris.toml) the same.
+#[test]
+fn install_debris_table() {
+    use combat_arms::game::effects::debris::{CaDebrisTable, FILE};
+    let Some(mount) = mount() else { return };
+    let Ok(bytes) = mount.read(FILE) else {
+        eprintln!("skipping: no {FILE} (the V1 key)");
+        return;
+    };
+    let install = CaDebrisTable::parse(&Document::parse(&bytes).unwrap());
+    let ours = &CaDebrisTable::built_in();
+    assert_eq!(install.0.len(), 6);
+    let path = |s: &String| s.replace('/', "\\").to_lowercase();
+    for (a, b) in install.0.iter().zip(&ours.0) {
+        assert_eq!(a.name, b.name);
+        assert_eq!((a.surface, a.number, a.bounce, a.rotate != 0), (b.surface, b.number, b.bounce, b.rotate != 0), "{}", a.name);
+        for (x, y) in [(a.scale, b.scale), (a.life, b.life)] {
+            assert!((x[0] - y[0]).abs() < 1e-4 && (x[1] - y[1]).abs() < 1e-4, "{}", a.name);
+        }
+        for (x, y) in [
+            (a.vel_min, b.vel_min),
+            (a.vel_max, b.vel_max),
+            (a.world_vel_min, b.world_vel_min),
+            (a.world_vel_max, b.world_vel_max),
+            (a.offset_min, b.offset_min),
+            (a.offset_max, b.offset_max),
+        ] {
+            assert!(x.iter().zip(y).all(|(p, q)| (p - q).abs() < 1e-3), "{}: {x:?} vs {y:?}", a.name);
+        }
+        let (x, y) = ([a.fade, a.gravity, a.alpha], [b.fade, b.gravity, b.alpha]);
+        assert!(x.iter().zip(y).all(|(p, q)| (p - q).abs() < 1e-4), "{}: {x:?} vs {y:?}", a.name);
+        for (x, y) in [
+            (&a.models, &b.models),
+            (&a.skins, &b.skins),
+            (&a.bounce_sounds, &b.bounce_sounds),
+            (&a.explode_sounds, &b.explode_sounds),
+        ] {
+            assert_eq!(x.iter().map(path).collect::<Vec<_>>(), y.iter().map(path).collect::<Vec<_>>(), "{}", a.name);
+        }
+        assert!(a.world_fx.is_empty() && a.impact_fx.is_empty());
+    }
+    assert_eq!(install.0[4].rotate, 360, "56x56WoodBox's Rotate stored as 360");
+}
+
+/// 4 on a stock map: the first map with a `56x56WoodBox` breakable; shot
+/// to death on its object world, it sends its debris effect (that record,
+/// along the shot) and a client throws 6 pieces of it at high detail.
+#[test]
+fn stock_wood_box_debris() {
+    use combat_arms::game::effects::debris::{CaDebrisTable, DebrisLevel, launch};
+    let Some(mount) = mount() else { return };
+    let table = CaDebrisTable::install();
+    for name in world::map_names(&mount) {
+        let Some(w) = world_file(&mount, &name) else { continue };
+        let Some(boxed) = w
+            .objects
+            .iter()
+            .find(|o| o.class == "Breakable" && string(o, "DebrisType").as_deref() == Some("56x56WoodBox"))
+            .and_then(|o| o.name().map(str::to_string))
+        else {
+            continue;
+        };
+        let Ok(map) = world::load_world(&mount, &name) else { continue };
+        let mut ow = objects::object_world(&map.entities);
+        ow.frame(0.0, 0.05);
+        ow.fx.clear();
+        let id = ow.named_all(&boxed)[0];
+        ow.hit_dir = bevy::math::Vec3::X;
+        ow.damage(id, 1000.0, Default::default(), true);
+        let sent = ow.fx.iter().find_map(|f| match f {
+            Fx::Debris { at, debris, dir } => Some((*at, debris.clone(), *dir)),
+            _ => None,
+        });
+        let (at, debris, dir) = sent.expect("its debris");
+        assert_eq!((debris.as_str(), dir), ("56x56WoodBox", bevy::math::Vec3::X), "{name} {boxed}");
+        assert_eq!(at, ow.objects[id as usize].pose.pos);
+        let r = table.get(table.id(&debris).unwrap()).unwrap();
+        assert_eq!(launch(r, DebrisLevel::High, at, dir, &mut || 0.5).len(), 6);
+        eprintln!("{name}: {boxed} at {at}");
+        return;
+    }
+    panic!("no 56x56WoodBox breakable on a readable map");
+}

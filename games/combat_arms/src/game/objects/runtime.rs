@@ -19,6 +19,13 @@
 //!   time), then each object whose update is due, in map order.
 //! - Characters touch triggers (`touch`), use doors (`use_object`) and
 //!   damage world models (`damage`) before the frame.
+//! - A destructible's death (11; Follow-up (2026-10-31b) 3 to 5): its
+//!   commands, its weapon (`CreateExplosion`, also `FIRE` while alive:
+//!   `Fx::Fire`), its `Spawn`, its prop debris (`Fx::Debris`, the record
+//!   its `DebrisType` names, facing `hit_dir`: `effects::debris`), then its
+//!   `WorldModelDebris` pieces launched (`<name>Debris<n>`: non-solid,
+//!   falling under the object gravity forever, pitch spinning about one
+//!   axis, the `Rotation` property applied again: quirks kept).
 //!
 //! Corrections (2026-10-22) readings: the nudge of switching a volume on is
 //! 10 u along the normalised (1, 1, 1); a first `VISIBLE`/`SOLID` message
@@ -36,9 +43,8 @@
 //! objects (timers, use spots, captions, messages, the objective list,
 //! cameras, `TargetTrigger` markers) are `events`'s;
 //! `BGMTrigger` only reports its `ON`/`OFF` (`Fx::Music`, `music::trigger`);
-//! breakables' `Spawn`, prop debris, `WorldModelDebris` and
-//! `CreateExplosion` aren't made (only the death command and the
-//! object's removal or hiding); bodies don't fire triggers; `PropType`
+//! a destructible's `Spawn` makes only the classes the object world runs
+//! (no world models: they have no geometry); bodies don't fire triggers; `PropType`
 //! and `Spawner` take the base messages only; the `ActivateTrigger`
 //! use-time gauge is the object world's (the modes' gauges are their
 //! own).
@@ -85,6 +91,7 @@ pub const ACTIVE_CLASSES: &[&str] = &[
     "Switch",
     "SlidingSwitch",
     "ActiveWorldModel",
+    "WorldModelDebris",
 ];
 
 /// Classes whose messages the rules (game modes) read.
@@ -328,6 +335,40 @@ pub enum Kind {
     MessageTrigger { showtime: f32 },
     Mission(Vec<events::Objective>),
     Camera(Box<events::Camera>),
+    /// A launched `WorldModelDebris` (world_objects.md Follow-up
+    /// (2026-10-31b) 3): falling forever, spinning about one axis.
+    Flight(Box<Flight>),
+}
+
+/// A launched `WorldModelDebris`' motion (file frame, u).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Flight {
+    pub v: Vec3,
+    /// Its pitch rate (rad/s; yaw and roll never change).
+    pub pitch_rate: f32,
+    /// Pitch, yaw, roll, from its `Rotation` property.
+    pub angles: Vec3,
+    /// It has spun (its rotation set from its angles) once.
+    pub spun: bool,
+}
+
+/// The engine's object gravity (u/s²).
+pub const OBJECT_GRAVITY: Vec3 = Vec3::new(0.0, -1600.0, 0.0);
+
+/// A launched piece's pitch rate from its rotation periods `p` (s): none
+/// when |P|² ≤ 0.001; else 2π / the last non-zero period of x, y, z
+/// (each overwrites the one before).
+pub fn spin_rate(p: Vec3) -> f32 {
+    if p.length_squared() <= 0.001 {
+        return 0.0;
+    }
+    let mut rate = 0.0;
+    for x in [p.x, p.y, p.z] {
+        if x.abs() > 0.001 {
+            rate = std::f32::consts::TAU / x;
+        }
+    }
+    rate
 }
 
 /// A `LightGroup`'s state at the map's start: `StartOn` (true) and
@@ -500,6 +541,9 @@ pub struct ObjectWorld {
     pub sound_serial: u32,
     /// Lines for the console's log (built while loading).
     pub log: Vec<String>,
+    /// The direction of the damage being applied (file frame): a
+    /// destructible's death direction (its prop debris faces it).
+    pub hit_dir: Vec3,
     /// The counted objectives' maxima by id (the co-op mission data for
     /// the difficulty: `MissionTrigger`'s `ADD_POINT_MISSION`).
     pub mission_points: std::collections::BTreeMap<String, i32>,
@@ -522,6 +566,7 @@ impl Default for ObjectWorld {
             sound_serial: 0,
             log: Vec::new(),
             mission_points: Default::default(),
+            hit_dir: Vec3::Z,
         }
     }
 }
@@ -550,6 +595,10 @@ fn flag(w: Option<&String>) -> Option<bool> {
 
 /// A world model's machine from its class and properties.
 fn awm(class: &str, p: &Props, pose: &Pose) -> Awm {
+    // A `WorldModelDebris` is a sliding door until launched (world_objects.md
+    // Follow-up (2026-10-31b) 3).
+    let debris = class == "WorldModelDebris";
+    let class = if debris { "SlidingDoor" } else { class };
     let door = class.ends_with("Door") || class == "Door";
     let switch = class.ends_with("Switch");
     let spinning = class == "SpinningWorldModel";
@@ -709,6 +758,200 @@ fn destructible(class: &str, p: &Props) -> Destructible {
     }
 }
 
+/// One map object from its properties (and, for a world model or a
+/// volume, its box centre in the file frame).
+pub fn object_of(p: Props, centre: Option<Vec3>) -> Object {
+    let class = p.string("classname");
+    let name = p.string("targetname");
+    let pos = centre.or_else(|| p.vector("origin")).unwrap_or(Vec3::ZERO);
+    let half = p.vector(keys::HALF).unwrap_or(Vec3::ZERO);
+    let half = Vec3::new(half.x, half.y, half.z).abs();
+    let pose = Pose {
+        pos,
+        rot: if centre.is_some() {
+            Quat::IDENTITY
+        } else {
+            p.angles("Rotation").map_or(Quat::IDENTITY, |a| rotation(a.x, a.y, a.z))
+        },
+        half,
+    };
+    let node = p.get(keys::SOLID).is_some();
+    let solid = p.bool_or(keys::SOLID, false);
+    let rayhit = p.bool_or(keys::RAYHIT, false);
+    let visible = p.bool_or("Visible", true);
+    let mut kind = Kind::Plain;
+    if node {
+        kind = Kind::WorldModel;
+    }
+    if ACTIVE_CLASSES.contains(&class.as_str()) {
+        kind = Kind::Active(Box::new(awm(&class, &p, &pose)));
+    }
+    match class.as_str() {
+        "Trigger" | "TargetTrigger" => {
+            let commands = (1..=10).map(|k| p.string(&format!("Command{k}"))).collect();
+            let target = class == "TargetTrigger";
+            kind = Kind::Trigger(Box::new(Trigger {
+                dims: p.vector("Dims").map(|d| d.abs()).unwrap_or(TRIGGER_DIMS),
+                n_activations: p.real_or("NumberOfActivations", 1.0).max(0.0) as u32,
+                send_delay: p.real_or("SendDelay", 0.0),
+                trigger_delay: p.real_or("TriggerDelay", 0.0),
+                commands,
+                trigger_touch: p.bool_or("TriggerTouch", false),
+                command_touch: p.string("CommandTouch"),
+                player_triggerable: p.bool_or("PlayerTriggerable", true),
+                weighted: p.bool_or("WeightedTrigger", false),
+                weight1: p.real_or("Message1Weight", 0.5),
+                timed: p.bool_or("TimedTrigger", false),
+                min_time: p.real_or("MinTriggerTime", 0.0),
+                max_time: p.real_or("MaxTriggerTime", 10.0),
+                activation_count: p.real_or("ActivationCount", 1.0).max(1.0) as u32,
+                locked: p.bool_or("Locked", false),
+                sound: p.string("ActivationSound"),
+                sound_radius: p.real_or("SoundRadius", TRIGGER_SOUND_RADIUS),
+                attach_to: p.string("AttachToObject"),
+                player_once: p.bool_or("PlayerOnceActivate", false),
+                last_attempt: f64::NEG_INFINITY,
+                marker: target.then(|| events::Marker::of(&p)),
+                ..default()
+            }));
+        }
+        "CommandTrigger" => {
+            kind = Kind::CommandTrigger {
+                locked: p.bool_or("Locked", false),
+                commands: four(&p, "Command", 0),
+            }
+        }
+        "TouchTrigger" => {
+            kind = Kind::TouchTrigger {
+                dims: p.vector("Dims").map(|d| d.abs()).unwrap_or(TRIGGER_DIMS),
+                locked: p.bool_or("Locked", false),
+                limit: p.real_or("NumberOfActivations", 1.0).max(0.0) as u32,
+                fired: 0,
+                commands: four(&p, "Command", 0),
+            }
+        }
+        "ActivateTrigger" => {
+            kind = Kind::Use(Box::new(UseTrigger {
+                dims: p.vector("Dims").map(|d| d.abs()).unwrap_or(TRIGGER_DIMS),
+                time: p.real_or("TimeAmount", 0.0),
+                locked: p.bool_or("Locked", false),
+                work: p.string("WorkCommand"),
+                release: p.string("ReleaseCommand"),
+                activate: p.string("ActivateCommand"),
+                user: None,
+            }))
+        }
+        "EventCounter" => {
+            let events = (0..=12)
+                .filter_map(|n| {
+                    let v = p.real(&format!("Event{n}Value"))? as i32;
+                    (v != -1).then(|| {
+                        (
+                            v,
+                            p.string(&format!("Event{n}IncToValCmd")),
+                            p.string(&format!("Event{n}DecToValCmd")),
+                        )
+                    })
+                })
+                .collect();
+            kind = Kind::EventCounter {
+                value: p.real_or("StartingValue", 0.0) as i32,
+                locked: false,
+                events,
+            }
+        }
+        "StartupCommand" => {
+            kind = Kind::StartupCommand {
+                command: p.string("Command"),
+            }
+        }
+        "KeyFramer" => {
+            let keys = p
+                .get(keys::KEYS)
+                .and_then(hex)
+                .and_then(|b| keyframer::parse_keys(&b))
+                .unwrap_or_default();
+            kind = Kind::KeyFramer(Box::new(Keyframer {
+                keys,
+                base: p.string("BaseKeyName"),
+                object_names: p
+                    .string("ObjectName")
+                    .split(';')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect(),
+                looping: p.bool_or("Looping", false),
+                align: p.bool_or("AlignToPath", false),
+                ignore_offsets: p.bool_or("IgnoreOffsets", false),
+                push: p.bool_or("PushObjects", false),
+                total_time: p.real_or("TotalPathTime", 0.0),
+                wave: Waveform::named(p.get("Wavetype").unwrap_or("Linear")),
+                // (Not `string`: that finds `targetname`, its own
+                // name, and every keyframer faced itself.)
+                target_name: p.exact("TargetName"),
+                target_offset: p.vector("TargetOffset").unwrap_or(Vec3::ZERO),
+                active_sound: p.string("ActiveSound"),
+                sound_radius: p.real_or("SoundRadius", AWM_SOUND_RADIUS),
+                start_active: p.bool_or("StartActive", false),
+                start_paused: p.bool_or("StartPaused", false),
+                forward: true,
+                ..default()
+            }));
+        }
+        "Explosion" => {
+            kind = Kind::Explosion {
+                radius: p.real_or("DamageRadius", 200.0),
+                damage: p.real_or("MaxDamage", 200.0),
+                effect: p.string("ImpactFXName"),
+                remove: p.bool_or("RemoveWhenDone", true),
+            }
+        }
+        "LightGroup" => kind = light_group_start(&p),
+        "SoundFX" | "SpecialFX" | "ScaleSprite" => {
+            kind = Kind::Switchable {
+                on: p.bool_or("StartOn", true),
+                plays: 0,
+            }
+        }
+        "TimerTrigger" => kind = Kind::Timer(Box::new(events::Timer::of(&p))),
+        "LightActivateTrigger" => kind = Kind::LightUse(Box::new(events::LightUse::of(&p))),
+        "CaptionTrigger" => {
+            kind = Kind::Caption {
+                showtime: p.real_or("Showtime", 10.0),
+                locked: false,
+            }
+        }
+        "MessageTrigger" => {
+            kind = Kind::MessageTrigger {
+                showtime: p.real_or("Showtime", 10.0),
+            }
+        }
+        "MissionTrigger" => kind = Kind::Mission(Vec::new()),
+        "Camera" => kind = Kind::Camera(Box::new(events::Camera::of(&p))),
+        "BGMTrigger" => kind = Kind::MusicTrigger { on: false },
+        c if super::super::volumes::is_volume(c) => kind = Kind::Volume,
+        _ => {}
+    }
+    let hp = (node || matches!(kind, Kind::Active(_))).then(|| destructible(&class, &p));
+    let obj = Object {
+        class: class.clone(),
+        name: name.clone(),
+        pose,
+        load_pose: pose,
+        visible: if node { visible } else { true },
+        solid,
+        rayhit,
+        node,
+        hp,
+        damage_on: true,
+        player_damage_on: true,
+        kind,
+        props: p,
+        ..default()
+    };
+    obj
+}
+
 impl ObjectWorld {
     /// The object world of a map's entities (`MapEntity` keyvalues as
     /// `Props`, in map order; `centres[i]` a world model's or volume's
@@ -716,197 +959,9 @@ impl ObjectWorld {
     pub fn build(entities: &[EntityProps]) -> Self {
         let mut w = Self::default();
         for (i, (kv, centre)) in entities.iter().enumerate() {
-            let p = Props(kv.clone());
-            let class = p.string("classname");
-            let name = p.string("targetname");
-            let pos = centre.or_else(|| p.vector("origin")).unwrap_or(Vec3::ZERO);
-            let half = p.vector(keys::HALF).unwrap_or(Vec3::ZERO);
-            let half = Vec3::new(half.x, half.y, half.z).abs();
-            let pose = Pose {
-                pos,
-                rot: if centre.is_some() {
-                    Quat::IDENTITY
-                } else {
-                    p.angles("Rotation").map_or(Quat::IDENTITY, |a| rotation(a.x, a.y, a.z))
-                },
-                half,
-            };
-            let node = p.get(keys::SOLID).is_some();
-            let solid = p.bool_or(keys::SOLID, false);
-            let rayhit = p.bool_or(keys::RAYHIT, false);
-            let visible = p.bool_or("Visible", true);
-            let mut kind = Kind::Plain;
-            if node {
-                kind = Kind::WorldModel;
-            }
-            if ACTIVE_CLASSES.contains(&class.as_str()) {
-                kind = Kind::Active(Box::new(awm(&class, &p, &pose)));
-            }
-            match class.as_str() {
-                "Trigger" | "TargetTrigger" => {
-                    let commands = (1..=10).map(|k| p.string(&format!("Command{k}"))).collect();
-                    let target = class == "TargetTrigger";
-                    kind = Kind::Trigger(Box::new(Trigger {
-                        dims: p.vector("Dims").map(|d| d.abs()).unwrap_or(TRIGGER_DIMS),
-                        n_activations: p.real_or("NumberOfActivations", 1.0).max(0.0) as u32,
-                        send_delay: p.real_or("SendDelay", 0.0),
-                        trigger_delay: p.real_or("TriggerDelay", 0.0),
-                        commands,
-                        trigger_touch: p.bool_or("TriggerTouch", false),
-                        command_touch: p.string("CommandTouch"),
-                        player_triggerable: p.bool_or("PlayerTriggerable", true),
-                        weighted: p.bool_or("WeightedTrigger", false),
-                        weight1: p.real_or("Message1Weight", 0.5),
-                        timed: p.bool_or("TimedTrigger", false),
-                        min_time: p.real_or("MinTriggerTime", 0.0),
-                        max_time: p.real_or("MaxTriggerTime", 10.0),
-                        activation_count: p.real_or("ActivationCount", 1.0).max(1.0) as u32,
-                        locked: p.bool_or("Locked", false),
-                        sound: p.string("ActivationSound"),
-                        sound_radius: p.real_or("SoundRadius", TRIGGER_SOUND_RADIUS),
-                        attach_to: p.string("AttachToObject"),
-                        player_once: p.bool_or("PlayerOnceActivate", false),
-                        last_attempt: f64::NEG_INFINITY,
-                        marker: target.then(|| events::Marker::of(&p)),
-                        ..default()
-                    }));
-                }
-                "CommandTrigger" => {
-                    kind = Kind::CommandTrigger {
-                        locked: p.bool_or("Locked", false),
-                        commands: four(&p, "Command", 0),
-                    }
-                }
-                "TouchTrigger" => {
-                    kind = Kind::TouchTrigger {
-                        dims: p.vector("Dims").map(|d| d.abs()).unwrap_or(TRIGGER_DIMS),
-                        locked: p.bool_or("Locked", false),
-                        limit: p.real_or("NumberOfActivations", 1.0).max(0.0) as u32,
-                        fired: 0,
-                        commands: four(&p, "Command", 0),
-                    }
-                }
-                "ActivateTrigger" => {
-                    kind = Kind::Use(Box::new(UseTrigger {
-                        dims: p.vector("Dims").map(|d| d.abs()).unwrap_or(TRIGGER_DIMS),
-                        time: p.real_or("TimeAmount", 0.0),
-                        locked: p.bool_or("Locked", false),
-                        work: p.string("WorkCommand"),
-                        release: p.string("ReleaseCommand"),
-                        activate: p.string("ActivateCommand"),
-                        user: None,
-                    }))
-                }
-                "EventCounter" => {
-                    let events = (0..=12)
-                        .filter_map(|n| {
-                            let v = p.real(&format!("Event{n}Value"))? as i32;
-                            (v != -1).then(|| {
-                                (
-                                    v,
-                                    p.string(&format!("Event{n}IncToValCmd")),
-                                    p.string(&format!("Event{n}DecToValCmd")),
-                                )
-                            })
-                        })
-                        .collect();
-                    kind = Kind::EventCounter {
-                        value: p.real_or("StartingValue", 0.0) as i32,
-                        locked: false,
-                        events,
-                    }
-                }
-                "StartupCommand" => {
-                    kind = Kind::StartupCommand {
-                        command: p.string("Command"),
-                    }
-                }
-                "KeyFramer" => {
-                    let keys = p
-                        .get(keys::KEYS)
-                        .and_then(hex)
-                        .and_then(|b| keyframer::parse_keys(&b))
-                        .unwrap_or_default();
-                    kind = Kind::KeyFramer(Box::new(Keyframer {
-                        keys,
-                        base: p.string("BaseKeyName"),
-                        object_names: p
-                            .string("ObjectName")
-                            .split(';')
-                            .map(|s| s.trim().to_string())
-                            .filter(|s| !s.is_empty())
-                            .collect(),
-                        looping: p.bool_or("Looping", false),
-                        align: p.bool_or("AlignToPath", false),
-                        ignore_offsets: p.bool_or("IgnoreOffsets", false),
-                        push: p.bool_or("PushObjects", false),
-                        total_time: p.real_or("TotalPathTime", 0.0),
-                        wave: Waveform::named(p.get("Wavetype").unwrap_or("Linear")),
-                        // (Not `string`: that finds `targetname`, its own
-                        // name, and every keyframer faced itself.)
-                        target_name: p.exact("TargetName"),
-                        target_offset: p.vector("TargetOffset").unwrap_or(Vec3::ZERO),
-                        active_sound: p.string("ActiveSound"),
-                        sound_radius: p.real_or("SoundRadius", AWM_SOUND_RADIUS),
-                        start_active: p.bool_or("StartActive", false),
-                        start_paused: p.bool_or("StartPaused", false),
-                        forward: true,
-                        ..default()
-                    }));
-                }
-                "Explosion" => {
-                    kind = Kind::Explosion {
-                        radius: p.real_or("DamageRadius", 200.0),
-                        damage: p.real_or("MaxDamage", 200.0),
-                        effect: p.string("ImpactFXName"),
-                        remove: p.bool_or("RemoveWhenDone", true),
-                    }
-                }
-                "LightGroup" => kind = light_group_start(&p),
-                "SoundFX" | "SpecialFX" | "ScaleSprite" => {
-                    kind = Kind::Switchable {
-                        on: p.bool_or("StartOn", true),
-                        plays: 0,
-                    }
-                }
-                "TimerTrigger" => kind = Kind::Timer(Box::new(events::Timer::of(&p))),
-                "LightActivateTrigger" => kind = Kind::LightUse(Box::new(events::LightUse::of(&p))),
-                "CaptionTrigger" => {
-                    kind = Kind::Caption {
-                        showtime: p.real_or("Showtime", 10.0),
-                        locked: false,
-                    }
-                }
-                "MessageTrigger" => {
-                    kind = Kind::MessageTrigger {
-                        showtime: p.real_or("Showtime", 10.0),
-                    }
-                }
-                "MissionTrigger" => kind = Kind::Mission(Vec::new()),
-                "Camera" => kind = Kind::Camera(Box::new(events::Camera::of(&p))),
-                "BGMTrigger" => kind = Kind::MusicTrigger { on: false },
-                c if super::super::volumes::is_volume(c) => kind = Kind::Volume,
-                _ => {}
-            }
-            let hp = (node || matches!(kind, Kind::Active(_))).then(|| destructible(&class, &p));
-            let obj = Object {
-                class: class.clone(),
-                name: name.clone(),
-                pose,
-                load_pose: pose,
-                visible: if node { visible } else { true },
-                solid,
-                rayhit,
-                node,
-                hp,
-                damage_on: true,
-                player_damage_on: true,
-                kind,
-                props: p,
-                ..default()
-            };
-            if !name.is_empty() {
-                w.names.entry(name.to_ascii_lowercase()).or_default().push(i as ObjId);
+            let obj = object_of(Props(kv.clone()), *centre);
+            if !obj.name.is_empty() {
+                w.names.entry(obj.name.to_ascii_lowercase()).or_default().push(i as ObjId);
             }
             w.objects.push(obj);
         }
@@ -1296,6 +1351,13 @@ impl ObjectWorld {
                     return;
                 }
                 "AIDAMAGEON" | "AIDAMAGEOFF" => return,
+                // A live destructible fires its weapon (Follow-up
+                // (2026-10-31b) 5, whatever its `CreateExplosion`).
+                "FIRE" if o.hp.as_ref().is_some_and(|d| !d.dead) => {
+                    let target = args.first().cloned();
+                    self.fire_weapon(id, target.as_deref());
+                    return;
+                }
                 "MAXHITPOINT" => {
                     if let (Some(d), Some(h)) = (&mut o.hp, args.first().and_then(|a| a.parse::<f32>().ok())) {
                         d.max = h;
@@ -1990,6 +2052,7 @@ impl ObjectWorld {
                     },
                 );
             }
+            self.death_effects(id);
             if remove {
                 self.remove(id);
             } else {
@@ -2004,6 +2067,138 @@ impl ObjectWorld {
                 }
             }
         }
+    }
+
+    /// A destructible's death (world_objects.md 11 and its Follow-up
+    /// (2026-10-31b) 3 to 5): its weapon with `CreateExplosion`, its
+    /// `Spawn`, its prop debris (`DebrisType`, `None` too), then its
+    /// world-model debris (`<name>Debris0`, `<name>Debris1`, ...) launched.
+    fn death_effects(&mut self, id: ObjId) {
+        let p = self.objects[id as usize].props.clone();
+        let pose = self.objects[id as usize].pose;
+        if p.bool_or("CreateExplosion", false) {
+            self.fire_weapon(id, None);
+        }
+        let spawn = p.string("Spawn");
+        if !spawn.trim().is_empty() {
+            self.spawn_object(&spawn, pose);
+        }
+        let debris = p.string("DebrisType");
+        self.fx.push(Fx::Debris {
+            at: pose.pos,
+            debris: if debris.trim().is_empty() { "None".into() } else { debris },
+            dir: self.hit_dir,
+        });
+        let name = self.objects[id as usize].name.clone();
+        if name.is_empty() {
+            return;
+        }
+        for n in 0.. {
+            let ids = self.named_all(&format!("{name}Debris{n}"));
+            if ids.is_empty() {
+                break;
+            }
+            for d in ids {
+                if self.objects[d as usize].class == "WorldModelDebris" {
+                    self.launch_debris(d);
+                }
+            }
+        }
+    }
+
+    /// A `WorldModelDebris` launched (Follow-up (2026-10-31b) 3): rotation
+    /// periods U(−1, 1) s per axis and velocity (U(−200, 200), U(100, 300),
+    /// U(−200, 200)) u/s; visible and ray-hit only (no collision).
+    pub fn launch_debris(&mut self, id: ObjId) {
+        if matches!(self.objects[id as usize].kind, Kind::Flight(_)) {
+            return;
+        }
+        let mut u = |a: f32, b: f32| a + (b - a) * self.rng.roll();
+        let periods = Vec3::new(u(-1.0, 1.0), u(-1.0, 1.0), u(-1.0, 1.0));
+        let v = Vec3::new(u(-200.0, 200.0), u(100.0, 300.0), u(-200.0, 200.0));
+        self.launch_debris_with(id, v, periods);
+    }
+
+    /// `launch_debris` with its draws given.
+    pub fn launch_debris_with(&mut self, id: ObjId, v: Vec3, periods: Vec3) {
+        let o = &mut self.objects[id as usize];
+        let angles = o.props.angles("Rotation").unwrap_or(Vec3::ZERO);
+        o.kind = Kind::Flight(Box::new(Flight {
+            v,
+            pitch_rate: spin_rate(periods),
+            angles,
+            spun: false,
+        }));
+        o.visible = true;
+        o.solid = false;
+        o.rayhit = true;
+        o.dirty = true;
+    }
+
+    /// An object fires its weapon (Follow-up (2026-10-31b) 5): from its
+    /// position, straight down going off in place unless
+    /// `FireAlongForward` (along its forward); at `target`'s position when
+    /// named (the object turned to face it).
+    fn fire_weapon(&mut self, id: ObjId, target: Option<&str>) {
+        let o = &self.objects[id as usize];
+        let (at, rot) = (o.pose.pos, o.pose.rot);
+        let p = &o.props;
+        let weapon = p.real_or("WeaponId", 0.0) as i32;
+        let factor = p.real_or("DamageFactor", 1.0);
+        let along = p.bool_or("FireAlongForward", false);
+        let aim = target.and_then(|n| self.named_all(n).first().copied()).map(|t| self.objects[t as usize].pose.pos);
+        let (dir, in_place) = match aim {
+            Some(to) => ((to - at).normalize_or_zero(), !along),
+            None if along => (rot * Vec3::Z, false),
+            None => (Vec3::NEG_Y, true),
+        };
+        if let Some(to) = aim {
+            let f = (to - at).normalize_or_zero();
+            if f != Vec3::ZERO {
+                let yaw = f.x.atan2(f.z);
+                let pitch = -f.y.asin();
+                let pose = Pose { rot: rotation(pitch, yaw, 0.0), ..self.objects[id as usize].pose };
+                self.set_pose(id, pose);
+            }
+        }
+        self.fx.push(Fx::Fire {
+            weapon,
+            at,
+            dir,
+            in_place,
+            factor,
+            shooter: id,
+        });
+    }
+
+    /// `Spawn` (Follow-up (2026-10-31b) 5): its first word a class, the
+    /// rest `(Name value)` properties; created at `pose` when the object
+    /// world runs that class (else nothing).
+    pub fn spawn_object(&mut self, text: &str, pose: Pose) -> Option<ObjId> {
+        let t = tokens(text);
+        let class = t.first()?.text.clone();
+        let runs = super::is_logic_object(&class) || RULE_CLASSES.contains(&class.as_str());
+        if !runs {
+            self.fx.push(Fx::Log(format!("Spawn: no class {class}")));
+            return None;
+        }
+        let mut kv = vec![("classname".to_string(), class)];
+        for w in &t[1..] {
+            let s = w.text.trim();
+            let (k, v) = s.split_once(char::is_whitespace).unwrap_or((s, ""));
+            let k = if k.eq_ignore_ascii_case("Name") { "targetname" } else { k };
+            kv.push((k.to_string(), v.trim().trim_matches('"').to_string()));
+        }
+        let mut o = object_of(Props(kv), Some(pose.pos));
+        o.pose.rot = pose.rot;
+        o.load_pose = o.pose;
+        o.dirty = true;
+        let id = self.objects.len() as ObjId;
+        if !o.name.is_empty() {
+            self.names.entry(o.name.to_ascii_lowercase()).or_default().push(id);
+        }
+        self.objects.push(o);
+        Some(id)
     }
 
     /// One server frame: the command manager, then each object's update.
@@ -2099,6 +2294,22 @@ impl ObjectWorld {
             Kind::KeyFramer(_) => {
                 self.objects[id as usize].kind = kind;
                 self.keyframer_update(id);
+                return;
+            }
+            Kind::Flight(f) => {
+                // Gravity from its launch velocity, through everything; its
+                // rotation from its own angles, pitch growing.
+                let o = &self.objects[id as usize];
+                let pos = o.pose.pos + f.v * dt + 0.5 * OBJECT_GRAVITY * dt * dt;
+                f.v += OBJECT_GRAVITY * dt;
+                // (Every frame: so its `Rotation` property turns it again,
+                // a quirk kept.)
+                f.angles.x += f.pitch_rate * dt;
+                f.spun = true;
+                let rot = rotation(f.angles.x, f.angles.y, f.angles.z);
+                let half = o.pose.half;
+                self.objects[id as usize].kind = kind;
+                self.set_pose(id, Pose { pos, rot, half });
                 return;
             }
             k => {

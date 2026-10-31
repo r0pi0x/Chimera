@@ -148,6 +148,7 @@
 pub mod attached;
 pub mod bomb;
 pub mod data;
+pub mod debris;
 pub mod fx;
 pub mod library;
 pub mod rules;
@@ -306,6 +307,22 @@ impl Plugin for CaEffectsPlugin {
     fn build(&self, app: &mut App) {
         use crate::{map::impact::SurfaceClassesAppExt, net::NetAppExt, weapon::impact::ImpactAppExt};
         app.net_part("combat_arms_flight_looks", attached::register);
+        app.net_part("combat_arms_debris", |app| {
+            use bevy_replicon::prelude::{Channel, ServerMessageAppExt};
+            app.add_server_message::<debris::CaDebris>(Channel::Ordered);
+        });
+        {
+            use crate::console::ConsoleAppExt;
+            app.console_command(
+                "debrisfxlevel",
+                "debrisfxlevel [0|1|2]: prop debris detail (low, medium, high: the pieces and their lifetimes x 0.333, \
+                 0.666, 1); without a value, the current one.",
+                |w, a| match a.first() {
+                    Some(v) => debris::set_level(w, v).map(|_| None),
+                    None => Ok(Some(format!("{:?}", w.resource::<debris::DebrisLevel>()))),
+                },
+            );
+        }
         app.register_impact_provider(crate::game::GAME)
             .register_surface_classes(SURFACES);
         app.register_weapon_hook::<CaWeaponFx>(EFFECTS, |e, _, p| {
@@ -322,6 +339,9 @@ impl Plugin for CaEffectsPlugin {
         .init_resource::<HurtLimiter>()
         .init_resource::<CaSoundFiles>()
         .init_resource::<CaSoundLengths>()
+        .init_resource::<debris::DebrisLevel>()
+        .init_resource::<debris::DebrisEffects>()
+        .add_message::<debris::CaDebris>()
         .add_message::<crate::game::grenades::CaBlastSurface>()
         .add_message::<CaSound>()
         .add_message::<CaFxRequest>()
@@ -352,6 +372,8 @@ impl Plugin for CaEffectsPlugin {
                 footsteps,
                 voice::voices,
                 step_effects,
+                debris::spawn,
+                debris::step,
                 attached::follow,
                 attached::flight,
                 attached::projectile_sounds,
