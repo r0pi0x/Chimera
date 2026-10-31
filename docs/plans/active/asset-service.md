@@ -563,6 +563,70 @@ the same commit.
 - Streaming while playing (VTF's low mips are already at the head of
   each file).
 
+### Converted-map cache (design, 2026-10-30; not implemented)
+
+Justified by the heavy tier's numbers (docs/performance.md, "The heavy
+tier: a sixth slot, and what conversion costs"): CS:S map conversion is
+999 s of the heavy tests' 3,153 s, and 830 s of that converts a map that
+an earlier test of the same run already converted (each test is its own
+process). Step 2 of P4b (architecture-review.md); task brief
+[11](../../tasks/11-heavy-tier-time.md).
+
+- **What is cached:** the `MapData` that
+  `cs_source::bsp::load_level_bytes_with` returns, whole (geometry,
+  lightmap atlas, collision, brushes and tree, visibility, props, decoded
+  textures, the kit as far as `MapLoadOptions::kit` read it), serialized
+  with postcard (already a workspace dependency) after serde derives on
+  the `map` types. Not cached: what is rebuilt cheaply or can't be
+  serialized: `light_field` (a closure; the cache keeps the lighting and
+  occluders it closes over and rebuilds it), `load_times` (`&'static`
+  names; a hit records one "cache" stage), the progress reporter. Put in
+  the world (`map::change_map`) is unchanged: a hit replaces conversion
+  only. Combat Arms' loader the same way later, if its numbers say so (its
+  sweeps convert each map once, so less to gain).
+- **Where:** per user, beside the asset store and never in a checkout:
+  `<cache dir>/chimera/maps/` (`~/.cache/chimera/maps`,
+  `%LOCALAPPDATA%\chimera\maps`; the asset store's own folder stays
+  content records only), one file per key; `CHIMERA_MAP_CACHE` overrides
+  the folder, `CHIMERA_MAP_CACHE=0` turns it off. Two checkouts and every
+  agent slot share it. Size cap like the content cache (least recently
+  used first; a cvar beside `cl_assetcache_gb`), since full loads with
+  decoded textures are hundreds of MB each (to be measured).
+- **Invalidation key** (a hash, the file's name): the map's name and
+  `MapLoadOptions` (`hdr_level`, `textures`, `kit`); the BSP's SHA-256
+  (`MapData::file_hash`, already computed); the files the conversion read
+  besides it, recorded during the miss with the mount's recording
+  (`chimera_assets::recording`): each archive's (VPK, loose file) path,
+  size and modification time, or the store record ids when served, kept
+  in the entry and checked on a hit (stat only, no hashing of archives);
+  the converter's version: a hash `build.rs` takes of the converter's
+  sources (`games/cs_source/src/game/`, `chimera/world/src/map/`, the
+  format crates under `source/`) and the locked versions of its parsing
+  crates (vbsp, vtf), plus a hand-bumped `CONVERTER_VERSION` for changes
+  those miss. Any code change in the converter is a new key, so the tests
+  still cover conversion after every converter change; changes elsewhere
+  keep the cache warm. Unused keys age out by the cap.
+- **Writing and cold start:** a miss converts as today, then writes the
+  entry to a temporary file and renames it into place (atomic; a reader
+  never sees half a file). A lock file per key makes processes that miss
+  the same key at once wait for the first one's write instead of all
+  converting (dust2's 66 tests start in waves of five). A cold run costs
+  what it does now plus one write per distinct map and options (107 maps
+  in the heavy tier); a corrupt or unreadable entry is a miss.
+- **Who uses it:** every caller of `load_level_bytes_with` (the heavy
+  tests of cs_source, party_kit, mashup_demo and the apps, through
+  `games::load_map` and `harness::load_level`) without changes to the
+  tests; the apps behind the same switch, off by default until measured
+  there. One heavy test loads a map both ways and compares the cached
+  `MapData` with a fresh conversion; the fast tier checks the key changes
+  with each input.
+- **Expected gain:** with a hit at a fifth to a quarter of a conversion
+  (de_dust2 1.85 s converting; to be measured), ~620-700 s of the 830 s of
+  repeated conversion, ~20% of the summed heavy time: heavy wall about
+  940 s to 750-800 s at five slots, warm or cold within a run (a cold run
+  converts each map once). Measure cold and warm before and after, per
+  map load and heavy wall (brief 11's last boxes).
+
 ## 11. Open questions for the user
 
 1. **Code in this public repo?** Mode 1 is engine code (`chimera_net`),

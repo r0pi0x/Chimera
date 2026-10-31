@@ -2371,6 +2371,19 @@ dithered fade bands. Left:
 - `perfgate` in the pre-push hook (budgets per game app): deferred by
   the user (2026-10-15), pushes aren't blocked on performance for now.
   A Windows-side check needs another counter source (none there yet).
+- Converted-map cache for the heavy tests (and later the apps):
+  implement the design in
+  [plans/active/asset-service.md](plans/active/asset-service.md),
+  section 10, "Converted-map cache"; measure cold and warm (heavy wall,
+  per-map load) as task brief [11](tasks/11-heavy-tier-time.md) says.
+  CS:S conversion is 32% of the heavy tests' time, 830 s of it repeats
+  (performance.md, "The heavy tier: a sixth slot", 2026-10-30): ~940 s to
+  750-800 s expected. Then re-try a sixth heavy slot (it gave -15% but ran
+  the box out of memory).
+- The seven heavy tests that fail with the installs on main (5e324989;
+  performance.md, same section): Combat Arms' archive count and view-model
+  timings, the mashup's world-only load, party_kit's dust2 gun game and
+  warehouse bodies.
 
 ## 10. Long tail
 
