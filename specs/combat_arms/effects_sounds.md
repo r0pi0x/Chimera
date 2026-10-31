@@ -259,8 +259,9 @@ player; the value is the default).
   `PolyTube` (the trail key) draws a camera-aligned textured strip that
   follows the key's path: a new section every `SectionInterval` (0.1 s), at
   most `TrailLen` (50) sections, each living `SectionLifespan` (1 s),
-  `TrailWidth` (20 u) wide with a width style (constant, small→big, …),
-  texture scrolled by `UAdd`. `PlaySound` and `PlayRandomSound` play a wave
+  `TrailWidth` (20 u) to each side of its path with a width style
+  (constant, small→big, …), texture scrolled by `UAdd`; the file names this
+  key type `PolyTrail` (full rules: Follow-up (2026-10-31) 1). `PlaySound` and `PlayRandomSound` play a wave
   (or one of `NumRand` numbered ones) 3D at the key's position, or local,
   with their own inner (100) and outer (500) radius, volume, priority,
   looping and pitch, started when the key starts. The sound lives only
@@ -1511,6 +1512,143 @@ place.
      point.
    - Expect: test cases 73–76.
 
+## Follow-up (2026-10-31): trail keys and smoke-trail puffs
+
+From the effect library's trail key, the base effect's colour curve, the
+client's particle smoke trail and its segments, the engine's particle
+system and particle drawing, and the install's effect file and archives.
+Answers the open question (a) of brief 24b in the Combat Arms plan ("how
+the trail key draws") and why our smoke-trail puffs look too small. Where
+"The effect file" above disagrees, this section wins.
+
+1. **The trail key (`PolyTrail` in the file).**
+   - Properties and editor defaults: `Texture`, `TrailWidth` W (20),
+     `WidthStyle` (0 Constant, 1 SmallToBig, 2 SmallToSmall, 3 BigToSmall;
+     default 0), `TrailLen` N (50, the most points the trail may hold),
+     `SectionLifespan` L (1.0 s), `UAdd` (0), `SectionInterval` I (0.1 s),
+     `BlendMode` (0 none, 1 add, 2 saturate, 3 by source alpha, 4 by source
+     colour, 5 by destination colour, 6 source × destination colour,
+     7 source alpha + one, 8 source alpha, 9 source colour + one,
+     10 destination colour × zero), `AlphaTest` (0 none, 1 <, 2 ≤, 3 >,
+     4 ≥, 5 =, 6 ≠), `ColorOp` (0 no texture, 1 modulate, 2 additive,
+     3 no colour), `FillMode` (0 wire, 1 fill), `Allignment` (sic; 0 Camera,
+     1 Up, 2 Right, 3 Forward). A key with N = 0 or W = 0 is not created.
+   - Stock data (200 trail keys): every one has `BlendMode` 1 (additive)
+     and `Allignment` Camera; `WidthStyle` BigToSmall 142, Constant 52,
+     SmallToBig 6; `UAdd` 0 in 187, 1.0 in 12 (the cinematic `Cine_A10*`
+     groups and `Snow_Tail_New`), 0.1 in one (`Cine_F16`).
+   - **Points.** The trail is a list of points, oldest first. It is empty
+     when the key becomes active (the list is cleared whenever the key is
+     hidden, and the effect manager hides every key once right after making
+     it). Each update, with Δ the frame time in seconds:
+     1. E += Δ (E starts at 0). If the key is not shutting down, the list
+        holds fewer than N points, and (E > I or the list holds exactly one
+        point): append a point at the key's current position (after its
+        placement mode has moved it) and set E = 0. So the first point
+        comes in the first update where E exceeds I, the second in the very
+        next update, then one in each update where E exceeds I again (with
+        fixed frames: every k-th update, k the smallest whole number with
+        k·Δ > I).
+     2. While not shutting down, the newest point is moved to the key's
+        current position every update: it follows the emitter, and the
+        older points stay where they were left.
+     3. Every point's age grows by Δ (a point made this update included).
+     4. The width and colours below are computed for all points, then every
+        point except the newest whose age is ≥ L is removed. Drawing uses
+        what remains; with fewer than 2 points nothing is drawn.
+   - **Width.** One half-width w applies to the whole strip at a time (it
+     does not vary along the trail); it changes over time with n, the
+     number of points at step 4 before removal:
+     - Constant: w = W;
+     - SmallToBig: w = W·(n − 2)/N;
+     - SmallToSmall: w = W·(n − 2)/N while n < (N + 1)/2, else
+       W·(N − (n − 2))/N;
+     - BigToSmall: w = W·(N − (n − 2))/N.
+     The strip spans w to each side of the path, so it is 2w wide. A trail
+     whose length is held steady by the lifespan keeps a steady width (for
+     BigToSmall just under W, for SmallToBig a small fraction of it).
+   - **Shape (Camera alignment, every stock key).** The points are taken
+     into camera space; for a segment from a to b the side direction is
+     (b.y − a.y, −(b.x − a.x), 0) (perpendicular to the segment within the
+     camera's view plane, depth ignored). The first and last points use
+     their one segment's direction, every inner point the average of its
+     two segments' directions; each is scaled to length w. Each segment is
+     a quad a + s_a, b + s_b, b − s_b, a − s_a (two triangles). Two-sided,
+     depth-tested, not written to depth. Up, Right and Forward alignment
+     (unused in stock data) use instead the key's own up, right or forward
+     axis at the moment the point was made, in world space.
+   - **Texture coordinates.** v = 0 on the a + s side, 1 on the a − s side.
+     u of the first point is 0; each new point gets u = u_prev +
+     |p − p_prev| / W, measured to the previous newest point where it was
+     at that moment (the following newest point keeps its u while it moves,
+     so the last segment's texture stretches until the next point is
+     made). The texture therefore repeats once per W u of path length, not
+     once over the whole trail. Every drawn u has an offset O added, where
+     O += `UAdd`·Δ each update: `UAdd` is in texture repeats per second,
+     and a positive value moves the pattern from the newest point toward
+     the oldest (away from the emitter) at `UAdd`·W u/s.
+   - **Colour.** Each point has its own colour from the key's colour keys
+     (`Ck`) evaluated at (age / L) mod 1 (alpha stored inverted, as
+     everywhere in the file), and each segment blends linearly between its
+     two points' colours. So the curve runs over each section's own life,
+     not over the key's life: a curve ending black (with additive blend) or
+     transparent fades every section out as it ages, and the newest section
+     always shows the start of the curve. The key's scale keys (`Sk`) do
+     nothing for a trail.
+   - **Ending.** When the key shuts down (smooth shut-down) no points are
+     added and the newest point stops following; the points age out and
+     the trail disappears once fewer than 2 remain. Without smooth
+     shut-down the key is removed at once.
+   - Stock example `Eye_Red_Tail_L` (the infected's eyes): W 2, BigToSmall,
+     N 50 (25 for its low-detail copy), L 0.2 s, I 0.03 s, `UAdd` 0,
+     additive, `ColorOp` modulate, texture
+     `FX\WEAPONS\GRENADE_TAIL\32XTAILBASE01.DTX`, colour keys (time, r, g,
+     b, stored alpha): (0, 1, 0, 0, 0), (0.0347, 1, 0.502, 0, 0), (0.1025,
+     1, 0, 0, 0), (0.6661, 1, 0, 0, 0), (1, 0, 0, 0, 0): opaque red with a
+     brief orange flash at birth, fading to black (invisible under additive
+     blend) over each section's last third.
+   - Ours (per the plan): constant width, the texture once from tail to
+     head, the key's colour at key time, no fade. Each of those differs.
+   - Expect: test cases 77–81.
+
+2. **Smoke-trail puffs** (projectile `SmokeTrail`, `special_weapons.md`
+   Follow-up 3 and its Corrections (2026-10-31) 2, which these rules
+   refine).
+   - **Size.** Each puff is a camera-facing square of side 4·s u, with
+     s = (2000 / P) · k, where P is the width of the game's screen in
+     pixels (the trail's particle radius 2000 is divided by it once when
+     the segment is made) and k the puff's scale factor. At 1024 pixels
+     wide s starts at 1.953 (a 7.8 u square); at 1920, 1.042 (4.2 u).
+   - **Growth.** k = 1 + 14·f and the puff's own alpha is 0.9·(1 − f),
+     where f = 1 − (life left / total life) of **that puff**, not of its
+     segment. Every puff gets a total life of 10 s (5 s at the "high"
+     special-effects detail, which the release build never has), plus a
+     tiny extra per emission step: of the S steps one update emits (S = 2
+     in the release build), step i (0-based) gets 10 + i·Δ_e/S s, Δ_e the
+     time since that segment's previous emission. The segment is removed
+     long before its puffs would die, so a puff only ever reaches about
+     f ≈ 0.17 (k ≈ 3.4, a 26 u square at 1024 pixels) on a long white
+     trail and f ≈ 0.10 (k ≈ 2.3) on a short one.
+   - **Segment alpha.** A segment emits on every update for its first
+     emitting time (0.2 s white, 0.3 s black) after it was made; after
+     that it stops and its whole particle system's alpha falls linearly
+     from 1 at its last emission to 0 one segment life (1.5 s long white,
+     0.75 s short) later, when the segment is removed. A puff's drawn
+     alpha is its own alpha × the segment's alpha.
+   - **Look.** The three sprite files the trail names
+     (`SFX\Smoke\Spr\WhiteTrailLong.spr`, `WhiteTrailShort.spr`,
+     `BlackTrailShort.spr`) are **not in the install** (no `SFX` folder
+     ships at all), so the particle system has no texture and each puff is
+     drawn as a plain untextured square in its vertex colour (Open question
+     31): a grey between 150/255 and 230/255 (one random value, the three
+     channels equal), ordinary alpha blending. The black type is grey too
+     (only its sprite would have made it dark).
+   - Under water (the segment starts inside a liquid volume): particle
+     radius 500 instead of 2000, 3 puffs per step, the particle system's
+     gravity set to 5 instead of 0, no wind, the default bubble texture and the liquid's
+     colour range.
+   - Expect: test cases 82–83.
+
 ## Test cases
 
 Distances are listener (camera) to source unless stated. "Gain" is g(d) of
@@ -1767,6 +1905,40 @@ map objects and model files of an older extracted client release;
     in camera axes, as unzoomed); `Color` and alpha changes in the record
     → no visible change.
 
+Trail keys and smoke-trail puffs (Follow-up (2026-10-31)).
+
+77. **Trail width (logic).** W = 2, N = 50: n = 2 → Constant 2,
+    SmallToBig 0, SmallToSmall 0, BigToSmall 2; n = 8 → 2, 0.24, 0.24,
+    1.76; n = 30 → 2, 1.12, 0.88 (30 ≥ 25.5), 0.88. The strip's full width
+    is twice these, the same at every point of the trail.
+78. **Trail cadence (logic).** I = 0.03 s, L = 0.25 s, N = 50, frames of
+    exactly 1/64 s from activation: points are made at updates 2, 3, 5, 7,
+    9, … (every second update after the third); before removal n = 1, 2,
+    2, 3, 3, …, 8, 8, 9 at update 17, where the point made at update 2
+    reaches age 0.25 and is removed; from then on n alternates 8 and 7
+    after removal. BigToSmall with W = 2 at n = 8 → w = 1.76.
+79. **Trail texture (logic).** W = 20; points at (0, 0, 0), (10, 0, 0),
+    (30, 0, 0) in that order → u = 0, 0.5, 1.5 (the texture repeats every
+    20 u of path); with `UAdd` 1 after 0.25 s every u is 0.25 larger and a
+    texture feature has moved 5 u toward the oldest point.
+80. **Trail colour (logic).** `Eye_Red_Tail_L`'s curve with L = 0.2 s: a
+    section of age 0.1 s → (1, 0, 0), opaque; age 0.17 s (curve time 0.85)
+    → red 0.449, green 0, blue 0; age 0.00347 s (curve time 0.01735) →
+    (1, 0.251, 0). The newest section is always near the curve start.
+81. **Trail ending (logic).** A trail of 8 points whose key shuts down with
+    smooth shut-down: no point is added, the newest stays where it was,
+    the others vanish as they reach L; when one point is left nothing is
+    drawn. Hiding the group clears all points; shown again, the trail
+    starts empty (first point after I).
+82. **Puff size (logic).** Screen 1024 pixels wide: a new puff's square is
+    7.8125 u; with total life 10 s, after 1.0 s k = 2.4 → 18.75 u, its own
+    alpha 0.81; at 1920 pixels the same puff is 4.17 u, then 10.0 u.
+83. **Puff fade and look (logic).** Long white segment (life 1.5 s,
+    emitting 0.2 s): 0.75 s after its last emission its alpha is 0.5, so a
+    puff emitted then with f = 0.075 shows alpha 0.9·0.925·0.5 = 0.416; at
+    1.5 s the segment and all its puffs are gone. Every puff is an
+    untextured grey square (channels equal, 150–230 of 255).
+
 ## Open questions
 
 1. **Beyond the outer radius**: the game's gain is not recomputed beyond R,
@@ -1907,3 +2079,8 @@ map objects and model files of an older extracted client release;
     set. Ordinary alpha blending with the texture's alpha is assumed;
     check a tracer's edges in game (soft edges: alpha blend; a hard
     rectangle: no blend).
+31. **Untextured drawing** (Follow-up (2026-10-31) 2): with no texture
+    bound, the fixed-function stages read the texture as opaque white on
+    Direct3D 9 hardware, so a smoke puff shows its plain vertex colour.
+    That is the graphics API's behaviour, not traced in the game's code;
+    check a rocket's smoke trail in game (grey squares, no soft smoke).
