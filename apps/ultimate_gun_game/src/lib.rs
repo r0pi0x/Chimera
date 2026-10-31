@@ -27,7 +27,9 @@
 //! band's guns by power score); its pool every game's maps, their installs' too
 //! (`auto::find_installed_maps`, the apps only), rotated at random but the
 //! last `AVOID_RECENT` played (`minigame::rotation`, seeded by the launch
-//! seed); its kit each gun's game's knife (the base game's, `BASE`, for a
+//! seed), the players voting for the next one on the end screen
+//! (`map_vote`, `minigame::vote`: the rotation's pick and two others);
+//! its kit each gun's game's knife (the base game's, `BASE`, for a
 //! game without one). `parts` (console) prints each game's capability
 //! report.
 //!
@@ -85,6 +87,9 @@ pub fn options(seed: u64, rungs: usize) -> AutoOptions {
         base: BASE,
         time_limit: 600.0,
         avoid_recent: Some(AVOID_RECENT),
+        // The players vote for the next map on the end screen (the
+        // built-in settings, chimera/sim/data/map_vote.toml).
+        map_vote: Some("true".into()),
         curve: chimera_sim::minigame::power::PowerCurve::shipped(),
     }
 }

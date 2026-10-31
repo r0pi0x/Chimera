@@ -168,6 +168,7 @@ pub(super) fn on_step(
         FlowEvent::Prepare { first: true } => commands.queue(|world: &mut World| {
             world.remove_resource::<MatchResults>();
             world.remove_resource::<NextMatch>();
+            world.remove_resource::<super::vote::MapVote>();
         }),
         _ => {}
     }

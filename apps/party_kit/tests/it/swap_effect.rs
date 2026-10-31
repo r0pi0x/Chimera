@@ -37,3 +37,17 @@ fn a_swap_flashes_once_when_on() {
     assert_eq!(swaps(false), 0, "off: nothing");
     assert_eq!(swaps(true), 2, "on: one flash per swap (CS:S to Combat Arms and back)");
 }
+
+/// Each game's swap sound (`swap_effect::swap_cue` on the party's cue
+/// packs): a swap into CS:S keeps CS:S's pickup sound, a swap into
+/// Combat Arms gets Combat Arms' weapon change sound.
+#[test]
+fn a_swap_sounds_the_new_games_own_swap_cue() {
+    use chimera_client::client::swap_effect::{SWAP_CUE, swap_cue};
+    use chimera_core::cues::CuePacks;
+    let sim = Sim::new(CaSim, (GreyboxMapPlugin, PartyPartsPlugin));
+    let packs = sim.app.world().resource::<CuePacks>();
+    let sound = |game: &str| swap_cue(packs, None, game).map(|p| (p.id.clone(), p.sound(SWAP_CUE).unwrap().to_string()));
+    assert_eq!(sound("cs_source"), Some(("cs_source".into(), "sound/items/battery_pickup.wav".into())));
+    assert_eq!(sound("combat_arms"), Some(("combat_arms".into(), "UI_SND/VWRM/WEAPONRACE_CHANGE.WAV".into())));
+}

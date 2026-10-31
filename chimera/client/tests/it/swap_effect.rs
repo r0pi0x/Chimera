@@ -78,7 +78,7 @@ fn on_once_per_swap() {
 
 /// With the effect on, the local player's swap sounds the cue packs'
 /// `swap` cue once (the new game's pack's, else the first that has one:
-/// Combat Arms' pack has none, so a swap to Combat Arms plays CS:S's);
+/// a pack without one, as this test's Combat Arms, takes the first's);
 /// another's swap, the effect off, or a definition's `cues = "none"`
 /// sounds nothing.
 #[test]

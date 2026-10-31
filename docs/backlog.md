@@ -368,25 +368,47 @@ the user's go-ahead: no Actions runs unless asked.
   - Clearer name tags when you aim at someone (their name and more),
     kept unobtrusive.
   - A flaming aura around the current leader.
-- **Characters follow the gun (user, 2026-10-31).** A rung's character
-  comes from a mapping between weapons and the characters that may hold
-  them, so the wearer fits the gun:
-  - Combat Arms guns: any Combat Arms character that can hold guns, never
-    zombies (or other characters that can't hold guns).
-  - Infected hands and other zombie weapons: zombie models only.
-  - Specialist-only guns (Combat Arms' specialist classes): those
-    specialists only.
-  - Boss- and NPC-specific guns: only that boss or NPC type's models, for
-    continuity with the game.
-  - CS:S, lighter: a gun normally bought only on T side gives a T model,
-    a CT-only gun a CT model; guns both sides buy, either.
-  Data-driven (a mapping per game, derived from the games' own data where
-  it says who holds what), with a pick among the allowed characters.
-- **Map vote on the end screen (user, 2026-10-31: build it).** Vote
-  rules, candidate maps and networking.
-- **Swap sound per game (user, 2026-10-31).** CS:S swaps keep
-  `items/battery_pickup.wav`; swaps into Combat Arms get a Combat Arms
-  sound of their own.
+- **Characters follow the gun (user, 2026-10-31): done; a spec session
+  for the rest.** A rung's character is drawn among the characters
+  allowed to hold its weapon (`chimera_sim::minigame::holders`, each
+  game's data/rung_characters.toml, overridable per weapon in the data
+  and in a definition's `rung_extras = { character = { weapons = .. }
+  }`). Derived: CS:S from the weapon data's buy team (12 team-only guns:
+  AK-47, Galil, SG 552, G3SG1, Dual Elites, MAC-10 give a T model; M4A1,
+  FAMAS, AUG, SG 550, Five-SeveN, TMP a CT model; every other gun
+  either); Combat Arms from the infected leg set (`LowerAniType` 1 or 2:
+  the infected's hands, zombie bodies only) and every other weapon any
+  player body (the rung bodies: never a zombie). Tests: party_kit
+  `rung_holders`. **For a spec session** (the specs don't say, so no
+  guesses were made): (1) which guns only Combat Arms' specialist
+  characters may hold, and which `Model#` records are those specialists
+  (lobby.md says only "specialist and assassin characters use their own
+  special slot rules"; is the assassin weapon type, the crossbows,
+  tied to an assassin body?); (2) the AI boss weapons (special_weapons.md
+  names the `HQRAID_*`, `Powered_Suit_Boss_*` families and the guided
+  `Boss_Missile`, and 35 AI boss launchers of `Guntype` 9): which body
+  record or `AIModel#` each belongs to (the powered suits are on
+  skeletons 5 and 6, characters.md 1, but nothing links weapon to body),
+  and whether any can be a player's; (3) NPC-only weapons of the PvE
+  modes (bots.md 11 leaves them out of scope) and their models; (4) any
+  weapon field in the weapons file that restricts who holds it. With
+  those, the data's `[weapons]` overrides take them; until then such a
+  gun on a rung is worn by any player body.
+- **Map vote on the end screen (user, 2026-10-31): done.** A
+  definition's `map_vote` (`chimera_sim::minigame::vote`, settings in
+  chimera/sim/data/map_vote.toml: 3 candidates, 12 s, a 3 s reveal):
+  the rotation's pick and the pool's other playable maps (fresh ones
+  first, this map when the pool is short) on the end screen, votes by
+  number key, click or `vote_map <n>`, counted by the server; the most
+  votes win, a tie at random, none: the rotation's pick. On in Ultimate
+  Gun Game. Tests: party_kit `map_vote`, chimera_sim `minigame::vote`.
+  Bots don't vote.
+- **Swap sound per game (user, 2026-10-31): done.** CS:S swaps keep
+  `items/battery_pickup.wav`; swaps into Combat Arms play its weapon
+  change sound, `UI_SND/VWRM/WEAPONRACE_CHANGE.WAV` (music_ambience.md
+  Section 10's `weapon_change_sound`; on a rung up into Combat Arms its
+  `rung_up` cue is the same file). Test: party_kit
+  `swap_effect::a_swap_sounds_the_new_games_own_swap_cue`.
 - **Combat Arms movers keep client prediction (user, 2026-10-31).** The
   original draws sliding movers 100 ms in the past and snaps rotating
   ones; ours predicts them. Kept as a known difference.
@@ -1604,7 +1626,7 @@ sections above already list.
   swap_effect`); once per swap, nothing for a first identity or a dead
   player. *2026-10-31:* with it, the local swap sounds the cue packs'
   `swap` cue (CS:S's pack: `items/battery_pickup.wav`, ours; Combat
-  Arms' pack has none, so its swaps take CS:S's; none with `cues =
+  Arms' pack: `UI_SND/VWRM/WEAPONRACE_CHANGE.WAV` since 2026-10-31; none with `cues =
   "none"`; test chimera_client
   `swap_effect::a_local_swap_sounds_the_swap_cue_once`). Character
   choice still needs the user's decision.

@@ -32,3 +32,50 @@ fn the_install_marks_its_infected_hands_and_overrides() {
     assert!(!bodies.is_empty() && bodies.iter().all(|b| pool.contains(b)));
     eprintln!("{} of {} rung bodies have an infection override", bodies.len(), pool.len());
 }
+
+/// Characters follow the gun on the install's data (`rungs::holders`,
+/// data/rung_characters.toml): every infected's weapon is held by the
+/// infected's bodies only, every other weapon by the player bodies (none
+/// of them only an infected's); the coverage is printed.
+#[test]
+fn the_installs_weapons_map_to_their_holders() {
+    let ca = CaData::install();
+    if ca.attributes().and_then(|a| a.models.as_ref()).is_none() {
+        eprintln!("skipping: the install's attribute data isn't readable (the V1 key)");
+        return;
+    }
+    let set = ca.weapon_set();
+    let mut catalog = chimera_sim::weapon::data::WeaponCatalog::default();
+    catalog.sets.push(set);
+    let ch = ca.characters();
+    let (players, zombies) = (ch.rung_bodies(), ch.infected_bodies());
+    let h = rungs::holders();
+    let (mut to_players, mut to_zombies, mut other) = (0, 0, 0);
+    for w in &set.weapons {
+        let bodies = rungs::bodies_for(&h, Some(&catalog), Some(&ca), &w.id);
+        if w.has_hook(rungs::INFECTED) {
+            assert_eq!(bodies, zombies, "{}: the infected's", w.id);
+            to_zombies += 1;
+        } else if bodies == players {
+            to_players += 1;
+        } else {
+            other += 1;
+        }
+    }
+    eprintln!(
+        "{} weapons: {to_players} to the {} player bodies, {to_zombies} to the {} infected bodies, {other} otherwise",
+        set.weapons.len(),
+        players.len(),
+        zombies.len()
+    );
+    // What a spec session should place (names only hint: by name, not
+    // by data, nothing is decided from them).
+    let hinted: Vec<&str> = set
+        .weapons
+        .iter()
+        .map(|w| w.id.as_str())
+        .filter(|id| ["npc", "boss", "hqraid", "powered_suit", "specialist", "assassin"].iter().any(|k| id.contains(k)))
+        .collect();
+    eprintln!("{} weapons whose names hint at an NPC, a boss or a specialist: {hinted:?}", hinted.len());
+    assert_eq!(other, 0, "no overrides in the data yet");
+}
