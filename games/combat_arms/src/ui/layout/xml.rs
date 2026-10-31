@@ -276,6 +276,8 @@ fn control(layout: &mut Layout, parent: WidgetId, el: &Element) -> Result<(), La
             max_range: int("GaugeBarMaxRange"),
             fill: int("GaugeBarWidth") as f64,
             bar_height: int("GaugeBarHeight"),
+            frame_stretch: quad("GaugeBackTextureSimpleStretchValue"),
+            bar_stretch: quad("GaugeBarTextureSimpleStretchValue"),
         }),
         "listctrl" | "scrolllistctrl" => Kind::List(list("BackTexture")),
         "columnctrl" => Kind::Column(list("BackTexture")),

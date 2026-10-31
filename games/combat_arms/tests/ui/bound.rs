@@ -64,6 +64,7 @@ fn gauge(range: i32) -> Kind {
         max_range: range,
         fill: 0.0,
         bar_height: 8,
+            ..Default::default()
     })
 }
 
