@@ -34,6 +34,7 @@ mod game_modes_followups;
 mod grenades;
 mod hired_guns;
 mod install_launchers;
+mod launcher_aim;
 mod inventory;
 mod lobby;
 mod lobby_loadout;
@@ -88,6 +89,7 @@ mod heavy {
     mod flight_looks;
     mod infected;
     mod junk_flea2;
+    mod launchers_install;
     mod map_load;
     mod missions;
     mod modes_part_two;
