@@ -274,3 +274,44 @@ fn a_sprite_skin_draws_its_first_frame() {
         }
     }
 }
+
+/// models_ltb.md "Sprite skins": a sprite skin's frames, each its texture,
+/// play on the drawn copy's clock at ⌊1000 / r⌋ ms a frame
+/// (`MapMesh::skin_frames`: Chimera's `render::skin_frames` swaps them);
+/// a frame that doesn't resolve is left out, and one frame left draws
+/// still.
+#[test]
+fn a_sprite_skin_plays_its_frames() {
+    let base = files();
+    let (red, green) = (dtx([0, 0, 255, 255]), dtx([0, 255, 0, 255]));
+    let header = |n: u32, rate: u32, frames: &[&str]| {
+        let mut w = W::default();
+        w.u32(n).u32(rate).u32(0).u32(0).u32(0);
+        for f in frames {
+            w.s(f);
+        }
+        w.0
+    };
+    let two = header(3, 4, &["T\\A-1.DTX", "T\\GONE.DTX", "T\\A-2.DTX"]);
+    let one = header(2, 10, &["T\\A-1.DTX", "T\\GONE.DTX"]);
+    let file = move |p: &str| match p {
+        "t/two.spr" => Some(two.clone()),
+        "t/one.spr" => Some(one.clone()),
+        "t/a-1.dtx" => Some(red.clone()),
+        "t/a-2.dtx" => Some(green.clone()),
+        _ => base(p),
+    };
+    let loaded = model::load("props/test/parent.ltb", &file).unwrap();
+    let mut data = MapData::default();
+    let i = props::place(&mut data, &loaded, &["T\\TWO.SPR".to_string()], &[], "Test", Vec3::ONE, Quat::IDENTITY, None, SCALE, &file);
+    let mesh = data.models[data.props[i].model].meshes[0].clone();
+    let frames = mesh.skin_frames.clone().expect("frames");
+    assert_eq!(frames.frame_ms, 250);
+    let colours: Vec<[u8; 4]> = frames.frames.iter().map(|&t| data.textures[t].rgba8[..4].try_into().unwrap()).collect();
+    assert_eq!(colours, [[255, 0, 0, 255], [0, 255, 0, 255]], "red, then green; the missing frame left out");
+    assert_eq!(mesh.texture, Some(frames.frames[0]), "drawn from its first frame");
+    assert_eq!(mesh.material, "t/two.spr");
+    let i = props::place(&mut data, &loaded, &["T\\ONE.SPR".to_string()], &[], "Test", Vec3::ONE, Quat::IDENTITY, None, SCALE, &file);
+    let mesh = &data.models[data.props[i].model].meshes[0];
+    assert!(mesh.texture.is_some() && mesh.skin_frames.is_none(), "one frame: still");
+}

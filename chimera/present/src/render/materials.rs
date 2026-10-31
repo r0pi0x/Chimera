@@ -80,7 +80,7 @@ pub fn lit_prop_material(
     let [r, g, b] = m.color;
     let lighting_only = matches!(view, MapDebugView::Lighting { .. });
     let tint = m.tint.map_or(Vec4::ONE, |[r, g, b]| Vec4::new(r, g, b, 1.0));
-    PropMaterial {
+    let mut material = PropMaterial {
         params: PropParams {
             base_color: if m.texture.is_some() || lighting_only {
                 tint
@@ -121,7 +121,47 @@ pub fn lit_prop_material(
         alpha_mode: m.alpha.shader_alpha_mode(),
         double_sided: m.double_sided,
         cull_front: false,
+        layer: None,
+        skin_frames: m
+            .skin_frames
+            .as_ref()
+            .filter(|_| !lighting_only)
+            .and_then(|s| s.frames.iter().map(|&f| textures.get(f).cloned()).collect::<Option<Vec<_>>>())
+            .unwrap_or_default(),
+        skin_frame_ms: m.skin_frames.as_ref().map_or(0, |s| s.frame_ms),
+    };
+    if let Some(layer) = m.layer.as_ref().filter(|_| !lighting_only) {
+        set_prop_layer(&mut material, layer, textures);
     }
+    material
+}
+
+/// Make `material` draw `layer` (`map::MapLayer`) over its base; one
+/// whose texture didn't resolve draws nothing more.
+pub fn set_prop_layer(material: &mut PropMaterial, layer: &MapLayer, textures: &[Handle<Image>]) {
+    let Some(image) = layer.texture.and_then(|t| textures.get(t)) else { return };
+    material.layer = Some(image.clone());
+    let p = &mut material.params;
+    p.layer = 1.0
+        + match layer.combine {
+            LayerCombine::MaskedAdd => 0.0,
+            LayerCombine::Add => 1.0,
+            LayerCombine::AlphaLerp => 2.0,
+            LayerCombine::Gloss => 3.0,
+        };
+    p.layer_coords = match layer.coords {
+        LayerCoords::CameraReflection => 0.0,
+        LayerCoords::CameraNormal => 1.0,
+        LayerCoords::SphereMap => 2.0,
+        LayerCoords::WorldReflection => 3.0,
+    };
+    p.layer_address = match layer.address {
+        LayerAddress::Wrap => 0.0,
+        LayerAddress::Clamp => 1.0,
+        LayerAddress::Mirror => 2.0,
+    };
+    p.layer_factor = layer.factor;
+    p.layer_light = layer.light;
 }
 
 /// Make `material` reflect `cube` as `env` says (Source `$envmap`).

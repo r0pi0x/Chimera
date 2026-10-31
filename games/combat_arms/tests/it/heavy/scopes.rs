@@ -3,7 +3,9 @@
 //! weapons file"; weapon_classes.md section 7: the snipers) gets its scope
 //! in the simulation built on the install's data: the weapon document
 //! merged from the record carries the sight's name, fitting resolves it in
-//! the install's modification records, and the zoom has the sight's levels.
+//! the install's modification records, and the zoom has the sight's levels;
+//! the special weapons too (weapon_classes.md Corrections (2026-10-30) 2:
+//! they zoom through their scope part like guns).
 //! Passes with a note without an install or without the V1 key.
 
 use bevy::prelude::*;
@@ -19,6 +21,15 @@ use combat_arms::{
     },
     harness::CaSimWith,
 };
+
+/// Hooks that make a weapon a special one (special_weapons.md).
+const SPECIAL_HOOKS: &[&str] = &[
+    "combat_arms:projectile",
+    "combat_arms:flame",
+    "combat_arms:device",
+    "combat_arms:bolt",
+    "combat_arms:controller",
+];
 
 /// The weapons weapon_classes.md names as scoped (section 7, "Shipped
 /// scopes" and the table's scope row): install `Name`, sight.
@@ -88,17 +99,19 @@ fn every_install_weapon_with_a_default_scope_has_it() {
             continue;
         }
         // The special weapons (the LGB, the napalm strike, the XM_25, the
-        // Optical Buster) fit no parts at all (tech-debt.md): their own
-        // scope designators aren't specified.
-        if !set.weapons.iter().find(|d| d.id == id).is_some_and(|d| d.hooks.contains_key("combat_arms:attachments")) {
-            specials.push(w.name.clone());
-            continue;
+        // Optical Buster) zoom through their scope like guns
+        // (weapon_classes.md Corrections (2026-10-30) 2).
+        let hooks = set.weapons.iter().find(|d| d.id == id).map(|d| &d.hooks);
+        if hooks.is_some_and(|h| SPECIAL_HOOKS.iter().any(|k| h.contains_key(*k))) {
+            specials.push(format!("{} ({})", w.name, w.default_scope_attach));
         }
         ids.push(id);
         wants.push(record.scope());
         names.push(format!("{} ({id}, sight \"{}\")", w.name, w.default_scope_attach));
     }
-    eprintln!("not in their accepted list: {}; special weapons: {specials:?}", not_listed.len());
+    eprintln!("not in their accepted list: {} {not_listed:?}", not_listed.len());
+    eprintln!("{} special weapons with a scope: {specials:?}", specials.len());
+    assert!(!specials.is_empty(), "no special weapon zooms through its scope");
     eprintln!(
         "{} install weapons with a default scope; without a document of ours: {no_document:?}; naming no sight record: {unknown_sight:?}",
         ids.len()

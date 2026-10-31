@@ -142,7 +142,7 @@ pub fn place(
     for (mesh, lod) in m.meshes.iter_mut().zip(model::drawn_lods(&loaded.model)) {
         render_style::apply(mesh, render_style::of_list(styles, lod.render_style));
     }
-    super::world::textures(&mut m.meshes, map, file);
+    super::world::model_textures(&mut m.meshes, map, file);
     map.models.push(m);
     map.entities.push(MapEntity {
         keyvalues: vec![

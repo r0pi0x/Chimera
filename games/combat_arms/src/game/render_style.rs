@@ -5,23 +5,31 @@
 //! weapon's `PVRenderStyle#` / `HHRenderStyle#`, a head piece's or
 //! face's); a missing entry is the engine's default style. How each file
 //! draws is our data (data/render_styles.toml, by file name: opaque,
-//! blended by the texture's alpha, added, glowing, or alpha-tested cut
-//! out as models_ltb.md "Render styles and sprite skins" reads the
-//! files), applied to the piece's mesh (`apply`).
+//! blended by the texture's alpha, added, glowing, alpha-tested cut out,
+//! or layered, as models_ltb.md "Render styles and sprite skins" reads
+//! the files), applied to the piece's mesh (`apply`). A layered style
+//! (`Layer`: `env_alpha_mask`, `itemedge`, `edgeamp01`, `envmap`,
+//! `pv_char`) draws the piece's second texture slot (`apply_with` names
+//! it; `world::model_textures` resolves it) as an environment or rim map
+//! on generated coordinates (Chimera's `map::MapLayer`), the stock
+//! styles' formulas with the game's lit colour taken as half our light
+//! (its default 2 x T x L is our T x light).
 //!
 //! Known shortcuts: the files aren't read (their format is in
 //! models_ltb.md now); the table is our summary of them, so a style
-//! not in it draws opaque, as the default style, and the environment and
-//! rim maps of slot 1 (`envmap`, `itemedge`, `pv_char`...) aren't drawn
-//! (Chimera's model material has no reflection- or normal-generated
-//! second texture yet); a model skin that is a sprite (`.spr`) shows its
-//! first frame (`world::textures`), not its frames on the model's clock.
+//! not in it draws opaque, as the default style; `pv_char_b`'s three
+//! passes aren't drawn (opaque); the layered styles' materials (ambient,
+//! diffuse, emissive, specular) aren't applied, only the formulas over our
+//! light; a face's, head piece's or attached part's slot 1 isn't named
+//! (only weapons' view and held models and body records' pieces).
 
 use std::{collections::HashMap, sync::OnceLock};
 
 use serde::Deserialize;
 
-use crate::map::{MapAlpha, MapMesh};
+use bevy::prelude::default;
+
+use crate::map::{LayerAddress, LayerCombine, LayerCoords, MapAlpha, MapLayer, MapMesh};
 
 /// How a render style draws a piece.
 #[derive(Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -50,6 +58,59 @@ pub enum Style {
         #[serde(default)]
         two_sided: bool,
     },
+    /// The piece's second texture slot as an environment or rim map on
+    /// generated coordinates (models_ltb.md "Stock styles"; `Layer`),
+    /// alpha-tested (kept where alpha > `cutout`/255) when set.
+    Layered {
+        layer: Layer,
+        #[serde(default)]
+        cutout: Option<u8>,
+    },
+}
+
+/// The stock styles that draw slot 1 (models_ltb.md "Stock styles"), T
+/// the colour map, S slot 1's sample, L the lit colour.
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum Layer {
+    /// `env_alpha_mask`: T + T.a x S x L, S at the camera-space
+    /// reflection (clamped); T unlit.
+    EnvAlphaMask,
+    /// `itemedge`: T x L + 3 S, S at the camera-space normal (mirrored).
+    ItemEdge,
+    /// `edgeamp01`: as `itemedge`, S added once.
+    EdgeAmp,
+    /// `envmap`: 2 L x lerp(T, S, T.a), S at the camera-space reflection
+    /// as a sphere map.
+    Envmap,
+    /// `pv_char`: (T x L + T.a x S) x (1 + T.a^2), S at the world-space
+    /// reflection (clamped).
+    PvChar,
+}
+
+/// The game's lit colour L as a fraction of ours: its stock style draws
+/// 2 x T x L where we draw T x our light.
+const GAME_LIGHT: f32 = 0.5;
+
+impl Layer {
+    /// How the layer draws (its texture still to be named and resolved).
+    pub fn map_layer(self) -> MapLayer {
+        let (coords, address, combine, factor) = match self {
+            Layer::EnvAlphaMask => (LayerCoords::CameraReflection, LayerAddress::Clamp, LayerCombine::MaskedAdd, 1.0),
+            Layer::ItemEdge => (LayerCoords::CameraNormal, LayerAddress::Mirror, LayerCombine::Add, 3.0),
+            Layer::EdgeAmp => (LayerCoords::CameraNormal, LayerAddress::Mirror, LayerCombine::Add, 1.0),
+            Layer::Envmap => (LayerCoords::SphereMap, LayerAddress::Clamp, LayerCombine::AlphaLerp, 2.0),
+            Layer::PvChar => (LayerCoords::WorldReflection, LayerAddress::Clamp, LayerCombine::Gloss, 1.0),
+        };
+        MapLayer {
+            coords,
+            address,
+            combine,
+            factor,
+            light: GAME_LIGHT,
+            ..default()
+        }
+    }
 }
 
 impl Style {
@@ -58,6 +119,7 @@ impl Style {
         match self {
             Style::Cutout { reference, strict: false, .. } => alpha >= reference,
             Style::Cutout { reference, strict: true, .. } => alpha > reference,
+            Style::Layered { cutout: Some(r), .. } => alpha > r,
             _ => alpha > 0,
         }
     }
@@ -113,6 +175,25 @@ pub fn apply(mesh: &mut MapMesh, style: Style) {
             mesh.unlit |= unlit;
             mesh.double_sided |= two_sided;
         }
+        Style::Layered { layer, cutout } => {
+            let material = mesh.layer.take().map(|l| l.material).unwrap_or_default();
+            mesh.layer = Some(MapLayer {
+                material,
+                ..layer.map_layer()
+            });
+            if let Some(r) = cutout {
+                mesh.alpha = MapAlpha::Mask((f32::from(r) + 0.5) / 255.0);
+            }
+        }
+    }
+}
+
+/// `apply`, a layered style's slot-1 texture being `skins[second]` (the
+/// piece's second texture index; none: the layer draws nothing).
+pub fn apply_with(mesh: &mut MapMesh, style: Style, skins: &[String], second: i32) {
+    apply(mesh, style);
+    if let Some(layer) = mesh.layer.as_mut().filter(|_| matches!(style, Style::Layered { .. })) {
+        layer.material = usize::try_from(second).ok().and_then(|i| skins.get(i)).cloned().unwrap_or_default();
     }
 }
 
@@ -139,5 +220,38 @@ mod tests {
         let mut m = MapMesh::default();
         apply(&mut m, mark);
         assert!(matches!(m.alpha, MapAlpha::Mask(c) if 159.0 / 255.0 < c && c < 160.0 / 255.0) && m.unlit);
+    }
+
+    /// models_ltb.md "Stock styles" and R3: `itemedge` adds slot 1 at the
+    /// camera-space normal (mirrored) 3 times, alpha-tested > 160.
+    #[test]
+    fn layered_styles_draw_slot_one() {
+        let edge = style("RS\\ItemEdge.ltb");
+        assert_eq!(edge, Style::Layered { layer: Layer::ItemEdge, cutout: Some(160) });
+        assert!(!edge.keeps(160) && edge.keeps(161));
+        let skins = ["T\\GUN.DTX".to_string(), "TEXTURES\\128XPV_SPECIALSPECR.DTX".into()];
+        let mut m = MapMesh::default();
+        apply_with(&mut m, edge, &skins, 1);
+        let l = m.layer.clone().unwrap();
+        assert_eq!(l.material, skins[1]);
+        assert_eq!((l.coords, l.address, l.combine, l.factor), (LayerCoords::CameraNormal, LayerAddress::Mirror, LayerCombine::Add, 3.0));
+        assert!(matches!(m.alpha, MapAlpha::Mask(c) if 160.0 / 255.0 < c && c < 161.0 / 255.0));
+        // R4: envmap's second pass: a sphere map, lerped by T.a, x 2L.
+        let env = style("RS\\envmap.ltb").clone();
+        let mut m = MapMesh::default();
+        apply_with(&mut m, env, &skins, 1);
+        let l = m.layer.unwrap();
+        assert_eq!((l.coords, l.combine, l.factor, l.light), (LayerCoords::SphereMap, LayerCombine::AlphaLerp, 2.0, 0.5));
+        for (name, layer) in [("RS\\ENV_ALPHA_MASK.ltb", Layer::EnvAlphaMask), ("RS\\PV_Char.ltb", Layer::PvChar), ("RS\\EdgeAmp01.ltb", Layer::EdgeAmp)] {
+            assert!(matches!(style(name), Style::Layered { layer: l, .. } if l == layer), "{name}");
+        }
+        // A single-texture style draws no second slot, named or not.
+        let mut m = MapMesh::default();
+        apply_with(&mut m, style("RS\\default.ltb"), &skins, 1);
+        assert!(m.layer.is_none());
+        // A layered piece with one slot names nothing (the layer stays undrawn).
+        let mut m = MapMesh::default();
+        apply_with(&mut m, edge, &skins[..1], -1);
+        assert!(m.layer.unwrap().material.is_empty());
     }
 }

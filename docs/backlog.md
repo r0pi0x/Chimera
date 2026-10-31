@@ -864,6 +864,13 @@ the user's go-ahead: no Actions runs unless asked.
      specified (data.rs "Known shortcuts").
      **Answered (2026-10-30):** exactly like a gun, through its scope
      part's zoom levels (weapon_classes.md Corrections (2026-10-30) 2).
+     **Done (2026-10-30):** a weapon document without a parts table whose
+     record names a `DefaultScopeAttach` gets one (`data::patch`), so it
+     fits its scope from its accepted list and zooms with that part's
+     levels and overlay; on the dev box's install 5 specials do (LGB
+     `LGB_scope`, both napalm strikes `napalm_scope`, XM_25 `XM25 scope`,
+     Optical_Buster_Apollo `L115 Scope`; `heavy::scopes`, test
+     `attachments::special_weapon_zooms_through_its_scope`).
 
   Stale in `game/data.rs`'s "Known shortcuts": "sounds and sound radii"
   aren't all unmapped (`MiscSound1..5`, `PlayAutoThrowSound`,
@@ -1091,7 +1098,7 @@ the user's go-ahead: no Actions runs unless asked.
   (the rest: kits, smoke and flash grenades, a missing snowball file).
   The text fallback is the plain name, no brackets. Tests: combat_arms'
   `heavy::kill_icons` (install), `kill_feed::tests` in chimera_client.
-- **Grey Combat Arms gun skins: fixed (first frame), confirm in a
+- **Grey Combat Arms gun skins: fixed (animated since 2026-10-30), confirm in a
   playtest** ("Prismatic Eco M416", "Drakeveil SIG550", "Dragunov SVD
   Obsidian Dragon" (flat), "M14 Cyanide Echo lv.4(limit)", "Red
   Dominion ARX60 Lv.1 (limit)", "SIG50 Clockwork" (body grey, scope
@@ -1103,9 +1110,11 @@ the user's go-ahead: no Actions runs unless asked.
   `.dtx` names only, so those pieces had no texture and drew the
   untextured grey (an attachment names a `.dtx`: the Clockwork's scope
   showed). A sprite skin now draws its first frame, as map surfaces and
-  effects already did (`data::skin_paths`, `world::textures`); it
-  doesn't animate: the sprite's timing isn't in the specs (open
-  question in docs/plans/active/combat-arms.md, "Weapon skins"). Same
+  effects already did (`data::skin_paths`); since 2026-10-30 it plays
+  its frames as models_ltb.md "Sprite skins" says (each drawn copy's own
+  looping clock, ⌊1000/r⌋ ms a frame, swapped whole:
+  `world::model_textures`, Chimera's `render::skin_frames`): 315
+  animated pieces in `heavy::weapon_skins` on the dev box. Same
   for both games' boxes (a naming rule, not a key). The sweep of all
   2,298 install weapons (`heavy::weapon_skins`, view and held model,
   each piece's first texture slot) on the dev box's install:

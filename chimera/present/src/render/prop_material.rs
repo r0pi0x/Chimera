@@ -12,7 +12,10 @@
 //! `$basealphaenvmapmask`, `$normalmapalphaenvmapmask`: the normal map's
 //! alpha, bound as `envmap_mask`), and the model
 //! shaders' `$detail` (every blend mode, 5 and 6 after lighting), `$selfillum`
-//! (base alpha or `$selfillummask`) and `$basetexturetransform`.
+//! (base alpha or `$selfillummask`) and `$basetexturetransform`; a second
+//! texture on generated coordinates (`map::MapLayer`: LithTech's
+//! environment and rim maps, `layer`), and a skin's frames
+//! (`map::MapSkinFrames`, swapped by `skin_frames`).
 //!
 //! Faces: back ones culled except on `$nocull` materials, front ones on
 //! mirrored (left-handed) view models, in the depth prepass as in the main
@@ -73,6 +76,17 @@ pub struct PropParams {
     /// 1 with `$selfillum` (mask: base alpha), 2 with a `$selfillummask`.
     pub selfillum: f32,
     pub selfillum_tint: Vec4,
+    /// A second texture on generated coordinates (`map::MapLayer`, bound
+    /// as `layer`): 0 none, else 1 + its combine (`layer_combine`).
+    pub layer: f32,
+    /// Its coordinates: 0 camera-space reflection, 1 camera-space normal,
+    /// 2 sphere map, 3 world-space reflection.
+    pub layer_coords: f32,
+    /// 0 wrap, 1 clamp, 2 mirror.
+    pub layer_address: f32,
+    pub layer_factor: f32,
+    /// The source game's lit colour as a fraction of the drawn light.
+    pub layer_light: f32,
 }
 
 impl PropParams {
@@ -92,7 +106,7 @@ impl PropParams {
     }
 }
 
-#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone, Default)]
 #[bind_group_data(PropMaterialKey)]
 pub struct PropMaterial {
     #[uniform(0)]
@@ -116,6 +130,15 @@ pub struct PropMaterial {
     pub double_sided: bool,
     /// Cull front faces instead of back ones (drawn mirrored).
     pub cull_front: bool,
+    /// `map::MapLayer`'s texture, sampled like `base` at coordinates the
+    /// shader makes (`PropParams::layer`).
+    #[texture(8)]
+    pub layer: Option<Handle<Image>>,
+    /// A skin that is a looping sequence (`map::MapSkinFrames`): each
+    /// frame's image (`base` shows one) and how long each shows, ms; each
+    /// drawn copy runs its own clock (`skin_frames::SkinClock`).
+    pub skin_frames: Vec<Handle<Image>>,
+    pub skin_frame_ms: u32,
 }
 
 impl Material for PropMaterial {

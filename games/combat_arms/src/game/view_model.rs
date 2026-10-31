@@ -400,9 +400,10 @@ pub fn load(
     let ca = super::data::CaData::install();
     let styles = ca.install_weapon(key).map_or(&[][..], |r| &r.pv_render_styles[..]);
     for (mesh, lod) in m.meshes.iter_mut().zip(model::drawn_lods(&loaded.model)) {
-        super::render_style::apply(mesh, super::render_style::of_list(styles, lod.render_style));
+        let style = super::render_style::of_list(styles, lod.render_style);
+        super::render_style::apply_with(mesh, style, skins, model::second_slot(lod));
     }
-    super::world::textures(&mut m.meshes, map, file);
+    super::world::model_textures(&mut m.meshes, map, file);
     for mesh in m.meshes.iter_mut().filter(|m| m.texture.is_none()) {
         mesh.color = UNSKINNED;
     }
@@ -490,7 +491,7 @@ pub fn load_part(
         model::pose_meshes(&loaded.model, entry, &mut m.meshes, VIEW_SCALE);
     }
     let styles = model::drawn_lods(&loaded.model).iter().map(|l| l.render_style).collect();
-    super::world::textures(&mut m.meshes, map, file);
+    super::world::model_textures(&mut m.meshes, map, file);
     for mesh in m.meshes.iter_mut().filter(|m| m.texture.is_none()) {
         mesh.color = UNSKINNED;
     }
@@ -506,7 +507,7 @@ pub fn load_hands(
 ) -> Result<(Vec<crate::map::MapMesh>, Vec<crate::map::MapBone>), String> {
     let loaded = model::load(&choice.model, file)?;
     let mut m = model::convert(&loaded, VIEW_SCALE, &skin_of(&choice.skins));
-    super::world::textures(&mut m.meshes, map, file);
+    super::world::model_textures(&mut m.meshes, map, file);
     for mesh in m.meshes.iter_mut().filter(|m| m.texture.is_none()) {
         mesh.color = UNSKINNED;
     }
