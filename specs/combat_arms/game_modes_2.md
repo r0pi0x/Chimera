@@ -3,7 +3,7 @@
 Source basis: the dedicated server's rule sets for Hired Guns, VIP Escort (public and clan), the four clan modes, Snowball Fight and the co-operative modes; the shared player bullion pocket, the squad (mercenary) manager, the bullion item, bank trigger and escape zone objects, the character damage and death path (freezing, AI damage scaling, kill credit for AI), the player's spawn and VIP teleport, the VIP data reader; the client's Hired Guns HUD, hire and order menus, Snowball respawn request, frozen-state controls and messages; the room data, hire-menu data, weapons and projectile data, character data and VIP data of a US-region data set; the plaintext per-map mission files of an older regional client; object lists read from plaintext maps of that client (Blood Money, Oil Rig, City of Wings); the regional build configurations that decide which variants are compiled.
 Status: draft
 
-Sections: Summary; Units and conventions; Constants (shared); M11 Hired Guns; M13 VIP Escort; M18 Clan variants; M16 Snowball Fight; M19 Co-operative modes; Per-tick order; Edge cases; Quirks; Test cases; Open questions.
+Sections: Summary; Units and conventions; Constants (shared); M11 Hired Guns; M13 VIP Escort; M18 Clan variants; M16 Snowball Fight; M19 Co-operative modes; Per-tick order; Edge cases; Quirks; Test cases; Follow-up (2026-10-31b) (exit timer); Open questions.
 
 This spec completes `game_modes.md` (called GM below) and uses its shared rules S1 to S14 and its phase names (setup, live, round over, round end, intermission). It also uses `missions.md` for the mission file fields and `movement.md` for the move penalty P. It does not repeat them.
 
@@ -495,6 +495,12 @@ Common setup unless stated: server file client copy (`ObjectStart` 0, `ObjectEnd
 51. Lives. A player dies (1 → 0 lives) → no respawn; the token offer is shown. The other three die → lives sum 0 → token offer to all → 12 s later mission failed (no one used a token).
 52. Life bonus at maximum. A script adds 1 life to players with 1 life (max 1) → no life added; their health and ammo refilled.
 53. AI cap. An AI hit computed at 120 health damage on a player → 50. At 1500 → 990. A melee AI hit of 120 → 120.
+
+## Follow-up (2026-10-31b): the exit timer's 61 s
+
+`world_objects.md` Follow-up (2026-10-31b) 1.1 traces the `TimerTrigger`: `START` sets its run-out to `TimeAmount` + 1 s, and `AutoStop` stops it, running its over-time commands, at the first update at or after that. So the stock `VipExitTimer` (60 s, early command at 54 s) unlocks the escape zone **61 s** after it was started, not 60 s; the helicopter's arrival commands still run at 54 s. Case 24 becomes: zone unlocked at t = 61 s (119 s on the clock); the VIP entering at t = 60.95 s → nothing.
+
+54. **Exit at 61 s.** Round live at t = 0 with the exit timer started then (20 Hz): helicopter-coming effects at t = 54.0; the zone still locked at t = 60.95; unlocked and open messages sent at t = 61.0.
 
 ## Open questions
 

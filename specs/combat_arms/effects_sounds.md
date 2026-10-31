@@ -28,8 +28,9 @@ surface table); Behavior (1 who makes what, 2 visibility gates, 3 muzzle
 flash, 4 tracers, 5 surface type of a hit, 6 impacts and decals, 7 blood,
 8 shell casings, 9 grenade explosion, flash and smoke looks, 10 how a sound
 is played, 11 sounds by event, 12 who hears what); Per-frame order; Edge
-cases; Quirks; Corrections (2026-10-22); Corrections (2026-10-30); Test
-cases; Open questions.
+cases; Quirks; Corrections (2026-10-22); Corrections (2026-10-30);
+Follow-up (2026-10-31) (trail keys); Follow-up (2026-10-31b) (prop debris,
+empty texture slots, surface 0); Test cases; Open questions.
 
 ---
 
@@ -1649,6 +1650,37 @@ the trail key draws") and why our smoke-trail puffs look too small. Where
      colour range.
    - Expect: test cases 82–83.
 
+## Follow-up (2026-10-31b): prop debris, empty texture slots, surface 0
+
+From the reference's debris table reader, the destructible aggregate's death handling, the client's debris effect and its moving-object physics, the renderer's per-stage texture binding, the server's bullet impact and shoot-through handling and its surface lookups, and the install (Steam build 26236938: `ATTRIBUTES\DEBRIS.TXT`, `ATTRIBUTES\SURFACE.TXT`, all 105 world files). Answers Open questions 15 and 31 and gives `world_objects.md` its debris looks (its Follow-up (2026-10-31b) 4). Test cases 84–96.
+
+1. **Prop debris** (a destructible world model's `DebrisType`).
+   - **The table** `ATTRIBUTES\DEBRIS.TXT`: records `[Debris0]`, `[Debris1]`, … read until one is missing; a record's number is its id. Keys: `Name`, `SurfaceId`, `MinScale`/`MaxScale`, `MinVel`/`MaxVel`, `MinWorldVel`/`MaxWorldVel` (vectors, default 0), `MinDebrisOffset`/`MaxDebrisOffset`, `MinLifetime`/`MaxLifetime`, `Fadetime`, `Number`, `Rotate` (an integer, non-zero = on), `MinBounce`/`MaxBounce`, `GravityScale`, `Alpha`, `Model1`…`Model5`, `Skin0…` and `RenderStyle0…` lists, `BounceSnd1`/`BounceSnd2`, `ExplodeSnd1`/`ExplodeSnd2`, `WorldSpaceFX`, `ImpactSpaceFX` (effect group names). A map object names a record by `Name`, case ignored.
+   - **The install's six records** (paths as stored; vectors are (right, forward, up) for `MinVel`/`MaxVel` and world (x, y, z) for the others):
+
+| Id | `Name` | Surface | Scale | `MinVel` .. `MaxVel` | World vel | Offset | Life, fade (s) | Number | Rotate | Bounces | Gravity × | Alpha | Models | Skin, style | Bounce / explode sounds (`FX\Debris\Snd\…`) |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | `None` | 0 | 1–1 | 0 .. 0 | 0 | (10, 10, 10) | 0, 0 | 0 | off | 0–0 | 1.0 | 1.0 | none | none | none |
+| 1 | `Window` | 40 | 0.5–1.2 | (−800, −500, −800) .. (800, 800, 800) | 0 | (10, 10, 10) | 4.0–5.0, 3.0 | 30 | on | 10–15 | 2.0 | 0.7 | `FX\Debris\Models\glass_01.ltb`, `glass_02.ltb`, `glass_03.ltb` | `FX\Debris\Skins\glass_01.dtx`, `RS\translucent.ltb` | `Smallglass\gib_1.wav`, `gib_2.wav` / `Smallglass\glass_crash1.wav`, `glass_crash3.wav` |
+| 2 | `Window_smoll` | 40 | 0.2–0.5 | (−400, −250, −400) .. (400, 400, 400) | 0 | (10, 10, 10) | 0.8–1.0, 2.0 | 15 | on | 10–15 | 1.0 | 0.7 | as `Window` | as `Window` | `Smallglass\gib_1.wav`, `gib_2.wav` / `Smallglass\explode_1.wav`, `explode_2.wav` |
+| 3 | `Window_Large` | 40 | 4–7 | (−600, −400, −600) .. (600, 400, 600) | 0 | (−30, −30, −30) .. (30, 30, 30) | 0.5–0.7, 2.0 | 10 | on | 15–20 | 1.0 | 0.7 | `FX\Debris\Models\GLASS_02A.ltb`, `GLASS_02B.ltb`, `GLASS_02C.ltb` | as `Window` | as `Window` |
+| 4 | `56x56WoodBox` | 30 | 5–8 | (−150, −150, 300) .. (150, 150, 500) | 0 | (−28, −28, 10) .. (28, 28, 50) | 1.0–1.2, 1.0 | 6 | on (stored as 360) | 10–15 | 3.0 | 1.0 | `FX\Debris\Models\WOOD1A.ltb`, `WOOD1C.ltb` | `FX\Debris\Skins\WOOD.dtx`, `RS\DEFAULT.ltb` | `Wood\gib_1.wav`, `gib_2.wav` / `Wood\explode_1.wav`, `explode_2.wav` |
+| 5 | `Stone` | 54 | 4–8 | (−200, −50, −200) .. (200, 300, 200) | (−50, 100, −50) .. (50, 300, 50) | (10, 10, 10) | 2.0–3.0, 2.0 | 8 | on | 5–8 | 2.5 | 1.0 | `FX\Debris\Models\chunk1.ltb` … `chunk4.ltb` | `FX\Debris\Skins\STONE.dtx`, `RS\default.ltb` | `STONE\gib_1.wav`, `gib_2.wav` / `STONE\explode_1.wav`, `explode_2.wav` |
+
+   No record names a `WorldSpaceFX` or `ImpactSpaceFX`. Users in the stock maps: `world_objects.md` Follow-up (2026-10-31b) 4.
+   - **Sending**: on the object's death (after its `Spawn`, before its world-model debris) the server sends an effect message at the object's position (the world model's box centre) carrying that position, the record id and a rotation whose forward is the death direction (the killing damage's direction) with up toward +Y. Every client that receives it builds the effect below.
+   - **Count**: N = min(`Number`, 20); then by the console variable `DebrisFXLevel` (default high): low N × 0.333, medium N × 0.666, truncated; at least 1. The lifetimes are scaled by the same factor (low 0.333, medium 0.666).
+   - **Each piece i = 1 … N**: model `Model`k with k = ((i − 1) mod the number of models) + 1, the record's first skin and render style; scale U(0.8, 1.2) × U(`MinScale`, `MaxScale`) on all axes; alpha `Alpha`. With F, R, U the message rotation's forward, right and up axes, the velocity bounds are lo = `MinWorldVel` + R·`MinVel`.x + F·`MinVel`.y + U·`MinVel`.z and hi likewise from the `Max` values; each world component of the piece's velocity is drawn uniformly between lo and hi on that component. The start is the message position + (U(`MinDebrisOffset`.x, `MaxDebrisOffset`.x), U(… .y), U(… .z)) in world axes. Life L = U(`MinLifetime`, `MaxLifetime`) (scaled), bounce budget b = a whole number U{`MinBounce` … `MaxBounce`}. With `Rotate`: angular speeds pitch U(−π, π), yaw U(−2π, 2π), roll U(−2π, 2π) rad/s, angles from 0. A piece that starts inside a liquid volume uses the liquid physics below for its whole life; one whose model is missing is not drawn but still counts.
+   - **At creation** one of the explode sounds (uniform) plays at the message position, radius 1000, low priority.
+   - **Motion**, each client frame of length dt (0 while the game is paused): new position = position + v·dt; then v += ½·`GravityScale`·g·dt with g = (0, −1000, 0) u/s² (liquid: (0, −500, 0)), so the effective fall acceleration is 500 × `GravityScale` u/s² (`Window` 1000, `56x56WoodBox` 1500, `Stone` 1250, the others 500). The segment from the old to the new position is tested against the level's polygons and solid objects (non-solid ones ignored). On a hit with plane normal n: the piece is placed 0.3 u off the hit point along n; v is mirrored about the plane and multiplied by 0.5 (liquid 0.25); the hit is a **ground** bounce when n.y > 0.6. A ground bounce costs one from b, and also puts the piece **at rest** when |v|² < 225 / dt (dt clamped to [0.001, 0.5], a frame longer than 0.5 s counting as 0.1). After any hit, if not in a liquid and b > 0, one bounce sound (uniform of the two) plays at the piece with probability 1/4, radius 1000, low priority; when b ≤ 0 the piece is at rest. A segment hitting **sky** or an **invisible** surface removes that piece at once, and the other pieces skip their motion for that frame.
+   - **Spin**: with `Rotate`, each bounce re-draws the three angular speeds; while moving the angles grow by speed × dt and the piece takes rotation R(pitch, yaw, roll); on coming to rest it is set to its yaw alone (lying flat).
+   - **Fade and end**: from the effect's first frame, a piece lives L, then, if `Fadetime` > 0.1 s, fades over `Fadetime` (alpha = min(its alpha, time left / `Fadetime`)); it is removed at L + `Fadetime` (no camera check). The effect ends when no piece is left.
+   - `None` gives N = 1 with no model and no sounds: nothing visible or audible.
+2. **An empty texture slot** (Open question 31; `models_ltb.md` Open question 10). Traced in the renderer: for each texture stage of a render-style pass, the engine binds the model's texture for the slot the stage names; when that slot holds no texture (or the texture cannot be created) it binds **nothing** to that stage, with no substitute or default image, and leaves the stage's colour and alpha operations exactly as the render style sets them (it does not disable the stage). A stage told to use no texture likewise binds nothing. So what an empty slot reads is whatever the graphics API returns for a stage with no texture: on Direct3D 9's fixed-function stages, opaque white, as assumed (that part is the API's, not the game's). One quirk: a texture that exists but has no device image leaves the stage's **previous** texture bound. (The engine also has an optional deferred renderer that puts only the colour map on its first stage; it is off unless enabled and not considered here.)
+3. **Surface 0, Unknown** (Open question 15). The install's own table (Steam build 26236938, `ATTRIBUTES\SURFACE.TXT`) has `[Surface0]` `Name` `Unknown`, `CanShootThrough` 1, `MaxShootThroughThickness` 10, `MaxShootThroughPerturb` 10, `BulletRangeDampen` 1.0, `BulletDamageDampen` 0.6, `ShowsMark` 0, stone impact sounds. Its shoot-through surfaces are Unknown (0), Air (1), Flesh (2), Armor (3), Chain Link Fence (9), trussing (23), Wood (30), Plywood (32), Glass (40), Shooting range target's hole (50), paper (53), Boss3_weak (65), Ice (69), "Can shoot through" (76), Cloth (81), Wood Door (100), Water (204), Invisible metal (206), WoodLadder (207).
+   - **Where surface 0 comes from**: the server takes a hit's surface from the object hit (its surface flags; the level itself has none) and, if that gives Unknown, from the polygon hit (its stored surface type). Characters' surfaces come from their model data, never Unknown. So a bullet meets Unknown on any solid polygon whose surface type is 0 and on objects with no surface of their own. Install census: 100,922 of 4,057,293 solid physics polygons (2.5 %, in 98 of 105 maps; WAREHOUSE 312 of 32,688, FREEZER 348 of 23,314, JUNK_FLEA 126 of 15,442) and 72,275 of 594,095 solid world-model polygons (12 %) have surface type 0.
+   - **What a round does on it** (server ray, `weapon_firing.md` "Penetration"): the impact effect plays with the Unknown look (no bullet hole, stone sounds); a non-level object hit is damaged; then the ray **shoots through**: for a non-level, non-world-model object only if one of its dimensions (2 × half-extent) is below 10; a back-cast from 11 u beyond the entry point to 1 u before it must hit something; the ray restarts from the exit (same surface flags) or the entry, with the range left reduced by the distance travelled (× 1.0), damage × 0.6 from then on (cumulative), and its direction re-perturbed by whole thousandths in −10 … 10 on the right and up axes. So walls and floors of surface 0 up to about 11 u thick are shot through, as `weapon_firing.md`'s table must add (its Follow-up (2026-10-31b)).
+
 ## Test cases
 
 Distances are listener (camera) to source unless stated. "Gain" is g(d) of
@@ -1939,6 +1971,22 @@ Trail keys and smoke-trail puffs (Follow-up (2026-10-31)).
     1.5 s the segment and all its puffs are gone. Every puff is an
     untextured grey square (channels equal, 150–230 of 255).
 
+Prop debris, empty texture slots and surface 0 (Follow-up (2026-10-31b)).
+
+84. **Debris table.** Parsing the install's `ATTRIBUTES\DEBRIS.TXT` gives six records, ids 0–5, values as in the table; `Rotate` of `56x56WoodBox` reads as on; `Window` has three models and two bounce and two explode sounds; `Stone` has `MinWorldVel` (−50, 100, −50).
+85. **Debris count.** `Window` (`Number` 30) at high detail → 20 pieces; medium → 13; low → 6; `56x56WoodBox` low → 1 (6 × 0.333 = 1.998 → 1); `None` → 1 piece, nothing drawn, no sound.
+86. **Debris velocity bounds.** `56x56WoodBox`, death direction (0, 0, 1) (right (1, 0, 0), up (0, 1, 0)): lo = (−150, 300, −150), hi = (150, 500, 150); every piece's velocity lies in that box. Death direction (1, 0, 0) (right (0, 0, −1)): lo = (−150, 300, 150), hi = (150, 500, −150); z is drawn between 150 and −150, so the pieces fill the same box.
+87. **Debris start offsets.** `Window`: every piece starts at the death position + (10, 10, 10). `Window_Large`: within ±30 per axis.
+88. **Debris models and scale.** `Window`, 20 pieces: pieces 1, 4, 7 … use `glass_01.ltb`, 2, 5 … `glass_02.ltb`, 3, 6 … `glass_03.ltb`; every scale lies in [0.4, 1.44] (0.8 × 0.5 to 1.2 × 1.2); alpha 0.7.
+89. **Debris fall.** A `56x56WoodBox` piece launched at (0, 400, 0) in open air at 60 fps: after 12 frames (0.2 s) its height gain is 400·0.2 − 1500·(1/60)²·66 = 52.5 u (the position steps with the speed before each frame's gravity) and its vertical speed 100 u/s.
+90. **Debris bounce.** A `Window` piece hitting a flat floor (n = (0, 1, 0)) at v = (100, −300, 0): it continues at (50, 150, 0), 0.3 u above the hit point, b down by one; at 60 fps a floor hit at v = (0, −200, 0) leaves |v| = 100 < √(225·60) ≈ 116 → at rest, rotated to its yaw only. A wall hit (n = (1, 0, 0)) does not count against b.
+91. **Debris sky.** A piece whose segment hits a sky polygon disappears that frame; the effect's other pieces do not move in that frame.
+92. **Debris end.** `Window` piece with L = 4.5 s, fade 3 s: alpha 0.7 until 4.5 s, 0.5 at 6.0 s (min(0.7, 1.5 / 3)), 0.2 at 6.9 s, removed after 7.5 s.
+93. **Empty slot (logic).** A model piece whose render style uses texture slot 2 on stage 1 with the slot empty: stage 1 has no texture bound and keeps the style's colour operation; no default or white image is created by the game.
+94. **Unknown surface table.** The install's surface table: surface 0 has shoot-through 1, thickness 10, perturb 10, range × 1.0, damage × 0.6; the shoot-through list is the 19 ids of Follow-up (2026-10-31b) 3.
+95. **Shot through an Unknown wall.** A server ray hits a level wall of surface type 0, 8 u thick, then a torso 500 u away: the torso takes the shot's damage × 0.6 (no other dampening); a 12 u wall of surface 0 stops the ray (limit 10 + 1 u, `weapon_firing.md` "Penetration") and nothing behind it is hit.
+96. **Unknown census.** WAREHOUSE's physics BSP has 312 solid polygons of surface type 0 out of 32,688; across the install 100,922 of 4,057,293 (98 maps) and 72,275 of 594,095 world-model polygons.
+
 ## Open questions
 
 1. **Beyond the outer radius**: the game's gain is not recomputed beyond R,
@@ -2018,7 +2066,9 @@ Trail keys and smoke-trail puffs (Follow-up (2026-10-31)).
     × 0.6), trussing (23: limit 10, damage × 1.0), Invisible metal (206:
     always, damage × 0.9), Air (1) and Boss3_weak (65) as shoot-through.
     Unknown matters: untyped world polygons would be penetrable up to 10 u.
-    Check which build's table the live game uses.
+    Answered (Follow-up (2026-10-31b) 3): the install's own table marks
+    Unknown shoot-through; surface-0 walls up to about 11 u are shot through
+    at damage × 0.6.
 16. **Build differences**: data from the US client; effect files identical
     in the US 1501.04 and BR 1810.04 archives for every group named here
     except the grenade groups' camera jitter (BR `Grenade_Dirt`: 20 u at all
@@ -2084,3 +2134,10 @@ Trail keys and smoke-trail puffs (Follow-up (2026-10-31)).
     Direct3D 9 hardware, so a smoke puff shows its plain vertex colour.
     That is the graphics API's behaviour, not traced in the game's code;
     check a rocket's smoke trail in game (grey squares, no soft smoke).
+    Traced (Follow-up (2026-10-31b) 2): the game binds nothing to such a
+    stage and keeps its operations; the white is the API's.
+32. **Debris offset mode** (Follow-up (2026-10-31b) 1): the debris effect
+    has a second offset mode (start points along each piece's velocity
+    direction) whose switch is never set for prop debris; the per-axis
+    offsets are assumed. Check: `Window` glass shards all start from one
+    point 10 u off the pane's centre.
