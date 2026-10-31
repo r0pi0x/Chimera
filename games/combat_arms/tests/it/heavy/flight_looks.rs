@@ -73,7 +73,7 @@ fn t114_eye_groups_by_face() {
     let g = fx.group("Eye_Red_Tail_L").expect("the red eyes");
     assert_eq!(g.keys.len(), 6);
     for k in &g.keys {
-        eprintln!("{} {:.2}-{:.2} {:?}", k.kind, k.start, k.end, k.props);
+        eprintln!("{} {:.2}-{:.2} on {:?}", k.kind, k.start, k.end, k.string("AttachName"));
     }
     let sockets: Vec<&str> = g.keys.iter().filter_map(|k| k.string("AttachName")).collect();
     assert!(sockets.iter().any(|s| s.eq_ignore_ascii_case("EYE_L")) && sockets.iter().any(|s| s.eq_ignore_ascii_case("EYE_R")), "{sockets:?}");

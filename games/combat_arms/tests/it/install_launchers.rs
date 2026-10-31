@@ -321,3 +321,27 @@ fn t52_launcher_muzzle() {
     let heard = &sim.app.world().resource::<Heard>().0;
     assert_eq!(heard.iter().filter(|s| s.file == "test_snd/law/fire.wav").count(), 1, "one fire sound");
 }
+
+/// Case 49 in play: the missile's group (`Test_Tail`, a follow-mode
+/// emitter) rides the rocket the LAW fires: its puffs lie along the
+/// flight, not at the launcher.
+#[test]
+fn t49_the_rockets_group_rides_it() {
+    use chimera_world::map::particles::{ParticleSet, Particles, step_particles};
+    use super::attached_effects::{TAIL_TEX, material, materials, particles, test_library};
+    combat_arms::game::effects::library::set_library(Some(test_library()));
+    let mut sim = sim();
+    sim.app.init_resource::<Particles>().add_systems(Update, step_particles.in_set(ParticleSet::Step));
+    materials(&mut sim);
+    let shooter = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
+    armed(&mut sim, shooter, NPC_LAW);
+    let eye = sim.position(shooter) + sim.state(shooter).eye_offset;
+    sim.intent(shooter).fire = true;
+    sim.seconds(0.25);
+    sim.intent(shooter).fire = false;
+    let tex = material(&sim, TAIL_TEX, false);
+    let d: Vec<f32> = particles(&sim).iter().filter(|(_, p)| p.material == tex).map(|(_, p)| p.position.distance(eye) / U).collect();
+    assert!(!d.is_empty(), "the group emits");
+    let far = d.iter().cloned().fold(0.0, f32::max);
+    assert!(far > 100.0, "puffs along the flight, up to {far} u from the launcher");
+}

@@ -48,7 +48,7 @@ use combat_arms::{
 };
 use lithtech_formats::fxf::{FxFile, FxGroup, FxKey, FxProp, FxValue};
 
-const TAIL_TEX: &str = "test_fx/tail.dtx";
+pub(super) const TAIL_TEX: &str = "test_fx/tail.dtx";
 const EYE_SPR: &str = "test_fx/eye.spr";
 const EYE_TEX: &str = "test_fx/eye.dtx";
 const TRAIL_TEX: &str = "test_fx/trail.dtx";
@@ -154,7 +154,7 @@ pub(super) fn test_library() -> Arc<FxLibrary> {
 }
 
 /// The materials the groups draw with, in the pool's material list.
-fn materials(sim: &mut Sim) {
+pub(super) fn materials(sim: &mut Sim) {
     let mut list = sim.app.world().get_resource::<ParticleMaterials>().map_or_else(MapParticles::default, |m| m.0.clone());
     for (tex, add) in [(TAIL_TEX, false), (EYE_TEX, true), (TRAIL_TEX, true), (SMOKE_TEX, false)] {
         let name = material_name(tex, add);
@@ -193,12 +193,12 @@ fn sim_with(data: Option<CaData>) -> Sim {
     sim
 }
 
-fn material(sim: &Sim, tex: &str, add: bool) -> usize {
+pub(super) fn material(sim: &Sim, tex: &str, add: bool) -> usize {
     sim.app.world().resource::<ParticleMaterials>().0.find(&material_name(tex, add)).unwrap()
 }
 
 /// Every live particle of the pool with its group's tag.
-fn particles(sim: &Sim) -> Vec<(Option<u64>, chimera_world::map::particles::Particle)> {
+pub(super) fn particles(sim: &Sim) -> Vec<(Option<u64>, chimera_world::map::particles::Particle)> {
     sim.app
         .world()
         .resource::<Particles>()

@@ -654,8 +654,12 @@ mission's `Model` is never used.
 (still our files, not the auto-cast records; no local auto-cast sound);
 (3) the `InfectedTex` overlay for the local player while infected
 (Quarantine's or a rung's: `ui::hud` `draw_infected`); tests rung_character
-t109, t110, ui hud t111. Left: (4) the eyes' `ClientFX#` groups, (5) the
-override's styles and hands, Quarantine's own change effect and sounds.
+t109, t110, ui hud t111. **(4) done (2026-10-31):** the faces'
+`ClientFX#` groups looping on the face model's `EYE_L`/`EYE_R` sockets,
+third person only, on the rung and for Quarantine's infected (who now
+wear the override's face) (`effects::attached`, tests attached_effects
+t114, heavy flight_looks). Left: (5) the override's styles and hands,
+Quarantine's own change effect and sounds, a host's own override.
 
 ## Attachment models: open questions for a spec session (2026-10-29)
 
@@ -1043,7 +1047,24 @@ faces the launch direction and never turns in flight; launchers get the
 FireFX group from a fire-only event; launched ammo uses the surface's
 impact group. Left open there: which flame sound fields the stock
 records fill and the boss flame launcher's keys (Open questions 14-15),
-both need the install's data.
+both need the install's data. **Implemented (2026-10-31):** effects
+that follow an entity (`effects::attached`, `fx::CaFx::attach`, Chimera's
+`Shape::Ribbon` for trail keys), the projectile's group, fly sound,
+flare, smoke trail and facing, the launchers' FireFX records, the
+launched ammo's surface group (cases 48-53 as tests); not yet: the
+activate, finish and create sounds, case 57's placeholder model.
+Open questions for a spec session: (a) the trail key (`PolyTrail`,
+effects_sounds.md names `PolyTube`'s properties only): how
+`WidthStyle` (Constant, SmallToBig, SmallToSmall, BigToSmall) shapes the
+width along the trail, what `UAdd` scrolls (per second? per section?),
+whether a section fades over `SectionLifespan` and how the key's colour
+keys apply (over the key's life or each section's); ours: constant
+width, the texture once tail to head, the key's colour at key time, no
+fade. (b) Follow-up 7's launcher FireFX "only while the point is in front
+of the viewer": the server's fire position is the shooter's eye, which
+effects_sounds.md 2 counts as straight up (never seen) for his own
+client, yet case 52 shows the group; ours shows it when the point is at
+the camera.
 
 ### 25. Radar and minimap
 
