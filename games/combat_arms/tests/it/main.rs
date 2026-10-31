@@ -103,6 +103,7 @@ mod heavy {
     mod served;
     mod radio;
     mod radar;
+    mod render_styles;
     mod view_model;
     mod weapon_skins;
     mod world;

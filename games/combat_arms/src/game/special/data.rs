@@ -69,6 +69,12 @@ pub struct ProjectileParams {
     /// install: special_weapons.md Follow-up (2026-10-30) 1-3).
     #[serde(default)]
     pub look: ProjectileLook,
+    /// `CreateSound` and `CreateSoundRadius` (archive path, u): the
+    /// server's sound when a player's shot makes it.
+    #[serde(default)]
+    pub create_sound: String,
+    #[serde(default)]
+    pub create_radius: f32,
 }
 
 fn unit_scale() -> [f32; 3] {
@@ -90,6 +96,14 @@ pub struct ProjectileLook {
     pub sound_radius: f32,
     pub flare: Option<FlareLook>,
     pub smoke_trail: Option<u32>,
+    /// `ActivateSound` (looped while the projectile is at rest),
+    /// `FinishSound` (once, `finish_time` s before the lifetime `lifetime`
+    /// ends) with `SoundRadius` for all three (special_weapons.md
+    /// Corrections (2026-10-31) 3).
+    pub activate_sound: String,
+    pub finish_sound: String,
+    pub finish_time: f32,
+    pub lifetime: f32,
 }
 
 /// A projectile's flare sprite (special_weapons.md Follow-up 3).
@@ -119,6 +133,16 @@ impl ProjectileLook {
         }
         if !self.fly_sound.is_empty() {
             out.push(format!("fly={}", self.fly_sound));
+        }
+        if !self.activate_sound.is_empty() {
+            out.push(format!("act={}", self.activate_sound));
+        }
+        if !self.finish_sound.is_empty() {
+            out.push(format!("fin={}", self.finish_sound));
+            out.push(format!("fint={}", self.finish_time));
+            out.push(format!("life={}", self.lifetime));
+        }
+        if self.has_sounds() {
             out.push(format!("r={}", self.sound_radius));
         }
         if let Some(f) = &self.flare {
@@ -142,6 +166,10 @@ impl ProjectileLook {
                 "smooth" => look.fx_smooth = v == "1",
                 "fly" => look.fly_sound = v.to_string(),
                 "r" => look.sound_radius = v.parse().unwrap_or(0.0),
+                "act" => look.activate_sound = v.to_string(),
+                "fin" => look.finish_sound = v.to_string(),
+                "fint" => look.finish_time = v.parse().unwrap_or(0.0),
+                "life" => look.lifetime = v.parse().unwrap_or(0.0),
                 "flare" => {
                     let p: Vec<&str> = v.split(',').collect();
                     if let [sprite, sx, sy, dy] = p[..] {
@@ -161,6 +189,11 @@ impl ProjectileLook {
 
     pub fn is_empty(&self) -> bool {
         *self == Self::default()
+    }
+
+    /// Whether it names a fly, activate or finish sound.
+    pub fn has_sounds(&self) -> bool {
+        !(self.fly_sound.is_empty() && self.activate_sound.is_empty() && self.finish_sound.is_empty())
     }
 }
 
@@ -384,6 +417,18 @@ pub struct DeviceParams {
     pub caltrops: Option<CaltropsParams>,
     #[serde(default)]
     pub nerve: Option<NerveParams>,
+    /// Its looks and sounds in flight and at rest (the projectile
+    /// record's `ActivateSound`, `FinishSound`, ...), and its create
+    /// sound; `auto_throw`: the weapon's `PlayAutoThrowSound` is on, so
+    /// its call-out stands in for the create sound.
+    #[serde(default)]
+    pub look: ProjectileLook,
+    #[serde(default)]
+    pub create_sound: String,
+    #[serde(default)]
+    pub create_radius: f32,
+    #[serde(default)]
+    pub auto_throw: bool,
     #[serde(default)]
     pub turret: Option<TurretParams>,
     #[serde(default)]
@@ -417,6 +462,9 @@ pub struct BoltParams {
     /// The detonator that goes with it (`SubControlWeaponName`).
     #[serde(default)]
     pub controller: Option<String>,
+    /// Its sounds in flight (the explosive bolt's `FinishSound` ...).
+    #[serde(default)]
+    pub look: ProjectileLook,
 }
 
 /// The explosive bolt (7): `ExplosionDelayTime`, `AreaDamage`,

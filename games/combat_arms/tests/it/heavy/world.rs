@@ -459,3 +459,29 @@ fn hgoilrig_spawns_on_its_own_family() {
         assert!(own.iter().any(|p| p.translation.distance(t.translation) < 1e-3));
     }
 }
+
+/// models_ltb.md Follow-up (2026-10-31) 7, R10: `grayhammer`'s fans
+/// (`TEXTURES\Objects\sub_ctrlbox\FanSpin01.spr`) are sprite sections
+/// that play their 8 frames, 19 a second (52 ms a frame, 416 ms long).
+#[test]
+fn r10_grayhammer_fans_animate() {
+    let Some(mount) = mount() else { return };
+    let map = world::load_from(&mount, "grayhammer").unwrap();
+    let fans: Vec<_> = map
+        .meshes
+        .iter()
+        .filter(|m| m.material.to_lowercase().ends_with("fanspin01.spr"))
+        .collect();
+    if fans.is_empty() {
+        eprintln!("skipping: the map's world file isn't readable here");
+        return;
+    }
+    for m in &fans {
+        let f = m.skin_frames.as_ref().expect("the fan plays");
+        assert_eq!((f.frames.len(), f.frame_ms), (8, 52), "8 frames, 19 a second");
+    }
+    let sprites = map.meshes.iter().filter(|m| m.material.to_lowercase().ends_with(".spr")).count();
+    let playing = map.meshes.iter().filter(|m| m.skin_frames.is_some()).count();
+    eprintln!("grayhammer: {sprites} sprite sections, {playing} playing");
+    assert!(playing >= 1);
+}

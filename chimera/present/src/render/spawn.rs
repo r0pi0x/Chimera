@@ -680,6 +680,7 @@ fn spawn_world_meshes(
     let mut node_bounds: HashMap<Entity, (Vec3, Vec3)> = HashMap::new();
     // Overlays and infodecals draw in the map's order (`blend_order`).
     let mut decal_order = 0u32;
+    let mut section = 0u32;
     for m in &data.meshes {
         // Fog-only water (another shader: de_nuke's pool) is drawn as the
         // world.
@@ -717,11 +718,16 @@ fn spawn_world_meshes(
         // Lightmapped world surfaces: Source-style texture x baked light.
         if let (Some(_), Some(lm), Some(world_materials)) = (lit, lightmaps.world.as_ref(), world_materials.as_mut()) {
             let (material, blended) = lit_world_material(m, s, textures, cubemaps, lightmaps, lm);
+            // A sprite section keeps its own material, so its clock is its
+            // own (two sections with one sprite run apart).
+            let animated = material.skin_frames.len() > 1;
+            section += 1;
+            let key = if animated { format!("{material:?}#{section}") } else { format!("{material:?}") };
             let material = world_shared
-                .entry((m.skybox, own(m), format!("{material:?}")))
+                .entry((m.skybox, own(m), key))
                 .or_insert_with(|| world_materials.add(material))
                 .clone();
-            let merged = merge_spot(m);
+            let merged = merge_spot(m).filter(|_| !animated);
             if let Some((_, node, home, centre)) = &merged {
                 world_merger.add((material.clone(), blended), *node, home, *centre, m);
             }
@@ -957,6 +963,12 @@ fn lit_world_material(
         // Map overlays and infodecals (see WorldMaterial::decal).
         decal: is_decal(m),
         modulate: m.modulate,
+        // A sprite section: its frames, shown on its own clock.
+        skin_frames: m
+            .skin_frames
+            .as_ref()
+            .map_or_else(Vec::new, |f| f.frames.iter().map(|&i| textures[i].clone()).collect()),
+        skin_frame_ms: m.skin_frames.as_ref().map_or(0, |f| f.frame_ms),
     };
     (material, blended)
 }

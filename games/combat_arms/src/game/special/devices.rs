@@ -177,6 +177,8 @@ pub fn launch(world: &mut World, l: Launch) {
     }
     let dir = cone_dir(p.perturb, p.dynamic_perturb, l.yaw, l.pitch, l.command, super::DEVICE);
     let unit = d.unit;
+    // The record's create sound, unless the weapon's call-out stands in.
+    crate::game::effects::sounds::write_create_sound(world, &p.create_sound, p.create_radius, p.auto_throw, l.eye);
     let mut o = if p.speed > 0.0 {
         CaObject::new(id, Some(l.thrower), unit, d.hp, l.eye / unit, dir * p.speed, Kind::Device(d.params.clone()))
     } else {

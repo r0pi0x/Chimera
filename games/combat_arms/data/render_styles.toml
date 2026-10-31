@@ -19,14 +19,16 @@
 # attachments.md Corrections (2026-10-30) 4: a sight's lens: texture x
 # lit colour, alpha-tested (kept where alpha > 160/255), two-sided.
 "RS\\transparent.ltb" = { cutout = { reference = 160, strict = true, two_sided = true } }
-# models_ltb.md "Stock styles": slot 1 as an environment or rim map on
-# generated coordinates (render_style::Layer); pv_char_b's three passes
-# aren't drawn (opaque, as the default).
+# models_ltb.md "Stock styles" and Follow-up (2026-10-31): slot 1 as an
+# environment or rim map on generated coordinates (render_style::Layer),
+# each with its style file's lighting material; pv_char_b's three passes
+# in one.
 "RS\\ENV_ALPHA_MASK.ltb" = { layered = { layer = "env_alpha_mask" } }
 "RS\\ItemEdge.ltb" = { layered = { layer = "item_edge", cutout = 160 } }
 "RS\\EdgeAmp01.ltb" = { layered = { layer = "edge_amp", cutout = 160 } }
 "RS\\envmap.ltb" = { layered = { layer = "envmap" } }
 "RS\\PV_Char.ltb" = { layered = { layer = "pv_char" } }
+"RS\\PV_Char_B.ltb" = { layered = { layer = "pv_char_b" } }
 "RS\\translucent.ltb" = "blend"
 "RS\\translucent2pass.ltb" = "blend"
 "RS\\translucent_nolight.ltb" = "blend"

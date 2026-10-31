@@ -9,7 +9,9 @@
 //!   (their view models' attached effects and their projectiles' groups
 //!   in flight included), the faces' looping groups (`attached_groups`)
 //!   and the projectiles' flare and smoke trail sprites (`SMOKE_TRAILS`;
-//!   the `FX` archive, unkeyed), each a particle material of the map
+//!   the `FX` archive, unkeyed; the smoke sprites are not in the install:
+//!   its puffs use the untextured material `UNTEXTURED_PUFF`), each a
+//!   particle material of the map
 //!   (`material_name`: texture and blend), its size kept for sprites
 //!   (`FxLibrary::texture_size`);
 //! - the world's surface types on the drawn meshes (`tag_surfaces`): each
@@ -230,13 +232,29 @@ pub fn add_looks(map: &mut MapData, data: &super::super::data::CaDataInner, file
         .filter_map(|l| l.flare.as_ref())
         .map(|f| (f.sprite.clone(), true))
         .collect();
-    if looks.iter().any(|l| l.smoke_trail.is_some()) {
+    let smoke = looks.iter().any(|l| l.smoke_trail.is_some());
+    if smoke {
         sprites.extend(SMOKE_TRAILS.iter().map(|t| (t.sprite.to_string(), false)));
+        // The trail's sprites are not in the install (effects_sounds.md
+        // Follow-up (2026-10-31) 2): its puffs are plain squares.
+        if map.particles.find(UNTEXTURED_PUFF).is_none() {
+            map.particles.materials.push(ParticleMaterial {
+                name: UNTEXTURED_PUFF.to_string(),
+                texture: None,
+                blend: ParticleBlend::Alpha,
+                vertex_color: true,
+                vertex_alpha: true,
+                ..default()
+            });
+        }
     }
     for (spr, add) in sprites {
         let spr = normalize(&spr);
         let Some(path) = file(&spr).and_then(|b| sprite_texture(&b)) else {
-            loaded.missing += 1;
+            // A smoke sprite the install lacks is expected, not a warning.
+            if !smoke || add {
+                loaded.missing += 1;
+            }
             continue;
         };
         loaded.sprites.insert(spr, path.clone());
@@ -323,6 +341,10 @@ pub fn attached_groups(looks: &[ProjectileLook], characters: &crate::game::chara
     }
     out
 }
+
+/// The particle material of a smoke puff without its sprite file: no
+/// texture, vertex colour and alpha, ordinary alpha blending.
+pub const UNTEXTURED_PUFF: &str = "ca_untextured_puff";
 
 /// A smoke trail's look by `SmokeTrailType` (special_weapons.md
 /// Follow-up 3): its sprite, segment life and emitting time (s).

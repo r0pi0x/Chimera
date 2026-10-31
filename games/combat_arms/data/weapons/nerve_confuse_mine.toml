@@ -38,6 +38,10 @@ speed = 800.0
 lifetime = 60.0
 health = 300.0
 box_half = [20.0, 6.0, 20.0]
+# Sounds: the beep while it flies, the loop once it lies still, the finish
+# 2.4 s before its 60 s are over; all 3D at 600 u [special_weapons.md
+# Corrections (2026-10-31) 3].
+look = { fly_sound = "guns_pt/snd/bomb_beep.wav", activate_sound = "guns_snd_etc/nerve_confuse_mine/activeloop.wav", finish_sound = "guns_snd_etc/nerve_confuse_mine/autofinish.wav", finish_time = 2.4, lifetime = 60.0, sound_radius = 600.0 }
 # Damage type 44 (camera reverse) with 3 for 3 s on every enemy within 250 u.
 nerve = { damage_type = 44, amount = 3.0, duration = 3.0, radius = 250.0 }
 

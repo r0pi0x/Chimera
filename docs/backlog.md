@@ -2439,3 +2439,8 @@ Counts are from de_dust2's entity lump and static prop lump.
   add, 10 hidden) and rendercolor; mode 1 draws the flat colour and mode 4
   alpha-tests (cs_italy's and de_piranesi's foliage and fences).
 - **Fire** (specs/source/fire.md) is in: env_fire (heat, growth, burn damage box with line of sight, fuel, Extinguish, outputs, re-created unlit each round, Q4), env_firesource/env_firesensor, entity flames (Ignite inputs, burning props, the gas can), the `env_fire_large_smoke` and `burning_character` looks (docs/tech-debt.md "Fire"). Next: compare a lit de_dust2 fire with CS:S's (Q1, Q10 operator meanings), and the probe-server questions: burn vs armour, the kill icon and score (Q2), player ignition (Q3), the radius damage of a burning can (Q6), burning-prop light (Q7), buried fires (Q9), floors on de_dust/de_train (Q5).
+- Combat Arms: a screenshot of a rocket's smoke trail on an open map
+  (the warehouse hall shows only the blast), the held launcher's `Flash`
+  socket for others' muzzle groups (the hand's stands in), activate and
+  finish sounds of devices, grenades and bolts on network clients (the
+  drawn key doesn't carry them), `pv_glass` as its own lit pass.

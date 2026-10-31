@@ -847,6 +847,11 @@ pub struct ProjectileRecord {
     /// Its looks and sounds in flight (special_weapons.md Follow-up
     /// (2026-10-30) 1-3).
     pub look: ProjectileLookRecord,
+    /// `CreateSound` and `CreateSoundRadius`: the server's sound when a
+    /// player's shot makes it (special_weapons.md Corrections
+    /// (2026-10-31) 3).
+    pub create_sound: String,
+    pub create_radius: f64,
 }
 
 /// A projectile record's looks and sounds in flight (special_weapons.md
@@ -865,6 +870,11 @@ pub struct ProjectileLookRecord {
     pub sound_radius: f64,
     pub flare: Option<(String, [f64; 2], f64)>,
     pub smoke_trail: Option<i32>,
+    /// `ActivateSound`, `FinishSound` and `FinishSoundTime` (s; special_
+    /// weapons.md Corrections (2026-10-31) 3).
+    pub activate_sound: String,
+    pub finish_sound: String,
+    pub finish_time: f64,
 }
 
 impl ProjectileLookRecord {
@@ -887,6 +897,9 @@ impl ProjectileLookRecord {
             sound_radius: s.number("SoundRadius", 0.0),
             flare: (on("Flare") && !sprite.is_empty()).then(|| (sprite, flare_scale, s.number("FlareYOffset", 0.0))),
             smoke_trail: on("SmokeTrail").then(|| s.int("SmokeTrailType", 1)),
+            activate_sound: string("ActivateSound"),
+            finish_sound: string("FinishSound"),
+            finish_time: s.number("FinishSoundTime", 0.0),
         }
     }
 }
@@ -906,6 +919,8 @@ impl ProjectileRecord {
             model_scale: s.vector("ModelScale").unwrap_or([1.0; 3]),
             skins: s.string_list("Skin").iter().map(|b| text(b)).collect(),
             look: ProjectileLookRecord::read(s),
+            create_sound: s.string("CreateSound").map(text).unwrap_or_default(),
+            create_radius: s.number("CreateSoundRadius", 0.0),
         }
     }
 

@@ -9,6 +9,7 @@ mod attributes;
 mod dtx;
 mod fixture;
 mod ltb;
+mod render_style;
 mod rez;
 mod world;
 
@@ -16,6 +17,7 @@ mod heavy {
     mod dtx_install;
     mod keyed_install;
     mod ltb_install;
+    mod render_style_install;
     mod rez_install;
     mod world_install;
 }

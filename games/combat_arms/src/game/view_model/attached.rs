@@ -150,6 +150,8 @@ pub struct CaLoopSound {
     pub sound: Option<crate::game::effects::sounds::CaSound>,
     /// Plays from this entity while it exists.
     pub follow: Option<Entity>,
+    /// Plays once, not looping (cut by a stop under its key all the same).
+    pub once: bool,
 }
 
 /// The local player's shown attached effects' sounds: started when a group
@@ -186,6 +188,7 @@ pub fn sounds(
                 key: *k,
                 sound: None,
                 follow: None,
+                once: false,
             });
         }
         keep
@@ -199,6 +202,7 @@ pub fn sounds(
             key: k,
             sound: Some(s),
             follow: Some(e),
+            once: false,
         });
     }
 }

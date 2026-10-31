@@ -10,6 +10,10 @@
 //!   shut down with it: smooth, its particles live out; else they go at
 //!   once (49);
 //! - the smoke trail's segments and puffs; no light (50);
+//! - a projectile's activate, finish and create sounds (61-63);
+//! - trail keys: width by style, cadence, texture u, colour over each
+//!   section's life, ending (77-81); smoke puffs' size, growth and fade
+//!   (82-83);
 //! - the model faces its fire direction for the whole flight (51);
 //! - launched ammo's surface group is the surface's impact group (53);
 //! - the infected face's eyes: its `ClientFX#` groups on the eye sockets,
@@ -34,11 +38,12 @@ use combat_arms::{
         characters::{CaPose, CaRungLook, records::Selection},
         data::{CaData, attributes::MODELS_FILE, read_attributes},
         effects::{
-            attached::{AttachedGroup, CaAttachedGroups, fly_sound_key, pose_of, worn_groups},
+            attached::{AttachedGroup, CaAttachedGroups, CaFlightLook, CaFlightSounds, FlightSound, fly_sound_key, flight_sounds, pose_of, worn_groups},
             data::CaFxTables,
-            fx::{CaFx, SmokeTrail},
+            fx::{CaFx, SmokeSegment, SmokeTrail},
             launched_burst,
-            library::{FxLibrary, material_name, normalize, set_library, smoke_trail},
+            library::{FxLibrary, UNTEXTURED_PUFF, material_name, normalize, set_library, smoke_trail},
+            trail::{Trail, TrailMode, TrailParams, WidthStyle},
         },
         inventory::UNIT,
         special::{CaObject, Kind, LOOK_SEPARATOR, PROJECTILE, ProjectileLook, ProjectileParams, facing},
@@ -52,7 +57,6 @@ pub(super) const TAIL_TEX: &str = "test_fx/tail.dtx";
 const EYE_SPR: &str = "test_fx/eye.spr";
 const EYE_TEX: &str = "test_fx/eye.dtx";
 const TRAIL_TEX: &str = "test_fx/trail.dtx";
-const SMOKE_TEX: &str = "test_fx/smoke.dtx";
 
 fn combo(i: i32, choices: &[&str]) -> FxValue {
     FxValue::Combo {
@@ -107,6 +111,29 @@ fn groups() -> Vec<FxGroup> {
                 ],
             )],
         },
+        // The M136's FireFX group, `test` in the install: a smoke puff 4 u
+        // ahead and a light, both on the launcher's `Flash` socket.
+        FxGroup {
+            name: "Test_Rocket_Fire".into(),
+            phase_ms: 200,
+            keys: vec![
+                key(
+                    "Sprite",
+                    0.2,
+                    [
+                        socket("Flash"),
+                        vec![
+                            ("Sprite", path(EYE_SPR)),
+                            ("BlendMode", combo(1, &["None", "Additive"])),
+                            ("Offset", FxValue::Vector([0.0, 0.0, 4.0])),
+                            ("Sk", FxValue::Vector4([0.0, 0.05, 0.0, 0.0])),
+                        ],
+                    ]
+                    .concat(),
+                ),
+                key("DynaLight", 0.2, [socket("Flash"), vec![("Offset", FxValue::Vector([0.0, 0.0, 0.0]))]].concat()),
+            ],
+        },
         FxGroup {
             name: "Test_Eyes".into(),
             phase_ms: 3000,
@@ -143,20 +170,26 @@ fn groups() -> Vec<FxGroup> {
 pub(super) fn test_library() -> Arc<FxLibrary> {
     let mut file = FxFile::parse(super::attached_fx::FX).unwrap();
     file.groups.extend(groups());
-    let textures: HashMap<String, UVec2> = [EYE_TEX, TRAIL_TEX, TAIL_TEX, SMOKE_TEX].iter().map(|t| (t.to_string(), UVec2::splat(32))).collect();
-    let sprites: HashMap<String, String> = [
-        (EYE_SPR.to_string(), EYE_TEX.to_string()),
-        (normalize(smoke_trail(2).sprite), SMOKE_TEX.to_string()),
-    ]
-    .into_iter()
-    .collect();
+    let textures: HashMap<String, UVec2> = [EYE_TEX, TRAIL_TEX, TAIL_TEX].iter().map(|t| (t.to_string(), UVec2::splat(32))).collect();
+    // The smoke trail's sprites are not in the install: its puffs are
+    // untextured squares.
+    let sprites: HashMap<String, String> = [(EYE_SPR.to_string(), EYE_TEX.to_string())].into_iter().collect();
     Arc::new(FxLibrary { file, textures, sprites })
 }
 
 /// The materials the groups draw with, in the pool's material list.
 pub(super) fn materials(sim: &mut Sim) {
     let mut list = sim.app.world().get_resource::<ParticleMaterials>().map_or_else(MapParticles::default, |m| m.0.clone());
-    for (tex, add) in [(TAIL_TEX, false), (EYE_TEX, true), (TRAIL_TEX, true), (SMOKE_TEX, false)] {
+    if list.find(UNTEXTURED_PUFF).is_none() {
+        list.materials.push(ParticleMaterial {
+            name: UNTEXTURED_PUFF.into(),
+            blend: ParticleBlend::Alpha,
+            vertex_color: true,
+            vertex_alpha: true,
+            ..default()
+        });
+    }
+    for (tex, add) in [(TAIL_TEX, false), (EYE_TEX, true), (TRAIL_TEX, true)] {
         let name = material_name(tex, add);
         if list.find(&name).is_none() {
             list.materials.push(ParticleMaterial {
@@ -292,9 +325,9 @@ fn t49_attached_group() {
     assert_eq!(sim.app.world().resource::<CaFx>().attached(e).count(), 1, "and not made again");
 }
 
-/// 50. `SmokeTrail` 1, type 2: segments 0.1 s apart, puffs living 1.5 s,
-/// alpha 0.9 → 0, scale 1 → 15 (a square of side 4 s), the long white
-/// trail's sprite; `Light` 1 makes no light.
+/// 50. `SmokeTrail` 1, type 2: a segment every 0.1 s, each emitting for
+/// 0.2 s and living on 1.5 s after (puffs: 82-83); `Light` 1 makes no
+/// light.
 #[test]
 fn t50_smoke_trail_and_no_light() {
     let mut sim = sim_with(None);
@@ -308,19 +341,238 @@ fn t50_smoke_trail_and_no_light() {
         sim.ticks(1);
     }
     let trail = sim.app.world().get::<SmokeTrail>(e).expect("a trail").clone();
-    assert!(trail.segments.len() == 2, "type 2 emits 0.2 s, a segment each 0.1 s: {trail:?}");
-    assert!(trail.segments.iter().all(|s| ((s / 0.1).round() * 0.1 - s).abs() < 1e-3));
-    let tex = material(&sim, SMOKE_TEX, false);
-    let puffs: Vec<_> = particles(&sim).into_iter().filter(|(_, p)| p.material == tex).map(|(_, p)| p).collect();
-    assert!(!puffs.is_empty());
-    for p in &puffs {
-        assert_eq!(p.life, smoke_trail(2).life);
-        assert!((p.alpha - 0.9).abs() < 1e-6);
-        assert!((p.size.at(0.0) - 2.0 * UNIT).abs() < 1e-6 && (p.size.at(1.0) - 30.0 * UNIT).abs() < 1e-5);
-        let up = p.velocity.y / UNIT;
-        assert!((5.0..=6.0).contains(&up) && p.velocity.x == 0.0, "{}", p.velocity / UNIT);
-    }
+    let born: Vec<f32> = trail.segments.iter().map(|s| s.born).collect();
+    assert!(born.len() >= 5 && born.iter().all(|s| ((s / 0.1).round() * 0.1 - s).abs() < 1e-3), "a segment each 0.1 s: {born:?}");
     assert!(sim.app.world().resource::<CaFx>().lights.is_empty(), "no light");
+}
+
+/// The puffs the trail of `e` has made: (segment tag, puff).
+fn puffs(sim: &Sim) -> Vec<(u64, chimera_world::map::particles::Particle)> {
+    let tex = sim.app.world().resource::<ParticleMaterials>().0.find(UNTEXTURED_PUFF).unwrap();
+    particles(sim).into_iter().filter(|(t, p)| t.is_some() && p.material == tex).map(|(t, p)| (t.unwrap(), p)).collect()
+}
+
+/// 82. A puff's square: 4 · (2000 / screen width) · k u, k = 1 + 14 f of
+/// its own life (10 s); its alpha 0.9 · (1 - f).
+#[test]
+fn t82_puff_size() {
+    for (width, side0, side1) in [(1024.0, 7.8125, 18.75), (1920.0, 4.1666665, 10.0)] {
+        let mut sim = sim_with(None);
+        sim.app.world_mut().resource_mut::<CaFx>().screen_width = width;
+        let look = ProjectileLook { smoke_trail: Some(2), ..default() };
+        let e = projectile(&mut sim, &look, Vec3::ZERO);
+        for i in 1..=10 {
+            sim.app.world_mut().get_mut::<Transform>(e).unwrap().translation = Vec3::Z * i as f32 * 0.2;
+            sim.ticks(1);
+        }
+        let mut p = puffs(&sim).first().expect("a puff").1.clone();
+        assert!(matches!(p.shape, Shape::Sprite));
+        assert!((p.life - 10.0).abs() < 0.05, "10 s plus a little: {}", p.life);
+        assert!((p.size.at(0.0) * 2.0 / UNIT - side0).abs() < 1e-3, "{width}: side {}", p.size.at(0.0) * 2.0 / UNIT);
+        // 1 s old of 10: f = 0.1, k = 2.4.
+        p.age = 0.1 * p.life;
+        assert!((p.current_size() * 2.0 / UNIT - side1).abs() < 1e-3);
+        let own = p.alpha * p.fade.at(p.age, p.life);
+        assert!((own - 0.81).abs() < 1e-3, "{own}");
+    }
+}
+
+/// 83. A long white segment (life 1.5 s, emitting 0.2 s) is at full alpha
+/// while emitting, 0.5 at 0.75 s after its last emission, gone at 1.5 s
+/// with all its puffs; a puff shows its own alpha times the segment's;
+/// every puff an untextured grey square.
+#[test]
+fn t83_puff_fade_and_look() {
+    let seg = SmokeSegment { born: 0.0, last_emit: 0.2, tag: 1 };
+    let (emitting, life) = (0.2, 1.5);
+    assert_eq!(seg.alpha(0.1, emitting, life), 1.0);
+    assert!((seg.alpha(0.2 + 0.75, emitting, life) - 0.5).abs() < 1e-6);
+    assert_eq!(seg.alpha(0.2 + 1.5, emitting, life), 0.0);
+    // A puff at f = 0.075 under a segment at 0.5: 0.9 · 0.925 · 0.5.
+    assert!((0.9f32 * (1.0 - 0.075) * 0.5 - 0.416).abs() < 1e-3);
+
+    let mut sim = sim_with(None);
+    let look = ProjectileLook { smoke_trail: Some(2), ..default() };
+    let e = projectile(&mut sim, &look, Vec3::ZERO);
+    // One segment's worth of flight, then the projectile is gone.
+    for i in 1..=10 {
+        sim.app.world_mut().get_mut::<Transform>(e).unwrap().translation = Vec3::Z * i as f32 * 0.2;
+        sim.ticks(1);
+    }
+    let all = puffs(&sim);
+    assert!(!all.is_empty());
+    for (_, p) in &all {
+        assert!(p.color.x == p.color.y && p.color.y == p.color.z, "channels equal");
+        assert!((150.0 / 255.0..=230.0 / 255.0).contains(&p.color.x), "{}", p.color.x);
+    }
+    // Keep it still and flying on: the first segment (made at 0) stops
+    // emitting at 0.2 s and is gone 1.5 s after its last emission.
+    let first_tag = all.iter().map(|(t, _)| *t).min().unwrap();
+    let trail_age = |sim: &Sim| sim.app.world().get::<SmokeTrail>(e).unwrap().age;
+    while trail_age(&sim) < 0.2 + 0.75 {
+        sim.ticks(1);
+    }
+    let mid: Vec<_> = puffs(&sim).into_iter().filter(|(t, _)| *t == first_tag).collect();
+    assert!(!mid.is_empty());
+    for (_, p) in &mid {
+        let a = p.alpha / 0.9;
+        assert!((0.4..0.55).contains(&a), "about half: {a}");
+    }
+    while trail_age(&sim) < 0.2 + 1.5 + 0.05 {
+        sim.ticks(1);
+    }
+    assert!(puffs(&sim).iter().all(|(t, _)| *t != first_tag), "segment and puffs gone");
+    assert!(sim.app.world().get::<SmokeTrail>(e).unwrap().segments.iter().all(|s| s.tag != first_tag));
+}
+
+// 77-81: trail keys, on the trail's points without a scene.
+
+fn eye_params(u_add: f32, unit: f32) -> TrailParams {
+    TrailParams {
+        width: 2.0,
+        style: WidthStyle::BigToSmall,
+        len: 50,
+        lifespan: 0.2,
+        interval: 0.03,
+        u_add,
+        colors: vec![
+            (0.0, [1.0, 0.0, 0.0, 1.0]),
+            (0.0347, [1.0, 0.502, 0.0, 1.0]),
+            (0.1025, [1.0, 0.0, 0.0, 1.0]),
+            (0.6661, [1.0, 0.0, 0.0, 1.0]),
+            (1.0, [0.0, 0.0, 0.0, 1.0]),
+        ],
+        unit,
+    }
+}
+
+/// 77. The half-width by style and point count (W 2, N 50).
+#[test]
+fn t77_trail_width() {
+    let w = |style: WidthStyle, n: usize| style.half_width(2.0, 50, n);
+    use WidthStyle::*;
+    let row = |n: usize, want: [f32; 4]| {
+        for (style, want) in [Constant, SmallToBig, SmallToSmall, BigToSmall].into_iter().zip(want) {
+            assert!((w(style, n) - want).abs() < 1e-5, "{style:?} n={n}: {} vs {want}", w(style, n));
+        }
+    };
+    row(2, [2.0, 0.0, 0.0, 2.0]);
+    row(8, [2.0, 0.24, 0.24, 1.76]);
+    row(30, [2.0, 1.12, 0.88, 0.88]);
+}
+
+/// 78. Points every second update after the third at 64 Hz (I 0.03,
+/// L 0.25, N 50); the oldest goes at update 17, when 9 points were held;
+/// then 8 and 7 alternate.
+#[test]
+fn t78_trail_cadence() {
+    let p = TrailParams { lifespan: 0.25, ..eye_params(0.0, 1.0) };
+    let mut t = Trail::default();
+    let dt = 1.0 / 64.0;
+    let mut made = Vec::new();
+    let mut counted = Vec::new();
+    let mut before = 0;
+    for update in 1..=24 {
+        t.update(&p, dt, Vec3::ZERO, TrailMode::Active);
+        if t.counted() > before {
+            made.push(update);
+        }
+        before = t.counted();
+        counted.push(t.counted());
+        if update == 17 {
+            assert_eq!(t.points.len(), 8, "the first point removed");
+        }
+    }
+    assert_eq!(&made[..5], &[2, 3, 5, 7, 9]);
+    assert_eq!(&counted[1..17], &[1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9]);
+    assert!(counted[17..].iter().all(|n| *n == 7 || *n == 8), "{counted:?}");
+    // BigToSmall at n = 8: 1.76.
+    assert!((p.style.half_width(2.0, 50, 8) - 1.76).abs() < 1e-5);
+}
+
+/// 79. Texture u: once per W u of path; `UAdd` scrolls toward the oldest
+/// point.
+#[test]
+fn t79_trail_texture() {
+    let p = TrailParams {
+        width: 20.0,
+        lifespan: 100.0,
+        interval: 0.001,
+        ..eye_params(1.0, 1.0)
+    };
+    let mut t = Trail::default();
+    for x in [0.0, 10.0, 30.0] {
+        t.update(&p, 0.05, Vec3::X * x, TrailMode::Active);
+    }
+    let us: Vec<f32> = t.points.iter().map(|q| q.u).collect();
+    assert_eq!(us.len(), 3, "{us:?}");
+    assert!((us[0]).abs() < 1e-6 && (us[1] - 0.5).abs() < 1e-5 && (us[2] - 1.5).abs() < 1e-5, "{us:?}");
+    // UAdd 1 per second: after 0.15 s every drawn u is 0.15 larger.
+    assert!((t.drawn_u(0) - us[0] - 0.15).abs() < 1e-5);
+    let mut t = Trail::default();
+    t.update(&p, 0.05, Vec3::ZERO, TrailMode::Active);
+    for _ in 0..5 {
+        t.update(&p, 0.05, Vec3::ZERO, TrailMode::ShuttingDown);
+    }
+    // The first update counts too: 6 x 0.05 s.
+    assert!((t.drawn_u(0) - t.points[0].u - 0.30).abs() < 1e-5, "after 0.3 s every u is 0.3 larger");
+    // A feature at u0 sits where u + O = u0: 0.25 · W = 5 u nearer the oldest.
+    assert!((0.25 * p.width - 5.0).abs() < 1e-5);
+}
+
+/// 80. Colour by each section's age over the lifespan.
+#[test]
+fn t80_trail_colour() {
+    let p = eye_params(0.0, 1.0);
+    let c = p.color_at(0.1);
+    assert!((c.x - 1.0).abs() < 1e-5 && c.y == 0.0 && c.z == 0.0 && c.w == 1.0, "{c}");
+    let c = p.color_at(0.17);
+    assert!((c.x - 0.449).abs() < 1e-3 && c.y == 0.0 && c.z == 0.0, "{c}");
+    let c = p.color_at(0.00347);
+    assert!((c.x - 1.0).abs() < 1e-5 && (c.y - 0.251).abs() < 1e-3 && c.z == 0.0, "{c}");
+    // The newest section is near the curve start.
+    let mut t = Trail::default();
+    t.update(&p, 0.04, Vec3::ZERO, TrailMode::Active);
+    t.update(&p, 0.04, Vec3::X, TrailMode::Active);
+    let newest = t.points.last().unwrap();
+    assert!(newest.age <= 0.04 + 1e-6);
+    assert_eq!(newest.color, p.color_at(newest.age), "its own age's colour");
+}
+
+/// 81. A trail whose key shuts down adds no point and the newest stays;
+/// the rest go as they reach L; with one left nothing is drawn. Hiding
+/// clears; shown again it starts empty.
+#[test]
+fn t81_trail_ending() {
+    let p = eye_params(0.0, 1.0);
+    let mut t = Trail::default();
+    for i in 0..10 {
+        t.update(&p, 0.04, Vec3::X * i as f32, TrailMode::Active);
+    }
+    let n = t.points.len();
+    assert!(n >= 4 && t.drawn());
+    let newest = t.points.last().unwrap().at;
+    for _ in 0..3 {
+        t.update(&p, 0.04, Vec3::X * 99.0, TrailMode::ShuttingDown);
+        assert_eq!(t.points.last().unwrap().at, newest, "the newest stays");
+    }
+    assert!(t.points.len() < n, "older ones vanish");
+    for _ in 0..10 {
+        t.update(&p, 0.04, Vec3::X * 99.0, TrailMode::ShuttingDown);
+    }
+    assert_eq!(t.points.len(), 1);
+    assert!(!t.drawn());
+    // Hidden: everything goes; the first point comes after I.
+    let mut t = Trail::default();
+    for i in 0..10 {
+        t.update(&p, 0.04, Vec3::X * i as f32, TrailMode::Active);
+    }
+    t.clear();
+    assert!(t.points.is_empty());
+    t.update(&p, 0.02, Vec3::ZERO, TrailMode::Active);
+    assert!(t.points.is_empty(), "before I");
+    t.update(&p, 0.02, Vec3::ZERO, TrailMode::Active);
+    assert_eq!(t.points.len(), 1);
 }
 
 /// 51. A rocket fired 30° up faces that way for its whole flight, even as
@@ -442,7 +694,7 @@ fn t114_eyes_third_person_only() {
     assert_eq!(near(&sim, other, eye), 1, "one eye sprite each frame");
     let ribbons: Vec<_> = particles(&sim).into_iter().filter(|(_, p)| p.material == trail).map(|(_, p)| p).collect();
     assert!(!ribbons.is_empty(), "the trail's sections");
-    assert!(ribbons.iter().all(|p| matches!(p.shape, Shape::Ribbon { width, .. } if (width[0] - 2.0 * UNIT).abs() < 1e-6)));
+    assert!(ribbons.iter().all(|p| matches!(p.shape, Shape::Ribbon { width, end_color: Some(_), .. } if (width[0] - 4.0 * UNIT).abs() < 1e-6)));
     sim.seconds(4.0);
     assert_eq!(near(&sim, other, eye), 1, "looping past its 3 s");
     // The same look on the local player: hidden in first person.
@@ -459,4 +711,175 @@ fn t114_eyes_third_person_only() {
     sim.ticks(3);
     assert!(sim.app.world().get::<CaAttachedGroups>(other).is_none());
     assert_eq!(sim.app.world().resource::<CaFx>().attached(other).count(), 0);
+}
+
+// 61-63: the projectile effect's activate, finish and create sounds.
+
+fn mine_look() -> combat_arms::game::special::ProjectileLook {
+    combat_arms::game::special::ProjectileLook {
+        fly_sound: "guns_pt/snd/bomb_beep.wav".into(),
+        activate_sound: "guns_snd_etc/nerve_confuse_mine/activeloop.wav".into(),
+        finish_sound: "guns_snd_etc/nerve_confuse_mine/autofinish.wav".into(),
+        finish_time: 2.4,
+        lifetime: 60.0,
+        sound_radius: 600.0,
+        ..default()
+    }
+}
+
+/// 61. `NerveConfuseMine`: the beep loops from launch and follows it; at
+/// landing (velocity 0, 1.2 s) the beep stops and `ActiveLoop` loops at the
+/// landing point; at 57.6 s `AutoFinish` plays once, replacing it, and the
+/// object removed at 60 s cuts it. Radius 600 throughout.
+#[test]
+fn t61_nerve_mine_sounds() {
+    // The rules, step by step.
+    let look = mine_look();
+    let mut now = FlightSound::None;
+    assert_eq!(flight_sounds(&mut now, &look, 0.0, false), vec![FlightSound::Fly]);
+    assert_eq!(flight_sounds(&mut now, &look, 0.5, false), vec![], "once");
+    assert_eq!(flight_sounds(&mut now, &look, 1.2, true), vec![FlightSound::Activate]);
+    assert_eq!(flight_sounds(&mut now, &look, 30.0, true), vec![], "looping on its own");
+    assert_eq!(flight_sounds(&mut now, &look, 57.59, true), vec![]);
+    assert_eq!(flight_sounds(&mut now, &look, 57.61, true), vec![FlightSound::Finish]);
+    assert_eq!(flight_sounds(&mut now, &look, 58.0, false), vec![], "nothing more changes");
+    // On the harness: the messages the sounds make.
+    let mut sim = sim_with(None);
+    let e = sim
+        .app
+        .world_mut()
+        .spawn((CaFlightLook(look.clone()), CaFlightSounds::default(), Transform::from_xyz(0.0, 1.0, 0.0)))
+        .id();
+    sim.app.world_mut().resource_mut::<Loops>().0.clear();
+    let key = fly_sound_key(e);
+    let started = |sim: &mut Sim| {
+        std::mem::take(&mut sim.app.world_mut().resource_mut::<Loops>().0).into_iter().filter(|l| l.key == key).collect::<Vec<_>>()
+    };
+    // Flying: moving every tick for 1.2 s.
+    for i in 1..=80 {
+        sim.app.world_mut().get_mut::<Transform>(e).unwrap().translation.x = i as f32 * 0.1;
+        sim.ticks(1);
+    }
+    let l = started(&mut sim);
+    assert_eq!(l.len(), 1, "the beep, once: {l:?}");
+    let s = l[0].sound.as_ref().unwrap();
+    assert_eq!((s.file.as_str(), s.radii.1, s.volume), ("guns_pt/snd/bomb_beep.wav", 600.0, 100.0));
+    assert!(!l[0].once && l[0].follow == Some(e));
+    // Landed: still from now on.
+    let landing = sim.app.world().get::<Transform>(e).unwrap().translation;
+    sim.ticks(3);
+    let l = started(&mut sim);
+    assert_eq!(l.len(), 1, "{l:?}");
+    let s = l[0].sound.as_ref().unwrap();
+    assert_eq!(s.file, "guns_snd_etc/nerve_confuse_mine/activeloop.wav");
+    assert!(s.at.unwrap().distance(landing) < 1e-4, "at the landing point");
+    assert!(!l[0].once && l[0].follow.is_none(), "looping, not following");
+    // 57.6 s after the effect was made: the finish, once.
+    sim.seconds((57.7 - sim.app.world().get::<CaFlightSounds>(e).unwrap().age) as f64);
+    let l = started(&mut sim);
+    assert_eq!(l.len(), 1, "{l:?}");
+    assert_eq!(l[0].sound.as_ref().unwrap().file, "guns_snd_etc/nerve_confuse_mine/autofinish.wav");
+    assert!(l[0].once);
+    // Removed: cut.
+    sim.app.world_mut().entity_mut(e).despawn();
+    sim.ticks(1);
+    let l = started(&mut sim);
+    assert!(l.len() == 1 && l[0].sound.is_none(), "stopped: {l:?}");
+}
+
+/// 62. `AssassinBomb_Projectile` (finish 5 s before its 30 s) still in
+/// flight at 25 s: the finish sound starts once, where it is then, replacing
+/// the fly sound; not moved afterwards.
+#[test]
+fn t62_assassin_bomb_finish() {
+    let look = combat_arms::game::special::ProjectileLook {
+        fly_sound: "guns_pt/snd/grenade.wav".into(),
+        activate_sound: "guns_pt/snd/snow_fly.wav".into(),
+        finish_sound: "guns_pt/snd/grenade.wav".into(),
+        finish_time: 5.0,
+        lifetime: 30.0,
+        sound_radius: 1000.0,
+        ..default()
+    };
+    let mut now = FlightSound::None;
+    assert_eq!(flight_sounds(&mut now, &look, 0.0, false), vec![FlightSound::Fly]);
+    assert_eq!(flight_sounds(&mut now, &look, 24.99, false), vec![]);
+    assert_eq!(flight_sounds(&mut now, &look, 25.01, false), vec![FlightSound::Finish], "once, replacing the fly sound");
+    assert_eq!(flight_sounds(&mut now, &look, 26.0, false), vec![]);
+    // A record with no finish sound (or no lifetime) never makes one.
+    let mut none = FlightSound::None;
+    let quiet = combat_arms::game::special::ProjectileLook { finish_sound: String::new(), ..look.clone() };
+    assert!(!flight_sounds(&mut none, &quiet, 29.0, false).contains(&FlightSound::Finish));
+    // Finish time default 0: at the lifetime's end.
+    let mut none = FlightSound::None;
+    let at_end = combat_arms::game::special::ProjectileLook { finish_time: 0.0, ..look.clone() };
+    assert!(!flight_sounds(&mut none, &at_end, 29.9, false).contains(&FlightSound::Finish));
+    assert!(flight_sounds(&mut none, &at_end, 30.01, false).contains(&FlightSound::Finish));
+    // Before launch (zero velocity, FireDelayTime): the activate sound.
+    let mut none = FlightSound::None;
+    assert_eq!(flight_sounds(&mut none, &look, 0.0, true), vec![FlightSound::Activate]);
+    assert_eq!(flight_sounds(&mut none, &look, 0.1, false), vec![FlightSound::Fly], "replaced at launch");
+}
+
+/// 63. A player throws `Caltrops` (create sound `fire.wav`, radius 300,
+/// weapon `PlayAutoThrowSound` 0): one server sound at his fire position and
+/// no call-out; a weapon whose call-out is on makes the call-out only; no
+/// radius or no file: nothing.
+#[test]
+fn t63_create_sound() {
+    use combat_arms::game::effects::sounds::create_sound;
+    let at = Vec3::new(1.0, 2.0, 3.0);
+    let s = create_sound("guns_snd_throwing/caltrops/fire.wav", 300.0, false, at).expect("a sound");
+    assert_eq!((s.file.as_str(), s.radii.1, s.at, s.volume, s.server), ("guns_snd_throwing/caltrops/fire.wav", 300.0, Some(at), 100.0, true));
+    assert!(create_sound("guns_snd_throwing/caltrops/fire.wav", 300.0, true, at).is_none(), "the call-out stands in");
+    assert!(create_sound("", 300.0, false, at).is_none());
+    assert!(create_sound("x.wav", 0.0, false, at).is_none());
+    // Our caltrops document carries them.
+    let set = CaData::builtin_static().weapon_set();
+    let w = set.get("combat_arms:caltrops").expect("caltrops");
+    let d: combat_arms::game::special::DeviceParams = w.hook(combat_arms::game::special::DEVICE).unwrap();
+    assert_eq!((d.create_sound.as_str(), d.create_radius, d.auto_throw), ("guns_snd_throwing/caltrops/fire.wav", 300.0, false));
+    // ... and the nerve mine its sounds.
+    let w = set.get("combat_arms:nerve_confuse_mine").expect("nerve mine");
+    let d: combat_arms::game::special::DeviceParams = w.hook(combat_arms::game::special::DEVICE).unwrap();
+    assert_eq!(d.look, mine_look());
+}
+
+/// 58 (placement): the shooter's own launcher group is made on him, at his
+/// point, each key placing itself by its mode: the puff at the held
+/// launcher's `Flash` socket 4 u along the character's forward, the light at
+/// the socket.
+#[test]
+fn t58_own_launcher_group_on_the_shooter() {
+    use combat_arms::game::effects::{CaFxRequest, FxKind};
+    let mut sim = sim_with(None);
+    let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), combat_arms::game::movement::ID);
+    sim.app.world_mut().entity_mut(me).insert(CaPose { right_hand: Some(Vec3::new(8.0, 40.0, -12.0)), ..default() });
+    sim.ticks(2);
+    let (t, state) = {
+        let w = sim.app.world();
+        (*w.get::<Transform>(me).unwrap(), w.get::<chimera_core::core::MovementState>(me).unwrap().clone())
+    };
+    let pose = sim.app.world().get::<CaPose>(me).unwrap().clone();
+    let flash = pose.world(&t, &state, UNIT, pose.right_hand.expect("kept"));
+    sim.app.world_mut().write_message(CaFxRequest {
+        group: "Test_Rocket_Fire".into(),
+        at: Vec3::new(9.0, 9.0, 9.0),
+        normal: Vec3::Z,
+        kind: FxKind::OwnParented(me),
+    });
+    sim.ticks(1);
+    assert_eq!(sim.app.world().resource::<CaFx>().attached(me).count(), 1, "parented to the shooter");
+    // His body faces -Z (yaw 0): 4 u along it from the socket.
+    let want = flash + Vec3::NEG_Z * 4.0 * UNIT;
+    let eye = material(&sim, EYE_TEX, true);
+    let puffs: Vec<_> = particles(&sim).into_iter().filter(|(_, p)| p.material == eye).collect();
+    assert_eq!(puffs.len(), 1, "one puff");
+    assert!(puffs[0].1.position.distance(want) < 1e-4, "{} vs {want}", puffs[0].1.position);
+    let lights = &sim.app.world().resource::<CaFx>().lights;
+    assert_eq!(lights.len(), 1);
+    assert!(lights[0].at.distance(flash) < 1e-4, "the light at the socket");
+    // It is spent after its length, and nothing keeps it.
+    sim.seconds(0.5);
+    assert_eq!(sim.app.world().resource::<CaFx>().attached(me).count(), 0);
 }

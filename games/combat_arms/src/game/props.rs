@@ -17,7 +17,8 @@
 //! development option of the app, docs/OBSERVABILITY.md).
 //!
 //! The stock maps' only such objects, the flags, name
-//! `RS\EdgeAmp01.ltb` (not in our style table: opaque, the default).
+//! `RS\EdgeAmp01.ltb` (a rim glow from their `Skin1`, the layered style
+//! `render_style::Layer::EdgeAmp`).
 //! World models (brush geometry) are drawn by their object's `BlendMode`
 //! (`world`), not here.
 //!
@@ -139,8 +140,12 @@ pub fn place(
             .map(|s| model::normalize(s))
             .unwrap_or_default()
     });
+    // A layered style's slot 1 is the piece's second index in the object's
+    // whole skin list (a flag's `Skin1`, models_ltb.md Follow-up
+    // (2026-10-31) 5).
+    let named: Vec<String> = skins.iter().map(|s| model::normalize(s)).collect();
     for (mesh, lod) in m.meshes.iter_mut().zip(model::drawn_lods(&loaded.model)) {
-        render_style::apply(mesh, render_style::of_list(styles, lod.render_style));
+        render_style::apply_with(mesh, render_style::of_list(styles, lod.render_style), &named, model::second_slot(lod));
     }
     super::world::model_textures(&mut m.meshes, map, file);
     map.models.push(m);

@@ -162,6 +162,32 @@ pitch = 0.0
 accepts = ["Test_Pellet_Mag", "Test_Pellet_Muzzle"]
 "#;
 
+/// Case 44's weapons: the L96A1 with a default sight "Sniper Scope" that is
+/// off its accepted list, the same on the list, and on the list with its
+/// model hidden (`DefaultScopeVisible` 0).
+const DEFAULT_OFF_LIST: &str = r#"
+id = "test:default_off_list"
+base = "combat_arms:l96a1"
+[hooks."combat_arms:attachments"]
+accepts = ["Magazine_A_SR"]
+defaults = { sight = "Sniper Scope" }
+"#;
+const DEFAULT_ON_LIST: &str = r#"
+id = "test:default_on_list"
+base = "combat_arms:l96a1"
+[hooks."combat_arms:attachments"]
+accepts = ["Sniper Scope"]
+defaults = { sight = "Sniper Scope" }
+"#;
+const DEFAULT_HIDDEN: &str = r#"
+id = "test:default_hidden"
+base = "combat_arms:l96a1"
+[hooks."combat_arms:attachments"]
+accepts = ["Sniper Scope"]
+defaults = { sight = "Sniper Scope" }
+default_sight_visible = false
+"#;
+
 fn sim() -> Sim {
     let mut sim = Sim::new(CaSim, GreyboxMapPlugin);
     sim.set_tick_interval(TICK_INTERVAL);
@@ -177,6 +203,9 @@ fn sim() -> Sim {
             ("ak47", AK47),
             ("rate_bullet", RATE_BULLET),
             ("pellets", PELLETS),
+            ("default_off_list", DEFAULT_OFF_LIST),
+            ("default_on_list", DEFAULT_ON_LIST),
+            ("default_hidden", DEFAULT_HIDDEN),
         ])
 
         .unwrap();
@@ -480,6 +509,32 @@ fn t04_default_fill() {
             name("MechSight_Aim_I_AR")
         ]
     );
+}
+
+/// 44. A default sight that is not on the weapon's accepted list is not
+/// fitted (attachments.md Corrections (2026-10-31)): the slot stays empty,
+/// no sight model, the zoom key does nothing. On the list it is fitted and
+/// zooms by its `ZoomLevel`; on the list with `DefaultScopeVisible` 0 it is
+/// fitted (the zoom works) but its model is hidden.
+#[test]
+fn t44_default_outside_the_list() {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, "test:default_off_list", &[]);
+    assert_eq!(fitted(&sim, w)[at::SIGHT], None, "not on the list: not fitted");
+    assert!(mods(&sim, w).part(at::SIGHT).is_none());
+    close(zoom_step(&mut sim, p, w), 90.0, 1e-3, "the zoom key does nothing");
+
+    let mut sim = self::sim();
+    let (p, w) = holding(&mut sim, "test:default_on_list", &[]);
+    assert_eq!(fitted(&sim, w)[at::SIGHT], name("Sniper Scope"));
+    assert!(mods(&sim, w).default_sight_visible);
+    close(zoom_step(&mut sim, p, w), 20.0, 1e-3, "zoom steps from its ZoomLevel");
+
+    let mut sim = self::sim();
+    let (p, w) = holding(&mut sim, "test:default_hidden", &[]);
+    assert_eq!(fitted(&sim, w)[at::SIGHT], name("Sniper Scope"));
+    assert!(mods(&sim, w).part(at::SIGHT).is_some_and(|p| p.default) && !mods(&sim, w).default_sight_visible, "its model is hidden");
+    close(zoom_step(&mut sim, p, w), 20.0, 1e-3, "but the zoom works");
 }
 
 /// 5. Silencer_A_AR then Silencer_B_AR: B fitted; first kick 1.300, the

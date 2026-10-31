@@ -46,6 +46,7 @@ pub(super) fn fire(world: &mut World, weapon: Entity, owner: Entity, eye: Vec3, 
     let dir = cone_dir(p.perturb, p.dynamic_perturb, yaw, pitch, seed, super::PROJECTILE);
     let o = CaObject::new(id, Some(owner), d.unit, d.hp, eye / d.unit, dir * p.speed, Kind::Impact(d.params.clone()));
     spawn_object(world, o);
+    crate::game::effects::sounds::write_create_sound(world, &p.create_sound, p.create_radius, false, eye);
 }
 
 /// A projectile of `p` for `weapon` at `at` (u) with `velocity` (u/s),

@@ -44,6 +44,11 @@ struct PropParams {
     layer_address: f32,
     layer_factor: f32,
     layer_light: f32,
+    layer_lit: f32,
+    layer_emissive: vec4<f32>,
+    layer_ambient: vec4<f32>,
+    layer_diffuse: vec4<f32>,
+    layer_specular: vec4<f32>,
 }
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> params: PropParams;
@@ -92,11 +97,14 @@ const LUMA = vec3<f32>(0.299, 0.587, 0.114);
 // A layer's coordinates (map::MapLayer, LithTech's generated texture
 // coordinates): x and y of the camera-space reflection (0) or normal
 // (1), the camera-space reflection as a sphere map (2: 0.5 x + 0.5), or
-// the world-space reflection (3); then wrapped, clamped (1) or mirrored (2).
+// the world-space reflection (3) or the world-space normal (4); then
+// wrapped, clamped (1) or mirrored (2).
 fn layer_uv(n: vec3<f32>, p: vec3<f32>) -> vec2<f32> {
     let c = params.layer_coords;
     var uv: vec2<f32>;
-    if c > 2.5 {
+    if c > 3.5 {
+        uv = n.xy;
+    } else if c > 2.5 {
         uv = reflect(normalize(p - view.world_position), n).xy;
     } else {
         let nv = normalize((view.view_from_world * vec4<f32>(n, 0.0)).xyz);
@@ -121,15 +129,39 @@ fn layer_uv(n: vec3<f32>, p: vec3<f32>) -> vec2<f32> {
 
 // The probe on a surface with normal n (shaders.md 4): the ambient cube
 // weighted by the squared normal, plus each light by its cosine.
-fn probe_light(n: vec3<f32>) -> vec3<f32> {
+fn probe_ambient(n: vec3<f32>) -> vec3<f32> {
     let n2 = n * n;
-    var light = n2.x * select(params.probe_cube[1].rgb, params.probe_cube[0].rgb, n.x >= 0.0)
+    return n2.x * select(params.probe_cube[1].rgb, params.probe_cube[0].rgb, n.x >= 0.0)
         + n2.y * select(params.probe_cube[3].rgb, params.probe_cube[2].rgb, n.y >= 0.0)
         + n2.z * select(params.probe_cube[5].rgb, params.probe_cube[4].rgb, n.z >= 0.0);
+}
+
+fn probe_direct(n: vec3<f32>) -> vec3<f32> {
+    var light = vec3<f32>(0.0);
     for (var i = 0u; i < 4u; i = i + 1u) {
         light = light + params.probe_light_color[i].rgb * max(dot(n, params.probe_light_dir[i].xyz), 0.0);
     }
     return light;
+}
+
+fn probe_light(n: vec3<f32>) -> vec3<f32> {
+    return probe_ambient(n) + probe_direct(n);
+}
+
+// The layer's specular colour (a render style's material: M_s x sum over
+// the probe's lights of C x max(0, N.H)^p), added after the texture stages.
+fn layer_specular(n: vec3<f32>, p: vec3<f32>) -> vec3<f32> {
+    let power = params.layer_specular.w;
+    if power <= 0.0 || all(params.layer_specular.rgb == vec3<f32>(0.0)) {
+        return vec3<f32>(0.0);
+    }
+    let to_eye = normalize(view.world_position - p);
+    var sum = vec3<f32>(0.0);
+    for (var i = 0u; i < 4u; i = i + 1u) {
+        let h = normalize(params.probe_light_dir[i].xyz + to_eye);
+        sum = sum + params.probe_light_color[i].rgb * pow(max(dot(n, h), 0.0), power);
+    }
+    return params.layer_specular.rgb * sum;
 }
 
 // The scene's point lights (muzzle flashes; map::DynamicLight), in
@@ -188,11 +220,13 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     @if(VERTEX_COLORS) {
         light = in.color.rgb;
     }
+    var direct_extra = vec3<f32>(0.0);
     if params.probe > 0.5 {
         light = probe_light(n);
     }
     if params.dynamic > 0.5 {
-        light = light + dynamic_light(in.world_position.xyz, n, in.position.xy);
+        direct_extra = dynamic_light(in.world_position.xyz, n, in.position.xy);
+        light = light + direct_extra;
     }
     var rgb = color.rgb * light;
     // A second texture on generated coordinates (map::LayerCombine), with
@@ -200,7 +234,19 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // 2 f l lerp(T, S, T.a), 3 (T l + T.a S)(1 + T.a^2).
     if params.layer > 0.5 {
         let s = textureSample(layer_texture, base_sampler, layer_uv(n, in.world_position.xyz)).rgb;
-        let l = light * params.layer_light;
+        var l = light * params.layer_light;
+        var spec = vec3<f32>(0.0);
+        // A lighting material (the render style's): L = clamp(M_e + M_a A +
+        // M_d sum), and a specular colour added after the stages.
+        if params.layer_lit > 0.5 && params.probe > 0.5 {
+            l = clamp(
+                params.layer_emissive.rgb + params.layer_ambient.rgb * probe_ambient(n)
+                    + params.layer_diffuse.rgb * (probe_direct(n) + direct_extra),
+                vec3<f32>(0.0),
+                vec3<f32>(1.0),
+            );
+            spec = layer_specular(n, in.world_position.xyz);
+        }
         let a = base_alpha;
         let combine = params.layer - 1.0;
         if combine < 0.5 {
@@ -209,9 +255,29 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
             rgb = color.rgb * l + params.layer_factor * s;
         } else if combine < 2.5 {
             rgb = params.layer_factor * l * mix(color.rgb, s, a);
-        } else {
+        } else if combine < 3.5 {
             rgb = (color.rgb * l + a * s) * (1.0 + a * a);
+        } else {
+            // pv_char_b (models_ltb.md Follow-up (2026-10-31) 4): pass 1,
+            // the lit pass's dot3 grey of c = lerp(F, T, F.a) blended
+            // toward L by T.a^2; pass 2 added, (F T)^2 + F.a T.a; pass 3
+            // multiplied, the base's 2T made brighter by its alpha and
+            // opened by S where the alpha is low.
+            let f = 0.502;
+            let t = color.rgb;
+            let c = clamp(t * f + vec3<f32>(f * (1.0 - f)), vec3<f32>(0.0), vec3<f32>(1.0));
+            let a2 = clamp(a * a, 0.0, 1.0);
+            let m = clamp(c * a2 + l * (1.0 - a2), vec3<f32>(0.0), vec3<f32>(1.0));
+            let d = clamp(4.0 * dot(m - vec3<f32>(0.5), m - vec3<f32>(0.5)), 0.0, 1.0);
+            let p2 = clamp((t * f) * (t * f) + vec3<f32>(f * a), vec3<f32>(0.0), vec3<f32>(1.0));
+            let s0 = clamp(2.0 * t, vec3<f32>(0.0), vec3<f32>(1.0));
+            let s1 = clamp(s0 + (1.0 - a) * s0, vec3<f32>(0.0), vec3<f32>(1.0));
+            let a1 = clamp(4.0 * a - 1.0, 0.0, 1.0);
+            let s2 = clamp(s1 + (1.0 - a1) * s, vec3<f32>(0.0), vec3<f32>(1.0));
+            rgb = clamp(vec3<f32>(d) + spec + p2, vec3<f32>(0.0), vec3<f32>(1.0)) * s2;
+            spec = vec3<f32>(0.0);
         }
+        rgb = rgb + spec;
     }
     // Detail modes 5 and 6: added after lighting.
     if params.detail > 0.5 && mode > 4.5 && mode < 6.5 {

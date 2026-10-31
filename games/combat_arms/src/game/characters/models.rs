@@ -54,7 +54,7 @@ use super::{
         data::{CaData, CaDataInner},
         grenades::{self, GrenadeParams},
         model,
-        render_style::{self, Style},
+        render_style::{self, Piece, Style},
         view_model::hands,
     },
     records::{self, CharacterData, ModelRecord, Selection},
@@ -588,7 +588,7 @@ impl Textures<'_> {
                 material: material.clone(),
                 ..default()
             };
-            render_style::apply_with(&mut m, style, &[layer], 0);
+            render_style::apply_with(&mut m, style, std::slice::from_ref(&layer), if layer.is_empty() { -1 } else { 0 });
             render_style::apply(&mut m, over);
             super::super::world::model_textures(std::slice::from_mut(&mut m), map, self.file);
             m
@@ -610,7 +610,9 @@ impl Textures<'_> {
 enum Source<'a> {
     /// Its texture slot and second slot (-1: none).
     Body(&'a ModelRecord, i32, i32),
-    Own(Vec<String>),
+    /// A worn piece's own list, by its kind's rules (`render_style::
+    /// piece_skin`), with the piece's texture slot and second slot.
+    Own(Piece, Vec<String>, i32, i32),
 }
 
 /// Each added mesh's skins' source and render style.
@@ -624,9 +626,9 @@ fn body_sources<'a>(record: &'a ModelRecord, lods: &[(i32, i32, i32)]) -> Added<
 }
 
 /// A face's or head piece's pieces: its own skins and render styles.
-fn piece_sources<'a>(skins: &[String], styles: &[String], lods: &[(i32, i32, i32)]) -> Added<'a> {
+fn piece_sources<'a>(piece: Piece, skins: &[String], styles: &[String], lods: &[(i32, i32, i32)]) -> Added<'a> {
     lods.iter()
-        .map(|&(_, _, style)| (Source::Own(skins.to_vec()), render_style::of_list(styles, style)))
+        .map(|&(slot, second, style)| (Source::Own(piece, skins.to_vec(), slot, second), render_style::of_list(styles, style)))
         .collect()
 }
 
@@ -712,7 +714,7 @@ fn body_group(
             Ok((lods, sockets)) => {
                 let choice = group.faces.len() as u16;
                 bodies.extend(std::iter::repeat_n(Some((1, choice)), lods.len()));
-                sources.extend(piece_sources(&rec.skins, &rec.render_styles, &lods));
+                sources.extend(piece_sources(Piece::Face, &rec.skins, &rec.render_styles, &lods));
                 group.faces.push(f);
                 group.face_sockets.push((f, Arc::new(sockets)));
             }
@@ -733,7 +735,7 @@ fn body_group(
             Ok((lods, _)) => {
                 let choice = group.heads.len() as u16;
                 bodies.extend(std::iter::repeat_n(Some((2, choice)), lods.len()));
-                sources.extend(piece_sources(&rec.skins, &rec.render_styles, &lods));
+                sources.extend(piece_sources(Piece::Head, &rec.skins, &rec.render_styles, &lods));
                 group.heads.push(h);
             }
             Err(e) => warn.push(format!("head piece {path}: {e}")),
@@ -757,7 +759,7 @@ fn body_group(
                     let list = if part == 3 { &mut group.goggles } else { &mut group.backpacks };
                     let choice = list.len() as u16;
                     bodies.extend(std::iter::repeat_n(Some((part, choice)), lods.len()));
-                    sources.extend(piece_sources(&rec.skins, &rec.render_styles, &lods));
+                    sources.extend(piece_sources(if part == 3 { Piece::Goggle } else { Piece::Backpack }, &rec.skins, &rec.render_styles, &lods));
                     list.push(id);
                 }
                 Err(e) => warn.push(format!("attachment {path}: {e}")),
@@ -783,9 +785,9 @@ fn body_group(
                 .iter()
                 .map(|(source, style)| {
                     let (name, over) = match source {
-                        Source::Own(list) => {
-                            let i = usize::try_from(c).ok().filter(|&i| i < list.len()).unwrap_or(0);
-                            (list.get(i).cloned().unwrap_or_default(), Style::Opaque)
+                        Source::Own(piece, list, slot, _) => {
+                            let c = usize::try_from(c).unwrap_or(0);
+                            (render_style::piece_skin(*piece, list, *slot, c).unwrap_or_default().to_string(), Style::Opaque)
                         }
                         // The team mark in its mark's own style too
                         // (`[TeamMark]`'s `RenderStyle#`).
@@ -796,8 +798,13 @@ fn body_group(
                         Source::Body(record, s, _) => (slot(&data, record, *s, c, teammate), Style::Opaque),
                     };
                     // A layered style's slot 1 (`render_style::Layer`).
+                    // (A slot the piece binds without a skin reads white.)
+                    let white = |name: String| if name.is_empty() { render_style::WHITE_SLOT.to_string() } else { name };
                     let layer = match source {
-                        Source::Body(record, _, second) if *second >= 0 => slot(&data, record, *second, c, teammate),
+                        Source::Body(record, _, second) if *second >= 0 => white(slot(&data, record, *second, c, teammate)),
+                        Source::Own(piece, list, _, second) if *second >= 0 => white(
+                            render_style::piece_skin(*piece, list, *second, usize::try_from(c).unwrap_or(0)).unwrap_or_default().to_string(),
+                        ),
                         _ => String::new(),
                     };
                     textures.look(name, layer, *style, over, map)

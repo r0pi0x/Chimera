@@ -20,18 +20,27 @@
 //!   infected faces' eyes on `EYE_L`/`EYE_R`); `face_groups` lists them
 //!   when the character's look changes, seen in third person only.
 //!
+//! - A projectile's sounds (`projectile_sounds`, `flight_sounds`; special_
+//!   weapons.md Corrections (2026-10-31) 3): the fly sound loops while it
+//!   moves, the activate sound loops where it comes to rest, the finish
+//!   sound plays once `FinishSoundTime` before its lifetime ends; one at a
+//!   time. Impact projectiles carry the look in their drawn key; devices,
+//!   grenades and bolts get it as a component where the server makes
+//!   them.
+//!
 //! Known shortcuts (docs/tech-debt.md): `PlaySound` keys of attached
 //! groups play nothing (the stock projectile and eye groups have none);
-//! the trail key's width style and `UAdd` aren't applied (constant width,
-//! the texture once from tail to head: effects_sounds.md names them
-//! only), nor any fade of its sections; a projectile's `ActivateSound`,
-//! `FinishSound` and `CreateSound` aren't read; smoke puffs live their
-//! segment's life from their own birth; the flare is additive (the spec
-//! says unlit only) and square (`FlareScale`'s x); a character's sockets
-//! come from the posed tick (`CaPose`), placed at the drawn transform;
-//! the body and head records' `ClientFX#` lists (none in the stock data)
-//! and a host's own override aren't read; spectating in first person
-//! still shows the watched player's groups.
+//! a device's, grenade's or bolt's sounds are made only where the server
+//! is (a listen server, local play), not on a network client, whose
+//! drawn key doesn't carry them; the activate sound's "velocity is zero"
+//! is the object's own where it has one, else whether it moved since the
+//! last frame; the flare is additive (the spec says unlit only) and
+//! square (`FlareScale`'s x); a character's sockets come from the posed
+//! tick (`CaPose`), placed at the drawn transform, and its `Flash` socket
+//! (the held launcher's) is the hand's; the body and head records'
+//! `ClientFX#` lists (none in the stock data) and a host's own override
+//! aren't read; spectating in first person still shows the watched
+//! player's groups.
 
 use bevy::prelude::*;
 
@@ -106,31 +115,117 @@ pub fn on_shown(ev: On<Insert<ShownItem>>, items: Query<&ShownItem>, mut command
     if let Some(kind) = look.smoke_trail {
         e.insert(SmokeTrail { kind, ..default() });
     }
-    e.insert(CaFlightLook(look));
+    e.insert((CaFlightSounds::default(), CaFlightLook(look)));
 }
 
-/// The fly sound starts with the projectile (Follow-up 2): looping, 3D
-/// with `SoundRadius` (inner 7 %), volume 100, following it.
-pub fn fly_sound(ev: On<Add<CaFlightLook>>, q: Query<(&CaFlightLook, Option<&Transform>)>, mut out: MessageWriter<CaLoopSound>) {
-    let Ok((look, t)) = q.get(ev.event_target()) else { return };
-    if look.0.fly_sound.is_empty() {
-        return;
+/// Which of a projectile's sounds plays now (special_weapons.md
+/// Corrections (2026-10-31) 3: one at a time, starting one stops the
+/// current one).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FlightSound {
+    #[default]
+    None,
+    Fly,
+    Activate,
+    Finish,
+}
+
+/// A projectile effect's sound state on this client: what plays, how
+/// long the effect has existed (T0 = when this client made it), where it
+/// was last frame.
+#[derive(Component, Clone, Debug, Default, PartialEq)]
+pub struct CaFlightSounds {
+    pub current: FlightSound,
+    pub age: f32,
+    pub last: Option<Vec3>,
+}
+
+/// One client update of a projectile effect's sounds (Corrections
+/// (2026-10-31) 3), in the game's order: once the finish sound has
+/// started nothing changes; the fly sound plays while the projectile
+/// moves (and follows it: `CaLoopSound::follow`); the activate sound
+/// starts, looping where the projectile then is, when it is at rest; the
+/// finish sound starts once, `finish_time` s before `lifetime` is over.
+/// Each sound is enabled by its name being non-empty. The sounds started
+/// this update, in order; the last one plays.
+pub fn flight_sounds(state: &mut FlightSound, look: &ProjectileLook, age: f32, at_rest: bool) -> Vec<FlightSound> {
+    let mut started = Vec::new();
+    if *state == FlightSound::Finish {
+        return started;
     }
-    let at = t.map_or(Vec3::ZERO, |t| t.translation);
-    out.write(CaLoopSound {
-        key: fly_sound_key(ev.event_target()),
-        sound: Some(CaSound::at(look.0.fly_sound.clone(), at, look.0.sound_radius)),
-        follow: Some(ev.event_target()),
-    });
+    if !look.fly_sound.is_empty() && !at_rest && *state != FlightSound::Fly {
+        *state = FlightSound::Fly;
+        started.push(*state);
+    }
+    if !look.activate_sound.is_empty() && *state != FlightSound::Activate && at_rest {
+        *state = FlightSound::Activate;
+        started.push(*state);
+    }
+    if !look.finish_sound.is_empty() && look.lifetime > 0.0 && age > look.lifetime - look.finish_time {
+        *state = FlightSound::Finish;
+        started.push(*state);
+    }
+    started
+}
+
+/// A projectile's sounds each client update (`flight_sounds`), 3D at
+/// `SoundRadius`, volume 100: the fly sound loops and follows it, the
+/// activate sound loops where it came to rest (not moved after), the
+/// finish sound plays once where it is then.
+pub fn projectile_sounds(
+    time: Res<Time>,
+    mut q: Query<(
+        Entity,
+        &CaFlightLook,
+        &mut CaFlightSounds,
+        &Transform,
+        Option<&crate::game::special::CaObject>,
+        Option<&crate::game::grenades::CaGrenade>,
+    )>,
+    mut out: MessageWriter<CaLoopSound>,
+) {
+    let dt = time.delta_secs();
+    for (e, look, mut state, t, object, grenade) in &mut q {
+        let at = t.translation;
+        // The object's velocity where it has one, else whether it moved.
+        let at_rest = match (object, grenade) {
+            (Some(o), _) => o.velocity == Vec3::ZERO,
+            (_, Some(g)) => g.velocity == Vec3::ZERO,
+            _ => state.last.is_some_and(|l| l == at),
+        };
+        state.last = Some(at);
+        let age = state.age;
+        state.age += dt;
+        let look = &look.0;
+        if !look.has_sounds() {
+            continue;
+        }
+        let mut now = state.current;
+        for which in flight_sounds(&mut now, look, age, at_rest) {
+            let (file, once, follow) = match which {
+                FlightSound::Fly => (&look.fly_sound, false, Some(e)),
+                FlightSound::Activate => (&look.activate_sound, false, None),
+                _ => (&look.finish_sound, true, None),
+            };
+            out.write(CaLoopSound {
+                key: fly_sound_key(e),
+                sound: Some(CaSound::at(file.clone(), at, look.sound_radius)),
+                follow,
+                once,
+            });
+        }
+        state.current = now;
+    }
 }
 
 /// ... and stops when it goes (detonation, sky, lifetime, removal).
 pub fn fly_sound_stop(ev: On<Remove<CaFlightLook>>, q: Query<&CaFlightLook>, mut out: MessageWriter<CaLoopSound>) {
-    if q.get(ev.event_target()).is_ok_and(|l| !l.0.fly_sound.is_empty()) {
+    if q.get(ev.event_target()).is_ok_and(|l| l.0.has_sounds()) {
         out.write(CaLoopSound {
             key: fly_sound_key(ev.event_target()),
             sound: None,
             follow: None,
+            once: false,
         });
     }
 }
@@ -240,9 +335,13 @@ pub fn flight(
     mut fx: ResMut<CaFx>,
     particles: Option<ResMut<Particles>>,
     materials: Option<Res<ParticleMaterials>>,
+    window: Query<&Window, With<bevy::window::PrimaryWindow>>,
 ) {
     let (Some(lib), Some(mut particles), Some(materials)) = (library::library(), particles, materials) else { return };
     let dt = time.delta_secs();
+    if let Ok(w) = window.single() {
+        fx.screen_width = w.resolution.physical_width() as f32;
+    }
     for (look, t, trail) in &mut projectiles {
         if let Some(f) = &look.0.flare {
             let at = t.translation + Vec3::Y * f.y_offset * fx.unit;

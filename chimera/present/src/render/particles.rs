@@ -323,14 +323,29 @@ pub fn draw_particles(
                 Shape::Quad { corners, rect } => {
                     b.quad(corners.map(|c| c - centre), rect, rgba);
                 }
-                Shape::Ribbon { to, width, u } => {
+                Shape::Ribbon {
+                    to,
+                    width,
+                    u,
+                    end_color,
+                    prev,
+                    next,
+                } => {
                     let to_c = to - centre;
-                    let along = to - p.position;
-                    let side = along.cross(p.position - from).normalize_or_zero();
-                    let (w0, w1) = (side * width[0] / 2.0, side * width[1] / 2.0);
+                    // The side direction square to a segment and to the eye;
+                    // at a joint the average of the two segments'.
+                    let side_of = |a: Vec3, b: Vec3| (b - a).cross(a - from).normalize_or_zero();
+                    let here = side_of(p.position, to);
+                    let start_side = prev.map_or(here, |q| (side_of(q, p.position) + here).normalize_or(here));
+                    let end_side = next.map_or(here, |q| (here + side_of(to, q)).normalize_or(here));
+                    let (w0, w1) = (start_side * width[0] / 2.0, end_side * width[1] / 2.0);
                     // U along the strip, V across.
                     let r = [rect[0] + (rect[2] - rect[0]) * u.0, rect[1], rect[0] + (rect[2] - rect[0]) * u.1, rect[3]];
-                    b.quad([at - w0, at + w0, to_c + w1, to_c - w1], r, rgba);
+                    let end_rgba = end_color.map_or(rgba, |c| {
+                        let lin = if def.vertex_color { Color::srgb(c.x, c.y, c.z).to_linear() } else { LinearRgba::WHITE };
+                        [lin.red, lin.green, lin.blue, if def.vertex_alpha { c.w * near } else { rgba[3] }]
+                    });
+                    b.quad_colors([at - w0, at + w0, to_c + w1, to_c - w1], r, [rgba, rgba, end_rgba, end_rgba]);
                 }
                 Shape::Tumble { angles, .. } => {
                     // One corner on the particle; the face across the side
@@ -388,12 +403,17 @@ struct QuadBuilder {
 
 impl QuadBuilder {
     /// Corners: bottom-left, top-left, top-right, bottom-right.
-    fn quad(&mut self, corners: [Vec3; 4], [u0, v0, u1, v1]: [f32; 4], rgba: [f32; 4]) {
+    fn quad(&mut self, corners: [Vec3; 4], rect: [f32; 4], rgba: [f32; 4]) {
+        self.quad_colors(corners, rect, [rgba; 4]);
+    }
+
+    /// A quad with a colour per corner.
+    fn quad_colors(&mut self, corners: [Vec3; 4], [u0, v0, u1, v1]: [f32; 4], rgba: [[f32; 4]; 4]) {
         let base = self.positions.len() as u32;
-        for (p, uv) in corners.iter().zip([[u0, v1], [u0, v0], [u1, v0], [u1, v1]]) {
+        for ((p, uv), c) in corners.iter().zip([[u0, v1], [u0, v0], [u1, v0], [u1, v1]]).zip(rgba) {
             self.positions.push(p.to_array());
             self.uvs.push(uv);
-            self.colors.push(rgba);
+            self.colors.push(c);
         }
         self.indices
             .extend([base, base + 1, base + 2, base, base + 2, base + 3]);

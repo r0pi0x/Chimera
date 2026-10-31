@@ -148,12 +148,14 @@ pub fn set_prop_layer(material: &mut PropMaterial, layer: &MapLayer, textures: &
             LayerCombine::Add => 1.0,
             LayerCombine::AlphaLerp => 2.0,
             LayerCombine::Gloss => 3.0,
+            LayerCombine::PvCharB => 4.0,
         };
     p.layer_coords = match layer.coords {
         LayerCoords::CameraReflection => 0.0,
         LayerCoords::CameraNormal => 1.0,
         LayerCoords::SphereMap => 2.0,
         LayerCoords::WorldReflection => 3.0,
+        LayerCoords::WorldNormal => 4.0,
     };
     p.layer_address = match layer.address {
         LayerAddress::Wrap => 0.0,
@@ -162,6 +164,13 @@ pub fn set_prop_layer(material: &mut PropMaterial, layer: &MapLayer, textures: &
     };
     p.layer_factor = layer.factor;
     p.layer_light = layer.light;
+    if let Some(l) = layer.lighting {
+        p.layer_lit = 1.0;
+        p.layer_emissive = l.emissive.extend(0.0);
+        p.layer_ambient = l.ambient.extend(0.0);
+        p.layer_diffuse = l.diffuse.extend(0.0);
+        p.layer_specular = l.specular.extend(l.power);
+    }
 }
 
 /// Make `material` reflect `cube` as `env` says (Source `$envmap`).

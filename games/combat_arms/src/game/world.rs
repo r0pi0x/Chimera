@@ -44,8 +44,10 @@
 //!   dtx`, the level the shipped "DetailLevel" loads: `skipped_levels`;
 //!   `alpharef` cuts out; DXT files also keep their blocks, mip levels
 //!   included, which the GPU takes as BC: `dtx_bc`); the plain maps' world textures are in unkeyed
-//!   archives. A sprite (`.spr`) on a map surface draws its first frame's
-//!   texture (`effects::library::sprite_texture`); as a model's skin it
+//!   archives. A sprite (`.spr`) on a map surface plays its frames, each
+//!   section (a mesh of the sprite per world model and blend) on its own
+//!   clock while it is drawn (`world_sprites`: `MapMesh::skin_frames`,
+//!   Chimera's `skin_frames::advance_sections`); as a model's skin it
 //!   plays its frames (`model_textures`: `MapMesh::skin_frames`, each
 //!   drawn copy on its own clock, models_ltb.md "Sprite skins"), and a
 //!   layered render style's slot-1 texture resolves there too. A texture that doesn't resolve
@@ -146,7 +148,7 @@
 //! (Q13 still open: whether the lightmap multiplies over them). A map
 //! whose lightmaps don't fit one 8192 x 8192 atlas (`ATLAS_MAX`, the GPU's
 //! limit; TERRORDOME's are 4096 x 19428) has them all at half resolution
-//! (one atlas, not the game's pages). A sprite texture doesn't animate.
+//! (one atlas, not the game's pages).
 //! The spawns drop straight down by a ray (not the hull). HGOILRIG's
 //! start points (its one team point and the `HungerGame` ones) have no
 //! solid floor below them in the physics BSP, only the sliding water's
@@ -440,6 +442,9 @@ pub fn convert_with(
     let (mut meshes, seconds): (Vec<MapMesh>, Vec<Option<String>>) =
         built.into_iter().map(|(m, s, _)| (m, s)).unzip();
     textures_with(&mut meshes, &mut map, file, decode);
+    if decode {
+        world_sprites(&mut meshes, &mut map, file);
+    }
     second_layers(&mut meshes, &seconds, &mut map, file, decode);
     map.meshes = meshes;
     map.lightmap = Some(lightmap.map);
@@ -1006,7 +1011,7 @@ pub(crate) fn model_textures(meshes: &mut [MapMesh], map: &mut MapData, file: &d
                 names.push(String::new());
             }
         }
-        layer_at.push(m.layer.as_ref().filter(|l| !l.material.is_empty()).map(|l| {
+        layer_at.push(m.layer.as_ref().filter(|l| !l.material.is_empty() && l.material != super::render_style::WHITE_SLOT).map(|l| {
             extra.push(MapMesh {
                 material: l.material.clone(),
                 ..default()
@@ -1040,7 +1045,67 @@ pub(crate) fn model_textures(meshes: &mut [MapMesh], map: &mut MapData, file: &d
         if let (Some(i), Some(layer)) = (layer_at[k], m.layer.as_mut()) {
             layer.texture = extra[i].texture;
         }
+        // A second slot with no skin reads opaque white.
+        if let Some(layer) = m.layer.as_mut().filter(|l| l.material == super::render_style::WHITE_SLOT) {
+            layer.texture = Some(white_texture(map));
+        }
     }
+}
+
+/// The world's sprite sections (a mesh whose texture is a `.spr`,
+/// models_ltb.md Follow-up (2026-10-31) 7): its frames' textures, shown one
+/// after another on the section's own clock while it is drawn
+/// (`MapMesh::skin_frames`, ⌊1000 / rate⌋ ms a frame, looping). A sprite
+/// that doesn't read, or whose frames don't resolve, keeps its first frame.
+pub fn world_sprites(meshes: &mut [MapMesh], map: &mut MapData, file: &dyn Fn(&str) -> Option<Vec<u8>>) {
+    let norm = |p: &str| p.trim().replace('\\', "/").to_lowercase();
+    let mut extra: Vec<MapMesh> = Vec::new();
+    let mut at: Vec<(usize, std::ops::Range<usize>, u32)> = Vec::new();
+    for (k, m) in meshes.iter().enumerate() {
+        let name = norm(&m.material);
+        if !name.ends_with(".spr") {
+            continue;
+        }
+        let Some(sprite) = file(&name).and_then(|b| lithtech_formats::spr::Sprite::parse(&b).ok()) else { continue };
+        let start = extra.len();
+        extra.extend(sprite.frames.iter().map(|f| MapMesh {
+            material: norm(f),
+            alpha: m.alpha,
+            ..default()
+        }));
+        at.push((k, start..extra.len(), sprite.frame_ms()));
+    }
+    if extra.is_empty() {
+        return;
+    }
+    textures_with(&mut extra, map, file, true);
+    for (k, range, frame_ms) in at {
+        let frames: Vec<usize> = extra[range].iter().filter_map(|f| f.texture).collect();
+        if frames.len() > 1 {
+            meshes[k].skin_frames = Some(crate::map::MapSkinFrames {
+                frames,
+                frame_ms: frame_ms.max(1),
+            });
+        }
+    }
+}
+
+/// The 1 x 1 opaque white texture an empty texture slot reads as (once per
+/// map).
+fn white_texture(map: &mut MapData) -> usize {
+    if let Some(i) = map.textures.iter().position(|t| t.name == "<white>") {
+        return i;
+    }
+    map.textures.push(MapTexture {
+        name: "<white>".into(),
+        srgb: true,
+        mips: Vec::new(),
+        width: 1,
+        height: 1,
+        rgba8: vec![255; 4],
+        bc: None,
+    });
+    map.textures.len() - 1
 }
 
 /// Resolve each mesh's texture (as `model_textures` says; a sprite: its

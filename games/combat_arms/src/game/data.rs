@@ -129,9 +129,9 @@
 //!   Not mapped (no field
 //!   in our data yet): a projectile's box (its model's first animation
 //!   box x `ModelScale`: the template's stays), `AltVelocity`,
-//!   the projectile record's `ActivateSound`, `FinishSound` and
-//!   `CreateSound` (special_weapons.md Follow-up 2: not read yet; its
-//!   `FXName`, `FlySound`, flare and smoke trail are, `look_table`),
+//!   (the projectile record's `ActivateSound`, `FinishSound`,
+//!   `FinishSoundTime` and `CreateSound` are read, `look_table`,
+//!   `create_values`, into the projectile, device and grenade hooks),
 //!   `TripleShot*` timing (the trigger's `latency`, a
 //!   flame copy's fire keys and a knife copy's swings come from the
 //!   copy's view model: `timing`),
@@ -662,6 +662,8 @@ fn grenade_values(p: &ProjectileRecord, length_scale: f64) -> Vec<Set> {
     if let Some(h) = p.can_hit_same_kind {
         out.push(set(&["hooks", GRENADE, "hits_same_kind"], h));
     }
+    out.push(set(&["hooks", GRENADE, "look"], Value::Table(look_table(&p.look, p.lifetime))));
+    out.extend(create_values(GRENADE, p));
     if !p.model.is_empty() {
         let skins = skin_paths(&p.skins).into_iter().map(Value::String).collect::<Vec<_>>();
         out.extend([
@@ -1036,6 +1038,19 @@ fn patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile, mods: Option<&Mo
             for s in grenade_values(p, length_scale) {
                 apply(doc, &s);
             }
+            // A device's sounds in flight and at rest (a nerve mine's, a
+            // caltrop's create sound): its projectile record's.
+            if hook_table(doc, super::special::BOLT).is_some() {
+                apply(doc, &set(&["hooks", super::special::BOLT, "look"], Value::Table(look_table(&p.look, p.lifetime))));
+            }
+            if hook_table(doc, super::special::DEVICE).is_some() {
+                const DEVICE: &str = super::special::DEVICE;
+                apply(doc, &set(&["hooks", DEVICE, "look"], Value::Table(look_table(&p.look, p.lifetime))));
+                apply(doc, &set(&["hooks", DEVICE, "auto_throw"], w.play_auto_throw_sound));
+                for s in create_values(DEVICE, p) {
+                    apply(doc, &s);
+                }
+            }
         }
         // An impact projectile's flight, look, lasting sphere and sounds
         // (special_weapons.md 1, "Where the numbers live").
@@ -1277,7 +1292,8 @@ fn projectile_patch(doc: &mut Table, w: &WeaponRecord, a: &AmmoRecord, file: &We
                 set(&["hooks", PROJECTILE, "skins"], Value::Array(skins)),
             ]);
         }
-        out.push(set(&["hooks", PROJECTILE, "look"], Value::Table(look_table(&p.look))));
+        out.push(set(&["hooks", PROJECTILE, "look"], Value::Table(look_table(&p.look, p.lifetime))));
+        out.extend(create_values(PROJECTILE, p));
     }
     out.push(set(&["hooks", PROJECTILE, "shooter_exempt"], w.gun_type == ROCKET_GUNTYPE));
     // The lasting sphere: made for ammo that has one (its numbers are
@@ -1349,13 +1365,20 @@ const GRENADE_AMMO_TYPE: i32 = 2;
 /// A projectile record's looks in flight as `special::ProjectileLook`'s
 /// table (special_weapons.md Follow-up (2026-10-30) 1-3): the group,
 /// fly sound, flare and smoke trail; sounds and sprites as archive paths.
-fn look_table(l: &attributes::ProjectileLookRecord) -> Table {
+fn look_table(l: &attributes::ProjectileLookRecord, lifetime: Option<f64>) -> Table {
     let mut t = Table::new();
     t.insert("fx".into(), Value::String(l.fx.clone()));
     t.insert("fx_loop".into(), Value::Boolean(l.fx_loop));
     t.insert("fx_smooth".into(), Value::Boolean(l.fx_smooth));
     t.insert("fly_sound".into(), Value::String(super::model::normalize(&l.fly_sound)));
     t.insert("sound_radius".into(), Value::Float(l.sound_radius));
+    t.insert("activate_sound".into(), Value::String(super::model::normalize(&l.activate_sound)));
+    t.insert("finish_sound".into(), Value::String(super::model::normalize(&l.finish_sound)));
+    t.insert("finish_time".into(), Value::Float(l.finish_time));
+    // The finish sound counts from the lifetime's end.
+    if !l.finish_sound.is_empty() {
+        t.insert("lifetime".into(), Value::Float(lifetime.unwrap_or(0.0)));
+    }
     if let Some((sprite, scale, dy)) = &l.flare {
         let mut f = Table::new();
         f.insert("sprite".into(), Value::String(super::model::normalize(sprite)));
@@ -1367,6 +1390,16 @@ fn look_table(l: &attributes::ProjectileLookRecord) -> Table {
         t.insert("smoke_trail".into(), Value::Integer(n.max(0).into()));
     }
     t
+}
+
+/// A projectile record's create sound (special_weapons.md Corrections
+/// (2026-10-31) 3) as the hook `hook`'s `create_sound` and
+/// `create_radius`.
+fn create_values(hook: &str, p: &ProjectileRecord) -> [Set; 2] {
+    [
+        set(&["hooks", hook, "create_sound"], super::model::normalize(&p.create_sound)),
+        set(&["hooks", hook, "create_radius"], p.create_radius),
+    ]
 }
 
 /// An impact record as our effects data writes one (`effects::data::

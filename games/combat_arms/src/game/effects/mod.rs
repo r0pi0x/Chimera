@@ -9,9 +9,13 @@
 //!   a silenced part without a level nothing); the third-person muzzle
 //!   group (`hh_muzzle`, the muzzle part's first) for others when the fire
 //!   point is seen; your FireFX group (`test`) at your flash point (a
-//!   launcher's, its ammo's install record `CaWeaponFx::fire_record`, at
-//!   the shot's origin and only when that is in front of you:
-//!   special_weapons.md Follow-up 7); a
+//!   launcher's, its ammo's install record `CaWeaponFx::fire_record`:
+//!   parented to the shooter, shown only when the fire point as the
+//!   server sent it (`rules::compress_position`) passes the view test from
+//!   your camera now, so most launches show nothing; others see the
+//!   third-person muzzle group at the held launcher's `Flash` socket,
+//!   turned toward the world origin: special_weapons.md Corrections
+//!   (2026-10-31) 1); a
 //!   casing (seen and near fire point, the FireFX ejecting); the muzzle or
 //!   FireFX group again for each further pellet of a round; the tracer
 //!   (`rules::TracerCounter`: yours by the last fitted part's tracer, the
@@ -112,7 +116,9 @@
 //! - Third-person points: others' muzzle and breach (casing start) and
 //!   their shots' sound are at their posed `RightHand` socket
 //!   (`characters::CaPose`; the held model's own `Flash` and `Breach`
-//!   sockets aren't applied); hit-zone surfaces for others' shots on a
+//!   sockets aren't applied; a launcher's `Flash` is the same point);
+//!   the world's box for a launcher's compressed fire point is the box
+//!   around its surface-tagged triangles (`SurfaceGrid::bounds`); hit-zone surfaces for others' shots on a
 //!   network client are the body's (6): a client sees no hit zones.
 //! - Liquids: the ammo's own under-water record (`UWBullet`) isn't
 //!   swapped in and no bubble trail is drawn (section 6a); rays pass a
@@ -142,6 +148,7 @@ pub mod fx;
 pub mod library;
 pub mod rules;
 pub mod sounds;
+pub mod trail;
 pub mod voice;
 
 use std::collections::HashMap;
@@ -221,6 +228,10 @@ pub enum FxKind {
     Muzzle,
     /// Your own FireFX group at your flash point.
     OwnFire,
+    /// Your own launcher's FireFX group, parented to the shooter
+    /// (special_weapons.md Corrections (2026-10-31) 1): made at his point,
+    /// each key placing itself by its own mode.
+    OwnParented(Entity),
     /// An ImpactFX's own group (smoke, flash).
     Ammo,
     /// A surface's impact burst (blood on characters).
@@ -316,7 +327,6 @@ impl Plugin for CaEffectsPlugin {
         .init_resource::<crate::game::rungs::InfectionSound>()
         .add_observer(crate::game::rungs::infection_moment)
         .add_observer(attached::on_shown)
-        .add_observer(attached::fly_sound)
         .add_observer(attached::fly_sound_stop)
         .add_observer(attached::face_groups)
         // One-frame particles (attached sprites, trails, flares) are drawn
@@ -338,6 +348,7 @@ impl Plugin for CaEffectsPlugin {
                 step_effects,
                 attached::follow,
                 attached::flight,
+                attached::projectile_sounds,
                 spawn_fx,
                 sounds::play,
                 crate::game::view_model::attached::sounds,
@@ -481,6 +492,11 @@ pub struct Ground<'w> {
 }
 
 impl Ground<'_> {
+    /// The box around the world (metres), where the map has surfaces.
+    pub fn bounds(&self) -> Option<(Vec3, Vec3)> {
+        self.grid.as_deref()?.bounds()
+    }
+
     /// The type of surface `s`: as `surface_type`, and where that finds
     /// none (another game's surface the app's table doesn't name, which
     /// would be Unknown, with no bullet hole), the type of its class
@@ -833,11 +849,12 @@ fn shot_effects(
     mut dings: ResMut<DingQueue>,
     mut sounds: MessageWriter<CaSound>,
     mut fx: MessageWriter<CaFxRequest>,
-    (mut state, volumes, protected, route): (
+    (mut state, volumes, protected, route, show_local): (
         Local<ShotState>,
         Query<&CaVolume>,
         Query<(), With<super::rules::spawns::CaProtected>>,
         crate::weapon::impact::ImpactRoute,
+        Option<Res<crate::map::ShowLocalBody>>,
     ),
     mut commands: Commands,
 ) {
@@ -919,12 +936,18 @@ fn shot_effects(
                     .ok()
                     .and_then(|(p, t, s)| Some(p.world(t, s, UNIT, p.right_hand?)));
                 // A launcher's (a projectile round's) fire-only event comes
-                // from the server's fire position, for the shooter too, and
-                // shows only while that point is in front of the viewer
-                // (special_weapons.md Follow-up 7).
+                // from the server's fire position (the shooter's camera when
+                // he fired), compressed to the world's grid; his own client
+                // takes it as received, the others' replace it with the held
+                // launcher's `Flash` socket (special_weapons.md Corrections
+                // (2026-10-31) 1). The shooter in a third-person camera is
+                // one of the others.
                 let launcher = wfx.ammo_kind == AmmoKind::Thrown;
+                let world_box = grid.bounds();
+                let own = mine && (!launcher || !show_local.as_ref().is_some_and(|s| s.0));
                 let fire = if launcher {
-                    *origin
+                    let sent = world_box.map_or(*origin, |b| rules::compress_position(*origin, b));
+                    if own { sent } else { hand.unwrap_or(sent) }
                 } else if mine {
                     vm.map_or(*origin, |v| v.flash_point)
                 } else {
@@ -936,8 +959,11 @@ fn shot_effects(
                     muzzle: None,
                     rays: 0,
                 };
-                // The fire sound.
-                if let Some((file, radius)) = fire_sound(wfx, mods, mine) {
+                // The fire sound (a launcher's event carries none for the
+                // others: it is ignored for a player's projectile).
+                if (!launcher || mine)
+                    && let Some((file, radius)) = fire_sound(wfx, mods, mine)
+                {
                     let silenced = mods.is_some_and(|m| m.silencer_level().is_some());
                     // Others' shots sound at their weapon (Open question 18).
                     let mut s = if mine { CaSound::local(file) } else { CaSound::at(file, fire, radius) };
@@ -951,28 +977,33 @@ fn shot_effects(
                     continue;
                 };
                 let gates = cam.gates(fire, fire + dir, !mine);
-                // The shooter's own launcher group: the server's fire
-                // position is his eye, which the gate counts as straight up
-                // (never seen); case 52 shows it, hidden only behind him
-                // (our reading: a point at the camera passes).
-                let own_seen = !launcher || gates.fire_seen || (fire - cam.at).length() < 0.001 * UNIT;
-                if mine && own_seen {
-                    // Your FireFX group at your flash point.
-                    if let Some(f) = fire_record.filter(|f| !f.fx.is_empty()) {
+                if own {
+                    // The shooter's own launcher group shows only when the
+                    // received point passes the view test from the camera as
+                    // it is when the event arrives.
+                    let seen = !launcher || gates.fire_seen;
+                    if seen && let Some(f) = fire_record.filter(|f| !f.fx.is_empty()) {
                         round.muzzle = Some(CaFxRequest {
                             group: f.fx.clone(),
                             at: fire,
                             normal: dir,
-                            kind: FxKind::OwnFire,
+                            kind: if launcher { FxKind::OwnParented(e.owner) } else { FxKind::OwnFire },
                         });
                     }
                 } else if gates.fire_seen {
                     let group = hh_muzzle(&tables, wfx, mods);
                     if !group.is_empty() {
+                        // A launcher's event has no impact position: the
+                        // muzzle group turns toward the world origin.
+                        let normal = if launcher {
+                            (rules::unset_impact(world_box) - fire).normalize_or(dir)
+                        } else {
+                            dir
+                        };
                         round.muzzle = Some(CaFxRequest {
                             group: group.to_string(),
                             at: fire,
-                            normal: dir,
+                            normal,
                             kind: FxKind::Muzzle,
                         });
                     }
@@ -984,6 +1015,7 @@ fn shot_effects(
                 // A casing (8).
                 if let Some(f) = fire_record
                     && f.shells
+                    && (own || !launcher)
                     && settings.shell_casings
                     && gates.fire_seen
                     && !gates.fire_far
@@ -1841,13 +1873,24 @@ fn spawn_fx(
     particles: Option<ResMut<Particles>>,
     materials: Option<Res<ParticleMaterials>>,
     world: WorldTracer,
+    parents: Query<(&Transform, Option<&super::characters::CaPose>, Option<&MovementState>)>,
 ) {
     let Some(lib) = library::library() else {
         requests.clear();
         return;
     };
     for r in requests.read() {
-        fx.spawn(&lib, &r.group, r.at, effect_frame(r.normal));
+        match r.kind {
+            // On the shooter: where he is, with his sockets (`Flash`).
+            FxKind::OwnParented(parent) => {
+                let Ok((t, pose, state)) = parents.get(parent) else { continue };
+                let pose = attached::pose_of(t, pose.zip(state));
+                fx.attach_once(&lib, &r.group, parent, pose);
+            }
+            _ => {
+                fx.spawn(&lib, &r.group, r.at, effect_frame(r.normal));
+            }
+        }
     }
     let (Some(mut particles), Some(materials)) = (particles, materials) else { return };
     fx.step(time.delta_secs(), &lib, &mut particles, &materials.0, &world);

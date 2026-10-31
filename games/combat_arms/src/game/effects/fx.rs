@@ -26,18 +26,23 @@
 //!   the entity; socket or node attach at that socket: `place`), a
 //!   looping group's whole-group keys never ending and its other keys
 //!   replayed each pass, sprites drawn each frame where they are, trail
-//!   keys (`PolyTrail`: sections every `SectionInterval`, at most
-//!   `TrailLen`, each kept `SectionLifespan`, `TrailWidth` wide, as
-//!   Chimera's `Shape::Ribbon`), hidden groups frozen; shut down with
+//!   keys (`PolyTrail`: `trail::Trail`'s points, width by `WidthStyle`,
+//!   texture u scrolled by `UAdd`, colour keys over each section's life,
+//!   as Chimera's `Shape::Ribbon`, ageing out after a smooth shut-down),
+//!   hidden groups frozen and their trails cleared; shut down with
 //!   smooth shut-down (particles live out) or at once (`kill_tagged`);
-//!   a projectile's flare and smoke trail (`flare`, `smoke`).
+//!   a group made once on an entity (`attach_once`: a launcher's own
+//!   FireFX, on the shooter); a projectile's flare and smoke trail
+//!   (`flare`, `smoke`: segments of puffs, each puff on its own 10 s
+//!   life, the segment fading as a whole).
 //!
 //! A key drawn through an effect shader (`library::shaded`: the
 //! refraction keys of heat and blasts) draws nothing.
 //!
 //! Several jitters add up (`jitter_at`, Open question 24).
 //!
-//! Known shortcuts (docs/tech-debt.md): a group not on an entity places
+//! Known shortcuts (docs/tech-debt.md): trail keys draw as camera-aligned
+//! strips whatever their `Allignment`; a group not on an entity places
 //! every key at the effect's point (the first-person muzzle flash is the
 //! front end's own, at the view model's socket); multi-key scale and colour curves are
 //! drawn as a ramp from the first key to the last (`rules::key_curve` is
@@ -58,6 +63,7 @@ use lithtech_formats::fxf::{FxKey, sample_keys};
 use super::{
     library::{FxLibrary, additive, material_name, shaded},
     rules::jitter_falloff,
+    trail::{Trail, TrailMode, TrailParams},
 };
 use crate::map::{
     ParticleRng,
@@ -80,10 +86,9 @@ pub fn effect_frame(normal: Vec3) -> Mat3 {
 struct KeyRun {
     started: bool,
     next_emit: f32,
-    /// A trail key's sections (`PolyTrail`): their points (metres) and
-    /// the group age each was laid at, oldest first; the next one's age.
-    trail: Vec<(Vec3, f32)>,
-    next_section: f32,
+    /// A trail key's points (`PolyTrail`) and what it draws with.
+    trail: Trail,
+    kit: Option<(TrailParams, usize)>,
 }
 
 /// A group playing.
@@ -118,6 +123,9 @@ pub struct Attach {
     pub pose: ParentPose,
     /// Hidden: nothing drawn or emitted, its clock frozen.
     pub hidden: bool,
+    /// Made for one burst (a launcher's own FireFX): placed from the pose
+    /// it was made with, living its length, not kept by a listing.
+    pub once: bool,
 }
 
 /// Where a group's parent is this frame (metres; its frame's columns its
@@ -198,9 +206,13 @@ pub struct CaFx {
     /// Groups to start later (a splat when its particle lands): (in
     /// seconds, name, point, normal).
     pending: Vec<(f32, String, Vec3, Vec3)>,
+    /// Trails of groups shut down smoothly, ageing out.
+    fading: Vec<(Trail, TrailParams, usize)>,
     rng: ParticleRng,
     /// Metres per unit.
     pub unit: f32,
+    /// The game's screen width in pixels (smoke puffs' size).
+    pub screen_width: f32,
     /// The next instance's tag.
     next_tag: u64,
 }
@@ -213,8 +225,10 @@ impl Default for CaFx {
             jitters: Vec::new(),
             detail: super::rules::DEFAULT_FX_DETAIL,
             pending: Vec::new(),
+            fading: Vec::new(),
             rng: ParticleRng::new(0xCAF0),
             unit: super::super::inventory::UNIT,
+            screen_width: DEFAULT_SCREEN_WIDTH,
             next_tag: TAG_BASE,
         }
     }
@@ -244,6 +258,28 @@ impl CaFx {
                 smooth,
                 pose,
                 hidden: false,
+                once: false,
+            }),
+        )
+    }
+
+    /// Start group `name` once on `parent` (a launcher's own FireFX: the
+    /// shooter's point and sockets as `pose` gives them): its keys place
+    /// themselves by their modes from that pose and it ends with its length.
+    pub fn attach_once(&mut self, lib: &FxLibrary, name: &str, parent: Entity, pose: ParentPose) -> bool {
+        let (at, frame) = (pose.at, pose.frame);
+        self.make(
+            lib,
+            name,
+            at,
+            frame,
+            Some(Attach {
+                parent,
+                looping: false,
+                smooth: true,
+                pose,
+                hidden: false,
+                once: true,
             }),
         )
     }
@@ -285,15 +321,24 @@ impl CaFx {
     /// out where they are; the others' particles go at once.
     pub fn shut_down(&mut self, particles: Option<&mut Particles>, mut keep: impl FnMut(Entity, &str) -> bool) {
         let mut gone: Vec<u64> = Vec::new();
-        self.instances.retain(|i| match &i.attach {
-            Some(a) if !keep(a.parent, &i.group) => {
-                if !a.smooth {
+        let mut fading = Vec::new();
+        self.instances.retain_mut(|i| match &i.attach {
+            Some(a) if !a.once && !keep(a.parent, &i.group) => {
+                if a.smooth {
+                    // Its trails stop growing and age out.
+                    for run in &mut i.keys {
+                        if let Some((params, material)) = run.kit.take() {
+                            fading.push((std::mem::take(&mut run.trail), params, material));
+                        }
+                    }
+                } else {
                     gone.push(i.tag);
                 }
                 false
             }
             _ => true,
         });
+        self.fading.extend(fading);
         if let Some(p) = particles {
             for t in gone {
                 p.kill_tagged(t);
@@ -339,7 +384,11 @@ impl CaFx {
         for inst in &mut instances {
             let Some(g) = lib.group(&inst.group) else { continue };
             if inst.attach.as_ref().is_some_and(|a| a.hidden) {
-                // Frozen: no time passes for it, nothing drawn.
+                // Frozen: no time passes for it, nothing drawn, its trails
+                // start over when it is shown again.
+                for run in &mut inst.keys {
+                    run.trail.clear();
+                }
                 continue;
             }
             inst.age += dt;
@@ -407,8 +456,8 @@ impl CaFx {
                     "Sprite" if first => self.sprite(k, base, frame, lib, particles, materials),
                     "PolyTrail" | "PolyTube" if attached => {
                         let at = base + frame * Vec3::from(k.vector("Offset").unwrap_or_default()) * self.unit;
-                        let u = key_time(k, t, looping && whole(k, length));
-                        self.trail(k, run, at, inst.age, live, u, lib, particles, materials);
+                        let smooth = inst.attach.as_ref().is_some_and(|a| a.smooth);
+                        self.trail(k, run, at, dt, live, smooth, lib, particles, materials);
                     }
                     "DynaLight" if first => self.lights.push(FxLight {
                         at: base + frame * Vec3::from(k.vector("Offset").unwrap_or_default()) * self.unit,
@@ -434,10 +483,17 @@ impl CaFx {
                 }
             }
         }
+        let mut fading = std::mem::take(&mut self.fading);
+        for (trail, params, material) in &mut fading {
+            trail.update(params, dt, Vec3::ZERO, TrailMode::ShuttingDown);
+            draw_trail(trail, params, *material, particles);
+        }
+        fading.retain(|(t, _, _)| t.drawn());
+        self.fading = fading;
         // A group on its parent lives until shut down (`shut_down`; one
         // that doesn't loop is spent after its length and isn't made
         // again); any other ends with its length.
-        instances.retain(|i| i.attach.is_some() || lib.group(&i.group).is_some_and(|g| i.age <= g.length() + 0.05));
+        instances.retain(|i| i.attach.as_ref().is_some_and(|a| !a.once) || lib.group(&i.group).is_some_and(|g| i.age <= g.length() + 0.05));
         // Groups started while stepping (none: `pending` holds those).
         instances.append(&mut self.instances);
         self.instances = instances;
@@ -614,73 +670,103 @@ impl CaFx {
         particles.add(one_frame(p));
     }
 
-    /// A trail key (`PolyTrail`, effects_sounds.md "The effect file":
-    /// `PolyTube`): a section laid where the key is every
-    /// `SectionInterval` s, at most `TrailLen`, each kept
-    /// `SectionLifespan` s; drawn this frame from the oldest section to
-    /// the key's point as camera-facing strips `TrailWidth` u wide, the
-    /// texture's u from 0 at the tail to 1 at the head, coloured by the
-    /// key's colour keys at key time `u`. `live`: the key is running
-    /// (else no new sections and nothing drawn).
+    /// A trail key (`PolyTrail`, effects_sounds.md Follow-up (2026-10-31)
+    /// 1) with the key at `at` (metres): its points (`trail::Trail`),
+    /// drawn as strips between them. `live`: the key is running; past its
+    /// end the points age out (`smooth` shut-down) or go at once.
     #[allow(clippy::too_many_arguments)]
-    fn trail(&mut self, k: &FxKey, run: &mut KeyRun, at: Vec3, age: f32, live: bool, u: f32, lib: &FxLibrary, particles: &mut Particles, materials: &MapParticles) {
-        let interval = k.float("SectionInterval").unwrap_or(0.1).max(1e-3);
-        let len = k.int("TrailLen").unwrap_or(50).max(1) as usize;
-        let lifespan = k.float("SectionLifespan").unwrap_or(1.0);
-        let width = k.float("TrailWidth").unwrap_or(20.0) * self.unit;
-        run.trail.retain(|(_, born)| age - born <= lifespan);
-        if !live {
+    fn trail(&mut self, k: &FxKey, run: &mut KeyRun, at: Vec3, dt: f32, live: bool, smooth: bool, lib: &FxLibrary, particles: &mut Particles, materials: &MapParticles) {
+        let Some(params) = TrailParams::from_key(k, self.unit) else { return };
+        let Some(texture) = lib.texture_of(k) else { return };
+        let Some(material) = materials.find(&material_name(&texture, additive(k))) else { return };
+        if !live && !smooth {
             run.trail.clear();
             return;
         }
-        if run.trail.is_empty() || age >= run.next_section {
-            run.trail.push((at, age));
-            run.next_section = age + interval;
-            if run.trail.len() > len {
-                let cut = run.trail.len() - len;
-                run.trail.drain(..cut);
-            }
-        }
-        let Some(texture) = lib.texture_of(k) else { return };
-        let Some(material) = materials.find(&material_name(&texture, additive(k))) else { return };
-        let c = color_at(&k.color_keys(), u);
-        let mut points: Vec<Vec3> = run.trail.iter().map(|p| p.0).collect();
-        points.push(at);
-        let n = (points.len() - 1) as f32;
-        if n < 1.0 {
-            return;
-        }
-        let mut group = one_frame_group();
-        for (i, w) in points.windows(2).enumerate() {
-            if w[0].distance_squared(w[1]) < 1e-12 {
-                continue;
-            }
-            let mut p = Particle::new(w[0], ONE_FRAME, material, 0.0);
-            p.shape = Shape::Ribbon {
-                to: w[1],
-                width: [width, width],
-                u: (i as f32 / n, (i + 1) as f32 / n),
-            };
-            p.color = c.truncate();
-            p.alpha = c.w;
-            group.particles.push(p);
-        }
-        particles.add(group);
+        let mode = if live { TrailMode::Active } else { TrailMode::ShuttingDown };
+        run.trail.update(&params, dt, at, mode);
+        draw_trail(&run.trail, &params, material, particles);
+        run.kit = Some((params, material));
     }
 }
 
+/// A trail's strips this frame: a `Shape::Ribbon` per segment, the
+/// strip's one half-width, each end's own colour, joints averaged.
+fn draw_trail(trail: &Trail, params: &TrailParams, material: usize, particles: &mut Particles) {
+    if !trail.drawn() {
+        return;
+    }
+    let width = 2.0 * trail.half_width_m(params.unit);
+    let pts = &trail.points;
+    let mut group = one_frame_group();
+    for i in 0..pts.len() - 1 {
+        let (a, b) = (&pts[i], &pts[i + 1]);
+        let mut p = Particle::new(a.at, ONE_FRAME, material, 0.0);
+        p.shape = Shape::Ribbon {
+            to: b.at,
+            width: [width, width],
+            u: (trail.drawn_u(i), trail.drawn_u(i + 1)),
+            end_color: Some(b.color),
+            prev: i.checked_sub(1).map(|j| pts[j].at),
+            next: pts.get(i + 2).map(|q| q.at),
+        };
+        p.color = a.color.truncate();
+        p.alpha = a.color.w;
+        group.particles.push(p);
+    }
+    particles.add(group);
+}
+
 /// A projectile's smoke trail as it goes (special_weapons.md Follow-up
-/// 3): its clock, its last point (metres) and its segments' start times.
+/// 3, effects_sounds.md Follow-up (2026-10-31) 2): its clock, its last
+/// point (metres) and its segments.
 #[derive(Component, Clone, Debug, Default, PartialEq)]
 pub struct SmokeTrail {
     pub kind: u32,
     pub age: f32,
     pub last: Option<Vec3>,
-    pub segments: Vec<f32>,
+    pub segments: Vec<SmokeSegment>,
+}
+
+/// One trail segment: made at `born` (trail clock), emitting puffs for
+/// its type's time, then fading as a whole until it is removed; its
+/// puffs are the particle groups tagged `tag`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SmokeSegment {
+    pub born: f32,
+    /// The trail clock at its last emission.
+    pub last_emit: f32,
+    pub tag: u64,
+}
+
+impl SmokeSegment {
+    /// The segment's own alpha: 1 while it emits, then falling to 0 over
+    /// `life` seconds after its last emission.
+    pub fn alpha(&self, now: f32, emitting: f32, life: f32) -> f32 {
+        if now - self.born < emitting {
+            1.0
+        } else {
+            (1.0 - (now - self.last_emit) / life).clamp(0.0, 1.0)
+        }
+    }
 }
 
 /// A new trail segment every this many seconds.
 pub const SMOKE_SEGMENT_INTERVAL: f32 = 0.1;
+
+/// Each puff's total life (s), at the release build's detail.
+pub const PUFF_LIFE: f32 = 10.0;
+
+/// Emission steps a segment makes in one update (the release build's).
+pub const PUFF_STEPS: usize = 2;
+
+/// A puff's square at its birth is `4 * PUFF_RADIUS / screen width`
+/// units wide (the trail's particle radius 2000 over the screen's width
+/// in pixels, times 4).
+pub const PUFF_RADIUS: f32 = 2000.0;
+
+/// Screen width (pixels) assumed until the front end gives the real one.
+pub const DEFAULT_SCREEN_WIDTH: f32 = 1024.0;
 
 impl CaFx {
     /// A projectile's flare this frame (special_weapons.md Follow-up 3):
@@ -693,51 +779,82 @@ impl CaFx {
         particles.add(one_frame(Particle::new(at, ONE_FRAME, material, px * scale * self.unit * 0.5)));
     }
 
-    /// A smoke trail's frame (special_weapons.md Follow-up 3) with the
-    /// projectile now at `at` (metres): a segment starts every 0.1 s and
-    /// emits for its type's time; each emitting segment fills the way
-    /// from the last point to this one with puffs, 5 steps at high
-    /// detail, else 2 (none at low), ±0.5 u jitter; each puff grey
-    /// (150..230 of 255), alpha 0.9 → 0 and scale 1 → 15 over the
-    /// segment's life, drifting 5-6 u/s up and ±5 u/s along z.
+    /// A smoke trail's frame (special_weapons.md Follow-up 3, effects_sounds.md
+    /// Follow-up (2026-10-31) 2) with the projectile now at `at` (metres):
+    /// a segment starts every 0.1 s and emits on every update for its
+    /// type's time; an emitting segment fills the way from the last point
+    /// to this one with puffs (`PUFF_STEPS` per update, none at low
+    /// detail), ±0.5 u jitter, each grey (150..230 of 255), alpha 0.9 → 0
+    /// and scale 1 → 15 over its own `PUFF_LIFE` s, a square of side
+    /// 4 · (2000 / screen width) · scale u, drifting 5-6 u/s up and ±5 u/s
+    /// along z. After it stops, a segment's whole alpha falls from 1 to 0
+    /// over the type's life, then it and its puffs go. Textured with the
+    /// type's sprite when the install has it, else plain squares.
     #[allow(clippy::too_many_arguments)]
     pub fn smoke(&mut self, lib: &FxLibrary, trail: &mut SmokeTrail, at: Vec3, dt: f32, particles: &mut Particles, materials: &MapParticles) {
         let look = super::library::smoke_trail(trail.kind);
         let first = trail.last.is_none();
         let from = trail.last.replace(at).unwrap_or(at);
         if first {
-            trail.segments.push(0.0);
+            self.next_tag += 1;
+            trail.segments.push(SmokeSegment { born: 0.0, last_emit: 0.0, tag: self.next_tag });
         } else {
             trail.age += dt;
         }
-        while trail.segments.last().is_some_and(|s| trail.age - s >= SMOKE_SEGMENT_INTERVAL - 1e-6) {
-            let next = trail.segments.last().copied().unwrap_or(0.0) + SMOKE_SEGMENT_INTERVAL;
-            trail.segments.push(next);
+        while trail.segments.last().is_some_and(|s| trail.age - s.born >= SMOKE_SEGMENT_INTERVAL - 1e-6) {
+            let born = trail.segments.last().map_or(0.0, |s| s.born) + SMOKE_SEGMENT_INTERVAL;
+            self.next_tag += 1;
+            trail.segments.push(SmokeSegment { born, last_emit: born, tag: self.next_tag });
         }
-        trail.segments.retain(|s| trail.age - s < look.emitting);
-        if self.detail == 0 || first {
-            return;
-        }
-        let Some(texture) = lib.sprites.get(&super::library::normalize(look.sprite)) else { return };
-        let Some(material) = materials.find(&material_name(texture, false)) else { return };
+        let texture = lib.sprites.get(&super::library::normalize(look.sprite)).and_then(|t| materials.find(&material_name(t, false)));
+        let material = texture.or_else(|| materials.find(super::library::UNTEXTURED_PUFF));
         let u = self.unit;
-        let steps = if self.detail >= 2 { 5 } else { 2 };
-        let mut group = ParticleGroup::new(Motion::default());
-        for _ in 0..trail.segments.len() {
-            for i in 1..=steps {
-                let jitter = Vec3::new(self.rng.float(-0.5, 0.5), self.rng.float(-0.5, 0.5), self.rng.float(-0.5, 0.5));
-                let p_at = from.lerp(at, i as f32 / steps as f32) + jitter * u;
-                let mut p = Particle::new(p_at, look.life, material, 0.0);
-                let grey = self.rng.float(150.0, 230.0) / 255.0;
-                p.color = Vec3::splat(grey);
-                p.alpha = 0.9;
-                p.fade = Fade::Ramp(Ramp::linear(1.0, 0.0));
-                p.size = Ramp::linear(2.0 * u, 2.0 * 15.0 * u);
-                p.velocity = Vec3::new(0.0, self.rng.float(5.0, 6.0), self.rng.float(-5.0, 5.0)) * u;
-                group.particles.push(p);
+        let half = PUFF_RADIUS / self.screen_width.max(1.0) * 2.0 * u;
+        let now = trail.age;
+        for seg in &mut trail.segments {
+            if now - seg.born < look.emitting && !first && self.detail > 0 {
+                if let Some(material) = material {
+                    seg.last_emit = now;
+                    let mut puffs = Vec::new();
+                    for i in 0..PUFF_STEPS {
+                        let jitter = Vec3::new(self.rng.float(-0.5, 0.5), self.rng.float(-0.5, 0.5), self.rng.float(-0.5, 0.5));
+                        let p_at = from.lerp(at, (i + 1) as f32 / PUFF_STEPS as f32) + jitter * u;
+                        let mut p = Particle::new(p_at, PUFF_LIFE + i as f32 * dt / PUFF_STEPS as f32, material, 0.0);
+                        let grey = self.rng.float(150.0, 230.0) / 255.0;
+                        p.color = Vec3::splat(grey);
+                        p.alpha = 0.9 * seg.alpha(now, look.emitting, look.life);
+                        p.fade = Fade::Ramp(Ramp::linear(1.0, 0.0));
+                        p.size = Ramp::linear(half, half * 15.0);
+                        p.velocity = Vec3::new(0.0, self.rng.float(5.0, 6.0), self.rng.float(-5.0, 5.0)) * u;
+                        puffs.push(p);
+                    }
+                    match particles.groups.iter_mut().find(|g| g.tag == Some(seg.tag)) {
+                        Some(g) => g.particles.extend(puffs),
+                        None => {
+                            let mut g = ParticleGroup::new(Motion::default());
+                            g.capped = false;
+                            g.tag = Some(seg.tag);
+                            g.particles = puffs;
+                            particles.add(g);
+                        }
+                    }
+                }
+            } else if let Some(g) = particles.groups.iter_mut().find(|g| g.tag == Some(seg.tag)) {
+                // The whole segment fades: each puff's alpha is its own
+                // times the segment's.
+                let a = 0.9 * seg.alpha(now, look.emitting, look.life);
+                for p in &mut g.particles {
+                    p.alpha = a;
+                }
             }
         }
-        particles.add(group);
+        trail.segments.retain(|seg| {
+            let alive = now - seg.born < look.emitting || now - seg.last_emit < look.life;
+            if !alive {
+                particles.kill_tagged(seg.tag);
+            }
+            alive
+        });
     }
 }
 
@@ -776,7 +893,7 @@ fn key_time(k: &FxKey, t: f32, repeats: bool) -> f32 {
     if repeats { u.rem_euclid(1.0) } else { u.clamp(0.0, 1.0) }
 }
 
-fn color_at(keys: &[(f32, [f32; 4])], t: f32) -> Vec4 {
+pub(super) fn color_at(keys: &[(f32, [f32; 4])], t: f32) -> Vec4 {
     if keys.is_empty() {
         return Vec4::ONE;
     }
