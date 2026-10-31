@@ -4,7 +4,8 @@
 //! and walk from, in zones' and water's absence, and the map's spawn
 //! points when the mesh has no areas; inside the map only: never on a
 //! mesh generated for another walker (bots' climbs: de_aztec's spawn over
-//! its wall), never in a solid or void leaf.
+//! its wall), never in a solid or void leaf; off the areas' centred grid
+//! (de_dust2's "seam": a row of eyes in the plane where two faces meet).
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemState, prelude::*};
@@ -387,4 +388,33 @@ fn facing_costs_well_under_a_millisecond() {
     let each = t.elapsed() / n as u32;
     println!("facing_at: {each:?} per spawn");
     assert!(each < std::time::Duration::from_millis(1), "{each:?} per spawn");
+}
+
+/// An area symmetric about x = 0 and z = 0, as nav areas often are about
+/// a line of the map's own grid (where its faces meet: de_dust2's y 2304
+/// "seam", 2026-10-30): centred, 1.5 m apart, every spot would sit on
+/// x, z = 0 (mod 1.5 m), a whole row in each centre plane. Nudged, few
+/// are within 1 cm of that lattice, none moves more than `SPOT_NUDGE`,
+/// and all stay half a metre inside the area.
+#[test]
+fn spots_are_nudged_off_the_areas_centred_grid() {
+    let mut sim = started(DEF, |app| {
+        app.insert_resource(NavMesh {
+            areas: vec![area(1, -8.5, -8.5, 8.5, 8.5, 0.0)],
+            ..default()
+        });
+    });
+    let spots = spawns::candidates(sim.app.world_mut());
+    assert!(spots.len() > 50, "{} spots", spots.len());
+    let off = |c: f32| {
+        let r = c.rem_euclid(spawns::SPOT_GRID);
+        r.min(spawns::SPOT_GRID - r)
+    };
+    let on = spots.iter().filter(|s| off(s.x) < 0.01 || off(s.z) < 0.01).count();
+    assert!(on * 7 < spots.len(), "{on} of {} spots on the centred grid's lines", spots.len());
+    assert!(
+        spots.iter().all(|s| off(s.x) <= spawns::SPOT_NUDGE + 1e-4 && off(s.z) <= spawns::SPOT_NUDGE + 1e-4),
+        "moved at most the nudge"
+    );
+    assert!(spots.iter().all(|s| s.x.abs() <= 8.0 + 1e-4 && s.z.abs() <= 8.0 + 1e-4), "inside the area");
 }

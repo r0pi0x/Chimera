@@ -212,30 +212,32 @@ the user's go-ahead: no Actions runs unless asked.
   playtest turn the knife finale on (Host settings) or set the odds to
   1. The melee band is the ladder's trailing melee rungs (the power
   curve's melee band, `minigame::power`).
-- **A vertical seam through the frame on de_dust2.** A 2026-10-30 capture
-  (Lucker Party, outside the arch toward B tunnels) shows a hard vertical
-  line down the middle of the frame. Left of it the ground is a
-  different surface from the right, and a wall is cut off along the same
-  line. *Diagnosed 2026-10-29: not a rendering fault; confirm against a
-  CS:S capture.* The spot is a party spawn, `setpos -1031.46 2303.15
-  32.67; setang 0 0 0` (eye; between CT spawn and B doors, facing east).
-  The line is the edge at y 2304 between two displacements:
-  `de_dust/rockwall_blend` to the north (left; its sand mound also hides
-  the tower's foot) and `de_dust/groundsand_blend` to the south, with the
-  `overlays/brickroad01` paving overlay stopping at y 2296. Both sides show
-  `groundsand03a` (blend weights 1.0 and 0.97 at the edge), but with the
-  texture turned about 90° and offset between the two faces' mappings, and
-  only `groundsand_blend` has a bump map for it. The spawn grid
-  (`minigame::spawns`, spots on the nav mesh facing one of eight
-  directions) put the eye exactly in the vertical plane of that edge and
-  looking along it, so the edge projects onto the frame's middle column:
-  27-33 units sideways the line moves off-centre (+32 / -15 px), and it
-  stays put on the ground from above. Unchanged with `r_novis 1`,
-  `r_shadows 0`, `mat_antialias 0`, `mat_colorcorrection 0`, the sky
-  camera off, and `CHIMERA_GPU_PREPROCESS=1 CHIMERA_SKIP_OUTPUTS=0`. To
-  settle whether CS:S draws the edge as sharply: `refcmp capture-ref
-  --only seam_b_mound` on the Windows PC (views `seam_b_mound`,
-  `seam_b_mound_south` in tools/refcmp/de_dust2.toml), then `report`.
+- **A vertical seam through the frame on de_dust2: spawns fixed; confirm
+  the edge against a CS:S capture.** A 2026-10-30 capture (Lucker Party,
+  outside the arch toward B tunnels) showed a hard vertical line down the
+  middle of the frame. The spot was a party spawn, `setpos -1031.46
+  2303.15 32.67; setang 0 0 0` (eye; between CT spawn and B doors, facing
+  east), 0.85 units from the edge at y 2304 between two displacements,
+  looking along it: `de_dust/rockwall_blend` north (no `$bumpmap`, so
+  compiled without bump lightmaps) and `de_dust/groundsand_blend` south
+  (bumped). Everything in that vertical plane (the edge, the tower's
+  wall seen end-on) lands on the frame's middle column. *Not a rendering
+  fault (2026-10-31):* the albedo debug view shows no line (the same
+  `groundsand03a` both sides), and the two flat lightmaps agree along the
+  edge (`heavy::map_de_dust2::the_b_mound_seam_is_where_bump_lighting_stops`);
+  the line is the bump lighting stopping there, drawn the way
+  specs/cs_source/shaders.md says CS:S draws a bumped face next to a flat
+  one. *The spawns' part, fixed:* spots were centred in their nav areas,
+  which are often symmetric about a line of the map's grid (35 of
+  de_dust2's spots sat on that one edge's line; 2.6 times chance within a
+  unit of a 64-unit line); each spot is now nudged a seeded amount off
+  the centred grid (`minigame::spawns::SPOT_NUDGE`; tests
+  `spawns::spots_are_nudged_off_the_areas_centred_grid` and, on
+  de_dust2, `heavy::spawns::dust2s_spawn_eyes_keep_off_its_grid_lines`:
+  now at chance). Left: `refcmp capture-ref --only seam_b_mound` on the
+  Windows PC (views `seam_b_mound`, `seam_b_mound_south` in
+  tools/refcmp/de_dust2.toml), then `report`, to see that CS:S draws the
+  edge as sharply.
 - **Rung attachments may not fit their gun, or not show (user, 2026-10-29): fixed, confirm in a playtest.**
   In the Escape-menu screenshots, the FMG-9's rung listed a holosight and
   the Luger P08's a silencer, but neither shows on the gun, and the user

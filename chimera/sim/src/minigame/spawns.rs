@@ -11,8 +11,13 @@
 //!   0.8 m ledges a player can't, and once left de_aztec over its walls),
 //!   a grid
 //!   about `SPOT_GRID` m apart in the areas that can be walked to from the
-//!   spawn points and back (the mesh's main connected region), in a
-//!   seeded random order. Each spot is checked (`spot_ok`): a floor under
+//!   spawn points and back (the mesh's main connected region), each spot
+//!   moved a seeded random amount (up to `SPOT_NUDGE` per axis) off the
+//!   area's centred grid, in a seeded random order. The nudge keeps eyes
+//!   off the map's grid lines: areas are often symmetric about one, and
+//!   centred spots put a whole row of eyes in the plane where two faces
+//!   meet, which then shows as a vertical line through the frame (de_dust2's
+//!   "seam" between a bump-lit and a flat-lit displacement, 2026-10-30). Each spot is checked (`spot_ok`): a floor under
 //!   it, a character's capsule fits there without touching the world, it
 //!   is inside the map (on a map with visibility data, its chest in a
 //!   leaf of a cluster: not solid, not the void outside the world), and
@@ -71,6 +76,11 @@ use super::def::Facing;
 
 /// The grid of spots in a navigation area (m).
 pub const SPOT_GRID: f32 = 1.5;
+/// The most a spot moves off its area's centred grid, either way on each
+/// axis (m).
+pub const SPOT_NUDGE: f32 = SPOT_GRID / 4.0;
+/// Mixed into the seed for the nudges' draws.
+const SPOT_NUDGE_SEED: u32 = 0x5EA4_0FF5;
 /// Most spots kept for a map.
 pub const MAX_SPOTS: usize = 1500;
 /// Spawns that may find the collision not ready before the spawn points
@@ -343,6 +353,8 @@ fn build(world: &mut World, points: &[Vec3], cap: usize) -> SpawnSpots {
         }
     };
     let mut rng = Rng::new(seed);
+    // Its own draws, so the shuffle's stay as they were.
+    let mut nudge = Rng::new(seed ^ SPOT_NUDGE_SEED);
     let mut raw: Vec<(f32, f32, f32)> = Vec::new();
     for (i, ok) in region(nav, points).into_iter().enumerate() {
         let a = &nav.areas[i];
@@ -357,9 +369,23 @@ fn build(world: &mut World, points: &[Vec3], cap: usize) -> SpawnSpots {
             (n, (len - (n - 1) as f32 * SPOT_GRID) / 2.0)
         };
         let ((nx, ox), (nz, oz)) = (axis(size.x), axis(size.y));
+        // Each spot moved off the centred grid by up to `SPOT_NUDGE`,
+        // staying `m` inside the area (a quarter of a narrow one's width):
+        // areas are often symmetric about a line of the map's own grid,
+        // where its faces meet, and an eye in that plane sees the edge as
+        // a vertical line through the frame (de_dust2's "seam").
+        // Drawn within the part of the nudge's reach that is inside (not
+        // clamped, which would stack spots on the inset's line).
+        let nudged = |lo: f32, hi: f32, at: f32, r: f32| {
+            let inset = m.min((hi - lo) / 4.0);
+            let (a, b) = ((at - SPOT_NUDGE).max(lo + inset), (at + SPOT_NUDGE).min(hi - inset));
+            if a < b { a + r * (b - a) } else { at }
+        };
         for ix in 0..nx {
             for iz in 0..nz {
                 let (x, z) = (a.min.x + ox + ix as f32 * SPOT_GRID, a.min.y + oz + iz as f32 * SPOT_GRID);
+                let x = nudged(a.min.x, a.max.x, x, nudge.next());
+                let z = nudged(a.min.y, a.max.y, z, nudge.next());
                 raw.push((x, z, a.height_at(x, z)));
             }
         }

@@ -26,8 +26,10 @@ fn the_server_plays_the_gun_game() {
     assert_eq!(testkit::active_id(sim.app.world(), a), Some(cs_source::game::weapons::GLOCK));
     // Protection (2 s) over, b 4 m in front of a.
     sim.seconds(1.5);
-    let at = sim.position(a) + Vec3::new(0.0, 0.0, -4.0);
-    place(&mut sim, b, at);
+    // On the greybox's open middle (a spawn spot may be near a ledge).
+    let open = Vec3::new(0.0, 1.0, 0.0);
+    place(&mut sim, a, open);
+    place(&mut sim, b, open + Vec3::new(0.0, 0.0, -4.0));
     sim.seconds(0.5);
     assert!(shoot_until_dead(&mut sim, a, b, 8.0), "the Glock kills");
     assert_eq!(sim.app.world().get::<Rung>(a).map(|r| r.0), Some(1));
