@@ -13,38 +13,43 @@
 //! Riding and meeting movers on a client (10, Client). After each tick
 //! the server writes every updating active world model (doors, sliding,
 //! rotating and spinning world models whose countdown runs) with what
-//! changes as it runs (`movers::AwmMotion`) and the next object frame's
-//! time on an entity of its own (`NetCaMotion`, kept by server tick in
-//! the client's `Snapshots`). A client runs its own player ahead of the
-//! server, so in each predicted and each replayed tick it puts its own
-//! copies of those machines where the server had them after the tick
-//! before (`place_motion`, `core::Predict::PlaceMovers`: from the newest
-//! state at or before it, stepped through the server frames since with
-//! the server's own code, `movers::update_when_due`, and our player's box
-//! as its predicted ticks had it); its movement then sweeps the nodes
-//! where the server's did. After movement (`step_motion`,
+//! changes as it runs (`movers::AwmMotion`), every running keyframer
+//! with its own (`keyframer::KfMotion`) and the poses of the objects it
+//! moves, and the next object frame's time on an entity of its own
+//! (`NetCaMotion`, kept by server tick in the client's `Snapshots`). A
+//! client runs its own player ahead of the server, so in each predicted
+//! and each replayed tick it puts its own copies of those machines where
+//! the server had them after the tick before (`place_motion`,
+//! `core::Predict::PlaceMovers`: from the newest state at or before it,
+//! stepped through the server frames since with the server's own code,
+//! `movers::update_when_due`, `Keyframer::frame` and `keyframer::
+//! placements`, in the server's object order, and our player's box as
+//! its predicted ticks had it); its movement then sweeps the nodes where
+//! the server's did. After movement (`step_motion`,
 //! `core::Predict::CarryRiders`), when the server's 20 Hz frame falls on
 //! the tick, it steps them once more with our player's box: a step into
 //! the player is refused as on the server (6), and a player standing on
-//! one is carried by its move (`movers::carried`), as the server's frame
-//! carries riders. The stepped poses go onto the client's object world,
-//! nodes and volumes (attachments follow); the server's poses (`read`)
-//! don't overwrite them (`CaObjects::predicted`). What the client can't
-//! know ahead (a door starting, a trigger, a command, another player in
-//! the way) shows up as a prediction error when the server's state
-//! arrives, corrected and eased like any other.
+//! one (a keyframed solid world model too) is carried by its move
+//! (`movers::carried`), as the server's frame carries riders. The stepped
+//! poses go onto the client's object world, nodes and volumes
+//! (attachments follow: HGOILRIG's rising sea carries its water and gas
+//! volumes, its keyframers the water sounds); the server's poses
+//! (`read`) don't overwrite them (`CaObjects::predicted`). What the
+//! client can't know ahead (a door or keyframer starting, a key's
+//! command, a trigger, another player in the way) shows up as a
+//! prediction error when the server's state arrives, corrected and eased
+//! like any other.
 //!
 //! Known shortcuts: the spec leaves the client's push and interpolation
 //! open (Open questions 6 and 14: the original pushes its own player
 //! with each server update's move and draws movers interpolated in the
 //! past, rotating ones snapped); ours follows the engine's prediction as
 //! for Source's movers instead: movers stepped to the predicted tick,
-//! the player carried and blocked there, rotating ones too. Keyframed
-//! objects (and what they carry, HGOILRIG's rising sea and its volumes)
-//! are not stepped: they and their volumes are drawn at the server's
-//! newest pose, so a client swimming in the rising sea is corrected from
-//! the server. Only our own player meets the stepped movers on the
-//! client (others are drawn in the past).
+//! the player carried and blocked there, rotating ones too. A stepped
+//! keyframer faces its target where the client has the target when the
+//! stepping starts (no stock keyframer has one). Only our own player
+//! meets the stepped movers on the client (others are drawn in the
+//! past).
 
 use bevy::prelude::*;
 use bevy_replicon::{prelude::*, shared::server_entity_map::ServerEntityMap};
@@ -54,7 +59,8 @@ use super::super::grenades::SERVER_FRAME;
 use super::{
     CaObjects, apply_effects,
     commands::{ObjId, Who},
-    movers::{Awm, AwmMotion, CharBox, Pose},
+    keyframer::{self, KfMotion, Keyframer},
+    movers::{Awm, AwmMotion, Blocking, CharBox, Pose},
     runtime::{Kind, ObjSound},
 };
 use crate::{
@@ -84,6 +90,27 @@ pub struct NetCaMotion {
     /// None while nothing updates.
     pub next_frame: Option<f64>,
     pub movers: Vec<NetMover>,
+    /// The running keyframers (built, active, not paused).
+    pub keyframers: Vec<NetKeyframer>,
+}
+
+/// One running keyframer: what changes as it runs and the objects it
+/// moves as the server has them.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct NetKeyframer {
+    pub id: u32,
+    pub motion: KfMotion,
+    pub objects: Vec<NetPlaced>,
+}
+
+/// An object a keyframer moves.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub struct NetPlaced {
+    pub id: u32,
+    pub pos: Vec3,
+    pub rot: Quat,
+    /// A solid world model (characters stand on it and are carried).
+    pub carries: bool,
 }
 
 /// One updating active world model.
@@ -114,18 +141,31 @@ pub struct CaMotionPredict {
 const OWN_KEPT: usize = 256;
 
 impl CaMotionPredict {
-    /// The stepped movers' poses.
+    /// The stepped objects' poses (active world models and what
+    /// keyframers move).
     pub fn poses(&self) -> Vec<(ObjId, Pose)> {
-        self.movers.iter().map(|m| (m.id, m.pose)).collect()
+        poses(&self.movers)
     }
 }
 
+/// One machine a client steps, by object id (the server's update order).
 #[derive(Debug, Clone)]
 struct Stepped {
     id: ObjId,
-    awm: Awm,
-    pose: Pose,
-    solid: bool,
+    run: Run,
+}
+
+#[derive(Debug, Clone)]
+enum Run {
+    /// An active world model.
+    Awm { awm: Box<Awm>, pose: Pose, solid: bool },
+    /// A keyframer with the objects it moves (id, pose, carries riders)
+    /// and where its target is (taken when the stepping starts).
+    Kf {
+        kf: Box<Keyframer>,
+        objects: Vec<(ObjId, Pose, bool)>,
+        target: Option<Vec3>,
+    },
 }
 
 /// The objects that differ from the map's start, on one replicated
@@ -273,10 +313,39 @@ fn write_motion(world: &mut World) {
             _ => None,
         })
         .collect();
+    let keyframers: Vec<NetKeyframer> = o
+        .world
+        .objects
+        .iter()
+        .enumerate()
+        .filter(|(_, ob)| !ob.removed)
+        .filter_map(|(i, ob)| match &ob.kind {
+            Kind::KeyFramer(k) if k.running() => Some(NetKeyframer {
+                id: i as u32,
+                motion: k.motion(),
+                objects: o
+                    .world
+                    .controlled(k)
+                    .into_iter()
+                    .map(|c| {
+                        let p = &o.world.objects[c as usize];
+                        NetPlaced {
+                            id: c,
+                            pos: p.pose.pos,
+                            rot: p.pose.rot,
+                            carries: p.solid && p.is_world_model(),
+                        }
+                    })
+                    .collect(),
+            }),
+            _ => None,
+        })
+        .collect();
     let now = NetCaMotion {
         map,
-        next_frame: (!movers.is_empty()).then_some(o.next_frame),
+        next_frame: (!movers.is_empty() || !keyframers.is_empty()).then_some(o.next_frame),
         movers,
+        keyframers,
     };
     let have = world.query::<(Entity, &NetCaMotion)>().iter(world).next().map(|(e, n)| (e, n == &now));
     match have {
@@ -319,41 +388,86 @@ fn own_box(world: &World, player: Entity, at: Vec3, scale: f32) -> Option<CharBo
     ))
 }
 
-/// One server frame of the stepped movers (in object order, as the
-/// server's frame updates them), with `chars` as the characters they meet;
-/// each step carries the riders' boxes along. Returns how far each
-/// character was carried.
+/// The stepped objects' poses.
+fn poses(movers: &[Stepped]) -> Vec<(ObjId, Pose)> {
+    let mut out = Vec::new();
+    for m in movers {
+        match &m.run {
+            Run::Awm { pose, .. } => out.push((m.id, *pose)),
+            Run::Kf { objects, .. } => out.extend(objects.iter().map(|(o, p, _)| (*o, *p))),
+        }
+    }
+    out
+}
+
+/// Characters standing on a world model moved from `from` to `to` move
+/// with it (10); returns how far each was carried into `carried`.
+fn carry(chars: &mut [CharBox], riders: &[usize], from: &Pose, to: &Pose, carried: &mut [Vec3]) {
+    for &i in riders {
+        let d = super::movers::carried(&chars[i], from, to);
+        chars[i].min += d;
+        chars[i].max += d;
+        carried[i] += d;
+    }
+}
+
+/// One server frame of the stepped machines (in object order, as the
+/// server's frame updates them), with `chars` as the characters they
+/// meet: active world models' updates (`movers::update_when_due`) and
+/// running keyframers' (`Keyframer::frame`, `keyframer::placements`;
+/// their keys' sounds and commands are the server's); each move carries
+/// the riders' boxes along. Returns how far each character was carried.
 fn step_frame(movers: &mut [Stepped], chars: &mut [CharBox], at: f64) -> Vec<Vec3> {
     let mut carried = vec![Vec3::ZERO; chars.len()];
     let mut out = Vec::new();
     for m in movers.iter_mut() {
-        out.clear();
-        let Some((next, riders)) =
-            super::movers::update_when_due(&mut m.awm, &m.pose, m.solid, chars, at, SERVER_FRAME as f32, &mut out)
-        else {
-            continue;
-        };
-        for i in riders {
-            let d = super::movers::carried(&chars[i], &m.pose, &next);
-            chars[i].min += d;
-            chars[i].max += d;
-            carried[i] += d;
+        match &mut m.run {
+            Run::Awm { awm, pose, solid } => {
+                out.clear();
+                let Some((next, riders)) =
+                    super::movers::update_when_due(awm, pose, *solid, chars, at, SERVER_FRAME as f32, &mut out)
+                else {
+                    continue;
+                };
+                carry(chars, &riders, pose, &next, &mut carried);
+                *pose = next;
+            }
+            Run::Kf { kf, objects, target } => {
+                if !kf.running() {
+                    continue;
+                }
+                let f = kf.frame(SERVER_FRAME as f32);
+                kf.snap = false;
+                let Some((pos, rot)) = f.place else { continue };
+                let now: Vec<(ObjId, Pose)> = objects.iter().map(|(o, p, _)| (*o, *p)).collect();
+                let places = keyframer::placements(kf, pos, rot, &now, *target);
+                for ((_, pose, carries), new) in objects.iter_mut().zip(places) {
+                    if new != *pose {
+                        let riders = Blocking {
+                            chars: &*chars,
+                            solid: *carries,
+                        }
+                        .riders(pose);
+                        carry(chars, &riders, pose, &new, &mut carried);
+                    }
+                    *pose = new;
+                }
+            }
         }
-        m.pose = next;
     }
     carried
 }
 
-/// The stepped movers onto the client's own object world, their nodes and
+/// The stepped objects onto the client's own object world, their nodes and
 /// volumes (attachments follow, `ObjectWorld::set_pose`); those the
 /// prediction places aren't taken from the server's poses (`read`).
 fn show_motion(world: &mut World, movers: &[Stepped]) {
     {
         let mut o = world.resource_mut::<CaObjects>();
         let mut placed: Vec<ObjId> = Vec::new();
-        for m in movers {
-            o.world.set_pose(m.id, m.pose);
-            let mut stack = vec![m.id];
+        for (id, pose) in poses(movers) {
+            o.world.set_pose(id, pose);
+            let mut stack = vec![id];
             while let Some(id) = stack.pop() {
                 if !placed.contains(&id) {
                     placed.push(id);
@@ -413,16 +527,15 @@ fn place_motion(world: &mut World) {
     };
     let mut movers: Vec<Stepped> = {
         let o = world.resource::<CaObjects>();
-        net.movers
-            .iter()
-            .filter_map(|m| {
-                let ob = o.world.objects.get(m.id as usize)?;
-                let mut awm = ob.awm()?.clone();
-                let mut motion = m.motion.clone();
-                motion.activator = to_client(world, motion.activator);
-                awm.set_motion(&motion);
-                Some(Stepped {
-                    id: m.id,
+        let awms = net.movers.iter().filter_map(|m| {
+            let ob = o.world.objects.get(m.id as usize)?;
+            let mut awm = Box::new(ob.awm()?.clone());
+            let mut motion = m.motion.clone();
+            motion.activator = to_client(world, motion.activator);
+            awm.set_motion(&motion);
+            Some(Stepped {
+                id: m.id,
+                run: Run::Awm {
                     awm,
                     pose: Pose {
                         pos: m.pos,
@@ -430,9 +543,36 @@ fn place_motion(world: &mut World) {
                         half: ob.pose.half,
                     },
                     solid: m.solid,
-                })
+                },
             })
-            .collect()
+        });
+        let kfs = net.keyframers.iter().filter_map(|n| {
+            let Kind::KeyFramer(k) = &o.world.objects.get(n.id as usize)?.kind else { return None };
+            let mut kf = k.clone();
+            kf.set_motion(&n.motion);
+            let objects = n
+                .objects
+                .iter()
+                .filter_map(|p| {
+                    let ob = o.world.objects.get(p.id as usize)?;
+                    Some((
+                        p.id,
+                        Pose {
+                            pos: p.pos,
+                            rot: p.rot,
+                            half: ob.pose.half,
+                        },
+                        p.carries,
+                    ))
+                })
+                .collect();
+            let target = o.world.keyframer_target(&kf);
+            Some(Stepped {
+                id: n.id,
+                run: Run::Kf { kf, objects, target },
+            })
+        });
+        awms.chain(kfs).collect()
     };
     movers.sort_by_key(|m| m.id);
     let mut next = net.next_frame.unwrap_or(f64::INFINITY);

@@ -5,7 +5,9 @@
 //! volumes (8, also in play), its fan (9), its drum (10, 11), its keys'
 //! blind data (14) and the decks it never had (26); BLOODMONEY's truck
 //! doors in front of `UNITSPAWN_ALPHA`, which a hired unit now opens;
-//! CITYOFWINGS's VIP cell (game_modes_2.md case 23). Most run the object
+//! CITYOFWINGS's VIP cell (game_modes_2.md case 23); a network client
+//! swimming in HGOILRIG's rising sea, with the sea and its water-sound
+//! keyframers predicted (10, Client). Most run the object
 //! world of the converted map (`objects::object_world`) at the server's
 //! 20 Hz; the sea, the doors and the cell also in play. Pass with a note
 //! without `[games.combat_arms] path` in chimera.local.toml (the keyed
@@ -1108,4 +1110,86 @@ fn shortfuse_door_closing_on_a_client_is_predicted() {
         assert_eq!(g.errors, 0, "{what}: standing in a closing door isn't mispredicted");
         assert_agrees(&mut sim, &what);
     }
+}
+
+/// world_objects.md 10 (Client) and test case 8 on HGOILRIG: a client
+/// swimming in the `Water` volume while the sea rises (`SlidingWater`
+/// on: its `OpeningCommand` also starts the eight water-sound keyframers).
+/// The client steps the sea, which carries its volumes, and the
+/// keyframers as the server does: the swimmer rises with the water and
+/// isn't corrected after the start's round trip, and the client's sea and
+/// water sounds are the server's at the same tick.
+#[test]
+fn hgoilrig_rising_sea_with_a_client_swimming_is_predicted() {
+    use crate::object_carry::{assert_agrees, graph, link, put, send};
+    use chimera_core::core::{SimClock, SimTick};
+    use chimera_net::{harness::NetSim, net::predict::NetGraph};
+    let Some(mount) = mount() else { return };
+    let Some(data) = map(&mount, "hgoilrig") else { return };
+    let s = movement_data().meters_per_unit;
+    let sea = T::of(&data).pos("SlidingWater");
+    let latency = 100;
+    let mut sim = NetSim::new(CaSim, link(latency, 0), 83, 1, move |app| {
+        app.add_plugins(MapSimPlugin::new(data.clone()));
+    });
+    sim.set_frame(combat_arms::game::TICK_INTERVAL);
+    sim.until_joined(1200);
+    sim.ticks(60);
+    // In the water (its top at y -58 at load), over the sea's centre.
+    put(&mut sim, Vec3::new(sea.x, -120.0, sea.z), s);
+    sim.ticks(400);
+    *sim.clients[0].app.world_mut().resource_mut::<NetGraph>() = NetGraph::default();
+    let theirs = sim.character_of(0).unwrap();
+    let feet = |sim: &NetSim| from_engine(sim.server.app.world().get::<Transform>(theirs).unwrap().translation, s).y;
+    let y0 = feet(&sim);
+    // The objects' poses by tick: the sea and `SND_WaterA`.
+    let poses = |app: &App| {
+        let o = app.world().resource::<CaObjects>();
+        let p = |n: &str| o.world.objects[o.named(n).unwrap() as usize].pose.pos;
+        (p("SlidingWater"), p("SND_WaterA"))
+    };
+    let window = ((2 * latency) as f64 / 1000.0 / combat_arms::game::TICK_INTERVAL) as u32 + 8;
+    send(&mut sim, "SlidingWater", "on");
+    let mut server: BTreeMap<u64, (Vec3, Vec3)> = BTreeMap::new();
+    let mut client: Vec<(u64, (Vec3, Vec3))> = Vec::new();
+    let mut errors_after = 0;
+    let mut last = 0;
+    // 125 s: the sea's 120 s rise (its sounds' 90 s ride within it).
+    let ticks = (125.0 / combat_arms::game::TICK_INTERVAL) as u32;
+    for k in 0..ticks {
+        sim.step();
+        let e = graph(&sim).errors;
+        if e > last && k > window {
+            errors_after += e - last;
+        }
+        last = e;
+        server.insert(sim.server.app.world().resource::<SimTick>().0, poses(&sim.server.app));
+        if k > window {
+            let c = &sim.clients[0].app;
+            client.push((c.world().resource::<SimClock>().tick, poses(c)));
+        }
+    }
+    let (mut sea_gap, mut sound_gap, mut compared) = (0.0f32, 0.0f32, 0);
+    for (t, (a, b)) in &client {
+        if let Some((sa, sb)) = server.get(t) {
+            sea_gap = sea_gap.max(a.distance(*sa));
+            sound_gap = sound_gap.max(b.distance(*sb));
+            compared += 1;
+        }
+    }
+    let (risen, y1) = (poses(&sim.server.app).0.y - sea.y, feet(&sim));
+    let g = graph(&sim);
+    eprintln!(
+        "hgoilrig {latency} ms: the sea rose {risen:.1} u, the swimmer {y0:.1} -> {y1:.1} u; {errors_after} errors after \
+         the start's round trip, {} of {} states wrong, worst correction {:.4} m; the client's sea off the server's \
+         by {sea_gap:.4} u and SND_WaterA by {sound_gap:.4} u at the same tick ({compared} ticks)",
+        g.errors, g.checked, g.worst_error
+    );
+    assert!((risen - 500.0).abs() < 1.0, "the sea rose 500 u: {risen}");
+    assert!(y1 > y0 + 300.0 && y1 < 442.0, "the swimmer rose with the water, in it: {y0} -> {y1}");
+    assert!(compared > 1000, "compared {compared} ticks");
+    assert!(sea_gap < 1e-3, "the client's sea is the server's: {sea_gap} u off");
+    assert!(sound_gap < 1e-3, "the client's water sound is the server's: {sound_gap} u off");
+    assert_eq!(errors_after, 0, "the swimmer isn't corrected after the start");
+    assert_agrees(&mut sim, "hgoilrig");
 }

@@ -13,7 +13,7 @@
 //!   reversal, blocking without pushing or crushing, doors and switches
 //!   (use to open, links, `TRIGGERCLOSE`), riders carried;
 //! - `keyframer`: keys from blind data, time and constant-speed modes,
-//!   straight and Bézier segments, rotations blended;
+//!   straight and Bézier segments, rotations blended, riders carried;
 //! - `runtime`: breakables (damage, death at 1 HP or less, round reset
 //!   through `MEMORIZE`/`REMEMBER`), triggers (delays, counts, weighted,
 //!   timed), command and touch triggers, target triggers, event counters,
@@ -50,16 +50,15 @@
 //! a `setpos` line at it, `ca_object_cmd <command string>` runs a command string,
 //! `ca_object_vars` lists the variables and pending commands.
 //!
-//! A network client steps the active world models itself to the tick it
-//! predicts and carries its own player on them (`net`, 10's Client).
+//! A network client steps the active world models and the running
+//! keyframers itself to the tick it predicts and carries its own player
+//! on them (`net`, 10's Client).
 //!
 //! Known shortcuts: the explosion's effect isn't drawn and its damage skips the armour
-//! step; riders are carried without the spec's 0.1 u drop, and only by
-//! active world models (a keyframer's objects carry no one); nodes collide as their
-//! polygons' triangles (the engine's own `BoxPhysics` boxes aren't used)
-//! while the game's tests use their boxes (`movers`); keyframed nodes
-//! snap to each server update on clients (not stepped, not interpolated:
-//! `net`).
+//! step; riders are carried without the spec's 0.1 u drop (by active
+//! world models and by the solid world models keyframers move); nodes
+//! collide as their polygons' triangles (the engine's own `BoxPhysics`
+//! boxes aren't used) while the game's tests use their boxes (`movers`).
 
 pub mod commands;
 pub mod geometry;

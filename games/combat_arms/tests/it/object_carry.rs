@@ -4,7 +4,9 @@
 //! does and carries its own player with it, so a player on a rising lift
 //! is predicted where the server has it (no corrections while riding), and
 //! a door closing onto a player stops above it on the client as on the
-//! server.
+//! server. Keyframers are stepped too, and the platform a keyframer moves
+//! carries its riders on the server and on the client alike (10: the
+//! engine carries on any move).
 //!
 //! `cargo test -p combat_arms --features dev --test it object_carry:: --
 //! --nocapture` prints the numbers.
@@ -32,7 +34,7 @@ use combat_arms::{
     },
     harness::CaSim,
 };
-use lithtech_formats::world::{Object, Value, World};
+use lithtech_formats::world::{BlindChunk, Object, Value, World};
 
 use crate::world_objects_play::{cuboid, prop, world_with};
 
@@ -543,4 +545,135 @@ fn a_swinging_door_stops_on_a_client_as_on_the_server() {
     assert!(server.angle_between(client) < 1e-4, "the client's door is the server's");
     assert_eq!(g.errors, 0, "standing in a door's swing isn't mispredicted");
     assert_agrees(&mut sim, "swing");
+}
+
+/// A 200 u square platform 10 u high at x 400 (a solid `WorldModel`
+/// "Plat") that a time-mode keyframer ("KF", keys `K0`, `K01`, `K02`)
+/// lifts 200 u in 2 s, then slides 200 u along +X in 2 s.
+fn keyframed_world() -> World {
+    let mut w = world_with(
+        vec![cuboid("Plat", [300.0, 0.0, -100.0], [500.0, 10.0, 100.0], false)],
+        vec![
+            Object {
+                class: "WorldModel".into(),
+                properties: vec![
+                    prop("Name", Value::String("Plat".into())),
+                    prop("Pos", Value::Vector([400.0, 5.0, 0.0])),
+                    prop("Solid", Value::Bool(true)),
+                    prop("Rayhit", Value::Bool(true)),
+                ],
+            },
+            Object {
+                class: "KeyFramer".into(),
+                properties: vec![
+                    prop("Name", Value::String("KF".into())),
+                    prop("Pos", Value::Vector([0.0, 0.0, 0.0])),
+                    prop("ObjectName", Value::String("Plat".into())),
+                    prop("BaseKeyName", Value::String("K".into())),
+                    prop("KeyDataIndex", Value::Real(0.1)),
+                ],
+            },
+        ],
+    );
+    // The keys' blind data (world_objects.md 9): no tangents, no sound or
+    // command.
+    let mut b = Vec::new();
+    b.extend(3u32.to_le_bytes());
+    for ([x, y, z], stamp) in [([400.0f32, 5.0, 0.0], 0.0f32), ([400.0, 205.0, 0.0], 2.0), ([600.0, 205.0, 0.0], 2.0)] {
+        b.extend(0u16.to_le_bytes());
+        b.extend([0u8, 0u8]);
+        for f in [x, y, z, 0.0, 0.0, 0.0, stamp, 300.0] {
+            b.extend(f.to_le_bytes());
+        }
+    }
+    w.blind_data.push(BlindChunk {
+        id: combat_arms::game::objects::keyframer::KEY_CHUNK_ID,
+        data: b,
+    });
+    w
+}
+
+/// A client standing on a keyframed platform rides it up 200 u and along
+/// 200 u, then back: the server carries it (10), and its prediction
+/// steps the keyframer as the server does, so it rides where the server
+/// has it (errors only in the round trip after each start).
+#[test]
+fn a_client_rides_a_keyframed_platform_predicted() {
+    let s = movement::movement_data().meters_per_unit;
+    let map = world::convert(&keyframed_world(), "keyframed", s, &|_| None);
+    for (latency, jitter, seed) in [(50, 0, 77), (150, 20, 78)] {
+        let m = map.clone();
+        let mut sim = NetSim::new(CaSim, link(latency, jitter), seed, 1, move |app| {
+            app.add_plugins(MapSimPlugin::new(m.clone()));
+        });
+        sim.set_frame(TICK_INTERVAL);
+        sim.until_joined(600);
+        sim.ticks(240);
+        put(&mut sim, Vec3::new(400.0, 60.0, 0.0), s);
+        sim.ticks(200);
+        let theirs = sim.character_of(0).unwrap();
+        let at = |sim: &NetSim| from_engine(sim.server.app.world().get::<Transform>(theirs).unwrap().translation, s);
+        let start = at(&sim);
+        assert!(
+            (node_y(&sim.clients[0].app, "Plat", s) - 5.0).abs() < 1e-3,
+            "the client has the platform down"
+        );
+        *sim.clients[0].app.world_mut().resource_mut::<NetGraph>() = NetGraph::default();
+        let window = ((2 * latency + 2 * jitter) as f64 / 1000.0 / TICK_INTERVAL) as u32 + 8;
+        send(&mut sim, "KF", "on");
+        let there = ride(&mut sim, "Plat", 900, window);
+        let top = at(&sim);
+        let carried = graph(&sim).carried;
+        send(&mut sim, "KF", "backward");
+        send(&mut sim, "KF", "on");
+        let back = ride(&mut sim, "Plat", 900, window);
+        let end = at(&sim);
+        let g = graph(&sim);
+        println!(
+            "keyframed {latency}±{jitter} ms: there {:.1} in {} ticks, errors at {:?}, worst gap {:.3} m ({:.4} after \
+             the start, platform {:.4}); back to {:.1} in {} ticks, errors at {:?}, worst gap {:.3} m ({:.4}, \
+             platform {:.4}); carried {carried} ticks, {} of {} states wrong, worst correction {:.3} m",
+            top - start,
+            there.ticks,
+            there.errors,
+            there.worst_gap,
+            there.gap_after,
+            there.node_gap_after,
+            end - start,
+            back.ticks,
+            back.errors,
+            back.worst_gap,
+            back.gap_after,
+            back.node_gap_after,
+            g.errors,
+            g.checked,
+            g.worst_error
+        );
+        let what = format!("keyframed {latency}±{jitter} ms");
+        assert!(
+            (top - start - Vec3::new(200.0, 200.0, 0.0)).length() < 1.0,
+            "{what}: rode up and along {}",
+            top - start
+        );
+        assert!((end - start).length() < 1.0, "{what}: back at {}", end - start);
+        // (It faces no target: its `TargetName` isn't its own `Name`.)
+        let turn = {
+            let o = sim.server.app.world().resource::<CaObjects>();
+            o.world.objects[o.named("Plat").unwrap() as usize].pose.rot
+        };
+        assert!(turn.angle_between(Quat::IDENTITY) < 1e-4, "{what}: the platform didn't turn: {turn:?}");
+        assert!(carried > 30, "{what}: carried {carried} ticks");
+        for (dir, r) in [("there", &there), ("back", &back)] {
+            assert!(r.gap_after < 1e-4, "{what}: {dir}: {} m off the server after the start", r.gap_after);
+            assert!(r.node_gap_after < 1e-4, "{what}: {dir}: the client's platform {} m off", r.node_gap_after);
+            assert!(
+                r.errors.iter().all(|k| *k <= window),
+                "{what}: {dir}: errors after the start's round trip ({:?}, window {window})",
+                r.errors
+            );
+            assert!(r.errors.len() <= 4, "{what}: {dir}: {:?}", r.errors);
+        }
+        sim.ticks(30);
+        assert_agrees(&mut sim, &what);
+    }
 }

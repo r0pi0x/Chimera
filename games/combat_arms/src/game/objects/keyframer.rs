@@ -7,17 +7,29 @@
 //!
 //! `Keyframer::frame` is one update of its clock and path: which keys it
 //! passed (their sound and command for the object world to run) and
-//! where the path stands; the object world (`runtime`) places the
-//! controlled objects with their offsets.
+//! where the path stands; `placements` puts the controlled objects there
+//! with their offsets, and characters standing on a solid world model it
+//! moves are carried (10, `movers::Blocking::riders`). The server's object
+//! world (`runtime`) and a network client's prediction (`net`) both run
+//! these, the client with its own copy of the keyframer and what changes
+//! as it runs from the server (`KfMotion`).
 //!
 //! Known shortcuts: `AlignToPath` faces the motion with up +Y only (the
 //! keys' pitch and roll aren't added); the Bézier length is measured by
 //! 64 chords (the engine's own subdivision is Open question 7);
-//! `PushObjects` teleports like the rest (no stock keyframer pushes).
+//! `PushObjects` teleports like the rest (no stock keyframer pushes);
+//! every frame's move carries riders (the jump back to the start of a
+//! looping velocity-mode keyframer, or of one switched on again, too),
+//! `GOTO`'s jump doesn't (whether the engine carries on a teleport isn't
+//! given).
 
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
-use super::geometry::{Waveform, rotation};
+use super::{
+    geometry::{Waveform, rotation},
+    movers::Pose,
+};
 
 /// The blind-data chunk id of keyframer keys.
 pub const KEY_CHUNK_ID: u32 = 0x6AAF_0884;
@@ -214,7 +226,108 @@ pub struct KfFrame {
     pub ended: bool,
 }
 
+/// What changes in a keyframer as it runs (its clock, path place,
+/// direction, destination, target and offsets): with the map's keyframer
+/// (the same keys and properties), a network client steps it as the
+/// server does (`net`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct KfMotion {
+    pub active: bool,
+    pub paused: bool,
+    pub finished: bool,
+    pub forward: bool,
+    pub t: f32,
+    pub next: u32,
+    pub at_key: bool,
+    pub k: f32,
+    pub dest: Option<(u32, String)>,
+    pub snap: bool,
+    pub target_name: String,
+    pub target_offset: Vec3,
+    pub offsets: Vec<(u32, Vec3, Vec4)>,
+}
+
+/// A rotation facing `d` with up +Y.
+pub fn look(d: Vec3) -> Quat {
+    let f = d.normalize_or_zero();
+    if f == Vec3::ZERO {
+        return Quat::IDENTITY;
+    }
+    let yaw = f.x.atan2(f.z);
+    let pitch = -f.y.asin();
+    rotation(pitch, yaw, 0.0)
+}
+
+/// Where keyframer `k` puts its controlled `objects` (ids and current
+/// poses, in order) for the path point `pos`, `rot` (9, "Placing"): the
+/// offsets added unless `IgnoreOffsets`; facing `target_at` (the target's
+/// position plus `TargetOffset`) when it has one, else the motion with
+/// `AlignToPath`, else the keys' rotation plus the rotation offset.
+pub fn placements(k: &Keyframer, pos: Vec3, rot: Quat, objects: &[(u32, Pose)], target_at: Option<Vec3>) -> Vec<Pose> {
+    objects
+        .iter()
+        .map(|(o, old)| {
+            let (off, roff) = k.offsets.iter().find(|x| x.0 == *o).map_or((Vec3::ZERO, Vec4::ZERO), |x| (x.1, x.2));
+            let at = if k.ignore_offsets { pos } else { pos + off };
+            let r = if let Some(t) = target_at {
+                look(t - at)
+            } else if k.align {
+                let d = at - old.pos;
+                if d.length_squared() > 1e-8 { look(d) } else { old.rot }
+            } else if k.ignore_offsets {
+                rot
+            } else {
+                Quat::from_vec4(Vec4::from(rot) + roff).normalize()
+            };
+            Pose { pos: at, rot: r, ..*old }
+        })
+        .collect()
+}
+
 impl Keyframer {
+    /// Whether its update moves its objects (built, active, not paused).
+    pub fn running(&self) -> bool {
+        self.built && self.active && !self.paused
+    }
+
+    /// What changes as it runs (`KfMotion`).
+    pub fn motion(&self) -> KfMotion {
+        KfMotion {
+            active: self.active,
+            paused: self.paused,
+            finished: self.finished,
+            forward: self.forward,
+            t: self.t,
+            next: self.next as u32,
+            at_key: self.at_key,
+            k: self.k,
+            dest: self.dest.as_ref().map(|(i, c)| (*i as u32, c.clone())),
+            snap: self.snap,
+            target_name: self.target_name.clone(),
+            target_offset: self.target_offset,
+            offsets: self.offsets.clone(),
+        }
+    }
+
+    /// Take `m` as what changes as it runs (a built keyframer's).
+    pub fn set_motion(&mut self, m: &KfMotion) {
+        self.built = true;
+        self.queued.clear();
+        self.active = m.active;
+        self.paused = m.paused;
+        self.finished = m.finished;
+        self.forward = m.forward;
+        self.t = m.t;
+        self.next = m.next as usize;
+        self.at_key = m.at_key;
+        self.k = m.k;
+        self.dest = m.dest.as_ref().map(|(i, c)| (*i as usize, c.clone()));
+        self.snap = m.snap;
+        self.target_name = m.target_name.clone();
+        self.target_offset = m.target_offset;
+        self.offsets = m.offsets.clone();
+    }
+
     /// Each key's absolute time.
     pub fn times(&self) -> Vec<f32> {
         let mut t = 0.0;

@@ -152,6 +152,12 @@ impl Props {
     pub fn angles(&self, key: &str) -> Option<Vec3> {
         self.get(key).map(crate::map::entities::parse_vector)
     }
+    /// A property by its exact name (case kept): for names that differ
+    /// from a map entity key only by case (`TargetName` is not
+    /// `targetname`, the object's `Name`).
+    pub fn exact(&self, key: &str) -> String {
+        self.0.iter().find(|(k, _)| k == key).map_or(String::new(), |(_, v)| v.clone())
+    }
     /// The first present of several names.
     fn first(&self, names: &[&str]) -> Option<&str> {
         names.iter().find_map(|n| self.get(n))
@@ -809,7 +815,9 @@ impl ObjectWorld {
                         push: p.bool_or("PushObjects", false),
                         total_time: p.real_or("TotalPathTime", 0.0),
                         wave: Waveform::named(p.get("Wavetype").unwrap_or("Linear")),
-                        target_name: p.string("TargetName"),
+                        // (Not `string`: that finds `targetname`, its own
+                        // name, and every keyframer faced itself.)
+                        target_name: p.exact("TargetName"),
                         target_offset: p.vector("TargetOffset").unwrap_or(Vec3::ZERO),
                         active_sound: p.string("ActiveSound"),
                         sound_radius: p.real_or("SoundRadius", AWM_SOUND_RADIUS),
@@ -2062,7 +2070,7 @@ impl ObjectWorld {
     }
 
     /// The objects a keyframer moves.
-    fn controlled(&self, k: &Keyframer) -> Vec<ObjId> {
+    pub fn controlled(&self, k: &Keyframer) -> Vec<ObjId> {
         k.object_names.iter().flat_map(|n| self.named_all(n)).filter(|o| !self.objects[*o as usize].removed).collect()
     }
 
@@ -2094,14 +2102,14 @@ impl ObjectWorld {
             return;
         }
         let f = k.frame(dt);
-        let snap = std::mem::take(&mut k.snap);
+        k.snap = false;
         let keys = k.keys.clone();
         self.objects[id as usize].kind = Kind::KeyFramer(k);
         for &i in &f.passed {
             self.pass_key(id, &keys[i]);
         }
         if let Some((pos, rot)) = f.place {
-            self.place_controlled(id, pos, rot, snap);
+            self.place_controlled(id, pos, rot, true);
         }
         if let Some(c) = f.arrived.filter(|c| !c.is_empty()) {
             self.run(&c, Ctx { sender: Who::Object(id), target: Some(id), ..Ctx::default() });
@@ -2141,29 +2149,35 @@ impl ObjectWorld {
             .collect()
     }
 
-    /// Put the controlled objects on the path point.
-    fn place_controlled(&mut self, id: ObjId, pos: Vec3, rot: Quat, _snap: bool) {
+    /// Where keyframer `k`'s target is for its objects to face (its
+    /// position plus `TargetOffset`), when it has one.
+    pub fn keyframer_target(&self, k: &Keyframer) -> Option<Vec3> {
+        if k.target_name.is_empty() {
+            return None;
+        }
+        self.named_all(&k.target_name).first().map(|t| self.objects[*t as usize].pose.pos + k.target_offset)
+    }
+
+    /// Put the controlled objects on the path point (`keyframer::
+    /// placements`); with `carry` (a frame's move, not `GOTO`'s jump)
+    /// characters standing on a solid world model among them move with it
+    /// (10: the engine carries on any move).
+    fn place_controlled(&mut self, id: ObjId, pos: Vec3, rot: Quat, carry: bool) {
         let Kind::KeyFramer(k) = &self.objects[id as usize].kind else { return };
-        let (ignore, target, offset, align) = (k.ignore_offsets, k.target_name.clone(), k.target_offset, k.align);
-        let offsets: HashMap<ObjId, (Vec3, Vec4)> = k.offsets.iter().map(|(o, p, r)| (*o, (*p, *r))).collect();
-        let target_at = (!target.is_empty())
-            .then(|| self.named_all(&target).first().map(|t| self.objects[*t as usize].pose.pos + offset))
-            .flatten();
-        for o in self.controlled(k) {
-            let (off, roff) = offsets.get(&o).copied().unwrap_or((Vec3::ZERO, Vec4::ZERO));
-            let at = if ignore { pos } else { pos + off };
-            let old = self.objects[o as usize].pose;
-            let r = if let Some(t) = target_at {
-                look(t - at)
-            } else if align {
-                let d = at - old.pos;
-                if d.length_squared() > 1e-8 { look(d) } else { old.rot }
-            } else if ignore {
-                rot
-            } else {
-                Quat::from_vec4(Vec4::from(rot) + roff).normalize()
-            };
-            self.set_pose(o, Pose { pos: at, rot: r, ..old });
+        let objects: Vec<(ObjId, Pose)> =
+            self.controlled(k).into_iter().map(|o| (o, self.objects[o as usize].pose)).collect();
+        let places = keyframer::placements(k, pos, rot, &objects, self.keyframer_target(k));
+        for ((o, old), new) in objects.into_iter().zip(places) {
+            if carry && new != old {
+                let ob = &self.objects[o as usize];
+                let riders = Blocking {
+                    chars: &self.chars,
+                    solid: ob.solid && ob.is_world_model(),
+                }
+                .riders(&old);
+                self.carry(&riders, &old, &new);
+            }
+            self.set_pose(o, new);
         }
     }
 
@@ -2218,7 +2232,7 @@ impl ObjectWorld {
         self.objects[id as usize].kind = Kind::KeyFramer(k);
         if let Some(i) = goto {
             let key = &keys[i];
-            self.place_controlled(id, key.pos, key.rot(), true);
+            self.place_controlled(id, key.pos, key.rot(), false);
             self.pass_key(id, key);
         }
         self.active_sound(id);
@@ -2260,17 +2274,6 @@ impl ObjectWorld {
         }
         s
     }
-}
-
-/// A rotation facing `d` with up +Y.
-fn look(d: Vec3) -> Quat {
-    let f = d.normalize_or_zero();
-    if f == Vec3::ZERO {
-        return Quat::IDENTITY;
-    }
-    let yaw = f.x.atan2(f.z);
-    let pitch = -f.y.asin();
-    rotation(pitch, yaw, 0.0)
 }
 
 /// Hex text as bytes.
