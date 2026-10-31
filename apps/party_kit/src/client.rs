@@ -19,7 +19,9 @@
 //! shell's, and no radars unless `hud_radar 1` (`PartyHudPlugin`); with
 //! `party_swap_effect 1` (default 0) a short flash when the local
 //! player's gun changes game, a puff at others' (`client::swap_effect`). Known
-//! The Escape menu is the party's own (`esc_menu`), titled by the app.
+//! The Escape menu is the party's own (`esc_menu`), titled by the app;
+//! `client_app_at_menu` starts the app at the main menu (`main_menu`)
+//! over the first of its background maps that loads.
 //! Known shortcuts: not CS:S's spectator panel or overview;
 //! on Combat Arms' maps there is no CS:S HUD look (the shell's plain HUD
 //! with CS:S's guns).
@@ -211,30 +213,62 @@ fn sync_gun_names(
 /// minigame takes it, the network and the client shell with both games'
 /// HUDs. `chimera_client::client::app::run` runs it.
 pub fn client_app(args: Args, title: &str) -> App {
-    use chimera_core::gameplay::{Gameplay, GameplayAppExt};
-    use chimera_present::{MapPlugin, PresentationPlugins};
-    use super::PartyPlugins;
-    let mut app = App::new();
     let id = args.game_map().unwrap_or("cs_source:de_dust2").to_string();
     match super::load_map(&id, 0) {
-        Ok(data) => {
-            eprintln!(
-                "loaded {id}: {} triangles, {} textures, {} spawns, {} warnings",
-                data.triangle_count(),
-                data.textures.len(),
-                data.spawns.len(),
-                data.warnings.len()
-            );
-            for w in &data.warnings {
-                eprintln!("  warning: {w}");
-            }
-            app.add_plugins(MapPlugin::new(data));
-        }
+        Ok(data) => client_app_on(args, title, &id, data),
         Err(e) => {
             eprintln!("error: --map {id}: {e}");
             std::process::exit(1);
         }
     }
+}
+
+/// `client_app` starting at the party's main menu (`main_menu`): the map
+/// behind it the first of data/main_menu.toml's background maps that
+/// loads (the greybox if none does), Play starting `minigame`.
+pub fn client_app_at_menu(args: Args, title: &str, minigame: &str) -> App {
+    let data = crate::main_menu::MenuData::shipped();
+    let mut app = match crate::main_menu::background_map(&data, |id| super::load_map(id, 0)) {
+        Some((id, map)) => client_app_on(args, title, &id, map),
+        None => {
+            eprintln!("warning: none of the main menu's background maps loads: the greybox behind it");
+            let mut args = args;
+            args.map = None;
+            client_app_with(args, title, None)
+        }
+    };
+    app.add_plugins(crate::main_menu::MainMenuPlugin {
+        at_start: true,
+        minigame: minigame.into(),
+        keep_recent: true,
+    });
+    app
+}
+
+/// `client_app` on map `id` (its data loaded).
+fn client_app_on(args: Args, title: &str, id: &str, data: chimera_world::map::MapData) -> App {
+    eprintln!(
+        "loaded {id}: {} triangles, {} textures, {} spawns, {} warnings",
+        data.triangle_count(),
+        data.textures.len(),
+        data.spawns.len(),
+        data.warnings.len()
+    );
+    for w in &data.warnings {
+        eprintln!("  warning: {w}");
+    }
+    client_app_with(args, title, Some(data))
+}
+
+fn client_app_with(args: Args, title: &str, map: Option<chimera_world::map::MapData>) -> App {
+    use chimera_core::gameplay::{Gameplay, GameplayAppExt};
+    use chimera_present::{MapPlugin, PresentationPlugins};
+    use super::PartyPlugins;
+    let mut app = App::new();
+    app.add_plugins(match map {
+        Some(data) => MapPlugin::new(data),
+        None => MapPlugin::empty(),
+    });
     app.add_plugins((
         // Both installs as `cs_source://` and `combat_arms://` assets
         // (before `AssetPlugin`).

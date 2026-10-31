@@ -735,17 +735,17 @@ the user's go-ahead: no Actions runs unless asked.
   - **Vote to skip the map:** on everyone's menu. It passes with a
     majority of the players, then goes to the next map in the rotation.
   - **Quit.**
-  - No scoreboard entry, since Tab opens it. No Disconnect until there is
-    a main menu to go back to.
+  - No scoreboard entry, since Tab opens it. Disconnect: done with the
+    main menu's M1.
 - **RCON admins for the Escape menu's host settings.** Today only the
   host (a listen server's player) sees them; a dedicated server's admin
   sets the same cvars on its console.
 - **A main menu for Ultimate Gun Game (and the other party apps).**
-  Scope it after the Escape menu: play (host or join), server browser
-  or direct connect, options, quit. Then add Disconnect to the Escape
-  menu, returning to it. Plan:
-  [docs/plans/active/main-menu.md](plans/active/main-menu.md) (M1 menu,
-  host, join, options, Disconnect; M2 LAN browser; M3 master server).
+  M1 done (2026-10-31: Play, Join by address, Options, Quit, loading and
+  failure boxes, Disconnect; CS:S's menu's look over a live map). Next:
+  M2 LAN browser, M3 master server; menu music (Combat Arms' menu
+  playlist). Plan:
+  [docs/plans/active/main-menu.md](plans/active/main-menu.md).
 - **Combat Arms grenade not thrown while sprinting: matches Combat Arms.**
   Pin pulled, then sprint, then release: the throw waits until sprint
   ends. view_models.md says so ("Grenade and sprint": the cocked and

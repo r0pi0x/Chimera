@@ -1,0 +1,112 @@
+# The party apps' main menu (party_kit::main_menu) and the entries of the
+# Escape menu (party_kit::esc_menu). Ultimate Gun Game starts at it; Lucker
+# Party (shelved) still starts in its minigame and shows no Disconnect.
+#
+# [[entry]]: the main menu's left-hand entries, in order, in CS:S's main
+# menu's place (the GameUI look of CS:S's install). `page` opens one of the
+# menu's pages (play, join, options); `command` is a console line. `gap`
+# leaves half a row before it.
+#
+# [[escape]]: the Escape menu's entries, in order. `action` is one of
+# resume, options, host, vote, disconnect, quit; `when` gates it: always,
+# host (not a network client), main_menu (the app has this main menu).
+#
+# [[play]]: the Play page's Server tab, each row a cvar set when the game
+# starts (its value shown from the cvar when the page opens, `default` if
+# given; `{title}` in it is the app's name). `range` = [min, max, step],
+# `choices` = [[value, label], ...], `text` = the entry's byte limit (`masked`: a password). `map` = true is
+# the map row: "Rotation" (the minigame's pool, its first map) or one map
+# of it. The Game tab is data/host_settings.toml's next-match rows.
+#
+# [background]: the live map behind the menu and its slow camera flight,
+# an orbit around the middle of the map's spawn points: `maps` the first
+# that loads, `height` metres above the spawns' middle, `radius` metres
+# from it, `period` seconds a lap, `pitch` degrees down.
+
+[background]
+maps = ["cs_source:de_dust2", "combat_arms:warehouse"]
+height = 13.0
+radius = 34.0
+period = 150.0
+pitch = 12.0
+
+[[entry]]
+label = "Play"
+page = "play"
+
+[[entry]]
+label = "Join"
+page = "join"
+
+[[entry]]
+label = "Options"
+page = "options"
+gap = true
+
+[[entry]]
+label = "Quit"
+command = "quit"
+
+[[escape]]
+label = "Resume"
+action = "resume"
+
+[[escape]]
+label = "Options"
+action = "options"
+
+[[escape]]
+label = "Host settings"
+action = "host"
+when = "host"
+
+[[escape]]
+label = "Vote to skip the map"
+action = "vote"
+
+[[escape]]
+label = "Disconnect"
+action = "disconnect"
+when = "main_menu"
+
+[[escape]]
+label = "Quit"
+action = "quit"
+
+[[play]]
+label = "Map"
+map = true
+
+[[play]]
+label = "Bots"
+cvar = "MaxPlayer"
+range = [0, 15, 1]
+default = "3"
+
+[[play]]
+label = "Max. players"
+cvar = "maxplayers"
+range = [2, 16, 1]
+default = "8"
+
+[[play]]
+label = "Server name"
+cvar = "hostname"
+text = 64
+default = "{title}'s game"
+
+[[play]]
+label = "Password"
+cvar = "sv_password"
+text = 32
+masked = true
+
+[[play]]
+label = "Port"
+cvar = "hostport"
+text = 5
+
+[[play]]
+label = "Open the router's port (UPnP)"
+cvar = "net_upnp"
+choices = [["0", "No"], ["1", "Yes"]]

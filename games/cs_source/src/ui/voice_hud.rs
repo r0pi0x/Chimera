@@ -73,12 +73,14 @@ fn window_size(window: &Query<&Window, With<PrimaryWindow>>) -> (f32, f32) {
 
 /// The talking player's own icon, in `HudVoiceSelfStatus`'s box.
 fn self_icon(
-    hud: Res<ActiveHud>,
+    hud: Option<Res<ActiveHud>>,
     activity: Res<VoiceActivity>,
     window: Query<&Window, With<PrimaryWindow>>,
     mut icon: Query<(&mut Node, &mut Visibility), With<SelfIcon>>,
     mut commands: Commands,
 ) {
+    // Gone mid-frame (the map unloaded: back to the menu).
+    let Some(hud) = hud else { return };
     let Some(panel) = hud.0.panels.get("HudVoiceSelfStatus") else { return };
     let Ok((mut node, mut vis)) = icon.single_mut() else {
         if let Some(image) = sprite_image(&hud, "voice_self") {
@@ -138,7 +140,7 @@ impl Layout {
 /// The rows of `HudVoiceStatus`: who else talks.
 #[allow(clippy::too_many_arguments)]
 fn rows(
-    hud: Res<ActiveHud>,
+    hud: Option<Res<ActiveHud>>,
     activity: Res<VoiceActivity>,
     time: Res<Time<Real>>,
     fonts: Res<crate::client::fonts::UiFonts>,
@@ -148,6 +150,8 @@ fn rows(
     mut shown: Local<(Vec<Talker>, (f32, f32))>,
     mut commands: Commands,
 ) {
+    // Gone mid-frame (the map unloaded: back to the menu).
+    let Some(hud) = hud else { return };
     let Some(panel) = hud.0.panels.get("HudVoiceStatus") else { return };
     let talkers: Vec<Talker> = activity
         .talking(time.elapsed_secs_f64())

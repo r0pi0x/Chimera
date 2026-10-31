@@ -233,6 +233,11 @@ pub const BY_USER: &str = "Disconnect by user.";
 /// Why a client was dropped when its server stopped (CS:S's words).
 pub const SHUTTING_DOWN: &str = "Server shutting down";
 
+/// Why a client was dropped when its server stopped and the server was a
+/// listen server (a host's own player was in it): the host left (its
+/// Disconnect, the app closed).
+pub const HOST_LEFT: &str = "The host left the game.";
+
 /// Seconds without a packet before either end of a UDP connection gives
 /// up (Source's `cl_timeout` default).
 pub const TIMEOUT_SECONDS: i32 = 30;
@@ -557,7 +562,7 @@ pub fn classify(reason: &str, own_version: &str, joined: bool) -> JoinFailure {
         JoinFailure::Timeout
     } else if reason.contains("differs from the server's") {
         JoinFailure::MapDiffers
-    } else if joined || reason.contains("DisconnectedByServer") || reason.contains("shutting down") {
+    } else if joined || reason.contains("DisconnectedByServer") || reason.contains("shutting down") || reason == HOST_LEFT {
         JoinFailure::Dropped
     } else {
         JoinFailure::Other
@@ -632,10 +637,24 @@ fn watch_connection(world: &mut World) {
         // Netcode's hang-up without a word first: the server stopped (its
         // `quit`, the host's `disconnect` or menu, the app closed); a kick
         // or refusal says why before (`RefusedReason`). CS:S's words.
+        // A listen server's host left (its server stopped; the in-memory
+        // link's hang-up reads as the transport's).
+        "DisconnectedByServer" | "connection terminated by the transport layer" if hosted(world) => {
+            HOST_LEFT.to_string()
+        }
         "DisconnectedByServer" => SHUTTING_DOWN.to_string(),
         _ => reason,
     };
     super::disconnect(world, &reason);
+}
+
+/// The server was a listen server: a host's player (`HOST_ID`) is among
+/// the characters it sent.
+fn hosted(world: &mut World) -> bool {
+    world
+        .query::<&super::NetCharacter>()
+        .iter(world)
+        .any(|c| c.owner == Some(super::HOST_ID))
 }
 
 /// Get the server's map (`maps::step`: the loaded one, a copy here, a

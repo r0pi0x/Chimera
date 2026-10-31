@@ -1,8 +1,9 @@
 //! The loading screen (specs/combat_arms/ui_system.md H: the loading
 //! screen's layout, shown from a map load's start to its end, stretched
 //! by x_r, y_r): while the shell joins a server or follows its map change
-//! (`client::front_end`'s `joining`, until `entered_game`,
-//! `map_load_failed` or `left_game`), the install's loading layout
+//! (`client::front_end`'s events, observed: `Joining`, until
+//! `EnteredGame`, `MapLoadFailed` or `LeftGame`; the party apps keep it
+//! to Combat Arms' maps, `party_kit::main_menu`), the install's loading layout
 //! (`ui::install::LOADING_FILE`) bound by name: `MapImage` the map's
 //! picture (`UI_SCR_Loading\MapLoading\MapImage\<map>.dtx`, read when
 //! the screen opens), `mapName` and its shadow the map's name (the
@@ -38,7 +39,7 @@ use super::{
     install::texture_key,
     layout::{Layout, Strings},
 };
-use crate::client::{canvas::Scale, fonts::UiFonts, front_end::FrontEnd};
+use crate::client::{canvas::Scale, fonts::UiFonts, front_end as fe};
 
 /// The loading screen's state: what is loading (the joining label), how
 /// far (0 to 1), and the room's mode when known (its key).
@@ -195,21 +196,22 @@ impl Plugin for CaLoadingPlugin {
                 commands.spawn((LoadingRoot, layer(60)));
             })
             .add_systems(Update, (track, draw, cursor).chain());
-        FrontEnd::register(app, |hooks| {
-            hooks.joining = |w, label| {
-                if let Some(mut l) = w.get_resource_mut::<CaLoading>() {
-                    l.label = Some(label.to_string());
-                }
-            };
-            let done: fn(&mut World) = |w| {
-                if let Some(mut l) = w.get_resource_mut::<CaLoading>() {
-                    *l = CaLoading::default();
-                }
-            };
-            hooks.entered_game = done;
-            hooks.map_load_failed = done;
-            hooks.left_game = done;
-        });
+        app.add_observer(|j: On<fe::Joining>, mut l: Option<ResMut<CaLoading>>| {
+            if let Some(l) = l.as_deref_mut() {
+                l.label = Some(j.label.clone());
+            }
+        })
+        .add_observer(|_: On<fe::EnteredGame>, l: Option<ResMut<CaLoading>>| done(l))
+        .add_observer(|_: On<fe::MapLoadFailed>, l: Option<ResMut<CaLoading>>| done(l))
+        .add_observer(|_: On<fe::LeftGame>, l: Option<ResMut<CaLoading>>| done(l));
+    }
+}
+
+/// The loading screen is done (the game entered, the load failed, the
+/// game left).
+fn done(l: Option<ResMut<CaLoading>>) {
+    if let Some(mut l) = l {
+        *l = CaLoading::default();
     }
 }
 

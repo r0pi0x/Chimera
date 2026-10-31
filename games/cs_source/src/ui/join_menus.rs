@@ -66,7 +66,7 @@ pub struct JoinMenusStatePlugin;
 
 impl Plugin for JoinMenusStatePlugin {
     fn build(&self, app: &mut App) {
-        crate::client::front_end::FrontEnd::register(app, |f| f.start_game = start_game);
+        app.add_observer(crate::client::front_end::on_world::<crate::client::front_end::StartGame>(start_game));
         app.init_resource::<JoinMenus>()
             .init_resource::<TeamMenu>()
             .add_systems(Update, follow_player)
