@@ -2486,12 +2486,10 @@ dithered fade bands. Left:
 Counts are from de_dust2's entity lump and static prop lump.
 
 - **Combat Arms world objects, what item 23 left** (docs/plans/active/
-  combat-arms.md row 23): a client stepping keyframed objects (the
-  active world models are stepped and carry the client's player since
-  2026-10-31; keyframers aren't, so a client in HGOILRIG's rising sea is
-  corrected from the server), and the server carrying riders on
-  keyframed objects (world_objects.md 10 says the engine carries on any
-  move; no stock map needs it); the spec's Open questions 6 and 14 (the
+  combat-arms.md row 23): whether the engine carries riders on a
+  keyframer's teleports (`GOTO`, a looping velocity-mode keyframer's
+  jump back: ours doesn't on `GOTO`, does on the jump; no stock
+  keyframer moves a world model); the spec's Open questions 6 and 14 (the
   original's own client push and interpolation) for a parity check; the
   breakables' `CreateExplosion`/`FIRE`, `Spawn`, `WorldModelDebris`
   and `DebrisType` looks; map cameras and `TargetTrigger` markers; and
