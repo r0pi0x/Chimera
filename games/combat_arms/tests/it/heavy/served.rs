@@ -5,6 +5,12 @@
 //! loads again from a mount of only that store's records: the same map, no
 //! file missing, no key needed. Skipped without a Combat Arms install and
 //! its keys. The store is a scratch folder, removed after.
+//!
+//! M2: the same store served by the asset service on 127.0.0.1, and the
+//! map loaded through the mount a game uses (`served::open_with`) with no
+//! install, no keys, an empty local store and the service set: the
+//! manifest and every record arrive on demand, checked, and the map is
+//! the same.
 
 use std::{
     fmt::Write as _,
@@ -14,7 +20,7 @@ use std::{
 
 use chimera_core::mount::{
     Mount,
-    assets::{CachedFiles, Manifest, Recorder, Store, pack},
+    assets::{AssetSettings, CachedFiles, Manifest, Recorder, RemoteConfig, Store, accounts::Accounts, pack, server},
     config::LocalConfig,
     install, served,
 };
@@ -88,4 +94,57 @@ fn warehouse_loads_from_the_store_alone() {
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(served_map, from_install, "the same map from the store");
     assert!(report.files > 100, "{} files", report.files);
+}
+
+#[test]
+fn warehouse_loads_from_the_asset_service_with_no_install() {
+    let Some(found) = LocalConfig::load().ok().and_then(|c| install::resolve(&c, GAME, None).install) else {
+        eprintln!("skipping: no Combat Arms install configured");
+        return;
+    };
+    let Ok(installed) = mount::open_install(&found.path) else {
+        eprintln!("skipping: no Combat Arms install at {}", found.path.display());
+        return;
+    };
+    let recorder = Recorder::in_memory();
+    let recorded = served::record(installed, GAME, &recorder);
+    let from_install = summary(&world::load_from(&recorded, "warehouse").unwrap());
+    let paths: Vec<String> = recorder.lines().into_iter().map(|l| l.path).collect();
+
+    // The server's store: what the load read, decrypted, published as
+    // build "test".
+    let dir = std::env::temp_dir().join(format!("chimera_served_ca_service_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let server_store = Store::new(dir.join("server"));
+    let mut manifest = Manifest::new(GAME, "test", None);
+    let report = pack(&recorded, &paths, &server_store, &mut manifest, Some("warehouse"), 4).unwrap();
+    manifest.save(&server_store.manifest_path(GAME, "test")).unwrap();
+    let mut users = Accounts::default();
+    let (_, token) = users.add("heavy_test", None, "").unwrap();
+    users.save(&Accounts::path(&server_store.root)).unwrap();
+    let running = server::serve(server::Service::new(server_store).unwrap(), "127.0.0.1:0", 4).unwrap();
+
+    // The client: no install, no keys, an empty store, the service.
+    let client = Store::new(dir.join("client"));
+    let settings = AssetSettings {
+        store: Some(client.clone()),
+        use_install: false,
+        builds: Default::default(),
+        remote: Some(RemoteConfig { url: running.url(), token, key: None }),
+        lock: None,
+    };
+    let started = Instant::now();
+    let mount = served::open_with(&settings, GAME, &dir.join("no-install"), mount::open_install).unwrap();
+    let fetched = summary(&world::load_from(&mount, "warehouse").unwrap());
+    let took = started.elapsed();
+    let records = client.record_ids().len();
+    eprintln!(
+        "warehouse from the service: {records} of {} records fetched on demand, load {:.2} s",
+        report.records,
+        took.as_secs_f64()
+    );
+    drop(running);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(fetched, from_install, "the same map from fetched files");
+    assert!(records > 100 && records <= report.records, "{records} records fetched");
 }

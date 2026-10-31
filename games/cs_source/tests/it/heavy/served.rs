@@ -4,6 +4,11 @@
 //! and the map loads again from a mount of only that store's records: the
 //! same map, no file missing. Skipped without a CS:S install. The store is
 //! a scratch folder, removed after.
+//!
+//! M2: the same store served by the asset service on 127.0.0.1, and the
+//! map loaded through the mount a game uses (`served::open_with`) with no
+//! install, an empty local store and the service set: the manifest and
+//! every record arrive on demand, checked, and the map is the same.
 
 use std::{
     fmt::Write as _,
@@ -14,7 +19,7 @@ use std::{
 use ::cs_source::game::{self as cs_source, bsp};
 use chimera_core::mount::{
     Mount,
-    assets::{CachedFiles, Manifest, Recorder, Store, pack},
+    assets::{AssetSettings, CachedFiles, Manifest, Recorder, RemoteConfig, Store, accounts::Accounts, pack, server},
     config::LocalConfig,
     served,
 };
@@ -90,4 +95,62 @@ fn de_dust2_loads_from_the_store_alone() {
     let _ = std::fs::remove_dir_all(&dir);
     assert_eq!(served_map, from_install, "the same map from the store");
     assert!(report.files > 100, "{} files", report.files);
+}
+
+#[test]
+fn de_dust2_loads_from_the_asset_service_with_no_install() {
+    let Some(install) = LocalConfig::load().ok().and_then(|c| {
+        chimera_core::mount::install::resolve(&c, cs_source::GAME, cs_source::INFO.steam.as_ref()).install
+    }) else {
+        eprintln!("skipping: no CS:S install");
+        return;
+    };
+    let Ok(installed) = cs_source::mount::open_install(&install.path) else {
+        eprintln!("skipping: no CS:S install at {}", install.path.display());
+        return;
+    };
+    let options = MapLoadOptions::default();
+    let recorder = Recorder::in_memory();
+    let recorded = served::record(installed, cs_source::GAME, &recorder);
+    let from_install = summary(&bsp::load_level_with(&recorded, "de_dust2", &options).unwrap());
+    let paths: Vec<String> = recorder.lines().into_iter().map(|l| l.path).collect();
+
+    // The server's store: what the load read, published as build "test".
+    let dir = std::env::temp_dir().join(format!("chimera_served_service_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let server_store = Store::new(dir.join("server"));
+    let mut manifest = Manifest::new(cs_source::GAME, "test", Some(240));
+    let report = pack(&recorded, &paths, &server_store, &mut manifest, Some("de_dust2"), 4).unwrap();
+    manifest.save(&server_store.manifest_path(cs_source::GAME, "test")).unwrap();
+    let accounts = Accounts::path(&server_store.root);
+    let mut users = Accounts::default();
+    let (_, token) = users.add("heavy_test", None, "").unwrap();
+    users.save(&accounts).unwrap();
+    let running = server::serve(server::Service::new(server_store).unwrap(), "127.0.0.1:0", 4).unwrap();
+
+    // The client: no install, an empty store, the service.
+    let client = Store::new(dir.join("client"));
+    let settings = AssetSettings {
+        store: Some(client.clone()),
+        use_install: false,
+        builds: Default::default(),
+        remote: Some(RemoteConfig { url: running.url(), token, key: None }),
+        lock: None,
+    };
+    let no_install = dir.join("no-install");
+    let started = Instant::now();
+    let mount = served::open_with(&settings, cs_source::GAME, &no_install, cs_source::mount::open_install).unwrap();
+    let map = bsp::load_level_with(&mount, "de_dust2", &options).unwrap();
+    let took = started.elapsed();
+    let fetched = summary(&map);
+    let records = client.record_ids().len();
+    eprintln!(
+        "de_dust2 from the service: {records} of {} records fetched on demand, load {:.2} s",
+        report.records,
+        took.as_secs_f64()
+    );
+    drop(running);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(fetched, from_install, "the same map from fetched files");
+    assert!(records > 100 && records <= report.records, "{records} records fetched");
 }

@@ -17,12 +17,7 @@ pub const LEVEL: i32 = 3;
 
 /// The lowercase hex SHA-256 of `bytes`: a record's id.
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut out = String::with_capacity(64);
-    for b in digest {
-        out.push_str(&format!("{b:02x}"));
-    }
-    out
+    hex(&Sha256::digest(bytes))
 }
 
 /// Whether `id` looks like a record id (64 lowercase hex characters).
@@ -82,29 +77,37 @@ impl Store {
         Ok(Put { id, stored: packed.len() as u64, new: true })
     }
 
+    /// Store a record as it came from a server (`packed`: its zstd bytes),
+    /// after checking it is record `id` of `size` plain bytes; returns the
+    /// plain bytes. A record that isn't what it claims (tampered with,
+    /// wrong, cut short) is `InvalidData` and never stored.
+    pub fn put_stored(&self, id: &str, size: u64, packed: &[u8]) -> io::Result<Vec<u8>> {
+        if !is_id(id) {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{id:?} is not a record id")));
+        }
+        let plain = unpack(id, size, packed)?;
+        let path = self.record_path(id);
+        if !path.is_file() {
+            write_atomic(&path, packed)?;
+        }
+        Ok(plain)
+    }
+
     /// Record `id`'s plain bytes, checked: exactly `size` bytes whose
     /// SHA-256 is `id`, else `InvalidData` (a corrupt or wrong record);
     /// `NotFound` when the store lacks it.
     pub fn get(&self, id: &str, size: u64) -> io::Result<Vec<u8>> {
         let path = self.record_path(id);
         let packed = fs::read(&path).map_err(|e| io::Error::new(e.kind(), format!("record {id}: {e}")))?;
-        let bad = |what: String| io::Error::new(io::ErrorKind::InvalidData, format!("record {id}: {what}"));
-        let size = usize::try_from(size).map_err(|_| bad("too large".into()))?;
-        // One byte more than wanted, so a longer record shows as one.
-        let plain = zstd::bulk::decompress(&packed, size + 1).map_err(|e| bad(format!("not zstd ({e})")))?;
-        if plain.len() != size {
-            return Err(bad(format!("{} bytes, the manifest says {size}", plain.len())));
-        }
-        if sha256_hex(&plain) != id {
-            return Err(bad("hash mismatch (corrupt record)".into()));
-        }
-        Ok(plain)
+        unpack(id, size, &packed)
     }
 
     /// Every record id in the store, sorted.
     pub fn record_ids(&self) -> Vec<String> {
         let mut out = Vec::new();
-        let Ok(dirs) = fs::read_dir(self.root.join("records")) else { return out };
+        let Ok(dirs) = fs::read_dir(self.root.join("records")) else {
+            return out;
+        };
         for dir in dirs.flatten() {
             let Ok(files) = fs::read_dir(dir.path()) else { continue };
             for f in files.flatten() {
@@ -140,7 +143,7 @@ impl Store {
             .flatten()
             .filter_map(|e| e.file_name().to_string_lossy().strip_suffix(".txt").map(String::from))
             .collect();
-        out.sort_by_key(|b| (b.parse::<u64>().map_or(1, |_| 0), b.parse::<u64>().unwrap_or(0), b.clone()));
+        sort_builds(&mut out);
         out
     }
 
@@ -148,6 +151,55 @@ impl Store {
     pub fn latest_build(&self, game: &str) -> Option<String> {
         self.builds(game).pop()
     }
+}
+
+/// Record `id`'s plain bytes from its stored (zstd) bytes, checked: exactly
+/// `size` bytes whose SHA-256 is `id`, else `InvalidData`.
+pub fn unpack(id: &str, size: u64, packed: &[u8]) -> io::Result<Vec<u8>> {
+    let bad = |what: String| io::Error::new(io::ErrorKind::InvalidData, format!("record {id}: {what}"));
+    let size = usize::try_from(size).map_err(|_| bad("too large".into()))?;
+    // One byte more than wanted, so a longer record shows as one.
+    let plain = zstd::bulk::decompress(packed, size + 1).map_err(|e| bad(format!("not zstd ({e})")))?;
+    if plain.len() != size {
+        return Err(bad(format!("{} bytes, the manifest says {size}", plain.len())));
+    }
+    if sha256_hex(&plain) != id {
+        return Err(bad("hash mismatch (corrupt or tampered record)".into()));
+    }
+    Ok(plain)
+}
+
+/// Builds oldest first: numeric builds by number, then the rest by name.
+pub fn sort_builds(builds: &mut [String]) {
+    builds.sort_by_key(|b| (b.parse::<u64>().map_or(1, |_| 0), b.parse::<u64>().unwrap_or(0), b.clone()));
+}
+
+/// Whether `name` is safe as a game or build name in a path or URL
+/// (letters, digits, `_`, `-`, `.`; not empty, not `.` or `..`).
+pub fn is_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 128
+        && name != "."
+        && name != ".."
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
+}
+
+/// Lowercase hex of `bytes`.
+pub fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// `hex`'s bytes back, if `text` is hex of exactly `N` bytes.
+pub fn unhex<const N: usize>(text: &str) -> Option<[u8; N]> {
+    let text = text.trim();
+    if text.len() != 2 * N {
+        return None;
+    }
+    let mut out = [0u8; N];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(text.get(2 * i..2 * i + 2)?, 16).ok()?;
+    }
+    Some(out)
 }
 
 /// Write `bytes` to `path` through a temporary file beside it.

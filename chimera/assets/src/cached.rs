@@ -2,8 +2,11 @@
 //! `entries`, `contains` and `files_in` answer from the manifest without
 //! touching records; `read` decompresses the record and checks its size
 //! and SHA-256 (a corrupt record is `InvalidData`, never handed to a
-//! loader). A path the manifest has but the store lacks is an error that
-//! names it (`asset miss`), so a set missing a file shows at once.
+//! loader). A record the store lacks is asked of the fetcher, when there
+//! is one (the asset service, `remote`; on demand, one request per
+//! record, checked before it is kept); without one, or when it fails, the
+//! read is an error that names the path (`asset miss`), so a set missing
+//! a file shows at once.
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -14,7 +17,7 @@ use std::{
 
 use chimera_vfs::{Entry, FileSource};
 
-use crate::{Manifest, Store, manifest::FileRecord};
+use crate::{Manifest, Store, manifest::FileRecord, remote::Fetcher};
 
 /// A manifest indexed for lookups (shared between mounts of it).
 #[derive(Debug)]
@@ -60,11 +63,18 @@ static INDEXES: Mutex<BTreeMap<std::path::PathBuf, (Option<SystemTime>, Arc<Inde
 pub struct CachedFiles {
     store: Store,
     index: Arc<Index>,
+    fetcher: Option<Arc<dyn Fetcher>>,
 }
 
 impl CachedFiles {
     pub fn new(store: Store, manifest: &Manifest) -> Self {
-        Self { store, index: Arc::new(Index::new(manifest)) }
+        Self { store, index: Arc::new(Index::new(manifest)), fetcher: None }
+    }
+
+    /// Records the store lacks are fetched with `fetcher` (when Some).
+    pub fn with_fetcher(mut self, fetcher: Option<Arc<dyn Fetcher>>) -> Self {
+        self.fetcher = fetcher;
+        self
     }
 
     /// `game`'s manifest at `build` in `store`, indexed once per process
@@ -77,11 +87,11 @@ impl CachedFiles {
             && *when == modified
             && modified.is_some()
         {
-            return Ok(Self { store: store.clone(), index: index.clone() });
+            return Ok(Self { store: store.clone(), index: index.clone(), fetcher: None });
         }
         let index = Arc::new(Index::new(&Manifest::load(&path)?));
         cache.insert(path, (modified, index.clone()));
-        Ok(Self { store: store.clone(), index })
+        Ok(Self { store: store.clone(), index, fetcher: None })
     }
 
     pub fn index(&self) -> &Index {
@@ -100,9 +110,17 @@ impl FileSource for CachedFiles {
 
     fn read(&self, path: &str) -> Option<io::Result<Vec<u8>>> {
         let f = self.index.files.get(path)?;
-        Some(self.store.get(&f.id, f.size).map_err(|e| {
+        let got = match self.store.get(&f.id, f.size) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound && self.fetcher.is_some() => {
+                self.fetcher.as_ref().map_or(Err(e), |fetcher| fetcher.fetch(&self.store, &f.id, f.size))
+            }
+            got => got,
+        };
+        Some(got.map_err(|e| {
             let e = io::Error::new(e.kind(), format!("{}: {path}: {e}", self.index.game));
-            if e.kind() == io::ErrorKind::NotFound {
+            if e.kind() == io::ErrorKind::InvalidData {
+                eprintln!("asset refused {e}");
+            } else {
                 eprintln!("asset miss {e}");
             }
             e

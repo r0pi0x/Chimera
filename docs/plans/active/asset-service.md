@@ -1,6 +1,9 @@
 # Plan: assets served by the host (ownership-checked)
 
-Status: M1 built 2026-10-30 (section 9, "M1 results"); M2 next. Decided: the hybrid model
+Status: M1 built 2026-10-30 (section 9, "M1 results"); M2 built with
+internal accounts 2026-10-30 (section 9, "M2 results", with the
+deployment steps), not yet deployed; Steam sign-in waits for the
+milestone that opens the server. Decided: the hybrid model
 (docs/DESIGN.md, "Assets, code and legal"; backlog roadmap, "Smaller
 installs: a hybrid", 2026-10-29). Directions from the user, 2026-10-30:
 
@@ -525,6 +528,111 @@ the same commit.
   fetched files with no install. *Contributor: develops, runs tests,
   tools and single-player playtests without installs, keys or Steam on
   his machine.* The user's priority.
+- **M2 results (internal accounts, built 2026-10-30; not deployed).** As
+  the decisions below say: internal accounts first, no Steam. Built, all
+  in `chimera_assets` (no new crate; the server code is unused by the
+  games and never in a release's asset paths):
+  - **Accounts** (`accounts`): an `Authenticator` per account kind, asked
+    in order; `Internal` reads `<server store>/server/accounts.toml`
+    (token hashes only, re-read when it changes, so a revoke takes effect
+    at the next request). `chimera_pack user add <name> [--games a,b]
+    [--note <device>]` prints a new token once (`chimera1_<64 hex>`; one
+    per device: run it again), `user revoke <name> [--token <n>]`, `user
+    list`. Accounts may be limited to games (`--games`; default all):
+    another game's manifest or a record only its manifests refer to is
+    403. Steam (OpenID sign-in, the ownership check, the allowlist) is
+    another `Authenticator`, to be added before the server is opened up.
+  - **The service** (`server`, the `chimera_asset_server` binary): plain
+    HTTP/1.1 on `127.0.0.1:8731` (tiny_http, blocking, 8 threads,
+    TCP_NODELAY); `GET /key` (the public key, no token), and with
+    `Authorization: Bearer <token>`: `/whoami`, `/games`, `/m/<game>/<build>`
+    (signed: `X-Chimera-Signature`), `/r/<id>` (as stored, zstd), `POST
+    /batch` (ids per line, framed answer). None, unknown or revoked token:
+    401. Manifests are re-read when the folder changes (at most once a
+    second), so a publish needs no restart; one without a valid `.sig` is
+    signed when read. Each request is a line of
+    `<server store>/server/access.log` (time, `kind:name#token`, method,
+    path, status, records, bytes). The Ed25519 key is
+    `<server store>/server/signing.key` (0600, made on first use).
+  - **Publishing:** `chimera_pack publish <game> [--from <log> --set
+    <name>]` packs the install into the server's store
+    (`<data_local>/chimera/asset-server`, `~/.local/share/...`, or
+    `--store`), copies the sets the user's store has for that build
+    (`--sets-from`; only sets whose files were all published) and signs
+    the manifest. Upload over HTTPS (another machine) isn't built.
+  - **The client** (`remote`): `[assets] url`, `token`, `key` in
+    chimera.local.toml or `CHIMERA_ASSET_URL`, `CHIMERA_ASSET_TOKEN`,
+    `CHIMERA_ASSET_KEY` (the console name will be `chimera:asset_url`).
+    `https://` only, plain `http://` only to localhost. With a service
+    set, `AssetSettings::build` fetches a manifest the store lacks (the
+    pinned build: `[assets] builds`, else `assets.lock`; else the
+    service's newest), checks its signature (against the pinned key, else
+    the key the server names over HTTPS) and the locked id, and keeps it;
+    each `CachedFiles` fetches a missing record on demand (`Fetcher`),
+    checks it against the manifest's id and size and only then stores it
+    in the user-wide store. A service that fails is reported once per
+    game and process and the game counts as not served (tests skip).
+  - **The CLI:** `chimera_assets login [<url> <token>]` (checks the token,
+    prints the `[assets]` lines with the key to pin), `fetch <game>
+    [<set>...]` (batches of 256), `lock [<game>...]` (writes `assets.lock`:
+    per game `build` and `manifest` id; none is committed yet: there is
+    no deployed server to pin).
+  - **Tests** (our own fixture bytes, the service on 127.0.0.1, a free
+    port): `chimera_assets`' `service` tests: a valid token gets signed
+    manifests, records and batches, logged; none, unknown or revoked
+    (while running) is 401, a second device's token still works; an
+    account limited to one game gets 403 for the other's manifest and
+    records (a record both share is allowed); the client refuses a
+    tampered record (not stored), a manifest signed by another key, a
+    manifest not the locked one, and plain HTTP off this machine; a
+    publish is served without a restart; accounts and the lock round
+    trip. Heavy (skip without installs):
+    `heavy::served::de_dust2_loads_from_the_asset_service_with_no_install`
+    (cs_source) and `warehouse_loads_from_the_asset_service_with_no_install`
+    (combat_arms): record a load, publish it into a scratch server store,
+    serve it, load through `mount::served::open_with` with no install, no
+    keys and an empty local store: the same meshes and texels, every
+    record fetched on demand. Measured on this box (load average ~15):
+    de_dust2 2,469 records on demand, load 2.4 s (61 s before
+    TCP_NODELAY: each response's last segment waited for the client's
+    delayed ACK); WAREHOUSE 342 records, 12.5 s (the process's first
+    load). A CLI run on localhost (publish 2 files, `user add`, the
+    server, `login`, `fetch`, `verify`, `lock`, a bad token) worked.
+    `chimera_assets` cross-builds for `x86_64-pc-windows-gnu` (ring
+    included).
+  - **Differs from the text above:** section 5's `[asset_dev]` and
+    `tools/assets` are `[assets]` and `chimera_assets`; `chimera_pack
+    --publish` is `chimera_pack publish`; no Steam, allowlist or fake
+    Steam yet (internal accounts instead); tokens don't expire (revoke).
+  - **Deployment (to do with the user; nothing was started):** on the dev
+    box, from the checkout:
+    ```
+    cargo run --release --features tools --bin chimera_pack -- publish cs_source
+    cargo run --release --features tools --bin chimera_pack -- publish combat_arms
+    cargo run --release --features tools --bin chimera_pack -- user add <tester> --note <device>
+    cargo run --release -p chimera_assets --bin chimera_asset_server    # 127.0.0.1:8731; prints the key
+    tailscale serve --bg --https=443 http://127.0.0.1:8731
+    ```
+    `publish` without `--from` packs the whole install (CS:S ~3 GB
+    stored); with `--from <vfs log> --set <name>` only a set, e.g. the
+    `heavy-tests` log. Keep the server running under a user service
+    (systemd `--user` unit with `Restart=on-failure`) or a terminal; it
+    binds localhost only, so only `tailscale serve` reaches it, over
+    HTTPS on the tailnet name (`https://<box>.<tailnet>.ts.net`). Each
+    tester: `[assets] url = "https://<box>.<tailnet>.ts.net"`, `token =
+    "<printed>"`, then `chimera_assets login` (prints `key` to pin) and
+    `chimera_assets fetch cs_source <set>` or nothing (on demand). Then
+    `chimera_assets lock` on a branch and commit `assets.lock`. Back up
+    `<server store>/server/` (key and accounts); revoke with `user revoke`.
+  - **Left:** Steam sign-in, the ownership check and the allowlist (an
+    `Authenticator`, before the server opens up); publishing over HTTPS
+    from another machine (publisher tokens); rate limits and token
+    expiry; the cache cap (`cl_assetcache_gb`); on-demand fetches are one
+    request per record (a miss could fetch its set by batch); the
+    `heavy-tests`, `base`, weapon and player sets; tests that need an
+    install accepting "install or service" beyond the store-alone path
+    (`mount::served::alone` skips whole-install checks); Combat Arms'
+    music (`Game/BGM`) isn't served.
 - **M3: mode 1, files from the game server.** The game server's
   sign-in listener and short tokens, `PlayerEntitlements`,
   `AssetRequest`/`AssetChunk` with `sv_asset_maxrate`; the client
