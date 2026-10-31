@@ -2380,10 +2380,11 @@ dithered fade bands. Left:
   (performance.md, "The heavy tier: a sixth slot", 2026-10-30): ~940 s to
   750-800 s expected. Then re-try a sixth heavy slot (it gave -15% but ran
   the box out of memory).
-- The seven heavy tests that fail with the installs on main (5e324989;
-  performance.md, same section): Combat Arms' archive count and view-model
-  timings, the mashup's world-only load, party_kit's dust2 gun game and
-  warehouse bodies.
+- *Done:* the seven heavy tests that failed with the installs on 5e324989
+  (Combat Arms' archive count and view-model timings, the mashup's
+  world-only load, party_kit's dust2 gun game and warehouse bodies) were
+  fixed by the fix-install-heavy merge (74457ecf), which landed while
+  this measurement ran. Post-push runs now use the installs.
 
 ## 10. Long tail
 
