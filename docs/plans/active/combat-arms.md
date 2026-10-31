@@ -435,6 +435,14 @@ Notes:
   bomb's fire key with movement locked; the mission files read (item
   21). Live checks left in windows-captures.md, Sitting 5, items 17-30.
 
+- 2026-10-31: NPC and boss bodies (characters.md 12, 13): the `AIModel#`
+  records wearable as player looks in their body families
+  (`characters::families`, data/npc_bodies.toml), the install's hit
+  tables 2-18, the NPC and boss guns on their own bodies in the gun
+  game (data/rung_characters.toml); cases 62-89 as tests (`npc_bodies`,
+  `heavy::npc_bodies`). Left: the hull per body (Open question 35), the
+  EOD boss's `AL` pulse, the Shining's weight sets.
+
 ## Weapon skins: open questions for a spec session (2026-10-29)
 
 From the 2026-10-28 gun game playtest's grey and scrambled guns (docs/
