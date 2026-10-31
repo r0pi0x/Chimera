@@ -6,12 +6,15 @@
 //! games' characters through and shatters the panes their box touches
 //! (its panes' collider is for shots only, `core::TRACE_ONLY_LAYER`), and
 //! a break-on-touch glass func_breakable breaks when either runs into it.
+//! A Combat Arms round breaks both and goes on through (their nodes'
+//! surface is glass, `map::BrushSurface`, which Combat Arms passes:
+//! weapon_firing.md "Penetration").
 
 use bevy::prelude::*;
 use chimera_core::core::DamageKind;
 use chimera_world::{
     harness::Sim,
-    map::{MapBrush, MapData, MapEntity, MapHull, MapSimPlugin},
+    map::{MapBrush, MapData, MapEntity, MapHull, MapMesh, MapSimPlugin},
 };
 use combat_arms::{game::movement as ca_movement, harness::CaSim};
 use cs_source::game::movement::{self as css_movement, to_engine, to_source};
@@ -91,8 +94,26 @@ fn glass_map() -> MapData {
                 vec![hull(Vec3::new(-32.0, -2.0, -32.0), Vec3::new(32.0, 2.0, 32.0))],
             ),
         ],
+        // Their drawn faces: glass (what a round finds there,
+        // `map::BrushSurface`).
+        meshes: (0..2).map(glass_face).collect(),
         entity_scale: SCALE,
         spawns: vec![(to_engine(Vec3::new(0.0, -300.0, 1.0)), None)],
+        ..default()
+    }
+}
+
+/// A drawn glass face of brush entity `entity` (one triangle; where it
+/// is doesn't matter here).
+fn glass_face(entity: usize) -> MapMesh {
+    MapMesh {
+        material: "glass/glasswindow001a".into(),
+        entity: Some(entity),
+        surface: Some("glass".into()),
+        positions: vec![[0.0, 0.0, 0.0], [0.1, 0.0, 0.0], [0.0, 0.1, 0.0]],
+        normals: vec![[0.0, 0.0, 1.0]; 3],
+        uvs: vec![[0.0, 0.0]; 3],
+        indices: vec![0, 1, 2],
         ..default()
     }
 }
@@ -194,4 +215,59 @@ fn touch_glass_broken(sim: &Sim) -> bool {
         .filter_map(|id| logic.world.get(id))
         .find(|e| e.map_index == Some(1))
         .is_none_or(|e| matches!(&e.class, Class::Breakable(b) if b.broken))
+}
+
+// ---------------------------------------------------------------------------
+// Combat Arms' rounds through CS:S's glass (specs/combat_arms/
+// weapon_firing.md "Penetration": Glass passes, damage x 0.9).
+
+/// A Combat Arms soldier at Source (x, y) holding `gun`, drawn.
+fn gunner(sim: &mut Sim, gun: &str, x: f32, y: f32) -> Entity {
+    let p = runner(sim, ca_movement::ID, x, y);
+    chimera_sim::weapon::give(sim.app.world_mut(), p, gun).expect("the gun");
+    sim.seconds(1.5);
+    p
+}
+
+fn health(sim: &Sim, p: Entity) -> f32 {
+    sim.app.world().get::<chimera_core::core::Health>(p).unwrap().current
+}
+
+/// One round from `p` at Source point `at`.
+fn shoot(sim: &mut Sim, p: Entity, at: Vec3) {
+    chimera_sim::testkit::aim_at(sim, p, to_engine(at));
+    sim.ticks(1);
+    sim.intent(p).fire = true;
+    sim.ticks(1);
+    sim.intent(p).fire = false;
+    sim.ticks(10);
+}
+
+#[test]
+fn a_combat_arms_round_breaks_a_window_pane_and_goes_through() {
+    let mut sim = party_on_glass();
+    let shooter = gunner(&mut sim, "combat_arms:m4a1", 0.0, 100.0);
+    let target = runner(&mut sim, ca_movement::ID, 0.0, 320.0);
+    let before = health(&sim, target);
+    let chest = to_source(sim.position(target)) + Vec3::Z * 10.0;
+    shoot(&mut sim, shooter, chest);
+    let panes = broken_panes(&sim);
+    let after = health(&sim, target);
+    eprintln!("panes {panes:?}, target {before} -> {after}");
+    assert!(panes.is_some_and(|n| n > 0), "the round broke the window: {panes:?}");
+    assert!(after < before, "and went on into the soldier behind: {before} -> {after}");
+}
+
+#[test]
+fn a_combat_arms_round_breaks_glass_and_goes_through() {
+    let mut sim = party_on_glass();
+    let shooter = gunner(&mut sim, "combat_arms:m4a1", -300.0, 100.0);
+    let target = runner(&mut sim, ca_movement::ID, -300.0, 320.0);
+    let before = health(&sim, target);
+    let chest = to_source(sim.position(target)) + Vec3::Z * 10.0;
+    shoot(&mut sim, shooter, chest);
+    let after = health(&sim, target);
+    eprintln!("glass broken {}, target {before} -> {after}", touch_glass_broken(&sim));
+    assert!(touch_glass_broken(&sim), "the round broke the glass");
+    assert!(after < before, "and went on into the soldier behind: {before} -> {after}");
 }

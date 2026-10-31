@@ -53,6 +53,10 @@ pub(crate) fn plain_rungs(world: &mut World) {
 }
 
 /// A Combat Arms soldier, not yet in the game (the minigame takes it in).
+/// The greybox's open middle, where `line_up` stands players (feet just
+/// above the floor).
+pub(crate) const OPEN: Vec3 = Vec3::new(0.0, 1.0, 0.0);
+
 pub(crate) fn soldier(sim: &mut Sim) -> Entity {
     sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), movement::ID)
 }
@@ -107,7 +111,8 @@ pub(crate) fn shoot_until_dead(sim: &mut Sim, shooter: Entity, target: Entity, s
 }
 
 /// `target` back in play, unprotected, `d` m in front of `shooter` (both
-/// standing still), the shooter's weapon drawn.
+/// standing still, on the greybox's open middle: a spawn spot may be near
+/// a ledge), the shooter's weapon drawn.
 pub(crate) fn line_up(sim: &mut Sim, shooter: Entity, target: Entity, d: f32) {
     for _ in 0..(6.0 * sim.tick_hz()) as u32 {
         if alive(sim, target) && sim.app.world().get::<God>(target).is_none() {
@@ -116,7 +121,8 @@ pub(crate) fn line_up(sim: &mut Sim, shooter: Entity, target: Entity, d: f32) {
         sim.ticks(1);
     }
     assert!(alive(sim, target), "respawned");
-    let from = sim.position(shooter);
+    let from = OPEN;
+    place(sim, shooter, from);
     place(sim, target, from + Vec3::new(0.0, 0.0, -d));
     // Settle, and finish drawing what the last kill gave.
     sim.seconds(1.3);

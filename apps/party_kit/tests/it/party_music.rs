@@ -94,7 +94,9 @@ fn a_protected_player_shows_and_takes_no_hit_from_either_games_guns() {
             },
             chimera_core::core::God,
         ));
-        let from = sim.position(a);
+        // On the greybox's open middle (a spawn spot may be near a ledge).
+        let from = crate::gun_game::OPEN;
+        place(&mut sim, a, from);
         place(&mut sim, b, from + Vec3::new(0.0, 0.0, -4.0));
         sim.ticks(3);
         assert_eq!(fire_at(&mut sim, a, b), (0, 0.0), "{gun}: protected");

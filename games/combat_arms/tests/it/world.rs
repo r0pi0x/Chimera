@@ -264,6 +264,44 @@ fn t09_t10_what_collides() {
     assert!(walk_world(walled(0, true)) > -500.0 * s, "through a blocker");
 }
 
+/// The small world with its wall of surface type `ty` (40 Glass, 41
+/// Bullet-Proof Glass), solid or not.
+fn glazed(ty: u16, solid: bool) -> World {
+    let mut w = small_world();
+    let m = &mut w.models[0];
+    m.surfaces.push(Surface {
+        flags: if solid { surface_flags::SOLID } else { 0 },
+        surface_type: ty,
+        ..default()
+    });
+    m.polygons[1].surface = 1;
+    w
+}
+
+/// weapon_firing.md "Penetration" on a map's glass: a pane of Glass (40),
+/// solid or ray-hit only, lets a round through to the target behind it;
+/// Bullet-Proof Glass (41) stops it. Each glass type is a collision set of
+/// its own named with its surface (`MapCollisionSet::surface`, what the
+/// round reads), and sight passes both.
+#[test]
+fn glass_lets_rounds_through_and_bullet_proof_glass_stops_them() {
+    let s = movement::movement_data().meters_per_unit;
+    for (ty, solid, name, through) in [
+        (40, true, "Glass", true),
+        (40, false, "Glass", true),
+        (41, true, "Bullet-Proof Glass", false),
+    ] {
+        let map = world::convert(&glazed(ty, solid), "small", s, &|_| None);
+        let set = map
+            .collision_sets
+            .iter()
+            .find(|c| !c.indices.is_empty() && c.see_through)
+            .unwrap_or_else(|| panic!("{ty}: a glass set"));
+        assert_eq!((set.surface.as_deref(), set.characters), (Some(name), solid), "{ty}");
+        assert_eq!(shoot_world(glazed(ty, solid), 700.0), through, "{name} (solid {solid})");
+    }
+}
+
 /// `shoot` on another world.
 fn shoot_world(w: World, ahead: f32) -> bool {
     let s = movement::movement_data().meters_per_unit;
@@ -788,11 +826,12 @@ fn glass_is_see_through() {
     sim.ticks(2);
     let world = sim.app.world_mut();
     let marked = world
-        .query_filtered::<&Name, With<chimera_world::map::SeeThrough>>()
+        .query_filtered::<(&Name, Option<&chimera_world::map::PropSurface>), With<chimera_world::map::SeeThrough>>()
         .iter(world)
-        .map(|n| n.to_string())
+        .map(|(n, s)| (n.to_string(), s.map(|s| s.0.clone())))
         .collect::<Vec<_>>();
-    assert_eq!(marked, ["Map collision (glass)"]);
+    // Its collider names its surface (what a round reads there).
+    assert_eq!(marked, [("Map collision (glass (Glass))".to_string(), Some("Glass".to_string()))]);
     assert!(walk_world(w) > -500.0 * s, "players stop at the glass");
 }
 

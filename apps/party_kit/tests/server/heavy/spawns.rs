@@ -247,3 +247,34 @@ fn every_pool_map_s_spawn_spots_are_inside_it() {
         }
     }
 }
+
+/// de_dust2's spots off its 64-unit grid lines, where faces meet (the
+/// 2026-10-30 "seam": a party spawn's eye 0.85 units from the edge at
+/// y 2304 between a bump-lit and a flat-lit displacement, looking along
+/// it, saw the edge as a vertical line through the frame's middle; 35
+/// spots, area-centred, sat on that one line). Each spot coordinate within
+/// a unit of a 64-unit line no more often than chance (1 in 32) allows,
+/// with room, and no row of spots along y 2304.
+#[test]
+fn dust2s_spawn_eyes_keep_off_its_grid_lines() {
+    use chimera_sim::minigame::spawns;
+    if !installs() {
+        eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
+        return;
+    }
+    let Some(mut sim) = server(&["+minigame", "originals:gun_game_dust2", "+map", "cs_source:de_dust2", "+maxplayers", "4"])
+    else {
+        return;
+    };
+    sim.seconds(1.0);
+    let spots = spawns::candidates(sim.app.world_mut());
+    // Source units: x, and y = -z.
+    let coords: Vec<f32> = spots.iter().flat_map(|s| [s.x / 0.0254, -s.z / 0.0254]).collect();
+    let on = coords.iter().filter(|c| (**c - (**c / 64.0).round() * 64.0).abs() < 1.0).count();
+    let chance = coords.len() as f32 / 32.0;
+    let row = spots.iter().filter(|s| (-s.z / 0.0254 - 2304.0).abs() < 1.0).count();
+    eprintln!("{} spots: {on} coordinates within a unit of a 64-unit line (chance {chance:.0}); {row} within a unit of y 2304", spots.len());
+    assert!(spots.len() > 1000, "{} spots", spots.len());
+    assert!((on as f32) < chance * 1.4, "{on} coordinates on 64-unit lines, chance {chance:.0}");
+    assert!(row < 8, "{row} spots along y 2304");
+}

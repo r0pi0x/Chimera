@@ -340,6 +340,9 @@ fn spawn_world_collision(commands: &mut Commands, data: &MapData, parts: Collisi
         if set.see_through {
             e.insert(SeeThrough);
         }
+        if let Some(s) = &set.surface {
+            e.insert(PropSurface(s.clone()));
+        }
     }
     // Glass and grates get a collider of their own, marked `SeeThrough`.
     for (glass, collider) in [false, true].into_iter().zip(parts.solids) {
@@ -406,6 +409,9 @@ fn spawn_entity_nodes(commands: &mut Commands, data: &MapData, root: Entity) -> 
                 Visibility::default(),
                 ChildOf(root),
             ));
+            if let Some(s) = entities::brush_surface(&data.meshes, i) {
+                node.insert(entities::BrushSurface(s));
+            }
             match (collider, &e.physics) {
                 // A physics brush (func_physbox): a rigid body like a
                 // physics prop, pinned while its motion is disabled.

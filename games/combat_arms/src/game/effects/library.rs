@@ -15,8 +15,10 @@
 //!   (`material_name`: texture and blend), its size kept for sprites
 //!   (`FxLibrary::texture_size`);
 //! - the world's surface types on the drawn meshes (`tag_surfaces`): each
-//!   texture takes the type its physics polygons have most, so Chimera's
-//!   `SurfaceGrid` answers a hit point's or a foot's type;
+//!   texture takes the type its solid physics polygons have most (a
+//!   texture none of them uses: its other polygons', non-solid detail and
+//!   world models'), so Chimera's `SurfaceGrid` answers a hit point's or a
+//!   foot's type and a world model's node its `map::BrushSurface`;
 //! - sound files (`sound_clip`, the unkeyed `GUNS_SND_*`, `SND`,
 //!   `CHARS_SND` and `UI_SND` archives), read through the install's mount
 //!   when first played.
@@ -394,27 +396,34 @@ fn load_fx_file(file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<FxFile, String
         .clone()
 }
 
-/// Give each drawn mesh of the world (no entity) the surface type its
-/// texture's physics polygons have most often (as its `surface`, the
-/// number in text), so `SurfaceGrid` answers types; textures the physics
-/// BSP doesn't use stay untyped (0, Unknown).
+/// Give each drawn mesh the surface type its texture's polygons have most
+/// often (as its `surface`, the number in text), so `SurfaceGrid` answers
+/// types for the world's and a node's `map::BrushSurface` is its type:
+/// the physics BSP's solid polygons decide; a texture none of them uses
+/// takes its type from every other polygon that does (the physics BSP's
+/// non-solid ones, which rays hit too, world_dat.md, and the world
+/// models': glass panes, breakables). Textures no polygon uses stay
+/// untyped (0, Unknown).
 pub fn tag_surfaces(map: &mut MapData, world: &World) {
-    let mut counts: HashMap<String, HashMap<u16, usize>> = HashMap::new();
-    for m in world.models.iter().filter(|m| m.is_physics()) {
+    let majority = |counts: HashMap<String, HashMap<u16, usize>>| -> HashMap<String, u16> {
+        counts
+            .into_iter()
+            .filter_map(|(t, c)| c.into_iter().max_by_key(|(ty, n)| (*n, u16::MAX - *ty)).map(|(ty, _)| (t, ty)))
+            .collect()
+    };
+    let (mut solid, mut other): (HashMap<String, HashMap<u16, usize>>, HashMap<String, HashMap<u16, usize>>) =
+        Default::default();
+    for m in &world.models {
         for i in 0..m.polygons.len() {
             let s = m.polygon_surface(i);
-            if s.flags & surface_flags::SOLID == 0 {
-                continue;
-            }
             let Some(t) = m.textures.get(s.texture as usize) else { continue };
+            let counts = if m.is_physics() && s.flags & surface_flags::SOLID != 0 { &mut solid } else { &mut other };
             *counts.entry(normalize(t)).or_default().entry(s.surface_type).or_default() += 1;
         }
     }
-    let types: HashMap<String, u16> = counts
-        .into_iter()
-        .filter_map(|(t, c)| c.into_iter().max_by_key(|(ty, n)| (*n, u16::MAX - *ty)).map(|(ty, _)| (t, ty)))
-        .collect();
-    for m in map.meshes.iter_mut().filter(|m| m.entity.is_none()) {
+    let mut types = majority(other);
+    types.extend(majority(solid));
+    for m in map.meshes.iter_mut() {
         if let Some(ty) = types.get(&normalize(&m.material)) {
             m.surface = Some(ty.to_string());
         }

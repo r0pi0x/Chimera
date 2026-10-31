@@ -42,7 +42,7 @@ pub mod hazards;
 pub use hazards::{SpawnHazardAppExt, SpawnHazards};
 pub mod fish;
 pub mod fire;
-pub use entities::{MapBrushEntity, MapEntities, MapEntity, MapHull};
+pub use entities::{BrushSurface, MapBrushEntity, MapEntities, MapEntity, MapHull};
 pub mod beams;
 pub mod breakables;
 pub mod buoyancy;

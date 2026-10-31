@@ -2121,3 +2121,34 @@ fn t45_a_miss_is_the_fire_sound_alone() {
     assert_eq!(h.iter().filter(|s| s.file == M9_FIRE).count(), 2, "{h:?}");
     assert!(!h.iter().any(|s| s.file.contains("impact")), "no impact sound: {h:?}");
 }
+
+/// A round on Bullet-Proof Glass (surface 41, a pane with its own surface:
+/// a glass set of a Combat Arms map, `map::MapCollisionSet::surface`)
+/// takes that surface's impact (`Impact_Glass_BulletProof`) and decal,
+/// not the world's around it (here metal).
+#[test]
+fn a_round_on_bullet_proof_glass_takes_its_impact() {
+    use avian3d::prelude::{Collider, RigidBody};
+    let mut sim = sim();
+    let me = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
+    sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
+    arm(&mut sim, me, "combat_arms:m4a1");
+    type_everything(&mut sim, 20);
+    let eye = sim.position(me) + sim.state(me).eye_offset;
+    sim.app.world_mut().spawn((
+        Transform::from_translation(Vec3::new(eye.x, eye.y, eye.z - 3.0)),
+        RigidBody::Static,
+        Collider::cuboid(2.0, 2.0, 0.02),
+        chimera_world::map::PropSurface("Bullet-Proof Glass".into()),
+    ));
+    sim.intent(me).pitch = 0.0;
+    sim.ticks(2);
+    heard(&mut sim);
+    sim.app.world_mut().resource_mut::<Requested>().0.clear();
+    fire_once(&mut sim, me);
+    let req = std::mem::take(&mut sim.app.world_mut().resource_mut::<Requested>().0);
+    assert!(req.iter().any(|r| r.group == "Impact_Glass_BulletProof" && r.kind == FxKind::Surface), "{req:?}");
+    assert!(!req.iter().any(|r| r.group == "Impact_Metal"), "{req:?}");
+    let marks = sim.app.world().resource::<CaMarks>();
+    assert_eq!(marks.marks.last().map(|m| m.sprite.as_str()), Some("fx/i_mark/im_glass_bp.spr"));
+}

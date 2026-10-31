@@ -180,7 +180,10 @@
 //! - The spread runs per tick (the spec's per frame), its sub-steps on an
 //!   exact 80 Hz clock (`SpreadOptions::quantised` drops the remainder
 //!   as the game does); the body's twist is ours to keep (`body_yaw`).
-//! - What a round passes is a collider's `PropSurface`, else the
+//! - What a round passes is the hit collider's own surface
+//!   (`effects::owned_surface`: a prop's `PropSurface`, a glass set's on a
+//!   Combat Arms map, a brush entity's `map::BrushSurface` such as a CS:S
+//!   window's glass or a world model's type number), else the
 //!   world's surface type where it hit (the drawn triangles' types,
 //!   `effects::world_surface`) by name in the table; on another game's map
 //!   (a mashup) its surface names are Combat Arms' through the app's table
@@ -1939,7 +1942,9 @@ struct Delivery<'w, 's> {
     knockback: Query<'w, 's, &'static super::movement::HitKnockback>,
     now: Res<'w, SimClock>,
     commands: Commands<'w, 's>,
-    surfaces: Query<'w, 's, &'static PropSurface>,
+    /// Colliders' own surfaces: props' and Combat Arms' glass sets'
+    /// (`PropSurface`), brush entities' (`map::BrushSurface`).
+    surfaces: (Query<'w, 's, &'static PropSurface>, Query<'w, 's, &'static crate::map::BrushSurface>),
     colliders: Query<'w, 's, &'static ColliderOf>,
     bodies: Query<'w, 's, (&'static RigidBody, Option<&'static ColliderAabb>)>,
     table: Res<'w, CaSurfaces>,
@@ -2107,24 +2112,31 @@ impl Delivery<'_, '_> {
     }
 
     /// The name of the surface a round hit (`CaSurfaces`' key): the
-    /// collider's `PropSurface` (or its body's), else the world's surface
+    /// collider's own (`effects::owned_surface`: a prop's, a glass set's, a
+    /// brush entity's such as a CS:S window), else the world's surface
     /// type at `point`; another game's names (a mashup's map) as Combat
     /// Arms' (`map::SurfaceNames`).
-    fn surface_name(&self, collider: Entity, body: Entity, point: Vec3) -> Option<String> {
+    fn surface_name(&self, collider: Entity, point: Vec3) -> Option<String> {
         let names = self.ground.1.as_deref();
-        let prop = self.surfaces.get(collider).or_else(|_| self.surfaces.get(body)).ok();
-        if let Some(p) = prop {
-            return Some(names.map_or(p.0.as_str(), |n| n.resolve(&p.0)).to_string());
-        }
         let tables = super::effects::data::CaFxTables::built_in();
+        let (props, brushes) = &self.surfaces;
+        if let Some(p) = super::effects::owned_surface(collider, props, brushes, &self.colliders) {
+            let p = names.map_or(p, |n| n.resolve(p));
+            // Combat Arms' own world models name their type's number
+            // (`library::tag_surfaces`).
+            return match p.parse::<u16>() {
+                Ok(ty) => Some(tables.surface.iter().find(|s| s.id == ty)?.name.clone()),
+                Err(_) => Some(p.to_string()),
+            };
+        }
         let ty = super::effects::world_surface_named(self.ground.0.as_deref(), names, point);
         Some(tables.surface.iter().find(|s| s.id == ty)?.name.clone())
     }
 
     /// How a round passes what it hit (`surface_name` in `CaSurfaces`).
     /// None: it stops there.
-    fn surface_at(&self, collider: Entity, body: Entity, point: Vec3) -> Option<SurfacePass> {
-        self.table.get(&self.surface_name(collider, body, point)?)
+    fn surface_at(&self, collider: Entity, point: Vec3) -> Option<SurfacePass> {
+        self.table.get(&self.surface_name(collider, point)?)
     }
 }
 
@@ -3047,8 +3059,8 @@ fn server_walk(w: &mut Delivery, dmg: &CaDamage, r: &Round, walk: Walk, bodies: 
             });
         }
         // Through it? A collider's surface, else the world's there.
-        let name = w.surface_name(hit.entity, body, point);
-        let Some(pass) = w.surface_at(hit.entity, body, point) else { return };
+        let name = w.surface_name(hit.entity, point);
+        let Some(pass) = w.surface_at(hit.entity, point) else { return };
         let restart = if pass.thickness <= 0.0 {
             point
         } else {
@@ -3073,7 +3085,7 @@ fn server_walk(w: &mut Delivery, dmg: &CaDamage, r: &Round, walk: Walk, bodies: 
             }
             // The exit when its surface is the entry's, else the entry.
             let exit = far - dir * h.distance;
-            if w.surface_name(h.entity, w.body(h.entity), exit) == name { exit } else { point }
+            if w.surface_name(h.entity, exit) == name { exit } else { point }
         };
         left = (walk.range - restart.distance(r.origin)) * pass.range;
         dampen *= pass.damage;

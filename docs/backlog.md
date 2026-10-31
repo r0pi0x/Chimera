@@ -212,30 +212,32 @@ the user's go-ahead: no Actions runs unless asked.
   playtest turn the knife finale on (Host settings) or set the odds to
   1. The melee band is the ladder's trailing melee rungs (the power
   curve's melee band, `minigame::power`).
-- **A vertical seam through the frame on de_dust2.** A 2026-10-30 capture
-  (Lucker Party, outside the arch toward B tunnels) shows a hard vertical
-  line down the middle of the frame. Left of it the ground is a
-  different surface from the right, and a wall is cut off along the same
-  line. *Diagnosed 2026-10-29: not a rendering fault; confirm against a
-  CS:S capture.* The spot is a party spawn, `setpos -1031.46 2303.15
-  32.67; setang 0 0 0` (eye; between CT spawn and B doors, facing east).
-  The line is the edge at y 2304 between two displacements:
-  `de_dust/rockwall_blend` to the north (left; its sand mound also hides
-  the tower's foot) and `de_dust/groundsand_blend` to the south, with the
-  `overlays/brickroad01` paving overlay stopping at y 2296. Both sides show
-  `groundsand03a` (blend weights 1.0 and 0.97 at the edge), but with the
-  texture turned about 90° and offset between the two faces' mappings, and
-  only `groundsand_blend` has a bump map for it. The spawn grid
-  (`minigame::spawns`, spots on the nav mesh facing one of eight
-  directions) put the eye exactly in the vertical plane of that edge and
-  looking along it, so the edge projects onto the frame's middle column:
-  27-33 units sideways the line moves off-centre (+32 / -15 px), and it
-  stays put on the ground from above. Unchanged with `r_novis 1`,
-  `r_shadows 0`, `mat_antialias 0`, `mat_colorcorrection 0`, the sky
-  camera off, and `CHIMERA_GPU_PREPROCESS=1 CHIMERA_SKIP_OUTPUTS=0`. To
-  settle whether CS:S draws the edge as sharply: `refcmp capture-ref
-  --only seam_b_mound` on the Windows PC (views `seam_b_mound`,
-  `seam_b_mound_south` in tools/refcmp/de_dust2.toml), then `report`.
+- **A vertical seam through the frame on de_dust2: spawns fixed; confirm
+  the edge against a CS:S capture.** A 2026-10-30 capture (Lucker Party,
+  outside the arch toward B tunnels) showed a hard vertical line down the
+  middle of the frame. The spot was a party spawn, `setpos -1031.46
+  2303.15 32.67; setang 0 0 0` (eye; between CT spawn and B doors, facing
+  east), 0.85 units from the edge at y 2304 between two displacements,
+  looking along it: `de_dust/rockwall_blend` north (no `$bumpmap`, so
+  compiled without bump lightmaps) and `de_dust/groundsand_blend` south
+  (bumped). Everything in that vertical plane (the edge, the tower's
+  wall seen end-on) lands on the frame's middle column. *Not a rendering
+  fault (2026-10-31):* the albedo debug view shows no line (the same
+  `groundsand03a` both sides), and the two flat lightmaps agree along the
+  edge (`heavy::map_de_dust2::the_b_mound_seam_is_where_bump_lighting_stops`);
+  the line is the bump lighting stopping there, drawn the way
+  specs/cs_source/shaders.md says CS:S draws a bumped face next to a flat
+  one. *The spawns' part, fixed:* spots were centred in their nav areas,
+  which are often symmetric about a line of the map's grid (35 of
+  de_dust2's spots sat on that one edge's line; 2.6 times chance within a
+  unit of a 64-unit line); each spot is now nudged a seeded amount off
+  the centred grid (`minigame::spawns::SPOT_NUDGE`; tests
+  `spawns::spots_are_nudged_off_the_areas_centred_grid` and, on
+  de_dust2, `heavy::spawns::dust2s_spawn_eyes_keep_off_its_grid_lines`:
+  now at chance). Left: `refcmp capture-ref --only seam_b_mound` on the
+  Windows PC (views `seam_b_mound`, `seam_b_mound_south` in
+  tools/refcmp/de_dust2.toml), then `report`, to see that CS:S draws the
+  edge as sharply.
 - **Rung attachments may not fit their gun, or not show (user, 2026-10-29): fixed, confirm in a playtest.**
   In the Escape-menu screenshots, the FMG-9's rung listed a holosight and
   the Luger P08's a silencer, but neither shows on the gun, and the user
@@ -885,12 +887,32 @@ the user's go-ahead: no Actions runs unless asked.
   `DotSightName`, special weapons' scopes and held models hold. Not
   listed there: the ammo's effect names, the rates above, the muzzle
   effect names.
-- **Can Combat Arms guns shoot through glass?** Check that a Combat Arms
-  round goes through (and breaks) glass the way Combat Arms does: CS:S
-  maps' breakable glass, and Combat Arms maps' glass surfaces. The specs
-  have a surface 41, Bullet-Proof Glass, with its own impact. What
-  Combat Arms does to rounds at glass (pass, stop, lose damage) may need
-  a spec session on the Windows PC.
+- **Can Combat Arms guns shoot through glass? Fixed, confirm in a
+  playtest.** Checked against weapon_firing.md "Penetration" (Glass,
+  surface 40: passes up to 10 u, damage x 0.9, re-perturb 5; Bullet-Proof
+  Glass, 41: not shoot-through, stops the round, its own impact
+  `Impact_Glass_BulletProof`). What differed, now fixed:
+  - CS:S maps: a Combat Arms round broke a window (func_breakable_surf)
+    or glass func_breakable but stopped there: brush entities had no
+    surface for it (the world's `SurfaceGrid` holds the world's own
+    triangles only). Their nodes now carry `map::BrushSurface` (the
+    surface most of their faces have: `glass`, Combat Arms' Glass through
+    the mashup's table), so the round breaks the pane and goes on (party
+    `cross_glass`, mashup `heavy::cs_maps::a_combat_arms_round_breaks_an_office_window_and_goes_through`).
+  - Combat Arms maps: glass was read by texture from the nearest drawn
+    triangle, typed by its solid polygons only, so non-solid glass and
+    glass world models were Unknown (stopped rounds, no glass impact).
+    The glass collision sets are now one per type with their surface
+    (`MapCollisionSet::surface`, on the collider as `PropSurface`), world
+    models' textures are typed too (nodes take theirs as `BrushSurface`),
+    and impacts read what was hit before the world (`effects::owned_surface`)
+    (combat_arms `world::glass_lets_rounds_through_and_bullet_proof_glass_stops_them`,
+    `weapon_firing::t37_*`, `effects_sounds::a_round_on_bullet_proof_glass_takes_its_impact`,
+    `heavy::world::glass_sets_and_glass_world_models_name_their_surface`).
+  Combat Arms' own glass doesn't break (only `Breakable` objects do, by
+  hit points; world_objects.md 11). Open: surface Unknown (0) is
+  shoot-through in one build's table (effects_sounds.md Open question
+  15); ours stops.
 - **Random attachments on Combat Arms rungs (user idea): fixed, confirm
   in a playtest.** Built as Chimera's per-rung extras hook
   (`ladder::RungExtrasHook`, `rung_extras` in `[rules]`) with Combat

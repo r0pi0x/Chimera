@@ -1124,6 +1124,39 @@ fn t37_two_panels() {
     close(shoot_at(&mut sim, shooter, target, "Torso"), 18.9, 1e-3, "glass and plywood");
 }
 
+/// Glass passes a round at 0.9 of its damage; Bullet-Proof Glass (surface
+/// 41) isn't in the shoot-through table and stops it, however thin.
+#[test]
+fn t37_glass_passes_and_bullet_proof_glass_stops() {
+    for (surface, want) in [("Glass", 35.0 * 0.9), ("Bullet-Proof Glass", 0.0)] {
+        let mut sim = sim();
+        let (shooter, target) = range_lane(&mut sim, "test:m4a1_exact", 1000.0);
+        place_at(&mut sim, shooter, target, "Torso", 1000.0);
+        panel(&mut sim, 33.0, 1.0, surface);
+        close(shoot_at(&mut sim, shooter, target, "Torso"), want, 1e-3, surface);
+    }
+}
+
+/// The same for a brush entity's glass (`map::BrushSurface`): another
+/// game's window by its name, a Combat Arms world model (a node) by its
+/// type's number.
+#[test]
+fn t37_brush_entities_glass() {
+    for (surface, want) in [("glass", 35.0 * 0.9), ("40", 35.0 * 0.9), ("41", 0.0)] {
+        let mut sim = sim();
+        let (shooter, target) = range_lane(&mut sim, "test:m4a1_exact", 1000.0);
+        place_at(&mut sim, shooter, target, "Torso", 1000.0);
+        sim.app.world_mut().spawn((
+            Transform::from_xyz(30.0, 1.5, 33.0),
+            RigidBody::Kinematic,
+            Collider::cuboid(3.0, 3.0, U),
+            chimera_world::map::BrushSurface(surface.into()),
+        ));
+        sim.ticks(1);
+        close(shoot_at(&mut sim, shooter, target, "Torso"), want, 1e-3, surface);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The follow-up answers (38-49)
 

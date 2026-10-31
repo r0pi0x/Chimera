@@ -56,7 +56,8 @@ neither game knows the other (checks/tests/it/architecture.rs).
   the translation where it reads surfaces (`effects::Ground`,
   `surface_type`: impacts, footsteps, shells, grenades; penetration,
   which now also reads the world's surface type where a wall has no
-  `PropSurface`).
+  `PropSurface`, and a brush entity's `map::BrushSurface`, so a Combat
+  Arms round passes CS:S's glass windows and breakables).
 - CS:S's guns per slot: `cs_source::game::weapons::CsGunsPlugin` (the
   data, its hooks, accuracy and recoil, penetration materials) split
   from `CsWeaponsPlugin` (which adds the shop, rules, effects and the

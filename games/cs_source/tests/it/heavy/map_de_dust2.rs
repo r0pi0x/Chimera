@@ -3029,3 +3029,61 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
     assert_eq!(lean.spawns, full.spawns);
     assert_eq!(lean.warnings, full.warnings);
 }
+
+/// The 2026-10-30 "seam" (a vertical line through a party spawn's frame,
+/// between CT spawn and the B doors): the edge at y 2304 between two
+/// displacements, `de_dust/rockwall_blend` north (no `$bumpmap`, so its
+/// faces are compiled without bump lightmaps) and `de_dust/groundsand_blend`
+/// south (bumped). Their sand texture is the same (the albedo view shows
+/// no line) and their flat lightmaps agree along the edge, so the line is
+/// the bump lighting stopping there, as CS:S's shader draws it (bumped:
+/// the three pages' mix with the normal map; unbumped: the flat page);
+/// an eye in the edge's plane saw it end-on (`minigame::spawns` nudges
+/// spots off such lines now).
+#[test]
+fn the_b_mound_seam_is_where_bump_lighting_stops() {
+    use crate::stack::games::cs_source::{bsp, lightmap};
+    if dust2().is_none() {
+        return;
+    }
+    let install = LocalConfig::load().unwrap().game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref()).unwrap();
+    let mount = cs_source::mount::open(&install).unwrap();
+    let bytes = mount.read("maps/de_dust2.bsp").unwrap();
+    let lump = lightmap::lighting_lump(&bytes, false);
+    let map = vbsp::Bsp::read(&bytes).unwrap();
+    // Flat lighting at each shared edge vertex, per material.
+    let mut edge: std::collections::BTreeMap<i32, Vec<(String, bool, f32)>> = Default::default();
+    for face in map.models().next().unwrap().faces() {
+        if face.displacement().is_none() {
+            continue;
+        }
+        let Some(s) = lightmap::face_samples(lump, &face) else { continue };
+        let tex = face.texture();
+        let bumped = tex.flags.contains(vbsp::TextureFlags::BUMPLIGHT);
+        for t in bsp::face_triangles(&face) {
+            for (p, l) in t {
+                if (p.y - 2304.0).abs() < 0.5 && (-1152.0..=-768.0).contains(&p.x) {
+                    let (x, y) = (l.x.clamp(0.0, s.width as f32 - 1.0) as u32, l.y.clamp(0.0, s.height as f32 - 1.0) as u32);
+                    let v: f32 = s.rgb[(y * s.width + x) as usize].iter().sum();
+                    let list = edge.entry(p.x.round() as i32).or_default();
+                    if !list.iter().any(|(n, ..)| *n == tex.name()) {
+                        list.push((tex.name().to_string(), bumped, v));
+                    }
+                }
+            }
+        }
+    }
+    assert!(edge.len() >= 8, "the edge's vertices: {edge:?}");
+    for (x, faces) in &edge {
+        let rock = faces.iter().find(|f| f.0.eq_ignore_ascii_case("de_dust/rockwall_blend"));
+        let sand = faces.iter().find(|f| f.0.eq_ignore_ascii_case("de_dust/groundsand_blend"));
+        let (Some(rock), Some(sand)) = (rock, sand) else { panic!("x {x}: both faces meet there: {faces:?}") };
+        assert!(!rock.1 && sand.1, "x {x}: rockwall_blend flat-lit, groundsand_blend bump-lit");
+        assert!(
+            (rock.2 - sand.2).abs() <= 0.05 * rock.2.max(sand.2),
+            "x {x}: the flat lightmaps agree across the edge: {} vs {}",
+            rock.2,
+            sand.2
+        );
+    }
+}

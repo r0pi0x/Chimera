@@ -83,7 +83,10 @@
 //!   (non-solid detail) and the world models that are ray-hit but not
 //!   solid, traces only (shots, sight, cover, grenades). Polygons of the
 //!   glass surface types (`GLASS_SURFACE_TYPES`) go to sets of their own,
-//!   Chimera's `SeeThrough` (bots see through them, bots.md 5.2).
+//!   one per type, Chimera's `SeeThrough` (bots see through them, bots.md
+//!   5.2), each named with its surface (`MapCollisionSet::surface`: Glass,
+//!   Bullet-Proof Glass), which rounds read (weapon_firing.md
+//!   "Penetration": the one passes, the other stops them).
 //! - Volumes (`volumes`): `Water`, `EndlessFall` and the other volume
 //!   classes go to the map's entities (class, properties, the world
 //!   model's faces as one hull) for `volumes::CaVolume`, which the map's
@@ -1462,7 +1465,8 @@ fn collision(
         positions.extend(corners.iter().map(|p| p.to_array()));
     };
     let (mut solid, mut traces, mut blockers) = (Vec::new(), Vec::new(), Vec::new());
-    let (mut glass, mut glass_traces) = (Vec::new(), Vec::new());
+    // Per glass type: (solid, ray-hit only).
+    let mut glass: Vec<(Vec<[u32; 3]>, Vec<[u32; 3]>)> = GLASS_SURFACE_TYPES.iter().map(|_| Default::default()).collect();
     let mut sky = Vec::new();
     // Nodes' world models collide by their nodes; where they stand at
     // load they are floors for dropping spawns only.
@@ -1475,15 +1479,15 @@ fn collision(
         }
         for i in 0..m.polygons.len() {
             let surface = m.polygon_surface(i);
-            let see_through = GLASS_SURFACE_TYPES.contains(&surface.surface_type);
+            let glass_type = GLASS_SURFACE_TYPES.iter().position(|t| *t == surface.surface_type);
             let solid_face = is_solid && surface.flags & surface_flags::SOLID != 0;
-            let out = match (solid_face, see_through) {
+            let out = match (solid_face, glass_type) {
                 _ if node && solid_face => &mut node_floors,
                 _ if node => &mut node_surfaces,
-                (true, false) => &mut solid,
-                (true, true) => &mut glass,
-                (false, false) => &mut traces,
-                (false, true) => &mut glass_traces,
+                (true, None) => &mut solid,
+                (true, Some(g)) => &mut glass[g].0,
+                (false, None) => &mut traces,
+                (false, Some(g)) => &mut glass[g].1,
             };
             let before = out.len();
             fan(&mut m.polygon_vertices(i), out);
@@ -1511,21 +1515,6 @@ fn collision(
             traces: true,
             ..default()
         },
-        // Glass: solid as the rest, but sight passes it (bots.md 5.2).
-        MapCollisionSet {
-            name: "glass".into(),
-            indices: glass,
-            characters: true,
-            traces: true,
-            see_through: true,
-        },
-        MapCollisionSet {
-            name: "non-solid glass".into(),
-            indices: glass_traces,
-            characters: false,
-            traces: true,
-            see_through: true,
-        },
         // Neither: no collider (the nodes have theirs), floors for spawns.
         MapCollisionSet {
             name: NODE_FLOORS.into(),
@@ -1538,6 +1527,31 @@ fn collision(
             ..default()
         },
     ];
+    // Glass: solid as the rest, but sight passes it (bots.md 5.2); a set
+    // per type, its surface named, so a round knows which glass it hit
+    // (weapon_firing.md "Penetration": Glass passes, Bullet-Proof Glass
+    // stops).
+    let tables = super::effects::data::CaFxTables::built_in();
+    for (ty, (glass, glass_traces)) in GLASS_SURFACE_TYPES.iter().zip(glass) {
+        let surface = tables.surface.iter().find(|s| s.id == *ty).map(|s| s.name.clone());
+        let name = surface.clone().unwrap_or_else(|| ty.to_string());
+        map.collision_sets.push(MapCollisionSet {
+            name: format!("glass ({name})"),
+            indices: glass,
+            characters: true,
+            traces: true,
+            see_through: true,
+            surface: surface.clone(),
+        });
+        map.collision_sets.push(MapCollisionSet {
+            name: format!("non-solid glass ({name})"),
+            indices: glass_traces,
+            characters: false,
+            traces: true,
+            see_through: true,
+            surface,
+        });
+    }
     sky
 }
 
