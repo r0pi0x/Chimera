@@ -352,6 +352,10 @@ pub struct CaPose {
     /// `EYE_L` and `EYE_R`, where the face's looping groups sit (the
     /// infected's eyes: game_modes.md Corrections (2026-10-30) 7).
     pub eyes: [Option<Vec3>; 2],
+    /// The held weapon's `Flash` and `Flash01` sockets (its model's own,
+    /// in its `Hand` pose on the hand's node: `models::held_socket`);
+    /// None when the weapon has none or its model isn't loaded.
+    pub flash: [Option<Vec3>; 2],
     /// The legs' yaw (as `Intent::yaw`).
     pub body_yaw: f32,
     /// From a body model (not the spec's skeleton).
@@ -366,17 +370,23 @@ impl CaPose {
         feet + Quat::from_rotation_y(self.body_yaw) * (p * unit)
     }
 
+    /// The place of the held weapon's `Flash` socket: its model's own,
+    /// else the hand's (the third-person muzzle of others' launchers).
+    pub fn flash_point(&self) -> Option<Vec3> {
+        self.flash[0].or(self.right_hand)
+    }
+
     /// The sockets effect groups attach to on a character (`EYE_L`,
-    /// `EYE_R`, `RightHand`, `NAME_socket`), in the character's frame.
+    /// `EYE_R`, `RightHand`, `Flash`, `NAME_socket`), in the character's frame.
     pub fn sockets(&self) -> impl Iterator<Item = (&'static str, Vec3)> + '_ {
         [
             ("EYE_L", self.eyes[0]),
             ("EYE_R", self.eyes[1]),
             ("RightHand", self.right_hand),
-            // The held weapon's flash socket, at the hand (the held
-            // model's own isn't posed here).
-            ("Flash", self.right_hand),
-            ("Flash01", self.right_hand),
+            // The held weapon's flash sockets (the hand's where its model
+            // has none posed).
+            ("Flash", self.flash[0].or(self.right_hand)),
+            ("Flash01", self.flash[1].or(self.right_hand)),
             ("NAME_socket", self.name_tag),
         ]
         .into_iter()
@@ -967,14 +977,15 @@ fn drive(
         // The worn face's sockets (its eyes), on the body's nodes.
         let face = look.and_then(|l| data.characters().worn_face(l)).and_then(|f| models::face_sockets(f.id));
         let face = face.as_deref().map(Vec::as_slice);
+        let held_id = weapon.map(|w| w.0.id);
         let posed = if client {
             let posed = anim.posed(r, squash, false);
-            *pose = pose_of(&anim, &posed, body_yaw, squash, face);
+            *pose = pose_of(&anim, &posed, body_yaw, squash, face, held_id);
             posed
         } else {
             let (posed, server) = anim.posed_both(r, squash);
-            *pose = pose_of(&anim, &posed, body_yaw, squash, face);
-            pose.server_spheres = pose_of(&anim, &server, body_yaw, squash, face).spheres;
+            *pose = pose_of(&anim, &posed, body_yaw, squash, face, held_id);
+            pose.server_spheres = pose_of(&anim, &server, body_yaw, squash, face, held_id).spheres;
             posed
         };
         if let (true, Some(mut animator)) = (anim.rig.is_some() && ours, animator) {
@@ -1081,8 +1092,16 @@ fn inputs(
 
 /// The pose's results in the character's frame.
 /// `face`: the worn face piece's sockets (`models::piece_sockets`), for
-/// the eyes when the body has none of theirs.
-pub fn pose_of(anim: &CaAnim, posed: &Posed, body_yaw: f32, squash: f32, face: Option<&[(String, String, Vec3, Quat)]>) -> CaPose {
+/// the eyes when the body has none of theirs. `held`: the weapon held
+/// (its ID), for its `Flash` sockets.
+pub fn pose_of(
+    anim: &CaAnim,
+    posed: &Posed,
+    body_yaw: f32,
+    squash: f32,
+    face: Option<&[(String, String, Vec3, Quat)]>,
+    held: Option<&str>,
+) -> CaPose {
     let skel = records::builtin().skeleton(anim.skeleton);
     let body = |p: Vec3| skeleton::to_body(p, posed.feet);
     let left_foot = if anim.rig.is_some() {
@@ -1114,9 +1133,19 @@ pub fn pose_of(anim: &CaAnim, posed: &Posed, body_yaw: f32, squash: f32, face: O
                 })
                 .map(body)
         }),
+        flash: ["Flash", "Flash01"].map(|n| held_socket_point(posed, held?, n).map(body)),
         body_yaw,
         modelled: anim.rig.is_some(),
     }
+}
+
+/// Held weapon `weapon`'s socket `name` on the posed skeleton, in the
+/// posed frame (LithTech's, z mirrored): the socket as the held model
+/// registered it, on its hand node's posed place.
+pub fn held_socket_point(posed: &Posed, weapon: &str, name: &str) -> Option<Vec3> {
+    let (bone, at) = models::held_socket(weapon, name)?;
+    let (p, q) = *posed.globals.get(posed.node(&bone)?)?;
+    Some(p + q * Vec3::new(at.x, at.y, -at.z))
 }
 
 /// The server's animation state for the network: each tracker's name

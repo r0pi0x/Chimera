@@ -174,6 +174,10 @@ pub fn play(
             for s in server_sounds(super::data::CaFxTables::built_in()) {
                 ensure(&mut bank, &mut files, &mut lengths, mount, &s);
             }
+            // ... and the create sounds of devices, grenades and rockets.
+            for s in create_sounds(data.weapon_set()) {
+                ensure(&mut bank, &mut files, &mut lengths, mount, &s);
+            }
         }
     }
     // The effects master (music_ambience.md 8): every effect, ambient
@@ -275,7 +279,34 @@ pub fn server_sound(file: &str, at: Vec3, (r, big_r): (f32, f32)) -> CaSound {
 /// one and a radius, and the weapon's automatic throw (or mine) call-out
 /// (`auto_throw`) doesn't stand in for it.
 pub fn create_sound(file: &str, radius: f32, auto_throw: bool, at: Vec3) -> Option<CaSound> {
-    (radius > 0.0 && !file.is_empty() && !auto_throw).then(|| server_sound(file, at, (rules::inner_radius(radius), radius)))
+    (radius > 0.0 && !file.is_empty() && !auto_throw)
+        .then(|| server_sound(file, at, rules::server_radii(rules::inner_radius(radius), radius)))
+}
+
+/// The create sounds of the weapon set's devices, grenades and impact
+/// projectiles (the server's sounds of a launch, as clients get them),
+/// for a client to have ready by entry name.
+pub fn create_sounds(set: &crate::weapon::data::WeaponSet) -> Vec<CaSound> {
+    use crate::game::{
+        grenades::{GrenadeParams, HOOK},
+        special::{DEVICE, DeviceParams, PROJECTILE, ProjectileParams},
+    };
+    let mut out = Vec::new();
+    for w in &set.weapons {
+        let made = [
+            w.hook::<DeviceParams>(DEVICE).map(|d| (d.create_sound, d.create_radius)),
+            w.hook::<GrenadeParams>(HOOK).map(|g| (g.create_sound, g.create_radius)),
+            w.hook::<ProjectileParams>(PROJECTILE).map(|p| (p.create_sound, p.create_radius)),
+        ];
+        for (file, radius) in made.into_iter().flatten() {
+            if let Some(s) = create_sound(&file, radius, false, Vec3::ZERO)
+                && !out.iter().any(|o: &CaSound| o.entry() == s.entry())
+            {
+                out.push(s);
+            }
+        }
+    }
+    out
 }
 
 /// `create_sound` written to the world's sounds (the server's frame).

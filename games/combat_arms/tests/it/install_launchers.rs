@@ -399,13 +399,16 @@ fn t59_others_launcher_muzzle() {
     let w = armed(&mut sim, other, NPC_LAW);
     // His launcher's flash socket, a little in front of his hand, in the
     // view (he is 500 u ahead, facing me).
-    let hand = Vec3::new(8.0, 40.0, -12.0);
-    sim.app.world_mut().entity_mut(other).insert(CaPose { right_hand: Some(hand), ..default() });
+    // ... which his launcher's model has 0.5 m ahead of the hand's node.
+    let hand_node = combat_arms::game::data::CaData::builtin().characters().skeleton(0).socket("RightHand").unwrap().parent.clone();
+    combat_arms::game::characters::models::register_held_socket(NPC_LAW, "Flash", &hand_node, Vec3::new(0.0, 0.0, 0.5));
     sim.ticks(1);
     let flash = {
         let world = sim.app.world();
         let (p, t, s) = (world.get::<CaPose>(other).unwrap(), world.get::<Transform>(other).unwrap(), world.get::<chimera_core::core::MovementState>(other).unwrap());
-        p.world(t, s, U, p.right_hand.expect("the pose kept its hand"))
+        let (hand, socket) = (p.right_hand.expect("the pose has his hand"), p.flash[0].expect("the pose has his launcher's socket"));
+        assert!(p.world(t, s, U, hand).distance(p.world(t, s, U, socket)) > 0.1, "the socket is not the hand");
+        p.world(t, s, U, socket)
     };
     looks(&mut sim);
     sim.app.world_mut().resource_mut::<Heard>().0.clear();
