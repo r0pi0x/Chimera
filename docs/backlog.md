@@ -2485,6 +2485,17 @@ dithered fade bands. Left:
 
 Counts are from de_dust2's entity lump and static prop lump.
 
+- **Combat Arms world objects, what item 23 left** (docs/plans/active/
+  combat-arms.md row 23): client-side carrying of the local player by a
+  moving world model (world_objects.md 10; needs the spec's Open
+  questions 6 and 14 answered, and Chimera's prediction replay to place
+  Combat Arms' movers as `source_logic` does for Source's); the
+  breakables' `CreateExplosion`/`FIRE`, `Spawn`, `WorldModelDebris`
+  and `DebrisType` looks; map cameras and `TargetTrigger` markers; and
+  `TimerTrigger`, `LightActivateTrigger`, `CaptionTrigger`,
+  `MessageTrigger`, `MissionTrigger` once a spec session covers them
+  (Open question 8).
+
 - **Remaining decals**: 13 infodecals over the stock maps find no
   surface (dust2 5, tides 3, compound 2, dust 2, train 1): by props
   (window frames) or farther than our reach from any face; the probe

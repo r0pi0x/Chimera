@@ -305,3 +305,35 @@ fn clients_see_the_door() {
     sim.ticks(30);
     assert!((door_y(&sim.clients[1].app) - 235.0).abs() < 1e-3, "a late joiner sees it open");
 }
+
+/// world_dat.md "Light groups": after each message the object sends
+/// every client its group's colour: a client relights from the server's
+/// switch, and a late joiner gets the group as it is.
+#[test]
+fn clients_see_the_light_groups() {
+    use chimera_world::map::LightStyles;
+    let map = world::convert(&crate::world::light_group_world(false), "lg", 0.01, &|_| None);
+    let link = LinkConditions {
+        latency: Duration::from_millis(40),
+        jitter: Duration::ZERO,
+        loss: 0.0,
+    };
+    let mut sim = NetSim::new(CaSim, link, 3, 1, move |app| {
+        app.add_plugins(MapSimPlugin::new(map.clone()));
+    });
+    sim.set_frame(TICK_INTERVAL);
+    sim.until_joined(600);
+    sim.ticks(30);
+    let styles = |app: &App| app.world().get_resource::<LightStyles>().map(|s| s.styles.clone());
+    sim.server.app.world_mut().write_message(CaObjectMessage {
+        target: "G".into(),
+        message: "on".into(),
+    });
+    sim.ticks(30);
+    assert_eq!(styles(&sim.server.app), Some(vec![(32, true)]));
+    assert_eq!(styles(&sim.clients[0].app), Some(vec![(32, true)]), "the client relights");
+    sim.add_client(|_| {});
+    sim.until_joined(600);
+    sim.ticks(30);
+    assert_eq!(styles(&sim.clients[1].app), Some(vec![(32, true)]), "a late joiner too");
+}

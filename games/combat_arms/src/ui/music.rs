@@ -19,7 +19,8 @@
 //!   of the map (`CaAmbient`) is a live sound from the map's load, muted
 //!   by its distance gain (`ambient::gain`, times `Volume` and the effects
 //!   master); a sound with `Ambient` off is placed at its object with
-//!   Chimera's radius level.
+//!   Chimera's radius level, following it with `PlayAttached` (the
+//!   object's anchor, `objects::sound`).
 //! - **The window** (`minimized`): both masters go to 0 while the window
 //!   has no size.
 //!
@@ -31,7 +32,7 @@
 //! window counts as minimized when it has no pixels (what Windows
 //! reports), not by the platform's iconic state; the listener is the
 //! local player's body (not a spectated one); the 3D map sounds' filters
-//! (`Filter`) and attached sounds don't apply.
+//! (`Filter`) don't apply.
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
@@ -324,6 +325,7 @@ fn play_ambient(
     mut pb: ResMut<Playback>,
     ambient: Res<CaAmbient>,
     objects: Res<CaObjects>,
+    object_sounds: Res<crate::game::objects::sound::CaObjectSounds>,
     volumes: Res<CaVolumes>,
     data: Res<crate::game::data::CaData>,
     me: Query<&Transform, With<LocalPlayer>>,
@@ -358,6 +360,14 @@ fn play_ambient(
             }
             continue;
         }
+        // A placed sound that follows its object (`PlayAttached`) waits
+        // for the object's anchor (`objects::sound`).
+        let follow = if s.attached && !s.ambient {
+            let Some(e) = object_sounds.follow(&objects, s.id) else { continue };
+            Some(e)
+        } else {
+            None
+        };
         let Some(mount) = mount.as_deref() else { continue };
         let file = s.file.to_lowercase().replace('\\', "/");
         let clip = *pb.sound_files.entry(file.clone()).or_insert_with(|| {
@@ -380,7 +390,7 @@ fn play_ambient(
             key: SoundKey(AMBIENT_KEYS | s.id as u64),
             entry: format!("ca:amb:{file}"),
             at,
-            follow: None,
+            follow,
             volume: Some(volume),
             pitch: Some(100.0),
             level: Some(level),

@@ -33,11 +33,16 @@
 //! poses), visibility and collision layers (solid: everything; ray-hit
 //! only: traces; neither: nothing), volumes' state and offset (`volumes::
 //! CaVolume`, carried by `Attachments`: HGOILRIG's rising sea), carried
-//! characters, sounds (`effects::CaSound`, server sounds), explosions'
+//! characters, explosions'
 //! blasts (`grenades::falloff` from a quarter of the radius, a clear line
 //! needed) and the messages for the rules (`CaObjectEvent`: mode objects
 //! and controllers). Clients run no map logic: they get the objects that
 //! differ from the map's start (`net`, late joiners too) and draw them.
+//! The objects' sounds (14: transition sounds looping or not, keyframers'
+//! active and key sounds, triggers' activation sounds) are state in the
+//! object world that the server sends with the objects; `sound` plays
+//! them on every machine, following the object (its node, or an anchor
+//! entity at it) when attached.
 //!
 //! Debugging (docs/OBSERVABILITY.md): `ca_objects [filter]` lists objects
 //! and their state, `ca_object_msg <name> <message...>` sends a message
@@ -45,11 +50,7 @@
 //! a `setpos` line at it, `ca_object_cmd <command string>` runs a command string,
 //! `ca_object_vars` lists the variables and pending commands.
 //!
-//! Known shortcuts: sounds play once where they start (attached ones
-//! don't follow, transition loops don't loop and so aren't stopped: `CaSound`
-//! has no loops; the object world still says when a loop would stop,
-//! `Fx::StopSound`);
-//! the explosion's effect isn't drawn and its damage skips the armour
+//! Known shortcuts: the explosion's effect isn't drawn and its damage skips the armour
 //! step; riders are carried on the server only (a client's own player on
 //! a moving platform is corrected from the server, not carried by its
 //! prediction) and without the spec's 0.1 u drop; nodes collide as their
@@ -62,7 +63,9 @@ pub mod geometry;
 pub mod keyframer;
 pub mod movers;
 mod net;
+pub mod lights;
 pub mod runtime;
+pub mod sound;
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -79,7 +82,7 @@ use self::{
     movers::CharBox,
     runtime::{Fx, Kind, ObjectWorld},
 };
-use super::{effects::sounds::CaSound, inventory, volumes::CaVolume};
+use super::{inventory, volumes::CaVolume};
 use crate::{
     console::ConsoleAppExt,
     core::{
@@ -205,9 +208,19 @@ pub struct CaObjects {
     pending_uses: Vec<(ObjId, Who)>,
     pending_damage: Vec<Damage>,
     pending_requests: Vec<CaObjectMessage>,
+    /// A client: the last sound start the server had made when this
+    /// client first heard of the objects (one-shots up to it already
+    /// played: `net`).
+    pub net_sound_floor: Option<u32>,
 }
 
 impl CaObjects {
+    /// Object `i`'s state at the map's start if it is a `LightGroup`.
+    pub fn world_start_light(&self, i: usize) -> Option<Kind> {
+        let o = self.world.objects.get(i)?;
+        (o.class == "LightGroup").then(|| runtime::light_group_start(&o.props))
+    }
+
     /// The character entity of a `Who`.
     pub fn entity(who: Who) -> Option<Entity> {
         match who {
@@ -230,6 +243,9 @@ impl Plugin for CaObjectsPlugin {
         app.init_resource::<CaObjects>()
             .add_message::<CaObjectMessage>()
             .add_message::<CaObjectEvent>()
+            .init_resource::<sound::CaObjectSounds>()
+            .add_message::<super::view_model::attached::CaLoopSound>()
+            .add_systems(Update, (sound::play.before(super::effects::sounds::loops), lights::show))
             .add_systems(
                 FixedUpdate,
                 (load, (gather, frame).chain().run_if(authoritative), apply)
@@ -758,31 +774,8 @@ fn write_objects(world: &mut World, ids: &[ObjId], scale: f32) {
 /// One effect.
 fn effect(world: &mut World, f: Fx, scale: f32) {
     match f {
-        Fx::Sound {
-            file,
-            at,
-            radius,
-            inner,
-            attach,
-            ..
-        } => {
-            if radius <= 0.0 {
-                return;
-            }
-            let source = attach.and_then(|a| world.resource::<CaObjects>().nodes.get(&a).copied());
-            world.write_message(CaSound {
-                file,
-                at: Some(to_engine(at, scale)),
-                radii: (inner, radius),
-                volume: 100.0,
-                source,
-                channel: None,
-                server: true,
-                level: None,
-            });
-        }
-        // Our sounds don't loop (`CaSound`), so there is nothing to stop.
-        Fx::StopSound { owner } => debug!("objects: {owner} stops its looping sound"),
+        // Sounds play from the objects' state on every machine (`sound`).
+        Fx::Sound { .. } | Fx::StopSound { .. } => {}
         Fx::Music { id, on } => {
             let props = world.resource::<CaObjects>().world.objects[id as usize].props.clone();
             super::music::trigger::on_message(world, id, on, &props);
