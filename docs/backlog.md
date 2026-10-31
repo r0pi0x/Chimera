@@ -368,6 +368,11 @@ the user's go-ahead: no Actions runs unless asked.
   - Clearer name tags when you aim at someone (their name and more),
     kept unobtrusive.
   - A flaming aura around the current leader.
+- **NPC bodies, then NPC and boss guns on them (user, 2026-10-31).**
+  Support Combat Arms' NPC bodies (skeletons 2-18, `AIModel#` records)
+  first, so NPC- and boss-only guns (characters.md section 12) go on
+  their own NPC models in the gun game. Infected hands go on any infected
+  type the maps give them, not only their own (open question 27).
 - **Characters follow the gun (user, 2026-10-31): done; a spec session
   for the rest.** A rung's character is drawn among the characters
   allowed to hold its weapon (`chimera_sim::minigame::holders`, each
