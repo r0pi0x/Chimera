@@ -128,10 +128,22 @@ pub fn drawn_lods(model: &Model) -> Vec<&ltb::Lod> {
         .collect()
 }
 
+/// A drawn LOD's second texture index (slot 1: an environment or rim
+/// map under a layered render style, `render_style::Layer`; -1 none).
+pub fn second_slot(lod: &ltb::Lod) -> i32 {
+    lod.used_textures().get(1).copied().unwrap_or(-1)
+}
+
 /// A drawn LOD's skin slot (its first texture index; -1 none) and its
 /// render-style index.
 pub fn slot_and_style(lod: &ltb::Lod) -> (i32, i32) {
     (lod.used_textures().first().copied().unwrap_or(-1), lod.render_style)
+}
+
+/// `slot_and_style` with the second slot between (`second_slot`).
+pub fn slots_and_style(lod: &ltb::Lod) -> (i32, i32, i32) {
+    let (slot, style) = slot_and_style(lod);
+    (slot, second_slot(lod), style)
 }
 
 fn mat(m: &ltb::Mat4) -> Mat4 {

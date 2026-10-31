@@ -2,13 +2,14 @@
 //! weapon of the merged set (ours and the install's), its view model
 //! (`[models] view`, `view_skins`) and held model (`[models] world`, its
 //! look's skins), each drawn piece's skin as the loaders resolve it
-//! (`game::model::drawn_lods`, its first texture slot, `world::textures`'
-//! reading: a `.dtx`, or a sprite's first frame), grouped by why a piece
+//! (`game::model::drawn_lods`, its first texture slot, `world::model_textures`'
+//! reading: a `.dtx`, or a sprite's frames), grouped by why a piece
 //! would draw untextured (grey): no skin entry for its slot, a file that
 //! isn't there or is locked (a keyed archive without its key), one that
 //! doesn't decode; and what else may make it look wrong: a second texture
-//! slot we don't draw, a sprite (animated: only its first frame), a render
-//! style our table doesn't know (drawn opaque, lit).
+//! slot (drawn under a layered style, not under a single-texture one), a
+//! render style our table doesn't know (drawn opaque, lit). Sprite skins
+//! are counted by whether they animate (two or more frames resolve).
 //!
 //! Needs the V1 key (the weapons file) and the V2 key (the rifles',
 //! SMGs', snipers' and third-person archives) in chimera.local.toml; run
@@ -22,7 +23,7 @@ use std::collections::BTreeMap;
 
 use chimera_core::mount::config::LocalConfig;
 use combat_arms::game::{GAME, INFO, data::CaData, effects::library::sprite_texture, model, render_style};
-use lithtech_formats::dtx::Dtx;
+use lithtech_formats::{dtx::Dtx, spr::Sprite};
 
 fn mount() -> Option<chimera_core::mount::Mount> {
     let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else {
@@ -36,21 +37,31 @@ fn mount() -> Option<chimera_core::mount::Mount> {
     Some((INFO.open)(&install).unwrap())
 }
 
-/// How one skin entry resolves.
-fn resolve(entry: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<&'static str, String> {
+/// How one skin entry resolves: a texture, or a sprite skin with how
+/// many of its frames resolve (it animates with two or more).
+fn resolve(entry: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Option<(usize, usize)>, String> {
     if entry.is_empty() {
         return Err("no skin entry for the piece's slot".into());
     }
-    let mut path = model::normalize(entry);
-    let mut sprite = false;
+    let path = model::normalize(entry);
+    let texture = |path: &str| -> Result<(), String> {
+        let bytes = file(path).ok_or("texture missing or locked")?;
+        Dtx::parse(bytes).map(|_| ()).map_err(|e| format!("texture doesn't decode: {e}"))
+    };
     if path.ends_with(".spr") {
         let bytes = file(&path).ok_or("sprite missing or locked")?;
-        path = sprite_texture(&bytes).ok_or("sprite unreadable")?;
-        sprite = true;
+        let Ok(sprite) = Sprite::parse(&bytes) else {
+            // Drawn from its first frame (`world::textures`).
+            texture(&sprite_texture(&bytes).ok_or("sprite unreadable")?)?;
+            return Ok(Some((1, 1)));
+        };
+        let ok = sprite.frames.iter().filter(|f| texture(&model::normalize(f)).is_ok()).count();
+        if ok == 0 {
+            return Err("no frame of the sprite resolves".into());
+        }
+        return Ok(Some((ok, sprite.frames.len())));
     }
-    let bytes = file(&path).ok_or("texture missing or locked")?;
-    Dtx::parse(bytes).map_err(|e| format!("texture doesn't decode: {e}"))?;
-    Ok(if sprite { "sprite (first frame only)" } else { "texture" })
+    texture(&path).map(|_| None)
 }
 
 /// The weapons' names as the game shows them (with the `ui` feature: the
@@ -87,6 +98,7 @@ fn every_weapons_skins_resolve() {
     let mut causes: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut count = |cause: String, what: String| causes.entry(cause).or_default().push(what);
     let mut weapons = 0;
+    let mut animated = 0;
     for w in &ca.weapon_set().weapons {
         let Some(record) = ca.install_weapon(&w.id) else { continue };
         weapons += 1;
@@ -128,18 +140,28 @@ fn every_weapons_skins_resolve() {
                     .cloned()
                     .unwrap_or_default();
                 match resolve(&entry, &file) {
-                    Ok("texture") => {}
-                    Ok(kind) => count(kind.into(), format!("{what}: {entry}")),
+                    Ok(None) => {}
+                    Ok(Some((ok, n))) if ok > 1 => {
+                        animated += 1;
+                        count("sprite skin, animated".into(), format!("{what}: {entry} ({ok} of {n} frames)"));
+                    }
+                    Ok(Some(_)) => count("sprite skin, one frame (still)".into(), format!("{what}: {entry}")),
                     Err(e) => count(format!("grey: {e}"), format!("{what}: slot {:?} -> {entry:?}", slots)),
                 }
+                let style = usize::try_from(lod.render_style).ok().and_then(|i| styles.get(i));
+                let layered = style.is_some_and(|n| matches!(render_style::style(n), render_style::Style::Layered { .. }));
                 if slots.len() > 1 {
                     let rest: Vec<String> = slots[1..]
                         .iter()
                         .map(|i| usize::try_from(*i).ok().and_then(|i| skins.get(i)).cloned().unwrap_or_default())
                         .collect();
-                    count("a second texture slot (not drawn)".into(), format!("{what}: {rest:?}"));
+                    let cause = if layered {
+                        "a second texture slot, drawn as an environment or rim map"
+                    } else {
+                        "a second texture slot under a single-texture style (not drawn, as the game)"
+                    };
+                    count(cause.into(), format!("{what}: {rest:?}"));
                 }
-                let style = usize::try_from(lod.render_style).ok().and_then(|i| styles.get(i));
                 if let Some(name) = style
                     && render_style::style(name) == render_style::Style::Opaque
                     && !name.to_ascii_lowercase().ends_with("default.ltb")
@@ -165,6 +187,10 @@ fn every_weapons_skins_resolve() {
         }
     }
     assert!(weapons > 0, "the weapons file names weapons");
+    // models_ltb.md "Sprite skins": the sprite-skinned pieces play their
+    // frames (310 pieces on the dev box's install, 2026-10-30).
+    println!("\n{animated} pieces with an animated sprite skin");
+    assert!(animated > 0, "no weapon piece has an animated sprite skin");
     // The playtest's grey "Prismatic" M416: a sprite skin was dropped.
     for w in &ca.weapon_set().weapons {
         let Some(record) = ca.install_weapon(&w.id) else { continue };

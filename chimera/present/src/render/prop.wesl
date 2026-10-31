@@ -39,6 +39,11 @@ struct PropParams {
     detail_tint: vec4<f32>,
     selfillum: f32,
     selfillum_tint: vec4<f32>,
+    layer: f32,
+    layer_coords: f32,
+    layer_address: f32,
+    layer_factor: f32,
+    layer_light: f32,
 }
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> params: PropParams;
@@ -49,6 +54,7 @@ struct PropParams {
 @group(constants::MATERIAL_BIND_GROUP) @binding(5) var envmap_mask_texture: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(6) var detail_texture: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(7) var selfillum_mask_texture: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(8) var layer_texture: texture_2d<f32>;
 
 // A texture transform (map::MapUvTransform): rows . (u, v, 1), plus the
 // TextureScroll translation, wrapped to [0, 1) as the proxy does.
@@ -82,6 +88,36 @@ fn detail_combine(mode: f32, a: vec4<f32>, d: vec4<f32>, f: f32) -> vec4<f32> {
 }
 
 const LUMA = vec3<f32>(0.299, 0.587, 0.114);
+
+// A layer's coordinates (map::MapLayer, LithTech's generated texture
+// coordinates): x and y of the camera-space reflection (0) or normal
+// (1), the camera-space reflection as a sphere map (2: 0.5 x + 0.5), or
+// the world-space reflection (3); then wrapped, clamped (1) or mirrored (2).
+fn layer_uv(n: vec3<f32>, p: vec3<f32>) -> vec2<f32> {
+    let c = params.layer_coords;
+    var uv: vec2<f32>;
+    if c > 2.5 {
+        uv = reflect(normalize(p - view.world_position), n).xy;
+    } else {
+        let nv = normalize((view.view_from_world * vec4<f32>(n, 0.0)).xyz);
+        if c > 0.5 && c < 1.5 {
+            uv = nv.xy;
+        } else {
+            let pv = (view.view_from_world * vec4<f32>(p, 1.0)).xyz;
+            uv = reflect(normalize(pv), nv).xy;
+            if c > 1.5 {
+                uv = 0.5 * uv + 0.5;
+            }
+        }
+    }
+    if params.layer_address > 1.5 {
+        let m = fract(uv * 0.5) * 2.0;
+        uv = 1.0 - abs(m - 1.0);
+    } else if params.layer_address > 0.5 {
+        uv = saturate(uv);
+    }
+    return uv;
+}
 
 // The probe on a surface with normal n (shaders.md 4): the ambient cube
 // weighted by the squared normal, plus each light by its cosine.
@@ -159,6 +195,24 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         light = light + dynamic_light(in.world_position.xyz, n, in.position.xy);
     }
     var rgb = color.rgb * light;
+    // A second texture on generated coordinates (map::LayerCombine), with
+    // the source game's lit colour l: 0 T + T.a S l, 1 T l + f S,
+    // 2 f l lerp(T, S, T.a), 3 (T l + T.a S)(1 + T.a^2).
+    if params.layer > 0.5 {
+        let s = textureSample(layer_texture, base_sampler, layer_uv(n, in.world_position.xyz)).rgb;
+        let l = light * params.layer_light;
+        let a = base_alpha;
+        let combine = params.layer - 1.0;
+        if combine < 0.5 {
+            rgb = color.rgb + a * s * l;
+        } else if combine < 1.5 {
+            rgb = color.rgb * l + params.layer_factor * s;
+        } else if combine < 2.5 {
+            rgb = params.layer_factor * l * mix(color.rgb, s, a);
+        } else {
+            rgb = (color.rgb * l + a * s) * (1.0 + a * a);
+        }
+    }
     // Detail modes 5 and 6: added after lighting.
     if params.detail > 0.5 && mode > 4.5 && mode < 6.5 {
         let f = params.detail_factor;

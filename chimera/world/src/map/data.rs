@@ -247,6 +247,12 @@ pub struct MapMesh {
     /// material keeps the face's coordinates). The cracked face carries it
     /// too, unused, so a window's broken looks share one material.
     pub pane_mask: Option<usize>,
+    /// A model skin that is a looping sequence of textures (`texture` its
+    /// first frame), each drawn copy on its own clock (`MapSkinFrames`).
+    pub skin_frames: Option<MapSkinFrames>,
+    /// A second texture on generated coordinates combined with the base
+    /// (`MapLayer`: environment and rim maps).
+    pub layer: Option<MapLayer>,
 }
 
 impl MapMesh {
@@ -302,6 +308,8 @@ pub struct MapMeshLook {
     pub detail: Option<MapDetail>,
     pub base_transform: MapUvTransform,
     pub selfillum: Option<MapSelfIllum>,
+    pub skin_frames: Option<MapSkinFrames>,
+    pub layer: Option<MapLayer>,
 }
 
 impl MapMeshLook {
@@ -319,6 +327,8 @@ impl MapMeshLook {
             detail: self.detail,
             base_transform: self.base_transform,
             selfillum: self.selfillum,
+            skin_frames: self.skin_frames.clone(),
+            layer: self.layer.clone(),
             ..m.clone()
         }
     }
@@ -459,6 +469,92 @@ pub struct MapFlatEnvmap {
     pub signed_add: bool,
     /// Weighted by the base texture's alpha (`envmapalpha`).
     pub by_base_alpha: bool,
+}
+
+/// A model skin that is a looping sequence of textures (LithTech's sprite
+/// skins, specs/combat_arms/models_ltb.md "Sprite skins"): each drawn
+/// copy of the model starts its own clock at 0 when created, advances it
+/// by each drawn frame's time in whole milliseconds and shows frame
+/// floor(t / `frame_ms`) mod n, the whole texture swapped (no blending);
+/// it always loops (`step`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MapSkinFrames {
+    /// Each frame's texture (indices into `MapData::textures`).
+    pub frames: Vec<usize>,
+    /// How long each frame shows, ms (at least 1).
+    pub frame_ms: u32,
+}
+
+impl MapSkinFrames {
+    /// The clock `t` (ms) advanced by `delta_ms`, wrapped to the
+    /// sequence's length, and the frame it shows.
+    pub fn step(&self, t: u32, delta_ms: u32) -> (u32, usize) {
+        let n = self.frames.len().max(1) as u64;
+        let p = u64::from(self.frame_ms.max(1));
+        let t = (u64::from(t) + u64::from(delta_ms)) % (p * n);
+        (t as u32, ((t / p) % n) as usize)
+    }
+}
+
+/// Where a `MapLayer`'s coordinates come from: x and y of a vector in
+/// camera space (x right, y up) or world space, used as u and v.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum LayerCoords {
+    /// The view direction reflected about the normal, camera space.
+    #[default]
+    CameraReflection,
+    /// The normal, camera space.
+    CameraNormal,
+    /// The camera-space reflection mapped by u = 0.5x + 0.5, v = 0.5y +
+    /// 0.5 (a sphere map).
+    SphereMap,
+    /// The view direction reflected about the normal, world space.
+    WorldReflection,
+}
+
+/// How coordinates outside 0..1 sample a `MapLayer`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum LayerAddress {
+    Wrap,
+    #[default]
+    Clamp,
+    Mirror,
+}
+
+/// How a `MapLayer`'s sample S combines with the base texture T (its
+/// alpha T.a) and the source game's lit colour L (the drawn light times
+/// `MapLayer::light`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum LayerCombine {
+    /// T + T.a x S x L: the base unlit, its alpha masking a lit
+    /// reflection.
+    #[default]
+    MaskedAdd,
+    /// T x L + `factor` x S: a rim glow added.
+    Add,
+    /// `factor` x L x lerp(T, S, T.a): the reflection through the base's
+    /// alpha, lit.
+    AlphaLerp,
+    /// (T x L + T.a x S) x (1 + T.a^2): the base's alpha a gloss mask.
+    Gloss,
+}
+
+/// A second texture sampled on generated coordinates and combined with
+/// the base (LithTech render styles' slot 1: environment and rim maps,
+/// specs/combat_arms/models_ltb.md "Stock styles").
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MapLayer {
+    /// The source game's texture name, which its loader resolves into
+    /// `texture`.
+    pub material: String,
+    /// Index into `MapData::textures`; None: not drawn.
+    pub texture: Option<usize>,
+    pub coords: LayerCoords,
+    pub address: LayerAddress,
+    pub combine: LayerCombine,
+    pub factor: f32,
+    /// The source game's lit colour as a fraction of the drawn light.
+    pub light: f32,
 }
 
 /// Baked lighting atlas: linear RGB, where 1.0 shows a texture at its own
@@ -1473,5 +1569,29 @@ mod render_tests {
         m.render = None;
         m.render_color = Some([128; 3]);
         assert!((m.render_factor().x - 0.2159).abs() < 1e-3);
+    }
+
+    /// models_ltb.md R5: five frames at 10 per second (100 ms each): 0-99
+    /// ms frame 0, 250 ms frame 2, 520 ms frame 0 again (looped); 16 ms
+    /// steps advance the clock by 16 ms each.
+    #[test]
+    fn skin_frames_loop_on_their_clock() {
+        let s = MapSkinFrames {
+            frames: vec![10, 11, 12, 13, 14],
+            frame_ms: 100,
+        };
+        assert_eq!(s.step(0, 0), (0, 0));
+        assert_eq!(s.step(0, 99), (99, 0));
+        assert_eq!(s.step(0, 250), (250, 2));
+        assert_eq!(s.step(0, 520), (20, 0));
+        let mut t = 0;
+        let mut shown = Vec::new();
+        for _ in 0..10 {
+            let (next, f) = s.step(t, 16);
+            assert_eq!(next, t + 16);
+            t = next;
+            shown.push(f);
+        }
+        assert_eq!(shown, [0, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
     }
 }

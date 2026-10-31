@@ -494,9 +494,14 @@ AUG A3 Champions Lightning's view skin aren't in the install (grey, as
 the game leaves a missing skin).
 single-texture styles. (4) open: not on this box (models_ltb.md Open
 question 8). **Partly done (2026-10-30):** the lens and mark styles are
-cut-outs (`render_style::Style::Cutout`); not yet: sprite skins'
-animation (a skin shows its first frame) and slot 1's reflection and rim
-maps (Chimera's model material has no generated second texture).
+cut-outs (`render_style::Style::Cutout`). **Done (2026-10-30):** sprite
+skins animate (`world::model_textures`, `map::MapSkinFrames`, Chimera's
+`render::skin_frames`: each drawn copy's clock), and slot 1 draws as an
+environment or rim map under `env_alpha_mask`, `itemedge`,
+`edgeamp01`, `envmap` and `pv_char` (`render_style::Layer`,
+`map::MapLayer`, the prop shader's layer); not yet: `pv_char_b`'s
+passes, the styles' own materials, and slot 1 on faces, head pieces and
+attached parts.
 
 `cargo test -p combat_arms --features dev,ui --test it
 heavy::weapon_skins -- --nocapture` lists every install weapon's pieces

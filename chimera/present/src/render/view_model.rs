@@ -256,6 +256,12 @@ pub fn build_late(
             if let Some(s) = &mut m.selfillum {
                 s.mask = s.mask.map(|t| t + base);
             }
+            if let Some(f) = &mut m.skin_frames {
+                f.frames.iter_mut().for_each(|t| *t += base);
+            }
+            if let Some(l) = &mut m.layer {
+                l.texture = l.texture.map(|t| t + base);
+            }
         }
         let asset = Build {
             textures: &assets.textures,
@@ -447,7 +453,7 @@ pub fn draw_view_models(
                 commands.entity(e).try_despawn();
             }
             if let Some((key, a, _)) = shown {
-                spawn_body(&mut commands, camera, key, a, mirror);
+                spawn_body(&mut commands, camera, key, a, mirror, materials.as_deref_mut());
             }
             continue;
         }
@@ -566,7 +572,14 @@ pub fn view_model_cameras_draw(
     }
 }
 
-fn spawn_body(commands: &mut Commands, camera: Entity, key: &str, asset: &ViewModelAsset, mirror: bool) {
+fn spawn_body(
+    commands: &mut Commands,
+    camera: Entity,
+    key: &str,
+    asset: &ViewModelAsset,
+    mirror: bool,
+    mut assets: Option<&mut Assets<PropMaterial>>,
+) {
     let layer = RenderLayers::layer(VIEW_MODEL_LAYER);
     let body = commands
         .spawn((
@@ -596,7 +609,14 @@ fn spawn_body(commands: &mut Commands, camera: Entity, key: &str, asset: &ViewMo
     for part in &asset.parts {
         // Mirroring turns triangles inside out: the mirrored material culls
         // front faces.
-        let material = part.materials[mirror as usize].clone();
+        let mut material = part.materials[mirror as usize].clone();
+        // A skin that is a sequence runs on this body's own clock
+        // (`skin_frames`): its own material.
+        if let Some(assets) = assets.as_deref_mut()
+            && assets.get(&material).is_some_and(|m| m.skin_frames.len() > 1)
+        {
+            material = super::probe_lit::instance(assets, &material);
+        }
         materials.push(material.clone());
         commands.spawn((
             Mesh3d(part.mesh.clone()),

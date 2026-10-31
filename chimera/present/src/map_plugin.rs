@@ -285,6 +285,9 @@ impl MapLayers for Present {
                 .before(bevy::camera::visibility::VisibilitySystems::CheckVisibility),
         )
         .add_systems(Update, render::bodies::uncull_placed_ragdolls)
+        // Sprite skins: each drawn copy's frame on its own clock.
+        .add_observer(render::skin_frames::start_clock)
+        .add_systems(Update, render::skin_frames::advance)
         .add_systems(
             PostUpdate,
             // After propagation, so it sees this frame's (interpolated)
