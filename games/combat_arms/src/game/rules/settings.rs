@@ -209,6 +209,7 @@ pub struct EscortData {
     pub vip_spawn: String,
     pub escape_zone: String,
     pub exit_time: f32,
+    pub exit_arrival: f32,
     pub end_hold: f32,
     pub swap_wait: f32,
     pub swap_notice: f32,

@@ -102,6 +102,11 @@ pub struct Exit {
     pub opens: f64,
     /// ... and is open.
     pub open: bool,
+    /// The helicopter starts to arrive then (the exit timer's in-time
+    /// command) ...
+    pub arrives: f64,
+    /// ... and is arriving.
+    pub arriving: bool,
 }
 
 /// The objectives as every machine sees them.

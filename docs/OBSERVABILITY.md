@@ -1574,6 +1574,10 @@ message has no player behind it, so a door's `DoorLink` isn't told:
 message both leaves); `ca_object_props <name>` prints an object's state,
 a `setpos` line at its centre and every property as the map stores it
 (its commands: what opens it, which mode or trigger gates it);
+`ca_object_damage <name> [hp]` damages an object (default: enough to
+break it) along the local player's view, so its death runs as a shot's
+would (its prop debris: `ca_object_damage Brk70Box02` on HELLGATE throws
+wood; `debrisfxlevel 0|1|2` sets the debris detail);
 `ca_object_cmd <command string>` runs a whole command string (`delay`,
 `rand`, variables); `ca_object_vars` lists the command manager's variables
 and pending delayed commands. A map's objects and their properties as

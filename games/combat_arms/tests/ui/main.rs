@@ -21,6 +21,7 @@ mod death_screen;
 mod fire_voices;
 mod frame_cost;
 mod hud;
+mod hud_scale;
 mod lobby;
 mod music;
 mod net_hud;

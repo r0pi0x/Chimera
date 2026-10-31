@@ -137,14 +137,14 @@ fn vip_escort_over_the_network() {
     assert_eq!(o.escort, 1);
     let now = sim.clients[1].app.world().resource::<chimera_core::core::SimClock>().now;
     let opens = o.exit.unwrap().opens - now;
-    assert!((55.0..61.0).contains(&opens), "the exit opens in {opens:.1} s");
+    assert!((56.0..62.0).contains(&opens), "the exit opens in {opens:.1} s");
     // Open it now; the VIP walks in.
     let t = sim.server.app.world().resource::<chimera_core::core::SimClock>().now;
     sim.server
         .app
         .world_mut()
         .resource_mut::<combat_arms::game::rules::objectives::CaObjectives>()
-        .exit = Some(Exit { opens: t, open: true });
+        .exit = Some(Exit { opens: t, open: true, ..Default::default() });
     hold_server(&mut sim, a, exit, 3);
     let won = sim.until(300, |s| (0..2).all(|i| view(s, i).round_wins == [1, 0]));
     assert!(won, "Alpha's round everywhere: {:?}", view(&sim, 0).round_wins);

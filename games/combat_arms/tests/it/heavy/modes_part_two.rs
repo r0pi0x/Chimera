@@ -252,9 +252,11 @@ fn vip_escort_on_cityofwings() {
     sim.ticks(3);
     assert!(m(&sim).winner.is_none(), "the exit is shut");
     let ends = m(&sim).round_ends.unwrap();
-    assert!(until(&mut sim, 65.0, |s| s.app.world().resource::<CaObjectives>().exit.is_some_and(|x| x.open)));
+    assert!(until(&mut sim, 66.0, |s| s.app.world().resource::<CaObjectives>().exit.is_some_and(|x| x.open)));
     let left = ends - sim.app.world().resource::<chimera_core::core::SimClock>().now;
-    assert!((left - 120.0).abs() < 0.2, "open with 120 s left: {left:.2}");
+    // The exit timer's 60 s + its 1 s run-out (game_modes_2.md Follow-up
+    // (2026-10-31b)): 119 s left.
+    assert!((left - 119.0).abs() < 0.2, "open with 119 s left: {left:.2}");
     for _ in 0..3 {
         put(&mut sim, vip, exit.centre);
         sim.ticks(1);

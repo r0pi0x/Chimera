@@ -18,6 +18,12 @@
 //!   through `MEMORIZE`/`REMEMBER`), triggers (delays, counts, weighted,
 //!   timed), command and touch triggers, target triggers, event counters,
 //!   start-up commands, the use triggers (`ActivateTrigger`), explosions;
+//! - `events`: the event objects (timers, hold-to-use spots, captions,
+//!   messages, the objective list, cameras and their points, target
+//!   triggers' markers), whose notices to the clients are `CaObjectNotice`;
+//! - `markers`: the markers' icons from the install's trigger resource
+//!   table, by name (`CaMarkers`: what the local player is shown; the
+//!   radar and map icons, the HUD's guide markers);
 //! - `commands`: the command-string language and its manager (variables,
 //!   `when`, delays by real frame time, 512 slots, a failure stops the
 //!   rest of its string).
@@ -47,7 +53,8 @@
 //! Debugging (docs/OBSERVABILITY.md): `ca_objects [filter]` lists objects
 //! and their state, `ca_object_msg <name> <message...>` sends a message
 //! now, `ca_object_props <name>` prints an object's stored properties and
-//! a `setpos` line at it, `ca_object_cmd <command string>` runs a command string,
+//! a `setpos` line at it, `ca_object_damage <name> [hp]` damages (breaks)
+//! it, `ca_object_cmd <command string>` runs a command string,
 //! `ca_object_vars` lists the variables and pending commands.
 //!
 //! A network client steps the active world models and the running
@@ -55,17 +62,21 @@
 //! on them (`net`, 10's Client).
 //!
 //! Known shortcuts: the explosion's effect isn't drawn and its damage skips the armour
-//! step; riders are carried without the spec's 0.1 u drop (by active
+//! step; a destructible's weapon (`CreateExplosion`, `FIRE`) is only a
+//! `CaObjectFire` message (no stock map has one: its weapon id isn't
+//! turned into a shot); riders are carried without the spec's 0.1 u drop (by active
 //! world models and by the solid world models keyframers move); nodes
 //! collide as their polygons' triangles (the engine's own `BoxPhysics`
 //! boxes aren't used) while the game's tests use their boxes (`movers`).
 
 pub mod commands;
+pub mod events;
 pub mod geometry;
 pub mod keyframer;
 pub mod movers;
 pub mod net;
 pub mod lights;
+pub mod markers;
 pub mod runtime;
 pub mod sound;
 
@@ -110,8 +121,13 @@ pub const LOGIC_CLASSES: &[&str] = &[
     "SpecialFX",
     "LightGroup",
     "Camera",
+    "CameraPoint",
     "Point",
     "TimerTrigger",
+    "LightActivateTrigger",
+    "CaptionTrigger",
+    "MessageTrigger",
+    "MissionTrigger",
 ];
 
 /// Whether `game::world` passes objects of `class` through for the object
@@ -165,6 +181,30 @@ pub struct CaObjectEvent {
     pub name: String,
     pub message: String,
     pub sender: Option<Entity>,
+}
+
+/// What the server tells every client about an event object (a timer,
+/// caption, message, objective, use spot or camera: `events::Notice`).
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct CaObjectNotice {
+    pub object: ObjId,
+    pub name: String,
+    pub notice: events::Notice,
+}
+
+/// A destructible fires its weapon (world_objects.md Follow-up
+/// (2026-10-31b) 5: `CreateExplosion` at its death, `FIRE`): the game's
+/// weapon id, from `at` along `dir` (engine), going off in place when
+/// `in_place`, damage x `factor`, by object `shooter`. No stock map has
+/// one; nothing turns it into a projectile yet (Known shortcuts).
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct CaObjectFire {
+    pub weapon: i32,
+    pub at: Vec3,
+    pub dir: Vec3,
+    pub in_place: bool,
+    pub factor: f32,
+    pub shooter: ObjId,
 }
 
 /// A node's object (its map entity index).
@@ -248,9 +288,12 @@ impl Plugin for CaObjectsPlugin {
         app.init_resource::<CaObjects>()
             .add_message::<CaObjectMessage>()
             .add_message::<CaObjectEvent>()
+            .add_message::<CaObjectNotice>()
+            .add_message::<CaObjectFire>()
             .init_resource::<sound::CaObjectSounds>()
             .add_message::<super::view_model::attached::CaLoopSound>()
-            .add_systems(Update, (sound::play.before(super::effects::sounds::loops), lights::show))
+            .init_resource::<markers::CaMarkers>()
+            .add_systems(Update, (sound::play.before(super::effects::sounds::loops), lights::show, markers::show))
             .add_systems(
                 FixedUpdate,
                 (load, (gather, frame).chain().run_if(authoritative), apply)
@@ -287,6 +330,34 @@ impl Plugin for CaObjectsPlugin {
                 |w, a| {
                     let name = a.first().ok_or("usage: ca_object_props <name>")?;
                     Ok(Some(props(w, name)))
+                },
+            )
+            .console_command(
+                "ca_object_damage",
+                "ca_object_damage <name> [hit points]: damage the objects of that name now (the server's; default \
+                 enough to break them), from the local player's view direction (their death sends their debris).",
+                |w, a| {
+                    let name = a.first().ok_or("usage: ca_object_damage <name> [hit points]")?;
+                    let hp = a.get(1).and_then(|h| h.parse::<f32>().ok()).unwrap_or(1.0e6);
+                    let dir = w
+                        .query_filtered::<&Intent, With<crate::core::LocalPlayer>>()
+                        .iter(w)
+                        .next()
+                        .map_or(Vec3::Z, |i| from_engine(crate::weapon::aim_of(i.yaw, i.pitch) * Vec3::NEG_Z, 1.0).normalize_or_zero());
+                    let ids = w.resource::<CaObjects>().world.named_all(name);
+                    if ids.is_empty() {
+                        return Ok(Some(format!("no object named {name}")));
+                    }
+                    {
+                        let mut o = w.resource_mut::<CaObjects>();
+                        for id in &ids {
+                            o.world.hit_dir = dir;
+                            o.world.damage(*id, hp, Who::Nobody, false);
+                        }
+                    }
+                    apply_effects(w);
+                    let o = w.resource::<CaObjects>();
+                    Ok(Some(ids.iter().map(|i| o.world.describe(*i)).collect::<Vec<_>>().join("\n")))
                 },
             )
             .console_command(
@@ -601,7 +672,8 @@ fn frame(world: &mut World) {
     for (id, who) in uses {
         w.use_object(id, who);
     }
-    for (id, amount, attacker, player) in damage {
+    for (id, amount, attacker, player, dir) in damage {
+        w.hit_dir = if dir == Vec3::ZERO { Vec3::Z } else { dir };
         w.damage(id, amount, attacker, player);
     }
     for r in requests {
@@ -670,15 +742,15 @@ fn use_rays(world: &mut World) -> Vec<(ObjId, Who)> {
 }
 
 /// This frame's damage to nodes: (object, hit points, attacker, a player
-/// attacker).
-fn node_damage(world: &mut World, chars: &[CharBox]) -> Vec<(ObjId, f32, Who, bool)> {
+/// attacker, its direction in the file frame).
+fn node_damage(world: &mut World, chars: &[CharBox]) -> Vec<(ObjId, f32, Who, bool, Vec3)> {
     let hits = std::mem::take(&mut world.resource_mut::<CaObjects>().pending_damage);
     hits.into_iter()
         .filter_map(|d| {
             let id = world.get::<CaNode>(d.target)?.0;
             let who = d.attacker.map_or(Who::Nobody, |a| Who::Character(a.to_bits()));
             let player = chars.iter().any(|c| c.who == who && c.player);
-            Some((id, d.amount / inventory::HP, who, player))
+            Some((id, d.amount / inventory::HP, who, player, from_engine(d.dir, 1.0).normalize_or_zero()))
         })
         .collect()
 }
@@ -835,6 +907,49 @@ fn effect(world: &mut World, f: Fx, scale: f32) {
             });
         }
         Fx::CharacterMessage { who, message } => debug!("objects: to {who:?}: {message}"),
+        Fx::Notice { id, notice } => {
+            let name = world.resource::<CaObjects>().world.objects[id as usize].name.clone();
+            info!("objects: {name}: {notice:?}");
+            world.write_message(CaObjectNotice { object: id, name, notice });
+        }
+        Fx::Debris { at, debris, dir } => {
+            if world.get_resource::<super::effects::debris::CaDebrisTable>().is_none() {
+                let t = super::effects::debris::CaDebrisTable::install();
+                world.insert_resource(t);
+            }
+            let table = world.resource::<super::effects::debris::CaDebrisTable>();
+            let Some(record) = table.id(&debris) else {
+                debug!("objects: no debris record {debris}");
+                return;
+            };
+            let msg = super::effects::debris::CaDebris { at, record, dir };
+            if world.get_resource::<crate::core::NetRole>() == Some(&crate::core::NetRole::Server) {
+                world.write_message(bevy_replicon::prelude::ToClients {
+                    targets: bevy_replicon::prelude::SendTargets::All,
+                    message: msg,
+                });
+            } else {
+                world.write_message(msg);
+            }
+        }
+        Fx::Fire {
+            weapon,
+            at,
+            dir,
+            in_place,
+            factor,
+            shooter,
+        } => {
+            debug!("objects: object {shooter} fires weapon {weapon} along {dir} (in place {in_place}, x {factor})");
+            world.write_message(CaObjectFire {
+                weapon,
+                at: to_engine(at, scale),
+                dir: to_engine(dir, 1.0),
+                in_place,
+                factor,
+                shooter,
+            });
+        }
         Fx::Log(l) => debug!("objects: {l}"),
     }
 }
@@ -892,6 +1007,8 @@ fn explode(world: &mut World, at: Vec3, radius: f32, damage: f32, attacker: Who,
         })
         .collect();
     for (id, amount) in breakables {
+        let d = (o.world.objects[id as usize].pose.pos - at).normalize_or_zero();
+        o.world.hit_dir = if d == Vec3::ZERO { Vec3::Z } else { d };
         o.world.damage(id, amount, attacker, false);
     }
 }

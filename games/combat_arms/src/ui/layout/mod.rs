@@ -179,6 +179,11 @@ pub struct GaugeLook {
     /// The fill, percent.
     pub fill: f64,
     pub bar_height: i32,
+    /// The frame's and the bar's nine-slice values
+    /// (`GaugeBackTextureSimpleStretchValue`,
+    /// `GaugeBarTextureSimpleStretchValue`; W2, W5).
+    pub frame_stretch: Option<[f32; 4]>,
+    pub bar_stretch: Option<[f32; 4]>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -354,6 +359,19 @@ pub struct TextDraw {
     pub reference_size: IVec2,
     /// The string image's rect in screen px.
     pub rect: PxRect,
+    /// The glyphs' horizontal stretch over the face's own proportions at
+    /// the scaled height: ⌊a_f x_r⌋ over a_f y_r (T2), 1 at (1, 1).
+    pub stretch: f32,
+}
+
+/// The horizontal stretch of a font's glyphs drawn at `scaled` (T2): the
+/// forced average width over the width the face has at the scaled height.
+pub fn glyph_stretch(base: &text::Font, scaled: Scaled) -> f32 {
+    let natural = base.average as f64 * scaled.height as f64 / base.height.max(1) as f64;
+    if natural <= 0.0 || scaled.advance <= 0 {
+        return 1.0;
+    }
+    (scaled.advance as f64 / natural) as f32
 }
 
 /// What a tree draws, in draw order.
@@ -564,6 +582,7 @@ impl Layout {
             reference_at: at,
             reference_size: m.reference,
             rect: PxRect::new(top.x, top.x + m.px.x, top.y, top.y + m.px.y),
+            stretch: glyph_stretch(font, m.font),
         })
     }
 
@@ -721,19 +740,19 @@ impl Layout {
                 }
                 Kind::Gauge(g) => {
                     let (at, size) = self.image_quad(id, Vec2::ONE);
-                    if ctx.textures.size(&g.frame).is_some() {
-                        out.push(Draw::Quad(id, Quad::new(at, size, g.frame.clone(), [0.0, 0.0, 1.0, 1.0], fade([255; 4]))));
+                    if let Some(t) = ctx.textures.size(&g.frame) {
+                        let mut q = Quad::new(at, size, g.frame.clone(), [0.0, 0.0, 1.0, 1.0], fade([255; 4]));
+                        q.slices = g.frame_stretch.map(|s| Self::slices(at, size, t, s));
+                        out.push(Draw::Quad(id, q));
                     }
                     if let Some(bw) = canvas::gauge_width(g.fill, g.max_range) {
                         let p = self.tree.abs_pos(id) + g.bar_at;
                         let (sx, sy) = (self.scale.x, self.scale.y);
-                        let q = Quad::new(
-                            [p.x as f64 * sx, p.y as f64 * sy],
-                            [bw as f64 * sx, g.bar_height as f64 * sy],
-                            g.bar.clone(),
-                            [0.0, 0.0, 1.0, 1.0],
-                            fade([255; 4]),
-                        );
+                        let (at, size) = ([p.x as f64 * sx, p.y as f64 * sy], [bw as f64 * sx, g.bar_height as f64 * sy]);
+                        let mut q = Quad::new(at, size, g.bar.clone(), [0.0, 0.0, 1.0, 1.0], fade([255; 4]));
+                        if let (Some(s), Some(t)) = (g.bar_stretch, ctx.textures.size(&g.bar)) {
+                            q.slices = Some(Self::slices(at, size, t, s));
+                        }
                         out.push(Draw::Quad(id, q));
                     }
                 }

@@ -20,8 +20,10 @@
 //!   an escort point and is moved to the map's `VipTeleportPoint` (its
 //!   rotation, on the floor; none: it stays).
 //! - The exit (M13.5): the `EscapeZoneTrigger` named by the mission, shut
-//!   until `exit_time` (60 s) after each real round's setup
-//!   (`CaObjectives::exit`). The VIP, alive, on the escort team, touching
+//!   until the exit timer stops itself, `exit_time` (60 s) + its 1 s
+//!   run-out after each real round's setup (`CaObjectives::exit`; the
+//!   helicopter's arrival at `exit_arrival`, 54 s: game_modes_2.md
+//!   Follow-up (2026-10-31b), case 54). The VIP, alive, on the escort team, touching
 //!   it while the round is live, undecided and the round clock (read raw:
 //!   Quirk 7) not run out: the escort wins.
 //! - Results (M13.6's table): the escape, the VIP's death, the last
@@ -336,7 +338,8 @@ fn setup(world: &mut World) {
         // Its timer starts with the live phase (`update`).
         o.exit = (!warmup).then_some(Exit {
             opens: f64::INFINITY,
-            open: false,
+            arrives: f64::INFINITY,
+            ..default()
         });
         o.swap_notice = None;
     }
@@ -418,13 +421,26 @@ pub(super) fn update(
         && x.opens.is_infinite()
         && m.phase == Phase::Live
     {
-        let exit_time = settings.escort.exit_time as f64;
+        // The exit timer stops itself (unlocking the zone) at its run-out,
+        // 1 s after its `TimeAmount` (world_objects.md Follow-up
+        // (2026-10-31b) 1.1).
+        let exit_time = (settings.escort.exit_time + crate::game::objects::events::TIMER_RUN_OUT) as f64;
         let length = settings.mode_data().time_limit.unwrap_or(0.0) as f64;
         let start = m.round_ends.map_or(now, |e| e - length);
         o.exit = Some(Exit {
             opens: start + exit_time,
+            arrives: start + settings.escort.exit_arrival as f64,
             ..x
         });
+    }
+    // The helicopter starts to arrive (the timer's in-time command).
+    if let Some(x) = o.exit
+        && !x.arriving
+        && now + 1e-9 >= x.arrives
+        && m.phase == Phase::Live
+    {
+        o.exit = Some(Exit { arriving: true, ..x });
+        info!("the helicopter is coming");
     }
     // The exit opens.
     if let Some(x) = o.exit
