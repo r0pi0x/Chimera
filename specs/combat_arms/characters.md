@@ -1,9 +1,9 @@
 # Combat Arms: player characters
 
-Source basis: reference material the user pointed the spec session to on the game's player characters: the shared character-model attribute manager and the per-player model selection record, the player object's model building, attachments, death and body code on the server, the client's character effect (aim twisting, hit-sphere display), the shared third-person animation driver and its animation-set tables, the client and server animation updaters, the body object and its states, and the client hit-sphere test. Data was read from a US-region attribute data set (the model, attachment, mark and weapon attribute files) and, where it differs, compared with a BR-region set. Model numbers were measured with a throwaway reader written from `models_ltb.md` and `animation.md` on the character archives of the US reference client (build 1501.04), whose character archives are not keyed. The Steam install on the Windows PC (manifest build id 25595979) keys its character archives (`V2_RESOURCES_KEY`), so those numbers are marked "install" in Test cases and must be re-measured there. A follow-up session (Open questions 13–22) added the server's reload, weapon-fire and hit-box code, the client's shot filter, emote and body effects, and measured the female numbers and third-person weapon sockets on an older extracted client release (its male files reproduce the US 1501.04 numbers).
+Source basis: reference material the user pointed the spec session to on the game's player characters: the shared character-model attribute manager and the per-player model selection record, the player object's model building, attachments, death and body code on the server, the client's character effect (aim twisting, hit-sphere display), the shared third-person animation driver and its animation-set tables, the client and server animation updaters, the body object and its states, and the client hit-sphere test. Data was read from a US-region attribute data set (the model, attachment, mark and weapon attribute files) and, where it differs, compared with a BR-region set. Model numbers were measured with a throwaway reader written from `models_ltb.md` and `animation.md` on the character archives of the US reference client (build 1501.04), whose character archives are not keyed. The Steam install on the Windows PC (manifest build id 25595979) keys its character archives (`V2_RESOURCES_KEY`), so those numbers are marked "install" in Test cases and must be re-measured there. Section 12 (who may hold which weapon) was read on the Steam install, build 26236938: weapon, item, model, AI and effect files, all mission files and every world's objects, with the client's item, equipment-slot and room-option code. A follow-up session (Open questions 13–22) added the server's reload, weapon-fire and hit-box code, the client's shot filter, emote and body effects, and measured the female numbers and third-person weapon sockets on an older extracted client release (its male files reproduce the US 1501.04 numbers).
 Status: draft
 
-Sections: Summary; Units and conventions; Constants; Behaviour (1 character records and model choice, 2 assembling the model: pieces, skins, head and face, attachments, 3 skeleton and sockets, 4 trackers and layering, 5 deciding the animation state, 6 building the animation names, 7 starting, restarting, syncing, rates and blend times, 8 aim pitch and twist, 9 hit reactions, emotes, 10 death and bodies, 11 hit-sphere placement); Per-tick order; Edge cases; Quirks; Corrections (2026-10-22); Corrections (2026-10-30); Test cases; Open questions.
+Sections: Summary; Units and conventions; Constants; Behaviour (1 character records and model choice, 2 assembling the model: pieces, skins, head and face, attachments, 3 skeleton and sockets, 4 trackers and layering, 5 deciding the animation state, 6 building the animation names, 7 starting, restarting, syncing, rates and blend times, 8 aim pitch and twist, 9 hit reactions, emotes, 10 death and bodies, 11 hit-sphere placement, 12 who may hold which weapon); Per-tick order; Edge cases; Quirks; Corrections (2026-10-22); Corrections (2026-10-30); Test cases; Open questions.
 
 ---
 
@@ -493,6 +493,178 @@ The `Nuts` socket exists on 43 of the 61 bodies with the 53-node male skeleton (
 
 The female table has no neck sphere, no groin sphere and no 7.0 shoulder spheres, and has four 3 u torso spheres the male lacks (Open question 1).
 
+### 12. Who may hold which weapon
+
+Read on the Steam install (build 26236938): the weapon file, the item file (`ITEMS.TXT`), the model file, the three AI files (`AIBUTES*.TXT`), the effect file (`FX.TXT`), all 820 mission files (`GMS.rez`, `missions.md`) and the objects of every world; plus the client's item, equipment-slot and room-option code. "No link" below means none of these sources names the weapon for any holder. Weapon ids are `Weapon#` indices; our ids are the slugs of their `Name` (`combat_arms:` + lower case, other characters `_`).
+
+#### 12.1 Holder records
+
+| Kind | Where | Key | Notes |
+|---|---|---|---|
+| Player body | model file `Model#` | index | 592 records; item records of characters use the same number as `ItemID` |
+| Infection override | model file `Overidable_Model#` | index | the look of an infected player (1, `InfectedOveridable`) |
+| NPC body | model file `AIModel#` | `Name` | 101 records; never a player body. Skeleton 0 or 1 = humanoid; 2, 3 = infected; 5 = powered suit; 7–18 = boss bodies; 8 = dummies |
+| Boss model | effect file `PatternFX#` | `Name` | one record, `HQRaid_Boss` (`CHARS_M_BODY\boss_model.ltb`, skeleton 4): not a character |
+
+#### 12.2 How a weapon reaches a holder
+
+Seven kinds of link exist in the data. Nothing else ties a weapon to a body.
+
+- **L1, NPC hands in a world.** Every NPC is a `CAIHuman` world object (947 in 23 worlds). Its `ModelTemplate` names an `AIModel` (every value matches one), its `RightHand` and `LeftHand` name the weapons it holds (`<none>` = empty), `Brain` names its AI record and `NPCType` its class (`NPCDefault`, `Zombie`, `AbnormalZombie`, `ClubZombie`, `SpecialBugs`, `SpecialBoss`, `AbnormalBoss`, `BonusCoin`, `PrisonOfficer`, `SpecialZ`). `RightHand2` and `LeftHand2` are `<none>` on all 947. Holder = the `AIModel`.
+- **L2, the HQ raid boss.** `PatternFX0` (`HQRaid_Boss`) lists `Weapon0..2` with a socket and a chance each: 460 on `highgun` (100), 462 on `Missile_` (50), 463 on `bomb_` (50). The weapon file's `[PatternWeapon0..3]` hold the boss's fire patterns for 460, 461, 462, 463 (`WeaponId`, `WeaponType` `NormalWeapon` or `SpecialWeapon`, timings). Worlds place the boss as a `PatternObject` with `ModelName` `HQRaid_Boss` (NemexisHQ with pattern NPC `HQRaid_Boss`, NemexisLab_CP with `LABRaid_Boss`, both `[PatternNPC#]` in the AI files).
+- **L3, suit sets given by a mode.** A mission file's `[ChangeCharInfo_n]` (`ModelIndex` a, `WeaponIndex` b) pairs `[ChangeCharModel_a]` (`ModelId`: a `Model#` index; `HUDIndex`) with `[ChangeCharWeapon_b]` (`Primary<i>`, `Secondary<i>`: weapon ids). `WeaponIndex` is the number of a weapon set, not a weapon id. Five files have them: NEMEXISLAB_CP, ROADKILL_RTDM and SNOWVALLEY_RTDM (sets 0–4), DESERTHOLE_RTDM and TESTING_T (sets 0–9, the B and R coloured suits). VIP Escort files use the same shape (`VIPChangeCharInfo`, `VIPChangeCharModel_0`, `VIPChangeCharWeapon_0`) for the VIP (Model 87 `VIP_Melissa`, or 289 `VIP_Hauser`; weapons 91 and 0). The mode code that reads these sections is not in the reference code read (Open question 25).
+- **L4, infected loadouts of a mode.** Quarantine (`missions.md` F4.1): `[InfectedModelSetting]` `MeleeWeapon0` 191, `[InfectedHostModelSetting]` 190, in all 33 `_QRT` files; NOXIOUSDAMNATION_LLHG gives its infected 1346. Holder = any player in the infected state, drawn with its body's infection override.
+- **L5, infected mercenaries.** Use items of `SubType` 20 (infected mercenary) carry `InfectedModelNo` (a `Model#`) and `InfectedWeaponNo`: item 54 → Model 56 `Infected Merc Subtype-S` with 521; item 55 → Model 57 `Infected Merc Subtype-P` with 522; items 148 and 150 → Model 513 `Infected theshinning` with 1734. Holder = that body (`game_modes.md` M8: "a mercenary character uses its own infected model and weapon").
+- **L6, NPC skills.** `[NpcSkill#]` `UseWeaponName` in the AI files is a weapon a skill fires; a `[Brain#]` lists skills in `NpcSkillName<i>`, and a `CAIHuman` names its brain. Holder = the `AIModel`s of the objects whose brain lists that skill.
+- **L7, equipment slots of a player's loadout** (12.3). This is the only rule that limits what a player body may carry.
+
+Pickups anyone may take are not holder links: co-op `[WeaponSpawn]` (M32_FT, Minigun_Bounty_FT, Airstrike_Napalm_FT in 8 files), Hunted map spawn tables (533 in NOXIOUSDAMNATION_LHG and _LLHG), the Hired Guns turret (558).
+
+#### 12.3 Specialists and assassins
+
+**The game's own test.** A character counts as a specialist when its `Character#` record in the item file has `ItemType` 30, an assassin with `ItemType` 37 (36 is "assassin weapon"); the room option "no specialists" (weapon-use option 9) refuses a loadout whose character has either type. In this install all 303 `Character#` records have `ItemType` 22 (mercenary), and no item of any kind has type 30, 36 or 37. **By data, no body is a specialist or an assassin.**
+
+**By name only** (no data marks them): specialist bodies `Model` 22 `Specialist01_M`, 23 `Specialist01_W`, 27 `Specialist02_M`, 38 `Specialist04`, 43 `Brazilian_Specialist`, 44 `Specialist02_Rebalance`, 45 `Specialist01_Rebalance`, 46 `Brazil_Speical01_Rebalance`, 47 `Specialist04_Rebalance`, 48 `Specialist01_W_Rebalance`, 236, 237, 252, 253 (the `_recruit` copies), 486 (`Specialist01_M` cosmetic); assassin bodies 63 `Assassin_F`, 64 `Assassin_M`, 244, 245 (`_recruit`). `Nemexis_Enemy_Man_Special`, `Nemexis_Enemy_Man_Assassin` and the woman pair (82–85) are named alike; no data ties them to specialist or assassin rules either.
+
+**What restricts a weapon: the equip-slot type.** A `WeaponItem#` may carry `EquipBackpackType` (0 normal, 1 special, 2 perk, 3 assassin, 4 special with three slots; default 0) and `EquipOnlyBackpack` 1. Such a weapon can only go into a backpack slot of the same type; if the player has none, the equip screen refuses it ("equip only in the special backpack", "… assassin backpack"). A player's backpack slots and their types come from:
+
+1. the character item: `AddSlot` slots, all of type `SlotType`; this type is also the character's own slot type;
+2. the equipped backpack item, the same way;
+3. use items of `SubType` 18 (extend special backpack), `AddSlot` slots of type `SlotType` (or `SlotType_0`, `SlotType_1`, … per slot), counted only when the character's own slot type is not 0, and then given the character's type.
+
+Install values: 116 characters have `AddSlot` (1 or 2), every one with `SlotType` 0; four extend items (36, 52: one slot of type 1; 76: types 1 and 0; 77: two of type 1) never count, since no character has a non-normal type. Weapons with a slot type: 1 (special) on 173 `Claymore_Controller`, 174 `Satellite_Scanner`, 290 `M32_FT`, 291 `Minigun_Bounty_FT`, 293 `Airstrike_Napalm_FT`, 447 `Mobile_Grenade_Controller`, 558 `HG2_Auto_Turret`; 3 (assassin) on 536 `Nerve_Confuse_Mine`. So these 8 are the specialist-only (7) and assassin-only (1) weapons, and with this install's data **no loadout can hold them**; players get some of them only from the mode pickups above.
+
+The assassin crossbows (533 `Assassin_Bowgun_Nor`, 534 `Assassin_Bowgun_Expl`) are item type 8 (rocket launcher) with no slot type: any body may carry them. 535 `Assassin_Bowgun_Expl_Controller` is 534's controller (534's `SubControlWeaponName`; 535 has `NoSelect` 1): it comes with 534 and is never chosen on its own.
+
+The only data link between player bodies and particular weapons is L3 (the powered suits, 12.4) and L5 (infected mercenaries, 12.6).
+
+#### 12.4 Boss and NPC weapons (the 48 candidates)
+
+The 48 weapons whose id contains `npc`, `boss`, `hqraid`, `powered_suit` or `assassin`, by link. "AIModel" names are `AIModel#` `Name`s, with the record number. "Item" = the weapon has a `WeaponItem#` record (only those can be in a player's inventory).
+
+| Weapon | Link | Holder record(s) | Worlds or files |
+|---|---|---|---|
+| 62 `AK-47_npc` | L1 right | SH_Rifle 0, SH_Recon 1, SH_MGunner 2, SH_Sniper 3, SH_HeavyGunner 4, SH_RoyalGuard 6, Agent_Z 12, SubMission_Z_1 76, SubMission_Z_2 79 | DesertFox_CP, Sandhog_CP1, TwinTower, SnowStorm |
+| 63 `IMI_UZI_npc` | L1 right | SH_Rifle 0, SH_Recon 1, SH_MGunner 2, SH_Sniper 3, SH_HeavyGunner 4, SH_RoyalGuard 6 | DesertFox_CP, Sandhog_CP1 |
+| 64 `M24_npc` | L1 right | SH_Recon 1, SH_Sniper 3, SH_RoyalGuard 6 | DesertFox_CP, Sandhog_CP1 |
+| 65 `M60_npc` | L1 right (once left) | SH_Recon 1, SH_MGunner 2, SH_RoyalGuard 6 | DesertFox_CP, Sandhog_CP1, TwinTower |
+| 66 `LAW_npc` | L1 right | SH_HeavyGunner 4 | DesertFox_CP, Sandhog_CP1 |
+| 67 `Minigun_npc` | none | — | — |
+| 68 `M67_npc` | L1 left | SH_Rifle 0, SH_Recon 1, SH_MGunner 2, SH_Sniper 3, SH_HeavyGunner 4, SH_RoyalGuard 6, Agent_Z 12, Squad_0–9, 11, 12 (13–22, 38, 39), HQRAIDNPC_1–3 (32–34), Powered_Suit_Npc_Melee 35, Powered_Suit_Npc_Smg 36 | DesertFox_CP, Sandhog_CP1, TwinTower, BloodMoney, HiredGuns2, NemexisHQ, NemexisLab_CP |
+| 69 `Dynamite_npc` | L1 left | SH_Recon 1, SH_MGunner 2, SH_Sniper 3, SH_HeavyGunner 4, SH_RoyalGuard 6 | DesertFox_CP, Sandhog_CP1 |
+| 283 `VH_Normal_NPC` | L1 right | Normal_Infecter_Common_D 11 | BlackLung, CabinFever, DeathRoom_CP, RailwayDefence |
+| 286 `VH_Explode_NPC` | L1 right | Normal_Infecter_Explode_C 10 | same four |
+| 287 `VH_Heavy_NPC` | L1 right | Heavy_Infecter_Gas_A 8 | same four |
+| 288 `VH_Light_NPC` | L1 right | Light_Infecter_Speed_B 9 | same four |
+| 366 `Quarantine_Stick_NPC` | L1 right | Normal_Infecter_Common_D 11 (brain `Infected_Stick`, `ClubZombie`) | BlackLung |
+| 416 `MP5A4_NPC` | L1 right; item | Squad_3 15, Squad_4 16, Squad_12 39 | BloodMoney, HiredGuns2 |
+| 417 `M4A1_NPC` | L1 right; item | Squad_1 13, Squad_2 14, Squad_11 38 | BloodMoney, HiredGuns2 |
+| 418 `P90_NPC` | L1 right; item | Squad_5 17, Squad_6 18, Squad_10 37 | BloodMoney, HiredGuns2 |
+| 419 `M416_NPC` | L1 right; item | Squad_7 19, Squad_8 20 | BloodMoney, HiredGuns2 |
+| 420 `MG21E_NPC` | L1 right; item | Squad_9 21, Squad_0 22 | BloodMoney, HiredGuns2 |
+| 421 `Watergun_NPC` | none | — | — |
+| 457 `HQRAIDNPC_1_MELEE` | L1 right | HQRAIDNPC_1 32 | NemexisHQ, NemexisLab_CP |
+| 458 `HQRAIDNPC_2_SMG` | L1 right | HQRAIDNPC_2 33, Powered_Suit_Npc_Melee 35, Powered_Suit_Npc_Smg 36, SubMission_Z_1 76, SubMission_Z_2 79 | NemexisHQ, NemexisLab_CP, SnowStorm |
+| 459 `HQRAIDNPC_3_SPECIAL` | L1 right | HQRAIDNPC_3 34 | NemexisHQ, NemexisLab_CP |
+| 460 `HQRAID_BOSS_MINIGUN` | L2 | `PatternFX0` `HQRaid_Boss` (`Weapon0`, `highgun`) | NemexisHQ, NemexisLab_CP |
+| 461 `HQRAID_BOSS_FLAME` | L2 (pattern only) | `HQRaid_Boss` by `[PatternWeapon1]`; not mounted by `PatternFX0` | same |
+| 462 `HQRAID_BOSS_MISSILE` | L2 | `HQRaid_Boss` (`Weapon1`, `Missile_`) | same |
+| 463 `HQRAID_BOSS_POISONBOMB` | L2 | `HQRaid_Boss` (`Weapon2`, `bomb_`) | same |
+| 526 `Powered_Suit_Basic_SR` | L3 set 3 (8); item | Model 59 `Powered_Suit_SR`, 580 `_SRB`, 585 `_SRR` | 5 files |
+| 527 `Powered_Suit_Basic_SMG` | L3 set 2 (7); item | Model 58 `Powered_Suit_SMG`, 579, 584 | 5 files |
+| 528 `Powered_Suit_Boss_MG` | L3 set 0 (5); item | Model 62 `Powered_Suit_Boss`, 583, 588 | 5 files |
+| 529 `Powered_Suit_Basic_Pistol` | L3 sets 1, 4 (6, 9); item | Model 60 `Powered_Suit_Melee`, 581, 586, and 61 `Powered_suit_medic`, 582, 587 | 5 files |
+| 530 `Powered_Suit_Basic_Melee` | L3 set 1 (6); item | Model 60, 581, 586 | 5 files |
+| 531 `Powered_Suit_Boss_Launcher` | L3 set 0 (5); item | Model 62, 583, 588 | 5 files |
+| 532 `Powered_Suit_Basic_Medic` | L3 set 4 (9); item | Model 61, 582, 587 | 5 files |
+| 533 `Assassin_Bowgun_Nor` | item only | any body (12.3) | Hunted spawns |
+| 534 `Assassin_Bowgun_Expl` | item only | any body | — |
+| 535 `Assassin_Bowgun_Expl_Controller` | with 534 | whoever holds 534 | — |
+| 537 `NPC_Powered_Suit_Basic_SMG` | none | — (AIModel 36 holds 458 instead) | — |
+| 538 `NPC_Powered_Suit_Basic_Melee` | none | — (AIModel 35 holds 458 instead) | — |
+| 560 `Ravens_G36C_NPC` | none | — | — |
+| 561 `Souzas_Parafal_NPC` | none | — | — |
+| 562 `PP19_MOD_Scorpion_NPC` | none | — | — |
+| 676 `InfectedS_Captain_Hand_Boss` | L1 right | InfectedS_Captain_Boss 50, InfectedS_W_Captain_Boss 70, InfectedS_Captain 40 (TowerDefence only) | InfectedShip_CP, TowerDefence |
+| 858 `Abnormal_Boss_Minigun` | L1 left | Abnormal_Boss 75, Abnormal_Du_Boss 89, Abnormal_Du_Boss_A 90, Abnormal_Boss_Fortress 92, Abnormal_Boss_Beetle 94, Abnormal_Boss_GroundThorn 98 | BossBattle_CP, BossBattle3_CP, BossBattle4_CP, BossRush, BossShip, SnowStorm, DarkThanDark |
+| 863 `Abnormal_Boss_Minigun_Left` | none | — | — |
+| 864 `Abnormal_IceGas_boss` | L6 only | none: `[NpcSkill16]` `P_Boss_IceGas` fires it, but no `[Brain#]` lists that skill | — |
+| 1142 `VH_Normal_NPC_CFS` | L1 right | Normal_Infect_CFS 82, Normal_Infect_Carnival_CFS 83 | CostaRecon_CP |
+| 1143 `VH_Explode_NPC_CFS` | L1 right | Explode_Infect_CFS 84, Explode_Infect_Carnival_CFS 85 | CostaRecon_CP |
+| 1144 `VH_Heavy_NPC_CFS` | L1 right | Hauser_Infect_CFS 86 | CostaRecon_CP |
+
+Counts: 25 by L1, 4 by L2 (461 by pattern only), 7 by L3, 3 crossbow family (no holder restriction), 1 by an unused skill, 8 with no link. Item records exist for 14 (416–420, 526–534); the other 34 never appear in a player's inventory.
+
+The L3 sets in full (NEMEXISLAB_CP; the R/B files repeat them for the coloured suits, sets 5–9 = 0–4):
+
+| Set | Body (`Model#`) | Weapons |
+|---|---|---|
+| 0 | 62 `Powered_Suit_Boss` (583 B, 588 R) | primary 528, secondary 531 |
+| 1 | 60 `Powered_Suit_Melee` (581, 586) | primary 530, secondary 529 |
+| 2 | 58 `Powered_Suit_SMG` (579, 584) | primary 527 |
+| 3 | 59 `Powered_Suit_SR` (580, 585) | primary 526 |
+| 4 | 61 `Powered_suit_medic` (582, 587) | primary 532, secondary 529 |
+
+Powered-suit bodies are skeleton 5 (the boss suits 6) with `HumanModel` 0.
+
+#### 12.5 Weapon fields
+
+No field of the weapon records (297 keys in all) names a body, skeleton, figure type, team or character type, and none limits who may hold a weapon. The fields that come closest, and what they do:
+
+- `LowerAniType` 1 or 2: the infected leg set (4, 5); 40 weapons. It is the only body-class signal in the weapon data: these weapons are animated for infected legs.
+- `Hidden` true (21 weapons, all infected hands): the third-person weapon model is not attached.
+- `NoSelect` 1 (173, 447, 535): the weapon cannot be selected; each is the controller named by another weapon's `SubControlWeaponName`.
+- `AIPrimaryWeapon` true (457, 538): an NPC treats this melee weapon as a ranged one when choosing attacks.
+- `[DeditWeapon]` (54 names: infected and NPC hands, boss weapons, the CFS event weapons, 7 modifiable guns): a list in the weapon file not read by the game code read; a hint that the names are NPC or special weapons, nothing more.
+
+On the item side: `EquipBackpackType` and `EquipOnlyBackpack` (12.3); `CanRestrict` (45 weapon items, the room's weapon restriction); a character's `RestrictedSlot<i>` lists item types the character cannot change (11 head gear, 12 face attachment, 14 clothes, 15 class kit, 16 backpack, 39–43 cosmetic slots), never a weapon type.
+
+#### 12.6 Infected hands
+
+The 40 weapons with `LowerAniType` 1 or 2 (all `Guntype` 0, knife class 39, except 366: class 47 and leg set 2) and who holds them. "Own type" is the infected type the hand's name and data both point to; "also" lists other holders the worlds give it.
+
+| Weapon | Link | Own type | Also |
+|---|---|---|---|
+| 190 `Quarantine_Host_Hand` | L4 | any infected player, host | L1 left on AIModels 8, 9, 10, 11 (BlackLung, CabinFever, RailwayDefence, TowerDefence) |
+| 191 `Quarantine_Virus_Hand` | L4 | any infected player | — |
+| 283, 286, 287, 288 `VH_*_NPC` | L1 | 12.4 table | — |
+| 344 `Mutation_Quarantine_Virus_Hand` | none (has an item record, type 7) | — | — |
+| 366 `Quarantine_Stick_NPC` | L1 | AIModel 11 as club zombie | — |
+| 521 `Quarantine_SubtypeS_Hand` | L5 | Model 56 | — |
+| 522 `Quarantine_SubtypeP_Hand` | L5 | Model 57 | — |
+| 654 `InfectedS_Captain_Hand` | L1 | InfectedS_Captain 40, InfectedS_W_Captain 60 | DarkThanDark: InfectedS_Man01_Host 41, _Man02_Host 43, _W_Man01_Host 61, _Man01_Virus 42, SubMission_Z_1 76; RailwayDefence: Infecter_Abnormal_Suicide 73 |
+| 655 `InfectedS_Man01_Host_Hand` | L1 | InfectedS_Man01_Host 41, _W_Man01_Host 61 | Normal_Infecter_Common_D 11 (DarkThanDark), Infecter_Abnormal_Suicide 73 (TowerDefence), InfectedS_Captain 40 (ZombieWar) |
+| 656 `InfectedS_Man01_Virus_Hand` | L1 | 42, 62 | — |
+| 657 `InfectedS_Man02_Host_Hand` | L1 | 43, 63 | — |
+| 658 `InfectedS_Man02_Virus_Hand` | L1 | 44, 64 | — |
+| 659 `InfectedS_Woman_Host_Hand` | L1 | 45, 65 | Infecter_Abnormal_Suicide 73 (TowerDefence) |
+| 660 `InfectedS_Woman_Virus_Hand` | L1 | 46, 66 | — |
+| 661 `InfectedS_New_Man01_Hand` | L1 | 47, 67 | Infecter_Abnormal_Suicide 73 (TowerDefence) |
+| 662 `InfectedS_New_Man02_Hand` | L1 | 48, 68 | — |
+| 663 `InfectedS_New_Woman_Hand` | L1 | 49, 69, InfectedS_New_Woman_StunUp 52, InfectedS_New_Woman_Block 59 | — |
+| 674 `InfectedS_Man02_Host_Hand_NSee` | none | (by name: InfectedS_Man02_Host_NSee 51, not placed in any world) | — |
+| 675 `InfectedS_New_Woman_Hand_StunUp` | L1 | 52 | — |
+| 676 `InfectedS_Captain_Hand_Boss` | L1 | 50, 70 | InfectedS_Captain 40 (TowerDefence) |
+| 678 `InfectedS_Captain_1_Hand` | none | (by name: the captains 40, 60) | — |
+| 684 `InfectedS_Man01_Host_B_Hand` | L1 | InfectedS_Man01_Host_B 53 | — |
+| 685 `InfectedS_Man02_Host_B_Hand` | L1 | InfectedS_Man02_Host_B 54 | InfectedS_New_Man02_B 57 |
+| 686 `InfectedS_Woman_Host_B_Hand` | L1 | InfectedS_Woman_Host_B 55 | — |
+| 687 `InfectedS_New_Man01_B_Hand` | L1 | InfectedS_New_Man01_B 56 | — |
+| 688 `InfectedS_New_Man02_B_Hand` | L1 | 57 | — |
+| 689 `InfectedS_New_Woman_B_Hand` | L1 | InfectedS_New_Woman_B 58 | — |
+| 854 `Abnormal_Normal` | L1 | Infecter_Abnormal_Normal 71, Infecter_Abnormal_Normal_boss 80 | Infecter_Abnormal_Suicide 73 (SnowStorm); bosses Abnormal_Du_Boss_S 91, Abnormal_Boss_Callus 95, Abnormal_Boss3_Bugs_A 96, _B 99 |
+| 859 `Abnormal_Explode` | L1 | Infecter_Abnormal_Explode 72 | — |
+| 860 `Abnormal_Blood` | L1 | Infecter_Abnormal_Blood 74, Infecter_Abnormal_Blood_boss 81 | — |
+| 861 `Bonus_Abnormal_Explode` | L1 | Bonus_Abnormal_Explode 77 | — |
+| 862 `Bonus_Abnormal_Blood` | L1 | Bonus_Abnormal_Blood 78 | — |
+| 1142, 1143, 1144 `VH_*_NPC_CFS` | L1 | 12.4 table | — |
+| 1346 `Quarantine_LC_Melee` | L4 | any infected player in NOXIOUSDAMNATION_LLHG | — |
+| 1734 `The Shining_Hand` | L5 | Model 513 | — |
+
+The `InfectedS_W_*` records (60–70) are the same types as their `InfectedS_*` twins and share their hands. Counts: 31 hands by L1, 3 by L4 (190 also by L1), 3 by L5, 3 with no link. The `InfectedS_*` worlds are InfectedShip_CP (and DarkThanDark, TowerDefence, ZombieWar for the "also" cases); the `Abnormal_*` ones SnowStorm, TowerDefence, ZombieRoom and the boss maps; `VH_*` 12.4.
+
+What it means for a rule "infected hands only on their own infected type": the player-side infected bodies are the infection overrides of the player bodies (190 and 191, and 1346 in its mode) and the three infected mercenaries (521, 522, 1734); every other hand belongs to an `AIModel` NPC type, never to a player body.
+
 ## Per-tick order
 
 **Server, per client movement frame received** (each frame of the client's update packet, in sequence):
@@ -709,6 +881,22 @@ From the shared model-attribute reader's skin assembly and the client's equipmen
 60. **Leaves cut-out (logic).** A ghillie leaves texel with alpha 0.62 (158/255) → not drawn; 0.63 (161/255) → drawn opaque, unlit texture colour.
 61. **Missing body file (data, Steam build 26236938).** Records 279 and 280 → their body files are not in the install; loading either → the model is `models\default.ltb` (1,720 bytes, 1 piece, 52 triangles, animation `x` 6566 ms), drawn untextured.
 
+**Who may hold which weapon (data, Steam build 26236938; 12)**
+
+62. The weapon file has 2386 `Weapon#` records; 48 have an id containing `npc`, `boss`, `hqraid`, `powered_suit` or `assassin`. By link (12.4): 25 world NPC hands, 4 HQ raid boss (461 by pattern only), 7 suit sets, 3 crossbow family, 1 skill-only (864), 8 none (67, 421, 537, 538, 560, 561, 562, 863).
+63. 40 weapons have `LowerAniType` 1 or 2; only 366 `Quarantine_Stick_NPC` has 2. 21 have `Hidden` true, all infected hands; `NoSelect` 1 on 173, 447, 535; `AIPrimaryWeapon` true on 457, 538.
+64. Worlds: 947 `CAIHuman` objects in 23 worlds; every `ModelTemplate` equals the `Name` of one of the 101 `AIModel#` records; `RightHand2` and `LeftHand2` are `<none>` on all.
+65. `CAIHuman` with `RightHand` `VH_Normal_NPC` → `ModelTemplate` always `Normal_Infecter_Common_D`, in BlackLung, CabinFever, DeathRoom_CP and RailwayDefence only. `HQRAIDNPC_2_SMG` → HQRAIDNPC_2, Powered_Suit_Npc_Melee, Powered_Suit_Npc_Smg, SubMission_Z_1, SubMission_Z_2. No world object names 537 or 538.
+66. `PatternFX0` (`HQRaid_Boss`): `Weapon0` 460 on `highgun` chance 100, `Weapon1` 462 on `Missile_` 50, `Weapon2` 463 on `bomb_` 50; `[PatternWeapon0..3]` `WeaponId` 460, 461, 462, 463.
+67. NEMEXISLAB_CP: `ChangeCharInfo_2` → `ChangeCharModel_2` `ModelId` 58, `ChangeCharWeapon_2` `Primary0` 527; set 0 → Model 62 with 528 and 531. DESERTHOLE_RTDM: 10 sets, set 5 → Model 588 with 528 and 531. `WeaponIndex` 2 is set 2, not weapon 2.
+68. Use item 54 (`SubType` 20) → `InfectedModelNo` 56, `InfectedWeaponNo` 521; item 55 → 57, 522; items 148 and 150 → 513, 1734.
+69. Item file: 303 `Character#` records, all `ItemType` 22; no record of any kind has `ItemType` 30, 36 or 37. 116 characters have `AddSlot`, all with `SlotType` 0; `Character14` has `ItemID` 22 and Model 22 is `Specialist01_M`.
+70. `WeaponItem#` with `EquipBackpackType`: 8, all with `EquipOnlyBackpack` 1: type 1 on weapons 173, 174, 290, 291, 293, 447, 558; type 3 on 536. Use items with `SubType` 18: 36, 52, 76, 77.
+71. Equip rule (logic): character with `AddSlot` 2, `SlotType` 0 plus an equipped extend item (`SubType` 18, one slot of type 1) → two normal backpack slots and no special one; equipping 290 `M32_FT` is refused. A character with `SlotType` 1 and the same item → three special slots; 290 goes in, and an ordinary weapon (slot type 0) cannot go into those slots: a weapon only enters a backpack slot whose type equals its own.
+72. The 33 `_QRT` mission files: infected melee 191, host melee 190; NOXIOUSDAMNATION_LLHG infected melee 1346.
+73. `[NpcSkill16]` `P_Boss_IceGas` uses `Abnormal_IceGas_boss`; no `[Brain#]` in the three AI files lists `P_Boss_IceGas`.
+74. Weapon items exist for exactly 14 of the 48 (416–420, 526–534) and for one infected hand (344).
+
 ## Open questions
 
 1. **Contradictions with `weapon_firing.md`'s hit-zone table.** (a) The male "Shoulders: 5.5 each, plus 7.0 each" — the 7.0 spheres (`Left_Shld`, `Right_Shld`) are table entries with no node or socket on any of the 100 bodies read, so they never exist; only the 5.5 shoulder spheres do. (b) Groin location: the US data gives `Nuts` location 2 (torso), the BR data 5 (groin); `weapon_firing.md` uses 5 (no armour, groin death animation). Which does the Steam data use? Check the decrypted Steam `MODELBUTES.TXT`. (c) "The female skeleton has the same body and limb spheres": it has no neck sphere and no groin sphere, and has four extra 3 u torso spheres (clavicle and spine helpers). (d) The tables key on the model's `Skeleton` value, not on `FigureType`: 13 US records pair them differently (for example female-shaped enemy NPCs on skeleton 1 with figure type 0). Update `weapon_firing.md` after a review.
@@ -747,3 +935,11 @@ From the shared model-attribute reader's skin assembly and the client's equipmen
 22. **Third-person weapons.**
     **Answered:** `HHModel` of the weapon record, on `RightHand`, zero offset, identity rotation, scale 1 (`HHModelScale` unread); no back or holster display. Applied in 2; case 57.
 23. **Left open by the 2026-10-22 corrections.** (a) A jump-pad launch sends its own motion status, which the driver treats like "falling" (standing legs until landing); whether the client also reports an ordinary "jumped" for it was not traced, so whether a pad launch shows the jump legs is open. (b) Item 9's frozen upper pose after an emote follows from the start rules as read; confirm live. (c) Item 1: whether the stock fire animations' last frame differs visibly from the aim pose (how a held trigger looks to others) needs the libraries.
+
+24. **Specialists in this build.** No character is typed specialist (30) or assassin (37) and no character gives a special or assassin slot, so by the client data the 8 slot-typed weapons (12.3) can never be equipped. Does the lobby server's own item data differ (types or slot types), or are specialist slots really gone in the Classic? Check in game: buy a specialist character, try to equip `M32_FT`. Until then the "specialists" are named bodies only (12.3 list) and the specialist-only weapons are those 8.
+25. **The suit-set mode.** The mode that reads `ChangeCharInfo_` / `ChangeCharModel_` / `ChangeCharWeapon_` (co-op NemexisLab and the `_RTDM` files) is not in the reference code read: how a player picks a set (`HUDIndex`), whether a suit can carry other weapons, and whether suit weapons ever reach a non-suit body.
+26. **Weapons with no link** (67 `Minigun_npc`, 421 `Watergun_NPC`, 537, 538, 560 `Ravens_G36C_NPC`, 561 `Souzas_Parafal_NPC`, 562 `PP19_MOD_Scorpion_NPC`, 863 `Abnormal_Boss_Minigun_Left`, 864, and hands 344, 674, 678). By name only: 537/538 → AIModels 36/35, 863 → the same bosses as 858, 674 → AIModel 51, 678 → the captains 40/60, 560–562 → the named mercenaries Raven, Souza and Scorpion (player bodies); 67, 421, 344 → none. These are guesses for our data, not the game's.
+27. **Cross-type hands.** Worlds give some hands to other types (12.6 "also": a captain's hand on male hosts in DarkThanDark, `Quarantine_Host_Hand` on the co-op zombies, `M9` on `Normal_Infecter_Common_D`). For "own infected type only", take the "Own type" column; for "any holder the game used", add the "also" column.
+28. **NPC bodies as rung bodies.** Every NPC and boss weapon belongs to `AIModel#` bodies (or the boss `PatternFX0` model), never to a `Model#` player body. Honouring the rule needs those bodies in the rung pool; skeletons 2–18 and their animation libraries are not specified here (the powered suits, skeletons 5 and 6, are player bodies).
+29. **`[DeditWeapon]`.** What reads this list (an editor list for NPC hands is assumed from the name) was not found.
+30. **Older data.** In the US and BR data sets read for this spec's earlier sections, were the specialist and assassin characters typed 30 / 37 with special or assassin slots, and the crossbows typed 36? If so, the older rule was: crossbows and the slot-typed weapons only on those characters.

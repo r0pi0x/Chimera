@@ -393,7 +393,9 @@ the user's go-ahead: no Actions runs unless asked.
   modes (bots.md 11 leaves them out of scope) and their models; (4) any
   weapon field in the weapons file that restricts who holds it. With
   those, the data's `[weapons]` overrides take them; until then such a
-  gun on a rung is worn by any player body.
+  gun on a rung is worn by any player body. **Answered** in
+  specs/combat_arms/characters.md section 12 (holders by data link, the
+  equip-slot rule, infected hands; test cases 62–74, Open questions 24–30).
 - **Map vote on the end screen (user, 2026-10-31): done.** A
   definition's `map_vote` (`chimera_sim::minigame::vote`, settings in
   chimera/sim/data/map_vote.toml: 3 candidates, 12 s, a 3 s reveal):
