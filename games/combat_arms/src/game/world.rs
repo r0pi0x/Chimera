@@ -44,8 +44,11 @@
 //!   dtx`, the level the shipped "DetailLevel" loads: `skipped_levels`;
 //!   `alpharef` cuts out; DXT files also keep their blocks, mip levels
 //!   included, which the GPU takes as BC: `dtx_bc`); the plain maps' world textures are in unkeyed
-//!   archives. A sprite (`.spr`) draws its first frame's texture
-//!   (`effects::library::sprite_texture`). A texture that doesn't resolve
+//!   archives. A sprite (`.spr`) on a map surface draws its first frame's
+//!   texture (`effects::library::sprite_texture`); as a model's skin it
+//!   plays its frames (`model_textures`: `MapMesh::skin_frames`, each
+//!   drawn copy on its own clock, models_ltb.md "Sprite skins"), and a
+//!   layered render style's slot-1 texture resolves there too. A texture that doesn't resolve
 //!   (keyed archives without the V2 key; with it, a few files the install
 //!   lacks or ships empty) leaves a flat colour of its own per name, named
 //!   in the map's warnings.
@@ -957,13 +960,92 @@ fn add_block(
 /// Each mesh's texture from the install (`.dtx`, the level the shipped
 /// "DetailLevel" loads for its group; an alpha-tested one cut out at its
 /// `alpharef`); a name that doesn't resolve keeps the mesh's flat colour,
-/// with a warning.
-pub(crate) fn textures(meshes: &mut [MapMesh], map: &mut MapData, file: &dyn Fn(&str) -> Option<Vec<u8>>) {
-    textures_with(meshes, map, file, true);
+/// with a warning. And as model skins
+/// (specs/combat_arms/models_ltb.md "Sprite skins" and "Stock styles"):
+/// a sprite (`.spr`) skin's frames, each its texture, on the drawn copy's
+/// own clock (`MapMesh::skin_frames`, ⌊1000 / rate⌋ ms a frame; a frame
+/// that doesn't resolve is left out, and a sprite that doesn't read draws
+/// its first frame, as map surfaces do), and the slot-1 texture of a
+/// piece's environment or rim map (`MapMesh::layer`; one that doesn't
+/// resolve leaves the layer undrawn).
+pub(crate) fn model_textures(meshes: &mut [MapMesh], map: &mut MapData, file: &dyn Fn(&str) -> Option<Vec<u8>>) {
+    let norm = |p: &str| p.trim().replace('\\', "/").to_lowercase();
+    // Each sprite skin's frames and frame time, by mesh.
+    let sprites: Vec<Option<(Vec<String>, u32)>> = meshes
+        .iter()
+        .map(|m| {
+            let name = norm(&m.material);
+            if !name.ends_with(".spr") {
+                return None;
+            }
+            let s = lithtech_formats::spr::Sprite::parse(&file(&name)?).ok()?;
+            Some((s.frames.iter().map(|f| norm(f)).collect(), s.frame_ms()))
+        })
+        .collect();
+    // The frames and layers as meshes of their own, resolved with the
+    // rest in one pass (each file once).
+    let mut extra: Vec<MapMesh> = Vec::new();
+    let mut frame_at: Vec<Option<std::ops::Range<usize>>> = Vec::with_capacity(meshes.len());
+    let mut layer_at: Vec<Option<usize>> = Vec::with_capacity(meshes.len());
+    let mut names: Vec<String> = Vec::with_capacity(meshes.len());
+    for (m, sprite) in meshes.iter_mut().zip(&sprites) {
+        let start = extra.len();
+        match sprite {
+            Some((frames, _)) => {
+                extra.extend(frames.iter().map(|f| MapMesh {
+                    material: f.clone(),
+                    alpha: m.alpha,
+                    ..default()
+                }));
+                frame_at.push(Some(start..extra.len()));
+                // Drawn from its frames: resolved there, not here.
+                names.push(std::mem::take(&mut m.material));
+            }
+            None => {
+                frame_at.push(None);
+                names.push(String::new());
+            }
+        }
+        layer_at.push(m.layer.as_ref().filter(|l| !l.material.is_empty()).map(|l| {
+            extra.push(MapMesh {
+                material: l.material.clone(),
+                ..default()
+            });
+            extra.len() - 1
+        }));
+    }
+    let base = meshes.len();
+    let mut all: Vec<MapMesh> = meshes.iter().cloned().chain(extra).collect();
+    textures_with(&mut all, map, file, true);
+    let (own, extra) = all.split_at(base);
+    for (k, m) in meshes.iter_mut().enumerate() {
+        *m = own[k].clone();
+        if let (Some(range), Some((_, frame_ms))) = (frame_at[k].clone(), &sprites[k]) {
+            m.material = std::mem::take(&mut names[k]);
+            let resolved: Vec<&MapMesh> = extra[range].iter().filter(|f| f.texture.is_some()).collect();
+            if let Some(first) = resolved.first() {
+                m.texture = first.texture;
+                m.color = [255; 3];
+                if m.alpha == MapAlpha::Opaque {
+                    m.alpha = first.alpha;
+                }
+            }
+            if resolved.len() > 1 {
+                m.skin_frames = Some(crate::map::MapSkinFrames {
+                    frames: resolved.iter().filter_map(|f| f.texture).collect(),
+                    frame_ms: (*frame_ms).max(1),
+                });
+            }
+        }
+        if let (Some(i), Some(layer)) = (layer_at[k], m.layer.as_mut()) {
+            layer.texture = extra[i].texture;
+        }
+    }
 }
 
-/// `textures`; `decode` off keeps each texture's size only (no texels, no
-/// mip levels: `MapLoadOptions::textures`).
+/// Resolve each mesh's texture (as `model_textures` says; a sprite: its
+/// first frame); `decode` off keeps each texture's size only (no texels,
+/// no mip levels: `MapLoadOptions::textures`).
 pub(crate) fn textures_with(
     meshes: &mut [MapMesh],
     map: &mut MapData,
@@ -1175,7 +1257,7 @@ pub(crate) fn second_layers(
             continue;
         }
         // The base texture's link and detail fields (its pixels are
-        // `textures`').
+        // `textures_with`').
         let base = bases.entry(link_path(&m.material)).or_insert_with_key(|path| {
             let d = Dtx::parse(file(path)?).ok()?;
             Some((d.link()?, d.detail_scale, d.detail_rotation))

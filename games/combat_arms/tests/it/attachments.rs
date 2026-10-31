@@ -1171,6 +1171,48 @@ fn t28_install_sight_on_a_machine_gun_zooms() {
     }
 }
 
+/// weapon_classes.md Corrections (2026-10-30) 2: a special weapon zooms
+/// exactly like a gun through the scope its record names
+/// (`DefaultScopeAttach`, the XM25's `XM25 Scope`), with that part's
+/// levels; one whose record names none doesn't zoom.
+#[test]
+fn special_weapon_zooms_through_its_scope() {
+    use combat_arms::{
+        game::{data::{CaData, InstallAttributes}, weapons::zoom::CaZoom},
+        harness::CaSimWith,
+    };
+    const XM25: &str = "combat_arms:xm_25";
+    let mods = r#"
+        [Mod0] Name="XM25 Scope" Kinds=1 Type=1 Integrated=1 ZoomLevel=1 ZoomFov0=30.0
+        [Weapon0] Name="XM_25" ModName0="XM25 Scope"
+    "#;
+    for (record, want) in [
+        (r#"[Weapon0] Name="XM_25" AmmoName0="a" DefaultScopeAttach="XM25 Scope""#, Some(30.0)),
+        (r#"[Weapon0] Name="XM_25" AmmoName0="a""#, None),
+    ] {
+        let text = format!("[Ammo0] Name=\"a\" {record}");
+        let attributes = InstallAttributes {
+            weapons: Some(WeaponsFile::read(&Document::parse(text.as_bytes()).unwrap()).unwrap()),
+            mods: Some(ModFile::read(&Document::parse(mods.as_bytes()).unwrap())),
+            ..default()
+        };
+        let mut sim = Sim::with(CaSimWith(CaData::with_attributes(attributes)), |app| {
+            app.add_plugins(GreyboxMapPlugin);
+        });
+        sim.set_tick_interval(TICK_INTERVAL);
+        let p = player(&mut sim, Vec3::new(30.0, 1.0, 30.0), 0.0, 1.0, XM25, &[]);
+        let w = arm(&mut sim, p, XM25);
+        let scope = sim.app.world().get::<CaZoom>(w).and_then(|z| z.scope.clone());
+        assert_eq!(scope.map(|s| s.fov), want.map(|f| vec![f]), "{record}");
+        // The zoom key: the scope's FOV, as a gun's.
+        sim.intent(p).secondary = true;
+        sim.ticks(1);
+        sim.intent(p).secondary = false;
+        sim.seconds(0.5);
+        assert_eq!(sim.app.world().get::<Zoomed>(p).map(|z| z.fov), want, "{record}: zoomed");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Network
 

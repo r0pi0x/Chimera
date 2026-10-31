@@ -111,14 +111,8 @@ fn draw(sim: &mut Sim, character: Entity) {
             base_color: Vec4::ONE,
             ..default()
         },
-        base: None,
-        envmap: None,
-        envmap_mask: None,
-        detail: None,
-        selfillum_mask: None,
         alpha_mode: AlphaMode::Opaque,
-        double_sided: false,
-        cull_front: false,
+        ..default()
     });
     w.spawn((ProbeLit::new(vec![m], Vec3::ZERO), ChildOf(character)));
 }

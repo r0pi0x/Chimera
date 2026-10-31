@@ -25,6 +25,8 @@
 //! - `rez_cipher`: the payload ciphers, chosen by the archive's title (V1
 //!   Twofish-CBC, V2 AES-256-CBC) with keys supplied at run time; keys
 //!   never live in the repo.
+//! - `spr`: sprites (`.spr`): a frame rate and a list of texture paths
+//!   (animated textures and model skins).
 //! - `world`: world files (the compiled map, `.dat`, version 85): BSPs,
 //!   objects, the light grid, blockers and the render data with its
 //!   lightmaps, bounds-checked.
@@ -39,4 +41,5 @@ pub mod fxf;
 pub mod ltb;
 pub mod rez;
 pub mod rez_cipher;
+pub mod spr;
 pub mod world;

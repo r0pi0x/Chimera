@@ -6,8 +6,8 @@
 # "blend" (by the texture's alpha), "add" (added to what's behind,
 # unlit) or "glow" (at the texture's own brightness, ignoring the
 # lighting). A file not listed draws opaque: the default style, and the
-# environment-map, outline, fur, freezing and infection styles (their
-# effects aren't drawn).
+# outline, fur, freezing and infection styles (their effects aren't
+# drawn).
 
 [styles]
 "RS\\default.ltb" = "opaque"
@@ -19,6 +19,14 @@
 # attachments.md Corrections (2026-10-30) 4: a sight's lens: texture x
 # lit colour, alpha-tested (kept where alpha > 160/255), two-sided.
 "RS\\transparent.ltb" = { cutout = { reference = 160, strict = true, two_sided = true } }
+# models_ltb.md "Stock styles": slot 1 as an environment or rim map on
+# generated coordinates (render_style::Layer); pv_char_b's three passes
+# aren't drawn (opaque, as the default).
+"RS\\ENV_ALPHA_MASK.ltb" = { layered = { layer = "env_alpha_mask" } }
+"RS\\ItemEdge.ltb" = { layered = { layer = "item_edge", cutout = 160 } }
+"RS\\EdgeAmp01.ltb" = { layered = { layer = "edge_amp", cutout = 160 } }
+"RS\\envmap.ltb" = { layered = { layer = "envmap" } }
+"RS\\PV_Char.ltb" = { layered = { layer = "pv_char" } }
 "RS\\translucent.ltb" = "blend"
 "RS\\translucent2pass.ltb" = "blend"
 "RS\\translucent_nolight.ltb" = "blend"

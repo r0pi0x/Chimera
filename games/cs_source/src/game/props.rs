@@ -753,6 +753,7 @@ fn mesh_look(materials: &mut MaterialLoader, dirs: &[String], name: &str) -> Map
         detail: r.detail,
         base_transform: r.base_transform,
         selfillum: r.selfillum,
+        ..Default::default()
     }
 }
 
@@ -893,6 +894,8 @@ fn convert_model_in(
                             detail: m.detail,
                             base_transform: m.base_transform,
                             selfillum: m.selfillum,
+                            skin_frames: m.skin_frames.clone(),
+                            layer: m.layer.clone(),
                         },
                     })
                     .collect()

@@ -387,7 +387,7 @@ fn held_part(
         model::pose_meshes(&loaded.model, entry, &mut m.meshes, 1.0);
     }
     let styles: Vec<i32> = model::drawn_lods(&loaded.model).iter().map(|l| l.render_style).collect();
-    super::super::world::textures(&mut m.meshes, map, file);
+    super::super::world::model_textures(&mut m.meshes, map, file);
     let scale = Mat4::from_scale(Vec3::from(record.attach_hh_scale.unwrap_or([1.0; 3])));
     let offset = parts::offset_matrix(&params.part_offsets.of(slot, false));
     let to = socket * offset * scale;
@@ -429,7 +429,7 @@ fn thrown(
         let i = lod.used_textures().first().copied().unwrap_or(-1);
         usize::try_from(i).ok().and_then(|i| skins.get(i)).cloned().unwrap_or_default()
     });
-    super::super::world::textures(&mut m.meshes, map, file);
+    super::super::world::model_textures(&mut m.meshes, map, file);
     if let Some(entry) = model::rest_entry(&loaded, THROWN_POSE) {
         model::pose_meshes(&loaded.model, entry, &mut m.meshes, 1.0);
     }
@@ -506,6 +506,15 @@ pub fn append_shared(map: &mut MapData, models: &SharedModels, kit: &crate::map:
         for t in model.skins.iter_mut().flatten().filter_map(|l| l.texture.as_mut()) {
             *t += base;
         }
+        // Sprite skins' frames and slot-1 layers too.
+        let frames = model.meshes.iter_mut().filter_map(|m| m.skin_frames.as_mut());
+        for f in frames.chain(model.skins.iter_mut().flatten().filter_map(|l| l.skin_frames.as_mut())) {
+            f.frames.iter_mut().for_each(|t| *t += base);
+        }
+        let layers = model.meshes.iter_mut().filter_map(|m| m.layer.as_mut());
+        for l in layers.chain(model.skins.iter_mut().flatten().filter_map(|l| l.layer.as_mut())) {
+            l.texture = l.texture.map(|t| t + base);
+        }
     };
     map.textures.extend(models.data.textures.iter().cloned());
     let bodies = models.data.kit.characters.iter().filter(|_| kit.bodies());
@@ -538,20 +547,21 @@ fn slot(data: &CharacterData, record: &ModelRecord, slot: i32, c: i32, teammate:
 /// Textures by name and render style, loaded once into `map`.
 struct Textures<'a> {
     file: &'a dyn Fn(&str) -> Option<Vec<u8>>,
-    loaded: HashMap<(String, Style, Style), MapMesh>,
+    loaded: HashMap<(String, String, Style, Style), MapMesh>,
 }
 
 impl Textures<'_> {
-    /// `material` drawn in `style`, then `over` (a team mark's own).
-    fn look(&mut self, material: String, style: Style, over: Style, map: &mut MapData) -> MapMeshLook {
-        let m = self.loaded.entry((material.clone(), style, over)).or_insert_with(|| {
+    /// `material` drawn in `style` (`layer`: its slot-1 texture, for a
+    /// layered style), then `over` (a team mark's own).
+    fn look(&mut self, material: String, layer: String, style: Style, over: Style, map: &mut MapData) -> MapMeshLook {
+        let m = self.loaded.entry((material.clone(), layer.clone(), style, over)).or_insert_with(|| {
             let mut m = MapMesh {
                 material: material.clone(),
                 ..default()
             };
-            render_style::apply(&mut m, style);
+            render_style::apply_with(&mut m, style, &[layer], 0);
             render_style::apply(&mut m, over);
-            super::super::world::textures(std::slice::from_mut(&mut m), map, self.file);
+            super::super::world::model_textures(std::slice::from_mut(&mut m), map, self.file);
             m
         });
         MapMeshLook {
@@ -559,6 +569,8 @@ impl Textures<'_> {
             texture: m.texture,
             alpha: m.alpha,
             unlit: m.unlit,
+            skin_frames: m.skin_frames.clone(),
+            layer: m.layer.clone(),
             ..default()
         }
     }
@@ -567,7 +579,8 @@ impl Textures<'_> {
 /// Where a mesh's skins come from: a body record's texture slot, or its
 /// own list by camouflage index (a face or head piece).
 enum Source<'a> {
-    Body(&'a ModelRecord, i32),
+    /// Its texture slot and second slot (-1: none).
+    Body(&'a ModelRecord, i32, i32),
     Own(Vec<String>),
 }
 
@@ -575,16 +588,16 @@ enum Source<'a> {
 type Added<'a> = Vec<(Source<'a>, Style)>;
 
 /// A body record's pieces: its texture slots, its render styles.
-fn body_sources<'a>(record: &'a ModelRecord, lods: &[(i32, i32)]) -> Added<'a> {
+fn body_sources<'a>(record: &'a ModelRecord, lods: &[(i32, i32, i32)]) -> Added<'a> {
     lods.iter()
-        .map(|&(slot, style)| (Source::Body(record, slot), render_style::of_list(&record.render_styles, style)))
+        .map(|&(slot, second, style)| (Source::Body(record, slot, second), render_style::of_list(&record.render_styles, style)))
         .collect()
 }
 
 /// A face's or head piece's pieces: its own skins and render styles.
-fn piece_sources<'a>(skins: &[String], styles: &[String], lods: &[(i32, i32)]) -> Added<'a> {
+fn piece_sources<'a>(skins: &[String], styles: &[String], lods: &[(i32, i32, i32)]) -> Added<'a> {
     lods.iter()
-        .map(|&(_, style)| (Source::Own(skins.to_vec()), render_style::of_list(styles, style)))
+        .map(|&(_, _, style)| (Source::Own(skins.to_vec()), render_style::of_list(styles, style)))
         .collect()
 }
 
@@ -604,7 +617,7 @@ fn body_group(
     let ca = CaData::install();
     let data = ca.characters();
     let loaded = model::load(&base.file, file)?;
-    let base_lods: Vec<(i32, i32)> = model::drawn_lods(&loaded.model).into_iter().map(model::slot_and_style).collect();
+    let base_lods: Vec<(i32, i32, i32)> = model::drawn_lods(&loaded.model).into_iter().map(model::slots_and_style).collect();
     // Chimera's animation set only needs the body's own pose (the
     // driver lays the pose out itself, `Animator::fixed`): no resampling
     // of the library.
@@ -737,13 +750,18 @@ fn body_group(
                         }
                         // The team mark in its mark's own style too
                         // (`[TeamMark]`'s `RenderStyle#`).
-                        Source::Body(record, 2) => (
+                        Source::Body(record, 2, _) => (
                             slot(&data, record, 2, c, teammate),
                             render_style::of_list(&data.marks.render_styles, i32::from(teammate)),
                         ),
-                        Source::Body(record, s) => (slot(&data, record, *s, c, teammate), Style::Opaque),
+                        Source::Body(record, s, _) => (slot(&data, record, *s, c, teammate), Style::Opaque),
                     };
-                    textures.look(name, *style, over, map)
+                    // A layered style's slot 1 (`render_style::Layer`).
+                    let layer = match source {
+                        Source::Body(record, _, second) if *second >= 0 => slot(&data, record, *second, c, teammate),
+                        _ => String::new(),
+                    };
+                    textures.look(name, layer, *style, over, map)
                 })
                 .collect()
         })
@@ -753,6 +771,8 @@ fn body_group(
         mesh.texture = look.texture;
         mesh.alpha = look.alpha;
         mesh.unlit = look.unlit;
+        mesh.skin_frames = look.skin_frames.clone();
+        mesh.layer = look.layer.clone();
         mesh.color = if look.texture.is_some() { [255; 3] } else { [150; 3] };
         mesh.body = *body;
     }
@@ -800,9 +820,9 @@ fn merge(
     path: &str,
     scale: f32,
     file: &dyn Fn(&str) -> Option<Vec<u8>>,
-) -> Result<Vec<(i32, i32)>, String> {
+) -> Result<Vec<(i32, i32, i32)>, String> {
     let loaded = model::load_own(path, file)?;
-    let lods: Vec<(i32, i32)> = model::drawn_lods(&loaded.model).into_iter().map(model::slot_and_style).collect();
+    let lods: Vec<(i32, i32, i32)> = model::drawn_lods(&loaded.model).into_iter().map(model::slots_and_style).collect();
     let mut m = model::convert(&loaded, scale, &|_| String::new());
     let rig = m.rig.take().ok_or("a piece without a skeleton")?;
     let map = hands::match_bones(&rig.bones, bones)?;
@@ -841,7 +861,7 @@ fn attach(
     path: &str,
     scale: f32,
     file: &dyn Fn(&str) -> Option<Vec<u8>>,
-) -> Result<Vec<(i32, i32)>, String> {
+) -> Result<Vec<(i32, i32, i32)>, String> {
     let s = owner
         .sockets
         .iter()
@@ -850,7 +870,7 @@ fn attach(
     let node = s.node as usize;
     let parent = *hands::globals(bones).get(node).ok_or("the socket's node is not in the skeleton")?;
     let loaded = model::load_own(path, file)?;
-    let lods: Vec<(i32, i32)> = model::drawn_lods(&loaded.model).into_iter().map(model::slot_and_style).collect();
+    let lods: Vec<(i32, i32, i32)> = model::drawn_lods(&loaded.model).into_iter().map(model::slots_and_style).collect();
     let m = model::convert(&loaded, scale, &|_| String::new());
     let at = parent * socket_local(s.rotation, s.position);
     for mut mesh in m.meshes {
@@ -913,18 +933,18 @@ fn held_with_sockets(
     file: &dyn Fn(&str) -> Option<Vec<u8>>,
 ) -> Result<(MapHeldModel, Vec<(String, Mat4)>), String> {
     let loaded = model::load(path, file)?;
-    let styles: Vec<Style> = model::drawn_lods(&loaded.model)
+    let styles: Vec<(Style, i32)> = model::drawn_lods(&loaded.model)
         .into_iter()
-        .map(|l| render_style::of_list(&look.render_styles, l.render_style))
+        .map(|l| (render_style::of_list(&look.render_styles, l.render_style), model::second_slot(l)))
         .collect();
     let mut m = model::convert(&loaded, 1.0, &|lod| {
         let i = lod.used_textures().first().copied().unwrap_or(-1);
         usize::try_from(i).ok().and_then(|i| look.skins.get(i)).cloned().unwrap_or_default()
     });
-    for (mesh, style) in m.meshes.iter_mut().zip(styles) {
-        render_style::apply(mesh, style);
+    for (mesh, (style, second)) in m.meshes.iter_mut().zip(styles) {
+        render_style::apply_with(mesh, style, &look.skins, second);
     }
-    super::super::world::textures(&mut m.meshes, map, file);
+    super::super::world::model_textures(&mut m.meshes, map, file);
     // Drawn in its own `Hand` pose, not the bind pose (`model::rest_entry`).
     if let Some(entry) = model::rest_entry(&loaded, HELD_POSE) {
         model::pose_meshes(&loaded.model, entry, &mut m.meshes, 1.0);

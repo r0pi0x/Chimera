@@ -119,9 +119,11 @@
 //!   `ReloadAfterFire`, `ZoomedMovePenalty`: weapon_classes.md) go in the
 //!   `combat_arms:zoom` table (made empty first in a document that fits
 //!   parts, `combat_arms:attachments`, so the machine guns and shotguns
-//!   the install gives a sight zoom; the special weapons, with no
-//!   attachments table, get none: their own scope designators, `LGB_scope`
-//!   and the like, aren't specified), `AccumPreFire` in `combat_arms:spin`'s;
+//!   the install gives a sight zoom; a document without that table whose
+//!   record names a `DefaultScopeAttach`, the special weapons' XM25 Scope,
+//!   `LGB_scope` and L115 scopes, gets it made empty too, so it fits and
+//!   zooms through its scope like a gun: weapon_classes.md Corrections
+//!   (2026-10-30) 2), `AccumPreFire` in `combat_arms:spin`'s;
 //!   `ReloadPerBullet` 0 removes our `magazine.shells` (1 keeps it: ours
 //!   are the spec's timings, a copy's its own view model's, `timing`).
 //!   Not mapped (no field
@@ -161,9 +163,7 @@
 //!   its held model when first held (`characters::held_on_demand`) and
 //!   its view model when first drawn (`view_model::on_demand`).
 //!   The skins' `Hands` placeholder and `PV_L_ARM` / `PV_R_ARM` tags (no
-//!   `.dtx` or `.spr`) are empty slots (`skin_paths`); a sprite skin
-//!   (`.spr`, the animated ones: rainbow, lava-crystal, light-up guns)
-//!   draws its first frame only (the sprite's timing isn't in the specs).
+//!   `.dtx` or `.spr`) are empty slots (`skin_paths`).
 
 pub mod attributes;
 pub mod served;
@@ -674,7 +674,8 @@ fn grenade_values(p: &ProjectileRecord, length_scale: f64) -> Vec<Set> {
 /// texture files (the stock data's `Hands` placeholder and the
 /// `PV_L_ARM` / `PV_R_ARM` tags, view_models.md 2) are empty. A sprite
 /// (`.spr`, an animated texture sequence: world_dat.md) is a texture
-/// file: the model draws its first frame (`world::textures`).
+/// file: the model draws its frames on its own clock
+/// (`world::model_textures`).
 pub fn skin_paths(skins: &[String]) -> Vec<String> {
     skins
         .iter()
@@ -988,6 +989,18 @@ fn patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile, mods: Option<&Mo
     // gets an empty one for the install's values (`apply` writes only into
     // tables there), or the machine guns and shotguns the install gives a
     // sight could never zoom.
+    // A weapon of ours without parts (the special weapons) whose record
+    // names a scope zooms through it like a gun (weapon_classes.md
+    // Corrections (2026-10-30) 2: the XM25's `XM25 Scope`, `LGB_scope`,
+    // the L115 scope on specials): it gets the parts table too, which
+    // fits the scope from the record's defaults and accepted list.
+    if !w.default_scope_attach.is_empty()
+        && let Some(hooks) = doc.entry("hooks").or_insert_with(|| Value::Table(Table::new())).as_table_mut()
+    {
+        hooks
+            .entry(super::attachments::ATTACHMENTS)
+            .or_insert_with(|| Value::Table(Table::new()));
+    }
     if let Some(Value::Table(hooks)) = doc.get_mut("hooks")
         && hooks.contains_key(super::attachments::ATTACHMENTS)
     {
