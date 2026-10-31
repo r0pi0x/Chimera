@@ -1,89 +1,94 @@
 //! The game's front end as the client shell sees it. A game's menus and
 //! panels (CS:S's: `games::cs_source::ui`, added by the app) are a part
 //! of that game; the shell (console, input, network glue, debug tools)
-//! never names them. It tells them what happened through `FrontEnd`'s
-//! hooks and reads what they show through `MenuStatus` and `KeyPanels`
+//! never names them. It tells them what happened through triggered
+//! events (`EnteredGame`, `LeftGame`, `Joining`, `JoinFailed`,
+//! `MapLoadFailed`, `StartGame`) that each front end observes, and reads what they show through `MenuStatus` and `KeyPanels`
 //! (an app's own menu over them: `AppMenu`),
 //! which the game's UI keeps in step with its own state (`FrontEndSync`).
-//! Without a game UI the hooks do nothing and the resources are absent or
+//! Without a game UI the events have no observers and the resources are absent or
 //! empty: the shell plays with no menus.
 
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 
-/// What the shell tells the game's menus; each game UI plugin sets the
-/// hooks it owns (`FrontEnd::register`). Unset hooks do nothing.
-#[derive(Resource, Clone, Copy)]
-pub struct FrontEnd {
-    /// A map is in and played (`map`, joined, a server's map change done):
-    /// the menu closes.
-    pub entered_game: fn(&mut World),
-    /// Out of the game (`disconnect`, dropped): the main menu.
-    pub left_game: fn(&mut World),
-    /// A server is being joined (its address or name, then its map): the
-    /// loading dialog.
-    pub joining: fn(&mut World, &str),
-    /// Joining (or the game) failed: the dialog says why
-    /// (`net::client::JoinProgress::failure`).
-    pub show_failure: fn(&mut World),
-    /// A map failed to load: the loading dialog goes.
-    pub map_load_failed: fn(&mut World),
-    /// A game the local player starts (`map`, `--map`): it comes in as
-    /// `rules::JoinChoice` says (the game's join menus, or on a team).
-    pub start_game: fn(&mut World),
+/// What the shell tells the front ends, as events triggered at the
+/// moment it happens (`World::trigger`, then the observers' commands
+/// applied: `front_end::entered_game` and the others). Each front end
+/// (CS:S's game menu and join menus, Combat Arms' loading screen, the
+/// party apps' main menu) observes those it cares about, so several can
+/// follow the same moment. Without observers nothing happens.
+///
+/// A map is in and played (`map`, joined, a server's map change done):
+/// the menu closes.
+#[derive(Event, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EnteredGame;
+
+/// Out of the game (`disconnect`, dropped): the main menu.
+#[derive(Event, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LeftGame;
+
+/// A server is being joined (its address or name, then its map): the
+/// loading dialog.
+#[derive(Event, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Joining {
+    pub label: String,
 }
 
-impl Default for FrontEnd {
-    fn default() -> Self {
-        Self {
-            entered_game: |_| {},
-            left_game: |_| {},
-            joining: |_, _| {},
-            show_failure: |_| {},
-            map_load_failed: |_| {},
-            start_game: |_| {},
-        }
-    }
+/// Joining (or the game) failed: the dialog says why
+/// (`net::client::JoinProgress::failure`).
+#[derive(Event, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct JoinFailed;
+
+/// A map failed to load: the loading dialog goes.
+#[derive(Event, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MapLoadFailed;
+
+/// A game the local player starts (`map`, `--map`): it comes in as
+/// `rules::JoinChoice` says (the game's join menus, or on a team).
+#[derive(Event, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StartGame;
+
+fn tell<'a, E: Event<Trigger<'a>: Default>>(w: &mut World, event: E) {
+    w.trigger(event);
+    w.flush();
 }
 
-impl FrontEnd {
-    /// The hooks registered (the defaults where none are).
-    pub fn of(world: &World) -> Self {
-        world.get_resource::<Self>().copied().unwrap_or_default()
-    }
-
-    /// Set some of the hooks (a game UI plugin, as it builds).
-    pub fn register(app: &mut App, set: impl FnOnce(&mut FrontEnd)) {
-        let world = app.world_mut();
-        let mut hooks = Self::of(world);
-        set(&mut hooks);
-        world.insert_resource(hooks);
-    }
-}
-
+/// Trigger `EnteredGame`.
 pub fn entered_game(w: &mut World) {
-    (FrontEnd::of(w).entered_game)(w)
+    tell(w, EnteredGame)
 }
 
+/// Trigger `LeftGame`.
 pub fn left_game(w: &mut World) {
-    (FrontEnd::of(w).left_game)(w)
+    tell(w, LeftGame)
 }
 
+/// Trigger `Joining`.
 pub fn joining(w: &mut World, label: &str) {
-    (FrontEnd::of(w).joining)(w, label)
+    tell(w, Joining { label: label.to_string() })
 }
 
+/// Trigger `JoinFailed`.
 pub fn show_failure(w: &mut World) {
-    (FrontEnd::of(w).show_failure)(w)
+    tell(w, JoinFailed)
 }
 
+/// Trigger `MapLoadFailed`.
 pub fn map_load_failed(w: &mut World) {
-    (FrontEnd::of(w).map_load_failed)(w)
+    tell(w, MapLoadFailed)
 }
 
+/// Trigger `StartGame`.
 pub fn start_game(w: &mut World) {
-    (FrontEnd::of(w).start_game)(w)
+    tell(w, StartGame)
+}
+
+/// An observer of front-end event `E` that runs `f` on the whole world
+/// (a menu's: menus are an allowed whole-world place), at once.
+pub fn on_world<E: Event>(f: fn(&mut World)) -> impl FnMut(On<E>, Commands) {
+    move |_: On<E>, mut commands: Commands| commands.queue(f)
 }
 
 /// The game menu (main menu, Esc menu, its dialogs) as the shell needs to

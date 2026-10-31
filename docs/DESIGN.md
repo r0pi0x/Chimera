@@ -679,7 +679,47 @@ pages are data (apps/party_kit/data/options.toml, host_settings.toml):
   vote), 20 s, one at a time, a wait per caller; passed, the server
   goes to the rotation's next map. Everyone sees a small vote panel
   (F1 yes, F2 no).
-- No scoreboard entry (Tab) and no Disconnect until there is a main menu.
+- **Disconnect** (apps with the main menu; its entries are data,
+  data/main_menu.toml `[[escape]]`): back to the main menu. A host with
+  people connected is asked first ("End the game for 2 players?"); its
+  clients land on their menu with "The host left the game."
+  (`net::client::HOST_LEFT`).
+- No scoreboard entry (Tab).
+
+### The party apps' main menu
+
+Ultimate Gun Game starts at a menu (`party_kit::main_menu`; Lucker Party,
+shelved, still starts in its minigame) unless the command line plays
+(`--map`, `+minigame`, `+connect`, `--screenshot` and the other tool
+runs skip it, so scripts and tests are unchanged). Its first iteration
+copies CS:S's main menu (user, 2026-10-31): the same VGUI widgets
+(`chimera_client::client::widgets`) in the GameUI look of CS:S's install,
+the entries at the bottom left under the app's name in text (no logo),
+each page a movable frame; the code is the party's, not CS:S's game
+menu, which is that game's front end (its Create Server, options and
+server browser are CS:S's). Entries and the Play page's rows are data
+(data/main_menu.toml).
+
+- **Play** hosts: the rows' cvars (map or the minigame's rotation, bots,
+  max. players, server name, password, port, UPnP), then the map, a
+  listen server when `maxplayers` > 1 (joinable by default), the app's
+  minigame once the map is in. The Game tab is the host settings'
+  next-match rows.
+- **Join** is direct connect (address, password, recent addresses); the
+  LAN browser is M2.
+- **Options**: the Escape menu's tabs and Binds.
+- **Behind it** a live map (`[background]`) with a slow camera orbit;
+  the HUD is hidden by drawing the menu's UI on a camera of its own
+  while the shell's UI camera (the HUD's) is off.
+- **Loading**: CS:S's loading dialog's parts (stage, bar, Cancel), for
+  joins, Play's load and a map change in a game; Combat Arms' own
+  loading screen instead for Combat Arms' maps (user decision 5).
+- **Failures** (a refused join, a drop, a failed load) land on the menu
+  in CS:S's "Disconnected" box with why.
+- The shell tells front ends what happens by triggered events
+  (`front_end::EnteredGame`, `LeftGame`, `Joining`, `JoinFailed`,
+  `MapLoadFailed`, `StartGame`), which CS:S's game menu, Combat Arms'
+  loading screen and this menu each observe.
 
 ## Multiplayer
 

@@ -248,7 +248,9 @@ fn color(c: [u8; 4]) -> Color {
     Color::srgba_u8(c[0], c[1], c[2], c[3])
 }
 
-fn build(hud: Res<ActiveHud>, old: Query<Entity, With<GameHudPart>>, mut commands: Commands) {
+fn build(hud: Option<Res<ActiveHud>>, old: Query<Entity, With<GameHudPart>>, mut commands: Commands) {
+    // Gone mid-frame (the map unloaded: back to the menu).
+    let Some(hud) = hud else { return };
     for e in &old {
         commands.entity(e).despawn();
     }
@@ -311,7 +313,7 @@ fn remember_hits(mut damage: MessageReader<Damage>, rules: DamageRules, mut hits
 #[allow(clippy::type_complexity)]
 fn death_notices(
     mut died: MessageReader<Died>,
-    hud: Res<ActiveHud>,
+    hud: Option<Res<ActiveHud>>,
     hits: Res<LastHits>,
     who: Query<(
         Option<&Name>,
@@ -333,6 +335,8 @@ fn death_notices(
     mut clock: Local<NoticeClock>,
     shared: Option<Res<crate::client::kill_feed::SharedKillFeed>>,
 ) {
+    // Gone mid-frame (the map unloaded: back to the menu).
+    let Some(hud) = hud else { return };
     // The app draws one feed for every HUD (`client::kill_feed`): none here.
     if shared.is_some() {
         died.clear();
@@ -713,7 +717,7 @@ pub fn layout(
 /// Lay the HUD out for the window and fill in the values.
 #[allow(clippy::type_complexity)]
 fn update(
-    hud: Res<ActiveHud>,
+    hud: Option<Res<ActiveHud>>,
     fonts: Res<UiFonts>,
     windows: Query<&Window>,
     player: Option<Single<LocalState, With<LocalPlayer>>>,
@@ -735,6 +739,8 @@ fn update(
     )>,
     mut commands: Commands,
 ) {
+    // Gone mid-frame (the map unloaded: back to the menu).
+    let Some(hud) = hud else { return };
     let Some(window) = windows.iter().next() else {
         return;
     };

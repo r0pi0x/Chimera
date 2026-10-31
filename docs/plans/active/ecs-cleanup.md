@@ -195,7 +195,7 @@ registries) a single-slot hook resource that must follow the gameplay
 | `map::MapScopedResource` | map/mod.rs:308 | `remove` | unload | A | |
 | `map::SpawnHazards` | chimera/world/src/map/hazards.rs:16 | (tuple) | map load | A | |
 | `map::LogicInspect` | chimera/world/src/map/logic_view.rs:266 | 5 inspectors | tools | A | |
-| `client::FrontEnd` | chimera/client/src/client/front_end.rs:18 | 6 transitions | one-off | A | shell to menus; a party app has one front end |
+| ~~`client::FrontEnd`~~ | chimera/client/src/client/front_end.rs | 6 transitions | one-off | done | triggered events (`EnteredGame` ...) since the main menu's M1: several front ends observe them |
 | `client::AppHooks` | chimera/client/src/client/mod.rs:367 | `unload_greybox`, `respawn_greybox` (and 3 loaders) | map load | A | app-level |
 | `client::GameDebug` | chimera/client/src/client/debug_ui.rs:49 | `bot_state`, `round_status` | debug UI | A | tools |
 | `combat_arms::CaMode` | | `left` | gone | | the mode's part of the `on_leave` observer, `rules::mode_left` (step 8, done) |
