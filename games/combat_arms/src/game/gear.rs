@@ -532,9 +532,22 @@ pub fn body_figure<'a>(data: &GearData, movement: &'a MovementData, look: &Selec
 /// and its body type (`body_figure`).
 pub fn gear_view<'a>(data: &GearData, movement: &'a MovementData, look: &Selection, rung: bool) -> (Selection, &'a Figure) {
     let figure = body_figure(data, movement, look);
-    let vest = Selection {
-        model: vest_of(look, rung),
-        ..*look
+    let vest = if rung {
+        // A rung's pieces are drawn, not worn as gear (an NPC body's
+        // head piece and goggles: characters.md 13.2): the baseline's.
+        let d = Selection::default();
+        Selection {
+            model: vest_of(look, rung),
+            head: d.head,
+            goggle: d.goggle,
+            backpack: d.backpack,
+            ..*look
+        }
+    } else {
+        Selection {
+            model: vest_of(look, rung),
+            ..*look
+        }
     };
     (vest, figure)
 }

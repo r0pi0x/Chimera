@@ -10,7 +10,13 @@
 //! skins (`merge_install_pieces`), and its body records we have none of
 //! join ours (its specialists and mercenaries: `rung_bodies` is the
 //! wearable player bodies); a client's selection is checked by
-//! `CharacterData::validated`.
+//! `CharacterData::validated`. Its NPC bodies (`AIModel#`, 13.2) join
+//! after them (`merge_npcs`: id = the `Model#` count + the index, as the
+//! game numbers them; skins by slot, face, head piece, goggles and
+//! backpack found by name, the `AIFace#` records joining the faces the
+//! same way: `NpcRecord`, `npc_bodies`, `default_look`), and its hit
+//! tables past ours (`Skeleton#` 2-18) join the skeletons (`table`: the
+//! install's data's, the only one with bodies on them).
 
 use std::collections::BTreeMap;
 
@@ -83,10 +89,43 @@ pub struct ModelRecord {
     /// them.
     #[serde(default)]
     pub colour_skins: Vec<crate::game::data::attributes::ColourSkins>,
+    /// An NPC body (`AIModel#`, characters.md 13.2; the install's): its
+    /// own look. None: a player body.
+    #[serde(default)]
+    pub npc: Option<NpcRecord>,
 }
 
 fn no_override() -> i32 {
     -1
+}
+
+/// An NPC body's look (characters.md 13.2): its skins in texture-slot
+/// order and its pieces, resolved from their names to record ids (-1:
+/// none).
+#[derive(Deserialize, Clone, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NpcRecord {
+    /// `Skin#`: texture slot i (no camouflage, colours or team mark).
+    #[serde(default)]
+    pub skins: Vec<String>,
+    /// The face piece (a `Face#` record, else an `AIFace#` one: its id
+    /// here, `CharacterData::face`), the head piece (`Hair#`), goggles
+    /// and backpack (the attachment file's records).
+    pub face: i32,
+    pub head: i32,
+    pub goggle: i32,
+    pub backpack: i32,
+    /// `AIOnly`, `HumanModel`.
+    #[serde(default)]
+    pub ai_only: bool,
+    #[serde(default)]
+    pub human: bool,
+    /// `UseSpecialDeathAni`.
+    #[serde(default)]
+    pub special_death: Option<String>,
+    /// `ClientFX#`.
+    #[serde(default)]
+    pub client_fx: Vec<String>,
 }
 
 /// An infection override (`Overidable_Model#`, characters.md 2): the
@@ -357,6 +396,13 @@ pub struct CharacterData {
     /// The infection overrides (`Overidable_Model#`, the install's).
     #[serde(default)]
     pub infection: Vec<InfectionRecord>,
+    /// The body families (data/npc_bodies.toml, `families`).
+    #[serde(skip)]
+    pub families: super::families::Families,
+    /// Each skeleton's hit table as the weapons test it
+    /// (`weapons::hit_table`), by index.
+    #[serde(skip)]
+    pub hit_spheres: Vec<Vec<crate::game::weapons::HitSphere>>,
 }
 
 /// The built-in character data without any install, a read-only table
@@ -380,6 +426,8 @@ impl CharacterData {
                 m.render_styles = data.body_render_styles.clone();
             }
         }
+        data.families = super::families::built_in();
+        data.hit_spheres = data.skeleton.iter().enumerate().map(|(i, s)| crate::game::weapons::make_hit_table(s, i)).collect();
         data
     }
 }
@@ -484,6 +532,7 @@ fn merge_install_pieces(data: &mut CharacterData, ca: &CaDataInner) {
             footprint_volume: r.footprint_volume,
             infected: r.infected,
             colour_skins: colour_lists(&r.colour_skins),
+            npc: None,
         });
     }
     data.infection = models
@@ -528,6 +577,119 @@ fn merge_install_pieces(data: &mut CharacterData, ca: &CaDataInner) {
             None => data.face.push(face),
         }
     }
+    merge_npcs(data, models, ca);
+}
+
+/// The install's NPC bodies (characters.md 13.2): each `AIModel#` as a
+/// body record after the `Model#` records (id: their count plus its
+/// index, as the game numbers them), its face (`AIFace` looked up among
+/// the `Face#` records, then the `AIFace#` ones, which join the faces
+/// after the `Face#` records the same way), head piece (`Hair#`), goggles
+/// and backpack (the attachment file's) found by name, without case; a
+/// name no record has (the defaults `AIFace0`, `AIhair0`, ...) is none.
+/// The hit tables past ours (`Skeleton#` 2 on, 13.6) join the skeletons.
+fn merge_npcs(data: &mut CharacterData, models: &crate::game::data::attributes::ModelsFile, ca: &CaDataInner) {
+    let faces_base = models.faces.len() as i32;
+    for (i, r) in models.ai_faces.iter().enumerate() {
+        let id = faces_base + i as i32;
+        data.face.retain(|f| f.id != id);
+        data.face.push(FaceRecord {
+            id,
+            name: r.name.clone(),
+            file: r.files.first().cloned().filter(|f| !f.is_empty()),
+            skins: super::super::data::skin_paths(&r.skins),
+            hair: r.hair,
+            render_styles: r.render_styles.clone(),
+            client_fx: r.client_fx.clone(),
+        });
+    }
+    let by_name = |list: &[(i32, String)], name: &str| list.iter().find(|(_, n)| !n.is_empty() && n.eq_ignore_ascii_case(name)).map_or(-1, |(i, _)| *i);
+    let indexed = |names: Vec<&String>| -> Vec<(i32, String)> { names.into_iter().enumerate().map(|(i, n)| (i as i32, n.clone())).collect() };
+    let mut faces = indexed(models.faces.iter().map(|f| &f.name).collect());
+    faces.extend(models.ai_faces.iter().enumerate().map(|(i, f)| (faces_base + i as i32, f.name.clone())));
+    let heads = indexed(models.hair_pieces.iter().map(|h| &h.name).collect());
+    let attachments = ca.attributes().and_then(|a| a.attachments.as_ref());
+    let goggles = attachments.map(|a| indexed(a.goggles.iter().map(|g| &g.name).collect())).unwrap_or_default();
+    let backpacks = attachments.map(|a| indexed(a.backpacks.iter().map(|g| &g.name).collect())).unwrap_or_default();
+    let base = models.bodies.len() as i32;
+    for (i, r) in models.npcs.iter().enumerate() {
+        let id = base + i as i32;
+        data.model.retain(|m| m.id != id);
+        data.model.push(ModelRecord {
+            id,
+            name: r.name.clone(),
+            file: r.file.clone(),
+            skeleton: usize::try_from(r.skeleton).unwrap_or(0),
+            figure: usize::try_from(r.figure_type).unwrap_or(0),
+            gear: r.gear,
+            faces: Vec::new(),
+            upper_skins: Vec::new(),
+            lower_skins: Vec::new(),
+            additional_skins: Vec::new(),
+            render_styles: r.render_styles.clone(),
+            footprint_volume: 0.0,
+            infected: -1,
+            colour_skins: Vec::new(),
+            npc: Some(NpcRecord {
+                skins: r.skins.iter().map(|s| if super::super::data::is_skin_file(s) { s.clone() } else { String::new() }).collect(),
+                face: if r.attach_face { by_name(&faces, &r.face) } else { -1 },
+                head: by_name(&heads, &r.hair),
+                goggle: by_name(&goggles, &r.goggle),
+                backpack: by_name(&backpacks, &r.backpack),
+                ai_only: r.ai_only,
+                human: r.human,
+                special_death: r.special_death.clone(),
+                client_fx: r.client_fx.clone(),
+            }),
+        });
+    }
+    for (i, nodes) in models.hit_tables.iter().enumerate().skip(data.skeleton.len()) {
+        if data.skeleton.len() == i {
+            data.skeleton.push(install_table(i, nodes));
+        }
+    }
+}
+
+/// An install hit table (`Skeleton#` `index`) as a skeleton record: its
+/// spheres by name (on the body's node or socket of that name when posed,
+/// 11), no measured positions, nodes or sockets, no aim of its own (the
+/// family's: `families`).
+pub fn install_table(index: usize, nodes: &[crate::game::data::attributes::SkeletonNode]) -> SkeletonRecord {
+    SkeletonRecord {
+        name: format!("table {index}"),
+        aim: Vec::new(),
+        nodes: Vec::new(),
+        spheres: nodes
+            .iter()
+            .enumerate()
+            .map(|(k, n)| SphereRecord {
+                index: k as u32,
+                name: n.name.clone(),
+                radius: n.radius as f32,
+                location: u8::try_from(n.location).unwrap_or(0),
+                factor: n.damage_factor as f32,
+                socket: None,
+                absent: false,
+                bind: None,
+                at: None,
+                priority: Some(n.priority as f32),
+            })
+            .collect(),
+        sockets: Vec::new(),
+        left_foot: [0.0, super::skeleton::STAND_FEET, 0.0],
+        hit_priority: HitPriority::default(),
+    }
+}
+
+/// Hit table `index`: ours (0 male, 1 female: measured, data/
+/// characters.toml), else the install's (`CaData::install`'s: only an
+/// install has bodies on the others), else ours 0.
+pub fn table(index: usize) -> &'static SkeletonRecord {
+    let ours = builtin();
+    if index < ours.skeleton.len() {
+        return &ours.skeleton[index];
+    }
+    super::super::data::CaData::install_static().characters().skeleton.get(index).unwrap_or(&ours.skeleton[0])
 }
 
 /// The install's weapons file over our weapon looks: each install
@@ -605,9 +767,55 @@ impl CharacterData {
     pub fn rung_bodies(&self) -> Vec<i32> {
         self.model
             .iter()
-            .filter(|m| !m.file.is_empty() && m.skeleton <= 1 && m.upper_skins.iter().any(|s| !s.is_empty()))
+            .filter(|m| m.npc.is_none() && !m.file.is_empty() && m.skeleton <= 1 && m.upper_skins.iter().any(|s| !s.is_empty()))
             .map(|m| m.id)
             .collect()
+    }
+
+    /// The NPC bodies a player may wear (characters.md 13.8, `@npcs` in
+    /// the rungs' mapping): every `AIModel#` record with a body file
+    /// whose family is wearable (not the HQ raid boss's gunship, not the
+    /// dummy).
+    pub fn npc_bodies(&self) -> Vec<i32> {
+        self.model
+            .iter()
+            .filter(|m| m.npc.is_some() && !m.file.is_empty() && self.family(m).wearable)
+            .map(|m| m.id)
+            .collect()
+    }
+
+    /// Body record `record`'s family (`families`: by its body file, else
+    /// its hit table).
+    pub fn family(&self, record: &ModelRecord) -> &'static super::families::Family {
+        super::families::families().of(&record.file, record.skeleton)
+    }
+
+    /// The skeleton index a body's head pieces are chosen by (2: their
+    /// file per skeleton): a player tree's (0 male, 1 female) for a body
+    /// of the male or female family, else its hit table.
+    pub fn piece_skeleton(&self, record: &ModelRecord) -> usize {
+        self.family(record).stock_rig.unwrap_or(record.skeleton)
+    }
+
+    /// The look body `body` is worn with by default: an NPC body with its
+    /// own face, head piece, goggles and backpack (13.2); a player body
+    /// with its default face.
+    pub fn default_look(&self, body: i32) -> Selection {
+        match self.model(body).and_then(|m| m.npc.as_ref()) {
+            Some(n) => Selection {
+                model: body,
+                face: n.face,
+                head: n.head,
+                goggle: n.goggle,
+                backpack: n.backpack,
+                ..Selection::default()
+            },
+            None => Selection {
+                model: body,
+                face: self.default_face(body),
+                ..Selection::default()
+            },
+        }
     }
 
     /// A body's skin for texture slot `slot` past the five fixed ones
@@ -639,6 +847,10 @@ impl CharacterData {
     /// M8, characters.md 2), else its default face. The override's render
     /// styles and hands aren't drawn (docs/plans/active/combat-arms.md).
     pub fn infected_look(&self, body: i32) -> Selection {
+        // An NPC body is infected as it is (no override: 13.2).
+        if self.model(body).is_some_and(|m| m.npc.is_some()) {
+            return self.default_look(body);
+        }
         let face = self
             .infection_of(body)
             .map(|r| r.face)
@@ -744,6 +956,9 @@ impl CharacterData {
     /// face redirect: 0 for the male bodies, 4, the first female face,
     /// for the female twin); 0 when none does.
     pub fn default_face(&self, body: i32) -> i32 {
+        if let Some(n) = self.model(body).and_then(|m| m.npc.as_ref()) {
+            return n.face;
+        }
         (0..8)
             .find(|&f| {
                 let s = Selection {

@@ -244,13 +244,21 @@ pub fn fly_sound_stop(ev: On<Remove<CaFlightLook>>, q: Query<&CaFlightLook>, mut
 
 /// The groups a look wears: its face's `ClientFX#` list (game_modes.md
 /// Corrections (2026-10-30) 4, 7), looping, third person only; the face
-/// a selection names, else its body's default.
+/// a selection names, else its body's default; an NPC body's own
+/// `ClientFX#` too (characters.md 13.2: its eyes' glow, its markers).
 pub fn worn_groups(data: &CaData, look: &Selection) -> Vec<AttachedGroup> {
-    data.characters()
-        .worn_face(look)
+    let ch = data.characters();
+    let own = ch.model(look.model).and_then(|m| m.npc.as_ref()).map_or(&[][..], |n| &n.client_fx[..]);
+    let mut seen: Vec<String> = Vec::new();
+    ch.worn_face(look)
         .map_or(&[][..], |f| &f.client_fx[..])
         .iter()
-        .filter(|g| !g.is_empty())
+        .chain(own)
+        // A group both list is worn once (`InfectedS_New_Man01_B`).
+        .filter(|g| !g.is_empty() && !seen.contains(&g.to_lowercase()) && {
+            seen.push(g.to_lowercase());
+            true
+        })
         .map(|g| AttachedGroup {
             group: g.clone(),
             looping: true,

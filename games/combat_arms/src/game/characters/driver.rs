@@ -7,6 +7,13 @@
 //! rules, on LithTech's own millisecond trackers (`lithtech_formats::
 //! anim::Tracker`) over the body's combined animation list.
 //!
+//! The infected hands' classes (39 `VUM...`, 47 `VGUM...`: the knife
+//! names with code `M`, prefixed) and the powered suits' robot classes
+//! (58-67, characters.md 13.7: their names per posture and direction from
+//! data/npc_bodies.toml, `families::RobotClass`) build their own names; a
+//! body's family may give its own hit names, and a boss's runs a minimal
+//! mapping instead (`update_boss`, 13.8).
+//!
 //! A name the library lacks starts nothing (Quirk 1). Without a body
 //! model the library is `spec_library`: every name section 6 can build,
 //! with the spec's measured lengths, minus the names it says the US
@@ -358,7 +365,48 @@ pub fn class_code(class: i32) -> (&'static str, &'static str) {
 }
 
 fn knife(class: i32) -> bool {
-    matches!(class, 14 | 16)
+    matches!(class, 14 | 16 | 39 | 47)
+}
+
+/// Whether class `class` has an alt-fire of its own (the knives, the
+/// infected hands, the melee suits' second swing).
+pub fn has_alt_fire(class: i32) -> bool {
+    knife(class) || matches!(class, 61 | 67)
+}
+
+/// The infected hands' classes (characters.md 12.6, 13.5): the knife
+/// names with code `M`, prefixed `V` (39, `VUM...`) or `VG` (47, the club
+/// zombie's `VGUM...`).
+fn infected_prefix(class: i32) -> Option<&'static str> {
+    match class {
+        39 => Some("V"),
+        47 => Some("VG"),
+        _ => None,
+    }
+}
+
+/// A robot class's names (characters.md 13.7, data/npc_bodies.toml): the
+/// posture's row by direction (diagonals as forward or back), its run
+/// and walk forms, and the posture's sprint name.
+fn robot_names(t: &super::families::RobotClass, posture: Posture, dir: Direction) -> (String, Option<String>, Option<String>) {
+    let i = match dir {
+        Direction::None => 0,
+        Direction::F | Direction::FL | Direction::FR => 1,
+        Direction::B | Direction::BL | Direction::BR => 2,
+        Direction::L => 3,
+        Direction::R => 4,
+    };
+    let (row, sprint) = match posture {
+        Posture::Hit => return ("D_HIT".into(), None, None),
+        Posture::Hit2 => return ("D_HITT".into(), None, None),
+        Posture::Aim => (&t.aim, &t.sprint.aim),
+        Posture::Fire | Posture::PreFire | Posture::PostFire => (&t.fire, &t.sprint.fire),
+        Posture::Select => (&t.select, &t.sprint.select),
+        Posture::Reload => (&t.reload, &t.sprint.reload),
+        Posture::AltFire => (t.alt_fire.as_ref().unwrap_or(&t.aim), &t.sprint.aim),
+    };
+    let (run, walk) = super::families::forms(&row[i]);
+    (run, Some(walk), Some(sprint.clone()))
 }
 
 fn thrown(class: i32) -> bool {
@@ -371,7 +419,23 @@ fn thrown(class: i32) -> bool {
 /// double barrel (27) and the snowball gun (29) on fire, alt-fire, select
 /// and reload (their alt-fire is their fire).
 pub fn upper_names(class: i32, posture: Posture, dir: Direction) -> (String, Option<String>, Option<String>) {
+    if let Some(t) = super::families::families().robot(class) {
+        return robot_names(t, posture, dir);
+    }
+    if let Some(prefix) = infected_prefix(class) {
+        if matches!(posture, Posture::Hit | Posture::Hit2) {
+            return coded_names(class, "M", "", posture, dir);
+        }
+        let (run, walk, sprint) = coded_names(class, "M", "", posture, dir);
+        let p = |n: String| format!("{prefix}{n}");
+        return (p(run), walk.map(p), sprint.map(p));
+    }
     let (code, digit) = class_code(class);
+    coded_names(class, code, digit, posture, dir)
+}
+
+/// `upper_names` for a class of code `code` and digit `digit` (6).
+fn coded_names(class: i32, code: &str, digit: &str, posture: Posture, dir: Direction) -> (String, Option<String>, Option<String>) {
     let all_digit = matches!(class, 27 | 29);
     let fire_digit = if all_digit { digit } else { "" };
     let d = dir.upper();
@@ -481,6 +545,24 @@ pub struct Driver {
     /// upper tracker is started again only when the class or posture
     /// changed, or this name differs while aiming or firing).
     started: Option<usize>,
+    /// The body's family (characters.md 13.4; None: a player body's
+    /// rules): its hit names, a boss's mapping.
+    pub family: Option<&'static super::families::Family>,
+    /// A boss body's action (`update_boss`).
+    pub boss: BossAction,
+}
+
+/// What a boss body plays (13.8's minimal mapping).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BossAction {
+    #[default]
+    Idle,
+    Walk,
+    FireStart,
+    FireLoop,
+    FireEnd,
+    Melee,
+    Hit,
 }
 
 /// The emote menu's choices 1-4 (9: Hunted only; `DT` is disabled).
@@ -519,6 +601,8 @@ impl Driver {
             fresh: true,
             emote: None,
             started: None,
+            family: None,
+            boss: BossAction::Idle,
         }
     }
 
@@ -732,6 +816,10 @@ impl Driver {
 
     /// One update: advance by `ms`, decide, start (sections 5 to 7).
     pub fn update(&mut self, ms: u32, i: &Inputs) {
+        if let Some(b) = self.family.and_then(|f| f.boss.as_ref()) {
+            self.update_boss(ms, i, b);
+            return;
+        }
         self.advance(ms);
         if let Some(s) = i.status {
             self.status = s;
@@ -754,7 +842,12 @@ impl Driver {
                 self.emote = None;
             }
         }
-        let (run, walk, sprint) = upper_names(class, posture, direction);
+        let (mut run, mut walk, mut sprint) = upper_names(class, posture, direction);
+        // A family's own hit reactions (13.8: the infected's `VD_HIT`).
+        if let (Some([hit, hit2]), Posture::Hit | Posture::Hit2) = (self.family.and_then(|f| f.hits.as_ref()), posture) {
+            run = if posture == Posture::Hit { hit.clone() } else { hit2.clone() };
+            (walk, sprint) = (None, None);
+        }
         let exists = |n: &Option<String>| n.as_deref().and_then(|n| self.find(n));
         let upper = match movement {
             Movement::Sprint => exists(&sprint).or_else(|| self.find(&run)),
@@ -838,7 +931,83 @@ impl Driver {
     /// Change the library (a new body file): every tracker starts again
     /// on the next update.
     pub fn set_list(&mut self, list: Arc<AnimList>) {
+        let family = self.family;
         *self = Self::new(list);
+        self.family = family;
+    }
+
+    /// One update of a boss body (13.8's minimal mapping, `BossNames`):
+    /// fire held plays the fire (its start, then its loop while held,
+    /// then its end; one name loops while held), alt-fire the melee once,
+    /// a hit (damage, not protected) the hit once, else walking (any
+    /// direction) the walk, standing the idle; the same name on the upper
+    /// and lower trackers (the body's lower set is empty, its upper set
+    /// the whole body). A name the body lacks starts nothing.
+    pub fn update_boss(&mut self, ms: u32, i: &Inputs, b: &super::families::BossNames) {
+        self.advance(ms);
+        if let Some(s) = i.status {
+            self.status = s;
+        }
+        let done = self.done(&self.upper);
+        let three = b.fire.len() == 3;
+        let hit = self.status == Status::Hit && i.damaged && !i.protected && b.hit.is_some();
+        self.status = Status::None;
+        use BossAction as A;
+        let fire = i.fire && !b.fire.is_empty();
+        let next = match self.boss {
+            A::FireStart if done => A::FireLoop,
+            A::FireStart => A::FireStart,
+            A::FireLoop if !fire && three => A::FireEnd,
+            A::FireLoop if fire => A::FireLoop,
+            A::FireEnd if !done => A::FireEnd,
+            A::Melee | A::Hit if !done => self.boss,
+            _ if fire => {
+                if three {
+                    A::FireStart
+                } else {
+                    A::FireLoop
+                }
+            }
+            _ if i.alt_fire && b.melee.is_some() => A::Melee,
+            _ if hit => A::Hit,
+            _ if (i.forward || i.back || i.left || i.right) && b.walk.is_some() => A::Walk,
+            _ => A::Idle,
+        };
+        let name = match next {
+            A::Idle => Some(&b.idle),
+            A::Walk => b.walk.as_ref(),
+            A::FireStart => b.fire.first(),
+            A::FireLoop => b.fire.get(usize::from(three)),
+            A::FireEnd => b.fire.get(2),
+            A::Melee => b.melee.as_ref(),
+            A::Hit => b.hit.as_ref(),
+        };
+        let changed = next != self.boss || std::mem::take(&mut self.fresh);
+        self.boss = next;
+        let Some(entry) = name.and_then(|n| self.find(n)) else { return };
+        let looping = matches!(next, A::Idle | A::Walk | A::FireLoop);
+        let list = self.list.clone();
+        for t in [&mut self.upper, &mut self.lower] {
+            t.looping = looping;
+            if changed && t.current == entry && !looping {
+                t.reset();
+            } else {
+                Self::start(&list, t, entry, looping);
+            }
+        }
+        let posture = match next {
+            A::FireStart | A::FireLoop | A::FireEnd => Posture::Fire,
+            A::Melee => Posture::AltFire,
+            A::Hit => Posture::Hit,
+            _ => Posture::Aim,
+        };
+        self.playing = Some(posture);
+        self.last = Decided {
+            class: i.class,
+            posture,
+            movement: if next == A::Walk { Movement::Run } else { Movement::Walk },
+            direction: Direction::of(i.forward, i.back, i.left, i.right),
+        };
     }
 }
 

@@ -34,9 +34,13 @@ fn the_install_marks_its_infected_hands_and_overrides() {
 }
 
 /// Characters follow the gun on the install's data (`rungs::holders`,
-/// data/rung_characters.toml): every infected's weapon is held by the
-/// infected's bodies only, every other weapon by the player bodies (none
-/// of them only an infected's); the coverage is printed.
+/// data/rung_characters.toml): an infected's weapon the data names no
+/// holders for is held by the infected's bodies only, any other such
+/// weapon by the player bodies; a weapon the data names (the NPC and boss
+/// guns, the suit weapons, the NPC infected's hands: characters.md 12)
+/// by bodies that exist, an infected's hand by infected bodies (the
+/// player bodies' infected, an infected mercenary or an NPC); the
+/// coverage is printed.
 #[test]
 fn the_installs_weapons_map_to_their_holders() {
     let ca = CaData::install();
@@ -50,32 +54,33 @@ fn the_installs_weapons_map_to_their_holders() {
     let ch = ca.characters();
     let (players, zombies) = (ch.rung_bodies(), ch.infected_bodies());
     let h = rungs::holders();
-    let (mut to_players, mut to_zombies, mut other) = (0, 0, 0);
+    let (mut to_players, mut to_zombies, mut named) = (0, 0, 0);
     for w in &set.weapons {
         let bodies = rungs::bodies_for(&h, Some(&catalog), Some(&ca), &w.id);
-        if w.has_hook(rungs::INFECTED) {
+        let infected = w.has_hook(rungs::INFECTED);
+        if h.override_for(&w.id).is_some() {
+            assert!(!bodies.is_empty(), "{}: its holders exist", w.id);
+            if infected {
+                for b in &bodies {
+                    let r = ch.model(*b).unwrap();
+                    let fam = ch.family(r);
+                    assert!(zombies.contains(b) || r.npc.is_some() || fam.class == Some(39), "{}: {} isn't an infected body", w.id, r.name);
+                }
+            }
+            named += 1;
+        } else if infected {
             assert_eq!(bodies, zombies, "{}: the infected's", w.id);
             to_zombies += 1;
-        } else if bodies == players {
-            to_players += 1;
         } else {
-            other += 1;
+            assert_eq!(bodies, players, "{}: the player bodies", w.id);
+            to_players += 1;
         }
     }
     eprintln!(
-        "{} weapons: {to_players} to the {} player bodies, {to_zombies} to the {} infected bodies, {other} otherwise",
+        "{} weapons: {to_players} to the {} player bodies, {to_zombies} to the {} infected bodies, {named} to the bodies the data names",
         set.weapons.len(),
         players.len(),
         zombies.len()
     );
-    // What a spec session should place (names only hint: by name, not
-    // by data, nothing is decided from them).
-    let hinted: Vec<&str> = set
-        .weapons
-        .iter()
-        .map(|w| w.id.as_str())
-        .filter(|id| ["npc", "boss", "hqraid", "powered_suit", "specialist", "assassin"].iter().any(|k| id.contains(k)))
-        .collect();
-    eprintln!("{} weapons whose names hint at an NPC, a boss or a specialist: {hinted:?}", hinted.len());
-    assert_eq!(other, 0, "no overrides in the data yet");
+    assert!(named >= 60, "{named}");
 }

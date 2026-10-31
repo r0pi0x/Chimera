@@ -282,6 +282,18 @@ impl Rig {
     pub fn new(model: ltb::Model, list: AnimList) -> Self {
         let set = |name: &str| model.weight_sets.iter().position(|w| w.name.eq_ignore_ascii_case(name));
         let (stand, crouch) = list.hull_boxes();
+        // A body without the player's stand and crouch names whose first
+        // animation puts its root deeper than the fallback hull's half
+        // height (a boss, characters.md 13.6, Open question 35): its feet
+        // where that animation puts them, standing and crouched.
+        let deep = (list.find(ltb::STAND_ANIMATION).is_none() || list.find(ltb::CROUCH_ANIMATION).is_none())
+            .then(|| list.entries.first().map(|e| -e.translation[1]))
+            .flatten()
+            .filter(|d| *d > stand[1]);
+        let (stand, crouch) = match deep {
+            Some(d) => ([stand[0], d, stand[2]], [crouch[0], d, crouch[2]]),
+            None => (stand, crouch),
+        };
         let shape = Shape::new(
             model.nodes.iter().map(|n| n.name.clone()).collect(),
             model.parents(),

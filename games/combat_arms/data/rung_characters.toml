@@ -10,8 +10,10 @@
 #   install's player bodies, skeletons 0 and 1 with a two-texture body,
 #   characters.md 1: the stock bodies, specialists and mercenaries; never
 #   an infected override, an NPC or a boss record).
-# Characters are `@players`, `@infected`, a `Model#` record id, or a
-# record `Name` (a `*` pattern); `!x` takes x out of a group.
+# Characters are `@players`, `@infected`, `@npcs`, a body record id (a
+# `Model#` index; an `AIModel#` is the `Model#` count plus its index), or
+# a record `Name` (a `*` pattern; `Model#` and `AIModel#` alike); `!x`
+# takes x out of a group.
 default = "soldiers"
 
 [derived]
@@ -20,10 +22,99 @@ infected = "zombies"
 [groups]
 soldiers = ["@players"]
 zombies = ["@infected"]
+# The Sandhog soldiers (12.4's `SH_*` holders).
+sandhog = ["SH_Rifle", "SH_Recon", "SH_MGunner", "SH_Sniper", "SH_HeavyGunner", "SH_RoyalGuard"]
+# The squad mercenaries holding the M67 (Squad_0-9, 11, 12).
+squad = ["Squad_0", "Squad_1", "Squad_2", "Squad_3", "Squad_4", "Squad_5", "Squad_6", "Squad_7", "Squad_8", "Squad_9", "Squad_11", "Squad_12"]
+# The big powered suit and its coloured copies (Model 62, 583, 588).
+big_suits = ["62", "583", "588"]
+# The bosses holding `Abnormal_Boss_Minigun` (12.4).
+abnormal_bosses = ["Abnormal_Boss", "Abnormal_Du_Boss", "Abnormal_Du_Boss_A", "Abnormal_Boss_Fortress", "Abnormal_Boss_Beetle", "Abnormal_Boss_GroundThorn"]
 
 # Explicit overrides (a weapon id or record name, `*` patterns -> groups
-# or characters), over what is derived. The specs don't say yet which
-# guns only specialists, bosses or NPCs hold, nor which body each of
-# those belongs to (docs/backlog.md "Characters follow the gun": the
-# questions for a spec session); none so far.
+# or characters), over what is derived: who may hold which weapon
+# (characters.md 12; the user's decisions of 2026-10-31: NPC and boss
+# guns on their own NPC bodies, an infected hand on any infected type the
+# maps give it). Characters here are also `@npcs` (every wearable NPC
+# body, `AIModel#`, 13), `AIModel#` record names and `Model#` ids.
 [weapons]
+# L1, the world NPCs' hands (12.4): the `AIModel`s holding them.
+"ak-47_npc" = ["sandhog", "Agent_Z", "SubMission_Z_1", "SubMission_Z_2"]
+"imi_uzi_npc" = ["sandhog"]
+"m24_npc" = ["SH_Recon", "SH_Sniper", "SH_RoyalGuard"]
+"m60_npc" = ["SH_Recon", "SH_MGunner", "SH_RoyalGuard"]
+"law_npc" = ["SH_HeavyGunner"]
+"m67_npc" = ["sandhog", "Agent_Z", "squad", "HQRAIDNPC_1", "HQRAIDNPC_2", "HQRAIDNPC_3", "Powered_Suit_Npc_Melee", "Powered_Suit_Npc_Smg"]
+"dynamite_npc" = ["SH_Recon", "SH_MGunner", "SH_Sniper", "SH_HeavyGunner", "SH_RoyalGuard"]
+"vh_normal_npc" = ["Normal_Infecter_Common_D"]
+"vh_explode_npc" = ["Normal_Infecter_Explode_C"]
+"vh_heavy_npc" = ["Heavy_Infecter_Gas_A"]
+"vh_light_npc" = ["Light_Infecter_Speed_B"]
+"quarantine_stick_npc" = ["Normal_Infecter_Common_D"]
+"mp5a4_npc" = ["Squad_3", "Squad_4", "Squad_12"]
+"m4a1_npc" = ["Squad_1", "Squad_2", "Squad_11"]
+"p90_npc" = ["Squad_5", "Squad_6", "Squad_10"]
+"m416_npc" = ["Squad_7", "Squad_8"]
+"mg21e_npc" = ["Squad_9", "Squad_0"]
+"hqraidnpc_1_melee" = ["HQRAIDNPC_1"]
+"hqraidnpc_2_smg" = ["HQRAIDNPC_2", "Powered_Suit_Npc_Melee", "Powered_Suit_Npc_Smg", "SubMission_Z_1", "SubMission_Z_2"]
+"hqraidnpc_3_special" = ["HQRAIDNPC_3"]
+"infecteds_captain_hand_boss" = ["InfectedS_Captain_Boss", "InfectedS_W_Captain_Boss", "InfectedS_Captain"]
+"abnormal_boss_minigun" = ["abnormal_bosses"]
+"vh_normal_npc_cfs" = ["Normal_Infect_CFS", "Normal_Infect_Carnival_CFS"]
+"vh_explode_npc_cfs" = ["Explode_Infect_CFS", "Explode_Infect_Carnival_CFS"]
+"vh_heavy_npc_cfs" = ["Hauser_Infect_CFS"]
+# L2, the HQ raid boss's weapons: its gunship is no body (13.8), so ours
+# stand in: the big powered suit (`Powered_Suit_Boss` and its coloured
+# copies), the boss's suit, the biggest walking body that holds guns.
+"hqraid_boss_*" = ["big_suits"]
+# L3, the suit sets (12.4): each suit weapon on the suits it comes with.
+"powered_suit_basic_sr" = ["59", "580", "585"]
+"powered_suit_basic_smg" = ["58", "579", "584"]
+"powered_suit_boss_mg" = ["big_suits"]
+"powered_suit_basic_pistol" = ["60", "581", "586", "61", "582", "587"]
+"powered_suit_basic_melee" = ["60", "581", "586"]
+"powered_suit_boss_launcher" = ["big_suits"]
+"powered_suit_basic_medic" = ["61", "582", "587"]
+# L5, the infected mercenaries' hands (12.6): their own bodies.
+"quarantine_subtypes_hand" = ["56"]
+"quarantine_subtypep_hand" = ["57"]
+"the_shining_hand" = ["513"]
+# L1 and L4, the infected's hands (12.6): their own infected types and
+# every other one the worlds give them (Open question 27's "any holder
+# the game used"); the Quarantine host's hand the infected players too.
+"quarantine_host_hand" = ["zombies", "Heavy_Infecter_Gas_A", "Light_Infecter_Speed_B", "Normal_Infecter_Explode_C", "Normal_Infecter_Common_D"]
+"infecteds_captain_hand" = ["InfectedS_Captain", "InfectedS_W_Captain", "InfectedS_Man01_Host", "InfectedS_Man02_Host", "InfectedS_W_Man01_Host", "InfectedS_Man01_Virus", "SubMission_Z_1", "Infecter_Abnormal_Suicide"]
+"infecteds_man01_host_hand" = ["InfectedS_Man01_Host", "InfectedS_W_Man01_Host", "Normal_Infecter_Common_D", "Infecter_Abnormal_Suicide", "InfectedS_Captain"]
+"infecteds_man01_virus_hand" = ["InfectedS_Man01_Virus", "InfectedS_W_Man01_Virus"]
+"infecteds_man02_host_hand" = ["InfectedS_Man02_Host", "InfectedS_W_Man02_Host"]
+"infecteds_man02_virus_hand" = ["InfectedS_Man02_Virus", "InfectedS_W_Man02_Virus"]
+"infecteds_woman_host_hand" = ["InfectedS_Woman_Host", "InfectedS_W_Woman_Host", "Infecter_Abnormal_Suicide"]
+"infecteds_woman_virus_hand" = ["InfectedS_Woman_Virus", "InfectedS_W_Woman_Virus"]
+"infecteds_new_man01_hand" = ["InfectedS_New_Man01", "InfectedS_W_New_Man01", "Infecter_Abnormal_Suicide"]
+"infecteds_new_man02_hand" = ["InfectedS_New_Man02", "InfectedS_W_New_Man02"]
+"infecteds_new_woman_hand" = ["InfectedS_New_Woman", "InfectedS_W_New_Woman", "InfectedS_New_Woman_StunUp", "InfectedS_New_Woman_Block"]
+"infecteds_new_woman_hand_stunup" = ["InfectedS_New_Woman_StunUp"]
+"infecteds_man01_host_b_hand" = ["InfectedS_Man01_Host_B"]
+"infecteds_man02_host_b_hand" = ["InfectedS_Man02_Host_B", "InfectedS_New_Man02_B"]
+"infecteds_woman_host_b_hand" = ["InfectedS_Woman_Host_B"]
+"infecteds_new_man01_b_hand" = ["InfectedS_New_Man01_B"]
+"infecteds_new_man02_b_hand" = ["InfectedS_New_Man02_B"]
+"infecteds_new_woman_b_hand" = ["InfectedS_New_Woman_B"]
+"abnormal_normal" = ["Infecter_Abnormal_Normal", "Infecter_Abnormal_Normal_boss", "Infecter_Abnormal_Suicide", "Abnormal_Du_Boss_S", "Abnormal_Boss_Callus", "Abnormal_Boss3_Bugs_A", "Abnormal_Boss3_Bugs_B"]
+"abnormal_explode" = ["Infecter_Abnormal_Explode"]
+"abnormal_blood" = ["Infecter_Abnormal_Blood", "Infecter_Abnormal_Blood_boss"]
+"bonus_abnormal_explode" = ["Bonus_Abnormal_Explode"]
+"bonus_abnormal_blood" = ["Bonus_Abnormal_Blood"]
+# No link in the data: the spec's marked guesses by name (Open question
+# 26), ours. 67 `Minigun_npc`, 421 `Watergun_NPC`, 561
+# `Souzas_Parafal_NPC` (no Souza body in the install), 864
+# `Abnormal_IceGas_boss` and 344 `Mutation_Quarantine_Virus_Hand` keep the
+# derived rule.
+"npc_powered_suit_basic_smg" = ["Powered_Suit_Npc_Smg"]
+"npc_powered_suit_basic_melee" = ["Powered_Suit_Npc_Melee"]
+"abnormal_boss_minigun_left" = ["abnormal_bosses"]
+"infecteds_man02_host_hand_nsee" = ["InfectedS_Man02_Host_NSee"]
+"infecteds_captain_1_hand" = ["InfectedS_Captain", "InfectedS_W_Captain"]
+"ravens_g36c_npc" = ["Raven (Cosmetic)", "Summer Raven"]
+"pp19_mod_scorpion_npc" = ["Scorpion (Cosmetic)"]
