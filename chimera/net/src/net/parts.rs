@@ -33,8 +33,8 @@
 //!   network's pick) and come in at a free spawn point of their team,
 //!   else any (`enter_at_spawn`), bots are despawned, a frozen player
 //!   keeps only its look. `NetHooks` lists what every part does when this
-//!   process stops serving and what it places before movement in each
-//!   replayed tick.
+//!   process stops serving (what it places before movement in each
+//!   predicted and replayed tick goes in `core::Predict::PlaceMovers`).
 //! - **Ordering**: a part orders its client-side holds before
 //!   `predict::RecordCommand` (CS:S's `BombHold`), as the rules' freeze is
 //!   applied in `SimSet::Rules`.
@@ -182,10 +182,6 @@ pub struct NetHooks {
     /// components off what stays (the host, bots), each part takes its
     /// own off (and despawns what it spawned only to replicate).
     pub stopped_serving: Vec<fn(&mut World)>,
-    /// A client's prediction replays a tick: called with the tick's clock
-    /// and intent set, before movement, so a part places what the player
-    /// moves against at that tick (Source's movers).
-    pub replay: Vec<fn(&mut World)>,
     /// The server builds the match's manifest (`manifest::current`): each
     /// part adds what its side of the match needs (the minigame's).
     pub manifest: Vec<fn(&mut World, &mut super::manifest::MatchManifest)>,

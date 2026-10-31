@@ -50,19 +50,22 @@
 //! a `setpos` line at it, `ca_object_cmd <command string>` runs a command string,
 //! `ca_object_vars` lists the variables and pending commands.
 //!
+//! A network client steps the active world models itself to the tick it
+//! predicts and carries its own player on them (`net`, 10's Client).
+//!
 //! Known shortcuts: the explosion's effect isn't drawn and its damage skips the armour
-//! step; riders are carried on the server only (a client's own player on
-//! a moving platform is corrected from the server, not carried by its
-//! prediction) and without the spec's 0.1 u drop; nodes collide as their
+//! step; riders are carried without the spec's 0.1 u drop, and only by
+//! active world models (a keyframer's objects carry no one); nodes collide as their
 //! polygons' triangles (the engine's own `BoxPhysics` boxes aren't used)
-//! while the game's tests use their boxes (`movers`); sliding and keyframed nodes snap to each
-//! server update on clients (no interpolation between them).
+//! while the game's tests use their boxes (`movers`); keyframed nodes
+//! snap to each server update on clients (not stepped, not interpolated:
+//! `net`).
 
 pub mod commands;
 pub mod geometry;
 pub mod keyframer;
 pub mod movers;
-mod net;
+pub mod net;
 pub mod lights;
 pub mod runtime;
 pub mod sound;
@@ -212,6 +215,9 @@ pub struct CaObjects {
     /// client first heard of the objects (one-shots up to it already
     /// played: `net`).
     pub net_sound_floor: Option<u32>,
+    /// A client: the objects whose pose its prediction places (the
+    /// stepped active world models and what is attached to them: `net`).
+    pub predicted: Vec<ObjId>,
 }
 
 impl CaObjects {
@@ -389,24 +395,40 @@ fn characters(world: &mut World, scale: f32) -> Vec<CharBox> {
     chimera_core::query_cache::cached_query::<Row, With<Intent>, _>(world, |q, world| {
         q.iter(world)
             .map(|(e, t, s, h, bot, npc, dead, intent)| {
-            let (lo, hi) = if s.hull_max != s.hull_min {
-                (s.hull_min, s.hull_max)
-            } else {
-                (Vec3::new(-0.4, -0.9, -0.4), Vec3::new(0.4, 0.9, 0.4))
-            };
-            let a = from_engine(t.translation + lo, scale);
-            let b = from_engine(t.translation + hi, scale);
-            CharBox {
-                who: Who::Character(e.to_bits()),
-                min: a.min(b),
-                max: a.max(b),
-                player: !bot && !npc,
-                alive: !dead && h.is_none_or(|h| h.current > 0.0),
-                using: intent.use_key,
-            }
-        })
-        .collect()
+                char_box(e, t.translation, s, h, !bot && !npc, dead, intent.use_key, scale)
+            })
+            .collect()
     })
+}
+
+/// A character's box for the objects (file frame, u) with its centre at
+/// `at` (engine m).
+#[allow(clippy::too_many_arguments)]
+fn char_box(
+    e: Entity,
+    at: Vec3,
+    s: &MovementState,
+    h: Option<&Health>,
+    player: bool,
+    dead: bool,
+    using: bool,
+    scale: f32,
+) -> CharBox {
+    let (lo, hi) = if s.hull_max != s.hull_min {
+        (s.hull_min, s.hull_max)
+    } else {
+        (Vec3::new(-0.4, -0.9, -0.4), Vec3::new(0.4, 0.9, 0.4))
+    };
+    let a = from_engine(at + lo, scale);
+    let b = from_engine(at + hi, scale);
+    CharBox {
+        who: Who::Character(e.to_bits()),
+        min: a.min(b),
+        max: a.max(b),
+        player,
+        alive: !dead && h.is_none_or(|h| h.current > 0.0),
+        using,
+    }
 }
 
 /// The world model nodes' and volumes' entities, by object id.

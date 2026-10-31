@@ -11,7 +11,11 @@
 //! own test refuses a step that would overlap a player (unless forced),
 //! the engine's refuses one that would overlap any solid character
 //! (`Blocking`). Boxes are the world model's box (its BSP's half-extents
-//! about its centre, turned with it).
+//! about its centre, turned with it). `update_when_due` is one update as
+//! the object frame runs it, with the riders it carries (`carried`): the
+//! server's frame and a network client's prediction both run it, the
+//! client with its own copy of the machine and what changes as it runs
+//! from the server (`AwmMotion`, `net`).
 //!
 //! Known shortcuts: the game's player test uses the true pose (not
 //! Quirk 6's unconjugated rotation); `ACTIVATE` by bots is accepted with
@@ -19,6 +23,7 @@
 //! destructible's (`runtime`).
 
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use super::{
     commands::Who,
@@ -48,7 +53,7 @@ pub enum Motion {
 }
 
 /// Its state.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum State {
     #[default]
     Off,
@@ -149,7 +154,7 @@ impl Blocking<'_> {
 }
 
 /// A transition's spin (spinning world models, 8): angular speed per axis.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Spin {
     pub omega: Vec3,
     pub omega_final: Vec3,
@@ -214,6 +219,113 @@ pub struct Awm {
     pub spin: Spin,
     /// Update countdown (s; None: not updating).
     pub countdown: Option<f32>,
+}
+
+/// The part of a machine that changes as it runs: with its own copy of
+/// the map's machine (the same properties), a network client steps it as
+/// the server does (10, Client; `net`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AwmMotion {
+    pub state: State,
+    pub paused: Option<(State, Vec3)>,
+    pub locked: bool,
+    pub orig: Vec3,
+    pub on_pos: Vec3,
+    pub off_pos: Vec3,
+    pub pivot: Vec3,
+    pub angles: Vec3,
+    pub on_angles: Vec3,
+    pub dirs: Vec3,
+    pub move_start: f64,
+    pub stop_time: f64,
+    pub tau: f32,
+    pub multiplier: f32,
+    pub activator: Who,
+    pub spin: Spin,
+    pub countdown: Option<f32>,
+}
+
+impl Awm {
+    /// What changes as it runs (`AwmMotion`).
+    pub fn motion(&self) -> AwmMotion {
+        AwmMotion {
+            state: self.state,
+            paused: self.paused,
+            locked: self.locked,
+            orig: self.orig,
+            on_pos: self.on_pos,
+            off_pos: self.off_pos,
+            pivot: self.pivot,
+            angles: self.angles,
+            on_angles: self.on_angles,
+            dirs: self.dirs,
+            move_start: self.move_start,
+            stop_time: self.stop_time,
+            tau: self.tau,
+            multiplier: self.multiplier,
+            activator: self.activator,
+            spin: self.spin,
+            countdown: self.countdown,
+        }
+    }
+
+    /// Take `m` as what changes as it runs.
+    pub fn set_motion(&mut self, m: &AwmMotion) {
+        self.state = m.state;
+        self.paused = m.paused;
+        self.locked = m.locked;
+        self.orig = m.orig;
+        self.on_pos = m.on_pos;
+        self.off_pos = m.off_pos;
+        self.pivot = m.pivot;
+        self.angles = m.angles;
+        self.on_angles = m.on_angles;
+        self.dirs = m.dirs;
+        self.move_start = m.move_start;
+        self.stop_time = m.stop_time;
+        self.tau = m.tau;
+        self.multiplier = m.multiplier;
+        self.activator = m.activator;
+        self.spin = m.spin;
+        self.countdown = m.countdown;
+    }
+}
+
+/// One active world model's update when its countdown runs out (2-8), as
+/// the object frame runs it: the pose it moved to and the characters
+/// riding it (by index in `chars`), when it moved. The server's frame and
+/// a network client's prediction (`net`) both run this.
+#[allow(clippy::too_many_arguments)]
+pub fn update_when_due(
+    a: &mut Awm,
+    pose: &Pose,
+    solid: bool,
+    chars: &[CharBox],
+    now: f64,
+    dt: f32,
+    out: &mut Vec<Out>,
+) -> Option<(Pose, Vec<usize>)> {
+    let c = a.countdown.as_mut()?;
+    *c -= dt;
+    if *c > 0.0 {
+        return None;
+    }
+    let f = Frame {
+        now,
+        dt,
+        blocking: Blocking { chars, solid },
+    };
+    let next = a.update(&f, pose, out)?;
+    Some((next, f.blocking.riders(pose)))
+}
+
+/// How far a character riding a world model that moved from `from` to
+/// `to` is carried (10: its centre turned about the world model and
+/// moved with it).
+pub fn carried(c: &CharBox, from: &Pose, to: &Pose) -> Vec3 {
+    let turn = to.rot * from.rot.inverse();
+    let centre = c.centre();
+    to.pos + turn * (centre - from.pos) - centre
 }
 
 /// The per-axis direction for on angles `on` (Quirk 4).

@@ -59,6 +59,18 @@ const RATCHET: &[ScheduleRatchet] = &[
         opposite: 0,
     },
     ScheduleRatchet {
+        schedule: "Predict::PlaceMovers",
+        server: 0,
+        client: 0,
+        opposite: 0,
+    },
+    ScheduleRatchet {
+        schedule: "Predict::CarryRiders",
+        server: 0,
+        client: 0,
+        opposite: 0,
+    },
+    ScheduleRatchet {
         schedule: "Predict::Movement",
         server: 4,
         client: 4,

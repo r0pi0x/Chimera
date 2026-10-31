@@ -184,7 +184,7 @@ registries) a single-slot hook resource that must follow the gameplay
 | `slots::MovementImpl` | chimera/core/src/slots.rs:28 | `insert`, `remove` (`EntityWorldMut`), `footing`, `seat` | per movement swap | A | per entity, keyed by id: already a good seam |
 | `net::OwnPart` | chimera/net/src/net/parts.rs:92 | `encode`, `decode` | per tick per client | A | codec, sorted by name |
 | `net::NetHooks` | parts.rs:175 | `stopped_serving`, `manifest`, `accept` | one-off | A | |
-| | parts.rs:183 | `replay` | **per replayed command** | A (watch) | Source movers' `place` (`source/logic/src/logic/net.rs:389`, 3 raw queries, clones `MapEntities`); moving it into a schedule is risky for little gain: not planned, but cache its queries |
+| | parts.rs:183 | `replay` | **per replayed command** | A (watch) | Source movers' `place` (`source/logic/src/logic/net.rs:389`, 3 raw queries, clones `MapEntities`). Removed 2026-10-31: the movers are placed in the `core::Predict::PlaceMovers` stage (and Combat Arms' carried in `CarryRiders`) |
 | `net::JoinRules` | parts.rs:196 | `joined`, `enter`, `choice` | per join | **S** | inserted by both games (`games/cs_source/src/game/net.rs:201`, `games/combat_arms/src/game/net.rs:177`) |
 | `net::BotHooks` | parts.rs:290 | `kick`, `sync_quota` | console, serving | **S** | CS:S's (`cs_source/src/game/net.rs:206`) |
 | `net::Holds` | parts.rs:313 | `freeze_ends` (and `frozen`, not world-taking) | **every server tick** (`server.rs:924`), per command | **S** | both games insert one |
@@ -982,8 +982,9 @@ gone. Test: `each_players_status_lines_follow_the_ladder_in_a_component`;
 13. Install memos into resources or assets (9 D statics, E2's left part):
     only after the map loaders receive the app's context (`MapLoader`
     is a plain `fn` today, `chimera/world/src/map/sources.rs:163`).
-14. Not planned: `NetHooks::replay` into a schedule (it runs inside
-    `predict::reconcile`'s replay loop; little gain, high risk);
+14. Not planned: (`NetHooks::replay` became the `core::Predict::
+    PlaceMovers` stage on 2026-10-31, when Combat Arms' movers needed a
+    step after movement too: `CarryRiders`);
     `RungExtrasHook::apply` as an observer (it must precede `OnRung` and
     the weapons, see 2.1); Combat Arms' `bots::think` (bots are parked);
     the flow's driver (`step_phases`, `run_rounds`, `handle_deaths`),

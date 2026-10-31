@@ -1033,3 +1033,79 @@ fn stock_light_groups() {
         assert_eq!(style(&t), [(fridge, false)], "off once it is closed");
     }
 }
+
+/// world_objects.md 10 (Client) on SHORTFUSE: a client standing where
+/// `Door_OUT_L01` closes. Its prediction steps the leaf as the server's
+/// frame does: the client's leaf, at the tick the client predicts, is
+/// where the server's is at that tick (after the round trip that tells
+/// it of the start), the leaf stops at the player on both (6: never
+/// pushes) and the player standing there is never mispredicted.
+#[test]
+fn shortfuse_door_closing_on_a_client_is_predicted() {
+    use crate::object_carry::{assert_agrees, graph, link, put, ride, send};
+    use chimera_net::{harness::NetSim, net::predict::NetGraph};
+    let Some(mount) = mount() else { return };
+    let Some(data) = map(&mount, "shortfuse") else { return };
+    let s = movement_data().meters_per_unit;
+    let (closed, half) = {
+        let t = T::of(&data);
+        let o = &t.w.objects[t.id("Door_OUT_L01") as usize];
+        (o.pose.pos, o.pose.half)
+    };
+    let leaf = |app: &App| {
+        let o = app.world().resource::<CaObjects>();
+        let n = *o.nodes.get(&o.named("Door_OUT_L01").unwrap()).unwrap();
+        from_engine(app.world().get::<Transform>(n).unwrap().translation, s)
+    };
+    for (latency, seed) in [(50, 81), (150, 82)] {
+        let d = data.clone();
+        // Two clients, on two teams.
+        let mut sim = NetSim::new(CaSim, link(latency, 0), seed, 2, move |app| {
+            app.add_plugins(MapSimPlugin::new(d.clone()));
+        });
+        sim.set_frame(combat_arms::game::TICK_INTERVAL);
+        sim.until_joined(1200);
+        // (Kept short: a player left in this doorway for long is killed by
+        // an endless-fall volume's lasting damage.)
+        sim.ticks(60);
+        send(&mut sim, "Door_OUT_L01", "trigger");
+        send(&mut sim, "Door_OUT_R01", "trigger");
+        sim.ticks(120);
+        let open = leaf(&sim.server.app);
+        assert!(open.distance(closed) > 60.0, "the leaf opened: {open:.1} (closed {closed:.1})");
+        // Our player on the floor near the far end of where the leaf
+        // closes (it travels some 50 u to it).
+        put(&mut sim, Vec3::new(closed.x, closed.y - half.y + 60.0, closed.z + 30.0), s);
+        sim.ticks(80);
+        *sim.clients[0].app.world_mut().resource_mut::<NetGraph>() = NetGraph::default();
+        let theirs = sim.character_of(0).unwrap();
+        let before = sim.server.app.world().get::<Transform>(theirs).unwrap().translation;
+        send(&mut sim, "Door_OUT_L01", "trigger");
+        let window = ((2 * latency) as f64 / 1000.0 / combat_arms::game::TICK_INTERVAL) as u32 + 8;
+        let r = ride(&mut sim, "Door_OUT_L01", 600, window);
+        let (server_leaf, client_leaf) = (leaf(&sim.server.app), leaf(&sim.clients[0].app));
+        let after = sim.server.app.world().get::<Transform>(theirs).unwrap().translation;
+        let g = graph(&sim);
+        eprintln!(
+            "shortfuse {latency} ms: leaf stopped at {server_leaf:.1} (client {client_leaf:.1}; open {open:.1}, closed \
+             {closed:.1}); the client's leaf off the server's by {:.4} m at the same tick after the start; player \
+             moved {:.4} m; errors at {:?}, worst gap {:.4} m, {} of {} states wrong",
+            r.node_gap_after,
+            after.distance(before),
+            r.errors,
+            r.worst_gap,
+            g.errors,
+            g.checked
+        );
+        let what = format!("shortfuse {latency} ms");
+        assert!(server_leaf.distance(closed) > 10.0, "{what}: the leaf stopped at the player");
+        assert!(server_leaf.distance(open) > 10.0, "{what}: the leaf moved toward the player");
+        assert!(after.distance(before) < 1e-3, "{what}: the player wasn't pushed");
+        let hp = sim.server.app.world().get::<Health>(theirs).map_or(0.0, |h| h.current);
+        assert!(hp > 0.0, "{what}: the player is alive (a dead one doesn't block)");
+        assert!(client_leaf.distance(server_leaf) < 0.01, "{what}: the client's leaf is the server's");
+        assert!(r.node_gap_after < 1e-4, "{what}: the client's leaf at its tick is {} m off", r.node_gap_after);
+        assert_eq!(g.errors, 0, "{what}: standing in a closing door isn't mispredicted");
+        assert_agrees(&mut sim, &what);
+    }
+}

@@ -645,7 +645,8 @@ Yes, well. Prediction runs the `Predict::{Select, Movement, Weapons}`
 schedules once per command (core.rs:1130-1154), predicted components are
 registered by type (`PredictedAppExt`) and saved, restored and compared
 generically, side effects are gated by `FirstTimePredicted`, and map
-movers replay through `NetHooks::replay`. Two games plug into it without
+movers replay through `NetHooks::replay` (since 2026-10-31 the
+`Predict::PlaceMovers` and `Predict::CarryRiders` stages). Two games plug into it without
 touching it. Small things:
 
 - `PredictedComponents::net_order` builds and sorts a `Vec` on every
