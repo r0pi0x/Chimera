@@ -44,6 +44,7 @@ mod mode_corrections;
 mod mode_kit;
 mod model;
 mod movement;
+mod npc_bodies;
 mod movement_corrections;
 mod movement_volumes;
 mod music_ambience;
@@ -100,6 +101,7 @@ mod heavy {
     mod missions;
     mod modes_part_two;
     mod music_ambience;
+    mod npc_bodies;
     mod model;
     mod movement_volumes;
     mod own_sounds;

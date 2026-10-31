@@ -1172,7 +1172,14 @@ impl HitSphere {
     pub fn region(&self) -> crate::core::BodyRegion {
         use crate::core::BodyRegion as R;
         let n = self.name.to_ascii_lowercase();
-        let side = |l, r| if self.at.x < 0.0 { l } else { r };
+        // The side by where it sits; an install table's (no measured
+        // place) by its name (`Left_*`, `Bip01 L *`, `*_L`).
+        let left = if self.at == Vec3::ZERO {
+            n.contains("left") || n.contains(" l ") || n.ends_with("_l") || n.ends_with(" l")
+        } else {
+            self.at.x < 0.0
+        };
+        let side = |l, r| if left { l } else { r };
         match self.location {
             Head => R::Head,
             Groin => R::Groin,
@@ -1188,16 +1195,30 @@ impl HitSphere {
     }
 }
 
-/// Skeleton `index`'s hit table from data/characters.toml.
-fn hit_table(index: usize) -> &'static [HitSphere] {
-    let skel = characters::records::builtin().skeleton(index);
+/// Hit table `index`: ours for the male and female (measured), the
+/// install's past them (characters.md 13.6: `CaData::install`'s
+/// `CharacterData::hit_spheres`, the only data with bodies on them);
+/// else the male's.
+pub fn hit_table(index: usize) -> &'static [HitSphere] {
+    match index {
+        0 => *MALE,
+        1 => *FEMALE,
+        i => super::data::CaData::install_static().characters().hit_spheres.get(i).map_or(*MALE, Vec::as_slice),
+    }
+}
+
+/// Skeleton `skel`'s (index `index`) hit table.
+pub fn make_hit_table(skel: &characters::records::SkeletonRecord, index: usize) -> Vec<HitSphere> {
+    // An install table has no measured positions (its spheres are only
+    // where a body model poses them); ours drop what no stock body has.
+    let measured = skel.spheres.iter().any(|s| s.at.is_some());
     let table: Vec<HitSphere> = skel
         .spheres
         .iter()
         .map(|s| HitSphere {
             name: s.name.clone().leak(),
             at: s.at.map_or(Vec3::ZERO, |a| characters::skeleton::to_body(Vec3::from(a), characters::skeleton::STAND_FEET)),
-            radius: if s.absent || s.at.is_none() { 0.0 } else { s.radius },
+            radius: if s.absent || (measured && s.at.is_none()) { 0.0 } else { s.radius },
             location: match s.location {
                 1 => Head,
                 3 => Arm,
@@ -1210,13 +1231,13 @@ fn hit_table(index: usize) -> &'static [HitSphere] {
             priority: s.priority.unwrap_or_else(|| skel.hit_priority.of(s.location)),
         })
         .collect();
-    table.leak()
+    table
 }
 
 /// The male skeleton's hit table (table 0, the default male body).
-pub static MALE: LazyLock<&'static [HitSphere]> = LazyLock::new(|| hit_table(0));
+pub static MALE: LazyLock<&'static [HitSphere]> = LazyLock::new(|| characters::records::builtin().hit_spheres[0].as_slice());
 /// The female skeleton's (table 1).
-pub static FEMALE: LazyLock<&'static [HitSphere]> = LazyLock::new(|| hit_table(1));
+pub static FEMALE: LazyLock<&'static [HitSphere]> = LazyLock::new(|| characters::records::builtin().hit_spheres[1].as_slice());
 
 /// A character's hit table (`MALE` when it has none; `characters` sets
 /// it from the body's skeleton).
@@ -2101,7 +2122,16 @@ impl Delivery<'_, '_> {
                 let turn = Quat::from_rotation_y(body);
                 // Another game's shapes may poke out of the hull (a taller
                 // model's head): the box holds them, so they're reached.
-                let (min, max) = theirs.as_ref().map_or((min, max), |s| box_holding(min, max, s));
+                // So may an NPC or boss body's spheres (a hit table past the
+                // player's two, characters.md 13.6: the hull is the
+                // player's, Open question 35).
+                let held = theirs.is_some() || data.first().is_some_and(|s| s.skeleton >= 2);
+                let shapes = theirs.unwrap_or_else(|| sphere_shapes(data, &spheres));
+                let (min, max) = if held {
+                    box_holding(min, max, &shapes)
+                } else {
+                    (min, max)
+                };
                 Some(Body {
                     entity,
                     origin,
@@ -2109,7 +2139,7 @@ impl Delivery<'_, '_> {
                     max,
                     forward: turn * Vec3::NEG_Z,
                     right: turn * Vec3::X,
-                    shapes: theirs.unwrap_or_else(|| sphere_shapes(data, &spheres)),
+                    shapes,
                 })
             })
             .collect()
@@ -2324,8 +2354,12 @@ pub fn geometry_at_by(
     let spheres = data
         .iter()
         .map(|s| {
-            let p = posed.sphere(s.name).map_or(Vec3::ZERO, |p| characters::skeleton::to_body(p, posed.feet));
-            (feet + turn * (p * unit), s.radius * unit)
+            // A sphere the stand-in skeleton has no place for (an install
+            // table's name it lacks) can't be hit.
+            match posed.sphere(s.name) {
+                Some(p) => (feet + turn * (characters::skeleton::to_body(p, posed.feet) * unit), s.radius * unit),
+                None => (feet, 0.0),
+            }
         })
         .collect();
     (min, max, spheres)

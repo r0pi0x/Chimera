@@ -1,0 +1,210 @@
+# Combat Arms' body families (specs/combat_arms/characters.md 13.4,
+# 13.7, 13.8), read by game::characters::families: which family a body
+# record belongs to (a family naming its body file wins over one naming
+# its hit table, `Skeleton`), and how the player driver runs on it.
+#
+# Per family:
+# - files: body files (the name after the folder, any case);
+# - tables: hit tables (the record's `Skeleton`);
+# - aim: whose seven aim nodes it pitches and twists (0 the male
+#   player's, 1 the female's; none: no aim, 13.5);
+# - stock_rig: the player tree it shares (0 male, 1 female): until its
+#   own body loads it poses on that stock rig;
+# - wearable = false: never drawn as a player's body;
+# - class / legs: the upper class and leg set it plays whatever is
+#   held (13.8: the infected bodies play class 39 on the `V` legs);
+# - classes / other_class: the weapon classes it has animations for,
+#   and the one it plays for any other gun (13.8, Open question 36);
+#   other_class_by_record: the same per record `Name`;
+# - hits: the hit reactions' names in place of `D_HIT` / `D_HITT`;
+# - death: the death animation it always plays (the records'
+#   `UseSpecialDeathAni` wins);
+# - boss: a minimal mapping onto a body with no player names (13.8):
+#   idle, walk, fire (one name looping while held, or start, loop and
+#   end), melee (alt-fire), hit, death; one name on every tracker.
+
+[families.male]
+tables = [0]
+aim = 0
+stock_rig = 0
+
+[families.female]
+tables = [1]
+# Quirk 12: the female body on the male hit table.
+files = ["Light_W_vest.ltb"]
+aim = 1
+stock_rig = 1
+
+[families.tanker]
+tables = [2]
+files = ["VIM_F_NM_DF_Tanker_SH.ltb", "CM_Body_Infected_Ship_Captain_KE.ltb", "CM_Body_Infected_Ship_Captain_B_KE.ltb"]
+aim = 0
+class = 39
+legs = 1
+hits = ["VD_HIT", "VD_HITT"]
+death = "VDIE"
+
+[families.assassin]
+tables = [3]
+files = ["VIW_F_NM_DF_Assassin_CH.ltb", "CW_VST_TheShining.ltb"]
+aim = 1
+class = 39
+legs = 1
+hits = ["VD_HIT", "VD_HITT"]
+death = "VDIE"
+
+# The powered suits (13.7): the robot classes; a gun of no suit class
+# plays the SMG suit's (the melee record the melee suit's): Open
+# question 36's proposal.
+[families.small_suit]
+tables = [5]
+files = ["Suit_small_Base.ltb"]
+aim = 0
+classes = [58, 59, 60, 61, 62, 66, 67]
+other_class = 58
+other_class_by_record = { "Powered_Suit_Npc_Melee" = 61, "Powered_Suit_Melee" = 61 }
+
+# The big suit has only the machine-gun and launcher classes; another gun
+# plays the machine gun's (ours: the spec proposes nothing for it).
+[families.big_suit]
+tables = [6]
+files = ["Suit_BIG_Base.ltb"]
+aim = 0
+classes = [63, 64]
+other_class = 63
+
+[families.eod_boss]
+tables = [7]
+files = ["PV_CabinFever2_EOD_Boss_KE.ltb"]
+boss = { idle = "ilde", walk = "Walk", fire = ["Attack_L_ST", "Attack_L_LP", "Attack_L_ED"], melee = "Foot_Attack", hit = "Damage_ST", death = "Death" }
+
+[families.gxl_4209]
+files = ["GXL-4209.ltb"]
+boss = { idle = "Idle", walk = "Walk", fire = ["Attack"], death = "Die" }
+
+[families.gxl_4209b]
+tables = [9]
+files = ["GXL-4209B.ltb"]
+boss = { idle = "Idle", walk = "Walk", fire = ["Strafe"], death = "Die" }
+
+[families.gxl_x]
+tables = [10]
+files = ["GXL-X.ltb"]
+boss = { idle = "Idle", walk = "Walk", fire = ["Attack"], death = "Die" }
+
+[families.mob_robot]
+tables = [11]
+files = ["Mob_Robot.ltb"]
+boss = { idle = "Idle", walk = "Walk", fire = ["Laser"], melee = "Melee", death = "Die" }
+
+[families.fortress]
+tables = [12]
+files = ["Boss_Fortress.ltb"]
+boss = { idle = "Idle", walk = "Walk", fire = ["Gatling_ST", "Gatling_LP", "Gatling_ED"], melee = "Melee", death = "Die" }
+
+[families.callus]
+tables = [13]
+files = ["Callus.ltb"]
+boss = { idle = "Idle", fire = ["Breed"], hit = "Hit", death = "Die" }
+
+[families.beetle]
+tables = [14]
+files = ["Beetle.ltb"]
+boss = { idle = "Idle", walk = "Walk", fire = ["Attack"], death = "Die" }
+
+[families.scorpion]
+tables = [15]
+files = ["Scorpion.ltb"]
+boss = { idle = "Idle", walk = "Walk", fire = ["Attack"], melee = "Melee", death = "Die" }
+
+[families.thorn]
+tables = [16]
+files = ["Thorn.ltb"]
+boss = { idle = "Idle", fire = ["AppearAtk_ST", "AppearAtk_LP", "AppearAtk_ED"] }
+
+[families.bugs]
+tables = [18]
+files = ["Bugs_Explosive.ltb", "Bugs_MeleeHeavy.ltb"]
+boss = { idle = "Idle", walk = "Walk", fire = ["Attack"], death = "Die" }
+
+# The HQ raid boss's gunship (13.7) is no walking body; neither is the
+# tutorial dummy, whose body file the install lacks.
+[families.pattern_boss]
+tables = [4]
+files = ["boss_model.ltb"]
+wearable = false
+
+[families.dummy]
+tables = [8, 17]
+wearable = false
+
+# The robot classes' upper names (13.7), by `AniType`. Per posture five
+# names for the directions none, F, B, L, R (diagonals as F and B), and
+# its sprint name; `{s}` is the stance (R running or standing, W walking:
+# the walk name is used when the library has it); "run|walk" names the
+# two forms where they differ otherwise. The right strafe plays the left
+# names (Quirk 15).
+[robot_classes.58] # SMG suit
+aim = ["USMG{s}AmS", "USMG{s}AmF", "USMG{s}AmB", "USMG{s}AmL", "USMG{s}AmL"]
+fire = ["USMG{s}FiS", "USMGRFiF", "USMGRFiF", "USMG{s}FiL", "USMG{s}FiL"]
+select = ["USMGRSSeS", "USMG{s}SeS", "USMG{s}SeS", "USMG{s}SeS", "USMG{s}SeS"]
+reload = ["USMGRSReS", "USMG{s}ReS", "USMG{s}ReS", "USMG{s}ReS", "USMG{s}ReS"]
+sprint = { aim = "USMGRRAmF", fire = "USMGRRAmF", select = "USMGRRSeS", reload = "USMGRRReS" }
+
+[robot_classes.59] # pistol suit
+aim = ["USMG{s}AmS", "USMG{s}AmF", "USMG{s}AmB", "USMG{s}AmL", "USMG{s}AmL"]
+fire = ["UP{s}FiS", "UPRFiF", "UPRFiF", "UP{s}FiL", "UP{s}FiL"]
+select = ["USMGRSSeS", "USMG{s}SeS", "USMG{s}SeS", "USMG{s}SeS", "USMG{s}SeS"]
+reload = ["UP{s}ReS", "UPRReL|UPWReS", "UPRReL|UPWReS", "UPRReL|UPWReS", "UPRReL|UPWReS"]
+sprint = { aim = "USMGRRAmF", fire = "USMGRRAmF", select = "USMGRRSeS", reload = "UPRRReS" }
+
+[robot_classes.60] # sniper suit
+aim = ["USMG{s}AmS", "USMG{s}AmF", "USMG{s}AmB", "USMG{s}AmL", "USMG{s}AmL"]
+fire = ["USN{s}FiS", "USNRFiF", "USNRFiF", "USN{s}FiL", "USN{s}FiL"]
+select = ["USMGRSSeS", "USMG{s}SeS", "USMG{s}SeS", "USMG{s}SeS", "USMG{s}SeS"]
+reload = ["USN{s}ReS", "USNRReF", "USNRReF", "USN{s}ReL", "USN{s}ReL"]
+sprint = { aim = "USMGRRAmF", fire = "USMGRRAmF", select = "USMGRRSeS", reload = "USNRRReS" }
+
+[robot_classes.61] # melee suit
+aim = ["UME{s}AmS", "UME{s}AmF", "UME{s}AmB", "UME{s}AmL", "UME{s}AmL"]
+fire = ["UME{s}FiS", "UMERFiF", "UMERFiF", "UMERFiL", "UMERFiL"]
+select = ["UMERSSeS", "UME{s}SeS", "UME{s}SeS", "UME{s}SeS", "UME{s}SeS"]
+reload = ["UMERSReS", "UME{s}ReS", "UME{s}ReS", "UME{s}ReS", "UME{s}ReS"]
+alt_fire = ["UME{s}FiS1", "UME{s}FiF1", "UME{s}FiF1", "UME{s}FiL1", "UME{s}FiL1"]
+sprint = { aim = "UMERRAmF", fire = "UMERRAmF", select = "UMERRSeS", reload = "UMERRReS" }
+
+[robot_classes.62] # medic suit
+aim = ["UME{s}AmS", "UME{s}AmF", "UME{s}AmB", "UME{s}AmL", "UME{s}AmL"]
+fire = ["URE{s}FiS", "URERFiF", "URERFiF", "URERFiL", "URERFiL"]
+select = ["UMERSSeS", "UME{s}SeS", "UME{s}SeS", "UME{s}SeS", "UME{s}SeS"]
+reload = ["UMERSReS", "UME{s}ReS", "UME{s}ReS", "UME{s}ReS", "UME{s}ReS"]
+sprint = { aim = "UMERRAmF", fire = "UMERRAmF", select = "UMERRSeS", reload = "UMERRReS" }
+
+[robot_classes.63] # big suit, machine gun
+aim = ["UMG{s}AmS", "UMG{s}AmF", "UMG{s}AmB", "UMG{s}AmL", "UMG{s}AmL"]
+fire = ["UMG{s}FiS", "UMGRFiF", "UMGRFiF", "UMGRFiL", "UMGRFiL"]
+select = ["UMGRSSeS", "UMG{s}SeS", "UMG{s}SeS", "UMG{s}SeS", "UMG{s}SeS"]
+reload = ["UMGRSReS", "UMG{s}ReS", "UMG{s}ReS", "UMG{s}ReS", "UMG{s}ReS"]
+sprint = { aim = "UMGRRAmF", fire = "UMGRRAmF", select = "UMGRRSeS", reload = "UMGRRReS" }
+
+[robot_classes.64] # big suit, launcher (aim and select are the SMG suit's, which the big suit lacks)
+aim = ["USMG{s}AmS", "USMG{s}AmF", "USMG{s}AmB", "USMG{s}AmL", "USMG{s}AmL"]
+fire = ["UFG{s}FiS", "UFGRFiF", "UFGRFiF", "UFGRFiL", "UFGRFiL"]
+select = ["USMGRSSeS", "USMG{s}SeS", "USMG{s}SeS", "USMG{s}SeS", "USMG{s}SeS"]
+reload = ["UFG{s}ReS", "UFGRReL", "UFGRReL", "UFGRReL", "UFGRReL"]
+sprint = { aim = "USMGRRAmF", fire = "USMGRRAmF", select = "USMGRRSeS", reload = "UFGRRReS" }
+
+[robot_classes.66] # NPC suit, SMG (its fires the `_AI` copies)
+aim = ["USMG{s}AmS", "USMG{s}AmF", "USMG{s}AmB", "USMG{s}AmL", "USMG{s}AmL"]
+fire = ["USMG{s}FiS_AI", "USMGRFiF_AI", "USMGRFiF_AI", "USMG{s}FiL_AI", "USMG{s}FiL_AI"]
+select = ["USMGRSSeS", "USMG{s}SeS", "USMG{s}SeS", "USMG{s}SeS", "USMG{s}SeS"]
+reload = ["USMGRSReS", "USMG{s}ReS", "USMG{s}ReS", "USMG{s}ReS", "USMG{s}ReS"]
+sprint = { aim = "USMGRRAmF", fire = "USMGRRAmF", select = "USMGRRSeS", reload = "USMGRRReS" }
+
+[robot_classes.67] # NPC suit, melee
+aim = ["UME{s}AmS", "UME{s}AmF", "UME{s}AmB", "UME{s}AmL", "UME{s}AmL"]
+fire = ["UME{s}FiS_AI", "UMERFiF_AI", "UMERFiF_AI", "UMERFiL_AI", "UMERFiL_AI"]
+select = ["UMERSSeS", "UME{s}SeS", "UME{s}SeS", "UME{s}SeS", "UME{s}SeS"]
+reload = ["UMERSReS", "UME{s}ReS", "UME{s}ReS", "UME{s}ReS", "UME{s}ReS"]
+alt_fire = ["UME{s}FiS1_AI", "UME{s}FiF1_AI", "UME{s}FiF1_AI", "UME{s}FiL1_AI", "UME{s}FiL1_AI"]
+sprint = { aim = "UMERRAmF", fire = "UMERRAmF", select = "UMERRSeS", reload = "UMERRReS" }

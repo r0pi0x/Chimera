@@ -328,6 +328,7 @@ impl Loaded {
 pub fn attached_groups(looks: &[ProjectileLook], characters: &crate::game::characters::records::CharacterData, fx: &FxFile) -> Vec<String> {
     let mut names: Vec<String> = looks.iter().map(|l| l.fx.clone()).collect();
     names.extend(characters.face.iter().flat_map(|f| f.client_fx.iter().cloned()));
+    names.extend(characters.model.iter().filter_map(|m| m.npc.as_ref()).flat_map(|n| n.client_fx.iter().cloned()));
     let mut seen: HashSet<String> = HashSet::new();
     let mut out = Vec::new();
     while let Some(n) = names.pop() {
