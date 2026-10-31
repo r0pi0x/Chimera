@@ -148,6 +148,7 @@ pub mod action;
 pub mod bound;
 pub mod death;
 pub mod full_map;
+pub mod guides;
 pub mod install;
 pub mod model;
 pub mod radar;
@@ -1321,7 +1322,7 @@ impl Plugin for CaHudPlugin {
         app
             .add_systems(
                 Startup,
-                (spawn, score::spawn_root, draw::load_faces, draw::load_art, radar::spawn_root, full_map::spawn_root),
+                (spawn, score::spawn_root, draw::load_faces, draw::load_art, radar::spawn_root, full_map::spawn_root, guides::spawn_root),
             )
             .add_systems(Update, screen_size.before(HudUpdate).run_if(crate::gameplay::hud_is(crate::game::GAME)))
             .add_systems(
@@ -1336,6 +1337,7 @@ impl Plugin for CaHudPlugin {
                     draw_action,
                     draw_feed,
                     draw_tags,
+                    guides::draw_guides,
                     draw_minigame,
                     draw_mode_notice,
                     score::draw_score,

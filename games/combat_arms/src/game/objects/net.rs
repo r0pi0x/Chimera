@@ -3,7 +3,9 @@
 //! command and hit point; clients get the objects' poses and flags. One
 //! replicated entity carries every world model and volume that differs
 //! from the map's start (`NetCaObjects`: position, rotation, visible,
-//! solid, ray-hit, removed; a `SoundFX` a keyframer moved) and the
+//! solid, ray-hit, removed; a `SoundFX` a keyframer moved), the
+//! `TargetTrigger` markers that are on and exist in the mode playing, the
+//! cameras live or with a changed field of view, and the
 //! objects' sounds (`NetVoice`: a joiner gets the loops still playing,
 //! not the one-shots made before it heard of them), so a late joiner gets
 //! open doors, risen water and broken breakables as they are; a client writes them into its
@@ -184,6 +186,22 @@ pub struct NetCaObjects {
     /// The light groups switched or recoloured since the start (world_dat.md
     /// "Light groups": the object sends every client its group's colour).
     pub lights: Vec<NetLight>,
+    /// The `TargetTrigger` markers that are on and exist in the mode
+    /// playing (world_objects.md Follow-up (2026-10-31b) 1.6).
+    pub markers: Vec<u32>,
+    /// The cameras that are live or changed their field of view (1.7).
+    pub cameras: Vec<NetCamera>,
+}
+
+/// A camera's state.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub struct NetCamera {
+    pub id: u32,
+    pub live: bool,
+    pub fov: [f32; 2],
+    pub fov_from: [f32; 2],
+    pub fov_since: f64,
+    pub fov_over: f32,
 }
 
 /// A `LightGroup`'s state.
@@ -725,12 +743,44 @@ fn write(world: &mut World) {
             _ => None,
         })
         .collect();
+    let family = crate::game::rules::current_mode(world).and_then(|m| m.spawns.family);
+    let o = world.resource::<CaObjects>();
+    let markers: Vec<u32> = o
+        .world
+        .objects
+        .iter()
+        .enumerate()
+        .filter(|(_, ob)| !ob.removed)
+        .filter_map(|(i, ob)| match &ob.kind {
+            Kind::Trigger(t) => t.marker.as_ref().filter(|m| m.on && m.exists_in(family)).map(|_| i as u32),
+            _ => None,
+        })
+        .collect();
+    let cameras: Vec<NetCamera> = o
+        .world
+        .objects
+        .iter()
+        .enumerate()
+        .filter_map(|(i, ob)| match &ob.kind {
+            Kind::Camera(c) if c.live || c.fov != super::events::Camera::of(&ob.props).fov => Some(NetCamera {
+                id: i as u32,
+                live: c.live,
+                fov: c.fov.to_array(),
+                fov_from: c.fov_from.to_array(),
+                fov_since: c.fov_since,
+                fov_over: c.fov_over,
+            }),
+            _ => None,
+        })
+        .collect();
     let now = NetCaObjects {
         map,
         objects,
         sounds,
         voices,
         lights,
+        markers,
+        cameras,
     };
     let have = world.query::<(Entity, &NetCaObjects)>().iter(world).next().map(|(e, n)| (e, n.clone()));
     match have {
@@ -814,6 +864,36 @@ fn read(world: &mut World) {
                     on: l.on,
                     color: Vec3::from(l.color),
                 });
+        }
+        // The markers (on when the server says) and the cameras.
+        for i in 0..o.world.objects.len() {
+            let ob = &mut o.world.objects[i];
+            match &mut ob.kind {
+                Kind::Trigger(t) => {
+                    if let Some(m) = &mut t.marker {
+                        m.on = net.markers.contains(&(i as u32));
+                    }
+                }
+                Kind::Camera(c) => {
+                    let start = super::events::Camera::of(&ob.props);
+                    match net.cameras.iter().find(|n| n.id as usize == i) {
+                        Some(n) => {
+                            c.live = n.live;
+                            c.fov = Vec2::from(n.fov);
+                            c.fov_from = Vec2::from(n.fov_from);
+                            c.fov_since = n.fov_since;
+                            c.fov_over = n.fov_over;
+                        }
+                        None => {
+                            c.live = false;
+                            c.fov = start.fov;
+                            c.fov_from = start.fov;
+                            c.fov_over = 0.0;
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
         // The objects' sounds; the one-shots made before this client
         // first heard of them already played (17: a joiner doesn't get

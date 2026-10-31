@@ -21,6 +21,9 @@
 //! - `events`: the event objects (timers, hold-to-use spots, captions,
 //!   messages, the objective list, cameras and their points, target
 //!   triggers' markers), whose notices to the clients are `CaObjectNotice`;
+//! - `markers`: the markers' icons from the install's trigger resource
+//!   table, by name (`CaMarkers`: what the local player is shown; the
+//!   radar and map icons, the HUD's guide markers);
 //! - `commands`: the command-string language and its manager (variables,
 //!   `when`, delays by real frame time, 512 slots, a failure stops the
 //!   rest of its string).
@@ -70,6 +73,7 @@ pub mod keyframer;
 pub mod movers;
 pub mod net;
 pub mod lights;
+pub mod markers;
 pub mod runtime;
 pub mod sound;
 
@@ -269,7 +273,8 @@ impl Plugin for CaObjectsPlugin {
             .add_message::<CaObjectNotice>()
             .init_resource::<sound::CaObjectSounds>()
             .add_message::<super::view_model::attached::CaLoopSound>()
-            .add_systems(Update, (sound::play.before(super::effects::sounds::loops), lights::show))
+            .init_resource::<markers::CaMarkers>()
+            .add_systems(Update, (sound::play.before(super::effects::sounds::loops), lights::show, markers::show))
             .add_systems(
                 FixedUpdate,
                 (load, (gather, frame).chain().run_if(authoritative), apply)

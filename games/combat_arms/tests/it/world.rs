@@ -56,7 +56,7 @@ fn physics(quads: &[([f32; 3], [[f32; 3]; 4])]) -> WorldModel {
     m
 }
 
-fn prop(name: &str, value: Value) -> Property {
+pub(crate) fn prop(name: &str, value: Value) -> Property {
     Property {
         name: name.into(),
         flags: 0,
