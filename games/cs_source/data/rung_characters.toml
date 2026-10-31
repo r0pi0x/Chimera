@@ -1,0 +1,23 @@
+# Who wears a CS:S rung's gun (chimera_sim::minigame::holders; read by
+# game::rungs): the player model drawn for a rung is one of the models
+# allowed to hold its gun. Derived from the weapon data's buy team
+# (`buy.team`, the weapon scripts' team restriction, weapons.md): a gun
+# only Terrorists buy gives a T model, one only Counter-Terrorists buy a
+# CT model, one both sides buy either. Characters are player classes
+# (`core::PlayerClass` 1-8) or their names (game::rungs::NAMES).
+default = "any"
+
+[derived]
+"team:1" = "t"
+"team:2" = "ct"
+
+[groups]
+# Phoenix Connexion, Elite Crew, Arctic Avengers, Guerilla Warfare.
+t = ["1", "2", "3", "4"]
+# SEAL Team 6, GSG-9, SAS, GIGN.
+ct = ["5", "6", "7", "8"]
+any = ["t", "ct"]
+
+# Explicit overrides (a weapon id or a `*` name pattern -> groups or
+# classes), over what is derived; none so far.
+[weapons]

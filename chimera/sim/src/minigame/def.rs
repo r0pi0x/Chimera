@@ -13,6 +13,9 @@
 //! rotation = "random"        # or "in_turn" (the default): the next map at random from the pool,
 //! avoid_recent = 10          #   not one of the last this many played (at most the pool's size
 //!                            #   less one: never the same map twice); the host's `MapHistory`
+//! map_vote = true            # the players vote for the next map on the end screen
+//!                            # (`minigame::vote`; default off); tuned: { candidates = 3,
+//!                            # time = "12s", reveal = "3s" } over chimera/sim/data/map_vote.toml
 //! cues = "cs_source"          # the cue pack its callouts sound (`chimera_core::cues`); "none";
 //!                             # default: the pack of the game whose HUD is up, else the first
 //! music = "combat_arms"       # the game whose music director plays its moments
@@ -87,6 +90,10 @@ pub struct MinigameDef {
     /// (as many as the pool allows).
     #[serde(default = "ten")]
     pub avoid_recent: usize,
+    /// A vote for the next map on the match-end screen (`super::vote`):
+    /// `true`, `false` (the default) or the settings tuned.
+    #[serde(default)]
+    pub map_vote: Option<MapVoteParam>,
     /// The cue pack its callouts sound (`chimera_core::cues::CuePacks::
     /// choose`): a pack's id, `none`, or None (`default`) the first
     /// registered.
@@ -117,6 +124,15 @@ fn two_seconds() -> f32 {
 
 fn ten() -> usize {
     10
+}
+
+/// `map_vote`: on or off, or tuned (`super::vote::MapVoteSettings`'s
+/// keys over the built-in).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum MapVoteParam {
+    On(bool),
+    Tuned(toml::Table),
 }
 
 /// How a rotating minigame picks its next map.
@@ -440,6 +456,7 @@ impl MinigameDef {
         if self.spawn.respawn.delay < 0.0 || self.spawn.respawn.protection.damage < 0.0 || self.spawn.respawn.protection.bullets < 0.0 {
             return Err("spawn.respawn: negative times".into());
         }
+        super::vote::MapVoteSettings::of(self).map_err(|e| format!("map_vote: {e}"))?;
         Ok(())
     }
 
@@ -470,7 +487,7 @@ pub fn parse_seconds(s: &str) -> Result<f32, String> {
     Ok(n * scale)
 }
 
-fn seconds<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
+pub(super) fn seconds<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f32, D::Error> {
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum Value {

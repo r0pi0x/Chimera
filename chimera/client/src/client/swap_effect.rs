@@ -15,7 +15,8 @@
 //! game's pack's, else the first pack that has one; none with the
 //! definition's `cues = "none"`), played as the callouts' cues are
 //! (`callouts::CalloutView::to_play`). CS:S's pack lends one (a stock
-//! pickup sound: ours, CS:S has no swap); Combat Arms' none.
+//! pickup sound: ours, CS:S has no swap); Combat Arms' its weapon-change
+//! sound (`UI_SND/VWRM/WEAPONRACE_CHANGE.WAV`, ours too).
 //!
 //! Known shortcuts: the puff is one sphere, not particles.
 

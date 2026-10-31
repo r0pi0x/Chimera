@@ -21,3 +21,8 @@ rung_up = "UI_SND/VWRM/WEAPONRACE_CHANGE.WAV"
 # `last_stage_sound`.
 last_rung = "UI_SND/VWRM/WEAPONRACE_LASTCHANGE.WAV"
 last_rung_other = "UI_SND/VWRM/WEAPONRACE_LASTCHANGE.WAV"
+# Your gun's game changed to Combat Arms on a rung (with
+# `party_swap_effect 1`: the swap's flash): the weapon change sound,
+# `weapon_change_sound` (music_ambience.md Section 10), the game's only
+# sound for a weapon change. Combat Arms has no swap: our choice.
+swap = "UI_SND/VWRM/WEAPONRACE_CHANGE.WAV"

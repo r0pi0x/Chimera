@@ -64,6 +64,16 @@
 //!   (`minigame::NextMatch`: the map picked for the next match as soon as
 //!   the match is decided, and when the change comes; `NetMinigame::next`),
 //!   which the shell's match-end screen shows.
+//! - **The map vote** (a definition's `map_vote`, `minigame::vote`): with
+//!   one, the hold's next map isn't picked at once: the rotation's pick
+//!   and a few other maps go on a ballot (`minigame::vote::MapVote`,
+//!   replicated as `NetMinigame::vote` with the counts, no ballots) and
+//!   the hold waits for it (`NextMatch::at` moved to its close plus the
+//!   reveal); each player votes (`vote_map`, console `vote_map <n>`: a
+//!   client sends `MapVoteCast`, the server counts it for that client's
+//!   character; a host casts for its own player), and at the close the
+//!   most votes win (a tie at random, none: the rotation's pick), which
+//!   becomes the hold's next map.
 //! - **The playable set** (`playable`, `PartyOffer`, console
 //!   `party_offer`): each registered minigame on its pool's first map
 //!   against the players' mount doctor reports (their userinfo); the
@@ -86,7 +96,7 @@ use crate::{
         maps::sha256,
         ordered::OrderedAppExt,
     },
-    minigame::{self, ActiveMinigame, MatchResults, NextMatch, EVENT_NAMES, MinigameDef, MinigameEvent, Minigames, ladder::{Ladder, Rung, RungExtras}, rotation::MapHistory, runtime::InMinigame, wins::MatchesWon},
+    minigame::{self, ActiveMinigame, MatchResults, NextMatch, EVENT_NAMES, MinigameDef, MinigameEvent, Minigames, ladder::{Ladder, Rung, RungExtras}, rotation::MapHistory, runtime::InMinigame, vote::{self, MapVote, MapVoteSettings}, wins::MatchesWon},
     mode::{Match, Phase},
 };
 use chimera_core::game_registry::Games;
@@ -128,6 +138,26 @@ pub struct NetMinigame {
     pub rungs: Vec<String>,
     /// How many of `rungs` are the melee finale's (`Ladder::melee_rungs`).
     pub melee_rungs: usize,
+    /// The map vote on the match-end screen (`minigame::vote::MapVote`),
+    /// while there is one.
+    pub vote: Option<NetMapVote>,
+}
+
+/// `minigame::vote::MapVote` on the network: the ballot, the counts, when
+/// it closes (a server tick) and, once closed, the winner.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct NetMapVote {
+    pub candidates: Vec<String>,
+    pub counts: Vec<u32>,
+    pub closes: f64,
+    pub winner: Option<usize>,
+}
+
+/// Client -> server: the client's player votes for the vote's candidate
+/// `choice` (from 0).
+#[derive(Message, Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub struct MapVoteCast {
+    pub choice: u8,
 }
 
 /// A character's spawn protection (`core::SpawnProtected`), its windows'
@@ -183,7 +213,8 @@ fn register(app: &mut App) {
         .ordered::<Rung>()
         .add_mapped_server_message::<MinigameNews>(Channel::Ordered)
         .add_server_message::<PartyOffer>(Channel::Ordered)
-        .make_message_independent::<PartyOffer>();
+        .make_message_independent::<PartyOffer>()
+        .add_client_message::<MapVoteCast>(Channel::Ordered);
     {
         let mut hooks = app.world_mut().resource_mut::<NetHooks>();
         hooks.stopped_serving.push(stopped_serving);
@@ -201,6 +232,18 @@ fn register(app: &mut App) {
         },
     )
     .console_command(
+        "vote_map",
+        "vote_map <n>: vote for the end screen's map n (from 1) while the map vote is open; alone, the vote as it \
+         stands.",
+        |w, a| match a.first() {
+            None => Ok(Some(vote_text(w))),
+            Some(n) => {
+                let n: usize = n.parse().ok().filter(|n| *n >= 1).ok_or_else(|| format!("not a choice: {n}"))?;
+                vote_map(w, n - 1).map(|_| None)
+            }
+        },
+    )
+    .console_command(
         "party_offer",
         "The minigames every connected player can play (the server's mount doctor reports; a client: what \
          its server offers), and on the server who lacks what for the others.",
@@ -208,7 +251,8 @@ fn register(app: &mut App) {
     );
     let server = || resource_equals(NetRole::Server);
     let client = || resource_equals(NetRole::Client);
-    app.add_systems(FixedLast, serve_minigame.run_if(not(client())))
+    app.add_systems(PreUpdate, receive_map_votes.after(ServerSystems::Receive).run_if(server()))
+        .add_systems(FixedLast, serve_minigame.run_if(not(client())))
         .add_systems(
             PostUpdate,
             (write_protection, send_news, send_offer).chain().before(ServerSystems::Send).run_if(server()),
@@ -266,6 +310,12 @@ fn write_minigame(world: &mut World) {
         rung_extras: world.get_resource::<Ladder>().map(|l| l.extras.clone()).unwrap_or_default(),
         rungs: world.get_resource::<Ladder>().map(|l| l.rungs.iter().map(|r| r.to_string()).collect()).unwrap_or_default(),
         melee_rungs: world.get_resource::<Ladder>().map_or(0, |l| l.melee_rungs),
+        vote: world.get_resource::<MapVote>().map(|v| NetMapVote {
+            candidates: v.candidates.clone(),
+            counts: v.counts.clone(),
+            closes: tick_of(&clock, v.closes),
+            winner: v.winner,
+        }),
     };
     // Another minigame, or its definition made again (same id, new text).
     let announced = world.get_resource::<Announced>().map(|a| a.0);
@@ -765,6 +815,28 @@ fn apply_minigame(world: &mut World, mut refused: Local<Option<String>>) {
             }
         }
     }
+    // The map vote, its close on this clock (ballots stay the server's).
+    let vote = n.vote.and_then(|v| {
+        let closes = local.as_ref().map(|f| f(v.closes))?;
+        let mut m = MapVote::new(v.candidates, closes);
+        m.counts = v.counts;
+        m.winner = v.winner;
+        Some(m)
+    });
+    let have = world.get_resource::<MapVote>();
+    let same = match (have, &vote) {
+        (Some(h), Some(v)) => h.candidates == v.candidates && h.counts == v.counts && h.winner == v.winner && (h.closes - v.closes).abs() < 0.1,
+        (None, None) => true,
+        _ => false,
+    };
+    if !same {
+        match vote {
+            Some(v) => world.insert_resource(v),
+            None => {
+                world.remove_resource::<MapVote>();
+            }
+        }
+    }
     // The match-end hold, its time on this clock (rewritten only when it
     // moves by more than the clocks' jitter).
     let next = n.next.and_then(|(map, at)| Some(NextMatch { map, at: local.as_ref().map(|f| f(at))? }));
@@ -810,21 +882,141 @@ fn rotate(world: &mut World) {
     let Some(active) = world.get_resource::<ActiveMinigame>().copied() else { return };
     let Some(next) = world.get_resource::<NextMatch>().cloned() else { return };
     let def = active.def;
+    let now = world.resource::<SimClock>().now;
     let target = match next.map.clone() {
         Some(m) => m,
-        None => {
-            let m = next_map(world, def);
-            world.resource_mut::<NextMatch>().map = Some(m.clone());
-            m
-        }
+        None => match world.get_resource::<MapVote>().cloned() {
+            // The vote is open: its close picks the map.
+            Some(vote) if vote.open() => {
+                if now < vote.closes {
+                    return;
+                }
+                let m = close_vote(world);
+                world.resource_mut::<NextMatch>().map = Some(m.clone());
+                m
+            }
+            _ => {
+                let m = next_map(world, def);
+                if open_vote(world, def, &m) {
+                    return;
+                }
+                world.resource_mut::<NextMatch>().map = Some(m.clone());
+                m
+            }
+        },
     };
     let over = world.get_resource::<Match>().is_some_and(|m| m.phase == Phase::MatchOver);
-    let now = world.resource::<SimClock>().now;
     if !over || now < next.at {
         return;
     }
     let target = if playable_on(world, def, Some(&target)).ok() { target } else { next_map(world, def) };
     go_to(world, def, &target);
+}
+
+/// The map vote opened when `def` has one (`minigame::vote`): the
+/// rotation's pick `first` and other playable maps of the pool on the
+/// ballot, closing `time` s from now, the hold (`NextMatch::at`) moved to
+/// its close plus the reveal. False without a vote, or with one candidate
+/// only (the rotation's pick stands).
+fn open_vote(world: &mut World, def: &'static MinigameDef, first: &str) -> bool {
+    let Ok(Some(settings)) = MapVoteSettings::of(def) else { return false };
+    let here = crate::net::current_map(world);
+    let pool: Vec<String> = def.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
+    let ok: Vec<String> = pool.iter().filter(|m| playable_on(world, def, Some(m)).ok()).cloned().collect();
+    let here_ok = playable_on(world, def, Some(&here)).ok();
+    let mut history = world.remove_resource::<MapHistory>().unwrap_or_default();
+    let recent = history.recent(def.avoid_recent).to_vec();
+    let playable = |m: &str| ok.iter().any(|o| o == m) || (m == here && here_ok);
+    let ballot = vote::candidates(first, &pool, &here, &recent, settings.candidates, &playable, &mut history.rng);
+    world.insert_resource(history);
+    if ballot.len() < 2 {
+        return false;
+    }
+    let now = world.resource::<SimClock>().now;
+    let closes = now + settings.time as f64;
+    info!("{}: map vote on {}", def.id, ballot.join(", "));
+    world.insert_resource(MapVote::new(ballot, closes));
+    let mut next = world.resource_mut::<NextMatch>();
+    next.at = next.at.max(closes + settings.reveal as f64);
+    true
+}
+
+/// The open vote closed: the winner (`MapVote::tally` on the host's
+/// generator), said on the console.
+fn close_vote(world: &mut World) -> String {
+    let mut history = world.remove_resource::<MapHistory>().unwrap_or_default();
+    let mut vote = world.resource_mut::<MapVote>();
+    let map = vote.close(&mut history.rng);
+    let counts = vote.counts.clone();
+    world.insert_resource(history);
+    info!("map vote: {map} ({counts:?})");
+    map
+}
+
+/// The local player votes for candidate `choice` (from 0) of the open map
+/// vote: a client sends it to its server, a host casts it for its own
+/// player.
+pub fn vote_map(world: &mut World, choice: usize) -> Result<(), String> {
+    let vote = world.get_resource::<MapVote>().ok_or("no map vote now")?;
+    if !vote.open() {
+        return Err("the map vote is closed".into());
+    }
+    if choice >= vote.candidates.len() {
+        return Err(format!("the vote has {} maps", vote.candidates.len()));
+    }
+    if world.get_resource::<NetRole>() == Some(&NetRole::Client) {
+        world.write_message(MapVoteCast { choice: choice as u8 });
+        return Ok(());
+    }
+    let me = world
+        .query_filtered::<Entity, With<chimera_core::core::LocalPlayer>>()
+        .iter(world)
+        .next()
+        .ok_or("no player here to vote")?;
+    cast_vote(world, me, choice)
+}
+
+/// `voter` (a character in the match) votes for `choice` (the host's).
+pub fn cast_vote(world: &mut World, voter: Entity, choice: usize) -> Result<(), String> {
+    if world.get::<InMinigame>(voter).is_none() {
+        return Err("only players in the match vote".into());
+    }
+    let mut vote = world.get_resource_mut::<MapVote>().ok_or("no map vote now")?;
+    if vote.cast(voter, choice) { Ok(()) } else { Err("the vote is closed, or no such map".into()) }
+}
+
+/// The vote as it stands, for the console.
+fn vote_text(world: &World) -> String {
+    let Some(v) = world.get_resource::<MapVote>() else { return "no map vote now".into() };
+    let mut lines: Vec<String> = v
+        .candidates
+        .iter()
+        .zip(&v.counts)
+        .enumerate()
+        .map(|(i, (m, c))| format!("{}. {} ({c})", i + 1, vote::map_name(m)))
+        .collect();
+    if let Some(m) = v.winning_map() {
+        lines.push(format!("won: {}", vote::map_name(m)));
+    }
+    lines.join("\n")
+}
+
+/// The server: each client's vote, counted for its character (a listen
+/// server host's own through replicon's local resend).
+fn receive_map_votes(mut casts: MessageReader<FromClient<MapVoteCast>>, mut commands: Commands) {
+    for c in casts.read() {
+        let (client, choice) = (c.client_id, c.message.choice as usize);
+        commands.queue(move |w: &mut World| {
+            let voter = match client.entity() {
+                Some(e) => w.get::<crate::net::server::Player>(e).map(|p| p.character),
+                None => w.query_filtered::<Entity, With<chimera_core::core::LocalPlayer>>().iter(w).next(),
+            };
+            let Some(voter) = voter else { return };
+            if let Err(e) = cast_vote(w, voter, choice) {
+                debug!("a map vote refused: {e}");
+            }
+        });
+    }
 }
 
 /// The playing minigame's next match now (a host), without the hold: the

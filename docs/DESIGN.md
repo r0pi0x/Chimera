@@ -548,7 +548,18 @@ that):
   rungs keep their knife unless a game makes it its character's (below). CS:S's rungs (`cs_source::game::rungs`) each draw one
   of its eight player models (four T, four CT; a `PlayerClass`, which a
   free-for-all player's body follows too) for everyone on the rung, named
-  in the rung's HUD line. Each part turns off by key
+  in the rung's HUD line. **Characters follow the gun** (user,
+  2026-10-31): a rung's character is drawn among the characters allowed
+  to hold its weapon, a mapping per game in data
+  (`chimera_sim::minigame::holders`, each game's
+  data/rung_characters.toml) derived from the game's own data where it
+  says who holds what: CS:S's buy team (a T-only gun a T model, a
+  CT-only gun a CT model, a gun both sides buy either), Combat Arms'
+  infected leg set (an infected's hands the zombie bodies only; every
+  other weapon any player body, never a zombie); explicit overrides in
+  the data and in a definition (`rung_extras = { character = { weapons
+  = { "<id>" = ["ct"] } } }`). Specialist-, boss- and NPC-only guns wait
+  for a spec that names them (docs/backlog.md). Each part turns off by key
   (`rung_extras = { attachments = false, character = false, melee =
   false, infected = false }`), all with `rung_extras = false`. The apps
   seed them anew at each launch (Ultimate Gun Game with its launch seed).
@@ -655,7 +666,8 @@ game's:
   flashes and fades over 0.3 s while the new gun draws, and another
   player's body gets a brief puff, generic, no game's look; the local
   swap sounds the cue packs' `swap` cue (the new game's pack's, else the
-  first that has one: CS:S's lends a stock pickup sound, our choice).
+  first that has one: CS:S's lends a stock pickup sound, Combat Arms' its
+  weapon-change sound, our choices).
 
 ### The party apps' Escape menu
 

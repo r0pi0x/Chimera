@@ -437,6 +437,9 @@ pub struct AutoOptions {
     /// After a match: a random map of the pool, not one of the last this
     /// many played (`def::Rotation::Random`); None: the pool's next.
     pub avoid_recent: Option<usize>,
+    /// The end screen's map vote (`def::MinigameDef::map_vote`, `vote`):
+    /// its TOML value (`"true"`, `"{ candidates = 4 }"`); None: none.
+    pub map_vote: Option<String>,
     /// The power curve the ladder follows (`PowerCurve::shipped`).
     pub curve: PowerCurve,
 }
@@ -500,6 +503,10 @@ pub fn definition(
         .avoid_recent
         .map(|n| format!("rotation = \"random\"\navoid_recent = {n}\n"))
         .unwrap_or_default();
+    let rotation = match &opts.map_vote {
+        Some(v) => format!("{rotation}map_vote = {v}\n"),
+        None => rotation,
+    };
     Ok(format!(
         "# An automatic gun game (chimera_sim::minigame::auto), seed {seed}.\n\
          id = {id}\nname = {name}\n\
@@ -708,6 +715,7 @@ mod tests {
             base: "a",
             time_limit: 600.0,
             avoid_recent: Some(10),
+            map_vote: Some("true".into()),
             curve: PowerCurve::shipped(),
         };
         let caps = [a, c, d];

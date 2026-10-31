@@ -49,7 +49,9 @@
 //! key/value pairs, which only its hook reads), but for two things
 //! Chimera does itself: a melee weapon in place of the kit's
 //! (`RungExtras::melee`, `runtime::KitMelee`) and a label after the
-//! rung's weapon in the HUD's rung line. A player is armed for its rung
+//! rung's weapon in the HUD's rung line. A game's character for a rung
+//! comes from those allowed to hold its weapon (`holders::Holders`, the
+//! game's data; characters follow the gun). A player is armed for its rung
 //! (`arm`: the melee, then every hook's `apply`, with its own extras or
 //! none) before a life's weapons (its observer of `minigame::Arming`)
 //! and at each rung swap. A rung of a game without a hook draws none. The ladder's

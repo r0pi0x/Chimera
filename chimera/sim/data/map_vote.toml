@@ -1,0 +1,9 @@
+# The map vote on a minigame's match-end screen (chimera_sim::minigame::vote),
+# for a definition with `map_vote = true`; a definition tunes any key with
+# `map_vote = { candidates = 4 }`. Ours: neither game has one.
+# How many maps are on the ballot (the rotation's pick first; at least 2).
+candidates = 3
+# How long the vote stays open after the screen comes up.
+time = "12s"
+# How long the winner shows before the map changes.
+reveal = "3s"

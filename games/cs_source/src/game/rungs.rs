@@ -6,7 +6,12 @@
 //!
 //! - `character`: a player class (`core::PlayerClass` 1-8: the four T and
 //!   four CT models CS:S ships, `bsp::CLASS_MODELS`; they are the install's
-//!   player models), put on the player at arming (a respawn, a rung swap,
+//!   player models) among those allowed to hold the rung's gun
+//!   (characters follow the gun: `HOLDERS`, data/rung_characters.toml, on
+//!   Chimera's `minigame::holders`: a gun only Terrorists buy, the weapon
+//!   data's `buy.team` 1, a T model; a CT-only one a CT model; any other
+//!   either; a definition's `rung_extras = { character = { weapons = ..
+//!   } }` overrides it), put on the player at arming (a respawn, a rung swap,
 //!   a late join) over its own class and the team's model, and replicated
 //!   as the class is (a network client sees it as the player's body). The
 //!   class gives the body and its hitboxes through the class's model
@@ -31,8 +36,46 @@ use chimera_sim::minigame::{
     ladder::{RungDraw, RungExtras, RungExtrasAppExt, RungExtrasHook},
 };
 
+use chimera_sim::{minigame::holders::Holders, weapon::data::WeaponCatalog};
+
 use super::GAME;
 use crate::core::PlayerClass;
+
+/// Who holds which gun (data/rung_characters.toml).
+pub const HOLDERS: &str = include_str!("../../data/rung_characters.toml");
+
+/// `HOLDERS` parsed (bad built-in data panics; the tests load it).
+pub fn holders() -> Holders {
+    Holders::parse(HOLDERS).unwrap_or_else(|e| panic!("rung_characters.toml: {e}"))
+}
+
+/// What the weapon data says of `weapon` for the mapping: its buy team
+/// (`team:<n>`), if only one team buys it.
+pub fn derived(catalog: Option<&WeaponCatalog>, weapon: &str) -> Option<String> {
+    let team = catalog?.get(weapon)?.buy.as_ref()?.team?;
+    Some(format!("team:{team}"))
+}
+
+/// The classes (1-8) allowed to hold `weapon` under `holders`: the
+/// mapping's characters read as class numbers or model names; none read:
+/// all eight.
+pub fn classes_for(holders: &Holders, catalog: Option<&WeaponCatalog>, weapon: &str) -> Vec<u8> {
+    let names = holders.of(weapon, derived(catalog, weapon).as_deref());
+    let mut out: Vec<u8> = Vec::new();
+    for n in &names {
+        let class = n
+            .parse::<u8>()
+            .ok()
+            .filter(|c| (1..=8).contains(c))
+            .or_else(|| NAMES.iter().position(|m| m.eq_ignore_ascii_case(n)).map(|i| i as u8 + 1));
+        match class {
+            Some(c) if !out.contains(&c) => out.push(c),
+            Some(_) => {}
+            None => warn!("rung characters: `{n}` is no CS:S player model"),
+        }
+    }
+    if out.is_empty() { (1..=8).collect() } else { out }
+}
 
 /// The option key (`rung_extras = { character = false }`).
 pub const CHARACTER_KEY: &str = "character";
@@ -68,15 +111,17 @@ pub const HOOK: RungExtrasHook = RungExtrasHook {
 pub struct RungClass;
 
 /// A CS:S rung's draw.
-fn draw(_world: &World, d: &RungDraw, rng: &mut Rng) -> Option<RungExtras> {
+fn draw(world: &World, d: &RungDraw, rng: &mut Rng) -> Option<RungExtras> {
     // No character of its own for a melee rung (it keeps its knife).
     if d.melee || !d.options.on(CHARACTER_KEY) {
         return None;
     }
-    let i = rng.below(NAMES.len());
+    let holders = holders().tuned(d.options);
+    let pool = classes_for(&holders, world.get_resource::<WeaponCatalog>(), d.weapon);
+    let class = pool[rng.below(pool.len())];
     Some(RungExtras {
-        values: vec![(CLASS.into(), (i + 1).to_string())],
-        label: Some(NAMES[i].into()),
+        values: vec![(CLASS.into(), class.to_string())],
+        label: Some(NAMES[class as usize - 1].into()),
         ..RungExtras::default()
     })
 }

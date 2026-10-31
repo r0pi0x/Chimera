@@ -18,6 +18,16 @@
 //! - **The next map** and a countdown to the change ("Next map: de_dust2
 //!   in 5", then "Changing map to de_dust2"), from `NextMatch` (a
 //!   server's, replicated: `chimera_net::minigame_net`).
+//! - **The map vote** (a definition's `map_vote`,
+//!   `chimera_sim::minigame::vote::MapVote`, the server's, replicated):
+//!   while it is open the candidate maps under the standings, each with
+//!   its number, name and votes, the local player's choice marked, and
+//!   "Vote for the next map: 1-3 or click (12)" in place of the
+//!   countdown; a number key (1-9, the keypad's too, not while the
+//!   console or chat types) or a click on a map votes
+//!   (`chimera_net::minigame_net::vote_map`; the cursor is freed while
+//!   the vote is open and grabbed again after), again to change it. Once
+//!   closed the winner is marked and the countdown names it.
 //! - **A winner sound** once as the screen comes up after a decided match:
 //!   a file from an install, chosen by data, each game's
 //!   `GameParts::match_won_sound`, or to a player who lost its
@@ -37,15 +47,14 @@
 //! headless too (tests read it); drawing is Bevy UI. Nothing shows
 //! without a minigame, so plain CS:S and Combat Arms are unchanged. Part of `ClientPlugins`.
 //!
-//! Known shortcuts: no map vote (the server's rotation picks the next
-//! map); text and colours in CS:S's face, no game's art; no music pause.
+//! Known shortcuts: text and colours in CS:S's face, no game's art; no music pause.
 
 use std::sync::Arc;
 
 use bevy::{prelude::*, window::PrimaryWindow};
 use chimera_core::game_parts::PartsRegistry;
 use chimera_sim::{
-    minigame::{NextMatch, hud::MinigameHud},
+    minigame::{NextMatch, hud::MinigameHud, vote::{self, MapVote}},
     weapon::data::WeaponCatalog,
 };
 
@@ -67,7 +76,9 @@ impl Plugin for MatchEndPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MatchEndView>()
             .add_systems(Startup, spawn)
-            .add_systems(Update, (follow, draw).chain());
+            .init_resource::<MapVoteChoice>()
+            .add_systems(Update, (vote_input.run_if(resource_exists::<MapVote>), follow, draw, draw_vote).chain())
+            .add_systems(Update, vote_cursor.after(follow));
         if app.world().contains_resource::<AssetServer>() {
             app.init_resource::<WinSound>()
                 .add_systems(Update, play_sound.after(follow).run_if(resource_exists::<Assets<SoundAsset>>));
@@ -103,11 +114,41 @@ pub struct MatchEndView {
     pub rows: Vec<MatchEndRow>,
     /// The next map and the countdown.
     pub next: String,
+    /// The map vote, while there is one.
+    pub vote: Option<MatchEndVote>,
     /// The winner sound's candidates `(game, file)` asked for when the
     /// screen came up, in order (the player takes them).
     pub sound: Vec<(String, String)>,
     /// How many times a winner sound was asked for.
     pub sounds_asked: u32,
+}
+
+/// The map vote as the screen shows it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MatchEndVote {
+    /// The candidates' names (without the game).
+    pub maps: Vec<String>,
+    pub counts: Vec<u32>,
+    /// The local player's choice.
+    pub mine: Option<usize>,
+    /// Once closed, the winner.
+    pub winner: Option<usize>,
+}
+
+impl MatchEndVote {
+    pub fn open(&self) -> bool {
+        self.winner.is_none()
+    }
+}
+
+/// The local player's vote in the open map vote (this machine's; reset
+/// when the vote goes).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct MapVoteChoice(pub Option<usize>);
+
+/// The line while the vote of `n` maps is open, `left` s before it closes.
+pub fn vote_line(n: usize, left: f64) -> String {
+    format!("Vote for the next map: 1-{n} or click ({})", left.max(0.0).ceil() as i64)
 }
 
 /// The countdown line `left` seconds before the change to `next`'s map.
@@ -139,7 +180,11 @@ fn follow(
     gameplay: Option<Res<Gameplay>>,
     chars: Query<(Option<&NetCharacter>, Option<&Name>, Has<LocalPlayer>)>,
     mut view: ResMut<MatchEndView>,
+    (map_vote, mut choice): (Option<Res<MapVote>>, ResMut<MapVoteChoice>),
 ) {
+    if map_vote.is_none() && choice.0.is_some() {
+        choice.0 = None;
+    }
     let results = hud.as_ref().filter(|h| h.playing()).and_then(|h| h.results.clone());
     let shown = results.is_some() && next.is_some();
     // The games' panels leave the results to this screen while it is up.
@@ -180,7 +225,11 @@ fn follow(
         .collect();
     let winner = rows.iter().find(|r| r.winner);
     let now = clock.map_or(0.0, |c| c.now);
-    let line = next_line(&next, next.at - now);
+    let shown_vote = vote_view(map_vote.as_deref(), choice.0);
+    let line = match (&shown_vote, map_vote.as_deref()) {
+        (Some(v), Some(m)) if v.open() => vote_line(v.maps.len(), m.closes - now),
+        _ => next_line(&next, next.at - now),
+    };
     let came_up = !view.shown;
     let mut v = MatchEndView {
         shown: true,
@@ -189,6 +238,7 @@ fn follow(
         you_won: winner.is_some_and(|w| w.local),
         rows: rows.clone(),
         next: line,
+        vote: shown_vote,
         sound: view.sound.clone(),
         sounds_asked: view.sounds_asked,
     };
@@ -197,6 +247,181 @@ fn follow(
         v.sounds_asked += 1;
     }
     view.set_if_neq(v);
+}
+
+/// The vote as shown: its maps by name, the counts, the local choice.
+fn vote_view(v: Option<&MapVote>, mine: Option<usize>) -> Option<MatchEndVote> {
+    let v = v?;
+    Some(MatchEndVote {
+        maps: v.candidates.iter().map(|m| vote::map_name(m).to_string()).collect(),
+        counts: v.counts.clone(),
+        mine: mine.filter(|m| *m < v.candidates.len()),
+        winner: v.winner,
+    })
+}
+
+/// A vote for candidate `i`: sent (`minigame_net::vote_map`) and kept as
+/// the local choice.
+fn cast(world: &mut World, i: usize) {
+    match chimera_net::minigame_net::vote_map(world, i) {
+        Ok(()) => world.resource_mut::<MapVoteChoice>().0 = Some(i),
+        Err(e) => debug!("map vote: {e}"),
+    }
+}
+
+/// The keys and clicks that vote: 1-9 (and the keypad's) while the
+/// screen shows an open vote and nothing else types; a click on a map.
+/// Runs while there is a vote; the cast is queued (`cast`).
+fn vote_input(
+    view: Res<MatchEndView>,
+    keys: Option<Res<ButtonInput<KeyCode>>>,
+    console: Option<Res<super::console::ConsoleUi>>,
+    chat: Option<Res<super::chat::ChatInput>>,
+    clicked: Query<(&VoteButton, &super::widgets::Interaction), Changed<super::widgets::Interaction>>,
+    mut commands: Commands,
+) {
+    if !view.vote.as_ref().is_some_and(|v| v.open()) {
+        return;
+    }
+    const DIGITS: [(KeyCode, KeyCode); 9] = [
+        (KeyCode::Digit1, KeyCode::Numpad1),
+        (KeyCode::Digit2, KeyCode::Numpad2),
+        (KeyCode::Digit3, KeyCode::Numpad3),
+        (KeyCode::Digit4, KeyCode::Numpad4),
+        (KeyCode::Digit5, KeyCode::Numpad5),
+        (KeyCode::Digit6, KeyCode::Numpad6),
+        (KeyCode::Digit7, KeyCode::Numpad7),
+        (KeyCode::Digit8, KeyCode::Numpad8),
+        (KeyCode::Digit9, KeyCode::Numpad9),
+    ];
+    let typing = console.is_some_and(|c| c.open) || chat.is_some_and(|c| c.open.is_some());
+    let key = keys
+        .filter(|_| !typing)
+        .and_then(|k| DIGITS.iter().position(|(a, b)| k.just_pressed(*a) || k.just_pressed(*b)));
+    let click = clicked.iter().find(|(_, i)| **i == super::widgets::Interaction::Pressed).map(|(b, _)| b.0);
+    if let Some(i) = key.or(click) {
+        commands.queue(move |w: &mut World| cast(w, i));
+    }
+}
+
+/// The cursor freed while the vote is open (to click a map), grabbed
+/// again after if this freed it and nothing else wants it.
+fn vote_cursor(
+    view: Res<MatchEndView>,
+    cursor: Option<Single<&mut bevy::window::CursorOptions>>,
+    console: Option<Res<super::console::ConsoleUi>>,
+    menu: Option<Res<super::front_end::MenuStatus>>,
+    mut freed: Local<bool>,
+) {
+    let Some(mut cursor) = cursor else { return };
+    let open = view.shown && view.vote.as_ref().is_some_and(|v| v.open());
+    if open {
+        if super::input::cursor_grabbed(&cursor) {
+            super::input::release_cursor(&mut cursor);
+            *freed = true;
+        }
+    } else if *freed {
+        *freed = false;
+        let elsewhere = console.is_some_and(|c| c.open) || menu.is_some_and(|m| m.open);
+        if !elsewhere {
+            super::input::capture_cursor(&mut cursor);
+        }
+    }
+}
+
+/// A candidate's button (its index).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VoteButton(pub usize);
+
+/// The row the candidates are drawn in.
+#[derive(Component)]
+struct VoteRow;
+
+const VOTE_BG: Color = Color::srgba(0.0, 0.0, 0.0, 0.5);
+const VOTE_MINE: Color = Color::srgba(0.85, 0.62, 0.1, 0.32);
+const VOTE_WON: Color = Color::srgba(1.0, 0.82, 0.25, 0.45);
+
+/// The candidates under the standings: "1. de_dust2  2", the local
+/// choice on a gold band, the winner brighter once closed.
+#[allow(clippy::type_complexity)]
+fn draw_vote(
+    view: Res<MatchEndView>,
+    window: Query<&Window, With<PrimaryWindow>>,
+    row: Query<Entity, With<VoteRow>>,
+    buttons: Query<Entity, With<VoteButton>>,
+    root: Query<Entity, With<MatchEndRoot>>,
+    parts: Query<(), (With<MatchEndPart>, Without<MatchEndRoot>, Without<StandingsRow>)>,
+    mut commands: Commands,
+    mut drawn: Local<Option<(Option<MatchEndVote>, u32)>>,
+    fonts: Option<Res<super::fonts::UiFonts>>,
+) {
+    let height = window.iter().next().map_or(720.0, |w| w.height());
+    let s = scale(height, view.rows.len());
+    let key = (s * 1000.0) as u32;
+    let want = view.vote.clone().filter(|_| view.shown);
+    if drawn.as_ref() == Some(&(want.clone(), key)) {
+        return;
+    }
+    *drawn = Some((want.clone(), key));
+    for e in &buttons {
+        commands.entity(e).despawn();
+    }
+    let Some(v) = want else {
+        for e in &row {
+            commands.entity(e).despawn();
+        }
+        return;
+    };
+    let row_e = match row.iter().next() {
+        Some(e) => e,
+        None => {
+            let Some(root) = root.iter().next() else { return };
+            // Before the countdown line (the root's last child).
+            let at = parts.iter().count().saturating_sub(1);
+            let e = commands
+                .spawn((
+                    VoteRow,
+                    Node {
+                        column_gap: px(14.0 * s),
+                        ..default()
+                    },
+                ))
+                .id();
+            commands.entity(root).insert_children(at, &[e]);
+            e
+        }
+    };
+    let font = super::fonts::overlay_font(fonts.as_deref(), 22.0 * s, false);
+    let bold = super::fonts::overlay_font(fonts.as_deref(), 22.0 * s, true);
+    commands.entity(row_e).with_children(|r| {
+        for (i, (map, count)) in v.maps.iter().zip(&v.counts).enumerate() {
+            let won = v.winner == Some(i);
+            let bg = if won {
+                VOTE_WON
+            } else if v.mine == Some(i) {
+                VOTE_MINE
+            } else {
+                VOTE_BG
+            };
+            let color = if won { GOLD } else if v.mine == Some(i) { LOCAL } else if v.open() { TEXT } else { DIM };
+            r.spawn((
+                VoteButton(i),
+                super::widgets::clickable(),
+                Node {
+                    padding: UiRect::axes(px(16.0 * s), px(8.0 * s)),
+                    ..default()
+                },
+                BackgroundColor(super::widgets::display_alpha(bg)),
+            ))
+            .with_children(|b| {
+                b.spawn((
+                    Text::new(format!("{}. {map}   {count}", i + 1)),
+                    if won || v.mine == Some(i) { bold.clone() } else { font.clone() },
+                    TextColor(color),
+                ));
+            });
+        }
+    });
 }
 
 /// The screen's root (hidden while there is nothing to show).

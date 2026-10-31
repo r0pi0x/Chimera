@@ -24,5 +24,5 @@ lead_tied = "sound/buttons/blip2.wav"
 match_won = "sound/ui/achievement_earned.wav"
 match_lost = "sound/buttons/button10.wav"
 # Your gun's game changed on a rung (with `party_swap_effect 1`: the
-# swap's flash; any game's swap, as Combat Arms' pack has none).
+# swap's flash; a swap to CS:S, or to a game whose pack has none).
 swap = "sound/items/battery_pickup.wav"

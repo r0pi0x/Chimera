@@ -51,7 +51,8 @@
 //!   registers): keys of any definition set when its match starts.
 //! - Console: `minigames` (the definitions, the playing one marked),
 //!   `minigame <id>`, `minigame_load <file>`, `minigame_status`,
-//!   `minigame_restart`.
+//!   `minigame_restart`; cheats (`sv_cheats`): `ladder_rung <n>` (the
+//!   local player onto a rung), `minigame_win` (the local player wins).
 //!
 //! - Results: once the match is decided `results::MatchResults` (winner,
 //!   each player's final rung, kills and deaths) is kept for the HUDs
@@ -62,6 +63,8 @@
 //!   map of its pool (`chimera_net::minigame_net`): in turn, or at random
 //!   skipping the maps played lately (`rotation`: `rotation = "random"`,
 //!   `MapHistory`).
+//!   With `map_vote` the players vote for it on the end screen
+//!   (`vote::MapVote`: the rotation's pick and a few other maps).
 //! - Matches won: `wins::MatchWins` counts a decided match for its winner
 //!   by name for as long as the process runs (kept over `restart`, a
 //!   rotation and `change_match`), `wins::MatchesWon` carries it on each
@@ -74,7 +77,7 @@
 //!   ladder, a power score from each gun's data; `ladder_power` prints it).
 //!
 //! Known shortcuts: one round per match; the map pool's first map is the
-//! app's to load (no map vote); `character` is informational
+//! app's to load (the map vote is for the next match's); `character` is informational
 //! (the character kit isn't a slot yet), `movement` is set on each
 //! player at its spawn (with `identity = "weapon"`, the movement and body
 //! are the held weapon's game's: `identity`); teams other than the mode's are refused, not
@@ -88,6 +91,7 @@
 
 pub mod auto;
 pub mod def;
+pub mod holders;
 pub mod hud;
 pub mod ladder;
 pub mod moments;
@@ -97,6 +101,7 @@ pub mod rotation;
 pub mod power;
 pub mod runtime;
 pub mod spawns;
+pub mod vote;
 pub mod wins;
 
 use bevy::prelude::*;
@@ -424,6 +429,7 @@ pub fn restart(world: &mut World) {
     world.insert_resource(Match::default());
     world.remove_resource::<MatchResults>();
     world.remove_resource::<NextMatch>();
+    world.remove_resource::<vote::MapVote>();
     runtime::lift_end_freeze(world);
     world.insert_resource(mode::flow::MissionFrames::default());
     spawns::reset(world);
@@ -589,6 +595,38 @@ impl Plugin for MinigamePlugin {
             "minigame_status",
             "The minigame's match: phase, time left, each player's kills, deaths and the rules' standing.",
             |w, _| runtime::status(w).map(Some),
+        )
+        .console_command(
+            "ladder_rung",
+            "ladder_rung <n>: put the local player on the ladder's rung n (from 1), its weapon given (a cheat; \
+             screenshots and tests).",
+            |w, a| {
+                let n: usize = a.first().and_then(|n| n.parse().ok()).filter(|n| *n >= 1).ok_or("ladder_rung <n>")?;
+                let ladder = w.get_resource::<ladder::Ladder>().cloned().ok_or("no ladder plays")?;
+                let me = local_player(w)?;
+                let rung = (n - 1).min(ladder.rungs.len().saturating_sub(1));
+                ladder::set_rung(w, me, rung, &ladder);
+                Ok(Some(format!("rung {}: {}", rung + 1, ladder.rungs[rung])))
+            },
+        )
+        .console_command(
+            "minigame_win",
+            "minigame_win: the local player wins the match now (a cheat; the end screen for screenshots).",
+            |w, _| {
+                let me = local_player(w)?;
+                let team = w.get::<crate::core::Team>(me).map(|t| t.0).ok_or("the local player has no team")?;
+                w.get_resource_mut::<Match>().ok_or("no match")?.win(team);
+                Ok(Some("match won".into()))
+            },
         );
     }
+}
+
+/// The local player's character (the console cheats').
+fn local_player(world: &mut World) -> Result<Entity, String> {
+    world
+        .query_filtered::<Entity, With<chimera_core::core::LocalPlayer>>()
+        .iter(world)
+        .next()
+        .ok_or_else(|| "no local player".to_string())
 }

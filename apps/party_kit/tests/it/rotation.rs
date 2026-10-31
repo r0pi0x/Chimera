@@ -143,7 +143,7 @@ fn a_won_match(text: &str) -> (NetSim, Entity) {
 }
 
 /// `a_won_match` with `extra` on every app.
-fn a_won_match_and(text: &str, extra: fn(&mut App)) -> (NetSim, Entity) {
+pub(crate) fn a_won_match_and(text: &str, extra: fn(&mut App)) -> (NetSim, Entity) {
     let mut sim = party_and(2, Some(text), extra);
     sim.server.app.init_resource::<Levels>().add_systems(Update, server_loads);
     sim.server.app.console_command("changelevel", "changelevel <map>: a test's.", |w, a| {

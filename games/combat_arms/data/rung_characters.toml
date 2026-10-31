@@ -1,0 +1,29 @@
+# Who wears a Combat Arms rung's gun (chimera_sim::minigame::holders; read
+# by game::rungs): the body drawn for a rung is one of the characters
+# allowed to hold its weapon. Derived from the game's own data:
+# - an infected's weapon (its record plays the infected leg set,
+#   `LowerAniType` 1 or 2, characters.md 5: the Quarantine hands; marked
+#   `combat_arms:infected`, game::data::infected_table) is held by the
+#   infected only: zombie bodies (`@infected`: the player bodies with an
+#   infection override, worn infected, game_modes.md M8);
+# - every other weapon by any character that holds guns (`@players`: the
+#   install's player bodies, skeletons 0 and 1 with a two-texture body,
+#   characters.md 1: the stock bodies, specialists and mercenaries; never
+#   an infected override, an NPC or a boss record).
+# Characters are `@players`, `@infected`, a `Model#` record id, or a
+# record `Name` (a `*` pattern); `!x` takes x out of a group.
+default = "soldiers"
+
+[derived]
+infected = "zombies"
+
+[groups]
+soldiers = ["@players"]
+zombies = ["@infected"]
+
+# Explicit overrides (a weapon id or record name, `*` patterns -> groups
+# or characters), over what is derived. The specs don't say yet which
+# guns only specialists, bosses or NPCs hold, nor which body each of
+# those belongs to (docs/backlog.md "Characters follow the gun": the
+# questions for a spec session); none so far.
+[weapons]

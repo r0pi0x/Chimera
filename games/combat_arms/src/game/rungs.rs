@@ -22,10 +22,15 @@
 //!   record names; at most `LABEL_MAX` characters);
 //! - `character`: a body for everyone on the rung
 //!   (`characters::CaRungLook`, the look `wear_looks` dresses them in
-//!   over their own, a bot's and a client's too), drawn from every player
-//!   body the install has, specialists and mercenaries included
+//!   over their own, a bot's and a client's too), drawn among the
+//!   characters allowed to hold the rung's weapon (characters follow the
+//!   gun: `HOLDERS`, data/rung_characters.toml, on Chimera's
+//!   `minigame::holders`; `bodies_for`): a gun any player body the
+//!   install has, specialists and mercenaries included
 //!   (`CharacterData::rung_bodies`; without the install's models file the
-//!   stock six), with that body's default face; it plays with the
+//!   stock six), never a zombie; an infected's hand the infected's bodies
+//!   only (below); a definition's `rung_extras = { character = { weapons
+//!   = .. } }` overrides it; with that body's default face; it plays with the
 //!   baseline vest and its own body type only (`gear::vest_of`: no
 //!   drawn armour or speed); a body no stock group
 //!   has loads when first worn (`characters::bodies_on_demand`) and poses
@@ -50,8 +55,8 @@
 //!   the stock ones, records 191 and 190 of missions.md F4.1, first). A
 //!   rung whose own weapon is such a hand is the infected's too. On it
 //!   everyone holds the hands alone (no gun, no kit) and wears an
-//!   infected body (`CharacterData::infected_bodies`, its override's
-//!   face: `infected_look`); the next rung, up or down, makes them
+//!   infected body (the hands' holders: `CharacterData::infected_bodies`,
+//!   its override's face: `infected_look`); the next rung, up or down, makes them
 //!   themselves again. They keep the gun game's baseline (the rung
 //!   vest's armour and health, `gear::vest_of`; no `movement::CaInfected`,
 //!   so no knock-back from bullets: S14). Arriving and leaving are
@@ -91,6 +96,7 @@ use bevy::prelude::*;
 use serde::Deserialize;
 use chimera_sim::minigame::{
     auto::Rng,
+    holders::{self, Holders},
     ladder::{OnRung, RungCharacter, RungDraw, RungExtras, RungExtrasAppExt, RungExtrasHook, RungOptions},
 };
 
@@ -290,7 +296,7 @@ fn draw(world: &World, d: &RungDraw, rng: &mut Rng) -> Option<RungExtras> {
     }
     if let Some(hands) = hands {
         x.values.push((INFECTED_VALUE.into(), "1".into()));
-        if let Some(m) = draw_infected_body(world, rng) {
+        if let Some(m) = draw_holder(world, d, hands, rng) {
             x.values.push((MODEL.into(), m.to_string()));
         }
         x.character = Some(RungCharacter {
@@ -307,7 +313,7 @@ fn draw(world: &World, d: &RungDraw, rng: &mut Rng) -> Option<RungExtras> {
         }
     }
     if d.options.on(CHARACTER_KEY)
-        && let Some(m) = draw_body(world, rng)
+        && let Some(m) = draw_holder(world, d, d.weapon, rng)
     {
         x.values.push((MODEL.into(), m.to_string()));
     }
@@ -520,15 +526,56 @@ pub fn readable(name: &str) -> String {
     }
 }
 
-/// A body record from the rungs' pool (`CharacterData::rung_bodies`).
-pub fn draw_body(world: &World, rng: &mut Rng) -> Option<i32> {
-    let pool = world.get_resource::<CaData>()?.characters().rung_bodies();
-    (!pool.is_empty()).then(|| pool[rng.below(pool.len())])
+/// Who holds which weapon (data/rung_characters.toml).
+pub const HOLDERS: &str = include_str!("../../data/rung_characters.toml");
+
+/// `HOLDERS` parsed (bad built-in data panics; the tests load it).
+pub fn holders() -> Holders {
+    Holders::parse(HOLDERS).unwrap_or_else(|e| panic!("rung_characters.toml: {e}"))
 }
 
-/// A body for the infected's rung (`CharacterData::infected_bodies`).
-pub fn draw_infected_body(world: &World, rng: &mut Rng) -> Option<i32> {
-    let pool = world.get_resource::<CaData>()?.characters().infected_bodies();
+/// What the game's data says of `weapon` for the mapping: `infected` for
+/// an infected's weapon (`INFECTED`, the infected leg set).
+pub fn derived(catalog: Option<&WeaponCatalog>, weapon: &str) -> Option<&'static str> {
+    catalog.is_some_and(|c| is_infected_weapon(c, weapon)).then_some(INFECTED_VALUE)
+}
+
+/// The body records allowed to hold `weapon` under `holders`, in the
+/// data's order, each once: `@players` the rung bodies
+/// (`CharacterData::rung_bodies`), `@infected` the infected's
+/// (`infected_bodies`), a number that record, else a record `Name` or
+/// `*` pattern. Empty without the character data.
+pub fn bodies_for(holders: &Holders, catalog: Option<&WeaponCatalog>, data: Option<&CaData>, weapon: &str) -> Vec<i32> {
+    let Some(data) = data else { return Vec::new() };
+    let ch = data.characters();
+    let mut out: Vec<i32> = Vec::new();
+    for n in holders.of(weapon, derived(catalog, weapon)) {
+        let ids: Vec<i32> = match n.as_str() {
+            "@players" => ch.rung_bodies(),
+            "@infected" => ch.infected_bodies(),
+            _ => match n.parse::<i32>() {
+                Ok(id) => ch.model(id).map(|m| m.id).into_iter().collect(),
+                Err(_) => ch.model.iter().filter(|m| holders::matches(&n, &m.name)).map(|m| m.id).collect(),
+            },
+        };
+        if ids.is_empty() {
+            debug!("rung characters: `{n}` names no body record here");
+        }
+        for id in ids {
+            if !out.contains(&id) {
+                out.push(id);
+            }
+        }
+    }
+    out
+}
+
+/// A body record for a rung of `weapon`: one of its holders
+/// (`bodies_for`, the definition's overrides over the data's), drawn
+/// evenly.
+pub fn draw_holder(world: &World, d: &RungDraw, weapon: &str, rng: &mut Rng) -> Option<i32> {
+    let holders = holders().tuned(d.options);
+    let pool = bodies_for(&holders, world.get_resource::<WeaponCatalog>(), world.get_resource::<CaData>(), weapon);
     (!pool.is_empty()).then(|| pool[rng.below(pool.len())])
 }
 

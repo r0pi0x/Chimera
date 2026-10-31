@@ -744,6 +744,8 @@ pub const CHEATS: &[&str] = &[
     "chimera_sethealth",
     "chimera_setarmor",
     "chimera_setmoney",
+    "ladder_rung",
+    "minigame_win",
 ];
 
 /// Commands a network client sends to its server to act on its player,
