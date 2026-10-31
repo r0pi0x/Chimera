@@ -116,7 +116,9 @@
 //! - Third-person points: others' muzzle and breach (casing start) and
 //!   their shots' sound are at their posed `RightHand` socket
 //!   (`characters::CaPose`; the held model's own `Flash` and `Breach`
-//!   sockets aren't applied; a launcher's `Flash` is the same point);
+//!   sockets aren't applied); a launcher's muzzle group and your own
+//!   FireFX group use the held model's own `Flash` socket as posed
+//!   (`CaPose::flash`, the hand's where its model isn't loaded);
 //!   the world's box for a launcher's compressed fire point is the box
 //!   around its surface-tagged triangles (`SurfaceGrid::bounds`); hit-zone surfaces for others' shots on a
 //!   network client are the body's (6): a client sees no hit zones.
@@ -299,7 +301,8 @@ pub struct CaEffectsPlugin;
 
 impl Plugin for CaEffectsPlugin {
     fn build(&self, app: &mut App) {
-        use crate::{map::impact::SurfaceClassesAppExt, weapon::impact::ImpactAppExt};
+        use crate::{map::impact::SurfaceClassesAppExt, net::NetAppExt, weapon::impact::ImpactAppExt};
+        app.net_part("combat_arms_flight_looks", attached::register);
         app.register_impact_provider(crate::game::GAME)
             .register_surface_classes(SURFACES);
         app.register_weapon_hook::<CaWeaponFx>(EFFECTS, |e, _, p| {
@@ -935,6 +938,12 @@ fn shot_effects(
                     .get(e.owner)
                     .ok()
                     .and_then(|(p, t, s)| Some(p.world(t, s, UNIT, p.right_hand?)));
+                // The held launcher's own `Flash` socket as posed this tick
+                // (the hand's where its model has none).
+                let flash = hands
+                    .get(e.owner)
+                    .ok()
+                    .and_then(|(p, t, s)| Some(p.world(t, s, UNIT, p.flash_point()?)));
                 // A launcher's (a projectile round's) fire-only event comes
                 // from the server's fire position (the shooter's camera when
                 // he fired), compressed to the world's grid; his own client
@@ -947,7 +956,7 @@ fn shot_effects(
                 let own = mine && (!launcher || !show_local.as_ref().is_some_and(|s| s.0));
                 let fire = if launcher {
                     let sent = world_box.map_or(*origin, |b| rules::compress_position(*origin, b));
-                    if own { sent } else { hand.unwrap_or(sent) }
+                    if own { sent } else { flash.unwrap_or(sent) }
                 } else if mine {
                     vm.map_or(*origin, |v| v.flash_point)
                 } else {

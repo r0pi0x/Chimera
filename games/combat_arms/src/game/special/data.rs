@@ -4,7 +4,7 @@
 //! which spec section and which attribute-data field it is; lengths are
 //! the document's world units (`units`), times seconds, damage hit points.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::super::{grenades::OverTimeParams, weapons::DamageParams};
 
@@ -86,7 +86,7 @@ fn unit_scale() -> [f32; 3] {
 /// (`FXLoop`, `FXSmoothShutdown`), `FlySound` with `SoundRadius`, the
 /// flare (`FlareSprite`, `FlareScale`, `FlareYOffset` u) and the smoke
 /// trail's `SmokeTrailType`. Empty: nothing.
-#[derive(Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct ProjectileLook {
     pub fx: String,
@@ -107,7 +107,7 @@ pub struct ProjectileLook {
 }
 
 /// A projectile's flare sprite (special_weapons.md Follow-up 3).
-#[derive(Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct FlareLook {
     pub sprite: String,

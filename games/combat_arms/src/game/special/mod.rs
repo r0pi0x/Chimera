@@ -80,7 +80,7 @@
 //!   yet; its bolt is the primary's. The explosive bolt's `Range` is
 //!   measured in a straight line from the fire position.
 //! - Placeholder looks: devices and bolts are shown by their weapon's
-//!   `ShownItem` key (no models, effects or sounds for the devices yet);
+//!   `ShownItem` key (no models or effects for the devices yet; their sounds in flight, `CaFlightLook`);
 //!   an impact projectile by its record's model (`ProjectileParams::
 //!   shown_key`, from the install; a model-less one, the flame puff, and
 //!   any without an install, by the front end's placeholder ball; the

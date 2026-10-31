@@ -25,24 +25,27 @@
 //!   moves, the activate sound loops where it comes to rest, the finish
 //!   sound plays once `FinishSoundTime` before its lifetime ends; one at a
 //!   time. Impact projectiles carry the look in their drawn key; devices,
-//!   grenades and bolts get it as a component where the server makes
-//!   them.
+//!   grenades and bolts carry it as `CaFlightLook`, which the server
+//!   replicates (`register`), so a network client hears them too (their
+//!   create sounds are server sounds, ready by entry name on clients:
+//!   `sounds::create_sounds`).
 //!
 //! Known shortcuts (docs/tech-debt.md): `PlaySound` keys of attached
 //! groups play nothing (the stock projectile and eye groups have none);
-//! a device's, grenade's or bolt's sounds are made only where the server
-//! is (a listen server, local play), not on a network client, whose
-//! drawn key doesn't carry them; the activate sound's "velocity is zero"
-//! is the object's own where it has one, else whether it moved since the
-//! last frame; the flare is additive (the spec says unlit only) and
+//! the activate sound's "velocity is zero" is the object's own where it
+//! has one (a network client has none: whether it moved since the last
+//! frame); the flare is additive (the spec says unlit only) and
 //! square (`FlareScale`'s x); a character's sockets come from the posed
 //! tick (`CaPose`), placed at the drawn transform, and its `Flash` socket
-//! (the held launcher's) is the hand's; the body and head records'
+//! is the held model's own (`models::held_socket`, in its `Hand` pose on
+//! the hand's node; the hand's where the model isn't loaded); the body and head records'
 //! `ClientFX#` lists (none in the stock data) and a host's own override
 //! aren't read; spectating in first person still shows the watched
 //! player's groups.
 
 use bevy::prelude::*;
+use bevy_replicon::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use super::{
     fx::{CaFx, ParentPose, SmokeTrail, effect_frame},
@@ -80,9 +83,18 @@ pub struct AttachedGroup {
     pub third_person: bool,
 }
 
-/// A projectile's look in flight (from its drawn key: `on_shown`).
-#[derive(Component, Clone, Debug, PartialEq)]
+/// A projectile's look in flight (an impact projectile's from its drawn
+/// key: `on_shown`; a device's, grenade's or bolt's replicated from the
+/// server, whose objects carry it, so a network client hears their fly,
+/// activate and finish sounds too: `register`).
+#[derive(Component, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[require(CaFlightSounds)]
 pub struct CaFlightLook(pub ProjectileLook);
+
+/// The protocol: the looks of objects the server makes, on every side.
+pub fn register(app: &mut App) {
+    app.replicate::<CaFlightLook>();
+}
 
 /// Keys of the projectiles' fly sounds: this bit and the entity.
 pub const FLY_SOUND_KEYS: u64 = 1 << 57;

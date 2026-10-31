@@ -359,3 +359,69 @@ fn net_a_throw_launches_once_on_the_server_and_never_in_prediction() {
     let on_client = &sim.clients[0].app.world().resource::<Launches>().0;
     assert!(on_client.is_empty(), "none in prediction: {on_client:?}");
 }
+
+/// Loop sounds a client's effects asked for.
+#[derive(Resource, Default)]
+struct Loops(Vec<combat_arms::game::view_model::attached::CaLoopSound>);
+
+/// Device, grenade and bolt sounds in flight (special_weapons.md
+/// Corrections (2026-10-31) 3) on a network client: the server's object
+/// carries its look (`CaFlightLook`, replicated), so the client's copy
+/// plays the same fly sound, following it, and the same activate and
+/// finish sounds as the server would; the create sounds of the weapon
+/// set's devices, grenades and rockets are ready on a client by entry
+/// name (the server sends a sound by it).
+#[test]
+fn net_flight_sounds_play_on_clients() {
+    use combat_arms::game::{
+        effects::attached::{CaFlightLook, fly_sound_key},
+        special::ProjectileLook,
+    };
+    let link = LinkConditions { latency: Duration::from_millis(30), jitter: Duration::ZERO, loss: 0.0 };
+    let mut sim = NetSim::new(CaSim, link, 7, 1, |app| {
+        app.add_plugins(GreyboxMapPlugin).init_resource::<Loops>().add_systems(
+            Last,
+            |mut r: MessageReader<combat_arms::game::view_model::attached::CaLoopSound>, mut l: ResMut<Loops>| l.0.extend(r.read().cloned()),
+        );
+    });
+    sim.set_frame(TICK_INTERVAL);
+    sim.until_joined(600);
+    sim.ticks(120);
+    let look = ProjectileLook {
+        fly_sound: "test_snd/fly.wav".into(),
+        activate_sound: "test_snd/act.wav".into(),
+        sound_radius: 500.0,
+        ..default()
+    };
+    // A device, a grenade and a bolt, each given a look with sounds on the
+    // server (the stock data has none without the install's records).
+    for (how, id) in [(Make::Device, "combat_arms:caltrops"), (Make::Grenade, M67), (Make::Bolt, "combat_arms:assassin_bowgun_nor")] {
+        sim.clients[0].app.world_mut().resource_mut::<Loops>().0.clear();
+        let e = make(&mut sim, how, id, Vec3::new(0.0, 40.0, 0.0), Vec3::new(0.3, 1.0, 0.2).normalize());
+        sim.server.app.world_mut().entity_mut(e).insert(CaFlightLook(look.clone()));
+        sim.ticks(40);
+        let w = sim.clients[0].app.world_mut();
+        let copy: Vec<_> = w.query::<(Entity, &CaFlightLook)>().iter(w).map(|(e, l)| (e, l.0.clone())).collect();
+        assert_eq!(copy.len(), 1, "{id}: the look arrives on the client");
+        assert_eq!(copy[0].1, look, "{id}");
+        let heard = &w.resource::<Loops>().0;
+        let fly = heard
+            .iter()
+            .find(|l| l.key == fly_sound_key(copy[0].0))
+            .unwrap_or_else(|| panic!("{id}: no fly sound on the client: {heard:?}"));
+        assert_eq!(fly.sound.as_ref().map(|s| s.file.as_str()), Some("test_snd/fly.wav"), "{id}");
+        assert_eq!((fly.follow, fly.once), (Some(copy[0].0), false), "{id}: loops, following it");
+        // Gone: the sound stops.
+        if let Ok(s) = sim.server.app.world_mut().get_entity_mut(e) {
+            s.despawn();
+        }
+        sim.ticks(60);
+        let heard = &sim.clients[0].app.world().resource::<Loops>().0;
+        assert!(heard.iter().any(|l| l.sound.is_none() && l.key == fly_sound_key(copy[0].0)), "{id}: stopped with it");
+    }
+    // The create sounds, by the entry a server sound carries.
+    let ca = combat_arms::game::data::CaData::builtin();
+    let ready = combat_arms::game::effects::sounds::create_sounds(ca.weapon_set());
+    let caltrops = ready.iter().find(|s| s.file == "guns_snd_throwing/caltrops/fire.wav").expect("the caltrops' create sound");
+    assert_eq!(caltrops.radii.1, 300.0);
+}

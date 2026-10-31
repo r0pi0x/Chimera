@@ -883,3 +883,58 @@ fn t58_own_launcher_group_on_the_shooter() {
     sim.seconds(0.5);
     assert_eq!(sim.app.world().resource::<CaFx>().attached(me).count(), 0);
 }
+
+/// 58 (the socket): the group sits at the held launcher's own `Flash`
+/// socket as posed, not at the hand. The model's socket is registered as
+/// `held_with_sockets` does (on `Right_hand`, right-handed); the pose puts
+/// it on that node's posed place (LithTech's frame, z mirrored).
+#[test]
+fn t58_launcher_group_at_the_models_flash_socket() {
+    use combat_arms::game::characters::{
+        held_socket_point,
+        models::register_held_socket,
+        skeleton::{Posed, Shape},
+    };
+    use combat_arms::game::effects::{CaFxRequest, FxKind};
+    // The hand node at (10, 30, 5) turned a quarter about +Y; the model's
+    // flash 0.5 m ahead of it along its x.
+    let shape = std::sync::Arc::new(Shape::new(vec!["Right_hand".into()], vec![None], vec![]));
+    let q = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+    let posed = Posed { shape, globals: vec![(Vec3::new(10.0, 30.0, 5.0), q)], feet: 0.0 };
+    register_held_socket("test_flash_launcher", "Flash", "Right_hand", Vec3::new(0.5, 0.0, 0.0));
+    let flash = held_socket_point(&posed, "test_flash_launcher", "Flash").expect("registered");
+    assert!(flash.distance(Vec3::new(10.0, 30.0, 5.0) + q * Vec3::new(0.5, 0.0, 0.0)).abs() < 1e-5, "{flash}");
+    assert!(held_socket_point(&posed, "test_flash_launcher", "Flash01").is_none(), "no second socket");
+    assert!(held_socket_point(&posed, "another_gun", "Flash").is_none(), "per weapon");
+
+    // The same through the sim: a character holding a launcher whose model
+    // has a `Flash` socket 0.5 m (a stock-skeleton node's frame) ahead of
+    // its hand node has it posed there, not at the hand.
+    let hand_node = combat_arms::game::data::CaData::builtin().characters().skeleton(0).socket("RightHand").unwrap().parent.clone();
+    register_held_socket("combat_arms:xm_25", "Flash", &hand_node, Vec3::new(0.0, 0.0, 0.5));
+    let mut sim = sim_with(None);
+    let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), combat_arms::game::movement::ID);
+    chimera_sim::weapon::give(sim.app.world_mut(), me, "combat_arms:xm_25").expect("weapon");
+    sim.ticks(4);
+    let (t, state) = {
+        let w = sim.app.world();
+        (*w.get::<Transform>(me).unwrap(), w.get::<chimera_core::core::MovementState>(me).unwrap().clone())
+    };
+    let pose = sim.app.world().get::<CaPose>(me).unwrap().clone();
+    let socket = pose.flash[0].expect("the held model's socket is posed");
+    let hand = pose.right_hand.expect("the hand");
+    assert!(pose.world(&t, &state, UNIT, socket).distance(pose.world(&t, &state, UNIT, hand)) > 0.1, "not at the hand");
+    let at_socket = pose.world(&t, &state, UNIT, socket);
+    let at_hand = pose.world(&t, &state, UNIT, hand);
+    sim.app.world_mut().write_message(CaFxRequest {
+        group: "Test_Rocket_Fire".into(),
+        at: Vec3::new(9.0, 9.0, 9.0),
+        normal: Vec3::Z,
+        kind: FxKind::OwnParented(me),
+    });
+    sim.ticks(1);
+    let lights = &sim.app.world().resource::<CaFx>().lights;
+    assert_eq!(lights.len(), 1);
+    assert!(lights[0].at.distance(at_socket) < 1e-4, "at the model's socket {at_socket}: {}", lights[0].at);
+    assert!(lights[0].at.distance(at_hand) > 0.1, "not the hand's {at_hand}");
+}

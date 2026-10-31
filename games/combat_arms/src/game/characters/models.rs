@@ -40,6 +40,12 @@
 //! (`GUNS_M_HH`) are V2-keyed: without the key nothing here loads (the
 //! map's warnings say so) and characters stay the shell's capsules, posed
 //! by the spec's skeleton (`skeleton::fallback`).
+//!
+//! Known shortcuts (docs/tech-debt.md): each held model's sockets (its
+//! `Flash`, in its `Hand` pose on the hand's node) are kept in a
+//! process-wide table as the rigs and face sockets are
+//! (`held_socket`, `register_held_socket`), not in a resource: the models
+//! are built outside the world, once per session.
 
 use std::{
     collections::HashMap,
@@ -120,6 +126,28 @@ pub type PieceSockets = Vec<(String, String, Vec3, Quat)>;
 pub fn face_sockets(face: i32) -> Option<Arc<PieceSockets>> {
     let g = groups().lock().ok()?;
     g.iter().find_map(|g| g.face_sockets.iter().find(|(f, _)| *f == face).map(|(_, s)| s.clone()))
+}
+
+fn held_sockets() -> &'static Mutex<HashMap<(String, String), (String, Vec3)>> {
+    static SOCKETS: OnceLock<Mutex<HashMap<(String, String), (String, Vec3)>>> = OnceLock::new();
+    SOCKETS.get_or_init(Default::default)
+}
+
+/// Remember held weapon `weapon`'s socket `name` (lower case) as `at` in
+/// the frame of body node `bone` (right-handed): what `held_socket`
+/// returns. `held_with_sockets` registers every socket of a model it
+/// builds.
+pub fn register_held_socket(weapon: &str, name: &str, bone: &str, at: Vec3) {
+    if let Ok(mut s) = held_sockets().lock() {
+        s.insert((weapon.to_string(), name.to_ascii_lowercase()), (bone.to_string(), at));
+    }
+}
+
+/// Held weapon `weapon`'s socket `name` (case ignored): the body node it
+/// is on and its place in that node's frame (right-handed; the held
+/// model drawn in its `Hand` pose). None: no loaded model has it.
+pub fn held_socket(weapon: &str, name: &str) -> Option<(String, Vec3)> {
+    held_sockets().lock().ok()?.get(&(weapon.to_string(), name.to_ascii_lowercase())).cloned()
 }
 
 /// A model's sockets by their nodes' names.
@@ -1008,7 +1036,12 @@ fn held_with_sockets(
             let g = globals.get(s.node as usize).copied().unwrap_or(Mat4::IDENTITY);
             (s.name.clone(), at * g * socket_local(s.rotation, s.position))
         })
-        .collect();
+        .collect::<Vec<(String, Mat4)>>();
+    // The weapon's own ID (a key with parts: the base gun's).
+    let weapon = super::super::view_model::parts::split_key(key).0;
+    for (name, m) in &sockets {
+        register_held_socket(weapon, name, &socket.parent, m.w_axis.truncate());
+    }
     for mesh in &mut m.meshes {
         for p in &mut mesh.positions {
             *p = at.transform_point3(Vec3::from(*p)).to_array();
