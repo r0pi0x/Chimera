@@ -373,6 +373,13 @@ the user's go-ahead: no Actions runs unless asked.
   first, so NPC- and boss-only guns (characters.md section 12) go on
   their own NPC models in the gun game. Infected hands go on any infected
   type the maps give them, not only their own (open question 27).
+  **Specified** in specs/combat_arms/characters.md section 13 (the
+  `AIModel#` records, the 947 world NPCs by skeleton, body families and
+  their libraries, hit tables 2-18, hulls, the powered suits and the HQ
+  raid boss, and a mapping for player-driven NPC bodies; test cases
+  75-89, open questions 31-39): 814 of the NPCs wear the player male or
+  female tree and library, so they need only their skins, faces and
+  hit tables.
 - **Characters follow the gun (user, 2026-10-31): done; a spec session
   for the rest.** A rung's character is drawn among the characters
   allowed to hold its weapon (`chimera_sim::minigame::holders`, each

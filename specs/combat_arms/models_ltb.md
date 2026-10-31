@@ -597,6 +597,12 @@ Lighting materials, `pv_char_b`, second slots, world sprites (Follow-up (2026-10
 - **R9.** Skin slots (data): face `Face160` (Alpha Gear) piece `alpha_goggle` [0, 1] under `pv_char` → its reflection is `textures\128xCharSkin.dtx`; head piece `Hair331` (Summer Claire, camouflage 1) → slot 0 = its `Skin1`, slot 1 empty; a goggle with `Skin0..2` = a, b, c at camouflage 1 → slots 0, 1 = b, c; camouflage 5 → a, b, c.
 - **R10.** World sprite (logic): `grayhammer`'s `TEXTURES\Objects\sub_ctrlbox\FanSpin01.spr` is 8 frames at 19 per second (p = 52 ms, length 416 ms, frames `64xFan03`, `64xFan03b`, `64xFan04`, `64xFan04b`, `64xFan01`, `64xFan01b`, `64xFan02`, `64xFan02b`); drawn every frame from load: at 100 ms frame 1, at 450 ms frame 0 (looped). Turned away for 1 s and back: it resumes where it stopped.
 
+NPC and boss bodies (added 2026-10-31; `characters.md` 13), read from the install (Steam build 26236938):
+
+- **N1.** Child tracks by index, names differing: `CHARS_M_BODY\CM_Body_Infected_Ship_Captain_KE.ltb` (43 nodes) names `Ani_VI_Tanker_SH.ltb` as child 1, the library of `VIM_F_NM_DF_Tanker_SH.ltb`. Every node has the same parent index in both bodies, but the captain's nodes 7, 9, 37 and 42 are `Bip01 Neck`, `Bip01 L Clavicle`, `Bip01 L Foot` and `Left_foot` where the tanker's are `Neck`, `Left_shoulder`, `Left_foot` and `Bip01 R Toe0`; the library's tracks drive them by index.
+- **N2.** Bodies without a child: the eleven boss-battle bodies (`GXL-4209.ltb`, `Beetle.ltb`, `Scorpion.ltb` …) store their 4–18 animations themselves; `Beetle.ltb` has 152 nodes, one piece and no sockets.
+- **N3.** A body with no weight sets: `CHARS_M_BODY\CW_VST_TheShining.ltb` (71 nodes, child `ANI_VI_Assassin_CH.ltb`) stores none; `boss_model.ltb` (66 nodes, 24 sockets, radius 500) stores none either.
+
 ## Synthetic fixture
 
 A minimal valid model a reader's unit tests can build in code: one rigid triangle on a single root node, one animation `LST` with one keyframe, one socket and one binding. Total 540 bytes. All values little-endian.

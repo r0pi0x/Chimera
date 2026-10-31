@@ -396,6 +396,8 @@ q \leftarrow \mathrm{slerp}(q, q_t, f),\qquad p \leftarrow p + (p_t - p)\, f
 
 The default character's sets (node index: name: upper / Lower): 0–3 (root, mesh node, lower body, left pelvis): 0 / 1; 4 (right pelvis): 0 / 0.7; 5 (torso): 1 / 0.3; 6–38 (upper torso, neck, head, face, shoulders, arms, hands, fingers, one helper node): 1 / 0; 39–52 (legs, feet, toes and six helper nodes): 0 / 1. A third set `blend` holds 0.3 on nodes 4 and 5 and 0 elsewhere; the player animator does not use it.
 
+**How NPCs use it** (`characters.md` 13.5): the same upper and lower trackers on the body's `upper` / `Lower` sets, but no crouch tracker. Two NPC kinds differ: bug-type NPCs ask for a set named `Whole` on both trackers (no body has one), and the abnormal boss adds a third tracker on its body's `AL` set (nodes `Bone_AL01`, `Bone_AL02`) that loops the animation `AL`. The boss-battle bodies carry an `Upper` set of all ones and a `Lower` set of all zeros, so whatever the upper tracker plays is the whole pose.
+
 ## Node evaluation order and the node transform
 
 - Nodes are evaluated depth-first from the root (node 0), parent before children, children in file order, which is node-index order. The engine evaluates lazily: a request for one node (a socket, a hit sphere) evaluates only the path from the root to it; drawing evaluates every node. Results are cached until the next animation update or tracker change.
