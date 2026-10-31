@@ -36,8 +36,10 @@
 //! The numbers are the mission's (`missions::quarantine`) or, without the
 //! install's, our data's.
 //!
-//! Known shortcuts: the infected keep their body (the model record's
-//! infection override isn't loaded) and no change effect or sound plays;
+//! Known shortcuts: the infected wear their body's infection override's
+//! face (`characters::wear_looks`, so its eyes: `effects::attached`), not
+//! its render styles or hands, a host its infected override (not the
+//! host's own), and no change effect or sound plays;
 //! the infected's live projectiles aren't removed (`[DestroyProjectiles]`
 //! is read, not applied); any enemy kill by an infected infects (the
 //! infected hold only their infection weapon).

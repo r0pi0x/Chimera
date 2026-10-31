@@ -83,10 +83,12 @@
 //!   `ShownItem` key (no models, effects or sounds for the devices yet);
 //!   an impact projectile by its record's model (`ProjectileParams::
 //!   shown_key`, from the install; a model-less one, the flame puff, and
-//!   any without an install, by the front end's placeholder ball), with no
-//!   trail group (`FXName`) or flight sound (`FlySound`): unspecified
-//!   (docs/backlog.md). Its explosion's sound and group are the ImpactFX
-//!   (`effects`). The projectile and device weapons have no view models
+//!   any without an install, by the front end's placeholder ball; the
+//!   placeholder model of a model-less record with a scale, case 57, isn't
+//!   drawn), facing its fire direction (`facing`, Follow-up 5); its look
+//!   in flight (group, fly sound, flare, smoke trail: Follow-up 1-3) is
+//!   carried by its drawn key and played by `effects::attached`. Its
+//!   explosion's sound and group are the ImpactFX (`effects`). The projectile and device weapons have no view models
 //!   of their own.
 //! - Case 11 lists the M32's shells at 8100, 9100 ... and the end at 14134
 //!   ms; section 3.2 and case 12 have each shell complete a second after
@@ -157,6 +159,9 @@ pub struct State {
     pub facing: Vec3,
     /// The unit direction it moved in last (the blast point's 1 u back).
     pub last_dir: Vec3,
+    /// The fire direction (unit): an impact projectile's model faces it
+    /// for the whole flight (special_weapons.md Follow-up 5).
+    pub launch_dir: Vec3,
     /// Set off at this time (mines, hornets): the blast follows the
     /// `active` animation.
     pub triggered_at: Option<f64>,
@@ -250,6 +255,7 @@ impl CaObject {
             s: State {
                 facing: Vec3::NEG_Z,
                 last_dir: velocity.normalize_or_zero(),
+                launch_dir: velocity.normalize_or_zero(),
                 ..default()
             },
         }
@@ -261,9 +267,13 @@ impl CaObject {
     }
 
     /// Which way it is drawn facing (unit; zero: not turned): an impact
-    /// projectile or bolt along its flight (a stuck bolt as it went in),
-    /// else its facing.
+    /// projectile its fire direction, set once and not turned to follow a
+    /// falling arc (special_weapons.md Follow-up 5); a bolt along its
+    /// flight (a stuck bolt as it went in); else its facing.
     pub fn drawn_dir(&self) -> Vec3 {
+        if matches!(self.kind, Kind::Impact(_)) && self.s.launch_dir != Vec3::ZERO {
+            return self.s.launch_dir;
+        }
         if !matches!(self.kind, Kind::Impact(_) | Kind::Bolt(_)) {
             return Vec3::ZERO;
         }
@@ -732,7 +742,7 @@ pub(super) fn sync_objects(
             o.drawn_dir_from.lerp(to, a).normalize_or(to)
         };
         if dir != Vec3::ZERO {
-            let r = Transform::IDENTITY.looking_to(dir, Vec3::Y).rotation;
+            let r = facing(dir);
             if t.rotation != r {
                 t.rotation = r;
             }
@@ -745,6 +755,14 @@ pub(super) fn sync_objects(
             *target = tg;
         }
     }
+}
+
+/// The rotation that faces `dir` (unit) with the world's up made square to
+/// it, or for a shot straight up or down, world +X (special_weapons.md
+/// Follow-up 5).
+pub fn facing(dir: Vec3) -> Quat {
+    let up = if dir.cross(Vec3::Y).length_squared() < 1e-8 { Vec3::X } else { Vec3::Y };
+    Transform::IDENTITY.looking_to(dir, up).rotation
 }
 
 // ---------------------------------------------------------------------------

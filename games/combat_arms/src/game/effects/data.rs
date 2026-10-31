@@ -387,6 +387,14 @@ pub struct CaWeaponFx {
     /// effect file), used when the tables have none of that name: the
     /// launchers' explosions.
     pub impact_record: Option<ImpactFx>,
+    /// The install's record of `fire` (the ammo's `FireFXName`), used
+    /// when the tables have none of that name: the launchers' own-muzzle
+    /// groups (special_weapons.md Follow-up 7).
+    pub fire_record: Option<FireFx>,
+    /// A launched round (an impact projectile whose ammo `Type` isn't
+    /// grenade's, 2): its blast's surface group is the surface's impact
+    /// group, not its grenade group (special_weapons.md Follow-up 8).
+    pub launched: bool,
 }
 
 impl Default for CaWeaponFx {
@@ -410,6 +418,8 @@ impl Default for CaWeaponFx {
             reload_radius: 300.0,
             select_radius: 300.0,
             impact_record: None,
+            fire_record: None,
+            launched: false,
         }
     }
 }
@@ -422,6 +432,15 @@ impl CaWeaponFx {
             return None;
         }
         tables.impact(&self.impact).or(self.impact_record.as_ref())
+    }
+
+    /// Its FireFX record: the tables' of its name, else the install's
+    /// carried with it (`fire_record`).
+    pub fn fire_of<'a>(&'a self, tables: &'a CaFxTables) -> Option<&'a FireFx> {
+        if self.fire.is_empty() {
+            return None;
+        }
+        tables.fire(&self.fire).or(self.fire_record.as_ref())
     }
 
     /// The files it names.

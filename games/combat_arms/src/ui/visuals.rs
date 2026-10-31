@@ -125,7 +125,7 @@ fn grenade_balls(
     for (e, item) in &new {
         // A model-less impact projectile (the flame puff) draws no ball:
         // its record has no model (special_weapons.md 4).
-        let modelless = item.0 == crate::game::special::ProjectileParams::NO_MODEL_KEY;
+        let modelless = crate::game::special::ProjectileParams::is_modelless(&item.0);
         if modelless || !item.0.starts_with(crate::game::GAME) || models.as_ref().is_some_and(|m| m.0.contains_key(&item.0)) {
             continue;
         }

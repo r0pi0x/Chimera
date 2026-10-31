@@ -1008,7 +1008,7 @@ fn net_rocket_seen_and_damaging() {
             let w = c.app.world_mut();
             // Drawn by its projectile's key (the record's model; none in
             // the built-in data).
-            if w.query::<&ShownItem>().iter(w).any(|i| i.0 == combat_arms::game::special::ProjectileParams::NO_MODEL_KEY) {
+            if w.query::<&ShownItem>().iter(w).any(|i| combat_arms::game::special::ProjectileParams::is_modelless(&i.0)) {
                 seen[i] = true;
             }
         }
