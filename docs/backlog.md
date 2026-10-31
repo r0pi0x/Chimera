@@ -2439,6 +2439,11 @@ Counts are from de_dust2's entity lump and static prop lump.
   add, 10 hidden) and rendercolor; mode 1 draws the flat colour and mode 4
   alpha-tests (cs_italy's and de_piranesi's foliage and fences).
 - **Fire** (specs/source/fire.md) is in: env_fire (heat, growth, burn damage box with line of sight, fuel, Extinguish, outputs, re-created unlit each round, Q4), env_firesource/env_firesensor, entity flames (Ignite inputs, burning props, the gas can), the `env_fire_large_smoke` and `burning_character` looks (docs/tech-debt.md "Fire"). Next: compare a lit de_dust2 fire with CS:S's (Q1, Q10 operator meanings), and the probe-server questions: burn vs armour, the kill icon and score (Q2), player ignition (Q3), the radius damage of a burning can (Q6), burning-prop light (Q7), buried fires (Q9), floors on de_dust/de_train (Q5).
+- **Combat Arms: the LAW climbs steeply and fires late (seen 2026-10-31,
+  check).** On grandcanyon a level-aimed LAW rocket climbed steeply, and
+  it appeared about 75 frames after the press. Check both against
+  special_weapons.md (launch direction, any arming or fire delay) and fix
+  if they differ; it may be the test's `setang` or the view punch.
 - Combat Arms: `pv_glass` as its own lit pass. (Done 2026-10-31: a LAW's smoke trail seen on grandcanyon (`+setpos 0 40 0`, fire, `+setpos` aside, several `+screenshot`s a few frames apart; the rocket launches about 75 frames after the press); the held
   launcher's `Flash` socket posed from its model, `CaPose::flash`; devices',
   grenades' and bolts' sounds on network clients, `CaFlightLook` replicated
