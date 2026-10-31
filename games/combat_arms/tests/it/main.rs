@@ -14,6 +14,7 @@
 mod common;
 
 mod aim_points;
+mod attached_effects;
 mod attached_fx;
 mod attachments;
 mod attribute_data;
@@ -84,6 +85,7 @@ mod heavy {
     mod bots;
     mod characters;
     mod effects_sounds;
+    mod flight_looks;
     mod infected;
     mod junk_flea2;
     mod map_load;

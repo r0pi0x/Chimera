@@ -126,9 +126,11 @@
 //!   are the spec's timings, a copy's its own view model's, `timing`).
 //!   Not mapped (no field
 //!   in our data yet): a projectile's box (its model's first animation
-//!   box x `ModelScale`: the template's stays), `AltVelocity`, the
-//!   projectile record's `FXName` and `FlySound` (unspecified:
-//!   docs/backlog.md), `TripleShot*` timing (the trigger's `latency`, a
+//!   box x `ModelScale`: the template's stays), `AltVelocity`,
+//!   the projectile record's `ActivateSound`, `FinishSound` and
+//!   `CreateSound` (special_weapons.md Follow-up 2: not read yet; its
+//!   `FXName`, `FlySound`, flare and smoke trail are, `look_table`),
+//!   `TripleShot*` timing (the trigger's `latency`, a
 //!   flame copy's fire keys and a knife copy's swings come from the
 //!   copy's view model: `timing`),
 
@@ -180,7 +182,7 @@ use toml::{Table, Value};
 use self::attributes::{
     ATTACHMENTS_FILE, AmmoRecord, PERKS_FILE, SETS_FILE, AttachmentsFile, MARKS_FILE, MOD_FILE, MODELS_FILE, MarksFile, ModFile, ModelsFile, SERVER_FILE, ServerPlayer, ServerTimeWeight, WEAPONS_FILE,
  WeaponRecord,
-    WeaponsFile, FX_FILE, FigureTypeRecord, ImpactRecord, ProjectileRecord,
+    WeaponsFile, FX_FILE, FigureTypeRecord, FireRecord, ImpactRecord, ProjectileRecord,
 };
 use super::{
     attachments::CaModTable,
@@ -355,6 +357,7 @@ pub fn read_attributes(read: impl Fn(&str) -> io::Result<Vec<u8>>) -> (InstallAt
         if let Some(fx) = &fx {
             w.projectiles = ProjectileRecord::read_all(fx);
             w.impacts = ImpactRecord::read_all(fx);
+            w.fires = FireRecord::read_all(fx);
         }
         w
     });
@@ -1224,7 +1227,7 @@ fn over_time_kind(ty: i32) -> Option<&'static str> {
 /// An impact projectile weapon's install values (special_weapons.md 1.1
 /// to 1.3, 4; effects_sounds.md 6, 11): its projectile record's
 /// `Velocity`, `Lifetime`, `Gravity`, `CanHitSameKind` and world model
-/// (`Model`, `ModelScale`, `Skin#`) in `combat_arms:projectile`; the
+/// (`Model`, `ModelScale`, `Skin#`) and looks in flight (`look_table`) in `combat_arms:projectile`; the
 /// ammo's lasting sphere (`ProgDamage*`, made when the ammo has one and
 /// the document doesn't: a flame weapon copied from a rocket's) and the
 /// `Guntype` 9 shooter exemption; and its sounds: the weapon's `FireSnd`
@@ -1261,6 +1264,7 @@ fn projectile_patch(doc: &mut Table, w: &WeaponRecord, a: &AmmoRecord, file: &We
                 set(&["hooks", PROJECTILE, "skins"], Value::Array(skins)),
             ]);
         }
+        out.push(set(&["hooks", PROJECTILE, "look"], Value::Table(look_table(&p.look))));
     }
     out.push(set(&["hooks", PROJECTILE, "shooter_exempt"], w.gun_type == ROCKET_GUNTYPE));
     // The lasting sphere: made for ammo that has one (its numbers are
@@ -1282,9 +1286,30 @@ fn projectile_patch(doc: &mut Table, w: &WeaponRecord, a: &AmmoRecord, file: &We
     }
     out.extend([
         set(&["hooks", EFFECTS, "ammo_kind"], "thrown"),
+        set(&["hooks", EFFECTS, "launched"], a.kind != GRENADE_AMMO_TYPE),
         set(&["hooks", EFFECTS, "fire_sound"], super::model::normalize(&w.fire_snd)),
         set(&["hooks", EFFECTS, "fire_radius"], w.fire_snd_radius as f64),
     ]);
+    // The launcher's own-muzzle group and casings (special_weapons.md
+    // Follow-up 7): its ammo's FireFX record.
+    match file.fire(a) {
+        Some(r) => {
+            out.push(set(&["hooks", EFFECTS, "fire"], r.name.clone()));
+            let mut t = Table::new();
+            t.insert("fx".into(), Value::String(r.fx_name.clone()));
+            t.insert("shells".into(), Value::Boolean(r.eject_shells));
+            t.insert("shell_model".into(), Value::String(super::model::normalize(&r.shell_model)));
+            t.insert("shell_skin".into(), Value::String(super::model::normalize(&r.shell_skin)));
+            t.insert("shell_scale".into(), Value::Float(r.shell_scale));
+            t.insert("velocity".into(), floats(r.velocity));
+            out.push(set(&["hooks", EFFECTS, "fire_record"], Value::Table(t)));
+        }
+        None => {
+            if let Some(Value::Table(t)) = doc.get_mut("hooks").and_then(|h| h.get_mut(EFFECTS)) {
+                t.remove("fire_record");
+            }
+        }
+    }
     match file.impact(a) {
         Some(r) => {
             out.push(set(&["hooks", EFFECTS, "impact"], r.name.clone()));
@@ -1301,6 +1326,34 @@ fn projectile_patch(doc: &mut Table, w: &WeaponRecord, a: &AmmoRecord, file: &We
     for s in out {
         apply(doc, &s);
     }
+}
+
+/// The ammo `Type` of grenades: their blasts play the surface's grenade
+/// group; other launched ammo the surface's impact group
+/// (special_weapons.md Follow-up 8).
+const GRENADE_AMMO_TYPE: i32 = 2;
+
+/// A projectile record's looks in flight as `special::ProjectileLook`'s
+/// table (special_weapons.md Follow-up (2026-10-30) 1-3): the group,
+/// fly sound, flare and smoke trail; sounds and sprites as archive paths.
+fn look_table(l: &attributes::ProjectileLookRecord) -> Table {
+    let mut t = Table::new();
+    t.insert("fx".into(), Value::String(l.fx.clone()));
+    t.insert("fx_loop".into(), Value::Boolean(l.fx_loop));
+    t.insert("fx_smooth".into(), Value::Boolean(l.fx_smooth));
+    t.insert("fly_sound".into(), Value::String(super::model::normalize(&l.fly_sound)));
+    t.insert("sound_radius".into(), Value::Float(l.sound_radius));
+    if let Some((sprite, scale, dy)) = &l.flare {
+        let mut f = Table::new();
+        f.insert("sprite".into(), Value::String(super::model::normalize(sprite)));
+        f.insert("scale".into(), floats(*scale));
+        f.insert("y_offset".into(), Value::Float(*dy));
+        t.insert("flare".into(), Value::Table(f));
+    }
+    if let Some(n) = l.smoke_trail {
+        t.insert("smoke_trail".into(), Value::Integer(n.max(0).into()));
+    }
+    t
 }
 
 /// An impact record as our effects data writes one (`effects::data::

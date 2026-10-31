@@ -323,6 +323,15 @@ pub fn draw_particles(
                 Shape::Quad { corners, rect } => {
                     b.quad(corners.map(|c| c - centre), rect, rgba);
                 }
+                Shape::Ribbon { to, width, u } => {
+                    let to_c = to - centre;
+                    let along = to - p.position;
+                    let side = along.cross(p.position - from).normalize_or_zero();
+                    let (w0, w1) = (side * width[0] / 2.0, side * width[1] / 2.0);
+                    // U along the strip, V across.
+                    let r = [rect[0] + (rect[2] - rect[0]) * u.0, rect[1], rect[0] + (rect[2] - rect[0]) * u.1, rect[3]];
+                    b.quad([at - w0, at + w0, to_c + w1, to_c - w1], r, rgba);
+                }
                 Shape::Tumble { angles, .. } => {
                     // One corner on the particle; the face across the side
                     // and up axes.

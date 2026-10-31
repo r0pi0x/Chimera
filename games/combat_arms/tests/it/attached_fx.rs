@@ -31,7 +31,7 @@ use combat_arms::{
         data::{attributes::WEAPONS_FILE, merge_weapon_docs, read_attributes},
         effects::{
             self,
-            library::{FxLibrary, set_library},
+            library::set_library,
             sounds::CaSound,
         },
         movement,
@@ -47,7 +47,6 @@ use combat_arms::{
     },
     harness::CaSim,
 };
-use lithtech_formats::fxf::FxFile;
 use toml::{Table, Value};
 
 use super::{attribute_data::meters_per_unit, view_model::view_model};
@@ -70,7 +69,7 @@ const IDLE_WAV: &str = "test_snd/saw/idle.wav";
 
 /// The idle group: one looping, local engine sound over its 3 s (the
 /// stock `Chainsaw_PV_idle`'s shape).
-const FX: &str = "Groups: 1\r\n\tGroupName: Test_Saw_Idle\r\n\tFxInGroup: 1\r\n\tPhase: 3000\r\n\
+pub(super) const FX: &str = "Groups: 1\r\n\tGroupName: Test_Saw_Idle\r\n\tFxInGroup: 1\r\n\tPhase: 3000\r\n\
 \t\tFxName: PlaySound;\r\n\t\tFxID: 1\r\n\t\tLinked: 0\r\n\t\tLinkID: 0\r\n\t\tLinkNode:\r\n\
 \t\tStartTime: 0.0\r\n\t\tEndTime: 3.0\r\n\t\tRepeat: 1\r\n\t\tTrackID: 0\r\n\t\tMinScale: 0\r\n\
 \t\tMaxScale: 1\r\n\t\tProperties: 6\r\n\
@@ -172,10 +171,8 @@ fn copies() -> Vec<(String, String)> {
 struct Heard(Vec<CaSound>, Vec<CaLoopSound>, Vec<SoundControl>);
 
 fn sim() -> (Sim, Entity) {
-    set_library(Some(Arc::new(FxLibrary {
-        file: FxFile::parse(FX).unwrap(),
-        ..default()
-    })));
+    // One library for every test of the binary (they run at once).
+    set_library(Some(super::attached_effects::test_library()));
     let copies = copies();
     let mut sim = Sim::with(CaSim, move |app| {
         app.add_plugins(GreyboxMapPlugin);

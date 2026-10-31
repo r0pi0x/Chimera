@@ -144,7 +144,8 @@
 //!   hidden for a first-person owner (bodies aren't drawn there anyway);
 //!   cosmetics and the clan pieces aren't loaded (nothing selects them);
 //!   of an infection override (`records::InfectionRecord`, read from the
-//!   install) only its face is worn (a gun game's infected rung:
+//!   install) only its face is worn (a gun game's infected rung, and
+//!   Quarantine's infected, `movement::CaInfected`, in `wear_looks`:
 //!   `CharacterData::infected_look`), not its render styles or hands; a face's skins by camouflage index (its
 //!   colour overrides not read); render styles as `render_style` reads
 //!   them; a corpse (`CaBody`) is drawn by Chimera's `map::Corpse` body
@@ -348,6 +349,9 @@ pub struct CaPose {
     pub name_tag: Option<Vec3>,
     pub left_foot: Option<Vec3>,
     pub right_hand: Option<Vec3>,
+    /// `EYE_L` and `EYE_R`, where the face's looping groups sit (the
+    /// infected's eyes: game_modes.md Corrections (2026-10-30) 7).
+    pub eyes: [Option<Vec3>; 2],
     /// The legs' yaw (as `Intent::yaw`).
     pub body_yaw: f32,
     /// From a body model (not the spec's skeleton).
@@ -360,6 +364,19 @@ impl CaPose {
     pub fn world(&self, t: &Transform, state: &MovementState, unit: f32, p: Vec3) -> Vec3 {
         let feet = t.translation + Vec3::Y * if state.hull_max != state.hull_min { state.hull_min.y } else { -50.0 * unit };
         feet + Quat::from_rotation_y(self.body_yaw) * (p * unit)
+    }
+
+    /// The sockets effect groups attach to on a character (`EYE_L`,
+    /// `EYE_R`, `RightHand`, `NAME_socket`), in the character's frame.
+    pub fn sockets(&self) -> impl Iterator<Item = (&'static str, Vec3)> + '_ {
+        [
+            ("EYE_L", self.eyes[0]),
+            ("EYE_R", self.eyes[1]),
+            ("RightHand", self.right_hand),
+            ("NAME_socket", self.name_tag),
+        ]
+        .into_iter()
+        .filter_map(|(n, p)| Some((n, p?)))
     }
 }
 
@@ -578,27 +595,52 @@ pub fn bot_look_of(name: Option<&Name>, e: Entity) -> Selection {
 /// `CaOwnLook` (changed from the console at once); a client's player the
 /// look its client sent (`CaClientLook`); others keep the default.
 #[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity)]
 fn wear_looks(
     loadout: Res<CaOwnLook>,
+    data: Res<CaData>,
     clients: Query<(&Player, &CaClientLook)>,
     characters: Query<
-        (Entity, Option<&Selection>, Option<&Name>, Has<core::Bot>, Has<LocalPlayer>, Option<&CaRungLook>),
+        (
+            Entity,
+            Option<&Selection>,
+            Option<&Name>,
+            Has<core::Bot>,
+            Has<LocalPlayer>,
+            Option<&CaRungLook>,
+            Has<super::movement::CaInfected>,
+        ),
         (With<Intent>, With<MovementState>),
     >,
     mut commands: Commands,
 ) {
-    for (e, look, name, bot, local, rung) in &characters {
+    for (e, look, name, bot, local, rung, infected) in &characters {
         let sent = clients.iter().find(|(p, _)| p.character == e).map(|(_, l)| l.0);
-        let want = if let Some(r) = rung {
-            r.0
+        let own = if let Some(r) = rung {
+            Some(r.0)
         } else if local {
-            loadout.0
+            Some(loadout.0)
         } else if let Some(sent) = sent {
-            sent
+            Some(sent)
         } else if bot && look.is_none() {
-            records::builtin().bot_look(look_seed(name, e))
+            Some(records::builtin().bot_look(look_seed(name, e)))
         } else {
-            continue;
+            None
+        };
+        // Quarantine's infected wear their body's infection override's
+        // look (its face, so its eyes: game_modes.md M8, Corrections
+        // (2026-10-30) 5, 7).
+        let want = match (own, infected) {
+            (Some(own), true) => data.characters().infected_look(own.model),
+            (None, true) => match look {
+                Some(l) => {
+                    let i = data.characters().infected_look(l.model);
+                    if i.face == l.face { *l } else { i }
+                }
+                None => continue,
+            },
+            (Some(own), false) => own,
+            (None, false) => continue,
         };
         if look != Some(&want) {
             commands.entity(e).insert(want);
@@ -852,7 +894,7 @@ fn drive(
         (&mut CaAnim, &mut CaPose, Option<&mut CaAnimNet>),
         (&Intent, &MovementState, Option<&CaMovement>, &Health, Has<Dead>, Has<LocalPlayer>),
         (Option<&Inventory>, Option<&CaProtected>, Option<&Visibility>),
-        (Option<&mut Animator>, Option<&GameIdentity>),
+        (Option<&mut Animator>, Option<&GameIdentity>, Option<&Selection>),
     )>,
     weapons: Query<(&Weapon, Option<&WeaponState>, Option<&Magazine>, Option<&CaZoom>, Option<&CaSpread>)>,
     mut commands: Commands,
@@ -860,7 +902,7 @@ fn drive(
     let client = role.as_deref().is_some_and(|r| *r == NetRole::Client);
     let ms = (clock.delta.as_secs_f64() * 1000.0).round() as u32;
     let unit = unit();
-    for (e, (mut anim, mut pose, net), (intent, state, movement, health, dead, local), (inventory, protected, visibility), (animator, identity)) in
+    for (e, (mut anim, mut pose, net), (intent, state, movement, health, dead, local), (inventory, protected, visibility), (animator, identity, look)) in
         &mut characters
     {
         // Our body only on our characters (another game's identity wears
@@ -918,14 +960,17 @@ fn drive(
         } else {
             intent.yaw + anim.twist
         };
+        // The worn face's sockets (its eyes), on the body's nodes.
+        let face = look.and_then(|l| data.characters().worn_face(l)).and_then(|f| models::face_sockets(f.id));
+        let face = face.as_deref().map(Vec::as_slice);
         let posed = if client {
             let posed = anim.posed(r, squash, false);
-            *pose = pose_of(&anim, &posed, body_yaw, squash);
+            *pose = pose_of(&anim, &posed, body_yaw, squash, face);
             posed
         } else {
             let (posed, server) = anim.posed_both(r, squash);
-            *pose = pose_of(&anim, &posed, body_yaw, squash);
-            pose.server_spheres = pose_of(&anim, &server, body_yaw, squash).spheres;
+            *pose = pose_of(&anim, &posed, body_yaw, squash, face);
+            pose.server_spheres = pose_of(&anim, &server, body_yaw, squash, face).spheres;
             posed
         };
         if let (true, Some(mut animator)) = (anim.rig.is_some() && ours, animator) {
@@ -1031,7 +1076,9 @@ fn inputs(
 }
 
 /// The pose's results in the character's frame.
-pub fn pose_of(anim: &CaAnim, posed: &Posed, body_yaw: f32, squash: f32) -> CaPose {
+/// `face`: the worn face piece's sockets (`models::piece_sockets`), for
+/// the eyes when the body has none of theirs.
+pub fn pose_of(anim: &CaAnim, posed: &Posed, body_yaw: f32, squash: f32, face: Option<&[(String, String, Vec3, Quat)]>) -> CaPose {
     let skel = records::builtin().skeleton(anim.skeleton);
     let body = |p: Vec3| skeleton::to_body(p, posed.feet);
     let left_foot = if anim.rig.is_some() {
@@ -1052,6 +1099,17 @@ pub fn pose_of(anim: &CaAnim, posed: &Posed, body_yaw: f32, squash: f32) -> CaPo
         name_tag: posed.place("NAME_socket").map(|p| body(p.0)),
         left_foot: left_foot.map(body),
         right_hand: posed.place("RightHand").map(|p| body(p.0)),
+        eyes: ["EYE_L", "EYE_R"].map(|n| {
+            posed
+                .place(n)
+                .map(|p| p.0)
+                .or_else(|| {
+                    let (_, node, offset, _) = face?.iter().find(|s| s.0.eq_ignore_ascii_case(n))?;
+                    let (p, q) = *posed.globals.get(posed.node(node)?)?;
+                    Some(p + q * *offset)
+                })
+                .map(body)
+        }),
         body_yaw,
         modelled: anim.rig.is_some(),
     }

@@ -23,7 +23,8 @@ use combat_arms::{
         data::{CaData, read_attributes, attributes::{FX_FILE, WEAPONS_FILE}},
         effects::{self, CaFxRequest, data::{CaWeaponFx, EFFECTS}, sounds::CaSound},
         grenades::OverTimeKind,
-        special::{CaObject, PROJECTILE, ProjectileParams},
+        effects::FxKind,
+        special::{CaObject, FlareLook, PROJECTILE, ProjectileLook, ProjectileParams},
     },
     harness::CaSimWith,
 };
@@ -42,7 +43,7 @@ const WEAPONS_TXT: &str = r#"
     ProgDamageDuration=1.0 ProgDamageRadius=75.0 ProgDamageLifetime=2.0 ProgDamageType=3
     ProjectileFXName="Yellow_Flame" ImpactFXName="Bolt"
 [Ammo3] Name="Test_LAW_npc" Type=1 MaxAmount=3 AreaDamage=40 AreaDamageRadius=550 AreaDamageType=7 Health=50.0
-    ProjectileFXName="Missile" ImpactFXName="Rocket"
+    ProjectileFXName="Missile" ImpactFXName="Rocket" FireFXName="Test_M136"
 [Weapon0] Name="LAW" Guntype=9 AmmoName0="LAW" ShotsPerClip=1 RapidFireCount=1 Range=5000
     FireSnd="TEST_SND\LAW\fire.wav" FireSndRadius=2000
 [Weapon1] Name="Flamethrower" Guntype=9 AmmoName0="Flamethrower" ShotsPerClip=300 RapidFireCount=0 Range=1200
@@ -55,9 +56,14 @@ const WEAPONS_TXT: &str = r#"
 /// The records they fire and show (`FX.TXT`).
 const FX_TXT: &str = r#"
 [ProjectileFX0] Name="Yellow_Flame" Class="CProjectile" Velocity=500 Lifetime=1.0 Gravity=0 CanHitSameKind=0
-    Model="" ModelScale=<0.0, 0.0, 0.0>
+    Model="" ModelScale=<0.0, 0.0, 0.0> FXName="Test_Flame" FXSmoothShutdown=1 FlySound=0 SoundRadius=900
+    Light=0 Flare=0 SmokeTrail=0
 [ProjectileFX1] Name="Missile" Class="CProjectile" Velocity=1300 Lifetime=10.0 Gravity=0 CanHitSameKind=0
     Model="TEST_PT\Models\Rocket.ltb" ModelScale=<0.35, 0.35, 0.35> Skin0="TEST_PT\Skins\Rocket.dtx"
+    FXName="Test_Tail" FXLoop=0 FXSmoothShutdown=1 FlySound="TEST_SND\Rocket\fly.wav" SoundRadius=1200
+    Light=1 LightRadius=200 Flare=1 FlareSprite="TEST_FX\Flare.spr" FlareScale=0.5 FlareYOffset=2.0
+    SmokeTrail=1 SmokeTrailType=2
+[FireFX0] Name="Test_M136" FXName="Test_Rocket_Fire" EjectShells=0
 [ImpactFX0] Name="Rocket" Sound="TEST_SND\Explosions\boom.wav" SoundRadius=1500 CreateMark=0 Mark=""
     DoSurfaceFX=0 FXName="Test_Boom"
 [ImpactFX1] Name="Bolt" Sound="Surface" SoundRadius=0 CreateMark=0 Mark="" DoSurfaceFX=0
@@ -246,4 +252,72 @@ fn install_rocket_launcher_shows_hurts_and_sounds() {
     let looks = &sim.app.world().resource::<Looks>().0;
     assert!(looks.iter().any(|l| l.group == "Test_Boom"), "the explosion's group: {looks:?}");
     let _ = (w, U);
+}
+
+// ---------------------------------------------------------------------------
+// special_weapons.md Follow-up (2026-10-30): projectile looks and sounds
+// in flight, from the projectile records.
+
+/// Cases 48, 50 and 54's data: the missile's group (no loop, smooth
+/// shut-down), its fly sound and radius, its flare and its type 2 smoke
+/// trail (no light: `Light` is never made); the flame puff's group and no
+/// fly sound (`FlySound` 0). Both ride on the drawn key, so whatever draws
+/// the projectile (a network client too) reads them back.
+#[test]
+fn t48_t50_projectile_looks_from_the_records() {
+    let set = set();
+    let law: ProjectileParams = set.get(NPC_LAW).unwrap().hook(PROJECTILE).unwrap();
+    let want = ProjectileLook {
+        fx: "Test_Tail".into(),
+        fx_loop: false,
+        fx_smooth: true,
+        fly_sound: "test_snd/rocket/fly.wav".into(),
+        sound_radius: 1200.0,
+        flare: Some(FlareLook {
+            sprite: "test_fx/flare.spr".into(),
+            scale: [0.5, 0.5],
+            y_offset: 2.0,
+        }),
+        smoke_trail: Some(2),
+    };
+    assert_eq!(law.look, want);
+    assert_eq!(ProjectileLook::parse(&law.shown_key()), want, "the drawn key carries it");
+    let flame: ProjectileParams = set.get(BOSS).unwrap().hook(PROJECTILE).unwrap();
+    assert_eq!((flame.look.fx.as_str(), flame.look.fx_smooth), ("Test_Flame", true));
+    assert!(flame.look.fly_sound.is_empty(), "FlySound 0: no sound");
+    assert!(ProjectileParams::is_modelless(&flame.shown_key()));
+    // A look without a fly sound carries no radius.
+    assert_eq!(ProjectileLook::parse(&flame.shown_key()), ProjectileLook { sound_radius: 0.0, ..flame.look.clone() });
+    // Follow-up 7, 8: the launcher's FireFX record; its round is launched
+    // ammo (Type 1), not a grenade's.
+    let fx: CaWeaponFx = set.get(NPC_LAW).unwrap().hook(EFFECTS).unwrap();
+    assert_eq!(fx.fire, "Test_M136");
+    let f = fx.fire_record.expect("the install's FireFX record");
+    assert_eq!((f.fx.as_str(), f.shells), ("Test_Rocket_Fire", false));
+    assert!(fx.launched);
+}
+
+/// Case 52: the LAW fired shows the shooter its FireFX group once, at the
+/// shot's (server's) fire position, and no casing; its fire sound once.
+#[test]
+fn t52_launcher_muzzle() {
+    let mut sim = sim();
+    let shooter = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
+    sim.app.world_mut().entity_mut(shooter).insert(chimera_core::core::LocalPlayer);
+    armed(&mut sim, shooter, NPC_LAW);
+    sim.app.world_mut().resource_mut::<Looks>().0.clear();
+    sim.app.world_mut().resource_mut::<Heard>().0.clear();
+    let eye = sim.position(shooter) + sim.state(shooter).eye_offset;
+    sim.intent(shooter).fire = true;
+    sim.seconds(0.3);
+    sim.intent(shooter).fire = false;
+    let looks = &sim.app.world().resource::<Looks>().0;
+    let own: Vec<_> = looks.iter().filter(|l| l.group == "Test_Rocket_Fire").collect();
+    assert_eq!(own.len(), 1, "{looks:?}");
+    assert_eq!(own[0].kind, FxKind::OwnFire);
+    assert!(own[0].at.distance(eye) < 0.05, "at the fire position {eye}: {}", own[0].at);
+    let world = sim.app.world_mut();
+    assert_eq!(world.query::<&combat_arms::game::effects::CaShell>().iter(world).count(), 0, "no casing");
+    let heard = &sim.app.world().resource::<Heard>().0;
+    assert_eq!(heard.iter().filter(|s| s.file == "test_snd/law/fire.wav").count(), 1, "one fire sound");
 }

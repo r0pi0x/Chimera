@@ -3,7 +3,9 @@
 //! Chimera character model per skeleton (sex) named after its first
 //! record (`body_name`), with its animation library (`game::model`): the
 //! first record's body, then the other records' bodies, the faces of
-//! that sex (each record's default and the loadout pool's) and the head
+//! that sex (each record's default, the loadout pool's and the records'
+//! infection overrides' faces, each face's sockets kept: `face_sockets`,
+//! the infected's eyes) and the head
 //! pieces they may wear merged onto its skeleton as body-part choices
 //! (`BodyGroup`: a character's `map::BodyNumber` picks its body, face
 //! and head piece, `drawn`); its texture slots filled per camouflage
@@ -21,7 +23,7 @@
 //! `ModelScale`, in its `World` pose: `THROWN_POSE`) as a held model in no
 //! hand under `grenades::thrown_key`; each impact projectile's model in
 //! flight (the same fields of its record, `special::ProjectileParams`) under
-//! `ProjectileParams::shown_key`, once per model. The body's nodes, sockets, weight sets and
+//! `ProjectileParams::shown_key`, once per model and look. The body's nodes, sockets, weight sets and
 //! animation list are kept as a `Rig` (`rig`, every record of the group
 //! posing on the first's) for posing.
 //!
@@ -108,6 +110,31 @@ pub fn unregister(path: &str) {
     }
 }
 
+/// A piece's sockets (a face's `EYE_L` and `EYE_R`): name, the name of
+/// the node it is on (the body's of that name, as the piece is merged by
+/// node names), offset and rotation on that node.
+pub type PieceSockets = Vec<(String, String, Vec3, Quat)>;
+
+/// The sockets of face `face` as a loaded group merged it (None: no
+/// loaded group has that face).
+pub fn face_sockets(face: i32) -> Option<Arc<PieceSockets>> {
+    let g = groups().lock().ok()?;
+    g.iter().find_map(|g| g.face_sockets.iter().find(|(f, _)| *f == face).map(|(_, s)| s.clone()))
+}
+
+/// A model's sockets by their nodes' names.
+fn sockets_of(m: &lithtech_formats::ltb::Model) -> PieceSockets {
+    m.sockets
+        .iter()
+        .filter_map(|s| {
+            let node = m.nodes.get(s.node as usize)?.name.clone();
+            let q = Quat::from_array(s.rotation);
+            let q = if q.length_squared() > 0.0 { q.normalize() } else { Quat::IDENTITY };
+            Some((s.name.clone(), node, Vec3::from(s.position), q))
+        })
+        .collect()
+}
+
 /// The bodies loaded with a map: the three stock male bodies (Normal,
 /// Light, Heavy: their vests) and their female twins, each sex one
 /// character model (`BodyGroup`): the first record's body with its whole
@@ -125,6 +152,8 @@ pub struct BodyGroup {
     pub heads: Vec<i32>,
     pub goggles: Vec<i32>,
     pub backpacks: Vec<i32>,
+    /// Each face's sockets (`face_sockets`).
+    pub face_sockets: Vec<(i32, Arc<PieceSockets>)>,
 }
 
 impl BodyGroup {
@@ -630,7 +659,7 @@ fn body_group(
     // The other records' bodies (part 0).
     for r in &records[1..] {
         match merge(&mut m, &rig_data.bones, &r.file, scale, file) {
-            Ok(lods) => {
+            Ok((lods, _)) => {
                 let choice = group.records.len() as u16;
                 bodies.extend(std::iter::repeat_n(Some((0, choice)), lods.len()));
                 sources.extend(body_sources(r, &lods));
@@ -647,22 +676,32 @@ fn body_group(
             face_ids.push(f);
         }
     }
+    // The records' infection overrides' faces (an infected wears one,
+    // with its eyes' sockets: game_modes.md Corrections (2026-10-30) 5, 7),
+    // on their own body's skeleton.
+    let infected: Vec<i32> = group.records.iter().filter_map(|&id| data.infection_of(id)).map(|o| o.face).collect();
+    for f in infected.iter().copied() {
+        if !face_ids.contains(&f) {
+            face_ids.push(f);
+        }
+    }
     for f in face_ids {
         let look = Selection {
             face: f,
             ..Selection::default()
         };
-        if data.effective(&look).0.skeleton != base.skeleton {
+        if !infected.contains(&f) && data.effective(&look).0.skeleton != base.skeleton {
             continue;
         }
         let Some(rec) = data.face(f) else { continue };
         let Some(path) = &rec.file else { continue };
         match merge(&mut m, &rig_data.bones, path, scale, file) {
-            Ok(lods) => {
+            Ok((lods, sockets)) => {
                 let choice = group.faces.len() as u16;
                 bodies.extend(std::iter::repeat_n(Some((1, choice)), lods.len()));
                 sources.extend(piece_sources(&rec.skins, &rec.render_styles, &lods));
                 group.faces.push(f);
+                group.face_sockets.push((f, Arc::new(sockets)));
             }
             Err(e) => warn.push(format!("face {path}: {e}")),
         }
@@ -678,7 +717,7 @@ fn body_group(
         let Some(path) = data.head_file(h, base.skeleton) else { continue };
         let Some(rec) = data.head.iter().find(|x| x.id == h) else { continue };
         match merge(&mut m, &rig_data.bones, path, scale, file) {
-            Ok(lods) => {
+            Ok((lods, _)) => {
                 let choice = group.heads.len() as u16;
                 bodies.extend(std::iter::repeat_n(Some((2, choice)), lods.len()));
                 sources.extend(piece_sources(&rec.skins, &rec.render_styles, &lods));
@@ -800,8 +839,9 @@ fn merge(
     path: &str,
     scale: f32,
     file: &dyn Fn(&str) -> Option<Vec<u8>>,
-) -> Result<Vec<(i32, i32)>, String> {
+) -> Result<(Vec<(i32, i32)>, PieceSockets), String> {
     let loaded = model::load_own(path, file)?;
+    let sockets = sockets_of(&loaded.model);
     let lods: Vec<(i32, i32)> = model::drawn_lods(&loaded.model).into_iter().map(model::slot_and_style).collect();
     let mut m = model::convert(&loaded, scale, &|_| String::new());
     let rig = m.rig.take().ok_or("a piece without a skeleton")?;
@@ -822,7 +862,7 @@ fn merge(
         }
         body.meshes.push(mesh);
     }
-    Ok(lods)
+    Ok((lods, sockets))
 }
 
 /// A socket attachment (characters.md 2: goggles, masks, backpacks)
