@@ -11,13 +11,14 @@ use bevy::math::Vec3;
 use crate::stack::{
     games::{self, cs_source},
     map::{MapData, sound::SurfaceGrid},
-    mount::config::{LocalConfig, content_dir},
+    mount::config::LocalConfig,
 };
 
 fn load(name: &str) -> Option<MapData> {
-    let install = LocalConfig::load().ok()?.game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref())?;
-    let stock = install.join("cstrike/maps").join(format!("{name}.bsp")).is_file();
-    let cached = content_dir(cs_source::GAME).is_some_and(|d| d.join("maps").join(format!("{name}.bsp")).is_file());
+    LocalConfig::load().ok()?.game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref())?;
+    // The install's maps, or the asset store's standing in for it.
+    let stock = ::cs_source::game::INFO.mount().is_some_and(|m| m.contains(&format!("maps/{name}.bsp")));
+    let cached = ::cs_source::game::INFO.mount().is_some_and(|m| m.contains(&format!("maps/{name}.bsp")));
     if !stock && !cached {
         eprintln!("skipping {name}: not installed");
         return None;

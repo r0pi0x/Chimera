@@ -27,6 +27,10 @@
 //! is one line of `<store>/server/access.log`: time, account, method,
 //! path, status, records sent, bytes sent.
 //!
+//! `Service::with_latency` (`chimera_asset_server --latency-ms`) delays
+//! every answer, to measure clients as over a slower link (Tailscale, a
+//! VPS) from this machine.
+//!
 //! Known shortcuts: no rate limits (section 8) yet: the server is private on
 //! Tailscale; a batch answer is sent with chunked encoding, so a client
 //! learns its length only at the end; no range requests.
@@ -102,6 +106,8 @@ pub struct Service {
     auth: Vec<Box<dyn Authenticator>>,
     catalog: Mutex<Catalog>,
     log: Mutex<Option<File>>,
+    /// Added before each answer (measuring a slow link).
+    latency: Duration,
 }
 
 fn now_secs() -> u64 {
@@ -150,7 +156,20 @@ impl Service {
         fs::create_dir_all(server_dir(&store))?;
         let key = sign::load_or_create_key(&key_path(&store))?;
         let log = OpenOptions::new().create(true).append(true).open(server_dir(&store).join("access.log"))?;
-        Ok(Self { store, key, auth, catalog: Mutex::new(Catalog::default()), log: Mutex::new(Some(log)) })
+        Ok(Self {
+            store,
+            key,
+            auth,
+            catalog: Mutex::new(Catalog::default()),
+            log: Mutex::new(Some(log)),
+            latency: Duration::ZERO,
+        })
+    }
+
+    /// Every answer delayed by `latency`, as over a slower link.
+    pub fn with_latency(mut self, latency: Duration) -> Self {
+        self.latency = latency;
+        self
     }
 
     pub fn public_key(&self) -> String {
@@ -257,6 +276,9 @@ impl Service {
         };
         let Outcome { response, status, records, bytes } = outcome;
         let length = response.data_length().map(|n| n as u64);
+        if !self.latency.is_zero() {
+            std::thread::sleep(self.latency);
+        }
         let _ = request.respond(response);
         let sent = length.filter(|_| status == 200 && records == 1).unwrap_or_else(|| bytes.load(Ordering::Relaxed));
         let line = format!(

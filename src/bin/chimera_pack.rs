@@ -9,7 +9,12 @@
 //! and enters it in the manifest of the install's build
 //! (`manifests/<game>/<build>.txt`). With `--from`, only the files of that
 //! game in a `CHIMERA_VFS_LOG` log, entered as set `<name>` too; without,
-//! every file the mount shows. Records already stored are skipped, so
+//! every file the mount shows (CS:S's includes the game's download
+//! folder and Chimera's content cache: the publisher's community maps go
+//! with it), and the manifest is marked `complete` (a whole install:
+//! served alone, it stands in for one), with the game's
+//! loose files outside its archives added (Combat Arms' music,
+//! `Game/BGM/`, as set `music`). Records already stored are skipped, so
 //! packing again or a new build stores only what changed. The store is
 //! `--store`, else `[assets] store`/`CHIMERA_ASSET_STORE`, else the user's
 //! (`~/.cache/chimera/assets`).
@@ -25,6 +30,17 @@
 //! account (or a new token for one: one per device) and prints the token
 //! once; `user revoke <name> [--token <n>]` takes one or all of its tokens
 //! back (at the server's next request); `user list` shows the accounts.
+//!
+//! `chimera_pack sets <game> [--store <dir>] [--sign]` records the sets a
+//! game's pieces read, by loading each through the game's own loaders on
+//! the install (a tap on the mount notes every path read) and enters them
+//! in the manifest of the install's build (which must list those files: a
+//! whole pack or publish): `weapon/<id>` per weapon (CS:S: its view and
+//! world models with their materials and the waves of its sound entries;
+//! Combat Arms: its view model with hands and parts' textures), `players`
+//! (CS:S: the eight class models). `--sign` signs the manifest again with
+//! the server's key (a server store). `base` and the maps' sets come from
+//! `CHIMERA_VFS_LOG` logs (`--from`).
 //!
 //! Known shortcuts: publishing to a server on another machine (upload over
 //! HTTPS with a publisher token) isn't built: on a VPS, publish there or
@@ -45,6 +61,7 @@ use chimera_core::{
 const USAGE: &str = "\
 usage: chimera_pack pack <game> [options]       into a store (default the user's)
        chimera_pack publish <game> [options]    into the asset server's store, signed
+       chimera_pack sets <game> [--store <dir>] [--sign]   record weapon/<id> and players sets
        chimera_pack user add <name> [--games <a,b>] [--note <text>]
        chimera_pack user revoke <name> [--token <n>]
        chimera_pack user list                   (user: --store <server store>)
@@ -63,16 +80,20 @@ struct Game {
     info: &'static GameInfo,
     open_install: fn(&std::path::Path) -> std::io::Result<Mount>,
     app: u32,
+    /// Files the game reads from its install outside the mount, as a layer
+    /// and the set they make (whole packs only).
+    extra: Option<(fn(&std::path::Path) -> Option<Box<dyn chimera_core::mount::FileSource>>, &'static str)>,
 }
 
 fn games() -> [Game; 2] {
     [
-        Game { info: &cs_source::game::INFO, open_install: cs_source::game::mount::open_install, app: 240 },
+        Game { info: &cs_source::game::INFO, open_install: cs_source::game::mount::open_install, app: 240, extra: None },
         Game {
             info: &combat_arms::game::INFO,
             open_install: combat_arms::game::mount::open_install,
             // Combat Arms: the Classic.
             app: 1_263_550,
+            extra: Some((combat_arms::game::mount::loose_music, "music")),
         },
     ]
 }
@@ -87,6 +108,7 @@ fn run(args: &[String]) -> Result<(), String> {
         Some("pack") => false,
         Some("publish") => true,
         Some("user") => return user(&args[1..]),
+        Some("sets") => return sets(&args[1..]),
         _ => return Err(USAGE.into()),
     };
     let game_id = it.next().ok_or(USAGE)?;
@@ -128,7 +150,15 @@ fn run(args: &[String]) -> Result<(), String> {
             format!("{}: no Steam app manifest for app {}: pass --build", install.display(), game.app)
         })?,
     };
-    let mount = (game.open_install)(&install).map_err(|e| format!("{}: {e}", install.display()))?;
+    let mut mount = (game.open_install)(&install).map_err(|e| format!("{}: {e}", install.display()))?;
+    let whole = from.is_none();
+    let mut extra_set = None;
+    if let Some((layer, set)) = game.extra.as_ref().and_then(|(f, set)| Some((f(&install)?, *set))) {
+        if whole {
+            extra_set = Some((set, layer.entries().into_iter().map(|e| e.path).collect::<Vec<_>>()));
+        }
+        mount.push_boxed(layer);
+    }
     let paths: Vec<String> = match &from {
         Some(log) => {
             let lines = read_log(log)?;
@@ -157,6 +187,13 @@ fn run(args: &[String]) -> Result<(), String> {
         store.root.display()
     );
     let report = pack(&mount, &paths, &store, &mut manifest, set.as_deref(), threads).map_err(|e| e.to_string())?;
+    if whole && report.missing.is_empty() {
+        manifest.complete = true;
+    }
+    if let Some((name, paths)) = extra_set {
+        println!("set {name}: {} files (outside the archives)", paths.len());
+        manifest.sets.insert(name.to_string(), paths.into_iter().collect());
+    }
     if publish {
         let from = sets_from.or(user_store).filter(|s| *s != store);
         if let Some(from) = from.filter(|s| s.manifest_path(game.info.id, &build).is_file()) {
@@ -250,6 +287,136 @@ fn user(args: &[String]) -> Result<(), String> {
         }
         _ => return Err(USAGE.into()),
     }
+    Ok(())
+}
+
+/// A mount layer that notes every path read through it.
+struct Tap {
+    inner: std::sync::Arc<Mount>,
+    seen: std::sync::Arc<std::sync::Mutex<std::collections::BTreeSet<String>>>,
+}
+
+impl chimera_core::mount::FileSource for Tap {
+    fn name(&self) -> String {
+        "tap".into()
+    }
+
+    fn entries(&self) -> Vec<chimera_core::mount::Entry> {
+        self.inner.entries().into_iter().map(|(e, _)| e).collect()
+    }
+
+    fn read(&self, path: &str) -> Option<std::io::Result<Vec<u8>>> {
+        let got = self.inner.read(path);
+        if got.is_ok() {
+            self.seen.lock().unwrap_or_else(|e| e.into_inner()).insert(path.to_string());
+        }
+        Some(got)
+    }
+
+    fn contains(&self, path: &str) -> bool {
+        self.inner.contains(path)
+    }
+
+    fn files_in(&self, dir: &str) -> Vec<String> {
+        self.inner.files_in(dir)
+    }
+}
+
+/// Each named piece of `game` (a weapon, the players) and the paths
+/// loading it read through `mount`.
+fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>) -> Vec<(String, Vec<String>)> {
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeSet::new()));
+    let mut tapped = Mount::default();
+    tapped.push(Tap { inner: mount.clone(), seen: seen.clone() });
+    let take = || std::mem::take(&mut *seen.lock().unwrap_or_else(|e| e.into_inner())).into_iter().collect::<Vec<_>>();
+    let mut out = Vec::new();
+    match game {
+        "cs_source" => {
+            use cs_source::game::{bsp::CLASS_MODELS, material::MaterialLoader, props, sound::SoundScripts, weapons};
+            let scripts = SoundScripts::load(&mut MaterialLoader::guest(mount, 0, 0), "");
+            for w in &weapons::cs_weapons().weapons {
+                take();
+                let mut materials = MaterialLoader::guest(&tapped, 0, 0);
+                if let Some(view) = &w.models.view {
+                    let _ = props::load_view_model(&mut materials, view, &w.id, w.models.view_right_handed);
+                }
+                for world in [&w.models.world, &w.models.world_alt].into_iter().flatten() {
+                    let _ = props::load_held(&mut materials, world, &w.id, &[]);
+                }
+                for name in w.sounds.iter().flat_map(|s| s.entries()) {
+                    for wave in scripts.waves(name) {
+                        let _ = tapped.read(&wave);
+                    }
+                }
+                let id = w.id.rsplit(':').next().unwrap_or(&w.id).trim_start_matches("weapon_");
+                out.push((format!("weapon/{id}"), take()));
+            }
+            let mut materials = MaterialLoader::guest(&tapped, 0, 0);
+            for model in CLASS_MODELS {
+                let _ = props::load_held(&mut materials, model, model, &[]);
+            }
+            out.push(("players".into(), take()));
+        }
+        "combat_arms" => {
+            use combat_arms::game::{data::CaData, view_model::on_demand};
+            let read = |p: &str| tapped.read(p).ok();
+            for w in &CaData::install().weapon_set().weapons {
+                if !on_demand::ours(&w.id) {
+                    continue;
+                }
+                take();
+                let _ = on_demand::load_weapon(&w.id, &read);
+                let id = w.id.rsplit(':').next().unwrap_or(&w.id);
+                out.push((format!("weapon/{id}"), take()));
+            }
+        }
+        _ => {}
+    }
+    out.retain(|(_, paths)| !paths.is_empty());
+    out
+}
+
+/// `sets <game>`: record the pieces' sets into the install build's
+/// manifest.
+fn sets(args: &[String]) -> Result<(), String> {
+    let mut it = args.iter();
+    let game_id = it.next().ok_or(USAGE)?;
+    let (mut store, mut sign_it) = (None, false);
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--store" => store = Some(Store::new(it.next().ok_or("--store needs a value")?)),
+            "--sign" => sign_it = true,
+            _ => return Err(format!("unknown option {arg}\n{USAGE}")),
+        }
+    }
+    let games = games();
+    let game = games.iter().find(|g| g.info.id == game_id).ok_or_else(|| format!("unknown game {game_id}\n{USAGE}"))?;
+    let config = LocalConfig::load()?;
+    let store = store.or_else(|| config.assets.resolve().store).ok_or("no store folder: pass --store")?;
+    let install = install::resolve(&config, game.info.id, game.info.steam.as_ref())
+        .install
+        .map(|i| i.path)
+        .ok_or_else(|| format!("no {} install found", game.info.id))?;
+    let build = install::install_build_id(&install, game.app)
+        .ok_or_else(|| format!("{}: no Steam app manifest for app {}", install.display(), game.app))?;
+    let path = store.manifest_path(game.info.id, &build);
+    let mut manifest = Manifest::load(&path)?;
+    let mount = std::sync::Arc::new((game.open_install)(&install).map_err(|e| format!("{}: {e}", install.display()))?);
+    for (name, paths) in record_pieces(game.info.id, &mount) {
+        let (kept, left): (Vec<String>, Vec<String>) = paths.into_iter().partition(|p| manifest.files.contains_key(p));
+        if !left.is_empty() {
+            println!("set {name}: {} files not in the manifest left out (pack the whole install first)", left.len());
+        }
+        manifest.sets.insert(name.clone(), kept.into_iter().collect());
+        let (n, plain, stored) = manifest.set_size(&name);
+        println!("set {name}: {n} records, {} plain, {} stored", mb(plain), mb(stored));
+    }
+    manifest.save(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if sign_it {
+        let key = sign::load_or_create_key(&server::key_path(&store)).map_err(|e| e.to_string())?;
+        sign::sign_manifest_file(&key, &path).map_err(|e| format!("{}: {e}", path.display()))?;
+    }
+    println!("manifest: {}", path.display());
     Ok(())
 }
 

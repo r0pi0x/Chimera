@@ -60,7 +60,7 @@ use crate::stack::{
     greybox::GreyboxMapPlugin,
     harness::{CsSim, NetSim},
     map::{MapData, MapPlugin},
-    mount::config::{LocalConfig, content_dir},
+    mount::config::LocalConfig,
     net::{
         NetBody, NetCharacter, NetEvent, NetItem, NetProp, NetRound, NetScore, NetSettings, RadioRequest,
         client::Joined, interp::Snapshots, maps::MapFiles, memory::LinkConditions, predict::NetGraph,
@@ -87,7 +87,7 @@ fn installed() -> bool {
     let ok = LocalConfig::load()
         .ok()
         .and_then(|c| c.game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref()))
-        .is_some_and(|p| p.join("cstrike").is_dir());
+        .is_some_and(|p| chimera_core::mount::served::usable("cs_source", p, "cstrike"));
     if !ok {
         eprintln!("skipping: no CS:S install configured");
     }
@@ -143,8 +143,9 @@ fn count_error(error: bevy::ecs::error::BevyError, ctx: bevy::ecs::error::ErrorC
 /// The community map: `CHIMERA_SOAK_COMMUNITY`, else one of a few known
 /// to load, else none.
 fn community_map() -> Option<String> {
-    let dir = content_dir(cs_source::GAME)?.join("maps");
-    let has = |n: &str| dir.join(format!("{n}.bsp")).is_file();
+    // In the content cache, or the asset store standing in for the install.
+    let mount = ::cs_source::game::INFO.mount()?;
+    let has = |n: &str| mount.contains(&format!("maps/{n}.bsp"));
     if let Ok(n) = chimera_core::env::var("CHIMERA_SOAK_COMMUNITY") {
         return has(&n).then(|| format!("cs_source:{n}"));
     }

@@ -50,8 +50,8 @@ fn installed() -> bool {
     let Ok(config) = LocalConfig::load() else { return false };
     let css = config
         .game_path_in(cs_source::game::GAME, cs_source::game::INFO.steam.as_ref())
-        .is_some_and(|p| p.join("cstrike").is_dir());
-    let ca = config.game_path(combat_arms::game::GAME).is_some_and(|p| p.join("Game").is_dir());
+        .is_some_and(|p| chimera_core::mount::served::usable("cs_source", p, "cstrike"));
+    let ca = config.game_path(combat_arms::game::GAME).is_some_and(|p| chimera_core::mount::served::usable("combat_arms", p, "Game"));
     if !(css && ca) {
         eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
     }

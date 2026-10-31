@@ -2,7 +2,7 @@
 //! Arms parts' pool, CS:S's, the parts pool Ultimate Gun Game builds from,
 //! and each `maps = [...]` list of `minigames/*.toml`. A Combat Arms name is
 //! a `worlds*/<name>.dat` of the install's archives (`world::find`), a CS:S
-//! one a `cstrike/maps/<name>.bsp`. Passes with a note for a game without
+//! one a `maps/<name>.bsp` in its mount. Passes with a note for a game without
 //! an install (or served by the asset store alone); only file names are listed, nothing is read or written.
 
 use chimera_core::mount::config::LocalConfig;
@@ -33,11 +33,13 @@ fn every_map_in_every_pool_resolves() {
     // The asset store alone holds only the sets packed so far: no
     // install to check the pools against.
     let info = &combat_arms::game::INFO;
-    let ca = info.mount().filter(|_| !info.served_alone());
+    let ca = info.mount().filter(|_| !info.served_partial());
+    // The install's maps, or the asset store's standing in for it.
     let css = config
         .as_ref()
         .and_then(|c| c.game_path_in(cs_source::game::GAME, cs_source::game::INFO.steam.as_ref()))
-        .filter(|p| p.join("cstrike/maps").is_dir());
+        .filter(|p| chimera_core::mount::served::usable("cs_source", p, "cstrike/maps"))
+        .and_then(|_| cs_source::game::INFO.mount());
     if ca.is_none() {
         eprintln!("note: no Combat Arms install, its pools are not checked");
     }
@@ -56,8 +58,8 @@ fn every_map_in_every_pool_resolves() {
                 }
             }
             "cs_source" => {
-                if let Some(dir) = &css
-                    && !dir.join(format!("cstrike/maps/{name}.bsp")).is_file()
+                if let Some(m) = &css
+                    && !m.contains(&format!("maps/{name}.bsp"))
                 {
                     missing.push(format!("{id} ({from})"));
                 }

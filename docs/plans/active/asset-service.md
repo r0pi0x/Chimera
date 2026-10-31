@@ -2,7 +2,10 @@
 
 Status: M1 built 2026-10-30 (section 9, "M1 results"); M2 built with
 internal accounts 2026-10-30 (section 9, "M2 results", with the
-deployment steps), not yet deployed; Steam sign-in waits for the
+deployment steps), not yet deployed; made ready for an outside developer
+2026-10-31 (section 9, "M2 for developers": whole-game publishes, the
+sets, batched on-demand fetches, progress, tests from the service; the
+guide is docs/assets-for-developers.md); Steam sign-in waits for the
 milestone that opens the server. Decided: the hybrid model
 (docs/DESIGN.md, "Assets, code and legal"; backlog roadmap, "Smaller
 installs: a hybrid", 2026-10-29). Directions from the user, 2026-10-30:
@@ -609,6 +612,10 @@ the same commit.
     ```
     cargo run --release --features tools --bin chimera_pack -- publish cs_source
     cargo run --release --features tools --bin chimera_pack -- publish combat_arms
+    cargo run --release --features tools --bin chimera_pack -- sets cs_source --store <server store> --sign
+    cargo run --release --features tools --bin chimera_pack -- sets combat_arms --store <server store> --sign
+    # base, map/<id>, heavy-tests from CHIMERA_VFS_LOG logs (AGENTS.md, "Game files from the asset store"):
+    cargo run --release --features tools --bin chimera_pack -- publish cs_source --from <log> --set base
     cargo run --release --features tools --bin chimera_pack -- user add <tester> --note <device>
     cargo run --release -p chimera_assets --bin chimera_asset_server    # 127.0.0.1:8731; prints the key
     tailscale serve --bg --https=443 http://127.0.0.1:8731
@@ -624,15 +631,108 @@ the same commit.
     `chimera_assets fetch cs_source <set>` or nothing (on demand). Then
     `chimera_assets lock` on a branch and commit `assets.lock`. Back up
     `<server store>/server/` (key and accounts); revoke with `user revoke`.
-  - **Left:** Steam sign-in, the ownership check and the allowlist (an
-    `Authenticator`, before the server opens up); publishing over HTTPS
-    from another machine (publisher tokens); rate limits and token
-    expiry; the cache cap (`cl_assetcache_gb`); on-demand fetches are one
-    request per record (a miss could fetch its set by batch); the
-    `heavy-tests`, `base`, weapon and player sets; tests that need an
-    install accepting "install or service" beyond the store-alone path
-    (`mount::served::alone` skips whole-install checks); Combat Arms'
-    music (`Game/BGM`) isn't served.
+  - **Left (after "M2 for developers" below):** Steam sign-in, the
+    ownership check and the allowlist (an `Authenticator`, before the
+    server opens up); publishing over HTTPS from another machine
+    (publisher tokens); rate limits and token expiry; the cache cap
+    (`cl_assetcache_gb`).
+- **M2 for developers (built 2026-10-31; not deployed).** Goal: a
+  developer with only `[assets] url` and `token` plays, playtests and runs
+  the whole suite, heavy tier included. Guide:
+  docs/assets-for-developers.md.
+  - **Whole games:** `chimera_pack publish <game>` without `--from` packs
+    every file the game mounts and marks the manifest `complete` (a new
+    manifest line); served alone, a complete build stands in for the
+    install (`mount::served::partial` is false, so whole-install checks
+    run, fetching on demand). Combat Arms' loose music (`Game/BGM/`) is
+    packed under `loose/bgm/` (`combat_arms::game::mount::loose_music`,
+    set `music`); `ui::music` plays it through the mount when there is no
+    install folder.
+  - **Sets** (published into a scratch server store on this box, measured
+    2026-10-31; stored = transferred):
+
+    | | CS:S (build 25338318) | Combat Arms (26236938) |
+    |---|---|---|
+    | every file (CS:S: with the publisher's content cache, 89 community maps, 2.6 GB plain) | 48,483 files, 47,692 records, 4,394 MB (7,347 plain) | 32,266 files, 29,431 records, 3,806 MB (9,348 plain) |
+    | `base` (the app's main menu, `CHIMERA_VFS_LOG`) | 51 files, 1.5 MB | 1,790 files, 9.7 MB |
+    | `map/de_dust2`, `map/warehouse` (the app on the map, HUD and kit) | 2,531 files, 142.7 MB | 2,428 files, 92.9 MB |
+    | `weapon/<id>` (`chimera_pack sets`) | 29 sets, 0.7-1.9 MB, 21 MB together | 2,363 sets, 0.4-20 MB, 850 MB together |
+    | `players` | 68 files, 12.9 MB | none yet |
+    | `music` | - | 64 files, 72.3 MB |
+    | `heavy-tests` (the whole suite with no install, `CHIMERA_VFS_LOG`) | 15,793 files, 922 MB | 14,866 files, 2,563 MB |
+
+    Publishing took 38 s (CS:S) and 32 s (Combat Arms) for every file, 4
+    threads. `chimera_pack sets <game> [--sign]` records `weapon/<id>`
+    (CS:S: view and world models with materials, the waves of its sound
+    entries; Combat Arms: the view model with hands and parts) and
+    `players` (CS:S's eight class models) by loading each piece through
+    the game's loaders on a tapped mount. Not yet: Combat Arms' character
+    models as `players`, its weapons' world models and sounds.
+  - **Batched on demand:** a missing file brings its group in one `POST
+    /batch` (`CachedFiles`): the missing records of the smallest set
+    holding it, from it on (at most 1,024 records, ~32 MB stored), else
+    its companions (same folder and name before the first dot); one group
+    at a time per manifest. `CHIMERA_ASSET_BATCH=0` turns it off. First
+    loads through the asset service with no install, `heavy::served`
+    (`CHIMERA_ASSET_LATENCY_MS` delays each answer, as over a slower link;
+    the box's load average 15-30, so CA's times, mostly CPU, are noisy):
+
+    | | de_dust2 | WAREHOUSE |
+    |---|---|---|
+    | before (main, one request per record) | 3.25 s, 2,469 requests | 11.1 s, 358 requests |
+    | localhost, per record / batched | 3.08 s / 2.61 s (2,469 requests / 5 batches) | 26.1 s / 16.8 s (358 / 3) |
+    | 20 ms a request, per record / batched | 58.6 s / 4.1 s | 18.3 s / 10.0 s |
+
+  - **Progress:** `chimera_assets fetch` shows a live line on a terminal
+    (records and MB done of the total, speed, time left; a plain line
+    every 5 s elsewhere) and a summary, fetching batches on 4 connections
+    (`progress::Transfer`, `Remote::fill`); a run that fetches on demand
+    prints `assets: downloading from ...` every 2 s while it fetches and
+    `assets: fetched N files, X MB ... in T s` after (`progress::
+    on_demand`), nothing otherwise. `chimera_assets fetch` takes the
+    service's newer copy of a build's manifest; a kept manifest that isn't
+    the one `assets.lock` pins is fetched again.
+  - **Tests from the service:** tests ask
+    `chimera_core::mount::served::usable(game, path, marker)` instead of
+    `path.join(marker).is_dir()` (77 files), Combat Arms' key checks
+    `combat_arms::game::mount::can_read` (served records need no key),
+    stock-map checks the mount; checks of the install's own archives
+    skip with a note when served. The whole suite (`cargo nextest run
+    --workspace --features dev`) with no install, no Steam folder, no
+    keys, an empty cache and only `[assets] url/token` against a scratch
+    server on 127.0.0.1: see "Heavy tier with no install" below.
+  - **Measuring and the server:** `chimera_asset_server --latency-ms`,
+    `Service::with_latency`.
+  - **Heavy tier with no install (2026-10-31):** `cargo nextest run
+    --workspace --features dev` with `CHIMERA_CONFIG` holding only
+    `[assets] url/token`, an empty `CHIMERA_STEAM_ROOT`, an empty data
+    folder (no content cache), an empty asset cache, against
+    `chimera_asset_server` on 127.0.0.1 serving the whole publishes above:
+    4,662 tests, all pass, 1,072 s wall (the cache filled to 3.4 GB on
+    demand). Of the 584 heavy tests 534 ran from the service (community
+    maps included); 50 skip with a note: 36 `lithtech_formats` archive
+    tests (they open `.rez` files and keys by file name, below the
+    mount), 6 checks of Combat Arms' own archives (`BGM.rez`,
+    `ATTRIBUTES.rez`, the XML and language archives' listings, the
+    archive layers, keyless archives), 4 `heavy::served` (they pack from
+    an install), 4 that want local demo or probe files. Outside the heavy
+    tier 6 skip: the CS:S mount's own VPK and layer checks, `dump`, 3
+    sample-demo tests. Before this work, the same run had 256 tests
+    skipping (the install folder or keys asked for, community maps by
+    file) and 9 failing (tests reading the install's files by path).
+  - **Windows:** `chimera_assets` (all targets) and `chimera_core`,
+    `cs_source`, `combat_arms`, `chimera_pack` check for
+    `x86_64-pc-windows-gnu`. MSVC: nothing new; `ring` (rustls) needs the
+    MSVC C compiler (the Build Tools' `cl.exe`, as for the rest), the
+    TCP_NODELAY call goes through `windows-sys`' WinSock, and the live
+    progress line uses `\r` (works in Windows Terminal and conhost).
+  - **Left:** Combat Arms' `players` set (character models) and its
+    weapons' world models and sounds in `weapon/<id>`;
+    `lithtech_formats`' install tests read archives by path (they could
+    take the served mount through a test helper above the format crate);
+    a size cap for the cache; deployment (section "Deployment" above, plus
+    `chimera_pack sets <game> --sign` and the set publishes after
+    `publish <game>`); and what "Left" above lists.
 - **M3: mode 1, files from the game server.** The game server's
   sign-in listener and short tokens, `PlayerEntitlements`,
   `AssetRequest`/`AssetChunk` with `sv_asset_maxrate`; the client

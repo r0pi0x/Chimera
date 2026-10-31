@@ -10,7 +10,7 @@ const U: f32 = 0.0254;
 
 fn read(map: &str) -> Option<Vec<u8>> {
     let install = LocalConfig::load().ok()?.game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref())?;
-    if !install.join("cstrike").is_dir() {
+    if !chimera_core::mount::served::usable("cs_source", &install, "cstrike") {
         eprintln!("skipping: no CS:S install configured");
         return None;
     }

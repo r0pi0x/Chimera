@@ -42,7 +42,7 @@ const SPEC_SCOPED: &[(&str, &str)] = &[
 ];
 
 fn install_data() -> Option<CaData> {
-    let installed = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)).is_some_and(|p| p.join("Game").is_dir());
+    let installed = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)).is_some_and(|p| chimera_core::mount::served::usable("combat_arms", p, "Game"));
     if !installed {
         eprintln!("skipping: no Combat Arms install configured");
         return None;

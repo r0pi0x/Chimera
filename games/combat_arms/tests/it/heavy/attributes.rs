@@ -22,7 +22,11 @@ fn attributes_rez() -> Option<std::path::PathBuf> {
     };
     let path = install.join("Game").join("ATTRIBUTES.rez");
     if !path.is_file() {
-        eprintln!("skipping: no {}", path.display());
+        // Served alone, the callers that can read the files through the
+        // mount do; the archive's own check says why it skips.
+        if !combat_arms::game::INFO.served_alone() {
+            eprintln!("skipping: no {}", path.display());
+        }
         return None;
     }
     Some(path)
@@ -59,7 +63,12 @@ fn known(key: &str) -> bool {
 
 #[test]
 fn install_attribute_data() {
-    let Some(path) = attributes_rez() else { return };
+    let Some(path) = attributes_rez() else {
+        if combat_arms::game::INFO.served_alone() {
+            eprintln!("skipping: checks the install's own ATTRIBUTES.rez (served from the asset store here)");
+        }
+        return;
+    };
     let keys = mount::keys().unwrap();
     let archive = RezArchive::open(&path, &keys).unwrap();
     // The plaintext directory: one ATTRIBUTES folder with the files by role.
@@ -180,8 +189,16 @@ fn merged_numbers_against_ours() {
         data::{merge_mods, merge_movement, merge_weapon_docs_with_mods},
         movement::{MOVEMENT_DATA, MovementData},
     };
-    let Some(path) = attributes_rez() else { return };
-    let Ok(attrs) = open_attributes(&path) else {
+    // The archive, or its files through the asset store standing in for
+    // the install (decrypted there).
+    let attrs = match attributes_rez() {
+        Some(path) => open_attributes(&path),
+        None => match combat_arms::game::INFO.mount() {
+            Some(m) if combat_arms::game::INFO.served_alone() => combat_arms::game::data::attributes_from_mount(&m),
+            _ => return,
+        },
+    };
+    let Ok(attrs) = attrs else {
         eprintln!("skipping: no V1 key");
         return;
     };

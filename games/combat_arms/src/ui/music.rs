@@ -7,7 +7,9 @@
 //!   (found by name without case) and the player's own MP3s in `Jukebox/`
 //!   next to the game folder are what the player can open; a Jukebox
 //!   file joins the playlist ticked. The music is read from loose files,
-//!   not from `BGM.rez`.
+//!   not from `BGM.rez`; with no install folder (the game served by the
+//!   asset store or service) the same files come through the game's mount
+//!   (`mount::LOOSE_MUSIC`, fetched when first played).
 //! - **Music** (`play_music`): each stream of the player (`CaMusic::
 //!   mixed`: the music master times its slot's gain) is a live sound
 //!   under a key of its own, decoded on a background task the first time
@@ -73,6 +75,8 @@ enum Clip {
 pub struct Playback {
     /// Normalized music path to the file on disk.
     paths: HashMap<String, PathBuf>,
+    /// Normalized music path to its path in the game's mount (served).
+    mounted: HashMap<String, String>,
     scanned: bool,
     /// Decoded music by file.
     clips: HashMap<String, Clip>,
@@ -144,6 +148,20 @@ fn scan(mut pb: ResMut<Playback>, mut music: ResMut<CaMusic>, data: Res<crate::g
     let Some(install) = INFO.install() else { return };
     let mut found = Vec::new();
     walk(&install.join("Game").join("BGM"), "bgm", &mut found);
+    if !install.join("Game").is_dir()
+        && let Some(mount) = crate::game::world::mount()
+    {
+        // Served: the loose music as the packer stored it.
+        let prefix = format!("{}/", crate::game::mount::LOOSE_MUSIC);
+        for (e, _) in mount.entries() {
+            if let Some(rest) = e.path.strip_prefix(&prefix) {
+                let key = format!("bgm/{rest}");
+                let len = music.data.files.get(&key).map(|s| s * 1000.0);
+                music.files.insert(&key, len);
+                pb.mounted.insert(key, e.path);
+            }
+        }
+    }
     let mut jukebox = Vec::new();
     if let Ok(dir) = std::fs::read_dir(install.join("Jukebox")) {
         for e in dir.flatten() {
@@ -253,7 +271,13 @@ fn play_music(
                     let bytes = std::fs::read(&path).ok()?;
                     source_formats::wav::decode_any(&bytes).ok()
                 })),
-                None => Clip::Failed,
+                None => match pb.mounted.get(&file).cloned() {
+                    Some(path) => Clip::Loading(AsyncComputeTaskPool::get().spawn(async move {
+                        let bytes = crate::game::world::mount()?.read(&path).ok()?;
+                        source_formats::wav::decode_any(&bytes).ok()
+                    })),
+                    None => Clip::Failed,
+                },
             },
             Some(Clip::Loading(mut task)) => match block_on(poll_once(&mut task)) {
                 Some(Some(clip)) => {

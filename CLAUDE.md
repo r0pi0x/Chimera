@@ -16,6 +16,7 @@ This file is a map. Follow the links for detail; keep it short.
 |---|---|
 | What the project is, installing and playing | [README.md](README.md) |
 | Contributor contract for any agent (rules, setup, done, pitfalls) | [AGENTS.md](AGENTS.md) |
+| Working without the games installed (the asset service) | [docs/assets-for-developers.md](docs/assets-for-developers.md) |
 | Ready-to-run task briefs | [docs/tasks/](docs/tasks/README.md) |
 | Design decisions and why (slots, mounts, weapon model, legal rules) | [docs/DESIGN.md](docs/DESIGN.md) |
 | Code layout, layers, data flow | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |

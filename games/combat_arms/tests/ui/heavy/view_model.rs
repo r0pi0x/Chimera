@@ -37,11 +37,11 @@ fn keyed_install() -> bool {
         eprintln!("skipping: no Combat Arms install configured");
         return false;
     };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         eprintln!("skipping: no Combat Arms install at {}", install.display());
         return false;
     }
-    if !mount::keys().is_ok_and(|k| k.contains_key("V2")) {
+    if !mount::can_read("V2") {
         eprintln!("skipping: no V2 key in chimera.local.toml");
         return false;
     }

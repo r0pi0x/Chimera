@@ -27,7 +27,7 @@ fn install() -> Option<PathBuf> {
         eprintln!("skipping: no Combat Arms install configured");
         return None;
     };
-    if !install.join("Game").is_dir() {
+    if !chimera_core::mount::served::usable("combat_arms", &install, "Game") {
         eprintln!("skipping: no Combat Arms install at {}", install.display());
         return None;
     }
@@ -50,15 +50,48 @@ fn files_below(dir: &Path, prefix: &str, out: &mut Vec<(String, PathBuf)>) {
     }
 }
 
-fn loose() -> Option<Vec<(String, PathBuf)>> {
+/// A loose music file: on disk in the install, or in the game's mount
+/// under `mount::LOOSE_MUSIC` when the asset store stands in for it.
+enum Loose {
+    Disk(PathBuf),
+    Mounted(String),
+}
+
+impl Loose {
+    fn bytes(&self) -> Vec<u8> {
+        match self {
+            Loose::Disk(p) => std::fs::read(p).unwrap(),
+            Loose::Mounted(p) => combat_arms::game::world::mount().unwrap().read(p).unwrap(),
+        }
+    }
+}
+
+fn loose() -> Option<Vec<(String, Loose)>> {
+    let install = install()?;
+    let dir = install.join("Game").join("BGM");
+    if !dir.is_dir() {
+        let mount = combat_arms::game::world::mount()?;
+        let prefix = format!("{}/", combat_arms::game::mount::LOOSE_MUSIC);
+        let mut out: Vec<(String, Loose)> = mount
+            .entries()
+            .into_iter()
+            .filter_map(|(e, _)| Some((format!("bgm/{}", e.path.strip_prefix(&prefix)?), Loose::Mounted(e.path.clone()))))
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        return Some(out);
+    }
     let mut out = Vec::new();
-    files_below(&install()?.join("Game").join("BGM"), "bgm", &mut out);
-    Some(out)
+    files_below(&dir, "bgm", &mut out);
+    Some(out.into_iter().map(|(k, p)| (k, Loose::Disk(p))).collect())
 }
 
 #[test]
 fn t19_bgm_rez() {
     let Some(install) = install() else { return };
+    if !install.join("Game").is_dir() {
+        eprintln!("skipping: checks the install's own BGM.rez (served from the asset store here)");
+        return;
+    }
     let rez = RezArchive::open(install.join("Game").join("BGM.rez"), &RezKeys::new()).unwrap();
     let files: Vec<_> = rez.files().collect();
     assert_eq!(files.len(), 65, "entries");
@@ -70,8 +103,8 @@ fn t19_bgm_rez() {
     assert_eq!(size("bgm/bgm_halloween.mp3"), Some(2_707_821));
     // The payloads are not the plain files; the last size mod 16 bytes are.
     let loose = loose().unwrap();
-    let (key, path) = loose.iter().find(|(k, _)| k == "bgm/bgm_loop.mp3").unwrap();
-    let plain = std::fs::read(path).unwrap();
+    let (key, file) = loose.iter().find(|(k, _)| k == "bgm/bgm_loop.mp3").unwrap();
+    let plain = file.bytes();
     let stored = rez.read_raw(key).unwrap().unwrap();
     assert_eq!(stored.len(), plain.len());
     assert_ne!(stored[..16], plain[..16], "the first block differs");
@@ -95,10 +128,10 @@ fn t20_loose_bgm_folder() {
             .find(|(p, _)| p == k)
             .unwrap_or_else(|| panic!("no {k}"))
             .1
-            .clone()
+            .bytes()
     };
     let decode = |k: &str| {
-        let bytes = std::fs::read(find(k)).unwrap();
+        let bytes = find(k);
         (bytes.len(), source_formats::wav::decode_mp3(&bytes).unwrap())
     };
     let secs = |c: &source_formats::wav::SoundClip| c.samples.len() as f64 / c.channels as f64 / c.rate as f64;
@@ -139,11 +172,11 @@ fn the_built_in_table_matches_the_folder() {
     let table = MusicData::built_in();
     let mut missing = Vec::new();
     for (key, len) in &table.files {
-        let Some((_, path)) = files.iter().find(|(k, _)| k == key) else {
+        let Some((_, file)) = files.iter().find(|(k, _)| k == key) else {
             missing.push(key.clone());
             continue;
         };
-        let Ok(clip) = source_formats::wav::decode_any(&std::fs::read(path).unwrap()) else {
+        let Ok(clip) = source_formats::wav::decode_any(&file.bytes()) else {
             continue;
         };
         let got = clip.samples.len() as f64 / clip.channels as f64 / clip.rate as f64;

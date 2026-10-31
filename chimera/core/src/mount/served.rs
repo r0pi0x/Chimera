@@ -11,8 +11,11 @@
 //! gets the install alone. With `use_install = false`, or when the path is
 //! the store's stand-in for a missing install
 //! (`LocalConfig::game_path_in`), the store alone (`alone`), at the
-//! pinned build or the newest: then the mount holds only the sets packed
-//! so far, not a whole install. `CHIMERA_VFS_LOG=<file>` wraps every layer
+//! pinned build or the newest: then the mount holds what that build's
+//! manifest lists: every file the game mounts when it was published whole
+//! (`complete`), else only the sets packed so far (`partial`). `usable`
+//! is what a test or tool asks before reading a game's files: an install
+//! with the game's folder, or the store standing in for it. `CHIMERA_VFS_LOG=<file>` wraps every layer
 //! in a `Recording`: each file read is logged with its game, size and
 //! hash (`chimera_assets::recording`), which is how `chimera_pack` gets a
 //! set. With an asset service set (`[assets] url` and `token`), a
@@ -42,6 +45,35 @@ pub fn open(game: &str, install: &Path, open_install: fn(&Path) -> io::Result<Mo
 /// (every map, every weapon) has nothing to check it against.
 pub fn alone(game: &str, install: &Path) -> bool {
     settings().is_ok_and(|a| alone_with(&a, game, install))
+}
+
+/// Whether `game`'s mount at `install` is the asset store alone holding
+/// only some sets (its build's manifest isn't of a whole install): a check
+/// that wants a whole install (every map, every weapon) has nothing to
+/// check it against. A whole publish (`complete`) stands in for the
+/// install: files it lacks locally are fetched on demand.
+pub fn partial(game: &str, install: &Path) -> bool {
+    settings().is_ok_and(|a| alone_with(&a, game, install) && !complete(&a, game))
+}
+
+/// Whether `install` is somewhere `game`'s files can be read through its
+/// mount: an install holding `marker` (the game's folder, `cstrike` or
+/// `Game`), or the asset store's stand-in for a missing install (the store
+/// or the asset service serves the game). Tests and tools that need an
+/// install ask this, so they run from the service as they do from an
+/// install; one that reads the install's own files outside the mount (an
+/// archive by its file name) asks for the marker alone.
+pub fn usable(game: &str, install: impl AsRef<Path>, marker: &str) -> bool {
+    let install = install.as_ref();
+    install.join(marker).exists() || alone(game, install)
+}
+
+/// Whether the build `game` is served at lists every file it mounts.
+fn complete(assets: &AssetSettings, game: &str) -> bool {
+    let (Some(store), Some(build)) = (assets.store.as_ref(), assets.build(game)) else {
+        return false;
+    };
+    CachedFiles::open(store, game, &build).is_ok_and(|c| c.index().complete)
 }
 
 fn settings() -> io::Result<AssetSettings> {
@@ -261,5 +293,24 @@ mod tests {
         let stand_in = on.stand_in_install(GAME).unwrap();
         assert!(alone_with(&on, GAME, &stand_in) && !alone_with(&on, GAME, &root));
         assert!(open_with(&on, GAME, &stand_in, open_loose).unwrap().contains("maps/newer.dat"));
+    }
+
+    #[test]
+    fn a_whole_publish_stands_in_for_the_install_and_a_partial_one_does_not() {
+        let s = Scratch::new("complete");
+        let store = two_builds(&s);
+        let off = settings(&store, false, None);
+        assert!(!complete(&off, GAME), "sets only");
+        let path = store.manifest_path(GAME, "200");
+        let mut m = Manifest::load(&path).unwrap();
+        m.complete = true;
+        m.save(&path).unwrap();
+        assert!(complete(&off, GAME), "a whole install");
+        // What tests ask before reading a game's files.
+        let root = install(&s.0, Some("100"));
+        let on = settings(&store, true, None);
+        assert!(root.join("maps").is_dir());
+        assert!(!usable(GAME, &root, "nothing_here"), "an install without the game's folder");
+        assert!(alone_with(&on, GAME, &on.stand_in_install(GAME).unwrap()));
     }
 }

@@ -8,12 +8,16 @@
 //! game cs_source
 //! build 25338318
 //! app 240
+//! complete 1
 //! file <id> <size> <stored size> <path>
 //! set <name> <path>
 //! ```
 //!
-//! The path comes last on its line (it may hold spaces). Ids and sizes are
-//! facts about files, never the files' contents.
+//! The path comes last on its line (it may hold spaces). `complete 1`
+//! marks a manifest of every file the game mounts (`chimera_pack publish`
+//! of a whole install), not only of some sets: served alone, such a build
+//! stands in for a whole install. Ids and sizes are facts about files,
+//! never the files' contents.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -41,6 +45,8 @@ pub struct Manifest {
     pub build: String,
     /// The Steam app, when known.
     pub app: Option<u32>,
+    /// Every file the game mounts is listed (a whole install packed).
+    pub complete: bool,
     /// Normalized path -> record.
     pub files: BTreeMap<String, FileRecord>,
     /// Set name -> its paths (each in `files`).
@@ -57,6 +63,9 @@ impl Manifest {
         let mut out = format!("chimera-manifest {FORMAT}\ngame {}\nbuild {}\n", self.game, self.build);
         if let Some(app) = self.app {
             out.push_str(&format!("app {app}\n"));
+        }
+        if self.complete {
+            out.push_str("complete 1\n");
         }
         for (path, f) in &self.files {
             out.push_str(&format!("file {} {} {} {path}\n", f.id, f.size, f.stored));
@@ -86,6 +95,7 @@ impl Manifest {
                 "game" => m.game = rest.into(),
                 "build" => m.build = rest.into(),
                 "app" => m.app = Some(rest.parse().map_err(|_| err("bad app id"))?),
+                "complete" => m.complete = rest == "1",
                 "file" => {
                     let mut parts = rest.splitn(4, ' ');
                     let (Some(id), Some(size), Some(stored), Some(path)) =
