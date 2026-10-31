@@ -406,7 +406,7 @@ fn modes_part_two_lines() {
     assert_eq!(squad, ["Bank 800", "Mercenaries (follow me):", "  Squad_1 50 %"]);
     let esc = CaObjectives {
         escort: 2,
-        exit: Some(Exit { opens: 30.0, open: false }),
+        exit: Some(Exit { opens: 30.0, open: false, ..Default::default() }),
         rounds_to_swap: 2,
         ..Default::default()
     };

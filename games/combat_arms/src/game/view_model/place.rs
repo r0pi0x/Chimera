@@ -2,7 +2,15 @@
 //! view_models.md 4, 5, 9 and 10), as plain maths in the game's frame
 //! (left-handed, +Y up, units; camera space +X right, +Y up, +Z ahead):
 //! the model's camera-space origin, the shot jiggle, the world flash point
-//! and breach point, the fields of view and the muzzle flash's timer.
+//! and breach point, the fields of view and the muzzle flash's timer,
+//! and how dynamic lights fall on models (the view model included).
+//!
+//! Known shortcuts: the drawn falloff is Chimera's prop shader's (1 −
+//! d²/r²) × cosine (`render::prop.wesl`'s `dynamic_light`), not the
+//! game's 1 / (1 + 19·d²/r²) (`model_light_share`), and Chimera's light
+//! count, not the game's per-model choice of the strongest; the effect
+//! lights reach the view model's layer (`ui::effects`), placed in the
+//! world, which the view model's camera draws at the eye.
 
 use bevy::math::Vec3;
 
@@ -112,4 +120,22 @@ impl FlashTimer {
         self.shown = visible && alive && !under_water && self.shot_at.is_some_and(|t| now < t + length);
         self.shown
     }
+}
+
+/// How much of a dynamic light's colour reaches a model point `d` units
+/// from it, the light's radius `r` (view_models.md Follow-up (2026-10-31b)
+/// 1): 1 / (1 + 19·d²/r²), none at or beyond r. Every model is lit so, the
+/// view model too (its light placed relative to the camera).
+pub fn model_light_share(d: f32, r: f32) -> f32 {
+    if r <= 0.0 || d >= r {
+        return 0.0;
+    }
+    1.0 / (1.0 + 19.0 * d * d / (r * r))
+}
+
+/// A world light at `light` as the view model sees it: in the camera's
+/// space (the camera at `eye` with rotation `rot`), so it falls on the
+/// model where it really is relative to the camera.
+pub fn light_in_camera(light: Vec3, eye: Vec3, rot: bevy::math::Quat) -> Vec3 {
+    rot.inverse() * (light - eye)
 }

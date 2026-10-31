@@ -529,6 +529,13 @@ pub fn draw_radar(
     if let (Some(m), Some(a), Some(i)) = (&radar.map, art.as_mut(), images.as_mut()) {
         ensure_picture(&m.texture, a, i, &mut failed);
     }
+    // Icons the data names (the map markers' trigger resource pictures),
+    // decoded when first wanted too.
+    if let (Some(a), Some(i)) = (art.as_mut(), images.as_mut()) {
+        for m in &radar.marks {
+            ensure_picture(&m.look.icon, a, i, &mut failed);
+        }
+    }
     let loaded = art.as_ref().is_some_and(|a| !a.0.is_empty());
     if !super::rebuild(&mut last, ((*radar).clone(), loaded), *root, &mut commands) {
         return;

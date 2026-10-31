@@ -154,6 +154,13 @@
 //! listed for its open questions):
 //! - The scale is movement's `meters_per_unit` (the data's `units`; by
 //!   body size: movement.md Q3).
+//! - The level's polygons are open meshes here, not the original's solid
+//!   BSP: a round passing a wall of the level's own surface (Unknown
+//!   included, effects_sounds.md Follow-up (2026-10-31b) 3) also needs the
+//!   wall's far side within the limit + 1 unit ahead, so a single polygon
+//!   or a thick wall of the level stops it; a collider with a surface of
+//!   its own (a glass set, a prop, a world model) passes by the back-cast
+//!   alone.
 //! - Without a body model (no V2 key) the spheres sit on the spec's
 //!   skeleton as measured at `LST` t = 0 (characters.md 11), squashed
 //!   towards the feet when crouched and pitched by the look, the whole
@@ -1615,6 +1622,8 @@ pub struct SurfacePass {
     pub perturb: f32,
     pub range: f32,
     pub damage: f32,
+    /// Its surface type number (`effects.toml`'s ids).
+    pub id: u16,
 }
 
 /// Shoot-through surfaces by name (lower case).
@@ -1638,6 +1647,7 @@ impl CaSurfaces {
         #[serde(deny_unknown_fields)]
         struct Row {
             names: Vec<String>,
+            ids: Vec<u16>,
             thickness: f32,
             perturb: f32,
             range: f32,
@@ -1652,7 +1662,10 @@ impl CaSurfaces {
         let doc: Doc = toml::from_str(text).map_err(|e| e.to_string())?;
         let mut out = Vec::new();
         for row in doc.surface {
-            for n in row.names {
+            if row.ids.len() != row.names.len() {
+                return Err(format!("{:?}: one id per name", row.names));
+            }
+            for (n, id) in row.names.into_iter().zip(row.ids) {
                 out.push((
                     n.to_lowercase(),
                     SurfacePass {
@@ -1660,11 +1673,20 @@ impl CaSurfaces {
                         perturb: row.perturb,
                         range: row.range,
                         damage: row.damage,
+                        id,
                     },
                 ));
             }
         }
         Ok(Self(out))
+    }
+
+    /// The shoot-through surfaces' type numbers, ascending.
+    pub fn ids(&self) -> Vec<u16> {
+        let mut ids: Vec<u16> = self.0.iter().map(|(_, s)| s.id).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
     }
 
     /// The built-in table (data/surfaces.toml).
@@ -1949,12 +1971,14 @@ struct Delivery<'w, 's> {
     bodies: Query<'w, 's, (&'static RigidBody, Option<&'static ColliderAabb>)>,
     table: Res<'w, CaSurfaces>,
     /// The world's surfaces (walls without a `PropSurface`), another
-    /// game's surface names as Combat Arms' (a mashup's map), and what
-    /// takes damage that isn't a character (map breakables, props).
+    /// game's surface names as Combat Arms' (a mashup's map), what
+    /// takes damage that isn't a character (map breakables, props), and
+    /// the map's world models (shot through by their thickness alone).
     ground: (
         Option<Res<'w, SurfaceGrid>>,
         Option<Res<'w, SurfaceNames>>,
         Query<'w, 's, (), (With<Damageable>, Without<Intent>)>,
+        Query<'w, 's, (), With<crate::map::MapBrushEntity>>,
     ),
     /// Live grenades, which rounds hit (grenades.md 13), and special
     /// weapons' objects (rockets, mines: special_weapons.md 1.4).
@@ -2131,6 +2155,13 @@ impl Delivery<'_, '_> {
         }
         let ty = super::effects::world_surface_named(self.ground.0.as_deref(), names, point);
         Some(tables.surface.iter().find(|s| s.id == ty)?.name.clone())
+    }
+
+    /// Whether a collider has a surface of its own (a prop's, a brush
+    /// entity's, a glass set's), not the world's there.
+    fn owns_surface(&self, collider: Entity) -> bool {
+        let (props, brushes) = &self.surfaces;
+        super::effects::owned_surface(collider, props, brushes, &self.colliders).is_some()
     }
 
     /// How a round passes what it hit (`surface_name` in `CaSurfaces`).
@@ -3068,6 +3099,17 @@ fn server_walk(w: &mut Delivery, dmg: &CaDamage, r: &Round, walk: Walk, bodies: 
             // before it: anything it meets passes (the thickness itself is
             // never compared).
             let reach = pass.thickness + unit;
+            // The level's own geometry (no surface of its own: the
+            // world's) is solid behind its polygons, which are open
+            // meshes here: a point inside a thick wall is found by looking
+            // for the wall's far side ahead, not by the back-cast alone
+            // (the original's cast from inside solid space hits at once).
+            let ahead = Dir3::new(dir).unwrap_or(Dir3::NEG_Z);
+            if !w.owns_surface(hit.entity)
+                && w.spatial.cast_ray(point + dir * 1e-3, ahead, reach, false, &filter).is_none()
+            {
+                return;
+            }
             let far = point + dir * reach;
             let back = Dir3::new(-dir).unwrap_or(Dir3::NEG_Z);
             let Some(h) = w.spatial.cast_ray(far, back, reach + unit, true, &filter) else { return };
@@ -3075,10 +3117,12 @@ fn server_walk(w: &mut Delivery, dmg: &CaDamage, r: &Round, walk: Walk, bodies: 
                 // Still inside it at the limit: too thick.
                 return;
             }
-            // An object (not the world) must be thinner than the limit on
+            // An object (not the world or a world model: effects_sounds.md
+            // Follow-up (2026-10-31b) 3) must be thinner than the limit on
             // some axis too.
             if let Ok((rb, aabb)) = w.bodies.get(body)
                 && !rb.is_static()
+                && !w.ground.3.contains(body)
                 && aabb.is_some_and(|b| (b.max - b.min).min_element() >= pass.thickness)
             {
                 return;
@@ -3228,6 +3272,7 @@ mod tests {
         assert_eq!(t.get("plywood").map(|s| s.damage), Some(0.6));
         assert_eq!(t.get("water").map(|s| s.thickness), Some(0.0));
         assert!(t.get("concrete").is_none());
+        assert_eq!(t.get("unknown").map(|s| s.damage), Some(0.6));
     }
 
     #[test]

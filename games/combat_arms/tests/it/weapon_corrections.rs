@@ -975,3 +975,69 @@ fn wc41_pump_held() {
     // first.
     assert_eq!(&got[..2], &[2, 38], "{got:?}");
 }
+
+// ---------------------------------------------------------------------------
+// weapon_firing.md Follow-up (2026-10-31b) and effects_sounds.md Follow-up
+// (2026-10-31b) 3: surface 0 (Unknown) is shot through.
+
+/// A wall with no surface of its own (a level wall of surface type 0:
+/// Unknown), `units` thick, across the lane at z.
+fn bare_wall(sim: &mut Sim, z: f32, units: f32) {
+    sim.app.world_mut().spawn((
+        Transform::from_xyz(30.0, 1.5, z),
+        RigidBody::Static,
+        Collider::cuboid(3.0, 3.0, units * U),
+    ));
+    sim.ticks(1);
+}
+
+/// weapon_firing.md 70 and effects_sounds.md 95. A server ray through an
+/// 8 u wall of surface 0, a torso behind it (1000 u, 500 u): damage x 0.6
+/// and nothing else; a 12 u wall of surface 0 stops it.
+#[test]
+fn wf70_es95_unknown_wall() {
+    for units in [1000.0, 500.0] {
+        let mut clear = 0.0;
+        for wall in [None, Some(8.0), Some(12.0)] {
+            let mut sim = sim();
+            let (shooter, target) = range_lane(&mut sim, "test:m4a1_exact", units);
+            place_at(&mut sim, shooter, target, "Upper_torso", units);
+            let at = sphere(&sim, shooter, target, "Upper_torso");
+            aim(&mut sim, shooter, at);
+            if let Some(w) = wall {
+                bare_wall(&mut sim, 35.0, w);
+            }
+            let lost = pull(&mut sim, shooter, &[target])[0];
+            match wall {
+                None => {
+                    assert!(lost > 0.0, "a clear lane hits");
+                    clear = lost;
+                }
+                Some(8.0) => close(lost, clear * 0.6, 1e-3, &format!("8 u of Unknown at {units} u")),
+                Some(_) => close(lost, 0.0, 1e-6, &format!("12 u of Unknown at {units} u")),
+            }
+        }
+    }
+}
+
+/// effects_sounds.md 94. The surface table: Unknown (0) is shot through
+/// (limit 10, re-perturb 10, range x 1.0, damage x 0.6), and the
+/// shoot-through list is the 19 surfaces of Follow-up (2026-10-31b) 3.
+#[test]
+fn es94_unknown_in_the_surface_table() {
+    let t = ca::CaSurfaces::built_in();
+    let u = t.get("Unknown").expect("Unknown passes");
+    close(u.thickness, 10.0 * U, 1e-6, "limit");
+    close(u.perturb, 10.0, 0.0, "re-perturb");
+    close(u.range, 1.0, 0.0, "range");
+    close(u.damage, 0.6, 0.0, "damage");
+    assert_eq!(u.id, 0);
+    assert_eq!(t.ids(), vec![0, 1, 2, 3, 9, 23, 30, 32, 40, 50, 53, 65, 69, 76, 81, 100, 204, 206, 207]);
+    for (name, limit, damage) in
+        [("trussing", 10.0, 1.0), ("invisible metal", 0.0, 0.9), ("air", 0.0, 1.0), ("boss3_weak", 55.0, 0.3)]
+    {
+        let s = t.get(name).unwrap_or_else(|| panic!("{name} passes"));
+        close(s.thickness, limit * U, 1e-6, name);
+        close(s.damage, damage, 0.0, name);
+    }
+}

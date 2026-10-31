@@ -932,9 +932,10 @@ the user's go-ahead: no Actions runs unless asked.
     `weapon_firing::t37_*`, `effects_sounds::a_round_on_bullet_proof_glass_takes_its_impact`,
     `heavy::world::glass_sets_and_glass_world_models_name_their_surface`).
   Combat Arms' own glass doesn't break (only `Breakable` objects do, by
-  hit points; world_objects.md 11). Open: surface Unknown (0) is
-  shoot-through in one build's table (effects_sounds.md Open question
-  15); ours stops.
+  hit points; world_objects.md 11). Surface Unknown (0) is shot through
+  as the install's table says (effects_sounds.md Follow-up (2026-10-31b)
+  3); the level's own walls also need their far side within the limit
+  (our open meshes: `weapons` Known shortcuts).
 - **Random attachments on Combat Arms rungs (user idea): fixed, confirm
   in a playtest.** Built as Chimera's per-rung extras hook
   (`ladder::RungExtrasHook`, `rung_extras` in `[rules]`) with Combat
@@ -2508,16 +2509,17 @@ dithered fade bands. Left:
 Counts are from de_dust2's entity lump and static prop lump.
 
 - **Combat Arms world objects, what item 23 left** (docs/plans/active/
-  combat-arms.md row 23): whether the engine carries riders on a
-  keyframer's teleports (`GOTO`, a looping velocity-mode keyframer's
-  jump back: ours doesn't on `GOTO`, does on the jump; no stock
-  keyframer moves a world model); the spec's Open questions 6 and 14 (the
-  original's own client push and interpolation) for a parity check; the
-  breakables' `CreateExplosion`/`FIRE`, `Spawn`, `WorldModelDebris`
-  and `DebrisType` looks; map cameras and `TargetTrigger` markers; and
-  `TimerTrigger`, `LightActivateTrigger`, `CaptionTrigger`,
-  `MessageTrigger`, `MissionTrigger` once a spec session covers them
-  (Open question 8).
+  combat-arms.md row 23): the parity decision on clients' movers (the
+  original draws sliding movers 100 ms in the past, snaps rotating ones,
+  jumps keyframed ones and pushes its own player per drawn step, never on a
+  teleport; ours predicts them: world_objects.md Follow-up (2026-10-31b)
+  2, cases 40-45 not reproduced); the client display of timers, captions,
+  messages and the objective list (Open question 15: server notices only)
+  and of cameras (which camera a client looks through: death_killcam.md);
+  the co-op parts (sub-mission time, mission manager, mission texts and
+  counted maxima); `CaObjectFire` into a real shot (no stock map uses
+  it); the game's model-light falloff in the prop shader; the guide
+  markers' line test (alpha 125).
 
 - **Remaining decals**: 13 infodecals over the stock maps find no
   surface (dust2 5, tides 3, compound 2, dust 2, train 1): by props

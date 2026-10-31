@@ -4,7 +4,9 @@
 //! the map gives it (a heartbeat contact is on the radar only; a dead ally
 //! is on the map only), read from the world: every player and AI
 //! character, the mode's objectives and items (`game::rules::objects`,
-//! `objectives`), the death marks (`Died`).
+//! `objectives`), the map's markers that are on (`game::objects::markers`:
+//! their trigger resource records' large-map icons), the death marks
+//! (`Died`).
 //!
 //! Headless (the tests read `CaScene`); `radar` and `full_map` turn it
 //! into pixels.
@@ -162,6 +164,8 @@ pub struct SceneInputs<'w, 's> {
     screen: Option<Res<'w, super::HudScreen>>,
     /// Arms Race: each player's place on the ladder (the last stage).
     ladders: Query<'w, 's, &'static arms_race::CaLadder>,
+    /// The map's `TargetTrigger` markers that are on (their map icons).
+    markers: Option<Res<'w, crate::game::objects::markers::CaMarkers>>,
 }
 
 /// The spec's yaw of a character: its intent's, else its body's.
@@ -301,6 +305,30 @@ pub fn update_scene(inputs: SceneInputs, mut scene: ResMut<CaScene>, mut spots: 
         });
     }
 
+    // The map's markers (world_objects.md Follow-up (2026-10-31b) 1.6):
+    // their records' large-map pictures.
+    if let Some(markers) = &inputs.markers {
+        for m in &markers.0 {
+            let Some(icon) = &m.icons.map else { continue };
+            let l = Look {
+                icon: look::map_icon_key(icon),
+                view: None,
+                badge: None,
+                arrow: false,
+            };
+            items.push(Thing {
+                entity: None,
+                kind: Kind::Item,
+                at: radar::file_point(m.at),
+                y: radar::file_height(m.at),
+                yaw: 0.0,
+                radar: Some(l.clone()),
+                map: Some(l),
+                name: None,
+                arrow: false,
+            });
+        }
+    }
     // Objectives and items.
     if let (Some(objects), Some(objectives)) = (&inputs.objects, &inputs.objectives) {
         let pt = |p: Vec3| (radar::file_point(p), radar::file_height(p));

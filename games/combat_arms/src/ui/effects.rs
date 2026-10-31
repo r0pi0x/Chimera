@@ -71,6 +71,7 @@ use crate::{
         attachments::CaMods,
         effects::{
             CaShell, CaTracers,
+            debris::{CaDebrisPiece, CaDebrisTable},
             fx::CaFx,
             data::CaFxTables,
             library::{self, normalize},
@@ -94,7 +95,7 @@ impl Plugin for CaEffectsDrawPlugin {
             .insert_resource(FxImages::new(mount))
             .add_systems(
                 Update,
-                (decals, tracers, casings, muzzle_flash, super::attached_fx::attached_effects, lights)
+                (decals, tracers, casings, debris_looks, muzzle_flash, super::attached_fx::attached_effects, lights)
                     .after(crate::map::DriveAnimation)
                     .after(crate::game::effects::CaEffectsSet),
             )
@@ -478,6 +479,76 @@ fn casings(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Prop debris
+
+/// Debris pieces' meshes by model path, and their skins' materials' base
+/// (each piece fades on a material of its own).
+#[derive(Default)]
+struct DebrisLooks(HashMap<String, Handle<Mesh>>);
+
+/// Each new debris piece gets its record's model (the first piece of the
+/// `.ltb`; a small block without it) and skin, alpha-blended when the
+/// record's `Alpha` is below 1; every frame its fade
+/// (`game::effects::debris`).
+#[allow(clippy::too_many_arguments)]
+fn debris_looks(
+    new: Query<(Entity, &CaDebrisPiece), Without<Mesh3d>>,
+    shown: Query<(&CaDebrisPiece, &MeshMaterial3d<StandardMaterial>)>,
+    table: Option<Res<CaDebrisTable>>,
+    server: Res<AssetServer>,
+    mut fx_images: ResMut<FxImages>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut looks: Local<DebrisLooks>,
+    mut commands: Commands,
+) {
+    let Some(table) = table else { return };
+    for (e, p) in &new {
+        let Some(r) = table.get(p.record) else { continue };
+        let Some(model) = r.models.get(p.piece.model) else {
+            // A record without models (`None`): nothing drawn.
+            commands.entity(e).insert((Mesh3d(Handle::default()), Visibility::Hidden));
+            continue;
+        };
+        let mesh = looks
+            .0
+            .entry(model.clone())
+            .or_insert_with(|| {
+                fx_images
+                    .mount()
+                    .and_then(|m| casing_mesh(model, &m))
+                    .map(|m| meshes.add(m))
+                    .unwrap_or_else(|| meshes.add(Cuboid::new(0.05, 0.01, 0.05)))
+            })
+            .clone();
+        let tex = r.skins.first().filter(|s| !s.is_empty()).and_then(|s| fx_images.get(s, &server));
+        let alpha = p.piece.alpha;
+        let material = materials.add(StandardMaterial {
+            base_color: if tex.is_some() { Color::srgba(1.0, 1.0, 1.0, alpha) } else { Color::srgba(0.7, 0.75, 0.8, alpha) },
+            base_color_texture: tex,
+            alpha_mode: if alpha < 1.0 { AlphaMode::Blend } else { AlphaMode::Opaque },
+            double_sided: true,
+            cull_mode: None,
+            perceptual_roughness: 0.5,
+            ..default()
+        });
+        commands.entity(e).insert((Mesh3d(mesh), MeshMaterial3d(material), Visibility::default()));
+    }
+    for (p, m) in &shown {
+        let Some(r) = table.get(p.record) else { continue };
+        let a = p.piece.alpha_now(r.fade);
+        if let Some(mut mat) = materials.get_mut(&m.0)
+            && (mat.base_color.alpha() - a).abs() > 1e-3
+        {
+            mat.base_color.set_alpha(a);
+            if a < 1.0 {
+                mat.alpha_mode = AlphaMode::Blend;
+            }
+        }
+    }
+}
+
 /// A casing model's first piece as a mesh (metres).
 fn casing_mesh(path: &str, mount: &crate::mount::Mount) -> Option<Mesh> {
     if path.is_empty() {
@@ -596,6 +667,8 @@ fn muzzle_flash(
     let lib = library::library();
     // Without the effect file: a plain glow (no install); with it, the
     // group's particle, or nothing when the group is missing.
+    let mut at = at;
+    let mut light_at = vm.flash_point;
     let (size, color, tex, light_keys) = match lib.as_ref() {
         None => (0.016, Vec3::new(1.0, 0.75, 0.4), None, None),
         Some(lib) => {
@@ -609,6 +682,16 @@ fn muzzle_flash(
                 *qv = Visibility::Hidden;
                 return;
             };
+            // A player-view key at the flash point, its own offset not
+            // added (view_models.md Follow-up (2026-10-31b) 2); a socket
+            // key at its socket (`flash_at`).
+            use crate::game::view_model::attached::{FlashKeyPoint, flash_key_point};
+            if let Some(FlashKeyPoint::Camera(o)) = flash_key_point(p.combo("UpdatePos"), true, vm.flash_offset, vm.flash_point) {
+                at = Vec3::new(o.x, o.y, -o.z) * UNIT;
+            }
+            if let Some(FlashKeyPoint::World(f)) = l.and_then(|l| flash_key_point(l.combo("UpdatePos"), false, vm.flash_offset, vm.flash_point)) {
+                light_at = f;
+            }
             let life = p.float("MaxParticleLifeSpan").unwrap_or(0.05).max(1e-3);
             let t = (age / life).min(1.0);
             let s = sample_keys(&p.scale_keys(), t, 0.5);
@@ -635,7 +718,7 @@ fn muzzle_flash(
                 let t = (age / life.max(1e-3)).min(1.0);
                 let r = sample_keys(&radius, t, 0.0) * UNIT;
                 let ch = |i: usize| sample_keys(&color.iter().map(|(k, c)| (*k, c[i])).collect::<Vec<_>>(), t, 1.0);
-                lt.translation = vm.flash_point;
+                lt.translation = light_at;
                 pl.range = r.max(0.01);
                 pl.color = Color::srgb(ch(0), ch(1), ch(2));
                 pl.intensity = LIGHT_LUMENS;

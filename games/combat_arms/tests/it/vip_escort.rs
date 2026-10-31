@@ -161,9 +161,11 @@ fn case_22_vip_loadout() {
     assert!((limit - 159.6).abs() < 0.5, "{limit} u/s");
 }
 
-/// 24. The exit opens 60 s after the setup: the VIP in the zone at 59.95 s
-/// → nothing; at 75 s → the escort wins, everyone frozen and immune; the
-/// round over at 78 s; Alpha's round wins +1.
+/// 24, as game_modes_2.md Follow-up (2026-10-31b) corrects it. The exit
+/// opens 61 s after the setup (the exit timer's 60 s + its 1 s run-out):
+/// the VIP in the zone at 60.95 s → nothing; at 75 s → the escort wins,
+/// everyone frozen and immune; the round over at 78 s; Alpha's round wins
+/// +1.
 #[test]
 fn case_24_exit_opens() {
     let (mut sim, _a, b) = esc(2, 2);
@@ -172,13 +174,13 @@ fn case_24_exit_opens() {
         None => panic!("a timer"),
     };
     let v = vip(&mut sim).unwrap();
-    run_to(&mut sim, t0, 59.9);
+    run_to(&mut sim, t0, 60.9);
     assert!(!objectives(&sim).exit.unwrap().open);
     hold_at(&mut sim, v, EXIT, 0.04);
-    assert!(m(&sim).winner.is_none(), "shut until 60 s: {:?} at {}", m(&sim), now(&sim) - t0);
+    assert!(m(&sim).winner.is_none(), "shut until 61 s: {:?} at {}", m(&sim), now(&sim) - t0);
     put(&mut sim, v, VIP_AT);
-    run_to(&mut sim, t0, 60.05);
-    assert!(objectives(&sim).exit.unwrap().open, "open at 60 s");
+    run_to(&mut sim, t0, 61.05);
+    assert!(objectives(&sim).exit.unwrap().open, "open at 61 s");
     run_to(&mut sim, t0, 75.0);
     hold_at(&mut sim, v, EXIT, TICK_INTERVAL);
     let mm = m(&sim);
@@ -191,6 +193,25 @@ fn case_24_exit_opens() {
     assert!((round_over_at(&sim).unwrap() - (t0 + 78.0)).abs() < 0.1);
     assert_eq!(m(&sim).round_wins, [1, 0]);
     assert_eq!(stats(&sim, v).vip_escapes, 1);
+}
+
+/// game_modes_2.md 54. Exit at 61 s: the round live at t = 0 with the
+/// exit timer started then: the helicopter coming at t = 54.0; the zone
+/// still shut at t = 60.95; open at t = 61.0.
+#[test]
+fn case_54_exit_at_61_s() {
+    let (mut sim, _a, _b) = esc(2, 2);
+    let t0 = m(&sim).round_ends.expect("a timer") - 180.0;
+    run_to(&mut sim, t0, 53.95);
+    assert!(!objectives(&sim).exit.unwrap().arriving, "not yet at 53.95 s");
+    run_to(&mut sim, t0, 54.0);
+    assert!(objectives(&sim).exit.unwrap().arriving, "the helicopter at 54 s");
+    run_to(&mut sim, t0, 60.95);
+    assert!(!objectives(&sim).exit.unwrap().open, "shut at 60.95 s");
+    run_to(&mut sim, t0, 61.0);
+    let x = objectives(&sim).exit.unwrap();
+    assert!(x.open, "open at 61 s");
+    assert!((x.opens - (t0 + 61.0)).abs() < 1e-6, "opens at {}", x.opens - t0);
 }
 
 /// 25. The VIP killed at 100 s → the elimination team; frozen; the round
@@ -275,7 +296,7 @@ fn case_28_last_frame() {
         {
             let w = sim.app.world_mut();
             let mut o = w.resource_mut::<combat_arms::game::rules::objectives::CaObjectives>();
-            o.exit = Some(combat_arms::game::rules::objectives::Exit { opens: t, open: true });
+            o.exit = Some(combat_arms::game::rules::objectives::Exit { opens: t, open: true, ..Default::default() });
         }
         // The round ends at the next tick (or the one after).
         let dt = TICK_INTERVAL;
@@ -314,7 +335,7 @@ fn case_30_swap_timing() {
     let now0 = now(&sim);
     {
         let mut o = sim.app.world_mut().resource_mut::<combat_arms::game::rules::objectives::CaObjectives>();
-        o.exit = Some(combat_arms::game::rules::objectives::Exit { opens: now0, open: true });
+        o.exit = Some(combat_arms::game::rules::objectives::Exit { opens: now0, open: true, ..Default::default() });
     }
     hold_at(&mut sim, v, EXIT, TICK_INTERVAL);
     let t0 = now(&sim) - TICK_INTERVAL;

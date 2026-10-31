@@ -1,0 +1,122 @@
+# Combat Arms' prop debris records (specs/combat_arms/effects_sounds.md
+# Follow-up (2026-10-31b) 1: the install's `ATTRIBUTES\DEBRIS.TXT`, six
+# records), as the spec gives them, not a file from the game: used when the
+# install's table can't be read. A record's place is its id; a map object's
+# `DebrisType` names it by `name` (case ignored). Vectors: `vel` is (right,
+# forward, up) of the death direction's frame, the others world (x, y, z);
+# times in seconds; `rotate` 0 or not; `models`, `skins`, `styles` and the
+# sounds are archive paths.
+
+[[record]]
+name = "None"
+surface = 0
+scale = [1.0, 1.0]
+offset_min = [10.0, 10.0, 10.0]
+offset_max = [10.0, 10.0, 10.0]
+
+[[record]]
+name = "Window"
+surface = 40
+scale = [0.5, 1.2]
+vel_min = [-800.0, -500.0, -800.0]
+vel_max = [800.0, 800.0, 800.0]
+offset_min = [10.0, 10.0, 10.0]
+offset_max = [10.0, 10.0, 10.0]
+life = [4.0, 5.0]
+fade = 3.0
+number = 30
+rotate = 1
+bounce = [10, 15]
+gravity = 2.0
+alpha = 0.7
+models = ["FX\\Debris\\Models\\glass_01.ltb", "FX\\Debris\\Models\\glass_02.ltb", "FX\\Debris\\Models\\glass_03.ltb"]
+skins = ["FX\\Debris\\Skins\\glass_01.dtx"]
+styles = ["RS\\translucent.ltb"]
+bounce_sounds = ["FX\\Debris\\Snd\\Smallglass\\gib_1.wav", "FX\\Debris\\Snd\\Smallglass\\gib_2.wav"]
+explode_sounds = ["FX\\Debris\\Snd\\Smallglass\\glass_crash1.wav", "FX\\Debris\\Snd\\Smallglass\\glass_crash3.wav"]
+
+[[record]]
+name = "Window_smoll"
+surface = 40
+scale = [0.2, 0.5]
+vel_min = [-400.0, -250.0, -400.0]
+vel_max = [400.0, 400.0, 400.0]
+offset_min = [10.0, 10.0, 10.0]
+offset_max = [10.0, 10.0, 10.0]
+life = [0.8, 1.0]
+fade = 2.0
+number = 15
+rotate = 1
+bounce = [10, 15]
+gravity = 1.0
+alpha = 0.7
+models = ["FX\\Debris\\Models\\glass_01.ltb", "FX\\Debris\\Models\\glass_02.ltb", "FX\\Debris\\Models\\glass_03.ltb"]
+skins = ["FX\\Debris\\Skins\\glass_01.dtx"]
+styles = ["RS\\translucent.ltb"]
+bounce_sounds = ["FX\\Debris\\Snd\\Smallglass\\gib_1.wav", "FX\\Debris\\Snd\\Smallglass\\gib_2.wav"]
+explode_sounds = ["FX\\Debris\\Snd\\Smallglass\\explode_1.wav", "FX\\Debris\\Snd\\Smallglass\\explode_2.wav"]
+
+[[record]]
+name = "Window_Large"
+surface = 40
+scale = [4.0, 7.0]
+vel_min = [-600.0, -400.0, -600.0]
+vel_max = [600.0, 400.0, 600.0]
+offset_min = [-30.0, -30.0, -30.0]
+offset_max = [30.0, 30.0, 30.0]
+life = [0.5, 0.7]
+fade = 2.0
+number = 10
+rotate = 1
+bounce = [15, 20]
+gravity = 1.0
+alpha = 0.7
+models = ["FX\\Debris\\Models\\GLASS_02A.ltb", "FX\\Debris\\Models\\GLASS_02B.ltb", "FX\\Debris\\Models\\GLASS_02C.ltb"]
+skins = ["FX\\Debris\\Skins\\glass_01.dtx"]
+styles = ["RS\\translucent.ltb"]
+bounce_sounds = ["FX\\Debris\\Snd\\Smallglass\\gib_1.wav", "FX\\Debris\\Snd\\Smallglass\\gib_2.wav"]
+explode_sounds = ["FX\\Debris\\Snd\\Smallglass\\glass_crash1.wav", "FX\\Debris\\Snd\\Smallglass\\glass_crash3.wav"]
+
+[[record]]
+name = "56x56WoodBox"
+surface = 30
+scale = [5.0, 8.0]
+vel_min = [-150.0, -150.0, 300.0]
+vel_max = [150.0, 150.0, 500.0]
+offset_min = [-28.0, -28.0, 10.0]
+offset_max = [28.0, 28.0, 50.0]
+life = [1.0, 1.2]
+fade = 1.0
+number = 6
+rotate = 360
+bounce = [10, 15]
+gravity = 3.0
+alpha = 1.0
+models = ["FX\\Debris\\Models\\WOOD1A.ltb", "FX\\Debris\\Models\\WOOD1C.ltb"]
+skins = ["FX\\Debris\\Skins\\WOOD.dtx"]
+styles = ["RS\\DEFAULT.ltb"]
+bounce_sounds = ["FX\\Debris\\Snd\\Wood\\gib_1.wav", "FX\\Debris\\Snd\\Wood\\gib_2.wav"]
+explode_sounds = ["FX\\Debris\\Snd\\Wood\\explode_1.wav", "FX\\Debris\\Snd\\Wood\\explode_2.wav"]
+
+[[record]]
+name = "Stone"
+surface = 54
+scale = [4.0, 8.0]
+vel_min = [-200.0, -50.0, -200.0]
+vel_max = [200.0, 300.0, 200.0]
+world_vel_min = [-50.0, 100.0, -50.0]
+world_vel_max = [50.0, 300.0, 50.0]
+offset_min = [10.0, 10.0, 10.0]
+offset_max = [10.0, 10.0, 10.0]
+life = [2.0, 3.0]
+fade = 2.0
+number = 8
+rotate = 1
+bounce = [5, 8]
+gravity = 2.5
+alpha = 1.0
+models = ["FX\\Debris\\Models\\chunk1.ltb", "FX\\Debris\\Models\\chunk2.ltb", "FX\\Debris\\Models\\chunk3.ltb", "FX\\Debris\\Models\\chunk4.ltb"]
+skins = ["FX\\Debris\\Skins\\STONE.dtx"]
+styles = ["RS\\default.ltb"]
+bounce_sounds = ["FX\\Debris\\Snd\\STONE\\gib_1.wav", "FX\\Debris\\Snd\\STONE\\gib_2.wav"]
+explode_sounds = ["FX\\Debris\\Snd\\STONE\\explode_1.wav", "FX\\Debris\\Snd\\STONE\\explode_2.wav"]

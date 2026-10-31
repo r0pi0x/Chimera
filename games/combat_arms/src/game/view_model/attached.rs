@@ -213,21 +213,62 @@ pub fn of_active<'a>(attached: &'a CaAttachedFx, inventory: &Inventory) -> Optio
     (attached.weapon.is_some() && attached.weapon == inventory.active).then_some(attached)
 }
 
+/// The "player view" placement mode (`UpdatePos` 2): placed only by the
+/// weapon code, for the muzzle flash group (view_models.md Follow-up
+/// (2026-10-31b) 2).
+pub const PLAYER_VIEW: i32 = 2;
+
+/// Where a muzzle-flash key sits (view_models.md Follow-up (2026-10-31b)
+/// 2).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FlashKeyPoint {
+    /// In the view-model camera's space: the flash offset o (units, the
+    /// game's camera axes).
+    Camera(Vec3),
+    /// In the world: the flash point F (metres).
+    World(Vec3),
+}
+
+/// Where a key of placement mode `mode` of the muzzle flash group sits
+/// while the flash shows: a player-view key at the flash point, its own
+/// `Offset` not added (a camera-relative key, a particle or sprite, at the
+/// camera-space flash offset; a world key, a light, at the world flash
+/// point); None for another mode (placed by that mode).
+pub fn flash_key_point(mode: Option<i32>, camera_relative: bool, flash_offset: Vec3, flash_point: Vec3) -> Option<FlashKeyPoint> {
+    (mode == Some(PLAYER_VIEW)).then(|| {
+        if camera_relative {
+            FlashKeyPoint::Camera(flash_offset)
+        } else {
+            FlashKeyPoint::World(flash_point)
+        }
+    })
+}
+
 /// Where a key of an attached effect sits, in the view-model camera's
 /// space (metres, Bevy axes), posed as drawn: a key attached to a socket
 /// or node of the view model (`UpdatePos` 3-6 with `AttachName`; sockets
 /// first, then nodes, names without case) is there plus its `Offset` in
-/// that socket's axes (units); any other (fixed, follow, player view) and
-/// a name the model lacks sit at the model's origin plus the offset.
+/// that socket's axes (units); a player-view key (`UpdatePos` 2: nothing
+/// places it in an attached group, Follow-up (2026-10-31b) 2) stays where
+/// the model was when the group was made (`made`) plus its unrotated
+/// offset; any other (fixed, follow) and a name the model lacks sit at the
+/// model's origin plus the offset.
+#[allow(clippy::too_many_arguments)]
 pub fn key_place(
     model: &crate::map::MapViewModel,
     pose: &[crate::map::anim::BonePose],
     offset: &crate::map::ViewModelOffset,
     attach: Option<&str>,
     key_offset: Vec3,
+    mode: Option<i32>,
+    made: &crate::map::ViewModelOffset,
 ) -> Mat4 {
-    let placed = crate::map::view_model::placement(offset, false);
     let o = Vec3::new(key_offset.x, key_offset.y, -key_offset.z);
+    if mode == Some(PLAYER_VIEW) {
+        let at = crate::map::view_model::placement(made, false).to_matrix() * model.root.to_matrix();
+        return Mat4::from_translation(at.transform_point3(Vec3::ZERO) + o);
+    }
+    let placed = crate::map::view_model::placement(offset, false);
     let name = attach.filter(|n| !n.is_empty());
     let socket = name.and_then(|n| model.attachments.iter().position(|a| a.name.eq_ignore_ascii_case(n)));
     let base = match socket {

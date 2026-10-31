@@ -18,10 +18,13 @@
 //! keys' pitch and roll aren't added); the Bézier length is measured by
 //! 64 chords (the engine's own subdivision is Open question 7);
 //! `PushObjects` teleports like the rest (no stock keyframer pushes);
-//! every frame's move carries riders (the jump back to the start of a
-//! looping velocity-mode keyframer, or of one switched on again, too),
-//! `GOTO`'s jump doesn't (whether the engine carries on a teleport isn't
-//! given).
+//! every frame's move carries riders on the server (the jump back to the
+//! start of a looping keyframer, or of one switched on again, is that
+//! frame's placement too), and so does `GOTO`'s jump (world_objects.md
+//! Follow-up (2026-10-31b) 2.3: every teleport carries on the server);
+//! a client steps the frames' moves and carries its own player on them
+//! even without `PushObjects`, where the original's are teleports a client
+//! never carries on (`net`'s Known shortcuts: our prediction).
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
