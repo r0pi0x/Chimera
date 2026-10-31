@@ -269,6 +269,24 @@ pub fn server_sound(file: &str, at: Vec3, (r, big_r): (f32, f32)) -> CaSound {
     }
 }
 
+/// A projectile record's create sound (special_weapons.md Corrections
+/// (2026-10-31) 3): a server sound at the shot's fire position `at`
+/// (metres), radius `radius` (u), volume 100, once, when the record has
+/// one and a radius, and the weapon's automatic throw (or mine) call-out
+/// (`auto_throw`) doesn't stand in for it.
+pub fn create_sound(file: &str, radius: f32, auto_throw: bool, at: Vec3) -> Option<CaSound> {
+    (radius > 0.0 && !file.is_empty() && !auto_throw).then(|| server_sound(file, at, (rules::inner_radius(radius), radius)))
+}
+
+/// `create_sound` written to the world's sounds (the server's frame).
+pub fn write_create_sound(world: &mut World, file: &str, radius: f32, auto_throw: bool, at: Vec3) {
+    if let Some(s) = create_sound(file, radius, auto_throw, at)
+        && let Some(mut m) = world.get_resource_mut::<Messages<CaSound>>()
+    {
+        m.write(s);
+    }
+}
+
 /// Start and stop the long-lived looping sounds (`view_model::attached::
 /// CaLoopSound`: the attached effects' sounds), each file read the first
 /// time as `play` does, scaled by the effects master when started.
@@ -305,7 +323,7 @@ pub fn loops(
             at: s.at,
             follow: if s.at.is_some() { l.follow } else { None },
             volume: Some((s.volume / 100.0 * master).clamp(0.0, 1.0)),
-            looping: true,
+            looping: !l.once,
             ..default()
         }));
     }

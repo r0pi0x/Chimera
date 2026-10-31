@@ -178,6 +178,23 @@ pub fn seen(cam: Vec3, forward: Vec3, p: Vec3) -> bool {
     forward.dot(dir) >= VIEW_CONE_DOT
 }
 
+/// A position as the game sends it in a fire-only weapon event
+/// (special_weapons.md Corrections (2026-10-31) 1): each axis quantised
+/// to a grid over the world's bounding box `(lo, hi)`, 2^19 cells on x
+/// and z, 2^18 on y, and received as the cell's centre. Any one unit.
+pub fn compress_position(p: Vec3, (lo, hi): (Vec3, Vec3)) -> Vec3 {
+    let cells = Vec3::new(524_288.0, 262_144.0, 524_288.0);
+    let size = (hi - lo).max(Vec3::splat(1e-6));
+    let cell = ((p - lo) / size * cells).floor().clamp(Vec3::ZERO, cells - 1.0);
+    lo + (cell + 0.5) / cells * size
+}
+
+/// The world origin clamped into the world's box: the impact position of
+/// an event that never set one (a launcher's fire-only event).
+pub fn unset_impact(world: Option<(Vec3, Vec3)>) -> Vec3 {
+    world.map_or(Vec3::ZERO, |(lo, hi)| Vec3::ZERO.clamp(lo, hi))
+}
+
 /// The gates of section 2 (units). `others`: another player's shot (its
 /// impact within 300 u counts as seen).
 pub fn gates(cam: Vec3, forward: Vec3, fire: Vec3, impact: Vec3, others: bool) -> Gates {

@@ -157,3 +157,28 @@ fn every_rung_bodys_skins_resolve() {
         assert!(g.additional_skins.first().is_some_and(|s| s.to_lowercase().contains("ghillie")), "{}: {:?}", g.name, g.additional_skins);
     }
 }
+
+/// models_ltb.md R9 on the install's records: `Face160` (Alpha Gear)
+/// fills slot 1 with the reflection `textures\128xCharSkin.dtx` (its
+/// whole list in order); `Hair331` (Summer Claire) at camouflage 1 fills
+/// slot 0 with its `Skin1` and leaves slot 1 empty.
+#[test]
+fn r9_piece_skins_from_the_records() {
+    let ca = CaData::install();
+    if ca.attributes().and_then(|a| a.models.as_ref()).is_none() {
+        eprintln!("skipping: the install's models file isn't readable (the V1 key)");
+        return;
+    }
+    let data = ca.characters();
+    let face = data.face(160).expect("Face160");
+    let reflection = render_style::piece_skin(render_style::Piece::Face, &face.skins, 1, 0).expect("slot 1");
+    assert_eq!(model::normalize(reflection), "textures/128xcharskin.dtx", "{:?}", face.skins);
+    let hair = data.head.iter().find(|h| h.id == 331).expect("Hair331");
+    assert_eq!(
+        render_style::piece_skin(render_style::Piece::Head, &hair.skins, 0, 1),
+        hair.skins.get(1).map(String::as_str),
+        "slot 0 = Skin1 at camouflage 1: {:?}",
+        hair.skins
+    );
+    assert_eq!(render_style::piece_skin(render_style::Piece::Head, &hair.skins, 1, 1), None, "slot 1 is never filled");
+}

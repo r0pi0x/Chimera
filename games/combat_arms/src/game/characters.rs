@@ -373,6 +373,10 @@ impl CaPose {
             ("EYE_L", self.eyes[0]),
             ("EYE_R", self.eyes[1]),
             ("RightHand", self.right_hand),
+            // The held weapon's flash socket, at the hand (the held
+            // model's own isn't posed here).
+            ("Flash", self.right_hand),
+            ("Flash01", self.right_hand),
             ("NAME_socket", self.name_tag),
         ]
         .into_iter()

@@ -789,9 +789,21 @@ pub fn spawn_object(world: &mut World, mut o: CaObject) -> Entity {
         Kind::Impact(p) => p.shown_key(),
         _ => o.weapon.to_string(),
     };
+    // A device's sounds in flight and at rest (Corrections (2026-10-31) 3).
+    let look = match &o.kind {
+        Kind::Device(d) if d.look.has_sounds() => Some(d.look.clone()),
+        Kind::Bolt(b) if b.look.has_sounds() => Some(b.look.clone()),
+        _ => None,
+    };
     let mut e = world.spawn((Name::new(name), Transform::from_translation(at), target, ShownItem(id), o));
     if survives {
         e.insert(SurvivesRestart);
+    }
+    if let Some(look) = look {
+        e.insert((
+            super::effects::attached::CaFlightSounds::default(),
+            super::effects::attached::CaFlightLook(look),
+        ));
     }
     e.id()
 }

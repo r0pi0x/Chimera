@@ -510,6 +510,8 @@ pub enum LayerCoords {
     SphereMap,
     /// The view direction reflected about the normal, world space.
     WorldReflection,
+    /// The normal, world space.
+    WorldNormal,
 }
 
 /// How coordinates outside 0..1 sample a `MapLayer`.
@@ -537,6 +539,48 @@ pub enum LayerCombine {
     AlphaLerp,
     /// (T x L + T.a x S) x (1 + T.a^2): the base's alpha a gloss mask.
     Gloss,
+    /// LithTech's `pv_char_b`, its three passes in one (`pv_char_b`):
+    /// the dot3 grey of the lit pass, plus the added pass, times the
+    /// multiplied pass that reads S.
+    PvCharB,
+}
+
+/// The fixed-function lighting material of a render-style pass (LithTech's:
+/// the style file's material, specs/combat_arms/models_ltb.md Follow-up
+/// (2026-10-31) 3). A pass with lighting on lights its vertices with it:
+/// the lit colour is `lit(A, sigma)`, and a separate specular colour is
+/// added to the pixel after all the texture stages (`specular`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LayerLighting {
+    pub emissive: Vec3,
+    pub ambient: Vec3,
+    pub diffuse: Vec3,
+    pub specular: Vec3,
+    pub power: f32,
+}
+
+impl LayerLighting {
+    /// L = clamp(M_e + M_a x A + M_d x sigma), per channel, with `ambient`
+    /// the ambient light the engine gives the model and `direct` the sum
+    /// over lights of colour x max(0, N.D) x falloff.
+    pub fn lit(&self, ambient: Vec3, direct: Vec3) -> Vec3 {
+        (self.emissive + self.ambient * ambient + self.diffuse * direct).clamp(Vec3::ZERO, Vec3::ONE)
+    }
+
+    /// The specular colour S = M_s x sum_k C_k x max(0, N.H_k)^p over the
+    /// lights `(colour, direction toward the light)` for a normal `n` seen
+    /// from the unit direction `to_eye`; nothing when the material's
+    /// specular colour is black or its power is 0.
+    pub fn specular_of(&self, n: Vec3, to_eye: Vec3, lights: &[(Vec3, Vec3)]) -> Vec3 {
+        if self.specular == Vec3::ZERO || self.power <= 0.0 {
+            return Vec3::ZERO;
+        }
+        let sum: Vec3 = lights
+            .iter()
+            .map(|(c, d)| *c * n.dot((*d + to_eye).normalize_or_zero()).max(0.0).powf(self.power))
+            .sum();
+        self.specular * sum
+    }
 }
 
 /// A second texture sampled on generated coordinates and combined with
@@ -555,6 +599,10 @@ pub struct MapLayer {
     pub factor: f32,
     /// The source game's lit colour as a fraction of the drawn light.
     pub light: f32,
+    /// The pass's lighting material: the lit colour L comes from it (and a
+    /// specular colour is added after the stages) on a probe-lit model,
+    /// instead of `light`'s fraction.
+    pub lighting: Option<LayerLighting>,
 }
 
 /// Baked lighting atlas: linear RGB, where 1.0 shows a texture at its own

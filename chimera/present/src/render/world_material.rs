@@ -212,6 +212,12 @@ pub struct WorldMaterial {
     /// A decal that multiplies the surface: blended as `src x dst + dst x
     /// src` (Source's DecalModulate), the shader returning half the factor.
     pub modulate: bool,
+    /// A sprite section (`map::MapSkinFrames` on a world mesh): each
+    /// frame's image (`base` shows one) and how long each shows, ms; the
+    /// section runs its own clock while it is drawn
+    /// (`skin_frames::advance_sections`). Empty: a still texture.
+    pub skin_frames: Vec<Handle<Image>>,
+    pub skin_frame_ms: u32,
 }
 
 impl Material for WorldMaterial {

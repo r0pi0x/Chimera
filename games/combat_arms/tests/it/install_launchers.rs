@@ -50,7 +50,7 @@ const WEAPONS_TXT: &str = r#"
 [Weapon2] Name="Test_Boss_Flamer" Guntype=9 AmmoName0="Test_Boss_Flamer" ShotsPerClip=999 InfiniteAmmo=1
     RapidFireCount=0 Range=2000
 [Weapon3] Name="Test_LAW_npc" Guntype=9 AmmoName0="Test_LAW_npc" ShotsPerClip=1 RapidFireCount=0 Range=5000
-    FireSnd="TEST_SND\LAW\fire.wav" FireSndRadius=2000
+    FireSnd="TEST_SND\LAW\fire.wav" FireSndRadius=2000 HHMuzzleFXName="WEAPON_HH"
 "#;
 
 /// The records they fire and show (`FX.TXT`).
@@ -216,6 +216,9 @@ fn install_rocket_launcher_shows_hurts_and_sounds() {
     let mut sim = sim();
     let shooter = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
     let victim = player(&mut sim, 0.0, 400.0, 0.0, 2);
+    // The shooter's own client plays the fire sound (the event carries none
+    // for the others: case 59).
+    sim.app.world_mut().entity_mut(shooter).insert(chimera_core::core::LocalPlayer);
     set_health(&mut sim, victim, 70.0);
     let (c, _) = body(&mut sim, victim);
     let w = armed(&mut sim, shooter, NPC_LAW);
@@ -279,6 +282,7 @@ fn t48_t50_projectile_looks_from_the_records() {
             y_offset: 2.0,
         }),
         smoke_trail: Some(2),
+        ..default()
     };
     assert_eq!(law.look, want);
     assert_eq!(ProjectileLook::parse(&law.shown_key()), want, "the drawn key carries it");
@@ -297,29 +301,156 @@ fn t48_t50_projectile_looks_from_the_records() {
     assert!(fx.launched);
 }
 
-/// Case 52: the LAW fired shows the shooter its FireFX group once, at the
-/// shot's (server's) fire position, and no casing; its fire sound once.
+/// A launcher's fire-only event as the server sends it: from `origin`
+/// along the aim.
+fn launch(sim: &mut Sim, owner: Entity, weapon: Entity, origin: Vec3) {
+    use chimera_sim::weapon::{SpreadShape, WeaponEvent, WeaponEventKind};
+    let (yaw, pitch) = {
+        let i = sim.intent(owner);
+        (i.yaw, i.pitch)
+    };
+    sim.app.world_mut().write_message(WeaponEvent {
+        owner,
+        weapon,
+        kind: WeaponEventKind::Fired {
+            id: NPC_LAW,
+            origin,
+            yaw,
+            pitch,
+            seed: 0,
+            spread: SpreadShape::Template(0.0),
+            mode: 0,
+        },
+        replay: false,
+    });
+    sim.ticks(1);
+}
+
+/// The FireFX requests since the last call.
+fn looks(sim: &mut Sim) -> Vec<CaFxRequest> {
+    std::mem::take(&mut sim.app.world_mut().resource_mut::<Looks>().0)
+}
+
+/// Case 58 (special_weapons.md Corrections (2026-10-31) 1): the shooter
+/// sees his own launcher's FireFX group only when the received fire point
+/// passes the view test (forward · direction >= 0.6) from his camera as
+/// it is when the event arrives; made on the shooter (parented), with no
+/// casing; the fire sound plays once either way.
 #[test]
-fn t52_launcher_muzzle() {
+fn t58_own_launcher_fire_fx_by_the_cone_rule() {
+    use chimera_core::core::LocalPlayer;
+    use combat_arms::game::effects::FxKind;
     let mut sim = sim();
-    let shooter = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
-    sim.app.world_mut().entity_mut(shooter).insert(chimera_core::core::LocalPlayer);
-    armed(&mut sim, shooter, NPC_LAW);
-    sim.app.world_mut().resource_mut::<Looks>().0.clear();
-    sim.app.world_mut().resource_mut::<Heard>().0.clear();
-    let eye = sim.position(shooter) + sim.state(shooter).eye_offset;
-    sim.intent(shooter).fire = true;
-    sim.seconds(0.3);
-    sim.intent(shooter).fire = false;
-    let looks = &sim.app.world().resource::<Looks>().0;
-    let own: Vec<_> = looks.iter().filter(|l| l.group == "Test_Rocket_Fire").collect();
-    assert_eq!(own.len(), 1, "{looks:?}");
-    assert_eq!(own[0].kind, FxKind::OwnFire);
-    assert!(own[0].at.distance(eye) < 0.05, "at the fire position {eye}: {}", own[0].at);
+    let shooter = player(&mut sim, 0.0, 0.0, 0.0, 1);
+    sim.app.world_mut().entity_mut(shooter).insert(LocalPlayer);
+    let w = armed(&mut sim, shooter, NPC_LAW);
+    sim.ticks(2);
+    let eye = |sim: &Sim| sim.position(shooter) + sim.state(shooter).eye_offset;
+    let forward = |sim: &mut Sim| {
+        let i = sim.intent(shooter);
+        chimera_sim::weapon::aim_of(i.yaw, i.pitch) * Vec3::NEG_Z
+    };
+    let e = eye(&sim);
+    let f = forward(&mut sim);
+    let own = |sim: &mut Sim| looks(sim).into_iter().any(|l| l.group == "Test_Rocket_Fire" && l.kind == FxKind::OwnParented(shooter));
+    looks(&mut sim);
+    // Standing still, the point a hair ahead: seen.
+    launch(&mut sim, shooter, w, e + f * 0.012 * U);
+    assert!(own(&mut sim), "straight ahead: seen");
+    // A hair behind: not.
+    launch(&mut sim, shooter, w, e - f * 0.012 * U);
+    assert!(!own(&mut sim), "behind: nothing");
+    // Walked backward 10 u since firing: the old eye is ahead.
+    sim.app.world_mut().get_mut::<Transform>(shooter).unwrap().translation -= f * 10.0 * U;
+    launch(&mut sim, shooter, w, e);
+    assert!(own(&mut sim), "moved backward: seen");
+    // Strafed sideways 10 u: square to the view, not seen.
+    sim.app.world_mut().get_mut::<Transform>(shooter).unwrap().translation += f * 10.0 * U + Vec3::X * 10.0 * U;
+    launch(&mut sim, shooter, w, e);
+    assert!(!own(&mut sim), "sideways: nothing");
+    // Back where he fired from: the point is the camera ("straight up"):
+    // seen only when looking at least 36.87 degrees up.
+    sim.app.world_mut().get_mut::<Transform>(shooter).unwrap().translation -= Vec3::X * 10.0 * U;
+    sim.intent(shooter).pitch = 0.5;
+    sim.ticks(2);
+    let e = eye(&sim);
+    launch(&mut sim, shooter, w, e);
+    assert!(!own(&mut sim), "28 degrees up: not seen");
+    sim.intent(shooter).pitch = 0.7;
+    sim.ticks(2);
+    let e = eye(&sim);
+    launch(&mut sim, shooter, w, e);
+    assert!(own(&mut sim), "40 degrees up: seen");
     let world = sim.app.world_mut();
     assert_eq!(world.query::<&combat_arms::game::effects::CaShell>().iter(world).count(), 0, "no casing");
+}
+
+/// Case 59: another player's launcher shot makes the third-person muzzle
+/// group (`WEAPON_HH`) at his held launcher's `Flash` socket with its +Z
+/// toward the world origin, no ammo group, no casing, no fire sound from
+/// the event. A weapon with no muzzle group makes nothing.
+#[test]
+fn t59_others_launcher_muzzle() {
+    use combat_arms::game::{characters::CaPose, effects::FxKind};
+    let mut sim = sim();
+    let me = player(&mut sim, 0.0, 0.0, 0.0, 1);
+    sim.app.world_mut().entity_mut(me).insert(chimera_core::core::LocalPlayer);
+    let other = player(&mut sim, 0.0, -500.0, std::f32::consts::PI, 2);
+    let w = armed(&mut sim, other, NPC_LAW);
+    // His launcher's flash socket, a little in front of his hand, in the
+    // view (he is 500 u ahead, facing me).
+    let hand = Vec3::new(8.0, 40.0, -12.0);
+    sim.app.world_mut().entity_mut(other).insert(CaPose { right_hand: Some(hand), ..default() });
+    sim.ticks(1);
+    let flash = {
+        let world = sim.app.world();
+        let (p, t, s) = (world.get::<CaPose>(other).unwrap(), world.get::<Transform>(other).unwrap(), world.get::<chimera_core::core::MovementState>(other).unwrap());
+        p.world(t, s, U, p.right_hand.expect("the pose kept its hand"))
+    };
+    looks(&mut sim);
+    sim.app.world_mut().resource_mut::<Heard>().0.clear();
+    launch(&mut sim, other, w, Vec3::new(1.0, 2.0, 3.0));
+    let l = looks(&mut sim);
+    let hh: Vec<_> = l.iter().filter(|l| l.kind == FxKind::Muzzle).collect();
+    assert_eq!(hh.len(), 1, "{l:?}");
+    assert_eq!(hh[0].group, "WEAPON_HH");
+    assert!(hh[0].at.distance(flash) < 1e-4, "at the socket {flash}: {}", hh[0].at);
+    let toward = (Vec3::ZERO - flash).normalize();
+    assert!(hh[0].normal.distance(toward) < 1e-4, "+Z toward the world origin: {}", hh[0].normal);
+    assert!(!l.iter().any(|l| l.group == "Test_Rocket_Fire"), "never the ammo's group: {l:?}");
     let heard = &sim.app.world().resource::<Heard>().0;
-    assert_eq!(heard.iter().filter(|s| s.file == "test_snd/law/fire.wav").count(), 1, "one fire sound");
+    assert!(heard.iter().all(|s| s.file != "test_snd/law/fire.wav"), "no fire sound from the event: {heard:?}");
+    let world = sim.app.world_mut();
+    assert_eq!(world.query::<&combat_arms::game::effects::CaShell>().iter(world).count(), 0, "no casing");
+}
+
+/// Case 60: a received fire point is within half a cell of the sent one
+/// on each axis (2^19 cells on x and z, 2^18 on y, over the world's box),
+/// at a cell's centre.
+#[test]
+fn t60_compressed_fire_point() {
+    use combat_arms::game::effects::rules::compress_position;
+    let world = (Vec3::new(-4096.0, -500.0, -2048.0), Vec3::new(4096.0, 1500.0, 2048.0));
+    let mut n = 0u32;
+    for x in [-4000.1, -0.3, 1234.567, 4095.99] {
+        for y in [-499.9, 0.0, 61.7, 1499.5] {
+            for z in [-2047.5, 0.01, 999.123] {
+                let p = Vec3::new(x, y, z);
+                let r = compress_position(p, world);
+                assert!((r.x - p.x).abs() <= 8192.0 / 524_288.0 / 2.0 + 1e-3, "x {p} -> {r}");
+                assert!((r.y - p.y).abs() <= 2000.0 / 262_144.0 / 2.0 + 1e-3, "y {p} -> {r}");
+                assert!((r.z - p.z).abs() <= 4096.0 / 524_288.0 / 2.0 + 1e-3, "z {p} -> {r}");
+                assert_eq!(compress_position(r, world), r, "a cell's centre is its own");
+                n += 1;
+            }
+        }
+    }
+    assert_eq!(n, 48);
+    // The impact position an event never sets: the world origin, clamped
+    // into the box.
+    use combat_arms::game::effects::rules::unset_impact;
+    assert_eq!(unset_impact(Some(world)), Vec3::ZERO);
+    assert_eq!(unset_impact(Some((Vec3::new(10.0, 1.0, -5.0), Vec3::new(20.0, 3.0, 5.0)))), Vec3::new(10.0, 1.0, 0.0));
 }
 
 /// Case 49 in play: the missile's group (`Test_Tail`, a follow-mode

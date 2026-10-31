@@ -87,6 +87,16 @@ pub struct PropParams {
     pub layer_factor: f32,
     /// The source game's lit colour as a fraction of the drawn light.
     pub layer_light: f32,
+    /// 1: the layer's lit colour and specular come from a lighting
+    /// material (`map::LayerLighting`) over the probe's ambient and
+    /// lights, as below (needs `probe`); 0: `layer_light`'s fraction.
+    pub layer_lit: f32,
+    /// The material's emissive, ambient and diffuse colours, and its
+    /// specular colour (w = its power).
+    pub layer_emissive: Vec4,
+    pub layer_ambient: Vec4,
+    pub layer_diffuse: Vec4,
+    pub layer_specular: Vec4,
 }
 
 impl PropParams {

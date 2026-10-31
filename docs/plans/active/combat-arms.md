@@ -499,9 +499,11 @@ skins animate (`world::model_textures`, `map::MapSkinFrames`, Chimera's
 `render::skin_frames`: each drawn copy's clock), and slot 1 draws as an
 environment or rim map under `env_alpha_mask`, `itemedge`,
 `edgeamp01`, `envmap` and `pv_char` (`render_style::Layer`,
-`map::MapLayer`, the prop shader's layer); not yet: `pv_char_b`'s
-passes, the styles' own materials, and slot 1 on faces, head pieces and
-attached parts.
+`map::MapLayer`, the prop shader's layer). **Done (2026-10-31):**
+`pv_char_b`'s passes, the styles' lighting materials and specular, slot 1
+on faces, head pieces, goggles, backpacks and flags, empty slots white,
+world sprite sections on their own clocks, and the render-style file
+reader (`lithtech_formats::render_style`).
 
 `cargo test -p combat_arms --features dev,ui --test it
 heavy::weapon_skins -- --nocapture` lists every install weapon's pieces
@@ -1324,3 +1326,15 @@ run `$env:TZ="UTC"` before `git commit`. End the message with
 hooks. Then `git pull --rebase` and `git push` to main (or to
 `specs-incoming` if I say so).
 ```
+
+**Implemented (2026-10-31, branch `ca-looks`)** from the answers above:
+trail keys (`effects::trail`, Chimera's `Shape::Ribbon` with per-end
+colours and joints), smoke puffs on their own 10 s lives (untextured grey
+squares), the launcher FireFX by the cone rule on the compressed fire
+point (parented to the shooter; others `WEAPON_HH` toward the origin),
+activate, finish and create sounds, the render styles above, default
+sights outside the list (already fitted by `attachments::fit`; case 44
+tests it). Left: a screenshot of a trail on an open map (the playtest
+runs show only the blast smoke in the warehouse hall); a held launcher's
+own `Flash` socket (the hand's stands in); device, grenade and bolt
+sounds on network clients; `pv_glass` as its own pass.

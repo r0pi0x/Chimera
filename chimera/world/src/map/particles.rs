@@ -283,8 +283,20 @@ pub enum Shape {
     /// (engine space), `width` wide at each end (meters; the width runs
     /// across the strip, square to the line and to the eye), showing the
     /// texture's u from `u.0` at the particle to `u.1` at `to` and v
-    /// across: a section of a ribbon trail.
-    Ribbon { to: Vec3, width: [f32; 2], u: (f32, f32) },
+    /// across): a section of a ribbon trail. `width` is the strip's full
+    /// width; `end_color` (rgb, opacity; the particle's own colour and
+    /// alpha are the start's) blends the colour along the strip; `prev` and
+    /// `next` are the neighbouring points of the trail, so a joint's side
+    /// direction is the average of its two segments' (without them the
+    /// segment's own).
+    Ribbon {
+        to: Vec3,
+        width: [f32; 2],
+        u: (f32, f32),
+        end_color: Option<Vec4>,
+        prev: Option<Vec3>,
+        next: Option<Vec3>,
+    },
     /// A bullet tracer (specs/cs_source/tracers.md 3.1): a streak `length`
     /// long whose head leaves `start` along `dir` at `speed` (m/s), both
     /// ends kept between `start` and `distance` along; a camera-facing core

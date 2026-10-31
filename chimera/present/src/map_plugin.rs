@@ -288,6 +288,9 @@ impl MapLayers for Present {
         // Sprite skins: each drawn copy's frame on its own clock.
         .add_observer(render::skin_frames::start_clock)
         .add_systems(Update, render::skin_frames::advance)
+        // ... and a world sprite section's, while it is drawn.
+        .init_resource::<render::skin_frames::SectionClocks>()
+        .add_systems(Update, render::skin_frames::advance_sections)
         .add_systems(
             PostUpdate,
             // After propagation, so it sees this frame's (interpolated)

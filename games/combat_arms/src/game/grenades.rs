@@ -371,6 +371,15 @@ pub struct GrenadeParams {
     /// five stock grenades; the install's record says.
     #[serde(default)]
     pub call_out: bool,
+    /// The projectile record's looks and sounds (`ActivateSound`,
+    /// `FinishSound`, ...) and its create sound (special_weapons.md
+    /// Corrections (2026-10-31) 3).
+    #[serde(default)]
+    pub look: super::special::ProjectileLook,
+    #[serde(default)]
+    pub create_sound: String,
+    #[serde(default)]
+    pub create_radius: f32,
     /// The projectile record's `Model` (an archive path of the install):
     /// the grenade as drawn in flight, in its `World` pose; None: the front
     /// end's placeholder. `ModelScale` (stock 2 per axis; the box above is
@@ -1022,6 +1031,7 @@ pub fn launch(world: &mut World, l: Launch) {
     if p.call_out {
         callout::send(world, l.thrower, l.command);
     }
+    super::effects::sounds::write_create_sound(world, &p.create_sound, p.create_radius, p.call_out, l.eye);
     // Pitcher's force (gear_perks.md 14; 1 without it).
     let force = super::perks::throw_force(world, l.thrower);
     spawn_grenade(world, l.weapon, Some(l.thrower), at, dir * p.speed * data.unit * force);
@@ -1074,6 +1084,10 @@ pub fn spawn_grenade(
         SurvivesRestart,
         // Drawn with its projectile record's model (`thrown_key`).
         ShownItem(thrown_key(id)),
+        // Its sounds in flight and at rest (special_weapons.md Corrections
+        // (2026-10-31) 3).
+        super::effects::attached::CaFlightSounds::default(),
+        super::effects::attached::CaFlightLook(data.params.look.clone()),
         CaGrenade {
             weapon: id,
             params: data.params.clone(),

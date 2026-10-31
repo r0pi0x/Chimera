@@ -6,7 +6,7 @@
 
 use bevy::prelude::*;
 use chimera_world::map::{
-    self, MapData, PropRig, PropSequence,
+    self, MapData, MapMesh, PropRig, PropSequence,
     anim::{Animator, BonePose},
 };
 use combat_arms::game::{model, props};
@@ -314,4 +314,45 @@ fn a_sprite_skin_plays_its_frames() {
     let i = props::place(&mut data, &loaded, &["T\\ONE.SPR".to_string()], &[], "Test", Vec3::ONE, Quat::IDENTITY, None, SCALE, &file);
     let mesh = &data.models[data.props[i].model].meshes[0];
     assert!(mesh.texture.is_some() && mesh.skin_frames.is_none(), "one frame: still");
+}
+
+/// models_ltb.md Follow-up (2026-10-31) 7, R10: a sprite on a map surface
+/// plays its frames like a model's skin, each section (mesh) with its own
+/// frame list and ⌊1000 / r⌋ ms a frame (Chimera's
+/// `skin_frames::advance_sections` runs the clocks, a section at a time,
+/// while drawn); a plain texture stays still. `FanSpin01`: 8 frames at 19 a
+/// second is 52 ms a frame.
+#[test]
+fn world_sprite_sections_play_their_frames() {
+    use combat_arms::game::world::world_sprites;
+    let (red, green) = (dtx([0, 0, 255, 255]), dtx([0, 255, 0, 255]));
+    let header = |n: u32, rate: u32, frames: &[&str]| {
+        let mut w = W::default();
+        w.u32(n).u32(rate).u32(0).u32(0).u32(0);
+        for f in frames {
+            w.s(f);
+        }
+        w.0
+    };
+    let fan = header(4, 19, &["T\\FAN-1.DTX", "T\\FAN-2.DTX", "T\\FAN-1.DTX", "T\\FAN-2.DTX"]);
+    let file = move |p: &str| match p {
+        "t/fan.spr" => Some(fan.clone()),
+        "t/fan-1.dtx" => Some(red.clone()),
+        "t/fan-2.dtx" => Some(green.clone()),
+        _ => None,
+    };
+    let mesh = |material: &str| MapMesh {
+        material: material.into(),
+        ..default()
+    };
+    let mut data = MapData::default();
+    let mut meshes = vec![mesh("t/fan.spr"), mesh("t/plain.dtx"), mesh("t/fan.spr"), mesh("t/gone.spr")];
+    world_sprites(&mut meshes, &mut data, &file);
+    for k in [0, 2] {
+        let f = meshes[k].skin_frames.clone().expect("a sprite section plays");
+        assert_eq!(f.frame_ms, 52, "19 a second");
+        let colours: Vec<[u8; 4]> = f.frames.iter().map(|&t| data.textures[t].rgba8[..4].try_into().unwrap()).collect();
+        assert_eq!(colours, [[255, 0, 0, 255], [0, 255, 0, 255], [255, 0, 0, 255], [0, 255, 0, 255]]);
+    }
+    assert!(meshes[1].skin_frames.is_none() && meshes[3].skin_frames.is_none(), "still textures and unreadable sprites");
 }

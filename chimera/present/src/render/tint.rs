@@ -335,6 +335,8 @@ mod tests {
             double_sided: false,
             decal: false,
             modulate: false,
+            skin_frames: Vec::new(),
+            skin_frame_ms: 0,
         };
         let flat = looked_world(
             textured.clone(),

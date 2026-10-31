@@ -19,6 +19,8 @@
 //!   detail with rigid, skinned and vertex-animated meshes, the node
 //!   tree, weight sets, child models, animations, sockets and bindings,
 //!   bounds-checked.
+//! - `render_style`: render-style files (`RS\*.LTB`): a style's lighting
+//!   material and its passes of texture stages and render states.
 //! - `rez`: `.rez` resource archives (header, directory, file data) as a
 //!   mount layer (`chimera_vfs::FileSource`), and a folder of them
 //!   as a `Mount`.
@@ -39,6 +41,7 @@ pub mod attributes;
 pub mod dtx;
 pub mod fxf;
 pub mod ltb;
+pub mod render_style;
 pub mod rez;
 pub mod rez_cipher;
 pub mod spr;

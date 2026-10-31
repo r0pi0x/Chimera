@@ -498,6 +498,13 @@ impl SurfaceGrid {
         me
     }
 
+    /// The box around the world's triangles (engine space), if it has any.
+    pub fn bounds(&self) -> Option<(Vec3, Vec3)> {
+        let mut it = self.tris.iter().flat_map(|(t, _)| t.iter().copied());
+        let first = it.next()?;
+        Some(it.fold((first, first), |(lo, hi), p| (lo.min(p), hi.max(p))))
+    }
+
     /// The surface of the highest upward-facing triangle under `p` (engine
     /// space), at most `reach` meters below it.
     pub fn below(&self, p: Vec3, reach: f32) -> Option<&str> {
