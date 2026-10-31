@@ -106,12 +106,6 @@ the user's go-ahead: no Actions runs unless asked.
 
 ### Gun game playtest, 2026-10-28 (user)
 
-- **Combat Arms HUD pieces not scaled right (user, 2026-10-31).** Some
-  of Combat Arms' HUD elements don't scale with the rest, e.g. the score
-  at the top (the Elimination / kills bar) and the sprint bar's
-  background. Check every Combat Arms HUD element against the layout's
-  own scaling rules (hud_crosshair.md, ui_system.md) at several
-  resolutions and aspect ratios, and fix what differs.
 - **The grenade launcher's projectile is choppy on a client, "maybe all
   projectiles" (user, 2026-10-29): fixed, confirm in a playtest.** Not
   the client's interpolation (every `NetItem` was already drawn between

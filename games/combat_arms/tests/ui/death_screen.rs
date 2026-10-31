@@ -80,6 +80,7 @@ fn layout() -> Layout {
             max_range: 200,
             fill: 0.0,
             bar_height: 8,
+            ..Default::default()
         })
     };
     let plain = l.add(root, "Respawn", at(700, 650), at(300, 100), window());

@@ -14,9 +14,9 @@
 //!   it `StandIns` paints each named texture as a flat colour of the
 //!   texture's size.
 //!
-//! Known shortcuts: glyphs are drawn at the font's height and their own
-//! width, not stretched to the scaled average width (T2's ⌊a_f x_r⌋ /
-//! a_f), and a face's glyph widths differ from the monospaced metrics the
+//! Known shortcuts: glyphs are stretched by the average width's ratio
+//! (T2's ⌊a_f x_r⌋ over the face's width at the scaled height), not
+//! rebuilt at the forced width, and a face's glyph widths differ from the monospaced metrics the
 //! layout measures with, so each line is aligned inside its measured box
 //! as its text is (left, centred, right); nine-slice and UVs don't show
 //! on flat stand-ins; an image wider than its texture is stretched, not
@@ -157,19 +157,25 @@ pub fn spawn_text(p: &mut ChildSpawnerCommands, t: &TextDraw, fonts: Option<&UiF
     };
     for (at, line) in &t.lines {
         let width = line.chars().count() as i32 * t.font.advance;
+        // The glyphs stretch about the box's centre (T2): the node is the
+        // box over the stretch, so scaled it fills the box.
+        let stretch = if t.stretch > 0.0 { t.stretch } else { 1.0 };
+        let inner = width as f32 / stretch;
+        let shift = (width as f32 - inner) / 2.0;
         let mut one = |off: IVec2, c: Rgba| {
             p.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: px((at.x + off.x) as f32),
+                    left: px((at.x + off.x) as f32 + shift),
                     top: px((at.y + off.y) as f32),
-                    width: px(width as f32),
+                    width: px(inner),
                     height: px(t.font.height as f32),
                     justify_content: justify,
                     align_items: AlignItems::Center,
                     overflow: Overflow::visible(),
                     ..default()
                 },
+                UiTransform::from_scale(Vec2::new(stretch, 1.0)),
                 children![(Text::new(line.clone()), font.clone(), TextColor(colour(c)), TextLayout::no_wrap())],
             ));
         };
