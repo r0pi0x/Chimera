@@ -1050,6 +1050,7 @@ pub struct MapData {
     /// must load the same file. None for maps built in code.
     pub file_hash: Option<[u8; 32]>,
     pub meshes: Vec<MapMesh>,
+    #[serde(with = "crate::map::pod_serde::par_vec")]
     pub textures: Vec<MapTexture>,
     /// Baked reflection cubemaps (`MapEnvmap::cubemap` indexes these).
     pub cubemaps: Vec<MapCubemap>,
@@ -1057,6 +1058,7 @@ pub struct MapData {
     /// `cubemaps`), for objects that take the nearest.
     pub cubemap_samples: Vec<(Vec3, usize)>,
     pub lightmap: Option<MapLightmap>,
+    #[serde(with = "crate::map::pod_serde::par_vec")]
     pub models: Vec<MapModel>,
     pub props: Vec<MapProp>,
     /// Collision triangles (surfaces with no solid volume, e.g. terrain).
@@ -1210,14 +1212,17 @@ pub struct GameKit {
     /// The bots' navigation mesh, if the game ships one for the map.
     pub nav: Option<Arc<nav::NavMesh>>,
     /// How characters look and where they can be hit, per team.
+    #[serde(with = "crate::map::pod_serde::par_vec")]
     pub characters: Vec<MapCharacterModel>,
     /// Models characters can hold (weapons' world models).
+    #[serde(with = "crate::map::pod_serde::par_vec")]
     pub held: Vec<MapHeldModel>,
     /// Runtime decals (bullet holes, slashes) by group.
     pub decals: decal::MapDecals,
     /// The game's own HUD look, when it has one.
     pub hud: Option<Arc<hud::GameHud>>,
     /// What characters see of what they hold (weapons' view models).
+    #[serde(with = "crate::map::pod_serde::par_vec")]
     pub view_models: Vec<MapViewModel>,
     /// What shots look like at the muzzle (flash sprites and light).
     pub muzzle_flash: Option<MapMuzzleFlash>,

@@ -32,6 +32,7 @@ serde.workspace = true
 # and keys.
 postcard.workspace = true
 blake3.workspace = true
+memmap2 = "0.9"
 # The user-wide store (`~/.cache/chimera/assets`, `%LOCALAPPDATA%\chimera\assets`).
 dirs.workspace = true
 # `[assets]` read by the CLI itself (it sits below chimera_core's config),

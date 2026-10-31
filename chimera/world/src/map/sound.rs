@@ -105,6 +105,7 @@ pub struct MapSurface {
 pub struct MapSounds {
     /// Lower-case entry names.
     pub entries: HashMap<String, MapSoundEntry>,
+    #[serde(with = "crate::map::pod_serde::par_vec")]
     pub clips: Vec<MapSoundClip>,
     /// Lower-case surface names.
     pub surfaces: HashMap<String, MapSurface>,

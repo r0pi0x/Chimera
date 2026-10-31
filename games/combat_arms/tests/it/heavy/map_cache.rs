@@ -3,8 +3,8 @@
 //! world converted (meshes, textures, lightmap, collision, entities),
 //! compared by hash, the effect library added to either; a damaged entry
 //! converts again. Prints cold and warm load times and the entry's size
-//! (`--nocapture`). A scratch cache folder, removed after. Skipped without
-//! a Combat Arms install.
+//! (`--nocapture`). A scratch cache folder beside the user's map cache,
+//! removed after. Skipped without a Combat Arms install.
 
 use std::{
     hash::{DefaultHasher, Hasher},
@@ -61,7 +61,11 @@ fn load(mount: &Mount, cache: Option<&MapCache>) -> (MapData, Outcome, f32) {
 #[test]
 fn a_cached_warehouse_is_the_converted_one() {
     let Some(mount) = mount() else { return };
-    let dir: PathBuf = std::env::temp_dir().join(format!("chimera_map_cache_ca_{}", std::process::id()));
+    // Beside the user's cache, on disk (the temporary folder may be memory).
+    let base = MapCache::default_dir()
+        .and_then(|d| d.parent().map(PathBuf::from))
+        .unwrap_or_else(std::env::temp_dir);
+    let dir = base.join(format!("maps-test-ca-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let cache = MapCache::at(&dir, u64::MAX);
     // The first load also reads the session's data once (weapons, effect

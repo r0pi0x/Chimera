@@ -145,6 +145,40 @@ pub mod pod_opt_arc {
     }
 }
 
+/// `Vec<T>` of big values: each element postcard-encoded on its own and
+/// written as a byte string, so they encode and decode on threads (a
+/// whole map's textures are three quarters of its entry). Reading needs a
+/// deserializer that lends its bytes (postcard from a slice).
+pub mod par_vec {
+    use serde::de::DeserializeOwned;
+
+    use super::*;
+    use crate::map::cache::parallel;
+
+    pub fn serialize<T: Serialize + Sync, S: Serializer>(v: &[T], s: S) -> Result<S::Ok, S::Error> {
+        let encoded = parallel(v.len(), |i| postcard::to_allocvec(&v[i]));
+        let encoded: Vec<Vec<u8>> = encoded
+            .into_iter()
+            .collect::<Result<_, _>>()
+            .map_err(serde::ser::Error::custom)?;
+        s.collect_seq(encoded.iter().map(|b| serde_bytes_ref(b)))
+    }
+
+    /// A byte string, not a sequence of numbers.
+    fn serde_bytes_ref(b: &[u8]) -> Blob<'_, u8> {
+        Blob(b)
+    }
+
+    pub fn deserialize<'de, T: DeserializeOwned + Send, D: Deserializer<'de>>(d: D) -> Result<Vec<T>, D::Error> {
+        let encoded: Vec<&'de [u8]> = Vec::deserialize(d)?;
+        let decoded = parallel(encoded.len(), |i| postcard::from_bytes::<T>(encoded[i]));
+        decoded
+            .into_iter()
+            .collect::<Result<_, _>>()
+            .map_err(serde::de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -163,6 +197,8 @@ mod tests {
         e: Arc<Vec<u8>>,
         #[serde(with = "pod_opt_arc")]
         f: Option<Arc<Vec<[f32; 3]>>>,
+        #[serde(with = "par_vec")]
+        g: Vec<(String, Vec<u8>)>,
     }
 
     #[test]
@@ -174,6 +210,7 @@ mod tests {
             d: Some([vec![1], vec![], vec![u32::MAX]]),
             e: Arc::new(vec![5; 9]),
             f: None,
+            g: (0..40).map(|i| (format!("t{i}"), vec![i as u8; i])).collect(),
         };
         let bytes = postcard::to_allocvec(&x).unwrap();
         assert_eq!(postcard::from_bytes::<All>(&bytes).unwrap(), x);

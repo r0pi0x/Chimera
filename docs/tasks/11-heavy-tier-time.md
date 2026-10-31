@@ -68,9 +68,9 @@ by converter version and source hashes, cold-start behaviour) before code.
 - [x] Write the cache design before implementing it: what is cached,
       where it lives (per-user store, never the repo), the invalidation
       key, and which tests use it.
-- [ ] Implement the cache separately and measure it cold and warm: heavy
+- [x] Implement the cache separately and measure it cold and warm: heavy
       wall and per-map load time before/after.
-- [ ] Tests still skip cleanly without an install; `cargo test -p
+- [x] Tests still skip cleanly without an install; `cargo test -p
       repo_checks` passes.
 
 Done 2026-10-30 on the Linux dev box (docs/performance.md, "The heavy
@@ -79,6 +79,12 @@ wall, six 802 s (-15%) but out of available memory, so five stay; CS:S
 conversion 999 s of 3,153 s, 830 s of it repeated loads. The design is
 in plans/active/asset-service.md, section 10; implementing it is a
 backlog item (section 9).
+
+The cache, done 2026-10-31 (docs/performance.md, "The converted-map
+cache"): de_dust2 1.6 s to 0.22 s whole, 1.2 s to 0.15 s lean;
+cs_source's 363 heavy tests 439 s to 374 s wall (-15%), 1,224 s to 972 s
+summed. Left (backlog): the whole heavy tier timed with it, a sixth slot
+again.
 
 ## Constraints
 

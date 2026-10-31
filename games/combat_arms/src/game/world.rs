@@ -415,9 +415,9 @@ pub fn load_world_in(
 }
 
 /// `1`: Combat Arms' worlds go through the converted-map cache too. Off
-/// by default: they convert about as fast as they read back (WAREHOUSE
-/// 0.24 s converted, 0.27 s read from its 222 MB entry; docs/performance.md,
-/// "The converted-map cache"), so an entry would only cost disk.
+/// by default: they convert quickly (WAREHOUSE 0.27 s converted, 0.13 s
+/// read back from its 222 MB entry; docs/performance.md, "The
+/// converted-map cache"), too little gained for the disk.
 pub const CACHE_ENV: &str = "CHIMERA_MAP_CACHE_CA";
 
 /// The converter's version for the converted-map cache: the hash of this

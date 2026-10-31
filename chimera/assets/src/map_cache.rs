@@ -7,12 +7,12 @@
 //! hit reads the converted map back instead.
 //!
 //! - **What:** whatever a loader converts (`cached`'s `T`: CS:S keeps its
-//!   `MapData` with the lighting its light field closes over, Combat Arms
-//!   its world before the per-session effect library, when asked to:
-//!   `CHIMERA_MAP_CACHE_CA=1`, its worlds convert about as fast as they
-//!   read back), serialized with postcard (big arrays as byte strings:
-//!   chimera_world's `map::pod_serde`): our own format, a local cache like the asset store,
-//!   never the games' files.
+//!   `MapData` with the lighting its light field closes over; Combat
+//!   Arms its world before the per-session effect library, only with
+//!   `CHIMERA_MAP_CACHE_CA=1`: its worlds convert quickly), serialized
+//!   with postcard (big arrays as byte strings, big lists element by
+//!   element on threads: chimera_world's `map::pod_serde`): our own
+//!   format, a local cache like the asset store, never the games' files.
 //! - **Where:** `<cache dir>/chimera/maps/` (`~/.cache/chimera/maps`,
 //!   `%LOCALAPPDATA%\chimera\maps`), one file per key, shared by every
 //!   checkout and agent slot; `CHIMERA_MAP_CACHE=<folder>` puts it
@@ -23,25 +23,28 @@
 //! - **Key** (the file's name, `Key`): the loader, the converter's version
 //!   (the hash of its sources the game's `build.rs` takes, with
 //!   chimera_world's map format: its map types' sources and a hand-bumped
-//!   number),
-//!   the map's name, `MapLoadOptions` and the map file's own hash. The
-//!   other files the conversion reads go in the entry: the mount tracks
-//!   every path asked for, found or not, and every folder listed
-//!   (`chimera_vfs::Mount::track`), and the entry keeps each one's
+//!   number), the map's name, `MapLoadOptions`, the map file's own hash
+//!   and the mount's layers by name (an install, the asset store or
+//!   both). The other files the conversion reads go in the entry: the
+//!   mount tracks every path asked for, found or not, and every folder
+//!   listed (`chimera_vfs::Mount::track`), and the entry keeps each one's
 //!   fingerprint (an archive entry's checksum and place, a store record's
 //!   id, else a BLAKE3 of the bytes: `fingerprint`). A hit checks them all
-//!   again; one that differs (a patched install, a new loose file in
-//!   front of an archive's) converts again and replaces the entry.
+//!   again (on threads); one that differs (a patched install, a new loose
+//!   file in front of an archive's) converts again and replaces the entry.
 //! - **Writing:** a miss takes the key's lock file (`File::lock`, freed
 //!   when the process ends), so processes missing the same map at once
 //!   wait for the first one's entry instead of all converting; the entry
 //!   is written to a temporary file and renamed into place, so a reader
-//!   never sees half of one. An entry that doesn't read (truncated, its
+//!   never sees half of one. Reading one maps it (processes reading the
+//!   same entry share its pages), checks it (a BLAKE3 per 16 MB, on
+//!   threads) and decodes it. An entry that doesn't read (truncated, its
 //!   checksum wrong, an older format) is a miss. `CHIMERA_MAP_CACHE_LOG=1`
 //!   prints where a hit's time goes.
 //!
 //! Known shortcuts: files a converter reads without the mount are the
-//! loader's to put in its key.
+//! loader's to put in its key. An entry truncated by hand while a process
+//! reads it (mapped) crashes that process.
 
 use std::{
     collections::BTreeSet,
@@ -60,9 +63,13 @@ pub const ENV: &str = "CHIMERA_MAP_CACHE";
 /// The cache's cap in GB (decimal).
 pub const CAP_ENV: &str = "CHIMERA_MAP_CACHE_GB";
 /// The cap when `CAP_ENV` isn't set.
-pub const DEFAULT_CAP_GB: f64 = 20.0;
+pub const DEFAULT_CAP_GB: f64 = 40.0;
 
-const MAGIC: &[u8; 8] = b"CHIMAP\0\x01";
+const MAGIC: &[u8; 8] = b"CHIMAP\0\x02";
+
+/// The payload's checksums: one BLAKE3 per this many bytes, checked on
+/// threads.
+const CHUNK: usize = 16 << 20;
 
 static DISABLED: AtomicBool = AtomicBool::new(false);
 
@@ -121,11 +128,6 @@ impl MapCache {
             Some(path) => PathBuf::from(path),
         };
         Some(Self { dir, cap })
-    }
-
-    #[cfg(test)]
-    fn entry_path(&self, key: &Key) -> PathBuf {
-        self.dir.join(format!("{}.map", key.hex()))
     }
 
     /// Every entry with its size and when it was last used.
@@ -282,7 +284,78 @@ struct Header {
     /// Each input (`Input`) and its fingerprint when converted.
     inputs: Vec<(Input, String)>,
     payload_len: u64,
-    payload_hash: [u8; 32],
+    /// A BLAKE3 of each `CHUNK` of the payload.
+    payload_hashes: Vec<[u8; 32]>,
+}
+
+/// `f(i)` for each `i` in `0..n`, on up to as many threads as the machine
+/// has, in order.
+pub fn parallel<R: Send>(n: usize, f: impl Fn(usize) -> R + Sync) -> Vec<R> {
+    let threads = std::thread::available_parallelism()
+        .map_or(4, |t| t.get())
+        .min(n.max(1));
+    if threads <= 1 {
+        return (0..n).map(f).collect();
+    }
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let mut out: Vec<(usize, R)> = std::thread::scope(|s| {
+        let workers: Vec<_> = (0..threads)
+            .map(|_| {
+                s.spawn(|| {
+                    let mut mine = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        if i >= n {
+                            break mine;
+                        }
+                        mine.push((i, f(i)));
+                    }
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|w| w.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
+            .collect()
+    });
+    out.sort_by_key(|(i, _)| *i);
+    out.into_iter().map(|(_, r)| r).collect()
+}
+
+fn chunk_hashes(payload: &[u8]) -> Vec<[u8; 32]> {
+    let chunks: Vec<&[u8]> = payload.chunks(CHUNK).collect();
+    parallel(chunks.len(), |i| *blake3::hash(chunks[i]).as_bytes())
+}
+
+/// An entry's bytes: the file mapped (its pages are the system's file
+/// cache, shared by every process reading the same entry, and nothing is
+/// copied), else read.
+enum EntryBytes {
+    Mapped(memmap2::Mmap),
+    Read(Vec<u8>),
+}
+
+impl std::ops::Deref for EntryBytes {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        match self {
+            Self::Mapped(m) => m,
+            Self::Read(b) => b,
+        }
+    }
+}
+
+fn open_entry(path: &Path) -> io::Result<EntryBytes> {
+    let file = File::open(path)?;
+    // SAFETY: entries are never written in place (a new one is renamed
+    // over the old, eviction unlinks), so the mapped bytes don't change
+    // while they are read; only someone truncating the file by hand could
+    // pull them away.
+    match unsafe { memmap2::Mmap::map(&file) } {
+        Ok(m) => Ok(EntryBytes::Mapped(m)),
+        Err(_) => fs::read(path).map(EntryBytes::Read),
+    }
 }
 
 /// Why an entry wasn't used.
@@ -297,7 +370,7 @@ enum Unusable {
 
 fn read_entry<T: DeserializeOwned>(path: &Path, key: &str, mount: &Mount) -> Result<T, Unusable> {
     let start = std::time::Instant::now();
-    let bytes = match fs::read(path) {
+    let bytes = match open_entry(path) {
         Ok(b) => b,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(Unusable::Missing),
         Err(e) => return Err(Unusable::Corrupt(e.to_string())),
@@ -314,16 +387,20 @@ fn read_entry<T: DeserializeOwned>(path: &Path, key: &str, mount: &Mount) -> Res
         return Err(corrupt("another key's entry"));
     }
     let read = start.elapsed().as_secs_f32();
-    if header.payload_len != payload.len() as u64 || *blake3::hash(payload).as_bytes() != header.payload_hash {
+    if header.payload_len != payload.len() as u64 || chunk_hashes(payload) != header.payload_hashes {
         return Err(corrupt("checksum"));
     }
     let checked = start.elapsed().as_secs_f32();
     let inputs = header.inputs.len();
-    for (input, was) in header.inputs {
-        let access = Access::from(input);
-        let now = fingerprint(mount, &access);
+    let now = parallel(inputs, |i| {
+        fingerprint(mount, &Access::from(header.inputs[i].0.clone()))
+    });
+    for ((input, was), now) in header.inputs.into_iter().zip(now) {
         if now != was {
-            return Err(Unusable::Stale(format!("{access:?}: was {was}, now {now}")));
+            return Err(Unusable::Stale(format!(
+                "{:?}: was {was}, now {now}",
+                Access::from(input)
+            )));
         }
     }
     let compared = start.elapsed().as_secs_f32();
@@ -353,7 +430,7 @@ fn write_entry<T: Serialize>(
         key: key.to_string(),
         inputs,
         payload_len: payload.len() as u64,
-        payload_hash: *blake3::hash(&payload).as_bytes(),
+        payload_hashes: chunk_hashes(&payload),
     };
     let head = postcard::to_allocvec(&header).map_err(io::Error::other)?;
     fs::create_dir_all(&cache.dir)?;
@@ -394,7 +471,11 @@ pub fn cached<T: Serialize + DeserializeOwned>(
     let Some(cache) = cache else {
         return convert().map(|v| (v, Outcome::Off));
     };
-    let key = key.hex();
+    // The mount's layers by name: a load from the asset store alone and
+    // one from the install are two entries, not one replacing the other
+    // at each load (their inputs' fingerprints differ).
+    let layers: Vec<String> = mount.layers().map(|l| l.name()).collect();
+    let key = key.part("layers", layers.join("\n")).hex();
     let path = cache.dir.join(format!("{key}.map"));
     let try_read = || -> Option<T> {
         match read_entry::<T>(&path, &key, mount) {
@@ -452,13 +533,9 @@ pub fn cached<T: Serialize + DeserializeOwned>(
 }
 
 fn inputs(mount: &Mount, accesses: BTreeSet<Access>) -> Vec<(Input, String)> {
-    accesses
-        .into_iter()
-        .map(|a| {
-            let f = fingerprint(mount, &a);
-            (a.into(), f)
-        })
-        .collect()
+    let accesses: Vec<Access> = accesses.into_iter().collect();
+    let prints = parallel(accesses.len(), |i| fingerprint(mount, &accesses[i]));
+    accesses.into_iter().map(Input::from).zip(prints).collect()
 }
 
 #[cfg(test)]
@@ -546,9 +623,10 @@ mod tests {
         let (_, o) = cached(None, &mount, key(), || convert(&mount, &mut runs)).unwrap();
         assert_eq!((o, runs), (Outcome::Off, 5));
         // A failed conversion writes nothing.
+        let before = cache.entries().len();
         let e = cached::<String>(Some(&cache), &mount, Key::new("test", "fails"), || Err("no".into()));
         assert_eq!(e.unwrap_err(), "no");
-        assert!(!cache.entry_path(&Key::new("test", "fails")).exists());
+        assert_eq!(cache.entries().len(), before);
         fs::remove_dir_all(&root).ok();
     }
 
@@ -564,7 +642,7 @@ mod tests {
         let key = || Key::new("test", "v1");
         let mut runs = 0;
         cached(Some(&cache), &mount, key(), || convert(&mount, &mut runs)).unwrap();
-        let path = cache.entry_path(&key());
+        let path = cache.entries().pop().expect("the entry").0;
         let good = fs::read(&path).unwrap();
         // A flipped byte in the payload, a truncated file, an empty one,
         // someone else's file.

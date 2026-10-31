@@ -5,7 +5,8 @@
 //! read that changes, or a new one in front of it, converts again; a
 //! damaged entry converts again. Prints cold and warm load times and the
 //! entry's size (`--nocapture`). Each test uses its own scratch cache
-//! folder, removed after. Skipped without a CS:S install.
+//! folder beside the user's map cache, removed after. Skipped without a
+//! CS:S install.
 
 use std::{path::PathBuf, time::Instant};
 
@@ -26,7 +27,12 @@ fn install_mount() -> Option<Mount> {
 }
 
 fn scratch(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("chimera_map_cache_it_{name}_{}", std::process::id()));
+    // Beside the user's cache, on disk: a whole entry is a gigabyte, and
+    // the temporary folder may be memory (tmpfs).
+    let base = MapCache::default_dir()
+        .and_then(|d| d.parent().map(PathBuf::from))
+        .unwrap_or_else(std::env::temp_dir);
+    let d = base.join(format!("maps-test-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     d
 }
@@ -79,6 +85,18 @@ fn load(mount: &Mount, options: &MapLoadOptions, cache: Option<&MapCache>) -> (M
     (map, outcome, t.elapsed().as_secs_f32())
 }
 
+/// A part's serialized size, whatever its type.
+mod erased {
+    pub trait Ser {
+        fn size(&self) -> usize;
+    }
+    impl<T: serde::Serialize> Ser for T {
+        fn size(&self) -> usize {
+            postcard::to_allocvec(self).map_or(0, |b| b.len())
+        }
+    }
+}
+
 fn entry_size(dir: &std::path::Path) -> u64 {
     std::fs::read_dir(dir)
         .map(|rd| {
@@ -101,6 +119,23 @@ fn cold_and_warm(options: &MapLoadOptions, what: &str) {
     let (miss, o, t_miss) = load(&mount, options, Some(&cache));
     assert_eq!(o, Outcome::Miss);
     let size = entry_size(&dir);
+    // What the entry is made of (MB), largest first.
+    let mb = |v: &dyn erased::Ser| v.size() as f64 / 1e6;
+    let mut parts: Vec<(&str, f64)> = vec![
+        ("textures", mb(&cold.textures)),
+        ("cubemaps", mb(&cold.cubemaps)),
+        ("meshes", mb(&cold.meshes)),
+        ("lightmap", mb(&cold.lightmap)),
+        ("models", mb(&cold.models)),
+        ("props", mb(&cold.props)),
+        ("kit", mb(&cold.kit)),
+        ("sounds", mb(&cold.sounds)),
+        ("collision", mb(&(&cold.collision_positions, &cold.collision_indices, &cold.collision_hulls, &cold.collision_brushes))),
+        ("entities", mb(&cold.entities)),
+        ("visibility", mb(&cold.visibility)),
+    ];
+    parts.sort_by(|a, b| b.1.total_cmp(&a.1));
+    eprintln!("de_dust2 {what} entry parts (MB): {parts:.1?}");
     let (warm, o, t_warm) = load(&mount, options, Some(&cache));
     assert_eq!(o, Outcome::Hit);
     let (_, _, t_warm2) = load(&mount, options, Some(&cache));

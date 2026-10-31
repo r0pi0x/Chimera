@@ -778,9 +778,12 @@ tier: a sixth slot, and what conversion costs"): CS:S map conversion is
 999 s of the heavy tests' 3,153 s, and 830 s of that converts a map that
 an earlier test of the same run already converted (each test is its own
 process). Step 2 of P4b (architecture-review.md); task brief
-[11](../../tasks/11-heavy-tier-time.md). The code is
-`chimera_world::map::cache` (its `//!` doc is the reference); the
-numbers are in docs/performance.md, "The converted-map cache".
+[11](../../tasks/11-heavy-tier-time.md). The code is chimera_assets'
+`map_cache` (the cache; its `//!` doc is the reference) and
+chimera_world's `map::cache` (the map side); the numbers are in
+docs/performance.md, "The converted-map cache": de_dust2 whole 1.6 s to
+0.22 s, lean 1.2 s to 0.15 s; cs_source's heavy tests 439 s to 374 s
+wall, 1,224 s to 972 s summed.
 
 - **What is cached:** CS:S: the `MapData` that
   `cs_source::bsp::load_level_bytes_with` converts, whole (geometry,
@@ -790,60 +793,71 @@ numbers are in docs/performance.md, "The converted-map cache".
   `light_field` (a closure; its occluders are built on its first use).
   `load_times` is one "map cache" stage on a hit. Serialized with
   postcard after serde derives on the `map` types; big arrays (texels,
-  vertices, lightmap samples, sound samples) as one byte string each
-  (`map::pod_serde`), which made a hit 3x faster to decode; `MapExtras`
-  by a list of known extension types (`extras::known`). Combat Arms: its
-  world (`world::load_world_in`: `convert_with` and the surface tags;
-  the per-session effect library is added after, hit or not), **off by
-  default** (`CHIMERA_MAP_CACHE_CA=1`): WAREHOUSE converts in 0.24 s and
-  reads back in 0.27 s, so an entry only costs disk.
+  vertices, lightmap samples, sound samples) as one byte string each,
+  big lists (textures, models, characters, held and view models, sound
+  clips) element by element, encoded and decoded on threads
+  (`map::pod_serde`); `MapExtras` by a list of known extension types
+  (`extras::known`). Combat Arms: its world (`world::load_world_in`:
+  `convert_with` and the surface tags; the per-session effect library is
+  added after, hit or not), **off by default** (`CHIMERA_MAP_CACHE_CA=1`):
+  WAREHOUSE 0.27 s converted, 0.13 s read back, 222 MB.
 - **Where:** `<cache dir>/chimera/maps/` (`~/.cache/chimera/maps`,
   `%LOCALAPPDATA%\chimera\maps`), one `<key>.map` per key, shared by
   every checkout and slot; `CHIMERA_MAP_CACHE=<folder>` moves it,
   `CHIMERA_MAP_CACHE=0` turns it off (`mapsweep --no-map-cache`, or
-  `cache::disable()` in a tool); `CHIMERA_MAP_CACHE_GB` caps it (20 GB
-  by default), least recently used first (a hit touches its entry).
-  Entries: de_dust2 986 MB whole, 227 MB lean.
-- **Key** (a BLAKE3, the file's name): the format (the hash of
+  `cache::disable()` in a tool); `CHIMERA_MAP_CACHE_GB` caps it (40 GB
+  by default: cs_source's heavy tests fill 32 GB with 47 entries), least
+  recently used first (a hit touches its entry). de_dust2: 986 MB whole,
+  227 MB lean.
+- **Key** (a BLAKE3, the file's name): the map format (the hash of
   chimera_world's `src/map`, Chimera's core types and the vfs, taken by
   its build.rs, and `FORMAT_BUMP`), the loader, the converter's version
   (the game's build.rs hashes `src/game`, `data`, its format crate and
   Cargo.lock: `bsp::CONVERTER`, `world::CONVERTER`), the map's name,
-  `MapLoadOptions` and the map file's hash. Every other file the
+  `MapLoadOptions`, the map file's hash and the mount's layers by name
+  (an install and a store-only mount are two entries; one key for both
+  made them replace each other at every load). Every other file the
   conversion asks the mount for is tracked (`chimera_vfs::Mount::track`:
   reads and checks, found or not, every `read_every` and folder listing)
   and kept in the entry with its fingerprint: the serving layer and a
   VPK entry's CRC-32, size and place, a store record's id, a `.rez`
   entry's place with the archive's size and time, else a BLAKE3 of the
-  bytes (loose files). A hit checks each again (de_dust2: 2,557 inputs,
-  0.08 s); one that differs converts again and replaces the entry. The
-  three loops that read every layer by hand now go through
-  `Mount::read_every`, so they are tracked too.
-- **Writing:** a miss takes the key's lock file (`File::lock`, released
-  when the process ends) and checks again, so processes missing the same
-  key at once wait for the first one's entry; the entry (magic, header
-  with the inputs and the payload's BLAKE3, payload) is written to a
+  bytes (loose files). A hit checks each again on threads (de_dust2:
+  2,557 inputs, 0.03 s); one that differs converts again and replaces
+  the entry. The three loops that read every layer by hand now go
+  through `Mount::read_every`, so they are tracked too.
+- **Writing and reading:** a miss takes the key's lock file
+  (`File::lock`, released when the process ends) and checks again only
+  if an entry was written meanwhile, so processes missing the same key
+  at once wait for the first one's entry; the entry (magic, header with
+  the inputs and a BLAKE3 per 16 MB of payload, payload) is written to a
   temporary file and renamed into place. No fsync: an entry cut short
-  fails its checksum. A corrupt, truncated or foreign entry is deleted
-  and converted again.
+  fails its checksum. A hit maps the file (`memmap2`: its pages are the
+  file cache, shared between processes), checks the pieces on threads
+  and decodes. A corrupt, truncated or foreign entry is deleted and
+  converted again.
 - **Who uses it:** every caller of `load_level_bytes_with` (the heavy
   tests of cs_source, party_kit, mashup_demo, mapsweep and the apps, the
-  dedicated servers' lean loads included) with no change to the tests.
-  The apps use it too (on by default): a whole map reads back about as
-  fast as 12 threads convert it, on one thread.
-- **Tests:** fast: `map::cache` (hit, changed and newly shadowing input,
-  converter version, corrupt entries, eviction, four threads missing one
-  key convert once, the key's parts), `pod_serde`, `extras`,
-  `chimera_vfs` (tracking, the source hash), and a check that every
-  serialized type of chimera_world is under the hashed `src/map`. Heavy:
-  cs_source `heavy::map_cache` (de_dust2 whole and lean: converted, miss
-  and hit equal by hash per part and the light field the same; a nav
-  file put in front, changed, removed; a damaged entry), combat_arms
+  dedicated servers' lean loads included) with no change to the tests;
+  the apps too (on by default: a whole map reads back 7x faster than 12
+  threads convert it).
+- **Tests:** fast: chimera_assets `map_cache` (hit, changed and newly
+  shadowing input, converter version, corrupt entries, eviction, four
+  threads missing one key convert once, the key's parts),
+  chimera_world `map::cache` (options and format in the key, every
+  serialized type under the hashed `src/map`), `pod_serde`, `extras`,
+  `chimera_vfs` (tracking, the source hash). Heavy: cs_source
+  `heavy::map_cache` (de_dust2 whole and lean: converted, miss and hit
+  equal by hash per part and the light field the same; a nav file put in
+  front, changed, removed; a damaged entry), combat_arms
   `heavy::map_cache` (WAREHOUSE).
 - **Left:** a cvar beside the env variables; the asset store's own cap;
-  Combat Arms on by default if a slower converter or bigger maps make it
-  worth it; less on disk (entries keep both the BC blocks and the RGBA8
-  copies of each texture: half of a whole entry).
+  a miss holds the encoded entry beside the map (2.8 GB peak for a whole
+  dust2 against 1.3 GB converting: stream it to the file); entries keep
+  both the BC blocks and the RGBA8 copies of each texture (three
+  quarters of a whole entry); Combat Arms on by default if bigger maps
+  make it worth it; the whole heavy tier (all crates) measured again,
+  and a sixth heavy slot tried again.
 
 ## 11. Open questions for the user
 
