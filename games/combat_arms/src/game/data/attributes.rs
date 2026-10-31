@@ -636,6 +636,9 @@ pub struct WeaponsFile {
     /// The effect file's impact records (`ImpactFX#`; empty without the
     /// file), linked by the ammo's `ImpactFXName`.
     pub impacts: Vec<ImpactRecord>,
+    /// The effect file's fire records (`FireFX#`; empty without the
+    /// file), linked by the ammo's `FireFXName`.
+    pub fires: Vec<FireRecord>,
 }
 
 impl WeaponsFile {
@@ -688,6 +691,7 @@ impl WeaponsFile {
             perturb,
             projectiles: Vec::new(),
             impacts: Vec::new(),
+            fires: Vec::new(),
         })
     }
 
@@ -728,12 +732,52 @@ impl WeaponsFile {
         find_by_name(&self.projectiles, &ammo.projectile_fx, |p| &p.name).map(|(_, p)| p)
     }
 
+    /// The fire record `ammo` names (its `FireFXName`, the first record
+    /// of that name).
+    pub fn fire(&self, ammo: &AmmoRecord) -> Option<&FireRecord> {
+        let name = ammo.fire_fx.as_deref().filter(|n| !n.is_empty())?;
+        find_by_name(&self.fires, name, |p| &p.name).map(|(_, p)| p)
+    }
+
     /// The impact record `ammo` names (its `ImpactFXName`, the first
     /// record of that name; a present but empty name is `BulletFmj`).
     pub fn impact(&self, ammo: &AmmoRecord) -> Option<&ImpactRecord> {
         let name = ammo.impact_fx.as_deref()?;
         let name = if name.is_empty() { "BulletFmj" } else { name };
         find_by_name(&self.impacts, name, |p| &p.name).map(|(_, p)| p)
+    }
+}
+
+/// `FireFX<N>` in the effect file (effects_sounds.md, "Effect tables in
+/// the attribute data"): the group the shooter alone sees at the muzzle
+/// and the casings.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FireRecord {
+    pub name: String,
+    pub fx_name: String,
+    pub eject_shells: bool,
+    pub shell_model: String,
+    pub shell_skin: String,
+    pub shell_scale: f64,
+    pub velocity: [f64; 3],
+}
+
+impl FireRecord {
+    pub fn read(s: &Section) -> Self {
+        Self {
+            name: name_of(s),
+            fx_name: s.string("FXName").map(text).unwrap_or_default(),
+            eject_shells: s.number("EjectShells", 0.0) != 0.0,
+            shell_model: s.string("ShellModel").map(text).unwrap_or_default(),
+            shell_skin: s.string("ShellSkin").map(text).unwrap_or_default(),
+            shell_scale: s.number("ShellScale", 1.0),
+            velocity: s.vector("Velocity").unwrap_or_default(),
+        }
+    }
+
+    /// Every `FireFX#` record of the effect file.
+    pub fn read_all(doc: &Document) -> Vec<Self> {
+        doc.records("FireFX").into_iter().map(Self::read).collect()
     }
 }
 
@@ -800,6 +844,51 @@ pub struct ProjectileRecord {
     pub model: String,
     pub model_scale: [f64; 3],
     pub skins: Vec<String>,
+    /// Its looks and sounds in flight (special_weapons.md Follow-up
+    /// (2026-10-30) 1-3).
+    pub look: ProjectileLookRecord,
+}
+
+/// A projectile record's looks and sounds in flight (special_weapons.md
+/// Follow-up (2026-10-30) 1-3): the `FXName` group with `FXLoop` and
+/// `FXSmoothShutdown`, the `FlySound` (a number reads as none) with
+/// `SoundRadius`, the flare (`Flare` 1 with `FlareSprite`, `FlareScale`
+/// in its two screen axes, `FlareYOffset`) and the smoke trail
+/// (`SmokeTrail` 1, `SmokeTrailType`). `Light*` is never made, so not
+/// read.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ProjectileLookRecord {
+    pub fx: String,
+    pub fx_loop: bool,
+    pub fx_smooth: bool,
+    pub fly_sound: String,
+    pub sound_radius: f64,
+    pub flare: Option<(String, [f64; 2], f64)>,
+    pub smoke_trail: Option<i32>,
+}
+
+impl ProjectileLookRecord {
+    pub fn read(s: &Section) -> Self {
+        let on = |k: &str| s.number_opt(k).is_some_and(|v| v != 0.0);
+        let string = |k: &str| s.string(k).map(text).unwrap_or_default();
+        let flare_scale = match s.vector("FlareScale") {
+            Some([x, y, _]) => [x, y],
+            None => {
+                let v = s.number("FlareScale", 1.0);
+                [v, v]
+            }
+        };
+        let sprite = string("FlareSprite");
+        Self {
+            fx: string("FXName"),
+            fx_loop: on("FXLoop"),
+            fx_smooth: on("FXSmoothShutdown"),
+            fly_sound: string("FlySound"),
+            sound_radius: s.number("SoundRadius", 0.0),
+            flare: (on("Flare") && !sprite.is_empty()).then(|| (sprite, flare_scale, s.number("FlareYOffset", 0.0))),
+            smoke_trail: on("SmokeTrail").then(|| s.int("SmokeTrailType", 1)),
+        }
+    }
 }
 
 impl ProjectileRecord {
@@ -816,6 +905,7 @@ impl ProjectileRecord {
             model: s.string("Model").map(text).unwrap_or_default(),
             model_scale: s.vector("ModelScale").unwrap_or([1.0; 3]),
             skins: s.string_list("Skin").iter().map(|b| text(b)).collect(),
+            look: ProjectileLookRecord::read(s),
         }
     }
 
@@ -997,6 +1087,10 @@ pub struct PieceRecord {
     pub hair: Option<i32>,
     /// `RenderStyle0..`.
     pub render_styles: Vec<String>,
+    /// `ClientFX0..`: effect groups the piece plays looping on the
+    /// character (game_modes.md Corrections (2026-10-30) 4, 7: faces'
+    /// eyes).
+    pub client_fx: Vec<String>,
 }
 
 impl PieceRecord {
@@ -1018,6 +1112,7 @@ impl PieceRecord {
             skins: list("Skin"),
             hair: s.get("HairIndex").map(|_| s.int("HairIndex", -1)).filter(|&h| h >= 0),
             render_styles: list("RenderStyle"),
+            client_fx: list("ClientFX"),
         }
     }
 }

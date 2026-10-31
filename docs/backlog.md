@@ -390,8 +390,8 @@ the user's go-ahead: no Actions runs unless asked.
   (`MODELS\DEFAULT_PROJECTILE.LTB`) at the record's `ModelScale`; the
   flame's scale is 0 (nothing, as ours), `Scorpion_Venom`'s 0.35 (a
   small untextured shape in flight). Ours draws nothing for an empty
-  `Model` (`special::data::NO_MODEL_KEY`). Small; after the
-  ca-corrections projectile work lands.
+  `Model` (`special::data::NO_MODEL_KEY`). Small; the
+  projectile looks it waited for landed 2026-10-31 (`effects::attached`).
 - **Zombies: a character tied to its weapon (user idea, 2026-10-29):
   done, confirm in a playtest.** Chimera's `ladder::RungCharacter`
   (arriving and leaving: `ladder::OnRung`'s observers); Combat Arms'
@@ -406,7 +406,12 @@ the user's go-ahead: no Actions runs unless asked.
   trails, the override's virus render styles and hands. (All specified
   since: game_modes.md Corrections (2026-10-30) 1-7; the eyes are the
   face's `ClientFX#` groups, `Eye_Red_Tail_L` for the stock infected
-  faces, on the `EYE_L`/`EYE_R` sockets: item 7, case 114.) The idea as
+  faces, on the `EYE_L`/`EYE_R` sockets: item 7, case 114.) **Eyes done
+  (2026-10-31):** the override's face loads with its body group and is
+  worn on the infected rung and by Quarantine's infected; its
+  `ClientFX#` groups play looping on its `EYE_L`/`EYE_R` sockets, third
+  person only (`effects::attached`; tests `attached_effects` t114). Still
+  not drawn: the virus render styles and the override's hands. The idea as
   given:
   Some Combat Arms characters can only use certain weapons: the infected
   (zombies) fight with their hands. Make them a special class. A rung
@@ -573,9 +578,15 @@ the user's go-ahead: no Actions runs unless asked.
   AT4 and RMS12 skins, the boss missile, the M79/MZP-1 family). Left for
   a spec session (docs/plans/active/combat-arms.md, brief 24b): the
   projectile record's trail group (`FXName`), flight sound (`FlySound`),
-  flare and light. A flame puff has no model in its record, so it now
-  draws nothing (no ball); until the spec answers how its `Flame_Yellow`
-  trail plays, flame weapons show no flame. The M32 family firing
+  flare and light. **Done (2026-10-31)** from special_weapons.md's
+  Follow-up (2026-10-30): the record's group rides the projectile
+  (`effects::attached`; a flame puff's `Flame_Yellow` plays, so flames
+  show), its `FlySound` loops and follows it, its flare and smoke trail,
+  its model faces its fire direction, launchers show their FireFX record
+  at the fire position, launched ammo's blast plays the surface's impact
+  group (tests `attached_effects`, `install_launchers` t48-t53). Left:
+  `ActivateSound`, `FinishSound`, `CreateSound`; the trail key's width
+  styles and `UAdd`. The M32 family firing
   copies of itself: fixed with the rest (the shell was drawn by the
   weapon's key, the M32's held model; now `M32_Shell.ltb`). The
   "Anti-Virus Flamethrower" is most likely `RMS12` (its HUD name image,
@@ -804,7 +815,8 @@ the user's go-ahead: no Actions runs unless asked.
   (Fixed 2026-10-29 for every impact projectile weapon, the launchers
   and their copies: the table is made, with the record's `FireSnd`,
   `FireSndRadius` and the ammo's ImpactFX; the crossbow, the M67 and
-  the launchers' `HHMuzzleFXName` and `FireFXName` are still open.) The
+  the launchers' `HHMuzzleFXName` are still open; their `FireFXName`
+  done 2026-10-31.) The
   MP5A4 and Dragunov have no first-person muzzle flash (no view-model
   table). The M60's FireFX should be `5.56mm`, not `7.62mm`, the R870's
   `12Gauge_R`, not `_G`. The R870 has no deselect sound.

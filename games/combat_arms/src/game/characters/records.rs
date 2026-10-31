@@ -136,6 +136,11 @@ pub struct FaceRecord {
     /// `RenderStyle#` (none: the engine's default style).
     #[serde(default)]
     pub render_styles: Vec<String>,
+    /// `ClientFX#`: effect groups worn looping on the character, seen
+    /// in third person (game_modes.md Corrections (2026-10-30) 4, 7: the
+    /// infected faces' eyes).
+    #[serde(default)]
+    pub client_fx: Vec<String>,
 }
 
 /// A socket attachment a player wears (characters.md 2): goggles or a
@@ -384,7 +389,7 @@ impl CharacterData {
 /// faces:
 /// each `Model#` of ours by its id (file, skins, render styles, face
 /// redirects), each `Hair#` and `Face#` record by its index, its files,
-/// skins, render styles and (a face) `HairIndex` (characters.md sections
+/// skins, render styles and (a face) `HairIndex` and `ClientFX#` (characters.md sections
 /// 1 and 2); ours not in it stay.
 fn merge_install_pieces(data: &mut CharacterData, ca: &CaDataInner) {
     if let Some(m) = ca.attributes().and_then(|a| a.marks.as_ref()) {
@@ -516,6 +521,7 @@ fn merge_install_pieces(data: &mut CharacterData, ca: &CaDataInner) {
             skins: super::super::data::skin_paths(&r.skins),
             hair: r.hair,
             render_styles: r.render_styles.clone(),
+            client_fx: r.client_fx.clone(),
         };
         match data.face.iter_mut().find(|f| f.id == id) {
             Some(f) => *f = face,
@@ -725,6 +731,12 @@ impl CharacterData {
 
     pub fn face(&self, id: i32) -> Option<&FaceRecord> {
         self.face.iter().find(|f| f.id == id)
+    }
+
+    /// The face record a selection wears for its looping groups and
+    /// sockets: the face it names, else its body's default.
+    pub fn worn_face(&self, look: &Selection) -> Option<&FaceRecord> {
+        self.face(look.face).or_else(|| self.face(self.default_face(look.model)))
     }
 
     /// The face a body record is drawn with by default: the first face

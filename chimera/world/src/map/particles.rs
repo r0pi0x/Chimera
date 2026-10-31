@@ -19,7 +19,9 @@
 //! `ScreenSize`), rolls that stop at an age and mirrored sprites, `Shape::Tumble` (3D shards: three spinning
 //! angles, `tumble_axes`, settling flat, `settle_flat`); `ParticleSet`
 //! (Step, Draw) lets games show
-//! one-frame groups (smoke clouds) between stepping and drawing.
+//! one-frame groups (smoke clouds) between stepping and drawing;
+//! `Shape::Ribbon` (camera-facing trail sections) and tagged groups an
+//! effect can cut at once (`ParticleGroup::tag`, `kill_tagged`).
 
 use bevy::prelude::*;
 
@@ -277,6 +279,12 @@ pub enum Shape {
     /// bottom-right; engine space) showing this texture rectangle (min u,
     /// min v, max u, max v): a segment of a trail.
     Quad { corners: [Vec3; 4], rect: [f32; 4] },
+    /// A strip facing the camera from the particle's position to `to`
+    /// (engine space), `width` wide at each end (meters; the width runs
+    /// across the strip, square to the line and to the eye), showing the
+    /// texture's u from `u.0` at the particle to `u.1` at `to` and v
+    /// across: a section of a ribbon trail.
+    Ribbon { to: Vec3, width: [f32; 2], u: (f32, f32) },
     /// A bullet tracer (specs/cs_source/tracers.md 3.1): a streak `length`
     /// long whose head leaves `start` along `dir` at `speed` (m/s), both
     /// ends kept between `start` and `distance` along; a camera-facing core
@@ -445,6 +453,9 @@ pub struct ParticleGroup {
     /// Joins a live group with the same key if their boxes together stay
     /// under `extent` across: (key, extent in meters, spawn box min, max).
     pub merge: Option<(u32, f32, Vec3, Vec3)>,
+    /// Who made it, so it can be cut at once (`Particles::kill_tagged`:
+    /// an effect shut down without letting its particles live out).
+    pub tag: Option<u64>,
     age: f32,
     fresh: bool,
 }
@@ -598,6 +609,11 @@ impl Particles {
         }
         self.groups.push(group);
         n
+    }
+
+    /// Remove every group tagged `tag` at once.
+    pub fn kill_tagged(&mut self, tag: u64) {
+        self.groups.retain(|g| g.tag != Some(tag));
     }
 
     /// Advance everything by the frame time `dt` (clamped to `max_dt`).

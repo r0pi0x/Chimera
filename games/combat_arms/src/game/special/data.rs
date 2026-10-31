@@ -65,18 +65,115 @@ pub struct ProjectileParams {
     pub model_scale: [f32; 3],
     #[serde(default)]
     pub skins: Vec<String>,
+    /// Its looks and sounds in flight (the projectile record's, from the
+    /// install: special_weapons.md Follow-up (2026-10-30) 1-3).
+    #[serde(default)]
+    pub look: ProjectileLook,
 }
 
 fn unit_scale() -> [f32; 3] {
     [1.0; 3]
 }
 
+/// A projectile's looks and sounds in flight (special_weapons.md
+/// Follow-up (2026-10-30) 1-3): the projectile record's `FXName` group
+/// (`FXLoop`, `FXSmoothShutdown`), `FlySound` with `SoundRadius`, the
+/// flare (`FlareSprite`, `FlareScale`, `FlareYOffset` u) and the smoke
+/// trail's `SmokeTrailType`. Empty: nothing.
+#[derive(Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct ProjectileLook {
+    pub fx: String,
+    pub fx_loop: bool,
+    pub fx_smooth: bool,
+    pub fly_sound: String,
+    pub sound_radius: f32,
+    pub flare: Option<FlareLook>,
+    pub smoke_trail: Option<u32>,
+}
+
+/// A projectile's flare sprite (special_weapons.md Follow-up 3).
+#[derive(Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct FlareLook {
+    pub sprite: String,
+    pub scale: [f32; 2],
+    pub y_offset: f32,
+}
+
+impl ProjectileLook {
+    /// As text after a drawn key (`shown_key`), so whatever draws a
+    /// projectile, a network client's too, reads its look from the key
+    /// it is drawn under (`parse`): `fx=..;loop=1;smooth=1;fly=..;r=..;
+    /// flare=sprite,sx,sy,dy;smoke=n` (fields left out when empty).
+    pub fn key(&self) -> String {
+        let mut out: Vec<String> = Vec::new();
+        if !self.fx.is_empty() {
+            out.push(format!("fx={}", self.fx));
+            if self.fx_loop {
+                out.push("loop=1".into());
+            }
+            if self.fx_smooth {
+                out.push("smooth=1".into());
+            }
+        }
+        if !self.fly_sound.is_empty() {
+            out.push(format!("fly={}", self.fly_sound));
+            out.push(format!("r={}", self.sound_radius));
+        }
+        if let Some(f) = &self.flare {
+            out.push(format!("flare={},{},{},{}", f.sprite, f.scale[0], f.scale[1], f.y_offset));
+        }
+        if let Some(t) = self.smoke_trail {
+            out.push(format!("smoke={t}"));
+        }
+        out.join(";")
+    }
+
+    /// The look a drawn key carries (`key`; none: the default).
+    pub fn parse(shown: &str) -> Self {
+        let mut look = Self::default();
+        let Some((_, text)) = shown.split_once(LOOK_SEPARATOR) else { return look };
+        for field in text.split(';') {
+            let Some((k, v)) = field.split_once('=') else { continue };
+            match k {
+                "fx" => look.fx = v.to_string(),
+                "loop" => look.fx_loop = v == "1",
+                "smooth" => look.fx_smooth = v == "1",
+                "fly" => look.fly_sound = v.to_string(),
+                "r" => look.sound_radius = v.parse().unwrap_or(0.0),
+                "flare" => {
+                    let p: Vec<&str> = v.split(',').collect();
+                    if let [sprite, sx, sy, dy] = p[..] {
+                        look.flare = Some(FlareLook {
+                            sprite: sprite.to_string(),
+                            scale: [sx.parse().unwrap_or(1.0), sy.parse().unwrap_or(1.0)],
+                            y_offset: dy.parse().unwrap_or(0.0),
+                        });
+                    }
+                }
+                "smoke" => look.smoke_trail = v.parse().ok(),
+                _ => {}
+            }
+        }
+        look
+    }
+
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// Between a projectile's drawn key and its look (`ProjectileLook::key`).
+pub const LOOK_SEPARATOR: char = '~';
+
 impl ProjectileParams {
     /// The key its projectile is drawn under (`map::loose::ShownItem`, the
-    /// held-model kit): one per model, scale and skins, whichever weapon
-    /// fires it; a model-less projectile's never has a model.
+    /// held-model kit): one per model, scale, skins and look, whichever
+    /// weapon fires it; a model-less projectile's never has a model. The
+    /// look follows `LOOK_SEPARATOR` (none when it has none).
     pub fn shown_key(&self) -> String {
-        match &self.model {
+        let base = match &self.model {
             Some(m) => format!(
                 "{}{m}|{:?}|{}",
                 PROJECTILE_KEY,
@@ -84,7 +181,17 @@ impl ProjectileParams {
                 self.skins.join(",")
             ),
             None => Self::NO_MODEL_KEY.to_string(),
+        };
+        if self.look.is_empty() {
+            base
+        } else {
+            format!("{base}{LOOK_SEPARATOR}{}", self.look.key())
         }
+    }
+
+    /// Whether a drawn key is a model-less projectile's.
+    pub fn is_modelless(shown: &str) -> bool {
+        shown.split(LOOK_SEPARATOR).next() == Some(Self::NO_MODEL_KEY)
     }
 
     /// The drawn key of a projectile without a model.

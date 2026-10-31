@@ -8,7 +8,10 @@
 //!   silencer's radius, `CaMods`: silenced level ℓ plays `SilencedFireSnd`ℓ,
 //!   a silenced part without a level nothing); the third-person muzzle
 //!   group (`hh_muzzle`, the muzzle part's first) for others when the fire
-//!   point is seen; your FireFX group (`test`) at your flash point; a
+//!   point is seen; your FireFX group (`test`) at your flash point (a
+//!   launcher's, its ammo's install record `CaWeaponFx::fire_record`, at
+//!   the shot's origin and only when that is in front of you:
+//!   special_weapons.md Follow-up 7); a
 //!   casing (seen and near fire point, the FireFX ejecting); the muzzle or
 //!   FireFX group again for each further pellet of a round; the tracer
 //!   (`rules::TracerCounter`: yours by the last fitted part's tracer, the
@@ -45,7 +48,9 @@
 //!   with the install's record from the merge: special_weapons.md 1.3):
 //!   its sound at the blast (none on
 //!   sky); the surface's grenade group when seen (that of the grenade's
-//!   last bounce or touch, its own Metal if none: mid-air too);
+//!   last bounce or touch, its own Metal if none: mid-air too; a
+//!   launched round's, not grenade ammo, the surface's impact group:
+//!   `launched_burst`, special_weapons.md Follow-up 8);
 //!   the flash's and smoke's own groups always. Bounces (`bounce_sounds`,
 //!   the server's): the surface's grenade sound, one per grenade.
 //! - **Hurt** (`hurt_sounds`, the server's): a sound by damage kind and
@@ -81,7 +86,9 @@
 //! - **Stepping** (`step_effects`): decals age (frozen while paused),
 //!   tracers fly, casings fall and bounce (`rules::Casing`; the first
 //!   bounce's sound), effect groups play (`fx::CaFx` on Chimera's
-//!   particle pool, from the requests `CaFxRequest`).
+//!   particle pool, from the requests `CaFxRequest`); groups and sounds
+//!   that follow an entity (a projectile's look in flight, a face's eyes)
+//!   are `attached`'s.
 //!
 //! The front end (`ui::effects`) draws decals, tracers, casings, lights
 //! and the first-person muzzle flash; `sounds` plays `CaSound`s.
@@ -128,6 +135,7 @@
 //!   are absent or inert in the stock data (Open question 23) and not
 //!   modelled.
 
+pub mod attached;
 pub mod bomb;
 pub mod data;
 pub mod fx;
@@ -307,6 +315,13 @@ impl Plugin for CaEffectsPlugin {
         .add_message::<crate::game::view_model::attached::CaLoopSound>()
         .init_resource::<crate::game::rungs::InfectionSound>()
         .add_observer(crate::game::rungs::infection_moment)
+        .add_observer(attached::on_shown)
+        .add_observer(attached::fly_sound)
+        .add_observer(attached::fly_sound_stop)
+        .add_observer(attached::face_groups)
+        // One-frame particles (attached sprites, trails, flares) are drawn
+        // on the frame they are added: before the pool steps.
+        .configure_sets(Update, CaEffectsSet.before(crate::map::particles::ParticleSet::Step))
         .add_systems(
             Update,
             (
@@ -321,6 +336,8 @@ impl Plugin for CaEffectsPlugin {
                 footsteps,
                 voice::voices,
                 step_effects,
+                attached::follow,
+                attached::flight,
                 spawn_fx,
                 sounds::play,
                 crate::game::view_model::attached::sounds,
@@ -890,7 +907,7 @@ fn shot_effects(
             }
             None => continue,
         };
-        let fire_record = tables.fire(&wfx.fire);
+        let fire_record = wfx.fire_of(&tables);
         match &e.kind {
             WeaponEventKind::Fired { origin, yaw, pitch, .. } => {
                 let dir = aim_of(*yaw, *pitch) * Vec3::NEG_Z;
@@ -901,7 +918,18 @@ fn shot_effects(
                     .get(e.owner)
                     .ok()
                     .and_then(|(p, t, s)| Some(p.world(t, s, UNIT, p.right_hand?)));
-                let fire = if mine { vm.map_or(*origin, |v| v.flash_point) } else { hand.unwrap_or(*origin) };
+                // A launcher's (a projectile round's) fire-only event comes
+                // from the server's fire position, for the shooter too, and
+                // shows only while that point is in front of the viewer
+                // (special_weapons.md Follow-up 7).
+                let launcher = wfx.ammo_kind == AmmoKind::Thrown;
+                let fire = if launcher {
+                    *origin
+                } else if mine {
+                    vm.map_or(*origin, |v| v.flash_point)
+                } else {
+                    hand.unwrap_or(*origin)
+                };
                 let mut round = Round {
                     fire,
                     first_ray: true,
@@ -923,7 +951,12 @@ fn shot_effects(
                     continue;
                 };
                 let gates = cam.gates(fire, fire + dir, !mine);
-                if mine {
+                // The shooter's own launcher group: the server's fire
+                // position is his eye, which the gate counts as straight up
+                // (never seen); case 52 shows it, hidden only behind him
+                // (our reading: a point at the camera passes).
+                let own_seen = !launcher || gates.fire_seen || (fire - cam.at).length() < 0.001 * UNIT;
+                if mine && own_seen {
                     // Your FireFX group at your flash point.
                     if let Some(f) = fire_record.filter(|f| !f.fx.is_empty()) {
                         round.muzzle = Some(CaFxRequest {
@@ -1315,10 +1348,12 @@ fn grenade_effects(
         // projectile's: its weapon's ImpactFX (the ammo's `ImpactFXName`,
         // the install's record when the tables lack it; special_weapons.md
         // 1.3), played as a launched round's.
+        let launched_fx = known.by_id.get(d.weapon).and_then(|k| k.fx.as_ref());
         let record = match tables.grenade.get(d.weapon) {
             Some(g) => tables.impact(&g.impact),
-            None => known.by_id.get(d.weapon).and_then(|k| k.fx.as_ref()).and_then(|w| w.impact_of(&tables)),
+            None => launched_fx.and_then(|w| w.impact_of(&tables)),
         };
+        let launched = tables.grenade.get(d.weapon).is_none() && launched_fx.is_some_and(|w| w.launched);
         let Some(record) = record else { continue };
         // The surface of the grenade's last bounce or touch, wherever it
         // is now; one that touched nothing is its own metal, never Air
@@ -1342,8 +1377,14 @@ fn grenade_effects(
         );
         // In water (its point + the up normal in a liquid): the surface's
         // under-water grenade group, half volume (Edge cases).
-        if in_liquid(volumes.iter(), d.at + Vec3::Y * UNIT) {
+        let wet = in_liquid(volumes.iter(), d.at + Vec3::Y * UNIT);
+        if wet {
             submerge(&mut out, record, surface, AmmoKind::Thrown, seen);
+        }
+        // Launched (not grenade) ammo: the surface's impact group, as a
+        // bullet's (special_weapons.md Follow-up 8).
+        if launched && out.burst.is_some() {
+            out.burst = launched_burst(surface, wet);
         }
         // The grenade's look is its surface's grenade group.
         if let Some(b) = out.burst.take() {
@@ -1356,6 +1397,14 @@ fn grenade_effects(
         }
         emit_impact(&out, d.at, Vec3::Y, None, &mut sounds, &mut fx, &mut marks, &mut rolls, record);
     }
+}
+
+/// A launched round's surface group (special_weapons.md Follow-up 8): the
+/// surface's `ImpactFXName` (under water `UWImpactFXName`), none when
+/// empty.
+pub fn launched_burst(surface: &data::Surface, under_water: bool) -> Option<String> {
+    let g = if under_water { &surface.uw_impact_fx } else { &surface.impact_fx };
+    (!g.is_empty()).then(|| g.clone())
 }
 
 /// The Water surface type (footsteps on an unknown surface in water).
