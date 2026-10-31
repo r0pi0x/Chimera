@@ -3,8 +3,10 @@
 //! command and hit point; clients get the objects' poses and flags. One
 //! replicated entity carries every world model and volume that differs
 //! from the map's start (`NetCaObjects`: position, rotation, visible,
-//! solid, ray-hit, removed), so a late joiner gets open doors, risen
-//! water and broken breakables as they are; a client writes them into its
+//! solid, ray-hit, removed; a `SoundFX` a keyframer moved) and the
+//! objects' sounds (`NetVoice`: a joiner gets the loops still playing,
+//! not the one-shots made before it heard of them), so a late joiner gets
+//! open doors, risen water and broken breakables as they are; a client writes them into its
 //! own object world (built from the same map) and onto its nodes and
 //! volumes. Registered as the network part `combat_arms_objects`.
 
@@ -12,7 +14,11 @@ use bevy::prelude::*;
 use bevy_replicon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::{CaObjects, apply_effects, movers::Pose, runtime::Kind};
+use super::{
+    CaObjects, apply_effects,
+    movers::Pose,
+    runtime::{Kind, ObjSound},
+};
 use crate::{
     core::NetRole,
     map::MapFile,
@@ -29,6 +35,52 @@ pub struct NetCaObjects {
     /// The map sounds (`SoundFX`) switched or restarted since the start
     /// (music_ambience.md 6: a joiner gets every sound still running).
     pub sounds: Vec<NetSound>,
+    /// The objects' own sounds (world_objects.md 14: transition, active
+    /// and placed one-shot sounds; `sound`).
+    pub voices: Vec<NetVoice>,
+}
+
+/// One object's sound (`runtime::ObjSound`) in a slot.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct NetVoice {
+    pub id: u32,
+    /// A placed one-shot (`Object::shot`), else the object's sound.
+    pub shot: bool,
+    pub file: String,
+    pub at: [f32; 3],
+    pub attach: Option<u32>,
+    pub radius: f32,
+    pub inner: f32,
+    pub looping: bool,
+    pub serial: u32,
+}
+
+impl NetVoice {
+    fn of(id: u32, shot: bool, s: &ObjSound) -> Self {
+        Self {
+            id,
+            shot,
+            file: s.file.clone(),
+            at: s.at.to_array(),
+            attach: s.attach,
+            radius: s.radius,
+            inner: s.inner,
+            looping: s.looping,
+            serial: s.serial,
+        }
+    }
+
+    fn sound(&self) -> ObjSound {
+        ObjSound {
+            file: self.file.clone(),
+            at: Vec3::from(self.at),
+            attach: self.attach,
+            radius: self.radius,
+            inner: self.inner,
+            looping: self.looping,
+            serial: self.serial,
+        }
+    }
 }
 
 /// One map sound's state.
@@ -84,7 +136,10 @@ fn write(world: &mut World) {
         .objects
         .iter()
         .enumerate()
-        .filter(|(i, ob)| (ob.node || o.volumes.contains_key(&(*i as u32))) && o.start.get(*i).is_some_and(|s| (ob.pose, flags_of(ob)) != *s || ob.vol.speed.is_some()))
+        .filter(|(i, ob)| {
+            (ob.node || o.volumes.contains_key(&(*i as u32)) || ob.class == "SoundFX")
+                && o.start.get(*i).is_some_and(|s| (ob.pose, flags_of(ob)) != *s || ob.vol.speed.is_some())
+        })
         .map(|(i, ob)| NetObject {
             id: i as u32,
             pos: ob.pose.pos.to_array(),
@@ -108,7 +163,23 @@ fn write(world: &mut World) {
             _ => None,
         })
         .collect();
-    let now = NetCaObjects { map, objects, sounds };
+    let voices: Vec<NetVoice> = o
+        .world
+        .objects
+        .iter()
+        .enumerate()
+        .flat_map(|(i, ob)| {
+            [(false, &ob.sound), (true, &ob.shot)]
+                .into_iter()
+                .filter_map(move |(shot, s)| s.as_ref().map(|s| NetVoice::of(i as u32, shot, s)))
+        })
+        .collect();
+    let now = NetCaObjects {
+        map,
+        objects,
+        sounds,
+        voices,
+    };
     let have = world.query::<(Entity, &NetCaObjects)>().iter(world).next().map(|(e, n)| (e, n.clone()));
     match have {
         Some((e, n)) if n != now => {
@@ -175,6 +246,27 @@ fn read(world: &mut World) {
             let start = o.world.objects[i].props.bool_or("StartOn", true);
             let (on, plays) = net.sounds.iter().find(|s| s.id as usize == i).map_or((start, 0), |s| (s.on, s.plays));
             o.world.objects[i].kind = Kind::Switchable { on, plays };
+        }
+        // The objects' sounds; the one-shots made before this client
+        // first heard of them already played (17: a joiner doesn't get
+        // past one-shot sounds).
+        let floor = *o
+            .net_sound_floor
+            .get_or_insert_with(|| net.voices.iter().map(|v| v.serial).max().unwrap_or(0));
+        for ob in &mut o.world.objects {
+            ob.sound = None;
+            ob.shot = None;
+        }
+        for v in &net.voices {
+            if !v.looping && v.serial <= floor {
+                continue;
+            }
+            let Some(ob) = o.world.objects.get_mut(v.id as usize) else { continue };
+            if v.shot {
+                ob.shot = Some(v.sound());
+            } else {
+                ob.sound = Some(v.sound());
+            }
         }
     }
     apply_effects(world);

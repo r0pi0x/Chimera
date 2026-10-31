@@ -5,8 +5,10 @@
 //! gain rule of effects_sounds.md 10 (`gain`). The pure parts here: the
 //! object's properties, the radii the wire carries, the gain; the
 //! resource `CaAmbient` is the sounds of the loaded map with their state
-//! (switched on, restarts), which the front end plays (`ui::music`) and a
-//! one-shot's restart plays as a `CaSound`.
+//! (switched on, restarts, where its object is now: a keyframer carries
+//! HGOILRIG's water sounds), which the front end plays (`ui::music`; a
+//! placed sound with `PlayAttached` follows its object's anchor,
+//! `objects::sound`) and a one-shot's restart plays as a `CaSound`.
 
 use bevy::prelude::*;
 
@@ -164,10 +166,14 @@ pub fn sync(a: &mut CaAmbient, objects: &crate::game::objects::CaObjects) {
         return;
     }
     for s in &mut a.sounds {
-        if let Some(Kind::Switchable { on, plays }) = objects.world.objects.get(s.id as usize).map(|o| &o.kind) {
-            s.on = *on;
-            s.plays = *plays;
+        let Some(o) = objects.world.objects.get(s.id as usize) else { continue };
+        if let Kind::Switchable { on, plays } = o.kind {
+            s.on = on;
+            s.plays = plays;
         }
+        // Where its object is now (a keyframer or an attachment moves it:
+        // world_objects.md 14, HGOILRIG's water sounds).
+        s.at = o.pose.pos;
     }
 }
 

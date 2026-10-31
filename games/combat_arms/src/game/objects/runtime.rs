@@ -24,6 +24,11 @@
 //! 10 u along the normalised (1, 1, 1); a first `VISIBLE`/`SOLID` message
 //! records its own value as what the object "had".
 //!
+//! Sounds (14) are state: each object's current sound and last placed
+//! one-shot (`ObjSound`), which `sound` plays; a keyframer's
+//! `ActiveSound` loops on its first object while it is active (the
+//! sound is kept through `PAUSE`: the spec stops it only when inactive).
+//!
 //! Known shortcuts: `SoundFX` keeps its on/off state and restart count (the
 //! client's `music::ambient` plays them); `LightGroup`, `Camera`,
 //! `SpecialFX` and `TargetTrigger` keep their on/off state only
@@ -290,6 +295,27 @@ pub enum Kind {
     MusicTrigger { on: bool },
 }
 
+/// A sound an object plays (14): its transition sound or a keyframer's
+/// active sound (`Object::sound`), or a placed one-shot (`Object::shot`:
+/// a trigger's activation sound, a key's sound). Kept while it may still
+/// sound, so a machine that starts after (a late joiner) learns of a
+/// loop; `serial` tells one start from the next.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ObjSound {
+    pub file: String,
+    /// Where it started (file frame, u).
+    pub at: Vec3,
+    /// The object it follows (an active world model's with `SoundPos`
+    /// exactly (0, 0, 0), a keyframer's first object), else it stays at
+    /// `at`.
+    pub attach: Option<ObjId>,
+    /// Outer and inner radius (u).
+    pub radius: f32,
+    pub inner: f32,
+    pub looping: bool,
+    pub serial: u32,
+}
+
 /// What `MEMORIZE` keeps (the world-model and active layers).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Memo {
@@ -343,6 +369,13 @@ pub struct Object {
     pub attached: Vec<Attached>,
     pub parent: Option<ObjId>,
     pub kind: Kind,
+    /// The sound it plays now: its transition sound (looping until the
+    /// next transition with `LoopSounds`, else the last one-shot), a
+    /// keyframer's `ActiveSound` (14).
+    pub sound: Option<ObjSound>,
+    /// Its last placed one-shot (a trigger's `ActivationSound`, a key's
+    /// sound).
+    pub shot: Option<ObjSound>,
     /// Pose or flags changed since the bridge last looked.
     pub dirty: bool,
 }
@@ -403,7 +436,9 @@ pub struct ObjectWorld {
     pub active_player: Who,
     /// `PlayerOnceActivate`'s list, shared by every trigger.
     pub once: Vec<Who>,
-    /// Each world model's last sound (to stop it on the next).
+    /// The last sound start's serial (`ObjSound::serial`).
+    pub sound_serial: u32,
+    /// Lines for the console's log (built while loading).
     pub log: Vec<String>,
 }
 
@@ -421,6 +456,7 @@ impl Default for ObjectWorld {
             rng: Rng(0x5eed),
             active_player: Who::Nobody,
             once: Vec::new(),
+            sound_serial: 0,
             log: Vec::new(),
         }
     }
@@ -932,20 +968,82 @@ impl ObjectWorld {
                     let o = &self.objects[id as usize];
                     let Some(a) = o.awm() else { continue };
                     let attached = a.sound_pos == Vec3::ZERO;
-                    self.fx.push(Fx::Sound {
+                    let s = ObjSound {
                         file,
                         at: o.pose.pos + a.sound_pos,
                         attach: attached.then_some(id),
                         radius: a.sound_radius,
                         inner: a.sound_radius * movers::SOUND_INNER_FRACTION,
                         looping,
-                        owner: Some(id),
-                    });
+                        serial: 0,
+                    };
+                    self.play(id, s, false);
                 }
-                Out::StopSound => self.fx.push(Fx::StopSound { owner: id }),
+                Out::StopSound => self.stop_loop(id),
                 Out::DoorLink(_) => {}
             }
         }
+    }
+
+    /// Start sound `s` of object `id`: its transition (or active) sound,
+    /// replacing the one before, or (`shot`) a placed one-shot.
+    pub fn play(&mut self, id: ObjId, mut s: ObjSound, shot: bool) {
+        self.sound_serial = self.sound_serial.wrapping_add(1);
+        s.serial = self.sound_serial;
+        self.fx.push(Fx::Sound {
+            file: s.file.clone(),
+            at: s.at,
+            attach: s.attach,
+            radius: s.radius,
+            inner: s.inner,
+            looping: s.looping,
+            owner: (!shot).then_some(id),
+        });
+        let o = &mut self.objects[id as usize];
+        if shot {
+            o.shot = Some(s);
+        } else {
+            o.sound = Some(s);
+        }
+    }
+
+    /// Stop object `id`'s looping sound (a one-shot plays to its end:
+    /// Corrections (2026-10-22) 3).
+    pub fn stop_loop(&mut self, id: ObjId) {
+        self.fx.push(Fx::StopSound { owner: id });
+        let o = &mut self.objects[id as usize];
+        if o.sound.as_ref().is_some_and(|s| s.looping) {
+            o.sound = None;
+        }
+    }
+
+    /// A keyframer's `ActiveSound` (9, 14): looping on its first object
+    /// while it is active, stopped when it isn't.
+    fn active_sound(&mut self, id: ObjId) {
+        let Kind::KeyFramer(k) = &self.objects[id as usize].kind else { return };
+        if k.active_sound.is_empty() {
+            return;
+        }
+        let playing = self.objects[id as usize].sound.is_some();
+        if k.active == playing {
+            return;
+        }
+        if !k.active {
+            self.stop_loop(id);
+            return;
+        }
+        let (file, radius) = (k.active_sound.clone(), k.sound_radius);
+        let Some(&first) = self.controlled(k).first() else { return };
+        let s = ObjSound {
+            file,
+            at: self.objects[first as usize].pose.pos,
+            attach: Some(first),
+            radius,
+            inner: radius * movers::SOUND_INNER_FRACTION,
+            looping: true,
+            serial: 0,
+        };
+        self.play(id, s, false);
     }
 
     /// Run a command string (its failure, if any, logged).
@@ -1144,6 +1242,10 @@ impl ObjectWorld {
         o.solid = false;
         o.rayhit = false;
         o.dirty = true;
+        // Ours: a removed object's loop goes with it.
+        if o.sound.as_ref().is_some_and(|s| s.looping) {
+            o.sound = None;
+        }
         let attached: Vec<ObjId> = o.attached.drain(..).map(|a| a.id).collect();
         let remove_attachments = o.props.bool_or("RemoveAttachments", true);
         for a in attached {
@@ -1536,17 +1638,15 @@ impl ObjectWorld {
         if t.player_once && matches!(who, Who::Character(_)) && !self.once.contains(&who) {
             self.once.push(who);
         }
-        if !t.sound.is_empty() {
-            self.fx.push(Fx::Sound {
-                file: t.sound.clone(),
-                at: pos,
-                attach: None,
-                radius: t.sound_radius,
-                inner: t.sound_radius * movers::SOUND_INNER_FRACTION,
-                looping: false,
-                owner: None,
-            });
-        }
+        let sound = (!t.sound.is_empty()).then(|| ObjSound {
+            file: t.sound.clone(),
+            at: pos,
+            attach: None,
+            radius: t.sound_radius,
+            inner: t.sound_radius * movers::SOUND_INNER_FRACTION,
+            looping: false,
+            serial: 0,
+        });
         let mut run: Vec<String> = Vec::new();
         for (k, c) in t.commands.iter().enumerate() {
             if t.weighted && k < 2 {
@@ -1558,6 +1658,9 @@ impl ObjectWorld {
             run.push(c.clone());
         }
         let touch = (by_touch && t.trigger_touch).then(|| t.command_touch.clone());
+        if let Some(s) = sound {
+            self.play(id, s, true);
+        }
         let ctx = Ctx {
             sender: who,
             target: Some(id),
@@ -1801,6 +1904,9 @@ impl ObjectWorld {
                 continue;
             }
             self.update(id);
+            if matches!(self.objects[id as usize].kind, Kind::KeyFramer(_)) {
+                self.active_sound(id);
+            }
         }
     }
 
@@ -1958,15 +2064,16 @@ impl ObjectWorld {
     /// A key's sound and command.
     fn pass_key(&mut self, id: ObjId, key: &keyframer::Key) {
         if !key.sound.is_empty() {
-            self.fx.push(Fx::Sound {
+            let s = ObjSound {
                 file: key.sound.clone(),
                 at: key.pos,
                 attach: None,
                 radius: key.sound_radius,
                 inner: key.sound_radius * movers::SOUND_INNER_FRACTION,
                 looping: false,
-                owner: None,
-            });
+                serial: 0,
+            };
+            self.play(id, s, true);
         }
         if !key.command.is_empty() {
             self.run(&key.command, Ctx { sender: Who::Object(id), target: Some(id), ..Ctx::default() });
@@ -2067,6 +2174,7 @@ impl ObjectWorld {
             self.place_controlled(id, key.pos, key.rot(), true);
             self.pass_key(id, key);
         }
+        self.active_sound(id);
     }
 
     /// A summary of object `id` for the console.

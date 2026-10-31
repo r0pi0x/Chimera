@@ -367,6 +367,9 @@ fn t04_freezer_beak_and_wing() {
     let (file, attach, radius, inner) = sound.expect("the opening sound on the trigger frame");
     assert!(file.eq_ignore_ascii_case("SND\\Freezer\\Crazy_Chicken.wav"), "{file}");
     assert_eq!((attach, radius, inner), (Some(t.id("Chk_mouth")), 1000.0, 250.0));
+    // The beak's sound (14): a one-shot that follows it.
+    let s = t.w.objects[t.id("Chk_mouth") as usize].sound.clone().expect("the beak's sound");
+    assert_eq!((s.looping, s.attach), (false, Some(t.id("Chk_mouth"))));
     for n in 1..=4 {
         t.frame();
         close3(t.pos("Chk_mouth"), start - Vec3::Y * 8.0 * n as f32, 1e-3, &format!("frame {n}"));
@@ -893,4 +896,91 @@ fn shortfuse_lid_opens_through_its_panel() {
     press(&mut sim, Vec3::new(458.04, -4056.98, 587.0));
     sim.seconds(1.5);
     assert_eq!((state(&sim, panel), state(&sim, lid)), (State::Off, State::Off), "a second press closes it");
+}
+
+
+/// 14 on the stock maps: every active world model of FREEZER, SNOWSTORM,
+/// HGOILRIG and BLOODMONEY that names an opening (power-on) sound starts
+/// it when triggered from rest, as the object's own sound, attached when
+/// its `SoundPos` is (0, 0, 0), radius `SoundRadius` and inner a quarter
+/// of it; none of them loops (no stock map sets `LoopSounds`), so no
+/// transition stops one.
+#[test]
+fn stock_transition_sounds() {
+    let Some(mount) = mount() else { return };
+    let mut seen = 0;
+    for name in ["freezer", "snowstorm", "hgoilrig", "bloodmoney"] {
+        let Some(data) = map(&mount, name) else { continue };
+        let mut t = T::of(&data);
+        t.frame();
+        let ids: Vec<u32> = (0..t.w.objects.len() as u32)
+            .filter(|&i| t.w.objects[i as usize].awm().is_some_and(|a| a.state == State::Off && !a.locked && !a.sounds[0].is_empty()))
+            .collect();
+        for id in ids {
+            let (file, pos, radius) = {
+                let a = t.w.objects[id as usize].awm().unwrap();
+                (a.sounds[0].clone(), a.sound_pos, a.sound_radius)
+            };
+            t.w.now = t.t;
+            t.w.deliver(id, "TRIGGER", Ctx::default());
+            let o = &t.w.objects[id as usize];
+            let s = o.sound.clone().unwrap_or_else(|| panic!("{name} {}: no sound", o.name));
+            assert_eq!(s.file, file, "{name} {}", o.name);
+            assert!(!s.looping, "{name} {}", o.name);
+            assert_eq!(s.attach, (pos == Vec3::ZERO).then_some(id), "{name} {}", o.name);
+            assert_eq!((s.radius, s.inner), (radius, radius * 0.25), "{name} {}", o.name);
+            seen += 1;
+        }
+    }
+    if seen > 0 {
+        assert!(seen >= 20, "{seen} sounding world models");
+    }
+}
+
+/// 14: HGOILRIG's eight `SND_Water*` sounds (looping, radius 3000, inner
+/// 250, placed in 3D, `PlayAttached`) ride their keyframers from the sea
+/// edge toward the rig once `CMD_SNDWaterON` fires; in play each has an
+/// anchor at its object, which the sound follows.
+#[test]
+fn hgoilrig_water_sounds_follow_their_keyframers() {
+    use combat_arms::game::{
+        music::ambient::SoundFx,
+        objects::sound::{CaObjectSounds, ObjectSoundAnchor},
+    };
+    let Some(mount) = mount() else { return };
+    let Some(data) = map(&mount, "hgoilrig") else { return };
+    let mut t = T::of(&data);
+    t.frame();
+    for c in ["A", "B", "C", "D", "E", "F", "G", "H"] {
+        let o = &t.w.objects[t.id(&format!("SND_Water{c}")) as usize];
+        let f = SoundFx::from_props(0, &o.name, &o.props, o.pose.pos, true, 0);
+        assert!(f.looping && f.attached && !f.ambient, "SND_Water{c}");
+        assert_eq!((f.outer, f.inner), (3000.0, 250.0), "SND_Water{c}");
+    }
+    let start = t.pos("SND_WaterA");
+    let kf = t.id("KeyFramerA");
+    close3(start, k_pos(&t, kf, 0), 1.0, "at the sea edge");
+    t.send("CMD_SNDWaterON", "TRIGGER", Who::Nobody);
+    t.frames((45.0 / DT) as usize);
+    let half = t.pos("SND_WaterA");
+    assert!(half.y > -14.0 + 100.0 && half.y < 946.0, "rising toward the rig: {half}");
+    t.frames((50.0 / DT) as usize);
+    close3(t.pos("SND_WaterA"), k_pos(&t, kf, 1), 1.0, "at the rig after 90 s");
+    // In play: the anchor follows.
+    let mut sim = Sim::new(CaSim, MapSimPlugin::new(data));
+    sim.ticks(10);
+    sim.app.world_mut().write_message(CaObjectMessage {
+        target: "CMD_SNDWaterON".into(),
+        message: "trigger".into(),
+    });
+    sim.seconds(20.0);
+    let w = sim.app.world_mut();
+    let id = w.resource::<CaObjects>().named("SND_WaterA").unwrap();
+    let e = *w.resource::<CaObjectSounds>().anchors.get(&id).expect("an anchor");
+    assert_eq!(w.get::<ObjectSoundAnchor>(e), Some(&ObjectSoundAnchor(id)));
+    let o = w.resource::<CaObjects>();
+    let pos = o.world.objects[id as usize].pose.pos;
+    assert!(pos.distance(start) > 100.0, "moved: {pos}");
+    let at = w.get::<Transform>(e).unwrap().translation;
+    assert!(at.distance(to_engine(pos, o.scale)) < 0.05, "the anchor at the sound");
 }
