@@ -878,12 +878,8 @@ fn reconcile(world: &mut World, player: Entity, server: OwnState, restart: bool)
             *i = p.intent.clone();
         }
         world.insert_resource(p.clock);
-        // What the player moves against at that tick (`NetHooks::replay`:
-        // Source's movers).
-        let replay = world.resource::<super::NetHooks>().replay.clone();
-        for place in replay {
-            place(world);
-        }
+        // (What the player moves against at that tick, the movers, is
+        // placed by the parts' `core::Predict::PlaceMovers` systems.)
         crate::core::predict(world);
         super::canonical_position(world, player);
         p.state = world.resource::<PredictedComponents>().encode(world, player);

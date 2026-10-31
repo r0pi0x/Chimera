@@ -137,7 +137,7 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
         "chimera/net/src/net/parts.rs",
         "NetHooks",
-        "serving's one-off steps; `replay` inside prediction's replay loop",
+        "serving's one-off steps",
     ),
     (
         "chimera/net/src/net/parts.rs",

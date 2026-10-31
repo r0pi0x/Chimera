@@ -1985,18 +1985,12 @@ impl ObjectWorld {
                 let pose = self.objects[id as usize].pose;
                 let solid = self.objects[id as usize].solid;
                 let chars = std::mem::take(&mut self.chars);
-                let f = Frame {
-                    now,
-                    dt,
-                    blocking: Blocking { chars: &chars, solid },
-                };
                 let mut out = Vec::new();
-                let moved = a.update(&f, &pose, &mut out);
-                let riders = moved.as_ref().map(|_| f.blocking.riders(&pose)).unwrap_or_default();
+                let moved = movers::update_when_due(a, &pose, solid, &chars, now, dt, &mut out);
                 let activator = a.activator;
                 self.chars = chars;
                 self.objects[id as usize].kind = kind;
-                if let Some(next) = moved {
+                if let Some((next, riders)) = moved {
                     self.carry(&riders, &pose, &next);
                     self.set_pose(id, next);
                 }
@@ -2058,12 +2052,9 @@ impl ObjectWorld {
     /// Characters standing on a world model that moved from `from` to
     /// `to` move with it (10).
     fn carry(&mut self, riders: &[usize], from: &Pose, to: &Pose) {
-        let turn = to.rot * from.rot.inverse();
         for &i in riders {
             let c = &mut self.chars[i];
-            let centre = c.centre();
-            let moved = to.pos + turn * (centre - from.pos);
-            let delta = moved - centre;
+            let delta = movers::carried(c, from, to);
             c.min += delta;
             c.max += delta;
             self.fx.push(Fx::Carry { who: c.who, delta });

@@ -52,7 +52,7 @@ pub const MAX_DEPTH: u32 = 64;
 pub type ObjId = u32;
 
 /// Who a command acts for: its sender.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Who {
     #[default]
     Nobody,

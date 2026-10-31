@@ -352,7 +352,7 @@ pub fn schedule_systems(world: &mut World, label: impl bevy::ecs::schedule::Sche
 /// The schedules the simulation's order matters in, by name: the fixed
 /// tick's and prediction's (`Predict`, which a client replays): the
 /// ambiguity ratchet's and the server/client order comparison's.
-pub fn simulation_schedules() -> [(&'static str, bevy::ecs::schedule::InternedScheduleLabel); 6] {
+pub fn simulation_schedules() -> [(&'static str, bevy::ecs::schedule::InternedScheduleLabel); 8] {
     use bevy::ecs::schedule::ScheduleLabel;
     use chimera_core::core::Predict;
     [
@@ -360,7 +360,9 @@ pub fn simulation_schedules() -> [(&'static str, bevy::ecs::schedule::InternedSc
         ("FixedPostUpdate", FixedPostUpdate.intern()),
         ("FixedLast", FixedLast.intern()),
         ("Predict::Select", Predict::Select.intern()),
+        ("Predict::PlaceMovers", Predict::PlaceMovers.intern()),
         ("Predict::Movement", Predict::Movement.intern()),
+        ("Predict::CarryRiders", Predict::CarryRiders.intern()),
         ("Predict::Weapons", Predict::Weapons.intern()),
     ]
 }

@@ -38,7 +38,7 @@
 //! does (`Stepper`), carries its own player with those steps
 //! (`logic::carry_player`) and places the nodes (`Transform`, `MovingSolid`,
 //! shown, collider) before movement, in each predicted and each replayed tick
-//! (`place`; the replays through `net::NetHooks::replay`); the network puts
+//! (`place`, in `core::Predict::PlaceMovers`); the network puts
 //! the player back on the server's mover after a correction
 //! (`net::predict::restore_ground`).
 //!
@@ -51,7 +51,7 @@ use bevy_replicon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    core::{MovingSolid, NetRole, SimClock, SimSet},
+    core::{MovingSolid, NetRole, Predict, SimClock},
     logic::{
         CarriedMover, HudEvent, HudShow, Logic, brush_to_engine, carry_player, classes::Class, movers::pusher,
         mover_brushes_at,
@@ -64,7 +64,7 @@ use crate::{
         NetAppExt, NetHooks,
         interp::{HearTicks, Snapshots, hold_heard, remove_snapshots, write_snapshot},
         ordered::OrderedAppExt,
-        predict::{CommandClock, NetGraph, RecordCommand, predicted_player},
+        predict::{CommandClock, NetGraph, predicted_player},
         server::Player,
     },
 };
@@ -89,14 +89,8 @@ fn register(app: &mut App) {
         .add_server_message::<MapHud>(Channel::Ordered)
         .add_message::<HudEvent>()
         .add_systems(FixedLast, write_movers.run_if(resource_equals(NetRole::Server)))
-        .add_systems(
-            FixedUpdate,
-            place
-                .after(RecordCommand)
-                .after(SimSet::Commands)
-                .before(SimSet::Movement)
-                .run_if(client()),
-        )
+        // Each predicted and each replayed tick (`core::Predict`).
+        .add_systems(Predict::PlaceMovers, place.run_if(client()))
         .add_systems(Update, copy_tints.run_if(client()))
         .add_systems(PreUpdate, hold_heard::<NetMover>.after(HearTicks).run_if(client()))
         .add_systems(
@@ -104,9 +98,7 @@ fn register(app: &mut App) {
             forward_hud.before(ServerSystems::Send).run_if(resource_equals(NetRole::Server)),
         )
         .add_systems(PreUpdate, receive_hud.after(ClientSystems::Receive).run_if(client()));
-    let mut hooks = app.world_mut().resource_mut::<NetHooks>();
-    hooks.replay.push(place);
-    hooks.stopped_serving.push(stopped_serving);
+    app.world_mut().resource_mut::<NetHooks>().stopped_serving.push(stopped_serving);
 }
 
 /// Serving stopped: movers stop replicating.
@@ -385,7 +377,7 @@ struct Placed {
 /// from their snapshots, its own player carried as the server's logic
 /// does, then the nodes placed (transform, brushes for movement, shown,
 /// solid). Runs before movement in each predicted tick and each replayed
-/// one (`predict::reconcile`).
+/// one (`core::Predict::PlaceMovers`).
 pub fn place(world: &mut World) {
     if world.get_resource::<NetRole>() != Some(&NetRole::Client)
         || world.get_resource::<CommandClock>().is_none_or(|c| c.tick.is_none())

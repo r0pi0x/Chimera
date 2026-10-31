@@ -688,7 +688,8 @@ measurements):
   - (e) `LogicOneShot` and `MapSay` moved down to `map::state` (the
     network forwards them without the logic); movers and HUD messages
     are the logic's part (`logic::net`; a client's replayed ticks place
-    the movers through `net::NetHooks::replay`, stopping serving takes
+    the movers through `net::NetHooks::replay`, since 2026-10-31 the
+    `core::Predict::PlaceMovers` stage; stopping serving takes
     the parts' components off through `NetHooks::stopped_serving`).
   The registration order changed (the parts last): `NET_VERSION` net24
   (multiplayer.md). `source_logic` now depends on `chimera_net` (and so

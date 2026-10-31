@@ -462,11 +462,14 @@ FixedUpdate:  bot brains, (server) each player's command for this tick ──> I
               MapControls ──> Intent (taken buttons, at controls, frozen; the buttons kept for game_ui)
               weapon selection/deploy ──> MaxSpeed           (core::Predict::Select)
               RoundRestarts changed ──> logic world re-created, nodes back
-              LogicSet::Pre     thinks, movers push/carry characters, +use (Intent.use_key);
-                                (client) movers stepped to the command tick, our player carried
-                                (logic::net::place, also in each replayed command)
+              LogicSet::Pre     thinks, movers push/carry characters, +use (Intent.use_key)
               SimSet::Commands  Intent.command stamped (tick + Seed)
-              SimSet::Movement  Intent (+ MaxSpeed) ──> Transform, Velocity, MovementState  (Predict::Movement)
+              SimSet::Movement  (client) map movers placed at the command tick, Source's stepped
+                                with our player carried (logic::net::place; Predict::PlaceMovers,
+                                also in each replayed command; Combat Arms' objects::net)
+                                Intent (+ MaxSpeed) ──> Transform, Velocity, MovementState  (Predict::Movement)
+                                (client) Combat Arms' active world models stepped as the server's
+                                object frame, our player carried (Predict::CarryRiders)
               AnchorSet         placed weapons (loose or carried) ──> EntityAnchors, anchor nodes
               LogicSet::Post    trigger touches (push ──> BaseVelocity, teleport), untouch,
                                 event queue (outputs ──> inputs), removals; effects ──> Damage, HUD text

@@ -1603,29 +1603,61 @@ impl Default for FirstTimePredicted {
 }
 
 /// The parts of a tick prediction runs for a client's own player, as
-/// schedules: weapon selection, movement and the weapon frame. A fixed tick
-/// runs each from its place in `FixedUpdate` (`weapon::SelectWeapons`,
-/// `SimSet::Movement`, `weapon::WeaponFrame`); a replay runs them in order
-/// per command (`predict`). Their systems read time from `SimClock`,
-/// write side effects only under `FirstTimePredicted`, and act on every
-/// entity with the components they need (on a client, only its own player
-/// will have them; others are drawn from snapshots).
+/// schedules: weapon selection, the movers placed, movement, the movers'
+/// step carrying their riders, and the weapon frame. A fixed tick runs
+/// each from its place in `FixedUpdate` (`weapon::SelectWeapons`,
+/// `SimSet::Movement` for the three movement stages, `weapon::WeaponFrame`);
+/// a replay runs them in order per command (`predict`). Their systems read
+/// time from `SimClock`, write side effects only under
+/// `FirstTimePredicted`, and act on every entity with the components they
+/// need (on a client, only its own player will have them; others are drawn
+/// from snapshots).
+///
+/// `PlaceMovers` and `CarryRiders` are where a game's map logic puts a
+/// network client's own copies of its moving parts at the tick it
+/// predicts (what the player moves against) and, after movement, steps
+/// them as the server's logic does that tick and carries the player
+/// riding them (Source's movers: `source_logic`; Combat Arms' active world
+/// models). They hold only systems that act on a client.
 #[derive(bevy::ecs::schedule::ScheduleLabel, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Predict {
     Select,
+    PlaceMovers,
     Movement,
+    CarryRiders,
     Weapons,
 }
 
 impl Predict {
-    pub const ALL: [Predict; 3] = [Predict::Select, Predict::Movement, Predict::Weapons];
+    pub const ALL: [Predict; 5] = [
+        Predict::Select,
+        Predict::PlaceMovers,
+        Predict::Movement,
+        Predict::CarryRiders,
+        Predict::Weapons,
+    ];
+
+    /// The stages a fixed tick runs at this stage's place (movement with
+    /// the movers placed before it and the riders carried after).
+    pub fn stages(self) -> &'static [Predict] {
+        match self {
+            Predict::Movement => &[Predict::PlaceMovers, Predict::Movement, Predict::CarryRiders],
+            Predict::Select => &[Predict::Select],
+            Predict::PlaceMovers => &[Predict::PlaceMovers],
+            Predict::CarryRiders => &[Predict::CarryRiders],
+            Predict::Weapons => &[Predict::Weapons],
+        }
+    }
 }
 
-/// An exclusive system that runs the `stage` schedule, placed in
-/// `FixedUpdate` where that stage belongs.
+/// An exclusive system that runs the `stage` schedule (and those that go
+/// with it: `Predict::stages`), placed in `FixedUpdate` where that stage
+/// belongs.
 pub fn run_predicted(stage: Predict) -> impl FnMut(&mut World) {
     move |world: &mut World| {
-        let _ = world.try_run_schedule(stage);
+        for s in stage.stages() {
+            let _ = world.try_run_schedule(*s);
+        }
     }
 }
 
