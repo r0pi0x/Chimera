@@ -25,7 +25,7 @@ pub const TRAIL_MIN_STEP: f32 = 2.0 * 0.0254;
 pub const SMOKESTACK_FULL_SIM: f32 = 5.0;
 
 /// A sprite trail (env_spritetrail).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapTrail {
     /// The entity (index into `MapData::entities`).
     pub entity: Option<usize>,
@@ -46,7 +46,7 @@ pub struct MapTrail {
 
 /// A smoke stack (env_smokestack). Directions are unit vectors in engine
 /// space; lengths meters; speeds m/s.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapSmokeStack {
     pub entity: Option<usize>,
     pub position: Vec3,
@@ -99,7 +99,7 @@ impl MapSmokeStack {
 
 /// A point_tesla (public entity docs): arcs from its origin to surfaces
 /// within its radius, each spark a random number of them.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapTesla {
     pub entity: Option<usize>,
     pub position: Vec3,
@@ -117,7 +117,7 @@ pub struct MapTesla {
 /// env_embers (no spec; public entity docs): embers born at random in its
 /// volume, `density` a second, each living `lifetime` seconds and drifting
 /// at `speed` along the entity's facing.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapEmbers {
     pub entity: Option<usize>,
     /// The entity's origin, engine space: where its node is placed.
@@ -139,7 +139,7 @@ pub struct MapEmbers {
 
 /// env_muzzleflash (no spec; public entity docs): Fire flashes a few
 /// view-facing sprites along its facing, "scale" times the size.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapMuzzleFlash {
     pub entity: Option<usize>,
     pub position: Vec3,
@@ -150,7 +150,7 @@ pub struct MapMuzzleFlash {
 
 /// A strike-generator env_beam's look (visual_entities.md 4.2): its
 /// strikes are beams of this width, colour and noise.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapStrike {
     /// The entity (index into `MapData::entities`).
     pub entity: usize,

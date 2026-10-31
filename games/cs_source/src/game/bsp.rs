@@ -115,23 +115,109 @@ pub fn load_level_bytes(mount: &Mount, name: &str, bytes: Vec<u8>, hdr_level: u8
     load_level_bytes_with(mount, name, bytes, &MapLoadOptions::hdr(hdr_level))
 }
 
-/// `load_level_bytes` with `options`.
+/// `load_level_bytes` with `options`. A map converted before with the
+/// same file, options, converter and install files is read back from the
+/// converted-map cache (`map::cache`; `CONVERTER` is the version).
 pub fn load_level_bytes_with(
     mount: &Mount,
     name: &str,
     bytes: Vec<u8>,
     options: &MapLoadOptions,
 ) -> Result<MapData, String> {
+    let cache = crate::map::cache::MapCache::from_env();
+    load_level_bytes_in(mount, name, bytes, options, cache.as_ref()).map(|(data, _)| data)
+}
+
+/// `load_level_bytes_with` through `cache` (None: converted), and whether
+/// it was read from there (tests, measurements).
+pub fn load_level_bytes_in(
+    mount: &Mount,
+    name: &str,
+    bytes: Vec<u8>,
+    options: &MapLoadOptions,
+    cache: Option<&crate::map::cache::MapCache>,
+) -> Result<(MapData, crate::map::cache::Outcome), String> {
+    let start = std::time::Instant::now();
+    options.progress.report(0.02, "LoadingProgress_LoadMap");
+    // What the network handshake compares (`MapData::file_hash`).
+    let file_hash: [u8; 32] = sha2::Digest::finalize(<sha2::Sha256 as sha2::Digest>::new_with_prefix(&bytes)).into();
+    use crate::map::cache::MapKey;
+    let key = crate::map::cache::key(super::GAME, CONVERTER)
+        .part("map", name)
+        .options(options)
+        .part("file", file_hash);
+    let (converted, outcome) = crate::map::cache::cached(cache, mount, key, || {
+        convert_level_bytes(mount, name, bytes, file_hash, options)
+    })?;
+    let Converted { mut data, light } = converted;
+    if let (Some(light), Some(tree)) = (light, data.sky_vis.clone()) {
+        data.light_field = Some(light.field(tree, &data));
+    }
+    if outcome == crate::map::cache::Outcome::Hit {
+        let took = start.elapsed().as_secs_f32();
+        bevy::log::info!("{name}: read from the map cache in {took:.2} s");
+        data.load_times = vec![("map cache", took)];
+        options.progress.report(0.95, "LoadingProgress_SignonLocal");
+    }
+    Ok((data, outcome))
+}
+
+/// The converter's version for the converted-map cache: the hash of this
+/// crate's converter sources and data, Source's format crate and the
+/// lockfile (build.rs), so any change to them is a new version.
+pub const CONVERTER: &str = env!("CHIMERA_CONVERTER_SOURCES");
+
+/// What a conversion gives, as the cache keeps it: the map, and what its
+/// light field (`MapData::light_field`, a closure) is rebuilt from.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Converted {
+    data: MapData,
+    light: Option<LightParts>,
+}
+
+/// The map's lighting and the brushes that shadow it: the light field's
+/// parts (`field`).
+#[derive(serde::Serialize, serde::Deserialize)]
+struct LightParts {
+    lighting: super::ambient::MapLighting,
+    #[serde(with = "crate::map::pod_serde::pod_vecs")]
+    shadow_hulls: Vec<Vec<[f32; 3]>>,
+    #[serde(with = "crate::map::pod_serde::pod_vecs")]
+    sky_hulls: Vec<Vec<[f32; 3]>>,
+    /// Built during the conversion; read back, built on the field's first
+    /// use (a load that never draws never builds it).
+    #[serde(skip)]
+    occluders: std::sync::OnceLock<super::ambient::Occluders>,
+}
+
+impl LightParts {
+    /// The light at any point, for view models (spec view_models.md 9).
+    fn field(self, tree: crate::map::MapSkyVis, data: &MapData) -> crate::map::MapLightField {
+        let terrain = (data.collision_positions.clone(), data.collision_indices.clone());
+        crate::map::MapLightField(std::sync::Arc::new(move |p| {
+            let occluders = self.occluders.get_or_init(|| {
+                super::ambient::Occluders::new(&self.shadow_hulls, (&terrain.0, &terrain.1)).with_sky(&self.sky_hulls)
+            });
+            let lighting = &self.lighting;
+            super::props::probe_with(&|q| lighting.ambient_in(tree.leaf(q), q), lighting, occluders, p)
+        }))
+    }
+}
+
+/// The conversion `load_level_bytes_with` caches.
+fn convert_level_bytes(
+    mount: &Mount,
+    name: &str,
+    bytes: Vec<u8>,
+    file_hash: [u8; 32],
+    options: &MapLoadOptions,
+) -> Result<Converted, String> {
     let hdr_level = options.hdr_level;
     // Stages for a loading screen, worded as the game words them
     // (`map::loading`; the fractions are rough shares of the time).
     let report = |f: f32, stage: &'static str| options.progress.report(f, stage);
     let mut timer = crate::map::loading::LoadTimer::default();
-    report(0.02, "LoadingProgress_LoadMap");
     let path = format!("maps/{name}.bsp");
-    timer.lap("read");
-    // What the network handshake compares (`MapData::file_hash`).
-    let file_hash: [u8; 32] = sha2::Digest::finalize(<sha2::Sha256 as sha2::Digest>::new_with_prefix(&bytes)).into();
     timer.lap("hash");
     // Community maps often ship LZMA-compressed lumps; our own lump
     // readers want them plain.
@@ -274,11 +360,9 @@ pub fn load_level_bytes_with(
     };
     timer.lap("ambient lighting");
     let raw_leaves = super::ambient::raw_leaves(&bytes);
-    let occluders = super::ambient::Occluders::new(
-        &shadow_hulls(&bsp, &raw_leaves),
-        (&data.collision_positions, &data.collision_indices),
-    )
-    .with_sky(&sky_hulls(&bsp, &raw_leaves));
+    let (shadow, sky) = (shadow_hulls(&bsp, &raw_leaves), sky_hulls(&bsp, &raw_leaves));
+    let occluders =
+        super::ambient::Occluders::new(&shadow, (&data.collision_positions, &data.collision_indices)).with_sky(&sky);
     timer.lap("occluders");
     // Detail props (grass, weeds): models as static props, sprites as
     // `MapDetailProps`.
@@ -298,12 +382,14 @@ pub fn load_level_bytes_with(
     data.source_fx_mut().detail_props = super::detail::detail_props(&detail, &bsp, |m| materials.resolve(m).texture);
     timer.lap("props");
     super::ropes::add_ropes(&bsp, &mut materials, &lighting, &occluders, &mut data);
-    // The same query at run time, for view models (spec view_models.md 9).
-    if let Some(tree) = data.sky_vis.clone() {
-        data.light_field = Some(crate::map::MapLightField(std::sync::Arc::new(move |p| {
-            super::props::probe_with(&|q| lighting.ambient_in(tree.leaf(q), q), &lighting, &occluders, p)
-        })));
-    }
+    // The same query at run time, for view models (spec view_models.md 9):
+    // the light field (`LightParts::field`).
+    let light = data.sky_vis.is_some().then(|| LightParts {
+        lighting,
+        shadow_hulls: shadow,
+        sky_hulls: sky,
+        occluders: occluders.into(),
+    });
     super::sprites::add_sprites(&bsp, &mut materials, &mut data);
     super::dust::add_dust(&bsp, &super::ambient::raw_leaves(&bytes), &mut materials, &mut data);
     super::steam::add_steam(&bsp, &mut materials, &mut data);
@@ -486,7 +572,7 @@ pub fn load_level_bytes_with(
     data.load_times = timer.stages;
     // Left: putting it in the world (`map::change_map`).
     report(0.95, "LoadingProgress_SignonLocal");
-    Ok(data)
+    Ok(Converted { data, light })
 }
 
 /// The players' character bodies `kit` asks for into `into`: a T and a CT

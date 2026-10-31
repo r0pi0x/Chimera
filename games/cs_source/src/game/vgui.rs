@@ -313,7 +313,7 @@ pub fn load(materials: &mut MaterialLoader, hud: &mut GameHud, map: &str) -> Opt
     // The GameUI's vote words (`GameUI_vote_*`: hl2's copy; cstrike's
     // `gameui_english.txt` lacks them), from every copy along the path.
     let path = crate::mount::normalize("resource/gameui_english.txt");
-    for bytes in materials.mount().layers().filter_map(|l| l.read(&path)?.ok()) {
+    for bytes in materials.mount().read_every(&path) {
         for (k, v) in super::radio::localization(&super::radio::decode(&bytes)) {
             if k.starts_with("gameui_vote") {
                 strings.entry(k).or_insert(v);

@@ -45,7 +45,7 @@ pub enum SoundLevel {
 }
 
 /// A value drawn uniformly from start..start + range.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Interval {
     pub start: f32,
     pub range: f32,
@@ -61,7 +61,7 @@ impl Interval {
 }
 
 /// A named sound (Source: a sound script entry).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapSoundEntry {
     /// Indices into `MapData::sound_clips`; one is picked at random.
     pub waves: Vec<usize>,
@@ -75,7 +75,7 @@ pub struct MapSoundEntry {
 }
 
 /// Ground properties that sounds use (Source surface properties).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapSurface {
     pub step_left: Option<String>,
     pub step_right: Option<String>,
@@ -101,7 +101,7 @@ pub struct MapSurface {
 }
 
 /// Sound data the map carries.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapSounds {
     /// Lower-case entry names.
     pub entries: HashMap<String, MapSoundEntry>,
@@ -119,7 +119,7 @@ pub struct MapSounds {
 /// A volume in which footsteps on one surface play another surface's
 /// (Source's func_footstep_control): a character whose feet are inside
 /// steps on `from` with `to`'s step sounds.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct StepRemap {
     /// Convex volumes (engine space), each as planes `(normal, offset)`
     /// with the outward normal: inside when `normal . p <= offset` for all.
@@ -140,7 +140,7 @@ impl StepRemap {
 
 /// A map's background ambience (Source soundscapes): loops that fade in
 /// while it applies, and one-shots at random intervals.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Soundscape {
     pub name: String,
     /// The room preset it sets (`room::PRESETS`, Source's "dsp"); None
@@ -159,7 +159,7 @@ pub struct Soundscape {
     pub randoms: Vec<ScapeRandom>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ScapeLoop {
     /// Index into `clips`.
     pub clip: usize,
@@ -175,7 +175,7 @@ pub struct ScapeLoop {
     pub dry: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ScapePosition {
     Ambient,
     Index(usize),
@@ -183,7 +183,7 @@ pub enum ScapePosition {
     Random,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ScapeRandom {
     pub clips: Vec<usize>,
     /// Seconds between plays.
@@ -198,7 +198,7 @@ pub struct ScapeRandom {
 
 /// A box that selects a soundscape for a listener inside it (Source
 /// trigger_soundscape); the most recently entered one wins.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SoundscapeZone {
     pub min: Vec3,
     pub max: Vec3,
@@ -211,7 +211,7 @@ pub struct SoundscapeZone {
 }
 
 /// A point that selects a soundscape within its radius (env_soundscape).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SoundscapeEmitter {
     pub at: Vec3,
     /// Meters; None: unlimited.

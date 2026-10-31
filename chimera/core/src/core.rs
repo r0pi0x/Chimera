@@ -379,7 +379,7 @@ impl Seed {
 }
 
 /// Where on a body a hit landed (Source hitgroups).
-#[derive(Reflect, Default, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Reflect, Default, Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum Hitgroup {
     #[default]
     Generic,
@@ -397,7 +397,7 @@ pub enum Hitgroup {
 /// hitgroups are the coarse view (`hitgroup`), Combat Arms' locations
 /// (`BodyPart`) the armour's; a game that tells fewer apart maps onto
 /// these (`from_hitgroup`).
-#[derive(Reflect, Default, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Reflect, Default, Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum BodyRegion {
     #[default]
     Generic,
@@ -858,7 +858,7 @@ pub struct Damageable;
 /// table says so use it). The body's game converts its own format into
 /// these (docs/DESIGN.md "Hits across games"); every gun's rule works on
 /// either shape.
-#[derive(Clone, Copy, Debug, PartialEq, Reflect)]
+#[derive(Clone, Copy, Debug, PartialEq, Reflect, serde::Serialize, serde::Deserialize)]
 pub struct Hitbox {
     pub center: Vec3,
     pub half: Vec3,
@@ -2360,7 +2360,7 @@ impl Plugin for CorePlugin {
 /// whose movement sweeps boxes against brushes (Source) use these instead
 /// of the physics engine's shape casts, which lose precision on large
 /// volumes.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapBrush {
     pub planes: Vec<(Vec3, f32)>,
     pub min: Vec3,
@@ -2694,7 +2694,7 @@ impl MapTerrain {
 pub struct MapTerrainCollider;
 
 /// A water (or slime) volume, for swimming.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapWaterVolume {
     pub brush: MapBrush,
     pub slime: bool,
@@ -2828,7 +2828,7 @@ impl BrushGrid {
 /// world's brushes). A Source trace tests brushes leaf by leaf down this
 /// tree, so of two faces hit at the same distance (a ladder flush with a
 /// player clip) the one reached first wins. Engine space.
-#[derive(Resource, Clone, Debug, Default)]
+#[derive(Resource, Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapBrushTree {
     pub nodes: Vec<BrushTreeNode>,
     /// Each leaf's brushes (indices into `MapBrushes`), in stored order.
@@ -2837,7 +2837,7 @@ pub struct MapBrushTree {
     pub root: i32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BrushTreeNode {
     /// Splitting plane n.p = dist; children[0] is in front of it.
     pub normal: Vec3,

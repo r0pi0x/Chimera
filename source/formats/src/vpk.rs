@@ -204,6 +204,19 @@ impl FileSource for Vpk {
         self.entries.contains_key(path)
     }
 
+    /// The directory's CRC-32 of the entry, its sizes and where it lies.
+    fn fingerprint(&self, path: &str) -> Option<String> {
+        let e = self.entries.get(path)?;
+        Some(format!(
+            "vpk {:08x} {} {} {} {}",
+            e.crc,
+            e.preload.len(),
+            e.length,
+            e.archive,
+            e.offset
+        ))
+    }
+
     fn files_in(&self, dir: &str) -> Vec<String> {
         self.entries
             .keys()

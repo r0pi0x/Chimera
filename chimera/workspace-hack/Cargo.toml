@@ -32,9 +32,7 @@ bevy_tasks = { version = "0.20", features = ["multi_threaded"] }
 bevy_time = { version = "0.20", features = ["serialize"] }
 bevy_utils = { version = "0.20", features = ["debug", "serialize", "std"] }
 bitflags = { version = "2", default-features = false, features = ["bytemuck", "serde", "std"] }
-blake3 = { version = "1" }
 bytemuck = { version = "1", default-features = false, features = ["aarch64_simd", "derive", "extern_crate_alloc", "min_const_generics", "must_cast", "wasm_simd"] }
-constant_time_eq = { version = "0.4", default-features = false, features = ["std"] }
 crossbeam-channel = { version = "0.5" }
 crypto-common = { version = "0.1", default-features = false, features = ["getrandom", "std"] }
 derive_more = { version = "2", features = ["as_ref", "constructor", "deref", "deref_mut", "display", "from", "into", "is_variant", "try_unwrap", "unwrap"] }
@@ -63,13 +61,14 @@ rand = { version = "0.10" }
 regex-automata = { version = "0.4" }
 regex-syntax = { version = "0.8" }
 ron = { version = "0.12" }
-serde = { version = "1", features = ["alloc", "derive"] }
-serde_core = { version = "1", features = ["alloc"] }
+serde = { version = "1", features = ["alloc", "derive", "rc"] }
+serde_core = { version = "1", features = ["alloc", "rc"] }
 serde_json = { version = "1", features = ["raw_value"] }
 skrifa = { version = "0.44", default-features = false, features = ["autohint_shaping", "std"] }
 slotmap = { version = "1", default-features = false, features = ["std"] }
 smallvec = { version = "1", default-features = false, features = ["const_new", "serde", "union"] }
 stable_deref_trait = { version = "1", default-features = false, features = ["alloc"] }
+thiserror = { version = "2" }
 tinystr = { version = "0.8", default-features = false, features = ["alloc", "zerovec"] }
 toml_datetime = { version = "1", features = ["serde"] }
 toml_parser = { version = "1" }
@@ -96,7 +95,7 @@ proc-macro2 = { version = "1", features = ["span-locations"] }
 quote = { version = "1" }
 regex-automata = { version = "0.4" }
 regex-syntax = { version = "0.8" }
-serde_core = { version = "1", features = ["alloc"] }
+serde_core = { version = "1", features = ["alloc", "rc"] }
 syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "fold", "full", "visit"] }
 toml_datetime = { version = "1", features = ["serde"] }
 toml_parser = { version = "1" }

@@ -12,7 +12,7 @@ use bevy::prelude::*;
 pub const STEAM_RAMPS: usize = 5;
 
 /// A steam jet. Engine space, meters, seconds.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapSteam {
     pub origin: Vec3,
     /// Unit vectors: where the jet points, and the two it spreads along.

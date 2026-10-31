@@ -26,6 +26,10 @@
 //! `progress` reports fetches in words people read: a live line for
 //! `chimera_assets fetch`, periodic lines while a load fetches on demand.
 //!
+//! `map_cache`: converted maps on disk beside the store, keyed by the
+//! converter and checked against every file the conversion read
+//! (`~/.cache/chimera/maps`, `CHIMERA_MAP_CACHE`).
+//!
 //! Known shortcuts: `verify` and `gc` read the whole store single-threaded; no
 //! cache cap.
 
@@ -34,6 +38,7 @@ pub mod cached;
 pub mod config;
 pub mod lock;
 pub mod manifest;
+pub mod map_cache;
 pub mod pack;
 pub mod progress;
 pub mod recording;

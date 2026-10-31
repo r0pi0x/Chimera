@@ -39,14 +39,14 @@ use super::{MapData, MapModel, MapPart};
 
 /// A gib list: the models one break picks from, by name (Source: the
 /// propdata "BreakableModels" lists, "MetalChunks"...).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapGibSet {
     pub name: String,
     pub models: Vec<MapModel>,
 }
 
 /// How gibs move and look.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapGibPhysics {
     /// Downward acceleration (m/s²).
     pub gravity: f32,
@@ -151,7 +151,7 @@ pub const MAX_GIBS: usize = 300;
 
 /// What a prop model breaks into (Source: the `.phy` break pieces, else
 /// chunks of a gib list).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum MapBreak {
     /// One piece per entry, each a model of gib list `set`.
     Pieces { set: String, pieces: Vec<MapBreakPiece> },
@@ -170,7 +170,7 @@ pub enum MapBreak {
 }
 
 /// One break piece of a prop model.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapBreakPiece {
     /// Index in its gib list.
     pub model: usize,

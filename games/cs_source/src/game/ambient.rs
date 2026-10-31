@@ -95,7 +95,7 @@ fn src(x: f32, y: f32, z: f32) -> Vec3 {
 }
 
 /// Light arriving from six directions: +X, -X, +Y, -Y, +Z, -Z (engine axes).
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct AmbientCube(pub [Vec3; 6]);
 
 impl AmbientCube {
@@ -107,13 +107,14 @@ impl AmbientCube {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 struct Sample {
     position: Vec3,
     cube: AmbientCube,
 }
 
 /// A compiled light, already converted to engine space.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub enum WorldLight {
     /// The sun: light travels along `direction`.
     Sky { direction: Vec3, intensity: Vec3 },
@@ -135,6 +136,7 @@ pub enum WorldLight {
     },
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct MapLighting {
     leaves: Vec<Vec<Sample>>,
     /// Lights not already folded into the ambient cubes.

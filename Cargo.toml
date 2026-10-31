@@ -144,7 +144,7 @@ bevy = { version = "0.20.0", default-features = false, features = [
 # bevy_image uses.
 wgpu-types = { version = "30", default-features = false }
 postcard = { version = "1.1", default-features = false, features = ["alloc"] }
-serde = { version = "1.0.229", features = ["derive"] }
+serde = { version = "1.0.229", features = ["derive", "rc"] }
 # Per-thread hardware counters (instructions, cycles, cache and branch
 # misses) for `metrics`; Linux only, elsewhere the metrics say
 # "unavailable".
@@ -174,6 +174,10 @@ glam = "0.33"
 lzma-rs = "0.3"
 # The user's folders (mount::install's settings, captures).
 dirs = "7.0.0"
+# Checksums and keys of the converted-map cache (chimera_world `map::cache`).
+blake3 = "1.8"
+# Plain arrays as bytes in the converted-map cache (chimera_world `map::pod_serde`).
+bytemuck = { version = "1.25", features = ["extern_crate_alloc"] }
 toml = "1.1.6"
 # Where Steam is (`HKCU\Software\Valve\Steam` `SteamPath`) for finding the
 # CS:S install (chimera_core's mount::install); already in the tree

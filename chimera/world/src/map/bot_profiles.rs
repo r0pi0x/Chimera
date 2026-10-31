@@ -36,7 +36,7 @@ pub mod difficulty {
 }
 
 /// One bot personality.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BotProfile {
     pub name: String,
     /// `difficulty::*` bits it plays at.
@@ -51,7 +51,7 @@ pub struct BotProfile {
 
 /// The game's bot profiles, in the file's order (a resource while a map
 /// of that game is loaded).
-#[derive(Resource, Clone, Debug, Default, PartialEq)]
+#[derive(Resource, Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct BotProfiles(pub Vec<BotProfile>);
 
 /// The attributes a block sets that naming uses.

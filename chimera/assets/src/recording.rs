@@ -136,6 +136,10 @@ impl FileSource for Recording {
         has
     }
 
+    fn fingerprint(&self, path: &str) -> Option<String> {
+        self.inner.fingerprint(path)
+    }
+
     fn files_in(&self, dir: &str) -> Vec<String> {
         self.inner.files_in(dir)
     }

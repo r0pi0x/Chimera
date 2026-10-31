@@ -93,7 +93,7 @@ use crate::core::{Died, Health, Hitgroup, Intent, MovementState, RAGDOLL_LAYER};
 /// (specs/cs_source/ragdolls.md 1). Shapes and anchors are in the
 /// skeleton's frames and units (like `BoneBox`; `MapCharacterModel::root`
 /// converts), masses in kg, angles in radians.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapRagdoll {
     pub bodies: Vec<MapRagdollBody>,
     pub joints: Vec<MapRagdollJoint>,
@@ -136,7 +136,7 @@ impl MapRagdoll {
 }
 
 /// One rigid body, following bone `bone`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapRagdollBody {
     pub bone: usize,
     /// Convex pieces (their corners) in the bone's frame.
@@ -158,7 +158,7 @@ pub struct MapRagdollBody {
 /// place in `parent`'s bone frame; the child's rotation relative to that
 /// bind orientation, as X-then-Y-then-Z Euler angles about its own axes,
 /// stays inside `limits` (min, max radians per axis).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapRagdollJoint {
     pub parent: usize,
     pub child: usize,

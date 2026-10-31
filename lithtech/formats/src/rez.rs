@@ -230,6 +230,9 @@ pub struct RezArchive {
     header: RezHeader,
     files: HashMap<String, RezFile>,
     cipher: Option<RezCipher>,
+    /// The archive file's size and modification time when opened
+    /// (`FileSource::fingerprint`); None for bytes in memory.
+    stamp: Option<String>,
 }
 
 impl RezArchive {
@@ -269,12 +272,23 @@ impl RezArchive {
         }
         let cipher = header.key_scheme().and_then(|s| keys.get(s)).cloned();
         drop(reader);
+        let stamp = match &data {
+            Data::File(p) => std::fs::metadata(p).ok().map(|m| {
+                let t = m
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok());
+                format!("{} {}", m.len(), t.map_or(0, |t| t.as_nanos()))
+            }),
+            Data::Bytes(_) => None,
+        };
         Ok(Self {
             name,
             data,
             header,
             files,
             cipher,
+            stamp,
         })
     }
 
@@ -427,6 +441,21 @@ impl FileSource for RezArchive {
 
     fn contains(&self, path: &str) -> bool {
         self.files.contains_key(path)
+    }
+
+    /// The archive file's size and time with the entry's place, size and
+    /// time, and whether it can be decrypted; None for an archive in
+    /// memory (hashed instead).
+    fn fingerprint(&self, path: &str) -> Option<String> {
+        let f = self.files.get(path)?;
+        let stamp = self.stamp.as_ref()?;
+        Some(format!(
+            "rez {stamp} {} {} {} {}",
+            f.offset,
+            f.size,
+            f.time,
+            self.cipher.is_some()
+        ))
     }
 
     /// The file's bytes, decrypted when the archive is keyed; a keyed

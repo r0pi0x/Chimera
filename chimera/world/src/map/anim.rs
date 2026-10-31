@@ -15,6 +15,10 @@
 
 use std::{collections::HashMap, sync::Arc};
 
+fn sorted<S: serde::Serializer>(m: &HashMap<String, usize>, s: S) -> Result<S::Ok, S::Error> {
+    s.collect_map(m.iter().collect::<std::collections::BTreeMap<_, _>>())
+}
+
 use bevy::prelude::*;
 
 /// One bone's local rotation and position.
@@ -22,7 +26,7 @@ pub type BonePose = (Quat, Vec3);
 
 /// Everything one skeleton can play. Bone indices are the target
 /// skeleton's (`MapCharacterModel::bones`).
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct AnimSet {
     /// The target skeleton's own default pose.
     pub defaults: Vec<BonePose>,
@@ -33,6 +37,9 @@ pub struct AnimSet {
     pub sequences: Vec<Sequence>,
     pub params: Vec<PoseParam>,
     /// Sequence index by lower-case name (filled by loaders; optional).
+    /// Serialized in name order, so a cached map's bytes are the same
+    /// each time (`cache`).
+    #[serde(serialize_with = "sorted")]
     pub names: HashMap<String, usize>,
     /// The target skeleton's bone parents (empty: unknown; inverse
     /// kinematics then does nothing).
@@ -45,7 +52,7 @@ pub struct AnimSet {
 
 /// A limb inverse kinematics can bend: root (shoulder), middle (elbow)
 /// and end (hand) bones, target skeleton indices.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct IkChain {
     /// Lower-case name (games pick chains by it).
     pub name: String,
@@ -55,7 +62,7 @@ pub struct IkChain {
 /// What a sequence's animation says about an IK chain while it plays:
 /// lock the chain's end to where the animation put it relative to a bone,
 /// or release it. Games decide what a lock aims at (`Animator::ik`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct IkRule {
     /// `AnimSet::ik_chains` index.
     pub chain: usize,
@@ -72,7 +79,7 @@ pub struct IkGoal {
 }
 
 /// Sampled frames of one animation.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Animation {
     pub name: String,
     pub fps: f32,
@@ -89,14 +96,14 @@ pub struct Animation {
 
 /// One bone's values per frame (one entry: constant); None keeps the
 /// starting value.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Track {
     pub bone: usize,
     pub rotation: Option<Vec<Quat>>,
     pub position: Option<Vec<Vec3>>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Sequence {
     pub name: String,
     pub activity: String,
@@ -127,7 +134,7 @@ pub struct Sequence {
 }
 
 /// An event a sequence fires when its cycle passes `cycle`.
-#[derive(Debug, Default, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AnimEvent {
     pub cycle: f32,
     /// Its number (0 for named events).
@@ -151,14 +158,14 @@ impl Sequence {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Axis {
     pub param: Option<usize>,
     pub keys: Vec<f32>,
     pub range: (f32, f32),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AutoLayer {
     pub sequence: usize,
     pub start: f32,
@@ -167,7 +174,7 @@ pub struct AutoLayer {
     pub end: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PoseParam {
     pub name: String,
     pub start: f32,

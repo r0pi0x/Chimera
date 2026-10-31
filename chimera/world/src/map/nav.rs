@@ -45,7 +45,7 @@ pub mod spot {
 }
 
 /// A place a bot can hide or hold from, on the ground of its area.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HidingSpot {
     pub pos: Vec3,
     /// `spot` bits.
@@ -60,7 +60,7 @@ pub mod vis {
 
 /// Hiding spots that come into view, in order, when walking through an
 /// area from one neighbour to another (spec "Encounter record").
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Encounter {
     /// Area indices entered from and left toward.
     pub from: usize,
@@ -71,7 +71,7 @@ pub struct Encounter {
 }
 
 /// Which edge of an area a link leaves by.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Side {
     MinX,
     MaxX,
@@ -91,7 +91,7 @@ impl Side {
 }
 
 /// How a link is travelled.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Via {
     Walk(Side),
     /// Climb ladder (index into `ladders`) up or down.
@@ -99,7 +99,7 @@ pub enum Via {
     LadderDown(usize),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NavArea {
     /// The file's id.
     pub id: u32,
@@ -125,7 +125,7 @@ pub struct NavArea {
     pub encounters: Vec<Encounter>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct NavLadder {
     pub top: Vec3,
     pub bottom: Vec3,
@@ -135,7 +135,7 @@ pub struct NavLadder {
     pub normal: Vec3,
 }
 
-#[derive(Resource, Clone, Debug, Default)]
+#[derive(Resource, Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct NavMesh {
     pub areas: Vec<NavArea>,
     pub ladders: Vec<NavLadder>,

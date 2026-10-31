@@ -25,7 +25,7 @@ use bevy::prelude::*;
 /// One convex volume of a brush entity, relative to the entity's origin
 /// and unrotated, in entity space: planes (outward normal, distance) and
 /// corner points.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapHull {
     pub planes: Vec<(Vec3, f32)>,
     pub points: Vec<Vec3>,
@@ -34,7 +34,7 @@ pub struct MapHull {
 /// A map entity: its keyvalues in the order the map lists them (repeated
 /// keys kept: outputs are repeated keys) and, for brush entities, its
 /// volumes.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapEntity {
     pub keyvalues: Vec<(String, String)>,
     /// Player-solid volumes (doors, buttons) or, for triggers, the trigger

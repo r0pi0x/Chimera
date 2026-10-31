@@ -31,7 +31,8 @@ const NOT_SIMULATION: &[(&str, &str)] = &[
     (
         "chimera/assets",
         "the asset store under the mounts: files on disk, the same for every app in the process (its \
-         statics are a cache of parsed manifests and the process's `CHIMERA_VFS_LOG` writer)",
+         statics are a cache of parsed manifests, the process's `CHIMERA_VFS_LOG` writer and the converted-map \
+         cache's off switch)",
     ),
     ("chimera/dev", "Bevy's development-only features, no code of ours"),
     ("chimera/tools", "developer tools, not run in a game"),

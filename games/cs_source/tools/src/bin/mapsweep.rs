@@ -38,6 +38,7 @@ const USAGE: &str = "\
 usage: mapsweep [options]
   --filter <text>    only maps whose name contains <text> (several: comma-separated)
   --stock            the install's own maps (cstrike/maps) instead of the content cache
+  --no-map-cache     convert every map (the converted-map cache off: load times as converted)
   --out <dir>        report folder (default: target/mapsweep)
   --secs <n>         seconds of map logic to run per map (default 10)
   --shots <exe>      also run <exe> (a Chimera build, e.g. target/playtest/cs_source) per map:
@@ -146,6 +147,7 @@ fn parse() -> Result<Args, String> {
             "--frames" => a.frames = value()?.parse().map_err(|_| "--frames: not a number")?,
             "--audit" => a.audit = true,
             "--stock" => a.stock = true,
+            "--no-map-cache" => cs_source_app::map::cache::disable(),
             "--fire" => {
                 let v = value()?;
                 let mut parts = v.splitn(3, ',');

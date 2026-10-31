@@ -51,7 +51,7 @@ pub fn spline(nodes: &[Vec3], subdiv: usize) -> Vec<(Vec3, usize, f32)> {
 
 /// A settled rope that can move again: its nodes (engine space, meters),
 /// their positions a step ago, the link's maximum length and gravity.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct RopeSway {
     pub nodes: Vec<Vec3>,
     pub previous: Vec<Vec3>,

@@ -3,13 +3,24 @@
 //! `lithtech_formats`' `.rez`, or a `LooseDir`), `Mount` (layers searched in
 //! order, like a game's search path) and path normalization. Neutral and
 //! dependency-free: it sits under both format crates and Chimera's `mount`.
+//!
+//! What a load asks of a mount can be tracked (`Mount::track`: every path
+//! read or checked, every folder listed, found or not), and a layer can
+//! name a file's content cheaply (`FileSource::fingerprint`): together the
+//! converted-map cache's inputs (chimera_world's `map::cache`), checked
+//! on a hit without reading the files again.
 
 pub mod bytes;
+pub mod source_hash;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs, io,
     path::{Path, PathBuf},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 /// One file visible through a mount.
@@ -42,6 +53,49 @@ pub trait FileSource: Send + Sync {
             .map(|e| e.path)
             .collect()
     }
+    /// A cheap name for the content of `path` (already normalized) that
+    /// changes when the content does, without reading it: an archive
+    /// entry's checksum and size, a store record's id. `None` (the
+    /// default): the reader hashes the bytes instead. Only compared with
+    /// the same layer's own fingerprints.
+    fn fingerprint(&self, _path: &str) -> Option<String> {
+        None
+    }
+}
+
+/// What a load asked of a mount (`Mount::track`), by normalized path.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Access {
+    /// A file read or checked for (`read`, `contains`): found or not.
+    File(String),
+    /// A file read from every layer that has it (`read_every`).
+    Every(String),
+    /// A folder listed (`files_in`).
+    Folder(String),
+}
+
+type Log = Arc<Mutex<BTreeSet<Access>>>;
+
+/// A mount's accesses being collected (`Mount::track`); `finish` returns
+/// them. Dropping it stops the collection.
+pub struct Tracking<'a> {
+    mount: &'a Mount,
+    log: Log,
+}
+
+impl Tracking<'_> {
+    /// Everything asked since `track`, sorted.
+    pub fn finish(self) -> BTreeSet<Access> {
+        std::mem::take(&mut *self.log.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+}
+
+impl Drop for Tracking<'_> {
+    fn drop(&mut self) {
+        let mut logs = self.mount.logs.lock().unwrap_or_else(|e| e.into_inner());
+        logs.retain(|l| !Arc::ptr_eq(l, &self.log));
+        self.mount.tracking.store(logs.len(), Ordering::Release);
+    }
 }
 
 /// Normalize a path the way Source and LithTech resolve them:
@@ -63,6 +117,10 @@ pub fn normalize(path: &str) -> String {
 #[derive(Default)]
 pub struct Mount {
     layers: Vec<Box<dyn FileSource>>,
+    /// Open `Tracking`s (several loads may track one mount at once; each
+    /// sees the others' accesses too, which only makes it stricter).
+    logs: Mutex<Vec<Log>>,
+    tracking: AtomicUsize,
 }
 
 impl Mount {
@@ -87,11 +145,48 @@ impl Mount {
     /// Each layer replaced by `f(layer)`, in the same order (e.g. wrapped
     /// in a recorder of what is read).
     pub fn map_layers(self, f: impl FnMut(Box<dyn FileSource>) -> Box<dyn FileSource>) -> Mount {
-        Mount { layers: self.layers.into_iter().map(f).collect() }
+        Mount { layers: self.layers.into_iter().map(f).collect(), ..Default::default() }
+    }
+
+    /// Start collecting what is asked of this mount (`Tracking::finish`).
+    pub fn track(&self) -> Tracking<'_> {
+        let log = Log::default();
+        let mut logs = self.logs.lock().unwrap_or_else(|e| e.into_inner());
+        logs.push(log.clone());
+        self.tracking.store(logs.len(), Ordering::Release);
+        Tracking { mount: self, log }
+    }
+
+    fn note(&self, access: impl FnOnce() -> Access) {
+        if self.tracking.load(Ordering::Acquire) == 0 {
+            return;
+        }
+        let access = access();
+        for log in self.logs.lock().unwrap_or_else(|e| e.into_inner()).iter() {
+            log.lock().unwrap_or_else(|e| e.into_inner()).insert(access.clone());
+        }
+    }
+
+    /// The layer that serves `path` (normalized): its index and itself.
+    pub fn layer_of(&self, path: &str) -> Option<(usize, &dyn FileSource)> {
+        self.layers
+            .iter()
+            .enumerate()
+            .find(|(_, l)| l.contains(path))
+            .map(|(i, l)| (i, l.as_ref()))
+    }
+
+    /// `path` from every layer that has it, in search order (files a game
+    /// merges along its search path, such as localization).
+    pub fn read_every(&self, path: &str) -> Vec<Vec<u8>> {
+        let path = normalize(path);
+        self.note(|| Access::Every(path.clone()));
+        self.layers.iter().filter_map(|l| l.read(&path)?.ok()).collect()
     }
 
     pub fn read(&self, path: &str) -> io::Result<Vec<u8>> {
         let path = normalize(path);
+        self.note(|| Access::File(path.clone()));
         self.layers
             .iter()
             .find_map(|l| l.read(&path))
@@ -102,6 +197,7 @@ impl Mount {
     /// still fail), without reading it.
     pub fn contains(&self, path: &str) -> bool {
         let path = normalize(path);
+        self.note(|| Access::File(path.clone()));
         self.layers.iter().any(|l| l.contains(&path))
     }
 
@@ -110,6 +206,7 @@ impl Mount {
     /// the whole install).
     pub fn files_in(&self, dir: &str) -> Vec<String> {
         let dir = normalize(dir);
+        self.note(|| Access::Folder(dir.clone()));
         let mut seen = std::collections::BTreeSet::new();
         for layer in &self.layers {
             seen.extend(layer.files_in(&dir));
@@ -263,6 +360,34 @@ mod tests {
         assert!(mount.files_in("materials/none").is_empty());
         assert!(mount.contains("MATERIALS/vgui/logos/spray_a.vtf"));
         assert!(!mount.contains("materials/vgui/logos/spray_b.vtf"));
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn tracking_collects_what_is_asked_found_or_not() {
+        let root = std::env::temp_dir().join(format!("chimera_track_{}", std::process::id()));
+        fs::create_dir_all(root.join("a")).unwrap();
+        fs::write(root.join("a").join("x.txt"), b"x").unwrap();
+        let mut mount = Mount::default();
+        mount.push(LooseDir::new(&root));
+        mount.read("before").ok();
+        let t = mount.track();
+        mount.read("A/x.txt").unwrap();
+        assert!(!mount.contains("a/missing"));
+        mount.files_in("a");
+        assert_eq!(mount.read_every("a/x.txt"), vec![b"x".to_vec()]);
+        let got: Vec<Access> = t.finish().into_iter().collect();
+        assert_eq!(
+            got,
+            vec![
+                Access::File("a/missing".into()),
+                Access::File("a/x.txt".into()),
+                Access::Every("a/x.txt".into()),
+                Access::Folder("a".into()),
+            ]
+        );
+        assert_eq!(mount.tracking.load(Ordering::Acquire), 0, "dropped with finish");
+        assert_eq!(mount.layer_of("a/x.txt").map(|(i, _)| i), Some(0));
         fs::remove_dir_all(&root).ok();
     }
 

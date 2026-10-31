@@ -28,7 +28,7 @@ use bevy::math::{Vec2, Vec3, Vec4};
 /// A texture coordinate transform: uv' = rows · (u, v, 1), plus a
 /// translation scrolling at `scroll` (texture repeats per second, wrapped
 /// to [0, 1) as Source's TextureScroll proxy does).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapUvTransform {
     pub rows: [[f32; 3]; 2],
     pub scroll: [f32; 2],
@@ -143,7 +143,7 @@ impl MapUvTransform {
 }
 
 /// `$detailblendmode` and the two-texture blend's own detail modes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DetailMode {
     /// Source's `$detailblendmode` 0-9 (shaders.md 2, "$detail").
     Source(u8),
@@ -173,7 +173,7 @@ impl DetailMode {
 
 /// Source `$selfillum`: the surface glows with its own colour where the
 /// mask says (base alpha, or `$selfillummask` on models).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapSelfIllum {
     /// `$selfillumtint`, linear as the shader uses it.
     pub tint: [f32; 3],
@@ -283,7 +283,7 @@ pub fn parameter_gamma_to_linear(v: f32) -> f32 {
 /// `MapData::textures`; a material drawing it binds `frames[0]` and
 /// `render::texture_anim` swaps the frames in) and the proxy's
 /// `animatedtextureframerate`.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapTextureAnim {
     pub frames: Vec<usize>,
     /// Frames per second.

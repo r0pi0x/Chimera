@@ -46,10 +46,12 @@ pub use entities::{BrushSurface, MapBrushEntity, MapEntities, MapEntity, MapHull
 pub mod beams;
 pub mod breakables;
 pub mod buoyancy;
+pub mod cache;
 pub mod color_correction;
 pub mod contact_filter;
 pub mod controllers;
 pub mod copies;
+pub mod pod_serde;
 pub use breakables::{
     BreakProp, BrushPanes, FallingPane, GlassImpact, GlassShatter, MapBreak, MapBreakPiece, SpawnGibs,
 };

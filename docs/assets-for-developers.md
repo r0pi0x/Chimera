@@ -82,6 +82,24 @@ later ones read the cache.
   yet: delete the folder (or `records/`) to start over; files come back on
   demand.
 
+## Converted maps
+
+Beside it, `~/.cache/chimera/maps` (`%LOCALAPPDATA%\chimera\maps`) keeps
+maps as converted (CS:S maps whole; Combat Arms' worlds only with
+`CHIMERA_MAP_CACHE_CA=1`, they convert about as fast), one file per
+map, options and converter version, in our own format
+(chimera_world's `map::cache`): the next load of the same map, by any
+test, tool or app in any checkout, reads it back instead of converting.
+Install files the conversion read are checked on each hit (archive
+checksums, store record ids, else a hash), so a patched install converts
+again; so does any change to a converter's sources.
+
+- `CHIMERA_MAP_CACHE=0` turns it off; `CHIMERA_MAP_CACHE=<folder>` moves
+  it; `CHIMERA_MAP_CACHE_GB` caps it (20 by default; least recently used
+  entries go first). `mapsweep --no-map-cache` converts every map.
+- Deleting the folder is always safe. Nothing in it belongs in the
+  repository.
+
 ## How updates arrive
 
 The repository's `assets.lock` (when there is one) pins each game's build

@@ -28,7 +28,7 @@ use bevy::prelude::*;
 use super::ParticleRng;
 
 /// How a particle material is drawn.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ParticleBlend {
     /// Blended by alpha over the scene.
     #[default]
@@ -39,7 +39,7 @@ pub enum ParticleBlend {
 
 /// A material particles can use: a texture, its blend, and which vertex
 /// attributes it honours.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ParticleMaterial {
     pub name: String,
     /// Index into `MapData::textures`.
@@ -70,7 +70,7 @@ pub struct ParticleMaterial {
 /// second). A sprite's screen size is its width (twice its half-width)
 /// over the view's height at its depth (our reading: the spec says "of
 /// the screen"). Zero: no limit.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ScreenSize {
     pub max: f32,
     pub fade_start: f32,
@@ -118,7 +118,7 @@ impl ScreenSize {
 }
 
 /// The particle materials a map's game uses, found by name.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapParticles {
     pub materials: Vec<ParticleMaterial>,
 }

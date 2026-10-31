@@ -376,7 +376,7 @@ pub fn load(mount: &Mount) -> Option<GameUi> {
         "resource/cstrike_english.txt",
     ] {
         let path = crate::mount::normalize(file);
-        for bytes in mount.layers().filter_map(|l| l.read(&path)?.ok()) {
+        for bytes in mount.read_every(&path) {
             for (k, v) in super::radio::localization(&super::radio::decode(&bytes)) {
                 strings.entry(k).or_insert(v);
             }

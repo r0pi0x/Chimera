@@ -363,21 +363,67 @@ pub fn load_world(mount: &Mount, name: &str) -> Result<MapData, String> {
     load_world_with(mount, name, &MapLoadOptions::default())
 }
 
-/// `load_world` with `options`.
+/// `load_world` with `options`. With `CACHE_ENV`, the world's conversion
+/// (`convert_with` and its surface tags) is read back from the
+/// converted-map cache (`map::cache`; `CONVERTER` is the version) when it
+/// was converted before from the same files; the effect library (per
+/// session, from the install's weapon data: `effects::library::add_looks`)
+/// is added to either.
 pub fn load_world_with(mount: &Mount, name: &str, options: &MapLoadOptions) -> Result<MapData, String> {
+    let wanted = std::env::var(CACHE_ENV).is_ok_and(|v| v.trim() == "1");
+    let cache = wanted.then(crate::map::cache::MapCache::from_env).flatten();
+    load_world_in(mount, name, options, cache.as_ref()).map(|(map, _)| map)
+}
+
+/// `load_world_with` through `cache` (None: converted), and whether the
+/// world was read from there (tests, measurements).
+pub fn load_world_in(
+    mount: &Mount,
+    name: &str,
+    options: &MapLoadOptions,
+    cache: Option<&crate::map::cache::MapCache>,
+) -> Result<(MapData, crate::map::cache::Outcome), String> {
+    let start = std::time::Instant::now();
     let path = find(mount, name).ok_or_else(|| format!("{name}: no such map (worlds*/{name}.dat)"))?;
     let bytes = mount.read(&path).map_err(|e| format!("{path}: {e}"))?;
-    let world = World::parse(&bytes).map_err(|e| format!("{path}: {e}"))?;
     let scale = super::movement::movement_data().meters_per_unit;
     let file = |path: &str| mount.read(path).ok();
-    let mut map = convert_with(&world, name, scale, &file, options.textures);
-    map.warnings.extend(world.warnings.iter().map(|w| format!("{path}: {w}")));
-    super::effects::library::add_to_map(&mut map, &super::data::CaData::install(), &world, &file);
-    if let Ok(spec) = std::env::var(super::props::DEV_PROP_VAR) {
-        super::props::dev_prop(&world, &mut map, &spec, scale, &file);
+    let dev_prop = std::env::var(super::props::DEV_PROP_VAR).ok();
+    let convert = || -> Result<MapData, String> {
+        let world = World::parse(&bytes).map_err(|e| format!("{path}: {e}"))?;
+        let mut map = convert_with(&world, name, scale, &file, options.textures);
+        map.warnings.extend(world.warnings.iter().map(|w| format!("{path}: {w}")));
+        super::effects::library::tag_surfaces(&mut map, &world);
+        if let Some(spec) = &dev_prop {
+            super::props::dev_prop(&world, &mut map, spec, scale, &file);
+        }
+        Ok(map)
+    };
+    // A development prop is never cached.
+    let cache = cache.filter(|_| dev_prop.is_none());
+    let key = crate::map::cache::key(super::GAME, CONVERTER)
+        .part("map", name)
+        .content("file", &bytes)
+        .part("scale", scale.to_le_bytes())
+        .part("textures", [options.textures as u8]);
+    let (mut map, outcome) = crate::map::cache::cached(cache, mount, key, convert)?;
+    if outcome == crate::map::cache::Outcome::Hit {
+        info!("{name}: world read from the map cache in {:.2} s", start.elapsed().as_secs_f32());
     }
-    Ok(map)
+    super::effects::library::add_looks(&mut map, &super::data::CaData::install(), &file);
+    Ok((map, outcome))
 }
+
+/// `1`: Combat Arms' worlds go through the converted-map cache too. Off
+/// by default: they convert about as fast as they read back (WAREHOUSE
+/// 0.24 s converted, 0.27 s read from its 222 MB entry; docs/performance.md,
+/// "The converted-map cache"), so an entry would only cost disk.
+pub const CACHE_ENV: &str = "CHIMERA_MAP_CACHE_CA";
+
+/// The converter's version for the converted-map cache: the hash of this
+/// crate's game sources and data, LithTech's format crate and the
+/// lockfile (build.rs), so any change to them is a new version.
+pub const CONVERTER: &str = env!("CHIMERA_CONVERTER_SOURCES");
 
 /// A world as Chimera's map, `scale` metres per world unit; `file` reads
 /// a texture by its normalized path (lower case, `/`), None when missing.

@@ -185,7 +185,7 @@ impl SurfaceClassesAppExt for App {
 /// materials, impact sounds) it carries: its loader adds its own game,
 /// each dressing its game. Empty `looks`: not told (hand-made maps,
 /// tests): every game's impacts are taken to be there.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MapImpacts {
     /// The map's own game (`cs_source` for de_dust2), set by
     /// `sources::MapSources` (else the first of `looks`).

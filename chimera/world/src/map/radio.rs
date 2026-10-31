@@ -19,7 +19,7 @@ use bevy::prelude::*;
 /// One thing the radio can say. Several variants are picked from at
 /// random (CS:S's "Affirmative" / "Roger that"); each pairs a sound entry
 /// with its text.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RadioCommand {
     /// The console name (`coverme`); also what `core::Radio` carries.
     pub command: String,
@@ -30,7 +30,7 @@ pub struct RadioCommand {
 }
 
 /// A radio menu: its title and item lines as the game shows them.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RadioMenu {
     pub title: String,
     /// (number key, label).
@@ -46,7 +46,7 @@ pub enum ChatColor {
 }
 
 /// The loaded map's radio, when the game has one.
-#[derive(Resource, Clone, Debug, Default, PartialEq)]
+#[derive(Resource, Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RadioCommands {
     pub commands: Vec<RadioCommand>,
     pub menus: Vec<RadioMenu>,
@@ -68,7 +68,7 @@ pub const SPECTATORS: u8 = 3;
 /// Player text chat lines (`say`, `say_team`): `%s1` the sender, `%s2` the
 /// text, `%s3` the sender's place, with Source's colour control characters
 /// (as `RadioCommands::format`).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SayFormats {
     pub all: String,
     pub all_dead: String,
@@ -92,7 +92,7 @@ pub struct SayFormats {
 }
 
 /// One team's chat formats: alive, alive at a known place, dead.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TeamSay {
     pub alive: String,
     pub alive_place: Option<String>,
