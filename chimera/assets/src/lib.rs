@@ -30,12 +30,18 @@
 //! converter and checked against every file the conversion read
 //! (`~/.cache/chimera/maps`, `CHIMERA_MAP_CACHE`).
 //!
+//! `disk`: free space (`statvfs`, `GetDiskFreeSpaceExW`) and the floor
+//! under which the map cache and the store's on-demand writes skip the
+//! write (`CHIMERA_DISK_FLOOR_GB`).
+//!
 //! Known shortcuts: `verify` and `gc` read the whole store single-threaded; no
-//! cache cap.
+//! cap on the store; `chimera_pack`'s `put` doesn't check free space (an
+//! explicit fill fails loudly instead).
 
 pub mod accounts;
 pub mod cached;
 pub mod config;
+pub mod disk;
 pub mod lock;
 pub mod manifest;
 pub mod map_cache;

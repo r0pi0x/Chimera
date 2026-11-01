@@ -19,7 +19,12 @@
 //!   elsewhere, `CHIMERA_MAP_CACHE=0` turns it off (as does `disable`, a
 //!   tool's `--no-map-cache`). `CHIMERA_MAP_CACHE_GB` caps its size
 //!   (`DEFAULT_CAP_GB`): after each write the least recently used entries
-//!   go first (a hit marks its entry used).
+//!   go first (a hit marks its entry used). Free space weighs in
+//!   (`disk`): the effective cap is no more than what the cache holds plus
+//!   the disk's free space above the floor (`CHIMERA_DISK_FLOOR_GB`, 20 GB
+//!   or 5% of the disk, whichever is smaller), and a write that would leave
+//!   less than the floor free is skipped with a one-line warning (the map
+//!   is converted and used all the same).
 //! - **Key** (the file's name, `Key`): the loader, the converter's version
 //!   (the hash of its sources the game's `build.rs` takes, with
 //!   chimera_world's map format: its map types' sources and a hand-bumped
@@ -56,6 +61,8 @@ use std::{
 };
 
 use chimera_vfs::{Access, Mount};
+
+use crate::disk;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 /// Where the cache is, or `0` (also `off`, `false`) for none.
@@ -148,11 +155,17 @@ impl MapCache {
     /// (never `keep`), and temporary files left by a process that died
     /// writing.
     pub fn evict(&self, keep: Option<&Path>) {
+        self.evict_with(keep, &disk::space);
+    }
+
+    /// `evict` with the free-space reader (`disk::limit_cap`).
+    pub fn evict_with(&self, keep: Option<&Path>, read: disk::Reader) {
         let mut entries = self.entries();
         let mut total: u64 = entries.iter().map(|e| e.1).sum();
+        let cap = disk::limit_cap(self.cap, total, &self.dir, read);
         entries.sort_by_key(|e| e.2);
         for (path, size, _) in entries {
-            if total <= self.cap {
+            if total <= cap {
                 break;
             }
             if Some(path.as_path()) == keep {
@@ -424,7 +437,8 @@ fn write_entry<T: Serialize>(
     key: &str,
     inputs: Vec<(Input, String)>,
     value: &T,
-) -> io::Result<()> {
+    read: disk::Reader,
+) -> io::Result<bool> {
     let payload = postcard::to_allocvec(value).map_err(io::Error::other)?;
     let header = Header {
         key: key.to_string(),
@@ -434,6 +448,18 @@ fn write_entry<T: Serialize>(
     };
     let head = postcard::to_allocvec(&header).map_err(io::Error::other)?;
     fs::create_dir_all(&cache.dir)?;
+    let size = (MAGIC.len() + 8 + head.len() + payload.len()) as u64;
+    if !disk::has_room(&cache.dir, size, read) {
+        disk::warn_once("map cache", || {
+            format!(
+                "not writing {} ({:.1} GB): less than the free-space floor would be left on its disk ({} sets it)",
+                path.display(),
+                size as f64 / 1e9,
+                disk::FLOOR_ENV
+            )
+        });
+        return Ok(false);
+    }
     let tmp = cache.dir.join(format!("{key}.{}.{}.tmp", std::process::id(), unique()));
     let written = (|| {
         let mut f = File::create(&tmp)?;
@@ -449,7 +475,7 @@ fn write_entry<T: Serialize>(
     if written.is_err() {
         let _ = fs::remove_file(&tmp);
     }
-    written
+    written.map(|()| true)
 }
 
 /// A number no other call in this process gets.
@@ -467,6 +493,17 @@ pub fn cached<T: Serialize + DeserializeOwned>(
     mount: &Mount,
     key: Key,
     convert: impl FnOnce() -> Result<T, String>,
+) -> Result<(T, Outcome), String> {
+    cached_with(cache, mount, key, convert, &disk::space)
+}
+
+/// `cached` with the free-space reader.
+pub fn cached_with<T: Serialize + DeserializeOwned>(
+    cache: Option<&MapCache>,
+    mount: &Mount,
+    key: Key,
+    convert: impl FnOnce() -> Result<T, String>,
+    read: disk::Reader,
 ) -> Result<(T, Outcome), String> {
     let Some(cache) = cache else {
         return convert().map(|v| (v, Outcome::Off));
@@ -524,11 +561,11 @@ pub fn cached<T: Serialize + DeserializeOwned>(
     let value = convert()?;
     let accesses = tracking.finish();
     let inputs = inputs(mount, accesses);
-    if let Err(e) = write_entry(cache, &path, &key, inputs, &value) {
+    if let Err(e) = write_entry(cache, &path, &key, inputs, &value, read) {
         eprintln!("map cache: {}: {e}", path.display());
     }
     drop(lock);
-    cache.evict(Some(&path));
+    cache.evict_with(Some(&path), read);
     Ok((value, Outcome::Miss))
 }
 
@@ -542,6 +579,21 @@ fn inputs(mount: &Mount, accesses: BTreeSet<Access>) -> Vec<(Input, String)> {
 mod tests {
     use super::*;
     use chimera_vfs::LooseDir;
+
+    /// Plenty of room whatever the machine's disk holds.
+    fn roomy(_: &Path) -> Option<disk::Space> {
+        Some(disk::Space { free: 1 << 50, total: 1 << 51 })
+    }
+
+    /// `cached` on a disk with room (these tests aren't about space).
+    fn cached<T: Serialize + DeserializeOwned>(
+        cache: Option<&MapCache>,
+        mount: &Mount,
+        key: Key,
+        convert: impl FnOnce() -> Result<T, String>,
+    ) -> Result<(T, Outcome), String> {
+        cached_with(cache, mount, key, convert, &roomy)
+    }
 
     fn temp(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("chimera_map_cache_{name}_{}", std::process::id()));
@@ -670,7 +722,7 @@ mod tests {
             f.set_modified(now - Duration::from_secs(100 - i as u64 * 10)).unwrap();
         }
         fs::write(root.join("x.1.2.tmp"), b"").unwrap();
-        cache.evict(Some(&root.join("a.map")));
+        cache.evict_with(Some(&root.join("a.map")), &roomy);
         let mut left: Vec<String> = fs::read_dir(&root)
             .unwrap()
             .flatten()
@@ -679,6 +731,60 @@ mod tests {
         left.sort();
         // a is the oldest but kept (just written); b goes, the next oldest.
         assert_eq!(left, ["a.map", "c.map", "x.1.2.tmp"]);
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn a_write_below_the_free_space_floor_is_skipped_and_the_map_still_loads() {
+        let root = temp("floor");
+        let files = root.join("files");
+        fs::create_dir_all(&files).unwrap();
+        fs::write(files.join("a.txt"), "one").unwrap();
+        let mut mount = Mount::default();
+        mount.push(LooseDir::new(&files));
+        let cache = MapCache::at(root.join("cache"), u64::MAX);
+        let key = || Key::new("test", "v1");
+        let gb = 1_000_000_000u64;
+        let disk_with = |free: u64| move |_: &Path| Some(disk::Space { free, total: 1000 * gb });
+        let mut runs = 0;
+        // 1 GB free of 1000, the floor 20 GB: converted, nothing written.
+        let low = disk_with(gb);
+        let (v, o) = cached_with(Some(&cache), &mount, key(), || convert(&mount, &mut runs), &low).unwrap();
+        assert_eq!((v.as_str(), o, runs), ("onefalse", Outcome::Miss, 1));
+        assert!(cache.entries().is_empty(), "no entry below the floor");
+        // Room again: written, then a hit.
+        let roomy = disk_with(500 * gb);
+        cached_with(Some(&cache), &mount, key(), || convert(&mount, &mut runs), &roomy).unwrap();
+        assert_eq!(cache.entries().len(), 1);
+        let (_, o) = cached_with(Some(&cache), &mount, key(), || convert(&mount, &mut runs), &low).unwrap();
+        assert_eq!((o, runs), (Outcome::Hit, 2), "reading needs no room");
+        fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn free_space_clamps_the_effective_cap() {
+        let root = temp("clamp");
+        let cache = MapCache::at(&root, u64::MAX / 4);
+        let now = SystemTime::now();
+        for (i, name) in ["a", "b", "c"].iter().enumerate() {
+            let p = root.join(format!("{name}.map"));
+            fs::write(&p, [0u8; 100]).unwrap();
+            let f = File::options().append(true).open(&p).unwrap();
+            f.set_modified(now - Duration::from_secs(100 - i as u64 * 10)).unwrap();
+        }
+        // A disk of 2000 bytes, floor 5% = 100: 150 free leaves 50 of
+        // growth over the 300 held, far under the cap, so nothing goes
+        // (a full disk stops growth, it doesn't empty the cache).
+        let disk = |free| move |_: &Path| Some(disk::Space { free, total: 2000 });
+        cache.evict_with(None, &disk(150));
+        assert_eq!(cache.entries().len(), 3);
+        // The same cache with a cap of 250 evicts as before.
+        let capped = MapCache::at(&root, 250);
+        capped.evict_with(None, &disk(1500));
+        assert_eq!(capped.entries().len(), 2);
+        // 120 free (20 above the floor): it may hold 220, so the 200 stay.
+        capped.evict_with(None, &disk(120));
+        assert_eq!(capped.entries().len(), 2);
         fs::remove_dir_all(&root).ok();
     }
 

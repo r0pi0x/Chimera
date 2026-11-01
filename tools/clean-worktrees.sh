@@ -4,7 +4,10 @@
 # are kept; only regenerable build output goes. Usage: clean-worktrees.sh [repo]
 # The build slots (.claude/slots/*, tools/agent-slot.sh) keep their target/
 # on purpose (it's what makes them fast): this only trims the free ones
-# past AGENT_SLOT_MAX_GB (60 GB) through `agent-slot.sh trim`.
+# past AGENT_SLOT_MAX_GB (60 GB) through `agent-slot.sh trim`, which also
+# trims cargo's incremental folders in the main checkout's, the post-push
+# slot's and the slots' target/ past CHIMERA_INCREMENTAL_MAX_GB (30 GB),
+# oldest first, skipping a target a running cargo holds.
 set -u
 repo="${1:-$(git rev-parse --show-toplevel)}"
 freed=0
@@ -21,4 +24,6 @@ done
 echo "freed $((freed / 1024 / 1024)) GB"
 if [ -d "$repo/.claude/slots" ]; then
   AGENT_SLOTS_DIR="$repo/.claude/slots" "$(dirname "$0")/agent-slot.sh" trim
+else
+  "$(dirname "$0")/agent-slot.sh" trim-incremental "$repo/target"
 fi

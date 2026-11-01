@@ -1477,6 +1477,32 @@ otherwise leaves slots alone) shrinks a free slot's `target/` past
 takes. A whole-workspace test build is about 40 GB with the test
 profile's line tables, a `cargo run --features dev` build more.
 
+Disk guards (the dev box's disk filled to 100% on 2026-10-31: the main
+checkout's `target/debug/incremental` was 206 GB, a slot's 195 GB, the
+post-push slot's 101 GB):
+
+- `tools/agent-slot.sh trim-incremental [target...]` (also run by `trim`,
+  so by `tools/clean-worktrees.sh`, and by `tools/post-push-tests.sh` on
+  its own target before building) trims cargo's `target/*/incremental`
+  folders in the main checkout, the post-push slot and every slot, oldest
+  session folders first, past `CHIMERA_INCREMENTAL_MAX_GB` (30) down to
+  3/4 of it. A target whose `.cargo-lock` a running cargo holds (flock)
+  is left alone, with a note. Nothing runs it on a timer: run
+  `tools/clean-worktrees.sh` now and then (or from cron).
+- The converted-map cache and the store's on-demand writes
+  (`chimera_assets::disk`) skip a write that would leave less than the
+  floor free, with a one-line warning (the map is converted or the record
+  read all the same), and the map cache's cap is limited to what it holds
+  plus the free space above the floor. The floor is
+  `CHIMERA_DISK_FLOOR_GB` (default 20, decimal GB) or 5% of the disk,
+  whichever is smaller; `0` turns it off.
+- `tools/doctor` warns, and `tools/post-push-tests.sh` prints a warning
+  at its start, when free space is below the floor (`tools/disk-free.sh`
+  has the same rule in shell).
+- Tests: `chimera_assets` unit tests (`disk`, `map_cache`, `store`, with
+  an injected free-space reader); `checks/tests/it/scripts.rs` (the trim
+  and the floor in shell, on temporary folders).
+
 Measured 2026-10-27 (12 threads, load 10-50 from other agents;
 docs/performance.md, "Test cycle"): `cargo test -p chimera_sim --features
 dev --test it <one test>` from cold in a new slot 1,964 s; after a

@@ -32,6 +32,11 @@ remote=${CHIMERA_POST_PUSH_REMOTE:-origin}
 ref=${CHIMERA_POST_PUSH_REF:-$remote/main}
 mode=${CHIMERA_PUSH_TESTS:-${MASHUP_PUSH_TESTS:-affected}}
 mkdir -p "$out"
+# shellcheck source=/dev/null
+. "$here/disk-free.sh"
+if ! disk_check "$repo"; then
+    echo "post-push: WARNING: low disk space: $DISK_FREE_GB GB free of $DISK_TOTAL_GB (floor $DISK_FLOOR_GB GB); the build may fail. tools/clean-worktrees.sh trims build folders" >&2
+fi
 exec 8>"$out/.lock"
 flock -n 8 || { echo "post-push: another run is going; waiting for it" >&2; flock 8; }
 
@@ -47,6 +52,9 @@ if [ ! -e "$dir/.git" ]; then
     echo "post-push: creating its checkout at $dir (the first run builds from cold)" >&2
     git -C "$repo" worktree add --quiet --detach "$dir" "$sha" || exit 2
 fi
+# Its incremental caches grow without bound: trim them (CHIMERA_INCREMENTAL_MAX_GB;
+# a target a running cargo holds is left alone) before building.
+"$here/agent-slot.sh" trim-incremental "$dir/target" || true
 git -C "$dir" reset --quiet --hard && git -C "$dir" clean -fdq && git -C "$dir" checkout --quiet --detach "$sha" || exit 2
 cd "$dir" || exit 2
 # shellcheck source=/dev/null

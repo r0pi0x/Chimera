@@ -194,6 +194,10 @@ log> --set <name>` (a set from a recorded run), `chimera_pack sets <game>
   `target/` survives between agents (`release` when done);
   `source tools/agent-env.sh && agent_run cargo ...` shares one jobserver
   and sccache so builds don't oversubscribe the box. OBSERVABILITY.md 3e.
+  Builds fill disks: `tools/clean-worktrees.sh` trims cargo's incremental
+  folders past `CHIMERA_INCREMENTAL_MAX_GB` (30), the caches skip writes
+  below `CHIMERA_DISK_FLOOR_GB` free (20), `tools/doctor` warns. A full
+  disk fails builds in odd ways: check `df` first.
 - Windows clones made before `.gitattributes` may hold CRLF files, which
   breaks tests that compare text: `git rm -r --cached . && git reset --hard`.
 - The first build takes minutes and tens of GB in `target/`; build one

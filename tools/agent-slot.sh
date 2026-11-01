@@ -12,6 +12,7 @@
 #   tools/agent-slot.sh release [slot]            # the slot you're in by default
 #   tools/agent-slot.sh status
 #   tools/agent-slot.sh trim [slot...]            # shrink target/ past the limit
+#   tools/agent-slot.sh trim-incremental [target...]   # trim target/*/incremental
 #
 # acquire takes a free slot (flock), creates its worktree the first time,
 # and checks out <branch>: reset to [base] when given (`git checkout -B`),
@@ -26,6 +27,14 @@
 # (trim target/ past this, default 60: a whole-workspace test build is
 # ~40 GB; acquire trims the slot it takes),
 # AGENT_SLOTS_DIR (where the slots live).
+#
+# trim-incremental: cargo's incremental caches (target/<profile>/incremental,
+# also under a target triple) grow without bound (the main checkout's was
+# 206 GB on 2026-10-31). It trims them in the main checkout's target/, the
+# post-push slot's, and every slot's (or the target folders named), oldest
+# session first, down to 3/4 of CHIMERA_INCREMENTAL_MAX_GB (default 30)
+# when they are past it. A target a running cargo holds (a flock on its
+# .cargo-lock files) is left alone. `trim` does it too.
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 common=$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)
@@ -59,6 +68,57 @@ trim_slot() {
     say "still $gb GB: removing $(basename "$slot")/target"
     rm -rf "$slot/target"
   fi
+}
+
+inc_max_gb=${CHIMERA_INCREMENTAL_MAX_GB:-30}
+
+# Whether a cargo is building in <target>: it holds a flock on the
+# .cargo-lock beside its profile folder. Without flock(1), assume so.
+target_in_use() {
+  local f
+  command -v flock >/dev/null 2>&1 || return 0
+  while IFS= read -r f; do
+    flock -n "$f" true 2>/dev/null || return 0
+  done < <(find "$1" -maxdepth 3 -name .cargo-lock 2>/dev/null)
+  return 1
+}
+
+# Trim <target>'s incremental folders past the limit, oldest session
+# folders (incremental/<crate>-<hash>/s-*) first, down to 3/4 of it.
+trim_incremental() {
+  local target=$1 limit_kb goal_kb total_kb=0 kb dir
+  local -a incs=()
+  [ -d "$target" ] || return 0
+  limit_kb=$(awk -v g="$inc_max_gb" 'BEGIN {printf "%d", g * 1048576}')
+  goal_kb=$((limit_kb * 3 / 4))
+  while IFS= read -r -d '' dir; do incs+=("$dir"); done \
+    < <(find "$target" -maxdepth 3 -type d -name incremental -print0 2>/dev/null)
+  [ ${#incs[@]} -gt 0 ] || return 0
+  total_kb=$(du -sk -- "${incs[@]}" 2>/dev/null | awk '{s += $1} END {print s + 0}')
+  [ "$total_kb" -gt "$limit_kb" ] || return 0
+  if target_in_use "$target"; then
+    say "$target: incremental is $((total_kb / 1048576)) GB (limit $inc_max_gb) but a cargo is using it: left alone"
+    return 0
+  fi
+  say "$target: incremental is $((total_kb / 1048576)) GB (limit $inc_max_gb): trimming oldest first"
+  while IFS= read -r -d '' dir; do
+    [ "$total_kb" -gt "$goal_kb" ] || break
+    dir=${dir#* }
+    kb=$(du -sk -- "$dir" 2>/dev/null | cut -f1)
+    rm -rf -- "$dir" && total_kb=$((total_kb - ${kb:-0}))
+  done < <(find "${incs[@]}" -mindepth 2 -maxdepth 2 -type d -printf '%T@ %p\0' 2>/dev/null | sort -z -n)
+  find "${incs[@]}" -mindepth 1 -maxdepth 1 -type d -empty -delete 2>/dev/null || true
+  say "$target: incremental now $((total_kb / 1048576)) GB"
+}
+
+# The main checkout's target/, the post-push slot's, each slot's (or the
+# targets named).
+trim_incrementals() {
+  local t
+  if [ $# -eq 0 ]; then
+    set -- "$repo/target" "$slots_dir/post-push/target" "$slots_dir"/slot*/target
+  fi
+  for t in "$@"; do trim_incremental "$t"; done
 }
 
 # The slot holding the current directory, or the one named (slotN or a path).
@@ -165,6 +225,7 @@ trim() {
       s=${s%/}
       [ -e "$s.lock" ] || trim_slot "$s"
     done
+    trim_incrementals
     return
   fi
   for s in "$@"; do
@@ -180,5 +241,6 @@ case "$cmd" in
   release) release "$@" ;;
   status) status ;;
   trim) trim "$@" ;;
+  trim-incremental) trim_incrementals "$@" ;;
   *) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//' >&2; exit 2 ;;
 esac
