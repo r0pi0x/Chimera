@@ -701,6 +701,37 @@ game's:
   first that has one: CS:S's lends a stock pickup sound, Combat Arms' its
   weapon-change sound, our choices).
 
+### The mission display
+
+Combat Arms' event objects tell every client about timers, captions,
+messages and the objective list (`CaObjectNotice`), and the original
+client's code for showing them is not in the reference (world_objects.md
+Open question 15). The user decided (2026-10-31) on **our own simple
+display with the install's HUD fonts, marked as ours: not from the
+original.**
+
+- **State, not events.** The server folds the notices into one state
+  (`game::objects::mission::CaMission`: running timers, the caption and
+  message on show, the objectives) which replicates on an entity of its
+  own (`NetCaMission`, times in server ticks), so a late joiner gets the
+  running timer, a caption still showing and the current objectives; a
+  client writes it into its own `CaMission` on its clock. Captions and
+  messages carry their end time; the display lets them expire by the
+  clock, nothing is re-sent.
+- **Display = pure view + thin draw.** `ui::hud::mission::view` turns the
+  state into `CaMissionHud` (headless, tested), `boxes` into the places,
+  `draw_mission` into `hud_text` calls, so the text scales like the rest of
+  the HUD (reference px by x_r and y_r, glyphs by `layout::glyph_stretch`).
+- **Data-driven.** Places, fonts (names from `data/ui/fonts.toml`),
+  colours, effects, wrap widths and the warning threshold are in
+  `data/ui/mission_hud.toml`; the timer sits under the score panel (below
+  its objective lines), the caption at the bottom centre, the message
+  centre-print, the objective list top left (no key hides it: the options
+  data has none). Unknown ids show as their text id until the string table
+  has them.
+- Also ours and not from the original: a timer's `mm:ss` rounding up, the
+  warning colour, the marks before objectives.
+
 ### The party apps' Escape menu
 
 Ultimate Gun Game and Lucker Party have a menu of their own

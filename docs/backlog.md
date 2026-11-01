@@ -2583,9 +2583,9 @@ Counts are from de_dust2's entity lump and static prop lump.
   original draws sliding movers 100 ms in the past, snaps rotating ones,
   jumps keyframed ones and pushes its own player per drawn step, never on a
   teleport; ours predicts them: world_objects.md Follow-up (2026-10-31b)
-  2, cases 40-45 not reproduced); the client display of timers, captions,
-  messages and the objective list (Open question 15: server notices only)
-  and of cameras (which camera a client looks through: death_killcam.md);
+  2, cases 40-45 not reproduced); the display of cameras (which camera a
+  client looks through: death_killcam.md; the timers, captions, messages
+  and objective list are ours, done: DESIGN "The mission display");
   the co-op parts (sub-mission time, mission manager, mission texts and
   counted maxima).
 

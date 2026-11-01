@@ -7,7 +7,8 @@
 //! `TargetTrigger` markers that are on and exist in the mode playing, the
 //! cameras live or with a changed field of view, and the
 //! objects' sounds (`NetVoice`: a joiner gets the loops still playing,
-//! not the one-shots made before it heard of them), so a late joiner gets
+//! not the one-shots made before it heard of them), and the mission display's state on an entity of
+//! its own (`mission::NetCaMission`: timers, caption, message, objectives), so a late joiner gets
 //! open doors, risen water and broken breakables as they are; a client writes them into its
 //! own object world (built from the same map) and onto its nodes and
 //! volumes. Registered as the network part `combat_arms_objects`.
@@ -304,6 +305,8 @@ fn part(app: &mut App) {
     app.init_resource::<CaMotionPredict>()
         .replicate::<NetCaObjects>()
         .ordered::<NetCaObjects>()
+        .replicate::<super::mission::NetCaMission>()
+        .ordered::<super::mission::NetCaMission>()
         .replicate::<NetCaMotion>()
         .set_receive_fns::<NetCaMotion>(write_snapshot::<NetCaMotion>, remove_snapshots::<NetCaMotion>)
         .ordered_with::<NetCaMotion>(write_snapshot::<NetCaMotion>, remove_snapshots::<NetCaMotion>)
@@ -314,6 +317,7 @@ fn part(app: &mut App) {
         .add_systems(Predict::PlaceMovers, place_motion.run_if(client()))
         .add_systems(Predict::CarryRiders, step_motion.run_if(client()));
     app.world_mut().resource_mut::<NetHooks>().stopped_serving.push(stopped_serving);
+    app.world_mut().resource_mut::<NetHooks>().stopped_serving.push(super::mission::stopped_serving);
 }
 
 /// Serving stopped: the motion state stops replicating.
@@ -698,6 +702,7 @@ pub(super) fn flags_of(o: &super::runtime::Object) -> u8 {
 
 /// The server's objects that differ from the start.
 fn write(world: &mut World) {
+    super::mission::write(world);
     let Some(map) = world.get_resource::<MapFile>().map(|m| m.name.clone()) else { return };
     let o = world.resource::<CaObjects>();
     let objects: Vec<NetObject> = o
@@ -811,6 +816,7 @@ fn write(world: &mut World) {
 
 /// A client: the server's objects into its own, and onto the nodes.
 fn read(world: &mut World) {
+    super::mission::read(world);
     let Some(map) = world.get_resource::<MapFile>().map(|m| m.name.clone()) else { return };
     let Some(net) = world.query::<&NetCaObjects>().iter(world).next().cloned() else { return };
     if net.map != map {
