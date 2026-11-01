@@ -428,6 +428,7 @@ implementing (owner branch) / done.
 | Item | Spec | Status | Lift |
 |---|---|---|---|
 | Wave 0 spec | H0 `source_deltas.md` | spec landed (branch `hl2dm-h0`, 2026-11-01; user review pending) | – |
+| Wave 1 specs | H1 `movement.md`, H2 `suit.md`, H3 `weapons.md`, H6 `rules.md` | spec landed (branch `hl2dm-w1`, 2026-11-01; user review pending; corrections to H0 listed in each) | – |
 | M0 install and look | H0 (install facts) | not started (facts recorded; RCON reads and the probe left) | S0, S1, S11 |
 | M1 maps load | H0 | not started | S2, S3, S4 |
 | M3 movement, suit | H1, H2 | not started | S5, S6, C2, C8 |
@@ -454,6 +455,20 @@ implementing (owner branch) / done.
   through `hl2mp/`'s overrides of HL2's include models, MDL versions
   44–48 all present, FOV 75, HL2:DM ships NextBot bots. Briefs H1–H10
   refined in section 4 accordingly.
+- 2026-11-01: wave 1 (H1, H2, H3, H6) written: specs/hl2dm/movement.md,
+  suit.md, weapons.md, rules.md (draft). Main findings: no bunny-hop
+  cap, no forward jump boost in multiplayer (`player_limit_jump_speed`
+  unread); sprint starts only on the `+speed` press and wins over walk;
+  ladders pull onto the line and climb at exactly 200; armour fits
+  `hits::absorb`'s shape (C2) given separate armour and health quanta and
+  the bypass classes; health keeps fractional damage; drowning after aux
+  power and 7 s of air; `impulse 50` isn't suit zoom (`+zoom` is);
+  pistol has its 1°–6° spread after all; bullets do the script damage to
+  props too; 2 spawn grenades; dead players never become observers, so
+  `mp_forcerespawn` always applies (shipped `valve.rc` sets 0: button
+  respawn after 3 s); no 5 s team-change limit; spawn spots occupied
+  within 128 units. Each spec lists its corrections to H0 and its probe
+  cases.
 
 ## Decision log
 
