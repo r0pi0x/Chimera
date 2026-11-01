@@ -360,12 +360,13 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>) -> Vec<(String, Vec<
         "combat_arms" => {
             use combat_arms::game::{data::CaData, view_model::on_demand};
             let read = |p: &str| tapped.read(p).ok();
-            for w in &CaData::install().weapon_set().weapons {
+            let ca = CaData::install();
+            for w in &ca.weapon_set().weapons {
                 if !on_demand::ours(&w.id) {
                     continue;
                 }
                 take();
-                let _ = on_demand::load_weapon(&w.id, &read);
+                let _ = on_demand::load_weapon(&ca, &w.id, &read);
                 let id = w.id.rsplit(':').next().unwrap_or(&w.id);
                 out.push((format!("weapon/{id}"), take()));
             }
