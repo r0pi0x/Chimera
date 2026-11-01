@@ -472,6 +472,7 @@ fn is_docs(path: &str) -> bool {
             "tools/sccache-heal.sh",
             "tools/clean-worktrees.sh",
             "tools/agent-slot.sh",
+            "tools/disk-free.sh",
             "tools/post-push-tests.sh",
             // A profiling script (runs built binaries; no crate reads it).
             "tools/perf-profile.sh",

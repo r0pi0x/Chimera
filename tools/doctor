@@ -36,6 +36,16 @@ case "${TZ:-}" in
     *) warn "TZ is not UTC in this shell (commit dates must be UTC)" "export TZ=UTC   (or TZ=UTC git commit ...)" ;;
 esac
 
+# Disk: the caches stop writing below the floor (tools/disk-free.sh).
+# shellcheck source=/dev/null
+. tools/disk-free.sh
+if disk_check .; then
+    pass "free disk space ($DISK_FREE_GB GB free of $DISK_TOTAL_GB; floor $DISK_FLOOR_GB)"
+else
+    warn "low disk space: $DISK_FREE_GB GB free of $DISK_TOTAL_GB (below the $DISK_FLOOR_GB GB floor: the map and asset caches skip their writes, builds may fail)" \
+        "tools/clean-worktrees.sh (trims build folders), or cargo clean in checkouts you don't use; CHIMERA_DISK_FLOOR_GB moves the floor"
+fi
+
 # Toolchain.
 need=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 if have=$(rustc --version 2>/dev/null | awk '{print $2}'); then

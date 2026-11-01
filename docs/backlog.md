@@ -2442,15 +2442,17 @@ docs/plans/active/sound.md.
 
 ## 9. Performance
 
-- **Disk guards (2026-10-31: the dev box's disk filled to 100%).** The
-  main checkout's `target/debug/incremental` had grown to 206 GB (nothing
-  trims it), slot1's target to 195 GB, the post-push slot's to 101 GB,
-  and the converted-map cache adds up to 40 GB. To do:
-  `tools/clean-worktrees.sh` also trims the main checkout's and the
-  post-push slot's incremental folders past a limit; the map cache and the
-  asset cache check free space before writing (skip the write below a
-  floor) and the map cache's default cap is weighed against free space;
-  `tools/doctor` warns when free space is low.
+- Done: **Disk guards (2026-10-31: the dev box's disk filled to 100%).**
+  `tools/agent-slot.sh trim-incremental` (run by `trim`,
+  `tools/clean-worktrees.sh` and `tools/post-push-tests.sh`) trims
+  `target/*/incremental` of the main checkout, the post-push slot and the
+  slots past `CHIMERA_INCREMENTAL_MAX_GB` (30), oldest first, skipping a
+  target a running cargo holds; the map cache and the store's on-demand
+  writes skip below the free-space floor (`CHIMERA_DISK_FLOOR_GB`, 20 GB or
+  5% of the disk) and the map cache's cap is limited by free space;
+  `tools/doctor` and `post-push-tests.sh` warn (OBSERVABILITY 3e). Left:
+  nothing runs `clean-worktrees.sh` on a timer; `chimera_pack`'s `put` and
+  any other cache don't check space.
 
 - **Flaky: `heavy::net_big_map` under a full heavy run (2026-10-31).**
   In a9caa3b5's after-push run, 150 MB took 133.4 s of game time against

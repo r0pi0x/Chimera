@@ -2,7 +2,9 @@
 //! zstd level 3; `id` = lowercase hex SHA-256 of the plain bytes) and
 //! `manifests/<game>/<build>.txt`. Writes are atomic (a temporary file,
 //! then a rename), so packers running at once never leave half a record;
-//! a record already there is never written again (dedup by id).
+//! a record already there is never written again (dedup by id). A fetched
+//! record (`put_stored`) is not stored when the disk is below the
+//! free-space floor (`disk`).
 
 use std::{
     fs, io,
@@ -10,6 +12,8 @@ use std::{
 };
 
 use sha2::{Digest, Sha256};
+
+use crate::disk;
 
 /// zstd level for records (the plan's section 2: level 3 packs at
 /// 120-220 MB/s a thread and unpacks at 530-640 MB/s).
@@ -82,13 +86,30 @@ impl Store {
     /// plain bytes. A record that isn't what it claims (tampered with,
     /// wrong, cut short) is `InvalidData` and never stored.
     pub fn put_stored(&self, id: &str, size: u64, packed: &[u8]) -> io::Result<Vec<u8>> {
+        self.put_stored_with(id, size, packed, &disk::space)
+    }
+
+    /// `put_stored` with the free-space reader: below the floor
+    /// (`disk::has_room`) the record is checked and returned but not
+    /// stored, with a one-line warning.
+    pub fn put_stored_with(&self, id: &str, size: u64, packed: &[u8], read: disk::Reader) -> io::Result<Vec<u8>> {
         if !is_id(id) {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{id:?} is not a record id")));
         }
         let plain = unpack(id, size, packed)?;
         let path = self.record_path(id);
         if !path.is_file() {
-            write_atomic(&path, packed)?;
+            if disk::has_room(&self.root, packed.len() as u64, read) {
+                write_atomic(&path, packed)?;
+            } else {
+                disk::warn_once("asset store", || {
+                    format!(
+                        "not storing fetched records in {}: less than the free-space floor would be left on its disk ({} sets it)",
+                        self.root.display(),
+                        disk::FLOOR_ENV
+                    )
+                });
+            }
         }
         Ok(plain)
     }
@@ -216,4 +237,29 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     fs::rename(&tmp, path).inspect_err(|_| {
         let _ = fs::remove_file(&tmp);
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_fetched_record_is_not_stored_below_the_free_space_floor() {
+        let root = std::env::temp_dir().join(format!("chimera_store_floor_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let store = Store::new(&root);
+        let plain = b"some record".to_vec();
+        let id = sha256_hex(&plain);
+        let packed = zstd::bulk::compress(&plain, LEVEL).unwrap();
+        let gb = 1_000_000_000u64;
+        let disk_with = |free: u64| move |_: &Path| Some(disk::Space { free, total: 1000 * gb });
+        let got = store.put_stored_with(&id, plain.len() as u64, &packed, &disk_with(gb)).unwrap();
+        assert_eq!(got, plain, "still loads");
+        assert!(!store.has(&id), "not stored below the floor");
+        store.put_stored_with(&id, plain.len() as u64, &packed, &disk_with(500 * gb)).unwrap();
+        assert!(store.has(&id));
+        // A record that isn't what it claims is refused whatever the space.
+        assert!(store.put_stored_with(&id, 3, &packed, &disk_with(500 * gb)).is_err());
+        fs::remove_dir_all(&root).ok();
+    }
 }
