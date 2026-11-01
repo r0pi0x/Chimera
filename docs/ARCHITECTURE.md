@@ -33,7 +33,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    \        |
   |    cs_source (games/cs_source/)   CS:S's simulation: loaders, parts, rules, bots, SimPlugins, harness::CsSim
   |    |    source_logic (source/logic/)   logic: Source entity I/O
-  |    |    source_engine (source/engine/)   Source behaviour every Source game shares: search path, map lists
+  |    |    source_engine (source/engine/)   Source behaviour every Source game shares: search path, map lists, content
   |    |   /
   |    chimera_net (chimera/net/)   net: transport, replication, prediction; harness::NetSim
   |    |
@@ -175,8 +175,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   Source game shares, lifted out of `cs_source` as HL2:DM needs it
   (docs/plans/active/hl2dm.md, section 3): so far `search_path` (a
   game's search path as a mount, from its `gameinfo.txt` or the game's
-  own list) and `maps` (the maps an install holds, its map cycle, map
-  import). It uses the engine's crates and `source_formats`, never the
+  own list), `maps` (the maps an install holds, its map cycle, map
+  import) and `content` (Source's files converted into Chimera's types:
+  materials so far, lifts S2-S4). It uses the engine's crates and `source_formats`, never the
   presentation, `mashup`, a game or an app (checked); CS:S and HL2:DM
   use it, Combat Arms never. `cargo test -p source_engine --features
   dev` tests it alone.
@@ -391,8 +392,8 @@ it); map uses only core. games/<name> uses core, console, slots,
 character, movement, mount, map, weapon, objectives and rules (to register
 its rule modules), bot and net (its part of the network); its `ui/` uses
 those, client and the rest of the simulation. `source_engine`'s modules
-(`search_path`, `maps`) use no module of ours, only the engine's crates
-by name (`chimera_core::mount`).
+`search_path` and `maps` use no module of ours, only the engine's crates
+by name (`chimera_core::mount`); its `content` uses core, map and mount.
 
 Presentation sits beside the simulation, above `map`: `audio` (sound
 playback, live sounds, room DSP, soundscapes, hearing) uses core and map,

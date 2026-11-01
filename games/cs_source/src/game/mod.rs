@@ -187,7 +187,6 @@ pub mod hud;
 pub mod impact_effects;
 pub mod impacts;
 pub mod lightmap;
-pub mod material;
 pub mod mount;
 pub mod movement;
 pub mod nav;
@@ -219,11 +218,14 @@ pub mod view_anim;
 pub mod vgui;
 pub mod view_motion;
 pub mod votes;
-pub mod water;
 pub mod weapons;
 
 // Pure-data readers moved to `source_formats`, at their old paths.
 pub use source_formats::{lumps, pak, phy, vhv, vpk, wav};
+
+// Source's content converters lifted into `source_engine` (docs/plans/
+// active/hl2dm.md, section 3), at their old paths.
+pub use source_engine::content::{material, water};
 
 /// The game's id (`cs_source`): defined with the gameplay's condition
 /// for CS:S's match-wide systems (`objectives::plays`), the lowest of its

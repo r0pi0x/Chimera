@@ -45,8 +45,8 @@ use crate::{
     mount::Mount,
 };
 
-/// One Hammer unit is one inch.
-pub const METERS_PER_UNIT: f32 = 0.0254;
+// One Hammer unit is one inch (`source_engine`'s, at its old path).
+pub use source_engine::content::METERS_PER_UNIT;
 
 /// The player models by class (`core::PlayerClass` 1-8, CS:S's
 /// `joinclass` numbers): Phoenix Connexion, Elite Crew, Arctic Avengers,

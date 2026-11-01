@@ -42,6 +42,9 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("search_path", &[]),
     // Source's map listings and map cycle, map import (source_engine).
     ("maps", &[]),
+    // Source's content converted into Chimera's types (source_engine's
+    // `content`: BSP, materials, models; lifted from CS:S's loaders).
+    ("content", &["core", "map", "mount"]),
     // Which game fills each match-wide slot (rules, HUD, binds, tick) and
     // the sets that gate a game's systems by it.
     ("gameplay", &["core", "game_registry"]),

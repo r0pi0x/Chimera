@@ -7392,9 +7392,20 @@ dependencies = [
 name = "source_engine"
 version = "0.1.0"
 dependencies = [
+ "avian3d",
+ "bevy",
  "bzip2",
  "chimera_core",
+ "chimera_world",
+ "half",
+ "image",
+ "serde",
+ "sha2",
  "source_formats",
+ "vbsp",
+ "vmdl",
+ "vmt-parser",
+ "vtf",
  "workspace-hack",
 ]
 
