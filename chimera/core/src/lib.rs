@@ -20,6 +20,7 @@
 pub mod announcer;
 pub mod character;
 pub mod console;
+pub mod console_names;
 pub mod console_scope;
 pub mod core;
 pub mod cues;

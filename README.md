@@ -108,8 +108,12 @@ Some console commands:
 Names have namespaces, like ids: `cs_source:sv_gravity` (or `css:`),
 `combat_arms:MaxPlayer` (`ca:`), `chimera:quickstart` for ours. Short
 names work too: the current game's first, then Chimera's; when two games
-both have one, the console says so and lists the full names. Old names
-(`chimera_quickstart`, `net_upnp`, ...) still work.
+both have one, the console says so and lists the full names. The engine's
+Source commands and settings are Chimera's, in Source's spelling
+(`chimera:map`, `chimera:fps_max`, `chimera:noclip`); a game's own rules
+and tuned values (`cs_source:mp_roundtime`, `cs_source:sv_gravity`) stay
+its. Old names (`chimera_quickstart`, `net_upnp`, and the former
+`cs_source:fps_max`) still work.
 
 Settings and binds are saved as CS:S's `config.cfg` in your user folder
 (`~/.local/share/chimera/cfg/` on Linux, `%APPDATA%\chimera\cfg\` on
