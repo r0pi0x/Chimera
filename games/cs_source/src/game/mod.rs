@@ -168,10 +168,7 @@
 //! a client demo's (or the probe's) recorded input played again through our
 //! movement and weapons and compared (`resim.rs`, the `demosim` tool).
 
-pub mod ambient;
-pub mod anim;
 pub mod beams;
-pub mod breakables;
 pub mod bsp;
 pub mod decals;
 pub mod demo;
@@ -195,10 +192,7 @@ pub mod objectives;
 pub mod overlays;
 pub mod pain;
 pub mod parts;
-pub mod pcf;
 pub mod player_anim;
-pub mod propdata;
-pub mod props;
 pub mod pushaway;
 pub mod radio;
 pub mod ropes;
@@ -212,8 +206,6 @@ pub mod sound;
 pub mod soundscape;
 pub mod sprites;
 pub mod steam;
-pub mod trails;
-pub mod surfaceprops;
 pub mod view_anim;
 pub mod vgui;
 pub mod view_motion;
@@ -225,7 +217,7 @@ pub use source_formats::{lumps, pak, phy, vhv, vpk, wav};
 
 // Source's content converters lifted into `source_engine` (docs/plans/
 // active/hl2dm.md, section 3), at their old paths.
-pub use source_engine::content::{material, water};
+pub use source_engine::content::{ambient, anim, breakables, material, pcf, propdata, props, surfaceprops, trails, water};
 
 /// The game's id (`cs_source`): defined with the gameplay's condition
 /// for CS:S's match-wide systems (`objectives::plays`), the lowest of its

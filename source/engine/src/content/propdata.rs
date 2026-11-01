@@ -5,7 +5,7 @@
 
 use bevy::prelude::*;
 
-use super::hud::{self, Kv};
+use source_formats::keyvalues::{Kv, parse_res};
 
 /// A model's resolved prop data.
 #[derive(Clone, Debug, PartialEq)]
@@ -126,13 +126,13 @@ fn apply(block: &Kv, templates: &Kv, pd: &mut PropData, depth: u32) {
 
 /// propdata.txt's templates.
 pub fn templates(text: &str) -> Kv {
-    hud::parse(text)
+    parse_res(text)
 }
 
 /// A model's prop data from its key values text, over `templates`
 /// (propdata.txt); None when the model has no `prop_data` block.
 pub fn resolve(model_kv: &str, templates: &Kv) -> Option<PropData> {
-    let kv = hud::parse(model_kv);
+    let kv = parse_res(model_kv);
     let own = find(&kv, "prop_data")?;
     let mut pd = PropData::default();
     apply(own, templates, &mut pd, 0);

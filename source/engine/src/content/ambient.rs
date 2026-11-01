@@ -7,9 +7,9 @@
 use bevy::prelude::*;
 use vbsp::Bsp;
 
-use super::bsp::{METERS_PER_UNIT, to_engine};
+use super::{METERS_PER_UNIT, to_engine};
 
-pub(super) fn lump(bytes: &[u8], index: usize) -> &[u8] {
+pub fn lump(bytes: &[u8], index: usize) -> &[u8] {
     let at = 8 + index * 16;
     let Some(entry) = bytes.get(at..at + 8) else { return &[] };
     let ofs = i32::from_le_bytes(entry[0..4].try_into().unwrap()).max(0) as usize;

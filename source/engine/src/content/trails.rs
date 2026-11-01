@@ -8,7 +8,7 @@
 use bevy::prelude::*;
 use vbsp::Bsp;
 
-use super::{bsp::METERS_PER_UNIT, material::MaterialLoader};
+use super::{METERS_PER_UNIT, material::MaterialLoader};
 use crate::map::{
     MapData,
     emitters::{MapSmokeStack, MapTrail},

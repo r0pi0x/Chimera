@@ -62,7 +62,7 @@ pub fn gib_physics() -> MapGibPhysics {
 
 /// The model paths of each "BreakableModels" list in propdata.txt.
 pub fn breakable_models(text: &str) -> Vec<(String, Vec<String>)> {
-    let kv = super::hud::parse(text);
+    let kv = source_formats::keyvalues::parse_res(text);
     // The file is one block ("PropData.txt" { ... }) holding the lists.
     let root = kv.items().first().map(|(_, v)| v);
     let Some(lists) = root

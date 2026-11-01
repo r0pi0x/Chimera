@@ -15,7 +15,7 @@ use bevy::prelude::*;
 pub use source_formats::pcf::{Element, Value, manifest_files, read_dmx};
 use vbsp::Bsp;
 
-use super::{bsp::METERS_PER_UNIT, material::MaterialLoader, trails::particle_material};
+use super::{METERS_PER_UNIT, material::MaterialLoader, trails::particle_material};
 use crate::map::{
     MapData,
     psys::{Emitter, Init, MapParticleSystems, Op, Pick, PlacedSystem, Render, SystemDef},

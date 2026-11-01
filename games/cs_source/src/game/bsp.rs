@@ -45,8 +45,10 @@ use crate::{
     mount::Mount,
 };
 
-// One Hammer unit is one inch (`source_engine`'s, at its old path).
-pub use source_engine::content::METERS_PER_UNIT;
+// One Hammer unit is one inch, Source's axes to the engine's and the
+// playable box (`source_engine`'s, at their old paths).
+pub use source_engine::content::{Bounds, METERS_PER_UNIT, playable_bounds, to_engine};
+use source_engine::content::parse_vector;
 
 /// The player models by class (`core::PlayerClass` 1-8, CS:S's
 /// `joinclass` numbers): Phoenix Connexion, Elite Crew, Arctic Avengers,
@@ -61,12 +63,6 @@ pub const CLASS_MODELS: [&str; 8] = [
     "models/player/ct_sas.mdl",
     "models/player/ct_gign.mdl",
 ];
-
-/// Source (x forward, y left, z up) to engine (y up, -z forward), in meters.
-/// A rotation, so handedness and winding are preserved.
-pub fn to_engine(v: vbsp::Vector) -> Vec3 {
-    Vec3::new(v.x, v.z, -v.y) * METERS_PER_UNIT
-}
 
 fn to_engine_dir(v: vbsp::Vector) -> Vec3 {
     Vec3::new(v.x, v.z, -v.y).normalize_or_zero()
@@ -409,7 +405,7 @@ fn convert_level_bytes(
         // Hostages' bodies, on maps with hostages (picked by name).
         if data.entities.iter().any(|e| e.classname().eq_ignore_ascii_case("hostage_entity")) {
             for path in super::objectives::HOSTAGE_MODELS {
-                match super::props::load_character(&mut materials, &surfaces, path, None) {
+                match super::props::load_character(super::GAME, &mut materials, &surfaces, path, None) {
                     Ok(mut c) => {
                         c.name = Some(path.to_string());
                         data.kit.characters.push(c);
@@ -590,14 +586,14 @@ fn add_bodies(
             (CLASS_MODELS[0], Some(crate::core::Team(1))),
             (CLASS_MODELS[4], None),
         ] {
-            match super::props::load_character(materials, surfaces, path, team) {
+            match super::props::load_character(super::GAME, materials, surfaces, path, team) {
                 Ok(c) => into.characters.push(c),
                 Err(e) => warnings.push(e),
             }
         }
         for (i, path) in CLASS_MODELS.iter().enumerate().filter(|(i, _)| i % 4 != 0) {
             let team = crate::core::Team(1 + i as u8 / 4);
-            match super::props::load_character(materials, surfaces, path, Some(team)) {
+            match super::props::load_character(super::GAME, materials, surfaces, path, Some(team)) {
                 Ok(mut c) => {
                     c.class = Some(i as u8 + 1);
                     into.characters.push(c);
@@ -621,7 +617,7 @@ fn add_guns(
     let skeleton = match into.characters.first() {
         Some(c) => Some(c.bones.clone()),
         None if !kit.parts() && kit.any_models() => {
-            super::props::load_character(materials, surfaces, CLASS_MODELS[0], None)
+            super::props::load_character(super::GAME, materials, surfaces, CLASS_MODELS[0], None)
                 .ok()
                 .map(|c| c.bones)
         }
@@ -1379,58 +1375,6 @@ pub fn brush_entities(bsp: &Bsp) -> Vec<BrushEntity> {
         });
     }
     out
-}
-
-/// The playable world's bounds (Source units), from the world's
-/// `world_mins`/`world_maxs`. The map compiler computes these without the
-/// 3D skybox, so content outside them (with a margin) is skybox content.
-pub struct Bounds {
-    lo: Vec3,
-    hi: Vec3,
-}
-
-impl Bounds {
-    const MARGIN: f32 = 64.0;
-
-    /// Engine-space box (meters), margin included.
-    pub fn engine(&self) -> (Vec3, Vec3) {
-        let a = to_engine(vbsp::Vector {
-            x: self.lo.x - Self::MARGIN,
-            y: self.lo.y - Self::MARGIN,
-            z: self.lo.z - Self::MARGIN,
-        });
-        let b = to_engine(vbsp::Vector {
-            x: self.hi.x + Self::MARGIN,
-            y: self.hi.y + Self::MARGIN,
-            z: self.hi.z + Self::MARGIN,
-        });
-        (a.min(b), a.max(b))
-    }
-
-    pub fn contains(&self, p: vbsp::Vector) -> bool {
-        self.contains_point(Vec3::new(p.x, p.y, p.z))
-    }
-
-    /// `contains` for a point in Source units held as a `Vec3`.
-    pub fn contains_point(&self, p: Vec3) -> bool {
-        p.cmpge(self.lo - Self::MARGIN).all() && p.cmple(self.hi + Self::MARGIN).all()
-    }
-}
-
-pub fn playable_bounds(bsp: &Bsp) -> Option<Bounds> {
-    let world = bsp
-        .entities
-        .iter()
-        .find(|e| e.prop("classname") == Some("worldspawn"))?;
-    let v = |key: &'static str| world.prop(key).and_then(parse_vector).map(|v| Vec3::new(v.x, v.y, v.z));
-    // Only meaningful when there is a 3D skybox.
-    bsp.entities
-        .iter()
-        .find(|e| e.prop("classname") == Some("sky_camera"))?;
-    Some(Bounds {
-        lo: v("world_mins")?,
-        hi: v("world_maxs")?,
-    })
 }
 
 fn sky_camera(bsp: &Bsp) -> Option<crate::map::MapSkyCamera> {
@@ -2560,12 +2504,6 @@ mod brush_tests {
         assert!(has(Vec3::new(136.0, 176.0, 80.0)), "{corners:?}");
         assert!(has(Vec3::new(136.0, 80.0, 80.0)), "{corners:?}");
     }
-}
-
-fn parse_vector(s: &str) -> Option<vbsp::Vector> {
-    let mut it = s.split_whitespace().map(|p| p.parse::<f32>());
-    let (x, y, z) = (it.next()?.ok()?, it.next()?.ok()?, it.next()?.ok()?);
-    Some(vbsp::Vector { x, y, z })
 }
 
 /// The cubemap lump's sample origins (lump 42, 16 bytes each: three i32

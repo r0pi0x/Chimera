@@ -177,7 +177,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   game's search path as a mount, from its `gameinfo.txt` or the game's
   own list), `maps` (the maps an install holds, its map cycle, map
   import) and `content` (Source's files converted into Chimera's types:
-  materials so far, lifts S2-S4). It uses the engine's crates and `source_formats`, never the
+  materials and models so far, lifts S2-S4). It uses the engine's crates and `source_formats`, never the
   presentation, `mashup`, a game or an app (checked); CS:S and HL2:DM
   use it, Combat Arms never. `cargo test -p source_engine --features
   dev` tests it alone.
