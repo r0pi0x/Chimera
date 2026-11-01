@@ -1,7 +1,7 @@
 //! Cheat commands in a network game (Source's FCVAR_CHEAT commands;
 //! `console::CHEATS`): a network client's `noclip`, `god`, `setpos`, ...
 //! go to its server (`ClientCommand`, the command's name in full:
-//! `cs_source:noclip`), which runs them for that client's
+//! `chimera:noclip`), which runs them for that client's
 //! player (`console::CommandPlayer`) when its own `sv_cheats` is 1, and
 //! sends back what they printed (`ConsoleText`): Source's way, where the
 //! client sends cheats on and the server decides. A player's movement

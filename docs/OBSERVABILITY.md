@@ -349,7 +349,9 @@ Only `Reflect`-registered types are visible; register new core components in
 
 - Names have namespaces (docs/plans/active/console-namespaces.md):
   `cs_source:sv_gravity` (alias `css:`), `combat_arms:MaxPlayer`
-  (`ca:`), `chimera:noblock`. Short names still work: they resolve in
+  (`ca:`), `chimera:noblock`; the engine's Source names are `chimera:`
+  too (`chimera:map`, `chimera:fps_max`; the table is
+  `chimera_core::console_names`; `cs_source:fps_max` still works). Short names still work: they resolve in
   the scope's game, then `chimera`, then wherever only one game has
   them; `scope` says which game (`scope ca` pins it, `scope auto`
   follows the game played: in the party apps, the gun in hand). An

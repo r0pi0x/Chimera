@@ -22,7 +22,8 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("query_cache", &[]),
     // Values worked out once and kept by their owner (`Memos`): std only.
     ("memo", &[]),
-    ("console", &["core", "env", "query_cache"]),
+    ("console", &["core", "env", "query_cache", "console_names"]),
+    ("console_names", &[]),
     // The console's scope (the game played: the local player's identity,
     // else the default game) and the games' console namespaces.
     ("console_scope", &["core", "console", "game_registry", "slots"]),

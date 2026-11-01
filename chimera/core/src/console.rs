@@ -14,10 +14,14 @@
 //! Namespaces (docs/plans/active/console-namespaces.md): every cvar and
 //! command has a full name `<namespace>:<name>` (`cs_source:sv_cheats`,
 //! `combat_arms:MaxPlayer`, `chimera:noblock`), which always works. A
-//! name registered without one is Source's, the names the engine
-//! implements, which are CS:S's (`SOURCE_NAMESPACE`); Chimera's own are
-//! `chimera:` (`CHIMERA`: the console's language, our tools and general
-//! settings). A game's `GameInfo::console_namespaces` names its canonical
+//! name registered without one is Source's: the engine's Source names
+//! (maps, connection, video, audio, network, input, demos, cheats:
+//! `console_names::ENGINE_NAMES`, one table) are `chimera:` with the
+//! console's language, our tools and general settings (`CHIMERA`), and a
+//! game's own rules and tuned values (`mp_*`, `sv_gravity`, the buy menu)
+//! are CS:S's (`SOURCE_NAMESPACE`) until another Source game registers
+//! its own; the full names saved before (`cs_source:fps_max`) still work
+//! (`Console::resolve`). A game's `GameInfo::console_namespaces` names its canonical
 //! namespace and its aliases (`css`, `ca`: `Console::add_namespace`). A
 //! short name resolves in the scope's game, then `chimera`, then wherever
 //! it is the only one (`Console::resolve`); several left is an error with
@@ -115,14 +119,14 @@ pub const SERVER_NAMES: &[&str] = &[
     "chimera:noblock",
     "chimera:announcer",
     "chimera:party_even_footsteps",
-    "cs_source:decalfrequency",
+    "chimera:decalfrequency",
     "cs_source:spec_freeze_time",
     "cs_source:spec_freeze_traveltime",
 ];
 
 /// The player's own settings with a server prefix (Source's client cvars:
 /// `mp_decals`, Multiplayer > Advanced's decal limit), by full name.
-pub const LOCAL_NAMES: &[&str] = &["cs_source:mp_decals"];
+pub const LOCAL_NAMES: &[&str] = &["chimera:mp_decals"];
 
 impl CvarScope {
     /// The scope of a cvar by its full name (`ns:name`; a bare name is
@@ -133,7 +137,7 @@ impl CvarScope {
     pub fn of(full: &str) -> Self {
         let full = full.to_lowercase();
         let (ns, name) = split(&full);
-        let full = format!("{}:{name}", ns.unwrap_or(SOURCE_NAMESPACE));
+        let full = format!("{}:{name}", source_home(ns, name));
         Self::by_rules(name, |table| table.contains(&full.as_str()))
     }
 
@@ -241,10 +245,30 @@ pub struct Console {
 /// general settings (`chimera:noblock`).
 pub const CHIMERA: &str = "chimera";
 
-/// The namespace of a name registered without one: Source's names, which
-/// the engine implements (its movement, network, video and audio
-/// settings, `sv_cheats`, `noclip`), are CS:S's, the first game.
+/// The namespace of a Source name that is a game's own (its rules, the
+/// movement values it tunes: `sv_gravity`, `mp_roundtime`, the buy menu),
+/// registered without one: CS:S's, the first Source game. Engine names
+/// (`map`, `fps_max`, `noclip`) are `chimera:` (`console_names`).
 pub const SOURCE_NAMESPACE: &str = "cs_source";
+
+/// The namespace a name has: its own when it says one, but CS:S's
+/// (`cs_source`, or none) for a Source engine name (`console_names::ENGINE_NAMES`)
+/// is `chimera`, where the engine's names moved; a bare name goes to
+/// `console_names::home`. Namespace aliases (`css`) are not followed here
+/// (`Console::canonical_full` does).
+pub fn source_home<'a>(ns: Option<&'a str>, short: &str) -> &'a str {
+    match ns {
+        None => home(short),
+        Some(ns) if ns == SOURCE_NAMESPACE => home(short),
+        Some(ns) => ns,
+    }
+}
+
+/// The namespace of a Source name that has none: `chimera` for an engine
+/// name (`console_names::ENGINE_NAMES`), else CS:S's (`SOURCE_NAMESPACE`).
+fn home(short: &str) -> &'static str {
+    if crate::console_names::is_engine(short) { CHIMERA } else { SOURCE_NAMESPACE }
+}
 
 /// Old prefixes of our own names (before namespaces; `mashup_` before the
 /// rename to Chimera): `chimera_noblock` and `mashup_noblock` are
@@ -401,7 +425,18 @@ impl Console {
     pub fn canonical_full(&self, name: &str) -> String {
         let lower = name.to_lowercase();
         let (ns, short) = split(&lower);
-        format!("{}:{short}", self.canonical_namespace(ns.unwrap_or(SOURCE_NAMESPACE)))
+        format!("{}:{short}", self.home_of(ns, short))
+    }
+
+    /// The canonical namespace of `short` typed with `ns` (None: bare):
+    /// the one it names, but Source's names go where the table sends them
+    /// (`source_home`: `cs_source:fps_max` is `chimera:fps_max`).
+    fn home_of(&self, ns: Option<&str>, short: &str) -> String {
+        let source = self.canonical_namespace(SOURCE_NAMESPACE);
+        match ns.map(|n| self.canonical_namespace(n)) {
+            Some(ns) if ns != source => ns,
+            _ => self.canonical_namespace(home(short)),
+        }
     }
 
     /// The full name (cased as registered) a cvar or command registered
@@ -409,7 +444,7 @@ impl Console {
     fn registered_name(&self, name: &str) -> String {
         let lower = name.to_lowercase();
         if let (Some(ns), short) = split(name) {
-            return format!("{}:{short}", self.canonical_namespace(ns));
+            return format!("{}:{short}", self.home_of(Some(ns), short));
         }
         if let Some((_, new)) = OLD_NAMES.iter().find(|(old, _)| *old == lower) {
             let (ns, short) = split(new);
@@ -420,7 +455,7 @@ impl Console {
                 return format!("{}:{}", self.canonical_namespace(ns), &name[prefix.len()..]);
             }
         }
-        format!("{}:{name}", self.canonical_namespace(SOURCE_NAMESPACE))
+        format!("{}:{name}", self.home_of(None, name))
     }
 
     fn known(&self, full: &str) -> bool {
@@ -456,7 +491,7 @@ impl Console {
     pub fn resolve_in(&self, typed: &str, scope: Option<&str>) -> Resolved {
         let lower = typed.to_lowercase();
         if let (Some(ns), short) = split(&lower) {
-            let full = format!("{}:{short}", self.canonical_namespace(ns));
+            let full = format!("{}:{short}", self.home_of(Some(ns), short));
             return if self.known(&full) {
                 Resolved::Found(full)
             } else {
@@ -1136,13 +1171,13 @@ where
 /// or client) only with `sv_cheats 1` on the server (replicated). Single
 /// player always has them.
 pub const CHEATS: &[&str] = &[
-    "cs_source:noclip",
-    "cs_source:god",
-    "cs_source:setpos",
-    "cs_source:setang",
-    "cs_source:give",
-    "cs_source:impulse",
-    "cs_source:ent_fire",
+    "chimera:noclip",
+    "chimera:god",
+    "chimera:setpos",
+    "chimera:setang",
+    "chimera:give",
+    "chimera:impulse",
+    "chimera:ent_fire",
     "chimera:hurtme",
     "chimera:sethealth",
     "chimera:setarmor",
@@ -1153,7 +1188,7 @@ pub const CHEATS: &[&str] = &[
 
 /// Commands a network client sends to its server to act on its player,
 /// with no `sv_cheats` needed (`net::cheats`): CS:S's `kill`.
-pub const PLAYER_COMMANDS: &[&str] = &["cs_source:kill"];
+pub const PLAYER_COMMANDS: &[&str] = &["chimera:kill"];
 
 /// Impulses that aren't cheats (Source's player impulses): `impulse 100`
 /// (the flashlight) and `impulse 201` (the spray). Every other impulse
@@ -1173,7 +1208,7 @@ pub fn in_table(console: &Console, table: &[&str], name: &str) -> bool {
 /// `PLAYER_IMPULSES`).
 pub fn is_cheat(console: &Console, name: &str, args: &[String]) -> bool {
     in_table(console, CHEATS, name)
-        && !(in_table(console, &["cs_source:impulse"], name)
+        && !(in_table(console, &["chimera:impulse"], name)
             && args.first().is_some_and(|a| PLAYER_IMPULSES.contains(&a.trim())))
 }
 
@@ -1189,10 +1224,10 @@ pub const SERVER_COMMANDS: &[&str] = &[
     "cs_source:bot_goto",
     "cs_source:bot_freeze",
     "cs_source:bot_unfreeze",
-    "cs_source:changelevel",
+    "chimera:changelevel",
     "cs_source:mp_restartgame",
-    "cs_source:kick",
-    "cs_source:kickid",
+    "chimera:kick",
+    "chimera:kickid",
 ];
 
 /// `sv_cheats`.
@@ -2007,6 +2042,43 @@ pub(crate) mod tests {
         assert_eq!(c.layers["cs_source"]["d"], "cs_source:x 2");
     }
 
+    /// The engine's Source names are `chimera:`; the full names saved
+    /// before the move (`cs_source:fps_max`, `css:fps_max`) still work, in
+    /// configs, binds and tables, while game-tuned names stay CS:S's.
+    #[test]
+    fn engine_names_moved_to_chimera_and_the_old_full_names_still_work() {
+        #[derive(Resource, Default)]
+        struct W([u8; 3]);
+        let mut app = namespaced();
+        app.init_resource::<W>();
+        resource_cvar::<W, u8>(&mut app, "fps_max", "engine", |v| &mut v.0[0]);
+        resource_cvar::<W, u8>(&mut app, "sv_gravity", "tuned per game", |v| &mut v.0[1]);
+        resource_cvar::<W, u8>(&mut app, "cs_source:r_shadows", "engine, said the old way", |v| &mut v.0[2]);
+        assert_eq!(found(&app, "fps_max"), is("chimera:fps_max"));
+        assert_eq!(found(&app, "sv_gravity"), is("cs_source:sv_gravity"));
+        assert_eq!(found(&app, "r_shadows"), is("chimera:r_shadows"));
+        // The old full names are aliases (the namespace's alias too).
+        assert_eq!(found(&app, "cs_source:fps_max"), is("chimera:fps_max"));
+        assert_eq!(found(&app, "CSS:FPS_MAX"), is("chimera:fps_max"));
+        assert_eq!(found(&app, "cs_source:sv_gravity"), is("cs_source:sv_gravity"));
+        assert_eq!(found(&app, "chimera:sv_gravity"), Resolved::Unknown, "game-tuned stays per game");
+        // Short names find the engine's from any scope.
+        run(&mut app, "scope ca");
+        assert_eq!(found(&app, "fps_max"), is("chimera:fps_max"));
+        // A config written before the move sets the engine's value.
+        run(&mut app, "cs_source:fps_max 144; css:sv_gravity 9");
+        let c = app.world().resource::<Console>();
+        assert_eq!(c.cvar("chimera:fps_max").unwrap().name, "chimera:fps_max");
+        assert!(run(&mut app, "chimera:fps_max")[0].contains("\"144\""));
+        // Tables of full names take both spellings.
+        let c = app.world().resource::<Console>();
+        assert!(in_table(c, &["chimera:fps_max"], "cs_source:fps_max"));
+        assert!(in_table(c, &["cs_source:fps_max"], "chimera:fps_max"));
+        // A saved bind keeps working and is written with the new name.
+        assert_eq!(c.qualify_line("cs_source:fps_max 60"), "fps_max 60");
+        assert_eq!(c.cvar_scope("cs_source:sv_cheats"), CvarScope::Replicated);
+    }
+
     #[test]
     fn a_game_alias_can_become_canonical() {
         let mut app = namespaced();
@@ -2019,7 +2091,10 @@ pub(crate) mod tests {
         assert_eq!(c.cvar("sv_speed").unwrap().name, "css:sv_speed");
         assert_eq!(c.cvar("sv_cheats").unwrap().scope, CvarScope::Replicated);
         assert!(in_table(c, CHEATS, "css:noclip") || c.command("noclip").is_none());
-        assert_eq!(c.canonical_full("cs_source:kill"), "css:kill");
+        assert_eq!(c.canonical_full("cs_source:buy"), "css:buy");
+        // Engine names stay Chimera's whichever way the old namespace is spelled.
+        assert_eq!(c.canonical_full("css:kill"), "chimera:kill");
+        assert_eq!(c.canonical_full("kill"), "chimera:kill");
     }
 
     #[test]
