@@ -8,8 +8,10 @@ crate, DESIGN.md "ECS style" (what landed: step 1 below). Steps 2
 per-tick hooks as systems), 5 (death and spawn pollers), 6 (the
 minigame runtime's per-tick work), 7 (the HUD's status as a component),
 8 (rules modules' joins and armings as events), 9 (round and match
-lifecycle events) and 10 done 2026-10-30: the ECS cleanup is complete
-apart from the items under "Later, in this order" (section 4).
+lifecycle events) and 10 done 2026-10-30; "Later" items 13 (install
+memos out of statics, loaders get the app's context) and 11 (measured:
+no raw query worth a kept state) done 2026-11-01. Left: item 12,
+opportunistic (section 4).
 The roadmap item's other parts (docs/backlog.md, "First: ECS cleanup
 where new games plug in") follow section 4's order. Goal (user, 2026-10-29): outcomes, not a rewrite. The
 next games (Half-Life 2: Deathmatch, Team Fortress 2, later Call of
@@ -975,10 +977,33 @@ gone. Test: `each_players_status_lines_follow_the_ladder_in_a_component`;
     `place`, Combat Arms' `rules/flow.rs` helpers, `supplies`,
     `mercs::expire`. Performance only. Do it only where `profsum` shows
     a gain (roadmap step 4).
+    **Measured 2026-11-01, nothing converted** (`tools/perf-profile.sh`
+    and `profsum`, `profiling` build with frame pointers, 499 Hz, 20 s
+    from 40 s, load 2-7 on 12 threads). CS:S (`cs_source --map
+    cs_source:de_dust2 +bot_quota 8`): tick p50 0.91 ms, 3.09 M
+    instructions, 1,706 archetypes; `bomb::arm` 0.0006 ms a frame, the
+    movers' `place` and the round writers no sample (under 0.0003).
+    Combat Arms (`lucker_party --map combat_arms:warehouse +minigame
+    originals:gun_game_dust2 +MaxPlayer 4`): tick p50 1.66 ms, 6.46 M
+    instructions, 2,503 archetypes; `perks::supplies` 0.0015 ms a frame,
+    `music::gather` 0.0022, the rules flow's helpers, `mercs::expire`,
+    the modes' updates no sample. The party's dedicated server on the
+    same map with one client joined: `capture_own_states` 2.3 % and
+    `canonical_positions` 1.3 % of its tick, `objects::net::write` 1.0 %,
+    but none of their samples is in `QueryState::new` or
+    `update_archetypes` (the work is the encoding itself), so a kept
+    state gains nothing; `write_match`, `apply_protection` no sample.
+    What does cost is the executor's own `update_archetypes_unsafe_
+    world_cell` for declared queries (0.26 ms a frame on CS:S, 0.37 on
+    Combat Arms, 19.5 % of the server's tick), which grows with the
+    archetype count, not with the raw sites: a lead for the archetype
+    count (docs/performance.md, "Map changes that slowed the tick"),
+    not for this item.
 12. Combat Arms' per-tick rules and objects (`publish`,
     `update_team_counts`, `objects::frame`/`gather`/`apply`,
     `perk_tick`, `ask_for_respawns`) as normal systems when a feature
     touches them (E3's "opportunistic" rule).
+    Still open: item 13 didn't touch them (2026-11-01).
 13. Install memos into resources or assets (9 D statics, E2's left part):
     only after the map loaders receive the app's context (`MapLoader`
     is a plain `fn` today, `chimera/world/src/map/sources.rs:163`).
