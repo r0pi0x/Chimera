@@ -1,0 +1,57 @@
+[package]
+name = "hl2dm_app"
+version = "0.1.0"
+description = "The Half-Life 2: Deathmatch app: its game binary on Chimera (M1: its maps and the greybox with stand-in movement and gun)"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# No doc tests (none written): skips a rustdoc pass on every test run.
+[lib]
+doctest = false
+
+# The app composes Chimera and HL2:DM: the simulation, the presentation,
+# the client shell and the network. Never another game's crates or
+# `mashup` (checks/tests/it/architecture.rs).
+[dependencies]
+chimera_core.workspace = true
+chimera_world.workspace = true
+chimera_sim.workspace = true
+chimera_net.workspace = true
+chimera_present.workspace = true
+chimera_client.workspace = true
+hl2dm.workspace = true
+avian3d.workspace = true
+bevy.workspace = true
+workspace-hack.workspace = true
+
+# The game.
+[[bin]]
+name = "hl2dm"
+path = "src/main.rs"
+test = false
+
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[features]
+# Faster iteration: link Bevy as a dynamic library, serve the remote
+# protocol. `cargo run --features dev --bin hl2dm`. Never for release
+# builds.
+dev = [
+    "chimera_core/dev",
+    "chimera_world/dev",
+    "chimera_sim/dev",
+    "chimera_net/dev",
+    "chimera_present/dev",
+    "chimera_client/dev",
+    "hl2dm/dev",
+]
+
+# Profiling (docs/performance.md, "See a frame yourself"), as the other
+# apps'.
+trace = ["chimera_core/trace", "chimera_client/trace"]
+profile = ["chimera_core/profile", "chimera_client/profile"]
+tracy = ["chimera_core/tracy", "chimera_client/tracy"]

@@ -1,7 +1,7 @@
 [package]
 name = "cs_source_tools"
 version = "0.1.0"
-description = "CS:S's tools: comparing with the real game (refcmp, movecmp, the HUD), the map sweep, the perf gate's scenarios"
+description = "CS:S's tools: comparing with the real game (refcmp, movecmp, the HUD), the perf gate's scenarios"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
@@ -54,11 +54,6 @@ required-features = ["tools"]
 # (`cs_source::resim`).
 [[bin]]
 name = "demosim"
-test = false
-required-features = ["tools"]
-
-[[bin]]
-name = "mapsweep"
 test = false
 required-features = ["tools"]
 

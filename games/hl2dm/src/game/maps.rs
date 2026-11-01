@@ -73,6 +73,17 @@ pub fn load_level_with(mount: &crate::mount::Mount, name: &str, options: &MapLoa
     bsp::load_level_with(&HL2DM, mount, name, options)
 }
 
+/// Map `name` from its file's `bytes` (a copy downloaded from a server),
+/// its content from `mount`, through the converted-map cache.
+pub fn load_level_bytes_with(
+    mount: &crate::mount::Mount,
+    name: &str,
+    bytes: Vec<u8>,
+    options: &MapLoadOptions,
+) -> Result<MapData, String> {
+    bsp::load_level_bytes_with(&HL2DM, mount, name, bytes, options)
+}
+
 fn no_kit(_: &mut Kit) {}
 
 fn no_extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'static str]) {

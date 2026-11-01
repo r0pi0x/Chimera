@@ -34,6 +34,8 @@ members = [
     "apps/cs_source_server",
     "apps/combat_arms",
     "apps/combat_arms_server",
+    "apps/hl2dm",
+    "apps/hl2dm_server",
     "apps/mashup_demo",
     "apps/party_kit",
     "apps/lucker_party",
@@ -69,6 +71,8 @@ default-members = [
     "apps/cs_source_server",
     "apps/combat_arms",
     "apps/combat_arms_server",
+    "apps/hl2dm",
+    "apps/hl2dm_server",
     "apps/mashup_demo",
     "apps/party_kit",
     "apps/lucker_party",
@@ -281,6 +285,13 @@ test = false
 # tool, `--features tools`; never in releases.
 [[bin]]
 name = "chimera_pack"
+test = false
+required-features = ["tools"]
+
+# The map sweep (docs/OBSERVABILITY.md, "Sweeping every cached map"): a
+# host tool over CS:S's and HL2:DM's maps, `--features tools`.
+[[bin]]
+name = "mapsweep"
 test = false
 required-features = ["tools"]
 

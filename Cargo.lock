@@ -4453,6 +4453,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "hl2dm_app"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "chimera_client",
+ "chimera_core",
+ "chimera_net",
+ "chimera_present",
+ "chimera_sim",
+ "chimera_world",
+ "hl2dm",
+ "workspace-hack",
+]
+
+[[package]]
+name = "hl2dm_server"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "chimera_core",
+ "chimera_net",
+ "chimera_sim",
+ "chimera_world",
+ "hl2dm",
+ "workspace-hack",
+]
+
+[[package]]
 name = "hound"
 version = "3.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

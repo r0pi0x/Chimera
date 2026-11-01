@@ -1813,8 +1813,9 @@ sizes and times.
 
 ### Sweeping every cached map (mapsweep)
 
-`mapsweep` loads every map in Chimera's content cache
-(`~/.local/share/chimera/content/cs_source/maps/`) headless, each under
+`mapsweep` (src/bin/mapsweep.rs) loads every map in Chimera's content
+cache (`~/.local/share/chimera/content/cs_source/maps/`; with `--game
+hl2dm`, HL2:DM's) headless, each under
 `catch_unwind`, runs its map logic for a few seconds, and writes
 `report.md` (problems ranked by how many maps they affect, then one row
 per map), `report.csv` and `warnings.txt` (every warning and logic line)
@@ -1833,6 +1834,7 @@ cargo run --features dev,tools --bin mapsweep -- --filter surf_,kz_ # some of th
 cargo run --features dev,tools --bin mapsweep -- --stock            # the install's own maps
 cargo run --features dev,tools --bin mapsweep -- --shots target/playtest/cs_source --filter mg_
 cargo run --features dev,tools --bin mapsweep -- --audit           # plus the map logic audit
+cargo run --features dev,tools --bin mapsweep -- --game hl2dm --stock   # HL2:DM's stock maps
 ```
 
 `--audit` adds `audit.md` (ranked by maps affected) and `audit.txt` (per

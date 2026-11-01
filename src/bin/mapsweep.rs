@@ -1,5 +1,8 @@
 //! Development tool: load every map in Chimera's content cache headless and
-//! report what goes wrong (docs/plans/active/community-maps.md).
+//! report what goes wrong (docs/plans/active/community-maps.md), for a
+//! Source game: CS:S by default, HL2:DM with `--game hl2dm`
+//! (docs/plans/active/hl2dm.md, M1). A host tool of the sandbox crate, as
+//! `dump` and `chimera_pack` are: it links both games.
 //!
 //! Per map: load time, an error or panic, load warnings by kind, entity
 //! classes nothing handles, what the map logic logs in its first seconds
@@ -24,20 +27,22 @@ use std::{
 };
 
 use cs_source_app::{
+    game_registry::GameInfo,
     games::{self, cs_source},
     logic::{
         LogicWorld, NoCollision,
         audit::{MapAudit, audit_map},
         classes::Class,
     },
-    map::MapData,
-    mount::config::{LocalConfig, content_dir},
+    map::{MapData, MapLoadOptions},
+    mount::config::content_dir,
 };
 
 const USAGE: &str = "\
 usage: mapsweep [options]
+  --game <id>        the Source game whose maps to sweep: cs_source (default) or hl2dm
   --filter <text>    only maps whose name contains <text> (several: comma-separated)
-  --stock            the install's own maps (cstrike/maps) instead of the content cache
+  --stock            the install's own maps (cstrike/maps, hl2mp/maps) instead of the content cache
   --no-map-cache     convert every map (the converted-map cache off: load times as converted)
   --out <dir>        report folder (default: target/mapsweep)
   --secs <n>         seconds of map logic to run per map (default 10)
@@ -53,15 +58,58 @@ usage: mapsweep [options]
                      these inputs (repeatable) and print the queue, connections and logic log
                      every half second for --secs seconds (run-away map logic)";
 
+/// A Source game the sweep loads maps of.
+struct Game {
+    info: &'static GameInfo,
+    /// Map `name` from the install, as the game's app loads it.
+    load: fn(&str) -> Result<MapData, String>,
+    /// The map's sound entries nothing resolves (CS:S's sound scripts).
+    missing_sounds: fn(&MapData) -> Vec<String>,
+    /// Its own entity classes handled outside the logic layer.
+    handled: &'static [&'static str],
+}
+
+const GAMES: [Game; 2] = [
+    Game {
+        info: &cs_source::INFO,
+        load: |name| games::load_map(&format!("{}:{name}", cs_source::GAME)),
+        missing_sounds,
+        handled: &[
+            "info_player_terrorist",
+            "info_player_counterterrorist",
+            // CS:S spawns players only at the team spawns.
+            "info_player_start",
+            "info_bomb_target",
+            "info_hostage_rescue",
+            "hostage_entity",
+            "func_bomb_target",
+            "func_buyzone",
+            "func_hostage_rescue",
+            "func_escapezone",
+            "func_vip_safetyzone",
+            "func_no_defuse",
+        ],
+    },
+    Game {
+        info: &hl2dm::game::INFO,
+        load: |name| hl2dm::game::maps::load_installed_map(name, &MapLoadOptions::default()),
+        // HL2:DM's maps carry no sound entries yet (M1: lift S5 is M3).
+        missing_sounds: |_| Vec::new(),
+        handled: &[
+            "info_player_deathmatch",
+            // Team spawns and the fallback: H6's spawn choice (M7).
+            "info_player_combine",
+            "info_player_rebel",
+            "info_player_start",
+        ],
+    },
+];
+
 /// Entity classes the game or the map loader handles outside the logic
 /// layer (drawn, volumes, objectives, lighting and look, sound), or that
 /// do nothing in a map at run time (hints for tools and the compiler).
 const HANDLED_ELSEWHERE: &[&str] = &[
     "worldspawn",
-    "info_player_terrorist",
-    "info_player_counterterrorist",
-    // CS:S spawns players only at the team spawns.
-    "info_player_start",
     // Ladders come from the brushes' ladder contents.
     "info_ladder",
     "info_target",
@@ -74,15 +122,6 @@ const HANDLED_ELSEWHERE: &[&str] = &[
     "info_overlay_accessor",
     "infodecal",
     "info_map_parameters",
-    "info_bomb_target",
-    "info_hostage_rescue",
-    "hostage_entity",
-    "func_bomb_target",
-    "func_buyzone",
-    "func_hostage_rescue",
-    "func_escapezone",
-    "func_vip_safetyzone",
-    "func_no_defuse",
     "func_illusionary",
     "func_wall",
     "func_detail",
@@ -113,6 +152,7 @@ const HANDLED_ELSEWHERE: &[&str] = &[
 ];
 
 struct Args {
+    game: &'static Game,
     filter: Option<String>,
     out: PathBuf,
     secs: f32,
@@ -127,6 +167,7 @@ struct Args {
 
 fn parse() -> Result<Args, String> {
     let mut a = Args {
+        game: &GAMES[0],
         filter: None,
         out: PathBuf::from("target/mapsweep"),
         secs: 10.0,
@@ -140,6 +181,13 @@ fn parse() -> Result<Args, String> {
     while let Some(flag) = it.next() {
         let mut value = || it.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
+            "--game" => {
+                let id = value()?;
+                a.game = GAMES
+                    .iter()
+                    .find(|g| g.info.id == id || g.info.namespaces().contains(&id.as_str()))
+                    .ok_or(format!("--game {id}: cs_source or hl2dm"))?;
+            }
             "--filter" => a.filter = Some(value()?.to_lowercase()),
             "--out" => a.out = PathBuf::from(value()?),
             "--secs" => a.secs = value()?.parse().map_err(|_| "--secs: not a number")?,
@@ -286,14 +334,14 @@ fn missing_sounds(map: &MapData) -> Vec<String> {
         .collect()
 }
 
-fn sweep_map(name: &str, path: &Path, secs: f32, audit: bool) -> Row {
+fn sweep_map(game: &Game, name: &str, path: &Path, secs: f32, audit: bool) -> Row {
     let mut row = Row {
         name: name.to_string(),
         bsp_version: bsp_version(path),
         ..Row::default()
     };
     let t0 = Instant::now();
-    let loaded = catch_unwind(|| games::load_map(&format!("{}:{name}", cs_source::GAME)));
+    let loaded = catch_unwind(|| (game.load)(name));
     row.load_s = t0.elapsed().as_secs_f32();
     let map = match loaded {
         Ok(Ok(map)) => map,
@@ -310,7 +358,7 @@ fn sweep_map(name: &str, path: &Path, secs: f32, audit: bool) -> Row {
     row.slow_stages = map.load_times.iter().copied().filter(|s| s.1 >= 0.5).collect();
     row.slow_stages.sort_by(|a, b| b.1.total_cmp(&a.1));
     row.warnings = map.warnings.clone();
-    row.warnings.extend(missing_sounds(&map));
+    row.warnings.extend((game.missing_sounds)(&map));
     // Decoded textures whose pixels don't match their size (drawing code
     // indexes by size).
     for t in &map.textures {
@@ -360,6 +408,7 @@ fn sweep_map(name: &str, path: &Path, secs: f32, audit: bool) -> Row {
                 // Placed weapons: the weapon layer (`weapon::equip`).
                 // Known gaps the logic notes (`classes::noted_class`).
                 if HANDLED_ELSEWHERE.contains(&class.as_str())
+                    || game.handled.contains(&class.as_str())
                     || class.starts_with("weapon_")
                     || cs_source_app::logic::classes::noted_class(&class).is_some()
                 {
@@ -402,13 +451,13 @@ fn panic_text(p: &Box<dyn std::any::Any + Send>) -> String {
 
 /// Run a Chimera build on the map: a screenshot from the first spawn and
 /// the perf log's frame-time lines.
-fn shoot(exe: &Path, name: &str, out: &Path, frames: u32) -> (Option<PathBuf>, Option<String>) {
+fn shoot(game: &Game, exe: &Path, name: &str, out: &Path, frames: u32) -> (Option<PathBuf>, Option<String>) {
     let shot = out.join("shots").join(format!("{name}.png"));
     let _ = fs::create_dir_all(shot.parent().unwrap());
     let result = Command::new(exe)
         .args([
             "--map",
-            &format!("{}:{name}", cs_source::GAME),
+            &format!("{}:{name}", game.info.id),
             "--window",
             "1280x720",
             "--frames",
@@ -447,16 +496,14 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let game = args.game;
     let dir = if args.stock {
-        LocalConfig::load()
-            .ok()
-            .and_then(|c| c.game_path_in(cs_source::GAME, cs_source::INFO.steam.as_ref()))
-            .map(|p| p.join("cstrike").join("maps"))
+        game.info.install().map(|p| p.join(game.info.content_dir).join("maps"))
     } else {
-        content_dir(cs_source::GAME).map(|d| d.join("maps"))
+        content_dir(game.info.id).map(|d| d.join("maps"))
     };
     let Some(dir) = dir else {
-        eprintln!("no content folder (or, with --stock, no CS:S install)");
+        eprintln!("no content folder (or, with --stock, no {} install)", game.info.short_name);
         return ExitCode::FAILURE;
     };
     let mut maps: Vec<(String, PathBuf)> = fs::read_dir(&dir)
@@ -478,7 +525,7 @@ fn main() -> ExitCode {
     if !args.fire.is_empty() {
         for (name, _) in &maps {
             eprintln!("== {name}");
-            match games::load_map(&format!("{}:{name}", cs_source::GAME)) {
+            match (game.load)(name) {
                 Ok(map) => {
                     for line in cs_source_app::logic::audit::trace_fire(&map.entities, &args.fire, args.secs) {
                         eprintln!("{line}");
@@ -496,11 +543,11 @@ fn main() -> ExitCode {
     let mut rows = Vec::new();
     for (i, (name, path)) in maps.iter().enumerate() {
         eprintln!("[{}/{}] {name}", i + 1, maps.len());
-        let mut row = sweep_map(name, path, args.secs, args.audit);
+        let mut row = sweep_map(game, name, path, args.secs, args.audit);
         if let Some(exe) = &args.shots
             && row.status == "ok"
         {
-            (row.shot, row.frame_ms) = shoot(exe, name, &args.out, args.frames);
+            (row.shot, row.frame_ms) = shoot(game, exe, name, &args.out, args.frames);
         }
         eprintln!(
             "  {} in {:.1}s, {} warnings, {} unsupported classes",
@@ -684,7 +731,8 @@ fn source_literals() -> BTreeSet<String> {
     }
     let mut out = BTreeSet::new();
     // Every crate's sources (Source's logic classes are source/logic's).
-    let repo = cs_source_tools::repo_root();
+    // The sandbox crate sits at the repository's root.
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     for dir in ["chimera", "source", "games", "apps", "src"] {
         walk(&repo.join(dir), &mut out);
     }
