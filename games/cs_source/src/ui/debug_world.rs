@@ -28,13 +28,13 @@ impl Plugin for WorldDebugPlugin {
         );
         resource_cvar::<WorldViews, u8>(
             app,
-            "chimera_drawsound",
+            "chimera:drawsound",
             "1: sphere each map sound's (ambient_generic, env_soundscape) audible radius near you; 2: all of them.",
             |d| &mut d.sound,
         );
         resource_cvar::<WorldViews, u8>(
             app,
-            "chimera_drawtriggers",
+            "chimera:drawtriggers",
             "1: outline the map's brush triggers near you, coloured by kind; 2: all of them.",
             |d| &mut d.triggers,
         );

@@ -278,6 +278,38 @@ list and ratchets each crate's exclusive systems in per-tick schedules;
 `checks/tests/it/determinism.rs` checks every simulation crate, a new
 one from its first commit.
 
+### Console names have namespaces
+
+With several games in one app, flat console names collide. Every cvar
+and command has a full name like our ids, `<namespace>:<name>`:
+`cs_source:sv_cheats`, `combat_arms:MaxPlayer`, `chimera:noblock`; the
+full name always works (user decision, 2026-10-31;
+[plans/active/console-namespaces.md](plans/active/console-namespaces.md)).
+
+- Original names stay in their game's namespace, for parity. The Source
+  names the engine implements (movement, network, video and audio
+  settings, `noclip`, `map`) are CS:S's, so a name registered without a
+  namespace is `cs_source`'s. Combat Arms' names are `combat_arms:` (its
+  `ca_*` ones keep the prefix).
+- Ours are `chimera:` with no `sv_`/`cl_`/`chimera_` prefix
+  (`chimera:hitmarker`, `chimera:announcer`), and so is the console's own
+  language (`bind`, `alias`, `exec`, `scope`, ...), which every game uses.
+- A game's `GameInfo::console_namespaces` lists its canonical namespace
+  and its aliases (`css`, `ca`), accepted wherever a namespace is; the
+  canonical one is what configs save and the network sends.
+- Short names resolve in the scope's game, then `chimera`, then wherever
+  only one game has them; more than one is an error with a hint. The
+  scope follows the game played (the party apps: the gun in hand) unless
+  `scope <game>` pins it.
+- Old names (`chimera_*`, `mashup_*`, renamed settings: `OLD_NAMES`)
+  stay as hidden aliases, so configs, binds, scripts and tests keep
+  working. Configs are written with full names; `bind` and `alias` store
+  command names in full, but Chimera's unshared names, `+`/`-` actions
+  and the binds the client polls (`slot1`) stay short.
+- On the wire: replicated cvars by full name, a client's commands for its
+  server (cheats, `kill`) with the full name. Userinfo keys stay the
+  short names (Source's keys).
+
 ### Normalization and mixing rules
 
 - The host game's rules win; imported parts adapt to the host.

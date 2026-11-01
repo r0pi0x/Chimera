@@ -419,9 +419,9 @@ impl Plugin for CaPerksPlugin {
                         .after(core::apply_damage),
                 ),
             );
-        crate::console::resource_cvar::<CaPerksEnabled, bool>(app, "ca_perks_enabled", "The room option Perks.", |p| &mut p.0);
+        crate::console::resource_cvar::<CaPerksEnabled, bool>(app, "combat_arms:ca_perks_enabled", "The room option Perks.", |p| &mut p.0);
         app.console_command(
-            "ca_perk",
+            "combat_arms:ca_perk",
             "ca_perk <1-4>: start the active perk in that position (the use-perk key plus a number).",
             |w, a| {
                 let slot: u8 = a.first().and_then(|s| s.parse().ok()).filter(|s| (1..=4).contains(s)).ok_or("ca_perk <1-4>")?;

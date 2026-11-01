@@ -68,7 +68,7 @@ impl Plugin for AnnouncePlugin {
             );
         crate::console::resource_cvar::<AnnouncerSetting, String>(
             app,
-            "sv_announcer",
+            "chimera:announcer",
             "The kill announcer: default (the game's), none, random (one per map) or a pack's id.",
             |s| &mut s.0,
         );

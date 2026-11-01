@@ -63,7 +63,7 @@ impl Plugin for PlayerAnimPlugin {
             );
         crate::console::resource_cvar::<HandIk, u8>(
             app,
-            "chimera_hand_ik",
+            "chimera:hand_ik",
             "1: hands locked onto the weapon as the player models' IK rules say (drawn bodies); 0: off, the animation's own arms (for comparison).",
             |h| &mut h.0,
         );

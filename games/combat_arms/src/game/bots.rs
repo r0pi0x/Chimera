@@ -484,19 +484,19 @@ impl Plugin for CaBotsPlugin {
                 }
             },
         });
-        resource_cvar::<BotSettings, u32>(app, "MaxPlayer", "Bots the server keeps in the game (Bot Deathmatch's player count).", |s| {
+        resource_cvar::<BotSettings, u32>(app, "combat_arms:MaxPlayer", "Bots the server keeps in the game (Bot Deathmatch's player count).", |s| {
             &mut s.quota
         });
         resource_cvar::<BotSettings, u8>(
             app,
-            "BotLevel",
+            "combat_arms:BotLevel",
             "Level of bots added from now on: 0 Easy, 1 Normal, 2 Veteran (3 training).",
             |s| &mut s.level,
         );
-        resource_cvar::<BotSettings, u8>(app, "ca_bot_stop", "1: bots stand still (they still see, aim and fire).", |s| &mut s.stop);
-        resource_cvar::<BotSettings, u8>(app, "ca_bot_dont_shoot", "1: bots never fire.", |s| &mut s.dont_shoot);
+        resource_cvar::<BotSettings, u8>(app, "combat_arms:ca_bot_stop", "1: bots stand still (they still see, aim and fire).", |s| &mut s.stop);
+        resource_cvar::<BotSettings, u8>(app, "combat_arms:ca_bot_dont_shoot", "1: bots never fire.", |s| &mut s.dont_shoot);
         app.console_command(
-            "ca_bot_add",
+            "combat_arms:ca_bot_add",
             "ca_bot_add [alpha|bravo]: add a bot at BotLevel (default team: opposite the human); raises MaxPlayer.",
             |w, a| {
                 let team = match a.first().map(|s| s.to_ascii_lowercase()) {
@@ -516,7 +516,7 @@ impl Plugin for CaBotsPlugin {
             },
         )
         .console_command(
-            "ca_bot_kick",
+            "combat_arms:ca_bot_kick",
             "ca_bot_kick [all|<name>]: remove every bot (MaxPlayer 0) or the one by that name.",
             |w, a| {
                 let wanted = a.join(" ");
@@ -540,7 +540,7 @@ impl Plugin for CaBotsPlugin {
                 Ok(Some(format!("kicked {n} bots")))
             },
         )
-        .console_command("ca_bots", "The bots: name, team, template, state, target, health.", |w, _| {
+        .console_command("combat_arms:ca_bots", "The bots: name, team, template, state, target, health.", |w, _| {
             let mut lines = Vec::new();
             let mut q = w.query::<(&CaBot, Option<&Name>, &crate::core::Team, &crate::core::Health)>();
             for (b, n, t, h) in q.iter(w) {

@@ -54,7 +54,12 @@ pub struct SimBasePlugins;
 impl Plugin for SimBasePlugins {
     fn build(&self, app: &mut App) {
         app.insert_resource(Time::<Fixed>::from_hz(core::DEFAULT_TICK_HZ))
-            .add_plugins((core::CorePlugin, console::ConsolePlugin, movement::MovementPlugins))
+            .add_plugins((
+                core::CorePlugin,
+                console::ConsolePlugin,
+                chimera_core::console_scope::ConsoleScopePlugin,
+                movement::MovementPlugins,
+            ))
             .add_plugins(game_log::GameLogPlugin)
             .add_plugins(weapon::WeaponPlugin)
             .add_plugins(announce::AnnouncePlugin);

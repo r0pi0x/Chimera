@@ -40,13 +40,13 @@ impl Plugin for VideoPlugin {
         );
         resource_cvar::<VideoSettings, u8>(
             app,
-            "chimera_fullscreen",
+            "chimera:fullscreen",
             "Display mode: 0 windowed, 1 full screen, 2 borderless full screen.",
             |v| &mut v.fullscreen,
         );
         resource_cvar::<VideoSettings, String>(
             app,
-            "chimera_resolution",
+            "chimera:resolution",
             "Window size in pixels, e.g. 1920x1080 (empty: as started).",
             |v| &mut v.resolution,
         );

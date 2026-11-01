@@ -228,7 +228,7 @@ impl Plugin for TraceCapturePlugin {
         });
         app.insert_resource(Capture { until: None, planned }).add_systems(Last, run);
         app.console_command(
-            "trace_capture",
+            "chimera:trace_capture",
             "trace_capture [seconds]: record every span for that long (default 1, at most 30) into trace-<map>-<time>.json (a `trace` build).",
             |w, a| {
                 let seconds = a.first().map_or(Ok(1.0), |s| s.parse::<f64>().map_err(|_| "trace_capture [seconds]"))?;

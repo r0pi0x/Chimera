@@ -191,7 +191,7 @@ pub fn build(app: &mut App) {
         choices: |_, _| Vec::new(),
     })
     .console_command(
-        "party_skipmap",
+        "chimera:party_skipmap",
         "party_skipmap: call a vote to skip the map (the next of the rotation); alone, with no server, skip it.",
         |w, _| {
             if w.get_resource::<NetRole>().is_none_or(|r| *r == NetRole::Standalone) {

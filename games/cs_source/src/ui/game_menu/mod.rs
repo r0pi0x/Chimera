@@ -245,7 +245,7 @@ impl Plugin for GameMenuPlugin {
         }
         crate::console::resource_cvar::<LoadingDetails, u8>(
             app,
-            "chimera_loading_details",
+            "chimera:loading_details",
             "1: the loading dialog adds a detailed view (each stage's time, bytes and percentage; the server's name, \
              map, players and ping).",
             |d| &mut d.0,
@@ -324,7 +324,7 @@ impl Plugin for GameMenuPlugin {
             },
         )
         .console_command(
-            "chimera_quickstart",
+            "chimera:quickstart",
             "Ours: start a game at once: rounds on de_dust2 (else the first map) with 9 normal bots (five \
              terrorists, four counter-terrorists besides you), single player; Create Server's other settings as \
              they are.",

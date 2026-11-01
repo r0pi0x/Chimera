@@ -131,7 +131,7 @@ pub(super) fn plugin(app: &mut App) {
     app.init_resource::<Upnp>().init_resource::<PortMapping>();
     resource_cvar::<Upnp, u8>(
         app,
-        "net_upnp",
+        "chimera:upnp",
         "1: while hosting, ask the router (UPnP) to forward the game's UDP port to this machine",
         |u| &mut u.enabled,
     );

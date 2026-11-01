@@ -1444,7 +1444,7 @@ impl Plugin for ImpactEffectsPlugin {
         }
         crate::console::ConsoleAppExt::console_command(
             app,
-            "chimera_particles",
+            "chimera:particles",
             "Live particles: groups, total, and those under the 2048 cap",
             |w, _| {
                 let p = w

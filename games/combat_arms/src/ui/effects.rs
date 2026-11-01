@@ -103,7 +103,7 @@ impl Plugin for CaEffectsDrawPlugin {
         if app.world().get_resource::<crate::console::Console>().is_some() {
             crate::console::resource_cvar::<TracerSettings, u8>(
                 app,
-                "cl_tracer_through_walls",
+                "combat_arms:tracer_through_walls",
                 "0: tracers are hidden by walls (default, as the original game); 1: drawn through walls.",
                 |s| &mut s.through_walls,
             );

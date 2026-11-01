@@ -174,16 +174,20 @@ pub fn register_keys(app: &mut App) {
     use crate::console::ConsoleAppExt;
     for (name, which) in [("incradarscale", 0), ("decradarscale", 1), ("fulltacticalmap", 2)] {
         for (sign, on) in [("+", true), ("-", false)] {
-            app.console_command(&format!("{sign}{name}"), "A radar key (for binds).", move |w, _| {
-                if let Some(mut k) = w.get_resource_mut::<RadarKeys>() {
-                    match which {
-                        0 => k.expand = on,
-                        1 => k.decrease = on,
-                        _ => k.map = on,
+            app.console_command(
+                &format!("combat_arms:{sign}{name}"),
+                "A radar key (for binds).",
+                move |w, _| {
+                    if let Some(mut k) = w.get_resource_mut::<RadarKeys>() {
+                        match which {
+                            0 => k.expand = on,
+                            1 => k.decrease = on,
+                            _ => k.map = on,
+                        }
                     }
-                }
-                Ok(None)
-            });
+                    Ok(None)
+                },
+            );
         }
     }
 }

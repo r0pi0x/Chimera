@@ -161,10 +161,12 @@ impl Plugin for CaLobbyPlugin {
                     .chain()
                     .in_set(CaLobbySet),
             );
-        resource_cvar::<CaLobbyName, String>(app, "ca_lobby_name", "Your name in the lobby.", |n| &mut n.0);
+        resource_cvar::<CaLobbyName, String>(app, "combat_arms:ca_lobby_name", "Your name in the lobby.", |n| {
+            &mut n.0
+        });
         crate::console::ConsoleAppExt::console_command(
             app,
-            "ca_lobby",
+            "combat_arms:ca_lobby",
             "ca_lobby [0|1]: run the lobby on this process (rooms, ready, start); players wait in it until their \
              room starts.",
             |w, a| {
@@ -180,7 +182,7 @@ impl Plugin for CaLobbyPlugin {
         );
         crate::console::ConsoleAppExt::console_command(
             app,
-            "ca_lobby_demo",
+            "combat_arms:ca_lobby_demo",
             "ca_lobby_demo [n]: a demo room (Elimination) for the local player with n made-up players (screenshots, \
              checking the screens); they stay until the lobby is restarted.",
             |w, a| {

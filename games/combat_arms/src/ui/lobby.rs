@@ -1397,7 +1397,7 @@ impl Plugin for CaLobbyScreenPlugin {
             .add_systems(Update, window_size.before(super::menu::MenuSystems))
             .add_systems(Update, collect_keys.before(super::menu::MenuSystems))
             .add_systems(Update, draw_screen.after(super::menu::MenuSystems));
-        crate::console::ConsoleAppExt::console_command(app, "lobby", "Open Combat Arms' lobby on this process.", |w, _| {
+        crate::console::ConsoleAppExt::console_command(app, "combat_arms:lobby", "Open Combat Arms' lobby on this process.", |w, _| {
             w.resource_mut::<crate::console::Console>().submit("ca_lobby 1");
             Ok(None)
         });

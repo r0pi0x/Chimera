@@ -47,7 +47,7 @@ impl Plugin for FrameMetricsPlugin {
         app.init_resource::<FrameMetrics>().insert_resource(HitchRatio(2.0));
         resource_cvar::<HitchRatio, f32>(
             app,
-            "chimera_hitch_ratio",
+            "chimera:hitch_ratio",
             "Log a frame taking this many times the median frame time, with its slowest schedules \
              (and spans, in a --features profile build); 0: off.",
             |h| &mut h.0,

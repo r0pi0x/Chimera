@@ -7,6 +7,7 @@
 mod announcer;
 mod archetypes;
 mod bodies_drawn;
+mod console_scope;
 mod controls;
 mod cross_game;
 mod cross_glass;

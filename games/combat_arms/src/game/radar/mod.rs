@@ -181,10 +181,10 @@ impl Plugin for CaRadarPlugin {
             )
             .add_systems(FixedLast, send_round.run_if(not(resource_equals(NetRole::Client))))
             .add_systems(Update, read_world_offset);
-        resource_cvar(app, "radarscale", "The radar's zoom, 0.5 to 2.0 (saved when it hides).", |r: &mut CaRadarProfile| {
+        resource_cvar(app, "combat_arms:radarscale", "The radar's zoom, 0.5 to 2.0 (saved when it hides).", |r: &mut CaRadarProfile| {
             &mut r.scale
         });
-        resource_cvar(app, "rotateradar", "1: the radar turns with the view (read when a map loads).", |r: &mut CaRadarProfile| {
+        resource_cvar(app, "combat_arms:rotateradar", "1: the radar turns with the view (read when a map loads).", |r: &mut CaRadarProfile| {
             &mut r.rotate
         });
     }

@@ -614,7 +614,7 @@ impl Plugin for MainMenuPlugin {
                     .before(crate::esc_menu::EscMenuSystems),
             )
             .console_command(
-                "mainmenu",
+                "chimera:mainmenu",
                 "mainmenu [main|play|join|options]: the main menu's page (out of a game); screenshots and tests.",
                 |w, a| {
                     let page = match a.first() {
@@ -635,7 +635,7 @@ impl Plugin for MainMenuPlugin {
                 },
             )
             .console_command(
-                "mainmenu_type",
+                "chimera:mainmenu_type",
                 "mainmenu_type <field> <text>: type into the main menu's field (address, password, or a Play row's \
                  number); screenshots and tests.",
                 |w, a| {
@@ -656,7 +656,7 @@ impl Plugin for MainMenuPlugin {
                 },
             )
             .console_command(
-                "mainmenu_press",
+                "chimera:mainmenu_press",
                 "mainmenu_press <start|connect|cancel|close|back|quit>: press that button of the main menu (screenshots \
                  and tests).",
                 |w, a| {
@@ -674,7 +674,7 @@ impl Plugin for MainMenuPlugin {
                 },
             )
             .console_command(
-                "mainmenu_failure",
+                "chimera:mainmenu_failure",
                 "mainmenu_failure <text>: show the failure box with that text (screenshots).",
                 |w, a| {
                     let mut m = w.resource_mut::<PartyMenu>();

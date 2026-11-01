@@ -151,13 +151,13 @@ fn view_console(app: &mut App) {
     );
     resource_cvar::<Watch, u32>(
         app,
-        "chimera_watch",
+        "chimera:watchbot",
         "Chase camera on bot n (\"Bot n\"), behind it at cam_idealdist/cam_idealyaw; 0 back to you.",
         |w| &mut w.0,
     );
     resource_cvar::<FreeCam, u8>(
         app,
-        "chimera_freecam",
+        "chimera:freecam",
         "Detached camera: 1 fly it (player stands still), 2 keep it there and control the player, 0 back to the eye.",
         |f| &mut f.mode,
     );
@@ -169,7 +169,7 @@ fn view_console(app: &mut App) {
     );
     resource_cvar::<HealthBars, u8>(
         app,
-        "chimera_healthbars",
+        "chimera:healthbars",
         "1: health bars above other living characters.",
         |h| &mut h.0,
     );

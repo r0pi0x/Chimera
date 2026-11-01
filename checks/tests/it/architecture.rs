@@ -21,6 +21,9 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // `world.query` with its state kept between calls: Bevy only.
     ("query_cache", &[]),
     ("console", &["core", "env", "query_cache"]),
+    // The console's scope (the game played: the local player's identity,
+    // else the default game) and the games' console namespaces.
+    ("console_scope", &["core", "console", "game_registry", "slots"]),
     // Game events and the server log: what the rules and the network tell
     // plugins and admins happened (players named by the gameplay's game's
     // `LogSubjects`).

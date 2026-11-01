@@ -256,6 +256,7 @@ mod tests {
         old_default_binds: &[],
         movement_cvars: &[],
         meters_per_unit: 0.0254,
+        console_namespaces: &[],
     };
     static A: GameInfo = A_INFO;
     static B: GameInfo = GameInfo {

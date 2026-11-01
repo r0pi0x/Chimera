@@ -190,7 +190,7 @@ impl Plugin for EscMenuPlugin {
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<VotePanel>()
             .add_message::<Action>()
-            .console_command("escmenu", "escmenu [options|host]: open or close the Escape menu (at that page).", |w, a| {
+            .console_command("chimera:escmenu", "escmenu [options|host]: open or close the Escape menu (at that page).", |w, a| {
                 let page = match a.first().map(String::as_str) {
                     Some("options") => Page::Options(0),
                     Some("host") => Page::Host,
@@ -203,7 +203,7 @@ impl Plugin for EscMenuPlugin {
                 Ok(None)
             })
             .console_command(
-                "escmenu_press",
+                "chimera:escmenu_press",
                 "escmenu_press <resume|options|host|disconnect|confirm|back|quit>: press that entry of the open \
                  Escape menu (screenshots and tests).",
                 |w, a| {

@@ -55,8 +55,8 @@ impl Plugin for FirstRunPlugin {
             .add_systems(Startup, startup)
             .add_systems(Update, (keys, pointer, draw).chain().after(super::game_menu::MenuSystems));
         app.console_command(
-            "chimera_install",
-            "chimera_install [folder|auto]: show which CS:S install is used and how it was found; with a folder \
+            "chimera:install",
+            "install [folder|auto]: show which CS:S install is used and how it was found; with a folder \
              (the one holding cstrike/ and hl2/), use and remember it; auto: forget it and search Steam again.",
             |w, a| {
                 let arg = a.join(" ");
@@ -74,8 +74,8 @@ impl Plugin for FirstRunPlugin {
             },
         )
         .console_command(
-            "chimera_firstrun",
-            "chimera_firstrun [open | type <text> | clear | retry | continue]: drive the first-run dialog \
+            "chimera:firstrun",
+            "firstrun [open | type <text> | clear | retry | continue]: drive the first-run dialog \
              (CS:S not found) as typing and clicks would; prints its state.",
             |w, a| {
                 let input = match a.first().map(String::as_str) {

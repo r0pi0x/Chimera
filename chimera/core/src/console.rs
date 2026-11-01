@@ -9,22 +9,40 @@
 //! (`ConsoleAppExt::console_cvar`/`console_command`, `resource_cvar`),
 //! Source-style parsing (`;`, quotes, `//`), aliases, binds, `wait`,
 //! exec/config files, built-ins (help, find, cvarlist, differences, reset,
-//! toggle, incrementvar, watch, host_writeconfig, ...); each cvar's `CvarScope`
-//! from its name (`SERVER_PREFIXES`, `SERVER_NAMES`: replicated or server-only
-//! in a network game; a network client can't set them, `net::cvars` sends the
-//! replicated ones); `sv_cheats` (`Cheats`) gates `CHEATS` (noclip, god,
-//! setpos, setang, give, impulse but `PLAYER_IMPULSES` (100, 201), ent_fire,
-//! `chimera_set*`; `is_cheat`) in network games; a
-//! network client sends its cheats to the server (`Console::to_server`,
+//! toggle, incrementvar, watch, scope, host_writeconfig, ...).
+//!
+//! Namespaces (docs/plans/active/console-namespaces.md): every cvar and
+//! command has a full name `<namespace>:<name>` (`cs_source:sv_cheats`,
+//! `combat_arms:MaxPlayer`, `chimera:noblock`), which always works. A
+//! name registered without one is Source's, the names the engine
+//! implements, which are CS:S's (`SOURCE_NAMESPACE`); Chimera's own are
+//! `chimera:` (`CHIMERA`: the console's language, our tools and general
+//! settings). A game's `GameInfo::console_namespaces` names its canonical
+//! namespace and its aliases (`css`, `ca`: `Console::add_namespace`). A
+//! short name resolves in the scope's game, then `chimera`, then wherever
+//! it is the only one (`Console::resolve`); several left is an error with
+//! a hint. The scope is `scope <game>` when pinned, else the local
+//! player's `GameIdentity` (the party apps: the gun in hand), else the
+//! default game (`console_scope`, which also gives the console the games'
+//! namespaces). Old names still resolve, hidden: the
+//! `chimera_*`/`mashup_*` prefixes (`OLD_PREFIXES`) and renamed settings
+//! (`OLD_NAMES`: `cl_hitmarker` is `chimera:hitmarker`). Configs save
+//! cvars by full name, and `bind`/`bindgame`/`alias` store command names
+//! in full (`Console::qualify_line`; Chimera's unshared names, `+`/`-`
+//! actions and polled binds, `Console::keep_short`, stay short).
+//!
+//! Each cvar's `CvarScope` comes from its name (`SERVER_PREFIXES`,
+//! `SERVER_NAMES`: replicated or server-only in a network game; a network
+//! client can't set them, `net::cvars` sends the replicated ones by full
+//! name); `sv_cheats` (`Cheats`) gates `CHEATS` (noclip, god, setpos,
+//! setang, give, impulse but `PLAYER_IMPULSES` (100, 201), ent_fire,
+//! `chimera:set*`; `is_cheat`) in network games; a network client sends
+//! its cheats to the server with full names (`Console::to_server`,
 //! `net::cheats`; `command_player` is the player a command acts on);
-//! `chimera_noblock` (`core::NoBlock`) is ours and replicated; a network client
-//! can't run `SERVER_COMMANDS` (bots, `changelevel`, `mp_restartgame`);
-//! userinfo cvars (`Console::userinfo`, `userinfo()`: e.g. `cl_autowepswitch`)
-//! are the local player's `core::UserInfo`. Our own cvars and commands
-//! are `chimera_*`; their old names (`mashup_*`, `OLD_PREFIX`) still work,
-//! hidden (`current_name`: lookups; `Console::current_line`: lines stored
-//! by `bind` and `alias`), so configs and binds saved before the rename
-//! keep working and are written back with the new names.
+//! `chimera:noblock` (`core::NoBlock`) is ours and replicated; a network
+//! client can't run `SERVER_COMMANDS` (bots, `changelevel`,
+//! `mp_restartgame`); userinfo cvars (`Console::userinfo`, `userinfo()`:
+//! e.g. `cl_autowepswitch`) are the local player's `core::UserInfo`.
 
 use std::{
     collections::{BTreeMap, VecDeque},
@@ -86,32 +104,43 @@ pub enum CvarScope {
 pub const SERVER_PREFIXES: &[&str] = &["sv_", "mp_", "phys_", "bot_", "ammo_"];
 
 /// Game rules without a server prefix that are the server's and
-/// replicated all the same: ours (the party's `party_even_footsteps`,
-/// which every machine mixes by), and Source's `decalfrequency` (the
-/// seconds between a player's sprays) and the freeze cam's timings
-/// (`spec_freeze_time`, `spec_freeze_traveltime`; replicated in CS:S).
+/// replicated all the same, by full name: ours (`chimera:rounds`,
+/// `chimera:noblock`, the kill announcer `chimera:announcer`, the party's
+/// `chimera:party_even_footsteps`, which every machine mixes by), and
+/// Source's `decalfrequency` (the seconds between a player's sprays) and
+/// the freeze cam's timings (`spec_freeze_time`, `spec_freeze_traveltime`;
+/// replicated in CS:S).
 pub const SERVER_NAMES: &[&str] = &[
-    "chimera_rounds",
-    "chimera_noblock",
-    "party_even_footsteps",
-    "decalfrequency",
-    "spec_freeze_time",
-    "spec_freeze_traveltime",
+    "chimera:rounds",
+    "chimera:noblock",
+    "chimera:announcer",
+    "chimera:party_even_footsteps",
+    "cs_source:decalfrequency",
+    "cs_source:spec_freeze_time",
+    "cs_source:spec_freeze_traveltime",
 ];
 
 /// The player's own settings with a server prefix (Source's client cvars:
-/// `mp_decals`, Multiplayer > Advanced's decal limit).
-pub const LOCAL_NAMES: &[&str] = &["mp_decals"];
+/// `mp_decals`, Multiplayer > Advanced's decal limit), by full name.
+pub const LOCAL_NAMES: &[&str] = &["cs_source:mp_decals"];
 
 impl CvarScope {
-    /// The scope of a cvar named `name`: the server's when it has a server
-    /// prefix; of those, bots' settings and secrets stay on the server and
-    /// the rest replicate.
-    pub fn of(name: &str) -> Self {
-        let name = current_name(name);
-        if SERVER_NAMES.contains(&name.as_str()) {
+    /// The scope of a cvar by its full name (`ns:name`; a bare name is
+    /// Source's), as written in `SERVER_NAMES` (`Console::cvar_scope`
+    /// follows namespace aliases too): the server's when its name has a
+    /// server prefix; of those, bots' settings and secrets stay on the
+    /// server and the rest replicate.
+    pub fn of(full: &str) -> Self {
+        let full = full.to_lowercase();
+        let (ns, name) = split(&full);
+        let full = format!("{}:{name}", ns.unwrap_or(SOURCE_NAMESPACE));
+        Self::by_rules(name, |table| table.contains(&full.as_str()))
+    }
+
+    fn by_rules(name: &str, listed: impl Fn(&[&str]) -> bool) -> Self {
+        if listed(SERVER_NAMES) {
             CvarScope::Replicated
-        } else if LOCAL_NAMES.contains(&name.as_str()) {
+        } else if listed(LOCAL_NAMES) {
             CvarScope::Local
         } else if !SERVER_PREFIXES.iter().any(|p| name.starts_with(p)) {
             CvarScope::Local
@@ -156,8 +185,23 @@ pub struct Line {
 /// The console's state.
 #[derive(Resource, Default)]
 pub struct Console {
+    /// By full name, lower case (`cs_source:sv_gravity`).
     cvars: BTreeMap<String, Cvar>,
     commands: BTreeMap<String, Command>,
+    /// A short name (lower case) -> the full names (lower case) of the
+    /// cvars and commands it is short for.
+    shorts: BTreeMap<String, Vec<String>>,
+    /// A namespace (lower case, canonical or an alias) -> its canonical
+    /// one (`Console::add_namespace`: `css` -> `cs_source`).
+    namespaces: BTreeMap<String, String>,
+    /// The scope pinned by `scope <game>` (canonical), over `auto_scope`.
+    pub scope: Option<String>,
+    /// The scope when none is pinned (`follow_scope`): the local player's
+    /// identity's game, else the default game.
+    pub auto_scope: Option<String>,
+    /// Command words a stored line keeps as typed (`qualify_line`): the
+    /// binds the client polls by their short name (`slot1`, `buymenu`).
+    keep_short: std::collections::BTreeSet<String>,
     pub aliases: BTreeMap<String, String>,
     /// Key name (lower-case) -> command line.
     pub binds: BTreeMap<String, String>,
@@ -173,7 +217,7 @@ pub struct Console {
     /// Lines waiting to run, and frames to wait before the next.
     queue: VecDeque<String>,
     wait: u32,
-    /// Expressions shown on the HUD (`watch`).
+    /// Expressions shown on the HUD (`watch`), by full name.
     pub watches: Vec<String>,
     /// Bumped when something should be saved (binds, cvars changed).
     pub dirty: bool,
@@ -184,7 +228,7 @@ pub struct Console {
     /// (`hostname` had two, so the server's name couldn't be set).
     pub replaced: Vec<String>,
     /// Lines a network client sends its server to run for its player
-    /// (cheats: `net::cheats` takes them).
+    /// (cheats: `net::cheats` takes them), with full names.
     pub to_server: Vec<String>,
     /// Also log what commands print (info, errors as `error: ...`, target
     /// `console`): the client sets it, so a run's log holds the results of
@@ -192,22 +236,61 @@ pub struct Console {
     pub log_output: bool,
 }
 
-/// The prefix of our own cvars and commands (`chimera_noblock`, ...).
-pub const PREFIX: &str = "chimera_";
+/// Chimera's own namespace: the console's language (`bind`, `alias`,
+/// `exec`, `scope`, ...), the input actions (`+jump`), our tools and our
+/// general settings (`chimera:noblock`).
+pub const CHIMERA: &str = "chimera";
 
-/// Their prefix before the rename to Chimera: `mashup_rounds` is
-/// `chimera_rounds` (`current_name`), a hidden alias for saved configs and
-/// binds.
-pub const OLD_PREFIX: &str = "mashup_";
+/// The namespace of a name registered without one: Source's names, which
+/// the engine implements (its movement, network, video and audio
+/// settings, `sv_cheats`, `noclip`), are CS:S's, the first game.
+pub const SOURCE_NAMESPACE: &str = "cs_source";
 
-/// The name `name` answers to now, lower case: an old `mashup_*` name is
-/// its `chimera_*` one (`OLD_PREFIX`); any other name is itself.
-pub fn current_name(name: &str) -> String {
-    let lower = name.to_lowercase();
-    match lower.strip_prefix(OLD_PREFIX) {
-        Some(rest) => format!("{PREFIX}{rest}"),
-        None => lower,
+/// Old prefixes of our own names (before namespaces; `mashup_` before the
+/// rename to Chimera): `chimera_noblock` and `mashup_noblock` are
+/// `chimera:noblock`. Hidden aliases for saved configs, binds and scripts.
+pub const OLD_PREFIXES: &[(&str, &str)] = &[("chimera_", CHIMERA), ("mashup_", CHIMERA)];
+
+/// Our settings and commands renamed with namespaces (old name -> full
+/// name): our general settings lost their `sv_`/`cl_`/`net_` prefixes; a
+/// `chimera_*` name that would have met a built-in got a new one. Hidden
+/// aliases, as `OLD_PREFIXES`.
+pub const OLD_NAMES: &[(&str, &str)] = &[
+    ("cl_hitmarker", "chimera:hitmarker"),
+    ("sv_announcer", "chimera:announcer"),
+    ("cl_predict_projectiles", "chimera:predict_projectiles"),
+    ("hud_radar", "chimera:radar"),
+    ("net_upnp", "chimera:upnp"),
+    ("net_lan_ports", "chimera:lan_ports"),
+    ("net_lan_broadcast", "chimera:lan_broadcast"),
+    ("chimera_watch", "chimera:watchbot"),
+    ("mashup_watch", "chimera:watchbot"),
+    ("cl_tracer_through_walls", "combat_arms:tracer_through_walls"),
+];
+
+/// A name's namespace and short name (`cs_source:sv_gravity`:
+/// `(Some("cs_source"), "sv_gravity")`; a bare name has none).
+pub fn split(name: &str) -> (Option<&str>, &str) {
+    match name.split_once(':') {
+        Some((ns, short)) if !ns.is_empty() && !short.is_empty() => (Some(ns), short),
+        _ => (None, name),
     }
+}
+
+/// The short name of a full one (the part after its namespace).
+pub fn short_name(name: &str) -> &str {
+    split(name).1
+}
+
+/// What a name typed or stored resolves to (`Console::resolve`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Resolved {
+    /// The full name (lower case) of a cvar or command.
+    Found(String),
+    /// A short name several namespaces have, none of them the scope's or
+    /// Chimera's: their full names.
+    Ambiguous(Vec<String>),
+    Unknown,
 }
 
 const MAX_OUTPUT: usize = 4000;
@@ -236,15 +319,337 @@ impl Console {
         self.layer_defaults.insert(game.to_string(), layer);
     }
 
-    pub fn add_cvar(&mut self, cvar: Cvar) {
-        if let Some(old) = self.cvars.insert(cvar.name.to_lowercase(), cvar) {
+    /// A game's namespaces (`GameInfo::console_namespaces`): the first is
+    /// canonical (what configs save and the network sends), the rest are
+    /// aliases accepted wherever a namespace is (`css:sv_gravity`,
+    /// `scope ca`). Names registered under an alias move to the canonical.
+    pub fn add_namespace(&mut self, names: &[&str]) {
+        let Some(canonical) = names.first().map(|n| n.to_lowercase()) else {
+            return;
+        };
+        for n in names {
+            self.namespaces.insert(n.to_lowercase(), canonical.clone());
+        }
+        // Anything that pointed at a namespace now an alias points on.
+        for target in self.namespaces.values_mut() {
+            if names.iter().any(|n| n.eq_ignore_ascii_case(target)) {
+                *target = canonical.clone();
+            }
+        }
+        self.namespaces.insert(canonical.clone(), canonical.clone());
+        let moved = |key: &str| {
+            let (ns, short) = split(key);
+            ns.filter(|ns| *ns != canonical && names.iter().any(|n| n.eq_ignore_ascii_case(ns)))
+                .map(|_| short.to_string())
+        };
+        let rename = |name: &mut String| {
+            if let Some(short) = moved(&name.to_lowercase()) {
+                let keep = split(name).1.to_string();
+                debug_assert_eq!(keep.to_lowercase(), short);
+                *name = format!("{canonical}:{keep}");
+            }
+        };
+        let cvars = std::mem::take(&mut self.cvars);
+        for (_, mut c) in cvars {
+            rename(&mut c.name);
+            self.cvars.insert(c.name.to_lowercase(), c);
+        }
+        let commands = std::mem::take(&mut self.commands);
+        for (_, mut c) in commands {
+            rename(&mut c.name);
+            self.commands.insert(c.name.to_lowercase(), c);
+        }
+        self.reindex();
+    }
+
+    /// A namespace's canonical name (an alias's game; any other as it is).
+    pub fn canonical_namespace(&self, ns: &str) -> String {
+        let ns = ns.to_lowercase();
+        self.namespaces.get(&ns).cloned().unwrap_or(ns)
+    }
+
+    /// Whether `ns` names a namespace: a game's (or an alias), Chimera's,
+    /// or one some name is registered in.
+    pub fn is_namespace(&self, ns: &str) -> bool {
+        let ns = self.canonical_namespace(ns);
+        ns == CHIMERA
+            || self.namespaces.contains_key(&ns)
+            || self
+                .cvars
+                .keys()
+                .chain(self.commands.keys())
+                .any(|k| split(k).0 == Some(ns.as_str()))
+    }
+
+    /// Every namespace name `scope` takes: the games' and their aliases
+    /// (each with its canonical one), Chimera's.
+    pub fn namespace_names(&self) -> Vec<(String, String)> {
+        let mut v: Vec<(String, String)> = self.namespaces.iter().map(|(k, c)| (k.clone(), c.clone())).collect();
+        v.push((CHIMERA.into(), CHIMERA.into()));
+        v
+    }
+
+    /// The scope short names resolve in first: the pinned one, else the
+    /// automatic one.
+    pub fn current_scope(&self) -> Option<&str> {
+        self.scope.as_deref().or(self.auto_scope.as_deref())
+    }
+
+    /// `name` as a full name in canonical form, lower case (a bare name is
+    /// Source's, `SOURCE_NAMESPACE`), whether or not it is registered: for
+    /// comparing with tables of full names.
+    pub fn canonical_full(&self, name: &str) -> String {
+        let lower = name.to_lowercase();
+        let (ns, short) = split(&lower);
+        format!("{}:{short}", self.canonical_namespace(ns.unwrap_or(SOURCE_NAMESPACE)))
+    }
+
+    /// The full name (cased as registered) a cvar or command registered
+    /// as `name` gets.
+    fn registered_name(&self, name: &str) -> String {
+        let lower = name.to_lowercase();
+        if let (Some(ns), short) = split(name) {
+            return format!("{}:{short}", self.canonical_namespace(ns));
+        }
+        if let Some((_, new)) = OLD_NAMES.iter().find(|(old, _)| *old == lower) {
+            let (ns, short) = split(new);
+            return format!("{}:{short}", self.canonical_namespace(ns.unwrap_or(CHIMERA)));
+        }
+        for (prefix, ns) in OLD_PREFIXES {
+            if lower.starts_with(prefix) {
+                return format!("{}:{}", self.canonical_namespace(ns), &name[prefix.len()..]);
+            }
+        }
+        format!("{}:{name}", self.canonical_namespace(SOURCE_NAMESPACE))
+    }
+
+    fn known(&self, full: &str) -> bool {
+        self.cvars.contains_key(full) || self.commands.contains_key(full)
+    }
+
+    fn index(&mut self, full: &str) {
+        let short = short_name(full).to_string();
+        let entry = self.shorts.entry(short).or_default();
+        if !entry.iter().any(|f| f == full) {
+            entry.push(full.to_string());
+            entry.sort();
+        }
+    }
+
+    fn reindex(&mut self) {
+        self.shorts.clear();
+        let keys: Vec<String> = self.cvars.keys().chain(self.commands.keys()).cloned().collect();
+        for k in keys {
+            self.index(&k);
+        }
+    }
+
+    /// What `typed` names: a full name (its namespace may be an alias); a
+    /// short name in the scope's game, then Chimera's, then the only
+    /// namespace that has it (several: ambiguous); else an old name
+    /// (`OLD_NAMES`, `OLD_PREFIXES`).
+    pub fn resolve(&self, typed: &str) -> Resolved {
+        self.resolve_in(typed, self.current_scope())
+    }
+
+    /// `resolve` with `scope` for the scope.
+    pub fn resolve_in(&self, typed: &str, scope: Option<&str>) -> Resolved {
+        let lower = typed.to_lowercase();
+        if let (Some(ns), short) = split(&lower) {
+            let full = format!("{}:{short}", self.canonical_namespace(ns));
+            return if self.known(&full) {
+                Resolved::Found(full)
+            } else {
+                Resolved::Unknown
+            };
+        }
+        if let Some(all) = self.shorts.get(&lower) {
+            for ns in scope.into_iter().chain([CHIMERA]) {
+                if let Some(full) = all.iter().find(|f| split(f).0 == Some(ns)) {
+                    return Resolved::Found(full.clone());
+                }
+            }
+            match all.len() {
+                0 => {}
+                1 => return Resolved::Found(all[0].clone()),
+                _ => return Resolved::Ambiguous(all.clone()),
+            }
+        }
+        if let Some((_, new)) = OLD_NAMES.iter().find(|(old, _)| *old == lower) {
+            let full = self.canonical_full(new);
+            if self.known(&full) {
+                return Resolved::Found(full);
+            }
+        }
+        for (prefix, ns) in OLD_PREFIXES {
+            if let Some(rest) = lower.strip_prefix(prefix) {
+                let full = format!("{}:{rest}", self.canonical_namespace(ns));
+                if self.known(&full) {
+                    return Resolved::Found(full);
+                }
+            }
+        }
+        Resolved::Unknown
+    }
+
+    /// The full name (lower case) `typed` resolves to, if one.
+    pub fn full_name(&self, typed: &str) -> Option<String> {
+        match self.resolve(typed) {
+            Resolved::Found(full) => Some(full),
+            _ => None,
+        }
+    }
+
+    /// The registered spelling of a full name (`combat_arms:MaxPlayer`).
+    pub fn spelled(&self, full: &str) -> String {
+        let key = full.to_lowercase();
+        self.cvars
+            .get(&key)
+            .map(|c| c.name.clone())
+            .or_else(|| self.commands.get(&key).map(|c| c.name.clone()))
+            .unwrap_or(key)
+    }
+
+    /// How to show a full name: its short name when that resolves to it
+    /// here (in the current scope), else the full name.
+    pub fn display_name(&self, full: &str) -> String {
+        let spelled = self.spelled(full);
+        let short = short_name(&spelled);
+        if self.full_name(short).as_deref() == Some(full.to_lowercase().as_str()) {
+            short.to_string()
+        } else {
+            spelled
+        }
+    }
+
+    /// The hint for a short name several namespaces have.
+    pub fn ambiguity_hint(&self, typed: &str, fulls: &[String]) -> String {
+        let names: Vec<String> = fulls.iter().map(|f| self.spelled(f)).collect();
+        format!(
+            "\"{typed}\" is ambiguous: {}. Type the full name, or pick a game with `scope <game>`.",
+            names.join(", ")
+        )
+    }
+
+    /// A word a stored line keeps as typed (a bind the client polls by its
+    /// short name: `slot1`, `buymenu`).
+    pub fn keep_short(&mut self, word: &str) {
+        self.keep_short.insert(word.trim().to_lowercase());
+    }
+
+    /// How a stored line names the command `typed`: None to keep it as
+    /// typed (`+`/`-` actions, `keep_short` words, aliases, names that
+    /// resolve to nothing or to several); else its full name, but a name
+    /// of Chimera's that no game shares stays short.
+    fn stored_name(&self, typed: &str, scope: Option<&str>) -> Option<String> {
+        let lower = typed.to_lowercase();
+        if lower.starts_with(['+', '-']) || self.keep_short.contains(&lower) || self.aliases.contains_key(&lower) {
+            return None;
+        }
+        let Resolved::Found(full) = self.resolve_in(typed, scope) else {
+            return None;
+        };
+        let spelled = self.spelled(&full);
+        let (ns, short) = split(&full);
+        if ns == Some(CHIMERA) && self.shorts.get(short).is_some_and(|v| v.len() == 1) {
+            return Some(short_name(&spelled).to_string());
+        }
+        Some(spelled)
+    }
+
+    /// `line` as `bind`, `bindgame`, `alias` and config.cfg store it: each
+    /// command's name in full (`stored_name`), so it means the same in any
+    /// scope and app; an old name (`chimera_noblock`) is written as the
+    /// new one. Unchanged lines keep their text. Also the hints for names
+    /// left short because several games have them.
+    pub fn qualify_line_with_hints(&self, line: &str) -> (String, Vec<String>) {
+        self.qualify_line_in(line, self.current_scope())
+    }
+
+    /// `qualify_line_with_hints` with `scope` for the scope (a game's own
+    /// binds, `bindgame`, in that game's).
+    pub fn qualify_line_in(&self, line: &str, scope: Option<&str>) -> (String, Vec<String>) {
+        let commands = parse(line);
+        let mut changed = false;
+        let mut hints = Vec::new();
+        let out: Vec<String> = commands
+            .into_iter()
+            .map(|mut words| {
+                if let Resolved::Ambiguous(all) = self.resolve_in(&words[0], scope)
+                    && !self.aliases.contains_key(&words[0].to_lowercase())
+                {
+                    hints.push(self.ambiguity_hint(&words[0], &all));
+                }
+                if let Some(name) = self.stored_name(&words[0], scope)
+                    && name != words[0]
+                {
+                    words[0] = name;
+                    changed = true;
+                }
+                words.iter().map(|w| quote(w)).collect::<Vec<_>>().join(" ")
+            })
+            .collect();
+        (if changed { out.join("; ") } else { line.to_string() }, hints)
+    }
+
+    /// `qualify_line_with_hints`'s line.
+    pub fn qualify_line(&self, line: &str) -> String {
+        self.qualify_line_with_hints(line).0
+    }
+
+    /// `words` (a command) as a line with its name in full, canonical: what
+    /// goes over the network (a client's commands for its server).
+    pub fn wire_line(&self, words: &[String]) -> String {
+        let mut words = words.to_vec();
+        if let Some(first) = words.first_mut()
+            && let Some(full) = self.full_name(first)
+        {
+            *first = self.spelled(&full);
+        }
+        words.iter().map(|w| quote(w)).collect::<Vec<_>>().join(" ")
+    }
+
+    /// A cvar's `CvarScope` by its full name, its namespace's aliases
+    /// followed (`CvarScope::of`).
+    pub fn cvar_scope(&self, name: &str) -> CvarScope {
+        let full = self.canonical_full(name);
+        CvarScope::by_rules(short_name(&full), |table| {
+            table.iter().any(|t| self.canonical_full(t) == full)
+        })
+    }
+
+    /// Add a cvar under its full name (`registered_name`); its scope comes
+    /// from that name (`cvar_scope`).
+    pub fn add_cvar(&mut self, mut cvar: Cvar) {
+        cvar.name = self.registered_name(&cvar.name);
+        cvar.scope = self.cvar_scope(&cvar.name);
+        let key = cvar.name.to_lowercase();
+        self.index(&key);
+        if let Some(old) = self.cvars.insert(key, cvar) {
             self.replaced.push(old.name);
         }
     }
 
+    /// The full name (lower case) a registering plugin means by `name`:
+    /// the name it registered (`registered_name`) when there is one, else
+    /// what `name` resolves to.
+    fn own_name(&self, name: &str) -> Option<String> {
+        let registered = self.registered_name(name).to_lowercase();
+        if self.known(&registered) {
+            Some(registered)
+        } else {
+            self.full_name(name)
+        }
+    }
+
+    fn cvar_mut(&mut self, name: &str) -> Option<&mut Cvar> {
+        let full = self.own_name(name)?;
+        self.cvars.get_mut(&full)
+    }
+
     /// Mark a cvar to be saved in config.cfg.
     pub fn archive(&mut self, name: &str) {
-        if let Some(c) = self.cvars.get_mut(&current_name(name)) {
+        if let Some(c) = self.cvar_mut(name) {
             c.archive = true;
         }
     }
@@ -253,7 +658,7 @@ impl Console {
     /// so the config leaves it out while it has that value): an app whose
     /// starting value is not the shell's.
     pub fn set_default(&mut self, name: &str, value: &str) {
-        if let Some(c) = self.cvars.get_mut(&current_name(name)) {
+        if let Some(c) = self.cvar_mut(name) {
             c.default = value.into();
         }
     }
@@ -261,67 +666,48 @@ impl Console {
     /// Mark a cvar as the player's own setting the simulation reads
     /// (`core::UserInfo`).
     pub fn userinfo(&mut self, name: &str) {
-        if let Some(c) = self.cvars.get_mut(&current_name(name)) {
+        if let Some(c) = self.cvar_mut(name) {
             c.userinfo = true;
         }
     }
 
     /// Give a cvar a range for hints and sliders.
     pub fn set_range(&mut self, name: &str, min: f32, max: f32) {
-        if let Some(c) = self.cvars.get_mut(&current_name(name)) {
+        if let Some(c) = self.cvar_mut(name) {
             c.range = Some((min, max));
         }
     }
 
     /// Give a command argument completion.
     pub fn set_completion(&mut self, name: &str, complete: CompleteFn) {
-        if let Some(c) = self.commands.get_mut(&current_name(name)) {
+        if let Some(full) = self.own_name(name)
+            && let Some(c) = self.commands.get_mut(&full)
+        {
             c.complete = Some(complete);
         }
     }
 
-    pub fn add_command(&mut self, command: Command) {
-        self.commands.insert(command.name.to_lowercase(), command);
+    pub fn add_command(&mut self, mut command: Command) {
+        command.name = self.registered_name(&command.name);
+        let key = command.name.to_lowercase();
+        self.index(&key);
+        self.commands.insert(key, command);
     }
 
-    /// A cvar by name (any case; an old `mashup_*` name finds its
-    /// `chimera_*` cvar, `current_name`).
+    /// A cvar by name: full, short (`resolve`) or old, any case.
     pub fn cvar(&self, name: &str) -> Option<&Cvar> {
-        self.cvars.get(&current_name(name))
+        if let Some(c) = self.cvars.get(name) {
+            return Some(c);
+        }
+        self.cvars.get(&self.full_name(name)?)
     }
 
     /// A command by name (as `cvar`).
     pub fn command(&self, name: &str) -> Option<&Command> {
-        self.commands.get(&current_name(name))
-    }
-
-    /// `line` with each old name of ours (`mashup_*`, a `+`/`-` action's
-    /// too) whose new name (`chimera_*`) the console knows written as the
-    /// new one: what `bind` and `alias` store, so a config saved before the
-    /// rename is written back with the new names.
-    pub fn current_line(&self, line: &str) -> String {
-        let is_word = |c: char| c.is_ascii_alphanumeric() || c == '_';
-        let lower = line.to_ascii_lowercase();
-        let mut out = String::with_capacity(line.len());
-        let mut i = 0;
-        while i < line.len() {
-            let starts_word = !line[..i].chars().next_back().is_some_and(is_word);
-            if starts_word && lower[i..].starts_with(OLD_PREFIX) {
-                let end = line[i..].find(|c: char| !is_word(c)).map_or(line.len(), |n| i + n);
-                let new = current_name(&line[i..end]);
-                let known = self.cvars.contains_key(&new)
-                    || ["", "+", "-"].iter().any(|p| self.commands.contains_key(&format!("{p}{new}")));
-                if known {
-                    out += &new;
-                    i = end;
-                    continue;
-                }
-            }
-            let c = line[i..].chars().next().expect("in bounds");
-            out.push(c);
-            i += c.len_utf8();
+        if let Some(c) = self.commands.get(name) {
+            return Some(c);
         }
-        out
+        self.commands.get(&self.full_name(name)?)
     }
 
     pub fn cvars(&self) -> impl Iterator<Item = &Cvar> {
@@ -357,14 +743,15 @@ impl Console {
         self.print(Level::Info, text);
     }
 
-    /// Every name the console knows: cvars, commands, aliases.
+    /// Every name the console offers: cvars and commands as shown here
+    /// (`display_name`), and aliases.
     pub fn names(&self) -> Vec<String> {
         let mut v: Vec<String> = self
             .cvars
             .keys()
             .chain(self.commands.keys())
-            .chain(self.aliases.keys())
-            .cloned()
+            .map(|k| self.display_name(k))
+            .chain(self.aliases.keys().cloned())
             .collect();
         v.sort();
         v.dedup();
@@ -450,6 +837,13 @@ pub fn arg_position(command: &str) -> Option<usize> {
 /// kept, so `[amount=100]` is optional) and the description after the
 /// colon. Help that doesn't start with the name has no usage.
 pub fn usage(name: &str, help: &str) -> (Vec<String>, String) {
+    // A full name's help starts with its short name.
+    let short = short_name(name);
+    let name = if help.get(..name.len()).is_some_and(|h| h.eq_ignore_ascii_case(name)) {
+        name
+    } else {
+        short
+    };
     let Some(rest) = help
         .get(..name.len())
         .filter(|h| h.eq_ignore_ascii_case(name))
@@ -530,16 +924,10 @@ pub fn execute(world: &mut World, words: &[String], depth: usize) {
     let Some(typed) = words.first().map(|w| w.to_lowercase()) else {
         return;
     };
-    // An old `mashup_*` name runs its `chimera_*` command or cvar.
-    let name = current_name(&typed);
     let args = &words[1..];
-    let (alias, command, cvar) = {
+    let (alias, resolved) = {
         let c = world.resource::<Console>();
-        (
-            c.aliases.get(&typed).cloned(),
-            c.command(&name).cloned(),
-            c.cvar(&name).cloned(),
-        )
+        (c.aliases.get(&typed).cloned(), c.resolve(&typed))
     };
     if let Some(body) = alias {
         if depth >= MAX_ALIAS_DEPTH {
@@ -553,26 +941,38 @@ pub fn execute(world: &mut World, words: &[String], depth: usize) {
         }
         return;
     }
+    // The full name (an old `chimera_*` name runs its `chimera:` one).
+    let (name, command, cvar) = match &resolved {
+        Resolved::Found(full) => {
+            let c = world.resource::<Console>();
+            (full.clone(), c.commands.get(full).cloned(), c.cvars.get(full).cloned())
+        }
+        _ => (typed.clone(), None, None),
+    };
+    let client = world.get_resource::<crate::core::NetRole>() == Some(&crate::core::NetRole::Client);
     let result = if let Some(cmd) = command {
-        if SERVER_COMMANDS.contains(&name.as_str())
-            && world.get_resource::<crate::core::NetRole>() == Some(&crate::core::NetRole::Client)
-        {
+        let console = world.resource::<Console>();
+        let (server_command, cheat, player_command) = (
+            in_table(console, SERVER_COMMANDS, &name),
+            is_cheat(console, &name, args),
+            in_table(console, PLAYER_COMMANDS, &name),
+        );
+        if server_command && client {
             Err(format!(
-                "Can't use server command {name} from a client: only the server operator can run it."
+                "Can't use server command {typed} from a client: only the server operator can run it."
             ))
-        } else if (is_cheat(&name, args) || PLAYER_COMMANDS.contains(&name.as_str()))
-            && world.get_resource::<crate::core::NetRole>() == Some(&crate::core::NetRole::Client)
-        {
+        } else if (cheat || player_command) && client {
             // A network client's cheat acts on its player on the server,
             // which runs it if its `sv_cheats` is 1 and says what came of
-            // it (`net::cheats`), as Source's client sends them on.
-            let line = words.iter().map(|w| quote(w)).collect::<Vec<_>>().join(" ");
+            // it (`net::cheats`), as Source's client sends them on. The
+            // name goes in full: the server's scope may differ.
+            let line = console.wire_line(words);
             world.resource_mut::<Console>().to_server.push(line);
             Ok(None)
-        } else if is_cheat(&name, args) && !cheats_allowed(world) {
+        } else if cheat && !cheats_allowed(world) {
             // Source's words.
             Err(format!(
-                "Can't use cheat command {name} in multiplayer, unless the server has sv_cheats set to 1."
+                "Can't use cheat command {typed} in multiplayer, unless the server has sv_cheats set to 1."
             ))
         } else {
             (cmd.run)(world, args)
@@ -589,17 +989,20 @@ pub fn execute(world: &mut World, words: &[String], depth: usize) {
                 "\"{}\" = \"{}\"{changed}\n - {}",
                 cvar.name, value, cvar.help
             )))
-        } else if cvar.scope != CvarScope::Local
-            && world.get_resource::<crate::core::NetRole>() == Some(&crate::core::NetRole::Client)
-        {
+        } else if cvar.scope != CvarScope::Local && client {
             // The server's (sent to us, `net::cvars`), Source's words.
-            Err(format!("Can't change replicated ConVar {} from console of client, only server operator can change its value", cvar.name))
+            Err(format!(
+                "Can't change replicated ConVar {} from console of client, only server operator can change its value",
+                short_name(&cvar.name)
+            ))
         } else {
             (cvar.set)(world, &args.join(" ")).map(|_| {
                 world.resource_mut::<Console>().dirty = true;
                 None
             })
         }
+    } else if let Resolved::Ambiguous(all) = &resolved {
+        Err(world.resource::<Console>().ambiguity_hint(&typed, all))
     } else {
         Err(format!("Unknown command \"{typed}\""))
     };
@@ -720,7 +1123,7 @@ where
     // one isn't on/off even when its default is 0 or 1.
     let integer = "1".parse::<T>().is_ok() && "0.5".parse::<T>().is_err();
     let mut console = app.world_mut().resource_mut::<Console>();
-    if let Some(c) = console.cvars.get_mut(&current_name(name)) {
+    if let Some(c) = console.cvar_mut(name) {
         c.integer = integer;
         if "0.5".parse::<T>().is_ok() {
             c.values.clear();
@@ -729,56 +1132,67 @@ where
 }
 
 /// Commands that change the simulation for the one who runs them
-/// (Source's FCVAR_CHEAT ones): in a network game (server or client) only
-/// with `sv_cheats 1` on the server (replicated). Single player always
-/// has them.
+/// (Source's FCVAR_CHEAT ones), by full name: in a network game (server
+/// or client) only with `sv_cheats 1` on the server (replicated). Single
+/// player always has them.
 pub const CHEATS: &[&str] = &[
-    "noclip",
-    "god",
-    "setpos",
-    "setang",
-    "give",
-    "impulse",
-    "ent_fire",
-    "chimera_hurtme",
-    "chimera_sethealth",
-    "chimera_setarmor",
-    "chimera_setmoney",
-    "ladder_rung",
-    "minigame_win",
+    "cs_source:noclip",
+    "cs_source:god",
+    "cs_source:setpos",
+    "cs_source:setang",
+    "cs_source:give",
+    "cs_source:impulse",
+    "cs_source:ent_fire",
+    "chimera:hurtme",
+    "chimera:sethealth",
+    "chimera:setarmor",
+    "chimera:setmoney",
+    "chimera:ladder_rung",
+    "chimera:minigame_win",
 ];
 
 /// Commands a network client sends to its server to act on its player,
 /// with no `sv_cheats` needed (`net::cheats`): CS:S's `kill`.
-pub const PLAYER_COMMANDS: &[&str] = &["kill"];
+pub const PLAYER_COMMANDS: &[&str] = &["cs_source:kill"];
 
 /// Impulses that aren't cheats (Source's player impulses): `impulse 100`
 /// (the flashlight) and `impulse 201` (the spray). Every other impulse
 /// (`impulse 101`: all weapons) is one.
 pub const PLAYER_IMPULSES: &[&str] = &["100", "201"];
 
-/// Whether the command `name` (lower case) with `args` is a cheat
-/// (`CHEATS`, but for `PLAYER_IMPULSES`).
-pub fn is_cheat(name: &str, args: &[String]) -> bool {
-    CHEATS.contains(&name) && !(name == "impulse" && args.first().is_some_and(|a| PLAYER_IMPULSES.contains(&a.trim())))
+/// Whether the command `name` (any name `resolve` takes) is in `table`
+/// (full names; namespace aliases followed).
+pub fn in_table(console: &Console, table: &[&str], name: &str) -> bool {
+    let Some(full) = console.full_name(name) else {
+        return false;
+    };
+    table.iter().any(|t| console.canonical_full(t) == full)
 }
 
-/// Commands that change the server's game (bots, the map): a network
-/// client can't run them (its world isn't the game's; the server's
-/// operator runs them on the server's console).
+/// Whether the command `name` with `args` is a cheat (`CHEATS`, but for
+/// `PLAYER_IMPULSES`).
+pub fn is_cheat(console: &Console, name: &str, args: &[String]) -> bool {
+    in_table(console, CHEATS, name)
+        && !(in_table(console, &["cs_source:impulse"], name)
+            && args.first().is_some_and(|a| PLAYER_IMPULSES.contains(&a.trim())))
+}
+
+/// Commands that change the server's game (bots, the map), by full name:
+/// a network client can't run them (its world isn't the game's; the
+/// server's operator runs them on the server's console).
 pub const SERVER_COMMANDS: &[&str] = &[
-    "bot_add",
-    "bot_add_t",
-    "bot_add_ct",
-    "bot_kick",
-    "bot_give",
-    "bot_goto",
-    "bot_freeze",
-    "bot_unfreeze",
-    "changelevel",
-    "mp_restartgame",
-    "kick",
-    "kickid",
+    "cs_source:bot_add",
+    "cs_source:bot_add_t",
+    "cs_source:bot_add_ct",
+    "cs_source:bot_kick",
+    "cs_source:bot_give",
+    "cs_source:bot_goto",
+    "cs_source:bot_freeze",
+    "cs_source:bot_unfreeze",
+    "cs_source:changelevel",
+    "cs_source:mp_restartgame",
+    "cs_source:kick",
+    "cs_source:kickid",
 ];
 
 /// `sv_cheats`.
@@ -828,15 +1242,19 @@ impl Plugin for ConsolePlugin {
         app.init_resource::<crate::core::NoBlock>();
         resource_cvar::<crate::core::NoBlock, u8>(
             app,
-            "chimera_noblock",
+            "chimera:noblock",
             "Players passing through each other (ours; the server's, sent to clients): 0 nobody (CS:S), 1 teammates, 2 everyone.",
             |n| &mut n.0,
         );
-        app.world_mut().resource_mut::<Console>().set_range("chimera_noblock", 0.0, 2.0);
+        app.world_mut()
+            .resource_mut::<Console>()
+            .set_range("chimera:noblock", 0.0, 2.0);
     }
 }
 
-/// The userinfo cvars' values (`Cvar::userinfo`), by name.
+/// The userinfo cvars' values (`Cvar::userinfo`), by short name: the
+/// keys Source's userinfo has (`cl_autowepswitch`), which the simulation
+/// reads on any machine.
 pub fn userinfo(world: &mut World) -> std::collections::BTreeMap<String, String> {
     let Some(console) = world.get_resource::<Console>() else {
         return Default::default();
@@ -845,7 +1263,7 @@ pub fn userinfo(world: &mut World) -> std::collections::BTreeMap<String, String>
         .cvars
         .values()
         .filter(|c| c.userinfo)
-        .map(|c| (c.name.clone(), c.get.clone()))
+        .map(|c| (short_name(&c.name).to_string(), c.get.clone()))
         .collect();
     getters
         .into_iter()
@@ -859,7 +1277,9 @@ fn local_userinfo(world: &mut World) {
         (Entity, Option<&crate::core::UserInfo>),
         With<crate::core::LocalPlayer>,
         _,
-    >(world, |q, world| q.iter(world).next().map(|(e, have)| (e, have.cloned())));
+    >(world, |q, world| {
+        q.iter(world).next().map(|(e, have)| (e, have.cloned()))
+    });
     let Some((me, have)) = local else { return };
     let info = crate::core::UserInfo(userinfo(world));
     if have.as_ref() != Some(&info) {
@@ -871,13 +1291,29 @@ fn console(w: &mut World) -> Mut<'_, Console> {
     w.resource_mut::<Console>()
 }
 
+/// Whether a full name or its short name starts with `prefix` (lower
+/// case): `cvarlist sv_` and `cvarlist cs_source:sv_` both list
+/// `cs_source:sv_gravity`.
+fn starts_with_either(name: &str, prefix: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.starts_with(prefix) || short_name(&lower).starts_with(prefix)
+}
+
+/// Warn about names a stored line left short (`qualify_line_with_hints`).
+fn hint(c: &mut Console, hints: Vec<String>) -> Result<Option<String>, String> {
+    for h in hints {
+        c.print(Level::Warn, h);
+    }
+    Ok(None)
+}
+
 fn builtins(app: &mut App) {
-    app.console_command("echo", "Print text.", |_, a| Ok(Some(a.join(" "))))
-        .console_command("clear", "Clear the console output.", |w, _| {
+    app.console_command("chimera:echo", "Print text.", |_, a| Ok(Some(a.join(" "))))
+        .console_command("chimera:clear", "Clear the console output.", |w, _| {
             console(w).output.clear();
             Ok(None)
         })
-        .console_command("help", "help <name>: what a command or cvar does.", |w, a| {
+        .console_command("chimera:help", "help <name>: what a command or cvar does.", |w, a| {
             let c = w.resource::<Console>();
             let Some(name) = a.first() else {
                 return Ok(Some(
@@ -900,7 +1336,7 @@ fn builtins(app: &mut App) {
             }
             Err(format!("no command or cvar \"{name}\""))
         })
-        .console_command("find", "find <text>: cvars and commands whose name or help mention it.", |w, a| {
+        .console_command("chimera:find", "find <text>: cvars and commands whose name or help mention it.", |w, a| {
             let text = a.join(" ").to_lowercase();
             let c = w.resource::<Console>();
             let mut out: Vec<String> = c
@@ -916,12 +1352,12 @@ fn builtins(app: &mut App) {
             out.sort();
             Ok(Some(if out.is_empty() { format!("nothing matches \"{text}\"") } else { out.join("\n") }))
         })
-        .console_command("cvarlist", "cvarlist [prefix]: cvars with their values.", |w, a| {
+        .console_command("chimera:cvarlist", "cvarlist [prefix]: cvars with their values.", |w, a| {
             let prefix = a.first().map(|p| p.to_lowercase()).unwrap_or_default();
             let cvars: Vec<Cvar> = w
                 .resource::<Console>()
                 .cvars()
-                .filter(|v| v.name.to_lowercase().starts_with(&prefix))
+                .filter(|v| starts_with_either(&v.name, &prefix))
                 .cloned()
                 .collect();
             let lines: Vec<String> = cvars
@@ -934,17 +1370,17 @@ fn builtins(app: &mut App) {
                 .collect();
             Ok(Some(format!("{}\n{} cvars (* changed from default)", lines.join("\n"), lines.len())))
         })
-        .console_command("cmdlist", "cmdlist [prefix]: commands.", |w, a| {
+        .console_command("chimera:cmdlist", "cmdlist [prefix]: commands.", |w, a| {
             let prefix = a.first().map(|p| p.to_lowercase()).unwrap_or_default();
             let lines: Vec<String> = w
                 .resource::<Console>()
                 .commands()
-                .filter(|v| v.name.to_lowercase().starts_with(&prefix))
+                .filter(|v| starts_with_either(&v.name, &prefix))
                 .map(|v| format!("{:<28} {}", v.name, v.help))
                 .collect();
             Ok(Some(lines.join("\n")))
         })
-        .console_command("differences", "Cvars changed from their defaults.", |w, _| {
+        .console_command("chimera:differences", "Cvars changed from their defaults.", |w, _| {
             let cvars: Vec<Cvar> = w.resource::<Console>().cvars().cloned().collect();
             let lines: Vec<String> = cvars
                 .iter()
@@ -955,13 +1391,13 @@ fn builtins(app: &mut App) {
                 .collect();
             Ok(Some(if lines.is_empty() { "no cvars changed".into() } else { lines.join("\n") }))
         })
-        .console_command("reset", "reset <cvar>: back to its default.", |w, a| {
+        .console_command("chimera:reset", "reset <cvar>: back to its default.", |w, a| {
             let name = a.first().ok_or("reset <cvar>")?;
             let v = w.resource::<Console>().cvar(name).cloned().ok_or(format!("no cvar \"{name}\""))?;
             (v.set)(w, &v.default)?;
             Ok(Some(format!("{} = \"{}\"", v.name, v.default)))
         })
-        .console_command("resetall", "Every cvar back to its default.", |w, _| {
+        .console_command("chimera:resetall", "Every cvar back to its default.", |w, _| {
             let cvars: Vec<Cvar> = w.resource::<Console>().cvars().cloned().collect();
             let mut n = 0;
             for v in &cvars {
@@ -972,7 +1408,7 @@ fn builtins(app: &mut App) {
             }
             Ok(Some(format!("{n} cvars reset")))
         })
-        .console_command("alias", "alias <name> \"<commands>\": a new command; alias alone lists them.", |w, a| {
+        .console_command("chimera:alias", "alias <name> \"<commands>\": a new command; alias alone lists them.", |w, a| {
             let mut c = console(w);
             match a {
                 [] => Ok(Some(
@@ -980,14 +1416,14 @@ fn builtins(app: &mut App) {
                 )),
                 [name] => Ok(c.aliases.get(&name.to_lowercase()).map(|v| format!("{name}: {v}"))),
                 [name, rest @ ..] => {
-                    let body = c.current_line(&rest.join(" "));
+                    let (body, hints) = c.qualify_line_with_hints(&rest.join(" "));
                     c.aliases.insert(name.to_lowercase(), body);
                     c.dirty = true;
-                    Ok(None)
+                    hint(&mut c, hints)
                 }
             }
         })
-        .console_command("toggle", "toggle <cvar> [a b ...]: flip 0/1, or cycle through the values given.", |w, a| {
+        .console_command("chimera:toggle", "toggle <cvar> [a b ...]: flip 0/1, or cycle through the values given.", |w, a| {
             let name = a.first().ok_or("toggle <cvar> [values]")?;
             let v = w.resource::<Console>().cvar(name).cloned().ok_or(format!("no cvar \"{name}\""))?;
             let now = (v.get)(w).unwrap_or_default();
@@ -996,7 +1432,7 @@ fn builtins(app: &mut App) {
             (v.set)(w, &cycle[i])?;
             Ok(Some(format!("{} = \"{}\"", v.name, cycle[i])))
         })
-        .console_command("incrementvar", "incrementvar <cvar> <min> <max> <step>: add step, wrapping.", |w, a| {
+        .console_command("chimera:incrementvar", "incrementvar <cvar> <min> <max> <step>: add step, wrapping.", |w, a| {
             let [name, min, max, step] = a else {
                 return Err("incrementvar <cvar> <min> <max> <step>".into());
             };
@@ -1014,40 +1450,44 @@ fn builtins(app: &mut App) {
             (v.set)(w, &text)?;
             Ok(Some(format!("{} = \"{text}\"", v.name)))
         })
-        .console_command("wait", "wait [frames]: pause the rest of the queue (default 1 frame).", |w, a| {
+        .console_command("chimera:wait", "wait [frames]: pause the rest of the queue (default 1 frame).", |w, a| {
             let frames = a.first().and_then(|f| f.parse().ok()).unwrap_or(1);
             console(w).wait = frames;
             Ok(None)
         })
-        .console_command("watch", "watch <cvar>: show its value on screen (unwatch to remove).", |w, a| {
-            let name = current_name(a.first().ok_or("watch <cvar>")?);
+        .console_command("chimera:watch", "watch <cvar>: show its value on screen (unwatch to remove).", |w, a| {
+            let typed = a.first().ok_or("watch <cvar>")?;
             let mut c = console(w);
+            let name = c.full_name(typed).unwrap_or_else(|| typed.to_lowercase());
             if !c.watches.contains(&name) {
                 c.watches.push(name);
             }
             Ok(None)
         })
-        .console_command("unwatch", "unwatch [cvar]: stop showing it (all with no name).", |w, a| {
+        .console_command("chimera:unwatch", "unwatch [cvar]: stop showing it (all with no name).", |w, a| {
             let mut c = console(w);
             match a.first() {
-                Some(n) => c.watches.retain(|x| x != &current_name(n)),
+                Some(n) => {
+                    let name = c.full_name(n).unwrap_or_else(|| n.to_lowercase());
+                    c.watches.retain(|x| x != &name)
+                }
                 None => c.watches.clear(),
             }
             Ok(None)
         })
-        .console_command("exec", "exec <file>: run a config file (cfg folder; .cfg optional).", |w, a| {
+        .console_command("chimera:exec", "exec <file>: run a config file (cfg folder; .cfg optional).", |w, a| {
             let name = a.first().ok_or("exec <file>")?;
             let text = read_cfg(name).ok_or(format!("couldn't exec {name}"))?;
             run_cfg(w, &text);
             Ok(None)
         })
-        .console_command("execifexists", "execifexists <file>: exec, silently skipped if missing.", |w, a| {
+        .console_command("chimera:execifexists", "execifexists <file>: exec, silently skipped if missing.", |w, a| {
             if let Some(text) = a.first().and_then(|n| read_cfg(n)) {
                 run_cfg(w, &text);
             }
             Ok(None)
         })
-        .console_command("bind", "bind <key> [command]: run a command on a key (+action: held).", |w, a| {
+        .console_command("chimera:bind", "bind <key> [command]: run a command on a key (+action: held).", |w, a| {
             let mut c = console(w);
             match a {
                 [] => Err("bind <key> [command]".into()),
@@ -1056,15 +1496,15 @@ fn builtins(app: &mut App) {
                     None => format!("\"{key}\" is not bound"),
                 })),
                 [key, rest @ ..] => {
-                    let line = c.current_line(&rest.join(" "));
+                    let (line, hints) = c.qualify_line_with_hints(&rest.join(" "));
                     c.binds.insert(key.to_lowercase(), line);
                     c.dirty = true;
-                    Ok(None)
+                    hint(&mut c, hints)
                 }
             }
         })
         .console_command(
-            "bindgame",
+            "chimera:bindgame",
             "bindgame <game> <key> [command]: a key's command while <game> is the player's identity, over the \
              shared binds (no command: hides the shared bind there; a bare game and key says what it is).",
             |w, a| {
@@ -1076,21 +1516,46 @@ fn builtins(app: &mut App) {
                         None => format!("\"{key}\" has no bind of its own in {game}"),
                     })),
                     [game, key, rest @ ..] => {
-                        let line = c.current_line(&rest.join(" "));
+                        let scope = c.canonical_namespace(game);
+                        let (line, hints) = c.qualify_line_in(&rest.join(" "), Some(&scope));
                         c.layers.entry(game.clone()).or_default().insert(key.to_lowercase(), line);
                         c.dirty = true;
-                        Ok(None)
+                        hint(&mut c, hints)
                     }
                 }
             },
         )
-        .console_command("unbindgameall", "Remove every game's own binds (bindgamedefaults brings the shipped ones back).", |w, _| {
+        .console_command(
+            "chimera:scope",
+            "scope [game|auto]: the game whose names short names mean first (then chimera's): a game's id or alias \
+             (cs_source, css, combat_arms, ca); auto follows the game played (the gun in hand in the party apps).",
+            |w, a| {
+                let mut c = console(w);
+                match a.first().map(|s| s.to_lowercase()) {
+                    None => {}
+                    Some(x) if x == "auto" => c.scope = None,
+                    Some(game) => {
+                        if !c.is_namespace(&game) {
+                            return Err(format!("no game \"{game}\" (scope <game>: a game's id or alias, or auto)"));
+                        }
+                        c.scope = Some(c.canonical_namespace(&game));
+                    }
+                }
+                let now = match (&c.scope, &c.auto_scope) {
+                    (Some(s), _) => format!("scope: {s} (pinned; scope auto follows the game played)"),
+                    (None, Some(s)) => format!("scope: {s} (the game played)"),
+                    (None, None) => "scope: none (chimera's names, then names only one game has)".into(),
+                };
+                Ok(Some(now))
+            },
+        )
+        .console_command("chimera:unbindgameall", "Remove every game's own binds (bindgamedefaults brings the shipped ones back).", |w, _| {
             let mut c = console(w);
             c.layers.clear();
             c.dirty = true;
             Ok(None)
         })
-        .console_command("unbindgame", "unbindgame <game> <key>: the shared bind shows through in <game> again.", |w, a| {
+        .console_command("chimera:unbindgame", "unbindgame <game> <key>: the shared bind shows through in <game> again.", |w, a| {
             let [game, key] = a else { return Err("unbindgame <game> <key>".into()) };
             let mut c = console(w);
             if let Some(l) = c.layers.get_mut(game) {
@@ -1099,7 +1564,7 @@ fn builtins(app: &mut App) {
             c.dirty = true;
             Ok(None)
         })
-        .console_command("bindgamedefaults", "bindgamedefaults [game]: every game's (or <game>'s) own binds as shipped.", |w, a| {
+        .console_command("chimera:bindgamedefaults", "bindgamedefaults [game]: every game's (or <game>'s) own binds as shipped.", |w, a| {
             let mut c = console(w);
             let defaults = c.layer_defaults.clone();
             match a.first() {
@@ -1111,24 +1576,24 @@ fn builtins(app: &mut App) {
             c.dirty = true;
             Ok(None)
         })
-        .console_command("unbind", "unbind <key>", |w, a| {
+        .console_command("chimera:unbind", "unbind <key>", |w, a| {
             let key = a.first().ok_or("unbind <key>")?.to_lowercase();
             let mut c = console(w);
             c.binds.remove(&key);
             c.dirty = true;
             Ok(None)
         })
-        .console_command("unbindall", "Remove every bind.", |w, _| {
+        .console_command("chimera:unbindall", "Remove every bind.", |w, _| {
             let mut c = console(w);
             c.binds.clear();
             c.dirty = true;
             Ok(None)
         })
-        .console_command("bindlist", "Every bind.", |w, _| {
+        .console_command("chimera:bindlist", "Every bind.", |w, _| {
             let c = w.resource::<Console>();
             Ok(Some(c.binds.iter().map(|(k, v)| format!("{k:<12} \"{v}\"")).collect::<Vec<_>>().join("\n")))
         })
-        .console_command("host_writeconfig", "host_writeconfig [file]: save binds, aliases and changed cvars (config.cfg).", |w, a| {
+        .console_command("chimera:host_writeconfig", "host_writeconfig [file]: save binds, aliases and changed cvars (config.cfg).", |w, a| {
             let name = a.first().map_or("config.cfg", |s| s.as_str());
             let text = config_text(w);
             let path = cfg_dir().ok_or("no config folder")?.join(with_cfg(name));
@@ -1202,19 +1667,28 @@ pub fn config_text(w: &mut World) -> String {
             c.cvars().cloned().collect::<Vec<_>>(),
         )
     };
+    let console = w.resource::<Console>();
+    let qualified = |line: &str, scope: Option<&str>| console.qualify_line_in(line, scope).0;
+    let scope = console.current_scope();
     out += "unbindall\n";
     for (k, v) in binds {
-        out += &format!("bind {} {}\n", quote(&k), quote(&v));
+        out += &format!("bind {} {}\n", quote(&k), quote(&qualified(&v, scope)));
     }
     // The games' own binds: all of them anew, so one removed stays removed.
     out += "unbindgameall\n";
     for (game, keys) in &layers {
+        let game_scope = console.canonical_namespace(game);
         for (k, v) in keys {
-            out += &format!("bindgame {} {} {}\n", quote(game), quote(k), quote(v));
+            out += &format!(
+                "bindgame {} {} {}\n",
+                quote(game),
+                quote(k),
+                quote(&qualified(v, Some(&game_scope)))
+            );
         }
     }
     for (k, v) in aliases {
-        out += &format!("alias {} {}\n", quote(&k), quote(&v));
+        out += &format!("alias {} {}\n", quote(&k), quote(&qualified(&v, scope)));
     }
     for v in cvars.into_iter().filter(|v| v.archive) {
         if let Some(value) = (v.get)(w)
@@ -1227,7 +1701,7 @@ pub fn config_text(w: &mut World) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     #[test]
@@ -1257,8 +1731,14 @@ mod tests {
         assert_eq!(args, ["<head|chest>", "[amount=100]", "[from yaw, degrees: 0 = front]"]);
         assert_eq!(text, "a hit on yourself.");
         // Help without a usage is all description.
-        assert_eq!(usage("god", "Toggle taking no damage."), (vec![], "Toggle taking no damage.".to_string()));
-        assert_eq!(usage("give", "Give the local player a weapon by ID (e.g. give x).").0, Vec::<String>::new());
+        assert_eq!(
+            usage("god", "Toggle taking no damage."),
+            (vec![], "Toggle taking no damage.".to_string())
+        );
+        assert_eq!(
+            usage("give", "Give the local player a weapon by ID (e.g. give x).").0,
+            Vec::<String>::new()
+        );
         // A name that only starts the help isn't a usage.
         assert_eq!(usage("bot", "bot_add [team]: add a bot.").0, Vec::<String>::new());
         assert_eq!(arg_position("setpos"), None);
@@ -1291,7 +1771,7 @@ mod tests {
         app
     }
 
-    fn run(app: &mut App, line: &str) -> Vec<String> {
+    pub(crate) fn run(app: &mut App, line: &str) -> Vec<String> {
         let start = app.world().resource::<Console>().output.len();
         app.world_mut().resource_mut::<Console>().submit(line);
         app.update();
@@ -1334,7 +1814,10 @@ mod tests {
         let text = config_text(first.world_mut());
         assert!(text.contains("bind space +jump"), "{text}");
         assert!(text.contains("alias hop \"echo hi; wait\""), "{text}");
-        assert!(text.contains("sv_speed 320"), "{text}");
+        assert!(
+            text.contains("\ncs_source:sv_speed 320\n"),
+            "saved by full name: {text}"
+        );
         // A fresh console running the file ends up the same.
         let mut other = app();
         run_cfg(other.world_mut(), &text);
@@ -1348,10 +1831,195 @@ mod tests {
             .world_mut()
             .resource_mut::<Console>()
             .cvars
-            .get_mut("sv_speed")
+            .get_mut("cs_source:sv_speed")
             .unwrap()
             .archive = false;
         assert!(!config_text(other.world_mut()).contains("sv_speed"));
+    }
+
+    /// An app with the same short names in several namespaces: `x` in
+    /// both games, `y` in Combat Arms and Chimera, `only` in CS:S alone.
+    pub(crate) fn namespaced() -> App {
+        let mut app = app();
+        #[derive(Resource, Default)]
+        struct V([u8; 5]);
+        app.init_resource::<V>();
+        resource_cvar::<V, u8>(&mut app, "cs_source:x", "CS:S's x", |v| &mut v.0[0]);
+        resource_cvar::<V, u8>(&mut app, "combat_arms:x", "Combat Arms' x", |v| &mut v.0[1]);
+        resource_cvar::<V, u8>(&mut app, "chimera:y", "ours", |v| &mut v.0[2]);
+        resource_cvar::<V, u8>(&mut app, "combat_arms:y", "Combat Arms' y", |v| &mut v.0[3]);
+        resource_cvar::<V, u8>(&mut app, "only", "CS:S's alone (registered bare)", |v| &mut v.0[4]);
+        let mut c = app.world_mut().resource_mut::<Console>();
+        c.add_namespace(&["cs_source", "css"]);
+        c.add_namespace(&["combat_arms", "ca"]);
+        app
+    }
+
+    fn found(app: &App, name: &str) -> Resolved {
+        app.world().resource::<Console>().resolve(name)
+    }
+
+    fn is(full: &str) -> Resolved {
+        Resolved::Found(full.into())
+    }
+
+    #[test]
+    fn short_names_resolve_by_scope_then_chimera_then_alone() {
+        let mut app = namespaced();
+        // No scope: Chimera's first, then the only one; `x` is ambiguous.
+        assert_eq!(found(&app, "y"), is("chimera:y"));
+        assert_eq!(found(&app, "only"), is("cs_source:only"));
+        assert_eq!(
+            found(&app, "x"),
+            Resolved::Ambiguous(vec!["combat_arms:x".into(), "cs_source:x".into()])
+        );
+        // Full names always work, with aliases for the namespace.
+        assert_eq!(found(&app, "combat_arms:x"), is("combat_arms:x"));
+        assert_eq!(found(&app, "CA:X"), is("combat_arms:x"));
+        assert_eq!(found(&app, "css:x"), is("cs_source:x"));
+        assert_eq!(found(&app, "ca:only"), Resolved::Unknown);
+        // The scope's game first, then Chimera's.
+        run(&mut app, "scope ca");
+        assert_eq!(found(&app, "x"), is("combat_arms:x"));
+        assert_eq!(found(&app, "y"), is("combat_arms:y"));
+        assert_eq!(found(&app, "only"), is("cs_source:only"));
+        run(&mut app, "x 7");
+        assert!(run(&mut app, "combat_arms:x")[0].contains("\"7\""));
+        assert!(run(&mut app, "cs_source:x")[0].contains("\"0\""));
+        run(&mut app, "scope cs_source");
+        assert_eq!(found(&app, "x"), is("cs_source:x"));
+        assert_eq!(found(&app, "y"), is("chimera:y"));
+        // The automatic scope when none is pinned (`console_scope`).
+        run(&mut app, "scope auto");
+        app.world_mut().resource_mut::<Console>().auto_scope = Some("combat_arms".into());
+        assert_eq!(found(&app, "x"), is("combat_arms:x"));
+        assert!(run(&mut app, "scope")[0].contains("combat_arms (the game played)"));
+        assert!(run(&mut app, "scope nogame")[0].contains("no game"));
+    }
+
+    #[test]
+    fn an_ambiguous_short_name_prints_a_hint() {
+        let mut app = namespaced();
+        let out = run(&mut app, "x 1");
+        assert!(
+            out[0].contains("\"x\" is ambiguous: combat_arms:x, cs_source:x") && out[0].contains("scope <game>"),
+            "{out:?}"
+        );
+        // Nothing was set.
+        assert!(run(&mut app, "cs_source:x")[0].contains("\"0\""));
+        // A bind of it keeps the short name and says why.
+        let out = run(&mut app, "bind k \"x 1\"");
+        assert!(out.iter().any(|l| l.contains("is ambiguous")), "{out:?}");
+        assert_eq!(app.world().resource::<Console>().binds["k"], "x 1");
+    }
+
+    #[test]
+    fn old_names_still_work() {
+        let mut app = app();
+        #[derive(Resource, Default)]
+        struct Ours(u8, u8);
+        app.init_resource::<Ours>();
+        // Registered under their old names, as plugins did.
+        resource_cvar::<Ours, u8>(&mut app, "chimera:hitmarker", "", |o| &mut o.0);
+        resource_cvar::<Ours, u8>(&mut app, "chimera:watchbot", "", |o| &mut o.1);
+        let c = app.world().resource::<Console>();
+        assert_eq!(c.cvar("cl_hitmarker").unwrap().name, "chimera:hitmarker");
+        assert_eq!(c.cvar("hitmarker").unwrap().name, "chimera:hitmarker");
+        assert_eq!(c.cvar("chimera_watch").unwrap().name, "chimera:watchbot");
+        assert_eq!(c.cvar("mashup_watch").unwrap().name, "chimera:watchbot");
+        assert_eq!(c.cvar("chimera:noblock").unwrap().name, "chimera:noblock");
+        assert_eq!(c.cvar("chimera_noblock").unwrap().name, "chimera:noblock");
+        assert_eq!(c.cvar("MASHUP_NOBLOCK").unwrap().name, "chimera:noblock");
+        // The built-in `watch` keeps its name.
+        assert_eq!(c.command("watch").unwrap().name, "chimera:watch");
+        // Old names aren't offered.
+        let names = c.names();
+        assert!(names.contains(&"noblock".to_string()) && !names.iter().any(|n| n.starts_with("chimera_")));
+        run(&mut app, "chimera_noblock 2; cl_hitmarker 1");
+        assert!(run(&mut app, "noblock")[0].contains("\"2\""));
+        assert!(run(&mut app, "chimera:hitmarker")[0].contains("\"1\""));
+        // A bind or alias of an old name is stored with the new one.
+        run(
+            &mut app,
+            "bind n \"chimera_noblock 1\"; alias nb \"mashup_noblock 0; echo off\"",
+        );
+        let c = app.world().resource::<Console>();
+        assert_eq!(c.binds["n"], "noblock 1");
+        assert_eq!(c.aliases["nb"], "noblock 0; echo off");
+    }
+
+    #[test]
+    fn configs_read_short_names_and_save_full_ones() {
+        let mut first = namespaced();
+        {
+            let mut c = first.world_mut().resource_mut::<Console>();
+            for n in ["sv_speed", "combat_arms:x", "chimera:y", "ca:y"] {
+                c.archive(n);
+            }
+            c.keep_short("slot1");
+        }
+        // A config from before namespaces: short names, in a scope.
+        let old = "bind space +jump\nbind 1 slot1\nbind f \"only 1; echo hi\"\nscope ca\nx 3\nsv_speed 320\ny 4\n";
+        run_cfg(first.world_mut(), old);
+        first.update();
+        let text = config_text(first.world_mut());
+        for line in [
+            "bind space +jump",
+            "bind 1 slot1",
+            "bind f \"cs_source:only 1; echo hi\"",
+            "\ncombat_arms:x 3\n",
+            "\ncs_source:sv_speed 320\n",
+            "\ncombat_arms:y 4\n",
+        ] {
+            assert!(text.contains(line), "{line}: {text}");
+        }
+        // Another app in another scope reads it back the same.
+        let mut other = namespaced();
+        run(&mut other, "scope css");
+        run_cfg(other.world_mut(), &text);
+        other.update();
+        assert!(run(&mut other, "combat_arms:x")[0].contains("\"3\""));
+        assert!(run(&mut other, "combat_arms:y")[0].contains("\"4\""));
+        assert!(run(&mut other, "chimera:y")[0].contains("\"0\""));
+        assert!(run(&mut other, "sv_speed")[0].contains("\"320\""));
+        assert_eq!(
+            other.world().resource::<Console>().binds["f"],
+            "cs_source:only 1; echo hi"
+        );
+    }
+
+    #[test]
+    fn binds_store_full_names_in_their_scope() {
+        let mut app = namespaced();
+        run(
+            &mut app,
+            "scope combat_arms; bind a \"x 1\"; bind b +attack; bind c \"toggle y\"",
+        );
+        // A game's own binds qualify in that game's scope.
+        run(&mut app, "bindgame cs_source d \"x 2\"");
+        let c = app.world().resource::<Console>();
+        assert_eq!(c.binds["a"], "combat_arms:x 1");
+        assert_eq!(c.binds["b"], "+attack", "actions stay as typed");
+        assert_eq!(
+            c.binds["c"], "toggle y",
+            "Chimera's unshared names stay short (arguments as typed)"
+        );
+        assert_eq!(c.layers["cs_source"]["d"], "cs_source:x 2");
+    }
+
+    #[test]
+    fn a_game_alias_can_become_canonical() {
+        let mut app = namespaced();
+        // The user picks `css` as CS:S's canonical name.
+        app.world_mut()
+            .resource_mut::<Console>()
+            .add_namespace(&["css", "cs_source"]);
+        let c = app.world().resource::<Console>();
+        assert_eq!(c.cvar("cs_source:x").unwrap().name, "css:x");
+        assert_eq!(c.cvar("sv_speed").unwrap().name, "css:sv_speed");
+        assert_eq!(c.cvar("sv_cheats").unwrap().scope, CvarScope::Replicated);
+        assert!(in_table(c, CHEATS, "css:noclip") || c.command("noclip").is_none());
+        assert_eq!(c.canonical_full("cs_source:kill"), "css:kill");
     }
 
     #[test]

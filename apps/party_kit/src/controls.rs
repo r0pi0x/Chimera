@@ -256,7 +256,7 @@ pub struct ControlsPlugin;
 impl Plugin for ControlsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ControlsPage>()
-            .console_command("controls", "controls [shared|combat_arms|cs_source]: the key binds page.", |w, a| {
+            .console_command("chimera:controls", "controls [shared|combat_arms|cs_source]: the key binds page.", |w, a| {
                 let tab = match a.first() {
                     Some(name) => tab_named(name).ok_or_else(|| format!("no tab `{name}`"))?,
                     None => w.resource::<ControlsPage>().tab,

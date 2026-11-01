@@ -1,6 +1,7 @@
 //! Cheat commands in a network game (Source's FCVAR_CHEAT commands;
 //! `console::CHEATS`): a network client's `noclip`, `god`, `setpos`, ...
-//! go to its server (`ClientCommand`), which runs them for that client's
+//! go to its server (`ClientCommand`, the command's name in full:
+//! `cs_source:noclip`), which runs them for that client's
 //! player (`console::CommandPlayer`) when its own `sv_cheats` is 1, and
 //! sends back what they printed (`ConsoleText`): Source's way, where the
 //! client sends cheats on and the server decides. A player's movement
@@ -22,7 +23,10 @@ use serde::{Deserialize, Serialize};
 
 use super::server::Player;
 use crate::{
-    console::{CommandPlayer, Console, ConsoleAppExt, Level, PLAYER_COMMANDS, cheats_allowed, command_player, execute, is_cheat, parse},
+    console::{
+        CommandPlayer, Console, ConsoleAppExt, Level, PLAYER_COMMANDS, cheats_allowed, command_player, execute,
+        in_table, is_cheat, parse,
+    },
     core::{MovementState, NetRole, Velocity},
     movement::noclip::NoclipBack,
     slots::{Loadout, MovementSlot, set_movement},
@@ -104,14 +108,20 @@ pub fn run_for(world: &mut World, client: Entity, line: &str) {
         let Some(name) = words.first().map(|w| w.to_lowercase()) else {
             continue;
         };
-        let cheat = is_cheat(&name, &words[1..]);
-        if !cheat && !PLAYER_COMMANDS.contains(&name.as_str()) {
+        // Clients send full names (`Console::wire_line`); a short one
+        // resolves in the server's scope.
+        let console = world.resource::<Console>();
+        let cheat = is_cheat(console, &name, &words[1..]);
+        if !cheat && !in_table(console, PLAYER_COMMANDS, &name) {
             continue;
         }
         if cheat && !cheats_allowed(world) {
             // Source's words.
             lines.push((
-                format!("Can't use cheat command {name} in multiplayer, unless the server has sv_cheats set to 1."),
+                format!(
+                    "Can't use cheat command {} in multiplayer, unless the server has sv_cheats set to 1.",
+                    crate::console::short_name(&name)
+                ),
                 true,
             ));
             continue;

@@ -103,7 +103,7 @@ impl Plugin for WidgetsPlugin {
             .add_systems(Update, style_buttons)
             .add_systems(PostUpdate, place_frames.before(bevy::ui::UiSystems::Layout));
         app.console_command(
-            "vgui_windows",
+            "chimera:vgui_windows",
             "vgui_windows [<frame> <x> <y> [<wide> <tall>]]: the menus' frames (servers, options, createserver, \
              ...) with their places and stacking, back to front; with a frame, move it there (window pixels) as \
              a drag of its title bar would, and size it (scheme pixels) when it's sizeable; screenshots and tests.",
@@ -126,7 +126,7 @@ impl Plugin for WidgetsPlugin {
             },
         );
         app.console_command(
-            "ui_click",
+            "chimera:ui_click",
             "ui_click <x> <y>: click the left button there (window pixels), as the pointer would; tests and \
              screenshots of the menus.",
             |w, a| {
@@ -136,7 +136,7 @@ impl Plugin for WidgetsPlugin {
             },
         );
         app.console_command(
-            "ui_drag",
+            "chimera:ui_drag",
             "ui_drag <x0> <y0> <x1> <y1> [<frames>]: press the left button at x0 y0, move to x1 y1 over that \
              many frames (default 10) and let go (window pixels): a scroll bar's thumb, a slider, a frame.",
             |w, a| {

@@ -349,19 +349,34 @@ fn candidates(world: &mut World, input: &str) -> (String, Vec<(String, String)>)
     let console = world.resource::<Console>();
     let mut out: Vec<(String, String)> = Vec::new();
     let plain = |v: &[&str]| v.iter().map(|x| (x.to_string(), String::new())).collect::<Vec<_>>();
+    // Names as they are typed here: short when that means them in this
+    // scope, else in full (`Console::display_name`); with a namespace
+    // typed, in full.
+    let shown = |name: &str| {
+        if token.contains(':') {
+            name.to_string()
+        } else {
+            console.display_name(name)
+        }
+    };
     if head.is_empty() {
         for v in console.cvars() {
-            out.push((v.name.clone(), v.help.clone()));
+            out.push((shown(&v.name), v.help.clone()));
         }
         for c in console.commands() {
-            out.push((c.name.clone(), c.help.clone()));
+            out.push((shown(&c.name), c.help.clone()));
         }
         for (a, body) in &console.aliases {
             out.push((a.clone(), format!("alias: {body}")));
         }
     } else {
-        let cmd = words[0].to_lowercase();
-        if let Some(v) = console.cvar(&cmd)
+        let typed = words[0].to_lowercase();
+        // The command's short name (`chimera_hurtme`, `css:bot_add`: by
+        // what they resolve to).
+        let cmd = console
+            .full_name(&typed)
+            .map_or(typed.clone(), |f| crate::console::short_name(&f).to_string());
+        if let Some(v) = console.cvar(&typed)
             && arg == 0
         {
             out.extend(v.values.iter().map(|x| (x.clone(), String::new())));
@@ -377,12 +392,12 @@ fn candidates(world: &mut World, input: &str) -> (String, Vec<(String, String)>)
         let bound = |n: &str| console.binds.get(n).map_or(String::new(), |v| format!("bound to \"{v}\""));
         match cmd.as_str() {
             "help" | "reset" | "toggle" | "incrementvar" | "watch" | "unwatch" | "cvarlist" | "find" if arg == 0 => {
-                out.extend(console.cvars().map(|v| (v.name.clone(), v.help.clone())));
+                out.extend(console.cvars().map(|v| (shown(&v.name), v.help.clone())));
                 if cmd == "help" || cmd == "find" {
-                    out.extend(console.commands().map(|c| (c.name.clone(), c.help.clone())));
+                    out.extend(console.commands().map(|c| (shown(&c.name), c.help.clone())));
                 }
             }
-            "cmdlist" if arg == 0 => out.extend(console.commands().map(|c| (c.name.clone(), c.help.clone()))),
+            "cmdlist" if arg == 0 => out.extend(console.commands().map(|c| (shown(&c.name), c.help.clone()))),
             "exec" | "execifexists" => {
                 if let Some(dir) = cfg_dir()
                     && let Ok(files) = std::fs::read_dir(dir)
@@ -409,7 +424,7 @@ fn candidates(world: &mut World, input: &str) -> (String, Vec<(String, String)>)
             }
             "bind" => {
                 out.extend(ACTIONS.iter().map(|a| (format!("+{a}"), String::new())));
-                out.extend(console.commands().map(|c| (c.name.clone(), c.help.clone())));
+                out.extend(console.commands().map(|c| (shown(&c.name), c.help.clone())));
             }
             "map" | "maps" if arg == 0 => {
                 let game = crate::game_registry::default_game(world);
@@ -424,7 +439,7 @@ fn candidates(world: &mut World, input: &str) -> (String, Vec<(String, String)>)
                 out.push(("1".into(), "terrorists".into()));
                 out.push(("2".into(), "counter-terrorists".into()));
             }
-            "chimera_hurtme" if arg == 0 => out.extend(plain(&[
+            "hurtme" if arg == 0 => out.extend(plain(&[
                 "head", "chest", "stomach", "leftarm", "rightarm", "leftleg", "rightleg", "generic",
             ])),
             "menu" if arg == 0 => out.extend(plain(&[
@@ -451,19 +466,28 @@ fn candidates(world: &mut World, input: &str) -> (String, Vec<(String, String)>)
                     out.extend(r.0.iter().map(|d| (d.id.to_string(), String::new())));
                 }
             }
-            "chimera_watch" if arg == 0 => {
+            "watchbot" if arg == 0 => {
                 out.push(("0".into(), "back to your own view".into()));
                 out.extend(bot_names(world).into_iter().filter_map(|n| {
                     let number = n.strip_prefix("Bot ")?.to_string();
                     Some((number, n))
                 }));
             }
+            "scope" if arg == 0 => {
+                out.push(("auto".into(), "follow the game played".into()));
+                out.extend(
+                    console
+                        .namespace_names()
+                        .into_iter()
+                        .map(|(n, c)| if n == c { (n, String::new()) } else { (n, format!("alias of {c}")) }),
+                );
+            }
             "ent_fire" if arg == 0 => out.extend(logic_names(world)),
             "ent_fire" if arg == 1 => out.extend(plain(ENT_INPUTS)),
             _ => {}
         }
         let console = world.resource::<Console>();
-        if let Some(c) = console.command(&cmd).cloned()
+        if let Some(c) = console.command(&typed).cloned()
             && let Some(complete) = c.complete
         {
             out.extend(complete(world, token).into_iter().map(|x| (x, String::new())));
@@ -572,7 +596,7 @@ fn arg_help(world: &mut World, input: &str) -> Option<ArgHelp> {
             _ => None,
         };
         return Some(ArgHelp {
-            name: c.name.clone(),
+            name: console.display_name(&c.name),
             args,
             current,
             detail: text,
@@ -595,7 +619,7 @@ fn arg_help(world: &mut World, input: &str) -> Option<ArgHelp> {
         }
         let kind = if v.integer { "<whole number>" } else { "<value>" };
         return Some(ArgHelp {
-            name: v.name.clone(),
+            name: world.resource::<Console>().display_name(&v.name),
             args: vec![kind.to_string()],
             current: (arg == 0).then_some(0),
             detail,
@@ -2247,7 +2271,7 @@ pub fn client_commands(app: &mut App) {
     // client's player).
     crate::net::cheats::player_commands(app);
     app.console_command(
-        "chimera_host_if_asked",
+        "chimera:host_if_asked",
         "Host the loaded map for other players when maxplayers asks for them (what map and the menu's \
          Create Server do after a load); the command line's --map runs it after its +commands.",
         |w, _| {
@@ -2284,8 +2308,8 @@ pub fn client_commands(app: &mut App) {
         },
     )
     .console_command(
-        "chimera_hurtme",
-        "chimera_hurtme <head|chest|stomach|leftarm|rightarm|leftleg|rightleg|generic> [amount=100] [from yaw, degrees: 0 = shot from the front] [attacker name]: a bullet hit on yourself at that hitbox (e.g. to see your ragdoll in thirdperson; killed by a named player, its death cam and freeze cam).",
+        "chimera:hurtme",
+        "hurtme <head|chest|stomach|leftarm|rightarm|leftleg|rightleg|generic> [amount=100] [from yaw, degrees: 0 = shot from the front] [attacker name]: a bullet hit on yourself at that hitbox (e.g. to see your ragdoll in thirdperson; killed by a named player, its death cam and freeze cam).",
         |w, a| {
             use crate::core::{Damage, DamageKind, Health, Hitboxes, Hitgroup, Intent};
             let group = match a.first().map(|s| s.to_ascii_lowercase()).as_deref() {
@@ -2370,7 +2394,7 @@ pub fn client_commands(app: &mut App) {
         },
     )
     .console_command(
-        "import",
+        "chimera:import",
         "import <file.bsp|file.bsp.bz2>: copy a map into Chimera's content cache (never the game folder).",
         |w, a| {
             let path = a.join(" ");
@@ -2472,7 +2496,7 @@ pub fn client_commands(app: &mut App) {
         Ok(None)
     })
     .console_command(
-        "con_input",
+        "chimera:con_input",
         "con_input \"<text>\" [n]: open the console with text on its input line and its nth suggestion picked \
          (1: the first), as typing and Down would (for screenshots of the console).",
         |w, a| {
@@ -2502,7 +2526,7 @@ pub fn client_commands(app: &mut App) {
         },
     )
     .console_command(
-        "con_dump",
+        "chimera:con_dump",
         "con_dump [file]: write the console output to the cfg folder (condump.txt).",
         |w, a| {
             let name = a.first().map_or("condump.txt", |s| s.as_str());
@@ -2514,7 +2538,7 @@ pub fn client_commands(app: &mut App) {
         },
     )
     .console_command(
-        "con_copy",
+        "chimera:con_copy",
         "con_copy [lines]: copy the console output (or its last lines) to the clipboard.",
         |w, a| {
             let output = &w.resource::<Console>().output;
@@ -2711,6 +2735,7 @@ mod tests {
             old_default_binds: &[],
             movement_cvars: &[],
             meters_per_unit: 0.0254,
+            console_namespaces: &[],
         };
         let target = |name: &str| map_target(Some(&GAME), name);
         let sg = |m: &str| Some((format!("some_game:{m}"), true));

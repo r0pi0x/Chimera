@@ -799,27 +799,27 @@ impl Plugin for CaGearPlugin {
 /// The console's gear settings (`CaOwnGear`, `CaGearQuirks`).
 pub fn gear_cvars(app: &mut App) {
     use crate::console::resource_cvar;
-    resource_cvar::<CaOwnGear, String>(app, "ca_perks", "Your perk items, e.g. \"16001 16012\".", |g| &mut g.perks);
-    resource_cvar::<CaOwnGear, String>(app, "ca_items", "Your equipped item numbers (set tiers).", |g| &mut g.items);
-    resource_cvar::<CaOwnGear, String>(app, "ca_head_mods", "Gear mods on your helmet (up to 3).", |g| &mut g.head_mods);
-    resource_cvar::<CaOwnGear, String>(app, "ca_face_mods", "Gear mods on your goggles or mask (up to 3).", |g| {
+    resource_cvar::<CaOwnGear, String>(app, "combat_arms:ca_perks", "Your perk items, e.g. \"16001 16012\".", |g| &mut g.perks);
+    resource_cvar::<CaOwnGear, String>(app, "combat_arms:ca_items", "Your equipped item numbers (set tiers).", |g| &mut g.items);
+    resource_cvar::<CaOwnGear, String>(app, "combat_arms:ca_head_mods", "Gear mods on your helmet (up to 3).", |g| &mut g.head_mods);
+    resource_cvar::<CaOwnGear, String>(app, "combat_arms:ca_face_mods", "Gear mods on your goggles or mask (up to 3).", |g| {
         &mut g.face_mods
     });
-    resource_cvar::<CaOwnGear, String>(app, "ca_vest_mods", "Gear mods on your vest (up to 3).", |g| &mut g.vest_mods);
-    resource_cvar::<CaOwnGear, i32>(app, "ca_fast_respawns", "Your fast respawns left (F7).", |g| &mut g.fast_respawns);
-    resource_cvar::<CaOwnGear, i32>(app, "ca_fast_respawns_max", "Your fast respawns at most.", |g| {
+    resource_cvar::<CaOwnGear, String>(app, "combat_arms:ca_vest_mods", "Gear mods on your vest (up to 3).", |g| &mut g.vest_mods);
+    resource_cvar::<CaOwnGear, i32>(app, "combat_arms:ca_fast_respawns", "Your fast respawns left (F7).", |g| &mut g.fast_respawns);
+    resource_cvar::<CaOwnGear, i32>(app, "combat_arms:ca_fast_respawns_max", "Your fast respawns at most.", |g| {
         &mut g.fast_respawns_max
     });
-    resource_cvar::<CaOwnGear, i32>(app, "ca_fast_pass", "1: unlimited fast respawns (the monthly pass).", |g| {
+    resource_cvar::<CaOwnGear, i32>(app, "combat_arms:ca_fast_pass", "1: unlimited fast respawns (the monthly pass).", |g| {
         &mut g.fast_pass
     });
-    resource_cvar::<CaOwnGear, i32>(app, "ca_skill_extender", "1: a fourth perk slot.", |g| &mut g.skill_extender);
-    resource_cvar::<CaOwnGear, i32>(app, "ca_infected_item", "1: an infected-mercenary item (Fighting Chance).", |g| {
+    resource_cvar::<CaOwnGear, i32>(app, "combat_arms:ca_skill_extender", "1: a fourth perk slot.", |g| &mut g.skill_extender);
+    resource_cvar::<CaOwnGear, i32>(app, "combat_arms:ca_infected_item", "1: an infected-mercenary item (Fighting Chance).", |g| {
         &mut g.infected_item
     });
     resource_cvar::<CaGearQuirks, bool>(
         app,
-        "ca_gear_byte_ids",
+        "combat_arms:ca_gear_byte_ids",
         "1: the reference's byte-wide gear ids (quirk 1: everyone without a face or goggle piece gets piece 255).",
         |q| &mut q.byte_ids,
     );

@@ -419,7 +419,7 @@ impl Plugin for CaVolumesPlugin {
                 .in_set(SimSet::Weapons),
         )
         .console_command(
-            "ca_volumes_here",
+            "combat_arms:ca_volumes_here",
             "ca_volumes_here [radius u = 0]: the map's volumes at your centre (or within the radius of it): name, class, bounds (u, engine axes), damage, pending, hidden, whether you are inside.",
             |w, a| {
                 let radius = a.first().and_then(|r| r.parse::<f32>().ok()).unwrap_or(0.0).max(0.0);

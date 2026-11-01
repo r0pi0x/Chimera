@@ -253,6 +253,7 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
     old_default_binds: OLD_DEFAULT_BINDS,
     movement_cvars: movement::CVARS,
     meters_per_unit: 0.0254,
+    console_namespaces: &["cs_source", "css"],
 };
 
 /// Every map the mounted install holds: `maps/<name>.bsp`, sorted.

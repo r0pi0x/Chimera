@@ -320,7 +320,7 @@ fn even_footsteps(app: &mut App) {
     if app.world().get_resource::<chimera_core::console::Console>().is_some() {
         chimera_core::console::resource_cvar::<EvenFootsteps, u8>(
             app,
-            "party_even_footsteps",
+            "chimera:party_even_footsteps",
             "1: every game's footsteps carry as far and as loud as CS:S's (one profile for both identities); 0: each game's own.",
             |s| &mut s.on,
         );
