@@ -28,9 +28,9 @@ HL2:DM spec continues it and must not contradict it.
 | H2 | [suit.md](suit.md) | 1 | draft | health, armour split, aux power, flashlight, breath, pickups and chargers |
 | H3 | [weapons.md](weapons.md) | 1 | draft | inventory, switching, ammo, bullet weapons, melee |
 | H6 | [rules.md](rules.md) | 1 | draft | DM and TDM, spawns, respawn, limits, intermission, scoring, teams, models |
-| H4 | `projectiles.md` | 2 | not started | SMG1 grenade, AR2 ball, RPG, crossbow, frag, S.L.A.M. |
-| H5 | `gravity_gun.md` | 2 | not started | gravity gun, `+use` carry (off by default), physics damage and credit |
-| H7 | `player_models.md` | 2 | not started | models, animation, hitboxes, ragdolls, view models |
+| H4 | [projectiles.md](projectiles.md) | 2 | draft | SMG1 grenade, AR2 ball, RPG, crossbow, frag, S.L.A.M. |
+| H5 | [gravity_gun.md](gravity_gun.md) | 2 | draft | gravity gun, `+use` carry (off by default), physics damage and credit |
+| H7 | [player_models.md](player_models.md) | 2 | draft | models, animation, hitboxes, ragdolls, view models |
 | H8 | `hud.md` | 3 | not started | HUD panels, weapon selection, death notices, scoreboard |
 | H9 | `effects_sounds.md` | 3 | not started | effects and sounds |
 | H10 | `maps_entities.md` | 3 | not started | HL2:DM's map entities beyond specs/source/ |
