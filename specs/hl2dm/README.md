@@ -24,10 +24,10 @@ HL2:DM spec continues it and must not contradict it.
 | H | File | Wave | Status | Covers |
 |---|---|---|---|---|
 | H0 | [source_deltas.md](source_deltas.md) | 0 | draft | each existing Source spec: same or what differs; install facts (search path, VPKs, stock maps, BSP and MDL versions, builds, tick, default cvars, player models, weapon scripts, SourceMod on the probe server) |
-| H1 | `movement.md` | 1 | not started | movement deltas: speeds, sprint, gravity and jump, ladders (`func_useableladder`), water and drowning, fall damage |
-| H2 | `suit.md` | 1 | not started | health, armour split, aux power, flashlight, breath, pickups and chargers |
-| H3 | `weapons.md` | 1 | not started | inventory, switching, ammo, bullet weapons, melee |
-| H6 | `rules.md` | 1 | not started | DM and TDM, spawns, respawn, limits, intermission, scoring, teams, models |
+| H1 | [movement.md](movement.md) | 1 | draft | movement deltas: speeds, sprint, gravity and jump, ladders (`func_useableladder`), water and drowning, fall damage |
+| H2 | [suit.md](suit.md) | 1 | draft | health, armour split, aux power, flashlight, breath, pickups and chargers |
+| H3 | [weapons.md](weapons.md) | 1 | draft | inventory, switching, ammo, bullet weapons, melee |
+| H6 | [rules.md](rules.md) | 1 | draft | DM and TDM, spawns, respawn, limits, intermission, scoring, teams, models |
 | H4 | `projectiles.md` | 2 | not started | SMG1 grenade, AR2 ball, RPG, crossbow, frag, S.L.A.M. |
 | H5 | `gravity_gun.md` | 2 | not started | gravity gun, `+use` carry (off by default), physics damage and credit |
 | H7 | `player_models.md` | 2 | not started | models, animation, hitboxes, ragdolls, view models |
