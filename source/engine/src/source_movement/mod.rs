@@ -1,8 +1,26 @@
-//! Source player movement, from specs/cs_source/movement.md: a swept-box
-//! kinematic controller. Friction and acceleration toward a wish direction,
-//! air acceleration with the 30-unit cap that makes air-strafing work,
-//! split gravity, jumping, ground detection, slide moves with crease
-//! handling, stair stepping, sticking to slopes and stairs, and ducking.
+//! Source player movement, from specs/cs_source/movement.md (lift S6 of
+//! docs/plans/active/hl2dm.md: CS:S's, now every Source game's): a
+//! swept-box kinematic controller. Friction and acceleration toward a wish
+//! direction, air acceleration with the 30-unit cap that makes
+//! air-strafing work, split gravity, jumping, ground detection, slide
+//! moves with crease handling, stair stepping, sticking to slopes and
+//! stairs, and ducking.
+//!
+//! Each Source game registers it under its own id with its own config
+//! (`SourceMovementAppExt::source_movement`: `cs_source:movement` with the
+//! `SourceMovementConfig` resource, CS:S's measured values;
+//! `hl2dm:movement` with its own in `SourceMovementConfigs`), and its
+//! cvars under its namespace; a character's config follows its
+//! `MovementSlot` (`MovementConfigs`). What differs between the games is
+//! config: CS:S's stamina, bunny-hop cap, walk scale, ladder dampening and
+//! measured hulls; HL2's fall thresholds and fixed or fractional fall
+//! damage, the swim lift of the player's own speed, footsteps of the
+//! character's model (`StepSounds`, none while ducked), climbing
+//! `func_useableladder`s instead of ladder brushes (`useable_ladders`:
+//! the map's ladders, mounting, forced moves, climbing and dismounts), and
+//! no CS:S drowning. A game may choose the tick's max speed before the
+//! step (`SourceSpeed`, ordered before `SourceMovementStep`: HL2:DM's
+//! walk, run and sprint).
 //!
 //! The maths runs in Source units (inches, Z up) like the spec; the
 //! character's `Transform` (engine meters, Y up) is the centre of the
@@ -16,13 +34,13 @@
 //! its sound. A bullet hit's velocity modifier (CS:S, weapons.md M18,
 //! set by `hit_reaction`) multiplies the max speed and recovers by 1/3 a
 //! second after each move. A head under water too long drowns
-//! (`super::drown`, from the water level kept here). Footsteps play the
+//! (`drown`, from the water level kept here). Footsteps play the
 //! surface underfoot's steps, or a footstep volume's replacement
-//! (func_footstep_control, `super::sound::step_remaps`). A character with
+//! (func_footstep_control, `content::sound::step_remaps`). A character with
 //! `SettleOnGround` (hostages) goes down onto the floor its ground test
 //! finds (players keep the gap of up to 2 units, as Source's do).
-//! `match_movement` is what the characters the game spawns move with
-//! (bots, hostages): the match's, never the local player's noclip.
+//! NPCs (`core::Npc`: CS:S's hostages) block every player whatever
+//! `chimera_noblock` says.
 //!
 //! Known shortcuts (docs/tech-debt.md): Two departures from Source's box trace,
 //! made so surfing works (`Tracer::sweep_brushes`): the plane a box stops
@@ -89,6 +107,9 @@
 pub mod drown;
 pub mod pushaway;
 pub mod shadow;
+pub mod useable_ladders;
+
+pub use useable_ladders::{ForcedMove, UseableLadder, UseableLadders};
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -103,10 +124,8 @@ use crate::{
         PushAway,
         sound::{SoundBank, SurfaceGrid},
     },
-    slots::RegisterSlots,
+    slots::{MovementSlot, RegisterSlots},
 };
-
-pub const ID: &str = "cs_source:movement";
 
 const METERS_PER_UNIT: f32 = 0.0254;
 
@@ -207,6 +226,42 @@ pub struct SourceMovementConfig {
     /// sv_footsteps: false silences steps, jump and landing sounds
     /// (sounds.md 3; the timers still run).
     pub footsteps: bool,
+    /// Landing effects' thresholds (units/s): none below `fall_punch`;
+    /// above `fall_safe` full volume (and damage), above `fall_half_safe`
+    /// 0.85, below `fall_bounce` silent, else 0.5 (CS:S: the shared code's
+    /// 350, 580, 290, 200; HL2's set scaled for gravity 600: 303, 526.5,
+    /// 263.25, 173).
+    pub fall_punch: f32,
+    pub fall_half_safe: f32,
+    pub fall_bounce: f32,
+    /// A damaging landing costs exactly this (HL2:DM's `mp_falldamage` 0:
+    /// 10); None: by speed (`fall_damage_per_speed`).
+    pub fall_fixed: Option<f32>,
+    /// HL2's damage by speed: the fraction is kept (the health's
+    /// remainder takes it) and the landing roll uses the fall speed less
+    /// `fall_safe` (specs/hl2dm/movement.md "Falling and landing"); CS:S
+    /// truncates and rolls by the whole fall.
+    pub fall_fraction: bool,
+    /// Brushes with ladder contents are climbed (CS:S). HL2's games climb
+    /// `func_useableladder`s instead (`useable_ladders`) and contents
+    /// ladders are solid like any brush.
+    pub contents_ladders: bool,
+    /// `func_useableladder`s are climbed (`useable_ladders`; HL2:DM), with
+    /// `sv_ladder_useonly` (only `+use` mounts) and
+    /// `sv_autoladderdismount` (the ends dismount by themselves).
+    pub useable_ladders: bool,
+    pub ladder_use_only: bool,
+    pub ladder_auto_dismount: bool,
+    /// Swimming's upward push is the player's max speed (HL2: 190, 150 or
+    /// 320), not `client_maxspeed`.
+    pub swim_lift_max_speed: bool,
+    /// Footsteps are the character's model's (`StepSounds`: HL2:DM's run
+    /// steps, whatever the surface) on the shared timing, silent while
+    /// ducked; else the surface's (CS:S).
+    pub model_footsteps: bool,
+    /// CS:S's drowning (`drown`); a game with its own (HL2:DM's suit)
+    /// turns it off.
+    pub drowning: bool,
 }
 
 /// Console variables players and server configs know, mapped onto the
@@ -362,8 +417,77 @@ impl SourceMovementConfig {
             fall_safe: 580.0,
             fall_damage_per_speed: 100.0 / (1024.0 - 580.0),
             footsteps: true,
+            fall_punch: 350.0,
+            fall_half_safe: 290.0,
+            fall_bounce: 200.0,
+            fall_fixed: None,
+            fall_fraction: false,
+            contents_ladders: true,
+            useable_ladders: false,
+            ladder_use_only: false,
+            ladder_auto_dismount: true,
+            swim_lift_max_speed: false,
+            model_footsteps: false,
+            drowning: true,
         }
     }
+}
+
+/// The configs of the Source movements registered with one of their own
+/// (`SourceMovementAppExt::source_movement`), by movement id. A Source
+/// movement without one (CS:S's) uses the `SourceMovementConfig`
+/// resource.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct SourceMovementConfigs(pub Vec<(&'static str, SourceMovementConfig)>);
+
+impl SourceMovementConfigs {
+    pub fn get(&self, id: &str) -> Option<&SourceMovementConfig> {
+        self.0.iter().find(|(i, _)| *i == id).map(|(_, c)| c)
+    }
+
+    pub fn get_mut(&mut self, id: &str) -> Option<&mut SourceMovementConfig> {
+        self.0.iter_mut().find(|(i, _)| *i == id).map(|(_, c)| c)
+    }
+}
+
+/// Each Source character's config: its movement's own
+/// (`SourceMovementConfigs`, by its `MovementSlot`), else the
+/// `SourceMovementConfig` resource.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct MovementConfigs<'w> {
+    fallback: Res<'w, SourceMovementConfig>,
+    own: Option<Res<'w, SourceMovementConfigs>>,
+}
+
+impl MovementConfigs<'_> {
+    /// The config of a character on movement `slot`.
+    pub fn of(&self, slot: Option<&MovementSlot>) -> &SourceMovementConfig {
+        slot.and_then(|s| self.own.as_ref().and_then(|o| o.get(s.0)))
+            .unwrap_or(&self.fallback)
+    }
+}
+
+/// `MovementConfigs::of` from the world.
+pub fn config_of(world: &World, e: Entity) -> SourceMovementConfig {
+    let slot = world.get::<MovementSlot>(e);
+    slot.and_then(|s| world.get_resource::<SourceMovementConfigs>().and_then(|o| o.get(s.0)).cloned())
+        .or_else(|| world.get_resource::<SourceMovementConfig>().cloned())
+        .unwrap_or_default()
+}
+
+/// This tick's max speed for a Source character, set by its game before
+/// the movement (HL2:DM's walk, run and sprint, specs/hl2dm/movement.md
+/// "Speed selection"), units/s: replaces the held weapon's and the walk
+/// key's scale; `sv_maxspeed` still caps it.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SourceSpeed(pub f32);
+
+/// A character's own footstep entries (left, right), for a movement with
+/// `model_footsteps` (HL2:DM: its model's run steps).
+#[derive(Component, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct StepSounds {
+    pub left: String,
+    pub right: String,
 }
 
 impl Default for SourceMovementConfig {
@@ -575,6 +699,16 @@ pub struct SourceMovement {
     /// it down on the floor below.
     #[serde(default)]
     pub seat: Option<bool>,
+    /// On a `func_useableladder` (`useable_ladders`): its index in
+    /// `UseableLadders`.
+    #[serde(default)]
+    pub useable: Option<u32>,
+    /// Being pulled onto or off one (`useable_ladders::ForcedMove`).
+    #[serde(default)]
+    pub forced: Option<ForcedMove>,
+    /// `+use` was held last tick (a fresh press mounts and dismounts).
+    #[serde(default)]
+    pub use_held: bool,
 }
 
 impl Default for SourceMovement {
@@ -611,11 +745,14 @@ impl Default for SourceMovement {
             punch_roll_vel: 0.0,
             velocity_modifier: 1.0,
             seat: None,
+            useable: None,
+            forced: None,
+            use_held: false,
         }
     }
 }
 
-/// Where a CS:S character stands (`slots::Footing`): its feet are the
+/// Where a Source character stands (`slots::Footing`): its feet are the
 /// origin's fixed 36 units down whatever its box.
 fn footing(world: &World, e: Entity) -> Option<crate::slots::Footing> {
     let me = world.get::<SourceMovement>(e)?;
@@ -627,12 +764,12 @@ fn footing(world: &World, e: Entity) -> Option<crate::slots::Footing> {
     })
 }
 
-/// A character switched to CS:S's movement (`slots::set_movement`) put on
+/// A character switched to a Source movement (`slots::set_movement`) put on
 /// the old movement's feet, ducked if it crouched (duck held: let go, it
 /// stands up when there's room); the step frees and grounds it
 /// (`Mover::reseat`).
 fn seat(world: &mut World, e: Entity, f: crate::slots::Footing) {
-    let cfg = world.get_resource::<SourceMovementConfig>().cloned().unwrap_or_default();
+    let cfg = config_of(world, e);
     let at = f.feet + Vec3::Y * ORIGIN_ABOVE_FEET * METERS_PER_UNIT;
     let Ok(mut ent) = world.get_entity_mut(e) else { return };
     if let Some(mut me) = ent.get_mut::<SourceMovement>() {
@@ -668,35 +805,98 @@ fn seat_offsets() -> Vec<Vec3> {
     out
 }
 
+/// Source movement's systems, once per app (`SourceMovementAppExt::
+/// source_movement` adds it): the step, the physics shadow, the push-away,
+/// the drowning, the map's useable ladders, and the default config
+/// (`SourceMovementConfig`, CS:S's values).
 pub struct SourceMovementPlugin;
 
 impl Plugin for SourceMovementPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SourceMovementConfig>()
-            .add_message::<crate::map::PlaySound>();
-        // Every movement cvar in the console, defaulting to CS:S's values.
-        let defaults = SourceMovementConfig::default();
-        for (name, help) in CVARS {
-            let name = *name;
-            crate::console::ConsoleAppExt::console_cvar(
-                app,
-                name,
-                help,
-                &defaults.get_cvar(name).unwrap_or_default(),
-                move |w| w.get_resource::<SourceMovementConfig>().and_then(|c| c.get_cvar(name)),
-                move |w, v| {
-                    w.get_resource_mut::<SourceMovementConfig>()
-                        .ok_or("no Source movement")?
-                        .set_cvar(name, v)
-                },
-            );
-        }
-        app.register_movement::<SourceMovement>(ID)
-            .seat_movement(ID, footing, seat)
-            .add_systems(crate::core::Predict::Movement, step)
+            .init_resource::<SourceMovementConfigs>()
+            .init_resource::<UseableLadders>()
+            .add_message::<crate::map::PlaySound>()
+            .add_message::<crate::map::entities::FireEntityOutput>()
+            .add_systems(First, useable_ladders::build_ladders)
+            .add_systems(crate::core::Predict::Movement, step.in_set(SourceMovementStep))
             .predicted_net::<SourceMovement>()
             .add_plugins((pushaway::PushAwayPlugin, shadow::ShadowPlugin));
         app.add_plugins(drown::DrowningPlugin);
+    }
+}
+
+/// The movement step: a game's own per-tick choices (HL2:DM's speed
+/// selection, `SourceSpeed`) go before it.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct SourceMovementStep;
+
+/// Register a Source movement.
+pub trait SourceMovementAppExt {
+    /// Movement `id` on Source's movement (`SourceMovementPlugin`, added
+    /// once), with its own `config` (None: the `SourceMovementConfig`
+    /// resource, CS:S's) and its console variables (`CVARS`), under
+    /// `namespace` (`hl2dm:sv_gravity`; None: bare names, a Source game's
+    /// own by the console's rule: CS:S's).
+    fn source_movement(
+        &mut self,
+        id: &'static str,
+        config: Option<SourceMovementConfig>,
+        namespace: Option<&'static str>,
+    ) -> &mut Self;
+}
+
+impl SourceMovementAppExt for App {
+    fn source_movement(
+        &mut self,
+        id: &'static str,
+        config: Option<SourceMovementConfig>,
+        namespace: Option<&'static str>,
+    ) -> &mut Self {
+        if !self.is_plugin_added::<SourceMovementPlugin>() {
+            self.add_plugins(SourceMovementPlugin);
+        }
+        let own = config.is_some();
+        let defaults = match config {
+            Some(c) => {
+                self.world_mut().resource_mut::<SourceMovementConfigs>().0.push((id, c.clone()));
+                c
+            }
+            None => SourceMovementConfig::default(),
+        };
+        let get = move |w: &World| -> Option<SourceMovementConfig> {
+            if own {
+                w.get_resource::<SourceMovementConfigs>().and_then(|c| c.get(id)).cloned()
+            } else {
+                w.get_resource::<SourceMovementConfig>().cloned()
+            }
+        };
+        for (name, help) in CVARS {
+            let name = *name;
+            let full = match namespace {
+                Some(ns) => format!("{ns}:{name}"),
+                None => name.to_string(),
+            };
+            crate::console::ConsoleAppExt::console_cvar(
+                self,
+                &full,
+                help,
+                &defaults.get_cvar(name).unwrap_or_default(),
+                move |w| get(w).and_then(|c| c.get_cvar(name)),
+                move |w, v| {
+                    if own {
+                        w.get_resource_mut::<SourceMovementConfigs>()
+                            .and_then(|c| c.into_inner().get_mut(id).map(|c| c.set_cvar(name, v)))
+                            .ok_or("no Source movement")?
+                    } else {
+                        w.get_resource_mut::<SourceMovementConfig>()
+                            .ok_or("no Source movement")?
+                            .set_cvar(name, v)
+                    }
+                },
+            );
+        }
+        self.register_movement::<SourceMovement>(id).seat_movement(id, footing, seat)
     }
 }
 
@@ -1186,6 +1386,14 @@ struct Mover<'a, 'b, 'w, 's> {
     wish: Vec3,
     /// Down onto the floor found (`SettleOnGround`).
     settle: bool,
+    /// This tick's max speed from the game (`SourceSpeed`), units/s.
+    speed: Option<f32>,
+    /// The character's own footsteps (`StepSounds`).
+    step_sounds: Option<&'a StepSounds>,
+    /// The map's useable ladders.
+    ladders: &'a [UseableLadder],
+    /// Map outputs fired this tick (entity index, output).
+    outputs: Vec<(usize, &'static str)>,
 }
 
 impl Mover<'_, '_, '_, '_> {
@@ -1574,9 +1782,77 @@ impl Mover<'_, '_, '_, '_> {
         self.sounds.push((entry, self.feet, Some(volume)));
     }
 
+    /// One of the model's own steps (`StepSounds`), alternating and left
+    /// first; none while ducked (HL2:DM, specs/hl2dm/movement.md "Step
+    /// sounds").
+    fn model_step(&mut self, volume: f32) {
+        if !self.cfg.footsteps || self.me.ducked {
+            return;
+        }
+        let Some(steps) = self.step_sounds else { return };
+        self.me.step_left = !self.me.step_left;
+        let entry = if self.me.step_left { &steps.left } else { &steps.right };
+        self.sounds.push((entry.clone(), self.feet, Some(volume)));
+    }
+
+    /// HL2's footstep timing (the shared code's, movement.md "Step
+    /// sounds"): bands 90/220 standing, 60/80 ducked or on a ladder; the
+    /// interval and volume by the ladder, the water level or the ground's
+    /// material; the model's step (`model_step`).
+    fn model_footsteps(&mut self) {
+        if self.me.step_timer > 0.0 {
+            self.me.step_timer = (self.me.step_timer - 1000.0 * self.dt).max(0.0);
+            if self.me.step_timer > 0.0 {
+                return;
+            }
+        }
+        let ladder = self.me.ladder.is_some() || self.me.useable.is_some();
+        let speed = self.v.length();
+        let (walk, run) = if ladder || self.me.ducked { (60.0, 80.0) } else { (90.0, 220.0) };
+        if speed < walk || !(ladder || (self.me.on_ground && self.v.truncate().length() > 1e-4)) {
+            return;
+        }
+        let slow = speed < run;
+        let (mut volume, mut period) = if ladder {
+            (0.5, 350.0)
+        } else if self.me.water_level == 2 {
+            (0.65, 600.0)
+        } else if self.me.water_level == 1 {
+            if slow { (0.2, 400.0) } else { (0.5, 300.0) }
+        } else {
+            let Some(surface) = self.me.surface.clone() else { return };
+            let material = self
+                .trace
+                .sounds
+                .and_then(|b| b.surface(&surface))
+                .map_or('C', |s| s.game_material);
+            let volume = match (material, slow) {
+                ('D', true) => 0.25,
+                ('D', false) => 0.55,
+                ('V', true) => 0.4,
+                ('V', false) => 0.7,
+                (_, true) => 0.2,
+                (_, false) => 0.5,
+            };
+            (volume, if slow { 400.0 } else { 300.0 })
+        };
+        if self.me.ducked || ladder {
+            period += 100.0;
+        }
+        if self.me.ducked {
+            volume *= 0.65;
+        }
+        self.me.step_timer = period;
+        self.model_step(volume);
+    }
+
     /// Footsteps (sound spec 3, "When a footstep is checked"), from the
     /// state at the start of the tick.
     fn footsteps(&mut self) {
+        if self.cfg.model_footsteps {
+            self.model_footsteps();
+            return;
+        }
         if self.me.step_timer > 0.0 {
             self.me.step_timer = (self.me.step_timer - 1000.0 * self.dt).max(0.0);
             if self.me.step_timer > 0.0 {
@@ -1648,23 +1924,25 @@ impl Mover<'_, '_, '_, '_> {
         // The view rolls by the current fall speed (a wall slam's is
         // usually 0).
         self.me.punch_roll = self.me.fall_speed * LAND_PUNCH_SCALE;
-        if let Some(s) = self.me.surface.clone() {
+        if self.cfg.model_footsteps {
+            self.model_step(volume);
+        } else if let Some(s) = self.me.surface.clone() {
             self.play_step(&s, volume);
         }
     }
 
     /// Landing (sound spec 3): fall speed tiers.
     fn landing_sound(&mut self, fall: f32) {
-        if fall < 350.0 {
+        if fall < self.cfg.fall_punch {
             return;
         }
         let volume = if self.me.water_level > 0 {
             0.5
-        } else if fall > 580.0 {
+        } else if fall > self.cfg.fall_safe {
             1.0
-        } else if fall > 290.0 {
+        } else if fall > self.cfg.fall_half_safe {
             0.85
-        } else if fall < 200.0 {
+        } else if fall < self.cfg.fall_bounce {
             0.0
         } else {
             0.5
@@ -1844,7 +2122,11 @@ impl Mover<'_, '_, '_, '_> {
     fn swim(&mut self, intent: &Intent, f: f32, s: f32, max_speed: f32) {
         let (forward, right) = Self::view(intent);
         let mut wish = forward * f + right * s;
-        let lift = self.cfg.client_maxspeed;
+        let lift = if self.cfg.swim_lift_max_speed {
+            self.speed.unwrap_or(self.player_maxspeed)
+        } else {
+            self.cfg.client_maxspeed
+        };
         if intent.jump {
             wish.z += lift;
         } else if f == 0.0 && s == 0.0 {
@@ -2027,7 +2309,9 @@ impl Mover<'_, '_, '_, '_> {
         self.half_gravity();
         self.me.jump_held = true;
         // A full-volume step on the surface jumped from.
-        if let Some(s) = self.me.surface.clone() {
+        if self.cfg.model_footsteps {
+            self.model_step(1.0);
+        } else if let Some(s) = self.me.surface.clone() {
             self.play_step(&s, 1.0);
         }
     }
@@ -2103,7 +2387,11 @@ impl Mover<'_, '_, '_, '_> {
         // A recent hit holds it lower (M18): faster than that slows by
         // the usual friction.
         let walk = if intent.walk { self.cfg.walk_speed } else { 1.0 };
-        let max_speed = self.player_maxspeed.min(self.cfg.maxspeed) * walk * self.me.velocity_modifier;
+        let max_speed = match self.speed {
+            // The game chose it (HL2:DM's walk, run or sprint).
+            Some(p) => p.min(self.cfg.maxspeed) * self.me.velocity_modifier,
+            None => self.player_maxspeed.min(self.cfg.maxspeed) * walk * self.me.velocity_modifier,
+        };
         let (mut f, mut s) = (
             intent.move_axis.y * self.cfg.key_speed + self.push_input.x,
             intent.move_axis.x * self.cfg.key_speed + self.push_input.y,
@@ -2130,6 +2418,28 @@ impl Mover<'_, '_, '_, '_> {
             self.base = Vec3::ZERO;
         }
         self.base_touched = false;
+        // A pull onto or off a useable ladder: nothing else moves the
+        // player until it arrives (movement.md "Forced moves").
+        let mut arrived_off = false;
+        if self.me.forced.is_some() {
+            match self.ladder_step(intent, f, s, max_speed) {
+                useable_ladders::LadderStep::Done => {
+                    self.me.last_feet = Some(self.feet);
+                    return;
+                }
+                useable_ladders::LadderStep::Climb => {
+                    self.ladder_move(intent, f, s, max_speed);
+                    self.me.last_feet = Some(self.feet);
+                    return;
+                }
+                useable_ladders::LadderStep::Walk => {
+                    // A dismount's arrival: the walking move without input.
+                    f = 0.0;
+                    s = 0.0;
+                    arrived_off = true;
+                }
+            }
+        }
         if !self.check_stuck() {
             return;
         }
@@ -2172,7 +2482,23 @@ impl Mover<'_, '_, '_, '_> {
         } else {
             scale
         };
-        self.ladder(intent, f, s, ladder_scale);
+        if self.cfg.useable_ladders && !arrived_off {
+            match self.ladder_step(intent, f, s, max_speed) {
+                useable_ladders::LadderStep::Done => {
+                    self.me.last_feet = Some(self.feet);
+                    return;
+                }
+                useable_ladders::LadderStep::Climb => {
+                    self.ladder_move(intent, f, s, max_speed);
+                    self.me.last_feet = Some(self.feet);
+                    return;
+                }
+                useable_ladders::LadderStep::Walk => {}
+            }
+        }
+        if self.cfg.contents_ladders {
+            self.ladder(intent, f, s, ladder_scale);
+        }
         if self.me.ladder.is_some() {
             // Ladder move: no gravity, friction or ground snapping.
             self.water_check();
@@ -2275,11 +2601,22 @@ impl Mover<'_, '_, '_, '_> {
         if self.me.on_ground {
             self.v.z = 0.0;
             if self.me.fall_speed > 0.0 {
-                if self.me.water_level == 0 && self.me.fall_speed > self.cfg.fall_safe {
-                    self.fall_damage =
-                        ((self.me.fall_speed - self.cfg.fall_safe) * self.cfg.fall_damage_per_speed).floor();
+                let fall = self.me.fall_speed;
+                if self.me.water_level == 0 && fall > self.cfg.fall_safe {
+                    let by_speed = (fall - self.cfg.fall_safe) * self.cfg.fall_damage_per_speed;
+                    self.fall_damage = match self.cfg.fall_fixed {
+                        Some(d) => d,
+                        None if self.cfg.fall_fraction => {
+                            // HL2: the fall speed itself is lowered, so the
+                            // landing rolls the view by what is left.
+                            self.me.fall_speed = fall - self.cfg.fall_safe;
+                            by_speed
+                        }
+                        None => by_speed.floor(),
+                    };
                 }
-                self.landing_sound(self.me.fall_speed);
+                self.landing_sound(fall);
+                self.me.fall_speed = fall;
                 self.me.last_landing_speed = self.me.fall_speed;
                 self.me.fall_speed = 0.0;
             }
@@ -2331,6 +2668,7 @@ fn step(
         Option<&mut shadow::PhysicsTouch>,
         Option<&crate::core::MapControls>,
         Has<SettleOnGround>,
+        (Option<&MovementSlot>, Option<&SourceSpeed>, Option<&StepSounds>),
     )>,
     query: SpatialQuery,
     brushes: Option<Res<MapBrushes>>,
@@ -2355,7 +2693,11 @@ fn step(
     bank: Option<Res<SoundBank>>,
     mut play: MessageWriter<PlaySound>,
     mut damage: MessageWriter<Damage>,
-    cfg: Res<SourceMovementConfig>,
+    (configs, mut ladders, mut outputs): (
+        MovementConfigs,
+        Option<ResMut<UseableLadders>>,
+        MessageWriter<crate::map::entities::FireEntityOutput>,
+    ),
     (clock, first, mut grid_cache): (
         Res<crate::core::SimClock>,
         Res<crate::core::FirstTimePredicted>,
@@ -2382,7 +2724,7 @@ fn step(
     // the collider's bounds. Those whose collider is off (the dead, also
     // those waiting to respawn with their health, unseen) block nobody.
     let alive = |e: Entity| (health.get(e).is_ok_and(|h| h.current > 0.0) || health.get(e).is_err()) && !dead.contains(e);
-    let hull_box = |feet: Vec3, ducked: bool| {
+    let hull_box = |cfg: &SourceMovementConfig, feet: Vec3, ducked: bool| {
         let height = if ducked { cfg.duck_height } else { cfg.stand_height };
         let (a, b) = (
             to_engine(feet + Vec3::new(-HALF_WIDTH, -HALF_WIDTH, 0.0)),
@@ -2390,14 +2732,15 @@ fn step(
         );
         MapBrush::from_box(a.min(b), a.max(b))
     };
+    // A player being pulled onto or off a ladder isn't solid; a box of its
+    // size waits at the end of the pull instead (movement.md "Forced
+    // moves").
     let mut boxes: Vec<(Entity, MapBrush)> = q
         .iter()
         .filter(|(e, ..)| alive(*e))
-        .map(|(e, _, me, t, ..)| {
-            (
-                e,
-                hull_box(to_source(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET, me.ducked),
-            )
+        .map(|(e, _, me, t, .., (slot, _, _))| {
+            let feet = me.forced.map_or(to_source(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET, |f| f.goal);
+            (e, hull_box(configs.of(slot), feet, me.ducked))
         })
         .collect();
     boxes.extend(
@@ -2445,9 +2788,46 @@ fn step(
         *grid = Some(crate::core::BrushGrid::new(&b.0));
     }
     let grid = grid.as_ref().filter(|_| brushes.is_some());
-    for (entity, intent, mut me, mut transform, mut vel, mut state, weapon_speed, mut base, gravity, touch, controls, settle) in
-        &mut q
+    // The map's useable ladders' ends, out of the floors they touch (once).
+    if let Some(l) = ladders.as_mut()
+        && l.0.iter().any(|l| !l.fixed)
     {
+        let tracer = Tracer {
+            query: &query,
+            filter: &filter,
+            brushes: brushes.as_deref(),
+            grid,
+            tree: tree.as_deref(),
+            water: water.as_deref(),
+            water_zones: &water_zones,
+            surfaces: surfaces.as_deref(),
+            prop_surfaces: &|_: Entity| None,
+            sounds: None,
+            heights: (72.0, 36.0),
+            others: &[],
+            terrain: terrain.as_deref(),
+            owners: &[],
+        };
+        useable_ladders::fix_ends(&tracer, &mut l.0);
+    }
+    let ladders: &[UseableLadder] = ladders.as_ref().map_or(&[], |l| &l.0);
+    for (
+        entity,
+        intent,
+        mut me,
+        mut transform,
+        mut vel,
+        mut state,
+        weapon_speed,
+        mut base,
+        gravity,
+        touch,
+        controls,
+        settle,
+        (slot, speed, step_sounds),
+    ) in &mut q
+    {
+        let cfg = configs.of(slot);
         // player_speedmod: the movement runs as if this many ticks passed
         // (specs/source/game_entities.md 1, lagged movement); 0 (or less:
         // our choice) holds it still, gravity included.
@@ -2482,7 +2862,7 @@ fn step(
         }
         let (forward, right) = Mover::view(intent);
         let push_input = pushaway::push_back(
-            pushaway::player_box(&transform, &me, &cfg),
+            pushaway::player_box(&transform, &me, cfg),
             forward,
             right,
             props.iter().map(|(_, t, p)| (t, p)),
@@ -2505,7 +2885,7 @@ fn step(
             owners: &owners,
         };
         let mut mover = Mover {
-            cfg: &cfg,
+            cfg,
             trace: &tracer,
             feet: to_source(transform.translation) - Vec3::Z * ORIGIN_ABOVE_FEET,
             v: to_source(vel.0),
@@ -2526,12 +2906,17 @@ fn step(
             ground_collider: None,
             wish: Vec3::ZERO,
             settle,
+            speed: speed.map(|s| s.0),
+            step_sounds,
+            ladders,
+            outputs: Vec::new(),
         };
         if let Some(on_ground) = mover.me.seat.take() {
             mover.reseat(on_ground);
         }
         let start = mover.feet;
         mover.tick(intent);
+        mover.me.use_held = intent.use_key;
         // The velocity modifier recovers after the move, whichever way it
         // went (M18: the first tick after a hit moves at the value set).
         mover.me.velocity_modifier = (mover.me.velocity_modifier + VELOCITY_MODIFIER_RECOVERY * dt).min(1.0);
@@ -2549,9 +2934,17 @@ fn step(
                 **b = new;
             }
         }
-        // Damage and sounds only the first time a command runs.
+        // Damage, sounds and outputs only the first time a command runs.
         if !first.0 {
             mover.sounds.clear();
+            mover.outputs.clear();
+        }
+        for (map_index, output) in mover.outputs.drain(..) {
+            outputs.write(crate::map::entities::FireEntityOutput {
+                map_index,
+                output: output.into(),
+                activator: Some(entity),
+            });
         }
         if mover.fall_damage > 0.0 && first.0 {
             // Health is normalized: 1.0 = 100 points. No attacker, no
@@ -2582,7 +2975,7 @@ fn step(
         transform.translation = to_engine(feet + Vec3::Z * ORIGIN_ABOVE_FEET);
         // Later movers this tick see where this one went.
         if let Some((_, b)) = boxes.iter_mut().find(|(e, _)| *e == entity) {
-            *b = hull_box(feet, me.ducked);
+            *b = hull_box(cfg, me.forced.map_or(feet, |f| f.goal), me.ducked);
         }
         vel.0 = to_engine(v);
         *state = MovementState {
@@ -2593,19 +2986,19 @@ fn step(
             hull_min: {
                 let (a, b) = (
                     to_engine(Vec3::new(-HALF_WIDTH, -HALF_WIDTH, -ORIGIN_ABOVE_FEET)),
-                    to_engine(Vec3::new(HALF_WIDTH, HALF_WIDTH, hull_height(&cfg, me.ducked) - ORIGIN_ABOVE_FEET)),
+                    to_engine(Vec3::new(HALF_WIDTH, HALF_WIDTH, hull_height(cfg, me.ducked) - ORIGIN_ABOVE_FEET)),
                 );
                 a.min(b)
             },
             hull_max: {
                 let (a, b) = (
                     to_engine(Vec3::new(-HALF_WIDTH, -HALF_WIDTH, -ORIGIN_ABOVE_FEET)),
-                    to_engine(Vec3::new(HALF_WIDTH, HALF_WIDTH, hull_height(&cfg, me.ducked) - ORIGIN_ABOVE_FEET)),
+                    to_engine(Vec3::new(HALF_WIDTH, HALF_WIDTH, hull_height(cfg, me.ducked) - ORIGIN_ABOVE_FEET)),
                 );
                 a.max(b)
             },
             ground: me.ground_entity,
-            on_ladder: me.ladder.is_some(),
+            on_ladder: me.ladder.is_some() || me.useable.is_some(),
             view_roll: me.punch_roll.to_radians(),
         };
     }

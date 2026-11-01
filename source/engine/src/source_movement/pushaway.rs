@@ -8,7 +8,7 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
-use super::{SourceMovement, SourceMovementConfig, to_source};
+use super::{MovementConfigs, SourceMovement, SourceMovementConfig, to_source};
 use crate::{
     core::{SimSet, Velocity},
     map::{
@@ -87,17 +87,18 @@ fn push_props(
         &SourceMovement,
         Option<&crate::core::MapControls>,
         Option<&NextPush>,
+        Option<&crate::slots::MovementSlot>,
     )>,
     clock: Res<crate::core::SimClock>,
     mut props: Query<
         (Entity, &Transform, &PhysicsProp, Forces, Has<StartAsleep>),
         (Without<SourceMovement>, Without<RigidBodyDisabled>, Without<ColliderDisabled>),
     >,
-    cfg: Res<SourceMovementConfig>,
+    cfg: MovementConfigs,
     mut commands: Commands,
     mut awakened: MessageWriter<PropAwakened>,
 ) {
-    for (who, pt, pv, me, controls, next) in &players {
+    for (who, pt, pv, me, controls, next, slot) in &players {
         if controls.is_some_and(|c| c.parented) {
             continue;
         }
@@ -106,7 +107,7 @@ fn push_props(
             continue;
         }
         let mut pushed = false;
-        let mut player = player_box(pt, me, &cfg);
+        let mut player = player_box(pt, me, cfg.of(slot));
         let centre = (player.0 + player.1) / 2.0;
         player.0 -= Vec3::splat(QUERY_EXPAND);
         player.1 += Vec3::splat(QUERY_EXPAND);

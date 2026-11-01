@@ -33,7 +33,7 @@
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemParam, prelude::*};
 
-use super::{SourceMovement, SourceMovementConfig, to_engine, to_source};
+use super::{MovementConfigs, SourceMovement, SourceMovementConfig, to_engine, to_source};
 use crate::{
     core::{Health, Intent, PropSurface, SHADOW_LAYER, Velocity},
     map::{
@@ -209,11 +209,11 @@ struct ShadowBox(f32);
 /// or no longer moving the Source way.
 fn attach(
     mut commands: Commands,
-    new: Query<(Entity, &Transform), (With<SourceMovement>, Without<Shadowed>)>,
+    new: Query<(Entity, &Transform, Option<&crate::slots::MovementSlot>), (With<SourceMovement>, Without<Shadowed>)>,
     gone: Query<(Entity, &Shadowed), Without<SourceMovement>>,
     shadows: Query<(Entity, &PhysicsShadow)>,
     owners: Query<(), With<Shadowed>>,
-    cfg: Res<SourceMovementConfig>,
+    cfg: MovementConfigs,
 ) {
     for (shadow, s) in &shadows {
         if !owners.contains(s.owner) {
@@ -224,8 +224,8 @@ fn attach(
         commands.entity(s.0).try_despawn();
         commands.entity(owner).remove::<(Shadowed, PhysicsTouch)>();
     }
-    for (owner, t) in &new {
-        let height = cfg.stand_height;
+    for (owner, t, slot) in &new {
+        let height = cfg.of(slot).stand_height;
         let centre = t.translation + Vec3::Y * (height / 2.0 - ORIGIN_ABOVE_FEET) * METERS_PER_UNIT;
         let shadow = commands
             .spawn((
@@ -268,6 +268,7 @@ fn drive(
         &Shadowed,
         Option<&Health>,
         Option<&crate::core::MapControls>,
+        Option<&crate::slots::MovementSlot>,
     )>,
     mut shadows: Query<
         (
@@ -280,11 +281,11 @@ fn drive(
         Without<Shadowed>,
     >,
     mut commands: Commands,
-    cfg: Res<SourceMovementConfig>,
+    cfg: MovementConfigs,
     time: Res<Time>,
 ) {
     let dt = time.delta_secs();
-    for (t, me, touch, shadowed, health, controls) in &owners {
+    for (t, me, touch, shadowed, health, controls, slot) in &owners {
         let Ok((mut s, mut size, mut pos, mut st, mut v)) = shadows.get_mut(shadowed.0) else {
             continue;
         };
@@ -300,7 +301,7 @@ fn drive(
         } else {
             feet
         };
-        let height = hull_height(&cfg, me.ducked);
+        let height = hull_height(cfg.of(slot), me.ducked);
         let centre = to_engine(target_feet + Vec3::Z * height / 2.0);
         let resized = size.0 != height;
         if resized {
@@ -333,21 +334,22 @@ fn reconcile(
         &SourceMovement,
         &PhysicsTouch,
         &Shadowed,
+        Option<&crate::slots::MovementSlot>,
     )>,
     shadows: Query<(&PhysicsShadow, &ShadowBox, &Position, &LinearVelocity), Without<Shadowed>>,
     characters: Query<Entity, With<Intent>>,
     props: Query<(Entity, &PhysicsProp)>,
     spatial: SpatialQuery,
-    cfg: Res<SourceMovementConfig>,
+    cfg: MovementConfigs,
 ) {
-    for (owner, mut t, mut vel, me, touch, shadowed) in &mut owners {
+    for (owner, mut t, mut vel, me, touch, shadowed, slot) in &mut owners {
         let Ok((s, size, pos, sv)) = shadows.get(shadowed.0) else {
             continue;
         };
         if !s.active || !(touch.touched || touch.standing_on.is_some()) {
             continue;
         }
-        let height = hull_height(&cfg, me.ducked);
+        let height = hull_height(cfg.of(slot), me.ducked);
         if size.0 != height {
             continue;
         }

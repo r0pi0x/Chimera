@@ -6,6 +6,9 @@
 
 pub use source_engine::source_movement::*;
 
+/// The movement's id.
+pub const ID: &str = "cs_source:movement";
+
 use bevy::prelude::*;
 
 /// The movement a character the game spawns gets (bots, hostages): the
@@ -32,13 +35,15 @@ pub fn match_movement(world: &mut World) -> Option<&'static str> {
         .find(|m| *m != noclip)
 }
 
-/// Source's movement as CS:S's (`ID`), with its pain sounds (a hard
-/// landing's `Player.FallDamage`).
+/// Source's movement as CS:S's (`ID`): its config is the
+/// `SourceMovementConfig` resource (CS:S's values, `Default`), its cvars
+/// the bare Source names (CS:S's by the console's rule); with its pain
+/// sounds (a hard landing's `Player.FallDamage`).
 pub struct SourceMovementPlugin;
 
 impl Plugin for SourceMovementPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(source_engine::source_movement::SourceMovementPlugin);
+        app.source_movement(ID, None, None);
         if !app.is_plugin_added::<super::pain::PainSoundsPlugin>() {
             app.add_plugins(super::pain::PainSoundsPlugin);
         }
