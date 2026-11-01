@@ -52,6 +52,7 @@ pub mod contact_filter;
 pub mod controllers;
 pub mod copies;
 pub mod pod_serde;
+pub mod texture_serde;
 pub use breakables::{
     BreakProp, BrushPanes, FallingPane, GlassImpact, GlassShatter, MapBreak, MapBreakPiece, SpawnGibs,
 };

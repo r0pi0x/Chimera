@@ -5,7 +5,8 @@
 //! crate's `src/map`, Chimera's core types and the vfs, and
 //! `FORMAT_BUMP`) and the load options a key adds (`MapKey::options`).
 //! Map types serialize with serde (postcard), big arrays as byte strings
-//! (`pod_serde`), `MapExtras` through its list of known types; what can't
+//! (`pod_serde`), textures without the texels their BC blocks decode to
+//! (`texture_serde`), `MapExtras` through its list of known types; what can't
 //! be serialized (`MapData::light_field`, a closure; `load_times`) is the
 //! loader's to rebuild on a hit.
 //!

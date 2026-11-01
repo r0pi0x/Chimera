@@ -21,8 +21,9 @@ use super::{
 };
 use crate::core::{MapBrush, MapBrushTree, MapWaterVolume, Team};
 
-/// An RGBA8 texture in sRGB, top row first.
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+/// An RGBA8 texture in sRGB, top row first. Serialized without the
+/// texels its BC blocks decode to (`texture_serde`).
+#[derive(Clone, Debug)]
 pub struct MapTexture {
     /// Source path, e.g. `materials/de_dust/sitebwall01.vtf`.
     pub name: String,
@@ -30,11 +31,9 @@ pub struct MapTexture {
     pub srgb: bool,
     /// Smaller mip levels shipped with the texture (RGBA8, halving each
     /// time). Empty: generate them.
-    #[serde(with = "crate::map::pod_serde::pod_vecs")]
     pub mips: Vec<Vec<u8>>,
     pub width: u32,
     pub height: u32,
-    #[serde(with = "crate::map::pod_serde::pod")]
     pub rgba8: Vec<u8>,
     /// The same image as the source file stores it, when that is block
     /// compressed (DXT1/3/5): uploaded as is where the GPU takes BC

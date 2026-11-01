@@ -21,7 +21,7 @@
 //! `SimBasePlugins`: the engine's simulation without a game (the fixed
 //! tick, `core`, the console, game events and the server log, the movement
 //! slot's implementations, the weapon framework, the announcer's
-//! counting): the start of a game's set (`cs_source::SimPlugins`)
+//! counting, the converted-map cache's `chimera_map_cache`): the start of a game's set (`cs_source::SimPlugins`)
 //! and the base of the engine's own scenario tests (tests/it/).
 
 pub mod announce;
@@ -58,5 +58,63 @@ impl Plugin for SimBasePlugins {
             .add_plugins(game_log::GameLogPlugin)
             .add_plugins(weapon::WeaponPlugin)
             .add_plugins(announce::AnnouncePlugin);
+        map_cache_cvar(app);
+    }
+}
+
+/// `chimera_map_cache 0/1`: the converted-map cache off or on for the
+/// process (chimera_assets' `map_cache::CVAR`, read at each map load),
+/// over `CHIMERA_MAP_CACHE`. Its default is what the environment (or the
+/// command line) says, so `reset` leaves the environment's choice.
+fn map_cache_cvar(app: &mut App) {
+    use chimera_core::mount::assets::map_cache::{self, MapCache};
+    use console::ConsoleAppExt;
+    let default = if MapCache::from_env().is_some() { "1" } else { "0" };
+    app.console_cvar(
+        map_cache::CVAR,
+        "1: maps load from the converted-map cache (written on a map's first load), 0: converted at each load; \
+         over CHIMERA_MAP_CACHE, from the next map load.",
+        default,
+        |_| Some(if MapCache::from_env().is_some() { "1" } else { "0" }.into()),
+        |_, v| {
+            let on = map_cache::parse_switch(v).ok_or_else(|| format!("bad value \"{v}\": 0 or 1"))?;
+            map_cache::set_switch(Some(on));
+            Ok(())
+        },
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::prelude::*;
+    use chimera_core::{
+        console::Console,
+        mount::assets::map_cache::{self, MapCache},
+    };
+
+    #[test]
+    fn the_map_cache_cvar_switches_the_cache() {
+        let mut app = App::new();
+        app.add_plugins(super::console::ConsolePlugin);
+        super::map_cache_cvar(&mut app);
+        let mut run = |line: &str| {
+            let start = app.world().resource::<Console>().output.len();
+            app.world_mut().resource_mut::<Console>().submit(line);
+            app.update();
+            app.world().resource::<Console>().output[start..]
+                .iter()
+                .map(|l| l.text.clone())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        run("chimera_map_cache 0");
+        assert!(MapCache::from_env().is_none(), "off");
+        assert!(run("chimera_map_cache").contains("\"0\""));
+        assert!(run("chimera_map_cache maybe").contains("bad value"));
+        if MapCache::default_dir().is_some() {
+            run("chimera_map_cache 1");
+            assert!(MapCache::from_env().is_some(), "on, whatever the environment says");
+        }
+        map_cache::set_switch(None);
     }
 }

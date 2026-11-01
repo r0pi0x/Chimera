@@ -30,6 +30,8 @@ serde.workspace = true
 # format (postcard, `pod_serde`'s byte strings).
 postcard.workspace = true
 bytemuck.workspace = true
+# BC blocks decoded again when a cached map is read (`map::texture_serde`).
+texpresso = "2.0"
 # Surface tables of mashups (`map::sources::SurfaceTable`).
 toml.workspace = true
 workspace-hack.workspace = true
