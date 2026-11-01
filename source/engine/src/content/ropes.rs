@@ -24,10 +24,6 @@ use crate::map::{MapData, MapRope};
 pub const STEP: f32 = 1.0 / 50.0;
 /// Rope gravity in the SDK 2013 rope code, units/s² (the spec's value).
 pub const SPEC_GRAVITY: f32 = 1500.0;
-/// Rope gravity in CS:S, measured with refcmp on de_dust2's overhead
-/// cables: 800 (= sv_gravity) puts the 5-node cable within 2 px of the game
-/// across the view; 1500 hangs it 15 px low. See specs/cs_source/ropes.md.
-pub const CSS_GRAVITY: f32 = 800.0;
 const DAMPING: f32 = 0.98;
 const SWEEPS: usize = 3;
 /// Added to every rope's length: Slack 100 is a rope exactly its span.
@@ -64,7 +60,8 @@ pub struct RopeSim {
 impl RopeSim {
     /// A straight rope at rest. The rope's length is the span truncated to
     /// whole units, plus `slack` - 100, split evenly over the links.
-    /// `gravity` in units/s² ([`SPEC_GRAVITY`] or [`CSS_GRAVITY`]).
+    /// `gravity` in units/s² ([`SPEC_GRAVITY`], or the game's
+    /// `sv_gravity` as `add_ropes` uses).
     pub fn new(start: Vec3, end: Vec3, slack: i32, nodes: usize, gravity: f32) -> Self {
         let n = nodes.max(2);
         let span = start.distance(end).trunc();
@@ -149,12 +146,17 @@ fn key<'a>(e: &vbsp::RawEntity<'a>, name: &str) -> Option<&'a str> {
         .map(|(_, v)| v)
 }
 
+/// The map's ropes into `data`, hung at `gravity` (units/s²): the game's
+/// `sv_gravity`, as CS:S's measured (refcmp on de_dust2's overhead cables:
+/// 800, its sv_gravity, puts the 5-node cable within 2 px of the game
+/// across the view; 1500 hangs it 15 px low; specs/cs_source/ropes.md).
 pub fn add_ropes(
     bsp: &Bsp,
     materials: &mut MaterialLoader,
     lighting: &MapLighting,
     occluders: &Occluders,
     data: &mut MapData,
+    gravity: f32,
 ) {
     let ropes: Vec<_> = bsp
         .entities
@@ -205,7 +207,7 @@ pub fn add_ropes(
         });
         let texture_height = texture.map(|t| materials.textures[t].height as f32).unwrap_or(1.0);
 
-        let mut sim = RopeSim::new(start, end, slack, nodes, CSS_GRAVITY);
+        let mut sim = RopeSim::new(start, end, slack, nodes, gravity);
         sim.settle();
         // One light sample per node: the probe averaged over its six axis
         // directions, clamped to 0-1 (the game's point-lighting query).
@@ -238,7 +240,7 @@ pub fn add_ropes(
             previous: settled.clone(),
             nodes: settled,
             link: sim.link_length() * METERS_PER_UNIT,
-            gravity: Vec3::NEG_Y * CSS_GRAVITY * METERS_PER_UNIT,
+            gravity: Vec3::NEG_Y * gravity * METERS_PER_UNIT,
             subdiv,
             wind: !windy_map && int("nowind").is_none_or(|v| v == 0.0),
         });

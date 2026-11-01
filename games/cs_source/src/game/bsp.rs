@@ -2,7 +2,8 @@
 //! lift S2 of docs/plans/active/hl2dm.md, re-exported here with its
 //! neighbours at their old paths) with CS:S's data and hooks
 //! (`CS_SOURCE`): its converter's version (`CONVERTER`, this crate's
-//! build.rs), the kit CS:S's maps carry (`kit`: the players' bodies by
+//! build.rs), its spawn classes and teams (`SPAWNS`), its gravity
+//! (`GRAVITY`, 800), the kit CS:S's maps carry (`kit`: the players' bodies by
 //! class (`CLASS_MODELS`), the hostages' on maps with hostages, impact
 //! decals and spray logos, the HUD look and the map's overview, round
 //! sounds, the radio, bots' names, CS:S's impact looks; `held`: the guns'
@@ -39,11 +40,24 @@ pub const CLASS_MODELS: [&str; 8] = [
 /// is a new version.
 pub const CONVERTER: &str = env!("CHIMERA_CONVERTER_SOURCES");
 
+/// CS:S's spawn points: terrorists' (our team 1, CS:S's 2) and
+/// counter-terrorists' (our 2, CS:S's 3).
+pub const SPAWNS: &[(&str, Option<crate::core::Team>)] = &[
+    ("info_player_terrorist", Some(crate::core::Team(1))),
+    ("info_player_counterterrorist", Some(crate::core::Team(2))),
+];
+
+/// CS:S's `sv_gravity` (units/s²): what its maps' physics bodies, ropes
+/// and gibs fall at.
+pub const GRAVITY: f32 = 800.0;
+
 /// CS:S as a Source game for the map conversion: its id, converter
 /// version and hooks.
 pub static CS_SOURCE: SourceGame = SourceGame {
     id: super::GAME,
     converter: CONVERTER,
+    spawns: SPAWNS,
+    gravity: GRAVITY,
     kit,
     extra_particles,
     held,

@@ -83,10 +83,17 @@ const NOT_SOLID: TextureFlags = TextureFlags::SKY2D
 /// sounds, called where the conversion reads them (so a game's textures
 /// keep their places in the map's list).
 pub struct SourceGame {
-    /// The game's id (`cs_source`).
+    /// The game's id (`cs_source`): its maps' ids are `<id>:<name>`.
     pub id: &'static str,
     /// The converter's version for the converted-map cache.
     pub converter: &'static str,
+    /// The entity classes that are its spawn points (`MapData::spawns`,
+    /// in the entity lump's order), each with the team that spawns there
+    /// (None: anyone).
+    pub spawns: &'static [(&'static str, Option<Team>)],
+    /// Its `sv_gravity` (units/s²): physics bodies fall at it, ropes hang
+    /// at it, gibs fall at half of it.
+    pub gravity: f32,
     /// The kit before the map's own effects: the players' bodies, HUD,
     /// decals, the map overview and what else the game's maps carry, as
     /// far as `Kit::kit` asks; the impact looks the map claims.
@@ -263,7 +270,7 @@ fn convert_level_bytes(
     let bsp = Bsp::read(&bytes).map_err(|e| format!("{path}: {e}"))?;
     timer.lap("parse");
     let hdr_level = if lightmap::has_hdr_lighting(&bytes) { hdr_level.min(2) } else { 0 };
-    let (mut data, layout) = convert_level(&bsp, &bytes, name, hdr_lighting);
+    let (mut data, layout) = convert_level(game, &bsp, &bytes, name, hdr_lighting);
     timer.lap("geometry, lightmaps, collision");
     data.look = source_look_level(hdr_level, &data.entities);
     data.file_hash = Some(file_hash);
@@ -413,7 +420,7 @@ fn convert_level_bytes(
     );
     data.source_fx_mut().detail_props = super::detail::detail_props(&detail, &bsp, |m| materials.resolve(m).texture);
     timer.lap("props");
-    super::ropes::add_ropes(&bsp, &mut materials, &lighting, &occluders, &mut data);
+    super::ropes::add_ropes(&bsp, &mut materials, &lighting, &occluders, &mut data, game.gravity);
     // The same query at run time, for view models (spec view_models.md 9):
     // the light field (`LightParts::field`).
     let light = data.sky_vis.is_some().then(|| LightParts {
@@ -489,7 +496,7 @@ fn convert_level_bytes(
             Err(e) => data.warnings.push(e),
         }
     }
-    data.gib_physics = Some(super::breakables::gib_physics());
+    data.gib_physics = Some(super::breakables::gib_physics(game.gravity));
     timer.lap("held and view models, shells, gibs");
     report(0.8, "LoadingProgress_SignonDataLocal");
     let sounds = (game.sounds)(&mut materials, &bsp, name, &surfaces, &data.entities);
@@ -744,7 +751,7 @@ pub struct LightmapLayout {
 /// `bytes` is the whole BSP file (for lumps vbsp doesn't keep as stored),
 /// as `lightmap::select_lighting` left it; `hdr` is what it chose: the
 /// HDR lightmaps (lump 53) or the LDR ones (lump 8).
-pub fn convert_level(bsp: &Bsp, bytes: &[u8], name: &str, hdr: bool) -> (MapData, LightmapLayout) {
+pub fn convert_level(game: &SourceGame, bsp: &Bsp, bytes: &[u8], name: &str, hdr: bool) -> (MapData, LightmapLayout) {
     let lighting = lightmap::lighting_lump(bytes, hdr);
     let leaves = super::ambient::raw_leaves(bytes);
     // Switchable light styles (32+) whose lights start off (spawnflag 1);
@@ -771,7 +778,7 @@ pub fn convert_level(bsp: &Bsp, bytes: &[u8], name: &str, hdr: bool) -> (MapData
     let mut atlas = AtlasBuilder::default();
     let mut face_slots: Vec<Option<usize>> = Vec::new();
     let mut data = MapData {
-        name: format!("cs_source:{name}"),
+        name: format!("{}:{name}", game.id),
         look: source_look(),
         ..default()
     };
@@ -991,10 +998,11 @@ pub fn convert_level(bsp: &Bsp, bytes: &[u8], name: &str, hdr: bool) -> (MapData
     };
 
     for ent in bsp.entities.iter() {
-        let team = match ent.prop("classname") {
-            Some("info_player_terrorist") => Some(Team(1)),
-            Some("info_player_counterterrorist") => Some(Team(2)),
-            _ => continue,
+        let Some(&(_, team)) = ent
+            .prop("classname")
+            .and_then(|c| game.spawns.iter().find(|(class, _)| *class == c))
+        else {
+            continue;
         };
         if let Some(origin) = ent.prop("origin").and_then(parse_vector) {
             data.spawns.push((to_engine(origin), team));
@@ -1013,8 +1021,8 @@ pub fn convert_level(bsp: &Bsp, bytes: &[u8], name: &str, hdr: bool) -> (MapData
     data.fog = world_fog(bsp);
     data.shadows = Some(shadow_control(bsp));
     data.playable = playable_bounds(bsp).map(|b| b.engine());
-    // Physics bodies fall at sv_gravity (800 units/s^2), read at load.
-    data.gravity = Some(800.0 * METERS_PER_UNIT);
+    // Physics bodies fall at the game's sv_gravity, read at load.
+    data.gravity = Some(game.gravity * METERS_PER_UNIT);
     (data, layout)
 }
 

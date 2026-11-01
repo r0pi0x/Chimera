@@ -11,8 +11,6 @@ use crate::map::{
 };
 
 const UNIT: f32 = 0.0254;
-/// sv_gravity (units/s²); gibs fall at half of it.
-const GRAVITY: f32 = 800.0;
 /// Glass gibs: alpha 128 of 255, bounce 0.3.
 const GLASS_ALPHA: f32 = 128.0 / 255.0;
 const GLASS_BOUNCE: f32 = 0.3;
@@ -41,15 +39,17 @@ pub fn impact_decal(classname: &str, material: i32, surfacetype: i32) -> Option<
 /// The gib lists every breakable material uses.
 const LISTS: &[&str] = &["WoodChunks", "GlassChunks", "MetalChunks", "ConcreteChunks"];
 
-pub fn gib_physics() -> MapGibPhysics {
+/// How gibs move, in a game whose `sv_gravity` is `gravity` (units/s²):
+/// gibs fall at half of it, broken props' pieces at all of it.
+pub fn gib_physics(gravity: f32) -> MapGibPhysics {
     MapGibPhysics {
-        gravity: GRAVITY / 2.0 * UNIT,
+        gravity: gravity / 2.0 * UNIT,
         bounce: BOUNCE,
         glass_bounce: GLASS_BOUNCE,
         glass_alpha: GLASS_ALPHA,
         fade: 1.0,
         // Broken props' pieces are client physics props: full gravity.
-        prop_gravity: GRAVITY * UNIT,
+        prop_gravity: gravity * UNIT,
         // The shared temporary-entity bounce sound rule (view_models.md
         // 8, which breakables.md "Breaking" 5 points to by its break
         // flag): one bounce in six, full volume at 450 units/s down, the
