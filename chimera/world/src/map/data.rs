@@ -266,6 +266,47 @@ pub struct MapMesh {
     /// A second texture on generated coordinates combined with the base
     /// (`MapLayer`: environment and rim maps).
     pub layer: Option<MapLayer>,
+    /// How the scene's point lights (`DynamicLight`: muzzle flashes,
+    /// effect lights) fade on it with distance: its own game's curve, so a
+    /// model keeps its look on another game's map.
+    pub light_falloff: LightFalloff,
+}
+
+/// A point light's share of its colour at distance d of its radius R on
+/// a lit model (the prop shader's `dynamic_light`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub enum LightFalloff {
+    /// Source's: 1 - d^2/R^2 (the world's too).
+    #[default]
+    Source,
+    /// LithTech's model lighting (Combat Arms, specs/combat_arms/
+    /// view_models.md Follow-up (2026-10-31b) 1): 1 / (1 + 19 d^2/R^2),
+    /// none at or beyond R.
+    LithTech,
+}
+
+impl LightFalloff {
+    /// The share at `d` of radius `r` (what the shader computes).
+    pub fn share(self, d: f32, r: f32) -> f32 {
+        if r <= 0.0 {
+            return 0.0;
+        }
+        let x = d * d / (r * r);
+        match self {
+            Self::Source => (1.0 - x).clamp(0.0, 1.0),
+            Self::LithTech if x >= 1.0 => 0.0,
+            Self::LithTech => 1.0 / (1.0 + 19.0 * x),
+        }
+    }
+
+    /// `PropParams::dynamic` for a lit material with this falloff (0 is
+    /// unlit by the scene's lights).
+    pub fn shader_value(self) -> f32 {
+        match self {
+            Self::Source => 1.0,
+            Self::LithTech => 2.0,
+        }
+    }
 }
 
 impl MapMesh {

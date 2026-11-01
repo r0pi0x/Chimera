@@ -6,7 +6,9 @@
 //!
 //! Props lit by a light probe (vertex colours, or per pixel from uniforms for
 //! moving models such as view models), plus the scene's point lights
-//! (`DynamicLight`, read from Bevy's light clusters), Source range fog,
+//! (`DynamicLight`, read from Bevy's light clusters) with the mesh's own
+//! game's falloff (`map::LightFalloff`: Source's 1 - d^2/r^2, or
+//! LithTech's 1 / (1 + 19 d^2/r^2) on Combat Arms' models), Source range fog,
 //! `$envmap` reflections (the cubemap a material names, or for `env_cubemap`
 //! the nearest baked one) masked as the material says (`$envmapmask`,
 //! `$basealphaenvmapmask`, `$normalmapalphaenvmapmask`: the normal map's
@@ -51,8 +53,9 @@ pub struct PropParams {
     pub envmap_saturation: f32,
     /// Linear tint (the model shader converts the material's gamma value).
     pub envmap_tint: Vec4,
-    /// 1: add the scene's point lights (`DynamicLight`s), see
-    /// `dynamic_light` in prop.wesl.
+    /// Add the scene's point lights (`DynamicLight`s), see
+    /// `dynamic_light` in prop.wesl: 0 off, else the falloff's
+    /// `map::LightFalloff::shader_value` (1 Source's, 2 LithTech's).
     pub dynamic: f32,
     /// 1: lit per pixel by the probe below instead of vertex colours.
     pub probe: f32,

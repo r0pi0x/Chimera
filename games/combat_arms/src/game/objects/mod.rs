@@ -21,6 +21,9 @@
 //! - `events`: the event objects (timers, hold-to-use spots, captions,
 //!   messages, the objective list, cameras and their points, target
 //!   triggers' markers), whose notices to the clients are `CaObjectNotice`;
+//! - `fire`: a destructible's weapon (`CreateExplosion`, `FIRE`) fired
+//!   as a real shot: grenade, projectile or hitscan rays, as the weapon
+//!   defines, with no character as the shooter;
 //! - `markers`: the markers' icons from the install's trigger resource
 //!   table, by name (`CaMarkers`: what the local player is shown; the
 //!   radar and map icons, the HUD's guide markers);
@@ -62,15 +65,14 @@
 //! on them (`net`, 10's Client).
 //!
 //! Known shortcuts: the explosion's effect isn't drawn and its damage skips the armour
-//! step; a destructible's weapon (`CreateExplosion`, `FIRE`) is only a
-//! `CaObjectFire` message (no stock map has one: its weapon id isn't
-//! turned into a shot); riders are carried without the spec's 0.1 u drop (by active
+//! step; riders are carried without the spec's 0.1 u drop (by active
 //! world models and by the solid world models keyframers move); nodes
 //! collide as their polygons' triangles (the engine's own `BoxPhysics`
 //! boxes aren't used) while the game's tests use their boxes (`movers`).
 
 pub mod commands;
 pub mod events;
+pub mod fire;
 pub mod geometry;
 pub mod keyframer;
 pub mod movers;
@@ -196,7 +198,8 @@ pub struct CaObjectNotice {
 /// (2026-10-31b) 5: `CreateExplosion` at its death, `FIRE`): the game's
 /// weapon id, from `at` along `dir` (engine), going off in place when
 /// `in_place`, damage x `factor`, by object `shooter`. No stock map has
-/// one; nothing turns it into a projectile yet (Known shortcuts).
+/// one; `fire::fire` makes it a real shot, then it is written for
+/// whoever reads it (tests, logs).
 #[derive(Message, Clone, Debug, PartialEq)]
 pub struct CaObjectFire {
     pub weapon: i32,
@@ -293,7 +296,7 @@ impl Plugin for CaObjectsPlugin {
             .init_resource::<sound::CaObjectSounds>()
             .add_message::<super::view_model::attached::CaLoopSound>()
             .init_resource::<markers::CaMarkers>()
-            .add_systems(Update, (sound::play.before(super::effects::sounds::loops), lights::show, markers::show))
+            .add_systems(Update, (sound::play.before(super::effects::sounds::loops), lights::show, (markers::show, markers::line_tests).chain()))
             .add_systems(
                 FixedUpdate,
                 (load, (gather, frame).chain().run_if(authoritative), apply)
@@ -941,14 +944,17 @@ fn effect(world: &mut World, f: Fx, scale: f32) {
             shooter,
         } => {
             debug!("objects: object {shooter} fires weapon {weapon} along {dir} (in place {in_place}, x {factor})");
-            world.write_message(CaObjectFire {
+            let f = CaObjectFire {
                 weapon,
                 at: to_engine(at, scale),
                 dir: to_engine(dir, 1.0),
                 in_place,
                 factor,
                 shooter,
-            });
+            };
+            let shot = fire::fire(world, &f);
+            debug!("objects: object {shooter}'s shot: {shot:?}");
+            world.write_message(f);
         }
         Fx::Log(l) => debug!("objects: {l}"),
     }

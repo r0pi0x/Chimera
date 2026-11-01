@@ -1940,6 +1940,14 @@ fn vm48_light_on_the_gun() {
     assert!((s - 1.0 / 1.19).abs() < 1e-5, "{s}");
     assert_eq!(place::model_light_share(210.0, 200.0), 0.0);
     assert_eq!(place::model_light_share(200.0, 200.0), 0.0, "cut at the radius");
+    // The prop shader's curve for our models (`LightFalloff::LithTech`,
+    // dynamic 2 in `PropParams`) is the same function; Source's isn't.
+    use chimera_world::map::LightFalloff;
+    for d in [0.0, 20.0, 100.0, 199.0, 200.0, 210.0] {
+        assert_eq!(LightFalloff::LithTech.share(d, 200.0), place::model_light_share(d, 200.0), "{d}");
+    }
+    assert!((LightFalloff::Source.share(20.0, 200.0) - 0.99).abs() < 1e-6);
+    assert_eq!((LightFalloff::Source.shader_value(), LightFalloff::LithTech.shader_value()), (1.0, 2.0));
 }
 
 /// 49. The camera turned 90° with the light fixed in the world: the light
