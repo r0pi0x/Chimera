@@ -65,7 +65,7 @@ usage: chimera_pack pack <game> [options]       into a store (default the user's
        chimera_pack user add <name> [--games <a,b>] [--note <text>]
        chimera_pack user revoke <name> [--token <n>]
        chimera_pack user list                   (user: --store <server store>)
-  games: cs_source, combat_arms
+  games: cs_source, combat_arms, hl2dm
   --set <name>      enter the packed files as set <name> (needs --from)
   --from <log>      only the game's files in a CHIMERA_VFS_LOG log
   --store <dir>     the store (default: [assets] store, CHIMERA_ASSET_STORE, ~/.cache/chimera/assets)
@@ -85,7 +85,7 @@ struct Game {
     extra: Option<(fn(&std::path::Path) -> Option<Box<dyn chimera_core::mount::FileSource>>, &'static str)>,
 }
 
-fn games() -> [Game; 2] {
+fn games() -> [Game; 3] {
     [
         Game { info: &cs_source::game::INFO, open_install: cs_source::game::mount::open_install, app: 240, extra: None },
         Game {
@@ -95,6 +95,9 @@ fn games() -> [Game; 2] {
             app: 1_263_550,
             extra: Some((combat_arms::game::mount::loose_music, "music")),
         },
+        // Half-Life 2: Deathmatch: its search path from `hl2mp/gameinfo.txt`;
+        // no pieces' sets yet (`record_pieces`).
+        Game { info: &hl2dm::game::INFO, open_install: hl2dm::game::mount::open_install, app: 320, extra: None },
     ]
 }
 

@@ -1,5 +1,9 @@
 //! Finding a game's install, in this order:
 //!
+//! 0. `$CHIMERA_<GAME>_ROOT` (`root_env`: `CHIMERA_HL2DM_ROOT`,
+//!    `CHIMERA_CS_SOURCE_ROOT`), for one run: a SteamCMD install outside
+//!    Steam's libraries, or a test against another copy, without editing
+//!    the config;
 //! 1. its `path` in `chimera.local.toml` (`config::LocalConfig`: an
 //!    explicit path always wins, even one that doesn't check out);
 //! 2. the path saved in the user's settings file (`settings_path`: the
@@ -46,9 +50,17 @@ pub const STEAM_ROOT_ENV: &str = "CHIMERA_STEAM_ROOT";
 /// Replaces the user's settings file.
 pub const SETTINGS_ENV: &str = "CHIMERA_SETTINGS";
 
+/// The environment variable naming `game`'s install for this run:
+/// `CHIMERA_<GAME>_ROOT`, the id upper-cased (`CHIMERA_HL2DM_ROOT`).
+pub fn root_env(game: &str) -> String {
+    format!("CHIMERA_{}_ROOT", game.to_ascii_uppercase())
+}
+
 /// How an install was found.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Found {
+    /// The environment variable (`root_env`).
+    Env(String),
     /// `chimera.local.toml` (the file, when known).
     Config(Option<PathBuf>),
     /// The user's settings file.
@@ -61,6 +73,7 @@ pub enum Found {
 impl fmt::Display for Found {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Found::Env(var) => write!(f, "${var}"),
             Found::Config(Some(file)) => write!(f, "config {}", file.display()),
             Found::Config(None) => f.write_str("config"),
             Found::Saved(file) => write!(f, "saved settings {}", file.display()),
@@ -478,10 +491,23 @@ const NO_PATH: &str = "no install path";
 /// the game runs; `forget_steam` searches again).
 static STEAM_FOUND: Mutex<BTreeMap<String, Resolved>> = Mutex::new(BTreeMap::new());
 
-/// `resolve_with` from the environment: the settings file
-/// (`settings_path`), the Steam roots (`steam_roots`, searched once per
-/// run).
+/// `resolve_with` from the environment: `$CHIMERA_<GAME>_ROOT` first
+/// (`root_env`; taken as it is, like the config's path, with a note when
+/// it doesn't check out), then the settings file (`settings_path`), the
+/// Steam roots (`steam_roots`, searched once per run).
 pub fn resolve(config: &LocalConfig, game: &str, sg: Option<&SteamGame>) -> Resolved {
+    let var = root_env(game);
+    if let Some(path) = crate::env::var_os(&var).filter(|p| !p.is_empty()) {
+        let path = expand_home(Path::new(&path));
+        let mut notes = Vec::new();
+        if let Some(sg) = sg
+            && let Err(e) = check(&path, sg)
+        {
+            notes.push(format!("${var} doesn't check out: {e}"));
+        }
+        let build_id = sg.and_then(|g| install_build_id(&path, g.app_id));
+        return Resolved { install: Some(Install { path, found: Found::Env(var), build_id }), notes };
+    }
     let settings = settings_path();
     let mut r = resolve_with(config, settings.as_deref(), None, game, sg);
     let Some(sg) = sg.filter(|_| r.install.is_none()) else {

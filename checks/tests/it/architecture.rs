@@ -37,6 +37,11 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // What a game tells the shell about itself (its install, map cycle,
     // tick, binds, movement cvars): data the game registers.
     ("game_registry", &["mount"]),
+    // Source's shared search path (source_engine): a game's layers from
+    // its `gameinfo.txt` or its own list; external crates only.
+    ("search_path", &[]),
+    // Source's map listings and map cycle, map import (source_engine).
+    ("maps", &[]),
     // Which game fills each match-wide slot (rules, HUD, binds, tick) and
     // the sets that gate a game's systems by it.
     ("gameplay", &["core", "game_registry"]),
@@ -270,8 +275,10 @@ const CRATE_SRC: &[&str] = &[
     "chimera/client/src",
     "chimera/net/src",
     "source/logic/src",
+    "source/engine/src",
     "games/cs_source/src",
     "games/combat_arms/src",
+    "games/hl2dm/src",
 ];
 
 /// The CS:S app's glue (crate `cs_source_app`): `lib.rs` (`SimPlugins`,
@@ -1134,6 +1141,7 @@ fn workspace_crates() {
                 "chimera_",
                 "cs_source",
                 "combat_arms",
+                "hl2dm",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1161,6 +1169,7 @@ fn workspace_crates() {
                 "chimera_tools",
                 "cs_source",
                 "combat_arms",
+                "hl2dm",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1182,9 +1191,11 @@ fn workspace_crates() {
                 "mashup",
                 "chimera_",
                 "source_logic",
+                "source_engine",
                 "source_tools",
                 "cs_source",
                 "combat_arms",
+                "hl2dm",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1193,20 +1204,20 @@ fn workspace_crates() {
             ],
             PURE_DATA,
         ),
-        ("chimera/core", &["mashup", "cs_source", "combat_arms", "games", "originals", "lucker_party", "party_kit"], ENGINE),
+        ("chimera/core", &["mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"], ENGINE),
         (
             "chimera/world",
-            &["chimera_present", "mashup", "cs_source", "combat_arms", "games", "originals", "lucker_party", "party_kit"],
+            &["chimera_present", "mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"],
             WORLD,
         ),
         (
             "chimera/present",
-            &["mashup", "cs_source", "combat_arms", "games", "originals", "lucker_party", "party_kit"],
+            &["mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"],
             PRESENT,
         ),
         (
             "chimera/sim",
-            &["chimera_present", "mashup", "cs_source", "combat_arms", "games", "originals", "lucker_party", "party_kit"],
+            &["chimera_present", "mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"],
             SIM,
         ),
         (
@@ -1214,9 +1225,11 @@ fn workspace_crates() {
             &[
                 "chimera_present",
                 "source_logic",
+                "source_engine",
                 "mashup",
                 "cs_source",
                 "combat_arms",
+                "hl2dm",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1232,6 +1245,7 @@ fn workspace_crates() {
                 "cs_source_app",
                 "mashup",
                 "combat_arms",
+                "hl2dm",
                 "originals",
                 "lucker_party",
                 "party_kit",
@@ -1244,6 +1258,7 @@ fn workspace_crates() {
                 "chimera_present",
                 "chimera_client",
                 "source_logic",
+                "source_engine",
                 "cs_source",
                 "combat_arms_app",
                 "mashup",
@@ -1255,11 +1270,43 @@ fn workspace_crates() {
         ),
         (
             "source/logic",
-            &["chimera_present", "mashup", "cs_source", "combat_arms", "games", "originals", "lucker_party", "party_kit"],
+            &["chimera_present", "mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"],
             SOURCE,
         ),
-        ("apps/cs_source", &["mashup", "combat_arms"], APP),
-        ("apps/combat_arms", &["mashup", "cs_source", "source_logic"], CA_APP),
+        // Source engine behaviour every Source game shares: on the engine's
+        // crates and Source's, below the games (docs/plans/active/hl2dm.md, S0).
+        (
+            "source/engine",
+            &[
+                "chimera_present",
+                "chimera_client",
+                "mashup",
+                "cs_source",
+                "combat_arms",
+                "hl2dm",
+                "games",
+                "originals",
+                "lucker_party",
+                "party_kit",
+            ],
+            SOURCE,
+        ),
+        (
+            "games/hl2dm",
+            &[
+                "chimera_present",
+                "chimera_client",
+                "cs_source",
+                "combat_arms",
+                "mashup",
+                "originals",
+                "lucker_party",
+                "party_kit",
+            ],
+            GAME,
+        ),
+        ("apps/cs_source", &["mashup", "combat_arms", "hl2dm"], APP),
+        ("apps/combat_arms", &["mashup", "cs_source", "source_logic", "source_engine"], CA_APP),
         (
             "apps/mashup_demo",
             &["mashup", "cs_source_app", "combat_arms_app", "lucker_party", "party_kit"],
@@ -1274,6 +1321,7 @@ fn workspace_crates() {
                 "lithtech_",
                 "cs_source",
                 "combat_arms",
+                "hl2dm",
                 "mashup",
                 "lucker_party",
                 "party_kit",
@@ -1291,7 +1339,9 @@ fn workspace_crates() {
                 "mashup",
                 "cs_source",
                 "source_logic",
+                "source_engine",
                 "combat_arms",
+                "hl2dm",
                 "originals",
                 "ultimate_gun_game",
                 "lucker_party_server",
@@ -1308,6 +1358,7 @@ fn workspace_crates() {
                 "arboard",
                 "cs_source",
                 "combat_arms",
+                "hl2dm",
                 "mashup",
                 "ultimate_gun_game",
                 "lucker_party",
@@ -1316,7 +1367,7 @@ fn workspace_crates() {
         ),
         (
             "apps/ultimate_gun_game",
-            &["mashup", "cs_source", "source_logic", "cs_source_app", "combat_arms_app", "lucker_party"],
+            &["mashup", "cs_source", "source_logic", "source_engine", "cs_source_app", "combat_arms_app", "lucker_party"],
             UGG_APP,
         ),
         (
@@ -1329,6 +1380,7 @@ fn workspace_crates() {
                 "arboard",
                 "cs_source",
                 "combat_arms",
+                "hl2dm",
                 "mashup",
                 "lucker_party",
             ],
@@ -1336,7 +1388,7 @@ fn workspace_crates() {
         ),
         (
             "chimera/tools",
-            &["source_", "cs_source", "combat_arms", "games", "mashup"],
+            &["source_", "cs_source", "combat_arms", "hl2dm", "games", "mashup"],
             TOOLS,
         ),
         (
@@ -1347,6 +1399,7 @@ fn workspace_crates() {
                 "chimera_",
                 "cs_source",
                 "combat_arms",
+                "hl2dm",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1364,6 +1417,7 @@ fn workspace_crates() {
                 "source_",
                 "cs_source",
                 "combat_arms",
+                "hl2dm",
                 "games",
                 "originals",
                 "lucker_party",
@@ -1373,7 +1427,7 @@ fn workspace_crates() {
             ],
             CHECKS,
         ),
-        ("games/cs_source/tools", &["mashup", "combat_arms"], TOOLS),
+        ("games/cs_source/tools", &["mashup", "combat_arms", "hl2dm"], TOOLS),
         (
             "apps/cs_source_server",
             &[
@@ -1397,6 +1451,7 @@ fn workspace_crates() {
                 "combat_arms_app",
                 "cs_source",
                 "source_logic",
+                "source_engine",
                 "mashup",
             ],
             CA_SERVER,
@@ -1405,10 +1460,12 @@ fn workspace_crates() {
             "chimera/client",
             &[
                 "source_logic",
+                "source_engine",
                 "bevy_replicon",
                 "mashup",
                 "cs_source",
                 "combat_arms",
+                "hl2dm",
                 "games",
                 "originals",
                 "lucker_party",

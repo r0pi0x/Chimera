@@ -34,6 +34,9 @@ source_logic.workspace = true
 # The network: the game registers its round, bomb and hostages there and
 # fills its hooks (`game::net`).
 chimera_net.workspace = true
+# Source engine behaviour shared with the other Source games (the search
+# path: `game::mount`).
+source_engine.workspace = true
 source_formats.workspace = true
 avian3d.workspace = true
 bevy.workspace = true
@@ -104,6 +107,7 @@ dev = [
     "chimera_client?/dev",
     "chimera_present?/dev",
     "source_logic/dev",
+    "source_engine/dev",
 ]
 # CPU profile: spans in a Chrome trace (docs/performance.md), for the
 # capacity test's server (tests/it/heavy/net_capacity.rs). Only for
