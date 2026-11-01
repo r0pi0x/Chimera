@@ -17,14 +17,20 @@
 //!   `%LOCALAPPDATA%\chimera\maps`), one file per key, shared by every
 //!   checkout and agent slot; `CHIMERA_MAP_CACHE=<folder>` puts it
 //!   elsewhere, `CHIMERA_MAP_CACHE=0` turns it off (as does `disable`, a
-//!   tool's `--no-map-cache`). `CHIMERA_MAP_CACHE_GB` caps its size
+//!   tool's `--no-map-cache`); the console's `chimera:map_cache 0/1`
+//!   (`CVAR`, registered by chimera_sim's `SimBasePlugins`) turns it off or on
+//!   over the variable from the next load, and on the command line
+//!   (`+chimera:map_cache 0`) from the first, also a load made before
+//!   the console runs. `CHIMERA_MAP_CACHE_GB` caps its size
 //!   (`DEFAULT_CAP_GB`): after each write the least recently used entries
 //!   go first (a hit marks its entry used). Free space weighs in
 //!   (`disk`): the effective cap is no more than what the cache holds plus
 //!   the disk's free space above the floor (`CHIMERA_DISK_FLOOR_GB`, 20 GB
 //!   or 5% of the disk, whichever is smaller), and a write that would leave
 //!   less than the floor free is skipped with a one-line warning (the map
-//!   is converted and used all the same).
+//!   is converted and used all the same): a write starts only above the
+//!   floor and stops at the chunk that would cross it (an entry's size
+//!   isn't known before it is encoded).
 //! - **Key** (the file's name, `Key`): the loader, the converter's version
 //!   (the hash of its sources the game's `build.rs` takes, with
 //!   chimera_world's map format: its map types' sources and a hand-bumped
@@ -40,8 +46,11 @@
 //! - **Writing:** a miss takes the key's lock file (`File::lock`, freed
 //!   when the process ends), so processes missing the same map at once
 //!   wait for the first one's entry instead of all converting; the entry
-//!   is written to a temporary file and renamed into place, so a reader
-//!   never sees half of one. Reading one maps it (processes reading the
+//!   is encoded straight into a temporary file (`ChunkWriter`: the
+//!   payload a 16 MB chunk at a time, each hashed on a thread, then the
+//!   header; a whole de_dust2's miss peaks at 1.5 GB, not 2.9 with the
+//!   encoded entry held beside the map) and renamed into place, so a
+//!   reader never sees half of one. Reading one maps it (processes reading the
 //!   same entry share its pages), checks it (a BLAKE3 per 16 MB, on
 //!   threads) and decodes it. An entry that doesn't read (truncated, its
 //!   checksum wrong, an older format) is a miss. `CHIMERA_MAP_CACHE_LOG=1`
@@ -56,7 +65,7 @@ use std::{
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicU8, Ordering},
     time::{Duration, SystemTime},
 };
 
@@ -72,17 +81,77 @@ pub const CAP_ENV: &str = "CHIMERA_MAP_CACHE_GB";
 /// The cap when `CAP_ENV` isn't set.
 pub const DEFAULT_CAP_GB: f64 = 40.0;
 
-const MAGIC: &[u8; 8] = b"CHIMAP\0\x02";
+/// An entry: this, the payload, the header (`Header`), the header's
+/// length (u64, little-endian). The header comes last so the payload can
+/// be encoded straight into the file (`ChunkWriter`).
+const MAGIC: &[u8; 8] = b"CHIMAP\0\x03";
 
 /// The payload's checksums: one BLAKE3 per this many bytes, checked on
 /// threads.
 const CHUNK: usize = 16 << 20;
 
-static DISABLED: AtomicBool = AtomicBool::new(false);
+/// The console's switch (`CVAR`): 0 not set, 1 on, 2 off.
+static SWITCH: AtomicU8 = AtomicU8::new(0);
+
+/// The console variable that turns the cache on (1) or off (0) for the
+/// process, over `ENV` (chimera_sim's `SimBasePlugins` registers it). Read at
+/// each map load; given on the command line (`+chimera:map_cache 0`, or
+/// a name `CVAR_NAMES` lists) it holds from the first load, also one made
+/// before the console runs (a dedicated server's first map).
+pub const CVAR: &str = "chimera:map_cache";
+
+/// `CVAR` as the command line may name it: in full, short, by the old
+/// prefixes (the console resolves the same).
+pub const CVAR_NAMES: &[&str] = &["chimera:map_cache", "map_cache", "chimera_map_cache", "mashup_map_cache"];
 
 /// No cache for the rest of the process (a tool's `--no-map-cache`).
 pub fn disable() {
-    DISABLED.store(true, Ordering::Relaxed);
+    set_switch(Some(false));
+}
+
+/// Turn the cache on or off for the process over `ENV` (`CVAR`); None
+/// leaves it to the environment again.
+pub fn set_switch(on: Option<bool>) {
+    let v = match on {
+        None => 0,
+        Some(true) => 1,
+        Some(false) => 2,
+    };
+    SWITCH.store(v, Ordering::Relaxed);
+}
+
+/// What `set_switch` set, else `CVAR` on the process's command line.
+fn switch() -> Option<bool> {
+    match SWITCH.load(Ordering::Relaxed) {
+        1 => Some(true),
+        2 => Some(false),
+        _ => {
+            static ARGS: std::sync::OnceLock<Option<bool>> = std::sync::OnceLock::new();
+            *ARGS.get_or_init(|| command_line_switch(std::env::args()))
+        }
+    }
+}
+
+/// `+chimera:map_cache <0|1>` (or another of `CVAR_NAMES`) in a command
+/// line; the last one counts.
+fn command_line_switch(args: impl Iterator<Item = String>) -> Option<bool> {
+    let args: Vec<String> = args.collect();
+    let at = args
+        .iter()
+        .rposition(|a| {
+            a.strip_prefix('+')
+                .is_some_and(|n| CVAR_NAMES.iter().any(|c| n.eq_ignore_ascii_case(c)))
+        })?;
+    parse_switch(args.get(at + 1)?)
+}
+
+/// A switch's value: 0 or 1 (also off/on, false/true, no/yes).
+pub fn parse_switch(v: &str) -> Option<bool> {
+    match v.trim().to_ascii_lowercase().as_str() {
+        "0" | "off" | "false" | "no" => Some(false),
+        "1" | "on" | "true" | "yes" => Some(true),
+        _ => None,
+    }
 }
 
 /// A cache folder and its cap.
@@ -118,12 +187,14 @@ impl MapCache {
     /// The cache the environment asks for (module docs); None when it's
     /// off.
     pub fn from_env() -> Option<Self> {
-        if DISABLED.load(Ordering::Relaxed) {
-            return None;
-        }
         let var = std::env::var(ENV).ok();
         let cap = std::env::var(CAP_ENV).ok().and_then(|v| v.trim().parse::<f64>().ok());
-        Self::from_settings(var.as_deref(), cap)
+        match switch() {
+            Some(false) => None,
+            // On: the folder `ENV` names, else the default one.
+            Some(true) => Self::from_settings(var.as_deref(), cap).or_else(|| Self::from_settings(None, cap)),
+            None => Self::from_settings(var.as_deref(), cap),
+        }
     }
 
     /// `from_env` with the variables' values.
@@ -392,9 +463,13 @@ fn read_entry<T: DeserializeOwned>(path: &Path, key: &str, mount: &Mount) -> Res
     let rest = bytes
         .strip_prefix(MAGIC.as_slice())
         .ok_or_else(|| corrupt("not a map cache entry"))?;
-    let (len, rest) = rest.split_at_checked(8).ok_or_else(|| corrupt("truncated"))?;
+    let (rest, len) = rest
+        .split_at_checked(rest.len().wrapping_sub(8))
+        .ok_or_else(|| corrupt("truncated"))?;
     let len = u64::from_le_bytes(len.try_into().expect("8 bytes")) as usize;
-    let (head, payload) = rest.split_at_checked(len).ok_or_else(|| corrupt("truncated header"))?;
+    let (payload, head) = rest
+        .split_at_checked(rest.len().wrapping_sub(len))
+        .ok_or_else(|| corrupt("truncated header"))?;
     let header: Header = postcard::from_bytes(head).map_err(|e| corrupt(&format!("header: {e}")))?;
     if header.key != key {
         return Err(corrupt("another key's entry"));
@@ -431,6 +506,124 @@ fn read_entry<T: DeserializeOwned>(path: &Path, key: &str, mount: &Mount) -> Res
     Ok(value)
 }
 
+/// Where an entry's payload is encoded to (a postcard flavor): its file,
+/// a `CHUNK` at a time, each chunk's BLAKE3 taken on its own thread while
+/// the next is encoded. A miss holds one chunk per hashing thread besides
+/// the map, not the whole entry. Each chunk written asks the disk again
+/// (`disk::has_room`): one that would leave less than the floor free
+/// stops the write.
+struct ChunkWriter<'a> {
+    file: File,
+    dir: &'a Path,
+    read: disk::Reader<'a>,
+    buf: Vec<u8>,
+    len: u64,
+    hashing: std::collections::VecDeque<std::thread::JoinHandle<[u8; 32]>>,
+    hashes: Vec<[u8; 32]>,
+    error: Option<WriteError>,
+}
+
+/// Why an entry wasn't written.
+#[derive(Debug)]
+enum WriteError {
+    Io(io::Error),
+    /// The disk's free space reached the floor (`disk`).
+    Floor,
+}
+
+impl From<io::Error> for WriteError {
+    fn from(e: io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
+impl<'a> ChunkWriter<'a> {
+    fn new(file: File, dir: &'a Path, read: disk::Reader<'a>) -> Self {
+        Self {
+            file,
+            dir,
+            read,
+            buf: Vec::with_capacity(CHUNK),
+            len: 0,
+            hashing: Default::default(),
+            hashes: Vec::new(),
+            error: None,
+        }
+    }
+
+    /// Write and hash the chunk in `buf` (the last may be short).
+    fn flush_chunk(&mut self) -> Result<(), WriteError> {
+        if self.buf.is_empty() {
+            return Ok(());
+        }
+        if !disk::has_room(self.dir, self.buf.len() as u64, self.read) {
+            return Err(WriteError::Floor);
+        }
+        self.file.write_all(&self.buf)?;
+        let chunk = std::mem::replace(&mut self.buf, Vec::with_capacity(CHUNK));
+        let threads = std::thread::available_parallelism().map_or(4, |t| t.get());
+        if self.hashing.len() >= threads
+            && let Some(h) = self.hashing.pop_front()
+        {
+            self.hashes.push(h.join().unwrap_or_else(|e| std::panic::resume_unwind(e)));
+        }
+        self.hashing
+            .push_back(std::thread::spawn(move || *blake3::hash(&chunk).as_bytes()));
+        Ok(())
+    }
+
+    fn extend(&mut self, mut data: &[u8]) -> Result<(), WriteError> {
+        self.len += data.len() as u64;
+        while !data.is_empty() {
+            let take = (CHUNK - self.buf.len()).min(data.len());
+            self.buf.extend_from_slice(&data[..take]);
+            data = &data[take..];
+            if self.buf.len() == CHUNK {
+                self.flush_chunk()?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The payload's length and its chunks' hashes, every byte written.
+    fn finish(mut self) -> Result<(File, u64, Vec<[u8; 32]>), WriteError> {
+        if let Some(e) = self.error.take() {
+            return Err(e);
+        }
+        self.flush_chunk()?;
+        for h in self.hashing.drain(..) {
+            self.hashes.push(h.join().unwrap_or_else(|e| std::panic::resume_unwind(e)));
+        }
+        Ok((self.file, self.len, self.hashes))
+    }
+}
+
+impl postcard::ser_flavors::Flavor for &mut ChunkWriter<'_> {
+    type Output = ();
+
+    fn try_extend(&mut self, data: &[u8]) -> postcard::Result<()> {
+        if self.error.is_some() {
+            return Err(postcard::Error::SerializeBufferFull);
+        }
+        self.extend(data).map_err(|e| {
+            self.error = Some(e);
+            postcard::Error::SerializeBufferFull
+        })
+    }
+
+    fn try_push(&mut self, data: u8) -> postcard::Result<()> {
+        self.try_extend(&[data])
+    }
+
+    fn finalize(self) -> postcard::Result<()> {
+        Ok(())
+    }
+}
+
+/// Write `value`'s entry: encoded straight into a temporary file (the
+/// payload after the magic, then the header, then the header's length),
+/// renamed into place when whole. False when the disk's free space is at
+/// the floor (nothing written).
 fn write_entry<T: Serialize>(
     cache: &MapCache,
     path: &Path,
@@ -439,43 +632,55 @@ fn write_entry<T: Serialize>(
     value: &T,
     read: disk::Reader,
 ) -> io::Result<bool> {
-    let payload = postcard::to_allocvec(value).map_err(io::Error::other)?;
-    let header = Header {
-        key: key.to_string(),
-        inputs,
-        payload_len: payload.len() as u64,
-        payload_hashes: chunk_hashes(&payload),
-    };
-    let head = postcard::to_allocvec(&header).map_err(io::Error::other)?;
     fs::create_dir_all(&cache.dir)?;
-    let size = (MAGIC.len() + 8 + head.len() + payload.len()) as u64;
-    if !disk::has_room(&cache.dir, size, read) {
+    let floor = || {
         disk::warn_once("map cache", || {
             format!(
-                "not writing {} ({:.1} GB): less than the free-space floor would be left on its disk ({} sets it)",
+                "not writing {}: less than the free-space floor would be left on its disk ({} sets it)",
                 path.display(),
-                size as f64 / 1e9,
                 disk::FLOOR_ENV
             )
         });
-        return Ok(false);
+        Ok(false)
+    };
+    if !disk::has_room(&cache.dir, 0, read) {
+        return floor();
     }
     let tmp = cache.dir.join(format!("{key}.{}.{}.tmp", std::process::id(), unique()));
-    let written = (|| {
-        let mut f = File::create(&tmp)?;
-        f.write_all(MAGIC)?;
-        f.write_all(&(head.len() as u64).to_le_bytes())?;
-        f.write_all(&head)?;
-        f.write_all(&payload)?;
+    let written = (|| -> Result<(), WriteError> {
+        let mut file = File::create(&tmp)?;
+        file.write_all(MAGIC)?;
+        let mut writer = ChunkWriter::new(file, &cache.dir, read);
+        if let Err(e) = postcard::serialize_with_flavor(value, &mut writer) {
+            // The file's error (or the floor), else the value's.
+            return Err(writer.error.take().unwrap_or_else(|| WriteError::Io(io::Error::other(e))));
+        }
+        let (mut file, payload_len, payload_hashes) = writer.finish()?;
+        let header = Header {
+            key: key.to_string(),
+            inputs,
+            payload_len,
+            payload_hashes,
+        };
+        let head = postcard::to_allocvec(&header).map_err(io::Error::other)?;
+        file.write_all(&head)?;
+        file.write_all(&(head.len() as u64).to_le_bytes())?;
         // No fsync: an entry cut short by a crash fails its checksum and
         // converts again.
-        drop(f);
-        fs::rename(&tmp, path)
+        drop(file);
+        fs::rename(&tmp, path)?;
+        Ok(())
     })();
-    if written.is_err() {
-        let _ = fs::remove_file(&tmp);
+    match written {
+        Ok(()) => Ok(true),
+        Err(e) => {
+            let _ = fs::remove_file(&tmp);
+            match e {
+                WriteError::Floor => floor(),
+                WriteError::Io(e) => Err(e),
+            }
+        }
     }
-    written.map(|()| true)
 }
 
 /// A number no other call in this process gets.
@@ -619,6 +824,18 @@ mod tests {
             assert_eq!(MapCache::from_settings(None, None).map(|c| c.dir), Some(d.clone()));
             assert_eq!(MapCache::from_settings(Some("1"), None).map(|c| c.dir), Some(d));
         }
+    }
+
+    #[test]
+    fn the_command_line_switch_is_read() {
+        let args = |a: &[&str]| command_line_switch(a.iter().map(|s| s.to_string()));
+        assert_eq!(args(&["app", "+map", "de_dust2"]), None);
+        assert_eq!(args(&["app", "+chimera:map_cache", "0", "+map", "x"]), Some(false));
+        assert_eq!(args(&["app", "+map_cache", "0"]), Some(false));
+        assert_eq!(args(&["app", "+CHIMERA_MAP_CACHE", "on"]), Some(true), "the old name");
+        assert_eq!(args(&["app", "+chimera_map_cache", "0", "+chimera_map_cache", "1"]), Some(true), "the last wins");
+        assert_eq!(args(&["app", "+chimera_map_cache"]), None);
+        assert_eq!(args(&["app", "+chimera_map_cache", "maybe"]), None);
     }
 
     #[test]

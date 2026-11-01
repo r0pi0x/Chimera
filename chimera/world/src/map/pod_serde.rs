@@ -147,8 +147,11 @@ pub mod pod_opt_arc {
 
 /// `Vec<T>` of big values: each element postcard-encoded on its own and
 /// written as a byte string, so they encode and decode on threads (a
-/// whole map's textures are three quarters of its entry). Reading needs a
-/// deserializer that lends its bytes (postcard from a slice).
+/// map's textures, which decode their BC blocks: `texture_serde`).
+/// Encoding goes a batch of elements at a time (two per thread), so a
+/// streamed entry never holds every element's bytes; decoding takes the
+/// biggest first. Reading needs a deserializer that lends its bytes
+/// (postcard from a slice).
 pub mod par_vec {
     use serde::de::DeserializeOwned;
 
@@ -156,26 +159,32 @@ pub mod par_vec {
     use crate::map::cache::parallel;
 
     pub fn serialize<T: Serialize + Sync, S: Serializer>(v: &[T], s: S) -> Result<S::Ok, S::Error> {
-        let encoded = parallel(v.len(), |i| postcard::to_allocvec(&v[i]));
-        let encoded: Vec<Vec<u8>> = encoded
-            .into_iter()
-            .collect::<Result<_, _>>()
-            .map_err(serde::ser::Error::custom)?;
-        s.collect_seq(encoded.iter().map(|b| serde_bytes_ref(b)))
-    }
-
-    /// A byte string, not a sequence of numbers.
-    fn serde_bytes_ref(b: &[u8]) -> Blob<'_, u8> {
-        Blob(b)
+        use serde::ser::SerializeSeq;
+        // A batch at a time, so a map's encoding (`cache`, streamed to its
+        // file) never holds all its textures' bytes at once.
+        let batch = std::thread::available_parallelism().map_or(4, |t| t.get()) * 2;
+        let mut seq = s.serialize_seq(Some(v.len()))?;
+        for part in v.chunks(batch) {
+            let encoded = parallel(part.len(), |i| postcard::to_allocvec(&part[i]));
+            for b in encoded {
+                seq.serialize_element(&Blob(&b.map_err(serde::ser::Error::custom)?))?;
+            }
+        }
+        seq.end()
     }
 
     pub fn deserialize<'de, T: DeserializeOwned + Send, D: Deserializer<'de>>(d: D) -> Result<Vec<T>, D::Error> {
         let encoded: Vec<&'de [u8]> = Vec::deserialize(d)?;
-        let decoded = parallel(encoded.len(), |i| postcard::from_bytes::<T>(encoded[i]));
-        decoded
-            .into_iter()
-            .collect::<Result<_, _>>()
-            .map_err(serde::de::Error::custom)
+        // The biggest first (a texture's blocks decode in time with their
+        // size), so the last thread doesn't finish alone on a big one.
+        let mut order: Vec<usize> = (0..encoded.len()).collect();
+        order.sort_by_key(|&i| std::cmp::Reverse(encoded[i].len()));
+        let decoded = parallel(order.len(), |i| postcard::from_bytes::<T>(encoded[order[i]]));
+        let mut out: Vec<Option<T>> = std::iter::repeat_with(|| None).take(encoded.len()).collect();
+        for (i, d) in order.into_iter().zip(decoded) {
+            out[i] = Some(d.map_err(serde::de::Error::custom)?);
+        }
+        Ok(out.into_iter().map(|x| x.expect("every element decoded")).collect())
     }
 }
 

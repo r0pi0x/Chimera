@@ -47,6 +47,12 @@ fn digest(map: &MapData) -> Vec<(&'static str, String)> {
     vec![
         ("meshes", h(&map.meshes)),
         ("textures", h(&map.textures)),
+        // Serialized, a texture leaves out the texels its blocks decode
+        // to (chimera_world `map::texture_serde`): compared here.
+        (
+            "texels",
+            h(&map.textures.iter().map(|t| (&t.rgba8, &t.mips)).collect::<Vec<_>>()),
+        ),
         ("lightmap", h(&map.lightmap)),
         (
             "collision",

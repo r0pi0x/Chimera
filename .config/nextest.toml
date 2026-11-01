@@ -79,6 +79,15 @@ filter = 'binary_id(cs_source::it) & test(/^heavy::map_courses::(kz_bhop_izanami
 test-group = 'heavy'
 priority = 90
 
+# The longest besides the soak (2-3 minutes: every pool map loaded in
+# turn) and Combat Arms' skins of every rung (2 minutes): party_kit's
+# sweep ended every run alone, its binary's turn coming last
+# (2026-10-31, the map-cache-2 runs: the last of 625 tests in each).
+[[profile.default.overrides]]
+filter = '(binary_id(party_kit::server) & test(/^heavy::spawns::every_pool_map_s_spawn_spots_are_inside_it$/)) | (binary_id(combat_arms::it) & test(/^heavy::body_skins::every_rung_bodys_skins_resolve$/))'
+test-group = 'heavy'
+priority = 90
+
 # Every crate's heavy tests (`heavy::` in its test binaries) share the
 # slots. The longest besides the soak took ~2 minutes on a busy box:
 # killed after 12.

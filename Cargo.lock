@@ -2831,6 +2831,7 @@ dependencies = [
  "postcard",
  "serde",
  "source_formats",
+ "texpresso",
  "toml",
  "wgpu-types",
  "workspace-hack",
