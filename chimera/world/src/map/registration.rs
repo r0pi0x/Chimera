@@ -299,7 +299,7 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
             .before(bevy::camera::visibility::VisibilitySystems::VisibilityPropagate),
     );
     app.add_systems(Startup, spawn_map::<L::Drawer>.run_if(resource_exists::<PendingMap>));
-    app.init_resource::<MapHooks>();
+    app.init_resource::<MapHooks>().init_resource::<super::LoadContext>();
     let mut hooks = app.world_mut().resource_mut::<MapHooks>();
     hooks.spawn = Some(spawn_pending_map::<L::Drawer>);
     hooks.prepare.push(spawn::prepare_world);
@@ -312,6 +312,7 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
 /// are built (`MapPlugin`).
 fn scoped_resources(app: &mut App) {
     app.map_scoped::<PendingMap>()
+        .map_scoped::<MapMemos>()
         .map_scoped::<MapFile>()
         .map_scoped::<PlayableArea>()
         .map_scoped::<vis::ActiveVisibility>()

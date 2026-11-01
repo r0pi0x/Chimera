@@ -3,8 +3,10 @@
 //! map, `world::dress`) and on first use:
 //!
 //! - the effect file (`clientfx/clientfx.fxf`, the unkeyed `CLIENTFX`
-//!   archive, `lithtech_formats::fxf`), parsed once per process
-//!   (`library`);
+//!   archive, `lithtech_formats::fxf`), parsed once per install data
+//!   (`CaData::memo`), and with what the map loaded for it the map's
+//!   `FxLibrary` (in its `map::MapMemos`: the world's while the map
+//!   plays, `Library` for systems, `library_in` for a world);
 //! - the textures of the effect groups the tables and the weapons name
 //!   (their view models' attached effects and their projectiles' groups
 //!   in flight included), the faces' looping groups (`attached_groups`)
@@ -29,10 +31,10 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Mutex, OnceLock},
+    sync::Arc,
 };
 
-use bevy::prelude::*;
+use bevy::{ecs::system::SystemParam, prelude::*};
 use lithtech_formats::{
     dtx::Dtx,
     fxf::{FxFile, FxGroup, FxKey},
@@ -43,7 +45,7 @@ use super::data::{CaFxTables, CaWeaponFx, EFFECTS};
 use crate::game::special::{PROJECTILE, ProjectileLook, ProjectileParams};
 use crate::{
     map::{
-        MapData, MapSoundClip, MapTexture,
+        MapData, MapMemos, MapSoundClip, MapTexture,
         particles::{ParticleBlend, ParticleMaterial},
     },
     mount::Mount,
@@ -81,18 +83,41 @@ impl FxLibrary {
     }
 }
 
-static LIBRARY: Mutex<Option<Arc<FxLibrary>>> = Mutex::new(None);
-
-/// The effect file as last loaded with a map (None: no install, or not
-/// loaded yet).
-pub fn library() -> Option<Arc<FxLibrary>> {
-    LIBRARY.lock().ok()?.clone()
+/// The effect library of a map's memos (None: no install, or the map
+/// loaded none).
+pub fn library(memos: &MapMemos) -> Option<Arc<FxLibrary>> {
+    memos.get::<Arc<FxLibrary>>().cloned()
 }
 
-/// Use `lib` as the effect library (tests, tools).
-pub fn set_library(lib: Option<Arc<FxLibrary>>) {
-    if let Ok(mut l) = LIBRARY.lock() {
-        *l = lib;
+/// The effect library of the map `world` plays.
+pub fn library_in(world: &bevy::ecs::world::World) -> Option<Arc<FxLibrary>> {
+    library(world.get_resource::<MapMemos>()?)
+}
+
+/// Use `lib` as a map's effect library (None: none).
+pub fn set_library(memos: &mut MapMemos, lib: Option<Arc<FxLibrary>>) {
+    match lib {
+        Some(lib) => memos.insert(lib),
+        None => memos.remove::<Arc<FxLibrary>>(),
+    }
+}
+
+/// Use `lib` as the effect library of the map `world` plays (tests,
+/// tools; on the greybox too).
+pub fn set_library_in(world: &mut bevy::ecs::world::World, lib: Option<Arc<FxLibrary>>) {
+    set_library(&mut world.get_resource_or_init::<MapMemos>(), lib);
+}
+
+/// The playing map's effect library, for systems.
+#[derive(SystemParam)]
+pub struct Library<'w> {
+    memos: Option<Res<'w, MapMemos>>,
+}
+
+impl Library<'_> {
+    /// The library (None: no map, no install, or the map loaded none).
+    pub fn get(&self) -> Option<Arc<FxLibrary>> {
+        library(self.memos.as_deref()?)
     }
 }
 
@@ -186,11 +211,11 @@ pub fn add_to_map(map: &mut MapData, data: &super::super::data::CaDataInner, wor
 /// in a mashup, `world::dress`): the effect file (once) and the wanted
 /// groups' textures as the map's particle materials.
 pub fn add_looks(map: &mut MapData, data: &super::super::data::CaDataInner, file: &dyn Fn(&str) -> Option<Vec<u8>>) {
-    let fx = match load_fx_file(file) {
+    let fx = match load_fx_file(data, file) {
         Ok(f) => f,
         Err(e) => {
             map.warnings.push(format!("effects: {e}: no effect looks"));
-            set_library(None);
+            set_library(&mut map.memos, None);
             return;
         }
     };
@@ -266,7 +291,7 @@ pub fn add_looks(map: &mut MapData, data: &super::super::data::CaDataInner, file
     if missing > 0 {
         map.warnings.push(format!("effects: {missing} effect textures missing or unreadable: drawn untextured"));
     }
-    set_library(Some(Arc::new(FxLibrary {
+    set_library(&mut map.memos, Some(Arc::new(FxLibrary {
         file: fx,
         textures,
         sprites,
@@ -386,15 +411,17 @@ pub fn smoke_trail(t: u32) -> SmokeTrailLook {
     }
 }
 
-/// The effect file, parsed once per process.
-fn load_fx_file(file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<FxFile, String> {
-    static PARSED: OnceLock<Result<FxFile, String>> = OnceLock::new();
-    PARSED
-        .get_or_init(|| {
+/// The effect file, parsed once per install data (`CaData::memo`).
+fn load_fx_file(data: &super::super::data::CaDataInner, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<FxFile, String> {
+    struct Parsed(Result<FxFile, String>);
+    data.memo(|| {
+        Parsed((|| {
             let bytes = file(FX_FILE).ok_or_else(|| format!("{FX_FILE} doesn't read"))?;
             FxFile::parse(&String::from_utf8_lossy(&bytes)).map_err(|e| format!("{FX_FILE}: {e}"))
-        })
-        .clone()
+        })())
+    })
+    .0
+    .clone()
 }
 
 /// Give each drawn mesh the surface type its texture's polygons have most

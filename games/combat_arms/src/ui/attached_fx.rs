@@ -203,11 +203,12 @@ pub fn attached_effects(
     mut meshes: ResMut<Assets<Mesh>>,
     mut state: Local<AttachedState>,
     mut commands: Commands,
+    library: library::Library,
 ) {
     let now = time.elapsed_secs_f64();
     let dt = time.delta_secs();
     let detail = fx.as_ref().map_or(crate::game::effects::rules::DEFAULT_FX_DETAIL, |f| f.detail);
-    let lib = library::library();
+    let lib = library.get();
     let mut items: Vec<Item> = Vec::new();
     let shown = player.as_ref().and_then(|p| {
         let (attached, inv, view, offset) = (p.0, p.1, p.2, p.3);

@@ -33,9 +33,9 @@ use super::{
     models,
     records::Selection,
 };
-use crate::map::{CharacterModels, MapCharacterModel, MapTexture, add_character_model};
+use crate::map::{CharacterModels, LoadContext, MapCharacterModel, add_character_model};
 
-type Loaded = Result<(MapCharacterModel, Vec<MapTexture>), String>;
+type Loaded = Result<models::OnDemand<MapCharacterModel>, String>;
 
 /// The bodies loading, the ones tried (loaded or not) and the ones a
 /// stock group has.
@@ -52,15 +52,20 @@ pub fn load_on_demand(
     looks: Query<&Selection>,
     models: Option<Res<CharacterModels>>,
     data: Res<CaData>,
+    loaded: models::LoadedModels,
+    context: Option<Res<LoadContext>>,
     mut pending: Local<Pending>,
     mut commands: Commands,
 ) {
     pending.tasks.retain(|_, task| {
         let Some(result) = block_on(poll_once(task)) else { return true };
         match result {
-            Ok((model, textures)) => {
+            Ok(models::OnDemand { model, textures, index }) => {
                 let textures = std::sync::Arc::new(textures);
-                commands.queue(move |world: &mut World| add_character_model(world, model, textures));
+                commands.queue(move |world: &mut World| {
+                    models::late_in(world).0.merge(&index);
+                    add_character_model(world, model, textures);
+                });
             }
             Err(e) => warn!("Combat Arms: {e} (the stock body stays)"),
         }
@@ -78,14 +83,15 @@ pub fn load_on_demand(
         if pending.tried.contains(&id) || pending.stock.contains(&id) {
             continue;
         }
-        if models::group_has(id) {
+        if loaded.get().group_has(id) {
             pending.stock.insert(id);
             continue;
         }
         pending.tried.insert(id);
+        let ca = context.as_deref().map_or_else(CaData::install, CaData::install_for);
         let task = AsyncComputeTaskPool::get().spawn(async move {
-            let mount = super::super::world::mount().ok_or_else(|| format!("body record {id}: no Combat Arms install"))?;
-            models::load_body(id, &|p: &str| mount.read(p).ok())
+            let mount = ca.mount().ok_or_else(|| format!("body record {id}: no Combat Arms install"))?;
+            models::load_body(&ca, id, &|p: &str| mount.read(p).ok())
         });
         pending.tasks.insert(id, task);
     }

@@ -1203,7 +1203,7 @@ pub fn hit_table(index: usize) -> &'static [HitSphere] {
     match index {
         0 => *MALE,
         1 => *FEMALE,
-        i => super::data::CaData::install_static().characters().hit_spheres.get(i).map_or(*MALE, Vec::as_slice),
+        i => characters::records::install_tables().hit_spheres.get(i).map_or(*MALE, Vec::as_slice),
     }
 }
 

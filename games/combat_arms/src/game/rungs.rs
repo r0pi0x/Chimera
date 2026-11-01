@@ -646,8 +646,8 @@ fn apply(world: &mut World, e: Entity, extras: Option<&RungExtras>) {
                 (true, Some(data)) => data.characters().infected_look(id),
                 _ => look_of(world, id),
             };
-            if let Some(data) = world.get_resource::<CaData>() {
-                models::alias_rig(data.characters(), id);
+            if let Some(data) = world.get_resource::<CaData>().cloned() {
+                models::alias_rig(world, data.characters(), id);
             }
             // Worn at once (not at `wear_looks`' next tick): the rung's
             // swap restarts the player's prediction (`core::rebase`) with

@@ -149,8 +149,9 @@ fn smoke_balls(
     mut materials: ResMut<Assets<StandardMaterial>>,
     time: Res<Time>,
     mut commands: Commands,
+    library: crate::game::effects::library::Library,
 ) {
-    if crate::game::effects::library::library().is_some() {
+    if library.get().is_some() {
         return;
     }
     let now = time.elapsed_secs_f64();

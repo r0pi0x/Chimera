@@ -343,12 +343,12 @@ checked at all (step 1 fixes this).
 | `BUILTIN` (`CaData`) | games/combat_arms/src/game/data/store.rs:119 | A | the built-in data, the same for every app |
 | `SETTINGS` (rounds) | games/cs_source/src/rules/rounds.rs:153 | A | defaults |
 | `SET`, `DOC` (CS:S weapons, economy) | games/cs_source/src/game/weapons.rs:131, :405 | A | built-in, the set leaked by design |
-| `INSTALL` (`CaData`) | games/combat_arms/src/game/data/store.rs:133 | D (later) | install-derived; one install per machine, so sharing is correct, but it never frees |
-| `LIBRARY`, `PARSED` (effects) | games/combat_arms/src/game/effects/library.rs:77, :259 | D (later) | loader-filled memo (E2 left): needs the loader to get the app's context |
-| `MOUNT` | games/combat_arms/src/game/world.rs:279 | D (later) | the same |
-| `RIGS`, `GROUPS`, `SHARED` | games/combat_arms/src/game/characters/models.rs:87, :162, :470 | D (later) | model caches, never freed |
-| `CACHE` (view models) | games/combat_arms/src/game/view_model/on_demand.rs:64 | D (later) | "never freed" (tech-debt.md) |
-| `UI` (install UI) | games/combat_arms/src/ui/install.rs:702 | D (later) | front end only |
+| `INSTALL` (`CaData`) | games/combat_arms/src/game/data/store.rs:133 | gone | `CaData::install()` is shared through `chimera_assets::shared` (a weak register: held by each app's resource and `LoadContext`, freed with the last), its attribute files and mount read on first use (item 13, done) |
+| `LIBRARY`, `PARSED` (effects) | games/combat_arms/src/game/effects/library.rs:77, :259 | gone | the library is the map's (`MapData::memos`, the world's `MapMemos` while it plays, `effects::library::Library`); the parsed file a memo of the install data (`CaData::memo`) (item 13, done) |
+| `MOUNT` | games/combat_arms/src/game/world.rs:279 | gone | `CaData::mount`, the mount itself shared like the install data (item 13, done) |
+| `RIGS`, `GROUPS`, `SHARED` (and `SOCKETS`, added by 1f0a2972) | games/combat_arms/src/game/characters/models.rs:87, :162, :470 | gone | `models::CaModelIndex`: a map's in its `MapMemos`, the app's late loads' in `CaLateModels`, read together (`LoadedModels`); the converted models a memo of the install data (item 13, done) |
+| `CACHE` (view models) | games/combat_arms/src/game/view_model/on_demand.rs:64 | gone | a memo of the app's install data (`CaData::memo`), freed with it (item 13, done) |
+| `UI` (install UI) | games/combat_arms/src/ui/install.rs:702 | gone | a memo of the install data (`CaData::memo`) (item 13, done) |
 | `GAME_DEFAULTS`, `OLD_DEFAULTS` | chimera/client/src/client/binds.rs:189, :193 | gone | now `binds::BindDefaults`, a resource keyed by game (step 10, done); a gameplay switch still doesn't re-read binds (known shortcut) |
 | `MAP_NAMES`, `CYCLE` | chimera/client/src/client/console.rs:1890, :1923 | gone | now `console::MapLists`, a resource keyed by game (step 10, done) |
 | `PROGRESS` | chimera/world/src/map/loading.rs:16 | gone | now `loading::LoadReporter`, a resource the load also holds through `MapLoadOptions::progress` (step 10, done) |
@@ -982,6 +982,29 @@ gone. Test: `each_players_status_lines_follow_the_ladder_in_a_component`;
 13. Install memos into resources or assets (9 D statics, E2's left part):
     only after the map loaders receive the app's context (`MapLoader`
     is a plain `fn` today, `chimera/world/src/map/sources.rs:163`).
+    **Done 2026-11-01.** Loaders and dressings get the app's context in
+    their options (`MapLoadOptions::context`, the app's `map::
+    LoadContext` resource, a `chimera_core::memo::Memos`; `MapDressing::
+    dress` takes the options too; the console's loads, the dedicated
+    servers' `changelevel` and their start maps pass it). Three homes,
+    by how long a memo is right (DESIGN.md, "A game's loader and
+    memos"): per install on the game's install data (`CaData::memo`;
+    `CaData::install()` shared by the apps that hold it through
+    `chimera_assets::shared`, a weak register, and freed with the last;
+    `CaData::install_for(context)` is the app's), per map in
+    `MapData::memos` (`map::MapMemos`, a map-scoped resource once
+    spawned, not in the converted-map cache), per app across maps in a
+    resource of the game's (`models::CaLateModels`). Moved: `INSTALL`,
+    `MOUNT`, `PARSED`, `SHARED`, `CACHE`, `UI` to the install data;
+    `LIBRARY`, `RIGS`, `GROUPS`, `SOCKETS` to the map's memos and the
+    late index. The install's hit and skeleton tables, which components
+    hold as `&'static`, are leaked once per install data value
+    (`records::install_tables`). The converted-map cache is unchanged:
+    its key still comes from the loader's options and files, and the
+    memos are added after a hit. Test: `data_isolation::
+    two_apps_keep_their_own_loaded_models_and_effects` (and `sources::
+    tests::the_apps_context_reaches_the_loader_and_the_dressing`).
+    Ratchet: `games/combat_arms` statics 23 to 14.
 14. Not planned: (`NetHooks::replay` became the `core::Predict::
     PlaceMovers` stage on 2026-10-31, when Combat Arms' movers needed a
     step after movement too: `CarryRiders`);

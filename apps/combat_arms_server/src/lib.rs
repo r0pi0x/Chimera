@@ -124,19 +124,27 @@ pub fn map_id(name: &str) -> String {
 
 /// Map `id` from the install (`combat_arms:<name>`).
 pub fn load_map(id: &str) -> Result<MapData, String> {
+    load_map_in(id, &map::LoadContext::default())
+}
+
+/// `load_map` for the app whose context is `context` (`map::LoadContext`:
+/// its install data).
+pub fn load_map_in(id: &str, context: &map::LoadContext) -> Result<MapData, String> {
     match id.split_once(':') {
         Some((game, _)) if format!("{game}:") != MAP_PREFIX => {
             Err(format!("{id}: not a Combat Arms map (combat_arms:<name>)"))
         }
         // A server draws nothing: no textures.
-        _ => combat_arms::game::world::load_with(id, &map::MapLoadOptions::lean()),
+        _ => combat_arms::game::world::load_with(id, &map::MapLoadOptions::lean().in_context(context)),
     }
 }
 
 /// The map a server starts on: the greybox, or one loaded from the install.
 pub enum StartMap {
     Greybox,
-    Loaded { id: String, data: MapData },
+    /// `context`: the context it was loaded in (`map::LoadContext`), the
+    /// server app's from then on, so the install data it read stays held.
+    Loaded { id: String, data: MapData, context: map::LoadContext },
 }
 
 impl StartMap {
@@ -146,8 +154,9 @@ impl StartMap {
         if id == net::GREYBOX {
             return Ok(Self::Greybox);
         }
-        let data = load_map(&id).map_err(|e| format!("+map {id}: {e}"))?;
-        Ok(Self::Loaded { id, data })
+        let context = map::LoadContext::default();
+        let data = load_map_in(&id, &context).map_err(|e| format!("+map {id}: {e}"))?;
+        Ok(Self::Loaded { id, data, context })
     }
 }
 
@@ -175,9 +184,13 @@ impl ServerPlugin {
 
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
+        let start = self.map.lock().unwrap().take();
+        if let Some(StartMap::Loaded { context, .. }) = &start {
+            app.insert_resource(context.clone());
+        }
         app.add_plugins(combat_arms::SimPlugins);
-        match self.map.lock().unwrap().take() {
-            Some(StartMap::Loaded { id, data }) => {
+        match start {
+            Some(StartMap::Loaded { id, data, .. }) => {
                 app.add_plugins(MapSimPlugin::new(data)).insert_resource(LoadedMapName(id));
             }
             // The map systems too: `changelevel` loads one later.
@@ -252,9 +265,10 @@ pub fn change_level(world: &mut World, name: &str) -> Result<Option<String>, Str
     }
     // Clients hear of it now (`net::maps`: the map's name changes first).
     world.insert_resource(LoadedMapName(id.clone()));
+    let context = map::LoadContext::of(world);
     let task = bevy::tasks::AsyncComputeTaskPool::get().spawn({
         let id = id.clone();
-        async move { load_map(&id) }
+        async move { load_map_in(&id, &context) }
     });
     world.insert_resource(LevelLoad { id: id.clone(), task });
     Ok(Some(format!("changing level to {id}...")))

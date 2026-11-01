@@ -683,13 +683,36 @@ pub fn install_table(index: usize, nodes: &[crate::game::data::attributes::Skele
 
 /// Hit table `index`: ours (0 male, 1 female: measured, data/
 /// characters.toml), else the install's (`CaData::install`'s: only an
-/// install has bodies on the others), else ours 0.
+/// install has bodies on the others, `install_tables`), else ours 0.
 pub fn table(index: usize) -> &'static SkeletonRecord {
     let ours = builtin();
     if index < ours.skeleton.len() {
         return &ours.skeleton[index];
     }
-    super::super::data::CaData::install_static().characters().skeleton.get(index).unwrap_or(&ours.skeleton[0])
+    install_tables().skeleton.get(index).unwrap_or(&ours.skeleton[0])
+}
+
+/// The install's skeleton and hit tables, for what holds them as
+/// `&'static` (a character's `weapons::HitSpheres`, its pose's
+/// skeleton): leaked once per install data value (`CaData::memo`; the
+/// install data's module doc).
+pub struct InstallTables {
+    pub skeleton: Vec<SkeletonRecord>,
+    pub hit_spheres: Vec<Vec<crate::game::weapons::HitSphere>>,
+}
+
+/// `InstallTables` of `CaData::install` (the app's while one holds it).
+pub fn install_tables() -> &'static InstallTables {
+    struct Leaked(&'static InstallTables);
+    let ca = super::super::data::CaData::install();
+    ca.memo(|| {
+        let c = ca.characters();
+        Leaked(Box::leak(Box::new(InstallTables {
+            skeleton: c.skeleton.clone(),
+            hit_spheres: c.hit_spheres.clone(),
+        })))
+    })
+    .0
 }
 
 /// The install's weapons file over our weapon looks: each install

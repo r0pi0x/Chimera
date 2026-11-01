@@ -31,8 +31,8 @@ const NOT_SIMULATION: &[(&str, &str)] = &[
     (
         "chimera/assets",
         "the asset store under the mounts: files on disk, the same for every app in the process (its \
-         statics are a cache of parsed manifests, the process's `CHIMERA_VFS_LOG` writer and the converted-map \
-         cache's off switch)",
+         statics are a cache of parsed manifests, the process's `CHIMERA_VFS_LOG` writer, the converted-map \
+         cache's off switch and `shared`'s weak register of install data the apps hold)",
     ),
     ("chimera/dev", "Bevy's development-only features, no code of ours"),
     ("chimera/tools", "developer tools, not run in a game"),
@@ -53,7 +53,7 @@ const BASELINE: &[(&str, usize, usize)] = &[
     ("chimera/net/src", 27, 0),
     ("source/logic/src", 9, 0),
     ("games/cs_source/src", 140, 6),
-    ("games/combat_arms/src", 103, 23),
+    ("games/combat_arms/src", 103, 14),
     // Plain-data loaders (no Bevy, so no fixed-hasher maps at hand): what
     // they read becomes the map both sides simulate.
     ("source/formats/src", 8, 0),

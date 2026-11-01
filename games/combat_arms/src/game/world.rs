@@ -248,11 +248,12 @@ pub static MAP_LOADER: MapLoader = MapLoader {
 /// install's archives.
 pub static DRESSING: MapDressing = MapDressing {
     game: super::GAME,
-    dress: |map| {
-        let mount = super::INFO.mount().ok_or_else(|| {
+    dress: |map, options| {
+        let data = super::data::CaData::install_for(&options.context);
+        let mount = data.mount().ok_or_else(|| {
             "no Combat Arms install: set [games.combat_arms] path in chimera.local.toml".to_string()
         })?;
-        dress(&mount, map);
+        dress(&data, &mount, map);
         Ok(())
     },
 };
@@ -260,14 +261,14 @@ pub static DRESSING: MapDressing = MapDressing {
 /// Combat Arms' parts on any map (another game's, in a mashup): the
 /// effect looks (`effects::library::add_looks`), the weapons' view models
 /// and the character bodies and held models, as `load_from` adds them to
-/// its own. The map's surfaces keep their own names (Combat Arms' effects
-/// take an unknown surface's).
-pub fn dress(mount: &Mount, map: &mut MapData) {
+/// its own, from install data `data` (`CaData::install_for` the app). The
+/// map's surfaces keep their own names (Combat Arms' effects take an
+/// unknown surface's).
+pub fn dress(data: &super::data::CaData, mount: &Mount, map: &mut MapData) {
     let file = |path: &str| mount.read(path).ok();
-    let data = super::data::CaData::install();
-    super::effects::library::add_looks(map, &data, &file);
-    super::view_model::add_view_models(map, &data, &file);
-    super::characters::models::add_character_models(map, &data, &file);
+    super::effects::library::add_looks(map, data, &file);
+    super::view_model::add_view_models(map, data, &file);
+    super::characters::models::add_character_models(map, data, &file);
 }
 
 /// Map `id` (`combat_arms:<name>`, or the bare name) from the install.
@@ -276,21 +277,22 @@ pub fn load(id: &str) -> Result<MapData, String> {
 }
 
 /// `load` with `options` (`MapLoadOptions::textures` off: the world's
-/// textures aren't decoded; the dedicated server's).
+/// textures aren't decoded; the dedicated server's), from the install
+/// data of the app that asked (`options.context`, `CaData::install_for`).
 pub fn load_with(id: &str, options: &MapLoadOptions) -> Result<MapData, String> {
     let name = map_name(id);
-    let mount = mount().ok_or_else(|| {
+    let mount = super::data::CaData::install_for(&options.context).mount().ok_or_else(|| {
         "no Combat Arms install: set [games.combat_arms] path in chimera.local.toml".to_string()
     })?;
     load_from_with(&mount, &name, options)
 }
 
-/// The install, mounted once per session (its archives' directories read
-/// once; `None` when it doesn't open): map loads and on-demand loads
-/// (`view_model::on_demand`) share it.
+/// The install, mounted (its archives' directories read once while an
+/// app holds the install data: `CaData::mount`; `None` when it doesn't
+/// open). Code with an app at hand asks its data (`CaData::install_for`
+/// the app's `map::LoadContext`) instead.
 pub fn mount() -> Option<std::sync::Arc<Mount>> {
-    static MOUNT: std::sync::OnceLock<Option<std::sync::Arc<Mount>>> = std::sync::OnceLock::new();
-    MOUNT.get_or_init(|| super::INFO.mount().map(std::sync::Arc::new)).clone()
+    super::data::CaData::install().mount()
 }
 
 /// A map id's file name: lower case, without the game prefix.
@@ -344,10 +346,11 @@ pub fn load_from_with(mount: &Mount, name: &str, options: &MapLoadOptions) -> Re
     if !options.kit.parts() && !options.kit.any_models() {
         return load_world_with(mount, name, options);
     }
+    let ca = super::data::CaData::install_for(&options.context);
     let (map, models) = std::thread::scope(|s| {
         let models = s.spawn(|| {
-            super::data::CaData::install().weapon_set();
-            super::characters::models::shared_character_models(&file)
+            ca.weapon_set();
+            super::characters::models::shared_character_models(&ca, &file)
         });
         let map = load_world_with(mount, name, options);
         (map, models.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
@@ -410,7 +413,7 @@ pub fn load_world_in(
     if outcome == crate::map::cache::Outcome::Hit {
         info!("{name}: world read from the map cache in {:.2} s", start.elapsed().as_secs_f32());
     }
-    super::effects::library::add_looks(&mut map, &super::data::CaData::install(), &file);
+    super::effects::library::add_looks(&mut map, &super::data::CaData::install_for(&options.context), &file);
     Ok((map, outcome))
 }
 

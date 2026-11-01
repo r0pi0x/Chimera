@@ -2,8 +2,9 @@
 //! loads"): a map loads without them (`world::load_from`), and a weapon's
 //! view model loads in the background (`AsyncComputeTaskPool`) the first
 //! time a weapon wants drawing: one in the local player's inventory or
-//! shown by a character's `ViewAnimator`. Converted once per session
-//! (`cached`, kept across map changes), each with its own textures
+//! shown by a character's `ViewAnimator`. Converted once per install
+//! data (`cached`: the app's `CaData::install_for`'s `memo`, kept across
+//! map changes and freed with the data), each with its own textures
 //! (`map::add_view_model`; drawn on a map and on the greybox alike, where
 //! Chimera's drawing has assets of its own: `render::view_model::
 //! assets_without_map`, `tests/ui/heavy/view_model.rs`); until it is
@@ -23,13 +24,14 @@
 //!
 //! Known shortcuts (docs/tech-debt.md): the placeholder box shows for the
 //! frames a model takes to load (tens of milliseconds; the first draw of
-//! each weapon); the cache keeps every model for the session; nothing
+//! each weapon); the cache keeps every model while the install data
+//! lives (the app's session); nothing
 //! preloads a weapon before it is in the local player's inventory or
 //! shown (a spectated player's new weapon waits its load too).
 
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex, OnceLock},
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
 };
 
 use bevy::{
@@ -37,10 +39,16 @@ use bevy::{
     tasks::{AsyncComputeTaskPool, Task, block_on, poll_once},
 };
 
-use super::{super::attachments::CaMods, hands, load, load_hands, parts};
+use super::{
+    super::{
+        attachments::CaMods,
+        data::{CaData, CaDataInner},
+    },
+    hands, load, load_hands, parts,
+};
 use crate::{
     core::LocalPlayer,
-    map::{MapData, MapTexture, MapViewModel, ViewAnimator, ViewModels, add_view_model},
+    map::{LoadContext, MapData, MapTexture, MapViewModel, ViewAnimator, ViewModels, add_view_model},
     weapon::{Inventory, Weapon},
 };
 
@@ -60,27 +68,32 @@ pub struct LoadedViewModel {
 
 type Loaded = Result<Arc<LoadedViewModel>, String>;
 
-fn cache() -> &'static Mutex<HashMap<String, Loaded>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Loaded>>> = OnceLock::new();
-    CACHE.get_or_init(Default::default)
+/// The view models install data `ca` loaded (or failed to), by key.
+#[derive(Default)]
+struct Cache(Mutex<BTreeMap<String, Loaded>>);
+
+fn cache(ca: &CaDataInner) -> Arc<Cache> {
+    ca.memo(Cache::default)
 }
 
-/// Weapon `id`'s view model if this session loaded it (or failed to).
-pub fn cached(id: &str) -> Option<Loaded> {
-    cache().lock().ok()?.get(id).cloned()
+/// Weapon `id`'s view model if install data `ca` loaded it (or failed
+/// to).
+pub fn cached(ca: &CaDataInner, id: &str) -> Option<Loaded> {
+    cache(ca).0.lock().ok()?.get(id).cloned()
 }
 
-/// Weapon `id`'s view model from the install through `file` (`load`, with
-/// the default character's hands when they read), with its own textures;
-/// Err when its data names none or it doesn't read.
-pub fn load_weapon(id: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<LoadedViewModel, String> {
+/// Weapon `id`'s view model from install data `ca`'s install through
+/// `file` (`load`, with the default character's hands when they read),
+/// with its own textures; Err when its data names none or it doesn't
+/// read.
+pub fn load_weapon(ca: &CaDataInner, id: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<LoadedViewModel, String> {
     // A weapon with fitted parts (`parts::view_key`): its own view model,
     // the parts on it.
     let (base, names) = parts::split_key(id);
     if !names.is_empty() {
-        return load_with_parts(id, base, file);
+        return load_with_parts(ca, id, base, file);
     }
-    let w = super::super::data::CaData::install()
+    let w = ca
         .weapon_set()
         .weapons
         .iter()
@@ -121,9 +134,8 @@ pub fn load_weapon(id: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<L
 /// View-model key `key` (`parts::view_key`): weapon `base`'s view model
 /// (`load_cached`) with its parts' models on it, its textures with
 /// theirs.
-fn load_with_parts(key: &str, base: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<LoadedViewModel, String> {
-    let bare = load_cached(base, file)?;
-    let ca = super::super::data::CaData::install();
+fn load_with_parts(ca: &CaDataInner, key: &str, base: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<LoadedViewModel, String> {
+    let bare = load_cached(ca, base, file)?;
     let params = ca
         .weapon_set()
         .get(base)
@@ -148,13 +160,14 @@ fn load_with_parts(key: &str, base: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>
     })
 }
 
-/// `load_weapon` once per session: the cached result after the first.
-pub fn load_cached(id: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Loaded {
-    if let Some(l) = cached(id) {
+/// `load_weapon` once per install data: the cached result after the
+/// first.
+pub fn load_cached(ca: &CaDataInner, id: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Loaded {
+    if let Some(l) = cached(ca, id) {
         return l;
     }
-    let loaded = load_weapon(id, file).map(Arc::new);
-    if let Ok(mut c) = cache().lock() {
+    let loaded = load_weapon(ca, id, file).map(Arc::new);
+    if let Ok(mut c) = cache(ca).0.lock() {
         c.insert(id.to_string(), loaded.clone());
     }
     loaded
@@ -168,18 +181,21 @@ pub fn ours(id: &str) -> bool {
 
 /// The view models loading.
 #[derive(Default)]
-pub struct Pending(HashMap<String, Task<Loaded>>);
+pub struct Pending(BTreeMap<String, Task<Loaded>>);
 
-/// Each wanted weapon's view model (`LoadOnDemand`): from the session's
-/// cache at once, else loaded in the background and added when done.
+/// Each wanted weapon's view model (`LoadOnDemand`): from the app's
+/// install data's cache at once, else loaded in the background and added
+/// when done.
 pub fn load_on_demand(
     models: Option<Res<ViewModels>>,
     local: Query<&Inventory, With<LocalPlayer>>,
     shown: Query<&ViewAnimator>,
     weapons: Query<(&Weapon, Option<&CaMods>)>,
+    context: Option<Res<LoadContext>>,
     mut pending: Local<Pending>,
     mut commands: Commands,
 ) {
+    let ca = context.as_deref().map_or_else(CaData::install, CaData::install_for);
     let has = |k: &str| models.as_ref().is_some_and(|m| m.get(k).is_some());
     // Finished loads first.
     pending.0.retain(|id, task| {
@@ -192,7 +208,7 @@ pub fn load_on_demand(
             }
             Err(e) => warn!("Combat Arms: {e} (the placeholder stands in)"),
         }
-        if let Ok(mut c) = cache().lock() {
+        if let Ok(mut c) = cache(&ca).0.lock() {
             c.insert(id.clone(), result);
         }
         false
@@ -216,17 +232,17 @@ pub fn load_on_demand(
             continue;
         }
         seen.push(id);
-        match cached(id) {
+        match cached(&ca, id) {
             Some(Ok(l)) => {
                 let (model, textures) = (l.model.clone(), l.textures.clone());
                 commands.queue(move |world: &mut World| add_view_model(world, model, textures));
             }
             Some(Err(_)) => {}
             None => {
-                let key = id.to_string();
+                let (key, ca) = (id.to_string(), ca.clone());
                 let task = AsyncComputeTaskPool::get().spawn(async move {
-                    let mount = super::super::world::mount().ok_or_else(|| format!("{key}: no Combat Arms install"))?;
-                    load_weapon(&key, &|p: &str| mount.read(p).ok()).map(Arc::new)
+                    let mount = ca.mount().ok_or_else(|| format!("{key}: no Combat Arms install"))?;
+                    load_weapon(&ca, &key, &|p: &str| mount.read(p).ok()).map(Arc::new)
                 });
                 pending.0.insert(id.to_string(), task);
             }

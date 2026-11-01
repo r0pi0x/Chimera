@@ -153,7 +153,9 @@ fn body_group_numbers() {
     for (n, part, want) in [(19, 0, 1), (19, 1, 2), (19, 2, 1)] {
         assert_eq!(chimera_world::map::body_choice(&g.parts(), n, part), want);
     }
-    models::register_group(g.clone());
+    let mut late = models::CaLateModels::default();
+    late.0.register_group(g.clone());
+    let loaded = models::Models::new(None, Some(&late));
     let d = builtin();
     // Model 1 (Light), face 2, head piece 2 (the combat helmet).
     let look = Selection {
@@ -163,9 +165,11 @@ fn body_group_numbers() {
         ..default()
     };
     let head = if d.head_file(2, 0).is_some() { 2 } else { -1 };
-    assert_eq!(models::drawn(&combat_arms::game::data::CaData::builtin(), &look), Some((models::body_name(0), g.number(1, 2, head))));
+    let ca = combat_arms::game::data::CaData::builtin();
+    assert_eq!(models::drawn(&ca, loaded, &look), Some((models::body_name(0), g.number(1, 2, head))));
     // A female face: the female group, absent here.
-    assert_eq!(models::drawn(&combat_arms::game::data::CaData::builtin(), &Selection { face: 5, ..default() }), None);
+    assert_eq!(models::drawn(&ca, loaded, &Selection { face: 5, ..default() }), None);
+    assert_eq!(models::drawn(&ca, models::Models::default(), &look), None, "no group loaded");
 }
 
 #[test]
@@ -1139,13 +1143,12 @@ fn scenario_modelled_body() {
     for n in &mut stand_in.nodes {
         n.2[0] += 5.0;
     }
-    models::register(file, Arc::new(stand_in.rig(STAND_IN_ANIMS)));
     let mut sim = sim();
+    models::register(sim.app.world_mut(), file, Arc::new(stand_in.rig(STAND_IN_ANIMS)));
     let p = player(&mut sim, Vec3::new(0.0, 1.0, 12.0), 0.0);
     sim.app.world_mut().entity_mut(p).insert(Selection { model: 1, ..default() });
     sim.ticks(3);
     let pose = sim.app.world().get::<CaPose>(p).unwrap().clone();
-    models::unregister(file);
     assert!(pose.modelled);
     assert_eq!(playing(&sim, p), ("URFRAmS".into(), "LST".into(), "LC".into()));
     let skel = builtin().skeleton(0);

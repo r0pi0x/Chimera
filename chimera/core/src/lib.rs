@@ -9,7 +9,8 @@
 //! gameplay (`gameplay`: which game fills each match-wide slot), the parts
 //! each game lends a game made of several (`game_parts`), announcers'
 //! packs and kill facts (`announcer`), minigame cue packs (`cues`), queries
-//! kept between calls of exclusive code (`query_cache`). Code
+//! kept between calls of exclusive code (`query_cache`), values worked out
+//! once and kept by their owner (`memo`). Code
 //! everything else uses and that changes rarely, in its own crate so an
 //! edit higher up doesn't recompile it.
 //!
@@ -27,6 +28,7 @@ pub mod game_log;
 pub mod game_parts;
 pub mod gameplay;
 pub mod game_registry;
+pub mod memo;
 pub mod metrics;
 pub mod mount;
 pub mod profile;
