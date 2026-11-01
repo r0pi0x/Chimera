@@ -9,7 +9,13 @@
 //! `pcf` (particle systems); with what they read of the map: `ambient`
 //! (ambient cubes, world lights, the light probes), `breakables` (gib
 //! lists, windows' broken looks) and `trails` (sprite trails, smoke
-//! stacks, particle materials). Here: Source's units and axes
+//! stacks, particle materials). Maps (lift S2): `bsp` (BSP v20 to
+//! `MapData` for a `SourceGame`, which supplies its id, converter version
+//! and kit hooks), with the map's parts: `lightmap`, `overlays`,
+//! `detail`, `decals` (infodecals, and impact decals and spray logos for
+//! a game's kit), `sky`, `ropes`, `beams`, `steam`, `sprites`, `dust`,
+//! `nav`. (Fire, soundscapes and sounds stay CS:S's until their lifts:
+//! S10 and S5.) Here: Source's units and axes
 //! (`METERS_PER_UNIT`, `to_engine`), the playable box (`playable_bounds`)
 //! and entities' vectors (`parse_vector`).
 //!
@@ -18,11 +24,23 @@
 
 pub mod ambient;
 pub mod anim;
+pub mod beams;
 pub mod breakables;
+pub mod bsp;
+pub mod decals;
+pub mod detail;
+pub mod dust;
+pub mod lightmap;
 pub mod material;
+pub mod nav;
+pub mod overlays;
 pub mod pcf;
 pub mod propdata;
 pub mod props;
+pub mod ropes;
+pub mod sky;
+pub mod sprites;
+pub mod steam;
 pub mod surfaceprops;
 pub mod trails;
 pub mod water;

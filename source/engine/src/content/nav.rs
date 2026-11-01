@@ -1,5 +1,5 @@
-//! CS:S navigation meshes (`maps/<map>.nav`, versions 9 and 16) into the
-//! neutral `NavMesh`, per specs/cs_source/nav.md "File layout": the file is
+//! Source navigation meshes (`maps/<map>.nav`, versions 9 and 16; CS:S's
+//! bots read them) into the neutral `NavMesh`, per specs/cs_source/nav.md "File layout": the file is
 //! read by `source_formats::nav`; here its records are linked (ids to
 //! indices, ladders, encounters) and put in engine units and axes.
 
@@ -7,8 +7,12 @@ use bevy::prelude::*;
 pub use source_formats::nav::NavInfo;
 use source_formats::nav::{Area as RawArea, NavFile};
 
-use super::movement::to_engine;
 use crate::map::nav::{Encounter, HidingSpot, NavArea, NavLadder, NavMesh, Side, Via};
+
+/// A Source-space point (units, Z up) in engine space (meters, Y up).
+fn to_engine(v: Vec3) -> Vec3 {
+    Vec3::new(v.x, v.z, -v.y) * super::METERS_PER_UNIT
+}
 
 /// Source compass side (N=0 is -Y) to the engine edge it becomes.
 fn side(d: usize) -> Side {

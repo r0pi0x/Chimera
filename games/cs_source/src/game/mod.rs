@@ -168,13 +168,9 @@
 //! a client demo's (or the probe's) recorded input played again through our
 //! movement and weapons and compared (`resim.rs`, the `demosim` tool).
 
-pub mod beams;
 pub mod bsp;
-pub mod decals;
 pub mod demo;
-pub mod detail;
 pub mod drown;
-pub mod dust;
 pub mod fire;
 pub mod gameui;
 pub mod grenades;
@@ -183,29 +179,22 @@ pub mod hostage_anim;
 pub mod hud;
 pub mod impact_effects;
 pub mod impacts;
-pub mod lightmap;
 pub mod mount;
 pub mod movement;
-pub mod nav;
 pub mod net;
 pub mod objectives;
-pub mod overlays;
 pub mod pain;
 pub mod parts;
 pub mod player_anim;
 pub mod pushaway;
 pub mod radio;
-pub mod ropes;
 pub mod resim;
 pub mod rules;
 pub mod rungs;
 pub mod scrapes;
 pub mod shadow;
-pub mod sky;
 pub mod sound;
 pub mod soundscape;
-pub mod sprites;
-pub mod steam;
 pub mod view_anim;
 pub mod vgui;
 pub mod view_motion;
@@ -217,7 +206,10 @@ pub use source_formats::{lumps, pak, phy, vhv, vpk, wav};
 
 // Source's content converters lifted into `source_engine` (docs/plans/
 // active/hl2dm.md, section 3), at their old paths.
-pub use source_engine::content::{ambient, anim, breakables, material, pcf, propdata, props, surfaceprops, trails, water};
+pub use source_engine::content::{
+    ambient, anim, beams, breakables, decals, detail, dust, lightmap, material, nav, overlays, pcf, propdata, props,
+    ropes, sky, sprites, steam, surfaceprops, trails, water,
+};
 
 /// The game's id (`cs_source`): defined with the gameplay's condition
 /// for CS:S's match-wide systems (`objectives::plays`), the lowest of its
