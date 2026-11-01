@@ -41,7 +41,7 @@ chimera_present (chimera/present/)   render, audio, MapPlugin, assets (installs 
 chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; greybox, harness::Sim
   |                \
 chimera_core          source_formats (source/formats/)   formats as plain data: no Bevy
- (chimera/core/)       core, console, slots, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, query_cache
+ (chimera/core/)       core, console, console_scope, slots, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, query_cache
                       chimera_vfs (chimera/vfs/)   the neutral VFS (`FileSource`, `Mount`) under both format crates and `mount`
                       chimera_assets (chimera/assets/)   the asset store over the VFS: records, manifests and sets, `CachedFiles`, the vfs log, the asset service (server, HTTPS client); `mount::served` layers it
                       lithtech_formats (lithtech/formats/)   LithTech's formats as plain data (`.rez`, attribute files, worlds, textures, models, animation, effect files)
@@ -353,7 +353,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
                                   query_cache under console: kept query states)
 ```
 
-Exact edges: game_log uses core, console and gameplay (the gameplay's
+Exact edges: console_scope uses core, console, game_registry and slots
+(the console's scope from the game played, the games' namespaces);
+game_log uses core, console and gameplay (the gameplay's
 game names players in the log); net uses the engine's
 simulation (core, console, game_log, slots, character, movement, map,
 weapon) and names no game or Source logic (`minigame_net` uses net,

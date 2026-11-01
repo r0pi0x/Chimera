@@ -535,7 +535,7 @@ impl Plugin for MinigamePlugin {
         runtime::plugin(app);
         power::plugin(app);
         app.console_command(
-            "minigames",
+            "chimera:minigames",
             "List the minigames (id: name, players, maps, rules module), the one playing marked *.",
             |w, _| {
                 let playing = w.get_resource::<ActiveMinigame>().map(|a| a.def.id.as_str());
@@ -559,7 +559,7 @@ impl Plugin for MinigamePlugin {
             },
         )
         .console_command(
-            "minigame",
+            "chimera:minigame",
             "minigame <id>: play that minigame on the map loaded (a fresh match; its rules, slots and spawns); \
              no argument: the one playing.",
             |w, a| match a.first() {
@@ -572,7 +572,7 @@ impl Plugin for MinigamePlugin {
             },
         )
         .console_command(
-            "minigame_load",
+            "chimera:minigame_load",
             "minigame_load <file>: read a minigame definition (TOML) from disk, check it and add it.",
             |w, a| {
                 let path = a.first().ok_or("minigame_load <file>")?;
@@ -581,7 +581,7 @@ impl Plugin for MinigamePlugin {
                 Ok(Some(format!("added {}", def.id)))
             },
         )
-        .console_command("minigame_restart", "Play the minigame's match again from the start.", |w, _| {
+        .console_command("chimera:minigame_restart", "Play the minigame's match again from the start.", |w, _| {
             if client(w) {
                 return Err(SERVER_PICKS.into());
             }
@@ -592,12 +592,12 @@ impl Plugin for MinigamePlugin {
             Ok(Some("match restarted".into()))
         })
         .console_command(
-            "minigame_status",
+            "chimera:minigame_status",
             "The minigame's match: phase, time left, each player's kills, deaths and the rules' standing.",
             |w, _| runtime::status(w).map(Some),
         )
         .console_command(
-            "ladder_rung",
+            "chimera:ladder_rung",
             "ladder_rung <n>: put the local player on the ladder's rung n (from 1), its weapon given (a cheat; \
              screenshots and tests).",
             |w, a| {
@@ -610,7 +610,7 @@ impl Plugin for MinigamePlugin {
             },
         )
         .console_command(
-            "minigame_win",
+            "chimera:minigame_win",
             "minigame_win: the local player wins the match now (a cheat; the end screen for screenshots).",
             |w, _| {
                 let me = local_player(w)?;

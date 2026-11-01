@@ -55,7 +55,8 @@ the user's go-ahead: no Actions runs unless asked.
     full names from now on. An ambiguous short name prints a hint.
   - Our general settings move to `chimera:` with no sv_/cl_ prefix.
   Do it with the ECS cleanup, before the next game; the user to confirm
-  the design.
+  the design. **Built 2026-10-31** (with `css:`/`ca:` namespace
+  aliases): [plans/active/console-namespaces.md](plans/active/console-namespaces.md).
 - **First: ECS cleanup where new games plug in (2026-10-29).** Order (user, 2026-10-30): after the current gameplay work, before any new game; performance is fine today. Plan: [plans/active/ecs-cleanup.md](plans/active/ecs-cleanup.md) (steps 1-10 done; its "later" items remain). For
   extensibility more than speed. Counts today: ~350 functions taking the
   whole world (`&mut World`), ~720 queries built inside them, 78

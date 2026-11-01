@@ -526,7 +526,7 @@ pub fn table(world: &World, curve: &PowerCurve) -> Vec<(&'static str, GunClass, 
 /// The `ladder_power` console command.
 pub fn plugin(app: &mut App) {
     app.init_resource::<PowerReaders>().console_command(
-        "ladder_power",
+        "chimera:ladder_power",
         "ladder_power [filter]: every classed gun's power score (higher: stronger), time to kill at the middle \
          distance and band, by band then score (data/power_curve.toml); a filter keeps ids containing it.",
         |w, a| {

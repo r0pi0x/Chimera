@@ -69,7 +69,7 @@ impl Plugin for AnnouncerPlugin {
             .add_systems(Update, announce);
         crate::console::ConsoleAppExt::console_command(
             app,
-            "chimera_announce",
+            "chimera:announce",
             "Announce a kill of yours as the server's pack would (a test): chimera_announce <multi-kill count> [first] [head|groin] [revenge] [female] [total=<kills>].",
             test_announce,
         );

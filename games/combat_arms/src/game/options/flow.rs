@@ -574,7 +574,7 @@ pub fn row_text(world: &World, action: usize) -> String {
 
 pub fn register(app: &mut App) {
     app.console_command(
-        "options",
+        "combat_arms:options",
         "options [open [force]|force|ok|cancel|default <tab>|tab <name>|save|applybinds|show]: Combat Arms' options screen state.",
         |w, a| {
             let tab_of = |s: Option<&String>| match s.map(|s| s.to_lowercase()).as_deref() {

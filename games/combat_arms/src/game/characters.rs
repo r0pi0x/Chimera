@@ -499,7 +499,7 @@ impl Plugin for CaCharactersPlugin {
         look_cvars(app);
         use crate::console::ConsoleAppExt;
         app.console_command(
-            "ca_wear",
+            "combat_arms:ca_wear",
             "ca_wear <record id or name>: wear that body (an NPC's or boss's with its own look) as a rung's look until the next rung (13.8; screenshots, checks).",
             |w, args| {
                 let want = args.first().ok_or("ca_wear <record id or name>")?;
@@ -518,7 +518,7 @@ impl Plugin for CaCharactersPlugin {
             },
         );
         app.console_command(
-            "ca_emote",
+            "combat_arms:ca_emote",
             "Hunted only: play emote 1 Insult, 2 Surrender, 3 Insult_Dance or 4 Salute (characters.md 9; the G menu's).",
             |w, args| {
                 let n: usize = args.first().and_then(|a| a.parse().ok()).filter(|n| (1..=4).contains(n)).ok_or("ca_emote 1-4")?;
@@ -642,12 +642,12 @@ impl Default for CaOwnLook {
 /// The console's look settings (`CaOwnLook`).
 pub fn look_cvars(app: &mut App) {
     use crate::console::resource_cvar;
-    resource_cvar::<CaOwnLook, i32>(app, "ca_model", "Your body record (0 Normal, 1 Light, 2 Heavy).", |l| &mut l.0.model);
-    resource_cvar::<CaOwnLook, i32>(app, "ca_face", "Your face (0-3 male, 4-7 female).", |l| &mut l.0.face);
-    resource_cvar::<CaOwnLook, i32>(app, "ca_head", "Your head piece (0: none).", |l| &mut l.0.head);
-    resource_cvar::<CaOwnLook, i32>(app, "ca_camo", "Your camouflage index (0-6).", |l| &mut l.0.camouflage);
-    resource_cvar::<CaOwnLook, i32>(app, "ca_goggle", "Your goggles or mask (-1: none).", |l| &mut l.0.goggle);
-    resource_cvar::<CaOwnLook, i32>(app, "ca_backpack", "Your backpack (-1: none).", |l| &mut l.0.backpack);
+    resource_cvar::<CaOwnLook, i32>(app, "combat_arms:ca_model", "Your body record (0 Normal, 1 Light, 2 Heavy).", |l| &mut l.0.model);
+    resource_cvar::<CaOwnLook, i32>(app, "combat_arms:ca_face", "Your face (0-3 male, 4-7 female).", |l| &mut l.0.face);
+    resource_cvar::<CaOwnLook, i32>(app, "combat_arms:ca_head", "Your head piece (0: none).", |l| &mut l.0.head);
+    resource_cvar::<CaOwnLook, i32>(app, "combat_arms:ca_camo", "Your camouflage index (0-6).", |l| &mut l.0.camouflage);
+    resource_cvar::<CaOwnLook, i32>(app, "combat_arms:ca_goggle", "Your goggles or mask (-1: none).", |l| &mut l.0.goggle);
+    resource_cvar::<CaOwnLook, i32>(app, "combat_arms:ca_backpack", "Your backpack (-1: none).", |l| &mut l.0.backpack);
 }
 
 /// A seed for a bot's look: its name's (stable across rounds), else its

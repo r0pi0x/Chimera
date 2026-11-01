@@ -211,7 +211,7 @@ impl Plugin for DebugUiStatePlugin {
         app.init_resource::<DebugUi>()
             .add_systems(Startup, apply_ranges)
             .console_command(
-                "debugui",
+                "chimera:debugui",
                 "debugui [tab|close]: toggle the debug window (F8), or open it on a tab (player, world, movement, \
                  bots, rendering, perf, audio, logic, rounds, cvars).",
                 |w, a| {
@@ -242,8 +242,8 @@ fn local_player(w: &mut World) -> Result<Entity, String> {
 /// The Player tab's setters: health, armour and money, in CS:S points.
 fn player_commands(app: &mut App) {
     app.console_command(
-        "chimera_sethealth",
-        "chimera_sethealth <1-100>: set your health (CS:S points).",
+        "chimera:sethealth",
+        "sethealth <1-100>: set your health (CS:S points).",
         |w, a| {
             let hp = a.first().and_then(|v| v.parse::<f32>().ok()).ok_or("chimera_sethealth <1-100>")?;
             let p = local_player(w)?;
@@ -253,8 +253,8 @@ fn player_commands(app: &mut App) {
         },
     )
     .console_command(
-        "chimera_setarmor",
-        "chimera_setarmor <0-100> [helmet 0|1]: set your armour (CS:S points) and helmet.",
+        "chimera:setarmor",
+        "setarmor <0-100> [helmet 0|1]: set your armour (CS:S points) and helmet.",
         |w, a| {
             let amount = a
                 .first()
@@ -273,8 +273,8 @@ fn player_commands(app: &mut App) {
         },
     )
     .console_command(
-        "chimera_setmoney",
-        "chimera_setmoney <amount>: set your money.",
+        "chimera:setmoney",
+        "setmoney <amount>: set your money.",
         |w, a| {
             let amount = a.first().and_then(|v| v.parse::<f64>().ok()).ok_or("chimera_setmoney <amount>")?;
             let p = local_player(w)?;

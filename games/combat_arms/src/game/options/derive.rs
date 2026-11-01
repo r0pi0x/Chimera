@@ -223,20 +223,20 @@ pub fn sensitivity_key(world: &mut World, inc: bool) {
 
 pub fn register(app: &mut App) {
     app.init_resource::<CaChoose>();
-    app.console_command("sensitivityinc", "Mouse sensitivity up one (1 to 99), with a chat line.", |w, _| {
+    app.console_command("combat_arms:sensitivityinc", "Mouse sensitivity up one (1 to 99), with a chat line.", |w, _| {
         sensitivity_key(w, true);
         Ok(None)
     })
-    .console_command("sensitivitydec", "Mouse sensitivity down one (1 to 99), with a chat line.", |w, _| {
+    .console_command("combat_arms:sensitivitydec", "Mouse sensitivity down one (1 to 99), with a chat line.", |w, _| {
         sensitivity_key(w, false);
         Ok(None)
     })
-    .console_command("hudonoff", "Hide or show the HUD's panels (kept until the game exits).", |w, _| {
+    .console_command("combat_arms:hudonoff", "Hide or show the HUD's panels (kept until the game exits).", |w, _| {
         let mut h = w.resource_mut::<CaHudSwitch>();
         h.on = !h.on;
         Ok(None)
     })
-    .console_command("helpscreen", "Toggle the help popup (not for game masters).", |w, _| {
+    .console_command("combat_arms:helpscreen", "Toggle the help popup (not for game masters).", |w, _| {
         if !w.resource::<super::CaAccount>().game_master {
             let mut p = w.resource_mut::<HelpPopup>();
             p.open = !p.open;
@@ -244,7 +244,7 @@ pub fn register(app: &mut App) {
         Ok(None)
     });
     for n in 1u8..=6 {
-        app.console_command(&format!("choose_{n}"), "A menu line pick (keys 1 to 6).", move |w, _| {
+        app.console_command(&format!("combat_arms:choose_{n}"), "A menu line pick (keys 1 to 6).", move |w, _| {
             w.resource_mut::<CaChoose>().0.push(n);
             Ok(None)
         });

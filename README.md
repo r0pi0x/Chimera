@@ -83,7 +83,7 @@ The first build takes a while (several minutes); later ones are quick.
 the latest version and runs it.
 
 If the game picks the wrong install, open the console (`~`) and use
-`chimera_install <folder>` (the folder containing `cstrike/` and `hl2/`).
+`chimera:install <folder>` (the folder containing `cstrike/` and `hl2/`).
 
 ## Playing
 
@@ -96,13 +96,20 @@ Some console commands:
 
 | Command | Does |
 |---|---|
-| `chimera_quickstart` | de_dust2 with nine bots, straight away |
+| `chimera:quickstart` | de_dust2 with nine bots, straight away |
 | `map <name>` | load a map (`map de_nuke`) |
 | `bot_add`, `bot_kick`, `bot_quota <n>` | add, remove or set the number of bots |
 | `connect <ip[:port]>` | join a server |
 | `callvote` | start a vote (kick, change map, restart) |
 | `playdemo <file>` | play a CS:S demo |
 | `menu extras` | Chimera's own options (things CS:S doesn't have) |
+| `scope <game>` | which game's names short names mean (`scope ca`, `scope auto`) |
+
+Names have namespaces, like ids: `cs_source:sv_gravity` (or `css:`),
+`combat_arms:MaxPlayer` (`ca:`), `chimera:quickstart` for ours. Short
+names work too: the current game's first, then Chimera's; when two games
+both have one, the console says so and lists the full names. Old names
+(`chimera_quickstart`, `net_upnp`, ...) still work.
 
 Settings and binds are saved as CS:S's `config.cfg` in your user folder
 (`~/.local/share/chimera/cfg/` on Linux, `%APPDATA%\chimera\cfg\` on
@@ -196,7 +203,7 @@ runs an optimized build):
 ```
 
 On Linux or macOS the same by hand: `cargo run --profile playtest --bin
-lucker_party -- -port 28930 +maxplayers 4 +MaxPlayer 0 +net_upnp 1` hosts
+lucker_party -- -port 28930 +maxplayers 4 +MaxPlayer 0 +chimera:upnp 1` hosts
 (or `--bin lucker_party_server` for no window) and `cargo run --profile
 playtest --bin lucker_party -- +connect <ip>:28930` joins.
 
@@ -210,7 +217,7 @@ friends; the game port is **UDP 28930** (`-Port` changes it).
   blocking `lucker_party.exe`, is the usual reason.
 - **Over the internet:** friends need your public address and the host's
   router to let UDP 28930 through. The host script asks the router to
-  forward it by itself (UPnP, `net_upnp 1`; the game prints a `UPnP:` line
+  forward it by itself (UPnP, `chimera:upnp 1`; the game prints a `UPnP:` line
   saying whether it worked and the router's outside address, and `status`
   shows it again). If the router has UPnP off, or sits behind another NAT
   (an ISP box), forward UDP 28930 to the host's PC by hand in the router's

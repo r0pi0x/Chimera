@@ -314,7 +314,7 @@ impl Plugin for CaEffectsPlugin {
         {
             use crate::console::ConsoleAppExt;
             app.console_command(
-                "debrisfxlevel",
+                "combat_arms:debrisfxlevel",
                 "debrisfxlevel [0|1|2]: prop debris detail (low, medium, high: the pieces and their lifetimes x 0.333, \
                  0.666, 1); without a value, the current one.",
                 |w, a| match a.first() {

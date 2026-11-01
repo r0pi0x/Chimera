@@ -301,7 +301,7 @@ impl Plugin for WeaponPlugin {
         );
         crate::console::resource_cvar::<drop::UsePickup, u8>(
             app,
-            "chimera_usepickup",
+            "chimera:usepickup",
             "1: +use on a dropped weapon you look at takes it, dropping the one in its slot (CS:GO's; CS:S has none).",
             |u| &mut u.0,
         );
@@ -339,7 +339,7 @@ impl Plugin for WeaponPlugin {
         }
         crate::console::resource_cvar::<drop::DebugPickup, u8>(
             app,
-            "chimera_debug_pickup",
+            "chimera:debug_pickup",
             "1: print why the loose weapon nearest you is or isn't picked up, each time that changes (2: for every character; pickups are the server's).",
             |u| &mut u.0,
         );

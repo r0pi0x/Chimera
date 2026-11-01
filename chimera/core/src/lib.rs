@@ -1,5 +1,6 @@
 //! The engine's stable base (docs/ARCHITECTURE.md, "Crates"): the shared
-//! vocabulary (`core`), the console, the slot registries (`slots`), the
+//! vocabulary (`core`), the console and its scope (`console_scope`: the
+//! game played, the games' namespaces), the slot registries (`slots`), the
 //! character's components (`character`), the performance metrics, the
 //! mounts (`mount`: the VFS over a game's files, local config, finding
 //! installs), the environment variables and per-user folders under
@@ -18,6 +19,7 @@
 pub mod announcer;
 pub mod character;
 pub mod console;
+pub mod console_scope;
 pub mod core;
 pub mod cues;
 pub mod env;

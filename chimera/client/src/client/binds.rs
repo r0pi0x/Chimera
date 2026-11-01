@@ -410,6 +410,9 @@ impl BindsAppExt for App {
             .get_resource_or_insert_with(PolledBinds::default)
             .extra
             .insert(norm(command));
+        // Read by its short name, so binds store it so
+        // (`Console::keep_short`).
+        self.world_mut().get_resource_or_init::<Console>().keep_short(command);
         self
     }
 
@@ -665,8 +668,16 @@ pub const CONFIG_MARK: &str = "// binds: all";
 pub const DEFAULTS_MARK: &str = "// bind defaults: cs";
 
 pub fn commands(app: &mut App) {
+    // The polled binds are read by their short names: binds store them so
+    // (`Console::keep_short`).
+    {
+        let mut console = app.world_mut().get_resource_or_init::<Console>();
+        for word in POLLED {
+            console.keep_short(word);
+        }
+    }
     app.init_resource::<BindDefaults>().console_command(
-        "binddefaults",
+        "chimera:binddefaults",
         "binddefaults [missing|new]: put the default binds back (missing: only on free keys for unbound commands; \
          new: only the defaults added lately, likewise).",
         |w, a| {

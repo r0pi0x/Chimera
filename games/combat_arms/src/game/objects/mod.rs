@@ -305,13 +305,13 @@ impl Plugin for CaObjectsPlugin {
                     .in_set(SimSet::Weapons),
             )
             .console_command(
-                "ca_objects",
+                "combat_arms:ca_objects",
                 "ca_objects [filter]: the map's objects whose class or name contains the filter (all world models and \
                  logic objects without one): state, pose (u, the world file's axes), flags, hit points.",
                 |w, a| Ok(Some(list(w, a.first().map(String::as_str)))),
             )
             .console_command(
-                "ca_object_msg",
+                "combat_arms:ca_object_msg",
                 "ca_object_msg <name> <message...>: deliver a message to the objects of that name now (the server's), \
                  as a map command's `msg` would, e.g. `ca_object_msg Door01 trigger`.",
                 |w, a| {
@@ -326,7 +326,7 @@ impl Plugin for CaObjectsPlugin {
                 },
             )
             .console_command(
-                "ca_object_props",
+                "combat_arms:ca_object_props",
                 "ca_object_props <name>: the objects of that name: their state, then every property as the map \
                  stores it (commands, triggers' targets, doors' times), and where to stand: a `setpos` line at \
                  the object's centre (the feet, inches, as `getpos` prints).",
@@ -336,7 +336,7 @@ impl Plugin for CaObjectsPlugin {
                 },
             )
             .console_command(
-                "ca_object_damage",
+                "combat_arms:ca_object_damage",
                 "ca_object_damage <name> [hit points]: damage the objects of that name now (the server's; default \
                  enough to break them), from the local player's view direction (their death sends their debris).",
                 |w, a| {
@@ -364,7 +364,7 @@ impl Plugin for CaObjectsPlugin {
                 },
             )
             .console_command(
-                "ca_object_cmd",
+                "combat_arms:ca_object_cmd",
                 "ca_object_cmd <command string>: run a command string now (no sender), e.g. `ca_object_cmd msg \
                  (A B) (visible 0); delay 2 (msg C on)`.",
                 |w, a| {
@@ -373,7 +373,7 @@ impl Plugin for CaObjectsPlugin {
                 },
             )
             .console_command(
-                "ca_object_vars",
+                "combat_arms:ca_object_vars",
                 "ca_object_vars: the command manager's variables and pending delayed commands.",
                 |w, _| {
                     let o = w.resource::<CaObjects>();

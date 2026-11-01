@@ -39,7 +39,7 @@ impl Plugin for BotDebugPlugin {
             .add_systems(Update, (draw_bots, order_labels, bot_list).distributive_run_if(crate::gameplay::hud_is(crate::game::GAME)));
         resource_cvar::<BotViews, u8>(
             app,
-            "chimera_drawbots",
+            "chimera:drawbots",
             "1: each bot's role, target, last known enemy position, route, goal, hold spot, look target, grenade arc and flash it avoids.",
             |d| &mut d.bots,
         );

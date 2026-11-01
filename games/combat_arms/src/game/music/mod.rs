@@ -131,7 +131,7 @@ impl Plugin for CaMusicPlugin {
                     .in_set(CaMusicSet),
             )
             .console_cvar(
-                "party_music",
+                "chimera:party_music",
                 "party_music <0|1|2>: a party match's music: 0 off, 1 the start track once then a shuffled playlist \
                  of Combat Arms' tracks, 2 Combat Arms' original (the start track looping). Volume: the musicvolume option.",
                 &data::MusicData::built_in().party.default_music.to_string(),
@@ -146,13 +146,13 @@ impl Plugin for CaMusicPlugin {
                 },
             )
             .console_command(
-                "ca_music",
+                "combat_arms:ca_music",
                 "ca_music: the music player's slots and gains, the playlist's cursor and ticks, the screen and the \
                  interface sounds started.",
                 |w, _| Ok(Some(describe(w))),
             )
             .console_command(
-                "ca_ambient",
+                "combat_arms:ca_ambient",
                 "ca_ambient: the map's SoundFX objects (file, radii, volume, on) and their gain at the local player.",
                 |w, _| Ok(Some(describe_ambient(w))),
             );

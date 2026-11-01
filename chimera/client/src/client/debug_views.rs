@@ -26,7 +26,7 @@ impl Plugin for DebugViewsPlugin {
             .add_systems(Update, (draw_nav, draw_ragdolls));
         resource_cvar::<DebugViews, u8>(
             app,
-            "chimera_ragdoll_debug",
+            "chimera:ragdoll_debug",
             "1: draw ragdoll bodies (bounds, axes) and joints (parent anchor to child).",
             |d| &mut d.ragdolls,
         );
@@ -50,7 +50,7 @@ impl Plugin for DebugViewsPlugin {
         );
         resource_cvar::<DebugViews, u8>(
             app,
-            "chimera_drawnav",
+            "chimera:drawnav",
             "1: outline nav areas near you (coloured by place) and their links; 2: all of them.",
             |d| &mut d.nav,
         );

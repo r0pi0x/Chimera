@@ -70,7 +70,7 @@ impl Plugin for HitMarkerPlugin {
         if app.world().get_resource::<crate::console::Console>().is_some() {
             crate::console::resource_cvar::<HitMarkerSetting, u8>(
                 app,
-                "cl_hitmarker",
+                "chimera:hitmarker",
                 "1: a cross shows when your shot damages another player (yellow headshot, red kill); 0: off.",
                 |s| &mut s.on,
             );

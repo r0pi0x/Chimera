@@ -967,18 +967,18 @@ pub(super) fn plugin(app: &mut App) {
     resource_cvar::<JoinPassword, String>(app, "password", "The password to join a server with.", |p| &mut p.0);
     resource_cvar::<LanSettings, String>(
         app,
-        "net_lan_ports",
+        "chimera:lan_ports",
         "UDP ports the LAN tab and `lanscan` look for servers on: first-last (Source's 27015-27020).",
         |l| &mut l.ports,
     );
     resource_cvar::<LanSettings, String>(
         app,
-        "net_lan_broadcast",
+        "chimera:lan_broadcast",
         "Addresses the LAN scan broadcasts to, space separated (this machine is always asked too).",
         |l| &mut l.broadcast,
     );
     app.console_command(
-        "serverinfo",
+        "chimera:serverinfo",
         "serverinfo <ip[:port]> ...: ask servers for their name, map, players and ping.",
         |w, a| {
             if a.is_empty() {
@@ -1000,7 +1000,7 @@ pub(super) fn plugin(app: &mut App) {
         },
     )
     .console_command(
-        "lanscan",
+        "chimera:lanscan",
         "List servers on the local network (`net_lan_ports`).",
         |w, _| {
             let lan = w.resource::<LanSettings>().clone();

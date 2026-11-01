@@ -69,7 +69,7 @@ impl Plugin for ObjectivesHudPlugin {
             );
         resource_cvar::<Overlay, u8>(
             app,
-            "chimera_objectives",
+            "chimera:objectives",
             "1: show the bomb's timer and defuse and the hostages' state (debug).",
             |o| &mut o.0,
         );

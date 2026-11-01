@@ -742,7 +742,7 @@ impl Plugin for CaRulesPlugin {
                 publish.run_if(server.and_then(not(mode_on))).run_if(crate::gameplay::gameplay_is(super::GAME)),
             )
             .console_command(
-                "ca_hire",
+                "combat_arms:ca_hire",
                 "ca_hire <unit 0-9>: Hired Guns: hire a mercenary for the local player (the hire menu's keys 1-9, 0).",
                 |w, a| {
                     let unit: usize = a.first().and_then(|u| u.parse().ok()).ok_or("ca_hire <unit 0-9>")?;
@@ -757,7 +757,7 @@ impl Plugin for CaRulesPlugin {
                 },
             )
             .console_command(
-                "ca_order",
+                "combat_arms:ca_order",
                 "ca_order <hold|default|follow>: Hired Guns: the local player's mercenaries' order.",
                 |w, a| {
                     let order = a
@@ -774,7 +774,7 @@ impl Plugin for CaRulesPlugin {
                 },
             )
             .console_command(
-                "ca_restart",
+                "combat_arms:ca_restart",
                 "Start the match over (ca_mode's mode, ca_goal's goal): everyone respawned at the next server frame.",
                 |w, _| {
                     flow::restart(w);
@@ -782,7 +782,7 @@ impl Plugin for CaRulesPlugin {
                 },
             )
             .console_command(
-                "ca_match",
+                "combat_arms:ca_match",
                 "The match: mode, phase, team scores, round wins, players per team.",
                 |w, _| {
                     let v = w.resource::<CaMatchView>().clone();

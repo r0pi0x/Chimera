@@ -265,7 +265,7 @@ impl Plugin for LogicPlugin {
         );
         crate::console::resource_cvar::<LogicRecord, u8>(
             app,
-            "chimera_logic_record",
+            "chimera:logic_record",
             "1: record the outputs map entities fire and the inputs they get (the latest few hundred; \
              the debug UI's Logic tab lists them).",
             |r| &mut r.0,

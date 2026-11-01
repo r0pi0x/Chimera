@@ -226,7 +226,7 @@ impl Plugin for UltimateGunGamePlugin {
         .insert_resource(MapHistory::seeded(self.seed))
         .insert_resource(chimera_sim::minigame::ladder::RungSeed(self.seed))
         .console_command(
-            "ugg_new",
+            "chimera:ugg_new",
             "ugg_new [seed] [rungs] [map]: a new Ultimate Gun Game ladder for the players connected, played at once \
              (on `map`, else this one if in its pool, else its pool's first).",
             |w, a| {
@@ -241,7 +241,7 @@ impl Plugin for UltimateGunGamePlugin {
                 chimera_net::minigame_net::change_match(w, MINIGAME, a.get(2).map(String::as_str)).map(Some)
             },
         )
-        .console_command("parts", "parts: what each composed game lends (its capability report).", |w, _| {
+        .console_command("chimera:parts", "parts: what each composed game lends (its capability report).", |w, _| {
             Ok(Some(auto::report(w).iter().map(Capabilities::line).collect::<Vec<_>>().join("\n")))
         })
         .add_systems(PostStartup, with_installs);

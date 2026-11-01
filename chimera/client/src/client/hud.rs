@@ -145,7 +145,7 @@ fn radar_cvar(app: &mut App) {
     if app.world().get_resource::<crate::console::Console>().is_some_and(|c| c.cvar("hud_radar").is_some()) {
         return;
     }
-    crate::console::resource_cvar::<Radars, u8>(app, "hud_radar", "1: the games' radars draw; 0: hidden.", |r| &mut r.shown);
+    crate::console::resource_cvar::<Radars, u8>(app, "chimera:radar", "1: the games' radars draw; 0: hidden.", |r| &mut r.shown);
     app.world_mut().resource_mut::<crate::console::Console>().archive("hud_radar");
 }
 

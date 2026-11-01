@@ -1,7 +1,8 @@
 //! The games an app plays, as data the game fills in (`GameInfo`), so the
 //! client shell names no game: where its install is and how to mount it,
 //! its folder there, its map cycle, its server tick, its default binds
-//! and the movement cvars the debug UI lists.
+//! the movement cvars the debug UI lists and its console namespaces
+//! (`console_namespaces`: its id and aliases, `css`, `ca`).
 //!
 //! A game registers its `GameInfo` (a `static`) with
 //! `app.register_game(&INFO)` (or the `RegisterGame` plugin, which a game's
@@ -75,9 +76,25 @@ pub struct GameInfo {
     /// Arms' 0.018): what its console variables' distances are in when
     /// it is the gameplay (`cam_idealdist`).
     pub meters_per_unit: f32,
+    /// Its console namespaces (docs/plans/active/console-namespaces.md):
+    /// the first is canonical (configs save it, the network sends it;
+    /// normally the id), the rest are aliases accepted wherever a
+    /// namespace is (`css:sv_gravity`, `scope css`). Empty: the id alone.
+    /// `console_scope` gives them to the console.
+    pub console_namespaces: &'static [&'static str],
 }
 
 impl GameInfo {
+    /// Its console namespaces, the canonical first (`console_namespaces`,
+    /// else the id).
+    pub fn namespaces(&self) -> &[&'static str] {
+        if self.console_namespaces.is_empty() {
+            std::slice::from_ref(&self.id)
+        } else {
+            self.console_namespaces
+        }
+    }
+
     /// Where the game is installed (chimera.local.toml, saved, or found:
     /// `mount::install`).
     pub fn install(&self) -> Option<PathBuf> {
@@ -215,6 +232,7 @@ mod tests {
         old_default_binds: &[],
         movement_cvars: &[],
         meters_per_unit: 0.0254,
+        console_namespaces: &[],
     };
     static A: GameInfo = A_INFO;
     static B: GameInfo = GameInfo { id: "b_game", ..A_INFO };

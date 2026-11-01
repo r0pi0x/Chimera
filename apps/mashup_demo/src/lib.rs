@@ -169,7 +169,7 @@ impl Plugin for MashupPartsPlugin {
             cs_source::game::weapons::CsGunsPlugin,
         ))
         .console_command(
-            "loadout_slot",
+            "chimera:loadout_slot",
             "loadout_slot <primary|secondary|melee|throw|0-3> <weapon id>: that loadout slot gets the \
              weapon (either game's: cs_source:weapon_ak47, combat_arms:...), yours at once, everyone's \
              from their next spawn; no arguments: the loadout.",
