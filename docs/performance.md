@@ -2221,6 +2221,98 @@ while available memory didn't fall (13.3-13.5 GB at worst). The 363
 tests fill the cache with 47 entries, 32 GB (`CHIMERA_MAP_CACHE_GB`
 defaults to 40). All passed in every run.
 
+### The converted-map cache, second pass (2026-10-31)
+
+The follow-ups of the section above (backlog, "Converted-map cache, what's
+left"). The Linux dev box (12 threads, 31 GB, ~15 GB of swap already in
+use by idle processes); other agents' builds and tests came and went, so
+each tier run below started only after a minute with no other checkout
+building or testing and the 1-minute load under 5, and none ran beside
+another checkout's (sampled every 2 s).
+
+**A miss streams its entry to the file** (chimera_assets `map_cache`,
+`ChunkWriter`: the payload a 16 MB chunk at a time, each hashed on a
+thread, the header after it; format 3), instead of holding the encoded
+entry beside the map. **Textures keep only their BC blocks** when their
+RGBA8 image and mips are those blocks decoded (chimera_world
+`map::texture_serde`, checked when the entry is written); a hit decodes
+them again with the converters' decoder (texpresso), the biggest first.
+de_dust2 whole, the old binary and the new interleaved (`heavy::map_cache`
+with `CHIMERA_MAP_CACHE_LOG=1`, the box at load 10-16; peak memory of
+`map_de_dust2::ambient_samples_lie_in_their_leaf`, `ru_maxrss`, two runs
+each):
+
+| | before | after |
+|---|---|---|
+| entry | 986 MB (textures 759) | **399 MB** (textures 172) |
+| hit | 0.21-0.29 s (decode 0.14-0.17) | 0.24-0.68 s (decode 0.19-0.51) |
+| hit, process CPU | 1.7-1.9 s | 2.2-2.4 s |
+| peak RSS: cold / miss / hit | 1.33 / **2.87-2.92** / 2.08 GB | 1.33 / **1.50-1.51** / 1.51 GB |
+
+A hit now decodes 630 MB of texels (about 0.5 s of CPU on threads), so
+it is slower on a busy box (0.24 s with cores free, 0.5-0.7 s at load
+10-15) but still 3-7x faster than converting (1.6-2.6 s); the lean entry
+(no textures decoded) is unchanged, 227 MB, 0.10-0.11 s. Kept over the
+bigger entry: a third of the disk and of the page cache per map, and a
+miss's peak is now the conversion's plus 0.2 GB. A miss takes as long as
+before (2.0-3.6 s, noisy).
+
+**The whole heavy tier, warm** (every crate's `heavy::`, 625 tests:
+`cargo nextest run --features dev --profile bench --no-fail-fast -E
+'test(/^heavy::/)'`, the cache in a scratch folder filled by a first run,
+24-28 GB; `.config/nextest.toml`'s `max-threads` set to 5 or 6 for the
+run). Two changes in between: the first runs showed party_kit's
+pool-map spawn sweep (2-3 minutes) always the last test, ending each run
+alone, so it and Combat Arms' rung skins now start early (`priority =
+90`); the runs below have it.
+
+| | 5 heavy slots | 6 heavy slots | 5 slots, cache off |
+|---|---|---|---|
+| wall (nextest) | 646.2, 637.4 s | 544.4, 542.1 s (**-15.5%**) | 716.0 s |
+| tests summed | 2,302, 2,274 s | 2,448, 2,442 s | 2,596 s |
+| CPU (user + sys) | 3,241, 3,193 s | 3,363, 3,359 s | 3,282 s |
+| peak summed RSS | 21.0, 19.6 GB | 22.5, 22.4 GB | 19.8 GB |
+| least memory available | 1.4, 2.5 GB | **0, 0 GB** | 1.7 GB |
+| swap, start to peak | +0.3, +2.1 GB | **+4.8, +3.4 GB** | +1.6 GB |
+| 1-minute load, median | 5.6, 5.7 | 6.9, 8.7 | 5.1 |
+
+All passed in every run. The cache takes the tier from 716 s to 637-646 s
+(-10%; the tests' own time -12%, cs_source's -21%: 1,234 s to 969-989 s);
+what is left is mostly not map loads (the soak, the pool-map sweep,
+Combat Arms' rung skins, 105-120 s each, run whole beside the rest).
+Before the priority change a warm six-slot run took 620 s (the sweep
+last again); the earliest five-slot runs, 961-1,175 s, ran beside other
+checkouts' tests and are not comparable. **Decision: `max-threads = 5`
+stays.** Six slots are clearly faster (-15.5%, twice), but in both runs
+available memory reached 0 and 3-5 GB went to swap, the same as on
+10-30; the criterion stays at least 4 GB available throughout, which
+five slots don't meet either on this box with 15 GB of idle processes
+swapped (1.4-2.5 GB). A machine with more memory may take six.
+
+**Combat Arms stays off by default** (`CHIMERA_MAP_CACHE_CA=1` to turn
+it on). Its biggest maps (`load_world_in`, the whole world, a second
+cold load timed; box at load 15):
+
+| map (file) | cold | miss | hit | entry |
+|---|---|---|---|---|
+| 16ROOMS (83 MB) | 0.42 s | 0.58 s | 0.11 s | 245 MB |
+| TERRORDOME (77 MB) | 1.46-1.55 s | 2.43 s | 0.49-0.51 s | 640 MB |
+| NEMEXISWAR (66 MB) | 1.10-1.44 s | 3.53 s | 0.52-0.55 s | 641 MB |
+| DESERTFOX_CP (64 MB) | 1.10-1.21 s | 2.93 s | 0.32-0.34 s | 418 MB |
+| NEMEXISWARQ (59 MB) | 1.02-1.14 s | 3.65 s | 0.30-0.31 s | 634 MB |
+| BLOODMONEY (58 MB) | 0.51-0.53 s | 0.96 s | 0.26-0.28 s | 416 MB |
+| WAREHOUSE | 0.28 s | 0.39 s | 0.08 s | 222 MB |
+
+A hit saves 0.2-1.0 s a load, a miss costs 0.2-2.5 s more than
+converting, and the entries stay big: Combat Arms' textures keep their
+texels (their mips are box-filtered, not decoded blocks, and their RGBA8
+isn't texpresso's decoding of the blocks), and a TERRORDOME lightmap is
+244 MB. Combat Arms' 155 heavy tests, five slots, interleaved: off
+152.0, 150.7 s; on and warm 150.0, 148.4 s (-1.5%; the tests summed
+681-686 s against 676-681 s; user CPU 734-735 s against 621-625 s); a cold
+cache 170.5 s; it adds ~5 GB to the cache. Too little for the disk and
+the misses; a player loading a big map again saves under a second.
+
 ### The push hook (2026-10-19)
 
 Pushes took 20-60 minutes: the selection fell back to the whole suite

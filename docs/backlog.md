@@ -2554,13 +2554,13 @@ dithered fade bands. Left:
 - `perfgate` in the pre-push hook (budgets per game app): deferred by
   the user (2026-10-15), pushes aren't blocked on performance for now.
   A Windows-side check needs another counter source (none there yet).
-- Converted-map cache, what's left (built 2026-10-31:
-  [plans/active/asset-service.md](plans/active/asset-service.md),
-  section 10; performance.md, "The converted-map cache": cs_source's
-  heavy tests 439 s to 374 s wall): stream a miss's entry to the file
-  (2.8 GB peak against 1.3 GB converting); time the whole heavy tier
-  with it, then re-try a sixth heavy slot (it gave -15% but ran the box
-  out of memory); a cvar beside `CHIMERA_MAP_CACHE*`.
+- *Done:* the converted-map cache's follow-ups (2026-10-31,
+  performance.md, "The converted-map cache, second pass"): a miss's
+  entry streamed to the file (peak 2.9 GB to 1.5 GB), textures without
+  their decoded texels (de_dust2 986 MB to 399 MB), `chimera_map_cache
+  0/1`, the whole heavy tier measured (716 s off, 637-646 s warm; six
+  slots 542-544 s but out of memory: five stay), Combat Arms left off.
+  Left: the asset store's own cap.
 - *Done:* the seven heavy tests that failed with the installs on 5e324989
   (Combat Arms' archive count and view-model timings, the mashup's
   world-only load, party_kit's dust2 gun game and warehouse bodies) were
