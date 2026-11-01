@@ -429,7 +429,7 @@ implementing (owner branch) / done.
 |---|---|---|---|
 | Wave 0 spec | H0 `source_deltas.md` | spec landed (branch `hl2dm-h0`, 2026-11-01; user review pending) | – |
 | Wave 1 specs | H1 `movement.md`, H2 `suit.md`, H3 `weapons.md`, H6 `rules.md` | spec landed (branch `hl2dm-w1`, 2026-11-01; user review pending; corrections to H0 listed in each) | – |
-| M0 install and look | H0 (install facts) | not started (facts recorded; RCON reads and the probe left) | S0, S1, S11 |
+| M0 install and look | H0 (install facts) | done (branch `hl2dm-m0`, 2026-11-01): S0, S1, `games/hl2dm` skeleton, `dump hl2dm`, heavy `mount.rs`; left for M1/M3: the RCON reads and the probe (below) | S0, S1, (S11) |
 | M1 maps load | H0 | not started | S2, S3, S4 |
 | M3 movement, suit | H1, H2 | not started | S5, S6, C2, C8 |
 | M4 bullets, melee, UGG | H3 | not started | S8, C4, C7 |
@@ -469,6 +469,38 @@ implementing (owner branch) / done.
   respawn after 3 s); no 5 s team-change limit; spawn spots occupied
   within 128 units. Each spec lists its corrections to H0 and its probe
   cases.
+
+- 2026-11-01: M0 built (branch `hl2dm-m0`). S0: the crate `source/engine`
+  (`source_engine`), with the architecture rules (beside `source_logic`
+  under the games; CS:S and HL2:DM may use it, Combat Arms never). S1:
+  `source_engine::search_path` parses a `gameinfo.txt`'s SearchPaths
+  (`|gameinfo_path|`, `|all_source_engine_paths|`, `custom/*`, the VPK
+  `_dir` name, missing entries skipped, `gamebin` and write-only lines
+  left out, a folder named twice mounted once) into a `Mount`; CS:S's
+  mount moved onto the same builder with its own list
+  (`cs_source::game::mount::SEARCH_PATH`), layer for layer as before (its
+  order isn't its `gameinfo.txt`'s: loose `cstrike/` before its VPK;
+  switching is a parity change of its own, in its `//!` doc). Also lifted
+  (second use): `maps::{map_names, map_cycle, parse_map_cycle,
+  import_map_into}`, re-exported at CS:S's old paths. `games/hl2dm`:
+  `game::INFO` (id `hl2dm`, namespaces `hl2dm` and `hl2mp`, app 320,
+  folder `hl2mp`, tick 0.015) and `game::mount` (`open` through
+  `served::open`, `open_install`, `search_path`); `chimera_pack` knows
+  the game (`pack`/`publish hl2dm`, no sets yet); `dump hl2dm` prints the
+  search path and the install's summary. Installs are found as every
+  game's, plus a new `CHIMERA_<GAME>_ROOT` override for one run
+  (`CHIMERA_HL2DM_ROOT`; the SteamCMD install here is outside Steam's
+  libraries). The search path as loaded on build 24600434: `hl2mp/
+  hl2mp_pak_dir.vpk`, `hl2_complete/hl2_complete_misc_dir.vpk`, `hl2/
+  hl2_textures_dir.vpk`, `hl2/hl2_sound_vo_english_dir.vpk`, `hl2/
+  hl2_sound_misc_dir.vpk`, `hl2/hl2_misc_dir.vpk`, `platform/
+  platform_misc_dir.vpk`, then loose `hl2mp/`, `hl2_complete/`, `hl2/`,
+  `platform/`, `hl2mp/download`, then Chimera's content cache (13
+  layers; `custom/` holds only a readme, the English and three
+  `hl2_complete` archives are missing). Left from M0's list: the RCON
+  reads of the shipped cvar values and the probe's first start (Open
+  questions 1 and 2 of source_deltas.md), which need servers on UDP
+  ports and go with M3's probe work.
 
 ## Decision log
 

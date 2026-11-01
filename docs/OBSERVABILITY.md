@@ -1542,7 +1542,8 @@ standard's lines (`"Name<userid><uniqueid><TEAM>" triggered
 
 `dump` lists, summarizes and extracts files from a game install, using the
 same readers as the runtime mount. Install paths come from
-`chimera.local.toml`, else the saved or Steam-found one (`mount::install`).
+`$CHIMERA_<GAME>_ROOT` (`CHIMERA_HL2DM_ROOT`), else `chimera.local.toml`,
+else the saved or Steam-found one (`mount::install`).
 
 ```
 cargo run --bin dump -- cs_source                      # counts and sizes by type
@@ -1553,6 +1554,7 @@ cargo run --bin dump -- cs_source --lods models/props   # each model's LODs: swi
 cargo run --bin dump -- combat_arms --archives         # per-archive title, entropy, file count
 cargo run --bin dump -- combat_arms --list --filter worlds2
 cargo run --bin dump -- combat_arms --filter worlds2/warehouse.dat --extract
+cargo run --bin dump -- hl2dm                          # gameinfo.txt's search path, then the summary
 ```
 
 Combat Arms' maps: `cargo run --features dev -p combat_arms_app --bin

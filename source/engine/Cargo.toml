@@ -1,0 +1,30 @@
+[package]
+name = "source_engine"
+version = "0.1.0"
+description = "Source engine behaviour every Source game shares, on Chimera: the search path first"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# No doc tests (none written): skips a rustdoc pass on every test run.
+[lib]
+doctest = false
+
+# The engine's crates, Source's formats and its map logic; never the
+# presentation (`chimera_present`), `mashup`, a game or an app
+# (checks/tests/it/architecture.rs checks it). What it draws will sit
+# behind a `ui` feature, as a game's front end does. Same versions and
+# features as the game's (workspace dependencies), so `cargo test -p
+# source_engine` reuses the game's builds.
+[dependencies]
+chimera_core.workspace = true
+source_formats.workspace = true
+# Maps sent compressed by servers (`maps::import_map_into`).
+bzip2.workspace = true
+workspace-hack.workspace = true
+
+[features]
+# Bevy as a dynamic library, as the games' `dev` (which turns this on):
+# `cargo test -p source_engine --features dev` shares their Bevy build.
+dev = ["chimera_core/dev"]

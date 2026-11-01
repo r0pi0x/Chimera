@@ -256,23 +256,9 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
     console_namespaces: &["cs_source", "css"],
 };
 
-/// Every map the mounted install holds: `maps/<name>.bsp`, sorted.
-pub fn map_names(mount: &crate::mount::Mount) -> Vec<String> {
-    let mut names: Vec<String> = mount
-        .entries()
-        .into_iter()
-        .filter_map(|(e, _)| {
-            e.path
-                .strip_prefix("maps/")
-                .and_then(|p| p.strip_suffix(".bsp"))
-                .filter(|p| !p.contains('/'))
-                .map(String::from)
-        })
-        .collect();
-    names.sort();
-    names.dedup();
-    names
-}
+// Source's map listings (`maps/<name>.bsp`, the map cycle files), at
+// their old paths.
+pub use source_engine::maps::{map_cycle, map_names, parse_map_cycle};
 
 /// CS:S's maps from the install (`map::MapLoader`): what an app that
 /// plays CS:S maps chooses, the faithful one or a mashup
@@ -403,43 +389,6 @@ pub const OLD_DEFAULT_BINDS: &[(&str, &str)] = &[
     ("v", "noclip"),
     ("f9", "bug"),
 ];
-
-/// The map cycle a server plays in turn (`cfg/mapcycle.txt`, else the
-/// install's `cfg/mapcycle_default.txt`, else an old `mapcycle.txt`): its
-/// map names in order, those the install has.
-pub fn map_cycle(mount: &crate::mount::Mount) -> Vec<String> {
-    let maps: std::collections::HashSet<String> = mount
-        .entries()
-        .into_iter()
-        .filter_map(|(e, _)| e.path.strip_prefix("maps/")?.strip_suffix(".bsp").map(str::to_lowercase))
-        .collect();
-    let has_map = |m: &String| maps.contains(m);
-    ["cfg/mapcycle.txt", "cfg/mapcycle_default.txt", "mapcycle.txt"]
-        .iter()
-        .find_map(|p| mount.read(p).ok())
-        .map(|b| parse_map_cycle(&String::from_utf8_lossy(&b)))
-        .unwrap_or_default()
-        .into_iter()
-        .filter(has_map)
-        .collect()
-}
-
-/// A map cycle file's map names: `//` comments and blank lines left out.
-pub fn parse_map_cycle(text: &str) -> Vec<String> {
-    text.lines()
-        .map(|l| l.split("//").next().unwrap_or_default().trim())
-        .filter_map(|l| l.split_whitespace().next().map(str::to_lowercase))
-        .collect()
-}
-
-#[cfg(test)]
-mod cycle_tests {
-    #[test]
-    fn map_cycle_files_read_as_names() {
-        let text = "// Default mapcycle file\r\n//\r\n\r\ncs_italy\r\nde_dust // comment\n De_Aztec \n";
-        assert_eq!(super::parse_map_cycle(text), ["cs_italy", "de_dust", "de_aztec"]);
-    }
-}
 
 /// CS:S's server tick: 0.015 s (66.67 Hz). Measured with the movement probe
 /// (tools/css_probe): a dedicated server started with -tickrate 64 still

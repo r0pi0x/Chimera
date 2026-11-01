@@ -22,12 +22,14 @@ members = [
     "chimera/assets",
     "source/formats",
     "source/logic",
+    "source/engine",
     "source/tools",
     "lithtech/formats",
     "games/cs_source",
     "games/cs_source/tools",
     "games/combat_arms",
     "games/originals",
+    "games/hl2dm",
     "apps/cs_source",
     "apps/cs_source_server",
     "apps/combat_arms",
@@ -55,12 +57,14 @@ default-members = [
     "chimera/assets",
     "source/formats",
     "source/logic",
+    "source/engine",
     "source/tools",
     "lithtech/formats",
     "games/cs_source",
     "games/cs_source/tools",
     "games/combat_arms",
     "games/originals",
+    "games/hl2dm",
     "apps/cs_source",
     "apps/cs_source_server",
     "apps/combat_arms",
@@ -99,12 +103,18 @@ chimera_vfs = { path = "chimera/vfs" }
 chimera_assets = { path = "chimera/assets" }
 source_formats = { path = "source/formats" }
 source_logic = { path = "source/logic" }
+# Source engine behaviour every Source game shares, on Chimera (the
+# search path first; docs/plans/active/hl2dm.md, section 3).
+source_engine = { path = "source/engine" }
 # LithTech's formats as plain data (Combat Arms' `.rez` archives).
 lithtech_formats = { path = "lithtech/formats" }
 cs_source = { path = "games/cs_source" }
 # Combat Arms as a game crate (games/combat_arms): its skeleton, filled
 # from specs/combat_arms/ (docs/plans/active/combat-arms.md).
 combat_arms = { path = "games/combat_arms" }
+# Half-Life 2: Deathmatch as a game crate (games/hl2dm): its skeleton
+# (docs/plans/active/hl2dm.md).
+hl2dm = { path = "games/hl2dm" }
 # Lucker Party's original minigames (games/originals): their definitions
 # (minigames/) and rules hooks, on Chimera only.
 originals = { path = "games/originals" }
@@ -236,6 +246,7 @@ cs_source.workspace = true
 # `chimera_pack`: the games whose installs it packs (their own mounts), the
 # store it writes.
 combat_arms.workspace = true
+hl2dm.workspace = true
 chimera_core.workspace = true
 chimera_assets.workspace = true
 source_formats.workspace = true

@@ -12,6 +12,7 @@ use std::{
 };
 
 use bevy::math::{Quat, Vec3};
+use hl2dm::game as hl2dm;
 use lithtech_formats::rez;
 use mashup::{
     games::cs_source,
@@ -23,8 +24,9 @@ use mashup::{
 
 const USAGE: &str = "\
 usage: dump <game> [options]
-  games: cs_source, combat_arms
-  (no option)          summary: file counts and sizes by extension
+  games: cs_source, combat_arms, hl2dm
+  (no option)          summary: file counts and sizes by extension (hl2dm: its
+                       search path from gameinfo.txt first, each entry and whether it's there)
   --list               list every file with its size
   --archives           combat_arms: per-archive title, entropy and file count
   --sequences <model>  cs_source: a model's bones, sequences (activity, frames, fps,
@@ -112,7 +114,11 @@ fn install_path(args: &Args) -> Result<PathBuf, String> {
     if let Some(p) = &args.install {
         return Ok(p.clone());
     }
-    let steam = (args.game == cs_source::GAME).then_some(cs_source::INFO.steam).flatten();
+    let steam = match args.game.as_str() {
+        cs_source::GAME => cs_source::INFO.steam,
+        hl2dm::GAME => hl2dm::INFO.steam,
+        _ => None,
+    };
     LocalConfig::load()?.game_path_in(&args.game, steam.as_ref()).ok_or_else(|| {
         format!(
             "no install path for `{}`. Set [games.{}] path in chimera.local.toml \
@@ -127,8 +133,22 @@ fn run(args: &Args) -> Result<(), String> {
     match args.game.as_str() {
         cs_source::GAME => dump_cs_source(args, &install),
         COMBAT_ARMS => dump_combat_arms(args, &install),
-        other => Err(format!("unknown game `{other}`; expected cs_source or combat_arms")),
+        hl2dm::GAME => dump_hl2dm(args, &install),
+        other => Err(format!("unknown game `{other}`; expected cs_source, combat_arms or hl2dm")),
     }
+}
+
+/// HL2:DM: the search path its `gameinfo.txt` gives (when the install's
+/// own folders are there), then the mount's summary.
+fn dump_hl2dm(args: &Args, install: &Path) -> Result<(), String> {
+    if let Ok(path) = hl2dm::mount::search_path(install) {
+        println!("gameinfo.txt search path (first wins):");
+        for layer in &path.layers {
+            println!("  {layer}");
+        }
+    }
+    let mount = hl2dm::mount::open(install).map_err(|e| e.to_string())?;
+    report(args, &mount, &[])
 }
 
 fn human(bytes: u64) -> String {
@@ -445,7 +465,7 @@ fn report(args: &Args, mount: &Mount, locked: &[String]) -> Result<(), String> {
         slot.0 += 1;
         slot.1 += e.size;
     }
-    if layers.len() <= 12 {
+    if layers.len() <= 16 {
         println!("search path:");
         for (i, l) in layers.iter().enumerate() {
             println!("  [{i}] {l}");

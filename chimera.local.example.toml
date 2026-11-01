@@ -5,8 +5,9 @@
 # The game finds the CS:S install by itself: the path saved by its first-run
 # dialog or `chimera_install <folder>` (in the user's settings.toml, beside
 # the cfg folder), else Steam's library folders. A path here always wins
-# over both. The startup log says which install is used and how it was
-# found.
+# over both, and `CHIMERA_<GAME>_ROOT` (`CHIMERA_HL2DM_ROOT`,
+# `CHIMERA_CS_SOURCE_ROOT`) over all of them for one run. The startup log
+# says which install is used and how it was found.
 
 # [games.cs_source]
 # Folder containing cstrike/ and hl2/. Steam app 240.
@@ -17,6 +18,11 @@
 # movecmp tool. Keep it separate from the game install.
 # [games.cs_source_server]
 # path = "~/games/css-ds"
+
+# [games.hl2dm]
+# Folder containing hl2mp/, hl2/ and platform/. Steam app 320; a SteamCMD
+# install outside Steam's libraries needs this or CHIMERA_HL2DM_ROOT.
+# path = "~/games/hl2dm"
 
 [games.combat_arms]
 # Folder containing the game (only with the local Combat Arms loader).
