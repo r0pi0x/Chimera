@@ -1612,7 +1612,10 @@ keyframer's clock and next key, hit points. `ca_object_msg <name>
 VIP_Door trigger`, `ca_object_msg SlidingWater on`, `ca_object_msg
 Level04StartTrigger trigger`) and prints the target's state (a console
 message has no player behind it, so a door's `DoorLink` isn't told:
-message both leaves); `ca_object_props <name>` prints an object's state,
+message both leaves; a timer, caption, message or mission trigger's
+message (`ca_object_msg <timer> start`, `... <caption> play Cap404`) shows on
+the mission display, ours, and `combat_arms:ca_mission` prints its state);
+`ca_object_props <name>` prints an object's state,
 a `setpos` line at its centre and every property as the map stores it
 (its commands: what opens it, which mode or trigger gates it);
 `ca_object_damage <name> [hp]` damages an object (default: enough to

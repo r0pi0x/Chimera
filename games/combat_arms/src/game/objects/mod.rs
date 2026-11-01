@@ -24,6 +24,9 @@
 //! - `fire`: a destructible's weapon (`CreateExplosion`, `FIRE`) fired
 //!   as a real shot: grenade, projectile or hitscan rays, as the weapon
 //!   defines, with no character as the shooter;
+//! - `mission`: the timers, caption, message and objectives the notices
+//!   told, as state that replicates (the display is ours, not from the
+//!   original: `ui::hud::mission`);
 //! - `markers`: the markers' icons from the install's trigger resource
 //!   table, by name (`CaMarkers`: what the local player is shown; the
 //!   radar and map icons, the HUD's guide markers);
@@ -79,6 +82,7 @@ pub mod movers;
 pub mod net;
 pub mod lights;
 pub mod markers;
+pub mod mission;
 pub mod runtime;
 pub mod sound;
 
@@ -292,6 +296,7 @@ impl Plugin for CaObjectsPlugin {
             .add_message::<CaObjectMessage>()
             .add_message::<CaObjectEvent>()
             .add_message::<CaObjectNotice>()
+            .init_resource::<mission::CaMission>()
             .add_message::<CaObjectFire>()
             .init_resource::<sound::CaObjectSounds>()
             .add_message::<super::view_model::attached::CaLoopSound>()
@@ -309,6 +314,24 @@ impl Plugin for CaObjectsPlugin {
                 "ca_objects [filter]: the map's objects whose class or name contains the filter (all world models and \
                  logic objects without one): state, pose (u, the world file's axes), flags, hit points.",
                 |w, a| Ok(Some(list(w, a.first().map(String::as_str)))),
+            )
+            .console_command(
+                "combat_arms:ca_mission",
+                "ca_mission: the mission display's state (ours): running timers with their time left, the caption \
+                 and message on show, the objectives.",
+                |w, _| {
+                    let now = w.resource::<SimClock>().now;
+                    let m = w.resource::<mission::CaMission>();
+                    let mut out = vec![format!("{} timers, {} objectives", m.timers.len(), m.objectives.len())];
+                    out.extend(m.timers.iter().map(|t| format!("timer {}: {:.1} s left", t.name, t.ends - now)));
+                    for (what, s) in [("caption", &m.caption), ("message", &m.message)] {
+                        if let Some(s) = s {
+                            out.push(format!("{what} {}: {:.1} s left, team {}", s.text, s.until - now, s.team));
+                        }
+                    }
+                    out.extend(m.objectives.iter().map(|o| format!("objective {} (team {}): {:?} {:?}", o.id, o.team, o.state, o.count)));
+                    Ok(Some(out.join("\n")))
+                },
             )
             .console_command(
                 "combat_arms:ca_object_msg",
@@ -558,6 +581,7 @@ fn load(world: &mut World) {
     let Some(entities) = world.get_resource::<MapEntities>().cloned() else {
         if world.resource::<CaObjects>().from.is_some() {
             *world.resource_mut::<CaObjects>() = CaObjects::default();
+            world.insert_resource(mission::CaMission::default());
         }
         return;
     };
@@ -576,6 +600,7 @@ fn load(world: &mut World) {
         return;
     }
     let scale = entities.scale;
+    world.insert_resource(mission::CaMission::default());
     let mut w = object_world(&entities.entities);
     let now = world.resource::<SimClock>().now;
     let log = std::mem::take(&mut w.log);
@@ -913,6 +938,8 @@ fn effect(world: &mut World, f: Fx, scale: f32) {
         Fx::Notice { id, notice } => {
             let name = world.resource::<CaObjects>().world.objects[id as usize].name.clone();
             info!("objects: {name}: {notice:?}");
+            let now = world.resource::<SimClock>().now;
+            world.resource_mut::<mission::CaMission>().apply(id, &name, &notice, now);
             world.write_message(CaObjectNotice { object: id, name, notice });
         }
         Fx::Debris { at, debris, dir } => {

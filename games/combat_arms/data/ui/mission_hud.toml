@@ -1,0 +1,67 @@
+# The mission display: timers, captions, messages and the objective list
+# (game::objects::mission's state). OURS, NOT FROM THE ORIGINAL: the
+# original client's handlers aren't in the reference (world_objects.md
+# Open question 15); the places, looks and times are our choices, in the
+# install's HUD fonts (data/ui/fonts.toml names) and the HUD's colours.
+#
+# Places are reference pixels on the 1024 x 768 canvas, scaled like the
+# rest of the HUD (`ui::hud::model::Screen`, text by `layout::
+# glyph_stretch`). Colours are RGBA 0-255. `effect`: a font effect name
+# (SHADOW, STROKE, ...). Text is wrapped at `wrap` characters.
+
+# Top centre, under the score panel. A timer's place moves down under the
+# score panel's objective lines (`below_score_lines`, so the VIP exit's
+# own line isn't covered); several timers stack by `step`.
+[timer]
+at = [362.0, 118.0]
+size = [300.0, 24.0]
+font = "number 20"
+colour = [255, 255, 255, 255]
+effect = "SHADOW"
+# Under this many seconds the timer takes `warn_colour`.
+warn_below = 10.0
+warn_colour = [255, 80, 60, 255]
+below_score_lines = true
+step = 24.0
+# A second timer's name before its time ("Name 01:30"); off: time only.
+show_names = true
+
+# Bottom centre. A caption is shown for its own `Showtime`; `default_time`
+# only if a notice carries none (0 or less).
+[caption]
+at = [162.0, 610.0]
+size = [700.0, 22.0]
+font = "bold 18"
+colour = [255, 255, 255, 255]
+effect = "STROKE"
+wrap = 70
+default_time = 4.0
+
+# Centre-print style, above the mode switch notice (262, 300).
+[message]
+at = [162.0, 236.0]
+size = [700.0, 28.0]
+font = "bold 24"
+colour = [255, 230, 120, 255]
+effect = "STROKE"
+wrap = 56
+default_time = 4.0
+
+# Top left. Always shown while the list isn't empty (the options data has
+# no key for it). `title` heads the list (ours).
+[objectives]
+at = [10.0, 10.0]
+size = [300.0, 16.0]
+font = "bold 14"
+title = "Objectives"
+title_colour = [218, 218, 218, 255]
+effect = "SHADOW"
+normal = [255, 255, 255, 255]
+in_progress = [255, 230, 120, 255]
+success = [120, 255, 120, 255]
+failed = [255, 90, 80, 255]
+# Marks before each objective by state (ASCII only).
+mark_normal = "- "
+mark_in_progress = "- "
+mark_success = "+ "
+mark_failed = "x "

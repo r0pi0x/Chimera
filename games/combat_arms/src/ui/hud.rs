@@ -6,6 +6,9 @@
 //! prompts; `action`), laid out on the 1024x768 reference canvas
 //! stretched to the screen.
 //!
+//! The mission display (timers, captions, messages, objective list of the
+//! map's event objects) is `mission`: ours, not from the original.
+//!
 //! Behaviour and drawing are apart: `model` is the spec as plain
 //! functions; `CaHudStatePlugin` reads the world each frame into `CaHud`
 //! (what is shown, where, in which colour, with which text) with no
@@ -152,6 +155,7 @@ pub mod guides;
 pub mod install;
 pub mod model;
 pub mod radar;
+pub mod mission;
 pub mod scene;
 pub mod score;
 
@@ -400,6 +404,9 @@ impl Plugin for CaHudStatePlugin {
             .init_resource::<CaHud>()
             .init_resource::<score::CaScoreHud>()
             .init_resource::<score::ScoreMemory>()
+            .init_resource::<mission::MissionHudData>()
+            .init_resource::<mission::CaMissionHud>()
+            .init_resource::<crate::game::objects::mission::CaMission>()
             .init_resource::<ItemNames>()
             .init_resource::<crate::game::rules::CaMatchView>()
             .add_message::<WeaponEvent>()
@@ -410,7 +417,7 @@ impl Plugin for CaHudStatePlugin {
             .add_plugins(radar::CaRadarStatePlugin)
             .add_systems(
                 Update,
-                (track, update, heartbeat_sound, action::prompts, minigame_view, mode_notice_view, score::update_score, hide_panels)
+                (track, update, heartbeat_sound, action::prompts, minigame_view, mode_notice_view, score::update_score, hide_panels, mission::update_mission)
                     .chain()
                     .in_set(HudUpdate),
             );
@@ -1322,7 +1329,7 @@ impl Plugin for CaHudPlugin {
         app
             .add_systems(
                 Startup,
-                (spawn, score::spawn_root, draw::load_faces, draw::load_art, radar::spawn_root, full_map::spawn_root, guides::spawn_root),
+                (spawn, score::spawn_root, mission::spawn_root, draw::load_faces, draw::load_art, radar::spawn_root, full_map::spawn_root, guides::spawn_root),
             )
             .add_systems(Update, screen_size.before(HudUpdate).run_if(crate::gameplay::hud_is(crate::game::GAME)))
             .add_systems(
@@ -1341,6 +1348,7 @@ impl Plugin for CaHudPlugin {
                     draw_minigame,
                     draw_mode_notice,
                     score::draw_score,
+                    mission::draw_mission,
                 )
                     .after(HudUpdate)
                     .distributive_run_if(crate::gameplay::hud_is(crate::game::GAME)),
