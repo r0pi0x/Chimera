@@ -98,8 +98,8 @@ again; so does any change to a converter's sources.
   it; `CHIMERA_MAP_CACHE_GB` caps it (40 by default; least recently used
   entries go first; a whole CS:S map is about 400 MB, every crate's heavy
   tests' maps 24-28 GB). `mapsweep --no-map-cache` converts every map;
-  in a game or server, `chimera_map_cache 0` (console, or
-  `+chimera_map_cache 0` on the command line) does the same from the
+  in a game or server, `chimera:map_cache 0` (console, or
+  `+chimera:map_cache 0` on the command line) does the same from the
   next map load.
 - Deleting the folder is always safe. Nothing in it belongs in the
   repository.

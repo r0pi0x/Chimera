@@ -318,7 +318,7 @@ pub(super) fn plugin(app: &mut App) {
     });
     resource_cvar::<CaAiDamage, f32>(
         app,
-        "ca_ai_damage_factor",
+        "combat_arms:ca_ai_damage_factor",
         "AIDamageFactor: every AI's (bot's, mercenary's) damage x this before armour (0.8; a Hired Guns round sets \
          its objective's).",
         |s| &mut s.factor,
@@ -326,7 +326,7 @@ pub(super) fn plugin(app: &mut App) {
 
     resource_cvar::<CaRuleSettings, String>(
         app,
-        "ca_mode",
+        "combat_arms:ca_mode",
         "The game mode by its room key: TDM (Elimination), TSV (Elimination Pro), TMM (Search & Destroy), CTF \
          (Capture the Flag), FFA (One Man Army), LMS (Last Man Standing), BNT (Spy Hunt), QRT (Quarantine Regen), \
          SBT (Bombing Run), HQM (Seize and Secure), SQM2 (Squad Match 2), VTDM (VIP Elimination), VWRM (Arms \
@@ -334,51 +334,51 @@ pub(super) fn plugin(app: &mut App) {
          CDM, CMM, CCTF, CTSV, CESC; none. Takes effect at the next map load or ca_restart.",
         |s| &mut s.mode,
     );
-    resource_cvar::<CaRuleSettings, u32>(app, "ca_goal", "The goal G (kills, round wins, captures, rounds or minutes, by mode); 0: the mode's default.", |s| {
+    resource_cvar::<CaRuleSettings, u32>(app, "combat_arms:ca_goal", "The goal G (kills, round wins, captures, rounds or minutes, by mode); 0: the mode's default.", |s| {
         &mut s.goal
     });
     resource_cvar::<CaRuleSettings, u8>(
         app,
-        "ca_friendlyfire",
+        "combat_arms:ca_friendlyfire",
         "1: teammates hurt each other (NetFriendlyFire; bullets and melee at a quarter in the listed modes).",
         |s| &mut s.friendly_fire,
     );
     resource_cvar::<CaRuleSettings, u8>(
         app,
-        "ca_join_in_progress",
+        "combat_arms:ca_join_in_progress",
         "1: players may join a running match.",
         |s| &mut s.join_in_progress,
     );
-    resource_cvar::<CaRuleSettings, f32>(app, "ca_object_start", "Round setup length, s (ObjectStart).", |s| {
+    resource_cvar::<CaRuleSettings, f32>(app, "combat_arms:ca_object_start", "Round setup length, s (ObjectStart).", |s| {
         &mut s.object_start
     });
-    resource_cvar::<CaRuleSettings, f32>(app, "ca_object_end", "Round-over length, s (ObjectEnd).", |s| {
+    resource_cvar::<CaRuleSettings, f32>(app, "combat_arms:ca_object_end", "Round-over length, s (ObjectEnd).", |s| {
         &mut s.object_end
     });
-    resource_cvar::<CaRuleSettings, f32>(app, "ca_mission_end", "Intermission length, s (MissionEnd).", |s| {
+    resource_cvar::<CaRuleSettings, f32>(app, "combat_arms:ca_mission_end", "Intermission length, s (MissionEnd).", |s| {
         &mut s.mission_end
     });
     resource_cvar::<CaRuleSettings, f32>(
         app,
-        "ca_respawn_wait",
+        "combat_arms:ca_respawn_wait",
         "The server refuses a respawn sooner than this after a death, s.",
         |s| &mut s.respawn_wait_server,
     );
     resource_cvar::<CaRuleSettings, f32>(
         app,
-        "ca_respawn_wait_client",
+        "combat_arms:ca_respawn_wait_client",
         "A dead player asks to respawn after this, s.",
         |s| &mut s.respawn_wait_client,
     );
     resource_cvar::<CaRuleSettings, f32>(
         app,
-        "ca_respawn_invulnerability",
+        "combat_arms:ca_respawn_invulnerability",
         "After a respawn, no damage at all for this long, s (RespawnInvulnerabilityTime).",
         |s| &mut s.protect_all,
     );
     resource_cvar::<CaRuleSettings, f32>(
         app,
-        "ca_respawn_bullet_protection",
+        "combat_arms:ca_respawn_bullet_protection",
         "After a respawn, instant-hit shots pass through for this long, s.",
         |s| &mut s.protect_bullets,
     );

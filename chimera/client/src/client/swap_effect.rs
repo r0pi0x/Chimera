@@ -95,7 +95,7 @@ impl Plugin for SwapEffectPlugin {
         if app.world().get_resource::<crate::console::Console>().is_some() {
             crate::console::resource_cvar::<SwapEffectSetting, u8>(
                 app,
-                "party_swap_effect",
+                "chimera:party_swap_effect",
                 "1: a short flash when your gun changes game on a rung, a puff at others' bodies when theirs does; 0: off.",
                 |s| &mut s.on,
             );

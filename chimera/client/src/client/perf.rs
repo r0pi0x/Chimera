@@ -35,7 +35,7 @@ pub struct PerfPlugin;
 impl Plugin for PerfPlugin {
     fn build(&self, app: &mut App) {
         use crate::console::ConsoleAppExt;
-        app.console_command("chimera_census", chimera_core::metrics::census::HELP, chimera_core::metrics::census::command);
+        app.console_command("chimera:census", chimera_core::metrics::census::HELP, chimera_core::metrics::census::command);
         app.add_plugins((EntityCountDiagnosticsPlugin::default(), RenderDiagnosticsPlugin))
             .init_resource::<Perf>()
             .init_resource::<FrameTimes>()
@@ -91,13 +91,13 @@ impl Plugin for PerfPlugin {
         app.add_plugins(super::trace_capture::TraceCapturePlugin);
         resource_cvar::<PerfLog, u8>(
             app,
-            "chimera_perf_log",
+            "chimera:perf_log",
             "1: log the chimera_perf readout as text once a second (bugreport's report.txt always has the latest).",
             |p| &mut p.0,
         );
         resource_cvar::<Perf, u8>(
             app,
-            "chimera_perf",
+            "chimera:perf",
             "1: performance overlay (frame times, CPU, GPU passes, meshes, visibility, per-frame changes); \
              2: also every render pass; 3: also log what writes transforms, meshes and materials, and the UI trees, each second.",
             |p| &mut p.show,
@@ -135,7 +135,7 @@ impl Plugin for PerfPlugin {
         if app.world().contains_resource::<crate::render::sky_occluder::SkyOcclusion>() {
             resource_cvar::<crate::render::sky_occluder::SkyOcclusion, u8>(
                 app,
-                "chimera_skyocclude",
+                "chimera:skyocclude",
                 "1: sky faces hide what lies behind them (props, water, brush entities in the view's PVS); 0 (default): \
                  they don't (unchecked against CS:S).",
                 |v| &mut v.0,
@@ -160,7 +160,7 @@ pub fn decal_cvars(app: &mut App) {
     });
     resource_cvar::<DecalSettings, u8>(
         app,
-        "chimera_round_cleardecals",
+        "chimera:round_cleardecals",
         "1: remove every impact decal at each round start (the game keeps them until the map changes).",
         |s| &mut s.round_clear,
     );

@@ -23,6 +23,7 @@ mod frame_cost;
 mod hud;
 mod hud_scale;
 mod lobby;
+mod mission_hud;
 mod music;
 mod net_hud;
 mod options;

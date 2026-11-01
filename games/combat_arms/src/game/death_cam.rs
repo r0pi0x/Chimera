@@ -293,13 +293,13 @@ impl Plugin for CaDeathCamPlugin {
             .add_message::<DamageTaken>();
         resource_cvar::<CaEnemyCam, u8>(
             app,
-            "Enemydeadcam",
+            "combat_arms:Enemydeadcam",
             "1: the dead may follow their killer (and enemies when no teammate lives); the death screen shows the killer's health and armour.",
             |c| &mut c.0,
         );
         resource_cvar::<CaKillCamRoom, i32>(
             app,
-            "ca_killcam",
+            "combat_arms:ca_killcam",
             "The room's Kill Cam option (KillCam_On / KillCam_Off): 1 on, 0 off, -1 the mode's default (off; Hunted on).",
             |c| &mut c.0,
         );

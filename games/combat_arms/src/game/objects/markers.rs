@@ -15,10 +15,15 @@
 //! in the mode playing (`events::Marker::exists_in`, the server sends
 //! only those: `net`), with its record's icons for the local player.
 //!
-//! Known shortcuts: the line test that dims a guide marker isn't in the
-//! material (`Guide::blocked` is the caller's); the guide markers aren't
+//! `line_tests` dims a guide when the line from the local player's eye to
+//! the marker is blocked by the world (the material has no test of its
+//! own: ours is a ray against the solids, characters ignored, stopping
+//! `LINE_SLACK` short of the point).
+//!
+//! Known shortcuts: the guide markers aren't
 //! hidden during videos or while players are frozen (no videos here).
 
+use avian3d::prelude::*;
 use bevy::prelude::*;
 use lithtech_formats::attributes::Document;
 
@@ -148,6 +153,9 @@ pub struct Shown {
     /// Where (the engine's axes and metres).
     pub at: Vec3,
     pub icons: Icons,
+    /// The line from the local player's eye to `at` is blocked by the
+    /// world (`line_tests`): the guide is drawn at `BLOCKED_ALPHA`.
+    pub blocked: bool,
 }
 
 /// The markers a client shows now, for its local player.
@@ -178,7 +186,11 @@ pub fn show(
         .and_then(|s| super::super::rules::mode_by_key(&s.mode))
         .and_then(|m| m.spawns.family);
     let viewer = local.iter().next().map(|t| t.0);
-    let next = shown(&objects, &table, client, family, viewer);
+    let mut next = shown(&objects, &table, client, family, viewer);
+    // The line tests' results stay until `line_tests` runs again.
+    for m in &mut next.0 {
+        m.blocked = markers.0.iter().any(|o| o.id == m.id && o.blocked);
+    }
     if *markers != next {
         *markers = next;
     }
@@ -200,7 +212,42 @@ pub fn shown(o: &super::CaObjects, table: &TriggerResources, client: bool, famil
             name: ob.name.clone(),
             at: super::geometry::to_engine(ob.pose.pos, o.scale),
             icons: icons(r, &m.team, viewer),
+            blocked: false,
         });
     }
     CaMarkers(shown)
+}
+
+/// How far short of the marker's point the line test stops (m): a point
+/// on a floor or wall isn't blocked by that surface.
+pub const LINE_SLACK: f32 = 0.05;
+
+/// Whether the line from `eye` to `at` (engine, metres) is blocked by
+/// the world (solid geometry and world models; characters never block).
+pub fn line_blocked(spatial: &SpatialQuery, filter: &SpatialQueryFilter, eye: Vec3, at: Vec3) -> bool {
+    let d = at - eye;
+    let len = d.length() - LINE_SLACK;
+    let Ok(dir) = Dir3::new(d) else { return false };
+    len > 0.0 && spatial.cast_ray(eye, dir, len, true, filter).is_some()
+}
+
+/// Each frame after `show`: each shown marker's line test from the local
+/// player's eye (the first-person camera's place), which dims its guide
+/// to alpha 125 when blocked (Follow-up (2026-10-31b) 1.6; the test
+/// itself isn't in the material: a ray against the world's solids).
+pub fn line_tests(
+    spatial: SpatialQuery,
+    local: Query<(&Transform, &crate::core::MovementState), With<crate::core::LocalPlayer>>,
+    characters: Query<Entity, With<crate::core::Intent>>,
+    mut markers: ResMut<CaMarkers>,
+) {
+    let Some((t, s)) = local.iter().next() else { return };
+    let eye = t.translation + s.eye_offset;
+    let filter = SpatialQueryFilter::from_excluded_entities(characters.iter()).with_mask(crate::core::SOLID_LAYERS);
+    let blocked: Vec<bool> = markers.0.iter().map(|m| line_blocked(&spatial, &filter, eye, m.at)).collect();
+    if markers.0.iter().zip(&blocked).any(|(m, b)| m.blocked != *b) {
+        for (m, b) in markers.0.iter_mut().zip(blocked) {
+            m.blocked = b;
+        }
+    }
 }

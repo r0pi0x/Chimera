@@ -396,7 +396,7 @@ impl ModeAppExt for App {
     fn add_modes(&mut self, game: ModeGame, modes: &[&'static Mode]) -> &mut Self {
         if !self.world().contains_resource::<Modes>() {
             self.init_resource::<Modes>().console_command(
-                "chimera_modes",
+                "chimera:modes",
                 "List the game modes the games registered (id, key, name), the one playing marked *.",
                 |w, _| {
                     let playing = current_mode(w).map(|m| m.id);

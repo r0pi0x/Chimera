@@ -278,7 +278,7 @@ impl CaSettings {
 /// Register the table's console variables (the ones the options own).
 pub fn register(app: &mut App, table: &[Setting]) {
     app.console_cvar(
-        "RestoreDefaults",
+        "combat_arms:RestoreDefaults",
         "1: the next profile load restores every section from the default profile (then 0).",
         "0",
         |w| w.get_resource::<CaSettings>().and_then(|s| s.get("restoredefaults").map(str::to_string)),
@@ -292,7 +292,7 @@ pub fn register(app: &mut App, table: &[Setting]) {
         let ty = x.ty;
         let default = if x.default.is_empty() { "0".to_string() } else { x.to_cvar(&x.default) };
         app.console_cvar(
-            &x.cvar,
+            &format!("combat_arms:{}", x.cvar),
             &x.help,
             &default,
             move |w| w.get_resource::<CaSettings>().and_then(|s| s.get(&g).map(str::to_string)),

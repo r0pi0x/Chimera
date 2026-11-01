@@ -35,6 +35,12 @@ the user's go-ahead: no Actions runs unless asked.
   picks it up again. No PR test runner or CI for now;
   AGENTS.md asks contributors to test before merging (a guideline). A
   friend's test VM may come later.
+- **Decisions (user, 2026-10-31):** console namespaces approved as
+  designed below (build now); Combat Arms' mission timers, captions,
+  messages and objective list get our own simple display with the
+  install's HUD fonts, marked as ours (the client code isn't in the
+  reference); **the next game is Half-Life 2: Deathmatch**, after the
+  "before the next game" list (namespaces, the rest of the ECS cleanup).
 - **Console namespaces (user idea, 2026-10-30).** With several games in
   one app, flat command and setting names (`sv_cheats`, `cl_hitmarker`)
   collide. Proposed:
@@ -49,7 +55,8 @@ the user's go-ahead: no Actions runs unless asked.
     full names from now on. An ambiguous short name prints a hint.
   - Our general settings move to `chimera:` with no sv_/cl_ prefix.
   Do it with the ECS cleanup, before the next game; the user to confirm
-  the design.
+  the design. **Built 2026-10-31** (with `css:`/`ca:` namespace
+  aliases): [plans/active/console-namespaces.md](plans/active/console-namespaces.md).
 - **First: ECS cleanup where new games plug in (2026-10-29).** Order (user, 2026-10-30): after the current gameplay work, before any new game; performance is fine today. Plan: [plans/active/ecs-cleanup.md](plans/active/ecs-cleanup.md) (steps 1-10 done; its "later" items remain). For
   extensibility more than speed. Counts today: ~350 functions taking the
   whole world (`&mut World`), ~720 queries built inside them, 78
@@ -2440,6 +2447,14 @@ docs/plans/active/sound.md.
   banners aren't drawn), `$selfillummask`'s channel and
   `$selfillum_envmapmask_alpha`, detail modes 10/11.
 
+- **Combat Arms mission display: rough edges (2026-11-01).** The
+  objective list (top left) overlaps stray "Player" labels drawn there
+  on nemexishq (name tags at the screen's corner?); captions, messages
+  and objectives show their ids (the string table lacks them; find where
+  their texts live); counted objectives' maxima are 0 (mission data not
+  read); a lowercase `add <id>` object message runs the console's `add`
+  instead of the MissionTrigger's `ADD`.
+
 ## 9. Performance
 
 - Done: **Disk guards (2026-10-31: the dev box's disk filled to 100%).**
@@ -2557,7 +2572,7 @@ dithered fade bands. Left:
 - *Done:* the converted-map cache's follow-ups (2026-10-31,
   performance.md, "The converted-map cache, second pass"): a miss's
   entry streamed to the file (peak 2.9 GB to 1.5 GB), textures without
-  their decoded texels (de_dust2 986 MB to 399 MB), `chimera_map_cache
+  their decoded texels (de_dust2 986 MB to 399 MB), `chimera:map_cache
   0/1`, the whole heavy tier measured (716 s off, 637-646 s warm; six
   slots 542-544 s but out of memory: five stay), Combat Arms left off.
   Left: the asset store's own cap.
@@ -2576,13 +2591,11 @@ Counts are from de_dust2's entity lump and static prop lump.
   original draws sliding movers 100 ms in the past, snaps rotating ones,
   jumps keyframed ones and pushes its own player per drawn step, never on a
   teleport; ours predicts them: world_objects.md Follow-up (2026-10-31b)
-  2, cases 40-45 not reproduced); the client display of timers, captions,
-  messages and the objective list (Open question 15: server notices only)
-  and of cameras (which camera a client looks through: death_killcam.md);
+  2, cases 40-45 not reproduced); the display of cameras (which camera a
+  client looks through: death_killcam.md; the timers, captions, messages
+  and objective list are ours, done: DESIGN "The mission display");
   the co-op parts (sub-mission time, mission manager, mission texts and
-  counted maxima); `CaObjectFire` into a real shot (no stock map uses
-  it); the game's model-light falloff in the prop shader; the guide
-  markers' line test (alpha 125).
+  counted maxima).
 
 - **Remaining decals**: 13 infodecals over the stock maps find no
   surface (dust2 5, tides 3, compound 2, dust 2, train 1): by props

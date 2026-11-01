@@ -277,7 +277,7 @@ impl Plugin for CaMenuStatePlugin {
             .init_resource::<ButtonInput<MouseButton>>()
             .add_systems(Update, (keys, pointer, act, record_key).chain().in_set(MenuSystems))
             .add_systems(Update, popup_input.in_set(PopupInput).after(MenuSystems))
-            .console_command("ingamemenu", "Open or close Combat Arms' in-game menu (Esc).", |w, _| {
+            .console_command("combat_arms:ingamemenu", "Open or close Combat Arms' in-game menu (Esc).", |w, _| {
                 let mut m = w.resource_mut::<InGameMenu>();
                 let open = !m.open;
                 m.set_open(open);

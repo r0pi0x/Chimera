@@ -5,9 +5,11 @@
 //! place each frame at its picture's size, with the distance in whole
 //! metres under it when its record says `ShowDist`.
 //!
-//! Known shortcuts: the line test that dims a marker to alpha 125 isn't in
-//! the material, so markers are drawn fully opaque; a marker behind the
-//! camera isn't drawn (the spec doesn't say where it goes).
+//! A marker whose line from the local player's eye is blocked
+//! (`markers::line_tests`) is drawn at alpha 125 of 255.
+//!
+//! Known shortcuts: a marker behind the camera isn't drawn (the spec
+//! doesn't say where it goes).
 
 use std::collections::HashSet;
 
@@ -64,7 +66,7 @@ pub fn draw_guides(
                 continue;
             }
             let Ok(s) = cam.world_to_viewport(at, m.at) else { continue };
-            let alpha = guide_alpha(false) as f32 / 255.0;
+            let alpha = guide_alpha(m.blocked) as f32 / 255.0;
             let picture = art.and_then(|a| a.get(guide)).cloned();
             let size = picture.as_ref().map_or(Vec2::splat(FALLBACK), |(_, d)| d.as_vec2());
             let mut node = p.spawn(Node {

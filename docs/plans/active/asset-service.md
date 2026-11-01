@@ -809,10 +809,10 @@ wall, 1,224 s to 972 s summed.
   `%LOCALAPPDATA%\chimera\maps`), one `<key>.map` per key, shared by
   every checkout and slot; `CHIMERA_MAP_CACHE=<folder>` moves it,
   `CHIMERA_MAP_CACHE=0` turns it off (`mapsweep --no-map-cache`, or
-  `cache::disable()` in a tool); the console's `chimera_map_cache 0/1`
+  `cache::disable()` in a tool); the console's `chimera:map_cache 0/1`
   (registered by `SimBasePlugins`) turns it off or on over the variable
   from the next load, and from the first given on the command line
-  (`+chimera_map_cache 0`, read before the console runs too: a dedicated
+  (`+chimera:map_cache 0`, read before the console runs too: a dedicated
   server's first map); `CHIMERA_MAP_CACHE_GB` caps it (40 GB
   by default: every crate's heavy tests fill 24-28 GB), least
   recently used first (a hit touches its entry). de_dust2: 399 MB whole
@@ -858,7 +858,7 @@ wall, 1,224 s to 972 s summed.
   chimera_world `map::cache` (options and format in the key, every
   serialized type under the hashed `src/map`), `pod_serde`,
   `texture_serde` (texels left out and decoded again, kept when they
-  aren't the blocks decoded), chimera_sim's `chimera_map_cache`, `extras`,
+  aren't the blocks decoded), chimera_sim's `chimera:map_cache`, `extras`,
   `chimera_vfs` (tracking, the source hash). Heavy: cs_source
   `heavy::map_cache` (de_dust2 whole and lean: converted, miss and hit
   equal by hash per part and the light field the same; a nav file put in

@@ -21,6 +21,12 @@
 //! - `events`: the event objects (timers, hold-to-use spots, captions,
 //!   messages, the objective list, cameras and their points, target
 //!   triggers' markers), whose notices to the clients are `CaObjectNotice`;
+//! - `fire`: a destructible's weapon (`CreateExplosion`, `FIRE`) fired
+//!   as a real shot: grenade, projectile or hitscan rays, as the weapon
+//!   defines, with no character as the shooter;
+//! - `mission`: the timers, caption, message and objectives the notices
+//!   told, as state that replicates (the display is ours, not from the
+//!   original: `ui::hud::mission`);
 //! - `markers`: the markers' icons from the install's trigger resource
 //!   table, by name (`CaMarkers`: what the local player is shown; the
 //!   radar and map icons, the HUD's guide markers);
@@ -62,21 +68,21 @@
 //! on them (`net`, 10's Client).
 //!
 //! Known shortcuts: the explosion's effect isn't drawn and its damage skips the armour
-//! step; a destructible's weapon (`CreateExplosion`, `FIRE`) is only a
-//! `CaObjectFire` message (no stock map has one: its weapon id isn't
-//! turned into a shot); riders are carried without the spec's 0.1 u drop (by active
+//! step; riders are carried without the spec's 0.1 u drop (by active
 //! world models and by the solid world models keyframers move); nodes
 //! collide as their polygons' triangles (the engine's own `BoxPhysics`
 //! boxes aren't used) while the game's tests use their boxes (`movers`).
 
 pub mod commands;
 pub mod events;
+pub mod fire;
 pub mod geometry;
 pub mod keyframer;
 pub mod movers;
 pub mod net;
 pub mod lights;
 pub mod markers;
+pub mod mission;
 pub mod runtime;
 pub mod sound;
 
@@ -196,7 +202,8 @@ pub struct CaObjectNotice {
 /// (2026-10-31b) 5: `CreateExplosion` at its death, `FIRE`): the game's
 /// weapon id, from `at` along `dir` (engine), going off in place when
 /// `in_place`, damage x `factor`, by object `shooter`. No stock map has
-/// one; nothing turns it into a projectile yet (Known shortcuts).
+/// one; `fire::fire` makes it a real shot, then it is written for
+/// whoever reads it (tests, logs).
 #[derive(Message, Clone, Debug, PartialEq)]
 pub struct CaObjectFire {
     pub weapon: i32,
@@ -289,11 +296,12 @@ impl Plugin for CaObjectsPlugin {
             .add_message::<CaObjectMessage>()
             .add_message::<CaObjectEvent>()
             .add_message::<CaObjectNotice>()
+            .init_resource::<mission::CaMission>()
             .add_message::<CaObjectFire>()
             .init_resource::<sound::CaObjectSounds>()
             .add_message::<super::view_model::attached::CaLoopSound>()
             .init_resource::<markers::CaMarkers>()
-            .add_systems(Update, (sound::play.before(super::effects::sounds::loops), lights::show, markers::show))
+            .add_systems(Update, (sound::play.before(super::effects::sounds::loops), lights::show, (markers::show, markers::line_tests).chain()))
             .add_systems(
                 FixedUpdate,
                 (load, (gather, frame).chain().run_if(authoritative), apply)
@@ -302,13 +310,31 @@ impl Plugin for CaObjectsPlugin {
                     .in_set(SimSet::Weapons),
             )
             .console_command(
-                "ca_objects",
+                "combat_arms:ca_objects",
                 "ca_objects [filter]: the map's objects whose class or name contains the filter (all world models and \
                  logic objects without one): state, pose (u, the world file's axes), flags, hit points.",
                 |w, a| Ok(Some(list(w, a.first().map(String::as_str)))),
             )
             .console_command(
-                "ca_object_msg",
+                "combat_arms:ca_mission",
+                "ca_mission: the mission display's state (ours): running timers with their time left, the caption \
+                 and message on show, the objectives.",
+                |w, _| {
+                    let now = w.resource::<SimClock>().now;
+                    let m = w.resource::<mission::CaMission>();
+                    let mut out = vec![format!("{} timers, {} objectives", m.timers.len(), m.objectives.len())];
+                    out.extend(m.timers.iter().map(|t| format!("timer {}: {:.1} s left", t.name, t.ends - now)));
+                    for (what, s) in [("caption", &m.caption), ("message", &m.message)] {
+                        if let Some(s) = s {
+                            out.push(format!("{what} {}: {:.1} s left, team {}", s.text, s.until - now, s.team));
+                        }
+                    }
+                    out.extend(m.objectives.iter().map(|o| format!("objective {} (team {}): {:?} {:?}", o.id, o.team, o.state, o.count)));
+                    Ok(Some(out.join("\n")))
+                },
+            )
+            .console_command(
+                "combat_arms:ca_object_msg",
                 "ca_object_msg <name> <message...>: deliver a message to the objects of that name now (the server's), \
                  as a map command's `msg` would, e.g. `ca_object_msg Door01 trigger`.",
                 |w, a| {
@@ -323,7 +349,7 @@ impl Plugin for CaObjectsPlugin {
                 },
             )
             .console_command(
-                "ca_object_props",
+                "combat_arms:ca_object_props",
                 "ca_object_props <name>: the objects of that name: their state, then every property as the map \
                  stores it (commands, triggers' targets, doors' times), and where to stand: a `setpos` line at \
                  the object's centre (the feet, inches, as `getpos` prints).",
@@ -333,7 +359,7 @@ impl Plugin for CaObjectsPlugin {
                 },
             )
             .console_command(
-                "ca_object_damage",
+                "combat_arms:ca_object_damage",
                 "ca_object_damage <name> [hit points]: damage the objects of that name now (the server's; default \
                  enough to break them), from the local player's view direction (their death sends their debris).",
                 |w, a| {
@@ -361,7 +387,7 @@ impl Plugin for CaObjectsPlugin {
                 },
             )
             .console_command(
-                "ca_object_cmd",
+                "combat_arms:ca_object_cmd",
                 "ca_object_cmd <command string>: run a command string now (no sender), e.g. `ca_object_cmd msg \
                  (A B) (visible 0); delay 2 (msg C on)`.",
                 |w, a| {
@@ -370,7 +396,7 @@ impl Plugin for CaObjectsPlugin {
                 },
             )
             .console_command(
-                "ca_object_vars",
+                "combat_arms:ca_object_vars",
                 "ca_object_vars: the command manager's variables and pending delayed commands.",
                 |w, _| {
                     let o = w.resource::<CaObjects>();
@@ -555,6 +581,7 @@ fn load(world: &mut World) {
     let Some(entities) = world.get_resource::<MapEntities>().cloned() else {
         if world.resource::<CaObjects>().from.is_some() {
             *world.resource_mut::<CaObjects>() = CaObjects::default();
+            world.insert_resource(mission::CaMission::default());
         }
         return;
     };
@@ -573,6 +600,7 @@ fn load(world: &mut World) {
         return;
     }
     let scale = entities.scale;
+    world.insert_resource(mission::CaMission::default());
     let mut w = object_world(&entities.entities);
     let now = world.resource::<SimClock>().now;
     let log = std::mem::take(&mut w.log);
@@ -910,6 +938,8 @@ fn effect(world: &mut World, f: Fx, scale: f32) {
         Fx::Notice { id, notice } => {
             let name = world.resource::<CaObjects>().world.objects[id as usize].name.clone();
             info!("objects: {name}: {notice:?}");
+            let now = world.resource::<SimClock>().now;
+            world.resource_mut::<mission::CaMission>().apply(id, &name, &notice, now);
             world.write_message(CaObjectNotice { object: id, name, notice });
         }
         Fx::Debris { at, debris, dir } => {
@@ -941,14 +971,17 @@ fn effect(world: &mut World, f: Fx, scale: f32) {
             shooter,
         } => {
             debug!("objects: object {shooter} fires weapon {weapon} along {dir} (in place {in_place}, x {factor})");
-            world.write_message(CaObjectFire {
+            let f = CaObjectFire {
                 weapon,
                 at: to_engine(at, scale),
                 dir: to_engine(dir, 1.0),
                 in_place,
                 factor,
                 shooter,
-            });
+            };
+            let shot = fire::fire(world, &f);
+            debug!("objects: object {shooter}'s shot: {shot:?}");
+            world.write_message(f);
         }
         Fx::Log(l) => debug!("objects: {l}"),
     }

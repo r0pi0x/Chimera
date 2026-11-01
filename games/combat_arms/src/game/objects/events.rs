@@ -29,13 +29,15 @@
 //!   blend over t s: `Camera::fov_at`).
 //!
 //! What the server tells the clients is a `Notice` (`Fx::Notice`), which
-//! the bridge writes as `CaObjectNotice` and logs; the cameras' live flag
+//! the bridge writes as `CaObjectNotice`, logs and `mission` keeps as state; the cameras' live flag
 //! and field of view and the markers' state reach clients with the
 //! objects (`net`).
 //!
 //! Known shortcuts: how a client shows the timer, captions, messages and
 //! the objective list isn't in the material (world_objects.md Open
-//! question 15): they are notices on the server and lines in its log; the
+//! question 15): they are notices the server folds into state
+//! (`mission`) and replicates, and our own display draws it
+//! (`ui::hud::mission`, not from the original); the
 //! caption, message and objective texts are their ids (the co-op mission
 //! file's texts aren't read) and a counted objective's maximum comes from
 //! `ObjectWorld::mission_points` (none read yet: 0); the co-op parts (the

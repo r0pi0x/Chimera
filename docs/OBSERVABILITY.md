@@ -347,6 +347,21 @@ Only `Reflect`-registered types are visible; register new core components in
 
 ## 3b. The console from outside
 
+- Names have namespaces (docs/plans/active/console-namespaces.md):
+  `cs_source:sv_gravity` (alias `css:`), `combat_arms:MaxPlayer`
+  (`ca:`), `chimera:noblock`. Short names still work: they resolve in
+  the scope's game, then `chimera`, then wherever only one game has
+  them; `scope` says which game (`scope ca` pins it, `scope auto`
+  follows the game played: in the party apps, the gun in hand). An
+  ambiguous short name fails with a hint naming the full names, so a
+  script for an app with both games should use full names. Our old
+  names (`chimera_*`, `mashup_*`, `cl_hitmarker`, `sv_announcer`,
+  `net_upnp`, ...: `console::OLD_NAMES`) still work. `cvarlist sv_`
+  lists by short or full prefix; config.cfg is written with full names.
+  Tests: `chimera_core`'s `console::tests` (resolution, hints, old
+  names, configs, binds), `chimera_net`'s `tests/it/console_names.rs`
+  (full names on the wire), `party_kit`'s `console_scope.rs` (the gun in
+  hand).
 - Command line, Source style: `cargo run --features dev -- +sv_airaccelerate
   150 +cl_showpos 1 +bind f noclip` runs those console commands at startup;
   `--console` starts with the console open (screenshots of it).
@@ -1597,7 +1612,10 @@ keyframer's clock and next key, hit points. `ca_object_msg <name>
 VIP_Door trigger`, `ca_object_msg SlidingWater on`, `ca_object_msg
 Level04StartTrigger trigger`) and prints the target's state (a console
 message has no player behind it, so a door's `DoorLink` isn't told:
-message both leaves); `ca_object_props <name>` prints an object's state,
+message both leaves; a timer, caption, message or mission trigger's
+message (`ca_object_msg <timer> start`, `... <caption> play Cap404`) shows on
+the mission display, ours, and `combat_arms:ca_mission` prints its state);
+`ca_object_props <name>` prints an object's state,
 a `setpos` line at its centre and every property as the map stores it
 (its commands: what opens it, which mode or trigger gates it);
 `ca_object_damage <name> [hp]` damages an object (default: enough to

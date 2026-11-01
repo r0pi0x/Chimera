@@ -68,7 +68,7 @@ impl Plugin for CalloutsPlugin {
             .add_systems(Update, (draw.after(super::hud::HudSwitch), size));
         crate::console::ConsoleAppExt::console_command(
             app,
-            "chimera_callout",
+            "chimera:callout",
             "Make a minigame event for you, or another player, as the server would (a test): \
              chimera_callout <rung_up|rung_down|suicide_down|last_rung|lead_taken|lead_lost|lead_tied|match_won> [other] [rung].",
             test_callout,

@@ -21,7 +21,7 @@
 //! `SimBasePlugins`: the engine's simulation without a game (the fixed
 //! tick, `core`, the console, game events and the server log, the movement
 //! slot's implementations, the weapon framework, the announcer's
-//! counting, the converted-map cache's `chimera_map_cache`): the start of a game's set (`cs_source::SimPlugins`)
+//! counting, the converted-map cache's `chimera:map_cache`): the start of a game's set (`cs_source::SimPlugins`)
 //! and the base of the engine's own scenario tests (tests/it/).
 
 pub mod announce;
@@ -54,7 +54,12 @@ pub struct SimBasePlugins;
 impl Plugin for SimBasePlugins {
     fn build(&self, app: &mut App) {
         app.insert_resource(Time::<Fixed>::from_hz(core::DEFAULT_TICK_HZ))
-            .add_plugins((core::CorePlugin, console::ConsolePlugin, movement::MovementPlugins))
+            .add_plugins((
+                core::CorePlugin,
+                console::ConsolePlugin,
+                chimera_core::console_scope::ConsoleScopePlugin,
+                movement::MovementPlugins,
+            ))
             .add_plugins(game_log::GameLogPlugin)
             .add_plugins(weapon::WeaponPlugin)
             .add_plugins(announce::AnnouncePlugin);
@@ -62,7 +67,7 @@ impl Plugin for SimBasePlugins {
     }
 }
 
-/// `chimera_map_cache 0/1`: the converted-map cache off or on for the
+/// `chimera:map_cache 0/1`: the converted-map cache off or on for the
 /// process (chimera_assets' `map_cache::CVAR`, read at each map load),
 /// over `CHIMERA_MAP_CACHE`. Its default is what the environment (or the
 /// command line) says, so `reset` leaves the environment's choice.
@@ -107,10 +112,10 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("\n")
         };
-        run("chimera_map_cache 0");
+        run("chimera:map_cache 0");
         assert!(MapCache::from_env().is_none(), "off");
-        assert!(run("chimera_map_cache").contains("\"0\""));
-        assert!(run("chimera_map_cache maybe").contains("bad value"));
+        assert!(run("map_cache").contains("\"0\""), "the short name");
+        assert!(run("chimera:map_cache maybe").contains("bad value"));
         if MapCache::default_dir().is_some() {
             run("chimera_map_cache 1");
             assert!(MapCache::from_env().is_some(), "on, whatever the environment says");

@@ -90,8 +90,9 @@ fn a_spray_goes_on_the_wall_once_per_player_and_decalfrequency() {
     assert_eq!(sprays(sim.app.world_mut()).len(), 1);
     assert!(sprays(sim.app.world_mut())[0].normal.z > 0.99);
     // A spray is not a cheat (impulse 101 still is, in a network game).
-    assert!(!crate::stack::console::is_cheat("impulse", &["201".into()]));
-    assert!(crate::stack::console::is_cheat("impulse", &["101".into()]));
+    let console = sim.app.world().resource::<crate::stack::console::Console>();
+    assert!(!crate::stack::console::is_cheat(console, "impulse", &["201".into()]));
+    assert!(crate::stack::console::is_cheat(console, "impulse", &["101".into()]));
     // Gone with the map.
     clear_sprays(sim.app.world_mut());
     assert!(sprays(sim.app.world_mut()).is_empty());

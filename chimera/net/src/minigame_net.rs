@@ -223,7 +223,7 @@ fn register(app: &mut App) {
     }
     use crate::console::ConsoleAppExt;
     app.console_command(
-        "change_match",
+        "chimera:change_match",
         "change_match <minigame> [map]: play another minigame, the players kept and connected, its scores \
          anew; on [map], else on this map if it is in the minigame's pool, else on the pool's first.",
         |w, a| {
@@ -232,7 +232,7 @@ fn register(app: &mut App) {
         },
     )
     .console_command(
-        "vote_map",
+        "chimera:vote_map",
         "vote_map <n>: vote for the end screen's map n (from 1) while the map vote is open; alone, the vote as it \
          stands.",
         |w, a| match a.first() {
@@ -244,7 +244,7 @@ fn register(app: &mut App) {
         },
     )
     .console_command(
-        "party_offer",
+        "chimera:party_offer",
         "The minigames every connected player can play (the server's mount doctor reports; a client: what \
          its server offers), and on the server who lacks what for the others.",
         |w, _| Ok(Some(offer_text(w))),

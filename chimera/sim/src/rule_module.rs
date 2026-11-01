@@ -64,7 +64,7 @@ pub fn pick(world: &World) -> Option<&'static str> {
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<RuleModules>().console_command(
-        "chimera_rules",
+        "chimera:rules",
         "List the rule modules the games registered (name, what it plays, its cvars), the one playing marked *.",
         |w, _| {
             let active = pick(w);

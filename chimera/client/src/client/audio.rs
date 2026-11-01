@@ -159,7 +159,7 @@ fn sound_cvars(app: &mut App) {
     );
     resource_cvar::<SpokenLanguage, String>(
         app,
-        "chimera_spoken_language",
+        "chimera:spoken_language",
         "The voice language (CS:S's Audio tab): english, the install's voice files.",
         |l| &mut l.0,
     );

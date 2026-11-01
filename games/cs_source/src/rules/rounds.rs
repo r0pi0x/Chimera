@@ -495,13 +495,13 @@ pub(super) fn plugin(app: &mut App) {
     }
     resource_cvar::<RoundSettings, u8>(
         app,
-        "chimera_rounds",
+        "chimera:rounds",
         "1: Counter-Strike rounds with money (0: deathmatch respawns).",
         |r| &mut r.enabled,
     );
     resource_cvar::<RoundSettings, u8>(
         app,
-        "chimera_untimed_win",
+        "chimera:untimed_win",
         "1: on a map without objectives the defenders win when the round's time runs out \
          (0: the round goes on, as in CS:S).",
         |r| &mut r.untimed_win,

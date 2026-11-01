@@ -117,12 +117,16 @@ impl Plugin for CaUiPlugin {
         ))
         // Key 6, the objective class (inventory.md 2, 3: the mission
         // bomb), through the shell's selection as slot 6.
-        .console_command("slot6", "The objective class (the mission bomb).", |w, _| {
-            if let Some(mut m) = w.get_resource_mut::<crate::client::weapon_menu::WeaponMenu>() {
-                m.pressed.push(5);
-            }
-            Ok(None)
-        })
+        .console_command(
+            "combat_arms:slot6",
+            "The objective class (the mission bomb).",
+            |w, _| {
+                if let Some(mut m) = w.get_resource_mut::<crate::client::weapon_menu::WeaponMenu>() {
+                    m.pressed.push(5);
+                }
+                Ok(None)
+            },
+        )
         // The flash fades on Combat Arms' cosine, not the shell's linear
         // fade (grenades.md Corrections 2026-10-22, 1).
         .insert_resource(crate::client::senses::FlashFade(crate::game::grenades::blinded_alpha))

@@ -17,10 +17,10 @@
 //!   `%LOCALAPPDATA%\chimera\maps`), one file per key, shared by every
 //!   checkout and agent slot; `CHIMERA_MAP_CACHE=<folder>` puts it
 //!   elsewhere, `CHIMERA_MAP_CACHE=0` turns it off (as does `disable`, a
-//!   tool's `--no-map-cache`); the console's `chimera_map_cache 0/1`
+//!   tool's `--no-map-cache`); the console's `chimera:map_cache 0/1`
 //!   (`CVAR`, registered by chimera_sim's `SimBasePlugins`) turns it off or on
 //!   over the variable from the next load, and on the command line
-//!   (`+chimera_map_cache 0`) from the first, also a load made before
+//!   (`+chimera:map_cache 0`) from the first, also a load made before
 //!   the console runs. `CHIMERA_MAP_CACHE_GB` caps its size
 //!   (`DEFAULT_CAP_GB`): after each write the least recently used entries
 //!   go first (a hit marks its entry used). Free space weighs in
@@ -95,10 +95,14 @@ static SWITCH: AtomicU8 = AtomicU8::new(0);
 
 /// The console variable that turns the cache on (1) or off (0) for the
 /// process, over `ENV` (chimera_sim's `SimBasePlugins` registers it). Read at
-/// each map load; given on the command line (`+chimera_map_cache 0`) it
-/// holds from the first load, also one made before the console runs (a
-/// dedicated server's first map).
-pub const CVAR: &str = "chimera_map_cache";
+/// each map load; given on the command line (`+chimera:map_cache 0`, or
+/// a name `CVAR_NAMES` lists) it holds from the first load, also one made
+/// before the console runs (a dedicated server's first map).
+pub const CVAR: &str = "chimera:map_cache";
+
+/// `CVAR` as the command line may name it: in full, short, by the old
+/// prefixes (the console resolves the same).
+pub const CVAR_NAMES: &[&str] = &["chimera:map_cache", "map_cache", "chimera_map_cache", "mashup_map_cache"];
 
 /// No cache for the rest of the process (a tool's `--no-map-cache`).
 pub fn disable() {
@@ -128,12 +132,16 @@ fn switch() -> Option<bool> {
     }
 }
 
-/// `+chimera_map_cache <0|1>` in a command line.
+/// `+chimera:map_cache <0|1>` (or another of `CVAR_NAMES`) in a command
+/// line; the last one counts.
 fn command_line_switch(args: impl Iterator<Item = String>) -> Option<bool> {
     let args: Vec<String> = args.collect();
     let at = args
         .iter()
-        .rposition(|a| a.strip_prefix('+').is_some_and(|n| n.eq_ignore_ascii_case(CVAR)))?;
+        .rposition(|a| {
+            a.strip_prefix('+')
+                .is_some_and(|n| CVAR_NAMES.iter().any(|c| n.eq_ignore_ascii_case(c)))
+        })?;
     parse_switch(args.get(at + 1)?)
 }
 
@@ -822,8 +830,9 @@ mod tests {
     fn the_command_line_switch_is_read() {
         let args = |a: &[&str]| command_line_switch(a.iter().map(|s| s.to_string()));
         assert_eq!(args(&["app", "+map", "de_dust2"]), None);
-        assert_eq!(args(&["app", "+chimera_map_cache", "0", "+map", "x"]), Some(false));
-        assert_eq!(args(&["app", "+CHIMERA_MAP_CACHE", "on"]), Some(true));
+        assert_eq!(args(&["app", "+chimera:map_cache", "0", "+map", "x"]), Some(false));
+        assert_eq!(args(&["app", "+map_cache", "0"]), Some(false));
+        assert_eq!(args(&["app", "+CHIMERA_MAP_CACHE", "on"]), Some(true), "the old name");
         assert_eq!(args(&["app", "+chimera_map_cache", "0", "+chimera_map_cache", "1"]), Some(true), "the last wins");
         assert_eq!(args(&["app", "+chimera_map_cache"]), None);
         assert_eq!(args(&["app", "+chimera_map_cache", "maybe"]), None);

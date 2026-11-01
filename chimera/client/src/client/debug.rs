@@ -35,19 +35,19 @@ impl Plugin for DebugPlugin {
         commands(app);
         crate::console::resource_cvar::<DrawHitboxes, u8>(
             app,
-            "chimera_drawhitboxes",
+            "chimera:drawhitboxes",
             "1: outline characters' hitboxes (head red, chest yellow, stomach green, arms blue, legs cyan).",
             |d| &mut d.0,
         );
         crate::console::resource_cvar::<DebugHudOn, u8>(
             app,
-            "chimera_debughud",
+            "chimera:debughud",
             "1: show the debug readout at the top left (movement, speed, ground, and the debug keys).",
             |d| &mut d.0,
         );
         crate::console::resource_cvar::<DrawPhys, u8>(
             app,
-            "chimera_drawphys",
+            "chimera:drawphys",
             "1: outline physics props by state (green moving, blue asleep, grey still or frozen; \
              multiplayer props darker), players' physics shadows (white, yellow lines to the props \
              they touch) and list the props nearest you (mass, mode, state) on the debug HUD.",
@@ -61,8 +61,8 @@ impl Plugin for DebugPlugin {
 pub(super) fn commands(app: &mut App) {
     app.init_resource::<InspectorOn>()
         .console_command(
-            "chimera_inspector",
-            "chimera_inspector [0|1]: toggle the entity inspector (F11), or turn it on or off; turning it on frees \
+            "chimera:inspector",
+            "inspector [0|1]: toggle the entity inspector (F11), or turn it on or off; turning it on frees \
              the mouse (a click takes it back).",
             |w, a| {
                 let on = match a.first() {
@@ -80,7 +80,7 @@ pub(super) fn commands(app: &mut App) {
             },
         )
         .console_cvar(
-            "chimera_drawcollision",
+            "chimera:drawcollision",
             "1: draw every collision shape (avian's debug gizmos; F3, `toggle chimera_drawcollision`, flips it).",
             "0",
             |w| {

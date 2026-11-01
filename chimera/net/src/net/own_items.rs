@@ -158,7 +158,7 @@ pub(super) fn plugin(app: &mut App) {
     if app.world().get_resource::<crate::console::Console>().is_some() {
         crate::console::resource_cvar::<OwnItemSettings, u8>(
             app,
-            "cl_predict_projectiles",
+            "chimera:predict_projectiles",
             "1: your own rockets, launcher shells and bolts leave the muzzle on the shot, drawn by your client \
              until the server's copy takes over; 0: drawn from the server's copy, as the original games do \
              (default).",

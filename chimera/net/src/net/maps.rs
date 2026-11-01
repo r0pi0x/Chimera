@@ -1022,6 +1022,7 @@ mod tests {
         old_default_binds: &[],
         movement_cvars: &[],
         meters_per_unit: 1.0,
+        console_namespaces: &[],
     };
     const NO_FILE_GAME: GameInfo = GameInfo { id: "no_file", map_file: |_| None, ..A_GAME };
 

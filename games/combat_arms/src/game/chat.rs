@@ -278,7 +278,7 @@ impl Plugin for CaChatPlugin {
                     .in_set(CaChatSet),
             );
         app.console_command(
-            "ca_chatfilter",
+            "combat_arms:ca_chatfilter",
             "ca_chatfilter [0|1]: this client filters the bad words from what it receives (an account option).",
             |w, a| {
                 let mut chat = w.resource_mut::<CaChat>();
@@ -290,7 +290,7 @@ impl Plugin for CaChatPlugin {
         );
         resource_cvar::<ChatRegion, u8>(
             app,
-            "ca_chatregion",
+            "combat_arms:ca_chatregion",
             "1: the BR region's chat limits (5 lines in 10 s) instead of the others' (20 in 60 s).",
             |r| &mut r.0,
         );
@@ -480,7 +480,7 @@ pub fn radio_number_with(world: &mut World, n: usize, draw: Option<usize>) -> bo
 // --- Console commands the keys are bound to.
 
 fn commands(app: &mut App) {
-    app.console_command("chat_open", "Open the chat input on the current tab (Enter).", |w, _| {
+    app.console_command("combat_arms:chat_open", "Open the chat input on the current tab (Enter).", |w, _| {
         open_enter(w);
         Ok(None)
     });
@@ -489,7 +489,7 @@ fn commands(app: &mut App) {
         ("chat_team", Tab::Team, "Chat to your team (F3)."),
         ("chat_clan", Tab::Clan, "Chat to your clan (F4)."),
     ] {
-        app.console_command(name, help, move |w, _| {
+        app.console_command(&format!("combat_arms:{name}"), help, move |w, _| {
             open_tab(w, tab);
             Ok(None)
         });
@@ -499,14 +499,14 @@ fn commands(app: &mut App) {
         ("radio_answer", radio::ANSWER, "The radio's answer menu (V)."),
         ("radio_request", radio::REQUEST, "The radio's request menu (N)."),
     ] {
-        app.console_command(name, help, move |w, _| {
+        app.console_command(&format!("combat_arms:{name}"), help, move |w, _| {
             radio_key(w, class);
             Ok(None)
         });
     }
     for (sign, on) in [("+", true), ("-", false)] {
         app.console_command(
-            &format!("{sign}voicechat"),
+            &format!("combat_arms:{sign}voicechat"),
             "Push to talk (T).",
             move |w, _| {
                 voice_key(w, on);
@@ -514,7 +514,7 @@ fn commands(app: &mut App) {
             },
         );
     }
-    app.console_command("voice_toggle", "Voice output on or off (F8).", |w, _| {
+    app.console_command("combat_arms:voice_toggle", "Voice output on or off (F8).", |w, _| {
         let now = now_ms(w);
         let mut chat = w.resource_mut::<CaChat>();
         for l in chat.voice.toggle_output(now) {

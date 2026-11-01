@@ -198,7 +198,8 @@ fn menu_values(w: &mut World) -> MenuValues {
         }
         let cvars: Vec<_> = {
             let console = w.resource::<Console>();
-            names.iter().filter_map(|n| console.cvar(n).cloned()).collect()
+            // By the name the menu asks for (a cvar's own is its full one).
+            names.iter().filter_map(|n| Some((n.clone(), console.cvar(n).cloned()?))).collect()
         };
         let console = w.resource::<Console>();
         let binds = console.binds.clone();
@@ -211,7 +212,7 @@ fn menu_values(w: &mut World) -> MenuValues {
         }
         let values = cvars
             .into_iter()
-            .filter_map(|c| (c.get)(w).map(|v| (c.name.clone(), v)))
+            .filter_map(|(n, c)| (c.get)(w).map(|v| (n, v)))
             .collect::<HashMap<_, _>>();
         let defaults = w.get_resource::<crate::client::binds::BindDefaults>().map(|d| d.default_binds()).unwrap_or_default();
         (values, binds, known, defaults)

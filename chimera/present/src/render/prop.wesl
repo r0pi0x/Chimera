@@ -165,8 +165,10 @@ fn layer_specular(n: vec3<f32>, p: vec3<f32>) -> vec3<f32> {
 }
 
 // The scene's point lights (muzzle flashes; map::DynamicLight), in
-// lightmap units: colour x (1 - d^2/r^2) x cosine. Same as world.wesl.
-fn dynamic_light(p: vec3<f32>, n: vec3<f32>, frag_coord: vec2<f32>) -> vec3<f32> {
+// lightmap units: colour x falloff x cosine. The falloff is the model's
+// game's (map::LightFalloff::share): Source's 1 - d^2/r^2 (as world.wesl),
+// or with `lithtech` 1 / (1 + 19 d^2/r^2), none at or beyond r.
+fn dynamic_light(p: vec3<f32>, n: vec3<f32>, frag_coord: vec2<f32>, lithtech: bool) -> vec3<f32> {
     let view_z = dot(vec4<f32>(
         view.view_from_world[0].z,
         view.view_from_world[1].z,
@@ -179,7 +181,11 @@ fn dynamic_light(p: vec3<f32>, n: vec3<f32>, frag_coord: vec2<f32>) -> vec3<f32>
     for (var i = ranges.first_point_light_index_offset; i < ranges.first_spot_light_index_offset; i = i + 1u) {
         let light = &view_bindings::clustered_lights.data[clustering::get_clusterable_object_id(i)];
         let to = (*light).position_radius.xyz - p;
-        let falloff = saturate(1.0 - dot(to, to) * (*light).color_inverse_square_range.w);
+        let x = dot(to, to) * (*light).color_inverse_square_range.w;
+        var falloff = saturate(1.0 - x);
+        if lithtech {
+            falloff = select(1.0 / (1.0 + 19.0 * x), 0.0, x >= 1.0);
+        }
         sum = sum + (*light).color_inverse_square_range.rgb * falloff * max(dot(n, normalize(to)), 0.0);
     }
     return sum;
@@ -225,7 +231,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         light = probe_light(n);
     }
     if params.dynamic > 0.5 {
-        direct_extra = dynamic_light(in.world_position.xyz, n, in.position.xy);
+        direct_extra = dynamic_light(in.world_position.xyz, n, in.position.xy, params.dynamic > 1.5);
         light = light + direct_extra;
     }
     var rgb = color.rgb * light;
