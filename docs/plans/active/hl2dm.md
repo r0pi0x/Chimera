@@ -428,3 +428,12 @@ implementing (owner branch) / done.
   Bevy-level crate in `source/`, not Chimera and not `games/hl2dm`
   (architecture-review.md A5); what any game could use goes to
   Chimera. Lifts move first and generalize second.
+
+- **2026-11-01 (user):** install both now (done: the game, app 320, and
+  the dedicated server, 232370, on the dev box); engine-level Source
+  console names (map, quit, fps_max, video, network) move to `chimera:`
+  while game-tuned values (`sv_gravity`, ...) stay per game (open
+  question 2, option C); `apps/hl2dm` is faithful DM/TDM play first, its
+  GameUI menus and server browser later (question 3); spec sessions run
+  on this box as separate sessions, with the public Source SDK 2013
+  cloned outside the repository (question 6).
