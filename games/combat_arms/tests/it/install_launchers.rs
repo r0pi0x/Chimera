@@ -401,7 +401,7 @@ fn t59_others_launcher_muzzle() {
     // view (he is 500 u ahead, facing me).
     // ... which his launcher's model has 0.5 m ahead of the hand's node.
     let hand_node = combat_arms::game::data::CaData::builtin().characters().skeleton(0).socket("RightHand").unwrap().parent.clone();
-    combat_arms::game::characters::models::register_held_socket(NPC_LAW, "Flash", &hand_node, Vec3::new(0.0, 0.0, 0.5));
+    combat_arms::game::characters::models::late_in(sim.app.world_mut()).0.register_held_socket(NPC_LAW, "Flash", &hand_node, Vec3::new(0.0, 0.0, 0.5));
     sim.ticks(1);
     let flash = {
         let world = sim.app.world();
@@ -463,8 +463,8 @@ fn t60_compressed_fire_point() {
 fn t49_the_rockets_group_rides_it() {
     use chimera_world::map::particles::{ParticleSet, Particles, step_particles};
     use super::attached_effects::{TAIL_TEX, material, materials, particles, test_library};
-    combat_arms::game::effects::library::set_library(Some(test_library()));
     let mut sim = sim();
+    combat_arms::game::effects::library::set_library_in(sim.app.world_mut(), Some(test_library()));
     sim.app.init_resource::<Particles>().add_systems(Update, step_particles.in_set(ParticleSet::Step));
     materials(&mut sim);
     let shooter = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);

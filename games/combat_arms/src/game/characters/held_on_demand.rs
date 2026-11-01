@@ -29,13 +29,16 @@ use bevy::{
     tasks::{AsyncComputeTaskPool, Task, block_on, poll_once},
 };
 
-use super::{super::view_model::on_demand::ours, models::load_held_weapon};
+use super::{
+    super::{data::CaData, view_model::on_demand::ours},
+    models::{self, OnDemand, load_held_weapon},
+};
 use crate::map::{
-    Held, LateHeldModels, MapHeldModel, MapTexture, add_held_model,
+    Held, LateHeldModels, LoadContext, MapHeldModel, add_held_model,
     loose::{LooseAssets, LooseItem},
 };
 
-type Loaded = Result<(MapHeldModel, Vec<MapTexture>), String>;
+type Loaded = Result<OnDemand<MapHeldModel>, String>;
 
 /// The held models loading, and the weapons tried (loaded or not).
 #[derive(Default)]
@@ -59,15 +62,19 @@ pub fn load_on_demand(
     loose: Query<&LooseItem>,
     late: Option<Res<LateHeldModels>>,
     assets: Option<Res<LooseAssets>>,
+    context: Option<Res<LoadContext>>,
     mut pending: Local<Pending>,
     mut commands: Commands,
 ) {
     pending.tasks.retain(|_, task| {
         let Some(result) = block_on(poll_once(task)) else { return true };
         match result {
-            Ok((model, textures)) => {
+            Ok(OnDemand { model, textures, index }) => {
                 let textures = std::sync::Arc::new(textures);
-                commands.queue(move |world: &mut World| add_held_model(world, model, textures));
+                commands.queue(move |world: &mut World| {
+                    models::late_in(world).0.merge(&index);
+                    add_held_model(world, model, textures);
+                });
             }
             Err(e) => warn!("Combat Arms: {e} (the hand stays empty)"),
         }
@@ -87,9 +94,10 @@ pub fn load_on_demand(
         }
         pending.tried.insert(id.to_string());
         let key = id.to_string();
+        let ca = context.as_deref().map_or_else(CaData::install, CaData::install_for);
         let task = AsyncComputeTaskPool::get().spawn(async move {
-            let mount = super::super::world::mount().ok_or_else(|| format!("{key}: no Combat Arms install"))?;
-            load_held_weapon(&key, &|p: &str| mount.read(p).ok())
+            let mount = ca.mount().ok_or_else(|| format!("{key}: no Combat Arms install"))?;
+            load_held_weapon(&ca, &key, &|p: &str| mount.read(p).ok())
         });
         pending.tasks.insert(id.to_string(), task);
     }

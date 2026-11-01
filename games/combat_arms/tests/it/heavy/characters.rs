@@ -407,7 +407,7 @@ fn default_bodies_wear_face_and_head() {
     let mut map = MapData::default();
     models::add_character_models(&mut map, &combat_arms::game::data::CaData::install(), &file);
     eprintln!("warnings: {:?}", map.warnings);
-    let groups = models::loaded_groups();
+    let groups = map.memos.get::<models::CaModelIndex>().expect("the load's index").groups().to_vec();
     for (id, face_id) in [(0, 0), (7, 4)] {
         assert_eq!(data.default_face(id), face_id);
         let group = groups.iter().find(|g| g.records.first() == Some(&id)).expect("the group");

@@ -148,7 +148,7 @@ pub static MAP_SOURCES: MapSources = MapSources {
 /// CS:S's players, guns and HUD look on the maps of other games.
 pub static CS_SOURCE_PARTS: MapDressing = MapDressing {
     game: cs_source::game::GAME,
-    dress: |map| cs_source::game::dress_guest(map, KEPT),
+    dress: |map, _| cs_source::game::dress_guest(map, KEPT),
 };
 
 /// Map `id` (`cs_source:de_dust2`, `combat_arms:warehouse`) for the party.

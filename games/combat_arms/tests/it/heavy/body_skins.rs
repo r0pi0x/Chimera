@@ -129,8 +129,8 @@ fn every_rung_bodys_skins_resolve() {
     if std::env::var("CHIMERA_BODIES_LOAD").is_ok() {
         for &id in &bodies {
             let name = &data.model(id).unwrap().name;
-            match models::load_body(id, &file) {
-                Ok((c, _)) => {
+            match models::load_body(&CaData::install(), id, &file) {
+                Ok(models::OnDemand { model: c, .. }) => {
                     for (k, look) in c.model.skins[0].iter().enumerate().filter(|(_, l)| l.texture.is_none()) {
                         let part = c.model.meshes[k].body;
                         count("loaded: a mesh left untextured".into(), format!("{id} {name}: mesh {k} (part {part:?}) {:?}", look.material));

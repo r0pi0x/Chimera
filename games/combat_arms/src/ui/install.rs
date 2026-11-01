@@ -727,16 +727,16 @@ impl InstallUi {
     }
 }
 
-/// The install's UI data (read once per process, a memo of the install's
-/// files): None without an install, with `CaData::builtin`, or when its
-/// layouts are locked.
+/// The install's UI data (read once per install data, `CaData::memo`):
+/// None without an install, with `CaData::builtin`, or when its layouts
+/// are locked.
 pub fn installed(data: &crate::game::data::CaDataInner) -> Option<Arc<InstallUi>> {
-    static UI: std::sync::OnceLock<Option<Arc<InstallUi>>> = std::sync::OnceLock::new();
+    struct Ui(Option<Arc<InstallUi>>);
     if data.builtin_only() {
         return None;
     }
-    UI.get_or_init(|| {
-        let mount = crate::game::INFO.mount()?;
+    data.memo(|| Ui((|| {
+        let mount = data.mount()?;
         // Every weapon's kill icon: ours and the install's copies.
         let kills = kill_icons(data);
         let mut icons: Vec<String> = data.weapon_set().weapons.iter().map(|w| kill_art(&kills, &w.id)).collect();
@@ -747,6 +747,7 @@ pub fn installed(data: &crate::game::data::CaDataInner) -> Option<Arc<InstallUi>
         let mut ui = load(&mount, &icons)?;
         ui.kill_icons = Arc::new(kills);
         Some(Arc::new(ui))
-    })
+    })()))
+    .0
     .clone()
 }

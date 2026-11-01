@@ -2041,7 +2041,9 @@ pub fn start_map_load(w: &mut World, id: &str, file: Option<std::path::PathBuf>)
     // This load's own progress (the loading screen reads the resource).
     let progress = crate::map::loading::LoadReporter::default();
     w.insert_resource(progress.clone());
-    let options = crate::map::MapLoadOptions { hdr_level, progress, ..default() };
+    // The app's context: what its games keep for their loads.
+    let context = crate::map::LoadContext::of(w);
+    let options = crate::map::MapLoadOptions { hdr_level, progress, context, ..default() };
     // The app loads it (`AppHooks`), then the spawn's own work is done
     // there too (`map::prepare`): the frame that swaps it in only spawns.
     let hooks = w.get_resource::<super::AppHooks>().copied();

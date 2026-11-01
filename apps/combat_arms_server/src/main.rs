@@ -38,7 +38,7 @@ fn main() {
         eprintln!("error: {e}");
         std::process::exit(1);
     });
-    if let StartMap::Loaded { id, data } = &start {
+    if let StartMap::Loaded { id, data, .. } = &start {
         eprintln!("loaded {id}: {} spawns, {} warnings", data.spawns.len(), data.warnings.len());
     }
     let mut app = App::new();

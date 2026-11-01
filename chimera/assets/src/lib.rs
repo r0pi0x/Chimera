@@ -30,6 +30,10 @@
 //! converter and checked against every file the conversion read
 //! (`~/.cache/chimera/maps`, `CHIMERA_MAP_CACHE`).
 //!
+//! `shared`: values read from an install that the apps of one process
+//! share while any of them holds one (Combat Arms' attribute data and
+//! mount), freed after the last.
+//!
 //! `disk`: free space (`statvfs`, `GetDiskFreeSpaceExW`) and the floor
 //! under which the map cache and the store's on-demand writes skip the
 //! write (`CHIMERA_DISK_FLOOR_GB`).
@@ -50,6 +54,7 @@ pub mod progress;
 pub mod recording;
 pub mod remote;
 pub mod server;
+pub mod shared;
 pub mod sign;
 pub mod store;
 

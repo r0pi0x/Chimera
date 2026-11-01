@@ -64,6 +64,8 @@ pub mod lod;
 pub mod logic_view;
 pub mod loose;
 pub mod material_fx;
+pub mod memos;
+pub use memos::MapMemos;
 pub use material_fx::{DetailMode, MapSelfIllum, MapTextureAnim, MapUvTransform, parameter_gamma_to_linear};
 pub mod bot_profiles;
 pub mod monitor;
@@ -89,7 +91,7 @@ pub use sound::{
 pub mod shells;
 pub mod parallel;
 pub mod sources;
-pub use sources::{KitLoad, MapDressing, MapLoadOptions, MapLoader, MapSources, SpawnTeams, SurfaceNames, SurfaceTable};
+pub use sources::{KitLoad, LoadContext, MapDressing, MapLoadOptions, MapLoader, MapSources, SpawnTeams, SurfaceNames, SurfaceTable};
 pub mod surface_color;
 pub mod view_model;
 pub mod vis;

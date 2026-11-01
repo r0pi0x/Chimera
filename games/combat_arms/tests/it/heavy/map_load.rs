@@ -174,7 +174,8 @@ fn view_model_loads_on_demand_once() {
     let Some(mount) = mount() else { return };
     let file = |p: &str| mount.read(p).ok();
     let started = Instant::now();
-    let first = match on_demand::load_cached(weapons::RIFLE, &file) {
+    let ca = combat_arms::game::data::CaData::install();
+    let first = match on_demand::load_cached(&ca, weapons::RIFLE, &file) {
         Ok(first) => first,
         Err(e) if not_served(&mount, None, &format!("{} ({e})", weapons::RIFLE)) => return,
         Err(e) => panic!("{e}"),
@@ -200,7 +201,7 @@ fn view_model_loads_on_demand_once() {
         }
     }
     let started = Instant::now();
-    let again = on_demand::load_cached(weapons::RIFLE, &file).unwrap();
+    let again = on_demand::load_cached(&ca, weapons::RIFLE, &file).unwrap();
     assert!(std::sync::Arc::ptr_eq(&first, &again));
     assert!(started.elapsed() < Duration::from_millis(50));
 }

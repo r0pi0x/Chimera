@@ -912,6 +912,7 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
     }
     commands.insert_resource(sound::SurfaceGrid::new(data));
     commands.insert_resource(super::sources::SurfaceNames(Arc::new(data.surface_names.clone())));
+    commands.insert_resource(data.memos.clone());
     if !brushes.is_empty() {
         let floor = data
             .playable

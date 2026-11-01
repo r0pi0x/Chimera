@@ -1229,6 +1229,11 @@ pub struct MapData {
     /// Features only some games' maps have (`MapExtras`), such as Source's
     /// effect lists (`MapData::source_fx`).
     pub extras: MapExtras,
+    /// What the load worked out for the game that plays the map
+    /// (`MapMemos`: Combat Arms' rigs and effect library), the world's
+    /// resource while the map plays. Not in the converted-map cache.
+    #[serde(skip)]
+    pub memos: super::MapMemos,
     /// Seconds each loading stage took (`loading::LoadTimer`), in order.
     #[serde(skip)]
     pub load_times: Vec<(&'static str, f32)>,

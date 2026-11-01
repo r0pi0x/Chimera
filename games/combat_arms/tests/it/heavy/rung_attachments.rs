@@ -184,14 +184,14 @@ fn a_fitted_silencer_and_sight_draw_on_the_view_model() {
     let key = parts::view_key(M4, Some(&fitted(&["Silencer_A_AR", "DotSight_A_AR", "Magazine_A_AR"])));
     assert_eq!(key, format!("{M4}+Silencer_A_AR+DotSight_A_AR"));
     assert_eq!(parts::view_key(M4, Some(&fitted(&["Magazine_A_AR"]))), M4);
-    let bare = match on_demand::load_weapon(M4, &file) {
+    let bare = match on_demand::load_weapon(&CaData::install(), M4, &file) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("skipping: the M4A1's view model doesn't load ({e}; the V2 key)");
             return;
         }
     };
-    let with = on_demand::load_weapon(&key, &file).unwrap();
+    let with = on_demand::load_weapon(&CaData::install(), &key, &file).unwrap();
     for w in &with.warnings {
         eprintln!("warning: {w}");
     }
@@ -250,14 +250,15 @@ fn fitted_parts_draw_on_the_held_model() {
         eprintln!("skipping: the install's modification file isn't readable (the V1 key)");
         return;
     }
-    let (bare, _) = match load_held_weapon(M4, &file) {
-        Ok(h) => h,
+    let ca = CaData::install();
+    let bare = match load_held_weapon(&ca, M4, &file) {
+        Ok(h) => h.model,
         Err(e) => {
             eprintln!("skipping: the M4A1's held model doesn't load ({e}; the V2 key)");
             return;
         }
     };
-    let (with, _) = load_held_weapon(&format!("{M4}+Silencer_A_AR+DotSight_A_AR"), &file).unwrap();
+    let with = load_held_weapon(&ca, &format!("{M4}+Silencer_A_AR+DotSight_A_AR"), &file).unwrap().model;
     let added = &with.model.meshes[bare.model.meshes.len()..];
     assert!(added.len() >= 2, "the parts' meshes are added ({})", added.len());
     let gun: Vec<Vec3> = bare.model.meshes.iter().flat_map(|m| m.positions.iter()).map(|p| Vec3::from(*p)).collect();

@@ -605,6 +605,7 @@ fn muzzle_flash(
     mut meshes: ResMut<Assets<Mesh>>,
     mut state: Local<FlashState>,
     mut commands: Commands,
+    library: library::Library,
 ) {
     let now = time.elapsed_secs_f64();
     let Ok((mut qt, mut qv, qm)) = quads.single_mut() else {
@@ -664,7 +665,7 @@ fn muzzle_flash(
         state.roll = (state.seed >> 8) as f32 / (1u32 << 24) as f32 * std::f32::consts::TAU;
     }
     let age = state.shot.map_or(0.0, |s| (now - s) as f32);
-    let lib = library::library();
+    let lib = library.get();
     // Without the effect file: a plain glow (no install); with it, the
     // group's particle, or nothing when the group is missing.
     let mut at = at;

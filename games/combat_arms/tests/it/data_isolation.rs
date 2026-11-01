@@ -86,3 +86,55 @@ fn a_builtin_app_and_an_install_app_coexist() {
     // reaches the built-in app.
     assert!(builtin.app.world().resource::<CaData>().attributes().is_none());
 }
+
+/// What map loads work out (the models' rigs, groups and held sockets, the
+/// effect library) and what an app loads after (its late models) are the
+/// app's, not the process's (once statics: docs/plans/active/
+/// ecs-cleanup.md, item 13): two apps in one process each see their own,
+/// a map's go with it when it is unloaded, and each app's map loads get
+/// its own context, which holds the one install data both share.
+#[test]
+fn two_apps_keep_their_own_loaded_models_and_effects() {
+    use std::sync::Arc;
+
+    use chimera_world::map::{self, LoadContext, MapData, MapSimPlugin};
+    use combat_arms::game::{
+        characters::models::{self, CaModelIndex},
+        effects::library::{self, FxLibrary},
+    };
+
+    // A map whose load registered a held model's socket and an effect
+    // library, as Combat Arms' loader does (`MapData::memos`).
+    let mut loaded = MapData::default();
+    loaded.memos.entry::<CaModelIndex>().register_held_socket("combat_arms:law", "Flash", "Right_hand", Vec3::X);
+    library::set_library(&mut loaded.memos, Some(Arc::new(FxLibrary::default())));
+    let mut a = Sim::with(CaSim, move |app| {
+        app.add_plugins(MapSimPlugin::new(loaded));
+    });
+    let mut b = Sim::with(CaSim, |app| {
+        app.add_plugins(MapSimPlugin::new(MapData::default()));
+    });
+    a.ticks(1);
+    b.ticks(1);
+    let socket = |sim: &Sim| models::models_in(sim.app.world()).held_socket("combat_arms:law", "flash");
+    assert!(socket(&a).is_some(), "a's map registered it");
+    assert!(socket(&b).is_none(), "b's map didn't");
+    assert!(library::library_in(a.app.world()).is_some() && library::library_in(b.app.world()).is_none());
+
+    // What an app loads later (on demand) is its own too, and stays across
+    // map changes.
+    models::late_in(b.app.world_mut()).0.register_held_socket("combat_arms:m4a1", "Flash", "Right_hand", Vec3::Y);
+    let late = |sim: &Sim| models::models_in(sim.app.world()).held_socket("combat_arms:m4a1", "flash");
+    assert!(late(&b).is_some() && late(&a).is_none());
+    map::unload_map(a.app.world_mut());
+    map::unload_map(b.app.world_mut());
+    assert!(socket(&a).is_none() && library::library_in(a.app.world()).is_none(), "gone with a's map");
+    assert!(late(&b).is_some(), "b's late model stays");
+
+    // Each app's loads get its own context; the install data in them is
+    // the one both share while they hold it.
+    let (ca, cb) = (LoadContext::of(a.app.world_mut()), LoadContext::of(b.app.world_mut()));
+    assert_ne!(ca, cb, "one context per app");
+    assert!(CaData::install_for(&ca).same(&CaData::install_for(&cb)), "one install data");
+    assert!(CaData::install_for(&ca).same(&CaData::install()), "the process's while an app holds it");
+}

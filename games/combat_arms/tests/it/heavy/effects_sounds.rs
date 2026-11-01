@@ -326,7 +326,7 @@ fn shots_on_a_map() {
         .filter(|n| n.contains("refract") || n.contains("heatsmoke"))
         .collect();
     assert!(refract.is_empty(), "{refract:?}");
-    assert!(library::library().is_some());
+    assert!(library::library(&map.memos).is_some(), "the map carries its effect library");
     let spawn = map.spawns[0].0;
     let mut sim = Sim::with(CaSim, move |app| {
         app.add_plugins(MapSimPlugin::new(map));

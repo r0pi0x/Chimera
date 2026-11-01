@@ -87,11 +87,12 @@ fn wait_for(sim: &mut Sim, id: &str) -> (bool, usize) {
     let assets = world.get_resource::<ViewModelAssets>().is_some();
     let shown: Vec<Option<String>> = world.query::<&ViewAnimator>().iter(world).map(|v| v.key.clone()).collect();
     let cameras = world.query::<&ViewModelCamera>().iter(world).count();
+    let cached = on_demand::cached(&combat_arms::game::data::CaData::install_for(&chimera_world::map::LoadContext::of(world)), id).map(|r| r.map(|_| ()));
     panic!(
         "{id}: no view model drawn on the greybox: {:?}; models {models:?}, assets {assets}, shown {shown:?}, \
          view-model cameras {cameras}, cached {:?}",
         drawn(sim),
-        on_demand::cached(id).map(|r| r.map(|_| ()))
+        cached
     );
 }
 

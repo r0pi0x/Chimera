@@ -16,17 +16,25 @@
 //! - `CaData::builtin_with_weapons(docs)`: the built-in data with other
 //!   weapon documents (tests, minigame tuning).
 //!
-//! The first two are process-wide singletons (the install's
-//! `ATTRIBUTES.rez` takes seconds to read and decrypt, and is the same
-//! for every app, so it is read once; the weapon set built from it is
-//! leaked once: weapon IDs are `&'static str`). They are immutable once
-//! built, and the app's choice between them is the resource, not a
-//! switch.
+//! `builtin()` is one value for the process (read-only tables of ours).
+//! `install()` is the install's: the apps of a process share it while any
+//! holds it (the asset store's `shared` register keeps only a weak
+//! reference), and it is freed with the last; each Combat Arms app holds
+//! it in its resource or its map loads' context (`map::LoadContext`,
+//! `install_for`), so its loads never reach for a process-wide memo. Its
+//! parts read from the install fill on first use: the attribute files
+//! (`ATTRIBUTES.rez` takes seconds to read and decrypt), the mounted
+//! archives (`mount`, themselves shared the same way) and what the game
+//! works out from them once per install (`memo`: the converted character
+//! models, the view models loaded on demand, the parsed effect file, the
+//! front end's UI data). The weapon set built from it is leaked (weapon
+//! IDs are `&'static str`), once per install value, and so are the
+//! install's hit and skeleton tables (`static_tables`).
 //!
 //! Known shortcuts:
-//! - Map loaders (`map::MapLoader`, `MapDressing`) are plain function
-//!   pointers with no app to ask: they use `CaData::install()`, as they
-//!   read the install anyway.
+//! - A new install value after the last one was freed reads the files
+//!   again and leaks its weapon set and tables again (only a process
+//!   whose apps all went, a test binary's next test).
 
 use std::{
     collections::BTreeSet,
@@ -51,6 +59,11 @@ use super::super::{
     movement::{MovementData, movement_data},
 };
 
+/// The install data's and mount's keys in the asset store's `shared`
+/// register.
+const INSTALL_KEY: &str = "combat_arms:install";
+const MOUNT_KEY: &str = "combat_arms:mount";
+
 /// The data an app plays Combat Arms with (module doc). Cheap to clone;
 /// derefs to `CaDataInner`.
 #[derive(Resource, Clone)]
@@ -72,7 +85,13 @@ impl Deref for CaData {
 /// What a `CaData` holds.
 pub struct CaDataInner {
     builtin_only: bool,
-    attributes: Option<InstallAttributes>,
+    /// The install's attribute files: given (`with_attributes`), none
+    /// (`builtin`), or read on first use (`install`).
+    attributes: OnceLock<Option<InstallAttributes>>,
+    /// The install's mounted archives, asked once (`mount`).
+    mount: OnceLock<Option<Arc<Mount>>>,
+    /// What the game works out from this data once (`memo`).
+    memos: chimera_core::memo::Memos,
     /// The built-in weapon documents of this data.
     docs: Vec<(String, String)>,
     weapon_set: OnceLock<&'static WeaponSet>,
@@ -87,10 +106,21 @@ pub struct CaDataInner {
 }
 
 impl CaData {
-    fn new(builtin_only: bool, attributes: Option<InstallAttributes>, docs: Vec<(String, String)>) -> Self {
-        Self(Arc::new(CaDataInner {
+    fn new(builtin_only: bool, attributes: Option<Option<InstallAttributes>>, docs: Vec<(String, String)>) -> Self {
+        Self(Arc::new(Self::inner(builtin_only, attributes, docs)))
+    }
+
+    /// `attributes`: None to read the install's on first use.
+    fn inner(builtin_only: bool, attributes: Option<Option<InstallAttributes>>, docs: Vec<(String, String)>) -> CaDataInner {
+        let cell = OnceLock::new();
+        if let Some(a) = attributes {
+            let _ = cell.set(a);
+        }
+        CaDataInner {
             builtin_only,
-            attributes,
+            attributes: cell,
+            mount: OnceLock::new(),
+            memos: Default::default(),
             docs,
             weapon_set: OnceLock::new(),
             weapon_docs: OnceLock::new(),
@@ -100,7 +130,7 @@ impl CaData {
             characters: OnceLock::new(),
             missions: OnceLock::new(),
             builtin_ids: OnceLock::new(),
-        }))
+        }
     }
 
     fn built_in_docs() -> Vec<(String, String)> {
@@ -117,58 +147,54 @@ impl CaData {
     /// with no app to ask (`characters::records::builtin`).
     pub fn builtin_static() -> &'static Self {
         static BUILTIN: OnceLock<CaData> = OnceLock::new();
-        BUILTIN.get_or_init(|| Self::new(true, None, Self::built_in_docs()))
+        BUILTIN.get_or_init(|| Self::new(true, Some(None), Self::built_in_docs()))
     }
 
     /// The install's attribute data over the built-in when it can be read
     /// (`[games.combat_arms] path` and the `V1` key in the local config);
     /// else the built-in numbers, with the install's files still
-    /// mountable. Read once per process.
+    /// mountable. Shared by the apps of the process while any holds it
+    /// (module doc); its files are read on first use.
     pub fn install() -> Self {
-        Self::install_static().clone()
+        Self(crate::mount::assets::shared::shared(INSTALL_KEY, || {
+            Self::inner(false, None, Self::built_in_docs())
+        }))
     }
 
-    /// `install()` by reference (the lobby's tables).
-    pub fn install_static() -> &'static Self {
-        static INSTALL: OnceLock<CaData> = OnceLock::new();
-        INSTALL
-            .get_or_init(|| {
-                let attributes = (|| {
-                    let install = crate::mount::config::LocalConfig::load().ok()?.game_path(super::super::GAME)?;
-                    let path = install.join("Game").join("ATTRIBUTES.rez");
-                    if !path.is_file() {
-                        // Served from the asset store (`mount::served`):
-                        // the archive's files, recorded at their paths.
-                        return super::attributes_from_mount(&super::super::INFO.mount()?)
-                            .map_err(|e| info!("Combat Arms: built-in data only: {e}"))
-                            .ok();
-                    }
-                    open_attributes(&path)
-                        .map_err(|e| info!("Combat Arms: built-in data only: {e}"))
-                        .ok()
-                })();
-                Self::new(false, attributes, Self::built_in_docs())
-            })
+    /// The install data of the app whose map loads have `context`
+    /// (`map::LoadContext`: Combat Arms' plugin puts it there): what its
+    /// loaders and on-demand loads read. `install()` with no app.
+    pub fn install_for(context: &crate::map::LoadContext) -> Self {
+        context.get::<CaData>().map_or_else(Self::install, |d| (*d).clone())
+    }
+
+    /// Whether `self` and `other` are one data value.
+    pub fn same(&self, other: &CaData) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
     }
 
     /// The built-in data with `docs` as the weapon documents (name, TOML
     /// text) instead of `WEAPON_DATA`: a test's or a minigame's own
     /// weapon tuning. Not shared with any other app.
     pub fn builtin_with_weapons(docs: Vec<(String, String)>) -> Self {
-        Self::new(true, None, docs)
+        Self::new(true, Some(None), docs)
     }
 
     /// An install's attribute files, as read, over the built-in data
     /// (tests that build an install by hand). Not shared.
     pub fn with_attributes(attributes: InstallAttributes) -> Self {
-        Self::new(false, Some(attributes), Self::built_in_docs())
+        Self::new(false, Some(Some(attributes)), Self::built_in_docs())
     }
 
     /// The app's data: its resource if a plugin or the game's setup put
     /// one there, else the default (inserted now, so every plugin of the
-    /// app agrees whatever order they build in).
+    /// app agrees whatever order they build in). The install data its map
+    /// loads read goes into its `map::LoadContext` too (`install_for`):
+    /// held while the app lives.
     pub fn of(app: &mut App) -> Self {
         app.init_resource::<CaData>();
+        let context = app.world_mut().get_resource_or_init::<crate::map::LoadContext>().clone();
+        context.get_or_init(Self::install);
         app.world().resource::<CaData>().clone()
     }
 }
@@ -180,21 +206,49 @@ impl CaDataInner {
         self.builtin_only
     }
 
-    /// The install's mount (its archives' directories read once per
-    /// process: `world::mount`); `None` without an install, or in
-    /// `builtin()` data (no map, sound or texture reads the install).
+    /// The install's mount (its archives' directories read once, shared
+    /// by the data values that hold it: the module doc); `None` without
+    /// an install, or in `builtin()` data (no map, sound or texture reads
+    /// the install).
     pub fn mount(&self) -> Option<Arc<Mount>> {
         if self.builtin_only {
             return None;
         }
-        super::super::world::mount()
+        self.mount
+            .get_or_init(|| crate::mount::assets::shared::shared_opt(MOUNT_KEY, || super::super::INFO.mount()))
+            .clone()
     }
 
     /// The install's attribute data: `None` without an install, with
     /// `builtin()`, or when `ATTRIBUTES.rez` can't be read (no V1 key:
-    /// logged).
+    /// logged). Read on first use.
     pub fn attributes(&self) -> Option<&InstallAttributes> {
-        self.attributes.as_ref()
+        self.attributes
+            .get_or_init(|| {
+                let install = crate::mount::config::LocalConfig::load().ok()?.game_path(super::super::GAME)?;
+                let path = install.join("Game").join("ATTRIBUTES.rez");
+                if !path.is_file() {
+                    // Served from the asset store (`mount::served`): the
+                    // archive's files, recorded at their paths.
+                    let mount = self.mount()?;
+                    return super::attributes_from_mount(&mount)
+                        .map_err(|e| info!("Combat Arms: built-in data only: {e}"))
+                        .ok();
+                }
+                open_attributes(&path)
+                    .map_err(|e| info!("Combat Arms: built-in data only: {e}"))
+                    .ok()
+            })
+            .as_ref()
+    }
+
+    /// The value of type `T` this data worked out once (`init` the first
+    /// time): what the game reads from the install per install, not per
+    /// app or map (the converted character models, the view models loaded
+    /// on demand, the parsed effect file, the UI data). Freed with the
+    /// data.
+    pub fn memo<T: std::any::Any + Send + Sync>(&self, init: impl FnOnce() -> T) -> Arc<T> {
+        self.memos.get_or_init(init)
     }
 
     /// The server's `ReloadCheckTime` (attribute_data.md Corrections 3):
@@ -284,7 +338,7 @@ impl CaDataInner {
                 if self.builtin_only {
                     return None;
                 }
-                let mount = super::super::world::mount()?;
+                let mount = self.mount()?;
                 Some(super::super::missions::read_install(&|p| mount.read(p).ok()))
             })
             .as_ref()

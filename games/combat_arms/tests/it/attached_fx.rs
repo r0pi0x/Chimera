@@ -31,7 +31,7 @@ use combat_arms::{
         data::{attributes::WEAPONS_FILE, merge_weapon_docs, read_attributes},
         effects::{
             self,
-            library::set_library,
+            library::set_library_in,
             sounds::CaSound,
         },
         movement,
@@ -171,11 +171,11 @@ fn copies() -> Vec<(String, String)> {
 struct Heard(Vec<CaSound>, Vec<CaLoopSound>, Vec<SoundControl>);
 
 fn sim() -> (Sim, Entity) {
-    // One library for every test of the binary (they run at once).
-    set_library(Some(super::attached_effects::test_library()));
     let copies = copies();
     let mut sim = Sim::with(CaSim, move |app| {
         app.add_plugins(GreyboxMapPlugin);
+        // The greybox's effect library (each sim its own).
+        set_library_in(app.world_mut(), Some(super::attached_effects::test_library()));
         times(app);
         let refs: Vec<(&str, &str)> = copies.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
         app.add_weapon_data(&refs).unwrap();

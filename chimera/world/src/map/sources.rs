@@ -50,7 +50,12 @@
 //!
 //! The functions are plain `fn`s and the lists `'static` slices, so an
 //! app's `MapSources` is a `static` and its `client::AppHooks::load_map`
-//! a closure over it.
+//! a closure over it. What a loader or dressing needs of the app that
+//! asked comes in its options (`MapLoadOptions::context`, the app's
+//! `LoadContext`: Combat Arms keeps its install data there, so a load
+//! never reaches for a process-wide memo), and what it works out for the
+//! map's game goes with the map (`MapData::memos`, `memos::MapMemos`;
+//! docs/DESIGN.md, "A game's loader and memos").
 
 use std::{
     collections::{BTreeSet, HashMap},
@@ -83,6 +88,42 @@ pub struct MapLoadOptions {
     /// Where the loader reports its stages (`loading::LoadReporter`): the
     /// loading screen of the app that asked reads the same handle.
     pub progress: super::loading::LoadReporter,
+    /// The app that asked (its `LoadContext` resource): what its games keep
+    /// for their loads. A load with no app (a tool, a test) gets a fresh
+    /// one.
+    pub context: LoadContext,
+}
+
+/// An app's context for its map loads (`MapLoadOptions::context`): one
+/// value per type that its games put there or fill on first use
+/// (`chimera_core::memo::Memos`). Combat Arms keeps its install data in
+/// it (`CaData`), so every load of the app reads the install the app
+/// holds, and none of it outlives the app. A resource of each app (the
+/// map's plugins insert it); clones share it.
+#[derive(Resource, Clone, Default, Debug)]
+pub struct LoadContext(pub chimera_core::memo::Memos);
+
+impl std::ops::Deref for LoadContext {
+    type Target = chimera_core::memo::Memos;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+/// Two contexts are equal when they are one app's.
+impl PartialEq for LoadContext {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.same(&other.0)
+    }
+}
+
+impl Eq for LoadContext {}
+
+impl LoadContext {
+    /// The world's context (made when it has none).
+    pub fn of(world: &mut World) -> Self {
+        world.get_resource_or_init::<Self>().clone()
+    }
 }
 
 /// How much of a map game's kit (`GameKit`) a loader reads from the
@@ -141,7 +182,7 @@ impl KitLoad {
 
 impl Default for MapLoadOptions {
     fn default() -> Self {
-        Self { hdr_level: 0, textures: true, kit: KitLoad::All, progress: default() }
+        Self { hdr_level: 0, textures: true, kit: KitLoad::All, progress: default(), context: default() }
     }
 }
 
@@ -155,6 +196,11 @@ impl MapLoadOptions {
     pub fn lean() -> Self {
         Self { textures: false, ..Self::default() }
     }
+
+    /// These options for the app whose context is `context`.
+    pub fn in_context(self, context: &LoadContext) -> Self {
+        Self { context: context.clone(), ..self }
+    }
 }
 
 /// One game's maps (`game:name`) from its install.
@@ -162,7 +208,8 @@ impl MapLoadOptions {
 pub struct MapLoader {
     /// The game's id, the prefix of its map ids (`cs_source`).
     pub game: &'static str,
-    /// Map `name` (without the prefix) with `options`.
+    /// Map `name` (without the prefix) with `options` (the app's context
+    /// in `options.context`).
     pub load: fn(&str, &MapLoadOptions) -> Result<MapData, String>,
 }
 
@@ -173,9 +220,10 @@ pub struct MapLoader {
 pub struct MapDressing {
     /// The game's id (`combat_arms`).
     pub game: &'static str,
-    /// Add the game's parts to `map`; an error (no install) leaves the
+    /// Add the game's parts to `map` for the load `options` (the app's
+    /// context in `options.context`); an error (no install) leaves the
     /// map undressed, with a warning.
-    pub dress: fn(&mut MapData) -> Result<(), String>,
+    pub dress: fn(&mut MapData, &MapLoadOptions) -> Result<(), String>,
 }
 
 /// Spawn teams of another game's maps as the gameplay's teams: map
@@ -337,27 +385,27 @@ impl MapSources {
         }
         let mut map = (loader.load)(name, &options)?;
         map.impacts.game = Some(loader.game.to_string());
-        self.dress(loader.game, &mut map);
+        self.dress(loader.game, &mut map, &options);
         Ok(map)
     }
 
     /// `map` (of `game`) made ready for the gameplay: unchanged when the
     /// gameplay is the map's own game (or there is none); else its game's
     /// parts taken off, its spawn teams mapped (`teams`) and the
-    /// gameplay's parts added.
-    pub fn dress(&self, game: &str, map: &mut MapData) {
+    /// gameplay's parts added (for the load `options`).
+    pub fn dress(&self, game: &str, map: &mut MapData, options: &MapLoadOptions) {
         if let Some(gameplay) = self.gameplay.filter(|g| !g.game.eq_ignore_ascii_case(game)) {
-            self.dress_with(gameplay, game, map);
+            self.dress_with(gameplay, game, map, options);
         }
         for guest in self.guests.iter().filter(|g| !g.game.eq_ignore_ascii_case(game)) {
-            if let Err(e) = (guest.dress)(map) {
+            if let Err(e) = (guest.dress)(map, options) {
                 map.warnings.push(format!("{}'s parts: {e}", guest.game));
             }
         }
     }
 
     /// `dress` with the gameplay's own parts.
-    fn dress_with(&self, gameplay: &MapDressing, game: &str, map: &mut MapData) {
+    fn dress_with(&self, gameplay: &MapDressing, game: &str, map: &mut MapData, options: &MapLoadOptions) {
         map.kit = std::mem::take(&mut map.kit).stay(self.kept, self.players);
         // The map game's bodies go after the gameplay's (whose first is
         // the one everything without an identity is measured against).
@@ -380,7 +428,7 @@ impl MapSources {
                     .map(|s| Team(s.to))
             });
         }
-        if let Err(e) = (gameplay.dress)(map) {
+        if let Err(e) = (gameplay.dress)(map, options) {
             map.warnings.push(format!("{}'s parts: {e}", gameplay.game));
         }
         map.kit.characters.extend(kept_bodies);
@@ -435,7 +483,7 @@ mod tests {
         Ok(map)
     }
 
-    fn b_parts(map: &mut MapData) -> Result<(), String> {
+    fn b_parts(map: &mut MapData, _: &MapLoadOptions) -> Result<(), String> {
         map.warnings.push("b's parts".into());
         Ok(())
     }
@@ -476,7 +524,7 @@ mod tests {
         map.kit.muzzle_flash = Some(default());
         map.kit.decals.groups.insert("impact.concrete".into(), vec![(1.0, 0)]);
         map.source_fx_mut().detail_props = None;
-        SOURCES.dress("a", &mut map);
+        SOURCES.dress("a", &mut map, &MapLoadOptions::default());
         let kit = &map.kit;
         assert!(kit.round_sounds.draw.is_none() && kit.muzzle_flash.is_none());
         assert_eq!(kit.held.len(), 1, "the kept prefix stays");
@@ -551,7 +599,7 @@ mod tests {
             map.kit.hud = Some(default());
             Ok(map)
         }
-        fn b_bodies(map: &mut MapData) -> Result<(), String> {
+        fn b_bodies(map: &mut MapData, _: &MapLoadOptions) -> Result<(), String> {
             map.kit.characters.push(body("b", Some("b_soldier")));
             Ok(())
         }
@@ -578,11 +626,11 @@ mod tests {
     /// gameplay's own dressing, and a failing one is a warning.
     #[test]
     fn a_guest_dresses_the_maps_of_other_games() {
-        fn a_guest(map: &mut MapData) -> Result<(), String> {
+        fn a_guest(map: &mut MapData, _: &MapLoadOptions) -> Result<(), String> {
             map.kit.characters.push(body("a", Some("a_guest")));
             Ok(())
         }
-        fn a_broken_guest(_: &mut MapData) -> Result<(), String> {
+        fn a_broken_guest(_: &mut MapData, _: &MapLoadOptions) -> Result<(), String> {
             Err("no install".into())
         }
         static A_GUEST: MapDressing = MapDressing { game: "a", dress: a_guest };
@@ -601,6 +649,35 @@ mod tests {
         assert!(other.warnings.iter().any(|w| w.contains("c's parts: no install")), "{:?}", other.warnings);
         let own = S4.load("a:x", 0).unwrap();
         assert!(own.kit.characters.iter().all(|c| c.name.as_deref() != Some("a_guest")), "not on its own game's map");
+    }
+
+    /// The app's context reaches its loader and the gameplay's dressing:
+    /// two apps' loads each see their own.
+    #[test]
+    fn the_apps_context_reaches_the_loader_and_the_dressing() {
+        #[derive(Debug)]
+        struct Who(u32);
+        fn loader(name: &str, o: &MapLoadOptions) -> Result<MapData, String> {
+            let app = o.context.get::<Who>().map_or(0, |a| a.0);
+            Ok(MapData { name: format!("{name}@{app}"), ..default() })
+        }
+        fn dressing(map: &mut MapData, o: &MapLoadOptions) -> Result<(), String> {
+            map.warnings.push(format!("dressed for {}", o.context.get::<Who>().map_or(0, |a| a.0)));
+            Ok(())
+        }
+        static L: MapLoader = MapLoader { game: "a", load: loader };
+        static D: MapDressing = MapDressing { game: "b", dress: dressing };
+        static S: MapSources =
+            MapSources { loaders: &[&L], gameplay: Some(&D), teams: &[], surfaces: &[], kept: &[], players: false, guests: &[] };
+        let (one, two) = (LoadContext::default(), LoadContext::default());
+        one.insert(Who(1));
+        two.insert(Who(2));
+        assert_ne!(one, two);
+        let a = S.load_with("a:x", &MapLoadOptions::lean().in_context(&one)).unwrap();
+        let b = S.load_with("a:x", &MapLoadOptions::lean().in_context(&two)).unwrap();
+        assert_eq!((a.name.as_str(), a.warnings[0].as_str()), ("x@1", "dressed for 1"));
+        assert_eq!((b.name.as_str(), b.warnings[0].as_str()), ("x@2", "dressed for 2"));
+        assert_eq!(S.load("a:x", 0).unwrap().name, "x@0", "no app: a fresh context");
     }
 
     #[test]

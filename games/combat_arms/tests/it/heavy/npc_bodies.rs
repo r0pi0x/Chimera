@@ -71,9 +71,15 @@ fn truthy(s: &Section, key: &str) -> bool {
     }
 }
 
+/// The install's data, held for the rest of the process (`&'static`, as
+/// the tables these tests borrow).
+fn install() -> &'static CaData {
+    Box::leak(Box::new(CaData::install()))
+}
+
 /// The install's character data (the models file needs the V1 key).
 fn install_characters() -> Option<&'static CharacterData> {
-    let ca = CaData::install_static();
+    let ca = install();
     if ca.attributes().and_then(|a| a.models.as_ref()).is_none() {
         eprintln!("skipping: the install's models file isn't readable (the V1 key)");
         return None;
@@ -128,7 +134,7 @@ fn t62_63_74_weapon_file() {
     // Our mapping: every candidate but the unlinked ones without a guess
     // and the crossbows has its own holders.
     let h = rungs::holders();
-    let ca = CaData::install_static();
+    let ca = install();
     for &i in &CANDIDATES {
         let Some(id) = ca.weapon_for_index(i as i32) else { continue };
         let own = h.override_for(id).is_some();
@@ -199,7 +205,7 @@ fn t64_65_76_world_npcs() {
     );
     assert!(holders_of("NPC_Powered_Suit_Basic_SMG").is_empty() && holders_of("NPC_Powered_Suit_Basic_Melee").is_empty());
     // Our mapping covers every (NPC body, NPC weapon) pair the worlds give.
-    let ca = CaData::install_static();
+    let ca = install();
     let h = rungs::holders();
     let catalog_infected = |id: &str| ca.weapon_set().get(id).is_some_and(|w| w.has_hook(rungs::INFECTED));
     let mut checked = 0;
@@ -253,7 +259,7 @@ fn t67_72_mission_files() {
     assert_eq!((0..).take_while(|n| hole.section(&format!("ChangeCharInfo_{n}")).is_some()).count(), 10);
     assert_eq!(set(&hole, 5), (588, vec![528, 531]));
     // Our suit sets: each set's weapons may be drawn on its body.
-    let ca = CaData::install_static();
+    let ca = install();
     let h = rungs::holders();
     for d in [&lab, &hole] {
         for n in 0.. {
@@ -780,26 +786,28 @@ fn t87_88_bodies_play_and_load() {
     assert_eq!(f.playing().0, "Gatling_ST");
 
     // One body per family loads, with its pieces' skins.
+    let mut loaded = models::CaLateModels::default();
     for name in ["Squad_1", "Squad_2", "Heavy_Infecter_Gas_A", "Light_Infecter_Speed_B", "Powered_Suit_Npc_Smg", "Abnormal_Boss", "Abnormal_Boss_Fortress"] {
         let r = npc(name);
-        let (c, textures) = models::load_body(r.id, &file).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let models::OnDemand { model: c, textures, index } = models::load_body(install(), r.id, &file).unwrap_or_else(|e| panic!("{name}: {e}"));
+        loaded.0.merge(&index);
         assert!(!c.model.meshes.is_empty() && !textures.is_empty(), "{name}");
         let untextured = c.model.meshes.iter().filter(|m| m.texture.is_none()).count();
         assert!(untextured * 4 <= c.model.meshes.len(), "{name}: {untextured} of {} meshes untextured", c.model.meshes.len());
         let look = ch.default_look(r.id);
-        let (want, _) = models::drawn(CaData::install_static(), &look).unwrap_or_else(|| panic!("{name}: not drawn"));
+        let (want, _) = models::drawn(install(), models::Models::new(None, Some(&loaded)), &look).unwrap_or_else(|| panic!("{name}: not drawn"));
         assert_eq!(want, models::body_name(r.id));
     }
     // The squad's face, cap and gas mask are its group's choices.
     let squad = npc("Squad_1");
-    let g = models::loaded_groups().into_iter().find(|g| g.records == [squad.id]).unwrap();
+    let g = loaded.0.groups().iter().find(|g| g.records == [squad.id]).unwrap().clone();
     let n = squad.npc.as_ref().unwrap();
     assert_eq!((g.faces.clone(), g.heads.clone(), g.goggles.clone()), (vec![n.face], vec![-1, n.head], vec![-1, n.goggle]));
     // The tanker poses its table-2 spheres: 45 of its 45 (41 on nodes, 4
     // on sockets).
     let t = anim_of(npc("Heavy_Infecter_Gas_A"));
     let posed = t.posed(0.0, 1.0, false);
-    let pose = combat_arms::game::characters::pose_of(&t, &posed, 0.0, 1.0, None, None);
+    let pose = combat_arms::game::characters::pose_of(&t, &posed, 0.0, 1.0, None, models::Models::new(None, Some(&loaded)), None);
     let table = hit_table(2);
     let live = table.iter().zip(&pose.spheres).filter(|(s, c)| s.radius > 0.0 && c.is_some()).count();
     assert_eq!(live, 45);

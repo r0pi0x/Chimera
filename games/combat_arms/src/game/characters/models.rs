@@ -27,9 +27,15 @@
 //! animation list are kept as a `Rig` (`rig`, every record of the group
 //! posing on the first's) for posing.
 //!
-//! Converted once per session (`shared_character_models`, the first map
-//! load's) and copied into each map after (`append_shared`: the textures
-//! appended, the indices moved), the rigs and groups registered again.
+//! Converted once per install data (`shared_character_models`, the first
+//! map load's, kept by `CaData::memo`) and copied into each map after
+//! (`append_shared`: the textures appended, the indices moved), with the
+//! rigs, groups and held models' sockets the conversion registered
+//! (`CaModelIndex`). A map's index goes with it (`MapData::memos`, the
+//! world's `map::MapMemos` while it plays); what is loaded later, on
+//! demand, goes into the app's own (`CaLateModels`, kept across map
+//! changes as Chimera's late character and held models are). Systems read
+//! both (`LoadedModels`, `models_in`: the late first).
 //! A body no stock group has (an install specialist a ladder rung
 //! dresses its players in) loads alone when first worn (`load_body`,
 //! `bodies_on_demand`), its own character model added after the map
@@ -45,18 +51,13 @@
 //! map's warnings say so) and characters stay the shell's capsules, posed
 //! by the spec's skeleton (`skeleton::fallback`).
 //!
-//! Known shortcuts (docs/tech-debt.md): each held model's sockets (its
-//! `Flash`, in its `Hand` pose on the hand's node) are kept in a
-//! process-wide table as the rigs and face sockets are
-//! (`held_socket`, `register_held_socket`), not in a resource: the models
-//! are built outside the world, once per session.
 
 use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex, OnceLock},
+    collections::{BTreeMap, HashMap},
+    sync::{Arc, Mutex},
 };
 
-use bevy::prelude::*;
+use bevy::{ecs::system::SystemParam, prelude::*};
 use lithtech_formats::ltb;
 
 use super::{
@@ -70,7 +71,7 @@ use super::{
     records::{self, CharacterData, ModelRecord, Selection},
     skeleton::Rig,
 };
-use crate::map::{MapCharacterModel, MapData, MapHeldModel, MapMesh, MapMeshLook, MapModel};
+use crate::map::{MapCharacterModel, MapData, MapHeldModel, MapMemos, MapMesh, MapMeshLook, MapModel};
 
 /// The character model of body record `id` (`map::BodyName`): the first
 /// record of a body group (`BodyGroup`).
@@ -95,64 +96,173 @@ pub fn shows_mark(teammate: bool, quarantine: bool) -> bool {
     teammate && !quarantine
 }
 
-fn rigs() -> &'static Mutex<HashMap<String, Arc<Rig>>> {
-    static RIGS: OnceLock<Mutex<HashMap<String, Arc<Rig>>>> = OnceLock::new();
-    RIGS.get_or_init(Default::default)
+/// What character-model loads registered (module doc): each body file's
+/// rig, the body groups and the held models' sockets. A map's (in its
+/// `MapMemos`), the app's late ones (`CaLateModels`), or a load's own
+/// (an on-demand load returns it).
+#[derive(Clone, Default)]
+pub struct CaModelIndex {
+    rigs: BTreeMap<String, Arc<Rig>>,
+    groups: Vec<BodyGroup>,
+    held_sockets: BTreeMap<(String, String), (String, Vec3)>,
 }
 
-/// The rig loaded for body file `path` (any case and slashes).
-pub fn rig(path: &str) -> Option<Arc<Rig>> {
-    rigs().lock().ok()?.get(&model::normalize(path)).cloned()
-}
+impl CaModelIndex {
+    /// The rig loaded for body file `path` (any case and slashes).
+    pub fn rig(&self, path: &str) -> Option<Arc<Rig>> {
+        self.rigs.get(&model::normalize(path)).cloned()
+    }
 
-/// Keep `rig` as body file `path`'s (the loader's; tests register
-/// stand-ins).
-pub fn register(path: &str, rig: Arc<Rig>) {
-    if let Ok(mut r) = rigs().lock() {
-        r.insert(model::normalize(path), rig);
+    /// Keep `rig` as body file `path`'s.
+    pub fn register(&mut self, path: &str, rig: Arc<Rig>) {
+        self.rigs.insert(model::normalize(path), rig);
+    }
+
+    /// Forget body file `path`'s rig.
+    pub fn unregister(&mut self, path: &str) {
+        self.rigs.remove(&model::normalize(path));
+    }
+
+    /// The body groups (one per skeleton for the stock bodies, one per
+    /// body loaded on demand).
+    pub fn groups(&self) -> &[BodyGroup] {
+        &self.groups
+    }
+
+    /// Keep `group`, in place of one of the same name (its first record).
+    pub fn register_group(&mut self, group: BodyGroup) {
+        let name = group.name();
+        self.groups.retain(|x| x.name() != name);
+        self.groups.push(group);
+    }
+
+    /// Remember held weapon `weapon`'s socket `name` (lower case) as `at`
+    /// in the frame of body node `bone` (right-handed): what
+    /// `held_socket` returns. `held_with_sockets` registers every socket
+    /// of a model it builds.
+    pub fn register_held_socket(&mut self, weapon: &str, name: &str, bone: &str, at: Vec3) {
+        self.held_sockets
+            .insert((weapon.to_string(), name.to_ascii_lowercase()), (bone.to_string(), at));
+    }
+
+    /// `other`'s registrations over this index's.
+    pub fn merge(&mut self, other: &CaModelIndex) {
+        self.rigs.extend(other.rigs.iter().map(|(k, v)| (k.clone(), v.clone())));
+        for g in &other.groups {
+            self.register_group(g.clone());
+        }
+        self.held_sockets
+            .extend(other.held_sockets.iter().map(|(k, v)| (k.clone(), v.clone())));
+    }
+
+    /// Nothing registered.
+    pub fn is_empty(&self) -> bool {
+        self.rigs.is_empty() && self.groups.is_empty() && self.held_sockets.is_empty()
     }
 }
 
-/// Forget body file `path`'s rig.
-pub fn unregister(path: &str) {
-    if let Ok(mut r) = rigs().lock() {
-        r.remove(&model::normalize(path));
+/// What the app loaded after its maps (module doc): bodies a rung dresses
+/// players in, install weapons' held models, the rigs aliased to stock
+/// ones. Kept across map changes.
+#[derive(Resource, Clone, Default)]
+pub struct CaLateModels(pub CaModelIndex);
+
+/// What a world's character models registered: the app's late index,
+/// then the playing map's (`models_in`, `LoadedModels`).
+#[derive(Clone, Copy, Default)]
+pub struct Models<'a> {
+    late: Option<&'a CaModelIndex>,
+    map: Option<&'a CaModelIndex>,
+}
+
+impl<'a> Models<'a> {
+    /// From a map's memos and the app's late index.
+    pub fn new(map: Option<&'a MapMemos>, late: Option<&'a CaLateModels>) -> Self {
+        Self {
+            late: late.map(|l| &l.0),
+            map: map.and_then(|m| m.get::<CaModelIndex>()),
+        }
     }
+
+    fn each(&self) -> impl Iterator<Item = &'a CaModelIndex> {
+        self.late.into_iter().chain(self.map)
+    }
+
+    /// The rig loaded for body file `path` (any case and slashes).
+    pub fn rig(&self, path: &str) -> Option<Arc<Rig>> {
+        self.each().find_map(|i| i.rig(path))
+    }
+
+    /// The body groups loaded (the late ones first).
+    pub fn groups(&self) -> impl Iterator<Item = &'a BodyGroup> {
+        self.each().flat_map(|i| i.groups.iter())
+    }
+
+    /// Whether a loaded group has body record `id`.
+    pub fn group_has(&self, id: i32) -> bool {
+        self.groups().any(|x| x.records.contains(&id))
+    }
+
+    /// The sockets of face `face` as a loaded group merged it (None: no
+    /// loaded group has that face).
+    pub fn face_sockets(&self, face: i32) -> Option<Arc<PieceSockets>> {
+        self.groups()
+            .find_map(|g| g.face_sockets.iter().find(|(f, _)| *f == face).map(|(_, s)| s.clone()))
+    }
+
+    /// Held weapon `weapon`'s socket `name` (case ignored): the body node
+    /// it is on and its place in that node's frame (right-handed; the
+    /// held model drawn in its `Hand` pose). None: no loaded model has it.
+    pub fn held_socket(&self, weapon: &str, name: &str) -> Option<(String, Vec3)> {
+        let key = (weapon.to_string(), name.to_ascii_lowercase());
+        self.each().find_map(|i| i.held_sockets.get(&key).cloned())
+    }
+}
+
+/// The models `world` registered (`Models`).
+pub fn models_in(world: &World) -> Models<'_> {
+    Models::new(world.get_resource::<MapMemos>(), world.get_resource::<CaLateModels>())
+}
+
+/// `models_in` for systems.
+#[derive(SystemParam)]
+pub struct LoadedModels<'w> {
+    map: Option<Res<'w, MapMemos>>,
+    late: Option<Res<'w, CaLateModels>>,
+}
+
+impl LoadedModels<'_> {
+    /// The registrations (`Models`).
+    pub fn get(&self) -> Models<'_> {
+        Models::new(self.map.as_deref(), self.late.as_deref())
+    }
+}
+
+/// The app's late index to add to (tests register stand-ins there).
+pub fn late_in(world: &mut World) -> Mut<'_, CaLateModels> {
+    world.get_resource_or_init::<CaLateModels>()
+}
+
+/// Keep `rig` as body file `path`'s in `world` (its late index; tests
+/// register stand-ins).
+pub fn register(world: &mut World, path: &str, rig: Arc<Rig>) {
+    late_in(world).0.register(path, rig);
+}
+
+/// Forget body file `path`'s rig in `world` (its late index).
+pub fn unregister(world: &mut World, path: &str) {
+    late_in(world).0.unregister(path);
+}
+
+/// The body groups `world` has loaded.
+pub fn loaded_groups(world: &World) -> Vec<BodyGroup> {
+    models_in(world).groups().cloned().collect()
 }
 
 /// A piece's sockets (a face's `EYE_L` and `EYE_R`): name, the name of
 /// the node it is on (the body's of that name, as the piece is merged by
 /// node names), offset and rotation on that node.
 pub type PieceSockets = Vec<(String, String, Vec3, Quat)>;
-
-/// The sockets of face `face` as a loaded group merged it (None: no
-/// loaded group has that face).
-pub fn face_sockets(face: i32) -> Option<Arc<PieceSockets>> {
-    let g = groups().lock().ok()?;
-    g.iter().find_map(|g| g.face_sockets.iter().find(|(f, _)| *f == face).map(|(_, s)| s.clone()))
-}
-
-fn held_sockets() -> &'static Mutex<HashMap<(String, String), (String, Vec3)>> {
-    static SOCKETS: OnceLock<Mutex<HashMap<(String, String), (String, Vec3)>>> = OnceLock::new();
-    SOCKETS.get_or_init(Default::default)
-}
-
-/// Remember held weapon `weapon`'s socket `name` (lower case) as `at` in
-/// the frame of body node `bone` (right-handed): what `held_socket`
-/// returns. `held_with_sockets` registers every socket of a model it
-/// builds.
-pub fn register_held_socket(weapon: &str, name: &str, bone: &str, at: Vec3) {
-    if let Ok(mut s) = held_sockets().lock() {
-        s.insert((weapon.to_string(), name.to_ascii_lowercase()), (bone.to_string(), at));
-    }
-}
-
-/// Held weapon `weapon`'s socket `name` (case ignored): the body node it
-/// is on and its place in that node's frame (right-handed; the held
-/// model drawn in its `Hand` pose). None: no loaded model has it.
-pub fn held_socket(weapon: &str, name: &str) -> Option<(String, Vec3)> {
-    held_sockets().lock().ok()?.get(&(weapon.to_string(), name.to_ascii_lowercase())).cloned()
-}
 
 /// A model's sockets by their nodes' names.
 fn sockets_of(m: &lithtech_formats::ltb::Model) -> PieceSockets {
@@ -219,47 +329,37 @@ impl BodyGroup {
     }
 }
 
-fn groups() -> &'static Mutex<Vec<BodyGroup>> {
-    static GROUPS: OnceLock<Mutex<Vec<BodyGroup>>> = OnceLock::new();
-    GROUPS.get_or_init(Default::default)
-}
-
-/// The body groups loaded (one per skeleton).
-pub fn loaded_groups() -> Vec<BodyGroup> {
-    groups().lock().map(|g| g.clone()).unwrap_or_default()
-}
-
-/// Keep `group` (the loader's; tests register their own), in place of
-/// one of the same name (its first record): one per skeleton for the
-/// stock bodies, one per body loaded on demand (`load_body`).
-pub fn register_group(group: BodyGroup) {
-    if let Ok(mut g) = groups().lock() {
-        let name = group.name();
-        g.retain(|x| x.name() != name);
-        g.push(group);
-    }
-}
-
-/// Whether a loaded group has body record `id`.
-pub fn group_has(id: i32) -> bool {
-    groups().lock().is_ok_and(|g| g.iter().any(|x| x.records.contains(&id)))
-}
-
 /// Body record `id` as its own character model (a body no stock group
 /// has: an install specialist a ladder rung dresses its players in,
 /// `game::rungs`), loaded alone with its own animation library, faces and
 /// head pieces as `add_character_models` loads a group (`body_group`:
-/// its rig and group registered), with its own textures: for the map's
-/// `LateCharacterModels` (`map::add_character_model`). Err when it
-/// doesn't read.
-pub fn load_body(id: i32, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<(MapCharacterModel, Vec<crate::map::MapTexture>), String> {
-    let ca = CaData::install();
+/// its rig and group registered in the returned index), with its own
+/// textures: for the map's `LateCharacterModels` (`map::
+/// add_character_model`) and the app's `CaLateModels`. `ca`: the install
+/// data (`CaData::install_for`). Err when it doesn't read.
+pub fn load_body(ca: &CaDataInner, id: i32, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<OnDemand<MapCharacterModel>, String> {
     let data = ca.characters();
     let r = data.model(id).ok_or_else(|| format!("body record {id}: none"))?;
     let scale = super::super::movement::movement_data().meters_per_unit;
     let mut own = MapData::default();
-    let c = body_group(&[r], scale, &mut own, file).map_err(|e| format!("body {} ({}): {e}", r.name, r.file))?;
-    Ok((c, own.textures))
+    let c = body_group(ca, &[r], scale, &mut own, file).map_err(|e| format!("body {} ({}): {e}", r.name, r.file))?;
+    Ok(OnDemand::of(c, own))
+}
+
+/// A model loaded on demand: it, its own textures and what its load
+/// registered (for the app's `CaLateModels`).
+pub struct OnDemand<T> {
+    pub model: T,
+    pub textures: Vec<crate::map::MapTexture>,
+    pub index: CaModelIndex,
+}
+
+impl<T> OnDemand<T> {
+    fn of(model: T, mut own: MapData) -> Self {
+        let index = own.memos.get::<CaModelIndex>().cloned().unwrap_or_default();
+        own.memos.remove::<CaModelIndex>();
+        Self { model, textures: own.textures, index }
+    }
 }
 
 /// Body record `id` posed on its skeleton's stock rig until its own loads
@@ -267,26 +367,28 @@ pub fn load_body(id: i32, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<(Map
 /// takes the stock group's rig of that skeleton when it has none, so its
 /// hit spheres follow the animated pose (the 53-node male and 60-node
 /// female player trees are one shape each, characters.md 2).
-pub fn alias_rig(data: &CharacterData, id: i32) {
+/// The rig goes into `world`'s late index (`CaLateModels`).
+pub fn alias_rig(world: &mut World, data: &CharacterData, id: i32) {
     let Some(r) = data.model(id) else { return };
-    if rig(&r.file).is_some() {
+    if models_in(world).rig(&r.file).is_some() {
         return;
     }
     // A body of another tree (an infected, a suit, a boss: characters.md
     // 13.4) has no stock rig to pose on: its own rig (the body and its
     // library, nothing drawn) is read now, from the install's mount.
     let Some(tree) = data.family(r).stock_rig else {
-        if let Some(mount) = super::super::world::mount() {
+        let ca = world.get_resource::<crate::map::LoadContext>().map_or_else(CaData::install, CaData::install_for);
+        if let Some(mount) = ca.mount() {
             match model::load(&r.file, &|p: &str| mount.read(p).ok()) {
-                Ok(l) => register(&r.file, Arc::new(Rig::new(l.model, l.list))),
+                Ok(l) => register(world, &r.file, Arc::new(Rig::new(l.model, l.list))),
                 Err(e) => warn!("Combat Arms: body {} ({}): {e}", r.name, r.file),
             }
         }
         return;
     };
     let base = LOADED.iter().filter_map(|i| data.model(*i)).find(|b| b.skeleton == tree);
-    if let Some(stock) = base.and_then(|b| rig(&b.file)) {
-        register(&r.file, stock);
+    if let Some(stock) = base.and_then(|b| models_in(world).rig(&b.file)) {
+        register(world, &r.file, stock);
     }
 }
 
@@ -294,12 +396,11 @@ pub fn alias_rig(data: &CharacterData, id: i32) {
 /// character model and body number (that body's pieces, the selection's
 /// face, else the body's default, the head piece worn:
 /// `CharacterData::worn_head`, its goggles and backpack); None when no
-/// loaded group has its body.
-pub fn drawn(ca: &CaData, look: &Selection) -> Option<(String, i32)> {
+/// loaded group (of `models`) has its body.
+pub fn drawn(ca: &CaData, models: Models, look: &Selection) -> Option<(String, i32)> {
     let data = ca.characters();
     let (record, _) = data.effective(look);
-    let g = groups().lock().ok()?;
-    let group = g.iter().find(|g| g.records.contains(&record.id))?;
+    let group = models.groups().find(|g| g.records.contains(&record.id))?;
     let face = if group.faces.contains(&look.face) { look.face } else { data.default_face(record.id) };
     // An NPC body wears its own head piece only (13.2: no face's hair).
     let pieces = data.piece_skeleton(record);
@@ -332,7 +433,7 @@ pub fn add_character_models(map: &mut MapData, ca: &CaDataInner, file: &dyn Fn(&
             .filter_map(|id| data.model(*id))
             .filter(|r| r.skeleton == *skeleton)
             .collect();
-        match body_group(&records, scale, map, file) {
+        match body_group(ca, &records, scale, map, file) {
             Ok(c) => map.kit.characters.push(c),
             Err(e) => failed.push(e),
         }
@@ -390,10 +491,10 @@ pub fn add_character_models(map: &mut MapData, ca: &CaDataInner, file: &dyn Fn(&
 /// for a weapon the map's kit doesn't carry (an install weapon, loaded
 /// when first held: `held_on_demand`). A key `id+Part+Part`
 /// (`view_model::parts::view_key`, `characters::WantHeld`): with those
-/// parts' third-person models on it (`held_part`). Err when its data
-/// names none or it doesn't read.
-pub fn load_held_weapon(id: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<(MapHeldModel, Vec<crate::map::MapTexture>), String> {
-    let ca = CaData::install();
+/// parts' third-person models on it (`held_part`). `ca`: the install
+/// data (`CaData::install_for`). Err when its data names none or it
+/// doesn't read.
+pub fn load_held_weapon(ca: &CaDataInner, id: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<OnDemand<MapHeldModel>, String> {
     // A weapon with drawn parts (`characters::held_key`): its model with
     // theirs.
     let (base, names) = super::super::view_model::parts::split_key(id);
@@ -419,7 +520,7 @@ pub fn load_held_weapon(id: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Res
             }
         }
     }
-    Ok((h, own.textures))
+    Ok(OnDemand::of(h, own))
 }
 
 /// Part `name`'s third-person model (attachments.md "View model and world
@@ -529,49 +630,36 @@ fn thrown(
 }
 
 /// The character models every map carries (`add_character_models` into
-/// an empty map: its own textures), their rigs and body groups
-/// (`shared_character_models`).
+/// an empty map: its own textures) and what their conversion registered
+/// (its memos' `CaModelIndex`: rigs, body groups, held sockets).
 pub struct SharedModels {
     data: MapData,
-    rigs: Vec<(String, Arc<Rig>)>,
-    groups: Vec<BodyGroup>,
 }
 
-/// `add_character_models`, converted once per session (the first map
-/// load; the next ones copy it: `append_shared`).
-pub fn shared_character_models(file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Arc<SharedModels> {
-    static SHARED: OnceLock<Mutex<Option<Arc<SharedModels>>>> = OnceLock::new();
-    let mut cached = SHARED.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
+/// `add_character_models`, converted once per install data (`ca`'s
+/// `memo`: the first map load; the next ones copy it, `append_shared`).
+pub fn shared_character_models(ca: &CaData, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Arc<SharedModels> {
+    // A lock of its own: two loads at once (a server's and a client's)
+    // convert once.
+    #[derive(Default)]
+    struct Shared(Mutex<Option<Arc<SharedModels>>>);
+    let shared = ca.memo(Shared::default);
+    let mut cached = shared.0.lock().unwrap_or_else(|e| e.into_inner());
     cached
         .get_or_insert_with(|| {
             let mut data = MapData::default();
-            add_character_models(&mut data, &CaData::install(), file);
-            let rigs = CaData::install()
-                .characters()
-                .model
-                .iter()
-                .filter(|r| LOADED.contains(&r.id))
-                .filter_map(|r| Some((r.file.clone(), rig(&r.file)?)))
-                .collect();
-            Arc::new(SharedModels {
-                data,
-                rigs,
-                groups: loaded_groups(),
-            })
+            add_character_models(&mut data, ca, file);
+            Arc::new(SharedModels { data })
         })
         .clone()
 }
 
 /// The shared character models into `map`: their textures appended to
 /// the map's (the meshes' and skins' indices moved past the map's own),
-/// their rigs and body groups registered again (a test may have replaced
-/// one).
+/// what their conversion registered into the map's index.
 pub fn append_shared(map: &mut MapData, models: &SharedModels, kit: &crate::map::KitLoad) {
-    for (path, r) in &models.rigs {
-        register(path, r.clone());
-    }
-    for g in &models.groups {
-        register_group(g.clone());
+    if let Some(index) = models.data.memos.get::<CaModelIndex>() {
+        map.memos.entry::<CaModelIndex>().merge(index);
     }
     let base = map.textures.len();
     let shift = |model: &mut MapModel| {
@@ -689,13 +777,13 @@ fn piece_sources<'a>(piece: Piece, skins: &[String], styles: &[String], lods: &[
 /// each face's `HairIndex`) merged onto its skeleton as body-part choices
 /// (`BodyGroup`), each mesh drawn in its render style (`render_style`).
 fn body_group(
+    ca: &CaDataInner,
     records: &[&ModelRecord],
     scale: f32,
     map: &mut MapData,
     file: &dyn Fn(&str) -> Option<Vec<u8>>,
 ) -> Result<MapCharacterModel, String> {
     let base = *records.first().ok_or("no body")?;
-    let ca = CaData::install();
     let data = ca.characters();
     let loaded = model::load(&base.file, file)?;
     let base_lods: Vec<(i32, i32, i32)> = model::drawn_lods(&loaded.model).into_iter().map(model::slots_and_style).collect();
@@ -901,11 +989,12 @@ fn body_group(
     }
     // Every record of the group poses on the first's skeleton and
     // library (one tree shape per sex, characters.md 2).
+    let index = map.memos.entry::<CaModelIndex>();
     for r in records {
-        register(&r.file, rig.clone());
+        index.register(&r.file, rig.clone());
     }
     let name = group.name();
-    register_group(group);
+    index.register_group(group);
     Ok(MapCharacterModel {
         game: Some(crate::game::GAME),
         team: None,
@@ -1076,8 +1165,9 @@ fn held_with_sockets(
         .collect::<Vec<(String, Mat4)>>();
     // The weapon's own ID (a key with parts: the base gun's).
     let weapon = super::super::view_model::parts::split_key(key).0;
+    let index = map.memos.entry::<CaModelIndex>();
     for (name, m) in &sockets {
-        register_held_socket(weapon, name, &socket.parent, m.w_axis.truncate());
+        index.register_held_socket(weapon, name, &socket.parent, m.w_axis.truncate());
     }
     for mesh in &mut m.meshes {
         for p in &mut mesh.positions {

@@ -476,6 +476,8 @@ pub struct CaCharactersPlugin;
 impl Plugin for CaCharactersPlugin {
     fn build(&self, app: &mut App) {
         CaData::of(app);
+        // What on-demand loads add, kept across map changes (`models`).
+        app.init_resource::<models::CaLateModels>();
         app.add_message::<WeaponEvent>()
             .add_message::<Damage>()
             .add_message::<Died>()
@@ -511,7 +513,7 @@ impl Plugin for CaCharactersPlugin {
                 }
                 .ok_or_else(|| format!("no body record {want}"))?;
                 let look = ch.default_look(record.id);
-                models::alias_rig(ch, record.id);
+                models::alias_rig(w, ch, record.id);
                 let me = w.query_filtered::<Entity, With<LocalPlayer>>().iter(w).next().ok_or("no player")?;
                 w.entity_mut(me).insert((CaRungLook(look), look));
                 Ok(Some(format!("{} ({}): {}", record.name, record.id, ch.family(record).name)))
@@ -616,9 +618,9 @@ fn unit() -> f32 {
 }
 
 /// The selection's body record, skeleton and rig.
-fn body_of(data: &CaData, look: &Selection) -> (i32, usize, Option<Arc<Rig>>) {
+fn body_of(data: &CaData, loaded: models::Models, look: &Selection) -> (i32, usize, Option<Arc<Rig>>) {
     let (record, _) = data.characters().effective(look);
-    (record.id, record.skeleton, models::rig(&record.file))
+    (record.id, record.skeleton, loaded.rig(&record.file))
 }
 
 /// The selection's body record's family and name.
@@ -736,6 +738,7 @@ fn wear_looks(
 #[allow(clippy::type_complexity)]
 fn setup(
     data: Res<CaData>,
+    loaded: models::LoadedModels,
     characters: Query<(Entity, Option<&Selection>, Option<&CaAnim>), (With<Intent>, With<MovementState>)>,
     females: Option<ResMut<crate::core::FemaleBodies>>,
     mut commands: Commands,
@@ -748,7 +751,7 @@ fn setup(
     }
     for (e, look, anim) in &characters {
         let look = look.copied().unwrap_or_default();
-        let (body, skeleton, rig) = body_of(&data, &look);
+        let (body, skeleton, rig) = body_of(&data, loaded.get(), &look);
         let (family, record) = family_of(&data, &look);
         let female = family.aim == Some(1);
         if let Some(f) = females.as_mut()
@@ -985,8 +988,10 @@ fn drive(
         (Option<&mut Animator>, Option<&GameIdentity>, Option<&Selection>),
     )>,
     weapons: Query<(&Weapon, Option<&WeaponState>, Option<&Magazine>, Option<&CaZoom>, Option<&CaSpread>)>,
+    loaded: models::LoadedModels,
     mut commands: Commands,
 ) {
+    let loaded = loaded.get();
     let client = role.as_deref().is_some_and(|r| *r == NetRole::Client);
     let ms = (clock.delta.as_secs_f64() * 1000.0).round() as u32;
     let unit = unit();
@@ -1049,17 +1054,17 @@ fn drive(
             intent.yaw + anim.twist
         };
         // The worn face's sockets (its eyes), on the body's nodes.
-        let face = look.and_then(|l| data.characters().worn_face(l)).and_then(|f| models::face_sockets(f.id));
+        let face = look.and_then(|l| data.characters().worn_face(l)).and_then(|f| loaded.face_sockets(f.id));
         let face = face.as_deref().map(Vec::as_slice);
         let held_id = weapon.map(|w| w.0.id);
         let posed = if client {
             let posed = anim.posed(r, squash, false);
-            *pose = pose_of(&anim, &posed, body_yaw, squash, face, held_id);
+            *pose = pose_of(&anim, &posed, body_yaw, squash, face, loaded, held_id);
             posed
         } else {
             let (posed, server) = anim.posed_both(r, squash);
-            *pose = pose_of(&anim, &posed, body_yaw, squash, face, held_id);
-            pose.server_spheres = pose_of(&anim, &server, body_yaw, squash, face, held_id).spheres;
+            *pose = pose_of(&anim, &posed, body_yaw, squash, face, loaded, held_id);
+            pose.server_spheres = pose_of(&anim, &server, body_yaw, squash, face, loaded, held_id).spheres;
             posed
         };
         if let (true, Some(mut animator)) = (anim.rig.is_some() && ours, animator) {
@@ -1177,6 +1182,7 @@ pub fn pose_of(
     body_yaw: f32,
     squash: f32,
     face: Option<&[(String, String, Vec3, Quat)]>,
+    models: models::Models,
     held: Option<&str>,
 ) -> CaPose {
     let skel = records::table(anim.skeleton);
@@ -1210,7 +1216,7 @@ pub fn pose_of(
                 })
                 .map(body)
         }),
-        flash: ["Flash", "Flash01"].map(|n| held_socket_point(posed, held?, n).map(body)),
+        flash: ["Flash", "Flash01"].map(|n| held_socket_point(models, posed, held?, n).map(body)),
         body_yaw,
         modelled: anim.rig.is_some(),
     }
@@ -1218,9 +1224,9 @@ pub fn pose_of(
 
 /// Held weapon `weapon`'s socket `name` on the posed skeleton, in the
 /// posed frame (LithTech's, z mirrored): the socket as the held model
-/// registered it, on its hand node's posed place.
-pub fn held_socket_point(posed: &Posed, weapon: &str, name: &str) -> Option<Vec3> {
-    let (bone, at) = models::held_socket(weapon, name)?;
+/// registered it (in `models`), on its hand node's posed place.
+pub fn held_socket_point(models: models::Models, posed: &Posed, weapon: &str, name: &str) -> Option<Vec3> {
+    let (bone, at) = models.held_socket(weapon, name)?;
     let (p, q) = *posed.globals.get(posed.node(&bone)?)?;
     Some(p + q * Vec3::new(at.x, at.y, -at.z))
 }
@@ -1327,6 +1333,7 @@ fn bodies(
 #[allow(clippy::type_complexity)]
 fn dress_corpses(
     data: &CaData,
+    loaded: models::Models,
     models: &CharacterModels,
     now: f64,
     bodies: &Query<(
@@ -1338,7 +1345,7 @@ fn dress_corpses(
     commands: &mut Commands,
 ) {
     for (e, b, (name, number, skin, corpse), animator) in bodies {
-        let Some((want, body)) = models::drawn(data, &b.look) else { continue };
+        let Some((want, body)) = models::drawn(data, loaded, &b.look) else { continue };
         if !models.0.iter().any(|m| m.name.as_deref() == Some(want.as_str())) {
             continue;
         }
@@ -1360,7 +1367,7 @@ fn dress_corpses(
         if corpse != Some(&corpse_here) {
             entity.insert(corpse_here);
         }
-        let Some(rig) = body_of(data, &b.look).2 else { continue };
+        let Some(rig) = body_of(data, loaded, &b.look).2 else { continue };
         let age = ((now - b.since).max(0.0) * 1000.0) as u32;
         // Posed once its animation has ended and held.
         let ended = animator.is_some_and(|a| a.fixed.is_some()) && f64::from(age) > b.length * 1000.0 + 100.0;
@@ -1412,10 +1419,12 @@ fn dress(
         (Option<&BodyName>, Option<&BodyNumber>, Option<&BodySkin>, Option<&Corpse>),
         Option<&Animator>,
     )>,
+    loaded: models::LoadedModels,
     mut commands: Commands,
 ) {
     let Some(models) = models else { return };
-    dress_corpses(&data, &models, clock.now, &bodies, &mut commands);
+    let loaded = loaded.get();
+    dress_corpses(&data, loaded, &models, clock.now, &bodies, &mut commands);
     let quarantine = view.is_some_and(|v| v.mode == super::gear::QUARANTINE);
     let mine = local.iter().next().flatten().copied();
     for (e, look, team, (name, number, skin), inventory, (held, identity, want_held)) in &characters {
@@ -1427,7 +1436,7 @@ fn dress(
             }
             continue;
         }
-        let Some((want, body)) = models::drawn(&data, look) else { continue };
+        let Some((want, body)) = models::drawn(&data, loaded, look) else { continue };
         if !models.0.iter().any(|m| m.name.as_deref() == Some(want.as_str())) {
             continue;
         }

@@ -160,8 +160,9 @@ pub fn sounds(
     players: Query<(Entity, &CaAttachedFx, Option<&Transform>), With<LocalPlayer>>,
     mut playing: Local<Vec<(SoundKey, Entity)>>,
     mut out: MessageWriter<CaLoopSound>,
+    library: crate::game::effects::library::Library,
 ) {
-    let lib = crate::game::effects::library::library();
+    let lib = library.get();
     let mut wanted: Vec<(SoundKey, Entity, crate::game::effects::sounds::CaSound)> = Vec::new();
     if let Some(lib) = lib.as_deref() {
         for (e, attached, t) in &players {

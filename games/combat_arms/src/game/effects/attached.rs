@@ -322,13 +322,14 @@ pub fn follow(
     show_local: Option<Res<ShowLocalBody>>,
     mut fx: ResMut<CaFx>,
     mut particles: Option<ResMut<Particles>>,
+    library: library::Library,
 ) {
     fx.shut_down(particles.as_deref_mut(), |e, g| {
         parents
             .get(e)
             .is_ok_and(|p| p.1.0.iter().any(|a| a.group.eq_ignore_ascii_case(g)))
     });
-    let Some(lib) = library::library() else { return };
+    let Some(lib) = library.get() else { return };
     let show_local = show_local.is_some_and(|s| s.0);
     for (e, groups, t, pose, state, vis, local) in &parents {
         let p = pose_of(t, pose.zip(state));
@@ -356,8 +357,9 @@ pub fn flight(
     particles: Option<ResMut<Particles>>,
     materials: Option<Res<ParticleMaterials>>,
     window: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    library: library::Library,
 ) {
-    let (Some(lib), Some(mut particles), Some(materials)) = (library::library(), particles, materials) else { return };
+    let (Some(lib), Some(mut particles), Some(materials)) = (library.get(), particles, materials) else { return };
     let dt = time.delta_secs();
     if let Ok(w) = window.single() {
         fx.screen_width = w.resolution.physical_width() as f32;

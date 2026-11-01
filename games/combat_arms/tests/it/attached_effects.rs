@@ -42,7 +42,7 @@ use combat_arms::{
             data::CaFxTables,
             fx::{CaFx, SmokeSegment, SmokeTrail},
             launched_burst,
-            library::{FxLibrary, UNTEXTURED_PUFF, material_name, normalize, set_library, smoke_trail},
+            library::{FxLibrary, UNTEXTURED_PUFF, material_name, normalize, set_library_in, smoke_trail},
             trail::{Trail, TrailMode, TrailParams, WidthStyle},
         },
         inventory::UNIT,
@@ -206,9 +206,10 @@ pub(super) fn materials(sim: &mut Sim) {
 struct Loops(Vec<CaLoopSound>);
 
 fn sim_with(data: Option<CaData>) -> Sim {
-    set_library(Some(test_library()));
     let setup = |app: &mut App| {
         app.add_plugins(GreyboxMapPlugin);
+        // The greybox's effect library (each sim its own).
+        set_library_in(app.world_mut(), Some(test_library()));
         // The pool as a drawing app steps it (the headless harness has
         // none): after the effects, before drawing.
         app.init_resource::<Loops>()
@@ -892,7 +893,7 @@ fn t58_own_launcher_group_on_the_shooter() {
 fn t58_launcher_group_at_the_models_flash_socket() {
     use combat_arms::game::characters::{
         held_socket_point,
-        models::register_held_socket,
+        models::{CaLateModels, Models, late_in},
         skeleton::{Posed, Shape},
     };
     use combat_arms::game::effects::{CaFxRequest, FxKind};
@@ -901,18 +902,21 @@ fn t58_launcher_group_at_the_models_flash_socket() {
     let shape = std::sync::Arc::new(Shape::new(vec!["Right_hand".into()], vec![None], vec![]));
     let q = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
     let posed = Posed { shape, globals: vec![(Vec3::new(10.0, 30.0, 5.0), q)], feet: 0.0 };
-    register_held_socket("test_flash_launcher", "Flash", "Right_hand", Vec3::new(0.5, 0.0, 0.0));
-    let flash = held_socket_point(&posed, "test_flash_launcher", "Flash").expect("registered");
+    let mut late = CaLateModels::default();
+    late.0.register_held_socket("test_flash_launcher", "Flash", "Right_hand", Vec3::new(0.5, 0.0, 0.0));
+    let models = Models::new(None, Some(&late));
+    let flash = held_socket_point(models, &posed, "test_flash_launcher", "Flash").expect("registered");
     assert!(flash.distance(Vec3::new(10.0, 30.0, 5.0) + q * Vec3::new(0.5, 0.0, 0.0)).abs() < 1e-5, "{flash}");
-    assert!(held_socket_point(&posed, "test_flash_launcher", "Flash01").is_none(), "no second socket");
-    assert!(held_socket_point(&posed, "another_gun", "Flash").is_none(), "per weapon");
+    assert!(held_socket_point(models, &posed, "test_flash_launcher", "Flash01").is_none(), "no second socket");
+    assert!(held_socket_point(models, &posed, "another_gun", "Flash").is_none(), "per weapon");
+    assert!(held_socket_point(Models::default(), &posed, "test_flash_launcher", "Flash").is_none(), "registered nowhere");
 
     // The same through the sim: a character holding a launcher whose model
     // has a `Flash` socket 0.5 m (a stock-skeleton node's frame) ahead of
     // its hand node has it posed there, not at the hand.
     let hand_node = combat_arms::game::data::CaData::builtin().characters().skeleton(0).socket("RightHand").unwrap().parent.clone();
-    register_held_socket("combat_arms:xm_25", "Flash", &hand_node, Vec3::new(0.0, 0.0, 0.5));
     let mut sim = sim_with(None);
+    late_in(sim.app.world_mut()).0.register_held_socket("combat_arms:xm_25", "Flash", &hand_node, Vec3::new(0.0, 0.0, 0.5));
     let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), combat_arms::game::movement::ID);
     chimera_sim::weapon::give(sim.app.world_mut(), me, "combat_arms:xm_25").expect("weapon");
     sim.ticks(4);

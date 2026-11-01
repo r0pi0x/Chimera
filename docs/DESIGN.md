@@ -278,6 +278,42 @@ list and ratchets each crate's exclusive systems in per-tick schedules;
 `checks/tests/it/determinism.rs` checks every simulation crate, a new
 one from its first commit.
 
+### A game's loader and memos
+
+A game's map loader is a plain `fn` (`map::MapLoader`, its gameplay's
+parts `map::MapDressing`), so an app's `MapSources` stays a `static`. What
+it needs of the app that asked comes in `MapLoadOptions::context`, the
+app's `map::LoadContext` resource (a `chimera_core::memo::Memos`: one
+value per type), never from a process-wide static. What a game works
+out once goes where it lives as long as it is right, never in a
+`static` (`checks/tests/it/determinism.rs` ratchets them):
+
+- **Per install** (the same for every app: parsed files, converted
+  models): on the game's install data value, memoized on it
+  (`CaData::memo`). The value is shared by the apps of a process while any
+  holds it through the asset store's weak register
+  (`chimera_assets::shared`), each app holding it in a resource and in
+  its `LoadContext` (Combat Arms: `CaData::of` puts it there,
+  `CaData::install_for` reads it back), and freed with the last.
+- **Per map** (what the load registered for the game's systems: rigs,
+  body groups, held models' sockets, effect library): in
+  `MapData::memos` (`map::MapMemos`), which spawns as the world's
+  `MapMemos` resource and goes with the map at unload. It is not in the
+  converted-map cache: the loader adds it after a hit, as it adds the
+  game's kit.
+- **Per app, across maps** (what is loaded on demand later): a resource
+  of the game's own (Combat Arms' `CaLateModels`, beside Chimera's
+  `LateCharacterModels`); its systems read the late and the map's
+  together (`models::LoadedModels`).
+
+A new game (Half-Life 2: Deathmatch) starts so: `MapLoader { game, load }`
+whose `load` reads its install through what its plugin put in the
+context, puts its per-map results in `map.memos` and keeps its converted
+map's key and load path through `map::cache` (`cache::key(game,
+CONVERTER)` with `.options(options)`); its systems read `Res<MapMemos>`.
+Two apps in one process (a `NetSim`, a listen server) then never see
+each other's memos (`games/combat_arms/tests/it/data_isolation.rs`).
+
 ### Console names have namespaces
 
 With several games in one app, flat console names collide. Every cvar

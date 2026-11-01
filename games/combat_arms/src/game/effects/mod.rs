@@ -1937,8 +1937,9 @@ fn spawn_fx(
     materials: Option<Res<ParticleMaterials>>,
     world: WorldTracer,
     parents: Query<(&Transform, Option<&super::characters::CaPose>, Option<&MovementState>)>,
+    library: library::Library,
 ) {
-    let Some(lib) = library::library() else {
+    let Some(lib) = library.get() else {
         requests.clear();
         return;
     };
