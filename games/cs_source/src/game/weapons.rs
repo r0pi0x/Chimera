@@ -181,7 +181,7 @@ pub fn display_names(mount: &crate::mount::Mount) -> Vec<(String, String)> {
     use super::radio::{decode, localization};
     let path = crate::mount::normalize("resource/cstrike_english.txt");
     let mut strings = std::collections::BTreeMap::new();
-    for bytes in mount.layers().filter_map(|l| l.read(&path)?.ok()) {
+    for bytes in mount.read_every(&path) {
         for (k, v) in localization(&decode(&bytes)) {
             strings.entry(k).or_insert(v);
         }

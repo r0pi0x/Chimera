@@ -9,13 +9,47 @@ use std::sync::Arc;
 
 /// Decoded audio: interleaved 16-bit samples (the game's
 /// `map::MapSoundClip`).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SoundClip {
     pub rate: u32,
     pub channels: u16,
+    /// One byte string when serialized (the converted-map cache), not
+    /// sample by sample.
+    #[serde(with = "samples_bytes")]
     pub samples: Arc<[i16]>,
     /// Loop from this frame to the end, when the file says so.
     pub loop_start: Option<usize>,
+}
+
+/// `SoundClip::samples` as little-endian bytes.
+mod samples_bytes {
+    use std::sync::Arc;
+
+    pub fn serialize<S: serde::Serializer>(v: &Arc<[i16]>, s: S) -> Result<S::Ok, S::Error> {
+        let bytes: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+        s.serialize_bytes(&bytes)
+    }
+
+    struct V;
+
+    impl serde::de::Visitor<'_> for V {
+        type Value = Arc<[i16]>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("16-bit samples as bytes")
+        }
+
+        fn visit_bytes<E: serde::de::Error>(self, b: &[u8]) -> Result<Self::Value, E> {
+            if !b.len().is_multiple_of(2) {
+                return Err(E::invalid_length(b.len(), &self));
+            }
+            Ok(b.chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect())
+        }
+    }
+
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Arc<[i16]>, D::Error> {
+        d.deserialize_bytes(V)
+    }
 }
 
 fn u16_at(b: &[u8], at: usize) -> Option<u16> {

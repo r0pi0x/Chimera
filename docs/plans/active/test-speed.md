@@ -215,14 +215,13 @@ first:
       process, so its 67 tests load once. Nextest runs one test per process
       and is unchanged. No global cache: one map retained, not every heavy
       map. Measurement pending the warm build.
-- [ ] **Converted-map cache (P4b step 2).** If one load per file is not
-      enough (nextest runs each test in its own process), serialize the
-      converted `MapData` (keyed by map file hash, load options, kit and
-      the build stamp) under `target/test-cache/` and load it in later
-      processes. First spike: measure serialize/deserialize against
-      conversion on de_dust2 and a surf map; cache only if it is at least
-      2x. Tests that assert load warnings/timings/texture bytes bypass
-      it. Expected: up to a third of heavy time.
+- [x] **Converted-map cache (P4b step 2).** Built 2026-10-31 per user
+      (`~/.cache/chimera/maps`, not `target/`), keyed by the converter's
+      sources and checked against every file the conversion read
+      (asset-service.md section 10): de_dust2 7-8x faster warm,
+      cs_source's heavy tests -15% wall, -21% summed (performance.md,
+      "The converted-map cache"). No test bypasses it: a hit is the
+      converted map (compared by hash in `heavy::map_cache`).
 - [ ] **Long tests as a profile.** The soak (178-266 s, 3 slots) and the
       capacity test (3 slots) are the longest. Put them in a `soak`
       profile/nightly run and keep the default full suite to the rest;

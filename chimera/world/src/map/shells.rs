@@ -13,7 +13,7 @@ use super::MapModel;
 
 /// A shell type: its model (engine axes, meters; +X along the shell) and
 /// the sound entry it makes when it bounces.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapShell {
     /// The type's name as weapon events give it, lower case (`762nato`).
     pub key: String,
@@ -22,7 +22,7 @@ pub struct MapShell {
 }
 
 /// How shells move (meters, seconds, radians). Games fill it.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapShellPhysics {
     /// Downward acceleration while flying.
     pub gravity: f32,

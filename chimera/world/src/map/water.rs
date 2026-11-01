@@ -22,7 +22,7 @@ pub const REFLECT_LAYER: usize = 27;
 
 /// How a water surface looks (Source Water material parameters after the
 /// game's defaults and quirks are applied).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapWaterMaterial {
     /// The game's material name.
     pub name: String,
@@ -92,7 +92,7 @@ pub struct MapWaterMaterial {
 /// A full-screen refraction of the finished frame (Source's Refract shader
 /// as an overlay): the screen sampled at an offset from a scrolling normal
 /// map, blurred and tinted.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapScreenWarp {
     /// The game's material name.
     pub name: String,
@@ -148,7 +148,7 @@ impl Default for MapWaterMaterial {
 }
 
 /// Which cubemap the cheap pass reflects.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum WaterEnvmap {
     /// Index into `MapData::cubemaps`.
     Baked(usize),

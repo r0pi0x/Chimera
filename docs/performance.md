@@ -2161,6 +2161,66 @@ converted-map cache would take back: its design is in
 (about 940 s to 750-800 s) with five slots, from that 830 s at a hit
 costing a fifth to a quarter of a conversion (to be measured).
 
+### The converted-map cache (2026-10-31)
+
+Task brief [11](tasks/11-heavy-tier-time.md), the design built
+([asset-service.md](plans/active/asset-service.md), section 10;
+chimera_assets `map_cache`, chimera_world `map::cache`). The Linux dev
+box (12 threads, 31 GB), installs configured, warm build in an agent
+slot; other agents' builds came and went (the 1-minute load is given).
+
+**Per load** (cs_source `heavy::map_cache`, `--nocapture`; median of
+the runs, the box at load 4-8): cold is a conversion with the cache off,
+a miss converts and writes the entry, warm reads it back.
+
+| | cold | miss and write | warm | entry |
+|---|---|---|---|---|
+| de_dust2, whole (textures decoded) | 1.62-1.65 s | 2.8-3.0 s | **0.22 s** | 986 MB |
+| de_dust2, lean (`MapLoadOptions::lean`) | 1.18-1.19 s | 1.4 s | **0.11-0.15 s** | 227 MB |
+| Combat Arms WAREHOUSE, world and its effect looks (opt-in) | 0.30 s | 0.67 s | 0.16 s | 222 MB |
+
+A whole de_dust2 entry is textures 759 MB (the BC blocks and the RGBA8
+copies with their mips), the kit 129 (bodies, held models), sounds 42,
+the lightmap 36, the rest under 10. Where a warm whole load's time goes
+(`CHIMERA_MAP_CACHE_LOG=1`): mapping 0.00 s, checksums 0.04 s (16 MB
+pieces on threads), checking 2,557 inputs 0.03 s, decoding 0.15 s. The
+first version read the file whole and decoded on one thread: 1.45 s,
+no faster than 12 threads converting; reading the pieces on threads, the
+big lists (textures, models, sounds) decoded element by element on
+threads (`pod_serde::par_vec`) and the file mapped instead of read
+brought it to 0.22 s. Combat Arms stays off by default: 0.14 s a load
+for 222 MB a map (the effect looks, 0.03 s, are added after either).
+
+Peak memory of one dust2 test (`map_de_dust2::ambient_samples_lie_in_their_leaf`,
+`ru_maxrss`): 1.29 GB cold, 2.83 GB on a miss (the encoded entry beside
+the map), 2.01 GB warm, of which the mapped entry's pages (about 1 GB)
+are the system's file cache, shared by every process reading the entry,
+not the process's own.
+
+**The heavy tier** (cs_source's 363 heavy tests, the part with the map
+loads; `cargo nextest run -p cs_source --features dev --profile bench -E
+'test(/^heavy::/)'`, five heavy slots; cache folder emptied before the
+cold run; runs interleaved off, cold, warm, off, warm):
+
+| | wall | tests summed | CPU (user + sys) | peak summed RSS | least available | load start / end |
+|---|---|---|---|---|---|---|
+| off (1) | 708.5 s | 2,009 s | 2,371 s | 22.0 GB | 1.0 GB | 18.5 / 7.2 (other builds) |
+| cold | 413.9 s | 1,113 s | 1,825 s | 11.4 GB | 10.8 GB | 7.2 / 8.3 |
+| warm (1) | 375.3 s | 974 s | 1,556 s | 10.0 GB | 13.3 GB | 8.3 / 8.7 |
+| off (2) | 438.6 s | 1,224 s | 1,678 s | 8.5 GB | 13.3 GB | 8.7 / 4.4 |
+| warm (2) | 373.6 s | 970 s | 1,536 s | 10.6 GB | 13.5 GB | 4.4 / 11.9 |
+
+Against the quiet off run: **wall -15% (438.6 to 374 s)**, the tests'
+own time -21% (1,224 to 972 s), CPU -8%; a cold run is already faster
+than off (-6%: after a map's first load in the run the rest hit). The
+67 de_dust2 tests: 180 s to 101-105 s summed, median 2.09 s to 0.84 s
+(they load whole maps). The wall falls less than the sum: the longest
+tests (the network soak, de_nuke's ladders) aren't map loads. Peak RSS
+counts the mapped entries' file pages, so it rose (8.5 to 10-11 GB)
+while available memory didn't fall (13.3-13.5 GB at worst). The 363
+tests fill the cache with 47 entries, 32 GB (`CHIMERA_MAP_CACHE_GB`
+defaults to 40). All passed in every run.
+
 ### The push hook (2026-10-19)
 
 Pushes took 20-60 minutes: the selection fell back to the whole suite

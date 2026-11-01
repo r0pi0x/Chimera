@@ -98,6 +98,10 @@ impl<S: FileSource> FileSource for Under<S> {
         self.inner_path(path).is_some_and(|p| self.inner.contains(p))
     }
 
+    fn fingerprint(&self, path: &str) -> Option<String> {
+        self.inner.fingerprint(self.inner_path(path)?)
+    }
+
     fn files_in(&self, dir: &str) -> Vec<String> {
         let inner = if dir == self.prefix { Some("") } else { self.inner_path(dir) };
         inner

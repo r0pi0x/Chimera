@@ -265,6 +265,11 @@ impl FileSource for CachedFiles {
         self.index.files.contains_key(path)
     }
 
+    /// The record's id: the SHA-256 of the file's bytes.
+    fn fingerprint(&self, path: &str) -> Option<String> {
+        self.index.files.get(path).map(|f| format!("record {}", f.id))
+    }
+
     fn files_in(&self, dir: &str) -> Vec<String> {
         self.index.dirs.get(dir).cloned().unwrap_or_default()
     }

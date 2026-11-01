@@ -28,6 +28,11 @@ sha2.workspace = true
 zstd = { version = "0.13", default-features = false }
 # `[assets]` in chimera.local.toml (read by chimera_core's `config`).
 serde.workspace = true
+# The converted-map cache (`map_cache`): its entries' format, checksums
+# and keys.
+postcard.workspace = true
+blake3.workspace = true
+memmap2 = "0.9"
 # The user-wide store (`~/.cache/chimera/assets`, `%LOCALAPPDATA%\chimera\assets`).
 dirs.workspace = true
 # `[assets]` read by the CLI itself (it sits below chimera_core's config),

@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use super::emitters::beam_segments;
 
 /// A beam between two points (engine space, meters).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapBeam {
     /// The entity (index into `MapData::entities`) the logic switches it
     /// by.
@@ -48,7 +48,7 @@ pub struct MapBeam {
 }
 
 /// A point_spotlight's halo at the beam's start (2.3).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SpotHalo {
     pub texture: usize,
     /// The spotlight's width W, meters.
@@ -62,7 +62,7 @@ pub struct SpotHalo {
 }
 
 /// An env_lightglow (6): engine space, meters.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapGlow {
     pub entity: Option<usize>,
     pub position: Vec3,

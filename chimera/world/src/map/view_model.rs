@@ -22,7 +22,7 @@ use super::{MapBone, MapModel, MapTexture, anim};
 pub const VIEW_MODEL_LAYER: usize = 2;
 
 /// A weapon's view model, keyed like `MapHeldModel` (the weapon ID).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapViewModel {
     pub key: String,
     /// Meshes in the eye's space (camera axes: -Z forward, Y up; meters),
@@ -48,7 +48,7 @@ pub struct MapViewModel {
 
 /// A point on a bone: `local` is in the bone's space (the skeleton's axes
 /// and units).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapAttachment {
     pub name: String,
     pub bone: usize,

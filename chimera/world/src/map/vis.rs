@@ -20,7 +20,7 @@ use bevy::prelude::*;
 use super::{AreaPortalStates, MapMesh};
 
 /// A map's visibility description, engine space (meters).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapVisibility {
     /// Splitting planes: normal and distance (`n . p = d`).
     pub planes: Vec<(Vec3, f32)>,
@@ -182,7 +182,7 @@ impl MapVisibility {
 /// A map's areas: groups of leaves that areaportals separate (Source's
 /// areas lump; area 0 is "none"). Each portal joins two areas through a
 /// convex opening.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapAreas {
     /// Each leaf's area, indexed like `MapVisibility::leaf_clusters`.
     pub leaf_areas: Vec<u16>,
@@ -194,7 +194,7 @@ pub struct MapAreas {
 }
 
 /// An opening between two areas.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AreaPortal {
     /// What map logic calls it by (Source: the portal entity's
     /// `portalnumber`).
@@ -231,7 +231,7 @@ impl AreaPortal {
 /// brush (`target`) draws at `limit` alpha nearer than `start` from the
 /// opening, rising to opaque at `end`; beyond `end` the portal closes and
 /// the opaque brush stands in for what lies behind it.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WindowFade {
     /// Meters from the opening (`FadeStartDist`, `FadeDist`).
     pub start: f32,
@@ -448,7 +448,7 @@ fn union(a: ScreenRect, b: ScreenRect) -> ScreenRect {
 /// fully behind them, while it is active (even where the
 /// polygon sticks out of the wall it sits in: world surfaces aren't
 /// hidden, so a window there still shows the room, without its props).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Occluder {
     /// What map logic calls it by (Source: `occludernumber`).
     pub key: u16,

@@ -24,7 +24,7 @@ use std::{collections::HashMap, sync::Arc};
 use bevy::prelude::*;
 
 /// A horizontal or vertical coordinate in the virtual 640x480 screen.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum HudCoord {
     /// From the left (top) edge.
     Start(f32),
@@ -59,7 +59,7 @@ impl HudCoord {
 }
 
 /// One HUD panel's box and the offsets of what it draws, in virtual units.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HudPanel {
     pub x: HudCoord,
     pub y: HudCoord,
@@ -83,8 +83,9 @@ impl HudPanel {
 
 /// A HUD font: its file's bytes and the size the game asks for (virtual
 /// pixels at 480 lines).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct HudFont {
+    #[serde(with = "crate::map::pod_serde::pod_arc")]
     pub data: Arc<Vec<u8>>,
     pub tall: f32,
     /// Added to the screen (`additive 1`), else blended.
@@ -92,7 +93,7 @@ pub struct HudFont {
 }
 
 /// An icon cut from a texture.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct HudSprite {
     /// Index into `MapData::textures`.
     pub texture: usize,
@@ -101,7 +102,7 @@ pub struct HudSprite {
 }
 
 /// A game's HUD look.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct GameHud {
     /// By the game's font name (e.g. `HudNumbers`, `Icons`).
     pub fonts: HashMap<String, HudFont>,
@@ -125,7 +126,7 @@ pub struct GameHud {
 
 /// A screen on a model: its panel's size in pixels, its text font and
 /// named colours (`C4Panel_Armed`).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelScreen {
     pub pixels: Vec2,
     pub font: Option<UiFontSize>,
@@ -142,7 +143,7 @@ impl GameHud {
 
 /// What a panel control is (VGUI's `ControlName`, grouped by how it
 /// draws).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum UiKind {
     /// A full-screen or framing panel (`Frame`, `WizardSubPanel`, the
     /// game's own menu classes): only a box.
@@ -164,7 +165,7 @@ pub enum UiKind {
 }
 
 /// How a label's text sits in its box (VGUI's `textAlignment`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum UiAlign {
     #[default]
     West,
@@ -196,7 +197,7 @@ impl UiAlign {
 
 /// One control of a panel layout, positioned inside its parent in the
 /// virtual 480-line screen (`HudCoord`s resolve against the parent box).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct UiControl {
     /// `fieldName` as written.
     pub name: String,
@@ -281,7 +282,7 @@ impl UiControl {
 }
 
 /// A panel layout: its controls in file order.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct UiLayout {
     pub controls: Vec<UiControl>,
 }
@@ -344,7 +345,7 @@ impl UiLayout {
 /// One size of a scheme font: its family, height (pixels at 480 lines,
 /// or, when `yres` names the screen heights it is for, pixels; a line's
 /// height, ascent plus descent), weight and smoothing.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct UiFontSize {
     pub family: String,
     pub tall: f32,
@@ -396,7 +397,7 @@ pub fn layout_key(path: &str) -> String {
 
 /// A game's own menus (buy, team) as panel layouts (their text in
 /// `GameHud::text_fonts`); without them the client draws plain menus.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct GameMenus {
     /// Layouts by `layout_key` of their file.
     pub layouts: HashMap<String, UiLayout>,
@@ -448,7 +449,7 @@ pub struct GameMenus {
 /// One entry of a game's command menu (Source's command menu definition
 /// files: `menuitem` blocks with a label and a command, a 0/1 cvar it
 /// toggles, or entries of their own: a submenu).
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CommandMenuItem {
     /// Its text (a `#token` resolved).
     pub label: String,
@@ -477,7 +478,7 @@ impl GameMenus {
 
 /// A top-down picture of the map for radars and overviews: which texture,
 /// and where it lies in the world.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapOverview {
     /// Index into `MapData::textures`.
     pub texture: usize,

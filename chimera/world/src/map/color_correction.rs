@@ -14,7 +14,7 @@ pub const LUT_SIZE: usize = 32;
 pub const LUT_BYTES: usize = LUT_SIZE * LUT_SIZE * LUT_SIZE * 3;
 
 /// A placed color_correction.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapColorCorrection {
     /// Index into `MapData::entities`.
     pub entity: Option<usize>,
@@ -32,6 +32,7 @@ pub struct MapColorCorrection {
     pub exclusive: bool,
     pub start_on: bool,
     /// `LUT_BYTES` bytes, entry r + 32 g + 1024 b.
+    #[serde(with = "crate::map::pod_serde::pod_arc")]
     pub lut: Arc<Vec<u8>>,
 }
 

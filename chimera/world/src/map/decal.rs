@@ -15,7 +15,7 @@ use bevy::prelude::*;
 
 /// One decal image: a rectangle of a texture (often a decal atlas) and its
 /// size on surfaces.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapDecal {
     /// Index into `MapData::textures`.
     pub texture: usize,
@@ -26,7 +26,7 @@ pub struct MapDecal {
     pub blend: DecalBlend,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DecalBlend {
     /// The surface times 2 x texel (0.5 grey leaves it unchanged).
     Modulate2x,
@@ -37,7 +37,7 @@ pub enum DecalBlend {
 
 /// The map's runtime decals: definitions, named groups of weighted
 /// variants, and the group a surface material letter takes when shot.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapDecals {
     pub decals: Vec<MapDecal>,
     /// Group name -> (weight, index into `decals`).

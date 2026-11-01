@@ -18,6 +18,8 @@ chimera_vfs.workspace = true
 glam.workspace = true
 lzma-rs.workspace = true
 symphonia.workspace = true
+# The converted-map cache serializes decoded clips (`wav::SoundClip`).
+serde.workspace = true
 
 [features]
 # Nothing: lets `--features dev` name this package alongside the others

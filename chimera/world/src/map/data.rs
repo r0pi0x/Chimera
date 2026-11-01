@@ -22,7 +22,7 @@ use super::{
 use crate::core::{MapBrush, MapBrushTree, MapWaterVolume, Team};
 
 /// An RGBA8 texture in sRGB, top row first.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapTexture {
     /// Source path, e.g. `materials/de_dust/sitebwall01.vtf`.
     pub name: String,
@@ -30,9 +30,11 @@ pub struct MapTexture {
     pub srgb: bool,
     /// Smaller mip levels shipped with the texture (RGBA8, halving each
     /// time). Empty: generate them.
+    #[serde(with = "crate::map::pod_serde::pod_vecs")]
     pub mips: Vec<Vec<u8>>,
     pub width: u32,
     pub height: u32,
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub rgba8: Vec<u8>,
     /// The same image as the source file stores it, when that is block
     /// compressed (DXT1/3/5): uploaded as is where the GPU takes BC
@@ -42,18 +44,19 @@ pub struct MapTexture {
 }
 
 /// BC1/2/3 blocks (DXT1/3/5) of a texture, each level's rows from the top.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapBc {
     pub format: MapBcFormat,
     /// Level 0 is the texture's size; each next one halves it (at least
     /// 1 x 1, one block for anything under 4 x 4). The chain may stop above
     /// 1 x 1 (Lithtech's files stop at 4 x 4).
+    #[serde(with = "crate::map::pod_serde::pod_vecs")]
     pub levels: Vec<Vec<u8>>,
 }
 
 /// A block compression format (`MapTexture::srgb` chooses the colour
 /// space).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum MapBcFormat {
     /// DXT1: 8 bytes a block, colour and a one-bit alpha.
     Bc1,
@@ -105,7 +108,7 @@ impl MapTexture {
 }
 
 /// How a surface's alpha is used.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum MapAlpha {
     #[default]
     Opaque,
@@ -140,22 +143,28 @@ impl MapAlpha {
 }
 
 /// Triangles sharing one material.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapMesh {
     /// The source game's material name, e.g. `de_dust/sitebwall01`.
     pub material: String,
     /// Part of the 3D skybox (drawn by the sky camera, see `MapSkyCamera`).
     pub skybox: bool,
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub positions: Vec<[f32; 3]>,
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub normals: Vec<[f32; 3]>,
     /// Texture coordinates in texture repeats (1.0 = one texture width).
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub uvs: Vec<[f32; 2]>,
     /// Skinned meshes: up to four bones per vertex (indices into the
     /// model's `MapBone`s) and their weights (summing to 1). Empty when
     /// the mesh isn't skinned.
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub joints: Vec<[u16; 4]>,
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub joint_weights: Vec<[f32; 4]>,
     /// Counter-clockwise triangles when seen from the front.
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub indices: Vec<u32>,
     /// Flat color, used when there's no texture.
     pub color: [u8; 3],
@@ -167,17 +176,20 @@ pub struct MapMesh {
     pub normal_map: Option<usize>,
     /// Per-vertex coordinates into `MapData::lightmap` (0..1); empty when
     /// the map has no baked lighting.
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub lightmap_uvs: Vec<[f32; 2]>,
     /// A second texture blended in per vertex (Source's WorldVertexTransition
     /// on displacements).
     pub blend: Option<MapBlend>,
     /// Per-vertex blend weight: 0 = first texture, 1 = second. Empty when
     /// there's no blend.
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub blend_weights: Vec<f32>,
     /// A second set of texture coordinates (texture repeats), where the
     /// second texture of `blend` is sampled when the source game gives it
     /// coordinates of its own (LithTech's dual-texture sections). Empty:
     /// the second texture uses the base coordinates (`MapBlend::transform`).
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub uvs2: Vec<[f32; 2]>,
     /// A detail texture tiled over the base texture.
     pub detail: Option<MapDetail>,
@@ -225,6 +237,7 @@ pub struct MapMesh {
     /// Model meshes: each vertex's index in the model's own vertex list
     /// (Source `.vvd` order), for light baked per vertex of the model
     /// (`MapProp::vertex_light`). Empty otherwise.
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub source_vertices: Vec<u32>,
     /// What part of a breakable window's look it is (`PaneLook`).
     pub pane_look: PaneLook,
@@ -275,7 +288,7 @@ impl MapMesh {
 /// `breakables::BrushPanes`): its face as placed, then, once it breaks,
 /// the face in its cracked material over the unbroken panes and jagged
 /// edge pieces where they meet broken ones.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum PaneLook {
     /// Drawn while whole (every mesh but a window's broken looks).
     #[default]
@@ -293,7 +306,7 @@ pub enum PaneLook {
 
 /// How a model mesh looks under one skin family: the material fields of
 /// `MapMesh` that a skin changes.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapMeshLook {
     pub material: String,
     pub texture: Option<usize>,
@@ -335,7 +348,7 @@ impl MapMeshLook {
 }
 
 /// A model's skeleton and what it can play (animated props).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapRig {
     /// Parents before children, in the source game's axes and units.
     pub bones: Vec<MapBone>,
@@ -348,16 +361,17 @@ pub struct MapRig {
 /// source game's face order and axes (Source: +X, -X, +Y, -Y, +Z, -Z in
 /// its Z-up frame), sampled with directions in that frame. Each face holds
 /// its mip chain, largest first (`mips` levels, each half the last).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapCubemap {
     pub name: String,
     pub size: u32,
     pub mips: u32,
+    #[serde(with = "crate::map::pod_serde::pod_arrays")]
     pub faces: [Vec<u8>; 6],
 }
 
 /// What scales a surface's reflection, per texel.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EnvmapMask {
     #[default]
     None,
@@ -371,7 +385,7 @@ pub enum EnvmapMask {
 
 /// Reflection parameters (specs/cs_source/shaders.md, "$envmap"), after the
 /// shader's fast-path rule has been applied.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapEnvmap {
     /// Index into `MapData::cubemaps`; None: the cubemap sample nearest
     /// to each object using the material (`MapData::cubemap_samples`).
@@ -390,7 +404,7 @@ pub struct MapEnvmap {
 
 /// Source `$detail`: a texture tiled `scale` times per base texture repeat
 /// and combined with the base color (specs/cs_source/shaders.md).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapDetail {
     /// Index into `MapData::textures` (sRGB-decoded or raw as the mode and
     /// shader want: shaders.md section 1).
@@ -411,7 +425,7 @@ pub struct MapDetail {
 
 /// The second layer of a two-texture surface. Indices into
 /// `MapData::textures`.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapBlend {
     pub texture: Option<usize>,
     pub normal_map: Option<usize>,
@@ -426,7 +440,7 @@ pub struct MapBlend {
 
 /// How a two-texture surface combines its textures, by the per-vertex
 /// weight w (`MapMesh::blend_weights`, 1 = second texture).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum BlendMode {
     /// Source's WorldVertexTransition: the colours mixed by w in linear
     /// space; alpha stays the first's.
@@ -458,7 +472,7 @@ impl BlendMode {
 /// (r.x, r.y) x (-0.5 / `scale`) + 0.5 (LithTech's `envmap` and
 /// `envmapalpha` links, specs/combat_arms/world_dat.md "Second textures";
 /// `material_fx::flat_envmap_uv`), combined before lighting.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapFlatEnvmap {
     /// Index into `MapData::textures` (sRGB).
     pub texture: usize,
@@ -477,7 +491,7 @@ pub struct MapFlatEnvmap {
 /// by each drawn frame's time in whole milliseconds and shows frame
 /// floor(t / `frame_ms`) mod n, the whole texture swapped (no blending);
 /// it always loops (`step`).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MapSkinFrames {
     /// Each frame's texture (indices into `MapData::textures`).
     pub frames: Vec<usize>,
@@ -498,7 +512,7 @@ impl MapSkinFrames {
 
 /// Where a `MapLayer`'s coordinates come from: x and y of a vector in
 /// camera space (x right, y up) or world space, used as u and v.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LayerCoords {
     /// The view direction reflected about the normal, camera space.
     #[default]
@@ -515,7 +529,7 @@ pub enum LayerCoords {
 }
 
 /// How coordinates outside 0..1 sample a `MapLayer`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LayerAddress {
     Wrap,
     #[default]
@@ -526,7 +540,7 @@ pub enum LayerAddress {
 /// How a `MapLayer`'s sample S combines with the base texture T (its
 /// alpha T.a) and the source game's lit colour L (the drawn light times
 /// `MapLayer::light`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum LayerCombine {
     /// T + T.a x S x L: the base unlit, its alpha masking a lit
     /// reflection.
@@ -550,7 +564,7 @@ pub enum LayerCombine {
 /// (2026-10-31) 3). A pass with lighting on lights its vertices with it:
 /// the lit colour is `lit(A, sigma)`, and a separate specular colour is
 /// added to the pixel after all the texture stages (`specular`).
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LayerLighting {
     pub emissive: Vec3,
     pub ambient: Vec3,
@@ -586,7 +600,7 @@ impl LayerLighting {
 /// A second texture sampled on generated coordinates and combined with
 /// the base (LithTech render styles' slot 1: environment and rim maps,
 /// specs/combat_arms/models_ltb.md "Stock styles").
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapLayer {
     /// The source game's texture name, which its loader resolves into
     /// `texture`.
@@ -607,15 +621,17 @@ pub struct MapLayer {
 
 /// Baked lighting atlas: linear RGB, where 1.0 shows a texture at its own
 /// brightness (above 1.0 is overbright).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapLightmap {
     pub width: u32,
     pub height: u32,
     /// Row-major, top row first.
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub rgb: Vec<[f32; 3]>,
     /// Directional lightmaps for normal-mapped surfaces (same layout), one
     /// per basis direction of radiosity normal mapping. Surfaces without
     /// them repeat `rgb`.
+    #[serde(with = "crate::map::pod_serde::pod_opt3")]
     pub bumped: Option<[Vec<[f32; 3]>; 3]>,
     /// Light styles that change: what each adds where it lights, so they
     /// can be turned on and off (`LightStyles`) or animate (`pattern`).
@@ -625,16 +641,19 @@ pub struct MapLightmap {
 }
 
 /// One light style's share of the lightmap atlas.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapLightStyle {
     pub style: u8,
     /// Lit at map start.
     pub on: bool,
     /// Atlas texels (row-major index) it lights, and the light it adds
     /// there (same units as `MapLightmap::rgb`).
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub texels: Vec<u32>,
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub rgb: Vec<[f32; 3]>,
     /// What it adds to each directional page, per texel.
+    #[serde(with = "crate::map::pod_serde::pod_opt3")]
     pub bumped: Option<[Vec<[f32; 3]>; 3]>,
     /// An animated style's brightness per step (1 = as baked), at
     /// `LIGHT_STYLE_STEPS` steps a second, looping; empty for a style that
@@ -696,7 +715,7 @@ impl MapLightmap {
 }
 
 /// A reusable model (e.g. a window frame), in its own space: meters, Y up.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapModel {
     pub meshes: Vec<MapMesh>,
     /// Collision box in model space (min, max), for box-solid props.
@@ -745,14 +764,27 @@ pub fn body_choice(parts: &[u16], body: i32, part: usize) -> u16 {
     ((body.max(0) / base.max(1)) % n) as u16
 }
 
+/// A game's name, as loaders set it (a type of its own so serde's derive
+/// sees no `'static` borrow: `static_name` reads it back).
+pub type GameName = Option<&'static str>;
+
+/// A game's name read back from a serialized map (`cache`) as the
+/// `&'static str` the loaders set: leaked (a few bytes per character
+/// model per hit; `cache`'s known shortcuts).
+fn static_name<'de, D: serde::Deserializer<'de>>(d: D) -> Result<GameName, D::Error> {
+    use serde::Deserialize;
+    Ok(Option::<String>::deserialize(d)?.map(|n| &*Box::leak(n.into_boxed_str())))
+}
+
 /// A character body from the game: meshes in the character's local space
 /// (feet at the origin, facing -Z) and its hitboxes in the same space.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapCharacterModel {
     /// The game whose body it is (`cs_source`); a character whose
     /// identity is another game's (`slots::GameIdentity`) never wears it.
     /// None: any game's.
-    pub game: Option<&'static str>,
+    #[serde(deserialize_with = "static_name")]
+    pub game: GameName,
     /// The team it's for; None: anyone without a better match.
     pub team: Option<Team>,
     /// Set for a model only characters that name it use (`BodyName`, e.g.
@@ -780,7 +812,7 @@ pub struct MapCharacterModel {
 }
 
 /// A hitbox in its bone's frame (the source game's axes and units).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BoneBox {
     pub bone: usize,
     pub center: Vec3,
@@ -791,7 +823,7 @@ pub struct BoneBox {
 /// A model characters hold (a weapon's world model), keyed by what
 /// `Held` names; meshes in the frame of `bone` of the character skeleton
 /// (its axes and units).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapHeldModel {
     pub key: String,
     pub model: MapModel,
@@ -810,7 +842,7 @@ pub struct MapHeldModel {
 
 /// One bone of a character skeleton, in its reference pose relative to
 /// its parent (the source game's axes and units).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapBone {
     pub name: String,
     pub parent: Option<usize>,
@@ -820,7 +852,7 @@ pub struct MapBone {
 
 /// A model's collision: convex pieces in model space, and the physics
 /// parameters that came with them.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapCollision {
     pub pieces: Vec<MapConvex>,
     /// kg.
@@ -837,14 +869,14 @@ pub struct MapCollision {
 }
 
 /// A convex piece: its corners and outward planes (n . p <= d inside).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapConvex {
     pub points: Vec<Vec3>,
     pub planes: Vec<(Vec3, f32)>,
 }
 
 /// How players collide with a prop.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PropSolid {
     None,
     /// The model's bounds as a box, rotated with the prop.
@@ -862,7 +894,7 @@ pub enum PropSolid {
 /// arriving from six axis directions (+X, -X, +Y, -Y, +Z, -Z) plus
 /// directional lights (direction toward the light, color), all in lightmap
 /// units. The same model Source uses for props and characters.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct LightProbe {
     pub cube: [Vec3; 6],
     pub lights: Vec<(Vec3, Vec3)>,
@@ -882,7 +914,7 @@ impl LightProbe {
 }
 
 /// A placed model.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapProp {
     /// Index into `MapData::models`.
     pub model: usize,
@@ -905,6 +937,7 @@ pub struct MapProp {
     /// compiled with per-vertex lighting), by the model's own vertex index
     /// (`MapMesh::source_vertices`), linear lightmap units: replaces
     /// `lighting` for the meshes' colours.
+    #[serde(with = "crate::map::pod_serde::pod_opt_arc")]
     pub vertex_light: Option<Arc<Vec<[f32; 3]>>>,
     /// Casts a dynamic shadow onto the world (Source: entity props, not
     /// static props, whose shadows are baked into lightmaps).
@@ -931,7 +964,7 @@ pub struct MapProp {
 }
 
 /// A physics prop's body (specs/cs_source/physics_props.md 3, 4).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapPhysics {
     /// kg.
     pub mass: f32,
@@ -952,7 +985,7 @@ pub struct MapPhysics {
 }
 
 /// How a physics prop and players interact.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PushAway {
     /// Collides with players like a wall (pushed by their physics shadow).
     Collide,
@@ -968,7 +1001,7 @@ pub enum PushAway {
 
 /// Dynamic prop shadows (Source `shadow_control`, specs/cs_source/shadows_sky.md):
 /// one direction, colour and cast distance for the whole map.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapShadows {
     /// Unit vector from caster toward receiver, engine space.
     pub direction: Vec3,
@@ -981,7 +1014,7 @@ pub struct MapShadows {
 /// Sound entries the announcer plays for rounds: a side's win, a draw,
 /// and one picked at random when a round goes live; also the player's
 /// own interface sounds (+use on nothing, the HUD's weapon selection).
-#[derive(Resource, Clone, Debug, Default, PartialEq)]
+#[derive(Resource, Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RoundSounds {
     pub attackers_win: Option<String>,
     pub defenders_win: Option<String>,
@@ -1009,7 +1042,7 @@ pub struct MapTraceSkip(pub Vec<usize>);
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct MapPropBrushStart(pub usize);
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapData {
     pub name: String,
     /// SHA-256 of the map's file as read from the install (before any
@@ -1017,6 +1050,7 @@ pub struct MapData {
     /// must load the same file. None for maps built in code.
     pub file_hash: Option<[u8; 32]>,
     pub meshes: Vec<MapMesh>,
+    #[serde(with = "crate::map::pod_serde::par_vec")]
     pub textures: Vec<MapTexture>,
     /// Baked reflection cubemaps (`MapEnvmap::cubemap` indexes these).
     pub cubemaps: Vec<MapCubemap>,
@@ -1024,10 +1058,13 @@ pub struct MapData {
     /// `cubemaps`), for objects that take the nearest.
     pub cubemap_samples: Vec<(Vec3, usize)>,
     pub lightmap: Option<MapLightmap>,
+    #[serde(with = "crate::map::pod_serde::par_vec")]
     pub models: Vec<MapModel>,
     pub props: Vec<MapProp>,
     /// Collision triangles (surfaces with no solid volume, e.g. terrain).
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub collision_positions: Vec<[f32; 3]>,
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub collision_indices: Vec<[u32; 3]>,
     /// More collision triangles (into `collision_positions`) that only
     /// some things meet.
@@ -1035,6 +1072,7 @@ pub struct MapData {
     /// Solid convex volumes, each as its corner points: what stops shots
     /// and physics bodies (player-only clips are in `collision_brushes`
     /// only).
+    #[serde(with = "crate::map::pod_serde::pod_vecs")]
     pub collision_hulls: Vec<Vec<[f32; 3]>>,
     /// Indices into `collision_hulls` of volumes light passes (glass,
     /// grates): their own collider, marked `SeeThrough`.
@@ -1090,6 +1128,7 @@ pub struct MapData {
     /// three positions per triangle). They are not drawn; with
     /// `chimera_skyocclude 1` they hide what lies behind them
     /// (`sky_occluder`).
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub sky_surfaces: Vec<[f32; 3]>,
     /// Precomputed visibility (clusters and potentially visible sets),
     /// when the game's maps have it: parts the camera can't see are hidden.
@@ -1136,7 +1175,9 @@ pub struct MapData {
     /// Data-driven particle systems and where the map runs them
     /// (info_particle_system): `psys`.
     pub particle_systems: Arc<psys::MapParticleSystems>,
-    /// The light at any point, for moving models.
+    /// The light at any point, for moving models. Not in the converted-map
+    /// cache (`cache`: a closure): the loader rebuilds it on a hit.
+    #[serde(skip)]
     pub light_field: Option<MapLightField>,
     /// Gib lists for breaking brushes, and how gibs move.
     pub gibs: Vec<breakables::MapGibSet>,
@@ -1149,6 +1190,7 @@ pub struct MapData {
     /// effect lists (`MapData::source_fx`).
     pub extras: MapExtras,
     /// Seconds each loading stage took (`loading::LoadTimer`), in order.
+    #[serde(skip)]
     pub load_times: Vec<(&'static str, f32)>,
 }
 
@@ -1159,7 +1201,7 @@ pub struct MapData {
 /// `MapData::textures` (the indices below point there). A mashup's map of
 /// another game has its own game's kit replaced (`GameKit::stay`) by the
 /// gameplay's; every field added here is replaced with it, none to list.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct GameKit {
     /// The announcer's round sounds (sound entries), when the game has them.
     pub round_sounds: RoundSounds,
@@ -1170,14 +1212,17 @@ pub struct GameKit {
     /// The bots' navigation mesh, if the game ships one for the map.
     pub nav: Option<Arc<nav::NavMesh>>,
     /// How characters look and where they can be hit, per team.
+    #[serde(with = "crate::map::pod_serde::par_vec")]
     pub characters: Vec<MapCharacterModel>,
     /// Models characters can hold (weapons' world models).
+    #[serde(with = "crate::map::pod_serde::par_vec")]
     pub held: Vec<MapHeldModel>,
     /// Runtime decals (bullet holes, slashes) by group.
     pub decals: decal::MapDecals,
     /// The game's own HUD look, when it has one.
     pub hud: Option<Arc<hud::GameHud>>,
     /// What characters see of what they hold (weapons' view models).
+    #[serde(with = "crate::map::pod_serde::par_vec")]
     pub view_models: Vec<MapViewModel>,
     /// What shots look like at the muzzle (flash sprites and light).
     pub muzzle_flash: Option<MapMuzzleFlash>,
@@ -1235,10 +1280,11 @@ impl MapData {
 /// only, non-solid detail only traces). Each set is its own static
 /// collider: on `core::PLAYER_CLIP_LAYER` (characters only),
 /// `core::TRACE_ONLY_LAYER` (traces only) or the default layer (both).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapCollisionSet {
     pub name: String,
     /// Triangles, indices into `MapData::collision_positions`.
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub indices: Vec<[u32; 3]>,
     /// Characters' movement collides with them (`CHARACTER_FILTER`).
     pub characters: bool,
@@ -1257,7 +1303,7 @@ pub struct MapCollisionSet {
 /// A muzzle flash: view-facing additive sprites strung out along the
 /// muzzle's forward axis, shown for `life` seconds, and a brief point
 /// light (`DynamicLight`) that lights the world, props and view models.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapMuzzleFlash {
     /// Index into `MapData::textures`.
     pub texture: Option<usize>,
@@ -1275,7 +1321,7 @@ pub struct MapMuzzleFlash {
 /// A muzzle flash's light: colour in lightmap units (1 = a fully lit
 /// surface shows its texture), radius range (meters, picked at random) and
 /// lifetime; its radius shrinks to 0 over the lifetime.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapFlashLight {
     pub color: Vec3,
     pub radius: (f32, f32),
@@ -1283,7 +1329,7 @@ pub struct MapFlashLight {
 }
 
 /// What the BSP leaf around a point can see of the sky.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LeafSky {
     /// Inside solid: the view clears to black.
     Solid,
@@ -1296,7 +1342,7 @@ pub enum LeafSky {
 }
 
 /// A BSP tree for point queries, in engine space (meters).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapSkyVis {
     /// Plane normal and distance.
     pub planes: Vec<(Vec3, f32)>,
@@ -1340,7 +1386,7 @@ impl std::fmt::Debug for MapLightField {
 /// spawned inside its brushes, fading in and out over their life and with
 /// distance (specs/cs_source/sprites_dust.md). Engine space, meters,
 /// seconds.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapDust {
     /// The brushes' bounds.
     pub min: Vec3,
@@ -1375,7 +1421,7 @@ pub struct MapDust {
 
 /// A map's detail sprites (Source detail props: grass and weeds over its
 /// ground), drawn by `detail` in a few merged meshes.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapDetailProps {
     /// The sprite sheet, index into `MapData::textures`.
     pub texture: usize,
@@ -1389,7 +1435,7 @@ pub struct MapDetailProps {
 }
 
 /// One detail sprite quad.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DetailQuad {
     /// Engine space; the quad's foot.
     pub origin: Vec3,
@@ -1408,7 +1454,7 @@ pub struct DetailQuad {
 
 /// A detail sprite facing the view: its rectangle (across, up) from the
 /// origin, meters; `vertical` turns only about the vertical axis.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DetailBillboard {
     pub vertical: bool,
     pub lo: Vec2,
@@ -1417,7 +1463,7 @@ pub struct DetailBillboard {
 
 /// A camera-facing sprite (lamp glows): a quad parallel to the view plane,
 /// drawn additively (specs/cs_source/sprites_dust.md).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapSprite {
     /// Engine space, meters.
     pub position: Vec3,
@@ -1445,7 +1491,7 @@ pub struct MapSprite {
 /// A rope or cable: a line of points drawn as a strip that always faces the
 /// camera (the rope shader widens it per view). Source's Cable look:
 /// texture x normal map's blue squared x per-point light.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapRope {
     /// Engine space, meters.
     pub points: Vec<Vec3>,
@@ -1468,7 +1514,7 @@ pub struct MapRope {
 /// A 3D skybox: a miniature scene (meshes and props marked `skybox`) drawn
 /// behind the world from `origin + eye / scale`, so it appears `scale` times
 /// larger and moves with the player.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapSkyCamera {
     /// Engine space, meters.
     pub origin: Vec3,
@@ -1481,7 +1527,7 @@ pub struct MapSkyCamera {
 /// the color moves toward the fog color by f^2 (specs/cs_source/shaders.md);
 /// with `linear`, by f (LithTech's table fog, specs/combat_arms/world_dat.md
 /// "Sky").
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapFog {
     /// sRGB color.
     pub color: [f32; 3],
@@ -1494,7 +1540,7 @@ pub struct MapFog {
 /// A sky cubemap: per engine face (+X, -X, +Y, -Y, +Z, -Z), an index into
 /// `MapData::textures` and an orientation (0-3 clockwise quarter turns, 4-7
 /// the same after mirroring horizontally).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapSky {
     pub faces: [(usize, u8); 6],
     /// Each face material's `$basetexturetransform` (specs/cs_source/
@@ -1507,16 +1553,17 @@ pub struct MapSky {
 }
 
 /// A linear RGB image with values above 1 (an HDR sky face), top row first.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapHdrImage {
     pub width: u32,
     pub height: u32,
+    #[serde(with = "crate::map::pod_serde::pod")]
     pub rgb: Vec<[f32; 3]>,
 }
 
 /// Presentation choices that differ between games, measured against the
 /// original (see `refcmp`).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapLook {
     /// Multiplier on all baked light (lightmaps and prop probes).
     pub light_scale: f32,
@@ -1538,7 +1585,7 @@ pub struct MapLook {
 }
 
 /// How a map is shown in HDR: the client's cameras follow it.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MapHdr {
     /// Auto exposure: the scale on the scene's light stays within
     /// (min, max). None: no exposure (Source's mat_hdr_level 1, bloom
@@ -1585,7 +1632,7 @@ impl MapData {
     }
 }
 /// How a sprite meets the image (its render mode).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum SpriteBlend {
     /// Added (additive and glow modes 3, 5, 9).
     #[default]

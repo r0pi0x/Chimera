@@ -22,7 +22,7 @@ use super::ParticleRng;
 pub const MAX_CONTROL_POINTS: usize = 8;
 
 /// One particle system definition.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct SystemDef {
     pub name: String,
     pub max_particles: usize,
@@ -73,7 +73,7 @@ impl Default for SystemDef {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Emitter {
     /// `rate` a second from `start` for `duration` s (0: forever).
     Continuously { start: f32, rate: f32, duration: f32 },
@@ -82,7 +82,7 @@ pub enum Emitter {
 }
 
 /// A uniform pick between two values with an exponent on the fraction.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Pick {
     pub min: f32,
     pub max: f32,
@@ -105,7 +105,7 @@ impl Pick {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Init {
     /// Position at a random direction × distance from the control point
     /// (scaled per axis by `bias`; an axis with `bias_abs` set takes the
@@ -181,7 +181,7 @@ pub enum Init {
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Op {
     /// Gravity (units/s²), and drag: the fraction of velocity removed per
     /// step.
@@ -264,7 +264,7 @@ pub enum Op {
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Render {
     None,
     /// Camera-facing (orientation 0) or flat (others) sprites from the
@@ -289,7 +289,7 @@ pub enum Render {
 
 /// The loaded map's particle systems: definitions and the
 /// info_particle_systems placed in it.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapParticleSystems {
     pub defs: Vec<SystemDef>,
     pub placed: Vec<PlacedSystem>,
@@ -304,7 +304,7 @@ impl MapParticleSystems {
 }
 
 /// An info_particle_system.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PlacedSystem {
     /// The entity (index into `MapData::entities`).
     pub entity: Option<usize>,
