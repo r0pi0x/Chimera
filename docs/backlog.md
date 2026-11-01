@@ -2447,6 +2447,14 @@ docs/plans/active/sound.md.
   banners aren't drawn), `$selfillummask`'s channel and
   `$selfillum_envmapmask_alpha`, detail modes 10/11.
 
+- **Combat Arms mission display: rough edges (2026-11-01).** The
+  objective list (top left) overlaps stray "Player" labels drawn there
+  on nemexishq (name tags at the screen's corner?); captions, messages
+  and objectives show their ids (the string table lacks them; find where
+  their texts live); counted objectives' maxima are 0 (mission data not
+  read); a lowercase `add <id>` object message runs the console's `add`
+  instead of the MissionTrigger's `ADD`.
+
 ## 9. Performance
 
 - Done: **Disk guards (2026-10-31: the dev box's disk filled to 100%).**
