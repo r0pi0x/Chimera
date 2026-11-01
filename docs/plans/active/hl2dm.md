@@ -430,6 +430,7 @@ implementing (owner branch) / done.
 | Wave 0 spec | H0 `source_deltas.md` | spec landed (branch `hl2dm-h0`, 2026-11-01; user review pending) | – |
 | Wave 1 specs | H1 `movement.md`, H2 `suit.md`, H3 `weapons.md`, H6 `rules.md` | spec landed (branch `hl2dm-w1`, 2026-11-01; user review pending; corrections to H0 listed in each) | – |
 | Wave 2 specs | H4 `projectiles.md`, H5 `gravity_gun.md`, H7 `player_models.md` | spec landed (branch `hl2dm-w2`, 2026-11-01; user review pending; corrections to H0 and wave 1 listed in each) | – |
+| Wave 3 specs | H8 `hud.md`, H9 `effects_sounds.md`, H10 `maps_entities.md` | spec landed (branch `hl2dm-w3`, 2026-11-01; user review pending; corrections to H0 and waves 1-2 listed in each) | – |
 | M0 install and look | H0 (install facts) | done (branch `hl2dm-m0`, 2026-11-01): S0, S1, `games/hl2dm` skeleton, `dump hl2dm`, heavy `mount.rs`; left for M1/M3: the RCON reads and the probe (below) | S0, S1, (S11) |
 | M1 maps load | H0 | not started | S2, S3, S4 |
 | M3 movement, suit | H1, H2 | not started | S5, S6, C2, C8 |
@@ -489,6 +490,23 @@ implementing (owner branch) / done.
   networked nor lag-compensated, only head ×3 matters, ragdoll force on
   the pelvis, fixed 0.45 s view bob ignoring `cl_bob*`. Each spec lists
   its corrections to H0 and wave 1 and its probe cases.
+- 2026-11-01: wave 3 (H8, H9, H10) written: specs/hl2dm/hud.md,
+  effects_sounds.md, maps_entities.md (draft). Main findings: HUD:
+  the shared Source HUD rules (640x480 layout, scheme lookup,
+  hudanimations events) specced once; below FOV 90 (default 75) every
+  weapon but the crossbow shows the default crosshair; `hud_fastswitch 1`
+  draws no selection; no team menu and no flashlight indicator in
+  HL2:DM. Effects and sounds: the server draws no shots, clients
+  re-trace ignoring players; only the shooter's own tracers whizz (AR2
+  with `Bullets.GunshipNearmiss`); no ricochet sound; no third-person
+  muzzle sprites; dissolve removes the body at 2.0 s; no pain voice;
+  LDR path only (refcmp with `mat_hdr_level 0`). Map entities: all 107
+  classes of the 8 stock maps classified; pickups respawn at their first
+  rest spot (items 2000 ticks, weapons 1333), relocation beyond 64
+  units; ammo crate and charger entity sides; `env_headcrabcanister` in
+  full (dm_runoff's map canisters likely removed at load); `env_shake`,
+  `env_microphone`, `npc_combine_camera` added. Each spec lists its
+  corrections to H0 and waves 1-2 and its probe cases.
 
 - 2026-11-01: M0 built (branch `hl2dm-m0`). S0: the crate `source/engine`
   (`source_engine`), with the architecture rules (beside `source_logic`
