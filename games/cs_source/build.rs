@@ -1,6 +1,7 @@
 //! The map converter's version for the converted-map cache
 //! (`game::bsp::CONVERTER`, chimera_world's `map::cache`): the hash of
-//! the converter's sources and data, Source's format crate and the
+//! the converter's sources and data, the Source content converters it
+//! calls (`source_engine`'s sources), Source's format crate and the
 //! lockfile (the parsing crates' versions), so any change to them makes
 //! every cached CS:S map a miss.
 
@@ -13,7 +14,13 @@ use std::path::Path;
 mod source_hash;
 
 fn main() {
-    let paths = ["src/game", "data", "../../source/formats/src", "../../Cargo.lock"];
+    let paths = [
+        "src/game",
+        "data",
+        "../../source/engine/src",
+        "../../source/formats/src",
+        "../../Cargo.lock",
+    ];
     for p in paths {
         println!("cargo:rerun-if-changed={p}");
     }

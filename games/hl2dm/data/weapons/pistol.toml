@@ -1,0 +1,33 @@
+# M1's test weapon (docs/plans/active/hl2dm.md, M1): the pistol with the
+# spec's plain numbers only (specs/hl2dm/weapons.md: 8 damage a bullet,
+# head x3, no range falloff, an 18-round clip, 150 carried, held attack
+# every 0.5 s, a 0.8 s draw, the reload's 96 ticks; the reserve starts
+# full, as the ammo type's 150). Not yet: the click
+# refire, the accuracy ramp and its spread, punch, the damage's push,
+# sounds and models (M4).
+id = "hl2dm:weapon_pistol"
+base = "hl2dm:base"
+slot = 1
+draw = 0.8
+
+[trigger]
+automatic = true
+cycle = 0.5
+timing = "accumulate"
+
+[magazine]
+clip = 18
+ammo = "hl2dm:pistol"
+reload = 1.44
+
+[hitscan]
+range = 56755.84
+pellets = 1
+punch_scale = 0.0
+
+[damage]
+amount = 8.0
+falloff = 1.0
+falloff_step = 500.0
+hitgroups = { head = 3.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
+impulse = 0.0

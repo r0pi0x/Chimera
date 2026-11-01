@@ -15,7 +15,7 @@ use bevy::math::Vec2;
 
 use source_formats::keyvalues::{Escapes, tokens};
 
-use super::{bsp::METERS_PER_UNIT, material::MaterialLoader};
+use super::{METERS_PER_UNIT, material::MaterialLoader};
 use crate::map::water::{MapScreenWarp, MapWaterMaterial, WaterEnvmap};
 
 /// A KeyValues node: a value or a block of named children, in order.

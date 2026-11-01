@@ -13,5 +13,13 @@
 //! list (CS:S's, kept as it was); `maps`, the maps an install holds and
 //! its map cycle.
 
+pub mod content;
 pub mod maps;
 pub mod search_path;
+
+// `crate::map`, `crate::core` and `crate::mount` inside, as in the game
+// crates the content modules came from.
+#[allow(unused_imports)]
+use chimera_core::{core, mount};
+#[allow(unused_imports)]
+use chimera_world::map;

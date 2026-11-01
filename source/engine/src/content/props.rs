@@ -39,7 +39,7 @@ use vbsp::Bsp;
 
 use super::{
     ambient::{self, MapLighting, Occluders},
-    bsp::{METERS_PER_UNIT, to_engine},
+    METERS_PER_UNIT, to_engine,
     material::MaterialLoader,
 };
 use crate::map::{
@@ -257,8 +257,10 @@ fn load_model_with_layout(
 
 /// A player model as a character body (specs/cs_source/weapons.md 5): its
 /// meshes and first hitbox set in the reference pose, in the character's
-/// local space (feet at the origin, facing -Z, meters).
+/// local space (feet at the origin, facing -Z, meters). `game` is the
+/// game whose body it is (`MapCharacterModel::game`: `cs_source`, `hl2dm`).
 pub fn load_character(
+    game: &'static str,
     materials: &mut MaterialLoader,
     surfaces: &super::surfaceprops::SurfaceProps,
     path: &str,
@@ -373,7 +375,7 @@ pub fn load_character(
         None => None,
     };
     Ok(crate::map::MapCharacterModel {
-        game: Some(super::GAME),
+        game: Some(game),
         team,
         name: None,
         class: None,
@@ -1498,11 +1500,11 @@ fn place_props(
     let mut prop_datas: HashMap<usize, HashMap<String, String>> = HashMap::new();
     let mut key_values: HashMap<usize, String> = HashMap::new();
     let mut failed: Vec<String> = Vec::new();
-    let bounds = super::bsp::playable_bounds(bsp);
+    let bounds = super::playable_bounds(bsp);
     let surfaces = super::surfaceprops::SurfaceProps::load(materials);
     // propdata.txt's templates (a model's prop_data "base"), read when an
     // entity prop needs one.
-    let mut templates: Option<(super::hud::Kv, Vec<(String, Vec<String>)>)> = None;
+    let mut templates: Option<(source_formats::keyvalues::Kv, Vec<(String, Vec<String>)>)> = None;
     // How many pieces each model breaks into (its `MapModel::breaks`).
     let mut broken_into: HashMap<usize, usize> = HashMap::new();
     for prop in placements {
@@ -2110,7 +2112,7 @@ fn prop_keys(
 /// hardware picks open (doors_buttons.md Q8): this is our reading of the
 /// model data.
 fn door_hardware(text: &str, hardware: i32) -> Option<(String, String)> {
-    use super::hud::Kv;
+    use source_formats::keyvalues::Kv;
     fn find<'a>(kv: &'a Kv, name: &str) -> Option<&'a Kv> {
         kv.items().iter().find_map(|(k, v)| {
             if k.eq_ignore_ascii_case(name) {
@@ -2120,7 +2122,7 @@ fn door_hardware(text: &str, hardware: i32) -> Option<(String, String)> {
             }
         })
     }
-    let kv = super::hud::parse(text);
+    let kv = source_formats::keyvalues::parse_res(text);
     let block = find(&kv, "door_options")?.get(&format!("hardware{hardware}"))?;
     let s = |k: &str| block.str(k).unwrap_or("").to_string();
     Some((s("locked"), s("unlocked")))
@@ -2129,7 +2131,7 @@ fn door_hardware(text: &str, hardware: i32) -> Option<(String, String)> {
 /// `door_options` key values: the block for its skin ("skinN"), else
 /// "default".
 fn door_options(text: &str, skin: i32) -> Option<(String, String, String)> {
-    use super::hud::Kv;
+    use source_formats::keyvalues::Kv;
     fn find<'a>(kv: &'a Kv, name: &str) -> Option<&'a Kv> {
         kv.items().iter().find_map(|(k, v)| {
             if k.eq_ignore_ascii_case(name) {
@@ -2139,7 +2141,7 @@ fn door_options(text: &str, skin: i32) -> Option<(String, String, String)> {
             }
         })
     }
-    let kv = super::hud::parse(text);
+    let kv = source_formats::keyvalues::parse_res(text);
     let options = find(&kv, "door_options")?;
     let block = options.get(&format!("skin{skin}")).or_else(|| options.get("default"))?;
     let s = |k: &str| block.str(k).unwrap_or("").to_string();

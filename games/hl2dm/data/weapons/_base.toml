@@ -1,0 +1,11 @@
+# HL2:DM's weapons' shared base: Source units (inches) and hit points
+# (specs/hl2dm/weapons.md). M1 has one test weapon on it; the guns come
+# with M4 (docs/plans/active/hl2dm.md).
+id = "hl2dm:base"
+abstract = true
+units = { length = 0.0254, damage = 0.01 }
+
+# The pistol's ammo: 150 carried at most (specs/hl2dm/weapons.md, the
+# ammo table).
+[ammo."hl2dm:pistol"]
+max = 150

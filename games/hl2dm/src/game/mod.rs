@@ -1,8 +1,11 @@
-//! Half-Life 2: Deathmatch's parts. M0: what the game tells the shell
-//! about itself (`INFO`: its id, folder, Steam app, tick, map names and
-//! cycle, console namespaces) and its install as a mount (`mount`).
-//! Movement, weapons, rules and the rest come with their specs
-//! (specs/hl2dm/; the plan's milestones M1 to M11).
+//! Half-Life 2: Deathmatch's parts: what the game tells the shell about
+//! itself (`INFO`: its id, folder, Steam app, tick, map names and cycle,
+//! console namespaces), its install as a mount (`mount`), its maps
+//! (`maps`: Source's conversion with HL2:DM's data; `MAP_LOADER`), and
+//! M1's stand-ins: a placeholder movement with H1's numbers (`movement`)
+//! and one test weapon (`weapons`); `Hl2dmPlugins` adds them. Movement,
+//! weapons, rules and the rest come with their specs (specs/hl2dm/; the
+//! plan's milestones M3 to M11).
 //!
 //! Known shortcuts:
 //! - `INFO`'s default binds and movement cvars are empty: the shell reads
@@ -12,7 +15,12 @@
 //!   specs/hl2dm/source_deltas.md, "Tick and network"); the server's
 //!   `-tickrate` option isn't modelled.
 
+pub mod maps;
 pub mod mount;
+pub mod movement;
+pub mod weapons;
+
+pub use maps::MAP_LOADER;
 
 /// The game's id (`hl2dm`): its maps' ids (`hl2dm:dm_lockdown`), its key
 /// in chimera.local.toml (`[games.hl2dm] path`) and its content cache.
@@ -64,3 +72,16 @@ pub const STOCK_MAPS: &[&str] = &[
     "dm_underpass",
     "halls3",
 ];
+
+/// HL2:DM's parts, after the engine's base (`crate::SimPlugins`): the
+/// game registered (`INFO`), its movement (the match's) and its weapons.
+pub struct Hl2dmPlugins;
+
+impl bevy::app::PluginGroup for Hl2dmPlugins {
+    fn build(self) -> bevy::app::PluginGroupBuilder {
+        bevy::app::PluginGroupBuilder::start::<Self>()
+            .add(crate::game_registry::RegisterGame(&INFO))
+            .add(movement::Hl2MovementPlugin)
+            .add(weapons::Hl2WeaponsPlugin)
+    }
+}

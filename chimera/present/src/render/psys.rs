@@ -15,7 +15,7 @@
 //! moves; white without one).
 //!
 //! Known shortcuts (docs/tech-debt.md): Particle systems (`render::psys`,
-//! `map::psys`, `games/cs_source/pcf.rs`): the operator meanings are
+//! `map::psys`, `source_engine::content::pcf`): the operator meanings are
 //! interpretations (specs/cs_source/impact_effects.md 14, fire.md 7.3; the
 //! library isn't public): drag removes its fraction per step (steps of the
 //! system's maximum time step), velocity noise is uniform per particle, random

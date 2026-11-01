@@ -1,0 +1,50 @@
+[package]
+name = "hl2dm_server"
+version = "0.1.0"
+description = "The Half-Life 2: Deathmatch dedicated server: HL2:DM's simulation and the network, no window, render or audio"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# No doc tests (none written): skips a rustdoc pass on every test run.
+[lib]
+doctest = false
+
+# Chimera's simulation crates and HL2:DM: nothing of chimera_present, the
+# client shell or the HL2:DM app (`hl2dm_app`, which draws) links
+# (checks/tests/it/architecture.rs, `server_builds_without_presentation`,
+# checks `cargo tree -p hl2dm_server`). In a workspace build features
+# unify, so the released server is built alone: `cargo build --release -p
+# hl2dm_server`.
+[dependencies]
+chimera_core.workspace = true
+chimera_world.workspace = true
+chimera_sim.workspace = true
+chimera_net.workspace = true
+hl2dm.workspace = true
+bevy.workspace = true
+workspace-hack.workspace = true
+
+# The server.
+[[bin]]
+name = "hl2dm_server"
+path = "src/main.rs"
+test = false
+
+# The integration tests (tests/it/): the server as the binary composes it
+# (`ServerPlugin`) with clients over UDP on loopback.
+[[test]]
+name = "it"
+path = "tests/it/main.rs"
+
+[features]
+# Bevy as a dynamic library, as the game's `dev`.
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "hl2dm/dev"]
+
+[dev-dependencies]
+# The presentation's Bevy and Avian features, for this crate's own tests only
+# (the dedicated servers build without them): `cargo test -p <crate>` shares
+# the clients' builds of Bevy instead of building its own (hakari.toml).
+bevy = { workspace = true, features = ["default", "wav"] }
+avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }

@@ -34,7 +34,7 @@
 //! loader to know what reads texels. Level 2 isn't the default.
 //!
 //! Known shortcuts (docs/tech-debt.md): Community maps' materials
-//! (`games/cs_source/material.rs`): what the VMT parser refuses is rewritten
+//! (`source_engine::content::material`): what the VMT parser refuses is rewritten
 //! (`lenient_vmt`) and parsed again rather than read by a parser of our own
 //! (so are materials with a DirectX 9 fallback block, whose keys the parser
 //! skips: stock HL2 walls' `$bumpmap`);
@@ -915,7 +915,7 @@ impl<'a> MaterialLoader<'a> {
             texture,
             uv_min: pos / full,
             uv_max: (pos + size) / full,
-            size: size * scale * super::bsp::METERS_PER_UNIT,
+            size: size * scale * super::METERS_PER_UNIT,
             blend: if atlas_shader == "decalmodulate" {
                 DecalBlend::Modulate2x
             } else {
@@ -1254,7 +1254,7 @@ impl<'a> MaterialLoader<'a> {
 }
 
 /// A VTF file's full-size image and its own mip levels as RGBA8.
-pub(crate) fn decode_bytes(bytes: &[u8]) -> Result<MapTexture, String> {
+pub fn decode_bytes(bytes: &[u8]) -> Result<MapTexture, String> {
     let vtf = vtf::from_bytes(bytes).map_err(|e| e.to_string())?;
     let image = decode_full(bytes, &vtf, 0)?;
     let mips = mip_levels(bytes, &vtf.header).unwrap_or_default();
@@ -1847,7 +1847,7 @@ fn world_tint(keys: &HashMap<String, String>) -> Option<[f32; 3]> {
 
 /// A material key's value read from its text, when the parser's defaults
 /// can't tell "absent" from a given value.
-pub(super) fn material_key<T: std::str::FromStr>(text: &str, key: &str) -> Option<T> {
+pub fn material_key<T: std::str::FromStr>(text: &str, key: &str) -> Option<T> {
     text.lines().find_map(|line| {
         let line = line.trim().to_ascii_lowercase();
         let rest = line

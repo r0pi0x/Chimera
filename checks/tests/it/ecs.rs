@@ -245,6 +245,8 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
 const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("apps/combat_arms_server/src/lib.rs", "the server's level changes"),
     ("apps/combat_arms_server/src/main.rs", "the server's state changes"),
+    ("apps/hl2dm_server/src/lib.rs", "the server's level changes"),
+    ("apps/hl2dm_server/src/main.rs", "the server's state changes"),
     (
         "apps/cs_source_server/src/main.rs",
         "the server's level and state changes",

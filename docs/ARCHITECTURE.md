@@ -24,8 +24,10 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    ultimate_gun_game_server (apps/ultimate_gun_game_server/)   its server: `party_kit`'s run loop with its parts
   |    originals (games/originals/)   the original minigames: definitions (minigames/) and rules hooks, Chimera only
   |    combat_arms_server (apps/combat_arms_server/)   Combat Arms' dedicated server: the game without `ui`
+  |    hl2dm_app (apps/hl2dm/)   the HL2:DM app: its game binary `hl2dm` (its maps, the greybox)
+  |    hl2dm_server (apps/hl2dm_server/)   HL2:DM's dedicated server: no presentation
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
-  |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: its `GameInfo` and its install's mount so far
+  |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -33,7 +35,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    \        |
   |    cs_source (games/cs_source/)   CS:S's simulation: loaders, parts, rules, bots, SimPlugins, harness::CsSim
   |    |    source_logic (source/logic/)   logic: Source entity I/O
-  |    |    source_engine (source/engine/)   Source behaviour every Source game shares: search path, map lists
+  |    |    source_engine (source/engine/)   Source behaviour every Source game shares: search path, map lists, content
   |    |   /
   |    chimera_net (chimera/net/)   net: transport, replication, prediction; harness::NetSim
   |    |
@@ -175,17 +177,23 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   Source game shares, lifted out of `cs_source` as HL2:DM needs it
   (docs/plans/active/hl2dm.md, section 3): so far `search_path` (a
   game's search path as a mount, from its `gameinfo.txt` or the game's
-  own list) and `maps` (the maps an install holds, its map cycle, map
-  import). It uses the engine's crates and `source_formats`, never the
+  own list), `maps` (the maps an install holds, its map cycle, map
+  import) and `content` (Source's files converted into Chimera's types:
+  maps, materials and models: lifts S2-S4; a game gives a map's
+  conversion its id and hooks, `content::bsp::SourceGame`). It uses the engine's crates and `source_formats`, never the
   presentation, `mashup`, a game or an app (checked); CS:S and HL2:DM
   use it, Combat Arms never. `cargo test -p source_engine --features
   dev` tests it alone.
-- `hl2dm` (games/hl2dm/) is Half-Life 2: Deathmatch, M0 of
+- `hl2dm` (games/hl2dm/) is Half-Life 2: Deathmatch, M0 and M1 of
   docs/plans/active/hl2dm.md: its `GameInfo` (`game::INFO`: Steam app
-  320, folder `hl2mp`, console namespaces `hl2dm` and `hl2mp`) and its
-  install mounted from `hl2mp/gameinfo.txt` (`game::mount`). Layered as
-  `cs_source`: the engine crates and Source's shared crates, never
-  another game, `mashup` or an app (checked).
+  320, folder `hl2mp`, console namespaces `hl2dm` and `hl2mp`), its
+  install mounted from `hl2mp/gameinfo.txt` (`game::mount`), its maps
+  (`game::maps`, `game::MAP_LOADER`: `source_engine`'s conversion with
+  HL2:DM's data), M1's stand-ins (`hl2dm:movement` on Chimera's
+  placeholder with H1's numbers, a test pistol as data), `SimPlugins`
+  and `game::Hl2dmPlugins`, and `harness::Hl2Sim` for its scenario
+  tests. Layered as `cs_source`: the engine crates and Source's shared
+  crates, never another game, `mashup` or an app (checked).
 - `chimera_net` is network play (`net`): the transport, the join
   handshake, replication of what every game has, prediction and
   interpolation. A game and Source's logic register what they replicate
@@ -297,10 +305,18 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   its tests build too), so it links no render or audio code and never
   the app (`combat_arms_app`), CS:S or Source's logic (checked the same
   way); built alone with `-p` for release.
+- `hl2dm_app` (apps/hl2dm/) is the HL2:DM app (binary `hl2dm`): Chimera
+  and `hl2dm` composed, maps `hl2dm:<name>` from the install or a
+  downloaded file, the greybox otherwise; `hl2dm_server`
+  (apps/hl2dm_server/) its dedicated server: Chimera's simulation crates,
+  the network and `hl2dm` (`ServerPlugin`), no presentation, client shell
+  or app (checked: `server_builds_without_presentation`); built alone with
+  `-p` for release.
 - `mashup` (the repository root; the old name) is a thin shim: `cs_source_app`
   re-exported at the old `mashup::` paths (src/lib.rs) for `dump` (an
-  install inspector for several games; its test in tests/it/). Nothing
-  new goes in it.
+  install inspector for several games; its test in tests/it/) and the host
+  tools over several games (`chimera_pack`, `mapsweep`). Nothing new goes
+  in its library.
 - Each crate keeps its tests: unit tests beside the code, integration
   tests in one binary per crate (`<crate>/tests/it/`, `heavy::` for the
   slow ones; `cs_source`'s front end's in tests/ui/ with `ui`), in the
@@ -321,9 +337,13 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `chimera_tools` (chimera/tools/: the perf gate, `imgcmp`, `tracesum`;
   no Source, game or app), `source_tools` (source/tools/: RCON,
   `demodump`, `testmap`; no Bevy, Chimera or game) and `cs_source_tools`
-  (games/cs_source/tools/: `refcmp`'s CS:S driver, `movecmp`, `demosim`, `mapsweep`,
+  (games/cs_source/tools/: `refcmp`'s CS:S driver, `movecmp`, `demosim`,
   `perfgate`'s scenarios). CS:S's tools still depend on `cs_source_app`
-  (its build stamp, map loading by id: tech-debt.md).
+  (its build stamp, map loading by id: tech-debt.md). `mapsweep` sweeps
+  a Source game's maps (`--game cs_source` or `hl2dm`), so it is a host
+  tool of the sandbox crate (src/bin/), beside `dump` and `chimera_pack`,
+  until the tools' Source half is lifted (docs/plans/active/hl2dm.md,
+  S11).
   An app's own tools only for app concerns (launch, packaging, budgets).
 - `workspace-hack` (chimera/workspace-hack/, generated by `cargo hakari`,
   .config/hakari.toml) unifies third-party features: every member but
@@ -391,8 +411,8 @@ it); map uses only core. games/<name> uses core, console, slots,
 character, movement, mount, map, weapon, objectives and rules (to register
 its rule modules), bot and net (its part of the network); its `ui/` uses
 those, client and the rest of the simulation. `source_engine`'s modules
-(`search_path`, `maps`) use no module of ours, only the engine's crates
-by name (`chimera_core::mount`).
+`search_path` and `maps` use no module of ours, only the engine's crates
+by name (`chimera_core::mount`); its `content` uses core, map and mount.
 
 Presentation sits beside the simulation, above `map`: `audio` (sound
 playback, live sounds, room DSP, soundscapes, hearing) uses core and map,

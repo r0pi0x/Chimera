@@ -82,6 +82,8 @@ cargo run --features dev --bin lucker_party -- +minigame originals:gun_game_dust
 cargo run --features dev --bin lucker_party_server -- +minigame originals:gun_game_dust2 +MaxPlayer 3   # its server
 cargo run --features dev --bin ultimate_gun_game   # Ultimate Gun Game (every game's guns)
 cargo run --features dev --bin ultimate_gun_game_server -- +map greybox   # its server
+cargo run --features dev --bin hl2dm -- --map hl2dm:dm_lockdown   # HL2:DM (its maps;
+                                   # `hl2dm_server` its server)
 tools/agent-slot.sh acquire <branch>   # an agent's warm checkout: cd to the
                                    # printed path, work and commit there; then
                                    # `tools/agent-slot.sh release` (OBSERVABILITY 3e)
