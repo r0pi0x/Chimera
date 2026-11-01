@@ -1,33 +1,61 @@
-# M1's test weapon (docs/plans/active/hl2dm.md, M1): the pistol with the
-# spec's plain numbers only (specs/hl2dm/weapons.md: 8 damage a bullet,
-# head x3, no range falloff, an 18-round clip, 150 carried, held attack
-# every 0.5 s, a 0.8 s draw, the reload's 96 ticks; the reserve starts
-# full, as the ammo type's 150). Not yet: the click
-# refire, the accuracy ramp and its spread, punch, the damage's push,
-# sounds and models (M4).
+# The pistol (specs/hl2dm/weapons.md 7.1): 8 a bullet, held attack every
+# 0.5 s (accumulating), a click's refire as fast as 8 ticks, the 1-6
+# degree accuracy ramp, a downward kick reset before each shot, 18 rounds,
+# 150 carried. Script: bucket 1 position 0, weight 2, clip 18.
 id = "hl2dm:weapon_pistol"
-base = "hl2dm:base"
+base = "hl2dm:gun"
+class = "pistol"
 slot = 1
+# ACT_VM_DRAW of v_pistol.mdl (weapons.md 2: 54 ticks).
 draw = 0.8
+weight = 2
 
 [trigger]
-automatic = true
 cycle = 0.5
-timing = "accumulate"
 
 [magazine]
 clip = 18
 ammo = "hl2dm:pistol"
-reload = 1.44
+# ACT_VM_RELOAD (96 ticks).
+reload = 1.4333
 
 [hitscan]
-range = 56755.84
-pellets = 1
+# The punch is zeroed before every shot (weapons.md 7.1): the shot goes
+# along the view.
 punch_scale = 0.0
+spread = { cone = 0.00873 }
 
 [damage]
 amount = 8.0
-falloff = 1.0
-falloff_step = 500.0
-hitgroups = { head = 3.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
-impulse = 0.0
+
+[sounds]
+fire = "Weapon_Pistol.Single"
+empty = "Weapon_Pistol.Empty"
+reload = [[0.0, "Weapon_Pistol.Reload"]]
+
+[models]
+world = "models/weapons/w_pistol.mdl"
+view = "models/weapons/v_pistol.mdl"
+view_right_handed = true
+
+[hud]
+name = "#HL2_Pistol"
+icon = "pistol"
+
+[hooks."hl2dm:inventory"]
+position = 0
+
+# The accuracy ramp and the click refire (weapons.md 7.1).
+[hooks."hl2dm:pistol"]
+penalty_per_shot = 0.2
+penalty_max = 1.5
+spread = [0.00873, 0.05234]
+click_unlock = 0.1
+dry_unlock = 0.2
+dry = 0.3667
+
+# Pitch U(0.25, 0.5) down, yaw U(-0.6, 0.6), after zeroing the punch.
+[hooks."hl2dm:punch"]
+pitch = [0.25, 0.5]
+yaw = [-0.6, 0.6]
+reset = true

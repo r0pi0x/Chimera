@@ -1,11 +1,12 @@
 //! Half-Life 2: Deathmatch's parts: what the game tells the shell about
 //! itself (`INFO`: its id, folder, Steam app, tick, map names and cycle,
 //! console namespaces), its install as a mount (`mount`), its maps
-//! (`maps`: Source's conversion with HL2:DM's data; `MAP_LOADER`), and
-//! M1's stand-ins: a placeholder movement with H1's numbers (`movement`)
-//! and one test weapon (`weapons`); `Hl2dmPlugins` adds them. Movement,
-//! weapons, rules and the rest come with their specs (specs/hl2dm/; the
-//! plan's milestones M3 to M11).
+//! (`maps`: Source's conversion with HL2:DM's data; `MAP_LOADER`), its
+//! bullet and melee weapons (`weapons`, M4: data and hooks; `scripts`, the
+//! install's weapon scripts against the data), and M1's stand-in movement
+//! with H1's numbers (`movement`); `Hl2dmPlugins` adds them. The real
+//! movement, the projectiles, rules and the rest come with their specs
+//! (specs/hl2dm/; the plan's milestones M3, M5 to M11).
 //!
 //! Known shortcuts:
 //! - `INFO`'s default binds and movement cvars are empty: the shell reads
@@ -18,6 +19,7 @@
 pub mod maps;
 pub mod mount;
 pub mod movement;
+pub mod scripts;
 pub mod weapons;
 
 pub use maps::MAP_LOADER;

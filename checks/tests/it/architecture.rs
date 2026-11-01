@@ -42,6 +42,8 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("search_path", &[]),
     // Source's map listings and map cycle, map import (source_engine).
     ("maps", &[]),
+    // A Source weapon script's keys (source_engine): read from a mount.
+    ("weapon_script", &["mount"]),
     // Source's content converted into Chimera's types (source_engine's
     // `content`: BSP, materials, models; lifted from CS:S's loaders).
     ("content", &["core", "map", "mount"]),

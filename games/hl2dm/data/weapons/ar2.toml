@@ -1,0 +1,45 @@
+# The AR2 (specs/hl2dm/weapons.md 7.3): 11 a bullet, 0.1 s accumulating
+# (ticks 7, 7, 6), a 3 degree cone, the machine gun's kick (8 degrees,
+# over 5 s held), 30 rounds, 60 carried; a new one gives a full clip and
+# 30 more (default_clip 60). Its energy ball (attack2) is M5's. Script:
+# bucket 2 position 1, weight 5, clip 30.
+id = "hl2dm:weapon_ar2"
+base = "hl2dm:gun"
+class = "rifle"
+slot = 2
+draw = 0.8333
+weight = 5
+
+[magazine]
+clip = 30
+ammo = "hl2dm:ar2"
+# 105 ticks.
+reload = 1.5667
+
+[hitscan]
+spread = { cone = 0.02618 }
+
+[damage]
+amount = 11.0
+
+[sounds]
+fire = "Weapon_AR2.Single"
+empty = "Weapon_IRifle.Empty"
+reload = [[0.0, "Weapon_AR2.Reload"]]
+
+[models]
+world = "models/weapons/w_irifle.mdl"
+view = "models/weapons/v_irifle.mdl"
+view_right_handed = true
+
+[hud]
+name = "#HL2_Pulse_Rifle"
+icon = "ar2"
+
+[hooks."hl2dm:inventory"]
+position = 1
+default_clip = 60
+
+[hooks."hl2dm:machine_gun"]
+max = 8.0
+slide = 5.0

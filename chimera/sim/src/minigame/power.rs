@@ -350,7 +350,7 @@ pub fn stats(data: &WeaponData, readers: &PowerReaders, curve: &PowerCurve, metr
     if let Some(h) = &data.hitscan {
         s.pellets = h.pellets.max(1);
         s.spread = match h.spread {
-            Some(SpreadData::Template(x)) => x,
+            Some(SpreadData::Template(x)) | Some(SpreadData::Cone(x)) => x,
             Some(SpreadData::Disc { inaccuracy, spread }) => inaccuracy + spread,
             None => 0.0,
         };

@@ -49,7 +49,7 @@ use super::{
     Senses, WeaponFx,
     interp::{Around, InterpClock, Snapshots},
     server::Player,
-    weapon_fx,
+    spread_shape, weapon_fx,
 };
 use crate::{
     core::{
@@ -333,9 +333,10 @@ fn send_weapon_events(
                 let Some(index) = registry.index(id) else {
                     continue;
                 };
-                let (disc, inaccuracy, spread) = match *spread {
-                    SpreadShape::Disc { inaccuracy, spread } => (true, inaccuracy, spread),
-                    SpreadShape::Template(s) => (false, s, 0.0),
+                let (shape, inaccuracy, spread) = match *spread {
+                    SpreadShape::Disc { inaccuracy, spread } => (spread_shape::DISC, inaccuracy, spread),
+                    SpreadShape::Template(s) => (spread_shape::TEMPLATE, s, 0.0),
+                    SpreadShape::Cone(s) => (spread_shape::CONE, s, 0.0),
                 };
                 let message = FireBullets {
                     shooter: e.owner,
@@ -344,7 +345,7 @@ fn send_weapon_events(
                     yaw: *yaw,
                     pitch: *pitch,
                     seed: *seed,
-                    disc,
+                    shape,
                     inaccuracy,
                     spread,
                     mode: *mode,
@@ -665,13 +666,13 @@ fn receive_fire(mut fire: MessageReader<FireBullets>, mut commands: Commands) {
                 yaw: f.yaw,
                 pitch: f.pitch,
                 seed: f.seed,
-                spread: if f.disc {
-                    SpreadShape::Disc {
+                spread: match f.shape {
+                    spread_shape::DISC => SpreadShape::Disc {
                         inaccuracy: f.inaccuracy,
                         spread: f.spread,
-                    }
-                } else {
-                    SpreadShape::Template(f.inaccuracy)
+                    },
+                    spread_shape::CONE => SpreadShape::Cone(f.inaccuracy),
+                    _ => SpreadShape::Template(f.inaccuracy),
                 },
                 mode: f.mode,
             });

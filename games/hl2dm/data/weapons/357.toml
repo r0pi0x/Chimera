@@ -1,0 +1,48 @@
+# The .357 (specs/hl2dm/weapons.md 7.2): 75 a bullet, no spread, a shot
+# every 0.75 s held (not accumulating), 8 degrees up per shot, 6 rounds,
+# 12 carried. Script: bucket 1 position 1, weight 7, clip 6.
+id = "hl2dm:weapon_357"
+base = "hl2dm:gun"
+class = "heavy_pistol"
+slot = 1
+# v_357.mdl's draw (67 ticks).
+draw = 1.0
+weight = 7
+
+[trigger]
+cycle = 0.75
+timing = "set"
+
+[magazine]
+clip = 6
+ammo = "hl2dm:357"
+# 245 ticks.
+reload = 3.6667
+
+[hitscan]
+spread = { cone = 0.0 }
+
+[damage]
+amount = 75.0
+impulse = 10882.81
+
+[sounds]
+fire = "Weapon_357.Single"
+empty = "Weapon_Pistol.Empty"
+
+[models]
+world = "models/weapons/w_357.mdl"
+view = "models/weapons/v_357.mdl"
+view_right_handed = true
+
+[hud]
+name = "#HL2_357Handgun"
+icon = "357"
+
+[hooks."hl2dm:inventory"]
+position = 1
+
+# (-8, U(-2, 2), 0): eight degrees up.
+[hooks."hl2dm:punch"]
+pitch = [-8.0, -8.0]
+yaw = [-2.0, 2.0]
