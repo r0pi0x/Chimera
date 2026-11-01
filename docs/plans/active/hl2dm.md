@@ -77,10 +77,10 @@ identity, network).
 
 | Area | Covered by CS:S's code | HL2:DM's own |
 |---|---|---|
-| Mount | `games/cs_source/src/game/mount.rs` mounts `cstrike/` then `hl2/`'s `hl2_textures`, `hl2_sound_vo_english`, `hl2_sound_misc`, `hl2_misc` VPKs and `platform/`; VPK v2 in `source_formats::vpk` | `hl2mp/` first (loose, `custom/`, `hl2mp_pak_dir.vpk`), then the same `hl2/` and `platform/` layers, `download/` and Chimera's content cache last. Better: read the install's `hl2mp/gameinfo.txt` SearchPaths, the game's own order (lift S1). Exact VPK list to confirm at M0 |
+| Mount | `games/cs_source/src/game/mount.rs` mounts `cstrike/` then `hl2/`'s `hl2_textures`, `hl2_sound_vo_english`, `hl2_sound_misc`, `hl2_misc` VPKs and `platform/`; VPK v2 in `source_formats::vpk` | `hl2mp/` first (loose, `custom/`, `hl2mp_pak_dir.vpk`), then the same `hl2/` and `platform/` layers, `download/` and Chimera's content cache last. Better: read the install's `hl2mp/gameinfo.txt` SearchPaths, the game's own order (lift S1). Confirmed by H0 (specs/hl2dm/source_deltas.md, "gameinfo.txt"): `hl2mp/custom/*`, `hl2mp_english.vpk` (absent), `hl2mp_pak.vpk`, four `hl2_complete` VPKs (only `_misc` present), the four `hl2/` VPKs, `platform_misc.vpk`, then loose `hl2mp/`, `hl2_complete/`, `hl2/` (its `scripts/` hold the sound manifest, prop data and surface properties), `platform/`, `hl2mp/download` last: every VPK before any loose folder |
 | Game info | `cs_source::game::INFO` (`GameInfo`) | `hl2dm::game::INFO`: id `hl2dm`, `short_name` "HL2:DM", `content_dir` `hl2mp`, Steam app 320, `required` `hl2mp/hl2mp_pak_dir.vpk` and `hl2/hl2_misc_dir.vpk`, `maps/<name>.bsp`, `cfg/config_default.cfg` binds, its movement cvars, 0.0254 m per unit, tick from the spec (expected 0.015 s), `console_namespaces` (open question 1) |
-| Maps | `bsp.rs` (BSP v20 to `MapData`), `lightmap.rs`, `ambient.rs`, `overlays.rs`, `detail.rs`, `decals.rs`, `sky.rs`, `water.rs`, `ropes.rs`, `soundscape.rs`, `fire.rs`, `beams.rs`, `trails.rs`, `steam.rs`, `sprites.rs`, `dust.rs`, `breakables.rs`, `nav.rs`; the converted-map cache (`map::cache`) | the stock maps (dm_lockdown, dm_overwatch, dm_powerhouse, dm_resistance, dm_runoff, dm_steamlab, dm_underpass, halls3: to confirm at M0); its entities beyond specs/source/: `info_player_deathmatch`/`_combine`/`_rebel`, placed `weapon_*` and `item_*` that respawn, `prop_physics_respawnable`, chargers, combine ball launchers; its `MapLoader` and a `MapDressing` for its players on other games' maps |
-| Materials | `material.rs` (VMT/VTF, lenient VMT, stand-in shaders), Chimera's Source shaders in `chimera_present` (specs/cs_source/shaders.md) | HL2's character shaders (`Eyes`, `EyeRefract`, `Teeth`) and flexed faces, not specced (CS:S's models have no flexes: specs/cs_source/mdl_v48.md); any map shader CS:S's maps don't use (found by `mapsweep` at M1) |
+| Maps | `bsp.rs` (BSP v20 to `MapData`), `lightmap.rs`, `ambient.rs`, `overlays.rs`, `detail.rs`, `decals.rs`, `sky.rs`, `water.rs`, `ropes.rs`, `soundscape.rs`, `fire.rs`, `beams.rs`, `trails.rs`, `steam.rs`, `sprites.rs`, `dust.rs`, `breakables.rs`, `nav.rs`; the converted-map cache (`map::cache`) | the stock maps (dm_lockdown, dm_overwatch, dm_powerhouse, dm_resistance, dm_runoff, dm_steamlab, dm_underpass, halls3: confirmed by H0, all BSP v20 with LDR and HDR lighting; halls3 is outside the map cycle); its entities beyond specs/source/: `info_player_deathmatch`/`_combine`/`_rebel`, placed `weapon_*` and `item_*` that respawn, `prop_physics_respawnable`, chargers, `func_useableladder` (stock maps have no combine ball launcher); its `MapLoader` and a `MapDressing` for its players on other games' maps |
+| Materials | `material.rs` (VMT/VTF, lenient VMT, stand-in shaders), Chimera's Source shaders in `chimera_present` (specs/cs_source/shaders.md) | HL2's character shaders (`Eyes`, `Teeth`; no player model uses `EyeRefract`) and flexed faces, not specced (CS:S's models have no flexes: specs/cs_source/mdl_v48.md); of the stock maps' world shaders only `UnlitTwoTexture` (dm_underpass) is new (H0) |
 | Models and animation | `props.rs` (MDL via `vmdl`, LODs, skins, body groups, `.phy`, ragdolls), `anim.rs` (v44-48 animation, sequences, events, attachments, include models), `propdata.rs`, `surfaceprops.rs`; CS:S's hostages already play HL2 citizen sequences (`hostage_anim.rs`) | HL2:DM's player models (Combine soldier, super soldier and metro police; the Rebels' male and female citizens), their include models, hitbox sets and ragdolls; the multiplayer animation state (activities per held weapon kind, aim and move pose parameters, fire, reload and jump gestures) instead of CS:S's (`player_anim.rs`); view models (`v_*.mdl`) and their activities |
 | Movement | Source movement (`movement.rs` with `Tracer`, `drown.rs`, `shadow.rs`, `pushaway.rs`; `SourceMovementConfig` already holds CS:S's values, stamina and the bunny-hop cap among them) | HL2:DM's numbers (walk, run and sprint speeds, `+walk`/`+speed` meaning), sprint drawing aux power, the jump's forward boost and its quirks, drowning through aux power, fall damage: a config and a few hooks, not a second movement |
 | Physics props as weapons | avian bodies for `prop_physics*` (specs/cs_source/physics_props.md), damage impulses, prop-on-player crush damage (`FixedPostUpdate`: "new contacts of props ──> impact Damage"), `prop_physics_multiplayer` push-away, `NetProp` replication | the gravity gun (punt, pull, hold, throw, limits by mass and size, what it can't hold), `+use` carry, physics damage to players by mass and speed with the thrower credited, the combine ball held and launched; who simulates a held prop on the network |
@@ -171,15 +171,14 @@ as math, per-tick order, edge cases, quirks, numbered test cases, open
 questions; no code blocks). The user reviews each before it is
 implemented.
 
-**Where they run.** On the Windows PC, as Combat Arms' waves do: a
-clean checkout of this repo, the SDK cloned somewhere outside it (the
-session asks the user where; the path never goes into the repo or a
-commit), and the game installed there for checking values. One session
-hands each brief to its own subagent, each brief writes only its own
-file, the main session alone does the git work; push to
-`specs-incoming` for review, or to main. The Linux box never holds the
-SDK: its sessions implement. Measurements (the probe, refcmp) are not
-code reading and run where the game is (section 6). Open question 6.
+**Where they run.** On this box, as separate sessions (user decision,
+2026-11-01, open question 6): the public SDK is cloned outside the
+repository and read in place; each spec session works in its own agent
+slot on its own branch, writes only `specs/hl2dm/` (and this plan's
+board), commits and leaves the merge to the coordinator. Nothing derived
+from the SDK is written anywhere else; implementation sessions never
+open it. Measurements (the probe, refcmp) are not code reading and run
+where the game is (section 6).
 
 **What exists.** `specs/source/` (entity I/O, triggers, doors and
 buttons, breakables, fire, physics brushes and constraints, prop
@@ -195,17 +194,17 @@ HL2:DM unchanged and what differs, so nothing is specced twice.
 
 | H | Spec file | Wave | Covers | Unblocks |
 |---|---|---|---|---|
-| H0 | `source_deltas.md` | 0 | for each Source-engine spec in specs/cs_source/ and specs/source/: holds for HL2:DM as is, or what differs; HL2's character shaders (`Eyes`, `EyeRefract`, `Teeth`) and flexes at rest; install facts (search path, VPKs, stock maps, BSP versions, Steam build) | S-lifts' scope, M1 |
-| H1 | `movement.md` | 1 | speeds (walk, run, sprint), `+speed`/`+walk`, accelerate and friction values, the jump and its forward boost (and the quirks players use), duck, ladders, water and drowning, fall damage, step, the tick rate; deltas against specs/cs_source/movement.md | S6, M3 |
-| H2 | `suit.md` | 1 | health and armour limits, the armour split per damage class, aux power (pool, drain per device, recharge, delays, what stops sprint), flashlight, breath, suit zoom, health kits, vials, batteries, chargers (rates, capacity, recharge), death and respawn state | C2, M3 |
-| H3 | `weapons.md` | 1 | inventory and slots (HL2's slot and position grid), switching and draw times, pickup and drop, ammo types and carry limits, `mp_weaponstay`; pistol, .357, SMG1, AR2, shotgun (fire rates, spread cones, damage per ammo type, hitgroup scales, view punch, reloads, the shotgun's double shot and shell reload); crowbar and stunstick (rates, reach, hull, damage, effects); the weapon scripts' fields we read | M4 |
-| H4 | `projectiles.md` | 2 | SMG1 grenade, AR2 energy ball (charge, launch, bounces, lifetime, dissolve), RPG (missile speed, guidance by the laser dot, losing the dot), crossbow (bolt speed, gravity, water, zoom, sticking), frag (fuse, throw, roll, lob, bounce), S.L.A.M. (tripmine beam, satchel throw and detonator, arming), the blast's radius damage and push | C1, M5 |
-| H5 | `gravity_gun.md` | 2 | punt (impulse by mass, range, cone, cooldown), pull, pick-up (reach, mass and size limits, what it never holds), the held object's motion and rotation, throw, drop on damage, the combine ball in it, `+use` carry; physics damage to players (by mass and speed, the thrower's credit and how long it lasts); `prop_physics_respawnable`; what the server simulates and what clients see | C6, M6 |
-| H6 | `rules.md` | 1 | DM and TDM (`mp_teamplay`), teams and their models, `cl_playermodel`, spawn-point choice, respawn (`mp_forcerespawn`, delays), frag and time limits, intermission and map change, scoring (suicides, team kills, world kills), team change and balance, chat, the game events and log lines, the server cvars and their defaults | M7 |
-| H7 | `player_models.md` | 2 | the player models and team mapping, the multiplayer animation state (activities per weapon kind, pose parameters, gestures), hitboxes and hitgroups, ragdolls on death, the view models' activities and HL2MP bob | S9, M8 |
-| H8 | `hud.md` | 3 | each HUD panel's behaviour (when it shows, flashes, fades; `scripts/hudanimations.txt`'s events), weapon selection, quick info, pickup history, death notices and their icons, damage indicator, aux power panel, suit zoom overlay, crosshair, scoreboard, team menu and MOTD | S7, M9 |
-| H9 | `effects_sounds.md` | 3 | muzzle flashes, tracers, impacts (deltas against specs/cs_source/impact_effects.md), explosions, the dissolve, the gravity gun's beams, the RPG's dot and trail; weapon, suit, pickup, charger, footstep and pain sound entries, loudness and fall-off | S5, S10, M10 |
-| H10 | `maps_entities.md` | 3 | HL2:DM's map entity classes beyond specs/source/ (pickups and their respawn, chargers, combine ball launchers, `func_physbox_multiplayer`, spawn classes, teleports), the stock maps' entity counts | C3, M7 |
+| H0 | `source_deltas.md` | 0 | **landed (draft, 2026-11-01)**: each spec in specs/cs_source/ and specs/source/ judged same, same-re-derive, differs or CS:S-only, with the numbers; install facts (search path, VPKs, stock maps, BSP and MDL versions, builds, tick, cvars, player models, weapon scripts, ammo table, HUD resources, the server and SourceMod) | S-lifts' scope, M0, M1 |
+| H1 | `movement.md` | 1 | starts from source_deltas.md 1.1–1.2 (gravity 600, jump 160, hull 72/36, speeds 150/190/320, sprint on aux power, no stamina, `sv_accelerate` 10, `sv_stopspeed` 100, input speeds 450, fixed 10 fall damage, the HL2 fall thresholds); writes: the probe measurements of the jump (bunny-hop cap or none, `player_limit_jump_speed`, the back-hop, the single-player-only forward boost), the ducked hull, air duck lift and duck input scale, **`func_useableladder`** with `info_ladder_dismount` (mount cone and distance, dismount choice, jump-off; contents ladders not climbable), water jump and swim, the always-allowed acceleration, step sounds' timing; drowning goes to H2 | S6, M3 |
+| H2 | `suit.md` | 1 | health and armour limits; the armour rule (80 % absorbed, 1 armour per point, 2 against blasts, at least 1, what bypasses it; source_deltas.md "Behavior") and whether `hits::absorb` can express it (C2); aux power (pool 0–100, recharge 12.5/s after 0.5 s with no device, sprint 25/s, breather 6.7/s, what stops sprint); breath (no air used while aux power lasts, then 7 s, then 10 a second, recovery); the flashlight (`mp_flashlight`, no aux drain in HL2:DM: confirm); suit zoom (`impulse 50`, `+zoom`); health kits 25, vials 10, batteries 15, chargers (75 suit, 50 health: rates, recharge); death state | C2, M3 |
+| H3 | `weapons.md` | 1 | inventory and slots (`bucket`, `bucket_position`, `weight`, `cl_autowepswitch`, `cl_defaultweapon`, `phys_swap`, `lastinv`), switching and draw times, pickup and drop, the spawn loadout, ammo carry limits (source_deltas.md's ammo table), `mp_weaponstay` and weapon/item respawn (20 s, 30 s); pistol (no spread despite its accuracy ramp; click refire 0.1 s), .357, SMG1, AR2, shotgun (7 and 12 pellets), with the scripts' player damage, the hitgroup cvars (head 3), damage against non-players per ammo type, view kick, reloads and auto-reload (3 s); crowbar (25, 75, 0.4) and stunstick (40, 75, 0.8) with the hull sweep; reads the plain `.txt` scripts only | M4 |
+| H4 | `projectiles.md` | 2 | SMG1 grenade (100 damage, radius 250), AR2 energy ball (radius 10, life 4 s, mass 150: charge, launch, bounces, dissolve), RPG (1500 units/s, guidance by the laser dot, losing the dot), crossbow (3500 in air, 1500 in water, gravity, zoom, sticking), frag as a **physics object** (fuse 2.5 s, throw 1200, lob 350 + 50 up, roll 700 when ducked, blips, live drop on death; CS:S's bounce rule does not apply), S.L.A.M. (tripmine beam, satchel throw and detonator, arming), blast damage and push | C1, M5 |
+| H5 | `gravity_gun.md` | 2 | punt and pull (`physcannon_*` cvars: max mass 250, reach 250, forces 700–1500, pull 4000, cone 0.97), pick-up (reach, mass and size limits, what it never holds), the held object's motion and rotation, throw (`player_throwforce` 1000), drop on damage, the combine ball in it; **`+use` carry is off by default** (`hl2mp_allow_pickup` 0): say what `+use` on a prop does then; physics damage to players (energy scale 4, the impact table, the thrower's credit and how long it lasts); `prop_physics_respawnable` (329 placed); what the server simulates and what clients see | C6, M6 |
+| H6 | `rules.md` | 1 | DM and TDM (`mp_teamplay`), teams and their models (round-robin replacement on a team mismatch, 5 s model and team change limits, `cl_playermodel` fallback), spawn-point choice (team spawns, random start, validity, the 48-unit telefrag fallback), death view and respawn (no freeze cam; observer after 3 s; any button or `mp_forcerespawn` after 5 s; `valve.rc`'s `mp_forcerespawn 0`), frag and time limits, intermission (`mp_chattime` 10) and map change (halls3 not in the cycle), restart (`mp_restartgame`, `mp_readyrestart`), scoring (suicides, team kills, world kills), chat, game events and log lines, the server cvars | M7 |
+| H7 | `player_models.md` | 2 | the 19 player models and team mapping; animation through `hl2mp/`'s include overrides (`models/player/male_anims.mdl`, `female_anims.mdl`: 105 sequences, 8 pose parameters) and the activity-based state (per `anim_prefix`), gestures; hitboxes and hitgroups; `hl2mp_ragdoll` bodies; the Eyes and Teeth shaders and flexes at rest (citizens: 54 controllers); view models (right-handed, no mirroring; FOV 75 and `viewmodel_fov` 54; the HL2MP bob row) | S9, M8 |
+| H8 | `hud.md` | 3 | each HUD panel's behaviour (when it shows, flashes, fades; `hl2mp/`'s `scripts/hudanimations.txt` and `hudlayout.res`), the scheme's fonts (GorDIN from `hl2_complete/resource/`, HalfLife2, HL2MP, HL2cross), weapon selection from the scripts' font icons, quick info, pickup history, death notices and their icons, damage indicator, aux power panel, flashlight, suit zoom overlay, crosshair (`Crosshairs` font), scoreboard, team menu and MOTD | S7, M9 |
+| H9 | `effects_sounds.md` | 3 | muzzle flashes, tracers (every 2nd for SMG1/AR2, `AR2Tracer`, whizz by `Bullets.DefaultNearmiss`), impacts (old-style as impact_effects.md; AR2's own), blood particles, explosions, the dissolve, the gravity gun's beams, the RPG's dot and trail, the UnlitTwoTexture shader (dm_underpass); weapon, suit, pickup, charger sound entries; footsteps per model type (`NPC_Citizen`/`NPC_CombineS`/`NPC_MetroPolice` `.RunFootstep*`, none while ducked), pain and death (`.Die`), loudness and fall-off | S5, S10, M10 |
+| H10 | `maps_entities.md` | 3 | HL2:DM's map entity classes beyond specs/source/: `weapon_*` and `item_*` pickups (healthkit 76, battery 44, ammo boxes) and their respawn, `item_ammo_crate`, `item_suitcharger`, `item_healthcharger`, `prop_physics_respawnable`, `func_useableladder` placement data, spawn classes, `env_headcrabcanister` (dm_runoff, 6), `env_flare`, `phys_motor`, `point_angularvelocitysensor`, `func_clip_vphysics`, `game_ragdoll_manager`, `func_dustcloud`, `env_lightglow`; the stock maps' counts (source_deltas.md). No stock map has a combine ball launcher or `func_physbox_multiplayer` (both dropped) | C3, M7 |
 
 H1, H2, H3 and H6 can run side by side (wave 1, after H0); wave 2 reads
 wave 1's files; wave 3 last. Board numbers are H0-H10.
@@ -277,7 +276,24 @@ copy it or depend on `cs_source`; record any assumption in the code's
 - M0 records the install's facts here (Steam build, `gameinfo.txt`'s
   search paths, the VPKs with sizes, the stock maps and their BSP
   versions, the player and weapon model lists): file names and hashes
-  are facts and may be committed, contents never.
+  are facts and may be committed, contents never. **Recorded by H0** in
+  specs/hl2dm/source_deltas.md, Part 2: game build 24600434, server
+  build 24600426, `PatchVersion` 10889068; the search path and VPK sizes;
+  the 8 stock maps (BSP v20, revisions, sizes, spawn counts); tick 0.015 s
+  (the server also honours `-tickrate`, CS:S's doesn't); the cvars that
+  differ from CS:S; the 19 player models; the weapon scripts (plain
+  `.txt` beside encrypted `.ctx`: Chimera reads the `.txt`, no key); the
+  ammo table. Left for M0 over RCON: the engine's rate cvars and the
+  shipped values of the registered defaults (source_deltas.md, Open
+  questions 1).
+- **The probe on HL2:DM** (H0): the dedicated server's `srcds_run`
+  starts the 32-bit `srcds_linux` (64-bit libraries ship, a 64-bit
+  launcher doesn't), so the probe runs as CS:S's: Metamod:Source and
+  SourceMod 1.12, 32-bit. The SourceMod 1.12 package on this box has
+  HL2:DM builds for 32 and 64 bits and `hl2mp` SDK-tools offsets for
+  both; whether they match build 24600426 is the first thing M0 checks.
+  The replay bot should be a SourceMod fake client, not HL2:DM's new
+  NextBot bots.
 
 **The asset service.** The packer is generic (asset-service.md,
 "Decisions": a new game needs its mount description, its Steam app id
@@ -374,8 +390,12 @@ overlap once their specs land (one lift per area at a time).
    `apps/hl2dm` with DM, TDM, every weapon, the suit and the HUD. Do
    its menus (GameUI main menu, create server, options, server
    browser) come too, as CS:S's, or the shell's plain menus?
-4. **Bots in the faithful app.** None, as in HL2:DM (parity), or
-   Combat Arms' bots as an opt-in option for playtests?
+4. **Bots in the faithful app.** H0 found that the current HL2:DM
+   ships bots (NextBot: `hl2mp_bot_add`, `hl2mp_bot_quota`,
+   `hl2mp_bot_difficulty`, gravity-gun-only and melee-only modes; they
+   generate `.nav` files, none ship). Parity would mean HL2:DM's own bots
+   eventually (a spec wave of their own), or Combat Arms' bots as an
+   opt-in option for playtests, or none for now?
 5. **The odd weapons in Ultimate Gun Game.** The gravity gun needs
    props to throw (CS:S's maps have few): leave it out of the ladder,
    give it a class of its own, or only on HL2:DM's maps? The same for
@@ -388,6 +408,9 @@ overlap once their specs land (one lift per area at a time).
 7. **The dedicated server's files.** May heavy tests read maps and
    models from the dedicated server install (232370, free) when the
    game isn't installed, or only the game (320) and the asset store?
+   (H0: the server has the same maps, `hl2mp` pak and HL2 misc VPK, but
+   only the directory files of HL2's texture and sound VPKs, so maps
+   and models load from it, textures and sounds don't.)
 8. **The shared crate's name.** `source/engine` (`source_engine`) for
    Source behaviour shared by CS:S and HL2:DM, or another name?
 9. **The big lifts first.** BSP conversion (S2) and Source movement
@@ -404,7 +427,9 @@ implementing (owner branch) / done.
 
 | Item | Spec | Status | Lift |
 |---|---|---|---|
-| M0 install and look | H0 (install facts) | not started | S0, S1, S11 |
+| Wave 0 spec | H0 `source_deltas.md` | spec landed (branch `hl2dm-h0`, 2026-11-01; user review pending) | – |
+| Wave 1 specs | H1 `movement.md`, H2 `suit.md`, H3 `weapons.md`, H6 `rules.md` | spec landed (branch `hl2dm-w1`, 2026-11-01; user review pending; corrections to H0 listed in each) | – |
+| M0 install and look | H0 (install facts) | not started (facts recorded; RCON reads and the probe left) | S0, S1, S11 |
 | M1 maps load | H0 | not started | S2, S3, S4 |
 | M3 movement, suit | H1, H2 | not started | S5, S6, C2, C8 |
 | M4 bullets, melee, UGG | H3 | not started | S8, C4, C7 |
@@ -419,6 +444,31 @@ implementing (owner branch) / done.
 ## Progress
 
 - 2026-11-01: plan written (no code).
+- 2026-11-01: wave 0 (H0) written: specs/hl2dm/README.md and
+  specs/hl2dm/source_deltas.md. Main findings: gravity 600, jump 160
+  (about 20 units), hull 72/36, walk/run/sprint 150/190/320 with sprint
+  on aux power, no stamina and no bunny-hop cap in the SDK, fixed 10
+  fall damage, `func_useableladder` ladders only, footsteps per model and
+  none while ducked, no penetration and player damage from the scripts,
+  pistol and .357 without spread, head ×3, suit absorbs 80 %, `+use`
+  carry off by default, no freeze cam, HL2:DM's animation reached
+  through `hl2mp/`'s overrides of HL2's include models, MDL versions
+  44–48 all present, FOV 75, HL2:DM ships NextBot bots. Briefs H1–H10
+  refined in section 4 accordingly.
+- 2026-11-01: wave 1 (H1, H2, H3, H6) written: specs/hl2dm/movement.md,
+  suit.md, weapons.md, rules.md (draft). Main findings: no bunny-hop
+  cap, no forward jump boost in multiplayer (`player_limit_jump_speed`
+  unread); sprint starts only on the `+speed` press and wins over walk;
+  ladders pull onto the line and climb at exactly 200; armour fits
+  `hits::absorb`'s shape (C2) given separate armour and health quanta and
+  the bypass classes; health keeps fractional damage; drowning after aux
+  power and 7 s of air; `impulse 50` isn't suit zoom (`+zoom` is);
+  pistol has its 1°–6° spread after all; bullets do the script damage to
+  props too; 2 spawn grenades; dead players never become observers, so
+  `mp_forcerespawn` always applies (shipped `valve.rc` sets 0: button
+  respawn after 3 s); no 5 s team-change limit; spawn spots occupied
+  within 128 units. Each spec lists its corrections to H0 and its probe
+  cases.
 
 ## Decision log
 
