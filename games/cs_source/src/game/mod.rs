@@ -194,7 +194,6 @@ pub mod rungs;
 pub mod scrapes;
 pub mod shadow;
 pub mod sound;
-pub mod soundscape;
 pub mod view_anim;
 pub mod vgui;
 pub mod view_motion;
@@ -208,7 +207,7 @@ pub use source_formats::{lumps, pak, phy, vhv, vpk, wav};
 // active/hl2dm.md, section 3), at their old paths.
 pub use source_engine::content::{
     ambient, anim, beams, breakables, decals, detail, dust, lightmap, material, nav, overlays, pcf, propdata, props,
-    ropes, sky, sprites, steam, surfaceprops, trails, water,
+    ropes, sky, soundscape, sprites, steam, surfaceprops, trails, water,
 };
 
 /// The game's id (`cs_source`): defined with the gameplay's condition
