@@ -35,6 +35,12 @@ the user's go-ahead: no Actions runs unless asked.
   picks it up again. No PR test runner or CI for now;
   AGENTS.md asks contributors to test before merging (a guideline). A
   friend's test VM may come later.
+- **Decisions (user, 2026-10-31):** console namespaces approved as
+  designed below (build now); Combat Arms' mission timers, captions,
+  messages and objective list get our own simple display with the
+  install's HUD fonts, marked as ours (the client code isn't in the
+  reference); **the next game is Half-Life 2: Deathmatch**, after the
+  "before the next game" list (namespaces, the rest of the ECS cleanup).
 - **Console namespaces (user idea, 2026-10-30).** With several games in
   one app, flat command and setting names (`sv_cheats`, `cl_hitmarker`)
   collide. Proposed:
