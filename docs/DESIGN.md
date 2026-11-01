@@ -322,18 +322,30 @@ and command has a full name like our ids, `<namespace>:<name>`:
 full name always works (user decision, 2026-10-31;
 [plans/active/console-namespaces.md](plans/active/console-namespaces.md)).
 
-- Original names stay in their game's namespace, for parity. The Source
-  names the engine implements (movement, network, video and audio
-  settings, `noclip`, `map`) are CS:S's, so a name registered without a
-  namespace is `cs_source`'s. Combat Arms' names are `combat_arms:` (its
-  `ca_*` ones keep the prefix).
+- Original names stay in their game's namespace, for parity, and the
+  Source names split in two (user decision, 2026-11-01). What Chimera's
+  engine implements for any Source game (maps and connecting, video,
+  audio, network and input settings, demos, screenshots, chat, voting,
+  the `+attack` actions, `noclip`/`god`/`setpos`) is `chimera:`, in
+  Source's spelling: `chimera:map`, `chimera:fps_max`, `chimera:rate`.
+  A game's own rules and the movement and physics values each Source
+  game tunes (`mp_*`, `bot_*`, the buy menu, `sv_gravity`, `sv_maxspeed`)
+  stay in its namespace, so HL2:DM can have `hl2dm:sv_gravity` beside
+  `cs_source:sv_gravity`. One table sorts them
+  (`chimera_core::console_names`), and a name registered without a
+  namespace goes where it says: `chimera:` for an engine name, else
+  `cs_source`. The old full names (`cs_source:fps_max`, in saved
+  configs, binds and scripts) still resolve to the engine's.
+  Combat Arms' names are `combat_arms:` (its `ca_*` ones keep the
+  prefix).
 - Ours are `chimera:` with no `sv_`/`cl_`/`chimera_` prefix
   (`chimera:hitmarker`, `chimera:announcer`), and so is the console's own
   language (`bind`, `alias`, `exec`, `scope`, ...), which every game uses.
 - A game's `GameInfo::console_namespaces` lists its canonical namespace
   and its aliases (`css`, `ca`), accepted wherever a namespace is; the
   canonical one is what configs save and the network sends.
-- Short names resolve in the scope's game, then `chimera`, then wherever
+- Short names resolve in the scope's game, then `chimera` (the engine's
+  names, whichever game is the scope), then wherever
   only one game has them; more than one is an error with a hint. The
   scope follows the game played (the party apps: the gun in hand) unless
   `scope <game>` pins it.

@@ -25,6 +25,8 @@ use chimera_world::greybox::GreyboxMapPlugin;
 struct Rules {
     cs: u32,
     ca: u32,
+    /// An engine name (`decalfrequency`), registered bare: `chimera:`.
+    engine: u32,
 }
 
 /// What the server heard from clients (`ClientCommand` lines).
@@ -36,7 +38,7 @@ fn hear(mut from: MessageReader<FromClient<ClientCommand>>, mut heard: ResMut<He
 }
 
 /// Whether a game's look-alike `setpos` ran (a command a server must not
-/// pick for the client's `cs_source:setpos`).
+/// pick for the client's `chimera:setpos`).
 #[derive(Resource, Default)]
 struct OtherSetpos(u32);
 
@@ -50,6 +52,7 @@ fn setup(app: &mut App) {
         .init_resource::<OtherSetpos>()
         .add_systems(PreUpdate, hear);
     resource_cvar::<Rules, u32>(app, "cs_source:sv_rule", "CS:S's rule", |r| &mut r.cs);
+    resource_cvar::<Rules, u32>(app, "decalfrequency", "Source's, the engine's", |r| &mut r.engine);
     resource_cvar::<Rules, u32>(app, "combat_arms:sv_rule", "Combat Arms' rule", |r| &mut r.ca);
     chimera_core::console::ConsoleAppExt::console_command(
         app,
@@ -120,7 +123,7 @@ fn a_clients_commands_go_to_its_server_by_full_name() {
     submit(&mut sim, None, "sv_cheats 1; scope combat_arms");
     sim.ticks(30);
     let me = sim.character_of(0).expect("client 0's player");
-    // The client types the short name in CS:S's scope.
+    // The client types the short name in CS:S's scope: the engine's command.
     submit(&mut sim, Some(0), "scope cs_source; setpos 100 200 300");
     assert!(
         sim.until(300, |s| !s.server.app.world().resource::<Heard>().0.is_empty()),
@@ -128,10 +131,10 @@ fn a_clients_commands_go_to_its_server_by_full_name() {
     );
     assert_eq!(
         sim.server.app.world().resource::<Heard>().0,
-        ["cs_source:setpos 100 200 300"]
+        ["chimera:setpos 100 200 300"]
     );
     sim.ticks(5);
-    // It ran CS:S's setpos on the client's player (Source units, feet).
+    // It ran the engine's setpos on the client's player (Source units, feet).
     let at = sim.server.app.world().get::<Transform>(me).unwrap().translation;
     assert!(
         (at.x - 100.0 * 0.0254).abs() < 0.05 && (at.z + 200.0 * 0.0254).abs() < 0.05,
@@ -142,4 +145,24 @@ fn a_clients_commands_go_to_its_server_by_full_name() {
         0,
         "not the server scope's setpos"
     );
+}
+
+/// The engine's Source names are `chimera:`'s on the wire; a server
+/// script written before the move (`cs_source:decalfrequency`) sets the
+/// same cvar, and the client gets it by the new full name.
+#[test]
+fn engine_cvars_replicate_as_chimeras_and_the_old_name_sets_them() {
+    let mut sim = joined();
+    submit(&mut sim, None, "cs_source:decalfrequency 7");
+    assert!(
+        sim.until(300, |s| s.clients[0].app.world().resource::<Rules>().engine == 7),
+        "the client gets the engine's cvar"
+    );
+    let c = sim.server.app.world().resource::<Console>();
+    assert_eq!(c.cvar("decalfrequency").unwrap().name, "chimera:decalfrequency");
+    assert_eq!(c.cvar_scope("cs_source:decalfrequency"), chimera_core::console::CvarScope::Replicated);
+    // The client can't set it: the server's.
+    submit(&mut sim, Some(0), "chimera:decalfrequency 1");
+    sim.ticks(10);
+    assert_eq!(sim.clients[0].app.world().resource::<Rules>().engine, 7);
 }

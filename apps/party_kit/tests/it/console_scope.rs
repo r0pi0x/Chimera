@@ -81,3 +81,26 @@ fn short_names_follow_the_gun_in_hand() {
     assert_eq!(resolve(&sim, "css:party_test"), is("cs_source:party_test"));
     assert_eq!(resolve(&sim, "ca:party_test"), is("combat_arms:party_test"));
 }
+
+/// The engine's Source names are Chimera's: the same cvar whatever the
+/// gun in hand, and the old `cs_source:` spelling (saved configs, binds)
+/// still reaches it; CS:S's tuned values stay in its namespace.
+#[test]
+fn engine_names_mean_the_same_in_every_game() {
+    let mut sim = party();
+    sim.app.init_resource::<Both>();
+    // Registered bare, as the apps do: one engine name, one game-tuned.
+    resource_cvar::<Both, u8>(&mut sim.app, "fps_max", "an engine name", |b| &mut b.0);
+    resource_cvar::<Both, u8>(&mut sim.app, "sv_gravity", "a tuned value", |b| &mut b.1);
+    let me = soldier(&mut sim);
+    sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
+    sim.seconds(1.5);
+    for game in ["cs_source", "combat_arms"] {
+        to_rung_of(&mut sim, me, game);
+        assert_eq!(resolve(&sim, "fps_max"), is("chimera:fps_max"), "{game}");
+    }
+    assert_eq!(resolve(&sim, "cs_source:fps_max"), is("chimera:fps_max"));
+    assert_eq!(resolve(&sim, "css:fps_max"), is("chimera:fps_max"));
+    assert_eq!(resolve(&sim, "sv_gravity"), is("cs_source:sv_gravity"), "game-tuned stays CS:S's");
+    assert_eq!(resolve(&sim, "chimera:sv_gravity"), Resolved::Unknown);
+}
