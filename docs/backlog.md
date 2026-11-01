@@ -2442,6 +2442,16 @@ docs/plans/active/sound.md.
 
 ## 9. Performance
 
+- **Disk guards (2026-10-31: the dev box's disk filled to 100%).** The
+  main checkout's `target/debug/incremental` had grown to 206 GB (nothing
+  trims it), slot1's target to 195 GB, the post-push slot's to 101 GB,
+  and the converted-map cache adds up to 40 GB. To do:
+  `tools/clean-worktrees.sh` also trims the main checkout's and the
+  post-push slot's incremental folders past a limit; the map cache and the
+  asset cache check free space before writing (skip the write below a
+  floor) and the map cache's default cap is weighed against free space;
+  `tools/doctor` warns when free space is low.
+
 - **Flaky: `heavy::net_big_map` under a full heavy run (2026-10-31).**
   In a9caa3b5's after-push run, 150 MB took 133.4 s of game time against
   the 120 s limit; alone, at the same load (~20), it passes in 8.8 s.
