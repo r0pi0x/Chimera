@@ -8,7 +8,7 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
-use super::movement::{SourceMovement, SourceMovementConfig, to_source};
+use super::{SourceMovement, SourceMovementConfig, to_source};
 use crate::{
     core::{SimSet, Velocity},
     map::{
@@ -129,8 +129,8 @@ fn push_props(
             }
             // kg.in/s to kg.m/s (to_engine scales units to meters), at the
             // player's centre, so the prop spins too.
-            let impulse = super::movement::to_engine(push_impulse(centre, (b.0 + b.1) / 2.0));
-            let at = super::movement::to_engine(centre);
+            let impulse = super::to_engine(push_impulse(centre, (b.0 + b.1) / 2.0));
+            let at = super::to_engine(centre);
             forces.apply_linear_impulse_at_point(impulse, at);
             pushed = true;
         }
@@ -205,7 +205,7 @@ pub fn push_back<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::movement::to_engine;
+    use crate::source_movement::to_engine;
 
     #[test]
     fn server_push() {

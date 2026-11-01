@@ -170,7 +170,6 @@
 
 pub mod bsp;
 pub mod demo;
-pub mod drown;
 pub mod fire;
 pub mod gameui;
 pub mod grenades;
@@ -186,19 +185,21 @@ pub mod objectives;
 pub mod pain;
 pub mod parts;
 pub mod player_anim;
-pub mod pushaway;
 pub mod radio;
 pub mod resim;
 pub mod rules;
 pub mod rungs;
 pub mod scrapes;
-pub mod shadow;
 pub mod sound;
 pub mod view_anim;
 pub mod vgui;
 pub mod view_motion;
 pub mod votes;
 pub mod weapons;
+
+// Source's movement lifted into `source_engine` (lift S6), at the old
+// paths.
+pub use source_engine::source_movement::{drown, pushaway, shadow};
 
 // Pure-data readers moved to `source_formats`, at their old paths.
 pub use source_formats::{lumps, pak, phy, vhv, vpk, wav};

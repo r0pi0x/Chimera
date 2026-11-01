@@ -33,7 +33,7 @@
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemParam, prelude::*};
 
-use super::movement::{SourceMovement, SourceMovementConfig, to_engine, to_source};
+use super::{SourceMovement, SourceMovementConfig, to_engine, to_source};
 use crate::{
     core::{Health, Intent, PropSurface, SHADOW_LAYER, Velocity},
     map::{

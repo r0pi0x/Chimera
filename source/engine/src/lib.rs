@@ -15,11 +15,12 @@
 
 pub mod content;
 pub mod maps;
+pub mod source_movement;
 pub mod search_path;
 
 // `crate::map`, `crate::core` and `crate::mount` inside, as in the game
 // crates the content modules came from.
 #[allow(unused_imports)]
-use chimera_core::{core, mount};
+use chimera_core::{console, core, mount, slots};
 #[allow(unused_imports)]
 use chimera_world::map;

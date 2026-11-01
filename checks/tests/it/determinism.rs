@@ -52,12 +52,13 @@ const BASELINE: &[(&str, usize, usize)] = &[
     ("chimera/world/src", 22, 0),
     ("chimera/net/src", 27, 0),
     ("source/logic/src", 9, 0),
-    ("games/cs_source/src", 30, 6),
+    ("games/cs_source/src", 30, 3),
     // Source's content converters, lifted from CS:S's loaders with their
     // maps (docs/plans/active/hl2dm.md, S2-S4) and sound scripts (S5),
     // counts moved with the files: what they read becomes the map both
-    // sides simulate.
-    ("source/engine/src", 109, 0),
+    // sides simulate. The statics: Source movement's debug switches (S6;
+    // `CHIMERA_SLIDE_DEBUG`, `CHIMERA_GROUND_DEBUG`, read once).
+    ("source/engine/src", 109, 3),
     ("games/combat_arms/src", 103, 14),
     // Plain-data loaders (no Bevy, so no fixed-hasher maps at hand): what
     // they read becomes the map both sides simulate.

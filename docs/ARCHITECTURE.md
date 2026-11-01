@@ -178,9 +178,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   (docs/plans/active/hl2dm.md, section 3): so far `search_path` (a
   game's search path as a mount, from its `gameinfo.txt` or the game's
   own list), `maps` (the maps an install holds, its map cycle, map
-  import) and `content` (Source's files converted into Chimera's types:
-  maps, materials and models: lifts S2-S4; a game gives a map's
-  conversion its id and hooks, `content::bsp::SourceGame`). It uses the engine's crates and `source_formats`, never the
+  import), `content` (Source's files converted into Chimera's types:
+  maps, materials, models and sounds: lifts S2-S5; a game gives a map's
+  conversion its id and hooks, `content::bsp::SourceGame`) and
+  `source_movement` (Source's player movement, its drowning, physics
+  shadow and push-away: lift S6; each Source game registers it under its
+  own id with its own config). It uses the engine's crates and `source_formats`, never the
   presentation, `mashup`, a game or an app (checked); CS:S and HL2:DM
   use it, Combat Arms never. `cargo test -p source_engine --features
   dev` tests it alone.
@@ -412,7 +415,8 @@ character, movement, mount, map, weapon, objectives and rules (to register
 its rule modules), bot and net (its part of the network); its `ui/` uses
 those, client and the rest of the simulation. `source_engine`'s modules
 `search_path` and `maps` use no module of ours, only the engine's crates
-by name (`chimera_core::mount`); its `content` uses core, map and mount.
+by name (`chimera_core::mount`); its `content` uses core, map and mount;
+its `source_movement` uses core, map, slots and console.
 
 Presentation sits beside the simulation, above `map`: `audio` (sound
 playback, live sounds, room DSP, soundscapes, hearing) uses core and map,
