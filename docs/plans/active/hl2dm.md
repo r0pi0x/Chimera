@@ -432,7 +432,7 @@ implementing (owner branch) / done.
 | Wave 2 specs | H4 `projectiles.md`, H5 `gravity_gun.md`, H7 `player_models.md` | spec landed (branch `hl2dm-w2`, 2026-11-01; user review pending; corrections to H0 and wave 1 listed in each) | – |
 | Wave 3 specs | H8 `hud.md`, H9 `effects_sounds.md`, H10 `maps_entities.md` | spec landed (branch `hl2dm-w3`, 2026-11-01; user review pending; corrections to H0 and waves 1-2 listed in each) | – |
 | M0 install and look | H0 (install facts) | done (branch `hl2dm-m0`, 2026-11-01): S0, S1, `games/hl2dm` skeleton, `dump hl2dm`, heavy `mount.rs`; left for M1/M3: the RCON reads and the probe (below) | S0, S1, (S11) |
-| M1 maps load | H0 | not started | S2, S3, S4 |
+| M1 maps load | H0 | done (branch `hl2dm-m1`, 2026-11-01): S2, S3, S4 lifted, CS:S's maps identical; `games/hl2dm` maps, `Hl2Sim`, stand-in movement and pistol; `apps/hl2dm`, `apps/hl2dm_server`; `mapsweep --game hl2dm` | S2, S3, S4, (S11: mapsweep) |
 | M3 movement, suit | H1, H2 | not started | S5, S6, C2, C8 |
 | M4 bullets, melee, UGG | H3 | not started | S8, C4, C7 |
 | M5 projectiles | H4 | not started | C1 |
@@ -539,6 +539,83 @@ implementing (owner branch) / done.
   reads of the shipped cvar values and the probe's first start (Open
   questions 1 and 2 of source_deltas.md), which need servers on UDP
   ports and go with M3's probe work.
+
+- 2026-11-01: M1 built (branch `hl2dm-m1`). Lifts, each "move, then
+  generalize", CS:S's converted maps compared part by part (digests of
+  meshes, textures and texels, lightmap, entities, props and models, kit,
+  sounds, spawns, warnings, and the whole map) on de_dust2 in all four kit
+  modes, cs_office, de_nuke, cs_militia, de_port at HDR 2 and the guest
+  dress: identical after each; `refcmp report` on de_dust2 gives the
+  baseline's numbers to three decimals. CS:S's and Combat Arms' whole
+  suites (`cargo nextest run -p cs_source -p combat_arms --features dev`,
+  heavy tests on the installs): 2936 passed, 11 skipped before; 2893
+  passed, 11 skipped after, the 43 missing being the moved files' unit
+  tests, which pass in `source_engine` (48 there). Order S3, S4, S2 (the three are
+  one cycle of calls; the leaves first):
+  - S3: `material.rs`, `water.rs` to `source_engine::content`; no CS:S
+    names inside.
+  - S4: `props.rs`, `anim.rs`, `propdata.rs`, `surfaceprops.rs`, `pcf.rs`
+    with the map readers they call (`ambient.rs`, `breakables.rs`,
+    `trails.rs`) and `bsp.rs`'s helpers (`to_engine`, `Bounds`,
+    `playable_bounds`, `parse_vector`, into `content`); a character
+    body's game is `props::load_character`'s argument.
+  - S2: `bsp.rs` and `lightmap`, `overlays`, `detail`, `decals`, `sky`,
+    `ropes`, `beams`, `steam`, `sprites`, `dust`, `nav`; what it read of
+    CS:S is a `bsp::SourceGame` the game passes: id and converter version
+    (the cache key, `cache::key(game.id, game.converter)`; each game's
+    build.rs hashes its own sources and `source/engine/src`), spawn
+    classes and teams, `sv_gravity` (bodies, ropes, gibs), and hooks
+    called where CS:S's code was (`kit`, `extra_particles`, `held`,
+    `sounds`). Left in CS:S: `fire.rs` (S10; the conversion never called
+    it), `soundscape.rs` (with sounds, S5; CS:S's `sounds` hook calls
+    it). Determinism counts moved with the files (cs_source 139 -> 50,
+    source_engine 89).
+
+  `games/hl2dm`: `game::maps` (`HL2DM`: spawns `info_player_deathmatch`,
+  gravity 600, an empty kit), `MAP_LOADER`, `SimPlugins`,
+  `game::Hl2dmPlugins`, `harness::Hl2Sim`; `hl2dm:movement` is
+  Chimera's placeholder under HL2:DM's id with H1's numbers
+  (`placeholder::Tuning`: run 190, sprint 320, gravity 600, jump 160);
+  `hl2dm:weapon_pistol` as data (8 a bullet, head x3, clip 18, 150
+  carried). `apps/hl2dm` (binary `hl2dm`, FOV 75) and
+  `apps/hl2dm_server` play the greybox and every stock map. `mapsweep`
+  moved to the sandbox crate's host tools with `--game`.
+
+  The stock maps as converted (build 24600434; every entity count equals
+  source_deltas.md's table): dm_lockdown 22 169 triangles, 452 props, 648
+  entities (60 lights), 33 spawns; dm_overwatch 8 822, 277, 364 (26), 17;
+  dm_powerhouse 42 975, 567, 1400 (326), 18; dm_resistance 27 067, 549,
+  630 (108), 20; dm_runoff 23 912, 649, 608 (45), 9; dm_steamlab 39 798,
+  1221, 1090 (135), 24; dm_underpass 21 466, 692, 878 (86), 17; halls3
+  10 028, 305, 337 (37), 10. No material missing.
+
+  `mapsweep --game hl2dm --stock` (no map cache): 8 of 8 load, no
+  failures. Load warnings: static props' baked light (`sp_<n>.vhv`)
+  not matching their model, lit by the probe instead (dm_resistance 8,
+  dm_runoff 7, halls3 6: `tree_deciduous_card_01.mdl`, checksums
+  e0297c46 against the model's 16fedd26, same vertex count); overlays
+  without geometry (dm_resistance 1, dm_runoff 8, dm_steamlab 2);
+  infodecals without a surface (dm_resistance 1, dm_underpass 14).
+  Classes nothing handles yet: the pickups (`item_healthkit` 76,
+  `item_battery` 44, `item_ammo_*`, `item_box_buckshot`,
+  `item_rpg_round`, `item_suitcharger` 12, `item_healthcharger` 8,
+  `item_healthvial`, `item_ammo_crate`: M7, H10), `func_useableladder`
+  (26 on 6 maps: M3, H1), `game_ragdoll_manager`, `env_flare`
+  (dm_resistance 7), `info_lighting_relative`, `env_microphone`,
+  `npc_combine_camera` (dm_underpass), `point_angularvelocitysensor`
+  (H10). Map logic notes: ladder dismount points (6 maps),
+  inputs to names nothing has (2), ambient_generic presets, a trigger
+  naming a filter, `trigger_hurt` radiation timing (dm_underpass).
+
+  For M2/M3 (and later): HL2:DM's kit is empty (no bodies, HUD, held or
+  view models, impact looks) and its maps are silent until S5 (sound
+  scripts, soundscapes) lands; team spawns and `info_player_start` wait
+  for H6's spawn choice (M7); the movement is the placeholder until S6
+  and H1 (M3), the pistol a stand-in until H3 (M4). dm_runoff's first
+  spawn starts the camera inside a wooden box-like room (unchecked
+  whether that is the map's hut or a prop around the spawn). The rest of
+  the tools' Source half (S11: refcmp, movecmp, hudcmp drivers) is
+  still CS:S's.
 
 ## Decision log
 
