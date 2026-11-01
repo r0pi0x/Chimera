@@ -25,7 +25,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |    originals (games/originals/)   the original minigames: definitions (minigames/) and rules hooks, Chimera only
   |    combat_arms_server (apps/combat_arms_server/)   Combat Arms' dedicated server: the game without `ui`
   |    combat_arms (games/combat_arms/)   Combat Arms' skeleton on Chimera, like cs_source; `ui` its HUD
-  |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: its `GameInfo` and its install's mount so far
+  |    hl2dm (games/hl2dm/)   Half-Life 2: Deathmatch: GameInfo, mount, maps, stand-in movement and gun, harness::Hl2Sim
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
@@ -182,12 +182,16 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   presentation, `mashup`, a game or an app (checked); CS:S and HL2:DM
   use it, Combat Arms never. `cargo test -p source_engine --features
   dev` tests it alone.
-- `hl2dm` (games/hl2dm/) is Half-Life 2: Deathmatch, M0 of
+- `hl2dm` (games/hl2dm/) is Half-Life 2: Deathmatch, M0 and M1 of
   docs/plans/active/hl2dm.md: its `GameInfo` (`game::INFO`: Steam app
-  320, folder `hl2mp`, console namespaces `hl2dm` and `hl2mp`) and its
-  install mounted from `hl2mp/gameinfo.txt` (`game::mount`). Layered as
-  `cs_source`: the engine crates and Source's shared crates, never
-  another game, `mashup` or an app (checked).
+  320, folder `hl2mp`, console namespaces `hl2dm` and `hl2mp`), its
+  install mounted from `hl2mp/gameinfo.txt` (`game::mount`), its maps
+  (`game::maps`, `game::MAP_LOADER`: `source_engine`'s conversion with
+  HL2:DM's data), M1's stand-ins (`hl2dm:movement` on Chimera's
+  placeholder with H1's numbers, a test pistol as data), `SimPlugins`
+  and `game::Hl2dmPlugins`, and `harness::Hl2Sim` for its scenario
+  tests. Layered as `cs_source`: the engine crates and Source's shared
+  crates, never another game, `mashup` or an app (checked).
 - `chimera_net` is network play (`net`): the transport, the join
   handshake, replication of what every game has, prediction and
   interpolation. A game and Source's logic register what they replicate

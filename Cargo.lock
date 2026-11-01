@@ -4438,8 +4438,17 @@ dependencies = [
 name = "hl2dm"
 version = "0.1.0"
 dependencies = [
+ "avian3d",
+ "bevy",
  "chimera_core",
+ "chimera_sim",
+ "chimera_world",
+ "postcard",
+ "serde",
+ "sha2",
  "source_engine",
+ "source_logic",
+ "vbsp",
  "workspace-hack",
 ]
 

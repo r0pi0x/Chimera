@@ -1,6 +1,11 @@
 //! Stand-in walking movement so the foundation is playable before any game's
 //! movement is specced. Deliberately not modeled on any game; replace with
 //! spec-based implementations, don't tune this into one.
+//!
+//! A game whose movement isn't built yet may run this code under its own
+//! id with its spec's plain numbers (speeds, gravity, jump: `Tuning`,
+//! `PlaceholderAppExt::placeholder_movement`); the way it moves stays
+//! the placeholder's (eased velocity, no friction or air control rules).
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -9,7 +14,7 @@ use super::wish_dir;
 use crate::{
     character::CAPSULE_HEIGHT,
     core::{Intent, MovementState, Predict, PredictedAppExt, SimClock, Velocity},
-    slots::RegisterSlots,
+    slots::{MovementSlot, RegisterSlots},
 };
 
 pub const ID: &str = "chimera:placeholder_movement";
@@ -25,10 +30,56 @@ const JUMP_SPEED: f32 = 6.5;
 /// Steepest walkable ground: cos(45 degrees).
 const MIN_GROUND_NORMAL_Y: f32 = 0.7;
 const GROUND_PROBE: f32 = 0.08;
-/// Upward speed above which we're airborne even if ground is near (m/s).
-const MAX_GROUNDED_RISE: f32 = JUMP_SPEED * 0.5;
+// Upward speed above which we're airborne even if ground is near: half
+// the jump speed (m/s).
 const STAND_EYE: f32 = 1.62 - CAPSULE_HEIGHT / 2.0;
 const CROUCH_EYE: f32 = 1.0 - CAPSULE_HEIGHT / 2.0;
+
+/// The numbers a movement on the placeholder's code moves by (meters,
+/// seconds).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Tuning {
+    pub walk: f32,
+    pub sprint: f32,
+    pub crouch: f32,
+    pub gravity: f32,
+    pub jump: f32,
+}
+
+/// The placeholder's own numbers (`ID`).
+pub const DEFAULT: Tuning = Tuning {
+    walk: WALK_SPEED,
+    sprint: SPRINT_SPEED,
+    crouch: CROUCH_SPEED,
+    gravity: GRAVITY,
+    jump: JUMP_SPEED,
+};
+
+/// The movements registered on the placeholder's code with their own
+/// numbers, by movement id; any other is `DEFAULT`.
+#[derive(Resource, Default, Clone, Debug)]
+pub struct Tunings(pub Vec<(&'static str, Tuning)>);
+
+impl Tunings {
+    /// Movement `id`'s numbers.
+    pub fn of(&self, id: &str) -> Tuning {
+        self.0.iter().find(|(m, _)| *m == id).map_or(DEFAULT, |(_, t)| *t)
+    }
+}
+
+/// Register a movement on the placeholder's code under a game's id.
+pub trait PlaceholderAppExt {
+    /// Movement `id`: the placeholder with `tuning`'s numbers.
+    fn placeholder_movement(&mut self, id: &'static str, tuning: Tuning) -> &mut Self;
+}
+
+impl PlaceholderAppExt for App {
+    fn placeholder_movement(&mut self, id: &'static str, tuning: Tuning) -> &mut Self {
+        self.register_movement::<PlaceholderMovement>(id);
+        self.world_mut().get_resource_or_init::<Tunings>().0.push((id, tuning));
+        self
+    }
+}
 
 #[derive(Component, Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlaceholderMovement {
@@ -42,6 +93,7 @@ pub struct PlaceholderMovementPlugin;
 impl Plugin for PlaceholderMovementPlugin {
     fn build(&self, app: &mut App) {
         app.register_movement::<PlaceholderMovement>(ID)
+            .init_resource::<Tunings>()
             .add_systems(Predict::Movement, step)
             .predicted_net::<PlaceholderMovement>();
     }
@@ -56,12 +108,15 @@ fn step(
         &mut Velocity,
         &mut MovementState,
         &Collider,
+        Option<&MovementSlot>,
     )>,
     move_and_slide: MoveAndSlide,
     clock: Res<SimClock>,
+    tunings: Res<Tunings>,
 ) {
     let dt = clock.dt();
-    for (entity, intent, mut me, mut transform, mut vel, mut state, collider) in &mut q {
+    for (entity, intent, mut me, mut transform, mut vel, mut state, collider, slot) in &mut q {
+        let tuning = slot.map_or(DEFAULT, |s| tunings.of(s.0));
         // Characters walk through ragdolls and loose items.
         let filter = SpatialQueryFilter::from_excluded_entities([entity]).with_mask(crate::core::CHARACTER_FILTER);
         let config = MoveAndSlideConfig::default();
@@ -70,11 +125,11 @@ fn step(
         let crouching = intent.crouch;
         let sprinting = intent.sprint && !crouching && intent.move_axis.y > 0.0 && state.on_ground;
         let speed = if crouching {
-            CROUCH_SPEED
+            tuning.crouch
         } else if sprinting {
-            SPRINT_SPEED
+            tuning.sprint
         } else {
-            WALK_SPEED
+            tuning.walk
         };
         let wish = wish_dir(intent.move_axis, intent.yaw_rotation()) * speed;
         let response = if state.on_ground { GROUND_RESPONSE } else { AIR_RESPONSE };
@@ -92,8 +147,8 @@ fn step(
                 // Lift the horizontal velocity onto the ground plane.
                 horizontal - Vec3::Y * (horizontal.dot(n) / n.y)
             }
-            (_, true) => horizontal + Vec3::Y * JUMP_SPEED,
-            (_, false) => horizontal + Vec3::Y * (vel.y - GRAVITY * dt),
+            (_, true) => horizontal + Vec3::Y * tuning.jump,
+            (_, false) => horizontal + Vec3::Y * (vel.y - tuning.gravity * dt),
         };
 
         let out = move_and_slide.move_and_slide(
@@ -122,7 +177,7 @@ fn step(
             .filter(|hit| hit.normal1.y >= MIN_GROUND_NORMAL_Y);
         // Walking up a slope moves us upward too, so only rising faster than
         // that counts as leaving the ground.
-        let on_ground = !jumped && velocity.y < MAX_GROUNDED_RISE && ground.is_some();
+        let on_ground = !jumped && velocity.y < tuning.jump * 0.5 && ground.is_some();
         me.ground_normal = None;
         if let (true, Some(hit)) = (on_ground, ground) {
             position.y -= hit.distance;
