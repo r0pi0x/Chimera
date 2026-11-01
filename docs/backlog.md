@@ -2580,9 +2580,7 @@ Counts are from de_dust2's entity lump and static prop lump.
   messages and the objective list (Open question 15: server notices only)
   and of cameras (which camera a client looks through: death_killcam.md);
   the co-op parts (sub-mission time, mission manager, mission texts and
-  counted maxima); `CaObjectFire` into a real shot (no stock map uses
-  it); the game's model-light falloff in the prop shader; the guide
-  markers' line test (alpha 125).
+  counted maxima).
 
 - **Remaining decals**: 13 infodecals over the stock maps find no
   surface (dust2 5, tides 3, compound 2, dust 2, train 1): by props

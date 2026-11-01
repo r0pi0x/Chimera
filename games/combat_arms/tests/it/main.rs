@@ -75,6 +75,7 @@ mod weapon_timings;
 mod world;
 mod volume_corrections;
 mod object_carry;
+mod object_fire;
 mod object_sounds;
 mod world_corrections;
 mod world_objects;

@@ -126,11 +126,10 @@ impl FlashTimer {
 /// from it, the light's radius `r` (view_models.md Follow-up (2026-10-31b)
 /// 1): 1 / (1 + 19·d²/r²), none at or beyond r. Every model is lit so, the
 /// view model too (its light placed relative to the camera).
+/// The prop shader draws our models so (`map::LightFalloff::LithTech`,
+/// set by `model::convert`).
 pub fn model_light_share(d: f32, r: f32) -> f32 {
-    if r <= 0.0 || d >= r {
-        return 0.0;
-    }
-    1.0 / (1.0 + 19.0 * d * d / (r * r))
+    crate::map::LightFalloff::LithTech.share(d, r)
 }
 
 /// A world light at `light` as the view model sees it: in the camera's

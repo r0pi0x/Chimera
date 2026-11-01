@@ -94,7 +94,7 @@ pub fn lit_prop_material(
             dynamic: if m.unlit || view != MapDebugView::Normal {
                 0.0
             } else {
-                1.0
+                m.light_falloff.shader_value()
             },
             base_uv_u: m.base_transform.shader_rows()[0],
             base_uv_v: m.base_transform.shader_rows()[1],
@@ -317,5 +317,32 @@ mod envmap_mask_tests {
         assert_eq!(prop_envmap_mask(EnvmapMask::BaseAlphaInverted, Some(7)), (2.0, None));
         assert_eq!(prop_envmap_mask(EnvmapMask::Texture(3), Some(7)), (3.0, Some(3)));
         assert_eq!(prop_envmap_mask(EnvmapMask::None, Some(7)), (0.0, None));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A lit mesh takes the scene's point lights with its own game's
+    /// falloff (`PropParams::dynamic`: 1 Source's, 2 LithTech's); unlit
+    /// ones take none.
+    #[test]
+    fn dynamic_lights_follow_the_mesh_falloff() {
+        let data = MapData::default();
+        let dynamic = |m: &MapMesh| lit_prop_material(m, &[], &data, MapDebugView::Normal, false).params.dynamic;
+        let mut m = MapMesh::default();
+        assert_eq!(dynamic(&m), 1.0, "Source's by default");
+        m.light_falloff = LightFalloff::LithTech;
+        assert_eq!(dynamic(&m), 2.0);
+        m.unlit = true;
+        assert_eq!(dynamic(&m), 0.0);
+        // The shader's curve: LithTech's 1 / (1 + 19 x), none from the
+        // radius; Source's 1 - x.
+        assert!((LightFalloff::LithTech.share(20.0, 200.0) - 1.0 / 1.19).abs() < 1e-6);
+        assert_eq!(LightFalloff::LithTech.share(200.0, 200.0), 0.0);
+        assert!((LightFalloff::Source.share(100.0, 200.0) - 0.75).abs() < 1e-6);
+        let wesl = include_str!("prop.wesl");
+        assert!(wesl.contains("1.0 / (1.0 + 19.0 * x)") && wesl.contains("params.dynamic > 1.5"));
     }
 }

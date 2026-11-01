@@ -6,6 +6,7 @@
 
 use bevy::prelude::*;
 use chimera_core::core::{LocalPlayer, NetRole, Team};
+use chimera_world::harness::Sim;
 use combat_arms::game::objects::{
     CaObjects,
     events::MarkerTeam,
@@ -166,4 +167,55 @@ fn clients_get_markers_of_the_mode_and_cameras() {
     sim.until_joined(600);
     sim.ticks(30);
     assert_eq!(seen(&mut sim.clients[1].app).0, vec!["Indicator_A00".to_string()], "a late joiner");
+}
+
+/// 1.6, the guide's line test: a marker 5 m in front of the local player
+/// is drawn opaque while nothing is between them; a wall across the line
+/// dims it to alpha 125, and taking the wall away brings it back. A
+/// floor under the point (the marker on it) doesn't block.
+#[test]
+fn guide_dims_when_its_line_is_blocked() {
+    use combat_arms::game::{movement, objects::geometry::from_engine};
+    let mut sim = crate::special_weapons::sim();
+    let scale = movement::movement_data().meters_per_unit;
+    let p = sim.spawn_character(Vec3::new(0.0, 0.05, 0.0), movement::ID);
+    sim.app.world_mut().entity_mut(p).insert((LocalPlayer, Team(2)));
+    sim.seconds(0.5);
+    let feet = sim.position(p);
+    let at = |x: f32, y: f32, z: f32| {
+        let q = from_engine(Vec3::new(x, y, z), scale);
+        v(q.x, q.y, q.z)
+    };
+    let mut t = T::new(vec![
+        obj("TargetTrigger", "Indicator_A00", &[("Team", "JSF".into()), ("origin", at(0.0, feet.y + 1.5, -5.0))]),
+        obj("TargetTrigger", "Indicator_EZone_unable", &[("origin", at(3.0, 0.0, -5.0))]),
+    ]);
+    t.send("Indicator_A00", "ON");
+    t.send("Indicator_EZone_unable", "ON");
+    {
+        let w = sim.app.world_mut();
+        let mut o = w.resource_mut::<CaObjects>();
+        o.world = t.w;
+        o.scale = scale;
+        w.insert_resource(table());
+        w.insert_resource(NetRole::Client);
+    }
+    let blocked = |sim: &mut Sim| -> Vec<(String, bool, u8)> {
+        sim.ticks(2);
+        let m = sim.app.world().resource::<CaMarkers>();
+        m.0.iter().map(|s| (s.name.clone(), s.blocked, guide_alpha(s.blocked))).collect()
+    };
+    let open = blocked(&mut sim);
+    assert_eq!(
+        open,
+        [("Indicator_A00".to_string(), false, 255), ("Indicator_EZone_unable".to_string(), false, 255)],
+        "nothing in the way; the one on the floor isn't blocked by it"
+    );
+    let wall = crate::special_weapons::solid(&mut sim, Vec3::new(-1.0, 0.0, -2.6), Vec3::new(1.0, 4.0, -2.4), None);
+    let shut = blocked(&mut sim);
+    assert_eq!((shut[0].1, shut[0].2), (true, 125), "the wall blocks the first: {shut:?}");
+    assert!(!shut[1].1, "not the second, beside the wall: {shut:?}");
+    sim.app.world_mut().despawn(wall);
+    sim.ticks(2);
+    assert!(!blocked(&mut sim)[0].1, "open again");
 }

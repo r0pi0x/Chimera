@@ -49,7 +49,7 @@ use lithtech_formats::{
     ltb::{self, Model},
 };
 
-use crate::map::{
+use crate::map::{LightFalloff, 
     MapBone, MapMesh, MapModel, MapRig,
     anim::{AnimSet, Animation, BonePose, Sequence, Track},
 };
@@ -348,6 +348,9 @@ pub fn convert_at(loaded: &LoadedModel, scale: f32, texture: &dyn Fn(&ltb::Lod) 
                 .flat_map(|&t| ltb::to_rh_triangle(t).map(u32::from))
                 .collect(),
             color: [200; 3],
+            // Lit by the scene's lights as LithTech lights models
+            // (view_models.md Follow-up (2026-10-31b) 1).
+            light_falloff: LightFalloff::LithTech,
             ..default()
         });
     }

@@ -135,6 +135,9 @@ fn converts_skeleton_meshes_and_animations() {
     assert_eq!(mesh.indices, [0, 2, 1]);
     assert!(mesh.joints.iter().all(|j| j[0] == 1));
     assert!(mesh.joint_weights.iter().all(|w| w[0] == 1.0));
+    // Lit by the scene's lights with LithTech's model falloff
+    // (view_models.md Follow-up (2026-10-31b) 1), whatever map it is on.
+    assert_eq!(mesh.light_falloff, chimera_world::map::LightFalloff::LithTech);
     // Animations: own then the child's, sampled at 30 per second.
     let set = &rig.animations;
     assert_eq!(set.sequences.len(), 2);
