@@ -1446,6 +1446,20 @@ pub struct RespawnAt {
     pub delay: f64,
 }
 
+/// What the dead local player sees until it respawns (the game's; read
+/// by the shell's death view, `client::spectate`): CS:S's death and
+/// freeze cams, then spectating (`Spectate`, the default), or its own
+/// body from behind for as long as it is dead (`Body`: HL2:DM's,
+/// specs/hl2dm/rules.md "The dead view": `height` above the ragdoll's
+/// origin, `distance` back along the view the mouse still turns, pulled
+/// in by a box of half-size `wall` against the world; meters).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub enum DeathView {
+    #[default]
+    Spectate,
+    Body { distance: f32, height: f32, wall: f32 },
+}
+
 /// `mp_fadetoblack` (CS:S's default 0): the dead see black
 /// (`client::senses`; set by the rules' `mp_fadetoblack`).
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]

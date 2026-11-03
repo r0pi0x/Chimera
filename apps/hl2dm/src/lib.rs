@@ -2,7 +2,8 @@
 //! what composes Chimera and HL2:DM (games/hl2dm) into the game binary
 //! (`hl2dm`, main.rs). M1 of docs/plans/active/hl2dm.md: the stock maps
 //! (and any map of the install) or the greybox, with HL2:DM's stand-in
-//! movement and its bullet and melee weapons (M4).
+//! movement and its bullet and melee weapons (M4), its pickups and its
+//! deathmatch and team deathmatch rules from the first map (M7).
 //!
 //! `SimPlugin`: the simulation as the binary runs it (its tests run it on
 //! the headless harness, tests/it/).
@@ -103,7 +104,10 @@ impl Plugin for SimPlugin {
     fn build(&self, app: &mut App) {
         use chimera_core::gameplay::{Gameplay, GameplayAppExt};
         app.add_plugins((hl2dm::SimPlugins, game::Hl2dmPlugins))
-            .set_gameplay(Gameplay::of(&game::INFO));
+            .set_gameplay(Gameplay::of(&game::INFO))
+            // Its rules from the first map (deathmatch, or TDM with
+            // `mp_teamplay 1`).
+            .insert_resource(game::rules::AutoStart(true));
     }
 }
 

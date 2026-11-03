@@ -27,3 +27,22 @@ pub fn event(world: &mut World, event: GameEvent) {
 pub fn log(world: &mut World, parts: Vec<LogPart>) {
     world.write_message(LogLine(parts));
 }
+
+/// A player as Source's log writes it, with HL2:DM's team name:
+/// `"Name<userid><uniqueid><Team>"` (the gameplay's `LogSubjects`).
+pub fn subject(world: &World, e: Entity, team: &str) -> String {
+    let resolve = crate::gameplay::active_hook::<crate::game_log::LogSubjects>(world, |g| g.rules)
+        .unwrap_or_default()
+        .0;
+    let s = resolve(world, e).unwrap_or_else(|| crate::game_log::LogSubject {
+        name: "unknown".into(),
+        userid: e.index().index() as u64,
+        unique: String::new(),
+    });
+    format!("\"{}<{}><{}><{}>\"", s.name, s.userid, s.unique, team)
+}
+
+/// A log line of text.
+pub fn log_text(world: &mut World, text: String) {
+    log(world, vec![LogPart::Text(text)]);
+}

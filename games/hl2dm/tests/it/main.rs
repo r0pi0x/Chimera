@@ -10,8 +10,10 @@
 mod info;
 mod melee;
 mod movement;
+mod net;
 mod net_prediction;
 mod pickups;
+mod rules;
 mod skeleton;
 mod suit;
 mod weapons;
@@ -20,6 +22,7 @@ mod weapons;
 mod heavy {
     mod map_cache;
     mod map_ladders;
+    mod map_pickups;
     mod map_stock;
     mod mount;
     mod scripts;

@@ -7,10 +7,11 @@
 //! the health remainder, aux power, breath and drowning, flashlight,
 //! zoom; M3), the map's pickups and wall chargers (`pickups`; M3; ammo
 //! boxes and respawns, M7), ammunition outside weapons (`ammo`), the ammo
-//! crate (`ammo_crates`), and
+//! crate (`ammo_crates`), its deathmatch and team deathmatch (`rules`,
+//! M7), and
 //! its bullet and melee weapons (`weapons`, M4: data and hooks; `scripts`,
 //! the install's weapon scripts against the data); `Hl2dmPlugins` adds
-//! them. The projectiles, rules and the rest come with their specs
+//! them. The projectiles and the rest come with their specs
 //! (specs/hl2dm/; the plan's milestones M5 to M11).
 //!
 //! Known shortcuts:
@@ -27,6 +28,7 @@ pub mod mount;
 pub mod movement;
 pub mod parts;
 pub mod pickups;
+pub mod rules;
 pub mod rungs;
 pub mod scripts;
 pub mod suit;
@@ -88,7 +90,8 @@ pub const STOCK_MAPS: &[&str] = &[
 
 /// HL2:DM's parts, after the engine's base (`crate::SimPlugins`): the
 /// game registered (`INFO`), its movement (the match's), the suit, the
-/// map's pickups and chargers, its weapons and their view models.
+/// map's pickups and chargers, its weapons and their view models, its
+/// rules (deathmatch and team deathmatch, `rules`).
 pub struct Hl2dmPlugins;
 
 impl bevy::app::PluginGroup for Hl2dmPlugins {
@@ -100,6 +103,7 @@ impl bevy::app::PluginGroup for Hl2dmPlugins {
             .add(pickups::PickupsPlugin)
             .add(weapons::Hl2WeaponsPlugin)
             .add(view::Hl2ViewPlugin)
+            .add(rules::Hl2RulesPlugin)
     }
 }
 

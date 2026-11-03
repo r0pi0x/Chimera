@@ -10,6 +10,11 @@
 //! `games::cs_source::ui::spectator_hud`); in first person the target's crosshair and scope (`hud.rs`). Back to
 //! the eye when you live again (respawn, new round).
 //!
+//! A game whose dead stay at their body (`core::DeathView::Body`,
+//! HL2:DM's) gets no death cam: the camera stays behind the body (its
+//! ragdoll's first part, else where it stands), the given distance back
+//! along the view the mouse still turns, as long as it is dead.
+//!
 //! Under rules that respawn the dead on a timer (`core::RespawnDue`: a
 //! minigame's `respawn.delay`, 2 s in the gun game) the death cam and the
 //! freeze cam are fitted into the wait (`fit_to_respawn`: at most 40 % of
@@ -722,7 +727,7 @@ pub fn place_camera(
     spec: Res<Spectator>,
     mut view: ResMut<SpecView>,
     mut chase: ResMut<ChaseOrbit>,
-    local: Option<Single<(Entity, &Transform, &Intent, &MovementState, Option<&RenderedView>), With<LocalPlayer>>>,
+    local: Option<Single<(Entity, &Transform, &Intent, &MovementState, Option<&RenderedView>, Has<Dead>, Has<Spectating>), With<LocalPlayer>>>,
     watched: Query<Watched>,
     ragdolls: Query<&Ragdoll>,
     bodies: Query<&GlobalTransform>,
@@ -736,14 +741,35 @@ pub fn place_camera(
         Option<Res<ButtonInput<MouseButton>>>,
         Option<Res<crate::console::Console>>,
     ),
+    death_view: Option<Res<crate::core::DeathView>>,
 ) {
+    // A game whose dead stay at their body (HL2:DM's): behind it as long
+    // as it is dead, the mouse turning the view.
+    if let (Some(crate::core::DeathView::Body { distance, height, wall }), Some(l)) =
+        (death_view.as_deref().copied(), local.as_ref())
+    {
+        let (me, at, intent, _, _, dead, spectating) = **l;
+        if dead && !spectating {
+            let body = ragdolls
+                .iter()
+                .find(|r| r.owner == me)
+                .and_then(|r| r.bodies.first())
+                .and_then(|b| bodies.get(*b).ok())
+                .map(|g| g.translation());
+            let look = Quat::from_euler(EulerRot::YXZ, intent.yaw, intent.pitch, 0.0);
+            let pose = body_view(body.unwrap_or(at.translation), look, distance, height, wall, &spatial, &characters);
+            chase.set_for = None;
+            view.set_if_neq(SpecView { pose: Some(pose), in_eye: None });
+            return;
+        }
+    }
     let (Some(local), true) = (local, spec.active()) else {
         chase.set_for = None;
         chase.roam.at = None;
         view.set_if_neq(SpecView::default());
         return;
     };
-    let (me, at, intent, state, own_view) = *local;
+    let (me, at, intent, state, own_view, _, _) = *local;
     let own = crate::map::interp::eye_view(own_view, intent, state);
     let (keys, motion, settings, cursor, mouse, console) = controls;
     let grabbed = cursor.is_some_and(|c| super::input::cursor_grabbed(&c));
@@ -938,6 +964,33 @@ pub fn freeze_end(from: Vec3, focus: Vec3) -> Vec3 {
         return from;
     }
     focus + (from - focus) / gap * d
+}
+
+/// The body view (`core::DeathView::Body`): from `height` above the body's
+/// origin, `distance` back along `look`, a box of half-size `wall` stopping
+/// on the world (not on characters).
+pub fn body_view(
+    body: Vec3,
+    look: Quat,
+    distance: f32,
+    height: f32,
+    wall: f32,
+    spatial: &SpatialQuery,
+    characters: &Query<Entity, With<Intent>>,
+) -> (Vec3, Quat) {
+    let from = body + Vec3::Y * height;
+    let back = look * Vec3::Z * distance;
+    let Ok(dir) = Dir3::new(back) else { return (from, look) };
+    let filter = SpatialQueryFilter::from_excluded_entities(characters).with_mask(crate::core::SOLID_LAYERS);
+    let config = ShapeCastConfig {
+        max_distance: distance,
+        ignore_origin_penetration: true,
+        ..default()
+    };
+    let d = spatial
+        .cast_shape(&Collider::cuboid(2.0 * wall, 2.0 * wall, 2.0 * wall), from, Quat::IDENTITY, dir, &config, &filter)
+        .map_or(distance, |h| h.distance);
+    (from + dir * d, look)
 }
 
 /// `from + offset`, pulled in if the world is in the way.

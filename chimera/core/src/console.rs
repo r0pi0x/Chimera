@@ -234,6 +234,10 @@ pub struct Console {
     /// Lines a network client sends its server to run for its player
     /// (cheats: `net::cheats` takes them), with full names.
     pub to_server: Vec<String>,
+    /// Commands a game marks as acting on the player who runs them
+    /// (`player_command`; beside `PLAYER_COMMANDS`): a network client
+    /// sends them to its server, full names, lower case.
+    player_commands: std::collections::BTreeSet<String>,
     /// Also log what commands print (info, errors as `error: ...`, target
     /// `console`): the client sets it, so a run's log holds the results of
     /// its `+commands` (the dedicated servers print them on stdout).
@@ -698,6 +702,21 @@ impl Console {
         }
     }
 
+    /// Mark command `name` (full) as acting on the player who runs it: a
+    /// network client sends it to its server, which runs it for that
+    /// client's player, no `sv_cheats` needed (a game's `jointeam`).
+    pub fn player_command(&mut self, name: &str) {
+        let full = self.canonical_full(name);
+        self.player_commands.insert(full);
+    }
+
+    /// Whether command `name` (any name `resolve` takes) acts on its
+    /// player (`PLAYER_COMMANDS`, or a game's `player_command`).
+    pub fn is_player_command(&self, name: &str) -> bool {
+        in_table(self, PLAYER_COMMANDS, name)
+            || self.full_name(name).is_some_and(|f| self.player_commands.contains(&self.canonical_full(&f)))
+    }
+
     /// Mark a cvar as the player's own setting the simulation reads
     /// (`core::UserInfo`).
     pub fn userinfo(&mut self, name: &str) {
@@ -990,7 +1009,7 @@ pub fn execute(world: &mut World, words: &[String], depth: usize) {
         let (server_command, cheat, player_command) = (
             in_table(console, SERVER_COMMANDS, &name),
             is_cheat(console, &name, args),
-            in_table(console, PLAYER_COMMANDS, &name),
+            console.is_player_command(&name),
         );
         if server_command && client {
             Err(format!(
@@ -1187,7 +1206,8 @@ pub const CHEATS: &[&str] = &[
 ];
 
 /// Commands a network client sends to its server to act on its player,
-/// with no `sv_cheats` needed (`net::cheats`): CS:S's `kill`.
+/// with no `sv_cheats` needed (`net::cheats`): CS:S's `kill`; a game adds
+/// its own (`Console::player_command`).
 pub const PLAYER_COMMANDS: &[&str] = &["chimera:kill"];
 
 /// Impulses that aren't cheats (Source's player impulses): `impulse 100`

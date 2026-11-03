@@ -89,6 +89,9 @@ pub struct SayFormats {
     pub joined_game: String,
     /// "Player %s1 left the game (%s2)" (`%s2` why).
     pub left_game: String,
+    /// The living read the dead's lines too (HL2:DM's; CS:S's don't).
+    #[serde(default)]
+    pub dead_heard: bool,
 }
 
 /// One team's chat formats: alive, alive at a known place, dead.
@@ -113,6 +116,7 @@ impl Default for SayFormats {
             name_change: "* %s1 changed name to %s2".into(),
             joined_game: "Player %s1 has joined the game".into(),
             left_game: "Player %s1 left the game (%s2)".into(),
+            dead_heard: false,
         }
     }
 }
@@ -174,6 +178,19 @@ impl SayFormats {
         };
         colour_runs(&fill(format, &[sender, text]), sender)
     }
+}
+
+/// Whether a viewer reads a chat line under `formats` (`sees_say`, or
+/// with `SayFormats::dead_heard` anyone reads the dead).
+pub fn reads(
+    formats: &SayFormats,
+    viewer_alive: bool,
+    viewer_team: Option<u8>,
+    sender_alive: bool,
+    sender_team: Option<u8>,
+    team_only: bool,
+) -> bool {
+    sees_say(viewer_alive && !formats.dead_heard, viewer_team, sender_alive, sender_team, team_only)
 }
 
 /// Whether a viewer reads a chat line: team chat only within the team,
