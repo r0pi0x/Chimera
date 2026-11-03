@@ -6,7 +6,8 @@
 //! as the slot, its position, weight, clip and `default_clip`, ammo type,
 //! damage (a weapon without a magazine counts its rounds itself, in its
 //! projectile hook: where the script names its ammo or clip, those are
-//! compared with the hook's), models, the HUD's name and the fire, empty and double-shot
+//! compared with the hook's; a clip of 0 with no ammo, the gravity gun's,
+//! is no clip), models, the HUD's name and the fire, empty and double-shot
 //! sounds). The data holds the spec's numbers so the game plays without
 //! the install's files; tests/it/heavy/scripts.rs checks they still match
 //! the install. Nothing is read from the scripts at run time.
@@ -63,11 +64,15 @@ pub fn differences(data: &WeaponData, script: &WeaponScript) -> Vec<String> {
     // frag's grenade, the S.L.A.M.'s three), those are what it carries.
     let own = own_rounds(data).filter(|_| data.magazine.is_none());
     let own_ammo = own.as_ref().map(|(a, _)| a.clone());
+    // A clip of 0 with no ammo (the gravity gun's script) is no clip.
+    let no_clip = script.clip_size == Some(0) && script.primary_ammo.is_none();
+    let (script_clip, script_default) =
+        if no_clip { (None, None) } else { (script.clip_size, script.default_clip) };
     let own_count = own.as_ref().map(|(_, c)| *c);
     check(
         "clip_size",
-        format!("{:?}", data.magazine.as_ref().map(|m| m.clip).or(own_count.filter(|_| script.clip_size.is_some()))),
-        format!("{:?}", script.clip_size),
+        format!("{:?}", data.magazine.as_ref().map(|m| m.clip).or(own_count.filter(|_| script_clip.is_some()))),
+        format!("{script_clip:?}"),
     );
     let default_clip = data
         .hooks
@@ -76,8 +81,8 @@ pub fn differences(data: &WeaponData, script: &WeaponScript) -> Vec<String> {
         .and_then(|p| p.as_integer())
         .map(|n| n as u32)
         .or(data.magazine.as_ref().map(|m| m.clip))
-        .or(own_count.filter(|_| script.default_clip.is_some()));
-    check("default_clip", format!("{default_clip:?}"), format!("{:?}", script.default_clip));
+        .or(own_count.filter(|_| script_default.is_some()));
+    check("default_clip", format!("{default_clip:?}"), format!("{script_default:?}"));
     check(
         "primary_ammo",
         format!("{:?}", data.magazine.as_ref().map(|m| m.ammo.clone()).or(own_ammo.filter(|_| script.primary_ammo.is_some()))),

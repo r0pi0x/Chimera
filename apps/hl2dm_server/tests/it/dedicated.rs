@@ -1,7 +1,8 @@
 //! The dedicated server (`ServerPlugin`, its command line) on the greybox
 //! with a headless client of HL2:DM's simulation (as the app runs it,
 //! without the window) joined over UDP on loopback: it comes in on
-//! HL2:DM's movement with its loadout (the SMG1 in hand).
+//! HL2:DM's movement with its loadout (the gravity gun in hand, the SMG1
+//! its last weapon).
 
 use std::time::Duration;
 
@@ -88,8 +89,11 @@ fn a_client_joins_on_hl2dms_movement_with_its_loadout() {
     let theirs = w.query::<(Entity, &NetCharacter)>().iter(w).find(|(_, n)| n.owner == id).unwrap().0;
     let w = server.app.world();
     assert_eq!(w.get::<chimera_core::slots::MovementSlot>(theirs).map(|m| m.0), Some(movement::ID));
-    // The spawn's loadout (specs/hl2dm/weapons.md 3): the SMG1 in hand.
-    assert_eq!(chimera_sim_active(w, theirs), Some(weapons::SMG1));
+    // The spawn's loadout (specs/hl2dm/weapons.md 3, test 1): the gravity
+    // gun in hand, the SMG1 the last weapon.
+    assert_eq!(chimera_sim_active(w, theirs), Some(weapons::PHYSCANNON));
+    let last = w.get::<chimera_sim::weapon::Inventory>(theirs).and_then(|i| i.last);
+    assert_eq!(last.and_then(|g| w.get::<chimera_sim::weapon::Weapon>(g)).map(|g| g.id), Some(weapons::SMG1));
 }
 
 /// The weapon `p` holds (by id).
