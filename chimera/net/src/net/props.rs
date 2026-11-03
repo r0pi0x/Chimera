@@ -14,21 +14,37 @@
 //!   Pushing one is the server's to simulate: the client sees the result
 //!   after the delay (Source the same).
 //!
-//! Physics props: the server's into `NetProp` (`write_props`); a client's
-//! copies made kinematic and `NetDrawn`, drawn between snapshots at the render
-//! tick (`draw_props`).
+//! - **Held props** (lift C6, `map::held::Held`; specs/hl2dm/gravity_gun.md
+//!   14): the server simulates them as any other (its game's controller
+//!   drives them) and also sends who holds one and where relative to the
+//!   holder's view (`NetHold`, `write_holds`). The holder's client draws it
+//!   there from its own predicted eye and view, so it follows the view at
+//!   once; every other client draws the snapshots. On each client the copy
+//!   is marked `Held` by its holder (target none: nothing drives it), so
+//!   the holder's own movement and shots pass it as on the server.
+//!
+//! Physics props: the server's into `NetProp` (`write_props`) and held ones'
+//! holders into `NetHold` (`write_holds`, from `write_props`); a client's copies made kinematic and
+//! `NetDrawn`, drawn between snapshots at the render tick, a held one at its
+//! holder's predicted view on the holder's client (`draw_props`).
+//!
+//! Known shortcuts: the holder's client places the held prop at the view
+//! offset the server last sent (no local controller with Source's 2-tick
+//! arrival, gravity_gun.md 14; a pitch past the game's clamp or a wall's
+//! push-in shows a tick late).
 
 use avian3d::prelude::{ColliderDisabled, RigidBody};
 use bevy::{app::RunFixedMainLoopSystems, prelude::*};
 
 use super::{
-    NetProp,
+    NetCharacter, NetHold, NetProp,
     interp::{Around, InterpClock, Snapshots},
     prop_flags,
 };
 use crate::{
-    core::NetRole,
+    core::{Intent, LocalPlayer, MovementState, NetRole},
     map::{
+        held::Held,
         LogicHidden, PhysicsProp, PropIndex, VisClusters,
         interp::{InterpSystems, NetDrawn, SNAP_SPEED},
         prop_physics::FrozenBody,
@@ -64,8 +80,12 @@ fn write_props(
         ),
         Or<(With<PhysicsProp>, With<FrozenBody>)>,
     >,
+    holds: HoldWrites,
     mut commands: Commands,
 ) {
+    // Held props' holders (one system with the poses: the same place in
+    // the tick, nothing more to order).
+    write_holds(holds, &mut commands);
     for (e, index, t, hidden, no_collision, have) in &mut q {
         let mut flags = 0;
         if !hidden {
@@ -94,6 +114,44 @@ fn write_props(
     }
 }
 
+/// What `write_holds` reads and writes.
+#[derive(bevy::ecs::system::SystemParam)]
+struct HoldWrites<'w, 's> {
+    held: Query<'w, 's, (Entity, &'static PropIndex, &'static Held, Option<&'static mut NetHold>)>,
+    let_go: Query<'w, 's, Entity, (With<NetHold>, Without<Held>)>,
+    owners: Query<'w, 's, &'static NetCharacter>,
+}
+
+/// The server: held props' holders and view offsets into `NetHold`.
+fn write_holds(mut w: HoldWrites, commands: &mut Commands) {
+    for (e, index, h, have) in &mut w.held {
+        let (Some(holder), Some((offset, rotation))) = (w.owners.get(h.holder).ok().and_then(|c| c.owner), h.view_offset)
+        else {
+            if have.is_some() {
+                commands.entity(e).remove::<NetHold>();
+            }
+            continue;
+        };
+        let now = NetHold {
+            index: index.0 as u32,
+            holder,
+            offset: offset.to_array(),
+            rotation: rotation.to_array(),
+        };
+        match have {
+            Some(mut have) => {
+                have.set_if_neq(now);
+            }
+            None => {
+                commands.entity(e).insert((bevy_replicon::prelude::Replicated, now));
+            }
+        }
+    }
+    for e in &w.let_go {
+        commands.entity(e).remove::<NetHold>();
+    }
+}
+
 /// A client: its props where the server had them at the render time.
 #[allow(clippy::type_complexity)]
 fn draw_props(
@@ -114,11 +172,34 @@ fn draw_props(
         ),
         Or<(With<PhysicsProp>, With<FrozenBody>)>,
     >,
+    (holds, characters, me, local, mut marked): (
+        Query<&NetHold>,
+        Query<(Entity, &NetCharacter)>,
+        Option<Res<super::client::LocalClientId>>,
+        Query<(&Transform, &MovementState, &Intent), (With<LocalPlayer>, Without<PropIndex>)>,
+        Query<(Entity, &PropIndex, &mut Held)>,
+    ),
     mut commands: Commands,
 ) {
     if !clock.running || proxies.is_empty() {
         return;
     }
+    // Held props: by index, the holder's character here and the offset.
+    let holder_of = |id: u64| characters.iter().find(|(_, c)| c.owner == Some(id)).map(|(e, _)| e);
+    let holds: std::collections::BTreeMap<u32, (&NetHold, Option<Entity>)> =
+        holds.iter().map(|h| (h.index, (h, holder_of(h.holder)))).collect();
+    for (e, index, mut h) in &mut marked {
+        match holds.get(&(index.0 as u32)).and_then(|(_, by)| *by) {
+            Some(by) if h.holder != by => h.holder = by,
+            Some(_) => {}
+            None => {
+                commands.entity(e).remove::<Held>();
+            }
+        }
+    }
+    let my_view = local.single().ok().map(|(t, s, i)| {
+        (t.translation + s.eye_offset, Quat::from_euler(EulerRot::YXZ, i.yaw, i.pitch, 0.0))
+    });
     let at = clock.render_tick;
     let step = super::interp::tick_step(&command_clock, &fixed) as f32;
     let mut by_index: std::collections::HashMap<u32, (Transform, u16)> = std::collections::HashMap::new();
@@ -155,10 +236,31 @@ fn draw_props(
                 commands.entity(e).insert(RigidBody::Kinematic);
             }
         }
-        let pose = Transform {
+        let mut pose = Transform {
             scale: t.scale,
             ..*pose
         };
+        if let Some((h, by)) = holds.get(&(index.0 as u32)) {
+            if let Some(by) = by
+                && !marked.contains(e)
+            {
+                commands.entity(e).insert(Held {
+                    holder: *by,
+                    target: None,
+                    view_offset: None,
+                    arrive: 0.0,
+                    max_speed: 0.0,
+                    max_angular: 0.0,
+                });
+            }
+            // The holder's own: at its predicted view now.
+            if me.as_deref().is_some_and(|m| m.0 == h.holder)
+                && let Some((eye, view)) = my_view
+            {
+                pose.translation = eye + view * Vec3::from_array(h.offset);
+                pose.rotation = (view * Quat::from_array(h.rotation)).normalize();
+            }
+        }
         if *t != pose {
             *t = pose;
         }

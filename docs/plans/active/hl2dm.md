@@ -149,7 +149,7 @@ data and hooks), `hit_reaction.rs`, `rungs.rs`, `parts.rs`, `demo.rs`
 | C4 | A game bundle for the composer (UGG gap 2) | `apps/party_kit/src/lib.rs`: `PartyPartsPlugin`, `MAP_SOURCES`, `GAME_PARTS`, `GAME_BINDS`, `add_view_model_fovs`, `CS_SOURCE_PARTS`, `client::with_huds` | three games make "name both games" untenable: each game exports one bundle (its sim parts plugin, `MapLoader`, guest `MapDressing`, HUD plugins, binds layer, view-model FOV, bot gun types) behind one Chimera interface, and the kit loops over the linked bundles | Medium: every `apps/party_kit/tests/it/` file (`cs_parts.rs`, `identity.rs`, `net_party.rs`, `listen_server.rs`, `rung_*.rs`, `startup.rs`), `apps/ultimate_gun_game/tests/it/` |
 | C5 | Teams and the game's end (L15's rest) | `games/cs_source/src/rules.rs`, `rules/game_end.rs`, `rules/teams` | only if the mode runtime lacks a frag or time limit, intermission and team assignment that HL2:DM's TDM can use (Combat Arms' TDM may already cover it: check first) | High if moved: `rounds.rs`, `teams.rs`, heavy `bot_rounds.rs`; avoid unless needed |
 | C6 | Held bodies on the network | `chimera_net`'s `NetProp` | a prop a player holds (gravity gun, `+use`) is simulated by the server and interpolated for everyone, the holder included (expected parity: the spec says); Chimera owns prop replication, so the seam (who holds it, its target pose) goes there; the gravity gun's rules stay `hl2dm`'s | Medium: `chimera_net` tests, `net_breakables.rs`, `logic_physics.rs` |
-| C7 | `chimera_pack`'s game list | `src/bin/chimera_pack.rs` (`games() -> [Game; 2]`, `record_pieces` by game id) | a third game: the list from the registered `GameInfo`s (app id from `steam`), the pieces' sets as a hook the game provides | Low: its unit tests, heavy `served.rs` |
+| C7 | `chimera_pack`'s game list | `src/bin/chimera_pack.rs` (`games() -> [Game; 3]`, `record_pieces` by game id) | a third game: the list from the registered `GameInfo`s (app id from `steam`), the pieces' sets as a hook the game provides | Low: its unit tests, heavy `served.rs` |
 | C8 | Console names shared by Source games | `chimera_core::console` (`SOURCE_NAMESPACE` = `cs_source`) | done 2026-11-01 (engine-names branch): `fps_max`, `rate`, `map` ... are `chimera:` (`chimera_core::console_names`); HL2:DM registers its own `hl2dm:sv_gravity` (section 5, option C) | Low/medium: `console_scope.rs`, console unit tests, `persist.rs` |
 
 Not lifted (HL2:DM's own, in `games/hl2dm`): the gravity gun's rules
@@ -436,12 +436,12 @@ implementing (owner branch) / done.
 | M3 movement, suit | H1, H2 | done (branch `hl2dm-m3`, 2026-11-03): S5 (scripts, soundscapes), S6, C2, C8; `hl2dm:movement`, the suit, pickups and chargers; the probe | S5, S6, C2, C8 |
 | M4 bullets, melee, UGG | H3 | done (branch `hl2dm-m4`, 2026-11-03): see Progress; left: probe checks (P1-P17), C7 (no need in M4) | S8, C4 |
 | M5 projectiles | H4 | done (branch `hl2dm-m5`, 2026-11-03): see Progress (effects: `hl2dm-fx`); left: probe checks (P1-P15), the frag in the spawn loadout, the effects (M10) | C1 |
-| M6 gravity gun | H5 | not started | C6 |
+| M6 gravity gun | H5 | done (branch `hl2dm-m6`, 2026-11-03): see Progress; left: `hl2mp_allow_pickup` 1's carry, `prop_physics_respawnable`, first-impact 10× and breaks, the gun's effects (M10), the probe checks (P1-P17) | C6 |
 | M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; left: the set pieces of H10 sections 8-16, respawnable props, the probe cases (the probe server crashes on a bot's death) | C3 (C5 not needed) |
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
 | M9 HUD | H8 | done (branch `hl2dm-m9`, 2026-11-03): see Progress; left: the items listed there | S7 (the look reader and the animation engine; CS:S's menu readers stay) |
 | M10 effects, sounds | H9 | done in part (branch `hl2dm-m10`, 2026-11-03): see Progress; left: explosions, ball, dissolve, RPG, crossbow, gravity-gun effects (M5, M6), shells, the shield wall shader, refcmp | S10, S5 |
-| M11 assets | none | not started | C7 |
+| M11 assets | none | done (branch `hl2dm-m11`, 2026-11-03): see Progress; left: the other heavy tiers' (party, UGG) HL2:DM reads from the store | C7 |
 
 ## Progress
 
@@ -1054,6 +1054,107 @@ implementing (owner branch) / done.
   have no gun class yet, so Ultimate Gun Game's ladder doesn't take them
   (open question 5's choice).
 
+- 2026-11-03: M6 built (branch `hl2dm-m6`). **C6** (Chimera,
+  `chimera_world::map::held`): `Held` on a body a player holds (its
+  holder, the game's target pose, the controller's arrival time and
+  speed and turn limits, the target relative to the holder's view),
+  `hold`/`release` keeping its mass (inertia scaled with it), damping and
+  gravity (`HeldSaved`), the controller before each physics step (one
+  tick to the target, capped), no contacts with the holder or his shadow
+  (`MapCollisionHooks`), `PhysicsInfluence` (who last moved a body by
+  hand, when). The holder's movement and shadow sweep (`source_engine`)
+  and his shots (`chimera_sim::weapon::deliver`) pass what he holds; the
+  bridge's impacts skip held bodies and scale players' impacts and
+  stress by a game's `source_logic::logic::PlayerImpactScale` (CS:S 1,
+  unchanged). `chimera_net`: `NetHold` (prop index, the holder's client
+  id, the view offset) written by the server; the holder's client draws
+  the prop at its own predicted eye and view (it follows a turn at once),
+  the others draw the snapshots; each client marks its copy `Held` by
+  the holder's character.
+
+  `games/hl2dm` (H5): `weapon_physcannon` (`weapons::physcannon`, data
+  `physcannon.toml`): punt (±8 box then line of 250; 15000 + 600
+  min(M, 250) along the view, a downward z × −0.65, the 2000 cap; the
+  0-damage hit naming the punter, influence, flag 64 unpins, the 0.5 s
+  repunt guard; 1 crush to a breakable; dry fire at players, the world,
+  ragdolls), grab and pull (line, ±4 box, 0.97 cone; the hold test: 250
+  kg, flags 8/64/512, ground, held, flesh; TooHeavy once a press; pull
+  4000 every 7 ticks), the hold (24 + 22.627 + extent, pitch clamp 75,
+  the wall rule, the horizontal push-out, view-relative rotation, the
+  smoothed error and its dead zone, drops for the ground, a lost or
+  pinned body), drop (285, 720), launch (the spline, U(−600, 600) spin,
+  the 250 reach), claws (open, 0.5 s close, the punt's and launch's
+  delays and suppression), instant draw, the holster lock, `phys_swap`,
+  the forced drop at death; frags caught or punted (thrower, 1.5 s fuse,
+  fast blips); combine balls caught (no mass limit, the catcher's, no
+  life while held, gone 8 s after the catch), launched at 959.2 with 1500
+  after the first contact and 4 s of life, dropped at 1500 within ±55
+  degrees. Debris props are in the gun's traces (the ragdoll layer).
+  `game::physics`: players' impact scale 4, the credit (within 1 s the
+  influencer, later the prop: a world kill; the influencer's own prop
+  spares him only within the bridge's measurement, 5 ticks), death
+  notice `physics`; multiplayer props in modes 1 and 2 solid to players
+  (Corrections 1); `+use` at props (`HL2Player.Use`, `OnPlayerUse` with
+  256, `HL2Player.UseDeny` for an unusable one). The spawn loadout now
+  gives the frag (2 grenades: the grant's 1 and the frag's) and the gun
+  last, in hand, the SMG1 the last weapon (weapons.md 3, M5's leftover;
+  M7's rules agree). View-model events: punt/launch the secondary
+  attack, grab/drop the primary.
+
+  Tests: hl2dm `gravity_gun.rs` (H5 cases 1-8, 10, 11, 13, 14, 16, 17,
+  21, 22, 23, 25, 26, 31, 33-36, 41, 42, 44, 47, 48, 54-58, 60, the
+  spawn), `net_gravity_gun.rs` (two clients: the holder draws it at its
+  view, the other the snapshots; both marked; let go), heavy
+  `map_props.rs` (dm_lockdown 200 physics props, 140 holdable;
+  dm_overwatch 132, 123; small light ones grabbed, held, launched at
+  1500, punted at the cap or the formula); unit tests (cases 1-3, 12,
+  18-20, 23, 27, 28; the controller). `weapons.rs`' and `skeleton.rs`'
+  spawn tests follow the new loadout.
+
+  Found against the spec: case 4's crate at 260 has its face at 250,
+  which the ±8 punt box reaches at 242 (the test uses 270); spec says the
+  traces miss. Left: `hl2mp_allow_pickup` 1's carry (section 8, steps
+  1-6; off by default), `prop_physics_respawnable` (13), the 10× first
+  impact and first-impact breaks after a launch (9), an explosive
+  prop's 2 s influencer rule (the logic's last attacker only), several
+  bodies per object (mass shares), `preferred_carryangles` and the
+  sawblade's spin, the contact factor and contact slide of the
+  controller, punting a free ball (no collider), a held ball's blast
+  (its end is a sound and removal), held items' 48-unit touch box, the
+  hold's idle shake and the claws' pose, the TDM friendly-fire case 43
+  (the engine's rule after the credit, not tested), `+use` carry's
+  throw; effects and sounds the gun needs from M10: the beams from the
+  claws and the core glow by effect state, the `PhyscannonImpact` launch
+  effect (beam to the point, sparks), the white fire fade, the
+  client-local `Weapon_PhysCannon.HoldSound` loop (pitch to 100, volume
+  0.8 over 0.5 s) and the held ball's loop pitch ramp. The probe checks
+  (P1-P17) weren't run (the probe server crashed on a bot's death in M7;
+  P2-P12 need a bot holding and punting).
+
+- **M11 assets (branch `hl2dm-m11`, 2026-11-03).** C7: `chimera_pack`'s
+  game list already had HL2:DM (app 320, its search path); this adds its
+  pieces' sets to `record_pieces`: `weapon/<id>` for the 12 weapons (view
+  and world models, the projectile models, materials, the waves of the
+  sound entries and melee sounds) and `players` (the 19 models). Build
+  24600434 published into the dev server's store and signed: 30,792
+  files, 30,390 records, 1.9 GB stored (only 863 records new: `hl2/` is
+  CS:S's), sets `weapon/*` (12, 13 MB), `players` (166 records, 18 MB),
+  `base` (1,069 records, 30 MB: what every one of the eight stock maps
+  reads, less the weapon and player sets), `map/<name>` for the eight
+  stock maps (the app on the map, 90-153 MB each) and `heavy-tests`
+  (6,598 records, 366 MB, the hl2dm crate's heavy tier). The hl2dm app
+  has no menu yet, so `base` is the intersection of the eight map logs.
+  `heavy/served.rs` (hl2dm): dm_lockdown converts from a scratch store
+  alone and from the service on 127.0.0.1 with no install, the same map.
+  The hl2dm heavy tier from a scratch server alone (no install, Steam
+  folder, keys or content cache; empty cache): 27 of 29 pass, no asset
+  misses; the two failures (`heavy::scripts`: weapon data against the
+  scripts) fail the same with the install. UGG's pool already takes
+  HL2:DM's maps (`map_patterns` `dm_*`, the installed maps from the
+  mount, which the store stands in for); halls3 isn't a `dm_*` name and
+  stays out. Left: the party and UGG heavy tests' reads of HL2:DM from
+  the store weren't run.
+
 - 2026-11-03: projectile effects built (branch `hl2dm-fx`; M5/M10's
   left-overs). **Task first:** the heavy script checks were the test's
   fault, not the data's (`scripts::differences` now reads a rocket's,
@@ -1088,6 +1189,16 @@ implementing (owner branch) / done.
   dissolve of the victim's dropped weapon, the ball's bounce, end and the
   stuck bolt's glow on a dedicated server's clients (they read the host's
   flyer messages), the RPG's scorch, `refcmp` captures.
+  **Gravity gun** (`game::physcannon_fx`, after merging M6): a punt's or
+  launch's spark burst (16-32 trails back toward the gun) and electric
+  sparks, the punter's `orangelight1` beam (12 to 4 units, 0.1 s) and the
+  white fire fade (245, 245, 255, 32 over 0.1 s, `ScreenFades`); the
+  client-side `HoldSound` loop (0 to 0.8 and 50 to 100 over 0.5 s, back
+  over 1 s) and a held ball's loop (pitch to 150 in the last second).
+  Tests in `gravity_gun.rs` (a punt's burst, beam and fade; the loop's
+  ramps) and unit tests. Left: the claws' core glow, glows, end caps and
+  beams (persistent sprites on a model's attachments need the render
+  layer), the punt's end at the object's centre.
 
 ## Decision log
 

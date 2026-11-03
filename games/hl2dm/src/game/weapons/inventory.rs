@@ -13,13 +13,14 @@
 //!
 //! HL2:DM's game (`Hl2WeaponsPlugin`, its own app):
 //!
-//! - **The spawn loadout** (`arm`): the starting weapons (pistol, SMG1)
-//!   with the melee weapon of the player's model kind first
+//! - **The spawn loadout** (`arm`): the starting weapons (pistol, SMG1,
+//!   frag, gravity gun) with the melee weapon of the player's model kind first
 //!   (`melee_for`: a stunstick for the Combine and metro police, a crowbar
 //!   for citizens; without a model, the DM fallback `models/
 //!   combine_soldier.mdl`), the reserves of section 3 (Pistol 150, SMG1 45,
-//!   Buckshot 6, 357 6: each type's count waits in `Hl2Ammo` for a weapon
-//!   that uses it), the SMG1 in hand and the pistol the last weapon.
+//!   1 grenade, Buckshot 6, 357 6: each type's count waits in `Hl2Ammo` for
+//!   a weapon that uses it; the frag's 1 and the grant's make 2), the
+//!   gravity gun in hand and the SMG1 the last weapon.
 //! - **Ammo per player, not per weapon**: a weapon carries only its clip
 //!   (a map's AR2 also the 30 over its clip, `default_clip` 60); taken new
 //!   it brings the player's count of its type into its reserve
@@ -36,9 +37,8 @@
 //!   the weapon in hand (melee weapons never: `undroppable`), touching a
 //!   weapon of a kind carried takes its rounds and removes it.
 //!
-//! Known shortcuts: no physcannon or frag yet (M5, M6), so the spawn ends
-//! with the SMG1 in hand (the spec's physcannon), the grenade count waits
-//! in `Hl2Ammo`; `cl_defaultweapon` isn't read; a dropped weapon falls
+//! Known shortcuts: `cl_defaultweapon` isn't read (the gravity gun ends
+//! in hand as with the default); a dropped weapon falls
 //! where its owner died (the death force and the 400 in/s cap, the spin,
 //! aren't modelled); `mp_weaponstay` and the placed weapons' 20 s respawn
 //! are M7's (placed weapons are put back at a round restart, Chimera's
@@ -203,8 +203,14 @@ impl Hl2Ammo {
 }
 
 /// The spawn's reserves (weapons.md 3: Pistol 255 clamped to 150, SMG1
-/// 45, Buckshot 6, 357 6; the grenade waits for M5).
-pub const SPAWN_AMMO: &[(&str, u32)] = &[("hl2dm:pistol", 150), ("hl2dm:smg1", 45), ("hl2dm:buckshot", 6), ("hl2dm:357", 6)];
+/// 45, 1 grenade, Buckshot 6, 357 6).
+pub const SPAWN_AMMO: &[(&str, u32)] = &[
+    ("hl2dm:pistol", 150),
+    ("hl2dm:smg1", 45),
+    ("hl2dm:grenade", 1),
+    ("hl2dm:buckshot", 6),
+    ("hl2dm:357", 6),
+];
 
 /// On a player whose life's loadout is done.
 #[derive(Component, Clone, Copy, Debug)]
@@ -244,6 +250,13 @@ fn arm_one(world: &mut World, e: Entity, kind: Option<ModelKind>) {
     }
     let weapons: Vec<Entity> = world.get::<Inventory>(e).map(|i| i.weapons.clone()).unwrap_or_default();
     for w in &weapons {
+        // A weapon counting its own rounds (the frag) takes its type's.
+        if let Some(ammo) = world.get::<super::launch::Hl2Rounds>(*w).map(|r| r.ammo) {
+            let n = pools.take(ammo);
+            if let Some(mut r) = world.get_mut::<super::launch::Hl2Rounds>(*w) {
+                r.count = (r.count + n).min(r.max);
+            }
+        }
         let Some(ammo) = world.get::<Hl2Item>(*w).and_then(|i| i.ammo) else { continue };
         let n = pools.take(ammo);
         if let Some(mut mag) = world.get_mut::<Magazine>(*w) {
@@ -252,11 +265,15 @@ fn arm_one(world: &mut World, e: Entity, kind: Option<ModelKind>) {
     }
     // The weapons in giving order switched by weight: the last given is
     // in hand, the one before it the last weapon.
-    let pistol = weapons.iter().copied().find(|w| world.get::<Weapon>(*w).is_some_and(|x| x.id == super::PISTOL));
+    // The frag and the gravity gun never switch: the SMG1 is the last
+    // weapon.
+    let smg1 = weapons.iter().copied().find(|w| world.get::<Weapon>(*w).is_some_and(|x| x.id == super::SMG1));
     if let Some(mut inv) = world.get_mut::<Inventory>(e)
-        && inv.last.is_none()
+        && smg1.is_some()
+        && inv.last != smg1
+        && inv.active != smg1
     {
-        inv.last = pistol;
+        inv.last = smg1;
     }
     world.entity_mut(e).insert(pools);
 }

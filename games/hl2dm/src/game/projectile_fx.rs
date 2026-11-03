@@ -101,6 +101,7 @@ pub const MATERIALS: &[&str] = &[
     "particle/particle_noisesphere",
     "particle/particle_smokegrenade",
     "effects/spark",
+    "sprites/orangelight1",
 ];
 
 /// The sound of every explosion, heard on each client.

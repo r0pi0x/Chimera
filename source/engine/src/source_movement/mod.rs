@@ -2680,7 +2680,11 @@ fn step(
         Query<(Entity, &MovingSolid)>,
         Option<Res<MapBrushTree>>,
         shadow::ShadowProps,
-        (Query<&WaterZone>, Query<&LadderZone>),
+        (
+            Query<&WaterZone>,
+            Query<&LadderZone>,
+            Query<(Entity, &crate::map::held::Held, Option<&RigidBodyColliders>)>,
+        ),
     ),
     // Props that are there: a broken or killed one (body and collider
     // disabled until a round restart) neither blocks nor pushes back.
@@ -2868,9 +2872,16 @@ fn step(
             props.iter().map(|(_, t, p)| (t, p)),
         );
         let prop_surface = |e: Entity| prop_surfaces.get(e).ok().map(|s| s.0.clone());
+        // A holder passes through what it holds (gravity_gun.md 5).
+        let mine: Vec<Entity> = crate::map::held::held_by(entity, zones.2.iter()).collect();
+        let own_filter = (!mine.is_empty()).then(|| {
+            let mut f = filter.clone();
+            f.excluded_entities.extend(mine);
+            f
+        });
         let tracer = Tracer {
             query: &query,
-            filter: &filter,
+            filter: own_filter.as_ref().unwrap_or(&filter),
             brushes: brushes.as_deref(),
             grid,
             tree: tree.as_deref(),

@@ -3,7 +3,8 @@
 //! Source's activities (`source_engine::view_anim`): the draw, idle, a
 //! fire sequence per shot (the shotgun's double shot its secondary
 //! attack), the dry fire, the reload (the shotgun's start, a shell, its
-//! finish, and the pump), a melee hit or miss; how they move
+//! finish, and the pump), a melee hit or miss, the gravity gun's punt or
+//! launch (its secondary attack) and grab or drop (its primary); how they move
 //! (`MOTION`: HL2's fixed bob and spring sway with pitch offsets,
 //! `source_engine::view_motion`); how they are drawn (`settings`: the view
 //! model at 54 degrees, the player's default 75; right-handed, never
@@ -84,6 +85,13 @@ fn event(f: &mut ViewFrame, kind: &WeaponEventKind) {
         WeaponEventKind::Swing { hit, .. } => {
             let order: &[&str] = if *hit { &[HIT_CENTER, PRIMARY] } else { &[MISS_CENTER, HIT_CENTER, PRIMARY] };
             f.attack(&acts(order));
+        }
+        // The gravity gun: a punt or launch, a grab or drop.
+        WeaponEventKind::Action(super::weapons::physcannon::PUNT) => {
+            f.attack(&acts(&[SECONDARY, PRIMARY]));
+        }
+        WeaponEventKind::Action(super::weapons::physcannon::PICKUP) => {
+            f.attack(&acts(&[PRIMARY]));
         }
         WeaponEventKind::Action(super::weapons::shotgun::PUMP) => {
             f.attack(&acts(&[SHOTGUN_PUMP]));

@@ -306,7 +306,7 @@ impl Plugin for Hl2EffectsPlugin {
         .init_resource::<MuzzleCache>()
         .add_message::<Tracer>()
         .add_message::<PlaySound>()
-        .add_plugins((super::projectile_fx::Hl2ProjectileFxPlugin, super::dissolve::Hl2DissolvePlugin))
+        .add_plugins((super::projectile_fx::Hl2ProjectileFxPlugin, super::dissolve::Hl2DissolvePlugin, super::physcannon_fx::Hl2PhyscannonFxPlugin))
         .add_systems(FixedUpdate, (tracers, gun_impacts).after(crate::core::SimSet::Weapons));
     }
 }

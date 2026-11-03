@@ -341,6 +341,7 @@ fn reconcile(
     props: Query<(Entity, &PhysicsProp)>,
     spatial: SpatialQuery,
     cfg: MovementConfigs,
+    held: Query<(Entity, &crate::map::held::Held, Option<&RigidBodyColliders>)>,
 ) {
     for (owner, mut t, mut vel, me, touch, shadowed, slot) in &mut owners {
         let Ok((s, size, pos, sv)) = shadows.get(shadowed.0) else {
@@ -381,6 +382,8 @@ fn reconcile(
                 .filter(|(_, p)| p.push != PushAway::Collide)
                 .map(|(e, _)| e),
         );
+        // What it holds never blocks it.
+        let excluded = excluded.chain(crate::map::held::held_by(owner, held.iter()));
         let filter = SpatialQueryFilter::from_excluded_entities(excluded).with_mask(crate::core::CHARACTER_FILTER);
         let w = 2.0 * HALF_WIDTH * METERS_PER_UNIT;
         let shape = Collider::cuboid(w, height * METERS_PER_UNIT, w);
