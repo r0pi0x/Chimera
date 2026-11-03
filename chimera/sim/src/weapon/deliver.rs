@@ -760,6 +760,21 @@ pub fn pellet_dirs(aim: Quat, seed: u32, spread: SpreadShape, pellets: u32) -> V
                     let y = rng.range(-0.5, 0.5) + rng.range(-0.5, 0.5);
                     spread_dir(aim, s, x, y)
                 }
+                SpreadShape::Cone(s) => {
+                    // Source's generic rule, a player's bias: flatness 0.5,
+                    // drawn again until inside the unit disc.
+                    let (mut x, mut y);
+                    let mut tries = 0;
+                    loop {
+                        x = rng.range(-1.0, 1.0) * 0.5 + rng.range(-1.0, 1.0) * 0.5;
+                        y = rng.range(-1.0, 1.0) * 0.5 + rng.range(-1.0, 1.0) * 0.5;
+                        tries += 1;
+                        if x * x + y * y <= 1.0 || tries >= 64 {
+                            break;
+                        }
+                    }
+                    cone_dir(aim, s, x, y)
+                }
                 SpreadShape::Disc { inaccuracy, spread } => {
                     let mut disc = |r: f32| {
                         let angle = rng.range(0.0, std::f32::consts::TAU);
@@ -817,6 +832,18 @@ pub fn spread_dir(aim: Quat, spread: f32, x: f32, y: f32) -> Dir3 {
     let r = aim * Vec3::X;
     let u = aim * Vec3::Y;
     Dir3::new(f + r * (x * spread) + u * (y * spread)).unwrap_or(Dir3::NEG_Z)
+}
+
+/// A `SpreadShape::Cone` pellet's direction: forward + x s right + y s up
+/// of the aim, where right is level (forward x world up) and up follows
+/// from them (Source's generic rule: no roll, a vertical aim's own axes).
+pub fn cone_dir(aim: Quat, spread: f32, x: f32, y: f32) -> Dir3 {
+    let f = aim * Vec3::NEG_Z;
+    let (r, u) = match f.cross(Vec3::Y).try_normalize() {
+        Some(r) => (r, r.cross(f).normalize()),
+        None => (aim * Vec3::X, aim * Vec3::Y),
+    };
+    Dir3::new(f + r * x * spread + u * y * spread).unwrap_or(Dir3::new(f).unwrap_or(Dir3::NEG_Z))
 }
 
 /// Damage scale after `distance`: base^(distance / step).

@@ -58,27 +58,28 @@ pub fn map_file_bytes(id: &str) -> Option<Vec<u8>> {
     cs_source::game::mount::open(&install).ok()?.read(&format!("maps/{name}.bsp")).ok()
 }
 
-/// The shell's plugins with both games' HUDs: Combat Arms' (`ui::
-/// with_hud`), then CS:S's panels, sprites and weapon selection (whose
-/// logic is the shell's `WeaponMenuPlugin`, added once, by CS:S's) and the
-/// minigame's panel on CS:S's HUD.
+/// The shell's plugins with every game's HUD (each bundle's `client`):
+/// the base game's, Combat Arms' (`ui::with_hud`), then the guests':
+/// CS:S's panels, sprites and weapon selection (whose logic is the shell's
+/// `WeaponMenuPlugin`, added once, by CS:S's), the minigame's panel on
+/// CS:S's HUD, and the rest of CS:S's HUD that follows the gun in hand
+/// (the radar, target ID, freeze cam, voice status: each drawing only
+/// while CS:S's HUD is the gameplay's). HL2:DM has none yet (M9): a
+/// player holding its gun sees the base game's.
 pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
-    use chimera_client::client::{hud::HudPlugin, view::ViewPlugin, weapon_menu::WeaponMenuPlugin};
-    use cs_source::ui::{game_hud::GameHudPlugin, hud_sprites::HudSpritesPlugin, minigame_hud::MinigameHudPlugin};
-    combat_arms::ui::with_hud(shell)
-        .disable::<WeaponMenuPlugin>()
-        .add_after::<HudPlugin>(GameHudPlugin)
-        .add_after::<GameHudPlugin>(HudSpritesPlugin)
-        .add_after::<HudSpritesPlugin>(MinigameHudPlugin)
-        .add_after::<ViewPlugin>(cs_source::ui::weapon_select::WeaponSelectPlugin)
-        // The rest of CS:S's HUD that follows the gun in hand: the radar,
-        // the names of the players aimed at, the freeze cam and the voice
-        // status (each draws only while CS:S's HUD is the gameplay's).
-        .add_after::<chimera_client::client::game_text::GameTextPlugin>(cs_source::ui::radar::RadarPlugin)
-        .add_after::<MinigameHudPlugin>(cs_source::ui::target_id::TargetIdPlugin)
-        .add_after::<cs_source::ui::target_id::TargetIdPlugin>(cs_source::ui::freeze_cam::FreezeCamPlugin)
-        .add_after::<cs_source::ui::freeze_cam::FreezeCamPlugin>(cs_source::ui::voice_hud::VoiceHudPlugin)
+    let mut shell = shell;
+    for client in CLIENTS {
+        if let Some(hud) = client.hud {
+            shell = hud(shell);
+        }
+    }
+    shell
 }
+
+/// Each game's front end (its `ui`'s `GameClient`, beside its bundle):
+/// the base game's first, then the guests' (HL2:DM has none yet, M9).
+pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 2] =
+    [&combat_arms::ui::PARTY_CLIENT, &cs_source::ui::party::CLIENT];
 
 /// The client: the shell's plugins with the app's hooks and both games'
 /// HUDs (`with_huds`), the map's HUD look CS:S's (`HudLookOwner`).
@@ -95,10 +96,6 @@ impl Plugin for ClientPlugin {
             }
             .build(),
         ))
-        .insert_resource(chimera_client::client::hud::HudLookOwner(cs_source::game::GAME))
-        // What CS:S's bodies play, for a player holding a CS:S gun (the
-        // gun game's `identity = "weapon"`).
-        .add_plugins(cs_source::game::player_anim::PlayerAnimPlugin)
         // The key binds page (F6, `controls`): shared binds and each
         // game's own.
         .add_plugins(crate::controls::ControlsPlugin)
@@ -109,8 +106,16 @@ impl Plugin for ClientPlugin {
         .add_plugins(chimera_client::client::minigame_scoreboard::MinigameScoreboardPlugin)
         // `party_swap_effect` (default 0): a flash on a rung's swap.
         .add_plugins(chimera_client::client::swap_effect::SwapEffectPlugin)
-        .add_systems(Startup, (cs_source_names, mount_doctor))
+        .add_systems(Startup, (guest_names, mount_doctor))
         .add_systems(Update, sync_gun_names);
+        // The rest of each guest's front end (CS:S's: the map's HUD look
+        // is its, and what its bodies play for a player holding its gun,
+        // the gun game's `identity = "weapon"`).
+        for client in CLIENTS {
+            if let Some(add) = client.app {
+                add(app);
+            }
+        }
     }
 }
 
@@ -180,16 +185,20 @@ fn mount_doctor(games: Res<Games>, mut commands: Commands) {
     commands.insert_resource(chimera_net::net::manifest::LocalMounts(report));
 }
 
-/// CS:S's guns' names for Combat Arms' HUD: its weapon panel and kill feed
-/// call a weapon by `ItemNames` (else its data's `hud.name`, which for CS:S
-/// is a string token), so the names come from CS:S's own strings in its
-/// install (`weapons::display_names`; none without the install, the guns
-/// then show their ids).
-fn cs_source_names(games: Res<Games>, mut names: ResMut<ItemNames>) {
-    let Some(mount) = games.get(cs_source::game::GAME).and_then(|g| g.mount()) else {
-        return;
-    };
-    names.0.extend(cs_source::game::weapons::display_names(&mount));
+/// The guests' guns' names for Combat Arms' HUD: its weapon panel and
+/// kill feed call a weapon by `ItemNames` (else its data's `hud.name`,
+/// which for CS:S and HL2:DM is a string token), so the names come from
+/// each game's own strings in its install (its bundle's `display_names`:
+/// CS:S's `weapons::display_names`, HL2:DM's; none without the install,
+/// the guns then show their ids).
+fn guest_names(games: Res<Games>, mut names: ResMut<ItemNames>) {
+    for bundle in super::GUESTS {
+        let Some(read) = bundle.display_names else { continue };
+        let Some(mount) = games.get(bundle.info.id).and_then(|g| g.mount()) else {
+            continue;
+        };
+        names.0.extend(read(&mount));
+    }
 }
 
 /// The Tab scoreboard's gun names: CS:S's (the minigame panel's) and
@@ -270,12 +279,18 @@ fn client_app_with(args: Args, title: &str, map: Option<chimera_world::map::MapD
         None => MapPlugin::empty(),
     });
     app.add_plugins((
-        // Both installs as `cs_source://` and `combat_arms://` assets
-        // (before `AssetPlugin`).
-        chimera_present::assets::InstallSourcesPlugin(vec![
-            chimera_present::assets::InstallSource::of(&cs_source::game::INFO),
-            chimera_present::assets::InstallSource::shared(combat_arms::game::INFO.id, combat_arms::game::world::mount),
-        ]),
+        // Every install as `cs_source://`, `hl2dm://` and
+        // `combat_arms://` assets (before `AssetPlugin`).
+        chimera_present::assets::InstallSourcesPlugin(
+            super::GUESTS
+                .iter()
+                .map(|b| chimera_present::assets::InstallSource::of(b.info))
+                .chain([chimera_present::assets::InstallSource::shared(
+                    combat_arms::game::INFO.id,
+                    combat_arms::game::world::mount,
+                )])
+                .collect(),
+        ),
         DefaultPlugins
             .set(WindowPlugin {
                 primary_window: Some(Window {

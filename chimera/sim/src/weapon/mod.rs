@@ -19,7 +19,9 @@
 //! wait for, a semi-automatic's press cuts short), `Magazine` (cost; `ShellReload`: one round at a time, a shot stops
 //! it, optionally back to back with a closing part; `auto_reload`: an empty
 //! clip reloads, held or not; `WeaponState::reload_held`: a game holds
-//! reloads), `Hitscan` (pellets
+//! reloads; `ShellReload::insert_first`: each round in as its insert
+//! starts, HL2's shotgun), `AltShot` (attack2 fires a bigger shot from the
+//! clip: HL2's double shot), `Hitscan` (pellets
 //! share a shot's inaccuracy offset; without a `DamageEffect` only its `Fired`
 //! event, for a game that delivers rounds itself)/`Melee` (delivery), `Penetration` with
 //! `PassMaterials` (bullets through walls and characters), `DamageEffect`,
@@ -32,7 +34,8 @@
 //! game's own slot-key rules: `OwnSelection`) and deploy before movement, the Source-style weapon frame in `SimSet::Weapons` (spec
 //! weapons.md 3–4; both in `core::Predict` schedules, timed by
 //! `core::SimClock`; characters a network client draws from snapshots
-//! (`map::interp::NetDrawn`) never run it), `WeaponEvent`s (`replay`: written
+//! (`map::interp::NetDrawn`) never run it), `WeaponEvent`s (`Action`: a
+//! game's own step of its weapon by name, the shotgun's pump; `replay`: written
 //! while a client re-ran a command; effects skip those; `Fired`: a round's
 //! origin, angles, spread seed and spread, enough to draw it again:
 //! `pellet_dirs`); `BulletTarget` (a target's own hitgroup multipliers, hits on
@@ -84,7 +87,7 @@ use serde::{Deserialize, Serialize};
 pub use params::ParamsAppExt;
 pub use sync::{CarriedAppExt, NetPart};
 
-pub use deliver::{aim_of, armor_split, falloff, hitgroup_at, pellet_dirs, quantize, spread_dir};
+pub use deliver::{aim_of, armor_split, cone_dir, falloff, hitgroup_at, pellet_dirs, quantize, spread_dir};
 pub use hits::{Absorbed, Coverage, DamageClass, Depletion, RegionScale, absorb};
 
 use crate::{
@@ -854,6 +857,13 @@ pub struct ShellReload {
     pub finish: f32,
     /// No tick between rounds (Combat Arms' reload loop).
     pub back_to_back: bool,
+    /// Each round goes in as its insert starts, the insert then playing
+    /// `insert` seconds (HL2's shotgun, specs/hl2dm/weapons.md 7.4): the
+    /// start, then a round at once and every `insert` after, timed from
+    /// the tick each went in; attacks wait for each part to end, and an
+    /// attack held with a round in the clip ends the reload there instead
+    /// of the next round going in.
+    pub insert_first: bool,
 }
 
 /// Where a one-at-a-time reload is (`ShellReload`).
@@ -972,6 +982,34 @@ pub enum SpreadShape {
     /// angle, plus one up to `spread` at another. Game code updates
     /// `inaccuracy` as it changes.
     Disc { inaccuracy: f32, spread: f32 },
+    /// Source's generic rule (the HL2 family's, specs/cs_source/weapons.md
+    /// 4.3 with a player's bias): each axis 0.5 U(-1, 1) + 0.5 U(-1, 1),
+    /// drawn again until the pair lies in the unit disc, times this spread
+    /// vector component (the same on both axes), along the aim's right and
+    /// up (HL2:DM's SMG1 0.04362, 5 degrees).
+    Cone(f32),
+}
+
+impl SpreadShape {
+    /// The widest a shot may stray, tangent units (a HUD's crosshair gap).
+    pub fn width(self) -> f32 {
+        match self {
+            SpreadShape::Template(s) | SpreadShape::Cone(s) => s,
+            SpreadShape::Disc { inaccuracy, spread } => inaccuracy + spread,
+        }
+    }
+}
+
+/// Attack2 fires a bigger shot from the clip (HL2's shotgun's double
+/// shot, specs/hl2dm/weapons.md 7.4): `pellets` pellets for `rounds`
+/// rounds, the next attack (both buttons) `cycle` seconds on. With fewer
+/// rounds in the clip a normal shot (the trigger's cycle); with none the
+/// empty clip's rule. It has priority over attack.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct AltShot {
+    pub pellets: u32,
+    pub rounds: u32,
+    pub cycle: f32,
 }
 
 /// Recoil and flinch on a character's view (Source's punch angle: pitch
@@ -1556,6 +1594,9 @@ pub enum WeaponEventKind {
     ShellInserting,
     /// A reload finished (the magazine swapped, or the last round in).
     Reloaded,
+    /// A game's own step of its weapon, by name (HL2's shotgun's pump,
+    /// `"pump"`): its view-model rules play what it means.
+    Action(&'static str),
     /// A grenade's pin came out (`grenade::Throwable`).
     PinPulled,
     /// A grenade was released (it leaves the hand a moment later).
@@ -1714,6 +1755,7 @@ struct WeaponParts {
     zoom: Option<&'static Zoom>,
     burst: Option<&'static Burst>,
     shells: Option<&'static ShellReload>,
+    alt_shot: Option<&'static AltShot>,
 }
 
 impl WeaponPartsItem<'_, '_> {
@@ -1729,6 +1771,39 @@ impl WeaponPartsItem<'_, '_> {
         }
         m.current = mode;
         w.event(owner, self.entity, WeaponEventKind::ModeChanged { mode });
+    }
+
+    /// One shot of `pellets` pellets spending `rounds` from the clip (an
+    /// `AltShot`): its traces and sound; whether it went.
+    fn fire_volley(&mut self, ctx: &mut deliver::Shot, rounds: u32, pellets: u32) -> bool {
+        let Some(scan) = self.hitscan else { return false };
+        if let Some(mag) = self.magazine.as_mut() {
+            if mag.clip < rounds {
+                return false;
+            }
+            mag.clip -= rounds;
+        }
+        let fired = WeaponEventKind::Fired {
+            id: self.weapon.id,
+            origin: ctx.eye,
+            yaw: ctx.yaw,
+            pitch: ctx.pitch,
+            seed: ctx.seed,
+            spread: scan.spread,
+            // The alternate shot is mode 1 to those who draw it (its
+            // `fire_alt` sound).
+            mode: self.mode().max(1),
+        };
+        ctx.w.event(ctx.owner, self.entity, fired);
+        if let Some(effect) = self.effect {
+            let scan = Hitscan { pellets, ..scan.clone() };
+            ctx.fire(&scan, effect, self.penetration);
+        }
+        if let Some(s) = self.sounds.and_then(|s| s.fire_alt.clone().or_else(|| s.fire.clone())) {
+            ctx.w.sound(owner_sound(s, ctx.owner, ctx.eye, CHAN_WEAPON));
+        }
+        self.state.burst += 1;
+        true
     }
 
     /// Fire up to `rounds` from the clip: traces, sounds; returns how many.
@@ -1919,7 +1994,56 @@ fn weapon_frame(
 
         // One-at-a-time reloads step on (spec 3.4; T25): the start, then a
         // round per insert, the next insert a tick after.
-        if w.state.shells != ShellStage::Idle && due >= w.state.shell_next {
+        if w.state.shells != ShellStage::Idle
+            && due >= w.state.shell_next
+            && let Some(shells) = w.shells.filter(|s| s.insert_first).cloned()
+        {
+            // Each round in as its insert starts (`ShellReload::insert_first`).
+            let clip = w.magazine.as_ref().map_or(0, |m| m.clip);
+            let stop = w.state.shells != ShellStage::Finishing
+                && ((intent.fire && clip >= 1)
+                    || (intent.secondary && w.alt_shot.is_some_and(|a| clip >= a.rounds)));
+            let room = w.magazine.as_ref().is_some_and(|m| m.clip < m.size && m.reserve > 0);
+            if stop {
+                // The held attack fires once this part is over (now).
+                w.state.shells = ShellStage::Idle;
+            } else {
+                match w.state.shells {
+                    ShellStage::Starting | ShellStage::Inserting if room => {
+                        if let Some(mag) = w.magazine.as_mut() {
+                            mag.clip += 1;
+                            mag.reserve -= 1;
+                        }
+                        w.state.shells = ShellStage::Inserting;
+                        w.state.shell_next = now + shells.insert as f64;
+                        w.state.next_primary = w.state.shell_next;
+                        w.state.next_secondary = w.state.shell_next;
+                        if let Some(s) = w.sounds {
+                            w.state.pending = s.reload.iter().map(|(t, e)| (now + *t as f64, e.clone())).collect();
+                        }
+                        ctx.w.event(owner, active, WeaponEventKind::ShellInserting);
+                    }
+                    ShellStage::Starting | ShellStage::Inserting => {
+                        if let Some(s) = w.sounds {
+                            w.state.pending = s.finish.iter().map(|(t, e)| (now + *t as f64, e.clone())).collect();
+                        }
+                        if shells.finish > 0.0 {
+                            w.state.shells = ShellStage::Finishing;
+                            w.state.shell_next = now + shells.finish as f64;
+                            w.state.next_primary = w.state.shell_next;
+                            w.state.next_secondary = w.state.shell_next;
+                        } else {
+                            w.state.shells = ShellStage::Idle;
+                            ctx.w.event(owner, active, WeaponEventKind::Reloaded);
+                        }
+                    }
+                    _ => {
+                        w.state.shells = ShellStage::Idle;
+                        ctx.w.event(owner, active, WeaponEventKind::Reloaded);
+                    }
+                }
+            }
+        } else if w.state.shells != ShellStage::Idle && due >= w.state.shell_next {
             let (insert, finish, back_to_back) =
                 w.shells.map_or((0.0, 0.0, false), |s| (s.insert as f64, s.finish as f64, s.back_to_back));
             // Back to back, each part runs from when the last was due.
@@ -1994,6 +2118,43 @@ fn weapon_frame(
             w.state.next_secondary = own;
             w.state.next_primary = other;
             blocked = true;
+        } else if intent.secondary
+            && let Some(alt) = w.alt_shot.copied()
+            && w.state.next_primary <= due
+            && w.state.arming == 0
+        {
+            // A bigger shot from the clip (`AltShot`): fewer rounds than it
+            // takes fire a normal shot, none the empty clip's rule.
+            blocked = true;
+            let clip = w.magazine.as_ref().map_or(u32::MAX, |m| m.clip);
+            let normal = (w.hitscan.map_or(1, |h| h.pellets), 1, w.trigger.map_or(alt.cycle, |t| t.cycle));
+            let (pellets, rounds, cycle) = if clip >= alt.rounds {
+                (alt.pellets, alt.rounds, alt.cycle)
+            } else {
+                normal
+            };
+            if clip == 0 {
+                if w.magazine.as_ref().is_some_and(|m| m.reserve > 0) {
+                    try_reload(&mut w, &mut inv, now, owner, ctx.w);
+                } else if !w.state.fired_on_empty {
+                    w.state.fired_on_empty = true;
+                    if now >= w.state.next_empty_sound {
+                        w.state.next_empty_sound = now + EMPTY_SOUND_INTERVAL;
+                        if let Some(s) = w.sounds.and_then(|s| s.empty.clone()) {
+                            ctx.w.sound(owner_sound(s, owner, eye, CHAN_ITEM));
+                        }
+                    }
+                    w.state.next_primary = now + 0.2;
+                    ctx.w.event(owner, active, WeaponEventKind::DryFire);
+                }
+            } else {
+                w.state.shells = ShellStage::Idle;
+                w.state.postfire_end = None;
+                if w.fire_volley(&mut ctx, rounds, pellets) {
+                    w.state.next_primary = now + cycle as f64;
+                    w.state.next_secondary = w.state.next_primary;
+                }
+            }
         } else if intent.secondary
             && let Some(modes) = w.modes.as_ref().map(|m| (**m).clone())
             && w.state.next_secondary <= due

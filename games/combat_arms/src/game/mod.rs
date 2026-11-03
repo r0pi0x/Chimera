@@ -74,6 +74,8 @@
 
 pub mod attachments;
 pub mod bots;
+pub mod bundle;
+pub use bundle::BUNDLE;
 pub mod characters;
 pub mod chat;
 pub mod data;

@@ -2,8 +2,9 @@
 //! (docs/plans/active/hl2dm.md): a third game library beside CS:S and
 //! Combat Arms. So far: what the game tells the shell about itself
 //! (`game::INFO`), its install as a mount (`game::mount`, from its
-//! `gameinfo.txt`), its maps (`game::maps`, `game::MAP_LOADER`), and M1's
-//! stand-ins for its movement and weapons (`game::Hl2dmPlugins`). Source
+//! `gameinfo.txt`), its maps (`game::maps`, `game::MAP_LOADER`), its
+//! bullet and melee weapons (`game::weapons`) and M1's stand-in movement
+//! (`game::Hl2dmPlugins`). Source
 //! behaviour it shares with CS:S comes from `source_engine`, never from
 //! `cs_source` (a lift, not a copy).
 //!

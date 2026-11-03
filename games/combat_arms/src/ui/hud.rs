@@ -189,7 +189,7 @@ use crate::{
     map::interp::RenderedView,
     net::{NetCharacter, NetSettings},
     weapon::{
-        AltModes, Armor, Burst, Hitscan, Inventory, Magazine, SpreadShape, Trigger, Weapon, WeaponEvent, WeaponEventKind,
+        AltModes, Armor, Burst, Hitscan, Inventory, Magazine, Trigger, Weapon, WeaponEvent, WeaponEventKind,
         Zoomed, grenade::Throwable,
     },
 };
@@ -1019,10 +1019,7 @@ fn update(
         ..default()
     };
     if let (Some((w, (id, scan, _, modes, burst, _, _, spread, _))), Some(p)) = (weapon, player) {
-        let n = scan.map_or(0.0, |s| match s.spread {
-            SpreadShape::Template(s) => s,
-            SpreadShape::Disc { inaccuracy, spread } => inaccuracy + spread,
-        }) * 1000.0;
+        let n = scan.map_or(0.0, |s| s.spread.width()) * 1000.0;
         let bursting = matches!((modes, burst), (Some(m), Some(b)) if b.mode == m.current && b.count > 0);
         let stance = Stance {
             zoomed: p.2.is_some_and(|z| !z.scope),

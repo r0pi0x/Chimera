@@ -29,6 +29,7 @@ pub mod minigame_hud;
 pub mod objectives_hud;
 pub mod options;
 pub mod overview;
+pub mod party;
 pub mod radar;
 pub mod radio;
 pub mod scoreboard;

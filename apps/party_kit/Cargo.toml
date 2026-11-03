@@ -26,6 +26,7 @@ chimera_net.workspace = true
 chimera_present = { workspace = true, optional = true }
 chimera_client = { workspace = true, optional = true }
 cs_source.workspace = true
+hl2dm.workspace = true
 source_logic.workspace = true
 combat_arms.workspace = true
 originals.workspace = true
@@ -42,6 +43,8 @@ workspace-hack.workspace = true
 bevy = { workspace = true, features = ["default", "wav"] }
 avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
 chimera_sim = { workspace = true, features = ["testkit"] }
+# HL2:DM's view-model motion rules (tests/it/hl2dm_parts.rs).
+source_engine.workspace = true
 
 # Its integration tests (tests/it/): minigames on the composed
 # simulation, headless (`heavy::`: the user's installs).
@@ -76,6 +79,7 @@ dev = [
     "chimera_present?/dev",
     "chimera_client?/dev",
     "cs_source/dev",
+    "hl2dm/dev",
     "source_logic/dev",
     "combat_arms/dev",
     "originals/dev",

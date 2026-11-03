@@ -1,5 +1,5 @@
 //! The app's simulation on the greybox (no install): a player on HL2:DM's
-//! movement with the test pistol stands, runs and shoots.
+//! movement with its loadout (the SMG1 in hand) stands, runs and shoots.
 
 use bevy::prelude::*;
 use chimera_sim::weapon::{Inventory, Magazine};
@@ -24,5 +24,8 @@ fn a_player_plays_the_greybox() {
     sim.seconds(0.2);
     let w = sim.app.world();
     let gun = w.get::<Inventory>(p).and_then(|i| i.active).expect("a weapon in hand");
-    assert_eq!(w.get::<Magazine>(gun).unwrap().clip, 17, "one shot of the pistol's 18");
+    // The spawn's loadout puts the SMG1 in hand (specs/hl2dm/weapons.md 3).
+    // 0.2 s held: the SMG1's first rounds (one every 0.075 s).
+    let clip = w.get::<Magazine>(gun).unwrap().clip;
+    assert!((41..=43).contains(&clip), "a few rounds of the SMG1's 45: {clip}");
 }

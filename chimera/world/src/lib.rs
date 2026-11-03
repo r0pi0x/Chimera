@@ -17,6 +17,7 @@
 //! whatever simulation plugins its caller passes as the base (a game's,
 //! or the engine's alone), so each crate's tests use it at their layer.
 
+pub mod game_bundle;
 pub mod greybox;
 pub mod harness;
 pub mod map;

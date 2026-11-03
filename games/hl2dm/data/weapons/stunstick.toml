@@ -1,0 +1,44 @@
+# The stunstick (specs/hl2dm/weapons.md 11): the crowbar's swing with 40 a
+# hit every 0.8 s, `Weapon_StunStick.Melee_Hit` on any hit, sounds on
+# deploy and holster. The Combine's and metro police's (the spawn's melee
+# by model kind). Script: bucket 0 position 1, weight 0.
+id = "hl2dm:weapon_stunstick"
+base = "hl2dm:base"
+slot = 0
+draw = 0.9333
+weight = 0
+undroppable = true
+
+[melee.primary]
+range = 75.0
+hull = 16.0
+hull_reach = 47.288
+facing_cos = 0.70721
+damage = 40.0
+hitgroups = false
+hit_refire = 0.8
+miss_refire = 0.8
+miss_refire_other = 0.8
+# 300 kg x in/s a point: 12000.
+force = 12000.0
+kind = "melee"
+armor_ratio = 0.4
+quantum = 0.0
+sound_hit = "Weapon_StunStick.Melee_Hit"
+sound_hit_world = "Weapon_StunStick.Melee_Hit"
+sound_miss = "Weapon_StunStick.Swing"
+
+[sounds]
+deploy = "Weapon_StunStick.Activate"
+
+[models]
+world = "models/weapons/w_stunbaton.mdl"
+view = "models/weapons/v_stunstick.mdl"
+view_right_handed = true
+
+[hud]
+name = "#HL2_StunBaton"
+icon = "stunstick"
+
+[hooks."hl2dm:inventory"]
+position = 1

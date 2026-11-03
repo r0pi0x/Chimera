@@ -404,3 +404,33 @@ fn a_switch_is_predicted_without_error() {
     assert_agrees(&mut sim, 0, "switches");
     assert!(graph(&sim, 0).resyncs >= 2, "the server's swaps were restarts: {:?}", graph(&sim, 0));
 }
+
+/// Across the three games: HL2:DM's pistol makes the player HL2:DM's
+/// (its movement and identity), CS:S's Glock CS:S's, Combat Arms'
+/// Beretta Combat Arms', and HL2:DM's SMG1 HL2:DM's again, each on the
+/// rung's swap (`hl2dm_parts::LADDER`).
+#[test]
+fn identity_follows_the_gun_across_three_games() {
+    use crate::hl2dm_parts::{LADDER, mixed_text};
+    let mut sim = Sim::new(CaSim, (GreyboxMapPlugin, PartyPartsPlugin));
+    crate::gun_game::no_finale(sim.app.world_mut());
+    chimera_sim::minigame::MinigameAppExt::add_minigames(&mut sim.app, &[("three.toml", &mixed_text(false))]).unwrap();
+    minigame::start(sim.app.world_mut(), "test:gun_game_hl2dm").unwrap();
+    let a = soldier(&mut sim);
+    let _b = soldier(&mut sim);
+    sim.seconds(1.5);
+    let l = sim.app.world().resource::<Ladder>().clone();
+    for (r, want) in [(0, "hl2dm"), (1, "cs_source"), (3, "combat_arms"), (2, "hl2dm")] {
+        ladder::set_rung(sim.app.world_mut(), a, r, &l);
+        sim.seconds(1.2);
+        assert_eq!(held(&sim, a), Some(LADDER[r]));
+        let w = sim.app.world();
+        assert_eq!(identity(w, a).as_deref(), Some(want), "rung {r}");
+        let wanted = match want {
+            "hl2dm" => hl2dm::game::movement::ID,
+            "cs_source" => cs_movement::ID,
+            _ => ca_movement::ID,
+        };
+        assert_eq!(movement(w, a), Some(wanted), "rung {r}");
+    }
+}

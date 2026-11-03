@@ -8,11 +8,14 @@
 //! The gameinfo parser's fast tests are `source_engine`'s own.
 
 mod info;
+mod melee;
 mod skeleton;
+mod weapons;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {
     mod map_cache;
     mod map_stock;
     mod mount;
+    mod scripts;
 }

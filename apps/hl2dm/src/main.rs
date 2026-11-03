@@ -2,7 +2,7 @@
 //! (`hl2dm::SimPlugins` + `Hl2dmPlugins`) on a map of the install
 //! (`--map hl2dm:<name>`, e.g. `hl2dm:dm_lockdown`) or the greybox, the
 //! presentation, the network and the client shell. M1: walk the stock
-//! maps with the stand-in movement and shoot the test pistol. The options
+//! maps with the stand-in movement and shoot its bullet and melee weapons. The options
 //! are the shell's, as the CS:S app's (`--help`).
 //!
 //! Network play is the shell's (`connect`, `-port`, `maxplayers`, `map`):
@@ -19,7 +19,7 @@ use hl2dm_app::ClientPlugin;
 fn main() {
     if std::env::args().skip(1).any(|a| a == "--help" || a == "-h") {
         println!(
-            "hl2dm: Half-Life 2: Deathmatch on Chimera (M1: its maps, a stand-in movement and the test pistol;\n\
+            "hl2dm: Half-Life 2: Deathmatch on Chimera (M1: its maps, a stand-in movement, its bullet and melee weapons;\n\
              --map hl2dm:<name>, e.g. hl2dm:dm_lockdown, else the greybox).\n\
              The options are the shell's (below, named after the CS:S app; all apply here).\n\
              Network play (a listen server, or the dedicated hl2dm_server):\n\

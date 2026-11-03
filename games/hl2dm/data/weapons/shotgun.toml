@@ -1,0 +1,73 @@
+# The shotgun (specs/hl2dm/weapons.md 7.4): 7 pellets of 9 in a 10 degree
+# cone, a pump after each shot (59 ticks a shot held), attack2's double
+# shot of 12 pellets for two shells (70 ticks), shells in one at a time
+# (the start 0.5 s, then a shell at once and every 0.4 s, the finish
+# 0.4333 s), 6 in the tube, 30 carried. Script: bucket 3 position 0,
+# weight 4, clip 6.
+id = "hl2dm:weapon_shotgun"
+base = "hl2dm:gun"
+class = "shotgun"
+slot = 3
+draw = 0.7333
+weight = 4
+
+[trigger]
+# The fire sequence; the pump follows (`hl2dm:shotgun`).
+cycle = 0.3333
+timing = "set"
+
+[magazine]
+clip = 6
+ammo = "hl2dm:buckshot"
+reload = 0.4
+# Its own frame starts a reload on an empty tube, attack held or not.
+reload_while_held = false
+auto_reload = true
+shells = { start = 0.5, insert = 0.4, finish = 0.4333, insert_first = true }
+
+[hitscan]
+pellets = 7
+spread = { cone = 0.08716 }
+
+[damage]
+amount = 9.0
+impulse = 1305.94
+
+# The double shot: 12 pellets, two shells, 0.5 s.
+[alt]
+kind = "shot"
+pellets = 12
+rounds = 2
+cycle = 0.5
+
+[sounds]
+fire = "Weapon_Shotgun.Single"
+fire_alt = "Weapon_Shotgun.Double"
+empty = "Weapon_Shotgun.Empty"
+reload = [[0.0, "Weapon_Shotgun.Reload"]]
+
+[models]
+world = "models/weapons/w_shotgun.mdl"
+view = "models/weapons/v_shotgun.mdl"
+view_right_handed = true
+
+[hud]
+name = "#HL2_Shotgun"
+icon = "shotgun"
+
+[hooks."hl2dm:inventory"]
+position = 0
+
+# The pump after a shot (0.5333 s, `Weapon_Shotgun.Special1`) and the
+# dry fire's 0.3333 s.
+[hooks."hl2dm:shotgun"]
+pump = 0.5333
+pump_sound = "Weapon_Shotgun.Special1"
+dry = 0.3333
+
+# Primary (U(-2, -1), U(-2, 2), 0): up; the double shot U(-5, 5) pitch.
+[hooks."hl2dm:punch"]
+pitch = [-2.0, -1.0]
+yaw = [-2.0, 2.0]
+alt_pitch = [-5.0, 5.0]
+alt_yaw = [0.0, 0.0]

@@ -1,0 +1,20 @@
+# HL2:DM's ammo types (specs/hl2dm/weapons.md 4, source_deltas.md's ammo
+# table): the most of each a player carries. A weapon's clip is apart
+# from it. The types of M5's weapons (AR2AltFire, SMG1_Grenade,
+# XBowBolt, RPG_Round, Grenade, slam) come with them.
+units = { length = 0.0254 }
+
+[ammo."hl2dm:pistol"]
+max = 150
+
+[ammo."hl2dm:357"]
+max = 12
+
+[ammo."hl2dm:smg1"]
+max = 225
+
+[ammo."hl2dm:ar2"]
+max = 60
+
+[ammo."hl2dm:buckshot"]
+max = 30
