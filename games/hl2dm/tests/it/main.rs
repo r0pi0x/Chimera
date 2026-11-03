@@ -40,4 +40,5 @@ mod heavy {
     mod player_models;
     mod scripts;
     mod served;
+    mod view_models;
 }
