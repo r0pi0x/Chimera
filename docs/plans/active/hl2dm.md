@@ -149,7 +149,7 @@ data and hooks), `hit_reaction.rs`, `rungs.rs`, `parts.rs`, `demo.rs`
 | C4 | A game bundle for the composer (UGG gap 2) | `apps/party_kit/src/lib.rs`: `PartyPartsPlugin`, `MAP_SOURCES`, `GAME_PARTS`, `GAME_BINDS`, `add_view_model_fovs`, `CS_SOURCE_PARTS`, `client::with_huds` | three games make "name both games" untenable: each game exports one bundle (its sim parts plugin, `MapLoader`, guest `MapDressing`, HUD plugins, binds layer, view-model FOV, bot gun types) behind one Chimera interface, and the kit loops over the linked bundles | Medium: every `apps/party_kit/tests/it/` file (`cs_parts.rs`, `identity.rs`, `net_party.rs`, `listen_server.rs`, `rung_*.rs`, `startup.rs`), `apps/ultimate_gun_game/tests/it/` |
 | C5 | Teams and the game's end (L15's rest) | `games/cs_source/src/rules.rs`, `rules/game_end.rs`, `rules/teams` | only if the mode runtime lacks a frag or time limit, intermission and team assignment that HL2:DM's TDM can use (Combat Arms' TDM may already cover it: check first) | High if moved: `rounds.rs`, `teams.rs`, heavy `bot_rounds.rs`; avoid unless needed |
 | C6 | Held bodies on the network | `chimera_net`'s `NetProp` | a prop a player holds (gravity gun, `+use`) is simulated by the server and interpolated for everyone, the holder included (expected parity: the spec says); Chimera owns prop replication, so the seam (who holds it, its target pose) goes there; the gravity gun's rules stay `hl2dm`'s | Medium: `chimera_net` tests, `net_breakables.rs`, `logic_physics.rs` |
-| C7 | `chimera_pack`'s game list | `src/bin/chimera_pack.rs` (`games() -> [Game; 2]`, `record_pieces` by game id) | a third game: the list from the registered `GameInfo`s (app id from `steam`), the pieces' sets as a hook the game provides | Low: its unit tests, heavy `served.rs` |
+| C7 | `chimera_pack`'s game list | `src/bin/chimera_pack.rs` (`games() -> [Game; 3]`, `record_pieces` by game id) | a third game: the list from the registered `GameInfo`s (app id from `steam`), the pieces' sets as a hook the game provides | Low: its unit tests, heavy `served.rs` |
 | C8 | Console names shared by Source games | `chimera_core::console` (`SOURCE_NAMESPACE` = `cs_source`) | done 2026-11-01 (engine-names branch): `fps_max`, `rate`, `map` ... are `chimera:` (`chimera_core::console_names`); HL2:DM registers its own `hl2dm:sv_gravity` (section 5, option C) | Low/medium: `console_scope.rs`, console unit tests, `persist.rs` |
 
 Not lifted (HL2:DM's own, in `games/hl2dm`): the gravity gun's rules
@@ -441,7 +441,7 @@ implementing (owner branch) / done.
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
 | M9 HUD | H8 | done (branch `hl2dm-m9`, 2026-11-03): see Progress; left: the items listed there | S7 (the look reader and the animation engine; CS:S's menu readers stay) |
 | M10 effects, sounds | H9 | done in part (branch `hl2dm-m10`, 2026-11-03): see Progress; left: explosions, ball, dissolve, RPG, crossbow, gravity-gun effects (M5, M6), shells, the shield wall shader, refcmp | S10, S5 |
-| M11 assets | none | not started | C7 |
+| M11 assets | none | done (branch `hl2dm-m11`, 2026-11-03): see Progress; left: the other heavy tiers' (party, UGG) HL2:DM reads from the store | C7 |
 
 ## Progress
 
@@ -1130,6 +1130,30 @@ implementing (owner branch) / done.
   0.8 over 0.5 s) and the held ball's loop pitch ramp. The probe checks
   (P1-P17) weren't run (the probe server crashed on a bot's death in M7;
   P2-P12 need a bot holding and punting).
+
+- **M11 assets (branch `hl2dm-m11`, 2026-11-03).** C7: `chimera_pack`'s
+  game list already had HL2:DM (app 320, its search path); this adds its
+  pieces' sets to `record_pieces`: `weapon/<id>` for the 12 weapons (view
+  and world models, the projectile models, materials, the waves of the
+  sound entries and melee sounds) and `players` (the 19 models). Build
+  24600434 published into the dev server's store and signed: 30,792
+  files, 30,390 records, 1.9 GB stored (only 863 records new: `hl2/` is
+  CS:S's), sets `weapon/*` (12, 13 MB), `players` (166 records, 18 MB),
+  `base` (1,069 records, 30 MB: what every one of the eight stock maps
+  reads, less the weapon and player sets), `map/<name>` for the eight
+  stock maps (the app on the map, 90-153 MB each) and `heavy-tests`
+  (6,598 records, 366 MB, the hl2dm crate's heavy tier). The hl2dm app
+  has no menu yet, so `base` is the intersection of the eight map logs.
+  `heavy/served.rs` (hl2dm): dm_lockdown converts from a scratch store
+  alone and from the service on 127.0.0.1 with no install, the same map.
+  The hl2dm heavy tier from a scratch server alone (no install, Steam
+  folder, keys or content cache; empty cache): 27 of 29 pass, no asset
+  misses; the two failures (`heavy::scripts`: weapon data against the
+  scripts) fail the same with the install. UGG's pool already takes
+  HL2:DM's maps (`map_patterns` `dm_*`, the installed maps from the
+  mount, which the store stands in for); halls3 isn't a `dm_*` name and
+  stays out. Left: the party and UGG heavy tests' reads of HL2:DM from
+  the store weren't run.
 
 ## Decision log
 

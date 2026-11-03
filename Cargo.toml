@@ -251,6 +251,7 @@ cs_source.workspace = true
 # store it writes.
 combat_arms.workspace = true
 hl2dm.workspace = true
+source_engine.workspace = true
 chimera_core.workspace = true
 chimera_assets.workspace = true
 source_formats.workspace = true
