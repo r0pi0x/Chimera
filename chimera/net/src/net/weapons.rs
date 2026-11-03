@@ -18,8 +18,9 @@
 //!   pattern the server traced; reloads, swings, throws and bomb arming
 //!   as `WeaponFx` for their bodies. The shooter's own client gets neither (it
 //!   predicted them).
-//! - **Things in the world** (`NetItem`): loose weapons and grenades in
-//!   flight are the server's and drawn from snapshots like props; smoke
+//! - **Things in the world** (`NetItem`): loose weapons, grenades and
+//!   projectiles in flight (`weapon::projectile`'s flyers and `ShownBody`s)
+//!   are the server's and drawn from snapshots like props; smoke
 //!   clouds (`NetSmoke`) start when heard; a detonation comes as
 //!   `Detonation` (the explosion's look and sound), a flash or a blast's
 //!   ringing as `Senses` to the player it hit.
@@ -184,7 +185,8 @@ fn write_held(
     }
 }
 
-/// Loose weapons and grenades in flight into `NetItem` (replicated from
+/// Loose weapons, grenades and projectiles in flight (`weapon::
+/// projectile`'s flyers and `ShownBody`s) into `NetItem` (replicated from
 /// the first one on).
 #[allow(clippy::type_complexity)]
 fn write_items(
@@ -196,25 +198,37 @@ fn write_items(
             Option<&Projectile>,
             Option<&ShownItem>,
             Option<&mut NetItem>,
+            Option<&crate::weapon::projectile::Flyer>,
+            Option<&crate::weapon::projectile::ShownBody>,
         ),
-        Or<(With<LooseItem>, With<Projectile>)>,
+        Or<(
+            With<LooseItem>,
+            With<Projectile>,
+            With<crate::weapon::projectile::Flyer>,
+            With<crate::weapon::projectile::ShownBody>,
+        )>,
     >,
     characters: Query<&NetCharacter>,
     mut commands: Commands,
 ) {
-    for (e, t, loose, projectile, shown, have) in &mut q {
+    for (e, t, loose, projectile, shown, have, flyer, body) in &mut q {
         // A projectile is drawn as the server shows it (its `ShownItem`:
-        // a game's own thrown model), else as its weapon.
-        let model = match (loose, projectile, shown) {
+        // a game's own thrown model), else as its weapon; so is a flyer
+        // (`weapon::projectile`).
+        let model = match (loose, projectile, shown, flyer) {
             (Some(l), ..) => l.0.clone(),
-            (None, Some(_), Some(s)) => s.0.clone(),
-            (None, Some(p), None) => p.weapon.to_string(),
+            (None, Some(_), Some(s), _) | (None, None, Some(s), Some(_)) => s.0.clone(),
+            (None, None, Some(s), None) if body.is_some() => s.0.clone(),
+            (None, Some(p), None, _) => p.weapon.to_string(),
+            (None, None, None, Some(f)) => f.weapon.to_string(),
             _ => continue,
         };
         // On the network's grid (`quant`): an item shaking below it sends
         // nothing.
         let owner = projectile
             .and_then(|p| p.thrower)
+            .or(flyer.and_then(|f| f.owner))
+            .or(body.and_then(|b| b.owner))
             .and_then(|t| characters.get(t).ok())
             .and_then(|c| c.owner);
         let now = NetItem {

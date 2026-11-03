@@ -1,7 +1,8 @@
 //! HL2:DM's ammunition outside its weapons: each type's carry limit
 //! (`AmmoLimits`, from the weapon data's ammo types), giving a player
-//! rounds of a type (`give`: into the reserve of a carried weapon that
-//! uses it, else the count waiting in `Hl2Ammo`, capped by the limit; no
+//! rounds of a type (`give`: into the rounds a carried weapon counts
+//! itself, `weapons::launch::Hl2Rounds`, or the reserve of one that uses
+//! it, else the count waiting in `Hl2Ammo`, capped by the limit; no
 //! weapon of it needed) and the boxes and crates as data
 //! (data/items.toml: `ItemData`, specs/hl2dm/maps_entities.md 1, 3).
 
@@ -106,6 +107,22 @@ pub fn give(world: &mut World, player: Entity, ammo: &str, count: u32) -> u32 {
     let Some(limit) = world.get_resource::<AmmoLimits>().and_then(|l| l.0.get(ammo).copied()) else {
         return 0;
     };
+    // A weapon counting this type itself (the projectiles' rounds,
+    // `weapons::launch::Hl2Rounds`: grenades, rockets, attack2's).
+    let weapons: Vec<Entity> = world
+        .get::<chimera_sim::weapon::Inventory>(player)
+        .map(|i| i.weapons.clone())
+        .unwrap_or_default();
+    for w in weapons {
+        if let Some(mut r) = world.get_mut::<super::weapons::launch::Hl2Rounds>(w)
+            && r.ammo == ammo
+        {
+            let max = r.max.min(limit).max(r.count);
+            let add = count.min(max - r.count);
+            r.count += add;
+            return add;
+        }
+    }
     if let Some(w) = weapon_of(world, player, ammo) {
         let Some(mut m) = world.get_mut::<Magazine>(w) else { return 0 };
         let max = m.reserve_max.min(limit).max(m.reserve);

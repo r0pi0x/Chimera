@@ -1,0 +1,56 @@
+# The RPG (specs/hl2dm/projectiles.md 6): 3 rockets carried, one
+# missile at a time (`hl2dm:rpg`): from eye + 12 forward + 6 right - 3 up
+# at 300 forward + 128 up under full gravity (a +-4 box), non-solid 0.3 s
+# when nothing is within 128 along the view; ignited after 0.3 s (20
+# ticks) at 1500 units/s, a point, guided by the laser dot (12.5 % a tick,
+# riding the beam from the owner's centre 256 ahead within 512 of the dot,
+# the dot 10 into its surface); 150 in 300; refire 0.5; the 1.6667 s
+# reload after the missile, ended only with attack up. Script: bucket 4
+# position 1, weight 0, default clip 3, autoswitchfrom 1.
+id = "hl2dm:weapon_rpg"
+base = "hl2dm:base"
+# No gun class yet: the gun game takes only classed guns (its ladder
+# with the projectile weapons is for later).
+slot = 4
+draw = 1.1
+weight = 0
+
+[sounds]
+fire = "Weapon_RPG.Single"
+
+[models]
+world = "models/weapons/w_rocket_launcher.mdl"
+view = "models/weapons/v_rpg.mdl"
+view_right_handed = true
+
+[hud]
+name = "#HL2_RPG"
+icon = "rpg_missile"
+
+[hooks."hl2dm:inventory"]
+position = 1
+default_clip = 3
+
+[hooks."hl2dm:rpg"]
+ammo = "hl2dm:rpg_round"
+count = 3
+max = 3
+refire = 0.5
+reload = 1.6667
+muzzle = [12.0, 6.0, -3.0]
+launch_speed = 300.0
+launch_up = 128.0
+half = 4.0
+grace_check = 128.0
+ignite = 0.3
+speed = 1500.0
+homing = 0.125
+ride_lead = 256.0
+ride_near = 512.0
+dot_sink = 10.0
+dot_range = 56755.84
+damage = 150.0
+radius = 300.0
+sound = "Weapon_RPG.Single"
+empty = "Weapon_SMG1.Empty"
+explode = "BaseGrenade.Explode"

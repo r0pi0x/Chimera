@@ -123,6 +123,16 @@ pub fn add_held(
             Err(e) => warnings.push(e),
         }
     }
+    // The projectiles, drawn by key (`weapons::launch::MODELS`).
+    for (key, path, weapon) in super::weapons::launch::MODELS {
+        if !kit.wants(weapon) {
+            continue;
+        }
+        match props::load_held(materials, path, key, &skeleton) {
+            Ok(h) => into.held.push(h),
+            Err(e) => warnings.push(e),
+        }
+    }
 }
 
 /// HL2:DM's ragdolls (specs/hl2dm/player_models.md 10): the killing

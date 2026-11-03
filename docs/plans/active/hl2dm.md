@@ -435,7 +435,7 @@ implementing (owner branch) / done.
 | M1 maps load | H0 | done (branch `hl2dm-m1`, 2026-11-01): S2, S3, S4 lifted, CS:S's maps identical; `games/hl2dm` maps, `Hl2Sim`, stand-in movement and pistol; `apps/hl2dm`, `apps/hl2dm_server`; `mapsweep --game hl2dm` | S2, S3, S4, (S11: mapsweep) |
 | M3 movement, suit | H1, H2 | done (branch `hl2dm-m3`, 2026-11-03): S5 (scripts, soundscapes), S6, C2, C8; `hl2dm:movement`, the suit, pickups and chargers; the probe | S5, S6, C2, C8 |
 | M4 bullets, melee, UGG | H3 | done (branch `hl2dm-m4`, 2026-11-03): see Progress; left: probe checks (P1-P17), C7 (no need in M4) | S8, C4 |
-| M5 projectiles | H4 | not started | C1 |
+| M5 projectiles | H4 | done (branch `hl2dm-m5`, 2026-11-03): see Progress; left: probe checks (P1-P15), the frag in the spawn loadout, the effects (M10) | C1 |
 | M6 gravity gun | H5 | not started | C6 |
 | M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; left: the set pieces of H10 sections 8-16, respawnable props, the probe cases (the probe server crashes on a bot's death) | C3 (C5 not needed) |
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
@@ -991,6 +991,68 @@ implementing (owner branch) / done.
   hit), the shield wall's `UnlitTwoTexture` shader, impact sounds of
   remote shots, `refcmp` views (no reference captures: the real game was
   not launched), the probe checks P7-P11.
+
+- 2026-11-03: M5 built (branch `hl2dm-m5`). **C1** (Chimera,
+  `chimera_sim::weapon::projectile`): a flyer (`Flyer`: speed, gravity by
+  Source's exact toss, a box, sphere or point swept against
+  `SOLID_LAYERS`, never its owner, optionally past loose items, a grace
+  through everything, a lifetime, `keep_speed`) with what a touch does
+  (`Touch`: explode through a `grenade::BlastAt`, bounce, a bolt's
+  glance or stick, report) and a direct hit's damage through the shared
+  armour step (`Direct`, hitboxes or the box's height bands); games steer
+  in `FlyerSet::Think` and answer `FlyerHit` in `FlyerSet::Touch`; made
+  from a weapon's frame rounds (`chimera:projectile`, `Launcher`, with
+  `LaunchUnderWater`) or a game's `LaunchRequest`; drawn on clients from
+  `NetItem` (so are a game's own bodies marked `ShownBody`). Also lifted
+  from Combat Arms' special weapons and shared with them: `ray_box` (its
+  `box_entry`), `ray_sphere` (`sphere_entry`), `facing`. Generic beside it:
+  `grenade::SourceRadius` (Source's radius damage as `Blast::radius_rule`),
+  `weapon::Inflicted` (where a blast's or projectile's damage came from,
+  for HL2:DM's shove), `weapon::HolsterLocked`. Combat Arms' objects keep
+  their own 20 Hz frames and units (moving them onto flyers would change
+  their timing; `special_weapons.rs` and `net_projectiles.rs` pass
+  unchanged); CS:S's grenades unchanged (`radius_rule: None`).
+
+  `games/hl2dm` (H4): `launch` (HL2's blast: linear to the box, the eye
+  line, mass/350 shields, force 300 a point to 30000; `Hl2Rounds`, a
+  weapon's own count of its second or only ammo); `alt_fire` (the SMG1's
+  contact grenade, the AR2's charged ball: constant 1000, 4 s, 1000 crush
+  through the suit, the seek after counted world bounces); `rpg` (the
+  toss, ignition at tick 20, the dot, beam riding from the owner's centre,
+  12.5 % a tick, the reload ended only with attack up, can't be put away);
+  `crossbow` (bolts on `chimera:projectile`: hitboxes, ×3 head, glance or
+  stick, 1500 under water; the reload strictly after the fire animation:
+  168 ticks a held shot; the press zoom to 20); `frag` (pull-back, throw,
+  lob, roll as the view model's events time them, an avian 1 kg body
+  through players with the 0.2 bounce and 0.1 tap, fuse and blips on the
+  7-tick think grid, martyrdom); `slam` (modes by the 42-unit line, the
+  trip mine's arming on the think grid, its beam checks, 17 ticks to
+  200 in 200 for its placer; satchels, the detonator, harmless pops).
+  The damage shove reads `Inflicted` (blasts push from their point, the
+  shooter's own too). Found while testing: the guns' and melee's
+  `armor_ratio` 0.4 gave the suit every point of a hit while it lasted
+  (a pistol body hit on 100 armour cost 8 armour and no health); now 1
+  (health 20 %, as suit.md and projectiles.md 11 say).
+
+  Tests: hl2dm `projectiles.rs` (H4 cases 1-5, 15-23, 27, 32, 34-37,
+  39-41, 43-44, 47-49, 52-62 and a pistol on the suit), `net_projectiles.rs`
+  (each projectile drawn on a client from its `NetItem`, moving, the
+  weapon's predicted rounds the server's), unit tests (seek 24, 26;
+  guidance 29-31; throws 44-48; the blast's units); chimera_sim
+  projectile unit tests; Combat Arms' `special_weapons.rs`,
+  `net_projectiles.rs`, `launcher_aim.rs`, `grenades.rs` and CS:S's
+  grenade tests pass unchanged. Left: the probe trajectories (P1-P15), the
+  frag (2 grenades) in the spawn loadout with the physcannon (M6/M7's
+  loadout), the sky test, the water rule of blasts, the spawn blast grace
+  (M7), death-notice names (test 64, M9), DSP hearing (63), effects,
+  trails, the dot's drawing, pinned ragdolls and dissolves (M10), the
+  gravity gun's catches (M6), test 38 (under water: the marker is the
+  movement's water level, not checked headless), 42 (props). Merged
+  with M7: ammo boxes and crates of the projectiles' types fill the
+  weapon's own rounds (`ammo::give`), a pool waiting for its weapon goes
+  into them on pickup; `impulse 101` fills them (`weapon::FilledUp`). The projectile weapons
+  have no gun class yet, so Ultimate Gun Game's ladder doesn't take them
+  (open question 5's choice).
 
 ## Decision log
 

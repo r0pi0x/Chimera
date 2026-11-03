@@ -759,11 +759,8 @@ pub(super) fn sync_objects(
 
 /// The rotation that faces `dir` (unit) with the world's up made square to
 /// it, or for a shot straight up or down, world +X (special_weapons.md
-/// Follow-up 5).
-pub fn facing(dir: Vec3) -> Quat {
-    let up = if dir.cross(Vec3::Y).length_squared() < 1e-8 { Vec3::X } else { Vec3::Y };
-    Transform::IDENTITY.looking_to(dir, up).rotation
-}
+/// Follow-up 5): Chimera's (lift C1).
+pub use crate::weapon::projectile::facing;
 
 // ---------------------------------------------------------------------------
 // Making objects

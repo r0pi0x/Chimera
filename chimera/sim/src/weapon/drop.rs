@@ -323,7 +323,7 @@ pub struct DeathDrop(pub i32);
 /// lowest slot of the droppable weapons without a `DeathDrop`), and the
 /// highest `DeathDrop` they carry (when `DeathDrops`; measured on CS:S,
 /// specs/cs_source/grenades.md Q17).
-pub(super) fn drop_on_death(mut died: MessageReader<Died>, drops: Option<Res<DeathDrops>>, none: Option<Res<NoDeathDrops>>, mut commands: Commands) {
+pub fn drop_on_death(mut died: MessageReader<Died>, drops: Option<Res<DeathDrops>>, none: Option<Res<NoDeathDrops>>, mut commands: Commands) {
     if none.is_some() || !drops.is_some_and(|d| d.0) {
         died.clear();
         return;

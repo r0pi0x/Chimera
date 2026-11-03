@@ -1,0 +1,64 @@
+# The S.L.A.M. (specs/hl2dm/projectiles.md 8): 5 carried, 3 a pickup;
+# trip-mine mode with a wall within 42 along the view; the trip mine
+# (attach 0.2333 s, within 128, 3 off the surface; arms on the first
+# 7-tick check after 2 s; its beam 2048 checked every 3 ticks, tripping
+# on a player or a 2.048 change; 17 ticks to 200 in 200 at 8 along its
+# normal); the satchel (throw 0.4667 s, 500 units/s plus the thrower's
+# velocity; set off 0.2 s after the detonator, 150 in 200 at 16 above).
+# Script: bucket 4 position 2, weight 1, clip 3.
+id = "hl2dm:weapon_slam"
+base = "hl2dm:base"
+# No gun class yet: the gun game takes only classed guns (its ladder
+# with the projectile weapons is for later).
+slot = 4
+draw = 1.0
+weight = 1
+
+[models]
+world = "models/weapons/w_slam.mdl"
+view = "models/weapons/v_slam.mdl"
+view_right_handed = true
+
+[hud]
+name = "#HL2_SLAM"
+icon = "slam"
+
+[hooks."hl2dm:inventory"]
+position = 2
+
+[hooks."hl2dm:slam"]
+ammo = "hl2dm:slam"
+count = 3
+max = 5
+mode_reach = 42.0
+attach_reach = 128.0
+to_mine = 1.3333
+to_throw = 1.6667
+to_throw_detonator = 1.0
+attach = 0.2333
+attach_after = 1.4333
+throw_anim = 0.4667
+throw_after = 1.8
+detonate = 1.3333
+detonate_only = 0.6667
+satchel_speed = 500.0
+satchel_fuse = 0.2
+satchel_damage = 150.0
+satchel_radius = 200.0
+mine_offset = 3.0
+mine_first_check = 13
+mine_check = 7
+mine_arm = 2.0
+beam = 2048.0
+beam_tolerance = 2.048
+beam_first_check = 7
+beam_check = 3
+mine_delay = 17
+mine_damage = 200.0
+mine_radius = 200.0
+place_sound = "TripmineGrenade.Place"
+activate_sound = "TripmineGrenade.Activate"
+stop_sound = "TripmineGrenade.StopSound"
+throw_sound = "Weapon_SLAM.SatchelThrow"
+detonate_sound = "Weapon_SLAM.SatchelDetonate"
+explode = "BaseGrenade.Explode"

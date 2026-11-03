@@ -5,7 +5,9 @@
 //! of the damage, times 32 x 32 x 72 over its box's volume (twice when
 //! ducked), at most 1000 units/s, its upward part at most 250. Bullets and
 //! melee name the shooter (a pistol body hit shoves 40 units/s, a .357's
-//! 375, a crowbar's 125). A player is HL2:DM's when its identity is
+//! 375, a crowbar's 125); projectiles and blasts push from where they were
+//! (`weapon::Inflicted`: a blast's point, a bolt, a ball), the shooter's
+//! own blast too (grenade and rocket jumps). A player is HL2:DM's when its identity is
 //! (`slots::GameIdentity`, the gun game's), or with no identity in a game
 //! whose rules are HL2:DM's (its own app). A shove of more than 140
 //! units/s upward lifts the player off the ground. The server's
@@ -21,6 +23,8 @@
 use bevy::prelude::*;
 
 use chimera_core::{gameplay::Gameplay, slots::{GameIdentity, MovementSlot}};
+
+use chimera_sim::weapon::Inflicted;
 
 use crate::core::{Damage, Health, MovementState, Velocity};
 
@@ -100,18 +104,27 @@ pub fn shove_players(
     )>,
     others: Query<&Transform>,
     gameplay: Option<Res<Gameplay>>,
+    mut inflicted: MessageReader<Inflicted>,
 ) {
+    let mut inflictors: Vec<Inflicted> = inflicted.read().copied().collect();
     for d in damage.read() {
-        let Some(attacker) = d.attacker.filter(|a| *a != d.target) else { continue };
         if d.amount < 0.01 {
             continue;
         }
-        let from = match victims.get(attacker) {
-            Ok((a_at, _, _, a_state, ..)) => bounds(a_at, a_state).1,
-            Err(_) => match others.get(attacker) {
-                Ok(a_at) => bounds(a_at, None).1,
-                Err(_) => continue,
-            },
+        // A projectile's or a blast's: from where it was, the shooter's
+        // own too (grenade and rocket jumps).
+        let from = match inflictors.iter().position(|i| i.target == d.target && i.amount == d.amount) {
+            Some(i) if d.weapon.is_some() => to_source(inflictors.remove(i).from),
+            _ => {
+                let Some(attacker) = d.attacker.filter(|a| *a != d.target) else { continue };
+                match victims.get(attacker) {
+                    Ok((a_at, _, _, a_state, ..)) => bounds(a_at, a_state).1,
+                    Err(_) => match others.get(attacker) {
+                        Ok(a_at) => bounds(a_at, None).1,
+                        Err(_) => continue,
+                    },
+                }
+            }
         };
         let Ok((at, health, mut velocity, state, identity, slot)) = victims.get_mut(d.target) else { continue };
         if health.current <= 0.0 || !is_hl2dm(identity, gameplay.as_deref()) {

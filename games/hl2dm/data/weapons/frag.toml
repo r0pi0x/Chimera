@@ -1,0 +1,62 @@
+# The frag (specs/hl2dm/projectiles.md 9): 5 carried; pull-back 0.25 s
+# (its event at 0.2), throw 0.55 s (released 0.05 in), lob and roll 0.7
+# s (0.1 in), refire 0.5, draw 1.2667; throw 1200 x (forward + 0.1 up),
+# lob 350 forward + 50 up, roll 700 along the ground, each plus the
+# thrower's velocity; a 1 kg physics body (+-4, friction 0.9,
+# elasticity 0.01) through players (0.2 back off one, 0.1 crush); fuse
+# 2.5 s, warning at 1.0, blips 1.0 then 0.3, thinks every 7 ticks; 150 in
+# 250. Script: bucket 4 position 0, weight 1, default clip 1.
+id = "hl2dm:weapon_frag"
+base = "hl2dm:base"
+# No gun class yet: the gun game takes only classed guns (its ladder
+# with the projectile weapons is for later).
+slot = 4
+draw = 1.2667
+weight = 1
+
+[models]
+world = "models/weapons/w_grenade.mdl"
+view = "models/weapons/v_grenade.mdl"
+view_right_handed = true
+
+[hud]
+name = "#HL2_Grenade"
+icon = "grenade_frag"
+
+[hooks."hl2dm:inventory"]
+position = 0
+default_clip = 1
+
+[hooks."hl2dm:frag"]
+ammo = "hl2dm:grenade"
+count = 1
+max = 5
+pull = 0.25
+pull_event = 0.2
+throw_anim = 0.55
+lob_anim = 0.7
+throw_release = 0.05
+lob_release = 0.1
+refire = 0.5
+draw = 1.2667
+throw_speed = 1200.0
+throw_lift = 0.1
+lob_speed = 350.0
+lob_up = 50.0
+roll_speed = 700.0
+fuse = 2.5
+warn = 1.0
+blip_slow = 1.0
+blip_fast = 0.3
+think_ticks = 7
+damage = 150.0
+radius = 250.0
+mass = 1.0
+half = 4.0
+friction = 0.9
+elasticity = 0.01
+player_bounce = 0.2
+player_tap = 0.1
+blip = "Grenade.Blip"
+roll_sound = "WeaponFrag.Roll"
+explode = "BaseGrenade.Explode"
