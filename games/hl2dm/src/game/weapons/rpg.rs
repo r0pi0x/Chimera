@@ -195,6 +195,7 @@ pub fn before_frame(
                         &clock,
                     );
                     f.gravity = 600.0 * U;
+                    f.turn = chimera_sim::weapon::projectile::MODEL_X_FORWARD;
                     f.half = Vec3::splat(p.half * U);
                     f.touch = Touch::Explode;
                     f.blast = Some(launch::blast(p.damage, p.radius, None, Some(&p.explode)));

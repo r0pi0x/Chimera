@@ -151,7 +151,13 @@ pub struct Flyer {
     pub stuck_until: Option<f64>,
     /// Hit this tick: what (the game's `FlyerSet::Touch` reads `FlyerHit`).
     pub last_hit: Option<Entity>,
+    /// Its model's own turn before it faces its flight (`facing` puts −Z
+    /// along it; a Source model's nose is its +X: `MODEL_X_FORWARD`).
+    pub turn: Quat,
 }
+
+/// `Flyer::turn` for a model whose nose is its +X (Source's models).
+pub const MODEL_X_FORWARD: Quat = Quat::from_xyzw(0.0, std::f32::consts::FRAC_1_SQRT_2, 0.0, std::f32::consts::FRAC_1_SQRT_2);
 
 impl Flyer {
     /// A flyer of `weapon` by `owner` with `velocity` (m/s), made now: a
@@ -177,6 +183,7 @@ impl Flyer {
             blast: None,
             stuck_until: None,
             last_hit: None,
+            turn: Quat::IDENTITY,
         }
     }
 }
@@ -304,6 +311,9 @@ pub struct LauncherParams {
     /// Lifetime, seconds.
     #[serde(default)]
     pub life: Option<f32>,
+    /// Its model's nose is its +X (Source's models: `MODEL_X_FORWARD`).
+    #[serde(default)]
+    pub x_forward: bool,
 }
 
 fn report() -> String {
@@ -348,6 +358,9 @@ impl LauncherParams {
             .map_or(Vec3::ZERO, |h| Vec3::new(h[0], h[2], h[1]).abs() * unit);
         f.pass_items = self.pass_items;
         f.hitboxes = self.hitboxes;
+        if self.x_forward {
+            f.turn = MODEL_X_FORWARD;
+        }
         // Relative here; made absolute at the launch.
         f.expires = self.life.map(|l| l as f64);
         f.touch = match self.touch.as_str() {
@@ -489,7 +502,7 @@ pub fn spawn_flyer(commands: &mut Commands, mut flyer: Flyer, start: Vec3, shown
     if flyer.solid_after == f64::MIN {
         flyer.solid_after = clock.now;
     }
-    let rotation = facing(flyer.velocity.normalize_or(Vec3::NEG_Z));
+    let rotation = facing(flyer.velocity.normalize_or(Vec3::NEG_Z)) * flyer.turn;
     commands
         .spawn((
             Name::new(format!("Projectile {}", flyer.weapon)),
@@ -721,7 +734,7 @@ fn fly(
         let Ok(dir) = Dir3::new(step) else { continue };
         if clock.now < f.solid_after - 1e-6 {
             t.translation += step;
-            t.rotation = facing(*dir);
+            t.rotation = facing(*dir) * f.turn;
             continue;
         }
         let from = t.translation;
@@ -781,7 +794,7 @@ fn fly(
         let Some((distance, normal, collider)) = hit else {
             t.translation += step;
             if f.velocity.length_squared() > 0.0 {
-                t.rotation = facing(f.velocity.normalize());
+                t.rotation = facing(f.velocity.normalize()) * f.turn;
             }
             continue;
         };
@@ -853,7 +866,7 @@ fn fly(
             }
         }
         if f.velocity.length_squared() > 0.0 {
-            t.rotation = facing(f.velocity.normalize());
+            t.rotation = facing(f.velocity.normalize()) * f.turn;
         }
         world.hits.write(FlyerHit {
             flyer: e,
@@ -894,6 +907,12 @@ mod tests {
         let t = ray_sphere(Vec3::new(-3.0, 0.0, 0.0), Vec3::new(3.0, 0.0, 0.0), Vec3::ZERO, 1.0).unwrap();
         assert!((t - 1.0 / 3.0).abs() < 1e-6);
         assert_eq!(ray_sphere(Vec3::ZERO, Vec3::X, Vec3::ZERO, 1.0), Some(0.0));
+    }
+
+    #[test]
+    fn a_source_model_noses_along_its_flight() {
+        let r = facing(Vec3::Z) * MODEL_X_FORWARD;
+        assert!((r * Vec3::X - Vec3::Z).length() < 1e-5);
     }
 
     #[test]
