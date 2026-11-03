@@ -23,6 +23,7 @@ mod weapons;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {
+    mod hud_look;
     mod map_cache;
     mod map_ladders;
     mod map_pickups;

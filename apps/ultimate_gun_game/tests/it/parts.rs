@@ -58,11 +58,12 @@ fn each_game_reports_what_it_lends() {
         assert!(c.knife.is_some(), "{}", c.line());
         assert!(!c.maps.is_empty(), "{}", c.line());
     }
-    // HL2:DM's bodies and HUD are M8's and M9's: the fallbacks for now.
+    // HL2:DM's bodies are M8's (the fallback for now); its HUD (M9) is its
+    // own id.
     for c in [&report[0], &report[2]] {
         assert!(c.hud.is_some() && c.characters.is_some(), "{}", c.line());
     }
-    assert!(report[1].hud.is_none() && report[1].characters.is_none(), "{}", report[1].line());
+    assert!(report[1].hud == Some(hl2dm::game::GAME) && report[1].characters.is_none(), "{}", report[1].line());
     assert_eq!(report[1].guns.len(), claimed_guns(1), "HL2:DM's five guns: {}", report[1].line());
     assert_eq!(report[1].movement, Some(hl2dm::game::movement::ID));
     assert_eq!(report[0].guns.len(), claimed_guns(0), "every CS:S gun");

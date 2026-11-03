@@ -66,7 +66,7 @@ default = ["present"]
 # and both games' front ends (`combat_arms/ui`; `cs_source/ui` for CS:S's
 # HUD, shown to a player holding a CS:S gun): everything but the
 # dedicated server.
-present = ["dep:chimera_present", "dep:chimera_client", "combat_arms/ui", "cs_source/ui"]
+present = ["dep:chimera_present", "dep:chimera_client", "combat_arms/ui", "cs_source/ui", "hl2dm/ui"]
 
 # Faster iteration: link Bevy as a dynamic library, serve the remote
 # protocol. `cargo run --features dev --bin lucker_party`. Never for

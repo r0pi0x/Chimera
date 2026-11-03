@@ -742,3 +742,33 @@ fn timeleft_55() {
     }
     assert_eq!(limits::time_left(g.world()), None, "test 55");
 }
+
+/// What the scoreboard and team line read (M9, `game::standing`): each
+/// player's HL2:DM team number and the match's team play, intermission and
+/// team scores, written for the network to replicate.
+#[test]
+fn the_rules_write_what_the_hud_reads() {
+    use hl2dm::game::standing::{Hl2MatchView, Hl2Team};
+    let mut g = game(dm_spots(), |r| r.teamplay = 1);
+    let ps: Vec<Entity> = (0..2).map(|_| g.join("none")).collect();
+    g.sim.seconds(0.2);
+    for p in &ps {
+        let team = g.player(*p).team;
+        assert_eq!(g.world().get::<Hl2Team>(*p).copied(), Some(Hl2Team(team)), "the team, not the engine's");
+    }
+    let view = g.world().query::<&Hl2MatchView>().single(g.world()).expect("one match entity").clone();
+    assert_eq!(view, Hl2MatchView { teamplay: true, over: false, scores: [0, 0] });
+    // The intermission.
+    g.world().resource_mut::<Hl2Rules>().timelimit = 1.0;
+    g.sim.seconds(65.0);
+    let view = g.world().query::<&Hl2MatchView>().single(g.world()).unwrap().clone();
+    assert!(view.over, "the intermission is told");
+    // A team change follows.
+    let mut g = game(dm_spots(), |r| r.teamplay = 1);
+    let a = g.join("none");
+    g.sim.seconds(0.1);
+    let other = if g.player(a).team == COMBINE { REBELS } else { COMBINE };
+    rules::players::change_team(g.world(), a, other, false);
+    g.sim.seconds(0.1);
+    assert_eq!(g.world().get::<Hl2Team>(a).copied(), Some(Hl2Team(other)));
+}

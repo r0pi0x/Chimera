@@ -44,6 +44,10 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("maps", &[]),
     // A Source weapon script's keys (source_engine): read from a mount.
     ("weapon_script", &["mount"]),
+    // Source's HUD (source_engine, lift S7): a game's look read from its
+    // install into the map's HUD types, and the animation scripts; the
+    // look reads files through the content crate's material loader.
+    ("hud", &["map", "content"]),
     // Source's view-model rules and motion (source_engine, lift S8): on
     // the weapon frame's driver and the map's view-model types.
     ("view_anim", &["map", "weapon"]),
@@ -1699,6 +1703,7 @@ fn workspace_crates() {
 const UI_FEATURES: &[(&str, &str, &[&str])] = &[
     ("games/cs_source", "ui", &["chimera_present", "chimera_client"]),
     ("games/combat_arms", "ui", &["chimera_present", "chimera_client"]),
+    ("games/hl2dm", "ui", &["chimera_present", "chimera_client"]),
 ];
 
 /// Crates a member's `FORBIDDEN` list names that its tests alone may use

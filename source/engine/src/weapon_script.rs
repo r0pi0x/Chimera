@@ -38,6 +38,17 @@ pub struct WeaponScript {
     pub damage: i32,
     /// `SoundData`: kind (`single_shot`, `empty`, `reload`, ...) to entry.
     pub sounds: Vec<(String, String)>,
+    /// `TextureData`: the HUD's icons of this weapon by name (`weapon`,
+    /// `weapon_s`, `ammo`, `ammo2`, `crosshair`, `zoom`, ...).
+    pub icons: Vec<(String, ScriptIcon)>,
+}
+
+/// One icon of a script's `TextureData`: a glyph of a scheme font, or a
+/// rectangle of a sprite sheet (pixels).
+#[derive(Clone, Debug, PartialEq)]
+pub enum ScriptIcon {
+    Glyph { font: String, character: char },
+    Sprite { file: String, rect: [f32; 4] },
 }
 
 /// `item_flags` bits.
@@ -99,7 +110,32 @@ impl WeaponScript {
                         .collect()
                 })
                 .unwrap_or_default(),
+            icons: d
+                .get("TextureData")
+                .map(|b| {
+                    b.items()
+                        .iter()
+                        .filter_map(|(k, v)| {
+                            let n = |key: &str| v.str(key).and_then(|x| x.trim().parse::<f32>().ok());
+                            let icon = if let (Some(font), Some(c)) = (v.str("font"), v.str("character").and_then(|c| c.chars().next())) {
+                                ScriptIcon::Glyph { font: font.to_string(), character: c }
+                            } else {
+                                ScriptIcon::Sprite {
+                                    file: v.str("file")?.to_string(),
+                                    rect: [n("x")?, n("y")?, n("width")?, n("height")?],
+                                }
+                            };
+                            Some((k.to_lowercase(), icon))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         })
+    }
+
+    /// The icon `name` (`weapon`).
+    pub fn icon(&self, name: &str) -> Option<&ScriptIcon> {
+        self.icons.iter().find(|(k, _)| k == name).map(|(_, i)| i)
     }
 
     /// The `SoundData` entry of `kind` (`single_shot`).

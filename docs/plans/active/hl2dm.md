@@ -439,7 +439,7 @@ implementing (owner branch) / done.
 | M6 gravity gun | H5 | not started | C6 |
 | M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; left: the set pieces of H10 sections 8-16, respawnable props, the probe cases (the probe server crashes on a bot's death) | C3 (C5 not needed) |
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
-| M9 HUD | H8 | not started | S7 |
+| M9 HUD | H8 | done (branch `hl2dm-m9`, 2026-11-03): see Progress; left: the items listed there | S7 (the look reader and the animation engine; CS:S's menu readers stay) |
 | M10 effects, sounds | H9 | not started | S10, S5 |
 | M11 assets | none | not started | C7 |
 
@@ -870,6 +870,73 @@ implementing (owner branch) / done.
   pull-in is the shell's sphere, not a box; every map load converts all
   19 models; dissolving ragdolls (M5/M10); `cl_playermodel` and team
   models (M7).
+- 2026-11-03: M9 built (branch `hl2dm-m9`). **S7** (partial, as HL2:DM
+  needs it): `source_engine::hud::look` (colours with the first of a
+  duplicate name winning, the scheme's fonts, font files by family and by
+  file, the layout through `parse_pc`, icons from the texture lists, a
+  brace glyph's quoting) moved out of CS:S's `game::hud` (CS:S's `load`
+  calls it, behaviour kept; its scopes, scoreboard pictures, screens and
+  menus stay); `source_engine::hud::anim`, the HUD animation scripts
+  (`hudanimations.txt`: events, `Animate`/`RunEvent`/`StopEvent`/
+  `StopAnimation`/`StopPanelAnimations`, Linear/Accel/Deaccel, restart
+  rules, the start value taken on the first frame, platform conditions on
+  event and command lines); `WeaponScript::icons`. `vgui.rs`/`gameui.rs`
+  stay CS:S's until a second game draws menus. **The look**
+  (`hl2dm::game::hud`, in the map's kit): the install's layout, scheme,
+  fonts (HalfLife2 from `hl2mp/`, GorDIN by weight, HL2cross from Half-Life
+  2's), icons, each weapon's script icons (`weapon_smg1/weapon`), the
+  strings, the chat box's place (`basechat.res`) and the animation script
+  (kept in the strings under `@hudanimations`, so it travels with the
+  map's cache). **The HUD** (`hl2dm::ui`, feature `ui`): `Hl2Hud`, one
+  state machine that decides which named event a change starts (health:
+  above or below 20, low pulse; suit; ammo and its weapon switches; aux
+  power with its device lines and low colour; team line fade; selection
+  open, fade and close; damage by angle; spawn reset) and what each
+  variable draws, as a `Frame` (a list of boxes, text, sprites and rings
+  in window pixels, so the layout is tested without a window): numeric
+  panels with their glow, aux bar, damage flashes, buckets selection with
+  `slotN`, `invnext`/`invprev`, attack-confirm and `cancelselect` taking
+  the shell weapon menu's place (`hud_fastswitch` 0 and 1), pickup history
+  (five rows, "FULL"), death notices (skull, icons by weapon name), quick
+  info and its blink, crosshair by FOV (the default sprite below 90, the
+  spec's quirk), suit zoom overlay, target ID, the scoreboard (DM and
+  TDM sections, the DM header on the spectators, sorted) held with
+  `+showscores` and up at the intermission. `game::standing` replicates
+  each player's HL2:DM team and the match (team play, intermission, team
+  scores). The app adds `Hl2dmUiPlugin`; party apps `Hl2dmHudPlugin`
+  (`ui::party::CLIENT`, `GameParts::hud` is HL2:DM's id). The chat is the
+  shell's, in the `HudChat` box. Tests: `games/hl2dm/tests/ui/` (H8 test
+  cases 5-8 as the animator's, 6, 8-23, 24-34, 35-44, 45-51, 52-57,
+  58-63, 64-66, 67, 68 on a stand-in look carrying the spec's numbers and
+  our own script of its events; 1-4 as the look's unit tests), the
+  modules' unit tests, heavy `hud_look.rs` (layout numbers, first colours,
+  fonts by height and their files, icons, strings, every event the HUD
+  starts is in the script), party `hud.rs`, `rules.rs` (standing),
+  `source_engine`'s animator tests. Checked in the app on dm_lockdown and
+  dm_overwatch (listen server and two clients, screenshots): the panels,
+  fire flashes, empty ammo red, low health box and bracket, pickup rows,
+  death notice with the skull, the scoreboard, the intermission and the
+  dead view (the camera orbits the player's own ragdoll: it is in frame).
+  Found against the spec: `hud_textures.txt` has `"character" "{"` glyphs
+  (quoted braces break the KeyValues reader: now escaped before parsing);
+  the layout's panels are conditioned on the block name (`HudHealth
+  [!$DECK]`), which `parse_pc` takes; the scoreboard header token is
+  `%s1    -   %s2 players` (name and count); `HudPlayerDeath` ends at
+  255 alpha red (added, so the scene still shows). Left: the secondary
+  ammo panel waits for M5's secondary ammo (the `WeaponNow::secondary`
+  field is None); history items (battery, kit) are told by whole steps of
+  armour 15 and health 25, not the server's item message; ammo-denied
+  rows ("FULL") have their rules but nothing feeds them (the server's
+  refusal); the damage flashes are straight bands and the fullscreen one
+  only is additive; the scoreboard has no avatars, its server name is
+  empty and its rows start 26 units down; target ID has no trace (the
+  state and drawing are built, nothing fills it: needs a view ray); MOTD,
+  hints, the console selection styles, the spectator GUI; HL2:DM's HUD on
+  other games' maps (the map's look is the other game's: needs a second
+  look resource); `refcmp hudcmp` (no reference captures of the real
+  client were made: not launched); the probe checks P1-P9; the lift of
+  the menu readers; `hurtme` is not a directed hit, so its damage message
+  draws no side flash (real hits do).
 
 ## Decision log
 

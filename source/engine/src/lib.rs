@@ -20,6 +20,7 @@
 //! updates, the hands' IK locks; each game's state picks its sequences).
 
 pub mod content;
+pub mod hud;
 pub mod maps;
 pub mod player_anim;
 pub mod source_movement;

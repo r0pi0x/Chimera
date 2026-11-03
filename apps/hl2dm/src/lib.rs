@@ -10,7 +10,8 @@
 //!
 //! `ClientPlugin`: the client shell (`chimera_client`) with this app's
 //! hooks (`client_hooks`) and HL2:DM's field of view (75, specs/hl2dm/
-//! source_deltas.md 1.8); the shell's own HUD (HL2:DM's is M9).
+//! source_deltas.md 1.8) and its HUD (M9: `hl2dm::ui`; the shell's own draws
+//! until a map brings the look).
 //!
 //! `VERSION` and `BUILD`: this build's version and commit, stamped by
 //! build.rs (the script every app shares, chimera/core/build_stamp.rs).
@@ -20,7 +21,7 @@
 //! map downloaded); the greybox otherwise.
 //!
 //! Known shortcuts: no menus (straight into the map or the greybox) and
-//! the shell's HUD; the shell keeps its config (binds, cvars) in the same
+//! HL2:DM's HUD (M9); the shell keeps its config (binds, cvars) in the same
 //! folder as the other apps' (`console::cfg_dir`).
 
 use bevy::prelude::*;
@@ -123,7 +124,9 @@ impl Plugin for ClientPlugin {
             args: self.args.clone(),
             hooks: client_hooks(),
         })
-        .insert_resource(chimera_client::client::video::PlayerFov(DEFAULT_FOV));
+        .insert_resource(chimera_client::client::video::PlayerFov(DEFAULT_FOV))
+        // HL2:DM's HUD (hl2dm::ui), over the shell's fallback.
+        .add_plugins(hl2dm::ui::Hl2dmUiPlugin);
     }
 }
 

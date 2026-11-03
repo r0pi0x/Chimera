@@ -170,6 +170,30 @@ fn the_hud_follows_the_gun_with_the_minigame_on_both() {
     assert!(lines.iter().any(|(_, t)| t.starts_with("Rung 3/")), "the third rung shown: {lines:?}");
 }
 
+/// HL2:DM's HUD in the party (the identity of a player holding an HL2:DM
+/// gun: `GameParts::hud`, M9): its panels hang from a root that shows only
+/// while HL2:DM's HUD is the gameplay's (the gun in hand follows
+/// `GameParts::hud_of`). With the map's look CS:S's it draws nothing of
+/// its own (the shell's HUD stands in).
+#[test]
+fn hl2dms_hud_is_down_under_other_games_guns() {
+    let (mut sim, me, _other) = party_with_huds_and(|app| {
+        app.add_plugins(hl2dm::ui::Hl2dmHudPlugin);
+        // Its root (the plugin spawns it at startup, which the harness skips).
+        app.world_mut().spawn((Node::default(), HudRoot(hl2dm::game::GAME)));
+    });
+    assert_eq!(party_kit::GAME_PARTS[1].game, hl2dm::game::GAME);
+    assert_eq!(party_kit::GAME_PARTS[1].hud, Some(hl2dm::game::GAME), "HL2:DM lends its HUD's id");
+    assert_eq!(hud(&sim), cs_source::game::GAME);
+    assert!(!shown(&mut sim, hl2dm::game::GAME), "down under a CS:S gun");
+    // CS:S's HUD stays up, HL2:DM's builds no panels on CS:S's map (the
+    // look is CS:S's), whichever way the local gun's identity goes.
+    assert!(shown(&mut sim, cs_source::game::GAME));
+    assert!(cs_panels(&mut sim) > 0);
+    assert!(sim.app.world().resource::<hl2dm::ui::systems::Hl2dmHud>().hud.is_none());
+    let _ = me;
+}
+
 /// Whether the shell's callout overlay shows, and its lines.
 fn shell_callout(sim: &mut Sim) -> Option<Vec<String>> {
     let w = sim.app.world_mut();

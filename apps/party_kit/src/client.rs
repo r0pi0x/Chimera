@@ -64,8 +64,9 @@ pub fn map_file_bytes(id: &str) -> Option<Vec<u8>> {
 /// `WeaponMenuPlugin`, added once, by CS:S's), the minigame's panel on
 /// CS:S's HUD, and the rest of CS:S's HUD that follows the gun in hand
 /// (the radar, target ID, freeze cam, voice status: each drawing only
-/// while CS:S's HUD is the gameplay's). HL2:DM has none yet (M9): a
-/// player holding its gun sees the base game's.
+/// while CS:S's HUD is the gameplay's), and HL2:DM's panels (M9, drawing
+/// while its HUD is the gameplay's and the map's look is HL2:DM's: a
+/// player holding its gun otherwise sees the shell's).
 pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
     let mut shell = shell;
     for client in CLIENTS {
@@ -77,9 +78,9 @@ pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 }
 
 /// Each game's front end (its `ui`'s `GameClient`, beside its bundle):
-/// the base game's first, then the guests' (HL2:DM has none yet, M9).
-pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 2] =
-    [&combat_arms::ui::PARTY_CLIENT, &cs_source::ui::party::CLIENT];
+/// the base game's first, then the guests' (HL2:DM's: M9).
+pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 3] =
+    [&combat_arms::ui::PARTY_CLIENT, &cs_source::ui::party::CLIENT, &hl2dm::ui::party::CLIENT];
 
 /// The client: the shell's plugins with the app's hooks and both games'
 /// HUDs (`with_huds`), the map's HUD look CS:S's (`HudLookOwner`).

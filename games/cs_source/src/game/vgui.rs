@@ -188,31 +188,7 @@ pub fn layout(
 
 /// The scheme's fonts: every size entry of every font, in order.
 pub fn fonts(scheme: &Kv) -> HashMap<String, Vec<UiFontSize>> {
-    let mut out = HashMap::new();
-    for (name, f) in scheme.get("Fonts").map(Kv::items).unwrap_or_default() {
-        let sizes: Vec<UiFontSize> = f
-            .items()
-            .iter()
-            .filter_map(|(_, e)| {
-                let yres = e.str("yres").and_then(|y| {
-                    let v: Vec<u32> = y.split_whitespace().filter_map(|n| n.parse().ok()).collect();
-                    (v.len() == 2).then(|| (v[0], v[1]))
-                });
-                Some(UiFontSize {
-                    family: e.str("name")?.to_string(),
-                    tall: e.str("tall")?.trim().parse().ok()?,
-                    weight: e.str("weight").and_then(|w| w.trim().parse().ok()).unwrap_or(400),
-                    yres,
-                    antialias: e.str("antialias").is_some_and(|a| a.trim() != "0"),
-                    additive: e.str("additive").is_some_and(|a| a.trim() != "0"),
-                })
-            })
-            .collect();
-        if !sizes.is_empty() {
-            out.insert(name.clone(), sizes);
-        }
-    }
-    out
+    source_engine::hud::look::scheme_fonts(scheme).into_iter().collect()
 }
 
 /// Files of the buy menu's first page per team (ours: 1 terrorists, 2
