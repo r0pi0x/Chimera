@@ -1,9 +1,9 @@
 //! M1's skeleton on the headless harness (`harness::Hl2Sim`, the
 //! greybox): HL2:DM is the gameplay, a new player moves on
-//! `hl2dm:movement` (the placeholder with H1's numbers: run 190,
-//! gravity 600, jump 160 units/s) and starts with its loadout (the SMG1
-//! in hand; the pistol, whose bullet does 8, specs/hl2dm/weapons.md 6,
-//! 24 to the head).
+//! `hl2dm:movement` (Source's with H1's numbers: run 190, gravity 600,
+//! jump 160 units/s; specs/hl2dm/movement.md's cases are movement.rs) and
+//! starts with its loadout (the SMG1 in hand; the pistol, whose bullet
+//! does 8, specs/hl2dm/weapons.md 6, 24 to the head).
 
 use bevy::prelude::*;
 use chimera_core::{
@@ -68,7 +68,7 @@ fn runs_at_190_and_jumps_about_21_units() {
     sim.intent(p).move_axis = Vec2::ZERO;
     sim.seconds(1.0);
     // A standing jump: 160 units/s against 600 units/s² peaks at
-    // 160² / 1200 = 21.3 units (the placeholder integrates per tick).
+    // about 20 units (20.145 at the 0.015 s tick: movement.rs).
     let start = sim.position(p).y;
     sim.intent(p).jump = true;
     let mut peak = start;
@@ -78,7 +78,7 @@ fn runs_at_190_and_jumps_about_21_units() {
     }
     sim.intent(p).jump = false;
     let height = (peak - start) / UNIT;
-    assert!((height - 21.3).abs() < 1.5, "jump height {height} units");
+    assert!((height - 20.1).abs() < 1.5, "jump height {height} units");
 }
 
 #[test]

@@ -15,7 +15,12 @@
 //! weapons.md M7's split exactly (`deliver::armor_split`); Combat Arms'
 //! gear (its protection fractions, wear 1 when consumable, ratio 1) is
 //! weapon_firing.md's armour step. How armour runs out is its game's rule
-//! (`Depletion`).
+//! (`Depletion`). HL2's suit (lift C2, specs/hl2dm/suit.md "Armour") is
+//! the same shape: P 0.8 on every part, wear 1 (2 against blasts), with a
+//! catch-all entry that leaves classes out (`Coverage::except`: falls,
+//! drowning, poison, radiation) and its own armour quantum
+//! (`absorb_quanta`: whole armour points, health's fraction kept for its
+//! remainder, `core::DamageRemainder`).
 
 use crate::core::{BodyPart, BodyRegion, DamageKind};
 
@@ -69,6 +74,12 @@ impl DamageClass {
     pub const POISON: Self = Self(5);
     pub const FLASH: Self = Self(6);
     pub const CRUSH: Self = Self(7);
+    /// Falls, drowning and radiation: armour that leaves classes out
+    /// (HL2's suit, `Coverage::except`) tells them apart; CS:S's kevlar
+    /// and Combat Arms' gear treat them as any class.
+    pub const FALL: Self = Self(8);
+    pub const DROWN: Self = Self(9);
+    pub const RADIATION: Self = Self(10);
     /// The first number of a game's own classes.
     pub const OWN: u16 = 1000;
 
@@ -79,8 +90,10 @@ impl DamageClass {
             DamageKind::Melee => Self::MELEE,
             DamageKind::Blast => Self::BLAST,
             DamageKind::Burn => Self::BURN,
-            DamageKind::Crush | DamageKind::Fall => Self::CRUSH,
-            DamageKind::Generic | DamageKind::Drown => Self::GENERIC,
+            DamageKind::Crush => Self::CRUSH,
+            DamageKind::Fall => Self::FALL,
+            DamageKind::Drown => Self::DROWN,
+            DamageKind::Generic => Self::GENERIC,
         }
     }
 }
@@ -98,6 +111,12 @@ pub struct Coverage {
     pub leg: f32,
     pub groin: f32,
     pub wear: f32,
+    /// Classes this entry leaves out (bit n: class n, for classes below
+    /// 64): a catch-all entry (`class` None) that covers every class but
+    /// those (HL2's suit: all but fall, drown, poison, radiation, and
+    /// blasts, which its own entry covers at another wear).
+    #[serde(default)]
+    pub except: u64,
 }
 
 impl Coverage {
@@ -114,7 +133,12 @@ impl Coverage {
 
     /// Whether it applies to `class`.
     pub fn against(&self, class: DamageClass) -> bool {
-        self.class.is_none_or(|c| c == class)
+        self.class.is_none_or(|c| c == class) && !(class.0 < 64 && self.except & (1 << class.0) != 0)
+    }
+
+    /// `except` for these classes.
+    pub fn except_of(classes: &[DamageClass]) -> u64 {
+        classes.iter().filter(|c| c.0 < 64).fold(0, |m, c| m | 1 << c.0)
     }
 }
 
@@ -163,6 +187,24 @@ pub fn absorb<'a>(
     entries: impl IntoIterator<Item = &'a Coverage>,
     depletion: Depletion,
 ) -> Absorbed {
+    absorb_quanta(raw, part, class, ratio, (quantum, quantum), amount, entries, depletion)
+}
+
+/// `absorb` with the armour's own quantum: `quanta` is (health's, what
+/// armour has left's). HL2's suit loses whole armour points while health
+/// keeps the fraction (its remainder, `core::DamageRemainder`).
+#[allow(clippy::too_many_arguments)]
+pub fn absorb_quanta<'a>(
+    raw: f32,
+    part: BodyPart,
+    class: DamageClass,
+    ratio: Option<f32>,
+    quanta: (f32, f32),
+    amount: f32,
+    entries: impl IntoIterator<Item = &'a Coverage>,
+    depletion: Depletion,
+) -> Absorbed {
+    let (quantum, armour_quantum) = quanta;
     let uncovered = Absorbed {
         to_health: super::deliver::quantize(raw, quantum),
         taken: 0.0,
@@ -202,8 +244,8 @@ pub fn absorb<'a>(
             covered: true,
         };
     }
-    let left = if quantum > 0.0 {
-        super::deliver::quantize(amount - cost, quantum)
+    let left = if armour_quantum > 0.0 {
+        super::deliver::quantize(amount - cost, armour_quantum)
     } else {
         amount - cost
     };
@@ -262,6 +304,7 @@ mod tests {
         leg: 0.15,
         groin: 0.0,
         wear: 1.0,
+        except: 0,
     };
     const HEAD: Coverage = Coverage {
         class: Some(DamageClass::BULLET),
@@ -271,6 +314,7 @@ mod tests {
         leg: 0.0,
         groin: 0.0,
         wear: 1.0,
+        except: 0,
     };
 
     fn close(a: f32, b: f32) -> bool {
@@ -308,6 +352,48 @@ mod tests {
         assert_eq!(a.to_health, 33.0, "{a:?}");
         let a = absorb(0.35, BodyPart::Torso, DamageClass::BULLET, Some(1.0), 0.0, 1.0, &[KEVLAR], Depletion::Cost);
         assert!(close(a.to_health, 0.175) && close(a.taken, 0.0875), "{a:?}");
+    }
+
+    /// HL2's suit (specs/hl2dm/suit.md tests 1-5): 0.8 on every part, a
+    /// catch-all entry leaving out falls, drowning, poison, radiation and
+    /// blasts, blasts at wear 2; armour in whole points, health exact.
+    #[test]
+    fn a_suit_leaving_classes_out() {
+        let all = |class, wear, except| Coverage {
+            class,
+            head: 0.8,
+            torso: 0.8,
+            arm: 0.8,
+            leg: 0.8,
+            groin: 0.8,
+            wear,
+            except,
+        };
+        let out = Coverage::except_of(&[
+            DamageClass::FALL,
+            DamageClass::DROWN,
+            DamageClass::POISON,
+            DamageClass::RADIATION,
+            DamageClass::BLAST,
+        ]);
+        let suit = [all(None, 1.0, out), all(Some(DamageClass::BLAST), 2.0, 0)];
+        let hit = |raw: f32, class, armour: f32| {
+            let a = absorb_quanta(raw / 100.0, BodyPart::Leg, class, Some(1.0), (0.0, 0.01), armour / 100.0, &suit, Depletion::Cost);
+            ((a.to_health * 100.0 * 1e3).round() / 1e3, ((armour / 100.0 - a.taken) * 100.0).round())
+        };
+        assert_eq!(hit(30.0, DamageClass::BULLET, 100.0), (6.0, 76.0));
+        assert_eq!(hit(30.0, DamageClass::BLAST, 100.0), (6.0, 52.0));
+        assert_eq!(hit(30.0, DamageClass::BULLET, 10.0), (20.0, 0.0));
+        assert_eq!(hit(30.0, DamageClass::BLAST, 10.0), (25.0, 0.0));
+        assert_eq!(hit(8.0, DamageClass::BULLET, 100.0), (1.6, 93.0), "whole armour points, health exact");
+        for class in [DamageClass::FALL, DamageClass::DROWN, DamageClass::POISON, DamageClass::RADIATION] {
+            assert_eq!(hit(10.0, class, 50.0), (10.0, 50.0), "{class:?} bypasses");
+        }
+        assert_eq!(hit(10.0, DamageClass::GENERIC, 100.0), (2.0, 92.0));
+        // A game's own class (Combat Arms') is covered by the catch-all.
+        assert_eq!(hit(10.0, DamageClass(DamageClass::OWN + 3), 100.0), (2.0, 92.0));
+        // CS:S's kevlar leaves nothing out.
+        assert!(KEVLAR.against(DamageClass::FALL) && KEVLAR.against(DamageClass::DROWN));
     }
 
     #[test]

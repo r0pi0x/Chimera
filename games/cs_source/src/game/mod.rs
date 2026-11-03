@@ -173,7 +173,6 @@ pub mod bsp;
 pub mod bundle;
 pub use bundle::BUNDLE;
 pub mod demo;
-pub mod drown;
 pub mod fire;
 pub mod gameui;
 pub mod grenades;
@@ -189,21 +188,22 @@ pub mod objectives;
 pub mod pain;
 pub mod parts;
 pub mod player_anim;
-pub mod pushaway;
 pub mod radio;
 pub mod resim;
 pub mod rules;
 pub mod rungs;
 pub mod scrapes;
-pub mod shadow;
 pub mod sound;
-pub mod soundscape;
 pub mod view_anim;
 pub mod vgui;
 /// Lifted to `source_engine` (S8), re-exported where it was.
 pub use source_engine::view_motion;
 pub mod votes;
 pub mod weapons;
+
+// Source's movement lifted into `source_engine` (lift S6), at the old
+// paths.
+pub use source_engine::source_movement::{drown, pushaway, shadow};
 
 // Pure-data readers moved to `source_formats`, at their old paths.
 pub use source_formats::{lumps, pak, phy, vhv, vpk, wav};
@@ -212,7 +212,7 @@ pub use source_formats::{lumps, pak, phy, vhv, vpk, wav};
 // active/hl2dm.md, section 3), at their old paths.
 pub use source_engine::content::{
     ambient, anim, beams, breakables, decals, detail, dust, lightmap, material, nav, overlays, pcf, propdata, props,
-    ropes, sky, sprites, steam, surfaceprops, trails, water,
+    ropes, sky, soundscape, sprites, steam, surfaceprops, trails, water,
 };
 
 /// The game's id (`cs_source`): defined with the gameplay's condition

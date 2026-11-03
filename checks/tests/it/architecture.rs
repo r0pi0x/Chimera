@@ -54,6 +54,10 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // Source's content converted into Chimera's types (source_engine's
     // `content`: BSP, materials, models; lifted from CS:S's loaders).
     ("content", &["core", "map", "mount"]),
+    // Source's player movement (source_engine's `source_movement`, lifted
+    // from CS:S's): each Source game's config and cvars, the map's
+    // brushes, water and props it moves through.
+    ("source_movement", &["core", "map", "slots", "console"]),
     // Which game fills each match-wide slot (rules, HUD, binds, tick) and
     // the sets that gate a game's systems by it.
     ("gameplay", &["core", "game_registry"]),

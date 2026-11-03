@@ -4,7 +4,8 @@
 //! second, 3, 4, then 5 each (+1 a hit, at most 5) until it surfaces or
 //! dies. After surfacing, the drowning damage taken comes back 10 at a time
 //! about every 2 s (the first within the first second), never more than
-//! was taken and never above max health.
+//! was taken and never above max health. For a Source movement whose
+//! config has `drowning` (CS:S's); HL2:DM's suit drowns its own way.
 //!
 //! The clocks are strict "later than" tests on the simulation's time, which
 //! reproduces the measured ticks at CS:S's 0.015 s: the first hit on the
@@ -32,7 +33,7 @@
 
 use bevy::prelude::*;
 
-use super::movement::SourceMovement;
+use super::{MovementConfigs, SourceMovement};
 use crate::core::{Damage, DamageKind, DamageTaken, Health, Hitgroup, SimClock, SimSet};
 
 /// Seconds the head can stay under water before the first hit.
@@ -85,11 +86,23 @@ impl Plugin for DrowningPlugin {
 fn drown(
     clock: Res<SimClock>,
     mut commands: Commands,
-    mut players: Query<(Entity, &SourceMovement, &mut Health, &Transform, Option<&mut Drowning>)>,
+    mut players: Query<(
+        Entity,
+        &SourceMovement,
+        &mut Health,
+        &Transform,
+        Option<&mut Drowning>,
+        Option<&crate::slots::MovementSlot>,
+    )>,
     mut damage: MessageWriter<Damage>,
+    configs: MovementConfigs,
 ) {
     let now = clock.now;
-    for (entity, me, mut health, at, state) in &mut players {
+    for (entity, me, mut health, at, state, slot) in &mut players {
+        // A game with drowning of its own (HL2:DM's suit).
+        if !configs.of(slot).drowning {
+            continue;
+        }
         let Some(mut state) = state else {
             commands.entity(entity).try_insert(Drowning::default());
             continue;

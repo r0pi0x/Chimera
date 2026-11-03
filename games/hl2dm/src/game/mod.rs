@@ -1,17 +1,19 @@
 //! Half-Life 2: Deathmatch's parts: what the game tells the shell about
 //! itself (`INFO`: its id, folder, Steam app, tick, map names and cycle,
 //! console namespaces), its install as a mount (`mount`), its maps
-//! (`maps`: Source's conversion with HL2:DM's data; `MAP_LOADER`), its
-//! bullet and melee weapons (`weapons`, M4: data and hooks; `scripts`, the
-//! install's weapon scripts against the data), and M1's stand-in movement
-//! with H1's numbers (`movement`); `Hl2dmPlugins` adds them. The real
-//! movement, the projectiles, rules and the rest come with their specs
-//! (specs/hl2dm/; the plan's milestones M3, M5 to M11).
+//! (`maps`: Source's conversion and sounds with HL2:DM's data;
+//! `MAP_LOADER`), its movement (`movement`: Source's with HL2:DM's config,
+//! walk, run and sprint, ladders, falls; M3), the suit (`suit`: armour,
+//! the health remainder, aux power, breath and drowning, flashlight,
+//! zoom; M3), the map's pickups and wall chargers (`pickups`; M3), and
+//! its bullet and melee weapons (`weapons`, M4: data and hooks; `scripts`,
+//! the install's weapon scripts against the data); `Hl2dmPlugins` adds
+//! them. The projectiles, rules and the rest come with their specs
+//! (specs/hl2dm/; the plan's milestones M5 to M11).
 //!
 //! Known shortcuts:
-//! - `INFO`'s default binds and movement cvars are empty: the shell reads
-//!   the install's `cfg/config_default.cfg`, and HL2:DM's movement comes
-//!   with M3 (specs/hl2dm/movement.md).
+//! - `INFO`'s default binds are empty: the shell reads the install's
+//!   `cfg/config_default.cfg`.
 //! - `INFO.tick_interval` is the default tick H0 recorded (0.015 s,
 //!   specs/hl2dm/source_deltas.md, "Tick and network"); the server's
 //!   `-tickrate` option isn't modelled.
@@ -20,8 +22,10 @@ pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod pickups;
 pub mod rungs;
 pub mod scripts;
+pub mod suit;
 pub mod view;
 pub mod weapons;
 
@@ -60,7 +64,7 @@ pub static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo
     default_binds_cfg: "cfg/config_default.cfg",
     default_binds: &[],
     old_default_binds: &[],
-    movement_cvars: &[],
+    movement_cvars: source_engine::source_movement::CVARS,
     meters_per_unit: 0.0254,
     console_namespaces: &["hl2dm", "hl2mp"],
 };
@@ -79,8 +83,8 @@ pub const STOCK_MAPS: &[&str] = &[
 ];
 
 /// HL2:DM's parts, after the engine's base (`crate::SimPlugins`): the
-/// game registered (`INFO`), its movement (the match's), its weapons and
-/// their view models.
+/// game registered (`INFO`), its movement (the match's), the suit, the
+/// map's pickups and chargers, its weapons and their view models.
 pub struct Hl2dmPlugins;
 
 impl bevy::app::PluginGroup for Hl2dmPlugins {
@@ -88,6 +92,8 @@ impl bevy::app::PluginGroup for Hl2dmPlugins {
         bevy::app::PluginGroupBuilder::start::<Self>()
             .add(crate::game_registry::RegisterGame(&INFO))
             .add(movement::Hl2MovementPlugin)
+            .add(suit::SuitPlugin)
+            .add(pickups::PickupsPlugin)
             .add(weapons::Hl2WeaponsPlugin)
             .add(view::Hl2ViewPlugin)
     }
@@ -118,17 +124,19 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
 };
 
 /// What HL2:DM adds to a game of several games: the game registered, map
-/// logic for its maps, its movement (not the match's), its guns (data,
-/// hooks, recoil, the shove, its rung extras) and their view models'
-/// rules and motion. Not its game's rules (the loadout, pickups).
+/// logic for its maps, its movement (not the match's) with the suit, its
+/// guns (data, hooks, recoil, the shove, its rung extras) and their view
+/// models' rules and motion. Not its game's rules (the loadout, pickups).
 pub fn party_sim(app: &mut bevy::app::App) {
     use crate::game_registry::GameAppExt;
-    use chimera_sim::movement::placeholder::PlaceholderAppExt;
     app.register_game(&INFO);
     if !app.is_plugin_added::<source_logic::logic::LogicPlugin>() {
         app.add_plugins(source_logic::logic::LogicPlugin);
     }
-    app.placeholder_movement(movement::ID, movement::TUNING)
-        .add_plugins(weapons::Hl2GunsPlugin);
+    movement::add_movement(app);
+    if !app.is_plugin_added::<suit::SuitPlugin>() {
+        app.add_plugins(suit::SuitPlugin);
+    }
+    app.add_plugins(weapons::Hl2GunsPlugin);
     view::add_rules(app);
 }

@@ -1,4 +1,5 @@
-//! CS:S soundscapes (specs/cs_source/sounds.md 6): the soundscape scripts,
+//! Source soundscapes (specs/cs_source/sounds.md 6; lift S5 of
+//! docs/plans/active/hl2dm.md): the soundscape scripts,
 //! flattened (nested soundscapes, volumes and position overrides
 //! resolved), and the map entities that select them: trigger_soundscape
 //! boxes with their env_soundscape_triggerable, and env_soundscape points
@@ -13,12 +14,16 @@ use vbsp::Bsp;
 
 use super::{
     material::MaterialLoader,
-    movement::to_engine,
     sound::{interval, named_level, wave_dry, wave_file},
 };
 use crate::map::sound::{
     Interval, MapSounds, ScapeLoop, ScapePosition, ScapeRandom, Soundscape, SoundscapeEmitter, SoundscapeZone,
 };
+
+/// Source (units, Z up) to engine (meters, Y up).
+fn to_engine(v: Vec3) -> Vec3 {
+    Vec3::new(v.x, v.z, -v.y) * METERS_PER_UNIT
+}
 
 /// Nested soundscapes stop past this depth.
 const MAX_DEPTH: u32 = 8;

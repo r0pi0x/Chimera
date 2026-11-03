@@ -14,8 +14,9 @@
 //! and kit hooks), with the map's parts: `lightmap`, `overlays`,
 //! `detail`, `decals` (infodecals, and impact decals and spray logos for
 //! a game's kit), `sky`, `ropes`, `beams`, `steam`, `sprites`, `dust`,
-//! `nav`. (Fire, soundscapes and sounds stay CS:S's until their lifts:
-//! S10 and S5.) Here: Source's units and axes
+//! `nav`. Sounds (lift S5): `sound` (sound scripts, the entries a map
+//! uses and their waves, footstep volumes) and `soundscape` (soundscapes
+//! and the entities that select them). (Fire stays CS:S's until S10.) Here: Source's units and axes
 //! (`METERS_PER_UNIT`, `to_engine`), the playable box (`playable_bounds`)
 //! and entities' vectors (`parse_vector`).
 //!
@@ -39,6 +40,8 @@ pub mod propdata;
 pub mod props;
 pub mod ropes;
 pub mod sky;
+pub mod sound;
+pub mod soundscape;
 pub mod sprites;
 pub mod steam;
 pub mod surfaceprops;

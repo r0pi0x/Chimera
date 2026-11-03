@@ -50,6 +50,16 @@ fn duel(id: &str, ahead: f32, aside: f32) -> (Sim, Entity, Entity) {
     (sim, p, t)
 }
 
+/// Hold `t` where it stands: each hit shoves it 5 units/s a point
+/// (projectiles.md 3) and on Source movement it slides out of reach; the
+/// spec's kill cases (32, 33) count hits on a target that stays.
+fn pin(sim: &mut Sim, t: Entity) {
+    sim.app.world_mut().entity_mut(t).insert(chimera_core::core::MapControls {
+        time_scale: 0.0,
+        ..Default::default()
+    });
+}
+
 /// Swing with attack held for `n` ticks: the ticks of the swings and
 /// whether each hit.
 fn swing(sim: &mut Sim, p: Entity, n: u64) -> Vec<(u64, bool)> {
@@ -78,6 +88,7 @@ fn health(sim: &Sim, e: Entity) -> f32 {
 #[test]
 fn crowbar_kills_in_four_hits_27_ticks_apart_32() {
     let (mut sim, p, t) = duel(weapons::CROWBAR, 1.2, 0.0);
+    pin(&mut sim, t);
     let swings = swing(&mut sim, p, 90);
     let hits: Vec<u64> = swings.iter().filter(|(_, h)| *h).map(|(t, _)| *t).collect();
     assert_eq!(&hits[..4], [0, 27, 54, 81], "{swings:?}");
@@ -87,6 +98,7 @@ fn crowbar_kills_in_four_hits_27_ticks_apart_32() {
 #[test]
 fn stunstick_kills_in_three_hits_54_ticks_apart_33() {
     let (mut sim, p, t) = duel(weapons::STUNSTICK, 1.2, 0.0);
+    pin(&mut sim, t);
     let swings = swing(&mut sim, p, 110);
     let hits: Vec<u64> = swings.iter().filter(|(_, h)| *h).map(|(t, _)| *t).collect();
     assert_eq!(&hits[..3], [0, 54, 108], "{swings:?}");

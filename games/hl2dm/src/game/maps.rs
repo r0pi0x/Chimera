@@ -14,10 +14,10 @@
 //! Known shortcuts:
 //! - HL2:DM's kit has only the view models: no player bodies (M8, specs/
 //!   hl2dm/player_models.md), held models (they need a body's skeleton,
-//!   M8), HUD (M9), muzzle flash, impact decals and looks (M10); the
-//!   maps' sound entries are empty and their
-//!   soundscapes unread (sound scripts are CS:S's until lift S5, M3), so
-//!   the maps are silent.
+//!   M8), HUD (M9), muzzle flash, impact decals and looks (M10). Its
+//!   sounds (Source's sound scripts and soundscapes, lift S5) are the
+//!   entries it plays so far (`SOUNDS`: movement, the suit, pickups and
+//!   chargers); its weapons' entries aren't among them yet.
 //! - Team spawns (`info_player_combine`, `info_player_rebel`) and the
 //!   `info_player_start` fallback aren't spawn points yet: deathmatch's
 //!   spawns only (H6's spawn choice comes with the rules, M7).
@@ -51,8 +51,42 @@ pub static HL2DM: SourceGame = SourceGame {
     kit: no_kit,
     extra_particles: no_extra_particles,
     held: held_kit,
-    sounds: no_sounds,
+    sounds,
 };
+
+/// The sound entries HL2:DM plays whatever the map (beyond the
+/// surfaces' and the map's own): the model footsteps, the ladder, the
+/// suit's (sprint, drowning, flashlight), pickups and chargers
+/// (specs/hl2dm/movement.md, suit.md).
+pub const SOUNDS: &[&str] = &[
+    "NPC_Citizen.RunFootstepLeft",
+    "NPC_Citizen.RunFootstepRight",
+    "NPC_CombineS.RunFootstepLeft",
+    "NPC_CombineS.RunFootstepRight",
+    "NPC_MetroPolice.RunFootstepLeft",
+    "NPC_MetroPolice.RunFootstepRight",
+    "Ladder.StepRight",
+    "HL2Player.SprintStart",
+    "HL2Player.SprintNoPower",
+    "HL2Player.FlashLightOn",
+    "HL2Player.FlashLightOff",
+    "HL2Player.Use",
+    "HL2Player.UseDeny",
+    "Player.FallDamage",
+    "Player.DrownStart",
+    "Player.DrownContinue",
+    "HealthKit.Touch",
+    "HealthVial.Touch",
+    "ItemBattery.Touch",
+    "AlyxEMP.Charge",
+    "SuitRecharge.Start",
+    "SuitRecharge.ChargingLoop",
+    "SuitRecharge.Deny",
+    "WallHealth.Start",
+    "WallHealth.LoopingContinueCharge",
+    "WallHealth.Deny",
+    "WallHealth.Recharge",
+];
 
 /// HL2:DM's maps from the install (`map::MapLoader`): what an app that
 /// plays them chooses (`map::MapSources`).
@@ -150,6 +184,11 @@ fn no_extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'stat
     (&[], &[])
 }
 
-fn no_sounds(_: &mut MaterialLoader, _: &vbsp::Bsp, _: &str, _: &SurfaceProps, _: &[MapEntity]) -> MapSounds {
-    MapSounds::default()
+/// HL2:DM's sounds: Source's sound scripts with the entries HL2:DM plays
+/// (`SOUNDS`), then the map's soundscapes.
+fn sounds(materials: &mut MaterialLoader, bsp: &vbsp::Bsp, name: &str, surfaces: &SurfaceProps, entities: &[MapEntity]) -> MapSounds {
+    let mut out =
+        source_engine::content::sound::load(materials, name, surfaces, entities, SOUNDS.iter().map(|s| s.to_string()));
+    source_engine::content::soundscape::load(materials, bsp, name, &mut out);
+    out
 }

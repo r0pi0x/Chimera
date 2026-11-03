@@ -1,7 +1,7 @@
 [package]
 name = "hl2dm"
 version = "0.1.0"
-description = "Half-Life 2: Deathmatch as a game crate: its install, maps, bullet and melee weapons, and a placeholder movement so far (docs/plans/active/hl2dm.md)"
+description = "Half-Life 2: Deathmatch as a game crate: its install, maps, movement, suit, and bullet and melee weapons so far (docs/plans/active/hl2dm.md)"
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
@@ -30,8 +30,11 @@ source_formats.workspace = true
 # simulation (`SimPlugins`).
 source_logic.workspace = true
 bevy.workspace = true
+# The suit's line-of-sight traces (pickups, chargers).
+avian3d.workspace = true
 vbsp.workspace = true
-# Weapon hooks' parameters (`game::weapons`).
+# Weapon hooks' parameters (`game::weapons`), the suit's predicted state
+# (`Suit`).
 serde.workspace = true
 workspace-hack.workspace = true
 
@@ -41,6 +44,8 @@ workspace-hack.workspace = true
 [dev-dependencies]
 bevy = { workspace = true, features = ["default", "wav"] }
 avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+# The network harness (`NetSim`: tests/it/net_prediction.rs).
+chimera_net.workspace = true
 # The test kit's readers (`chimera_sim::testkit`: what is in hand, aim).
 chimera_sim = { workspace = true, features = ["testkit"] }
 # Digests of converted maps (tests/it/heavy/map_cache.rs).

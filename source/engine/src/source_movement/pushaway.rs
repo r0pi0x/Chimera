@@ -8,7 +8,7 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
-use super::movement::{SourceMovement, SourceMovementConfig, to_source};
+use super::{MovementConfigs, SourceMovement, SourceMovementConfig, to_source};
 use crate::{
     core::{SimSet, Velocity},
     map::{
@@ -87,17 +87,18 @@ fn push_props(
         &SourceMovement,
         Option<&crate::core::MapControls>,
         Option<&NextPush>,
+        Option<&crate::slots::MovementSlot>,
     )>,
     clock: Res<crate::core::SimClock>,
     mut props: Query<
         (Entity, &Transform, &PhysicsProp, Forces, Has<StartAsleep>),
         (Without<SourceMovement>, Without<RigidBodyDisabled>, Without<ColliderDisabled>),
     >,
-    cfg: Res<SourceMovementConfig>,
+    cfg: MovementConfigs,
     mut commands: Commands,
     mut awakened: MessageWriter<PropAwakened>,
 ) {
-    for (who, pt, pv, me, controls, next) in &players {
+    for (who, pt, pv, me, controls, next, slot) in &players {
         if controls.is_some_and(|c| c.parented) {
             continue;
         }
@@ -106,7 +107,7 @@ fn push_props(
             continue;
         }
         let mut pushed = false;
-        let mut player = player_box(pt, me, &cfg);
+        let mut player = player_box(pt, me, cfg.of(slot));
         let centre = (player.0 + player.1) / 2.0;
         player.0 -= Vec3::splat(QUERY_EXPAND);
         player.1 += Vec3::splat(QUERY_EXPAND);
@@ -129,8 +130,8 @@ fn push_props(
             }
             // kg.in/s to kg.m/s (to_engine scales units to meters), at the
             // player's centre, so the prop spins too.
-            let impulse = super::movement::to_engine(push_impulse(centre, (b.0 + b.1) / 2.0));
-            let at = super::movement::to_engine(centre);
+            let impulse = super::to_engine(push_impulse(centre, (b.0 + b.1) / 2.0));
+            let at = super::to_engine(centre);
             forces.apply_linear_impulse_at_point(impulse, at);
             pushed = true;
         }
@@ -205,7 +206,7 @@ pub fn push_back<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::movement::to_engine;
+    use crate::source_movement::to_engine;
 
     #[test]
     fn server_push() {

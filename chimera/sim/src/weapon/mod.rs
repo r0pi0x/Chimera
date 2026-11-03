@@ -1111,6 +1111,12 @@ pub struct Zoomed {
     pub sensitivity: Option<f32>,
 }
 
+/// A zoom of the character's own, not its weapon's (HL2's suit zoom):
+/// its view's FOV (horizontal degrees at 4:3) while the held weapon isn't
+/// zoomed (`apply_zoom`).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ViewZoom(pub f32);
+
 /// On a weapon: the game keeps its owner's `Zoomed` itself while it is
 /// drawn (Combat Arms' scopes, with their transitions); `apply_zoom`
 /// leaves it alone then.
@@ -1208,6 +1214,7 @@ pub const KEVLAR: hits::Coverage = hits::Coverage {
     leg: 0.0,
     groin: 0.5,
     wear: 0.5,
+    except: 0,
 };
 
 /// CS:S's helmet: the head, as kevlar covers the body.
@@ -1219,6 +1226,7 @@ pub const HELMET: hits::Coverage = hits::Coverage {
     leg: 0.0,
     groin: 0.0,
     wear: 0.5,
+    except: 0,
 };
 
 impl Armor {
@@ -1255,6 +1263,10 @@ impl Armor {
 pub struct ArmorPieces {
     pub pieces: Vec<hits::ArmorPiece>,
     pub depletion: hits::Depletion,
+    /// What armour has left is truncated to this (HL2's suit: whole
+    /// points) whatever the hit's own quantum; None: the hit's.
+    #[serde(default)]
+    pub armour_quantum: Option<f32>,
 }
 
 /// What `armor` covers (a game's `pieces` when worn, else its default
@@ -1323,17 +1335,18 @@ impl HitArmor<'_, '_> {
         let Ok((mut armor, pieces)) = self.armor.get_mut(damage.target) else {
             return ArmorHit::default();
         };
+        let armour_quantum = pieces.and_then(|p| p.armour_quantum).unwrap_or(quantum);
         let (entries, depletion) = coverage(&armor, pieces);
         let mut hit = ArmorHit {
             covered: false,
             helmet: armor.amount > 0.0 && armor.helmet,
         };
-        let a = hits::absorb(
+        let a = hits::absorb_quanta(
             raw,
             region.part(),
             hits::DamageClass::of(damage.kind),
             ratio,
-            quantum,
+            (quantum, armour_quantum),
             armor.amount,
             entries,
             depletion,
@@ -2403,14 +2416,23 @@ fn try_reload(w: &mut WeaponPartsItem, inv: &mut Inventory, now: f64, owner: Ent
 /// with `OwnZoom` leaves it to the game) and move at its zoomed speed.
 #[allow(clippy::type_complexity)]
 fn apply_zoom(
-    owners: Query<(Entity, &Inventory, Option<&Zoomed>, Option<&MaxSpeed>), Without<NetDrawn>>,
+    owners: Query<(Entity, &Inventory, Option<&Zoomed>, Option<&MaxSpeed>, Option<&ViewZoom>), Without<NetDrawn>>,
     weapons: Query<(&Weapon, Option<&AltModes>, Option<&Zoom>, Has<OwnZoom>)>,
     mut commands: Commands,
 ) {
-    for (owner, inv, zoomed, speed) in &owners {
+    for (owner, inv, zoomed, speed, view) in &owners {
+        // The character's own zoom, when its weapon has none.
+        let own_zoom = view.map(|v| Zoomed {
+            fov: v.0,
+            scope: false,
+            sensitivity: None,
+        });
         let Some((weapon, modes, zoom, own)) = inv.active.and_then(|a| weapons.get(a).ok()) else {
-            if zoomed.is_some() {
-                commands.entity(owner).remove::<Zoomed>();
+            if zoomed != own_zoom.as_ref() {
+                match own_zoom {
+                    Some(z) => commands.entity(owner).insert(z),
+                    None => commands.entity(owner).remove::<Zoomed>(),
+                };
             }
             continue;
         };
@@ -2426,6 +2448,7 @@ fn apply_zoom(
             ))
         });
         let want_speed = now.map_or(weapon.max_speed, |(_, s)| s);
+        let now = now.or(own_zoom.map(|z| (z, weapon.max_speed)));
         // The game's own zoom (`OwnZoom`) keeps its `Zoomed` itself.
         if !own && zoomed != now.as_ref().map(|(z, _)| z) {
             match now {

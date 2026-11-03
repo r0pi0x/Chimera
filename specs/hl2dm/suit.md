@@ -703,3 +703,19 @@ properties every tick):
    poison and radiation apart from generic and crush. If the implementer
    finds the class extension costlier than a hook, an armour rule per game
    remains the fallback; the tests above pin either.
+10. **Probe results (M3, 2026-11-03, dedicated server build 24600426,
+    tools/hl2dm_probe).** P3: aux 100 after the first sprint tick from
+    standing, 99.625 after the second (H0 test 3 corrected, confirmed);
+    P4: 268 ticks to empty (0.25 after tick 267), the tap costs 0.375 +
+    2.5 and the recharge starts 34 ticks after the release; P5: a sprint
+    kept ducked drains 0.375 a tick, a standing sprint drains nothing and
+    doesn't recharge; `HL2Player.SprintStart` is `player/suit_sprint.wav`
+    at 0.9. P12 at map start: `sk_healthkit` 25, `sk_healthvial` 10,
+    `sk_battery` 15, `sk_healthcharger` 50, `sk_suitcharger_citadel` 200,
+    `sk_suitcharger_citadel_maxarmor` 200, `mp_flashlight` 0,
+    `player_old_armor` 0, `sv_stickysprint` 0, `sv_hl2mp_item_respawn_time`
+    30 as listed, but **`sk_suitcharger` is 30** (skill 1), not 75: the
+    spec's pool (and test 44) needs a follow-up spec session (Chimera keeps
+    75 until then). Also read: `mp_forcerespawn` 0 on the dedicated server
+    (H0 Open question 1: `valve.rc` runs there too). Not measured yet:
+    P1-P2, P6-P11, P13 (damage by kind, drowning, chargers).

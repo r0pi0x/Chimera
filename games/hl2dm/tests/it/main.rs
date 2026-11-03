@@ -9,12 +9,16 @@
 
 mod info;
 mod melee;
+mod movement;
+mod net_prediction;
 mod skeleton;
+mod suit;
 mod weapons;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {
     mod map_cache;
+    mod map_ladders;
     mod map_stock;
     mod mount;
     mod scripts;

@@ -782,3 +782,40 @@ Probe cases (real game; Steam builds game 24600434, dedicated server
 11. **Spawn and the sprint state.** Spawning refills aux to 100 but the
     sprint state is not visibly reset; whether a player respawning with
     `+speed` held sprints at once is H2/H6's to check.
+12. **Probe results (M3, 2026-11-03, dedicated server build 24600426,
+    tools/hl2dm_probe, an `hl2mp_bot_add` bot whose commands the probe
+    replaces).** Answered: rows 1-4 and P5 exactly (28.5 ... 190; walk
+    and sprint likewise; friction 178.6/102.34/96.2/90.2/6.2/0); P2 the
+    standing jump's first vz 146.5, apex 20.145 at the end of tick 17,
+    grounded at the end of **tick 34** with the feet 1.275 up (Open
+    question 1: 34, not H0's 35); P3 the ducked jump 151.0, apex 21.33 at
+    tick 18, grounded at tick 35; P4 the air duck lifts the feet the whole
+    36 (37.05 with the tick's move), eye 28 ducked and 64 standing (the
+    probe's `m_vecMaxs` reads 60 ducked, the collision property's box:
+    the movement hull's 36 is unconfirmed); row 21's eye 46.675 / 28.066 /
+    28 at ticks 13 / 26 / 27; P7 a jump at 600 keeps 600 with
+    `player_limit_jump_speed` 0 and 1 (no cap, the cvar does nothing;
+    the back-hop at 400 wasn't measured: the run's bot didn't jump);
+    P8 aux 100, 99.625, 99.25 ... from rest (Open question 2: the first
+    tick drains nothing), a standing sprint drains nothing, the tap's
+    97.125 and recharge 34 ticks after, running dry at tick 268; P9 a
+    sprint kept ducked runs 16.0 / 106.0 / 106.667 and keeps draining;
+    P10 on dm_resistance: the forced move at 190 (2.85 a tick), the
+    mount 8 ticks later, the climb at exactly 3 units a tick, forward
+    climbs up to 17° down and down from 18°, **back climbs up** at a level
+    view and down from 18° up (Open question 10: confirmed), a strafe key
+    climbs up, forward + right at 20° down up, forward at 20° down down,
+    no keys hangs, jump-off at yaw 180 gives (-200, 0, 41) after the tick,
+    the automatic dismount at the top onto (-408, 299, -951) when facing
+    it and none when facing away; `Ladder.StepRight` plays on the mount
+    tick at volume 1; P12 a fall of 526.5 lands without damage at 0.85, a
+    fall of 544.5 costs 10 with a step at 1.0 and `Player.FallDamage`, 778.5
+    costs 10, with `mp_falldamage` 1 health 38 (62 of 62.5), armour 50
+    untouched; P13 running steps on ticks 5, 32, 59 at 0.2 (the bot's
+    Combine model: `hardboot_generic*`), none ducked; P1 `sv_gravity`
+    600, `sv_accelerate` 10, `sv_stopspeed` 100, `sv_friction` 4,
+    `sv_airaccelerate` 10, `sv_maxspeed` 320, `sv_stepsize` 18, the
+    `hl2_*` speeds 150/190/320, `mp_falldamage` 0, `sv_footsteps` and
+    `mp_footsteps` 1, `sv_ladder_useonly` 0, `sv_autoladderdismount` 1,
+    `xc_uncrouch_on_jump` 1. Not measured yet: P11 (dm_lockdown's ladder
+    brushes), P14 (water), P15, P16.

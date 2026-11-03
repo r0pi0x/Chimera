@@ -19,6 +19,7 @@
 
 pub mod content;
 pub mod maps;
+pub mod source_movement;
 pub mod search_path;
 pub mod view_anim;
 pub mod view_motion;
@@ -27,7 +28,7 @@ pub mod weapon_script;
 // `crate::map`, `crate::core` and `crate::mount` inside, as in the game
 // crates the content modules came from.
 #[allow(unused_imports)]
-use chimera_core::{core, mount};
+use chimera_core::{console, core, mount, slots};
 #[allow(unused_imports)]
 use chimera_world::map;
 #[allow(unused_imports)]

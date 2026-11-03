@@ -101,6 +101,9 @@ fn engine_names_mean_the_same_in_every_game() {
     }
     assert_eq!(resolve(&sim, "cs_source:fps_max"), is("chimera:fps_max"));
     assert_eq!(resolve(&sim, "css:fps_max"), is("chimera:fps_max"));
+    // Game-tuned: CS:S's in CS:S's scope; with another game's gun the two
+    // Source games' own (`hl2dm:sv_gravity`, lift C8) are both candidates.
+    to_rung_of(&mut sim, me, "cs_source");
     assert_eq!(resolve(&sim, "sv_gravity"), is("cs_source:sv_gravity"), "game-tuned stays CS:S's");
     assert_eq!(resolve(&sim, "chimera:sv_gravity"), Resolved::Unknown);
 }
