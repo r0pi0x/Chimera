@@ -4,7 +4,9 @@
 # the hitgroup (head 3) as a bullet, force 21000 kg in/s, glancing off
 # below cos 0.5 faster than 100 (0.75 of its speed, full gravity), else
 # sticking 2 s; refire 0.75; the reload (1.8333 s) starts strictly after
-# the 0.6667 s fire animation (`hl2dm:crossbow`): 168 ticks a held shot;
+# the fire animation (`hl2dm:crossbow`): 0.1 s as the real server measures
+# (the spec's 0.6667 gave 168 ticks a held shot; the server fires every
+# 130, tools/hl2dm_probe/cases.py);
 # attack2's press zooms to 20. Script: bucket 3 position 1, weight 6,
 # clip 1, default clip 5.
 id = "hl2dm:weapon_crossbow"
@@ -54,7 +56,7 @@ pitch = [-2.0, -2.0]
 yaw = [0.0, 0.0]
 
 [hooks."hl2dm:crossbow"]
-fire_anim = 0.6667
+fire_anim = 0.1
 reload = 1.8333
 zoom_fov = 20.0
 

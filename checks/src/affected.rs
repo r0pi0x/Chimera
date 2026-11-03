@@ -10,7 +10,7 @@
 //!   resolved dependencies changed, `lock_affected`, as if their code
 //!   had);
 //! - documentation (`Change::Docs`): Markdown anywhere, licences, docs/,
-//!   specs/, scripts/, dist/, the analysis and setup scripts under tools/
+//!   specs/, scripts/, dist/, the analysis, probe and setup scripts under tools/
 //!   and .claude/settings.json: only
 //!   this crate's checks (CLAUDE.md's links, one-line docs entries, the
 //!   spec rule);
@@ -459,6 +459,7 @@ fn is_docs(path: &str) -> bool {
             "dist/",
             "tools/arch_survey/",
             "tools/css_probe/",
+            "tools/hl2dm_probe/",
             "tools/renderdoc/",
         ]
         .iter()
@@ -1138,6 +1139,10 @@ mod tests {
         assert_eq!(names, [CHECKS]);
         assert!(s.partial.is_empty());
         assert_eq!(s.nextest_args(false), ["-p", CHECKS, "-E", "package(repo_checks)"]);
+        // The probes' plugins and drivers: no crate reads them.
+        let s = select(&["tools/hl2dm_probe/cases.py", "tools/hl2dm_probe/chimera_probe.sp"]);
+        assert!(s.all.is_none());
+        assert_eq!(s.packages.keys().collect::<Vec<_>>(), [CHECKS]);
     }
 
     #[test]

@@ -35,7 +35,7 @@ fn hit(raw: f32, class: hits::DamageClass, armour: &mut f32, r: &mut DamageRemai
         BodyPart::Torso,
         class,
         Some(1.0),
-        (0.0, 0.01),
+        (0.0, Some(0.01)),
         *armour / 100.0,
         entries,
         hits::Depletion::Cost,
@@ -61,6 +61,8 @@ fn the_armour_split() {
 }
 
 /// Tests 6-9, 14: whole armour points lost, the health's fraction carried.
+/// Armour pays its cost truncated to whole points (the real server, probe
+/// 2026-11-03: 8 bullet damage costs 6 of 100, not the spec's 7).
 #[test]
 fn uneven_health_steps() {
     // Test 6: four 8-damage bullets on 100 armour.
@@ -70,7 +72,7 @@ fn uneven_health_steps() {
         health -= hit(8.0, hits::DamageClass::BULLET, &mut a, &mut r);
         seen.push((health, a, (r.0 * 10.0).round() / 10.0));
     }
-    assert_eq!(seen, [(99.0, 93.0, 0.6), (97.0, 86.0, 0.2), (96.0, 79.0, 0.8), (94.0, 72.0, 0.4)]);
+    assert_eq!(seen, [(99.0, 94.0, 0.6), (97.0, 88.0, 0.2), (96.0, 82.0, 0.8), (94.0, 76.0, 0.4)]);
 
     // Test 7: five 1-damage hits on 50 armour.
     let (mut a, mut r, mut health) = (50.0, DamageRemainder::default(), 100.0);
@@ -81,12 +83,12 @@ fn uneven_health_steps() {
     }
     assert_eq!(seen, [(100.0, 49.0), (100.0, 48.0), (100.0, 47.0), (100.0, 46.0), (99.0, 45.0)]);
 
-    // Test 8: a pistol head shot (24).
+    // Test 8: a pistol head shot (24): 19.2 paid as 19 (probe).
     let (mut a, mut r) = (100.0, DamageRemainder::default());
-    assert_eq!((hit(24.0, hits::DamageClass::BULLET, &mut a, &mut r), a), (4.0, 80.0));
-    // Test 9: seven 9-damage pellets as one hit of 63.
+    assert_eq!((hit(24.0, hits::DamageClass::BULLET, &mut a, &mut r), a), (4.0, 81.0));
+    // Test 9: seven 9-damage pellets as one hit of 63: 50.4 paid as 50 (probe).
     let (mut a, mut r) = (100.0, DamageRemainder::default());
-    assert_eq!((hit(63.0, hits::DamageClass::BULLET, &mut a, &mut r), a), (12.0, 49.0));
+    assert_eq!((hit(63.0, hits::DamageClass::BULLET, &mut a, &mut r), a), (12.0, 50.0));
     // Test 14: 0.8 carried from the last life completes a point.
     let (mut a, mut r) = (50.0, DamageRemainder(0.8));
     assert_eq!(hit(1.0, hits::DamageClass::BULLET, &mut a, &mut r), 1.0);
