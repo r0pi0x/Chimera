@@ -208,6 +208,7 @@ impl Plugin for LogicPlugin {
             .add_message::<crate::map::prop_physics::PropAwakened>()
             .init_resource::<PreStep>()
             .init_resource::<Impacts>()
+            .init_resource::<PlayerImpactScale>()
             .add_systems(
                 FixedPostUpdate,
                 record_velocities.before(PhysicsSystems::StepSimulation),
@@ -2548,6 +2549,18 @@ struct Impact {
 #[derive(Resource, Default)]
 struct Impacts(Vec<Impact>);
 
+/// A game's energy scale for physics impacts on its players and for their
+/// stress (prop_damage.md 6: CS:S's player 1; HL2:DM's 4,
+/// specs/hl2dm/gravity_gun.md 9).
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct PlayerImpactScale(pub f32);
+
+impl Default for PlayerImpactScale {
+    fn default() -> Self {
+        Self(1.0)
+    }
+}
+
 /// Physics impacts (prop_damage.md 5, 6): a new contact of a logic prop's
 /// body damages it by the speed the collision took away (its table and
 /// energy scale), and a moving prop hitting a player damages the player
@@ -2570,6 +2583,7 @@ fn impacts(
     shadows: Query<&crate::map::prop_physics::PhysicsShadow>,
     positions: Query<&Position>,
     collisions: avian3d::prelude::Collisions,
+    (held, player_scale): (Query<(), With<crate::map::held::Held>>, Res<PlayerImpactScale>),
     mut damage: MessageWriter<Damage>,
 ) {
     let Some(logic) = logic else {
@@ -2590,7 +2604,8 @@ fn impacts(
             player(s.body1.unwrap_or(s.collider1)),
             player(s.body2.unwrap_or(s.collider2)),
         );
-        if b1 == b2 {
+        // A held body deals and takes no impact damage (gravity_gun.md 5).
+        if b1 == b2 || held.contains(b1) || held.contains(b2) {
             continue;
         }
         for (me, other) in [(b1, b2), (b2, b1)] {
@@ -2726,7 +2741,7 @@ fn impacts(
                     };
                     let amount = super::prop_damage::impact_damage(
                         &super::prop_damage::PLAYER_TABLE,
-                        1.0,
+                        player_scale.0,
                         player,
                         // The prop moves toward the player against the
                         // normal (from the player to it).
@@ -2773,7 +2788,7 @@ const AVIAN_IMPULSE_PASSES: f32 = 2.0;
 /// `STRESS_LIMIT` (scaled by `PLAYER_STRESS_SCALE` over its 85 kg) with a
 /// `STRESS_LARGE_MASS` prop among them: `STRESS_DAMAGE` crush from the
 /// world, pushing straight down.
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn stress(
     logic: Option<Res<Logic>>,
     collisions: avian3d::prelude::Collisions,
@@ -2783,6 +2798,7 @@ fn stress(
     props: Query<(&RigidBody, &crate::map::PhysicsProp)>,
     of: Query<&avian3d::prelude::ColliderOf>,
     impacts: Res<Impacts>,
+    player_scale: Res<PlayerImpactScale>,
     mut damage: MessageWriter<Damage>,
 ) {
     if logic.is_none() {
@@ -2825,7 +2841,7 @@ fn stress(
                 large |= prop.mass >= STRESS_LARGE_MASS;
             }
         }
-        if large && received * PLAYER_STRESS_SCALE / PLAYER_MASS > STRESS_LIMIT {
+        if large && received * player_scale.0 * PLAYER_STRESS_SCALE / PLAYER_MASS > STRESS_LIMIT {
             damage.write(Damage {
                 target: player,
                 attacker: None,

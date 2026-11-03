@@ -19,7 +19,8 @@
 //! and in a client's predicted and others' redrawn shots alike. In the
 //! damage window alone a hit on it shows and deals nothing: its trace is
 //! told with no `hit`, no push, no damage, a swing as a miss, and the
-//! round ends there.
+//! round ends there. A body its shooter holds (`map::held::Held`) isn't
+//! there for the shooter's own shots either (gravity_gun.md 5).
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -84,6 +85,8 @@ pub(super) struct World<'w, 's> {
     /// Spawn-protected characters (`core::SpawnProtected`): passed
     /// through in the bullets window, a hit on them showing nothing.
     protected: Query<'w, 's, (Entity, &'static crate::core::SpawnProtected)>,
+    /// Bodies players hold (`map::held`): a holder's shots pass its own.
+    held: Query<'w, 's, (Entity, &'static crate::map::held::Held, Option<&'static avian3d::prelude::RigidBodyColliders>)>,
 }
 
 impl World<'_, '_> {
@@ -198,7 +201,13 @@ impl Shot<'_, '_, '_> {
     /// Spawn-protected characters attacks pass through now
     /// (`core::SpawnProtected::passes_attacks`).
     fn passing(&self) -> Vec<Entity> {
-        self.w.protected.iter().filter(|(_, p)| p.passes_attacks(self.now)).map(|(e, _)| e).collect()
+        self.w
+            .protected
+            .iter()
+            .filter(|(_, p)| p.passes_attacks(self.now))
+            .map(|(e, _)| e)
+            .chain(crate::map::held::held_by(self.owner, self.w.held.iter()))
+            .collect()
     }
 
     /// Whether a hit on `e` shows and deals nothing now (spawn protection).

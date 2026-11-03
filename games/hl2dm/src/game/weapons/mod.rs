@@ -6,7 +6,8 @@
 //! (specs/hl2dm/projectiles.md, H4): the SMG1's grenade and the AR2's ball
 //! (`alt_fire`), the crossbow (`crossbow`, its bolts Chimera's
 //! `chimera:projectile`), the RPG (`rpg`), the frag (`frag`) and the
-//! S.L.A.M. (`slam`), on Chimera's flyers (`weapon::projectile`, lift C1)
+//! S.L.A.M. (`slam`); and the gravity gun (`physcannon`,
+//! specs/hl2dm/gravity_gun.md, H5, on Chimera's held bodies), on Chimera's flyers (`weapon::projectile`, lift C1)
 //! with HL2's blast (`launch`). The install's own scripts (`scripts/weapon_*.txt`,
 //! plain text) are read by `game::scripts` and checked against the data.
 //!
@@ -45,6 +46,7 @@ pub mod crossbow;
 pub mod frag;
 pub mod inventory;
 pub mod launch;
+pub mod physcannon;
 pub mod pistol;
 pub mod recoil;
 pub mod rpg;
@@ -87,6 +89,7 @@ pub const DATA: &[(&str, &str)] = &[
     data_file!("rpg.toml"),
     data_file!("frag.toml"),
     data_file!("slam.toml"),
+    data_file!("physcannon.toml"),
 ];
 
 pub const CROWBAR: &str = "hl2dm:weapon_crowbar";
@@ -100,6 +103,7 @@ pub const CROSSBOW: &str = "hl2dm:weapon_crossbow";
 pub const RPG: &str = "hl2dm:weapon_rpg";
 pub const FRAG: &str = "hl2dm:weapon_frag";
 pub const SLAM: &str = "hl2dm:weapon_slam";
+pub const PHYSCANNON: &str = "hl2dm:weapon_physcannon";
 
 /// The hooks the data names.
 pub const INVENTORY: &str = "hl2dm:inventory";
@@ -113,10 +117,12 @@ pub const RPG_HOOK: &str = "hl2dm:rpg";
 pub const CROSSBOW_HOOK: &str = "hl2dm:crossbow";
 pub const FRAG_HOOK: &str = "hl2dm:frag";
 pub const SLAM_HOOK: &str = "hl2dm:slam";
+pub const PHYSCANNON_HOOK: &str = "hl2dm:physcannon";
 
 /// The weapons every player spawns with besides the melee weapon of its
-/// model (`inventory::arm`), in giving order.
-pub const STARTING: &[&str] = &[PISTOL, SMG1];
+/// model (`inventory::arm`), in giving order (weapons.md 3): the last
+/// given, the gravity gun, ends in hand.
+pub const STARTING: &[&str] = &[PISTOL, SMG1, FRAG, PHYSCANNON];
 
 /// HL2:DM's weapons as data, parsed (a fresh copy each call: a map's
 /// kit and the tests read it; an app's `WeaponCatalog` holds its own).
@@ -269,6 +275,9 @@ pub fn register_hooks(app: &mut App) {
             },
             p.rounds.rounds(),
         ));
+    })
+    .register_weapon_hook::<physcannon::PhysParams>(PHYSCANNON_HOOK, |e, _, p| {
+        e.insert(physcannon::Hl2Physcannon::new(p.clone()));
     });
 }
 
@@ -304,8 +313,37 @@ fn projectile_systems(app: &mut App) {
         .predicted_part::<alt_fire::Hl2Ball>()
         .predicted_part::<crossbow::Hl2Crossbow>()
         .predicted_part::<frag::Hl2Frag>()
-        .predicted_part::<slam::Hl2Slam>();
+        .predicted_part::<slam::Hl2Slam>()
+        .predicted_part::<physcannon::Hl2Physcannon>();
     rpg::plugin(app);
+}
+
+/// The gravity gun's systems (`Hl2GunsPlugin`): its frame (predicted),
+/// the server's holds and the drop at its holder's death.
+fn physcannon_systems(app: &mut App) {
+    use chimera_sim::weapon::SelectWeapons;
+    if !app.is_plugin_added::<crate::map::held::HeldPlugin>() {
+        app.add_plugins(crate::map::held::HeldPlugin);
+    }
+    app.add_systems(Predict::Weapons, physcannon::frame.before(WeaponFrame))
+        .add_systems(Predict::Select, physcannon::lock_holding.before(SelectWeapons))
+        .add_systems(
+            FixedUpdate,
+            (
+                physcannon::hold.after(SimSet::Weapons),
+                physcannon::drop_on_death
+                    .after(crate::core::apply_damage)
+                    .before(chimera_sim::weapon::drop::drop_on_death),
+            )
+                .run_if(crate::core::authoritative),
+        );
+    use crate::console::ConsoleAppExt;
+    app.console_command("hl2dm:phys_swap", "Drop what the gravity gun holds and switch to the last weapon, or select the gravity gun.", |w, _| {
+        let e = crate::console::command_player(w)?;
+        physcannon::phys_swap(w, e);
+        Ok(None)
+    });
+    app.world_mut().resource_mut::<crate::console::Console>().player_command("hl2dm:phys_swap");
 }
 
 /// HL2:DM's weapons alone: the data, its hooks, the recoil and the pump
@@ -317,6 +355,7 @@ impl Plugin for Hl2GunsPlugin {
     fn build(&self, app: &mut App) {
         register_hooks(app);
         projectile_systems(app);
+        physcannon_systems(app);
         if let Err(e) = app.add_weapon_data(DATA) {
             panic!("HL2:DM weapon data: {e}");
         }
@@ -397,7 +436,7 @@ mod tests {
         register_hooks(&mut app);
         chimera_sim::weapon::projectile::register_launcher(&mut app);
         app.add_weapon_data(DATA).unwrap();
-        assert_eq!(hl2_weapons().weapons.len(), 11);
-        assert_eq!(view_models().len(), 11);
+        assert_eq!(hl2_weapons().weapons.len(), 12);
+        assert_eq!(view_models().len(), 12);
     }
 }

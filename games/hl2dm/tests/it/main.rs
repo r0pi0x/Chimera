@@ -9,11 +9,13 @@
 
 mod animation;
 mod effects;
+mod gravity_gun;
 mod hitboxes;
 mod info;
 mod melee;
 mod movement;
 mod net;
+mod net_gravity_gun;
 mod net_prediction;
 mod net_projectiles;
 mod pickups;
@@ -31,6 +33,7 @@ mod heavy {
     mod map_cache;
     mod map_ladders;
     mod map_pickups;
+    mod map_props;
     mod map_stock;
     mod mount;
     mod player_models;

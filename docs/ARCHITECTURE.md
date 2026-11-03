@@ -540,11 +540,12 @@ FixedPostUpdate: physics step; new contacts of props ──> impact Damage (crus
 FixedLast:    (client) Transform, eye, look, punch ──> interpolation samples (last two ticks); predicted
               state ──> PredictionHistory; (server) characters ──> NetBody, NetHeld, OwnState (with
               what they carry); bodies animated from the tick's values (SimAnimator) ──> Hitboxes
-              (map::SimPose) ──> HitHistory; movers ──> NetMover; physics props ──> NetProp; loose
-              weapons, grenades ──> NetItem
+              (map::SimPose) ──> HitHistory; movers ──> NetMover; physics props ──> NetProp (held
+              ones' holders and view offsets ──> NetHold: map::held); loose weapons, grenades ──>
+              NetItem
 after fixed loop: (client) samples + overstep fraction ──> drawn Transform, RenderedView; others,
-              physics props and items (NetDrawn) from their snapshots at the render tick (net::interp,
-              net::props, net::weapons)
+              physics props and items (NetDrawn) from their snapshots at the render tick, a prop the
+              local player holds at its predicted view (net::interp, net::props, net::weapons)
 Update:       (client) RemoteShot ──> others' rounds traced again (no damage) ──> WeaponEvent, PlaySound
 PostUpdate:   (server) changes replicated (a mutate message with each client's updates: UpdatePacing),
               OwnStateDelta to each player due one;

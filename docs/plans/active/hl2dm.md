@@ -436,7 +436,7 @@ implementing (owner branch) / done.
 | M3 movement, suit | H1, H2 | done (branch `hl2dm-m3`, 2026-11-03): S5 (scripts, soundscapes), S6, C2, C8; `hl2dm:movement`, the suit, pickups and chargers; the probe | S5, S6, C2, C8 |
 | M4 bullets, melee, UGG | H3 | done (branch `hl2dm-m4`, 2026-11-03): see Progress; left: probe checks (P1-P17), C7 (no need in M4) | S8, C4 |
 | M5 projectiles | H4 | done (branch `hl2dm-m5`, 2026-11-03): see Progress; left: probe checks (P1-P15), the frag in the spawn loadout, the effects (M10) | C1 |
-| M6 gravity gun | H5 | not started | C6 |
+| M6 gravity gun | H5 | done (branch `hl2dm-m6`, 2026-11-03): see Progress; left: `hl2mp_allow_pickup` 1's carry, `prop_physics_respawnable`, first-impact 10× and breaks, the gun's effects (M10), the probe checks (P1-P17) | C6 |
 | M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; left: the set pieces of H10 sections 8-16, respawnable props, the probe cases (the probe server crashes on a bot's death) | C3 (C5 not needed) |
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
 | M9 HUD | H8 | done (branch `hl2dm-m9`, 2026-11-03): see Progress; left: the items listed there | S7 (the look reader and the animation engine; CS:S's menu readers stay) |
@@ -1053,6 +1053,83 @@ implementing (owner branch) / done.
   into them on pickup; `impulse 101` fills them (`weapon::FilledUp`). The projectile weapons
   have no gun class yet, so Ultimate Gun Game's ladder doesn't take them
   (open question 5's choice).
+
+- 2026-11-03: M6 built (branch `hl2dm-m6`). **C6** (Chimera,
+  `chimera_world::map::held`): `Held` on a body a player holds (its
+  holder, the game's target pose, the controller's arrival time and
+  speed and turn limits, the target relative to the holder's view),
+  `hold`/`release` keeping its mass (inertia scaled with it), damping and
+  gravity (`HeldSaved`), the controller before each physics step (one
+  tick to the target, capped), no contacts with the holder or his shadow
+  (`MapCollisionHooks`), `PhysicsInfluence` (who last moved a body by
+  hand, when). The holder's movement and shadow sweep (`source_engine`)
+  and his shots (`chimera_sim::weapon::deliver`) pass what he holds; the
+  bridge's impacts skip held bodies and scale players' impacts and
+  stress by a game's `source_logic::logic::PlayerImpactScale` (CS:S 1,
+  unchanged). `chimera_net`: `NetHold` (prop index, the holder's client
+  id, the view offset) written by the server; the holder's client draws
+  the prop at its own predicted eye and view (it follows a turn at once),
+  the others draw the snapshots; each client marks its copy `Held` by
+  the holder's character.
+
+  `games/hl2dm` (H5): `weapon_physcannon` (`weapons::physcannon`, data
+  `physcannon.toml`): punt (±8 box then line of 250; 15000 + 600
+  min(M, 250) along the view, a downward z × −0.65, the 2000 cap; the
+  0-damage hit naming the punter, influence, flag 64 unpins, the 0.5 s
+  repunt guard; 1 crush to a breakable; dry fire at players, the world,
+  ragdolls), grab and pull (line, ±4 box, 0.97 cone; the hold test: 250
+  kg, flags 8/64/512, ground, held, flesh; TooHeavy once a press; pull
+  4000 every 7 ticks), the hold (24 + 22.627 + extent, pitch clamp 75,
+  the wall rule, the horizontal push-out, view-relative rotation, the
+  smoothed error and its dead zone, drops for the ground, a lost or
+  pinned body), drop (285, 720), launch (the spline, U(−600, 600) spin,
+  the 250 reach), claws (open, 0.5 s close, the punt's and launch's
+  delays and suppression), instant draw, the holster lock, `phys_swap`,
+  the forced drop at death; frags caught or punted (thrower, 1.5 s fuse,
+  fast blips); combine balls caught (no mass limit, the catcher's, no
+  life while held, gone 8 s after the catch), launched at 959.2 with 1500
+  after the first contact and 4 s of life, dropped at 1500 within ±55
+  degrees. Debris props are in the gun's traces (the ragdoll layer).
+  `game::physics`: players' impact scale 4, the credit (within 1 s the
+  influencer, later the prop: a world kill; the influencer's own prop
+  spares him only within the bridge's measurement, 5 ticks), death
+  notice `physics`; multiplayer props in modes 1 and 2 solid to players
+  (Corrections 1); `+use` at props (`HL2Player.Use`, `OnPlayerUse` with
+  256, `HL2Player.UseDeny` for an unusable one). The spawn loadout now
+  gives the frag (2 grenades: the grant's 1 and the frag's) and the gun
+  last, in hand, the SMG1 the last weapon (weapons.md 3, M5's leftover;
+  M7's rules agree). View-model events: punt/launch the secondary
+  attack, grab/drop the primary.
+
+  Tests: hl2dm `gravity_gun.rs` (H5 cases 1-8, 10, 11, 13, 14, 16, 17,
+  21, 22, 23, 25, 26, 31, 33-36, 41, 42, 44, 47, 48, 54-58, 60, the
+  spawn), `net_gravity_gun.rs` (two clients: the holder draws it at its
+  view, the other the snapshots; both marked; let go), heavy
+  `map_props.rs` (dm_lockdown 200 physics props, 140 holdable;
+  dm_overwatch 132, 123; small light ones grabbed, held, launched at
+  1500, punted at the cap or the formula); unit tests (cases 1-3, 12,
+  18-20, 23, 27, 28; the controller). `weapons.rs`' and `skeleton.rs`'
+  spawn tests follow the new loadout.
+
+  Found against the spec: case 4's crate at 260 has its face at 250,
+  which the ±8 punt box reaches at 242 (the test uses 270); spec says the
+  traces miss. Left: `hl2mp_allow_pickup` 1's carry (section 8, steps
+  1-6; off by default), `prop_physics_respawnable` (13), the 10× first
+  impact and first-impact breaks after a launch (9), an explosive
+  prop's 2 s influencer rule (the logic's last attacker only), several
+  bodies per object (mass shares), `preferred_carryangles` and the
+  sawblade's spin, the contact factor and contact slide of the
+  controller, punting a free ball (no collider), a held ball's blast
+  (its end is a sound and removal), held items' 48-unit touch box, the
+  hold's idle shake and the claws' pose, the TDM friendly-fire case 43
+  (the engine's rule after the credit, not tested), `+use` carry's
+  throw; effects and sounds the gun needs from M10: the beams from the
+  claws and the core glow by effect state, the `PhyscannonImpact` launch
+  effect (beam to the point, sparks), the white fire fade, the
+  client-local `Weapon_PhysCannon.HoldSound` loop (pitch to 100, volume
+  0.8 over 0.5 s) and the held ball's loop pitch ramp. The probe checks
+  (P1-P17) weren't run (the probe server crashed on a bot's death in M7;
+  P2-P12 need a bot holding and punting).
 
 ## Decision log
 
