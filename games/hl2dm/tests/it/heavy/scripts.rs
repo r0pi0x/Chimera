@@ -50,7 +50,20 @@ fn draw_and_reload_times_are_the_view_models() {
         }
     };
     for data in &weapons::hl2_weapons().weapons {
-        check(data, "ACT_VM_DRAW", data.draw);
+        // The S.L.A.M.'s view model has no plain draw: its draws are per
+        // mode (projectiles.md 8, weapons.md 2: the throw's and the
+        // detonator's last 1.0 s, the trip mine's 0.8333 s), and `draw` is
+        // the throw's.
+        if data.id == weapons::SLAM {
+            check(data, "ACT_SLAM_THROW_DRAW", data.draw);
+            for act in ["ACT_SLAM_TRIPMINE_DRAW", "ACT_SLAM_STICKWALL_DRAW"] {
+                if let Some(t) = length(&mount, data.models.view.as_deref().unwrap(), act) {
+                    assert!(near(t, 0.8333), "slam {act}: {t}");
+                }
+            }
+        } else {
+            check(data, "ACT_VM_DRAW", data.draw);
+        }
         let Some(m) = &data.magazine else { continue };
         match m.shells {
             Some(s) => {
