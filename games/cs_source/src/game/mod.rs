@@ -192,7 +192,7 @@ pub mod radio;
 pub mod resim;
 pub mod rules;
 pub mod rungs;
-pub mod scrapes;
+pub use source_engine::effects::scrapes;
 pub mod sound;
 pub mod view_anim;
 pub mod vgui;

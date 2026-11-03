@@ -186,7 +186,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   own id with its own config), `player_anim` (the shared half of Source's
   player animation: lift S9; each game's state picks its sequences) and
   `weapon_script` (a plain-text weapon script's keys, icons too) and `hud` (a
-  game's HUD look read from its install, and the HUD animation scripts: lift S7). It uses the engine's crates and `source_formats`, never the
+  game's HUD look read from its install, and the HUD animation scripts: lift S7) and `effects`
+  (Source's impact particles, decals and impact, physics and scrape sounds with
+  each game's `ImpactStyle`: lift S10 and the rest of S5). It uses the engine's crates and `source_formats`, never the
   presentation, `mashup`, a game or an app (checked); CS:S and HL2:DM
   use it, Combat Arms never. `cargo test -p source_engine --features
   dev` tests it alone.
@@ -420,7 +422,8 @@ those, client and the rest of the simulation. `source_engine`'s modules
 `search_path` and `maps` use no module of ours, only the engine's crates
 by name (`chimera_core::mount`); its `content` uses core, map and mount,
 its `source_movement` core, map, slots and console, its `weapon_script`
-mount, its `hud` map and content, its `player_anim` core, map, weapon and `source_movement`.
+mount, its `hud` map and content, its `player_anim` core, map, weapon and `source_movement`, its `effects`
+core, map, weapon, console and content.
 
 Presentation sits beside the simulation, above `map`: `audio` (sound
 playback, live sounds, room DSP, soundscapes, hearing) uses core and map,

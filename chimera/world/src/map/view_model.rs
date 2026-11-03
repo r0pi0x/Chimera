@@ -236,6 +236,9 @@ pub struct ViewModelEvent {
 pub enum ViewModelEventKind {
     /// A muzzle flash at the view model's attachment (index).
     MuzzleFlash { attachment: usize },
+    /// A muzzle flash of a kind the game's kit names
+    /// (`GameKit::muzzle_flash_kinds`: "PISTOL", "COMBINE").
+    MuzzleFlashOf { attachment: usize, kind: String },
     /// A shell ejected from the attachment (index): the shell type's name
     /// and speed (game units per second).
     EjectBrass {

@@ -106,3 +106,13 @@ fn the_animation_script_has_every_event_the_hud_starts() {
     let clips = &script.events["weaponusesclips"];
     assert_eq!(clips.len(), 2);
 }
+
+/// The damage indicator's full-screen red (the dead view's) is added to the
+/// scene through `vgui/white_additive` (hud.md 8); without the picture the
+/// HUD falls back to a plain blend, which ends in a solid red (M9's note:
+/// the material names no `$basetexture`, the look loads `vgui/white`).
+#[test]
+fn the_additive_picture_is_there() {
+    let Some(hud) = look() else { return };
+    assert!(hud.sprites.contains_key("white_additive"), "the dead view would be a solid red");
+}

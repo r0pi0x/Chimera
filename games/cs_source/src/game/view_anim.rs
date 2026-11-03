@@ -116,6 +116,7 @@ pub fn muzzle_flash(materials: &mut super::material::MaterialLoader) -> MapMuzzl
             radius: (32.0 * UNIT, 64.0 * UNIT),
             life: 0.05,
         }),
+        ..default()
     }
 }
 

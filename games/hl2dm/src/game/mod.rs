@@ -26,6 +26,8 @@
 pub mod ammo;
 pub mod ammo_crates;
 pub mod bodies;
+pub mod effects;
+pub mod flashes;
 pub mod hud;
 pub mod look;
 pub mod maps;
@@ -37,6 +39,7 @@ pub mod rules;
 pub mod player_anim;
 pub mod rungs;
 pub mod scripts;
+pub mod sounds;
 pub mod standing;
 pub mod suit;
 pub mod view;
@@ -109,6 +112,8 @@ impl bevy::app::PluginGroup for Hl2dmPlugins {
             .add(suit::SuitPlugin)
             .add(pickups::PickupsPlugin)
             .add(weapons::Hl2WeaponsPlugin)
+            .add(effects::Hl2EffectsPlugin)
+            .add(sounds::Hl2SoundsPlugin)
             .add(view::Hl2ViewPlugin)
             .add(rules::Hl2RulesPlugin)
             .add(bodies::Hl2BodiesPlugin)
@@ -158,6 +163,10 @@ pub fn party_sim(app: &mut bevy::app::App) {
         app.add_plugins(suit::SuitPlugin);
     }
     app.add_plugins(weapons::Hl2GunsPlugin);
+    effects::add_effects(app);
+    if !app.is_plugin_added::<sounds::Hl2SoundsPlugin>() {
+        app.add_plugins(sounds::Hl2SoundsPlugin);
+    }
     view::add_rules(app);
     if !app.is_plugin_added::<bodies::Hl2BodiesPlugin>() {
         app.add_plugins((bodies::Hl2BodiesPlugin, player_anim::Hl2AnimPlugin));

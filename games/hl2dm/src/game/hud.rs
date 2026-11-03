@@ -51,7 +51,10 @@ pub const WEAPON_CLASSES: &[&str] = &[
 ];
 
 /// Whole pictures the HUD draws, by our name: their materials.
-const PICTURES: &[(&str, &str)] = &[("white_additive", "vgui/white_additive"), ("zoom", "vgui/zoom")];
+/// (`white_additive`'s material names no `$basetexture`: Source draws it
+/// with the white 1 x 1 texture, `vgui/white`.)
+const PICTURES: &[(&str, &str, &str)] =
+    &[("white_additive", "vgui/white_additive", "vgui/white"), ("zoom", "vgui/zoom", "vgui/zoom")];
 
 /// The localization files, later ones under earlier ones.
 const STRINGS: &[&str] = &["resource/hl2mp_english.txt", "resource/hl2_english.txt", "resource/valve_english.txt"];
@@ -84,11 +87,12 @@ pub fn load(materials: &mut MaterialLoader) -> Option<GameHud> {
             }
         }
     }
-    for (name, material) in PICTURES {
+    for (name, material, fallback) in PICTURES {
         if materials.read(&format!("materials/{material}.vmt")).is_none() {
             continue;
         }
-        if let Some(texture) = materials.resolve(material).texture {
+        let texture = materials.resolve(material).texture.or_else(|| materials.texture(fallback, true));
+        if let Some(texture) = texture {
             let t = &materials.textures[texture];
             hud.sprites.insert((*name).to_string(), HudSprite { texture, rect: [0.0, 0.0, t.width as f32, t.height as f32] });
         }

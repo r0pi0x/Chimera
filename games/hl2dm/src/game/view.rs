@@ -12,7 +12,7 @@
 //! Known shortcuts: the pistol's and machine guns' series of fire
 //! sequences (`ACT_VM_RECOIL1`-`3` after the first shots) play the first
 //! one each time; the AR2's vent pose parameter isn't set (both
-//! cosmetic); the stunstick's sparks and the muzzle flashes are M10's.
+//! cosmetic); the shells aren't drawn (M10: `flashes`, `effects`).
 
 use bevy::prelude::*;
 use chimera_sim::weapon::{
@@ -68,7 +68,7 @@ pub fn rules() -> ViewAnimRules {
         draw: |_| acts(&[DRAW, IDLE]),
         idle: |_| acts(&[IDLE]),
         event,
-        effect: source::event_effect,
+        effect: super::flashes::event_effect,
     }
 }
 

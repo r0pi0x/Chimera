@@ -34,11 +34,24 @@ struct RawEntry {
 #[derive(Default)]
 pub struct SoundScripts {
     entries: HashMap<String, RawEntry>,
+    /// An entry defined again keeps its first definition (HL2:DM's
+    /// `NPC_Citizen.die`, specs/hl2dm/effects_sounds.md Open questions 2);
+    /// else the last wins (CS:S's `Player.UseDeny`).
+    first_wins: bool,
 }
 
 impl SoundScripts {
     pub fn load(materials: &mut MaterialLoader, map: &str) -> Self {
-        let mut me = Self::default();
+        Self::load_with(materials, map, false)
+    }
+
+    /// The scripts, an entry defined twice keeping its first definition
+    /// when `first_wins`.
+    pub fn load_with(materials: &mut MaterialLoader, map: &str, first_wins: bool) -> Self {
+        let mut me = Self {
+            first_wins,
+            ..Self::default()
+        };
         if let Some(manifest) = materials.read("scripts/game_sounds_manifest.txt") {
             let t = tokens(&String::from_utf8_lossy(&manifest), Escapes::Off);
             let files: Vec<String> = t
@@ -92,6 +105,9 @@ impl SoundScripts {
                 i += 2;
             }
             i += 1;
+            if self.first_wins && self.entries.contains_key(&name) {
+                continue;
+            }
             self.entries.insert(name, entry);
         }
     }
@@ -103,8 +119,30 @@ impl SoundScripts {
     /// The files entry `name` may play (its waves under `sound/`): what a
     /// weapon's sounds read (`chimera_pack sets`).
     pub fn waves(&self, name: &str) -> Vec<String> {
-        self.entries.get(&name.to_lowercase()).map(|e| e.waves.iter().map(|w| wave_file(w)).collect()).unwrap_or_default()
+        self.entries
+            .get(&name.to_lowercase())
+            .map(|e| {
+                e.waves
+                    .iter()
+                    .flat_map(|w| [false, true].into_iter().filter(|f| !*f || w.contains(GENDER)).map(|f| wave_file(&gendered(w, f))))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
+}
+
+/// What a script wave's path holds where the emitter's gender goes
+/// (`vo/npc/$gender01/pain07`).
+pub const GENDER: &str = "$gender";
+
+/// The suffix of the female variant of an entry whose waves hold `GENDER`
+/// (`npc_citizen.die` plays the male's, `npc_citizen.die$female` the
+/// female's).
+pub const FEMALE_SUFFIX: &str = "$female";
+
+/// `wave` for a male or a female emitter.
+fn gendered(wave: &str, female: bool) -> String {
+    wave.replace(GENDER, if female { "female" } else { "male" })
 }
 
 /// "a" or "a,b": start a, range b - a (C-style number prefixes).
@@ -264,7 +302,20 @@ pub fn load(
     entities: &[MapEntity],
     game: impl IntoIterator<Item = String>,
 ) -> MapSounds {
-    let scripts = SoundScripts::load(materials, map);
+    load_with(materials, map, surfaces, entities, game, false)
+}
+
+/// `load`, an entry defined twice keeping its first definition when
+/// `first_wins` (else the last).
+pub fn load_with(
+    materials: &mut MaterialLoader,
+    map: &str,
+    surfaces: &SurfaceProps,
+    entities: &[MapEntity],
+    game: impl IntoIterator<Item = String>,
+    first_wins: bool,
+) -> MapSounds {
+    let scripts = SoundScripts::load_with(materials, map, first_wins);
     let mut out = MapSounds::default();
     let (ambient_entries, ambient_raw) = ambient_messages(entities);
     let mut wanted: HashSet<String> = ALWAYS
@@ -330,7 +381,11 @@ pub fn load(
     let mut files: Vec<String> = wanted
         .iter()
         .filter_map(|n| scripts.entries.get(n))
-        .flat_map(|raw| raw.waves.iter().map(|w| wave_file(w)))
+        .flat_map(|raw| {
+            raw.waves
+                .iter()
+                .flat_map(|w| [false, true].into_iter().filter(|f| *f || w.contains(GENDER)).map(|f| wave_file(&gendered(w, f))))
+        })
         .chain(ambient_raw.iter().map(|n| wave_file(n)))
         .collect();
     files.sort();
@@ -342,19 +397,28 @@ pub fn load(
         let Some(raw) = scripts.entries.get(&name) else {
             continue;
         };
+        // A wave with `$gender` (HL2's citizens) is a male entry and, under
+        // `FEMALE_SUFFIX`, a female one: the game picks by the emitter.
+        let female_too = raw.waves.iter().any(|w| w.contains(GENDER));
         let mut waves = Vec::new();
-        for w in &raw.waves {
-            let file = wave_file(w);
-            let index = *decoded.entry(file.clone()).or_insert_with(|| {
-                let clip = predecoded.remove(&file).flatten();
-                clip.map(|c| {
-                    out.clips.push(c);
-                    out.clips.len() - 1
-                })
-            });
-            match index {
-                Some(i) => waves.push(i),
-                None => failed += 1,
+        let mut female_waves = Vec::new();
+        for (female, list) in [(false, &mut waves), (true, &mut female_waves)] {
+            if female && !female_too {
+                continue;
+            }
+            for w in &raw.waves {
+                let file = wave_file(&gendered(w, female));
+                let index = *decoded.entry(file.clone()).or_insert_with(|| {
+                    let clip = predecoded.remove(&file).flatten();
+                    clip.map(|c| {
+                        out.clips.push(c);
+                        out.clips.len() - 1
+                    })
+                });
+                match index {
+                    Some(i) => list.push(i),
+                    None => failed += 1,
+                }
             }
         }
         let keys = &raw.keys;
@@ -382,17 +446,24 @@ pub fn load(
                 "PITCH_HIGH" => Interval::fixed(120.0),
                 _ => interval(p),
             });
-        out.entries.insert(
-            name,
-            MapSoundEntry {
-                waves,
-                volume,
-                pitch,
-                level,
-                channel: keys.get("channel").map_or(0, |c| channel(c)),
-                dry: !raw.waves.is_empty() && raw.waves.iter().all(|w| wave_dry(w)),
-            },
-        );
+        let entry = MapSoundEntry {
+            waves,
+            volume,
+            pitch,
+            level,
+            channel: keys.get("channel").map_or(0, |c| channel(c)),
+            dry: !raw.waves.is_empty() && raw.waves.iter().all(|w| wave_dry(w)),
+        };
+        if female_too {
+            out.entries.insert(
+                format!("{name}{FEMALE_SUFFIX}"),
+                MapSoundEntry {
+                    waves: female_waves,
+                    ..entry.clone()
+                },
+            );
+        }
+        out.entries.insert(name, entry);
     }
     for name in ambient_raw {
         let file = wave_file(&name);
