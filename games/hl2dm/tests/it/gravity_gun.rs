@@ -919,3 +919,85 @@ fn a_dropped_ball_leaves_at_1500() {
     let off = v.normalize().dot(Vec3::X).acos().to_degrees();
     assert!(off <= 55.0 * std::f32::consts::SQRT_2 + 0.5, "{off} degrees off the view");
 }
+
+// ---------------------------------------------------------------------------
+// The gun's effects (effects_sounds.md 11; `physcannon_fx`)
+
+fn with_effects(w: &mut W) {
+    use chimera_core::core::LocalPlayer;
+    use chimera_world::map::{
+        logic_view::ScreenFades,
+        particles::{MapParticles, ParticleMaterial, ParticleMaterials},
+    };
+    let materials = hl2dm::game::projectile_fx::MATERIALS
+        .iter()
+        .chain(source_engine::effects::impact_effects::MATERIALS)
+        .map(|n| ParticleMaterial { name: n.to_string(), ..default() })
+        .collect();
+    w.sim.app.insert_resource(ParticleMaterials(MapParticles { materials }));
+    w.sim.app.init_resource::<ScreenFades>();
+    w.sim.app.world_mut().entity_mut(w.p).insert(LocalPlayer);
+}
+
+/// H9 11: a punt's spark burst (16 to 32 sparks), the punter's beam of
+/// `orangelight1` and the white fire fade (245, 245, 255, 32 over 0.1 s).
+#[test]
+fn a_punt_bursts_beams_and_fades_white() {
+    use chimera_world::map::{
+        logic_view::ScreenFades,
+        particles::{ParticleMaterials, Particles},
+    };
+    let mut w = world(&[Crate::ahead(100.0)]);
+    with_effects(&mut w);
+    w.sim.app.world_mut().resource_mut::<Particles>().groups.clear();
+    w.press(true, false, 1, 2);
+    let (spark, beam) = {
+        let m = &w.sim.app.world().resource::<ParticleMaterials>().0;
+        (m.find("effects/spark").unwrap(), m.find("sprites/orangelight1").unwrap())
+    };
+    let ps = w.sim.app.world().resource::<Particles>();
+    let sparks = ps.groups.iter().flat_map(|g| g.particles.iter()).filter(|p| p.material == spark).count();
+    assert!(sparks >= 16, "{sparks}");
+    let beams = ps.groups.iter().flat_map(|g| g.particles.iter()).filter(|p| p.material == beam).count();
+    assert_eq!(beams, 1);
+    let now = w.sim.app.world().resource::<bevy::prelude::Time>().elapsed_secs_f64();
+    let mut fades = w.sim.app.world_mut().resource_mut::<ScreenFades>();
+    let (color, alpha, _) = fades.at(now).expect("a fade");
+    assert_eq!(color, [245, 245, 255]);
+    assert!(alpha > 0 && alpha <= 32);
+}
+
+/// H9 11: the hold loop starts silent at pitch 50 and reaches 0.8 and 100
+/// after 0.5 s; letting go fades it out over a second and stops it.
+#[test]
+fn the_hold_loop_ramps_up_and_down() {
+    use chimera_world::map::SoundControl;
+    let mut w = world(&[Crate::ahead(200.0)]);
+    with_effects(&mut w);
+    let mut cursor = w.sim.app.world().resource::<Messages<SoundControl>>().get_cursor_current();
+    let mut msgs: Vec<SoundControl> = Vec::new();
+    let mut run = |w: &mut W, ticks: u64, msgs: &mut Vec<SoundControl>| {
+        for _ in 0..ticks {
+            w.sim.ticks(1);
+            msgs.extend(cursor.read(w.sim.app.world().resource::<Messages<SoundControl>>()).cloned());
+        }
+    };
+    w.press(false, true, 1, 1);
+    run(&mut w, 50, &mut msgs);
+    let start = msgs.iter().find_map(|m| match m {
+        SoundControl::Start(s) => Some(s.clone()),
+        _ => None,
+    });
+    let start = start.expect("the loop starts");
+    assert_eq!(start.entry, hl2dm::game::physcannon_fx::HOLD_SOUND);
+    assert!(start.looping && start.volume == Some(0.0) && start.pitch == Some(50.0));
+    let last = msgs.iter().rev().find_map(|m| match m {
+        SoundControl::Change { volume, pitch, .. } => Some((*volume, *pitch)),
+        _ => None,
+    });
+    assert_eq!(last, Some((Some(0.8), Some(100.0))));
+    // Let go: a secondary press after 0.5 s drops it.
+    w.press(false, true, 1, 1);
+    run(&mut w, 100, &mut msgs);
+    assert!(msgs.iter().any(|m| matches!(m, SoundControl::Stop(_))), "stopped after the fade");
+}

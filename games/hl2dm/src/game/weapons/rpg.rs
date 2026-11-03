@@ -30,9 +30,9 @@
 //!   blocks the next shot until let go): the fastest refire is 113 ticks
 //!   after the explosion.
 //!
-//! Known shortcuts: the dot isn't drawn (H9: M10) nor replicated; the
+//! Known shortcuts: the dot is drawn (`projectile_fx`) but not replicated; the
 //! dot appears with the draw (not after the 1.1 s draw animation) and
-//! isn't lowered with no ammo; the missile's smoke trail, the owner's
+//! isn't lowered with no ammo; the missile's trail is drawn (`projectile_fx`); the owner's
 //! fade at ignition and `Missile.Ignite`'s loop are M10's; the missile's
 //! sky test (removed silently) is Chimera's flyers' (none yet).
 

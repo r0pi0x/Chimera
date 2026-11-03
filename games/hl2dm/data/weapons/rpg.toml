@@ -53,4 +53,5 @@ damage = 150.0
 radius = 300.0
 sound = "Weapon_RPG.Single"
 empty = "Weapon_SMG1.Empty"
-explode = "BaseGrenade.Explode"
+# No server sound: the explosion's boom is the client's (H9 15.10).
+explode = ""

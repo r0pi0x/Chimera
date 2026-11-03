@@ -435,7 +435,7 @@ implementing (owner branch) / done.
 | M1 maps load | H0 | done (branch `hl2dm-m1`, 2026-11-01): S2, S3, S4 lifted, CS:S's maps identical; `games/hl2dm` maps, `Hl2Sim`, stand-in movement and pistol; `apps/hl2dm`, `apps/hl2dm_server`; `mapsweep --game hl2dm` | S2, S3, S4, (S11: mapsweep) |
 | M3 movement, suit | H1, H2 | done (branch `hl2dm-m3`, 2026-11-03): S5 (scripts, soundscapes), S6, C2, C8; `hl2dm:movement`, the suit, pickups and chargers; the probe | S5, S6, C2, C8 |
 | M4 bullets, melee, UGG | H3 | done (branch `hl2dm-m4`, 2026-11-03): see Progress; left: probe checks P4, P11, P12, P14, P15 (the rest run: branch `hl2dm-probe`), C7 (no need in M4) | S8, C4 |
-| M5 projectiles | H4 | done (branch `hl2dm-m5`, 2026-11-03): see Progress; left: probe checks P5-P8, P9's under-water speed and damage, P10-P12, P14, P15 (the rest run: branch `hl2dm-probe`), the effects (M10) | C1 |
+| M5 projectiles | H4 | done (branch `hl2dm-m5`, 2026-11-03): see Progress (effects: `hl2dm-fx`); left: probe checks P5-P8, P9's under-water speed and damage, P10-P12, P14, P15 (the rest run: branch `hl2dm-probe`), the effects (M10) | C1 |
 | M6 gravity gun | H5 | done (branch `hl2dm-m6`, 2026-11-03): see Progress; left: `hl2mp_allow_pickup` 1's carry, `prop_physics_respawnable`, first-impact 10× and breaks, the gun's effects (M10), the probe checks P6-P17 (P1-P5 run: branch `hl2dm-probe`) | C6 |
 | M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; left: the set pieces of H10 sections 8-16, respawnable props, rules P5-P14 (the probe's crash fixed: branch `hl2dm-probe`) | C3 (C5 not needed) |
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
@@ -1216,6 +1216,51 @@ implementing (owner branch) / done.
   back-hop, weapons P4, P11 (copies: maps P2 above), P12, projectiles
   P5-P8, P9's water speed and damage, P10-P12, P14-P15, gravity P6-P17, rules P5-P14, maps P3-P9, M8's
   P6-P11, M9's P1-P9, M10's P7-P11.
+
+- 2026-11-03: projectile effects built (branch `hl2dm-fx`; M5/M10's
+  left-overs). **Task first:** the heavy script checks were the test's
+  fault, not the data's (`scripts::differences` now reads a rocket's,
+  grenade's and S.L.A.M.'s ammo, clip and default clip from their
+  projectile hook where the script names them; the S.L.A.M.'s view model
+  has no `ACT_VM_DRAW`, its draws are per mode: the test checks
+  `ACT_SLAM_THROW_DRAW` = 1.0 s and the trip mine's 0.8333 s where found).
+  **Lift:** CS:S's explosion particles (`explosion`, `blast_direction`,
+  `FxMaterials`) moved to `source_engine::effects::explosions` (CS:S
+  re-exports them). **HL2:DM** (`game::projectile_fx`, `game::dissolve`):
+  explosions of the frag, SMG1 grenade, RPG and S.L.A.M. on `Detonated`
+  (the core and flash, `BaseExplosionEffect.Sound` on each machine; the
+  RPG's and S.L.A.M.'s by the explosion entity's rule, drawn 24 off the
+  surface found 8 above to 40 below), no more server `BaseGrenade.Explode`
+  for the rocket, contact grenade and S.L.A.M. (the frag's stays); the
+  rocket's 8 flares and smoke puffs per 4 units; the ball's animated body,
+  flicker and blur, its `cball_bounce` quads and sparks, its two
+  `lgtning` rings; the bolt's 20-halo blur and its stuck glow and sparks;
+  the contact grenade's smoke trail; the frag's and satchel's red glow and
+  the frag's trail; the RPG's laser dot (the owner's from the current
+  view, others' at the server's dot). The ball's kill: the victim is
+  `Dissolving` (no voice), its ragdoll takes `Dissolve`: black over 1 s,
+  fade 1.9 to 2.0 s, floating (+0.02 g, 50 units/s cap), sparks and
+  glows around each body part, removed 134 ticks on (`RagdollSet`,
+  `despawn_ragdoll` made public in `map::ragdoll`). A remote client now
+  draws any blast `Detonated` of a game's own projectile (it dropped them
+  without a throwable template). Tests: `projectile_fx.rs` (H9 39, 41,
+  42, 45, 47 and the ball, bolt, smoke, frag looks), `ragdolls.rs`
+  (H9 9, 11; unit tests for 10, 12). Left: the RPG's beam and glow on the
+  view model (needs attachments from the render layer), the held ball's
+  model, the shot satchel's pop look (H9 40: it has no `Detonated`), the
+  dissolve of the victim's dropped weapon, the ball's bounce, end and the
+  stuck bolt's glow on a dedicated server's clients (they read the host's
+  flyer messages), the RPG's scorch, `refcmp` captures.
+  **Gravity gun** (`game::physcannon_fx`, after merging M6): a punt's or
+  launch's spark burst (16-32 trails back toward the gun) and electric
+  sparks, the punter's `orangelight1` beam (12 to 4 units, 0.1 s) and the
+  white fire fade (245, 245, 255, 32 over 0.1 s, `ScreenFades`); the
+  client-side `HoldSound` loop (0 to 0.8 and 50 to 100 over 0.5 s, back
+  over 1 s) and a held ball's loop (pitch to 150 in the last second).
+  Tests in `gravity_gun.rs` (a punt's burst, beam and fade; the loop's
+  ramps) and unit tests. Left: the claws' core glow, glows, end caps and
+  beams (persistent sprites on a model's attachments need the render
+  layer), the punt's end at the object's centre.
 
 ## Decision log
 

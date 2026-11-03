@@ -12,11 +12,10 @@
 //! the five sprite strings of the spec's table, per view-model event
 //! option) with their light.
 //!
-//! Left for the projectile milestones (M5, M6): explosions, the combine
-//! ball's glow and rings, the dissolve, the RPG's laser and trail, the
-//! crossbow bolt's blur and glow, the gravity gun's sprites and beams; the
-//! one hook they share is `Dissolving` (`sounds`: a body being dissolved
-//! has no death voice).
+//! The projectiles' looks are `projectile_fx` (explosions, the rocket,
+//! the ball, the bolt, the grenades' trails, the laser dot) and the ball's
+//! dissolve is `dissolve`; the gravity gun's sprites and beams are left
+//! (M6).
 //!
 //! Known shortcuts (docs/tech-debt.md): other players' shots are drawn as
 //! the shooter's own are (their server-flagged tracer on every bullet of a
@@ -75,7 +74,10 @@ const STUNSTICK_GLOW: &str = "sprites/light_glow02_add";
 
 /// Load the effect materials (runtime, from the install).
 pub fn load_materials(loader: &mut source_engine::content::material::MaterialLoader) -> MapParticles {
-    impact_effects::load_materials(loader, &[MATERIALS])
+    impact_effects::load_materials(
+        loader,
+        &[MATERIALS, super::projectile_fx::MATERIALS, source_engine::effects::explosions::MATERIALS],
+    )
 }
 
 /// The default tracer's streak (specs/cs_source/tracers.md 3.1): 5000
@@ -304,6 +306,7 @@ impl Plugin for Hl2EffectsPlugin {
         .init_resource::<MuzzleCache>()
         .add_message::<Tracer>()
         .add_message::<PlaySound>()
+        .add_plugins((super::projectile_fx::Hl2ProjectileFxPlugin, super::dissolve::Hl2DissolvePlugin, super::physcannon_fx::Hl2PhyscannonFxPlugin))
         .add_systems(FixedUpdate, (tracers, gun_impacts).after(crate::core::SimSet::Weapons));
     }
 }
