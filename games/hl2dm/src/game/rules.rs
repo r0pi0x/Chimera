@@ -31,9 +31,8 @@
 //! they test the rules (`Hl2Sim` alone runs none, so its characters stay
 //! where the tests put them). Server-side, while HL2:DM is the gameplay.
 //!
-//! The dead stay at their body (no observer phase): `core::DeathView::
-//! Body` tells the shell's death view to orbit the ragdoll from 96 units
-//! behind, 14 above its origin. `say_team` in DM reaches only its sender
+//! The dead stay at their body (no observer phase): the view is
+//! `game::bodies`' (`core::OrbitDeadView`). `say_team` in DM reaches only its sender
 //! (every DM player is a team of its own to Chimera, `mode::FFA_FIRST`
 //! on); the dead are heard by the living (`map::radio::SayFormats::
 //! dead_heard`, HL2:DM's chat formats).
@@ -312,11 +311,6 @@ impl Plugin for Hl2RulesPlugin {
         .init_resource::<players::ModelCounters>()
         .init_resource::<crate::core::RoundRestarts>()
         .init_resource::<FriendlyFire>()
-        .insert_resource(crate::core::DeathView::Body {
-            distance: 96.0 * 0.0254,
-            height: 14.0 * 0.0254,
-            wall: 6.0 * 0.0254,
-        })
         .add_message::<crate::core::Damage>()
         .add_message::<chimera_core::game_log::GameEvent>()
         .game_hook(super::GAME, crate::gameplay::NewGame(new_game))

@@ -438,7 +438,7 @@ implementing (owner branch) / done.
 | M5 projectiles | H4 | not started | C1 |
 | M6 gravity gun | H5 | not started | C6 |
 | M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; left: the set pieces of H10 sections 8-16, respawnable props, the probe cases (the probe server crashes on a bot's death) | C3 (C5 not needed) |
-| M8 bodies | H7 | not started | S9 |
+| M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
 | M9 HUD | H8 | not started | S7 |
 | M10 effects, sounds | H9 | not started | S10, S5 |
 | M11 assets | none | not started | C7 |
@@ -780,9 +780,8 @@ implementing (owner branch) / done.
   frozen intermission (`mp_chattime`) and the next map (`nextlevel`, the
   cycle, the first when off it); `mp_restartgame` (the map's entities
   again through `core::restart_round`), `mp_readyrestart` (`player_say`,
-  now fired by `net::chat`), `timeleft`. The dead stay at their body:
-  `core::DeathView::Body` and the shell's body view (`client::spectate`:
-  96 units back, 14 up, a 6-unit box against the world). HL2:DM's chat
+  now fired by `net::chat`), `timeleft`. The dead stay at their body (M8's
+  `core::OrbitDeadView`; M7's own copy dropped at the merge). HL2:DM's chat
   formats in its map kit, the living reading the dead
   (`SayFormats::dead_heard`). The apps start the rules on their first
   map (`rules::AutoStart`). Tests: `pickups.rs` (H10 cases 1-9, 11, 12,
@@ -804,6 +803,73 @@ implementing (owner branch) / done.
   M6), the respawn light, chargers' `Recharge`/`SetCharge` inputs and
   value outputs, HL2:DM's scoreboard and death notices (M9), the
   server rewriting a remote client's `cl_playermodel`, the probe cases.
+- 2026-11-03: M8 built (branch `hl2dm-m8`). **S9**:
+  `source_engine::player_anim`, the shared half of CS:S's `player_anim`
+  (the inputs from the simulation and the weapons' events, the drawn
+  update at the frame rate, a server's per-tick pose into `SimAnimator`,
+  the hands' IK locks), generic over a game's `PlayerAnimRules` (a
+  component per body; `PlayerAnimPlugin`/`SimAnimPlugin` per game, with a
+  filter: CS:S's hostages); CS:S's `PlayerAnim` keeps its sequences by
+  weapon suffix, its tests and the schedule ratchets unchanged.
+  **Bodies** (`hl2dm::game::bodies`): the 19 player models in HL2:DM's
+  maps' kit and as a guest on other games' maps (all 19, named by path;
+  the DM default, the Combine soldier, unnamed), animated through
+  `hl2mp/`'s include overrides (the search path's order; includes are
+  case- and slash-insensitive), the weapons' world models held on them;
+  `Hl2Model` worn by name (`BodyName`) and replicated (net part
+  `hl2dm_bodies`). **Animation** (`game::player_anim`, `game::look`):
+  H7's state (five activities, the weapon kind's fixed table, cycle 0 on
+  every change, rate = speed / the blended authored ground speed with no
+  clamp, `move_yaw` from the gait yaw, the feet planted to 45 degrees or
+  3 s then 360 degrees/s with the un-normalized fade, `aim_pitch`,
+  `aim_yaw`, fire and reload gestures on overlay layers, the autoplay
+  head and spine sequences: `Animator::autoplay`); clients' heads and
+  eyes toward the first player within 128 units in front (else 512
+  ahead) at 130 degrees/s. **Hitboxes**: each model's set, only the head
+  x3 (the weapons' data), Combine pelvis and chest generic. **Ragdolls**
+  (`map::ragdoll::RagdollGameRules`): HL2:DM's push body 0 with the hit's
+  own force, aim at no death pose and stay after the respawn until the
+  owner dies again (`Outlived`). **The dead view** (`core::OrbitDeadView`
+  in the shell's spectate, HL2:DM's own app): its ragdoll from 96 units
+  behind, 14 above, along the view. **Faces** (`map::face`, adapted from
+  hl2-rs): the Eyes shader (the eyeball's own normal flattened along its
+  up, half-Lambert, the iris projected toward `EyeTarget`, clamped to the
+  30 degree cone), Teeth (lit toward the mouth's forward times the mouth
+  descriptor: dark at rest), flexes (descriptors, controllers, rules,
+  FACS lids; each body's own copy of a face mesh moved on the CPU when
+  its `FaceWeights` change), blinks every U(1.5, 4) s of 0.2 s, every
+  other controller 0. Also: VMT conditions with a shader-model suffix
+  (`">=dx90_20b"`, the Combine's base textures) count as their level;
+  `AnimSet::ground_motion` (blended authored velocity); a body name a map
+  lacks falls back to the identity's game's body; Combat Arms' dressing
+  takes off only its own body names. Party apps: HL2:DM rungs draw their
+  model (UGG on de_dust2 checked by screenshot).
+
+  Found against the spec (the install, build 24600434): `male_02.mdl` has
+  three more own sequences (`Envelope_Anim`, `Choked_Barnacle`,
+  `Crushed_Barnacle`), so its merged indices are 3 past the others' (1.2
+  says the same on all 19; we choose by activity and name, so nothing
+  depends on them); iris scales are 1.4706, 1.5152 and 1.5873 on either
+  sex (11.4's per-sex values are two of them); the blended ground speed
+  halfway N-NE is the vector's, 193.82 (open question 2, by the files);
+  an eyeball's stored forward is its gaze (out of the face).
+
+  Tests: hl2dm `animation.rs` (H7 cases 1, 3-35), `hitboxes.rs`
+  (54-56), `ragdolls.rs` (39, 42), heavy `player_models.rs` (every model
+  with its 105 animation sequences, activities, pose ranges, hitbox set,
+  ragdoll and masses, textures, eyes and teeth; the run cycles' ground
+  speeds; case 36's rules and lids), chimera_world `face` (37, 38),
+  chimera_client `dead_view.rs`, party `bodies_drawn.rs` and
+  `rung_characters.rs` with HL2:DM rungs (over the network). Left: the
+  probe checks P6-P11; the server's state takes the command's own eye
+  angles (the spec: the previous command's), lag compensation rewinds
+  the posed hitboxes whole (the spec keeps current pose parameters,
+  case 57); a ragdoll's push is the killing hit's force, not the
+  command's sum (shotgun); no glint; a ragdoll's face keeps its last
+  weights; `flex_smooth`; the lids take the rest gaze; the dead view's
+  pull-in is the shell's sphere, not a box; every map load converts all
+  19 models; dissolving ragdolls (M5/M10); `cl_playermodel` and team
+  models (M7).
 
 ## Decision log
 

@@ -381,3 +381,55 @@ fn a_network_client_sees_the_infected_and_their_return() {
     }
     assert_no_errors(&sim, "leaving the infected's rung");
 }
+
+/// HL2:DM's rung characters (`hl2dm::game::rungs`): on the mixed ladder
+/// (`hl2dm_parts::LADDER`, rung extras on) each HL2:DM rung dresses
+/// everyone on it in one of HL2:DM's player models (`Hl2Model`, worn by
+/// name: `BodyName`), and a network client sees the server's choice on
+/// its own player and on the others (`Hl2Model` replicated, the net part
+/// `hl2dm_bodies`); a rung of another game's gun takes it off on every
+/// side.
+#[test]
+fn hl2dm_rungs_dress_their_players_on_server_and_clients() {
+    use hl2dm::game::weapons::inventory::Hl2Model;
+    let text = crate::hl2dm_parts::mixed_text(true);
+    let setup = move |app: &mut App| {
+        app.add_plugins((GreyboxMapPlugin, PartyPartsPlugin));
+        minigame::MinigameAppExt::add_minigames(app, &[("hl2dm.toml", &text)]).unwrap();
+    };
+    let mut sim = NetSim::new(combat_arms::harness::CaSim, link(), 7, 2, setup);
+    sim.set_frame(TICK_INTERVAL);
+    crate::gun_game::no_finale(sim.server.app.world_mut());
+    minigame::start(sim.server.app.world_mut(), "test:gun_game_hl2dm").expect("the gun game starts");
+    sim.until_joined(900);
+    sim.ticks(300);
+    let model = |w: &World, e: Entity| w.get::<Hl2Model>(e).map(|m| m.0.clone());
+    let name = |w: &World, e: Entity| w.get::<chimera_world::map::BodyName>(e).map(|m| m.0.clone());
+    for rung in [0usize, 2, 4] {
+        all_on(&mut sim, rung);
+        sim.ticks(120);
+        let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+        let want = model(sim.server.app.world(), a);
+        assert!(want.is_some(), "rung {rung}: the server dresses a");
+        assert_eq!(want, model(sim.server.app.world(), b), "rung {rung}: everyone on it alike");
+        for i in 0..2 {
+            let me = sim.local_player(i).unwrap();
+            let w = sim.clients[i].app.world();
+            assert_eq!(model(w, me), want, "rung {rung}: client {i} sees its own model");
+            let named = want.clone().filter(|m| m != hl2dm::game::weapons::inventory::DEFAULT_MODEL);
+            assert_eq!(name(w, me), named, "rung {rung}: client {i} wears it by name");
+        }
+        // Client 1 sees player a dressed alike.
+        let id0 = sim.client_id(0);
+        let a_seen = NetSim::owned_by(&mut sim.clients[1], Some(id0)).expect("client 1 sees player a");
+        assert_eq!(model(sim.clients[1].app.world(), a_seen), want, "rung {rung}: client 1 sees a's model");
+    }
+    // A CS:S rung: the model comes off everywhere.
+    all_on(&mut sim, 1);
+    sim.ticks(120);
+    let a = sim.character_of(0).unwrap();
+    assert_eq!(model(sim.server.app.world(), a), None);
+    let me = sim.local_player(0).unwrap();
+    assert_eq!(model(sim.clients[0].app.world(), me), None);
+    assert_eq!(name(sim.clients[0].app.world(), me), None);
+}

@@ -1,8 +1,11 @@
 //! What CS:S player bodies play: the player animation state of
 //! specs/cs_source/animation.md §12 (the SDK template the CS:S data
-//! follows) driving each character's `Animator`, on CS:S's bodies only
-//! (`CharacterModels::is_of`: in a mashup another game's bodies play its
-//! own). The plugin also drives hostages (`hostage_anim`).
+//! follows) driving each character's `Animator`, on CS:S's bodies only:
+//! CS:S's rules (`PlayerAnim`, sequences by the weapon's suffix) on
+//! Source's shared half (`source_engine::player_anim`, lift S9: the
+//! inputs, the drawn and per-tick server updates, the hands' IK locks).
+//! The plugin also drives hostages (`hostage_anim`) and puts the held
+//! weapon's world model in their hands (`hold_weapons`).
 //!
 //! Known shortcuts (docs/tech-debt.md): Player animation follows the SDK
 //! template (spec §12): ground speeds 100/250/85 make feet slide against CS:S's
@@ -13,52 +16,38 @@
 //! `idle_shoot_gren1/2`). Why it's OK for now: CS:S's own state isn't public;
 //! check against a demo (spec open questions).
 
-use std::sync::Arc;
-
 use bevy::prelude::*;
+pub use source_engine::player_anim::{Inputs, normalize};
+use source_engine::player_anim::{PlayerAnimRules, PlayerAnimSystems};
 
 use crate::{
-    core::{Health, Intent, MovementState, Velocity},
-    map::{
-        DriveAnimation,
-        anim::{AnimSet, Animator, Fading, Layer},
-    },
-    weapon::{Inventory, Weapon, WeaponEvent, WeaponEventKind},
+    map::anim::{AnimSet, Animator, Fading, Layer},
+    weapon::{Inventory, Weapon},
 };
 
-const UNIT: f32 = 0.0254;
-const MOVING_MIN_SPEED: f32 = 0.5;
 const RUN_THRESHOLD: f32 = 175.0;
+const MOVING_MIN_SPEED: f32 = 0.5;
 const MAX_BODY_YAW: f32 = 90.0;
 const FEET_YAW_RATE: f32 = 720.0;
 const FEET_TURN_FADE: f32 = 45.0;
 const FACE_FRONT_TIME: f64 = 3.0;
 const JUMP_GROUND_IGNORE: f64 = 0.2;
-/// Seconds a hand takes to settle onto its grip or let go (our choice;
-/// the files' IK rules carry no fade we use).
-const HAND_LOCK_FADE: f32 = 0.2;
-/// IK chains of the shared skeleton and the grip bones their ends lock
-/// to: `weapon_bone_RHand`/`_LHand` sit where the hands are in each
-/// weapon's authored pose, so a locked hand stays on the gun while the
-/// aim layers turn the arms (playtest 2026-10-10: a pistol held a hand's
-/// width off the hand when aiming up or down).
-const HAND_CHAINS: [(&str, &str); 2] = [
-    ("rhand", "valvebiped.weapon_bone_rhand"),
-    ("lhand", "valvebiped.weapon_bone_lhand"),
-];
+
+/// Characters CS:S animates otherwise (hostages: `hostage_anim`).
+type NotHostages = Without<crate::objectives::hostages::Hostage>;
 
 pub struct PlayerAnimPlugin;
 
 impl Plugin for PlayerAnimPlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<WeaponEvent>()
+        app.add_plugins(source_engine::player_anim::PlayerAnimPlugin::<PlayerAnim, NotHostages>::default())
             .init_resource::<HandIk>()
             .add_systems(
                 Update,
                 (
-                    drive.in_set(DriveAnimation),
-                    super::hostage_anim::drive.in_set(DriveAnimation),
+                    super::hostage_anim::drive.in_set(crate::map::DriveAnimation),
                     hold_weapons,
+                    hands_off.after(PlayerAnimSystems).in_set(crate::map::DriveAnimation),
                 ),
             );
         crate::console::resource_cvar::<HandIk, u8>(
@@ -67,6 +56,15 @@ impl Plugin for PlayerAnimPlugin {
             "1: hands locked onto the weapon as the player models' IK rules say (drawn bodies); 0: off, the animation's own arms (for comparison).",
             |h| &mut h.0,
         );
+    }
+}
+
+/// `chimera_hand_ik 0`: the drawn bodies' hands left to the animation.
+fn hands_off(hand_ik: Res<HandIk>, mut bodies: Query<&mut Animator, With<PlayerAnim>>) {
+    if hand_ik.0 == 0 {
+        for mut a in &mut bodies {
+            a.ik.clear();
+        }
     }
 }
 
@@ -160,7 +158,6 @@ pub struct PlayerAnim {
     gait_yaw: f32,
     jumping: Option<f64>,
     restart: bool,
-    was_on_ground: bool,
     pub activity: Activity,
     idle: Queue,
     moving: Queue,
@@ -190,7 +187,6 @@ impl Default for PlayerAnim {
             gait_yaw: 0.0,
             jumping: None,
             restart: false,
-            was_on_ground: true,
             activity: Activity::Idle,
             idle: Queue::default(),
             moving: Queue::default(),
@@ -203,48 +199,6 @@ impl Default for PlayerAnim {
             suffix: "",
         }
     }
-}
-
-/// Angle in degrees into (-180, 180].
-fn normalize(a: f32) -> f32 {
-    let a = a % 360.0;
-    if a > 180.0 {
-        a - 360.0
-    } else if a <= -180.0 {
-        a + 360.0
-    } else {
-        a
-    }
-}
-
-/// What the body sees this update, in Source terms: degrees, units/s, the
-/// game's world axes (yaw 0 = +X, counter-clockwise).
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Inputs {
-    pub eye_yaw: f32,
-    /// Positive looking down.
-    pub eye_pitch: f32,
-    pub velocity: Vec2,
-    pub ducked: bool,
-    pub on_ground: bool,
-    pub jumped: bool,
-    pub fired: bool,
-    /// A reload started this update.
-    pub reloaded: bool,
-    /// Which part of a reload: "" a whole one, else "_start", "_loop" (a
-    /// shell going in) or "_end" (shotguns).
-    pub reload_part: &'static str,
-    /// The hand that fired: "" or, for dual pistols, "_L" or "_R".
-    pub shot_side: &'static str,
-    /// A grenade's pin is out (or its throw is pending).
-    pub primed: bool,
-    /// A grenade was released this update.
-    pub threw: bool,
-    /// Arming the bomb stopped short this update (let go, walked off, the
-    /// round ended): its `*_Shoot_C4` gesture stops at once instead of
-    /// playing out (playtest 2026-10-14: a tap's gesture kept playing as
-    /// the player ran off).
-    pub fire_stopped: bool,
 }
 
 /// What the state decided: pose parameters by name and the render yaw.
@@ -550,45 +504,45 @@ impl PlayerAnim {
 }
 
 impl PlayerAnim {
-    /// The hands' IK locks from the files' rules (`AnimSet::ik_locks`):
-    /// the layers in order, each sequence then its autolayers, the last
-    /// rule for a chain wins. Guns' hand poses lock both hands to the
-    /// weapon, the knife's release them, dual pistols lock the right hand
-    /// only; reloads lock them to the grips as they move. Grenades hang
-    /// on the hand itself and their grips aren't where the hands are
-    /// (the right one 7.7 units and 162 degrees off): no locks.
+    /// The hands' IK locks from the files' rules (`player_anim::
+    /// lock_hands`). Guns' hand poses lock both hands to the weapon, the
+    /// knife's release them, dual pistols lock the right hand only;
+    /// reloads lock them to the grips as they move. Grenades hang on the
+    /// hand itself and their grips aren't where the hands are (the right
+    /// one 7.7 units and 162 degrees off): no locks.
     fn lock_hands(&mut self, a: &mut Animator, suffix: &str, dt: f32) {
-        let set = a.set.clone();
-        a.ik.clear();
-        if set.ik_chains.is_empty() || set.parents.is_empty() {
-            return;
-        }
-        let mut locks = vec![None; set.ik_chains.len()];
-        if suffix != "GREN" {
-            for l in a.layers.iter().flatten().filter(|l| l.weight > 0.0) {
-                set.ik_locks(l.sequence, &mut locks);
-            }
-        }
-        for (k, (chain, grip)) in HAND_CHAINS.iter().enumerate() {
-            let found = set.ik_chains.iter().position(|c| c.name == *chain);
-            let target = set.bone_names.iter().position(|n| n == grip);
-            let (Some(chain), Some(target)) = (found, target) else {
-                self.hand_locks[k] = 0.0;
-                continue;
-            };
-            let want = if locks[chain] == Some(true) { 1.0 } else { 0.0 };
-            let step = if self.reset_hands { 1.0 } else { dt / HAND_LOCK_FADE };
-            let w = &mut self.hand_locks[k];
-            *w = if *w < want { (*w + step).min(want) } else { (*w - step).max(want) };
-            if *w > 0.0 {
-                a.ik.push(crate::map::anim::IkGoal {
-                    chain,
-                    target,
-                    weight: *w,
-                });
-            }
-        }
+        source_engine::player_anim::lock_hands(a, &mut self.hand_locks, self.reset_hands, suffix != "GREN", dt);
         self.reset_hands = false;
+    }
+}
+
+impl PlayerAnimRules for PlayerAnim {
+    const GAME: &'static str = super::GAME;
+
+    fn update(&mut self, a: &mut Animator, i: &Inputs, weapon: Option<&str>, dt: f32, now: f64) {
+        PlayerAnim::update(self, a, i, suffix(weapon), dt, now);
+    }
+
+    fn feet_yaw(&self) -> f32 {
+        self.feet_yaw
+    }
+
+    fn dead(&mut self) {
+        self.reset = true;
+    }
+
+    /// Dual pistols shoot from either hand.
+    fn shot_side(w: &Weapon, m: Option<&crate::weapon::Magazine>) -> &'static str {
+        match m {
+            Some(m) if super::weapons::alternate_hands(w.id) => {
+                if super::weapons::elite_right_hand(m.clip) {
+                    "_R"
+                } else {
+                    "_L"
+                }
+            }
+            _ => "",
+        }
     }
 }
 
@@ -623,8 +577,7 @@ pub fn suffix(weapon: Option<&str>) -> &'static str {
     }
 }
 
-/// Whether `body` is one of CS:S's models (or of no game in particular):
-/// the bodies this animation drives.
+/// Whether `body` is one of CS:S's models (or of no game in particular).
 fn ours(models: Option<&crate::map::CharacterModels>, body: Option<&crate::map::BodyModel>) -> bool {
     models.is_none_or(|m| m.is_of(body, super::GAME))
 }
@@ -663,225 +616,13 @@ fn hold_weapons(
     }
 }
 
-/// What weapons did this update, per owner: shots (with the hand that
-/// fired), reload parts, throws.
-#[derive(Default)]
-struct Happened {
-    fired: Vec<(Entity, &'static str)>,
-    reloaded: Vec<(Entity, &'static str)>,
-    threw: Vec<Entity>,
-    /// Arming stopped short (after its start, if both came this update).
-    arming_stopped: Vec<Entity>,
-}
-
-type WeaponsQuery<'w, 's> = Query<'w, 's, (&'static Weapon, Option<&'static crate::weapon::grenade::Throwable>)>;
-type LoadingQuery<'w, 's> =
-    Query<'w, 's, (Option<&'static crate::weapon::ShellReload>, Option<&'static crate::weapon::Magazine>)>;
-
-impl Happened {
-    fn of(all: &[&WeaponEvent], weapons: &WeaponsQuery, loading: &LoadingQuery) -> Self {
-        let mut h = Self::default();
-        for ev in all {
-            let (shells, magazine) = loading.get(ev.weapon).unwrap_or((None, None));
-            match ev.kind {
-                WeaponEventKind::Shot { .. } | WeaponEventKind::Swing { .. } | WeaponEventKind::ArmingStarted => {
-                    let dual = weapons
-                        .get(ev.weapon)
-                        .is_ok_and(|(w, _)| super::weapons::alternate_hands(w.id));
-                    let side = match magazine {
-                        Some(m) if dual => {
-                            if super::weapons::elite_right_hand(m.clip) {
-                                "_R"
-                            } else {
-                                "_L"
-                            }
-                        }
-                        _ => "",
-                    };
-                    h.fired.push((ev.owner, side));
-                }
-                WeaponEventKind::ReloadStarted => {
-                    h.reloaded.push((ev.owner, if shells.is_some() { "_start" } else { "" }));
-                }
-                WeaponEventKind::ShellInserting => h.reloaded.push((ev.owner, "_loop")),
-                WeaponEventKind::Reloaded if shells.is_some() => h.reloaded.push((ev.owner, "_end")),
-                WeaponEventKind::Thrown => h.threw.push(ev.owner),
-                WeaponEventKind::ArmingStopped => {
-                    h.fired.retain(|(o, _)| *o != ev.owner);
-                    h.arming_stopped.push(ev.owner);
-                }
-                _ => {}
-            }
-        }
-        h
-    }
-
-    fn find(list: &[(Entity, &'static str)], e: Entity) -> Option<&'static str> {
-        list.iter().rev().find(|(o, _)| *o == e).map(|(_, p)| *p)
-    }
-}
-
-/// One character's update: its state and inputs into its animator.
-#[allow(clippy::too_many_arguments)]
-fn animate(
-    e: Entity,
-    state: &mut PlayerAnim,
-    animator: &mut Animator,
-    look: crate::map::interp::EyeView,
-    velocity: &Velocity,
-    movement: &MovementState,
-    weapon: Option<(&Weapon, Option<&crate::weapon::grenade::Throwable>)>,
-    happened: &Happened,
-    dt: f32,
-    now: f64,
-) {
-    let jumped = state.was_on_ground && !movement.on_ground && velocity.y > 0.0;
-    state.was_on_ground = movement.on_ground;
-    // Our axes to the game's: forward at yaw 0 is -Z (+X there), left is
-    // -X (+Y there).
-    let inputs = Inputs {
-        eye_yaw: look.yaw.to_degrees(),
-        eye_pitch: -look.pitch.to_degrees(),
-        velocity: Vec2::new(-velocity.z, -velocity.x) / UNIT,
-        ducked: movement.crouching,
-        on_ground: movement.on_ground,
-        jumped,
-        fired: Happened::find(&happened.fired, e).is_some(),
-        reloaded: Happened::find(&happened.reloaded, e).is_some(),
-        reload_part: Happened::find(&happened.reloaded, e).unwrap_or(""),
-        shot_side: Happened::find(&happened.fired, e).unwrap_or(""),
-        primed: weapon.and_then(|(_, t)| t).is_some_and(|t| t.primed()),
-        threw: happened.threw.contains(&e),
-        fire_stopped: happened.arming_stopped.contains(&e),
-    };
-    let suffix = suffix(weapon.map(|(w, _)| w.id));
-    state.update(animator, &inputs, suffix, dt, now);
-    animator.yaw = Some(state.feet_yaw.to_radians());
-}
-
-#[allow(clippy::type_complexity)]
-fn drive(
-    time: Res<Time>,
-    mut characters: Query<(
-        Entity,
-        &mut Animator,
-        Option<&mut PlayerAnim>,
-        &Intent,
-        &Velocity,
-        &MovementState,
-        Option<&Health>,
-        Option<&Inventory>,
-        (Option<&crate::map::interp::RenderedView>, Option<&crate::map::BodyModel>),
-    ), Without<crate::objectives::hostages::Hostage>>,
-    weapons: WeaponsQuery,
-    loading: LoadingQuery,
-    mut events: MessageReader<WeaponEvent>,
-    hand_ik: Res<HandIk>,
-    models: Option<Res<crate::map::CharacterModels>>,
-    mut commands: Commands,
-) {
-    let all: Vec<&WeaponEvent> = events.read().filter(|e| e.shown()).collect();
-    let happened = Happened::of(&all, &weapons, &loading);
-    let (dt, now) = (time.delta_secs(), time.elapsed_secs_f64());
-    for (e, mut animator, state, intent, velocity, movement, health, inventory, (view, body)) in &mut characters {
-        // Only CS:S's bodies (another game's, in a mashup, play its own).
-        if !ours(models.as_deref(), body) {
-            if state.is_some() {
-                commands.entity(e).remove::<PlayerAnim>();
-            }
-            continue;
-        }
-        let Some(mut state) = state else {
-            commands.entity(e).insert(PlayerAnim::default());
-            continue;
-        };
-        if health.is_some_and(|h| h.current <= 0.0) {
-            state.reset = true;
-            continue;
-        }
-        // The look as drawn (eased between ticks, `map::interp`), as the
-        // client's animation state takes it (specs/cs_source/animation.md
-        // 12).
-        let look = crate::map::interp::eye_view(view, intent, movement);
-        let weapon = inventory.and_then(|i| i.active).and_then(|w| weapons.get(w).ok());
-        animate(e, &mut state, &mut animator, look, velocity, movement, weapon, &happened, dt, now);
-        if hand_ik.0 == 0 {
-            animator.ik.clear();
-        }
-    }
-}
-
-/// A network server's own animation state of a body (`map::SimAnimator`).
-#[derive(Component, Debug, Clone, Default)]
-pub struct SimPlayerAnim(pub PlayerAnim);
-
-/// A network server animates every body again in the fixed tick, from
-/// the tick's own values (the look as simulated, the tick's shots), into
-/// its `map::SimAnimator`, which poses the hitboxes the next tick traces
-/// and lag compensation keeps (`map::SimPose`). What is drawn keeps its
-/// own animation (`drive`).
+/// A network server animates CS:S's bodies again in the fixed tick
+/// (`source_engine::player_anim::SimAnimPlugin`).
 pub struct SimAnimPlugin;
 
 impl Plugin for SimAnimPlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<WeaponEvent>().add_systems(
-            FixedLast,
-            drive_sim
-                .before(crate::map::SimPose)
-                .run_if(resource_equals(crate::core::NetRole::Server)),
-        );
-    }
-}
-
-#[allow(clippy::type_complexity)]
-fn drive_sim(
-    clock: Res<crate::core::SimClock>,
-    mut characters: Query<(
-        Entity,
-        &Animator,
-        Option<&mut crate::map::SimAnimator>,
-        Option<&mut SimPlayerAnim>,
-        &Intent,
-        &Velocity,
-        &MovementState,
-        Option<&Health>,
-        (Option<&Inventory>, Option<&crate::map::BodyModel>),
-    ), Without<crate::objectives::hostages::Hostage>>,
-    weapons: WeaponsQuery,
-    loading: LoadingQuery,
-    mut events: MessageReader<WeaponEvent>,
-    models: Option<Res<crate::map::CharacterModels>>,
-    mut commands: Commands,
-) {
-    let all: Vec<&WeaponEvent> = events.read().filter(|e| e.shown()).collect();
-    let happened = Happened::of(&all, &weapons, &loading);
-    let (dt, now) = (clock.dt(), clock.now);
-    for (e, drawn, sim, state, intent, velocity, movement, health, (inventory, body)) in &mut characters {
-        if !ours(models.as_deref(), body) {
-            if sim.is_some() || state.is_some() {
-                commands.entity(e).remove::<(crate::map::SimAnimator, SimPlayerAnim)>();
-            }
-            continue;
-        }
-        let (Some(mut sim), Some(mut state)) = (sim, state) else {
-            commands.entity(e).insert((
-                crate::map::SimAnimator(Animator::new(drawn.set.clone())),
-                SimPlayerAnim::default(),
-            ));
-            continue;
-        };
-        if !Arc::ptr_eq(&sim.0.set, &drawn.set) {
-            // Another model (a team change).
-            sim.0 = Animator::new(drawn.set.clone());
-            state.0 = PlayerAnim::default();
-        }
-        if health.is_some_and(|h| h.current <= 0.0) {
-            state.0.reset = true;
-            continue;
-        }
-        let look = crate::map::interp::eye_view(None, intent, movement);
-        let weapon = inventory.and_then(|i| i.active).and_then(|w| weapons.get(w).ok());
-        animate(e, &mut state.0, &mut sim.0, look, velocity, movement, weapon, &happened, dt, now);
+        app.add_plugins(source_engine::player_anim::SimAnimPlugin::<PlayerAnim, NotHostages>::default());
     }
 }
 

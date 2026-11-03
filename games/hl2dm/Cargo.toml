@@ -29,6 +29,9 @@ source_formats.workspace = true
 # Source's map logic (entity I/O, triggers, movers): part of the game's
 # simulation (`SimPlugins`).
 source_logic.workspace = true
+# Its part of the network: the player models worn (`bodies`).
+chimera_net.workspace = true
+bevy_replicon.workspace = true
 bevy.workspace = true
 # The suit's line-of-sight traces (pickups, chargers).
 avian3d.workspace = true
@@ -46,8 +49,6 @@ workspace-hack.workspace = true
 [dev-dependencies]
 bevy = { workspace = true, features = ["default", "wav"] }
 avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
-# The network harness (`NetSim`: tests/it/net_prediction.rs).
-chimera_net.workspace = true
 # The test kit's readers (`chimera_sim::testkit`: what is in hand, aim).
 chimera_sim = { workspace = true, features = ["testkit"] }
 # Digests of converted maps (tests/it/heavy/map_cache.rs).
@@ -62,4 +63,4 @@ path = "tests/it/main.rs"
 [features]
 # Bevy as a dynamic library, as an app's `dev` (which turns this on):
 # `cargo test -p hl2dm --features dev` shares the apps' Bevy build.
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "source_engine/dev", "source_logic/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "source_engine/dev", "source_logic/dev"]

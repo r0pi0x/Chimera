@@ -277,6 +277,13 @@ impl MapLayers for Present {
         )
         .add_systems(
             PostUpdate,
+            // Eyes and teeth from where this frame's pose puts the head.
+            (render::bodies::aim_faces, render::bodies::apply_face_morphs)
+                .after(bevy::transform::TransformSystems::Propagate)
+                .before(bevy::asset::AssetEventSystems),
+        )
+        .add_systems(
+            PostUpdate,
             // This frame's visibility of what is on the view-model layer
             // (propagated), before the cameras check what they see.
             render::view_model::view_model_cameras_draw

@@ -100,6 +100,17 @@ pub struct PropParams {
     pub layer_ambient: Vec4,
     pub layer_diffuse: Vec4,
     pub layer_specular: Vec4,
+    /// A face part (`map::face`): 0 none, 1 an eyeball (its iris bound as
+    /// `layer`), 2 teeth.
+    pub face: f32,
+    /// Eyeball: its centre (world, xyz); teeth: unused.
+    pub face_center: Vec4,
+    /// Eyeball: its up (world, unit); teeth: the mouth's forward (world,
+    /// unit) and, in w, how lit the teeth are (0 to 1).
+    pub face_up: Vec4,
+    /// Eyeball: the iris texture's planes over world points (u, v).
+    pub face_u: Vec4,
+    pub face_v: Vec4,
 }
 
 impl PropParams {

@@ -5,7 +5,7 @@
 //! `props` (MDL through `vmdl`: static props and prop entities, character
 //! bodies of the game that asks, held, view and shell models, LODs,
 //! ragdolls), `anim` (sequences, animations, events, attachments),
-//! `propdata` and `surfaceprops` (the install's prop and surface data),
+//! `face` (eyeballs and mouths), `propdata` and `surfaceprops` (the install's prop and surface data),
 //! `pcf` (particle systems); with what they read of the map: `ambient`
 //! (ambient cubes, world lights, the light probes), `breakables` (gib
 //! lists, windows' broken looks) and `trails` (sprite trails, smoke
@@ -31,6 +31,7 @@ pub mod bsp;
 pub mod decals;
 pub mod detail;
 pub mod dust;
+pub mod face;
 pub mod lightmap;
 pub mod material;
 pub mod nav;

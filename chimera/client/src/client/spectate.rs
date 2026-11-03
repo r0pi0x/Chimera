@@ -8,12 +8,9 @@
 //! anyone alive. The spectator's HUD is the game's front end's (CS:S's
 //! bars from its `spectator.res`, or a plain panel:
 //! `games::cs_source::ui::spectator_hud`); in first person the target's crosshair and scope (`hud.rs`). Back to
-//! the eye when you live again (respawn, new round).
-//!
-//! A game whose dead stay at their body (`core::DeathView::Body`,
-//! HL2:DM's) gets no death cam: the camera stays behind the body (its
-//! ragdoll's first part, else where it stands), the given distance back
-//! along the view the mouse still turns, as long as it is dead.
+//! the eye when you live again (respawn, new round). A game may have its
+//! own dead view instead (`core::OrbitDeadView`, HL2:DM's): its own
+//! ragdoll from behind along the view until it lives again.
 //!
 //! Under rules that respawn the dead on a timer (`core::RespawnDue`: a
 //! minigame's `respawn.delay`, 2 s in the gun game) the death cam and the
@@ -727,12 +724,13 @@ pub fn place_camera(
     spec: Res<Spectator>,
     mut view: ResMut<SpecView>,
     mut chase: ResMut<ChaseOrbit>,
-    local: Option<Single<(Entity, &Transform, &Intent, &MovementState, Option<&RenderedView>, Has<Dead>, Has<Spectating>), With<LocalPlayer>>>,
+    local: Option<Single<(Entity, &Transform, &Intent, &MovementState, Option<&RenderedView>), With<LocalPlayer>>>,
     watched: Query<Watched>,
     ragdolls: Query<&Ragdoll>,
     bodies: Query<&GlobalTransform>,
     spatial: SpatialQuery,
     characters: Query<Entity, With<Intent>>,
+    (orbit, spectating): (Option<Res<crate::core::OrbitDeadView>>, Query<(), With<crate::core::Spectating>>),
     controls: (
         Option<Res<ButtonInput<KeyCode>>>,
         Option<Res<AccumulatedMouseMotion>>,
@@ -741,36 +739,28 @@ pub fn place_camera(
         Option<Res<ButtonInput<MouseButton>>>,
         Option<Res<crate::console::Console>>,
     ),
-    death_view: Option<Res<crate::core::DeathView>>,
 ) {
-    // A game whose dead stay at their body (HL2:DM's): behind it as long
-    // as it is dead, the mouse turning the view.
-    if let (Some(crate::core::DeathView::Body { distance, height, wall }), Some(l)) =
-        (death_view.as_deref().copied(), local.as_ref())
-    {
-        let (me, at, intent, _, _, dead, spectating) = **l;
-        if dead && !spectating {
-            let body = ragdolls
-                .iter()
-                .find(|r| r.owner == me)
-                .and_then(|r| r.bodies.first())
-                .and_then(|b| bodies.get(*b).ok())
-                .map(|g| g.translation());
-            let look = Quat::from_euler(EulerRot::YXZ, intent.yaw, intent.pitch, 0.0);
-            let pose = body_view(body.unwrap_or(at.translation), look, distance, height, wall, &spatial, &characters);
-            chase.set_for = None;
-            view.set_if_neq(SpecView { pose: Some(pose), in_eye: None });
-            return;
-        }
-    }
     let (Some(local), true) = (local, spec.active()) else {
         chase.set_for = None;
         chase.roam.at = None;
         view.set_if_neq(SpecView::default());
         return;
     };
-    let (me, at, intent, state, own_view, _, _) = *local;
+    let (me, at, intent, state, own_view) = *local;
     let own = crate::map::interp::eye_view(own_view, intent, state);
+    // A game's own dead view (HL2:DM's): around its ragdoll until it lives.
+    if let (Some(orbit), false) = (orbit.as_deref(), spectating.contains(me)) {
+        let root = ragdolls
+            .iter()
+            .find(|r| r.owner == me && !r.placed)
+            .and_then(|r| r.bodies.first())
+            .and_then(|b| bodies.get(*b).ok())
+            .map(|g| g.translation());
+        let look = Quat::from_euler(EulerRot::YXZ, intent.yaw, intent.pitch, 0.0);
+        let pose = orbit_pose(orbit, root, at.translation + own.eye_offset, look, &spatial, &characters);
+        view.set_if_neq(SpecView { pose: Some(pose), in_eye: None });
+        return;
+    }
     let (keys, motion, settings, cursor, mouse, console) = controls;
     let grabbed = cursor.is_some_and(|c| super::input::cursor_grabbed(&c));
     let turn = match (grabbed, motion, settings) {
@@ -874,6 +864,22 @@ pub fn place_camera(
     view.set_if_neq(SpecView { pose, in_eye });
 }
 
+/// The dead view of `OrbitDeadView`: O = the ragdoll's root (or `eye`) +
+/// `height` up, the camera `distance` back from O along `look`, pulled in
+/// where the world is in the way.
+fn orbit_pose(
+    orbit: &crate::core::OrbitDeadView,
+    root: Option<Vec3>,
+    eye: Vec3,
+    look: Quat,
+    spatial: &SpatialQuery,
+    characters: &Query<Entity, With<Intent>>,
+) -> (Vec3, Quat) {
+    let o = root.map_or(eye, |r| r + Vec3::Y * orbit.height * UNIT);
+    let back = look * Vec3::Z * orbit.distance * UNIT;
+    (sweep(spatial, o, back, characters), look)
+}
+
 /// The death cam's path: from the eye back (away from the killer, or
 /// behind where you faced) and up, turning from where you looked to the
 /// killer's eye (or your body).
@@ -964,33 +970,6 @@ pub fn freeze_end(from: Vec3, focus: Vec3) -> Vec3 {
         return from;
     }
     focus + (from - focus) / gap * d
-}
-
-/// The body view (`core::DeathView::Body`): from `height` above the body's
-/// origin, `distance` back along `look`, a box of half-size `wall` stopping
-/// on the world (not on characters).
-pub fn body_view(
-    body: Vec3,
-    look: Quat,
-    distance: f32,
-    height: f32,
-    wall: f32,
-    spatial: &SpatialQuery,
-    characters: &Query<Entity, With<Intent>>,
-) -> (Vec3, Quat) {
-    let from = body + Vec3::Y * height;
-    let back = look * Vec3::Z * distance;
-    let Ok(dir) = Dir3::new(back) else { return (from, look) };
-    let filter = SpatialQueryFilter::from_excluded_entities(characters).with_mask(crate::core::SOLID_LAYERS);
-    let config = ShapeCastConfig {
-        max_distance: distance,
-        ignore_origin_penetration: true,
-        ..default()
-    };
-    let d = spatial
-        .cast_shape(&Collider::cuboid(2.0 * wall, 2.0 * wall, 2.0 * wall), from, Quat::IDENTITY, dir, &config, &filter)
-        .map_or(distance, |h| h.distance);
-    (from + dir * d, look)
 }
 
 /// `from + offset`, pulled in if the world is in the way.

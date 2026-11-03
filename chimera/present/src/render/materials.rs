@@ -133,6 +133,14 @@ pub fn lit_prop_material(
     if let Some(layer) = m.layer.as_ref().filter(|_| !lighting_only) {
         set_prop_layer(&mut material, layer, textures);
     }
+    // Faces (`map::face`): an eyeball's iris in the layer's slot (its
+    // planes set each frame, `bodies::aim_faces`), teeth unlit until then.
+    if let Some(eye) = &m.eye {
+        material.params.face = 1.0;
+        material.layer = eye.iris.and_then(|t| textures.get(t)).cloned();
+    } else if m.teeth.is_some() {
+        material.params.face = 2.0;
+    }
     material
 }
 
