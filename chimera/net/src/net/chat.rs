@@ -43,7 +43,7 @@ use super::{
 };
 use crate::{
     core::{Health, LocalPlayer, NetRole, Radio, Team},
-    map::radio::{hears, sees_say},
+    map::radio::{hears, reads},
     core::Dead,
 };
 
@@ -290,6 +290,16 @@ pub fn deliver_say(world: &mut World, from: Entity, text: &str, team_only: bool)
         console.print(crate::console::Level::Info, line);
     }
     let sender = world.get::<Replicated>(from).map(|_| from);
+    // The game's chat rules (who reads the dead).
+    let formats = world
+        .get_resource::<crate::map::radio::RadioCommands>()
+        .map(|r| r.say.clone())
+        .unwrap_or_default();
+    // A chat line for plugins and rules (`player_say`).
+    world.write_message(
+        crate::game_log::GameEvent::of("player_say", from)
+            .with("text", crate::game_log::EventValue::Str(text.to_string())),
+    );
     // Remote players, then the host.
     let mut readers: Vec<(ClientId, Entity)> = world
         .query::<(Entity, &Player)>()
@@ -305,7 +315,7 @@ pub fn deliver_say(world: &mut World, from: Entity, text: &str, team_only: bool)
     }
     for (client, viewer) in readers {
         let v = sender_of(world, viewer);
-        if !sees_say(v.alive, v.team, s.alive, s.team, team_only) {
+        if !reads(&formats, v.alive, v.team, s.alive, s.team, team_only) {
             continue;
         }
         world.write_message(ToClients {

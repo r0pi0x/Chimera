@@ -1,0 +1,161 @@
+# HL2:DM's walk-over ammo boxes and its ammo crates
+# (specs/hl2dm/maps_entities.md 1 and 3): what each gives. The kits,
+# vials and batteries are the suit's (game::pickups). An ammo type HL2:DM
+# lacks (the flare and sniper boxes) is never taken.
+
+[[box]]
+class = "item_ammo_pistol"
+aliases = ["item_box_srounds"]
+model = "models/items/boxsrounds.mdl"
+ammo = "hl2dm:pistol"
+count = 20
+
+[[box]]
+class = "item_ammo_pistol_large"
+aliases = ["item_large_box_srounds"]
+model = "models/items/boxsrounds.mdl"
+ammo = "hl2dm:pistol"
+count = 100
+
+[[box]]
+class = "item_ammo_smg1"
+aliases = ["item_box_mrounds"]
+model = "models/items/boxmrounds.mdl"
+ammo = "hl2dm:smg1"
+count = 45
+
+[[box]]
+class = "item_ammo_smg1_large"
+aliases = ["item_large_box_mrounds"]
+model = "models/items/boxmrounds.mdl"
+ammo = "hl2dm:smg1"
+count = 225
+
+[[box]]
+class = "item_ammo_ar2"
+aliases = ["item_box_lrounds"]
+model = "models/items/combine_rifle_cartridge01.mdl"
+ammo = "hl2dm:ar2"
+count = 20
+
+[[box]]
+class = "item_ammo_ar2_large"
+aliases = ["item_large_box_lrounds"]
+model = "models/items/combine_rifle_cartridge01.mdl"
+ammo = "hl2dm:ar2"
+count = 100
+
+[[box]]
+class = "item_ammo_357"
+model = "models/items/357ammo.mdl"
+ammo = "hl2dm:357"
+count = 6
+
+[[box]]
+class = "item_ammo_357_large"
+model = "models/items/357ammobox.mdl"
+ammo = "hl2dm:357"
+count = 20
+
+[[box]]
+class = "item_ammo_crossbow"
+model = "models/items/crossbowrounds.mdl"
+ammo = "hl2dm:xbowbolt"
+count = 6
+
+[[box]]
+class = "item_box_buckshot"
+model = "models/items/boxbuckshot.mdl"
+ammo = "hl2dm:buckshot"
+count = 20
+
+[[box]]
+class = "item_rpg_round"
+aliases = ["item_ml_grenade"]
+model = "models/weapons/w_missile_closed.mdl"
+ammo = "hl2dm:rpg_round"
+count = 1
+
+[[box]]
+class = "item_ammo_smg1_grenade"
+aliases = ["item_ar2_grenade"]
+model = "models/items/ar2_grenade.mdl"
+ammo = "hl2dm:smg1_grenade"
+count = 1
+
+[[box]]
+class = "item_ammo_ar2_altfire"
+model = "models/items/combine_rifle_ammo01.mdl"
+ammo = "hl2dm:ar2altfire"
+count = 1
+
+[[box]]
+class = "item_box_flare_rounds"
+model = "models/items/boxflares.mdl"
+ammo = "hl2dm:flareround"
+count = 5
+
+[[box]]
+class = "item_flare_round"
+model = "models/items/flare.mdl"
+ammo = "hl2dm:flareround"
+count = 1
+
+[[box]]
+class = "item_box_sniper_rounds"
+model = "models/items/boxsniperrounds.mdl"
+ammo = "hl2dm:sniperround"
+count = 10
+
+# item_ammo_crate's AmmoType 0-9: its model and what one opening gives.
+# Type 5 also gives a weapon_frag to a player without one.
+[[crate]]
+model = "models/items/ammocrate_pistol.mdl"
+ammo = "hl2dm:pistol"
+count = 300
+
+[[crate]]
+model = "models/items/ammocrate_smg1.mdl"
+ammo = "hl2dm:smg1"
+count = 300
+
+[[crate]]
+model = "models/items/ammocrate_ar2.mdl"
+ammo = "hl2dm:ar2"
+count = 300
+
+[[crate]]
+model = "models/items/ammocrate_rockets.mdl"
+ammo = "hl2dm:rpg_round"
+count = 3
+
+[[crate]]
+model = "models/items/ammocrate_buckshot.mdl"
+ammo = "hl2dm:buckshot"
+count = 120
+
+[[crate]]
+model = "models/items/ammocrate_grenade.mdl"
+ammo = "hl2dm:grenade"
+count = 5
+weapon = "hl2dm:weapon_frag"
+
+[[crate]]
+model = "models/items/ammocrate_smg1.mdl"
+ammo = "hl2dm:357"
+count = 50
+
+[[crate]]
+model = "models/items/ammocrate_smg1.mdl"
+ammo = "hl2dm:xbowbolt"
+count = 50
+
+[[crate]]
+model = "models/items/ammocrate_ar2.mdl"
+ammo = "hl2dm:ar2altfire"
+count = 3
+
+[[crate]]
+model = "models/items/ammocrate_smg2.mdl"
+ammo = "hl2dm:smg1_grenade"
+count = 5

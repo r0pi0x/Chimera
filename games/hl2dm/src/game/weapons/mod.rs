@@ -242,6 +242,7 @@ impl Plugin for Hl2WeaponsPlugin {
                 owner_pickup_removes: true,
                 death_drop_held: true,
                 loose_life: Some(31.0),
+                weapon_stay: false,
             })
             .add_systems(
                 FixedUpdate,

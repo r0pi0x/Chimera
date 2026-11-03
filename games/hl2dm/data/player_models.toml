@@ -1,0 +1,27 @@
+# HL2:DM's player models (specs/hl2dm/rules.md "Models"): the 19 valid
+# `cl_playermodel`s, as the two round-robin lists in their order. A
+# model of the wrong kind for a TDM team is replaced by the next of the
+# team's list (one counter per list, shared, never reset).
+combine = [
+    "models/combine_soldier.mdl",
+    "models/combine_soldier_prisonguard.mdl",
+    "models/combine_super_soldier.mdl",
+    "models/police.mdl",
+]
+citizens = [
+    "models/humans/group03/male_01.mdl",
+    "models/humans/group03/male_02.mdl",
+    "models/humans/group03/female_01.mdl",
+    "models/humans/group03/male_03.mdl",
+    "models/humans/group03/female_02.mdl",
+    "models/humans/group03/male_04.mdl",
+    "models/humans/group03/female_03.mdl",
+    "models/humans/group03/male_05.mdl",
+    "models/humans/group03/female_04.mdl",
+    "models/humans/group03/male_06.mdl",
+    "models/humans/group03/female_06.mdl",
+    "models/humans/group03/male_07.mdl",
+    "models/humans/group03/female_07.mdl",
+    "models/humans/group03/male_08.mdl",
+    "models/humans/group03/male_09.mdl",
+]

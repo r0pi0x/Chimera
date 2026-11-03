@@ -11,6 +11,7 @@
 //! models (the `held` hook, `add_view_models`), right-handed and never
 //! mirrored (specs/hl2dm/player_models.md 12.1). `dress_guest` brings them
 //! onto another game's map (the party's), read from the HL2:DM install.
+//! Also its chat formats (`chat`: no radio, the dead read by the living).
 //!
 //! Known shortcuts:
 //! - HL2:DM's kit has no HUD (M9), muzzle flash, impact decals and looks
@@ -18,9 +19,9 @@
 //!   sounds (Source's sound scripts and soundscapes, lift S5) are the
 //!   entries it plays so far (`SOUNDS`: movement, the suit, pickups and
 //!   chargers); its weapons' entries aren't among them yet.
-//! - Team spawns (`info_player_combine`, `info_player_rebel`) and the
-//!   `info_player_start` fallback aren't spawn points yet: deathmatch's
-//!   spawns only (H6's spawn choice comes with the rules, M7).
+//! - The map's `SpawnPoint`s are deathmatch's only; HL2:DM's rules
+//!   choose among the map's spot entities themselves (`rules::spawns`:
+//!   the team classes, `info_player_start`).
 
 use source_engine::content::{
     bsp::{self, Kit, SourceGame},
@@ -86,6 +87,10 @@ pub const SOUNDS: &[&str] = &[
     "WallHealth.LoopingContinueCharge",
     "WallHealth.Deny",
     "WallHealth.Recharge",
+    "BaseCombatCharacter.AmmoPickup",
+    "AmmoCrate.Open",
+    "AmmoCrate.Close",
+    "HudChat.Message",
 ];
 
 /// HL2:DM's maps from the install (`map::MapLoader`): what an app that
@@ -129,6 +134,37 @@ pub fn load_level_bytes_with(
 /// (`bodies::add_bodies`).
 fn body_kit(k: &mut Kit) {
     super::bodies::add_bodies(k.materials, k.surfaces, k.kit, &mut k.data.kit, &mut k.data.warnings);
+    k.data.kit.radio = Some(chat());
+}
+
+/// HL2:DM's chat (specs/hl2dm/rules.md "Chat"): no radio; its line
+/// formats (the localization's `HL2MP_Chat_*`, the name in its team's
+/// colour), no "*DEAD*" mark and the dead read by the living,
+/// `HudChat.Message` on each line.
+pub fn chat() -> crate::map::radio::RadioCommands {
+    use crate::map::radio::{RadioCommands, SayFormats, TeamSay};
+    let all = "\u{3}%s1\u{1} :  %s2".to_string();
+    let team = TeamSay {
+        alive: "\u{1}(TEAM) \u{3}%s1\u{1} :  %s2".into(),
+        alive_place: None,
+        dead: "\u{1}(TEAM) \u{3}%s1\u{1} :  %s2".into(),
+    };
+    RadioCommands {
+        commands: Vec::new(),
+        menus: Vec::new(),
+        format: String::new(),
+        format_location: None,
+        say: SayFormats {
+            all: all.clone(),
+            all_dead: all,
+            all_spectator: "\u{1}*SPEC* \u{3}%s1\u{1} :  %s2".into(),
+            team: vec![(1, team.clone()), (2, team)],
+            team_spectator: "\u{1}(Spectator) \u{3}%s1\u{1} :  %s2".into(),
+            sound: Some("HudChat.Message".into()),
+            dead_heard: true,
+            ..SayFormats::default()
+        },
+    }
 }
 
 /// What players hold on HL2:DM's maps: its weapons' world models on the

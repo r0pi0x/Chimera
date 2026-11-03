@@ -147,6 +147,7 @@ fn say(get: &dyn Fn(&str) -> Option<String>) -> SayFormats {
         left_game: get("game_player_left_game")
             .map(|s| s.trim_end().to_string())
             .unwrap_or(generic.left_game),
+        dead_heard: false,
     }
 }
 

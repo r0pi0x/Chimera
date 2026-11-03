@@ -20,7 +20,9 @@
 //! `PickupRules` holds what a game changes of these (HL2:DM: a second's
 //! touch delay, several weapons to a slot, an owner's touch taking the
 //! weapon's rounds and the weapon, the dead dropping what they hold,
-//! dropped weapons gone after 31 s, `pick_up` removing them).
+//! dropped weapons gone after 31 s, `pick_up` removing them; `weapon_stay`:
+//! nobody takes a kind they carry, HL2:DM's `mp_weaponstay`). A placed
+//! weapon taken starts its copy's wait (`respawn::weapon_taken`).
 //!
 //! Known shortcuts (docs/tech-debt.md): `cl_autowepswitch`
 //! (`weapon::drop::auto_switch`): weights are the spec's table (the install's
@@ -140,6 +142,9 @@ pub struct PickupRules {
     pub death_drop_held: bool,
     /// A dropped weapon (not a map's) is removed this long after the drop.
     pub loose_life: Option<f64>,
+    /// Nobody takes a weapon of a kind they carry, not even its rounds
+    /// (HL2:DM's `mp_weaponstay`: the placed weapon seems to stay).
+    pub weapon_stay: bool,
 }
 
 impl Default for PickupRules {
@@ -150,6 +155,7 @@ impl Default for PickupRules {
             owner_pickup_removes: false,
             death_drop_held: false,
             loose_life: None,
+            weapon_stay: false,
         }
     }
 }
@@ -549,11 +555,13 @@ pub(super) fn pick_up(
             match v {
                 Some(Verdict::Take) => {
                     taken.push(item);
+                    // A map's weapon that comes back (`respawn`).
+                    commands.queue(move |w: &mut World| super::respawn::weapon_taken(w, item));
                     commands.entity(item).despawn();
                     commands.queue(move |w: &mut World| take(w, owner, weapon));
                     break;
                 }
-                Some(Verdict::Ammo(mine)) if same_type_ammo => {
+                Some(Verdict::Ammo(mine)) if same_type_ammo && !rules.weapon_stay => {
                     let removes = rules.owner_pickup_removes;
                     commands.queue(move |w: &mut World| take_ammo(w, item, weapon, mine, removes));
                 }
@@ -858,6 +866,7 @@ fn take_ammo(world: &mut World, item: Entity, weapon: Entity, mine: Entity, remo
         m.reserve += got;
     }
     if empty {
+        super::respawn::weapon_taken(world, item);
         world.despawn(item);
         world.despawn(weapon);
     }

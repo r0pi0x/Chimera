@@ -39,6 +39,8 @@ vbsp.workspace = true
 # Weapon hooks' parameters (`game::weapons`), the suit's predicted state
 # (`Suit`).
 serde.workspace = true
+# The item data (data/items.toml).
+toml.workspace = true
 workspace-hack.workspace = true
 
 # The tests' own: the presentation's Bevy and Avian features, for this

@@ -30,6 +30,10 @@ fn every_stock_map_plays() {
         let spawns: Vec<Vec3> = data.spawns.iter().take(3).map(|s| s.0).collect();
         assert!(!spawns.is_empty(), "{id}: no spawns");
         let mut sim = Sim::new(hl2dm_app::SimPlugin, MapSimPlugin::new(data));
+        // The movement on the map, where the test puts each player: not
+        // the rules' spawn choice (`rules::AutoStart` off).
+        sim.app.insert_resource(hl2dm::game::rules::AutoStart(false));
+        sim.app.insert_resource(hl2dm::game::rules::Hl2Match::default());
         for (i, at) in spawns.iter().enumerate() {
             let p = sim.spawn_character(*at + Vec3::Y * (HALF_HULL + 0.1), movement::ID);
             sim.seconds(2.0);
