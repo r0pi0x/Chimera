@@ -119,6 +119,31 @@ pub fn view_models() -> Vec<(String, String)> {
         .collect()
 }
 
+/// Every HL2:DM weapon's display name by weapon id, from the install's
+/// strings (`resource/hl2mp_english.txt`): the text of its data's
+/// `hud.name` token (`#HL2_Pistol`: "9MM PISTOL"), its line breaks as
+/// spaces. Empty without the file.
+pub fn display_names(mount: &crate::mount::Mount) -> Vec<(String, String)> {
+    use source_formats::localization::{decode, localization};
+    let mut strings = std::collections::BTreeMap::new();
+    for bytes in mount.read_every(&crate::mount::normalize("resource/hl2mp_english.txt")) {
+        for (k, v) in localization(&decode(&bytes)) {
+            strings.entry(k).or_insert(v);
+        }
+    }
+    hl2_weapons()
+        .weapons
+        .into_iter()
+        .filter_map(|w| {
+            let token = w.hud.name.as_deref()?.trim_start_matches('#').to_lowercase();
+            let text = strings.get(&token)?;
+            // Line breaks (the AR2's and SMG1's two-line names) as spaces.
+            let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            (!text.is_empty()).then_some((w.id, text))
+        })
+        .collect()
+}
+
 /// A shot's spread for the gun game's power curve: the pistol's first
 /// shot's cone and its follow-ups' after a quarter of the ramp
 /// (`ReadAt::firing`).
@@ -174,6 +199,8 @@ impl Plugin for Hl2GunsPlugin {
         if let Err(e) = app.add_weapon_data(DATA) {
             panic!("HL2:DM weapon data: {e}");
         }
+        // A rung's player model and melee weapon (`rungs`).
+        app.add_plugins(super::rungs::Hl2RungsPlugin);
         app.add_systems(
             Predict::Weapons,
             (

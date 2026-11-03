@@ -91,9 +91,12 @@
 //! (`PartyPartsPlugin`), on CS:S's maps only.
 
 use bevy::{app::PluginGroupBuilder, prelude::*};
-use chimera_core::{game_parts::GamePartsAppExt, game_registry::GameAppExt};
+use chimera_core::game_parts::GamePartsAppExt;
 use chimera_sim::minigame::{MinigameDef, MinigamePlugin};
-use chimera_world::map::{MapData, MapDressing, MapLoadOptions, MapSources, SpawnTeams, SurfaceTable};
+use chimera_world::{
+    game_bundle::GameBundle,
+    map::{MapData, MapDressing, MapLoadOptions, MapSources, SpawnTeams, SurfaceTable},
+};
 
 /// This build's version (`version`, bug reports): stamped by build.rs.
 pub const VERSION: &str = env!("CHIMERA_VERSION");
@@ -103,6 +106,19 @@ pub const BUILD: &str = env!("CHIMERA_GIT");
 
 /// The minigame played without `+minigame`.
 pub const DEFAULT_MINIGAME: &str = originals::GUN_GAME_DUST2;
+
+/// The games the party composes besides its base game (Combat Arms,
+/// whose gameplay, bots and HUD everything plays on), each one bundle
+/// (`chimera_world::game_bundle`, lift C4): CS:S and HL2:DM, in the order
+/// an automatic ladder takes them. The kit loops over these; only the
+/// base game and the pairs' data (spawn teams, surface names) are named.
+pub static GUESTS: [&GameBundle; 2] = [&cs_source::game::BUNDLE, &hl2dm::game::BUNDLE];
+
+/// The base game's bundle.
+pub static BASE: &GameBundle = &combat_arms::game::BUNDLE;
+
+/// Every game the party composes: the guests, then the base.
+pub static BUNDLES: [&GameBundle; 3] = [GUESTS[0], GUESTS[1], BASE];
 
 /// CS:S's spawn teams as Combat Arms': terrorists (1) Alpha, counter-
 /// terrorists (2) Bravo.
@@ -119,36 +135,45 @@ pub const TEAMS: &[SpawnTeams] = &[
     },
 ];
 
-/// CS:S's surfaces as Combat Arms' surface types: the mashup's table.
-pub const SURFACES: &[SurfaceTable] = &[SurfaceTable {
-    map: cs_source::game::GAME,
-    gameplay: combat_arms::game::GAME,
-    text: include_str!("../../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
-}];
+/// The Source games' surfaces (CS:S's and HL2:DM's: Source's names and
+/// material letters) as Combat Arms' surface types: the mashup's table.
+pub const SURFACES: &[SurfaceTable] = &[
+    SurfaceTable {
+        map: cs_source::game::GAME,
+        gameplay: combat_arms::game::GAME,
+        text: include_str!("../../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
+    },
+    SurfaceTable {
+        map: hl2dm::game::GAME,
+        gameplay: combat_arms::game::GAME,
+        text: include_str!("../../mashup_demo/data/surfaces_cs_source_combat_arms.toml"),
+    },
+];
 
-/// What of CS:S's parts stays on its maps: its guns' held and view models.
-pub const KEPT: &[&str] = &["cs_source:weapon_"];
+/// What of the guests' parts stays on their own maps: their guns' held
+/// and view models.
+pub static KEPT: [&str; 2] = [GUESTS[0].kept[0], GUESTS[1].kept[0]];
 
-/// Where this app's maps come from and whose gameplay dresses them.
+/// The guests' players, guns and HUD looks on the maps of other games.
+pub static GUEST_DRESSING: [&MapDressing; 2] = [GUESTS[0].guest.unwrap(), GUESTS[1].guest.unwrap()];
+
+/// Where this app's maps come from (a bare map name is the first guest's,
+/// CS:S's) and whose gameplay dresses them.
 pub static MAP_SOURCES: MapSources = MapSources {
-    loaders: &[&cs_source::game::MAP_LOADER, &combat_arms::game::world::MAP_LOADER],
+    loaders: &[GUESTS[0].loader, GUESTS[1].loader, BASE.loader],
     gameplay: Some(&combat_arms::game::world::DRESSING),
     teams: TEAMS,
     surfaces: SURFACES,
-    kept: KEPT,
-    // A player holding a CS:S gun is CS:S's (the gun game's `identity =
-    // "weapon"`): CS:S's player bodies and HUD look stay on its maps.
+    kept: &KEPT,
+    // A player holding a guest's gun is that game's (the gun game's
+    // `identity = "weapon"`): its player bodies and HUD look stay on its
+    // maps.
     players: true,
-    // On Combat Arms' maps (Warehouse) too: a CS:S gun's holder is CS:S's
-    // (its player models, its guns' view models and held models, its HUD
-    // look), read from the CS:S install behind the map.
-    guests: &[&CS_SOURCE_PARTS],
-};
-
-/// CS:S's players, guns and HUD look on the maps of other games.
-pub static CS_SOURCE_PARTS: MapDressing = MapDressing {
-    game: cs_source::game::GAME,
-    dress: |map, _| cs_source::game::dress_guest(map, KEPT),
+    // On the other games' maps (Combat Arms' Warehouse, CS:S's on
+    // HL2:DM's and back) a guest's gun's holder is its game's: its player
+    // models, its guns' view and held models, its HUD look, read from its
+    // install behind the map.
+    guests: &GUEST_DRESSING,
 };
 
 /// Map `id` (`cs_source:de_dust2`, `combat_arms:warehouse`) for the party.
@@ -163,8 +188,7 @@ pub fn load_map_with(id: &str, options: &MapLoadOptions) -> Result<MapData, Stri
 
 /// What each composed game lends (its capability claim, `chimera_core::
 /// game_parts`), in the order an automatic ladder takes them.
-pub static GAME_PARTS: [&chimera_core::game_parts::GameParts; 2] =
-    [&cs_source::game::parts::PARTS, &combat_arms::game::parts::PARTS];
+pub static GAME_PARTS: [&chimera_core::game_parts::GameParts; 3] = [BUNDLES[0].parts, BUNDLES[1].parts, BUNDLES[2].parts];
 
 /// The simulation: Combat Arms' (the engine's base, then its parts, the
 /// default game), then `PartyPartsPlugin`.
@@ -181,13 +205,15 @@ impl PluginGroup for PartyPlugins {
 
 /// Each game's own binds, over the shared ones (`Console::layers`, applied
 /// by the local input to a player whose identity is that game): where the
-/// games disagree about a key. Combat Arms: Shift sprints, C walks
-/// (Alt is free look in Chimera). CS:S: Shift walks (`+speed`), Ctrl ducks.
-/// The shared binds are the default ones (the gameplay game's); the
-/// Controls page (`controls`) edits both.
-pub const GAME_BINDS: &[(&str, &[(&str, &str)])] = &[
-    (combat_arms::game::GAME, &[("shift", "+sprint"), ("c", "+walk")]),
-    (cs_source::game::GAME, &[("shift", "+speed"), ("ctrl", "+duck")]),
+/// games disagree about a key (each bundle's `binds`). Combat Arms: Shift
+/// sprints, C walks (Alt is free look in Chimera). CS:S: Shift walks
+/// (`+speed`), Ctrl ducks. HL2:DM: Shift sprints (`+speed`), Ctrl ducks,
+/// Alt walks. The shared binds are the default ones (the gameplay game's);
+/// the Controls page (`controls`) edits each.
+pub static GAME_BINDS: [(&str, &[(&str, &str)]); 3] = [
+    (BUNDLES[2].info.id, BUNDLES[2].binds),
+    (BUNDLES[0].info.id, BUNDLES[0].binds),
+    (BUNDLES[1].info.id, BUNDLES[1].binds),
 ];
 
 /// Combat Arms' bots' gun types for CS:S's guns (data/bot_gun_types.toml).
@@ -198,19 +224,12 @@ pub const BOT_GUN_TYPES: &str = include_str!("../data/bot_gun_types.toml");
 pub const DEFAULT_BOTS: u32 = 3;
 
 /// Each game's guns at the game's own view-model field of view, for a
-/// player of that game (`viewmodel_fov` is CS:S's, `ca_viewmodel_fov`
-/// Combat Arms'; both saved in the config). After Combat Arms' view model
-/// settings are in.
+/// player of that game (each bundle's `view_model_fov`: `viewmodel_fov` is
+/// CS:S's, `ca_viewmodel_fov` Combat Arms', both saved in the config;
+/// HL2:DM's 54 at its 75). After Combat Arms' view model settings are in.
 pub fn add_view_model_fovs(app: &mut App) {
-    let fov = |game, s: chimera_world::map::ViewModelSettings| chimera_world::map::GameFov {
-        game,
-        fov: s.fov,
-        default_fov: s.default_fov,
-    };
-    app.insert_resource(chimera_world::map::GameViewModelFovs(vec![
-        fov(combat_arms::game::GAME, combat_arms::game::view_model::settings()),
-        fov(cs_source::game::GAME, cs_source::game::view_anim::settings()),
-    ]));
+    let fovs = [BASE].iter().chain(GUESTS.iter()).filter_map(|b| b.view_model_fov.map(|f| f())).collect();
+    app.insert_resource(chimera_world::map::GameViewModelFovs(fovs));
     cs_source::game::view_anim::viewmodel_fov_cvar(app);
 }
 
@@ -226,48 +245,21 @@ pub struct PartyPartsPlugin;
 
 impl Plugin for PartyPartsPlugin {
     fn build(&self, app: &mut App) {
-        app.register_game(&cs_source::game::INFO);
         // What each game lends a game made of several (the capability
         // reports: `chimera_sim::minigame::auto`).
         for parts in GAME_PARTS {
             app.register_parts(parts);
         }
-        // CS:S's guns' view models: Chimera's generic driver with CS:S's
-        // rules plays them (Combat Arms' driver lets go of a character
-        // holding another game's gun).
-        cs_source::game::view_anim::add_rules(app);
+        // Each guest's parts in the simulation (its bundle's `sim`: CS:S's
+        // guns, impacts, movement, view-model rules and motion; HL2:DM's
+        // guns, rung extras, view models). A guest's guns' view models
+        // play on Chimera's generic driver with its game's rules (Combat
+        // Arms' driver lets go of a character holding another game's gun).
+        for bundle in GUESTS {
+            (bundle.sim)(app);
+        }
         add_view_model_fovs(app);
-        // ... and CS:S's bob and sway (`cl_bobcycle`, `cl_wpn_sway_*`) while
-        // Combat Arms' driver has let go of the local player (its own sway
-        // is the driver's, with its guns).
-        cs_source::game::view_anim::add_motion(
-            app,
-            |own: Query<(), (With<chimera_core::core::LocalPlayer>, With<chimera_sim::weapon::view_anim::OwnViewAnim>)>| {
-                own.is_empty()
-            },
-        );
         app.add_plugins((
-            source_logic::logic::LogicPlugin,
-            cs_source::game::weapons::CsGunsPlugin,
-            // CS:S's bullet impacts (sounds, decals, debris, sparks, blood,
-            // tracers) for its guns, on any map (`weapon::impact`: Combat
-            // Arms' maps carry CS:S's looks as a guest's).
-            cs_source::game::impacts::BulletImpactsPlugin,
-            // Props knocked about and scraping make CS:S's sounds
-            // (sounds.md 4); adds `BulletImpactsPlugin` if not in.
-            cs_source::game::impacts::ImpactSoundsPlugin,
-            // Being hit by a CS:S gun: the slowdown and the view flinch
-            // (weapons.md M18), on CS:S-identity characters only.
-            cs_source::game::hit_reaction::HitReactionPlugin,
-            cs_source::game::impact_effects::ImpactEffectsPlugin,
-            // CS:S's grenades' looks: the HE's explosion and the smoke
-            // cloud (Combat Arms draws only its own grenades').
-            cs_source::game::grenades::GrenadeLooksPlugin,
-            // CS:S's movement, for a player holding a CS:S gun (the gun
-            // game's `identity = "weapon"`), and a network server's
-            // per-tick animation of CS:S's bodies (their hitboxes).
-            cs_source::game::movement::SourceMovementPlugin,
-            cs_source::game::player_anim::SimAnimPlugin,
             MinigamePlugin,
             originals::OriginalsPlugin,
             // The match and the ladder over the network (a part: nothing
@@ -278,7 +270,7 @@ impl Plugin for PartyPartsPlugin {
             s.mode = "none".into();
         }
         if let Some(mut console) = app.world_mut().get_resource_mut::<chimera_core::console::Console>() {
-            for (game, binds) in GAME_BINDS {
+            for (game, binds) in &GAME_BINDS {
                 console.ship_layer(game, binds);
             }
         }

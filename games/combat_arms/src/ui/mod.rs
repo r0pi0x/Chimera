@@ -93,6 +93,14 @@ pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
         .add_after::<crate::client::view::ViewPlugin>(crate::client::weapon_menu::WeaponMenuPlugin)
 }
 
+/// Combat Arms' front end in a party app (beside its `game::BUNDLE`):
+/// its HUD on the shell (`with_hud`).
+pub static PARTY_CLIENT: chimera_world::game_bundle::GameClient = chimera_world::game_bundle::GameClient {
+    game: crate::game::GAME,
+    hud: Some(with_hud),
+    app: None,
+};
+
 /// Combat Arms' front end but its HUD: the in-game menu and the
 /// placeholder visuals.
 pub struct CaUiPlugin;

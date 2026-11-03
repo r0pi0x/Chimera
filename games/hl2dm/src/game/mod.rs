@@ -19,7 +19,10 @@
 pub mod maps;
 pub mod mount;
 pub mod movement;
+pub mod parts;
+pub mod rungs;
 pub mod scripts;
+pub mod view;
 pub mod weapons;
 
 pub use maps::MAP_LOADER;
@@ -76,7 +79,8 @@ pub const STOCK_MAPS: &[&str] = &[
 ];
 
 /// HL2:DM's parts, after the engine's base (`crate::SimPlugins`): the
-/// game registered (`INFO`), its movement (the match's) and its weapons.
+/// game registered (`INFO`), its movement (the match's), its weapons and
+/// their view models.
 pub struct Hl2dmPlugins;
 
 impl bevy::app::PluginGroup for Hl2dmPlugins {
@@ -85,5 +89,46 @@ impl bevy::app::PluginGroup for Hl2dmPlugins {
             .add(crate::game_registry::RegisterGame(&INFO))
             .add(movement::Hl2MovementPlugin)
             .add(weapons::Hl2WeaponsPlugin)
+            .add(view::Hl2ViewPlugin)
     }
+}
+
+/// HL2:DM as one bundle for an app made of several games (lift C4,
+/// `chimera_world::game_bundle`): its info, parts and maps, its guns'
+/// view models on other games' maps (`GUEST`), its binds (Shift sprints,
+/// `+speed`; Ctrl ducks; Alt walks: its `cfg/config_default.cfg`), its
+/// view models' field of view and its parts in the composed simulation
+/// (`party_sim`). No HUD yet (M9).
+pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_bundle::GameBundle {
+    info: &INFO,
+    parts: &parts::PARTS,
+    loader: &MAP_LOADER,
+    guest: Some(&GUEST),
+    kept: &["hl2dm:weapon_"],
+    binds: &[("shift", "+speed"), ("ctrl", "+duck"), ("alt", "+walk")],
+    view_model_fov: Some(view::fov),
+    sim: party_sim,
+    display_names: Some(weapons::display_names),
+};
+
+/// HL2:DM's guns on the maps of other games.
+pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
+    game: GAME,
+    dress: |map, _| maps::dress_guest(map, BUNDLE.kept),
+};
+
+/// What HL2:DM adds to a game of several games: the game registered, map
+/// logic for its maps, its movement (not the match's), its guns (data,
+/// hooks, recoil, the shove, its rung extras) and their view models'
+/// rules and motion. Not its game's rules (the loadout, pickups).
+pub fn party_sim(app: &mut bevy::app::App) {
+    use crate::game_registry::GameAppExt;
+    use chimera_sim::movement::placeholder::PlaceholderAppExt;
+    app.register_game(&INFO);
+    if !app.is_plugin_added::<source_logic::logic::LogicPlugin>() {
+        app.add_plugins(source_logic::logic::LogicPlugin);
+    }
+    app.placeholder_movement(movement::ID, movement::TUNING)
+        .add_plugins(weapons::Hl2GunsPlugin);
+    view::add_rules(app);
 }

@@ -3,7 +3,12 @@
 //! swing, the reload activity, and idle once the last one has played out;
 //! the effects their animation events ask for (specs/cs_source/
 //! view_models.md 6–8: muzzle flash, brass); how they are drawn (FOV,
-//! handedness) and their console variables. These are CS:S's `rules` on
+//! handedness) and their console variables. Source's activities, the
+//! events' effects and the reactions every Source game shares are
+//! `source_engine::view_anim`'s (lift S8); the knife's sequences, the
+//! silencer, the Elites' hands and the last round's sequence are CS:S's
+//! here; its bob and sway are `source_engine::view_motion` with
+//! `MotionRules::CVARS`. These are CS:S's `rules` on
 //! Chimera's view-model driver (`weapon::view_anim`, which drives each
 //! character's `map::ViewAnimator`); `map::view_model` draws it.
 //!
@@ -20,17 +25,18 @@ use bevy::prelude::*;
 
 use crate::{
     console::{Console, resource_cvar},
-    map::{
-        DriveAnimation, EffectSettings, MapFlashLight, MapMuzzleFlash, ViewModelEventKind, ViewModelSettings,
-        anim::AnimEvent,
-    },
+    map::{DriveAnimation, EffectSettings, MapFlashLight, MapMuzzleFlash, ViewModelSettings},
     weapon::{
         WeaponEventKind,
         view_anim::{self, Pick, ViewAnimAppExt, ViewAnimRules, ViewFrame, ViewState},
     },
 };
 
-use super::view_motion::{self, ViewMotion};
+use source_engine::view_motion::{self, MotionAppExt, MotionRules, ViewMotion};
+pub use source_engine::view_anim::{
+    ATTACH_SILENCER, DETACH_SILENCER, DRAW, DRYFIRE, DRYFIRE_LEFT, HIT_CENTER, IDLE, MISS_CENTER, PRIMARY, PULL_BACK,
+    PULL_PIN, RELOAD, SECONDARY, SHOTGUN_RELOAD_FINISH, SHOTGUN_RELOAD_START, THROW, event_effect,
+};
 
 /// `viewmodel_fov` default: horizontal degrees at 4:3, CS:S's 54 (spec
 /// view_models.md, constants). The player may raise it (a smaller gun) up
@@ -52,35 +58,6 @@ pub fn settings() -> ViewModelSettings {
         right_hand: 1,
         draw: 1,
     }
-}
-
-/// Model event numbers (spec view_models.md 6): a muzzle flash on the
-/// attachment its option names (1-based); the named client effect that
-/// ejects brass ("EjectBrass_<type> <attachment> <speed>").
-const EVENT_MUZZLE_FLASHES: &[i32] = &[5001, 5011, 5021, 5031];
-const EVENT_CLIENT_EFFECT_ATTACH: &str = "AE_CLIENT_EFFECT_ATTACH";
-
-/// What a view-model animation event asks the map to show.
-pub fn event_effect(e: &AnimEvent) -> Option<ViewModelEventKind> {
-    if EVENT_MUZZLE_FLASHES.contains(&e.event) {
-        let n: usize = e.options.trim().parse().ok()?;
-        return Some(ViewModelEventKind::MuzzleFlash {
-            attachment: n.checked_sub(1)?,
-        });
-    }
-    if e.name.eq_ignore_ascii_case(EVENT_CLIENT_EFFECT_ATTACH) {
-        let mut words = e.options.split_whitespace();
-        let effect = words.next()?;
-        let shell = effect.strip_prefix("EjectBrass_")?;
-        let attachment: usize = words.next()?.parse().ok()?;
-        let speed: f32 = words.next().and_then(|w| w.parse().ok()).unwrap_or(0.0);
-        return Some(ViewModelEventKind::EjectBrass {
-            attachment: attachment.checked_sub(1)?,
-            shell: shell.to_string(),
-            speed,
-        });
-    }
-    None
 }
 
 /// Shell types (spec view_models.md 8): the name brass events use, the
@@ -150,31 +127,9 @@ pub fn muzzle_flash(materials: &mut super::material::MaterialLoader) -> MapMuzzl
 /// longer than the captures (docs/tech-debt.md). Its data's `[anim]`.
 pub const KNIFE_IDLE: f32 = 20.0;
 
-pub const DRAW: &str = "ACT_VM_DRAW";
-pub const IDLE: &str = "ACT_VM_IDLE";
-pub const PRIMARY: &str = "ACT_VM_PRIMARYATTACK";
-pub const SECONDARY: &str = "ACT_VM_SECONDARYATTACK";
-pub const RELOAD: &str = "ACT_VM_RELOAD";
-pub const DRYFIRE: &str = "ACT_VM_DRYFIRE";
-/// Dual pistols: the last round from either hand.
-pub const DRYFIRE_LEFT: &str = "ACT_VM_DRYFIRE_LEFT";
-/// Shotguns (spec weapons.md 3.4): the reload's start and finish; each
-/// shell going in plays `RELOAD`.
-pub const SHOTGUN_RELOAD_START: &str = "ACT_SHOTGUN_RELOAD_START";
-pub const SHOTGUN_RELOAD_FINISH: &str = "ACT_SHOTGUN_RELOAD_FINISH";
-pub const ATTACH_SILENCER: &str = "ACT_VM_ATTACH_SILENCER";
-pub const DETACH_SILENCER: &str = "ACT_VM_DETACH_SILENCER";
 /// Silenced weapons' view models tag their silenced set with this suffix
 /// (spec weapons.md, view-model durations).
 const SILENCED: &str = "_SILENCED";
-pub const HIT_CENTER: &str = "ACT_VM_HITCENTER";
-/// Grenades (spec grenades.md 2): the pin pull (the unused pull variants
-/// are the same sequence) and the throw.
-pub const PULL_PIN: &str = "ACT_VM_PULLPIN";
-pub const PULL_BACK: &str = "ACT_VM_PULLBACK_HIGH";
-pub const THROW: &str = "ACT_VM_THROW";
-pub const MISS_CENTER: &str = "ACT_VM_MISSCENTER";
-
 /// `v_knife_t.mdl` tags the stab and both slashes `ACT_VM_HITCENTER` and
 /// the stab miss `ACT_VM_MISSCENTER`, so its attacks are picked by
 /// sequence name (spec 6.2 lists them; which the game plays when is open:
@@ -284,9 +239,11 @@ fn silenced(state: &ViewState) -> bool {
 }
 
 /// CS:S's view-model rules registered for its weapons (`cs_source:`
-/// ids): an app with CS:S's guns but not `ViewAnimPlugin` calls this.
+/// ids), with its motion (`MotionRules::CVARS`: the cvar-driven bob and
+/// the history sway): an app with CS:S's guns but not `ViewAnimPlugin`
+/// calls this.
 pub fn add_rules(app: &mut App) {
-    app.view_anim_rules(super::GAME, rules());
+    app.view_anim_rules(super::GAME, rules()).view_motion_rules(super::GAME, MotionRules::CVARS);
 }
 
 /// CS:S's view-model rules on Chimera's driver (`weapon::view_anim`).
@@ -376,35 +333,9 @@ fn event(f: &mut ViewFrame, kind: &WeaponEventKind) {
             }
             f.dice.last_attack = f.now;
         }
-        WeaponEventKind::ReloadStarted => {
-            let order: &[&str] = if f.state.shells {
-                &[SHOTGUN_RELOAD_START]
-            } else {
-                &[RELOAD]
-            };
-            f.attack(&variants(order, silenced));
-        }
-        WeaponEventKind::ShellInserting => {
-            f.attack(&acts(&[RELOAD]));
-        }
-        WeaponEventKind::Reloaded if f.state.shells => {
-            f.attack(&acts(&[SHOTGUN_RELOAD_FINISH]));
-        }
-        WeaponEventKind::PinPulled => {
-            f.attack(&acts(&[PULL_PIN, PULL_BACK]));
-        }
-        WeaponEventKind::Thrown => {
-            f.attack(&acts(&[THROW]));
-        }
-        // The C4's key presses (spec objectives.md: `pressbutton`, the
-        // primary activity); stopping short goes back to idle.
-        WeaponEventKind::ArmingStarted => {
-            f.attack(&acts(&[PRIMARY]));
-        }
-        WeaponEventKind::ArmingStopped => {
-            f.play(&acts(&[IDLE]));
-        }
-        _ => {}
+        // The rest is every Source game's (a reload with its silenced
+        // variant, a shell, a shell reload's finish, a grenade, the C4).
+        other => source_engine::view_anim::common_event_with(f, other, variants(&[RELOAD], silenced)),
     }
 }
 

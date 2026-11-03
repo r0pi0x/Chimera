@@ -21,6 +21,9 @@ doctest = false
 chimera_core.workspace = true
 # The map's types (`map::MapData` and its parts) the content converts into.
 chimera_world.workspace = true
+# The weapon frame's view-model driver and parts the view-model rules and
+# motion work on (`view_anim`, `view_motion`: lift S8).
+chimera_sim.workspace = true
 source_formats.workspace = true
 # Source's content readers, as CS:S's were (the lifts S2-S4): BSP, MDL,
 # VMT and VTF, with the image formats VTF and the HUD's pictures need.
@@ -41,4 +44,4 @@ workspace-hack.workspace = true
 [features]
 # Bevy as a dynamic library, as the games' `dev` (which turns this on):
 # `cargo test -p source_engine --features dev` shares their Bevy build.
-dev = ["chimera_core/dev", "chimera_world/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev"]

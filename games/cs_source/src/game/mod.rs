@@ -122,8 +122,9 @@
 //! reload, idle by activity, silenced variants and silencer attach/detach, one
 //! burst sequence per burst, last-round sequence, the Elites' left and right
 //! hands, shotgun reload start/insert/finish, hidden behind a scope; muzzle
-//! flash and shell data; the view-model cvars), bob and sway
-//! (`view_motion.rs`), and the light field for moving models
+//! flash and shell data; the view-model cvars; Source's activities and
+//! effects from `source_engine::view_anim`), bob and sway
+//! (`source_engine::view_motion` with CS:S's cvar-driven rules), and the light field for moving models
 //! (`props::probe_with` at run time), the HUD look from the install (`hud.rs`:
 //! `hudlayout.res`, `clientscheme.res` (read as the Windows game reads it:
 //! platform conditionals) with its text fonts and TTFs, `mod_textures.txt`
@@ -169,6 +170,8 @@
 //! movement and weapons and compared (`resim.rs`, the `demosim` tool).
 
 pub mod bsp;
+pub mod bundle;
+pub use bundle::BUNDLE;
 pub mod demo;
 pub mod drown;
 pub mod fire;
@@ -197,7 +200,8 @@ pub mod sound;
 pub mod soundscape;
 pub mod view_anim;
 pub mod vgui;
-pub mod view_motion;
+/// Lifted to `source_engine` (S8), re-exported where it was.
+pub use source_engine::view_motion;
 pub mod votes;
 pub mod weapons;
 

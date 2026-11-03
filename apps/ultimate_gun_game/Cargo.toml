@@ -34,6 +34,7 @@ avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_
 chimera_sim = { workspace = true, features = ["testkit"] }
 chimera_world.workspace = true
 combat_arms.workspace = true
+hl2dm.workspace = true
 
 # The game.
 [[bin]]

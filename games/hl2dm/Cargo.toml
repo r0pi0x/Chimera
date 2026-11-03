@@ -24,6 +24,8 @@ chimera_sim.workspace = true
 # Source engine behaviour shared with CS:S (the search path, map lists,
 # the maps' conversion).
 source_engine.workspace = true
+# The install's strings (weapon names: `weapons::display_names`).
+source_formats.workspace = true
 # Source's map logic (entity I/O, triggers, movers): part of the game's
 # simulation (`SimPlugins`).
 source_logic.workspace = true
