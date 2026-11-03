@@ -62,6 +62,10 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // Source's content converted into Chimera's types (source_engine's
     // `content`: BSP, materials, models; lifted from CS:S's loaders).
     ("content", &["core", "map", "mount"]),
+    // Source's impact looks and sounds (source_engine's `effects`, lift
+    // S10 and the rest of S5): the particles and sounds of a hit, the
+    // weapon events it reads.
+    ("effects", &["core", "map", "weapon", "console", "content"]),
     // Source's player movement (source_engine's `source_movement`, lifted
     // from CS:S's): each Source game's config and cvars, the map's
     // brushes, water and props it moves through.

@@ -1282,6 +1282,9 @@ pub struct GameKit {
     pub view_models: Vec<MapViewModel>,
     /// What shots look like at the muzzle (flash sprites and light).
     pub muzzle_flash: Option<MapMuzzleFlash>,
+    /// Muzzle flashes by kind, for a game with several (HL2:DM's pistol,
+    /// .357, SMG1, AR2 and shotgun: `ViewModelEventKind::MuzzleFlashOf`).
+    pub muzzle_flash_kinds: Vec<(String, MapMuzzleFlash)>,
     /// Spent shell types and how they fly.
     pub shells: Vec<shells::MapShell>,
     pub shell_physics: Option<shells::MapShellPhysics>,
@@ -1372,6 +1375,12 @@ pub struct MapMuzzleFlash {
     pub color: [f32; 3],
     pub life: f32,
     pub light: Option<MapFlashLight>,
+    /// Other textures each sprite picks among, with `texture` (HL2's four
+    /// muzzle flash sheets, one at random per sprite).
+    pub alt_textures: Vec<usize>,
+    /// The sprites show only at the first-person view model; a weapon
+    /// held by a body (another player's) gets the light alone (HL2:DM).
+    pub no_world_sprites: bool,
 }
 
 /// A muzzle flash's light: colour in lightmap units (1 = a fully lit

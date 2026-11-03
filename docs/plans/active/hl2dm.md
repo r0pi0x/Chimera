@@ -440,7 +440,7 @@ implementing (owner branch) / done.
 | M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; left: the set pieces of H10 sections 8-16, respawnable props, the probe cases (the probe server crashes on a bot's death) | C3 (C5 not needed) |
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
 | M9 HUD | H8 | done (branch `hl2dm-m9`, 2026-11-03): see Progress; left: the items listed there | S7 (the look reader and the animation engine; CS:S's menu readers stay) |
-| M10 effects, sounds | H9 | not started | S10, S5 |
+| M10 effects, sounds | H9 | done in part (branch `hl2dm-m10`, 2026-11-03): see Progress; left: explosions, ball, dissolve, RPG, crossbow, gravity-gun effects (M5, M6), shells, the shield wall shader, refcmp | S10, S5 |
 | M11 assets | none | not started | C7 |
 
 ## Progress
@@ -940,6 +940,57 @@ implementing (owner branch) / done.
   client were made: not launched); the probe checks P1-P9; the lift of
   the menu readers; `hurtme` is not a directed hit, so its damage message
   draws no side flash (real hits do).
+- 2026-11-03: M10 built in part (branch `hl2dm-m10`). **S10 and the rest
+  of S5** (move and generalize in one commit; CS:S's tests unchanged):
+  `impact_effects.rs`, `impacts.rs` and `scrapes.rs` moved to
+  `source_engine::effects`, re-exported at their old `cs_source::game`
+  paths. Each game adds the plugins with an `ImpactStyle` (id, ricochet,
+  bullet splash scale, pellet sound grouping, damage unit, the flesh
+  surface; `ImpactStyles` in the app, the effect systems added once and
+  asking `ImpactRoute` which game draws a shot); `surfaces(game)` and
+  `as_game` give any game's surface classes; `HitSoundHere` marks the
+  characters whose bullet hit sounds as the surface's flesh impact (CS:S's
+  hostages, HL2:DM's players). CS:S keeps its tracers (one every 4th), its
+  effect materials, its ricochet and its pain module. A bug found on the
+  way: guarding the effect plugin by `Particles` skipped its systems in an
+  app with the presentation (use a marker). Also in the lift:
+  `SoundScripts::load_with` (an entry defined twice keeps the first, for
+  HL2:DM's `NPC_Citizen.die`; CS:S keeps the last) and `$gender` waves
+  (entry `<name>` male, `<name>$female`).
+  **HL2:DM** (`game::effects`, `game::sounds`, `game::flashes`): its style
+  (no ricochet, splash 4 to 8, every pellet's sound), tracers by weapon
+  (counter first, every 2nd or 4th bullet, the AR2's own look), the
+  shooter's own near-miss sounds (24 and 72 units, 0.1 s), the AR2's flat
+  flash and the stunstick's glow and sparks, impact decals and effect
+  materials in the kit, every weapon's sound entries, the flesh impact
+  from a hit player, `HL2Player.BurnPain`, death voices by model kind
+  (female citizens' variant, none under `Dissolving`), footsteps by model
+  kind, and five muzzle-flash kinds picked by the view model's event
+  option (`MapData::kit.muzzle_flash_kinds`, `ViewModelEventKind::
+  MuzzleFlashOf`, `MapMuzzleFlash::alt_textures` and `no_world_sprites`;
+  the renderer draws a sprite per texture and keeps CS:S's flash as it
+  was). Tests: `games/hl2dm/tests/it/effects.rs` (H9 cases 1-3, 7-9,
+  13, 18-26, 35), heavy `sound_stock.rs` (every entry resolves, the first
+  `NPC_Citizen.die`, decals), unit tests. The dead view's fade: the
+  spec's red is additive (`vgui/white_additive`, alpha 255 at 4.3 s: R
+  saturates, G and B keep the scene). Cause of the solid red: that
+  material names no `$basetexture` (Source draws it with the white
+  `vgui/white`), so the picture was never loaded and the HUD fell back to
+  an alpha blend of the opaque red; the look now loads `vgui/white` for it
+  (heavy `hud_look.rs`, `the_additive_picture_is_there`). Not re-captured in
+  the app (box loaded). Spec against the install: the heavy test found
+  every entry; `NPC_Citizen.die` waves carry `$gender`, which the loader
+  now expands. Left for M5 (clear hooks: `Dissolving`, `ImpactStyle`,
+  `flat_quad`, `Tracer`): explosions and their sounds, the energy ball's
+  look and rings, the dissolve (colour, float, sparks), the RPG's laser
+  and trail, the crossbow's blur and glow, the SMG1 grenade's smoke; M6:
+  the gravity gun's sprites and beams. Left in H9: shells (view-model
+  event numbers unread), smoke puffs of the pistol and .357, the muzzle
+  core's colour, remote shots' re-trace and tracer flags, wall-blood and
+  the shooter's predicted blood offset (blood is the server's copy at the
+  hit), the shield wall's `UnlitTwoTexture` shader, impact sounds of
+  remote shots, `refcmp` views (no reference captures: the real game was
+  not launched), the probe checks P7-P11.
 
 - 2026-11-03: M5 built (branch `hl2dm-m5`). **C1** (Chimera,
   `chimera_sim::weapon::projectile`): a flyer (`Flyer`: speed, gravity by
