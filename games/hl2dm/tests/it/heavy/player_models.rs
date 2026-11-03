@@ -208,3 +208,51 @@ fn eyes_look_out_of_the_face() {
         }
     }
 }
+
+#[test]
+fn a_citizens_face_at_rest_and_blinking() {
+    // Case 36 and P5: 54 controllers, 71 descriptors, 63 rules; at rest
+    // only the four neutral lid descriptors are 1; with blink 1 the upper
+    // lowerers are 1, the lower lids half neutral half raiser. The lids'
+    // flexes move the face mesh's vertices.
+    let Some(mount) = install_mount() else { return };
+    let m = bodies::load_one(&mount, "models/humans/group03/male_07.mdl").unwrap();
+    let face = m.model.face.as_ref().expect("a face");
+    assert_eq!((face.controllers.len(), face.descriptors.len(), face.rules.len()), (54, 71, 63));
+    let at = |name: &str| face.descriptors.iter().position(|d| d == name).unwrap_or_else(|| panic!("no {name}"));
+    let blink = face.controllers.iter().position(|c| c.name == "blink").expect("a blink controller");
+    let mut values = vec![0.0; face.controllers.len()];
+    let rest = source_engine::content::face::run_rules(face, &values);
+    let neutral = ["upper_right_neutral", "lower_right_neutral", "upper_left_neutral", "lower_left_neutral"];
+    for (i, w) in rest.iter().enumerate() {
+        let want = if neutral.contains(&face.descriptors[i].as_str()) { 1.0 } else { 0.0 };
+        assert!(near(*w, want, 1e-4), "{} at rest: {w}", face.descriptors[i]);
+    }
+    values[blink] = 1.0;
+    let shut = source_engine::content::face::run_rules(face, &values);
+    for (name, want) in [
+        ("upper_right_lowerer", 1.0),
+        ("upper_left_lowerer", 1.0),
+        ("upper_right_neutral", 0.0),
+        ("lower_right_neutral", 0.5),
+        ("lower_right_raiser", 0.5),
+    ] {
+        assert!(near(shut[at(name)], want, 1e-3), "{name} blinking: {}", shut[at(name)]);
+    }
+    let morphs: usize = m.model.meshes.iter().map(|x| x.morphs.len()).sum();
+    assert!(morphs > 0, "no mesh flexes");
+    let moved = |w: &[[f32; 2]]| -> f32 {
+        m.model
+            .meshes
+            .iter()
+            .flat_map(|x| &x.morphs)
+            .map(|mo| {
+                let [a, b] = w[mo.flex as usize];
+                mo.deltas.iter().zip(&mo.sides).map(|(d, s)| bevy::math::Vec3::from(*d).length() * (a * (1.0 - s) + b * s)).sum::<f32>()
+            })
+            .sum()
+    };
+    let w_rest = hl2dm::game::look::face_weights(face, &vec![0.0; face.controllers.len()]);
+    let w_shut = hl2dm::game::look::face_weights(face, &values);
+    assert!(moved(&w_shut) > moved(&w_rest), "a blink moves the lids: {} vs {}", moved(&w_shut), moved(&w_rest));
+}

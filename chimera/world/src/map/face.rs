@@ -7,7 +7,11 @@
 //! meshes by its loader; where a character looks (`EyeTarget`, set by its
 //! game's animation on clients) and the iris projection the drawn eye
 //! takes from it (`MapEye::projection`), which `render::bodies` writes
-//! into the eye's material each frame.
+//! into the eye's material each frame; a model's facial flexes
+//! (`MapFace`: descriptors, controllers, rules, mesh flexes, FACS lids, for
+//! its game to run) and each mesh's vertex offsets (`MapMorph`), which a
+//! drawn body's own copy of the mesh follows from its character's
+//! `FaceWeights`.
 //!
 //! The eye basis and the planar iris projection follow hl2-rs's
 //! `eyes::basis` and `eyes::projection`, in world space here.
@@ -129,6 +133,76 @@ impl MapEye {
         [u.extend(0.5 - u.dot(origin)), v.extend(0.5 - v.dot(origin))]
     }
 }
+
+/// A model's facial animation data (Source's flexes), for its game to
+/// run: flex descriptors, controllers (name, range), the rules that make
+/// descriptor weights from controller values (Source's stack program:
+/// opcode and operand pairs), the mesh flexes (`MapMorph::flex` indexes
+/// them) and the eyeballs' lids.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MapFace {
+    pub descriptors: Vec<String>,
+    pub controllers: Vec<MapFlexController>,
+    pub rules: Vec<MapFlexRule>,
+    pub flexes: Vec<MapFlex>,
+    pub eyelids: Vec<MapEyelids>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MapFlexController {
+    pub name: String,
+    pub min: f32,
+    pub max: f32,
+}
+
+/// Descriptor `descriptor`'s weight from a stack program.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MapFlexRule {
+    pub descriptor: usize,
+    pub ops: Vec<(i32, i32)>,
+}
+
+/// A mesh flex: how its descriptor's weight (and its pair's, for the
+/// vertices' other side) ramps it in over `targets`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MapFlex {
+    pub descriptor: usize,
+    pub pair: usize,
+    pub targets: [f32; 4],
+}
+
+/// An eyeball's lids (Source's FACS eyelids): the raiser, neutral and
+/// lowerer descriptors of each lid, their lid heights, and the lid
+/// descriptors they write; the eyeball's basis in its bone (as `MapEye`).
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MapEyelids {
+    pub up: Vec3,
+    pub forward: Vec3,
+    pub radius: f32,
+    pub upper_flex: [i32; 3],
+    pub lower_flex: [i32; 3],
+    pub upper_target: [f32; 3],
+    pub lower_target: [f32; 3],
+    pub upper_lid: i32,
+    pub lower_lid: i32,
+}
+
+/// A mesh's vertices moved by one flex (`MapFace::flexes`): each vertex
+/// (index into the mesh's), its offset at full weight (the mesh's space)
+/// and its side (0: the flex's own weight, 1: its pair's).
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct MapMorph {
+    pub flex: u16,
+    pub vertices: Vec<u32>,
+    pub deltas: Vec<[f32; 3]>,
+    pub sides: Vec<f32>,
+}
+
+/// A character's face as its game drives it: each mesh flex's weight for
+/// its own side and its pair's (`MapFace::flexes` order). The drawn body's
+/// face meshes follow it (`render::bodies`).
+#[derive(Component, Clone, Debug, Default, PartialEq)]
+pub struct FaceWeights(pub Vec<[f32; 2]>);
 
 #[cfg(test)]
 mod tests {

@@ -270,6 +270,8 @@ pub struct MapMesh {
     pub eye: Option<Box<MapEye>>,
     /// A mouth's teeth (Source's Teeth shader, `map::face`).
     pub teeth: Option<MapTeeth>,
+    /// Facial flexes moving its vertices (`map::face`, `MapModel::face`).
+    pub morphs: Vec<super::face::MapMorph>,
     /// How the scene's point lights (`DynamicLight`: muzzle flashes,
     /// effect lights) fade on it with distance: its own game's curve, so a
     /// model keeps its look on another game's map.
@@ -788,6 +790,10 @@ pub struct MapModel {
     /// drawn instead with distance and Video > Advanced's model detail
     /// (`lod`).
     pub lods: Vec<lod::MapLod>,
+    /// Its facial animation data (`map::face`), when its meshes have
+    /// flexes.
+    #[serde(default)]
+    pub face: Option<Arc<super::face::MapFace>>,
 }
 
 impl MapModel {

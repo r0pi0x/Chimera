@@ -6,10 +6,16 @@
 //! ahead. The head turns toward it (`head_yaw` within its ±44.8 degree
 //! range, `head_pitch` within -20 to 23) at up to 130 degrees/s, the head
 //! counter-turning while the feet turn; the eyes aim at it (`EyeTarget`,
-//! drawn by `render::bodies` through `map::face`).
+//! drawn by `render::bodies` through `map::face`). Citizens blink (11.2:
+//! every U(1.5, 4) s a blink of `blink_duration` 0.2 s, shut in 32 ms),
+//! every other controller at 0: the face's rules, FACS lids and mesh flex
+//! weights each frame (`faces`: `map::FaceWeights`, which the drawn face
+//! meshes follow).
 //!
 //! Known shortcuts: players are taken in the query's order, not the
-//! server's player index.
+//! server's player index; the lids take the eyes' rest gaze (not the eye
+//! aim of 11.3); `flex_smooth` isn't applied; a ragdoll's face keeps the
+//! weights it had at death (spec 10.2: forced to rest).
 
 use bevy::prelude::*;
 use source_engine::player_anim::normalize;
@@ -135,5 +141,99 @@ mod tests {
         }
         // Down is positive pitch.
         assert!((angles(Vec3::new(0.0, -1.0, -1.0)).1 - 45.0).abs() < 1e-3);
+    }
+}
+
+/// `blink_duration` (s).
+pub const BLINK_DURATION: f32 = 0.2;
+/// Seconds between blinks: uniform in this range.
+pub const BLINK_INTERVAL: (f32, f32) = (1.5, 4.0);
+
+/// The blink controller's value `left` seconds before the blink's end
+/// (spec 11.2).
+pub fn blink_weight(left: f32) -> f32 {
+    let u = left * std::f32::consts::FRAC_PI_2 / BLINK_DURATION;
+    if u <= 0.0 {
+        return 0.0;
+    }
+    let c = u.cos();
+    if !(0.0 < c && c < 1.0) {
+        return 0.0;
+    }
+    let b = 2.0 * c.sqrt();
+    (if b > 1.0 { 2.0 - b } else { b }).clamp(0.0, 1.0)
+}
+
+/// A body's blinking: when the current blink ends and the next starts,
+/// and its generator.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Blink {
+    pub end: f64,
+    pub next: f64,
+    seed: u64,
+}
+
+impl Blink {
+    fn roll(&mut self) -> f32 {
+        self.seed ^= self.seed << 13;
+        self.seed ^= self.seed >> 7;
+        self.seed ^= self.seed << 17;
+        let u = (self.seed >> 40) as f32 / (1u64 << 24) as f32;
+        BLINK_INTERVAL.0 + u * (BLINK_INTERVAL.1 - BLINK_INTERVAL.0)
+    }
+}
+
+/// The face's descriptors at controller values `values` (the rules, then
+/// the lids) and its mesh flexes' weights.
+pub fn face_weights(face: &crate::map::MapFace, values: &[f32]) -> Vec<[f32; 2]> {
+    let mut d = source_engine::content::face::run_rules(face, values);
+    source_engine::content::face::eyelids(face, &mut d);
+    source_engine::content::face::flex_weights(face, &d)
+}
+
+/// Each drawn HL2:DM body with a face: its blink and flex weights.
+#[allow(clippy::type_complexity)]
+pub fn faces(
+    time: Res<Time>,
+    models: Option<Res<crate::map::CharacterModels>>,
+    mut bodies: Query<
+        (Entity, &crate::map::BodyModel, Option<&mut Blink>, Option<&mut crate::map::FaceWeights>, Option<&Health>),
+        With<Hl2PlayerAnim>,
+    >,
+    mut commands: Commands,
+) {
+    let Some(models) = models else { return };
+    let now = time.elapsed_secs_f64();
+    for (e, body, blink, weights, health) in &mut bodies {
+        let Some(face) = models.0.get(body.0).and_then(|m| m.model.face.as_ref()) else { continue };
+        if health.is_some_and(|h| h.current <= 0.0) {
+            continue;
+        }
+        let Some(mut blink) = blink else {
+            let mut b = Blink { end: 0.0, next: now, seed: e.to_bits() | 1 };
+            b.next = now + b.roll() as f64;
+            commands.entity(e).insert(b);
+            continue;
+        };
+        if now >= blink.next {
+            blink.end = now + BLINK_DURATION as f64;
+            blink.next = now + blink.roll() as f64;
+        }
+        let values: Vec<f32> = face
+            .controllers
+            .iter()
+            .map(|c| if c.name.eq_ignore_ascii_case("blink") { blink_weight((blink.end - now) as f32) } else { 0.0 })
+            .collect();
+        let w = face_weights(face, &values);
+        match weights {
+            Some(mut x) => {
+                if x.0 != w {
+                    x.0 = w;
+                }
+            }
+            None => {
+                commands.entity(e).insert(crate::map::FaceWeights(w));
+            }
+        }
     }
 }

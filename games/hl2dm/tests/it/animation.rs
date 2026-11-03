@@ -507,3 +507,15 @@ fn bodies_on_the_harness_run_and_jump() {
     assert!(main(&mut sim).starts_with("run_"), "{}", main(&mut sim));
     assert!(sim.app.world().get::<Animator>(p).unwrap().autoplay);
 }
+
+#[test]
+fn a_blink_shuts_in_32_ms_and_opens_over_the_rest() {
+    // Case 35: 0, 0.76278, 0.31821, 0.07764, 0 at 0, 50, 100, 150, 200 ms
+    // after the flip (time left 0.2 .. 0).
+    use hl2dm::game::look::blink_weight;
+    for (t, want) in [(0.0f32, 0.0f32), (0.05, 0.76278), (0.1, 0.31821), (0.15, 0.07764), (0.2, 0.0)] {
+        assert!(close(blink_weight(0.2 - t), want, 1e-4), "{t}: {}", blink_weight(0.2 - t));
+    }
+    let peak = (0..200).map(|ms| (ms, blink_weight(0.2 - ms as f32 / 1000.0))).max_by(|a, b| a.1.total_cmp(&b.1)).unwrap();
+    assert!((31..=33).contains(&peak.0) && peak.1 > 0.99, "{peak:?}");
+}

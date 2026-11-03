@@ -278,7 +278,7 @@ impl MapLayers for Present {
         .add_systems(
             PostUpdate,
             // Eyes and teeth from where this frame's pose puts the head.
-            render::bodies::aim_faces
+            (render::bodies::aim_faces, render::bodies::apply_face_morphs)
                 .after(bevy::transform::TransformSystems::Propagate)
                 .before(bevy::asset::AssetEventSystems),
         )

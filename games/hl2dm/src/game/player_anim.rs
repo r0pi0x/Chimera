@@ -446,6 +446,7 @@ impl Plugin for Hl2AnimPlugin {
                 super::look::look
                     .after(source_engine::player_anim::PlayerAnimSystems)
                     .in_set(crate::map::DriveAnimation),
+                super::look::faces.in_set(crate::map::DriveAnimation),
             ),
         );
     }

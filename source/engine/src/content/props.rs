@@ -274,7 +274,17 @@ pub fn load_character(
     let face = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
     let mut body = convert_model_in(&model, 0, materials, false, &[]);
     face_meshes(&mut body.meshes, face);
-    dress_face(materials, &model, &bytes_of(materials, path)?, &mut body.meshes, path);
+    let mdl_bytes = bytes_of(materials, path)?;
+    dress_face(materials, &model, &mdl_bytes, &mut body.meshes, path);
+    // Its flexes: the face's data and each mesh's vertex offsets, turned
+    // as the meshes are.
+    match super::face::flexes(&mdl_bytes) {
+        Ok((face, morphs)) => {
+            super::face::dress_morphs(&morphs, &mut body.meshes, &|d| face_turn(face_quat(), d));
+            body.face = face.map(std::sync::Arc::new);
+        }
+        Err(e) => warn!("{path}: flexes: {e}"),
+    }
     // Its lower levels of detail, skinned to the same skeleton (the
     // `.vvd`'s bone ids are the model's own at every level).
     body.lods = lower_levels
@@ -388,6 +398,16 @@ pub fn load_character(
         bones,
         root: Transform::from_rotation(face * axes).with_scale(Vec3::splat(METERS_PER_UNIT)),
     })
+}
+
+/// Characters' turn (Source models face +X; characters -Z at yaw 0).
+fn face_quat() -> Quat {
+    Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)
+}
+
+/// A Source offset in a character mesh's space.
+fn face_turn(face: Quat, d: Vec3) -> Vec3 {
+    face * to_engine(v_src(d))
 }
 
 fn bytes_of(materials: &MaterialLoader, path: &str) -> Result<Vec<u8>, String> {
@@ -962,6 +982,7 @@ fn convert_model_in(
         rig: None,
         breaks: None,
         lods: Vec::new(),
+        face: None,
     }
 }
 

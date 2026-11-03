@@ -18,7 +18,9 @@
 //! (`map::add_character_model`, appended to each map's `CharacterModels`)
 //! likewise (`build_late_bodies`); face parts (`map::face`: eyeballs with
 //! their iris projected toward the character's `EyeTarget`, teeth) set
-//! each frame from where the pose puts the head (`aim_faces`);
+//! each frame from where the pose puts the head (`aim_faces`), face meshes
+//! with flexes drawn from the body's own copy, moved by the character's
+//! `map::FaceWeights` (`apply_face_morphs`);
 //! `adopt_bodies`/`pose_ragdolls` hand a dead
 //! character's body to its ragdoll and pose it from the ragdoll's bodies.
 //!
@@ -210,6 +212,18 @@ pub struct BodyAssets {
     /// Each part's face (an eyeball or teeth: `map::face`), drawn where its
     /// character looks (`aim_faces`).
     pub faces: Vec<Option<Face>>,
+    /// Each part's facial flexes (`MapMesh::morphs`; empty: none): its
+    /// own copy of the mesh follows its character's `FaceWeights`.
+    pub morphs: Vec<std::sync::Arc<Vec<MapMorph>>>,
+}
+
+/// A body's own copy of a face mesh with flexes: its rest positions, its
+/// flexes and the weights it shows.
+#[derive(Component, Clone, Debug)]
+pub struct FaceMorph {
+    pub rest: std::sync::Arc<Vec<[f32; 3]>>,
+    pub morphs: std::sync::Arc<Vec<MapMorph>>,
+    pub shown: Vec<[f32; 2]>,
 }
 
 /// A face part of a body's model.
@@ -282,6 +296,7 @@ pub fn attach_bodies(
     existing: Query<&CharacterBody>,
     show_local: Res<ShowLocalBody>,
     mut materials: Option<ResMut<Assets<PropMaterial>>>,
+    mut meshes: Option<ResMut<Assets<Mesh>>>,
     mut commands: Commands,
 ) {
     let (Some(models), Some(bodies)) = (models, bodies) else {
@@ -360,8 +375,25 @@ pub fn attach_bodies(
                 None => material.clone(),
             };
             own.push(material.clone());
+            // A face mesh with flexes: the body's own copy.
+            let flexes = assets.morphs.get(k).filter(|m| !m.is_empty()).cloned();
+            let mut morph = None;
+            let mesh = match (&flexes, meshes.as_mut()) {
+                (Some(f), Some(meshes)) => match meshes.get(mesh).cloned() {
+                    Some(copy) => {
+                        let rest = match copy.attribute(Mesh::ATTRIBUTE_POSITION) {
+                            Some(bevy::mesh::VertexAttributeValues::Float32x3(p)) => p.clone(),
+                            _ => Vec::new(),
+                        };
+                        morph = Some(FaceMorph { rest: std::sync::Arc::new(rest), morphs: f.clone(), shown: Vec::new() });
+                        meshes.add(copy)
+                    }
+                    None => mesh.clone(),
+                },
+                _ => mesh.clone(),
+            };
             let mut part = commands.spawn((
-                Mesh3d(mesh.clone()),
+                Mesh3d(mesh),
                 MeshMaterial3d(material),
                 bevy::mesh::skinning::SkinnedMesh {
                     inverse_bindposes: assets.bindposes.clone(),
@@ -373,8 +405,16 @@ pub fn attach_bodies(
                 bevy::camera::visibility::DynamicSkinnedMeshBounds,
                 ChildOf(body),
             ));
-            if let (Some(_), Some(levels)) = (&assets.lod_group, assets.levels.get(k)) {
-                part.insert(super::lod::LodMeshes(levels.clone()));
+            match morph {
+                // Its own copy stays at its level of detail.
+                Some(m) => {
+                    part.insert(m);
+                }
+                None => {
+                    if let (Some(_), Some(levels)) = (&assets.lod_group, assets.levels.get(k)) {
+                        part.insert(super::lod::LodMeshes(levels.clone()));
+                    }
+                }
             }
             if let Some(face) = assets.faces.get(k).cloned().flatten() {
                 let bone = match &face {
@@ -831,6 +871,45 @@ pub fn body_assets(
                 _ => None,
             })
             .collect(),
+        morphs: model.meshes.iter().map(|m| std::sync::Arc::new(m.morphs.clone())).collect(),
+    }
+}
+
+/// Each face mesh with flexes takes its character's `FaceWeights` (when
+/// they change): its rest positions plus each flex's offsets at its
+/// side's weight. A ragdoll's keeps what it showed.
+pub fn apply_face_morphs(
+    mut parts: Query<(&mut FaceMorph, &Mesh3d, &ChildOf)>,
+    bodies: Query<Option<&ChildOf>, With<CharacterBody>>,
+    weights: Query<&FaceWeights>,
+    meshes: Option<ResMut<Assets<Mesh>>>,
+) {
+    let Some(mut meshes) = meshes else { return };
+    for (mut face, mesh, body) in &mut parts {
+        let Some(owner) = bodies.get(body.parent()).ok().flatten().map(ChildOf::parent) else { continue };
+        let Ok(w) = weights.get(owner) else { continue };
+        if w.0 == face.shown {
+            continue;
+        }
+        let mut positions: Vec<[f32; 3]> = face.rest.to_vec();
+        for m in face.morphs.iter() {
+            let [w1, w3] = w.0.get(m.flex as usize).copied().unwrap_or([0.0; 2]);
+            if w1.abs() < 1e-4 && w3.abs() < 1e-4 {
+                continue;
+            }
+            for ((v, d), side) in m.vertices.iter().zip(&m.deltas).zip(&m.sides) {
+                let k = w1 * (1.0 - side) + w3 * side;
+                if let Some(p) = positions.get_mut(*v as usize) {
+                    p[0] += d[0] * k;
+                    p[1] += d[1] * k;
+                    p[2] += d[2] * k;
+                }
+            }
+        }
+        if let Some(mut m) = meshes.get_mut(&mesh.0) {
+            m.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+        }
+        face.shown = w.0.clone();
     }
 }
 

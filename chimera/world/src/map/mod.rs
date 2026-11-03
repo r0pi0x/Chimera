@@ -37,7 +37,7 @@ pub mod decal;
 pub mod emitters;
 pub mod extras;
 pub mod face;
-pub use face::{EyeTarget, MapEye, MapTeeth};
+pub use face::{EyeTarget, FaceWeights, MapEye, MapFace, MapMorph, MapTeeth};
 pub use extras::{MapExtras, SourceEffects};
 pub mod entities;
 pub mod hazards;
