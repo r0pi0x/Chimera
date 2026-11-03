@@ -1250,8 +1250,10 @@ the spawn; the process's peak memory), main / this change:
 | peak memory | 2,503 / 2,193 MB | 2,305 / 2,122 MB | 3,570 / 3,393 MB |
 
 `heavy::map_load` keeps loads under budget (20 s, 30 s for TERRORDOME,
-the spawn and the navigation tick too; peak 2.5 and 3.5 GB): room for a
-busy box, a regression check rather than a target.
+the spawn and the navigation tick too; peak 3 and 3.5 GB): room for a
+busy box, a regression check rather than a target. WAREHOUSE then
+JUNK_FLEA peaked at 2,267-2,716 MB over eight runs of the same code
+(2026-11-03), so its budget went from 2.5 to 3 GB.
 
 ## Lean map loads (2026-10-21)
 

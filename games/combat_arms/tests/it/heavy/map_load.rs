@@ -123,9 +123,12 @@ fn spawn_and_navigate(name: &str, map: MapData, budget: Duration) {
     assert!(spawned < budget && longest < budget, "{name}");
 }
 
+/// The peak after the second map varies from run to run on the same code
+/// (2,267 to 2,716 MB over eight runs on the dev box, 2026-11-03; the first
+/// load's 1,663 to 1,695 MB): the budget sits above that spread.
 #[test]
 fn warehouse_loads_within_budget() {
-    loads_within("warehouse", "junk_flea", Duration::from_secs(20), 2500);
+    loads_within("warehouse", "junk_flea", Duration::from_secs(20), 3000);
 }
 
 /// A lean load (`MapLoadOptions::lean`, the dedicated server's): the same
