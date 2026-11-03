@@ -846,3 +846,76 @@ fn multiplayer_props_are_solid() {
     assert_eq!(p.push, PushAway::Collide);
 }
 
+
+/// A combine ball (B's) floating `ahead` units in front of the eye.
+fn ball(w: &mut W, ahead: f32) -> (Entity, Entity) {
+    use chimera_sim::weapon::projectile::{Flyer, Touch, spawn_flyer};
+    let b = w.sim.spawn_character(to_engine(FEET + Vec3::new(-300.0, 300.0, 36.0)), movement::ID);
+    w.sim.ticks(10);
+    let start = to_engine(w.eye() + Vec3::new(ahead, 0.0, 0.0));
+    let world = w.sim.app.world_mut();
+    let clock = *world.resource::<SimClock>();
+    let mut f = Flyer::new(weapons::AR2, Some(b), Vec3::ZERO, &clock);
+    f.half = Vec3::splat(10.0 * U);
+    f.sphere = true;
+    f.keep_speed = Some(1000.0 * U);
+    f.expires = Some(clock.now + 4.0);
+    f.touch = Touch::Bounce;
+    let mut commands = world.commands();
+    let e = spawn_flyer(&mut commands, f, start, weapons::launch::BALL_MODEL.into(), &clock);
+    world.flush();
+    (e, b)
+}
+
+/// Cases 55, 56: a ball caught becomes the catcher's and stays in the
+/// gun; launched it leaves at 959.2 along the view with 4 s of life.
+#[test]
+fn a_caught_ball_is_the_catchers_and_leaves_at_959() {
+    use chimera_sim::weapon::projectile::Flyer;
+    let mut w = world(&[]);
+    let (e, _) = ball(&mut w, 150.0);
+    w.press(false, true, 1, 2);
+    assert!(w.holding(), "caught");
+    let f = w.sim.app.world().get::<Flyer>(e).unwrap();
+    assert_eq!(f.owner, Some(w.p));
+    assert!(f.expires.is_none(), "its life stops while held");
+    w.sim.seconds(1.0);
+    let rel = to_source(w.sim.position(e)) - w.eye();
+    assert!(rel.x > 30.0 && rel.x < 80.0 && rel.y.abs() < 3.0, "held at {rel}");
+    w.press(true, false, 1, 1);
+    let now = w.now();
+    let f = w.sim.app.world().get::<Flyer>(e).unwrap();
+    let v = to_source(f.velocity);
+    assert!((v.x - 959.2).abs() < 1.0 && v.y.abs() < 1.0, "{v}");
+    assert_eq!(f.keep_speed, Some(1500.0 * U), "1500 after its first bounce");
+    assert!((f.expires.unwrap() - (now + 4.0)).abs() < 0.02);
+}
+
+/// Case 55's end: a ball kept in the gun goes off 8 s after the catch.
+#[test]
+fn a_ball_kept_goes_off_after_8_s() {
+    let mut w = world(&[]);
+    let (e, _) = ball(&mut w, 150.0);
+    w.press(false, true, 1, 2);
+    w.sim.seconds(7.8);
+    assert!(w.sim.app.world().get_entity(e).is_ok(), "still held at 7.8 s");
+    w.sim.seconds(0.3);
+    assert!(w.sim.app.world().get_entity(e).is_err(), "gone at 8 s");
+    assert!(!w.holding());
+}
+
+/// Case 57: dropped, it leaves at 1500 within 55 degrees of the view.
+#[test]
+fn a_dropped_ball_leaves_at_1500() {
+    use chimera_sim::weapon::projectile::Flyer;
+    let mut w = world(&[]);
+    let (e, _) = ball(&mut w, 150.0);
+    w.press(false, true, 1, 2);
+    w.sim.seconds(1.0);
+    w.press(false, true, 1, 1);
+    let f = w.sim.app.world().get::<Flyer>(e).unwrap();
+    let v = to_source(f.velocity);
+    assert!((v.length() - 1500.0).abs() < 1.0, "{v}");
+    let off = v.normalize().dot(Vec3::X).acos().to_degrees();
+    assert!(off <= 55.0 * std::f32::consts::SQRT_2 + 0.5, "{off} degrees off the view");
+}

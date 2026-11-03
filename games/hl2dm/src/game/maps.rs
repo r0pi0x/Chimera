@@ -14,11 +14,9 @@
 //! Also its chat formats (`chat`: no radio, the dead read by the living).
 //!
 //! Known shortcuts:
-//! - HL2:DM's kit has its HUD look (`hud`) but no muzzle flash, impact decals and looks
-//!   (M10). Its
-//!   sounds (Source's sound scripts and soundscapes, lift S5) are the
-//!   entries it plays so far (`SOUNDS`: movement, the suit, pickups and
-//!   chargers); its weapons' entries aren't among them yet.
+//! - Its sounds (Source's sound scripts and soundscapes, lift S5) are the
+//!   entries it plays (`SOUNDS`: movement, the suit, pickups and chargers;
+//!   `sounds::entries`: the weapons', hurt and death).
 //! - The map's `SpawnPoint`s are deathmatch's only; HL2:DM's rules
 //!   choose among the map's spot entities themselves (`rules::spawns`:
 //!   the team classes, `info_player_start`).
@@ -146,6 +144,12 @@ fn body_kit(k: &mut Kit) {
     if k.kit.hud() {
         k.data.kit.hud = super::hud::load(k.materials).map(std::sync::Arc::new);
     }
+    // Its impact looks: the decals of the install's `decals_subrect.txt`
+    // by surface letter, the effect materials; its guns' impacts can be
+    // drawn on the map (specs/hl2dm/effects_sounds.md 6).
+    k.data.kit.decals = source_engine::content::decals::impact_decals(k.materials);
+    k.data.particles = super::effects::load_materials(k.materials);
+    k.data.impacts.add(super::GAME);
 }
 
 /// HL2:DM's chat (specs/hl2dm/rules.md "Chat"): no radio; its line
@@ -182,6 +186,7 @@ pub fn chat() -> crate::map::radio::RadioCommands {
 /// bodies and their view models.
 fn held_kit(kit: &mut Kit) {
     super::bodies::add_held(kit.materials, kit.surfaces, kit.kit, &mut kit.data.kit, &mut kit.data.warnings);
+    kit.data.kit.muzzle_flash_kinds = super::flashes::kinds(kit.materials);
     let mut models = Vec::new();
     add_view_models(kit.materials, kit.kit, &mut models, &mut kit.data.warnings);
     kit.data.kit.view_models.extend(models);
@@ -247,8 +252,10 @@ fn no_extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'stat
 /// HL2:DM's sounds: Source's sound scripts with the entries HL2:DM plays
 /// (`SOUNDS`), then the map's soundscapes.
 fn sounds(materials: &mut MaterialLoader, bsp: &vbsp::Bsp, name: &str, surfaces: &SurfaceProps, entities: &[MapEntity]) -> MapSounds {
-    let mut out =
-        source_engine::content::sound::load(materials, name, surfaces, entities, SOUNDS.iter().map(|s| s.to_string()));
+    let game = SOUNDS.iter().map(|s| s.to_string()).chain(super::sounds::entries());
+    // An entry defined twice keeps its first definition (`NPC_Citizen.die`:
+    // specs/hl2dm/effects_sounds.md, Open questions 2).
+    let mut out = source_engine::content::sound::load_with(materials, name, surfaces, entities, game, true);
     source_engine::content::soundscape::load(materials, bsp, name, &mut out);
     out
 }

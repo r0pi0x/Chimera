@@ -740,6 +740,16 @@ pub struct FlashAssets {
     data: MapMuzzleFlash,
     mesh: Handle<Mesh>,
     material: Option<Handle<SpriteMaterial>>,
+    /// The kit's flashes by kind (`ViewModelEventKind::MuzzleFlashOf`).
+    kinds: Vec<(String, FlashKind)>,
+}
+
+/// One kind of muzzle flash: its data, and a material per texture (a
+/// sprite picks one at random).
+struct FlashKind {
+    data: MapMuzzleFlash,
+    mesh: Handle<Mesh>,
+    materials: Vec<Handle<SpriteMaterial>>,
 }
 
 pub fn build_flash_assets(
@@ -748,7 +758,48 @@ pub fn build_flash_assets(
     meshes: &mut Assets<Mesh>,
     sprites: Option<&mut Assets<SpriteMaterial>>,
 ) -> Option<FlashAssets> {
-    let flash = data.kit.muzzle_flash.clone()?;
+    if data.kit.muzzle_flash.is_none() && data.kit.muzzle_flash_kinds.is_empty() {
+        return None;
+    }
+    let flash = data.kit.muzzle_flash.clone().unwrap_or_default();
+    let mut sprites = sprites;
+    let kinds = data
+        .kit
+        .muzzle_flash_kinds
+        .iter()
+        .map(|(name, k)| {
+            let size = k
+                .texture
+                .and_then(|t| data.textures.get(t))
+                .map_or(UVec2::ONE, |t| UVec2::new(t.width, t.height));
+            let [r, g, b] = k.color;
+            let materials = k
+                .texture
+                .into_iter()
+                .chain(k.alt_textures.iter().copied())
+                .filter_map(|t| textures.get(t))
+                .filter_map(|t| {
+                    Some(sprites.as_deref_mut()?.add(SpriteMaterial {
+                        params: SpriteParams {
+                            color: Vec4::new(r, g, b, 1.0),
+                            size: Vec2::ONE,
+                        },
+                        texture: Some(t.clone()),
+                        glow: false,
+                        blend: crate::render::sprite_material::SpriteBlend::Add,
+                    }))
+                })
+                .collect();
+            (
+                name.clone(),
+                FlashKind {
+                    data: k.clone(),
+                    mesh: meshes.add(crate::render::sprite_material::sprite_mesh(size)),
+                    materials,
+                },
+            )
+        })
+        .collect();
     let size = flash
         .texture
         .and_then(|t| data.textures.get(t))
@@ -771,6 +822,7 @@ pub fn build_flash_assets(
         mesh: meshes.add(crate::render::sprite_material::sprite_mesh(size)),
         material,
         data: flash,
+        kinds,
     })
 }
 
@@ -830,7 +882,7 @@ pub fn muzzle_flashes(
         return;
     };
     // Lights ready before the first shot (see `spawn_flash_light`).
-    if pool.is_empty() && flash.data.light.is_some() {
+    if pool.is_empty() && (flash.data.light.is_some() || flash.kinds.iter().any(|(_, k)| k.data.light.is_some())) {
         for _ in 0..4 {
             commands.spawn((
                 Name::new("Muzzle flash light"),
@@ -855,8 +907,10 @@ pub fn muzzle_flashes(
     let effects = effects.map(|e| *e).unwrap_or_default();
     let now = time.elapsed_secs_f64();
     for ev in events.read() {
-        let ViewModelEventKind::MuzzleFlash { attachment } = ev.kind else {
-            continue;
+        let (attachment, kind) = match &ev.kind {
+            ViewModelEventKind::MuzzleFlash { attachment } => (*attachment, None),
+            ViewModelEventKind::MuzzleFlashOf { attachment, kind } => (*attachment, Some(kind.as_str())),
+            _ => continue,
         };
         // First person: the owner's anchor has its view model drawn.
         let first_person = anchors.iter().find_map(|(parent, eye, projection, children, source)| {
@@ -898,6 +952,7 @@ pub fn muzzle_flashes(
                 .find(|(m, _)| m.owner == ev.owner)
                 .map(|(_, g)| (g.translation(), g.rotation() * Vec3::X))
         };
+        let on_view_model = first_person.is_some();
         let Some((at, forward)) = first_person.or_else(world_model) else {
             continue;
         };
@@ -908,13 +963,21 @@ pub fn muzzle_flashes(
                 .0
                 .insert(owner, (at, now));
         });
-        let data = &flash.data;
-        if let Some(material) = &flash.material {
+        let (data, mesh, materials): (&MapMuzzleFlash, &Handle<Mesh>, &[Handle<SpriteMaterial>]) = match kind {
+            None => (&flash.data, &flash.mesh, flash.material.as_slice()),
+            Some(k) => match flash.kinds.iter().find(|(n, _)| n.eq_ignore_ascii_case(k)) {
+                Some((_, k)) => (&k.data, &k.mesh, &k.materials),
+                None => continue,
+            },
+        };
+        if !materials.is_empty() && !(data.no_world_sprites && !on_view_model) {
             let scale = dice.range(data.scale);
             for (ahead, size) in &data.sprites {
+                let pick = ((dice.roll() * materials.len() as f32) as usize).min(materials.len() - 1);
+                let material = &materials[pick];
                 commands.spawn((
                     Name::new("Muzzle flash"),
-                    Mesh3d(flash.mesh.clone()),
+                    Mesh3d(mesh.clone()),
                     MeshMaterial3d(material.clone()),
                     Transform::from_translation(at + forward * *ahead * scale),
                     FlashSprite {
@@ -1056,28 +1119,28 @@ pub fn age_effects(
     }
 }
 
-/// Flash sprites share one material; give each its own size by a material
-/// per size bucket.
+/// Flash sprites of a texture share one material; give each its own size by
+/// a material per texture and size bucket.
 pub fn size_flash_sprites(
     flash: Option<Res<FlashAssets>>,
     mut sprites: Query<(&FlashSize, &mut MeshMaterial3d<SpriteMaterial>), Added<FlashSize>>,
     mut materials: Option<ResMut<Assets<SpriteMaterial>>>,
-    mut cache: Local<HashMap<u32, Handle<SpriteMaterial>>>,
+    mut cache: Local<HashMap<(AssetId<SpriteMaterial>, u32), Handle<SpriteMaterial>>>,
 ) {
-    let (Some(flash), Some(materials)) = (flash, materials.as_mut()) else {
-        return;
-    };
-    let Some(base) = flash.material.as_ref().and_then(|m| materials.get(m)).cloned() else {
+    let (Some(_), Some(materials)) = (flash, materials.as_mut()) else {
         return;
     };
     for (size, mut material) in &mut sprites {
+        let Some(base) = materials.get(&material.0).cloned() else {
+            continue;
+        };
         // Millimetre buckets.
-        let key = (size.0 * 1000.0).round() as u32;
+        let key = (material.0.id(), (size.0 * 1000.0).round() as u32);
         let handle = cache
             .entry(key)
             .or_insert_with(|| {
                 let mut m = base.clone();
-                m.params.size = Vec2::splat(key as f32 / 1000.0);
+                m.params.size = Vec2::splat(key.1 as f32 / 1000.0);
                 materials.add(m)
             })
             .clone();

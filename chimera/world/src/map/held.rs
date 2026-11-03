@@ -198,7 +198,12 @@ pub struct HeldPlugin;
 
 impl Plugin for HeldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(FixedPostUpdate, drive.before(PhysicsSystems::StepSimulation));
+        // Inside the physics step (its own schedule): before the solver,
+        // after the game's targets were set in the tick.
+        app.add_systems(
+            PhysicsSchedule,
+            drive.after(PhysicsStepSystems::First).before(PhysicsStepSystems::BroadPhase),
+        );
     }
 }
 

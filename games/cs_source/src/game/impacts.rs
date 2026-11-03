@@ -1,530 +1,64 @@
-//! Impact sounds (specs/cs_source/sounds.md 4): bullet impacts by the hit
-//! surface, and physics impacts by both touching surfaces and the impact
-//! speed. Scrapes (looping friction sounds) are `scrapes.rs`. A bullet
-//! hit on a player sounds once, the server's choice (`pain.rs`: a hurt
-//! sound, or the flesh impact), so it is left out here.
-//!
-//! Across games (`weapon::impact`): bullet impacts and decals are drawn
-//! for the shots Chimera's route gives CS:S (`BulletImpactsPlugin`, which
-//! an app with CS:S's guns but not its game adds), with another game's
-//! map's surface names as CS:S's by class (`as_cs`, `SURFACES`).
+//! CS:S's impact sounds and decals: Source's
+//! (`source_engine::effects::impacts`, lift S5 of
+//! docs/plans/active/hl2dm.md, re-exported here at its old path) with
+//! CS:S's style (`super::impact_effects::STYLE`) and its surfaces. A
+//! bullet hit on a player sounds once, the server's choice (`pain.rs`),
+//! so the impact leaves it out; CS:S's hostages keep theirs there
+//! (`HitSoundHere`).
 
-use std::collections::HashMap;
+pub use source_engine::effects::impacts::*;
 
-use avian3d::prelude::*;
 use bevy::prelude::*;
+use source_engine::effects::impacts as engine;
 
-use crate::{
-    core::{Intent, MapWater},
-    map::{
-        DecalGroup, MapBrushEntity, MapEntities, PhysicsProp, PlaceDecal, PlaySound, PropSurface,
-        breakables::PieceBody,
-        impact::{GameSurfaces, SurfaceClass, SurfaceClasses},
-        sound::{MapSounds, MapSurface, SoundBank, SurfaceGrid},
-    },
-    objectives::hostages::Hostage,
-    weapon::{WeaponEvent, WeaponEventKind, impact::ImpactRoute},
+use crate::map::{
+    impact::{GameSurfaces, SurfaceClasses},
 };
+use crate::objectives::hostages::Hostage;
 
-const UNIT: f32 = 0.0254;
-/// Impacts below this speed are silent, u/s.
-const IMPACT_MIN_SPEED: f32 = 70.0;
-/// Volume reaches 1 at this speed, u/s.
-const IMPACT_FULL_SPEED: f32 = 320.0;
-/// A pair's contacts closer together than this make one sound, s.
-const IMPACT_MIN_DT: f64 = 0.05;
-/// The same for client-side physics objects (a broken prop's pieces): a
-/// sound needs strictly more than this since the pair's last contact.
-const IMPACT_MIN_DT_CLIENT: f64 = 0.1;
-/// After this many queued impacts in a frame, new ones merge into the last.
-const IMPACT_MERGE_AFTER: usize = 4;
-/// One shot's pellets skip an identical impact sound within this, units.
-const IMPACT_GROUP_RADIUS: f32 = 300.0;
-/// How far from a contact or hit point a world triangle may be, m.
-const SURFACE_REACH: f32 = 0.3;
-
-pub struct ImpactSoundsPlugin;
-
-impl Plugin for ImpactSoundsPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugins(super::scrapes::ScrapePlugin).init_resource::<LastContact>();
-        if !app.is_plugin_added::<BulletImpactsPlugin>() {
-            app.add_plugins(BulletImpactsPlugin);
-        }
-        app.add_systems(FixedPostUpdate, physics_impacts.after(PhysicsSystems::Writeback));
-    }
-}
-
-/// Bullets' and knives' impact sounds and decals alone (what an app with
-/// CS:S's guns but not its game adds, Lucker Party), for the impacts
-/// Chimera's route gives CS:S (`weapon::impact::ImpactRoute`): its guns'
-/// on any map that carries its looks, other games' guns' on its maps
-/// when theirs can't. Registers CS:S as an impact provider.
-pub struct BulletImpactsPlugin;
-
-impl Plugin for BulletImpactsPlugin {
-    fn build(&self, app: &mut App) {
-        use crate::weapon::impact::ImpactAppExt;
-        app.register_impact_provider(super::GAME)
-            .add_message::<PlaySound>()
-            .add_message::<WeaponEvent>()
-            .add_message::<PlaceDecal>()
-            .add_systems(
-                FixedUpdate,
-                (bullet_impacts, impact_decals).after(crate::core::SimSet::Weapons),
-            );
-    }
-}
+/// CS:S's surfaces by class (`map::impact`).
+pub const SURFACES: GameSurfaces = engine::surfaces(super::GAME);
 
 /// `name`, a surface of the loaded map's game, as CS:S names it: itself
 /// on CS:S's maps (and maps that don't say), else by its class
 /// (`map::impact::SurfaceClasses`: a Combat Arms "Cement" wall is CS:S's
 /// `concrete`).
 pub fn as_cs(name: String, classes: Option<&SurfaceClasses>, map_game: Option<&str>) -> String {
-    match (classes, map_game) {
-        (Some(c), Some(game)) if !game.eq_ignore_ascii_case(super::GAME) => {
-            c.translate(Some(game), &name, super::GAME).unwrap_or(name)
-        }
-        _ => name,
+    engine::as_game(name, classes, map_game, super::GAME)
+}
+
+/// Bullets' and knives' impact sounds and decals alone (what an app with
+/// CS:S's guns but not its game adds, Lucker Party). Registers CS:S as an
+/// impact provider.
+pub struct BulletImpactsPlugin;
+
+impl Plugin for BulletImpactsPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(engine::BulletImpactsPlugin(super::impact_effects::STYLE));
+        add_hostage_sounds(app);
     }
 }
 
-/// CS:S's surfaces by class (`map::impact`): its surface property names
-/// as `SurfaceClass::guess` reads them, and the property each class
-/// takes on other games' maps (the stock `surfaceproperties*.txt` names).
-pub const SURFACES: GameSurfaces = GameSurfaces {
-    game: super::GAME,
-    classify: |name| {
-        let class = SurfaceClass::guess(name);
-        (class != SurfaceClass::Default).then_some(class)
-    },
-    name: |class| {
-        Some(match class {
-            SurfaceClass::Concrete => "concrete",
-            SurfaceClass::Metal => "metal",
-            SurfaceClass::Wood => "wood",
-            SurfaceClass::Dirt => "dirt",
-            SurfaceClass::Sand => "sand",
-            SurfaceClass::Grass => "grass",
-            SurfaceClass::Snow => "snow",
-            SurfaceClass::Glass => "glass",
-            SurfaceClass::Tile => "tile",
-            SurfaceClass::Plastic => "plastic",
-            SurfaceClass::Cloth => "carpet",
-            SurfaceClass::Flesh => "flesh",
-            SurfaceClass::Water => "water",
-            SurfaceClass::Default => "default",
-        })
-    },
-};
+/// Bullets' impacts with the physics objects' impact sounds and scrapes.
+pub struct ImpactSoundsPlugin;
 
-/// Physics impact volume for an impact speed in u/s: (s/320)², at most 1.
-pub fn impact_volume(speed: f32) -> f32 {
-    (speed / IMPACT_FULL_SPEED).powi(2).min(1.0)
-}
-
-/// The entry an object with surface `own` plays when hitting `hit` at
-/// `speed` u/s: the hard impact, or the soft one for soft targets or slow
-/// impacts. None when the surface has no hard impact.
-pub fn impact_entry<'a>(own: &'a MapSurface, hit: &MapSurface, speed: f32) -> Option<&'a str> {
-    let hard = own.impact_hard.as_deref()?;
-    let soft = own.impact_soft.as_deref();
-    let use_soft = hit.hardness < own.hard_threshold || (own.hard_min_velocity > 0.0 && speed < own.hard_min_velocity);
-    Some(match (use_soft, soft) {
-        (true, Some(s)) => s,
-        _ => hard,
-    })
-}
-
-pub(super) fn surface<'a>(sounds: &'a MapSounds, name: &str) -> Option<&'a MapSurface> {
-    sounds.surface(name).or_else(|| sounds.surface("default"))
-}
-
-/// Entry volume as the script sets it (middle of its range).
-fn script_volume(sounds: &MapSounds, entry: &str) -> f32 {
-    sounds
-        .entry(entry)
-        .map_or(1.0, |e| e.volume.start + e.volume.range / 2.0)
-}
-
-/// Surface name of what a trace or contact touched.
-pub(super) fn surface_of(
-    entity: Option<Entity>,
-    at: Vec3,
-    props: &Query<&PropSurface>,
-    characters: &Query<(), With<Intent>>,
-    grid: Option<&SurfaceGrid>,
-) -> String {
-    if let Some(e) = entity {
-        if let Ok(s) = props.get(e) {
-            return s.0.clone();
-        }
-        if characters.contains(e) {
-            return "player".into();
-        }
-    }
-    grid.and_then(|g| g.nearest(at, SURFACE_REACH))
-        .unwrap_or("default")
-        .to_string()
-}
-
-fn bullet_impacts(
-    mut events: MessageReader<WeaponEvent>,
-    bank: Option<Res<SoundBank>>,
-    grid: Option<Res<SurfaceGrid>>,
-    props: Query<&PropSurface>,
-    characters: Query<(), With<Intent>>,
-    players: Query<(), (With<Intent>, Without<Hostage>)>,
-    water: Option<Res<MapWater>>,
-    mut play: MessageWriter<PlaySound>,
-    (route, classes): (ImpactRoute, Option<Res<SurfaceClasses>>),
-) {
-    let Some(bank) = bank else {
-        events.clear();
-        return;
-    };
-    // Played this tick per shooter: (entry, position), for pellet grouping.
-    let mut played: Vec<(Entity, String, Vec3)> = Vec::new();
-    for e in events.read().filter(|e| e.shown() && route.draws(super::GAME, e)) {
-        // Every surface a bullet reaches, also after passing something.
-        let (WeaponEventKind::Shot { from, to, hit, .. } | WeaponEventKind::ShotContinued { from, to, hit, .. }) =
-            &e.kind
-        else {
-            continue;
-        };
-        if hit.is_none() || in_water(*from, *to, water.as_deref()) {
-            continue;
-        }
-        // A player's hit sound is the server's, one per hit: a hurt sound,
-        // or this flesh impact where none plays (`pain::hurt_sounds`;
-        // measured, sounds.md "Hurt and death sounds"). A network client
-        // can't tell, not knowing others' armour.
-        if hit.is_some_and(|e| players.contains(e)) {
-            continue;
-        }
-        // Hostages' hitboxes are `flesh` (impact_effects.md 3), not the
-        // movement box's `player` (which has no impact sound of its own).
-        let name = match hit {
-            Some(e) if characters.contains(*e) => super::pain::FLESH.to_string(),
-            _ => as_cs(
-                surface_of(*hit, *to, &props, &characters, grid.as_deref()),
-                classes.as_deref(),
-                route.map_game(),
-            ),
-        };
-        let Some(entry) = surface(&bank.0, &name).and_then(|s| s.bullet_impact.clone()) else {
-            continue;
-        };
-        if played
-            .iter()
-            .any(|(o, n, p)| *o == e.owner && *n == entry && p.distance(*to) < IMPACT_GROUP_RADIUS * UNIT)
-        {
-            continue;
-        }
-        played.push((e.owner, entry.clone(), *to));
-        play.write(PlaySound::at(entry, *to));
+impl Plugin for ImpactSoundsPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_plugins(engine::ImpactSoundsPlugin(super::impact_effects::STYLE));
+        add_hostage_sounds(app);
     }
 }
 
-/// A shot ending in water makes no impact (a splash instead, or nothing
-/// under water; specs/cs_source/impact_effects.md section 11).
-fn in_water(from: Vec3, to: Vec3, water: Option<&MapWater>) -> bool {
-    water.is_some_and(|w| super::impact_effects::water_shot(from, to, &w.0) != super::impact_effects::WaterShot::Dry)
-}
-
-/// The knife's mark on walls. Not in the public data and no spec names it
-/// (impact_effects.md 12 points to overlays_decals.md, which has no knife
-/// entry): a guess from the decal script's slash group, to check against
-/// the game.
-const SLASH_DECAL: &str = "ManhackCut";
-
-/// A breakable brush's own impact decal (specs/source/breakables.md:
-/// glass "GlassBreak", unbreakable glass "BulletProof"), when `hit` (or
-/// its parent) is the node of one.
-fn breakable_decal(
-    hit: Entity,
-    brushes: &Query<&MapBrushEntity>,
-    parents: &Query<&ChildOf>,
-    map: Option<&MapEntities>,
-) -> Option<&'static str> {
-    let node = std::iter::once(hit)
-        .chain(parents.get(hit).ok().map(|c| c.parent()))
-        .find_map(|e| brushes.get(e).ok())?;
-    let e = map?.entities.get(node.0)?;
-    let class = e.classname();
-    if !super::breakables::CLASSES.iter().any(|c| c.eq_ignore_ascii_case(class)) {
-        return None;
-    }
-    let int = |k: &str| e.get(k).map_or(0, |v| v.trim().parse::<f32>().map_or(0, |x| x as i32));
-    super::breakables::impact_decal(class, int("material"), int("surfacetype"))
-}
-
-/// Decals where shots and knife swings hit the world: the hit surface's
-/// impact decal ("TranslationData" by its game material), or a breakable
-/// brush's own (`breakable_decal`), the knife's slash, on the world, the
-/// prop or the brush entity that was hit. Characters take none yet.
-#[allow(clippy::too_many_arguments)]
-fn impact_decals(
-    mut events: MessageReader<WeaponEvent>,
-    bank: Option<Res<SoundBank>>,
-    grid: Option<Res<SurfaceGrid>>,
-    props: Query<&PropSurface>,
-    characters: Query<(), With<Intent>>,
-    brushes: Query<&MapBrushEntity>,
-    parents: Query<&ChildOf>,
-    map: Option<Res<MapEntities>>,
-    water: Option<Res<MapWater>>,
-    mut decals: MessageWriter<PlaceDecal>,
-    (route, classes): (ImpactRoute, Option<Res<SurfaceClasses>>),
-) {
-    // Characters take blood, not these (not done yet).
-    let marked = |e: Entity| !characters.contains(e);
-    for e in events.read().filter(|e| e.shown() && route.draws(super::GAME, e)) {
-        match &e.kind {
-            // Every surface a bullet enters, also after passing something
-            // (M13 logs an impact per surface reached; exits are not
-            // logged, so they get no mark).
-            WeaponEventKind::Shot {
-                from,
-                to,
-                hit: Some(hit),
-                normal: Some(normal),
-            }
-            | WeaponEventKind::ShotContinued {
-                from,
-                to,
-                hit: Some(hit),
-                normal: Some(normal),
-            } if marked(*hit) && !in_water(*from, *to, water.as_deref()) => {
-                let group = match breakable_decal(*hit, &brushes, &parents, map.as_deref()) {
-                    Some(name) => DecalGroup::Named(name.into()),
-                    None => {
-                        let name = as_cs(
-                            surface_of(Some(*hit), *to, &props, &characters, grid.as_deref()),
-                            classes.as_deref(),
-                            route.map_game(),
-                        );
-                        let Some(material) = bank
-                            .as_ref()
-                            .and_then(|b| surface(&b.0, &name))
-                            .map(|s| s.game_material)
-                        else {
-                            continue;
-                        };
-                        DecalGroup::Material(material)
-                    }
-                };
-                decals.write(PlaceDecal {
-                    target: Some(*hit),
-                    group,
-                    point: *to,
-                    normal: *normal,
-                    dir: (*to - *from).normalize_or_zero(),
-                    spin: false,
-                    round: false,
-                });
-            }
-            // A swing into water only splashes (impact_effects).
-            WeaponEventKind::Swing {
-                at: Some((point, normal, hit)),
-                line,
-                ..
-            } if marked(*hit) && super::impact_effects::knife_splash(*line, water.as_deref()).is_none() => {
-                let name = breakable_decal(*hit, &brushes, &parents, map.as_deref()).unwrap_or(SLASH_DECAL);
-                decals.write(PlaceDecal {
-                    target: Some(*hit),
-                    group: DecalGroup::Named(name.into()),
-                    point: *point,
-                    normal: *normal,
-                    dir: -*normal,
-                    spin: false,
-                    round: false,
-                });
-            }
-            _ => {}
-        }
+/// A hostage's bullet hit sounds as a flesh impact (`HitSoundHere`).
+fn add_hostage_sounds(app: &mut App) {
+    if !app.world().contains_resource::<HostageSounds>() {
+        app.insert_resource(HostageSounds).add_observer(
+            |added: On<Add<Hostage>>, mut commands: Commands| {
+                commands.entity(added.entity).insert(HitSoundHere);
+            },
+        );
     }
 }
 
-/// When each colliding pair last touched (fixed-tick seconds).
-#[derive(Resource, Default)]
-struct LastContact(HashMap<(Entity, Entity), f64>);
-
-/// A queued impact sound for this physics frame.
-struct Queued {
-    own: String,
-    hit: String,
-    at: Vec3,
-    volume: f32,
-    /// The largest of the merged impacts' volumes and speeds.
-    loudest: f32,
-    speed: f32,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn physics_impacts(
-    mut started: MessageReader<CollisionStart>,
-    collisions: Collisions,
-    bodies: Query<(&RigidBody, Option<&PhysicsProp>, Has<PieceBody>)>,
-    props: Query<&PropSurface>,
-    characters: Query<(), With<Intent>>,
-    bank: Option<Res<SoundBank>>,
-    grid: Option<Res<SurfaceGrid>>,
-    mut last: ResMut<LastContact>,
-    mut play: MessageWriter<PlaySound>,
-    time: Res<Time>,
-) {
-    let Some(bank) = bank else {
-        started.clear();
-        return;
-    };
-    let sounds = &bank.0;
-    let now = time.elapsed_secs_f64();
-    let mut queue: Vec<Queued> = Vec::new();
-    for start in started.read() {
-        let Some(pair) = collisions.get(start.collider1, start.collider2) else {
-            continue;
-        };
-        let key = (pair.collider1.min(pair.collider2), pair.collider1.max(pair.collider2));
-        let previous = last.0.insert(key, now);
-        let piece = |b: Option<Entity>| b.and_then(|b| bodies.get(b).ok()).is_some_and(|(.., p)| p);
-        let client = piece(pair.body1) || piece(pair.body2);
-        if previous.is_some_and(|t| {
-            if client {
-                now - t <= IMPACT_MIN_DT_CLIENT
-            } else {
-                now - t < IMPACT_MIN_DT
-            }
-        }) {
-            continue;
-        }
-        // Approach speed before the solver, in u/s.
-        let Some((speed, at)) = pair
-            .manifolds
-            .iter()
-            .flat_map(|m| m.points.iter())
-            .map(|p| (-p.normal_speed / UNIT, p.point))
-            .max_by(|a, b| a.0.total_cmp(&b.0))
-        else {
-            continue;
-        };
-        if speed < IMPACT_MIN_SPEED {
-            continue;
-        }
-        let simulated = |b: Option<Entity>| {
-            b.and_then(|b| bodies.get(b).ok())
-                .is_some_and(|(rb, prop, piece)| rb.is_dynamic() && (prop.is_some() || piece))
-        };
-        let sides = [
-            (pair.collider1, pair.body1, pair.collider2, pair.body2),
-            (pair.collider2, pair.body2, pair.collider1, pair.body1),
-        ];
-        if !sides.iter().any(|s| simulated(s.1)) {
-            continue;
-        }
-        let names = sides.map(|(c, ..)| {
-            let world = bodies.get(c).is_ok_and(|(rb, ..)| rb.is_static()) && !props.contains(c);
-            surface_of((!world).then_some(c), at, &props, &characters, grid.as_deref())
-        });
-        // Silent materials (game material X).
-        if names
-            .iter()
-            .any(|n| surface(sounds, n).is_some_and(|s| s.game_material == 'X'))
-        {
-            continue;
-        }
-        for (i, side) in sides.iter().enumerate() {
-            if !simulated(side.1) {
-                continue;
-            }
-            let (own, hit) = (names[i].clone(), names[1 - i].clone());
-            let v = impact_volume(speed);
-            // Merge into an entry for the same surface (any entry once the
-            // queue is long), searching from the end.
-            let full = queue.len() > IMPACT_MERGE_AFTER;
-            match queue.iter_mut().rev().find(|q| full || q.own == own) {
-                Some(q) => {
-                    if v > q.loudest {
-                        q.at = at;
-                        q.hit = hit;
-                        q.loudest = v;
-                    }
-                    q.volume += v;
-                    q.speed = q.speed.max(speed + 0.0001);
-                }
-                None => queue.push(Queued {
-                    own,
-                    hit,
-                    at,
-                    volume: v,
-                    loudest: v,
-                    speed: speed + 0.0001,
-                }),
-            }
-        }
-    }
-    // Forget pairs that haven't touched for a while.
-    if last.0.len() > 4096 {
-        last.0.retain(|_, t| now - *t < 1.0);
-    }
-    for q in queue.iter().rev() {
-        let (Some(own), Some(hit)) = (surface(sounds, &q.own), surface(sounds, &q.hit)) else {
-            continue;
-        };
-        let Some(entry) = impact_entry(own, hit, q.speed) else {
-            continue;
-        };
-        if sounds.entry(entry).is_none() {
-            // A failed lookup stops the rest of the queue (spec quirk).
-            break;
-        }
-        play.write(PlaySound {
-            pitch: None,
-            entry: entry.to_string(),
-            at: Some(q.at),
-            volume: Some(script_volume(sounds, entry) * q.volume.min(1.0)),
-            source: None,
-            channel: None,
-        });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn impact_volumes() {
-        // Spec: 70 -> 0.0478515625, 160 -> 0.25, 320+ -> 1.
-        assert!((impact_volume(70.0) - 0.047_851_563).abs() < 1e-7);
-        assert!((impact_volume(160.0) - 0.25).abs() < 1e-6);
-        assert_eq!(impact_volume(500.0), 1.0);
-    }
-
-    #[test]
-    fn soft_against_soft_targets() {
-        let crate_ = MapSurface {
-            impact_hard: Some("Wood_Crate.ImpactHard".into()),
-            impact_soft: Some("Wood_Crate.ImpactSoft".into()),
-            hard_threshold: 0.5,
-            ..default()
-        };
-        let concrete = MapSurface {
-            hardness: 1.0,
-            ..default()
-        };
-        let dirt = MapSurface {
-            hardness: 0.25,
-            ..default()
-        };
-        assert_eq!(impact_entry(&crate_, &concrete, 200.0), Some("Wood_Crate.ImpactHard"));
-        assert_eq!(impact_entry(&crate_, &dirt, 200.0), Some("Wood_Crate.ImpactSoft"));
-        let slow = MapSurface {
-            hard_min_velocity: 300.0,
-            ..crate_.clone()
-        };
-        assert_eq!(impact_entry(&slow, &concrete, 200.0), Some("Wood_Crate.ImpactSoft"));
-        let no_hard = MapSurface::default();
-        assert_eq!(impact_entry(&no_hard, &concrete, 200.0), None);
-    }
-}
+#[derive(Resource)]
+struct HostageSounds;

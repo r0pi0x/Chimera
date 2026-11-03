@@ -8,6 +8,7 @@
 //! The gameinfo parser's fast tests are `source_engine`'s own.
 
 mod animation;
+mod effects;
 mod gravity_gun;
 mod hitboxes;
 mod info;
@@ -28,6 +29,7 @@ mod weapons;
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {
     mod hud_look;
+    mod sound_stock;
     mod map_cache;
     mod map_ladders;
     mod map_pickups;

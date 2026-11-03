@@ -24,7 +24,7 @@
 //!   the holder's own movement and shots pass it as on the server.
 //!
 //! Physics props: the server's into `NetProp` (`write_props`) and held ones'
-//! holders into `NetHold` (`write_holds`); a client's copies made kinematic and
+//! holders into `NetHold` (`write_holds`, from `write_props`); a client's copies made kinematic and
 //! `NetDrawn`, drawn between snapshots at the render tick, a held one at its
 //! holder's predicted view on the holder's client (`draw_props`).
 //!
@@ -52,10 +52,7 @@ use crate::{
 };
 
 pub(super) fn plugin(app: &mut App) {
-    app.add_systems(
-        FixedLast,
-        (write_props, write_holds).run_if(resource_equals(NetRole::Server)),
-    )
+    app.add_systems(FixedLast, write_props.run_if(resource_equals(NetRole::Server)))
         .add_systems(
             RunFixedMainLoop,
             draw_props
@@ -83,8 +80,12 @@ fn write_props(
         ),
         Or<(With<PhysicsProp>, With<FrozenBody>)>,
     >,
+    holds: HoldWrites,
     mut commands: Commands,
 ) {
+    // Held props' holders (one system with the poses: the same place in
+    // the tick, nothing more to order).
+    write_holds(holds, &mut commands);
     for (e, index, t, hidden, no_collision, have) in &mut q {
         let mut flags = 0;
         if !hidden {
@@ -113,16 +114,18 @@ fn write_props(
     }
 }
 
+/// What `write_holds` reads and writes.
+#[derive(bevy::ecs::system::SystemParam)]
+struct HoldWrites<'w, 's> {
+    held: Query<'w, 's, (Entity, &'static PropIndex, &'static Held, Option<&'static mut NetHold>)>,
+    let_go: Query<'w, 's, Entity, (With<NetHold>, Without<Held>)>,
+    owners: Query<'w, 's, &'static NetCharacter>,
+}
+
 /// The server: held props' holders and view offsets into `NetHold`.
-fn write_holds(
-    held: Query<(Entity, &PropIndex, &Held, Option<&mut NetHold>)>,
-    let_go: Query<Entity, (With<NetHold>, Without<Held>)>,
-    owners: Query<&NetCharacter>,
-    mut commands: Commands,
-) {
-    let mut held = held;
-    for (e, index, h, have) in &mut held {
-        let (Some(holder), Some((offset, rotation))) = (owners.get(h.holder).ok().and_then(|c| c.owner), h.view_offset)
+fn write_holds(mut w: HoldWrites, commands: &mut Commands) {
+    for (e, index, h, have) in &mut w.held {
+        let (Some(holder), Some((offset, rotation))) = (w.owners.get(h.holder).ok().and_then(|c| c.owner), h.view_offset)
         else {
             if have.is_some() {
                 commands.entity(e).remove::<NetHold>();
@@ -144,7 +147,7 @@ fn write_holds(
             }
         }
     }
-    for e in &let_go {
+    for e in &w.let_go {
         commands.entity(e).remove::<NetHold>();
     }
 }
