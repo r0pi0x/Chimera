@@ -1262,6 +1262,40 @@ implementing (owner branch) / done.
   beams (persistent sprites on a model's attachments need the render
   layer), the punt's end at the object's centre.
 
+- 2026-11-03: view models and the listen server (branch `hl2dm-visual`).
+  **The RPG drawn black, the frag not in hand** (dm_lockdown): not a
+  material fault. `heavy/view_models.rs` loads all 12 view models as a
+  map's kit does: every mesh resolves to its base texture, the hands
+  included. Both are the lighting at the spawn corridor (where they were
+  seen): dm_lockdown has no `light`s, only 57 `light_spot`s, and none
+  reaches that corridor unoccluded, so a view model there gets the
+  ambient cube alone (0.01-0.1 per side; view_models.md 9 as specced).
+  The RPG's `rocket launcher sheet` is the darkest weapon texture (mean
+  sRGB about 17, vtex reflectivity 0.005; the AR2's 0.16, the SMG1's
+  0.01): there it is black, and the AR2 is near black too. In the lit
+  wash room (`setpos -3619 2600 0`) both the RPG and the frag (in the
+  fist) draw textured. Its material is `$phong` with a flat bump map
+  (exponent 25, boost 2, fresnel ranges 0.2/0.5/1.5): the Phong ("skin")
+  shader would add highlights, but shaders.md open question 14 leaves it
+  unspecified; a spec of it (HL2's view models, the citizens) is the
+  next step for the look.
+  **The listen server's host frozen after a client joined**: not
+  reproduced. The hl2dm app hosting dm_lockdown (`-port 27100`) with one,
+  two and then a third client (one leaving, another joining), under
+  `host_timescale 0.2`, firing, holding props: the host stayed at 60 fps
+  (`Time` delta 16-17 ms over the remote protocol), moved, and each of
+  its screenshots changed, also with the client windows stacked over it.
+  The earlier run's "frozen" frames differ by 0.1-0.3 % of their pixels:
+  frames that changed while what was asked of the game didn't happen (a
+  punt and a ball that weren't launched in them). No change made.
+  **Glow sprites drawn blended**: `Sprite`-shader materials take their
+  blend from the render mode, and the stuck bolt's glow
+  (`light_glow02_noz`, glow mode) and the punt beam (`orangelight1`)
+  loaded as their VMT says, blended: a black square around the bolt.
+  `effects::ADDITIVE_SPRITES` loads them additive; `heavy/
+  effect_materials.rs` checks it. Seen while taking promo shots: the stuck
+  bolt stands vertical in the wall whatever its flight (not looked into).
+
 ## Decision log
 
 - 2026-10-31 (user): Half-Life 2: Deathmatch is the next game, after

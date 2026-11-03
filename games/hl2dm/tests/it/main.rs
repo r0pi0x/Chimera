@@ -29,6 +29,7 @@ mod weapons;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {
+    mod effect_materials;
     mod hud_look;
     mod sound_stock;
     mod map_cache;
@@ -40,4 +41,5 @@ mod heavy {
     mod player_models;
     mod scripts;
     mod served;
+    mod view_models;
 }
