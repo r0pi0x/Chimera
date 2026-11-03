@@ -194,6 +194,24 @@ fn a_blast_100_units_away_does_90_6_and_shoves_2_4() {
     );
 }
 
+/// Open question 1, measured on the real server (the plan's Progress
+/// 2026-11-03 "probe 2"): a rocket or contact grenade going off against a
+/// ceiling hurts the players below by the distance rule, though its
+/// lifted blast point lies in the brush. Here the blast point is 2 units
+/// into the floor (1 after the lift), 50 behind the player: the line from
+/// (-50, 0, -1) to the eye enters the box at (-16, 0, 43.2), d = 55.76;
+/// 100 in 250 does 77.7 (health 22, 0.7 carried).
+#[test]
+fn a_blast_point_inside_the_world_still_hurts() {
+    let mut sim = sim();
+    let p = player(&mut sim);
+    let f = feet(&sim, p);
+    blast(&mut sim, f + to_engine(Vec3::new(-50.0, 0.0, -2.0)), 100.0, 250.0, None);
+    sim.ticks(1);
+    let h = health(&sim, p);
+    assert!((h - 22.0).abs() < 1.01, "health {h}");
+}
+
 /// Test 3: the same blast on 100 armour: health 60, no armour left.
 #[test]
 fn a_blast_on_armour_takes_two_armour_a_point_3() {

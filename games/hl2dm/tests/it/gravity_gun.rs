@@ -185,6 +185,8 @@ fn world_on(crates: &[Crate], walls: &[(Vec3, Vec3)], floor: (Vec3, Vec3)) -> W 
     let mut data = MapData {
         name: "test:gravity_gun".into(),
         entity_scale: U,
+        // HL2:DM's physics gravity, as its maps load (sv_gravity 600).
+        gravity: Some(600.0 * U),
         ..default()
     };
     solid(&mut data, floor.0, floor.1);
