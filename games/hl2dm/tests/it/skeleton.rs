@@ -51,10 +51,11 @@ fn a_new_player_runs_hl2dms_movement_with_its_loadout() {
     let p = player(&mut sim);
     let w = sim.app.world();
     assert_eq!(w.get::<MovementSlot>(p).map(|m| m.0), Some(movement::ID));
-    // The spawn's loadout (weapons.md 3): the SMG1 in hand.
-    assert_eq!(testkit::active_id(w, p), Some(weapons::SMG1));
-    let gun = testkit::active(w, p).unwrap();
-    assert_eq!(w.get::<Magazine>(gun).unwrap().clip, 45);
+    // The spawn's loadout (weapons.md 3): the gravity gun in hand, the
+    // SMG1 the last weapon.
+    assert_eq!(testkit::active_id(w, p), Some(weapons::PHYSCANNON));
+    let smg = w.get::<chimera_sim::weapon::Inventory>(p).unwrap().last.unwrap();
+    assert_eq!(w.get::<Magazine>(smg).unwrap().clip, 45);
 }
 
 #[test]
@@ -86,7 +87,15 @@ fn a_pistol_bullet_does_8_and_24_to_the_head() {
     let mut sim = sim();
     let p = player(&mut sim);
     let target = sim.spawn_character(greybox::SPAWNS[0] - Vec3::Z * 6.0, movement::ID);
-    let pistol = sim.app.world().get::<chimera_sim::weapon::Inventory>(p).unwrap().last.unwrap();
+    let pistol = {
+        let w = sim.app.world();
+        let inv = w.get::<chimera_sim::weapon::Inventory>(p).unwrap();
+        inv.weapons
+            .iter()
+            .copied()
+            .find(|e| w.get::<chimera_sim::weapon::Weapon>(*e).is_some_and(|x| x.id == weapons::PISTOL))
+            .unwrap()
+    };
     sim.app.world_mut().get_mut::<chimera_sim::weapon::Inventory>(p).unwrap().wanted = Some(pistol);
     sim.seconds(1.0);
     let mut cursor = sim.app.world().resource::<Messages<WeaponEvent>>().get_cursor_current();

@@ -1,0 +1,84 @@
+# The gravity gun (specs/hl2dm/gravity_gun.md, H5): primary punts what it
+# points at within 250 (15000 + 600 x its mass, mass capped at 250, along
+# the view; a downward punt's z x -0.65), every 0.5 s; secondary grabs a
+# movable object of at most 250 kg within 250 (a line, then a +-4 box,
+# then a 0.97 cone), pulls one up to 1000 away every 0.1 s (4000, less
+# under 50 kg); held about 24 + 22.6 + its depth in front of the eye
+# (pitch clamped to 75), 1 kg, damping 10, at most 1000 in/s; primary
+# launches it at 1500 (less above 100 kg), a fresh secondary drops it
+# (285 in/s, 720 deg/s at most). Usable the tick it is drawn (deploy sets
+# the timers to now). Script: bucket 0 position 2, weight 0, no ammo,
+# autoswitchto and autoswitchfrom 0.
+id = "hl2dm:weapon_physcannon"
+base = "hl2dm:base"
+slot = 0
+# The draw animation (v_physcannon.mdl, 22 ticks) doesn't delay use.
+draw = 0.0
+weight = 0
+undroppable = true
+
+[models]
+world = "models/weapons/w_physics.mdl"
+view = "models/weapons/v_physcannon.mdl"
+view_right_handed = true
+
+[hud]
+name = "#HL2_GravityGun"
+icon = "physcannon"
+
+[hooks."hl2dm:inventory"]
+position = 2
+autoswitchto = false
+autoswitchfrom = false
+
+[hooks."hl2dm:physcannon"]
+trace_length = 250.0
+search_length = 1000.0
+max_mass = 250.0
+max_force = 1500.0
+min_force = 700.0
+pull_force = 4000.0
+cone = 0.97
+punt_base = 15000.0
+punt_mass = 600.0
+down_reflect = -0.65
+punt_hull = 8.0
+grab_hull = 4.0
+refire = 0.5
+search_refire = 0.1
+hold_base = 24.0
+player_radius = 22.627
+pitch_clamp = 75.0
+hold_speed = 1000.0
+hold_angular = 3600.0
+held_mass = 1.0
+held_rot_damping = 10.0
+error_limit = 12.0
+error_grace = 1.0
+drop_speed = 285.0
+drop_spin = 720.0
+launch_spin = 600.0
+punch_pitch = -6.0
+punch_yaw = 2
+recoil_pitch = [1.0, 2.0]
+recoil_yaw = [-1.0, 1.0]
+claws_close_delay = 0.5
+punt_claws = 0.5
+launch_claws = 0.1
+target_suppress = 0.25
+frag_fuse = 1.5
+ball_life = 8.0
+ball_speed = 1500.0
+ball_mass = 750.0
+ball_held_mass = 20.0
+ball_flight_life = 4.0
+ball_drop_spread = 55
+launch_sound = "Weapon_PhysCannon.Launch"
+dry_sound = "Weapon_PhysCannon.DryFire"
+pickup_sound = "Weapon_PhysCannon.Pickup"
+drop_sound = "Weapon_PhysCannon.Drop"
+open_sound = "Weapon_PhysCannon.OpenClaws"
+close_sound = "Weapon_PhysCannon.CloseClaws"
+too_heavy_sound = "Weapon_PhysCannon.TooHeavy"
+ball_hold_sound = "NPC_CombineBall.HoldingInPhysCannon"
+ball_launch_sound = "NPC_CombineBall.Launch"

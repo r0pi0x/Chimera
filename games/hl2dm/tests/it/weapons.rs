@@ -107,9 +107,15 @@ fn spawn_loadout_1_and_2() {
     let w = sim.app.world();
     let inv = w.get::<Inventory>(p).unwrap();
     let ids: Vec<&str> = inv.weapons.iter().map(|e| w.get::<Weapon>(*e).unwrap().id).collect();
-    assert_eq!(ids, [weapons::CROWBAR, weapons::PISTOL, weapons::SMG1], "order of acquisition");
-    assert_eq!(testkit::active_id(w, p), Some(weapons::SMG1));
-    assert_eq!(inv.last.map(|l| w.get::<Weapon>(l).unwrap().id), Some(weapons::PISTOL));
+    assert_eq!(
+        ids,
+        [weapons::CROWBAR, weapons::PISTOL, weapons::SMG1, weapons::FRAG, weapons::PHYSCANNON],
+        "order of acquisition"
+    );
+    assert_eq!(testkit::active_id(w, p), Some(weapons::PHYSCANNON));
+    assert_eq!(inv.last.map(|l| w.get::<Weapon>(l).unwrap().id), Some(weapons::SMG1));
+    let frag = weapon_of(&sim, p, weapons::FRAG).unwrap();
+    assert_eq!(sim.app.world().get::<hl2dm::game::weapons::launch::Hl2Rounds>(frag).unwrap().count, 2, "2 grenades");
     let (pistol, smg) = (weapon_of(&sim, p, weapons::PISTOL).unwrap(), weapon_of(&sim, p, weapons::SMG1).unwrap());
     assert_eq!((mag(&sim, pistol).clip, mag(&sim, pistol).reserve), (18, 150));
     assert_eq!((mag(&sim, smg).clip, mag(&sim, smg).reserve), (45, 45));

@@ -78,6 +78,7 @@ pub mod physics_clip;
 pub mod prepare;
 pub mod placed_ragdoll;
 pub mod prop_physics;
+pub mod held;
 pub mod psys;
 pub mod radio;
 pub mod ragdoll;

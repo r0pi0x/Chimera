@@ -40,7 +40,7 @@ mod community_tests;
 
 pub use bridge::set_node_shown;
 pub use bridge::{
-    CarriedMover, Logic, LogicOneShot, LogicPlugin, LogicSeed, LogicSet, brush_to_engine, carry_player,
+    CarriedMover, Logic, LogicOneShot, LogicPlugin, LogicSeed, LogicSet, PlayerImpactScale, brush_to_engine, carry_player,
     mover_brushes_at,
 };
 pub use hud::{HudEvent, HudMessage, MapSay, HudMessages, HudShow, MapShake, ScreenFade, ScreenFades};

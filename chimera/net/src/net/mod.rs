@@ -53,7 +53,7 @@
 //! `ChoosingClass`, `PlayerClass`, `NetBody` (quantized: `quant`;
 //! `body_flags::TELEPORTS` counts the server's teleports), `Team`, `Health`,
 //! `slots::GameIdentity` (whose body a character wears), the map render looks `map::RenderLook` (players) and
-//! `BrushTint` (movers), `NetProp`, `NetHeld`, `NetItem`, `NetSmoke`, the body,
+//! `BrushTint` (movers), `NetProp`, `NetHold`, `NetHeld`, `NetItem`, `NetSmoke`, the body,
 //! prop and item ones also into each entity's `interp::Snapshots` by
 //! server tick, all written in tick order (`ordered`); weapons' messages
 //! `FireBullets`, `WeaponFx`, `Detonation`, `Senses`, `Killed`, `HitConfirm`,
@@ -794,6 +794,21 @@ pub mod prop_flags {
     pub const SOLID: u16 = 1 << 1;
 }
 
+/// A physics prop a player holds (`map::held::Held`, lift C6): by its
+/// node's `map::PropIndex`, the holder's client id (`NetCharacter::owner`)
+/// and where it is held relative to the holder's eye and view (position in
+/// the view's frame, rotation after the view's, engine space). The
+/// holder's client draws it there from its own predicted view; everyone
+/// else draws the prop's `NetProp` (`props`). Written by the server after
+/// each tick, removed when let go.
+#[derive(Component, Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct NetHold {
+    pub index: u32,
+    pub holder: u64,
+    pub offset: [f32; 3],
+    pub rotation: [f32; 4],
+}
+
 /// What a character holds, for others to draw (`weapons`): the active
 /// weapon's registry index (`weapon::WeaponRegistry::index`), its
 /// `AltModes` mode (a silencer on) and whether a grenade's pin is out.
@@ -1256,6 +1271,8 @@ impl Plugin for NetPlugin {
             // Weapons (slice 4).
             .replicate::<NetHeld>()
             .ordered::<NetHeld>()
+            .replicate::<NetHold>()
+            .ordered::<NetHold>()
             .replicate::<NetItem>()
             .set_receive_fns::<NetItem>(interp::write_snapshot::<NetItem>, interp::remove_snapshots::<NetItem>)
             .ordered_with::<NetItem>(interp::write_snapshot::<NetItem>, interp::remove_snapshots::<NetItem>)

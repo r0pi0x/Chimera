@@ -166,6 +166,9 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
     placed_ragdoll::plugin(app);
     layers.light_styles(app);
     app.add_plugins((controllers::ControllersPlugin, buoyancy::BuoyancyPlugin));
+    if !app.is_plugin_added::<super::held::HeldPlugin>() {
+        app.add_plugins(super::held::HeldPlugin);
+    }
     app.init_resource::<MonitorCamera>();
     layers.screens_and_sound(app);
     // What the simulation writes for the audio (registered by it first

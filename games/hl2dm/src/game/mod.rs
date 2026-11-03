@@ -12,8 +12,9 @@
 //! its rules to draw (`standing`), its deathmatch and team deathmatch (`rules`,
 //! M7), and
 //! its bullet and melee weapons (`weapons`, M4: data and hooks; `scripts`,
-//! the install's weapon scripts against the data); `Hl2dmPlugins` adds
-//! them. The projectiles and the rest come with their specs
+//! the install's weapon scripts against the data), its projectiles (M5)
+//! and gravity gun (M6), physics props as its game plays them (`physics`:
+//! impact damage and its credit, `+use`, M6); `Hl2dmPlugins` adds them. The projectiles and the rest come with their specs
 //! (specs/hl2dm/; the plan's milestones M5 to M11).
 //!
 //! Known shortcuts:
@@ -32,6 +33,7 @@ pub mod maps;
 pub mod mount;
 pub mod movement;
 pub mod parts;
+pub mod physics;
 pub mod pickups;
 pub mod rules;
 pub mod player_anim;
@@ -108,6 +110,7 @@ impl bevy::app::PluginGroup for Hl2dmPlugins {
             .add(movement::Hl2MovementPlugin)
             .add(suit::SuitPlugin)
             .add(pickups::PickupsPlugin)
+            .add(physics::Hl2PhysicsPlugin)
             .add(weapons::Hl2WeaponsPlugin)
             .add(view::Hl2ViewPlugin)
             .add(rules::Hl2RulesPlugin)

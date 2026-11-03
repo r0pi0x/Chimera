@@ -426,10 +426,15 @@ pub struct MapCollisionHooks<'w, 's> {
     used: super::contact_filter::UsedContacts<'w, 's>,
     shadows: super::prop_physics::ShadowContacts<'w, 's>,
     clips: super::physics_clip::ClipContacts<'w, 's>,
+    held: super::held::HeldContacts<'w, 's>,
 }
 
 impl CollisionHooks for MapCollisionHooks<'_, '_> {
     fn filter_pairs(&self, a: Entity, b: Entity, _: &mut Commands) -> bool {
+        // A held body never touches its holder.
+        if let Some(keep) = self.held.filter(a, b) {
+            return keep;
+        }
         // Players' physics shadows touch only the props they push, and
         // their characters no physics prop.
         if let Some(keep) = self.shadows.filter(a, b) {
