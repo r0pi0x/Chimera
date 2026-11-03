@@ -42,7 +42,7 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
 chimera_present (chimera/present/)   render, audio, MapPlugin, assets (installs as asset sources)
   |    chimera_sim (chimera/sim/)   weapon, movement, rule_module, mode, minigame, identity, spawning, announce, server_docs; SimBasePlugins; testkit (feature)
   |    |
-chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; greybox, harness::Sim
+chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, harness::Sim
   |                \
 chimera_core          source_formats (source/formats/)   formats as plain data: no Bevy
  (chimera/core/)       core, console, console_names, console_scope, slots, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, query_cache, memo
