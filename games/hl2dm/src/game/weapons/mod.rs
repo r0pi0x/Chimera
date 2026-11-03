@@ -1,9 +1,13 @@
 //! HL2:DM's weapons as data (docs/weapon-data.md): one TOML file per
 //! weapon in games/hl2dm/data/weapons (built in, parsed at run time:
 //! `hl2_weapons`) with specs/hl2dm/weapons.md's numbers (H3): the
-//! pistol, .357, SMG1 and AR2 (their attack2s, the grenade and the energy
-//! ball, are M5's), the shotgun (single and double shot), the crowbar and
-//! the stunstick. The install's own scripts (`scripts/weapon_*.txt`,
+//! pistol, .357, SMG1 and AR2, the shotgun (single and double shot), the
+//! crowbar and the stunstick; and the projectile weapons
+//! (specs/hl2dm/projectiles.md, H4): the SMG1's grenade and the AR2's ball
+//! (`alt_fire`), the crossbow (`crossbow`, its bolts Chimera's
+//! `chimera:projectile`), the RPG (`rpg`), the frag (`frag`) and the
+//! S.L.A.M. (`slam`), on Chimera's flyers (`weapon::projectile`, lift C1)
+//! with HL2's blast (`launch`). The install's own scripts (`scripts/weapon_*.txt`,
 //! plain text) are read by `game::scripts` and checked against the data.
 //!
 //! The shared frame (`chimera_sim::weapon`) runs them with HL2:DM's parts:
@@ -36,11 +40,17 @@
 //! HL2:DM's choice by distance and view (weapons.md 12); the tracer
 //! counter, impacts and sounds are M10's.
 
+pub mod alt_fire;
+pub mod crossbow;
+pub mod frag;
 pub mod inventory;
+pub mod launch;
 pub mod pistol;
 pub mod recoil;
+pub mod rpg;
 pub mod shotgun;
 pub mod shove;
+pub mod slam;
 
 use bevy::prelude::*;
 use chimera_sim::{
@@ -73,6 +83,10 @@ pub const DATA: &[(&str, &str)] = &[
     data_file!("smg1.toml"),
     data_file!("ar2.toml"),
     data_file!("shotgun.toml"),
+    data_file!("crossbow.toml"),
+    data_file!("rpg.toml"),
+    data_file!("frag.toml"),
+    data_file!("slam.toml"),
 ];
 
 pub const CROWBAR: &str = "hl2dm:weapon_crowbar";
@@ -82,6 +96,10 @@ pub const MAGNUM: &str = "hl2dm:weapon_357";
 pub const SMG1: &str = "hl2dm:weapon_smg1";
 pub const AR2: &str = "hl2dm:weapon_ar2";
 pub const SHOTGUN: &str = "hl2dm:weapon_shotgun";
+pub const CROSSBOW: &str = "hl2dm:weapon_crossbow";
+pub const RPG: &str = "hl2dm:weapon_rpg";
+pub const FRAG: &str = "hl2dm:weapon_frag";
+pub const SLAM: &str = "hl2dm:weapon_slam";
 
 /// The hooks the data names.
 pub const INVENTORY: &str = "hl2dm:inventory";
@@ -89,6 +107,12 @@ pub const PISTOL_HOOK: &str = "hl2dm:pistol";
 pub const PUNCH: &str = "hl2dm:punch";
 pub const MACHINE_GUN: &str = "hl2dm:machine_gun";
 pub const SHOTGUN_HOOK: &str = "hl2dm:shotgun";
+pub const SMG1_GRENADE_HOOK: &str = "hl2dm:smg1_grenade";
+pub const BALL_HOOK: &str = "hl2dm:combine_ball";
+pub const RPG_HOOK: &str = "hl2dm:rpg";
+pub const CROSSBOW_HOOK: &str = "hl2dm:crossbow";
+pub const FRAG_HOOK: &str = "hl2dm:frag";
+pub const SLAM_HOOK: &str = "hl2dm:slam";
 
 /// The weapons every player spawns with besides the melee weapon of its
 /// model (`inventory::arm`), in giving order.
@@ -185,7 +209,103 @@ pub fn register_hooks(app: &mut App) {
             pump_pending: false,
             reload_after_pump: false,
         });
+    })
+    .register_weapon_hook::<alt_fire::SmgGrenadeParams>(SMG1_GRENADE_HOOK, |e, _, p| {
+        e.insert((alt_fire::Hl2SmgGrenade(p.clone()), p.rounds.rounds()));
+    })
+    .register_weapon_hook::<alt_fire::BallParams>(BALL_HOOK, |e, _, p| {
+        e.insert((
+            alt_fire::Hl2Ball {
+                params: p.clone(),
+                launch_at: None,
+            },
+            p.rounds.rounds(),
+        ));
+    })
+    .register_weapon_hook::<rpg::RpgParams>(RPG_HOOK, |e, _, p| {
+        e.insert((
+            rpg::Hl2Rpg {
+                params: p.clone(),
+                missile: false,
+                reload_until: None,
+                missile_entity: None,
+            },
+            p.rounds.rounds(),
+        ));
+    })
+    .register_weapon_hook::<crossbow::CrossbowParams>(CROSSBOW_HOOK, |e, _, p| {
+        e.insert((
+            crossbow::Hl2Crossbow {
+                params: *p,
+                fired_at: None,
+                secondary_held: false,
+                zoomed: false,
+            },
+            chimera_sim::weapon::OwnZoom,
+        ));
+    })
+    .register_weapon_hook::<frag::FragParams>(FRAG_HOOK, |e, _, p| {
+        e.insert((
+            frag::Hl2Frag {
+                params: p.clone(),
+                stage: frag::READY,
+                secondary: false,
+                kind: frag::THROW,
+                since: 0.0,
+                released: false,
+            },
+            p.rounds.rounds(),
+        ));
+    })
+    .register_weapon_hook::<slam::SlamParams>(SLAM_HOOK, |e, _, p| {
+        e.insert((
+            slam::Hl2Slam {
+                params: p.clone(),
+                mine_mode: false,
+                transition_until: 0.0,
+                detonator: false,
+                action: slam::IDLE,
+                action_end: 0.0,
+            },
+            p.rounds.rounds(),
+        ));
     });
+}
+
+/// The projectile weapons' systems (`Hl2GunsPlugin`): attack2s, the RPG,
+/// the crossbow, the frag and the S.L.A.M. on Chimera's flyers.
+fn projectile_systems(app: &mut App) {
+    use chimera_sim::weapon::{SelectWeapons, projectile::FlyerSet};
+    app.add_message::<slam::SlamAction>()
+        .add_systems(
+            Predict::Weapons,
+            (
+                (alt_fire::before_frame, crossbow::before_frame, frag::before_frame, slam::before_frame).before(WeaponFrame),
+                crossbow::after_frame.after(WeaponFrame),
+            ),
+        )
+        .add_systems(Predict::Select, alt_fire::lock_charging.before(SelectWeapons))
+        .add_systems(FixedUpdate, launch::mark_under_water.before(SimSet::Weapons))
+        .add_systems(FixedUpdate, launch::fill_up.run_if(crate::core::authoritative))
+        .add_systems(
+            FixedUpdate,
+            (
+                (alt_fire::ball_touches, alt_fire::ball_ends).in_set(FlyerSet::Touch),
+                (slam::actions, slam::satchels, slam::mines, frag::think, frag::player_taps, slam::spent)
+                    .chain()
+                    .in_set(FlyerSet::Touch),
+                frag::drop_live
+                    .after(crate::core::apply_damage)
+                    .before(chimera_sim::weapon::drop::drop_on_death),
+            )
+                .run_if(crate::core::authoritative),
+        )
+        .predicted_part::<launch::Hl2Rounds>()
+        .predicted_part::<alt_fire::Hl2Ball>()
+        .predicted_part::<crossbow::Hl2Crossbow>()
+        .predicted_part::<frag::Hl2Frag>()
+        .predicted_part::<slam::Hl2Slam>();
+    rpg::plugin(app);
 }
 
 /// HL2:DM's weapons alone: the data, its hooks, the recoil and the pump
@@ -196,6 +316,7 @@ pub struct Hl2GunsPlugin;
 impl Plugin for Hl2GunsPlugin {
     fn build(&self, app: &mut App) {
         register_hooks(app);
+        projectile_systems(app);
         if let Err(e) = app.add_weapon_data(DATA) {
             panic!("HL2:DM weapon data: {e}");
         }
@@ -273,8 +394,9 @@ mod tests {
         assert_eq!(files.len(), DATA.len());
         let mut app = App::new();
         register_hooks(&mut app);
+        chimera_sim::weapon::projectile::register_launcher(&mut app);
         app.add_weapon_data(DATA).unwrap();
-        assert_eq!(hl2_weapons().weapons.len(), 7);
-        assert_eq!(view_models().len(), 7);
+        assert_eq!(hl2_weapons().weapons.len(), 11);
+        assert_eq!(view_models().len(), 11);
     }
 }

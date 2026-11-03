@@ -46,7 +46,10 @@
 //! a game's own pieces worn with it, `ArmorPieces`: `coverage`),
 //! with a `BulletHit` for each bullet hit on something with health (games'
 //! reactions: CS:S's slowdown and flinch); `ViewPunch` (pitch, yaw, roll) on
-//! the view and, scaled, on the shots.
+//! the view and, scaled, on the shots; `HolsterLocked` (a weapon that can't
+//! be put away now); `Inflicted` (where a projectile's or blast's damage
+//! came from); launched projectiles (`projectile`, lift C1: flyers from a
+//! weapon's rounds, `chimera:projectile`, or a game's `LaunchRequest`).
 //!
 //! Known shortcuts (docs/tech-debt.md): Penetration (M13): a player's budget
 //! cost is a fixed 21.5 units (a fit to the stop cases, Q7), not its thickness;
@@ -74,6 +77,7 @@ pub mod lagcomp;
 pub mod notice;
 pub mod params;
 mod pass_data;
+pub mod projectile;
 pub mod random;
 pub mod remote;
 pub mod spray;
@@ -117,6 +121,25 @@ impl DamageWeapons {
 }
 
 
+/// `impulse 101` filled `player`'s weapons: games fill the ammo they count
+/// themselves (HL2:DM's rockets, grenades, S.L.A.M.s, attack2 rounds).
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FilledUp {
+    pub player: Entity,
+}
+
+/// Where the thing that dealt a `Damage` was, when that isn't its
+/// attacker: a blast's centre, a projectile (lift C1: `grenade`'s blasts
+/// and `projectile`'s direct hits write it beside their damage, with the
+/// damage's target and amount to pair them). Games that push the victim
+/// away from the inflictor read it (HL2:DM's damage shove).
+#[derive(Message, Clone, Copy, Debug, PartialEq)]
+pub struct Inflicted {
+    pub target: Entity,
+    pub amount: f32,
+    pub from: Vec3,
+}
+
 /// Source's weapon sound channel: a new shot cuts off the last one's tail.
 pub const CHAN_WEAPON: u8 = 1;
 /// Reload part sounds and other item noises.
@@ -140,6 +163,14 @@ pub struct SelectWeapons;
 /// sides for a character that follows its weapon (`identity`).
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct SlotLastInv;
+
+/// On a weapon that can't be put away now (HL2's AR2 charging its ball,
+/// its RPG while its missile flies, specs/hl2dm/projectiles.md 5.1,
+/// 6.2): selection refuses every switch from it (slot keys, `lastinv`,
+/// `Inventory::wanted`). Games add and remove it (predicted with their
+/// own parts); death and drops don't ask.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HolsterLocked;
 
 /// A game that turns slot keys and `lastinv` (`Intent::select`,
 /// `Intent::last_weapon`) into switches by its own rules, with a system
@@ -171,6 +202,7 @@ impl Plugin for WeaponPlugin {
             .init_resource::<notice::CenterNotice>()
             .add_systems(Update, notice::mode_notice)
             .add_message::<BulletHit>()
+            .add_message::<FilledUp>()
             .add_message::<crate::map::RagdollShot>()
             .add_message::<PlaySound>()
             // The rules' sounds (`map::GameSound`), played here.
@@ -248,6 +280,7 @@ impl Plugin for WeaponPlugin {
         lagcomp::plugin(app);
         remote::plugin(app);
         grenade::plugin(app);
+        projectile::plugin(app);
         spray::plugin(app);
         economy::plugin(app);
         app.init_resource::<Console>();
@@ -408,6 +441,8 @@ impl Plugin for WeaponPlugin {
                         m.reserve = m.reserve_max;
                     }
                 }
+                // Games fill what they count themselves (HL2:DM's grenades).
+                w.write_message(FilledUp { player });
                 Ok(None)
             },
         )
@@ -1639,6 +1674,7 @@ pub(crate) fn select_weapons(
     clock: Res<SimClock>,
     first: Res<FirstTimePredicted>,
     own: Option<Res<OwnSelection>>,
+    locked: Query<(), With<HolsterLocked>>,
 ) {
     let now = clock.now;
     let keys = own.is_none();
@@ -1684,8 +1720,9 @@ pub(crate) fn select_weapons(
         inv.prev_last = intent.last_weapon;
 
         let Some(want) = inv.wanted.take() else { continue };
-        // Selecting what you hold changes nothing (spec 3.6).
-        if inv.active == Some(want) {
+        // Selecting what you hold changes nothing (spec 3.6); a weapon
+        // that can't be put away now stays (`HolsterLocked`).
+        if inv.active == Some(want) || inv.active.is_some_and(|a| locked.contains(a)) {
             continue;
         }
         // Holster: cancels a reload, a burst and the zoom; CS:S models have

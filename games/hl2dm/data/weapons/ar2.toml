@@ -1,7 +1,8 @@
 # The AR2 (specs/hl2dm/weapons.md 7.3): 11 a bullet, 0.1 s accumulating
 # (ticks 7, 7, 6), a 3 degree cone, the machine gun's kick (8 degrees,
 # over 5 s held), 30 rounds, 60 carried; a new one gives a full clip and
-# 30 more (default_clip 60). Its energy ball (attack2) is M5's. Script:
+# 30 more (default_clip 60). Its energy ball on attack2 (projectiles.md
+# 5): `hl2dm:combine_ball`. Script:
 # bucket 2 position 1, weight 5, clip 30.
 id = "hl2dm:weapon_ar2"
 base = "hl2dm:gun"
@@ -43,3 +44,36 @@ default_clip = 60
 [hooks."hl2dm:machine_gun"]
 max = 8.0
 slide = 5.0
+
+# The energy ball (projectiles.md 5): 3 carried, none at spawn; charge
+# 0.5 s (launch strictly after), busy 0.7, next primary 0.5, next
+# secondary 1.0; a 10-unit sphere at 1000 units/s kept after every
+# contact, 4 s of life, 1000 crush + dissolve a touch; punch pitch
+# -12..-8, yaw 1..2 (whole degrees); seeks after world bounces 0.25 s
+# apart: within cos 0.966 (15 degrees) in a 2048-unit sweep of +-256, or
+# after a kill within 512 in front (`sk_combine_ball_search_radius`).
+[hooks."hl2dm:combine_ball"]
+ammo = "hl2dm:ar2altfire"
+max = 3
+charge = 0.5
+busy = 0.7
+primary = 0.5
+secondary = 1.0
+dry = 0.5
+speed = 1000.0
+radius = 10.0
+life = 4.0
+damage = 1000.0
+punch_pitch = [-12, -8]
+punch_yaw = [1, 2]
+bounce_gap = 0.25
+seek_cos = 0.966
+seek_reach = 2048.0
+seek_half = 256.0
+seek_kill_radius = 512.0
+charge_sound = "Weapon_CombineGuard.Special1"
+sound = "Weapon_IRifle.Single"
+launch_sound = "NPC_CombineBall.Launch"
+empty = "Weapon_IRifle.Empty"
+impact_sound = "NPC_CombineBall.Impact"
+explode_sound = "NPC_CombineBall.Explosion"

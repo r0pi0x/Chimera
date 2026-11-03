@@ -39,7 +39,13 @@
 //! game_launch`: a `Launch` event on the weapon where the grenade leaves
 //! the hand, the server's only, which the game's observer answers for its
 //! own weapons with a `Projectile` marked `GameFlown` that it flies and
-//! detonates; `Detonated` and the network's drawing still apply).
+//! detonates; `Detonated` and the network's drawing still apply). Other
+//! projectiles (`projectile`'s flyers, a game's own bodies) ask for a
+//! blast with `BlastAt`; `Blast::radius_rule` (`SourceRadius`) is
+//! Source's generic radius damage (HL2:DM's: characters' distance to
+//! where the line to their eye enters their box, a body between shielding
+//! mass/350, the force by each victim's own damage); every blast's
+//! damage is told with where it came from (`weapon::Inflicted`).
 //!
 //! Known shortcuts (docs/tech-debt.md): Grenades (specs/cs_source/grenades.md)
 //! follow the SDK template where CS:S is unmeasured: release + 0.1 s to the
@@ -114,6 +120,8 @@ pub(super) fn plugin(app: &mut App) {
     use super::CarriedAppExt;
     app.predicted_part::<Throwable>()
         .add_message::<Detonated>()
+        .add_message::<BlastAt>()
+        .add_message::<super::Inflicted>()
         .add_message::<PlaceDecal>()
         .add_message::<Radio>()
         .init_resource::<GrenadeRng>()
@@ -131,6 +139,13 @@ pub(super) fn plugin(app: &mut App) {
                 (fly, explosions, smoke_clouds)
                     .chain()
                     .after(super::WeaponFrame)
+                    .in_set(crate::core::SimSet::Weapons),
+                blast_requests
+                    .after(super::projectile::FlyerSet::Touch)
+                    .after(explosions)
+                    // Only projectiles' blasts (none in CS:S or Combat
+                    // Arms): unordered against their systems on purpose.
+                    .ambiguous_with_all()
                     .in_set(crate::core::SimSet::Weapons),
                 drop_primed
                     .after(crate::core::apply_damage)
@@ -333,6 +348,42 @@ pub struct Blast {
     /// Reaches everyone in range whatever is between (no traces: CS:S's
     /// bomb, measured 2026-10-18).
     pub through_walls: bool,
+    /// Source's generic radius damage instead of the rules above for
+    /// characters' distance, shielding and the push (HL2:DM's every
+    /// explosion, specs/hl2dm/projectiles.md 2): `SourceRadius`.
+    pub radius_rule: Option<SourceRadius>,
+}
+
+/// Source's generic radius damage (HL2's, specs/hl2dm/projectiles.md 2):
+/// a character is aimed at its eye and its distance is to where that line
+/// enters its box (0 from inside); the first other body on the line (not
+/// the world, which blocks whole) shields a share and the distance is to
+/// it: a physics body `mass / shield_mass` of the damage (all at or above
+/// it; living characters count `character_mass`), anything else
+/// `shield_other`; the push on loose bodies and each victim's force is
+/// `per_damage` × its own decayed damage (normalized), at most `force_cap`
+/// (kg·m/s). Linear falloff (`Blast::bell_sigma` None).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SourceRadius {
+    pub shield_mass: f32,
+    pub shield_other: f32,
+    pub character_mass: f32,
+    pub per_damage: f32,
+    pub force_cap: f32,
+}
+
+/// A blast a game's projectile asks for (lift C1: `projectile`): `blast`
+/// at `at` (its ground probe, its damage and push, its scorch, sound and
+/// shake, `Detonated` for the effects), dealt by `thrower` with `weapon`
+/// (kill notices), leaving out `inflictor`. The server's, applied in
+/// `SimSet::Weapons` after the flyers move (`projectile::FlyerSet`).
+#[derive(Message, Clone, Debug)]
+pub struct BlastAt {
+    pub at: Vec3,
+    pub blast: std::sync::Arc<Blast>,
+    pub thrower: Option<Entity>,
+    pub weapon: &'static str,
+    pub inflictor: Option<Entity>,
 }
 
 /// Props and characters between a blast and a character shield part of the
@@ -1051,6 +1102,7 @@ struct GrenadeWorld<'w, 's> {
     decals: MessageWriter<'w, PlaceDecal>,
     detonated: MessageWriter<'w, Detonated>,
     deafened: MessageWriter<'w, Deafened>,
+    inflicted: MessageWriter<'w, super::Inflicted>,
     push_scale: Option<Res<'w, super::PushScale>>,
     /// Spawn-protected characters (`core::SpawnProtected`): projectiles
     /// fly through them, blasts leave them out.
@@ -1152,6 +1204,24 @@ impl GrenadeWorld<'_, '_> {
                     && (self.is_world(e, body) || self.living_character(body) || !self.is_character(body))
             })
             .is_some()
+    }
+
+    /// The first body other than `target` (and `skip`) on the line that
+    /// isn't the world: a living character, a prop, a loose body
+    /// (`SourceRadius`'s shield).
+    fn blocker(&self, from: Vec3, to: Vec3, target: Entity, skip: Option<Entity>) -> Option<Entity> {
+        let d = to - from;
+        let dir = Dir3::new(d).ok()?;
+        let filter = SpatialQueryFilter::default().with_mask(SOLID_LAYERS);
+        self.spatial
+            .cast_ray_predicate(from, dir, d.length(), true, &filter, &|e| {
+                let body = self.body(e);
+                body != target
+                    && Some(body) != skip
+                    && !self.is_world(e, body)
+                    && (self.living_character(body) || !self.is_character(body))
+            })
+            .map(|h| self.body(h.entity))
     }
 
     fn living_character(&self, e: Entity) -> bool {
@@ -1505,6 +1575,34 @@ fn explosions(
     }
 }
 
+/// Apply the blasts projectiles asked for (`BlastAt`): as a grenade's,
+/// then `Detonated` so games draw it.
+fn blast_requests(mut events: MessageReader<BlastAt>, mut world: GrenadeWorld, mut rng: ResMut<GrenadeRng>) {
+    for e in events.read() {
+        let b = &e.blast;
+        let (origin, probe) = explode_at(e.at, b, e.thrower, e.weapon, e.inflictor, &mut world, &mut rng.0, false);
+        if let Some(s) = &b.sound {
+            world.play.write(PlaySound {
+                pitch: None,
+                entry: s.clone(),
+                at: Some(origin),
+                volume: None,
+                source: None,
+                channel: Some(CHAN_WEAPON),
+            });
+        }
+        world.detonated.write(Detonated {
+            kind: GrenadeKind::Blast,
+            weapon: e.weapon,
+            thrower: e.thrower,
+            at: origin,
+            ground: probe,
+            projectile: e.inflictor.unwrap_or(Entity::PLACEHOLDER),
+            shake: b.shake,
+        });
+    }
+}
+
 /// The weapon name explosions from map logic count as (kill notices).
 pub const EXPLOSION_WEAPON: &str = "env_explosion";
 
@@ -1526,6 +1624,8 @@ fn blast(
     let mut samples: Vec<(Entity, [Vec3; 3])> = Vec::new();
     // Characters' origins (the feet, as Source's), for their hearing.
     let mut origins: Vec<(Entity, Vec3)> = Vec::new();
+    // Each target's bounds (`SourceRadius`'s box entry).
+    let mut boxes: Vec<(Entity, Vec3, Vec3)> = Vec::new();
     for t in world.bodies.iter() {
         // The spawn-protected aren't there for it (`passing`).
         if Some(t.entity) == skip || world.passing(t.entity) {
@@ -1563,6 +1663,7 @@ fn blast(
             _ => (lo + hi) / 2.0,
         };
         hits.push((t.entity, target, 0.0));
+        boxes.push((t.entity, lo, hi));
     }
     for (target, point, amount) in &mut hits {
         // Characters aren't in the trace (it sees world brushes only);
@@ -1573,18 +1674,51 @@ fn blast(
         } else {
             world.world_trace(src, *point, own)
         };
-        let end = match trace {
+        let mut end = match trace {
             None => *point,
             Some((fraction, _, body)) if body == *target => src.lerp(*point, fraction),
             Some(_) => continue,
         };
+        // Source's rule (`SourceRadius`): a body on the line shields a
+        // share (the distance to the eye), else the distance is to where
+        // the line enters the character's box.
+        let mut share = 1.0;
+        if let Some(rule) = b.radius_rule
+            && world.is_character(*target)
+        {
+            match world.blocker(src, *point, *target, skip) {
+                Some(blocker) => {
+                    let mass = if world.is_character(blocker) {
+                        rule.character_mass
+                    } else {
+                        world.dynamic.get(blocker).ok().and_then(|(_, rb, _, m, _)| rb.is_dynamic().then(|| m.map_or(1.0, |m| m.value()))).unwrap_or(f32::NAN)
+                    };
+                    let absorbed = if mass.is_nan() { rule.shield_other } else { mass / rule.shield_mass };
+                    if absorbed >= 1.0 {
+                        continue;
+                    }
+                    share = 1.0 - absorbed;
+                }
+                None => {
+                    if let Some(&(_, lo, hi)) = boxes.iter().find(|(e, ..)| e == target) {
+                        let d = *point - src;
+                        let len = d.length();
+                        if len > 0.0 {
+                            let t = super::projectile::ray_box(lo, hi, src, d / len, len).unwrap_or(len);
+                            end = src + d / len * t;
+                        }
+                    }
+                }
+            }
+        }
         *point = end;
         let d = end.distance(src);
         let legacy = b.legacy && world.legacy.as_ref().is_some_and(|l| l.0 != 0);
-        *amount = match b.bell_sigma {
-            Some(sigma) if !legacy => blast_damage_bell(b.damage, sigma, d),
-            _ => blast_damage(b.damage, b.radius, d),
-        };
+        *amount = share
+            * match b.bell_sigma {
+                Some(sigma) if !legacy => blast_damage_bell(b.damage, sigma, d),
+                _ => blast_damage(b.damage, b.radius, d),
+            };
     }
     for (target, end, mut raw) in hits {
         if raw <= 0.0 {
@@ -1607,8 +1741,12 @@ fn blast(
         // multipliers (as `deliver`'s hits).
         let character = world.bodies.get(target).is_ok_and(|t| t.health.is_some());
         let dir = (end - src).normalize_or_zero();
+        let force = match b.radius_rule {
+            Some(rule) => (rule.per_damage * raw).min(rule.force_cap) * rng.float(b.force_jitter.0, b.force_jitter.1),
+            None => b.force * kept,
+        };
         let mut damage = Damage {
-            force: dir * b.force * kept,
+            force: dir * force,
             target,
             attacker: thrower,
             amount: if character { super::quantize(raw, b.quantum) } else { raw },
@@ -1630,6 +1768,11 @@ fn blast(
         {
             world.deafened.write(Deafened { target, effect });
         }
+        world.inflicted.write(super::Inflicted {
+            target,
+            amount: damage.amount,
+            from: origin,
+        });
         world.damage.write(damage);
     }
     // Loose bodies in reach and in the open get the push (physics_props.md
@@ -1649,7 +1792,12 @@ fn blast(
         {
             continue;
         }
-        let j = (b.force * rng.float(b.force_jitter.0, b.force_jitter.1)).min(mass * b.max_push_speed);
+        let base = match b.radius_rule {
+            // Its own decayed damage's force (projectiles.md 2.3).
+            Some(rule) => (rule.per_damage * blast_damage(b.damage, b.radius, centre.distance(src))).min(rule.force_cap),
+            None => b.force,
+        };
+        let j = (base * rng.float(b.force_jitter.0, b.force_jitter.1)).min(mass * b.max_push_speed);
         let dir = (centre - src).normalize_or(Vec3::Y);
         let scale = world.push_scale.as_ref().map_or(1.0, |s| s.0);
         if let Ok((.., mut forces)) = world.dynamic.get_mut(e) {

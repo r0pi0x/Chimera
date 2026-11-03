@@ -117,6 +117,7 @@ pub(super) fn device_weapon(e: &mut EntityWorldMut, d: &'static WeaponData, p: &
                 shake: None,
                 shield: None,
                 through_walls: false,
+                radius_rule: None,
             }),
             pin_sounds: Vec::new(),
             bounce_sound: None,

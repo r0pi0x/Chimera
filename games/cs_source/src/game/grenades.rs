@@ -209,6 +209,7 @@ pub fn he_blast() -> Blast {
             head: 0.8,
         }),
         through_walls: false,
+        radius_rule: None,
     }
 }
 

@@ -13,6 +13,8 @@ mod info;
 mod melee;
 mod movement;
 mod net_prediction;
+mod net_projectiles;
+mod projectiles;
 mod ragdolls;
 mod skeleton;
 mod suit;

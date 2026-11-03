@@ -36,7 +36,8 @@ hitgroups = { head = 3.0, chest = 1.0, stomach = 1.0, arm = 1.0, leg = 1.0 }
 impulse = 666.57
 # Health keeps the fraction (suit.md; the carried remainder is M3's).
 quantum = 0.0
-# The suit takes 80 %: health gets 20 % of a hit (`armor_ratio` x 0.5).
-# The suit's own rule (one armour point per point absorbed) is lift C2's,
-# M3 (docs/plans/active/hl2dm.md).
-armor_ratio = 0.4
+# The suit (`suit::suit_armour`, its coverage 0.8 on the shared armour
+# step) takes 80 % at one armour point a point: with ratio 1 health gets
+# the other 20 % (0.4 left health nothing while the armour lasted:
+# corrected with M5's projectiles, projectiles.md 11).
+armor_ratio = 1.0

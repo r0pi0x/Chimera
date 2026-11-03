@@ -1,6 +1,7 @@
 # The SMG1 (specs/hl2dm/weapons.md 7.3): 5 a bullet, 0.075 s accumulating
 # (13.33 a second), a 5 degree cone, the machine gun's kick (1 degree,
-# over 2 s held), 45 rounds, 225 carried. Its grenade (attack2) is M5's.
+# over 2 s held), 45 rounds, 225 carried. Its contact grenade on attack2
+# (projectiles.md 4): `hl2dm:smg1_grenade`.
 # Script: bucket 2 position 0, weight 3, clip 45.
 id = "hl2dm:weapon_smg1"
 base = "hl2dm:gun"
@@ -44,3 +45,21 @@ position = 0
 [hooks."hl2dm:machine_gun"]
 max = 1.0
 slide = 2.0
+
+# The contact grenade (projectiles.md 4): 3 carried, none at spawn; 1000
+# units/s along view + punch, 400 units/s² of gravity, a +-3 box, 100 in
+# 250; next primary 0.5, next secondary 1.0; dry 0.5.
+[hooks."hl2dm:smg1_grenade"]
+ammo = "hl2dm:smg1_grenade"
+max = 3
+speed = 1000.0
+gravity = 400.0
+half = 3.0
+damage = 100.0
+radius = 250.0
+primary = 0.5
+secondary = 1.0
+dry = 0.5
+sound = "Weapon_SMG1.Double"
+empty = "Weapon_SMG1.Empty"
+explode = "BaseGrenade.Explode"
