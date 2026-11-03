@@ -1299,8 +1299,9 @@ impl Armor {
 pub struct ArmorPieces {
     pub pieces: Vec<hits::ArmorPiece>,
     pub depletion: hits::Depletion,
-    /// What armour has left is truncated to this (HL2's suit: whole
-    /// points) whatever the hit's own quantum; None: the hit's.
+    /// Armour pays whole multiples of this, at least one (HL2's suit:
+    /// whole points), whatever the hit's own quantum; None: what armour
+    /// has left is cut to the hit's quantum (`hits::absorb_quanta`).
     #[serde(default)]
     pub armour_quantum: Option<f32>,
 }
@@ -1371,7 +1372,7 @@ impl HitArmor<'_, '_> {
         let Ok((mut armor, pieces)) = self.armor.get_mut(damage.target) else {
             return ArmorHit::default();
         };
-        let armour_quantum = pieces.and_then(|p| p.armour_quantum).unwrap_or(quantum);
+        let armour_quantum = pieces.and_then(|p| p.armour_quantum);
         let (entries, depletion) = coverage(&armor, pieces);
         let mut hit = ArmorHit {
             covered: false,

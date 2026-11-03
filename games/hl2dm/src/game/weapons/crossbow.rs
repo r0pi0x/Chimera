@@ -7,9 +7,12 @@
 //! gravity after), else sticking for 2 s), view punch −2 (`hl2dm:punch`).
 //!
 //! - **Automatic reload**: on the first tick strictly after the fire
-//!   animation's end (0.6667 s: tick 45) the reload (1.8333 s, the player
-//!   busy) starts if there are bolts in reserve; the bolt is in at its end
-//!   (tick 168), where a held attack fires again: 168 ticks a shot.
+//!   animation's end the reload (1.8333 s, the player busy) starts if
+//!   there are bolts in reserve; the bolt is in at its end, where a held
+//!   attack fires again. The animation's length is data: 0.1 s (tick 7),
+//!   as the real server measures (a shot every 130 ticks held, the load
+//!   sound 69 ticks after the shot), not the spec's 0.6667 (tick 45, 168
+//!   ticks a shot).
 //! - **Zoom**: attack2's press (not its hold) toggles FOV 20 (`weapon::
 //!   Zoomed`, the crossbow's own zoom: `OwnZoom`), also while reloading;
 //!   firing and reloading keep it; putting the crossbow away unzooms.

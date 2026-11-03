@@ -717,5 +717,19 @@ properties every tick):
     30 as listed, but **`sk_suitcharger` is 30** (skill 1), not 75: the
     spec's pool (and test 44) needs a follow-up spec session (Chimera keeps
     75 until then). Also read: `mp_forcerespawn` 0 on the dedicated server
-    (H0 Open question 1: `valve.rc` runs there too). Not measured yet:
-    P1-P2, P6-P11, P13 (damage by kind, drowning, chargers).
+    (H0 Open question 1: `valve.rc` runs there too).
+    **Second probe session (2026-11-03, `tools/hl2dm_probe/cases.py`):**
+    P1: tests 1, 2 and the run-outs as listed, but armour pays its cost
+    **truncated**, at least 1: 8 bullet damage on 100 leaves 94 (test 6:
+    94, 88, 82, 76), 24 leaves 81 (test 8), 63 leaves 50 (test 9), blast
+    6 leaves 91; "Armour" step 3's ⌈0.8·D·w⌉ is trunc(0.8·D·w) on this
+    build (Chimera follows the server). P2: the remainder (0.8) survives
+    death; one 1-bullet hit then takes 1. P6 (dm_underpass): aux falls
+    0.1005 a tick, empty at about 14.9 s, hits of 10 at 21.9 s and every
+    1.005 s, `player/pl_drown*.wav`, recovery +10 at once and 2.01 s
+    later, as listed. P10: suit charger 1 point per 7 ticks, pool 30 (the
+    cvar), refilled 30 s after it ran empty (a use held on the empty
+    charger doesn't push the refill back); health charger 1 per 7 ticks,
+    pool 50. P11: dm_lockdown's flag-8192 charger: +2 armour and +5
+    health a charge, pool 200, armour to 200. Not measured yet: P7-P9,
+    P13.

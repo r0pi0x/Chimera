@@ -3,11 +3,18 @@
 A SourceMod plugin (`chimera_probe.sp`) that replays per-tick inputs on a
 bot in a real Half-Life 2: Deathmatch dedicated server and logs its
 position, velocity, ground and duck state, water level, move type, aux
-power, health and armour after every tick, its sounds and its hurt
-events; `probe.py` drives it over RCON and `measure.py` runs the cases of
-specs/hl2dm/movement.md (P2-P13) and suit.md (P3-P5) and prints each beside
-the spec's numbers. The CS:S probe (tools/css_probe) is the model; this
-one has no CS:S-only calls.
+power, health, armour and life state after every tick, its active
+weapon (clip, ammo, next attack times), tracked entities (projectiles,
+props, items: position, velocity, think tick, effects), its sounds,
+damage and traced hits, bullets (the "Shotgun Shot" temp entity: origin,
+direction, seed, spread) and deaths and spawns; server commands give
+weapons and ammo, hurt, kill, place players, spawn props and read or set
+any entity property (the list in the plugin's header). `probe.py`
+drives it over RCON; `measure.py` runs the cases of
+specs/hl2dm/movement.md (P2-P13) and suit.md (P3-P5), `cases.py` those of
+rules.md, suit.md, weapons.md, projectiles.md, gravity_gun.md and
+maps_entities.md, each printed beside the spec's numbers. The CS:S probe
+(tools/css_probe) is the model; this one has no CS:S-only calls.
 
 Setup (once per machine; nothing here touches the game's install):
 
@@ -30,21 +37,31 @@ mp_forcerespawn 1
 mp_timelimit 0
 mp_fraglimit 0
 hl2mp_bot_quota 0
+nb_player_stop 1
 ```
+
+`nb_player_stop 1` matters: an `hl2mp_bot_add` bot's NextBot behaviour
+crashes the server (a segfault in the bot's action update) as soon as
+the bot dies, whatever kills it (`sm_slay`, damage, a fall). Stopped,
+the bot still runs the commands the plugin writes, dies and respawns
+safely. `probe.setup` sets it again with `mp_forcerespawn 1`, which the
+dedicated server resets to 0 at the map load.
 
 Run (a port other than CS:S's probe's 27030 and the default 27015):
 
 ```
 cd <server> && ./srcds_run -game hl2mp -console -port 27040 +ip 127.0.0.1 \
-    -insecure -norestart +tv_enable 0 +maxplayers 4 +exec chimera_probe.cfg +map dm_lockdown
-python3 -c "import sys; sys.path.insert(0, 'tools/hl2dm_probe'); import probe; print(probe.connect().exec('hl2mp_bot_add'))"
+    -insecure -norestart -nobreakpad +tv_enable 0 +maxplayers 4 +exec chimera_probe.cfg +map dm_lockdown
+python3 -c "import sys; sys.path.insert(0, 'tools/hl2dm_probe'); import probe; probe.setup(probe.connect())"
 cd tools/hl2dm_probe && python3 measure.py            # or: measure.py accel jump aux
+python3 cases.py                                      # or: cases.py weapons gravity
 ```
 
-Quit the server afterwards (`quit` over RCON). `hl2mp_bot_add` prints
-"invalid team index" in deathmatch but adds the bot; the plugin replaces
-its commands every tick, so its AI moves nothing. The ladder cases need
-`changelevel dm_resistance` and the bot added again.
+Quit the server afterwards (`quit` over RCON). `-nobreakpad` keeps a
+crash's minidump on the machine. `hl2mp_bot_add` prints "invalid team
+index" in deathmatch but adds the bot. A map change drops the bots: run
+`probe.setup` again. The ladder cases need `changelevel dm_resistance`,
+the water cases (`cases.py swim drown`) `changelevel dm_underpass`.
 
 Notes (build 24600426, 2026-11-03):
 - The placement tick runs a move: a start velocity is already one tick
@@ -54,4 +71,14 @@ Notes (build 24600426, 2026-11-03):
 - `m_vecMaxs` reads 60 while ducked (the view offset reads 28): the
   collision property's box, not necessarily the movement's ducked hull.
 - `m_flMaxspeed` reads 0 (the max speed isn't kept there).
-- Aux power is `m_flSuitPower`, armour `m_ArmorValue` (a data field).
+- Aux power is `m_flSuitPower`, armour `m_ArmorValue` (a data field),
+  the health remainder `m_flDamageAccumulator`.
+- The bot's tick base runs 4 ticks ahead of the server's tick
+  (`sv_clockcorrection_msecs` 60): its command time (the rows'
+  `gametime`) is that clock, so timers its commands start (fuses, an
+  item's respawn) land 4-5 server ticks after the specs' counts.
+- A bot whose behaviour is stopped doesn't animate: a level shot at
+  its head height passes over it (no head hits; the chest and arms do
+  take hits).
+- Bullet impacts aren't dispatched as effects with no client connected;
+  the bullets' temp entity carries the spread instead.

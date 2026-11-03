@@ -61,6 +61,12 @@ fn draw_and_reload_times_are_the_view_models() {
                     assert!(near(t, 0.8333), "slam {act}: {t}");
                 }
             }
+        } else if data.id == weapons::PHYSCANNON {
+            // The gravity gun's draw plays (0.3222 s, weapons.md 3) but
+            // doesn't delay use: deploy sets its timers to now
+            // (gravity_gun.md "Deploy", Corrections 4), so `draw` is 0.
+            assert_eq!(data.draw, 0.0, "physcannon draw");
+            check(data, "ACT_VM_DRAW", 0.3222);
         } else {
             check(data, "ACT_VM_DRAW", data.draw);
         }
