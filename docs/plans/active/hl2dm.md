@@ -922,7 +922,10 @@ implementing (owner branch) / done.
   the layout's panels are conditioned on the block name (`HudHealth
   [!$DECK]`), which `parse_pc` takes; the scoreboard header token is
   `%s1    -   %s2 players` (name and count); `HudPlayerDeath` ends at
-  255 alpha red (added, so the scene still shows). Left: the secondary
+  255 alpha red (added, so the scene still shows; but the live capture
+  of the dead view about 4 s in is solid red with the ragdoll barely
+  visible, so the blend or the alpha's end needs a look against the
+  real game). Left: the secondary
   ammo panel waits for M5's secondary ammo (the `WeaponNow::secondary`
   field is None); history items (battery, kit) are told by whole steps of
   armour 15 and health 25, not the server's item message; ammo-denied
