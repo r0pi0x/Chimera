@@ -19,8 +19,9 @@
 //! the same shape: P 0.8 on every part, wear 1 (2 against blasts), with a
 //! catch-all entry that leaves classes out (`Coverage::except`: falls,
 //! drowning, poison, radiation) and its own armour quantum
-//! (`absorb_quanta`: whole armour points, health's fraction kept for its
-//! remainder, `core::DamageRemainder`).
+//! (`absorb_quanta`: armour pays whole points of its cost, at least one,
+//! as the real server does; health's fraction kept for its remainder,
+//! `core::DamageRemainder`).
 
 use crate::core::{BodyPart, BodyRegion, DamageKind};
 
@@ -187,19 +188,22 @@ pub fn absorb<'a>(
     entries: impl IntoIterator<Item = &'a Coverage>,
     depletion: Depletion,
 ) -> Absorbed {
-    absorb_quanta(raw, part, class, ratio, (quantum, quantum), amount, entries, depletion)
+    absorb_quanta(raw, part, class, ratio, (quantum, None), amount, entries, depletion)
 }
 
-/// `absorb` with the armour's own quantum: `quanta` is (health's, what
-/// armour has left's). HL2's suit loses whole armour points while health
-/// keeps the fraction (its remainder, `core::DamageRemainder`).
+/// `absorb` with the armour's own quantum: `quanta` is (health's, the
+/// armour's). With no armour quantum what armour has left is cut to the
+/// health's quantum; with one, armour pays its cost cut to whole quanta,
+/// at least one (HL2's suit, measured on the real server: 8 bullet damage
+/// costs 6.4, paid as 6; 1 damage costs 0.8, paid as 1) while health keeps
+/// the fraction (its remainder, `core::DamageRemainder`).
 #[allow(clippy::too_many_arguments)]
 pub fn absorb_quanta<'a>(
     raw: f32,
     part: BodyPart,
     class: DamageClass,
     ratio: Option<f32>,
-    quanta: (f32, f32),
+    quanta: (f32, Option<f32>),
     amount: f32,
     entries: impl IntoIterator<Item = &'a Coverage>,
     depletion: Depletion,
@@ -244,10 +248,10 @@ pub fn absorb_quanta<'a>(
             covered: true,
         };
     }
-    let left = if armour_quantum > 0.0 {
-        super::deliver::quantize(amount - cost, armour_quantum)
-    } else {
-        amount - cost
+    let left = match armour_quantum {
+        Some(q) if q > 0.0 => (amount - super::deliver::quantize(cost, q).max(q)).max(0.0),
+        _ if quantum > 0.0 => super::deliver::quantize(amount - cost, quantum),
+        _ => amount - cost,
     };
     Absorbed {
         to_health: super::deliver::quantize(to_health, quantum),
@@ -378,14 +382,16 @@ mod tests {
         ]);
         let suit = [all(None, 1.0, out), all(Some(DamageClass::BLAST), 2.0, 0)];
         let hit = |raw: f32, class, armour: f32| {
-            let a = absorb_quanta(raw / 100.0, BodyPart::Leg, class, Some(1.0), (0.0, 0.01), armour / 100.0, &suit, Depletion::Cost);
+            let a = absorb_quanta(raw / 100.0, BodyPart::Leg, class, Some(1.0), (0.0, Some(0.01)), armour / 100.0, &suit, Depletion::Cost);
             ((a.to_health * 100.0 * 1e3).round() / 1e3, ((armour / 100.0 - a.taken) * 100.0).round())
         };
         assert_eq!(hit(30.0, DamageClass::BULLET, 100.0), (6.0, 76.0));
         assert_eq!(hit(30.0, DamageClass::BLAST, 100.0), (6.0, 52.0));
         assert_eq!(hit(30.0, DamageClass::BULLET, 10.0), (20.0, 0.0));
         assert_eq!(hit(30.0, DamageClass::BLAST, 10.0), (25.0, 0.0));
-        assert_eq!(hit(8.0, DamageClass::BULLET, 100.0), (1.6, 93.0), "whole armour points, health exact");
+        assert_eq!(hit(8.0, DamageClass::BULLET, 100.0), (1.6, 94.0), "whole armour points paid, health exact");
+        assert_eq!(hit(1.0, DamageClass::BULLET, 50.0), (0.2, 49.0), "at least one point");
+        assert_eq!(hit(6.0, DamageClass::BLAST, 100.0), (1.2, 91.0), "9.6 paid as 9");
         for class in [DamageClass::FALL, DamageClass::DROWN, DamageClass::POISON, DamageClass::RADIATION] {
             assert_eq!(hit(10.0, class, 50.0), (10.0, 50.0), "{class:?} bypasses");
         }

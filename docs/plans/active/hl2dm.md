@@ -434,10 +434,10 @@ implementing (owner branch) / done.
 | M0 install and look | H0 (install facts) | done (branch `hl2dm-m0`, 2026-11-01): S0, S1, `games/hl2dm` skeleton, `dump hl2dm`, heavy `mount.rs`; left for M1/M3: the RCON reads and the probe (below) | S0, S1, (S11) |
 | M1 maps load | H0 | done (branch `hl2dm-m1`, 2026-11-01): S2, S3, S4 lifted, CS:S's maps identical; `games/hl2dm` maps, `Hl2Sim`, stand-in movement and pistol; `apps/hl2dm`, `apps/hl2dm_server`; `mapsweep --game hl2dm` | S2, S3, S4, (S11: mapsweep) |
 | M3 movement, suit | H1, H2 | done (branch `hl2dm-m3`, 2026-11-03): S5 (scripts, soundscapes), S6, C2, C8; `hl2dm:movement`, the suit, pickups and chargers; the probe | S5, S6, C2, C8 |
-| M4 bullets, melee, UGG | H3 | done (branch `hl2dm-m4`, 2026-11-03): see Progress; left: probe checks (P1-P17), C7 (no need in M4) | S8, C4 |
-| M5 projectiles | H4 | done (branch `hl2dm-m5`, 2026-11-03): see Progress; left: probe checks (P1-P15), the frag in the spawn loadout, the effects (M10) | C1 |
-| M6 gravity gun | H5 | done (branch `hl2dm-m6`, 2026-11-03): see Progress; left: `hl2mp_allow_pickup` 1's carry, `prop_physics_respawnable`, first-impact 10× and breaks, the gun's effects (M10), the probe checks (P1-P17) | C6 |
-| M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; left: the set pieces of H10 sections 8-16, respawnable props, the probe cases (the probe server crashes on a bot's death) | C3 (C5 not needed) |
+| M4 bullets, melee, UGG | H3 | done (branch `hl2dm-m4`, 2026-11-03): see Progress; left: probe checks P4, P11, P12, P14, P15 (the rest run: branch `hl2dm-probe`), C7 (no need in M4) | S8, C4 |
+| M5 projectiles | H4 | done (branch `hl2dm-m5`, 2026-11-03): see Progress; left: probe checks P5-P8, P9's refire, under-water speed and damage, P10-P12, P14, P15 (the rest run: branch `hl2dm-probe`), the effects (M10) | C1 |
+| M6 gravity gun | H5 | done (branch `hl2dm-m6`, 2026-11-03): see Progress; left: `hl2mp_allow_pickup` 1's carry, `prop_physics_respawnable`, first-impact 10× and breaks, the gun's effects (M10), the probe checks P6-P17 (P1-P5 run: branch `hl2dm-probe`) | C6 |
+| M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; left: the set pieces of H10 sections 8-16, respawnable props, rules P5-P14 (the probe's crash fixed: branch `hl2dm-probe`) | C3 (C5 not needed) |
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
 | M9 HUD | H8 | done (branch `hl2dm-m9`, 2026-11-03): see Progress; left: the items listed there | S7 (the look reader and the animation engine; CS:S's menu readers stay) |
 | M10 effects, sounds | H9 | done in part (branch `hl2dm-m10`, 2026-11-03): see Progress; left: explosions, ball, dissolve, RPG, crossbow, gravity-gun effects (M5, M6), shells, the shield wall shader, refcmp | S10, S5 |
@@ -1154,6 +1154,65 @@ implementing (owner branch) / done.
   mount, which the store stands in for); halls3 isn't a `dm_*` name and
   stays out. Left: the party and UGG heavy tests' reads of HL2:DM from
   the store weren't run.
+- 2026-11-03: The probe made reliable and run (branch `hl2dm-probe`,
+  dedicated server build 24600426, port 27040). **The crash**: an
+  `hl2mp_bot_add` bot's NextBot behaviour segfaults the server in its
+  action update as soon as the bot dies (`sm_slay` or anything else:
+  the core dump's stack is the bot's behaviour update, not SourceMod).
+  `nb_player_stop 1` stops the behaviour and keeps the bot running the
+  plugin's commands: it dies and respawns safely, again and again
+  (`probe.setup` sets it with `mp_forcerespawn 1`, which the server
+  resets at the map load; the README has it). The plugin (version 2)
+  now also logs the active weapon, tracked entities, damage, traced hits
+  with hitgroups, bullets' temp entities (seed, spread), deaths and
+  spawns, the server tick and the bot's tick base, and gives, hurts,
+  kills, places, spawns props and reads or sets any property;
+  `tools/hl2dm_probe/cases.py` runs the cases below.
+
+  **The bot's clock**: its tick base runs 4 ticks ahead of the server's
+  (`sv_clockcorrection_msecs` 60). Timers its commands start run on that
+  clock, so counted in server ticks they land 4-5 ticks after the specs'
+  numbers (frag explosion 173 not 169, its blips 0, 74-75, 96, 117, 137-138,
+  159; RPG ignition 23-24 not 20; a kit back 2004-2005 not 2000; a
+  weapon's copy 1337-1338 not 1333); a death from a console kill (outside a
+  command) respawns 5 ticks sooner (329). The specs' numbers hold in the
+  command's own clock (an in-tick death: 334 exactly). Chimera runs one
+  clock, so nothing changes; whether a human client's tick base sits
+  ahead the same way wasn't measured.
+
+  | Case | Real server | Spec | Ours |
+  |---|---|---|---|
+  | rules P2-P4 respawn | force 334 after an in-tick death; held button never; press at +200: 201, +199: nothing (then 334); release then press +201: 202; observer mode 0 throughout | same | same (tests) |
+  | suit tests 1, 2, run-outs | 94/76, 94/52; armour 10: 80/0, blast 75/0; armour 5, 7 dmg: 98/0 | same | same |
+  | suit test 6 (four 8-bullets on 100) | armour 94, 88, 82, 76 | 93, 86, 79, 72 | **was the spec's; fixed** |
+  | armour paid per bullet D | trunc(0.8 D), at least 1 (24: 19, 63: 50); blast trunc(1.6 D) | ⌈0.8 D⌉ | **fixed** (`absorb_quanta`) |
+  | suit P2 remainder | 0.8 kept across death; next 1-bullet: 99 | same | same |
+  | suit P6 drowning | aux −0.1005 a tick, 0 at 14.87-14.93 s, hits 10 at 21.9 s then +1.005 s, `pl_drown*`; recovery +10 at once, then 2.01 s | same | same (tests) |
+  | suit P10 chargers | suit: 1 per 7 ticks, pool **30**; health: 1 per 7, pool 50; refill 30 s from emptying, held use doesn't push it | pool 75 (`sk_suitcharger`, the user's open question) | 75, kept |
+  | suit P11 megacharger (8192) | +2 armour, +5 health a charge, pool 200, armour to 200 | same | same |
+  | suit P12, weapons P3, projectiles P13, gravity P1, maps P10 cvars | all as listed but `sk_suitcharger` 30; `physcannon_*` flags only "sv" (not cheat) | cheat-flagged | – |
+  | movement rows 59-61 (water) | sink −7.2, −13.968 … −48; jump 116.8 then 104.2; forward 22.8, 44.232, 64.378 | same | same (tests) |
+  | weapons P1, P2 spread | pistol cone 0.00872 (first shot), +0.00538 a fast click to 0.05234; .357 0 | same (penalty 0.185, 0.37 per click) | same |
+  | weapons P5 spawn ammo | pistol 150, SMG1 45, .357 6, buckshot 6, grenades 2 | 2 (open question 2) | 2 |
+  | weapons P6, P7 | pistol 33/34, .357 50, SMG1 5 (first sometimes 6), AR2 7-7-6, shotgun 59, double 70; clicks 8 | same | same (tests) |
+  | weapons P8, P9 | reloads 96, 245, 100, 105, shotgun first shell 34; switch 54 (pistol), 56 (SMG1) | same | same |
+  | weapons P10, P13, P17 | guns dropped with their clip, crowbar and gravity gun not, gone after 31 s; SMG1 back after 3.1 s: 45, after 2.85 s: 38; `drop` does nothing | same | same |
+  | weapons P16, projectiles P7 | bullets push: pistol 40 (5 per damage), .357 375, shotgun 45 a pellet, crowbar ≈123 | P16: unchanged; P7: as measured | push (M4's shove) |
+  | projectiles P1, P2 frag | start eye + 18 forward, 8 right; ≈1160 forward, 120 up, and ≈2.2° to the right (lateral 3.8 % of the speed, every throw); lob ≈340-380, 43 up | (1200, 0, 120), (350, 0, 50) | the spec's |
+  | projectiles P3, P4, P9 | contact grenade 1000, gravity 400; missile (300, 0, 128) with gravity 600 then 1500; bolt 3500, gravity 30 | same | same |
+  | gravity P2 level punts | 10/30/100/250 kg: 1842/1084/748/660 a tick after (2000/1100/750/660 less a tick of drag) | same | same |
+  | gravity P3 punt 45° down, 30 kg | 827 forward, 577 up (the crate on the floor) | ≈ 506 up | – |
+  | gravity P4, P5 held, launched | held 66.5 ahead at eye height; launched 1469 (30 kg), 1324 (250 kg) | ≈ 66.6; 1500, 1327 | same |
+
+  Fixed: HL2:DM's armour pays its cost truncated to whole points, at
+  least one (`hits::absorb_quanta` with an armour quantum; CS:S and
+  Combat Arms unchanged), suit tests 6, 8, 9 and the hits unit test to
+  the measured values. Not measured: head hits (the stopped bot doesn't
+  animate: level shots at head height pass over it), crowbar reach (P14),
+  ladder brushes (movement P11), P15, the client cases (P16), H1's
+  back-hop, weapons P4, P11 (copies: maps P2 above), P12, projectiles
+  P5-P8, P9's refire, water speed and damage, P10-P12, P14-P15, gravity P6-P17, rules P5-P14, maps P3-P9, M8's
+  P6-P11, M9's P1-P9, M10's P7-P11.
 
 ## Decision log
 
