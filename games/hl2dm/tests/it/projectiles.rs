@@ -646,13 +646,15 @@ fn the_crossbow_fires_every_130_ticks_held_36_37() {
     assert!((d.x - 525.0).abs() < 0.05 && (d.z + 0.3375).abs() < 0.01, "{d}");
 }
 
-/// Test 39: a head shot is 300, a chest shot 100 (with 100 armour: health
-/// 80, armour 20).
+/// Test 39, as the real server measures (the plan's Progress 2026-11-03
+/// "probe 2": its bolts hit a player's generic hitgroup, head or legs):
+/// a head shot is 100 like a chest shot (with 100 armour: health 80,
+/// armour 20), not the spec's 300.
 #[test]
-fn a_bolt_does_100_times_the_hitgroup_39() {
+fn a_bolt_does_100_anywhere_39() {
     for (head, armour, health_left, armour_left) in [
         (false, 0.0, 0.0, None),
-        (true, 1.0, 0.0, None),
+        (true, 1.0, 80.0, Some(0.2)),
         (false, 1.0, 80.0, Some(0.2)),
     ] {
         let mut sim = sim();

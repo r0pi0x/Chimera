@@ -78,7 +78,16 @@ Notes (build 24600426, 2026-11-03):
   `gametime`) is that clock, so timers its commands start (fuses, an
   item's respawn) land 4-5 server ticks after the specs' counts.
 - A bot whose behaviour is stopped doesn't animate: a level shot at
-  its head height passes over it (no head hits; the chest and arms do
-  take hits).
+  its head height passes over it. Its head hitbox sits low and to one
+  side: from 200 units ahead of a bot facing the shooter, pitch 1.25
+  and yaw +1 hit it (hitbox 0, hitgroup 1; `cases.py heads`); pitch 3
+  the chest, 8.5 a thigh.
+- Tracked entities' rows end with their angles; `probe_prop` takes
+  spawnflags (72: hanging motion-disabled until the gravity gun punts
+  it, so punts can be measured with nothing under the prop). Above
+  `measure.ROOF` there is open sky for in-air throws and punts.
+- A frag's origin circles its mass centre as it spins (3-5 units):
+  fit its velocity past the circle (`cases.window_velocity`), not from
+  one tick's step.
 - Bullet impacts aren't dispatched as effects with no client connected;
   the bullets' temp entity carries the spread instead.
