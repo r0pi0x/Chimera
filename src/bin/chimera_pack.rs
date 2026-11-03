@@ -38,7 +38,7 @@
 //! whole pack or publish): `weapon/<id>` per weapon (CS:S: its view and
 //! world models with their materials and the waves of its sound entries;
 //! Combat Arms: its view model with hands and parts' textures), `players`
-//! (CS:S: the eight class models). `--sign` signs the manifest again with
+//! (CS:S: the eight class models; HL2:DM: its 19 player models). `--sign` signs the manifest again with
 //! the server's key (a server store). `base` and the maps' sets come from
 //! `CHIMERA_VFS_LOG` logs (`--from`).
 //!
@@ -96,7 +96,7 @@ fn games() -> [Game; 3] {
             extra: Some((combat_arms::game::mount::loose_music, "music")),
         },
         // Half-Life 2: Deathmatch: its search path from `hl2mp/gameinfo.txt`;
-        // no pieces' sets yet (`record_pieces`).
+        // its pieces' sets: `weapon/<id>` and `players` (`record_pieces`).
         Game { info: &hl2dm::game::INFO, open_install: hl2dm::game::mount::open_install, app: 320, extra: None },
     ]
 }
@@ -373,6 +373,43 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>) -> Vec<(String, Vec<
                 let id = w.id.rsplit(':').next().unwrap_or(&w.id);
                 out.push((format!("weapon/{id}"), take()));
             }
+        }
+        "hl2dm" => {
+            use hl2dm::game::{bodies, weapons, weapons::inventory::DEFAULT_MODEL};
+            use source_engine::content::{material::MaterialLoader, props, sound::SoundScripts};
+            let scripts = SoundScripts::load_with(&mut MaterialLoader::guest(mount, 0, 0), "", true);
+            let held = bodies::load_one(&tapped, DEFAULT_MODEL).ok().map(|c| c.bones);
+            for w in &weapons::hl2_weapons().weapons {
+                take();
+                let mut materials = MaterialLoader::guest(&tapped, 0, 0);
+                if let Some(view) = &w.models.view {
+                    let _ = props::load_view_model(&mut materials, view, &w.id, true);
+                }
+                if let (Some(world), Some(bones)) = (&w.models.world, &held) {
+                    let _ = props::load_held(&mut materials, world, &w.id, bones);
+                }
+                if let Some(bones) = &held {
+                    for (key, path, weapon) in weapons::launch::MODELS {
+                        if *weapon == w.id {
+                            let _ = props::load_held(&mut materials, path, key, bones);
+                        }
+                    }
+                }
+                let swings = w.melee.iter().flat_map(|m| [Some(&m.primary), m.secondary.as_ref()]).flatten();
+                let swung = swings.flat_map(|s| [&s.sound_hit, &s.sound_hit_world, &s.sound_miss]).flatten();
+                for name in w.sounds.iter().flat_map(|s| s.entries()).chain(swung.map(String::as_str)) {
+                    for wave in scripts.waves(name) {
+                        let _ = tapped.read(&wave);
+                    }
+                }
+                let id = w.id.rsplit(':').next().unwrap_or(&w.id).trim_start_matches("weapon_");
+                out.push((format!("weapon/{id}"), take()));
+            }
+            take();
+            for model in bodies::PLAYER_MODELS {
+                let _ = bodies::load_one(&tapped, model);
+            }
+            out.push(("players".into(), take()));
         }
         _ => {}
     }

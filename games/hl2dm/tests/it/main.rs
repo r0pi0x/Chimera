@@ -38,4 +38,5 @@ mod heavy {
     mod mount;
     mod player_models;
     mod scripts;
+    mod served;
 }

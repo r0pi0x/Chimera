@@ -34,22 +34,24 @@ from an install.
    cargo run -p chimera_assets --bin chimera_assets -- fetch cs_source base map/de_dust2 players
    cargo run -p chimera_assets --bin chimera_assets -- fetch cs_source heavy-tests
    cargo run -p chimera_assets --bin chimera_assets -- fetch combat_arms      # every file
+   cargo run -p chimera_assets --bin chimera_assets -- fetch hl2dm heavy-tests
    ```
    On a terminal it shows one live line (records and MB done of the total,
    speed, time left), elsewhere a line every 5 s, then a summary.
 
 What the server has (sizes as stored, i.e. transferred; build 25338318 of
-CS:S, 26236938 of Combat Arms, measured 2026-10-31):
+CS:S, 26236938 of Combat Arms, 24600434 of HL2:DM; measured 2026-10-31, HL2:DM
+2026-11-03):
 
-| | CS:S | Combat Arms |
-|---|---|---|
-| every file the game mounts (`fetch <game>`; CS:S: with the publisher's content cache, 89 community maps) | 47,692 records, 4.4 GB (7.5 GB plain) | 29,431 records, 3.8 GB (9.8 GB plain; music included) |
-| `base` (menus, fonts, UI sounds) | 1.5 MB | 9.7 MB |
-| `map/de_dust2`, `map/warehouse` (a client's load, HUD and kit included) | 143 MB | 93 MB |
-| `weapon/<id>` (view and world models, materials, sounds; CA: view models with hands and parts) | 29 sets, 0.7-1.9 MB each, 21 MB together | 2,363 sets, 0.4-20 MB each, 850 MB together |
-| `players` (the eight class models) | 12.9 MB | - |
-| `music` (`Game/BGM`, loose files) | - | 72 MB |
-| `heavy-tests` (what the whole suite reads) | 15,703 records, 922 MB | 13,322 records, 2.6 GB |
+| | CS:S | Combat Arms | HL2:DM |
+|---|---|---|---|
+| every file the game mounts (`fetch <game>`; CS:S: with the publisher's content cache, 89 community maps) | 47,692 records, 4.4 GB (7.5 GB plain) | 29,431 records, 3.8 GB (9.8 GB plain; music included) | 30,792 files, 30,390 records, 1.9 GB (3.2 GB plain; its `hl2/` records are CS:S's, shared) |
+| `base` (menus, fonts, UI sounds) | 1.5 MB | 9.7 MB | 1,069 records, 30 MB (what every map reads: scripts, decals, impact and footstep sounds) |
+| `map/de_dust2`, `map/warehouse` (a client's load, HUD and kit included) | 143 MB | 93 MB | `map/<dm_lockdown, dm_overwatch, dm_powerhouse, dm_resistance, dm_runoff, dm_steamlab, dm_underpass, halls3>`: 2,014-3,318 records, 90-153 MB each (the app on the map) |
+| `weapon/<id>` (view and world models, materials, sounds; CA: view models with hands and parts) | 29 sets, 0.7-1.9 MB each, 21 MB together | 2,363 sets, 0.4-20 MB each, 850 MB together | 12 sets, 0.7-1.8 MB each, 13 MB together (view and world models, projectile models, materials, sounds) |
+| `players` (the eight class models) | 12.9 MB | - | 166 records, 18 MB (the 19 player models) |
+| `music` (`Game/BGM`, loose files) | - | 72 MB | - |
+| `heavy-tests` (what the whole suite reads) | 15,703 records, 922 MB | 13,322 records, 2.6 GB | 6,598 records, 366 MB |
 
 `chimera_assets status` lists the sets and sizes of what you have.
 
