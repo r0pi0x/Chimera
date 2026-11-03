@@ -1439,6 +1439,20 @@ impl Default for SpectatorRules {
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
 pub struct RespawnDue(pub Option<RespawnAt>);
 
+/// A game's dead view instead of CS:S's death and freeze cams and
+/// watching others (HL2:DM's, specs/hl2dm/rules.md "The dead view"):
+/// while the local player is dead and not on the spectator team, the
+/// camera sits `distance` units behind the point `height` units above its
+/// ragdoll's root (its own eye without one), along its view, which the
+/// mouse still turns, pulled in by a box of half-size `wall` against the
+/// world. Distances in Source units. Read by `client::spectate`.
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct OrbitDeadView {
+    pub distance: f32,
+    pub height: f32,
+    pub wall: f32,
+}
+
 /// A timed respawn: at `at` (`SimClock` s), `delay` s after the death.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RespawnAt {

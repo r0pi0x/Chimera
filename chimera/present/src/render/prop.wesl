@@ -1,7 +1,8 @@
 // Props lit by a light probe: texture x the light baked into vertex
 // colors (or the probe evaluated per pixel, for moving models), plus the
 // scene's point lights, then Source's range fog (f^2), as for world
-// surfaces.
+// surfaces. Face parts (map::face): eyeballs lit along their own normal
+// with the iris projected on them, teeth darkened toward the back.
 
 import bevy_pbr::{
     render::forward_io::VertexOutput,
@@ -49,6 +50,11 @@ struct PropParams {
     layer_ambient: vec4<f32>,
     layer_diffuse: vec4<f32>,
     layer_specular: vec4<f32>,
+    face: f32,
+    face_center: vec4<f32>,
+    face_up: vec4<f32>,
+    face_u: vec4<f32>,
+    face_v: vec4<f32>,
 }
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> params: PropParams;
@@ -144,6 +150,17 @@ fn probe_direct(n: vec3<f32>) -> vec3<f32> {
     return light;
 }
 
+// The probe's lights with half-Lambert ((n.l / 2 + 1/2)^2: the Eyes
+// shader, specs/hl2dm/player_models.md 11.4).
+fn probe_direct_half(n: vec3<f32>) -> vec3<f32> {
+    var light = vec3<f32>(0.0);
+    for (var i = 0u; i < 4u; i = i + 1u) {
+        let h = dot(n, params.probe_light_dir[i].xyz) * 0.5 + 0.5;
+        light = light + params.probe_light_color[i].rgb * h * h;
+    }
+    return light;
+}
+
 fn probe_light(n: vec3<f32>) -> vec3<f32> {
     return probe_ambient(n) + probe_direct(n);
 }
@@ -221,7 +238,20 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     if params.alpha_cutoff > 0.0 && color.a < params.alpha_cutoff {
         discard;
     }
-    let n = normalize(in.world_normal);
+    var n = normalize(in.world_normal);
+    // An eyeball: lit along the direction from its centre, flattened
+    // along its up (11.4); the iris projected over the sclera.
+    if params.face > 0.5 && params.face < 1.5 {
+        let d = in.world_position.xyz - params.face_center.xyz;
+        let u = params.face_up.xyz;
+        n = normalize(d - 0.5 * dot(d, u) * u);
+        let p = vec4<f32>(in.world_position.xyz, 1.0);
+        let iris_uv = vec2<f32>(dot(params.face_u, p), dot(params.face_v, p));
+        if all(iris_uv >= vec2<f32>(0.0)) && all(iris_uv <= vec2<f32>(1.0)) {
+            let iris = textureSample(layer_texture, base_sampler, iris_uv);
+            color = vec4<f32>(mix(color.rgb, iris.rgb * params.base_color.rgb, iris.a), color.a);
+        }
+    }
     var light = vec3<f32>(1.0);
     @if(VERTEX_COLORS) {
         light = in.color.rgb;
@@ -229,6 +259,13 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     var direct_extra = vec3<f32>(0.0);
     if params.probe > 0.5 {
         light = probe_light(n);
+        if params.face > 0.5 && params.face < 1.5 {
+            light = probe_ambient(n) + probe_direct_half(n);
+        }
+    }
+    // Teeth: darker as the mouth closes and away from its forward (11.5).
+    if params.face > 1.5 {
+        light = light * params.face_up.w * saturate(dot(n, params.face_up.xyz));
     }
     if params.dynamic > 0.5 {
         direct_extra = dynamic_light(in.world_position.xyz, n, in.position.xy, params.dynamic > 1.5);

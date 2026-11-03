@@ -1431,8 +1431,14 @@ fn dress(
         // Another game's character for now (`GameIdentity`: the weapon it
         // holds): our look comes off; that game dresses it.
         if !GameIdentity::allows(identity, super::GAME) {
-            if name.is_some() || number.is_some() || skin.is_some() {
-                commands.entity(e).remove::<(BodyName, BodyNumber, BodySkin)>();
+            // Only a name of ours: another game names its own bodies
+            // (HL2:DM's player models).
+            let ours = name.is_some_and(|n| models.0.iter().any(|m| m.game == Some(super::GAME) && m.name.as_deref() == Some(n.0.as_str())));
+            if ours {
+                commands.entity(e).remove::<BodyName>();
+            }
+            if number.is_some() || skin.is_some() {
+                commands.entity(e).remove::<(BodyNumber, BodySkin)>();
             }
             continue;
         }

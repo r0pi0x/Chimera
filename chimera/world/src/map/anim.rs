@@ -91,6 +91,11 @@ pub struct Animation {
     /// How fast its authored motion moves the character (skeleton units
     /// per second; 0: in place), for matching playback to real speed.
     pub speed: f32,
+    /// Its authored horizontal velocity (skeleton units per second, the
+    /// skeleton's X and Y): `speed` with its direction, for blending
+    /// directions (`ground_motion`).
+    #[serde(default)]
+    pub motion: Vec2,
     pub tracks: Vec<Track>,
 }
 
@@ -116,6 +121,11 @@ pub struct Sequence {
     pub delta: bool,
     /// With `delta`: applied in the bone's frame after the base.
     pub post: bool,
+    /// Played on every body each frame whatever the main sequence
+    /// (Source's autoplay flag), driven by its pose parameters; only where
+    /// the game asks for it (`Animator::autoplay`).
+    #[serde(default)]
+    pub autoplay: bool,
     pub fade_in: f32,
     pub fade_out: f32,
     /// Grid width and height, and its animations row-major.
@@ -429,6 +439,26 @@ impl AnimSet {
         .sum()
     }
 
+    /// The length of sequence `s`'s blended authored velocity at
+    /// `params`: its animations' `motion` vectors weighted like
+    /// `cycle_rate` (between two directions, shorter than either:
+    /// specs/hl2dm/player_models.md 5).
+    pub fn ground_motion(&self, s: usize, params: &[f32]) -> f32 {
+        let seq = &self.sequences[s];
+        let (i0, s0) = self.axis(seq, 0, params);
+        let (i1, s1) = self.axis(seq, 1, params);
+        [
+            (0, 0, (1.0 - s0) * (1.0 - s1)),
+            (1, 0, s0 * (1.0 - s1)),
+            (0, 1, (1.0 - s0) * s1),
+            (1, 1, s0 * s1),
+        ]
+        .into_iter()
+        .map(|(dx, dy, w)| w * self.animations[Self::cell(seq, i0 + dx, i1 + dy)].motion)
+        .sum::<Vec2>()
+        .length()
+    }
+
     /// Fold sequence `s`'s IK rules, then its autolayers', into `locks`
     /// (per chain: Some(true) locked, Some(false) released, None
     /// untouched), as `accumulate` visits them.
@@ -711,6 +741,10 @@ pub struct Animator {
     /// controllers: Combat Arms' trackers and aim), one per bone:
     /// `pose` returns it as it is, and the sequences above are ignored.
     pub fixed: Option<Arc<Vec<BonePose>>>,
+    /// Apply the set's autoplay sequences (`Sequence::autoplay`) after the
+    /// layers, at weight 1 (HL2:DM's head and spine turns: specs/hl2dm/
+    /// player_models.md 7 step 5); off for games that don't ask.
+    pub autoplay: bool,
 }
 
 impl Animator {
@@ -839,6 +873,11 @@ impl Animator {
                 l.cycle.clamp(0.0, 0.999)
             };
             set.accumulate(&mut pose, l.sequence, cycle, l.weight.min(1.0), &self.params);
+        }
+        if self.autoplay {
+            for s in (0..set.sequences.len()).filter(|&s| set.sequences[s].autoplay) {
+                set.accumulate(&mut pose, s, 0.0, 1.0, &self.params);
+            }
         }
         set.solve_ik(&mut pose, &self.ik);
         pose

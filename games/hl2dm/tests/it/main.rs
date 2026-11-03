@@ -7,10 +7,13 @@
 //! passing with a note without one.
 //! The gameinfo parser's fast tests are `source_engine`'s own.
 
+mod animation;
+mod hitboxes;
 mod info;
 mod melee;
 mod movement;
 mod net_prediction;
+mod ragdolls;
 mod skeleton;
 mod suit;
 mod weapons;
@@ -21,5 +24,6 @@ mod heavy {
     mod map_ladders;
     mod map_stock;
     mod mount;
+    mod player_models;
     mod scripts;
 }

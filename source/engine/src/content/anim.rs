@@ -489,18 +489,24 @@ fn zero_sample(entries: &[Vec4], span: usize, f: f32, quat: bool) -> Vec4 {
 /// its end frame (animation.md §11: 44-byte segments, end frame at +0,
 /// position at +32).
 fn movement_speed(b: &Bytes, o: usize) -> Result<f32, String> {
+    Ok(movement(b, o)?.length())
+}
+
+/// `movement_speed` with its direction: the horizontal velocity (skeleton
+/// X and Y, units/s).
+fn movement(b: &Bytes, o: usize) -> Result<Vec2, String> {
     let n = b.i32(o + 20)?.clamp(0, 64) as usize;
     let at = b.i32(o + 24)?;
     let fps = b.f32(o + 8)?;
     if n == 0 || at <= 0 || fps <= 0.0 {
-        return Ok(0.0);
+        return Ok(Vec2::ZERO);
     }
     let last = o + at as usize + 44 * (n - 1);
     let end = b.i32(last)?;
     if end <= 0 {
-        return Ok(0.0);
+        return Ok(Vec2::ZERO);
     }
-    Ok(b.vec3(last + 32)?.truncate().length() / (end as f32 / fps))
+    Ok(b.vec3(last + 32)?.truncate() / (end as f32 / fps))
 }
 
 /// Decode animation `a` of `m`, bone indices local to `m`.
@@ -564,6 +570,7 @@ fn decode(m: &Model, a: usize) -> Result<Animation, String> {
         frames,
         delta,
         speed: movement_speed(&b, o)?,
+        motion: movement(&b, o)?,
         ..default()
     };
     // Each chunk's records (None: its data is missing).
@@ -1001,6 +1008,7 @@ pub fn load(read: Read, path: &str) -> Result<AnimSet, String> {
                 snap: s.flags & 0x2 != 0,
                 delta: s.flags & 0x4 != 0,
                 post: s.flags & 0x10 != 0,
+                autoplay: s.flags & 0x8 != 0,
                 fade_in: s.fade.0,
                 fade_out: s.fade.1,
                 grid: s.grid,

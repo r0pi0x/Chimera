@@ -16,7 +16,12 @@
 //! (`map::add_held_model`) on the next frame and again on each map
 //! (`build_late_held`), and character models a game adds later
 //! (`map::add_character_model`, appended to each map's `CharacterModels`)
-//! likewise (`build_late_bodies`); `adopt_bodies`/`pose_ragdolls` hand a dead
+//! likewise (`build_late_bodies`); face parts (`map::face`: eyeballs with
+//! their iris projected toward the character's `EyeTarget`, teeth) set
+//! each frame from where the pose puts the head (`aim_faces`), face meshes
+//! with flexes drawn from the body's own copy, moved by the character's
+//! `map::FaceWeights` (`apply_face_morphs`);
+//! `adopt_bodies`/`pose_ragdolls` hand a dead
 //! character's body to its ragdoll and pose it from the ragdoll's bodies.
 //!
 //! Known shortcuts (docs/tech-debt.md): Frame-time shortcuts
@@ -204,6 +209,35 @@ pub struct BodyAssets {
     /// model has body parts (`MapModel::body_parts`, `MapMesh::body`).
     pub body_parts: Vec<u16>,
     pub mesh_bodies: Vec<Option<(u16, u16)>>,
+    /// Each part's face (an eyeball or teeth: `map::face`), drawn where its
+    /// character looks (`aim_faces`).
+    pub faces: Vec<Option<Face>>,
+    /// Each part's facial flexes (`MapMesh::morphs`; empty: none): its
+    /// own copy of the mesh follows its character's `FaceWeights`.
+    pub morphs: Vec<std::sync::Arc<Vec<MapMorph>>>,
+}
+
+/// A body's own copy of a face mesh with flexes: its rest positions, its
+/// flexes and the weights it shows.
+#[derive(Component, Clone, Debug)]
+pub struct FaceMorph {
+    pub rest: std::sync::Arc<Vec<[f32; 3]>>,
+    pub morphs: std::sync::Arc<Vec<MapMorph>>,
+    pub shown: Vec<[f32; 2]>,
+}
+
+/// A face part of a body's model.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Face {
+    Eye(MapEye),
+    Teeth(MapTeeth),
+}
+
+/// A body's mesh drawn as a face part, on its bone's joint.
+#[derive(Component, Clone, Debug)]
+pub struct FacePart {
+    pub face: Face,
+    pub joint: Entity,
 }
 
 impl BodyAssets {
@@ -262,6 +296,7 @@ pub fn attach_bodies(
     existing: Query<&CharacterBody>,
     show_local: Res<ShowLocalBody>,
     mut materials: Option<ResMut<Assets<PropMaterial>>>,
+    mut meshes: Option<ResMut<Assets<Mesh>>>,
     mut commands: Commands,
 ) {
     let (Some(models), Some(bodies)) = (models, bodies) else {
@@ -340,8 +375,25 @@ pub fn attach_bodies(
                 None => material.clone(),
             };
             own.push(material.clone());
+            // A face mesh with flexes: the body's own copy.
+            let flexes = assets.morphs.get(k).filter(|m| !m.is_empty()).cloned();
+            let mut morph = None;
+            let mesh = match (&flexes, meshes.as_mut()) {
+                (Some(f), Some(meshes)) => match meshes.get(mesh).cloned() {
+                    Some(copy) => {
+                        let rest = match copy.attribute(Mesh::ATTRIBUTE_POSITION) {
+                            Some(bevy::mesh::VertexAttributeValues::Float32x3(p)) => p.clone(),
+                            _ => Vec::new(),
+                        };
+                        morph = Some(FaceMorph { rest: std::sync::Arc::new(rest), morphs: f.clone(), shown: Vec::new() });
+                        meshes.add(copy)
+                    }
+                    None => mesh.clone(),
+                },
+                _ => mesh.clone(),
+            };
             let mut part = commands.spawn((
-                Mesh3d(mesh.clone()),
+                Mesh3d(mesh),
                 MeshMaterial3d(material),
                 bevy::mesh::skinning::SkinnedMesh {
                     inverse_bindposes: assets.bindposes.clone(),
@@ -353,8 +405,25 @@ pub fn attach_bodies(
                 bevy::camera::visibility::DynamicSkinnedMeshBounds,
                 ChildOf(body),
             ));
-            if let (Some(_), Some(levels)) = (&assets.lod_group, assets.levels.get(k)) {
-                part.insert(super::lod::LodMeshes(levels.clone()));
+            match morph {
+                // Its own copy stays at its level of detail.
+                Some(m) => {
+                    part.insert(m);
+                }
+                None => {
+                    if let (Some(_), Some(levels)) = (&assets.lod_group, assets.levels.get(k)) {
+                        part.insert(super::lod::LodMeshes(levels.clone()));
+                    }
+                }
+            }
+            if let Some(face) = assets.faces.get(k).cloned().flatten() {
+                let bone = match &face {
+                    Face::Eye(e) => e.bone,
+                    Face::Teeth(t) => t.bone,
+                };
+                if let Some(&joint) = joints.get(bone) {
+                    part.insert(FacePart { face, joint });
+                }
             }
         }
         if let Some(group) = &assets.lod_group {
@@ -793,6 +862,92 @@ pub fn body_assets(
         root,
         body_parts: model.body_parts.clone(),
         mesh_bodies: model.meshes.iter().map(|m| m.body).collect(),
+        faces: model
+            .meshes
+            .iter()
+            .map(|m| match (&m.eye, &m.teeth) {
+                (Some(e), _) => Some(Face::Eye((**e).clone())),
+                (None, Some(t)) => Some(Face::Teeth(t.clone())),
+                _ => None,
+            })
+            .collect(),
+        morphs: model.meshes.iter().map(|m| std::sync::Arc::new(m.morphs.clone())).collect(),
+    }
+}
+
+/// Each face mesh with flexes takes its character's `FaceWeights` (when
+/// they change): its rest positions plus each flex's offsets at its
+/// side's weight. A ragdoll's keeps what it showed.
+pub fn apply_face_morphs(
+    mut parts: Query<(&mut FaceMorph, &Mesh3d, &ChildOf)>,
+    bodies: Query<Option<&ChildOf>, With<CharacterBody>>,
+    weights: Query<&FaceWeights>,
+    meshes: Option<ResMut<Assets<Mesh>>>,
+) {
+    let Some(mut meshes) = meshes else { return };
+    for (mut face, mesh, body) in &mut parts {
+        let Some(owner) = bodies.get(body.parent()).ok().flatten().map(ChildOf::parent) else { continue };
+        let Ok(w) = weights.get(owner) else { continue };
+        if w.0 == face.shown {
+            continue;
+        }
+        let mut positions: Vec<[f32; 3]> = face.rest.to_vec();
+        for m in face.morphs.iter() {
+            let [w1, w3] = w.0.get(m.flex as usize).copied().unwrap_or([0.0; 2]);
+            if w1.abs() < 1e-4 && w3.abs() < 1e-4 {
+                continue;
+            }
+            for ((v, d), side) in m.vertices.iter().zip(&m.deltas).zip(&m.sides) {
+                let k = w1 * (1.0 - side) + w3 * side;
+                if let Some(p) = positions.get_mut(*v as usize) {
+                    p[0] += d[0] * k;
+                    p[1] += d[1] * k;
+                    p[2] += d[2] * k;
+                }
+            }
+        }
+        if let Some(mut m) = meshes.get_mut(&mesh.0) {
+            m.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+        }
+        face.shown = w.0.clone();
+    }
+}
+
+/// Each face part's material from where it is drawn this frame: an
+/// eyeball's centre, up and iris planes toward its character's
+/// `EyeTarget` (ahead without one, or once its body is a ragdoll's: spec
+/// 10.2), teeth toward the mouth's forward, unlit while the mouth is shut
+/// (spec 11.5 at rest).
+pub fn aim_faces(
+    parts: Query<(&FacePart, &MeshMaterial3d<PropMaterial>, &ChildOf)>,
+    bodies: Query<Option<&ChildOf>, With<CharacterBody>>,
+    targets: Query<&EyeTarget>,
+    joints: Query<&GlobalTransform, With<BodyJoint>>,
+    materials: Option<ResMut<Assets<PropMaterial>>>,
+) {
+    let Some(mut materials) = materials else { return };
+    for (part, material, body) in &parts {
+        let Ok(bone) = joints.get(part.joint) else { continue };
+        let owner = bodies.get(body.parent()).ok().flatten().map(ChildOf::parent);
+        let target = owner.and_then(|o| targets.get(o).ok()).map(|t| t.0);
+        let scale = bone.compute_transform().scale.x;
+        let Some(mut m) = materials.get_mut(&material.0) else { continue };
+        let p = &mut m.params;
+        match &part.face {
+            Face::Eye(eye) => {
+                let aim = eye.aim(bone, target, scale);
+                let (centre, up, _) = eye.world(bone);
+                let [u, v] = eye.projection(bone, aim, scale);
+                p.face_center = centre.extend(1.0);
+                p.face_up = up.extend(0.0);
+                p.face_u = u;
+                p.face_v = v;
+            }
+            Face::Teeth(t) => {
+                let forward = bone.affine().transform_vector3(t.forward).normalize_or_zero();
+                p.face_up = forward.extend(0.0);
+            }
+        }
     }
 }
 

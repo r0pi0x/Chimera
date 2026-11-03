@@ -1142,7 +1142,7 @@ impl<'a> MaterialLoader<'a> {
         index
     }
 
-    fn texture(&mut self, name: &str, srgb: bool) -> Option<usize> {
+    pub fn texture(&mut self, name: &str, srgb: bool) -> Option<usize> {
         // The monitor screen (func_monitor's point_camera view: `_rt_Camera`,
         // or `engine/camerarendertarget` as dev/dev_monitor names it): a
         // placeholder the map replaces with a render target.
@@ -1634,7 +1634,10 @@ fn dx_block_applies(name: &str) -> Option<bool> {
         ("<dx", |l, x| l < x),
     ];
     for (op, holds) in ops {
-        if let Some(level) = n.strip_prefix(op).and_then(|x| x.parse::<u32>().ok()) {
+        // `>=dx90_20b` (HL2's models: DirectX 9 with pixel shader 2.0b)
+        // counts as its level, 90.
+        let digits = |x: &str| x[..x.find(|c: char| !c.is_ascii_digit()).unwrap_or(x.len())].parse::<u32>().ok();
+        if let Some(level) = n.strip_prefix(op).and_then(digits) {
             return Some(holds(LEVEL, level));
         }
     }
@@ -2220,5 +2223,14 @@ mod tests {
         assert_eq!(world_tint(&keys(&[("$color2", "[0.5 0.5 0.5]")])), None);
         // Models' tint converts the same braces from gamma.
         assert_ne!(tint(&keys(&[("$color", "{128 128 128}")])), world_tint(&keys(&[("$color", "{128 128 128}")])));
+    }
+
+    #[test]
+    fn shader_model_conditions_count_as_their_level() {
+        // HL2's player models keep `$basetexture` in `">=dx90_20b"`.
+        assert_eq!(dx_block_applies(">=dx90_20b"), Some(true));
+        assert_eq!(dx_block_applies("<dx90_20b"), Some(false));
+        assert_eq!(dx_block_applies(">=DX90"), Some(true));
+        assert_eq!(dx_block_applies("<DX90"), Some(false));
     }
 }

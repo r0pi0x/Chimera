@@ -173,9 +173,10 @@ impl ModelKind {
 /// The DM fallback model (rules.md "Models in DM").
 pub const DEFAULT_MODEL: &str = "models/combine_soldier.mdl";
 
-/// A player's HL2:DM model (its path); none: `DEFAULT_MODEL`. The bodies
-/// are M8's: today only the spawn's melee weapon reads it.
-#[derive(Component, Clone, Debug, PartialEq, Eq)]
+/// A player's HL2:DM model (its path); none: `DEFAULT_MODEL`: its body
+/// (`bodies`, replicated) and the spawn's melee weapon.
+#[derive(Component, Reflect, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[reflect(Component)]
 pub struct Hl2Model(pub String);
 
 /// The melee weapon a model of `kind` spawns with.

@@ -8,7 +8,9 @@
 //! anyone alive. The spectator's HUD is the game's front end's (CS:S's
 //! bars from its `spectator.res`, or a plain panel:
 //! `games::cs_source::ui::spectator_hud`); in first person the target's crosshair and scope (`hud.rs`). Back to
-//! the eye when you live again (respawn, new round).
+//! the eye when you live again (respawn, new round). A game may have its
+//! own dead view instead (`core::OrbitDeadView`, HL2:DM's): its own
+//! ragdoll from behind along the view until it lives again.
 //!
 //! Under rules that respawn the dead on a timer (`core::RespawnDue`: a
 //! minigame's `respawn.delay`, 2 s in the gun game) the death cam and the
@@ -728,6 +730,7 @@ pub fn place_camera(
     bodies: Query<&GlobalTransform>,
     spatial: SpatialQuery,
     characters: Query<Entity, With<Intent>>,
+    (orbit, spectating): (Option<Res<crate::core::OrbitDeadView>>, Query<(), With<crate::core::Spectating>>),
     controls: (
         Option<Res<ButtonInput<KeyCode>>>,
         Option<Res<AccumulatedMouseMotion>>,
@@ -745,6 +748,19 @@ pub fn place_camera(
     };
     let (me, at, intent, state, own_view) = *local;
     let own = crate::map::interp::eye_view(own_view, intent, state);
+    // A game's own dead view (HL2:DM's): around its ragdoll until it lives.
+    if let (Some(orbit), false) = (orbit.as_deref(), spectating.contains(me)) {
+        let root = ragdolls
+            .iter()
+            .find(|r| r.owner == me && !r.placed)
+            .and_then(|r| r.bodies.first())
+            .and_then(|b| bodies.get(*b).ok())
+            .map(|g| g.translation());
+        let look = Quat::from_euler(EulerRot::YXZ, intent.yaw, intent.pitch, 0.0);
+        let pose = orbit_pose(orbit, root, at.translation + own.eye_offset, look, &spatial, &characters);
+        view.set_if_neq(SpecView { pose: Some(pose), in_eye: None });
+        return;
+    }
     let (keys, motion, settings, cursor, mouse, console) = controls;
     let grabbed = cursor.is_some_and(|c| super::input::cursor_grabbed(&c));
     let turn = match (grabbed, motion, settings) {
@@ -846,6 +862,22 @@ pub fn place_camera(
         .then_some(spec.target)
         .flatten();
     view.set_if_neq(SpecView { pose, in_eye });
+}
+
+/// The dead view of `OrbitDeadView`: O = the ragdoll's root (or `eye`) +
+/// `height` up, the camera `distance` back from O along `look`, pulled in
+/// where the world is in the way.
+fn orbit_pose(
+    orbit: &crate::core::OrbitDeadView,
+    root: Option<Vec3>,
+    eye: Vec3,
+    look: Quat,
+    spatial: &SpatialQuery,
+    characters: &Query<Entity, With<Intent>>,
+) -> (Vec3, Quat) {
+    let o = root.map_or(eye, |r| r + Vec3::Y * orbit.height * UNIT);
+    let back = look * Vec3::Z * orbit.distance * UNIT;
+    (sweep(spatial, o, back, characters), look)
 }
 
 /// The death cam's path: from the eye back (away from the killer, or

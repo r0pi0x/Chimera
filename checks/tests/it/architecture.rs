@@ -48,6 +48,10 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // the weapon frame's driver and the map's view-model types.
     ("view_anim", &["map", "weapon"]),
     ("view_motion", &["core", "map", "weapon"]),
+    // Source's player animation, the shared half (source_engine, lift
+    // S9): the inputs from the simulation (core, the weapons' events, the
+    // Source movement's water level) into the map's animators.
+    ("player_anim", &["core", "map", "weapon", "source_movement"]),
     // A game as one bundle for a party app's composer (chimera_world, lift
     // C4): its maps' loader and dressing, plain data otherwise.
     ("game_bundle", &["map"]),
