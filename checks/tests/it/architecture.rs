@@ -775,6 +775,103 @@ fn specs_contain_no_code_blocks() {
     assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
 }
 
+/// The sources THIRD_PARTY.md lists: (name, entry text), names lower-cased.
+fn third_party_entries() -> Vec<(String, String)> {
+    let text = fs::read_to_string(root().join("THIRD_PARTY.md")).expect(
+        "THIRD_PARTY.md is missing from the repo root. It lists the approved permissive code sources \
+         (CLAUDE.md, \"Hard rules\"); restore it.",
+    );
+    let mut out: Vec<(String, String)> = Vec::new();
+    for line in text.lines() {
+        if let Some(name) = line.strip_prefix("## ") {
+            out.push((name.trim().to_lowercase(), String::new()));
+        } else if let Some((_, body)) = out.last_mut() {
+            body.push_str(line);
+            body.push('\n');
+        }
+    }
+    out
+}
+
+/// Code enters the repo only from an approved permissive source
+/// (THIRD_PARTY.md). A file that says "Adapted from X" or "Copied from X"
+/// in a comment near its top must name a source listed there.
+#[test]
+fn third_party_headers_name_listed_sources() {
+    const CODE: &[&str] = &[
+        "rs", "wgsl", "glsl", "toml", "py", "sh", "ps1", "js", "ts", "ron",
+    ];
+    let listed = third_party_entries();
+    let mut errors = Vec::new();
+    for f in tracked_files() {
+        if !CODE.iter().any(|e| f.ends_with(&format!(".{e}"))) || f == "checks/tests/it/architecture.rs" {
+            continue;
+        }
+        let Ok(text) = fs::read_to_string(root().join(&f)) else {
+            continue;
+        };
+        for (i, line) in text.lines().take(40).enumerate() {
+            let t = line.trim_start();
+            let Some(t) = ["///", "//!", "//", "#", "--", "/*", "*"]
+                .iter()
+                .find_map(|c| t.strip_prefix(c))
+            else {
+                continue;
+            };
+            let t = t.trim_start();
+            let Some(rest) = t.strip_prefix("Adapted from ").or_else(|| t.strip_prefix("Copied from ")) else {
+                continue;
+            };
+            let name: String = rest
+                .chars()
+                .take_while(|c| !matches!(c, ' ' | '(' | ',' | ':' | ';'))
+                .collect::<String>()
+                .to_lowercase();
+            if !listed.iter().any(|(n, _)| *n == name) {
+                errors.push(format!(
+                    "{f}:{}: header names source `{name}`, which THIRD_PARTY.md does not list. Only approved \
+                     permissive sources may be copied or adapted. If this code really comes from a listed \
+                     source, fix the name; otherwise remove the code (Source SDK, leaked, decompiled or \
+                     unlisted code never enters the repo; write a spec instead). Adding a source needs the \
+                     user's OK, then an entry in THIRD_PARTY.md.",
+                    i + 1
+                ));
+            }
+        }
+    }
+    assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
+}
+
+/// Every THIRD_PARTY.md entry carries its URL, licence, copyright line,
+/// commit and licence text, and a named `licenses/` file exists.
+#[test]
+fn third_party_entries_are_complete() {
+    let mut errors = Vec::new();
+    for (name, body) in third_party_entries() {
+        for field in ["URL", "Licence", "Copyright", "Commit"] {
+            if !body.lines().any(|l| l.trim_start_matches("- ").starts_with(&format!("{field}:"))) {
+                errors.push(format!(
+                    "THIRD_PARTY.md, `{name}`: missing the `- {field}: ...` line. Add it (see the format at the top of the file)."
+                ));
+            }
+        }
+        let file = body.lines().find_map(|l| l.trim_start_matches("- ").strip_prefix("Licence file:"));
+        match file.map(str::trim) {
+            Some(p) if !p.starts_with("licenses/") || !root().join(p).is_file() => errors.push(format!(
+                "THIRD_PARTY.md, `{name}`: licence file `{p}` does not exist. Add it as licenses/<name>.txt \
+                 with the project's full licence text, or fix the path."
+            )),
+            Some(_) => {}
+            None if !body.contains("```") => errors.push(format!(
+                "THIRD_PARTY.md, `{name}`: no licence text. Paste it in a fenced block under the entry, or \
+                 add a `- Licence file: licenses/<name>.txt` line and that file."
+            )),
+            None => {}
+        }
+    }
+    assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
+}
+
 /// Documents that CLAUDE.md points to must exist, so the map never rots.
 #[test]
 fn docs_map_links_resolve() {
