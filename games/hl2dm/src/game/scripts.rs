@@ -4,7 +4,9 @@
 //! our weapon data (`game::weapons`, data/weapons): `read` reads a weapon's
 //! script, `differences` names each key the data disagrees on (the bucket
 //! as the slot, its position, weight, clip and `default_clip`, ammo type,
-//! damage, models, the HUD's name and the fire, empty and double-shot
+//! damage (a weapon without a magazine counts its rounds itself, in its
+//! projectile hook: where the script names its ammo or clip, those are
+//! compared with the hook's), models, the HUD's name and the fire, empty and double-shot
 //! sounds). The data holds the spec's numbers so the game plays without
 //! the install's files; tests/it/heavy/scripts.rs checks they still match
 //! the install. Nothing is read from the scripts at run time.
@@ -29,6 +31,17 @@ pub fn ammo_id(name: &str) -> String {
     format!("{}:{}", super::GAME, name.to_lowercase())
 }
 
+/// The ammo and count of the weapon's own rounds (`launch::Hl2Rounds`,
+/// named by its projectile hook): the rockets, grenades and S.L.A.M.s
+/// that the data holds beside, not in, a magazine.
+fn own_rounds(data: &WeaponData) -> Option<(String, u32)> {
+    data.hooks.values().find_map(|h| {
+        let ammo = h.get("ammo")?.as_str()?.to_string();
+        let count = h.get("count")?.as_integer()? as u32;
+        Some((ammo, count))
+    })
+}
+
 /// Where `data` disagrees with `script`, one line each.
 pub fn differences(data: &WeaponData, script: &WeaponScript) -> Vec<String> {
     let mut out = Vec::new();
@@ -45,18 +58,29 @@ pub fn differences(data: &WeaponData, script: &WeaponScript) -> Vec<String> {
         .and_then(|p| p.as_integer());
     check("bucket_position", format!("{position:?}"), format!("{:?}", Some(script.bucket_position as i64)));
     check("weight", format!("{:?}", data.weight), format!("{:?}", Some(script.weight)));
-    check("clip_size", format!("{:?}", data.magazine.as_ref().map(|m| m.clip)), format!("{:?}", script.clip_size));
+    // A weapon without a magazine counts its rounds itself (`own_rounds`):
+    // where the script names a clip or ammo for it (the RPG's rocket, the
+    // frag's grenade, the S.L.A.M.'s three), those are what it carries.
+    let own = own_rounds(data).filter(|_| data.magazine.is_none());
+    let own_ammo = own.as_ref().map(|(a, _)| a.clone());
+    let own_count = own.as_ref().map(|(_, c)| *c);
+    check(
+        "clip_size",
+        format!("{:?}", data.magazine.as_ref().map(|m| m.clip).or(own_count.filter(|_| script.clip_size.is_some()))),
+        format!("{:?}", script.clip_size),
+    );
     let default_clip = data
         .hooks
         .get(super::weapons::INVENTORY)
         .and_then(|h| h.get("default_clip"))
         .and_then(|p| p.as_integer())
         .map(|n| n as u32)
-        .or(data.magazine.as_ref().map(|m| m.clip));
+        .or(data.magazine.as_ref().map(|m| m.clip))
+        .or(own_count.filter(|_| script.default_clip.is_some()));
     check("default_clip", format!("{default_clip:?}"), format!("{:?}", script.default_clip));
     check(
         "primary_ammo",
-        format!("{:?}", data.magazine.as_ref().map(|m| m.ammo.clone())),
+        format!("{:?}", data.magazine.as_ref().map(|m| m.ammo.clone()).or(own_ammo.filter(|_| script.primary_ammo.is_some()))),
         format!("{:?}", script.primary_ammo.as_deref().map(ammo_id)),
     );
     if let Some(d) = &data.damage {
