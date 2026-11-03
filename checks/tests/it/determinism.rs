@@ -47,7 +47,7 @@ const NOT_SIMULATION: &[(&str, &str)] = &[
 /// listed is held at 0 and 0. Lower a number when you remove uses; never
 /// raise one.
 const BASELINE: &[(&str, usize, usize)] = &[
-    ("chimera/core/src", 1, 2),
+    ("chimera/core/src", 0, 2),
     ("chimera/sim/src", 10, 0),
     ("chimera/world/src", 22, 0),
     ("chimera/net/src", 27, 0),

@@ -2175,7 +2175,7 @@ impl DamageRules<'_, '_> {
 /// systems can order themselves after it).
 pub fn apply_damage(
     mut damage: MessageReader<Damage>,
-    mut health: Query<&mut Health, Without<God>>,
+    mut health: Query<(&mut Health, Option<&mut DamageRemainder>), Without<God>>,
     rules: DamageRules,
     mut died: MessageWriter<Died>,
     mut taken: MessageWriter<DamageTaken>,
@@ -2184,10 +2184,18 @@ pub fn apply_damage(
         if rules.refuse(d) {
             continue;
         }
-        let Ok(mut h) = health.get_mut(d.target) else { continue };
+        let Ok((mut h, remainder)) = health.get_mut(d.target) else { continue };
         if h.current <= 0.0 {
             continue;
         }
+        let mut d = std::borrow::Cow::Borrowed(d);
+        if let Some(mut r) = remainder {
+            // Whole points, the fraction carried (HL2's health): a hit
+            // that comes to no whole point does nothing.
+            let Some(points) = r.take(d.amount * 100.0) else { continue };
+            d.to_mut().amount = points / 100.0;
+        }
+        let d = d.as_ref();
         h.current -= d.amount;
         taken.write(DamageTaken {
             damage: d.clone(),
@@ -2201,6 +2209,51 @@ pub fn apply_damage(
                 damage: d.clone(),
             });
         }
+    }
+}
+
+/// Health that takes whole points and carries the fraction of each hit
+/// (Half-Life 2's, specs/hl2dm/suit.md "Fractional damage"): the
+/// fractions add up here, and when they reach a point the next hit takes
+/// it too (at most one a hit). A hit that comes to no whole point does
+/// nothing to health (no `DamageTaken`). Never reset, not even on
+/// respawn. Without it, health takes the damage as it comes.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DamageRemainder(pub f32);
+
+impl DamageRemainder {
+    /// The whole points a hit of `points` takes (None: none), carrying its
+    /// fraction.
+    pub fn take(&mut self, points: f32) -> Option<f32> {
+        // A hair of float noise (0.2 x 5 is 1.0000001) is no fraction.
+        let points = (points * 1e4).round() / 1e4;
+        let mut whole = points.floor();
+        self.0 += points - whole;
+        if self.0 >= 1.0 - 1e-4 {
+            whole += 1.0;
+            self.0 = (self.0 - 1.0).max(0.0);
+        }
+        (whole > 0.0).then_some(whole)
+    }
+}
+
+#[cfg(test)]
+mod remainder_tests {
+    use super::DamageRemainder;
+
+    /// specs/hl2dm/suit.md "Fractional damage": 1.6-point hits take 1, 2,
+    /// 1, 2; 0.2-point hits nothing four times, then a point.
+    #[test]
+    fn whole_points_and_the_carried_fraction() {
+        let mut r = DamageRemainder::default();
+        let taken: Vec<Option<f32>> = (0..4).map(|_| r.take(1.6)).collect();
+        assert_eq!(taken, [Some(1.0), Some(2.0), Some(1.0), Some(2.0)]);
+        let mut r = DamageRemainder::default();
+        let taken: Vec<Option<f32>> = (0..5).map(|_| r.take(0.2)).collect();
+        assert_eq!(taken, [None, None, None, None, Some(1.0)]);
+        let mut r = DamageRemainder::default();
+        assert_eq!(r.take(62.5), Some(62.0));
+        assert!((r.0 - 0.5).abs() < 1e-6);
     }
 }
 

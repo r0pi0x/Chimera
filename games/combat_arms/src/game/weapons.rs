@@ -1454,6 +1454,7 @@ impl Gear {
                 leg: p.leg,
                 groin: 0.0,
                 wear: if p.consumable { 1.0 } else { 0.0 },
+                except: 0,
             })
     }
 }
@@ -1531,6 +1532,7 @@ pub fn pieces_of(gear: &[Gear]) -> ArmorPieces {
     ArmorPieces {
         pieces: gear.iter().map(|g| hits::ArmorPiece { entries: g.coverage().collect() }).collect(),
         depletion: hits::Depletion::Blocked,
+        armour_quantum: None,
     }
 }
 
