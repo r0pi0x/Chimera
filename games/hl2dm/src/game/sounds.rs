@@ -10,8 +10,8 @@
 //!
 //! Known shortcuts: a death plays on every machine that sees the kill (as
 //! CS:S's), not sent as a sound; the server's flesh impact goes to all
-//! with the entry's level, without the PAS filter; `Dissolving` (M5's
-//! energy ball) is only a marker here. Why it's OK for now: the sounds
+//! with the entry's level, without the PAS filter; `Dissolving` (the
+//! energy ball's kill, `dissolve`) is only a marker here. Why it's OK for now: the sounds
 //! and their choice are the spec's; the delivery rules need the network
 //! milestone's probe.
 

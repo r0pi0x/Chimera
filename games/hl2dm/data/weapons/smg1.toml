@@ -62,4 +62,5 @@ secondary = 1.0
 dry = 0.5
 sound = "Weapon_SMG1.Double"
 empty = "Weapon_SMG1.Empty"
-explode = "BaseGrenade.Explode"
+# No server sound: the explosion's boom is the client's (H9 15.10).
+explode = ""

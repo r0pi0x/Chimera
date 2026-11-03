@@ -20,7 +20,10 @@ use chimera_world::{
         ragdoll::{Outlived, RagdollRules, Ragdolled, death_push},
     },
 };
-use hl2dm::{game::movement, harness::Hl2Sim};
+use hl2dm::{
+    game::{movement, sounds::Dissolving, weapons},
+    harness::Hl2Sim,
+};
 
 const SCALE: f32 = 0.0254;
 
@@ -208,4 +211,56 @@ fn one_ragdoll_kept_until_the_next_death() {
     let second = ragdolls(&mut sim);
     assert_eq!(second.len(), 1);
     assert_ne!(second[0].0, first[0].0);
+}
+
+/// The energy ball's kill: the same hit as `kill`, by the ball (an AR2's
+/// flyer, crush).
+fn kill_by_ball(sim: &mut Sim, p: Entity) {
+    sim.app.world_mut().get_mut::<Health>(p).unwrap().current = 0.01;
+    let point = sim.position(p) + Vec3::Y * 0.7;
+    sim.app.world_mut().write_message(Damage {
+        force: Vec3::ZERO,
+        target: p,
+        attacker: None,
+        amount: 10.0,
+        point,
+        dir: Vec3::NEG_Z,
+        hitgroup: Hitgroup::Generic,
+        kind: DamageKind::Crush,
+        weapon: Some(weapons::AR2),
+    });
+}
+
+#[test]
+fn the_balls_victim_dissolves_and_is_gone_134_ticks_on_9_11() {
+    // H9 cases 9 and 11: no death voice (the victim is marked), the ragdoll
+    // is removed at the first tick at or after 2.0 s, floating up at
+    // 0.02 g meanwhile.
+    let (mut sim, p) = sim();
+    let mut sounds = sim.app.world().resource::<Messages<chimera_world::map::PlaySound>>().get_cursor_current();
+    kill_by_ball(&mut sim, p);
+    sim.ticks(2);
+    assert!(sim.app.world().get::<Dissolving>(p).is_some());
+    let r = ragdolls(&mut sim);
+    assert_eq!(r.len(), 1);
+    let heard: Vec<String> =
+        sounds.read(sim.app.world().resource::<Messages<chimera_world::map::PlaySound>>()).map(|s| s.entry.clone()).collect();
+    assert!(heard.iter().all(|e| !e.to_lowercase().ends_with(".die")), "{heard:?}");
+    // 130 ticks later (132 after the kill) it is still there, at 134 gone.
+    sim.ticks(129);
+    assert_eq!(ragdolls(&mut sim).len(), 1);
+    sim.ticks(5);
+    assert!(ragdolls(&mut sim).is_empty(), "removed 134 ticks after the kill");
+    // A bullet's victim is not marked.
+    let (mut sim, p) = self::sim();
+    kill(&mut sim, p, 666.57);
+    sim.ticks(2);
+    assert!(sim.app.world().get::<Dissolving>(p).is_none());
+    // And one that lives again can die with a voice.
+    let (mut sim, p) = self::sim();
+    kill_by_ball(&mut sim, p);
+    sim.ticks(2);
+    sim.app.world_mut().get_mut::<Health>(p).unwrap().current = 1.0;
+    sim.ticks(2);
+    assert!(sim.app.world().get::<Dissolving>(p).is_none());
 }

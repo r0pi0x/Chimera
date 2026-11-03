@@ -729,6 +729,10 @@ fn receive_detonations(mut detonations: MessageReader<Detonation>, mut commands:
                 Some(GrenadeEffect::Blast(b)) => (GrenadeKind::Blast, b.sound.clone(), b.shake),
                 Some(GrenadeEffect::Flash(f)) => (GrenadeKind::Flash, f.sound.clone(), None),
                 Some(GrenadeEffect::Smoke(s)) => (GrenadeKind::Smoke, s.sound.clone(), None),
+                // A game's projectile that explodes by its own rules
+                // (HL2:DM's rockets and frags, `BlastAt`): a blast to draw,
+                // its sound the game's.
+                None if d.kind == 0 => (GrenadeKind::Blast, None, None),
                 None => return,
             };
             w.write_message(Detonated {

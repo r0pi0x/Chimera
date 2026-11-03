@@ -17,6 +17,7 @@ mod net;
 mod net_prediction;
 mod net_projectiles;
 mod pickups;
+mod projectile_fx;
 mod projectiles;
 mod ragdolls;
 mod rules;
