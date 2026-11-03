@@ -24,7 +24,13 @@ maps the code; [docs/DESIGN.md](docs/DESIGN.md) gives the reasons.
    `chimera.local.toml` (or the old `mashup.local.toml`) at all: it holds
    keys. (`checks/tests/it/architecture.rs`: `no_game_assets_tracked`,
    `no_keys_tracked`; `.gitignore`.)
-2. **Specs only.** Third-party code never enters the repo and is never
+2. **Specs, or listed sources only.** Code may be copied or adapted only
+   from an approved permissive source in [THIRD_PARTY.md](THIRD_PARTY.md)
+   (now hl2-rs), and the file then starts with a header such as
+   `// Adapted from hl2-rs (MIT, see THIRD_PARTY.md): <original path>`;
+   adding a source needs the user's OK (`third_party_headers_name_listed_sources`).
+   All other third-party code (Source SDK 2013, leaked or decompiled code,
+   unlisted or non-permissive code) never enters the repo and is never
    translated. Original-game behaviour reaches the code only as specs in
    [specs/](specs/README.md), written in our own words in a separate
    session. Implementation work reads `specs/` and our code, nothing else.
@@ -40,7 +46,7 @@ maps the code; [docs/DESIGN.md](docs/DESIGN.md) gives the reasons.
    No real names, personal emails or machine paths (`/home/<you>/`) in
    commits or files. `.githooks/pre-push` refuses anything else.
 5. **Never skip hooks** (`--no-verify`, `-n`). Fix what they report.
-6. **Layering, the asset rule, the spec rule and the docs' links** are
+6. **Layering, the asset rule, the spec rule, the third-party rule and the docs' links** are
    tests: `cargo test -p repo_checks`. Their failure messages say how to
    fix things.
 7. **Bevy and avian3d APIs** change often: check the pinned crate source
