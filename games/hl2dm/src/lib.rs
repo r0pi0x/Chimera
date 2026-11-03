@@ -16,11 +16,12 @@
 
 pub mod game;
 pub mod harness;
+pub mod rules;
 
 // `crate::game_registry`, `crate::map` and the rest inside, as in the
 // other game crates (the architecture check reads `crate::<module>`
 // against its layering table).
-use chimera_core::{console, core, game_registry, mount, slots};
+use chimera_core::{console, core, game_log, game_registry, mount, slots};
 use chimera_sim::weapon;
 use chimera_world::map;
 

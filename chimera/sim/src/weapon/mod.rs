@@ -76,6 +76,7 @@ pub mod params;
 mod pass_data;
 pub mod random;
 pub mod remote;
+pub mod respawn;
 pub mod spray;
 pub mod sync;
 pub mod view_anim;

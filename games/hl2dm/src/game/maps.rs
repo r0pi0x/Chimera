@@ -86,6 +86,9 @@ pub const SOUNDS: &[&str] = &[
     "WallHealth.LoopingContinueCharge",
     "WallHealth.Deny",
     "WallHealth.Recharge",
+    "BaseCombatCharacter.AmmoPickup",
+    "AmmoCrate.Open",
+    "AmmoCrate.Close",
 ];
 
 /// HL2:DM's maps from the install (`map::MapLoader`): what an app that

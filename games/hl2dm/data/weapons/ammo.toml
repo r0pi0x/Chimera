@@ -18,3 +18,23 @@ max = 60
 
 [ammo."hl2dm:buckshot"]
 max = 30
+
+# The ammo types of the weapons still to come (M5, M6), carried already:
+# ammo boxes and crates give them (specs/hl2dm/maps_entities.md 1, 3).
+[ammo."hl2dm:xbowbolt"]
+max = 10
+
+[ammo."hl2dm:rpg_round"]
+max = 3
+
+[ammo."hl2dm:smg1_grenade"]
+max = 3
+
+[ammo."hl2dm:ar2altfire"]
+max = 3
+
+[ammo."hl2dm:grenade"]
+max = 5
+
+[ammo."hl2dm:slam"]
+max = 5

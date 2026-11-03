@@ -11,6 +11,7 @@ mod info;
 mod melee;
 mod movement;
 mod net_prediction;
+mod pickups;
 mod skeleton;
 mod suit;
 mod weapons;

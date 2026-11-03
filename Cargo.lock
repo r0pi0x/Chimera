@@ -4450,6 +4450,7 @@ dependencies = [
  "source_engine",
  "source_formats",
  "source_logic",
+ "toml",
  "vbsp",
  "workspace-hack",
 ]

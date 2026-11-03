@@ -5,7 +5,9 @@
 //! `MAP_LOADER`), its movement (`movement`: Source's with HL2:DM's config,
 //! walk, run and sprint, ladders, falls; M3), the suit (`suit`: armour,
 //! the health remainder, aux power, breath and drowning, flashlight,
-//! zoom; M3), the map's pickups and wall chargers (`pickups`; M3), and
+//! zoom; M3), the map's pickups and wall chargers (`pickups`; M3; ammo
+//! boxes and respawns, M7), ammunition outside weapons (`ammo`), the ammo
+//! crate (`ammo_crates`), and
 //! its bullet and melee weapons (`weapons`, M4: data and hooks; `scripts`,
 //! the install's weapon scripts against the data); `Hl2dmPlugins` adds
 //! them. The projectiles, rules and the rest come with their specs
@@ -18,6 +20,8 @@
 //!   specs/hl2dm/source_deltas.md, "Tick and network"); the server's
 //!   `-tickrate` option isn't modelled.
 
+pub mod ammo;
+pub mod ammo_crates;
 pub mod maps;
 pub mod mount;
 pub mod movement;
