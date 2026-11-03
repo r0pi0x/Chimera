@@ -172,11 +172,19 @@ impl CharacterModels {
         class: Option<&crate::core::PlayerClass>,
     ) -> Option<(usize, &MapCharacterModel)> {
         let game = identity.map(|i| i.0.as_str());
-        match name {
-            Some(n) => self.0.iter().enumerate().find(|(_, m)| {
+        let named = name.and_then(|n| {
+            self.0.iter().enumerate().find(|(_, m)| {
                 Self::wears(game, m) && m.name.as_deref().is_some_and(|x| x.eq_ignore_ascii_case(&n.0))
-            }),
-            None => class
+            })
+        });
+        match (name, named) {
+            (_, Some(found)) => Some(found),
+            // A name the map lacks among its identity's game's bodies (an
+            // HL2:DM player model a map's kit doesn't carry): its game's
+            // usual body. Without an identity's game, nothing (a hostage's
+            // model).
+            (Some(_), None) if identity.is_none() => None,
+            _ => class
                 // A class counts for its team, or in a free-for-all
                 // (a team id past the two sides) whichever it is.
                 .filter(|c| c.0 != 0 && (c.team() == team || team.is_some_and(|t| t.0 > 2)))

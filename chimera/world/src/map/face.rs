@@ -76,9 +76,10 @@ impl MapEye {
         let a = bone.affine();
         let origin = a.transform_point3(self.origin);
         let up = a.transform_vector3(self.up).normalize_or(Vec3::Y);
-        // The stored forward points out of the back of the eye (hl2-rs's
-        // fallback gaze is its negation).
-        let ahead = -a.transform_vector3(self.forward).normalize_or(Vec3::NEG_Z);
+        // The stored forward is the gaze at rest (the citizens': out of
+        // the face, from the eyes' centres; hl2-rs takes its negation in its
+        // own bone frames).
+        let ahead = a.transform_vector3(self.forward).normalize_or(Vec3::NEG_Z);
         (origin, up, ahead)
     }
 
@@ -138,7 +139,7 @@ mod tests {
             bone: 0,
             origin: Vec3::new(1.0, 2.0, 3.0),
             up: Vec3::Z,
-            forward: -Vec3::X,
+            forward: Vec3::X,
             radius: 0.5,
             iris_scale: 1.5,
             z_offset: 0.0,

@@ -101,6 +101,7 @@ impl bevy::app::PluginGroup for Hl2dmPlugins {
             .add(view::Hl2ViewPlugin)
             .add(bodies::Hl2BodiesPlugin)
             .add(player_anim::Hl2AnimPlugin)
+            .add(bodies::Hl2DeadViewPlugin)
     }
 }
 

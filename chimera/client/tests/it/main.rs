@@ -7,6 +7,7 @@
 
 mod match_end;
 mod callouts;
+mod dead_view;
 mod hit_marker;
 mod swap_effect;
 mod metrics;

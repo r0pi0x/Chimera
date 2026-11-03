@@ -134,6 +134,11 @@ fn every_model_loads_with_its_activities_and_hitbox_set() {
             }
             None => wrong.push(format!("{path}: no ragdoll")),
         }
+        // Every mesh textured (the Combine's base textures sit in a
+        // `">=dx90_20b"` block).
+        for x in m.model.meshes.iter().filter(|x| x.texture.is_none()) {
+            wrong.push(format!("{path}: {} untextured", x.material));
+        }
         // Faces (§1.3, §11.4): citizens' two eyeballs.
         let eyes = m.model.meshes.iter().filter(|x| x.eye.is_some()).count();
         let want_eyes = if kind == Some(ModelKind::Citizen) { 2 } else { 0 };
@@ -186,5 +191,20 @@ fn run_cycles_have_the_specs_ground_speeds() {
         assert!(near(set.cycle_rate(run, &a.params), 1.0 / 0.6, 1e-3));
         let jump = set.sequence("jump_ar2").unwrap();
         assert!(near(set.cycle_rate(jump, &a.params), 1.0 / 0.8667, 1e-3));
+    }
+}
+
+
+#[test]
+fn eyes_look_out_of_the_face() {
+    // `MapEye::forward` is the gaze at rest: from each eye's centre away
+    // from the head bone, the way the face looks (a citizen's eyes sit in
+    // front of the head bone's origin, along it).
+    let Some(mount) = install_mount() else { return };
+    for path in ["models/humans/group03/female_04.mdl", "models/humans/group03/male_07.mdl"] {
+        let m = bodies::load_one(&mount, path).unwrap();
+        for e in m.model.meshes.iter().filter_map(|x| x.eye.as_ref()) {
+            assert!(e.origin.normalize().dot(e.forward) > 0.5, "{path}: eye at {} looks {}", e.origin, e.forward);
+        }
     }
 }

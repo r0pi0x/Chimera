@@ -14,7 +14,8 @@
 //! with none (or whose model the map lacks) still has a body. `Hl2Model`
 //! is replicated (`net`), so clients wear what the server chose.
 //!
-//! Their ragdolls follow HL2:DM's rules (`RAGDOLL`, `map::ragdoll::
+//! The dead look at their own ragdoll (`DEAD_VIEW`, HL2:DM's own app:
+//! `Hl2DeadViewPlugin`). Their ragdolls follow HL2:DM's rules (`RAGDOLL`, `map::ragdoll::
 //! RagdollGameRules`: spec 10).
 //!
 //! `add_bodies` puts them in a map's kit (HL2:DM's own maps, `maps`) and
@@ -24,7 +25,8 @@
 //! models read again for each); a ragdoll's push is the killing hit's
 //! force, not the sum of the forces of the victim's last command (spec
 //! 10.1: a shotgun kill pushes with the pellet that killed, not all
-//! seven).
+//! seven); the dead view's camera is pulled in by the shell's sphere
+//! (0.2 m), not the spec's box of half-size 6.
 
 use bevy::prelude::*;
 use source_engine::content::{material::MaterialLoader, props, surfaceprops::SurfaceProps};
@@ -134,6 +136,25 @@ pub const RAGDOLL: crate::map::ragdoll::RagdollRules = crate::map::ragdoll::Ragd
     outlive_respawn: true,
 };
 
+/// The dead player's view (specs/hl2dm/rules.md "The dead view"): its
+/// own ragdoll from 96 units behind, 14 above its root, until it lives
+/// again; no death cam, freeze cam or watching others.
+pub const DEAD_VIEW: crate::core::OrbitDeadView = crate::core::OrbitDeadView {
+    distance: 96.0,
+    height: 14.0,
+    wall: 6.0,
+};
+
+/// HL2:DM's dead view in its own app (`DEAD_VIEW`; the party apps keep
+/// theirs).
+pub struct Hl2DeadViewPlugin;
+
+impl Plugin for Hl2DeadViewPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(DEAD_VIEW);
+    }
+}
+
 /// Players wear their `Hl2Model` by name (none, or the default: the
 /// unnamed default body).
 #[allow(clippy::type_complexity)]
@@ -176,7 +197,9 @@ pub struct Hl2BodiesPlugin;
 impl Plugin for Hl2BodiesPlugin {
     fn build(&self, app: &mut App) {
         use chimera_net::net::parts::NetAppExt;
-        app.add_systems(Update, wear_models).net_part("hl2dm_bodies", register);
+        app.register_type::<Hl2Model>()
+            .add_systems(Update, wear_models)
+            .net_part("hl2dm_bodies", register);
         // Its ragdolls (spec 10): no death pose, the killing force on the
         // pelvis, kept after the respawn until the next death.
         let mut rules = app.world_mut().get_resource_or_init::<crate::map::ragdoll::RagdollGameRules>();

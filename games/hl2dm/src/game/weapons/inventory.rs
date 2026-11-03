@@ -175,7 +175,8 @@ pub const DEFAULT_MODEL: &str = "models/combine_soldier.mdl";
 
 /// A player's HL2:DM model (its path); none: `DEFAULT_MODEL`: its body
 /// (`bodies`, replicated) and the spawn's melee weapon.
-#[derive(Component, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Component, Reflect, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[reflect(Component)]
 pub struct Hl2Model(pub String);
 
 /// The melee weapon a model of `kind` spawns with.

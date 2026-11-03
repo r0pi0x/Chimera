@@ -279,3 +279,99 @@ fn every_living_player_stays_drawn_through_swaps_deaths_and_map_changes() {
     assert!(kills > 60 && swaps > 30 && map_changes >= 5 && dead_at_change >= map_changes, "{stats}");
     eprintln!("{stats}");
 }
+
+/// The floor with HL2:DM's bodies too: its default (unnamed, the Combine
+/// soldier's) and each of its 19 player models by name, as its guest
+/// dressing loads them (`hl2dm::game::bodies`).
+fn floor_with_hl2dm(name: &str) -> MapData {
+    let mut map = floor(name);
+    let default = hl2dm::game::weapons::inventory::DEFAULT_MODEL;
+    for path in hl2dm::game::bodies::PLAYER_MODELS {
+        let mut c = character("hl2dm");
+        if path != default {
+            c.name = Some(path.to_string());
+        }
+        map.kit.characters.push(c);
+    }
+    map
+}
+
+/// HL2:DM's rungs draw their model (spec player_models.md; the rung's
+/// `Hl2Model`, worn by name): on the mixed ladder (`hl2dm_parts::LADDER`,
+/// rung extras on), each living player on an HL2:DM rung has one drawn
+/// body, HL2:DM's, the rung's model by name (the default when it has
+/// none); a CS:S or Combat Arms rung gives
+/// that game's body back; deaths leave ragdolls and the body comes back.
+#[test]
+fn hl2dm_rungs_draw_their_model() {
+    use hl2dm::game::weapons::inventory::Hl2Model;
+    let text = crate::hl2dm_parts::mixed_text(true);
+    let mut sim = Sim::new(
+        CaSim,
+        (render_assets, chimera_present::MapPlugin::new(floor_with_hl2dm("test:bodies_hl2")), PartyPartsPlugin),
+    );
+    crate::gun_game::no_finale(sim.app.world_mut());
+    minigame::MinigameAppExt::add_minigames(&mut sim.app, &[("hl2dm.toml", &text)]).unwrap();
+    minigame::start(sim.app.world_mut(), "test:gun_game_hl2dm").expect("the gun game starts");
+    let players: Vec<Entity> = (0..4).map(|_| soldier(&mut sim)).collect();
+    sim.seconds(1.5);
+    let ladder = sim.app.world().resource::<minigame::ladder::Ladder>().clone();
+    let mut seen_hl2 = 0;
+    for step in 0..12usize {
+        for (i, p) in players.iter().enumerate() {
+            minigame::ladder::set_rung(sim.app.world_mut(), *p, (step + i) % ladder.rungs.len(), &ladder);
+            place(&mut sim, *p, Vec3::new(i as f32 * 4.0 - 6.0, 1.0, 0.0));
+        }
+        sim.seconds(1.2);
+        let world = sim.app.world_mut();
+        for p in &players {
+            let id = world.get::<GameIdentity>(*p).map(|i| i.0.clone());
+            let kids: Vec<Entity> = world.get::<Children>(*p).map(|c| c.to_vec()).unwrap_or_default();
+            let bodies: Vec<usize> = kids.iter().filter_map(|c| world.get::<CharacterBody>(*c).map(|b| b.model)).collect();
+            assert_eq!(bodies.len(), 1, "step {step}: {p} ({id:?}) has {} bodies", bodies.len());
+            let models = world.resource::<chimera_world::map::CharacterModels>().clone();
+            let m = &models.0[bodies[0]];
+            assert_eq!(m.game.map(str::to_string), id, "step {step}: {p} wears another game's body");
+            if id.as_deref() == Some("hl2dm") {
+                seen_hl2 += 1;
+                let want = world.get::<Hl2Model>(*p).map(|h| h.0.clone()).filter(|h| h != hl2dm::game::weapons::inventory::DEFAULT_MODEL);
+                assert_eq!(m.name, want, "step {step}: {p} wears its rung's model");
+            }
+        }
+    }
+    assert!(seen_hl2 >= 12, "{seen_hl2} HL2:DM bodies checked");
+    // A death leaves HL2:DM's ragdoll; the body comes back with the
+    // respawn and the ragdoll stays (its rules).
+    let p = players[0];
+    minigame::ladder::set_rung(sim.app.world_mut(), p, 0, &ladder);
+    sim.seconds(1.2);
+    let at = sim.position(p);
+    sim.app.world_mut().write_message(Damage {
+        target: p,
+        attacker: Some(players[1]),
+        amount: 1000.0,
+        point: at + Vec3::Y * 0.5,
+        dir: Vec3::NEG_Z,
+        hitgroup: Hitgroup::Chest,
+        kind: DamageKind::Bullet,
+        weapon: None,
+        force: Vec3::NEG_Z * 10.0,
+    });
+    sim.ticks(3);
+    let world = sim.app.world_mut();
+    assert_eq!(world.query::<&chimera_world::map::Ragdoll>().iter(world).count(), 1);
+    sim.seconds(6.0);
+    let world = sim.app.world_mut();
+    assert!(alive(world, p), "respawned");
+    assert!(undrawn_any(world, p).is_none(), "{:?}", undrawn_any(world, p));
+}
+
+/// Why living `e` has no single drawn body, whatever game's.
+fn undrawn_any(world: &mut World, e: Entity) -> Option<String> {
+    if world.get::<Ragdolled>(e).is_some() {
+        return Some("still marked Ragdolled".into());
+    }
+    let kids: Vec<Entity> = world.get::<Children>(e).map(|c| c.to_vec()).unwrap_or_default();
+    let n = kids.iter().filter(|c| world.get::<CharacterBody>(**c).is_some()).count();
+    (n != 1).then(|| format!("{n} bodies"))
+}
