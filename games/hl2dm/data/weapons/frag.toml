@@ -3,7 +3,7 @@
 # s (0.1 in), refire 0.5, draw 1.2667; throw 1200 x (forward + 0.1 up),
 # lob 350 forward + 50 up, roll 700 along the ground, each plus the
 # thrower's velocity; a 1 kg physics body (+-4, friction 0.9,
-# elasticity 0.01) through players (0.2 back off one, 0.1 crush); fuse
+# elasticity 0.01, air drag) through players (0.2 back off one, 0.1 crush); fuse
 # 2.5 s, warning at 1.0, blips 1.0 then 0.3, thinks every 7 ticks; 150 in
 # 250. Script: bucket 4 position 0, weight 1, default clip 1.
 id = "hl2dm:weapon_frag"
@@ -57,6 +57,10 @@ friction = 0.9
 elasticity = 0.01
 player_bounce = 0.2
 player_tap = 0.1
+# Air drag in flight (measured, the plan's Progress 2026-11-03 probe 2):
+# (0.07 + 0.00009 |v|) v per second.
+drag_linear = 0.07
+drag_quadratic = 0.00009
 blip = "Grenade.Blip"
 roll_sound = "WeaponFrag.Roll"
 explode = "BaseGrenade.Explode"

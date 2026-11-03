@@ -25,8 +25,8 @@
 //       "W tick class clip1 ammo1 ammo2 next_primary next_secondary"
 //         (the active weapon; the next-attack times relative to gametime)
 //       "E tick index class x y z vx vy vz next_think_tick server_tick
-//        effects" (effects bit 32: not drawn, e.g. a taken item)
-//         (tracked entities)
+//        effects pitch yaw roll" (tracked entities; effects bit 32: not
+//        drawn, e.g. a taken item; the angles: the absolute rotation)
 //     and as they happen: "S tick channel volume level pitch sample entry"
 //     (the bot's sounds; "s ..." the same for tracked entities),
 //     "H tick health armor" (player_hurt), "D tick victim attacker
@@ -48,8 +48,9 @@
 //   probe_hurt <damage> <type> [attacker client]: damage the bot.
 //   probe_tp <client> <x y z pitch yaw>: place any player.
 //   probe_find <class substring>: entities' index, class, name, origin.
-//   probe_prop <class> <model> <x y z> [mass]: spawn a physics prop,
-//     tracked; prints its index.
+//   probe_prop <class> <model> <x y z> [mass [spawnflags]]: spawn a
+//     physics prop, tracked; prints its index (spawnflags 72: motion
+//     disabled until the gravity gun touches it, so it hangs in the air).
 //   probe_track <index> | clear | <class prefix>: track an entity, or
 //     every new entity whose class starts with the prefix.
 //   probe_get <index> <data|send> <prop> [int|float|vec|ent]: read a prop.
@@ -116,7 +117,7 @@ public void OnPluginStart()
     RegServerCmd("probe_hurt", Command_Hurt, "probe_hurt <damage> <type> [attacker]");
     RegServerCmd("probe_tp", Command_Tp, "probe_tp <client> <x y z pitch yaw>");
     RegServerCmd("probe_find", Command_Find, "probe_find <class substring>");
-    RegServerCmd("probe_prop", Command_Prop, "probe_prop <class> <model> <x y z> [mass]");
+    RegServerCmd("probe_prop", Command_Prop, "probe_prop <class> <model> <x y z> [mass [spawnflags]]");
     RegServerCmd("probe_track", Command_Track, "probe_track <index> | clear | <class prefix>");
     RegServerCmd("probe_get", Command_Get, "probe_get <index> <data|send> <prop> [int|float|vec|ent]");
     RegServerCmd("probe_setprop", Command_SetProp, "probe_setprop <index> <data|send> <prop> <int|float> <value>");
@@ -430,6 +431,11 @@ public Action Command_Prop(int args)
         Format(script, sizeof(script), "mass,%s", mass);
         DispatchKeyValue(e, "overridescript", script);
     }
+    if (args >= 7) {
+        char flags[16];
+        GetCmdArg(7, flags, sizeof(flags));
+        DispatchKeyValue(e, "spawnflags", flags);
+    }
     DispatchKeyValueVector(e, "origin", o);
     DispatchSpawn(e);
     ActivateEntity(e);
@@ -657,10 +663,12 @@ void WriteEntity(int e)
     float v[3];
     GetEntPropVector(e, Prop_Data, "m_vecAbsOrigin", o);
     GetEntPropVector(e, Prop_Data, "m_vecAbsVelocity", v);
+    float a[3];
+    GetEntPropVector(e, Prop_Data, "m_angAbsRotation", a);
     int think = HasEntProp(e, Prop_Data, "m_nNextThinkTick") ? GetEntProp(e, Prop_Data, "m_nNextThinkTick") : -1;
     int effects = HasEntProp(e, Prop_Send, "m_fEffects") ? GetEntProp(e, Prop_Send, "m_fEffects") : -1;
-    g_out.WriteLine("E %d %d %s %.4f %.4f %.4f %.4f %.4f %.4f %d %d %d", g_cursor, e, cls, o[0], o[1], o[2], v[0], v[1],
-        v[2], think, GetGameTickCount(), effects);
+    g_out.WriteLine("E %d %d %s %.4f %.4f %.4f %.4f %.4f %.4f %d %d %d %.3f %.3f %.3f", g_cursor, e, cls, o[0], o[1],
+        o[2], v[0], v[1], v[2], think, GetGameTickCount(), effects, a[0], a[1], a[2]);
 }
 
 public void OnPlayerRunCmdPost(int client, int buttons, int impulse, const float vel[3], const float angles[3],

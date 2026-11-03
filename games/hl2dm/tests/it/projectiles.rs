@@ -783,9 +783,10 @@ fn a_tapped_throw_44() {
     assert_eq!(t, 20, "made on tick 19 (seen before 20)");
     let _ = at;
     let v0 = to_source(v);
-    // Read after its first physics step: gravity has taken a little.
+    // Read after its first physics step: gravity and a tick of air drag
+    // (1200 × 0.176 × 0.015 = 3.2) have taken a little.
     assert!(
-        (v0.x - 1200.0).abs() < 1.0 && v0.y.abs() < 1.0 && (v0.z - 120.0).abs() < 10.0,
+        (v0.x - 1196.8).abs() < 1.0 && v0.y.abs() < 1.0 && (v0.z - 120.0).abs() < 10.0,
         "{v0}"
     );
     let _ = start;
@@ -855,11 +856,42 @@ fn lob_and_roll_47_48() {
         } else {
             Vec3::new(350.0, 0.0, 50.0)
         };
-        // Read after its first physics step (gravity, the roll's floor).
+        // Read after its first physics step (gravity, the roll's floor,
+        // a tick of air drag: 0.5 off the lob, 1.4 off the roll).
         assert!(
-            (v.x - want.x).abs() < 1.0 && v.y.abs() < 1.0 && (v.z - want.z).abs() < 10.0,
+            (v.x - want.x).abs() < 2.0 && v.y.abs() < 1.0 && (v.z - want.z).abs() < 10.0,
             "duck {duck}: {v}"
         );
+    }
+}
+
+/// 9.4's air drag (measured on the real server, the plan's Progress
+/// 2026-11-03 "probe 2"): a throw's forward speed 10 ticks after it
+/// leaves the hand ≈ 1167 (the real one's, fitted past its spin), a
+/// lob's 20 ticks on ≈ 339.
+#[test]
+fn a_frag_slows_in_the_air() {
+    for (secondary, after, want) in [(false, 10, 1167.0), (true, 20, 339.0)] {
+        let mut sim = sim();
+        let p = player(&mut sim);
+        frag_ready(&mut sim, p, 2);
+        let mut seen: Vec<Vec3> = Vec::new();
+        run(&mut sim, p, 50, |s, t| {
+            s.intent(p).fire = !secondary && t == 0;
+            s.intent(p).secondary = secondary && t == 0;
+            let w = s.app.world_mut();
+            if let Some(v) = w
+                .query::<(&Hl2Grenade, &avian3d::prelude::LinearVelocity)>()
+                .iter(w)
+                .next()
+                .map(|(_, v)| v.0)
+            {
+                seen.push(to_source(v));
+            }
+        });
+        // seen[0]: after its first step.
+        let v = seen[after];
+        assert!((v.x - want).abs() < 3.0, "secondary {secondary}: {v} after {after} ticks");
     }
 }
 

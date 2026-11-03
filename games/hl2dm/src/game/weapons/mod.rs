@@ -295,6 +295,7 @@ fn projectile_systems(app: &mut App) {
         )
         .add_systems(Predict::Select, alt_fire::lock_charging.before(SelectWeapons))
         .add_systems(FixedUpdate, launch::mark_under_water.before(SimSet::Weapons))
+        .add_systems(FixedPostUpdate, frag::air_drag.before(avian3d::prelude::PhysicsSystems::StepSimulation))
         .add_systems(FixedUpdate, launch::fill_up.run_if(crate::core::authoritative))
         .add_systems(
             FixedUpdate,
