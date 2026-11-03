@@ -437,7 +437,7 @@ implementing (owner branch) / done.
 | M4 bullets, melee, UGG | H3 | done (branch `hl2dm-m4`, 2026-11-03): see Progress; left: probe checks (P1-P17), C7 (no need in M4) | S8, C4 |
 | M5 projectiles | H4 | done (branch `hl2dm-m5`, 2026-11-03): see Progress; left: probe checks (P1-P15), the frag in the spawn loadout, the effects (M10) | C1 |
 | M6 gravity gun | H5 | not started | C6 |
-| M7 rules, pickups | H6, H10 | not started | C3, (C5) |
+| M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; left: the set pieces of H10 sections 8-16, respawnable props, the probe cases (the probe server crashes on a bot's death) | C3 (C5 not needed) |
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
 | M9 HUD | H8 | not started | S7 |
 | M10 effects, sounds | H9 | not started | S10, S5 |
@@ -741,6 +741,68 @@ implementing (owner branch) / done.
   dm_lockdown's ladder brushes) and 62 (the water jump); the waist-water
   step counter; `player_old_armor`.
 
+- 2026-11-03: M7 built (branch `hl2dm-m7`). **C3** (`chimera_sim::weapon::
+  respawn`): with a game's `RespawnRules`, a map pickup records the spot
+  where it first rests (rest checks every 0.1 s), a taken item hides there
+  and comes back after its delay (a think on the nearest tick: 2000 at 30
+  s), a taken placed weapon leaves a copy appearing 1333 ticks later
+  (`Copied`: no map outputs), and at each pickup's own check (30 s items,
+  20 s weapons, first on the tick it rests) one at rest farther than 64
+  units goes back; `PickupRules::weapon_stay` (`mp_weaponstay`: copies at
+  once, owners refused). **Pickups** (`game::pickups`, `ammo`,
+  `ammo_crates`): items are physics objects; the ammo box table and crate
+  types as data (data/items.toml; the M5/M6 ammo types' limits in
+  ammo.toml); boxes used up whole, `OnCacheInteraction`, `OnPlayerTouch`,
+  `ammo_pickup`; `item_ammo_crate`'s timeline (ammo on T + 63, `Close`
+  T + 105, full T + 182) and crowbar use; suit chargers' `OnFull` (at load,
+  on refill), `OnHalfEmpty`, `OnEmpty` (dm_lockdown's megacharger light);
+  `sv_hl2mp_item_respawn_time`, `sv_hl2mp_weapon_respawn_time`,
+  `mp_weaponstay`. **Rules** (`game::rules`): DM and TDM as two modes on
+  the mode runtime (`hl2dm:dm`, `hl2dm:tdm`: one live round from the map's
+  load, decided by the limits, its round over the intermission, the match
+  over the map change; C5 wasn't needed, nothing lifted from CS:S): joining
+  (DM team 0, every player its own engine team so `say_team` reaches only
+  its sender; TDM the smaller team, random on a tie), the 19 models
+  (data/player_models.toml) with the shared round-robin counters, the 5 s
+  model timer reset by spawns, `cl_playermodel` (userinfo), `jointeam`,
+  `spectate`, `joingame` (0.3 s rate, a TDM suicide charged to the new
+  team, a frag back when going to spectate; `Console::player_command`, so
+  a client's go to its server), the spawn ring walk (the empty slot, the
+  first spot doubled), 128-unit occupancy, the 48-unit telefrag
+  (`worldspawn`), team classes falling back to deathmatch's, then
+  `info_player_start`; the respawn (buttons released once, then a press,
+  or `mp_forcerespawn`'s 5 s, after more than 3 s: ticks 201 and 334); the
+  0.5 s pure-blast grace; the 5 s suicide limit; scoring (team kills -1
+  frag and +1 to the killer's team, suicides -1 to the victim's team, no
+  frags or deaths in the intermission); death-notice names; `player_death`,
+  `player_team`, `player_spawn`, `round_start`, log lines with HL2:DM's
+  team names; frag (DM player, TDM team) and whole-minute time limits; the
+  frozen intermission (`mp_chattime`) and the next map (`nextlevel`, the
+  cycle, the first when off it); `mp_restartgame` (the map's entities
+  again through `core::restart_round`), `mp_readyrestart` (`player_say`,
+  now fired by `net::chat`), `timeleft`. The dead stay at their body (M8's
+  `core::OrbitDeadView`; M7's own copy dropped at the merge). HL2:DM's chat
+  formats in its map kit, the living reading the dead
+  (`SayFormats::dead_heard`). The apps start the rules on their first
+  map (`rules::AutoStart`). Tests: `pickups.rs` (H10 cases 1-9, 11, 12,
+  14, 16, 17, 20, 23), `rules.rs` (H6 tests 1, 2, 4, 5, 7-21, 24-56 in
+  part: the ring walk's unit test, 26-29, 30-35, 36-43, 44-46, 53-56),
+  `net.rs` (join on a team, `jointeam` from a client, respawn), heavy
+  `map_pickups.rs` (every stock map's items, chargers, crates: 329 items,
+  200 ammo boxes; a kit back after 2000 ticks, a weapon's copy after
+  1333). Also: the heavy app test `every_stock_map_plays` put players
+  half a hull too low since M3's Source movement (fixed separately).
+
+  The probe (port 27040): `mp_forcerespawn` reads 0 again on a plain
+  start; killing the `hl2mp_bot_add` bot (`sm_slay`) crashed the
+  dedicated server twice, so P2-P14 of rules.md and P1-P10 of
+  maps_entities.md weren't measured (the respawn and copy ticks are the
+  spec's). Left: H10's set pieces (sections 8-16: canisters, flares, the
+  fan's motor and sensor, the microphone, the camera, `env_shake`,
+  `game_ragdoll_manager`), `prop_physics_respawnable` (section 5, with
+  M6), the respawn light, chargers' `Recharge`/`SetCharge` inputs and
+  value outputs, HL2:DM's scoreboard and death notices (M9), the
+  server rewriting a remote client's `cl_playermodel`, the probe cases.
 - 2026-11-03: M8 built (branch `hl2dm-m8`). **S9**:
   `source_engine::player_anim`, the shared half of CS:S's `player_anim`
   (the inputs from the simulation and the weapons' events, the drawn
@@ -864,7 +926,12 @@ implementing (owner branch) / done.
   (M7), death-notice names (test 64, M9), DSP hearing (63), effects,
   trails, the dot's drawing, pinned ragdolls and dissolves (M10), the
   gravity gun's catches (M6), test 38 (under water: the marker is the
-  movement's water level, not checked headless), 42 (props).
+  movement's water level, not checked headless), 42 (props). Merged
+  with M7: ammo boxes and crates of the projectiles' types fill the
+  weapon's own rounds (`ammo::give`), a pool waiting for its weapon goes
+  into them on pickup; `impulse 101` fills them (`weapon::FilledUp`). The projectile weapons
+  have no gun class yet, so Ultimate Gun Game's ladder doesn't take them
+  (open question 5's choice).
 
 ## Decision log
 

@@ -9,7 +9,8 @@
 # clip 1, default clip 5.
 id = "hl2dm:weapon_crossbow"
 base = "hl2dm:base"
-class = "sniper"
+# No gun class yet: the gun game takes only classed guns (its ladder
+# with the projectile weapons is for later).
 slot = 3
 draw = 1.0
 weight = 6

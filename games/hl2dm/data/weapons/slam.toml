@@ -8,7 +8,8 @@
 # Script: bucket 4 position 2, weight 1, clip 3.
 id = "hl2dm:weapon_slam"
 base = "hl2dm:base"
-class = "grenade"
+# No gun class yet: the gun game takes only classed guns (its ladder
+# with the projectile weapons is for later).
 slot = 4
 draw = 1.0
 weight = 1

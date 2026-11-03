@@ -1,7 +1,9 @@
 //! Every stock map plays in the app's simulation (`hl2dm_app::SimPlugin`
 //! with `map::MapSimPlugin`, the map loaded as `--map hl2dm:<name>` loads
-//! it, lean): a player put at each of its first spawns falls onto the
-//! floor and stands there, and runs a step. Passes with a note without
+//! it, lean): a player put at each of its first spawns (a spot is where
+//! the feet go; HL2:DM's Source movement keeps a character's transform at
+//! the middle of its 72-unit hull, so it is put half a hull and a little
+//! more above) falls onto the floor and stands there, and runs a step. Passes with a note without
 //! the install (`$CHIMERA_HL2DM_ROOT`, Steam, `[games.hl2dm] path`).
 
 use bevy::prelude::*;
@@ -10,6 +12,9 @@ use chimera_world::{
     map::{MapLoadOptions, MapSimPlugin},
 };
 use hl2dm::game::{STOCK_MAPS, movement};
+
+/// Half a standing hull (36 units), m: a spot's feet to the transform.
+const HALF_HULL: f32 = 36.0 * 0.0254;
 
 #[test]
 fn every_stock_map_plays() {
@@ -25,11 +30,15 @@ fn every_stock_map_plays() {
         let spawns: Vec<Vec3> = data.spawns.iter().take(3).map(|s| s.0).collect();
         assert!(!spawns.is_empty(), "{id}: no spawns");
         let mut sim = Sim::new(hl2dm_app::SimPlugin, MapSimPlugin::new(data));
+        // The movement on the map, where the test puts each player: not
+        // the rules' spawn choice (`rules::AutoStart` off).
+        sim.app.insert_resource(hl2dm::game::rules::AutoStart(false));
+        sim.app.insert_resource(hl2dm::game::rules::Hl2Match::default());
         for (i, at) in spawns.iter().enumerate() {
-            let p = sim.spawn_character(*at + Vec3::Y * 0.1, movement::ID);
+            let p = sim.spawn_character(*at + Vec3::Y * (HALF_HULL + 0.1), movement::ID);
             sim.seconds(2.0);
             assert!(sim.state(p).on_ground, "{id} spawn {i}: stands");
-            let fell = at.y - sim.position(p).y;
+            let fell = at.y - (sim.position(p).y - HALF_HULL);
             assert!(fell < 1.0, "{id} spawn {i}: fell {fell} m (through the floor?)");
             let before = sim.position(p);
             sim.intent(p).move_axis = Vec2::Y;

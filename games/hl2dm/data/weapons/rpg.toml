@@ -9,7 +9,8 @@
 # position 1, weight 0, default clip 3, autoswitchfrom 1.
 id = "hl2dm:weapon_rpg"
 base = "hl2dm:base"
-class = "launcher"
+# No gun class yet: the gun game takes only classed guns (its ladder
+# with the projectile weapons is for later).
 slot = 4
 draw = 1.1
 weight = 0

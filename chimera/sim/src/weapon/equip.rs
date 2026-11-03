@@ -8,7 +8,8 @@
 //!   the logic layer gives the activator its items, after taking its
 //!   weapons when the entity strips.
 //! - `weapon_*` entities placed in the map: loose weapons lying where they
-//!   stand, put back at every round restart (`MapWeapon`).
+//!   stand, put back at every round restart (`MapWeapon`); with a game's
+//!   `respawn::RespawnRules`, each comes back after it is taken.
 //!
 //! Covers: map equipment (game_player_equip without "Use Only" as
 //! `SpawnEquipment`, given instead of the starting weapons at every spawn;
@@ -32,10 +33,9 @@
 //! until another is set. Why it's OK for now: Makes mg_, bhop and surf maps
 //! play; write specs/source/game_entities.md and measure when a map disagrees.
 
-use avian3d::prelude::{AngularVelocity, LinearVelocity};
 use bevy::prelude::*;
 
-use super::{Armor, Inventory, Weapon, WeaponRegistry, WeaponState, drop::Loose, give, grenade::Throwable};
+use super::{Armor, Inventory, Weapon, WeaponRegistry, drop::Loose, give, grenade::Throwable};
 use crate::{
     core::{Equip, RoundRestarts},
     map::{
@@ -43,7 +43,6 @@ use crate::{
             EntityAnchors, FireEntityOutput, MapAnchor, MapEntities, entity_rotation, entity_to_engine,
             rotation_to_engine,
         },
-        loose::LooseItem,
     },
 };
 
@@ -258,35 +257,34 @@ pub fn place_weapons(world: &mut World, entities: &[crate::map::MapEntity], scal
     }
     let delay = world.get_resource::<super::drop::PickupRules>().copied().unwrap_or_default().touch_delay;
     let since = super::drop::tick_time(world) - delay;
+    let respawns = world.contains_resource::<super::respawn::RespawnRules>();
     for (index, e) in entities.iter().enumerate() {
         let class = e.classname().to_ascii_lowercase();
         if !class.starts_with("weapon_") {
             continue;
         }
-        let Some(def) = world.resource::<WeaponRegistry>().find(&class) else { continue };
-        let (id, build) = (def.id, def.build.clone());
-        // The weapon itself remembers its map entity too (its pickup
-        // outputs; what is parented to it follows it: `anchor_weapons`).
-        let mut w = world.spawn((Name::new(id.to_string()), WeaponState::default(), MapWeapon(index)));
-        build(&mut w);
-        let weapon = w.id();
+        let Some(id) = world.resource::<WeaponRegistry>().find(&class).map(|d| d.id) else { continue };
         // A little up from the origin (usually on the floor) so the body
         // starts clear of it.
         let at = entity_to_engine(e.origin(), scale) + Vec3::Y * 4.0 * scale;
         let turn = rotation_to_engine(entity_rotation(e.angles()));
-        world.spawn((
-            Name::new(format!("Map {id}")),
-            LooseItem(id.to_string()),
-            Loose {
-                weapon,
-                dropper: None,
-                since,
-            },
-            MapWeapon(index),
-            Transform::from_translation(at).with_rotation(turn),
-            LinearVelocity(Vec3::ZERO),
-            AngularVelocity(Vec3::ZERO),
-        ));
+        let Some((_, loose)) = super::respawn::place_one(world, id, index, Transform::from_translation(at).with_rotation(turn), since)
+        else {
+            continue;
+        };
+        // Coming back after it is taken (`respawn`, a game's rules): unless
+        // its spawnflag 1 << 30 says never.
+        if respawns {
+            let flags = e.get("spawnflags").and_then(|f| f.trim().parse::<i64>().ok()).unwrap_or(0);
+            world
+                .entity_mut(loose)
+                .insert(super::respawn::MapPickup::new(super::respawn::PickupKind::Weapon, flags & (1 << 30) != 0));
+        }
+    }
+    // Copies waiting to appear go with the weapons they stand for.
+    let copies: Vec<Entity> = world.query_filtered::<Entity, With<super::respawn::WeaponCopy>>().iter(world).collect();
+    for c in copies {
+        world.despawn(c);
     }
 }
 
@@ -297,6 +295,10 @@ pub(super) fn picked_up(world: &mut World, owner: Entity, weapon: Entity) {
     let Some(index) = world.get::<MapWeapon>(weapon).map(|m| m.0) else {
         return;
     };
+    // A respawned copy has no map entity's outputs.
+    if world.get::<super::respawn::Copied>(weapon).is_some() {
+        return;
+    }
     if world.contains_resource::<Messages<FireEntityOutput>>() {
         world.write_message(FireEntityOutput {
             map_index: index,

@@ -14,15 +14,18 @@
 //!   match (`gameplay::new_game`). Clients load the map from their own
 //!   install by name.
 //! - Players join with the HL2:DM app's `+connect <ip>:<port>`; a server
-//!   takes eight unless told otherwise (`maxplayers`). M1: no rules yet
-//!   (deathmatch and team deathmatch are M7), no bots.
+//!   takes eight unless told otherwise (`maxplayers`). HL2:DM's rules
+//!   from the start map on (`game::rules`, M7: deathmatch, or team
+//!   deathmatch with `mp_teamplay 1`; the intermission's end changes to
+//!   the cycle's next map with `changelevel`); no bots.
 //!
 //! Lifted nothing: the pieces are Chimera's (`net`, `map::MapSimPlugin`,
 //! the headless harness's `add_headless_with`, `single_threaded_schedules`)
 //! and HL2:DM's (`game::*`); Combat Arms' server's main.rs has the same
 //! shape (its options, stdin console and run loop).
 //!
-//! Known shortcuts: no map cycle; no `MapFiles` (a client without the map
+//! Known shortcuts: the map cycle is HL2:DM's shipped one (the install's
+//! `mapcycle.txt` isn't read); no `MapFiles` (a client without the map
 //! can't download it: maps load from each player's install); changing
 //! to the greybox keeps HL2:DM's 15 ms tick (the greybox has no tick of
 //! its own).
@@ -190,6 +193,9 @@ impl Plugin for ServerPlugin {
         app.set_gameplay(Gameplay::of(&INFO))
             .insert_resource(BuildVersion(VERSION))
             .add_plugins((NetPlugin, Hl2dmPlugins))
+            // The rules from the start map (`changelevel` starts each new
+            // one: `gameplay::new_game`).
+            .insert_resource(hl2dm::game::rules::AutoStart(true))
             // A dedicated server takes eight players unless told otherwise.
             .insert_resource(NetSettings {
                 maxplayers: 8,

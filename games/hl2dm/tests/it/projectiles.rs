@@ -1120,3 +1120,16 @@ fn a_pistol_hit_on_the_suit_takes_a_fifth_to_health() {
     let a = sim.app.world().get::<Armor>(t).unwrap().amount * 100.0;
     assert!((93.0..=94.0).contains(&a.round()), "armour {a}");
 }
+
+/// Ammo boxes (M7's `ammo::give`) of a projectile's type fill the weapon's
+/// own rounds up to their limit (RPG_Round 3).
+#[test]
+fn ammo_of_a_projectile_type_fills_its_weapons_rounds() {
+    let mut sim = sim();
+    let p = player(&mut sim);
+    let w = holding(&mut sim, p, weapons::RPG);
+    set_rounds(&mut sim, w, 1);
+    let added = hl2dm::game::ammo::give(sim.app.world_mut(), p, "hl2dm:rpg_round", 5);
+    assert_eq!(added, 2);
+    assert_eq!(sim.app.world().get::<Hl2Rounds>(w).unwrap().count, 3);
+}

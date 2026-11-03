@@ -24,8 +24,7 @@ use serde::{Deserialize, Serialize};
 use super::server::Player;
 use crate::{
     console::{
-        CommandPlayer, Console, ConsoleAppExt, Level, PLAYER_COMMANDS, cheats_allowed, command_player, execute,
-        in_table, is_cheat, parse,
+        CommandPlayer, Console, ConsoleAppExt, Level, cheats_allowed, command_player, execute, is_cheat, parse,
     },
     core::{MovementState, NetRole, Velocity},
     movement::noclip::NoclipBack,
@@ -112,7 +111,7 @@ pub fn run_for(world: &mut World, client: Entity, line: &str) {
         // resolves in the server's scope.
         let console = world.resource::<Console>();
         let cheat = is_cheat(console, &name, &words[1..]);
-        if !cheat && !in_table(console, PLAYER_COMMANDS, &name) {
+        if !cheat && !console.is_player_command(&name) {
             continue;
         }
         if cheat && !cheats_allowed(world) {

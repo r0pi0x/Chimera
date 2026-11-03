@@ -4,7 +4,9 @@
 //! (`game::INFO`), its install as a mount (`game::mount`, from its
 //! `gameinfo.txt`), its maps (`game::maps`, `game::MAP_LOADER`), its
 //! movement and suit (M3) and its bullet and melee weapons
-//! (`game::weapons`, M4; `game::Hl2dmPlugins`). Source
+//! (`game::weapons`, M4; `game::Hl2dmPlugins`), its pickups and rules
+//! (`game::pickups`, `game::rules`, M7; `rules`: its game events and log
+//! lines). Source
 //! behaviour it shares with CS:S comes from `source_engine`, never from
 //! `cs_source` (a lift, not a copy).
 //!
@@ -16,11 +18,12 @@
 
 pub mod game;
 pub mod harness;
+pub mod rules;
 
 // `crate::game_registry`, `crate::map` and the rest inside, as in the
 // other game crates (the architecture check reads `crate::<module>`
 // against its layering table).
-use chimera_core::{console, core, game_registry, mount, slots};
+use chimera_core::{console, core, game_log, game_registry, gameplay, mount, slots};
 use chimera_sim::weapon;
 use chimera_world::map;
 
