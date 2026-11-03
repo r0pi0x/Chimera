@@ -16,7 +16,10 @@
 //! (`map::add_held_model`) on the next frame and again on each map
 //! (`build_late_held`), and character models a game adds later
 //! (`map::add_character_model`, appended to each map's `CharacterModels`)
-//! likewise (`build_late_bodies`); `adopt_bodies`/`pose_ragdolls` hand a dead
+//! likewise (`build_late_bodies`); face parts (`map::face`: eyeballs with
+//! their iris projected toward the character's `EyeTarget`, teeth) set
+//! each frame from where the pose puts the head (`aim_faces`);
+//! `adopt_bodies`/`pose_ragdolls` hand a dead
 //! character's body to its ragdoll and pose it from the ragdoll's bodies.
 //!
 //! Known shortcuts (docs/tech-debt.md): Frame-time shortcuts
@@ -204,6 +207,23 @@ pub struct BodyAssets {
     /// model has body parts (`MapModel::body_parts`, `MapMesh::body`).
     pub body_parts: Vec<u16>,
     pub mesh_bodies: Vec<Option<(u16, u16)>>,
+    /// Each part's face (an eyeball or teeth: `map::face`), drawn where its
+    /// character looks (`aim_faces`).
+    pub faces: Vec<Option<Face>>,
+}
+
+/// A face part of a body's model.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Face {
+    Eye(MapEye),
+    Teeth(MapTeeth),
+}
+
+/// A body's mesh drawn as a face part, on its bone's joint.
+#[derive(Component, Clone, Debug)]
+pub struct FacePart {
+    pub face: Face,
+    pub joint: Entity,
 }
 
 impl BodyAssets {
@@ -355,6 +375,15 @@ pub fn attach_bodies(
             ));
             if let (Some(_), Some(levels)) = (&assets.lod_group, assets.levels.get(k)) {
                 part.insert(super::lod::LodMeshes(levels.clone()));
+            }
+            if let Some(face) = assets.faces.get(k).cloned().flatten() {
+                let bone = match &face {
+                    Face::Eye(e) => e.bone,
+                    Face::Teeth(t) => t.bone,
+                };
+                if let Some(&joint) = joints.get(bone) {
+                    part.insert(FacePart { face, joint });
+                }
             }
         }
         if let Some(group) = &assets.lod_group {
@@ -793,6 +822,53 @@ pub fn body_assets(
         root,
         body_parts: model.body_parts.clone(),
         mesh_bodies: model.meshes.iter().map(|m| m.body).collect(),
+        faces: model
+            .meshes
+            .iter()
+            .map(|m| match (&m.eye, &m.teeth) {
+                (Some(e), _) => Some(Face::Eye((**e).clone())),
+                (None, Some(t)) => Some(Face::Teeth(t.clone())),
+                _ => None,
+            })
+            .collect(),
+    }
+}
+
+/// Each face part's material from where it is drawn this frame: an
+/// eyeball's centre, up and iris planes toward its character's
+/// `EyeTarget` (ahead without one, or once its body is a ragdoll's: spec
+/// 10.2), teeth toward the mouth's forward, unlit while the mouth is shut
+/// (spec 11.5 at rest).
+pub fn aim_faces(
+    parts: Query<(&FacePart, &MeshMaterial3d<PropMaterial>, &ChildOf)>,
+    bodies: Query<Option<&ChildOf>, With<CharacterBody>>,
+    targets: Query<&EyeTarget>,
+    joints: Query<&GlobalTransform, With<BodyJoint>>,
+    materials: Option<ResMut<Assets<PropMaterial>>>,
+) {
+    let Some(mut materials) = materials else { return };
+    for (part, material, body) in &parts {
+        let Ok(bone) = joints.get(part.joint) else { continue };
+        let owner = bodies.get(body.parent()).ok().flatten().map(ChildOf::parent);
+        let target = owner.and_then(|o| targets.get(o).ok()).map(|t| t.0);
+        let scale = bone.compute_transform().scale.x;
+        let Some(mut m) = materials.get_mut(&material.0) else { continue };
+        let p = &mut m.params;
+        match &part.face {
+            Face::Eye(eye) => {
+                let aim = eye.aim(bone, target, scale);
+                let (centre, up, _) = eye.world(bone);
+                let [u, v] = eye.projection(bone, aim, scale);
+                p.face_center = centre.extend(1.0);
+                p.face_up = up.extend(0.0);
+                p.face_u = u;
+                p.face_v = v;
+            }
+            Face::Teeth(t) => {
+                let forward = bone.affine().transform_vector3(t.forward).normalize_or_zero();
+                p.face_up = forward.extend(0.0);
+            }
+        }
     }
 }
 

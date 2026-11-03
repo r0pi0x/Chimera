@@ -15,7 +15,7 @@ use std::sync::Arc;
 use bevy::prelude::*;
 
 use super::{
-    DetailMode, MapEntity, MapExtras, MapRagdoll, MapSelfIllum, MapSounds, MapTextureAnim, MapUvTransform, MapViewModel, SourceEffects, anim, beams,
+    DetailMode, MapEntity, MapEye, MapTeeth, MapExtras, MapRagdoll, MapSelfIllum, MapSounds, MapTextureAnim, MapUvTransform, MapViewModel, SourceEffects, anim, beams,
     bot_profiles, breakables, color_correction, decal, emitters, hud, lod, nav, particles, psys, radio, rope_sway,
     shells, vis, water,
 };
@@ -265,6 +265,11 @@ pub struct MapMesh {
     /// A second texture on generated coordinates combined with the base
     /// (`MapLayer`: environment and rim maps).
     pub layer: Option<MapLayer>,
+    /// An eyeball (Source's Eyes shader: its iris projected where the
+    /// character looks, `map::face`).
+    pub eye: Option<Box<MapEye>>,
+    /// A mouth's teeth (Source's Teeth shader, `map::face`).
+    pub teeth: Option<MapTeeth>,
     /// How the scene's point lights (`DynamicLight`: muzzle flashes,
     /// effect lights) fade on it with distance: its own game's curve, so a
     /// model keeps its look on another game's map.

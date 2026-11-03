@@ -15,10 +15,13 @@
 //! `view_anim` and `view_motion`, what Source view models play and how
 //! they move with the player (lift S8: each game's rules over Source's
 //! activities, CS:S's cvar-driven bob and history sway, HL2's fixed bob
-//! and spring sway).
+//! and spring sway); `player_anim`, the shared half of Source's player
+//! animation (lift S9: the inputs, the drawn and the server's per-tick
+//! updates, the hands' IK locks; each game's state picks its sequences).
 
 pub mod content;
 pub mod maps;
+pub mod player_anim;
 pub mod source_movement;
 pub mod search_path;
 pub mod view_anim;

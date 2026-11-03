@@ -467,6 +467,7 @@ fn posed_model() -> MapCharacterModel {
             delta: false,
             base: 0,
             speed: 0.0,
+            motion: Vec2::ZERO,
             tracks: vec![Track {
                 bone: 1,
                 rotation: Some((0..7).map(|f| if f == 0 { upright } else { bent }).collect()),

@@ -1142,7 +1142,7 @@ impl<'a> MaterialLoader<'a> {
         index
     }
 
-    fn texture(&mut self, name: &str, srgb: bool) -> Option<usize> {
+    pub fn texture(&mut self, name: &str, srgb: bool) -> Option<usize> {
         // The monitor screen (func_monitor's point_camera view: `_rt_Camera`,
         // or `engine/camerarendertarget` as dev/dev_monitor names it): a
         // placeholder the map replaces with a render target.

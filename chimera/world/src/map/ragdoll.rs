@@ -23,6 +23,9 @@
 //!   zeroed unmarked, or avian wakes them right away), and go
 //!   away at a round restart and when their owner lives again (respawn)
 //!   or is gone.
+//! - A game's rules may differ (`RagdollGameRules` by the body's game:
+//!   HL2:DM's push the root body with the hit's own force, aim at no death
+//!   pose and stay after the respawn until the owner dies again).
 //!
 //! Ragdolls for any game (specs/cs_source/ragdolls.md): `MapRagdoll` on a
 //! character model (bodies on bones, joints with per-axis limits),
@@ -211,6 +214,48 @@ impl Default for RagdollSettings {
     }
 }
 
+/// A game's ragdoll rules where they differ from CS:S's (ragdolls.md):
+/// HL2:DM's (specs/hl2dm/player_models.md 10) push the root body with the
+/// hit's own force, aim at no death pose and outlive their owner's
+/// respawn until it dies again.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RagdollRules {
+    /// Bone velocities aim at a death pose for the hit (spec 2.3).
+    pub death_pose: bool,
+    /// The killing push goes into body 0 (the root: the pelvis), whatever
+    /// was hit, instead of the hit's body.
+    pub push_root: bool,
+    /// The killing push is the damage's own force (`Damage::force`, when
+    /// it has one) instead of `DEATH_IMPULSE` along the hit.
+    pub damage_force: bool,
+    /// The ragdoll stays when its owner lives again, until the owner dies
+    /// again or is gone.
+    pub outlive_respawn: bool,
+}
+
+impl Default for RagdollRules {
+    fn default() -> Self {
+        Self {
+            death_pose: true,
+            push_root: false,
+            damage_force: false,
+            outlive_respawn: false,
+        }
+    }
+}
+
+/// Ragdoll rules by game (`MapCharacterModel::game`); a game without an
+/// entry has `RagdollRules::default` (CS:S's).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct RagdollGameRules(pub Vec<(&'static str, RagdollRules)>);
+
+impl RagdollGameRules {
+    pub fn of(&self, game: Option<&str>) -> RagdollRules {
+        game.and_then(|g| self.0.iter().find(|(x, _)| x.eq_ignore_ascii_case(g)))
+            .map_or_else(RagdollRules::default, |(_, r)| *r)
+    }
+}
+
 /// One tick's skeleton pose: bones in the skeleton's space (parents
 /// applied) and where the skeleton's space sits in the world.
 #[derive(Clone, Debug)]
@@ -288,6 +333,12 @@ pub struct Ragdoll {
     /// its prop node, `model` unused.
     pub placed: bool,
 }
+
+/// On a ragdoll whose owner lives again and has a body of its own: it
+/// stays until the owner dies again or is gone
+/// (`RagdollRules::outlive_respawn`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct Outlived;
 
 impl Ragdoll {
     /// A map-placed ragdoll's simulation (`placed_ragdoll`).
@@ -487,6 +538,7 @@ pub fn death_pose_bones(m: &MapCharacterModel, side: DeathSide, frame: u8, crouc
 
 pub fn plugin(app: &mut App) {
     app.init_resource::<RagdollSettings>()
+        .init_resource::<RagdollGameRules>()
         .add_message::<RagdollShot>()
         .add_plugins(JointGraphPlugin::<RagdollJoint>::default())
         .add_systems(
@@ -639,6 +691,7 @@ fn rotation_between(from: Quat, to: Quat) -> Vec3 {
 fn spawn_ragdolls(
     mut died: MessageReader<Died>,
     settings: Res<RagdollSettings>,
+    rules: Res<RagdollGameRules>,
     models: Option<Res<CharacterModels>>,
     owners: Query<(&BodyModel, &SkeletonPose, Option<&MovementState>), Without<Ragdolled>>,
     time: Res<Time>,
@@ -654,6 +707,7 @@ fn spawn_ragdolls(
         }
         let Ok((model, pose, state)) = owners.get(d.entity) else { continue };
         let Some(m) = models.0.get(model.0) else { continue };
+        let rule = rules.of(m.game);
         let Some(ragdoll) = &m.ragdoll else { continue };
         let Some(b1) = pose.frames.back() else { continue };
         let b0 = pose
@@ -672,7 +726,7 @@ fn spawn_ragdolls(
                 | crate::core::DamageKind::Crush
         );
         let death = DeathSide::from_force(b1.root.rotation.inverse() * d.damage.dir)
-            .filter(|_| pushes)
+            .filter(|_| pushes && rule.death_pose)
             .map(|side| (side, death_pose_frame(d.damage.hitgroup)))
             .and_then(|(side, frame)| {
                 let crouch = state.is_some_and(|s| s.crouching);
@@ -694,7 +748,7 @@ fn spawn_ragdolls(
             dt: (b1.time - b0.time) as f32,
             death_pose: death.as_ref().map(|(p, _)| *p),
         };
-        let entity = spawn_ragdoll(&mut commands, d.entity, model.0, m, ragdoll, &seed, &d.damage, time.elapsed_secs_f64());
+        let entity = spawn_ragdoll_with(&mut commands, d.entity, model.0, m, ragdoll, &seed, &d.damage, time.elapsed_secs_f64(), rule);
         commands.entity(d.entity).insert(Ragdolled);
         info!("ragdoll {entity} for {} (death pose {:?})", d.entity, seed.death_pose);
     }
@@ -711,7 +765,7 @@ pub struct RagdollSeed<'a> {
     pub death_pose: Option<(DeathSide, u8)>,
 }
 
-/// Spawn one ragdoll; returns its entity.
+/// Spawn one ragdoll (CS:S's rules); returns its entity.
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_ragdoll(
     commands: &mut Commands,
@@ -723,15 +777,40 @@ pub fn spawn_ragdoll(
     hit: &crate::core::Damage,
     now: f64,
 ) -> Entity {
+    spawn_ragdoll_with(commands, owner, model, m, ragdoll, poses, hit, now, RagdollRules::default())
+}
+
+/// The killing push of `hit` under `rules` (kg·m/s) and the body it goes
+/// into (`k`: the hit's body by CS:S's rule; HL2:DM's the root, with the
+/// damage's own force).
+pub fn death_push(rules: RagdollRules, k: Option<usize>, hit: &crate::core::Damage) -> (Option<usize>, Vec3) {
+    let k = if rules.push_root { Some(0) } else { k };
+    let force = match k {
+        Some(_) if rules.damage_force && hit.force != Vec3::ZERO => hit.force,
+        Some(_) => hit.dir.normalize_or_zero() * DEATH_IMPULSE,
+        None => Vec3::ZERO,
+    };
+    (k, force)
+}
+
+/// `spawn_ragdoll` under a game's `rules`.
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_ragdoll_with(
+    commands: &mut Commands,
+    owner: Entity,
+    model: usize,
+    m: &MapCharacterModel,
+    ragdoll: &MapRagdoll,
+    poses: &RagdollSeed,
+    hit: &crate::core::Damage,
+    now: f64,
+    rules: RagdollRules,
+) -> Entity {
     let (b0, b1, target, dt) = (poses.prev, poses.seed, poses.target, poses.dt);
     let scale = m.root.scale.x;
     let ragdoll_entity = commands.spawn((Name::new("Ragdoll"), MapPart, Transform::default())).id();
     let masks = ragdoll.collision_masks();
-    let k = hit_body(m, ragdoll, b1, hit);
-    let force = match k {
-        Some(_) => hit.dir.normalize_or_zero() * DEATH_IMPULSE,
-        None => Vec3::ZERO,
-    };
+    let (k, force) = death_push(rules, hit_body(m, ragdoll, b1, hit), hit);
     let total: f32 = ragdoll.bodies.iter().map(|b| b.mass).sum::<f32>().max(1.0);
     let shared_point = k.and_then(|k| ragdoll.bodies.get(k)).map(|b| b1.world(b.bone).1);
     let mut bodies = Vec::with_capacity(ragdoll.bodies.len());
@@ -918,10 +997,12 @@ pub fn spawn_body(
 /// loses `Ragdolled` too, or it never got a body again (a bot killed by
 /// the gun game's winning shot stayed invisible on the next map).
 fn remove_ragdolls(
-    ragdolls: Query<(Entity, &Ragdoll)>,
+    ragdolls: Query<(Entity, &Ragdoll, Has<Outlived>)>,
     owners: Query<Option<&Health>>,
     marked: Query<Entity, With<Ragdolled>>,
     restarts: Option<Res<crate::core::RoundRestarts>>,
+    models: Option<Res<CharacterModels>>,
+    rules: Res<RagdollGameRules>,
     mut commands: Commands,
 ) {
     let restart = restarts.is_some_and(|r| r.is_changed() && !r.is_added());
@@ -929,12 +1010,13 @@ fn remove_ragdolls(
         Ok(h) => h.is_none_or(|h| h.current > 0.0),
         Err(_) => true,
     };
+    let gone = |owner: Entity| owners.get(owner).is_err();
     for owner in &marked {
-        if alive(owner) && !ragdolls.iter().any(|(_, r)| r.owner == owner && !r.placed) {
+        if alive(owner) && !ragdolls.iter().any(|(_, r, outlived)| r.owner == owner && !r.placed && !outlived) {
             commands.entity(owner).remove::<Ragdolled>();
         }
     }
-    for (e, r) in &ragdolls {
+    for (e, r, outlived) in &ragdolls {
         if r.placed {
             continue;
         }
@@ -942,7 +1024,22 @@ fn remove_ragdolls(
             despawn_ragdoll(&mut commands, e, r);
             continue;
         }
+        if outlived {
+            // Kept until its owner dies again (its new ragdoll comes this
+            // tick) or leaves.
+            if gone(r.owner) || !alive(r.owner) {
+                despawn_ragdoll(&mut commands, e, r);
+            }
+            continue;
+        }
         if !alive(r.owner) {
+            continue;
+        }
+        let game = models.as_ref().and_then(|m| m.0.get(r.model)).and_then(|m| m.game);
+        if rules.of(game).outlive_respawn && !gone(r.owner) {
+            // The owner gets a body of its own; this one stays.
+            commands.entity(e).insert(Outlived);
+            commands.entity(r.owner).remove::<Ragdolled>();
             continue;
         }
         despawn_ragdoll(&mut commands, e, r);

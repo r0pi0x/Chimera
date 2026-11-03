@@ -274,6 +274,7 @@ pub fn load_character(
     let face = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
     let mut body = convert_model_in(&model, 0, materials, false, &[]);
     face_meshes(&mut body.meshes, face);
+    dress_face(materials, &model, &bytes_of(materials, path)?, &mut body.meshes, path);
     // Its lower levels of detail, skinned to the same skeleton (the
     // `.vvd`'s bone ids are the model's own at every level).
     body.lods = lower_levels
@@ -387,6 +388,47 @@ pub fn load_character(
         bones,
         root: Transform::from_rotation(face * axes).with_scale(Vec3::splat(METERS_PER_UNIT)),
     })
+}
+
+fn bytes_of(materials: &MaterialLoader, path: &str) -> Result<Vec<u8>, String> {
+    materials.read(path).ok_or_else(|| format!("{path}: not found"))
+}
+
+/// The model's eyeballs and mouths on its meshes (`face::dress`): each
+/// eyeball's iris texture from its material's `$iris`, teeth on the
+/// meshes whose material uses the Teeth shader. A model without a face
+/// is left as it is; one whose face doesn't read, with a warning.
+fn dress_face(materials: &mut MaterialLoader, model: &vmdl::Model, bytes: &[u8], meshes: &mut [MapMesh], path: &str) {
+    let dirs = model.texture_directories().to_vec();
+    let table: Vec<Option<String>> = match model.skin_tables().next() {
+        Some(t) => (0..64).map(|slot| t.texture(slot as i32).map(str::to_string)).collect(),
+        None => Vec::new(),
+    };
+    let names = |slot: usize| table.get(slot).cloned().flatten();
+    let vmt = |materials: &MaterialLoader, name: &str| {
+        dirs.iter()
+            .map(|d| format!("{d}{name}"))
+            .find(|m| materials.read_text(&format!("materials/{}.vmt", crate::mount::normalize(m))).is_some())
+    };
+    let shader = |materials: &MaterialLoader, name: &str| -> Option<String> {
+        let m = vmt(materials, name)?;
+        let text = materials.read_text(&format!("materials/{}.vmt", crate::mount::normalize(&m)))?;
+        let first = text.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+        Some(first.trim_start_matches('"').split(|c: char| c == '"' || c == '{' || c.is_whitespace()).next()?.to_lowercase())
+    };
+    let teeth: Vec<String> = meshes
+        .iter()
+        .filter(|m| shader(materials, &m.material).as_deref() == Some("teeth"))
+        .map(|m| m.material.clone())
+        .collect();
+    let mut iris = |name: &str| {
+        let m = vmt(materials, name)?;
+        let tex = materials.material_value(&m, "$iris")?;
+        materials.texture(tex.trim_matches('"'), true)
+    };
+    if let Err(e) = super::face::dress(bytes, &names, meshes, &mut iris, &|m| teeth.iter().any(|t| t == m)) {
+        warn!("{path}: {e}");
+    }
 }
 
 /// Most solids a ragdoll may have (specs/cs_source/ragdolls.md, Constants).

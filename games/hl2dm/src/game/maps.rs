@@ -6,15 +6,15 @@
 //! fall at it; source_deltas.md 1.1). `MAP_LOADER` loads a map of the
 //! install (`hl2dm:<name>`) as an app's `map::MapSources` asks.
 //!
-//! Its kit (the `held` hook, `add_view_models`): its weapons' view models,
-//! right-handed and never mirrored (specs/hl2dm/player_models.md 12.1).
-//! `dress_guest` brings them onto another game's map (the party's), read
-//! from the HL2:DM install.
+//! Its kit: its 19 player bodies (the `kit` hook, `bodies::add_bodies`),
+//! its weapons' world models held on them (`bodies::add_held`) and view
+//! models (the `held` hook, `add_view_models`), right-handed and never
+//! mirrored (specs/hl2dm/player_models.md 12.1). `dress_guest` brings them
+//! onto another game's map (the party's), read from the HL2:DM install.
 //!
 //! Known shortcuts:
-//! - HL2:DM's kit has only the view models: no player bodies (M8, specs/
-//!   hl2dm/player_models.md), held models (they need a body's skeleton,
-//!   M8), HUD (M9), muzzle flash, impact decals and looks (M10). Its
+//! - HL2:DM's kit has no HUD (M9), muzzle flash, impact decals and looks
+//!   (M10). Its
 //!   sounds (Source's sound scripts and soundscapes, lift S5) are the
 //!   entries it plays so far (`SOUNDS`: movement, the suit, pickups and
 //!   chargers); its weapons' entries aren't among them yet.
@@ -48,7 +48,7 @@ pub static HL2DM: SourceGame = SourceGame {
     converter: CONVERTER,
     spawns: SPAWNS,
     gravity: GRAVITY,
-    kit: no_kit,
+    kit: body_kit,
     extra_particles: no_extra_particles,
     held: held_kit,
     sounds,
@@ -125,10 +125,16 @@ pub fn load_level_bytes_with(
     bsp::load_level_bytes_with(&HL2DM, mount, name, bytes, options)
 }
 
-fn no_kit(_: &mut Kit) {}
+/// HL2:DM's kit before the map's effects: its 19 player bodies
+/// (`bodies::add_bodies`).
+fn body_kit(k: &mut Kit) {
+    super::bodies::add_bodies(k.materials, k.surfaces, k.kit, &mut k.data.kit, &mut k.data.warnings);
+}
 
-/// What players hold on HL2:DM's maps: its weapons' view models.
+/// What players hold on HL2:DM's maps: its weapons' world models on the
+/// bodies and their view models.
 fn held_kit(kit: &mut Kit) {
+    super::bodies::add_held(kit.materials, kit.surfaces, kit.kit, &mut kit.data.kit, &mut kit.data.warnings);
     let mut models = Vec::new();
     add_view_models(kit.materials, kit.kit, &mut models, &mut kit.data.warnings);
     kit.data.kit.view_models.extend(models);
@@ -156,10 +162,11 @@ pub fn add_view_models(
     }
 }
 
-/// HL2:DM's guns (those `kept` names) on another game's map (the party
-/// apps', where a player holding an HL2:DM gun is HL2:DM's): their view
-/// models, read from the HL2:DM install, their textures appended to the
-/// map's.
+/// HL2:DM's players and guns on another game's map (the party apps',
+/// where a player holding an HL2:DM gun is HL2:DM's): its 19 bodies, the
+/// guns `kept` names (held and view models), read from the HL2:DM
+/// install, their textures appended to the map's; the bodies go after the
+/// map's own.
 pub fn dress_guest(map: &mut MapData, kept: &'static [&'static str]) -> Result<(), String> {
     let install = super::INFO
         .install()
@@ -167,16 +174,22 @@ pub fn dress_guest(map: &mut MapData, kept: &'static [&'static str]) -> Result<(
     let mount = super::mount::open(&install).map_err(|e| e.to_string())?;
     let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
     let mut materials = MaterialLoader::guest(&mount, textures, cubemaps);
-    let mut models = Vec::new();
+    let surfaces = SurfaceProps::load(&mut materials);
+    let kit = crate::map::KitLoad::Players(kept);
+    let mut guest = crate::map::GameKit::default();
     let mut warnings = Vec::new();
-    add_view_models(&mut materials, crate::map::KitLoad::Players(kept), &mut models, &mut warnings);
+    super::bodies::add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
+    super::bodies::add_held(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
+    add_view_models(&mut materials, kit, &mut guest.view_models, &mut warnings);
     materials.finish_textures();
     warnings.extend(materials.missing);
     map.textures.extend(materials.textures.split_off(textures));
     map.cubemaps.extend(materials.cubemaps.split_off(cubemaps));
     map.texture_anims.extend(materials.texture_anims);
     map.warnings.extend(warnings);
-    map.kit.view_models.extend(models);
+    map.kit.characters.extend(guest.characters);
+    map.kit.held.extend(guest.held);
+    map.kit.view_models.extend(guest.view_models);
     Ok(())
 }
 
