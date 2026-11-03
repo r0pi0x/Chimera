@@ -634,3 +634,11 @@ implementing (owner branch) / done.
   GameUI menus and server browser later (question 3); spec sessions run
   on this box as separate sessions, with the public Source SDK 2013
   cloned outside the repository (question 6).
+
+- **2026-11-03 (user):** code from approved permissive sources listed in
+  `THIRD_PARTY.md` may be copied or adapted with credit (a header in each
+  file; checked by `architecture.rs`). Only hl2-rs (MIT) is approved. It
+  is a reference implementation for Source shaders (Eyes, Teeth, iris,
+  flexes), model lighting, animation layers, sky and HUD, and is usable
+  directly with credit. The Source SDK 2013 and everything unlisted stay
+  spec-only.

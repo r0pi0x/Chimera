@@ -280,10 +280,17 @@ Tests that need a game install skip when it is missing.
 - No game's files are committed or shipped; they load from your install.
 - Behaviour from the original games reaches this repository only as
   written specs (values, formulas, rules) in [specs/](specs/README.md).
-  No third-party code is committed or translated.
+  Third-party code is committed only from approved permissive sources,
+  with credit ([THIRD_PARTY.md](THIRD_PARTY.md)); nothing else is
+  copied or translated.
 - Game names are trademarks of their owners. This project is not
   affiliated with or endorsed by Valve, Nexon, Valofe or any other
   publisher.
+
+## Credits
+
+Some rendering and model code is adapted from [hl2-rs](https://github.com/kvalls/hl2-rs)
+(MIT, copyright HL2-RS contributors); see [THIRD_PARTY.md](THIRD_PARTY.md).
 
 ## License
 

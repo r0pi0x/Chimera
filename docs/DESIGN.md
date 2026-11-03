@@ -867,9 +867,18 @@ uses mounted; the server checks this before a match. Plan:
   what the game does as a plain spec in our own words (formats, values,
   rules, edge cases); a separate session implements from the spec in this
   project's ECS architecture rather than mirroring the original's structure.
-- Never commit third-party code, assets, extracted files or keys. The goal
-  is a faithful recreation built without distributing anything we don't
-  own; players load assets from their own install.
+- Never commit other games' assets, extracted files or keys. The goal is a
+  faithful recreation built without distributing anything we don't own;
+  players load assets from their own install.
+- Third-party code (user decision, 2026-11-03): code may be copied or
+  adapted only from an approved permissive source listed in
+  [THIRD_PARTY.md](../THIRD_PARTY.md) (now hl2-rs, MIT), with a header in
+  each such file naming the source, licence and original path, and the
+  credit kept in that list. The Source SDK 2013, leaked or decompiled
+  code (Combat Arms') and any non-permissive or unlisted code still never
+  enter the repo and are never translated line by line; the spec workflow
+  above stays the only way their behaviour reaches us. A new source needs
+  the user's OK. `checks/tests/it/architecture.rs` enforces the headers.
 - Two ways to get assets (user decision, 2026-10-29). By default every
   player loads from their own install. A server may instead name a
   private asset service, behind a CDN and run by whoever hosts the

@@ -26,13 +26,17 @@ This file is a map. Follow the links for detail; keep it short.
 | What to build next (to-do list) | [docs/backlog.md](docs/backlog.md) |
 | Known shortcuts in existing code | [docs/tech-debt.md](docs/tech-debt.md) |
 | Writing behavior specs | [specs/README.md](specs/README.md) |
+| Code we may copy, and its credits | [THIRD_PARTY.md](THIRD_PARTY.md) |
 
 ## Hard rules
 
 - Never commit other games' assets, extracted files or encryption keys. Load
   assets at runtime from the user's own install.
-- Third-party code never enters this repo and is never translated line by
-  line. Behavior reaches us only as specs in our own words, written in a
+- Code enters only from an approved permissive source listed in
+  [THIRD_PARTY.md](THIRD_PARTY.md), with a credit header in the file.
+  Anything else (Source SDK, leaked or decompiled code, unlisted or
+  non-permissive code) never enters and is never translated line by line;
+  its behavior reaches us only as specs in our own words, written in a
   separate session. Implementation sessions read specs only.
 - Bevy is pinned in `Cargo.toml` (0.20.0) and its API changes often: check the
   pinned crate source in `~/.cargo/registry/src/*/bevy_*-0.20.0/` or its
@@ -40,7 +44,7 @@ This file is a map. Follow the links for detail; keep it short.
 - Must build and run on Linux and Windows.
 - Scope: first-person games only; CS:S and Combat Arms first.
 
-`cargo test` enforces layering, the asset rule, the spec rule and this file's
+`cargo test` enforces layering, the asset rule, the spec rule, the third-party rule and this file's
 links (`checks/tests/it/architecture.rs`). Its failure messages say how to fix things.
 
 ## Commands
