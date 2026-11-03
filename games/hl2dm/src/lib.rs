@@ -2,8 +2,8 @@
 //! (docs/plans/active/hl2dm.md): a third game library beside CS:S and
 //! Combat Arms. So far: what the game tells the shell about itself
 //! (`game::INFO`), its install as a mount (`game::mount`, from its
-//! `gameinfo.txt`), its maps (`game::maps`, `game::MAP_LOADER`), and M1's
-//! stand-ins for its movement and weapons (`game::Hl2dmPlugins`). Source
+//! `gameinfo.txt`), its maps (`game::maps`, `game::MAP_LOADER`), its
+//! movement and suit (M3) and M1's stand-in pistol (`game::Hl2dmPlugins`). Source
 //! behaviour it shares with CS:S comes from `source_engine`, never from
 //! `cs_source` (a lift, not a copy).
 //!
@@ -19,7 +19,8 @@ pub mod harness;
 // `crate::game_registry`, `crate::map` and the rest inside, as in the
 // other game crates (the architecture check reads `crate::<module>`
 // against its layering table).
-use chimera_core::{core, game_registry, mount, slots};
+use chimera_core::{console, core, game_registry, mount, slots};
+use chimera_sim::weapon;
 use chimera_world::map;
 
 use bevy::prelude::*;

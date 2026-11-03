@@ -433,7 +433,7 @@ implementing (owner branch) / done.
 | Wave 3 specs | H8 `hud.md`, H9 `effects_sounds.md`, H10 `maps_entities.md` | spec landed (branch `hl2dm-w3`, 2026-11-01; user review pending; corrections to H0 and waves 1-2 listed in each) | – |
 | M0 install and look | H0 (install facts) | done (branch `hl2dm-m0`, 2026-11-01): S0, S1, `games/hl2dm` skeleton, `dump hl2dm`, heavy `mount.rs`; left for M1/M3: the RCON reads and the probe (below) | S0, S1, (S11) |
 | M1 maps load | H0 | done (branch `hl2dm-m1`, 2026-11-01): S2, S3, S4 lifted, CS:S's maps identical; `games/hl2dm` maps, `Hl2Sim`, stand-in movement and pistol; `apps/hl2dm`, `apps/hl2dm_server`; `mapsweep --game hl2dm` | S2, S3, S4, (S11: mapsweep) |
-| M3 movement, suit | H1, H2 | not started | S5, S6, C2, C8 |
+| M3 movement, suit | H1, H2 | done (branch `hl2dm-m3`, 2026-11-03): S5 (scripts, soundscapes), S6, C2, C8; `hl2dm:movement`, the suit, pickups and chargers; the probe | S5, S6, C2, C8 |
 | M4 bullets, melee, UGG | H3 | not started | S8, C4, C7 |
 | M5 projectiles | H4 | not started | C1 |
 | M6 gravity gun | H5 | not started | C6 |
@@ -616,6 +616,81 @@ implementing (owner branch) / done.
   whether that is the map's hut or a prop around the spawn). The rest of
   the tools' Source half (S11: refcmp, movecmp, hudcmp drivers) is
   still CS:S's.
+
+- 2026-11-03: M3 built (branch `hl2dm-m3`). Lifts, each "move, then
+  generalize", after a baseline of CS:S's, Combat Arms', source_engine's
+  and hl2dm's suites (2958 passed, 11 skipped):
+  - S5 (the part M3 needs): `sound.rs` and `soundscape.rs` to
+    `source_engine::content`; CS:S's own entries stay in its
+    `sound::load`. CS:S's map sounds compared entry by entry (waves by
+    content), soundscapes and step remaps, on de_dust2, cs_office,
+    de_nuke, cs_militia, de_port, de_aztec, cs_italy, de_train:
+    identical. `impacts.rs`, `scrapes.rs` and `pain.rs` stay CS:S's (M10).
+  - S6: `movement.rs` (with its tracer), `drown.rs`, `shadow.rs`,
+    `pushaway.rs` to `source_engine::source_movement` (a module name of
+    its own in the layering table); then a config per movement id
+    (`SourceMovementAppExt::source_movement`; CS:S keeps the
+    `SourceMovementConfig` resource and its bare cvars) and HL2's parts
+    as config switches (fall thresholds and fixed or fractional damage,
+    swim lift, model footsteps, no CS:S drowning, no contents ladders,
+    `func_useableladder`s with forced moves and dismounts) and
+    `SourceSpeed` (a game's max speed, before `SourceMovementStep`).
+    CS:S's movement traced over 17 500 scripted ticks (ground, steps,
+    ledges, a ladder, both pools, both configs: position, velocity,
+    ground, duck, eye, roll, water, ladder, step timer, surface, fall
+    speed): bit for bit after the move and after the generalization;
+    CS:S, Combat Arms and source_engine suites with heavy tests: 2943
+    passed (the baseline less hl2dm's). `movecmp` wasn't run: it starts
+    CS:S's probe server on UDP 27030, which this session doesn't bind.
+  - C2: damage classes FALL, DROWN, RADIATION; `Coverage::except`;
+    `absorb_quanta` with the armour's own quantum
+    (`ArmorPieces::armour_quantum`); `core::DamageRemainder` in
+    `apply_damage`; `weapon::ViewZoom` (the suit zoom's FOV). CS:S's
+    kevlar and Combat Arms' gear unchanged (both suites pass).
+  - C8: HL2:DM's movement cvars are `hl2dm:` (`hl2dm:sv_gravity` ...,
+    its own config), with `hl2dm:hl2_walkspeed`/`normspeed`/`sprintspeed`,
+    `mp_falldamage`, `sv_ladder_useonly`, `sv_autoladderdismount`,
+    `mp_flashlight`, `sv_infinite_aux_power`.
+
+  `games/hl2dm`: `game::movement` (H1 on Source movement, the speed
+  selection and the sprint's aux power), `game::suit` (armour, the
+  health remainder, aux devices, breath and drowning, flashlight, suit
+  zoom, spawn reset), `game::pickups` (kits, vials, batteries, suit and
+  health chargers with the citadel and Kleiner flags), the maps' sounds
+  (Source's scripts with HL2:DM's entries, soundscapes). Tests:
+  `tests/it/movement.rs` (H1 rows 1-47, 49-61 but 48 and 62),
+  `suit.rs` (H2 tests 1-11, 14-18, 25-27, 29-35, 40-50, 52),
+  `net_prediction.rs` (walk, sprint, aux power, duck and jump predicted
+  bit for bit at 100 ms), heavy `map_ladders.rs` (26 ladders, 131
+  dismount points; dm_resistance's), unit tests in source_engine
+  (ladders), chimera_sim (the suit's coverage), chimera_core (the
+  remainder).
+
+  The probe (tools/hl2dm_probe, port 27040, dedicated server build
+  24600426): Metamod and SourceMod 1.12's 32-bit HL2:DM builds load; an
+  `hl2mp_bot_add` bot driven by the plugin. Matched tick for tick:
+  ground acceleration (run, walk, sprint), friction, the standing and
+  ducked jumps (grounded at tick 34 and 35), the air duck's 36 lift and
+  eyes, the duck curve, ducked acceleration, the sprint's aux power
+  (first tick free, standing free, tap cost, recharge delay, empty at
+  268), the sprint kept ducked, no jump cap with `player_limit_jump_speed`
+  either way, dm_resistance's ladder (mount, 200 climb, every direction
+  rule incl. back climbing up, jump-off, the top dismount), falls (no
+  damage at 526.5, 10 above, progressive 62 of 62.5), run footsteps on
+  ticks 5, 32, 59 at 0.2 and none ducked, and the cvars at start. Found:
+  `sk_suitcharger` is 30 on the running server (the spec says 75: a spec
+  follow-up), `mp_forcerespawn` 0 on the dedicated server. Results in
+  movement.md and suit.md "Open questions".
+
+  Left: probe cases P11, P14-P16 (movement), P1-P2, P6-P11, P13 (suit:
+  damage by kind, drowning, chargers), the back-hop; `movecmp --game
+  hl2dm` (S11: the tool's driver is CS:S's); the suit zoom's owner (the
+  crossbow, H4) and `toggle_zoom`; `impulse 100`'s bind and network path;
+  items drawn and resting where they fall (M7); `+use` deny sounds (M9);
+  `trigger_hurt`'s poison and radiation kinds (absorbed as generic now);
+  devices across death (suit.md Quirks, unconfirmed); H1 rows 48 (heavy,
+  dm_lockdown's ladder brushes) and 62 (the water jump); the waist-water
+  step counter; `player_old_armor`.
 
 ## Decision log
 
