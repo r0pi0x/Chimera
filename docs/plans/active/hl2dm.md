@@ -1217,6 +1217,22 @@ implementing (owner branch) / done.
   shader would add highlights, but shaders.md open question 14 leaves it
   unspecified; a spec of it (HL2's view models, the citizens) is the
   next step for the look.
+  **The listen server's host frozen after a client joined**: not
+  reproduced. The hl2dm app hosting dm_lockdown (`-port 27100`) with one,
+  two and then a third client (one leaving, another joining), under
+  `host_timescale 0.2`, firing, holding props: the host stayed at 60 fps
+  (`Time` delta 16-17 ms over the remote protocol), moved, and each of
+  its screenshots changed, also with the client windows stacked over it.
+  The earlier run's "frozen" frames differ by 0.1-0.3 % of their pixels:
+  frames that changed while what was asked of the game didn't happen (a
+  punt and a ball that weren't launched in them). No change made.
+  **Glow sprites drawn blended**: `Sprite`-shader materials take their
+  blend from the render mode, and the stuck bolt's glow
+  (`light_glow02_noz`, glow mode) and the punt beam (`orangelight1`)
+  loaded as their VMT says, blended: a black square around the bolt.
+  `effects::ADDITIVE_SPRITES` loads them additive; `heavy/
+  effect_materials.rs` checks it. Seen while taking promo shots: the stuck
+  bolt stands vertical in the wall whatever its flight (not looked into).
 
 ## Decision log
 
