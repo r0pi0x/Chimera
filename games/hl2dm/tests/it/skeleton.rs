@@ -1,8 +1,9 @@
 //! M1's skeleton on the headless harness (`harness::Hl2Sim`, the
 //! greybox): HL2:DM is the gameplay, a new player moves on
 //! `hl2dm:movement` (Source's with H1's numbers: run 190, gravity 600,
-//! jump 160 units/s; specs/hl2dm/movement.md's cases are movement.rs) and starts with the test pistol, whose
-//! bullet does 8 (specs/hl2dm/weapons.md 6), 24 to the head.
+//! jump 160 units/s; specs/hl2dm/movement.md's cases are movement.rs) and
+//! starts with its loadout (the SMG1 in hand; the pistol, whose bullet
+//! does 8, specs/hl2dm/weapons.md 6, 24 to the head).
 
 use bevy::prelude::*;
 use chimera_core::{
@@ -45,14 +46,15 @@ fn hl2dm_is_the_gameplay_at_its_tick() {
 }
 
 #[test]
-fn a_new_player_runs_hl2dms_movement_with_the_pistol() {
+fn a_new_player_runs_hl2dms_movement_with_its_loadout() {
     let mut sim = sim();
     let p = player(&mut sim);
     let w = sim.app.world();
     assert_eq!(w.get::<MovementSlot>(p).map(|m| m.0), Some(movement::ID));
-    assert_eq!(testkit::active_id(w, p), Some(weapons::PISTOL));
+    // The spawn's loadout (weapons.md 3): the SMG1 in hand.
+    assert_eq!(testkit::active_id(w, p), Some(weapons::SMG1));
     let gun = testkit::active(w, p).unwrap();
-    assert_eq!(w.get::<Magazine>(gun).unwrap().clip, 18);
+    assert_eq!(w.get::<Magazine>(gun).unwrap().clip, 45);
 }
 
 #[test]
@@ -84,6 +86,8 @@ fn a_pistol_bullet_does_8_and_24_to_the_head() {
     let mut sim = sim();
     let p = player(&mut sim);
     let target = sim.spawn_character(greybox::SPAWNS[0] - Vec3::Z * 6.0, movement::ID);
+    let pistol = sim.app.world().get::<chimera_sim::weapon::Inventory>(p).unwrap().last.unwrap();
+    sim.app.world_mut().get_mut::<chimera_sim::weapon::Inventory>(p).unwrap().wanted = Some(pistol);
     sim.seconds(1.0);
     let mut cursor = sim.app.world().resource::<Messages<WeaponEvent>>().get_cursor_current();
     for (aim, expected) in [(0.2, 8.0), (0.62, 24.0)] {

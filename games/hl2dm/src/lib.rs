@@ -3,7 +3,8 @@
 //! Combat Arms. So far: what the game tells the shell about itself
 //! (`game::INFO`), its install as a mount (`game::mount`, from its
 //! `gameinfo.txt`), its maps (`game::maps`, `game::MAP_LOADER`), its
-//! movement and suit (M3) and M1's stand-in pistol (`game::Hl2dmPlugins`). Source
+//! movement and suit (M3) and its bullet and melee weapons
+//! (`game::weapons`, M4; `game::Hl2dmPlugins`). Source
 //! behaviour it shares with CS:S comes from `source_engine`, never from
 //! `cs_source` (a lift, not a copy).
 //!

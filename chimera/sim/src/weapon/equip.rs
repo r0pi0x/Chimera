@@ -256,7 +256,8 @@ pub fn place_weapons(world: &mut World, entities: &[crate::map::MapEntity], scal
     for e in carried {
         world.entity_mut(e).remove::<MapWeapon>();
     }
-    let since = super::drop::tick_time(world) - super::drop::TOUCH_DELAY;
+    let delay = world.get_resource::<super::drop::PickupRules>().copied().unwrap_or_default().touch_delay;
+    let since = super::drop::tick_time(world) - delay;
     for (index, e) in entities.iter().enumerate() {
         let class = e.classname().to_ascii_lowercase();
         if !class.starts_with("weapon_") {

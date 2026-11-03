@@ -17,6 +17,10 @@
 //! `Time<Fixed>`, wherever it's asked from); with `chimera_usepickup 1`, a +use
 //! press on one looked at within `USE_REACH` swaps it for the weapon in its
 //! slot (`UsedPickup`); every weapon taken is told as `PickedUp`.
+//! `PickupRules` holds what a game changes of these (HL2:DM: a second's
+//! touch delay, several weapons to a slot, an owner's touch taking the
+//! weapon's rounds and the weapon, the dead dropping what they hold,
+//! dropped weapons gone after 31 s, `pick_up` removing them).
 //!
 //! Known shortcuts (docs/tech-debt.md): `cl_autowepswitch`
 //! (`weapon::drop::auto_switch`): weights are the spec's table (the install's
@@ -114,6 +118,41 @@ pub const USE_REACH: f32 = 100.0 * 0.0254;
 /// How far the view line may pass from a weapon's centre beyond its own
 /// half size and still take it (12 units; a guess).
 const USE_SLACK: f32 = 12.0 * 0.0254;
+
+/// How a game's loose weapons are taken and dropped, where it differs
+/// from CS:S's (the default): HL2:DM's (specs/hl2dm/weapons.md 8-9) are
+/// touchable a second after a drop, gone 31 s after it, several to a
+/// slot, the dead drop what they hold, and touching one of a kind carried
+/// takes its rounds into the reserve and the weapon with it.
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct PickupRules {
+    /// Seconds after a drop before anyone takes it (`TOUCH_DELAY`).
+    pub touch_delay: f64,
+    /// A weapon is taken only into an empty slot (CS:S); otherwise one of
+    /// each kind, any number to a slot.
+    pub one_per_slot: bool,
+    /// Touching a weapon of a kind carried takes what it holds into the
+    /// reserve up to its most and removes it if anything was taken, even
+    /// with rounds left (HL2:DM); otherwise it goes once emptied.
+    pub owner_pickup_removes: bool,
+    /// The dead drop the weapon in hand (when droppable) and nothing else
+    /// (HL2:DM); otherwise their best gun and highest `DeathDrop`.
+    pub death_drop_held: bool,
+    /// A dropped weapon (not a map's) is removed this long after the drop.
+    pub loose_life: Option<f64>,
+}
+
+impl Default for PickupRules {
+    fn default() -> Self {
+        Self {
+            touch_delay: TOUCH_DELAY,
+            one_per_slot: true,
+            owner_pickup_removes: false,
+            death_drop_held: false,
+            loose_life: None,
+        }
+    }
+}
 
 /// `chimera_usepickup`: 1 lets +use take the loose weapon looked at
 /// (default 0: CS:S's walk-over pickup only).
@@ -298,6 +337,13 @@ fn death_drops(world: &World, owner: Entity) -> Vec<Entity> {
     let Some(inv) = world.get::<Inventory>(owner) else {
         return Vec::new();
     };
+    if world.get_resource::<PickupRules>().is_some_and(|r| r.death_drop_held) {
+        return inv
+            .active
+            .filter(|a| world.get::<Weapon>(*a).is_some() && world.get::<Undroppable>(*a).is_none())
+            .into_iter()
+            .collect();
+    }
     let ok = |e: &&Entity| world.get::<Weapon>(**e).is_some() && world.get::<Undroppable>(**e).is_none();
     let gun = inv
         .weapons
@@ -429,9 +475,10 @@ fn verdict(
     weapons: &Query<(&Weapon, Option<&PickupTeam>)>,
     spatial: &avian3d::prelude::SpatialQuery,
     now: f64,
+    rules: &PickupRules,
     character: impl Fn(Entity) -> bool,
 ) -> Option<Verdict> {
-    if now - l.since < TOUCH_DELAY {
+    if now - l.since < rules.touch_delay {
         return Some(Verdict::TooSoon(now - l.since));
     }
     let gap = me.gap(item_at, body);
@@ -442,7 +489,7 @@ fn verdict(
     if only.is_some_and(|t| me.team != Some(&t.0)) {
         return Some(Verdict::WrongTeam);
     }
-    let touch = touch_of(weapon, me.inv, weapons);
+    let touch = touch_of(weapon, me.inv, weapons, rules.one_per_slot);
     if let Touch::Refused(mine) = touch {
         return Some(Verdict::SlotFull(mine));
     }
@@ -467,11 +514,27 @@ pub(super) fn pick_up(
     spatial: avian3d::prelude::SpatialQuery,
     time: Res<Time>,
     same_type: Option<Res<SameTypeAmmo>>,
+    rules: Option<Res<PickupRules>>,
+    placed: Query<(), With<super::equip::MapWeapon>>,
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs_f64();
     let same_type_ammo = same_type.is_none_or(|s| s.0);
+    let rules = rules.as_deref().copied().unwrap_or_default();
+    // Dropped weapons (not the map's) older than `PickupRules::loose_life`
+    // go, with their weapon.
     let mut taken = Vec::new();
+    if let Some(life) = rules.loose_life {
+        for (item, l, ..) in &loose {
+            if now - l.since >= life && !placed.contains(item) {
+                taken.push(item);
+                commands.entity(item).despawn();
+                if weapons.get(l.weapon).is_ok_and(|(w, _)| w.owner.is_none()) {
+                    commands.entity(l.weapon).despawn();
+                }
+            }
+        }
+    }
     for (owner, at, inv, health, team, state) in &owners {
         if health.current <= 0.0 {
             continue;
@@ -481,7 +544,7 @@ pub(super) fn pick_up(
             if taken.contains(&item) {
                 continue;
             }
-            let v = verdict(&me, l, item, item_at, body, &weapons, &spatial, now, |c| owners.contains(c));
+            let v = verdict(&me, l, item, item_at, body, &weapons, &spatial, now, &rules, |c| owners.contains(c));
             let weapon = l.weapon;
             match v {
                 Some(Verdict::Take) => {
@@ -491,7 +554,8 @@ pub(super) fn pick_up(
                     break;
                 }
                 Some(Verdict::Ammo(mine)) if same_type_ammo => {
-                    commands.queue(move |w: &mut World| take_ammo(w, item, weapon, mine));
+                    let removes = rules.owner_pickup_removes;
+                    commands.queue(move |w: &mut World| take_ammo(w, item, weapon, mine, removes));
                 }
                 _ => {}
             }
@@ -531,8 +595,10 @@ pub(super) fn debug_pickups(
     spatial: avian3d::prelude::SpatialQuery,
     time: Res<Time>,
     same_type: Option<Res<SameTypeAmmo>>,
+    rules: Option<Res<PickupRules>>,
     mut console: Option<ResMut<crate::console::Console>>,
 ) {
+    let rules = rules.as_deref().copied().unwrap_or_default();
     if setting.0 == 0 {
         if !seen.0.is_empty() {
             seen.0.clear();
@@ -562,7 +628,7 @@ pub(super) fn debug_pickups(
             ("dead", "dead, takes nothing".to_string())
         } else if let Some((_, item, l, t, b)) = nearest {
             let what = id_of(l.weapon);
-            match verdict(&me, l, item, t, b, &weapons, &spatial, now, |c| owners.contains(c)) {
+            match verdict(&me, l, item, t, b, &weapons, &spatial, now, &rules, |c| owners.contains(c)) {
                 None => ("gone", format!("{what}: its weapon is gone")),
                 Some(Verdict::Take) => ("take", format!("{what}: taking it")),
                 Some(Verdict::Ammo(_)) if same_type.as_ref().is_none_or(|s| s.0) => {
@@ -571,7 +637,7 @@ pub(super) fn debug_pickups(
                 Some(Verdict::Ammo(_)) => ("same", format!("{what}: same weapon carried, nothing taken")),
                 Some(Verdict::TooSoon(s)) => (
                     "soon",
-                    format!("{what}: dropped {s:.1} s ago, touchable from {TOUCH_DELAY} s"),
+                    format!("{what}: dropped {s:.1} s ago, touchable from {} s", rules.touch_delay),
                 ),
                 Some(Verdict::OutOfReach(m)) => ("reach", format!("{what}: out of reach, {m:.2} m from its touch box")),
                 Some(Verdict::WrongTeam) => ("team", format!("{what}: only the other team takes it")),
@@ -653,9 +719,11 @@ pub(super) fn use_pick_up(
     spatial: avian3d::prelude::SpatialQuery,
     time: Res<Time>,
     mut used: MessageWriter<UsedPickup>,
+    rules: Option<Res<PickupRules>>,
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs_f64();
+    let delay = rules.as_deref().copied().unwrap_or_default().touch_delay;
     let mut taken = Vec::new();
     for (owner, at, health, team, state, intent, mut inv) in &mut users {
         let pressed = intent.use_key && !inv.prev_use;
@@ -669,7 +737,7 @@ pub(super) fn use_pick_up(
         let aim = intent.look_rotation() * Vec3::NEG_Z;
         let items = loose
             .iter()
-            .filter(|(e, l, ..)| !taken.contains(e) && now - l.since >= TOUCH_DELAY)
+            .filter(|(e, l, ..)| !taken.contains(e) && now - l.since >= delay)
             .filter(|(_, l, ..)| {
                 weapons
                     .get(l.weapon)
@@ -749,14 +817,14 @@ fn blocker(
 }
 
 /// What touching `weapon` does for a character carrying `inv`.
-fn touch_of(weapon: &Weapon, inv: &Inventory, weapons: &Query<(&Weapon, Option<&PickupTeam>)>) -> Touch {
+fn touch_of(weapon: &Weapon, inv: &Inventory, weapons: &Query<(&Weapon, Option<&PickupTeam>)>, one_per_slot: bool) -> Touch {
     let mut slot_taken = None;
     for e in &inv.weapons {
         let Ok((mine, _)) = weapons.get(*e) else { continue };
         if mine.id == weapon.id {
             return Touch::Ammo(*e);
         }
-        if mine.slot == weapon.slot {
+        if one_per_slot && mine.slot == weapon.slot {
             slot_taken = slot_taken.or(Some(*e));
         }
     }
@@ -767,7 +835,7 @@ fn touch_of(weapon: &Weapon, inv: &Inventory, weapons: &Query<(&Weapon, Option<&
 /// to the most it carries (spec 3.9: the clip; ours also carries the
 /// dropper's reserve with the gun, taken after the clip). A gun left with
 /// nothing is removed; one nothing was taken from stays.
-fn take_ammo(world: &mut World, item: Entity, weapon: Entity, mine: Entity) {
+fn take_ammo(world: &mut World, item: Entity, weapon: Entity, mine: Entity, removes: bool) {
     let Some(room) = world
         .get::<super::Magazine>(mine)
         .map(|m| m.reserve_max.saturating_sub(m.reserve))
@@ -781,7 +849,7 @@ fn take_ammo(world: &mut World, item: Entity, weapon: Entity, mine: Entity) {
     theirs.clip -= from_clip;
     let from_reserve = theirs.reserve.min(room - from_clip);
     theirs.reserve -= from_reserve;
-    let empty = theirs.clip == 0 && theirs.reserve == 0;
+    let empty = (theirs.clip == 0 && theirs.reserve == 0) || (removes && from_clip + from_reserve > 0);
     let got = from_clip + from_reserve;
     if got == 0 {
         return;

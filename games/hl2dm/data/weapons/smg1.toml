@@ -1,0 +1,46 @@
+# The SMG1 (specs/hl2dm/weapons.md 7.3): 5 a bullet, 0.075 s accumulating
+# (13.33 a second), a 5 degree cone, the machine gun's kick (1 degree,
+# over 2 s held), 45 rounds, 225 carried. Its grenade (attack2) is M5's.
+# Script: bucket 2 position 0, weight 3, clip 45.
+id = "hl2dm:weapon_smg1"
+base = "hl2dm:gun"
+class = "smg"
+slot = 2
+draw = 0.8333
+weight = 3
+
+[trigger]
+cycle = 0.075
+
+[magazine]
+clip = 45
+ammo = "hl2dm:smg1"
+# 100 ticks.
+reload = 1.5
+
+[hitscan]
+spread = { cone = 0.04362 }
+
+[damage]
+amount = 5.0
+
+[sounds]
+fire = "Weapon_SMG1.Single"
+empty = "Weapon_SMG1.Empty"
+reload = [[0.0, "Weapon_SMG1.Reload"]]
+
+[models]
+world = "models/weapons/w_smg1.mdl"
+view = "models/weapons/v_smg1.mdl"
+view_right_handed = true
+
+[hud]
+name = "#HL2_SMG1"
+icon = "smg1"
+
+[hooks."hl2dm:inventory"]
+position = 0
+
+[hooks."hl2dm:machine_gun"]
+max = 1.0
+slide = 2.0

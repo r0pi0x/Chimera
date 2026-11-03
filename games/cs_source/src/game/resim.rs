@@ -998,7 +998,7 @@ fn run(sim: &mut Sim, rec: &Recording, offset: i64, opts: Options) -> Result<Rep
                 } => {
                     let (inacc, spr) = match spread {
                         crate::weapon::SpreadShape::Disc { inaccuracy, spread } => (Some(inaccuracy), Some(spread)),
-                        crate::weapon::SpreadShape::Template(s) => (Some(s), None),
+                        crate::weapon::SpreadShape::Template(s) | crate::weapon::SpreadShape::Cone(s) => (Some(s), None),
                     };
                     fired = Some((seed, inacc, spr, crate::weapon::aim_of(yaw, pitch)));
                 }

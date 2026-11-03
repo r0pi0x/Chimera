@@ -845,9 +845,9 @@ pub struct FireBullets {
     pub yaw: f32,
     pub pitch: f32,
     pub seed: u32,
-    /// `weapon::SpreadShape`: a disc (inaccuracy, spread), else the
-    /// template's scale in `inaccuracy`.
-    pub disc: bool,
+    /// `weapon::SpreadShape` (`spread_shape`): a disc (inaccuracy,
+    /// spread), else the template's or the cone's scale in `inaccuracy`.
+    pub shape: u8,
     pub inaccuracy: f32,
     pub spread: f32,
     pub mode: u8,
@@ -860,6 +860,14 @@ pub struct WeaponFx {
     #[entities]
     pub owner: Entity,
     pub kind: u8,
+}
+
+/// `FireBullets::shape` (the template 0 and the disc 1 as the bool it
+/// was).
+pub mod spread_shape {
+    pub const TEMPLATE: u8 = 0;
+    pub const DISC: u8 = 1;
+    pub const CONE: u8 = 2;
 }
 
 /// `WeaponFx::kind`.

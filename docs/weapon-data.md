@@ -8,6 +8,12 @@ name the data asks for (a hook). A game's weapons, another game's, or new
 ones become mixable: an app loads any documents on top of the games it runs,
 with no Rust (`App::add_weapon_data`).
 
+HL2:DM's are `games/hl2dm/data/weapons/*.toml`, the spec's numbers
+(specs/hl2dm/weapons.md); its install's weapon scripts are plain text
+beside the encrypted ones, and `games/hl2dm/tests/it/heavy/scripts.rs`
+checks the data against them and the draw and reload times against the
+view models (`hl2dm::game::scripts`, `source_engine::weapon_script`).
+
 CS:S's weapons are `games/cs_source/data/weapons/*.toml`: our own numbers
 (the spec's script tables and the measured values, specs/cs_source/weapons.md),
 not files from the game. The game's weapon scripts are encrypted in the
@@ -63,7 +69,9 @@ ammo = "cs_source:762mm"        # an ammo type: reserve max, box, penetration
 reload = 2.4324                 # s (a shell's, with `shells`)
 # shells = { start = 0.5, insert = 0.45 }   # one round at a time
 #   (+ finish = 0.9: a closing part, back_to_back = true: no tick
-#   between rounds; Combat Arms' shotguns)
+#   between rounds; Combat Arms' shotguns; insert_first = true: each
+#   round in as its insert starts, attacks waiting for each part, a held
+#   attack ending the reload: HL2:DM's shotgun)
 # reload_while_held = false
 # auto_reload = false           # an empty clip reloads, held or not (CA)
 
@@ -71,6 +79,7 @@ reload = 2.4324                 # s (a shell's, with `shells`)
 range = 8192.0
 # pellets = 1, punch_scale = 2.0 (from the base)
 # spread = { disc = { inaccuracy = 0.0, spread = 0.0 } } or { template = 0.05 }
+#   or { cone = 0.04362 } (Source's generic HL2 cone: HL2:DM's guns)
 # without [damage] the frame traces nothing: a game's hook delivers each
 # round's `Fired` event (Combat Arms)
 
@@ -91,6 +100,9 @@ kind = "scope"                  # fov = [..], max_speed, unzoom_after_shot,
 # kind = "burst", interval, refire, count, step, texts = [per mode],
 #   once_per_press, step_blocks_primary (CA: one burst a pull, the
 #   toggle's lockout)
+# kind = "shot", pellets, rounds, cycle: attack2 fires a bigger shot
+#   from the clip (`AltShot`: HL2:DM's shotgun's double shot, 12 pellets
+#   for 2 shells; fewer rounds: a normal shot)
 
 [sounds]                        # entries of the game's sound scripts
 fire = "Weapon_AK47.Single"
@@ -195,7 +207,14 @@ hud_icon = "ammo_762"
   `fire_sound_radius`, `silenced_radius = [per silencer level]`). The
   parts themselves are records in games/combat_arms/data/attachments/
   (`[[mod]]` tables, `{class}` in a name expanded per `classes`), not
-  weapon documents.
+  weapon documents. HL2:DM's (games/hl2dm/src/game/weapons/):
+  `hl2dm:inventory` (the script's `position`, `default_clip`,
+  `autoswitchto`, `autoswitchfrom`; the holstered auto-reload),
+  `hl2dm:pistol` (the accuracy ramp's `penalty_per_shot`, `penalty_max`,
+  `spread = [rest, most]`, the click refire's `click_unlock`,
+  `dry_unlock`, `dry`), `hl2dm:punch` (`pitch`, `yaw` ranges in Source
+  degrees, `reset`, `alt_pitch`, `alt_yaw`), `hl2dm:machine_gun` (`max`,
+  `slide`) and `hl2dm:shotgun` (`pump`, `pump_sound`, `dry`).
 - **Errors.** Unknown keys, an unknown base, ammo type or hook, a loop of
   bases, a duplicate ID and hook parameters the hook can't read are load
   errors naming the document and key. A game's own data failing to load

@@ -125,9 +125,19 @@ pub struct Hl2MovementPlugin;
 
 impl Plugin for Hl2MovementPlugin {
     fn build(&self, app: &mut App) {
+        add_movement(app);
+        app.insert_resource(Loadout { movement: ID });
+    }
+}
+
+/// `hl2dm:movement` without making it the match's (a game of several
+/// games: `super::party_sim`): Source's movement with HL2:DM's config, its
+/// speed selection and its cvars. The suit (`super::suit::SuitPlugin`)
+/// goes with it.
+pub fn add_movement(app: &mut App) {
+    {
         app.source_movement(ID, Some(config()), Some(super::GAME))
             .init_resource::<Speeds>()
-            .insert_resource(Loadout { movement: ID })
             .add_systems(
                 crate::core::Predict::Movement,
                 select_speed.after(super::suit::breath_devices).before(SourceMovementStep),

@@ -2,7 +2,7 @@
 //! what composes Chimera and HL2:DM (games/hl2dm) into the game binary
 //! (`hl2dm`, main.rs). M1 of docs/plans/active/hl2dm.md: the stock maps
 //! (and any map of the install) or the greybox, with HL2:DM's stand-in
-//! movement and test pistol.
+//! movement and its bullet and melee weapons (M4).
 //!
 //! `SimPlugin`: the simulation as the binary runs it (its tests run it on
 //! the headless harness, tests/it/).

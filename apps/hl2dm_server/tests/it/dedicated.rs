@@ -1,7 +1,7 @@
 //! The dedicated server (`ServerPlugin`, its command line) on the greybox
 //! with a headless client of HL2:DM's simulation (as the app runs it,
 //! without the window) joined over UDP on loopback: it comes in on
-//! HL2:DM's movement with the test pistol.
+//! HL2:DM's movement with its loadout (the SMG1 in hand).
 
 use std::time::Duration;
 
@@ -61,7 +61,7 @@ fn local(sim: &mut Sim) -> Option<Entity> {
 }
 
 #[test]
-fn a_client_joins_on_hl2dms_movement_with_the_pistol() {
+fn a_client_joins_on_hl2dms_movement_with_its_loadout() {
     let Some((mut server, addr)) = server(&["+map", "greybox", "+maxplayers", "4"]) else { return };
     let mut c = client(addr);
     let mut joined = false;
@@ -88,7 +88,8 @@ fn a_client_joins_on_hl2dms_movement_with_the_pistol() {
     let theirs = w.query::<(Entity, &NetCharacter)>().iter(w).find(|(_, n)| n.owner == id).unwrap().0;
     let w = server.app.world();
     assert_eq!(w.get::<chimera_core::slots::MovementSlot>(theirs).map(|m| m.0), Some(movement::ID));
-    assert_eq!(chimera_sim_active(w, theirs), Some(weapons::PISTOL));
+    // The spawn's loadout (specs/hl2dm/weapons.md 3): the SMG1 in hand.
+    assert_eq!(chimera_sim_active(w, theirs), Some(weapons::SMG1));
 }
 
 /// The weapon `p` holds (by id).

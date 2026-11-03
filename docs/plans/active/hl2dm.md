@@ -434,7 +434,7 @@ implementing (owner branch) / done.
 | M0 install and look | H0 (install facts) | done (branch `hl2dm-m0`, 2026-11-01): S0, S1, `games/hl2dm` skeleton, `dump hl2dm`, heavy `mount.rs`; left for M1/M3: the RCON reads and the probe (below) | S0, S1, (S11) |
 | M1 maps load | H0 | done (branch `hl2dm-m1`, 2026-11-01): S2, S3, S4 lifted, CS:S's maps identical; `games/hl2dm` maps, `Hl2Sim`, stand-in movement and pistol; `apps/hl2dm`, `apps/hl2dm_server`; `mapsweep --game hl2dm` | S2, S3, S4, (S11: mapsweep) |
 | M3 movement, suit | H1, H2 | done (branch `hl2dm-m3`, 2026-11-03): S5 (scripts, soundscapes), S6, C2, C8; `hl2dm:movement`, the suit, pickups and chargers; the probe | S5, S6, C2, C8 |
-| M4 bullets, melee, UGG | H3 | not started | S8, C4, C7 |
+| M4 bullets, melee, UGG | H3 | done (branch `hl2dm-m4`, 2026-11-03): see Progress; left: probe checks (P1-P17), C7 (no need in M4) | S8, C4 |
 | M5 projectiles | H4 | not started | C1 |
 | M6 gravity gun | H5 | not started | C6 |
 | M7 rules, pickups | H6, H10 | not started | C3, (C5) |
@@ -616,6 +616,55 @@ implementing (owner branch) / done.
   whether that is the map's hut or a prop around the spawn). The rest of
   the tools' Source half (S11: refcmp, movecmp, hudcmp drivers) is
   still CS:S's.
+
+- 2026-11-03: M4 built (branch `hl2dm-m4`). **Weapons as data**
+  (games/hl2dm/data/weapons): pistol, .357, SMG1, AR2, shotgun,
+  crowbar, stunstick with H3's numbers; the install's plain scripts and
+  view models agree (heavy `scripts.rs` through the new
+  `source_engine::weapon_script`: bucket, position, weight, clip,
+  `default_clip`, ammo, damage, models, names, sounds; draw and reload
+  lengths from each `v_*.mdl`). Hooks: `hl2dm:inventory` (holstered
+  auto-reload), `hl2dm:pistol` (accuracy ramp 1-6 degrees, click refire,
+  attack2 block, dry fire), `hl2dm:punch` and `hl2dm:machine_gun` (HL2's
+  punch spring, kicks moving the shot), `hl2dm:shotgun` (the pump). Chimera
+  gained, generic: `SpreadShape::Cone` (HL2's cone, `FireBullets::shape`
+  on the wire), `ShellReload::insert_first`, `AltShot` (the double shot),
+  `WeaponEventKind::Action`, `drop::PickupRules` (touch delay, several to
+  a slot, owner pickups removing the weapon, the dead dropping what they
+  hold, dropped weapons gone after 31 s). The game's rules
+  (`Hl2WeaponsPlugin`): loadout by model kind (crowbar for citizens,
+  stunstick otherwise; SMG1 in hand, pistol last: no physcannon or frag
+  yet), ammo per player (`Hl2Ammo`), the next best weapon on an empty
+  one; the damage shove of HL2:DM players, 5 u/s per point
+  (projectiles.md 3). Tests: hl2dm `weapons.rs`, `melee.rs` (H3 cases 1-26,
+  32-35, 44, 49-50; the shove).
+  **S8**: `source_engine::view_anim` (Source's activities, the events'
+  effects, shared reactions) and `view_motion` (moved from CS:S, now
+  per-game `MotionRules`: CS:S's cvar bob and history sway, HL2's fixed
+  0.45 s bob and spring sway with pitch offsets, player_models.md 12);
+  CS:S's rules keep the knife, silencer, Elites; HL2:DM's view models
+  (`game::view`) are right-handed, never mirrored, 54 at 75 degrees, in
+  its maps' kit and as a guest on other maps (`maps::dress_guest`).
+  **C4**: `chimera_world::game_bundle` (`GameBundle`; the front end apart,
+  `GameClient`, since a game's parts never name its `ui`); each game
+  exports `BUNDLE`; `party_kit` loops over its guests (CS:S, HL2:DM) for
+  map loaders, guests' dressing, kept models, parts, binds, view-model
+  fields of view, the simulation, names and the client. The base game
+  (Combat Arms) and the pairs' data (spawn teams, surface tables) stay
+  named. **UGG**: `parts.rs` (pistol, heavy-pistol .357, SMG1,
+  shotgun, AR2 rifle, the crowbar, `hl2dm:movement`, dm_lockdown and
+  dm_overwatch, `dm_*`), `rungs.rs` with data/rung_characters.toml (a
+  model per rung from the 19, Combine or Rebels; the Combine's give the
+  stunstick), the guns on the power curve; no bodies or HUD (M8, M9: the
+  fallbacks). Party tests: `hl2dm_parts.rs`, identity across three
+  games, an HL2:DM rung over the network; UGG `parts.rs` with three
+  games; hl2dm heavy and UGG tests on the installs. C7 (the plan's
+  `chimera_pack` list; the brief's "held props" is C6) wasn't needed.
+  Left: the probe checks (fire timings, spread: P1-P17 of weapons.md)
+  wait for M3's probe; armour (the suit, C2) and under-water refusal are
+  M3's; the box pellets, the melee re-trace, the 400 in/s drop velocity,
+  `mp_weaponstay` and 20 s respawns (M7), a remote client's double shot
+  drawing 7 pellets (`//!` docs list them).
 
 - 2026-11-03: M3 built (branch `hl2dm-m3`). Lifts, each "move, then
   generalize", after a baseline of CS:S's, Combat Arms', source_engine's

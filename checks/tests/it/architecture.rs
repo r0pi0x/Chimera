@@ -42,6 +42,15 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("search_path", &[]),
     // Source's map listings and map cycle, map import (source_engine).
     ("maps", &[]),
+    // A Source weapon script's keys (source_engine): read from a mount.
+    ("weapon_script", &["mount"]),
+    // Source's view-model rules and motion (source_engine, lift S8): on
+    // the weapon frame's driver and the map's view-model types.
+    ("view_anim", &["map", "weapon"]),
+    ("view_motion", &["core", "map", "weapon"]),
+    // A game as one bundle for a party app's composer (chimera_world, lift
+    // C4): its maps' loader and dressing, plain data otherwise.
+    ("game_bundle", &["map"]),
     // Source's content converted into Chimera's types (source_engine's
     // `content`: BSP, materials, models; lifted from CS:S's loaders).
     ("content", &["core", "map", "mount"]),

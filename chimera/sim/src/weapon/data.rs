@@ -56,7 +56,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, de::DeserializeOwned};
 
 use super::{
-    AltModes, Burst, DamageEffect, FireTiming, HitgroupScale, Hitscan, Magazine, Melee, ModeTexts, Penetration,
+    AltModes, AltShot, Burst, DamageEffect, FireTiming, HitgroupScale, Hitscan, Magazine, Melee, ModeTexts, Penetration,
     ShellReload, SpreadShape, Swing, SwitchWeight, Trigger, Weapon, WeaponDef, WeaponRegistry, WeaponSounds, Zoom,
     drop::{PickupTeam, Undroppable},
     economy::{AmmoBox, Prices},
@@ -243,6 +243,9 @@ pub struct ShellsData {
     /// No tick between rounds (`ShellReload::back_to_back`).
     #[serde(default)]
     pub back_to_back: bool,
+    /// Each round goes in as its insert starts (`ShellReload::insert_first`).
+    #[serde(default)]
+    pub insert_first: bool,
 }
 
 /// An ammo type: what `Penetration` passes (`power`, length units of a
@@ -286,6 +289,9 @@ pub struct HitscanData {
 pub enum SpreadData {
     Template(f32),
     Disc { inaccuracy: f32, spread: f32 },
+    /// Source's generic (HL2) cone (`SpreadShape::Cone`): the spread
+    /// vector's component, the same on both axes.
+    Cone(f32),
 }
 
 /// `DamageEffect` (damage in damage units, `falloff_step` a length,
@@ -411,6 +417,10 @@ pub enum AltData {
         #[serde(default)]
         step_blocks_primary: bool,
     },
+    /// Attack2 fires a bigger shot from the clip (`AltShot`: HL2's
+    /// shotgun's double shot): `pellets`, `rounds` from the clip, the next
+    /// attack `cycle` seconds on.
+    Shot { pellets: u32, rounds: u32, cycle: f32 },
 }
 
 /// Sound entries (`WeaponSounds`); timed ones as [seconds, entry].
@@ -974,6 +984,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
                 insert: s.insert,
                 finish: s.finish,
                 back_to_back: s.back_to_back,
+                insert_first: s.insert_first,
             });
         }
     }
@@ -988,6 +999,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
                 },
                 Some(SpreadData::Template(s)) => SpreadShape::Template(s),
                 Some(SpreadData::Disc { inaccuracy, spread }) => SpreadShape::Disc { inaccuracy, spread },
+                Some(SpreadData::Cone(s)) => SpreadShape::Cone(s),
             },
             punch_scale: h.punch_scale,
         });
@@ -1060,6 +1072,13 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
     }
     match &d.alt {
         None => {}
+        Some(AltData::Shot { pellets, rounds, cycle }) => {
+            e.insert(AltShot {
+                pellets: *pellets,
+                rounds: *rounds,
+                cycle: *cycle,
+            });
+        }
         Some(AltData::Scope {
             fov,
             max_speed,

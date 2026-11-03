@@ -1,0 +1,40 @@
+# Who wears an HL2:DM rung's gun (chimera_sim::minigame::holders; read by
+# game::rungs): the player model drawn for a rung is one of the models
+# allowed to hold its gun. HL2:DM restricts no weapon by team
+# (specs/hl2dm/rules.md "Models": any model holds any weapon), so every
+# gun takes any of its 19 player models: the Combine's four (the Combine
+# team's round-robin list) and the citizens' fifteen (the Rebels'). The
+# model's kind gives the rung's melee weapon (a stunstick for the
+# Combine and metro police, a crowbar for citizens: weapons.md 3).
+# Characters are model paths (`models/...`) or these groups.
+default = "any"
+
+[groups]
+combine = [
+    "models/combine_soldier.mdl",
+    "models/combine_soldier_prisonguard.mdl",
+    "models/combine_super_soldier.mdl",
+    "models/police.mdl",
+]
+rebels = [
+    "models/humans/group03/male_01.mdl",
+    "models/humans/group03/male_02.mdl",
+    "models/humans/group03/female_01.mdl",
+    "models/humans/group03/male_03.mdl",
+    "models/humans/group03/female_02.mdl",
+    "models/humans/group03/male_04.mdl",
+    "models/humans/group03/female_03.mdl",
+    "models/humans/group03/male_05.mdl",
+    "models/humans/group03/female_04.mdl",
+    "models/humans/group03/male_06.mdl",
+    "models/humans/group03/female_06.mdl",
+    "models/humans/group03/male_07.mdl",
+    "models/humans/group03/female_07.mdl",
+    "models/humans/group03/male_08.mdl",
+    "models/humans/group03/male_09.mdl",
+]
+any = ["combine", "rebels"]
+
+# Explicit overrides (a weapon id or a `*` name pattern -> groups or
+# models); none: HL2:DM has no team weapons.
+[weapons]
