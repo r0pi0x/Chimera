@@ -81,7 +81,9 @@ pub fn hl2_blast(damage: f32, radius: f32, probe: Option<(f32, f32, f32)>, sound
         max_push_speed: 2000.0 * U,
         ragdolls: None,
         scorch: Some("Scorch".into()),
-        sound: sound.map(str::to_string),
+        // An empty entry is no server sound (the rocket's and the
+        // satchel's boom is each client's own: `projectile_fx`).
+        sound: sound.filter(|s| !s.is_empty()).map(str::to_string),
         hearing: None,
         shake: Some(Shake {
             amplitude: 25.0 * U,

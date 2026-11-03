@@ -27,6 +27,7 @@
 pub mod ammo;
 pub mod ammo_crates;
 pub mod bodies;
+pub mod dissolve;
 pub mod effects;
 pub mod flashes;
 pub mod hud;
@@ -38,7 +39,9 @@ pub mod parts;
 pub mod physics;
 pub mod pickups;
 pub mod rules;
+pub mod physcannon_fx;
 pub mod player_anim;
+pub mod projectile_fx;
 pub mod rungs;
 pub mod scripts;
 pub mod sounds;

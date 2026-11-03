@@ -3,7 +3,9 @@
 //! `games/cs_source`): `impact_effects` (the surface's debris, dust and
 //! sparks, blood, water splashes, glass; on `map::particles`), `impacts`
 //! (bullet impact sounds and decals, physics impact sounds), `scrapes`
-//! (looping friction sounds). Each game adds the plugins with its
+//! (looping friction sounds), `explosions` (the explosion temp entity's
+//! smoke, fire, sparks and flecks, lifted from CS:S's HE grenade for
+//! HL2:DM's). Each game adds the plugins with its
 //! `ImpactStyle` (its id and the few numbers its engine differs in: the
 //! ricochet, the splash's scale, the grouping of pellets' sounds); its
 //! tracers, flashes and hurt sounds stay its own.
@@ -14,6 +16,7 @@ use chimera_sim::weapon::{
     impact::{ImpactBy, ImpactRoute},
 };
 
+pub mod explosions;
 pub mod impact_effects;
 pub mod impacts;
 pub mod scrapes;

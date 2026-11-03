@@ -31,9 +31,9 @@
 //! ground" check isn't needed by a toss that always ends on a touch and
 //! isn't done, nor its random spin; the ball's seek sweep is a cylinder
 //! of radius 256 + 16 around its line (the spec's swept box), its
-//! attractiveness has no team test (TDM is M7's), the ball's flash and the
-//! shooter's white fade, the dissolve of its victims and their weapons
-//! (M10) aren't drawn; the ball knocks props as a bounce (no 1000 crush
+//! attractiveness has no team test (TDM is M7's), the shooter's white fade
+//! and the dissolve of the victims' weapons aren't drawn (the ball's look
+//! is `projectile_fx`, its victims' dissolve `dissolve`); the ball knocks props as a bounce (no 1000 crush
 //! to props), and its harmless end is removed at once.
 
 use bevy::prelude::*;

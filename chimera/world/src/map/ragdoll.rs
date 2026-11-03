@@ -693,7 +693,8 @@ fn rotation_between(from: Quat, to: Quat) -> Vec3 {
 /// Turn each death into a ragdoll (spec 2.4): bodies at the newest pose,
 /// joints with the bind-pose frames, the killing hit's impulse, then bone
 /// velocities from the pose `BONE_DT` earlier.
-fn spawn_ragdolls(
+/// (Public so a game's ragdoll logic can run after it.)
+pub fn spawn_ragdolls(
     mut died: MessageReader<Died>,
     settings: Res<RagdollSettings>,
     rules: Res<RagdollGameRules>,
@@ -1051,7 +1052,9 @@ fn remove_ragdolls(
     }
 }
 
-fn despawn_ragdoll(commands: &mut Commands, e: Entity, r: &Ragdoll) {
+/// Remove a ragdoll with its bodies, joints and drawn body, and its
+/// owner's `Ragdolled`.
+pub fn despawn_ragdoll(commands: &mut Commands, e: Entity, r: &Ragdoll) {
     for x in r.joints.iter().chain(&r.bodies).chain(&r.visual) {
         if let Ok(mut x) = commands.get_entity(*x) {
             x.despawn();

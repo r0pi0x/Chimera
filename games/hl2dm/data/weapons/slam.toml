@@ -61,4 +61,5 @@ activate_sound = "TripmineGrenade.Activate"
 stop_sound = "TripmineGrenade.StopSound"
 throw_sound = "Weapon_SLAM.SatchelThrow"
 detonate_sound = "Weapon_SLAM.SatchelDetonate"
-explode = "BaseGrenade.Explode"
+# No server sound: the explosion's boom is the client's (H9 15.10).
+explode = ""
