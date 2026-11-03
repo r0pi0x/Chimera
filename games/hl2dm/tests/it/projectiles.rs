@@ -604,10 +604,11 @@ fn a_dead_owners_missile_flies_straight_32() {
 // ---------------------------------------------------------------------------
 // Crossbow (7)
 
-/// Test 36: holding attack, shots on ticks 0 and 168 (the reload from tick
-/// 45); test 37: its bolt at 3500 with a twentieth of gravity.
+/// Test 36: holding attack, shots on ticks 0 and 130 (the reload from tick
+/// 7; the real server, probe 2026-11-03: the spec says 168 and 45); test
+/// 37: its bolt at 3500 with a twentieth of gravity.
 #[test]
-fn the_crossbow_fires_every_168_ticks_held_36_37() {
+fn the_crossbow_fires_every_130_ticks_held_36_37() {
     let mut sim = sim();
     let p = player(&mut sim);
     let w = holding(&mut sim, p, weapons::CROSSBOW);
@@ -632,13 +633,13 @@ fn the_crossbow_fires_every_168_ticks_held_36_37() {
         .filter(|(_, k)| matches!(k, WeaponEventKind::Fired { .. }))
         .map(|(t, _)| *t)
         .collect();
-    assert_eq!(&fired[..2], [0, 168]);
+    assert_eq!(&fired[..2], [0, 130]);
     let reload = ran
         .events
         .iter()
         .find(|(_, k)| matches!(k, WeaponEventKind::ReloadStarted))
         .map(|(t, _)| *t);
-    assert_eq!(reload, Some(45));
+    assert_eq!(reload, Some(7));
     assert_eq!(sim.app.world().get::<Magazine>(w).unwrap().reserve, 3);
     // Ten moves: 350 ahead, 0.3375 down.
     let d = to_source(bolt[10] - start);

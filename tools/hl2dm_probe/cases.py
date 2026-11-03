@@ -246,6 +246,12 @@ def projectiles(r):
         sounds = [int(s[0]) - int(e[0][0]) + 1 for s in out["ent_sounds"] if s[1] == e[0][1] and "tick" in s[6]]
         show(f"projectiles {cls} {buttons}: start rel eye, first velocity, ignition, blips, life",
              (rel, v, jump, sounds, len(e)), want)
+    arm(r, "weapon_crossbow")
+    out = probe.run_full(r, measure.start(), hold(70, 0, 0, 0, 0, 180, select="weapon_crossbow")
+                         + hold(400, ATTACK, 0, 0, 0, 180))
+    show("projectiles P9 crossbow held: ticks between bolts", diffs([int(c[0]) for c in out["created"]
+                                                                     if c[2] == "crossbow_bolt"]),
+         "168 (spec); 130 (Chimera, from this server)")
     r.exec("probe_track clear")
 
 

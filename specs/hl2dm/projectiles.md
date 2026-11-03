@@ -1271,3 +1271,17 @@ dedicated server build 24600426), each marked **(probe)**:
 12. **Mine expiry on restart.** Trip mines and satchels are assumed to be
     removed by a game restart with the other non-map entities (rules.md);
     not checked here.
+
+13. **Probe results (2026-11-03, build 24600426, `tools/hl2dm_probe/cases.py`).**
+   A held crossbow fires every **130** ticks, not 168: the bolt is in 130
+   ticks after the shot and `bolt_load` plays 69 ticks after it, so the
+   reload starts about 7 ticks after the shot (the fire animation ends
+   after about 0.1 s, not 0.6667; Chimera uses 0.1). The frag starts at
+   eye + 18 forward + 8 right and flies about 2.2° right of the view (a
+   lateral part 3.8 % of its speed, every throw; ≈1160 forward and 120
+   up by its positions); the lob ≈ 340-380 forward, 43 up. Contact grenade
+   1000 with gravity 400, missile (300, 0, 128) with gravity 600 then 1500,
+   bolt 3500 with gravity 30, as listed. Fuses and ignition count from the
+   thrower's command clock, 4 ticks ahead of the server's on a bot, so in
+   server ticks the frag explodes 173 after creation (blips 0, 74-75, 96,
+   117, 137-138, 159) and the missile ignites 23-24 ticks after.

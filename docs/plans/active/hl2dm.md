@@ -435,7 +435,7 @@ implementing (owner branch) / done.
 | M1 maps load | H0 | done (branch `hl2dm-m1`, 2026-11-01): S2, S3, S4 lifted, CS:S's maps identical; `games/hl2dm` maps, `Hl2Sim`, stand-in movement and pistol; `apps/hl2dm`, `apps/hl2dm_server`; `mapsweep --game hl2dm` | S2, S3, S4, (S11: mapsweep) |
 | M3 movement, suit | H1, H2 | done (branch `hl2dm-m3`, 2026-11-03): S5 (scripts, soundscapes), S6, C2, C8; `hl2dm:movement`, the suit, pickups and chargers; the probe | S5, S6, C2, C8 |
 | M4 bullets, melee, UGG | H3 | done (branch `hl2dm-m4`, 2026-11-03): see Progress; left: probe checks P4, P11, P12, P14, P15 (the rest run: branch `hl2dm-probe`), C7 (no need in M4) | S8, C4 |
-| M5 projectiles | H4 | done (branch `hl2dm-m5`, 2026-11-03): see Progress; left: probe checks P5-P8, P9's refire, under-water speed and damage, P10-P12, P14, P15 (the rest run: branch `hl2dm-probe`), the effects (M10) | C1 |
+| M5 projectiles | H4 | done (branch `hl2dm-m5`, 2026-11-03): see Progress; left: probe checks P5-P8, P9's under-water speed and damage, P10-P12, P14, P15 (the rest run: branch `hl2dm-probe`), the effects (M10) | C1 |
 | M6 gravity gun | H5 | done (branch `hl2dm-m6`, 2026-11-03): see Progress; left: `hl2mp_allow_pickup` 1's carry, `prop_physics_respawnable`, first-impact 10× and breaks, the gun's effects (M10), the probe checks P6-P17 (P1-P5 run: branch `hl2dm-probe`) | C6 |
 | M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; left: the set pieces of H10 sections 8-16, respawnable props, rules P5-P14 (the probe's crash fixed: branch `hl2dm-probe`) | C3 (C5 not needed) |
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
@@ -1200,6 +1200,8 @@ implementing (owner branch) / done.
   | weapons P16, projectiles P7 | bullets push: pistol 40 (5 per damage), .357 375, shotgun 45 a pellet, crowbar ≈123 | P16: unchanged; P7: as measured | push (M4's shove) |
   | projectiles P1, P2 frag | start eye + 18 forward, 8 right; ≈1160 forward, 120 up, and ≈2.2° to the right (lateral 3.8 % of the speed, every throw); lob ≈340-380, 43 up | (1200, 0, 120), (350, 0, 50) | the spec's |
   | projectiles P3, P4, P9 | contact grenade 1000, gravity 400; missile (300, 0, 128) with gravity 600 then 1500; bolt 3500, gravity 30 | same | same |
+  | projectiles P9 crossbow held | a bolt every **130** ticks; the reload's load sound 69 ticks after the shot, the bolt in at 130 (the reload starts about 7 ticks after the shot) | 168 (reload from tick 45, after a 0.6667 s fire animation) | **was 168; fixed** (fire animation 0.1 s in crossbow.toml) |
+  | weapons test 14 SMG1 clip | 45 shots, last 220 ticks after the first | 220 ±1 | same |
   | gravity P2 level punts | 10/30/100/250 kg: 1842/1084/748/660 a tick after (2000/1100/750/660 less a tick of drag) | same | same |
   | gravity P3 punt 45° down, 30 kg | 827 forward, 577 up (the crate on the floor) | ≈ 506 up | – |
   | gravity P4, P5 held, launched | held 66.5 ahead at eye height; launched 1469 (30 kg), 1324 (250 kg) | ≈ 66.6; 1500, 1327 | same |
@@ -1207,11 +1209,12 @@ implementing (owner branch) / done.
   Fixed: HL2:DM's armour pays its cost truncated to whole points, at
   least one (`hits::absorb_quanta` with an armour quantum; CS:S and
   Combat Arms unchanged), suit tests 6, 8, 9 and the hits unit test to
-  the measured values. Not measured: head hits (the stopped bot doesn't
+  the measured values; the crossbow's fire animation 0.1 s (data), so a
+  held crossbow fires every 130 ticks (projectiles test 36). Not measured: head hits (the stopped bot doesn't
   animate: level shots at head height pass over it), crowbar reach (P14),
   ladder brushes (movement P11), P15, the client cases (P16), H1's
   back-hop, weapons P4, P11 (copies: maps P2 above), P12, projectiles
-  P5-P8, P9's refire, water speed and damage, P10-P12, P14-P15, gravity P6-P17, rules P5-P14, maps P3-P9, M8's
+  P5-P8, P9's water speed and damage, P10-P12, P14-P15, gravity P6-P17, rules P5-P14, maps P3-P9, M8's
   P6-P11, M9's P1-P9, M10's P7-P11.
 
 ## Decision log
