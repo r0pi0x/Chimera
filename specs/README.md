@@ -2,7 +2,7 @@
 
 Behavior worked out from reference material on other games enters this
 repository only as specs in this folder, written in our own words.
-Implementation is written from the specs alone. No third-party code or assets are ever committed. See
+Implementation is written from the specs alone. No code from a source outside [THIRD_PARTY.md](../THIRD_PARTY.md), and no assets, are ever committed. See
 "Assets and legal" in the top-level README for why.
 
 ## Who does what
