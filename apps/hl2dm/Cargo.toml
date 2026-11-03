@@ -21,7 +21,8 @@ chimera_sim.workspace = true
 chimera_net.workspace = true
 chimera_present.workspace = true
 chimera_client.workspace = true
-hl2dm.workspace = true
+# Its front end: the HUD (`hl2dm::ui`, the game's `ui` feature).
+hl2dm = { workspace = true, features = ["ui"] }
 avian3d.workspace = true
 bevy.workspace = true
 workspace-hack.workspace = true

@@ -28,9 +28,9 @@ pub static PARTS: GameParts = GameParts {
     ],
     knife: Some(CROWBAR),
     movement: Some(super::movement::ID),
-    // Its player models and HUD come with M8 and M9.
+    // Its player models come with M8; its HUD (M9) is this game's id.
     characters: None,
-    hud: None,
+    hud: Some(super::GAME),
     maps: &["hl2dm:dm_lockdown", "hl2dm:dm_overwatch"],
     map_patterns: &["dm_*"],
     announcer: None,

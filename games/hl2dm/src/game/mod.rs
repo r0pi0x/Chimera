@@ -7,7 +7,9 @@
 //! the health remainder, aux power, breath and drowning, flashlight,
 //! zoom; M3), the map's pickups and wall chargers (`pickups`; M3; ammo
 //! boxes and respawns, M7), ammunition outside weapons (`ammo`), the ammo
-//! crate (`ammo_crates`), its deathmatch and team deathmatch (`rules`,
+//! crate (`ammo_crates`), its HUD's look (`hud`: M9, read into the map's kit; the
+//! drawing is `crate::ui`, behind the `ui` feature) and what clients need of
+//! its rules to draw (`standing`), its deathmatch and team deathmatch (`rules`,
 //! M7), and
 //! its bullet and melee weapons (`weapons`, M4: data and hooks; `scripts`,
 //! the install's weapon scripts against the data); `Hl2dmPlugins` adds
@@ -24,6 +26,7 @@
 pub mod ammo;
 pub mod ammo_crates;
 pub mod bodies;
+pub mod hud;
 pub mod look;
 pub mod maps;
 pub mod mount;
@@ -34,6 +37,7 @@ pub mod rules;
 pub mod player_anim;
 pub mod rungs;
 pub mod scripts;
+pub mod standing;
 pub mod suit;
 pub mod view;
 pub mod weapons;
@@ -108,6 +112,7 @@ impl bevy::app::PluginGroup for Hl2dmPlugins {
             .add(view::Hl2ViewPlugin)
             .add(rules::Hl2RulesPlugin)
             .add(bodies::Hl2BodiesPlugin)
+            .add(standing::Hl2StandingPlugin)
             .add(player_anim::Hl2AnimPlugin)
             .add(bodies::Hl2DeadViewPlugin)
     }
@@ -118,7 +123,8 @@ impl bevy::app::PluginGroup for Hl2dmPlugins {
 /// view models on other games' maps (`GUEST`), its binds (Shift sprints,
 /// `+speed`; Ctrl ducks; Alt walks: its `cfg/config_default.cfg`), its
 /// view models' field of view and its parts in the composed simulation
-/// (`party_sim`). No HUD yet (M9).
+/// (`party_sim`). Its HUD (M9) is the front end's (`crate::ui::party`), the
+/// bundle's parts name its id.
 pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_bundle::GameBundle {
     info: &INFO,
     parts: &parts::PARTS,

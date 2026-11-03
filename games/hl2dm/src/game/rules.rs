@@ -43,8 +43,8 @@
 //! - The server doesn't rewrite a remote client's `cl_playermodel` (the
 //!   local player's is set); the message of the day and the chat lines
 //!   the rules print ("you are on team ...", "must wait N seconds") are
-//!   console lines; the scoreboard isn't drawn (HL2:DM's HUD is M9: the
-//!   intermission is `Hl2Match::over`, replicated with the freeze).
+//!   console lines; the scoreboard is the HUD's (M9, `ui::scoreboard`;
+//!   `standing` replicates the intermission, `Hl2Match::over`).
 //! - The map-start freeze (Open questions 10) is one tick; restart
 //!   doesn't remove ragdolls, projectiles or pending entity I/O.
 //! - A spot's `master` isn't read (no stock map has one).

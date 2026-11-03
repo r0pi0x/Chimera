@@ -4,12 +4,10 @@
 //! `scripts/mod_textures.txt`); the
 //! VGUI menus come from `super::vgui`.
 
-use std::{collections::HashMap, sync::Arc};
-
 use bevy::prelude::*;
 
 use super::material::MaterialLoader;
-use crate::map::hud::{GameHud, HudCoord, HudFont, HudPanel};
+use crate::map::hud::GameHud;
 
 /// The KeyValues tree and the resource-file reader (platform conditionals
 /// dropped), from `source_formats::keyvalues`.
@@ -21,148 +19,27 @@ pub use source_formats::keyvalues::{Kv, parse_res as parse};
 pub const BASE_ICONS: &[&str] = &["crosshair_default", "voice_self", "voice_player"];
 
 fn color(text: &str) -> Option<[u8; 4]> {
-    let v: Vec<u8> = text.split_whitespace().filter_map(|x| x.parse().ok()).collect();
-    match v.as_slice() {
-        [r, g, b] => Some([*r, *g, *b, 255]),
-        [r, g, b, a] => Some([*r, *g, *b, *a]),
-        _ => None,
-    }
+    source_engine::hud::look::colour(text)
 }
 
-/// A TrueType file's family name (name table, ID 1).
-pub fn family_name(ttf: &[u8]) -> Option<String> {
-    let u16_at = |o: usize| ttf.get(o..o + 2).map(|b| u16::from_be_bytes([b[0], b[1]]));
-    let u32_at = |o: usize| ttf.get(o..o + 4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]));
-    let tables = u16_at(4)? as usize;
-    let name = (0..tables)
-        .map(|i| 12 + i * 16)
-        .find(|&o| ttf.get(o..o + 4) == Some(b"name"))
-        .and_then(|o| u32_at(o + 8))? as usize;
-    let count = u16_at(name + 2)? as usize;
-    let strings = name + u16_at(name + 4)? as usize;
-    let mut best: Option<String> = None;
-    for r in 0..count {
-        let rec = name + 6 + r * 12;
-        let (platform, id) = (u16_at(rec)?, u16_at(rec + 6)?);
-        if id != 1 {
-            continue;
-        }
-        let (len, off) = (u16_at(rec + 8)? as usize, u16_at(rec + 10)? as usize);
-        let bytes = ttf.get(strings + off..strings + off + len)?;
-        let text = if platform == 0 || platform == 3 {
-            let units: Vec<u16> = bytes
-                .chunks_exact(2)
-                .map(|c| u16::from_be_bytes([c[0], c[1]]))
-                .collect();
-            String::from_utf16_lossy(&units)
-        } else {
-            bytes.iter().map(|&b| b as char).collect()
-        };
-        if best.is_none() || platform == 3 {
-            best = Some(text);
-        }
-    }
-    best
-}
+/// A TrueType file's family name (name table, ID 1), from
+/// `source_engine::hud::look` (lift S7).
+pub use source_engine::hud::look::family_name;
 
 /// The HUD look from the install, or None when its files are missing; with
 /// the menus (`super::vgui`, `map`: the loaded map, for its description).
+/// The shared reading is `source_engine::hud::look::load`; CS:S adds its
+/// scopes, scoreboard pictures, screens and menus.
 pub fn load(materials: &mut MaterialLoader, map: &str) -> Option<GameHud> {
-    let text = |m: &MaterialLoader, p: &str| m.read(p).map(|b| String::from_utf8_lossy(&b).into_owned());
-    // As the Windows game reads it: its platform-conditional entries
-    // (font names and sizes) are the Windows ones.
-    let scheme = super::gameui::parse_pc(&text(materials, "resource/clientscheme.res")?);
-    let scheme = scheme.items().first().map(|(_, v)| v.clone()).unwrap_or(scheme);
-    let layout = parse(&text(materials, "scripts/hudlayout.res")?);
-    let layout = layout.items().first().map(|(_, v)| v.clone()).unwrap_or(layout);
-    let mut hud = GameHud::default();
-
-    // Colours: named ones, then base settings that refer to them by name.
-    if let Some(c) = scheme.get("Colors") {
-        for (k, v) in c.items() {
-            if let Kv::Value(v) = v
-                && let Some(rgba) = color(v)
-            {
-                hud.colors.insert(k.clone(), rgba);
-            }
-        }
-    }
-    if let Some(b) = scheme.get("BaseSettings") {
-        for (k, v) in b.items() {
-            if let Kv::Value(v) = v {
-                let rgba = color(v).or_else(|| hud.colors.get(v).copied());
-                if let Some(rgba) = rgba {
-                    hud.colors.insert(k.clone(), rgba);
-                }
-            }
-        }
-    }
-
-    // Font files by family name, then the scheme's fonts by their name.
-    let mut files: HashMap<String, Arc<Vec<u8>>> = HashMap::new();
-    for (_, path) in scheme.get("CustomFontFiles").map(Kv::items).unwrap_or_default() {
-        let Kv::Value(path) = path else { continue };
-        let Some(bytes) = materials.read(path) else { continue };
-        if let Some(family) = family_name(&bytes) {
-            files.insert(family.to_lowercase(), Arc::new(bytes));
-        }
-    }
-    for (name, f) in scheme.get("Fonts").map(Kv::items).unwrap_or_default() {
-        // The first size entry (the 480-line one).
-        let Some((_, first)) = f.items().first() else { continue };
-        let (Some(family), Some(tall)) = (first.str("name"), first.str("tall").and_then(|t| t.parse().ok())) else {
-            continue;
-        };
-        if let Some(data) = files.get(&family.to_lowercase()) {
-            hud.fonts.insert(
-                name.clone(),
-                HudFont {
-                    data: data.clone(),
-                    tall,
-                    additive: first.str("additive").is_some_and(|a| a.trim() != "0"),
-                },
-            );
-        }
-    }
-
-    // Icons drawn with font glyphs or cut from sprite sheets: the base
-    // HUD's (e.g. `crosshair_default`, drawn when no weapon draws a
-    // crosshair), then the game's own over them.
-    for script in ["scripts/hud_textures.txt", "scripts/mod_textures.txt"] {
-        let Some(t) = text(materials, script) else { continue };
-        let t = parse(&t);
-        // Entries sit in a "TextureData" block (under the file's root key).
-        fn find<'a>(kv: &'a Kv) -> Option<&'a Kv> {
-            kv.get("TextureData")
-                .or_else(|| kv.items().iter().find_map(|(_, v)| find(v)))
-        }
-        let t = find(&t).cloned().unwrap_or(t);
-        let num = |v: &Kv, k: &str| v.str(k).and_then(|x| x.trim().parse::<f32>().ok());
-        // Of the base HUD's, only `BASE_ICONS`.
-        let base = script.starts_with("scripts/hud_");
-        for (name, v) in t.items() {
-            if base && !BASE_ICONS.iter().any(|k| name.eq_ignore_ascii_case(k)) {
-                continue;
-            }
-            if let (Some(font), Some(ch)) = (v.str("font"), v.str("character").and_then(|c| c.chars().next())) {
-                hud.icons.insert(name.clone(), (font.to_string(), ch));
-            } else if let Some(file) = v.str("file") {
-                // Icons cut from a sprite sheet (pixel rectangle).
-                let rect = [num(v, "x"), num(v, "y"), num(v, "width"), num(v, "height")];
-                if let ([Some(x), Some(y), Some(w), Some(h)], Some(texture)) =
-                    (rect, materials.resolve(file).texture)
-                {
-                    hud.sprites.insert(
-                        name.clone(),
-                        crate::map::hud::HudSprite {
-                            texture,
-                            rect: [x, y, w, h],
-                        },
-                    );
-                }
-            }
-        }
-    }
+    let mut hud = source_engine::hud::look::load(
+        materials,
+        &source_engine::hud::look::LookOptions {
+            base_icons: BASE_ICONS,
+            layout: parse,
+            font_files: false,
+            first_wins: false,
+        },
+    )?;
 
     // The sniper scope: a quarter of the ring (transparent inside, black
     // outside; the bottom-right quarter as stored) and the lens tint; the
@@ -191,44 +68,7 @@ pub fn load(materials: &mut MaterialLoader, map: &str) -> Option<GameHud> {
         }
     }
 
-    // Panels.
-    let num = |p: &Kv, k: &str| p.str(k).and_then(|v| v.trim().parse::<f32>().ok()).unwrap_or(0.0);
-    for (name, p) in layout.items() {
-        // A panel needs a position; one it leaves out is 0 (VGUI's
-        // default: `HudHistoryResource` gives no `ypos`).
-        let (x, y) = (
-            p.str("xpos").and_then(HudCoord::parse),
-            p.str("ypos").and_then(HudCoord::parse),
-        );
-        // The damage indicator places itself by its own keys (`dmg_xpos`).
-        if x.is_none() && y.is_none() && p.str("dmg_xpos").is_none() {
-            continue;
-        }
-        let (x, y) = (x.unwrap_or(HudCoord::Start(0.0)), y.unwrap_or(HudCoord::Start(0.0)));
-        hud.panels.insert(
-            name.clone(),
-            HudPanel {
-                x,
-                y,
-                wide: num(p, "wide"),
-                tall: num(p, "tall"),
-                background: p.str("bgcolor_override").and_then(color),
-                icon: Vec2::new(num(p, "icon_xpos"), num(p, "icon_ypos")),
-                digit: Vec2::new(num(p, "digit_xpos"), num(p, "digit_ypos")),
-                digit2: Vec2::new(num(p, "digit2_xpos"), num(p, "digit2_ypos")),
-                keys: p
-                    .items()
-                    .iter()
-                    .filter_map(|(k, v)| match v {
-                        Kv::Value(v) => Some((k.to_lowercase(), v.clone())),
-                        Kv::Block(_) => None,
-                    })
-                    .collect(),
-            },
-        );
-    }
-    hud.text_fonts = super::vgui::fonts(&scheme);
-    hud.screens = screens(materials);
+    hud.screens = screens(materials).collect();
     hud.menus = super::vgui::load(materials, &mut hud, map);
     (!hud.panels.is_empty()).then_some(hud)
 }
@@ -236,17 +76,17 @@ pub fn load(materials: &mut MaterialLoader, map: &str) -> Option<GameHud> {
 /// The screens on models (`scripts/vgui_screens.txt`: each panel's size in
 /// pixels); the C4's (`c4_*`) take their font and colours from the C4
 /// panel's scheme, `resource/c4panel.res`.
-fn screens(materials: &MaterialLoader) -> HashMap<String, crate::map::hud::ModelScreen> {
+fn screens(materials: &MaterialLoader) -> impl Iterator<Item = (String, crate::map::hud::ModelScreen)> {
     let text = |p: &str| materials.read(p).map(|b| String::from_utf8_lossy(&b).into_owned());
     let Some(list) = text("scripts/vgui_screens.txt") else {
-        return HashMap::new();
+        return Vec::new().into_iter();
     };
     let list = parse(&list);
     let list = list.items().first().map(|(_, v)| v.clone()).unwrap_or(list);
     let c4 = text("resource/c4panel.res").map(|t| super::gameui::parse_pc(&t));
     let c4 = c4.map(|s| s.items().first().map(|(_, v)| v.clone()).unwrap_or(s));
     let num = |v: &Kv, k: &str| v.str(k).and_then(|x| x.trim().parse::<f32>().ok()).unwrap_or(0.0);
-    let mut out = HashMap::new();
+    let mut out = Vec::new();
     for (name, v) in list.items() {
         let mut screen = crate::map::hud::ModelScreen {
             pixels: Vec2::new(num(v, "pixelswide"), num(v, "pixelshigh")),
@@ -260,9 +100,9 @@ fn screens(materials: &MaterialLoader) -> HashMap<String, crate::map::hud::Model
                 }
             }
         }
-        out.insert(name.to_lowercase(), screen);
+        out.push((name.to_lowercase(), screen));
     }
-    out
+    out.into_iter()
 }
 
 /// The map's radar picture: `resource/overviews/<map>.txt` (upper-left

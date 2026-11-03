@@ -14,7 +14,7 @@
 //! Also its chat formats (`chat`: no radio, the dead read by the living).
 //!
 //! Known shortcuts:
-//! - HL2:DM's kit has no HUD (M9), muzzle flash, impact decals and looks
+//! - HL2:DM's kit has its HUD look (`hud`) but no muzzle flash, impact decals and looks
 //!   (M10). Its
 //!   sounds (Source's sound scripts and soundscapes, lift S5) are the
 //!   entries it plays so far (`SOUNDS`: movement, the suit, pickups and
@@ -91,6 +91,14 @@ pub const SOUNDS: &[&str] = &[
     "AmmoCrate.Open",
     "AmmoCrate.Close",
     "HudChat.Message",
+    // The HUD's (specs/hl2dm/hud.md 5, 6, 9).
+    "Player.WeaponSelectionMoveSlot",
+    "Player.DenyWeaponSelection",
+    "Player.WeaponSelected",
+    "Player.WeaponSelectionClose",
+    "HUDQuickInfo.LowHealth",
+    "HUDQuickInfo.LowAmmo",
+    "Player.PickupWeapon",
 ];
 
 /// HL2:DM's maps from the install (`map::MapLoader`): what an app that
@@ -135,6 +143,9 @@ pub fn load_level_bytes_with(
 fn body_kit(k: &mut Kit) {
     super::bodies::add_bodies(k.materials, k.surfaces, k.kit, &mut k.data.kit, &mut k.data.warnings);
     k.data.kit.radio = Some(chat());
+    if k.kit.hud() {
+        k.data.kit.hud = super::hud::load(k.materials).map(std::sync::Arc::new);
+    }
 }
 
 /// HL2:DM's chat (specs/hl2dm/rules.md "Chat"): no radio; its line
