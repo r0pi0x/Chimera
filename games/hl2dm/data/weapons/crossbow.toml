@@ -1,0 +1,81 @@
+# The crossbow (specs/hl2dm/projectiles.md 7): clip 1, 10 carried (a new
+# one: 1 + 4); its rounds are bolts (`chimera:projectile`): 3500 units/s
+# (1500 from under water), gravity 30, a +-1 box hitting hitboxes, 100 x
+# the hitgroup (head 3) as a bullet, force 21000 kg in/s, glancing off
+# below cos 0.5 faster than 100 (0.75 of its speed, full gravity), else
+# sticking 2 s; refire 0.75; the reload (1.8333 s) starts strictly after
+# the 0.6667 s fire animation (`hl2dm:crossbow`): 168 ticks a held shot;
+# attack2's press zooms to 20. Script: bucket 3 position 1, weight 6,
+# clip 1, default clip 5.
+id = "hl2dm:weapon_crossbow"
+base = "hl2dm:base"
+# No gun class yet: the gun game takes only classed guns (its ladder
+# with the projectile weapons is for later).
+slot = 3
+draw = 1.0
+weight = 6
+
+[trigger]
+# Held attack fires again as the bolt goes in.
+automatic = true
+cycle = 0.75
+timing = "set"
+
+[magazine]
+clip = 1
+ammo = "hl2dm:xbowbolt"
+reload = 1.8333
+
+# Without [damage] the frame traces nothing: the round is a bolt.
+[hitscan]
+range = 56755.84
+pellets = 1
+punch_scale = 1.0
+spread = { cone = 0.0 }
+
+[sounds]
+fire = "Weapon_Crossbow.Single"
+
+[models]
+world = "models/weapons/w_crossbow.mdl"
+view = "models/weapons/v_crossbow.mdl"
+view_right_handed = true
+
+[hud]
+name = "#HL2_Crossbow"
+icon = "crossbow_bolt"
+
+[hooks."hl2dm:inventory"]
+position = 1
+default_clip = 5
+
+[hooks."hl2dm:punch"]
+pitch = [-2.0, -2.0]
+yaw = [0.0, 0.0]
+
+[hooks."hl2dm:crossbow"]
+fire_anim = 0.6667
+reload = 1.8333
+zoom_fov = 20.0
+
+[hooks."chimera:projectile"]
+speed = 3500.0
+water_speed = 1500.0
+gravity = 30.0
+half = [1.0, 1.0, 1.0]
+shown = "hl2dm:crossbow_bolt"
+# The bolt model's nose is its +X.
+x_forward = true
+touch = "bolt"
+glance_cos = 0.5
+glance_speed = 100.0
+glance_keep = 0.75
+glance_gravity = 600.0
+stick_time = 2.0
+damage = 100.0
+kind = "bullet"
+head = 3.0
+force = 21000.0
+# The suit's rule (`suit::suit_armour`): health takes 20 %.
+armor_ratio = 1.0
+hitboxes = true

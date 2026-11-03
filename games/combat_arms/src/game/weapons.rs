@@ -2397,22 +2397,8 @@ pub fn posed_geometry_by(
 }
 
 /// Where a ray enters an axis-aligned box (distance along the unit `dir`,
-/// clamped at 0), if within `limit`.
-pub fn box_entry(min: Vec3, max: Vec3, from: Vec3, dir: Vec3, limit: f32) -> Option<f32> {
-    let (mut enter, mut leave) = (f32::MIN, f32::MAX);
-    for i in 0..3 {
-        if dir[i].abs() < 1e-9 {
-            if from[i] < min[i] || from[i] > max[i] {
-                return None;
-            }
-            continue;
-        }
-        let (a, b) = ((min[i] - from[i]) / dir[i], (max[i] - from[i]) / dir[i]);
-        enter = enter.max(a.min(b));
-        leave = leave.min(a.max(b));
-    }
-    (enter <= leave && leave >= 0.0 && enter.max(0.0) <= limit).then_some(enter.max(0.0))
-}
+/// clamped at 0), if within `limit`: Chimera's (lift C1).
+pub use crate::weapon::projectile::ray_box as box_entry;
 
 /// The direction after a shoot-through surface (Corrections 9): `dir`
 /// plus `k_r` / 1000 and `k_u` / 1000 on the right and up axes of a look

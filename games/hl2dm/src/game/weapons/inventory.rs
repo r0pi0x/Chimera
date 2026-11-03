@@ -276,8 +276,14 @@ pub fn on_pickup(
     mut picked: MessageReader<PickedUp>,
     mut pools: Query<&mut Hl2Ammo>,
     mut weapons: Query<(&Hl2Item, &mut Magazine)>,
+    mut rounds: Query<&mut super::launch::Hl2Rounds>,
 ) {
     for p in picked.read() {
+        // A weapon counting its own rounds takes the pool of their type.
+        if let Ok(mut r) = rounds.get_mut(p.weapon) {
+            let pooled = pools.get_mut(p.who).map_or(0, |mut a| a.take(r.ammo));
+            r.count = (r.count + pooled).min(r.max);
+        }
         let Ok((item, mut mag)) = weapons.get_mut(p.weapon) else { continue };
         let Some(ammo) = item.ammo else { continue };
         let pooled = pools.get_mut(p.who).map_or(0, |mut a| a.take(ammo));

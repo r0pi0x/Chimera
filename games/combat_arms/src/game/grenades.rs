@@ -534,6 +534,7 @@ pub fn throwable(e: &mut EntityWorldMut, d: &'static WeaponData, p: &GrenadePara
             shake: None,
             shield: None,
             through_walls: false,
+            radius_rule: None,
         }),
     };
     e.insert((
@@ -1355,26 +1356,9 @@ impl GrenadeWorld<'_, '_> {
     }
 }
 
-/// Where a segment first enters a sphere: the fraction along it.
-pub(crate) fn sphere_entry(from: Vec3, to: Vec3, centre: Vec3, r: f32) -> Option<f32> {
-    let d = to - from;
-    let a = d.length_squared();
-    if a <= 0.0 || r <= 0.0 {
-        return None;
-    }
-    let m = from - centre;
-    let c = m.length_squared() - r * r;
-    if c <= 0.0 {
-        return Some(0.0);
-    }
-    let b = m.dot(d);
-    let disc = b * b - a * c;
-    if disc < 0.0 {
-        return None;
-    }
-    let t = (-b - disc.sqrt()) / a;
-    (0.0..=1.0).contains(&t).then_some(t)
-}
+/// Where a segment first enters a sphere: the fraction along it (Chimera's,
+/// lift C1).
+pub(crate) use crate::weapon::projectile::ray_sphere as sphere_entry;
 
 /// What a frame changes besides the grenades: damage dealt (with each
 /// target's health as it goes), detonations, effects.

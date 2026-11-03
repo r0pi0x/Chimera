@@ -26,7 +26,8 @@ miss_refire_other = 0.4
 # 300 kg x in/s a point: 7500 (weapons.md 11).
 force = 7500.0
 kind = "melee"
-armor_ratio = 0.4
+# The suit's rule (see `_gun.toml`).
+armor_ratio = 1.0
 quantum = 0.0
 # Every swing's sound; the hit's own is the surface's impact.
 sound_hit = "Weapon_Crowbar.Single"

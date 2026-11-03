@@ -22,7 +22,8 @@ miss_refire_other = 0.8
 # 300 kg x in/s a point: 12000.
 force = 12000.0
 kind = "melee"
-armor_ratio = 0.4
+# The suit's rule (see `_gun.toml`).
+armor_ratio = 1.0
 quantum = 0.0
 sound_hit = "Weapon_StunStick.Melee_Hit"
 sound_hit_world = "Weapon_StunStick.Melee_Hit"
