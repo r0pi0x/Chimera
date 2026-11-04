@@ -9,7 +9,11 @@ chargers (suit.md P10, P11), swimming and drowning (movement.md rows
 spawns: `tdm`, `tdm_spawns` change the map and come back to DM), crates
 dropped on and punted into a bot (gravity_gun.md P10: `crate_hits`), punts
 of a crate on the floor (`floor_punts`), `+use` carry with
-`hl2mp_allow_pickup` (`use_carry`) and the cvars every spec lists. Prints each case's
+`hl2mp_allow_pickup` (`use_carry`), round 4's (`gravity_more`: pulls, a
+caught ball, the Break input, a respawnable prop, held crates against a
+frozen one; `log_lines`, `ready`, `spawns_more`, `watcher`, `models`:
+rules P6, P9, P10, P12-P14; `models` wants a fresh server process) and
+the cvars every spec lists. Prints each case's
 numbers beside the spec's.
 
     python3 tools/hl2dm_probe/cases.py [case ...]   # dm_lockdown cases
@@ -702,6 +706,10 @@ def crate_hits(r):
                     (250, "100 + 5 + 10, a 20 later")]:
         show(f"gravity P10 {m} kg punted into a bot 150 ahead: hits (tick, amount, attacker), forward step",
              punt_into(r, a, b, m), want)
+    show("gravity P10 30 kg punted into a bot 50 ahead (at 1100)", punt_into(r, a, b, 30, dist=100), "50 + 10 + 5")
+    for m, want in [(30, "20 + 10 + 5"), (100, "50 + 10 + 10")]:
+        show(f"gravity P14 {m} kg prop_physics_multiplayer punted into a bot", punt_into(r, a, b, m,
+             cls="prop_physics_multiplayer"), f"{want} (as prop_physics: Corrections 1)")
     r.exec(f"probe_tp {b} {ROOF[0]} {ROOF[1]} {ROOF[2] + 100} 0 0")
 
 
@@ -803,10 +811,299 @@ def cvars(r):
         print(f"{n} = {m.group(1) if m else '?'}")
 
 
+def pulls(r, mass=30, dist=600):
+    """gravity_gun.md P8: secondary held at a crate resting on the roof
+    `dist` ahead (looking at it): its floor speed by tick from the first
+    tug."""
+    st = (ROOF[0], ROOF[1], ROOF[2], 4.2, 0, 0, 0, 0)
+    probe.wait_alive(r)
+    arm(r, "weapon_physcannon")
+    r.exec("probe_track clear")
+    probe.run_full(r, st, hold(30, 0, 0, 0, 4.2, 0, select="weapon_physcannon"))
+    idx = r.exec(f"probe_prop prop_physics {CRATE} {ROOF[0] + dist} {ROOF[1]} {ROOF[2] + 22} {mass} 0").split()[-1]
+    out = probe.run_full(r, st, hold(60, 0, 0, 0, 4.2, 0) + hold(80, ATTACK2, 0, 0, 4.2, 0))
+    e = [x for x in out["ents"] if x[1] == idx]
+    r.exec(f"probe_fire {idx} Kill")
+    return [round(math.hypot(*speed(a, b)[:2]), 1) for a, b in zip(e[61:], e[62:85])]
+
+
+def ball_catch(r):
+    """gravity_gun.md P12: an AR2 ball caught as it leaves the bot's own
+    gun (the gravity gun selected right after the alt-fire), launched: its
+    speed by tick."""
+    probe.wait_alive(r)
+    arm(r, "weapon_physcannon", "weapon_ar2")
+    r.exec("probe_set 5000 0")
+    r.exec("probe_track clear")
+    r.exec("probe_track prop_combine_ball")
+    ticks = (hold(75, 0, 0, 0, 0, 180, select="weapon_ar2") + hold(1, ATTACK2, 0, 0, 0, 180) + hold(36, 0, 0, 0, 0, 180)
+             + hold(60, ATTACK2, 0, 0, 0, 180, select="weapon_physcannon") + hold(30, 0, 0, 0, 0, 180)
+             + hold(1, ATTACK, 0, 0, 0, 180) + hold(40, 0, 0, 0, 0, 180))
+    out = probe.run_full(r, measure.start(), ticks)
+    e = [x for x in out["ents"] if x[2] == "prop_combine_ball"]
+    return [round(math.dist([float(q) for q in a[3:6]], [float(q) for q in b[3:6]]) / 0.015) for a, b in zip(e, e[1:])][90:]
+
+
+def break_input(r):
+    """gravity_gun.md P15: the Break input on a prop_physics crate: its
+    solid flags, effects, health and take-damage before and after, and
+    whatever it made."""
+    r.exec("probe_track clear")
+    r.exec("probe_track prop_physics")
+    idx = r.exec(f"probe_prop prop_physics {CRATE} {SPOT[0] - 60} {SPOT[1]} {SPOT[2] + 22} 30").split()[-1]
+    state = lambda: [r.exec(f"probe_get {idx} {k} {p} int").strip() for k, p in (
+        ("send", "m_usSolidFlags"), ("send", "m_fEffects"), ("data", "m_iHealth"), ("data", "m_takedamage"))]
+    before = state()
+    out = probe.run_full(r, measure.start(), hold(40), cmds=[(10, 0, f"probe_fire {idx} Break")])
+    after = state()
+    r.exec(f"probe_fire {idx} Kill")
+    return before, after, out["created"], out["removed"]
+
+
+def respawnable(r, block=False):
+    """gravity_gun.md P13: a prop_physics_respawnable crate (no
+    RespawnTime) shot with the .357; with `block` the bot stands on its
+    spot from row 100 to 4400: (row, effects) as they change."""
+    probe.wait_alive(r)
+    arm(r, "weapon_357")
+    r.exec("probe_set 5000 0")
+    r.exec("probe_track clear")
+    pitch = math.degrees(math.atan2(64 - 20, 60))
+    st = measure.start(pitch=pitch)
+    probe.run_full(r, st, hold(70, 0, 0, 0, pitch, 180, select="weapon_357"))
+    idx = r.exec(f"probe_prop prop_physics_respawnable {CRATE} {SPOT[0] - 60} {SPOT[1]} {SPOT[2] + 22} 30").split()[-1]
+    cmds = [(100, 0, f"probe_tp {bot(r)} {SPOT[0] - 60} {SPOT[1]} {SPOT[2]} 0 180"),
+            (4400, 0, f"probe_tp {bot(r)} {SPOT[0]} {SPOT[1]} {SPOT[2]} 0 180")] if block else []
+    out = probe.run_full(r, st, hold(60, 0, 0, 0, pitch, 180) + hold(1, ATTACK, 0, 0, pitch, 180)
+                         + hold(6000 if block else 4200, 0, 0, 0, pitch, 180), cmds=cmds)
+    r.exec(f"probe_fire {idx} Kill")
+    seen, last = [], None
+    for x in out["ents"]:
+        if x[1] == idx and x[11] != last:
+            seen.append((int(x[0]), x[11]))
+            last = x[11]
+    return seen
+
+
+def hold_gaps(r, c):
+    """gravity_gun.md P7: a 20 kg crate grabbed from the floor, then held
+    level with a frozen 200 kg crate `c` ahead at eye height in its way:
+    its distance from the hold point (66.8 ahead) by row, and the gun's
+    sounds (the drop's row)."""
+    probe.wait_alive(r)
+    arm(r, "weapon_physcannon")
+    r.exec("probe_track clear")
+    probe.run_full(r, measure.start(pitch=40), hold(30, 0, 0, 0, 40, 180, select="weapon_physcannon"))
+    crate = r.exec(f"probe_prop prop_physics {CRATE} {SPOT[0] - 45} {SPOT[1]} {SPOT[2] + 22} 20").split()[-1]
+    block = r.exec(f"probe_prop prop_physics {CRATE} {SPOT[0] - c} {SPOT[1]} {SPOT[2] + 64} 200 8").split()[-1]
+    out = probe.run_full(r, measure.start(pitch=40), hold(30, 0, 0, 0, 40, 180) + hold(1, ATTACK2, 0, 0, 40, 180)
+                         + hold(400, 0, 0, 0, 0, 180))
+    e = {int(x[0]): x for x in out["ents"] if x[1] == crate}
+    rows = out["rows"]
+    gaps = {t: round(math.hypot(66.8 + float(e[t][3]) - rows[t]["x"], float(e[t][5]) - rows[t]["z"] - rows[t]["eye"],
+                                float(e[t][4]) - rows[t]["y"]), 1) for t in range(60, 431, 40) if t in e}
+    r.exec(f"probe_fire {crate} Kill")
+    r.exec(f"probe_fire {block} Kill")
+    return gaps, [(int(x[0]), x[5].split("/")[-1]) for x in out["sounds"] if "physcannon" in x[5]]
+
+
+def gravity_more(r):
+    """gravity_gun.md P7, P8, P12, P13, P15 (round 4)."""
+    show("gravity P8 pull from 600, 30 kg: floor speed by tick", pulls(r), "+81.3 every 7 ticks less friction")
+    show("gravity P12 caught AR2 ball launched: speed by tick", ball_catch(r), "959 until its first bounce, then 1500")
+    show("gravity P15 Break input: (solid flags, effects, health, takedamage) before, after; created; removed",
+         break_input(r), "stays, non-solid (flags 4), undamageable")
+    show("gravity P13 respawnable, no RespawnTime: (row, effects)", respawnable(r), "hidden at the shot, back 60 s on")
+    show("gravity P13 blocked until row 4400", respawnable(r, block=True), "retries each second: back about 1 s after")
+    for c in (59, 87, 95, 97):
+        show(f"gravity P7 held against a frozen crate {c} ahead: gaps by row, sounds", hold_gaps(r, c),
+             "drop when the smoothed error passes 12 (gaps 15-24 never)")
+
+
+def log_lines(r):
+    """rules.md P12: the server log's lines for a kill, chat, a suicide
+    and a team change (DM; the bots: the second one is spectator after)."""
+    a, b = two_bots(r)
+    r.exec("log on")
+    time.sleep(0.5)
+    r.exec(f"probe_bot {b}")
+    r.exec(f"probe_hurt 500 2 {a}")
+    time.sleep(0.3)
+    r.exec(f"probe_bot {a}")
+    r.exec("probe_cmd say hello there")
+    time.sleep(1.0)
+    r.exec("probe_cmd say_team team words")
+    time.sleep(0.3)
+    r.exec("probe_kill")
+    time.sleep(6)
+    r.exec(f"probe_bot {a}")
+    r.exec("probe_cmd spectate")
+    time.sleep(0.5)
+    r.exec("log off")
+    import glob
+    import os
+    logs = sorted(glob.glob(os.path.join(probe.SERVER, "hl2mp", "logs", "*.log")), key=os.path.getmtime)
+    lines = [l.split(": ", 1)[1].strip() for l in open(logs[-1]) if "rcon" not in l and ": " in l]
+    show("rules P12 log lines", lines, "killed ... with, say, (DM: no say_team line), committed suicide with, joined team")
+
+
+def ready(r):
+    """rules.md P14: `mp_readyrestart 1` with two bots: one ready, the other
+    "Ready", a spawn in between, then both: when the deaths reset."""
+    a, b = two_bots(r)
+    deaths = lambda: {c: p[2] for c, p in probe.score(r)[0].items()}
+    for c in (a, b):
+        r.exec(f"probe_bot {c}")
+        r.exec("probe_kill")
+    time.sleep(6)
+    r.exec("mp_readyrestart 1")
+    time.sleep(1.5)
+    r.exec(f"probe_bot {a}")
+    r.exec("probe_cmd say ready")
+    time.sleep(3)
+    r.exec("probe_kill")
+    time.sleep(5.5)
+    r.exec(f"probe_bot {b}")
+    r.exec("probe_cmd say Ready")
+    time.sleep(2)
+    r.exec("probe_cmd say ready")
+    time.sleep(8)
+    waited = deaths()
+    r.exec(f"probe_bot {a}")
+    r.exec("probe_cmd say ready")
+    t0 = time.time()
+    while time.time() - t0 < 10 and not all(v == 0 for v in deaths().values()):
+        time.sleep(0.1)
+    show("rules P14 deaths after 'Ready' and a ready lost to a spawn; seconds to the restart after the last",
+         (waited, round(time.time() - t0, 1)), "no restart until all are ready; then the next 1 s check + 5 s")
+
+
+def spawn_spots(r, mode, xa, xb, rounds=5):
+    """rules.md P9, P10 on dm_lockdown cut to its spots 47 and 63 (A, B):
+    bots X and Y `xa` and `xb` units east of A and B (mode "dead": X
+    killed there; "spec": Y spectating there), Z respawned by a button:
+    where Z spawns and who dies. Changes the map first (no one may have
+    spawned at a spot that is then removed: the server crashes)."""
+    r.exec("hl2mp_bot_kick all")
+    time.sleep(1)
+    change_map(r, "dm_lockdown", 0)
+    for l in r.exec("probe_find info_player_deathmatch").splitlines():
+        p = l.split()
+        if len(p) > 5 and p[1] == "info_player_deathmatch" and p[0] not in ("47", "63"):
+            r.exec(f"probe_fire {p[0]} Kill")
+    probe.setup(r, bots=3)
+    time.sleep(3)
+    r.exec("mp_forcerespawn 0")
+    A, B = (-2842.78, 1926.97, 3.76), (-2844.47, 2727.53, 2.42)
+    X, Y, Z = 1, 2, 3
+    out_rows = []
+    for _ in range(rounds):
+        time.sleep(3.2)
+        for _ in range(3):
+            if all(p[3] == 0 for p in probe.score(r)[0].values()):
+                break
+            r.exec("mp_forcerespawn 1")
+            time.sleep(5.5)
+            r.exec("mp_forcerespawn 0")
+        r.exec(f"probe_tp {Z} {A[0] - 400} {A[1]} {A[2] + 1} 0 0")
+        r.exec(f"probe_tp {X} {A[0] + xa} {A[1]} {A[2] + 1} 0 0")
+        r.exec(f"probe_tp {Y} {B[0] + xb} {B[1]} {B[2] + 1} 0 0")
+        time.sleep(0.2)
+        if mode == "dead":
+            r.exec(f"probe_bot {X}")
+            r.exec("probe_kill")
+        if mode == "spec":
+            r.exec(f"probe_bot {Y}")
+            r.exec("probe_cmd spectate")
+            time.sleep(0.3)
+            r.exec(f"probe_tp {Y} {B[0] + xb} {B[1]} {B[2] + 1} 0 0")
+        time.sleep(0.2)
+        alive = sorted(c for c, p in probe.score(r)[0].items() if p[3] == 0)
+        r.exec(f"probe_bot {Z}")
+        out = probe.run_full(r, None, hold(246) + hold(1, ATTACK) + hold(30), cmds=[(1, 0, "probe_kill")])
+        rows = out["rows"]
+        sp = [i for i in range(3, len(rows)) if rows[i]["life"] == 0 and rows[i - 1]["life"] != 0]
+        at = "A" if sp and abs(rows[sp[0]]["y"] - A[1]) < 50 else "B" if sp else None
+        out_rows.append((alive, at, [int(e[2]) for e in out["events"] if e[1] == "player_death" and e[2] != str(Z)]))
+    r.exec("mp_forcerespawn 1")
+    return out_rows
+
+
+def spawns_more(r):
+    show("rules P9 all taken (X 30 from A, Y 60 from B): (alive before, Z's spot, killed)",
+         spawn_spots(r, "alive", 30, 60), "the first candidate's player dies, also at 60 (its box within 48)")
+    show("rules P9 X 66 from A", spawn_spots(r, "alive", 66, 40), "X lives (its box 50 away)")
+    show("rules P10 X's body 30 from A, Y alive 40 from B", spawn_spots(r, "dead", 30, 40, 7),
+         "a body takes the spot: Z at B kills Y on some rounds")
+    show("rules P10 Y spectating 40 from B, X 30 from A", spawn_spots(r, "spec", 30, 40),
+         "a spectator takes the spot: never at B")
+    change_map(r, "dm_lockdown", 0)
+
+
+def watcher(r, spec=2, target=3):
+    """rules.md P13: bot `spec` (already a spectator) watching bot
+    `target` in mode 4, driven so it runs commands; `target` runs `kill`
+    on row 30: the watcher's target and the target's life state as they
+    change (seconds)."""
+    import threading
+    r.exec(f"probe_bot {spec}")
+    r.exec("probe_cmd spec_mode 4")
+    for _ in range(4):
+        if r.exec(f"probe_get {spec} send m_hObserverTarget ent").strip().endswith(f" {target}"):
+            break
+        r.exec("probe_cmd spec_next")
+        time.sleep(0.3)
+    seen, stop = [], []
+
+    def poll():
+        q = probe.connect()
+        t0, last = time.time(), None
+        while not stop:
+            t = (q.exec(f"probe_get {spec} send m_hObserverTarget ent").strip(),
+                 q.exec(f"probe_get {target} data m_lifeState int").strip())
+            if t != last:
+                seen.append((round(time.time() - t0, 2), t))
+                last = t
+            time.sleep(0.02)
+    th = threading.Thread(target=poll)
+    th.start()
+    time.sleep(0.5)
+    probe.run_full(r, None, hold(500), cmds=[(30, target, "kill")])
+    stop.append(1)
+    th.join()
+    show("rules P13 watcher's target and the target's life state over time", seen, "moves on soon after the death")
+
+
+def models(r):
+    """rules.md P6 (a fresh server): TDM, four bots on Rebels with a
+    citizen cl_playermodel join Combine in turn: their models."""
+    r.exec("hl2mp_bot_kick all")
+    time.sleep(1)
+    change_map(r, "dm_lockdown", 1)
+    for _ in range(4):
+        r.exec("hl2mp_bot_add rebels")
+        time.sleep(1.5)
+    time.sleep(4)
+    ids = sorted(int(m) for m in re.findall(r"player (\d+) team", r.exec("probe_model")))
+    for c in ids:
+        r.exec(f"probe_clientcvar {c} cl_playermodel models/humans/group03/male_04.mdl")
+    time.sleep(6)
+    got = []
+    for c in ids:
+        r.exec(f"probe_bot {c}")
+        r.exec("probe_cmd jointeam 2")
+        time.sleep(1.5)
+        got.append(re.search(rf"player {c} team \d+ model (\S+)", r.exec("probe_model")).group(1))
+    show("rules P6 Combine models given in turn (a bot the manager moved to Combine first takes none)", got,
+         "prisonguard, super soldier, police, then combine_soldier")
+    change_map(r, "dm_lockdown", 0)
+
+
 CASES = {"respawn": respawn, "armour": armour, "weapons": weapons, "drops": drops, "pushes": pushes,
          "projectiles": projectiles, "gravity": gravity, "heads": heads, "frag_drag": frag_drag, "pickups": pickups, "chargers": chargers, "cvars": cvars,
          "swim": swim, "drown": drown, "tdm": tdm, "tdm_spawns": tdm_spawns, "crate_hits": crate_hits,
-         "floor_punts": floor_punts, "use_carry": use_carry}
+         "floor_punts": floor_punts, "use_carry": use_carry, "gravity_more": gravity_more, "log_lines": log_lines,
+         "ready": ready, "spawns_more": spawns_more, "watcher": watcher, "models": models}
 LOCKDOWN = ["cvars", "respawn", "armour", "weapons", "drops", "projectiles", "frag_drag", "gravity", "pickups",
             "chargers", "pushes", "heads"]
 

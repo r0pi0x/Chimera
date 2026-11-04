@@ -897,3 +897,39 @@ build 24600426):
     (+1, not shown), 2 and 3 unchanged. A bot removed in TDM costs team 0
     a point (Open questions 9). Spawns on dm_runoff: 48 Combine spawns all
     at `info_player_combine`, 36 Rebel at `info_player_rebel`.
+15. **Probe results, round 4 (2026-11-04, build 24600426, `cases.py
+    models log_lines ready spawns_more watcher`).**
+    - P6: on a fresh server process, TDM, bots on Rebels given a citizen
+      `cl_playermodel` and sent to Combine in turn got
+      `combine_soldier_prisonguard`, `combine_super_soldier`, `police`,
+      then `Combine_Soldier` (the list's first entry, written with the
+      case it was first precached in), as Models says.
+    - P9: dm_lockdown cut to two spots (the others removed right after a
+      map load, before anyone spawned: removing the spot a spawn last
+      used crashes the server), both taken: the player near the first
+      candidate takes 300 from the world (`player_death` attacker 0, the
+      log's "committed suicide with "world""), **also at 60 and 62 units
+      from the spot**; one 66 away lived. The radius test is the
+      player's box reaching within 48 (60 − 16 = 44), as the occupancy
+      test, not its origin: test 27's "the one at 60 lives" is wrong.
+    - P10 (Open questions 3): both take a spot. A bot killed 30 units
+      from spot A (its body there) with B taken: a newcomer spawned at B
+      and telefragged B's player on some rounds (no spot free), never
+      at A while it was free. A spectating bot 40 units from B with A
+      taken: every newcomer (5 of 5) spawned at A and killed A's player.
+    - P12: `"Bot Name<2><BOT><Unassigned>" killed "Bot Name<3><BOT><Unassigned>"
+      with "357"` (the attacker's weapon in hand), `... say "hello there"`,
+      `... committed suicide with "357"` (`kill`), `... joined team
+      "Spectator"` with the old team in the brackets, as "Server log
+      lines" says. A DM player's `say_team` writes **no line**; a TDM
+      player's writes `... say_team "text"`. A second chat line from the
+      same player right after the first (under about a second) is
+      dropped: no line, no `player_say` (a chat flood limit).
+    - P13: a spectating bot in mode 4 watching a bot that died (`kill`;
+      respawnable at once, life state 3) kept it as its target for the
+      7.5 s measured. Bots may not run the observer's think as a human's
+      client does: not settled; Open questions 8 stays open.
+    - P14: one bot saying `ready`: no restart in 8 s; `Ready` doesn't
+      count; a bot that said it, died and respawned has to say it again;
+      the last `ready` restarted the game (deaths 0) 5.8 s later (the
+      next 1 s check, then 5 s). No log line for the restart.
