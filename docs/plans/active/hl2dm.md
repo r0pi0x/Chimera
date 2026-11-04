@@ -1262,6 +1262,47 @@ implementing (owner branch) / done.
   beams (persistent sprites on a model's attachments need the render
   layer), the punt's end at the object's centre.
 
+- 2026-11-03: Probe round 2 (branch `hl2dm-probe2`, build 24600426).
+  The plugin's tracked-entity rows end with the angles, `probe_prop`
+  takes spawnflags (72 hangs a prop until the gun punts it); `cases.py`
+  gains `heads`, `frag_drag` and hanging-crate punts; README notes how to
+  aim at a stopped bot's head and fit a spinning grenade's velocity.
+
+  | Case | Real server | Spec | Ours |
+  |---|---|---|---|
+  | projectiles P2 frag throw | (1200, 0, 120) + the thrower's velocity, lob (350, 0, 50); round 1's 2.2° right was the origin circling the mass centre (3-5 units) | same, no drag | **air drag added**: (0.07 + 0.00009 \|v\|) v per second (frag.toml) |
+  | gravity P3 punt 45° down | hanging crate: (772, 488) a tick after = spec less drag and gravity; on the floor (827, 577) from the spun edge digging in | ≈ 506 up | hanging: same; floor (771, 813): **open** (solver contact) |
+  | gravity P3 spin | about the box trace's end (2964°/s at 21.8°; inertia 0.714 of a solid box) | "at the trace end" | **was the contact point; fixed**; a prop set moving by the punt was pushed as 1 kg (cap): **fixed** |
+  | weapons P15 head | pistol 24, .357 225, crowbar 25 (generic) | same | same |
+  | bolt head (test 39) | 100, generic hitgroup on head, chest, legs | 300 | **was 300; fixed** (crossbow.toml `head = 1`) |
+  | weapons P16 / projectiles P7 push | 5 a point (pistol 40, .357 375, pellet 45, crowbar 125 less a tick); blast 5 a point from the blast point lowered 10 | same | same |
+  | projectiles P6 frag blast | 150 − 0.6 d within the frag's position (125.6/126.4, 74.3/75.1) | same | same |
+  | projectiles OQ1 / P12 ceiling | rocket and contact grenade against a ceiling hurt by distance | open | same (new test) |
+  | projectiles P8 ball | kills through 200 armour; owner untouched; ends 272 server ticks after creation (4.005 s + the command clock), removed 33 later | same | same |
+  | projectiles P10 mine | created 16 after the press, armed 143-144 (139 + clock), placer in the beam trips at the first check (+7), blast 17 later | same | same |
+  | projectiles P11, P14 | shot satchel harmless; pin pulled on the last grenade at death: a live grenade | same | same |
+  | movement back-hop, P11 | no gain (376 kept); ladder-contents brushes block, never climbed | same | same |
+  | gravity P6, P10/P11, P16, P17 | drop cap 283/280; punt into a bot 50 + 10, the punter credited; a crate dropped 300 on a head 10 + 20; TooHeavy once a press; draw and punt on one command: a punt | 285; 500 for the drop (test 39) | 285; 60 for the punt; **20 for the drop: open** |
+  | suit P7, P9 | flashlight on keeps aux 100; a sprinter killed respawns at aux 97.5 (detach paid on the first tick) | same (Quirks) | flashlight same; **sprint across death was cleared; fixed** |
+  | weapons P4, P12, P14 | crate takes its prop data's bullet scale (8 → 6); weaponstay: taken, a copy stays, owned refused; crowbar hits a box 26 aside, not 36 | 8 | prop data; same; same |
+  | rules P11 | map change 71 s after the load with `mp_timelimit 1` | ≈ 70 | – |
+  | maps P3 | items settle from their placed origins | same | – |
+
+  Fixed: the frag's air drag (`frag::air_drag`, test `a_frag_slows_in_the_air`,
+  tests 44, 47 at a tick of drag); the gravity gun's point impulse at the
+  box trace's end and a just-enabled prop's own mass and inertia
+  (`a_hanging_crate_punted_from_above`; the gun tests' map now has HL2:DM's
+  physics gravity); the bolt's 100 anywhere (test 39); a sprint kept
+  across death and a dead player's suit left alone (`a_sprinter_killed_pays_the_detach_at_the_respawn`);
+  a blast point inside the world still hurts (test). Not measurable here:
+  TDM cases (rules P5-P10, P13-P14: `hl2mp_bot_add` bots are kicked at
+  once with `mp_teamplay 1`), movement P15 and projectiles P5 (two
+  driven players), P16 and HUD/effects (a client). Left: a punted crate
+  on the floor (avian's edge contact), the crate-on-a-head damage (ours
+  20, real 30), bolt speed under water (P9: dm_underpass's pool spots
+  put walls in the way), the ladder brushes against bullets, gravity
+  P7-P9, P12-P15, suit P8, the breather half of P9, P13, maps P4-P9.
+
 ## Decision log
 
 - 2026-10-31 (user): Half-Life 2: Deathmatch is the next game, after

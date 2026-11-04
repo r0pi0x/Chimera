@@ -922,3 +922,17 @@ dedicated server build 24600426), each marked **probe**:
     spec assume `sk_player_head` 3; P3 reads it. If the server leaves it
     at 2, every head number above changes (pistol head 16, five shots
     become seven).
+11. **Probe results, round 2 (2026-11-03, dedicated server build
+    24600426, `tools/hl2dm_probe/cases.py heads`).** A bot whose
+    behaviour is stopped doesn't animate; its head hitbox sits low and to
+    one side, so it is aimed at directly. P15: a pistol head hit 8 × 3 =
+    24, a .357's 225; the crowbar 25 on the head (generic hitgroup, no
+    multiplier). P14: at 40 ahead the crowbar still hits a player whose
+    centre is 26 to the side (the box reaches) and misses at 36 (the box
+    20 short); looking down at the feet from 30: a hit. P12: with
+    `mp_weaponstay 1` a placed shotgun is taken while a copy stays at the
+    spot; touched again while owned, it gives nothing. P4: bullets on a
+    wood crate (`prop_physics`, health 30) take its prop data's bullet
+    scale (pistol 8 → 6, SMG1 5 → 3 points), so P4's "8 on both" needs a
+    prop without multipliers; `func_breakable` not checked. P16 (from
+    round 1): bullets do push players, 5 a point (projectiles.md 3).
