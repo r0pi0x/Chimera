@@ -1401,3 +1401,94 @@ fn a_breakable_parented_to_a_physics_prop_rides_its_body() {
     assert!(node_at.distance(want) < 1.0, "node place {node_at}, on the turned prop {want}");
     assert!(node_rot.angle_between(rot) < 0.02, "node turn {node_rot}, the prop's {rot}");
 }
+
+/// phys_motor holding its speed (specs/hl2dm/maps_entities.md 10, as
+/// dm_lockdown's fan): a crate sunk into the floor, hinged to the world
+/// with "No Collision" (phys_hinge spawnflags 9) and driven at 1500 deg/s
+/// with no spin-up and inertia factor 125, ramps up over a second (test
+/// case 35), holds its speed through the floor it would rub on, and its
+/// point_angularvelocitysensor fires OnGreaterThan once; turned off, it
+/// coasts.
+#[test]
+fn a_motor_holds_its_speed_on_a_world_hinge() {
+    let fan = entity(
+        &[("classname", "prop_physics"), ("targetname", "fan"), ("origin", "0 0 10")],
+        Vec::new(),
+        false,
+    );
+    let hinge = entity(
+        &[
+            ("classname", "phys_hinge"),
+            ("origin", "0 0 10"),
+            ("hingeaxis", "16 0 10"),
+            ("spawnflags", "9"),
+            ("attach1", "fan"),
+        ],
+        Vec::new(),
+        false,
+    );
+    let motor = entity(
+        &[
+            ("classname", "phys_motor"),
+            ("targetname", "fan_motor"),
+            ("origin", "0 0 10"),
+            ("axis", "17 0 10"),
+            ("speed", "1500"),
+            ("spinup", "0"),
+            ("inertiafactor", "125"),
+            ("attach1", "fan"),
+        ],
+        Vec::new(),
+        false,
+    );
+    let sensor = entity(
+        &[
+            ("classname", "point_angularvelocitysensor"),
+            ("origin", "40 0 10"),
+            ("target", "fan"),
+            ("threshold", "1400"),
+            ("fireinterval", "0.2"),
+        ],
+        Vec::new(),
+        false,
+    );
+    let mut data = map(vec![fan, hinge, motor, sensor]);
+    add_crate(&mut data, 0, Vec3::new(0.0, 0.0, 10.0));
+    let mut sim = sim(data);
+    sim.app.world_mut().resource_mut::<Logic>().world.record = true;
+    sim.seconds(0.5);
+    let spin = |sim: &Sim| {
+        let l = sim.app.world().resource::<Logic>();
+        let fan = l.world.find("fan").expect("the fan");
+        l.world.prop(fan).map_or(0.0, |p| p.spin.length())
+    };
+    let fired = |sim: &Sim| {
+        let l = sim.app.world().resource::<Logic>();
+        l.world.fired.iter().filter(|(_, _, o)| o == "OnGreaterThan").count()
+    };
+    sim.app
+        .world_mut()
+        .resource_mut::<Logic>()
+        .world
+        .queue_input("fan_motor", "TurnOn", Value::Void, 0.0, None);
+    // Half way up after half a second (the target's ramp is 1500/s).
+    sim.seconds(0.5);
+    let half = spin(&sim);
+    assert!((600.0..900.0).contains(&half), "ramping: {half}");
+    sim.seconds(0.7);
+    let mut low = f32::MAX;
+    for _ in 0..60 {
+        sim.seconds(0.05);
+        low = low.min(spin(&sim));
+    }
+    assert!(low > 1450.0, "holds 1500 deg/s through the floor: lowest {low}");
+    assert_eq!(fired(&sim), 1, "the sensor saw it pass 1400 once");
+    sim.app
+        .world_mut()
+        .resource_mut::<Logic>()
+        .world
+        .queue_input("fan_motor", "TurnOff", Value::Void, 0.0, None);
+    sim.seconds(0.1);
+    let after = spin(&sim);
+    assert!(after > 1000.0, "coasts, not braked: {after}");
+}

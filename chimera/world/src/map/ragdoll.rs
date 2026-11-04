@@ -419,7 +419,8 @@ impl RagdollShot {
 /// (`prop_physics::ShadowContacts`). Filtered physics clips block only
 /// what their filter passes (`physics_clip`). Pairs no solver or event uses are
 /// dropped (`contact_filter`). Everything else is left to collision
-/// layers.
+/// layers. A body hinged to the world with "No Collision" doesn't touch
+/// the world (`controllers::WorldContacts`).
 #[derive(SystemParam)]
 pub struct MapCollisionHooks<'w, 's> {
     bodies: Query<'w, 's, &'static RagdollBody>,
@@ -427,6 +428,7 @@ pub struct MapCollisionHooks<'w, 's> {
     shadows: super::prop_physics::ShadowContacts<'w, 's>,
     clips: super::physics_clip::ClipContacts<'w, 's>,
     held: super::held::HeldContacts<'w, 's>,
+    world: super::controllers::WorldContacts<'w, 's>,
 }
 
 impl CollisionHooks for MapCollisionHooks<'_, '_> {
@@ -438,6 +440,10 @@ impl CollisionHooks for MapCollisionHooks<'_, '_> {
         // Players' physics shadows touch only the props they push, and
         // their characters no physics prop.
         if let Some(keep) = self.shadows.filter(a, b) {
+            return keep;
+        }
+        // A body hinged to the world with "No Collision" passes through it.
+        if let Some(keep) = self.world.filter(a, b) {
             return keep;
         }
         // Filtered physics clips block only the bodies their filter passes.

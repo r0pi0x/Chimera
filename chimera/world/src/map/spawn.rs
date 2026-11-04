@@ -301,6 +301,7 @@ fn spawn_world_collision(commands: &mut Commands, data: &MapData, parts: Collisi
             Name::new("Map collision (surfaces)"),
             MapPart,
             MapTerrainCollider,
+            super::controllers::WorldCollider,
             RigidBody::Static,
             surfaces,
             // Loose items slide on their own copy (below).
@@ -312,6 +313,7 @@ fn spawn_world_collision(commands: &mut Commands, data: &MapData, parts: Collisi
                 Name::new("Map collision (surfaces, for loose items)"),
                 MapPart,
                 MapTerrainCollider,
+                super::controllers::WorldCollider,
                 RigidBody::Static,
                 smooth,
                 CollisionLayers::new(crate::core::ITEM_GROUND_LAYER, crate::core::ITEM_LAYER),
@@ -331,6 +333,7 @@ fn spawn_world_collision(commands: &mut Commands, data: &MapData, parts: Collisi
         let mut e = commands.spawn((
             Name::new(format!("Map collision ({})", set.name)),
             MapPart,
+            super::controllers::WorldCollider,
             RigidBody::Static,
             collider,
             layers,
@@ -355,6 +358,7 @@ fn spawn_world_collision(commands: &mut Commands, data: &MapData, parts: Collisi
             }),
             MapPart,
             MapBrushCollider,
+            super::controllers::WorldCollider,
             RigidBody::Static,
             collider,
             Transform::default(),
@@ -820,6 +824,12 @@ fn insert_prop_collider(
         }
         (PropSolid::Mesh, Some(collider)) => {
             e.insert((RigidBody::Static, collider.clone(), MapPropCollider));
+            // A static prop is part of the world (its collision is the
+            // world's: a body hinged to the world with "No Collision"
+            // passes through it too).
+            if prop.entity.is_none() && !prop.skybox {
+                e.insert(super::controllers::WorldCollider);
+            }
             // A frozen physics prop can be set moving later.
             if let Some(p) = prop
                 .physics

@@ -841,6 +841,26 @@ implementing (owner branch) / done.
   `map::controllers`), so the sensor's `OnGreaterThan` is unit-tested only;
   the physics shake and rope shake of `env_shake` (flags 8, 16); the
   microphone's speaker routing; the respawn light on network clients.
+- 2026-11-03: dm_lockdown's fan holds its speed (branch
+  `hl2dm-setpieces2`). Cause of the flicker between 1500 and a crawl: the
+  fan's `phys_hinge` (spawnflags 9) joins it to the world with "No
+  Collision", which our joint kept only against its stand-in anchor body,
+  so the fan rubbed on the two static props of its housing (and the
+  brushes) every step. Now a body joined to the world with "No Collision"
+  doesn't touch the world's brushes or static props
+  (`map::controllers::NoWorldContacts`, `WorldCollider`, in
+  `MapCollisionHooks`). `phys_motor` also follows spec 10 now: its target
+  ramps (spinup 0: speed per second, test case 35) and the drive closes
+  `inertiafactor` × step of the gap, capped (hinge motors keep their
+  at-once spin). CS:S stock maps have no `phys_motor` and no constraint
+  with flag 1 (their entity lumps scanned), so only community maps' motors
+  see the ramp. Tests: chimera_world `motor_tests` (3), cs_source
+  `a_motor_holds_its_speed_on_a_world_hinge`, heavy `lockdown_fan_is_watched`
+  (29 of 30 samples from 1.5 s to 4.5 s above 1450, the other a tick's
+  dip where it bats the healthkit lying in it; `OnGreaterThan` once,
+  `OnLessThan` after the motor stops). The schedule ratchet's FixedUpdate
+  fell to 223 pairs, 37 opposite (the world-contact sync lives in
+  `sync_joints`: a system of its own reordered FixedPostUpdate).
 - 2026-11-03: M8 built (branch `hl2dm-m8`). **S9**:
   `source_engine::player_anim`, the shared half of CS:S's `player_anim`
   (the inputs from the simulation and the weapons' events, the drawn
