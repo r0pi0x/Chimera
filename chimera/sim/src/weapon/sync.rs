@@ -201,6 +201,8 @@ pub fn decode(world: &mut World, owner: Entity, bytes: Option<&[u8]>) {
         prev_select: net.prev_select,
         prev_last: net.prev_last,
         prev_use: world.get::<Inventory>(owner).is_some_and(|i| i.prev_use),
+        // The server's (lag compensation); kept as it was here.
+        last_shot: world.get::<Inventory>(owner).and_then(|i| i.last_shot),
     };
     world.entity_mut(owner).insert(inv);
 }

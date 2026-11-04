@@ -18,6 +18,9 @@ hull = 16.0
 # 75 - 1.732 x 16.
 hull_reach = 47.288
 facing_cos = 0.70721
+# A box hit is refined: a line to twice its distance, else its 8 corners
+# there (weapons.md 11).
+refine = true
 damage = 25.0
 hitgroups = false
 hit_refire = 0.4

@@ -86,6 +86,8 @@ range = 8192.0
 #   (HL2:DM; 0: none, each game counts its own)
 # redrawn_through_characters = true   # other clients trace its rounds
 #   again through every player (HL2:DM)
+# odd_box = 3.0                # a call of several bullets traces every
+#   odd-numbered one as a box of this half size (HL2:DM)
 # without [damage] the frame traces nothing: a game's hook delivers each
 # round's `Fired` event (Combat Arms)
 
@@ -146,12 +148,16 @@ standing = { up = 1.0, up_step = 0.175, side = 0.375, side_step = 0.0375, up_cap
 ```
 
 Melee weapons give `[melee.primary]` and `[melee.secondary]` swings (range,
-hull, hull_reach, facing_cos, damage, follow_up = [window, damage], backstab,
+hull, hull_reach, facing_cos, refine (a box hit re-traced to twice its
+distance and its corners: HL2:DM's), damage, follow_up = [window, damage], backstab,
 hitgroups, hit/miss refires, force per damage point, armor_ratio, quantum,
 sounds); `undroppable = true` and `pickup_team = 1` are flags; `death_drop
 = 3` marks a weapon the dead drop beside their best gun (`DeathDrop`: of
 those carried, the highest goes; CS:S's grenades); `kept_on_drop = true`
-one the drop key leaves in hand (`KeptOnDrop`; CS:S's grenades). A table left
+one the drop key leaves in hand (`KeptOnDrop`; CS:S's grenades);
+`[lag_compensation]` (`fired_within`, `reach`, `view_cos`) narrows whom its
+shots rewind (`lagcomp::RewindChoice`, HL2:DM's; without it every other
+player). A table left
 out means the part isn't there (no `[sounds]`: no `WeaponSounds`).
 
 Ammo types:

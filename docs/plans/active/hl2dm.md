@@ -1644,6 +1644,38 @@ implementing (owner branch) / done.
   on) and `a_carried_crate_dropped_while_touching_stops_dead`. Left: a
   client doesn't predict the pick-up itself (the server picks the prop).
 
+- 2026-11-04: **Hitscan, drop and projectile details** (branch
+  `hl2dm-hitscan`; weapons.md 1, 3, 5, 7.2, 9, 11, 12; projectiles.md 3,
+  4.2, 5.4, 8.5, 9.2). Chimera: `Hitscan::odd_box` (a call's odd bullets,
+  pellets or a tick's catch-up rounds, swept as ±3 boxes; hitboxes grown
+  by it), `Swing::refine` (a box hit re-traced to twice its distance, then
+  its 8 corners), a character's swing `Damage::force`, `lagcomp::
+  RewindChoice` from the data's `[lag_compensation]` with `RewindSpeed`
+  and `Inventory::last_shot` (CS:S has none: its spec 4.6 rewinds every
+  player, unchanged), others drawing an `AltShot` round with its pellets,
+  `drop::DeathPush`, `Unselectable`, `ArmourShare`. HL2:DM: the data sets
+  them; `cl_defaultweapon` (userinfo) picks the spawn's weapon; a weapon
+  with no ammo refuses `lastinv` and `phys_swap` (`lastinv` otherwise
+  matched the spec); the dead's weapon flies by the killing hit / 85 kg,
+  at most 400 in/s, spinning 200 deg/s an axis (unit not in the spec);
+  the .357 nudges the local player's view by a whole -1..1 degree; the
+  shove's size reads the damage before the suit's share; the contact
+  grenade explodes when stopped on a 3-tick check; the ball seeks with a
+  swept box, skipping TDM teammates and the intermission; the frag spins
+  about its own axes (the roll turned (0, yaw, -90): a forward roll, it
+  rolled backwards before); a TDM leaver's satchels go off (DM: they
+  stay, as before). The SMG1 grenade has no team test in the spec, so it
+  has none. Tests: `tests/it/weapon_details.rs` (boxes for the shotgun's
+  odd pellets and a catch-up bullet, the refined swing, the death throw,
+  `cl_defaultweapon` test 3, refused switches, the nudge, the shove on
+  armour, the stopped grenade, the leaver's satchels), `net_effects.rs`
+  (a remote double shot's 12 tracers; whom a shot rewinds, and no rewind
+  for attack2 alone), unit tests (`lagcomp`, the ball's swept box, the
+  frag's spins). Left: the death force is the killing hit's, not the
+  tick's sum; turned hitboxes meet a box as grown on their own axes;
+  other clients draw catch-up rounds as lines; the throw and lob are made
+  unturned (only the roll's orientation is specced).
+
 ## Decision log
 
 - 2026-10-31 (user): Half-Life 2: Deathmatch is the next game, after
