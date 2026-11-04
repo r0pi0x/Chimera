@@ -421,6 +421,33 @@ fn a_hanging_crate_punted_from_above() {
     assert!((pitch - 2964.0).abs() < 150.0, "pitching at {pitch} degrees/s ({spin})");
 }
 
+/// Case 3 on the floor, measured on the real server (2026-11-04,
+/// `cases.py floor_punts`): the 30 kg wood crate resting on the floor
+/// (centre 20.4 up), 40 ahead, punted looking 45 degrees down, leaves at
+/// (695, 871) on its second tick (1114 in/s, 51.4 degrees up; its first
+/// tick's step (773, 898) while its leading edge digs into the floor) and
+/// pitching at about 1490 degrees/s. Ours leaves at (761, 792) (1098 in/s,
+/// 46 degrees up) pitching at 1670: the floor contact (avian's, not
+/// vphysics') turns less of the spin into lift. Pinned: the speed within
+/// 3 %, the climb within 6 degrees (gravity_gun.md 11, the plan's open
+/// item).
+#[test]
+fn a_crate_on_the_floor_punted_from_above() {
+    let s = 40.4 * 0.0254;
+    let mut c = Crate::ahead(40.0).at(Vec3::new(40.0, 0.0, 20.4 - EYE));
+    c.half = Vec3::splat(20.2);
+    c.inertia = Some(Vec3::splat(0.714 * 30.0 * s * s / 6.0));
+    let mut w = world(&[c]);
+    look(&mut w.sim, w.p, EAST, -45.0);
+    w.sim.seconds(1.0);
+    w.press(true, false, 1, 1);
+    let first = w.at(0);
+    w.sim.ticks(1);
+    let v = (w.at(0) - first) / 0.015;
+    let (speed, climb) = (v.length(), v.z.atan2(v.x).to_degrees());
+    assert!((speed - 1114.0).abs() < 1114.0 * 0.03 && (climb - 51.4).abs() < 6.0, "{v}: {speed} in/s, {climb} up");
+}
+
 /// Case 4: a crate at 270 is out of reach (the spec's 260 puts its face
 /// at 250, which the ±8 box reaches at 242: the plan's Progress notes it): a dry fire, unchanged; next
 /// primary + 34, secondary unchanged.
@@ -805,6 +832,150 @@ fn ones_own_prop_hurts_later() {
     let log = w.sim.app.world().resource::<Log>();
     let d = log.died.iter().find(|(t, e, _)| *t >= t0 && *e == p).copied().unwrap();
     assert_eq!(d.2, Some(p));
+}
+
+/// A crate falling onto a standing player's head: the crush hits it
+/// takes on the landing's tick (health points, in order), the crate placed with its bottom
+/// `gap` above the head moving down at `speed` (Source units/s).
+fn drop_on_head(mass: f32, speed: f32, gap: f32) -> Vec<i32> {
+    // Out of the way on its pillar until it is dropped.
+    let mut w = world(&[Crate::ahead(300.0).mass(mass)]);
+    w.sim.app.world_mut().get_mut::<Health>(w.p).unwrap().current = 50.0;
+    let n = w.node(0);
+    let head = to_source(w.sim.position(w.p)).z + 36.0;
+    {
+        let world = w.sim.app.world_mut();
+        let mut e = world.entity_mut(n);
+        e.get_mut::<Position>().unwrap().0 = to_engine(Vec3::new(FEET.x, FEET.y, head + gap + 10.0));
+        e.get_mut::<LinearVelocity>().unwrap().0 = to_engine(Vec3::new(0.0, 0.0, -speed));
+        e.get_mut::<AngularVelocity>().unwrap().0 = Vec3::ZERO;
+    }
+    let mut cursor = w.sim.app.world().resource::<Messages<Damage>>().get_cursor_current();
+    let mut hits = Vec::new();
+    for _ in 0..60 {
+        w.sim.ticks(1);
+        let world = w.sim.app.world();
+        for d in cursor.read(world.resource::<Messages<Damage>>()) {
+            if d.target == w.p && d.kind == DamageKind::Crush {
+                hits.push((w.tick(), (d.amount * 100.0).round() as i32));
+            }
+        }
+    }
+    eprintln!("{mass} kg at {speed}: {hits:?}");
+    let first = hits.first().map(|h| h.0);
+    hits.into_iter().filter(|h| Some(h.0) == first).map(|h| h.1).collect()
+}
+
+/// P10 (probe, 2026-11-04, `cases.py drops`): crates let fall onto a
+/// standing bot's head (5000 health, the roof of dm_lockdown) hurt it as
+/// two contacts on one tick, by the crate's mass and its speed at the
+/// head (its last free tick's step; its bottom that far above the head
+/// then): 30 kg at 284, 389, 524 and 663: 5 + 10, 5 + 10, 10 + 20,
+/// 10 + 50; 10 kg at 420: one 10; 100 kg at 572 and 780: 20 + 100,
+/// 100 + 500; 250 kg at 582: 100 + 500.
+#[test]
+fn a_crate_falling_on_a_head_hurts_as_the_probe_measured() {
+    let mut wrong = Vec::new();
+    for (mass, speed, gap, want) in [
+        (30.0, 284.0, 4.4, vec![5, 10]),
+        (30.0, 389.0, 9.3, vec![5, 10]),
+        (30.0, 524.0, 8.7, vec![10, 20]),
+        (30.0, 663.0, 12.9, vec![10, 50]),
+        (10.0, 420.0, 8.7, vec![10]),
+        (100.0, 572.0, 8.4, vec![20, 100]),
+        (100.0, 780.0, 14.6, vec![100, 500]),
+        (250.0, 582.0, 12.6, vec![100, 500]),
+    ] {
+        let hits = drop_on_head(mass, speed, gap);
+        if hits != want {
+            wrong.push(format!("{mass} kg at {speed} in/s: {hits:?}, not {want:?}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// `hl2mp_allow_pickup` 1 (section 8; the probe, 2026-11-04,
+/// `cases.py use_carry`): `+use` at a 20 kg crate on the floor 45 ahead,
+/// looking 40 down, carries it 66.5 ahead at eye height looking level,
+/// (63.9, 37.0) looking 30 up and (63.8, −36.8) down, the crate level (the yaw-only frame);
+/// sprint is off; primary throws it at 199 a tick after (10 kg: 276).
+/// With 0 it stays.
+#[test]
+fn use_carries_with_allow_pickup_as_the_probe_measured() {
+    fn setup(mass: f32, allow: u8) -> W {
+        let s = 40.4 * 0.0254;
+        let mut c = Crate::ahead(45.0).mass(mass).at(Vec3::new(45.0, 0.0, 20.4 - EYE));
+        c.half = Vec3::splat(20.2);
+        c.inertia = Some(Vec3::splat(0.714 * mass * s * s / 6.0));
+        let mut w = world(&[c]);
+        w.sim.app.world_mut().resource_mut::<hl2dm::game::carry::CarryRules>().allow_pickup = allow;
+        look(&mut w.sim, w.p, EAST, -40.0);
+        w.sim.ticks(5);
+        w.sim.intent(w.p).use_key = true;
+        w.sim.ticks(1);
+        w.sim.intent(w.p).use_key = false;
+        look(&mut w.sim, w.p, EAST, 0.0);
+        w.sim.ticks(40);
+        w
+    }
+    let rel = |w: &mut W| w.at(0) - w.eye();
+    let mut w = setup(20.0, 0);
+    let r = rel(&mut w);
+    assert!((r - Vec3::new(45.0, 0.0, -43.6)).length() < 1.5, "allow 0: {r}");
+
+    let mut w = setup(20.0, 1);
+    let r = rel(&mut w);
+    assert!((r - Vec3::new(66.5, 0.0, 0.1)).length() < 1.5, "carried level: {r}");
+    look(&mut w.sim, w.p, EAST, 30.0);
+    w.sim.ticks(30);
+    let r = rel(&mut w);
+    assert!((r - Vec3::new(63.9, 0.0, 37.0)).length() < 1.5, "carried looking up: {r}");
+    look(&mut w.sim, w.p, EAST, -30.0);
+    w.sim.ticks(30);
+    let r = rel(&mut w);
+    assert!((r - Vec3::new(63.8, 0.0, -36.8)).length() < 1.5, "carried looking down: {r}");
+    let n = w.node(0);
+    let rot = w.sim.app.world().get::<Transform>(n).unwrap().rotation;
+    assert!(rot.angle_between(Quat::IDENTITY) < 0.02, "the crate stays level: {rot}");
+    look(&mut w.sim, w.p, EAST, 0.0);
+    w.sim.ticks(30);
+    // Sprint held while carrying: the run speed.
+    {
+        let mut i = w.sim.intent(w.p);
+        i.sprint = true;
+        i.move_axis = Vec2::Y;
+    }
+    w.sim.seconds(1.0);
+    let speed = to_source(w.sim.velocity(w.p)).truncate().length();
+    assert!((speed - 190.0).abs() < 2.0, "sprinting while carrying: {speed}");
+    {
+        let mut i = w.sim.intent(w.p);
+        i.sprint = false;
+        i.move_axis = Vec2::ZERO;
+    }
+    w.sim.seconds(1.0);
+    // A press of primary throws it; the gun doesn't punt.
+    let t0 = w.tick();
+    w.press(true, false, 1, 3);
+    let v = w.velocity(0);
+    assert!(w.sim.app.world().get::<Held>(n).is_none(), "let go");
+    assert!((v.x - 199.0).abs() < 6.0 && v.y.abs() < 2.0, "thrown: {v}");
+    assert!(w.sounds("Weapon_PhysCannon.Launch", t0).is_empty() && w.dry_fires(t0) == 0, "no punt");
+
+    let mut w = setup(10.0, 1);
+    w.press(true, false, 1, 3);
+    let v = w.velocity(0);
+    assert!((v.x - 276.0).abs() < 8.0, "10 kg thrown: {v}");
+
+    // `+use` again drops it from rest.
+    let mut w = setup(20.0, 1);
+    w.sim.intent(w.p).use_key = true;
+    w.sim.ticks(2);
+    w.sim.intent(w.p).use_key = false;
+    let n = w.node(0);
+    assert!(w.sim.app.world().get::<Held>(n).is_none(), "dropped");
+    let v = w.velocity(0);
+    assert!(v.truncate().length() < 5.0 && v.z <= 0.0, "from rest: {v}");
 }
 
 /// Case 44: a held crate pushed into another player hurts him not.

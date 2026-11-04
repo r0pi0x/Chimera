@@ -208,7 +208,8 @@ pub fn config_mut(world: &mut World) -> Mut<'_, SourceMovementConfig> {
 /// in each movement tick, predicted: the sprint starts only on a tick
 /// `+speed` is pressed, with the suit, not fully ducked, eyes out of the
 /// water and at least 10 aux power (else `HL2Player.SprintNoPower`), and
-/// stops when `+speed` is let go or the aux power runs out; walking needs
+/// stops when `+speed` is let go, the aux power runs out or the player
+/// carries something by `+use` (`carry::Carrying`); walking needs
 /// `+walk`, no sprint and no duck. The sprint device drains 25/s while
 /// the tick started moving; switching it off costs 2.5. A dead player's
 /// suit is left as it was (its devices stay on until the respawn: suit.md
@@ -225,6 +226,7 @@ pub fn select_speed(
             &mut SourceSpeed,
             &Transform,
             &MovementSlot,
+            Has<super::carry::Carrying>,
         ),
         Without<crate::core::Dead>,
     >,
@@ -237,7 +239,7 @@ pub fn select_speed(
     let speeds = speeds.map_or_else(Speeds::default, |s| *s);
     let dt = clock.dt();
     let infinite = infinite.is_some_and(|i| i.0);
-    for (entity, intent, me, vel, mut suit, mut speed, t, slot) in &mut q {
+    for (entity, intent, me, vel, mut suit, mut speed, t, slot, carrying) in &mut q {
         if slot.0 != ID {
             continue;
         }
@@ -255,7 +257,8 @@ pub fn select_speed(
         };
         let changed = intent.sprint != suit.speed_held;
         let fully_ducked = me.ducked && !me.ducking;
-        let allowed = suit.worn && !fully_ducked && me.water_level != 3;
+        // Carrying by `+use` turns the sprint off (gravity_gun.md 8).
+        let allowed = suit.worn && !fully_ducked && me.water_level != 3 && !carrying;
         let wanted = intent.sprint && allowed;
         let mut started = false;
         if changed && wanted != suit.sprinting {
@@ -270,7 +273,7 @@ pub fn select_speed(
                 suit.sprinting = false;
             }
         }
-        if suit.aux < SPRINT_STOP {
+        if suit.aux < SPRINT_STOP || carrying {
             suit.sprinting = false;
         }
         let walk_key = intent.walk && !intent.sprint;

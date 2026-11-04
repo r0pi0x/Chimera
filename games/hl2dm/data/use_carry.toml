@@ -1,0 +1,28 @@
+# `+use` carry with `hl2mp_allow_pickup` 1 (specs/hl2dm/gravity_gun.md 8):
+# the gravity gun's hold (sections 4-5: 24 + 22.627 + the object's depth
+# ahead along the view, pitch clamped to 75, 1 kg, damping 10, at most
+# 1000 in/s; dropped past an error of 12 after the first second) in the
+# player's yaw-only frame, axes within 30 degrees snapped at the grab; a
+# drop cut to 285 in/s and 720 deg/s (zeroed when touching something);
+# a throw of player_throwforce x k along the view, k from 0.5 at 0.5 kg
+# to 4 at 15 kg, and a spin of k x U(-10, 10) on each axis.
+# Measured (probe, 2026-11-04): carried 66.5 ahead at eye height, the
+# crate level when looking 30 up or down; thrown at 199 (20 kg), 276
+# (10 kg) a tick after; sprint off while carrying.
+max_mass = 35.0
+max_size = 128.0
+hold_base = 24.0
+player_radius = 22.627
+pitch_clamp = 75.0
+hold_speed = 1000.0
+hold_angular = 3600.0
+held_mass = 1.0
+held_rot_damping = 10.0
+error_limit = 12.0
+error_grace = 1.0
+drop_speed = 285.0
+drop_spin = 720.0
+snap_degrees = 30.0
+throw_mass = [0.5, 15.0]
+throw_k = [0.5, 4.0]
+throw_spin = 10.0

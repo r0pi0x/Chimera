@@ -29,6 +29,7 @@
 pub mod ammo;
 pub mod ammo_crates;
 pub mod bodies;
+pub mod carry;
 pub mod dissolve;
 pub mod effects;
 pub mod flashes;
