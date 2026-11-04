@@ -103,6 +103,7 @@ run revised two of these estimates:
 | Test-file edit, fast tier | 120-168.9 s, all 4,095 tests | 13.5-15.4 s warm affected | **8-11x** |
 | Bottom `chimera_core` edit | 43.4 s, 21 units | 60.8 s affected, 19 units | no gain |
 | No-op | 0.8 s | 5.9 s under load, 0 units | no relink regression |
+| Fast tier: `cargo test` vs `cargo nextest` | 104.4-113.8 s, 4,020 tests | 114.3-115.8 s, same tests | no gain; nextest 7% slower by mean |
 
 What this changes:
 
@@ -116,10 +117,16 @@ What this changes:
 - **Warm source/bottom edits are already 40-60 s.** The predicted
   5-10x for leaf builds was too optimistic: cargo already rebuilds only
   the changed units, and `source_formats` has many dependents.
+- **nextest does not shorten the Windows fast tier.** 4,020 tests:
+  `cargo test` 104.4-113.8 s (mean 107.6) versus `cargo nextest`
+  114.3-115.8 s (mean 114.9); cross-binary parallelism cannot shorten a
+  few long tests under `test-threads = 8`. Keep `cargo test` as the
+  Windows default (`docs/performance.md`, "nextest on the Windows fast
+  tier").
 - **Unmeasured this round**: sccache (not installed), Defender
-  exclusions (no administrator), nextest (not installed), and a
-  line-tables dev profile (the test profile already uses line tables).
-  They stay candidates, not claimed gains.
+  exclusions (no administrator), and a line-tables dev profile (the test
+  profile already uses line tables). They stay candidates, not claimed
+  gains.
 
 Recommended order of work, revised by the measurement:
 Phase 0 (measure) -> Phase 1 (slot fix + seeding + always work in a
@@ -208,11 +215,14 @@ habit is in place.
 - [ ] Add `scripts/affected-build.ps1` for the pre-commit split: build
   the affected packages' tests (`--no-run`) but run only the `--direct`
   ones plus `repo_checks`, exactly as `.githooks/pre-commit` does.
-- [ ] Install `cargo-nextest` and use it for the full suite and for the
-  affected set. `nextest` runs test binaries in parallel (cargo test runs
-  them one after another); keep the existing `heavy` memory slots in
-  mind and validate the Windows overrides on 32 GB. The fast tier can be
-  `cargo nextest run --features dev -E 'not test(/^heavy::/)'`.
+- [x] Measured `cargo-nextest` on the Windows fast tier (2026-10-30):
+  installed (0.9.150) and compared with `cargo test` over three
+  alternating rounds of 4,020 tests. `cargo test` 104.4-113.8 s (mean
+  107.6) versus nextest 114.3-115.8 s (mean 114.9): no gain, so the
+  Windows default stays `cargo test`. `scripts/affected-tests.ps1
+  -Nextest` was verified separately (module filter: 39 tests, 12 heavy
+  skipped). nextest remains the Linux full-suite runner
+  (`docs/performance.md`, "nextest on the Windows fast tier").
 - [ ] Make the Windows pre-commit path optional but available: the repo's
   hook is bash and `SESSIONS.md` says not to enable it in this clone; the
   PowerShell scripts give the same selection without the identity hook.
@@ -365,6 +375,14 @@ only if bottom-edit build time still hurts after the warm-slot habit.
 2026-10-30: never benchmark by building in `Chimera\`. It was the only
 warm target, which is why the slots stayed cold; slot 5 (empty) and
 slot 6 (seeded) are the measurement paths.
+
+2026-10-30: nextest is not the Windows fast-tier win it was predicted to
+be. 4,020 tests, three alternating rounds: `cargo test` mean 107.6 s,
+nextest mean 114.9 s (medians 113.75 vs 115.84). The long tests set the
+wall time and `test-threads = 8` caps concurrency, so parallel binaries do
+not help; keep `cargo test` as the default. nextest stays the Linux
+full-suite runner, and the affected runner keeps `-Nextest` for its
+module-level filter (verified: 39 tests, 12 heavy skipped).
 
 ## Not doing (for now)
 
