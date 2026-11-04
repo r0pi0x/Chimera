@@ -792,6 +792,57 @@ fn a_stuck_bolt_keeps_its_flight_direction() {
     assert!(seen_flying && seen_stuck);
 }
 
+/// Spec 7.4: a static brush entity is "a non-moving solid": a bolt shot
+/// into one at rest (a func_brush, the logic's kinematic brush: dm_lockdown's
+/// wash-room half wall) sticks there and stays drawn, as in the world;
+/// the same brush moving takes the bolt away on touch.
+#[test]
+fn a_bolt_sticks_in_a_brush_entity_at_rest_and_not_in_a_moving_one() {
+    use avian3d::prelude::{Collider, RigidBody};
+    use chimera_core::core::MovingSolid;
+    use chimera_world::map::loose::ShownItem;
+    for moving in [false, true] {
+        let mut sim = sim();
+        let p = player(&mut sim);
+        let w = holding(&mut sim, p, weapons::CROSSBOW);
+        sim.app.world_mut().get_mut::<Magazine>(w).unwrap().clip = 1;
+        // A wall 2 m east of the eye, as the logic layer spawns brush
+        // entities (kinematic, moved by its pose, its `MovingSolid`).
+        let at = eye(&sim, p) + Vec3::X * 2.0;
+        let velocity = if moving { Vec3::Y * 0.5 } else { Vec3::ZERO };
+        sim.app.world_mut().spawn((
+            Transform::from_translation(at),
+            RigidBody::Kinematic,
+            Collider::cuboid(0.2, 3.0, 3.0),
+            MovingSolid {
+                brushes: Vec::new(),
+                velocity,
+                solid: true,
+            },
+        ));
+        sim.ticks(2);
+        // Shot, then 0.6 s (the stick lasts 2).
+        let ran = run(&mut sim, p, 40, |s, k| s.intent(p).fire = k == 0);
+        let (_, hit) = ran.hits.first().cloned().expect("the bolt touched the wall");
+        assert!((hit.point.x - (at.x - 0.1)).abs() < 0.05, "on the wall's face: {:?}", hit.point);
+        let shown: Vec<(Flyer, bool)> = {
+            let w = sim.app.world_mut();
+            w.query::<(&Flyer, Has<ShownItem>)>()
+                .iter(w)
+                .map(|(f, s)| (f.clone(), s))
+                .collect()
+        };
+        if moving {
+            assert!(!hit.world && hit.gone, "a moving brush takes it: {hit:?}");
+            assert!(shown.is_empty(), "gone");
+        } else {
+            assert!(hit.world && !hit.gone, "stuck as in the world: {hit:?}");
+            let (f, drawn) = shown.first().cloned().expect("the stuck bolt is still there");
+            assert!(f.stuck_until.is_some() && drawn, "stuck and shown");
+        }
+    }
+}
+
 /// Test 43: attack2's press zooms to 20, the next back; holding doesn't
 /// repeat.
 #[test]

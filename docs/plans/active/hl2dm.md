@@ -1336,6 +1336,18 @@ implementing (owner branch) / done.
   `effects::ADDITIVE_SPRITES` loads them additive; `heavy/
   effect_materials.rs` checks it. Seen while taking promo shots: the stuck
   bolt stands vertical in the wall whatever its flight (not looked into).
+- 2026-11-04: **The crossbow bolt gone at the wash room's half wall**
+  (branch `hl2dm-bolt2`; the vertical bolt was fixed before: `y_forward`).
+  The bolt was drawn on the listen host (its flyer is the server's own
+  `ShownItem`), in flight and stuck in the world; the half wall
+  (`setpos -3619 2600 0`) is a func_brush, a kinematic body, and a bolt
+  sticks only in static bodies, so it was removed on touch as if the
+  brush moved. Now a kinematic body at rest (its `MovingSolid` and
+  velocities zero) is a non-moving solid (spec 7.4): the bolt sticks
+  there; a moving one still takes it away (projectiles test
+  `a_bolt_sticks_in_a_brush_entity_at_rest_and_not_in_a_moving_one`).
+  Side views on dm_lockdown: the stuck bolt lies along its flight, its
+  pointed tip at the wall and its tail out.
 
 ## Decision log
 

@@ -4,7 +4,9 @@
 //! everything, and what touching something does (`Touch`): explode (a
 //! `grenade::BlastAt` at the point), bounce off everything (keeping its
 //! speed, `Flyer::keep_speed`), stick or glance off like a bolt, or only
-//! report it; a direct hit's damage (`Direct`: through the shared armour
+//! report it (a bolt sticks in what doesn't move: static bodies, and
+//! kinematic ones at rest, the logic's brush entities by their
+//! `MovingSolid`); a direct hit's damage (`Direct`: through the shared armour
 //! step, `HitArmor`; the head's multiplier when it hits characters'
 //! hitboxes). Games steer flyers (guidance, seeking) in `FlyerSet::Think`
 //! and answer `FlyerHit`s in `FlyerSet::Touch`. Movement is Source's toss
@@ -34,7 +36,10 @@
 //! wall); a bounce or a glance spends the rest of its tick's move; the
 //! hitbox test of `Flyer::hitboxes` runs on the swept line's segment
 //! through the character's hull (a hit on the hull that misses every
-//! hitbox lets it fly on); breakable glass stops a bolt like any body;
+//! hitbox lets it fly on); breakable glass stops a bolt like any body; a
+//! brush entity turning in place (a rotating door: its `MovingSolid` has
+//! no angular speed) counts as at rest, and a bolt stuck in a brush stays
+//! where it stuck when the brush moves later;
 //! nothing is predicted (the spec's own: HL2:DM's projectiles appear one
 //! round trip late).
 
@@ -50,7 +55,7 @@ use super::{
     grenade::{Blast, BlastAt, gravity_step},
 };
 use crate::{
-    core::{Damage, DamageKind, Damageable, Health, Hitboxes, Hitgroup, ITEM_LAYER, Intent, SOLID_LAYERS, SimClock},
+    core::{Damage, DamageKind, Damageable, Health, Hitboxes, Hitgroup, ITEM_LAYER, Intent, MovingSolid, SOLID_LAYERS, SimClock},
     map::loose::ShownItem,
 };
 
@@ -596,7 +601,7 @@ struct FlyWorld<'w, 's> {
     spatial: SpatialQuery<'w, 's>,
     bodies: Query<'w, 's, Body, Without<Flyer>>,
     colliders: Query<'w, 's, &'static ColliderOf>,
-    rigid: Query<'w, 's, &'static RigidBody>,
+    rigid: Query<'w, 's, (&'static RigidBody, Option<&'static MovingSolid>, Option<&'static LinearVelocity>, Option<&'static AngularVelocity>)>,
     flyers: Query<'w, 's, (), With<Flyer>>,
     armor: HitArmor<'w, 's>,
     damage: MessageWriter<'w, Damage>,
@@ -621,12 +626,35 @@ impl FlyWorld<'_, '_> {
             .is_ok_and(|b| b.intent.is_some() && b.health.is_some_and(|h| h.current > 0.0))
     }
 
-    /// What doesn't move: static bodies (the map, brush entities).
+    /// What doesn't move: static bodies (the map) and kinematic ones at
+    /// rest (brush entities: a func_brush, a closed door; the logic moves
+    /// them by their pose, so their `MovingSolid` says how fast).
     fn still(&self, collider: Entity, body: Entity) -> bool {
+        self.rigid_is(collider, body, |rb, solid, v, w| {
+            rb.is_static()
+                || (rb.is_kinematic()
+                    && solid.is_none_or(|m| m.velocity.length_squared() < 1e-8)
+                    && v.is_none_or(|v| v.0.length_squared() < 1e-8)
+                    && w.is_none_or(|w| w.0.length_squared() < 1e-8))
+        })
+    }
+
+    /// A static body (the map's own, a frozen prop): a bolt sticks in it
+    /// even when it takes damage.
+    fn fixed(&self, collider: Entity, body: Entity) -> bool {
+        self.rigid_is(collider, body, |rb, _, _, _| rb.is_static())
+    }
+
+    fn rigid_is(
+        &self,
+        collider: Entity,
+        body: Entity,
+        f: impl Fn(&RigidBody, Option<&MovingSolid>, Option<&LinearVelocity>, Option<&AngularVelocity>) -> bool,
+    ) -> bool {
         self.rigid
             .get(collider)
             .or_else(|_| self.rigid.get(body))
-            .is_ok_and(|rb| rb.is_static())
+            .is_ok_and(|(rb, solid, v, w)| f(rb, solid, v, w))
     }
 
     fn takes_damage(&self, e: Entity) -> bool {
@@ -817,6 +845,7 @@ fn fly(
         }
         let character = world.is_character(body);
         let still = !character && world.still(collider, body);
+        let fixed = still && world.fixed(collider, body);
         let velocity = f.velocity;
         f.last_hit = Some(body);
         let group = if character {
@@ -855,12 +884,14 @@ fn fly(
                 f.velocity = reflect(velocity, n).normalize_or(n) * speed;
             }
             Touch::Bolt(rule) => {
-                if damageable && !still {
+                // What takes damage takes the bolt (a breakable, a
+                // prop; a kinematic one at rest too), unless the map's own.
+                if damageable && !fixed {
                     if let Some(d) = f.direct {
                         world.direct(&d, &f, body, point, *dir, group, t.translation);
                     }
                     gone = true;
-                } else if still || !damageable {
+                } else {
                     let speed = velocity.length();
                     let c = n.dot(-velocity / speed.max(1e-6));
                     if still && c < rule.glance_cos && speed > rule.glance_speed {
