@@ -253,6 +253,11 @@ fn runoff_canisters_stand_steep() {
             |(lo, hi), p| (lo.min(p), hi.max(p)),
         );
         let size = hi - lo;
+        // The landed one's origin is where its nose went in: a third of
+        // it (56 of 148 units) lies behind the origin, in the ground.
+        if h.key != CANISTER_MODEL && !h.key.ends_with("_sky") {
+            assert!(lo.x < -0.3 * size.x, "{}: buried behind its origin, {lo} .. {hi}", h.key);
+        }
         assert!(size.x > 1.8 * size.y.max(size.z), "{}: long along +X, size {size}", h.key);
     }
     let mut sim = sim_of(data);
