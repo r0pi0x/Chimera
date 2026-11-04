@@ -409,6 +409,8 @@ pub fn fallback_word(e: &KillEntry, name: impl Fn(&str) -> String) -> String {
         (None, DamageKind::Blast) => "blast".into(),
         (None, DamageKind::Burn) => "burned".into(),
         (None, DamageKind::Drown) => "drowned".into(),
+        (None, DamageKind::Poison) => "poisoned".into(),
+        (None, DamageKind::Radiation) => "irradiated".into(),
         (None, _) if e.suicide => "died".into(),
         (None, _) => "killed".into(),
     }

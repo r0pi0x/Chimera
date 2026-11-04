@@ -27,9 +27,10 @@
 //! - `impulse 100` reaches the flashlight only as the `Flashlight`
 //!   message (no bind or network path yet), and nothing draws the light
 //!   (H9).
-//! - Drowning's sounds play from the player; the server's hurt event and
-//!   the `trigger_hurt` damage kinds (poison, radiation: absorbed here as
-//!   generic, dm_underpass's) aren't told apart yet.
+//! - Drowning's sounds play from the player; the server's hurt event
+//!   isn't sent. A `trigger_hurt`'s poison and radiation types are their
+//!   own kinds (`DamageKind::Poison`, `Radiation`) and bypass the suit
+//!   (dm_underpass's 75); the other types it deals are generic.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;

@@ -359,6 +359,8 @@ pub fn load_with(
             scrape_smooth: surfaces.text(name, "scrapesmooth"),
             roughness: num("audioroughnessfactor", 1.0),
             rough_threshold: num("scraperoughthreshold", 0.5),
+            max_speed_factor: surfaces.text(name, "maxspeedfactor").and_then(|v| v.trim().parse().ok()),
+            jump_factor: surfaces.text(name, "jumpfactor").and_then(|v| v.trim().parse().ok()),
         };
         wanted.extend(
             [

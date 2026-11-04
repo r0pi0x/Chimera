@@ -52,6 +52,10 @@ pub struct Hurt {
     /// Armour takes its part: every `damagetype` but fall (32) and drown
     /// (16384) (measured, triggers.md question 4).
     pub armour: bool,
+    /// The damage's kind by its `damagetype` bits: poison (131072) and
+    /// radiation (262144), which HL2's suit lets through (specs/hl2dm/
+    /// suit.md "Armour"); else generic.
+    pub kind: crate::core::DamageKind,
     pub original: f32,
     pub cap: f32,
     pub doubling: bool,
@@ -106,6 +110,7 @@ pub(super) fn spawn(w: &mut LogicWorld, id: EntId) -> Option<Trigger> {
             Kind::Hurt(Hurt {
                 damage,
                 armour: e.kv_i("damagetype") & (32 | 16384) == 0,
+                kind: hurt_kind(e.kv_i("damagetype")),
                 original: damage,
                 cap: e.kv_f("damagecap"),
                 doubling: e.kv_i("damagemodel") == 1,
@@ -381,7 +386,7 @@ fn end_touch(w: &mut LogicWorld, id: EntId, who: Who) {
         && let Who::Player(p) = who
     {
         let per = h.damage * 0.5;
-        hurt_player(w, p, per, h.armour);
+        hurt_player(w, p, per, h.armour, h.kind);
     }
     if !was_in {
         return;
@@ -413,7 +418,19 @@ fn passes_ignoring_life(w: &LogicWorld, id: EntId, who: Who) -> bool {
     }
 }
 
-fn hurt_player(w: &mut LogicWorld, p: Entity, per: f32, armour: bool) {
+/// A trigger_hurt's damage kind by its `damagetype` bits (`Hurt::kind`).
+pub fn hurt_kind(bits: i32) -> crate::core::DamageKind {
+    use crate::core::DamageKind;
+    if bits & 262_144 != 0 {
+        DamageKind::Radiation
+    } else if bits & 131_072 != 0 {
+        DamageKind::Poison
+    } else {
+        DamageKind::Generic
+    }
+}
+
+fn hurt_player(w: &mut LogicWorld, p: Entity, per: f32, armour: bool, kind: crate::core::DamageKind) {
     if per < 0.0 {
         w.effects.push(Effect::Heal { target: p, amount: -per });
     } else if per > 0.0 {
@@ -421,6 +438,7 @@ fn hurt_player(w: &mut LogicWorld, p: Entity, per: f32, armour: bool) {
             target: p,
             amount: per,
             armour,
+            kind,
         });
     }
 }
@@ -608,7 +626,7 @@ pub(super) fn think(w: &mut LogicWorld, id: EntId) {
                 .collect();
             for v in &victims {
                 if let Who::Player(p) = v {
-                    hurt_player(w, *p, per, h.armour);
+                    hurt_player(w, *p, per, h.armour, h.kind);
                     w.fire_output(id, "OnHurtPlayer", Some(*v), Value::Void);
                 } else {
                     w.fire_output(id, "OnHurt", Some(*v), Value::Void);

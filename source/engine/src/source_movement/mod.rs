@@ -58,9 +58,13 @@
 //! currents); its landing roll keeps the movement spec's spring (the shared
 //! code's), on roll alone, apart from the weapons' punch (recoil and the hit
 //! flinch, `weapon::ViewPunch`, which decay by CS:S's measured linear rule;
-//! weapons.md M18 says landings decay that way too, not checked); fall damage
-//! (specs/cs_source/fall_damage.md) ignores landing on moving or floating
-//! objects. CS:S values, hulls, ducking, stamina and the bunny-hop cap are
+//! weapons.md M18 says landings decay that way too, not checked). A landing
+//! out of water counts `floating_bonus` less on a floating body
+//! (`map::buoyancy::Floating`: one the water lifts, our reading of
+//! "floating") and adds a descending ground's speed (at least 0.1); the
+//! ground material's maxspeedfactor and jumpfactor apply while on the
+//! ground (in the air: 1); a map's `IgnoreFallDamage` window
+//! (`core::IgnoreFallDamage`) spares fall damage. CS:S values, hulls, ducking, stamina and the bunny-hop cap are
 //! measured with movecmp/the probe. Not modelled: the bots' automatic jump-duck
 //! (bots only). An exactly 18-unit drop is at the edge of the stick-to-ground
 //! reach (unmeasured). Max speed comes from the held weapon (`MaxSpeed`). Why
@@ -234,6 +238,10 @@ pub struct SourceMovementConfig {
     pub fall_punch: f32,
     pub fall_half_safe: f32,
     pub fall_bounce: f32,
+    /// Taken off the fall speed of a landing out of water on a floating
+    /// body (`map::buoyancy::Floating`; CS:S 200, HL2 173: movement.md
+    /// "Falling", specs/hl2dm/movement.md "Falling and landing").
+    pub floating_bonus: f32,
     /// A damaging landing costs exactly this (HL2:DM's `mp_falldamage` 0:
     /// 10); None: by speed (`fall_damage_per_speed`).
     pub fall_fixed: Option<f32>,
@@ -262,6 +270,10 @@ pub struct SourceMovementConfig {
     /// CS:S's drowning (`drown`); a game with its own (HL2:DM's suit)
     /// turns it off.
     pub drowning: bool,
+    /// Steps in waist-deep water (level 2) skip one attempt in four, on a
+    /// counter every player shares (HL2's step timing: the step comes a
+    /// tick later; specs/hl2dm/movement.md "Step sounds").
+    pub waist_step_skip: bool,
 }
 
 /// Console variables players and server configs know, mapped onto the
@@ -420,6 +432,7 @@ impl SourceMovementConfig {
             fall_punch: 350.0,
             fall_half_safe: 290.0,
             fall_bounce: 200.0,
+            floating_bonus: 200.0,
             fall_fixed: None,
             fall_fraction: false,
             contents_ladders: true,
@@ -429,6 +442,7 @@ impl SourceMovementConfig {
             swim_lift_max_speed: false,
             model_footsteps: false,
             drowning: true,
+            waist_step_skip: false,
         }
     }
 }
@@ -1378,6 +1392,10 @@ struct Mover<'a, 'b, 'w, 's> {
     gravity_scale: f32,
     /// Moving solids' velocities (Source units/s), for riders.
     mover_velocity: &'a dyn Fn(Entity) -> Vec3,
+    /// Whether a collider's body floats in water (`map::buoyancy::Floating`).
+    floating: &'a dyn Fn(Entity) -> bool,
+    /// Waist-deep step attempts so far, every player's (`waist_step_skip`).
+    waist_steps: &'a mut u32,
     /// Physics colliders the move ran into this tick, the one stood on,
     /// and the wish velocity (units/s): the physics shadow's inputs
     /// (physics_props.md 4.1).
@@ -1816,6 +1834,15 @@ impl Mover<'_, '_, '_, '_> {
         let (mut volume, mut period) = if ladder {
             (0.5, 350.0)
         } else if self.me.water_level == 2 {
+            // HL2: of every four attempts waist-deep (anyone's) the first
+            // returns, the timer not set: that step comes a tick later.
+            if self.cfg.waist_step_skip {
+                let n = *self.waist_steps;
+                *self.waist_steps = n.wrapping_add(1);
+                if n % 4 == 0 {
+                    return;
+                }
+            }
             (0.65, 600.0)
         } else if self.me.water_level == 1 {
             if slow { (0.2, 400.0) } else { (0.5, 300.0) }
@@ -1931,9 +1958,47 @@ impl Mover<'_, '_, '_, '_> {
         }
     }
 
-    /// Landing (sound spec 3): fall speed tiers.
-    fn landing_sound(&mut self, fall: f32) {
-        if fall < self.cfg.fall_punch {
+    /// The ground material's max speed and jump factors (surface
+    /// properties' maxspeedfactor and jumpfactor, 1 by default): the
+    /// surface stood on at the tick's start, none in the air.
+    fn ground_factors(&self) -> (f32, f32) {
+        let surface = self
+            .me
+            .surface
+            .as_deref()
+            .filter(|_| self.me.on_ground)
+            .and_then(|n| self.trace.sounds?.surface(n));
+        (
+            surface.and_then(|s| s.max_speed_factor).unwrap_or(1.0),
+            surface.and_then(|s| s.jump_factor).unwrap_or(1.0),
+        )
+    }
+
+    /// The fall speed a landing counts (movement.md "Falling"; specs/
+    /// hl2dm/movement.md "Falling and landing"): from `fall_punch` up and
+    /// out of water, less `floating_bonus` on a floating body, plus the
+    /// ground's own speed when it is going down (at least 0.1).
+    fn landing_speed(&self, fall: f32) -> f32 {
+        if fall < self.cfg.fall_punch || self.me.water_level > 0 {
+            return fall;
+        }
+        let mut fall = fall;
+        if self.ground_collider.or(self.me.ground_entity).is_some_and(|c| (self.floating)(c)) {
+            fall -= self.cfg.floating_bonus;
+        }
+        if let Some(g) = self.me.ground_entity {
+            let vz = (self.mover_velocity)(g).z;
+            if vz < 0.0 {
+                fall = (fall + vz).max(0.1);
+            }
+        }
+        fall
+    }
+
+    /// Landing (sound spec 3): fall speed tiers, of the speed the landing
+    /// counts (`landing_speed`) once the real one reaches `fall_punch`.
+    fn landing_sound(&mut self, raw: f32, fall: f32) {
+        if raw < self.cfg.fall_punch {
             return;
         }
         let volume = if self.me.water_level > 0 {
@@ -2296,11 +2361,12 @@ impl Mover<'_, '_, '_, '_> {
                 self.v *= self.cfg.bunnyhop_cap / speed;
             }
         }
+        let impulse = self.cfg.jump_impulse * self.ground_factors().1;
         self.set_ground(false, None);
         if self.me.ducked || self.me.ducking {
-            self.v.z = self.cfg.jump_impulse;
+            self.v.z = impulse;
         } else {
-            self.v.z += self.cfg.jump_impulse;
+            self.v.z += impulse;
         }
         if self.me.stamina > 0.0 {
             self.v.z *= 1.0 - self.cfg.stamina_jump_scale * self.me.stamina;
@@ -2391,7 +2457,7 @@ impl Mover<'_, '_, '_, '_> {
             // The game chose it (HL2:DM's walk, run or sprint).
             Some(p) => p.min(self.cfg.maxspeed) * self.me.velocity_modifier,
             None => self.player_maxspeed.min(self.cfg.maxspeed) * walk * self.me.velocity_modifier,
-        };
+        } * self.ground_factors().0;
         let (mut f, mut s) = (
             intent.move_axis.y * self.cfg.key_speed + self.push_input.x,
             intent.move_axis.x * self.cfg.key_speed + self.push_input.y,
@@ -2601,7 +2667,9 @@ impl Mover<'_, '_, '_, '_> {
         if self.me.on_ground {
             self.v.z = 0.0;
             if self.me.fall_speed > 0.0 {
-                let fall = self.me.fall_speed;
+                let raw = self.me.fall_speed;
+                let fall = self.landing_speed(raw);
+                self.me.fall_speed = fall;
                 if self.me.water_level == 0 && fall > self.cfg.fall_safe {
                     let by_speed = (fall - self.cfg.fall_safe) * self.cfg.fall_damage_per_speed;
                     self.fall_damage = match self.cfg.fall_fixed {
@@ -2615,7 +2683,7 @@ impl Mover<'_, '_, '_, '_> {
                         None => by_speed.floor(),
                     };
                 }
-                self.landing_sound(fall);
+                self.landing_sound(raw, fall);
                 self.me.fall_speed = fall;
                 self.me.last_landing_speed = self.me.fall_speed;
                 self.me.fall_speed = 0.0;
@@ -2668,7 +2736,12 @@ fn step(
         Option<&mut shadow::PhysicsTouch>,
         Option<&crate::core::MapControls>,
         Has<SettleOnGround>,
-        (Option<&MovementSlot>, Option<&SourceSpeed>, Option<&StepSounds>),
+        (
+            Option<&MovementSlot>,
+            Option<&SourceSpeed>,
+            Option<&StepSounds>,
+            Option<&mut crate::core::IgnoreFallDamage>,
+        ),
     )>,
     query: SpatialQuery,
     brushes: Option<Res<MapBrushes>>,
@@ -2702,17 +2775,19 @@ fn step(
         Option<ResMut<UseableLadders>>,
         MessageWriter<crate::map::entities::FireEntityOutput>,
     ),
-    (clock, first, mut grid_cache): (
+    (clock, first, mut grid_cache, mut waist_steps): (
         Res<crate::core::SimClock>,
         Res<crate::core::FirstTimePredicted>,
         Local<Option<crate::core::BrushGrid>>,
+        Local<u32>,
     ),
     other_characters: Query<(Entity, &ColliderAabb, Option<&Health>), (With<Intent>, Without<SourceMovement>)>,
-    (health, dead, noblock, teams): (
+    (health, dead, noblock, teams, (collider_of, afloat)): (
         Query<&Health>,
         Query<(), With<ColliderDisabled>>,
         Option<Res<crate::core::NoBlock>>,
         Query<&crate::core::Team, Without<crate::core::Npc>>,
+        (Query<&ColliderOf>, Query<(), With<crate::map::buoyancy::Floating>>),
     ),
 ) {
     // `chimera_noblock` (ours): which players pass through which (hostages
@@ -2742,7 +2817,7 @@ fn step(
     let mut boxes: Vec<(Entity, MapBrush)> = q
         .iter()
         .filter(|(e, ..)| alive(*e))
-        .map(|(e, _, me, t, .., (slot, _, _))| {
+        .map(|(e, _, me, t, .., (slot, _, _, _))| {
             let feet = me.forced.map_or(to_source(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET, |f| f.goal);
             (e, hull_box(configs.of(slot), feet, me.ducked))
         })
@@ -2767,6 +2842,7 @@ fn step(
         .flat_map(|(e, m)| m.brushes.iter().map(move |b| (e, b)))
         .collect();
     let mover_velocity = |e: Entity| movers.get(e).map_or(Vec3::ZERO, |(_, m)| to_source(m.velocity));
+    let floating = |c: Entity| afloat.contains(collider_of.get(c).map_or(c, |o| o.body));
     // With brushes swept exactly, physics queries skip the same brushes.
     // Players pass through multiplayer physics props (their own
     // collision group); props that collide stay in. The same for every
@@ -2828,7 +2904,7 @@ fn step(
         touch,
         controls,
         settle,
-        (slot, speed, step_sounds),
+        (slot, speed, step_sounds, mut ignore_fall),
     ) in &mut q
     {
         let cfg = configs.of(slot);
@@ -2913,6 +2989,8 @@ fn step(
             unground: base.as_ref().is_some_and(|b| b.unground),
             gravity_scale: gravity.map_or(1.0, |g| g.0),
             mover_velocity: &mover_velocity,
+            floating: &floating,
+            waist_steps: &mut *waist_steps,
             touched: Vec::new(),
             ground_collider: None,
             wish: Vec3::ZERO,
@@ -2956,6 +3034,17 @@ fn step(
                 output: output.into(),
                 activator: Some(entity),
             });
+        }
+        // A map's `IgnoreFallDamage` window: no damage (a reset one ends
+        // at this landing).
+        if mover.fall_damage > 0.0
+            && let Some(ignore) = ignore_fall.as_mut()
+            && clock.now < ignore.until
+        {
+            mover.fall_damage = 0.0;
+            if ignore.reset && first.0 {
+                ignore.until = f64::MIN;
+            }
         }
         if mover.fall_damage > 0.0 && first.0 {
             // Health is normalized: 1.0 = 100 points. No attacker, no

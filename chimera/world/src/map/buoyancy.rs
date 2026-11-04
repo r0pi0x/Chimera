@@ -50,6 +50,12 @@ use bevy::prelude::*;
 
 use crate::core::MapWater;
 
+/// On a dynamic body the water lifts (part of it under a surface): what a
+/// Source player landing on it counts as a floating object (specs/hl2dm/
+/// movement.md "Falling and landing"; set each physics step).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Floating;
+
 /// Water's density, kg/m³.
 pub const WATER_DENSITY: f32 = 1000.0;
 /// Speed lost in water per second at full depth: vertical (the least:
@@ -242,11 +248,14 @@ fn float_bodies(
         Has<Sleeping>,
     )>,
     mut cache: Local<HullCache>,
+    floating: Query<Entity, With<Floating>>,
     mut commands: Commands,
 ) {
     let Some(water) = water.filter(|w| !w.0.is_empty()) else {
         return;
     };
+    // The dynamic bodies looked at, and whether the water lifts each.
+    let mut afloat: Vec<(Entity, bool)> = Vec::new();
     let g = gravity.map_or(9.81, |g| g.0.length());
     // The physics step's own (its gravity's): not the fixed tick's, which
     // differ when physics is slowed or a tick is long.
@@ -286,6 +295,7 @@ fn float_bodies(
         if !kind.is_dynamic() || wet.volume <= 0.0 {
             continue;
         }
+        afloat.push((body, false));
         let (min, max) = (wet.min, wet.max);
         // The highest surface of the water volumes it reaches into.
         let mut surface = f32::MIN;
@@ -308,6 +318,9 @@ fn float_bodies(
         let m = mass.value();
         if m <= 0.0 {
             continue;
+        }
+        if let Some(a) = afloat.last_mut() {
+            a.1 = true;
         }
         let share = (under / wet.volume).clamp(0.0, 1.0);
         // At most twice gravity: a very light body comes up briskly
@@ -341,6 +354,15 @@ fn float_bodies(
         v.0.x *= side;
         v.0.z *= side;
         w.0 *= 1.0 / (1.0 + WATER_ANGULAR_DRAG * h);
+    }
+    for (body, lifted) in afloat {
+        if lifted != floating.contains(body) {
+            if lifted {
+                commands.entity(body).try_insert(Floating);
+            } else {
+                commands.entity(body).try_remove::<Floating>();
+            }
+        }
     }
 }
 

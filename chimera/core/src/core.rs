@@ -627,6 +627,10 @@ pub enum DamageKind {
     Burn,
     /// Drowning: head under water too long (`games::cs_source::drown`).
     Drown,
+    /// Source's poison and radiation types (a trigger_hurt's `damagetype`
+    /// bits 131072 and 262144): HL2's suit lets them through.
+    Poison,
+    Radiation,
 }
 
 /// Give a character items a map names (`weapon_ak47`, `item_kevlar`, with
@@ -644,6 +648,16 @@ pub struct Equip {
 #[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
 pub struct DamageFilter {
     pub blocked: Vec<DamageKind>,
+}
+
+/// The map's `IgnoreFallDamage` / `IgnoreFallDamageWithoutReset` inputs
+/// on a player (specs/hl2dm/movement.md "Falling and landing"): a landing
+/// before `until` (s, `SimClock::now`) deals no fall damage; with `reset`
+/// the first such landing ends the window.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct IgnoreFallDamage {
+    pub until: f64,
+    pub reset: bool,
 }
 
 /// A character's command buttons as Source numbers them (the `IN_*` bits

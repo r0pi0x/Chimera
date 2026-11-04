@@ -297,7 +297,12 @@ pub fn collect(
     // Damage taken.
     for t in taken.read() {
         let d = &t.damage;
-        let kinds = Kinds { drown: d.kind == DamageKind::Drown, burn: d.kind == DamageKind::Burn, ..Kinds::default() };
+        let kinds = Kinds {
+            drown: d.kind == DamageKind::Drown,
+            burn: d.kind == DamageKind::Burn,
+            poison: d.kind == DamageKind::Poison,
+            radiation: d.kind == DamageKind::Radiation,
+        };
         let angle = at.and_then(|tf| {
             // The hit's direction is where it travelled; the inflictor is
             // behind it.

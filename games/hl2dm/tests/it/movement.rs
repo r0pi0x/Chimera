@@ -40,6 +40,8 @@ fn brush(lo: Vec3, hi: Vec3, surface: Option<&str>) -> MapBrush {
 const POOL: Vec3 = Vec3::new(-1500.0, 0.0, 0.0);
 /// Where the ground tests run, away from the ladder.
 const FIELD: Vec3 = Vec3::new(2000.0, -3000.0, 0.0);
+/// The middle of the waist-deep water (40 deep over the floor).
+const WADE: Vec3 = Vec3::new(5500.0, 0.0, 0.0);
 
 fn entity(pairs: &[(&str, &str)]) -> MapEntity {
     MapEntity {
@@ -61,10 +63,17 @@ fn test_map(mut commands: Commands, node: Res<WithNode>) {
         brush(Vec3::new(17.0, -200.0, 0.0), Vec3::new(400.0, 200.0, 264.0), Some("concrete")),
     ];
     commands.insert_resource(MapBrushes(brushes));
-    commands.insert_resource(MapWater(vec![MapWaterVolume {
-        brush: brush(Vec3::new(-2000.0, -8192.0, -200.0), Vec3::new(-1000.0, 8192.0, 200.0), None),
-        slime: false,
-    }]));
+    commands.insert_resource(MapWater(vec![
+        MapWaterVolume {
+            brush: brush(Vec3::new(-2000.0, -8192.0, -200.0), Vec3::new(-1000.0, 8192.0, 200.0), None),
+            slime: false,
+        },
+        // Waist-deep water over the floor.
+        MapWaterVolume {
+            brush: brush(Vec3::new(WADE.x - 1000.0, -8192.0, -64.0), Vec3::new(WADE.x + 1000.0, 8192.0, 40.0), None),
+            slime: false,
+        },
+    ]));
     let mut entities = vec![entity(&[
         ("classname", "func_useableladder"),
         ("targetname", "ladder"),
@@ -182,6 +191,18 @@ impl Player {
     /// Hold `+walk` alone.
     fn walk_key(&mut self, held: bool) {
         self.intent().walk = held;
+    }
+
+    /// The `+walk` key's own action (its bit in `Intent::actions`).
+    fn walk_action(&mut self, held: bool) {
+        let bit = self.sim.app.world().resource::<chimera_core::core::ActionRegistry>().bit(movement::WALK_ACTION);
+        assert_ne!(bit, 0, "the walk action is registered");
+        let mut i = self.intent();
+        if held {
+            i.actions |= bit;
+        } else {
+            i.actions &= !bit;
+        }
     }
 
     fn feet(&self) -> Vec3 {
@@ -974,4 +995,182 @@ fn its_cvars_are_its_own() {
     let cfg = w.resource::<source_engine::source_movement::SourceMovementConfigs>().get(ID).unwrap().gravity;
     assert_eq!(cfg, 300.0);
     assert_eq!(w.resource::<source_engine::source_movement::SourceMovementConfig>().gravity, 800.0, "CS:S's untouched");
+}
+
+/// Speed selection 4 (movement.md): ALT (`+walk`) and SHIFT (`+speed`)
+/// with no aux power walk at 150: the walk key is its own, not Chimera's
+/// shared walk that `+speed` sets too; SHIFT alone with no power runs.
+#[test]
+fn the_walk_key_with_shift_and_no_aux_power_walks() {
+    let mut pl = Player::on_floor();
+    pl.suit_mut().aux = 0.0;
+    pl.keys(1.0, 0.0);
+    pl.speed_key(true);
+    pl.tick();
+    assert_eq!(pl.max(), 190.0, "+speed alone, no power: runs");
+    pl.walk_action(true);
+    pl.tick();
+    assert_eq!(pl.max(), 150.0, "+walk and +speed, no power: walks");
+    assert!(!pl.suit().sprinting);
+    pl.sim.ticks(40);
+    close(pl.speed(), 150.0, "walking speed");
+    // With power, the sprint still beats the walk.
+    let mut pl = Player::on_floor();
+    pl.keys(1.0, 0.0);
+    pl.speed_key(true);
+    pl.walk_action(true);
+    pl.tick();
+    assert_eq!(pl.max(), 320.0, "sprint beats walk");
+}
+
+/// Speed selection 5 and Jumping: the ground material's max speed and
+/// jump factors (surface properties' maxspeedfactor, jumpfactor).
+#[test]
+fn the_ground_material_scales_speed_and_jump() {
+    let mut pl = Player::on_floor();
+    let mut sounds = chimera_world::map::MapSounds::default();
+    sounds.surfaces.insert(
+        "concrete".into(),
+        chimera_world::map::sound::MapSurface {
+            max_speed_factor: Some(0.5),
+            jump_factor: Some(1.25),
+            ..Default::default()
+        },
+    );
+    pl.sim.app.world_mut().insert_resource(chimera_world::map::sound::SoundBank(Arc::new(sounds)));
+    pl.keys(1.0, 0.0);
+    pl.sim.ticks(60);
+    close(pl.speed(), 95.0, "190 x 0.5");
+    pl.keys(0.0, 0.0);
+    pl.sim.ticks(60);
+    pl.intent().jump = true;
+    pl.tick();
+    // 160 x 1.25 = 200, less the tick's gravity (row 11: 160 ends the
+    // tick at 146.5).
+    close(pl.vel().z, 200.0 - 13.5, "jump impulse x 1.25");
+}
+
+/// A brush entity under the field to land on: its velocity (Source
+/// units/s) and whether it floats.
+fn platform(pl: &mut Player, top: f32, vz: f32, floating: bool) {
+    let lo = FIELD + Vec3::new(-200.0, -200.0, top - 16.0);
+    let hi = FIELD + Vec3::new(200.0, 200.0, top);
+    let mut e = pl.sim.app.world_mut().spawn(chimera_core::core::MovingSolid {
+        brushes: vec![brush(lo, hi, Some("concrete"))],
+        velocity: to_engine(Vec3::Z * vz),
+        solid: true,
+    });
+    if floating {
+        e.insert(chimera_world::map::buoyancy::Floating);
+    }
+}
+
+/// The landing speed of a fall onto the field from 600 units/s, on
+/// `ground` (None: the floor).
+fn landing_at_600(ground: Option<(f32, bool)>) -> (f32, Vec<(String, Option<f32>)>) {
+    let mut pl = Player::on_floor();
+    let top = 100.0;
+    if let Some((vz, floating)) = ground {
+        platform(&mut pl, top, vz, floating);
+    }
+    let floor = if ground.is_some() { top } else { 0.0 };
+    pl.place(FIELD + Vec3::Z * (floor + 30.0));
+    pl.set_vel(Vec3::Z * -600.0);
+    pl.clear_heard();
+    for _ in 0..20 {
+        pl.tick();
+        if pl.ms().on_ground {
+            break;
+        }
+    }
+    assert!(pl.ms().on_ground, "landed");
+    (pl.me().last_landing_speed, pl.heard())
+}
+
+/// Falling and landing, row 54: on a floating object 173 less (427:
+/// 0.85, no damage), on ground going down its speed less.
+#[test]
+fn landing_on_floating_and_descending_ground() {
+    let (plain, _) = landing_at_600(None);
+    assert!(plain > 600.0 && plain < 640.0, "{plain}");
+    let (float, heard) = landing_at_600(Some((0.0, true)));
+    close(float, plain - 173.0, "floating: 173 off");
+    let step = heard.iter().find(|(e, _)| e.contains("RunFootstep")).and_then(|(_, v)| *v);
+    assert_eq!(step, Some(0.85), "427 is the 0.85 tier");
+    let (down, _) = landing_at_600(Some((-100.0, false)));
+    close(down, plain - 100.0, "descending at 100: 100 off");
+    let (up, _) = landing_at_600(Some((100.0, false)));
+    close(up, plain, "rising ground: nothing");
+}
+
+/// Falling and landing: `IgnoreFallDamage` spares the first landing of
+/// its window and ends; `IgnoreFallDamageWithoutReset` spares every one.
+#[test]
+fn ignore_fall_damage_windows() {
+    for reset in [true, false] {
+        let mut pl = Player::at(FIELD + Vec3::Z * 245.0);
+        let now = pl.sim.app.world().resource::<chimera_core::core::SimClock>().now;
+        pl.sim
+            .app
+            .world_mut()
+            .entity_mut(pl.p)
+            .insert(chimera_core::core::IgnoreFallDamage { until: now + 10.0, reset });
+        let fall = |pl: &mut Player| {
+            pl.place(FIELD + Vec3::Z * 245.0);
+            pl.sim.ticks(70);
+            assert!(pl.ms().on_ground);
+            pl.health()
+        };
+        assert_eq!(fall(&mut pl), 100.0, "the first fall is spared (reset {reset})");
+        let second = fall(&mut pl);
+        assert_eq!(second, if reset { 90.0 } else { 100.0 }, "the second (reset {reset})");
+    }
+}
+
+/// Jumping: `toggle_duck` ducks until toggled again or, with
+/// `xc_uncrouch_on_jump` 1, a jump press.
+#[test]
+fn toggle_duck_and_uncrouch_on_jump() {
+    for uncrouch in [1u8, 0] {
+        let mut pl = Player::on_floor();
+        pl.sim.app.world_mut().resource_mut::<movement::UncrouchOnJump>().0 = uncrouch;
+        pl.sim.app.world_mut().entity_mut(pl.p).insert(movement::DuckToggle { on: true, ..Default::default() });
+        pl.sim.ticks(30);
+        assert!(pl.me().ducked, "toggled: ducks");
+        pl.intent().jump = true;
+        pl.tick();
+        pl.intent().jump = false;
+        let on = pl.sim.app.world().get::<movement::DuckToggle>(pl.p).unwrap().on;
+        assert_eq!(on, uncrouch == 0, "a jump un-toggles only with xc_uncrouch_on_jump 1");
+        pl.sim.ticks(80);
+        assert_eq!(pl.me().ducked, uncrouch == 0);
+    }
+}
+
+/// Step sounds: waist deep (water level 2) a step every 600 ms at 0.65,
+/// one attempt in four (on a counter every player shares) put off a tick.
+#[test]
+fn waist_deep_steps_skip_one_attempt_in_four() {
+    let mut pl = Player::at(WADE + Vec3::Z * 0.5);
+    pl.sim.ticks(4);
+    assert_eq!(pl.me().water_level, 2, "waist deep");
+    pl.keys(1.0, 0.0);
+    pl.clear_heard();
+    pl.sim.ticks(200);
+    let steps: Vec<(u64, Option<f32>)> = pl
+        .sim
+        .app
+        .world()
+        .resource::<Heard>()
+        .sounds
+        .iter()
+        .filter(|(_, e, _)| e.contains("RunFootstep"))
+        .map(|(t, _, v)| (*t, *v))
+        .collect();
+    assert!(steps.len() >= 4, "{steps:?}");
+    assert!(steps.iter().all(|(_, v)| *v == Some(0.65)), "{steps:?}");
+    let gaps: Vec<u64> = steps.windows(2).map(|w| w[1].0 - w[0].0).collect();
+    // Attempts 1, 5, 9 ... skip: after the first (delayed) step two come
+    // 40 ticks apart, then one 41.
+    assert_eq!(&gaps[..3], &[40, 40, 41], "{steps:?}");
 }

@@ -649,3 +649,46 @@ fn damage_lands_in_whole_points() {
     assert_eq!(pl.health(), 99.0, "five 0.2 hits take one point");
     let _ = (to_source(at), pl.sim.app.world().get::<MovementState>(p).is_some(), pl.sim.app.world().get::<SourceMovement>(p).is_some());
 }
+
+/// Edge cases (suit.md): a generic trigger_hurt is absorbed by armour,
+/// a radiation or poison one (dm_underpass's) bypasses it. 40 a second:
+/// 20 a pass on 100 armour.
+#[test]
+fn trigger_hurt_radiation_and_poison_bypass_the_suit() {
+    use chimera_world::map::{MapData, MapHull, MapSimPlugin};
+    let pass = |kind: &str| {
+        let (lo, hi) = (Vec3::new(-64.0, -64.0, 0.0), Vec3::new(64.0, 64.0, 128.0));
+        let b = MapBrush::from_box(lo, hi);
+        let points = (0..8)
+            .map(|i| Vec3::new([lo.x, hi.x][i & 1], [lo.y, hi.y][(i >> 1) & 1], [lo.z, hi.z][(i >> 2) & 1]))
+            .collect();
+        let hurt = MapEntity {
+            keyvalues: [("classname", "trigger_hurt"), ("spawnflags", "1"), ("damage", "40"), ("damagetype", kind), ("origin", "0 0 0")]
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+            hulls: vec![MapHull { planes: b.planes, points }],
+            ..Default::default()
+        };
+        let (a, b) = (to_engine(Vec3::new(-4096.0, -4096.0, -64.0)), to_engine(Vec3::new(4096.0, 4096.0, 0.0)));
+        let data = MapData {
+            name: "test:hurt".into(),
+            collision_brushes: vec![MapBrush::from_box(a.min(b), a.max(b))],
+            entities: vec![hurt],
+            entity_scale: UNIT,
+            ..Default::default()
+        };
+        let mut sim = Sim::new(Hl2Sim, MapSimPlugin::new(data));
+        sim.set_tick_interval(0.015);
+        let p = sim.spawn_character(to_engine(Vec3::Z * 37.0), ID);
+        sim.ticks(2);
+        sim.app.world_mut().get_mut::<Armor>(p).unwrap().amount = 1.0;
+        // The first pass only (the next is 33 ticks on).
+        sim.ticks(20);
+        let w = sim.app.world();
+        ((w.get::<Health>(p).unwrap().current * 100.0).round(), (w.get::<Armor>(p).unwrap().amount * 100.0).round())
+    };
+    assert_eq!(pass("0"), (96.0, 84.0), "generic: 4 to health, 16 armour");
+    assert_eq!(pass("262144"), (80.0, 100.0), "radiation bypasses the suit");
+    assert_eq!(pass("131072"), (80.0, 100.0), "poison bypasses the suit");
+}

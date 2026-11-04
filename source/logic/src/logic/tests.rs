@@ -861,6 +861,52 @@ fn trigger_hurt_armour_by_damage_type() {
     }
 }
 
+/// specs/hl2dm/suit.md "Armour": poison and radiation types are their
+/// own kinds (HL2's suit lets them through), the rest generic.
+#[test]
+fn trigger_hurt_kinds_by_damage_type() {
+    use crate::core::DamageKind;
+    for (kind, want) in [
+        ("0", DamageKind::Generic),
+        ("131072", DamageKind::Poison),
+        ("262144", DamageKind::Radiation),
+        ("8", DamageKind::Generic),
+    ] {
+        let mut w = hurt("40", &[("damagetype", kind)]);
+        for _ in 0..6 {
+            w.frame(&NoCollision);
+        }
+        let got: Vec<DamageKind> = w
+            .effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::Hurt { kind, .. } => Some(*kind),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(got, vec![want], "damagetype {kind}");
+    }
+}
+
+/// specs/hl2dm/movement.md "Falling and landing": the player's
+/// IgnoreFallDamage inputs (seconds, <= 0 meaning 10).
+#[test]
+fn ignore_fall_damage_inputs() {
+    let mut w = world();
+    w.activate();
+    let p = player_at(&mut w, 0, Vec3::ZERO);
+    let me = Some(Who::Player(p));
+    w.deliver(Who::Player(p), "IgnoreFallDamage", Value::Str("2".into()), me, None);
+    w.deliver(Who::Player(p), "IgnoreFallDamageWithoutReset", Value::Str("0".into()), me, None);
+    assert_eq!(
+        w.effects,
+        vec![
+            Effect::IgnoreFallDamage { target: p, seconds: 2.0, reset: true },
+            Effect::IgnoreFallDamage { target: p, seconds: 10.0, reset: false },
+        ]
+    );
+}
+
 #[test]
 fn trigger_hurt_passes() {
     // Entered at tick 0: passes every 33 ticks, the first 4 ticks after

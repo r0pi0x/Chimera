@@ -98,6 +98,13 @@ pub struct MapSurface {
     /// Sliding on something smoother than this plays the smooth scrape
     /// (scrapeRoughThreshold).
     pub rough_threshold: f32,
+    /// What standing on it does to movement (maxspeedfactor: the max
+    /// speed; jumpfactor: the jump impulse; None: 1; specs/cs_source/
+    /// movement.md "Surface materials").
+    #[serde(default)]
+    pub max_speed_factor: Option<f32>,
+    #[serde(default)]
+    pub jump_factor: Option<f32>,
 }
 
 /// Sound data the map carries.
