@@ -1500,7 +1500,13 @@ implementing (owner branch) / done.
   "closed" state (nothing in the spec enters it), the punt's end at the
   object's centre, the SMG1 grenade's scorch along its flight (4.3),
   scorches on props and brush entities, the RPG's beam and glow on the
-  view model (now buildable on `map::attached`).
+  view model (now buildable on `map::attached`). Seen in the app
+  (dm_lockdown's wash room): idle, small orange glows on the claws; held
+  (a barrel, a crate), a bright core over the muzzle and thin crackling
+  beams from the fork tips, partly hidden by the claws (the sprites are
+  depth tested against the view model; the game draws them after it);
+  an RPG on the floor leaves the scorch, faintly fringed light at its
+  edge. The pop wasn't captured.
 
 ## Decision log
 
