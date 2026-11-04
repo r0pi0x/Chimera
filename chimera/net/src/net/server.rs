@@ -654,7 +654,7 @@ pub(super) fn set_userinfo(world: &mut World, character: Entity, values: &[(Stri
             .collect(),
     );
     if let Ok(mut e) = world.get_entity_mut(character) {
-        e.insert(info);
+        e.insert((super::chat::ClientUserInfo(info.0.clone()), info));
     }
 }
 

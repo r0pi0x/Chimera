@@ -86,3 +86,24 @@ fn join_team_and_respawn() {
     sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = false;
     assert!(sim.server.app.world().get::<Dead>(theirs).is_none(), "respawned after 3 s");
 }
+
+/// Models (rules.md): the server rewrites a remote client's
+/// `cl_playermodel` to the model it resolved (an invalid setting, a TDM
+/// team's replacement) and back after a change refused within 5 s.
+#[test]
+fn the_server_rewrites_a_clients_playermodel() {
+    use hl2dm::game::rules::players::PlayerModelSetting;
+    let mut sim = tdm();
+    let theirs = sim.character_of(0).unwrap();
+    let model = sim.server.app.world().get::<Hl2Player>(theirs).unwrap().model.clone();
+    let setting = |sim: &NetSim| sim.clients[0].app.world().resource::<PlayerModelSetting>().0.clone();
+    assert!(setting(&sim).eq_ignore_ascii_case(&model), "told its model: {} vs {model}", setting(&sim));
+    // A change at once after the spawn's model is refused: put back.
+    sim.ticks(400);
+    let other = if model.contains("human") { "models/police.mdl" } else { "models/humans/group03/male_01.mdl" };
+    sim.server.app.world_mut().get_mut::<Hl2Player>(theirs).unwrap().model_free_at = f64::MAX;
+    sim.clients[0].app.world_mut().resource_mut::<PlayerModelSetting>().0 = other.into();
+    sim.ticks(60);
+    assert_eq!(sim.server.app.world().get::<Hl2Player>(theirs).unwrap().model, model, "refused");
+    assert!(setting(&sim).eq_ignore_ascii_case(&model), "put back: {}", setting(&sim));
+}

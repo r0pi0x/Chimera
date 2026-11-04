@@ -7,7 +7,9 @@
 //! - `players`: who plays (`Hl2Player`: HL2:DM's team number, model and
 //!   timers), joining (DM: team 0, every player an enemy; TDM: the team
 //!   with fewer players, a random one on a tie), the 19 models and their
-//!   round-robin replacement, `cl_playermodel` changes and their 5 s limit,
+//!   round-robin replacement, `cl_playermodel` changes and their 5 s limit
+//!   (a remote client's setting rewritten by the server: `chimera_net`'s
+//!   `UserInfoSet`),
 //!   `jointeam`/`spectate` and their 0.3 s rate, a TDM team change's
 //!   suicide charged to the new team, leaving.
 //! - `spawns`: the spot (the class ring walk from the class's last spot,
@@ -24,7 +26,8 @@
 //! - `limits`: the time and frag limits (the runtime's `decide`), the
 //!   intermission (everyone frozen, the scoreboard up, nothing counted but
 //!   team points, `mp_chattime`), the next map (`nextlevel`, else the map
-//!   cycle), `mp_restartgame`, `mp_readyrestart`, `timeleft`.
+//!   cycle), `mp_restartgame` (ragdolls, projectiles and delayed entity
+//!   I/O gone), `mp_readyrestart`, `timeleft`.
 //!
 //! The match is on once a map is loaded as a new game (`gameplay::
 //! NewGame`) or an app starts it (`start`); scenario tests start it when
@@ -40,13 +43,13 @@
 //! Known shortcuts (C5 wasn't needed: the mode runtime's phases, its
 //! `decide` hook and the sides' counters carry DM and TDM; nothing was
 //! lifted from CS:S's rules):
-//! - The server doesn't rewrite a remote client's `cl_playermodel` (the
-//!   local player's is set); the message of the day and the chat lines
+//! - The message of the day and the chat lines
 //!   the rules print ("you are on team ...", "must wait N seconds") are
 //!   console lines; the scoreboard is the HUD's (M9, `ui::scoreboard`;
 //!   `standing` replicates the intermission, `Hl2Match::over`).
-//! - The map-start freeze (Open questions 10) is one tick; restart
-//!   doesn't remove ragdolls, projectiles or pending entity I/O.
+//! - The map-start freeze (3 s of zeroed commands, the view free) comes
+//!   with every map loaded as a new game, a `changelevel` included (Open
+//!   questions 10 leaves that to be measured); tests' `start` has none.
 //! - A spot's `master` isn't read (no stock map has one).
 
 pub mod deaths;
@@ -102,6 +105,9 @@ pub const SPAWN_BLAST_GRACE: f64 = 0.5;
 pub const TELEFRAG_DAMAGE: f32 = 300.0;
 /// Seconds between suicides.
 pub const SUICIDE_INTERVAL: f64 = 5.0;
+/// After a map loaded as a new game, players' commands are zeroed this
+/// long (s; rules.md Edge cases, with `developer` 0).
+pub const MAP_START_FREEZE: f64 = 3.0;
 /// The restart and ready checks' period (s).
 pub const RULES_PERIOD: f64 = 1.0;
 /// All ready: the restart this long after (s).
@@ -186,6 +192,9 @@ pub struct Hl2Match {
     pub next_map: Option<String>,
     /// Dice for the spawn walk and the team tie (a seeded generator).
     pub dice: u64,
+    /// The map-start freeze: players' commands are zeroed until this (s;
+    /// a map loaded as a new game, `MAP_START_FREEZE`).
+    pub freeze_until: Option<f64>,
 }
 
 impl Hl2Match {
@@ -201,15 +210,16 @@ impl Hl2Match {
     }
 }
 
-/// An app's HL2:DM plays its rules from the first map that loads (`start`
-/// once the map's entities are in); `Hl2Sim` alone doesn't, so its
+/// An app's HL2:DM plays its rules from the first map that loads
+/// (`new_game` once the map's entities are in); `Hl2Sim` alone doesn't, so its
 /// scenario tests put characters where they want.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AutoStart(pub bool);
 
 fn auto_start(auto: Option<Res<AutoStart>>, m: Res<Hl2Match>, map: Option<Res<crate::map::MapEntities>>, mut commands: Commands) {
     if auto.is_some_and(|a| a.0) && !m.on && map.is_some() {
-        commands.queue(start);
+        // The first map is a map loaded as a new game: its freeze too.
+        commands.queue(new_game);
     }
 }
 
@@ -408,8 +418,13 @@ fn sync_cvars(rules: Res<Hl2Rules>, mut ff: ResMut<FriendlyFire>) {
 /// A fresh game on the map just loaded (`gameplay::NewGame`), or the
 /// first (`start`): `mp_teamplay` read, the time limit from now, the last
 /// spots and `nextlevel` cleared, the runtime's match from its start (its
-/// first step respawns everyone, scores at 0).
+/// first step respawns everyone, scores at 0); a map load freezes
+/// everyone's commands for its first 3 s (`MAP_START_FREEZE`).
 pub fn new_game(world: &mut World) {
+    begin(world, true);
+}
+
+fn begin(world: &mut World, freeze: bool) {
     let teamplay = world.get_resource::<Hl2Rules>().is_some_and(|r| r.teamplay != 0);
     let now = world.get_resource::<SimClock>().map_or(0.0, |c| c.now);
     let dice = world.get_resource::<Hl2Match>().map_or(0x5eed, |m| m.dice);
@@ -419,6 +434,7 @@ pub fn new_game(world: &mut World) {
         game_start: now,
         next_check: now,
         dice,
+        freeze_until: freeze.then_some(now + MAP_START_FREEZE),
         ..default()
     });
     world.insert_resource(Match::default());
@@ -440,7 +456,8 @@ pub fn new_game(world: &mut World) {
     players::new_map(world);
 }
 
-/// Start the rules on the map that plays (an app's first map, a test).
+/// Start the rules on the map that plays (a test, or an app starting
+/// them itself), without the map-start freeze.
 pub fn start(world: &mut World) {
-    new_game(world);
+    begin(world, false);
 }

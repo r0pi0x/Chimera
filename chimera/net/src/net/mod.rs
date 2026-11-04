@@ -1166,6 +1166,14 @@ pub struct UserInfoRequest {
     pub values: Vec<(String, String)>,
 }
 
+/// Server -> one client: set these userinfo cvars of yours (by their
+/// userinfo key): the server changed its copy (HL2:DM telling a client
+/// its `cl_playermodel`; Source's server setting a client's cvar).
+#[derive(Message, Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct UserInfoSet {
+    pub values: Vec<(String, String)>,
+}
+
 /// Server -> every player: someone changed their name (the game's
 /// "* %s1 changed name to %s2").
 #[derive(Message, Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -1319,6 +1327,7 @@ impl Plugin for NetPlugin {
             .make_message_independent::<CvarValues>()
             .add_client_message::<NameRequest>(Channel::Ordered)
             .add_client_message::<UserInfoRequest>(Channel::Ordered)
+            .add_server_message::<UserInfoSet>(Channel::Ordered)
             .add_server_message::<NameChanged>(Channel::Ordered)
             .make_message_independent::<NameChanged>()
             .add_server_message::<MapFx>(Channel::Unreliable)
