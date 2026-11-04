@@ -493,3 +493,50 @@ fn charger_inputs_and_value_outputs() {
     assert_eq!(w.outputs("OnFull").len(), full + 1, "Recharge fills it at once");
     assert!(w.heard("SuitRecharge.Start").len() >= 1);
 }
+
+/// The dial and the loop (maps_entities.md 4, suit.md "Wall chargers"):
+/// the charger's model (a node of its entity) holds `idle` at 1 − display
+/// / max, running ahead of the pool while used; the loop sound starts
+/// 0.56 s into a run under the charger's key and stops at switch-off.
+#[test]
+fn a_chargers_dial_and_loop() {
+    use chimera_world::map::{PropCycle, PropEntity, SoundControl};
+    #[derive(Resource, Default)]
+    struct Loops(Vec<(bool, u64)>);
+    let mut w = world(vec![entity("item_suitcharger", Vec3::new(40.0, 0.0, 64.0), &[])]);
+    let node = w.sim.app.world_mut().spawn(PropEntity(0)).id();
+    w.sim.app.init_resource::<Loops>().add_systems(FixedLast, |mut r: MessageReader<SoundControl>, mut l: ResMut<Loops>| {
+        for c in r.read() {
+            match c {
+                SoundControl::Start(s) => l.0.push((true, s.key.0)),
+                SoundControl::Stop(k) => l.0.push((false, k.0)),
+                _ => {}
+            }
+        }
+    });
+    w.place(Vec3::ZERO);
+    {
+        let mut i = w.sim.intent(w.p);
+        i.yaw = -std::f32::consts::FRAC_PI_2;
+        i.pitch = 0.0;
+    }
+    w.sim.ticks(2);
+    let cycle = |w: &World_| w.sim.app.world().get::<PropCycle>(node).map(|c| c.0);
+    assert_eq!(cycle(&w), Some(0.0), "full: frame 0");
+    w.sim.app.world_mut().get_mut::<chimera_sim::weapon::Armor>(w.p).unwrap().amount = 0.0;
+    w.sim.intent(w.p).use_key = true;
+    // 70 ticks of use: 10 charges (pool 65), the display 70/7 = 10 down
+    // too, over max + 0.1 while used.
+    w.sim.ticks(70);
+    let c = cycle(&w).unwrap();
+    assert!((c - (1.0 - 65.0 / 75.1)).abs() < 0.01, "dial {c}");
+    let loops = &w.sim.app.world().resource::<Loops>().0;
+    assert!(loops.iter().any(|(start, _)| *start), "the loop started");
+    w.sim.intent(w.p).use_key = false;
+    w.sim.ticks(40);
+    let loops = &w.sim.app.world().resource::<Loops>().0;
+    let key = loops.iter().find(|(s, _)| *s).unwrap().1;
+    assert!(loops.contains(&(false, key)), "the loop stopped at switch-off: {loops:?}");
+    let c = cycle(&w).unwrap();
+    assert!((c - (1.0 - 65.0 / 75.0)).abs() < 0.01, "back to the pool: {c}");
+}

@@ -46,6 +46,7 @@ pub mod player_anim;
 pub mod projectile_fx;
 pub mod rungs;
 pub mod scripts;
+pub mod set_piece_fx;
 pub mod set_pieces;
 pub mod sounds;
 pub mod standing;

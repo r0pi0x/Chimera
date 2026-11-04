@@ -1,7 +1,8 @@
 //! Each stock map's set pieces as HL2:DM's game plays them (specs/hl2dm/
 //! maps_entities.md 0, 5, 8-16): no entity class of the spec's census left
 //! without a handler, the respawnable props (329), dm_resistance's 7
-//! flares, the ragdoll managers, dm_underpass's camera model, and
+//! flares, the ragdoll managers, dm_underpass's camera and chargers'
+//! models, dm_runoff's canister models (posed open frames), and
 //! dm_runoff's strike (the second one fires the six canisters its template
 //! spawned) and dm_lockdown's fan seen by its sensor. Converted lean from
 //! the install; skips without one.
@@ -128,8 +129,43 @@ fn flares_and_the_camera_are_drawn() {
     let drawn = resistance.sprites.iter().filter(|s| s.entity.is_some_and(|e| flares.contains(&e))).count();
     assert_eq!(drawn, 14, "a red flare and a white core each");
     let underpass = convert(&mount, "dm_underpass", &MapLoadOptions::default());
-    // 692 props before the ceiling camera stood in as a model.
-    assert_eq!(underpass.props.len(), 693, "the ceiling camera's model");
+    // 692 props before the ceiling camera stood in as a model, and its
+    // five chargers (3 suit, 2 health) as theirs.
+    assert_eq!(underpass.props.len(), 698, "the ceiling camera's and the chargers' models");
+    let chargers: Vec<_> = underpass
+        .props
+        .iter()
+        .filter(|p| p.entity.is_some_and(|e| underpass.entities[e].classname().ends_with("charger")))
+        .collect();
+    assert_eq!(chargers.len(), 5);
+    assert!(
+        chargers.iter().all(|p| underpass.models[p.model].rig.as_ref().is_some_and(|r| r.animations.sequence("idle").is_some())),
+        "the chargers play `idle` (their dial)"
+    );
+}
+
+/// dm_runoff's kit has the canister's models: the flight model, and the
+/// landed one posed at its `open` frames (the doors move between the
+/// first and the last).
+#[test]
+fn the_canisters_models_are_loaded() {
+    use hl2dm::game::set_pieces::{CANISTER_MODEL, OPEN_FRAMES, landed_key};
+    let Some(mount) = install_mount() else { return };
+    let runoff = convert(&mount, "dm_runoff", &MapLoadOptions::default());
+    let held = |k: &str| runoff.kit.held.iter().find(|h| h.key == k).unwrap_or_else(|| panic!("{k} not in the kit"));
+    assert!(!held(CANISTER_MODEL).model.meshes.is_empty());
+    let first = &held(&landed_key(0, true)).model;
+    let last = &held(&landed_key(OPEN_FRAMES - 1, false)).model;
+    let moved = first
+        .meshes
+        .iter()
+        .zip(&last.meshes)
+        .flat_map(|(a, b)| a.positions.iter().zip(&b.positions))
+        .map(|(a, b)| Vec3::from(*a).distance(Vec3::from(*b)))
+        .fold(0.0f32, f32::max);
+    eprintln!("canister doors move up to {moved} units");
+    assert!(moved > 0.05, "the open frames differ: {moved}");
+    assert!(runoff.warnings.iter().all(|w| !w.contains("headcrabcannister")), "{:?}", runoff.warnings);
 }
 
 /// dm_runoff: the first strike fires nothing (its template removed the

@@ -6,30 +6,18 @@
 //! and weapons aren't drawn yet (M10), so the light stands at the pickup's
 //! place, a little above it.
 //!
-//! Known shortcuts: only the server's own client (a listen server or the
-//! standalone game) sees it: `PickupBack` isn't sent to network clients;
-//! the colour is a sixteenth of the spec's, as the muzzle flash's (it burnt
+//! The flash itself is the game's (`game::set_piece_fx::RespawnLight`,
+//! made from `PickupBack` on the host and sent to network clients).
+//!
+//! Known shortcuts: the colour is a sixteenth of the spec's, as the muzzle flash's (it burnt
 //! walls out); it fades linearly over its life.
 
 use bevy::prelude::*;
-use chimera_sim::weapon::{Weapon, respawn::PickupBack};
 
-use crate::game::{
-    pickups::{Item, Pickup},
-    weapons::{AR2, MAGNUM, RPG, SHOTGUN},
-};
+use crate::game::set_piece_fx::RespawnLight;
 
-const UNIT: f32 = 0.0254;
 /// How long the flash lives (s).
 pub const LIFE: f32 = 0.05;
-
-/// Whether a respawned pickup's model has an attachment to flash at.
-pub fn has_attachment(item: Option<&Pickup>, weapon: Option<&str>) -> bool {
-    if let Some(p) = item {
-        return matches!(&p.item, Item::Ammo { ammo, .. } if ammo.ends_with("ar2altfire") || ammo.ends_with("rpg_round"));
-    }
-    weapon.is_some_and(|w| [MAGNUM, AR2, SHOTGUN, RPG, "hl2dm:weapon_slam"].contains(&w))
-}
 
 #[derive(Component)]
 pub struct RespawnFlash {
@@ -37,34 +25,19 @@ pub struct RespawnFlash {
     pub radius: f32,
 }
 
-pub fn flash(
-    mut back: MessageReader<PickupBack>,
-    things: Query<(Option<&Pickup>, Option<&Weapon>)>,
-    mut commands: Commands,
-    mut dice: Local<u32>,
-) {
-    for b in back.read() {
-        if b.relocated {
-            continue;
-        }
-        let Ok((item, weapon)) = things.get(b.entity) else { continue };
-        if !has_attachment(item, weapon.map(|w| w.id)) {
-            continue;
-        }
-        *dice = dice.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-        let u = (*dice >> 8) as f32 / (1u32 << 24) as f32;
-        let radius = (32.0 + 32.0 * u) * UNIT;
+pub fn flash(mut lights: MessageReader<RespawnLight>, mut commands: Commands) {
+    for l in lights.read() {
         commands.spawn((
-            RespawnFlash { life: LIFE, radius },
+            RespawnFlash { life: LIFE, radius: l.radius },
             PointLight {
                 color: Color::srgb(1.0, 0.75, 0.25),
-                intensity: 40_000.0 * radius,
-                range: radius * 2.0,
+                intensity: 40_000.0 * l.radius,
+                range: l.radius * 2.0,
                 radius: 0.0,
                 shadow_maps_enabled: false,
                 ..default()
             },
-            Transform::from_translation(b.at + Vec3::Y * 0.2),
+            Transform::from_translation(l.at),
         ));
     }
 }

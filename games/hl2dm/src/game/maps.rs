@@ -192,6 +192,11 @@ pub fn chat() -> crate::map::radio::RadioCommands {
 /// bodies and their view models.
 fn held_kit(kit: &mut Kit) {
     super::bodies::add_held(kit.materials, kit.surfaces, kit.kit, &mut kit.data.kit, &mut kit.data.warnings);
+    // The headcrab canisters' models, on maps that have one.
+    if kit.data.entities.iter().any(|e| e.classname().eq_ignore_ascii_case("env_headcrabcanister")) {
+        let held = super::set_pieces::canister_models(kit.materials, &mut kit.data.warnings);
+        kit.data.kit.held.extend(held);
+    }
     kit.data.kit.muzzle_flash_kinds = super::flashes::kinds(kit.materials);
     let mut models = Vec::new();
     add_view_models(kit.materials, kit.kit, &mut models, &mut kit.data.warnings);

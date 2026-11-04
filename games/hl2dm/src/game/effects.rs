@@ -78,16 +78,22 @@ const STUNSTICK_GLOW: &str = "sprites/light_glow02_add";
 /// its VMT (specs/source/visual_entities.md 5; render modes 3, 5 and 9
 /// add, as `source_engine::content::trails`): the stuck bolt's glow
 /// (`light_glow02_noz`, glow mode, effects_sounds.md 9) and the gravity
-/// gun's punt beam (`orangelight1`, a beam: additive, 11). Loaded as
+/// gun's punt beam (`orangelight1`, a beam: additive, 11), the headcrab
+/// canister's trail (`smoke`, additive, maps_entities.md 8). Loaded as
 /// they are, they blended their black texels over the scene (a black
 /// square around the bolt's glow).
-pub const ADDITIVE_SPRITES: &[&str] = &["sprites/light_glow02_noz", "sprites/orangelight1"];
+pub const ADDITIVE_SPRITES: &[&str] = &["sprites/light_glow02_noz", "sprites/orangelight1", "sprites/smoke"];
 
 /// Load the effect materials (runtime, from the install).
 pub fn load_materials(loader: &mut source_engine::content::material::MaterialLoader) -> MapParticles {
     let mut particles = impact_effects::load_materials(
         loader,
-        &[MATERIALS, super::projectile_fx::MATERIALS, source_engine::effects::explosions::MATERIALS],
+        &[
+            MATERIALS,
+            super::projectile_fx::MATERIALS,
+            super::set_piece_fx::MATERIALS,
+            source_engine::effects::explosions::MATERIALS,
+        ],
     );
     for name in ADDITIVE_SPRITES {
         if let Some(i) = particles.find(name) {
@@ -327,7 +333,12 @@ impl Plugin for Hl2EffectsPlugin {
         .init_resource::<MuzzleCache>()
         .add_message::<Tracer>()
         .add_message::<PlaySound>()
-        .add_plugins((super::projectile_fx::Hl2ProjectileFxPlugin, super::dissolve::Hl2DissolvePlugin, super::physcannon_fx::Hl2PhyscannonFxPlugin))
+        .add_plugins((
+            super::projectile_fx::Hl2ProjectileFxPlugin,
+            super::set_piece_fx::Hl2SetPieceFxPlugin,
+            super::dissolve::Hl2DissolvePlugin,
+            super::physcannon_fx::Hl2PhyscannonFxPlugin,
+        ))
         .add_systems(FixedUpdate, (tracers, gun_impacts).after(crate::core::SimSet::Weapons));
     }
 }
