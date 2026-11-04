@@ -198,7 +198,14 @@ impl Plugin for LogicPlugin {
             .init_resource::<LogicRecord>()
             .add_systems(FixedUpdate, (load, apply_record, pre).chain().in_set(LogicSet::Pre))
             .add_systems(FixedUpdate, post.in_set(LogicSet::Post))
-            .add_systems(FixedUpdate, (damage, fire_outputs, fire_output_values, fire_keyed_outputs, take_ai_sounds).in_set(LogicSet::Damage))
+            // One after another: each takes the logic (`fire_outputs` after
+            // `damage` as before; the set pieces' three after it).
+            .add_systems(
+                FixedUpdate,
+                (damage, fire_outputs, fire_output_values, fire_keyed_outputs, take_ai_sounds)
+                    .chain()
+                    .in_set(LogicSet::Damage),
+            )
             .add_message::<crate::map::entities::FireEntityOutput>()
             .add_message::<crate::map::entities::FireEntityOutputValue>()
             .add_message::<crate::map::entities::MapEntityInput>()
