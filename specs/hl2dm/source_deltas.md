@@ -65,6 +65,7 @@ writes), **CS:S only** (does not apply).
 | tracers.md | same, with whizz sounds and other tracer kinds | H9 |
 | shaders.md | same, plus three shaders it doesn't cover | H7 (Eyes, Teeth), H9 (UnlitTwoTexture) |
 | shaders_two_texture_blend.md | same (no stock HL2:DM map uses it) | – |
+| shaders_phong.md | same; HL2:DM is its main user (view models, Combine soldiers) | H7 |
 | water.md | same | – |
 | ropes.md | same | – |
 | overlays_decals.md | same | – |
