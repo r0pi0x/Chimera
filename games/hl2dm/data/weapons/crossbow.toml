@@ -66,8 +66,8 @@ water_speed = 1500.0
 gravity = 30.0
 half = [1.0, 1.0, 1.0]
 shown = "hl2dm:crossbow_bolt"
-# The bolt model's nose is its +X.
-x_forward = true
+# The bolt model's nose is its +Y (its length, as the loose frame leaves it).
+y_forward = true
 touch = "bolt"
 glance_cos = 0.5
 glance_speed = 100.0

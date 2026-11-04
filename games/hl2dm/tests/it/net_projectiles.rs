@@ -209,3 +209,55 @@ fn the_trip_mine_is_drawn_on_the_client() {
     assert!(!seen.is_empty(), "the mine is drawn");
     rounds_agree(&mut sim, weapons::SLAM, gun);
 }
+
+/// A bolt's nose (its model's +Y) points along its flight on the client's
+/// drawn copy, and stuck in the wall it stays that way (and matches the
+/// server's flyer).
+#[test]
+fn the_stuck_bolt_keeps_its_flight_direction_on_both_sides() {
+    use chimera_sim::weapon::projectile::Flyer;
+    let mut sim = joined();
+    arm(&mut sim, weapons::CROSSBOW, 4, 3.0);
+    let mut last_move: Option<Vec3> = None;
+    let mut prev: Option<Vec3> = None;
+    let (mut flying, mut stuck) = (0, 0);
+    for k in 0..120 {
+        {
+            let mut i = client_intent(&mut sim);
+            i.fire = k < 2;
+        }
+        sim.step();
+        // The server's flyer: still or flying.
+        let w = sim.server.app.world_mut();
+        let server: Vec<(Vec3, bool)> = w
+            .query::<(&Flyer, &Transform)>()
+            .iter(w)
+            .map(|(f, t)| ((t.rotation * Vec3::Y), f.stuck_until.is_some()))
+            .collect();
+        let w = sim.clients[0].app.world_mut();
+        let mine: Vec<(Vec3, Vec3)> = w
+            .query::<(&NetItem, &Transform)>()
+            .iter(w)
+            .filter(|(i, _)| i.model == launch::BOLT_MODEL)
+            .map(|(_, t)| (t.translation, t.rotation * Vec3::Y))
+            .collect();
+        let Some((at, nose)) = mine.first().copied() else { continue };
+        if let Some(p) = prev {
+            let d = at - p;
+            if d.length() > 1e-3 {
+                let dir = d.normalize();
+                assert!(nose.dot(dir) > 0.98, "client nose {nose:?} vs motion {dir:?}");
+                last_move = Some(dir);
+                flying += 1;
+            } else if let Some(dir) = last_move {
+                assert!(nose.dot(dir) > 0.98, "stuck: client nose {nose:?} vs last motion {dir:?}");
+                stuck += 1;
+                if let Some((sn, true)) = server.first() {
+                    assert!(sn.dot(dir) > 0.98, "stuck: server nose {sn:?} vs {dir:?}");
+                }
+            }
+        }
+        prev = Some(at);
+    }
+    assert!(flying > 3 && stuck > 3, "flying {flying}, stuck {stuck}");
+}

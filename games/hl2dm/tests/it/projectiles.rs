@@ -729,6 +729,49 @@ fn a_bolt_glances_at_shallow_angles_and_sticks_otherwise_40_41() {
     }
 }
 
+/// A bolt's nose (its model's +Y) points along its flight in the air and,
+/// stuck, still along its last flight direction, for a floor hit too.
+#[test]
+fn a_stuck_bolt_keeps_its_flight_direction() {
+    let mut sim = sim();
+    let p = player(&mut sim);
+    let w = holding(&mut sim, p, weapons::CROSSBOW);
+    let template = sim
+        .app
+        .world()
+        .get::<chimera_sim::weapon::projectile::Launcher>(w)
+        .unwrap()
+        .template
+        .clone();
+    let mut f = template.clone();
+    f.owner = Some(p);
+    let dir = Vec3::new(0.8, 0.0, -0.6);
+    f.velocity = to_engine(dir * 3500.0);
+    let start = Vec3::new(0.0, 0.3, 0.0) + greybox::SPAWNS[1].with_y(0.0);
+    sim.app.world_mut().write_message(LaunchRequest { flyer: f, start, shown: None, tag: None });
+    let mut seen_flying = false;
+    let mut seen_stuck = false;
+    let mut last = Vec3::ZERO;
+    for _ in 0..120 {
+        sim.ticks(1);
+        let w = sim.app.world_mut();
+        let mut q = w.query::<(&Flyer, &Transform)>();
+        for (f, t) in q.iter(w) {
+            let nose = t.rotation * Vec3::Y;
+            if f.stuck_until.is_none() {
+                let v = f.velocity.normalize_or_zero();
+                assert!(nose.dot(v) > 0.99, "flying: nose {nose:?} vs {v:?}");
+                last = v;
+                seen_flying = true;
+            } else {
+                assert!(nose.dot(last) > 0.99, "stuck: nose {nose:?} vs last flight {last:?}");
+                seen_stuck = true;
+            }
+        }
+    }
+    assert!(seen_flying && seen_stuck);
+}
+
 /// Test 43: attack2's press zooms to 20, the next back; holding doesn't
 /// repeat.
 #[test]
