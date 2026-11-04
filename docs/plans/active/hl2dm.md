@@ -1356,7 +1356,13 @@ implementing (owner branch) / done.
   the stock routing (15 view model materials drawn by the default skins
   plus 2 other skins' = the spec's 17). Missing parameters take the spec's
   stated defaults (its open question 1). `CHIMERA_PHONG=0` draws them
-  plain for comparisons.
+  plain for comparisons. In dm_lockdown's wash room (`setpos -3619 2600
+  0`) the SMG1's barrel and the RPG's tube and rings take a soft highlight
+  band and the normal maps' relief; the Combine soldier
+  (`cl_playermodel models/combine_soldier.mdl`, `thirdperson`) changes
+  little under the room's light; CS:S's de_dust2 view model draws the same
+  with and without it (no CS:S material is phong). Left: a refcmp against
+  HL2:DM (open question 9).
 
 ## Decision log
 
