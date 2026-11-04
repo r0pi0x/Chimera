@@ -57,10 +57,11 @@ def run(r, start, ticks, name="probe"):
 LAST = {}
 
 
-def run_full(r, start, ticks, name="probe"):
+def run_full(r, start, ticks, name="probe", cmds=()):
     """`run`, returning every line kind by name: rows, sounds, hurts,
     weapon (W), ents (E), damage (D), traced (A), te (T), created (C), removed (X),
-    events (V), ent_sounds (s)."""
+    events (V), ent_sounds (s), commands run (K). `cmds`: (row, client,
+    command) run on that input row by the client (0: the server)."""
     folder = os.path.join(SERVER, "hl2mp")
     inp, out = f"{name}_in.txt", f"{name}_out.txt"
     with open(os.path.join(folder, inp), "w") as f:
@@ -69,6 +70,8 @@ def run_full(r, start, ticks, name="probe"):
         for t in ticks:
             extra = "".join(f" {v}" for v in t[5:])
             f.write(f"{t[0]} {t[1]:.3f} {t[2]:.3f} {t[3]:.4f} {t[4]:.4f}{extra}\n")
+        for row, client, cmd in cmds:
+            f.write(f"cmd {row} {client} {cmd}\n")
     path = os.path.join(folder, out)
     if os.path.exists(path):
         os.remove(path)
@@ -88,7 +91,7 @@ def run_full(r, start, ticks, name="probe"):
     cols = ("tick x y z vx vy vz ground ducked top eye buttons water movetype aux health armor maxspeed life obs gt server_tick tickbase"
             .split())
     kinds = {"S": "sounds", "H": "hurts", "W": "weapon", "E": "ents", "D": "damage", "T": "te", "C": "created",
-             "X": "removed", "V": "events", "s": "ent_sounds", "A": "traced"}
+             "X": "removed", "V": "events", "s": "ent_sounds", "A": "traced", "K": "commands"}
     out = {k: [] for k in kinds.values()}
     out["rows"] = []
     with open(path) as f:
@@ -111,6 +114,18 @@ def hold(n, buttons=0, forward=0.0, side=0.0, pitch=0.0, yaw=0.0, select=None):
     if select and n:
         ticks[0] = (buttons, forward, side, pitch, yaw, select)
     return ticks
+
+
+def score(r):
+    """`probe_score`: ({client: (team, frags, deaths, life)}, {team: score})."""
+    players, teams = {}, {}
+    for line in r.exec("probe_score").splitlines():
+        p = line.split()
+        if p[:1] == ["player"]:
+            players[int(p[1])] = (int(p[3]), int(p[5]), int(p[7]), int(p[9]))
+        elif p[:1] == ["team"]:
+            teams[int(p[1])] = int(p[3])
+    return players, teams
 
 
 def wait_alive(r, timeout=12.0):

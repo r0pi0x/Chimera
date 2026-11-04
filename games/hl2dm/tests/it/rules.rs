@@ -772,3 +772,103 @@ fn the_rules_write_what_the_hud_reads() {
     g.sim.seconds(0.1);
     assert_eq!(g.world().get::<Hl2Team>(a).copied(), Some(Hl2Team(other)));
 }
+
+/// The probe's TDM round (rules.md Open questions 14, 2026-11-04): an
+/// alive player's change to the other team kills it (frag −1, the new
+/// team −1); changes while dead, 1 s and over 5 s after the death, cost
+/// nothing; a change to its own team does nothing.
+#[test]
+fn tdm_team_changes_as_the_probe_measured() {
+    let mut g = game(dm_spots(), |r| {
+        r.teamplay = 1;
+        r.forcerespawn = 0;
+    });
+    let p = g.join("none");
+    g.sim.seconds(6.0);
+    let (team, other) = (g.player(p).team, COMBINE + REBELS - g.player(p).team);
+    let i = |t: u8| (t - COMBINE) as usize;
+    let (before, teams) = (g.score(p), g.teams());
+    g.command(p, &format!("hl2dm:jointeam {other}"));
+    g.sim.ticks(1);
+    assert!(g.dead(p));
+    assert_eq!(g.score(p), (before.0 - 1, before.1 + 1));
+    assert_eq!(g.teams()[i(other)], teams[i(other)] - 1, "the new team's point");
+    assert_eq!(g.teams()[i(team)], teams[i(team)]);
+    // Dead, a second later: back, free.
+    g.sim.seconds(1.0);
+    let (before, teams) = (g.score(p), g.teams());
+    g.command(p, &format!("hl2dm:jointeam {team}"));
+    g.sim.ticks(1);
+    assert_eq!(g.player(p).team, team);
+    assert_eq!((g.score(p), g.teams()), (before, teams), "a dead player's change");
+    // Dead over 5 s after the death: free too.
+    g.sim.seconds(6.0);
+    g.command(p, &format!("hl2dm:jointeam {other}"));
+    g.sim.ticks(1);
+    assert_eq!(g.player(p).team, other);
+    assert_eq!((g.score(p), g.teams()), (before, teams), "long dead");
+    // Respawned, its own team again: nothing.
+    g.sim.intent(p).fire = true;
+    g.sim.ticks(2);
+    g.sim.intent(p).fire = false;
+    assert!(!g.dead(p));
+    g.sim.seconds(6.0);
+    g.command(p, &format!("hl2dm:jointeam {other}"));
+    g.sim.ticks(1);
+    assert!(!g.dead(p), "its own team");
+    assert_eq!((g.score(p), g.teams()), (before, teams));
+}
+
+/// The probe's friendly fire and kills in TDM (rules.md Open questions
+/// 14): with `mp_friendlyfire` 0 a teammate's bullet hurts nothing, an
+/// enemy's does; with 1 both; a team kill costs the killer a frag and
+/// gives its team a point, an enemy kill a frag and a point; a world kill
+/// moves neither team's score.
+#[test]
+fn tdm_friendly_fire_and_kills_as_the_probe_measured() {
+    let spots: Vec<MapEntity> = (0..8)
+        .map(|i| entity("info_player_deathmatch", Vec3::new(i as f32 * 1000.0, 0.0, 0.0), Vec3::ZERO))
+        .collect();
+    for ff in [0u8, 1] {
+        let mut g = game(spots.clone(), |r| {
+            r.teamplay = 1;
+            r.friendlyfire = ff;
+        });
+        // Three players, two on one team.
+        let ps: Vec<Entity> = (0..3).map(|_| g.join("none")).collect();
+        assert!(g.events("player_death").is_empty());
+        let team = |p: Entity| g.player(p).team;
+        let (a, mate) = [(ps[0], ps[1]), (ps[0], ps[2]), (ps[1], ps[2])]
+            .into_iter()
+            .find(|(x, y)| team(*x) == team(*y))
+            .unwrap();
+        let enemy = *ps.iter().find(|p| team(**p) != team(a)).unwrap();
+        g.sim.seconds(1.0);
+        for (victim, hurt) in [(mate, ff == 1), (enemy, true)] {
+            g.hurt(victim, Some(a), 8.0, DamageKind::Bullet);
+            g.sim.ticks(1);
+            let h = g.world().get::<Health>(victim).unwrap().current;
+            assert_eq!(h < 1.0, hurt, "ff {ff}: {h}");
+        }
+        let at = |g: &Game| (g.player(a).team - COMBINE) as usize;
+        let (score, teams) = (g.score(a), g.teams());
+        g.kill(mate, Some(a));
+        if ff == 1 {
+            assert_eq!(g.score(a).0, score.0 - 1, "a team kill");
+            assert_eq!(g.teams()[at(&g)], teams[at(&g)] + 1);
+        } else {
+            assert!(!g.dead(mate), "refused");
+            assert_eq!(g.teams(), teams);
+        }
+        let (score, teams) = (g.score(a), g.teams());
+        g.kill(enemy, Some(a));
+        assert!(g.dead(enemy), "ff {ff}: the enemy killed");
+        assert_eq!(g.score(a).0, score.0 + 1, "ff {ff}");
+        assert_eq!(g.teams()[at(&g)], teams[at(&g)] + 1);
+        let teams = g.teams();
+        g.hurt(a, None, 1000.0, DamageKind::Fall);
+        g.sim.ticks(1);
+        assert!(g.dead(a));
+        assert_eq!(g.teams(), teams, "a world kill");
+    }
+}

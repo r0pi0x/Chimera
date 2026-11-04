@@ -2586,23 +2586,34 @@ fn record_velocities(mut pre: ResMut<PreStep>, bodies: Query<(Entity, &RigidBody
 
 /// A player's mass for impacts (kg; Source's player shadow).
 const PLAYER_MASS: f32 = 85.0;
-/// A prop and a player meet as two contacts in CS:S (measured 2026-10-17,
-/// prop_damage.md 6 and Q13, `tools/css_probe/impacts.py`); each counts
-/// as the prop losing this share of its speed into the player, by the
-/// prop's mass (kg): (mass, first, second). Fitted to the landings: a
-/// 30 kg crate at 576, 848 and 1233 in/s hurt the player 5 + 5, 5 + 10 and
-/// 10 + 20 (shares 0.31-0.35, then 0.43-0.52); a 500 kg cupboard at 259
-/// to 1522 in/s 5 + 50 up to 500 + 500 (0.262-0.274, then 0.62-0.73;
-/// 0.276 since props feel air drag, which slows the cupboard about
-/// 0.6 in/s before it lands at 100 in/s and took its first share under
-/// the 10-point band).
-/// Between and beyond, by the logarithm of the mass, clamped.
-const PLAYER_CONTACT_SHARES: [(f32, [f32; 2]); 2] = [(30.0, [0.335, 0.48]), (500.0, [0.276, 0.67])];
+/// A prop and a player meet as two contacts in Source's physics (CS:S
+/// measured 2026-10-17, prop_damage.md 6 and Q13,
+/// `tools/css_probe/impacts.py`; HL2:DM 2026-11-04, gravity_gun.md 9,
+/// `tools/hl2dm_probe/cases.py drops`); each counts as the prop losing
+/// this share of its speed into the player, by the prop's mass (kg):
+/// (mass, [first, second]). Fitted to the landings, the speed being the
+/// prop's at the head: CS:S's 30 kg crate at 576, 848 and 1233 in/s hurt
+/// the player 5 + 5, 5 + 10 and 10 + 20 (shares 0.31-0.35, then
+/// 0.43-0.52); its 500 kg cupboard at 259 to 1522 in/s 5 + 50 up to
+/// 500 + 500 (0.262-0.274, then 0.62-0.73; 0.276 since props feel air
+/// drag, which slows the cupboard about 0.6 in/s before it lands at
+/// 100 in/s and took its first share under the 10-point band). HL2:DM's
+/// (energy scale 4) 30 kg crate at 284, 389, 524 and 663: 5 + 10, 5 + 10,
+/// 10 + 20, 10 + 50 (second 0.51-0.61, so 30 kg's second is the narrow
+/// overlap with CS:S's, 0.512); 10 kg at 420: one 10 (first under 0.36,
+/// second over 0.6); 100 kg at 572 and 780: 20 + 100, 100 + 500 (first
+/// 0.29-0.31, second 0.41-0.56); 250 kg at 582: 100 + 500.
+/// Between the points by the logarithm of the mass, clamped at the ends.
+const PLAYER_CONTACT_SHARES: [(f32, [f32; 2]); 4] =
+    [(10.0, [0.335, 0.65]), (30.0, [0.335, 0.512]), (100.0, [0.31, 0.512]), (500.0, [0.276, 0.67])];
 
 /// `PLAYER_CONTACT_SHARES` for a prop of `mass` kg.
 fn player_contact_shares(mass: f32) -> [f32; 2] {
-    let [(m0, a), (m1, b)] = PLAYER_CONTACT_SHARES;
-    let t = ((mass.max(1e-3).ln() - m0.ln()) / (m1.ln() - m0.ln())).clamp(0.0, 1.0);
+    let m = mass.max(1e-3);
+    let points = &PLAYER_CONTACT_SHARES;
+    let k = points.iter().position(|(at, _)| *at > m).unwrap_or(points.len()).clamp(1, points.len() - 1);
+    let ((m0, a), (m1, b)) = (points[k - 1], points[k]);
+    let t = ((m.ln() - m0.ln()) / (m1.ln() - m0.ln())).clamp(0.0, 1.0);
     [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
 }
 /// Damage (health points) that breaks any breakable: an impact on one

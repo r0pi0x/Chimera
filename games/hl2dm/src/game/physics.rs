@@ -20,10 +20,10 @@
 //!   within 80 units (spawnflag 256, or at most 35 kg and 128 units on each
 //!   side, movable or flag 64, not flag 512) plays `HL2Player.Use` (and
 //!   fires its `OnPlayerUse` with 256); an unusable prop plays
-//!   `HL2Player.UseDeny`; nothing is carried.
+//!   `HL2Player.UseDeny`; nothing is carried (with `hl2mp_allow_pickup` 1
+//!   a prop passing the carry test is picked up: `carry`).
 //!
-//! Known shortcuts: `hl2mp_allow_pickup` 1's carry (section 8, steps 1-6)
-//! isn't built (the default is 0); an explosive prop's blast credit
+//! Known shortcuts: an explosive prop's blast credit
 //! (the last attacker, else the influencer within 2 s) is the logic's
 //! last-attacker rule only; the 10× first impact after a launch from the
 //! hold and first-impact breaks aren't done. `prop_physics_respawnable`
@@ -106,7 +106,10 @@ pub fn solid_multiplayer(mut props: Query<&mut PhysicsProp, Added<PhysicsProp>>)
 /// A fresh `+use` press at a physics prop (8).
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn use_props(
-    players: Query<(Entity, &Intent, &Transform, &MovementState, &source_engine::source_movement::SourceMovement)>,
+    players: Query<
+        (Entity, &Intent, &Transform, &MovementState, &source_engine::source_movement::SourceMovement),
+        Without<super::carry::Carrying>,
+    >,
     props: Query<(Option<&PhysicsProp>, Option<&FrozenBody>, Option<&RigidBody>, Option<&PropEntity>), Without<Held>>,
     of: Query<&ColliderOf>,
     logic: Option<Res<source_logic::logic::Logic>>,
@@ -114,7 +117,10 @@ pub fn use_props(
     spatial: SpatialQuery,
     mut play: MessageWriter<PlaySound>,
     mut outputs: MessageWriter<FireEntityOutput>,
+    carry: Option<Res<super::carry::CarryRules>>,
+    mut commands: Commands,
 ) {
+    let allow = carry.as_ref().is_some_and(|c| c.allow_pickup != 0);
     for (who, intent, at, state, me) in &players {
         if !intent.use_key || me.use_held {
             continue;
@@ -143,8 +149,8 @@ pub fn use_props(
             .unwrap_or(0);
         let size = (bounds.1 - bounds.0).abs() / U;
         let movable = rb.is_some_and(|r| r.is_dynamic()) || flags & SF_ENABLE_ON_GUN != 0;
-        let carry = mass <= USE_MASS && size.max_element() <= USE_SIZE + 1e-3 && movable && flags & SF_NO_PICKUP == 0;
-        let usable = flags & SF_USE_OUTPUT != 0 || carry;
+        let carry_ok = mass <= USE_MASS && size.max_element() <= USE_SIZE + 1e-3 && movable && flags & SF_NO_PICKUP == 0;
+        let usable = flags & SF_USE_OUTPUT != 0 || carry_ok;
         let entry = if usable { "HL2Player.Use" } else { "HL2Player.UseDeny" };
         play.write(PlaySound {
             pitch: None,
@@ -163,6 +169,11 @@ pub fn use_props(
                 activator: Some(who),
             });
         }
+        // `hl2mp_allow_pickup` 1: carried (`carry`), unless it is what the
+        // player stands on.
+        if allow && carry_ok && state.ground != Some(body) {
+            commands.queue(move |w: &mut World| super::carry::pick_up(w, who, body));
+        }
     }
 }
 
@@ -171,6 +182,7 @@ pub struct Hl2PhysicsPlugin;
 
 impl Plugin for Hl2PhysicsPlugin {
     fn build(&self, app: &mut App) {
+        super::carry::plugin(app);
         app.insert_resource(source_logic::logic::PlayerImpactScale(PLAYER_IMPACT_SCALE))
             .add_systems(
                 FixedUpdate,

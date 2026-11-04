@@ -16,7 +16,10 @@
 //     client) and keeps running across its death.
 //     Input: one optional "start x y z pitch yaw vx vy vz" line, then one
 //     line per tick "buttons forwardmove sidemove pitch yaw [select
-//     [impulse]]" (select: a weapon class the bot switches to, or "-").
+//     [impulse]]" (select: a weapon class the bot switches to, or "-"),
+//     and any number of "cmd <row> <client> <command ...>" lines: on that
+//     input row (before its input) the client runs the command
+//     (FakeClientCommand), or the server when client is 0.
 //     Output, per tick (tick 0: placed):
 //       "tick x y z vx vy vz onground ducked hull_top eye buttons water
 //        movetype aux health armor maxspeed life observer_mode gametime
@@ -35,8 +38,9 @@
 //     (a player's traced hit, before the hitgroup scale), "C tick index class" / "X tick index class" (tracked
 //     entities created / removed), "T tick name ..." (bullets: "Shotgun
 //     Shot" origin, direction, ammo, seed, shots, spread; EffectDispatch:
-//     effect name, origin), "V tick event userid" (player_death,
-//     player_spawn).
+//     effect name, origin), "V tick event client [attacker | team
+//     oldteam]" (player_death with the attacker's client, player_spawn,
+//     player_team with the new and old team).
 //   probe_bot <client>: drive this client (0: the first living bot).
 //   probe_set <health> <armor> [aux]: the bot's health, armour, aux power.
 //   probe_give <class>: give the bot an item or weapon.
@@ -59,6 +63,8 @@
 //   probe_water <x0 y0 z0> <x1 y1 z1> <step> <depth>: grid points (the
 //     lowest per column) in water with water `depth` units above too.
 //   probe_info: every living player's position and angles.
+//   probe_score: every player's team, frags, deaths and life state, and
+//     each team's score.
 
 #include <sourcemod>
 #include <sdktools>
@@ -68,7 +74,7 @@ public Plugin myinfo = {
     name = "chimera probe (HL2:DM)",
     author = "chimera",
     description = "Replays per-tick inputs on a bot and logs its movement, suit, weapon and nearby entities",
-    version = "2",
+    version = "3",
 };
 
 #define MAX_TICKS 16384
@@ -83,6 +89,11 @@ float g_yaw[MAX_TICKS];
 int g_impulse[MAX_TICKS];
 char g_select[MAX_TICKS][32];
 int g_count;
+#define MAX_CMDS 64
+int g_cmdRow[MAX_CMDS];
+int g_cmdClient[MAX_CMDS];
+char g_cmdText[MAX_CMDS][96];
+int g_cmdCount;
 float g_startPos[3];
 float g_startAng[3];
 float g_startVel[3];
@@ -102,6 +113,7 @@ public void OnPluginStart()
     HookEvent("player_hurt", Event_Hurt);
     HookEvent("player_death", Event_Life);
     HookEvent("player_spawn", Event_Life);
+    HookEvent("player_team", Event_Team);
     AddTempEntHook("Shotgun Shot", TE_Bullets);
     AddTempEntHook("EffectDispatch", TE_Effect);
     RegServerCmd("probe_run", Command_Run, "probe_run <input> <output>");
@@ -123,6 +135,7 @@ public void OnPluginStart()
     RegServerCmd("probe_setprop", Command_SetProp, "probe_setprop <index> <data|send> <prop> <int|float> <value>");
     RegServerCmd("probe_fire", Command_Fire, "probe_fire <index> <input> [value]");
     RegServerCmd("probe_info", Command_Info, "probe_info: living players' positions and angles");
+    RegServerCmd("probe_score", Command_Score, "probe_score: players' teams, frags, deaths; team scores");
     for (int i = 1; i <= MaxClients; i++) {
         if (IsClientInGame(i)) {
             OnClientPutInServer(i);
@@ -132,6 +145,9 @@ public void OnPluginStart()
 
 public void OnClientPutInServer(int client)
 {
+    // A bot kept across a map change is put in the server again: hook once.
+    SDKUnhook(client, SDKHook_OnTakeDamagePost, DamagePost);
+    SDKUnhook(client, SDKHook_TraceAttack, TraceAttack);
     SDKHook(client, SDKHook_OnTakeDamagePost, DamagePost);
     SDKHook(client, SDKHook_TraceAttack, TraceAttack);
 }
@@ -546,6 +562,7 @@ public Action Command_Run(int args)
         return Plugin_Handled;
     }
     g_count = 0;
+    g_cmdCount = 0;
     g_hasStart = false;
     char line[256];
     char parts[10][32];
@@ -555,7 +572,17 @@ public Action Command_Run(int args)
             continue;
         }
         int n = ExplodeString(line, " ", parts, sizeof(parts), sizeof(parts[]));
-        if (StrEqual(parts[0], "start") && n >= 9) {
+        if (StrEqual(parts[0], "cmd") && n >= 4 && g_cmdCount < MAX_CMDS) {
+            g_cmdRow[g_cmdCount] = StringToInt(parts[1]);
+            g_cmdClient[g_cmdCount] = StringToInt(parts[2]);
+            // The command: everything after the third space.
+            int at = 0;
+            for (int k = 0; k < 3; k++) {
+                at += StrContains(line[at], " ") + 1;
+            }
+            strcopy(g_cmdText[g_cmdCount], sizeof(g_cmdText[]), line[at]);
+            g_cmdCount++;
+        } else if (StrEqual(parts[0], "start") && n >= 9) {
             for (int k = 0; k < 3; k++) {
                 g_startPos[k] = StringToFloat(parts[1 + k]);
                 g_startVel[k] = StringToFloat(parts[6 + k]);
@@ -636,6 +663,18 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
     }
     if (g_cursor >= g_count) {
         return Plugin_Continue;
+    }
+    for (int k = 0; k < g_cmdCount; k++) {
+        if (g_cmdRow[k] == g_cursor) {
+            int c = g_cmdClient[k];
+            if (c == 0) {
+                ServerCommand("%s", g_cmdText[k]);
+                ServerExecute();
+            } else if (IsClientInGame(c)) {
+                FakeClientCommand(c, "%s", g_cmdText[k]);
+            }
+            g_out.WriteLine("K %d %d %s", g_cursor, c, g_cmdText[k]);
+        }
     }
     buttons = g_buttons[g_cursor];
     impulse = g_impulse[g_cursor];
@@ -812,6 +851,35 @@ public void Event_Hurt(Event e, const char[] name, bool dontBroadcast)
 public void Event_Life(Event e, const char[] name, bool dontBroadcast)
 {
     if (g_out != null) {
-        g_out.WriteLine("V %d %s %d", g_cursor, name, GetClientOfUserId(e.GetInt("userid")));
+        int c = GetClientOfUserId(e.GetInt("userid"));
+        if (StrEqual(name, "player_death")) {
+            g_out.WriteLine("V %d %s %d %d", g_cursor, name, c, GetClientOfUserId(e.GetInt("attacker")));
+        } else {
+            g_out.WriteLine("V %d %s %d", g_cursor, name, c);
+        }
     }
+}
+
+public void Event_Team(Event e, const char[] name, bool dontBroadcast)
+{
+    if (g_out != null) {
+        g_out.WriteLine("V %d %s %d %d %d", g_cursor, name, GetClientOfUserId(e.GetInt("userid")), e.GetInt("team"),
+            e.GetInt("oldteam"));
+    }
+}
+
+public Action Command_Score(int args)
+{
+    for (int i = 1; i <= MaxClients; i++) {
+        if (IsClientInGame(i)) {
+            PrintToServer("player %d team %d frags %d deaths %d life %d", i, GetClientTeam(i),
+                GetEntProp(i, Prop_Data, "m_iFrags"), GetEntProp(i, Prop_Data, "m_iDeaths"),
+                GetEntProp(i, Prop_Data, "m_lifeState"));
+        }
+    }
+    int t = -1;
+    while ((t = FindEntityByClassname(t, "team_manager")) != -1) {
+        PrintToServer("team %d score %d", GetEntProp(t, Prop_Send, "m_iTeamNum"), GetEntProp(t, Prop_Send, "m_iScore"));
+    }
+    return Plugin_Handled;
 }

@@ -55,10 +55,12 @@
 //! counts as two contacts in CS:S (measured: a 30 kg crate landing at 544, 827
 //! and 1219 in/s did 5+5, 5+10 and 10+20 and lost 5 itself at 1219; a 500 kg
 //! cupboard 5+50 at 0 up to 500+500 at 1500, losing 5 from 800 and 10 at 1500;
-//! the player as attacker, Q6 and Q13): the host splits one avian contact into
-//! two, each the prop losing a share of the speed it came with, by its mass
-//! (fitted to those numbers: 33.5%/48% at 30 kg, 27.2%/67% at 500, between by
-//! the log of the mass, of its speed into the player along the contact's
+//! the player as attacker, Q6 and Q13; HL2:DM's crates of 10 to 250 kg
+//! too, specs/hl2dm/gravity_gun.md 11): the host splits one avian contact
+//! into two, each the prop losing a share of the speed it came with, by its
+//! mass (fitted to those numbers: 33.5%/65% at 10 kg, 33.5%/51.2% at 30,
+//! 31%/51.2% at 100, 27.6%/67% at 500, between by the log of the mass, of
+//! its speed into the player along the contact's
 //! normal, so one sliding off the player's head hurts nobody), and the
 //! player's side is an 85 kg body whose speed change isn't measured; a
 //! player's crush damage has no force (spec: its post velocity × 85 kg) and
