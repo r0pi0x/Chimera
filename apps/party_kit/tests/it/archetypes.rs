@@ -18,6 +18,10 @@
 //!   a tick at 4800 archetypes and 2400 tables, 24.6M before the fix):
 //!   every query that matches characters still steps over their empty
 //!   tables, Bevy's own cost (docs/tech-debt.md).
+//!
+//! Both count only the ticks that make no new archetype
+//! (`instructions_per_tick`): a new one costs a step over the others,
+//! once.
 
 use bevy::prelude::*;
 use chimera_core::metrics::{ThreadCounters, census::Census};
@@ -99,11 +103,34 @@ fn bots_playing() -> (Sim, Vec<Entity>) {
 }
 
 /// The calling thread's instructions (the schedules run on it) per tick
-/// over `n` ticks; None without hardware counters.
+/// over `n` ticks, counting only the ticks that met no new archetype
+/// (none made in that tick or the one before); None without hardware
+/// counters. A new archetype has every query that its components could
+/// match step once over all the archetypes holding the query's rarest
+/// component (Bevy's `QueryState::update_archetypes`), here the bots'
+/// thousands: Bevy's cost, paid per archetype made, not per tick, and the
+/// bots make some while they play (a gun of another game, a death, a
+/// sleeping body), more or fewer as the schedule's order plays the game
+/// out (2026-11: 14 against 57 in the same window, 1.0x against 1.33x).
 fn instructions_per_tick(sim: &mut Sim, n: u64) -> Option<f64> {
-    let a = instructions()?;
-    sim.ticks(n);
-    Some(instructions()?.saturating_sub(a) as f64 / n as f64)
+    let archetypes = |sim: &Sim| sim.app.world().archetypes().len();
+    let (mut total, mut steady) = (0u64, 0u64);
+    let mut last = archetypes(sim);
+    let mut fresh = true;
+    for _ in 0..n {
+        let a = instructions()?;
+        sim.ticks(1);
+        let used = instructions()?.saturating_sub(a);
+        let now = archetypes(sim);
+        let made = now != last;
+        if !made && !fresh {
+            total += used;
+            steady += 1;
+        }
+        (last, fresh) = (now, made);
+    }
+    assert!(steady >= n / 4, "only {steady} of {n} ticks made no archetype");
+    Some(total as f64 / steady as f64)
 }
 
 /// This thread's instructions so far (with `trace`, from the span
