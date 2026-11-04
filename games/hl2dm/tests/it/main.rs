@@ -23,6 +23,7 @@ mod projectile_fx;
 mod projectiles;
 mod ragdolls;
 mod rules;
+mod set_pieces;
 mod skeleton;
 mod suit;
 mod weapons;
@@ -36,6 +37,7 @@ mod heavy {
     mod map_ladders;
     mod map_pickups;
     mod map_props;
+    mod map_set_pieces;
     mod map_stock;
     mod mount;
     mod player_models;

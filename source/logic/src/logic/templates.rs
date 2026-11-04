@@ -254,6 +254,19 @@ impl LogicWorld {
             super::classes::class_activate(self, id);
         }
         for &(id, source, origin, angles) in &new {
+            if let Some(e) = self.get(id)
+                && matches!(e.class, Class::None)
+                && self.game_classes.iter().any(|c| c.eq_ignore_ascii_case(&e.classname))
+            {
+                self.effects.push(Effect::EntitySpawned {
+                    id,
+                    map_index: None,
+                    class: e.classname.clone(),
+                    keyvalues: e.keyvalues.clone(),
+                    origin,
+                    angles,
+                });
+            }
             self.effects.push(Effect::Spawned {
                 id,
                 source,

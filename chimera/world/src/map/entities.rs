@@ -217,6 +217,101 @@ pub struct FireEntityOutput {
     pub activator: Option<Entity>,
 }
 
+/// Fire a map entity's output that carries a number (a charger's
+/// `OutRemainingCharge`), as `FireEntityOutput` otherwise.
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct FireEntityOutputValue {
+    pub map_index: usize,
+    pub output: String,
+    pub activator: Option<Entity>,
+    pub value: f32,
+}
+
+/// Fire an output of a logic entity by its key (`MapEntitySpawned::key`),
+/// for the entities of game-handled classes a template made, which no map
+/// index names.
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct FireKeyedOutput {
+    pub key: u64,
+    pub output: String,
+    pub activator: Option<Entity>,
+}
+
+/// Map entity classes a game handles itself (lower case): the logic
+/// layer delivers their inputs as `MapEntityInput` instead of logging
+/// them as unhandled. A game adds its classes at start-up.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct GameEntityClasses(pub Vec<&'static str>);
+
+impl GameEntityClasses {
+    /// Whether `class` (any case) is one of them.
+    pub fn has(&self, class: &str) -> bool {
+        self.0.iter().any(|c| c.eq_ignore_ascii_case(class))
+    }
+}
+
+/// An input a map's logic delivered to an entity of a game-handled class
+/// (`GameEntityClasses`): `map_index` into `MapEntities`, the input's
+/// name (lower case) and its value as text (empty: none).
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct MapEntityInput {
+    /// The logic entity (stable while it lives; a template's copies have
+    /// their own).
+    pub key: u64,
+    /// The map entity it is, None for a template's copy.
+    pub map_index: Option<usize>,
+    pub input: String,
+    pub value: String,
+    pub activator: Option<Entity>,
+}
+
+/// An entity of a game-handled class (`GameEntityClasses`) exists: at the
+/// map's load or a round restart, or made by a `point_template`
+/// (`map_index` None). `origin` and `angles` as the map gives them (entity
+/// space).
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct MapEntitySpawned {
+    pub key: u64,
+    pub map_index: Option<usize>,
+    pub class: String,
+    pub keyvalues: Vec<(String, String)>,
+    pub origin: Vec3,
+    pub angles: Vec3,
+}
+
+/// An entity of a game-handled class was removed (`Kill`).
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MapEntityRemoved {
+    pub key: u64,
+}
+
+/// What a sound-listening map entity (`env_microphone`) hears: the
+/// kinds of sounds Source's games insert in the AI sound list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AiSoundKind {
+    /// A bullet's impact.
+    BulletImpact,
+    /// An explosion (a blast's radius damage).
+    Explosion,
+    /// Other combat sounds.
+    Combat,
+    /// A footstep or other world noise.
+    World,
+    /// A player's noise.
+    Player,
+}
+
+/// A sound in the AI sound list: a game writes one for each bullet
+/// impact and blast; the logic keeps it for `life` seconds. `volume` is
+/// the radius it carries, in meters (engine space).
+#[derive(Message, Clone, Copy, Debug, PartialEq)]
+pub struct AiSound {
+    pub at: Vec3,
+    pub volume: f32,
+    pub kind: AiSoundKind,
+    pub life: f32,
+}
+
 /// The entity named by a `parentname` value (an attachment after a comma
 /// is left out).
 pub fn parent_name(value: &str) -> &str {

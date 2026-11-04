@@ -39,10 +39,10 @@
 //!   is found when the view's ray from the eye passes within 24 units of
 //!   its origin, at most 80 units away (not Source's `+use` search). Items
 //!   aren't drawn yet; the respawn light isn't made.
-//! - Chargers' value outputs (`OutRemainingCharge`, `OutRemainingHealth`),
-//!   their dial, the loop sound's stop and the `Recharge`/`SetCharge`
-//!   inputs aren't modelled (no stock map uses them; map inputs don't
-//!   reach a game's entities yet).
+//! - Chargers' dial (the model's cycle) and the loop sound's stop aren't
+//!   modelled (no model is drawn). `Recharge`/`SetCharge` arrive as
+//!   `MapEntityInput`s (`set_pieces` registers the classes); the value
+//!   outputs go out as `FireEntityOutputValue`s.
 //! - A held item's bigger touch box (the gravity gun's feeding) waits for
 //!   the gravity gun (M6).
 
@@ -56,7 +56,10 @@ use super::{
 };
 use crate::{
     core::{Health, Intent, RoundRestarts, SimClock, SimSet},
-    map::{MapEntities, PlaySound, entities::FireEntityOutput},
+    map::{
+        MapEntities, PlaySound,
+        entities::{FireEntityOutput, FireEntityOutputValue, MapEntityInput},
+    },
     weapon::Armor,
 };
 
@@ -248,6 +251,8 @@ impl Plugin for PickupsPlugin {
         use crate::console::resource_cvar;
         app.add_message::<PlaySound>()
             .add_message::<FireEntityOutput>()
+            .add_message::<FireEntityOutputValue>()
+            .add_message::<MapEntityInput>()
             .init_resource::<RespawnCvars>()
             .insert_resource(rules_of(&RespawnCvars::default()))
             .insert_resource(AmmoLimits::hl2())
@@ -257,6 +262,7 @@ impl Plugin for PickupsPlugin {
                 (
                     apply_cvars,
                     spawn_items,
+                    charger_inputs,
                     chargers.before(SimSet::Movement),
                     touch.after(SimSet::Movement).before(SimSet::Weapons),
                     super::ammo_crates::crates.after(SimSet::Weapons),
@@ -522,6 +528,7 @@ fn chargers(
     clock: Res<SimClock>,
     mut play: MessageWriter<PlaySound>,
     mut outputs: MessageWriter<FireEntityOutput>,
+    mut values: MessageWriter<FireEntityOutputValue>,
 ) {
     let now = clock.now;
     let places: Vec<(Entity, Vec3)> = q.iter().map(|(e, t, _)| (e, t.translation)).collect();
@@ -621,6 +628,13 @@ fn chargers(
             }
         }
         ch.last_charge = now;
+        // The charge left, as a fraction (maps_entities.md 4).
+        values.write(FireEntityOutputValue {
+            map_index: ch.map_index,
+            output: if ch.suit() { "OutRemainingCharge" } else { "OutRemainingHealth" }.into(),
+            activator: Some(who),
+            value: ch.pool / ch.max,
+        });
         // The pool's outputs (maps_entities.md 4).
         let half = (ch.max / 2.0).floor();
         let index = ch.map_index;
@@ -659,6 +673,42 @@ fn chargers(
                     activator: None,
                 });
             }
+        }
+    }
+}
+
+/// The map's inputs to chargers (maps_entities.md 4): `Recharge` (a suit
+/// charger's pool to full now, `OnFull` if it was below) and `SetCharge`
+/// (the pool and its maximum).
+fn charger_inputs(
+    mut inputs: MessageReader<MapEntityInput>,
+    mut q: Query<(Entity, &Transform, &mut Charger)>,
+    mut play: MessageWriter<PlaySound>,
+    mut outputs: MessageWriter<FireEntityOutput>,
+) {
+    for i in inputs.read() {
+        let Some((ce, ct, mut ch)) = q.iter_mut().find(|(_, _, c)| Some(c.map_index) == i.map_index) else { continue };
+        match i.input.as_str() {
+            "recharge" if ch.suit() => {
+                let was_below = ch.pool < ch.max;
+                ch.pool = ch.max;
+                ch.refill_at = None;
+                ch.off_at = None;
+                sound(&mut play, "SuitRecharge.Start", ct.translation, ce);
+                if was_below {
+                    outputs.write(FireEntityOutput {
+                        map_index: ch.map_index,
+                        output: "OnFull".into(),
+                        activator: None,
+                    });
+                }
+            }
+            "setcharge" if ch.suit() => {
+                let n = i.value.trim().parse::<f32>().unwrap_or(0.0).trunc();
+                ch.pool = n;
+                ch.max = n;
+            }
+            _ => {}
         }
     }
 }

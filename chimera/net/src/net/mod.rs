@@ -967,6 +967,14 @@ pub enum MapFx {
         dir: [f32; 3],
         magnitude: f32,
     },
+    /// A screen shake (`map::MapShake`: env_shake, a canister's impact).
+    Shake {
+        at: [f32; 3],
+        amplitude: f32,
+        frequency: f32,
+        duration: f32,
+        radius: f32,
+    },
 }
 
 /// Server -> the client a character belongs to: its player was blinded

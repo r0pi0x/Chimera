@@ -27,6 +27,7 @@ pub mod net;
 pub mod physics;
 pub mod prop_damage;
 pub mod props;
+pub mod sensors;
 pub mod templates;
 pub mod triggers;
 pub mod value;
@@ -37,6 +38,8 @@ pub mod world;
 mod tests;
 #[cfg(test)]
 mod community_tests;
+#[cfg(test)]
+mod set_piece_tests;
 
 pub use bridge::set_node_shown;
 pub use bridge::{

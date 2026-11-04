@@ -88,6 +88,12 @@ pub const SOUNDS: &[&str] = &[
     "BaseCombatCharacter.AmmoPickup",
     "AmmoCrate.Open",
     "AmmoCrate.Close",
+    // dm_runoff's canisters (maps_entities.md 8).
+    "HeadcrabCanister.LaunchSound",
+    "HeadcrabCanister.IncomingSound",
+    "HeadcrabCanister.Explosion",
+    "HeadcrabCanister.AfterLanding",
+    "HeadcrabCanister.Open",
     "HudChat.Message",
     // The HUD's (specs/hl2dm/hud.md 5, 6, 9).
     "Player.WeaponSelectionMoveSlot",

@@ -14,7 +14,9 @@
 //! its bullet and melee weapons (`weapons`, M4: data and hooks; `scripts`,
 //! the install's weapon scripts against the data), its projectiles (M5)
 //! and gravity gun (M6), physics props as its game plays them (`physics`:
-//! impact damage and its credit, `+use`, M6); `Hl2dmPlugins` adds them. The projectiles and the rest come with their specs
+//! impact damage and its credit, `+use`, M6), the stock maps' set pieces
+//! (`set_pieces`: canisters, the ragdoll manager, the AI sounds; M7);
+//! `Hl2dmPlugins` adds them. The projectiles and the rest come with their specs
 //! (specs/hl2dm/; the plan's milestones M5 to M11).
 //!
 //! Known shortcuts:
@@ -44,6 +46,7 @@ pub mod player_anim;
 pub mod projectile_fx;
 pub mod rungs;
 pub mod scripts;
+pub mod set_pieces;
 pub mod sounds;
 pub mod standing;
 pub mod suit;
@@ -116,6 +119,7 @@ impl bevy::app::PluginGroup for Hl2dmPlugins {
             .add(movement::Hl2MovementPlugin)
             .add(suit::SuitPlugin)
             .add(pickups::PickupsPlugin)
+            .add(set_pieces::SetPiecesPlugin)
             .add(physics::Hl2PhysicsPlugin)
             .add(weapons::Hl2WeaponsPlugin)
             .add(effects::Hl2EffectsPlugin)

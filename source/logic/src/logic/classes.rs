@@ -6,6 +6,12 @@
 //! game_text, point_servercommand (game-rule settings by prefix, put back when
 //! the map unloads, a console line each) / point_clientcommand (allowlist).
 //!
+//! Covers: classes a game handles itself (`LogicWorld::game_classes`, set from
+//! `map::entities::GameEntityClasses`): their inputs go to the game as
+//! `Effect::EntityInput` (`map::entities::MapEntityInput`), the entities are
+//! announced (`Effect::EntitySpawned`, `EntityRemoved`), and env_flare is a
+//! drawn `visuals::Part` (Start, Die) whose flame the map loader draws.
+//!
 //! Covers: env_global: global states outlive round restarts; logic_auto's
 //! `globalstate` gate.
 //!
@@ -577,6 +583,7 @@ impl Class {
             "color_correction" => {
                 Class::Part(super::visuals::spawn_part(w, id, super::visuals::PartKind::ColorCorrection))
             }
+            "env_flare" => Class::Part(super::visuals::spawn_part(w, id, super::visuals::PartKind::Flare)),
             "env_embers" => Class::Part(super::visuals::spawn_part(w, id, super::visuals::PartKind::Embers)),
             "func_clip_vphysics" => {
                 Class::Part(super::visuals::spawn_part(w, id, super::visuals::PartKind::PhysicsClip))
@@ -850,6 +857,29 @@ pub(super) fn class_input(
     {
         let detail = format!("{}.{input}", e.classname);
         w.note("inputs to classes that do nothing here (see their note)", detail);
+        return true;
+    }
+    // A class the game handles itself: its inputs go out to the game.
+    if matches!(class, Class::None)
+        && !matches!(
+            input,
+            "kill" | "killhierarchy" | "addoutput" | "fireuser1" | "fireuser2" | "fireuser3" | "fireuser4"
+        )
+        && let Some(e) = w.get(id)
+        && w.game_classes.iter().any(|c| c.eq_ignore_ascii_case(&e.classname))
+    {
+        let map_index = e.map_index;
+        let value = value.as_text(|x| w.name_of(x));
+        w.effects.push(super::world::Effect::EntityInput {
+            id,
+            map_index,
+            input: input.to_string(),
+            value,
+            activator: match activator {
+                Some(Who::Player(p)) => Some(p),
+                _ => None,
+            },
+        });
         return true;
     }
     let flags = w.get(id).map_or(0, |e| e.spawnflags);

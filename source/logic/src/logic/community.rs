@@ -150,6 +150,10 @@ pub enum Extra {
         on: bool,
         fov: f32,
     },
+    /// point_angularvelocitysensor (`sensors`).
+    Sensor(super::sensors::AngularSensor),
+    /// env_microphone (`sensors`).
+    Mic(super::sensors::Microphone),
 }
 
 /// point_camera's "Start Off" spawnflag.
@@ -210,6 +214,9 @@ pub const SF_SHAKE_GLOBAL: u32 = 1;
 pub(super) fn spawn(w: &LogicWorld, id: EntId, class: &str) -> Option<Class> {
     let e = w.get(id)?;
     let s = |k: &str| e.kv(k).unwrap_or("").trim().to_string();
+    if let Some(c) = super::sensors::spawn(w, id, class) {
+        return Some(c);
+    }
     let extra = match class {
         "logic_measure_movement" => Extra::Measure(Measure {
             // Measures from activation (the Disable input stops it).
@@ -261,12 +268,16 @@ fn extra_mut(w: &mut LogicWorld, id: EntId) -> Option<&mut Extra> {
 }
 
 pub(super) fn activate(w: &mut LogicWorld, id: EntId) {
+    super::sensors::activate(w, id);
     if matches!(extra(w, id), Some(Extra::Measure(_) | Extra::Push { enabled: true })) {
         w.think_in(id, w.dt);
     }
 }
 
 pub(super) fn think(w: &mut LogicWorld, id: EntId) {
+    if super::sensors::think(w, id) {
+        return;
+    }
     match extra(w, id).cloned() {
         Some(Extra::Measure(m)) if m.enabled => {
             measure(w, id, &m);
@@ -589,6 +600,9 @@ pub(super) fn place(w: &mut LogicWorld, who: Who, origin: Vec3, angles: Vec3) {
 }
 
 pub(super) fn input(w: &mut LogicWorld, id: EntId, input: &str, value: &Value, activator: Option<Who>) -> bool {
+    if super::sensors::input(w, id, input, value, activator) {
+        return true;
+    }
     let Some(x) = extra(w, id).cloned() else { return false };
     match (x, input) {
         (Extra::Measure(_), "enable" | "disable") => {
@@ -716,7 +730,9 @@ pub(super) fn input(w: &mut LogicWorld, id: EntId, input: &str, value: &Value, a
             let Some(e) = w.get(id) else { return true };
             let global = e.has_flag(SF_SHAKE_GLOBAL);
             let at = e.origin;
-            let amplitude = if input == "startshake" { s.amplitude } else { 0.0 };
+            // Every screen shake's amplitude is capped to 16 when sent
+            // (hl2dm/maps_entities.md 15).
+            let amplitude = if input == "startshake" { s.amplitude.min(16.0) } else { 0.0 };
             w.effects.push(Effect::Shake {
                 at,
                 amplitude,
