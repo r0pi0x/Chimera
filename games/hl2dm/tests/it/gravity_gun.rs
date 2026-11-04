@@ -44,6 +44,8 @@ struct Crate {
     half: Vec3,
     mass: f32,
     flags: u32,
+    /// Its rotational inertia (engine axes, kg m²); None: a solid box's.
+    inertia: Option<Vec3>,
 }
 
 impl Crate {
@@ -53,6 +55,7 @@ impl Crate {
             half: Vec3::splat(10.0),
             mass: 30.0,
             flags: 0,
+            inertia: None,
         }
     }
     fn mass(self, mass: f32) -> Self {
@@ -81,12 +84,13 @@ fn solid(data: &mut MapData, lo: Vec3, hi: Vec3) {
 }
 
 /// A crate, on a thin pillar when it floats (so it stays where it is
-/// put: the cases place crates at eye height).
+/// put: the cases place crates at eye height), unless motion-disabled
+/// (flag 8: it hangs).
 fn add_crate(data: &mut MapData, c: Crate) {
     let index = data.entities.len();
     let centre = FEET + Vec3::Z * EYE + c.at;
     let bottom = centre.z - c.half.z;
-    if bottom > 1.0 {
+    if bottom > 1.0 && c.flags & 8 == 0 {
         solid(data, Vec3::new(centre.x - 4.0, centre.y - 4.0, 0.0), Vec3::new(centre.x + 4.0, centre.y + 4.0, bottom - 0.05));
     }
     data.entities.push(MapEntity {
@@ -130,7 +134,7 @@ fn add_crate(data: &mut MapData, c: Crate) {
             elasticity: 0.0,
             damping: 0.0,
             rotdamping: 0.0,
-            inertia: None,
+            inertia: c.inertia,
             push: PushAway::Collide,
             frozen: c.flags & 8 != 0,
             asleep: false,
@@ -173,12 +177,19 @@ struct W {
 /// The map with `crates` (and walls), the player at `FEET` looking east
 /// with the gravity gun in hand (the spawn's).
 fn world_with(crates: &[Crate], walls: &[(Vec3, Vec3)]) -> W {
+    world_on(crates, walls, (Vec3::new(-4096.0, -4096.0, -64.0), Vec3::new(4096.0, 4096.0, 0.0)))
+}
+
+/// `world_with` on the floor `floor` (lowest and highest corners).
+fn world_on(crates: &[Crate], walls: &[(Vec3, Vec3)], floor: (Vec3, Vec3)) -> W {
     let mut data = MapData {
         name: "test:gravity_gun".into(),
         entity_scale: U,
+        // HL2:DM's physics gravity, as its maps load (sv_gravity 600).
+        gravity: Some(600.0 * U),
         ..default()
     };
-    solid(&mut data, Vec3::new(-4096.0, -4096.0, -64.0), Vec3::new(4096.0, 4096.0, 0.0));
+    solid(&mut data, floor.0, floor.1);
     for (lo, hi) in walls {
         solid(&mut data, *lo, *hi);
     }
@@ -380,6 +391,34 @@ fn a_downward_punt_goes_up() {
     w.press(true, false, 1, 1);
     let v = w.velocity(0);
     assert!(v.z > 450.0 && (v.x - 777.8).abs() < 40.0, "{v}");
+}
+
+/// Case 3, measured on the real server (the plan's Progress 2026-11-03
+/// "probe 2"): a 30 kg wood crate (40 units, its inertia 0.714 of a solid
+/// box's, measured) hanging motion-disabled (flags 8 + 64) 100 ahead, its
+/// centre 40 below the eye; looking 21.8 degrees down at it: 1011 forward,
+/// 252 up a tick after (the spec's 1100 × (0.928, 0.65 × 0.371) less a
+/// tick of drag and gravity) and pitching at 2964 degrees/s, the point
+/// impulse's turn about the box trace's end (its centre where it stopped,
+/// 8 units short of the face), not the contact point (2100/s). The
+/// player stands on a pad: nothing under the crate.
+#[test]
+fn a_hanging_crate_punted_from_above() {
+    let s = 40.4 * 0.0254;
+    let mut c = Crate::ahead(100.0).at(Vec3::new(100.0, 0.0, -40.0)).flags(72);
+    c.half = Vec3::splat(20.2);
+    c.inertia = Some(Vec3::splat(0.714 * 30.0 * s * s / 6.0));
+    let pad = (Vec3::new(-32.0, -32.0, -64.0), Vec3::new(32.0, 32.0, 0.0));
+    let mut w = world_on(&[c], &[], pad);
+    look(&mut w.sim, w.p, EAST, -21.8);
+    w.sim.ticks(2);
+    w.press(true, false, 1, 1);
+    let v = w.velocity(0);
+    assert!((v.x - 1011.0).abs() < 15.0 && (v.z - 252.0).abs() < 10.0 && v.y.abs() < 5.0, "{v}");
+    let n = w.node(0);
+    let spin = to_source(w.sim.app.world().get::<AngularVelocity>(n).unwrap().0) * 0.0254;
+    let pitch = spin.y.to_degrees();
+    assert!((pitch - 2964.0).abs() < 150.0, "pitching at {pitch} degrees/s ({spin})");
 }
 
 /// Case 4: a crate at 270 is out of reach (the spec's 260 puts its face

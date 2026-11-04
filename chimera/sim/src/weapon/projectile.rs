@@ -159,6 +159,10 @@ pub struct Flyer {
 /// `Flyer::turn` for a model whose nose is its +X (Source's models).
 pub const MODEL_X_FORWARD: Quat = Quat::from_xyzw(0.0, std::f32::consts::FRAC_1_SQRT_2, 0.0, std::f32::consts::FRAC_1_SQRT_2);
 
+/// `Flyer::turn` for a model whose nose is its +Y (a quarter turn about X
+/// takes +Y to −Z).
+pub const MODEL_Y_FORWARD: Quat = Quat::from_xyzw(-std::f32::consts::FRAC_1_SQRT_2, 0.0, 0.0, std::f32::consts::FRAC_1_SQRT_2);
+
 impl Flyer {
     /// A flyer of `weapon` by `owner` with `velocity` (m/s), made now: a
     /// point with no gravity that reports its touches; set the rest.
@@ -314,6 +318,10 @@ pub struct LauncherParams {
     /// Its model's nose is its +X (Source's models: `MODEL_X_FORWARD`).
     #[serde(default)]
     pub x_forward: bool,
+    /// Its model's nose is its +Y (the crossbow bolt's, as the loose frame
+    /// leaves it: `MODEL_Y_FORWARD`).
+    #[serde(default)]
+    pub y_forward: bool,
 }
 
 fn report() -> String {
@@ -360,6 +368,8 @@ impl LauncherParams {
         f.hitboxes = self.hitboxes;
         if self.x_forward {
             f.turn = MODEL_X_FORWARD;
+        } else if self.y_forward {
+            f.turn = MODEL_Y_FORWARD;
         }
         // Relative here; made absolute at the launch.
         f.expires = self.life.map(|l| l as f64);
@@ -913,6 +923,14 @@ mod tests {
     fn a_source_model_noses_along_its_flight() {
         let r = facing(Vec3::Z) * MODEL_X_FORWARD;
         assert!((r * Vec3::X - Vec3::Z).length() < 1e-5);
+    }
+
+    #[test]
+    fn a_y_nosed_model_noses_along_its_flight() {
+        for d in [Vec3::Z, Vec3::X, Vec3::new(0.3, 0.5, -0.8).normalize()] {
+            let r = facing(d) * MODEL_Y_FORWARD;
+            assert!((r * Vec3::Y - d).length() < 1e-5);
+        }
     }
 
     #[test]

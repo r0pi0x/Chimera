@@ -1,7 +1,9 @@
 # The crossbow (specs/hl2dm/projectiles.md 7): clip 1, 10 carried (a new
 # one: 1 + 4); its rounds are bolts (`chimera:projectile`): 3500 units/s
-# (1500 from under water), gravity 30, a +-1 box hitting hitboxes, 100 x
-# the hitgroup (head 3) as a bullet, force 21000 kg in/s, glancing off
+# (1500 from under water), gravity 30, a +-1 box hitting hitboxes, 100 as
+# a bullet wherever it hits (the real server's bolt hits a player's
+# generic hitgroup, head and legs alike: no head bonus, measured 2026-11-03;
+# the spec's head 300 isn't), force 21000 kg in/s, glancing off
 # below cos 0.5 faster than 100 (0.75 of its speed, full gravity), else
 # sticking 2 s; refire 0.75; the reload (1.8333 s) starts strictly after
 # the fire animation (`hl2dm:crossbow`): 0.1 s as the real server measures
@@ -66,8 +68,8 @@ water_speed = 1500.0
 gravity = 30.0
 half = [1.0, 1.0, 1.0]
 shown = "hl2dm:crossbow_bolt"
-# The bolt model's nose is its +X.
-x_forward = true
+# The bolt model's nose is its +Y (its length, as the loose frame leaves it).
+y_forward = true
 touch = "bolt"
 glance_cos = 0.5
 glance_speed = 100.0
@@ -76,7 +78,7 @@ glance_gravity = 600.0
 stick_time = 2.0
 damage = 100.0
 kind = "bullet"
-head = 3.0
+head = 1.0
 force = 21000.0
 # The suit's rule (`suit::suit_armour`): health takes 20 %.
 armor_ratio = 1.0

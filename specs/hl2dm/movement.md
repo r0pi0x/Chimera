@@ -819,3 +819,12 @@ Probe cases (real game; Steam builds game 24600434, dedicated server
     `mp_footsteps` 1, `sv_ladder_useonly` 0, `sv_autoladderdismount` 1,
     `xc_uncrouch_on_jump` 1. Not measured yet: P11 (dm_lockdown's ladder
     brushes), P14 (water), P15, P16.
+13. **Probe results, round 2 (2026-11-03, same build).** The back-hop
+    (test 18, H1): moving backwards at 376 relative to the view, nothing
+    or back held, a jump keeps 376 (no gain); forward the same. P11:
+    dm_lockdown's ladder-contents brushes (contents ladder + grate +
+    translucent, 1 unit thick, 64 wide) block a player walking into them
+    with forward and `+use` (stopped at the face), never climbed, jumping
+    against them included; shooting through them wasn't settled (each one
+    tried stands against other geometry). P15 needs two driven players
+    (the probe drives one); P16 needs a game client.

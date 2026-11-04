@@ -591,6 +591,30 @@ fn spawning_resets_the_suit() {
     close(pl.sim.app.world().get::<DamageRemainder>(pl.p).unwrap().0, 0.8, "the remainder is kept");
 }
 
+/// suit.md Quirks, as the real server measured (probe P9, the plan's
+/// Progress 2026-11-03 "probe 2"): killed sprinting, `+speed` let go while
+/// dead, the respawned player pays the sprint's 2.5 detach on the first
+/// tick (aux 97.5), full again 14 ticks after the half-second delay.
+#[test]
+fn a_sprinter_killed_pays_the_detach_at_the_respawn() {
+    let mut pl = Player::at(FIELD, vec![]);
+    pl.intent().move_axis = Vec2::Y;
+    pl.intent().sprint = true;
+    pl.sim.ticks(10);
+    assert!(pl.suit().sprinting);
+    pl.set_health(0.0);
+    pl.sim.app.world_mut().entity_mut(pl.p).insert(Dead { since: 0.0 });
+    pl.intent().move_axis = Vec2::ZERO;
+    pl.intent().sprint = false;
+    pl.sim.ticks(5);
+    chimera_sim::spawning::revive(pl.sim.app.world_mut(), pl.p, None);
+    pl.tick();
+    pl.tick();
+    close(pl.suit().aux, 97.5, "the first tick after the respawn");
+    pl.sim.ticks(33 + 14);
+    close(pl.suit().aux, 100.0, "full again");
+}
+
 /// A drowning hit bypasses the suit (test 10 in the simulation).
 #[test]
 fn damage_lands_in_whole_points() {

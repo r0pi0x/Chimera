@@ -733,3 +733,11 @@ properties every tick):
     pool 50. P11: dm_lockdown's flag-8192 charger: +2 armour and +5
     health a charge, pool 200, armour to 200. Not measured yet: P7-P9,
     P13.
+11. **Probe results, round 2 (2026-11-03, same build).** P7: with
+    `mp_flashlight 1` the flashlight on (effects bit 4) for 9 s keeps aux
+    at 100. P9 (sprint half): a bot killed while sprinting and
+    respawned with no key held has aux 97.5 from its first tick (the
+    sprint's 2.5 detach paid at the respawn: Quirks confirmed; Chimera
+    keeps the sprint across the death). Not measured: P8 (the zoom needs
+    the key held after a run ends), P9's breather half (dm_underpass),
+    P13 (dm_steamlab).
