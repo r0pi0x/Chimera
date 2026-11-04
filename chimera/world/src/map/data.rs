@@ -173,6 +173,9 @@ pub struct MapMesh {
     pub double_sided: bool,
     /// Tangent-space normal map (index into `MapData::textures`, linear).
     pub normal_map: Option<usize>,
+    /// Source's Phong model shading (VertexLitGeneric `$phong` with a
+    /// normal map, `map::phong`): None draws the plain model shader.
+    pub phong: Option<Box<super::phong::MapPhong>>,
     /// Per-vertex coordinates into `MapData::lightmap` (0..1); empty when
     /// the map has no baked lighting.
     #[serde(with = "crate::map::pod_serde::pod")]
@@ -360,9 +363,12 @@ pub struct MapMeshLook {
     pub alpha: MapAlpha,
     pub double_sided: bool,
     pub unlit: bool,
-    /// `$bumpmap` (index into `MapData::textures`, linear): on models only
-    /// its alpha is read, as a `$normalmapalphaenvmapmask` reflection mask.
+    /// `$bumpmap` (index into `MapData::textures`, linear): on models its
+    /// alpha is a `$normalmapalphaenvmapmask` reflection mask, and on the
+    /// Phong path (`phong`) the normal and specular mask.
     pub normal_map: Option<usize>,
+    /// `MapMesh::phong`.
+    pub phong: Option<Box<super::phong::MapPhong>>,
     pub envmap: Option<MapEnvmap>,
     pub tint: Option<[f32; 3]>,
     pub detail: Option<MapDetail>,
@@ -382,6 +388,7 @@ impl MapMeshLook {
             double_sided: self.double_sided,
             unlit: self.unlit,
             normal_map: self.normal_map,
+            phong: self.phong.clone(),
             envmap: self.envmap.clone(),
             tint: self.tint,
             detail: self.detail,

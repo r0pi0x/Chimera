@@ -17,7 +17,13 @@
 //! (base alpha or `$selfillummask`) and `$basetexturetransform`; a second
 //! texture on generated coordinates (`map::MapLayer`: LithTech's
 //! environment and rim maps, `layer`), and a skin's frames
-//! (`map::MapSkinFrames`, swapped by `skin_frames`).
+//! (`map::MapSkinFrames`, swapped by `skin_frames`). VertexLitGeneric
+//! `$phong` materials (`map::MapPhong`) take Source's Phong shading per
+//! pixel (`PropParams::phong`, specs/cs_source/shaders_phong.md): forced
+//! half-Lambert from the probe's ambient cube and lights, the
+//! reflection-vector specular with mask, fresnel ramp, boost and tint, the
+//! rim light, and the envmap's own mask rules; `map::phong` mirrors the
+//! maths on the CPU. `CHIMERA_PHONG=0` turns it off (`phong_enabled`).
 //!
 //! Faces: back ones culled except on `$nocull` materials, front ones on
 //! mirrored (left-handed) view models, in the depth prepass as in the main
@@ -111,6 +117,26 @@ pub struct PropParams {
     /// Eyeball: the iris texture's planes over world points (u, v).
     pub face_u: Vec4,
     pub face_v: Vec4,
+    /// Source's Phong model shading (specs/cs_source/shaders_phong.md,
+    /// `map::phong`): 0 off (the plain model shader), 1 on, 2 its cheap
+    /// variant (vertex normal, base-alpha mask, constant exponent, no rim
+    /// or tint).
+    pub phong: f32,
+    /// `$phongfresnelranges` (min, mid, max) and `$phongboost` (w).
+    pub phong_fresnel: Vec4,
+    /// The exponent k = x + y × the exponent texture's red; the rim's
+    /// exponent (z) and boost (w).
+    pub phong_exponent: Vec4,
+    /// S_t: a colour (rgb, w = 0), or w = 1 for lerp(1, base, exp.g).
+    pub phong_tint: Vec4,
+    /// Rim light on (x), its mask is the exponent texture's alpha (y),
+    /// `$basemapalphaphongmask` (z), a normal map is bound (w).
+    pub phong_flags: Vec4,
+    /// The envmap mask (`map::PhongEnvMask`): x 0 base alpha, 1 the
+    /// specular mask, 2 the constant w; y 1 inverts it; z `$envmapfresnel`.
+    pub phong_env: Vec4,
+    /// A lightwarp (x) and a phong warp (y) texture are bound.
+    pub phong_warp: Vec4,
 }
 
 impl PropParams {
@@ -163,6 +189,18 @@ pub struct PropMaterial {
     /// drawn copy runs its own clock (`skin_frames::SkinClock`).
     pub skin_frames: Vec<Handle<Image>>,
     pub skin_frame_ms: u32,
+    /// The Phong path's textures (`PropParams::phong`): the normal map
+    /// (rgb normal, alpha the specular mask), `$phongexponenttexture`
+    /// (white when unset), `$lightwarptexture` and `$phongwarptexture`,
+    /// all raw and sampled like `base`.
+    #[texture(9)]
+    pub normal_map: Option<Handle<Image>>,
+    #[texture(10)]
+    pub phong_exponent: Option<Handle<Image>>,
+    #[texture(11)]
+    pub lightwarp: Option<Handle<Image>>,
+    #[texture(12)]
+    pub phong_warp: Option<Handle<Image>>,
 }
 
 impl Material for PropMaterial {

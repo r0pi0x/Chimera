@@ -129,7 +129,14 @@ pub fn lit_prop_material(
             .and_then(|s| s.frames.iter().map(|&f| textures.get(f).cloned()).collect::<Option<Vec<_>>>())
             .unwrap_or_default(),
         skin_frame_ms: m.skin_frames.as_ref().map_or(0, |s| s.frame_ms),
+        normal_map: None,
+        phong_exponent: None,
+        lightwarp: None,
+        phong_warp: None,
     };
+    if let Some(phong) = m.phong.as_deref().filter(|_| !lighting_only && !m.unlit && phong_enabled()) {
+        set_prop_phong(&mut material, phong, m.normal_map, textures);
+    }
     if let Some(layer) = m.layer.as_ref().filter(|_| !lighting_only) {
         set_prop_layer(&mut material, layer, textures);
     }
@@ -142,6 +149,65 @@ pub fn lit_prop_material(
         material.params.face = 2.0;
     }
     material
+}
+
+/// Whether materials take the Phong path; `CHIMERA_PHONG=0` draws them
+/// with the plain model shader instead (a calibration hook for before and
+/// after comparisons, read once).
+pub fn phong_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| chimera_core::env::var("CHIMERA_PHONG").map_or(true, |v| v.trim() != "0"))
+}
+
+/// Make `material` draw Source's Phong shading (`map::MapPhong`,
+/// specs/cs_source/shaders_phong.md) with the mesh's `normal_map`. The
+/// shader doesn't apply `$detailtint`.
+pub fn set_prop_phong(material: &mut PropMaterial, phong: &MapPhong, normal_map: Option<usize>, textures: &[Handle<Image>]) {
+    let texture = |t: Option<usize>| t.and_then(|t| textures.get(t)).cloned();
+    material.normal_map = texture(normal_map).filter(|_| !phong.cheap);
+    material.phong_exponent = texture(phong.exponent_texture);
+    material.lightwarp = texture(phong.lightwarp);
+    material.phong_warp = texture(phong.phong_warp);
+    let p = &mut material.params;
+    let flag = |b: bool| if b { 1.0 } else { 0.0 };
+    p.phong = if phong.cheap { 2.0 } else { 1.0 };
+    p.detail_tint = Vec4::ONE;
+    let [m0, m1, m2] = phong.fresnel_ranges;
+    p.phong_fresnel = Vec4::new(m0, m1, m2, phong.boost);
+    let rim = phong.rim.filter(|_| !phong.cheap);
+    p.phong_exponent = Vec4::new(
+        phong.exponent.0,
+        phong.exponent.1,
+        rim.map_or(phong::RIM_EXPONENT_DEFAULT, |r| r.exponent),
+        rim.map_or(0.0, |r| r.boost),
+    );
+    p.phong_tint = match phong.tint {
+        PhongTint::White => Vec4::new(1.0, 1.0, 1.0, 0.0),
+        PhongTint::Color(c) => Vec3::from_array(c).extend(0.0),
+        PhongTint::Albedo => Vec4::ONE,
+    };
+    if phong.cheap {
+        p.phong_tint = Vec4::new(1.0, 1.0, 1.0, 0.0);
+    }
+    p.phong_flags = Vec4::new(
+        flag(rim.is_some()),
+        flag(rim.is_some_and(|r| r.mask) && material.phong_exponent.is_some()),
+        flag(phong.base_alpha_mask),
+        flag(material.normal_map.is_some()),
+    );
+    p.phong_env = match phong.env_mask {
+        PhongEnvMask::BaseAlpha => Vec4::new(0.0, 0.0, 0.0, 0.0),
+        PhongEnvMask::SpecularMask => Vec4::new(1.0, 0.0, 0.0, 0.0),
+        PhongEnvMask::Constant(c) => Vec4::new(2.0, 0.0, 0.0, c),
+    };
+    p.phong_env.y = flag(phong.invert_env_mask);
+    p.phong_env.z = phong.envmap_fresnel;
+    p.phong_warp = Vec4::new(
+        flag(material.lightwarp.is_some()),
+        flag(material.phong_warp.is_some() && !phong.cheap),
+        0.0,
+        0.0,
+    );
 }
 
 /// Make `material` draw `layer` (`map::MapLayer`) over its base; one
@@ -199,6 +265,15 @@ pub fn set_prop_envmap(
     material.params.envmap_contrast = env.contrast;
     material.params.envmap_saturation = env.saturation;
     material.params.envmap_tint = Vec3::from_array(env.tint.map(parameter_gamma_to_linear)).extend(1.0);
+    // The Phong path (shaders_phong.md 8): its own mask (`phong_env`), the
+    // tint raw, no contrast or saturation.
+    if material.params.phong > 0.5 {
+        material.params.envmap_mask = 0.0;
+        material.envmap_mask = None;
+        material.params.envmap_contrast = 0.0;
+        material.params.envmap_saturation = 1.0;
+        material.params.envmap_tint = Vec3::from_array(env.tint).extend(1.0);
+    }
 }
 
 /// The prop shader's mask mode for `mask` (`PropParams::envmap_mask`) and

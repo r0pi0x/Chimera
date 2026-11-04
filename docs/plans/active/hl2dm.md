@@ -1295,6 +1295,27 @@ implementing (owner branch) / done.
   `effects::ADDITIVE_SPRITES` loads them additive; `heavy/
   effect_materials.rs` checks it. Seen while taking promo shots: the stuck
   bolt stands vertical in the wall whatever its flight (not looked into).
+- 2026-11-03: **Source's Phong model shading** (branch `phong`,
+  specs/cs_source/shaders_phong.md, which answered shaders.md open
+  question 14). VertexLitGeneric `$phong` materials with a `$bumpmap`,
+  lightwarp or `$basemapalphaphongmask` are read into `map::MapPhong`
+  (`source_engine::content::material`, routed by `map::phong::route`;
+  the frag grenade's body, `$phong` without a bump map, stays on the plain
+  model shader) and drawn by prop.wesl's Phong path: forced half-Lambert
+  diffuse per pixel with the normal-mapped normal (screen-space tangent
+  frame) from the probe's ambient cube and 4 lights (and the scene's point
+  lights), the reflection-vector Phong lobe with the normal alpha mask,
+  the three-point fresnel ramp, `$phongboost`, the exponent rule
+  (`$phongexponent` over the map, 150 with neither) and tint (raw
+  `$phongtint` or the albedo tint), the rim light (max with the specular,
+  plus the ambient cube along the view on upward-facing pixels), the
+  envmap's own mask rules, lightwarp and phong warp, the cheap variant.
+  The spec's test cases run on a CPU mirror (`map::phong`;
+  chimera/present/tests/it/phong_spec.rs); `heavy/view_models.rs` checks
+  the stock routing (15 view model materials drawn by the default skins
+  plus 2 other skins' = the spec's 17). Missing parameters take the spec's
+  stated defaults (its open question 1). `CHIMERA_PHONG=0` draws them
+  plain for comparisons.
 
 ## Decision log
 
