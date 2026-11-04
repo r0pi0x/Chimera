@@ -10,7 +10,7 @@
 //! First-person view models for any game: `MapViewModel`, `ViewModels`,
 //! `ViewAnimator`, `ViewModelOffset`, `ViewModelSettings`, `EffectSettings`,
 //! `ViewModelEvent`, the anchor and camera markers, `ViewModelScreen`,
-//! `DynamicLight`, `HeldMuzzle` and the placement maths.
+//! `DynamicLight`, `HeldMuzzle`, `HeldAttachment` and the placement maths.
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -378,4 +378,14 @@ pub struct DynamicLight {
 #[derive(Component)]
 pub struct HeldMuzzle {
     pub owner: Entity,
+}
+
+/// One of a held weapon's attachments (`MapHeldModel::attachments`): a
+/// child of the held model, at the attachment; `index` in the model's
+/// list (`map::attached` draws sprites and beams here).
+#[derive(Component, Clone, Debug)]
+pub struct HeldAttachment {
+    pub owner: Entity,
+    pub index: usize,
+    pub name: String,
 }

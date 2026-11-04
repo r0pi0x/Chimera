@@ -436,7 +436,7 @@ implementing (owner branch) / done.
 | M3 movement, suit | H1, H2 | done (branch `hl2dm-m3`, 2026-11-03): S5 (scripts, soundscapes), S6, C2, C8; `hl2dm:movement`, the suit, pickups and chargers; the probe | S5, S6, C2, C8 |
 | M4 bullets, melee, UGG | H3 | done (branch `hl2dm-m4`, 2026-11-03): see Progress; left: probe checks P4, P11, P12, P14, P15 (the rest run: branch `hl2dm-probe`), C7 (no need in M4) | S8, C4 |
 | M5 projectiles | H4 | done (branch `hl2dm-m5`, 2026-11-03): see Progress (effects: `hl2dm-fx`); left: probe checks P5-P8, P9's under-water speed and damage, P10-P12, P14, P15 (the rest run: branch `hl2dm-probe`), the effects (M10) | C1 |
-| M6 gravity gun | H5 | done (branch `hl2dm-m6`, 2026-11-03): see Progress; left: `hl2mp_allow_pickup` 1's carry, first-impact 10× and breaks, the gun's effects (M10), the probe checks P6-P17 (P1-P5 run: branch `hl2dm-probe`) | C6 |
+| M6 gravity gun | H5 | done (branch `hl2dm-m6`, 2026-11-03): see Progress; left: `hl2mp_allow_pickup` 1's carry, first-impact 10× and breaks, the probe checks P6-P17 (P1-P5 run: branch `hl2dm-probe`) | C6 |
 | M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; set pieces built (branches `hl2dm-setpieces`, `hl2dm-setpieces2`, 2026-11-03): see Progress; left: rules P5-P14 (the probe's crash fixed: branch `hl2dm-probe`) | C3 (C5 not needed) |
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
 | M9 HUD | H8 | done (branch `hl2dm-m9`, 2026-11-03): see Progress; left: the items listed there | S7 (the look reader and the animation engine; CS:S's menu readers stay) |
@@ -1463,6 +1463,44 @@ implementing (owner branch) / done.
   `a_bolt_sticks_in_a_brush_entity_at_rest_and_not_in_a_moving_one`).
   Side views on dm_lockdown: the stuck bolt lies along its flight, its
   pointed tip at the wall and its tail out.
+- 2026-11-04: **The gravity gun's claws, the RPG's scorch, the satchel's
+  pop** (branch `hl2dm-fx2`; H9 11, 40-42, 48, 49). **Chimera**
+  (`map::attached`): sprites and beams that stay on a character's weapon
+  attachments (`AttachedFx`, by index or name), drawn each frame as
+  one-frame particles on the first-person view model (posed, offset and
+  mirrored as drawn; on the view model's layer: `ParticleGroup::
+  view_model`, a third particle mesh layer in `render::particles`) or
+  at the held world model's attachments (`MapHeldModel::attachments`,
+  read by `source_engine`'s `load_held`, spawned as `HeldAttachment`s);
+  a beam to a world point is re-projected and drawn in the world pass.
+  Beams follow visual_entities.md 1 (fractal noise, strip twice the
+  width, texture per 100 units) with the caller's segment count.
+  **HL2:DM** (`physcannon_fx`): the effect state (none, ready, holding
+  while holding or searching) per gun, the server's replicated to
+  clients (`Hl2GunEffect`, net part `hl2dm_physcannon_fx`); the core
+  moving to the state's width and alpha, the six glows, the end caps and
+  the noisy beams, the view model's set in first person (attachment 1 is
+  `muzzle` there, `core` on `w_physics`) and the world model's (`fork3`
+  too) for everyone else; a punt's or launch's blast sprite; the punt
+  beam now starts at the view model's attachment 1, others' sparks at the
+  world gun's. **Scorch** (`projectile_fx::scorches`, the server's): an
+  explosion by the entity rule (RPG, satchel, trip mine) puts `Scorch`
+  where its line from 8 above to 40 below that hits; none in mid-air or
+  on a wall well above the floor. **Pop** (`slam::SatchelPop`, sent to
+  clients by net part `hl2dm_projectile_fx`): a shot satchel's scale-0
+  explosion, the flash overlay and the debris (`explosions::pop`, the
+  explosion's sparks and flecks split out as `debris`) and
+  `BaseExplosionEffect.Sound` on every machine, `BaseGrenade.Explode` as
+  a `GameSound` (clients hear it now), a `Scorch` under it. Tests:
+  `gravity_gun.rs` (view model, world model, blast), `net_gravity_gun.rs`
+  (B sees A's beams), `projectile_fx.rs` (41/42 scorch, 40 pop),
+  `projectiles.rs` (60: pop, scorch, sound), heavy `view_models.rs` (the
+  models' fork attachments), `effect_materials.rs`; unit tests for the
+  core's and blast's ramps (48, 49) and the pieces by state. Left: the
+  "closed" state (nothing in the spec enters it), the punt's end at the
+  object's centre, the SMG1 grenade's scorch along its flight (4.3),
+  scorches on props and brush entities, the RPG's beam and glow on the
+  view model (now buildable on `map::attached`).
 
 ## Decision log
 

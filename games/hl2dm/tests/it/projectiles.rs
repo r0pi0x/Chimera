@@ -1231,10 +1231,27 @@ fn a_shot_satchel_is_harmless_60() {
         weapon: None,
         force: Vec3::ZERO,
     });
-    let ran = run(&mut sim, p, 20, |_, _| {});
+    let mut pops = sim.app.world().resource::<Messages<hl2dm::game::weapons::slam::SatchelPop>>().get_cursor_current();
+    let mut decals = sim.app.world().resource::<Messages<chimera_world::map::PlaceDecal>>().get_cursor_current();
+    let mut sounds = sim.app.world().resource::<Messages<chimera_world::map::GameSound>>().get_cursor_current();
+    let (mut popped, mut scorched, mut heard) = (Vec::new(), Vec::new(), Vec::new());
+    let ran = run(&mut sim, p, 20, |s, _| {
+        let w = s.app.world();
+        popped.extend(pops.read(w.resource::<Messages<hl2dm::game::weapons::slam::SatchelPop>>()).copied());
+        scorched.extend(decals.read(w.resource::<Messages<chimera_world::map::PlaceDecal>>()).cloned());
+        heard.extend(sounds.read(w.resource::<Messages<chimera_world::map::GameSound>>()).map(|g| g.0.entry.clone()));
+    });
     assert!(satchels(&mut sim).is_empty());
     assert!(ran.blasts.is_empty());
     assert_eq!(health(&sim, p), 100.0);
+    // 8.6 and effects_sounds.md test 40: the pop drawn everywhere, its
+    // scorch on the floor it lies on, `BaseGrenade.Explode` for all.
+    assert_eq!(popped.len(), 1, "one pop");
+    assert!(popped[0].at.distance(at) < 12.0 * U, "{} near {at}", popped[0].at);
+    assert_eq!(scorched.len(), 1, "a scorch");
+    assert!(matches!(&scorched[0].group, chimera_world::map::DecalGroup::Named(g) if g == "Scorch"));
+    assert!(scorched[0].normal.y > 0.9, "on the floor");
+    assert_eq!(heard.iter().filter(|e| *e == "BaseGrenade.Explode").count(), 1);
 }
 
 /// Test 62: the last slam placed as a trip mine, the S.L.A.M. leaves the

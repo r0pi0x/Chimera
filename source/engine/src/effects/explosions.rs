@@ -185,7 +185,33 @@ pub fn explosion(
                 ..Particle::new(at, rng.float(0.2, 0.4), fire, 0.0)
             });
         }
-        // Debris: spark streaks.
+    }
+    // The flash: one glow, fading out in 0.1 s while growing 16 units/s
+    // (its start size isn't in the spec: ours).
+    if let Some(glow) = m.glow {
+        core.particles.push(Particle {
+            color: Vec3::new(1.0, 0.9, 0.7),
+            fade: Fade::Ramp(Ramp::linear(1.0, 0.0)),
+            size: Ramp::linear(96.0 * UNIT, (96.0 + 1.6) * UNIT),
+            ..Particle::new(b, 0.1, glow, 0.0)
+        });
+    }
+    // In the order they were always made: sparks, the core, flecks.
+    let mut rest = debris(rng, m, b, a, world).into_iter();
+    if m.fire.is_some() {
+        out.extend(rest.next());
+    }
+    out.push(core);
+    out.extend(rest);
+    out
+}
+
+/// The explosion's debris (spec 5.4): 8 to 16 spark streaks and 16 to 32
+/// cement flecks bouncing off the world.
+pub fn debris(rng: &mut ParticleRng, m: &FxMaterials, b: Vec3, a: Vec3, world: &impl WorldTrace) -> Vec<ParticleGroup> {
+    let mut out = Vec::new();
+    if let Some(fire) = m.fire {
+        // Spark streaks.
         let mut sparks = ParticleGroup::new(Motion {
             gravity: 200.0 * UNIT,
             damping: 8.0,
@@ -205,17 +231,6 @@ pub fn explosion(
         }
         out.push(sparks);
     }
-    // The flash: one glow, fading out in 0.1 s while growing 16 units/s
-    // (its start size isn't in the spec: ours).
-    if let Some(glow) = m.glow {
-        core.particles.push(Particle {
-            color: Vec3::new(1.0, 0.9, 0.7),
-            fade: Fade::Ramp(Ramp::linear(1.0, 0.0)),
-            size: Ramp::linear(96.0 * UNIT, (96.0 + 1.6) * UNIT),
-            ..Particle::new(b, 0.1, glow, 0.0)
-        });
-    }
-    out.push(core);
     // Cement flecks bouncing off the world.
     if m.cement.iter().any(Option::is_some) {
         let origin = b + a * 16.0 * UNIT;
@@ -249,6 +264,24 @@ pub fn explosion(
                 ..Particle::new(at, 3.0, mat, size as f32 * UNIT)
             });
         }
+        out.push(g);
+    }
+    out
+}
+
+/// A scale-0 explosion (HL2's shot satchel's pop, specs/hl2dm/
+/// effects_sounds.md test 40): the flash overlay and the debris, no core
+/// (smoke, embers, fireballs).
+pub fn pop(rng: &mut ParticleRng, m: &FxMaterials, b: Vec3, a: Vec3, world: &impl WorldTrace) -> Vec<ParticleGroup> {
+    let mut out = debris(rng, m, b, a, world);
+    if let Some(glow) = m.glow {
+        let mut g = ParticleGroup::new(Motion::default());
+        g.particles.push(Particle {
+            color: Vec3::new(1.0, 0.9, 0.7),
+            fade: Fade::Ramp(Ramp::linear(1.0, 0.0)),
+            size: Ramp::linear(96.0 * UNIT, (96.0 + 1.6) * UNIT),
+            ..Particle::new(b, 0.1, glow, 0.0)
+        });
         out.push(g);
     }
     out

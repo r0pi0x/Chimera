@@ -754,25 +754,31 @@ pub fn load_held_posed(
             *n = to_bone.transform_vector3(source(*n)).normalize_or_zero().to_array();
         }
     }
-    // The muzzle attachment (spec view_models.md 6: `muzzle_flash`), in the
-    // same frame.
-    let muzzle = super::anim::attachments(&|p| materials.read(p), path)
-        .ok()
-        .and_then(|(list, _)| {
-            let (_, b, local) = list
-                .iter()
-                .find(|(n, _, _)| n.eq_ignore_ascii_case("muzzle_flash"))
-                .or_else(|| list.first())?
-                .clone();
-            let (bq, bp) = *global.get(b)?;
+    // Its attachments in the same frame (sprites drawn on them,
+    // `map::attached`), and the muzzle (spec view_models.md 6:
+    // `muzzle_flash`, else the first).
+    let list = super::anim::attachments(&|p| materials.read(p), path)
+        .map(|(list, _)| list)
+        .unwrap_or_default();
+    let attachments: Vec<(String, Transform)> = list
+        .iter()
+        .filter_map(|(name, b, local)| {
+            let (bq, bp) = *global.get(*b)?;
             let m = to_bone * Mat4::from_rotation_translation(bq, bp) * local.to_matrix();
-            Some(Transform::from_matrix(m))
-        });
+            Some((name.clone(), Transform::from_matrix(m)))
+        })
+        .collect();
+    let muzzle = attachments
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("muzzle_flash"))
+        .or_else(|| attachments.first())
+        .map(|(_, t)| *t);
     Ok(crate::map::MapHeldModel {
         key: key.to_string(),
         model: held,
         bone: bone.name.clone(),
         muzzle,
+        attachments,
         own: (!merged.is_empty()).then_some(own),
         merged: merged.into_iter().map(|(b, m)| (mdl.bones[b].name.clone(), m)).collect(),
     })

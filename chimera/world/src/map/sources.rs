@@ -466,6 +466,7 @@ mod tests {
                 model: default(),
                 bone: String::new(),
                 muzzle: None,
+                attachments: Vec::new(),
                 merged: Vec::new(),
                 own: None,
             });

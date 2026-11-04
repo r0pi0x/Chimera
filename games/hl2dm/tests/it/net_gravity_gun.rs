@@ -223,3 +223,46 @@ fn a_held_prop_follows_its_holders_view_at_once() {
     let at_a = pos(sim.clients[0].app.world(), mine);
     assert!(at_a.distance(at_server) < 3.0, "A {at_a}, server {at_server}");
 }
+
+/// effects_sounds.md 11 on a network client: the server's effect state of
+/// each player's gun reaches the others (`Hl2GunEffect`), so B draws A's
+/// claws on A's world model, beams while A holds, the idle glow after.
+#[test]
+fn others_see_the_claws_hold() {
+    use chimera_world::map::{
+        attached::{AttachedFx, AttachedPiece},
+        particles::{MapParticles, ParticleMaterial, ParticleMaterials},
+    };
+    use hl2dm::game::physcannon_fx::{GunEffect, Hl2GunEffect, MATERIALS, WORLD_BEAM};
+    let mut sim = joined();
+    let materials = MATERIALS.iter().map(|n| ParticleMaterial { name: n.to_string(), ..default() }).collect();
+    sim.clients[1].app.insert_resource(ParticleMaterials(MapParticles { materials }));
+    place(&mut sim, 1, Vec3::new(0.0, -300.0, 0.0));
+    place(&mut sim, 0, Vec3::ZERO);
+    let a_id = sim.client_id(0);
+    let a_on_b = |sim: &mut NetSim| {
+        let w1 = sim.clients[1].app.world_mut();
+        w1.query::<(Entity, &chimera_net::net::NetCharacter)>()
+            .iter(w1)
+            .find(|(_, c)| c.owner == Some(a_id))
+            .map(|(e, _)| e)
+            .unwrap()
+    };
+    let beams = |sim: &mut NetSim| {
+        let a = a_on_b(sim);
+        let w1 = sim.clients[1].app.world();
+        let beam = w1.resource::<ParticleMaterials>().0.find(WORLD_BEAM).unwrap();
+        let state = w1.get::<Hl2GunEffect>(a).map(|e| e.0);
+        let n = w1.get::<AttachedFx>(a).map_or(0, |fx| {
+            fx.world.iter().filter(|p| matches!(p, AttachedPiece::Beam { material, .. } if *material == beam)).count()
+        });
+        (state, n)
+    };
+    assert_eq!(beams(&mut sim), (Some(GunEffect::Ready), 0), "idle glow");
+    press(&mut sim, 0, 3);
+    sim.ticks(40);
+    assert_eq!(beams(&mut sim), (Some(GunEffect::Holding), 3), "beams while A holds");
+    press(&mut sim, 0, 3);
+    sim.ticks(40);
+    assert_eq!(beams(&mut sim), (Some(GunEffect::Ready), 0), "let go");
+}

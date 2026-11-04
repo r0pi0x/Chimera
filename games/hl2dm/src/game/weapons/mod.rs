@@ -286,6 +286,9 @@ pub fn register_hooks(app: &mut App) {
 fn projectile_systems(app: &mut App) {
     use chimera_sim::weapon::{SelectWeapons, projectile::FlyerSet};
     app.add_message::<slam::SlamAction>()
+        .add_message::<slam::SatchelPop>()
+        .add_message::<crate::map::GameSound>()
+        .add_message::<crate::map::PlaceDecal>()
         .add_systems(
             Predict::Weapons,
             (

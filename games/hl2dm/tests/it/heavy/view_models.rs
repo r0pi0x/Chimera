@@ -95,3 +95,31 @@ fn view_model_materials_route_to_phong_as_the_spec_counts() {
     assert!(phong.values().all(|p| !p.cheap));
     assert!(phong.values().any(|p| p.fresnel_ranges == [0.1, 5.0, 1.0]));
 }
+
+/// effects_sounds.md, "Gravity gun sprites and beams": the view model has
+/// the claws' `fork1b` to `fork2t` attachments and the world model `fork1m`
+/// to `fork3t` (`game::physcannon_fx` draws on them; attachment 1 is the
+/// core's), loaded into `MapViewModel::attachments` and
+/// `MapHeldModel::attachments`.
+#[test]
+fn the_gravity_gun_models_have_the_claws_attachments() {
+    use hl2dm::game::physcannon_fx::{VIEW_GLOWS, WORLD_GLOWS};
+    let Some(mount) = install_mount() else { return };
+    let mut materials = MaterialLoader::guest(&mount, 0, 0).lean(true);
+    let mut models = Vec::new();
+    let mut warnings = Vec::new();
+    maps::add_view_models(&mut materials, chimera_world::map::KitLoad::All, &mut models, &mut warnings);
+    let v = models.iter().find(|v| v.key == weapons::PHYSCANNON).expect("the gun's view model");
+    let names: Vec<&str> = v.attachments.iter().map(|a| a.name.as_str()).collect();
+    eprintln!("v_physcannon: {names:?}");
+    for want in VIEW_GLOWS {
+        assert!(names.iter().any(|n| n.eq_ignore_ascii_case(want)), "view model: no {want} in {names:?}");
+    }
+    let held = source_engine::content::props::load_held(&mut materials, "models/weapons/w_physics.mdl", "w", &[])
+        .expect("w_physics");
+    let names: Vec<&str> = held.attachments.iter().map(|(n, _)| n.as_str()).collect();
+    eprintln!("w_physics: {names:?}");
+    for want in WORLD_GLOWS {
+        assert!(names.iter().any(|n| n.eq_ignore_ascii_case(want)), "world model: no {want} in {names:?}");
+    }
+}

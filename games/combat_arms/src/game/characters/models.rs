@@ -624,6 +624,7 @@ fn thrown(
         model: m,
         bone: String::new(),
         muzzle: None,
+        attachments: Vec::new(),
         merged: Vec::new(),
         own: None,
     })
@@ -1185,6 +1186,7 @@ fn held_with_sockets(
             model: m,
             bone: socket.parent.clone(),
             muzzle: None,
+            attachments: Vec::new(),
             merged: Vec::new(),
             own: None,
         },

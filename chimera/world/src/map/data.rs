@@ -889,6 +889,9 @@ pub struct MapHeldModel {
     /// Where it shoots from, in the bone's frame (muzzle flashes; +X
     /// forward).
     pub muzzle: Option<Transform>,
+    /// Its named points (the model's attachments, in order), in the same
+    /// frame as `muzzle` (`map::attached` draws on them).
+    pub attachments: Vec<(String, Transform)>,
     /// Bone merge: parts that follow other bones of the skeleton (the
     /// dual pistols' left gun, on the left hand), each in its bone's
     /// frame; held in a hand, `model` then draws only what is left. Empty:
