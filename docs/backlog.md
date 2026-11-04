@@ -2483,6 +2483,14 @@ docs/plans/active/sound.md.
   it may be a hardware bit flip (no ECC reporting on the box). If it comes
   back, look at the ragdoll solver's `get_pair_unchecked_mut` first, then
   run a memory test.
+- **Bots make many archetypes, and each new one costs every query a walk
+  (2026-11-04).** In party_kit's gun game the bots make ~2000 archetypes
+  (another game's gun, death, sleeping body, spawn protection); each new
+  archetype makes every query step over all archetypes holding its rarest
+  component (Bevy's `update_archetypes_unsafe_world_cell`). The archetype
+  test now skips ticks that make one (9488d0d6), so this cost is
+  unmeasured and grows over a long session. Cut the churn (sparse-set or
+  always-present components for the toggled states) if ticks spike.
 
 Measured and culled (docs/performance.md): `chimera_perf`, `refcmp bench`,
 PVS culling by world chunk, areaportals (closed doors hide what's behind
