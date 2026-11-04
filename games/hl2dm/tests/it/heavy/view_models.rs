@@ -125,6 +125,34 @@ fn the_gravity_gun_models_have_the_claws_attachments() {
     }
 }
 
+/// effects_sounds.md, "Projectile visuals" (`rpg_beam_1st`, `rpg_beam_3rd`,
+/// open question 6): the RPG's view model has attachment 2 `laser` and 3
+/// `laser_end` (`game::rpg_fx` draws the beam between them), and the world
+/// model `w_rocket_launcher.mdl` 4 `guide` and 5 `guide_target` (read
+/// 2026-11-04: 5 attachments, `muzzle`, `missile`, `exhaust`, `guide`,
+/// `guide_target`; the spec's open question 6 counted 3), where the
+/// third-person beam goes.
+#[test]
+fn the_rpg_models_have_the_lasers_attachments() {
+    use hl2dm::game::rpg_fx::{VIEW_FROM, VIEW_TO, WORLD_FROM, WORLD_TO};
+    let Some(mount) = install_mount() else { return };
+    let mut materials = MaterialLoader::guest(&mount, 0, 0).lean(true);
+    let mut models = Vec::new();
+    let mut warnings = Vec::new();
+    maps::add_view_models(&mut materials, chimera_world::map::KitLoad::All, &mut models, &mut warnings);
+    let v = models.iter().find(|v| v.key == weapons::RPG).expect("the RPG's view model");
+    let names: Vec<&str> = v.attachments.iter().map(|a| a.name.as_str()).collect();
+    eprintln!("v_rpg: {names:?}");
+    assert!(names.get(VIEW_FROM).is_some_and(|n| n.eq_ignore_ascii_case("laser")), "{names:?}");
+    assert!(names.get(VIEW_TO).is_some_and(|n| n.eq_ignore_ascii_case("laser_end")), "{names:?}");
+    let held = source_engine::content::props::load_held(&mut materials, "models/weapons/w_rocket_launcher.mdl", "w", &[])
+        .expect("w_rocket_launcher");
+    let names: Vec<&str> = held.attachments.iter().map(|(n, _)| n.as_str()).collect();
+    eprintln!("w_rocket_launcher: {names:?}");
+    assert!(names.get(WORLD_FROM).is_some_and(|n| n.eq_ignore_ascii_case("guide")), "{names:?}");
+    assert!(names.get(WORLD_TO).is_some_and(|n| n.eq_ignore_ascii_case("guide_target")), "{names:?}");
+}
+
 /// Each weapon's shell type, as its view model's events from the install
 /// give it (specs/hl2dm/effects_sounds.md, Constants "Shells", probe case
 /// P6): the SMG1 ejects type 0 at cycle 0 of each fire sequence, the

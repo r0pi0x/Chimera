@@ -44,6 +44,7 @@ pub mod rules;
 pub mod physcannon_fx;
 pub mod player_anim;
 pub mod projectile_fx;
+pub mod rpg_fx;
 pub mod rungs;
 pub mod scripts;
 pub mod set_piece_fx;
