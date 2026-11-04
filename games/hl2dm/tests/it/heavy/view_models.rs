@@ -57,3 +57,41 @@ fn every_view_model_loads_textured() {
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
+
+/// specs/cs_source/shaders_phong.md, Stock content: 17 of HL2:DM's view
+/// model materials take the Phong shader (crowbar 2, crossbow 3, frag 4,
+/// hands 1, AR2 1, gravity gun 2, pistol 1, RPG 1, shotgun 1, SMG1 1; one
+/// of the crossbow's and one of the gravity gun's are other skins'), the
+/// frag's body (`$phong 1`, no normal map) the plain model shader, none
+/// the cheap variant; the pistol's fresnel ranges are [.1 5 1].
+#[test]
+fn view_model_materials_route_to_phong_as_the_spec_counts() {
+    let Some(mount) = install_mount() else { return };
+    let mut materials = MaterialLoader::guest(&mount, 0, 0).lean(true);
+    let mut models = Vec::new();
+    let mut warnings = Vec::new();
+    maps::add_view_models(&mut materials, chimera_world::map::KitLoad::All, &mut models, &mut warnings);
+    // By (view model, material): two models may each have a material of
+    // one name; the hands are one material.
+    let mut phong = std::collections::BTreeMap::new();
+    for v in &models {
+        for x in &v.model.meshes {
+            let key = if x.material == "v_hand_sheet" { String::new() } else { v.key.clone() };
+            if let Some(p) = &x.phong {
+                phong.insert((key, x.material.clone()), (**p).clone());
+            }
+        }
+    }
+    for (name, p) in &phong {
+        eprintln!("{name:?}: {p:?}");
+    }
+    // The default skins draw 15; the other two are the crossbow's glowing
+    // skin and the super gravity gun's.
+    for alt in ["models/weapons/v_crossbow/crossbow dirtmap_glow", "models/weapons/v_physcannon/v_superphyscannon_sheet"] {
+        assert!(materials.resolve(alt).phong.is_some(), "{alt}");
+    }
+    assert_eq!(phong.len(), 15, "{:?}", phong.keys().collect::<Vec<_>>());
+    assert!(!phong.keys().any(|(_, m)| m == "grenade body"));
+    assert!(phong.values().all(|p| !p.cheap));
+    assert!(phong.values().any(|p| p.fresnel_ranges == [0.1, 5.0, 1.0]));
+}

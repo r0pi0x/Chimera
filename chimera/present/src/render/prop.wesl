@@ -3,6 +3,8 @@
 // scene's point lights, then Source's range fog (f^2), as for world
 // surfaces. Face parts (map::face): eyeballs lit along their own normal
 // with the iris projected on them, teeth darkened toward the back.
+// VertexLitGeneric $phong materials: Source's Phong shading per pixel
+// (phong_shade, specs/cs_source/shaders_phong.md).
 
 import bevy_pbr::{
     render::forward_io::VertexOutput,
@@ -55,6 +57,13 @@ struct PropParams {
     face_up: vec4<f32>,
     face_u: vec4<f32>,
     face_v: vec4<f32>,
+    phong: f32,
+    phong_fresnel: vec4<f32>,
+    phong_exponent: vec4<f32>,
+    phong_tint: vec4<f32>,
+    phong_flags: vec4<f32>,
+    phong_env: vec4<f32>,
+    phong_warp: vec4<f32>,
 }
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> params: PropParams;
@@ -66,6 +75,10 @@ struct PropParams {
 @group(constants::MATERIAL_BIND_GROUP) @binding(6) var detail_texture: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(7) var selfillum_mask_texture: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(8) var layer_texture: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(9) var normal_texture: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(10) var phong_exponent_texture: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(11) var lightwarp_texture: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(12) var phong_warp_texture: texture_2d<f32>;
 
 // A texture transform (map::MapUvTransform): rows . (u, v, 1), plus the
 // TextureScroll translation, wrapped to [0, 1) as the proxy does.
@@ -208,6 +221,201 @@ fn dynamic_light(p: vec3<f32>, n: vec3<f32>, frag_coord: vec2<f32>, lithtech: bo
     return sum;
 }
 
+// Detail modes 5 and 6: added after lighting.
+fn detail_after_lighting(rgb: vec3<f32>, d: vec4<f32>) -> vec3<f32> {
+    let mode = params.detail - 1.0;
+    if params.detail > 0.5 && mode > 4.5 && mode < 6.5 {
+        let f = params.detail_factor;
+        if mode < 5.5 {
+            return rgb + f * d.rgb;
+        }
+        let m = select(4.0 * f, 1.0 / f, f >= 0.5);
+        let a = select(-0.5 * m, 1.0 - m, f >= 0.5);
+        return rgb + saturate(m * d.rgb + a);
+    }
+    return rgb;
+}
+
+// Source's Phong model shading (specs/cs_source/shaders_phong.md;
+// map::phong mirrors it on the CPU for the spec's test cases).
+
+// The ramp F of (1 - N.V)^2 through (min, mid, max), not clamped (7).
+fn phong_fresnel_ramp(n_dot_v: f32) -> f32 {
+    let r = params.phong_fresnel;
+    let x = saturate(1.0 - n_dot_v);
+    let f = x * x;
+    if f < 0.5 {
+        return r.x + (r.y - r.x) * 2.0 * f;
+    }
+    return r.y + (r.z - r.y) * (2.0 * f - 1.0);
+}
+
+// clamp(R.L)^k x clamp(N.L), 0 behind the light (0^0 counts as 0).
+fn phong_lobe(r_dot_l: f32, n_dot_l: f32, k: f32) -> f32 {
+    if r_dot_l <= 0.0 || n_dot_l <= 0.0 {
+        return 0.0;
+    }
+    return pow(min(r_dot_l, 1.0), k) * min(n_dot_l, 1.0);
+}
+
+// A 1D ramp's texel at u on its first row (shaders_phong.md open
+// question 6), or the phong warp's at (u, v), between texel centres.
+fn ramp_uv(t: texture_2d<f32>, uv: vec2<f32>) -> vec2<f32> {
+    let size = vec2<f32>(textureDimensions(t));
+    let half = 0.5 / size;
+    return clamp(uv, half, vec2<f32>(1.0) - half);
+}
+
+struct PhongSum {
+    diffuse: vec3<f32>,
+    specular: vec3<f32>,
+    rim: vec3<f32>,
+}
+
+// One light (toward it l, colour x attenuation c): half-Lambert or warped
+// diffuse (4), the specular and rim lobes (7).
+fn phong_light(sum: PhongSum, n: vec3<f32>, r: vec3<f32>, l: vec3<f32>, c: vec3<f32>, k: f32, fresnel: f32) -> PhongSum {
+    var out = sum;
+    let n_dot_l = dot(n, l);
+    let h = saturate(0.5 * n_dot_l + 0.5);
+    var w = vec3<f32>(h * h);
+    if params.phong_warp.x > 0.5 {
+        w = 2.0 * textureSampleLevel(lightwarp_texture, base_sampler, ramp_uv(lightwarp_texture, vec2<f32>(h, 0.0)), 0.0).rgb;
+    }
+    out.diffuse = out.diffuse + c * w;
+    let r_dot_l = dot(r, l);
+    let lobe = phong_lobe(r_dot_l, n_dot_l, k);
+    var s = c * lobe;
+    if params.phong_warp.y > 0.5 {
+        s = s * textureSampleLevel(phong_warp_texture, base_sampler, ramp_uv(phong_warp_texture, vec2<f32>(lobe, fresnel)), 0.0).rgb;
+    }
+    out.specular = out.specular + s;
+    if params.phong_flags.x > 0.5 {
+        out.rim = out.rim + c * phong_lobe(r_dot_l, n_dot_l, params.phong_exponent.z);
+    }
+    return out;
+}
+
+// The scene's point lights as local lights (dynamic_light's falloff as
+// the attenuation).
+fn phong_dynamic(sum: PhongSum, p: vec3<f32>, n: vec3<f32>, r: vec3<f32>, k: f32, fresnel: f32, frag_coord: vec2<f32>, lithtech: bool) -> PhongSum {
+    var out = sum;
+    let view_z = dot(vec4<f32>(
+        view.view_from_world[0].z,
+        view.view_from_world[1].z,
+        view.view_from_world[2].z,
+        view.view_from_world[3].z
+    ), vec4<f32>(p, 1.0));
+    let cluster = clustering::view_fragment_cluster_index(frag_coord, view_z, false);
+    let ranges = clustering::unpack_clusterable_object_index_ranges(cluster);
+    for (var i = ranges.first_point_light_index_offset; i < ranges.first_spot_light_index_offset; i = i + 1u) {
+        let light = &view_bindings::clustered_lights.data[clustering::get_clusterable_object_id(i)];
+        let to = (*light).position_radius.xyz - p;
+        let x = dot(to, to) * (*light).color_inverse_square_range.w;
+        var falloff = saturate(1.0 - x);
+        if lithtech {
+            falloff = select(1.0 / (1.0 + 19.0 * x), 0.0, x >= 1.0);
+        }
+        out = phong_light(out, n, r, normalize(to), (*light).color_inverse_square_range.rgb * falloff, k, fresnel);
+    }
+    return out;
+}
+
+// The shading normal from the normal map through a screen-space tangent
+// frame (dP/du, dP/dv: x along u, y along v image-down, as Source's).
+fn phong_normal(p: vec3<f32>, n_v: vec3<f32>, uv: vec2<f32>, n_t: vec3<f32>) -> vec3<f32> {
+    let dp1 = dpdx(p);
+    let dp2 = dpdy(p);
+    let duv1 = dpdx(uv);
+    let duv2 = dpdy(uv);
+    let dp2perp = cross(dp2, n_v);
+    let dp1perp = cross(n_v, dp1);
+    let t = dp2perp * duv1.x + dp1perp * duv2.x;
+    let b = dp2perp * duv1.y + dp1perp * duv2.y;
+    let inv = inverseSqrt(max(max(dot(t, t), dot(b, b)), 1e-12));
+    let n = n_t.x * t * inv + n_t.y * b * inv + n_t.z * n_v;
+    return select(n_v, normalize(n), dot(n, n) > 1e-12);
+}
+
+// The whole Phong pixel (shaders_phong.md, Per-pixel order): `base` the
+// base texture after detail, `a` the albedo (x modulation), `n_v` the
+// vertex normal, `vertex_light` the baked light of a prop without a probe
+// (its diffuse only). Before fog.
+fn phong_shade(in: VertexOutput, uv: vec2<f32>, base: vec4<f32>, a: vec3<f32>, n_v: vec3<f32>, vertex_light: vec3<f32>, d: vec4<f32>) -> vec3<f32> {
+    let p = in.world_position.xyz;
+    let cheap = params.phong > 1.5;
+    var texel = vec4<f32>(0.5, 0.5, 1.0, 1.0);
+    if params.phong_flags.w > 0.5 {
+        texel = textureSample(normal_texture, base_sampler, uv);
+    }
+    var n_t = texel.xyz * 2.0 - 1.0;
+    var mask = texel.a;
+    if params.phong_flags.z > 0.5 || cheap {
+        n_t = vec3<f32>(0.0, 0.0, 1.0);
+        mask = base.a;
+    }
+    let n = phong_normal(p, n_v, uv, n_t);
+    let v = normalize(view.world_position - p);
+    let n_dot_v = dot(n, v);
+    let fresnel = phong_fresnel_ramp(n_dot_v);
+    let x = saturate(1.0 - n_dot_v);
+    let rim_fresnel = x * x * x * x;
+    let r = 2.0 * n * n_dot_v - v;
+    let ex = textureSample(phong_exponent_texture, base_sampler, uv);
+    let k = params.phong_exponent.x + params.phong_exponent.y * ex.r;
+    var sum = PhongSum(vec3<f32>(0.0), vec3<f32>(0.0), vec3<f32>(0.0));
+    if params.probe > 0.5 {
+        sum.diffuse = probe_ambient(n);
+        for (var i = 0u; i < 4u; i = i + 1u) {
+            sum = phong_light(sum, n, r, params.probe_light_dir[i].xyz, params.probe_light_color[i].rgb, k, fresnel);
+        }
+    } else {
+        sum.diffuse = vertex_light;
+    }
+    if params.dynamic > 0.5 {
+        sum = phong_dynamic(sum, p, n, r, k, fresnel, in.position.xy, params.dynamic > 1.5);
+    }
+    // The envmap (8): its own mask rules, the fresnel ramp by
+    // $envmapfresnel, the tint raw.
+    var env = vec3<f32>(0.0);
+    if params.envmap > 0.5 {
+        var m_e = base.a;
+        if params.phong_env.x > 1.5 {
+            m_e = params.phong_env.w;
+        } else if params.phong_env.x > 0.5 {
+            m_e = mask;
+        }
+        if params.phong_env.y > 0.5 {
+            m_e = 1.0 - m_e;
+        }
+        let cube = textureSample(envmap_texture, envmap_sampler, vec3<f32>(r.x, -r.z, r.y)).rgb;
+        env = cube * params.envmap_tint.rgb * mix(1.0, fresnel, params.phong_env.z) * m_e;
+    }
+    // The mask takes the fresnel unless a phong warp already did; boost.
+    let masked = select(mask * fresnel, mask, params.phong_warp.y > 0.5);
+    var s = sum.specular * masked * params.phong_fresnel.w;
+    var diffuse = a * sum.diffuse;
+    if params.selfillum > 0.5 {
+        var m_s = vec3<f32>(base.a);
+        if params.selfillum > 1.5 {
+            m_s = textureSample(selfillum_mask_texture, base_sampler, uv).rgb;
+        }
+        diffuse = max(vec3<f32>(0.0), mix(diffuse, params.selfillum_tint.rgb * a, m_s));
+    }
+    diffuse = detail_after_lighting(diffuse, d);
+    // The rim (7, 3): its lobe by (1 - N.V)^4 (and the mask), merged by
+    // max, plus the ambient cube along the view on upward-facing pixels.
+    if params.phong_flags.x > 0.5 && !cheap {
+        let rho = select(1.0, ex.a, params.phong_flags.y > 0.5) * rim_fresnel;
+        s = max(s, sum.rim * rho);
+        if params.probe > 0.5 {
+            s = s + probe_ambient(v) * params.phong_exponent.w * saturate(rho * n.y);
+        }
+    }
+    let tint = select(params.phong_tint.rgb, mix(vec3<f32>(1.0), base.rgb, ex.g), params.phong_tint.w > 0.5);
+    return s * tint + env + diffuse;
+}
+
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     @if(VISIBILITY_RANGE_DITHER) {
@@ -230,9 +438,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         d = vec4<f32>(d.rgb * params.detail_tint.rgb, d.a);
         color = detail_combine(mode, color, d, params.detail_factor);
     }
+    let base = color;
     color = color * params.base_color;
-    // Self-illuminated: the base alpha is the mask, not opacity.
-    if params.selfillum > 0.5 {
+    // Self-illuminated: the base alpha is the mask, not opacity; so is it
+    // under $basemapalphaphongmask.
+    if params.selfillum > 0.5 || (params.phong > 0.5 && params.phong_flags.z > 0.5) {
         color.a = params.base_color.a;
     }
     if params.alpha_cutoff > 0.0 && color.a < params.alpha_cutoff {
@@ -255,6 +465,9 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     var light = vec3<f32>(1.0);
     @if(VERTEX_COLORS) {
         light = in.color.rgb;
+    }
+    if params.phong > 0.5 {
+        return prop_output(phong_shade(in, uv, base, color.rgb, n, light, d), color.a, in.world_position.xyz);
     }
     var direct_extra = vec3<f32>(0.0);
     if params.probe > 0.5 {
@@ -322,17 +535,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         }
         rgb = rgb + spec;
     }
-    // Detail modes 5 and 6: added after lighting.
-    if params.detail > 0.5 && mode > 4.5 && mode < 6.5 {
-        let f = params.detail_factor;
-        if mode < 5.5 {
-            rgb = rgb + f * d.rgb;
-        } else {
-            let m = select(4.0 * f, 1.0 / f, f >= 0.5);
-            let a = select(-0.5 * m, 1.0 - m, f >= 0.5);
-            rgb = rgb + saturate(m * d.rgb + a);
-        }
-    }
+    rgb = detail_after_lighting(rgb, d);
     // $selfillum: toward tint x albedo, unlit, by the base alpha or the
     // $selfillummask texture.
     if params.selfillum > 0.5 {
@@ -361,13 +564,18 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
         spec = mix(vec3<f32>(dot(spec, LUMA)), spec, params.envmap_saturation);
         rgb = rgb + spec;
     }
+    return prop_output(rgb, color.a, in.world_position.xyz);
+}
+
+// Fog and the output alpha.
+fn prop_output(lit: vec3<f32>, alpha: f32, p: vec3<f32>) -> vec4<f32> {
     // Under (or, at the surface, just below) water, what is below the
     // surface takes the water's fog.
-    let fog = source_fog(params.fog_color, params.fog_range, params.water_fog_color, params.water_fog_range, in.world_position.xyz);
-    rgb = mix(rgb, fog.rgb, fog.a);
+    let fog = source_fog(params.fog_color, params.fog_range, params.water_fog_color, params.water_fog_range, p);
+    let rgb = mix(lit, fog.rgb, fog.a);
     // Additive (translucent 2): alpha 0 under premultiplied blending adds.
     if params.translucent > 1.5 {
         return vec4<f32>(rgb, 0.0);
     }
-    return vec4<f32>(rgb, select(1.0, color.a, params.translucent > 0.5));
+    return vec4<f32>(rgb, select(1.0, alpha, params.translucent > 0.5));
 }

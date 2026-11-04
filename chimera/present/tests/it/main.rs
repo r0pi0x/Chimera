@@ -14,6 +14,7 @@ mod body_bounds;
 mod camera_outputs;
 mod idle_lights;
 mod particle_depth;
+mod phong_spec;
 mod map_unload;
 mod prop_fade;
 mod prop_lods;

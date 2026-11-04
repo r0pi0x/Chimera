@@ -198,7 +198,12 @@ objectives Q17, game events' fields and the log's other lines (class 1).
 | shaders | Q11 vertex-lit inputs | 2 | capture C28, RenderDoc |
 | shaders | Q12 pixel-fog depth | 3 | engine code |
 | shaders | Q13 revision skew | 3 | spec session |
-| shaders | Q14 `$phong` | 3 | spec session if content needs it |
+| shaders_phong | Q1 missing parameters (defined-and-zero or the stated defaults; implemented with the defaults) | 2 | a test VMT with `$rimlight 1` and no `$rimlightboost` under a bright ambient, against `$rimlightboost 1` |
+| shaders_phong | Q2 directional lights packed as far points; Q3 which 4 lights and their scale | 2 | RenderDoc capture of a model outdoors (and shaders Q11) |
+| shaders_phong | Q4 flat normal's alpha; Q5 `$bumptransform`; Q6 lightwarp's row | 3 | shader/engine source (no stock content uses them) |
+| shaders_phong | Q7 flashlight pass on phong models | 3 | spec session on the flashlight include |
+| shaders_phong | Q8 revision skew | 3 | spec session |
+| shaders_phong | Q9 measurement: Combine soldier and SMG1 view model | 2 | refcmp of HL2:DM's wash room on dm_lockdown |
 | shaders | Q15 WindowImposter, ShatteredGlass, LightmappedReflective | 3 | shader source |
 | shaders | Q16 texture transforms | 3 | material-system source |
 | shaders | Q17 `$emissiveblend*` | 3 | shader source |

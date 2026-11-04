@@ -8,7 +8,9 @@
 //! lighting (`world_tint`, specs/cs_source/shaders.md 2); AnimatedTexture
 //! proxies on `$basetexture`/`$bumpmap` (`MapData::texture_anims`, run by
 //! `render::texture_anim`) and a static `$frame`/`$bumpframe`
-//! (`MaterialLoader::frames`).
+//! (`MaterialLoader::frames`); VertexLitGeneric `$phong` materials'
+//! parameters, when they take the Phong shader (`MapPhong`, routed by
+//! `map::phong::route`, specs/cs_source/shaders_phong.md).
 //!
 //! Known shortcuts (docs/tech-debt.md): AnimatedTexture and `$frame` follow
 //! the public Valve Developer Wiki and water.md's frame rule (no spec covers
@@ -123,6 +125,9 @@ pub struct Resolved {
     /// DecalModulate: multiplies what it lies on by 2 x its texel
     /// (specs/cs_source/shaders.md, DecalModulate).
     pub modulate: bool,
+    /// VertexLitGeneric `$phong` drawn by the Phong shader
+    /// (specs/cs_source/shaders_phong.md; `phong`).
+    pub phong: Option<Box<crate::map::MapPhong>>,
 }
 
 pub struct MaterialLoader<'a> {
@@ -320,6 +325,7 @@ impl<'a> MaterialLoader<'a> {
                     base_transform: Default::default(),
                     selfillum: None,
                     modulate: false,
+                    phong: None,
                 }
             }
         }
@@ -344,6 +350,7 @@ impl<'a> MaterialLoader<'a> {
             base_transform: Default::default(),
             selfillum: None,
             modulate: false,
+            phong: None,
         };
         let vmt_path = format!("materials/{}.vmt", normalize(name));
         let Some(text) = self.read_text(&vmt_path) else {
@@ -498,6 +505,12 @@ impl<'a> MaterialLoader<'a> {
             MapAlpha::Mask(_) if selfillum.is_some() => MapAlpha::Opaque,
             a => a,
         };
+        let phong = if matches!(material, vmt_parser::material::Material::VertexLitGeneric(_)) {
+            let base_alpha = base.is_some_and(|b| self.texture_has_alpha(b));
+            self.phong(&|k| keys.get(k).cloned(), base_alpha, detail.is_some(), selfillum.is_some())
+        } else {
+            None
+        };
         Resolved {
             texture,
             alpha,
@@ -529,7 +542,91 @@ impl<'a> MaterialLoader<'a> {
             base_transform,
             selfillum,
             modulate: matches!(material, vmt_parser::material::Material::DecalModulate(_)),
+            phong,
         }
+    }
+
+    /// A VertexLitGeneric material's `$phong` parameters, when it takes the
+    /// Phong shader (specs/cs_source/shaders_phong.md 1, `phong::route`):
+    /// with a `$bumpmap`, `$lightwarptexture` or `$basemapalphaphongmask 1`.
+    /// Unset parameters take the spec's defaults (its open question 1).
+    /// `key`: a key's value; `base_alpha`: the base texture has alpha;
+    /// `detail`, `selfillum`: the material keeps them.
+    fn phong(
+        &mut self,
+        key: &dyn Fn(&str) -> Option<String>,
+        base_alpha: bool,
+        detail: bool,
+        selfillum: bool,
+    ) -> Option<Box<crate::map::MapPhong>> {
+        use crate::map::phong::*;
+        let flag = |k: &str| key(k).and_then(|v| vector(&v)).is_some_and(|v| v[0] != 0.0);
+        let num = |k: &str| key(k).and_then(|v| vector(&v)).map(|v| v[0]);
+        let named = |k: &str| key(k).map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+        if !flag("$phong") {
+            return None;
+        }
+        let base_alpha_mask = num("$basemapalphaphongmask") == Some(1.0);
+        let inputs = PhongInputs {
+            phong: true,
+            bumpmap: named("$bumpmap").is_some(),
+            lightwarp: named("$lightwarptexture").is_some(),
+            base_alpha_mask,
+            exponent_texture: named("$phongexponenttexture").is_some(),
+            phong_warp: named("$phongwarptexture").is_some(),
+            rimlight: flag("$rimlight"),
+            detail,
+            selfillum,
+            blend_tint_by_base_alpha: flag("$blendtintbybasealpha"),
+            base_has_alpha: base_alpha,
+        };
+        let cheap = match route(inputs, PhongSupport::default()) {
+            PhongRoute::Plain => return None,
+            PhongRoute::Cheap => true,
+            PhongRoute::Phong => false,
+        };
+        let mut raw = |k: &str| named(k).and_then(|t| self.texture(&t, false));
+        let exponent_texture = raw("$phongexponenttexture").filter(|_| !cheap);
+        let lightwarp = raw("$lightwarptexture");
+        let phong_warp = raw("$phongwarptexture").filter(|_| !cheap);
+        let rim = (flag("$rimlight") && !cheap).then(|| MapRimLight {
+            exponent: rim_exponent(num("$rimlightexponent")),
+            boost: num("$rimlightboost").unwrap_or(1.0),
+            mask: flag("$rimmask") && exponent_texture.is_some(),
+        });
+        let invert = flag("$invertphongmask");
+        let env_mask = if flag("$selfillumfresnel") {
+            PhongEnvMask::Constant(if invert { 1.0 } else { 0.0 })
+        } else if flag("$normalmapalphaenvmapmask") {
+            PhongEnvMask::SpecularMask
+        } else {
+            PhongEnvMask::BaseAlpha
+        };
+        Some(Box::new(MapPhong {
+            cheap,
+            exponent: exponent_rule(num("$phongexponentfactor").unwrap_or(0.0), num("$phongexponent"), cheap),
+            exponent_texture,
+            fresnel_ranges: key("$phongfresnelranges")
+                .and_then(|v| vector(&v))
+                .unwrap_or(FRESNEL_RANGES_DEFAULT),
+            boost: num("$phongboost").unwrap_or(1.0),
+            tint: if cheap {
+                PhongTint::White
+            } else {
+                tint_rule(
+                    key("$phongtint").and_then(|v| vector(&v)),
+                    flag("$phongalbedotint"),
+                    exponent_texture.is_some(),
+                )
+            },
+            rim,
+            lightwarp,
+            phong_warp,
+            base_alpha_mask,
+            env_mask,
+            invert_env_mask: invert,
+            envmap_fresnel: num("$envmapfresnel").unwrap_or(0.0),
+        }))
     }
 
     /// `$detail` and its parameters (specs/cs_source/shaders.md 2,
