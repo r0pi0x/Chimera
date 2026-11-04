@@ -334,6 +334,7 @@ fn load(world: &mut World) {
                 .get_resource::<crate::map::entities::GameEntityClasses>()
                 .map(|g| g.0.iter().map(|c| c.to_string()).collect())
                 .unwrap_or_default();
+            logic.break_keeps_props = world.get_resource::<KeepPropsOnBreak>().is_some_and(|k| k.0);
             let ids = logic.load_map(&m.entities);
             logic.announce_game_entities();
             let nodes = attach_nodes(world, &logic, &ids);
@@ -2586,7 +2587,7 @@ fn record_velocities(mut pre: ResMut<PreStep>, bodies: Query<(Entity, &RigidBody
 
 /// A player's mass for impacts (kg; Source's player shadow).
 const PLAYER_MASS: f32 = 85.0;
-/// A prop and a player meet as two contacts in Source's physics (CS:S
+/// A prop landing on a player meets it as two contacts in Source's physics (CS:S
 /// measured 2026-10-17, prop_damage.md 6 and Q13,
 /// `tools/css_probe/impacts.py`; HL2:DM 2026-11-04, gravity_gun.md 9,
 /// `tools/hl2dm_probe/cases.py drops`); each counts as the prop losing
@@ -2604,17 +2605,46 @@ const PLAYER_MASS: f32 = 85.0;
 /// second over 0.6); 100 kg at 572 and 780: 20 + 100, 100 + 500 (first
 /// 0.29-0.31, second 0.41-0.56); 250 kg at 582: 100 + 500.
 /// Between the points by the logarithm of the mass, clamped at the ends.
-const PLAYER_CONTACT_SHARES: [(f32, [f32; 2]); 4] =
-    [(10.0, [0.335, 0.65]), (30.0, [0.335, 0.512]), (100.0, [0.31, 0.512]), (500.0, [0.276, 0.67])];
+const PLAYER_CONTACT_SHARES: [(f32, &[f32]); 4] = [
+    (10.0, &[0.335, 0.65]),
+    (30.0, &[0.335, 0.512]),
+    (100.0, &[0.31, 0.512]),
+    (500.0, &[0.276, 0.67]),
+];
 
-/// `PLAYER_CONTACT_SHARES` for a prop of `mass` kg.
-fn player_contact_shares(mass: f32) -> [f32; 2] {
+/// A prop running into a player from the side (its contact normal within
+/// `SIDE_CONTACT` of level) meets it as three contacts: HL2:DM measured
+/// 2026-11-04 (gravity_gun.md 12, `cases.py crate_hits`): a 40-unit crate
+/// punted level into a standing bot, 10 kg at 1500 in/s: 20 + 10 (shares
+/// 0.43-0.52, 0.24-0.43, the third under 0.14); 30 kg at 1000: 20 + 10 + 5
+/// (0.38-0.47, 0.21-0.38, 0.13-0.21), and at 1100 from 50 ahead of the
+/// bot: 50 + 10 + 5 (0.42-0.54, 0.19-0.34, 0.11-0.19); 100 kg at 730: 50 + 10 + 10
+/// (0.35-0.45, 0.16-0.29 twice); 250 kg at 650: 100 + 5 + 10 (0.32-0.46,
+/// 0.07-0.11, 0.11-0.20). The values are mid-band fits, not vphysics' law.
+const PLAYER_SIDE_SHARES: [(f32, &[f32]); 4] = [
+    (10.0, &[0.47, 0.33, 0.07]),
+    (30.0, &[0.44, 0.30, 0.17]),
+    (100.0, &[0.40, 0.22, 0.22]),
+    (250.0, &[0.39, 0.09, 0.16]),
+];
+
+/// A contact whose normal's vertical part is under this (the sine of its
+/// slope) is a side hit (`PLAYER_SIDE_SHARES`), else a landing.
+const SIDE_CONTACT: f32 = 0.7;
+
+/// The contact shares for a prop of `mass` kg meeting a player, the
+/// contact normal's vertical part `up` (None: unknown, a landing).
+fn player_contact_shares(mass: f32, up: Option<f32>) -> Vec<f32> {
+    let points: &[(f32, &[f32])] = if up.is_some_and(|u| u.abs() < SIDE_CONTACT) {
+        &PLAYER_SIDE_SHARES
+    } else {
+        &PLAYER_CONTACT_SHARES
+    };
     let m = mass.max(1e-3);
-    let points = &PLAYER_CONTACT_SHARES;
     let k = points.iter().position(|(at, _)| *at > m).unwrap_or(points.len()).clamp(1, points.len() - 1);
     let ((m0, a), (m1, b)) = (points[k - 1], points[k]);
     let t = ((m.ln() - m0.ln()) / (m1.ln() - m0.ln())).clamp(0.0, 1.0);
-    [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+    a.iter().zip(b.iter()).map(|(a, b)| a + (b - a) * t).collect()
 }
 /// Damage (health points) that breaks any breakable: an impact on one
 /// that breaks on the first physics impact (flag 512).
@@ -2653,6 +2683,14 @@ struct Impact {
 #[derive(Resource, Default)]
 struct Impacts(Vec<Impact>);
 
+/// A game whose props broken other than by lethal damage (the Break
+/// input, a health input, pressure) stay in the world, non-solid and
+/// undamageable (`LogicWorld::break_keeps_props`): HL2:DM's
+/// (specs/hl2dm/gravity_gun.md Corrections 2, measured P15). Read at map
+/// load.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct KeepPropsOnBreak(pub bool);
+
 /// A game's energy scale for physics impacts on its players and for their
 /// stress (prop_damage.md 6: CS:S's player 1; HL2:DM's 4,
 /// specs/hl2dm/gravity_gun.md 9).
@@ -2669,7 +2707,8 @@ impl Default for PlayerImpactScale {
 /// body damages it by the speed the collision took away (its table and
 /// energy scale), and a moving prop hitting a player damages the player
 /// (the player table, attacker = the prop), as crush damage applied next
-/// tick. A prop and a player meet as two contacts (`PLAYER_CONTACT_SHARES`),
+/// tick. A prop and a player meet as two contacts landing
+/// (`PLAYER_CONTACT_SHARES`), three from the side (`PLAYER_SIDE_SHARES`),
 /// each hurting both: the prop by the player (attacker = the player) too.
 #[allow(clippy::too_many_arguments)]
 fn impacts(
@@ -2798,15 +2837,16 @@ fn impacts(
         } else {
             side(1, i.other, mass(i.other))
         };
-        // A prop meeting a player counts as two contacts (CS:S, measured),
-        // each the prop losing a share of its speed (by its mass).
+        // A prop meeting a player counts as two contacts landing on it, three
+        // from the side (measured), each the prop losing a share of its
+        // speed (by its mass).
         let player_contact = by_player || i.receiver == Receiver::Player;
         let shares: Vec<f32> = if player_contact {
             let prop_mass = match i.receiver {
                 Receiver::Prop(_, _, m) => m,
                 _ => theirs.mass,
             };
-            player_contact_shares(prop_mass).to_vec()
+            player_contact_shares(prop_mass, i.normal.map(|n| n.y))
         } else {
             vec![1.0]
         };

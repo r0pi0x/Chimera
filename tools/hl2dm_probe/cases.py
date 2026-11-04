@@ -667,8 +667,8 @@ def drop_on(r, a, b, mass, height):
     return hits, steps, round(z[t - 1] - ROOF[2], 1)
 
 
-def punt_into(r, a, b, mass, dist=200, ahead=50):
-    """A crate hanging at eye height `ahead` of bot `a`, punted level into
+def punt_into(r, a, b, mass, dist=200, ahead=50, cls="prop_physics"):
+    """A crate (`cls`) hanging at eye height `ahead` of bot `a`, punted level into
     bot `b` `dist` ahead: b's crush hits (tick, amount, attacker) and the
     crate's step at the hit."""
     probe.wait_alive(r)
@@ -679,7 +679,7 @@ def punt_into(r, a, b, mass, dist=200, ahead=50):
     r.exec(f"probe_tp {b} {SPOT[0] - dist} {SPOT[1]} {SPOT[2]} 0 0")
     r.exec(f"probe_setprop {b} data m_iHealth int 5000")
     r.exec(f"probe_setprop {b} data m_ArmorValue int 0")
-    idx = r.exec(f"probe_prop prop_physics {CRATE} {SPOT[0] - ahead} {SPOT[1]} {SPOT[2] + 64} {mass} 72").split()[-1]
+    idx = r.exec(f"probe_prop {cls} {CRATE} {SPOT[0] - ahead} {SPOT[1]} {SPOT[2] + 64} {mass} 72").split()[-1]
     out = probe.run_full(r, measure.start(), hold(1, ATTACK, 0, 0, 0, 180) + hold(60, 0, 0, 0, 0, 180))
     e = {int(x[0]): x for x in out["ents"] if x[1] == idx}
     hits = [(int(x[0]), round(float(x[4])), x[2]) for x in out["damage"] if x[1] == b]
