@@ -874,3 +874,26 @@ build 24600426):
     bot is kicked at once (each join and kick costs the unassigned team,
     and later team 2, a point: their scores read −2 and −3), so the TDM
     cases need human clients or another bot.
+14. **Probe results, round 3 (2026-11-04, build 24600426, `cases.py tdm
+    tdm_spawns`).** The kicks were the bot manager's, not the rules':
+    with `hl2mp_bot_join_after_player` 1 (its default) it removes bots
+    while no human plays; with 0 they stay in TDM, and `hl2mp_bot_add
+    combine` / `rebels` picks the team (a bot that first joined the other
+    team moves, a death charged to its new team). The bot manager also
+    moves its bots between teams on some spawns (not a rule). Measured,
+    all as this spec says: P5: changes 1 s apart all accepted; an alive
+    player's change to the other team kills it (frag −1, death +1, the
+    **new** team −1), a dead player's change costs nothing (1 s or more
+    than 5 s after its death), a change to its own team does nothing;
+    test 11: a second `jointeam` 0.15 s after the first is ignored;
+    test 12: a change 3.9 s after a `kill` (respawned by a button at
+    3.08 s) leaves the player alive, one 5.5 s after kills it; test 13:
+    `spectate` alive: a death, the frag given back, the old team −1.
+    Friendly fire: with `mp_friendlyfire` 0 a teammate's pistol bullet
+    traces (TraceAttack) but deals nothing, damage named for a teammate
+    is refused; with 1 both hurt (8 for the pistol). P7: a team kill
+    (ff 1): killer −1 frag, its team +1, the victim's death +1; an enemy
+    kill: +1 and +1. A world kill (a fall) in TDM gives team 0 its point
+    (+1, not shown), 2 and 3 unchanged. A bot removed in TDM costs team 0
+    a point (Open questions 9). Spawns on dm_runoff: 48 Combine spawns all
+    at `info_player_combine`, 36 Rebel at `info_player_rebel`.

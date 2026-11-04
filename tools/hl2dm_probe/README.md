@@ -62,6 +62,8 @@ crash's minidump on the machine. `hl2mp_bot_add` prints "invalid team
 index" in deathmatch but adds the bot. A map change drops the bots: run
 `probe.setup` again. The ladder cases need `changelevel dm_resistance`,
 the water cases (`cases.py swim drown`) `changelevel dm_underpass`.
+`cases.py tdm tdm_spawns` change the map themselves (TDM on dm_lockdown,
+then dm_runoff for its team spots) and come back to DM on dm_lockdown.
 
 Notes (build 24600426, 2026-11-03):
 - The placement tick runs a move: a start velocity is already one tick
@@ -91,3 +93,21 @@ Notes (build 24600426, 2026-11-03):
   one tick's step.
 - Bullet impacts aren't dispatched as effects with no client connected;
   the bullets' temp entity carries the spread instead.
+
+Notes (round 3, 2026-11-04):
+- TDM bots: with `hl2mp_bot_join_after_player` 1 (the default) the bot
+  manager kicks every bot while no human plays; `cases.change_map` sets
+  it to 0. `hl2mp_bot_add combine` / `rebels` picks a bot's team. The
+  manager still moves its bots between teams on some spawns: a team
+  change no command asked for is its own.
+- An input file may hold `cmd <row> <client> <command>` lines (`probe.
+  run_full(..., cmds=...)`): the client runs the command on that row
+  (0: the server); "K" lines log them, "V" lines now carry the death's
+  attacker and `player_team`'s new and old team. `probe_score` prints
+  every player's team, frags, deaths and life state and the team scores
+  (`probe.score`).
+- A bot kept across a map change is put in the server again: the plugin
+  unhooks before hooking its damage, so each hit is logged once (before
+  version 3 each map change doubled the "D" lines).
+- A tracked physics prop's `m_vecAbsVelocity` reads 0: take its velocity
+  from its position's steps (`cases.speed`).

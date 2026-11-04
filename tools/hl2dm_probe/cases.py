@@ -5,7 +5,11 @@ hits (P15, the bolt's), projectiles (projectiles.md P1-P4, P9, the
 frag's drag), the gravity gun's punts and launches (gravity_gun.md
 P2-P5, hanging crates), pickups (maps_entities.md P1, P2),
 chargers (suit.md P10, P11), swimming and drowning (movement.md rows
-59-61, suit.md P6) and the cvars every spec lists. Prints each case's
+59-61, suit.md P6), TDM (rules.md P5, P7, P8, friendly fire, team
+spawns: `tdm`, `tdm_spawns` change the map and come back to DM), crates
+dropped on and punted into a bot (gravity_gun.md P10: `crate_hits`), punts
+of a crate on the floor (`floor_punts`), `+use` carry with
+`hl2mp_allow_pickup` (`use_carry`) and the cvars every spec lists. Prints each case's
 numbers beside the spec's.
 
     python3 tools/hl2dm_probe/cases.py [case ...]   # dm_lockdown cases
@@ -488,6 +492,301 @@ def drown(r):
          [round(t * 0.015, 3) for t in ch[:4]]), "0.1005, ≈14.9, 21.9 then every 1.005")
 
 
+def change_map(r, name, teamplay):
+    """`changelevel` with `mp_teamplay` set, then the probe set up again.
+    `hl2mp_bot_join_after_player 0` keeps the bots in TDM (with its
+    default 1 the bot manager kicks every bot while no human plays, which
+    looked like TDM kicking them)."""
+    r.exec(f"mp_teamplay {teamplay}")
+    r.exec("hl2mp_bot_join_after_player 0")
+    r.exec(f"changelevel {name}")
+    time.sleep(12)
+    probe.setup(r, bots=0)
+
+
+def tdm_bots(r):
+    """Three bots: 1 and 2 Combine, 3 Rebels (`hl2mp_bot_add <team>`;
+    a bot that first joined the other team moves, which costs it a death
+    charged to its new team). Returns their client numbers."""
+    r.exec("hl2mp_bot_kick all")
+    time.sleep(2)
+    for team in ("combine", "combine", "rebels"):
+        r.exec(f"hl2mp_bot_add {team}")
+        time.sleep(1.5)
+    time.sleep(6)
+    players, _ = probe.score(r)
+    combine = sorted(c for c, p in players.items() if p[0] == 2)
+    rebels = sorted(c for c, p in players.items() if p[0] == 3)
+    return combine[0], combine[1], rebels[0]
+
+
+def wait_bot_alive(r, bot, timeout=12.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if probe.score(r)[0].get(bot, (0, 0, 0, 1))[3] == 0:
+            return True
+        time.sleep(0.25)
+    return False
+
+
+def timeline(r, bot, ticks, cmds):
+    """`cmds` (row, command; "{other}" and "{same}": the teams other than
+    and of the bot's at the start) run by `bot` while it runs `ticks`
+    (alive and 5 s past its last death first): its deaths, spawns and
+    team changes by row, and the score's change (frags, deaths; team
+    points). The bot manager moves a bot to another team on some of its
+    spawns (a team change of its own, not the rules'): rows after a spawn
+    the case didn't cause aren't the rules'."""
+    for _ in range(4):
+        wait_bot_alive(r, bot)
+        time.sleep(5.2)
+        a = probe.score(r)
+        if a[0][bot][3] == 0:
+            break
+    r.exec(f"probe_bot {bot}")
+    same = a[0][bot][0]
+    other = 5 - same
+    cmds = [(row, bot, c.format(other=other, same=same)) for row, c in cmds]
+    out = probe.run_full(r, None, ticks, cmds=cmds)
+    b = probe.score(r)
+    events = [(int(v[0]), v[1], v[3:]) for v in out["events"] if v[2] == str(bot)]
+    frags = tuple(y - x for x, y in zip(a[0][bot][1:3], b[0][bot][1:3]))
+    teams = {t: b[1][t] - a[1][t] for t in (2, 3)}
+    return same, events, frags, teams
+
+
+def tdm(r):
+    """rules.md P5, P7, P8, tests 10-13, friendly fire (rules.md "Friendly
+    fire", tests 50) on dm_lockdown in TDM; back to DM after."""
+    change_map(r, "dm_lockdown", 1)
+    c1, c2, rb = tdm_bots(r)
+    show("rules TDM teams after the adds (team, frags, deaths, life)", probe.score(r), "1, 2 on 2; 3 on 3")
+    show("rules P5/test 10: (start team, events, frags/deaths, team points) alive, jointeam the other team, "
+         "then (dead) back 1 s later, then the same team",
+         timeline(r, c1, hold(300), [(10, "jointeam {other}"), (77, "jointeam {same}"), (144, "jointeam {same}")]),
+         "death on 10 charged to the new team (frag -1); the dead change free; same team nothing")
+    show("rules test 11: jointeam twice 0.15 s apart",
+         timeline(r, c1, hold(60), [(10, "jointeam {other}"), (20, "jointeam {same}")]), "the second ignored (0.3 s)")
+    r.exec("mp_forcerespawn 0")
+    # With forced respawn off the bot may already be dead here (a death
+    # the bot manager's own team change caused): then the kill is nothing
+    # and the change on 410 is a long-dead player's.
+    show("rules: kill, then dead 6 s later change team (press at 420)",
+         timeline(r, c1, hold(420) + hold(1, ATTACK) + hold(30), [(10, "kill"), (410, "jointeam {other}")]),
+         "no death on 410 (a dead player's change is free)")
+    show("rules test 12: kill, button respawn at 3.08 s, change team at 3.9 s; back at 5.5 s",
+         timeline(r, c1, hold(215) + hold(1, ATTACK) + hold(300),
+                  [(10, "kill"), (270, "jointeam {other}"), (380, "jointeam {same}")]),
+         "alive at 270 (within 5 s of the suicide); death at 380, the new team -1")
+    r.exec("mp_forcerespawn 1")
+    show("rules test 13: spectate alive", timeline(r, c2, hold(30), [(10, "spectate")]),
+         "death, frag given back (0, +1), old team -1")
+    for ff in (0, 1):
+        r.exec(f"mp_friendlyfire {ff}")
+        for victim, other in ((c2, rb), (rb, c2)):
+            wait_bot_alive(r, victim)
+            r.exec(f"probe_tp {other} {ROOF[0]} {ROOF[1]} {ROOF[2]} 0 0")
+            show(f"friendly fire {ff}: pistol {c1} at {victim} (traced, taken)",
+                 shot_at(r, str(c1), str(victim), "weapon_pistol", 3, 0), "a teammate with ff 0 takes nothing")
+    for ff, victim, want in [(1, c2, "killer -1 frag, its team +1"), (1, rb, "killer +1, its team +1"),
+                             (0, c2, "refused")]:
+        r.exec(f"mp_friendlyfire {ff}")
+        wait_bot_alive(r, victim)
+        r.exec(f"probe_bot {victim}")
+        r.exec("probe_set 100 0 100")
+        a = probe.score(r)
+        r.exec(f"probe_hurt 500 2 {c1}")
+        time.sleep(0.2)
+        b = probe.score(r)
+        show(f"rules P7: ff {ff}, {c1} kills {victim} (frags, deaths of each; team points)",
+             ({c: tuple(y - x for x, y in zip(a[0][c][1:3], b[0][c][1:3])) for c in (c1, victim)},
+              {t: b[1][t] - a[1][t] for t in (0, 2, 3)}), want)
+    wait_bot_alive(r, c2)
+    r.exec(f"probe_bot {c2}")
+    r.exec("probe_set 100 0 100")
+    a = probe.score(r)
+    r.exec("probe_hurt 500 32")
+    time.sleep(0.2)
+    b = probe.score(r)
+    show("rules: a world kill (fall) in TDM: team points", {t: b[1][t] - a[1][t] for t in (0, 2, 3)},
+         "team 0 +1 (the world's: not shown), 2 and 3 unchanged")
+    r.exec("mp_friendlyfire 0")
+    r.exec(f"probe_bot {c1}")
+    change_map(r, "dm_lockdown", 0)
+
+
+def tdm_spawns(r, rounds=12):
+    """rules.md "Spawn-point choice": TDM on dm_runoff (8 Combine, 6 Rebel
+    spots): each spawn's nearest spot class by team; back to DM after."""
+    change_map(r, "dm_runoff", 1)
+    tdm_bots(r)
+    spots = {}
+    for cls in ("info_player_combine", "info_player_rebel", "info_player_deathmatch"):
+        for line in r.exec(f"probe_find {cls}").splitlines():
+            p = line.split()
+            if len(p) >= 6:
+                spots[(cls[12:], int(p[0]))] = tuple(float(v) for v in p[3:6])
+    teams = {c: v[0] for c, v in probe.score(r)[0].items()}
+    seen = {}
+    for _ in range(rounds):
+        for c in teams:
+            r.exec(f"probe_bot {c}")
+            r.exec("probe_kill")
+        time.sleep(5.6)
+        for line in r.exec("probe_info").splitlines():
+            m = re.match(r"player (\d+) fake 1 at (\S+) (\S+) (\S+)", line)
+            if m:
+                pos = [float(m.group(k)) for k in (2, 3, 4)]
+                k = min(spots, key=lambda k: sum((a - b) ** 2 for a, b in zip(spots[k], pos)))
+                key = (teams[int(m.group(1))], k[0])
+                seen[key] = seen.get(key, 0) + 1
+    show("rules TDM spawns on dm_runoff: (team, nearest spot class): count", seen, "2 combine, 3 rebel only")
+    change_map(r, "dm_lockdown", 0)
+
+
+def drop_on(r, a, b, mass, height):
+    """A crate let fall from `height` above bot `b`'s head (5000 health) on
+    the roof: its crush hits (tick, amount), its step (units/s) on the
+    ticks around the first and its centre's height above the feet the
+    tick before."""
+    probe.wait_alive(r)
+    r.exec(f"probe_bot {a}")
+    r.exec("probe_track clear")
+    r.exec(f"probe_tp {b} {ROOF[0]} {ROOF[1]} {ROOF[2]} 0 0")
+    r.exec(f"probe_setprop {b} data m_iHealth int 5000")
+    r.exec(f"probe_setprop {b} data m_ArmorValue int 0")
+    idx = r.exec(f"probe_prop prop_physics {CRATE} {ROOF[0]} {ROOF[1]} {ROOF[2] + 92 + height} {mass}").split()[-1]
+    out = probe.run_full(r, measure.start(), hold(int(100 + 3 * math.sqrt(height))))
+    z = {int(x[0]): float(x[5]) for x in out["ents"] if x[1] == idx}
+    hits = [(int(x[0]), round(float(x[4]))) for x in out["damage"] if x[1] == b and x[5] == "1"]
+    r.exec(f"probe_fire {idx} Kill")
+    if not hits:
+        return hits, [], None
+    t = hits[0][0]
+    steps = [round((z[k] - z[k - 1]) / 0.015) for k in range(t - 2, t + 3) if k in z and k - 1 in z]
+    return hits, steps, round(z[t - 1] - ROOF[2], 1)
+
+
+def punt_into(r, a, b, mass, dist=200, ahead=50):
+    """A crate hanging at eye height `ahead` of bot `a`, punted level into
+    bot `b` `dist` ahead: b's crush hits (tick, amount, attacker) and the
+    crate's step at the hit."""
+    probe.wait_alive(r)
+    r.exec(f"probe_bot {a}")
+    arm(r, "weapon_physcannon")
+    r.exec("probe_track clear")
+    probe.run_full(r, measure.start(), hold(30, 0, 0, 0, 0, 180, select="weapon_physcannon"))
+    r.exec(f"probe_tp {b} {SPOT[0] - dist} {SPOT[1]} {SPOT[2]} 0 0")
+    r.exec(f"probe_setprop {b} data m_iHealth int 5000")
+    r.exec(f"probe_setprop {b} data m_ArmorValue int 0")
+    idx = r.exec(f"probe_prop prop_physics {CRATE} {SPOT[0] - ahead} {SPOT[1]} {SPOT[2] + 64} {mass} 72").split()[-1]
+    out = probe.run_full(r, measure.start(), hold(1, ATTACK, 0, 0, 0, 180) + hold(60, 0, 0, 0, 0, 180))
+    e = {int(x[0]): x for x in out["ents"] if x[1] == idx}
+    hits = [(int(x[0]), round(float(x[4])), x[2]) for x in out["damage"] if x[1] == b]
+    r.exec(f"probe_fire {idx} Kill")
+    t = hits[0][0] if hits else None
+    step = [round(-x) for x in speed(e[t - 1], e[t])[:1]] if t and t in e and t - 1 in e else []
+    return hits, step
+
+
+def crate_hits(r):
+    """gravity_gun.md P10, 9: crates dropped on a bot's head and punted
+    into one."""
+    a, b = two_bots(r)
+    for mass, h, want in [(30, 75, "5 + 10"), (30, 150, "5 + 10"), (30, 300, "10 + 20 (spec test 39: 500)"),
+                          (30, 600, "10 + 50"), (10, 300, "10"), (100, 300, "20 + 100, a 5 later"),
+                          (100, 600, "100 + 500"), (250, 300, "100 + 500")]:
+        show(f"gravity P10 {mass} kg dropped {h} onto a head: hits (tick, amount), steps t-2..t+2, centre z at t-1",
+             drop_on(r, a, b, mass, h), want)
+    for m, want in [(10, "20 + 10"), (30, "20 + 10 + 5"), (100, "50 + 10 + 10, a 5 later"),
+                    (250, "100 + 5 + 10, a 20 later")]:
+        show(f"gravity P10 {m} kg punted into a bot 150 ahead: hits (tick, amount, attacker), forward step",
+             punt_into(r, a, b, m), want)
+    r.exec(f"probe_tp {b} {ROOF[0]} {ROOF[1]} {ROOF[2] + 100} 0 0")
+
+
+def floor_punt(r, mass, pitch, dist, settle=60):
+    """A crate settled on the floor `dist` ahead, punted looking `pitch`
+    down: its steps (forward, side, up) and pitch rates on the ticks
+    after."""
+    probe.wait_alive(r)
+    arm(r, "weapon_physcannon")
+    r.exec("probe_track clear")
+    probe.run_full(r, measure.start(pitch=pitch), hold(30, 0, 0, 0, pitch, 180, select="weapon_physcannon"))
+    idx = r.exec(f"probe_prop prop_physics {CRATE} {SPOT[0] - dist} {SPOT[1]} {SPOT[2] + 22} {mass}").split()[-1]
+    out = probe.run_full(r, measure.start(pitch=pitch), hold(settle, 0, 0, 0, pitch, 180)
+                         + hold(1, ATTACK, 0, 0, pitch, 180) + hold(8, 0, 0, 0, pitch, 180))
+    e = [x for x in out["ents"] if x[1] == idx]
+    r.exec(f"probe_fire {idx} Kill")
+    rows = []
+    for a, b in zip(e[settle:settle + 4], e[settle + 1:settle + 5]):
+        v = speed(a, b)
+        rows.append(([round(-v[0]), round(v[1]), round(v[2])], round((float(b[12]) - float(a[12])) / 0.015)))
+    return rows
+
+
+def floor_punts(r):
+    """gravity_gun.md P3 on the floor: the 30 kg crate resting 40 ahead."""
+    show("gravity P3 floor, 45 down, 40 ahead: (step, pitch rate) per tick", floor_punt(r, 30, 45, 40),
+         "(773, 0, 898), then (695, 20, 871); Chimera (773, 728) then (761, 792)")
+    show("gravity P3 floor, 30 down, 60 ahead", floor_punt(r, 30, 30, 60), "-")
+
+
+def carry(r, mass, after, pitch=40):
+    """`hl2mp_allow_pickup 1`: +use at a crate on the floor 45 ahead
+    (looking `pitch` down), then level for 40 ticks, then `after`: the
+    crate's centre relative to the eye and its step by row, the sounds,
+    the weapon rows."""
+    probe.wait_alive(r)
+    arm(r, "weapon_physcannon", "weapon_smg1")
+    r.exec("probe_track clear")
+    probe.run_full(r, measure.start(pitch=pitch), hold(40, 0, 0, 0, pitch, 180, select="weapon_smg1"))
+    idx = r.exec(f"probe_prop prop_physics {CRATE} {SPOT[0] - 45} {SPOT[1]} {SPOT[2] + 22} {mass}").split()[-1]
+    out = probe.run_full(r, measure.start(pitch=pitch), hold(40, 0, 0, 0, pitch, 180) + hold(1, USE, 0, 0, pitch, 180)
+                         + hold(40, 0, 0, 0, 0, 180) + after)
+    r.exec(f"probe_fire {idx} Kill")
+    e = [x for x in out["ents"] if x[1] == idx]
+    rows = out["rows"]
+    at = {}
+    for t in range(1, min(len(e), len(rows))):
+        eye = (rows[t]["x"], rows[t]["y"], rows[t]["z"] + rows[t]["eye"])
+        at[t] = ([round(-(float(e[t][3]) - eye[0]), 1), round(float(e[t][4]) - eye[1], 1),
+                  round(float(e[t][5]) - eye[2], 1)], [round(-x) if k == 0 else round(x)
+                                                       for k, x in enumerate(speed(e[t - 1], e[t]))],
+                 round(math.hypot(rows[t]["vx"], rows[t]["vy"])))
+    return at, [(int(x[0]), x[5]) for x in out["sounds"]], out["weapon"]
+
+
+def use_carry(r):
+    """gravity_gun.md 8, P9: `+use` at props with `hl2mp_allow_pickup` 0
+    and 1."""
+    r.exec("hl2mp_allow_pickup 0")
+    at, sounds, _ = carry(r, 20, [])
+    show("gravity P9 allow 0, 20 kg: crate 20 ticks after +use (rel eye), sounds", (at[60][0], sounds),
+         "unmoved, common/wpn_select.wav")
+    r.exec("hl2mp_allow_pickup 1")
+    at, sounds, _ = carry(r, 40, [])
+    show("gravity 8 allow 1, 40 kg", (at[60][0], sounds), "unmoved, common/wpn_denyselect.wav")
+    at, sounds, weapon = carry(r, 20, hold(1, ATTACK, 0, 0, 0, 180) + hold(10, 0, 0, 0, 0, 180))
+    show("gravity 8 allow 1, 20 kg: carried (rel eye on rows 42, 45, 80), sounds", ([at[t][0] for t in (42, 45, 80)],
+         sounds), "66.5 ahead at eye height (24 + 22.6 + its 20 depth), one click")
+    show("gravity 8 throw 20 kg (steps on the rows after the press)", [at[t][1] for t in range(82, 86)], "200 along f")
+    show("gravity 8 the weapon's next attack around the throw", [(w[0], w[5]) for w in weapon if 80 <= int(w[0]) <= 84],
+         "deployed again at the throw (SMG1 0.8333)")
+    for m, want in [(10, "279.3 less a tick of drag"), (1, "620.7 less drag")]:
+        at, _, _ = carry(r, m, hold(1, ATTACK, 0, 0, 0, 180) + hold(10, 0, 0, 0, 0, 180))
+        show(f"gravity 8 throw {m} kg", [at[t][1] for t in range(82, 86)], want)
+    at, _, _ = carry(r, 20, hold(40, 0, 0, 0, -30, 180) + hold(40, 0, 0, 0, 30, 180))
+    show("gravity 8 carried looking up 30, down 30 (rel eye)", (at[110][0], at[150][0]),
+         "(63.9, 0, 37.0), (63.8, 0, -36.8): the hold along the view, the crate level (yaw-only frame)")
+    for name, after in [("+use again", hold(1, USE, 0, 0, 0, 180)), ("secondary", hold(1, ATTACK2, 0, 0, 0, 180))]:
+        at, _, _ = carry(r, 20, after + hold(30, 0, 0, 0, 0, 180))
+        show(f"gravity 8 drop by {name}: steps after", [at[t][1] for t in range(82, 86)], "falls from rest")
+    at, _, _ = carry(r, 20, hold(60, probe.SPEED | FORWARD, 450, 0, 0, 180))
+    show("gravity 8 sprint held while carrying: player speed", at[130][2], "190 (sprint off)")
+    r.exec("hl2mp_allow_pickup 0")
+
+
 def cvars(r):
     names = ("sk_player_head sk_plr_dmg_pistol mp_weaponstay sv_hl2mp_weapon_respawn_time sv_hl2mp_item_respawn_time "
              "sk_auto_reload_time phys_pushscale sk_healthkit sk_healthvial sk_battery sk_suitcharger "
@@ -506,7 +805,8 @@ def cvars(r):
 
 CASES = {"respawn": respawn, "armour": armour, "weapons": weapons, "drops": drops, "pushes": pushes,
          "projectiles": projectiles, "gravity": gravity, "heads": heads, "frag_drag": frag_drag, "pickups": pickups, "chargers": chargers, "cvars": cvars,
-         "swim": swim, "drown": drown}
+         "swim": swim, "drown": drown, "tdm": tdm, "tdm_spawns": tdm_spawns, "crate_hits": crate_hits,
+         "floor_punts": floor_punts, "use_carry": use_carry}
 LOCKDOWN = ["cvars", "respawn", "armour", "weapons", "drops", "projectiles", "frag_drag", "gravity", "pickups",
             "chargers", "pushes", "heads"]
 

@@ -937,4 +937,44 @@ dedicated server build 24600426), marked **(probe)**:
     - P16: the TooHeavy sound once per press (held 60 ticks: once).
     - P17: selecting the gun and pressing primary on one command punts
       that tick (Corrections 4).
-    Not measured: P7, P8, P9, P12-P15.
+    Not measured: P7, P8, P12-P15.
+12. **Probe results, round 3 (2026-11-04, build 24600426,
+    `cases.py crate_hits floor_punts use_carry`).**
+    - P10 (test 39 is wrong: a crate stopped by a head is not stopped
+      dead): crates let fall onto a standing bot's head (5000 health) hurt
+      it as two crush contacts on one tick, credited as usual. By mass and
+      the crate's speed on its last free tick: 30 kg at 284, 389, 524,
+      663 in/s: 5 + 10, 5 + 10, 10 + 20, 10 + 50; 10 kg at 420: one 10;
+      100 kg at 572: 20 + 100 (and a 5 twenty ticks later), at 780:
+      100 + 500; 250 kg at 582: 100 + 500. Read through the energy formula
+      (scale 4, falling factor 2) each contact takes a share of the speed
+      into the player: the first 0.29-0.37, the second 0.51-0.61 at 30 kg,
+      over 0.6 at 10 kg, 0.41-0.56 at 100 kg (CS:S's 30 kg crate's second
+      share 0.43-0.52 overlaps at about 0.51). A heavy crate keeps on the
+      head after its landing (no second landing within 1.5 s).
+    - Crates hanging at eye height punted level into a bot 150 ahead
+      (two or three contacts on the hit's tick, all credited to the
+      punter): 10 kg at 1500: 20 + 10; 30 kg at 1000: 20 + 10 + 5; 100 kg
+      at 730: 50 + 10 + 10 (10 more twenty ticks later); 250 kg at 650:
+      100 + 5 + 10, then 50, 10, 5 over the next 20 ticks. (Round 2's
+      punt at 1050 into a bot from closer: 50 + 10.)
+    - P3 on the floor: the 30 kg crate resting on the floor (centre 20.4
+      up) 40 ahead, punted looking 45 degrees down: its first tick's step
+      (773, 898) as its leading edge digs into the floor, then (695, 20,
+      871) (1114 in/s, 51.4 degrees up), pitching forward at about
+      1490 degrees/s; 30 down at 60 ahead: (944, 803), then (781, 777),
+      2130 degrees/s.
+    - P9 and section 8: with `hl2mp_allow_pickup` 0 a 20 kg crate clicks
+      (`common/wpn_select.wav`) and stays; a 40 kg one denies
+      (`common/wpn_denyselect.wav`) whatever the cvar. With 1 the 20 kg
+      crate is carried (the click again, no other sound): it reaches the
+      hold point within 4 ticks at under 1000 in/s, 66.5 ahead at eye
+      height looking level, (63.9, 37.0) looking 30 up and (63.8, −36.8)
+      30 down, keeping its own attitude (level); it turns with the yaw.
+      Primary throws it: 199 in/s (20 kg) and 276 (10 kg) along the view a
+      tick after, 469 for 1 kg (the 620.7 less its heavy drag); the
+      weapon in hand (here the SMG1) isn't switched away while carrying,
+      doesn't fire, and is deployed again at the throw (its next attack
+      0.8333 s on: the draw); with primary held at the `+use` press the
+      crate is thrown at once. `+use` again or secondary drops it from
+      rest. Sprint held while carrying runs at 190.
