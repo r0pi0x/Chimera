@@ -1,5 +1,5 @@
 //! The RPG's laser as it is seen (specs/hl2dm/effects_sounds.md 9 and the
-//! "Projectile visuals" table; projectiles.md 6.1; Open questions 6):
+//! "Projectile visuals" table; projectiles.md 6.1, 6.3; Open questions 6):
 //!
 //! - **On or off** (`Hl2LaserOn`, on the player, the server's, replicated:
 //!   net part `hl2dm_rpg_fx`): on while the RPG in its hand has its dot
@@ -25,26 +25,40 @@
 //!   attachments as the install's model loads (heavy `view_models.rs`;
 //!   the spec's open question 6 counted 3).
 //!
+//! - **The ignition** (`Hl2Ignited`, put on the missile by the server
+//!   as it ignites, replicated): on each machine that sees it,
+//!   `Missile.Ignite` starts from the missile, looping until it is gone,
+//!   and its owner's screen fades (255, 225, 205, alpha 64 over 0.1 s;
+//!   the host's local player by the flyer's owner, a network client's by
+//!   the item's).
+//!
 //! Known shortcuts (docs/tech-debt.md): the beam's fade length (128 × the
 //! fraction of a 128-unit line, visual_entities.md 1) isn't drawn: the
 //! beam is full brightness to its end; the owner's client hears the
 //! laser's sounds when the server's state reaches it (the spec's "shared"
 //! sounds are played at once by the owner's prediction); the dot of a
 //! player outside the view is drawn as for any other (no dormant owner's
-//! networked point). Why it's OK for now: the beam is 100 units long and
+//! networked point); a network client starts the ignition's loop and its
+//! owner's fade when the server's mark reaches it (a latency late). Why
+//! it's OK for now: the beam is 100 units long and
 //! mostly hidden by the gun; the sounds are a latency late.
 
 use bevy::prelude::*;
-use chimera_sim::weapon::{CHAN_WEAPON, Inventory};
+use chimera_net::net::{NetItem, client::LocalClientId};
+use chimera_sim::weapon::{
+    CHAN_WEAPON, Inventory,
+    projectile::{Flyer, FlyerSet},
+};
 
 use super::{
     effects::AttachedPieces,
-    weapons::rpg::{DotTracer, Hl2LaserDot},
+    weapons::rpg::{DotTracer, Hl2LaserDot, Hl2Missile},
 };
 use crate::{
     core::{Intent, LocalPlayer, MovementState},
     map::{
-        GameSound, ParticleRng, PlaySound,
+        GameSound, ParticleRng, PlaySound, SoundControl, SoundKey, StartSound,
+        logic_view::{ScreenFade, ScreenFades},
         attached::{AttachPoint, AttachedFx, AttachedPiece, BeamEnd},
         interp::{RenderedView, eye_view},
         particles::{Motion, Particle, ParticleGroup, ParticleMaterials, ParticleSet, Particles},
@@ -76,6 +90,84 @@ pub const VIEW_FROM: usize = 1;
 pub const VIEW_TO: usize = 2;
 pub const WORLD_FROM: usize = 3;
 pub const WORLD_TO: usize = 4;
+
+/// `Missile.Ignite`: the missile's loop from its ignition to its removal.
+pub const IGNITE_SOUND: &str = "Missile.Ignite";
+/// The owner's screen fade at the ignition (projectiles.md 6.3: 255, 225,
+/// 205, alpha 64 over 0.1 s).
+pub const IGNITE_FADE: ([u8; 3], u8, f32) = ([255, 225, 205], 64, 0.1);
+/// The loops' keys: this + the missile's entity index.
+const IGNITE_KEYS: u64 = 0x6E52_0000_0000;
+
+/// A missile that has ignited (the server's, replicated): its loop plays
+/// and its owner's screen fades on each machine as it is first seen.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Reflect, serde::Serialize, serde::Deserialize)]
+#[reflect(Component)]
+pub struct Hl2Ignited;
+
+/// The server's: an ignited missile is marked.
+fn mark_ignited(missiles: Query<(Entity, &Hl2Missile), Without<Hl2Ignited>>, mut commands: Commands) {
+    for (e, m) in &missiles {
+        if m.ignited {
+            commands.entity(e).insert(Hl2Ignited);
+        }
+    }
+}
+
+fn ignite_key(e: Entity) -> SoundKey {
+    SoundKey(IGNITE_KEYS + (e.to_bits() & 0xFFFF_FFFF))
+}
+
+/// Each machine: a newly ignited missile starts `Missile.Ignite` from
+/// itself, looping until it is gone; its owner's screen fades (the host's
+/// local player by the flyer's owner, a network client's by the item's).
+#[allow(clippy::too_many_arguments)]
+fn ignitions(
+    new: Query<(Entity, Option<&Flyer>, Option<&NetItem>), Added<Hl2Ignited>>,
+    alive: Query<(), With<Hl2Ignited>>,
+    local: Query<(), With<LocalPlayer>>,
+    me: Option<Res<LocalClientId>>,
+    mut fades: Option<ResMut<ScreenFades>>,
+    time: Res<Time>,
+    mut playing: Local<Vec<Entity>>,
+    mut control: MessageWriter<SoundControl>,
+) {
+    for (e, flyer, item) in &new {
+        control.write(SoundControl::Start(StartSound {
+            key: ignite_key(e),
+            entry: IGNITE_SOUND.into(),
+            follow: Some(e),
+            looping: true,
+            ..default()
+        }));
+        playing.push(e);
+        let mine = flyer.and_then(|f| f.owner).is_some_and(|o| local.contains(o))
+            || item.and_then(|i| i.owner).zip(me.as_deref()).is_some_and(|(o, me)| o == me.0);
+        if mine && let Some(f) = fades.as_mut() {
+            let (color, alpha, duration) = IGNITE_FADE;
+            f.show(
+                ScreenFade {
+                    duration: ScreenFade::quantize(duration),
+                    hold: 0.0,
+                    color,
+                    alpha,
+                    fade_in: true,
+                    modulate: false,
+                    stay_out: false,
+                    purge: false,
+                },
+                time.elapsed_secs_f64(),
+            );
+        }
+    }
+    playing.retain(|e| {
+        let on = alive.contains(*e);
+        if !on {
+            control.write(SoundControl::Stop(ignite_key(*e)));
+        }
+        on
+    });
+}
 
 /// A player's RPG laser is on (the server's, replicated).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Reflect, serde::Serialize, serde::Deserialize)]
@@ -215,27 +307,38 @@ impl Plugin for Hl2RpgFxPlugin {
         use chimera_net::net::parts::NetAppExt;
         app.init_resource::<LaserRng>()
             .register_type::<Hl2LaserOn>()
+            .register_type::<Hl2Ignited>()
             .add_message::<GameSound>()
+            .add_message::<SoundControl>()
             .add_systems(
                 FixedUpdate,
-                laser_states.after(crate::core::SimSet::Weapons).run_if(crate::core::authoritative),
+                (
+                    laser_states.after(crate::core::SimSet::Weapons),
+                    mark_ignited.after(FlyerSet::Think),
+                )
+                    .run_if(crate::core::authoritative),
             )
             .add_systems(
                 Update,
                 (
                     laser_dots.after(ParticleSet::Step).before(ParticleSet::Draw),
                     laser_beams.in_set(AttachedPieces),
+                    ignitions.after(ParticleSet::Step).before(ParticleSet::Draw),
                 ),
             )
             .net_part("hl2dm_rpg_fx", register);
     }
 }
 
-/// The protocol: each player's laser on or off, from the server.
+/// The protocol, from the server: each player's laser on or off, the
+/// missiles' ignition.
 fn register(app: &mut App) {
     use bevy_replicon::prelude::AppRuleExt;
     use chimera_net::net::ordered::OrderedAppExt;
-    app.replicate::<Hl2LaserOn>().ordered::<Hl2LaserOn>();
+    app.replicate::<Hl2LaserOn>()
+        .ordered::<Hl2LaserOn>()
+        .replicate::<Hl2Ignited>()
+        .ordered::<Hl2Ignited>();
 }
 
 #[cfg(test)]

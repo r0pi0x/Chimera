@@ -385,3 +385,66 @@ fn a_satchel_pop_is_the_flash_and_debris_40() {
     assert!(!fire_parts.is_empty(), "spark streaks");
     assert!(fire_parts.iter().all(|p| matches!(p.shape, Shape::Trail { .. })), "no fireballs");
 }
+
+/// Effects 9: a ball held in the gravity gun draws no body quad; its
+/// flicker and blur stay.
+#[test]
+fn a_held_ball_has_no_body_quad() {
+    use hl2dm::game::projectile_fx::Hl2BallHeld;
+    let mut sim = sim();
+    sim.seconds(0.5);
+    let b = shown(&mut sim, BALL_MODEL, Vec3::new(0.0, 1.0, 0.0));
+    sim.app.world_mut().entity_mut(b).insert(Hl2BallHeld);
+    sim.ticks(2);
+    let mut x = 0.0;
+    for _ in 0..2 {
+        x += 16.0 * U;
+        put(&mut sim, b, Vec3::new(x, 1.0, 0.0));
+        clear(&mut sim);
+        sim.ticks(1);
+    }
+    assert!(drawn(&sim, "effects/ar2_altfire1").is_empty(), "no body quad");
+    assert_eq!(drawn(&sim, "effects/combinemuzzle1").len(), 1, "the flicker");
+    assert_eq!(drawn(&sim, "effects/ar2_altfire1b").len(), 8, "the blur");
+}
+
+/// Projectiles.md 7.4: a bolt that hits a body sends a "BoltImpact" where
+/// a line 128 units on along its flight meets the world (a wall 40 units
+/// behind the body), and none when the world is farther; one that sticks
+/// in the world sends its own at the hit.
+#[test]
+fn a_bolt_through_a_body_sends_its_impact_from_the_wall_behind() {
+    use hl2dm::game::projectile_fx::FlyerFx;
+    let mut sim = sim();
+    sim.seconds(0.5);
+    let mut cursor = sim.app.world().resource::<Messages<FlyerFx>>().get_cursor_current();
+    let clock = sim.app.world().resource::<SimClock>().clone();
+    let flyer = sim.app.world_mut().spawn(Flyer::new(weapons::CROSSBOW, None, Vec3::NEG_Z, &clock)).id();
+    let wall = greybox::NORTH_WALL_Z;
+    let mut impacts = |sim: &mut Sim, z: f32| {
+        sim.app.world_mut().write_message(FlyerHit {
+            flyer,
+            weapon: weapons::CROSSBOW,
+            owner: None,
+            other: None,
+            point: Vec3::new(0.0, 1.5, z),
+            normal: Vec3::Z,
+            velocity: Vec3::new(0.0, 0.0, wall.signum()) * 80.0,
+            character: true,
+            world: false,
+            gone: true,
+        });
+        sim.ticks(1);
+        cursor
+            .read(sim.app.world().resource::<Messages<FlyerFx>>())
+            .filter_map(|f| match f {
+                FlyerFx::BoltImpact { point, .. } => Some(*point),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let near = impacts(&mut sim, wall - wall.signum() * 40.0 * U);
+    assert_eq!(near.len(), 1, "the wall 40 units on");
+    assert!((near[0].z - wall).abs() < 0.05, "{near:?}");
+    assert!(impacts(&mut sim, wall - wall.signum() * 200.0 * U).is_empty(), "nothing within 128");
+}

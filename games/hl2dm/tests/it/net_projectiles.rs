@@ -261,3 +261,195 @@ fn the_stuck_bolt_keeps_its_flight_direction_on_both_sides() {
     }
     assert!(flying > 3 && stuck > 3, "flying {flying}, stuck {stuck}");
 }
+
+// ---------------------------------------------------------------------------
+// The flyers' looks on a dedicated server's client (specs/hl2dm/
+// effects_sounds.md 9): the server's `FlyerFx`, held balls, mine beams and
+// ignitions reach the client, which draws them.
+
+/// The client draws with every effect material (the greybox loads none).
+fn client_materials(sim: &mut NetSim) {
+    use chimera_world::map::particles::{MapParticles, ParticleMaterial, ParticleMaterials};
+    use hl2dm::game::{effects, projectile_fx, rpg_fx};
+    let materials = source_engine::effects::impact_effects::MATERIALS
+        .iter()
+        .chain(effects::MATERIALS)
+        .chain(projectile_fx::MATERIALS)
+        .chain(rpg_fx::MATERIALS)
+        .map(|n| ParticleMaterial { name: n.to_string(), ..default() })
+        .collect();
+    sim.clients[0].app.insert_resource(ParticleMaterials(MapParticles { materials }));
+}
+
+/// The client's particles of `material` alive now.
+fn client_drawn(sim: &NetSim, material: &str) -> usize {
+    use chimera_world::map::particles::{ParticleMaterials, Particles};
+    let w = sim.clients[0].app.world();
+    let m = w.resource::<ParticleMaterials>().0.find(material).expect(material);
+    w.resource::<Particles>().groups.iter().flat_map(|g| g.particles.iter()).filter(|p| p.material == m).count()
+}
+
+/// Press `button` for 2 steps, then watch `steps` steps for the client to
+/// draw `material`: the step it first did.
+fn first_drawn(sim: &mut NetSim, secondary: bool, steps: usize, material: &str) -> Option<usize> {
+    for k in 0..steps {
+        {
+            let mut i = client_intent(sim);
+            if secondary {
+                i.secondary = k < 2;
+            } else {
+                i.fire = k < 2;
+            }
+        }
+        sim.step();
+        if client_drawn(sim, material) > 0 {
+            return Some(k);
+        }
+    }
+    None
+}
+
+/// The energy ball's bounce off the west wall (`cball_bounce`'s two flat
+/// quads) is drawn on the client.
+#[test]
+fn the_balls_bounce_is_drawn_on_the_client() {
+    let mut sim = joined();
+    client_materials(&mut sim);
+    arm(&mut sim, weapons::AR2, 1, 0.0);
+    // The charge (0.5 s), then 1000 units/s across the greybox.
+    let k = first_drawn(&mut sim, true, 300, "effects/combinemuzzle1_nocull");
+    assert!(k.is_some(), "the bounce's quad on the client");
+    assert!(client_drawn(&sim, "effects/combinemuzzle2_nocull") > 0);
+}
+
+/// The ball's end (4 s on: its two rings of `sprites/lgtning`) is drawn on
+/// the client.
+#[test]
+fn the_balls_end_is_drawn_on_the_client() {
+    let mut sim = joined();
+    client_materials(&mut sim);
+    arm(&mut sim, weapons::AR2, 1, 0.0);
+    let k = first_drawn(&mut sim, true, 500, "sprites/lgtning").expect("the rings on the client");
+    // The charge (0.5 s) and the 4 s flight, with the link's latency.
+    let t = (k as f64 + 1.0) * hl2dm::game::TICK_INTERVAL;
+    assert!((4.4..5.0).contains(&t), "the end {t} s after the press");
+}
+
+/// A bolt stuck in the west wall glows on the client
+/// (`sprites/light_glow02_noz`, fading over 3 s).
+#[test]
+fn the_stuck_bolts_glow_is_drawn_on_the_client() {
+    let mut sim = joined();
+    client_materials(&mut sim);
+    arm(&mut sim, weapons::CROSSBOW, 4, 0.0);
+    assert!(first_drawn(&mut sim, false, 120, "sprites/light_glow02_noz").is_some(), "the glow on the client");
+}
+
+/// A ball held in a gravity gun is marked held on the client
+/// (`Hl2BallHeld`), which draws it without its body quad.
+#[test]
+fn a_held_ball_is_drawn_held_on_the_client() {
+    use chimera_sim::weapon::projectile::Flyer;
+    use hl2dm::game::{projectile_fx::Hl2BallHeld, weapons::physcannon::HeldBall};
+    let mut sim = joined();
+    client_materials(&mut sim);
+    arm(&mut sim, weapons::AR2, 1, 0.0);
+    let seen = shoot(&mut sim, true, 2, 50, launch::BALL_MODEL);
+    assert!(!seen.is_empty(), "the ball is drawn");
+    assert!(client_drawn(&sim, "effects/ar2_altfire1") > 0, "its body quad in flight");
+    let holder = sim.character_of(0).unwrap();
+    let w = sim.server.app.world_mut();
+    let ball = w.query_filtered::<Entity, With<Flyer>>().iter(w).next().expect("the server's ball");
+    w.entity_mut(ball).insert(HeldBall { holder, explode_at: f64::MAX });
+    sim.ticks(20);
+    sim.clients[0].app.world_mut().resource_mut::<chimera_world::map::particles::Particles>().groups.clear();
+    let w = sim.clients[0].app.world_mut();
+    let held = w.query_filtered::<&NetItem, With<Hl2BallHeld>>().iter(w).filter(|i| i.model == launch::BALL_MODEL).count();
+    assert_eq!(held, 1, "held on the client");
+    sim.step();
+    assert_eq!(client_drawn(&sim, "effects/ar2_altfire1"), 0, "no body quad while held");
+    assert!(client_drawn(&sim, "effects/combinemuzzle1") > 0, "the flicker stays");
+}
+
+/// An armed trip mine's beam (projectiles.md 8.2: red, brightness 64,
+/// 0.35 wide, along its normal for the length it armed with) is drawn
+/// on the client.
+#[test]
+fn the_trip_mines_beam_is_drawn_on_the_client() {
+    use chimera_world::map::particles::{Particles, Shape};
+    use hl2dm::game::projectile_fx::{Hl2MineBeam, MINE_BEAM_MATERIAL};
+    let mut sim = joined();
+    client_materials(&mut sim);
+    let theirs = sim.character_of(0).unwrap();
+    sim.server.app.world_mut().get_mut::<Transform>(theirs).unwrap().translation = Vec3::new(-40.0 + 30.0 * U, 1.0, 12.0);
+    sim.ticks(60);
+    arm(&mut sim, weapons::SLAM, 2, 0.0);
+    sim.ticks(120);
+    let seen = shoot(&mut sim, false, 2, 60, launch::MINE_MODEL);
+    assert!(!seen.is_empty(), "the mine is drawn");
+    assert_eq!(client_drawn(&sim, MINE_BEAM_MATERIAL), 0, "no beam before it arms");
+    // Out of its beam (the placer in it would trip it), then it arms 2 s
+    // after its creation.
+    sim.server.app.world_mut().get_mut::<Transform>(theirs).unwrap().translation = Vec3::new(0.0, 1.0, -12.0);
+    sim.ticks(150);
+    let w = sim.clients[0].app.world_mut();
+    let beams: Vec<f32> = w.query::<&Hl2MineBeam>().iter(w).map(|b| b.0).collect();
+    assert_eq!(beams.len(), 1, "armed on the client");
+    // Out from the west wall across the greybox.
+    assert!(beams[0] / U > 100.0, "beam {} units", beams[0] / U);
+    sim.clients[0].app.world_mut().resource_mut::<Particles>().groups.clear();
+    sim.step();
+    let w = sim.clients[0].app.world();
+    let m = w.resource::<chimera_world::map::particles::ParticleMaterials>().0.find(MINE_BEAM_MATERIAL).unwrap();
+    let ribbons: Vec<(Vec3, Vec3, [f32; 2])> = w
+        .resource::<Particles>()
+        .groups
+        .iter()
+        .flat_map(|g| g.particles.iter())
+        .filter(|p| p.material == m)
+        .filter_map(|p| match p.shape {
+            Shape::Ribbon { to, width, .. } => Some((p.position, to, width)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ribbons.len(), 1, "one beam: {ribbons:?}");
+    let (from, to, width) = ribbons[0];
+    assert!((from.distance(to) - beams[0]).abs() < 2.0 * U, "its length");
+    assert!(to.x > from.x + 100.0 * U, "east, off the west wall: {from:?} -> {to:?}");
+    assert!((width[0] / U - 0.35).abs() < 1e-3);
+}
+
+/// The RPG's missile, ignited (0.3 s on), is marked on the client, which
+/// starts its `Missile.Ignite` loop from it and stops it when it is gone.
+#[test]
+fn the_missiles_ignition_is_heard_on_the_client() {
+    use chimera_world::map::SoundControl;
+    use hl2dm::game::rpg_fx::{Hl2Ignited, IGNITE_SOUND};
+    let mut sim = joined();
+    arm(&mut sim, weapons::RPG, 3, 0.0);
+    let mut cursor = sim.clients[0].app.world().resource::<Messages<SoundControl>>().get_cursor_current();
+    let (mut started, mut stopped) = (None, false);
+    for k in 0..200 {
+        client_intent(&mut sim).fire = k < 2;
+        sim.step();
+        let w = sim.clients[0].app.world();
+        for m in cursor.read(w.resource::<Messages<SoundControl>>()) {
+            match m {
+                SoundControl::Start(s) if s.entry == IGNITE_SOUND => {
+                    assert!(s.looping && s.follow.is_some());
+                    started = Some((k, s.key));
+                }
+                SoundControl::Stop(key) if started.is_some_and(|(_, s)| s == *key) => stopped = true,
+                _ => {}
+            }
+        }
+        if started.is_some() && !stopped {
+            let w = sim.clients[0].app.world_mut();
+            assert!(w.query_filtered::<(), With<Hl2Ignited>>().iter(w).count() <= 1);
+        }
+    }
+    let (k, _) = started.expect("the loop starts on the client");
+    let t = (k as f64 + 1.0) * hl2dm::game::TICK_INTERVAL;
+    assert!((0.3..0.5).contains(&t), "ignited {t} s after the press");
+    assert!(stopped, "and stops when the missile is gone");
+}

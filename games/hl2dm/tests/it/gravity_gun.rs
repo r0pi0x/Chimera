@@ -1397,3 +1397,34 @@ fn a_punt_flashes_the_blast_sprite_at_the_core() {
     w.sim.ticks(20);
     assert!(drawn(&w, BLAST).is_empty(), "gone after 0.2 s");
 }
+
+/// H9 11: a punt's effect ends at the punted object's centre (not at the
+/// end of the eye's trace): the punter's beam reaches the crate's centre,
+/// 100 units ahead at eye height.
+#[test]
+fn a_punts_beam_ends_at_the_objects_centre() {
+    use chimera_world::map::particles::{ParticleMaterials, Particles, Shape};
+    let mut w = world(&[Crate::ahead(100.0)]);
+    with_effects(&mut w);
+    w.sim.app.world_mut().resource_mut::<Particles>().groups.clear();
+    w.press(true, false, 1, 2);
+    let beam = w.sim.app.world().resource::<ParticleMaterials>().0.find("sprites/orangelight1").unwrap();
+    let ends: Vec<Vec3> = w
+        .sim
+        .app
+        .world()
+        .resource::<Particles>()
+        .groups
+        .iter()
+        .flat_map(|g| g.particles.iter())
+        .filter(|p| p.material == beam)
+        .filter_map(|p| match p.shape {
+            Shape::Ribbon { to, .. } => Some(to),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(ends.len(), 1);
+    let centre = to_engine(FEET + Vec3::Z * EYE + Vec3::new(100.0, 0.0, 0.0));
+    let off = ends[0].distance(centre) / U;
+    assert!(off < 3.0, "the beam ends {off} units from the crate's centre ({:?})", to_source(ends[0]));
+}

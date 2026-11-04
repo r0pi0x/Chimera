@@ -1676,6 +1676,40 @@ implementing (owner branch) / done.
   other clients draw catch-up rounds as lines; the throw and lob are made
   unturned (only the roll's orientation is specced).
 
+- 2026-11-04: **Effects round 3** (branch `hl2dm-fx3`; effects_sounds.md 9,
+  10, 11; projectiles.md 5.1, 6.3, 7.4, 7.5, 8.2). The flyers' one-off
+  looks are the server's `FlyerFx` (the ball's bounce and end, a bolt
+  stuck, a bolt's "BoltImpact"), drawn on every machine and sent to
+  clients with the satchels' pops (net part `hl2dm_projectile_fx`, which
+  also replicates `Hl2BallHeld`: a held ball draws no body quad, and
+  `Hl2MineBeam`: an armed trip mine's beam, red, brightness 64, 0.35 wide,
+  along its normal for its arming length, `effects/laser1` as the spec
+  names no sprite). Bolts pin ragdolls (7.5): at an impact each machine
+  pins the first ragdoll bone within 128 units back along the flight to
+  the world (avian ball-and-socket to a static anchor, mass doubled,
+  `Weapon_Crossbow.BoltSkewer`) and shows a bolt 8 units back for 30 s; a
+  bolt through a body sends its impact where a 128-unit line on meets the
+  world. The RPG's ignition (`rpg_fx::Hl2Ignited`, replicated):
+  `Missile.Ignite` loops from the missile until it is gone, the owner's
+  screen fades (255, 225, 205, 64, 0.1 s). The AR2 shooter's white fade
+  at the launch. The ball's victim's dropped weapon dissolves
+  (`dissolve::Hl2DissolvingItem`, net part `hl2dm_dissolve`): nobody can
+  take it, it darkens and fades with the body's sparks and glows, gone
+  with its weapon at tick 134. The gravity gun's punt and launch effect
+  ends at the object's centre (the server's punted object). Tests:
+  `net_projectiles.rs` (the ball's bounce and end, the stuck bolt's glow,
+  a held ball, the mine's beam and the missile's ignition on a client),
+  `ragdolls.rs` (a bolt pins the ragdoll behind its impact; none past 128
+  units), `projectile_fx.rs` (a held ball's look, a body hit's impact),
+  `rpg_laser.rs` (the ignition's loop and fade), `weapon_details.rs` (the
+  dissolved weapon, the AR2's fade), `gravity_gun.rs` (the punt's beam to
+  the crate's centre). Left, the spec silent: the "closed" claws effect
+  state (no change into it named), the satchel's strobe (no rate or
+  form), the S.L.A.M.'s view-model sequences (no activities named). Left
+  otherwise: a held ball's model isn't turned to the camera (and is drawn
+  in flight too); a pin has no sky test and the pinned bone isn't moved
+  onto the impact; a client's own punt ends at its eye trace.
+
 ## Decision log
 
 - 2026-10-31 (user): Half-Life 2: Deathmatch is the next game, after

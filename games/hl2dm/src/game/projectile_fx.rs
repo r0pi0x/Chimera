@@ -1,6 +1,6 @@
 //! HL2:DM's projectile effects (specs/hl2dm/effects_sounds.md 8, 9, the
 //! Explosions and Projectile visuals tables; specs/hl2dm/projectiles.md
-//! 6.1, 9.5), drawn with Chimera's particles (`map::particles`):
+//! 5.1, 6.1, 7.4, 7.5, 8.2, 9.5), drawn with Chimera's particles (`map::particles`):
 //!
 //! - **Explosions** (`explosions`, on `Detonated`): the temp entity's
 //!   look (`source_engine::effects::explosions`: CS:S's smoke, embers,
@@ -17,43 +17,69 @@
 //! - **The rocket** (`MISSILE_MODEL`, every frame): 8 flare sprites behind
 //!   it and a smoke puff for each 4 units it travelled.
 //! - **The energy ball** (`BALL_MODEL`, every frame): the animated body
-//!   quad, the flickering halo and 8 blur halos behind; its bounce
-//!   (`cball_bounce`: two flat quads and sparks) and its end (sparks and
-//!   two rings of `sprites/lgtning` spreading to 1024 units).
+//!   quad (none while it is held in a gravity gun: `Hl2BallHeld`, the
+//!   server's `HeldBall` replicated), the flickering halo and 8 blur halos
+//!   behind; its bounce (`cball_bounce`: two flat quads and sparks) and its
+//!   end (sparks and two rings of `sprites/lgtning` spreading to 1024
+//!   units).
 //! - **The crossbow bolt** (`BOLT_MODEL`): 20 blur halos along its motion;
 //!   stuck in the world, a glow fading over 3 s and sparks.
+//! - **Bolts pinning ragdolls** (projectiles.md 7.5, `pin_ragdolls`): at a
+//!   "BoltImpact" (a bolt stuck in the world, or the world met by a line
+//!   128 units on from a body it hit) each machine pins the first ragdoll
+//!   bone within 128 units back along the flight to the world at the
+//!   impact (avian's ball-and-socket joint to a static anchor, the bone's
+//!   mass doubled, `Weapon_Crossbow.BoltSkewer`), waiting up to 0.25 s for
+//!   the victim's ragdoll; and shows a bolt 8 units back from it for 30 s.
+//! - **The trip mine's beam** (`Hl2MineBeam`, the server's arming length
+//!   replicated; `mine_beams`, every frame): from the mine along its normal
+//!   for that length, red (255, 55, 52), brightness 64, 0.35 units wide,
+//!   additive `effects/laser1`.
 //! - **The SMG1 grenade** (`SMG1_GRENADE_MODEL`): `env_smoketrail`'s smoke;
 //!   going off, the server's scorch where a 60-unit line along its flight
 //!   hits (`scorches`: `Scorch` on the world, `SmallScorch` on props and
 //!   brush entities).
 //! - **The frag and the satchel**: a red glow (the frag's beats faster
 //!   once warned) and the frag's red trail.
-//! - The RPG's laser (its dot, beam and glow) is `rpg_fx`'s.
+//! - **The AR2 shooter's white fade** as the ball leaves (projectiles.md
+//!   5.1: 255, 255, 255, alpha 64 over 0.1 s), on his machine.
+//! - The RPG's laser (its dot, beam and glow) and its missile's ignition
+//!   are `rpg_fx`'s.
 //!
 //! Every per-frame look is a one-frame group (`frame_group`) added after
 //! the particles' step and before their drawing, from what the shown
 //! projectile entities (`ShownItem`, on the host and on clients alike)
-//! are doing; the per-event ones read the host's `FlyerHit`/`FlyerGone`
-//! and every machine's `Detonated`.
+//! are doing. The one-off flyer effects (`FlyerFx`: the ball's bounce and
+//! end, a bolt stuck, a bolt's impact) are made where flyers are
+//! simulated, from `FlyerHit`/`FlyerGone`, and drawn on every machine: a
+//! network server sends them to its clients with the satchels' pops (net
+//! part `hl2dm_projectile_fx`, which also replicates `Hl2BallHeld` and
+//! `Hl2MineBeam`).
 //!
-//! Known shortcuts (docs/tech-debt.md): the ball's bounce and end and the
-//! stuck bolt's glow are drawn from the host's flyer messages, so a
-//! client of a dedicated server sees the ball, the bolt's blur and the
-//! trails but not those three; the held ball's model isn't drawn;
-//! the ball's body quad takes its frames from the material's sheet at 30 a
-//! second; the electric sparks are the surface effect's (sizes 1, 2 and 4
-//! of the spec are one size); the frag's trail has one width; the entity
-//! rule's scorch lands on the world only (not on props or brush entities
-//! under the blast; the SMG1 grenade's does); the satchel's glow
-//! strobes at a steady rate. Why it's OK for now: the shapes, sizes,
-//! lifetimes and counts are the spec's; the look needs the real game's
-//! captures to compare.
+//! Known shortcuts (docs/tech-debt.md): a held ball's model isn't turned
+//! to face the camera, and in flight its model is drawn too (every
+//! `ShownItem` draws its meshes); the ball's bounce goes to every client
+//! (the spec's is the PAS); the ball's body quad takes its frames from the
+//! material's sheet at 30 a second; the electric sparks are the surface
+//! effect's (sizes 1, 2 and 4 of the spec are one size), and a stuck
+//! bolt's are drawn under water too; the frag's trail has one width; the
+//! entity rule's scorch lands on the world only (not on props or brush
+//! entities under the blast; the SMG1 grenade's does); the satchel's glow
+//! strobes at a steady rate (the spec says "strobing" and gives no rate or
+//! form); the trip mine's beam material is our choice (the spec says "a
+//! laser sprite") and it is drawn at its arming length, not re-traced each
+//! frame; a pin has no sky test (the 16-unit line), the pinned bone keeps
+//! its distance from the impact (it isn't moved onto it) and the shown
+//! bolt overlaps the stuck flyer's own model for its 2 s. Why it's OK for
+//! now: the shapes, sizes, lifetimes and counts are the spec's; the look
+//! needs the real game's captures to compare.
 
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use bevy_replicon::prelude::*;
 use chimera_sim::weapon::{
+    WeaponEvent, WeaponEventKind,
     grenade::Detonated,
     projectile::{Flyer, FlyerGone, FlyerHit},
 };
@@ -67,14 +93,17 @@ use super::{
     weapons::{
         self,
         launch::{BALL_MODEL, BOLT_MODEL, MISSILE_MODEL, SATCHEL_MODEL, SMG1_GRENADE_MODEL},
-        slam::SatchelPop,
+        physcannon::HeldBall,
+        slam::{Hl2Mine, SatchelPop},
     },
 };
 use crate::{
-    core::MovementState,
+    core::{LocalPlayer, MovementState},
     map::{
         DecalGroup, ParticleRng, PlaceDecal, PlaySound,
+        logic_view::{ScreenFade, ScreenFades},
         loose::ShownItem,
+        ragdoll::RagdollBody,
         particles::{
             Fade, Motion, Particle, ParticleGroup, ParticleMaterials, ParticleSet, Particles, Ramp, Shape,
             WorldTrace, WorldTracer,
@@ -361,13 +390,58 @@ fn forward_pops(mut pops: MessageReader<SatchelPop>, mut out: MessageWriter<ToCl
     }
 }
 
-/// The protocol: shot satchels' pops, from the server (a client's own
-/// `SatchelPop` messages, which `pops` draws).
+/// The protocol, from the server: shot satchels' pops and the flyers'
+/// effects (a client's own `SatchelPop` and `FlyerFx` messages, which
+/// `pops` and `draw_flyer_fx` draw), held balls and armed mines' beams.
 fn register(app: &mut App) {
-    app.add_server_message::<SatchelPop>(Channel::Unreliable).add_systems(
-        PostUpdate,
-        forward_pops.before(ServerSystems::Send).run_if(resource_equals(crate::core::NetRole::Server)),
-    );
+    use bevy_replicon::prelude::AppRuleExt;
+    use chimera_net::net::ordered::OrderedAppExt;
+    app.add_server_message::<SatchelPop>(Channel::Unreliable)
+        .add_server_message::<FlyerFx>(Channel::Unreliable)
+        .replicate::<Hl2BallHeld>()
+        .ordered::<Hl2BallHeld>()
+        .replicate::<Hl2MineBeam>()
+        .ordered::<Hl2MineBeam>()
+        .add_systems(
+            PostUpdate,
+            (forward_pops, forward_flyer_fx)
+                .before(ServerSystems::Send)
+                .run_if(resource_equals(crate::core::NetRole::Server)),
+        );
+}
+
+/// The AR2 shooter's white screen fade as the ball leaves (projectiles.md
+/// 5.1: 255, 255, 255, alpha 64 over 0.1 s), on his own machine (the
+/// launch is predicted).
+pub const BALL_FADE: ([u8; 3], u8, f32) = ([255, 255, 255], 64, 0.1);
+
+fn shooter_fades(
+    mut events: MessageReader<WeaponEvent>,
+    local: Query<(), With<LocalPlayer>>,
+    mut fades: Option<ResMut<ScreenFades>>,
+    time: Res<Time>,
+) {
+    for e in events.read().filter(|e| e.shown()) {
+        if !matches!(e.kind, WeaponEventKind::Action("ball")) || !local.contains(e.owner) {
+            continue;
+        }
+        if let Some(f) = fades.as_mut() {
+            let (color, alpha, duration) = BALL_FADE;
+            f.show(
+                ScreenFade {
+                    duration: ScreenFade::quantize(duration),
+                    hold: 0.0,
+                    color,
+                    alpha,
+                    fade_in: true,
+                    modulate: false,
+                    stay_out: false,
+                    purge: false,
+                },
+                time.elapsed_secs_f64(),
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -437,7 +511,37 @@ fn draw_rings(
 }
 
 // ---------------------------------------------------------------------------
-// The ball's bounce and end, the bolt's sticking (the host's flyer messages)
+// The ball's bounce and end, the bolt's sticking (the server's `FlyerFx`)
+
+/// The flyers' one-off effects, made where the flyers are simulated (the
+/// host or the server, from `FlyerHit`/`FlyerGone`) and drawn on every
+/// machine: a network server sends them to its clients (net part
+/// `hl2dm_projectile_fx`), as it does the satchels' pops.
+#[derive(Message, Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum FlyerFx {
+    /// The energy ball's bounce on the world (`cball_bounce`).
+    BallBounce { point: Vec3, normal: Vec3 },
+    /// The energy ball's end (`ball_explode`: sparks and two rings).
+    BallEnd { at: Vec3 },
+    /// A crossbow bolt stuck in the world: its glow and sparks; `dir` its
+    /// flight's direction.
+    BoltStuck { point: Vec3, normal: Vec3, dir: Vec3 },
+    /// "BoltImpact" (projectiles.md 7.4-7.5): where a bolt stuck in the
+    /// world, or where a line 128 units on from a body it hit meets the
+    /// world; `dir` its flight's direction. Each machine pins a ragdoll
+    /// behind it and shows a bolt there.
+    BoltImpact { point: Vec3, dir: Vec3 },
+}
+
+/// How far on from a body a bolt hit the world is looked for, and how far
+/// back from a bolt's impact a ragdoll bone is (projectiles.md 7.4, 7.5),
+/// units.
+pub const BOLT_PIN_REACH: f32 = 128.0;
+/// The bolt shown at an impact: this far back along its flight, for this
+/// long (s).
+pub const PIN_BOLT_BACK: f32 = 8.0;
+pub const PIN_BOLT_LIFE: f64 = 30.0;
+pub const BOLT_SKEWER: &str = "Weapon_Crossbow.BoltSkewer";
 
 /// `cball_bounce` (spec 9): two flat quads at `at` + 1 unit off the
 /// surface `n`: 160 to 0 units over 0.25 s and 32 to 64 over 0.5 s.
@@ -483,51 +587,295 @@ impl MaterialIds {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn flyer_events(
+/// The flyers' effects from the host's flyer messages (where flyers are
+/// simulated): a world bounce of the ball, its end when its time ran out,
+/// a bolt sticking in the world.
+fn flyer_fx(
     mut hits: MessageReader<FlyerHit>,
     mut gone: MessageReader<FlyerGone>,
     flyers: Query<&Flyer>,
-    materials: Option<Res<ParticleMaterials>>,
-    time: Res<Time>,
-    mut particles: ResMut<Particles>,
-    mut rings: ResMut<Rings>,
-    mut rng: ResMut<FxRng>,
     world: WorldTracer,
+    mut out: MessageWriter<FlyerFx>,
 ) {
-    let Some(materials) = materials else {
-        hits.clear();
-        gone.clear();
-        return;
-    };
-    let ids = MaterialIds::new(&materials.0);
-    let effect = EffectMaterials::new(&materials.0);
-    let now = time.elapsed_secs_f64();
     for h in hits.read() {
         if h.weapon == weapons::AR2 && h.world {
-            for g in ball_bounce(&ids, &mut rng.0, h.point, h.normal) {
-                particles.add(g);
-            }
-            for g in impact_effects::electric_sparks(&mut rng.0, &effect, h.point, h.normal, &world) {
-                particles.add(g);
-            }
+            out.write(FlyerFx::BallBounce { point: h.point, normal: h.normal });
         }
-        if h.weapon == weapons::CROSSBOW && h.world && flyers.get(h.flyer).is_ok_and(|f| f.stuck_until.is_some()) {
-            if let Some(g) = bolt_glow(&ids, h.point) {
-                particles.add(g);
-            }
-            for g in impact_effects::electric_sparks(&mut rng.0, &effect, h.point, h.normal, &world) {
-                particles.add(g);
+        if h.weapon != weapons::CROSSBOW {
+            continue;
+        }
+        let dir = h.velocity.normalize_or_zero();
+        if h.world && flyers.get(h.flyer).is_ok_and(|f| f.stuck_until.is_some()) {
+            out.write(FlyerFx::BoltStuck { point: h.point, normal: h.normal, dir });
+            out.write(FlyerFx::BoltImpact { point: h.point, dir });
+        } else if h.character && dir != Vec3::ZERO {
+            // A body: the world 128 units on along its flight.
+            let to = h.point + dir * BOLT_PIN_REACH * U;
+            if let Some((f, _)) = world.trace(h.point, to) {
+                out.write(FlyerFx::BoltImpact { point: h.point + (to - h.point) * f, dir });
             }
         }
     }
     for g in gone.read() {
         if g.weapon == weapons::AR2 && g.expired {
-            rings.0.extend(ball_rings(g.at, now));
-            for p in impact_effects::electric_sparks(&mut rng.0, &effect, g.at, Vec3::Y, &world) {
-                particles.add(p);
-            }
+            out.write(FlyerFx::BallEnd { at: g.at });
         }
+    }
+}
+
+/// The flyers' effects drawn, on every machine.
+fn draw_flyer_fx(
+    mut fx: MessageReader<FlyerFx>,
+    materials: Option<Res<ParticleMaterials>>,
+    time: Res<Time>,
+    mut particles: ResMut<Particles>,
+    mut rings: ResMut<Rings>,
+    mut rng: ResMut<FxRng>,
+    mut pins: ResMut<Pins>,
+    world: WorldTracer,
+) {
+    let now = time.elapsed_secs_f64();
+    let all: Vec<FlyerFx> = fx.read().copied().collect();
+    for f in &all {
+        if let FlyerFx::BoltImpact { point, dir } = *f {
+            pins.wanted.push(PinWanted { point, dir, until: now + PIN_WAIT });
+            pins.bolts.push(PinBolt { at: point - dir * PIN_BOLT_BACK * U, dir, until: now + PIN_BOLT_LIFE, shown: None });
+        }
+    }
+    let Some(materials) = materials else { return };
+    let ids = MaterialIds::new(&materials.0);
+    let effect = EffectMaterials::new(&materials.0);
+    for f in all {
+        let groups = match f {
+            FlyerFx::BallBounce { point, normal } => {
+                let mut g = ball_bounce(&ids, &mut rng.0, point, normal);
+                g.extend(impact_effects::electric_sparks(&mut rng.0, &effect, point, normal, &world));
+                g
+            }
+            FlyerFx::BoltStuck { point, normal, .. } => {
+                let mut g: Vec<ParticleGroup> = bolt_glow(&ids, point).into_iter().collect();
+                g.extend(impact_effects::electric_sparks(&mut rng.0, &effect, point, normal, &world));
+                g
+            }
+            FlyerFx::BallEnd { at } => {
+                rings.0.extend(ball_rings(at, now));
+                impact_effects::electric_sparks(&mut rng.0, &effect, at, Vec3::Y, &world)
+            }
+            FlyerFx::BoltImpact { .. } => Vec::new(),
+        };
+        for g in groups {
+            particles.add(g);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bolts pinning ragdolls (projectiles.md 7.5, each machine for its own)
+
+/// How long an impact waits for a ragdoll to pin (the victim's ragdoll is
+/// made as the bolt's kill reaches this machine), seconds.
+pub const PIN_WAIT: f64 = 0.25;
+
+struct PinWanted {
+    point: Vec3,
+    dir: Vec3,
+    until: f64,
+}
+
+/// A bolt shown at an impact for 30 s (its `ShownItem`, this machine's).
+struct PinBolt {
+    at: Vec3,
+    dir: Vec3,
+    until: f64,
+    shown: Option<Entity>,
+}
+
+/// A ragdoll body pinned to the world: the joint, its anchor and the body.
+#[derive(Clone, Copy, Debug)]
+pub struct Pin {
+    pub joint: Entity,
+    pub anchor: Entity,
+    pub body: Entity,
+}
+
+/// The impacts waiting for a ragdoll, the bolts shown at them and the
+/// pins made.
+#[derive(Resource, Default)]
+pub struct Pins {
+    wanted: Vec<PinWanted>,
+    bolts: Vec<PinBolt>,
+    pub pins: Vec<Pin>,
+}
+
+/// The first ragdoll body a line from `point` back along the bolt's
+/// flight `dir` crosses within 128 units: the body and where.
+fn bone_behind(
+    spatial: &avian3d::prelude::SpatialQuery,
+    parts: &Query<&RagdollBody>,
+    point: Vec3,
+    dir: Vec3,
+) -> Option<Entity> {
+    let back = Dir3::new(-dir).ok()?;
+    let filter = avian3d::prelude::SpatialQueryFilter::from_mask(crate::core::RAGDOLL_LAYER);
+    spatial
+        .ray_hits(point, back, BOLT_PIN_REACH * U, 16, true, &filter)
+        .into_iter()
+        .filter(|h| parts.contains(h.entity))
+        .min_by(|a, b| a.distance.total_cmp(&b.distance))
+        .map(|h| h.entity)
+}
+
+/// Each machine: an impact pins the first ragdoll bone behind it to the
+/// world at the impact (a ball-and-socket joint, the bone's mass doubled,
+/// `Weapon_Crossbow.BoltSkewer`); the bolts are shown for 30 s; pins
+/// whose body is gone go too.
+#[allow(clippy::too_many_arguments)]
+fn pin_ragdolls(
+    mut pins: ResMut<Pins>,
+    spatial: avian3d::prelude::SpatialQuery,
+    parts: Query<&RagdollBody>,
+    masses: Query<&avian3d::prelude::Mass>,
+    exists: Query<()>,
+    time: Res<Time>,
+    mut play: MessageWriter<PlaySound>,
+    mut commands: Commands,
+) {
+    use avian3d::prelude::{Mass, RigidBody, SphericalJoint};
+    let now = time.elapsed_secs_f64();
+    let pins = &mut *pins;
+    pins.pins.retain(|p| {
+        let keep = exists.contains(p.body);
+        if !keep {
+            commands.entity(p.joint).try_despawn();
+            commands.entity(p.anchor).try_despawn();
+        }
+        keep
+    });
+    let mut made = Vec::new();
+    pins.wanted.retain(|w| {
+        let Some(body) = bone_behind(&spatial, &parts, w.point, w.dir) else { return now < w.until };
+        if pins.pins.iter().chain(&made).any(|p: &Pin| p.body == body) {
+            return false;
+        }
+        let anchor = commands
+            .spawn((Name::new("Bolt pin"), crate::map::MapPart, RigidBody::Static, Transform::from_translation(w.point)))
+            .id();
+        let joint = commands
+            .spawn((Name::new("Bolt pin joint"), crate::map::MapPart, SphericalJoint::new(anchor, body).with_anchor(w.point)))
+            .id();
+        if let Ok(m) = masses.get(body) {
+            commands.entity(body).try_insert(Mass(m.0 * 2.0));
+        }
+        play.write(PlaySound::at(BOLT_SKEWER, w.point));
+        made.push(Pin { joint, anchor, body });
+        false
+    });
+    pins.pins.extend(made);
+    for b in &mut pins.bolts {
+        if b.shown.is_none() {
+            let turn = Quat::from_rotation_arc(Vec3::Y, b.dir.try_normalize().unwrap_or(Vec3::Y));
+            b.shown = Some(
+                commands
+                    .spawn((
+                        Name::new("Pinned bolt"),
+                        crate::map::MapPart,
+                        ShownItem(BOLT_MODEL.into()),
+                        Transform::from_translation(b.at).with_rotation(turn),
+                    ))
+                    .id(),
+            );
+        }
+    }
+    pins.bolts.retain(|b| {
+        let keep = now < b.until;
+        if !keep && let Some(e) = b.shown {
+            commands.entity(e).try_despawn();
+        }
+        keep
+    });
+}
+
+/// The server: this tick's flyer effects to every client.
+fn forward_flyer_fx(mut fx: MessageReader<FlyerFx>, mut out: MessageWriter<ToClients<FlyerFx>>) {
+    for f in fx.read() {
+        out.write(ToClients { targets: SendTargets::CLIENTS_ONLY, message: *f });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// What the server marks for clients: a held ball, a trip mine's beam
+
+/// A combine ball held in a gravity gun (the server's `HeldBall`,
+/// replicated): drawn without its body quad (spec 9).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Reflect, serde::Serialize, serde::Deserialize)]
+#[reflect(Component)]
+pub struct Hl2BallHeld;
+
+/// An armed trip mine's beam (the server's `Hl2Mine::beam`, replicated):
+/// its length (meters) along the mine's normal (its model's −Z).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Reflect, serde::Serialize, serde::Deserialize)]
+#[reflect(Component)]
+pub struct Hl2MineBeam(pub f32);
+
+/// The server's: `Hl2BallHeld` follows `HeldBall`; an armed mine gets its
+/// `Hl2MineBeam`.
+#[allow(clippy::type_complexity)]
+fn mark_for_clients(
+    balls: Query<(Entity, Has<HeldBall>, Has<Hl2BallHeld>), With<Flyer>>,
+    mines: Query<(Entity, &Hl2Mine), Without<Hl2MineBeam>>,
+    mut commands: Commands,
+) {
+    for (e, held, marked) in &balls {
+        if held && !marked {
+            commands.entity(e).insert(Hl2BallHeld);
+        } else if !held && marked {
+            commands.entity(e).remove::<Hl2BallHeld>();
+        }
+    }
+    for (e, m) in &mines {
+        if let Some((len, _)) = m.beam {
+            commands.entity(e).insert(Hl2MineBeam(len));
+        }
+    }
+}
+
+/// The trip mine's beam colour (255, 55, 52), brightness 64 (of 255) and
+/// width (units; projectiles.md 8.2).
+pub const MINE_BEAM_COLOR: Vec3 = Vec3::new(1.0, 55.0 / 255.0, 52.0 / 255.0);
+pub const MINE_BEAM_BRIGHTNESS: f32 = 64.0 / 255.0;
+pub const MINE_BEAM_WIDTH: f32 = 0.35;
+/// Its material: a laser sprite (the spec names none; HL2:DM's laser
+/// beam, the RPG's world-model one, additive).
+pub const MINE_BEAM_MATERIAL: &str = super::rpg_fx::WORLD_BEAM;
+
+/// Each armed trip mine's beam this frame: from the mine along its normal
+/// for the length it armed with.
+fn mine_beams(
+    mines: Query<(&Hl2MineBeam, &GlobalTransform)>,
+    materials: Option<Res<ParticleMaterials>>,
+    mut particles: ResMut<Particles>,
+) {
+    let Some(mat) = materials.as_ref().and_then(|m| m.0.find(MINE_BEAM_MATERIAL)) else { return };
+    let mut g = frame_group();
+    for (beam, at) in &mines {
+        let (_, rotation, from) = at.to_scale_rotation_translation();
+        let to = from + rotation * Vec3::NEG_Z * beam.0;
+        g.particles.push(Particle {
+            color: MINE_BEAM_COLOR,
+            alpha: MINE_BEAM_BRIGHTNESS,
+            shape: Shape::Ribbon {
+                to,
+                width: [MINE_BEAM_WIDTH * U, MINE_BEAM_WIDTH * U],
+                u: (0.0, 1.0),
+                end_color: None,
+                prev: None,
+                next: None,
+            },
+            ..Particle::new(from, ONE_FRAME, mat, 1.0)
+        });
+    }
+    if !g.particles.is_empty() {
+        particles.add(g);
     }
 }
 
@@ -609,7 +957,7 @@ fn rocket(
     }
 }
 
-/// The ball's look this frame (spec 9): the body quad of half-size
+/// The ball's look this frame (spec 9): the body quad (not while `held`) of half-size
 /// 10 + sin(25 t) units, rolled by its spawn time, the flicker halo
 /// (1.5 to 2.5 times, grey 0.2 to 0.3) and 8 blur halos behind, stepping
 /// back min(0.5 s, 4) units with grey `remap(s: 4 → 0, 32 → 1) · (1 − i/12)`.
@@ -622,9 +970,10 @@ fn ball(
     moved: Vec3,
     seen: f64,
     now: f64,
+    held: bool,
 ) {
     let r = 10.0;
-    if let Some(body) = m("effects/ar2_altfire1") {
+    if let Some(body) = m("effects/ar2_altfire1").filter(|_| !held) {
         let t = (now - seen) as f32;
         g.particles.push(Particle {
             roll: seen as f32,
@@ -743,7 +1092,7 @@ fn glow_and_trail(
 
 #[allow(clippy::too_many_arguments)]
 fn projectile_looks(
-    items: Query<(Entity, &ShownItem, &GlobalTransform)>,
+    items: Query<(Entity, &ShownItem, &GlobalTransform, Has<Hl2BallHeld>)>,
     materials: Option<Res<ParticleMaterials>>,
     time: Res<Time>,
     mut particles: ResMut<Particles>,
@@ -757,7 +1106,7 @@ fn projectile_looks(
     let mut smoke = ParticleGroup::new(Motion { roll_decay: Some((8.0, 0.5)), ..default() });
     let mut trail = ParticleGroup::new(Motion::default());
     let mut seen = Vec::new();
-    for (e, shown, at) in &items {
+    for (e, shown, at, held) in &items {
         let key = shown.0.as_str();
         if ![MISSILE_MODEL, BALL_MODEL, BOLT_MODEL, SMG1_GRENADE_MODEL, SATCHEL_MODEL, weapons::FRAG].contains(&key) {
             continue;
@@ -769,7 +1118,7 @@ fn projectile_looks(
         t.at = at;
         match key {
             MISSILE_MODEL => rocket(&mut frame, &mut smoke, &mut rng.0, &m, at, moved, &mut t.carry),
-            BALL_MODEL => ball(&mut frame, &mut rng.0, &m, at, moved, t.seen, now),
+            BALL_MODEL => ball(&mut frame, &mut rng.0, &m, at, moved, t.seen, now, held),
             BOLT_MODEL => bolt(&mut frame, &m, at, moved),
             SMG1_GRENADE_MODEL => smoke_trail(&mut smoke, &mut rng.0, &m, at, dt, now - t.seen, &mut t.carry),
             SATCHEL_MODEL => glow_and_trail(&mut frame, &mut trail, &m, at, before, now - t.seen, true),
@@ -791,20 +1140,25 @@ impl Plugin for Hl2ProjectileFxPlugin {
         use chimera_net::net::parts::NetAppExt;
         app.init_resource::<FxRng>()
             .init_resource::<Rings>()
+            .init_resource::<Pins>()
+            .register_type::<Hl2BallHeld>()
+            .register_type::<Hl2MineBeam>()
             .add_message::<SatchelPop>()
+            .add_message::<FlyerFx>()
             .add_message::<PlaceDecal>()
             .add_systems(
                 FixedUpdate,
                 (
-                    (explosions, flyer_events).after(crate::core::SimSet::Weapons),
-                    scorches.after(crate::core::SimSet::Weapons).run_if(crate::core::authoritative),
+                    (explosions, shooter_fades).after(crate::core::SimSet::Weapons),
+                    (scorches, flyer_fx, mark_for_clients)
+                        .after(crate::core::SimSet::Weapons)
+                        .run_if(crate::core::authoritative),
                 ),
             )
-            .add_systems(Update, pops.after(ParticleSet::Step).before(ParticleSet::Draw))
             .net_part("hl2dm_projectile_fx", register)
             .add_systems(
                 Update,
-                (projectile_looks, draw_rings)
+                (pops, (draw_flyer_fx, (draw_rings, pin_ragdolls)).chain(), projectile_looks, mine_beams)
                     .after(ParticleSet::Step)
                     .before(ParticleSet::Draw),
             );

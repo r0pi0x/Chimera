@@ -34,13 +34,13 @@
 //! intermission (`Hl2Match::over`); before it has struck a player, those
 //! whose bounds meet a box of half extent 256 swept 2048 along the new
 //! direction (`seek`). The SMG1's grenade has no team test: it explodes on
-//! any player but its owner (4.2; the spec names none).
+//! any player but its owner (4.2; the spec names none). The shooter's
+//! white fade at the launch is `projectile_fx`'s, the dissolve of the
+//! ball's victims (the body and the dropped weapon) `dissolve`'s.
 //!
 //! Known shortcuts: the contact grenade's 3-tick check has no ground
 //! entity to test (a flyer has none: any touch ends it), and its random
-//! spin isn't given (a flyer faces its flight); the shooter's white fade
-//! and the dissolve of the victims' weapons aren't drawn (the ball's look
-//! is `projectile_fx`, its victims' dissolve `dissolve`); the ball knocks props as a bounce (no 1000 crush
+//! spin isn't given (a flyer faces its flight); the ball knocks props as a bounce (no 1000 crush
 //! to props), and its harmless end is removed at once.
 
 use bevy::prelude::*;

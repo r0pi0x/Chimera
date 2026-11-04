@@ -16,8 +16,16 @@
 //!
 //! and is gone at the 134th tick after the kill (`despawn_ragdoll`).
 //!
-//! Known shortcuts (docs/tech-debt.md): the weapon the victim drops isn't
-//! dissolved (it is dropped as any other); the sparks are spread around
+//! The weapon the victim drops dissolves too (`dissolve_items`, the
+//! server's): its loose entity loses `Loose` (nobody can take it) and is
+//! marked `Hl2DissolvingItem` (replicated: net part `hl2dm_dissolve`);
+//! every machine darkens and fades it as the body and throws the same
+//! sparks and glows about its centre (`item_looks`, timed from when that
+//! machine first sees it), with no float; it and its weapon are gone at
+//! the 134th tick.
+//!
+//! Known shortcuts (docs/tech-debt.md): a client's dissolving weapon is
+//! timed from when the server's mark reaches it (a latency late); the sparks are spread around
 //! each body part's centre within 12 units across the screen, not by its
 //! hitbox's extents; the ragdoll's drawn body takes its colour from
 //! `RenderLook` (the characters' look), which fades a ragdoll adopted by
@@ -26,6 +34,8 @@
 
 use avian3d::prelude::{Gravity, LinearVelocity};
 use bevy::prelude::*;
+
+use chimera_sim::weapon::drop::Loose;
 
 use super::{sounds::Dissolving, weapons};
 use crate::{
@@ -159,6 +169,52 @@ fn dissolve_ragdolls(
     }
 }
 
+/// One frame's spark tries and glows around `centre` (a body part's or a
+/// dropped weapon's) at the darkening's progress `p`, spread across the
+/// screen and shifted toward the camera `cam` (its place, right and up).
+fn sparks_around(
+    g: &mut ParticleGroup,
+    rng: &mut ParticleRng,
+    spark: Option<usize>,
+    glow: Option<usize>,
+    centre: Vec3,
+    cam: Option<(Vec3, Vec3, Vec3)>,
+    p: f32,
+) {
+    let (towards, right, up) = match cam {
+        Some((c, right, up)) => ((c - centre).normalize_or_zero(), right, up),
+        None => (Vec3::ZERO, Vec3::X, Vec3::Y),
+    };
+    let place = |rng: &mut ParticleRng| {
+        centre
+            + (right * rng.float(-1.0, 1.0) + up * rng.float(-1.0, 1.0)) * 12.0 * U * 0.75
+            + towards * (8.0 - 32.0 * (1.0 - p)) * U
+    };
+    if let Some(spark) = spark {
+        for _ in 0..2 {
+            if rng.float(0.0, 1.0) < 1.0 / 3.0 {
+                let life = rng.float(0.4, 0.5);
+                g.particles.push(Particle {
+                    velocity: Vec3::new(rng.float(-4.0, 4.0), rng.float(16.0, 64.0), rng.float(-4.0, 4.0)) * U,
+                    fade: Fade::Ramp(Ramp::linear(1.0, 0.0)),
+                    size: Ramp::linear(rng.float(4.0, 6.0) * U, 0.0),
+                    roll_speed: rng.float(-8.0, 8.0),
+                    ..Particle::new(place(rng), life, spark, 0.0)
+                });
+            }
+        }
+    }
+    if let Some(glow) = glow {
+        for _ in 0..((3.0 * p) as usize) {
+            g.particles.push(Particle {
+                velocity: Vec3::new(rng.float(-4.0, 4.0), rng.float(-64.0, 128.0), rng.float(-4.0, 4.0)) * U,
+                roll_speed: rng.float(-2.0, 2.0),
+                ..Particle::new(place(rng), 0.1, glow, rng.float(8.0, 12.0) * U)
+            });
+        }
+    }
+}
+
 /// The body's colour and the sparks, each frame.
 #[allow(clippy::too_many_arguments)]
 fn dissolve_looks(
@@ -189,40 +245,88 @@ fn dissolve_looks(
         let p = (t / DARKEN).clamp(0.0, 1.0);
         for body in &r.bodies {
             let Ok(at) = bodies.get(*body) else { continue };
-            let centre = at.translation();
-            let (towards, right, up) = match cam {
-                Some((c, right, up)) => ((c - centre).normalize_or_zero(), right, up),
-                None => (Vec3::ZERO, Vec3::X, Vec3::Y),
-            };
-            let place = |rng: &mut ParticleRng| {
-                centre
-                    + (right * rng.float(-1.0, 1.0) + up * rng.float(-1.0, 1.0)) * 12.0 * U * 0.75
-                    + towards * (8.0 - 32.0 * (1.0 - p)) * U
-            };
-            if let Some(spark) = spark {
-                for _ in 0..2 {
-                    if rng.float(0.0, 1.0) < 1.0 / 3.0 {
-                        let life = rng.float(0.4, 0.5);
-                        g.particles.push(Particle {
-                            velocity: Vec3::new(rng.float(-4.0, 4.0), rng.float(16.0, 64.0), rng.float(-4.0, 4.0)) * U,
-                            fade: Fade::Ramp(Ramp::linear(1.0, 0.0)),
-                            size: Ramp::linear(rng.float(4.0, 6.0) * U, 0.0),
-                            roll_speed: rng.float(-8.0, 8.0),
-                            ..Particle::new(place(rng), life, spark, 0.0)
-                        });
-                    }
-                }
-            }
-            if let Some(glow) = glow {
-                for _ in 0..((3.0 * p) as usize) {
-                    g.particles.push(Particle {
-                        velocity: Vec3::new(rng.float(-4.0, 4.0), rng.float(-64.0, 128.0), rng.float(-4.0, 4.0)) * U,
-                        roll_speed: rng.float(-2.0, 2.0),
-                        ..Particle::new(place(rng), 0.1, glow, rng.float(8.0, 12.0) * U)
-                    });
-                }
+            sparks_around(&mut g, rng, spark, glow, at.translation(), cam, p);
+        }
+    }
+    if !g.particles.is_empty() {
+        particles.add(g);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The victim's dropped weapon
+
+/// A dissolving dropped weapon's loose entity (the server's, replicated):
+/// nobody can take it, it darkens and fades as a ragdoll does (no float)
+/// and is gone at the 134th tick.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Reflect, serde::Serialize, serde::Deserialize)]
+#[reflect(Component)]
+pub struct Hl2DissolvingItem;
+
+/// The server's: when the dissolve started and the weapon the loose
+/// entity stands for.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct ItemDissolve {
+    pub tick: u64,
+    pub weapon: Entity,
+}
+
+/// The server's: a weapon a dissolving victim dropped can't be taken
+/// (its `Loose` goes) and dissolves; at `TICKS` it and its weapon go.
+fn dissolve_items(
+    dropped: Query<(Entity, &Loose), Added<Loose>>,
+    dissolving: Query<(Entity, &ItemDissolve)>,
+    marked: Query<(), With<Dissolving>>,
+    clock: Res<SimClock>,
+    mut commands: Commands,
+) {
+    for (e, l) in &dropped {
+        if l.dropper.is_some_and(|d| marked.contains(d)) {
+            commands
+                .entity(e)
+                .remove::<Loose>()
+                .insert((Hl2DissolvingItem, ItemDissolve { tick: clock.tick, weapon: l.weapon }));
+        }
+    }
+    for (e, d) in &dissolving {
+        if clock.tick >= d.tick + TICKS {
+            commands.entity(e).despawn();
+            if d.weapon != e
+                && let Ok(mut w) = commands.get_entity(d.weapon)
+            {
+                w.despawn();
             }
         }
+    }
+}
+
+/// Each machine: a dissolving weapon's colour, and its sparks and glows
+/// around its centre, from when this machine first saw it dissolving.
+#[allow(clippy::too_many_arguments)]
+fn item_looks(
+    items: Query<(Entity, &GlobalTransform), With<Hl2DissolvingItem>>,
+    camera: Query<&GlobalTransform, With<Camera3d>>,
+    materials: Option<Res<ParticleMaterials>>,
+    time: Res<Time>,
+    mut particles: ResMut<Particles>,
+    mut started: Local<std::collections::BTreeMap<Entity, f64>>,
+    mut rng: Local<Option<ParticleRng>>,
+    mut commands: Commands,
+) {
+    let rng = rng.get_or_insert_with(|| ParticleRng::new(0xD155_02));
+    let now = time.elapsed_secs_f64();
+    started.retain(|e, _| items.contains(*e));
+    let spark = materials.as_ref().and_then(|m| m.0.find("effects/spark"));
+    let glow = materials.as_ref().and_then(|m| m.0.find("effects/combinemuzzle2"));
+    let cam = camera.iter().next().map(|c| (c.translation(), c.right().as_vec3(), c.up().as_vec3()));
+    let mut g = ParticleGroup::new(Motion::default());
+    g.skip_first = false;
+    g.capped = false;
+    for (e, at) in &items {
+        let start = *started.entry(e).or_insert(now);
+        let t = (now - start) as f32;
+        commands.entity(e).insert(look_at(t));
+        sparks_around(&mut g, rng, spark, glow, at.translation(), cam, (t / DARKEN).clamp(0.0, 1.0));
     }
     if !g.particles.is_empty() {
         particles.add(g);
@@ -233,13 +337,29 @@ pub struct Hl2DissolvePlugin;
 
 impl Plugin for Hl2DissolvePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
-            FixedUpdate,
-            // The victim is marked, then its new ragdoll takes the dissolve.
-            (mark_dissolved, start_dissolves, dissolve_ragdolls).chain().after(spawn_ragdolls),
-        )
-        .add_systems(Update, dissolve_looks.after(ParticleSet::Step).before(ParticleSet::Draw));
+        use chimera_net::net::parts::NetAppExt;
+        app.register_type::<Hl2DissolvingItem>()
+            .add_systems(
+                FixedUpdate,
+                (
+                    // The victim is marked, then its new ragdoll takes the dissolve.
+                    (mark_dissolved, start_dissolves, dissolve_ragdolls).chain().after(spawn_ragdolls),
+                    dissolve_items.after(dissolve_ragdolls).run_if(crate::core::authoritative),
+                ),
+            )
+            .add_systems(
+                Update,
+                (dissolve_looks, item_looks).after(ParticleSet::Step).before(ParticleSet::Draw),
+            )
+            .net_part("hl2dm_dissolve", register);
     }
+}
+
+/// The protocol: the dissolving dropped weapons, from the server.
+fn register(app: &mut App) {
+    use bevy_replicon::prelude::AppRuleExt;
+    use chimera_net::net::ordered::OrderedAppExt;
+    app.replicate::<Hl2DissolvingItem>().ordered::<Hl2DissolvingItem>();
 }
 
 #[cfg(test)]
