@@ -62,7 +62,7 @@ use crate::{
         ParticleRng, SoundControl, SoundKey, StartSound,
         logic_view::{ScreenFade, ScreenFades},
         particles::{
-            Fade, Motion, Particle, ParticleGroup, ParticleMaterials, ParticleSet, Particles, Ramp, Shape, WorldTrace,
+            Fade, Motion, Particle, ParticleGroup, ParticleMaterials, Particles, Ramp, Shape, WorldTrace,
             WorldTracer,
         },
     },
@@ -514,14 +514,16 @@ fn claws(
             continue;
         };
         look.set(state, now);
-        let new = AttachedFx {
-            view: claw_pieces(&look, true, &mats, &mut rng.0, now),
-            world: claw_pieces(&look, false, &mats, &mut rng.0, now),
-        };
+        let view = claw_pieces(&look, true, &mats, &mut rng.0, now);
+        let world = claw_pieces(&look, false, &mats, &mut rng.0, now);
         match fx {
-            Some(mut fx) => *fx = new,
+            // Emptied for the frame (`effects::clear_attached`).
+            Some(mut fx) => {
+                fx.view.extend(view);
+                fx.world.extend(world);
+            }
             None => {
-                commands.entity(e).insert(new);
+                commands.entity(e).insert(AttachedFx { view, world });
             }
         }
     }
@@ -631,7 +633,7 @@ impl Plugin for Hl2PhyscannonFxPlugin {
                 (
                     hold_sound,
                     ball_sound,
-                    claws.after(ParticleSet::Step).before(attached::AttachedSet),
+                    claws.in_set(super::effects::AttachedPieces),
                 ),
             )
             .net_part("hl2dm_physcannon_fx", register);

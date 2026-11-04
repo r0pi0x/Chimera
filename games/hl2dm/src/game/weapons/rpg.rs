@@ -16,9 +16,11 @@
 //!   than the dot or within 512 of it (riding the beam), else that point;
 //!   the new direction normalize(0.125 t̂ + 0.875 v̂), the speed kept. No
 //!   dot (its owner dead, the RPG put away or dropped): straight on.
-//! - **The dot** (`Hl2LaserDot`, on the weapon, the server's): each tick
-//!   its owner holds the RPG with rockets or a missile out, where a line
-//!   from the eye along the view (no punch) stops, through windows; the
+//! - **The dot** (`Hl2LaserDot`, on the weapon, the server's): made once
+//!   the 1.1 s draw is over, then each tick its owner holds the RPG with
+//!   rockets or a missile out, where a line from the eye along the view
+//!   (no punch) stops, through windows (`DotTracer`, also the clients'
+//!   for drawing it, `rpg_fx`); the
 //!   surface normal, and what it stopped on when that is a player or
 //!   something else that takes damage. It can't be turned off.
 //! - **Explosion**: on touching anything solid (never its owner), 150 in
@@ -30,9 +32,7 @@
 //!   blocks the next shot until let go): the fastest refire is 113 ticks
 //!   after the explosion.
 //!
-//! Known shortcuts: the dot is drawn (`projectile_fx`) but not replicated; the
-//! dot appears with the draw (not after the 1.1 s draw animation) and
-//! isn't lowered with no ammo; the missile's trail is drawn (`projectile_fx`); the owner's
+//! Known shortcuts: the owner's
 //! fade at ignition and `Missile.Ignite`'s loop are M10's; the missile's
 //! sky test (removed silently) is Chimera's flyers' (none yet).
 
@@ -236,16 +236,43 @@ pub fn lock_rpg(
     }
 }
 
+/// The dot's line (spec 6.1): from `eye` along `fwd`, `range` meters,
+/// masked like a bullet but through windows (`SeeThrough`), ignoring
+/// `owner`. The server places its dot with it, and each client draws the
+/// dots it shows with it (effects_sounds.md 9: from the view, not the
+/// server's point).
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct DotTracer<'w, 's> {
+    spatial: SpatialQuery<'w, 's>,
+    colliders: Query<'w, 's, &'static ColliderOf>,
+    see_through: Query<'w, 's, (), With<SeeThrough>>,
+}
+
+impl DotTracer<'_, '_> {
+    /// What the line stops on: its distance (meters), the surface's
+    /// normal and the body hit.
+    pub fn trace(&self, owner: Entity, eye: Vec3, fwd: Vec3, range: f32) -> Option<(f32, Vec3, Entity)> {
+        let dir = Dir3::new(fwd).ok()?;
+        let filter = SpatialQueryFilter::default().with_mask(SOLID_LAYERS);
+        self.spatial
+            .cast_ray_predicate(eye, dir, range, true, &filter, &|c| {
+                let b = self.colliders.get(c).map_or(c, |o| o.body);
+                b != owner && c != owner && !self.see_through.contains(c) && !self.see_through.contains(b)
+            })
+            .map(|h| (h.distance, h.normal, self.colliders.get(h.entity).map_or(h.entity, |o| o.body)))
+    }
+}
+
 /// The dots (the server's, `FlyerSet::Think`): placed for every owner
-/// holding an RPG with rockets or a missile out, gone otherwise.
+/// holding an RPG with rockets or a missile out, once its draw is over
+/// (the inventory's next attack, set by the deploy), gone otherwise.
 #[allow(clippy::type_complexity)]
 pub fn place_dots(
     owners: Query<(Entity, &Intent, &Inventory, &Transform, &MovementState, &Health)>,
     rpgs: Query<(Entity, &Hl2Rpg, &Hl2Rounds, &Weapon, Has<Hl2LaserDot>)>,
-    spatial: SpatialQuery,
-    colliders: Query<&ColliderOf>,
-    see_through: Query<(), With<SeeThrough>>,
+    tracer: DotTracer,
     takes: Query<(), Or<(With<Health>, With<Damageable>)>>,
+    clock: Res<SimClock>,
     mut commands: Commands,
 ) {
     for (e, rpg, rounds, w, has) in &rpgs {
@@ -253,29 +280,24 @@ pub fn place_dots(
             .owner
             .and_then(|o| owners.get(o).ok())
             .filter(|(_, _, inv, .., h)| inv.active == Some(e) && h.current > 0.0);
-        let Some((owner, intent, _, at, state, _)) = holder.filter(|_| rounds.count > 0 || rpg.missile) else {
+        let Some((owner, intent, inv, at, state, _)) = holder.filter(|_| rounds.count > 0 || rpg.missile) else {
             if has {
                 commands.entity(e).remove::<Hl2LaserDot>();
             }
             continue;
         };
+        // Made the first time the weapon frame runs after the draw.
+        if !has && clock.now + 1e-5 < inv.next_attack {
+            continue;
+        }
         let (eye, fwd, ..) = launch::aim(at, state, intent, None, false);
-        let Ok(dir) = Dir3::new(fwd) else { continue };
-        let filter = SpatialQueryFilter::from_excluded_entities([owner]).with_mask(SOLID_LAYERS);
         let range = rpg.params.dot_range * U;
-        let hit = spatial.cast_ray_predicate(eye, dir, range, true, &filter, &|c| {
-            let b = colliders.get(c).map_or(c, |o| o.body);
-            !see_through.contains(c) && !see_through.contains(b)
-        });
-        let dot = match hit {
-            Some(h) => {
-                let body = colliders.get(h.entity).map_or(h.entity, |o| o.body);
-                Hl2LaserDot {
-                    at: eye + fwd * h.distance,
-                    normal: h.normal,
-                    target: takes.contains(body).then_some(body),
-                }
-            }
+        let dot = match tracer.trace(owner, eye, fwd, range) {
+            Some((d, normal, body)) => Hl2LaserDot {
+                at: eye + fwd * d,
+                normal,
+                target: takes.contains(body).then_some(body),
+            },
             None => Hl2LaserDot {
                 at: eye + fwd * range,
                 normal: -fwd,

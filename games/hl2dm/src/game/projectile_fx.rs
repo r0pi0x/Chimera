@@ -22,12 +22,13 @@
 //!   two rings of `sprites/lgtning` spreading to 1024 units).
 //! - **The crossbow bolt** (`BOLT_MODEL`): 20 blur halos along its motion;
 //!   stuck in the world, a glow fading over 3 s and sparks.
-//! - **The SMG1 grenade** (`SMG1_GRENADE_MODEL`): `env_smoketrail`'s smoke.
+//! - **The SMG1 grenade** (`SMG1_GRENADE_MODEL`): `env_smoketrail`'s smoke;
+//!   going off, the server's scorch where a 60-unit line along its flight
+//!   hits (`scorches`: `Scorch` on the world, `SmallScorch` on props and
+//!   brush entities).
 //! - **The frag and the satchel**: a red glow (the frag's beats faster
 //!   once warned) and the frag's red trail.
-//! - **The RPG's laser dot**: a glow quad at the end of a trace from the
-//!   current view (the owner's own), or at the server's dot (others');
-//!   its sounds are the weapon's (H4).
+//! - The RPG's laser (its dot, beam and glow) is `rpg_fx`'s.
 //!
 //! Every per-frame look is a one-frame group (`frame_group`) added after
 //! the particles' step and before their drawing, from what the shown
@@ -38,13 +39,12 @@
 //! Known shortcuts (docs/tech-debt.md): the ball's bounce and end and the
 //! stuck bolt's glow are drawn from the host's flyer messages, so a
 //! client of a dedicated server sees the ball, the bolt's blur and the
-//! trails but not those three; the RPG's beam and glow on the view model
-//! (re-projected attachments) are not drawn, nor the held ball's model;
+//! trails but not those three; the held ball's model isn't drawn;
 //! the ball's body quad takes its frames from the material's sheet at 30 a
 //! second; the electric sparks are the surface effect's (sizes 1, 2 and 4
-//! of the spec are one size); the frag's trail has one width; the scorch
-//! lands on the world only (not on props or brush entities under the
-//! blast); the satchel's glow
+//! of the spec are one size); the frag's trail has one width; the entity
+//! rule's scorch lands on the world only (not on props or brush entities
+//! under the blast; the SMG1 grenade's does); the satchel's glow
 //! strobes at a steady rate. Why it's OK for now: the shapes, sizes,
 //! lifetimes and counts are the spec's; the look needs the real game's
 //! captures to compare.
@@ -54,7 +54,6 @@ use std::collections::BTreeMap;
 use bevy::prelude::*;
 use bevy_replicon::prelude::*;
 use chimera_sim::weapon::{
-    Inventory, Weapon,
     grenade::Detonated,
     projectile::{Flyer, FlyerGone, FlyerHit},
 };
@@ -68,12 +67,11 @@ use super::{
     weapons::{
         self,
         launch::{BALL_MODEL, BOLT_MODEL, MISSILE_MODEL, SATCHEL_MODEL, SMG1_GRENADE_MODEL},
-        rpg::Hl2LaserDot,
         slam::SatchelPop,
     },
 };
 use crate::{
-    core::{Intent, LocalPlayer, MovementState},
+    core::MovementState,
     map::{
         DecalGroup, ParticleRng, PlaceDecal, PlaySound,
         loose::ShownItem,
@@ -82,7 +80,6 @@ use crate::{
             WorldTrace, WorldTracer,
         },
     },
-    weapon::aim_of,
 };
 
 const U: f32 = 0.0254;
@@ -235,25 +232,102 @@ pub fn entity_rule_hit(at: Vec3, world: &impl WorldTrace) -> Option<(Vec3, Vec3)
     world.trace(from, to).map(|(f, n)| (from + (to - from) * f, n))
 }
 
-/// The server's: an explosion by the entity rule (the RPG's, a satchel's,
-/// a trip mine's) leaves a `Scorch` where its line hits (spec 8; none in
-/// mid-air or on a wall well above the floor). Decals reach clients
-/// through Chimera's.
-fn scorches(mut detonated: MessageReader<Detonated>, world: WorldTracer, mut decals: MessageWriter<PlaceDecal>) {
+/// The SMG1 grenade's scorch line along its flight (projectiles.md 4.3),
+/// units.
+pub const FLIGHT_SCORCH_LINE: f32 = 60.0;
+
+/// The decal group an explosion's scorch takes on what its line hit:
+/// `Scorch` on the world, `SmallScorch` on anything else (4.3).
+pub fn scorch_group(on_world: bool) -> &'static str {
+    if on_world { weapons::slam::SCORCH } else { "SmallScorch" }
+}
+
+/// The SMG1 grenade's scorch line: from where it went off along its
+/// flight (the velocity it last flew with), 60 units; none when it had
+/// stopped (a zero direction makes no line).
+pub fn flight_line(at: Vec3, velocity: Vec3) -> Option<(Vec3, Vec3)> {
+    let dir = velocity.try_normalize()?;
+    Some((at, at + dir * FLIGHT_SCORCH_LINE * U))
+}
+
+/// What a scorch line hits: anything solid but characters and the
+/// exploding projectile; whether it is the world (a static body that is
+/// not a prop).
+#[derive(bevy::ecs::system::SystemParam)]
+struct ScorchLine<'w, 's> {
+    spatial: avian3d::prelude::SpatialQuery<'w, 's>,
+    colliders: Query<'w, 's, &'static avian3d::prelude::ColliderOf>,
+    characters: Query<'w, 's, (), With<MovementState>>,
+    statics: Query<'w, 's, &'static avian3d::prelude::RigidBody, Without<crate::map::MapPropCollider>>,
+}
+
+impl ScorchLine<'_, '_> {
+    /// Point, normal, body and whether the body is the world.
+    fn trace(&self, from: Vec3, to: Vec3, skip: Entity) -> Option<(Vec3, Vec3, Entity, bool)> {
+        let d = to - from;
+        let dir = Dir3::new(d).ok()?;
+        let filter = avian3d::prelude::SpatialQueryFilter::default().with_mask(crate::core::SOLID_LAYERS);
+        let body = |c: Entity| self.colliders.get(c).map_or(c, |o| o.body);
+        let h = self.spatial.cast_ray_predicate(from, dir, d.length(), true, &filter, &|c| {
+            let b = body(c);
+            b != skip && c != skip && !self.characters.contains(b)
+        })?;
+        let b = body(h.entity);
+        let world = self.statics.get(b).is_ok_and(|r| r.is_static()) || self.statics.get(h.entity).is_ok_and(|r| r.is_static());
+        Some((from + *dir * h.distance, h.normal, b, world))
+    }
+}
+
+/// The server's scorches (Chimera's decals reach the clients):
+/// - an explosion by the entity rule (the RPG's, a satchel's, a trip
+///   mine's) leaves a `Scorch` where its line hits (spec 8; none in
+///   mid-air or on a wall well above the floor);
+/// - the SMG1 grenade's, where a 60-unit line along its flight from its
+///   origin hits (projectiles.md 4.3): `Scorch` on the world,
+///   `SmallScorch` on a prop or brush entity, nothing on a player.
+fn scorches(
+    mut detonated: MessageReader<Detonated>,
+    world: WorldTracer,
+    line: ScorchLine,
+    flyers: Query<(Entity, &Flyer)>,
+    mut flights: Local<BTreeMap<Entity, Vec3>>,
+    mut decals: MessageWriter<PlaceDecal>,
+) {
+    let mut place = |target: Option<Entity>, group: &str, point: Vec3, normal: Vec3| {
+        decals.write(PlaceDecal {
+            target,
+            group: DecalGroup::Named(group.into()),
+            point,
+            normal,
+            dir: -normal,
+            spin: true,
+            round: false,
+        });
+    };
     for d in detonated.read() {
+        if d.weapon == weapons::SMG1 {
+            // The velocity it flew with before it went off.
+            let v = flights
+                .get(&d.projectile)
+                .copied()
+                .or_else(|| flyers.get(d.projectile).ok().map(|(_, f)| f.velocity));
+            let hit = v.and_then(|v| flight_line(d.at, v)).and_then(|(a, b)| line.trace(a, b, d.projectile));
+            if let Some((point, normal, body, on_world)) = hit {
+                place((!on_world).then_some(body), scorch_group(on_world), point, normal);
+            }
+            continue;
+        }
         if !look_of(d.weapon).is_some_and(|l| l.entity_rule) {
             continue;
         }
         if let Some((point, normal)) = entity_rule_hit(d.at, &world) {
-            decals.write(PlaceDecal {
-                target: None,
-                group: DecalGroup::Named(weapons::slam::SCORCH.into()),
-                point,
-                normal,
-                dir: -normal,
-                spin: true,
-                round: false,
-            });
+            place(None, weapons::slam::SCORCH, point, normal);
+        }
+    }
+    flights.clear();
+    for (e, f) in &flyers {
+        if f.weapon == weapons::SMG1 {
+            flights.insert(e, f.velocity);
         }
     }
 }
@@ -710,58 +784,6 @@ fn projectile_looks(
     }
 }
 
-// ---------------------------------------------------------------------------
-// The RPG's laser dot
-
-/// Where the dot is drawn, 4 units off the surface along its normal, with
-/// a width of 16 ± 4 units (spec 9).
-fn dot(g: &mut ParticleGroup, rng: &mut ParticleRng, mat: usize, point: Vec3, normal: Vec3) {
-    let half = (16.0 + rng.float(-4.0, 4.0)) / 2.0;
-    g.particles.push(flash(mat, point + normal * 4.0 * U, half, 1.0, 1.0));
-}
-
-/// The owner's own dot from the current view (never lagging the
-/// crosshair): a trace from the eye along the view, 56755.84 units; the
-/// server's dot for everyone else's RPG.
-#[allow(clippy::too_many_arguments)]
-fn laser_dots(
-    local: Query<(Entity, &Transform, &MovementState, &Intent, &Inventory), With<LocalPlayer>>,
-    weapons_q: Query<(&Weapon, Option<&weapons::launch::Hl2Rounds>)>,
-    dots: Query<(&Weapon, &Hl2LaserDot)>,
-    flyers: Query<&Flyer>,
-    materials: Option<Res<ParticleMaterials>>,
-    mut particles: ResMut<Particles>,
-    mut rng: ResMut<FxRng>,
-    world: WorldTracer,
-) {
-    let Some(mat) = materials.as_ref().and_then(|m| m.0.find("sprites/redglow1")) else { return };
-    let mut g = frame_group();
-    let mut mine = None;
-    for (owner, at, state, intent, inv) in &local {
-        let Some((w, rounds)) = inv.active.and_then(|a| weapons_q.get(a).ok()) else { continue };
-        let missile = flyers.iter().any(|f| f.weapon == weapons::RPG && f.owner == Some(owner));
-        if w.id != weapons::RPG || !(rounds.is_some_and(|r| r.count > 0) || missile) {
-            continue;
-        }
-        mine = Some(owner);
-        let eye = at.translation + state.eye_offset;
-        let dir = aim_of(intent.yaw, intent.pitch) * Vec3::NEG_Z;
-        let far = eye + dir * 56755.84 * U;
-        if let Some((f, n)) = world.trace(eye, far) {
-            dot(&mut g, &mut rng.0, mat, eye + (far - eye) * f, n);
-        }
-    }
-    for (w, d) in &dots {
-        if w.owner.is_some() && w.owner == mine {
-            continue;
-        }
-        dot(&mut g, &mut rng.0, mat, d.at, d.normal);
-    }
-    if !g.particles.is_empty() {
-        particles.add(g);
-    }
-}
-
 pub struct Hl2ProjectileFxPlugin;
 
 impl Plugin for Hl2ProjectileFxPlugin {
@@ -782,7 +804,7 @@ impl Plugin for Hl2ProjectileFxPlugin {
             .net_part("hl2dm_projectile_fx", register)
             .add_systems(
                 Update,
-                (projectile_looks, laser_dots, draw_rings)
+                (projectile_looks, draw_rings)
                     .after(ParticleSet::Step)
                     .before(ParticleSet::Draw),
             );

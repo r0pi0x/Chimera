@@ -20,9 +20,11 @@
 //! glow or additive render mode (`ADDITIVE_SPRITES`) load additive.
 //!
 //! The projectiles' looks are `projectile_fx` (explosions, the rocket,
-//! the ball, the bolt, the grenades' trails, the laser dot) and the ball's
-//! dissolve is `dissolve`; the gravity gun's sprites and beams are
-//! `physcannon_fx`'s.
+//! the ball, the bolt, the grenades' trails) and the ball's dissolve is
+//! `dissolve`; the gravity gun's sprites and beams are `physcannon_fx`'s,
+//! the RPG's laser `rpg_fx`'s (both add to a character's `AttachedFx` in
+//! `AttachedPieces`, after `clear_attached` empties it each frame); the
+//! pistol's and .357's muzzle smoke is `flashes`'.
 //!
 //! Known shortcuts (docs/tech-debt.md): the server's tracer count skips
 //! no bullet that broke glass, and a round whose bullets ended in water
@@ -48,7 +50,7 @@ use crate::{
     core::{LocalPlayer, MapWater},
     map::{
         ParticleRng, PlaySound,
-        particles::{Fade, MapParticles, Motion, Particle, ParticleGroup, ParticleMaterials, Particles, Ramp, Shape, WorldTracer},
+        particles::{Fade, MapParticles, Motion, Particle, ParticleGroup, ParticleMaterials, ParticleSet, Particles, Ramp, Shape, WorldTracer},
         tracer::{MuzzleCache, Tracer, TracerLook},
     },
     weapon::{Hitscan, Weapon, WeaponEvent, WeaponEventKind, impact::ImpactRoute},
@@ -98,6 +100,9 @@ pub const ADDITIVE_SPRITES: &[&str] = &[
     "sprites/glow04_noz",
     "sprites/orangeflare1",
     "sprites/orangelight1_noz",
+    // The RPG's laser beams (`rpg_fx`): beams add.
+    "effects/laser1",
+    "effects/laser1_noz",
 ];
 
 /// Load the effect materials (runtime, from the install).
@@ -109,6 +114,7 @@ pub fn load_materials(loader: &mut source_engine::content::material::MaterialLoa
             super::projectile_fx::MATERIALS,
             super::set_piece_fx::MATERIALS,
             super::physcannon_fx::MATERIALS,
+            super::rpg_fx::MATERIALS,
             source_engine::effects::explosions::MATERIALS,
         ],
     );
@@ -376,8 +382,39 @@ impl Plugin for Hl2EffectsPlugin {
             super::set_piece_fx::Hl2SetPieceFxPlugin,
             super::dissolve::Hl2DissolvePlugin,
             super::physcannon_fx::Hl2PhyscannonFxPlugin,
+            super::rpg_fx::Hl2RpgFxPlugin,
         ))
+        .configure_sets(
+            Update,
+            AttachedPieces.after(ParticleSet::Step).before(crate::map::attached::AttachedSet),
+        )
+        .add_systems(Update, clear_attached.before(AttachedPieces))
         .add_systems(FixedUpdate, (tracers, gun_impacts).after(crate::core::SimSet::Weapons));
+        super::flashes::plugin(app);
+    }
+}
+
+/// The game's writers of a character's `map::attached::AttachedFx` (the
+/// gravity gun's claws, the RPG's laser): each adds its pieces of the
+/// frame after `clear_attached` emptied the last frame's.
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct AttachedPieces;
+
+/// Empty every character's `AttachedFx` for this frame's writers; give
+/// one to each character without.
+fn clear_attached(
+    mut fx: Query<&mut crate::map::attached::AttachedFx>,
+    missing: Query<Entity, (With<crate::weapon::Inventory>, Without<crate::map::attached::AttachedFx>)>,
+    mut commands: Commands,
+) {
+    for mut f in &mut fx {
+        if !f.view.is_empty() || !f.world.is_empty() {
+            f.view.clear();
+            f.world.clear();
+        }
+    }
+    for e in &missing {
+        commands.entity(e).insert(crate::map::attached::AttachedFx::default());
     }
 }
 

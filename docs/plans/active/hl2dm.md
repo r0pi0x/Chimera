@@ -1557,6 +1557,50 @@ implementing (owner branch) / done.
   orange glow over the muzzle in front of the claws; holding a crate, a
   big bright orange-white core over the muzzle with the beams over the
   claws; the punt's blast over the gun.
+- 2026-11-04: **The RPG's laser, the pistol's and .357's smoke, the SMG1
+  grenade's scorch** (branch `hl2dm-rpglaser`; H9 9, 47, Constants;
+  H4 4.3, 6.1). The rocket already followed the dot (6.4: guidance and
+  beam riding were there). **The laser** (`game::rpg_fx`): on while the
+  RPG in hand has its dot, `Hl2LaserOn` on the player (the server's,
+  replicated: net part `hl2dm_rpg_fx`), with `Weapon_RPG.LaserOn`/`Off`
+  as `GameSound`s; the dot is now made only after the 1.1 s draw (the
+  deploy's next attack). HL2:DM has no toggle (6.1: attack2 does nothing),
+  so none was built. Every machine draws each lit laser's dot at the end
+  of the dot's own line (`rpg::DotTracer`, shared with the server: through
+  windows, past its owner): the local player's from its current view,
+  others' from their drawn eye (`RenderedView`), so a network client now
+  sees others' dots (before: only the host). The view model's beam
+  (`effects/laser1_noz`, attachment 2 `laser` to 3 `laser_end`, 2 wide,
+  red, brightness 128-200 a frame, 4 segments) and its `redglow1` glow
+  (8 ± 2) through `map::attached`; others' on the world model's 4 to 5
+  (`effects/laser1`, 1 wide). The install's `w_rocket_launcher.mdl`
+  has 5 attachments (`muzzle`, `missile`, `exhaust`, `guide`,
+  `guide_target`), so 4 and 5 exist: the spec's open question 6 (3
+  attachments) looks answered by the model; not checked against the real
+  game. The gravity gun's claws and the laser both write `AttachedFx`:
+  `effects::clear_attached` empties it each frame, the writers add in
+  `AttachedPieces`. **Smoke** (`flashes::muzzle_smoke`): a first-person
+  `PISTOL` flash puts a `particle_smokegrenade` puff 8 units ahead of the
+  muzzle 3 times in 4, a `357` one always (the table's numbers).
+  **SMG1 grenade scorch** (`projectile_fx::scorches`): a 60-unit line
+  from where it went off along the velocity it last flew with: `Scorch`
+  on the world, `SmallScorch` on props and brush entities, none when it
+  had stopped. Tests: `tests/it/rpg_laser.rs` (on after the draw and
+  its sounds, off when put away; the view model's beam and glow; the
+  world model's on attachments 4-5 and none without; the smoke, 3 in 4;
+  the flight scorch; NetSim: B sees A's laser state and draws A's dot
+  where the server's is, A its own), unit tests (dot size, beam pieces,
+  smoke puffs), heavy `view_models.rs` (the RPG's attachments),
+  `effect_materials.rs` (laser materials load, additive). Seen in the app
+  (dm_lockdown's wash room): the view-model laser is a thin red line from
+  the tube's side with a red glow at its start; the dot is a small red
+  point, plain on the darker tiles and barely visible on the bright white
+  tiles; the .357's puff is a clear grey cloud ahead of the muzzle, the
+  pistol's faint (its material's own alpha 0.27). The satchel's pop was
+  caught this time (a burst of 14 screenshots over the console): spark
+  streaks and flecks over the new scorch, then the debris falling. Left:
+  the beam's fade length, the owner's laser sounds played at once
+  (predicted), a dormant owner's networked dot point, refcmp.
 
 ## Decision log
 

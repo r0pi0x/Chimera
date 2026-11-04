@@ -23,6 +23,7 @@ mod pickups;
 mod projectile_fx;
 mod projectiles;
 mod ragdolls;
+mod rpg_laser;
 mod rules;
 mod set_pieces;
 mod skeleton;
