@@ -5,7 +5,8 @@
 //! (`map::particles`): on the first-person view model when this
 //! character's is the one drawn (the attachment posed by the view model's
 //! animation and offset, mirrored with it; on the view-model layer, so it
-//! is drawn over the world as the model is: `ParticleGroup::view_model`),
+//! is drawn over the world as the model is, and over the model itself, not
+//! depth tested against it: `ParticleGroup::view_model`),
 //! else on the weapon its body holds (`HeldAttachment`s, the held world
 //! model's attachments, `MapHeldModel::attachments`). A beam's end may be a
 //! point in the world instead (a gravity gun's punt): then the view

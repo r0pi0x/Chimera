@@ -21,7 +21,9 @@
 //! `fork` attachments re-drawn every frame at width U(6.4, 9.6) and alpha
 //! I(24, 32), and while holding the end caps (`sprites/orangeflare1`) and
 //! the beams from the fork tips to attachment 1 (noise 16, 8 segments);
-//! the view model's set in first person, the world model's (`fork3`
+//! widths are full widths (the spec's "glow quads"); the view model's set
+//! in first person (drawn over the claws, not depth tested against the
+//! view model), the world model's (`fork3`
 //! too) for everyone else. A punt or launch adds the blast sprite
 //! (`sprites/orangecore2`, width 8 to 64 in 0.1 s, alpha 255 to 0 in
 //! 0.2 s) for every machine drawing the gun; the punter's beam starts at
@@ -31,7 +33,7 @@
 //! Known shortcuts (docs/tech-debt.md): the punt's end point is the end
 //! of the eye's 250-unit trace (not the object's centre); the "closed"
 //! effect state is never entered (the spec names no change into it);
-//! sprite widths are read as full widths; the beams' texture scrolls at 15
+//! the beams' texture scrolls at 15
 //! lengths a second (a temporary beam's 0.1 × 150) and their frames don't
 //! play; without a drawn model (headless) the punt beam starts at an
 //! estimate of attachment 1 (eye + 0.4 ahead, 0.1 right, 0.1 down) and
