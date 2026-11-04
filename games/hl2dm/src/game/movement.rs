@@ -210,19 +210,24 @@ pub fn config_mut(world: &mut World) -> Mut<'_, SourceMovementConfig> {
 /// water and at least 10 aux power (else `HL2Player.SprintNoPower`), and
 /// stops when `+speed` is let go or the aux power runs out; walking needs
 /// `+walk`, no sprint and no duck. The sprint device drains 25/s while
-/// the tick started moving; switching it off costs 2.5.
+/// the tick started moving; switching it off costs 2.5. A dead player's
+/// suit is left as it was (its devices stay on until the respawn: suit.md
+/// Quirks, measured).
 #[allow(clippy::type_complexity)]
 pub fn select_speed(
-    mut q: Query<(
-        Entity,
-        &Intent,
-        &SourceMovement,
-        &Velocity,
-        &mut super::suit::Suit,
-        &mut SourceSpeed,
-        &Transform,
-        &MovementSlot,
-    )>,
+    mut q: Query<
+        (
+            Entity,
+            &Intent,
+            &SourceMovement,
+            &Velocity,
+            &mut super::suit::Suit,
+            &mut SourceSpeed,
+            &Transform,
+            &MovementSlot,
+        ),
+        Without<crate::core::Dead>,
+    >,
     speeds: Option<Res<Speeds>>,
     clock: Res<SimClock>,
     first: Res<FirstTimePredicted>,

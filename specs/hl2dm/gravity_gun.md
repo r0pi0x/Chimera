@@ -911,3 +911,30 @@ dedicated server build 24600426), marked **(probe)**:
    rely on it.
 10. **Integer yaw of the fire punch** uses the shared random stream with
     a label; tests should check the range {−2, …, 2}, not values.
+11. **Probe results (2026-11-03, dedicated server build 24600426,
+    `tools/hl2dm_probe/cases.py gravity`).** Answered:
+    - P3: a crate hanging motion-disabled with flag 64 (nothing under it)
+      punted looking 45° down leaves at (772, 488) a tick after, the
+      spec's 1100 × (0.707, 0.65 × 0.707) less a tick of drag and gravity;
+      21.8° down at its face (1011, 252) for (1021, 266). The **point
+      impulse acts at the trace's end** — the box's centre where the ±8
+      box stopped, not the contact point on the crate's face: the crate
+      pitches at 2964°/s (the trace end's lever predicts 2960, the
+      contact point's 2150). Level punts 5, 10 and 15 above the centre
+      pitch it at 176°/s per unit: its rotational inertia is 0.714 of a
+      solid box's (as CS:S's measured "70-80 %"). The round-1 case, a
+      crate on the floor, leaves at (827, 577): its leading bottom edge,
+      spun into the floor, is pushed up and forward (Chimera's solver
+      gives (771, 813) for that case: Open, a physics-engine contact
+      difference).
+    - P6: a held crate swung at 816 and 1000 in/s and dropped leaves at
+      283 and 280 (the 285 cap).
+    - P10, P11: a crate punted into a bot at about 1050 does 50 and 10
+      crush in two contacts on one tick, credited to the punter; a 30 kg
+      crate dropped 300 onto a bot's head does 10 then 20 (from 150: 5
+      then 10), not test 39's 500 (Chimera: 60 for the punt, as the
+      server; 20 for the drop).
+    - P16: the TooHeavy sound once per press (held 60 ticks: once).
+    - P17: selecting the gun and pressing primary on one command punts
+      that tick (Corrections 4).
+    Not measured: P7, P8, P9, P12-P15.

@@ -2,7 +2,9 @@
 //! (`Hl2Crossbow`) over the shared frame: clip 1, its rounds bolts
 //! (Chimera's `chimera:projectile`: 3500 units/s, 1500 with the shooter's
 //! eyes under water, a twentieth of gravity, a ±1 box hitting hitboxes,
-//! 100 × the hitgroup's multiplier (head 300) as a bullet, glancing off
+//! 100 as a bullet wherever it hits a player (the real server's bolt hits
+//! the generic hitgroup: no head bonus, measured; the spec's 300 head
+//! shot doesn't happen), glancing off
 //! at shallow angles (c < 0.5, faster than 100: 0.75 of its speed, full
 //! gravity after), else sticking for 2 s), view punch −2 (`hl2dm:punch`).
 //!

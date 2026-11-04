@@ -866,3 +866,11 @@ build 24600426):
     respawn with a minimum dead time, and the team-point rule of Scoring?
     Combat Arms' TDM may already have most of it; M7 checks before
     lifting anything from cs_source.
+13. **Probe results, round 2 (2026-11-03, dedicated server build
+    24600426).** P11: with `mp_timelimit 1` the map changes 71 s after
+    the load (the intermission's own start isn't in the server log),
+    also with no player in the game. P5-P10 and P13-P14 aren't measurable
+    with this server's bots: with `mp_teamplay 1` every `hl2mp_bot_add`
+    bot is kicked at once (each join and kick costs the unassigned team,
+    and later team 2, a point: their scores read −2 and −3), so the TDM
+    cases need human clients or another bot.

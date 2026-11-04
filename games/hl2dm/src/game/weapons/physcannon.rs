@@ -8,10 +8,12 @@
 //! - **Punt** (primary, not holding; every 0.5 s while held, a dry fire
 //!   too): a ±8 box, then a line, of 250 from the eye. A physics object
 //!   (not a ragdoll) gets 15000 at its centre plus 600 × min(M, 250) at
-//!   the hit point along the view (a downward view's z × −0.65), then the
+//!   the trace's end (the box's centre where it stopped) along the view
+//!   (a downward view's z × −0.65), then the
 //!   2000 in/s cap; a 0-damage hit naming the punter; its influence (the
 //!   punter, now); a motion-disabled prop with spawnflag 64 is set moving
-//!   first (without it the impulse does nothing); the same object again
+//!   first, punted with its own mass and inertia (without the flag the
+//!   impulse does nothing); the same object again
 //!   within 0.5 s: nothing. A damageable non-physics thing (a
 //!   `func_breakable`) takes 1 crush. A player, the world or nothing: a dry
 //!   fire. The fire's punch (U(1, 2), U(−1, 1) then −6, U{−2..2}, as
@@ -460,7 +462,9 @@ const GUN_MASK: LayerMask = LayerMask(SOLID_LAYERS.0 | crate::core::RAGDOLL_LAYE
 
 /// The first thing a ray (`half` 0) or box from `eye` along `dir` meets
 /// within `len` meters, leaving out `owner` and ragdolls: (collider,
-/// distance, point).
+/// distance, the trace's end: where the line or the box's centre stopped,
+/// as Source's trace end, not the contact point; measured: a punt's
+/// spin is the point impulse's about the box's centre).
 fn trace(o: &Objects, spatial: &SpatialQuery, eye: Vec3, dir: Dir3, len: f32, half: f32, owner: Entity) -> Option<(Entity, f32, Vec3)> {
     let filter = SpatialQueryFilter::from_excluded_entities([owner]).with_mask(GUN_MASK);
     let keep = |c: Entity| !o.ragdoll(o.body(c));
@@ -476,7 +480,7 @@ fn trace(o: &Objects, spatial: &SpatialQuery, eye: Vec3, dir: Dir3, len: f32, ha
     };
     spatial
         .cast_shape_predicate(&shape, eye, Quat::IDENTITY, dir, &config, &filter, &keep)
-        .map(|h| (h.entity, h.distance, h.point1))
+        .map(|h| (h.entity, h.distance, eye + *dir * h.distance))
 }
 
 /// The punt's target (2 step 2): the box's hit if it is something, else
@@ -900,16 +904,24 @@ fn prop_flags(world: &World, e: Entity) -> u32 {
 /// A physics punt (2) of `e` by `by` along `d` from the hit `point`.
 fn punt(world: &mut World, p: &PhysParams, by: Entity, e: Entity, d: Vec3, point: Vec3) {
     let flags = prop_flags(world, e);
-    if world.get::<FrozenBody>(e).is_some() && flags & SF_ENABLE_ON_GUN != 0 {
-        crate::map::prop_physics::enable_motion(world, e);
+    // A prop set moving now has no computed mass or inertia yet: its
+    // body's own (a solid box's inertia when it has none stored).
+    let mut enabled = None;
+    if let Some(frozen) = world.get::<FrozenBody>(e).cloned()
+        && flags & SF_ENABLE_ON_GUN != 0
+        && crate::map::prop_physics::enable_motion(world, e)
+    {
+        let m = frozen.physics.mass.max(1e-3);
+        let s = frozen.bounds.1 - frozen.bounds.0;
+        let solid = m / 12.0 * Vec3::new(s.y * s.y + s.z * s.z, s.x * s.x + s.z * s.z, s.x * s.x + s.y * s.y);
+        enabled = Some((m, frozen.physics.inertia.unwrap_or(solid)));
     }
     influence(world, e, by);
     take_frag(world, e, by, p.frag_fuse);
     let Ok(b) = world.get_entity(e) else { return };
-    let mass = b
-        .get::<ComputedMass>()
-        .map(|m| m.value())
-        .filter(|m| m.is_finite() && *m > 0.0)
+    let mass = enabled
+        .map(|(m, _)| m)
+        .or(b.get::<ComputedMass>().map(|m| m.value()).filter(|m| m.is_finite() && *m > 0.0))
         .or(b.get::<PhysicsProp>().map(|p| p.mass))
         .unwrap_or(1.0);
     let centre_j = p.punt_base * d;
@@ -919,11 +931,15 @@ fn punt(world: &mut World, p: &PhysParams, by: Entity, e: Entity, d: Vec3, point
     let pos = b.get::<Position>().map_or(Vec3::ZERO, |x| x.0);
     let rot = b.get::<Rotation>().map_or(Quat::IDENTITY, |r| r.0);
     let com = pos + rot * b.get::<ComputedCenterOfMass>().map_or(Vec3::ZERO, |c| c.0);
-    let dw = b
-        .get::<ComputedAngularInertia>()
-        .map(|i| i.rotated(rot).inverse().mul_vec3((point - com).cross(point_j * U)))
-        .filter(|w| w.is_finite())
-        .unwrap_or(Vec3::ZERO);
+    let torque = (point - com).cross(point_j * U);
+    let dw = match enabled {
+        Some((_, i)) => rot * ((rot.inverse() * torque) / i.max(Vec3::splat(1e-5))),
+        None => b
+            .get::<ComputedAngularInertia>()
+            .map(|i| i.rotated(rot).inverse().mul_vec3(torque))
+            .unwrap_or(Vec3::ZERO),
+    };
+    let dw = if dw.is_finite() { dw } else { Vec3::ZERO };
     push(world, e, dv, dw);
 }
 

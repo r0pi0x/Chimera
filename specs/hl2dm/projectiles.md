@@ -1120,8 +1120,9 @@ Keep all of these.
   from the shooter's body (not eye) to the dot, so it swings in from the
   side and follows flicks; holding fire blocks its reload.
 - **Crossbow bolts glance off at shallow angles** and drop after a
-  glance; they pass through glass and grates; one headshot (300) kills
-  through full armour.
+  glance; they pass through glass and grates. (One headshot (300) was
+  predicted to kill through full armour; the server's bolt hits the
+  generic hitgroup, 100 anywhere: Open questions 14.)
 - **Shooting a satchel defuses it**; shooting a trip mine sets it off for
   its placer.
 - **Trip mines watch with a different mask than they measure with**
@@ -1285,3 +1286,46 @@ dedicated server build 24600426), each marked **(probe)**:
    thrower's command clock, 4 ticks ahead of the server's on a bot, so in
    server ticks the frag explodes 173 after creation (blips 0, 74-75, 96,
    117, 137-138, 159) and the missile ignites 23-24 ticks after.
+14. **Probe results, round 2 (2026-11-03, same build).** Answered:
+    - **The frag's throw** is as 9.2 says, 1200 × (forward + 0.1 up) plus
+      the thrower's velocity (a falling thrower's −711 shows in the
+      grenade), the lob 350 forward + 50 up. Round 1's "2.2° to the
+      right" was the origin circling its mass centre as the grenade spins
+      (3-5 units, at the spin's rate); fitted past that circle the side
+      part is 0. **It feels air drag** (9.4 says damping 0, which holds:
+      this is the physics engine's drag): fitted over 15-tick windows at
+      speeds 50-1550, the velocity loses (0.07 + 0.00009 |v|) v per
+      second (0.176 of it a second at 1176, 0.10 at 350): a throw 1185
+      over its first 10 ticks, 1157 over the next 10.
+    - **Head hits** (on a bot that doesn't animate: its head hitbox is
+      low and to one side): a pistol head hit takes 24 (8 × 3), a .357's
+      225; the crowbar 25 with no multiplier (hitgroup generic, as 4
+      says). **A crossbow bolt never head-shots**: on the head, the chest
+      and the legs alike its hit is the generic hitgroup and takes 100
+      (with 100 armour: health 80, armour 20). Quirks' "one headshot
+      (300) kills through full armour" and test 39's 300 don't happen on
+      the server.
+    - Open question 1: a rocket and a contact grenade going off against
+      the ceiling above their shooter hurt by the distance rule (53 and
+      24 to the shooter 190 below): the lifted point inside the brush
+      blocks nothing.
+    - P6, P7: a frag's blast at measured distances does 150 − 0.6 d
+      within the frag's position error (125.6 for 126.4, 74.3 for 75.1),
+      and shoves 5 per point away from the blast point lowered 10
+      (|Δv| 371.6 for 74.3). Its 0.1-point tap shows when it rolls into
+      the victim.
+    - P8: the ball kills through 200 armour (1000, dissolve); fired
+      straight up in a room it never touches its owner and goes off 272
+      server ticks after its creation (4.005 s + the command clock's 4-5
+      ticks), removed 33 ticks after that.
+    - P10: the mine is created 16 ticks after the press, `TripmineGrenade.
+      Activate` 143-144 server ticks after it (139 + the command clock);
+      its placer standing in the beam trips it at the first check, 7
+      ticks after arming, and the blast is 17 ticks after that.
+    - P11: a shot satchel takes the bullet, is removed 5 ticks later and
+      hurts nobody (a bot 40 away untouched).
+    - P14: dying with the pin pulled on the last grenade drops it live
+      (the count 1 → 0 at the death).
+    Not settled: P5 (needs a second driven player), P9's water speed (the
+    test spots in dm_underpass's pool put walls in the bolt's way), P12's
+    exact distances, P15 (a grate in a mine's beam), the ducked shove.

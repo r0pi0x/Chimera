@@ -1,8 +1,9 @@
 """The HL2:DM probe's cases beyond movement (measure.py): respawn
 (specs/hl2dm/rules.md P2-P4), armour (suit.md P1-P2, tests 1-9), weapon
-timings and spread (weapons.md P1, P2, P5-P10, P13, P16, P17),
-projectiles (projectiles.md P1-P4, P9), the gravity gun's punts and
-launches (gravity_gun.md P2-P5), pickups (maps_entities.md P1, P2),
+timings and spread (weapons.md P1, P2, P5-P10, P13, P16, P17), head
+hits (P15, the bolt's), projectiles (projectiles.md P1-P4, P9, the
+frag's drag), the gravity gun's punts and launches (gravity_gun.md
+P2-P5, hanging crates), pickups (maps_entities.md P1, P2),
 chargers (suit.md P10, P11), swimming and drowning (movement.md rows
 59-61, suit.md P6) and the cvars every spec lists. Prints each case's
 numbers beside the spec's.
@@ -206,6 +207,119 @@ def pushes(r):
     r.exec(f"probe_bot {a}")
 
 
+def two_bots(r):
+    """(driven, victim): two bots, the first driven."""
+    probe.setup(r, bots=2)
+    time.sleep(1)
+    ids = re.findall(r"player (\d+) fake 1", r.exec("probe_info"))
+    r.exec(f"probe_bot {ids[0]}")
+    return ids[0], ids[1]
+
+
+def shot_at(r, a, b, cls, pitch, yaw, dist=200, armour=0, wait=30):
+    """One `cls` attack from SPOT (yaw 180 + `yaw`) at bot `b` placed
+    `dist` ahead facing it (health 5000): its traced hits (damage,
+    hitbox, hitgroup) and damage taken (damage, type, health after)."""
+    r.exec(f"probe_bot {a}")
+    r.exec("probe_set 100 0 100")
+    arm(r, cls)
+    r.exec(f"probe_tp {b} {SPOT[0] - dist} {SPOT[1]} {SPOT[2]} 0 0")
+    r.exec(f"probe_setprop {b} data m_iHealth int 5000")
+    r.exec(f"probe_setprop {b} data m_ArmorValue int {armour}")
+    out = probe.run_full(r, measure.start(), hold(70, 0, 0, 0, pitch, 180 + yaw, select=cls)
+                         + hold(1, ATTACK, 0, 0, pitch, 180 + yaw) + hold(wait, 0, 0, 0, pitch, 180 + yaw))
+    mine = lambda rows: [x for x in rows if x[1] == b]
+    return [(x[3], x[5], x[6]) for x in mine(out["traced"])], [(x[4], x[5], x[6]) for x in mine(out["damage"])]
+
+
+def heads(r):
+    """weapons P15, projectiles test 39: a stopped bot doesn't animate, its
+    head hitbox sits low and to one side: from 200 units, pitch 1.25 and
+    yaw +1 hit it (hitbox 0, hitgroup 1); pitch 3 the chest, 8.5 a leg."""
+    a, b = two_bots(r)
+    for cls, aim, dist, want in [("weapon_pistol", (1.25, 1.0), 200, "head: 8 traced, 24 taken"),
+                                 ("weapon_357", (1.25, 1.0), 200, "head: 75 traced, 225 taken"),
+                                 ("weapon_crowbar", (4.5, 5.0), 48, "25, no multiplier"),
+                                 ("weapon_crossbow", (1.25, 1.0), 200, "spec 300; real: 100, hitgroup 0"),
+                                 ("weapon_crossbow", (8.5, 0.0), 200, "legs: 100, hitgroup 0")]:
+        show(f"weapons P15 / bolt {cls} at {aim}, {dist}", shot_at(r, a, b, cls, *aim, dist=dist), want)
+    r.exec(f"probe_tp {b} {ROOF[0]} {ROOF[1]} {ROOF[2]} 0 0")
+
+
+def frag_drag(r):
+    """projectiles 9.4: a frag thrown from above the roof (deployed on the
+    floor first): its velocity fitted over 15-tick windows past its
+    spin (its origin circles its mass centre)."""
+    r.exec("probe_track clear")
+    r.exec("probe_track npc_grenade_frag")
+    for buttons, want in [(ATTACK, "1200 forward, 120 up, slowing 0.176 of its speed a second"),
+                          (ATTACK2, "350 forward, 50 up, slowing 0.10 a second")]:
+        probe.wait_alive(r)
+        arm(r, "weapon_frag")
+        probe.run_full(r, measure.start(), hold(70, 0, 0, 0, 0, 180, select="weapon_frag"))
+        out = probe.run_full(r, (ROOF[0], ROOF[1], ROOF[2] + 400, 0, 180, 0, 0, 0), hold(1, buttons, 0, 0, 0, 180)
+                             + hold(80, 0, 0, 0, 0, 180))
+        e = entities(out, "npc_grenade_frag")
+        row = out["rows"][int(e[0][0])]
+        eye = (row["x"], row["y"], row["z"] + row["eye"])
+        pts = [[float(x[3 + k]) - eye[k] for k in range(3)] for x in e]
+        fits = [round(-window_velocity(pts[s:s + 15])[0]) for s in (0, 15, 30, 45)]
+        show(f"frag {buttons} forward speed over 15-tick windows", fits, want)
+    r.exec("probe_track clear")
+
+
+def window_velocity(pts, g=600.0):
+    """The mean velocity of points 0.015 s apart, fitting a circle at one
+    rate (scanned) on top of a line (and gravity's parabola on z)."""
+    ts = [i * 0.015 for i in range(len(pts))]
+    best = None
+    for k in range(200, 4000, 5):
+        w = k * 0.01
+        rows = [[1.0, t, math.cos(w * t), math.sin(w * t)] for t in ts]
+        sol, res = [], 0.0
+        for ax in range(3):
+            ys = [p[ax] + (0.5 * g * t * t if ax == 2 else 0.0) for t, p in zip(ts, pts)]
+            x, e = least_squares(rows, ys)
+            sol.append(x[1])
+            res += e
+        if best is None or res < best[0]:
+            best = (res, sol)
+    return best[1]
+
+
+def least_squares(rows, ys):
+    n = len(rows[0])
+    m = [[sum(r[i] * r[j] for r in rows) for j in range(n)] + [sum(r[i] * y for r, y in zip(rows, ys))]
+         for i in range(n)]
+    for c in range(n):
+        p = max(range(c, n), key=lambda q: abs(m[q][c]))
+        m[c], m[p] = m[p], m[c]
+        for q in range(n):
+            if q != c and m[c][c]:
+                f = m[q][c] / m[c][c]
+                m[q] = [x - f * y for x, y in zip(m[q], m[c])]
+    x = [m[i][n] / m[i][i] if m[i][i] else 0.0 for i in range(n)]
+    return x, sum((sum(a * b for a, b in zip(r, x)) - y) ** 2 for r, y in zip(rows, ys))
+
+
+def hanging_punt(r, pitch, dist, height, mass=30):
+    """A crate hanging motion-disabled (flags 8 + 64) above the roof,
+    `dist` ahead and its centre `height` above the bot's feet, punted:
+    its velocity and pitch rate (degrees/s) a tick after."""
+    probe.wait_alive(r)
+    arm(r, "weapon_physcannon")
+    r.exec("probe_track clear")
+    probe.run_full(r, measure.start(pitch=pitch), hold(30, 0, 0, 0, pitch, 180, select="weapon_physcannon"))
+    z = ROOF[2] + 200
+    idx = r.exec(f"probe_prop prop_physics {CRATE} {ROOF[0] - dist} {ROOF[1]} {z + height} {mass} 72").split()[-1]
+    out = probe.run_full(r, (ROOF[0], ROOF[1], z, pitch, 180, 0, 0, 0), hold(1, ATTACK, 0, 0, pitch, 180)
+                         + hold(4, 0, 0, 0, pitch, 180))
+    e = [x for x in out["ents"] if x[1] == idx]
+    r.exec(f"probe_fire {idx} Kill")
+    a, b = e[1], e[2]
+    return [round(x) for x in speed(a, b)], round((float(b[12]) - float(a[12])) / 0.015)
+
+
 def entities(out, cls):
     """The rows of the first `cls` entity created in the run."""
     made = [c[1] for c in out["created"] if c[2] == cls]
@@ -277,6 +391,13 @@ def gravity(r):
          [punt(r, m)[0] for m in (10, 30, 100, 250)], "2000, 1100, 750, 660")
     show("gravity P3 punt looking 45 down, 30 kg (horizontal, up)", punt(r, 30, pitch=45, dist=40, height=24)[:2],
          "up ≈ 506")
+    show("gravity P3 hanging crate, 45 down (velocity, pitch rate)", hanging_punt(r, 45, 40, 24),
+         "(-778, 0, 506) less a tick of drag and gravity")
+    show("gravity P3 hanging crate, 21.8 down at its face", hanging_punt(r, 21.8, 100, 24),
+         "(-1007, 0, 253); pitching 2964/s (the lever to the box's centre where it stopped)")
+    for rz in (5, 10, 15):
+        show(f"gravity P3 level punt {rz} above a hanging crate's centre: pitch rate",
+             hanging_punt(r, 0, 100, 64 - rz)[1], f"{176 * rz}/s (inertia 0.714 of a solid box's)")
     for m, want in [(30, "1500; held ≈ 66.6 ahead"), (250, "≈ 1327")]:
         h, _, held = punt(r, m, launch=True)
         show(f"gravity P4/P5 launch held {m} kg (speed, held x offset)", (h, held), want)
@@ -384,10 +505,10 @@ def cvars(r):
 
 
 CASES = {"respawn": respawn, "armour": armour, "weapons": weapons, "drops": drops, "pushes": pushes,
-         "projectiles": projectiles, "gravity": gravity, "pickups": pickups, "chargers": chargers, "cvars": cvars,
+         "projectiles": projectiles, "gravity": gravity, "heads": heads, "frag_drag": frag_drag, "pickups": pickups, "chargers": chargers, "cvars": cvars,
          "swim": swim, "drown": drown}
-LOCKDOWN = ["cvars", "respawn", "armour", "weapons", "drops", "projectiles", "gravity", "pickups", "chargers",
-            "pushes"]
+LOCKDOWN = ["cvars", "respawn", "armour", "weapons", "drops", "projectiles", "frag_drag", "gravity", "pickups",
+            "chargers", "pushes", "heads"]
 
 if __name__ == "__main__":
     r = probe.connect()

@@ -25,6 +25,10 @@
 //!   ticks 0, 71, 92, 113, 134, 155. A player in its way this tick
 //!   (`player_taps`): it bounces off at 0.2 of its speed and taps him for
 //!   0.1 crush from its thrower; starting inside one reverses it at 0.2.
+//!   In flight it feels air drag (`air_drag`, measured on the real
+//!   server): (0.07 + 0.00009 |v|) v per second, 0.176 of its speed a
+//!   second at 1176 (a throw loses about 2 % of its speed in its first
+//!   0.1 s), 0.10 at 350 (a lob).
 //!   Explosion: a probe from 8 above to 24 below, the blast point 0.6 off
 //!   the floor, 150 in 250.
 //! - **Martyrdom** (`drop_live`): dying with the frag in hand and attack
@@ -57,7 +61,7 @@ use crate::{
         Damage, DamageKind, Died, FirstTimePredicted, Health, Hitgroup, ITEM_LAYER, Intent, MovementState, NetRole,
         SOLID_LAYERS, SimClock, Velocity,
     },
-    map::{PlaySound, loose::ShownItem},
+    map::{PlaySound, held::Held, loose::ShownItem},
 };
 
 /// `hl2dm:frag`'s parameters (Source units, seconds, points, degrees/s).
@@ -92,6 +96,10 @@ pub struct FragParams {
     pub elasticity: f32,
     pub player_bounce: f32,
     pub player_tap: f32,
+    /// Air drag: each tick in flight the velocity v loses
+    /// (`drag_linear` + `drag_quadratic` |v|) v dt (per second, per unit).
+    pub drag_linear: f32,
+    pub drag_quadratic: f32,
     pub blip: String,
     pub roll_sound: String,
     pub explode: String,
@@ -396,6 +404,17 @@ pub fn spawn_grenade(
         channel: None,
     });
     e
+}
+
+/// Before each physics step: grenades in flight (not held by a gravity
+/// gun, which switches drag off) slow down by their air drag (9.4).
+pub fn air_drag(time: Res<Time>, mut grenades: Query<(&Hl2Grenade, &mut LinearVelocity), Without<Held>>) {
+    let dt = time.delta_secs();
+    for (g, mut v) in &mut grenades {
+        let speed = v.0.length() / U;
+        let slow = ((g.params.drag_linear + g.params.drag_quadratic * speed) * dt).min(1.0);
+        v.0 *= 1.0 - slow;
+    }
 }
 
 /// The grenades' thinks (the server's): every 7 ticks from the one after

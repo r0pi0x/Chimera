@@ -17,9 +17,9 @@
 //! blocks firing while held.
 //!
 //! Known shortcuts:
-//! - The devices a player dies with are cleared at spawn: the spec's
-//!   "devices stuck across death" (suit.md Quirks, Open question 3) waits
-//!   for the probe (P9).
+//! - Of the devices a player dies with only the sprint is kept to the
+//!   respawn (measured, P9); the breather stuck on after a death under
+//!   water (suit.md Quirks) isn't measured and is cleared.
 //! - The suit zoom's FOV is stepped per tick on the simulation's clock
 //!   (the client evaluates it at its render time); it has no zoom owner
 //!   yet (the crossbow's scope comes with H4), and `toggle_zoom` isn't
@@ -375,9 +375,11 @@ fn wear(
 }
 
 /// A player back in play (no longer `Dead`): health 100 (`revive`),
-/// armour 0, aux power 100, the suit on, no devices, the view's zoom and
-/// the flashlight off, fresh air, unreturned drowning forgotten; the
-/// remainder kept (suit.md "Death and spawn").
+/// armour 0, aux power 100, the suit on, the view's zoom and the
+/// flashlight off, fresh air, unreturned drowning forgotten; the
+/// remainder kept (suit.md "Death and spawn"). A sprint running at the
+/// death is still on (suit.md Quirks, measured: the real server's
+/// respawned sprinter pays the 2.5 detach on its first tick, aux 97.5).
 fn spawned(
     mut revived: RemovedComponents<Dead>,
     mut q: Query<(&mut Suit, &mut Breath, &mut Armor)>,
@@ -388,6 +390,9 @@ fn spawned(
         let Ok((mut suit, mut breath, mut armor)) = q.get_mut(e) else { continue };
         *suit = Suit {
             off_tick: clock.tick,
+            devices: suit.devices & SPRINT,
+            sprinting: suit.sprinting,
+            speed_held: suit.speed_held,
             ..Suit::default()
         };
         *breath = Breath::default();

@@ -1296,3 +1296,8 @@ dedicated server build 24600426):
 9. **Shipped build vs SDK.** All numbers are the SDK's; the 2024–2025
    HL2:DM updates could have changed item or crate amounts. P1–P4 and P6
    compare.
+10. **Probe results, round 2 (2026-11-03, dedicated server build
+    24600426).** P3: items settle from their placed origins at the map
+    load (pistol rounds placed at z 21 rest at 0.4; an AR2 ball box rolled
+    33 units off its spot); being moved back at the next 30 s check
+    wasn't measured. P4-P9 not measured.

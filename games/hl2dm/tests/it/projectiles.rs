@@ -194,6 +194,24 @@ fn a_blast_100_units_away_does_90_6_and_shoves_2_4() {
     );
 }
 
+/// Open question 1, measured on the real server (the plan's Progress
+/// 2026-11-03 "probe 2"): a rocket or contact grenade going off against a
+/// ceiling hurts the players below by the distance rule, though its
+/// lifted blast point lies in the brush. Here the blast point is 2 units
+/// into the floor (1 after the lift), 50 behind the player: the line from
+/// (-50, 0, -1) to the eye enters the box at (-16, 0, 43.2), d = 55.76;
+/// 100 in 250 does 77.7 (health 22, 0.7 carried).
+#[test]
+fn a_blast_point_inside_the_world_still_hurts() {
+    let mut sim = sim();
+    let p = player(&mut sim);
+    let f = feet(&sim, p);
+    blast(&mut sim, f + to_engine(Vec3::new(-50.0, 0.0, -2.0)), 100.0, 250.0, None);
+    sim.ticks(1);
+    let h = health(&sim, p);
+    assert!((h - 22.0).abs() < 1.01, "health {h}");
+}
+
 /// Test 3: the same blast on 100 armour: health 60, no armour left.
 #[test]
 fn a_blast_on_armour_takes_two_armour_a_point_3() {
@@ -646,13 +664,15 @@ fn the_crossbow_fires_every_130_ticks_held_36_37() {
     assert!((d.x - 525.0).abs() < 0.05 && (d.z + 0.3375).abs() < 0.01, "{d}");
 }
 
-/// Test 39: a head shot is 300, a chest shot 100 (with 100 armour: health
-/// 80, armour 20).
+/// Test 39, as the real server measures (the plan's Progress 2026-11-03
+/// "probe 2": its bolts hit a player's generic hitgroup, head or legs):
+/// a head shot is 100 like a chest shot (with 100 armour: health 80,
+/// armour 20), not the spec's 300.
 #[test]
-fn a_bolt_does_100_times_the_hitgroup_39() {
+fn a_bolt_does_100_anywhere_39() {
     for (head, armour, health_left, armour_left) in [
         (false, 0.0, 0.0, None),
-        (true, 1.0, 0.0, None),
+        (true, 1.0, 80.0, Some(0.2)),
         (false, 1.0, 80.0, Some(0.2)),
     ] {
         let mut sim = sim();
@@ -783,9 +803,10 @@ fn a_tapped_throw_44() {
     assert_eq!(t, 20, "made on tick 19 (seen before 20)");
     let _ = at;
     let v0 = to_source(v);
-    // Read after its first physics step: gravity has taken a little.
+    // Read after its first physics step: gravity and a tick of air drag
+    // (1200 × 0.176 × 0.015 = 3.2) have taken a little.
     assert!(
-        (v0.x - 1200.0).abs() < 1.0 && v0.y.abs() < 1.0 && (v0.z - 120.0).abs() < 10.0,
+        (v0.x - 1196.8).abs() < 1.0 && v0.y.abs() < 1.0 && (v0.z - 120.0).abs() < 10.0,
         "{v0}"
     );
     let _ = start;
@@ -855,11 +876,42 @@ fn lob_and_roll_47_48() {
         } else {
             Vec3::new(350.0, 0.0, 50.0)
         };
-        // Read after its first physics step (gravity, the roll's floor).
+        // Read after its first physics step (gravity, the roll's floor,
+        // a tick of air drag: 0.5 off the lob, 1.4 off the roll).
         assert!(
-            (v.x - want.x).abs() < 1.0 && v.y.abs() < 1.0 && (v.z - want.z).abs() < 10.0,
+            (v.x - want.x).abs() < 2.0 && v.y.abs() < 1.0 && (v.z - want.z).abs() < 10.0,
             "duck {duck}: {v}"
         );
+    }
+}
+
+/// 9.4's air drag (measured on the real server, the plan's Progress
+/// 2026-11-03 "probe 2"): a throw's forward speed 10 ticks after it
+/// leaves the hand ≈ 1167 (the real one's, fitted past its spin), a
+/// lob's 20 ticks on ≈ 339.
+#[test]
+fn a_frag_slows_in_the_air() {
+    for (secondary, after, want) in [(false, 10, 1167.0), (true, 20, 339.0)] {
+        let mut sim = sim();
+        let p = player(&mut sim);
+        frag_ready(&mut sim, p, 2);
+        let mut seen: Vec<Vec3> = Vec::new();
+        run(&mut sim, p, 50, |s, t| {
+            s.intent(p).fire = !secondary && t == 0;
+            s.intent(p).secondary = secondary && t == 0;
+            let w = s.app.world_mut();
+            if let Some(v) = w
+                .query::<(&Hl2Grenade, &avian3d::prelude::LinearVelocity)>()
+                .iter(w)
+                .next()
+                .map(|(_, v)| v.0)
+            {
+                seen.push(to_source(v));
+            }
+        });
+        // seen[0]: after its first step.
+        let v = seen[after];
+        assert!((v.x - want).abs() < 3.0, "secondary {secondary}: {v} after {after} ticks");
     }
 }
 
