@@ -101,6 +101,13 @@ const GAMES: [Game; 2] = [
             "info_player_combine",
             "info_player_rebel",
             "info_player_start",
+            // Its pickups and set pieces (`hl2dm::game::pickups`,
+            // `ammo_crates`, `set_pieces`; the `item_*` prefix is below),
+            // ladders (`movement`), and the camera (a model).
+            "func_useableladder",
+            "game_ragdoll_manager",
+            "env_headcrabcanister",
+            "npc_combine_camera",
         ],
     },
 ];
@@ -115,6 +122,7 @@ const HANDLED_ELSEWHERE: &[&str] = &[
     "info_target",
     "info_teleport_destination",
     "info_node",
+    "info_lighting_relative",
     "info_null",
     "info_landmark",
     "info_lighting",
@@ -410,6 +418,7 @@ fn sweep_map(game: &Game, name: &str, path: &Path, secs: f32, audit: bool) -> Ro
                 if HANDLED_ELSEWHERE.contains(&class.as_str())
                     || game.handled.contains(&class.as_str())
                     || class.starts_with("weapon_")
+                    || class.starts_with("item_")
                     || cs_source_app::logic::classes::noted_class(&class).is_some()
                 {
                     continue;

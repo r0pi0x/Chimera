@@ -1287,6 +1287,10 @@ fn model_attachments(read: super::anim::Read, path: &str) -> Result<Vec<(String,
         .collect())
 }
 
+/// `npc_combine_camera` and its model (maps_entities.md 14).
+const COMBINE_CAMERA: &str = "npc_combine_camera";
+const COMBINE_CAMERA_MODEL: &str = "models/combine_camera/combine_camera.mdl";
+
 /// Props placed as entities: physics props (barrels, baskets; static here
 /// until there's physics) and dynamic props. Both collide by their physics
 /// model (the visible mesh until `.phy` is parsed).
@@ -1305,7 +1309,10 @@ fn entity_props(bsp: &Bsp) -> Vec<PropPlacement> {
             let physics = class.starts_with("prop_physics");
             let door = class == DOOR_CLASS;
             let ragdoll = class == "prop_ragdoll";
-            if !physics && !door && !ragdoll && !class.starts_with("prop_dynamic") {
+            // HL2's ceiling camera stands in as a still model (HL2:DM's
+            // dm_underpass; it sweeps in the game, maps_entities.md 14).
+            let camera = class == COMBINE_CAMERA;
+            if !physics && !door && !ragdoll && !camera && !class.starts_with("prop_dynamic") {
                 return None;
             }
             let [x, y, z] = parse(e.prop("origin")?)?;
@@ -1318,6 +1325,8 @@ fn entity_props(bsp: &Bsp) -> Vec<PropPlacement> {
                 // Its parts are bodies of their own when its model has a
                 // ragdoll (`map::ragdoll::PlacedRagdoll`).
                 PropSolid::None
+            } else if camera {
+                PropSolid::Mesh
             } else if !physics && !door && solid_key == Some("2") {
                 PropSolid::Box
             } else if physics || door || solid_key != Some("0") {
@@ -1332,7 +1341,7 @@ fn entity_props(bsp: &Bsp) -> Vec<PropPlacement> {
                         || e.prop("targetname")
                             .is_some_and(|n| animated_names.contains(&n.to_ascii_lowercase())));
             Some(PropPlacement {
-                model: e.prop("model")?.to_lowercase(),
+                model: if camera { COMBINE_CAMERA_MODEL.to_string() } else { e.prop("model")?.to_lowercase() },
                 skin: e.prop("skin").and_then(|s| s.trim().parse().ok()).unwrap_or(0),
                 origin: vbsp::Vector { x, y, z },
                 angles: vbsp::Angles { pitch, yaw, roll },

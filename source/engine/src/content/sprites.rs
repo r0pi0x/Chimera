@@ -111,4 +111,44 @@ pub fn add_sprites(bsp: &Bsp, materials: &mut MaterialLoader, data: &mut MapData
         data.warnings
             .push(format!("{skipped} sprites in render modes not drawn yet"));
     }
+    add_flares(bsp, materials, data);
+}
+
+/// `env_flare` spawnflag 8 (specs/hl2dm/maps_entities.md 9): starts hidden.
+const FLARE_START_OFF: u32 = 8;
+
+/// A map flare's flame (maps_entities.md 9): the red flare sprite of
+/// 40 units (the mean of 32 to 48) times `scale`, grey (114 of 255), and
+/// the small white one of 3 units drawn over everything. Both are drawn
+/// still (the spec jitters them every frame).
+fn add_flares(bsp: &Bsp, materials: &mut MaterialLoader, data: &mut MapData) {
+    for (index, e) in bsp
+        .entities
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.prop("classname") == Some("env_flare"))
+    {
+        let Some(origin) = e.prop("origin").and_then(parse3) else { continue };
+        let flags: u32 = e.prop("spawnflags").and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+        let scale = e.prop("scale").and_then(|v| v.trim().parse::<f32>().ok()).filter(|s| *s > 0.0).unwrap_or(1.0);
+        let at = to_engine(vbsp::Vector {
+            x: origin.x,
+            y: origin.y,
+            z: origin.z,
+        });
+        for (sheet, units, shade, glow) in [("effects/redflare", 40.0, 114.0 / 255.0, false), ("effects/yellowflare_noz", 3.0, 1.0, true)] {
+            let Some(texture) = materials.resolve(sheet).texture else { continue };
+            data.sprites.push(MapSprite {
+                position: at,
+                texture,
+                size: Vec2::splat(units * scale * METERS_PER_UNIT),
+                color: Vec4::new(shade, shade, shade, 1.0),
+                glow,
+                blend: SpriteBlend::Add,
+                proxy: 4.0 * METERS_PER_UNIT,
+                entity: Some(index),
+                start_on: flags & FLARE_START_OFF == 0,
+            });
+        }
+    }
 }

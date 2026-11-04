@@ -436,8 +436,8 @@ implementing (owner branch) / done.
 | M3 movement, suit | H1, H2 | done (branch `hl2dm-m3`, 2026-11-03): S5 (scripts, soundscapes), S6, C2, C8; `hl2dm:movement`, the suit, pickups and chargers; the probe | S5, S6, C2, C8 |
 | M4 bullets, melee, UGG | H3 | done (branch `hl2dm-m4`, 2026-11-03): see Progress; left: probe checks P4, P11, P12, P14, P15 (the rest run: branch `hl2dm-probe`), C7 (no need in M4) | S8, C4 |
 | M5 projectiles | H4 | done (branch `hl2dm-m5`, 2026-11-03): see Progress (effects: `hl2dm-fx`); left: probe checks P5-P8, P9's under-water speed and damage, P10-P12, P14, P15 (the rest run: branch `hl2dm-probe`), the effects (M10) | C1 |
-| M6 gravity gun | H5 | done (branch `hl2dm-m6`, 2026-11-03): see Progress; left: `hl2mp_allow_pickup` 1's carry, `prop_physics_respawnable`, first-impact 10× and breaks, the gun's effects (M10), the probe checks P6-P17 (P1-P5 run: branch `hl2dm-probe`) | C6 |
-| M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; left: the set pieces of H10 sections 8-16, respawnable props, rules P5-P14 (the probe's crash fixed: branch `hl2dm-probe`) | C3 (C5 not needed) |
+| M6 gravity gun | H5 | done (branch `hl2dm-m6`, 2026-11-03): see Progress; left: `hl2mp_allow_pickup` 1's carry, first-impact 10× and breaks, the gun's effects (M10), the probe checks P6-P17 (P1-P5 run: branch `hl2dm-probe`) | C6 |
+| M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; set pieces built (branch `hl2dm-setpieces`, 2026-11-03): see Progress; left: rules P5-P14 (the probe's crash fixed: branch `hl2dm-probe`) | C3 (C5 not needed) |
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
 | M9 HUD | H8 | done (branch `hl2dm-m9`, 2026-11-03): see Progress; left: the items listed there | S7 (the look reader and the animation engine; CS:S's menu readers stay) |
 | M10 effects, sounds | H9 | done in part (branch `hl2dm-m10`, 2026-11-03): see Progress; left: explosions, ball, dissolve, RPG, crossbow, gravity-gun effects (M5, M6), shells, the shield wall shader, refcmp | S10, S5 |
@@ -803,6 +803,44 @@ implementing (owner branch) / done.
   M6), the respawn light, chargers' `Recharge`/`SetCharge` inputs and
   value outputs, HL2:DM's scoreboard and death notices (M9), the
   server rewriting a remote client's `cl_playermodel`, the probe cases.
+- 2026-11-03: the set pieces of H10 sections 4-5 and 8-16 (branch
+  `hl2dm-setpieces`; what M7 and M6 left). **Generic** (Chimera,
+  source_logic): a game's own map classes (`map::entities::
+  GameEntityClasses`): the logic delivers their inputs as
+  `MapEntityInput`, tells of the entities (`MapEntitySpawned`, also a
+  `point_template`'s copies, `MapEntityRemoved`) and takes outputs back by
+  map index, by key (`FireKeyedOutput`) or with a number
+  (`FireEntityOutputValue`); an AI sound list (`AiSound`), heard by
+  **`env_microphone`** (`logic::sensors`: mask, sensitivity, range, smoothing,
+  `OnHeardSound`, `SoundLevel`, `Enable`/`Disable`) and **`point_
+  angularvelocitysensor`** (a prop body's spin reported by the bridge, the
+  spec's change-then-interval firing, `Test`, `TestWithInterval`);
+  **`prop_physics_respawnable`** (`RespawnTime`, kept name and outputs,
+  the body put back at its home when its spot is free, 1 s retries; unit
+  test); **`env_flare`** (a `Part`; the loader draws its red flare and white
+  core as sprites, `Start`/`Die`); `env_shake`'s amplitude cap 16 and its
+  reach to network clients (`MapFx::Shake`); `npc_combine_camera` as a
+  still model (the loader). **HL2:DM** (`game::set_pieces`): the canister
+  (`FireCanister` once, flight of `FlightTime` at `FlightSpeed`, incoming
+  sound, sweep, blast with the squared falloff, 750 shove, player push 250
+  to 1000, shake, landing, `OnLaunched`/`OnImpacted`/`OnOpened`; dm_runoff's
+  strike: the map's six are removed at load by their template, so the first
+  strike fires nothing and the next the six it spawned), the ragdoll
+  manager (`RagdollLimit`), bullet and blast AI sounds; the chargers'
+  `Recharge`/`SetCharge` and value outputs (`OutRemainingCharge`,
+  `OutRemainingHealth`); the respawn light (`ui::lights`, listen/standalone
+  only). Tests: source_logic `set_piece_tests` (4), hl2dm `set_pieces.rs`
+  (5), `pickups.rs` `charger_inputs_and_value_outputs`, heavy
+  `map_set_pieces.rs` (every stock map: no census class without a handler,
+  329 respawnable props, 7 flares drawn, the ragdoll managers' 4, the
+  camera's model, dm_runoff's two strikes, dm_lockdown's fan). Left: the
+  canister's model, trail, smoke and explosion effect, the 3D skybox arc,
+  headcrabs; the camera's sweep, pings and photos; the flare's smoke, light
+  and jitter; chargers' dial and loop-sound stop; the fan: the physics
+  motor spins the fan between 1500 and a crawl (`phys_motor` in
+  `map::controllers`), so the sensor's `OnGreaterThan` is unit-tested only;
+  the physics shake and rope shake of `env_shake` (flags 8, 16); the
+  microphone's speaker routing; the respawn light on network clients.
 - 2026-11-03: M8 built (branch `hl2dm-m8`). **S9**:
   `source_engine::player_anim`, the shared half of CS:S's `player_anim`
   (the inputs from the simulation and the weapons' events, the drawn

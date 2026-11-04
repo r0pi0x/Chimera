@@ -13,6 +13,7 @@
 //! - `numeric`, `aux`, `quick`, `damage`, `selection`, `history`,
 //!   `notices`, `scoreboard`: the elements; `look`: the install's layout,
 //!   scheme and fonts at a window size; `frame`: the draw list.
+//! - `lights`: the respawn light.
 //! - `systems`: the Bevy side (inputs from the simulation, the messages,
 //!   the selection's commands, the nodes).
 //!
@@ -42,6 +43,7 @@ pub mod damage;
 pub mod frame;
 pub mod history;
 pub mod hud;
+pub mod lights;
 pub mod look;
 pub mod notices;
 pub mod numeric;
@@ -91,6 +93,7 @@ impl Plugin for Hl2dmUiPlugin {
         }
         app.add_plugins(Hl2dmHudPlugin)
             // The selection closes at 1.25 s (a quarter into its fade).
+            .add_systems(Update, (lights::flash, lights::fade).chain())
             .insert_resource(WeaponMenuTimes { menu: 1.25, show: 1.25, fade: 0.25, select_hold: 0.15 })
             .add_systems(Update, systems::selection_commands.before(menu_input).run_if(chimera_core::gameplay::hud_is(GAME)));
     }

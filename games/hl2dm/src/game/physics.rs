@@ -26,8 +26,12 @@
 //! isn't built (the default is 0); an explosive prop's blast credit
 //! (the last attacker, else the influencer within 2 s) is the logic's
 //! last-attacker rule only; the 10× first impact after a launch from the
-//! hold and first-impact breaks aren't done; `prop_physics_respawnable`
-//! (section 13) is not built.
+//! hold and first-impact breaks aren't done. `prop_physics_respawnable`
+//! (section 13) is source_logic's prop (`RespawnTime`, 60 s by default, the
+//! prop stays with its name and outputs, hidden with its body off, and
+//! comes back at its home pose after the time if its box there is free of
+//! solid things, else tries again each second); the free-box test is the
+//! physics engine's, players included.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;

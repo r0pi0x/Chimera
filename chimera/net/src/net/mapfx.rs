@@ -15,7 +15,8 @@
 //! Map effects for clients (they run no map logic): the server's
 //! strike-generator beam strikes, tesla sparks and env_spark bursts as `MapFx`
 //! (unreliable), written on a client as its map's own messages
-//! (`map::BeamStrike`, `TeslaSpark`, `map::SparkBurst`).
+//! (`map::BeamStrike`, `TeslaSpark`, `map::SparkBurst`, `map::MapShake`: env_shake's
+//! and a canister's screen shakes reach network clients).
 //! Players' and movers' render looks (`map::RenderLook`, `BrushTint`) are
 //! replicated components; a client's `movers::copy_tints` puts a mover's on its
 //! own node.
@@ -40,6 +41,7 @@ pub(super) fn plugin(app: &mut App) {
         .add_message::<TeslaSpark>()
         .add_message::<SparkBurst>()
         .add_message::<LogicOneShot>()
+        .add_message::<crate::map::logic_view::MapShake>()
         .add_message::<SoundControl>()
         .add_message::<PlaySound>()
         .add_systems(
@@ -61,6 +63,7 @@ fn forward(
     mut strikes: MessageReader<BeamStrike>,
     mut teslas: MessageReader<TeslaSpark>,
     mut sparks: MessageReader<SparkBurst>,
+    mut shakes: MessageReader<crate::map::logic_view::MapShake>,
     mut out: MessageWriter<ToClients<MapFx>>,
 ) {
     let fx = strikes
@@ -78,6 +81,13 @@ fn forward(
             at: s.at.to_array(),
             dir: s.dir.to_array(),
             magnitude: s.magnitude,
+        }))
+        .chain(shakes.read().map(|s| MapFx::Shake {
+            at: s.at.to_array(),
+            amplitude: s.amplitude,
+            frequency: s.frequency,
+            duration: s.duration,
+            radius: s.radius,
         }));
     for message in fx {
         out.write(ToClients {
@@ -114,6 +124,21 @@ fn receive(mut fx: MessageReader<MapFx>, mut commands: Commands) {
                     at: Vec3::from_array(at),
                     dir: Vec3::from_array(dir),
                     magnitude,
+                });
+            }
+            MapFx::Shake {
+                at,
+                amplitude,
+                frequency,
+                duration,
+                radius,
+            } => {
+                w.write_message(crate::map::logic_view::MapShake {
+                    at: Vec3::from_array(at),
+                    amplitude,
+                    frequency,
+                    duration,
+                    radius,
                 });
             }
         });

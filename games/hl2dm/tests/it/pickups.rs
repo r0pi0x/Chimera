@@ -19,7 +19,7 @@ use chimera_sim::weapon::{
 };
 use chimera_world::{
     harness::Sim,
-    map::{MapBrush, MapBrushes, MapEntities, MapEntity, PlaySound, entities::FireEntityOutput},
+    map::{MapBrush, MapBrushes, MapEntities, MapEntity, PlaySound, entities::{FireEntityOutput, FireEntityOutputValue}},
 };
 use hl2dm::{
     game::{
@@ -87,6 +87,7 @@ fn entity(class: &str, at: Vec3, more: &[(&str, &str)]) -> MapEntity {
 struct Log {
     sounds: Vec<(u64, String)>,
     outputs: Vec<(u64, usize, String)>,
+    values: Vec<(u64, String, f32)>,
     events: Vec<(u64, GameEvent)>,
     backs: Vec<(u64, PickupBack)>,
     picked: Vec<(u64, PickedUp)>,
@@ -98,6 +99,7 @@ fn listen(
     mut log: ResMut<Log>,
     mut sounds: MessageReader<PlaySound>,
     mut outputs: MessageReader<FireEntityOutput>,
+    mut values: MessageReader<FireEntityOutputValue>,
     mut events: MessageReader<GameEvent>,
     mut backs: MessageReader<PickupBack>,
     mut picked: MessageReader<PickedUp>,
@@ -105,6 +107,7 @@ fn listen(
     let t = clock.tick;
     log.sounds.extend(sounds.read().map(|s| (t, s.entry.clone())));
     log.outputs.extend(outputs.read().map(|o| (t, o.map_index, o.output.clone())));
+    log.values.extend(values.read().map(|v| (t, v.output.clone(), v.value)));
     log.events.extend(events.read().map(|e| (t, e.clone())));
     log.backs.extend(backs.read().map(|b| (t, *b)));
     log.picked.extend(picked.read().map(|p| (t, *p)));
@@ -447,4 +450,46 @@ fn charger_outputs_23() {
     w.sim.intent(w.p).use_key = false;
     w.sim.ticks(4100);
     assert_eq!(w.outputs("OnFull").len(), 2, "refilled 60 s later");
+}
+
+/// The suit charger's inputs and value outputs (maps_entities.md 4):
+/// `SetCharge` sets the pool and its maximum, each charge tells the charge
+/// left as a fraction, `Recharge` fills the pool and fires `OnFull`.
+#[test]
+fn charger_inputs_and_value_outputs() {
+    let mut w = world(vec![
+        entity("item_suitcharger", Vec3::new(40.0, 0.0, 64.0), &[("targetname", "mega"), ("spawnflags", "8192")]),
+        entity("logic_relay", Vec3::new(0.0, 500.0, 0.0), &[("targetname", "r1"), ("OnTrigger", "mega,SetCharge,40,0,-1")]),
+        entity("logic_relay", Vec3::new(0.0, 600.0, 0.0), &[("targetname", "r2"), ("OnTrigger", "mega,Recharge,,0,-1")]),
+    ]);
+    let fire = |w: &mut World_, name: &str| {
+        w.sim
+            .app
+            .world_mut()
+            .resource_mut::<source_logic::logic::Logic>()
+            .world
+            .queue_input(name, "Trigger", source_logic::logic::Value::Void, 0.0, None);
+        w.sim.ticks(3);
+    };
+    fire(&mut w, "r1");
+    w.place(Vec3::ZERO);
+    {
+        let mut i = w.sim.intent(w.p);
+        i.yaw = -std::f32::consts::FRAC_PI_2;
+        i.pitch = 0.0;
+    }
+    w.sim.ticks(2);
+    w.sim.app.world_mut().get_mut::<chimera_sim::weapon::Armor>(w.p).unwrap().amount = 0.0;
+    w.sim.intent(w.p).use_key = true;
+    w.sim.ticks(10);
+    let first = w.log().values.iter().find(|(_, o, _)| o == "OutRemainingCharge").map(|v| v.2).expect("a value");
+    // The citadel takes 2 a charge: 38 of 40 left.
+    assert!((first - 38.0 / 40.0).abs() < 1e-5, "{first}");
+    w.sim.ticks(400);
+    assert_eq!(w.outputs("OnEmpty").len(), 1, "40 points are gone after 20 charges");
+    w.sim.intent(w.p).use_key = false;
+    let full = w.outputs("OnFull").len();
+    fire(&mut w, "r2");
+    assert_eq!(w.outputs("OnFull").len(), full + 1, "Recharge fills it at once");
+    assert!(w.heard("SuitRecharge.Start").len() >= 1);
 }

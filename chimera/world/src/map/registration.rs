@@ -175,7 +175,14 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
     // when there is one: then these change nothing).
     app.add_message::<PlaySound>()
         .add_message::<SoundControl>()
-        .add_message::<entities::FireEntityOutput>();
+        .add_message::<entities::FireEntityOutput>()
+        .add_message::<entities::FireEntityOutputValue>()
+        .add_message::<entities::MapEntityInput>()
+        .add_message::<entities::FireKeyedOutput>()
+        .add_message::<entities::MapEntitySpawned>()
+        .add_message::<entities::MapEntityRemoved>()
+        .add_message::<entities::AiSound>()
+        .init_resource::<entities::GameEntityClasses>();
     app.init_resource::<ShowLocalBody>();
     layers.vis_resources(app);
     app.add_message::<PlaceDecal>();

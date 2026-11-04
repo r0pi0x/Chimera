@@ -412,6 +412,32 @@ pub enum Effect {
         duration: f32,
         radius: f32,
     },
+    /// An input for an entity of a game-handled class
+    /// (`LogicWorld::game_classes`), by map index; the value as text.
+    EntityInput {
+        id: EntId,
+        map_index: Option<usize>,
+        input: String,
+        value: String,
+        activator: Option<Entity>,
+    },
+    /// An entity of a game-handled class exists (at the map's load, after
+    /// a round restart, or made by a point_template): the game keeps the
+    /// rest. `map_index`: None for a template's copy.
+    EntitySpawned {
+        id: EntId,
+        map_index: Option<usize>,
+        class: String,
+        keyvalues: Vec<(String, String)>,
+        origin: Vec3,
+        angles: Vec3,
+    },
+    /// An entity of a game-handled class was removed (Kill).
+    EntityRemoved { id: EntId },
+    /// A respawnable prop's time has come (`prop_damage`): the host puts
+    /// its body back at the spot it started at if that is free and tells
+    /// the logic (`LogicWorld::prop_revive`), else asks again later.
+    PropRespawn { id: EntId },
 }
 
 /// Static collision the logic needs (the world without movers), entity
@@ -673,6 +699,11 @@ pub struct LogicWorld {
     /// power-ups, team colours. They keep it across rounds, as the game's
     /// player entities do.
     pub player_looks: Vec<(Entity, crate::map::RenderLook)>,
+    /// Classes (lower case) the game handles itself: their inputs go out
+    /// as `Effect::EntityInput`.
+    pub game_classes: Vec<String>,
+    /// Live sounds of the AI sound list (`sensors`), entity space.
+    pub ai_sounds: Vec<super::sensors::AiSoundEntry>,
 }
 
 /// An env_global state.
@@ -755,6 +786,8 @@ impl LogicWorld {
             player_looks: Vec::new(),
             template_serial: 0,
             views: Vec::new(),
+            game_classes: Vec::new(),
+            ai_sounds: Vec::new(),
         }
     }
 
@@ -1107,6 +1140,17 @@ impl LogicWorld {
                         self.burning_players.retain(|x| *x != p);
                     }
                 }
+            }
+            if let Some(e) = slot.as_ref().filter(|e| e.killed)
+                && matches!(e.class, Class::None)
+                && self.game_classes.iter().any(|c| c.eq_ignore_ascii_case(&e.classname))
+            {
+                self.effects.push(Effect::EntityRemoved {
+                    id: EntId {
+                        index: i as u32,
+                        generation: *g,
+                    },
+                });
             }
             if slot.as_ref().is_some_and(|e| e.killed) {
                 *slot = None;
@@ -1686,6 +1730,7 @@ impl LogicWorld {
     /// use, touches, untouch, the queue, removals.
     pub fn frame(&mut self, collision: &dyn Collision) {
         self.break_orphan_joints();
+        self.expire_ai_sounds();
         self.run_thinks();
         self.move_cameras();
         self.step_movers(collision);
@@ -1697,6 +1742,26 @@ impl LogicWorld {
         self.untouch();
         self.service_queue();
         self.end_frame();
+    }
+
+    /// Tell the game of the entities of its classes (`Effect::EntitySpawned`).
+    pub fn announce_game_entities(&mut self) {
+        for id in self.ids() {
+            let Some(e) = self.get(id) else { continue };
+            if matches!(e.class, Class::None)
+                && e.map_index.is_some()
+                && self.game_classes.iter().any(|c| c.eq_ignore_ascii_case(&e.classname))
+            {
+                self.effects.push(Effect::EntitySpawned {
+                    id,
+                    map_index: e.map_index,
+                    class: e.classname.clone(),
+                    keyvalues: e.keyvalues.clone(),
+                    origin: e.origin,
+                    angles: e.angles,
+                });
+            }
+        }
     }
 
     /// Activate everything after spawning (the map's entities): filters,

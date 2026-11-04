@@ -66,6 +66,9 @@ pub enum PartKind {
     /// color_correction: weighs in while enabled (Enable/Disable; its
     /// fades are the map's: `map::color_correction`).
     ColorCorrection,
+    /// env_flare (maps_entities.md 9): its flame is drawn while on (Start,
+    /// Die; Launch is accepted and does not move it).
+    Flare,
     /// env_embers: embers drift through its volume while on (flag 1
     /// "Start On"; TurnOn/TurnOff/Toggle).
     Embers,
@@ -125,6 +128,8 @@ pub(super) fn spawn_part(w: &LogicWorld, id: EntId, kind: PartKind) -> Part {
             !e.kv("StartDisabled").is_some_and(|v| v.trim_start().starts_with('1'))
         }
         PartKind::Embers => e.has_flag(1),
+        // Spawnflag 8: starts hidden.
+        PartKind::Flare => !e.has_flag(8),
     };
     Part {
         kind,
@@ -180,12 +185,15 @@ pub(super) fn input(w: &mut LogicWorld, id: EntId, input: &str, value: &Value) -
                 | (PartKind::Dust | PartKind::Steam | PartKind::SmokeStack, "turnon")
                 | (PartKind::Particles, "start")
                 | (PartKind::Soundscape | PartKind::ColorCorrection | PartKind::PhysicsClip, "enable")
-                | (PartKind::Embers, "turnon") => true,
+                | (PartKind::Embers, "turnon")
+                | (PartKind::Flare, "start") => true,
                 (PartKind::Sprite, "hidesprite")
                 | (PartKind::Dust | PartKind::Steam | PartKind::SmokeStack, "turnoff")
                 | (PartKind::Particles, "stop")
                 | (PartKind::Soundscape | PartKind::ColorCorrection | PartKind::PhysicsClip, "disable")
-                | (PartKind::Embers, "turnoff") => false,
+                | (PartKind::Embers, "turnoff")
+                | (PartKind::Flare, "die") => false,
+                (PartKind::Flare, "launch") => p.on,
                 (PartKind::Sprite, "togglesprite")
                 | (PartKind::Steam | PartKind::SmokeStack, "toggle")
                 | (PartKind::Soundscape, "toggleenabled")

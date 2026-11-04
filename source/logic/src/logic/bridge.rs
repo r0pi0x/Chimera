@@ -198,8 +198,14 @@ impl Plugin for LogicPlugin {
             .init_resource::<LogicRecord>()
             .add_systems(FixedUpdate, (load, apply_record, pre).chain().in_set(LogicSet::Pre))
             .add_systems(FixedUpdate, post.in_set(LogicSet::Post))
-            .add_systems(FixedUpdate, (damage, fire_outputs).in_set(LogicSet::Damage))
+            .add_systems(FixedUpdate, (damage, fire_outputs, fire_output_values, fire_keyed_outputs, take_ai_sounds).in_set(LogicSet::Damage))
             .add_message::<crate::map::entities::FireEntityOutput>()
+            .add_message::<crate::map::entities::FireEntityOutputValue>()
+            .add_message::<crate::map::entities::MapEntityInput>()
+            .add_message::<crate::map::entities::FireKeyedOutput>()
+            .add_message::<crate::map::entities::MapEntitySpawned>()
+            .add_message::<crate::map::entities::MapEntityRemoved>()
+            .add_message::<crate::map::entities::AiSound>()
             // Physics impacts on props and players (after the physics
             // step; the damage lands next tick).
             .add_message::<CollisionStart>()
@@ -317,7 +323,12 @@ fn load(world: &mut World) {
             // fixed (tests).
             logic.seed(world.get_resource::<LogicSeed>().and_then(|s| s.0).unwrap_or_else(time_seed));
             logic.collision = static_collision(world, m.scale);
+            logic.game_classes = world
+                .get_resource::<crate::map::entities::GameEntityClasses>()
+                .map(|g| g.0.iter().map(|c| c.to_string()).collect())
+                .unwrap_or_default();
             let ids = logic.load_map(&m.entities);
+            logic.announce_game_entities();
             let nodes = attach_nodes(world, &logic, &ids);
             let props = attach_props(world, &logic, &ids, false);
             world.insert_resource(Logic {
@@ -355,6 +366,7 @@ fn load(world: &mut World) {
                 }
                 let source = logic.source.clone();
                 let ids = logic.world.round_restart(&source);
+                logic.world.announce_game_entities();
                 logic.nodes = attach_nodes(world, &logic.world, &ids);
                 logic.props = attach_props(world, &logic.world, &ids, true);
                 // HUD messages from the last round go too.
@@ -635,7 +647,7 @@ fn sync_props(world: &mut World, logic: &mut Logic) {
     for (id, node) in logic.props.clone() {
         match states.iter().find(|s| s.id == id) {
             Some(state) => {
-                set_prop_shown(world, node, state.visible, state.solid, true);
+                set_prop_shown(world, node, state.visible, state.solid, !state.gone);
                 set_prop_look(world, node, state, logic.world.round);
             }
             None => set_prop_shown(world, node, false, false, false),
@@ -1621,6 +1633,42 @@ fn apply_effects(world: &mut World, effects: Vec<Effect>, scale: f32) {
                     radius: radius * scale,
                 });
             }
+            Effect::EntityInput {
+                id,
+                map_index,
+                input,
+                value,
+                activator,
+            } => {
+                world.write_message(crate::map::entities::MapEntityInput {
+                    key: entity_key(id),
+                    map_index,
+                    input,
+                    value,
+                    activator,
+                });
+            }
+            Effect::EntitySpawned {
+                id,
+                map_index,
+                class,
+                keyvalues,
+                origin,
+                angles,
+            } => {
+                world.write_message(crate::map::entities::MapEntitySpawned {
+                    key: entity_key(id),
+                    map_index,
+                    class,
+                    keyvalues,
+                    origin,
+                    angles,
+                });
+            }
+            Effect::EntityRemoved { id } => {
+                world.write_message(crate::map::entities::MapEntityRemoved { key: entity_key(id) });
+            }
+            Effect::PropRespawn { id } => prop_respawn(world, id),
             Effect::Spark { at, dir, magnitude } => {
                 world.write_message(crate::map::SparkBurst {
                     at: entity_to_engine(at, scale),
@@ -2198,6 +2246,10 @@ fn prop_bounds(world: &mut World, logic: &mut Logic) {
             let (lo, hi) = (engine_to_entity(a.min, scale), engine_to_entity(a.max, scale));
             logic.world.set_prop_bounds(id, (lo.min(hi), lo.max(hi)));
         }
+        if let Some(v) = world.get::<AngularVelocity>(node) {
+            // rad/s, engine space -> deg/s, entity space.
+            logic.world.set_prop_spin(id, engine_to_entity(v.0, 1.0) * 180.0 / std::f32::consts::PI);
+        }
     }
 }
 
@@ -2473,6 +2525,28 @@ fn prop_broke(world: &mut World, id: EntId, sound: Option<String>, explode: Opti
             spin,
             skin,
         });
+    }
+    // A respawnable prop's body waits at the spot it started at.
+    let respawns = world
+        .get_resource::<Logic>()
+        .is_some_and(|l| l.world.prop(id).is_some_and(|p| p.respawn.is_some()));
+    if respawns && let Some(home) = world.get::<PropHome>(node).map(|h| h.0) {
+        let mut e = world.entity_mut(node);
+        if let Some(mut t) = e.get_mut::<Transform>() {
+            *t = home;
+        }
+        if let Some(mut p) = e.get_mut::<Position>() {
+            p.0 = home.translation;
+        }
+        if let Some(mut r) = e.get_mut::<Rotation>() {
+            *r = Rotation::from(home.rotation);
+        }
+        if let Some(mut v) = e.get_mut::<LinearVelocity>() {
+            v.0 = Vec3::ZERO;
+        }
+        if let Some(mut v) = e.get_mut::<AngularVelocity>() {
+            v.0 = Vec3::ZERO;
+        }
     }
 }
 
@@ -2882,6 +2956,126 @@ fn fire_outputs(mut asks: MessageReader<crate::map::entities::FireEntityOutput>,
                 logic.world.queue_input(&t, "Use", super::Value::Void, 0.0, who);
             }
         }
+    }
+}
+
+/// A logic entity's key in messages to games.
+fn entity_key(id: EntId) -> u64 {
+    (id.generation as u64) << 32 | id.index as u64
+}
+
+/// Outputs with a number a game asks a map entity to fire.
+fn fire_output_values(
+    mut asks: MessageReader<crate::map::entities::FireEntityOutputValue>,
+    logic: Option<ResMut<Logic>>,
+) {
+    let Some(mut logic) = logic else {
+        asks.clear();
+        return;
+    };
+    for a in asks.read() {
+        let id = logic
+            .world
+            .ids()
+            .into_iter()
+            .find(|id| logic.world.get(*id).is_some_and(|e| e.map_index == Some(a.map_index)));
+        if let Some(id) = id {
+            let who = a.activator.map(super::world::Who::Player);
+            logic.world.fire_output(id, &a.output, who, super::Value::Float(a.value));
+        }
+    }
+}
+
+/// Outputs a game asks a logic entity to fire, by key.
+fn fire_keyed_outputs(mut asks: MessageReader<crate::map::entities::FireKeyedOutput>, logic: Option<ResMut<Logic>>) {
+    let Some(mut logic) = logic else {
+        asks.clear();
+        return;
+    };
+    for a in asks.read() {
+        if let Some(id) = logic.world.ids().into_iter().find(|id| entity_key(*id) == a.key) {
+            let who = a.activator.map(super::world::Who::Player).or(Some(super::world::Who::Ent(id)));
+            logic.world.fire_output(id, &a.output, who, super::Value::Void);
+        }
+    }
+}
+
+/// The AI sound list's new sounds (bullet impacts, blasts) into the logic.
+fn take_ai_sounds(mut sounds: MessageReader<crate::map::entities::AiSound>, logic: Option<ResMut<Logic>>) {
+    let Some(mut logic) = logic else {
+        sounds.clear();
+        return;
+    };
+    let scale = logic.scale;
+    for s in sounds.read() {
+        logic
+            .world
+            .add_ai_sound(engine_to_entity(s.at, scale), s.volume / scale, s.kind, s.life);
+    }
+}
+
+/// A broken respawnable prop's time has come: if its spot is free its body
+/// goes back there as at the map's start and the logic revives it, else
+/// the logic asks again in a second (hl2dm/gravity_gun.md 13).
+fn prop_respawn(world: &mut World, id: EntId) {
+    let Some(node) = prop_node(world, id) else { return };
+    let home = world.get::<PropHome>(node).map(|h| h.0);
+    let size = std::iter::once(node)
+        .chain(world.get::<Children>(node).map(|c| c.to_vec()).unwrap_or_default())
+        .find_map(|e| world.get::<ColliderAabb>(e).map(|a| a.size()))
+        .unwrap_or(Vec3::splat(0.3));
+    let blocked = home.is_some_and(|h| {
+        use avian3d::prelude::{SpatialQuery, SpatialQueryFilter};
+        use bevy::ecs::system::RunSystemOnce;
+        let shape = Collider::cuboid(size.x * 0.9, size.y * 0.9, size.z * 0.9);
+        world
+            .run_system_once(move |q: SpatialQuery| {
+                let filter = SpatialQueryFilter::from_excluded_entities([node]);
+                let mut hit = false;
+                q.shape_intersections_callback(&shape, h.translation, h.rotation, &filter, |_| {
+                    hit = true;
+                    false
+                });
+                hit
+            })
+            .unwrap_or(false)
+    });
+    if blocked {
+        if let Some(mut logic) = world.get_resource_mut::<Logic>() {
+            logic.world.prop_respawn_blocked(id);
+        }
+        return;
+    }
+    if let Some(home) = home
+        && let Ok(mut e) = world.get_entity_mut(node)
+        && e.contains::<RigidBody>()
+    {
+        if let Some(mut t) = e.get_mut::<Transform>() {
+            *t = home;
+        }
+        if let Some(mut p) = e.get_mut::<Position>() {
+            p.0 = home.translation;
+        }
+        if let Some(mut r) = e.get_mut::<Rotation>() {
+            *r = Rotation::from(home.rotation);
+        }
+        if let Some(mut v) = e.get_mut::<LinearVelocity>() {
+            v.0 = Vec3::ZERO;
+        }
+        if let Some(mut v) = e.get_mut::<AngularVelocity>() {
+            v.0 = Vec3::ZERO;
+        }
+    }
+    let asleep = world
+        .get_resource::<Logic>()
+        .and_then(|l| l.world.prop_states().into_iter().find(|s| s.id == id))
+        .is_some_and(|s| s.asleep);
+    if let Some(mut logic) = world.get_resource_mut::<Logic>() {
+        logic.world.prop_revive(id);
+    }
+    crate::map::prop_physics::reset(world, node, asleep);
+    if let Ok(mut e) = world.get_entity_mut(node) {
+        e.insert(Damageable);
     }
 }
 

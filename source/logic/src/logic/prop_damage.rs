@@ -7,6 +7,9 @@
 //! "events only" damage (outputs, never breaks). Breaking fires OnBreak,
 //! removes the prop and what is parented to it, and asks the host for the
 //! break sound, the pieces and an explosion (`Effect::PropBreak`).
+//! `prop_physics_respawnable` stays after breaking (hidden, `PropState::gone`)
+//! and asks the host to put its body back after `RespawnTime`
+//! (`Effect::PropRespawn`, `prop_revive`; specs/hl2dm/maps_entities.md 5).
 //! Client-only props (multiplayer physics mode 3) follow their own simple
 //! rule (section 3). Physics impacts reach props as crush damage the host
 //! computes with `impact_damage`, players' contacts included (spec 6, Q13).
@@ -25,7 +28,10 @@
 //! Wake/Sleep/EnableMotion/DisableMotion (`Effect::PropMotion`), OnAwakened,
 //! break on pressure, Break/health/visibility/collision inputs, Skin,
 //! SetBodyGroup, SetAnimation/SetDefaultAnimation (`PropState`),
-//! OnAnimationBegun (a SetAnimation, and a default animation starting again)
+//! `prop_physics_respawnable` (`Prop::respawn`: it keeps its name and
+//! outputs, comes back as at the map's start when its spot is free, retries
+//! each second; a break's `OnBreak` fires every time), a body's reported
+//! spin (`set_prop_spin`, for `sensors`), OnAnimationBegun (a SetAnimation, and a default animation starting again)
 //! and OnAnimationDone (`prop_animation_done`, reported by the client's
 //! animation: `map::PropAnimationDone`).
 //!
@@ -169,7 +175,18 @@ pub struct Prop {
     /// Where its body is now: world box (entity space), from the host;
     /// None: not known (its origin stands for it).
     pub bounds: Option<(Vec3, Vec3)>,
+    /// Angular velocity of its body (deg/s, entity space), from the host
+    /// (`point_angularvelocitysensor` reads it).
+    pub spin: Vec3,
+    /// `prop_physics_respawnable`: seconds after breaking until it comes
+    /// back (maps_entities.md 5; hl2dm/gravity_gun.md 13).
+    pub respawn: Option<f32>,
 }
+
+/// The respawnable prop's default `RespawnTime` (s).
+pub const DEFAULT_RESPAWN_TIME: f32 = 60.0;
+/// A respawn blocked by something solid is tried again this often (s).
+pub const RESPAWN_RETRY: f32 = 1.0;
 
 /// Whether a class is a prop the logic keeps (not a door): model props,
 /// and physics brushes (func_physbox, which take damage, move and break
@@ -301,6 +318,11 @@ impl Prop {
             pressure_pending: false,
             burning: false,
             bounds: None,
+            spin: Vec3::ZERO,
+            respawn: (class == "prop_physics_respawnable").then(|| {
+                let t = e.kv_f("RespawnTime");
+                if t > 0.0 { t } else { DEFAULT_RESPAWN_TIME }
+            }),
         }
     }
 }
@@ -332,6 +354,8 @@ pub struct PropState {
     pub default_sequence: String,
     /// Started asleep (and hasn't woken yet).
     pub asleep: bool,
+    /// Broken and waiting to respawn: its body is off and it is hidden.
+    pub gone: bool,
 }
 
 /// What exploding props do: magnitude (health points), radius (units),
@@ -823,12 +847,24 @@ pub(super) fn prop_break(w: &mut LogicWorld, id: EntId, breaker: Option<Who>, at
         sound: Some(p.break_sound.clone()).filter(|s| !s.is_empty() && !p.client),
         explode,
     });
+    // Its flame goes with it (General.StopBurning).
+    super::fire::remove_flames_on(w, Who::Ent(id));
+    if let Some(after) = p.respawn {
+        // A respawnable prop stays, name and outputs with it, and comes
+        // back after its time (`PropRespawn`).
+        w.think_in(id, after);
+        for c in doomed {
+            w.kill(c);
+            if let Some(e) = w.get_mut(c) {
+                e.targetname.clear();
+            }
+        }
+        return;
+    }
     if let Some(e) = w.get_mut(id) {
         e.targetname.clear();
     }
     w.kill(id);
-    // Its flame goes with it (General.StopBurning).
-    super::fire::remove_flames_on(w, Who::Ent(id));
     for c in doomed {
         w.kill(c);
         if let Some(e) = w.get_mut(c) {
@@ -934,6 +970,10 @@ pub(super) fn prop_input(w: &mut LogicWorld, id: EntId, input: &str, value: &Val
 /// A pressure break comes due.
 pub(super) fn think(w: &mut LogicWorld, id: EntId) {
     let Some(p) = prop(w, id) else { return };
+    if p.broken && p.respawn.is_some() {
+        w.effects.push(Effect::PropRespawn { id });
+        return;
+    }
     if p.pressure_pending {
         p.pressure_pending = false;
         let breaker = p.pressure_breaker;
@@ -1024,7 +1064,7 @@ impl LogicWorld {
                 Some(PropState {
                     id,
                     index: e.map_index,
-                    visible: p.visible,
+                    visible: p.visible && !p.broken,
                     solid: p.solid && !p.broken,
                     damageable: !p.broken,
                     skin: p.skin,
@@ -1032,6 +1072,7 @@ impl LogicWorld {
                     sequence: p.sequence.clone().map(|s| (s, p.sequence_serial)),
                     default_sequence: p.default_sequence.clone(),
                     asleep: p.asleep,
+                    gone: p.broken,
                 })
             })
             .collect()
@@ -1042,6 +1083,31 @@ impl LogicWorld {
         match self.get(id).map(|e| &e.class) {
             Some(Class::Prop(p)) => Some((p.health, p.max_health)),
             _ => None,
+        }
+    }
+
+    /// A broken respawnable prop comes back as at the map's start: its
+    /// health, motion flags and look afresh, name and outputs as they
+    /// were (the host put its body back first: `Effect::PropRespawn`).
+    pub fn prop_revive(&mut self, id: EntId) {
+        if !prop(self, id).is_some_and(|p| p.broken && p.respawn.is_some()) {
+            return;
+        }
+        let fresh = Prop::spawn(self, id);
+        if let Some(Class::Prop(p)) = self.get_mut(id).map(|e| &mut e.class) {
+            **p = fresh;
+        }
+    }
+
+    /// A blocked respawn is tried again in a second.
+    pub fn prop_respawn_blocked(&mut self, id: EntId) {
+        self.think_in(id, RESPAWN_RETRY);
+    }
+
+    /// A prop body's angular velocity now (deg/s, entity space).
+    pub fn set_prop_spin(&mut self, id: EntId, spin: Vec3) {
+        if let Some(p) = prop(self, id) {
+            p.spin = spin;
         }
     }
 
