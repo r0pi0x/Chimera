@@ -39,7 +39,7 @@ use bevy::prelude::*;
 
 use super::{
     data::{WeaponCatalog, WeaponData},
-    AltModes, Burst, Inventory, Magazine, ShellReload, Weapon, WeaponEvent, WeaponEventKind, WeaponState, Zoomed,
+    AltModes, Burst, Inventory, Magazine, ShellReload, Weapon, WeaponEvent, WeaponEventKind, WeaponState, ViewModelHidden, Zoomed,
     grenade::Throwable,
 };
 use crate::{
@@ -375,6 +375,7 @@ pub fn drive(
             Option<&mut ViewAnimator>,
             Option<&mut ViewModelPlay>,
             Option<&Zoomed>,
+            Has<ViewModelHidden>,
         ),
         Without<OwnViewAnim>,
     >,
@@ -393,7 +394,7 @@ pub fn drive(
     let (dt, now) = (time.delta_secs(), time.elapsed_secs_f64());
     let rules = rules.as_deref();
     let events: Vec<&WeaponEvent> = events.read().filter(|e| e.shown()).collect();
-    for (e, inventory, health, view, dice, zoomed) in &mut characters {
+    for (e, inventory, health, view, dice, zoomed, holstered) in &mut characters {
         let (Some(mut view), Some(mut dice)) = (view, dice) else {
             commands
                 .entity(e)
@@ -404,7 +405,7 @@ pub fn drive(
         let parts = inventory.active.filter(|_| alive).and_then(|w| weapons.get(w).ok());
         let weapon = parts.map(|(w, ..)| w.id);
         // Snipers hide the view model behind the scope.
-        view.hidden = zoomed.is_some_and(|z| z.scope);
+        view.hidden = holstered || zoomed.is_some_and(|z| z.scope);
         let state = parts.map(|(w, alt, burst, magazine, throwable, (ws, shells))| {
             let mode = alt.map_or(0, |m| m.current);
             ViewState {

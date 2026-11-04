@@ -209,7 +209,7 @@ pub fn config_mut(world: &mut World) -> Mut<'_, SourceMovementConfig> {
 /// `+speed` is pressed, with the suit, not fully ducked, eyes out of the
 /// water and at least 10 aux power (else `HL2Player.SprintNoPower`), and
 /// stops when `+speed` is let go, the aux power runs out or the player
-/// carries something by `+use` (`carry::Carrying`); walking needs
+/// carries something by `+use` (`carry::Carried`, predicted); walking needs
 /// `+walk`, no sprint and no duck. The sprint device drains 25/s while
 /// the tick started moving; switching it off costs 2.5. A dead player's
 /// suit is left as it was (its devices stay on until the respawn: suit.md
@@ -226,7 +226,7 @@ pub fn select_speed(
             &mut SourceSpeed,
             &Transform,
             &MovementSlot,
-            Has<super::carry::Carrying>,
+            Has<super::carry::Carried>,
         ),
         Without<crate::core::Dead>,
     >,

@@ -978,6 +978,43 @@ fn use_carries_with_allow_pickup_as_the_probe_measured() {
     assert!(v.truncate().length() < 5.0 && v.z <= 0.0, "from rest: {v}");
 }
 
+/// Section 8 step 4: a carried crate dropped while it touches something
+/// has its velocity zeroed, in the air it is only cut (285, 720).
+#[test]
+fn a_carried_crate_dropped_while_touching_stops_dead() {
+    let drop_at = |pitch: f32| {
+        let s = 40.4 * 0.0254;
+        let mut c = Crate::ahead(45.0).mass(20.0).at(Vec3::new(45.0, 0.0, 20.4 - EYE));
+        c.half = Vec3::splat(20.2);
+        c.inertia = Some(Vec3::splat(0.714 * 20.0 * s * s / 6.0));
+        let mut w = world(&[c]);
+        w.sim.app.world_mut().resource_mut::<hl2dm::game::carry::CarryRules>().allow_pickup = 1;
+        look(&mut w.sim, w.p, EAST, -40.0);
+        w.sim.ticks(5);
+        w.sim.intent(w.p).use_key = true;
+        w.sim.ticks(1);
+        w.sim.intent(w.p).use_key = false;
+        look(&mut w.sim, w.p, EAST, pitch);
+        w.sim.ticks(40);
+        let n = w.node(0);
+        // Swung round, as if the player had turned fast.
+        for k in 1..=8 {
+            look(&mut w.sim, w.p, EAST + 4.0 * k as f32, pitch);
+            w.sim.ticks(1);
+        }
+        w.sim.intent(w.p).use_key = true;
+        w.sim.ticks(1);
+        w.sim.intent(w.p).use_key = false;
+        assert!(w.sim.app.world().get::<Held>(n).is_none(), "dropped");
+        w.velocity(0)
+    };
+    // Pressed into the floor (looking far down), then well clear of it.
+    let touching = drop_at(-75.0);
+    assert!(touching.length() < 20.0, "touching the floor: {touching}");
+    let clear = drop_at(0.0);
+    assert!(clear.length() > 60.0, "in the air: {clear}");
+}
+
 /// Case 44: a held crate pushed into another player hurts him not.
 #[test]
 fn held_crates_never_hurt() {

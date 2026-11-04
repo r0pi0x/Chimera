@@ -1157,6 +1157,11 @@ pub struct Zoomed {
     pub sensitivity: Option<f32>,
 }
 
+/// On a character whose weapon is holstered by the game for a while (HL2:DM's
+/// `+use` carry): its view model isn't drawn.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct ViewModelHidden;
+
 /// A zoom of the character's own, not its weapon's (HL2's suit zoom):
 /// its view's FOV (horizontal degrees at 4:3) while the held weapon isn't
 /// zoomed (`apply_zoom`).
