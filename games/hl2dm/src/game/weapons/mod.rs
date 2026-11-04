@@ -15,7 +15,14 @@
 //! no penetration or falloff, the script's damage against everything,
 //! head x3, the cone spread (`SpreadShape::Cone`), the shot along view +
 //! punch, holding attack on an empty clip reloads, the shotgun's double
-//! shot (`AltShot`) and shells in as their insert starts. What data can't
+//! shot (`AltShot`, drawn by other clients with its 12 pellets) and shells
+//! in as their insert starts, a call's odd bullets as ±3 boxes
+//! (`Hitscan::odd_box`, weapons.md 5), the melee box hit refined to a line
+//! to twice its distance and its corners (`Swing::refine`, 11), and lag
+//! compensation's choice of whom to rewind (`[lag_compensation]`,
+//! `weapon::lagcomp::RewindChoice`, 12: attack held or a shot in the last
+//! 5 commands; within 1.5 x their max speed, `rewind_speeds`, x
+//! `sv_maxunlag`, or 45 degrees of the view). What data can't
 //! say is the hooks it names (`register_hooks`):
 //!
 //! - `hl2dm:inventory` (`inventory::Hl2Item`): the script's facts, and the
@@ -33,13 +40,12 @@
 //! (`inventory`).
 //!
 //! Known shortcuts: no weapon refuses to fire under water (Chimera's
-//! characters don't tell how deep they are yet; the movement is M3's); the
-//! odd pellets of a multi-pellet shot are lines, not the spec's 6-unit
-//! boxes; the melee box's re-trace to twice its hit and its corners isn't
-//! done (the box's own hit is used); another client draws a double shot's
-//! seven pellets, not twelve; lag compensation rewinds every player, not
-//! HL2:DM's choice by distance and view (weapons.md 12); the tracer
-//! counter, impacts and sounds are M10's.
+//! characters don't tell how deep they are yet; the movement is M3's); an
+//! odd pellet's box meets a turned hitbox as that hitbox grown 3 units on
+//! its own axes (exact for one lined up); another client draws a tick's
+//! catch-up rounds as lines (each comes as its own round); a melee swing's
+//! lines hit players' hitboxes as bullets do (weapons.md 11: their
+//! collision box); the tracer counter, impacts and sounds are M10's.
 
 pub mod alt_fire;
 pub mod crossbow;
@@ -285,6 +291,7 @@ pub fn register_hooks(app: &mut App) {
 /// the crossbow, the frag and the S.L.A.M. on Chimera's flyers.
 fn projectile_systems(app: &mut App) {
     use chimera_sim::weapon::{SelectWeapons, projectile::FlyerSet};
+    app.add_observer(slam::leaver_satchels);
     app.add_message::<slam::SlamAction>()
         .add_message::<slam::SatchelPop>()
         .add_message::<crate::map::GameSound>()
@@ -303,7 +310,7 @@ fn projectile_systems(app: &mut App) {
         .add_systems(
             FixedUpdate,
             (
-                (alt_fire::ball_touches, alt_fire::ball_ends).in_set(FlyerSet::Touch),
+                (alt_fire::ball_touches, alt_fire::ball_ends, alt_fire::grenade_stopped).in_set(FlyerSet::Touch),
                 (slam::actions, slam::satchels, slam::mines, frag::think, frag::player_taps, slam::spent)
                     .chain()
                     .in_set(FlyerSet::Touch),
@@ -370,15 +377,21 @@ impl Plugin for Hl2GunsPlugin {
             (
                 (recoil::decay_punch, pistol::before_frame, shotgun::before_frame).before(WeaponFrame),
                 (recoil::kick, pistol::after_frame, shotgun::after_frame, inventory::holster_reload).after(WeaponFrame),
+                recoil::nudge_view.after(recoil::kick),
             ),
         )
         .add_systems(
             FixedUpdate,
-            shove::shove_players
-                .after(SimSet::Weapons)
-                .before(crate::core::apply_damage)
-                .run_if(crate::core::authoritative),
+            (
+                shove::shove_players
+                    .after(SimSet::Weapons)
+                    .before(crate::core::apply_damage)
+                    .run_if(crate::core::authoritative),
+                rewind_speeds.before(SimSet::Weapons).run_if(crate::core::authoritative),
+            ),
         )
+        .add_systems(Update, recoil::apply_view_nudge)
+        .init_resource::<recoil::ViewNudge>()
         .predicted_net::<recoil::Hl2Punch>()
         .predicted_part::<pistol::Hl2Pistol>()
         .predicted_part::<shotgun::Hl2Shotgun>()
@@ -407,6 +420,7 @@ impl Plugin for Hl2WeaponsPlugin {
                 death_drop_held: true,
                 loose_life: Some(31.0),
                 weapon_stay: false,
+                death_push: Some(inventory::DEATH_PUSH),
             })
             .add_systems(
                 FixedUpdate,
@@ -417,7 +431,40 @@ impl Plugin for Hl2WeaponsPlugin {
                     inventory::disarm.run_if(crate::core::authoritative),
                 ),
             )
-            .add_systems(Predict::Weapons, inventory::switch_from_empty.after(WeaponFrame));
+            .add_systems(Predict::Weapons, inventory::switch_from_empty.after(WeaponFrame))
+            .add_systems(
+                Predict::Select,
+                inventory::mark_unselectable.before(chimera_sim::weapon::SelectWeapons),
+            )
+            .init_resource::<inventory::DefaultWeaponSetting>();
+        crate::console::resource_cvar::<inventory::DefaultWeaponSetting, String>(
+            app,
+            "hl2dm:cl_defaultweapon",
+            "The weapon in hand after spawning, by class name (sent to the server as userinfo; weapon_physcannon by default).",
+            |s| &mut s.0,
+        );
+        let mut console = app.world_mut().resource_mut::<crate::console::Console>();
+        console.archive("hl2dm:cl_defaultweapon");
+        console.userinfo("hl2dm:cl_defaultweapon");
+    }
+}
+
+/// Each HL2:DM character's current max speed (`SourceSpeed`, its speed
+/// selection's) for lag compensation's choice (weapons.md 12,
+/// `weapon::lagcomp::RewindSpeed`); the server's.
+fn rewind_speeds(
+    q: Query<(Entity, &source_engine::source_movement::SourceSpeed, Option<&chimera_sim::weapon::lagcomp::RewindSpeed>)>,
+    mut commands: Commands,
+) {
+    use chimera_sim::weapon::lagcomp::RewindSpeed;
+    for (e, speed, have) in &q {
+        let want = (speed.0 > 0.0).then(|| RewindSpeed(speed.0 * 0.0254));
+        if want != have.copied() {
+            match want {
+                Some(s) => commands.entity(e).insert(s),
+                None => commands.entity(e).remove::<RewindSpeed>(),
+            };
+        }
     }
 }
 

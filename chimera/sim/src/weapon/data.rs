@@ -146,6 +146,10 @@ pub struct WeaponData {
     pub penetration: Option<PenetrationData>,
     #[serde(default)]
     pub melee: Option<MeleeData>,
+    /// Whom its shots and swings rewind (`lagcomp::RewindChoice`); None:
+    /// every other character.
+    #[serde(default)]
+    pub lag_compensation: Option<LagChoiceData>,
     #[serde(default)]
     pub alt: Option<AltData>,
     /// None: no `WeaponSounds` part.
@@ -288,6 +292,9 @@ pub struct HitscanData {
     /// `Hitscan::redrawn_through_characters`.
     #[serde(default)]
     pub redrawn_through_characters: bool,
+    /// `Hitscan::odd_box`: the half size (a length).
+    #[serde(default)]
+    pub odd_box: Option<f32>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
@@ -338,6 +345,15 @@ pub struct PenetrationData {
     pub max_distance: Option<f32>,
 }
 
+/// `lagcomp::RewindChoice`.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct LagChoiceData {
+    pub fired_within: u32,
+    pub reach: f32,
+    pub view_cos: f32,
+}
+
 /// `Melee`.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -359,6 +375,9 @@ pub struct SwingData {
     #[serde(default)]
     pub hull_reach: Option<f32>,
     pub facing_cos: f32,
+    /// `Swing::refine`.
+    #[serde(default)]
+    pub refine: bool,
     pub damage: f32,
     /// (window s, damage).
     #[serde(default)]
@@ -951,6 +970,13 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
     if d.undroppable {
         e.insert(Undroppable);
     }
+    if let Some(c) = d.lag_compensation {
+        e.insert(super::lagcomp::RewindChoice {
+            fired_within: c.fired_within,
+            reach: c.reach,
+            view_cos: c.view_cos,
+        });
+    }
     if d.kept_on_drop {
         e.insert(super::drop::KeptOnDrop);
     }
@@ -1010,6 +1036,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
             punch_scale: h.punch_scale,
             tracer_every: h.tracer_every,
             redrawn_through_characters: h.redrawn_through_characters,
+            odd_box: h.odd_box.map(|b| b * len),
         });
     }
     if let Some(x) = &d.damage {
@@ -1045,6 +1072,7 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
             hull: s.hull.map(|h| h * len),
             hull_reach: s.hull_reach.unwrap_or(s.range) * len,
             facing_cos: s.facing_cos,
+            refine: s.refine,
             damage: s.damage * dmg,
             follow_up: s.follow_up.map(|(t, x)| (t, x * dmg)),
             backstab: s.backstab.map(|x| x * dmg),

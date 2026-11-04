@@ -47,7 +47,9 @@
 //! with a `BulletHit` for each bullet hit on something with health (games'
 //! reactions: CS:S's slowdown and flinch); `ViewPunch` (pitch, yaw, roll) on
 //! the view and, scaled, on the shots; `HolsterLocked` (a weapon that can't
-//! be put away now); `Inflicted` (where a projectile's or blast's damage
+//! be put away now), `Unselectable` (one that can't be switched to);
+//! `ArmourShare` (a hit's damage before the armour took its share);
+//! `Inflicted` (where a projectile's or blast's damage
 //! came from); launched projectiles (`projectile`, lift C1: flyers from a
 //! weapon's rounds, `chimera:projectile`, or a game's `LaunchRequest`).
 //!
@@ -173,6 +175,12 @@ pub struct SlotLastInv;
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HolsterLocked;
 
+/// On a weapon that can't be switched to now (HL2:DM's with none of its
+/// ammo, specs/hl2dm/weapons.md 1): selection refuses every switch to it
+/// (slot keys, `lastinv`, `Inventory::wanted`). Games add and remove it.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Unselectable;
+
 /// A game that turns slot keys and `lastinv` (`Intent::select`,
 /// `Intent::last_weapon`) into switches by its own rules, with a system
 /// before `SelectWeapons` setting `Inventory::wanted` (Combat Arms' class
@@ -190,6 +198,7 @@ impl Plugin for WeaponPlugin {
             .init_resource::<drop::DebugPickup>()
             .init_resource::<drop::DebugPickupSeen>()
             .add_message::<drop::UsedPickup>()
+            .add_message::<ArmourShare>()
             .add_message::<drop::PickedUp>()
             .register_type::<economy::Money>()
             .register_type::<economy::DefuseKit>()
@@ -745,6 +754,9 @@ pub struct Inventory {
     prev_last: bool,
     /// Last tick's use key (`drop::use_pick_up`).
     prev_use: bool,
+    /// The command number of the last tick it shot or swung
+    /// (`lagcomp::RewindChoice`: "fired lately").
+    pub last_shot: Option<u32>,
 }
 
 impl Inventory {
@@ -936,6 +948,11 @@ pub struct Hitscan {
     /// Other clients trace this weapon's rounds again through every
     /// character (HL2:DM: the impact lands on what is behind the victim).
     pub redrawn_through_characters: bool,
+    /// When one firing call fires more than one bullet (pellets, or a
+    /// tick's catch-up rounds), every odd-numbered one (1, 3, 5...) is a
+    /// box of this half size instead of a line, m (HL2:DM's 3 units,
+    /// specs/hl2dm/weapons.md 5); None: all lines.
+    pub odd_box: Option<f32>,
 }
 
 /// Delivery add-on: bullets that pass through things (Source's bullet
@@ -1082,6 +1099,18 @@ pub struct BulletHit {
     pub helmet: bool,
 }
 
+/// A hit whose damage armour took a share of (`HitArmor`, written beside
+/// its `Damage`): the damage before (`raw`) and the health's share
+/// (`health`, the `Damage`'s amount), normalized like `Health`. For
+/// rules that read the damage arriving at the armour (HL2:DM's shove,
+/// specs/hl2dm/projectiles.md 3).
+#[derive(Message, Clone, Copy, Debug, PartialEq)]
+pub struct ArmourShare {
+    pub target: Entity,
+    pub raw: f32,
+    pub health: f32,
+}
+
 /// Secondary attack: step through the weapon's modes (0 = normal; scope
 /// levels, silencer on, burst). Other parts read `current`: `Zoom`,
 /// `Burst`, `WeaponSounds::fire_alt`, games' accuracy. Holding the button
@@ -1192,6 +1221,10 @@ pub struct Swing {
     pub hull_reach: f32,
     /// The box only hits targets within this cosine of the view.
     pub facing_cos: f32,
+    /// A box hit is refined (the SDK's, specs/hl2dm/weapons.md 11): a
+    /// line to twice its distance, else lines to the 8 corners of the box
+    /// there, the nearest hit; all missing, the box's own hit.
+    pub refine: bool,
     pub damage: f32,
     /// (window, damage): this damage instead when the previous swing of
     /// this kind was less than `window` seconds ago (CS:S slash: 15 within
@@ -1354,6 +1387,7 @@ pub struct ArmorHit {
 pub struct HitArmor<'w, 's> {
     armor: Query<'w, 's, (&'static mut Armor, Option<&'static ArmorPieces>)>,
     rules: crate::core::DamageRules<'w, 's>,
+    shares: Option<ResMut<'w, Messages<ArmourShare>>>,
 }
 
 impl HitArmor<'_, '_> {
@@ -1404,6 +1438,13 @@ impl HitArmor<'_, '_> {
             depletion,
         );
         if a.covered {
+            if let Some(m) = self.shares.as_mut() {
+                m.write(ArmourShare {
+                    target: damage.target,
+                    raw,
+                    health: a.to_health,
+                });
+            }
             damage.amount = a.to_health;
             hit.covered = true;
             if lands {
@@ -1699,6 +1740,7 @@ pub(crate) fn select_weapons(
     first: Res<FirstTimePredicted>,
     own: Option<Res<OwnSelection>>,
     locked: Query<(), With<HolsterLocked>>,
+    unselectable: Query<(), With<Unselectable>>,
 ) {
     let now = clock.now;
     let keys = own.is_none();
@@ -1746,7 +1788,7 @@ pub(crate) fn select_weapons(
         let Some(want) = inv.wanted.take() else { continue };
         // Selecting what you hold changes nothing (spec 3.6); a weapon
         // that can't be put away now stays (`HolsterLocked`).
-        if inv.active == Some(want) || inv.active.is_some_and(|a| locked.contains(a)) {
+        if inv.active == Some(want) || inv.active.is_some_and(|a| locked.contains(a)) || unselectable.contains(want) {
             continue;
         }
         // Holster: cancels a reload, a burst and the zoom; CS:S models have
@@ -1830,6 +1872,7 @@ struct WeaponParts {
     burst: Option<&'static Burst>,
     shells: Option<&'static ShellReload>,
     alt_shot: Option<&'static AltShot>,
+    rewind_choice: Option<&'static lagcomp::RewindChoice>,
 }
 
 impl WeaponPartsItem<'_, '_> {
@@ -1891,6 +1934,9 @@ impl WeaponPartsItem<'_, '_> {
         for i in 0..shots {
             if let Some(scan) = self.hitscan {
                 ctx.seed = ctx.seed.wrapping_add(i);
+                // One call's rounds: the odd ones may be boxes
+                // (`Hitscan::odd_box`).
+                ctx.round = (i, shots);
                 let fired = WeaponEventKind::Fired {
                     id: self.weapon.id,
                     origin: ctx.eye,
@@ -1917,6 +1963,7 @@ impl WeaponPartsItem<'_, '_> {
                 ctx.w.sound(owner_sound(s, ctx.owner, ctx.eye, CHAN_WEAPON));
             }
         }
+        ctx.round = (0, 1);
         self.state.burst += shots;
         if shots > 0
             && let Some(s) = self.sounds.filter(|s| !s.shot.is_empty())
@@ -1953,7 +2000,7 @@ fn weapon_frame(
     mut world: deliver::World,
     clock: Res<SimClock>,
     (histories, lag, mut lag_stats): (
-        Query<(Entity, &lagcomp::HitHistory, &Health)>,
+        Query<(Entity, &lagcomp::HitHistory, &Health, Option<&lagcomp::RewindSpeed>)>,
         Res<lagcomp::LagCompSettings>,
         ResMut<lagcomp::LagCompStats>,
     ),
@@ -2017,8 +2064,15 @@ fn weapon_frame(
         let may_trace = (intent.fire && w.state.next_primary <= due)
             || (intent.secondary && w.melee.is_some() && w.state.next_secondary <= due)
             || (w.state.burst_left > 0 && due >= w.state.next_burst_round);
+        // A weapon's own choice of whom to rewind (HL2:DM's,
+        // `lagcomp::RewindChoice`): only for attack held or a shot lately,
+        // then by distance and view; otherwise every other character.
+        let choice = w.rewind_choice.copied();
+        let wanted = choice.is_none_or(|c| c.wanted(intent.fire, intent.command, inv.last_shot));
         let rewound = match view.and_then(|v| v.0) {
-            Some(view_tick) if lag.unlag != 0 && may_trace && world.authoritative() => {
+            Some(view_tick) if lag.unlag != 0 && may_trace && wanted && world.authoritative() => {
+                let origin = transform.translation;
+                let forward = deliver::aim_of(intent.yaw, intent.pitch) * Vec3::NEG_Z;
                 lagcomp::rewind(
                     owner,
                     view_tick,
@@ -2027,8 +2081,11 @@ fn weapon_frame(
                     &lag,
                     histories
                         .iter()
-                        .filter(|(_, _, h)| h.current > 0.0)
-                        .map(|(e, history, _)| (e, history)),
+                        .filter(|(_, _, h, _)| h.current > 0.0)
+                        .filter(|(_, history, _, speed)| {
+                            choice.is_none_or(|c| c.picks(origin, forward, history, speed.copied(), lag.maxunlag))
+                        })
+                        .map(|(e, history, ..)| (e, history)),
                     &mut lag_stats,
                 )
             }
@@ -2047,6 +2104,8 @@ fn weapon_frame(
             rewound,
             through_characters: false,
             show_hits: true,
+            round: (0, 1),
+            traced: false,
             w: &mut world,
         };
 
@@ -2414,6 +2473,10 @@ fn weapon_frame(
             {
                 try_reload(&mut w, &mut inv, now, owner, ctx.w);
             }
+        }
+        // The command of the last shot or swing (`lagcomp::RewindChoice`).
+        if ctx.traced {
+            inv.last_shot = Some(intent.command);
         }
     }
 }

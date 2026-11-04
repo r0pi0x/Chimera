@@ -36,8 +36,15 @@
 //!   body's velocity, a full fuse; one used if any) instead of the frag;
 //!   one released but not yet out is lost.
 //!
-//! Known shortcuts: the grenade's spin is about world axes from the
-//! thrower's view (the spec's local axes); the red glow and trail are
+//! - **Spin** (9.2, `release_spin`): about the grenade's own axes, the
+//!   throw's (600, U{-1200..1200}, 0) and the lob's (200, U{-600..600}, 0)
+//!   degrees per second on an unturned grenade (the world's axes), the
+//!   roll's (0, 0, 720) on one turned (0, body yaw, -90)
+//!   (`roll_orientation`): a forward roll about the thrower's left.
+//!
+//! Known shortcuts: the throw and the lob are made unturned (the spec
+//! gives only the roll's orientation); the martyrdom grenade's spin (600
+//! about the right) is ours (the spec names none); the red glow and trail are
 //! M10's; the gravity gun's catch (1.5 s fuse) is M6's; the roll's
 //! projection onto a slope uses the floor under the box's centre.
 
@@ -306,14 +313,14 @@ pub fn before_frame(
                         };
                         let start = clear_start(&spatial, &filter, from, start);
                         let mut rng = shared_random(intent.command, "hl2dm:frag", 0);
-                        let spin = match frag.kind {
-                            THROW => right * 600.0 + Vec3::Y * (rng.next() * 2400.0 - 1200.0).round(),
-                            LOB => right * 200.0 + Vec3::Y * (rng.next() * 1200.0 - 600.0).round(),
-                            _ => right * 720.0,
+                        let (rotation, spin) = match frag.kind {
+                            THROW => release_spin(Quat::IDENTITY, 600.0, (rng.next() * 2400.0 - 1200.0).round(), 0.0),
+                            LOB => release_spin(Quat::IDENTITY, 200.0, (rng.next() * 1200.0 - 600.0).round(), 0.0),
+                            _ => release_spin(roll_orientation(intent.yaw), 0.0, 0.0, 720.0),
                         };
                         let thrower = Some(owner);
                         commands.queue(move |world: &mut World| {
-                            spawn_grenade(world, &p, thrower, start, v, spin * std::f32::consts::PI / 180.0);
+                            spawn_turned(world, &p, thrower, start, rotation, v, spin);
                         });
                     }
                     continue;
@@ -355,6 +362,24 @@ fn clear_start(spatial: &SpatialQuery, filter: &SpatialQueryFilter, from: Vec3, 
     }
 }
 
+/// The roll's grenade's orientation (9.2: Source angles (0, body yaw,
+/// -90)) for a thrower looking along `yaw` (Chimera's: forward is -Z
+/// turned by it): its nose (the model's +X) along the facing, its own z
+/// (up) to the thrower's left.
+pub fn roll_orientation(yaw: f32) -> Quat {
+    Quat::from_rotation_y(yaw + std::f32::consts::FRAC_PI_2) * Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)
+}
+
+/// A grenade's orientation `rotation` and its spin (rad/s, world) of
+/// (`x`, `y`, `z`) degrees per second about its own Source axes (9.2;
+/// Source's x, y, z are Chimera's x, -z, y). The throw and the lob are
+/// made unturned (the table gives the roll alone an orientation): their
+/// local axes are the world's.
+pub fn release_spin(rotation: Quat, x: f32, y: f32, z: f32) -> (Quat, Vec3) {
+    let local = Vec3::new(x, z, -y) * std::f32::consts::PI / 180.0;
+    (rotation, rotation * local)
+}
+
 /// A live grenade of `p` at `start` with `velocity` (m/s) and `spin`
 /// (rad/s), thrown by `thrower`: the physics body, its fuse, its first
 /// blip.
@@ -366,12 +391,25 @@ pub fn spawn_grenade(
     velocity: Vec3,
     spin: Vec3,
 ) -> Entity {
+    spawn_turned(world, p, thrower, start, Quat::IDENTITY, velocity, spin)
+}
+
+/// `spawn_grenade` turned by `rotation`.
+pub fn spawn_turned(
+    world: &mut World,
+    p: &FragParams,
+    thrower: Option<Entity>,
+    start: Vec3,
+    rotation: Quat,
+    velocity: Vec3,
+    spin: Vec3,
+) -> Entity {
     let clock = *world.resource::<SimClock>();
     let half = p.half * U;
     let e = world
         .spawn((
             Name::new("npc_grenade_frag"),
-            Transform::from_translation(start),
+            Transform::from_translation(start).with_rotation(rotation),
             RigidBody::Dynamic,
             Collider::cuboid(half * 2.0, half * 2.0, half * 2.0),
             CollisionLayers::new(ITEM_LAYER, LayerMask::ALL),
@@ -570,6 +608,27 @@ pub fn drop_live(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 9.2: the spins are about the grenade's own axes. The throw's 600
+    /// about Source's x (Chimera's x), its random part about Source's y
+    /// (Chimera's -z); the roll turned (0, body yaw, -90), spinning 720
+    /// about its own z: the thrower's left, a forward roll.
+    #[test]
+    fn spins_about_the_grenades_own_axes() {
+        let d = std::f32::consts::PI / 180.0;
+        let (r, w) = release_spin(Quat::IDENTITY, 600.0, 300.0, 0.0);
+        assert_eq!(r, Quat::IDENTITY);
+        assert!((w - Vec3::new(600.0, 0.0, -300.0) * d).length() < 1e-4, "{w}");
+        for yaw in [0.0f32, 1.0, -2.5] {
+            let (r, w) = release_spin(roll_orientation(yaw), 0.0, 0.0, 720.0);
+            let forward = Quat::from_rotation_y(yaw) * Vec3::NEG_Z;
+            let left = Quat::from_rotation_y(yaw) * Vec3::NEG_X;
+            assert!((r * Vec3::X - forward).length() < 1e-5, "nose along the facing");
+            assert!((w - left * 720.0 * d).length() < 1e-3, "{w}");
+            // Rolling forward: the bottom moves back, the top forward.
+            assert!(w.cross(Vec3::Y).dot(forward) > 0.0);
+        }
+    }
 
     pub(crate) fn params() -> FragParams {
         launch::hook_params(super::super::FRAG, super::super::FRAG_HOOK)

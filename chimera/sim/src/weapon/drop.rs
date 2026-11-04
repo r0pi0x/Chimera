@@ -20,7 +20,8 @@
 //! `PickupRules` holds what a game changes of these (HL2:DM: a second's
 //! touch delay, several weapons to a slot, an owner's touch taking the
 //! weapon's rounds and the weapon, the dead dropping what they hold,
-//! dropped weapons gone after 31 s, `pick_up` removing them; `weapon_stay`:
+//! dropped weapons gone after 31 s, `pick_up` removing them, the dead's
+//! weapon thrown by the killing hit's push, `DeathPush`; `weapon_stay`:
 //! nobody takes a kind they carry, HL2:DM's `mp_weaponstay`). A placed
 //! weapon taken starts its copy's wait (`respawn::weapon_taken`).
 //!
@@ -145,6 +146,24 @@ pub struct PickupRules {
     /// Nobody takes a weapon of a kind they carry, not even its rounds
     /// (HL2:DM's `mp_weaponstay`: the placed weapon seems to stay).
     pub weapon_stay: bool,
+    /// How the dead's weapon leaves them (`DeathPush`); None: where they
+    /// lie, at their velocity.
+    pub death_push: Option<DeathPush>,
+}
+
+/// A dead character's dropped weapon thrown by the killing hit's push
+/// (HL2:DM, specs/hl2dm/weapons.md 9): from 12 units under the eye facing
+/// its yaw, at the hit's force (`core::Damage::force`) over `mass`, at
+/// most `cap`, spinning at `spin` (world axes); its own velocity isn't
+/// added.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DeathPush {
+    /// kg.
+    pub mass: f32,
+    /// m/s.
+    pub cap: f32,
+    /// rad/s.
+    pub spin: Vec3,
 }
 
 impl Default for PickupRules {
@@ -156,6 +175,7 @@ impl Default for PickupRules {
             death_drop_held: false,
             loose_life: None,
             weapon_stay: false,
+            death_push: None,
         }
     }
 }
@@ -221,6 +241,12 @@ pub(super) fn tick_time(world: &World) -> f64 {
 
 /// Drop one weapon `owner` carries (thrown along the view, or let fall).
 pub fn drop_this(world: &mut World, owner: Entity, weapon: Entity, thrown: bool) -> Option<Entity> {
+    drop_pushed(world, owner, weapon, thrown, None)
+}
+
+/// `drop_this`, a dead owner's weapon pushed by the killing hit's `force`
+/// when the rules say so (`PickupRules::death_push`).
+fn drop_pushed(world: &mut World, owner: Entity, weapon: Entity, thrown: bool, force: Option<Vec3>) -> Option<Entity> {
     // The tick's clock, which `pick_up` reads: `drop` runs from the
     // console (a frame, where `Time` is the virtual clock).
     let now = tick_time(world);
@@ -261,15 +287,20 @@ pub fn drop_this(world: &mut World, owner: Entity, weapon: Entity, thrown: bool)
     let eye = world
         .get::<crate::core::MovementState>(owner)
         .map_or(Vec3::Y * 0.5, |s| s.eye_offset);
+    let yaw = Quat::from_rotation_y(look.to_euler(EulerRot::YXZ).0);
+    let push = force.zip(world.get_resource::<PickupRules>().and_then(|r| r.death_push));
+    let mut spin = yaw * Vec3::new(0.0, 2.0, 4.0);
     let (start, velocity) = if thrown {
         (
             at + eye - Vec3::Y * DROP_UNDER_EYE + forward.with_y(0.0).normalize_or_zero() * 0.3,
             carried + forward.with_y(0.0).normalize_or_zero() * THROW_FORWARD + Vec3::Y * THROW_UP,
         )
+    } else if let Some((force, p)) = push {
+        spin = p.spin;
+        (at + eye - Vec3::Y * DROP_UNDER_EYE, (force / p.mass.max(1e-3)).clamp_length_max(p.cap))
     } else {
         (at, carried)
     };
-    let yaw = Quat::from_rotation_y(look.to_euler(EulerRot::YXZ).0);
     let loose = world
         .spawn((
             Name::new(format!("Loose {id}")),
@@ -281,7 +312,7 @@ pub fn drop_this(world: &mut World, owner: Entity, weapon: Entity, thrown: bool)
             },
             Transform::from_translation(start).with_rotation(yaw),
             LinearVelocity(velocity),
-            AngularVelocity(yaw * Vec3::new(0.0, 2.0, 4.0)),
+            AngularVelocity(spin),
         ))
         .id();
     // Too many lying around: the oldest go.
@@ -329,10 +360,10 @@ pub fn drop_on_death(mut died: MessageReader<Died>, drops: Option<Res<DeathDrops
         return;
     }
     for d in died.read() {
-        let owner = d.entity;
+        let (owner, force) = (d.entity, d.damage.force);
         commands.queue(move |w: &mut World| {
             for weapon in death_drops(w, owner) {
-                drop_this(w, owner, weapon, false);
+                drop_pushed(w, owner, weapon, false, Some(force));
             }
         });
     }

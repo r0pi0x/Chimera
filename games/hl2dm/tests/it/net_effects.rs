@@ -5,7 +5,8 @@
 //! round every 2nd bullet; every shotgun shot, 7 pellets each), hears the
 //! surface's impact sound and none of the near-miss sounds, and traces
 //! the round again through every player (the impact lands on the wall
-//! behind the one hit).
+//! behind the one hit); a double shot is drawn with its 12 pellets.
+//! Lag compensation picks whom to rewind as HL2:DM does (weapons.md 12).
 
 use std::{sync::Arc, time::Duration};
 
@@ -123,6 +124,11 @@ struct Seen {
 /// Client 0 presses fire `presses` times (each held `hold` steps, then let
 /// go for `gap`), client 1 watching.
 fn burst(sim: &mut NetSim, presses: usize, hold: usize, gap: usize) -> Seen {
+    burst_with(sim, presses, hold, gap, false)
+}
+
+/// `burst` with attack2 instead (`secondary`).
+fn burst_with(sim: &mut NetSim, presses: usize, hold: usize, gap: usize, secondary: bool) -> Seen {
     let shooter = sim.character_of(0).unwrap();
     let mut fired = Log::<WeaponEvent>::new(sim, 0);
     let mut received = Log::<FireBullets>::new(sim, 2);
@@ -131,7 +137,11 @@ fn burst(sim: &mut NetSim, presses: usize, hold: usize, gap: usize) -> Seen {
     let mut events = Log::<WeaponEvent>::new(sim, 2);
     for _ in 0..presses {
         for k in 0..hold + gap {
-            intent(sim, 0).fire = k < hold;
+            if secondary {
+                intent(sim, 0).secondary = k < hold;
+            } else {
+                intent(sim, 0).fire = k < hold;
+            }
             sim.step();
             fired.poll(sim);
             received.poll(sim);
@@ -247,4 +257,55 @@ fn a_remote_round_is_traced_again_through_players() {
         assert!(to.z < 3.0, "the round ends behind the watcher (z 4): {to}");
     }
     assert!(seen.sounds.iter().any(|s| s.entry == "Default.BulletImpact"), "the wall sounds");
+}
+
+/// Weapons.md 7.4 and effects_sounds.md 1: the watcher draws a double
+/// shot's 12 pellets (each with its tracer), not a single shot's 7.
+#[test]
+fn a_remote_double_shot_draws_twelve_pellets() {
+    let mut sim = joined();
+    arm(&mut sim, weapons::SHOTGUN);
+    place(&mut sim, 0, Vec3::new(0.0, 1.0, 12.0), 0.0);
+    place(&mut sim, 1, Vec3::new(6.0, 1.0, 12.0), 0.0);
+    sim.ticks(40);
+    let seen = burst_with(&mut sim, 2, 3, 90, true);
+    assert!(seen.rounds >= 1, "the shotgun fired: {}", seen.rounds);
+    assert!(seen.received.iter().all(|f| f.flags & shot_flags::TRACERS != 0), "every double shot flagged");
+    assert_eq!(seen.tracers.len(), 12 * seen.received.len(), "12 tracers a double shot");
+}
+
+/// Weapons.md 12: a shot rewinds only the players within 1.5 x their max
+/// speed x `sv_maxunlag` of the shooter or within 45 degrees of its view;
+/// a shot with attack up (attack2's double shot, no shot in the last 5
+/// commands) rewinds nobody.
+#[test]
+fn lag_compensation_picks_whom_to_rewind_by_distance_and_view() {
+    use chimera_sim::weapon::lagcomp::LagCompStats;
+    let mut sim = joined();
+    arm(&mut sim, weapons::PISTOL);
+    let moved = |sim: &mut NetSim, at: Vec3| {
+        place(sim, 0, Vec3::new(0.0, 1.0, 12.0), 0.0);
+        place(sim, 1, at, 0.0);
+        sim.ticks(60);
+        let before = sim.server.app.world().resource::<LagCompStats>().rewinds;
+        burst(sim, 1, 2, 40);
+        let stats = sim.server.app.world().resource::<LagCompStats>();
+        assert!(stats.rewinds > before, "a rewind for the shot at {at}");
+        stats.last.as_ref().unwrap().moved
+    };
+    // 15 m behind (out of view, farther than 1.5 x 190 units/s x 1 s).
+    assert_eq!(moved(&mut sim, Vec3::new(0.0, 1.0, 27.0)), 0);
+    // 5 m behind: near enough.
+    assert_eq!(moved(&mut sim, Vec3::new(0.0, 1.0, 17.0)), 1);
+    // 15 m ahead: in view.
+    assert_eq!(moved(&mut sim, Vec3::new(2.0, 1.0, -3.0)), 1);
+    // Attack2's double shot alone: no rewind at all.
+    arm(&mut sim, weapons::SHOTGUN);
+    place(&mut sim, 0, Vec3::new(0.0, 1.0, 12.0), 0.0);
+    place(&mut sim, 1, Vec3::new(2.0, 1.0, -3.0), 0.0);
+    sim.ticks(60);
+    let before = sim.server.app.world().resource::<LagCompStats>().rewinds;
+    let seen = burst_with(&mut sim, 1, 3, 40, true);
+    assert!(seen.rounds >= 1, "the double shot fired");
+    assert_eq!(sim.server.app.world().resource::<LagCompStats>().rewinds, before, "not rewound");
 }

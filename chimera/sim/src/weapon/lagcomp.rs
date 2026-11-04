@@ -20,12 +20,23 @@
 //!   (`deliver::Shot::rewound`). Nothing is moved in the world, so nothing
 //!   needs restoring. `sv_unlag 0` turns it off; `sv_showlagcompensation
 //!   1` logs every rewind.
+//! - **Whom** (`RewindChoice`, a weapon's, from its data's
+//!   `[lag_compensation]`): CS:S's rule (spec 4.6) moves every other
+//!   living character. HL2:DM's weapons (specs/hl2dm/weapons.md 12) rewind
+//!   only when the command holds attack or the shooter shot or swung
+//!   within the last `fired_within` commands (`Inventory::last_shot`), and
+//!   then only those whose origin (their newest kept tick) is within
+//!   `reach` x their current max speed (`RewindSpeed`, which their game
+//!   writes; without one: always) x `sv_maxunlag` of the shooter's, or
+//!   lies within `view_cos` of the command's view from the shooter's
+//!   origin.
 //!
 //! Covers (spec 4.6): on a network server each living character's hit volume
 //! per tick (`HitHistory`: origin, look yaw, box, hitboxes; 1 s), and a remote
 //! player's shots traced against others where it saw them (`ViewTick` from its
 //! command, `rewind`: between two kept ticks, at most `sv_maxunlag`, not across
-//! a 64-unit teleport; `sv_unlag`, `sv_showlagcompensation`, `LagCompStats`).
+//! a 64-unit teleport; `sv_unlag`, `sv_showlagcompensation`, `LagCompStats`);
+//! a weapon's `RewindChoice` (HL2:DM's whom, weapons.md 12).
 
 use std::{collections::VecDeque, sync::Arc};
 
@@ -91,6 +102,39 @@ impl RewindInfo {
         (self.tick as f64 - self.target_tick) * step
     }
 }
+
+/// A weapon's choice of whom its shots rewind (module doc, "Whom").
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct RewindChoice {
+    /// Commands since the last shot that still count as firing.
+    pub fired_within: u32,
+    /// Times the target's max speed and `sv_maxunlag`: the distance within
+    /// which it is moved.
+    pub reach: f32,
+    /// Or within this cosine of the view.
+    pub view_cos: f32,
+}
+
+impl RewindChoice {
+    /// Whether a command rewinds at all: attack held, or the last shot
+    /// (`last_shot`, a command number) within `fired_within` commands.
+    pub fn wanted(&self, fire: bool, command: u32, last_shot: Option<u32>) -> bool {
+        fire || last_shot.is_some_and(|c| command.wrapping_sub(c) <= self.fired_within)
+    }
+
+    /// Whether the character of `history` is moved for a shooter at
+    /// `origin` looking along `forward`.
+    pub fn picks(&self, origin: Vec3, forward: Vec3, history: &HitHistory, speed: Option<RewindSpeed>, maxunlag: f32) -> bool {
+        let Some(at) = history.frames.back().map(|f| f.origin) else { return false };
+        let near = speed.is_none_or(|s| at.distance(origin) <= self.reach * s.0 * maxunlag.max(0.0));
+        near || (at - origin).normalize_or_zero().dot(forward) >= self.view_cos
+    }
+}
+
+/// A character's current max speed for `RewindChoice` (m/s; its movement's
+/// game writes it).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct RewindSpeed(pub f32);
 
 /// On a character whose shots are lag compensated: the server tick its
 /// client drew others at for this tick's command (the network layer sets
@@ -339,6 +383,34 @@ mod tests {
             max: Vec3::splat(0.4),
             hitboxes: None,
         }
+    }
+
+    /// HL2:DM's choice (weapons.md 12): attack held or a shot within 5
+    /// commands; near by speed, or within 45 degrees of the view.
+    #[test]
+    fn hl2dm_chooses_whom_by_distance_and_view() {
+        let c = RewindChoice {
+            fired_within: 5,
+            reach: 1.5,
+            view_cos: 0.707107,
+        };
+        assert!(c.wanted(true, 10, None));
+        assert!(!c.wanted(false, 10, None));
+        assert!(c.wanted(false, 10, Some(5)));
+        assert!(!c.wanted(false, 10, Some(4)));
+        let at = |x: f32, z: f32| HitHistory {
+            frames: [HitFrame { origin: Vec3::new(x, 0.0, z), ..frame(1, 0.0) }].into_iter().collect(),
+        };
+        let fwd = Vec3::NEG_Z;
+        let speed = Some(RewindSpeed(4.826));
+        // 1.5 x 4.826 x 1 = 7.24 m: near enough, behind the shooter.
+        assert!(c.picks(Vec3::ZERO, fwd, &at(0.0, 7.0), speed, 1.0));
+        // Farther, behind: not moved; ahead within 45 degrees: moved.
+        assert!(!c.picks(Vec3::ZERO, fwd, &at(0.0, 20.0), speed, 1.0));
+        assert!(c.picks(Vec3::ZERO, fwd, &at(10.0, -20.0), speed, 1.0));
+        assert!(!c.picks(Vec3::ZERO, fwd, &at(30.0, -20.0), speed, 1.0));
+        // No max speed known: always.
+        assert!(c.picks(Vec3::ZERO, fwd, &at(0.0, 20.0), None, 1.0));
     }
 
     #[test]

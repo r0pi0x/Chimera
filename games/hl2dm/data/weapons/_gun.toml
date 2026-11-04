@@ -30,6 +30,9 @@ punch_scale = 1.0
 # trace it again through every player (effects_sounds.md 1).
 tracer_every = 2
 redrawn_through_characters = true
+# A call of several bullets (pellets, a tick's catch-up rounds) traces
+# every odd-numbered one as a +-3 box (weapons.md 5).
+odd_box = 3.0
 
 [damage]
 amount = 1.0

@@ -16,7 +16,9 @@
 //!   (`shot_flags`: a tracer on each bullet, any impact at all): a
 //!   `WeaponEventKind::Redrawn` goes before its `Shot` events, and with
 //!   `Hitscan::redrawn_through_characters` the trace passes every
-//!   character (HL2:DM, specs/hl2dm/effects_sounds.md 1).
+//!   character (HL2:DM, specs/hl2dm/effects_sounds.md 1). A round of a
+//!   weapon's `AltShot` (mode 1 on a weapon without `AltModes`) is drawn
+//!   with that shot's pellets (the shotgun's double shot: 12).
 //! - **What else they do** (`RemoteAction`): reloads, swings and throws,
 //!   for their bodies' animations.
 //!
@@ -29,7 +31,7 @@
 use bevy::prelude::*;
 
 use super::{
-    AltModes, DamageEffect, Hitscan, Inventory, Penetration, SpreadShape, Weapon, WeaponEvent, WeaponEventKind,
+    AltModes, AltShot, DamageEffect, Hitscan, Inventory, Penetration, SpreadShape, Weapon, WeaponEvent, WeaponEventKind,
     WeaponSounds, deliver, grenade::Throwable,
 };
 use crate::core::SimClock;
@@ -154,6 +156,7 @@ fn remote_shots(
         Option<&DamageEffect>,
         Option<&Penetration>,
         Option<&WeaponSounds>,
+        (Option<&AltShot>, Has<AltModes>),
     )>,
     mut world: deliver::World,
     clock: Res<SimClock>,
@@ -165,7 +168,7 @@ fn remote_shots(
             .ok()
             .and_then(|i| i.active)
             .and_then(|a| weapons.get(a).ok().map(|w| (a, w)));
-        let Some((active, (_, Some(scan), Some(effect), pen, sounds))) = held.filter(|(_, (w, ..))| w.id == s.weapon)
+        let Some((active, (_, Some(scan), Some(effect), pen, sounds, (alt_shot, modes)))) = held.filter(|(_, (w, ..))| w.id == s.weapon)
         else {
             // The gun in hand is another now: no trace to draw, but the
             // shot's sound still plays.
@@ -176,8 +179,15 @@ fn remote_shots(
             }
             continue;
         };
+        // An `AltShot`'s round (mode 1 on a weapon with no modes of its
+        // own: the shotgun's double shot) has its pellets.
+        let pellets = match alt_shot {
+            Some(a) if s.mode > 0 && !modes => a.pellets,
+            _ => scan.pellets,
+        };
         let scan = Hitscan {
             spread: s.spread,
+            pellets,
             ..scan.clone()
         };
         let flagged = s.flags & shot_flags::FLAGGED != 0;
@@ -197,6 +207,8 @@ fn remote_shots(
             rewound: Vec::new(),
             through_characters: scan.redrawn_through_characters,
             show_hits: !flagged || impacts,
+            round: (0, 1),
+            traced: false,
             w: &mut world,
         };
         if !flagged || tracers || impacts {

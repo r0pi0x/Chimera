@@ -30,7 +30,9 @@
 //!   satchel that takes damage is removed with a harmless pop
 //!   (`SatchelPop`, drawn by `projectile_fx`; a `Scorch` within 24 under
 //!   it, `BaseGrenade.Explode` heard by everyone); its thrower's death
-//!   sets them all off 0.2 s later.
+//!   sets them all off 0.2 s later. A disconnect (8.5): in DM they stay
+//!   live; in TDM the leaver is killed first, so they go off
+//!   (`leaver_satchels`).
 //! - With no slam left and no satchels out the S.L.A.M. leaves the
 //!   inventory.
 //!
@@ -38,8 +40,8 @@
 //! M10's; the detonate animation's length (1.3333 s, 0.6667 s
 //! detonator-only) holds both attacks; a satchel near a wall at the throw's
 //! end is set down 5 units ahead at 1 unit/s (the spec's) only when the
-//! 42-unit line still hits; disconnects leave satchels live (DM's rule)
-//! and nothing kills a TDM leaver here (M7).
+//! 42-unit line still hits; a TDM leaver's satchels have no thrower left to
+//! credit (its entity is gone).
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -359,6 +361,26 @@ pub fn before_frame(
             st.next_primary = f64::MAX;
             st.next_secondary = f64::MAX;
             event(WeaponEventKind::Action("throw"));
+        }
+    }
+}
+
+/// A player leaving (its entity removed) in TDM while alive is killed on
+/// the way (rules.md; `rules::players`' `left`), so its satchels go off
+/// 0.2 s later as at a death (8.5); in DM they stay live.
+pub fn leaver_satchels(
+    remove: On<Remove<crate::game::rules::Hl2Player>>,
+    dead: Query<(), With<crate::core::Dead>>,
+    game: Option<Res<crate::game::rules::Hl2Match>>,
+    clock: Res<SimClock>,
+    mut satchels: Query<&mut Hl2Satchel>,
+) {
+    if !game.is_some_and(|m| m.on && m.teamplay) || dead.contains(remove.entity) {
+        return;
+    }
+    for mut s in &mut satchels {
+        if s.thrower == Some(remove.entity) && s.explode_at.is_none() {
+            s.explode_at = Some(clock.now + s.params.satchel_fuse as f64);
         }
     }
 }

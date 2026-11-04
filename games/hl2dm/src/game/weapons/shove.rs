@@ -14,17 +14,19 @@
 //! (`core::authoritative`), after the weapons and before the damage
 //! lands.
 //!
-//! Known shortcuts: the shove reads the damage as the weapon sent it,
-//! after the armour's share (the spec's is before the suit: M3's C2 brings
-//! the suit's own rule); "a whole health point" is the hit's amount of at
-//! least one point (the suit's carried fraction is M3's); a ladder isn't
-//! told apart from walking (`MovementState::on_ladder` is; noclip is).
+//! The shove's size reads the damage arriving at the suit, before the
+//! armour's share (`weapon::ArmourShare`, written beside each hit the
+//! armour took part of); whether it shoves at all reads what reaches health
+//! (at least one whole point).
+//!
+//! Known shortcuts: "a whole health point" is the hit's amount of at least
+//! one point (the suit's carried fraction is M3's).
 
 use bevy::prelude::*;
 
 use chimera_core::{gameplay::Gameplay, slots::{GameIdentity, MovementSlot}};
 
-use chimera_sim::weapon::Inflicted;
+use chimera_sim::weapon::{ArmourShare, Inflicted};
 
 use crate::core::{Damage, Health, MovementState, Velocity};
 
@@ -105,8 +107,10 @@ pub fn shove_players(
     others: Query<&Transform>,
     gameplay: Option<Res<Gameplay>>,
     mut inflicted: MessageReader<Inflicted>,
+    mut shares: MessageReader<ArmourShare>,
 ) {
     let mut inflictors: Vec<Inflicted> = inflicted.read().copied().collect();
+    let mut shares: Vec<ArmourShare> = shares.read().copied().collect();
     for d in damage.read() {
         if d.amount < 0.01 {
             continue;
@@ -133,8 +137,13 @@ pub fn shove_players(
         if slot.is_some_and(|s| s.0 == chimera_sim::movement::noclip::ID) || state.as_ref().is_some_and(|s| s.on_ladder) {
             continue;
         }
+        // The damage before the suit's share (projectiles.md 3: D_in).
+        let raw = match shares.iter().position(|s| s.target == d.target && (s.health - d.amount).abs() < 1e-6) {
+            Some(i) => shares.remove(i).raw,
+            None => d.amount,
+        };
         let (size, centre) = bounds(at, state.as_deref());
-        let dv = shove(d.amount * 100.0, size, centre, from);
+        let dv = shove(raw * 100.0, size, centre, from);
         velocity.0 += to_engine(dv);
         if dv.z > LIFT
             && let Some(mut s) = state
