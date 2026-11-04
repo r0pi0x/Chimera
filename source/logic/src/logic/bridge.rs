@@ -198,7 +198,14 @@ impl Plugin for LogicPlugin {
             .init_resource::<LogicRecord>()
             .add_systems(FixedUpdate, (load, apply_record, pre).chain().in_set(LogicSet::Pre))
             .add_systems(FixedUpdate, post.in_set(LogicSet::Post))
-            .add_systems(FixedUpdate, (damage, fire_outputs, fire_output_values, fire_keyed_outputs, take_ai_sounds).in_set(LogicSet::Damage))
+            // One after another: each takes the logic (`fire_outputs` after
+            // `damage` as before; the set pieces' three after it).
+            .add_systems(
+                FixedUpdate,
+                (damage, fire_outputs, fire_output_values, fire_keyed_outputs, take_ai_sounds)
+                    .chain()
+                    .in_set(LogicSet::Damage),
+            )
             .add_message::<crate::map::entities::FireEntityOutput>()
             .add_message::<crate::map::entities::FireEntityOutputValue>()
             .add_message::<crate::map::entities::MapEntityInput>()
@@ -1811,10 +1818,22 @@ fn sync_controls(world: &mut World, logic: &Logic) {
                     goal: entity_to_engine(goal, 1.0).normalize_or_zero(),
                     limit: limit.to_radians(),
                 },
-                L::Motor { axis, speed, spinup } => ControlKind::Motor {
+                L::Motor {
+                    axis,
+                    speed,
+                    spinup,
+                    inertia_factor,
+                    add_accel,
+                } => ControlKind::Motor {
                     axis: entity_to_engine(axis, 1.0).normalize_or_zero(),
                     speed: speed.to_radians(),
                     spinup,
+                    inertia_factor,
+                    add_accel: add_accel.to_radians(),
+                },
+                L::Spin { axis, speed } => ControlKind::Spin {
+                    axis: entity_to_engine(axis, 1.0).normalize_or_zero(),
+                    speed: speed.to_radians(),
                 },
                 L::Slide { axis, speed } => ControlKind::Slide {
                     axis: entity_to_engine(axis, 1.0).normalize_or_zero(),

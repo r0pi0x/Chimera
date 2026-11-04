@@ -1,7 +1,10 @@
 //! Placed props after spawning: their animated sequences (and
-//! `PropAnimationDone` when one ends, for the logic's OnAnimationDone) and the
+//! `PropAnimationDone` when one ends, for the logic's OnAnimationDone; a
+//! game holding one still at a cycle with `PropCycle`) and the
 //! components that tag them (their looks as drawn: `render::props`;
-//! their dynamic shadows: `render::shadows`).
+//! their dynamic shadows: `render::shadows`). `posed_model`: a rigged
+//! model's meshes moved to one frame of a sequence, for drawing it still
+//! where no skeleton is (a game's shown items).
 
 #[allow(unused_imports)]
 use super::*;
@@ -68,6 +71,67 @@ pub fn rig_inverse_bindposes(rig: &MapRig) -> bevy::mesh::skinning::SkinnedMeshI
     bevy::mesh::skinning::SkinnedMeshInverseBindposes::from(inverse)
 }
 
+/// Each bone's model-space matrix (engine axes, meters) for local poses
+/// `pose` of `rig`.
+fn rig_globals(rig: &MapRig, pose: &[anim::BonePose]) -> Vec<Mat4> {
+    let mut global: Vec<Mat4> = Vec::with_capacity(rig.bones.len());
+    for (i, b) in rig.bones.iter().enumerate() {
+        let (q, p) = pose.get(i).copied().unwrap_or((b.rotation, b.position));
+        let local = Mat4::from_rotation_translation(q, p);
+        let parent = b
+            .parent
+            .and_then(|p| global.get(p).copied())
+            .unwrap_or(rig.root.to_matrix());
+        global.push(parent * local);
+    }
+    global
+}
+
+/// `model` with its skinned meshes moved to sequence `sequence` at `cycle`
+/// (0..1), as one still model (no rig, no levels of detail); None when it
+/// has no rig or no such sequence.
+pub fn posed_model(model: &MapModel, sequence: &str, cycle: f32) -> Option<MapModel> {
+    let rig = model.rig.as_ref()?;
+    let set = &rig.animations;
+    let s = set.sequence(sequence)?;
+    let mut pose: Vec<anim::BonePose> = rig.bones.iter().map(|b| (b.rotation, b.position)).collect();
+    set.sequence_pose(s, cycle, &set.default_params(), &mut pose);
+    let rest = rig_globals(rig, &[]);
+    let posed = rig_globals(rig, &pose);
+    let skin: Vec<Mat4> = posed.iter().zip(&rest).map(|(p, r)| *p * r.inverse()).collect();
+    let mut out = model.clone();
+    out.rig = None;
+    out.lods.clear();
+    for m in &mut out.meshes {
+        if m.joints.len() != m.positions.len() {
+            continue;
+        }
+        for (i, (pos, nrm)) in m.positions.iter_mut().zip(m.normals.iter_mut()).enumerate() {
+            let (j, w) = (m.joints[i], m.joint_weights[i]);
+            let mut mat = Mat4::ZERO;
+            for k in 0..4 {
+                if w[k] > 0.0
+                    && let Some(b) = skin.get(j[k] as usize)
+                {
+                    mat += *b * w[k];
+                }
+            }
+            if mat == Mat4::ZERO {
+                continue;
+            }
+            *pos = mat.transform_point3(Vec3::from_array(*pos)).to_array();
+            *nrm = mat.transform_vector3(Vec3::from_array(*nrm)).normalize_or_zero().to_array();
+        }
+    }
+    Some(out)
+}
+
+/// Holds an animated prop's sequence still at this cycle (0..1): a game's
+/// gauge drawn by its model's frame (HL2's wall chargers' dial). Without
+/// it the prop plays on.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct PropCycle(pub f32);
+
 /// Animated props play what the logic asks (`PropSequence`,
 /// specs/source/prop_damage.md 9): a new serial restarts the named
 /// sequence (sequence 0 when the model lacks it), switching at once; a
@@ -75,12 +139,12 @@ pub fn rig_inverse_bindposes(rig: &MapRig) -> bevy::mesh::skinning::SkinnedMeshI
 /// sequence that ends starts the default again, if there is one.
 pub fn animate_props(
     time: Res<Time>,
-    mut props: Query<(Entity, &mut PropRig, Option<&PropSequence>)>,
+    mut props: Query<(Entity, &mut PropRig, Option<&PropSequence>, Option<&PropCycle>)>,
     mut done: MessageWriter<PropAnimationDone>,
     mut joints: Query<&mut Transform>,
 ) {
     let (now, dt) = (time.elapsed_secs_f64(), time.delta_secs());
-    for (node, mut rig, seq) in &mut props {
+    for (node, mut rig, seq, held) in &mut props {
         let rig = &mut *rig;
         if let Some(seq) = seq
             && rig.seen.as_ref() != Some(seq)
@@ -109,6 +173,23 @@ pub fn animate_props(
                 }
                 _ => {}
             }
+        }
+        if let Some(PropCycle(c)) = held {
+            // Held still: its sequence (the default's, else the first) at
+            // that frame.
+            if rig.animator.main.is_none() {
+                rig.animator.restart(rig.default.unwrap_or(0), now);
+            }
+            rig.animator.fading.clear();
+            rig.animator.cycle = c.clamp(0.0, 1.0);
+            let pose = rig.animator.pose(now);
+            for (joint, (q, p)) in rig.joints.iter().zip(pose) {
+                if let Ok(mut t) = joints.get_mut(*joint) {
+                    t.rotation = q;
+                    t.translation = p;
+                }
+            }
+            continue;
         }
         if rig.animator.main.is_none() {
             continue;

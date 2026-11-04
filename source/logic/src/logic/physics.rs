@@ -1,6 +1,6 @@
 //! Physics helpers map logic switches (specs/source/physics_brushes.md
-//! 4-5): phys_thruster and phys_keepupright; phys_motor (public entity
-//! docs) and the two-object constraints (specs/source/
+//! 4-5): phys_thruster and phys_keepupright; phys_motor (specs/hl2dm/
+//! maps_entities.md 10: speed, spinup, inertiafactor, addangaccel) and the two-object constraints (specs/source/
 //! physics_constraints.md: bodies, world, on/off, Break; the joints are
 //! the physics engine's, `map::controllers::BodyJoints`). The logic keeps whether
 //! each is on and its numbers; the bridge hands them to the physics as
@@ -155,9 +155,20 @@ pub enum ControlKind {
     },
     /// Goal up axis (entity space) and limit (deg/s).
     Upright { goal: Vec3, limit: f32 },
-    /// phys_motor: spin about `axis` (entity space) at `speed` deg/s,
-    /// reached over `spinup` s.
-    Motor { axis: Vec3, speed: f32, spinup: f32 },
+    /// phys_motor (maps_entities.md 10): spin about `axis` (entity space)
+    /// at `speed` deg/s; its target ramps there over `spinup` s (0: `speed`
+    /// per second), the drive closes `inertia_factor` × the step of the gap
+    /// a step, at most `inertia_factor` × (ramp + `add_accel` deg/s²).
+    Motor {
+        axis: Vec3,
+        speed: f32,
+        spinup: f32,
+        inertia_factor: f32,
+        add_accel: f32,
+    },
+    /// A hinge's motor (SetAngularVelocity): the body's spin about `axis`
+    /// set to `speed` deg/s at once.
+    Spin { axis: Vec3, speed: f32 },
     /// A slider's motor: move along `axis` (entity space) at `speed`
     /// units/s.
     Slide { axis: Vec3, speed: f32 },
@@ -579,13 +590,17 @@ impl LogicWorld {
                             axis: m.axis,
                             speed: m.speed,
                             spinup: e.kv_f("spinup"),
+                            // Absent or 0: 1 (the key's default; 0 would
+                            // leave the motor without torque).
+                            inertia_factor: Some(e.kv_f("inertiafactor")).filter(|k| *k > 0.0).unwrap_or(1.0),
+                            add_accel: e.kv_f("addangaccel"),
                         },
                     }),
                     // A hinge's or slider's motor drives its second body.
                     Class::Joint(j) if j.connected && j.on => {
                         let speed = j.motor?;
                         let kind = match j.kind {
-                            JointKind::Hinge { axis } => ControlKind::Motor { axis, speed, spinup: 0.0 },
+                            JointKind::Hinge { axis } => ControlKind::Spin { axis, speed },
                             JointKind::Slide { axis } => ControlKind::Slide { axis, speed },
                             _ => return None,
                         };

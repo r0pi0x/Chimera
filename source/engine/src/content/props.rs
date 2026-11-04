@@ -643,6 +643,20 @@ pub fn load_held(
     key: &str,
     skeleton: &[crate::map::MapBone],
 ) -> Result<crate::map::MapHeldModel, String> {
+    load_held_posed(materials, path, key, skeleton, None)
+}
+
+/// `load_held`, its meshes still at a frame of one of its sequences
+/// (`pose`: the sequence's name and its cycle, 0..1; `map::posed_model`):
+/// a shown item drawn at a moment of its animation (HL2's headcrab
+/// canister opening).
+pub fn load_held_posed(
+    materials: &mut MaterialLoader,
+    path: &str,
+    key: &str,
+    skeleton: &[crate::map::MapBone],
+    pose: Option<(&str, f32)>,
+) -> Result<crate::map::MapHeldModel, String> {
     let (model, _) = load_model(materials, path)?;
     let bytes = materials.read(path).ok_or_else(|| format!("{path}: not found"))?;
     let mdl = read_mdl(&bytes).map_err(|e| format!("{path}: {e}"))?;
@@ -666,13 +680,20 @@ pub fn load_held(
         Some(b) => b,
         None => (0, mdl.bones.first().ok_or_else(|| format!("{path}: no bones"))?),
     };
-    let to_bone = match global.get(i) {
+    // With no skeleton (a shown item never held: HL2's headcrab canister)
+    // the meshes stay in model space, whatever its first bone's pose.
+    let to_bone = match global.get(i).filter(|_| !skeleton.is_empty()) {
         Some((q, p)) => Transform::from_rotation(*q).with_translation(*p).to_matrix().inverse(),
         None => Mat4::IDENTITY,
     };
     // Engine space (meters, x z -y) back to the model's units and axes.
     let source = |v: [f32; 3]| Vec3::new(v[0], -v[2], v[1]);
     let mut held = convert_model_in(&model, 0, materials, false, &[]);
+    if let Some((sequence, cycle)) = pose {
+        held.rig = load_rig(materials, path);
+        held = crate::map::posed_model(&held, sequence, cycle)
+            .ok_or_else(|| format!("{path}: no skeleton or no sequence {sequence} to pose"))?;
+    }
     // Its surface (a dropped one's impact sounds): the collision model's,
     // else the model's own $surfaceprop, as for props.
     held.surfaceprop = load_collision(materials, path)
@@ -1291,6 +1312,14 @@ fn model_attachments(read: super::anim::Read, path: &str) -> Result<Vec<(String,
 const COMBINE_CAMERA: &str = "npc_combine_camera";
 const COMBINE_CAMERA_MODEL: &str = "models/combine_camera/combine_camera.mdl";
 
+/// HL2's wall chargers and their fixed models (the map's `model` key is
+/// ignored, maps_entities.md 4): solid, animated (the game holds their
+/// `idle` sequence at the dial's frame, `map::PropCycle`).
+const CHARGERS: [(&str, &str); 2] = [
+    ("item_suitcharger", "models/props_combine/suit_charger001.mdl"),
+    ("item_healthcharger", "models/props_combine/health_charger001.mdl"),
+];
+
 /// Props placed as entities: physics props (barrels, baskets; static here
 /// until there's physics) and dynamic props. Both collide by their physics
 /// model (the visible mesh until `.phy` is parsed).
@@ -1312,7 +1341,8 @@ fn entity_props(bsp: &Bsp) -> Vec<PropPlacement> {
             // HL2's ceiling camera stands in as a still model (HL2:DM's
             // dm_underpass; it sweeps in the game, maps_entities.md 14).
             let camera = class == COMBINE_CAMERA;
-            if !physics && !door && !ragdoll && !camera && !class.starts_with("prop_dynamic") {
+            let charger = CHARGERS.iter().find(|(c, _)| *c == class).map(|(_, m)| *m);
+            if !physics && !door && !ragdoll && !camera && charger.is_none() && !class.starts_with("prop_dynamic") {
                 return None;
             }
             let [x, y, z] = parse(e.prop("origin")?)?;
@@ -1325,7 +1355,7 @@ fn entity_props(bsp: &Bsp) -> Vec<PropPlacement> {
                 // Its parts are bodies of their own when its model has a
                 // ragdoll (`map::ragdoll::PlacedRagdoll`).
                 PropSolid::None
-            } else if camera {
+            } else if camera || charger.is_some() {
                 PropSolid::Mesh
             } else if !physics && !door && solid_key == Some("2") {
                 PropSolid::Box
@@ -1336,12 +1366,17 @@ fn entity_props(bsp: &Bsp) -> Vec<PropPlacement> {
             };
             let dynamic = class.starts_with("prop_dynamic");
             let animated = ragdoll
+                || charger.is_some()
                 || dynamic
                     && (e.prop("defaultanim").is_some_and(|a| !a.trim().is_empty())
                         || e.prop("targetname")
                             .is_some_and(|n| animated_names.contains(&n.to_ascii_lowercase())));
             Some(PropPlacement {
-                model: if camera { COMBINE_CAMERA_MODEL.to_string() } else { e.prop("model")?.to_lowercase() },
+                model: match (camera, charger) {
+                    (true, _) => COMBINE_CAMERA_MODEL.to_string(),
+                    (_, Some(m)) => m.to_string(),
+                    _ => e.prop("model")?.to_lowercase(),
+                },
                 skin: e.prop("skin").and_then(|s| s.trim().parse().ok()).unwrap_or(0),
                 origin: vbsp::Vector { x, y, z },
                 angles: vbsp::Angles { pitch, yaw, roll },

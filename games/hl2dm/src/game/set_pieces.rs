@@ -14,7 +14,14 @@
 //!   squared falloff, 750 units/s shove on physics objects, 250 to 1000 on
 //!   players), shakes the view (amplitude 16, radius 1024) and lands,
 //!   opening (`OnOpened`) unless it waits for `OpenCanister`. Outputs
-//!   `OnLaunched`, `OnImpacted`, `OnOpened`. Server-side.
+//!   `OnLaunched`, `OnImpacted`, `OnOpened`. Server-side; it is drawn on
+//!   every machine as shown items (`CANISTER_MODEL` in flight along its
+//!   line, spinning 90 deg/s about its long axis, then `landed_key`: the
+//!   landed model at `OPEN_FRAMES` frames of its `open` sequence through
+//!   the opening, smoking until `SmokeLifetime` or `StopSmoke`;
+//!   `canister_models` loads them on maps with a canister), its impact's
+//!   effects told as `CanisterBlast` (unless flag 524288); the trail,
+//!   smoke and explosion are `set_piece_fx`'s.
 //! - **`game_ragdoll_manager`** (`RagdollLimit`): `MaxRagdollCount`
 //!   (-1: 8) and the inputs `SetMaxRagdollCount`, `SetMaxRagdollCountDX8`.
 //!   HL2:DM's player bodies aren't in the list it limits and no stock map
@@ -23,10 +30,10 @@
 //!   s) and blast (the larger of 128 and 1.5 of its radius, 0.25 s) is told
 //!   to the logic (`map::entities::AiSound`).
 //!
-//! Known shortcuts: the canister's model, its flight trail, smoke, the
-//! explosion effect and the 3D skybox arc before it enters the world
-//! aren't drawn (it flies unseen; the flight's timing, damage, sounds and
-//! shake are the spec's); `StartingHeight`, `LaunchPositionName`,
+//! Known shortcuts: the 3D skybox arc before it enters the world isn't
+//! drawn (it appears at its entry point); the opening is four still
+//! frames, not the sequence played; the landed model isn't solid;
+//! `StartingHeight`, `LaunchPositionName`,
 //! "start impacted" and the skybox-only shots are not built (no stock
 //! canister uses them); the sweep and the blast test the distance of a
 //! body's centre, not its bounds, and the sweep is the spec's cube as a
@@ -35,6 +42,7 @@
 //! early detonation still lets the canister fly on without effect.
 
 use avian3d::prelude::{LinearVelocity, Position, RigidBody, SpatialQuery, SpatialQueryFilter};
+use chimera_sim::weapon::projectile::ShownBody;
 use bevy::prelude::*;
 
 use crate::{
@@ -43,9 +51,10 @@ use crate::{
         PlaySound,
         entities::{
             AiSound, AiSoundKind, FireKeyedOutput, GameEntityClasses, MapEntityInput, MapEntityRemoved, MapEntitySpawned,
-            entity_rotation, entity_to_engine,
+            entity_rotation, entity_to_engine, rotation_to_engine,
         },
         logic_view::MapShake,
+        loose::{LooseAssets, ShownItem},
     },
     weapon::{WeaponEvent, WeaponEventKind},
 };
@@ -80,6 +89,34 @@ pub const REMOVE_AFTER: f64 = 3.0;
 const ENTRY_RAY: f32 = 10_000.0;
 const INCOMING: &str = "HeadcrabCanister.IncomingSound";
 
+/// The canister's models as shown items (`ShownItem` keys, drawn on every
+/// machine: the network's `NetItem`): in flight `headcrabcannister01a`,
+/// landed `headcrabcannister01b` posed at `OPEN_FRAMES` frames of its
+/// `open` sequence, smoking (`open`) or not (`spent`).
+pub const CANISTER_MODEL: &str = "hl2dm:headcrabcanister";
+pub const FLIGHT_MODEL_FILE: &str = "models/props_combine/headcrabcannister01a.mdl";
+pub const LANDED_MODEL_FILE: &str = "models/props_combine/headcrabcannister01b.mdl";
+/// Frames of the `open` sequence the landed model is shown at (cycle
+/// k / (n − 1)).
+pub const OPEN_FRAMES: usize = 4;
+/// The landed canister's key at frame `k`, smoking or not.
+pub fn landed_key(k: usize, smoking: bool) -> String {
+    format!("hl2dm:headcrabcanister_{}{k}", if smoking { "open" } else { "spent" })
+}
+/// The spin about its long axis in flight (deg/s).
+pub const SPIN: f32 = 90.0;
+/// Its smoke after landing, until `SmokeLifetime` (s) runs out or
+/// `StopSmoke`.
+const SF_NO_SMOKE: u32 = 65_536;
+const SF_NO_IMPACT_EFFECTS: u32 = 524_288;
+
+/// A canister's impact effects (explosion, unless flag 524288), for
+/// every machine to draw (`set_piece_fx`).
+#[derive(Message, Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CanisterBlast {
+    pub at: Vec3,
+}
+
 const SF_NO_IMPACT_SOUND: u32 = 1;
 const SF_NO_LAUNCH_SOUND: u32 = 2;
 const SF_AT_ORIGIN: u32 = 8192;
@@ -95,6 +132,8 @@ pub struct CanisterParams {
     pub damage: f32,
     pub radius: f32,
     pub flags: u32,
+    /// `SmokeLifetime` (s).
+    pub smoke: f32,
 }
 
 impl CanisterParams {
@@ -111,6 +150,7 @@ impl CanisterParams {
             damage: f("Damage"),
             radius: f("DamageRadius"),
             flags: f("spawnflags") as u32,
+            smoke: f("SmokeLifetime"),
         }
     }
 
@@ -150,6 +190,12 @@ pub struct Canister {
     pub dir: Vec3,
     pub state: CanState,
     pub fired: bool,
+    /// Its orientation (entity space, its angles).
+    pub turn: Quat,
+    /// The shown model (`ShownItem` entity) and its key.
+    pub shown: Option<(Entity, String)>,
+    /// Smoke until then (s).
+    pub smoke_until: f64,
 }
 
 impl Canister {
@@ -207,6 +253,7 @@ impl Plugin for SetPiecesPlugin {
             .add_message::<MapDamage>()
             .add_message::<Explosion>()
             .add_message::<WeaponEvent>()
+            .add_message::<CanisterBlast>()
             .init_resource::<RagdollLimit>()
             .add_systems(
                 FixedUpdate,
@@ -228,7 +275,7 @@ fn track(
     for r in removed.read() {
         for (e, c) in &cans {
             if c.key == r.key {
-                commands.entity(e).despawn();
+                despawn_with_shown(&mut commands, e, c);
             }
         }
     }
@@ -237,7 +284,7 @@ fn track(
             "env_headcrabcanister" => {
                 for (e, c) in &cans {
                     if c.key == s.key {
-                        commands.entity(e).despawn();
+                        despawn_with_shown(&mut commands, e, c);
                     }
                 }
                 let params = CanisterParams::read(&s.keyvalues);
@@ -252,6 +299,9 @@ fn track(
                         params,
                         state: CanState::Idle,
                         fired: false,
+                        turn: entity_rotation(s.angles),
+                        shown: None,
+                        smoke_until: 0.0,
                     },
                 ));
             }
@@ -266,6 +316,70 @@ fn track(
                 *limit = RagdollLimit { max: n("MaxRagdollCount"), max_dx8: n("MaxRagdollCountDX8") };
             }
             _ => {}
+        }
+    }
+}
+
+/// The canister's shown models (`CANISTER_MODEL`, `landed_key`): the
+/// flight model, and the landed one posed at each of `OPEN_FRAMES` frames
+/// of `open` (twice: smoking and not).
+pub fn canister_models(
+    materials: &mut source_engine::content::material::MaterialLoader,
+    warnings: &mut Vec<String>,
+) -> Vec<crate::map::MapHeldModel> {
+    use source_engine::content::props;
+    let mut out = Vec::new();
+    match props::load_held(materials, FLIGHT_MODEL_FILE, CANISTER_MODEL, &[]) {
+        Ok(h) => out.push(h),
+        Err(e) => warnings.push(e),
+    }
+    for k in 0..OPEN_FRAMES {
+        let cycle = k as f32 / (OPEN_FRAMES - 1) as f32;
+        match props::load_held_posed(materials, LANDED_MODEL_FILE, &landed_key(k, true), &[], Some(("open", cycle))) {
+            Ok(h) => {
+                let mut spent = h.clone();
+                spent.key = landed_key(k, false);
+                out.extend([h, spent]);
+            }
+            Err(e) => warnings.push(e),
+        }
+    }
+    out
+}
+
+fn despawn_with_shown(commands: &mut Commands, e: Entity, c: &Canister) {
+    if let Some((shown, _)) = &c.shown {
+        commands.entity(*shown).try_despawn();
+    }
+    commands.entity(e).try_despawn();
+}
+
+/// Show canister `c` as `key` at `pose` (its model's origin there; a
+/// shown item is drawn centred on its bounds, `map::loose::LooseAssets`):
+/// the shown entity moved, or made again when the key changes (a shown
+/// item's model is fixed).
+fn show(commands: &mut Commands, c: &mut Canister, key: &str, mut pose: Transform, assets: Option<&LooseAssets>) {
+    if let Some(a) = assets.and_then(|a| a.0.get(key)) {
+        pose.translation -= pose.rotation * a.frame.translation;
+    }
+    match &c.shown {
+        Some((e, k)) if k == key => {
+            commands.entity(*e).try_insert(pose);
+        }
+        _ => {
+            if let Some((e, _)) = c.shown.take() {
+                commands.entity(e).try_despawn();
+            }
+            let e = commands
+                .spawn((
+                    Name::new("env_headcrabcanister model"),
+                    ShownItem(key.into()),
+                    ShownBody::default(),
+                    crate::map::MapPart,
+                    pose,
+                ))
+                .id();
+            c.shown = Some((e, key.into()));
         }
     }
 }
@@ -329,6 +443,7 @@ fn canister_inputs(
                 let enter = if v > 0.0 { (c.params.time - reach / v).max(0.0) } else { 0.0 };
                 c.state = CanState::Flying { launched: clock.now, enter, incoming: false, detonated: false, last: None };
             }
+            "stopsmoke" => c.smoke_until = c.smoke_until.min(clock.now),
             "opencanister" => {
                 if let CanState::Landed { started: false, opened, .. } = c.state {
                     say(&mut play, "HeadcrabCanister.Open");
@@ -338,6 +453,12 @@ fn canister_inputs(
             _ => {}
         }
     }
+}
+
+/// The frame of the `open` sequence (of `OPEN_FRAMES`) `t` seconds into
+/// the opening.
+pub fn open_frame(t: f64) -> usize {
+    ((t / OPEN_TIME).clamp(0.0, 1.0) * (OPEN_FRAMES - 1) as f64).round() as usize
 }
 
 /// The distance from `p` to the segment `a`-`b`.
@@ -381,16 +502,25 @@ fn canister_flight(
     mut damage: MessageWriter<Damage>,
     mut hurt: MessageWriter<MapDamage>,
     mut shakes: MessageWriter<MapShake>,
+    mut blasts: MessageWriter<CanisterBlast>,
+    assets: Option<Res<LooseAssets>>,
     mut commands: Commands,
 ) {
     for (entity, mut c) in &mut cans {
         let c = &mut *c;
         match c.state.clone() {
             CanState::Flying { launched, enter, mut incoming, mut detonated, last } => {
+                let t = (clock.now - launched) as f32;
+                // Drawn every tick in the world: along its line, spinning
+                // about its long axis.
+                if t >= enter && t < c.params.time {
+                    let spin = Quat::from_rotation_x((SPIN * (t - enter)).to_radians());
+                    let pose = Transform::from_translation(c.position(t)).with_rotation(rotation_to_engine(c.turn * spin));
+                    show(&mut commands, c, CANISTER_MODEL, pose, assets.as_deref());
+                }
                 if clock.tick % THINK_TICKS != 0 {
                     continue;
                 }
-                let t = (clock.now - launched) as f32;
                 if t < enter {
                     continue;
                 }
@@ -408,11 +538,18 @@ fn canister_flight(
                 if (landing || dist <= SWEEP_RADIUS) && !detonated {
                     detonated = true;
                     detonate(c, &mut bodies, &mut players, &mut play, &mut outputs, &mut damage, &mut hurt, &mut shakes);
+                    if !c.params.has(SF_REMOVE_ON_IMPACT) && !c.params.has(SF_NO_IMPACT_EFFECTS) {
+                        blasts.write(CanisterBlast { at: c.impact });
+                    }
                 }
                 if landing {
                     if c.params.has(SF_REMOVE_ON_IMPACT) {
                         c.state = CanState::Removed(clock.now + REMOVE_AFTER);
+                        if let Some((e, _)) = c.shown.take() {
+                            commands.entity(e).try_despawn();
+                        }
                     } else {
+                        c.smoke_until = if c.params.has(SF_NO_SMOKE) { clock.now } else { clock.now + c.params.smoke as f64 };
                         say(&mut play, "HeadcrabCanister.AfterLanding");
                         let started = !c.params.has(SF_WAIT_OPEN);
                         c.state = CanState::Landed { since: clock.now, started, opened: false };
@@ -424,12 +561,19 @@ fn canister_flight(
                     c.state = CanState::Flying { launched, enter, incoming, detonated, last: Some(here) };
                 }
             }
-            CanState::Landed { since, started: true, opened: false } if clock.now - since >= OPEN_TIME => {
-                outputs.write(FireKeyedOutput { key: c.key, output: "OnOpened".into(), activator: None });
-                c.state = CanState::Landed { since, started: true, opened: true };
+            CanState::Landed { since, started, opened } => {
+                if started && !opened && clock.now - since >= OPEN_TIME {
+                    outputs.write(FireKeyedOutput { key: c.key, output: "OnOpened".into(), activator: None });
+                    c.state = CanState::Landed { since, started: true, opened: true };
+                }
+                // The landed model at its `open` frame, smoking or not.
+                let k = if started { open_frame(clock.now - since) } else { 0 };
+                let smoking = clock.now < c.smoke_until;
+                let pose = Transform::from_translation(c.impact).with_rotation(rotation_to_engine(c.turn));
+                show(&mut commands, c, &landed_key(k, smoking), pose, assets.as_deref());
             }
             CanState::Removed(at) if clock.now >= at => {
-                commands.entity(entity).despawn();
+                despawn_with_shown(&mut commands, entity, c);
             }
             _ => {}
         }
@@ -579,11 +723,14 @@ mod tests {
     fn the_path_ends_at_the_impact_after_the_flight_time() {
         let c = Canister {
             key: 1,
-            params: CanisterParams { speed: 3000.0, time: 4.0, damage: 150.0, radius: 350.0, flags: 0 },
+            params: CanisterParams { speed: 3000.0, time: 4.0, damage: 150.0, radius: 350.0, flags: 0, smoke: 0.0 },
             impact: Vec3::new(1.0, 2.0, 3.0),
             dir: Vec3::new(0.0, -1.0, 0.0),
             state: CanState::Idle,
             fired: false,
+            turn: Quat::IDENTITY,
+            shown: None,
+            smoke_until: 0.0,
         };
         assert!(c.position(4.0).distance(c.impact) < 1e-5);
         assert!((c.position(3.0).y - (2.0 + 3000.0 * UNIT)).abs() < 1e-4, "1 s out: {:?}", c.position(3.0));

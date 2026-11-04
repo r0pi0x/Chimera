@@ -200,9 +200,19 @@ struct Heard {
     sounds: Vec<(u64, String)>,
 }
 
-fn listen(mut heard: ResMut<Heard>, mut sounds: MessageReader<PlaySound>) {
+/// One-shot sounds and the long ones started (a charger's loop).
+fn listen(
+    mut heard: ResMut<Heard>,
+    mut sounds: MessageReader<PlaySound>,
+    mut long: MessageReader<chimera_world::map::SoundControl>,
+) {
     let tick = heard.tick;
     heard.sounds.extend(sounds.read().map(|s| (tick, s.entry.clone())));
+    for c in long.read() {
+        if let chimera_world::map::SoundControl::Start(s) = c {
+            heard.sounds.push((tick, s.entry.clone()));
+        }
+    }
 }
 
 fn count(mut heard: ResMut<Heard>) {

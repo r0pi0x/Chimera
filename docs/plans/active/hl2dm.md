@@ -437,7 +437,7 @@ implementing (owner branch) / done.
 | M4 bullets, melee, UGG | H3 | done (branch `hl2dm-m4`, 2026-11-03): see Progress; left: probe checks P4, P11, P12, P14, P15 (the rest run: branch `hl2dm-probe`), C7 (no need in M4) | S8, C4 |
 | M5 projectiles | H4 | done (branch `hl2dm-m5`, 2026-11-03): see Progress (effects: `hl2dm-fx`); left: probe checks P5-P8, P9's under-water speed and damage, P10-P12, P14, P15 (the rest run: branch `hl2dm-probe`), the effects (M10) | C1 |
 | M6 gravity gun | H5 | done (branch `hl2dm-m6`, 2026-11-03): see Progress; left: `hl2mp_allow_pickup` 1's carry, first-impact 10× and breaks, the gun's effects (M10), the probe checks P6-P17 (P1-P5 run: branch `hl2dm-probe`) | C6 |
-| M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; set pieces built (branch `hl2dm-setpieces`, 2026-11-03): see Progress; left: rules P5-P14 (the probe's crash fixed: branch `hl2dm-probe`) | C3 (C5 not needed) |
+| M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; set pieces built (branches `hl2dm-setpieces`, `hl2dm-setpieces2`, 2026-11-03): see Progress; left: rules P5-P14 (the probe's crash fixed: branch `hl2dm-probe`) | C3 (C5 not needed) |
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
 | M9 HUD | H8 | done (branch `hl2dm-m9`, 2026-11-03): see Progress; left: the items listed there | S7 (the look reader and the animation engine; CS:S's menu readers stay) |
 | M10 effects, sounds | H9 | done in part (branch `hl2dm-m10`, 2026-11-03): see Progress; left: explosions, ball, dissolve, RPG, crossbow, gravity-gun effects (M5, M6), shells, the shield wall shader, refcmp | S10, S5 |
@@ -841,6 +841,56 @@ implementing (owner branch) / done.
   `map::controllers`), so the sensor's `OnGreaterThan` is unit-tested only;
   the physics shake and rope shake of `env_shake` (flags 8, 16); the
   microphone's speaker routing; the respawn light on network clients.
+- 2026-11-03: dm_lockdown's fan holds its speed (branch
+  `hl2dm-setpieces2`). Cause of the flicker between 1500 and a crawl: the
+  fan's `phys_hinge` (spawnflags 9) joins it to the world with "No
+  Collision", which our joint kept only against its stand-in anchor body,
+  so the fan rubbed on the two static props of its housing (and the
+  brushes) every step. Now a body joined to the world with "No Collision"
+  doesn't touch the world's brushes or static props
+  (`map::controllers::NoWorldContacts`, `WorldCollider`, in
+  `MapCollisionHooks`). `phys_motor` also follows spec 10 now: its target
+  ramps (spinup 0: speed per second, test case 35) and the drive closes
+  `inertiafactor` × step of the gap, capped (hinge motors keep their
+  at-once spin). CS:S stock maps have no `phys_motor` and no constraint
+  with flag 1 (their entity lumps scanned), so only community maps' motors
+  see the ramp. Tests: chimera_world `motor_tests` (3), cs_source
+  `a_motor_holds_its_speed_on_a_world_hinge`, heavy `lockdown_fan_is_watched`
+  (29 of 30 samples from 1.5 s to 4.5 s above 1450, the other a tick's
+  dip where it bats the healthkit lying in it; `OnGreaterThan` once,
+  `OnLessThan` after the motor stops). The schedule ratchet's FixedUpdate
+  fell to 223 pairs, 37 opposite (the world-contact sync lives in
+  `sync_joints`: a system of its own reordered FixedPostUpdate).
+- 2026-11-03: the set pieces' looks (branch `hl2dm-setpieces2`).
+  **Canister**: drawn on every machine as shown items (`ShownBody`, so
+  `NetItem` takes them to clients): `headcrabcannister01a` in flight on
+  its line, spinning 90 deg/s, then `headcrabcannister01b` at the impact
+  with its angles and origin, posed at four frames of `open` through the
+  opening (`map::posed_model`, `props::load_held_posed`; a skeleton-less
+  held model stays in model space), smoking until `SmokeLifetime` or
+  `StopSmoke`; `game::set_piece_fx` draws the trail (`sprites/smoke`,
+  additive, 32 ± 15 to 200 wide over 3 s), the landed smoke (8/s, 2 s,
+  grey 0.7 to 0.6, 32 to 64) and the impact's explosion (`CanisterBlast`,
+  sent to clients; none with flag 524288, so none on dm_runoff, where the
+  map's `env_fade` whites the view at the landing). **Flares**: smoke
+  (8/s, red, rising) and, without flag 1, the dynamic light (the stock
+  ones have flag 1). **Chargers**: their fixed models from the loader,
+  `idle` held at the dial's frame (`map::PropCycle`, 1 − display/max,
+  the display running 1/7 a tick ahead while used, 10/7 the citadel's;
+  host only), the loop sound a long sound under the charger's key,
+  stopped at switch-off. **Respawn light**: `RespawnLight` from the host,
+  sent to network clients (net part `hl2dm_set_pieces`). Tests: hl2dm
+  `set_pieces.rs` `a_canister_is_shown_in_flight_and_landed`,
+  `a_canister_with_impact_effects_blasts_and_stops_smoking`,
+  `pickups.rs` `a_chargers_dial_and_loop`, `set_piece_fx` unit tests,
+  heavy `the_canisters_models_are_loaded` (the doors move 44.5 units
+  between the first and last frame), dm_underpass's 698 props (the five
+  chargers). Live shots: dm_runoff's second strike (trail, canister,
+  landed open canisters smoking), a dm_resistance flare, dm_lockdown's
+  fan spinning. Left: the 3D skybox arc, headcrabs, the dust cloud of
+  the impact effects, the opening as a played sequence, the landed
+  canister's collision; the flare's jitter and burn-out shrink; the
+  dial on network clients; the camera's sweep.
 - 2026-11-03: M8 built (branch `hl2dm-m8`). **S9**:
   `source_engine::player_anim`, the shared half of CS:S's `player_anim`
   (the inputs from the simulation and the weapons' events, the drawn

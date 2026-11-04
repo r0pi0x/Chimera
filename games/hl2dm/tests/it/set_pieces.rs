@@ -168,6 +168,76 @@ fn a_canister_lands_after_its_flight_and_blasts() {
     assert!((0.03..0.08).contains(&hurt), "hurt {hurt}");
 }
 
+/// The shown keys and where (the canister's models as `ShownItem`s).
+fn shown(sim: &mut Sim) -> Vec<(String, Vec3)> {
+    let w = sim.app.world_mut();
+    w.query::<(&chimera_world::map::loose::ShownItem, &Transform)>()
+        .iter(w)
+        .filter(|(s, _)| s.0.starts_with("hl2dm:headcrabcanister"))
+        .map(|(s, t)| (s.0.clone(), t.translation))
+        .collect()
+}
+
+/// The canister is drawn (maps_entities.md 8): unseen until fired, the
+/// flight model on its line in the world (2000 units out a third of the
+/// way down at 3000 units/s), then the landed model at the impact, its
+/// `open` frames through the opening, smoking for `SmokeLifetime`, then
+/// the same without smoke; `StopSmoke` ends it early. dm_runoff's flags:
+/// no impact effects (`CanisterBlast`).
+#[test]
+fn a_canister_is_shown_in_flight_and_landed() {
+    use hl2dm::game::set_pieces::{CANISTER_MODEL, CanisterBlast, OPEN_FRAMES, landed_key};
+    let mut c = case(vec![canister(Vec3::new(0.0, 0.0, 8.0), &[("SmokeLifetime", "2")])]);
+    let impact = to_engine(Vec3::new(0.0, 0.0, 8.0));
+    assert!(shown(&mut c.sim).is_empty(), "nothing before it is fired");
+    c.input("can1", "FireCanister");
+    c.sim.seconds(3.0);
+    let s = shown(&mut c.sim);
+    assert_eq!(s.len(), 1, "{s:?}");
+    assert_eq!(s[0].0, CANISTER_MODEL);
+    let out = s[0].1.distance(impact) / UNIT;
+    assert!((2700.0..3300.0).contains(&out), "1 s out: {out} units");
+    assert!(s[0].1.y > impact.y, "coming down");
+    c.sim.seconds(1.1);
+    let s = shown(&mut c.sim);
+    assert_eq!(s.len(), 1, "{s:?}");
+    assert!(s[0].0.starts_with("hl2dm:headcrabcanister_open"), "landed, smoking: {s:?}");
+    assert!(s[0].1.distance(impact) < 0.01);
+    c.sim.seconds(1.2);
+    assert_eq!(shown(&mut c.sim)[0].0, landed_key(OPEN_FRAMES - 1, true), "opened");
+    c.sim.seconds(1.0);
+    assert_eq!(shown(&mut c.sim)[0].0, landed_key(OPEN_FRAMES - 1, false), "the smoke ran out");
+    let blasts = c.sim.app.world().resource::<bevy::ecs::message::Messages<CanisterBlast>>();
+    assert_eq!(blasts.iter_current_update_messages().count() + blasts.len(), 0, "no impact effects (524288)");
+    // Killed: gone.
+    c.input("can1", "Kill");
+    c.sim.ticks(3);
+    assert!(shown(&mut c.sim).is_empty());
+}
+
+/// Without flag 524288 the impact's effects are drawn (`CanisterBlast`
+/// at the impact); `StopSmoke` ends the smoke.
+#[test]
+fn a_canister_with_impact_effects_blasts_and_stops_smoking() {
+    use hl2dm::game::set_pieces::CanisterBlast;
+    #[derive(Resource, Default)]
+    struct Seen(Vec<Vec3>);
+    let mut c = case(vec![canister(Vec3::new(0.0, 0.0, 8.0), &[("spawnflags", "40962")])]);
+    c.sim.app.init_resource::<Seen>().add_systems(
+        FixedLast,
+        |mut r: MessageReader<CanisterBlast>, mut seen: ResMut<Seen>| seen.0.extend(r.read().map(|b| b.at)),
+    );
+    c.input("can1", "FireCanister");
+    c.sim.seconds(4.3);
+    let seen = &c.sim.app.world().resource::<Seen>().0;
+    assert_eq!(seen.len(), 1, "one blast");
+    assert!(seen[0].distance(to_engine(Vec3::new(0.0, 0.0, 8.0))) < 0.01);
+    assert!(shown(&mut c.sim)[0].0.starts_with("hl2dm:headcrabcanister_open"));
+    c.input("can1", "StopSmoke");
+    c.sim.ticks(3);
+    assert!(shown(&mut c.sim)[0].0.starts_with("hl2dm:headcrabcanister_spent"));
+}
+
 #[test]
 fn a_canister_beside_the_player_kills() {
     let mut c = case(vec![canister(Vec3::new(0.0, 0.0, 8.0), &[])]);

@@ -39,8 +39,11 @@
 //!   is found when the view's ray from the eye passes within 24 units of
 //!   its origin, at most 80 units away (not Source's `+use` search). Items
 //!   aren't drawn yet; the respawn light isn't made.
-//! - Chargers' dial (the model's cycle) and the loop sound's stop aren't
-//!   modelled (no model is drawn). `Recharge`/`SetCharge` arrive as
+//! - Chargers' models are the loader's (their fixed models, `idle` held
+//!   at the dial's frame: `dial_cycle` as `map::PropCycle`, on the host
+//!   only: a network client's dial stays full); the loop sound is a long
+//!   sound under the charger's key, stopped at switch-off. The
+//!   `emptyclick` sequence isn't played. `Recharge`/`SetCharge` arrive as
 //!   `MapEntityInput`s (`set_pieces` registers the classes); the value
 //!   outputs go out as `FireEntityOutputValue`s.
 //! - A held item's bigger touch box (the gravity gun's feeding) waits for
@@ -202,6 +205,25 @@ pub struct Charger {
     press_only: bool,
     last_deny: f64,
     refill_at: Option<f64>,
+    /// What the dial shows (maps_entities.md 4): the pool, but for a run's
+    /// drop of 1/7 a tick of use (citadel 10/7), back to the pool at
+    /// switch-off.
+    pub display: f32,
+    /// The loop sound plays (stopped at switch-off).
+    loop_on: bool,
+}
+
+/// The dial's frame of `idle` (maps_entities.md 4): 1 − display / max
+/// (a suit charger in use divides by max + 0.1).
+pub fn dial_cycle(display: f32, max: f32, suit_in_use: bool) -> f32 {
+    let max = if suit_in_use { max + 0.1 } else { max };
+    if max <= 0.0 { 1.0 } else { (1.0 - display / max).clamp(0.0, 1.0) }
+}
+
+/// The key of a charger's loop sound (`map::SoundControl`): a logic key
+/// (bit 63, so network clients hear it) out of the logic's own range.
+fn loop_key(map_index: usize) -> crate::map::SoundKey {
+    crate::map::SoundKey(1 << 63 | 1 << 61 | map_index as u64)
 }
 
 impl Charger {
@@ -224,6 +246,8 @@ impl Charger {
             press_only: false,
             last_deny: f64::NEG_INFINITY,
             refill_at: None,
+            display: max,
+            loop_on: false,
         }
     }
 
@@ -250,6 +274,7 @@ impl Plugin for PickupsPlugin {
     fn build(&self, app: &mut App) {
         use crate::console::resource_cvar;
         app.add_message::<PlaySound>()
+            .add_message::<crate::map::SoundControl>()
             .add_message::<FireEntityOutput>()
             .add_message::<FireEntityOutputValue>()
             .add_message::<MapEntityInput>()
@@ -529,6 +554,9 @@ fn chargers(
     mut play: MessageWriter<PlaySound>,
     mut outputs: MessageWriter<FireEntityOutput>,
     mut values: MessageWriter<FireEntityOutputValue>,
+    mut loops: MessageWriter<crate::map::SoundControl>,
+    dials: Query<(Entity, &crate::map::PropEntity, Option<&crate::map::PropCycle>)>,
+    mut commands: Commands,
 ) {
     let now = clock.now;
     let places: Vec<(Entity, Vec3)> = q.iter().map(|(e, t, _)| (e, t.translation)).collect();
@@ -585,6 +613,9 @@ fn chargers(
         }
         // 4. Switch off a while after the last use.
         ch.off_at = Some(now + IDLE_OFF);
+        // The dial runs ahead while held (1/7 a tick, the citadel's 10/7).
+        let drop = if ch.kind == ChargerKind::Citadel { 10.0 } else { 1.0 } / 7.0;
+        ch.display = (ch.display - drop).max(0.0);
         // 5. One charge every 0.1 s (strictly).
         if now <= ch.last_charge + GAP + SAME {
             continue;
@@ -603,7 +634,14 @@ fn chargers(
             }
             Some(since) if !ch.looping && now >= since + LOOP_DELAY - SAME => {
                 ch.looping = true;
-                sound(&mut play, looping, at, ce);
+                ch.loop_on = true;
+                loops.write(crate::map::SoundControl::Start(crate::map::StartSound {
+                    key: loop_key(ch.map_index),
+                    entry: looping.into(),
+                    at: Some(at),
+                    follow: Some(ce),
+                    ..default()
+                }));
             }
             _ => {}
         }
@@ -664,6 +702,7 @@ fn chargers(
         {
             ch.refill_at = None;
             ch.pool = ch.max;
+            ch.display = ch.pool;
             let entry = if ch.suit() { "SuitRecharge.Start" } else { "WallHealth.Recharge" };
             sound(&mut play, entry, ct.translation, ce);
             if ch.suit() {
@@ -673,6 +712,20 @@ fn chargers(
                     activator: None,
                 });
             }
+        }
+    }
+    // The loop sound stops with the run; the dial shows the display.
+    for (_, _, mut ch) in &mut q {
+        if ch.loop_on && !ch.looping {
+            ch.loop_on = false;
+            loops.write(crate::map::SoundControl::Stop(loop_key(ch.map_index)));
+        }
+    }
+    for (node, prop, held) in &dials {
+        let Some((_, _, ch)) = q.iter().find(|(_, _, c)| c.map_index == prop.0) else { continue };
+        let cycle = crate::map::PropCycle(dial_cycle(ch.display, ch.max, ch.suit() && ch.running.is_some()));
+        if held != Some(&cycle) {
+            commands.entity(node).insert(cycle);
         }
     }
 }
@@ -692,6 +745,7 @@ fn charger_inputs(
             "recharge" if ch.suit() => {
                 let was_below = ch.pool < ch.max;
                 ch.pool = ch.max;
+                ch.display = ch.pool;
                 ch.refill_at = None;
                 ch.off_at = None;
                 sound(&mut play, "SuitRecharge.Start", ct.translation, ce);
@@ -707,6 +761,7 @@ fn charger_inputs(
                 let n = i.value.trim().parse::<f32>().unwrap_or(0.0).trunc();
                 ch.pool = n;
                 ch.max = n;
+                ch.display = n;
             }
             _ => {}
         }
@@ -718,6 +773,7 @@ fn switch_off(ch: &mut Charger, now: f64) {
     ch.off_at = None;
     ch.running = None;
     ch.looping = false;
+    ch.display = ch.pool;
     if ch.pool <= 0.0 && ch.refill_at.is_none() {
         let wait = match ch.kind {
             ChargerKind::Health => HEALTH_REFILL,

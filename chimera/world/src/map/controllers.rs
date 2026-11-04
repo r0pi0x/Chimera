@@ -6,10 +6,18 @@
 //!
 //! Physics controllers the logic switches (`BodyControllers`): phys_thruster's
 //! push and turn worked out at each turn-on (`thrust_rates`), keepupright's
-//! correction (`upright_change`) and phys_motor's spin (`motor_change`), added
-//! to the body's velocities before each physics step; map constraints as avian
+//! correction (`upright_change`), phys_motor's spin (specs/hl2dm/
+//! maps_entities.md 10: its target ramped by `motor_ramp`, the drive
+//! `motor_drive` toward it with the inertia factor's gain and cap) and a
+//! hinge motor's (`motor_change`), added to the body's velocities before
+//! each physics step; map constraints as avian
 //! joints (`BodyJoints`: fixed, ball, hinge, slide, length; to the world
-//! through a static anchor body; off as `JointDisabled`).
+//! through a static anchor body; off as `JointDisabled`). A joint to the
+//! world with "No Collision" (physics_constraints.md 1.4: the world is the
+//! other body) keeps its body out of the world's collision (its brushes and
+//! static props, `WorldCollider`) while it holds (`NoWorldContacts`, dropped in the app's collision hooks:
+//! `WorldContacts`), so dm_lockdown's fan, hinged inside its housing,
+//! spins free.
 
 use avian3d::prelude::{
     AngularVelocity, ComputedAngularInertia, ComputedCenterOfMass, ComputedMass, LinearVelocity, PhysicsSystems,
@@ -48,9 +56,22 @@ pub enum ControlKind {
     /// phys_keepupright: turn the body's up (its entity +Z, engine local
     /// +Y) toward `goal` at most `limit` rad/s per step.
     Upright { goal: Vec3, limit: f32 },
-    /// phys_motor: spin about `axis` (world, unit) at `speed` rad/s,
-    /// reached over `spinup` seconds.
-    Motor { axis: Vec3, speed: f32, spinup: f32 },
+    /// phys_motor (specs/hl2dm/maps_entities.md 10): spin about `axis`
+    /// (world, unit) at `speed` rad/s. Its target ramps toward `speed` over
+    /// `spinup` s (0: `speed` per second, `motor_ramp`); the drive moves the
+    /// spin toward the target by `inertia_factor` × the step of the gap,
+    /// at most `inertia_factor` × (ramp + `add_accel` rad/s²) × the step
+    /// (`motor_drive`).
+    Motor {
+        axis: Vec3,
+        speed: f32,
+        spinup: f32,
+        inertia_factor: f32,
+        add_accel: f32,
+    },
+    /// A hinge's motor: the spin about `axis` (world, unit) set to `speed`
+    /// rad/s at once (`motor_change` with no spin-up).
+    Spin { axis: Vec3, speed: f32 },
     /// A slider's motor: move along `axis` (world, unit) at `speed` m/s,
     /// at once.
     Slide { axis: Vec3, speed: f32 },
@@ -125,6 +146,92 @@ fn break_joints(
     }
 }
 
+/// Marks the world's own colliders (its brushes and terrain), which a
+/// body hinged to the world with "No Collision" doesn't touch.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct WorldCollider;
+
+/// On a body joined to the world by a joint with "No Collision" that is
+/// on: its colliders don't touch the world's (`WorldContacts`).
+#[derive(Component, Debug, Clone, Copy)]
+pub struct NoWorldContacts;
+
+/// For the app's collision hooks: a `NoWorldContacts` body never touches
+/// a `WorldCollider`.
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct WorldContacts<'w, 's> {
+    marked: Query<'w, 's, (), With<NoWorldContacts>>,
+    world: Query<'w, 's, (), With<WorldCollider>>,
+    of: Query<'w, 's, &'static avian3d::prelude::ColliderOf>,
+}
+
+impl WorldContacts<'_, '_> {
+    /// Some(false) when colliders `a` and `b` are such a body's and the
+    /// world's; None otherwise.
+    pub fn filter(&self, a: Entity, b: Entity) -> Option<bool> {
+        if self.marked.is_empty() {
+            return None;
+        }
+        let body = |e: Entity| self.of.get(e).map_or(e, |o| o.body);
+        for (me, other) in [(a, b), (b, a)] {
+            if self.marked.contains(body(me)) && self.world.contains(other) {
+                return Some(false);
+            }
+        }
+        None
+    }
+}
+
+/// Put `NoWorldContacts` on the bodies whose world joints with "No
+/// Collision" are on, and take it off the others. The body's colliders get
+/// the pair filter, and are switched off and on once so that pairs the
+/// broad phase already made with the world go and the filter decides anew.
+/// (Part of `sync_joints`: a system of its own reorders the schedule.)
+fn sync_world_contacts(
+    joints: &BodyJoints,
+    marked: &Query<Entity, With<NoWorldContacts>>,
+    bodies: &Query<Option<&avian3d::prelude::RigidBodyColliders>>,
+    colliders: &Query<(Option<&avian3d::prelude::ActiveCollisionHooks>, Has<avian3d::prelude::ColliderDisabled>)>,
+    commands: &mut Commands,
+) {
+    use avian3d::prelude::{ActiveCollisionHooks, ColliderDisabled};
+    let wanted: Vec<Entity> = joints
+        .0
+        .iter()
+        .filter(|j| j.body1.is_none() && j.no_collide && j.on)
+        .map(|j| j.body2)
+        .filter(|b| bodies.contains(*b))
+        .collect();
+    let renew = |body: Entity, commands: &mut Commands| {
+        let Ok(list) = bodies.get(body) else { return };
+        let list: Vec<Entity> = match list {
+            Some(l) => l.iter().collect(),
+            None => vec![body],
+        };
+        for c in list {
+            let Ok((hooks, disabled)) = colliders.get(c) else { continue };
+            let hooks = hooks.copied().unwrap_or_default() | ActiveCollisionHooks::FILTER_PAIRS;
+            let mut e = commands.entity(c);
+            e.try_insert(hooks);
+            if !disabled {
+                e.try_insert(ColliderDisabled).try_remove::<ColliderDisabled>();
+            }
+        }
+    };
+    for b in &wanted {
+        if !marked.contains(*b) {
+            commands.entity(*b).try_insert(NoWorldContacts);
+            renew(*b, commands);
+        }
+    }
+    for b in marked {
+        if !wanted.contains(&b) {
+            commands.entity(b).try_remove::<NoWorldContacts>();
+            renew(b, commands);
+        }
+    }
+}
+
 /// The joints that exist now.
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub struct BodyJoints(pub Vec<BodyJoint>);
@@ -141,6 +248,34 @@ pub fn motor_change(omega: Vec3, axis: Vec3, speed: f32, spinup: f32, h: f32) ->
     };
     let next = now + (speed - now).clamp(-step, step);
     axis * (next - now)
+}
+
+/// phys_motor's ramp rate (rad/s²): speed/spinup, or speed per second
+/// with no spin-up.
+pub fn motor_accel(speed: f32, spinup: f32) -> f32 {
+    if spinup > 0.0 { speed.abs() / spinup } else { speed.abs() }
+}
+
+/// phys_motor's target one step of `h` seconds later: toward `speed` by at
+/// most `accel`·h (spec 10's ramp, every tick while ramping, the TurnOn
+/// tick too).
+pub fn motor_ramp(target: f32, speed: f32, accel: f32, h: f32) -> f32 {
+    let step = accel * h;
+    target + (speed - target).clamp(-step, step)
+}
+
+/// phys_motor's change of angular velocity for one step of `h` seconds
+/// (spec 10's drive): the rate about `axis` moves toward `target` by
+/// k·h of the gap (all of it when k·h ≥ 1), at most k·`cap`·h, where k is
+/// the inertia factor and `cap` the ramp rate plus the extra headroom.
+/// Nothing when the target is 0 (the body coasts).
+pub fn motor_drive(omega: Vec3, axis: Vec3, target: f32, k: f32, cap: f32, h: f32) -> Vec3 {
+    if target == 0.0 {
+        return Vec3::ZERO;
+    }
+    let gap = target - omega.dot(axis);
+    let limit = k * cap * h;
+    axis * (gap * (k * h).min(1.0)).clamp(-limit, limit)
 }
 
 /// The controllers on now (the logic layer writes it).
@@ -225,6 +360,7 @@ pub fn upright_change(rotation: Quat, omega: Vec3, goal: Vec3, limit: f32, h: f3
 fn apply(
     controllers: Res<BodyControllers>,
     mut started: Local<std::collections::HashMap<u64, Started>>,
+    mut targets: Local<std::collections::BTreeMap<u64, f32>>,
     mut bodies: Query<(
         &mut LinearVelocity,
         &mut AngularVelocity,
@@ -239,6 +375,8 @@ fn apply(
 ) {
     let h = time.timestep().as_secs_f32();
     started.retain(|k, _| controllers.0.iter().any(|c| c.key == *k));
+    // A motor turned off (gone from the list) drops its target to 0.
+    targets.retain(|k, _| controllers.0.iter().any(|c| c.key == *k));
     for c in &controllers.0 {
         let Ok((mut v, mut w, rot, mass, inertia, centre, sleeping)) = bodies.get_mut(c.body) else {
             continue;
@@ -302,7 +440,22 @@ fn apply(
                 (a * *scale * h, alpha * *scale * h)
             }
             ControlKind::Upright { goal, limit } => (Vec3::ZERO, upright_change(rotation, w.0, *goal, *limit, h)),
-            ControlKind::Motor { axis, speed, spinup } => (Vec3::ZERO, motor_change(w.0, *axis, *speed, *spinup, h)),
+            ControlKind::Motor {
+                axis,
+                speed,
+                spinup,
+                inertia_factor,
+                add_accel,
+            } => {
+                let accel = motor_accel(*speed, *spinup);
+                let target = targets.entry(c.key).or_insert(0.0);
+                *target = motor_ramp(*target, *speed, accel, h);
+                (
+                    Vec3::ZERO,
+                    motor_drive(w.0, *axis, *target, *inertia_factor, accel + *add_accel, h),
+                )
+            }
+            ControlKind::Spin { axis, speed } => (Vec3::ZERO, motor_change(w.0, *axis, *speed, 0.0, h)),
             ControlKind::Slide { axis, speed } => (*axis * (*speed - v.0.dot(*axis)), Vec3::ZERO),
         };
         if dv == Vec3::ZERO && dw == Vec3::ZERO {
@@ -323,7 +476,15 @@ struct MadeJoints(std::collections::HashMap<u64, (Entity, Option<Entity>, BodyJo
 
 /// Make, switch and remove joint entities to match `BodyJoints`. A joint
 /// to the world holds its body to a static body at the anchor.
-fn sync_joints(joints: Res<BodyJoints>, mut made: Local<MadeJoints>, mut commands: Commands) {
+fn sync_joints(
+    joints: Res<BodyJoints>,
+    mut made: Local<MadeJoints>,
+    marked: Query<Entity, With<NoWorldContacts>>,
+    bodies: Query<Option<&avian3d::prelude::RigidBodyColliders>>,
+    colliders: Query<(Option<&avian3d::prelude::ActiveCollisionHooks>, Has<avian3d::prelude::ColliderDisabled>)>,
+    mut commands: Commands,
+) {
+    sync_world_contacts(&joints, &marked, &bodies, &colliders, &mut commands);
     use avian3d::prelude::{
         DistanceJoint, FixedJoint, JointCollisionDisabled, JointDisabled, PrismaticJoint, RevoluteJoint, RigidBody,
         SphericalJoint,
@@ -423,15 +584,53 @@ mod motor_tests {
     use super::*;
 
     #[test]
-    fn motor_spins_up_over_its_time() {
-        // 100 deg/s over 1 s: a tenth of the way in 0.1 s.
+    fn a_hinge_motor_sets_its_spin_at_once() {
         let speed = 100f32.to_radians();
-        let dw = motor_change(Vec3::ZERO, Vec3::Y, speed, 1.0, 0.1);
-        assert!((dw.y - speed * 0.1).abs() < 1e-5);
-        // At speed: nothing; no spin-up: at once.
-        assert_eq!(motor_change(Vec3::Y * speed, Vec3::Y, speed, 1.0, 0.1), Vec3::ZERO);
         assert!((motor_change(Vec3::ZERO, Vec3::Y, speed, 0.0, 0.1).y - speed).abs() < 1e-5);
+        assert_eq!(motor_change(Vec3::Y * speed, Vec3::Y, speed, 0.0, 0.1), Vec3::ZERO);
         // Other axes are left alone.
         assert_eq!(motor_change(Vec3::X, Vec3::Y, 0.0, 1.0, 0.1), Vec3::ZERO);
+    }
+
+    /// maps_entities.md test case 35: speed 1500, spinup 0, TurnOn at tick
+    /// k: target 22.5 at k, +22.5 a tick, 1485 at k + 65, 1500 from k + 66.
+    #[test]
+    fn phys_motor_ramps_its_target() {
+        let h = 0.015;
+        let a = motor_accel(1500.0, 0.0);
+        assert_eq!(a, 1500.0);
+        assert_eq!(motor_accel(-90.0, 2.0), 45.0);
+        let mut t = 0.0;
+        let mut seen = Vec::new();
+        for _ in 0..=67 {
+            t = motor_ramp(t, 1500.0, a, h);
+            seen.push(t);
+        }
+        assert!((seen[0] - 22.5).abs() < 1e-3);
+        assert!((seen[1] - 45.0).abs() < 1e-3);
+        assert!((seen[65] - 1485.0).abs() < 1e-2, "{}", seen[65]);
+        assert_eq!(seen[66], 1500.0);
+        assert_eq!(seen[67], 1500.0);
+    }
+
+    /// The drive closes k·h of the gap (all of it once k·h ≥ 1), capped
+    /// at k·(ramp + headroom)·h, and does nothing at target 0.
+    #[test]
+    fn phys_motor_drives_toward_its_target() {
+        let x = Vec3::X;
+        // dm_lockdown's fan: k 125, a full step closes the gap.
+        let dw = motor_drive(Vec3::X * 10.0, x, 26.18, 125.0, 26.18, 0.015);
+        assert!((dw.x - 16.18).abs() < 1e-3);
+        // k 1: a sixty-sixth of the gap.
+        let dw = motor_drive(Vec3::ZERO, x, 1.0, 1.0, 100.0, 0.015);
+        assert!((dw.x - 0.015).abs() < 1e-6);
+        // Capped: k·cap·h.
+        let dw = motor_drive(Vec3::ZERO, x, 100.0, 10.0, 1.0, 0.015);
+        assert!((dw.x - 0.15).abs() < 1e-6);
+        // Off: the body coasts.
+        assert_eq!(motor_drive(Vec3::X * 5.0, x, 0.0, 125.0, 26.0, 0.015), Vec3::ZERO);
+        // Only the axis's part changes.
+        let dw = motor_drive(Vec3::new(1.0, 3.0, 0.0), x, 2.0, 125.0, 26.0, 0.015);
+        assert_eq!(dw.y, 0.0);
     }
 }
