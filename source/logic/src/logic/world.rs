@@ -702,6 +702,11 @@ pub struct LogicWorld {
     /// Classes (lower case) the game handles itself: their inputs go out
     /// as `Effect::EntityInput`.
     pub game_classes: Vec<String>,
+    /// A prop broken other than by lethal damage (the Break input, a
+    /// health input, pressure) stays where it is, non-solid and
+    /// undamageable, instead of being removed: HL2:DM's rule
+    /// (`KeepPropsOnBreak`; CS:S removes it).
+    pub break_keeps_props: bool,
     /// Live sounds of the AI sound list (`sensors`), entity space.
     pub ai_sounds: Vec<super::sensors::AiSoundEntry>,
 }
@@ -787,6 +792,7 @@ impl LogicWorld {
             template_serial: 0,
             views: Vec::new(),
             game_classes: Vec::new(),
+            break_keeps_props: false,
             ai_sounds: Vec::new(),
         }
     }

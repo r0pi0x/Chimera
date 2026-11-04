@@ -111,3 +111,22 @@ Notes (round 3, 2026-11-04):
   version 3 each map change doubled the "D" lines).
 - A tracked physics prop's `m_vecAbsVelocity` reads 0: take its velocity
   from its position's steps (`cases.speed`).
+
+Notes (round 4, 2026-11-04):
+- Plugin version 4: `probe_clientcvar <client> <cvar> <value>` sets a
+  fake client's client cvar (its `cl_playermodel`), `probe_model` prints
+  every player's model, and tracking a player (`probe_track <client>`)
+  no longer hooks its damage a second time (before, each `probe_track`
+  of a player after a `clear` added one more "D" line per hit).
+- Removing spawn spots (`probe_fire <spot> Kill`) crashes the server at
+  the next spawn if one of them was the last spot a spawn used: remove
+  them right after a map load with no bots in the game, then add the
+  bots (`cases.spawn_spots`).
+- `sv_gravity` set mid-map doesn't change the physics' gravity (props
+  still fall at the map load's 600).
+- The AR2's deploy takes about 1 s: an alt-fire pressed 40 ticks after
+  selecting it does nothing.
+- A player's second chat line within about a second of its first is
+  dropped (no log line, no `player_say`).
+- `cases.models` wants a fresh server process (the model counters are
+  never reset); `spawns_more` changes the map twice.

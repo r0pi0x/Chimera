@@ -65,6 +65,33 @@ fn a_respawnable_prop_keeps_its_name_and_comes_back() {
     assert_eq!(fired(&w, p, "OnBreak").len(), 2);
 }
 
+/// gravity_gun.md P13 (probe, 2026-11-04, `cases.py respawnable`): with
+/// no `RespawnTime` a broken respawnable crate comes back 60 s later (the
+/// real one 4005 ticks after the shot), and while a player stands on its
+/// spot it tries again every second (6 more tries, 402 ticks, for a bot
+/// standing there 6 s past the 60).
+#[test]
+fn a_respawnable_prop_without_a_time_comes_back_after_60_s() {
+    let mut w = world();
+    let p = spawn(
+        &mut w,
+        &[("classname", "prop_physics_respawnable"), (PROP_HEALTH_KEY, "30"), (PROP_PIECES_KEY, "7")],
+    );
+    w.activate();
+    run_to(&mut w, 1);
+    w.prop_hit(p, hit(100.0));
+    w.effects.clear();
+    let asked = |w: &LogicWorld| w.effects.iter().filter(|e| matches!(e, Effect::PropRespawn { .. })).count();
+    run_to(&mut w, 1 + 3990);
+    assert_eq!(asked(&w), 0, "not before 60 s");
+    run_to(&mut w, 1 + 4002);
+    assert_eq!(asked(&w), 1, "at 60 s");
+    w.effects.clear();
+    w.prop_respawn_blocked(p);
+    run_to(&mut w, 1 + 4002 + 68);
+    assert_eq!(asked(&w), 1, "again a second later while blocked");
+}
+
 #[test]
 fn the_sensor_fires_after_its_interval_once_the_spin_passes_the_threshold() {
     let mut w = world();

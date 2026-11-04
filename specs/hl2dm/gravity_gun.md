@@ -978,3 +978,50 @@ dedicated server build 24600426), marked **(probe)**:
       0.8333 s on: the draw); with primary held at the `+use` press the
       crate is thrown at once. `+use` again or secondary drops it from
       rest. Sprint held while carrying runs at 190.
+13. **Probe results, round 4 (2026-11-04, build 24600426, `cases.py
+    crate_hits gravity_more`).**
+    - Punts into a player (P10, P11's horizontal hits; the bot's damage
+      lines and its position tracked): a crate 50 ahead of a bot 200
+      away, punted level: 10 kg at 1500: 20 + 10; 30 kg at 1000:
+      20 + 10 + 5; 100 kg at 730: 50 + 10 + 10; 250 kg at 650:
+      100 + 5 + 10; the 30 kg crate with the bot 100 away (at 1100):
+      50 + 10 + 5. The crate keeps on forward after the hit (10 kg about
+      0, 30 kg 165, 100 kg 337, 250 kg 445 in/s; near a plain inelastic
+      collision with an 85 kg body) and the bot is pushed back: 650 in/s
+      on the hit's tick for 30 kg, 1110 for 100 kg, slowing on the floor.
+    - P14: a `prop_physics_multiplayer` crate punted into a bot hurts it
+      as a `prop_physics` one: 30 kg 20 + 10 + 5, 100 kg 50 + 10 + 10
+      (Corrections 1).
+    - P8: secondary held at a 30 kg crate resting 600 ahead (looking at
+      it): its floor speed 75.7 on the first tug's tick, then 72.0,
+      66.2, 62.4, 57.3, 51.9, 46.6, 121.8, ... (each tug 81.3 less a
+      tick of floor friction, about 5.5 in/s, every 7 ticks); 10 kg:
+      78.2, ... 125.9 (84 less friction). As section 3.
+    - P12 (Open questions 3): an AR2 ball caught by the gravity gun as it
+      left the catcher's own gun and launched flew at 959 until its first
+      bounce, then 1500.
+    - P15 (Open questions 9): the `Break` input on a 30-health wood crate
+      leaves it where it was, drawn (effects 0), solid flags 4 (not
+      solid), take-damage 0, health 30; nothing created or removed on
+      the server.
+    - P13: a `prop_physics_respawnable` crate with no `RespawnTime` shot
+      with the .357 is hidden at once (effects 32, put at its spawn
+      origin) and drawn again 4005 ticks (60.08 s) later; with the bot
+      standing on its spot it came back 402 ticks (6 tries 1 s apart)
+      after the 60 s, 68 ticks after the bot left.
+    - P7: a 20 kg crate held level against a frozen 200 kg crate whose
+      edge stopped it about 41.6 from the hold point dropped 57 ticks
+      after the 1 s grace (the formula's 57 for e = 41.6, halved). Held
+      14.0-14.4 from it (by our estimate of the hold point, 66.8 ahead)
+      it never dropped in 333 ticks after the grace (the formula: 114 to
+      129); held 11.6 from it it dropped after 266. Our estimate of the
+      gap may be off by about a unit and the hold point by more (the
+      contact keeps the crate a little off the frozen one), so the small
+      gaps don't settle the 15-24 band; the measured 41.6 case fits.
+    - P3 on the floor (round 3's 51.4 degrees and 1490 degrees/s;
+      Chimera 46 degrees, 1670): not closed. In Chimera the floor
+      contact's restitution decides it (0: 43 degrees, 2220 degrees/s;
+      the crate's 0.14: 46, 1670; 0.3: 49, 1190; 0.5: 52, 590), the
+      friction not at all, and no value gives both the climb and the
+      spin; the first tick's step is (773, 728) where the real crate's
+      is (773, 898): vphysics' edge contact acts within the punt's tick.

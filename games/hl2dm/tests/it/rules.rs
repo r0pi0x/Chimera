@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use chimera_core::{
     console::{CommandPlayer, execute},
     core::{Damage, DamageKind, Dead, Health, Hitgroup, Intent, MapCycle, Score, SimClock, Spectating, Team, UserInfo},
-    game_log::{EventValue, GameEvent},
+    game_log::{EventValue, GameEvent, Said, ServerLog},
 };
 use chimera_sim::mode::Match;
 use chimera_world::{
@@ -870,5 +870,113 @@ fn tdm_friendly_fire_and_kills_as_the_probe_measured() {
         g.sim.ticks(1);
         assert!(g.dead(a));
         assert_eq!(g.teams(), teams, "a world kill");
+    }
+}
+
+/// P12 (probe, 2026-11-04, `cases.py log_lines`): the server log's lines
+/// for a kill, a suicide, chat and a team change, as the real server
+/// wrote them: `"<a>" killed "<b>" with "357"`, `"<a>" say "hello"`; a DM
+/// player's `say_team` writes no line, a TDM player's `say_team` does.
+#[test]
+fn the_log_lines_as_the_probe_measured() {
+    let lines = |g: &Game| -> Vec<String> {
+        let log = g.sim.app.world().resource::<ServerLog>();
+        log.lines.iter().map(|l| l.split_once(": ").map_or(l.clone(), |(_, t)| t.to_string())).collect()
+    };
+    let mut g = game(dm_spots(), |_| {});
+    {
+        let mut log = g.world().resource_mut::<ServerLog>();
+        log.enabled = true;
+        log.file = 0;
+        log.echo = 0;
+    }
+    let a = g.join("none");
+    let b = g.join("none");
+    g.kill(b, Some(a));
+    g.world().write_message(Said { from: a, text: "hello there".into(), team_only: false });
+    g.world().write_message(Said { from: a, text: "team words".into(), team_only: true });
+    g.sim.ticks(3);
+    let got = lines(&g);
+    assert!(
+        got.iter().any(|l| l.starts_with('"') && l.contains("<Unassigned>\" killed \"") && l.contains("<Unassigned>\" with \"")),
+        "{got:#?}"
+    );
+    assert!(got.iter().any(|l| l.ends_with("<Unassigned>\" say \"hello there\"")), "{got:#?}");
+    assert!(!got.iter().any(|l| l.contains("say_team")), "DM: no say_team line: {got:#?}");
+
+    let mut g = game(dm_spots(), |r| r.teamplay = 1);
+    {
+        let mut log = g.world().resource_mut::<ServerLog>();
+        log.enabled = true;
+        log.file = 0;
+        log.echo = 0;
+    }
+    let a = g.join("none");
+    g.world().write_message(Said { from: a, text: "tdm team words".into(), team_only: true });
+    g.sim.ticks(3);
+    let got = lines(&g);
+    assert!(got.iter().any(|l| l.ends_with("> say_team \"tdm team words\"") || l.ends_with("\" say_team \"tdm team words\"")), "{got:#?}");
+}
+
+/// P9, P10 (probe, 2026-11-04, `cases.py spawn_spots` on dm_lockdown cut
+/// to two spots): with every spot taken the telefrag kills the players
+/// whose box reaches within 48 of the first candidate (a bot 60 and 62
+/// units from it died, one 66 away lived); a dead player's body and a
+/// spectator standing on a spot each make it taken (Open questions 3).
+#[test]
+fn spawn_spots_as_the_probe_measured() {
+    let two = || {
+        vec![
+            entity("info_player_deathmatch", Vec3::new(0.0, 0.0, 0.0), Vec3::ZERO),
+            entity("info_player_deathmatch", Vec3::new(1000.0, 0.0, 0.0), Vec3::ZERO),
+        ]
+    };
+    let put = |g: &mut Game, p: Entity, x: f32| {
+        let at = to_engine(Vec3::new(x, 0.0, 36.0));
+        g.world().get_mut::<Transform>(p).unwrap().translation = at;
+        g.sim.ticks(1);
+    };
+    let deaths = |g: &Game| g.events("player_death").len();
+    // 60 from each spot (the box 44 away): whichever spot comes first, its
+    // player dies.
+    let mut g = game(two(), |_| {});
+    let (a, b) = (g.join("none"), g.join("none"));
+    put(&mut g, a, 60.0);
+    put(&mut g, b, 1060.0);
+    let before = deaths(&g);
+    let _c = g.join("none");
+    g.sim.ticks(2);
+    assert_eq!(deaths(&g) - before, 1, "one telefrag at 60");
+    // 66 (the box 50 away): taken, but nobody dies.
+    let mut g = game(two(), |_| {});
+    let (a, b) = (g.join("none"), g.join("none"));
+    put(&mut g, a, 66.0);
+    put(&mut g, b, 1066.0);
+    let before = deaths(&g);
+    let c = g.join("none");
+    g.sim.ticks(2);
+    assert_eq!(deaths(&g) - before, 0, "nobody at 66");
+    assert!(g.feet(c).x.abs() < 1.0 || (g.feet(c).x - 1000.0).abs() < 1.0, "at a spot");
+    // A body on A: A is taken, the newcomer goes to B.
+    for _ in 0..3 {
+        let mut g = game(two(), |_| {});
+        let (a, b) = (g.join("none"), g.join("none"));
+        put(&mut g, a, 30.0);
+        put(&mut g, b, 5000.0);
+        g.kill(a, None);
+        let c = g.join("none");
+        assert!((g.feet(c).x - 1000.0).abs() < 1.0, "a body takes its spot: {}", g.feet(c));
+    }
+    // A spectator on A: the same.
+    for _ in 0..3 {
+        let mut g = game(two(), |_| {});
+        let (a, b) = (g.join("none"), g.join("none"));
+        g.command(a, "hl2dm:spectate");
+        g.sim.ticks(2);
+        put(&mut g, a, 30.0);
+        put(&mut g, b, 5000.0);
+        let c = g.join("none");
+        assert!((g.feet(c).x - 1000.0).abs() < 1.0, "a spectator takes its spot: {}", g.feet(c));
+        assert!(g.world().get::<Spectating>(a).is_some());
     }
 }
