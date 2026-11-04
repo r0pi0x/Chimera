@@ -194,7 +194,10 @@ fn held_kit(kit: &mut Kit) {
     super::bodies::add_held(kit.materials, kit.surfaces, kit.kit, &mut kit.data.kit, &mut kit.data.warnings);
     // The headcrab canisters' models, on maps that have one.
     if kit.data.entities.iter().any(|e| e.classname().eq_ignore_ascii_case("env_headcrabcanister")) {
-        let held = super::set_pieces::canister_models(kit.materials, &mut kit.data.warnings);
+        let sky = kit.data.entities.iter().find(|e| e.classname().eq_ignore_ascii_case("sky_camera")).map(|e| {
+            e.get("scale").and_then(|s| s.trim().parse::<f32>().ok()).filter(|s| *s > 0.0).unwrap_or(16.0)
+        });
+        let held = super::set_pieces::canister_models(kit.materials, sky, &mut kit.data.warnings);
         kit.data.kit.held.extend(held);
     }
     kit.data.kit.muzzle_flash_kinds = super::flashes::kinds(kit.materials);

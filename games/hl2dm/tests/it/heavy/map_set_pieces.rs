@@ -232,3 +232,83 @@ fn lockdown_fan_is_watched() {
     assert!(spin(&sim) < 1400.0);
     assert_eq!(count_fired(&sim, "OnLessThan"), 1, "and saw it drop below");
 }
+
+/// dm_runoff's canisters are placed as props are (maps_entities.md 8):
+/// pitch −71 points their forward axis 71 deg up, so the model's long axis
+/// (its +X) stands steep both in flight (along the flight) and landed
+/// (stuck in the ground nose-first), not lying flat. Measured on the shown
+/// items' drawn pose (their `Transform` and loose frame). Before they
+/// enter the world they fly in the 3D skybox (most of their 4 s).
+#[test]
+fn runoff_canisters_stand_steep() {
+    use chimera_world::map::loose::{LooseAssets, ShownItem};
+    use hl2dm::game::set_pieces::{CANISTER_MODEL, Canister, SKY_CANISTER_MODEL};
+    let Some(mount) = install_mount() else { return };
+    let data = convert(&mount, "dm_runoff", &MapLoadOptions::lean());
+    // The models' long axis is their +X (the flight model's hull is
+    // ±66.51 × ±21.27 × ±21.29).
+    for h in data.kit.held.iter().filter(|h| h.key.starts_with(CANISTER_MODEL)) {
+        let (lo, hi) = h.model.meshes.iter().flat_map(|m| &m.positions).map(|p| Vec3::from(*p)).fold(
+            (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)),
+            |(lo, hi), p| (lo.min(p), hi.max(p)),
+        );
+        let size = hi - lo;
+        // The landed one's origin is where its nose went in: a third of
+        // it (56 of 148 units) lies behind the origin, in the ground.
+        if h.key != CANISTER_MODEL && !h.key.ends_with("_sky") {
+            assert!(lo.x < -0.3 * size.x, "{}: buried behind its origin, {lo} .. {hi}", h.key);
+        }
+        assert!(size.x > 1.8 * size.y.max(size.z), "{}: long along +X, size {size}", h.key);
+    }
+    let mut sim = sim_of(data);
+    sim.seconds(1.0);
+    fire(&mut sim, "explosion_sequence");
+    sim.seconds(12.0);
+    fire(&mut sim, "explosion_sequence");
+    // The long axis of each shown canister model, in the world (engine
+    // axes, Y up), with its key and place.
+    let axes = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        let frames: Vec<(String, Transform)> =
+            w.resource::<LooseAssets>().0.iter().map(|(k, a)| (k.clone(), a.frame)).collect();
+        let mut q = w.query::<(&ShownItem, &Transform)>();
+        q.iter(w)
+            .filter(|(s, _)| s.0.starts_with(CANISTER_MODEL))
+            .map(|(s, t)| {
+                let frame = frames.iter().find(|(k, _)| *k == s.0).expect("a loose frame").1;
+                ((t.rotation * frame.rotation * Vec3::X).normalize(), s.0.clone(), t.translation)
+            })
+            .collect::<Vec<_>>()
+    };
+    let steep = 60f32.to_radians().sin();
+    let (mut flying, mut first_seen, mut in_sky) = (0, None, 0);
+    for tick in 0..((5.0 / 0.015) as usize) {
+        sim.seconds(0.015);
+        for (axis, key, at) in axes(&mut sim) {
+            if key == SKY_CANISTER_MODEL {
+                in_sky += 1;
+                assert!(axis.y.abs() > steep, "in the skybox its long axis is steep: {axis}");
+            }
+            if key == CANISTER_MODEL {
+                flying += 1;
+                first_seen.get_or_insert((tick, at));
+                assert!(axis.y.abs() > steep, "in flight its long axis is steep: {axis}");
+                let w = sim.app.world_mut();
+                let mut cans = w.query::<&Canister>();
+                let along = cans.iter(w).map(|c| axis.dot(c.dir).abs()).fold(0.0f32, f32::max);
+                assert!(along > 0.99, "it flies along its long axis: {along}");
+            }
+        }
+    }
+    eprintln!("flight model shown {flying} canister-ticks in the world, first at {first_seen:?}; {in_sky} in the skybox");
+    assert!(flying > 0, "the flight model is shown");
+    // dm_runoff's sky is about 1700 units up their line: about 0.55 s of
+    // the 4 s in the world, the rest in the skybox.
+    assert!(in_sky > 5 * flying, "most of the flight is in the skybox: {in_sky} against {flying}");
+    let landed = axes(&mut sim);
+    assert_eq!(landed.len(), 6, "six landed canisters");
+    for (axis, key, at) in landed {
+        eprintln!("{key} at {at}: long axis {axis}");
+        assert!(axis.y > steep, "landed, its long axis stands steep (forward up): {axis}");
+    }
+}
