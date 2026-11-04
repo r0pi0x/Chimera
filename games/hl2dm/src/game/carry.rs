@@ -15,25 +15,37 @@
 //! (its timers held off), sprint is off (`movement::select_speed`);
 //! secondary, a fresh `+use`, the error past 12 after the first second,
 //! the object gone or pinned, standing on it or dying drop it (speed cut to
-//! 285 in/s, spin to 720 deg/s); primary throws it: the same cut, then
+//! 285 in/s, spin to 720 deg/s; zeroed instead when the object touches
+//! anything at that moment, as the spec says); primary throws it: the same cut, then
 //! `player_throwforce` (1000) × k along the view at its centre, k = 0.5 +
 //! 3.5 (clamp(m, 0.5, 15) − 0.5) / 14.5, and k × U(−10, 10) deg/s of spin
 //! on each axis. Either way the weapon in hand is deployed again (its
 //! draw time from now, measured: the SMG1's next attack 0.8333 s on at
 //! the throw). Data: data/use_carry.toml.
 //!
-//! Known shortcuts: a drop while the object touches something isn't
-//! zeroed (the spec's rule; cut like any drop); the throw's spin reads the
-//! spec's random torque as degrees per second (its units aren't given);
-//! the view model isn't hidden while carrying, and the holder's network
-//! client predicts its weapon and sprint as usual (the server's refuse
-//! them); the weapon-selection HUD isn't hidden.
+//! Prediction: the weapon side of the carry is `Carried` (a predicted
+//! part, sent with the snapshot) and `carry_weapon` (`Predict::Weapons`,
+//! after the weapon frame, on the server and on the predicting client): the
+//! weapon's timers held off, and at the throw or a drop by secondary or a
+//! fresh `+use` the deploy; `movement::select_speed` reads `Carried` too, so
+//! the sprint stays off (190). The weapon is holstered in the spec's words,
+//! so the view model (`ViewModelHidden`, kept in step with `Carried` by
+//! `show_hands`) and the weapon-selection HUD (`ui`) are hidden while
+//! carrying. What only the server knows (the object, the error past 12, the
+//! ground, death) still ends a carry there, and the client learns it in the
+//! next snapshot; so does the pick-up itself.
+//!
+//! Known shortcuts: the throw's spin reads the spec's random torque as
+//! degrees per second (its units aren't given); a client doesn't predict the
+//! pick-up (which prop is the server's lookup).
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use chimera_sim::weapon::{Inventory, Weapon, WeaponEvent, WeaponEventKind, WeaponState, random::shared_random};
+use chimera_sim::weapon::{
+    Inventory, ViewModelHidden, Weapon, WeaponEvent, WeaponEventKind, WeaponFrame, WeaponState, random::shared_random,
+};
 
 use super::weapons::{
     launch::{self, U},
@@ -41,7 +53,7 @@ use super::weapons::{
 };
 use crate::{
     console::resource_cvar,
-    core::{Dead, Health, Intent, MovementState, SOLID_LAYERS, SimClock, SimSet},
+    core::{Dead, FirstTimePredicted, Health, Intent, MovementState, Predict, PredictedAppExt, SOLID_LAYERS, SimClock, SimSet},
     map::{
         PhysicsProp, PropEntity,
         held::{self, Held, PhysicsInfluence},
@@ -110,6 +122,14 @@ pub struct Carrying {
     pub error: f32,
     pub error_clock: f64,
     pub last_target: Option<Vec3>,
+    /// `+use` was down on the last tick (a fresh press drops).
+    pub use_was: bool,
+}
+
+/// On a player carrying by `+use`, the part the client predicts (the
+/// weapon held off, the deploy at the end, no sprint) and the server sends.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Carried {
     /// `+use` was down on the last tick (a fresh press drops).
     pub use_was: bool,
 }
@@ -197,6 +217,7 @@ pub fn pick_up(world: &mut World, who: Entity, body: Entity) {
         p.held_mass,
         p.held_rot_damping,
     );
+    world.entity_mut(who).insert(Carried { use_was: true });
     world.entity_mut(who).insert(Carrying {
         object: body,
         relative,
@@ -223,6 +244,9 @@ pub enum Release {
 pub fn release(world: &mut World, who: Entity, how: Release) {
     let Some(c) = world.get::<Carrying>(who).cloned() else { return };
     world.entity_mut(who).remove::<Carrying>();
+    // The predicted side may have deployed the weapon already (`carry_weapon`).
+    let deploy = world.entity_mut(who).take::<Carried>().is_some();
+    let touching = touches(world, c.object);
     let rules = world.get_resource::<CarryRules>().cloned().unwrap_or_default();
     let p = &rules.params;
     if world.get_entity(c.object).is_ok() {
@@ -234,6 +258,7 @@ pub fn release(world: &mut World, who: Entity, how: Release) {
         let v = b.get::<LinearVelocity>().map_or(Vec3::ZERO, |v| v.0).clamp_length_max(p.drop_speed * U);
         let w = b.get::<AngularVelocity>().map_or(Vec3::ZERO, |w| w.0).clamp_length_max(p.drop_spin.to_radians());
         let (v, w) = match how {
+            Release::Drop if touching => (Vec3::ZERO, Vec3::ZERO),
             Release::Drop => (v, w),
             Release::Throw { dir, seed } => {
                 let k = throw_k(p, mass);
@@ -250,7 +275,24 @@ pub fn release(world: &mut World, who: Entity, how: Release) {
             x.0 = w;
         }
     }
-    redeploy(world, who);
+    if deploy {
+        redeploy(world, who);
+    }
+}
+
+/// Whether `body` touches anything that isn't a sensor (8 step 4).
+fn touches(world: &World, body: Entity) -> bool {
+    let Some(graph) = world.get_resource::<ContactGraph>() else { return false };
+    graph.iter_active_touching().chain(graph.iter_sleeping_touching()).any(|pair| {
+        let other = if pair.body1 == Some(body) {
+            pair.collider2
+        } else if pair.body2 == Some(body) {
+            pair.collider1
+        } else {
+            return false;
+        };
+        world.get::<Sensor>(other).is_none()
+    })
 }
 
 /// While carrying, the weapon in hand can't fire: its timers held a tick
@@ -288,6 +330,65 @@ fn redeploy(world: &mut World, who: Entity) {
         kind: WeaponEventKind::Deployed,
         replay: false,
     });
+}
+
+/// Each tick, after the weapon frame, the server's and the predicting
+/// client's (`Predict::Weapons`): the weapon of a player carrying by `+use`
+/// held off, or deployed again when secondary, a fresh `+use` or primary
+/// ends the carry (8 steps 3 and 6; the object itself is `carry`'s).
+#[allow(clippy::type_complexity)]
+pub fn carry_weapon(
+    mut carriers: Query<(Entity, &mut Carried, &Intent, &mut Inventory)>,
+    mut weapons: Query<(&Weapon, &mut WeaponState)>,
+    clock: Res<SimClock>,
+    first: Res<FirstTimePredicted>,
+    mut events: MessageWriter<WeaponEvent>,
+    mut commands: Commands,
+) {
+    let now = clock.now;
+    let ahead = now + 2.0 * clock.dt() as f64;
+    for (who, mut c, intent, mut inv) in &mut carriers {
+        let fresh_use = intent.use_key && !c.use_was;
+        if c.use_was != intent.use_key {
+            c.use_was = intent.use_key;
+        }
+        let ends = intent.secondary || fresh_use || intent.fire;
+        let active = inv.active;
+        let draw = active.and_then(|a| weapons.get(a).ok()).map(|(w, _)| w.draw_time as f64);
+        if ends {
+            commands.entity(who).remove::<Carried>();
+            let Some((active, draw)) = active.zip(draw) else { continue };
+            inv.next_attack = now + draw;
+            if let Ok((_, mut st)) = weapons.get_mut(active) {
+                st.next_primary = now + draw;
+                st.next_secondary = now + draw;
+                st.fired_on_empty = false;
+            }
+            if first.0 {
+                events.write(WeaponEvent { owner: who, weapon: active, kind: WeaponEventKind::Deployed, replay: false });
+            }
+        } else {
+            inv.next_attack = inv.next_attack.max(ahead);
+            if let Some((_, mut st)) = active.and_then(|a| weapons.get_mut(a).ok()) {
+                st.next_primary = st.next_primary.max(ahead);
+                st.next_secondary = st.next_secondary.max(ahead);
+            }
+        }
+    }
+}
+
+/// The view model is hidden while carrying (the weapon is holstered).
+pub fn show_hands(
+    carrying: Query<Entity, (With<Carried>, Without<ViewModelHidden>)>,
+    done: Query<Entity, (With<ViewModelHidden>, Without<Carried>)>,
+    mut commands: Commands,
+) {
+    for e in &carrying {
+        commands.entity(e).insert(ViewModelHidden);
+    }
+    for e in &done {
+        commands.entity(e).remove::<ViewModelHidden>();
+    }
 }
 
 /// Each tick, the server's, after the weapons (8 step 3): a carry's
@@ -328,7 +429,6 @@ pub fn carry(
             commands.queue(move |w: &mut World| release(w, who, Release::Throw { dir, seed }));
             continue;
         }
-        commands.queue(move |w: &mut World| hold_off_weapon(w, who));
         let Ok((mut held, t, ..)) = bodies.get_mut(c.object) else { continue };
         let eye = at.translation + state.eye_offset;
         let clamp = p.pitch_clamp.to_radians();
@@ -388,10 +488,13 @@ pub fn plugin(app: &mut App) {
     resource_cvar::<CarryRules, f32>(app, "hl2dm:player_throwforce", "+use throw impulse base (kg in/s).", |r| {
         &mut r.throw_force
     });
-    app.add_systems(
-        FixedUpdate,
-        carry.after(SimSet::Weapons).run_if(crate::core::authoritative),
-    );
+    app.predicted_net::<Carried>()
+        .add_systems(Predict::Weapons, carry_weapon.after(WeaponFrame))
+        .add_systems(FixedUpdate, show_hands)
+        .add_systems(
+            FixedUpdate,
+            carry.after(SimSet::Weapons).run_if(crate::core::authoritative),
+        );
 }
 
 #[cfg(test)]

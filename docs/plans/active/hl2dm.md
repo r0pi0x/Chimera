@@ -1627,6 +1627,23 @@ implementing (owner branch) / done.
   punt's edge contact, the carry's drop-while-touching rule, the hidden
   view model and HUD while carrying.
 
+- 2026-11-04: **`+use` carry, the three shortcuts** (branch `hl2dm-carry2`).
+  A drop while the crate touches anything but a sensor zeroes its velocity
+  and spin (gravity_gun.md 8 step 4; otherwise cut to 285 and 720). The
+  weapon is holstered in the spec's words, so the view model
+  (`ViewModelHidden` on the player, new in `chimera_sim::weapon`, read by the
+  view animator) and the weapon-selection HUD (`hide_selection`) are hidden
+  while carrying; the spec says nothing more about what shows. A network
+  client predicts the carry: `Carried` is a predicted part (`predicted_net`),
+  `carry_weapon` (`Predict::Weapons`, after the weapon frame, server and
+  client alike) holds the weapon off and deploys it again at a throw or a
+  drop by secondary or a fresh `+use`, and `select_speed` reads `Carried`
+  (sprint stays 190). Pinned by `a_client_predicts_the_carry_as_the_server_runs_it`
+  (`net_gravity_gun.rs`: SMG1 in hand, carry, sprint, throw, fire held; no
+  prediction error, every predicted tick the server's, the deploy 0.8333 s
+  on) and `a_carried_crate_dropped_while_touching_stops_dead`. Left: a
+  client doesn't predict the pick-up itself (the server picks the prop).
+
 ## Decision log
 
 - 2026-10-31 (user): Half-Life 2: Deathmatch is the next game, after

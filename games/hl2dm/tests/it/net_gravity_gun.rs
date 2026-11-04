@@ -266,3 +266,116 @@ fn others_see_the_claws_hold() {
     sim.ticks(40);
     assert_eq!(beams(&mut sim), (Some(GunEffect::Ready), 0), "let go");
 }
+
+/// `hl2mp_allow_pickup` 1 over the network (gravity_gun.md 8): the client
+/// of the carrier predicts the carry's weapon side and its sprint, so its
+/// predicted state is the server's on every tick while it carries, sprints,
+/// presses primary (the throw, the weapon deployed again a draw time on)
+/// and holds it down after: no prediction error, the same state bit for
+/// bit; the pick-up itself is the server's.
+#[test]
+fn a_client_predicts_the_carry_as_the_server_runs_it() {
+    use chimera_core::core::{PredictedComponents, SimTick};
+    use chimera_net::net::predict::{NetGraph, PredictionHistory};
+    use chimera_sim::weapon::Inventory;
+    use hl2dm::game::{carry::{Carried, CarryRules, Carrying}, suit::Suit};
+
+    #[derive(Resource, Default)]
+    struct ServerStates(std::collections::HashMap<u64, Vec<u8>>);
+    let mut sim = joined();
+    sim.clients[0].app.init_resource::<ServerStates>();
+    sim.server.app.world_mut().resource_mut::<CarryRules>().allow_pickup = 1;
+    // The SMG1 in hand (draw 0.8333 s).
+    {
+        let theirs = sim.character_of(0).unwrap();
+        let w = sim.server.app.world_mut();
+        let gun = chimera_sim::weapon::give(w, theirs, "hl2dm:weapon_smg1").unwrap();
+        w.get_mut::<Inventory>(theirs).unwrap().wanted = Some(gun);
+    }
+    place(&mut sim, 1, Vec3::new(0.0, -300.0, 0.0));
+    sim.ticks(100);
+    place(&mut sim, 0, Vec3::new(90.0, 0.0, 0.0));
+    let theirs = sim.character_of(0).unwrap();
+    let me = sim.local_player(0).unwrap();
+    let intent = |sim: &mut NetSim, f: &dyn Fn(&mut Intent)| f(&mut sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap());
+
+    // `+use` at the crate: the server carries it, the snapshot tells the client.
+    intent(&mut sim, &|i| i.use_key = true);
+    sim.step();
+    intent(&mut sim, &|i| i.use_key = false);
+    sim.ticks(40);
+    assert!(sim.server.app.world().get::<Carrying>(theirs).is_some(), "the server carries it");
+    assert!(sim.server.app.world().get::<Carried>(theirs).is_some());
+    assert!(sim.clients[0].app.world().get::<Carried>(me).is_some(), "the client knows");
+    *sim.clients[0].app.world_mut().resource_mut::<NetGraph>() = NetGraph::default();
+
+    // After each step, every tick the client has predicted (the history
+    // is short) is compared with the server's state of that tick, once.
+    let mut compared = std::collections::BTreeSet::new();
+    let mut check = |sim: &mut NetSim| {
+        let w = sim.server.app.world();
+        let tick = w.resource::<SimTick>().0;
+        let state = w.resource::<PredictedComponents>().encode(w, theirs);
+        sim.clients[0].app.world_mut().resource_mut::<ServerStates>().0.insert(tick, state);
+        let (server, history) = {
+            let c = sim.clients[0].app.world();
+            (c.resource::<ServerStates>().0.clone(), c.resource::<PredictionHistory>().0.clone())
+        };
+        for p in history.iter().filter(|p| !p.state.is_empty()) {
+            if let Some(s) = server.get(&p.tick) {
+                assert!(*s == p.state, "the prediction for tick {} isn't the server's", p.tick);
+                compared.insert(p.tick);
+            }
+        }
+        compared.len()
+    };
+    // Sprint backwards while carrying: the run speed, aux power untouched.
+    intent(&mut sim, &|i| {
+        i.sprint = true;
+        i.move_axis = Vec2::NEG_Y;
+    });
+    for _ in 0..40 {
+        sim.step();
+        check(&mut sim);
+    }
+    {
+        let w = sim.clients[0].app.world();
+        assert!(!w.get::<Suit>(me).unwrap().sprinting, "no sprint while carrying");
+        assert!(w.get::<Carried>(me).is_some(), "still carrying");
+    }
+    // Primary throws it, and held down it can't fire the redeployed weapon.
+    intent(&mut sim, &|i| {
+        i.sprint = false;
+        i.move_axis = Vec2::ZERO;
+        i.fire = true;
+    });
+    // The command reaches the server a latency on; the client threw it when
+    // it pressed.
+    let mut thrown = 0;
+    for k in 0..60 {
+        sim.step();
+        check(&mut sim);
+        if k == 0 {
+            assert!(sim.clients[0].app.world().get::<Carried>(me).is_none(), "the client threw it at once");
+        }
+        let w = sim.server.app.world();
+        if thrown == 0 && w.get::<Carrying>(theirs).is_none() {
+            thrown = k + 1;
+            assert!(w.get::<Carried>(theirs).is_none(), "thrown");
+            let now = w.resource::<chimera_core::core::SimClock>().now;
+            let inv = w.get::<Inventory>(theirs).unwrap();
+            let draw = inv.active.and_then(|a| w.get::<chimera_sim::weapon::Weapon>(a)).map(|x| x.draw_time);
+            assert!((inv.next_attack - now - 0.8333).abs() < 0.05, "deployed again: {} at {now}, draw {draw:?}", inv.next_attack);
+        }
+    }
+    assert!(thrown > 0, "the server threw it");
+    intent(&mut sim, &|i| i.fire = false);
+    for _ in 0..40 {
+        sim.step();
+        check(&mut sim);
+    }
+    let g = sim.clients[0].app.world().resource::<NetGraph>().clone();
+    assert_eq!(g.errors, 0, "prediction errors ({g:?})");
+    let n = check(&mut sim);
+    assert!(n > 100, "predicted ticks compared: {n}");
+}

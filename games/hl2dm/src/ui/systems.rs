@@ -150,6 +150,7 @@ pub fn collect(
     windows: Query<&Window>,
     player: Option<Single<(Entity, &Health, Option<&Armor>, Option<&Suit>, Option<&Inventory>, Has<Dead>, Option<&Hl2Team>, Option<&Transform>, Option<&Hl2Ammo>), With<LocalPlayer>>>,
     weapons: Query<(&Weapon, Option<&Magazine>, Option<&Hl2Item>)>,
+    carrying: Query<(), (With<LocalPlayer>, With<crate::game::carry::Carried>)>,
     catalog: Option<Res<WeaponCatalog>>,
     mut taken: MessageReader<DamageTaken>,
     feed: Option<Res<KillFeed>>,
@@ -203,6 +204,8 @@ pub fn collect(
         crosshair: cvars.crosshair != 0,
         quickinfo: cvars.quickinfo != 0,
         hide_empty_slots: cvars.show_empty_slots == 0,
+        // The weapon is holstered while carrying by `+use` (gravity_gun.md 8).
+        hide_selection: !carrying.is_empty(),
         ..Inputs::default()
     };
     if inp.zoomed {
