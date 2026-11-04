@@ -244,7 +244,7 @@ Status: draft
 ### 4. VertexLitGeneric (static props, no baked per-vertex light)
 
 **Routing.**
-- $phong 1 with a $bumpmap (or a $phongwarptexture-type diffuse warp, or a base-alpha phong mask) switches to a separate Phong ("skin") shader. That shader adds a fresnel-ranged Blinn-Phong specular and rim light. Stock CS:S props almost never use it, so it is not specified here (Open questions).
+- $phong 1 with a $bumpmap (or a $lightwarptexture, or $basemapalphaphongmask 1) switches to a separate Phong ("skin") shader: always half-Lambert diffuse, a fresnel-ranged reflection-vector Phong specular and a rim light. It is specified in [shaders_phong.md](shaders_phong.md). CS:S's own content never uses it; HL2:DM's view models and Combine soldiers do.
 - $bumpmap without phong uses a per-pixel-lit bump variant: the same lighting terms evaluated per pixel with the decoded normal.
 
 **Albedo.**
@@ -542,7 +542,7 @@ The defaults for mat_specular, mat_bumpmap and mat_reducefillrate live in the en
     - whether ambient cube values are scaled.
 12. **Pixel-fog depth.** It is assumed that z is the clip-space depth (≈ view distance), as written by the vertex shader. The exact projection terms are engine-set.
 13. **Revision skew.** This was read from the current public SDK (which includes 2025-era additions such as bicubic lightmaps). CS:S's shipping shader DLL may predate some of them; the behaviour above at default convars is expected to be the same.
-14. **$phong on props** (the skin shader) is not specified. Specify it if any CS:S content we load uses it.
+14. **$phong on props: answered** (2026-11-03) in [shaders_phong.md](shaders_phong.md): the routing rule, the DX9 fallbacks, diffuse, specular, rim, envmap and the stock content count (54 materials, all in the shared HL2 content, none in CS:S's own).
 15. **Shaders community maps use that this spec doesn't cover** (found by the map sweep, 2026-10-08; mashup draws stand-ins until they are specified):
     - WindowImposter (surf_ maps' "fake sky" windows: `$envmap` a cubemap, `$color`, `$nofog`): drawn as the cubemap in the view direction, unlit, unfogged, as if infinitely far. The real shader may offset the lookup (parallax inside a box); to check against the game.
     - ShatteredGlass (func_breakable_surf windows' `$crackmaterial`): drawn as a translucent LightmappedGeneric showing its crack texture, its lighting lerped toward 1 by `$unlitfactor` (the Valve Developer Wiki's meaning: 0 multiplies by the lightmap, 1 by one); the per-pane proxy is not modelled. Unset, the factor is taken as 0.3, measured (added by the implementation session, 2026-10-17): cs_militia's broken windows in the house's shade, glass/glasswindowbreak070b (`$translucent`, base and `$detail` the same crack texture, alpha ~0.33, `$envmaptint` 0.05), average (55, 61, 55) in a CS:S screenshot; lit by the lightmap alone mashup drew (28, 24, 17), at 0.3 (58, 62, 56). To check against the shader: the real default, whether base and `$detail` multiply, and the blend's colour space.
