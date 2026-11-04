@@ -2476,6 +2476,13 @@ docs/plans/active/sound.md.
   The game-time rate seems to depend on wall time when the heavy slots
   compete. Make the measure independent of wall-clock contention (or
   run it in a slot of its own) if it fails again.
+- **Once: `combat_arms bots::merc_27_base_point` index out of bounds
+  (2026-11-03).** In 931cda5e's after-push run, `chimera/world/src/map/nav.rs:245`
+  read area 67113151 of 26529: that's the valid 4287 with bit 26 set. It
+  passed 11 reruns and the indices come from safe, deterministic code, so
+  it may be a hardware bit flip (no ECC reporting on the box). If it comes
+  back, look at the ragdoll solver's `get_pair_unchecked_mut` first, then
+  run a memory test.
 
 Measured and culled (docs/performance.md): `chimera_perf`, `refcmp bench`,
 PVS culling by world chunk, areaportals (closed doors hide what's behind

@@ -10,7 +10,8 @@
 //! AR2's flat flash on what its bullets hit and the stunstick's glow and
 //! sparks (`gun_impacts`), and the kit's muzzle flashes (`muzzle_flashes`:
 //! the five sprite strings of the spec's table, per view-model event
-//! option) with their light.
+//! option) with their light. `Sprite`-shader materials the effects draw in
+//! glow or additive render mode (`ADDITIVE_SPRITES`) load additive.
 //!
 //! The projectiles' looks are `projectile_fx` (explosions, the rocket,
 //! the ball, the bolt, the grenades' trails, the laser dot) and the ball's
@@ -72,12 +73,32 @@ pub const MATERIALS: &[&str] = &[
 const AR2_FLASH: &str = "effects/combinemuzzle2_nocull";
 const STUNSTICK_GLOW: &str = "sprites/light_glow02_add";
 
+/// `Sprite`-shader materials the effects draw in glow or additive render
+/// mode: such a material takes its blend from the render mode, not from
+/// its VMT (specs/source/visual_entities.md 5; render modes 3, 5 and 9
+/// add, as `source_engine::content::trails`): the stuck bolt's glow
+/// (`light_glow02_noz`, glow mode, effects_sounds.md 9) and the gravity
+/// gun's punt beam (`orangelight1`, a beam: additive, 11). Loaded as
+/// they are, they blended their black texels over the scene (a black
+/// square around the bolt's glow).
+pub const ADDITIVE_SPRITES: &[&str] = &["sprites/light_glow02_noz", "sprites/orangelight1"];
+
 /// Load the effect materials (runtime, from the install).
 pub fn load_materials(loader: &mut source_engine::content::material::MaterialLoader) -> MapParticles {
-    impact_effects::load_materials(
+    let mut particles = impact_effects::load_materials(
         loader,
         &[MATERIALS, super::projectile_fx::MATERIALS, source_engine::effects::explosions::MATERIALS],
-    )
+    );
+    for name in ADDITIVE_SPRITES {
+        if let Some(i) = particles.find(name) {
+            let m = &mut particles.materials[i];
+            m.blend = crate::map::particles::ParticleBlend::Additive;
+            // The entity's colour and alpha apply.
+            m.vertex_color = true;
+            m.vertex_alpha = true;
+        }
+    }
+    particles
 }
 
 /// The default tracer's streak (specs/cs_source/tracers.md 3.1): 5000
