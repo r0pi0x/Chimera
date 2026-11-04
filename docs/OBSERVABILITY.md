@@ -253,6 +253,10 @@ unseen behind it), unless `--spawn`, `--look`, `--movement` or `--views`
 is given: those start playing on the greybox, as above. `--map greybox`
 starts on the greybox too. So `--window 1280x720 --screenshot menu.png`
 photographs the main menu.
+The spawn `0,1,12` above is a greybox spot: on a real map it can sit
+inside solid (on de_dust2 it is inside a building, which clears the view
+to black with no sky), so for real maps take spots from
+`tools/refcmp/<map>.toml` or use `--views`.
 Add `--map cs_source:de_dust2` to load a real map (noclip plus
 `--spawn x,75,z --look 0,-89` gives a top-down view). `--lightmap-only`
 renders surfaces white so only baked lighting shows: misoriented lightmaps
