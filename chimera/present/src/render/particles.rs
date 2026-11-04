@@ -2,7 +2,9 @@
 //! rebuilt mesh per material (particles outside the playable area, in the
 //! 3D skybox, in a mesh of their own on the sky camera's layer; groups on
 //! a first-person view model, `ParticleGroup::view_model`, on the view
-//! model camera's layer, over the world as the model is)
+//! model camera's layer, over the world as the model is, and over the
+//! model too: drawn after it without the depth test,
+//! `ParticleDrawMaterial::over_model`)
 //! (`ParticleDrawMaterial`, particle.wesl: fogged, added ones toward
 //! black), camera-facing sprites, trails and flat quads, back to front.
 //! Sprites of sprite-card materials keep to their screen-size limits
@@ -42,18 +44,26 @@ pub struct ParticleDrawMaterial {
     #[uniform(2)]
     pub fog: fog::FogUniform,
     pub blend: ParticleBlend,
+    /// On the view model's layer: drawn over the view model (no depth
+    /// test; after it, in the transparent pass), as the game draws the
+    /// sprites and beams on a first-person weapon's attachments (the
+    /// gravity gun's `_noz` glows and beams, specs/hl2dm/effects_sounds.md
+    /// 11).
+    pub over_model: bool,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ParticleDrawKey {
     additive: bool,
+    over_model: bool,
 }
 
 impl From<&ParticleDrawMaterial> for ParticleDrawKey {
     fn from(m: &ParticleDrawMaterial) -> Self {
         Self {
             additive: m.blend == ParticleBlend::Additive,
+            over_model: m.over_model,
         }
     }
 }
@@ -62,10 +72,14 @@ impl ParticleDrawMaterial {
     /// Particles (CS:S's tracers and impact effects, Combat Arms' effect
     /// groups) are depth tested and write no depth: Bevy's compare is
     /// kept, so a wall hides them (`ParticleMaterial::no_depth` isn't
-    /// supported). A test checks it, as the pipeline can't be built
-    /// without a GPU.
-    pub fn apply_depth(depth: &mut bevy::render::render_resource::DepthStencilState) {
+    /// supported). Those over a view model (`over_model`) always pass, so
+    /// the model doesn't hide them. A test checks it, as the pipeline
+    /// can't be built without a GPU.
+    pub fn apply_depth(depth: &mut bevy::render::render_resource::DepthStencilState, over_model: bool) {
         depth.depth_write_enabled = Some(false);
+        if over_model {
+            depth.depth_compare = Some(bevy::render::render_resource::CompareFunction::Always);
+        }
     }
 }
 
@@ -89,7 +103,7 @@ impl Material for ParticleDrawMaterial {
     ) -> Result<(), bevy::render::render_resource::SpecializedMeshPipelineError> {
         descriptor.primitive.cull_mode = None;
         if let Some(depth) = descriptor.depth_stencil.as_mut() {
-            Self::apply_depth(depth);
+            Self::apply_depth(depth, key.bind_group_data.over_model);
         }
         if key.bind_group_data.additive
             && let Some(fragment) = descriptor.fragment.as_mut()
@@ -246,6 +260,7 @@ pub fn draw_particles(
                             texture,
                             fog: fog.as_ref().map_or_else(Default::default, |f| f.0),
                             blend: def.blend,
+                            over_model: layer == VIEW,
                         })),
                         // The mesh moves with its particles.
                         bevy::camera::visibility::NoFrustumCulling,

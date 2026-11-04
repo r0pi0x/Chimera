@@ -422,7 +422,7 @@ mod tests {
         OnTop::apply_depth(&mut tracer, true);
         assert_eq!(tracer.depth_compare, Some(Cmp::Always), "the option");
         let mut particle = tested();
-        chimera_present::render::particles::ParticleDrawMaterial::apply_depth(&mut particle);
+        chimera_present::render::particles::ParticleDrawMaterial::apply_depth(&mut particle, false);
         assert_eq!(particle.depth_compare, Some(Cmp::GreaterEqual), "particles are hidden by walls");
     }
 }

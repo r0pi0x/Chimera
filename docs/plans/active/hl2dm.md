@@ -1543,6 +1543,20 @@ implementing (owner branch) / done.
   the remote tracer's start at the world model's muzzle (the eye when no
   flash was drawn there), the shell fade length (open question 4), the
   pistol's and .357's smoke, refcmp.
+- 2026-11-04: **The claws' sprites over the view model** (branch
+  `hl2dm-claws`; H9 11). `render::particles`: the view-model layer's
+  particle meshes (`map::attached`'s first-person sprites and beams) are
+  drawn without the depth test (`ParticleDrawMaterial::over_model`,
+  compare always, no depth write), so the claws no longer cut the core
+  and the glows; the world's and the sky's stay depth tested (others'
+  guns). H9's units say the gravity gun's sprites ("glow quads") are full
+  widths, as read; the core's alpha (128 ready, 255 holding) and the
+  additive blend (colour × alpha) were already the spec's. Tests:
+  `chimera_present`'s `particle_depth.rs` (the depth state, and only the
+  view-model layer's mesh over the model). Seen in the app: idle, an
+  orange glow over the muzzle in front of the claws; holding a crate, a
+  big bright orange-white core over the muzzle with the beams over the
+  claws; the punt's blast over the gun.
 
 ## Decision log
 
