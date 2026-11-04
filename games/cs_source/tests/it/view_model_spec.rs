@@ -279,7 +279,7 @@ mod shells {
             position: Vec3::ZERO,
             velocity,
             rotation: Quat::IDENTITY,
-            spin: Vec2::new(1.0, 2.0),
+            spin: Vec3::new(1.0, 2.0, 0.0),
             age: 0.0,
             resting: false,
             bounced: false,
@@ -309,7 +309,7 @@ mod shells {
         let mut s = flying(Vec3::new(30.0, -20.0, 0.0));
         let hit = Some((Vec3::new(0.3, -0.2, 0.0), Vec3::Y));
         assert_eq!(shell_step(&mut s, 0.01, hit, &physics()), ShellHit::Rested(-20.0));
-        assert!(s.resting && s.velocity == Vec3::ZERO && s.spin == Vec2::ZERO);
+        assert!(s.resting && s.velocity == Vec3::ZERO && s.spin == Vec3::ZERO);
         // At rest it no longer moves.
         let at = s.position;
         shell_step(&mut s, 0.01, None, &physics());

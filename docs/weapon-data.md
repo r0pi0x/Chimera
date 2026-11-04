@@ -80,6 +80,12 @@ range = 8192.0
 # pellets = 1, punch_scale = 2.0 (from the base)
 # spread = { disc = { inaccuracy = 0.0, spread = 0.0 } } or { template = 0.05 }
 #   or { cone = 0.04362 } (Source's generic HL2 cone: HL2:DM's guns)
+# tracer_every = 2              # a tracer every Nth bullet by one count over
+#   every bullet a network server fires: it flags each round it sends
+#   other clients, who draw a tracer on every bullet of a flagged one
+#   (HL2:DM; 0: none, each game counts its own)
+# redrawn_through_characters = true   # other clients trace its rounds
+#   again through every player (HL2:DM)
 # without [damage] the frame traces nothing: a game's hook delivers each
 # round's `Fired` event (Combat Arms)
 

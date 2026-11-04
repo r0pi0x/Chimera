@@ -15,6 +15,7 @@ mod info;
 mod melee;
 mod movement;
 mod net;
+mod net_effects;
 mod net_gravity_gun;
 mod net_prediction;
 mod net_projectiles;

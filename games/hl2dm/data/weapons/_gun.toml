@@ -24,6 +24,12 @@ range = 56755.84
 pellets = 1
 # The punch moves the shot (weapons.md 5: aim = view + punch).
 punch_scale = 1.0
+# A tracer every 2nd bullet by one count over every bullet (weapons.md 6,
+# effects_sounds.md 2; the .357 and the shotgun every 4th); other clients
+# draw one on every bullet of a round the server's count picked, and
+# trace it again through every player (effects_sounds.md 1).
+tracer_every = 2
+redrawn_through_characters = true
 
 [damage]
 amount = 1.0

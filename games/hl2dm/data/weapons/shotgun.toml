@@ -28,6 +28,7 @@ shells = { start = 0.5, insert = 0.4, finish = 0.4333, insert_first = true }
 [hitscan]
 pellets = 7
 spread = { cone = 0.08716 }
+tracer_every = 4
 
 [damage]
 amount = 9.0

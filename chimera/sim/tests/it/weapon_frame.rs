@@ -191,6 +191,7 @@ fn a_remote_shot_sounds_after_its_shooter_swapped_guns() {
         seed: 1,
         spread: chimera_sim::weapon::SpreadShape::Template(0.0),
         mode: 0,
+        flags: 0,
     });
     let mut cursor = sim.app.world().resource::<Messages<PlaySound>>().get_cursor_current();
     sim.ticks(2);
@@ -380,6 +381,7 @@ fn a_remote_shot_shows_no_hit_on_a_protected_player() {
         seed: 1,
         spread: chimera_sim::weapon::SpreadShape::Template(0.0),
         mode: 0,
+        flags: 0,
     };
     let traced = |sim: &mut Sim| {
         sim.app.world_mut().write_message(shot.clone());

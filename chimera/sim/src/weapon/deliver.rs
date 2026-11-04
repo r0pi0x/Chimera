@@ -131,6 +131,13 @@ pub(super) struct Shot<'a, 'w, 's> {
     /// compensation, `lagcomp`): traced as these instead of where they
     /// are.
     pub rewound: Vec<Rewound>,
+    /// Pass through every character (others' rounds traced again on a
+    /// client, `Hitscan::redrawn_through_characters`).
+    pub through_characters: bool,
+    /// Tell what each trace hit (false: the `Shot` events say nothing
+    /// was hit, so no impact is drawn; a round the server says hit
+    /// nothing, `remote::shot_flags::IMPACTS`).
+    pub show_hits: bool,
     pub w: &'a mut World<'w, 's>,
 }
 
@@ -207,6 +214,13 @@ impl Shot<'_, '_, '_> {
             .filter(|(_, p)| p.passes_attacks(self.now))
             .map(|(e, _)| e)
             .chain(crate::map::held::held_by(self.owner, self.w.held.iter()))
+            .chain(
+                self.w
+                    .targets
+                    .iter()
+                    .filter(|t| self.through_characters && t.intent.is_some())
+                    .map(|t| t.entity),
+            )
             .collect()
     }
 
@@ -446,7 +460,7 @@ impl Shot<'_, '_, '_> {
                 // (nothing to draw), it takes nothing, and the round ends
                 // there.
                 let protected = hit.as_ref().is_some_and(|h| self.hides(h.entity));
-                let (entity, normal) = match protected {
+                let (entity, normal) = match protected || !self.show_hits {
                     true => (None, None),
                     false => (hit.as_ref().map(|h| h.entity), hit.as_ref().map(|h| h.normal)),
                 };

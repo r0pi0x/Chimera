@@ -896,6 +896,7 @@ fn a_round_whose_gun_was_swapped_still_sounds() {
         seed: 0,
         spread: SpreadShape::Template(0.0),
         mode: 0,
+        flags: 0,
     });
     sim.ticks(1);
     let s = heard(&mut sim);

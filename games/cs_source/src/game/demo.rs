@@ -1511,6 +1511,7 @@ fn happen(world: &mut World, p: &mut DemoPlayer, h: &Happening) {
                     SpreadShape::Template(*inaccuracy)
                 },
                 mode: *mode,
+                flags: 0,
             });
         }
         Happening::Anim { player, event } => {

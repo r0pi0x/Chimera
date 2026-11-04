@@ -21,6 +21,7 @@ reload = 3.6667
 
 [hitscan]
 spread = { cone = 0.0 }
+tracer_every = 4
 
 [damage]
 amount = 75.0

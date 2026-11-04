@@ -11,7 +11,10 @@
 //! - **Others' weapons** (`NetHeld`): what each character holds, so a
 //!   client draws it in their hands (`weapon::remote::show_held`); each
 //!   round they fire comes as `FireBullets` (origin, angles, spread seed
-//!   and spread) to clients whose eye is in the potentially audible set
+//!   and spread, and for weapons with `Hitscan::tracer_every` what the
+//!   server's trace found: `remote::shot_flags`, its tracer by one count
+//!   over every bullet the server fires, any hit) to clients whose eye is
+//!   in the potentially audible set
 //!   of the shooter's (Source's PAS, `MapVisibility::hears`; the dead and
 //!   spectators get every one) and is traced again on the client for its tracers,
 //!   impacts and sound (`weapon::remote::RemoteShot`), the same spread
@@ -63,10 +66,10 @@ use crate::{
         vis::ActiveVisibility,
     },
     weapon::{
-        AltModes, Inventory, SpreadShape, Weapon, WeaponEvent, WeaponEventKind, WeaponRegistry,
+        AltModes, Hitscan, Inventory, SpreadShape, Weapon, WeaponEvent, WeaponEventKind, WeaponRegistry,
         drop::DropRequested,
         grenade::{Detonated, GrenadeEffect, GrenadeKind, Projectile, SmokeCloud, Throwable},
-        remote::{RemoteAction, RemoteShot, show_held},
+        remote::{RemoteAction, RemoteShot, shot_flags, show_held},
     },
 };
 
@@ -303,12 +306,38 @@ fn send_weapon_events(
     vis: Option<Res<ActiveVisibility>>,
     replicated: Query<(), (With<Replicated>, With<NetCharacter>)>,
     registry: Res<WeaponRegistry>,
+    scans: Query<&Hitscan>,
+    mut tracer_count: Local<u64>,
     mut fire: MessageWriter<ToClients<FireBullets>>,
     mut fx: MessageWriter<ToClients<WeaponFx>>,
     mut hits: MessageWriter<ToClients<HitConfirm>>,
 ) {
+    // Rounds go out once their bullets are counted (each round's `Shot`
+    // events follow its `Fired`): (owner, bullets per tracer, message,
+    // the clients it goes to).
+    let mut rounds: Vec<(Entity, u32, FireBullets, Vec<Entity>)> = Vec::new();
     for e in events.read().filter(|e| e.shown()) {
         if !replicated.contains(e.owner) {
+            continue;
+        }
+        // A bullet of a round with the server's tracer count
+        // (`Hitscan::tracer_every`; one count over every bullet fired
+        // here): flag the round's tracer when the count picks it, and
+        // whether it hit anything.
+        if let WeaponEventKind::Shot { hit, .. } | WeaponEventKind::ShotContinued { hit, .. } = &e.kind {
+            if let Some((_, every, m, _)) = rounds.iter_mut().rev().find(|r| r.0 == e.owner)
+                && *every > 0
+            {
+                if matches!(e.kind, WeaponEventKind::Shot { .. }) {
+                    *tracer_count += 1;
+                    if tracer_count.is_multiple_of(u64::from(*every)) {
+                        m.flags |= shot_flags::TRACERS;
+                    }
+                }
+                if hit.is_some() {
+                    m.flags |= shot_flags::IMPACTS;
+                }
+            }
             continue;
         }
         // A hit, to the shooter's own client (its hit marker).
@@ -352,7 +381,9 @@ fn send_weapon_events(
                     SpreadShape::Template(s) => (spread_shape::TEMPLATE, s, 0.0),
                     SpreadShape::Cone(s) => (spread_shape::CONE, s, 0.0),
                 };
+                let every = scans.get(e.weapon).map_or(0, |s| s.tracer_every);
                 let message = FireBullets {
+                    flags: if every > 0 { shot_flags::FLAGGED } else { 0 },
                     shooter: e.owner,
                     weapon: index as u16,
                     origin: origin.to_array(),
@@ -373,12 +404,12 @@ fn send_weapon_events(
                     };
                     h.current <= 0.0 || vis.0.hears(*origin, t.translation + m.map_or(Vec3::ZERO, |m| m.eye_offset))
                 };
-                for (client, _) in players.iter().filter(|(_, p)| p.character != e.owner && audible(p.character)) {
-                    fire.write(ToClients {
-                        targets: SendTargets::Single(ClientId::Client(client)),
-                        message: message.clone(),
-                    });
-                }
+                let to = players
+                    .iter()
+                    .filter(|(_, p)| p.character != e.owner && audible(p.character))
+                    .map(|(c, _)| c)
+                    .collect();
+                rounds.push((e.owner, every, message, to));
                 continue;
             }
             WeaponEventKind::ReloadStarted => weapon_fx::RELOAD,
@@ -396,6 +427,14 @@ fn send_weapon_events(
             fx.write(ToClients {
                 targets,
                 message: WeaponFx { owner: e.owner, kind },
+            });
+        }
+    }
+    for (_, _, message, to) in rounds {
+        for client in to {
+            fire.write(ToClients {
+                targets: SendTargets::Single(ClientId::Client(client)),
+                message: message.clone(),
             });
         }
     }
@@ -689,6 +728,7 @@ fn receive_fire(mut fire: MessageReader<FireBullets>, mut commands: Commands) {
                     _ => SpreadShape::Template(f.inaccuracy),
                 },
                 mode: f.mode,
+                flags: f.flags,
             });
         });
     }

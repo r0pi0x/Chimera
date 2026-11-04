@@ -440,7 +440,7 @@ implementing (owner branch) / done.
 | M7 rules, pickups | H6, H10 | done (branch `hl2dm-m7`, 2026-11-03): see Progress; set pieces built (branches `hl2dm-setpieces`, `hl2dm-setpieces2`, 2026-11-03): see Progress; left: rules P5-P14 (the probe's crash fixed: branch `hl2dm-probe`) | C3 (C5 not needed) |
 | M8 bodies | H7 | done (branch `hl2dm-m8`, 2026-11-03): see Progress; left: probe checks (P6-P11), the items listed there | S9 |
 | M9 HUD | H8 | done (branch `hl2dm-m9`, 2026-11-03): see Progress; left: the items listed there | S7 (the look reader and the animation engine; CS:S's menu readers stay) |
-| M10 effects, sounds | H9 | done in part (branch `hl2dm-m10`, 2026-11-03): see Progress; left: explosions, ball, dissolve, RPG, crossbow, gravity-gun effects (M5, M6), shells, the shield wall shader, refcmp | S10, S5 |
+| M10 effects, sounds | H9 | done in part (branch `hl2dm-m10`, 2026-11-03): see Progress; left: explosions, ball, dissolve, RPG, crossbow, gravity-gun effects (M5, M6), the shield wall shader, refcmp (shells, remote tracers and impact sounds: done 2026-11-04, branch `hl2dm-netfx`) | S10, S5 |
 | M11 assets | none | done (branch `hl2dm-m11`, 2026-11-03): see Progress; left: the other heavy tiers' (party, UGG) HL2:DM reads from the store | C7 |
 
 ## Progress
@@ -1507,6 +1507,42 @@ implementing (owner branch) / done.
   depth tested against the view model; the game draws them after it);
   an RPG on the floor leaves the scorch, faintly fringed light at its
   edge. The pop wasn't captured.
+- 2026-11-04: **Others' tracers and impact sounds, shells** (branch
+  `hl2dm-netfx`; H9 1-3, 5). Chimera: a gun's `[hitscan] tracer_every`
+  (and `redrawn_through_characters`) is data (`Hitscan`); a network
+  server counts every bullet it fires and flags each round it sends
+  (`FireBullets::flags`, `weapon::remote::shot_flags`: tracer picked,
+  anything hit); a client traces the round again as flagged (a
+  `WeaponEventKind::Redrawn` before its `Shot` events, through every
+  player for HL2:DM's guns, no hits told when the server's hit nothing).
+  CS:S and Combat Arms are unchanged (no `tracer_every`: their own
+  counts). HL2:DM: its tracer cadence comes from the guns' data; a
+  flagged remote round draws a streak on every bullet (a shotgun shot
+  always 7), never whizzes; the impact sounds of remote rounds play
+  (they did before too: only untested) and land on what is behind a
+  player. Shells: HL2's numbered brass event (6001, option the type) is
+  read (`game::shells`): the SMG1's type 0 (`shell.mdl`) on every fire
+  sequence, the shotgun's type 2 (`shotgun_shell.mdl`) at 0.3125 of the
+  pump, with HL2's motion (`MapShellPhysics` gained world-axis speed,
+  roll spin, a random life, a sure bounce sound at 200 units/s and no
+  shooter's velocity; CS:S's values unchanged). Other players eject
+  nothing (spec 5: parity). Found on the way: HL2:DM's view models name
+  their muzzle event (`AE_MUZZLEFLASH`, number 0), which the flash
+  reader (numbers 5001...) never matched: no first-person flash sprite
+  was drawn; now read (heavy test). The "front-facing Combine shot" (the
+  AR2's flat flash facing the hit surface, `gun_impacts`) is drawn for
+  remote rounds by the same path. Tests: `tests/it/net_effects.rs` (the
+  SMG1's flagged rounds, the shotgun's 7 tracers, the AR2's streak, the
+  re-trace through players; cases 18, 20, 26), `effects.rs`
+  (`each_guns_tracer_cadence_is_its_data`), heavy `view_models.rs`
+  (each weapon's shell type and flash events from the install, both
+  shell models load), unit tests (brass event, bounce sound case 34).
+  Captures on dm_lockdown: the SMG1's shells fly out right of the gun
+  and are drawn textured; a remote player's tracer seen from a second
+  client. Left: the glass and water exceptions of the server's count,
+  the remote tracer's start at the world model's muzzle (the eye when no
+  flash was drawn there), the shell fade length (open question 4), the
+  pistol's and .357's smoke, refcmp.
 
 ## Decision log
 

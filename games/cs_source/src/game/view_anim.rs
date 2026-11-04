@@ -93,6 +93,11 @@ pub fn shell_physics() -> crate::map::shells::MapShellPhysics {
         fade: 2.0,
         sound_chance: 1.0 / 6.0,
         sound_full_speed: 450.0 * UNIT,
+        sound_sure_speed: None,
+        world_jitter: (Vec3::ZERO, Vec3::ZERO),
+        roll_spin: 0.0,
+        life_jitter: 0.0,
+        owner_velocity: true,
     }
 }
 

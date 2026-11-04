@@ -9,7 +9,8 @@
 //! Its kit: its 19 player bodies (the `kit` hook, `bodies::add_bodies`),
 //! its weapons' world models held on them (`bodies::add_held`) and view
 //! models (the `held` hook, `add_view_models`), right-handed and never
-//! mirrored (specs/hl2dm/player_models.md 12.1). `dress_guest` brings them
+//! mirrored (specs/hl2dm/player_models.md 12.1), and with a whole kit the
+//! SMG1's and shotgun's shells (`shells`). `dress_guest` brings them
 //! onto another game's map (the party's), read from the HL2:DM install.
 //! Also its chat formats (`chat`: no radio, the dead read by the living).
 //!
@@ -201,6 +202,11 @@ fn held_kit(kit: &mut Kit) {
         kit.data.kit.held.extend(held);
     }
     kit.data.kit.muzzle_flash_kinds = super::flashes::kinds(kit.materials);
+    // The SMG1's and the shotgun's shells, with a whole kit.
+    if kit.kit.parts() {
+        kit.data.kit.shells = super::shells::load(kit.materials, &mut kit.data.warnings);
+        kit.data.kit.shell_physics = Some(super::shells::physics());
+    }
     let mut models = Vec::new();
     add_view_models(kit.materials, kit.kit, &mut models, &mut kit.data.warnings);
     kit.data.kit.view_models.extend(models);

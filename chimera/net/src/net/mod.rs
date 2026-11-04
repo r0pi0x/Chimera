@@ -849,8 +849,8 @@ pub struct NetSmoke {
 /// Server -> every client but the shooter's: one round someone fired
 /// (`weapon::WeaponEventKind::Fired`), for the client to trace again and
 /// draw (Source's "fire bullets" message): who, which weapon (registry
-/// index), from where, the angles, the spread seed and the spread.
-/// Unreliable, like Source's temporary entities.
+/// index), from where, the angles, the spread seed and the spread, and
+/// what the server's own trace found (`flags`). Unreliable, like Source's temporary entities.
 #[derive(Message, Serialize, Deserialize, Clone, Debug, PartialEq, bevy::ecs::entity::MapEntities)]
 pub struct FireBullets {
     #[entities]
@@ -866,6 +866,10 @@ pub struct FireBullets {
     pub inaccuracy: f32,
     pub spread: f32,
     pub mode: u8,
+    /// `weapon::remote::shot_flags`: for a weapon with
+    /// `Hitscan::tracer_every`, whether the server's count gave the round
+    /// a tracer and whether it hit anything.
+    pub flags: u8,
 }
 
 /// Server -> every client but the doer's: something else a weapon did,

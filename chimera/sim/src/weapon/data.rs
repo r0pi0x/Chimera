@@ -282,6 +282,12 @@ pub struct HitscanData {
     /// None: a disc of 0 (a game's hook sets it as it changes).
     #[serde(default)]
     pub spread: Option<SpreadData>,
+    /// `Hitscan::tracer_every` (0: none).
+    #[serde(default)]
+    pub tracer_every: u32,
+    /// `Hitscan::redrawn_through_characters`.
+    #[serde(default)]
+    pub redrawn_through_characters: bool,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
@@ -1002,6 +1008,8 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
                 Some(SpreadData::Cone(s)) => SpreadShape::Cone(s),
             },
             punch_scale: h.punch_scale,
+            tracer_every: h.tracer_every,
+            redrawn_through_characters: h.redrawn_through_characters,
         });
     }
     if let Some(x) = &d.damage {
