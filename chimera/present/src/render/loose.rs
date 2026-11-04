@@ -5,15 +5,20 @@
 //! simulation's requests (a held model's key); the body is
 //! `map::loose::attach_loose`'s, the meshes these systems add, from the
 //! held models' whole meshes (`render::bodies::HeldAssets`) placed by the
-//! loose form's frame (`map::loose::LooseAssets`).
+//! loose form's frame (`map::loose::LooseAssets`). A shown item that
+//! appears outside the playable area on a map with a 3D skybox is in the
+//! skybox (HL2's headcrab canister before it enters the world): drawn on
+//! the sky camera's layer, as particles out there are (`render::particles`).
 
 use bevy::prelude::*;
 
 use super::{bodies::HeldAssets, probe_lit};
+use bevy::camera::visibility::RenderLayers;
 use crate::map::{
-    MapPart,
+    MapPart, PlayableArea, SKYBOX_LAYER,
     loose::{LooseAssets, LooseItem, ShownItem, SitOnOrigin},
 };
+use super::sky::ActiveMapHas3dSky;
 
 /// Marks a `LooseItem` whose meshes were added.
 #[derive(Component)]
@@ -70,16 +75,24 @@ pub struct ShownItemDrawn;
 
 /// Give new shown items their meshes.
 pub fn attach_shown(
-    items: Query<(Entity, &ShownItem, Option<&SitOnOrigin>), Without<ShownItemDrawn>>,
+    items: Query<(Entity, &ShownItem, Option<&SitOnOrigin>, Option<&Transform>), Without<ShownItemDrawn>>,
     assets: Option<Res<LooseAssets>>,
     held: Option<Res<HeldAssets>>,
     mut materials: Option<ResMut<Assets<crate::render::prop_material::PropMaterial>>>,
+    sky: (Option<Res<PlayableArea>>, Option<Res<ActiveMapHas3dSky>>),
     mut commands: Commands,
 ) {
     let (Some(assets), Some(held)) = (assets, held) else {
         return;
     };
-    for (e, item, sit) in &items {
+    // Where it appears decides its layer (a shown item outside the
+    // playable area stays out there: the skybox's are their own items).
+    let in_sky = |t: Option<&Transform>| match (&sky.0, &sky.1, t) {
+        (Some(area), Some(_), Some(t)) => t.translation.cmplt(area.0.0).any() || t.translation.cmpgt(area.0.1).any(),
+        _ => false,
+    };
+    for (e, item, sit, at) in &items {
+        let layers = in_sky(at).then(|| RenderLayers::layer(SKYBOX_LAYER));
         let mut ent = commands.entity(e);
         ent.insert((ShownItemDrawn, MapPart, Visibility::default()));
         if let (Some(a), Some(parts)) = (assets.0.get(&item.0), held.0.get(&item.0)) {
@@ -102,7 +115,10 @@ pub fn attach_shown(
             ent.insert(probe_lit::ProbeLit::new(own.clone(), Vec3::ZERO));
             ent.with_children(|c| {
                 for ((mesh, _), material) in parts.whole.iter().zip(own) {
-                    c.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(material), frame));
+                    let mut part = c.spawn((Mesh3d(mesh.clone()), MeshMaterial3d(material), frame));
+                    if let Some(l) = &layers {
+                        part.insert(l.clone());
+                    }
                 }
             });
         }

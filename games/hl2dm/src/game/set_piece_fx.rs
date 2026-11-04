@@ -4,10 +4,11 @@
 //! - **The headcrab canister** (`set_pieces`' shown models, on the host
 //!   and on network clients alike): in flight its sprite trail
 //!   (`sprites/smoke`, additive, colour (224, 224, 255), 32 ± 15 units wide
-//!   growing to 200 over its 3 s life); landed and smoking, the smoke
-//!   trail (8 puffs a second, life 2 s, grey 0.7 to 0.6, size 32 to 64,
-//!   from within 8 units, 0 to 8 units/s any way plus 32 to 64 up,
-//!   alpha 0.35); its impact's explosion (`CanisterBlast`: the Source
+//!   growing to 200 over its 3 s life; in the 3D skybox before it enters
+//!   the world, `SKY_CANISTER_MODEL`, drawn there at the sky's scale);
+//!   landed and smoking, the smoke trail (8 puffs a second, life 2 s, grey
+//!   0.7 to 0.6, size 32 to 64, from within 8 units, 0 to 8 units/s any
+//!   way plus 32 to 64 up, alpha 0.35); its impact's explosion (`CanisterBlast`: the Source
 //!   explosion of `source_engine::effects::explosions`, silent; none for
 //!   flag 524288, so none on dm_runoff).
 //! - **`env_flare`** (every frame while its part is on): unless flag 2,
@@ -33,7 +34,7 @@ use bevy_replicon::prelude::*;
 use chimera_sim::weapon::respawn::PickupBack;
 use source_engine::effects::explosions::{self, FxMaterials};
 
-use super::set_pieces::{CANISTER_MODEL, CanisterBlast};
+use super::set_pieces::{CANISTER_MODEL, CanisterBlast, SKY_CANISTER_MODEL, sky_camera};
 use crate::{
     core::NetRole,
     map::{
@@ -132,8 +133,10 @@ fn canisters(
     mut particles: ResMut<Particles>,
     mut rng: ResMut<FxRng>,
     mut tracks: Local<Tracks>,
+    entities: Option<Res<MapEntities>>,
 ) {
     let Some(materials) = materials else { return };
+    let sky_scale = sky_camera(entities.as_deref()).map_or(1.0, |(_, s)| s);
     let dt = time.delta_secs();
     let (trail_mat, smoke_mat) = (materials.0.find("sprites/smoke"), materials.0.find("particle/particle_smokegrenade"));
     let mut trail = ParticleGroup::new(Motion::default());
@@ -141,7 +144,11 @@ fn canisters(
     let mut seen = Vec::new();
     for (e, shown, at) in &items {
         let key = shown.0.as_str();
-        let flying = key == CANISTER_MODEL;
+        let in_sky = key == SKY_CANISTER_MODEL;
+        let flying = key == CANISTER_MODEL || in_sky;
+        // In the 3D skybox its trail is drawn at the sky's scale (its
+        // image as wide as in the world).
+        let k = if in_sky { sky_scale } else { 1.0 };
         let smoking = key.starts_with("hl2dm:headcrabcanister_open");
         if !flying && !smoking {
             continue;
@@ -150,7 +157,7 @@ fn canisters(
         let at = at.translation();
         let (last, owed) = tracks.0.entry(e).or_insert((at, 0.0));
         if flying && let Some(mat) = trail_mat {
-            *owed += last.distance(at) / U / TRAIL_STEP;
+            *owed += last.distance(at) * k / U / TRAIL_STEP;
             let n = (*owed as usize).min(64);
             *owed -= n as f32;
             for j in 0..n {
@@ -159,7 +166,7 @@ fn canisters(
                 trail.particles.push(Particle {
                     color: TRAIL_COLOR,
                     fade: Fade::Ramp(Ramp::linear(1.0, 0.0)),
-                    size: Ramp::linear(start / 2.0 * U, TRAIL_END_WIDTH / 2.0 * U),
+                    size: Ramp::linear(start / 2.0 * U / k, TRAIL_END_WIDTH / 2.0 * U / k),
                     ..Particle::new(p, TRAIL_LIFE, mat, 0.0)
                 });
             }

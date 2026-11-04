@@ -15,7 +15,14 @@
 //!   players), shakes the view (amplitude 16, radius 1024) and lands,
 //!   opening (`OnOpened`) unless it waits for `OpenCanister`. Outputs
 //!   `OnLaunched`, `OnImpacted`, `OnOpened`. Server-side; it is drawn on
-//!   every machine as shown items (`CANISTER_MODEL` in flight along its
+//!   every machine as shown items, their models placed as props are by
+//!   the entity's angles (`model_turn`; its long axis, the model's +X,
+//!   along its forward axis, so dm_runoff's stand 71 deg steep):
+//!   `SKY_CANISTER_MODEL` in the 3D skybox until it enters the world (the
+//!   flight model shrunk by the sky's scale, on the image of its line
+//!   raised by `StartingHeight` at the launch: `Canister::sky_position`;
+//!   without a sky camera it flies all its time in the world),
+//!   `CANISTER_MODEL` in the world along its
 //!   line, spinning 90 deg/s about its long axis, then `landed_key`: the
 //!   landed model at `OPEN_FRAMES` frames of its `open` sequence through
 //!   the opening, smoking until `SmokeLifetime` or `StopSmoke`;
@@ -30,10 +37,11 @@
 //!   s) and blast (the larger of 128 and 1.5 of its radius, 0.25 s) is told
 //!   to the logic (`map::entities::AiSound`).
 //!
-//! Known shortcuts: the 3D skybox arc before it enters the world isn't
-//! drawn (it appears at its entry point); the opening is four still
+//! Known shortcuts: the spec doesn't say how large the model is drawn in
+//! the skybox: it is shrunk by the sky's scale so its image is its own
+//! size, as in the world; the opening is four still
 //! frames, not the sequence played; the landed model isn't solid;
-//! `StartingHeight`, `LaunchPositionName`,
+//! `LaunchPositionName`,
 //! "start impacted" and the skybox-only shots are not built (no stock
 //! canister uses them); the sweep and the blast test the distance of a
 //! body's centre, not its bounds, and the sweep is the spec's cube as a
@@ -50,7 +58,7 @@ use crate::{
     map::{
         PlaySound,
         entities::{
-            AiSound, AiSoundKind, FireKeyedOutput, GameEntityClasses, MapEntityInput, MapEntityRemoved, MapEntitySpawned,
+            AiSound, AiSoundKind, FireKeyedOutput, GameEntityClasses, MapEntities, MapEntityInput, MapEntityRemoved, MapEntitySpawned,
             entity_rotation, entity_to_engine, rotation_to_engine,
         },
         logic_view::MapShake,
@@ -94,6 +102,9 @@ const INCOMING: &str = "HeadcrabCanister.IncomingSound";
 /// landed `headcrabcannister01b` posed at `OPEN_FRAMES` frames of its
 /// `open` sequence, smoking (`open`) or not (`spent`).
 pub const CANISTER_MODEL: &str = "hl2dm:headcrabcanister";
+/// The flight model shrunk by the map's 3D skybox scale, for its flight in
+/// the skybox before it enters the world (its image there is its own size).
+pub const SKY_CANISTER_MODEL: &str = "hl2dm:headcrabcanister_sky";
 pub const FLIGHT_MODEL_FILE: &str = "models/props_combine/headcrabcannister01a.mdl";
 pub const LANDED_MODEL_FILE: &str = "models/props_combine/headcrabcannister01b.mdl";
 /// Frames of the `open` sequence the landed model is shown at (cycle
@@ -134,6 +145,9 @@ pub struct CanisterParams {
     pub flags: u32,
     /// `SmokeLifetime` (s).
     pub smoke: f32,
+    /// `StartingHeight` (units): how far above its line the skybox arc
+    /// starts.
+    pub height: f32,
 }
 
 impl CanisterParams {
@@ -151,6 +165,7 @@ impl CanisterParams {
             radius: f("DamageRadius"),
             flags: f("spawnflags") as u32,
             smoke: f("SmokeLifetime"),
+            height: f("StartingHeight"),
         }
     }
 
@@ -205,6 +220,27 @@ impl Canister {
         let t = t.min(self.params.time);
         self.impact - self.dir * (self.params.time - t) * self.params.speed * UNIT
     }
+
+    /// Its place in the 3D skybox `t` seconds after launch, before it
+    /// enters the world at `enter` (m, engine space): the image of its line
+    /// back from the entry point, raised by `StartingHeight` at the launch
+    /// and coming down to the line at the entry with the line's slope
+    /// (horizontal speed and descent as in the world, at the sky's
+    /// `scale`), placed by the sky camera at `sky`.
+    pub fn sky_position(&self, t: f32, enter: f32, sky: Vec3, scale: f32) -> Vec3 {
+        let rise = if enter > 0.0 { (1.0 - t / enter).max(0.0).powi(2) } else { 0.0 };
+        let image = self.position(t) + Vec3::Y * self.params.height * UNIT * rise;
+        sky + image / scale
+    }
+}
+
+/// The map's 3D skybox camera: its origin (engine space, m) and scale;
+/// None without one.
+pub fn sky_camera(entities: Option<&MapEntities>) -> Option<(Vec3, f32)> {
+    let m = entities?;
+    let e = m.entities.iter().find(|e| e.classname().eq_ignore_ascii_case("sky_camera"))?;
+    let scale = e.get("scale").and_then(|s| s.trim().parse::<f32>().ok()).filter(|s| *s > 0.0).unwrap_or(16.0);
+    Some((entity_to_engine(e.origin(), m.scale), scale))
 }
 
 /// `game_ragdoll_manager`'s limit on the ragdoll retirement list.
@@ -325,12 +361,26 @@ fn track(
 /// of `open` (twice: smoking and not).
 pub fn canister_models(
     materials: &mut source_engine::content::material::MaterialLoader,
+    sky_scale: Option<f32>,
     warnings: &mut Vec<String>,
 ) -> Vec<crate::map::MapHeldModel> {
     use source_engine::content::props;
     let mut out = Vec::new();
     match props::load_held(materials, FLIGHT_MODEL_FILE, CANISTER_MODEL, &[]) {
-        Ok(h) => out.push(h),
+        Ok(h) => {
+            // With a 3D skybox, the same shrunk by its scale.
+            if let Some(scale) = sky_scale {
+                let mut sky = h.clone();
+                sky.key = SKY_CANISTER_MODEL.into();
+                for m in &mut sky.model.meshes {
+                    for p in &mut m.positions {
+                        *p = (Vec3::from(*p) / scale).to_array();
+                    }
+                }
+                out.push(sky);
+            }
+            out.push(h);
+        }
         Err(e) => warnings.push(e),
     }
     for k in 0..OPEN_FRAMES {
@@ -354,12 +404,14 @@ fn despawn_with_shown(commands: &mut Commands, e: Entity, c: &Canister) {
     commands.entity(e).try_despawn();
 }
 
-/// Show canister `c` as `key` at `pose` (its model's origin there; a
-/// shown item is drawn centred on its bounds, `map::loose::LooseAssets`):
+/// Show canister `c` as `key` at `pose` (its model's origin there, its
+/// model's axes turned as a prop's by its angles; a shown item is drawn
+/// centred on its bounds in the loose frame, `map::loose::LooseAssets`):
 /// the shown entity moved, or made again when the key changes (a shown
 /// item's model is fixed).
 fn show(commands: &mut Commands, c: &mut Canister, key: &str, mut pose: Transform, assets: Option<&LooseAssets>) {
     if let Some(a) = assets.and_then(|a| a.0.get(key)) {
+        pose.rotation *= model_turn(a.frame);
         pose.translation -= pose.rotation * a.frame.translation;
     }
     match &c.shown {
@@ -384,6 +436,16 @@ fn show(commands: &mut Commands, c: &mut Canister, key: &str, mut pose: Transfor
     }
 }
 
+/// What a shown item's pose is turned by so its model is placed as a
+/// prop's (Source axes straight to ours, x z −y, then the entity's
+/// rotation): the loose frame (`frame`, `map::loose::asset`) carries the
+/// player skeleton's turn too, a quarter turn about up that would lay the
+/// canister's long axis (its +X) along the entity's left, where its pitch
+/// doesn't tilt it.
+pub fn model_turn(frame: Transform) -> Quat {
+    Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2) * frame.rotation.inverse()
+}
+
 fn ragdoll_manager(mut inputs: MessageReader<MapEntityInput>, mut limit: ResMut<RagdollLimit>) {
     for i in inputs.read() {
         let n = i.value.trim().parse::<f32>().unwrap_or(0.0) as i32;
@@ -406,7 +468,9 @@ fn canister_inputs(
     mut play: MessageWriter<PlaySound>,
     mut outputs: MessageWriter<FireKeyedOutput>,
     spatial: SpatialQuery,
+    entities: Option<Res<MapEntities>>,
 ) {
+    let sky = sky_camera(entities.as_deref()).is_some();
     for i in inputs.read() {
         let Some(mut c) = cans.iter_mut().find(|c| c.key == i.key) else { continue };
         let c = &mut *c;
@@ -440,7 +504,8 @@ fn canister_inputs(
                 } else {
                     0.0
                 };
-                let enter = if v > 0.0 { (c.params.time - reach / v).max(0.0) } else { 0.0 };
+                // Without a 3D skybox it flies all of its time in the world.
+                let enter = if v > 0.0 && sky { (c.params.time - reach / v).max(0.0) } else { 0.0 };
                 c.state = CanState::Flying { launched: clock.now, enter, incoming: false, detonated: false, last: None };
             }
             "stopsmoke" => c.smoke_until = c.smoke_until.min(clock.now),
@@ -504,8 +569,10 @@ fn canister_flight(
     mut shakes: MessageWriter<MapShake>,
     mut blasts: MessageWriter<CanisterBlast>,
     assets: Option<Res<LooseAssets>>,
+    entities: Option<Res<MapEntities>>,
     mut commands: Commands,
 ) {
+    let sky = sky_camera(entities.as_deref());
     for (entity, mut c) in &mut cans {
         let c = &mut *c;
         match c.state.clone() {
@@ -517,6 +584,13 @@ fn canister_flight(
                     let spin = Quat::from_rotation_x((SPIN * (t - enter)).to_radians());
                     let pose = Transform::from_translation(c.position(t)).with_rotation(rotation_to_engine(c.turn * spin));
                     show(&mut commands, c, CANISTER_MODEL, pose, assets.as_deref());
+                } else if t < enter
+                    && let Some((origin, scale)) = sky
+                {
+                    // Before that, in the 3D skybox (not spinning yet).
+                    let pose = Transform::from_translation(c.sky_position(t, enter, origin, scale))
+                        .with_rotation(rotation_to_engine(c.turn));
+                    show(&mut commands, c, SKY_CANISTER_MODEL, pose, assets.as_deref());
                 }
                 if clock.tick % THINK_TICKS != 0 {
                     continue;
@@ -723,7 +797,7 @@ mod tests {
     fn the_path_ends_at_the_impact_after_the_flight_time() {
         let c = Canister {
             key: 1,
-            params: CanisterParams { speed: 3000.0, time: 4.0, damage: 150.0, radius: 350.0, flags: 0, smoke: 0.0 },
+            params: CanisterParams { speed: 3000.0, time: 4.0, damage: 150.0, radius: 350.0, flags: 0, smoke: 0.0, height: 0.0 },
             impact: Vec3::new(1.0, 2.0, 3.0),
             dir: Vec3::new(0.0, -1.0, 0.0),
             state: CanState::Idle,
@@ -735,5 +809,46 @@ mod tests {
         assert!(c.position(4.0).distance(c.impact) < 1e-5);
         assert!((c.position(3.0).y - (2.0 + 3000.0 * UNIT)).abs() < 1e-4, "1 s out: {:?}", c.position(3.0));
         assert!(c.position(9.0).distance(c.impact) < 1e-5, "clamped");
+    }
+
+    /// In the skybox: the image of its line at the sky's scale, raised by
+    /// `StartingHeight` at the launch and on the line at the entry.
+    #[test]
+    fn the_skybox_arc_ends_on_the_entry_point() {
+        let mut c = Canister {
+            key: 1,
+            params: CanisterParams { speed: 3000.0, time: 4.0, damage: 0.0, radius: 0.0, flags: 0, smoke: 0.0, height: 1600.0 },
+            impact: Vec3::ZERO,
+            dir: Vec3::new(1.0, -1.0, 0.0).normalize(),
+            state: CanState::Idle,
+            fired: false,
+            turn: Quat::IDENTITY,
+            shown: None,
+            smoke_until: 0.0,
+        };
+        let sky = Vec3::new(10.0, -50.0, 3.0);
+        let at_entry = c.sky_position(3.0, 3.0, sky, 16.0);
+        assert!(at_entry.distance(sky + c.position(3.0) / 16.0) < 1e-5);
+        let launch = c.sky_position(0.0, 3.0, sky, 16.0);
+        let raised = launch - (sky + c.position(0.0) / 16.0);
+        assert!((raised - Vec3::Y * 100.0 * UNIT).length() < 1e-5, "{raised}");
+        c.params.height = 0.0;
+        let mid = c.sky_position(1.5, 3.0, sky, 16.0);
+        assert!(mid.distance(sky + c.position(1.5) / 16.0) < 1e-5);
+    }
+
+    /// The loose frame's player-skeleton turn is undone: the model's +X
+    /// (Source forward) ends up along the entity's forward.
+    #[test]
+    fn a_shown_canister_is_turned_as_a_prop() {
+        let face = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+        let axes = Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
+        let frame = Transform::from_rotation(face * axes);
+        let angles = Vec3::new(-71.0, 30.0, 0.0);
+        let entity = rotation_to_engine(entity_rotation(angles));
+        let drawn = entity * model_turn(frame) * frame.rotation * Vec3::X;
+        let forward = entity_to_engine(entity_rotation(angles) * Vec3::X, 1.0);
+        assert!(drawn.distance(forward) < 1e-5, "{drawn} against {forward}");
+        assert!(drawn.y > 0.94, "71 deg up: {drawn}");
     }
 }
