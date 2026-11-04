@@ -4,7 +4,13 @@
 //! no ricochet, splashes of scale 4 to 8, each pellet's impact sound
 //! played), its own tracers (`tracers`: one counter for every bullet of
 //! the process, every 2nd (pistol, SMG1, AR2) or 4th (.357, shotgun)
-//! bullet draws a streak, the AR2's its own: `AR2_TRACER`), the near-miss
+//! bullet draws a streak, by the gun's data, `[hitscan] tracer_every`;
+//! the AR2's its own: `AR2_TRACER`); others' rounds on a network client
+//! as the server flagged them (`WeaponEventKind::Redrawn`: a streak on
+//! every bullet of a round its count picked, none on the others, never
+//! a near-miss; traced again through every player by the guns' data,
+//! `redrawn_through_characters`, so their impacts and impact sounds land
+//! on what is behind), the near-miss
 //! sound of one's own tracers (`Bullets.DefaultNearmiss`,
 //! `Bullets.GunshipNearmiss`: 24 and 72 units, at most every 0.1 s), the
 //! AR2's flat flash on what its bullets hit and the stunstick's glow and
@@ -18,15 +24,15 @@
 //! dissolve is `dissolve`; the gravity gun's sprites and beams are left
 //! (M6).
 //!
-//! Known shortcuts (docs/tech-debt.md): other players' shots are drawn as
-//! the shooter's own are (their server-flagged tracer on every bullet of a
-//! flagged shot, and the re-trace through all players, aren't: spec 1);
-//! the near-miss test's listener is the shot's start, the eye, not the
+//! Known shortcuts (docs/tech-debt.md): the server's tracer count skips
+//! no bullet that broke glass, and a round whose bullets ended in water
+//! still counts as hitting (the client skips water impacts itself); the
+//! remote tracer's start is the world model's muzzle only when its flash
+//! was drawn there, else the eye (spec 2); the near-miss test's listener is the shot's start, the eye, not the
 //! camera; a flash sprite's size draw is one per flash, not per sprite,
 //! and the AR2's core sprite is one more of the same string; the
 //! third-person flash is the light alone, which needs the world weapon's
-//! muzzle (`view_anim`'s events); shells (`shell.mdl` from the SMG1,
-//! `shotgun_shell.mdl` from the pump) are not drawn. Why it's OK for now:
+//! muzzle (`view_anim`'s events). Shells are `shells`. Why it's OK for now:
 //! the spec's numbers on the shooter's own screen are all there; the rest
 //! needs the real game's captures to check.
 
@@ -45,7 +51,7 @@ use crate::{
         particles::{Fade, MapParticles, Motion, Particle, ParticleGroup, ParticleMaterials, Particles, Ramp, Shape, WorldTracer},
         tracer::{MuzzleCache, Tracer, TracerLook},
     },
-    weapon::{Weapon, WeaponEvent, WeaponEventKind, impact::ImpactRoute},
+    weapon::{Hitscan, Weapon, WeaponEvent, WeaponEventKind, impact::ImpactRoute},
 };
 
 const UNIT: f32 = 0.0254;
@@ -127,21 +133,22 @@ pub const AR2_TRACER: TracerLook = TracerLook {
     min_distance: 128.0 * UNIT,
 };
 
-/// Bullets per tracer by weapon (weapons.md 6): every 4th for the .357 and
-/// the shotgun's pellets, every 2nd for the rest.
-pub fn tracer_every(weapon: &str) -> u64 {
-    if weapon == super::weapons::MAGNUM || weapon == super::weapons::SHOTGUN {
-        4
-    } else {
-        2
+/// Bullets per tracer of a gun (weapons.md 6): its data's
+/// `[hitscan] tracer_every` (every 4th for the .357 and the shotgun's
+/// pellets, every 2nd for the rest), 2 for another game's gun whose
+/// shots HL2:DM draws.
+pub fn tracer_every(scan: Option<&Hitscan>) -> u64 {
+    match scan.map_or(0, |s| s.tracer_every) {
+        0 => 2,
+        n => u64::from(n),
     }
 }
 
 /// Whether bullet number `count` (the process's, counting from 1 as the
-/// counter advances before it is tested: spec test 18) of `weapon` draws a
-/// tracer.
-pub fn draws_tracer(count: u64, weapon: &str) -> bool {
-    count.is_multiple_of(tracer_every(weapon))
+/// counter advances before it is tested: spec test 18) draws a tracer,
+/// one every `every`.
+pub fn draws_tracer(count: u64, every: u64) -> bool {
+    count.is_multiple_of(every.max(1))
 }
 
 /// A near-miss sound (spec 3): its entry, how close the shot must pass
@@ -185,11 +192,14 @@ pub fn whizz_distance(listener: Vec3, a: Vec3, b: Vec3, drop: f32) -> f32 {
     at(lo).min(at(0.0))
 }
 
-/// The bullets' tracers and the shooter's own near-miss sounds.
+/// The bullets' tracers and the shooter's own near-miss sounds; others'
+/// rounds the server flagged (`WeaponEventKind::Redrawn`, on a network
+/// client) draw a tracer on every bullet when flagged and never whizz
+/// (spec 1-3).
 #[allow(clippy::too_many_arguments)]
 fn tracers(
     mut events: MessageReader<WeaponEvent>,
-    weapons: Query<&Weapon>,
+    weapons: Query<(&Weapon, Option<&Hitscan>)>,
     local: Query<(), With<LocalPlayer>>,
     route: ImpactRoute,
     muzzles: Option<Res<MuzzleCache>>,
@@ -198,6 +208,7 @@ fn tracers(
     mut play: MessageWriter<PlaySound>,
     mut count: Local<u64>,
     mut next_whizz: Local<f64>,
+    mut redrawn: Local<Vec<(Entity, bool)>>,
 ) {
     let now = time.elapsed_secs_f64();
     for e in events.read().filter(|e| e.shown()) {
@@ -206,33 +217,49 @@ fn tracers(
         if route.gun_game(e.weapon) != Some(GAME) && !route.draws(GAME, e) {
             continue;
         }
-        let WeaponEventKind::Shot { from, to, .. } = e.kind else { continue };
-        let id = weapons.get(e.weapon).map_or("", |w| w.id);
+        let (id, scan) = weapons.get(e.weapon).map_or(("", None), |(w, s)| (w.id, s));
         let ar2 = id == super::weapons::AR2;
-        *count += 1;
-        if draws_tracer(*count, id) {
-            out.write(Tracer {
-                owner: e.owner,
-                from,
-                to,
-                look: if ar2 { AR2_TRACER } else { TRACER },
-            });
-            // Only the shooter's own tracers whizz, whether or not a
-            // streak is drawn for a short shot.
-            if local.contains(e.owner) && now >= *next_whizz {
-                let whizz = if ar2 { AR2_WHIZZ } else { WHIZZ };
-                let start = muzzles
-                    .as_ref()
-                    .and_then(|m| m.0.get(&e.owner))
-                    .filter(|(_, at)| now - at < 0.25)
-                    .map_or(from, |(p, _)| *p);
-                if whizz_distance(from, start, to, whizz.drop * UNIT) < whizz.range * UNIT {
-                    *next_whizz = now + WHIZZ_INTERVAL;
-                    play.write(PlaySound::at(whizz.entry, start));
+        let look = if ar2 { AR2_TRACER } else { TRACER };
+        match e.kind {
+            // Someone else's round as the server flagged it: its bullets
+            // follow.
+            WeaponEventKind::Redrawn { tracers } => {
+                redrawn.retain(|(o, _)| *o != e.owner);
+                redrawn.push((e.owner, tracers));
+                continue;
+            }
+            WeaponEventKind::Shot { from, to, .. } => {
+                if let Some(&(_, flagged)) = redrawn.iter().find(|(o, _)| *o == e.owner) {
+                    if flagged {
+                        out.write(Tracer { owner: e.owner, from, to, look });
+                    }
+                    continue;
+                }
+                *count += 1;
+                if !draws_tracer(*count, tracer_every(scan)) {
+                    continue;
+                }
+                out.write(Tracer { owner: e.owner, from, to, look });
+                // Only the shooter's own tracers whizz, whether or not a
+                // streak is drawn for a short shot.
+                if local.contains(e.owner) && now >= *next_whizz {
+                    let whizz = if ar2 { AR2_WHIZZ } else { WHIZZ };
+                    let start = muzzles
+                        .as_ref()
+                        .and_then(|m| m.0.get(&e.owner))
+                        .filter(|(_, at)| now - at < 0.25)
+                        .map_or(from, |(p, _)| *p);
+                    if whizz_distance(from, start, to, whizz.drop * UNIT) < whizz.range * UNIT {
+                        *next_whizz = now + WHIZZ_INTERVAL;
+                        play.write(PlaySound::at(whizz.entry, start));
+                    }
                 }
             }
+            _ => {}
         }
     }
+    // A flag lasts for its round's bullets, written together.
+    redrawn.clear();
 }
 
 #[derive(Resource)]
@@ -356,11 +383,9 @@ mod tests {
 
     #[test]
     fn tracer_cadence_by_weapon() {
-        // The counter advances first: the 2nd bullet of the SMG1 draws,
-        // the 4th of the shotgun (spec tests 18, 19).
-        assert!(!draws_tracer(1, super::super::weapons::SMG1) && draws_tracer(2, super::super::weapons::SMG1));
-        assert!((1..4).all(|c| !draws_tracer(c, super::super::weapons::SHOTGUN)) && draws_tracer(4, super::super::weapons::SHOTGUN));
-        assert!(draws_tracer(4, super::super::weapons::MAGNUM));
+        assert!(!draws_tracer(1, 2) && draws_tracer(2, 2));
+        assert!((1..4).all(|c| !draws_tracer(c, 4)) && draws_tracer(4, 4));
+        assert_eq!(tracer_every(None), 2, "another game's gun");
     }
 
     #[test]

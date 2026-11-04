@@ -24,8 +24,11 @@ use crate::{
 
 const UNIT: f32 = 0.0254;
 
-/// The muzzle-flash event numbers of a view model's fire sequence.
+/// The muzzle-flash event numbers of a view model's fire sequence, and
+/// the named event HL2:DM's view models carry (`AE_MUZZLEFLASH`, number
+/// 0; read from the install's models, heavy `view_models.rs`).
 const EVENTS: &[i32] = &[5001, 5011, 5021, 5031];
+const EVENT_NAME: &str = "AE_MUZZLEFLASH";
 
 /// A flash kind's table row: its spacing step and range of k, the size
 /// formula's numerator, the life, the sheets.
@@ -94,16 +97,17 @@ pub fn kinds(materials: &mut MaterialLoader) -> Vec<(String, MapMuzzleFlash)> {
 }
 
 /// What a view-model event asks for: a muzzle flash of the kind its option
-/// names (`SMG1 MUZZLE`), else Source's shared reading (brass).
+/// names (`SMG1 MUZZLE`), else HL2's numbered brass event
+/// (`shells::event_effect`), else Source's shared reading.
 pub fn event_effect(e: &AnimEvent) -> Option<ViewModelEventKind> {
-    if EVENTS.contains(&e.event) {
+    if EVENTS.contains(&e.event) || e.name.eq_ignore_ascii_case(EVENT_NAME) {
         let kind = e.options.split_whitespace().next()?.to_ascii_uppercase();
         return ROWS.iter().find(|r| r.name == kind).map(|r| ViewModelEventKind::MuzzleFlashOf {
             attachment: 0,
             kind: r.name.to_string(),
         });
     }
-    source_engine::view_anim::event_effect(e)
+    super::shells::event_effect(e).or_else(|| source_engine::view_anim::event_effect(e))
 }
 
 #[cfg(test)]
@@ -130,5 +134,8 @@ mod tests {
         assert!(matches!(event_effect(&ev("PISTOL MUZZLE")), Some(ViewModelEventKind::MuzzleFlashOf { kind, .. }) if kind == "PISTOL"));
         assert!(matches!(event_effect(&ev("357 muzzle")), Some(ViewModelEventKind::MuzzleFlashOf { kind, .. }) if kind == "357"));
         assert!(event_effect(&ev("")).is_none());
+        // As the install's models name it.
+        let named = AnimEvent { name: "AE_MUZZLEFLASH".into(), options: "SMG1 MUZZLE".into(), ..Default::default() };
+        assert!(matches!(event_effect(&named), Some(ViewModelEventKind::MuzzleFlashOf { kind, .. }) if kind == "SMG1"));
     }
 }

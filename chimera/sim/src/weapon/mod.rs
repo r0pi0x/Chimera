@@ -926,6 +926,16 @@ pub struct Hitscan {
     pub spread: SpreadShape,
     /// Shots go along the view plus this times the owner's `ViewPunch`.
     pub punch_scale: f32,
+    /// Bullets per tracer by the server's own count, one for every bullet
+    /// it fires (0: none; the games draw their own shots' tracers by
+    /// their own counts). With it a network server flags each round it
+    /// sends other clients (`remote::shot_flags`), and they draw a tracer
+    /// on every bullet of a flagged round (HL2:DM, specs/hl2dm/
+    /// effects_sounds.md 1-2).
+    pub tracer_every: u32,
+    /// Other clients trace this weapon's rounds again through every
+    /// character (HL2:DM: the impact lands on what is behind the victim).
+    pub redrawn_through_characters: bool,
 }
 
 /// Delivery add-on: bullets that pass through things (Source's bullet
@@ -1656,6 +1666,13 @@ pub enum WeaponEventKind {
     ArmingStarted,
     /// Arming stopped short (let go, moved off): back to idle.
     ArmingStopped,
+    /// Someone else's round, traced again here as the server flagged it
+    /// (`remote::RemoteShot` with `remote::shot_flags::FLAGGED`): its
+    /// `Shot` events follow at once. `tracers`: every one of its bullets
+    /// draws a tracer (the server's count picked one of them).
+    Redrawn {
+        tracers: bool,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -2023,6 +2040,8 @@ fn weapon_frame(
             seed: random::shot_seed(intent.command),
             now,
             rewound,
+            through_characters: false,
+            show_hits: true,
             w: &mut world,
         };
 

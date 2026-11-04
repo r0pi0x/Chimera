@@ -200,3 +200,27 @@ fn footsteps_follow_the_model_kind_1_2() {
     sim.ticks(3);
     assert_eq!(sim.app.world().get::<StepSounds>(p).unwrap().left, sounds::steps(weapons::inventory::ModelKind::Citizen).left);
 }
+
+/// Each gun's tracer cadence and remote re-trace are its data's
+/// (`[hitscan] tracer_every`, weapons.md 6, spec 1-2): every 2nd bullet
+/// for the pistol, SMG1 and AR2, every 4th for the .357 and the shotgun;
+/// all traced again through players on other clients.
+#[test]
+fn each_guns_tracer_cadence_is_its_data() {
+    let mut sim = sim();
+    let p = sim.spawn_character(greybox::SPAWNS[0], movement::ID);
+    sim.seconds(0.5);
+    for (id, every) in [
+        (weapons::PISTOL, 2),
+        (weapons::SMG1, 2),
+        (weapons::AR2, 2),
+        (weapons::MAGNUM, 4),
+        (weapons::SHOTGUN, 4),
+    ] {
+        let w = give(sim.app.world_mut(), p, id).unwrap();
+        let scan = sim.app.world().get::<chimera_sim::weapon::Hitscan>(w).unwrap();
+        assert_eq!(scan.tracer_every, every, "{id}");
+        assert!(scan.redrawn_through_characters, "{id}");
+        assert_eq!(effects::tracer_every(Some(scan)), u64::from(every));
+    }
+}

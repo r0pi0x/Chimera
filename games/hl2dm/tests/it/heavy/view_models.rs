@@ -1,7 +1,8 @@
 //! Every HL2:DM weapon's view model from the install: it loads through
 //! `maps::add_view_models` (as a map's kit does), with its hands, and each
 //! mesh's material resolves to a base texture (none missing or the error
-//! texture). `--nocapture` prints each model's lighting origin and every
+//! texture); each weapon's shells are the spec's (the brass events and
+//! the shell models). `--nocapture` prints each model's lighting origin and every
 //! mesh's material, texture and look. Skips without an install.
 //!
 //! (Checked 2026-11-03: the RPG drawing black and the frag not showing on
@@ -94,4 +95,68 @@ fn view_model_materials_route_to_phong_as_the_spec_counts() {
     assert!(!phong.keys().any(|(_, m)| m == "grenade body"));
     assert!(phong.values().all(|p| !p.cheap));
     assert!(phong.values().any(|p| p.fresnel_ranges == [0.1, 5.0, 1.0]));
+}
+
+/// Each weapon's shell type, as its view model's events from the install
+/// give it (specs/hl2dm/effects_sounds.md, Constants "Shells", probe case
+/// P6): the SMG1 ejects type 0 at cycle 0 of each fire sequence, the
+/// shotgun type 2 at 0.3125 of its pump, every other weapon nothing; both
+/// shell models load with meshes. And each gun's fire sequences give its
+/// muzzle flash (their named `AE_MUZZLEFLASH` event).
+#[test]
+fn each_weapons_shells_and_flashes_are_the_specs() {
+    use chimera_world::map::ViewModelEventKind;
+    let Some(mount) = install_mount() else { return };
+    let mut materials = MaterialLoader::guest(&mount, 0, 0);
+    let mut models = Vec::new();
+    let mut warnings = Vec::new();
+    maps::add_view_models(&mut materials, chimera_world::map::KitLoad::All, &mut models, &mut warnings);
+    let mut wrong = Vec::new();
+    for v in &models {
+        // (sequence, cycle, shell type) of every brass event.
+        let mut brass: Vec<(String, f32, String)> = Vec::new();
+        let mut fires = Vec::new();
+        let mut flashes = 0;
+        for s in v.animations.iter().flat_map(|a| a.sequences.iter()) {
+            if s.activity == "ACT_VM_PRIMARYATTACK" || s.activity.starts_with("ACT_VM_RECOIL") {
+                fires.push(s.name.clone());
+            }
+            for e in &s.events {
+                if matches!(hl2dm::game::flashes::event_effect(e), Some(ViewModelEventKind::MuzzleFlashOf { .. })) {
+                    flashes += 1;
+                }
+                if let Some(ViewModelEventKind::EjectBrass { attachment, shell, .. }) = hl2dm::game::flashes::event_effect(e) {
+                    if attachment >= v.attachments.len() {
+                        wrong.push(format!("{}: brass from attachment {attachment} of {}", v.key, v.attachments.len()));
+                    }
+                    brass.push((s.name.clone(), e.cycle, shell));
+                }
+            }
+        }
+        eprintln!("{}: {brass:?}, {flashes} muzzle flashes", v.key);
+        // The guns' fire sequences flash (spec 4: the named event).
+        let guns = [weapons::PISTOL, weapons::MAGNUM, weapons::SMG1, weapons::AR2, weapons::SHOTGUN];
+        if guns.contains(&v.key.as_str()) && flashes == 0 {
+            wrong.push(format!("{}: no muzzle flash event read", v.key));
+        }
+        let types: Vec<&str> = brass.iter().map(|b| b.2.as_str()).collect();
+        if v.key == weapons::SMG1 {
+            if brass.len() != fires.len() || brass.iter().any(|b| b.1 != 0.0 || b.2 != "0" || !fires.contains(&b.0)) {
+                wrong.push(format!("{}: {brass:?}, fire sequences {fires:?}", v.key));
+            }
+        } else if v.key == weapons::SHOTGUN {
+            if brass.len() != 1 || (brass[0].1 - 0.3125).abs() > 0.01 || types != ["2"] {
+                wrong.push(format!("{}: {brass:?}", v.key));
+            }
+        } else if !brass.is_empty() {
+            wrong.push(format!("{}: ejects {brass:?}", v.key));
+        }
+    }
+    let mut warnings = Vec::new();
+    let shells = hl2dm::game::shells::load(&mut materials, &mut warnings);
+    wrong.extend(warnings);
+    if shells.len() != hl2dm::game::shells::SHELLS.len() || shells.iter().any(|s| s.model.meshes.is_empty()) {
+        wrong.push(format!("{} shell models loaded", shells.len()));
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }

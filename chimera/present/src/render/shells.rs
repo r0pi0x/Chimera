@@ -2,7 +2,9 @@
 //! specs/cs_source/view_models.md 8): a small model flying under gravity
 //! (`map::shells::shell_step`), bouncing off the world with a sound now and
 //! then, coming to rest on floors and fading out. Started by
-//! `ViewModelEventKind::EjectBrass` for the first-person view model. Until
+//! `ViewModelEventKind::EjectBrass` for the first-person view model, with
+//! the game's `MapShellPhysics` (CS:S's; HL2:DM's world-axis speed, roll
+//! spin, random life and sure bounce sound). Until
 //! its first bounce it is drawn in the view-model pass, where the view
 //! model's field of view places it next to the gun; after that in the
 //! world.
@@ -177,10 +179,12 @@ pub fn eject(
         let origin = at(Vec3::ZERO);
         let axis = |v: Vec3| (at(v) - origin).normalize_or_zero();
         let (forward, right, up) = (axis(Vec3::X), axis(Vec3::NEG_Y), axis(Vec3::Z));
+        let (lo, hi) = p.world_jitter;
         let velocity = forward * speed * p.unit * roll(p.speed_factor.0, p.speed_factor.1)
             + up * roll(-p.up_jitter, p.up_jitter)
             + right * roll(-p.right_jitter, p.right_jitter)
-            + velocity.map_or(Vec3::ZERO, |v| v.0);
+            + Vec3::new(roll(lo.x, hi.x), roll(lo.y, hi.y), roll(lo.z, hi.z))
+            + velocity.filter(|_| p.owner_velocity).map_or(Vec3::ZERO, |v| v.0);
         // Its own materials, lit where it starts, so it can fade alone.
         let mut own = Vec::with_capacity(parts.len());
         if let Some(materials) = materials.as_mut() {
@@ -200,8 +204,9 @@ pub fn eject(
             velocity,
             // The shooter's eye angles; the model's +X along the view.
             rotation: eye.rotation() * Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
-            spin: Vec2::new(roll(-p.spin, p.spin), roll(-p.spin, p.spin)),
-            age: 0.0,
+            spin: Vec3::new(roll(-p.spin, p.spin), roll(-p.spin, p.spin), roll(-p.roll_spin, p.roll_spin)),
+            // A longer life (`life_jitter`): its age starts below zero.
+            age: -roll(0.0, p.life_jitter),
             resting: false,
             bounced: false,
         };
@@ -270,7 +275,7 @@ pub fn fly(
         if let ShellHit::Bounced(vz) | ShellHit::Rested(vz) = result {
             *dice = dice.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
             let chance = (*dice >> 8) as f32 / (1u32 << 24) as f32;
-            if chance < p.sound_chance
+            if p.sounds(vz, chance)
                 && let (Some(name), Some(sounds)) = (shell.bounce.as_deref(), sounds.as_ref())
                 && let Some(entry) = sounds.0.entry(name)
             {

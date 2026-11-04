@@ -48,6 +48,7 @@ pub mod rungs;
 pub mod scripts;
 pub mod set_piece_fx;
 pub mod set_pieces;
+pub mod shells;
 pub mod sounds;
 pub mod standing;
 pub mod suit;

@@ -2,7 +2,11 @@
 //! specs/cs_source/view_models.md 8) as data and motion: a shell type's
 //! model and bounce sound (`MapShell`), how shells move (`MapShellPhysics`)
 //! and one step of a shell's flight (`shell_step`, `shell_alpha`,
-//! `bounce_volume`). `render::shells` throws and draws them.
+//! `bounce_volume`, `MapShellPhysics::sounds`), with what HL2's casings
+//! add to CS:S's rules (specs/hl2dm/effects_sounds.md 5: random speed on
+//! the world's axes, roll spin, a random life, a sure bounce sound when
+//! landing hard, no shooter's velocity). `render::shells` throws and
+//! draws them.
 //!
 //! Spent shells for any game: `MapShell`/`MapShellPhysics` from the game; a
 //! flight's step, fade and bounce volume.
@@ -50,6 +54,31 @@ pub struct MapShellPhysics {
     /// which it plays at full volume.
     pub sound_chance: f32,
     pub sound_full_speed: f32,
+    /// A hit at this vertical speed or faster always sounds (HL2's
+    /// casings: 200 units/s); None: `sound_chance` alone.
+    #[serde(default)]
+    pub sound_sure_speed: Option<f32>,
+    /// Random speed added along the world's axes, between these (y up;
+    /// HL2's (-64, 0, -64) to (64, 64, 64) units/s).
+    #[serde(default)]
+    pub world_jitter: (Vec3, Vec3),
+    /// Roll spin up to this, either way (rad/s; HL2 spins every axis).
+    #[serde(default)]
+    pub roll_spin: f32,
+    /// Up to this much longer life, at random (s; HL2's 1 + U(0, 1)).
+    #[serde(default)]
+    pub life_jitter: f32,
+    /// The shooter's velocity is added (CS:S's; HL2's not).
+    #[serde(default)]
+    pub owner_velocity: bool,
+}
+
+impl MapShellPhysics {
+    /// Whether a hit at vertical speed `vz` sounds, given a draw `chance`
+    /// in [0, 1).
+    pub fn sounds(&self, vz: f32, chance: f32) -> bool {
+        self.sound_sure_speed.is_some_and(|s| vz.abs() >= s) || chance < self.sound_chance
+    }
 }
 
 /// A flying (or resting) shell.
@@ -58,8 +87,8 @@ pub struct ShellState {
     pub position: Vec3,
     pub velocity: Vec3,
     pub rotation: Quat,
-    /// Pitch and yaw rates (rad/s).
-    pub spin: Vec2,
+    /// Pitch, yaw and roll rates (rad/s).
+    pub spin: Vec3,
     pub age: f32,
     pub resting: bool,
     /// Bounced at least once (then drawn in the world).
@@ -85,7 +114,7 @@ pub fn shell_step(s: &mut ShellState, dt: f32, hit: Option<(Vec3, Vec3)>, physic
         return ShellHit::None;
     }
     let spin = s.spin * dt;
-    s.rotation = Quat::from_rotation_y(spin.y) * s.rotation * Quat::from_rotation_z(spin.x);
+    s.rotation = Quat::from_rotation_y(spin.y) * s.rotation * Quat::from_rotation_z(spin.x) * Quat::from_rotation_x(spin.z);
     let Some((point, normal)) = hit else {
         s.position += s.velocity * dt;
         s.velocity.y -= physics.gravity * dt;
@@ -97,7 +126,7 @@ pub fn shell_step(s: &mut ShellState, dt: f32, hit: Option<(Vec3, Vec3)>, physic
     let step = physics.gravity * dt;
     if normal.y > physics.rest_normal && vz <= 0.0 && vz >= -physics.rest_steps * step {
         s.velocity = Vec3::ZERO;
-        s.spin = Vec2::ZERO;
+        s.spin = Vec3::ZERO;
         s.resting = true;
         // Lie flat: keep only the heading.
         let forward = s.rotation * Vec3::X;

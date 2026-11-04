@@ -11,13 +11,19 @@
 //!   (`WeaponEventKind::Fired`); the client traces the same pellets
 //!   (`pellet_dirs`) through its own world with no damage (a client deals
 //!   none), so their tracers, impacts and decals show and the fire sound
-//!   plays, with the same spread pattern the server traced.
+//!   plays, with the same spread pattern the server traced. For weapons
+//!   with `Hitscan::tracer_every` the server flags the round
+//!   (`shot_flags`: a tracer on each bullet, any impact at all): a
+//!   `WeaponEventKind::Redrawn` goes before its `Shot` events, and with
+//!   `Hitscan::redrawn_through_characters` the trace passes every
+//!   character (HL2:DM, specs/hl2dm/effects_sounds.md 1).
 //! - **What else they do** (`RemoteAction`): reloads, swings and throws,
 //!   for their bodies' animations.
 //!
 //! Covers: what a network client draws of others' weapons (`show_held`: one
 //! weapon built from the registry in their hands; `RemoteShot`: their rounds
-//! traced again with no damage for tracers, impacts and the fire sound;
+//! traced again with no damage for tracers, impacts and the fire sound, as
+//! the server flagged them (`shot_flags`, `WeaponEventKind::Redrawn`);
 //! `RemoteAction`: reloads, swings, throws for their bodies).
 
 use bevy::prelude::*;
@@ -40,6 +46,23 @@ pub struct RemoteShot {
     pub seed: u32,
     pub spread: SpreadShape,
     pub mode: u8,
+    /// What the server says of the round (`shot_flags`; 0: nothing, the
+    /// games draw it by their own counts).
+    pub flags: u8,
+}
+
+/// What a server says of a round it sends other clients, for weapons with
+/// `Hitscan::tracer_every` (Source's fire-bullets message, specs/hl2dm/
+/// effects_sounds.md 1).
+pub mod shot_flags {
+    /// The weapon's tracers follow the server's count: the other bits
+    /// mean something.
+    pub const FLAGGED: u8 = 1;
+    /// The server's count picked one of the round's bullets for a tracer:
+    /// every bullet draws one here.
+    pub const TRACERS: u8 = 2;
+    /// One of its bullets hit something (else no impact is drawn here).
+    pub const IMPACTS: u8 = 4;
 }
 
 /// Something else someone else's weapon did (for its body's animation).
@@ -157,6 +180,11 @@ fn remote_shots(
             spread: s.spread,
             ..scan.clone()
         };
+        let flagged = s.flags & shot_flags::FLAGGED != 0;
+        let (tracers, impacts) = (s.flags & shot_flags::TRACERS != 0, s.flags & shot_flags::IMPACTS != 0);
+        if flagged {
+            world.event(s.shooter, active, WeaponEventKind::Redrawn { tracers });
+        }
         let mut ctx = deliver::Shot {
             owner: s.shooter,
             weapon: active,
@@ -167,9 +195,13 @@ fn remote_shots(
             seed: s.seed,
             now: clock.now,
             rewound: Vec::new(),
+            through_characters: scan.redrawn_through_characters,
+            show_hits: !flagged || impacts,
             w: &mut world,
         };
-        ctx.fire(&scan, effect, pen);
+        if !flagged || tracers || impacts {
+            ctx.fire(&scan, effect, pen);
+        }
         let sound = sounds.and_then(|x| match (s.mode > 0, &x.fire_alt) {
             (true, Some(alt)) => Some(alt.clone()),
             _ => x.fire.clone(),

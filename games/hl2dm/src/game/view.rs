@@ -13,7 +13,7 @@
 //! Known shortcuts: the pistol's and machine guns' series of fire
 //! sequences (`ACT_VM_RECOIL1`-`3` after the first shots) play the first
 //! one each time; the AR2's vent pose parameter isn't set (both
-//! cosmetic); the shells aren't drawn (M10: `flashes`, `effects`).
+//! cosmetic).
 
 use bevy::prelude::*;
 use chimera_sim::weapon::{
