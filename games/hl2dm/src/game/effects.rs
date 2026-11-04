@@ -15,8 +15,8 @@
 //!
 //! The projectiles' looks are `projectile_fx` (explosions, the rocket,
 //! the ball, the bolt, the grenades' trails, the laser dot) and the ball's
-//! dissolve is `dissolve`; the gravity gun's sprites and beams are left
-//! (M6).
+//! dissolve is `dissolve`; the gravity gun's sprites and beams are
+//! `physcannon_fx`'s.
 //!
 //! Known shortcuts (docs/tech-debt.md): other players' shots are drawn as
 //! the shooter's own are (their server-flagged tracer on every bullet of a
@@ -82,7 +82,17 @@ const STUNSTICK_GLOW: &str = "sprites/light_glow02_add";
 /// canister's trail (`smoke`, additive, maps_entities.md 8). Loaded as
 /// they are, they blended their black texels over the scene (a black
 /// square around the bolt's glow).
-pub const ADDITIVE_SPRITES: &[&str] = &["sprites/light_glow02_noz", "sprites/orangelight1", "sprites/smoke"];
+pub const ADDITIVE_SPRITES: &[&str] = &[
+    "sprites/light_glow02_noz",
+    "sprites/orangelight1",
+    "sprites/smoke",
+    // The gravity gun's (`physcannon_fx`): glow and additive render modes.
+    "sprites/orangecore1",
+    "sprites/orangecore2",
+    "sprites/glow04_noz",
+    "sprites/orangeflare1",
+    "sprites/orangelight1_noz",
+];
 
 /// Load the effect materials (runtime, from the install).
 pub fn load_materials(loader: &mut source_engine::content::material::MaterialLoader) -> MapParticles {
@@ -92,6 +102,7 @@ pub fn load_materials(loader: &mut source_engine::content::material::MaterialLoa
             MATERIALS,
             super::projectile_fx::MATERIALS,
             super::set_piece_fx::MATERIALS,
+            super::physcannon_fx::MATERIALS,
             source_engine::effects::explosions::MATERIALS,
         ],
     );

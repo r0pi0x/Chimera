@@ -75,6 +75,8 @@ pub struct HeldParts {
     /// What stays on `bone` when held.
     pub own: Vec<(Handle<Mesh>, Handle<PropMaterial>)>,
     pub muzzle: Option<Transform>,
+    /// Its attachments on `bone` (`MapHeldModel::attachments`).
+    pub attachments: Vec<(String, Transform)>,
     pub merged: Vec<(String, Vec<(Handle<Mesh>, Handle<PropMaterial>)>)>,
 }
 
@@ -140,6 +142,7 @@ pub fn build_late_held(
                 whole,
                 own: own_parts,
                 muzzle: h.muzzle,
+                attachments: h.attachments.clone(),
                 merged,
             },
         );
@@ -552,6 +555,12 @@ pub fn attach_held(
                 }
                 if let Some(t) = parts.muzzle {
                     m.spawn((t, view_model::HeldMuzzle { owner: character }));
+                }
+                for (index, (name, t)) in parts.attachments.iter().enumerate() {
+                    m.spawn((
+                        *t,
+                        view_model::HeldAttachment { owner: character, index, name: name.clone() },
+                    ));
                 }
             })
             .id();
@@ -1087,6 +1096,7 @@ mod late_held_tests {
             },
             bone: "hand".into(),
             muzzle: None,
+            attachments: Vec::new(),
             merged: Vec::new(),
             own: None,
         };

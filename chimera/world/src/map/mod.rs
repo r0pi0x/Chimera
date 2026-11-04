@@ -33,6 +33,7 @@ pub use crate::core::{
 };
 
 pub mod anim;
+pub mod attached;
 pub mod decal;
 pub mod emitters;
 pub mod extras;

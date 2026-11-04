@@ -289,6 +289,14 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
     // Before the physics step reads it (headless too).
     .add_systems(FixedUpdate, loose::attach_loose.before(crate::core::SimSet::Movement));
     let step = particles::step_particles.in_set(particles::ParticleSet::Step);
+    // Sprites and beams on weapons' attachments, after the games set them.
+    app.add_systems(
+        Update,
+        attached::draw_attached
+            .in_set(attached::AttachedSet)
+            .after(particles::ParticleSet::Step)
+            .before(particles::ParticleSet::Draw),
+    );
     match layers.effects() {
         Some(e) => app.add_systems(
             Update,

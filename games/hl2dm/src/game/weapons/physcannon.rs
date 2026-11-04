@@ -66,7 +66,7 @@
 //! first-impact breaks of props launched from the hold (9) aren't done;
 //! the claws' view-model pose, the hold's idle shake (`ACT_VM_RELOAD`),
 //! the white fade, the launch effect and the hold loops are
-//! `physcannon_fx`'s, the claws' beams and glow are not drawn; the cone search's line for a ball checks only the world; held
+//! `physcannon_fx`'s (the claws' glows and beams too); the cone search's line for a ball checks only the world; held
 //! items' grown touch box (11, Open questions 6) isn't done; the client
 //! doesn't predict the launch's distance check (it predicts a launch) nor
 //! a grab (the server's); a free combine ball can't be punted (it has no

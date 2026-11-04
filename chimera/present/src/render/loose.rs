@@ -154,6 +154,7 @@ mod tests {
                 whole: vec![(Handle::default(), Handle::default())],
                 own: Vec::new(),
                 muzzle: None,
+                attachments: Vec::new(),
                 merged: Vec::new(),
             },
         );

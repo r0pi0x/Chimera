@@ -462,6 +462,7 @@ fn build_character_assets(
                     whole,
                     own,
                     muzzle: h.muzzle,
+                    attachments: h.attachments.clone(),
                     merged,
                 },
             )

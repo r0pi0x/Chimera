@@ -1,11 +1,11 @@
 //! The effect materials from the install (`effects::load_materials`):
 //! every one the effects name loads, and the `Sprite`-shader glows the
 //! effects draw in glow or additive render mode (the stuck bolt's glow,
-//! the punt beam) add rather than blend (a blended `light_glow02_noz`
+//! the punt beam, the gravity gun's claws) add rather than blend (a blended `light_glow02_noz`
 //! drew a black square around the bolt). Skips without an install.
 
 use chimera_world::map::particles::ParticleBlend;
-use hl2dm::game::{effects, projectile_fx};
+use hl2dm::game::{effects, physcannon_fx, projectile_fx};
 use source_engine::content::material::MaterialLoader;
 
 use super::map_stock::install_mount;
@@ -18,6 +18,7 @@ fn effect_materials_load_and_glows_add() {
     let missing: Vec<&str> = effects::MATERIALS
         .iter()
         .chain(projectile_fx::MATERIALS)
+        .chain(physcannon_fx::MATERIALS)
         .copied()
         .filter(|m| particles.find(m).is_none())
         .collect();

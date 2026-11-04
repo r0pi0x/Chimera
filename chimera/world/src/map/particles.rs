@@ -468,6 +468,10 @@ pub struct ParticleGroup {
     /// Who made it, so it can be cut at once (`Particles::kill_tagged`:
     /// an effect shut down without letting its particles live out).
     pub tag: Option<u64>,
+    /// Drawn by the view-model camera (its layer, after the world, over
+    /// it): effects on a first-person view model, at the points where the
+    /// model is drawn (`map::attached`), not re-projected.
+    pub view_model: bool,
     age: f32,
     fresh: bool,
 }

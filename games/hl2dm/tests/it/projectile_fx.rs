@@ -332,3 +332,56 @@ fn the_laser_dot_follows_the_view_47() {
     sim.ticks(1);
     assert!(drawn(&sim, "sprites/redglow1").is_empty());
 }
+
+/// The decals placed over `ticks` ticks.
+fn scorches(sim: &mut Sim, ticks: u64) -> Vec<chimera_world::map::PlaceDecal> {
+    use chimera_world::map::PlaceDecal;
+    let mut cursor = sim.app.world().resource::<Messages<PlaceDecal>>().get_cursor_current();
+    let mut out = Vec::new();
+    for _ in 0..ticks {
+        sim.ticks(1);
+        out.extend(cursor.read(sim.app.world().resource::<Messages<PlaceDecal>>()).cloned());
+    }
+    out
+}
+
+/// Tests 41 and 42's scorch: a missile on the floor leaves a `Scorch` on
+/// it; one well above the floor (the line from 8 above to 32 below misses)
+/// leaves none; a frag's own probe isn't this rule's.
+#[test]
+fn the_rocket_scorches_the_floor_but_not_a_wall_41_42() {
+    use chimera_world::map::DecalGroup;
+    let mut sim = sim();
+    sim.seconds(0.5);
+    detonated(&mut sim, weapons::RPG, Vec3::new(0.0, 0.5 * U, 0.0));
+    let marks = scorches(&mut sim, 1);
+    assert_eq!(marks.len(), 1);
+    assert!(matches!(&marks[0].group, DecalGroup::Named(g) if g == "Scorch"));
+    assert!(marks[0].point.y.abs() < 1e-3 && marks[0].normal.y > 0.99, "{:?}", marks[0]);
+    detonated(&mut sim, weapons::RPG, Vec3::new(0.0, 100.0 * U, 0.0));
+    assert!(scorches(&mut sim, 1).is_empty(), "no scorch in the air");
+    detonated(&mut sim, weapons::SLAM, Vec3::new(0.0, 16.0 * U, 0.0));
+    assert_eq!(scorches(&mut sim, 1).len(), 1, "a satchel's on the floor below");
+}
+
+/// Test 40: a shot satchel's pop draws the flash overlay and the debris
+/// (sparks, flecks) but no fireballs or smoke puffs, and plays the
+/// explosion sound where it is.
+#[test]
+fn a_satchel_pop_is_the_flash_and_debris_40() {
+    use chimera_world::map::particles::Shape;
+    let mut sim = sim();
+    sim.seconds(0.5);
+    clear(&mut sim);
+    let at = Vec3::new(0.0, 1.0 * U, 0.0);
+    sim.app.world_mut().write_message(hl2dm::game::weapons::slam::SatchelPop { at });
+    let sounds = heard(&mut sim, 1);
+    assert_eq!(sounds.iter().filter(|(e, _)| e == projectile_fx::EXPLOSION_SOUND).count(), 1);
+    assert!(drawn(&sim, "particle/particle_noisesphere").is_empty(), "no smoke");
+    assert!(!drawn(&sim, "sprites/light_glow02_add_noz").is_empty(), "the flash");
+    let fire = material(&sim, "effects/fire_cloud2");
+    let ps = sim.app.world().resource::<Particles>();
+    let fire_parts: Vec<_> = ps.groups.iter().flat_map(|g| g.particles.iter()).filter(|p| p.material == fire).collect();
+    assert!(!fire_parts.is_empty(), "spark streaks");
+    assert!(fire_parts.iter().all(|p| matches!(p.shape, Shape::Trail { .. })), "no fireballs");
+}

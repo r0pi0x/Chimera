@@ -1,6 +1,8 @@
 //! Drawing the particle pool (`map::particles::Particles`): each frame one
 //! rebuilt mesh per material (particles outside the playable area, in the
-//! 3D skybox, in a mesh of their own on the sky camera's layer)
+//! 3D skybox, in a mesh of their own on the sky camera's layer; groups on
+//! a first-person view model, `ParticleGroup::view_model`, on the view
+//! model camera's layer, over the world as the model is)
 //! (`ParticleDrawMaterial`, particle.wesl: fogged, added ones toward
 //! black), camera-facing sprites, trails and flat quads, back to front.
 //! Sprites of sprite-card materials keep to their screen-size limits
@@ -23,6 +25,7 @@ use bevy::{
 use super::{dust, fog, sky::SkyCameraInfo};
 use crate::map::{
     MapData, MapPart, PlayableArea, SKYBOX_LAYER, SkyboxCamera, ViewModelCamera, monitor,
+    view_model::VIEW_MODEL_LAYER,
     particles::{MapParticles, Particle, ParticleBlend, ParticleMaterial, Particles, Shape},
     water,
 };
@@ -120,11 +123,11 @@ impl Plugin for ParticleMaterialPlugin {
 pub struct ParticleAssets {
     data: MapParticles,
     textures: Vec<Handle<Image>>,
-    /// (Material index, in the 3D skybox) -> (mesh entity, mesh, whether
-    /// it was last written empty). An empty mesh isn't written again until
+    /// (Material index, layer: `WORLD`, `SKY` or `VIEW`) -> (mesh entity,
+    /// mesh, whether it was last written empty). An empty mesh isn't written again until
     /// particles come back: a modified mesh is uploaded again, and makes
     /// every mesh entity re-check its pipeline that frame.
-    meshes: HashMap<(usize, bool), (Entity, Handle<Mesh>, bool)>,
+    meshes: HashMap<(usize, u8), (Entity, Handle<Mesh>, bool)>,
 }
 
 /// The particle meshes' resource for a map (`map::MapDrawer::insert_drawn`):
@@ -147,6 +150,12 @@ impl ParticleAssets {
 
 /// Rebuild the particle meshes for the camera.
 #[allow(clippy::type_complexity)]
+/// Particle mesh layers: the world, the 3D skybox, the view model's
+/// (`ParticleGroup::view_model`).
+const WORLD: u8 = 0;
+const SKY: u8 = 1;
+const VIEW: u8 = 2;
+
 pub fn draw_particles(
     particles: Res<Particles>,
     assets: Option<ResMut<ParticleAssets>>,
@@ -192,21 +201,29 @@ pub fn draw_particles(
     };
     let sky_eye = sky.as_ref().map(|s| s.0.origin + from / s.0.scale);
     // Per material and layer: (depth, particle, near fade).
-    let mut buckets: HashMap<(usize, bool), Vec<(f32, &Particle, f32)>> = HashMap::new();
+    let mut buckets: HashMap<(usize, u8), Vec<(f32, &Particle, f32)>> = HashMap::new();
     for g in &particles.groups {
         for p in &g.particles {
-            let skybox = sky_eye.is_some() && in_sky(p.position);
+            let skybox = !g.view_model && sky_eye.is_some() && in_sky(p.position);
+            let layer = if g.view_model {
+                VIEW
+            } else if skybox {
+                SKY
+            } else {
+                WORLD
+            };
             let eye = if skybox { sky_eye.unwrap_or(from) } else { from };
             let depth = (p.position - eye).dot(forward);
             let near = g.motion.draw_factor(depth, p);
-            buckets.entry((p.material, skybox)).or_default().push((depth, p, near));
+            buckets.entry((p.material, layer)).or_default().push((depth, p, near));
         }
     }
-    let mut used: Vec<(usize, bool)> = assets.meshes.keys().chain(buckets.keys()).copied().collect();
+    let mut used: Vec<(usize, u8)> = assets.meshes.keys().chain(buckets.keys()).copied().collect();
     used.sort_unstable();
     used.dedup();
     for key in used {
-        let (material, skybox) = key;
+        let (material, layer) = key;
+        let skybox = layer == SKY;
         let from = if skybox { sky_eye.unwrap_or(from) } else { from };
         let Some(def) = assets.data.materials.get(material).cloned() else {
             continue;
@@ -236,10 +253,18 @@ pub fn draw_particles(
                         Transform::default(),
                     ))
                     .id();
-                if skybox {
-                    commands
-                        .entity(entity)
-                        .insert(bevy::camera::visibility::RenderLayers::layer(SKYBOX_LAYER));
+                match layer {
+                    SKY => {
+                        commands
+                            .entity(entity)
+                            .insert(bevy::camera::visibility::RenderLayers::layer(SKYBOX_LAYER));
+                    }
+                    VIEW => {
+                        commands
+                            .entity(entity)
+                            .insert(bevy::camera::visibility::RenderLayers::layer(VIEW_MODEL_LAYER));
+                    }
+                    _ => {}
                 }
                 assets.meshes.insert(key, (entity, handle.clone(), false));
                 (entity, handle, false)

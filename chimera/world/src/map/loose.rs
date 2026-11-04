@@ -173,6 +173,7 @@ mod tests {
             model,
             bone: "b".into(),
             muzzle: None,
+            attachments: Vec::new(),
         };
         let a = asset(&held, Transform::from_scale(Vec3::splat(0.0254)));
         assert!((a.half - Vec3::new(0.508, 0.0508, 0.0254)).length() < 1e-5);

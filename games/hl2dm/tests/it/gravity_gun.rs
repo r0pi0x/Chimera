@@ -970,6 +970,7 @@ fn with_effects(w: &mut W) {
     };
     let materials = hl2dm::game::projectile_fx::MATERIALS
         .iter()
+        .chain(hl2dm::game::physcannon_fx::MATERIALS)
         .chain(source_engine::effects::impact_effects::MATERIALS)
         .map(|n| ParticleMaterial { name: n.to_string(), ..default() })
         .collect();
@@ -1039,4 +1040,152 @@ fn the_hold_loop_ramps_up_and_down() {
     w.press(false, true, 1, 1);
     run(&mut w, 100, &mut msgs);
     assert!(msgs.iter().any(|m| matches!(m, SoundControl::Stop(_))), "stopped after the fade");
+}
+
+/// The gun's attachments in a test view model and world model: attachment
+/// 1 (`core`) and the forks, each at its own point (meters, the model's
+/// frame).
+fn claw_attachments() -> Vec<(String, Vec3)> {
+    let mut list = vec![("core".to_string(), Vec3::new(0.0, -0.05, -0.5))];
+    for (i, n) in ["fork1b", "fork1m", "fork1t", "fork2b", "fork2m", "fork2t", "fork3m", "fork3t"].iter().enumerate() {
+        list.push((n.to_string(), Vec3::new(0.02 * i as f32 - 0.08, 0.03, -0.45)));
+    }
+    list
+}
+
+/// The particles drawn this frame with `material` (by name): their
+/// positions and whether on the view model's layer.
+fn drawn(w: &W, material: &str) -> Vec<(Vec3, bool)> {
+    use chimera_world::map::particles::{ParticleMaterials, Particles, Shape};
+    let m = w.sim.app.world().resource::<ParticleMaterials>().0.find(material).expect(material);
+    let ps = w.sim.app.world().resource::<Particles>();
+    ps.groups
+        .iter()
+        .flat_map(|g| g.particles.iter().map(move |p| (g, p)))
+        .filter(|(_, p)| p.material == m)
+        .map(|(g, p)| match p.shape {
+            Shape::Quad { corners, .. } => ((corners[0] + corners[3]) / 2.0, g.view_model),
+            _ => (p.position, g.view_model),
+        })
+        .collect()
+}
+
+/// H9 48 (effects_sounds.md 11, "Gravity gun sprites and beams"), first
+/// person: ready, the core and six glows sit on the view model's
+/// attachments (drawn on its layer); holding, the end caps on the two
+/// fork tips and two beams from them to attachment 1.
+#[test]
+fn the_claws_glow_on_the_view_model_and_beam_while_holding() {
+    use chimera_world::map::{
+        MapAttachment, MapBone, MapViewModel, ViewAnimator, ViewModelAnchor, ViewModelOffset, ViewModels,
+        view_model::placement,
+    };
+    use hl2dm::game::physcannon_fx::{CORE, END_CAP, GLOW, VIEW_BEAM};
+    let mut w = world(&[Crate::ahead(200.0)]);
+    with_effects(&mut w);
+    let attachments: Vec<MapAttachment> = claw_attachments()
+        .into_iter()
+        .map(|(name, at)| MapAttachment { name, bone: 0, local: Transform::from_translation(at) })
+        .collect();
+    let model = MapViewModel {
+        key: weapons::PHYSCANNON.into(),
+        model: MapModel::default(),
+        bones: vec![MapBone { name: "root".into(), parent: None, position: Vec3::ZERO, rotation: Quat::IDENTITY }],
+        root: Transform::IDENTITY,
+        animations: None,
+        right_handed: true,
+        allow_flipping: false,
+        attachments: attachments.clone(),
+        light_origin: Vec3::ZERO,
+    };
+    w.sim.app.insert_resource(ViewModels(std::sync::Arc::new(vec![model])));
+    let eye = GlobalTransform::from(Transform::from_xyz(1.0, 2.0, 3.0));
+    let p = w.p;
+    w.sim.app.world_mut().spawn((ViewModelAnchor, eye, ChildOf(p)));
+    if w.sim.app.world().get::<ViewAnimator>(p).is_none() {
+        w.sim.app.world_mut().entity_mut(p).insert(ViewAnimator { key: Some(weapons::PHYSCANNON.into()), ..default() });
+    }
+    w.sim.ticks(30);
+    let anchor_at = |w: &mut W| {
+        let world = w.sim.app.world_mut();
+        world.query_filtered::<&GlobalTransform, With<ViewModelAnchor>>().single(world).unwrap().compute_transform()
+    };
+    let at = |w: &mut W, name: &str| {
+        let offset = w.sim.app.world().get::<ViewModelOffset>(w.p).copied().unwrap_or_default();
+        let local = attachments.iter().find(|a| a.name == name).unwrap().local.translation;
+        anchor_at(w).transform_point(placement(&offset, false).transform_point(local))
+    };
+    let core = drawn(&w, CORE);
+    assert_eq!(core.len(), 1, "one core");
+    assert!(core[0].1, "on the view model's layer");
+    let want = at(&mut w, "core");
+    assert!(core[0].0.distance(want) < 1e-3, "core at {} not {want}", core[0].0);
+    let glows = drawn(&w, GLOW);
+    assert_eq!(glows.len(), 6);
+    for name in hl2dm::game::physcannon_fx::VIEW_GLOWS {
+        let want = at(&mut w, name);
+        assert!(glows.iter().any(|(p, vm)| *vm && p.distance(want) < 1e-3), "a glow at {name}");
+    }
+    assert!(drawn(&w, END_CAP).is_empty() && drawn(&w, VIEW_BEAM).is_empty(), "no caps or beams when ready");
+
+    w.grab(0);
+    w.sim.ticks(5);
+    let caps = drawn(&w, END_CAP);
+    assert_eq!(caps.len(), 2);
+    for name in hl2dm::game::physcannon_fx::VIEW_TIPS {
+        let want = at(&mut w, name);
+        assert!(caps.iter().any(|(p, _)| p.distance(want) < 1e-3), "an end cap at {name}");
+    }
+    // Two beams of 8 segments, on the view model's layer.
+    let beams = drawn(&w, VIEW_BEAM);
+    assert_eq!(beams.len(), 16);
+    assert!(beams.iter().all(|(_, vm)| *vm));
+}
+
+/// Others see the world model's set at its attachments (`HeldAttachment`):
+/// the glows on `fork1m` to `fork3t`; holding, three end caps and three
+/// beams; put away, nothing.
+#[test]
+fn the_claws_glow_on_the_world_model_for_others() {
+    use chimera_world::map::view_model::HeldAttachment;
+    use hl2dm::game::physcannon_fx::{END_CAP, GLOW, WORLD_BEAM, WORLD_GLOWS};
+    let mut w = world(&[Crate::ahead(200.0)]);
+    with_effects(&mut w);
+    let p = w.p;
+    let points = claw_attachments();
+    for (index, (name, at)) in points.iter().enumerate() {
+        let g = GlobalTransform::from(Transform::from_translation(*at + Vec3::Y));
+        w.sim.app.world_mut().spawn((HeldAttachment { owner: p, index, name: name.clone() }, g));
+    }
+    w.sim.ticks(30);
+    let glows = drawn(&w, GLOW);
+    assert_eq!(glows.len(), 6);
+    for name in WORLD_GLOWS {
+        let want = points.iter().find(|(n, _)| n == name).unwrap().1 + Vec3::Y;
+        assert!(glows.iter().any(|(p, vm)| !vm && p.distance(want) < 1e-4), "a glow at {name}");
+    }
+    w.grab(0);
+    w.sim.ticks(5);
+    assert_eq!(drawn(&w, END_CAP).len(), 3);
+    assert_eq!(drawn(&w, WORLD_BEAM).len(), 24);
+}
+
+/// H9 49: a punt shows the blast sprite at attachment 1, 8 to 64 wide.
+#[test]
+fn a_punt_flashes_the_blast_sprite_at_the_core() {
+    use chimera_world::map::view_model::HeldAttachment;
+    use hl2dm::game::physcannon_fx::BLAST;
+    let mut w = world(&[Crate::ahead(100.0)]);
+    with_effects(&mut w);
+    let p = w.p;
+    let core = Vec3::new(0.3, 1.5, 0.2);
+    w.sim.app.world_mut().spawn((HeldAttachment { owner: p, index: 0, name: "core".into() }, GlobalTransform::from_translation(core)));
+    w.sim.ticks(10);
+    assert!(drawn(&w, BLAST).is_empty());
+    w.press(true, false, 1, 2);
+    let blast = drawn(&w, BLAST);
+    assert_eq!(blast.len(), 1);
+    assert!(blast[0].0.distance(core) < 1e-4);
+    w.sim.ticks(20);
+    assert!(drawn(&w, BLAST).is_empty(), "gone after 0.2 s");
 }

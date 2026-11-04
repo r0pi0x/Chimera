@@ -27,8 +27,10 @@
 //! - **Detonator**: attack2 with it armed, not in mine mode and not in an
 //!   action: every satchel of this player goes off 0.2 s later (14 ticks):
 //!   150 in 200 at the satchel + 16 up; the detonator is disarmed. A
-//!   satchel that takes damage is removed with a harmless pop; its
-//!   thrower's death sets them all off 0.2 s later.
+//!   satchel that takes damage is removed with a harmless pop
+//!   (`SatchelPop`, drawn by `projectile_fx`; a `Scorch` within 24 under
+//!   it, `BaseGrenade.Explode` heard by everyone); its thrower's death
+//!   sets them all off 0.2 s later.
 //! - With no slam left and no satchels out the S.L.A.M. leaves the
 //!   inventory.
 //!
@@ -439,13 +441,45 @@ pub fn actions(
     }
 }
 
-/// Satchels: shot ones pop harmlessly, set-off ones explode (the server's).
+/// A shot satchel's harmless pop (8.6) at `at` (where the generic
+/// grenade explosion puts it): every machine draws it (`projectile_fx`).
+#[derive(Message, Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SatchelPop {
+    pub at: Vec3,
+}
+
+/// Where a pop goes off and what it scorches (the generic grenade
+/// explosion, as the frag's 9.6): a line from 8 units above `at` to 32
+/// below that; on a hit, the point 0.6 off it and the hit (point,
+/// normal), else `at`.
+pub fn pop_point(at: Vec3, world: &impl crate::map::particles::WorldTrace) -> (Vec3, Option<(Vec3, Vec3)>) {
+    let from = at + Vec3::Y * 8.0 * U;
+    let to = from - Vec3::Y * 32.0 * U;
+    match world.trace(from, to) {
+        Some((f, n)) => {
+            let hit = from + (to - from) * f;
+            (hit + n * 0.6 * U, Some((hit, n)))
+        }
+        None => (at, None),
+    }
+}
+
+/// The scorch decal group of HL2:DM's explosions.
+pub const SCORCH: &str = "Scorch";
+
+/// Satchels: shot ones pop harmlessly (`SatchelPop`, a `Scorch` under it,
+/// `BaseGrenade.Explode` heard by everyone), set-off ones explode (the
+/// server's).
+#[allow(clippy::too_many_arguments)]
 pub fn satchels(
     satchels: Query<(Entity, &Hl2Satchel, &Transform)>,
     mut damage: MessageReader<Damage>,
     clock: Res<SimClock>,
     mut blasts: MessageWriter<BlastAt>,
-    mut play: MessageWriter<PlaySound>,
+    mut sounds: MessageWriter<crate::map::GameSound>,
+    mut pops: MessageWriter<SatchelPop>,
+    mut decals: MessageWriter<crate::map::PlaceDecal>,
+    world: crate::map::particles::WorldTracer,
     mut commands: Commands,
 ) {
     let shot: Vec<Entity> = damage
@@ -465,7 +499,20 @@ pub fn satchels(
             });
             commands.entity(e).despawn();
         } else if shot.contains(&e) {
-            play.write(PlaySound::at("BaseGrenade.Explode", t.translation));
+            let (at, hit) = pop_point(t.translation, &world);
+            sounds.write(crate::map::GameSound(PlaySound::at("BaseGrenade.Explode", at)));
+            pops.write(SatchelPop { at });
+            if let Some((point, normal)) = hit {
+                decals.write(crate::map::PlaceDecal {
+                    target: None,
+                    group: crate::map::DecalGroup::Named(SCORCH.into()),
+                    point,
+                    normal,
+                    dir: -normal,
+                    spin: true,
+                    round: false,
+                });
+            }
             commands.entity(e).despawn();
         }
     }

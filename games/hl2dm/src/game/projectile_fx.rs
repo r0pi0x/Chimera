@@ -6,10 +6,14 @@
 //!   look (`source_engine::effects::explosions`: CS:S's smoke, embers,
 //!   fireballs, sparks and flecks, the same effect in every Source game)
 //!   and its sound `BaseExplosionEffect.Sound`, heard by each client where
-//!   it is; the shot satchel's pop (scale 0) is the flash alone. The
-//!   RPG's, satchel's and trip mine's go by the explosion entity's rule:
-//!   a line from 8 above the point to 40 below that, drawn 24 off what it
-//!   hits (and where it hits nothing, at the point itself).
+//!   it is. The RPG's, satchel's and trip mine's go by the explosion
+//!   entity's rule: a line from 8 above the point to 40 below that, drawn
+//!   24 off what it hits (and where it hits nothing, at the point itself),
+//!   and the server puts a `Scorch` where it hits (`scorches`; Chimera's
+//!   decals reach the clients).
+//! - **The shot satchel's pop** (`SatchelPop`, the server's, sent to
+//!   clients too: net part `hl2dm_projectile_fx`): a scale-0 explosion,
+//!   the flash and the debris (`explosions::pop`) and its sound.
 //! - **The rocket** (`MISSILE_MODEL`, every frame): 8 flare sprites behind
 //!   it and a smoke puff for each 4 units it travelled.
 //! - **The energy ball** (`BALL_MODEL`, every frame): the animated body
@@ -38,8 +42,9 @@
 //! (re-projected attachments) are not drawn, nor the held ball's model;
 //! the ball's body quad takes its frames from the material's sheet at 30 a
 //! second; the electric sparks are the surface effect's (sizes 1, 2 and 4
-//! of the spec are one size); the frag's trail has one width; the RPG
-//! leaves no scorch (its probe would move its blast); the satchel's glow
+//! of the spec are one size); the frag's trail has one width; the scorch
+//! lands on the world only (not on props or brush entities under the
+//! blast); the satchel's glow
 //! strobes at a steady rate. Why it's OK for now: the shapes, sizes,
 //! lifetimes and counts are the spec's; the look needs the real game's
 //! captures to compare.
@@ -47,6 +52,7 @@
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
+use bevy_replicon::prelude::*;
 use chimera_sim::weapon::{
     Inventory, Weapon,
     grenade::Detonated,
@@ -63,12 +69,13 @@ use super::{
         self,
         launch::{BALL_MODEL, BOLT_MODEL, MISSILE_MODEL, SATCHEL_MODEL, SMG1_GRENADE_MODEL},
         rpg::Hl2LaserDot,
+        slam::SatchelPop,
     },
 };
 use crate::{
     core::{Intent, LocalPlayer, MovementState},
     map::{
-        ParticleRng, PlaySound,
+        DecalGroup, ParticleRng, PlaceDecal, PlaySound,
         loose::ShownItem,
         particles::{
             Fade, Motion, Particle, ParticleGroup, ParticleMaterials, ParticleSet, Particles, Ramp, Shape,
@@ -218,6 +225,75 @@ fn explosions(
         }
         play.write(PlaySound::at(EXPLOSION_SOUND, at));
     }
+}
+
+/// The line of the explosion entity's rule under `at` (spec 8): from 8
+/// units above it to 40 below that; what it hits (point, normal).
+pub fn entity_rule_hit(at: Vec3, world: &impl WorldTrace) -> Option<(Vec3, Vec3)> {
+    let from = at + Vec3::Y * 8.0 * U;
+    let to = from - Vec3::Y * 40.0 * U;
+    world.trace(from, to).map(|(f, n)| (from + (to - from) * f, n))
+}
+
+/// The server's: an explosion by the entity rule (the RPG's, a satchel's,
+/// a trip mine's) leaves a `Scorch` where its line hits (spec 8; none in
+/// mid-air or on a wall well above the floor). Decals reach clients
+/// through Chimera's.
+fn scorches(mut detonated: MessageReader<Detonated>, world: WorldTracer, mut decals: MessageWriter<PlaceDecal>) {
+    for d in detonated.read() {
+        if !look_of(d.weapon).is_some_and(|l| l.entity_rule) {
+            continue;
+        }
+        if let Some((point, normal)) = entity_rule_hit(d.at, &world) {
+            decals.write(PlaceDecal {
+                target: None,
+                group: DecalGroup::Named(weapons::slam::SCORCH.into()),
+                point,
+                normal,
+                dir: -normal,
+                spin: true,
+                round: false,
+            });
+        }
+    }
+}
+
+/// A shot satchel's pop (spec test 40), on every machine: the flash and
+/// the debris (no core), and `BaseExplosionEffect.Sound`.
+fn pops(
+    mut pops: MessageReader<SatchelPop>,
+    materials: Option<Res<ParticleMaterials>>,
+    mut particles: ResMut<Particles>,
+    mut rng: ResMut<FxRng>,
+    mut play: MessageWriter<PlaySound>,
+    world: WorldTracer,
+) {
+    for p in pops.read() {
+        if let Some(m) = materials.as_ref() {
+            let mats = FxMaterials::new(&m.0);
+            let a = explosions::blast_direction(p.at, &world);
+            for g in explosions::pop(&mut rng.0, &mats, p.at, a, &world) {
+                particles.add(g);
+            }
+        }
+        play.write(PlaySound::at(EXPLOSION_SOUND, p.at));
+    }
+}
+
+/// The server: this tick's pops to every client.
+fn forward_pops(mut pops: MessageReader<SatchelPop>, mut out: MessageWriter<ToClients<SatchelPop>>) {
+    for p in pops.read() {
+        out.write(ToClients { targets: SendTargets::CLIENTS_ONLY, message: *p });
+    }
+}
+
+/// The protocol: shot satchels' pops, from the server (a client's own
+/// `SatchelPop` messages, which `pops` draws).
+fn register(app: &mut App) {
+    app.add_server_message::<SatchelPop>(Channel::Unreliable).add_systems(
+        PostUpdate,
+        forward_pops.before(ServerSystems::Send).run_if(resource_equals(crate::core::NetRole::Server)),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -690,12 +766,20 @@ pub struct Hl2ProjectileFxPlugin;
 
 impl Plugin for Hl2ProjectileFxPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_net::net::parts::NetAppExt;
         app.init_resource::<FxRng>()
             .init_resource::<Rings>()
+            .add_message::<SatchelPop>()
+            .add_message::<PlaceDecal>()
             .add_systems(
                 FixedUpdate,
-                (explosions, flyer_events).after(crate::core::SimSet::Weapons),
+                (
+                    (explosions, flyer_events).after(crate::core::SimSet::Weapons),
+                    scorches.after(crate::core::SimSet::Weapons).run_if(crate::core::authoritative),
+                ),
             )
+            .add_systems(Update, pops.after(ParticleSet::Step).before(ParticleSet::Draw))
+            .net_part("hl2dm_projectile_fx", register)
             .add_systems(
                 Update,
                 (projectile_looks, laser_dots, draw_rings)
