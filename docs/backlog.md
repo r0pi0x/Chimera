@@ -191,6 +191,11 @@ the original's own behaviour isn't a bug (say so instead).
 - **Ultimate Gun Game: HL2:DM rungs don't use HL2:DM's HUD and crosshair.**
   Holding an HL2:DM gun should show the same HUD and crosshair as HL2:DM
   itself, as other games' rungs do.
+- **Combat Arms melee and the RMS-12 against glass:** knives don't break
+  glass (CS office's windows), so a flamethrower player can't get in; the
+  RMS-12 can't break it either.
+- **RMS-12 flamethrower:** shoots what looks like smoke, not flames, and
+  doesn't seem to do damage to anybody.
 - **Combat Arms radio menus:** 7, 8 and 9 do nothing. Check what the
   original's menus offer on those keys (`choose_N`, the same commands as
   the console report above).
