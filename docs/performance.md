@@ -2028,20 +2028,84 @@ change's 1.6 GB).
 
 **Left** (backlog): the archetypes' own cost (table above; Bevy's per-frame
 queries that walk them all, bevy_audio's cleanup a tenth of the main thread at
-20,000); the render thread's slow rise; process memory (5.9 -> 14.5 GB over eight
-maps with the stores flat, which on a smaller machine could page: not found). On Windows a player can
+20,000); the render thread's slow rise and process memory (5.9 -> 14.5 GB over
+eight maps with the stores flat): the next section. On Windows a player can
 send a bugreport's `report.txt` or `chimera_perf_log 1` (archetypes are in it),
 and `chimera_census` at the start and at 30 fps; `chimera_census age 20000` in a
 fresh game shows what a long session cost before this fix.
 
-## A session's memory (tools, 2026-11-09)
+## A session's memory (2026-11-09)
 
-Tools for the "Process memory over a session" and "The render thread's cost"
-backlog entries; neither growth is explained yet, and no numbers are recorded
-here yet. `chimera_mem [<files>]` prints the process's mappings by kind (heap,
-anonymous, device, file; Linux), glibc's counts, the GPU allocator's report, the
-bytes in the image and mesh stores, and the render world's entities, archetypes,
-textures, mesh slabs and pipelines.
+What the section above left: Ultimate Gun Game's process memory rising over a
+session, and the render thread's cost. The real app, playtest build, 1280x720,
+the default bots, `god`, 90 s a map through `ugg_new <seed> 13 <map>` (the
+`after` console command times each line; `+wait` frames held up the map
+change), de_dust2 then cs_office, dm_lockdown, warehouse, de_inferno, de_nuke,
+cs_militia, de_aztec, de_dust2. The box at load 30-80 from other agents, so
+instructions and bytes, not times.
+
+**Tools.** `chimera_mem [<n>]` (`client::memory`) splits the process by kind
+of mapping (`/proc/self/smaps`: heap, anonymous, device, mapped files) and adds
+glibc's counts (`mallinfo2`), wgpu's allocator report (blocks, allocations by
+label), the image and mesh stores' bytes, the render world's entities,
+textures, mesh slabs and pipelines, and how many `PropMaterial`s the store
+holds against those an entity draws. A sampling heap profiler preloaded into
+the game (not in the repository: a few lines of C over glibc's `malloc`,
+`backtrace` every 256 KB, dumps of what's live by stack) said what holds the
+heap.
+
+**What held it.** Mapped files (100-300 MB) and the driver's device mappings
+(256-290 MB) stay flat; the rise was all heap. Live heap by stack between the
+fifth and the eighth map: 1.31 GB more under `AnimList::build` in
+`characters::models::load_body`, 0.4 GB of everything else. Each Combat Arms
+body loaded on demand parsed its skeleton's animation files (child models)
+again, about 80 MB of animation keys a body, and its rig kept them as long as
+it lived: a ladder brings ten bodies, and the old ladders' rigs stayed in the
+late model index (`CaModelIndex::rigs`; forgetting a ladder drops its groups,
+not its rigs). Second, glibc kept what a map change freed: "free in arenas"
+reached 5.9 GB, counted resident or swapped.
+
+**The fixes.** Child models load once per install data
+(`model::ChildModels`, `load_sharing`) and an animation is an `Arc` shared by
+its model and every `AnimList` built on it, so a body costs its own file
+only. 20 s after each map spawns, the client gives glibc's free pages back to
+the system (`memory::release_free`, `malloc_trim` on a thread; Linux with glibc
+only: Windows' heap returns large blocks itself).
+
+| map (process: resident + swapped, GB) | before | after | malloc in use, before | after |
+|---|---|---|---|---|
+| de_dust2 (start) | 4.26 | 2.80 | 2.12 | 2.19 |
+| cs_office | 7.16 | 4.06 | 4.18 | 3.41 |
+| dm_lockdown | 9.44 | 4.75 | 5.68 | 4.21 |
+| warehouse | 9.96 | 5.07 | 6.46 | 4.49 |
+| de_inferno | 12.34 | 5.85 | 7.90 | 5.32 |
+| de_nuke | 13.21 | 5.91 | 8.24 | 5.28 |
+| cs_militia | 15.16 | 5.66 | 8.68 | 5.02 |
+| de_aztec | 15.03 | 5.33 | 8.72 | 4.71 |
+| de_dust2 | 15.36 | 5.52 | 9.27 | 4.85 |
+
+What the heap still gains after the first maps (1.36 GB between the second and
+the last map, flat from the fifth): the current ladder's Combat Arms models'
+textures kept on the CPU (decoded RGBA 0.6 GB, their mips 0.15 GB, view
+models' 0.15 GB), which a later map's spawn builds its images from again.
+
+**The render thread** (not fixed). de_dust2's render world: 13.5-14.4M
+instructions a frame at the start, 18.4-19.3M after the eight maps, 24-25M on
+cs_militia and de_aztec. Sampled (instructions, user space) on de_dust2 at the
+end: wgpu's trackers 24% (dropping and clearing each pass's
+`ResourceMetadata<Buffer>` and `<Texture>`, `BufferUsageScope::clear`, the
+vectors' resize), Bevy's mesh allocator and render-asset hash lookups 14%
+(`MeshAllocationKey` tables, `RenderMesh` and `PreparedMaterial` maps). wgpu
+sizes each pass's trackers by the most buffers and textures ever alive at once
+(`TrackerIndexAllocator::size`, which never falls), so a peak costs every pass
+of every later frame; Bevy's hash tables keep their peak capacity too. What
+makes the peak: about 11,000 GPU buffers after the second map (2,530 at the
+start), nearly all `PropMaterial`s' uniforms, of which an entity draws 300
+(10,027 in the store on dm_lockdown, 306 drawn): every material of every body,
+held model and skin family the map's kit and the ladder's late models carry
+is prepared, drawn or not. `chimera_mem pad <n>` (that many undrawn materials,
+0 drops them) is the experiment that would put a number on each buffer; it
+didn't run (the session's display went with an out-of-memory kill on the box).
 
 ## See a frame yourself
 

@@ -36,6 +36,19 @@ impl Plugin for PerfPlugin {
     fn build(&self, app: &mut App) {
         use crate::console::ConsoleAppExt;
         app.console_command("chimera:census", chimera_core::metrics::census::HELP, chimera_core::metrics::census::command);
+        app.init_resource::<AfterLines>().add_systems(Update, run_after_lines);
+        app.console_command(
+            "chimera:after",
+            "after <seconds> <command...>: run a console line that many seconds from now, beside the queue: a script of \
+             `wait`s holds up whatever a command queues itself (`map` behind `ugg_new`), this doesn't.",
+            |w, a| {
+                let seconds: f32 = a.first().and_then(|s| s.parse().ok()).ok_or("after: how many seconds?")?;
+                let line = a.get(1..).unwrap_or_default().join(" ");
+                let due = Instant::now() + std::time::Duration::from_secs_f32(seconds.max(0.0));
+                w.resource_mut::<AfterLines>().0.push((due, line));
+                Ok(None)
+            },
+        );
         app.add_plugins((EntityCountDiagnosticsPlugin::default(), RenderDiagnosticsPlugin))
             .init_resource::<Perf>()
             .init_resource::<FrameTimes>()
@@ -206,6 +219,25 @@ fn water_cvars(app: &mut App) {
     for name in ["r_waterforceexpensive", "r_waterforcereflectentities"] {
         console.archive(name);
     }
+}
+
+/// `after`'s lines and when each is due.
+#[derive(Resource, Default)]
+struct AfterLines(Vec<(Instant, String)>);
+
+fn run_after_lines(mut lines: ResMut<AfterLines>, console: Option<ResMut<crate::console::Console>>) {
+    let Some(mut console) = console else { return };
+    if lines.0.is_empty() {
+        return;
+    }
+    let now = Instant::now();
+    lines.0.retain(|(due, line)| {
+        if *due > now {
+            return true;
+        }
+        console.submit(line.clone());
+        false
+    });
 }
 
 /// `host_timescale`: how fast game (virtual) time runs; 0 pauses it.

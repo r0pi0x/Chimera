@@ -321,7 +321,7 @@ fn node_evaluation() {
 fn find_matches_a_case_blind_scan() {
     let m = model(2, vec![record(2), record(3)]);
     let mut list = AnimList::build(&m, &[]);
-    let rename = |list: &mut AnimList, i: usize, n: &str| list.entries[i].animation.name = n.to_string();
+    let rename = |list: &mut AnimList, i: usize, n: &str| std::sync::Arc::make_mut(&mut list.entries[i].animation).name = n.to_string();
     rename(&mut list, 0, "LST");
     rename(&mut list, 1, "lst");
     rename(&mut list, 2, "Run_Forward");
@@ -333,4 +333,14 @@ fn find_matches_a_case_blind_scan() {
     list.entries.remove(0);
     assert_eq!(list.find("LST"), Some(0), "scanned after a change in count");
     assert_eq!(list.find("run_forward"), Some(1));
+}
+
+/// A list shares its model's animations (each is megabytes, and every body
+/// built from one model holds one: docs/performance.md, "A session's memory").
+#[test]
+fn lists_share_the_models_animations() {
+    let m = model(2, Vec::new());
+    let (a, b) = (AnimList::build(&m, &[]), AnimList::build(&m, &[]));
+    assert!(std::sync::Arc::ptr_eq(&a.entries[0].animation, &b.entries[0].animation));
+    assert!(std::sync::Arc::ptr_eq(&a.entries[0].animation, &m.animations[0]));
 }

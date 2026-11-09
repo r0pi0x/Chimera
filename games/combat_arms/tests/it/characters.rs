@@ -654,6 +654,7 @@ impl StandIn {
                         })
                         .collect(),
                 })
+                .map(std::sync::Arc::new)
                 .collect(),
             sockets: self
                 .sockets
@@ -843,7 +844,7 @@ fn t30_spheres_follow_the_animation() {
     let lrf = model.animation("LRF").unwrap();
     let parent = stand_in.nodes[foot].1.unwrap();
     let base = Vec3::from(stand_in.nodes[foot].2) - Vec3::from(stand_in.nodes[parent].2);
-    model.animations[lrf].channels[foot] = Channel::Transform {
+    std::sync::Arc::make_mut(&mut model.animations[lrf]).channels[foot] = Channel::Transform {
         positions: vec![base.to_array(), (base + Vec3::new(0.0, 0.0, 20.0)).to_array()],
         rotations: vec![[0.0, 0.0, 0.0, 1.0]],
     };

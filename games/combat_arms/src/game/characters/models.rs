@@ -397,7 +397,7 @@ pub fn alias_rig(world: &mut World, data: &CharacterData, id: i32) {
         }
         let ca = world.get_resource::<crate::map::LoadContext>().map_or_else(CaData::install, CaData::install_for);
         if let Some(mount) = ca.mount() {
-            match model::load(&r.file, &|p: &str| mount.read(p).ok()) {
+            match model::load_sharing(&r.file, &|p: &str| mount.read(p).ok(), &*ca.memo(model::ChildModels::default)) {
                 Ok(l) => register(world, &r.file, Arc::new(Rig::new(l.model, l.list))),
                 Err(e) => warn!("Combat Arms: body {} ({}): {e}", r.name, r.file),
             }
@@ -804,7 +804,7 @@ fn body_group(
 ) -> Result<MapCharacterModel, String> {
     let base = *records.first().ok_or("no body")?;
     let data = ca.characters();
-    let loaded = model::load(&base.file, file)?;
+    let loaded = model::load_sharing(&base.file, file, &*ca.memo(model::ChildModels::default))?;
     let base_lods: Vec<(i32, i32, i32)> = model::drawn_lods(&loaded.model).into_iter().map(model::slots_and_style).collect();
     // Chimera's animation set only needs the body's own pose (the
     // driver lays the pose out itself, `Animator::fixed`): no resampling

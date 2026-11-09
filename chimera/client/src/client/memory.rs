@@ -4,6 +4,14 @@
 //! (wgpu's report), the bytes in the main world's image and mesh stores, and
 //! the render world's own numbers, which a console command can't reach: a
 //! render system writes them about once a second into `RenderWorldStats`.
+//! Also how many `PropMaterial`s the store holds against those an entity
+//! draws, and `chimera_mem pad <n>`: `n` undrawn materials held (0 drops them),
+//! to measure what they cost the render thread.
+//!
+//! `release_after_map`: 20 s after each map spawns, `memory::release_free` on a
+//! thread gives glibc's free pages back to the system. A map change frees
+//! gigabytes that glibc kept (9 GB "free in arenas" after eight maps, still
+//! counted resident or swapped).
 
 use std::sync::{Arc, Mutex};
 
@@ -33,13 +41,36 @@ impl Plugin for MemoryPlugin {
         if let Some(render) = app.get_sub_app_mut(RenderApp) {
             render.insert_resource(stats).add_systems(Render, render_stats.in_set(RenderSystems::Cleanup));
         }
+        app.add_systems(Update, release_after_map);
         app.console_command(
             "chimera:mem",
             "chimera_mem [<files>]: what holds this process's memory: mappings by kind (heap, anonymous, device, \
              file), the allocator's bytes, the GPU allocator's blocks, the image and mesh stores' bytes, the render \
              world's; with the <files> largest mapped files and device mappings.",
-            |w, a| Ok(Some(readout(w, a.first().and_then(|n| n.parse().ok()).unwrap_or(0)))),
+            |w, a| {
+                if a.first().map(String::as_str) == Some("pad") {
+                    let n = a.get(1).and_then(|n| n.parse().ok()).ok_or("pad: how many?")?;
+                    return Ok(Some(pad(w, n)));
+                }
+                Ok(Some(readout(w, a.first().and_then(|n| n.parse().ok()).unwrap_or(0))))
+            },
         );
+    }
+}
+
+/// How long after a map starts its loads have ended, mostly: the ladder's
+/// models come in the seconds after it.
+const RELEASE_AFTER_SECONDS: f32 = 20.0;
+
+/// A while after each map's spawn, on a thread, give the allocator's free pages
+/// back (`memory::release_free`): the old map and its load's scratch.
+fn release_after_map(map: Option<Res<crate::map::MapFile>>, mut at: Local<Option<std::time::Instant>>) {
+    if map.is_some_and(|m| m.is_changed()) {
+        *at = Some(std::time::Instant::now());
+    }
+    if at.is_some_and(|t| t.elapsed().as_secs_f32() > RELEASE_AFTER_SECONDS) {
+        *at = None;
+        std::thread::spawn(crate::metrics::memory::release_free);
     }
 }
 
@@ -117,7 +148,56 @@ fn texture_bytes(i: &GpuImage) -> u64 {
         .sum()
 }
 
-fn readout(w: &World, files: usize) -> String {
+/// `chimera_mem pad <n>`: hold `n` copies of a material no entity draws (0
+/// drops them), each a GPU buffer and bind group, to measure what undrawn
+/// materials cost the render thread now and after they're gone
+/// (docs/performance.md, "A session's memory").
+#[derive(Resource, Default)]
+struct Pad(Vec<Handle<crate::render::prop_material::PropMaterial>>);
+
+fn pad(w: &mut World, n: usize) -> String {
+    use crate::render::prop_material::PropMaterial;
+    let mut held = std::mem::take(&mut w.get_resource_or_init::<Pad>().0);
+    held.truncate(n);
+    let mut store = w.resource_mut::<Assets<PropMaterial>>();
+    while held.len() < n {
+        held.push(store.add(PropMaterial::default()));
+    }
+    let len = held.len();
+    w.resource_mut::<Pad>().0 = held;
+    format!("holding {len} undrawn materials")
+}
+
+/// How many of a material store's assets entities draw with, and how many sit
+/// in the store held by something else (a cache, a model kept for later).
+fn material_users<M: bevy::pbr::Material>(w: &mut World) -> Option<(usize, usize)> {
+    let store = w.get_resource::<Assets<M>>()?.len();
+    let mut q = w.query::<&MeshMaterial3d<M>>();
+    let used: std::collections::BTreeSet<AssetId<M>> = q.iter(w).map(|m| m.0.id()).collect();
+    Some((store, used.len()))
+}
+
+/// The material handles the map's model caches hold: the bodies' (parts and
+/// skins), the held models', the gibs'.
+fn cached_materials(w: &World) -> String {
+    use crate::render::bodies::{HeldAssets, PlayModels};
+    let mut out = Vec::new();
+    if let Some(p) = w.get_resource::<PlayModels>() {
+        let parts: usize = p.bodies.iter().map(|b| b.parts.len()).sum();
+        let skins: usize = p.bodies.iter().map(|b| b.skins.iter().map(Vec::len).sum::<usize>()).sum();
+        out.push(format!("{} bodies {parts} parts {skins} skin materials", p.bodies.len()));
+    }
+    if let Some(h) = w.get_resource::<HeldAssets>() {
+        let n: usize = h.0.values().map(|p| p.whole.len() + p.own.len() + p.merged.iter().map(|m| m.1.len()).sum::<usize>()).sum();
+        out.push(format!("{} held models {n} parts", h.0.len()));
+    }
+    out.join(", ")
+}
+
+fn readout(w: &mut World, files: usize) -> String {
+    let props = material_users::<crate::render::prop_material::PropMaterial>(w);
+    let cached = cached_materials(w);
+    let w: &World = w;
     let mut lines = Vec::new();
     match Regions::read() {
         Some(r) => {
@@ -153,6 +233,19 @@ fn readout(w: &World, files: usize) -> String {
             size(r.total_reserved_bytes),
             r.blocks.len()
         ));
+        if files > 0 {
+            let mut by_name = std::collections::BTreeMap::<&str, (usize, u64)>::new();
+            for a in &r.allocations {
+                let e = by_name.entry(a.name.as_str()).or_default();
+                e.0 += 1;
+                e.1 += a.size;
+            }
+            let mut rows: Vec<_> = by_name.into_iter().collect();
+            rows.sort_by_key(|r| std::cmp::Reverse(r.1.0));
+            for (name, (n, b)) in rows.iter().take(files * 2) {
+                lines.push(format!("  gpu {name}: {n}, {}", size(*b)));
+            }
+        }
     }
     let image_bytes = w
         .get_resource::<Assets<Image>>()
@@ -168,6 +261,9 @@ fn readout(w: &World, files: usize) -> String {
         mesh_bytes.0,
         size(mesh_bytes.1)
     ));
+    if let Some((store, used)) = props {
+        lines.push(format!("PropMaterial: {store} in the store, {used} drawn by an entity; cached: {cached}"));
+    }
     if let Some(s) = w.get_resource::<RenderWorldStats>() {
         let s = s.0.lock().unwrap().clone();
         lines.push(format!(

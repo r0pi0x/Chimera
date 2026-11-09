@@ -6,6 +6,13 @@
 //! `anim::AnimSet`), so props, view models and bodies all draw and play
 //! through Chimera's model and animation layer.
 //!
+//! Child models (the animation files) load once per install data
+//! (`ChildModels`, a memo of `CaData`; `load_sharing`): every body on a
+//! skeleton names the same few, and their animations (`Arc`s, shared with
+//! each `AnimList` built on them) were parsed again for each body, 80 MB a
+//! body, and kept as long as its rig (docs/performance.md, "A session's
+//! memory").
+//!
 //! - Axes and units ("Converting to a right-handed Y-up frame"): Z
 //!   mirrored, triangle order swapped; the skeleton stays in world units
 //!   (the rig's root scales it by `scale` metres per unit), mesh
@@ -77,6 +84,26 @@ pub fn normalize(path: &str) -> String {
 /// Read model `path` and its children (named relative to its folder)
 /// through `file`.
 pub fn load(path: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<LoadedModel, String> {
+    load_sharing(path, file, &ChildModels::default())
+}
+
+/// The child models (animation files) read so far, by path: bodies' children
+/// are the same few files, whose animations then are one copy however many
+/// bodies load or are forgotten (docs/performance.md, "A session's memory").
+/// Bounded by the install's distinct child files.
+#[derive(Default)]
+pub struct ChildModels(std::sync::Mutex<std::collections::BTreeMap<String, std::sync::Arc<Model>>>);
+
+impl ChildModels {
+    /// How many, and the bytes of their animations' key data.
+    pub fn held(&self) -> (usize, usize) {
+        let held = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        (held.len(), held.values().flat_map(|m| &m.animations).map(|a| a.track_bytes() + a.vertex_anim_bytes()).sum())
+    }
+}
+
+/// `load`, its children through `shared`.
+pub fn load_sharing(path: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>, shared: &ChildModels) -> Result<LoadedModel, String> {
     let path = normalize(path);
     let read = |p: &str| -> Result<Model, String> {
         let bytes = file(p).ok_or_else(|| format!("{p}: not found or locked (keyed archive)"))?;
@@ -91,7 +118,17 @@ pub fn load(path: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Loaded
         } else {
             format!("{folder}/{name}")
         });
-        let child = read(&child_path)?;
+        let cached = shared.0.lock().unwrap_or_else(|e| e.into_inner()).get(&child_path).cloned();
+        let child = match cached {
+            Some(child) => child,
+            None => {
+                // Read outside the lock: two loads racing read it twice, the
+                // last one stays.
+                let child = std::sync::Arc::new(read(&child_path)?);
+                shared.0.lock().unwrap_or_else(|e| e.into_inner()).insert(child_path.clone(), child.clone());
+                child
+            }
+        };
         if !child.children.is_empty() {
             return Err(format!("{child_path}: a child model with children of its own"));
         }
@@ -100,7 +137,7 @@ pub fn load(path: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<Loaded
         }
         children.push(child);
     }
-    let refs: Vec<Option<&Model>> = children.iter().map(Some).collect();
+    let refs: Vec<Option<&Model>> = children.iter().map(|c| Some(&**c)).collect();
     let list = AnimList::build(&model, &refs);
     Ok(LoadedModel { path, model, list })
 }

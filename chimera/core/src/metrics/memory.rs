@@ -140,6 +140,18 @@ pub fn malloc() -> Option<Malloc> {
     None
 }
 
+/// Give the arenas' free pages back to the system (glibc keeps them, and a map
+/// change frees gigabytes between what stays: `chimera_mem`'s "free in arenas").
+/// Elsewhere nothing: Windows' heap returns big blocks when freed. It holds each
+/// arena's lock while it walks it: call it off the main thread.
+pub fn release_free() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: no pointers; the allocator's own locks guard it.
+    unsafe {
+        libc::malloc_trim(0);
+    }
+}
+
 /// Bytes as gigabytes or megabytes.
 pub fn size(b: u64) -> String {
     if b >= 1 << 30 {
