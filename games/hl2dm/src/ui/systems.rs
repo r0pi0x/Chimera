@@ -558,6 +558,16 @@ const KIND_BOX: u8 = 0;
 const KIND_TEXT: u8 = 1;
 const KIND_SPRITE: u8 = 2;
 
+/// No HUD at the main menu: `sync` stops with the gameplay after a
+/// `disconnect` and would leave its last frame up.
+pub fn hide_at_main_menu(status: Res<chimera_client::client::front_end::MenuStatus>, mut nodes: Query<&mut Visibility, With<Pooled>>) {
+    if !status.in_game {
+        for mut v in &mut nodes {
+            v.set_if_neq(Visibility::Hidden);
+        }
+    }
+}
+
 /// The frame's draws as UI nodes: pooled entities per kind, each kept at
 /// its draw's index in the stack (`GlobalZIndex`), extras hidden.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]

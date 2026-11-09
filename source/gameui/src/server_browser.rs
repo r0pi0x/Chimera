@@ -1,4 +1,4 @@
-//! The server browser (Find Servers, `openserverbrowser`), drawn as
+//! The server browser of a Source game (Find Servers, `openserverbrowser`), drawn as
 //! CS:S's: a frame over the menu with the Internet, Favorites, History
 //! and Lan tabs, the server list (password and bot icons, name, game,
 //! players, map, latency; History adds when last played), sorting by a

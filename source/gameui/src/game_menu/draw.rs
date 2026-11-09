@@ -12,7 +12,7 @@
 use super::*;
 
 #[derive(Component)]
-pub(super) struct MenuRoot;
+pub struct MenuRoot;
 
 /// The menu's own layer (its backdrop, title and entries): over the HUD
 /// and every in-game panel (the message of the day, team, class, buy,
@@ -79,7 +79,7 @@ pub(super) fn dialog_size(menu: &GameMenu, page: Page) -> (f32, f32) {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn draw(
+pub fn draw(
     menu: Res<GameMenu>,
     fonts: Res<UiFonts>,
     menu_ui: Option<Res<MenuUi>>,
@@ -279,7 +279,7 @@ pub(super) fn dialog(commands: &mut Commands, ctx: &Ctx, page: Page) {
             dialog_buttons(commands, ctx, frame, (w, h), &[Action::Ok, Action::Cancel, Action::Apply]);
         }
         Page::NewGame => {
-            let names: Vec<(String, bool)> = CREATE_TABS.iter().map(|(t, o)| (menu.text(t, o), true)).collect();
+            let names: Vec<(String, bool)> = menu.create_tabs().iter().map(|(t, o)| (menu.text(t, o), true)).collect();
             widgets::tabs(commands, frame, look, (8.0, 30.0), &names, menu.create_tab, None, Some(w - 16.0), |i| {
                 Hit(Target::Tab(i), 0)
             });

@@ -1,5 +1,7 @@
-//! The main menu and the in-game menu (Esc, or `menu [page]`), one menu
-//! drawn as CS:S's GameUI draws it. Out of a game (startup without a map,
+//! The main menu and the in-game menu (Esc, or `menu [page]`) of a Source
+//! game, one menu drawn as GameUI draws it (CS:S's and HL2:DM's: lifted out of
+//! `cs_source`; what's a game's own is `crate::MenuGame`; CS:S's words below
+//! are where it was measured). Out of a game (startup without a map,
 //! after `disconnect`) it is the main menu: always open, over the game's
 //! background picture, the game's title over its entries, in-game entries
 //! hidden. In a game: the entries at the left over the darkened game. Each
@@ -135,14 +137,15 @@ mod tests;
 
 pub use self::{
     create_server::*,
-    draw::MENU_Z,
+    draw::{MENU_Z, draw},
+    extras::auto_team,
     loading::*,
     main_menu::*,
     model::*,
     player_list::ListedPlayer,
     vote_setup::{VoteSetup, issue_label},
 };
-pub(in crate::ui) use self::systems::*;
+pub use self::systems::*;
 use self::{draw::*, options_pages::*, vote_setup::*};
 
 use std::{
@@ -162,7 +165,7 @@ use bevy::{
     window::CursorOptions,
 };
 
-pub(in crate::ui) use crate::client::widgets::{Look, bevel, label, place};
+pub use crate::client::widgets::{Look, bevel, label, place};
 use super::options::{Place, SETTINGS, SettingKind, TABS, Tab, VALUE_ENTRIES};
 use crate::client::{
     binds,
@@ -180,7 +183,8 @@ use crate::{
     map::hud::{GameUi, KeyAction, ServerSettingKind, UiControl, UiKind, UiLayout},
 };
 
-pub struct GameMenuPlugin;
+/// The game menu for a game (`MenuGame`: what's that game's own in it).
+pub struct GameMenuPlugin(pub &'static crate::MenuGame);
 
 /// Copy what the shell reads of the menu into `MenuStatus` whenever the
 /// menu changes.
@@ -199,7 +203,7 @@ fn sync_status(menu: Res<GameMenu>, mut status: ResMut<MenuStatus>) {
 
 impl Plugin for GameMenuPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<GameMenu>()
+        app.insert_resource(GameMenu::for_game(self.0))
             .init_resource::<LoadingDetails>()
             .init_resource::<LoadTimeline>()
             .init_resource::<AfterLoad>()
@@ -264,6 +268,12 @@ impl Plugin for GameMenuPlugin {
                     _ if tab.is_some() => Page::Settings,
                     None | Some("main") => Page::Main,
                     Some("newgame" | "createserver" | "game" | "bot") => Page::NewGame,
+                    Some("bots") if w.resource::<GameMenu>().game.bots().is_none() => {
+                        return Err("this game has no bots".to_string());
+                    }
+                    Some("team") if w.resource::<GameMenu>().game.teams().is_none() => {
+                        return Err("this game has no team dialog".to_string());
+                    }
                     Some("bots") => Page::Bots,
                     Some("team") => Page::Team,
                     Some("options" | "settings" | "advanced" | "videoadvanced" | "gamma" | "mpadvanced") => Page::Settings,
@@ -323,33 +333,6 @@ impl Plugin for GameMenuPlugin {
                 Ok(Some(state))
             },
         )
-        .console_command(
-            "chimera:quickstart",
-            "Ours: start a game at once: rounds on de_dust2 (else the first map) with 9 normal bots (five \
-             terrorists, four counter-terrorists besides you), single player; Create Server's other settings as \
-             they are.",
-            |w, _| {
-                // The settings read from the console, as opening the menu does.
-                open_menu(w, Page::Main);
-                let mut out = Outcome::default();
-                w.resource_mut::<GameMenu>().quick_start(&mut out);
-                if out.lines.is_empty() {
-                    return Err("no maps to start".into());
-                }
-                let mut console = w.resource_mut::<Console>();
-                for line in out.lines {
-                    console.submit(line);
-                }
-                *w.resource_mut::<AfterLoad>() = AfterLoad {
-                    lines: out.after_load,
-                    ..default()
-                };
-                if out.close {
-                    w.resource_mut::<RegrabCursor>().0 = true;
-                }
-                Ok(None)
-            },
-        )
         .console_command("gameui_activate", "Open the game menu (Esc).", |w, _| {
             open_menu(w, Page::Main);
             Ok(None)
@@ -363,6 +346,34 @@ impl Plugin for GameMenuPlugin {
             w.resource_mut::<RegrabCursor>().0 = true;
             Ok(None)
         });
+        if self.0.quick_start.is_some() {
+            app.console_command(
+                "chimera:quickstart",
+                "Ours: start a game at once: rounds on the game's quick map with its bots, single player; Create \
+                 Server's other settings as they are.",
+                |w, _| {
+                    // The settings read from the console, as opening the menu does.
+                    open_menu(w, Page::Main);
+                    let mut out = Outcome::default();
+                    w.resource_mut::<GameMenu>().quick_start(&mut out);
+                    if out.lines.is_empty() {
+                        return Err("no maps to start".into());
+                    }
+                    let mut console = w.resource_mut::<Console>();
+                    for line in out.lines {
+                        console.submit(line);
+                    }
+                    *w.resource_mut::<AfterLoad>() = AfterLoad {
+                        lines: out.after_load,
+                        ..default()
+                    };
+                    if out.close {
+                        w.resource_mut::<RegrabCursor>().0 = true;
+                    }
+                    Ok(None)
+                },
+            );
+        }
     }
 }
 

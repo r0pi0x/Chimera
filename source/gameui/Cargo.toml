@@ -1,0 +1,46 @@
+[package]
+name = "source_gameui"
+version = "0.1.0"
+description = "Source's GameUI on Chimera's client shell: the main and Esc menus, the options, Create Server, the server browser, the first-run dialog"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# No doc tests (none written): skips a rustdoc pass on every test run.
+[lib]
+doctest = false
+
+# A Source game's front end: the client shell, the presentation it draws
+# with and Source's readers, below the games; never `mashup`, a game or
+# an app (checks/tests/it/architecture.rs checks it). The games' `ui`
+# features turn it on; the dedicated servers never build it. The games
+# give it what is theirs as data (`MenuGame`).
+[dependencies]
+chimera_core.workspace = true
+chimera_world.workspace = true
+chimera_net.workspace = true
+chimera_present.workspace = true
+chimera_client.workspace = true
+source_engine.workspace = true
+bevy.workspace = true
+# The clipboard of the dialogs' text boxes; the display mode the system has.
+arboard.workspace = true
+winit.workspace = true
+bevy_replicon_renet.workspace = true
+workspace-hack.workspace = true
+
+[dev-dependencies]
+bevy = { workspace = true, features = ["default", "wav"] }
+chimera_sim.workspace = true
+
+[features]
+# Bevy as a dynamic library, as the games' `dev` (which turns this on).
+dev = [
+    "chimera_core/dev",
+    "chimera_world/dev",
+    "chimera_net/dev",
+    "chimera_present/dev",
+    "chimera_client/dev",
+    "source_engine/dev",
+]

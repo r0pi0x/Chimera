@@ -134,9 +134,6 @@ the original's own behaviour isn't a bug (say so instead).
   secondary ammo panel; branch `hl2dm-gaps1` feeds it, check after merge).
 - **HUD:** no ammo counter bottom right for the RPG (`hl2dm-gaps1` shows
   its own rounds as ammo, check after merge).
-- **Escape** only frees the cursor (click to return to the game): no menu.
-  HL2:DM's menus were planned for after faithful DM/TDM; the user has now
-  run into it, so it's next once these reports are done.
 - **Glass decals (dm_lockdown, upstairs office, `setpos -3201.81 4622.36
   192.04;setang 2.52 34.76 0.00`):** bullet decals on
   `func_breakable_surf` windows are very big and low res, and the broken

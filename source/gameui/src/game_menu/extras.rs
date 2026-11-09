@@ -1,8 +1,14 @@
-//! Our own dialogs: Lucker Party Options (the settings CS:S's options
-//! don't have; `menu extras`) and Bots and Team (`menu bots`, `menu
-//! team`). No menu entry opens them: CS:S's `GameMenu.res` has none.
+//! Our own dialogs: Lucker Party Options (the settings the game's options
+//! don't have; `menu extras`) and, in a game whose `MenuGame` has them, Bots
+//! and Team (`menu bots`, `menu team`). No menu entry opens them: the
+//! games' `GameMenu.res` have none.
 
 use super::*;
+
+/// The team `jointeam` auto-assign picks: the smaller, the first when even.
+pub fn auto_team(one: usize, two: usize) -> u8 {
+    if two < one { 3 } else { 2 }
+}
 
 impl GameMenu {
     /// Lucker Party Options' rows: ours, OK, Cancel.
@@ -29,13 +35,11 @@ impl GameMenu {
 
     /// The Bots dialog's rows (ours).
     pub(super) fn bots_rows(&self) -> Vec<Row> {
+        let [one, two] = self.game.bots().map_or(["", ""], |b| b.team_words);
         vec![
-            Row::Info(format!(
-                "In the game: {} terrorist and {} counter-terrorist bots",
-                self.bots[0], self.bots[1]
-            )),
-            Self::button_row("Add a terrorist bot", Action::Run("bot_add 1".into(), false)),
-            Self::button_row("Add a counter-terrorist bot", Action::Run("bot_add 2".into(), false)),
+            Row::Info(format!("In the game: {} {one} and {} {two} bots", self.bots[0], self.bots[1])),
+            Self::button_row(&format!("Add a {one} bot"), Action::Run("bot_add 1".into(), false)),
+            Self::button_row(&format!("Add a {two} bot"), Action::Run("bot_add 2".into(), false)),
             Self::button_row("Kick all bots", Action::Run("bot_kick".into(), false)),
             Self::button_row(&self.text("#GameUI_Close", "Close"), Action::Back),
         ]
@@ -43,15 +47,16 @@ impl GameMenu {
 
     /// The Team dialog's rows (ours).
     pub(super) fn team_rows(&self) -> Vec<Row> {
+        let [one, two] = self.game.teams().unwrap_or(["", ""]);
         vec![
-            Self::button_row("Terrorists", Action::Run("jointeam 2".into(), true)),
-            Self::button_row("Counter-Terrorists", Action::Run("jointeam 3".into(), true)),
+            Self::button_row(one, Action::Run("jointeam 2".into(), true)),
+            Self::button_row(two, Action::Run("jointeam 3".into(), true)),
             Self::button_row(
                 "Auto-assign",
                 Action::Run(
                     format!(
                         "jointeam {}",
-                        crate::ui::team_menu::auto_team(self.players[0], self.players[1])
+                        auto_team(self.players[0], self.players[1])
                     ),
                     true,
                 ),

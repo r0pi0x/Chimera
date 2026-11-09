@@ -8,6 +8,7 @@ mod common;
 mod damage_and_death;
 mod feed;
 mod history;
+mod menus;
 mod panels;
 mod quick_info;
 mod selection;

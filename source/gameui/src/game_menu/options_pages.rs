@@ -256,7 +256,7 @@ pub(super) fn crosshair_preview(commands: &mut Commands, parent: Entity, look: &
 
 impl GameMenu {
     /// Settings' values now (those `which` picks).
-    pub(super) fn snapshot(&self, which: impl Fn(&crate::ui::options::Setting) -> bool) -> Vec<(usize, Option<String>)> {
+    pub(super) fn snapshot(&self, which: impl Fn(&crate::options::Setting) -> bool) -> Vec<(usize, Option<String>)> {
         SETTINGS
             .iter()
             .enumerate()
@@ -365,6 +365,14 @@ impl GameMenu {
             // In a layout without its control: not shown (the game has no
             // place for it).
             if layout.is_some() && s.field.is_some_and(|f| order(f) == usize::MAX) {
+                continue;
+            }
+            // Hidden there, in a game whose layouts mean it.
+            if self.game.layout_hides()
+                && s.field.is_some_and(|f| {
+                    layout.and_then(|l| l.controls.iter().find(|c| c.name.eq_ignore_ascii_case(f))).is_some_and(|c| !c.visible)
+                })
+            {
                 continue;
             }
             fields.push((s.field.map_or(i, order), Field::Setting(i)));
@@ -503,6 +511,7 @@ impl GameMenu {
         let buttons: &[Action] = match self.tab {
             // Adjust brightness levels... and Advanced...
             Tab::Video => &[Action::Gamma, Action::VideoAdvanced],
+            Tab::Multiplayer if self.game.layout_hides() && self.layout().and_then(|l| l.get("Advanced")).is_some_and(|c| !c.visible) => &[],
             Tab::Multiplayer => &[Action::MultiplayerAdvanced],
             _ => &[],
         };
@@ -652,7 +661,7 @@ impl GameMenu {
             return;
         }
         self.aspect = Some(k);
-        let Some(i) = crate::ui::options::setting_index("chimera_resolution") else { return };
+        let Some(i) = crate::options::setting_index("chimera_resolution") else { return };
         let shown = self.shown_resolutions();
         let current = self.values.get(i).cloned().flatten().unwrap_or_default();
         if !shown.contains(&current)

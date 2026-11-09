@@ -35,12 +35,6 @@ pub const MAIN: [(MainItem, &str, bool); 8] = [
     (MainItem::Quit, "Quit", false),
 ];
 
-/// The map a quick start (`chimera_quickstart`) plays (rounds, `QUICK_BOTS` normal bots: five
-/// terrorists and four counter-terrorists besides you); the first map
-/// when the install lacks it.
-pub const QUICK_MAP: &str = "de_dust2";
-pub(super) const QUICK_BOTS: u8 = 9;
-
 impl MainItem {
     pub(super) fn page(self) -> Option<Page> {
         match self {
@@ -127,9 +121,11 @@ pub fn main_entries(ui: Option<&GameUi>) -> Vec<MainEntry> {
                 }
                 out.push(entry);
             }
-            // Whatever the file lacks, where CS:S has it.
+            // Whatever the file lacks, where CS:S has it (but a bug report
+            // only where the game's own menu offers one: HL2:DM's doesn't;
+            // `bugreport` is the console's).
             for (i, (item, ..)) in MAIN.iter().enumerate() {
-                if out.iter().any(|m| m.item == *item) {
+                if out.iter().any(|m| m.item == *item) || *item == MainItem::BugReport {
                     continue;
                 }
                 let at = match i {

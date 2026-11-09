@@ -3364,6 +3364,7 @@ dependencies = [
  "sha2",
  "source_engine",
  "source_formats",
+ "source_gameui",
  "source_logic",
  "vbsp",
  "vmdl",
@@ -4452,6 +4453,7 @@ dependencies = [
  "sha2",
  "source_engine",
  "source_formats",
+ "source_gameui",
  "source_logic",
  "toml",
  "vbsp",
@@ -7467,6 +7469,24 @@ dependencies = [
  "lzma-rs",
  "serde",
  "symphonia",
+]
+
+[[package]]
+name = "source_gameui"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "bevy",
+ "bevy_replicon_renet",
+ "chimera_client",
+ "chimera_core",
+ "chimera_net",
+ "chimera_present",
+ "chimera_sim",
+ "chimera_world",
+ "source_engine",
+ "winit",
+ "workspace-hack",
 ]
 
 [[package]]

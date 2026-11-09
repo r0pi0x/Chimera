@@ -23,6 +23,7 @@ members = [
     "source/formats",
     "source/logic",
     "source/engine",
+    "source/gameui",
     "source/tools",
     "lithtech/formats",
     "games/cs_source",
@@ -60,6 +61,7 @@ default-members = [
     "source/formats",
     "source/logic",
     "source/engine",
+    "source/gameui",
     "source/tools",
     "lithtech/formats",
     "games/cs_source",
@@ -110,6 +112,9 @@ source_logic = { path = "source/logic" }
 # Source engine behaviour every Source game shares, on Chimera (the
 # search path first; docs/plans/active/hl2dm.md, section 3).
 source_engine = { path = "source/engine" }
+# Source's GameUI drawn: the main and Esc menus and their dialogs, for a
+# Source game's front end (docs/plans/active/hl2dm.md, lift S7).
+source_gameui = { path = "source/gameui" }
 # LithTech's formats as plain data (Combat Arms' `.rez` archives).
 lithtech_formats = { path = "lithtech/formats" }
 cs_source = { path = "games/cs_source" }

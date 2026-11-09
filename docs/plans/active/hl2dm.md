@@ -127,7 +127,7 @@ board (section 8). Risky ones (S2, S6, C5) each alone, after a full
 | S4 | Models, animation, prop data, surfaces, particles | `props.rs` (2359), `anim.rs` (1072), `propdata.rs` (466), `surfaceprops.rs` (148), `pcf.rs` (460) | CS:S's model paths in `load_view_model` callers; the hitbox set's region mapping by bone (already generic) | Medium: `animation.rs`, `drawn_parts.rs`, `ragdoll*.rs`, `phy_spec.rs`, `player_lods.rs`, heavy `map_props.rs`, `map_prop_damage.rs` | M1 |
 | S5 | Sound scripts and Source's impact, scrape and pain sounds | `sound.rs` (596), `impacts.rs` (530), `scrapes.rs` (435), `pain.rs` (317: L3) | the entry names by hitgroup and helmet (`Player.Damage*`), `Player.FallDamage` become the game's data | Low/medium: `map_sound_fx.rs`, `pain_sounds.rs`, heavy `map_sound_stock.rs`, party `identity_sounds.rs` | M3 |
 | S6 | Source movement | `movement.rs` (2635, with `Tracer`: L1), `drown.rs` (149), `shadow.rs` (497), `pushaway.rs` (252) | `SourceMovementConfig` per movement id (`cs_source:movement`, `hl2dm:movement`); CS:S's stamina and bunny-hop cap stay its config; the hooks HL2:DM needs (sprint drawing a pool, the jump's boost, drowning damage) as named parts | High: `source_movement*.rs` (four files), `movement.rs`, `prediction.rs`, `net_prediction.rs`, heavy `map_courses.rs`, `map_ladders.rs`, `map_surf.rs`, `movecmp` against the probe, party `cross_water_ladders.rs` | M3 |
-| S7 | HUD and VGUI readers; the panel HUD | `hud.rs` (323), `vgui.rs` (595), `gameui.rs` (752); `ui/game_hud.rs` (L6), `ui/hud_sprites.rs` (L8) | file names (`cstrike_english.txt`, the panel names `HudHealth`...), `LOW_HEALTH`, notice time and count, money and round clock panels become CS:S's data | Medium: `cs_source` ui tests (`--features dev,ui`), `hudcmp`, party `hud.rs`, `kill_icons.rs` | M9 |
+| S7 | HUD and VGUI readers; the panel HUD; GameUI's menus (done 2026-11-09: `source_engine::hud::{vgui, gameui}`, crate `source_gameui`) | `hud.rs` (323), `vgui.rs` (595), `gameui.rs` (752); `ui/game_hud.rs` (L6), `ui/hud_sprites.rs` (L8) | file names (`cstrike_english.txt`, the panel names `HudHealth`...), `LOW_HEALTH`, notice time and count, money and round clock panels become CS:S's data | Medium: `cs_source` ui tests (`--features dev,ui`), `hudcmp`, party `hud.rs`, `kill_icons.rs` | M9 |
 | S8 | View-model rules, bob and sway | `view_anim.rs` (437), `view_motion.rs` (266) | Source's activity names (shared); CS:S's knife idle, silencer and burst rules stay CS:S's `ViewAnimRules`; HL2MP's bob (specs/cs_source/view_models.md's B13 row) as the other model | Medium: `view_models.rs`, `view_model_spec.rs`, party `drawn_ladder.rs` | M4 |
 | S9 | Player animation's shared half (L14) | `player_anim.rs` (964) | the pose parameters, aim and move layering, hand IK and the per-tick server pose (`SimAnimPlugin`) are Source's; the choice of sequence (CS:S's names by weapon suffix, HL2:DM's activities by weapon kind) is each game's hook | Medium: `animation.rs`, `drawn_parts.rs`, party `bodies_drawn.rs`, `identity.rs` | M8 |
 | S10 | Impact looks | `impact_effects.rs` (2282), runtime half of `decals.rs` (L11) | Source's material letters to effects are shared; CS:S's blood and particle tables become its data | Medium: `impact_effects.rs`, heavy `map_surfaces.rs`, party `cross_game.rs`, `cross_glass.rs` | M10 |
@@ -1836,6 +1836,28 @@ implementing (owner branch) / done.
   `heavy::sound_stock`, `particle_depth.rs`, `heavy::effect_materials`,
   `rpg_laser.rs` and `gravity_gun.rs` (`keep_up_with_the_view_this_frame`),
   `client::eye_tests`, `hud_text`, `heavy::hud_look`.
+
+- 2026-11-09: **HL2:DM's menus** (branch `hl2dm-menus`; the user's Windows
+  playtest: "when I press escape, it just shows me my cursor"). HL2:DM's
+  menus are the same GameUI as CS:S's, read from the same kinds of files
+  (its own `gamemenu.res`, `sourcescheme.res`, `optionssub*.res`,
+  `settings.scr`, `kb_act.lst`, `loadingdialog*.res`, `background01*.vtf`,
+  `gameinfo.txt`'s title, `servers/`), so they were lifted, not rewritten:
+  **S7's rest**. `gameui.rs` and the generic half of `vgui.rs` moved to
+  `source_engine::hud`; `ui/game_menu/`, `ui/options.rs`,
+  `ui/server_browser.rs` and `ui/first_run.rs` to a new crate,
+  `source/gameui` (`source_gameui`: above the client shell, below the
+  games, `source_engine` may not use the shell), re-exported at their old
+  `cs_source::ui::*` paths. What was CS:S's inside is data
+  (`source_gameui::MenuGame`: strings file, bots, teams, rounds, quick start,
+  whether hidden layout controls stay hidden); CS:S's panels hear
+  `GameMenuOpened` and keep `no_spectators`. HL2:DM's: `hl2dm::ui::MENU_GAME`.
+  Open question 3 is answered: GameUI, as CS:S's. Not built: the
+  options' player model picker and spray (their controls greyed;
+  `cl_playermodel` works from the console),
+  the MOTD, the Internet tab
+  (no master server, as CS:S's). No team menu: HL2:DM has none (hud.md 14);
+  the scoreboard existed (M9). Tests: `games/hl2dm/tests/ui/menus.rs`.
 
 ## Decision log
 

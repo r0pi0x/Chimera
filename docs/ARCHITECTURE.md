@@ -31,6 +31,8 @@ cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ i
   |
   |    cs_source[ui] (games/cs_source/src/ui/)   CS:S's front end: menus, panels, HUD (feature `ui`)
   |   /         \
+  |   source_gameui (source/gameui/)   GameUI drawn: main and Esc menus, options, Create Server, server browser (CS:S's and HL2:DM's `ui`)
+  |   /         \
   chimera_client  |  (chimera/client/)   client: the shell (input, camera, console UI, HUD base, widgets, debug)
   |    \        |
   |    cs_source (games/cs_source/)   CS:S's simulation: loaders, parts, rules, bots, SimPlugins, harness::CsSim
@@ -192,6 +194,14 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   presentation, `mashup`, a game or an app (checked); CS:S and HL2:DM
   use it, Combat Arms never. `cargo test -p source_engine --features
   dev` tests it alone.
+- `source_gameui` (source/gameui/) is Source's GameUI drawn on the client
+  shell, lifted out of CS:S's front end when HL2:DM needed it: the main
+  and Esc menus and their dialogs (`game_menu`), the options' settings
+  (`options`), the server browser, the first-run dialog. Its look comes
+  from the install through `source_engine::hud::gameui`; what's a game's own
+  (its strings file, bots, teams, rounds, quick start) is data, `MenuGame`.
+  Above the shell and `source_engine`, below the games, turned on by a
+  game's `ui` feature: dedicated servers never build it (checked).
 - `hl2dm` (games/hl2dm/) is Half-Life 2: Deathmatch, M0 and M1 of
   docs/plans/active/hl2dm.md: its `GameInfo` (`game::INFO`: Steam app
   320, folder `hl2mp`, console namespaces `hl2dm` and `hl2mp`), its

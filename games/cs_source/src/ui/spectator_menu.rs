@@ -54,6 +54,14 @@ impl Plugin for SpectatorMenuPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SpectatorMenu>()
             .init_resource::<MenuLists>()
+            // Its open drop-down (a popup, over everything) closes as the
+            // game menu opens.
+            .add_observer(|_: On<source_gameui::GameMenuOpened>, mut lists: ResMut<MenuLists>| {
+                if lists.open.is_some() || lists.sub.is_some() {
+                    lists.open = None;
+                    lists.sub = None;
+                }
+            })
             .init_resource::<VguiOpen>()
             .init_resource::<CvarStates>()
             .add_systems(

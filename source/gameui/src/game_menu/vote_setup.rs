@@ -85,9 +85,9 @@ pub(super) struct VoteBoxes {
 pub(super) fn vote_boxes(menu: &GameMenu) -> VoteBoxes {
     let ui = menu.ui.0.as_ref();
     let frame = ui
-        .and_then(|u| u.options.get(crate::game::gameui::VOTE_SETUP.0))
+        .and_then(|u| u.options.get(source_engine::hud::gameui::VOTE_SETUP.0))
         .and_then(|l| l.get("VoteSetupDialog"));
-    let inner = ui.and_then(|u| u.options.get(crate::game::gameui::VOTE_SETUP.1));
+    let inner = ui.and_then(|u| u.options.get(source_engine::hud::gameui::VOTE_SETUP.1));
     let at = |name: &str, or: (f32, f32, f32, f32)| {
         inner
             .and_then(|l| l.get(name))

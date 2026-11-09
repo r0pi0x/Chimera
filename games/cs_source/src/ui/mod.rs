@@ -18,22 +18,18 @@ pub mod buy_menu;
 pub mod debug;
 pub mod debug_world;
 pub mod demo;
-pub mod first_run;
 pub mod freeze_cam;
 pub mod game_hud;
-pub mod game_menu;
 pub mod hints;
 pub mod hud_sprites;
 pub mod join_menus;
 pub mod minigame_hud;
 pub mod objectives_hud;
-pub mod options;
 pub mod overview;
 pub mod party;
 pub mod radar;
 pub mod radio;
 pub mod scoreboard;
-pub mod server_browser;
 pub mod spectator_hud;
 pub mod spectator_menu;
 pub mod target_id;
@@ -46,8 +42,37 @@ pub mod win_panel;
 pub mod window_icon;
 
 use bevy::{app::PluginGroupBuilder, prelude::*};
+/// GameUI's menus and dialogs (Source's, shared with HL2:DM).
+pub use source_gameui::{first_run, game_menu, options, server_browser};
+use source_gameui::{BotMenu, MenuGame, QuickStart};
 
 use crate::client;
+
+/// What's CS:S's own in GameUI's menus: its bots, teams, rounds and quick
+/// start.
+pub static MENU_GAME: MenuGame = MenuGame {
+    info: &crate::game::INFO,
+    name: "Counter-Strike: Source",
+    steam_folder: "Counter-Strike Source",
+    strings: crate::game::gameui::STRINGS,
+    bots: Some(BotMenu {
+        difficulties: &crate::bot::DIFFICULTIES,
+        teams: [("", "Any"), ("#Cstrike_Team_T", "Terrorists"), ("#Cstrike_Team_CT", "Counter-Terrorists")],
+        cvars: [
+            ("BotPrefixEntry", "bot_prefix", "#CStrike_Bot_NamePrefix"),
+            ("BotJoinAfterPlayerCheck", "bot_join_after_player", "#CStrike_Bot_JoinAfterPlayer"),
+        ],
+        include_token: "#Cstrike_Bot_IncludeBots",
+        count_token: "#Cstrike_Bot_NumberOfBots",
+        difficulty_token: "#Cstrike_Bot_Difficulty",
+        join_team_token: "#CStrike_Bot_JoinTeam",
+        team_words: ["terrorist", "counter-terrorist"],
+    }),
+    rounds_cvar: Some("chimera_rounds"),
+    teams: Some(["Terrorists", "Counter-Terrorists"]),
+    quick_start: Some(QuickStart { map: "de_dust2", bots: 9 }),
+    layout_hides: false,
+};
 
 /// The client shell's plugins (`client::ClientPlugins`) with CS:S's HUD
 /// among them, each where it was when the HUD was the shell's (system
@@ -80,10 +105,10 @@ impl Plugin for CsSourceUiPlugin {
             radio::RadioPlugin,
             objectives_hud::ObjectivesHudPlugin,
             bomb_fx::BombFxPlugin,
-            game_menu::GameMenuPlugin,
+            game_menu::GameMenuPlugin(&MENU_GAME),
             window_icon::WindowIconPlugin,
             server_browser::ServerBrowserPlugin,
-            first_run::FirstRunPlugin,
+            first_run::FirstRunPlugin(&MENU_GAME),
             target_id::TargetIdPlugin,
             join_menus::JoinMenusPlugin,
             spectator_menu::SpectatorMenuPlugin,
@@ -101,6 +126,28 @@ impl Plugin for CsSourceUiPlugin {
 
 #[cfg(test)]
 mod tests {
+    /// Create Server's Normal is what bots start at.
+    #[test]
+    fn normal_difficulty_is_the_bots_default() {
+        let c = crate::bot::BotConfig::default();
+        let (_, r, a, t) = super::MENU_GAME.bots.as_ref().unwrap().difficulties[1];
+        assert_eq!((r, a, t), (c.reaction, c.aim_error, c.turn_rate));
+    }
+
+    /// The options' two cvars CS:S's own panels register, as the shared
+    /// ones (`source_gameui::options`): saved, at CS:S's defaults.
+    #[test]
+    fn the_options_own_cvars_of_css_are_saved() {
+        let mut app = bevy::prelude::App::new();
+        app.add_plugins(crate::console::ConsolePlugin);
+        super::radar::radar_cvars(&mut app);
+        super::objectives_hud::c4_bar_cvar(&mut app);
+        for (name, default) in [("cl_radar_locked", "0"), ("cl_c4progressbar", "1")] {
+            let c = app.world().resource::<crate::console::Console>().cvar(name).cloned().unwrap();
+            assert!(c.archive && c.default == default, "{name}");
+        }
+    }
+
     use crate::{
         client::binds::{self, cfg_binds, defaults_from},
         game::{DEFAULT_BINDS, INFO},

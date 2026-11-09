@@ -418,7 +418,7 @@ Only `Reflect`-registered types are visible; register new core components in
   line `game menu: GameUI look (...)` says the install's look loaded,
   with how many main menu backgrounds and the title it found (else the
   built-in one is drawn). Its logic is unit-tested in
-  `games::cs_source::ui::game_menu` (keys and clicks in, console lines out; rebinding
+  `source_gameui::game_menu`, shared with HL2:DM (keys and clicks in, console lines out; rebinding
   with real key presses headless; which entries show in and out of a
   game; `disconnect` and `map greybox` on a world). The main menu over
   a map: `--map cs_source:de_dust2 --screenshot m.png +wait 30 +menu`;
