@@ -1836,6 +1836,58 @@ implementing (owner branch) / done.
   `rpg_laser.rs` and `gravity_gun.rs` (`keep_up_with_the_view_this_frame`),
   `client::eye_tests`, `hud_text`, `heavy::hud_look`.
 
+- 2026-11-09: **Playtest group 2** (branch `hl2dm-play2`; the user's Windows
+  reports on dm_lockdown, each checked on the real server). **Explosive
+  barrels** did nothing because HL2:DM's own app had no `ExplosionRule`
+  (`Explosion`s, prop data's 120 in 256, were written and dropped; the blast
+  credit tests only read the messages): `physics::map_blast`, every
+  explosion's rule, with `PropBlastWeapon` naming the prop in the notice; drawn
+  and heard by the entity rule (`projectile_fx::DrawsMapBlasts`). Measured:
+  93.97 at 60 units, 66.85 at 120, 30.29 at 200, none at 300, blast + surface.
+  `Detonation` sent weapon 0 for a map's blast (on HL2:DM a crowbar: drawn by
+  nobody on a client): now `NO_WEAPON`. **Bench launch**: a step-up onto a prop
+  drove the shadow at 18 units a tick (1200 units/s) and the reconciliation
+  gave the player that: spec 4.1 step 6 now (raised, put in place over 4
+  units); shared with CS:S, whose heavy shadow tests stay green. The real bot
+  never rises at more than 0. **Cart sticking**: the original's in part: the real
+  bot jumping at a cart from the floor hangs too (off the ground, under 2 units
+  in 30 ticks); on top of it he walks off either way, as ours now. **Rotated
+  props**: not a bug at the first spot, `interior_fence004a` at 0 90 -90 is a
+  torn fence and a real bot walking at its corner stops at 5522 as ours; the
+  other roll would give 5562. The pipes (`prison_pipes002a`) go by the same
+  code and their ends taper in the model's own vertices; not measured apart.
+  **Moved props' light**: a physics prop kept the probe baked into its vertices
+  at load; once moved or turned it now takes own materials and the light field
+  (`probe_lit::light_moved_props`); at rest it keeps sharing materials, so it
+  batches. CS:S's too, as it should be: only static props bake.
+  **Showers**: the original's: no water entity or material on the map (no
+  particle, steam or sprite near, no water texture), the sound is the
+  `prison.showers` soundscape's running water. **Plug machine** (the "battery"):
+  the plug starts on the floor in the original too (-3800.75 5766.28 7.01 at a
+  fresh load, ours -3803.09 5768.60 7.09); it isn't seated until carried to the
+  slot. Carried there it seated 2.3 units off and turned: a body's teleport
+  sent its centre, not its origin (triggers.md, trigger_teleport 4), and the one
+  step before the map's `DisableMotion` pushed it out of the button brush it
+  overlaps (`prop_physics::JustTeleported`); now at -3786 5773 58 exactly.
+  The cable's end stayed in the air: ropes never followed a parent
+  (`MapRope::follow`, `rope_sway::follow_rope_ends`). **SMG1 trail** was a sketch of
+  particles_and_smoke.md 5: now along the path, both materials, a sine, grey
+  jitter, near fade 64-128. Its one departure: no "+ V", since the spec doesn't
+  say what a parented entity's absolute velocity is on a client and it would fly
+  with the grenade (a question for a spec session, or a capture). **The ball's
+  rings** were black stripes: `sprites/lgtning` is Sprite with no `$additive`;
+  beams add. **Window decals**: spec-silent, our reading: a hit on a
+  func_breakable_surf breaks it and its panes are drawn from then on, not the
+  face a decal goes on, so none (`ImpactMark::Nothing`); `GlassBreak` (64 texels
+  at scale 1: 64 units, the "big and low res") stays func_breakable glass's.
+  CS:S's windows had the same. Settle with a capture of a shot cs_office window.
+  **Flashlight**: the map's own shaders read only the clusters' point lights, so
+  a `SpotLight` lit nothing whatever its brightness; they read spot lights too
+  now (world.wesl, prop.wesl). Picked, the spec has none: white, 2 lightmap
+  units, 45 degree cone, 750 units. Tests: `blast_rules`,
+  `heavy::map_prop_walks`, `prop_relight` (chimera_present), `projectile_fx`,
+  `materials::the_map_shaders_take_spot_lights`, `content::breakables`.
+
 ## Decision log
 
 - 2026-10-31 (user): Half-Life 2: Deathmatch is the next game, after

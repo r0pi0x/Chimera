@@ -21,18 +21,30 @@ const BOUNCE: f32 = 0.5;
 /// through their own node so they can disappear.
 pub const CLASSES: &[&str] = &["func_breakable", "func_breakable_surf"];
 
-/// The decal group a bullet or knife hit leaves on a breakable brush in
-/// place of its surface's own (specs/source/breakables.md "func_breakable:
-/// keyvalues and spawn"): glass (material 0, or func_breakable_surf glass,
-/// surfacetype 0) "GlassBreak", unbreakable glass (material 7)
-/// "BulletProof"; None: the surface's.
-pub fn impact_decal(classname: &str, material: i32, surfacetype: i32) -> Option<&'static str> {
+/// What a bullet or knife hit leaves on a breakable brush.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ImpactMark {
+    /// The surface's own decal.
+    Surface,
+    /// This decal group.
+    Group(&'static str),
+    /// None: a glass window's first hit breaks it (breakables.md "Taking a
+    /// hit") and from then on the client draws its panes, not the face the
+    /// decal would be on ("What the client draws").
+    Nothing,
+}
+
+/// What a bullet or knife hit leaves on a breakable brush (specs/source/
+/// breakables.md "func_breakable: keyvalues and spawn"): glass (material
+/// 0) "GlassBreak", unbreakable glass (material 7) "BulletProof";
+/// func_breakable_surf glass nothing.
+pub fn impact_decal(classname: &str, material: i32, surfacetype: i32) -> ImpactMark {
     let surf = classname.eq_ignore_ascii_case("func_breakable_surf");
     match material {
-        _ if surf && surfacetype != 1 => Some("GlassBreak"),
-        0 => Some("GlassBreak"),
-        7 => Some("BulletProof"),
-        _ => None,
+        _ if surf && surfacetype != 1 => ImpactMark::Nothing,
+        0 => ImpactMark::Group("GlassBreak"),
+        7 => ImpactMark::Group("BulletProof"),
+        _ => ImpactMark::Surface,
     }
 }
 
@@ -311,13 +323,16 @@ mod tests {
 
     #[test]
     fn glass_takes_glass_break_decals_and_bulletproof_glass_its_own() {
-        assert_eq!(impact_decal("func_breakable", 0, 0), Some("GlassBreak"));
-        assert_eq!(impact_decal("func_breakable", 7, 0), Some("BulletProof"));
-        assert_eq!(impact_decal("func_breakable", 1, 0), None);
-        assert_eq!(impact_decal("func_breakable", 2, 0), None);
-        // A glass window whatever its "material"; tile by its material.
-        assert_eq!(impact_decal("func_breakable_surf", 2, 0), Some("GlassBreak"));
-        assert_eq!(impact_decal("func_breakable_surf", 1, 1), None);
+        use ImpactMark::*;
+        assert_eq!(impact_decal("func_breakable", 0, 0), Group("GlassBreak"));
+        assert_eq!(impact_decal("func_breakable", 7, 0), Group("BulletProof"));
+        assert_eq!(impact_decal("func_breakable", 1, 0), Surface);
+        assert_eq!(impact_decal("func_breakable", 2, 0), Surface);
+        // A glass window, whatever its "material", shows no bullet decal:
+        // the hit broke it, its panes are drawn instead of its face. Tile
+        // by its material.
+        assert_eq!(impact_decal("func_breakable_surf", 2, 0), Nothing);
+        assert_eq!(impact_decal("func_breakable_surf", 1, 1), Surface);
     }
 
     #[test]

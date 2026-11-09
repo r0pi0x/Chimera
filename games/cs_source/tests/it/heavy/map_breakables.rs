@@ -281,12 +281,13 @@ fn office_windows_lose_shot_panes() {
     assert!(done, "no window could be shot");
 }
 
-/// A shot cs_office window takes the spec's "GlassBreak" decal (not the
-/// glass surface's own impact decal), on the window's node; the install's
-/// decal script has both breakable glass groups.
+/// A shot cs_office window breaks and takes no decal: its panes are drawn
+/// from then on, not the face a decal would be on (breakables.md "What the
+/// client draws"; the 64-unit, 64-texel "GlassBreak" is func_breakable
+/// glass's); the install's decal script has both breakable glass groups.
 #[test]
-fn office_window_shots_leave_glass_break_decals() {
-    use crate::stack::map::{DecalGroup, PlaceDecal};
+fn office_window_shots_leave_no_decals() {
+    use crate::stack::map::PlaceDecal;
     let Some(map) = load("cs_office") else { return };
     for group in ["glassbreak", "bulletproof"] {
         let g = map.kit.decals.groups.get(group);
@@ -330,13 +331,7 @@ fn office_window_shots_leave_glass_break_decals() {
                     })
                 })
                 .collect();
-            assert!(!on_window.is_empty(), "the shot marks the window: {decals:?}");
-            assert!(
-                on_window
-                    .iter()
-                    .all(|d| matches!(&d.group, DecalGroup::Named(g) if g == "GlassBreak")),
-                "{on_window:?}"
-            );
+            assert!(on_window.is_empty(), "the shot leaves no decal on the window: {on_window:?}");
             return;
         }
     }
