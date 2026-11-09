@@ -46,6 +46,7 @@ pub mod net;
 pub mod net_graph;
 pub mod night_vision;
 pub mod frame_metrics;
+pub mod memory;
 pub mod perf;
 pub mod respawn_countdown;
 #[cfg(feature = "trace")]
@@ -406,6 +407,7 @@ impl PluginGroup for ClientPlugins {
             .add(debug_views::DebugViewsPlugin)
             .add(capture::CapturePlugin)
             .add(perf::PerfPlugin)
+            .add(memory::MemoryPlugin)
             .add(console::ConsoleUiPlugin)
             .add(net_graph::NetGraphPlugin)
             .add(hud::HudPlugin)

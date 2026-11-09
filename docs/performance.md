@@ -2034,6 +2034,15 @@ send a bugreport's `report.txt` or `chimera_perf_log 1` (archetypes are in it),
 and `chimera_census` at the start and at 30 fps; `chimera_census age 20000` in a
 fresh game shows what a long session cost before this fix.
 
+## A session's memory (tools, 2026-11-09)
+
+Tools for the "Process memory over a session" and "The render thread's cost"
+backlog entries; neither growth is explained yet, and no numbers are recorded
+here yet. `chimera_mem [<files>]` prints the process's mappings by kind (heap,
+anonymous, device, file; Linux), glibc's counts, the GPU allocator's report, the
+bytes in the image and mesh stores, and the render world's entities, archetypes,
+textures, mesh slabs and pipelines.
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,
