@@ -8,7 +8,10 @@
 //! <icon>` in `icons` and `sprites`: glyphs of the HUD fonts or sprite
 //! rectangles), the pictures the HUD draws (`white_additive`, `zoom`),
 //! the localised strings (`resource/valve_english.txt`, `hl2_english.txt`,
-//! `hl2mp_english.txt`, as `GameMenus::strings`) and the chat box's
+//! `hl2mp_english.txt`, VGUI's `vgui_english.txt`, as `GameMenus::strings`),
+//! the message of the day's window (`resource/ui/textwindow.res`, as
+//! `GameMenus::motd`) with the install's message (`cfg/motd_default.txt`,
+//! `motd_text_default.txt`: `motd_file`, `motd_text_file`) and the chat box's
 //! place (`resource/ui/basechat.res`, Half-Life 2's loose file; the
 //! layout's own `HudChat` is an unused 4 by 4).
 //!
@@ -57,7 +60,20 @@ const PICTURES: &[(&str, &str, &str)] =
     &[("white_additive", "vgui/white_additive", "vgui/white"), ("zoom", "vgui/zoom", "vgui/zoom")];
 
 /// The localization files, later ones under earlier ones.
-const STRINGS: &[&str] = &["resource/hl2mp_english.txt", "resource/hl2_english.txt", "resource/valve_english.txt"];
+/// (VGUI's own, `platform/`'s, for the text window's "OK".)
+const STRINGS: &[&str] = &[
+    "resource/hl2mp_english.txt",
+    "resource/hl2_english.txt",
+    "resource/valve_english.txt",
+    "resource/vgui_english.txt",
+];
+
+/// The message of the day's window (hud.md 14), and the install's message
+/// as a server finds it (the game folder's `motd.txt`, else the shipped
+/// default), and the plain-text one.
+pub const TEXT_WINDOW: &str = "resource/ui/textwindow.res";
+const MOTD_FILES: [&str; 3] = ["motd.txt", "cfg/motd.txt", "cfg/motd_default.txt"];
+const MOTD_TEXT_FILES: [&str; 3] = ["motd_text.txt", "cfg/motd_text.txt", "cfg/motd_text_default.txt"];
 
 /// The key of a weapon's icon in `GameHud::icons` and `sprites`.
 pub fn icon_key(class: &str, icon: &str) -> String {
@@ -132,6 +148,18 @@ pub fn load(materials: &mut MaterialLoader) -> Option<GameHud> {
     if let Some(bytes) = materials.read("scripts/hudanimations.txt") {
         menus.strings.insert(ANIMATIONS.to_string(), String::from_utf8_lossy(&bytes).into_owned());
     }
+    // The message of the day's window and the install's own message (the
+    // server's when it has no other: `net::motd`).
+    let text = |b: Vec<u8>| localization::decode(&b);
+    let mut read = |p: &str| materials.read(p).map(text);
+    if let Some(root) = source_engine::hud::vgui::read_res(&mut read, TEXT_WINDOW) {
+        let layout = source_engine::hud::vgui::layout(&root, &menus.strings, &hud.colors, &mut |_| None);
+        menus.layouts.insert(TEXT_WINDOW.to_string(), layout);
+        menus.motd = Some(TEXT_WINDOW.to_string());
+    }
+    let first = |files: &[&str]| files.iter().find_map(|f| materials.read(f)).map(text).filter(|t| !t.trim().is_empty());
+    menus.motd_file = first(&MOTD_FILES);
+    menus.motd_text_file = first(&MOTD_TEXT_FILES);
     hud.menus = Some(menus);
     hud.game = crate::game::GAME.to_string();
     (!hud.panels.is_empty()).then_some(hud)

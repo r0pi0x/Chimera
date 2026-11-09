@@ -59,7 +59,7 @@ fn the_fonts_follow_the_screen_height() {
 #[test]
 fn the_icons_and_strings_are_there() {
     let Some(h) = look() else { return };
-    for (weapon, glyph) in [("shotgun", '0'), ("smg1", '/'), ("crowbar", '6'), ("pistol", '-'), ("357", '.'), ("slam", '*')] {
+    for (weapon, glyph) in [("shotgun", '0'), ("smg1", '/'), ("crowbar", '6'), ("pistol", '-'), ("357", '.'), ("slam", '*'), ("smg1_grenade", '7'), ("combine_ball", '8')] {
         let icon = h.icons.get(&format!("death_{weapon}")).unwrap_or_else(|| panic!("death_{weapon}"));
         assert_eq!(*icon, ("HL2MPTypeDeath".to_string(), glyph), "{weapon}");
     }
@@ -186,4 +186,28 @@ fn the_brackets_fill_their_cell() {
         assert!(ink.min.y >= 99.0 && ink.max.y <= 100.0 + tall + 1.0, "{glyph}: {ink:?} outside the cell");
         assert!((ink.center().y - (100.0 + tall / 2.0)).abs() <= 1.5, "{glyph}: {ink:?} not centred");
     }
+}
+
+/// hud.md 14: the message of the day's window (`textwindow.res`: the message
+/// box at (76, 116) 480 by 240, the title at (76, 22), OK at (76, 364) 128
+/// by 20 saying VGUI's "OK") and the install's message, HTML and plain.
+#[test]
+fn the_message_of_the_days_window_is_there() {
+    use chimera_world::map::hud::{HudCoord, UiKind};
+    let Some(h) = look() else { return };
+    let menus = h.menus.as_ref().unwrap();
+    let page = menus.motd.as_ref().and_then(|m| menus.layouts.get(m)).expect("the text window");
+    let at = |name: &str| {
+        let c = page.controls.iter().find(|c| c.name.eq_ignore_ascii_case(name)).unwrap_or_else(|| panic!("{name}"));
+        (c.x, c.y, c.wide, c.tall, c.kind.clone(), c.text.clone())
+    };
+    let (x, y, w, hh, ..) = at("HTMLMessage");
+    assert_eq!((x, y, w, hh), (HudCoord::Start(76.0), HudCoord::Start(116.0), 480.0, 240.0));
+    let (x, y, ..) = at("MessageTitle");
+    assert_eq!((x, y), (HudCoord::Start(76.0), HudCoord::Start(22.0)));
+    let (x, y, w, hh, kind, text) = at("ok");
+    assert_eq!((x, y, w, hh, kind), (HudCoord::Start(76.0), HudCoord::Start(364.0), 128.0, 20.0, UiKind::Button));
+    assert_eq!(text, "OK");
+    assert!(menus.motd_file.as_ref().is_some_and(|t| t.contains("<html")), "the HTML message");
+    assert!(menus.motd_text_file.as_ref().is_some_and(|t| !t.contains('<')), "the plain one");
 }

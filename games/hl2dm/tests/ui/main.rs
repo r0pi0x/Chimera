@@ -9,6 +9,7 @@ mod damage_and_death;
 mod feed;
 mod history;
 mod menus;
+mod motd;
 mod panels;
 mod quick_info;
 mod selection;

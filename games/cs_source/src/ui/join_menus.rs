@@ -37,7 +37,7 @@ use crate::client::fonts::UiFonts;
 use super::team_menu::TeamMenu;
 use crate::client::vgui::{Painter, Shown, VguiButton, VguiMenu, VguiOpen};
 use crate::{
-    console::{Console, ConsoleAppExt, resource_cvar},
+    console::{Console, ConsoleAppExt},
     core::{ChoosingClass, LocalPlayer, NetRole, PlayerClass, Spectating, Team, Unassigned},
     map::hud::{ActiveHud, GameMenus, UiKind, UiLayout},
     net::ServerMotd,
@@ -89,21 +89,9 @@ pub fn motd_ok(w: &mut World) {
     });
 }
 
-/// `cl_disablehtmlmotd` (archived; Multiplayer > Advanced).
-pub(crate) fn motd_cvar(app: &mut App) {
-    app.init_resource::<DisableHtmlMotd>();
-    resource_cvar::<DisableHtmlMotd, u8>(
-        app,
-        "cl_disablehtmlmotd",
-        "1: the message of the day as the server's plain text (motd_text.txt) rather than its HTML one.",
-        |d| &mut d.0,
-    );
-    app.world_mut().resource_mut::<Console>().archive("cl_disablehtmlmotd");
-}
-
-/// `cl_disablehtmlmotd` (CS:S's default 0).
-#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
-pub struct DisableHtmlMotd(pub u8);
+/// The message of the day's helpers, shared with the other Source games
+/// (`source_gameui::motd`).
+pub use source_gameui::motd::{DisableHtmlMotd, motd_cvar, motd_layout, motd_page, motd_shown};
 
 /// Which join menu is open.
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
@@ -120,17 +108,6 @@ pub struct JoinMenus {
     pub class_after_team: Option<u8>,
     /// The class menu's button the pointer is over (its picture shows).
     hover: Option<String>,
-}
-
-/// The message of the day as shown: the HTML one's text, or with
-/// `cl_disablehtmlmotd` the plain-text one (its HTML one's text when the
-/// server has none).
-pub fn motd_shown(motd: &ServerMotd, disable_html: bool) -> String {
-    if disable_html && !motd.text.trim().is_empty() {
-        motd.text.replace('\r', "").trim().to_string()
-    } else {
-        crate::net::motd::plain_text(&motd.html)
-    }
 }
 
 /// A game the local player starts (`map`, `--map`): it comes in as
@@ -337,11 +314,6 @@ fn pointer(
     }
 }
 
-/// The game's message of the day panel.
-fn motd_layout(menus: &GameMenus) -> Option<&UiLayout> {
-    menus.layouts.get(menus.motd.as_ref()?)
-}
-
 /// The game's class menu for a team.
 fn class_layout(menus: &GameMenus, team: u8) -> Option<&UiLayout> {
     menus.layouts.get(menus.class.get(&team)?)
@@ -427,22 +399,6 @@ struct Drawn {
     /// The class menu's picture panel and its size.
     info: Option<(Entity, Vec2)>,
     info_shown: Option<String>,
-}
-
-/// The message of the day's layout made ready to draw: its message box
-/// (the `Message` HTML control) as wrapped text, the server's name in
-/// `serverName`.
-fn motd_page(page: &UiLayout, motd: &ServerMotd, message: &str) -> UiLayout {
-    let mut page = page.clone();
-    for c in &mut page.controls {
-        if c.name.eq_ignore_ascii_case("message") {
-            c.kind = UiKind::RichText;
-            c.text = message.to_string();
-        } else if c.name.eq_ignore_ascii_case("servername") {
-            c.text = motd.server.clone();
-        }
-    }
-    page
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -571,23 +527,6 @@ fn clear(roots: &Query<Entity, With<VguiRoot>>, open: &mut ResMut<VguiOpen>, dra
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_message_shown_follows_cl_disablehtmlmotd() {
-        let m = ServerMotd {
-            server: String::new(),
-            html: "<html><head><title>x</title></head><body><pre>Hello\nthere</pre></body></html>".into(),
-            text: "Plain hello\r\n".into(),
-        };
-        assert_eq!(motd_shown(&m, false), "Hello\nthere");
-        assert_eq!(motd_shown(&m, true), "Plain hello");
-        let html_only = ServerMotd {
-            server: String::new(),
-            html: m.html.clone(),
-            text: String::new(),
-        };
-        assert_eq!(motd_shown(&html_only, true), "Hello\nthere", "no plain one: the HTML one's text");
-    }
 
     /// A frame with no join menu must not mark `VguiOpen` changed:
     /// `grab_cursor` reads a change as a menu just closed and keeps the

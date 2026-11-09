@@ -1930,6 +1930,20 @@ implementing (owner branch) / done.
   (a dry blast skips the fully submerged), so nothing changes in play; the
   one difference left is that blast + surface isn't "exactly blast" for the
   0.5 s spawn grace, which would need the damage's bits on `Damage`.
+  **Message of the day** (hud.md 14, rules.md "Joining"): GameUI's text
+  window, lifted with CS:S's message helpers into `source_gameui::motd`
+  (`motd_shown`, `motd_page`, `cl_disablehtmlmotd`; CS:S's join flow keeps
+  its team and class menus and uses them). HL2:DM's look reads
+  `resource/ui/textwindow.res` and the install's `cfg/motd_default.txt` and
+  `motd_text_default.txt` (and VGUI's strings, for "OK"); a player coming
+  into a game an interactive run starts sees it (`MotdWindowPlugin`,
+  `JoinChoice::Menus`), the mouse free and the game's keys idle; OK or Enter
+  (the default button) closes it. A server's own `motd.txt` reaches clients
+  as CS:S's does (`net::motd`). Tests: `ui::motd`, `heavy::hud_look`
+  (the window's boxes, the install's messages, the launchers' glyphs). Not
+  drawn, the spec unclear: HL2:DM's own frame (which picture fills which
+  part), the title (we show the server's name), whether it shows again
+  after a `changelevel` (ours: whenever a local player entity is new).
 
 ## Decision log
 
