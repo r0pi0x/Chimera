@@ -36,8 +36,13 @@
 //! - With no slam left and no satchels out the S.L.A.M. leaves the
 //!   inventory.
 //!
-//! Known shortcuts: the beam, the strobe and the animations' drawing are
-//! M10's; the detonate animation's length (1.3333 s, 0.6667 s
+//! The armed mine's beam is drawn by `projectile_fx` (`Hl2MineBeam`), the
+//! satchel's red glow there too.
+//!
+//! Known shortcuts: the satchel's glow strobes at a steady rate (the spec
+//! says "strobing", no rate or form); the view model plays no S.L.A.M.
+//! sequences of its own (attach, throw, detonate, the mode changes: the
+//! spec names no activities for them); the detonate animation's length (1.3333 s, 0.6667 s
 //! detonator-only) holds both attacks; a satchel near a wall at the throw's
 //! end is set down 5 units ahead at 1 unit/s (the spec's) only when the
 //! 42-unit line still hits; a TDM leaver's satchels have no thrower left to

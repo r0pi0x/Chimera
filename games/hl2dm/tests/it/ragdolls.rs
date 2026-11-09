@@ -264,3 +264,60 @@ fn the_balls_victim_dissolves_and_is_gone_134_ticks_on_9_11() {
     sim.ticks(2);
     assert!(sim.app.world().get::<Dissolving>(p).is_none());
 }
+
+/// Projectiles.md 7.5: a bolt's impact pins the first ragdoll bone found
+/// within 128 units back along its flight to the world at the impact (a
+/// ball-and-socket joint, the bone's mass doubled), with
+/// `Weapon_Crossbow.BoltSkewer`, and shows a bolt 8 units back from it;
+/// the bone then keeps its distance from the impact. Nothing within 128
+/// units: no pin.
+#[test]
+fn a_bolt_pins_the_ragdoll_behind_its_impact() {
+    use avian3d::prelude::{Mass, SphericalJoint};
+    use chimera_world::map::{PlaySound, loose::ShownItem};
+    use hl2dm::game::{
+        projectile_fx::{FlyerFx, Pins},
+        weapons::launch::BOLT_MODEL,
+    };
+    for far in [false, true] {
+        let (mut sim, p) = sim();
+        kill(&mut sim, p, 666.57);
+        sim.ticks(10);
+        let (ragdoll, r) = ragdolls(&mut sim).remove(0);
+        let spine = r.bodies[1];
+        let at = |sim: &Sim, e: Entity| sim.app.world().get::<Transform>(e).unwrap().translation;
+        let mass = sim.app.world().get::<Mass>(spine).unwrap().0;
+        // A bolt flying +X past the spine, its impact 1 m on (or 4 m: past
+        // the 128 units).
+        let gap = if far { 4.0 } else { 1.0 };
+        let point = at(&sim, spine) + Vec3::X * gap;
+        let mut cursor = sim.app.world().resource::<Messages<PlaySound>>().get_cursor_current();
+        sim.app.world_mut().write_message(FlyerFx::BoltImpact { point, dir: Vec3::X });
+        sim.ticks(2);
+        let heard: Vec<String> =
+            cursor.read(sim.app.world().resource::<Messages<PlaySound>>()).map(|s| s.entry.clone()).collect();
+        let pins = sim.app.world().resource::<Pins>().pins.clone();
+        let w = sim.app.world_mut();
+        let bolts: Vec<Vec3> =
+            w.query::<(&ShownItem, &Transform)>().iter(w).filter(|(s, _)| s.0 == BOLT_MODEL).map(|(_, t)| t.translation).collect();
+        assert_eq!(bolts.len(), 1, "the bolt shown");
+        assert!((bolts[0] - (point - Vec3::X * 8.0 * SCALE)).length() < 1e-4);
+        if far {
+            assert!(pins.is_empty(), "nothing within 128 units");
+            assert!(!heard.iter().any(|h| h == "Weapon_Crossbow.BoltSkewer"));
+            continue;
+        }
+        assert_eq!(pins.len(), 1, "pinned");
+        let body = pins[0].body;
+        assert_eq!(sim.app.world().get::<RagdollBody>(body).map(|b| b.ragdoll), Some(ragdoll));
+        assert!(sim.app.world().get::<SphericalJoint>(pins[0].joint).is_some());
+        if body == spine {
+            assert!((sim.app.world().get::<Mass>(spine).unwrap().0 - 2.0 * mass).abs() < 1e-3, "its mass doubled");
+        }
+        assert!(heard.iter().any(|h| h == "Weapon_Crossbow.BoltSkewer"), "{heard:?}");
+        let d0 = at(&sim, body).distance(point);
+        sim.seconds(2.0);
+        let d1 = at(&sim, body).distance(point);
+        assert!((d1 - d0).abs() < 0.08, "held at its distance from the impact: {d0} -> {d1}");
+    }
+}

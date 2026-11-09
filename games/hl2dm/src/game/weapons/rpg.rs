@@ -32,9 +32,11 @@
 //!   blocks the next shot until let go): the fastest refire is 113 ticks
 //!   after the explosion.
 //!
-//! Known shortcuts: the owner's
-//! fade at ignition and `Missile.Ignite`'s loop are M10's; the missile's
-//! sky test (removed silently) is Chimera's flyers' (none yet).
+//! The ignition's looks (the owner's screen fade, `Missile.Ignite`'s loop
+//! until the missile is gone) are `rpg_fx`'s.
+//!
+//! Known shortcuts: the missile's sky test (removed silently) is
+//! Chimera's flyers' (none yet).
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
