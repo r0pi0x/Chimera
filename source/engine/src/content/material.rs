@@ -903,7 +903,7 @@ impl<'a> MaterialLoader<'a> {
     /// A particle or effect material (specs/cs_source/impact_effects.md):
     /// its base texture, blend (`$additive`), whether vertex colour and
     /// alpha apply (`$vertexcolor`, `$vertexalpha`; SpriteCard always
-    /// takes both), `$ignorez`, the texture's sprite sheet if it has one,
+    /// takes both), `$ignorez`, `$depthblend`, the texture's sprite sheet if it has one,
     /// and a sprite card's screen-size limits (`$maxsize`,
     /// `$startfadesize`, `$endfadesize`).
     pub fn particle(&mut self, name: &str) -> Option<crate::map::particles::ParticleMaterial> {
@@ -938,6 +938,7 @@ impl<'a> MaterialLoader<'a> {
             vertex_color: sprite_card || flag("$vertexcolor"),
             vertex_alpha: sprite_card || flag("$vertexalpha"),
             no_depth: flag("$ignorez"),
+            depth_blend: flag("$depthblend"),
             sequences,
             overbright: number("$overbrightfactor"),
             // Sprite cards' screen-size limits (impact_effects.md 14).

@@ -43,6 +43,7 @@ fn particles_after_blast(weapon: &'static str) -> usize {
         ground: None,
         projectile: Entity::PLACEHOLDER,
         shake: None,
+        flags: Default::default(),
     });
     sim.ticks(2);
     sim.app.world().resource::<Particles>().count()

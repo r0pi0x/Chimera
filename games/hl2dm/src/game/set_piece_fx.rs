@@ -218,7 +218,7 @@ fn blasts(
     for b in blasts.read() {
         let a = explosions::blast_direction(b.at, &world);
         let l = explosions::light_at(field.as_deref(), b.at + a * 32.0 * U);
-        for g in explosions::explosion(&mut rng.0, &mats, b.at, a, l, &world) {
+        for g in explosions::explosion(&mut rng.0, &mats, b.at, a, l, &world, Default::default()) {
             particles.add(g);
         }
     }

@@ -951,6 +951,7 @@ fn tick_bomb(
                 // Gone at the round restart (playtest 2026-10-14, as CS:S).
                 round_scorch: true,
                 through_walls: rules.through_walls,
+                flags: Default::default(),
             });
             outputs.write_batch(out);
             state.outcome = Some(BombOutcome::Exploded);

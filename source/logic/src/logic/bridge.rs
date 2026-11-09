@@ -1449,6 +1449,7 @@ fn apply_effects(world: &mut World, effects: Vec<Effect>, scale: f32) {
                 radius,
                 attacker,
                 inflictor,
+                flags,
             } => {
                 let attacker = match attacker {
                     Some(Who::Player(e)) => Some(e),
@@ -1471,6 +1472,7 @@ fn apply_effects(world: &mut World, effects: Vec<Effect>, scale: f32) {
                     // health half (measured on env_explosion 2026-10-17,
                     // game_entities.md question 7; the HE's is 1.475).
                     armor_ratio: Some(1.0),
+                    flags,
                 });
             }
             Effect::GlassImpact { at, normal } => {
@@ -2560,6 +2562,7 @@ fn prop_broke(world: &mut World, id: EntId, sound: Option<String>, explode: Opti
             through_walls: false,
             bell_sigma: None,
             armor_ratio: None,
+            flags: crate::core::BlastFlags(if x.silent { crate::core::BlastFlags::NO_SOUND } else { 0 }),
         });
     }
     if let Some(index) = world.get::<PropIndex>(node).map(|p| p.0) {

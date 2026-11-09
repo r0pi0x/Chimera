@@ -10,10 +10,11 @@
 
 use bevy::{
     camera::visibility::RenderLayers,
+    core_pipeline::prepass::DepthPrepass,
     prelude::*,
     render::render_resource::{CompareFunction, DepthStencilState, TextureFormat},
 };
-use chimera_present::render::particles::{ParticleAssets, ParticleDrawMaterial, draw_particles};
+use chimera_present::render::particles::{ParticleAssets, ParticleDrawMaterial, draw_particles, soft_particle_prepass};
 use chimera_world::map::{
     particles::{MapParticles, Motion, Particle, ParticleBlend, ParticleGroup, ParticleMaterial, Particles},
     view_model::VIEW_MODEL_LAYER,
@@ -99,4 +100,66 @@ fn only_the_view_model_layer_draws_over_the_model() {
     assert_eq!(drawn.iter().filter(|d| **d == (true, true)).count(), 1, "view model, `$ignorez`: over it: {drawn:?}");
     assert_eq!(drawn.iter().filter(|d| **d == (true, false)).count(), 1, "view model, without: depth tested: {drawn:?}");
     assert_eq!(drawn.iter().filter(|d| **d == (false, false)).count(), 2, "world, depth tested: {drawn:?}");
+}
+
+/// A material that says `$depthblend` draws soft and gives the main view
+/// the depth prepass it fades against (spec impact_effects.md: "softens the
+/// intersection with geometry"); one that doesn't stays cut at the world.
+#[test]
+fn depth_blend_materials_fade_against_a_prepass() {
+    fn run(flags: &[bool]) -> (Vec<(bool, String)>, bool) {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .init_asset::<Mesh>()
+            .init_asset::<ParticleDrawMaterial>()
+            .insert_resource(ParticleAssets::new(
+                MapParticles {
+                    materials: flags
+                        .iter()
+                        .map(|&depth_blend| ParticleMaterial {
+                            name: format!("depth_blend {depth_blend}"),
+                            vertex_alpha: true,
+                            depth_blend,
+                            ..default()
+                        })
+                        .collect(),
+                },
+                Vec::new(),
+            ))
+            .init_resource::<Particles>()
+            .add_systems(Update, (draw_particles, soft_particle_prepass));
+        let camera = app
+            .world_mut()
+            .spawn((
+                Camera3d::default(),
+                Projection::Perspective(PerspectiveProjection::default()),
+                GlobalTransform::default(),
+            ))
+            .id();
+        for material in 0..flags.len() {
+            let mut g = ParticleGroup::new(Motion::default());
+            g.skip_first = false;
+            g.particles.push(Particle::new(Vec3::NEG_Z, 1.0, material, 0.1));
+            app.world_mut().resource_mut::<Particles>().add(g);
+        }
+        app.update();
+        app.update();
+        let prepass = app.world().get::<DepthPrepass>(camera).is_some();
+        let mut q = app.world_mut().query::<(&Name, &MeshMaterial3d<ParticleDrawMaterial>)>();
+        let drawn = q
+            .iter(app.world())
+            .map(|(n, m)| {
+                (app.world().resource::<Assets<ParticleDrawMaterial>>().get(&m.0).unwrap().soft, n.to_string())
+            })
+            .collect();
+        (drawn, prepass)
+    }
+    let (mut drawn, prepass) = run(&[false, true]);
+    drawn.sort();
+    assert!(prepass, "a `$depthblend` material needs the prepass");
+    assert!(!drawn[0].0 && drawn[0].1.ends_with("false"), "{drawn:?}");
+    assert!(drawn[1].0 && drawn[1].1.ends_with("true"), "{drawn:?}");
+    let (drawn, prepass) = run(&[false]);
+    assert!(!prepass, "no material asks: no prepass for it");
+    assert!(!drawn[0].0, "{drawn:?}");
 }

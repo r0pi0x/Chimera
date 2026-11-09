@@ -806,6 +806,7 @@ impl LogicWorld {
                 radius,
                 attacker: breaker,
                 inflictor: id,
+                flags: Default::default(),
             });
         }
     }

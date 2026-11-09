@@ -105,6 +105,7 @@ fn explode(cx: &mut Cx, e: Entity, o: &mut CaObject, p: &BoltParams) {
         ground: None,
         projectile: e,
         shake: None,
+        flags: Default::default(),
     });
     impact::blast(cx, o, at, x.area_damage, x.area_radius, x.area_type, None);
 }

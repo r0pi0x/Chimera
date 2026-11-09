@@ -1857,6 +1857,7 @@ fn detonations(f: &mut Frame, grenades: &mut Grenades, world: &GrenadeWorld, out
             ground: None,
             projectile: e,
             shake: None,
+            flags: Default::default(),
         });
         out.blast_surface.write(CaBlastSurface {
             projectile: e,

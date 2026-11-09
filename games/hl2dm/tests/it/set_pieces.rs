@@ -302,6 +302,7 @@ fn the_microphone_hears_blasts() {
         bell_sigma: None,
         armor_ratio: None,
         through_walls: false,
+        flags: Default::default(),
     };
     c.sim.app.world_mut().write_message(blast(Vec3::new(1000.0, 0.0, 0.0)));
     c.sim.seconds(1.0);
