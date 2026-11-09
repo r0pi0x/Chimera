@@ -152,7 +152,8 @@ the original's own behaviour isn't a bug (say so instead).
 - **Escape** only frees the cursor (click to return to the game): no menu.
   HL2:DM's menus were planned for after faithful DM/TDM; the user has now
   run into it, so it's next once these reports are done.
-- **Glass decals (dm_lockdown, upstairs office):** bullet decals on
+- **Glass decals (dm_lockdown, upstairs office, `setpos -3201.81 4622.36
+  192.04;setang 2.52 34.76 0.00`):** bullet decals on
   `func_breakable_surf` windows are very big and low res, and the broken
   pieces don't show them. Breakable glass itself is right (13 of these on
   dm_lockdown, shared Source code: specs/source/breakables.md). Check
