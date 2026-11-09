@@ -2526,16 +2526,15 @@ docs/plans/active/sound.md.
   five sources, and the render world's sync). Fewer of the toggles that
   multiply them: spawn protection's three components, sleeping (`Sleeping`,
   `SolverBodyIndex`), `Shadowed` with `PhysicsTouch`.
-- **The render thread's cost rises over a session (2026-11-09).** de_dust2's
-  render world goes 14M -> 19M instructions a frame after eight other maps
-  (docs/performance.md, "A session's memory"): wgpu's per-pass trackers (24% of
-  the thread at the end) are sized by the most GPU buffers ever alive at once,
-  and Bevy's mesh and material hash tables (14%) keep their peak capacity.
-  The peak is about 11,000 buffers, nearly all `PropMaterial` uniforms: 10,000
-  in the store, 300 drawn. Measure one buffer's cost first (`chimera_mem pad
-  12000` on a fresh de_dust2, then `pad 0`: the cost should stay), then
-  prepare fewer: share the bodies', held models' and skins' materials until
-  an entity draws them, or make `PropMaterial` bindless.
+- **The render thread's cost rises over a session, what's left (2026-11-09).**
+  The kit's undrawn `PropMaterial`s no longer reach the render world
+  (`prop_material::DormantProps`; docs/performance.md, "A session's render
+  thread": each GPU buffer of the peak costs about 150-200 instructions a
+  frame for good). Left: measure the real app on a display (de_dust2 fresh,
+  then after eight other maps, `chimera_mem` and the render instructions) and
+  compare frozen-scene screenshots before and after on a Combat Arms and a CS:S
+  map; then price what's left of the 14M -> 19M (Bevy's mesh allocator and
+  render-asset hash tables keep their peak capacity).
 - **Process memory over a session, what's left (2026-11-09).** After the
   animation sharing and `malloc_trim` (5.5 GB after eight maps, was 15.4) the
   heap still holds the current ladder's Combat Arms model textures on the CPU

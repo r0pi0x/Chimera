@@ -105,7 +105,7 @@ pub fn light_moved_props(
             if !home.lit.contains(&material.0) {
                 continue;
             }
-            let handle = instance(&mut materials, &material.0);
+            let handle = instance(&mut materials, None, &material.0);
             if let Some(mut m) = materials.get_mut(&handle) {
                 m.params.set_probe(&probe, scale);
             }
@@ -118,9 +118,14 @@ pub fn light_moved_props(
     }
 }
 
-/// A copy of a shared material for one model instance.
-pub fn instance(materials: &mut Assets<PropMaterial>, shared: &Handle<PropMaterial>) -> Handle<PropMaterial> {
-    match materials.get(shared).cloned() {
+/// A copy of a shared material for one model instance (from the store, or
+/// held dormant: a kit's, `prop_material::DormantProps`).
+pub fn instance(
+    materials: &mut Assets<PropMaterial>,
+    dormant: Option<&super::prop_material::DormantProps>,
+    shared: &Handle<PropMaterial>,
+) -> Handle<PropMaterial> {
+    match super::prop_material::prop(materials, dormant, shared).cloned() {
         Some(m) => materials.add(m),
         None => shared.clone(),
     }

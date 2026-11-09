@@ -262,7 +262,11 @@ fn readout(w: &mut World, files: usize) -> String {
         size(mesh_bytes.1)
     ));
     if let Some((store, used)) = props {
-        lines.push(format!("PropMaterial: {store} in the store, {used} drawn by an entity; cached: {cached}"));
+        let dormant = w.get_resource::<crate::render::prop_material::DormantProps>().map_or(0, |d| d.live());
+        lines.push(format!(
+            "PropMaterial: {store} in the store (each a GPU buffer), {used} drawn by an entity, {dormant} dormant (not \
+             drawn: no GPU buffer); cached: {cached}"
+        ));
     }
     if let Some(s) = w.get_resource::<RenderWorldStats>() {
         let s = s.0.lock().unwrap().clone();

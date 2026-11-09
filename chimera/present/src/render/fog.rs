@@ -128,6 +128,7 @@ pub fn apply_fog_setting(
     setting: Res<FogSetting>,
     worlds: Option<ResMut<Assets<super::world_material::WorldMaterial>>>,
     props: Option<ResMut<Assets<super::prop_material::PropMaterial>>>,
+    dormant: Option<ResMut<super::prop_material::DormantProps>>,
     details: Option<ResMut<Assets<super::detail::DetailMaterial>>>,
     ropes: Option<ResMut<Assets<super::rope_material::RopeMaterial>>>,
     decals: Option<ResMut<Assets<super::decal::DecalMaterial>>>,
@@ -142,6 +143,14 @@ pub fn apply_fog_setting(
     }
     if let Some(mut a) = props {
         gate_all(&mut a, on, |m| m.params.fog_color.w, |m| &mut m.params.fog_color);
+    }
+    // What the kit's models' drawn copies are made from.
+    if let Some(mut d) = dormant {
+        for m in d.values_mut() {
+            if let Some(to) = gated_fog_switch(m.params.fog_color.w, on) {
+                m.params.fog_color.w = to;
+            }
+        }
     }
     if let Some(mut a) = details {
         gate_all(&mut a, on, |m| m.params.fog.color.w, |m| &mut m.params.fog.color);

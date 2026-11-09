@@ -50,7 +50,7 @@ use super::{
     build_mesh,
     late_build::{AddAsset, LateQueue, LateStores, Providers, Stores},
     probe_lit,
-    prop_material::PropMaterial,
+    prop_material::{DormantProps, PropMaterial},
 };
 #[allow(unused_imports)]
 use crate::map::*;
@@ -163,6 +163,7 @@ pub fn build_late_held(
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     materials: Option<ResMut<Assets<PropMaterial>>>,
+    mut dormant: Option<ResMut<DormantProps>>,
     mut bindposes: ResMut<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>,
     compressed: Option<Res<bevy::image::CompressedImageFormatSupport>>,
     mut queue: Local<LateQueue<(HeldParts, Option<crate::map::loose::LooseAsset>)>>,
@@ -178,6 +179,7 @@ pub fn build_late_held(
             meshes: &mut meshes,
             materials: &mut materials,
             bindposes: &mut bindposes,
+            dormant: dormant.as_deref_mut(),
         },
     };
     let bc = super::images::bc_wanted(compressed.as_deref());
@@ -238,6 +240,7 @@ pub fn build_late_bodies(
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     materials: Option<ResMut<Assets<PropMaterial>>>,
+    mut dormant: Option<ResMut<DormantProps>>,
     mut bindposes: ResMut<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>,
     compressed: Option<Res<bevy::image::CompressedImageFormatSupport>>,
     mut queue: Local<LateQueue<BodyAssets>>,
@@ -256,6 +259,7 @@ pub fn build_late_bodies(
             meshes: &mut meshes,
             materials: &mut materials,
             bindposes: &mut bindposes,
+            dormant: dormant.as_deref_mut(),
         },
     };
     let bc = super::images::bc_wanted(compressed.as_deref());
@@ -402,6 +406,7 @@ pub fn attach_bodies(
     show_local: Res<ShowLocalBody>,
     (time, no_stand_ins): (Res<Time>, Option<Res<chimera_core::game_parts::NoStandIns>>),
     mut materials: Option<ResMut<Assets<PropMaterial>>>,
+    dormant: Option<Res<DormantProps>>,
     mut meshes: Option<ResMut<Assets<Mesh>>>,
     mut waiting: Local<HashMap<Entity, f64>>,
     mut commands: Commands,
@@ -504,7 +509,7 @@ pub fn attach_bodies(
             }
             let material = family.and_then(|f| f.get(k)).unwrap_or(material);
             let material = match materials.as_mut() {
-                Some(m) => probe_lit::instance(m, material),
+                Some(m) => probe_lit::instance(m, dormant.as_deref(), material),
                 None => material.clone(),
             };
             own.push(material.clone());
@@ -629,6 +634,7 @@ pub fn attach_held(
     characters: Query<(Entity, &Held, &Children)>,
     mut body_query: Query<&mut CharacterBody>,
     mut materials: Option<ResMut<Assets<PropMaterial>>>,
+    dormant: Option<Res<DormantProps>>,
     mut commands: Commands,
 ) {
     let (Some(held), Some(bodies)) = (held, bodies) else {
@@ -666,7 +672,7 @@ pub fn attach_held(
         let mut instance = |list: &[(Handle<Mesh>, Handle<PropMaterial>)]| -> Vec<Handle<PropMaterial>> {
             list.iter()
                 .map(|(_, m)| match materials.as_mut() {
-                    Some(assets) => probe_lit::instance(assets, m),
+                    Some(assets) => probe_lit::instance(assets, dormant.as_deref(), m),
                     None => m.clone(),
                 })
                 .collect()
@@ -922,10 +928,11 @@ pub fn body_assets(
     root: Transform,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<PropMaterial>,
+    dormant: Option<&mut DormantProps>,
     bindposes: &mut Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
     material: &dyn Fn(&MapMesh) -> PropMaterial,
 ) -> BodyAssets {
-    let mut stores = Stores { meshes, materials, bindposes };
+    let mut stores = Stores { meshes, materials, bindposes, dormant };
     body_assets_into(model, bones, root, &mut stores, material)
 }
 

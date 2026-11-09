@@ -32,11 +32,13 @@ pub fn start_clock(
     on: On<Insert<MeshMaterial3d<PropMaterial>>>,
     meshes: Query<&MeshMaterial3d<PropMaterial>>,
     materials: Option<Res<Assets<PropMaterial>>>,
+    dormant: Option<Res<super::prop_material::DormantProps>>,
     mut commands: Commands,
 ) {
     let Some(materials) = materials else { return };
     let Ok(handle) = meshes.get(on.entity) else { return };
-    let Some(m) = materials.get(&handle.0) else { return };
+    // Woken into the store by `prop_material::wake_drawn`, before or after.
+    let Some(m) = super::prop_material::prop(&materials, dormant.as_deref(), &handle.0) else { return };
     if m.skin_frames.len() > 1 {
         commands.entity(on.entity).insert(SkinClock::default());
     } else {

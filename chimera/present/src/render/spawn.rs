@@ -113,6 +113,8 @@ pub struct MapAssets<'w> {
     rope_materials: Option<ResMut<'w, Assets<RopeMaterial>>>,
     sprite_materials: Option<ResMut<'w, Assets<SpriteMaterial>>>,
     prop_materials: Option<ResMut<'w, Assets<PropMaterial>>>,
+    /// Where the kit's models' materials wait until drawn.
+    dormant: Option<ResMut<'w, super::prop_material::DormantProps>>,
     shadow_materials: Option<Res<'w, Assets<shadows::ShadowMaterial>>>,
     water_materials: Option<ResMut<'w, Assets<water::WaterMaterial>>>,
     bindposes: Option<ResMut<'w, Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>>,
@@ -164,6 +166,7 @@ fn spawn_drawn(commands: &mut Commands, s: &MapSpawn, a: &mut MapAssets) -> Draw
         rope_materials,
         sprite_materials,
         prop_materials,
+        dormant,
         shadow_materials,
         water_materials,
         bindposes,
@@ -204,6 +207,7 @@ fn spawn_drawn(commands: &mut Commands, s: &MapSpawn, a: &mut MapAssets) -> Draw
             meshes,
             bindposes,
             prop_materials,
+            dormant.as_deref_mut(),
             sprite_materials,
         );
     }
@@ -418,6 +422,7 @@ fn build_character_assets(
     meshes: &mut Assets<Mesh>,
     bindposes: &mut Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
     prop_materials: &mut Option<ResMut<Assets<PropMaterial>>>,
+    mut dormant: Option<&mut super::prop_material::DormantProps>,
     sprite_materials: &mut Option<ResMut<Assets<SpriteMaterial>>>,
 ) {
     let (data, view) = (s.data, s.view);
@@ -440,7 +445,7 @@ fn build_character_assets(
     let bodies = data
         .kit.characters
         .iter()
-        .map(|c| body_assets(&c.model, &c.bones, c.root, meshes, pm, bindposes, &model_material))
+        .map(|c| body_assets(&c.model, &c.bones, c.root, meshes, pm, dormant.as_deref_mut(), bindposes, &model_material))
         .collect();
     let held = data
         .kit.held
@@ -450,7 +455,14 @@ fn build_character_assets(
                 model
                     .meshes
                     .iter()
-                    .map(|m| (meshes.add(build_mesh(m, false)), pm.add(model_material(m))))
+                    .map(|m| {
+                        let material = model_material(m);
+                        let material = match dormant.as_deref_mut() {
+                            Some(d) => d.add(pm, material),
+                            None => pm.add(material),
+                        };
+                        (meshes.add(build_mesh(m, false)), material)
+                    })
                     .collect()
             };
             let whole = build(&h.model);
@@ -471,14 +483,14 @@ fn build_character_assets(
         .collect::<HashMap<_, _>>();
     let view_models = prop_materials
         .as_mut()
-        .map(|pm| build_view_models(data, textures, cubemaps, view, meshes, pm, bindposes));
+        .map(|pm| build_view_models(data, textures, cubemaps, view, meshes, pm, dormant.as_deref_mut(), bindposes));
     let flash = build_flash_assets(data, textures, meshes, sprite_materials.as_deref_mut());
     let shells = prop_materials
         .as_mut()
         .and_then(|pm| super::shells::build_assets(data, textures, view, meshes, pm));
     let gibs = prop_materials
         .as_mut()
-        .map(|pm| super::breakables::build_gib_draws(data, textures, view, meshes, pm))
+        .map(|pm| super::breakables::build_gib_draws(data, textures, view, meshes, pm, dormant.as_deref_mut()))
         .unwrap_or_default();
     // Built in that order (asset ids follow it), inserted in this one
     // (resource ids follow it): the gibs' meshes go with the bodies'.

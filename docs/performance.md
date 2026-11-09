@@ -2186,23 +2186,76 @@ the last map, flat from the fifth): the current ladder's Combat Arms models'
 textures kept on the CPU (decoded RGBA 0.6 GB, their mips 0.15 GB, view
 models' 0.15 GB), which a later map's spawn builds its images from again.
 
-**The render thread** (not fixed). de_dust2's render world: 13.5-14.4M
-instructions a frame at the start, 18.4-19.3M after the eight maps, 24-25M on
-cs_militia and de_aztec. Sampled (instructions, user space) on de_dust2 at the
-end: wgpu's trackers 24% (dropping and clearing each pass's
+**The render thread**: the next section.
+
+## A session's render thread (2026-11-09)
+
+What the section above left: de_dust2's render world at 13.5-14.4M
+instructions a frame at the start, 18.4-19.3M after eight other maps, 24-25M
+on cs_militia and de_aztec. Sampled (instructions, user space) on de_dust2 at
+the end: wgpu's trackers 24% (dropping and clearing each pass's
 `ResourceMetadata<Buffer>` and `<Texture>`, `BufferUsageScope::clear`, the
 vectors' resize), Bevy's mesh allocator and render-asset hash lookups 14%
 (`MeshAllocationKey` tables, `RenderMesh` and `PreparedMaterial` maps). wgpu
-sizes each pass's trackers by the most buffers and textures ever alive at once
-(`TrackerIndexAllocator::size`, which never falls), so a peak costs every pass
-of every later frame; Bevy's hash tables keep their peak capacity too. What
-makes the peak: about 11,000 GPU buffers after the second map (2,530 at the
-start), nearly all `PropMaterial`s' uniforms, of which an entity draws 300
-(10,027 in the store on dm_lockdown, 306 drawn): every material of every body,
-held model and skin family the map's kit and the ladder's late models carry
-is prepared, drawn or not. `chimera_mem pad <n>` (that many undrawn materials,
-0 drops them) is the experiment that would put a number on each buffer; it
-didn't run (the session's display went with an out-of-memory kill on the box).
+sizes its trackers by the most buffers and textures ever alive at once
+(`TrackerIndexAllocator::size`, which never falls), and Bevy's hash tables
+keep their peak capacity. The peak: about 11,000 GPU buffers after the second
+map (2,530 at the start), nearly all `PropMaterial`s' uniforms (10,027 in the
+store on dm_lockdown, 306 drawn): every material of every body, skin family,
+held, loose, gib and view model the map's kit and the ladder's late models
+carry was prepared (a uniform buffer and a bind group each), drawn or not.
+
+**One buffer's price.** `cargo run -p chimera_present --features dev --example
+material_price -- [--views <k>] [<n>...]` renders offscreen (a GPU, no window
+or display: it ran on the dev box with the desktop session down), `k` cameras
+drawing 300 cubes of their own `PropMaterial`s into images, while the store
+holds `n` more that nothing draws, phase by phase; instructions a frame on the
+main thread (the render world runs there, unpipelined), 200-300 frames each
+(RTX 3080, Vulkan, dev profile):
+
+| undrawn materials held | 1 view | 4 views | 8 views |
+|---|---|---|---|
+| 0 (start) | 10.61M | 37.43M | 80.35M |
+| 12,000 | 12.50M | 39.09M | 81.90M |
+| 0 (dropped) | 12.49M | 39.08M | 79.75M |
+| 12,000 again | 12.69M | | 80.05M |
+| 24,000 | 14.88M | | 85.16M |
+
+About 150-200 instructions a frame for each buffer of the peak, and it stays
+after the buffers are freed: only a new peak costs more. So what matters is
+never making the peak: 11,000 undrawn materials are about 2M a frame of the
+render thread's rise, for the rest of the process. The rest of the rise (the
+hash tables, the session's other assets) is not priced yet.
+
+**The fix.** The kit's models' materials wait outside the store
+(`prop_material::DormantProps`: a handle reserved in the store, the material
+beside it) until an entity draws one (`wake_drawn`, an observer on
+`MeshMaterial3d<PropMaterial>`); bodies, held, loose and gib models draw
+copies (`probe_lit::instance`), which go into the store as before, and a view
+model draws its kit's material when shown. What changes every material (the
+fog setting, underwater fog, animated textures) changes the waiting ones too;
+one goes with its last handle (`DormantProps::prune`). A late model's
+materials no longer reach the render thread when it comes in
+(`late_build`). `chimera_mem` prints the store, the drawn and the dormant.
+
+Headless, with the drawing's assets (`heavy::session_materials` in
+ultimate_gun_game: a ladder on each map, the server's map change, 4 bots; no
+render world, so materials in the store, not GPU buffers):
+
+| map | store before | after | drawn | dormant after |
+|---|---|---|---|---|
+| de_dust2 | 2,114 | 153 | 120 | 1,961 |
+| warehouse | 1,631 | 30 | 30 | 1,601 |
+| de_dust2 again | 2,123 | 163 | 130 | 1,961 |
+
+(dm_lockdown, in the test's list, was not installed on the box.) The test
+fails if the store holds 600 more than is drawn, or grows on the same map
+after a lap.
+
+**Waits for a display:** the real app's render thread before and after over a
+session of maps (de_dust2 fresh and after eight other maps, as above), and frozen-scene screenshots before
+and after on a Combat Arms and a CS:S map (no visual change is expected: the
+same materials draw, made at the same moment).
 
 ## See a frame yourself
 

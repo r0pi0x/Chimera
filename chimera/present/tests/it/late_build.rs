@@ -13,7 +13,7 @@ use chimera_present::{
     MapPlugin,
     render::{
         bodies::{HeldAssets, PlayModels},
-        prop_material::PropMaterial,
+        prop_material::{DormantProps, PropMaterial},
         rope_material::RopeMaterial,
         shadows::ShadowMaterial,
         sprite_material::SpriteMaterial,
@@ -191,5 +191,7 @@ fn large_models_come_in_without_a_frame_over_the_limit() {
     let assets = w.resource::<PlayModels>();
     let (mesh, material) = &assets.bodies[1].parts[0];
     assert!(w.resource::<Assets<Mesh>>().contains(mesh.id()));
-    assert!(w.resource::<Assets<PropMaterial>>().contains(material.id()));
+    // Its materials wait outside the store until something draws them.
+    assert!(w.resource::<DormantProps>().get(material.id()).is_some());
+    assert!(!w.resource::<Assets<PropMaterial>>().contains(material.id()));
 }

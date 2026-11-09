@@ -30,6 +30,7 @@ pub fn draw_loose(
     assets: Option<Res<LooseAssets>>,
     held: Option<Res<HeldAssets>>,
     mut materials: Option<ResMut<Assets<crate::render::prop_material::PropMaterial>>>,
+    dormant: Option<Res<crate::render::prop_material::DormantProps>>,
     mut commands: Commands,
 ) {
     let (Some(assets), Some(held)) = (assets, held) else {
@@ -49,7 +50,7 @@ pub fn draw_loose(
             .whole
             .iter()
             .map(|(_, m)| match materials.as_mut() {
-                Some(assets) => probe_lit::instance(assets, m),
+                Some(assets) => probe_lit::instance(assets, dormant.as_deref(), m),
                 None => m.clone(),
             })
             .collect();
@@ -79,6 +80,7 @@ pub fn attach_shown(
     assets: Option<Res<LooseAssets>>,
     held: Option<Res<HeldAssets>>,
     mut materials: Option<ResMut<Assets<crate::render::prop_material::PropMaterial>>>,
+    dormant: Option<Res<crate::render::prop_material::DormantProps>>,
     sky: (Option<Res<PlayableArea>>, Option<Res<ActiveMapHas3dSky>>),
     mut commands: Commands,
 ) {
@@ -108,7 +110,7 @@ pub fn attach_shown(
                 .whole
                 .iter()
                 .map(|(_, m)| match materials.as_mut() {
-                    Some(assets) => probe_lit::instance(assets, m),
+                    Some(assets) => probe_lit::instance(assets, dormant.as_deref(), m),
                     None => m.clone(),
                 })
                 .collect();
