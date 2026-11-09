@@ -1966,6 +1966,44 @@ implementing (owner branch) / done.
   scoreboard's avatars without Steam. Shots of the window, the recoil
   series and the icons wait for a display (the box had none this session).
 
+- 2026-11-09: **Spec answers round 3** (branch `spec-impl3`; the specs of
+  merge `spec-gaps3`). **Under water** (weapons.md 5, tests 58-60): the
+  machine guns' attack2 is refused by the generic frame before their own
+  code, every tick it is held (empty sound, next secondary + 0.2, no
+  dry-fire animation); with no grenade or ball the no-ammo step answers
+  first (+0.5, the frame goes on); a refusal ends the weapon frame
+  (`Inventory::frame_ended`), so attack and reload held together never
+  reload; an empty .357 under water clicks and reloads as on land.
+  **Blast bits** (rules.md's spawn grace table, prop_damage.md):
+  `DamageKind::BlastSurface` (64 + 2^27) for exploding props and
+  `env_explosion`'s "surface only", generic for its "generic damage", carried
+  by `core::Explosion`; the grace refuses blast alone only; every other
+  rule reads both (`is_blast`). **Sparks** (effects_sounds.md, tests 63-66):
+  `BlastFlags::NO_SPARKS` (32, on every explosion made by code); a map
+  explosion under water without it makes 0-3 `spark_shower`s
+  (`game::spark_shower`: tossed with bounce, an electric-spark burst every
+  0.1 s through `map::SparkBurst`, the shared impact effect). **AR2 vents**
+  (weapons.md 7.3, test 61): `hl2dm:vent` writes `VentPoses` = shots / 5 at
+  the start of the AR2's frame, on the weapon and the view model (autoplay
+  layers on). **MOTD** (hud.md 14): the entry by its first characters
+  (blank, page address, HTML, plain), `cl_disablehtmlmotd` falls back to
+  `motd_text` (blank when empty), Space presses OK too, it opens again on
+  every map entered, HL2:DM's frame drawn as boxes over a blank backdrop
+  (`motd_frame`; the logo isn't drawn). **Scoreboard** (hud.md 13): avatar
+  cell left empty at its width; a team's average ping blank below 1.
+  **SMG1 grenade smoke** (particles_and_smoke.md 5): V is the grenade's
+  last networked velocity (`Hl2FlyerVelocity`, replicated), spread over
+  O − V·Δt … O and added to each puff. **Combat Arms sprite sets**
+  (combat_arms/effects_sounds.md): `Sprite` wins over `Texture`, a set by
+  its `.spr` extension; one frame clock per particle system in whole ms
+  (`Particle::frame_clock`), always looping. **Not done: GameUI**
+  (game_ui.md): the player-model and spray pickers, Import Spray and
+  Create Server's Server Type need the layout controls' field names, which
+  game_ui.md gives only as positions (question for a spec session); the
+  main menu (from `GameMenu.res`) and the hidden crosshair and Advanced
+  (`layout_hides`) already match. Shots of the MOTD, the Multiplayer page
+  and a spark shower wait for a display.
+
 ## Decision log
 
 - 2026-10-31 (user): Half-Life 2: Deathmatch is the next game, after

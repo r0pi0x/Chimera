@@ -334,6 +334,17 @@ pub struct ParticleCurves {
     pub frame_time: f32,
 }
 
+/// A looping sprite set's frame at `t` ms on its clock, each frame `d` ms
+/// (Combat Arms' particle systems: specs/combat_arms/effects_sounds.md,
+/// ParticleSystem "Sprite sets as particle textures").
+pub fn sprite_frame(t: u32, d: u32, frames: usize) -> usize {
+    if frames == 0 || d == 0 {
+        return 0;
+    }
+    let length = d as u64 * frames as u64;
+    ((t as u64 % length) / d as u64) as usize % frames
+}
+
 /// `keys` read at `t`: linear between keys, held outside them.
 fn sample_curve<const N: usize>(keys: &[(f32, [f32; N])], t: f32) -> Option<[f32; N]> {
     let first = keys.first()?;
@@ -384,6 +395,12 @@ pub struct Particle {
     pub shape: Shape,
     /// Curves over its life, over `color`, `alpha`, `size` and `material`.
     pub curves: Option<std::sync::Arc<ParticleCurves>>,
+    /// Its system's frame clock (whole ms), when an animated sprite's
+    /// frames run on the system's clock rather than the particle's age
+    /// (Combat Arms' sprite sets): set at birth from the system's, then
+    /// advanced by each step's time in whole milliseconds, so every
+    /// particle of a system shows the same frame.
+    pub frame_clock: Option<u32>,
 }
 
 impl Particle {
@@ -409,6 +426,7 @@ impl Particle {
             flip: false,
             shape: Shape::Sprite,
             curves: None,
+            frame_clock: None,
         }
     }
 
@@ -423,11 +441,18 @@ impl Particle {
         (self.alpha * self.fade.at(self.age, self.life)).clamp(0.0, 1.0)
     }
 
-    /// The material it draws with now (an animated sprite's frame).
+    /// The material it draws with now (an animated sprite's frame): by
+    /// its system's clock (`frame_clock`: frame ⌊t / d⌋, d the frame time
+    /// in whole ms, always looping), else by its own age.
     pub fn current_material(&self) -> usize {
         match self.curves.as_deref() {
             Some(c) if !c.frames.is_empty() && c.frame_time > 0.0 => {
-                c.frames[(self.age / c.frame_time).max(0.0) as usize % c.frames.len()]
+                let n = c.frames.len();
+                let i = match self.frame_clock {
+                    Some(t) => sprite_frame(t, (c.frame_time * 1000.0).round() as u32, n),
+                    None => (self.age / c.frame_time).max(0.0) as usize % n,
+                };
+                c.frames[i]
             }
             _ => self.material,
         }
@@ -748,6 +773,9 @@ pub fn step_particle(p: &mut Particle, m: &Motion, dt: f32, world: &impl WorldTr
     // The roll turns only until its stop time.
     let turning = (p.roll_stop - p.age).clamp(0.0, dt);
     p.age += dt;
+    if let Some(t) = &mut p.frame_clock {
+        *t = t.wrapping_add((dt * 1000.0) as u32);
+    }
     p.roll += p.roll_speed * turning;
     if let Some((rate, floor)) = m.roll_decay {
         p.roll_speed += p.roll_speed * (-rate * dt);
@@ -1067,6 +1095,33 @@ mod tests {
 #[cfg(test)]
 mod curve_tests {
     use super::*;
+
+    /// Combat Arms' sprite sets (effects_sounds.md, ParticleSystem "Sprite
+    /// sets as particle textures"): Y_FLAMESET's 4 frames at 12 a second,
+    /// d = 83 ms, frames at 0, 83, 166, 249 of every 332; on the system's
+    /// clock every particle shows the same frame whatever its age, and the
+    /// clock goes on by whole milliseconds (0 on a step under 1 ms).
+    #[test]
+    fn sprite_sets_run_on_their_systems_clock() {
+        let d = 1000 / 12;
+        assert_eq!(d, 83);
+        let at = |t| sprite_frame(t, d, 4);
+        assert_eq!([at(0), at(82), at(83), at(166), at(249), at(331), at(332), at(415)], [0, 0, 1, 2, 3, 3, 0, 1]);
+        let curves = std::sync::Arc::new(ParticleCurves { frames: vec![10, 11, 12, 13], frame_time: 0.083, ..default() });
+        let mut old = Particle::new(Vec3::ZERO, 5.0, 7, 1.0);
+        old.curves = Some(curves.clone());
+        old.age = 3.0;
+        old.frame_clock = Some(160);
+        let mut young = Particle { age: 0.0, ..old.clone() };
+        young.frame_clock = Some(160);
+        assert_eq!((old.current_material(), young.current_material()), (11, 11), "the same frame");
+        let (m, mut rng) = (Motion::default(), ParticleRng::new(1));
+        step_particle(&mut young, &m, 0.0005, &NoWorld, &mut rng);
+        assert_eq!(young.frame_clock, Some(160), "under 1 ms: no time");
+        step_particle(&mut young, &m, 0.0109, &NoWorld, &mut rng);
+        assert_eq!(young.frame_clock, Some(170), "whole milliseconds");
+        assert_eq!(young.current_material(), 12);
+    }
 
     /// A flame's look: white hot, orange, then gone; a growing size; an
     /// animated sprite's frames in a loop.

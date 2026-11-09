@@ -46,6 +46,20 @@ fn a_joining_player_sees_it_and_enter_closes_it() {
     assert!(!open(&a), "closed");
     assert!(!a.world().resource::<VguiOpen>().motd);
 
+    // Space presses the OK too (hud.md 14, "Keys").
+    let mut b = app(JoinChoice::Menus);
+    b.world_mut().spawn(LocalPlayer);
+    b.update();
+    b.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::Space);
+    b.update();
+    assert!(!open(&b), "Space closes it");
+    // Every map entered again (a changelevel): it opens again.
+    b.world_mut().resource_mut::<ButtonInput<KeyCode>>().reset_all();
+    b.update();
+    b.world_mut().trigger(chimera_client::client::front_end::EnteredGame);
+    b.update();
+    assert!(open(&b), "again after the map change");
+
     // A tool run (or a test) joins straight in.
     let mut a = app(JoinChoice::Auto);
     a.world_mut().spawn(LocalPlayer);
