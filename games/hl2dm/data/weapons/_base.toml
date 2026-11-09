@@ -9,3 +9,11 @@
 id = "hl2dm:base"
 abstract = true
 units = { length = 0.0254, damage = 0.01 }
+
+# Whom a shot or a primary swing rewinds (weapons.md 12): only with attack
+# held or a shot in the last 5 commands, then each player within 1.5 x
+# their max speed x sv_maxunlag, or within 45 degrees of the view.
+[lag_compensation]
+fired_within = 5
+reach = 1.5
+view_cos = 0.707107

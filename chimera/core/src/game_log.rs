@@ -102,6 +102,16 @@ pub enum LogPart {
 #[derive(Message, Clone, Debug, PartialEq)]
 pub struct LogLine(pub Vec<LogPart>);
 
+/// A chat line a player said on the server (the network layer's
+/// `deliver_say`), for a game's log lines: who, the cleaned text and
+/// whether it was `say_team`.
+#[derive(Message, Clone, Debug, PartialEq)]
+pub struct Said {
+    pub from: Entity,
+    pub text: String,
+    pub team_only: bool,
+}
+
 impl LogLine {
     /// `"<who>" triggered "<what>"`.
     pub fn triggered(who: Entity, what: &str) -> Self {
@@ -199,6 +209,7 @@ impl Plugin for GameLogPlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<GameEvent>()
             .add_message::<LogLine>()
+            .add_message::<Said>()
             .init_resource::<ServerLog>()
             .init_resource::<crate::gameplay::GameHooks<LogSubjects>>()
             .add_systems(Last, write_lines);

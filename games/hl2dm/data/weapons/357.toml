@@ -47,3 +47,6 @@ position = 1
 [hooks."hl2dm:punch"]
 pitch = [-8.0, -8.0]
 yaw = [-2.0, 2.0]
+# The shooter's own view turns a whole -1, 0 or +1 degree in pitch and
+# yaw a shot (weapons.md 7.2, client only).
+nudge = true

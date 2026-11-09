@@ -692,7 +692,7 @@ pub(super) fn prop_damage(w: &mut LogicWorld, id: EntId, hit: Hit) -> bool {
     if killed {
         // Breaker = the inflictor (the shooter, here); the outputs below
         // queue after OnBreak.
-        prop_break(w, id, hit.attacker, hit.attacker);
+        prop_break(w, id, hit.attacker, hit.attacker, true);
     }
     w.fire_output(id, "OnHealthChanged", hit.attacker, Value::Float(ratio));
     w.fire_output(id, "OnTakeDamage", hit.attacker, Value::Void);
@@ -749,7 +749,7 @@ fn client_damage(w: &mut LogicWorld, id: EntId, p: &Prop, hit: Hit) {
     let p = prop(w, id).unwrap();
     p.health -= damage;
     if p.health <= 0 {
-        prop_break(w, id, hit.attacker, hit.attacker);
+        prop_break(w, id, hit.attacker, hit.attacker, true);
     }
 }
 
@@ -784,7 +784,7 @@ fn set_health(w: &mut LogicWorld, id: EntId, new: i32, activator: Option<Who>) {
     }
     if new <= 0 {
         // The prop itself is the explosion's attacker (spec 7 step 5).
-        prop_break(w, id, activator, Some(Who::Ent(id)));
+        prop_break(w, id, activator, Some(Who::Ent(id)), false);
     }
 }
 
@@ -813,7 +813,10 @@ fn children(w: &LogicWorld, id: EntId) -> Vec<EntId> {
 /// host plays its break sound, explodes it (as `attacker`'s unless a
 /// player hurt it last) and throws its pieces; it and everything parented
 /// to it are removed (its name at once).
-pub(super) fn prop_break(w: &mut LogicWorld, id: EntId, breaker: Option<Who>, attacker: Option<Who>) {
+/// `damage`: lethal damage broke it (else an input, a health input or
+/// pressure: with `LogicWorld::break_keeps_props`, HL2:DM's, the prop
+/// stays where it is, broken: non-solid and undamageable).
+pub(super) fn prop_break(w: &mut LogicWorld, id: EntId, breaker: Option<Who>, attacker: Option<Who>, damage: bool) {
     let Some(p) = prop(w, id) else { return };
     if p.broken {
         return;
@@ -857,6 +860,11 @@ pub(super) fn prop_break(w: &mut LogicWorld, id: EntId, breaker: Option<Who>, at
     });
     // Its flame goes with it (General.StopBurning).
     super::fire::remove_flames_on(w, Who::Ent(id));
+    // HL2:DM's break routine doesn't remove the prop; only the lethal
+    // damage path does (specs/hl2dm/gravity_gun.md Corrections 2, P15).
+    if !damage && w.break_keeps_props {
+        return;
+    }
     if let Some(after) = p.respawn {
         // A respawnable prop stays, name and outputs with it, and comes
         // back after its time (`PropRespawn`).
@@ -888,7 +896,7 @@ pub(super) fn prop_input(w: &mut LogicWorld, id: EntId, input: &str, value: &Val
         .get(id)
         .is_some_and(|e| e.classname.eq_ignore_ascii_case("prop_ragdoll"));
     match input {
-        "break" => prop_break(w, id, activator, Some(Who::Ent(id))),
+        "break" => prop_break(w, id, activator, Some(Who::Ent(id)), false),
         "sethealth" | "addhealth" | "removehealth" => {
             let Some(n) = w.need_int(value, input) else { return true };
             let new = match input {
@@ -985,7 +993,7 @@ pub(super) fn think(w: &mut LogicWorld, id: EntId) {
     if p.pressure_pending {
         p.pressure_pending = false;
         let breaker = p.pressure_breaker;
-        prop_break(w, id, breaker, Some(Who::Ent(id)));
+        prop_break(w, id, breaker, Some(Who::Ent(id)), false);
     }
 }
 

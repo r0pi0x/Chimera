@@ -138,6 +138,13 @@ pub(super) struct Shot<'a, 'w, 's> {
     /// was hit, so no impact is drawn; a round the server says hit
     /// nothing, `remote::shot_flags::IMPACTS`).
     pub show_hits: bool,
+    /// This call's round and how many rounds the firing call fires (a
+    /// tick's catch-up rounds, one `fire` each): with the pellets, which
+    /// bullets are `Hitscan::odd_box` boxes.
+    pub round: (u32, u32),
+    /// Something was traced (a shot or a swing): lag compensation's
+    /// "fired lately" (`lagcomp::RewindChoice`).
+    pub traced: bool,
     pub w: &'a mut World<'w, 's>,
 }
 
@@ -160,20 +167,41 @@ fn nearest_box(boxes: &[crate::core::Hitbox], o: Vec3, d: Vec3, limit: f32) -> O
 
 /// What a ray hits of a character's volume: the nearest hitbox entered
 /// (distance, where it leaves that box, and its group) or, without
-/// hitboxes, its box.
-fn volume_entry(r: &Rewound, from: Vec3, dir: Dir3, limit: f32) -> Option<(f32, Option<f32>, Option<BodyRegion>)> {
+/// hitboxes, its box; each grown by `grow` for a box trace (`grown`).
+fn volume_entry(r: &Rewound, from: Vec3, dir: Dir3, limit: f32, grow: f32) -> Option<(f32, Option<f32>, Option<BodyRegion>)> {
     match &r.hitboxes {
         Some(boxes) => {
             let (feet, turn) = r.frame();
             let (o, d) = (turn * (from - feet), turn * *dir);
-            nearest_box(boxes, o, d, limit).map(|(enter, leave, group)| (enter, Some(leave), Some(group)))
+            let boxes: std::borrow::Cow<[crate::core::Hitbox]> = if grow > 0.0 { grown(boxes, grow).into() } else { (&boxes[..]).into() };
+            nearest_box(&boxes, o, d, limit).map(|(enter, leave, group)| (enter, Some(leave), Some(group)))
         }
         None => {
-            let b = r.aabb();
+            let mut b = r.aabb();
+            b.min -= Vec3::splat(grow);
+            b.max += Vec3::splat(grow);
             let (enter, _) = aabb_span(&b, from, *dir)?;
-            (enter < limit).then(|| (enter, None, Some(BodyRegion::from_hitgroup(hitgroup_at(&b, from + *dir * enter)))))
+            (enter < limit).then(|| (enter, None, Some(BodyRegion::from_hitgroup(hitgroup_at(&r.aabb(), from + *dir * enter)))))
         }
     }
+}
+
+/// Hitboxes as a box of half size `grow` sweeping into them meets them: each
+/// grown by `grow` on its own axes (a sphere's radius by `grow`), so a ray
+/// along the box's centre enters where the box would touch (exact for a
+/// box lined up with the hitbox; a turned one is held to the hitbox's axes).
+fn grown(boxes: &[crate::core::Hitbox], grow: f32) -> Vec<crate::core::Hitbox> {
+    boxes
+        .iter()
+        .map(|b| {
+            let mut b = *b;
+            b.half += Vec3::splat(grow);
+            if let Some(r) = b.radius.as_mut() {
+                *r += grow;
+            }
+            b
+        })
+        .collect()
 }
 
 /// Where a ray enters and leaves a world box (distances along `dir`, the
@@ -238,8 +266,10 @@ impl Shot<'_, '_, '_> {
     /// the eye, leaving out `skip`. Characters with hitboxes are hit only
     /// where a hitbox is (shots pass through the rest of their hull, and
     /// hitboxes poking out of it still count, as in Source); the nearest
-    /// box entered decides the hitgroup.
-    fn trace(&self, dir: Dir3, start: f32, end: f32, skip: &[Entity]) -> Option<Hit> {
+    /// box entered decides the hitgroup. With `grow` > 0 it is a box of
+    /// that half size (`Hitscan::odd_box`): a swept box against the world
+    /// and bodies, hitboxes grown by it (`grown`).
+    fn trace(&self, dir: Dir3, start: f32, end: f32, skip: &[Entity], grow: f32) -> Option<Hit> {
         let from = self.eye + *dir * start;
         let rewound: Vec<Entity> = self.rewound.iter().map(|r| r.entity).collect();
         let boxed: Vec<Entity> = self
@@ -272,20 +302,38 @@ impl Shot<'_, '_, '_> {
             .filter(|e| self.w.targets.get(*e).ok().and_then(|t| t.health).is_none_or(|h| h.current > 0.0))
             .filter(|e| !dead.contains(e))
             .collect();
-        let mut best = self
-            .w
-            .spatial
-            .cast_ray(from, dir, end - start, true, &filter)
-            .map(|hit| Hit {
-                entity: self.body(hit.entity),
-                collider: hit.entity,
-                point: from + *dir * hit.distance,
-                dir: *dir,
-                distance: start + hit.distance,
-                normal: hit.normal,
-                group: None,
-                box_exit: None,
-            });
+        let mut best = if grow > 0.0 {
+            let shape = Collider::cuboid(grow * 2.0, grow * 2.0, grow * 2.0);
+            let config = ShapeCastConfig::from_max_distance(end - start);
+            self.w
+                .spatial
+                .cast_shape(&shape, from, Quat::IDENTITY, dir, &config, &filter)
+                .map(|hit| Hit {
+                    entity: self.body(hit.entity),
+                    collider: hit.entity,
+                    // Where the box's centre stopped (Source's end position).
+                    point: from + *dir * hit.distance,
+                    dir: *dir,
+                    distance: start + hit.distance,
+                    normal: hit.normal1,
+                    group: None,
+                    box_exit: None,
+                })
+        } else {
+            self.w
+                .spatial
+                .cast_ray(from, dir, end - start, true, &filter)
+                .map(|hit| Hit {
+                    entity: self.body(hit.entity),
+                    collider: hit.entity,
+                    point: from + *dir * hit.distance,
+                    dir: *dir,
+                    distance: start + hit.distance,
+                    normal: hit.normal,
+                    group: None,
+                    box_exit: None,
+                })
+        };
         for e in boxed.into_iter().filter(|e| !skip.contains(e)) {
             let Some((o, d)) = self.local_ray(e, from, dir) else {
                 continue;
@@ -294,7 +342,8 @@ impl Shot<'_, '_, '_> {
                 continue;
             };
             let limit = best.as_ref().map_or(end, |b| b.distance) - start;
-            if let Some((distance, leave, group)) = nearest_box(&boxes.0, o, d, limit) {
+            let boxes: std::borrow::Cow<[crate::core::Hitbox]> = if grow > 0.0 { grown(&boxes.0, grow).into() } else { (&boxes.0[..]).into() };
+            if let Some((distance, leave, group)) = nearest_box(&boxes, o, d, limit) {
                 best = Some(Hit {
                     entity: e,
                     collider: e,
@@ -310,7 +359,7 @@ impl Shot<'_, '_, '_> {
         // Characters where the shooter saw them (lag compensation).
         for r in self.rewound.iter().filter(|r| !skip.contains(&r.entity) && !dead.contains(&r.entity)) {
             let limit = best.as_ref().map_or(end, |b| b.distance) - start;
-            if let Some((distance, leave, group)) = volume_entry(r, from, dir, limit) {
+            if let Some((distance, leave, group)) = volume_entry(r, from, dir, limit, grow) {
                 best = Some(Hit {
                     entity: r.entity,
                     collider: r.entity,
@@ -439,7 +488,17 @@ impl Shot<'_, '_, '_> {
     /// Fire every pellet of one shot.
     pub fn fire(&mut self, scan: &Hitscan, effect: &DamageEffect, pen: Option<&Penetration>) {
         let mut total: Vec<(Entity, f32, BodyRegion, Vec3, Vec3)> = Vec::new();
-        for dir in pellet_dirs(self.aim, self.seed, scan.spread, scan.pellets) {
+        self.traced = true;
+        let pellets = scan.pellets.max(1);
+        let (round, rounds) = self.round;
+        for (pellet, dir) in pellet_dirs(self.aim, self.seed, scan.spread, scan.pellets).into_iter().enumerate() {
+            // The call's bullet number: odd ones of a call of several are
+            // boxes (`Hitscan::odd_box`).
+            let bullet = round * pellets + pellet as u32;
+            let grow = match scan.odd_box {
+                Some(half) if rounds.max(1) * pellets > 1 && bullet % 2 == 1 => half,
+                _ => 0.0,
+            };
             // The bullet's damage so far (before hitgroups), where the
             // current segment starts and how far it may go, and what it
             // passed.
@@ -449,7 +508,7 @@ impl Shot<'_, '_, '_> {
             let mut passed = 0;
             let mut budget = pen.map_or(0.0, |p| p.power);
             loop {
-                let hit = self.trace(dir, start, end, &skip);
+                let hit = self.trace(dir, start, end, &skip, grow);
                 let (from, to) = (
                     self.eye + *dir * start,
                     hit.as_ref().map_or(self.eye + *dir * end, |h| h.point),
@@ -663,9 +722,10 @@ impl Shot<'_, '_, '_> {
     /// One swing (spec 6.1): a line, then a box when the line misses.
     /// Returns whether it hit anything.
     pub fn swing(&mut self, swing: &Swing, secondary: bool) -> bool {
+        self.traced = true;
         let forward = self.aim * Vec3::NEG_Z;
         let dir = Dir3::new(forward).unwrap_or(Dir3::NEG_Z);
-        let mut hit = self.trace(dir, 0.0, swing.range, &[]);
+        let mut hit = self.trace(dir, 0.0, swing.range, &[], 0.0);
         // The line's span (its end on a miss: the range's end).
         let line = (self.eye, hit.as_ref().map_or(self.eye + *dir * swing.range, |h| h.point));
         if hit.is_none()
@@ -685,7 +745,7 @@ impl Shot<'_, '_, '_> {
                 let origin = self.w.targets.get(entity).map_or(h.point1, |t| t.transform.translation);
                 let to = (origin - self.eye).normalize_or_zero();
                 if to.dot(forward) >= swing.facing_cos {
-                    hit = Some(Hit {
+                    let boxed = Hit {
                         entity,
                         collider: h.entity,
                         point: h.point1,
@@ -694,6 +754,10 @@ impl Shot<'_, '_, '_> {
                         normal: -h.normal1,
                         group: None,
                         box_exit: None,
+                    };
+                    hit = Some(match swing.refine {
+                        true => self.refine(dir, h.distance, half).unwrap_or(boxed),
+                        false => boxed,
                     });
                 }
             }
@@ -759,10 +823,36 @@ impl Shot<'_, '_, '_> {
                 hit.dir,
                 swing.kind,
                 false,
-                Vec3::ZERO,
+                // A character's death carries the swing's push (HL2:DM's
+                // dropped weapon and ragdoll, weapons.md 9, 11); props
+                // take theirs by `push` alone.
+                if alive { hit.dir * swing.force } else { Vec3::ZERO },
             );
         }
         true
+    }
+
+    /// A melee box hit `distance` along `dir` refined (`Swing::refine`):
+    /// a line to twice the distance, else lines to the 8 corners of a box
+    /// of half size `half` at that end, the nearest hit; None: all missed.
+    fn refine(&self, dir: Dir3, distance: f32, half: f32) -> Option<Hit> {
+        let reach = distance * 2.0;
+        if let Some(h) = self.trace(dir, 0.0, reach, &[], 0.0) {
+            return Some(Hit { dir: *dir, ..h });
+        }
+        let end = self.eye + *dir * reach;
+        let mut best: Option<Hit> = None;
+        for corner in 0..8 {
+            let sign = |bit: u32| if corner & bit == 0 { -1.0 } else { 1.0 };
+            let to = end + Vec3::new(sign(1), sign(2), sign(4)) * half - self.eye;
+            let Ok(d) = Dir3::new(to) else { continue };
+            if let Some(h) = self.trace(d, 0.0, to.length(), &[], 0.0)
+                && best.as_ref().is_none_or(|b| h.distance < b.distance)
+            {
+                best = Some(Hit { dir: *dir, ..h });
+            }
+        }
+        best
     }
 }
 

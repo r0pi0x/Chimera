@@ -12,9 +12,11 @@
 //!   60 s), `mp_readyrestart 1` (wait for every player to say
 //!   `mp_ready_signal`, then restart 5 s later); the restart (`restart`).
 //! - `timeleft`.
+//! - Chat's log lines (`log_says`, "Server log lines"): `say`, and
+//!   `say_team` only in TDM (measured: a DM player's writes none).
 
 use bevy::prelude::*;
-use chimera_core::game_log::{EventValue, GameEvent};
+use chimera_core::game_log::{EventValue, GameEvent, Said};
 
 use super::{
     DEFAULT_CYCLE, Hl2Match, Hl2Player, Hl2Rules, READY_RESTART_DELAY, RESPAWN_MIN_DEAD, RESTART_MAX, RULES_PERIOD, SPECTATOR,
@@ -261,6 +263,24 @@ pub(super) fn hear_says(mut events: MessageReader<GameEvent>, mut commands: Comm
     }
 }
 
+/// Chat lines' log lines (rules.md "Server log lines"; measured
+/// 2026-11-04, probe round 4): `"<player>" say "text"`, and `say_team`
+/// only in TDM (a DM player's `say_team` reaches only itself and writes no
+/// line).
+pub(super) fn log_says(mut said: MessageReader<Said>, mut commands: Commands) {
+    for s in said.read() {
+        let s = s.clone();
+        commands.queue(move |w: &mut World| {
+            if s.team_only && !w.resource::<Hl2Match>().teamplay {
+                return;
+            }
+            let who = super::deaths::subject(w, s.from);
+            let verb = if s.team_only { "say_team" } else { "say" };
+            crate::rules::log_text(w, format!("{who} {verb} \"{}\"", s.text));
+        });
+    }
+}
+
 /// Minutes and whole seconds left (None: no limit, or the last second).
 pub fn time_left(world: &World) -> Option<(i64, i64)> {
     let minutes = world.resource::<Hl2Rules>().timelimit.max(0.0).trunc() as f64;
@@ -281,7 +301,7 @@ pub(super) fn commands(app: &mut App) {
     });
     app.add_systems(
         FixedUpdate,
-        hear_says
+        (hear_says, log_says)
             .run_if(super::rules_on)
             .run_if(crate::core::authoritative)
             .in_set(crate::core::SimSet::Rules),

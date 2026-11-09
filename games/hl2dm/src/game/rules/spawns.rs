@@ -5,7 +5,9 @@
 //! `info_player_start` when the class has none), chosen by the ring walk
 //! (`first_candidate`, `choose`), the telefrag when every spot is taken,
 //! and the spawn: 1 unit above the spot, its angles, still, the suit and
-//! the loadout fresh.
+//! the loadout fresh. Every other player takes a spot, dead or a spectator
+//! (measured, rules.md P10); the telefrag kills the living whose box
+//! reaches within the fallback radius of the first candidate (P9).
 
 use avian3d::prelude::ColliderDisabled;
 use bevy::prelude::*;
@@ -126,8 +128,11 @@ pub fn spawn(world: &mut World, e: Entity) {
         let n = 1 + world.resource_mut::<Hl2Match>().roll(5) as usize;
         let last = world.resource::<Hl2Match>().last_spot[class];
         let first = first_candidate(spots.len(), last, n);
+        // Every other player occupies a spot, dead or a spectator
+        // (measured, rules.md P10: a bot's body and a spectating bot on a
+        // spot each made it taken); the telefrag hurts only the living.
         let others: Vec<(Entity, (Vec3, Vec3))> = world
-            .query_filtered::<(Entity, &Transform, Option<&MovementState>), (With<Hl2Player>, Without<Spectating>)>()
+            .query_filtered::<(Entity, &Transform, Option<&MovementState>), With<Hl2Player>>()
             .iter(world)
             .filter(|(o, ..)| *o != e)
             .map(|(o, t, s)| (o, bounds(t, s)))
@@ -148,14 +153,14 @@ pub fn spawn(world: &mut World, e: Entity) {
     place(world, e, at);
 }
 
-/// Every other player whose origin is within the fallback radius of
-/// `origin` takes 300 generic damage from the world.
+/// Every other player whose box reaches within the fallback radius of
+/// `origin` takes 300 generic damage from the world (measured, rules.md
+/// P9: a bot 62 units from the spot, its box 46 away, died; one 66 away,
+/// 50, lived).
 fn telefrag(world: &mut World, e: Entity, origin: Vec3, others: &[(Entity, (Vec3, Vec3))]) {
     let radius = world.resource::<Hl2Rules>().frag_fallback_radius;
-    for (o, (lo, hi)) in others {
-        // Its origin: the feet, the box's bottom centre.
-        let feet = Vec3::new((lo.x + hi.x) / 2.0, (lo.y + hi.y) / 2.0, lo.z);
-        if feet.distance(origin) > radius || *o == e {
+    for (o, b) in others {
+        if to_box(origin, *b) > radius || *o == e || world.get::<Dead>(*o).is_some() || world.get::<Spectating>(*o).is_some() {
             continue;
         }
         world.write_message(Damage {

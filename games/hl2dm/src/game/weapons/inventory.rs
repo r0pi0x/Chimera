@@ -37,13 +37,26 @@
 //!   the weapon in hand (melee weapons never: `undroppable`), touching a
 //!   weapon of a kind carried takes its rounds and removes it.
 //!
-//! Known shortcuts: `cl_defaultweapon` isn't read (the gravity gun ends
-//! in hand as with the default); a dropped weapon falls
-//! where its owner died (the death force and the 400 in/s cap, the spin,
-//! aren't modelled); `mp_weaponstay` and the placed weapons' 20 s respawn
+//! - **`cl_defaultweapon`** (`hl2dm:cl_defaultweapon`, userinfo; default
+//!   `weapon_physcannon`): the spawn's last switch is to the owned weapon
+//!   it names (`default_weapon`), else the gravity gun stays.
+//! - **Selectable** (`mark_unselectable`): a weapon with none of its ammo
+//!   (clip, reserve, its own rounds) is `weapon::Unselectable`, so every
+//!   switch to it is refused: `lastinv` and `phys_swap`'s too (weapons.md
+//!   1); `lastinv` is the shared one (the weapon in hand before the last
+//!   switch), `phys_swap` `physcannon::phys_swap` (a forced drop and
+//!   `lastinv` with the gun in hand, else the gun).
+//! - **The dead's weapon** (`DEATH_PUSH`, `weapon::drop::DeathPush`): from
+//!   12 units under the eye facing their yaw, at the killing hit's force
+//!   over 85 kg, at most 400 in/s, spinning 200 a world axis.
+//!
+//! Known shortcuts: the dead's weapon flies by the killing hit's force,
+//! not the sum of the tick's (a shotgun kill's is one pellet's), and its
+//! spin's (200, 200, 200) is read as degrees per second on world axes (the
+//! spec gives no unit); `mp_weaponstay` and the placed weapons' 20 s respawn
 //! are M7's (placed weapons are put back at a round restart, Chimera's
-//! rule); the selection commands (`hud_fastswitch`, `phys_swap`) are the
-//! shell's slot keys and `lastinv` (M9's HUD); the ammo pickup switch
+//! rule); a selection of the weapon in hand doesn't redeploy a hidden one;
+//! the ammo pickup switch
 //! (section 2, "Switch on ammo pickup") and the "ammo denied" notice wait
 //! for ammo items (M7).
 
@@ -51,13 +64,22 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use chimera_sim::weapon::{
-    Inventory, Magazine, Melee, NetPart, Weapon, WeaponState,
+    Inventory, Magazine, Melee, NetPart, Unselectable, Weapon, WeaponEvent, WeaponEventKind, WeaponState,
     drop::{Loose, PickedUp},
     equip::MapWeapon,
     spawn_weapon,
 };
 
 use crate::core::{Died, Health, Intent, SimClock};
+
+/// HL2:DM's dead drop their weapon by the killing hit (weapons.md 9,
+/// constants: 85 kg, 400 in/s, a (200, 200, 200) spin read as degrees per
+/// second).
+pub const DEATH_PUSH: chimera_sim::weapon::drop::DeathPush = chimera_sim::weapon::drop::DeathPush {
+    mass: 85.0,
+    cap: 400.0 * 0.0254,
+    spin: Vec3::splat(200.0 * std::f32::consts::PI / 180.0),
+};
 
 /// `sk_auto_reload_time`: seconds holstered before a clip tops up.
 pub const AUTO_RELOAD_TIME: f64 = 3.0;
@@ -276,6 +298,74 @@ fn arm_one(world: &mut World, e: Entity, kind: Option<ModelKind>) {
         inv.last = smg1;
     }
     world.entity_mut(e).insert(pools);
+    default_weapon(world, e, &weapons, smg1);
+}
+
+/// The userinfo key of `hl2dm:cl_defaultweapon`.
+pub const DEFAULT_WEAPON_KEY: &str = "cl_defaultweapon";
+/// Its default: the gravity gun.
+pub const DEFAULT_WEAPON: &str = "weapon_physcannon";
+
+/// `hl2dm:cl_defaultweapon` (weapons.md 3, step 5): the weapon in hand
+/// after the spawn's switches, by class name.
+#[derive(Resource, Clone, Debug)]
+pub struct DefaultWeaponSetting(pub String);
+
+impl Default for DefaultWeaponSetting {
+    fn default() -> Self {
+        Self(DEFAULT_WEAPON.into())
+    }
+}
+
+/// The spawn's last switch (weapons.md 3, step 5): to the owned weapon
+/// named by the player's `cl_defaultweapon` (its userinfo; the gravity gun
+/// when unset or not owned). The giving drew the gravity gun this tick
+/// after the switches by weight ended on the SMG1, the last weapon; a
+/// named weapon other than the gravity gun is drawn in its place this same
+/// tick, the weapon the chain ended on the last one (the pistol when the
+/// SMG1 is named: no switch to the weapon in hand).
+fn default_weapon(world: &mut World, e: Entity, weapons: &[Entity], smg1: Option<Entity>) {
+    let named = world
+        .get::<crate::core::UserInfo>(e)
+        .and_then(|u| u.0.get(DEFAULT_WEAPON_KEY).cloned())
+        .unwrap_or_else(|| DEFAULT_WEAPON.into())
+        .to_lowercase();
+    let class = |w: Entity| world.get::<Weapon>(w).map(|x| crate::game::scripts::class_of(x.id).to_string());
+    let Some(target) = weapons.iter().copied().find(|w| class(*w).as_deref() == Some(named.as_str())) else {
+        return;
+    };
+    let Some(inv) = world.get::<Inventory>(e) else { return };
+    let Some(active) = inv.active else { return };
+    if active == target || world.get::<super::physcannon::Hl2Physcannon>(target).is_some() {
+        return;
+    }
+    // Only the gravity gun the giving drew is put back.
+    if world.get::<super::physcannon::Hl2Physcannon>(active).is_none() {
+        return;
+    }
+    let pistol = weapons.iter().copied().find(|w| world.get::<Weapon>(*w).is_some_and(|x| x.id == super::PISTOL));
+    let last = if Some(target) == smg1 { pistol } else { smg1 };
+    let Some(draw) = world.get::<Weapon>(target).map(|w| w.draw_time as f64) else { return };
+    // The gravity gun's deploy started when the giving drew it.
+    let deployed = world
+        .get::<Weapon>(active)
+        .map_or(world.resource::<SimClock>().now, |g| inv.next_attack - g.draw_time as f64);
+    let ready = deployed + draw;
+    if let Some(mut inv) = world.get_mut::<Inventory>(e) {
+        inv.active = Some(target);
+        inv.last = last;
+        inv.next_attack = ready;
+    }
+    if let Some(mut st) = world.get_mut::<WeaponState>(target) {
+        st.next_primary = ready;
+        st.next_secondary = ready;
+    }
+    world.write_message(WeaponEvent {
+        owner: e,
+        weapon: target,
+        kind: WeaponEventKind::Deployed,
+        replay: false,
+    });
 }
 
 /// A death ends the life's loadout (the next spawn arms again).
@@ -327,6 +417,35 @@ pub fn loose_ammo(
 /// Whether a weapon has any ammo (melee weapons always do).
 fn has_ammo(mag: Option<&Magazine>) -> bool {
     mag.is_none_or(|m| m.clip > 0 || m.reserve > 0)
+}
+
+/// Whether a weapon can be selected (weapons.md 1): it uses no ammo type,
+/// or has any of its clip, its reserve, its own rounds (`Hl2Rounds`: the
+/// SMG1's grenades and the AR2's balls beside a clip, a frag's or a
+/// S.L.A.M.'s count). No HL2:DM script sets "select when empty".
+pub fn selectable(mag: Option<&Magazine>, rounds: Option<&super::launch::Hl2Rounds>) -> bool {
+    match (mag, rounds) {
+        (None, None) => true,
+        _ => mag.is_some_and(|m| m.clip > 0 || m.reserve > 0) || rounds.is_some_and(|r| r.count > 0),
+    }
+}
+
+/// HL2:DM's weapons with none of their ammo are `weapon::Unselectable`
+/// (refused by every switch: slot keys, `lastinv`, `phys_swap`'s), the
+/// rest not; predicted, before the selection.
+#[allow(clippy::type_complexity)]
+pub fn mark_unselectable(
+    weapons: Query<(Entity, Option<&Magazine>, Option<&super::launch::Hl2Rounds>, Has<Unselectable>), With<Hl2Item>>,
+    mut commands: Commands,
+) {
+    for (e, mag, rounds, marked) in &weapons {
+        let ok = selectable(mag, rounds);
+        if ok && marked {
+            commands.entity(e).remove::<Unselectable>();
+        } else if !ok && !marked {
+            commands.entity(e).insert(Unselectable);
+        }
+    }
 }
 
 /// The next best weapon for `inv` (weapons.md 2): None when the one in

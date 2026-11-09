@@ -18,7 +18,10 @@
 //! kinematic collider stops them when they move into the player, at any mass),
 //! a light prop pushed into a heavy one can still shove it, there is no 50 in/s
 //! push speed limit and the not-touching velocity target (step 5) is ignored;
-//! the shadow has no gravity and doesn't weigh on a prop stood on; only a move
+//! the shadow has no gravity and doesn't weigh on a prop stood on; a shadow
+//! pushed down below where it was sent (a prop landing on the player's head:
+//! it has no floor under it) is put back up instead of driven, so the prop
+//! isn't thrown off the head (HL2:DM measured: the crate stays on it); only a move
 //! of more than 24 units (a teleport, a respawn) or a duck/unduck puts the
 //! shadow in place, smaller step-ups drive it there; "stepped up" is a rise of
 //! more than 0.1 units in the tick (slopes count); the touch flag counts only
@@ -205,6 +208,10 @@ fn shadow_collider(height: f32) -> Collider {
 #[derive(Component, Clone, Copy, Debug)]
 struct ShadowBox(f32);
 
+/// Where the shadow was last sent (engine centre; None: not yet).
+#[derive(Component, Clone, Copy, Debug, Default)]
+struct ShadowAim(Option<Vec3>);
+
 /// Give every Source player a shadow; remove the shadows of players gone
 /// or no longer moving the Source way.
 fn attach(
@@ -232,6 +239,7 @@ fn attach(
                 Name::new("Physics shadow"),
                 PhysicsShadow { owner, active: false },
                 ShadowBox(height),
+                ShadowAim::default(),
                 Transform::from_translation(centre),
                 RigidBody::Dynamic,
                 shadow_collider(height),
@@ -274,6 +282,7 @@ fn drive(
         (
             &mut PhysicsShadow,
             &mut ShadowBox,
+            &mut ShadowAim,
             &mut Position,
             &mut Transform,
             &mut LinearVelocity,
@@ -286,7 +295,7 @@ fn drive(
 ) {
     let dt = time.delta_secs();
     for (t, me, touch, shadowed, health, controls, slot) in &owners {
-        let Ok((mut s, mut size, mut pos, mut st, mut v)) = shadows.get_mut(shadowed.0) else {
+        let Ok((mut s, mut size, mut aim, mut pos, mut st, mut v)) = shadows.get_mut(shadowed.0) else {
             continue;
         };
         // A parented player (riding a kart) touches nothing either.
@@ -310,7 +319,19 @@ fn drive(
         }
         if !alive || dt <= 0.0 {
             v.0 = Vec3::ZERO;
+            aim.0 = None;
             continue;
+        }
+        // A prop that landed on the player pushed the shadow down below
+        // where it was sent (it has no floor under it): it is put back up
+        // instead of driven, which would throw the prop off the head (a
+        // 100 kg crate landing at 780 in/s rose 30 units and landed again
+        // 0.7 s later; the real one stays on the head, gravity_gun.md 12).
+        if let Some(a) = aim.0
+            && pos.0.y < a.y
+        {
+            pos.0.y = a.y;
+            st.translation.y = a.y;
         }
         if resized || pos.0.distance(centre) > TELEPORT * METERS_PER_UNIT {
             pos.0 = centre;
@@ -319,6 +340,7 @@ fn drive(
         } else {
             v.0 = (centre - pos.0) / dt;
         }
+        aim.0 = Some(centre);
     }
 }
 

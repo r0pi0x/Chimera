@@ -16,10 +16,17 @@
 //! (`to_view`, `from_view`). The punch is HL2:DM's to decay only while
 //! an HL2:DM weapon is in hand (`weapon::impact::RecoilGame`).
 //!
+//! The .357's nudge (`Hl2Kick::nudge`, weapons.md 7.2): on the machine
+//! that plays the shooter (`LocalPlayer`; a dedicated server has none),
+//! the first time a shot is predicted, its real view angles turn by a whole
+//! -1, 0 or +1 degree in pitch and in yaw (`nudge_view`; applied to the
+//! local `Intent` in the frame, `apply_view_nudge`, so the next command
+//! carries it): a lasting turn of the aim, not a punch.
+//!
 //! Known shortcuts: the randoms are Chimera's generator seeded per command
 //! and use (weapons.md Q4: the ranges and seeding, not the game's
-//! numbers); the .357's client-only nudge of the real view angles isn't
-//! done.
+//! numbers); the nudge's numbers don't shift the client's punch yaw as the
+//! game's extra draws do (its punch is the server's here too).
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -29,7 +36,7 @@ use chimera_sim::weapon::{
     random::{Rng, shared_random, shot_seed},
 };
 
-use crate::core::{Intent, SimClock};
+use crate::core::{Intent, LocalPlayer, SimClock};
 
 /// Source's punch spring (shared with CS:S: weapons.md constants).
 pub const DAMPING: f32 = 9.0;
@@ -64,6 +71,11 @@ pub struct Hl2Kick {
     pub alt_pitch: Option<[f32; 2]>,
     #[serde(default)]
     pub alt_yaw: Option<[f32; 2]>,
+    /// The shooter's own machine turns its real view by a whole -1, 0 or
+    /// +1 degree in pitch and in yaw on each shot (the .357, weapons.md
+    /// 7.2: `nudge_view`).
+    #[serde(default)]
+    pub nudge: bool,
 }
 
 /// `hl2dm:machine_gun`: the kick per call with `max` degrees of extra
@@ -211,6 +223,47 @@ pub fn kick(
                 commands.entity(e.owner).insert(Hl2Punch { velocity: v });
             }
         }
+    }
+}
+
+/// The local player's view turn still to apply (Source degrees: pitch
+/// down, yaw left), from `nudge_view`.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct ViewNudge(pub Vec2);
+
+/// After the kicks: each shot of a nudging weapon (`Hl2Kick::nudge`) by
+/// the local player, the first time it is predicted, turns its view by a
+/// whole -1, 0 or +1 degree in pitch and in yaw.
+pub fn nudge_view(
+    mut events: MessageReader<WeaponEvent>,
+    weapons: Query<&Hl2Kick>,
+    owners: Query<&Intent, With<LocalPlayer>>,
+    mut nudge: ResMut<ViewNudge>,
+) {
+    for e in events.read() {
+        if e.replay || !matches!(e.kind, WeaponEventKind::Fired { .. }) {
+            continue;
+        }
+        if !weapons.get(e.weapon).is_ok_and(|k| k.nudge) {
+            continue;
+        }
+        let Ok(intent) = owners.get(e.owner) else { continue };
+        let mut dice = shared_random(intent.command, "hl2dm:view_nudge", 0);
+        let mut whole = || (dice.next() * 3.0).floor().min(2.0) - 1.0;
+        let (pitch, yaw) = (whole(), whole());
+        nudge.0 += Vec2::new(pitch, yaw);
+    }
+}
+
+/// In the frame: the pending nudge turns the local player's view.
+pub fn apply_view_nudge(mut nudge: ResMut<ViewNudge>, mut player: Query<&mut Intent, With<LocalPlayer>>) {
+    if nudge.0 == Vec2::ZERO {
+        return;
+    }
+    let turn = std::mem::take(&mut nudge.0);
+    for mut i in &mut player {
+        i.pitch = (i.pitch - turn.x.to_radians()).clamp(-89f32.to_radians(), 89f32.to_radians());
+        i.yaw = (i.yaw + turn.y.to_radians()).rem_euclid(std::f32::consts::TAU);
     }
 }
 

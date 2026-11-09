@@ -65,6 +65,9 @@
 //   probe_info: every living player's position and angles.
 //   probe_score: every player's team, frags, deaths and life state, and
 //     each team's score.
+//   probe_clientcvar <client> <cvar> <value>: set a fake client's
+//     client cvar (its userinfo, e.g. cl_playermodel).
+//   probe_model: every player's model.
 
 #include <sourcemod>
 #include <sdktools>
@@ -74,7 +77,7 @@ public Plugin myinfo = {
     name = "chimera probe (HL2:DM)",
     author = "chimera",
     description = "Replays per-tick inputs on a bot and logs its movement, suit, weapon and nearby entities",
-    version = "3",
+    version = "4",
 };
 
 #define MAX_TICKS 16384
@@ -136,6 +139,8 @@ public void OnPluginStart()
     RegServerCmd("probe_fire", Command_Fire, "probe_fire <index> <input> [value]");
     RegServerCmd("probe_info", Command_Info, "probe_info: living players' positions and angles");
     RegServerCmd("probe_score", Command_Score, "probe_score: players' teams, frags, deaths; team scores");
+    RegServerCmd("probe_clientcvar", Command_ClientCvar, "probe_clientcvar <client> <cvar> <value>");
+    RegServerCmd("probe_model", Command_Model, "probe_model: every player's model");
     for (int i = 1; i <= MaxClients; i++) {
         if (IsClientInGame(i)) {
             OnClientPutInServer(i);
@@ -210,6 +215,9 @@ void Track(int entity)
 {
     if (!Tracked(entity) && g_trackCount < MAX_TRACK) {
         g_track[g_trackCount++] = entity;
+        // Once per entity: tracking it again after a clear (a player is
+        // hooked already) must not log its hits twice.
+        SDKUnhook(entity, SDKHook_OnTakeDamagePost, DamagePost);
         SDKHook(entity, SDKHook_OnTakeDamagePost, DamagePost);
     }
 }
@@ -880,6 +888,32 @@ public Action Command_Score(int args)
     int t = -1;
     while ((t = FindEntityByClassname(t, "team_manager")) != -1) {
         PrintToServer("team %d score %d", GetEntProp(t, Prop_Send, "m_iTeamNum"), GetEntProp(t, Prop_Send, "m_iScore"));
+    }
+    return Plugin_Handled;
+}
+
+public Action Command_ClientCvar(int args)
+{
+    int c = GetCmdArgInt(1);
+    char name[64];
+    char value[256];
+    GetCmdArg(2, name, sizeof(name));
+    GetCmdArg(3, value, sizeof(value));
+    if (c > 0 && c <= MaxClients && IsClientInGame(c) && IsFakeClient(c)) {
+        SetFakeClientConVar(c, name, value);
+        PrintToServer("probe: %d %s = %s", c, name, value);
+    }
+    return Plugin_Handled;
+}
+
+public Action Command_Model(int args)
+{
+    char model[PLATFORM_MAX_PATH];
+    for (int i = 1; i <= MaxClients; i++) {
+        if (IsClientInGame(i)) {
+            GetClientModel(i, model, sizeof(model));
+            PrintToServer("player %d team %d model %s", i, GetClientTeam(i), model);
+        }
     }
     return Plugin_Handled;
 }

@@ -46,6 +46,8 @@ struct Crate {
     flags: u32,
     /// Its rotational inertia (engine axes, kg m²); None: a solid box's.
     inertia: Option<Vec3>,
+    /// A `prop_physics_multiplayer` (mode 1, solid) instead.
+    multiplayer: bool,
 }
 
 impl Crate {
@@ -56,6 +58,7 @@ impl Crate {
             mass: 30.0,
             flags: 0,
             inertia: None,
+            multiplayer: false,
         }
     }
     fn mass(self, mass: f32) -> Self {
@@ -95,7 +98,10 @@ fn add_crate(data: &mut MapData, c: Crate) {
     }
     data.entities.push(MapEntity {
         keyvalues: vec![
-            ("classname".into(), "prop_physics".into()),
+            (
+                "classname".into(),
+                if c.multiplayer { "prop_physics_multiplayer" } else { "prop_physics" }.into(),
+            ),
             ("origin".into(), format!("{} {} {}", centre.x, centre.y, centre.z)),
             ("spawnflags".into(), c.flags.to_string()),
         ],
@@ -135,7 +141,7 @@ fn add_crate(data: &mut MapData, c: Crate) {
             damping: 0.0,
             rotdamping: 0.0,
             inertia: c.inertia,
-            push: PushAway::Collide,
+            push: if c.multiplayer { PushAway::Solid } else { PushAway::Collide },
             frozen: c.flags & 8 != 0,
             asleep: false,
         }),
@@ -548,6 +554,40 @@ fn a_far_crate_is_pulled() {
     assert!(w.velocity(0).x < -200.0, "toward the player");
 }
 
+/// P8 (probe, 2026-11-04, `cases.py pulls`): secondary held at the 30 kg
+/// wood crate (40 units) resting on the floor 600 ahead (looking 4.2
+/// down) tugs it every 7 ticks; its floor speed by tick (the steps) on the
+/// real server, from the first tug: 75.7, 72.0, 66.2, 62.4, 57.3, 51.9,
+/// 46.6, then 121.8 ... 92.5, 167.5 ... 137.3, 212.0: each tug + 81.3 less
+/// a tick of the floor's friction (about 5.5 in/s a tick, 0.6 g).
+#[test]
+fn a_crate_pulled_from_600_as_the_probe_measured() {
+    let s = 40.4 * 0.0254;
+    let mut c = Crate::ahead(600.0).at(Vec3::new(600.0, 0.0, 20.4 - EYE));
+    c.half = Vec3::splat(20.2);
+    c.inertia = Some(Vec3::splat(0.714 * 30.0 * s * s / 6.0));
+    let mut w = world(&[c]);
+    look(&mut w.sim, w.p, EAST, -4.2);
+    w.sim.seconds(0.5);
+    let mut steps = Vec::new();
+    let mut last = w.at(0);
+    for _ in 0..23 {
+        w.sim.intent(w.p).secondary = true;
+        w.sim.ticks(1);
+        let at = w.at(0);
+        steps.push(((at - last).truncate().length() / 0.015 * 10.0).round() / 10.0);
+        last = at;
+    }
+    eprintln!("pulled: {steps:?}");
+    let want = [
+        75.7, 72.0, 66.2, 62.4, 57.3, 51.9, 46.6, 121.8, 118.9, 114.6, 109.0, 103.5, 98.0, 92.5, 167.5, 164.4, 160.0,
+        154.2, 148.6, 142.9, 137.3, 212.0, 208.6,
+    ];
+    let off: Vec<(usize, f32, f32)> =
+        steps.iter().zip(want).enumerate().filter(|(_, (a, b))| (*a - b).abs() > 6.0).map(|(k, (a, b))| (k, *a, b)).collect();
+    assert!(off.is_empty(), "(tick, ours, real) off by more than 6 in/s: {off:?}");
+}
+
 /// Case 13: a 300 kg crate: TooHeavy once a press, nothing moved.
 #[test]
 fn too_heavy_once_a_press() {
@@ -835,9 +875,11 @@ fn ones_own_prop_hurts_later() {
 }
 
 /// A crate falling onto a standing player's head: the crush hits it
-/// takes on the landing's tick (health points, in order), the crate placed with its bottom
-/// `gap` above the head moving down at `speed` (Source units/s).
-fn drop_on_head(mass: f32, speed: f32, gap: f32) -> Vec<i32> {
+/// takes on the landing's tick (health points, in order) and how many come
+/// later within 0.9 s, the crate placed with its bottom `gap` above the
+/// head moving down at `speed` (Source units/s), and its bottom's height
+/// over the head at the end.
+fn drop_on_head(mass: f32, speed: f32, gap: f32) -> (Vec<i32>, usize, f32) {
     // Out of the way on its pillar until it is dropped.
     let mut w = world(&[Crate::ahead(300.0).mass(mass)]);
     w.sim.app.world_mut().get_mut::<Health>(w.p).unwrap().current = 50.0;
@@ -863,7 +905,9 @@ fn drop_on_head(mass: f32, speed: f32, gap: f32) -> Vec<i32> {
     }
     eprintln!("{mass} kg at {speed}: {hits:?}");
     let first = hits.first().map(|h| h.0);
-    hits.into_iter().filter(|h| Some(h.0) == first).map(|h| h.1).collect()
+    let later = hits.iter().filter(|h| Some(h.0) != first).count();
+    let bottom = to_source(w.sim.position(n)).z - 10.0 - head;
+    (hits.into_iter().filter(|h| Some(h.0) == first).map(|h| h.1).collect(), later, bottom)
 }
 
 /// P10 (probe, 2026-11-04, `cases.py drops`): crates let fall onto a
@@ -872,7 +916,10 @@ fn drop_on_head(mass: f32, speed: f32, gap: f32) -> Vec<i32> {
 /// head (its last free tick's step; its bottom that far above the head
 /// then): 30 kg at 284, 389, 524 and 663: 5 + 10, 5 + 10, 10 + 20,
 /// 10 + 50; 10 kg at 420: one 10; 100 kg at 572 and 780: 20 + 100,
-/// 100 + 500; 250 kg at 582: 100 + 500.
+/// 100 + 500; 250 kg at 582: 100 + 500. The heavy crates stay on the head
+/// (round 3: no second landing within 1.5 s; ours, before the shadow was
+/// put back up instead of driven, threw them 30 units up to land again
+/// 0.7 s on for 5 + 10).
 #[test]
 fn a_crate_falling_on_a_head_hurts_as_the_probe_measured() {
     let mut wrong = Vec::new();
@@ -886,9 +933,72 @@ fn a_crate_falling_on_a_head_hurts_as_the_probe_measured() {
         (100.0, 780.0, 14.6, vec![100, 500]),
         (250.0, 582.0, 12.6, vec![100, 500]),
     ] {
-        let hits = drop_on_head(mass, speed, gap);
+        let (hits, later, bottom) = drop_on_head(mass, speed, gap);
         if hits != want {
             wrong.push(format!("{mass} kg at {speed} in/s: {hits:?}, not {want:?}"));
+        }
+        if mass >= 100.0 && (later > 0 || !(-12.0..1.0).contains(&bottom)) {
+            wrong.push(format!("{mass} kg at {speed} in/s: {later} later hits, its bottom {bottom} over the head"));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
+/// A wood crate (40 units, `mass` kg) hanging motion-disabled at eye
+/// height 50 ahead, punted level into a standing player `dist` ahead (5000
+/// health): the crush hits that player takes on the hit's tick (health
+/// points, in order), and all of them (tick, amount).
+fn punt_into(mass: f32, dist: f32, multiplayer: bool) -> (Vec<i32>, Vec<(u64, i32)>) {
+    let s = 40.4 * 0.0254;
+    let mut c = Crate::ahead(50.0).mass(mass).flags(72);
+    c.multiplayer = multiplayer;
+    c.half = Vec3::splat(20.2);
+    c.inertia = Some(Vec3::splat(0.714 * mass * s * s / 6.0));
+    let mut w = world(&[c]);
+    let b = w.sim.spawn_character(to_engine(FEET + Vec3::new(dist, 0.0, 36.0)), movement::ID);
+    w.sim.app.world_mut().get_mut::<Health>(b).unwrap().current = 50.0;
+    w.sim.ticks(30);
+    let mut cursor = w.sim.app.world().resource::<Messages<Damage>>().get_cursor_current();
+    let mut hits = Vec::new();
+    for k in 0..60 {
+        w.sim.intent(w.p).fire = k == 0;
+        w.sim.ticks(1);
+        let world = w.sim.app.world();
+        for d in cursor.read(world.resource::<Messages<Damage>>()) {
+            if d.target == b && d.kind == DamageKind::Crush {
+                hits.push((w.tick(), (d.amount * 100.0).round() as i32));
+            }
+        }
+    }
+    eprintln!("{mass} kg punted into a player: {hits:?}");
+    let first = hits.first().map(|h| h.0);
+    (hits.iter().filter(|h| Some(h.0) == first).map(|h| h.1).collect(), hits)
+}
+
+/// P10's punts (probe, 2026-11-04, `cases.py crate_hits`): a 40-unit
+/// crate hanging at eye height punted level into a standing bot 150
+/// ahead of it hurts it as two or three contacts on the hit's tick: 10 kg
+/// (at 1500 in/s): 20 + 10; 30 kg (1000): 20 + 10 + 5; 100 kg (730):
+/// 50 + 10 + 10; 250 kg (650): 100 + 5 + 10; and the 30 kg crate with the
+/// bot 50 ahead of it (at 1100): 50 + 10 + 5. The speeds come from the
+/// punt (`a_punt_sends_a_crate_at_1100`) less the air's drag. P14: a
+/// `prop_physics_multiplayer` crate hurts the same (30 kg: 20 + 10 + 5,
+/// 100 kg: 50 + 10 + 10; Corrections 1).
+#[test]
+fn a_crate_punted_into_a_player_hurts_as_the_probe_measured() {
+    let mut wrong = Vec::new();
+    for (mass, dist, multiplayer, want) in [
+        (10.0, 200.0, false, vec![20, 10]),
+        (30.0, 200.0, false, vec![20, 10, 5]),
+        (100.0, 200.0, false, vec![50, 10, 10]),
+        (250.0, 200.0, false, vec![100, 5, 10]),
+        (30.0, 100.0, false, vec![50, 10, 5]),
+        (30.0, 200.0, true, vec![20, 10, 5]),
+        (100.0, 200.0, true, vec![50, 10, 10]),
+    ] {
+        let (hits, _) = punt_into(mass, dist, multiplayer);
+        if hits != want {
+            wrong.push(format!("{mass} kg (multiplayer {multiplayer}) into a player {dist} ahead: {hits:?}, not {want:?}"));
         }
     }
     assert!(wrong.is_empty(), "{wrong:#?}");
@@ -1015,6 +1125,30 @@ fn a_carried_crate_dropped_while_touching_stops_dead() {
     assert!(clear.length() > 60.0, "in the air: {clear}");
 }
 
+/// P15 (probe, 2026-11-04, `cases.py break_input`): the `Break` input on a
+/// `prop_physics` (a 30-health wood crate) leaves it where it was, drawn,
+/// non-solid and taking no damage (Corrections 2: only lethal damage
+/// removes a prop in HL2:DM).
+#[test]
+fn the_break_input_leaves_the_prop() {
+    let mut w = world(&[Crate::ahead(100.0).at(Vec3::new(100.0, 0.0, 10.0 - EYE))]);
+    let n = w.node(0);
+    let before = w.at(0);
+    {
+        let mut logic = w.sim.app.world_mut().resource_mut::<source_logic::logic::Logic>();
+        let id = logic.world.by_map_index(0).expect("the crate's logic entity");
+        logic.world.queue_direct(id, "Break", source_logic::logic::Value::Void, 0.0, None);
+    }
+    w.sim.ticks(10);
+    let world = w.sim.app.world();
+    let logic = world.resource::<source_logic::logic::Logic>();
+    let id = logic.world.by_map_index(0).expect("still there");
+    let p = logic.world.prop(id).expect("still a prop");
+    assert!(p.broken && !p.solid, "broken, non-solid");
+    assert!(world.get_entity(n).is_ok(), "its body stays");
+    assert!(w.at(0).distance(before) < 1.0, "where it was");
+}
+
 /// Case 44: a held crate pushed into another player hurts him not.
 #[test]
 fn held_crates_never_hurt() {
@@ -1115,7 +1249,10 @@ fn ball(w: &mut W, ahead: f32) -> (Entity, Entity) {
 }
 
 /// Cases 55, 56: a ball caught becomes the catcher's and stays in the
-/// gun; launched it leaves at 959.2 along the view with 4 s of life.
+/// gun; launched it leaves at 959.2 along the view with 4 s of life, and
+/// at 1500 from its first bounce (P12, probe 2026-11-04, `cases.py
+/// ball_catch`: an AR2 ball caught as it left the catcher's own gun flew
+/// at 959 until it hit a wall, then 1500).
 #[test]
 fn a_caught_ball_is_the_catchers_and_leaves_at_959() {
     use chimera_sim::weapon::projectile::Flyer;

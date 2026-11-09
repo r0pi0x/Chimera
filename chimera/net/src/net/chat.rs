@@ -299,11 +299,17 @@ pub fn deliver_say(world: &mut World, from: Entity, text: &str, team_only: bool)
         .get_resource::<crate::map::radio::RadioCommands>()
         .map(|r| r.say.clone())
         .unwrap_or_default();
-    // A chat line for plugins and rules (`player_say`).
+    // A chat line for plugins and rules (`player_say`), and for the
+    // game's log.
     world.write_message(
         crate::game_log::GameEvent::of("player_say", from)
             .with("text", crate::game_log::EventValue::Str(text.to_string())),
     );
+    world.write_message(crate::game_log::Said {
+        from,
+        text: text.to_string(),
+        team_only,
+    });
     // Remote players, then the host.
     let mut readers: Vec<(ClientId, Entity)> = world
         .query::<(Entity, &Player)>()

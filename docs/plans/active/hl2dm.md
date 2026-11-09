@@ -1644,6 +1644,71 @@ implementing (owner branch) / done.
   on) and `a_carried_crate_dropped_while_touching_stops_dead`. Left: a
   client doesn't predict the pick-up itself (the server picks the prop).
 
+- 2026-11-04: **Hitscan, drop and projectile details** (branch
+  `hl2dm-hitscan`; weapons.md 1, 3, 5, 7.2, 9, 11, 12; projectiles.md 3,
+  4.2, 5.4, 8.5, 9.2). Chimera: `Hitscan::odd_box` (a call's odd bullets,
+  pellets or a tick's catch-up rounds, swept as ±3 boxes; hitboxes grown
+  by it), `Swing::refine` (a box hit re-traced to twice its distance, then
+  its 8 corners), a character's swing `Damage::force`, `lagcomp::
+  RewindChoice` from the data's `[lag_compensation]` with `RewindSpeed`
+  and `Inventory::last_shot` (CS:S has none: its spec 4.6 rewinds every
+  player, unchanged), others drawing an `AltShot` round with its pellets,
+  `drop::DeathPush`, `Unselectable`, `ArmourShare`. HL2:DM: the data sets
+  them; `cl_defaultweapon` (userinfo) picks the spawn's weapon; a weapon
+  with no ammo refuses `lastinv` and `phys_swap` (`lastinv` otherwise
+  matched the spec); the dead's weapon flies by the killing hit / 85 kg,
+  at most 400 in/s, spinning 200 deg/s an axis (unit not in the spec);
+  the .357 nudges the local player's view by a whole -1..1 degree; the
+  shove's size reads the damage before the suit's share; the contact
+  grenade explodes when stopped on a 3-tick check; the ball seeks with a
+  swept box, skipping TDM teammates and the intermission; the frag spins
+  about its own axes (the roll turned (0, yaw, -90): a forward roll, it
+  rolled backwards before); a TDM leaver's satchels go off (DM: they
+  stay, as before). The SMG1 grenade has no team test in the spec, so it
+  has none. Tests: `tests/it/weapon_details.rs` (boxes for the shotgun's
+  odd pellets and a catch-up bullet, the refined swing, the death throw,
+  `cl_defaultweapon` test 3, refused switches, the nudge, the shove on
+  armour, the stopped grenade, the leaver's satchels), `net_effects.rs`
+  (a remote double shot's 12 tracers; whom a shot rewinds, and no rewind
+  for attack2 alone), unit tests (`lagcomp`, the ball's swept box, the
+  frag's spins). Left: the death force is the killing hit's, not the
+  tick's sum; turned hitboxes meet a box as grown on their own axes;
+  other clients draw catch-up rounds as lines; the throw and lob are made
+  unturned (only the roll's orientation is specced).
+- 2026-11-04: **Probe round 4** (branch `hl2dm-probe4`, build 24600426;
+  plugin version 4: `probe_clientcvar`, `probe_model`, a tracked player's
+  hits logged once). `cases.py crate_hits gravity_more log_lines ready
+  spawns_more watcher models`; the numbers in specs/hl2dm/rules.md Open
+  questions 15 and gravity_gun.md 13.
+
+  | Case | Real server | Ours before | Ours now |
+  |---|---|---|---|
+  | crates punted into a bot (P10, P11) | 10 kg 1500: 20+10; 30 kg 1000: 20+10+5, 1100: 50+10+5; 100 kg 730: 50+10+10; 250 kg 650: 100+5+10 | 10+50; 10+50, –; 20+100; 50+500 (the landing's two contacts) | **as measured** (`source_logic` bridge: a side hit, normal within 0.7 of level, is three contacts, `PLAYER_SIDE_SHARES` by mass, mid-band fits; landings keep their two, CS:S's drops unchanged); pinned (`a_crate_punted_into_a_player_hurts_as_the_probe_measured`) |
+  | P14 multiplayer crate punted into a bot | as prop_physics: 20+10+5, 50+10+10 | same rule | same; pinned (same test) |
+  | heavy crate on a head | stays on it | 100 kg at 780 and 250 kg at 582 rose about 30 units and landed again 0.7 s on (5+10): the player's shadow, pushed 5 units down (no floor under it), was driven back up in one step and threw the crate | **stays** (`source_movement::shadow`: a shadow pushed below where it was sent is put back up, not driven); pinned (the drop test: no later hits, its bottom on the head) |
+  | P3 floor punt | 1114 in/s at 51.4°, 1490°/s; first tick (773, 898) | 1098 at 46°, 1670°/s; (773, 728) | unchanged: the solver. Restitution alone moves it (0.5: 52° but 590°/s), friction not at all; no setting gives both. Test unchanged (3 %, 6°) |
+  | P8 pull from 600 | 75.7, 72.0 ... 46.6, 121.8 ... (81.3 a tug every 7 ticks less 5.5 a tick of friction) | – | within 5.3 every tick (81.0 on the first); pinned (`a_crate_pulled_from_600_as_the_probe_measured`) |
+  | P12 caught ball | 959 until the first bounce, then 1500 | same | same (the test's doc names the probe) |
+  | P13 respawnable, no RespawnTime | back 60.08 s on; blocked: 1 s retries | 60 s, 1 s retries | same; pinned (`a_respawnable_prop_without_a_time_comes_back_after_60_s`) |
+  | P15 `Break` on prop_physics | stays: drawn, not solid, no damage | removed with its pieces | **stays** (`KeepPropsOnBreak`, HL2:DM's: any break but lethal damage keeps the prop, broken); pinned (`the_break_input_leaves_the_prop`) |
+  | P7 held against a frozen crate | gap 41.6: drop 57 ticks after the grace (the formula's); 14: never in 333; 11.6: after 266 | the formula | unchanged (the small gaps don't fit the formula with our gap estimate; not settled) |
+  | rules P6 Combine models in turn | prisonguard, super soldier, police, combine_soldier | same (tests 4-6) | same |
+  | rules P9 telefrag | kills at 60 and 62 units from the spot (the box within 48), not at 66 | origin within 48 (60 lived) | **the box within 48**; pinned (`spawn_spots_as_the_probe_measured`) |
+  | rules P10 | a body and a spectator on a spot take it | the body yes, a spectator no | **both**; the telefrag skips them; pinned (same test) |
+  | rules P12 log lines | kill, `say`, suicide, team change as specced; DM `say_team`: no line; TDM's: `say_team` | no chat lines | **chat lines** (`limits::log_says`, from `game_log::Said`, written by `net::chat::deliver_say`); pinned (`the_log_lines_as_the_probe_measured`) |
+  | rules P13 watcher | a spectating bot kept its dead target 7.5 s | moves on when the target is respawnable | unchanged: a bot's observer may not think as a human's (Open questions 8) |
+  | rules P14 ready-up | as specced; restart 5.8 s after the last `ready` | same (tests 44-46) | same |
+
+  Fits and guesses: the side-hit shares are mid-band fits to one punt
+  per mass (10, 30, 100, 250 kg; heavier clamp to 250's); the 0.7 split
+  between a side hit and a landing is ours; heavier crates past 250 kg
+  and glancing hits weren't measured. Left: the bot pushed back by a
+  punted crate (650 in/s for 30 kg, 1110 for 100 kg on the hit's tick;
+  ours only by the damage shove, 4 ticks later as the impact is measured
+  over 4 steps), punted crates bouncing back off the shadow in ours (the
+  real one keeps on forward), the floor punt's edge contact, P7's small
+  gaps, P13 with a human spectator, the chat flood limit.
+
 ## Decision log
 
 - 2026-10-31 (user): Half-Life 2: Deathmatch is the next game, after

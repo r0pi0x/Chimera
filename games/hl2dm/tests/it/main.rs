@@ -28,6 +28,7 @@ mod rules;
 mod set_pieces;
 mod skeleton;
 mod suit;
+mod weapon_details;
 mod weapons;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.

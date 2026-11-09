@@ -27,11 +27,18 @@
 //!   a 2048-unit sweep (±256), or once it has struck a player the nearest
 //!   in front within 512. Its end at 4 s is harmless.
 //!
-//! Known shortcuts: the contact grenade's 3-tick "stopped or on the
-//! ground" check isn't needed by a toss that always ends on a touch and
-//! isn't done, nor its random spin; the ball's seek sweep is a cylinder
-//! of radius 256 + 16 around its line (the spec's swept box), its
-//! attractiveness has no team test (TDM is M7's), the shooter's white fade
+//! The contact grenade's 3-tick check (4.2, `grenade_stopped`): every 3
+//! ticks of flight one stopped dead explodes. The ball's seek (5.4):
+//! attractive players are alive, not its owner, not the owner's teammates
+//! in TDM (`Hl2Match::teamplay`, `core::Team`) and nobody in the
+//! intermission (`Hl2Match::over`); before it has struck a player, those
+//! whose bounds meet a box of half extent 256 swept 2048 along the new
+//! direction (`seek`). The SMG1's grenade has no team test: it explodes on
+//! any player but its owner (4.2; the spec names none).
+//!
+//! Known shortcuts: the contact grenade's 3-tick check has no ground
+//! entity to test (a flyer has none: any touch ends it), and its random
+//! spin isn't given (a flyer faces its flight); the shooter's white fade
 //! and the dissolve of the victims' weapons aren't drawn (the ball's look
 //! is `projectile_fx`, its victims' dissolve `dissolve`); the ball knocks props as a bounce (no 1000 crush
 //! to props), and its harmless end is removed at once.
@@ -357,8 +364,9 @@ pub fn lock_charging(
 pub fn ball_touches(
     mut hits: MessageReader<FlyerHit>,
     mut flyers: Query<(&mut Flyer, Option<&mut BallFlight>, &Transform)>,
-    players: Query<(Entity, &Transform, &MovementState, &Health), With<Intent>>,
+    players: Query<(Entity, &Transform, &MovementState, &Health, Option<&crate::core::Team>), With<Intent>>,
     weapons: Query<&Hl2Ball>,
+    game: Option<Res<crate::game::rules::Hl2Match>>,
     spatial: avian3d::prelude::SpatialQuery,
     colliders: Query<&avian3d::prelude::ColliderOf>,
     clock: Res<SimClock>,
@@ -388,15 +396,20 @@ pub fn ball_touches(
                 state.last_bounce = Some(clock.now);
                 let d = f.velocity.normalize_or_zero();
                 let speed = f.velocity.length();
+                // Attractive (5.4): alive, not the owner, not its teammate
+                // in TDM, nobody in the intermission's freeze.
+                let teamplay = game.as_ref().is_some_and(|m| m.teamplay);
+                let frozen = game.as_ref().is_some_and(|m| m.over);
+                let owner_team = f.owner.and_then(|o| players.get(o).ok()).and_then(|(.., t)| t.copied());
                 let targets = players
                     .iter()
-                    .filter(|(e, .., hp)| Some(*e) != f.owner && hp.current > 0.0)
-                    .map(|(e, at, s, _)| {
-                        (
-                            e,
-                            at.translation + (s.hull_min + s.hull_max) / 2.0,
-                            at.translation + s.eye_offset,
-                        )
+                    .filter(|(e, .., hp, _)| Some(*e) != f.owner && hp.current > 0.0 && !frozen)
+                    .filter(|(.., team)| !(teamplay && team.is_some() && team.copied() == owner_team))
+                    .map(|(e, at, s, ..)| Seekable {
+                        entity: e,
+                        min: at.translation + s.hull_min,
+                        max: at.translation + s.hull_max,
+                        eye: at.translation + s.eye_offset,
                     });
                 if let Some(c) = seek(&p, h.point, d, state.struck, t.translation, targets, |from, to, e| {
                     clear_to(&spatial, &colliders, from, to, e)
@@ -411,6 +424,39 @@ pub fn ball_touches(
                 commands.entity(h.flyer).insert(state);
             }
         }
+    }
+}
+
+/// The contact grenade's check (4.2), every 3 ticks of flight (the
+/// server's, `FlyerSet::Touch`): one whose speed is exactly 0 explodes
+/// where it is.
+pub fn grenade_stopped(
+    flyers: Query<(Entity, &Flyer, &Transform)>,
+    mut blasts: MessageWriter<chimera_sim::weapon::grenade::BlastAt>,
+    mut gone: MessageWriter<FlyerGone>,
+    mut commands: Commands,
+) {
+    for (e, f, t) in &flyers {
+        if f.weapon != super::SMG1 || f.ticks == 0 || f.ticks % 3 != 0 || f.velocity != Vec3::ZERO {
+            continue;
+        }
+        if let Some(b) = f.blast.clone() {
+            blasts.write(chimera_sim::weapon::grenade::BlastAt {
+                at: t.translation,
+                blast: b,
+                thrower: f.owner,
+                weapon: f.weapon,
+                inflictor: Some(e),
+            });
+        }
+        gone.write(FlyerGone {
+            flyer: e,
+            weapon: f.weapon,
+            owner: f.owner,
+            at: t.translation,
+            expired: false,
+        });
+        commands.entity(e).despawn();
     }
 }
 
@@ -432,28 +478,44 @@ fn clear_to(
     }
 }
 
+/// A player the ball may seek: its bounds and its eye (world space).
+#[derive(Clone, Copy, Debug)]
+pub struct Seekable {
+    pub entity: Entity,
+    pub min: Vec3,
+    pub max: Vec3,
+    pub eye: Vec3,
+}
+
 /// The seek after a counted bounce at `q` with the new direction `d`
-/// (5.4): the winner's centre among `targets` (entity, bounds centre,
-/// eye), `visible` from the ball's centre `ball` to the eye.
+/// (5.4): the winner's bounds centre among the attractive `targets`
+/// (before it struck a player: those whose bounds meet a box of half
+/// extent `seek_half` swept from `q` `seek_reach` along `d`, within
+/// `seek_cos` of it; after: within `seek_kill_radius`, in front), `visible`
+/// from the ball's centre `ball` to the eye; the nearest wins.
 pub fn seek(
     p: &BallParams,
     q: Vec3,
     d: Vec3,
     struck: bool,
     ball: Vec3,
-    targets: impl Iterator<Item = (Entity, Vec3, Vec3)>,
+    targets: impl Iterator<Item = Seekable>,
     visible: impl Fn(Vec3, Vec3, Entity) -> bool,
 ) -> Option<Vec3> {
     let mut best: Option<(f32, Vec3)> = None;
-    for (e, c, eye) in targets {
+    for t in targets {
+        let (e, eye) = (t.entity, t.eye);
+        let c = (t.min + t.max) / 2.0;
         let to = c - q;
         let cos = to.normalize_or_zero().dot(d);
         let ok = if struck {
             to.length() <= p.seek_kill_radius * U && cos > 0.0
         } else {
-            let along = to.dot(d);
-            let off = (to - d * along).length();
-            along >= 0.0 && along <= p.seek_reach * U && off <= (p.seek_half + 16.0) * U && cos > p.seek_cos
+            // The swept box meets the bounds: the segment meets the bounds
+            // grown by the box's half extent.
+            let grow = Vec3::splat(p.seek_half * U);
+            let swept = launch_ray_box(t.min - grow, t.max + grow, q, d, p.seek_reach * U).is_some();
+            swept && cos > p.seek_cos
         };
         if !ok || !visible(ball, eye, e) {
             continue;
@@ -464,6 +526,10 @@ pub fn seek(
         }
     }
     best.map(|(_, c)| c)
+}
+
+fn launch_ray_box(min: Vec3, max: Vec3, from: Vec3, dir: Vec3, limit: f32) -> Option<f32> {
+    chimera_sim::weapon::projectile::ray_box(min, max, from, dir, limit)
 }
 
 /// A ball's harmless end (5.6): its sound where it was.
@@ -487,49 +553,46 @@ mod tests {
         launch::hook_params(super::super::AR2, super::super::BALL_HOOK)
     }
 
+    /// A standing player's bounds (±16, 72 tall) centred at `c` (units).
+    fn at(c: Vec3) -> Seekable {
+        Seekable {
+            entity: Entity::PLACEHOLDER,
+            min: (c - Vec3::new(16.0, 36.0, 16.0)) * U,
+            max: (c + Vec3::new(16.0, 36.0, 16.0)) * U,
+            eye: c * U,
+        }
+    }
+
     /// projectiles.md test 24: a player 15 degrees off is sought, one
     /// further off isn't.
     #[test]
     fn seeks_within_fifteen_degrees() {
         let p = params();
-        let u = U;
-        let target = |y: f32| {
-            std::iter::once((
-                Entity::PLACEHOLDER,
-                Vec3::new(1000.0, 0.0, y) * u,
-                Vec3::new(1000.0, 0.0, y) * u,
-            ))
-        };
-        let c = seek(&p, Vec3::ZERO, Vec3::X, false, Vec3::ZERO, target(200.0), |_, _, _| {
-            true
-        })
-        .unwrap();
+        let target = |y: f32| std::iter::once(at(Vec3::new(1000.0, 0.0, y)));
+        let c = seek(&p, Vec3::ZERO, Vec3::X, false, Vec3::ZERO, target(200.0), |_, _, _| true).unwrap();
         let d = c.normalize();
         assert!((d - Vec3::new(0.98058, 0.0, 0.19612)).length() < 1e-4, "{d}");
-        assert!(
-            seek(&p, Vec3::ZERO, Vec3::X, false, Vec3::ZERO, target(300.0), |_, _, _| {
-                true
-            })
-            .is_none()
-        );
+        assert!(seek(&p, Vec3::ZERO, Vec3::X, false, Vec3::ZERO, target(300.0), |_, _, _| true).is_none());
+    }
+
+    /// 5.4: the sweep is a box of half extent 256 from Q to Q + 2048 d, so
+    /// bounds just past its end still meet it (a cylinder along the line
+    /// stopped at 2048); past the box's reach nothing.
+    #[test]
+    fn the_seek_sweeps_a_box() {
+        let p = params();
+        let one = |x: f32| std::iter::once(at(Vec3::new(x, 0.0, 0.0)));
+        assert!(seek(&p, Vec3::ZERO, Vec3::X, false, Vec3::ZERO, one(2250.0), |_, _, _| true).is_some());
+        assert!(seek(&p, Vec3::ZERO, Vec3::X, false, Vec3::ZERO, one(2330.0), |_, _, _| true).is_none());
     }
 
     /// Test 26: after a kill, the nearest in front within 512.
     #[test]
     fn after_a_kill_seeks_in_front() {
         let p = params();
-        let front = (Entity::PLACEHOLDER, Vec3::new(400.0, 0.0, 0.0) * U, Vec3::ZERO);
-        let behind = (Entity::PLACEHOLDER, Vec3::new(-300.0, 0.0, 0.0) * U, Vec3::ZERO);
-        let c = seek(
-            &p,
-            Vec3::ZERO,
-            Vec3::X,
-            true,
-            Vec3::ZERO,
-            [front, behind].into_iter(),
-            |_, _, _| true,
-        )
-        .unwrap();
-        assert!((c - front.1).length() < 1e-5);
+        let front = at(Vec3::new(400.0, 0.0, 0.0));
+        let behind = at(Vec3::new(-300.0, 0.0, 0.0));
+        let c = seek(&p, Vec3::ZERO, Vec3::X, true, Vec3::ZERO, [front, behind].into_iter(), |_, _, _| true).unwrap();
+        assert!((c - (front.min + front.max) / 2.0).length() < 1e-5);
     }
 }

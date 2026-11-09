@@ -23,7 +23,12 @@
 //!   `HL2Player.UseDeny`; nothing is carried (with `hl2mp_allow_pickup` 1
 //!   a prop passing the carry test is picked up: `carry`).
 //!
-//! Known shortcuts: an explosive prop's blast credit
+//! - A prop broken other than by lethal damage (the `Break` input, a health
+//!   input, pressure) stays where it is, drawn, non-solid and undamageable
+//!   (Corrections 2, measured P15: `source_logic::logic::KeepPropsOnBreak`).
+//!
+//! Known shortcuts: a prop kept after a `Break` input is non-solid to the
+//! logic only (as `DisableCollision`): its body still collides; an explosive prop's blast credit
 //! (the last attacker, else the influencer within 2 s) is the logic's
 //! last-attacker rule only; the 10× first impact after a launch from the
 //! hold and first-impact breaks aren't done. `prop_physics_respawnable`
@@ -184,6 +189,8 @@ impl Plugin for Hl2PhysicsPlugin {
     fn build(&self, app: &mut App) {
         super::carry::plugin(app);
         app.insert_resource(source_logic::logic::PlayerImpactScale(PLAYER_IMPACT_SCALE))
+            // A prop broken by an input stays (gravity_gun.md Corrections 2).
+            .insert_resource(source_logic::logic::KeepPropsOnBreak(true))
             .add_systems(
                 FixedUpdate,
                 (

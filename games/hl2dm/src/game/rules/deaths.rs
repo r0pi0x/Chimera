@@ -187,7 +187,7 @@ fn score(world: &mut World, victim: Entity, attacker: Option<Entity>, damage: &D
 }
 
 /// A player in the log, with its HL2:DM team.
-fn subject(world: &World, e: Entity) -> String {
+pub(super) fn subject(world: &World, e: Entity) -> String {
     let team = world.get::<Hl2Player>(e).map_or(0, |p| p.team);
     crate::rules::subject(world, e, team_name(team))
 }
