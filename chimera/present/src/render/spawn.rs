@@ -1644,6 +1644,7 @@ fn spawn_ropes(
                     mesh: mesh.clone(),
                     pending: 0.0,
                     resting: true,
+                    ends: rope.follow.map(super::rope_sway::RopeEnd::of),
                 });
             }
         }
@@ -1978,6 +1979,18 @@ fn spawn_prop(
             Vec::new()
         }
     };
+    // A physics prop rests in the light baked above until it moves, then is
+    // lit where it is (`probe_lit`). Static and other props stay baked.
+    if prop.physics.is_some() && !prop.skybox && !spawned_materials.is_empty() {
+        let lit = spawned_materials
+            .iter()
+            .zip(&model.meshes)
+            .filter(|(_, m)| !m.unlit)
+            .map(|(h, _)| h.clone())
+            .collect();
+        let centre = (model.bounds.0 + model.bounds.1) / 2.0;
+        commands.entity(id).insert(probe_lit::PropLightHome::new(lit, centre));
+    }
     // What the logic may change: skin and body (entity props), sequences
     // (animated ones).
     if prop.entity.is_some() {

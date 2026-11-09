@@ -22,7 +22,7 @@ use chimera_world::{
     map::{
         PlaySound,
         loose::ShownItem,
-        particles::{MapParticles, ParticleMaterial, ParticleMaterials, Particles},
+        particles::{Fade, MapParticles, ParticleMaterial, ParticleMaterials, Particles},
     },
 };
 use hl2dm::{
@@ -285,6 +285,17 @@ fn the_contact_grenade_trails_smoke() {
     // 30 frames of 0.015 s: 21.6 puffs from the first frame on, all alive
     // (life 1 s).
     assert!((18..=24).contains(&total), "{total}");
+    // Particles_and_smoke.md 5: along the path, through a sine, near fade,
+    // both smoke materials.
+    let groups = &sim.app.world().resource::<Particles>().groups;
+    let smoke: Vec<_> = groups.iter().filter(|g| g.motion.near_fade.is_some()).flat_map(|g| &g.particles).collect();
+    assert_eq!(smoke.len(), total);
+    let xs: Vec<f32> = smoke.iter().map(|p| p.position.x).collect();
+    let span = xs.iter().cloned().fold(f32::MIN, f32::max) - xs.iter().cloned().fold(f32::MAX, f32::min);
+    assert!(span > 5.0, "spread along the 8.7 m flown: {span}");
+    assert!(smoke.iter().all(|p| matches!(p.fade, Fade::Sine)));
+    let (a, b) = (material(&sim, "particle/particle_smokegrenade"), material(&sim, "particle/particle_noisesphere"));
+    assert!(smoke.iter().any(|p| p.material == a) && smoke.iter().any(|p| p.material == b));
 }
 
 /// The frag's red glow while it flies.
@@ -447,4 +458,12 @@ fn a_bolt_through_a_body_sends_its_impact_from_the_wall_behind() {
     assert_eq!(near.len(), 1, "the wall 40 units on");
     assert!((near[0].z - wall).abs() < 0.05, "{near:?}");
     assert!(impacts(&mut sim, wall - wall.signum() * 200.0 * U).is_empty(), "nothing within 128");
+}
+
+/// The ball's rings draw `sprites/lgtning`, whose file (Sprite, no
+/// `$additive`) would blend its black texels over the scene: beams add
+/// (visual_entities.md 1). The playtest saw black stripes.
+#[test]
+fn the_rings_material_adds() {
+    assert!(hl2dm::game::effects::ADDITIVE_SPRITES.contains(&"sprites/lgtning"));
 }

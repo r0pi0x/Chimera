@@ -206,6 +206,18 @@ pub fn use_props(
     }
 }
 
+/// The rule of map logic's blasts (`core::Explosion`): every explosion's
+/// (projectiles.md 2), damage and radius their own. Its scorch is
+/// `projectile_fx`'s (the entity rule's line); the entity shakes no screen
+/// (game_entities.md 6: only the weapons shake).
+pub fn map_blast() -> chimera_sim::weapon::grenade::Blast {
+    chimera_sim::weapon::grenade::Blast {
+        scorch: None,
+        shake: None,
+        ..super::weapons::launch::hl2_blast(100.0, 250.0, None, None)
+    }
+}
+
 /// HL2:DM's physics rules in its own game.
 pub struct Hl2PhysicsPlugin;
 
@@ -219,6 +231,13 @@ impl Plugin for Hl2PhysicsPlugin {
             // A launch's first impact and an explosive prop's credit (9).
             .insert_resource(source_logic::logic::FirstImpactScale(FIRST_IMPACT_SCALE))
             .insert_resource(source_logic::logic::BlastInfluenceWindow(BLAST_CREDIT_WINDOW))
+            // Map logic's blasts: its explosive props and `env_explosion`s
+            // (prop_damage.md 7.5): every explosion's rule, at their own
+            // damage and radius, drawn by `projectile_fx`; a prop's kills
+            // name the prop (rules.md, the death notice).
+            .insert_resource(chimera_sim::weapon::grenade::ExplosionRule(map_blast()))
+            .insert_resource(source_logic::logic::PropBlastWeapon(PHYSICS_WEAPON))
+            .insert_resource(super::projectile_fx::DrawsMapBlasts)
             .insert_resource(source_logic::logic::PromptSideHits)
             .add_systems(
                 FixedUpdate,

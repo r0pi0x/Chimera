@@ -82,9 +82,9 @@
 //! with health makes a health-0 brush damageable (cs_havana's 10 wooden
 //! func_breakables, Wooden.Large: 50) and de_piranesi's Wooden.Tiny crates
 //! take 6, not their map 30: unchecked against the game. Glass and
-//! bulletproof glass take the spec's "GlassBreak"/"BulletProof" decals
-//! (the game picks them: CS:S `game::breakables::impact_decal`) from bullets
-//! and the knife alike; bulletproof
+//! bulletproof glass take the spec's "GlassBreak"/"BulletProof" decals, a
+//! glass window none (`content::breakables::impact_decal`), from bullets and
+//! the knife alike; bulletproof
 //! glass loses health and fires OnHealthChanged like any breakable but
 //! never breaks. Bullet traces (spec "Damage"): a computer's 50 % sparks are
 //! the electric sparks (impact_effects.md 8, via `Effect::Spark`, as

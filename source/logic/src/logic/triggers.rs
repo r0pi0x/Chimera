@@ -603,7 +603,14 @@ fn teleport_body(w: &mut LogicWorld, trigger: EntId, body: EntId, target: &str, 
     // Where it is now, until the host says (no second teleport from a
     // stale box this tick).
     let half = (hi - lo) / 2.0;
-    w.set_prop_bounds(body, (origin - half, origin + half));
+    let new_centre = match mark {
+        Some(_) => origin,
+        // The origin goes to the point, and its bounds with it: where the
+        // host's box will be is about this (no second teleport from a stale
+        // box this tick).
+        None => point + (centre - w.get(body).map_or(centre, |e| e.origin)),
+    };
+    w.set_prop_bounds(body, (new_centre - half, new_centre + half));
 }
 
 /// trigger_hurt pass, trigger_once removal.

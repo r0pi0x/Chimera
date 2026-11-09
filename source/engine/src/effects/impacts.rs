@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 
 use super::{ImpactStyle, ImpactStyles};
+use crate::content::breakables::ImpactMark;
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -276,22 +277,24 @@ fn in_water(from: Vec3, to: Vec3, water: Option<&MapWater>) -> bool {
 /// the game.
 pub const SLASH_DECAL: &str = "ManhackCut";
 
-/// A breakable brush's own impact decal (specs/source/breakables.md:
-/// glass "GlassBreak", unbreakable glass "BulletProof"), when `hit` (or
+/// What a breakable brush takes (specs/source/breakables.md:
+/// `ImpactMark`), when `hit` (or
 /// its parent) is the node of one.
 fn breakable_decal(
     hit: Entity,
     brushes: &Query<&MapBrushEntity>,
     parents: &Query<&ChildOf>,
     map: Option<&MapEntities>,
-) -> Option<&'static str> {
+) -> ImpactMark {
     let node = std::iter::once(hit)
         .chain(parents.get(hit).ok().map(|c| c.parent()))
-        .find_map(|e| brushes.get(e).ok())?;
-    let e = map?.entities.get(node.0)?;
+        .find_map(|e| brushes.get(e).ok());
+    let Some(e) = node.and_then(|n| map?.entities.get(n.0)) else {
+        return ImpactMark::Surface;
+    };
     let class = e.classname();
     if !crate::content::breakables::CLASSES.iter().any(|c| c.eq_ignore_ascii_case(class)) {
-        return None;
+        return ImpactMark::Surface;
     }
     let int = |k: &str| e.get(k).map_or(0, |v| v.trim().parse::<f32>().map_or(0, |x| x as i32));
     crate::content::breakables::impact_decal(class, int("material"), int("surfacetype"))
@@ -337,8 +340,9 @@ fn impact_decals(
                 normal: Some(normal),
             } if marked(*hit) && !in_water(*from, *to, water.as_deref()) => {
                 let group = match breakable_decal(*hit, &brushes, &parents, map.as_deref()) {
-                    Some(name) => DecalGroup::Named(name.into()),
-                    None => {
+                    ImpactMark::Nothing => continue,
+                    ImpactMark::Group(name) => DecalGroup::Named(name.into()),
+                    ImpactMark::Surface => {
                         let name = as_game(
                             surface_of(Some(*hit), *to, &props, &characters, grid.as_deref()),
                             classes.as_deref(),
@@ -371,10 +375,12 @@ fn impact_decals(
                 line,
                 ..
             } if marked(*hit) && super::impact_effects::knife_splash(*line, water.as_deref()).is_none() => {
-                let group = match breakable_decal(*hit, &brushes, &parents, map.as_deref()).or(style.melee_decal) {
-                    Some(name) => DecalGroup::Named(name.into()),
+                let mark = breakable_decal(*hit, &brushes, &parents, map.as_deref());
+                let group = match (mark, style.melee_decal) {
+                    (ImpactMark::Nothing, _) => continue,
+                    (ImpactMark::Group(name), _) | (ImpactMark::Surface, Some(name)) => DecalGroup::Named(name.into()),
                     // The surface's, as a bullet's (HL2:DM's melee).
-                    None => {
+                    (ImpactMark::Surface, None) => {
                         let name = as_game(
                             surface_of(Some(*hit), *point, &props, &characters, grid.as_deref()),
                             classes.as_deref(),

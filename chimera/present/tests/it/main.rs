@@ -18,6 +18,7 @@ mod particle_depth;
 mod phong_spec;
 mod map_unload;
 mod prop_fade;
+mod prop_relight;
 mod prop_lods;
 mod prop_shadows;
 mod shader_spec;

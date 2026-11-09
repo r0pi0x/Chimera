@@ -239,11 +239,39 @@ pub fn disable_motion(world: &mut World, node: Entity) {
     if super::placed_ragdoll::set_motion(world, node, false) {
         return;
     }
+    let now = world.get_resource::<crate::core::SimClock>().map_or(0.0, |c| c.now);
     if let Ok(mut e) = world.get_entity_mut(node)
         && e.get::<RigidBody>().is_some_and(|b| b.is_dynamic())
     {
+        // Teleported into a slot and pinned there (dm_lockdown's plug): the
+        // step between them pushed it out of what it overlaps (our solver,
+        // 2 units and a turn in one step); it stays where it was sent.
+        if let Some(sent) = e.take::<JustTeleported>().filter(|s| now - s.at <= TELEPORT_PIN_WINDOW) {
+            if let Some(mut t) = e.get_mut::<Transform>() {
+                t.translation = sent.position;
+                t.rotation = sent.rotation;
+            }
+            if let Some(mut p) = e.get_mut::<Position>() {
+                p.0 = sent.position;
+            }
+            if let Some(mut r) = e.get_mut::<Rotation>() {
+                *r = Rotation::from(sent.rotation);
+            }
+        }
         e.insert(RigidBody::Static);
     }
+}
+
+/// How long after a teleport a body pinned stays exactly where it was sent
+/// (s): the map's "teleport, DisableMotion 0.01 s later".
+const TELEPORT_PIN_WINDOW: f64 = 0.05;
+
+/// Where a teleport sent a physics body, and when (`disable_motion`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct JustTeleported {
+    pub position: Vec3,
+    pub rotation: Quat,
+    pub at: f64,
 }
 
 /// Wake a sleeping body (one that started asleep reports it).

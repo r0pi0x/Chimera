@@ -8,7 +8,8 @@
 //! Ropes in the wind (specs/cs_source/ropes.md "Wind"): a settled rope's
 //! simulation stepped again with the spec's gusts (`Gusts`) while the camera is
 //! within `rope_wind_dist` (`RopeWind`), its mesh rebuilt from the spline
-//! through its nodes.
+//! through its nodes. An end parented to an entity (`MapRope::follow`) goes
+//! with it, and the rope moves again until it rests.
 //!
 //! Known shortcuts (docs/tech-debt.md): Ropes (from specs/cs_source/ropes.md)
 //! settle at load and sway in the spec's gusts while the camera is within 1000
@@ -117,6 +118,50 @@ pub struct RopeMotion {
     /// Time not yet stepped, seconds.
     pub pending: f32,
     pub resting: bool,
+    /// Each end's parent and where the end sits in its frame (known once
+    /// the parent is found).
+    pub ends: [Option<RopeEnd>; 2],
+}
+
+/// A rope end that follows its parent entity.
+#[derive(Clone, Copy, Debug)]
+pub struct RopeEnd {
+    pub entity: usize,
+    pub on_parent: Option<(Entity, Vec3)>,
+}
+
+impl RopeEnd {
+    pub fn of(follow: Option<usize>) -> Option<Self> {
+        follow.map(|entity| Self { entity, on_parent: None })
+    }
+}
+
+/// Keep ropes' parented ends on their parents; a moved end wakes the rope.
+pub fn follow_rope_ends(
+    mut ropes: Query<&mut RopeMotion>,
+    parents: Query<(Entity, &crate::map::PropEntity, &GlobalTransform, Option<&crate::map::PropHome>)>,
+    placed: Query<&GlobalTransform>,
+) {
+    for mut r in &mut ropes {
+        let last = r.sway.nodes.len() - 1;
+        for (k, node) in [(0, 0), (1, last)] {
+            let Some(mut end) = r.ends[k] else { continue };
+            if end.on_parent.is_none() {
+                // Where the end was placed, in the parent's frame there.
+                let Some((e, _, at, home)) = parents.iter().find(|(_, p, ..)| p.0 == end.entity) else { continue };
+                let frame = home.map_or(at.compute_transform(), |h| h.0);
+                end.on_parent = Some((e, frame.rotation.inverse() * (r.sway.nodes[node] - frame.translation)));
+                r.ends[k] = Some(end);
+            }
+            let Some((parent, local)) = end.on_parent else { continue };
+            let Ok(at) = placed.get(parent) else { continue };
+            let pin = at.translation() + at.rotation() * local;
+            if pin.distance_squared(r.sway.nodes[node]) > REST_THRESHOLD {
+                r.sway.nodes[node] = pin;
+                r.resting = false;
+            }
+        }
+    }
 }
 
 /// Steps ropes the wind blows or that haven't come to rest, and redraws

@@ -117,19 +117,6 @@ the user's go-ahead: no Actions runs unless asked.
 Delete each when fixed. Check against specs/hl2dm/ and the probe; what's
 the original's own behaviour isn't a bug (say so instead).
 
-- **Explosive barrels** break without exploding.
-- **Props launch or trap the player:** walking into some props (the small
-  bench) throws the player into the air; jumping onto the wheelbarrow
-  sometimes sticks the player until they move backwards.
-- **Showers (dm_lockdown):** a constant sound but no water visible.
-- **Props rotated wrongly:** `setpos -3598.11 5389.92 64.03;setang 4.01
-  101.27 0.00` and pipes at `setpos -3062.89 3939.73 64.03;setang 2.14
-  166.60 0.00`, among others on the map.
-- **Moved props keep their lighting:** a lot of props don't change light
-  as they move, as if the environment's lights don't reach them. Check
-  whether the original does the same.
-- **SMG1 grenade trail** doesn't look like it renders correctly.
-- **AR2 ball's explosion** has particles that look wrong.
 - **HUD:** no count of the SMG1's grenades or ammo for them (the
   secondary ammo panel; branch `hl2dm-gaps1` feeds it, check after merge).
 - **HUD:** no ammo counter bottom right for the RPG (`hl2dm-gaps1` shows
@@ -137,15 +124,11 @@ the original's own behaviour isn't a bug (say so instead).
 - **Escape** only frees the cursor (click to return to the game): no menu.
   HL2:DM's menus were planned for after faithful DM/TDM; the user has now
   run into it, so it's next once these reports are done.
-- **Glass decals (dm_lockdown, upstairs office, `setpos -3201.81 4622.36
-  192.04;setang 2.52 34.76 0.00`):** bullet decals on
-  `func_breakable_surf` windows are very big and low res, and the broken
-  pieces don't show them. Breakable glass itself is right (13 of these on
-  dm_lockdown, shared Source code: specs/source/breakables.md). Check
-  specs/cs_source/impact_effects.md and whether CS:S's glass has the same bug.
-- **Flashlight lights nothing:** the toggle, network path and sounds work,
-  but the spot light has no visible effect on dm_lockdown, even at 10,000
-  times the brightness; the spec gives no brightness, colour or cone.
+- **The explosion's fireball has hard rectangular edges (2026-11-09):** seen
+  on an explosive drum in dm_lockdown (a straight cut along its top and
+  bottom, blocky steps at the sides). It's the effect shared with CS:S, so
+  check there too: sprite clipping against the world, a soft-depth fade, or
+  the frame's subrect.
 - **Combat Arms, Blood Money: spawning inside the vault** with no way out
   (`setpos -6.11 -747.55 -179.90;setang 2.98 90.31 0.00`). Check whether
   the map really has a spawn there, what opens the vault in the original,
@@ -178,9 +161,6 @@ the original's own behaviour isn't a bug (say so instead).
 - **Combat Arms radio menus:** 7, 8 and 9 do nothing. Check what the
   original's menus offer on those keys (`choose_N`, the same commands as
   the console report above).
-- **Battery machine:** at `setpos -3835.25 5745.72 64.02;setang 17.71
-  22.85 0.00` its rope or cable looks broken, and the battery doesn't seat
-  properly in the slot.
 
 ### Gun game playtest, 2026-10-28 (user)
 
