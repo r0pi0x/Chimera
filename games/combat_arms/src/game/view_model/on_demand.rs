@@ -8,8 +8,10 @@
 //! (`map::add_view_model`; drawn on a map and on the greybox alike, where
 //! Chimera's drawing has assets of its own: `render::view_model::
 //! assets_without_map`, `tests/ui/heavy/view_model.rs`); until it is
-//! ready the front end's placeholder box stands in, and `drive` starts
-//! the model afresh when it arrives.
+//! ready the front end's placeholder box stands in (nothing in an app with
+//! `game_parts::NoStandIns`), and `drive` starts the model afresh when it
+//! arrives. The match's ladder's view models load the same way ahead of
+//! time (`characters::preload`).
 //!
 //! A weapon with drawn parts shows its own view model (`parts::view_key`:
 //! `<weapon>+<part>+...`), made here from the weapon's with the parts'
@@ -22,10 +24,10 @@
 //! Runs only where `LoadOnDemand` is (the front end inserts it): a
 //! dedicated server draws no view models.
 //!
-//! Known shortcuts (docs/tech-debt.md): the placeholder box shows for the
-//! frames a model takes to load (tens of milliseconds; the first draw of
-//! each weapon); the cache keeps every model while the install data
-//! lives (the app's session); nothing
+//! Known shortcuts (docs/tech-debt.md): outside a ladder the placeholder
+//! box shows for the frames a model takes to load (tens of milliseconds;
+//! the first draw of each weapon); the cache keeps every model while the
+//! install data lives (the app's session); outside a ladder nothing
 //! preloads a weapon before it is in the local player's inventory or
 //! shown (a spectated player's new weapon waits its load too).
 
@@ -192,6 +194,7 @@ pub fn load_on_demand(
     shown: Query<&ViewAnimator>,
     weapons: Query<(&Weapon, Option<&CaMods>)>,
     context: Option<Res<LoadContext>>,
+    ladder: Res<crate::game::characters::preload::LadderModels>,
     mut pending: Local<Pending>,
     mut commands: Commands,
 ) {
@@ -225,6 +228,7 @@ pub fn load_on_demand(
         }
     }
     wanted.extend(shown.iter().filter_map(|v| v.key.clone()));
+    wanted.extend(ladder.keys.iter().cloned());
     let mut seen: Vec<&str> = Vec::new();
     for id in &wanted {
         let id = id.as_str();
@@ -233,10 +237,12 @@ pub fn load_on_demand(
         }
         seen.push(id);
         match cached(&ca, id) {
-            Some(Ok(l)) => {
+            // No map yet: it stays in the cache for the map coming.
+            Some(Ok(l)) if models.is_some() => {
                 let (model, textures) = (l.model.clone(), l.textures.clone());
                 commands.queue(move |world: &mut World| add_view_model(world, model, textures));
             }
+            Some(Ok(_)) => {}
             Some(Err(_)) => {}
             None => {
                 let (key, ca) = (id.to_string(), ca.clone());

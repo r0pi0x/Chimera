@@ -212,7 +212,8 @@ impl MapLayers for Present {
                     render::bodies::turn_bodies.after(DriveAnimation),
                     render::bodies::pose_bodies.after(DriveAnimation),
                     render::bodies::build_late_held.before(render::bodies::attach_held),
-                    render::bodies::attach_held,
+                    // On the new body in the frame it comes.
+                    render::bodies::attach_held.after(render::bodies::attach_bodies),
                     render::probe_lit::relight,
                     render::loose::attach_shown,
                     render::loose::draw_loose,

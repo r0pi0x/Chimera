@@ -745,9 +745,43 @@ pub struct Animator {
     /// layers, at weight 1 (HL2:DM's head and spine turns: specs/hl2dm/
     /// player_models.md 7 step 5); off for games that don't ask.
     pub autoplay: bool,
+    /// The skeleton this animator's pose is for (`skeleton_signature`):
+    /// `pose_bodies` poses only a body on that skeleton, so one
+    /// character's skeleton never drives another's model. None: any (a
+    /// game that says nothing; a corpse's own pose).
+    pub skeleton: Option<u64>,
+}
+
+/// A skeleton's shape as one number: its bones' names (case ignored) and
+/// parents, in order. Two skeletons with the same signature take each
+/// other's poses (Combat Arms' stock bodies of one tree); two with
+/// different ones must not.
+pub fn skeleton_signature<'a>(bones: impl IntoIterator<Item = (&'a str, Option<usize>)>) -> u64 {
+    const PRIME: u64 = 0x100_0000_01b3;
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
+    let mut eat = |b: u8| h = (h ^ u64::from(b)).wrapping_mul(PRIME);
+    for (name, parent) in bones {
+        name.bytes().for_each(|b| eat(b.to_ascii_lowercase()));
+        eat(0);
+        parent.map_or(u64::MAX, |p| p as u64).to_le_bytes().into_iter().for_each(&mut eat);
+    }
+    h
 }
 
 impl Animator {
+    /// Whether this animator has a pose for a body on skeleton `skeleton`
+    /// (`skeleton_signature`): something playing, on that skeleton or on
+    /// one it doesn't name.
+    pub fn poses(&self, skeleton: u64) -> bool {
+        self.main.is_some() && self.drives(skeleton)
+    }
+
+    /// Whether this animator's pose may go on a body on skeleton
+    /// `skeleton`.
+    pub fn drives(&self, skeleton: u64) -> bool {
+        self.skeleton.is_none_or(|s| s == skeleton)
+    }
+
     pub fn new(set: Arc<AnimSet>) -> Self {
         Self {
             params: set.default_params(),

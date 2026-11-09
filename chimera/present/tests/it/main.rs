@@ -11,6 +11,7 @@
 
 mod bc_textures;
 mod body_bounds;
+mod body_swap;
 mod camera_outputs;
 mod idle_lights;
 mod particle_depth;

@@ -63,6 +63,10 @@ pub fn from_aim_byte(b: i8) -> f32 {
 /// case-blind through an index instead of a scan per lookup.
 #[derive(Clone, Debug, Default)]
 pub struct Shape {
+    /// The nodes' names and parents as one number
+    /// (`map::anim::skeleton_signature`): a body model on these nodes has
+    /// the same.
+    pub signature: u64,
     pub names: Vec<String>,
     pub parents: Vec<Option<usize>>,
     /// Name, parent node, offset and rotation in the parent's space.
@@ -82,6 +86,7 @@ impl Shape {
             by
         };
         Self {
+            signature: crate::map::anim::skeleton_signature(names.iter().map(String::as_str).zip(parents.iter().copied())),
             nodes_by_name: index(&mut names.iter()),
             sockets_by_name: index(&mut sockets.iter().map(|s| &s.0)),
             names,
@@ -267,7 +272,8 @@ pub fn fallback(skel: &SkeletonRecord, squash: f32) -> Posed {
 #[derive(Clone, Debug)]
 pub struct Rig {
     pub model: ltb::Model,
-    pub list: AnimList,
+    /// Shared with the drivers on this rig (a character change makes one).
+    pub list: std::sync::Arc<AnimList>,
     /// The `upper` and `Lower` weight sets (case ignored).
     pub upper: Option<usize>,
     pub lower: Option<usize>,
@@ -313,7 +319,7 @@ impl Rig {
             half_heights: (stand[1], crouch[1]),
             shape: std::sync::Arc::new(shape),
             model,
-            list,
+            list: std::sync::Arc::new(list),
         }
     }
 

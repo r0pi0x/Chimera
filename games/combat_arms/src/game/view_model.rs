@@ -333,6 +333,7 @@ impl Plugin for CaViewModelPlugin {
         .init_resource::<CaSwayOption>()
         .init_resource::<hands::HandProfile>()
         .add_message::<CaViewKey>()
+        .init_resource::<super::characters::preload::LadderModels>()
         .add_systems(
             Update,
             (

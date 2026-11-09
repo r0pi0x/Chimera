@@ -101,9 +101,9 @@ pub fn append_late_characters(late: Option<Res<LateCharacterModels>>, models: Op
     if missing.is_empty() {
         return;
     }
-    let mut all = (*models.0).clone();
-    all.extend(missing);
-    models.0 = Arc::new(all);
+    // Not a copy of every body (a frame's work): only when another holds
+    // the list.
+    Arc::make_mut(&mut models.0).extend(missing);
 }
 
 /// A body drawn on an entity that is not a character: the corpse a game
@@ -305,7 +305,10 @@ pub fn attach_hitboxes(
             c.insert(crate::core::Hitboxes(m.hitboxes.clone()));
         }
         match &m.animations {
-            Some(set) => c.insert(anim::Animator::new(set.clone())),
+            Some(set) => c.insert(anim::Animator {
+                skeleton: Some(m.skeleton_signature()),
+                ..anim::Animator::new(set.clone())
+            }),
             None => c.remove::<anim::Animator>(),
         };
     }

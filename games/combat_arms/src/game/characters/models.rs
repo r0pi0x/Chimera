@@ -40,8 +40,10 @@
 //! dresses its players in) loads alone when first worn (`load_body`,
 //! `bodies_on_demand`), its own character model added after the map
 //! (`map::add_character_model`); until then (and on a server, which
-//! draws none) it poses on its tree's stock rig (`alias_rig`; a body of
-//! another tree, an infected, suit or boss, on its own rig read at once).
+//! draws none) its hit spheres pose on its tree's stock rig (`alias_rig`; a
+//! body of another tree, an infected, suit or boss, on its own rig, read at
+//! once on a server, with the body's load on a front end), and what it
+//! wore shows, on its own skeleton (`characters::CaShownAnim`).
 //! An NPC body (`AIModel#`, characters.md 13.2) is such a body too: its
 //! `Skin#` by texture slot (no camouflage or team mark), its own face,
 //! head piece (by its player tree), goggles and backpack only.
@@ -77,6 +79,11 @@ use crate::map::{MapCharacterModel, MapData, MapHeldModel, MapMemos, MapMesh, Ma
 /// record of a body group (`BodyGroup`).
 pub fn body_name(id: i32) -> String {
     format!("combat_arms:body:{id}")
+}
+
+/// The body record of character model `name` (`body_name`), if it is one.
+pub fn body_record(name: &str) -> Option<i32> {
+    name.strip_prefix("combat_arms:body:")?.parse().ok()
 }
 
 /// Skin families per body: camouflage index c and the team mark (2).
@@ -375,8 +382,13 @@ pub fn alias_rig(world: &mut World, data: &CharacterData, id: i32) {
     }
     // A body of another tree (an infected, a suit, a boss: characters.md
     // 13.4) has no stock rig to pose on: its own rig (the body and its
-    // library, nothing drawn) is read now, from the install's mount.
+    // library, nothing drawn) is read now, from the install's mount; a
+    // front end's comes with its body's load, not to stop the frame here
+    // (its hit spheres the spec's skeleton until then).
     let Some(tree) = data.family(r).stock_rig else {
+        if world.contains_resource::<super::super::view_model::on_demand::LoadOnDemand>() {
+            return;
+        }
         let ca = world.get_resource::<crate::map::LoadContext>().map_or_else(CaData::install, CaData::install_for);
         if let Some(mount) = ca.mount() {
             match model::load(&r.file, &|p: &str| mount.read(p).ok()) {
