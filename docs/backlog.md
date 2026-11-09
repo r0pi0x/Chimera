@@ -152,6 +152,11 @@ the original's own behaviour isn't a bug (say so instead).
 - **Escape** only frees the cursor (click to return to the game): no menu.
   HL2:DM's menus were planned for after faithful DM/TDM; the user has now
   run into it, so it's next once these reports are done.
+- **Glass decals (dm_lockdown, upstairs office):** bullet decals on
+  `func_breakable_surf` windows are very big and low res, and the broken
+  pieces don't show them. Breakable glass itself is right (13 of these on
+  dm_lockdown, shared Source code: specs/source/breakables.md). Check
+  specs/cs_source/impact_effects.md and whether CS:S's glass has the same bug.
 - **Battery machine:** at `setpos -3835.25 5745.72 64.02;setang 17.71
   22.85 0.00` its rope or cable looks broken, and the battery doesn't seat
   properly in the slot.
