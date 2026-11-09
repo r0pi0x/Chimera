@@ -201,6 +201,7 @@ the original's own behaviour isn't a bug (say so instead).
   match over repeated map changes (leaked entities, assets, meshes, audio,
   listeners; the bots' archetype churn noted below). Find what grows, and
   add a test that fails when it grows.
+- **Ultimate Gun Game's menu background** shouldn't use the greybox map.
 - **Combat Arms radio menus:** 7, 8 and 9 do nothing. Check what the
   original's menus offer on those keys (`choose_N`, the same commands as
   the console report above).
