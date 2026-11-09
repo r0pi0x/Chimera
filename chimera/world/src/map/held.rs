@@ -70,6 +70,12 @@ pub struct PhysicsInfluence {
     pub at: f64,
 }
 
+/// On a network client's copy of the prop its own player holds: where the
+/// last snapshots have it (it is drawn at the view instead): what the
+/// client's prediction of the hold's rules reads.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct ServerPose(pub Vec3, pub Quat);
+
 /// A body launched from a hold, until its next new contact: that contact
 /// counts more (specs/hl2dm/gravity_gun.md 9, the game's own rule, read by
 /// the logic's impact damage).

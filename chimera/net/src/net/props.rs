@@ -193,7 +193,7 @@ fn draw_props(
             Some(by) if h.holder != by => h.holder = by,
             Some(_) => {}
             None => {
-                commands.entity(e).remove::<Held>();
+                commands.entity(e).remove::<(Held, chimera_world::map::held::ServerPose)>();
             }
         }
     }
@@ -257,6 +257,7 @@ fn draw_props(
             if me.as_deref().is_some_and(|m| m.0 == h.holder)
                 && let Some((eye, view)) = my_view
             {
+                commands.entity(e).insert(chimera_world::map::held::ServerPose(pose.translation, pose.rotation));
                 pose.translation = eye + view * Vec3::from_array(h.offset);
                 pose.rotation = (view * Quat::from_array(h.rotation)).normalize();
             }

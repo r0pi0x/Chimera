@@ -9,6 +9,10 @@
 //! can't launch light ones). After the physics step the
 //! player is moved to where the shadow got to while pushing or standing
 //! on a prop (reconciliation). Multiplayer props are pushaway.rs's.
+//! A game that wants it (`ShadowKnockPlugin`, HL2:DM's; CS:S's keeps its
+//! measured contacts) has a prop running into a player from the side knock
+//! him on that tick and go on forward, rather than stop on the shadow and
+//! be driven back by it (`knock`).
 //!
 //! Known shortcuts (docs/tech-debt.md): Physics shadow
 //! (specs/cs_source/physics_props.md 4.1, games/cs_source/src/game/shadow.rs): the
@@ -77,6 +81,107 @@ impl Plugin for ShadowPlugin {
                     reconcile.after(PhysicsSystems::Writeback),
                 ),
             );
+    }
+}
+
+/// How a prop running into a player from the side moves both
+/// (`ShadowKnockPlugin`). HL2:DM measured, specs/hl2dm/gravity_gun.md Open
+/// questions 14 (`tools/hl2dm_probe/cases.py phys_rules`): the player's
+/// speed less the damage's shove is a hit of the prop's mass on his 85 kg
+/// with `player_rebound`, the prop's after it one with `prop_rebound`. Fits,
+/// not vphysics' law.
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct ShadowKnock {
+    pub player_rebound: f32,
+    pub prop_rebound: f32,
+    /// The prop's speed toward the player under this (units/s) only meets
+    /// the shadow as it does without this rule.
+    pub min_speed: f32,
+    /// A contact whose normal's vertical part is over this is a landing.
+    pub side: f32,
+}
+
+/// `ShadowKnock`'s systems, a game's choice.
+pub struct ShadowKnockPlugin(pub ShadowKnock);
+
+impl Plugin for ShadowKnockPlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(self.0)
+            .init_resource::<BeforeStep>()
+            .add_systems(
+                FixedPostUpdate,
+                (
+                    remember_velocities.before(PhysicsSystems::First),
+                    knock.after(reconcile).run_if(crate::core::authoritative),
+                ),
+            );
+    }
+}
+
+/// Props' velocities before this physics step.
+#[derive(Resource, Default)]
+struct BeforeStep(std::collections::BTreeMap<Entity, Vec3>);
+
+fn remember_velocities(mut before: ResMut<BeforeStep>, props: Query<(Entity, &RigidBody, &LinearVelocity), With<PhysicsProp>>) {
+    before.0.clear();
+    before.0.extend(props.iter().filter(|(_, rb, _)| rb.is_dynamic()).map(|(e, _, v)| (e, v.0)));
+}
+
+/// A hit of `mass` kg moving at speed 1 on a player at rest (`ShadowKnock`):
+/// the speed he gains, the prop's along the normal after it (not below 0).
+pub fn knock_shares(rules: &ShadowKnock, mass: f32) -> (f32, f32) {
+    let total = mass + SHADOW_MASS;
+    (
+        mass * (1.0 + rules.player_rebound) / total,
+        ((mass - rules.prop_rebound * SHADOW_MASS) / total).max(0.0),
+    )
+}
+
+/// A prop's new contact with a shadow, from the side, moving at it: the
+/// player knocked, the prop going on (the solver's answer replaced: a
+/// shadow is driven back to its player next step and would throw it back).
+#[allow(clippy::too_many_arguments)]
+fn knock(
+    mut started: MessageReader<CollisionStart>,
+    rules: Res<ShadowKnock>,
+    before: Res<BeforeStep>,
+    mut shadows: Query<(&PhysicsShadow, &ShadowAim, &mut Position, &mut Transform), Without<Shadowed>>,
+    mut owners: Query<&mut Velocity, With<Shadowed>>,
+    mut props: Query<
+        (&PhysicsProp, &Position, &mut LinearVelocity, Option<&ComputedMass>, Has<crate::map::held::Held>),
+        (Without<PhysicsShadow>, Without<Shadowed>),
+    >,
+    collisions: Collisions,
+) {
+    for s in started.read() {
+        let (b1, b2) = (s.body1.unwrap_or(s.collider1), s.body2.unwrap_or(s.collider2));
+        let (shadow, prop) = if shadows.contains(b1) { (b1, b2) } else { (b2, b1) };
+        let Ok((sh, aim, mut at, mut st)) = shadows.get_mut(shadow) else { continue };
+        let Ok((p, prop_at, mut v, mass, held)) = props.get_mut(prop) else { continue };
+        if !sh.active || held || p.push != PushAway::Collide {
+            continue;
+        }
+        let Some(&was) = before.0.get(&prop) else { continue };
+        let toward = at.0 - prop_at.0;
+        let n = collisions
+            .get(s.collider1, s.collider2)
+            .and_then(|pair| pair.manifolds.iter().map(|m| m.normal * m.points.len() as f32).sum::<Vec3>().try_normalize())
+            .map_or(toward.normalize_or_zero(), |n| if n.dot(toward) < 0.0 { -n } else { n });
+        let into = was.dot(n);
+        if n.y.abs() >= rules.side || into < rules.min_speed * METERS_PER_UNIT {
+            continue;
+        }
+        let (gain, keep) = knock_shares(&rules, mass.map_or(p.mass, |m| m.value()));
+        if let Ok(mut player) = owners.get_mut(sh.owner) {
+            player.0 += n.with_y(0.0).normalize_or_zero() * into * gain;
+        }
+        v.0 = was - n * into * (1.0 - keep);
+        // The solver pushed the shadow on past where its player gets next
+        // tick, and it would be driven back into the prop.
+        if let Some(a) = aim.0 {
+            at.0 = a;
+            st.translation = a;
+        }
     }
 }
 
@@ -457,6 +562,18 @@ mod tests {
         let mut slow = t;
         slow.dt = 0.0;
         assert!((target(&slow, true).x - (0.5 + 0.5 * 25.0)).abs() < 1e-4, "dt 0 → 0.1");
+    }
+
+    /// gravity_gun.md Open questions 14: the shares against what was
+    /// measured (the player's less the damage's shove; the prop's after).
+    #[test]
+    fn knock_shares_fit_the_probe() {
+        let r = ShadowKnock { player_rebound: 0.07, prop_rebound: 0.15, min_speed: 50.0, side: 0.7 };
+        for (mass, speed, player, prop) in [(30.0, 1000.0, 279.0, 165.0), (100.0, 730.0, 445.0, 337.0), (250.0, 650.0, 519.0, 445.0), (10.0, 1500.0, 190.0, 8.0)] {
+            let (gain, keep) = knock_shares(&r, mass);
+            assert!((gain * speed - player).abs() < 30.0, "{mass} kg: {} not {player}", gain * speed);
+            assert!((keep * speed - prop).abs() < 20.0, "{mass} kg: {} not {prop}", keep * speed);
+        }
     }
 
     /// Spec 4.1 step 7.

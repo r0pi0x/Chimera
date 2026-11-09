@@ -86,8 +86,11 @@
 //! rest of the `physgun_interactions` the stock models name (`bloodsplat`,
 //! `impale`, `lose_energy`, `onworldimpact`, `onpickup` "boogie", `damage`)
 //! aren't done; the client doesn't predict a grab (3: "the client predicts
-//! nothing of it", the server's choice of object) and predicts a launch's
-//! repunt guard not at all (the gun's own 0.5 s refire comes first).
+//! nothing of it", the server's choice of object), and a launch's repunt
+//! guard not at all (the gun's own 0.5 s refire comes first). It predicts a
+//! launch's distance check from the snapshots' pose of the prop it holds
+//! (`map::held::ServerPose`), a held ball's not at all (a ball has no pose
+//! sent as held).
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -431,6 +434,7 @@ pub struct Objects<'w, 's> {
     flyers: Query<'w, 's, (Entity, &'static Flyer, &'static Transform, Has<HeldBall>)>,
     entities: Option<Res<'w, MapEntities>>,
     parts: Query<'w, 's, (&'static RagdollBody, Option<&'static PropSurface>)>,
+    held_here: Query<'w, 's, (&'static Held, &'static held::ServerPose, Option<&'static PhysicsProp>)>,
     sets: Query<'w, 's, &'static Ragdoll>,
 }
 
@@ -847,14 +851,17 @@ pub fn frame(
                 continue;
             }
             let object = gun.object;
-            let far = server
-                && object.is_some_and(|o| {
-                    let centre = objects
-                        .centre(o)
-                        .or(objects.flyers.get(o).ok().map(|f| f.2.translation));
-                    let mine = at.translation + (state.hull_min + state.hull_max) / 2.0;
-                    centre.is_some_and(|c| c.distance(mine) > p.trace_length * U)
-                });
+            let mine = at.translation + (state.hull_min + state.hull_max) / 2.0;
+            let centre = if server {
+                object.and_then(|o| objects.centre(o).or(objects.flyers.get(o).ok().map(|f| f.2.translation)))
+            } else {
+                // A client: what the snapshots say of the prop it draws at
+                // its view (the hold's end, the object, are the server's).
+                objects.held_here.iter().find(|(h, ..)| h.holder == owner).map(|(_, pose, prop)| {
+                    pose.0 + pose.1 * prop.map_or(Vec3::ZERO, |x| (x.bounds.0 + x.bounds.1) / 2.0)
+                })
+            };
+            let far = centre.is_some_and(|c| c.distance(mine) > p.trace_length * U);
             let again = server && gun.punted.is_some_and(|(o, until)| Some(o) == object && due < until);
             if far {
                 sound(&mut play, &first, &p.dry_sound, eye, owner);

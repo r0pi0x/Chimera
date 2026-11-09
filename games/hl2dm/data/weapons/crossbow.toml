@@ -63,6 +63,7 @@ reload = 1.8333
 zoom_fov = 20.0
 
 [hooks."chimera:projectile"]
+sky_probe = 16.0
 speed = 3500.0
 water_speed = 1500.0
 gravity = 30.0

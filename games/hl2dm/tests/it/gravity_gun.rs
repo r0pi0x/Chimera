@@ -1012,6 +1012,77 @@ fn a_crate_punted_into_a_player_hurts_as_the_probe_measured() {
     assert!(wrong.is_empty(), "{wrong:#?}");
 }
 
+/// As `punt_into`, what the crate and the player do: (the player's forward
+/// speed the first tick he moves and his fastest within 8 ticks of the hit,
+/// the ticks from the hit until he moves, the crate's forward speed 4 ticks
+/// after the hit).
+fn punt_shove(mass: f32, dist: f32) -> (f32, f32, i64, f32) {
+    let s = 40.4 * 0.0254;
+    let mut c = Crate::ahead(50.0).mass(mass).flags(72);
+    c.half = Vec3::splat(20.2);
+    c.inertia = Some(Vec3::splat(0.714 * mass * s * s / 6.0));
+    let mut w = world(&[c]);
+    let b = w.sim.spawn_character(to_engine(FEET + Vec3::new(dist, 0.0, 36.0)), movement::ID);
+    w.sim.app.world_mut().get_mut::<Health>(b).unwrap().current = 50.0;
+    w.sim.ticks(30);
+    let mut cursor = w.sim.app.world().resource::<Messages<Damage>>().get_cursor_current();
+    let mut hit = None;
+    let (mut first, mut fastest, mut moved, mut crate_after) = (0.0f32, 0.0f32, None, 0.0);
+    for k in 0..60i64 {
+        w.sim.intent(w.p).fire = k == 0;
+        w.sim.ticks(1);
+        let world = w.sim.app.world();
+        if hit.is_none() && cursor.read(world.resource::<Messages<Damage>>()).any(|d| d.target == b && d.kind == DamageKind::Crush) {
+            hit = Some(k);
+        }
+        let v = to_source(world.get::<chimera_core::core::Velocity>(b).unwrap().0).x;
+        if let Some(h) = hit.or(if v > 20.0 { Some(k) } else { None }) {
+            if v > 20.0 && moved.is_none() {
+                moved = Some(k - h);
+                first = v;
+            }
+            if k - h <= 8 {
+                fastest = fastest.max(v);
+            }
+            if k - h == 4 {
+                crate_after = w.velocity(0).x;
+            }
+        }
+    }
+    (first, fastest, moved.unwrap_or(99), crate_after)
+}
+
+/// Open questions 14 (probe, `cases.py phys_rules`): a crate punted into a
+/// standing bot knocks it at once and goes on forward. The bot's fastest
+/// (with the damage's shove): 10 kg 340, 30 kg 454, 100 kg 795, 250 kg 1094,
+/// 30 kg at 1100 from 50 ahead 568; the crate after: 8, 165, 337, 445, 192.
+/// (Ours before: the crate back off the shadow, the bot only by the shove,
+/// 4 ticks late.)
+#[test]
+fn a_punted_crate_knocks_a_player_and_goes_on() {
+    let mut wrong = Vec::new();
+    for (mass, dist, bot, keeps) in [
+        (10.0, 200.0, 340.0, 8.0),
+        (30.0, 200.0, 454.0, 165.0),
+        (100.0, 200.0, 795.0, 337.0),
+        (250.0, 200.0, 1094.0, 445.0),
+        (30.0, 100.0, 568.0, 192.0),
+    ] {
+        let (first, fastest, moved, after) = punt_shove(mass, dist);
+        eprintln!("{mass} kg at {dist}: moved {moved} ticks from the hit at {first}, fastest {fastest}, crate {after}");
+        if moved > 1 {
+            wrong.push(format!("{mass} kg: moved {moved} ticks after the hit"));
+        }
+        if (fastest - bot).abs() > 0.15 * bot {
+            wrong.push(format!("{mass} kg: fastest {fastest}, not {bot}"));
+        }
+        if (after - keeps).abs() > 60.0 {
+            wrong.push(format!("{mass} kg: the crate {after}, not {keeps}"));
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
 /// `hl2mp_allow_pickup` 1 (section 8; the probe, 2026-11-04,
 /// `cases.py use_carry`): `+use` at a 20 kg crate on the floor 45 ahead,
 /// looking 40 down, carries it 66.5 ahead at eye height looking level,

@@ -2670,6 +2670,13 @@ const BREAK_NOW: f32 = 1.0e6;
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct FirstImpactScale(pub f32);
 
+/// A prop's side hit on a player is dealt on the step it begins rather than
+/// when measured (its damage needs only the speed it came with and the
+/// contact's normal): a game whose players are knocked on that tick (HL2:DM,
+/// specs/hl2dm/gravity_gun.md Open questions 14).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct PromptSideHits;
+
 /// A prop that breaks and explodes with no player as its attacker
 /// credits its influencer (`map::held::PhysicsInfluence`) when the
 /// influence is at most this old (s): HL2:DM's 2 (gravity_gun.md 9).
@@ -2707,6 +2714,10 @@ struct Impact {
     normal: Option<Vec3>,
     /// `me`'s first contact since its launch from a hold.
     first_after_launch: bool,
+    /// Dealt on its first step (a side hit in a game with `PromptSideHits`),
+    /// measured on only to keep stress off it.
+    prompt: bool,
+    dealt: bool,
 }
 
 #[derive(Resource, Default)]
@@ -2767,10 +2778,11 @@ fn impacts(
     positions: Query<&Position>,
     collisions: avian3d::prelude::Collisions,
     (held, player_scale): (Query<(), With<crate::map::held::Held>>, Res<PlayerImpactScale>),
-    (launched, sensors, first_scale): (
+    (launched, sensors, first_scale, knock): (
         Query<(), With<crate::map::held::LaunchedFromHold>>,
         Query<(), With<avian3d::prelude::Sensor>>,
         Option<Res<FirstImpactScale>>,
+        Option<Res<PromptSideHits>>,
     ),
     mut damage: MessageWriter<Damage>,
     mut commands: Commands,
@@ -2844,6 +2856,12 @@ fn impacts(
                 steps: 0,
                 normal,
                 first_after_launch,
+                // Its damage reads the speed it came with and the normal
+                // alone, and with the knock the player must feel it now.
+                prompt: knock.is_some()
+                    && (characters.contains(me) || characters.contains(other))
+                    && normal.is_some_and(|n| n.y.abs() < SIDE_CONTACT),
+                dealt: false,
             });
         }
     }
@@ -2857,12 +2875,11 @@ fn impacts(
             }
         }
         i.steps += 1;
-        if i.steps >= IMPACT_STEPS {
+        if !i.dealt && (i.prompt || i.steps >= IMPACT_STEPS) {
+            i.dealt = true;
             done.push(i.clone());
-            false
-        } else {
-            true
         }
+        i.steps < IMPACT_STEPS
     });
     for i in done {
         let fixed = |e: Entity| !bodies.get(e).is_ok_and(|(rb, ..)| rb.is_dynamic());

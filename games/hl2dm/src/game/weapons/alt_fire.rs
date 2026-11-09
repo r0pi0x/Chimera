@@ -50,7 +50,7 @@ use serde::Deserialize;
 
 use chimera_sim::weapon::{
     HolsterLocked, Inventory, NetPart, ViewPunch, WeaponEvent, WeaponEventKind, WeaponState,
-    projectile::{Direct, Flyer, FlyerGone, FlyerHit, LaunchRequest, LaunchUnderWater, Touch},
+    projectile::{Direct, Flyer, FlyerGone, FlyerHit, LaunchRequest, LaunchUnderWater, SkyEnd, Touch},
     random::shared_random,
 };
 
@@ -299,6 +299,8 @@ pub fn before_frame(
                 f.keep_speed = Some(p.speed * U);
                 f.expires = Some(now + p.life as f64);
                 f.touch = Touch::Bounce;
+                // 5.2: its end at once on a sky surface.
+                f.sky_end = Some(SkyEnd { probe: p.radius * 2.0 * U, expired: true });
                 f.direct = Some(Direct {
                     damage: p.damage * launch::HP,
                     kind: DamageKind::Crush,

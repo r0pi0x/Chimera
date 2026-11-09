@@ -939,6 +939,7 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
             commands.insert_resource(Gravity(Vec3::NEG_Y * g));
         }
         commands.insert_resource(MapWater(data.water.clone()));
+        commands.insert_resource(MapSkyFaces::of(&data.sky_surfaces));
         commands.insert_resource(water::WaterMovers(
             data.water_movers
                 .iter()
