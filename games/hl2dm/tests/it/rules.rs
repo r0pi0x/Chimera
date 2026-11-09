@@ -873,6 +873,78 @@ fn tdm_friendly_fire_and_kills_as_the_probe_measured() {
     }
 }
 
+/// Restart 2: projectiles go with the restart (a bolt in flight here).
+#[test]
+fn a_restart_removes_projectiles() {
+    use chimera_sim::weapon::projectile::{Flyer, LaunchRequest, Launcher};
+    let mut g = game(dm_spots(), |_| {});
+    let a = g.join("none");
+    let w = chimera_sim::weapon::give(g.world(), a, hl2dm::game::weapons::CROSSBOW).unwrap();
+    let mut f = g.world().get::<Launcher>(w).unwrap().template.clone();
+    f.owner = Some(a);
+    f.gravity = 0.0;
+    f.velocity = Vec3::Y * 0.5;
+    g.world().write_message(LaunchRequest { flyer: f, start: Vec3::new(0.0, 50.0, 0.0), shown: None, tag: None });
+    g.sim.ticks(3);
+    let flyers = |g: &mut Game| g.world().query::<&Flyer>().iter(g.world()).count();
+    assert_eq!(flyers(&mut g), 1, "in flight");
+    g.world().resource_mut::<Hl2Rules>().restartgame = 1.0;
+    for _ in 0..200 {
+        if !g.events("round_start").is_empty() {
+            break;
+        }
+        g.sim.ticks(1);
+    }
+    g.sim.ticks(1);
+    assert!(!g.events("round_start").is_empty());
+    assert_eq!(flyers(&mut g), 0, "gone with the restart");
+}
+
+/// Edge cases: a map loaded as a new game zeroes players' commands for its
+/// first 3 s; `start` (tests) has no freeze.
+#[test]
+fn the_map_start_freeze() {
+    let mut g = game(dm_spots(), |_| {});
+    let a = g.join("none");
+    rules::new_game(g.world());
+    g.sim.ticks(1);
+    let start = g.feet(a);
+    g.sim.intent(a).move_axis = Vec2::new(0.0, 1.0);
+    g.sim.seconds(2.5);
+    let i = g.sim.app.world().get::<Intent>(a).unwrap().clone();
+    assert_eq!(i.move_axis, Vec2::ZERO, "zeroed");
+    assert!(g.feet(a).distance(start) < 1.0, "held still");
+    g.sim.seconds(1.0);
+    g.sim.intent(a).move_axis = Vec2::new(0.0, 1.0);
+    g.sim.seconds(0.5);
+    assert!(g.feet(a).distance(start) > 20.0, "moves after 3 s");
+}
+
+/// Disconnecting: in TDM a living leaver dies as a suicide on its way out
+/// (a `player_death`, its point to team 0: Combine's and Rebels' scores
+/// unchanged); a dead one, and anyone in DM, only leaves its team.
+#[test]
+fn a_tdm_leaver_dies_as_a_suicide() {
+    let mut g = game(dm_spots(), |r| r.teamplay = 1);
+    let a = g.join("none");
+    let b = g.join("none");
+    g.sim.ticks(10);
+    let before = g.teams();
+    let deaths = g.events("player_death").len();
+    g.world().entity_mut(a).despawn();
+    g.sim.ticks(1);
+    let left = g.events("player_team");
+    assert!(left.iter().any(|(_, e)| e.get("disconnect") == Some(&EventValue::Bool(true))), "left its team");
+    assert_eq!(g.events("player_death").len(), deaths + 1, "a death notice");
+    assert_eq!(g.teams(), before, "team 0 takes the point");
+    // A dead leaver: no death.
+    g.kill(b, None);
+    let deaths = g.events("player_death").len();
+    g.world().entity_mut(b).despawn();
+    g.sim.ticks(1);
+    assert_eq!(g.events("player_death").len(), deaths);
+}
+
 /// P12 (probe, 2026-11-04, `cases.py log_lines`): the server log's lines
 /// for a kill, a suicide, chat and a team change, as the real server
 /// wrote them: `"<a>" killed "<b>" with "357"`, `"<a>" say "hello"`; a DM

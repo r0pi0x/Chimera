@@ -62,10 +62,16 @@ impl History {
         }
     }
 
-    fn add(&mut self, mut e: Entry) {
+    /// The slot the next entry takes (the counter wraps past the column).
+    fn next_slot(&mut self) -> usize {
         if GAP * (self.counter as f32 + 1.0) > COLUMN {
             self.counter = 0;
         }
+        self.counter
+    }
+
+    fn add(&mut self, mut e: Entry) {
+        self.next_slot();
         e.slot = self.counter;
         self.counter += 1;
         // A new entry in a slot takes it over.
@@ -112,6 +118,11 @@ impl History {
         }
         if let Some(e) = self.entries.iter_mut().find(|e| e.denied && e.ammo.as_deref() == Some(ammo)) {
             e.until = now + DENIED_LIFE;
+            return;
+        }
+        // It never overwrites a live entry: no row while its slot is taken.
+        let slot = self.next_slot();
+        if self.entries.iter().any(|e| e.slot == slot) {
             return;
         }
         self.add(Entry { text: Some("FULL".into()), caution: true, ammo: Some(ammo.into()), denied: true, ..Self::entry(now, DENIED_LIFE) });
@@ -187,6 +198,19 @@ mod tests {
         h.ammo("hl2dm:pistol", 20, None, 1.0);
         h.denied("hl2dm:pistol", 1.1);
         assert_eq!(h.entries.iter().filter(|e| e.denied).count(), 1);
+    }
+
+    /// A refused pickup never overwrites a live row in the slot it would
+    /// take.
+    #[test]
+    fn refused_ammo_keeps_live_rows() {
+        let mut h = History::default();
+        for i in 0..5 {
+            h.weapon(w(i + 1), Some(("WeaponIcons", 'a')), false, false, 0.0);
+        }
+        h.denied("hl2dm:smg1", 0.1);
+        assert_eq!(h.entries.len(), 5);
+        assert!(!h.entries.iter().any(|e| e.denied));
     }
 
     /// Spec test 57: a weapon that is exhaustible gets no row of its own;

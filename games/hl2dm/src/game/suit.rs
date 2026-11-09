@@ -11,25 +11,33 @@
 //! at 12.5/s half a second after the last one stops. While aux power lasts
 //! the player breathes under water; then the air lasts 7 s and drowning
 //! takes 10 a second (`drowning`), given back 10 every 2 s after
-//! surfacing. The flashlight (`Flashlight` message: `impulse 100`) costs
-//! nothing and needs `hl2dm:mp_flashlight` (0 by default). The suit zoom
-//! (`+zoom`) narrows the view to 25 over 0.4 s (`weapon::ViewZoom`) and
-//! blocks firing while held.
+//! surfacing. The flashlight (`impulse 100`: `weapon::PlayerImpulse`, a
+//! network client's through `net`'s `ImpulseRequest`, or the `Flashlight`
+//! message) costs nothing and needs `hl2dm:mp_flashlight` (0 by default);
+//! it replicates (`FlashlightOn`) and shows as a spot light along the
+//! view (`flashlight_lights`). The suit zoom (`+zoom`) narrows the view to
+//! 25 over 0.4 s (`weapon::ViewZoom`) and blocks firing while held;
+//! `hl2dm:toggle_zoom` works it without holding a key. It has one owner:
+//! not while the crossbow's scope holds the view, nor that while it does.
 //!
 //! Known shortcuts:
 //! - Of the devices a player dies with only the sprint is kept to the
 //!   respawn (measured, P9); the breather stuck on after a death under
 //!   water (suit.md Quirks) isn't measured and is cleared.
 //! - The suit zoom's FOV is stepped per tick on the simulation's clock
-//!   (the client evaluates it at its render time); it has no zoom owner
-//!   yet (the crossbow's scope comes with H4), and `toggle_zoom` isn't
-//!   a command.
-//! - `impulse 100` reaches the flashlight only as the `Flashlight`
-//!   message (no bind or network path yet), and nothing draws the light
-//!   (H9).
-//! - Drowning's sounds play from the player; the server's hurt event and
-//!   the `trigger_hurt` damage kinds (poison, radiation: absorbed here as
-//!   generic, dm_underpass's) aren't told apart yet.
+//!   (the client evaluates it at its render time).
+//! - The flashlight's light starts at the eye, not the model's right-hand
+//!   attachment suit.md gives for others, for every player; its reach is
+//!   that beam's 200 units. The spec gives no brightness, colour or cone
+//!   (ours are picked: white, 25 degrees, `SpotLight`'s intensity 400000).
+//!   On dm_lockdown it lights nothing visible: the map and the models looked
+//!   the same on and off, also at 10000 times the intensity with a wider
+//!   cone and a 30 m range. Why (likely their materials ignore the light)
+//!   isn't found yet, so the flashlight is the state and its sounds for now.
+//! - Drowning's sounds play from the player; the server's hurt event
+//!   isn't sent. A `trigger_hurt`'s poison and radiation types are their
+//!   own kinds (`DamageKind::Poison`, `Radiation`) and bypass the suit
+//!   (dm_underpass's 75); the other types it deals are generic.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -43,7 +51,7 @@ use crate::{
     },
     map::PlaySound,
     slots::MovementSlot,
-    weapon::{Armor, ArmorPieces, Inventory, ViewZoom, hits},
+    weapon::{Armor, ArmorPieces, Inventory, OwnZoom, PlayerImpulse, ViewZoom, Zoomed, hits},
 };
 
 /// Device bits (`Suit::devices`).
@@ -254,6 +262,11 @@ pub struct Breath {
 #[derive(Message, Clone, Copy, Debug)]
 pub struct Flashlight(pub Entity);
 
+/// `toggle_zoom` asked (the command's, on the server): the zoom system
+/// starts or stops the suit zoom next tick.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ZoomToggle;
+
 /// The flashlight is on (its dim light; others see a beam, H9).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FlashlightOn;
@@ -271,13 +284,20 @@ pub struct SuitPlugin;
 impl Plugin for SuitPlugin {
     fn build(&self, app: &mut App) {
         use crate::core::{ActionAppExt, PredictedAppExt};
+        use chimera_net::net::parts::NetAppExt;
         app.init_resource::<InfiniteAux>()
             .init_resource::<FlashlightAllowed>()
             .add_message::<Flashlight>()
+            .add_message::<PlayerImpulse>()
             .add_message::<PlaySound>()
             .add_message::<Damage>()
             .intent_action(ZOOM_ACTION)
             .predicted_net::<Suit>()
+            .net_part("hl2dm_flashlight", |app| {
+                use bevy_replicon::prelude::AppRuleExt;
+                app.replicate::<FlashlightOn>();
+            })
+            .add_systems(Update, flashlight_lights)
             .add_systems(FixedUpdate, wear.before(SimSet::Movement))
             .add_systems(
                 crate::core::Predict::Movement,
@@ -294,6 +314,19 @@ impl Plugin for SuitPlugin {
                     .before(SimSet::Movement)
                     .run_if(crate::core::authoritative),
             );
+        crate::console::ConsoleAppExt::console_command(
+            app,
+            &format!("{}:toggle_zoom", super::GAME),
+            "Start or stop the suit zoom (unlike +zoom, firing stays allowed).",
+            |w, _| {
+                let e = crate::console::command_player(w)?;
+                w.entity_mut(e).insert(ZoomToggle);
+                Ok(None)
+            },
+        );
+        app.world_mut()
+            .resource_mut::<crate::console::Console>()
+            .player_command(&format!("{}:toggle_zoom", super::GAME));
         for (name, help, get, set) in [
             (
                 "mp_flashlight",
@@ -493,11 +526,60 @@ fn drowning(
     }
 }
 
+/// A lit flashlight's spot light, following `.0`'s view.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FlashlightBeam(pub Entity);
+
+/// How far the flashlight reaches (units; suit.md's beam).
+pub const FLASHLIGHT_REACH: f32 = 200.0;
+
+/// One light for each player with the flashlight on (suit.md
+/// "Flashlight"): at the eye, along the view (the others' as drawn).
+#[allow(clippy::type_complexity)]
+fn flashlight_lights(
+    lit: Query<(Entity, &Transform, &crate::core::MovementState, &Intent, Option<&crate::map::interp::RenderedView>, Has<crate::core::LocalPlayer>), With<FlashlightOn>>,
+    mut beams: Query<(Entity, &FlashlightBeam, &mut Transform), Without<FlashlightOn>>,
+    mut commands: Commands,
+) {
+    let mut seen: Vec<Entity> = Vec::new();
+    for (e, beam, mut t) in &mut beams {
+        let Ok((_, at, state, intent, view, local)) = lit.get(beam.0) else {
+            commands.entity(e).despawn();
+            continue;
+        };
+        seen.push(beam.0);
+        let look = crate::map::interp::eye_view(if local { None } else { view }, intent, state);
+        t.translation = at.translation + look.eye_offset;
+        t.rotation = crate::weapon::aim_of(look.yaw, look.pitch);
+    }
+    for (player, at, state, intent, view, local) in &lit {
+        if seen.contains(&player) {
+            continue;
+        }
+        let look = crate::map::interp::eye_view(if local { None } else { view }, intent, state);
+        commands.spawn((
+            Name::new("Flashlight"),
+            FlashlightBeam(player),
+            SpotLight {
+                intensity: 400_000.0,
+                range: FLASHLIGHT_REACH * super::weapons::launch::U,
+                outer_angle: 25f32.to_radians() / 2.0,
+                inner_angle: 15f32.to_radians() / 2.0,
+                shadow_maps_enabled: false,
+                ..default()
+            },
+            Transform::from_translation(at.translation + look.eye_offset).with_rotation(crate::weapon::aim_of(look.yaw, look.pitch)),
+        ));
+    }
+}
+
 /// `impulse 100` (suit.md "Flashlight"): off always works (silent when
 /// dead); on needs `mp_flashlight` and a living player. Death turns it
 /// off silently.
+#[allow(clippy::too_many_arguments)]
 fn flashlight(
     mut toggles: MessageReader<Flashlight>,
+    mut impulses: MessageReader<PlayerImpulse>,
     q: Query<(&Health, &Transform, Has<FlashlightOn>), With<Suit>>,
     lit: Query<(Entity, &Health), With<FlashlightOn>>,
     allowed: Res<FlashlightAllowed>,
@@ -509,7 +591,12 @@ fn flashlight(
             commands.entity(e).remove::<FlashlightOn>();
         }
     }
-    for Flashlight(e) in toggles.read() {
+    let asked: Vec<Entity> = toggles
+        .read()
+        .map(|f| f.0)
+        .chain(impulses.read().filter(|i| i.impulse == 100).map(|i| i.player))
+        .collect();
+    for e in &asked {
         let Ok((h, t, on)) = q.get(*e) else { continue };
         let alive = h.current > 0.0;
         let entry = if on {
@@ -538,31 +625,53 @@ fn flashlight(
 /// to 25 over 0.4 s, released widens it back over 0.2 s, from the FOV of
 /// the moment truncated to a degree; a weapon switch or death ends it;
 /// while `+zoom` is held attack and attack2 do nothing. The view's zoom is
-/// `ViewZoom` while it differs from the default.
+/// `ViewZoom` while it differs from the default. `toggle_zoom`
+/// (`ZoomToggle`) starts or stops it without holding the key. One zoom
+/// owner: the suit zoom can't start while the crossbow's scope (a weapon
+/// with `OwnZoom`, its owner `Zoomed`) holds the view, and while the suit
+/// zoom holds, such a weapon's attack2 (its zoom toggle) is refused.
+#[allow(clippy::type_complexity)]
 fn zoom(
-    mut q: Query<(Entity, &mut Suit, &mut Intent, &Health, Option<&Inventory>, Option<&ViewZoom>)>,
+    mut q: Query<(
+        Entity,
+        &mut Suit,
+        &mut Intent,
+        &Health,
+        Option<&Inventory>,
+        Option<&ViewZoom>,
+        Has<Zoomed>,
+        Has<ZoomToggle>,
+    )>,
+    own_zooms: Query<(), With<OwnZoom>>,
     registry: Res<ActionRegistry>,
     clock: Res<SimClock>,
     mut last_weapon: Local<bevy::platform::collections::HashMap<Entity, Option<Entity>>>,
     mut commands: Commands,
 ) {
     let now = clock.now;
-    for (e, mut suit, mut intent, health, inv, view) in &mut q {
+    for (e, mut suit, mut intent, health, inv, view, zoomed, toggle) in &mut q {
         let held = intent.action(&registry, ZOOM_ACTION) && health.current > 0.0;
         let active = inv.and_then(|i| i.active);
         let switched = last_weapon.insert(e, active).is_some_and(|w| w != active);
         let current = suit.zoom.map_or(DEFAULT_FOV, |z| z.fov(now));
         let zoomed_in = suit.zoom.is_some_and(|z| z.to < DEFAULT_FOV);
+        // Another owner (the crossbow's scope) holds the zoom.
+        let scoped = active.is_some_and(|a| own_zooms.contains(a));
+        let other_owner = zoomed && scoped && !zoomed_in;
+        if toggle {
+            commands.entity(e).remove::<ZoomToggle>();
+        }
+        let start = ((held && !suit.zoom_held) || (toggle && !zoomed_in)) && health.current > 0.0;
         if health.current <= 0.0 && suit.zoom.is_some() {
             suit.zoom = None;
-        } else if held && !suit.zoom_held {
+        } else if start && !other_owner {
             suit.zoom = Some(ZoomMove {
                 from: current.trunc(),
                 to: ZOOM_FOV,
                 since: now,
                 time: ZOOM_IN,
             });
-        } else if zoomed_in && ((!held && suit.zoom_held) || switched) {
+        } else if zoomed_in && ((!held && suit.zoom_held) || switched || toggle) {
             suit.zoom = Some(ZoomMove {
                 from: current.trunc(),
                 to: DEFAULT_FOV,
@@ -573,6 +682,10 @@ fn zoom(
         suit.zoom_held = held;
         if held {
             intent.fire = false;
+            intent.secondary = false;
+        }
+        // The crossbow can't zoom while the suit zoom holds.
+        if scoped && suit.zoom.is_some_and(|z| z.to < DEFAULT_FOV) {
             intent.secondary = false;
         }
         let fov = suit.zoom.map_or(DEFAULT_FOV, |z| z.fov(now));

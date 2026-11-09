@@ -1743,6 +1743,35 @@ implementing (owner branch) / done.
   in flight too); a pin has no sky test and the pinned bone isn't moved
   onto the impact; a client's own punt ends at its eye trace.
 
+- 2026-11-09: **Gaps: movement, rules, suit, HUD** (branch `hl2dm-gaps1`).
+  Movement (2026-11-04 commit): the walk key as its own action, ground
+  factors, landings on floating and descending bodies, the fall-damage
+  inputs, `toggle_duck`, the waist counter. Rules: a remote client's
+  `cl_playermodel` rewritten (`UserInfoSet`), `mp_restartgame` removes
+  flyers, satchels and mines, the 3 s map-start freeze, a TDM leaver's
+  suicide pinned. Suit: `impulse 100` as a bind and network path
+  (`PlayerImpulse`, `ImpulseRequest`; `impulse 50` does nothing, without
+  an error), `hl2dm:toggle_zoom`, one zoom owner with the crossbow,
+  `FlashlightOn` replicated, a spot light per lit player; `trigger_hurt`'s
+  poison and radiation kinds. The capture on dm_lockdown shows the light
+  changes nothing on the map or the models, even much brighter, so the beam
+  isn't really drawn yet (`suit`'s shortcuts). HUD: the secondary panel fed (hud.md 4.6's
+  table; the frag's and RPG's own rounds as their ammo, also in the
+  selection and the history), target ID from the view ray and
+  `hud_centerid`, the history's items and "FULL" from the server
+  (`game::hud_notes`; `weapon::drop::AmmoFull` for a placed weapon).
+  The capture also found the panel never showed with the install's
+  script: `WeaponUsesSecondaryAmmo`'s own `StopPanelAnimations` removed the
+  animations it had just started. A stop now keeps its own event's. hud.md 3
+  says it removes all of them, which can't give 4.6's table; the spec should
+  say which (`heavy::hud_look` pins the result).
+  The binds are the install's `config_default.cfg`'s, not run live.
+  Left, spec unsure or silent: the freeze on a `changelevel` (rules.md
+  Open questions 10) and the leaver's death notice (9) wait for the
+  probe; a crate's refused opening sends no "FULL" (the spec names
+  pickups); the flashlight's brightness, colour and cone aren't in the
+  spec; the suit charger's pool (30 or 75) is the user's call.
+
 ## Decision log
 
 - 2026-10-31 (user): Half-Life 2: Deathmatch is the next game, after

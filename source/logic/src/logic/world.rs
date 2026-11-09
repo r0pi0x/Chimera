@@ -203,7 +203,8 @@ pub enum Effect {
     /// trigger_hurt's damage to a player, health points before armour
     /// (`core::MapDamage`): armour takes its part when `armour` (every
     /// damage type but fall and drown, measured).
-    Hurt { target: Entity, amount: f32, armour: bool },
+    /// `kind`: its type's (`triggers::Hurt::kind`).
+    Hurt { target: Entity, amount: f32, armour: bool, kind: crate::core::DamageKind },
     /// Burn damage to a player (fire.rs: env_fire, entity flames), health
     /// points.
     Burn { target: Entity, amount: f32 },
@@ -252,6 +253,10 @@ pub enum Effect {
     /// a filter_damage_type tests and its Negated flag (damage passes when
     /// its bits equal `bits`, inverted when negated); None clears it.
     DamageFilter { target: Entity, filter: Option<(u32, bool)> },
+    /// A player's `IgnoreFallDamage` (`reset`) or
+    /// `IgnoreFallDamageWithoutReset` input: no fall damage for `seconds`
+    /// (`core::IgnoreFallDamage`).
+    IgnoreFallDamage { target: Entity, seconds: f32, reset: bool },
     /// Give a player items (game_player_equip: names and counts), after
     /// taking all its weapons when `strip` (also player_weaponstrip).
     Equip { target: Entity, items: Vec<(String, u32)>, strip: bool },
@@ -1470,6 +1475,17 @@ impl LogicWorld {
                     found
                 };
                 self.effects.push(Effect::DamageFilter { target: p, filter });
+            }
+            // No fall damage for that many seconds (<= 0: 10); the first
+            // also ends at the first landing it spares (specs/hl2dm/
+            // movement.md "Falling and landing").
+            "ignorefalldamage" | "ignorefalldamagewithoutreset" => {
+                let Some(t) = self.need_float(&value, input) else { return };
+                self.effects.push(Effect::IgnoreFallDamage {
+                    target: p,
+                    seconds: if t <= 0.0 { 10.0 } else { t },
+                    reset: input == "ignorefalldamage",
+                });
             }
             "kill" | "killhierarchy" => {
                 // Players are never removed; a kill input kills them.

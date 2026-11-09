@@ -7,32 +7,37 @@
 //! 526.5, 922.5; `mp_falldamage` 0: a flat 10, 1: by speed with the
 //! fraction kept), `func_useableladder`s instead of ladder brushes, the
 //! swim lift of the player's own speed, footsteps of the model's own run
-//! steps (none while ducked), and the speed selection (`select_speed`):
-//! run 190, `+walk` 150, `+speed` sprint 320 on the suit's aux power
-//! (`super::suit`), started only on the key's press. The match's movement
-//! (`slots::Loadout`). Its cvars are `hl2dm:`'s (`hl2dm:sv_gravity` ...,
-//! lift C8), backed by its own config, apart from CS:S's.
+//! steps (none while ducked; waist deep, one attempt in four on a counter
+//! all players share is put off a tick), landings counting 173 less on a
+//! floating body and less a descending ground's speed, and the speed
+//! selection (`select_speed`): run 190, `+walk` 150 (its own action,
+//! `WALK_ACTION`: Chimera's shared `Intent::walk` is `+speed`'s too, so
+//! Alt and Shift with no aux power walk), `+speed` sprint 320 on the
+//! suit's aux power (`super::suit`), started only on the key's press; the
+//! ground material's max speed and jump factors are the shared
+//! movement's. `toggle_duck` (`DuckToggle`, predicted) ducks until toggled
+//! again or, with `xc_uncrouch_on_jump` 1, a jump press. The match's
+//! movement (`slots::Loadout`). Its cvars are `hl2dm:`'s
+//! (`hl2dm:sv_gravity` ..., lift C8), backed by its own config, apart from
+//! CS:S's.
 //!
 //! Known shortcuts:
-//! - `+speed` and `+walk`: Chimera's shared `+speed` sets both the walk
-//!   and the sprint key (`core::Intent`), so walking here is the walk key
-//!   without the sprint key: holding ALT and SHIFT with no aux power runs
-//!   at 190 (HL2:DM walks at 150).
-//! - Not modelled: the ground material's speed factor, landing on a
-//!   floating object or a descending one (movement.md "Falling and
-//!   landing"), `IgnoreFallDamage` inputs, the waist-water footstep
-//!   counter shared by all players (a one-tick delay), `xc_uncrouch_on_jump`
-//!   (toggle duck isn't modelled), the ground probe ignoring hostile
-//!   combine balls (none in HL2:DM), `trigger_vphysics_motion` blocking
-//!   jumps (no stock map has one).
+//! - What un-toggles `toggle_duck` is the jump key's press (the spec says
+//!   "a jump"), and its duck holds the duck key in the intent; the waist
+//!   counter is per process, so a client predicting its own steps counts
+//!   only its own.
+//! - Not modelled: the ground probe ignoring hostile combine balls (none
+//!   in HL2:DM), `trigger_vphysics_motion` blocking jumps (no stock map
+//!   has one).
 
 use bevy::prelude::*;
+use serde::{Deserialize, Serialize};
 use source_engine::source_movement::{
     SourceMovement, SourceMovementAppExt, SourceMovementConfig, SourceMovementConfigs, SourceMovementStep, SourceSpeed,
 };
 
 use crate::{
-    core::{FirstTimePredicted, Intent, SimClock, Velocity},
+    core::{ActionRegistry, FirstTimePredicted, Intent, SimClock, Velocity},
     map::PlaySound,
     slots::{Loadout, MovementSlot},
 };
@@ -102,8 +107,38 @@ pub fn config() -> SourceMovementConfig {
         swim_lift_max_speed: true,
         model_footsteps: true,
         drowning: false,
+        floating_bonus: 173.0,
+        waist_step_skip: true,
         ..SourceMovementConfig::shared_code()
     }
+}
+
+/// The walk key (`+walk`, Alt), a named action apart from Chimera's
+/// shared `Intent::walk`, which `+speed` sets too: HL2:DM's walk is the
+/// key itself, so Alt and Shift with no aux power walk.
+pub const WALK_ACTION: &str = "walk";
+
+/// `xc_uncrouch_on_jump`: a jump un-toggles `toggle_duck`.
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct UncrouchOnJump(pub u8);
+
+impl Default for UncrouchOnJump {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
+/// `toggle_duck`'s state (movement.md "Jumping": the toggle style of
+/// ducking, the server's): while `on` the player ducks as if `+duck` were
+/// held; with `xc_uncrouch_on_jump` 1 pressing jump turns it off.
+/// Predicted, so a client ducks with it.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct DuckToggle {
+    pub on: bool,
+    /// Jump was held last tick.
+    pub jump_held: bool,
+    /// The duck key is held for it (let go when it turns off).
+    pub forced: bool,
 }
 
 /// `mp_falldamage` 0's flat damage, health points.
@@ -136,12 +171,41 @@ impl Plugin for Hl2MovementPlugin {
 /// goes with it.
 pub fn add_movement(app: &mut App) {
     {
+        use crate::core::{ActionAppExt, PredictedAppExt};
         app.source_movement(ID, Some(config()), Some(super::GAME))
             .init_resource::<Speeds>()
+            .init_resource::<UncrouchOnJump>()
+            .init_resource::<ActionRegistry>()
+            .intent_action(WALK_ACTION)
+            .predicted_net::<DuckToggle>()
             .add_systems(
                 crate::core::Predict::Movement,
-                select_speed.after(super::suit::breath_devices).before(SourceMovementStep),
+                (toggled_duck, select_speed)
+                    .chain()
+                    .after(super::suit::breath_devices)
+                    .before(SourceMovementStep),
             );
+        crate::console::resource_cvar::<UncrouchOnJump, u8>(
+            app,
+            &format!("{}:xc_uncrouch_on_jump", super::GAME),
+            "1: a jump un-toggles toggle_duck",
+            |u| &mut u.0,
+        );
+        crate::console::ConsoleAppExt::console_command(
+            app,
+            &format!("{}:toggle_duck", super::GAME),
+            "Duck until toggled again (or a jump, with xc_uncrouch_on_jump 1).",
+            |w, _| {
+                let e = crate::console::command_player(w)?;
+                let mut t = w.get::<DuckToggle>(e).copied().unwrap_or_default();
+                t.on = !t.on;
+                w.entity_mut(e).insert(t);
+                Ok(None)
+            },
+        );
+        app.world_mut()
+            .resource_mut::<crate::console::Console>()
+            .player_command(&format!("{}:toggle_duck", super::GAME));
         for (name, help) in CVARS {
             let name = *name;
             crate::console::ConsoleAppExt::console_cvar(
@@ -234,6 +298,7 @@ pub fn select_speed(
     clock: Res<SimClock>,
     first: Res<FirstTimePredicted>,
     infinite: Option<Res<super::suit::InfiniteAux>>,
+    registry: Option<Res<ActionRegistry>>,
     mut play: MessageWriter<PlaySound>,
 ) {
     let speeds = speeds.map_or_else(Speeds::default, |s| *s);
@@ -276,7 +341,9 @@ pub fn select_speed(
         if suit.aux < SPRINT_STOP || carrying {
             suit.sprinting = false;
         }
-        let walk_key = intent.walk && !intent.sprint;
+        // `+walk` (its own action), or Chimera's walk without the sprint
+        // key (a bot, a game binding `+walk` alone).
+        let walk_key = registry.as_ref().is_some_and(|r| intent.action(r, WALK_ACTION)) || intent.walk && !intent.sprint;
         let walking = walk_key && !suit.sprinting && !intent.crouch || !suit.worn;
         let p = if suit.sprinting {
             if started {
@@ -304,5 +371,28 @@ pub fn select_speed(
         let moving = v.x.abs() > super::suit::STILL || v.z.abs() > super::suit::STILL;
         suit.update_aux(moving, now, dt, infinite);
         suit.speed_held = intent.sprint;
+    }
+}
+
+/// `toggle_duck` held down (`DuckToggle`), first in each movement tick:
+/// its duck as `+duck`; a jump press un-toggles it with
+/// `xc_uncrouch_on_jump` 1. Predicted.
+pub fn toggled_duck(mut q: Query<(&mut Intent, &mut DuckToggle)>, uncrouch: Option<Res<UncrouchOnJump>>) {
+    let uncrouch = uncrouch.is_none_or(|u| u.0 != 0);
+    for (mut intent, mut t) in &mut q {
+        let pressed = intent.jump && !t.jump_held;
+        if t.jump_held != intent.jump {
+            t.jump_held = intent.jump;
+        }
+        if t.on && pressed && uncrouch {
+            t.on = false;
+        }
+        if t.on && !intent.crouch {
+            intent.crouch = true;
+            t.forced = true;
+        } else if !t.on && t.forced {
+            intent.crouch = false;
+            t.forced = false;
+        }
     }
 }

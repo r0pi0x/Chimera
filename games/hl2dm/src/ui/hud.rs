@@ -105,6 +105,8 @@ pub struct Inputs {
     pub quickinfo: bool,
     /// `hud_showemptyweaponslots` is 0: the selection skips empty boxes.
     pub hide_empty_slots: bool,
+    /// `hud_centerid` is 0: the target ID at the bottom left.
+    pub target_id_left: bool,
 }
 
 /// A suit device count, from the inputs.
@@ -261,6 +263,9 @@ impl Hl2Hud {
         self.draw_crosshair(look, inp, &mut frame);
         self.draw_quick(look, inp, &mut frame);
         self.draw_zoom(look, inp, &mut frame);
+        if !inp.hide_misc {
+            self.draw_target(look, inp, &mut frame);
+        }
         self.draw_team_line(look, inp, &mut frame);
         frame
     }

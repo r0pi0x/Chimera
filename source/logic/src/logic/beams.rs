@@ -427,6 +427,7 @@ fn strike_now(w: &mut LogicWorld, id: EntId, s: &Strike) {
                     target: p,
                     amount: s.damage,
                     armour: true,
+                    kind: crate::core::DamageKind::Generic,
                 });
             }
             Some((a, b))
@@ -517,6 +518,7 @@ fn zap_tick(w: &mut LogicWorld, id: EntId) {
                 target: p,
                 amount: z.damage * elapsed,
                 armour: true,
+                kind: crate::core::DamageKind::Generic,
             });
         }
         if let Some(z) = part(w, id).and_then(|p| p.zap.as_mut()) {

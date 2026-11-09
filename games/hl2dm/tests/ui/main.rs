@@ -6,6 +6,7 @@
 
 mod common;
 mod damage_and_death;
+mod feed;
 mod history;
 mod panels;
 mod quick_info;

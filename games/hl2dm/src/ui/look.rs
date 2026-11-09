@@ -147,6 +147,9 @@ pub fn spec_look(screen: Screen) -> Look {
     ] {
         hud.colors.insert(name.into(), c);
     }
+    // hud_textures.txt's item icons (a vial has none).
+    hud.icons.insert("item_battery".into(), ("WeaponIcons".into(), '*'));
+    hud.icons.insert("item_healthkit".into(), ("WeaponIcons".into(), '+'));
     let sized = |family: &str, tall: f32, weight: u32, additive: bool| UiFontSize {
         family: family.into(),
         tall,

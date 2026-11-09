@@ -116,3 +116,46 @@ fn the_additive_picture_is_there() {
     let Some(hud) = look() else { return };
     assert!(hud.sprites.contains_key("white_additive"), "the dead view would be a solid red");
 }
+
+/// The install's script (hud.md 4.6's table): switching to a weapon with a
+/// secondary ammo type shows the panel with its count at r76 and moves the
+/// ammo panel to r222; back to one without hides it.
+#[cfg(feature = "ui")]
+#[test]
+fn the_install_shows_the_secondary_panel() {
+    use hl2dm::ui::{frame::{Draw, Screen}, hud::{Hl2Hud, Inputs, WeaponNow}, look::Look};
+    let Some(h) = look() else { return };
+    let script = hud::animations(&h);
+    let look = Look::new(std::sync::Arc::new(h), Screen::new(640.0, 480.0));
+    let mut hud = Hl2Hud::new(script, &look);
+    hud.reset(&look);
+    let held = |class: &str, secondary: Option<(String, u32)>| Inputs {
+        alive: true,
+        health: 100.0,
+        aux: 100.0,
+        fov: 90.0,
+        weapon: Some(WeaponNow { class: class.into(), uses_primary: true, clip: Some(18), max_clip: 18, reserve: 150, secondary }),
+        ..Inputs::default()
+    };
+    let (pistol, smg) = (held("weapon_pistol", None), held("weapon_smg1", Some(("hl2dm:smg1_grenade".into(), 3))));
+    let mut t = 0.0;
+    let mut run = |hud: &mut Hl2Hud, inp: &Inputs| {
+        for _ in 0..60 {
+            t += 0.05;
+            hud.think(inp, t);
+        }
+    };
+    let digits = |hud: &Hl2Hud, inp: &Inputs| match hud.frame(&look, inp).find_text("3") {
+        Some(Draw::Text { at, .. }) => Some(*at),
+        _ => None,
+    };
+    run(&mut hud, &pistol);
+    assert_eq!(digits(&hud, &pistol), None);
+    run(&mut hud, &smg);
+    assert_eq!(hud.anim.number("HudAmmoSecondary", "Alpha"), Some(255.0));
+    let at = digits(&hud, &smg).expect("the count drawn");
+    assert!(at.x > 640.0 - 76.0, "in the panel at r76: {at}");
+    assert_eq!(hud.anim.get("HudAmmo", "Position").and_then(|v| v.pair()), Some([418.0, 432.0]));
+    run(&mut hud, &pistol);
+    assert_eq!(hud.anim.number("HudAmmoSecondary", "Alpha"), Some(0.0));
+}

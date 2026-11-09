@@ -1317,7 +1317,7 @@ fn apply_effects(world: &mut World, effects: Vec<Effect>, scale: f32) {
                     weapon: None,
                 });
             }
-            Effect::Hurt { target, amount, armour } => {
+            Effect::Hurt { target, amount, armour, kind } => {
                 let point = world.get::<Transform>(target).map_or(Vec3::ZERO, |t| t.translation);
                 world.write_message(crate::core::MapDamage {
                     damage: Damage {
@@ -1328,7 +1328,7 @@ fn apply_effects(world: &mut World, effects: Vec<Effect>, scale: f32) {
                         point,
                         dir: Vec3::NEG_Y,
                         hitgroup: Hitgroup::Generic,
-                        kind: DamageKind::Generic,
+                        kind,
                         weapon: None,
                     },
                     armour,
@@ -1760,6 +1760,12 @@ fn apply_effects(world: &mut World, effects: Vec<Effect>, scale: f32) {
                     }
                 }
             }
+            Effect::IgnoreFallDamage { target, seconds, reset } => {
+                let now = world.get_resource::<crate::core::SimClock>().map_or(0.0, |c| c.now);
+                if let Ok(mut e) = world.get_entity_mut(target) {
+                    e.insert(crate::core::IgnoreFallDamage { until: now + f64::from(seconds), reset });
+                }
+            }
             Effect::Equip { target, items, strip } => {
                 world.write_message(crate::core::Equip { target, items, strip });
             }
@@ -2050,7 +2056,7 @@ fn with_controls(world: &mut World, target: Entity, f: impl FnOnce(&mut crate::c
 /// BULLET 2, SLASH 4, BURN 8, FALL 32, BLAST 64, DROWN 16384; the public SDK's
 /// names). Melee as slash and bullets without their extra flag bits are
 /// our reading; fall, the one maps filter, is exact.
-const DAMAGE_KINDS: [(DamageKind, u32); 8] = [
+const DAMAGE_KINDS: [(DamageKind, u32); 10] = [
     (DamageKind::Generic, 0),
     (DamageKind::Crush, 1),
     (DamageKind::Bullet, 2),
@@ -2059,6 +2065,8 @@ const DAMAGE_KINDS: [(DamageKind, u32); 8] = [
     (DamageKind::Fall, 32),
     (DamageKind::Blast, 64),
     (DamageKind::Drown, 16384),
+    (DamageKind::Poison, 131072),
+    (DamageKind::Radiation, 262144),
 ];
 
 /// The long-lived sound of a logic entity.

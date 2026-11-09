@@ -13,7 +13,8 @@
 //! client's `impulse 201` (`weapon::spray::SprayRequested`) goes to the
 //! server as a `SprayRequest`, which sprays for its player
 //! (`weapon::spray::spray`; its logo from the player's `cl_logofile`
-//! userinfo).
+//! userinfo). Its other player impulses (`weapon::PlayerImpulse`:
+//! `impulse 100`, a game's flashlight) go as `ImpulseRequest`.
 
 use std::collections::VecDeque;
 
@@ -27,6 +28,11 @@ use crate::{
     map::{DecalGroup, MAX_DECALS, MapBrushEntity, PlaceDecal, PropIndex, decal::Spray},
     weapon::spray::SprayRequested,
 };
+
+/// Client -> server: a player impulse of mine (`weapon::PlayerImpulse`:
+/// `impulse 100`).
+#[derive(Message, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq)]
+pub struct ImpulseRequest(pub u8);
 
 /// Client -> server: spray my logo (`impulse 201`).
 #[derive(Message, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq)]
@@ -101,10 +107,12 @@ pub(super) fn plugin(app: &mut App) {
         .add_message::<PlaceDecal>()
         .replicate::<Spray>()
         .add_client_message::<SprayRequest>(Channel::Ordered)
+        .add_client_message::<ImpulseRequest>(Channel::Ordered)
         .add_systems(PostUpdate, record.run_if(resource_equals(NetRole::Server)))
         .add_systems(
             PreUpdate,
-            receive_sprays
+            (receive_sprays, receive_impulses)
+                .chain()
                 .after(ServerSystems::Receive)
                 .run_if(resource_equals(NetRole::Server)),
         )
@@ -116,7 +124,8 @@ pub(super) fn plugin(app: &mut App) {
         )
         .add_systems(
             PostUpdate,
-            send_sprays
+            (send_sprays, send_impulses)
+                .chain()
                 .before(ClientSystems::Send)
                 .run_if(resource_equals(NetRole::Client)),
         )
@@ -181,6 +190,26 @@ fn replicate_sprays(new: Query<Entity, (Added<Spray>, Without<Replicated>)>, mut
 fn send_sprays(mut asked: MessageReader<SprayRequested>, mut out: MessageWriter<SprayRequest>) {
     for _ in asked.read() {
         out.write(SprayRequest);
+    }
+}
+
+/// Our player impulses (`impulse 100`), to the server.
+fn send_impulses(mut asked: MessageReader<crate::weapon::PlayerImpulse>, mut out: MessageWriter<ImpulseRequest>) {
+    for i in asked.read() {
+        out.write(ImpulseRequest(i.impulse));
+    }
+}
+
+/// A client's impulse, for its player.
+fn receive_impulses(
+    mut requests: MessageReader<FromClient<ImpulseRequest>>,
+    players: Query<&Player>,
+    mut out: MessageWriter<crate::weapon::PlayerImpulse>,
+) {
+    for r in requests.read() {
+        let Some(client) = r.client_id.entity() else { continue };
+        let Ok(p) = players.get(client) else { continue };
+        out.write(crate::weapon::PlayerImpulse { player: p.character, impulse: r.message.0 });
     }
 }
 

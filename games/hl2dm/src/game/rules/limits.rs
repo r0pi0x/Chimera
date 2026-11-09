@@ -112,13 +112,16 @@ pub fn change_map(world: &mut World) {
 }
 
 /// Frozen in the intermission: no movement, buttons or impulses, the look
-/// where it was.
-pub(super) fn hold_frozen(m: Res<Hl2Match>, mut players: Query<(&Hl2Player, &mut Intent)>) {
-    if !m.over {
+/// where it was; and the map-start freeze (`Hl2Match::freeze_until`), the
+/// look free.
+pub(super) fn hold_frozen(m: Res<Hl2Match>, clock: Res<SimClock>, mut players: Query<(&Hl2Player, &mut Intent)>) {
+    // The map-start freeze: commands zeroed, the view free.
+    let starting = m.freeze_until.is_some_and(|t| clock.now < t);
+    if !m.over && !starting {
         return;
     }
     for (p, mut i) in &mut players {
-        let (yaw, pitch) = p.frozen_look.unwrap_or((i.yaw, i.pitch));
+        let (yaw, pitch) = if m.over { p.frozen_look.unwrap_or((i.yaw, i.pitch)) } else { (i.yaw, i.pitch) };
         let held = Intent {
             yaw,
             pitch,
@@ -192,7 +195,25 @@ pub fn restart(world: &mut World) {
         m.restart_at = None;
         m.intermission_end = None;
     }
+    // The map's entities again, ragdolls gone, the logic rebuilt (its
+    // delayed I/O with it: `core::restart_round`), thrown grenades gone
+    // (`weapon::grenade`); here the rest of the projectiles: flyers
+    // (bolts, rockets, contact grenades, energy balls), satchels and
+    // tripmines.
     crate::core::restart_round(world);
+    let projectiles: Vec<Entity> = world
+        .query_filtered::<Entity, Or<(
+            With<chimera_sim::weapon::projectile::Flyer>,
+            With<crate::game::weapons::slam::Hl2Satchel>,
+            With<crate::game::weapons::slam::Hl2Mine>,
+        )>>()
+        .iter(world)
+        .collect();
+    for e in projectiles {
+        if let Ok(e) = world.get_entity_mut(e) {
+            e.despawn();
+        }
+    }
     let all: Vec<(Entity, Option<u64>, bool)> = world
         .query::<(Entity, &Hl2Player, Has<Dead>)>()
         .iter(world)

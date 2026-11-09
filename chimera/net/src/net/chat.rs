@@ -29,7 +29,9 @@
 //! client's `name` change as `NameRequest`, the host's own, renamed for
 //! everyone and announced (`NameChanged`, "* X changed name to Y"); userinfo: a
 //! client's userinfo cvars go with `Join` and, changed, as `UserInfoRequest`,
-//! kept as its character's `core::UserInfo`; a map's `say` lines
+//! kept as its character's `core::UserInfo` (and `ClientUserInfo`: what the
+//! client has), a server-side change sent back as `UserInfoSet`, which the
+//! client sets in its cvars; a map's `say` lines
 //! (`map::MapSay`) as the server console's; map effects (`MapFx`: strikes,
 //! tesla sparks, env_spark) to every client (`mapfx`). What map logic shows on
 //! HUDs is Source's logic's part (`logic::net`, `MapHud`).
@@ -39,7 +41,7 @@ use bevy_replicon::prelude::*;
 
 use super::{
     ChatMessage, NameChanged, NameRequest, NetCharacter, NetSettings, RadioCall, RadioRequest, SayRequest,
-    UserInfoRequest, server::Player,
+    UserInfoRequest, UserInfoSet, server::Player,
 };
 use crate::{
     core::{Health, LocalPlayer, NetRole, Radio, Team},
@@ -62,13 +64,15 @@ pub(super) fn plugin(app: &mut App) {
         )
         .add_systems(
             PostUpdate,
-            (forward_radio, rename_host, forward_map_says)
+            (forward_radio, rename_host, forward_map_says, send_userinfo_sets)
+                .chain()
                 .before(ServerSystems::Send)
                 .run_if(resource_equals(NetRole::Server)),
         )
         .add_systems(
             PreUpdate,
-            (receive_calls, name_characters)
+            (receive_calls, name_characters, receive_userinfo_sets)
+                .chain()
                 .after(ClientSystems::Receive)
                 .run_if(resource_equals(NetRole::Client)),
         )
@@ -498,6 +502,61 @@ fn receive_userinfo(mut requests: MessageReader<FromClient<UserInfoRequest>>, mu
             let Some(character) = w.get::<Player>(c).map(|p| p.character) else { return };
             super::server::set_userinfo(w, character, &values);
         });
+    }
+}
+
+/// On a remote player's character: the userinfo its client last sent or
+/// was told (`UserInfoSet`). Where the server's `core::UserInfo` differs
+/// (game code changed it), the client is told (`send_userinfo_sets`).
+#[derive(Component, Clone, Debug, Default, PartialEq)]
+pub struct ClientUserInfo(pub std::collections::BTreeMap<String, String>);
+
+/// Userinfo the server changed: to the character's client.
+fn send_userinfo_sets(
+    mut changed: Query<(Entity, &crate::core::UserInfo, &mut ClientUserInfo), Changed<crate::core::UserInfo>>,
+    clients: Query<(Entity, &Player)>,
+    mut out: MessageWriter<ToClients<UserInfoSet>>,
+) {
+    for (character, info, mut told) in &mut changed {
+        let values: Vec<(String, String)> = info
+            .0
+            .iter()
+            .filter(|(k, v)| told.0.get(*k) != Some(*v))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        if values.is_empty() {
+            continue;
+        }
+        let Some((client, _)) = clients.iter().find(|(_, p)| p.character == character) else { continue };
+        told.0.extend(values.iter().cloned());
+        out.write(ToClients {
+            targets: SendTargets::Single(ClientId::Client(client)),
+            message: UserInfoSet { values },
+        });
+    }
+}
+
+/// The server set some of our userinfo cvars: set them here (and so in
+/// what we send next).
+fn receive_userinfo_sets(world: &mut World) {
+    let incoming: Vec<(String, String)> = world
+        .resource_mut::<Messages<UserInfoSet>>()
+        .drain()
+        .flat_map(|m| m.values)
+        .collect();
+    if incoming.is_empty() {
+        return;
+    }
+    let setters: Vec<(String, crate::console::SetFn)> = world
+        .resource::<crate::console::Console>()
+        .cvars()
+        .filter(|c| c.userinfo)
+        .map(|c| (crate::console::short_name(&c.name).to_lowercase(), c.set.clone()))
+        .collect();
+    for (key, value) in incoming {
+        if let Some((_, set)) = setters.iter().find(|(n, _)| *n == key.to_lowercase()) {
+            let _ = set(world, &value);
+        }
     }
 }
 
