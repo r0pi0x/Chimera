@@ -179,6 +179,11 @@ the original's own behaviour isn't a bug (say so instead).
   (`setpos -6.11 -747.55 -179.90;setang 2.98 90.31 0.00`). Check whether
   the map really has a spawn there, what opens the vault in the original,
   and whether our spawn picking should refuse it. Decide and fix.
+- **Higher priority: changing Combat Arms characters hitches and garbles.**
+  The new character takes a moment to load, with visible lag, and meanwhile
+  the current character's bones go wrong, as if imitating the new one's. The
+  user suggests preloading every rung's model; also swap the body only when
+  the new one is ready, so a skeleton never drives the wrong model.
 - **Combat Arms radio menus:** 7, 8 and 9 do nothing. Check what the
   original's menus offer on those keys (`choose_N`, the same commands as
   the console report above).
