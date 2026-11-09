@@ -161,10 +161,6 @@ the original's own behaviour isn't a bug (say so instead).
   the current character's bones go wrong, as if imitating the new one's. The
   user suggests preloading every rung's model; also swap the body only when
   the new one is ready, so a skeleton never drives the wrong model.
-- **Ultimate Gun Game's winning screen names the wrong weapon:** winning as
-  a Combat Arms zombie, it shows some other knife as the gun. Everywhere a
-  player's gun is displayed should show their rung's primary, even when
-  they've switched to the knife. Check the scoreboard and other places too.
 - **Ultimate Gun Game: HL2:DM rungs don't use HL2:DM's HUD and crosshair.**
   Holding an HL2:DM gun should show the same HUD and crosshair as HL2:DM
   itself, as other games' rungs do.
@@ -183,8 +179,6 @@ the original's own behaviour isn't a bug (say so instead).
   model (seen at low FPS). Goes with the character swap above: keep what's
   showing until the real model is ready.
 - **Kill feed: the crowbar's icon** is just the large word "crowbar".
-- **Scoreboard: guns still top-aligned** in their list item, a lot of the
-  Combat Arms ones.
 - **RMS-12 on a gun game's rung (decision):** it burns nobody: its ammo's
   `ProgDamage` is 0 (specs/combat_arms/special_weapons.md 4, Open question
   8), so that is the original's data, not a bug. Its flames do show now and

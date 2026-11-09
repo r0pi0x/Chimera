@@ -10,8 +10,8 @@
 //! or changes (later calls replace); with nothing registered every lookup
 //! is none, so plain single-game apps are unchanged.
 //!
-//! Known shortcuts (the kill feed centres icons in a line-tall box itself,
-//! `kill_feed::icon_slot`; other users place them as before): an icon is drawn at the feed's own size (an image
+//! Known shortcuts (the kill feed centres icons' art in a line-tall box
+//! itself, `kill_feed::icon_slot`; other users place them as before): an icon is drawn at the feed's own size (an image
 //! scaled to the line's height, a glyph at its font's size), not at
 //! the registering game's layout.
 
@@ -59,6 +59,26 @@ impl WeaponIcons {
     pub fn mark(&self, game: &str, name: &str) -> Option<WeaponIcon> {
         self.1.get(&(game.to_ascii_lowercase(), name.to_string())).cloned()
     }
+}
+
+/// The rows of `image` that hold its art (first row, one past the last, in
+/// texels; a pixel counts from 10 % opacity): an icon may be painted high in
+/// a bigger texture, as Combat Arms' kill icons are (20 rows at the top of
+/// 64 x 32). None for an image whose pixels aren't here as RGBA bytes.
+pub fn ink_rows(image: &Image) -> Option<(f32, f32)> {
+    use bevy::render::render_resource::TextureFormat as F;
+    if !matches!(image.texture_descriptor.format, F::Rgba8Unorm | F::Rgba8UnormSrgb) {
+        return None;
+    }
+    let (w, h) = (image.width() as usize, image.height() as usize);
+    let data = image.data.as_deref()?;
+    if w == 0 || data.len() < w * h * 4 {
+        return None;
+    }
+    let inked = |y: &usize| data[y * w * 4..(y + 1) * w * 4].chunks_exact(4).any(|p| p[3] >= 26);
+    let first = (0..h).find(inked)?;
+    let last = (0..h).rev().find(inked)?;
+    Some((first as f32, last as f32 + 1.0))
 }
 
 /// Spawns `icon` as a child of `p`: a line `height` tall in pixels

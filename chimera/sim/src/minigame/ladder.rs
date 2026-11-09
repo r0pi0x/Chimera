@@ -616,6 +616,13 @@ impl Ladder {
         self.rungs.get(rung).copied()
     }
 
+    /// The gun to name for a player on `rung` (the scoreboard, the results:
+    /// never what they happen to hold): `weapon_at`, and the rung's own gun
+    /// where the catalogue can't say (a client still receiving it).
+    pub fn shown_weapon(&self, rung: usize, catalog: Option<&WeaponCatalog>) -> Option<&'static str> {
+        self.weapon_at(rung, catalog).or_else(|| self.rungs.get(rung).copied())
+    }
+
     /// Every rung character's weapon, as the catalogue has them.
     fn character_weapons(&self, catalog: &WeaponCatalog) -> Vec<&'static str> {
         let mut out: Vec<&'static str> = Vec::new();

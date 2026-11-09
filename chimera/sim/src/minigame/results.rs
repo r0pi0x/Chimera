@@ -8,8 +8,9 @@
 //! `NetMinigame`) so every client's HUD shows the same. Gone when the next
 //! match starts (`minigame::restart`).
 //!
-//! Each row also has the final rung's gun (its weapon id) and the
-//! player's matches won counting this one (`wins::MatchWins`), and the
+//! Each row also has the final rung's gun (its weapon id: what the rung
+//! gives as its weapon, `ladder::Ladder::shown_weapon`, whatever the player
+//! last held) and the player's matches won counting this one (`wins::MatchWins`), and the
 //! character it was (mapped to a client's own entity over the network,
 //! so a client finds its own row). With the results the match-end hold
 //! begins (`NextMatch`: when the next match's map change comes, and
@@ -38,7 +39,8 @@ pub struct ResultRow {
     /// it, so it finds its own row).
     #[entities]
     pub player: Option<Entity>,
-    /// On a ladder: the final rung's gun (a weapon id).
+    /// On a ladder: the final rung's gun (a weapon id;
+    /// `ladder::Ladder::shown_weapon`).
     pub gun: Option<String>,
     /// Matches won so far, this one counted (`wins::MatchWins`).
     pub wins: u32,
@@ -104,9 +106,9 @@ pub fn collect(world: &mut World) -> Option<MatchResults> {
     let active = *world.get_resource::<ActiveMinigame>()?;
     let m = world.resource::<Match>().clone();
     let on_ladder = active.rules.mode.id == ladder::LADDER;
-    let ladder_rungs: Vec<&'static str> =
-        if on_ladder { world.get_resource::<ladder::Ladder>().map(|l| l.rungs.clone()).unwrap_or_default() } else { Vec::new() };
-    let rungs = ladder_rungs.len() as u32;
+    let ladder_res = if on_ladder { world.get_resource::<ladder::Ladder>().cloned() } else { None };
+    let catalog = world.get_resource::<crate::weapon::data::WeaponCatalog>().cloned();
+    let rungs = ladder_res.as_ref().map_or(0, |l| l.rungs.len()) as u32;
     let wins = world.get_resource::<super::wins::MatchWins>().cloned().unwrap_or_default();
     let mut rows: Vec<(usize, ResultRow)> = runtime::players(world)
         .into_iter()
@@ -116,9 +118,10 @@ pub fn collect(world: &mut World) -> Option<MatchResults> {
             let name = world.get::<Name>(e).map_or_else(|| format!("Player {}", order + 1), |n| n.as_str().to_string());
             let at = world.get::<ladder::Rung>(e).map_or(0, |r| r.0);
             let rung = on_ladder.then_some(at as u32 + 1);
-            let gun = on_ladder
-                .then(|| ladder_rungs.get(at.min(ladder_rungs.len().saturating_sub(1))).map(|g| g.to_string()))
-                .flatten();
+            let gun = ladder_res
+                .as_ref()
+                .and_then(|l| l.shown_weapon(at.min(l.rungs.len().saturating_sub(1)), catalog.as_ref()))
+                .map(str::to_string);
             (order, ResultRow {
                 wins: wins.of(&name),
                 gun,
