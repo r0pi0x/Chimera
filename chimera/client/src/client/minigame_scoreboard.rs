@@ -42,7 +42,18 @@ pub struct MinigameScoreboardPlugin;
 impl Plugin for MinigameScoreboardPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<HeldActions>().init_resource::<GunNames>().add_systems(Startup, spawn).add_systems(Update, draw);
+        super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
     }
+}
+
+/// The rows' font, laid out ahead (`text_warm`) with the guns' names.
+fn warm_fonts(names: Res<GunNames>) -> Vec<super::text_warm::WarmText> {
+    vec![super::text_warm::WarmText { font: cell_font(), extra: names.0.values().flat_map(|v| v.chars()).collect() }]
+}
+
+/// The rows' cells' font.
+fn cell_font() -> TextFont {
+    TextFont { font_size: FontSize::Px(18.0), ..default() }
 }
 
 /// Guns' display names by weapon id (an app fills it; the minigame panel
@@ -126,7 +137,7 @@ fn spawn(mut commands: Commands) {
 fn cell(parent: &mut ChildSpawnerCommands, text: String, width: f32, right: bool, color: Color) {
     parent.spawn((
         Text::new(text),
-        TextFont { font_size: FontSize::Px(18.0), ..default() },
+        cell_font(),
         TextColor(color),
         TextLayout::new(if right { Justify::Right } else { Justify::Left }, LineBreak::NoWrap),
         Node { width: px(width), flex_shrink: 0.0, overflow: Overflow::clip(), ..default() },

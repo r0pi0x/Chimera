@@ -28,6 +28,7 @@ mod music;
 mod net_hud;
 mod options;
 mod radio_chat;
+mod text_warm;
 mod radar;
 mod score;
 mod ui_system;

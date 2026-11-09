@@ -137,7 +137,7 @@ the original's own behaviour isn't a bug (say so instead).
 - **Nothing blocks the main thread (user, 2026-11-09).** Rung and character
   changes, a late model's arrival and the first ticks on a map no longer stop a
   frame (docs/performance.md, "Nothing blocks the main thread", with numbers
-  and guards). Left: HUD texts at a size not shown before (20-60 M on their first frame, glyph atlases: HUDs naming their fonts and sizes ahead would let them be warmed); bots standing 10-13 s on a map loaded with no loading screen (`--map`); a map's swap frame (0.9-2.1 G main, 0.65-1.2 G render, 0.3-0.5 s with the loading screen standing still: a spawn over frames); a match's start (100 M); weapons off the ladder reading their timing on the frame; dedicated servers' nav flood in one tick.
+  and guards). Left: measuring the HUD texts' warm-up (`client::text_warm`) in the real app on a display (each rung's worst frame less ticks, before and after), and HUD texts no source declares yet (CS:S's and HL2:DM's UI texts spawned on demand, the kill feed's icon glyph fonts; each logs `text warm: ... glyph atlases made on a text's first frame`); bots standing 10-13 s on a map loaded with no loading screen (`--map`); a map's swap frame (0.9-2.1 G main, 0.65-1.2 G render, 0.3-0.5 s with the loading screen standing still: a spawn over frames); a match's start (100 M); weapons off the ladder reading their timing on the frame; dedicated servers' nav flood in one tick.
 - **Kill feed: the crowbar's icon** is just the large word "crowbar".
 - **Scoreboard: guns still top-aligned** in their list item, a lot of the
   Combat Arms ones.

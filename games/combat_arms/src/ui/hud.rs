@@ -9,6 +9,10 @@
 //! The mission display (timers, captions, messages, objective list of the
 //! map's event objects) is `mission`: ours, not from the original.
 //!
+//! Its fonts are laid out ahead (`client::text_warm`, `warm_fonts`): our
+//! panels' (`HUD_FONTS`) and each text's of the install's HUD, score,
+//! result, team list and death screen layouts, at the screen's scale.
+//!
 //! Behaviour and drawing are apart: `model` is the spec as plain
 //! functions; `CaHudStatePlugin` reads the world each frame into `CaHud`
 //! (what is shown, where, in which colour, with which text) with no
@@ -1311,6 +1315,7 @@ impl Plugin for CaHudPlugin {
         if let Some(i) = &ui.install {
             app.insert_resource(crate::game::rungs::CaPartNames::new(i.part_names.iter().cloned()));
         }
+        crate::client::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
         app.insert_resource(ui)
             .insert_resource(names)
             .insert_resource(InstallHud(panels))
@@ -1610,6 +1615,60 @@ fn line(a: Vec2, b: Vec2, thickness: f32, c: Color) -> impl Bundle {
         UiTransform::from_rotation(Rot2::radians(d.y.atan2(d.x))),
         BackgroundColor(c),
     )
+}
+
+/// The fonts our panels draw in by name (the install's layouts name
+/// theirs): with those, every text the HUD draws (`warm_fonts`).
+const HUD_FONTS: &[&str] = &[
+    looks::LABEL,
+    looks::VALUE,
+    looks::NAME,
+    looks::CLIP,
+    looks::SLASH,
+    looks::RESERVE,
+    looks::ICON_WORD,
+    looks::PROMPT,
+    looks::MINIGAME_TITLE,
+    looks::MINIGAME,
+    looks::NOTICE,
+    FEED_FONT,
+    RANGE_FONT,
+    score::looks::MODE,
+    score::looks::LABEL,
+    score::looks::SCORE,
+    score::looks::TIMER,
+    super::talk::FONT,
+];
+
+/// Every font the HUD draws at the screen's size, laid out ahead
+/// (`client::text_warm`) with the weapons' names: our panels' (`HUD_FONTS`)
+/// and each text of the install's HUD, score, result, team list and death
+/// screen layouts.
+fn warm_fonts(
+    ui: Option<Res<CaUi>>,
+    screen: Option<Res<HudScreen>>,
+    (fonts, faces): (Option<Res<UiFonts>>, Option<Res<CaFaces>>),
+    items: Option<Res<ItemNames>>,
+) -> Vec<crate::client::text_warm::WarmText> {
+    let Some(ui) = ui else { return Vec::new() };
+    let s = scale(screen.map_or_else(Screen::default, |s| s.0));
+    let extra: String = items.map(|n| n.0.values().flat_map(|v| v.chars()).collect()).unwrap_or_default();
+    let mut names: Vec<&str> = HUD_FONTS.to_vec();
+    if let Some(i) = &ui.install {
+        for l in [&i.hud, &i.indicator, &i.result, &i.team_list, &i.no_team_list, &i.kill_cam].into_iter().flatten() {
+            names.extend(l.tree.order().into_iter().filter_map(|id| l.widget(id).text()).map(|t| t.font.as_str()));
+        }
+    }
+    names.sort_unstable();
+    names.dedup();
+    names
+        .into_iter()
+        .filter_map(|name| ui.fonts.get(name))
+        .map(|f| crate::client::text_warm::WarmText {
+            font: draw::text_font(&f.face, f.scaled(s).height, fonts.as_deref(), faces.as_deref()),
+            extra: extra.clone(),
+        })
+        .collect()
 }
 
 /// What HUD texts are drawn with: the UI's fonts, the shell's stand-in

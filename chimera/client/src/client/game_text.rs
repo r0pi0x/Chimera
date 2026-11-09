@@ -19,7 +19,13 @@ pub struct GameTextPlugin;
 impl Plugin for GameTextPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<HudMessages>().add_systems(Update, draw);
+        super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
     }
+}
+
+/// The messages' font at the window's size, laid out ahead (`text_warm`).
+fn warm_fonts(window: super::text_warm::PrimaryWindows, fonts: Option<Res<super::fonts::UiFonts>>) -> Vec<super::text_warm::WarmText> {
+    fonts.map(|f| f.client(FONT.0, super::text_warm::window_height(&window), FONT.1).into()).into_iter().collect()
 }
 
 fn color(c: Vec3, a: f32) -> Color {
