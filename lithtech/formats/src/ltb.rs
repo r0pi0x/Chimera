@@ -438,7 +438,8 @@ pub struct Model {
     pub weight_sets: Vec<WeightSet>,
     /// File names of children 1 .. K-1 (child 0 is the model itself).
     pub children: Vec<String>,
-    pub animations: Vec<Animation>,
+    /// Shared with the animation lists built from this model (`anim::AnimList`).
+    pub animations: Vec<std::sync::Arc<Animation>>,
     pub sockets: Vec<Socket>,
     /// Per child slot (0 = the model itself), its binding list.
     pub bindings: Vec<Vec<Binding>>,
@@ -540,7 +541,7 @@ impl Model {
         let anim_count = c.count(26, "animations")?;
         let mut animations = Vec::with_capacity(anim_count);
         for i in 0..anim_count {
-            animations.push(parse_animation(&mut c, n).map_err(|e| LtbError::from(e).context(&format!("animation {i}")))?);
+            animations.push(parse_animation(&mut c, n).map(std::sync::Arc::new).map_err(|e| LtbError::from(e).context(&format!("animation {i}")))?);
         }
 
         // "Sockets".
@@ -639,12 +640,12 @@ impl Model {
 
     /// The counts block's track-byte field, from the data.
     pub fn track_bytes(&self) -> usize {
-        self.animations.iter().map(Animation::track_bytes).sum()
+        self.animations.iter().map(|a| a.track_bytes()).sum()
     }
 
     /// The counts block's vertex-animation byte field, from the data.
     pub fn vertex_anim_bytes(&self) -> usize {
-        self.animations.iter().map(Animation::vertex_anim_bytes).sum()
+        self.animations.iter().map(|a| a.vertex_anim_bytes()).sum()
     }
 
     /// Socket `s`'s transform in model space at bind pose ("Socket

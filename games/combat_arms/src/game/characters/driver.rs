@@ -1105,7 +1105,7 @@ fn interp_of(name: &str) -> u32 {
 /// A stand-in entry: two keys (0 and `length`) on no nodes.
 pub fn stand_in(name: &str, length: u32, interp: u32) -> Entry {
     Entry {
-        animation: Animation {
+        animation: std::sync::Arc::new(Animation {
             dims: [15.0, 50.0, 15.0],
             name: name.to_string(),
             compression: 0,
@@ -1121,7 +1121,7 @@ pub fn stand_in(name: &str, length: u32, interp: u32) -> Entry {
                 },
             ],
             channels: Vec::new(),
-        },
+        }),
         child: 0,
         dims: [15.0, 50.0, 15.0],
         translation: [0.0; 3],

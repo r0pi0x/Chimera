@@ -87,3 +87,35 @@ fn a_bodys_rig_and_model_are_one_skeleton() {
         assert_eq!(*signature, first.2, "{name}: a stock group is one skeleton (with {})", first.1);
     }
 }
+
+/// Bodies on one skeleton hold one copy of its animation files' animations:
+/// a ladder's ten bodies cost 800 MB before (docs/performance.md, "A session's
+/// memory"), and they stayed for the session.
+#[test]
+fn bodies_share_their_animation_files() {
+    let Some(mount) = mount() else { return };
+    let file = |p: &str| mount.read(p).ok();
+    let ca = CaData::install();
+    let data = ca.characters();
+    let mut rigs = Vec::new();
+    for id in data.rung_bodies().into_iter().step_by(5).take(8) {
+        let Ok(body) = models::load_body(&ca, id, &file) else { continue };
+        if let Some(rig) = body.index.rig(&data.model(id).unwrap().file) {
+            rigs.push(rig);
+        }
+    }
+    if rigs.len() < 2 {
+        eprintln!("skipping: fewer than two bodies read");
+        return;
+    }
+    let (files, bytes) = ca.memo(model::ChildModels::default).held();
+    eprintln!("{} bodies, {files} animation files, {} MB of animations", rigs.len(), bytes >> 20);
+    let mut shared = false;
+    for pair in rigs.windows(2) {
+        for a in &pair[0].list.entries {
+            shared |= pair[1].list.entries.iter().any(|b| std::sync::Arc::ptr_eq(&a.animation, &b.animation));
+        }
+    }
+    assert!(shared, "no two bodies share an animation: their child models are parsed for each");
+    assert!(files < 8 * 8, "{files} animation files for 8 bodies: the cache isn't keyed by file");
+}

@@ -2532,20 +2532,21 @@ docs/plans/active/sound.md.
   multiply them: spawn protection's three components, sleeping (`Sleeping`,
   `SolverBodyIndex`), `Shadowed` with `PhysicsTouch`.
 - **The render thread's cost rises over a session (2026-11-09).** de_dust2's
-  render world goes 15M -> 22-25M instructions a frame after a dozen other
-  maps at about the same meshes drawn, with no new entities or stores (same
-  run, `chimera_perf_log`); the frame's samples show nothing new, wgpu's
-  submit and the passes each a little more. Suspect wgpu's trackers (sized by
-  the most textures and buffers ever alive) and Bevy's mesh and material
-  allocators, which keep slabs: measure with a span trace on the Windows box
-  (`scripts\profile.ps1`) at the start of a session and after ten maps.
-- **Process memory over a session (2026-11-09).** Ultimate Gun Game's resident
-  and swapped memory goes 5.9 GB -> 14.5 GB over eight maps (19 GB on cs_militia
-  in a longer lap), flattening at the end, on Linux; the stores stay flat
-  (de_dust2 about 3,100 images and 3,400 meshes). Not glibc's arenas
-  (`MALLOC_ARENA_MAX=2`: 4.8 -> 13 GB), not the forgotten ladders' rigs. Find
-  what's live (`malloc_stats` didn't run from the sampler; a heap profile would
-  say), and whether a player's machine pages: that alone could cost frames.
+  render world goes 14M -> 19M instructions a frame after eight other maps
+  (docs/performance.md, "A session's memory"): wgpu's per-pass trackers (24% of
+  the thread at the end) are sized by the most GPU buffers ever alive at once,
+  and Bevy's mesh and material hash tables (14%) keep their peak capacity.
+  The peak is about 11,000 buffers, nearly all `PropMaterial` uniforms: 10,000
+  in the store, 300 drawn. Measure one buffer's cost first (`chimera_mem pad
+  12000` on a fresh de_dust2, then `pad 0`: the cost should stay), then
+  prepare fewer: share the bodies', held models' and skins' materials until
+  an entity draws them, or make `PropMaterial` bindless.
+- **Process memory over a session, what's left (2026-11-09).** After the
+  animation sharing and `malloc_trim` (5.5 GB after eight maps, was 15.4) the
+  heap still holds the current ladder's Combat Arms model textures on the CPU
+  (about 0.9 GB: decoded RGBA and mips, kept to build each map's images again);
+  dropping the decoded copy once uploaded would take most of it. On Windows
+  the trim doesn't apply: measure the process there over ten maps.
 
 Measured and culled (docs/performance.md): `chimera_perf`, `refcmp bench`,
 PVS culling by world chunk, areaportals (closed doors hide what's behind

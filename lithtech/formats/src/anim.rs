@@ -165,7 +165,9 @@ pub fn conjugate(q: Quat) -> Quat {
 /// and root translation the bindings give it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entry {
-    pub animation: Animation,
+    /// Shared with the model it came from and every list built from that
+    /// model: a character's animations are megabytes, and bodies share them.
+    pub animation: std::sync::Arc<Animation>,
     /// The child slot it came from (0 = the model itself).
     pub child: usize,
     pub dims: Vec3,

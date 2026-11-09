@@ -13,6 +13,7 @@
 pub mod census;
 pub mod counters;
 pub mod dist;
+pub mod memory;
 #[cfg(feature = "trace")]
 pub mod span_cost;
 
