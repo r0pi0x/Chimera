@@ -2134,20 +2134,34 @@ combination makes an archetype, not a table.
 "After" is on newer main (the character preloading came in between); its tick
 starts higher for that. The tables the real app still makes after the fix
 (1,731 after 15 maps, 290 of them characters') are the maps' own kinds of
-entities and stop growing when the maps repeat (the two-lap test below). Two laps of real
-maps, headless (`heavy::session_maps`, 6 bots, the server's map change):
+entities and stop growing when the maps repeat (the lap test below). Three laps of real
+maps, headless (`heavy::session_maps`, 6 bots, the server's map change, each map
+the same ladder every lap; a tick is the median of 300, 2026-11-09):
 
 | lap | de_dust2 | cs_office | dm_lockdown | warehouse | de_inferno |
 |---|---|---|---|---|---|
-| entities, first | 1,110 | 1,226 | 1,157 | 700 | 1,527 |
-| entities, second | 1,120 | 1,224 | 1,152 | 706 | 1,526 |
-| tick instr, first | 11.2M | 16.7M | 14.8M | 9.7M | 20.2M |
-| tick instr, second | 14.2M | 19.1M | 17.4M | 12.3M | 19.2M |
-| tables, first | 277 | 390 | 513 | 530 | 589 |
-| tables, second | 605 | 610 | 613 | 613 | 613 |
+| entities, first | 1,111 | 1,223 | 1,157 | 701 | 1,528 |
+| entities, third | 1,117 | 1,223 | 1,155 | 704 | 1,528 |
+| tick instr, first | 10.7M | 15.9M | 14.4M | 10.3M | 20.3M |
+| tick instr, second | 12.6M | 19.1M | 17.6M | 11.4M | 20.7M |
+| tick instr, third | 13.6M | 18.1M | 19.4M | 10.9M | 21.3M |
+| tables, first | 294 | 390 | 515 | 527 | 589 |
+| tables, third | 601 | 605 | 605 | 605 | 605 |
 
-(Tables stop at 613 on the second lap; archetypes 1,426 -> 4,744, what the tick's
-second lap pays for.)
+(Archetypes 1,456 after the first map, 4,068 at the second lap's start, 4,892
+at the end: the first lap makes nearly all of them, and the test compares a tick
+with the lap before from the second lap on.) Each archetype costs every tick
+whether anything is in it: with the bots kicked (no character on the map) a
+de_dust2 tick was 5.5M instructions at 1,474 archetypes and 7.4M at 3,839, about
+800 instructions an archetype on every map (on de_inferno 440). So de_dust2, the
+first map, pays all of the first lap's on its second visit (up to ~1.35x with
+nothing else on the map). A tick's mean is no measure of that: in one 200-tick
+window on de_dust2 single ticks ranged from 6.7M to 24M (deaths, grenades,
+ragdolls), so a map's mean moved by a fifth from run to run (warehouse 9.3M to
+13.6M on the first lap) and with the ladder; the test's first version
+(the mean, a new ladder each lap, the first lap against the second) failed by
+turns on de_dust2 and warehouse at each of the merges after it. Medians of the
+same ladder stay within 3% between runs.
 
 **The ladders' models.** A map's unload (`characters::preload::forget_old`) now
 forgets what older ladders brought but the ladder just played and what's worn
