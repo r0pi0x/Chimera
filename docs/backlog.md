@@ -143,7 +143,8 @@ the original's own behaviour isn't a bug (say so instead).
 - **Missing sounds:** the SMG1's right-click grenade launch and its
   explosion; the AR2's right-click ball launch; a breaking toilet or sink
   (only the pieces hitting the floor are heard); the crowbar's impact. With the gravity gun's
-  above, look for a shared cause first (a soundscript or game-sound path,
+  above, and an HL2:DM character's footsteps (running on de_dust2 in
+  Ultimate Gun Game), look for a shared cause first (a soundscript or game-sound path,
   possibly Windows-only).
 - **SMG1 grenade trail** doesn't look like it renders correctly.
 - **AR2 ball's explosion** has particles that look wrong.
