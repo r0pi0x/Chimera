@@ -41,7 +41,13 @@ pub fn build_gib_draws(
     view: MapDebugView,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<PropMaterial>,
+    mut dormant: Option<&mut super::prop_material::DormantProps>,
 ) -> GibDraws {
+    // Templates: each gib draws its own copy (`draw_gibs`).
+    let mut add = |m: PropMaterial| match dormant.as_deref_mut() {
+        Some(d) => d.add(materials, m),
+        None => materials.add(m),
+    };
     data.gibs
         .iter()
         .map(|s| {
@@ -54,7 +60,7 @@ pub fn build_gib_draws(
                         .map(|m| {
                             let mut material = crate::render::lit_prop_material(m, textures, data, view, false);
                             material.params.dynamic = 0.0;
-                            (meshes.add(crate::render::build_mesh(m, false)), materials.add(material))
+                            (meshes.add(crate::render::build_mesh(m, false)), add(material))
                         })
                         .collect();
                     let skins = model
@@ -69,7 +75,7 @@ pub fn build_gib_draws(
                                     let mut material =
                                         crate::render::lit_prop_material(&look.apply(m), textures, data, view, false);
                                     material.params.dynamic = 0.0;
-                                    materials.add(material)
+                                    add(material)
                                 })
                                 .collect()
                         })
@@ -95,6 +101,7 @@ pub fn draw_gibs(
     assets: Option<Res<GibAssets>>,
     light_field: Option<Res<LightField>>,
     materials: Option<ResMut<Assets<PropMaterial>>>,
+    dormant: Option<Res<super::prop_material::DormantProps>>,
     mut commands: Commands,
 ) {
     let (Some(models), Some(assets), Some(mut materials)) = (models, assets, materials) else {
@@ -110,7 +117,7 @@ pub fn draw_gibs(
         let mut own = Vec::with_capacity(model.parts.len());
         for (i, (_, m)) in model.parts.iter().enumerate() {
             let m = skin.and_then(|s| s.get(i)).unwrap_or(m);
-            let Some(mut material) = materials.get(m).cloned() else {
+            let Some(mut material) = super::prop_material::prop(&materials, dormant.as_deref(), m).cloned() else {
                 continue;
             };
             if let Some(probe) = &probe {

@@ -28,6 +28,11 @@
 //! Faces: back ones culled except on `$nocull` materials, front ones on
 //! mirrored (left-handed) view models, in the depth prepass as in the main
 //! pass (`face_cull`).
+//!
+//! The kit's models' materials (bodies, skins, held, loose, gib and view
+//! models) wait outside the store until an entity draws them
+//! (`DormantProps`, `wake_drawn`): each one in the store is a GPU buffer
+//! prepared whether drawn or not.
 
 use bevy::{
     asset::embedded_asset, prelude::*, reflect::TypePath, render::render_resource::AsBindGroup, shader::ShaderRef,
@@ -278,6 +283,105 @@ impl From<&PropMaterial> for PropMaterialKey {
     }
 }
 
+/// Prop materials nothing draws yet: the models a map's kit and its late
+/// models carry (every body's parts and skin families, every held, loose and
+/// view model's), which entities draw copies of (`probe_lit::instance`) or,
+/// a view model's, draw when shown. A material in `Assets<PropMaterial>` is
+/// prepared for the GPU (a uniform buffer and a bind group) whether drawn or
+/// not, and wgpu's per-pass trackers are sized by the most buffers ever alive
+/// at once (docs/performance.md, "A session's render thread"): kept here, a
+/// handle reserved in the store and its material beside it, they cost the
+/// render world nothing. One moves into the store when an entity draws it
+/// (`wake_drawn`), and goes when its last handle is dropped (`prune`, as
+/// the store drops it).
+///
+/// Readers of a material that may be one of these use `prop` (the store, then
+/// here); what changes every material (fog, animated textures) changes these
+/// too (`values_mut`). Without this resource (tests that build their own
+/// stores) materials go into the store as before.
+#[derive(Resource, Default)]
+pub struct DormantProps {
+    held: bevy::platform::collections::HashMap<
+        AssetId<PropMaterial>,
+        (std::sync::Weak<bevy::asset::StrongHandle>, PropMaterial),
+    >,
+    /// `held`'s size after the last prune: the next comes at twice it.
+    pruned: usize,
+}
+
+impl DormantProps {
+    /// Hold `m` under a handle reserved in `store`.
+    pub fn add(&mut self, store: &Assets<PropMaterial>, m: PropMaterial) -> Handle<PropMaterial> {
+        let handle = store.reserve_handle();
+        self.insert(&handle, m);
+        handle
+    }
+
+    /// Hold `m` under `handle`, reserved in the store and empty there (a late
+    /// model's: `late_build::Stage`).
+    pub fn insert(&mut self, handle: &Handle<PropMaterial>, m: PropMaterial) {
+        let Handle::Strong(strong) = handle else { return };
+        if self.held.len() >= (2 * self.pruned).max(1024) {
+            self.prune();
+        }
+        self.held.insert(handle.id(), (std::sync::Arc::downgrade(strong), m));
+    }
+
+    pub fn get(&self, id: impl Into<AssetId<PropMaterial>>) -> Option<&PropMaterial> {
+        self.held.get(&id.into()).map(|(_, m)| m)
+    }
+
+    /// Every material held, to change (fog, animated textures).
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut PropMaterial> {
+        self.held.values_mut().map(|(_, m)| m)
+    }
+
+    /// How many are held (dropped ones count until the next prune).
+    pub fn len(&self) -> usize {
+        self.held.len()
+    }
+
+    /// How many are held that something still has a handle to.
+    pub fn live(&self) -> usize {
+        self.held.values().filter(|(h, _)| h.strong_count() > 0).count()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.held.is_empty()
+    }
+
+    /// Drop the materials whose last handle has gone.
+    pub fn prune(&mut self) {
+        self.held.retain(|_, (h, _)| h.strong_count() > 0);
+        self.pruned = self.held.len();
+    }
+}
+
+/// Material `id` from the store, or held dormant.
+pub fn prop<'a>(
+    store: &'a Assets<PropMaterial>,
+    dormant: Option<&'a DormantProps>,
+    id: impl Into<AssetId<PropMaterial>>,
+) -> Option<&'a PropMaterial> {
+    let id = id.into();
+    store.get(id).or_else(|| dormant.and_then(|d| d.get(id)))
+}
+
+/// An entity draws a dormant material (`DormantProps`): into the store, to
+/// be prepared.
+pub fn wake_drawn(
+    on: On<Insert<MeshMaterial3d<PropMaterial>>>,
+    meshes: Query<&MeshMaterial3d<PropMaterial>>,
+    dormant: Option<ResMut<DormantProps>>,
+    store: Option<ResMut<Assets<PropMaterial>>>,
+) {
+    let (Some(mut dormant), Some(mut store)) = (dormant, store) else { return };
+    let Ok(handle) = meshes.get(on.entity) else { return };
+    if let Some((_, m)) = dormant.held.remove(&handle.0.id()) {
+        let _ = store.insert(handle.0.id(), m);
+    }
+}
+
 /// `prop_dither_prepass.wesl`: the depth prepass fragment stage for opaque
 /// props in a fade band (see `specialize`).
 const DITHER_PREPASS_SHADER: Handle<Shader> = bevy::asset::uuid_handle!("6f3d2b8e-5c1a-4e7f-9a42-1d8b7c3e5f60");
@@ -307,6 +411,44 @@ mod tests {
         assert_eq!(face_cull(true, false), None);
         assert_eq!(face_cull(true, true), None);
         assert_eq!(face_cull(false, true), Some(Face::Front));
+    }
+
+    /// A kit's material waits outside the store (no GPU buffer) until an
+    /// entity draws it; a copy made from it goes into the store; it goes
+    /// with its last handle.
+    #[test]
+    fn dormant_materials_enter_the_store_only_when_drawn() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()))
+            .init_asset::<PropMaterial>()
+            .init_resource::<DormantProps>()
+            .add_observer(wake_drawn);
+        let mut add = |app: &mut App, alpha: f32| {
+            let w = app.world_mut();
+            let m = PropMaterial { params: PropParams { alpha_cutoff: alpha, ..default() }, ..default() };
+            w.resource_scope(|w, mut d: Mut<DormantProps>| d.add(w.resource::<Assets<PropMaterial>>(), m))
+        };
+        let (drawn, copied, dropped) = (add(&mut app, 0.1), add(&mut app, 0.2), add(&mut app, 0.3));
+        app.update();
+        let store = |app: &App| app.world().resource::<Assets<PropMaterial>>().len();
+        assert_eq!(store(&app), 0, "nothing drawn: nothing to prepare");
+        let w = app.world_mut();
+        w.spawn(MeshMaterial3d(drawn.clone()));
+        let copy = w.resource_scope(|w, mut store: Mut<Assets<PropMaterial>>| {
+            super::super::probe_lit::instance(&mut store, w.get_resource::<DormantProps>(), &copied)
+        });
+        app.update();
+        let w = app.world();
+        let assets = w.resource::<Assets<PropMaterial>>();
+        assert_eq!(assets.get(&drawn).map(|m| m.params.alpha_cutoff), Some(0.1), "drawn: in the store");
+        assert_eq!(assets.get(&copy).map(|m| m.params.alpha_cutoff), Some(0.2), "a copy of a dormant one");
+        assert!(assets.get(&copied).is_none(), "what it was copied from still waits");
+        assert_eq!(store(&app), 2);
+        drop(dropped);
+        app.update();
+        let mut d = app.world_mut().resource_mut::<DormantProps>();
+        d.prune();
+        assert_eq!((d.len(), d.live()), (1, 1), "only the copied one's template is still held");
     }
 
     /// Why `specialize` must set the cull mode itself: a pipeline Bevy

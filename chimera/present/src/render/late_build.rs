@@ -16,10 +16,12 @@
 //! last asset, once that has been prepared, and until then whoever wants it
 //! keeps what it shows.
 //!
+//! A model's materials wait outside the store (`prop_material::DormantProps`,
+//! when the app has it) until something draws them: then none of it reaches the
+//! render thread here; without it, `FILL_MATERIALS` a frame go into the store.
+//!
 //! Known shortcuts (docs/tech-debt.md): one image or mesh is not split, so a
-//! single asset larger than `FILL_BYTES` is that frame's whole budget and more;
-//! a model's materials still take their bind groups on the render thread, within
-//! `FILL_MATERIALS` a frame.
+//! single asset larger than `FILL_BYTES` is that frame's whole budget and more.
 
 use std::{collections::VecDeque, sync::atomic::{AtomicU64, Ordering}};
 
@@ -30,7 +32,7 @@ use bevy::{
     tasks::{AsyncComputeTaskPool, Task, block_on, poll_once},
 };
 
-use super::prop_material::PropMaterial;
+use super::prop_material::{DormantProps, PropMaterial};
 
 /// Bytes of texels and vertices one queue puts into `Assets` a frame (the
 /// render thread uploads them that frame). Three queues run: at most three
@@ -59,6 +61,9 @@ pub struct Stores<'a> {
     pub meshes: &'a mut Assets<Mesh>,
     pub materials: &'a mut Assets<PropMaterial>,
     pub bindposes: &'a mut Assets<SkinnedMeshInverseBindposes>,
+    /// Where materials wait until something draws them (`DormantProps`);
+    /// None: into `materials`.
+    pub dormant: Option<&'a mut DormantProps>,
 }
 
 impl AddAsset<Mesh> for Stores<'_> {
@@ -69,7 +74,10 @@ impl AddAsset<Mesh> for Stores<'_> {
 
 impl AddAsset<PropMaterial> for Stores<'_> {
     fn add_asset(&mut self, asset: PropMaterial) -> Handle<PropMaterial> {
-        self.materials.add(asset)
+        match self.dormant.as_deref_mut() {
+            Some(d) => d.add(self.materials, asset),
+            None => self.materials.add(asset),
+        }
     }
 }
 
@@ -92,7 +100,7 @@ pub struct Stage {
     images: VecDeque<(AssetId<Image>, Image)>,
     meshes: VecDeque<(AssetId<Mesh>, Mesh)>,
     bindposes: VecDeque<(AssetId<SkinnedMeshInverseBindposes>, SkinnedMeshInverseBindposes)>,
-    materials: VecDeque<(AssetId<PropMaterial>, PropMaterial)>,
+    materials: VecDeque<(Handle<PropMaterial>, PropMaterial)>,
 }
 
 /// What reserves handles (from any thread).
@@ -152,9 +160,15 @@ impl Stage {
         for (id, b) in self.bindposes.drain(..) {
             let _ = to.stores.bindposes.insert(id, b);
         }
+        if let Some(d) = to.stores.dormant.as_deref_mut() {
+            // Dormant until drawn: nothing for the render world yet.
+            for (handle, material) in self.materials.drain(..) {
+                d.insert(&handle, material);
+            }
+        }
         for _ in 0..FILL_MATERIALS {
-            let Some((id, material)) = self.materials.pop_front() else { break };
-            let _ = to.stores.materials.insert(id, material);
+            let Some((handle, material)) = self.materials.pop_front() else { break };
+            let _ = to.stores.materials.insert(handle.id(), material);
         }
         self.materials.is_empty()
     }
@@ -187,7 +201,7 @@ impl AddAsset<SkinnedMeshInverseBindposes> for Stage {
 impl AddAsset<PropMaterial> for Stage {
     fn add_asset(&mut self, asset: PropMaterial) -> Handle<PropMaterial> {
         let h = self.providers.materials.reserve_handle().typed::<PropMaterial>();
-        self.materials.push_back((h.id(), asset));
+        self.materials.push_back((h.clone(), asset));
         h
     }
 }
@@ -314,6 +328,7 @@ mod tests {
                 meshes: &mut meshes,
                 materials: &mut materials,
                 bindposes: &mut bindposes,
+                dormant: None,
             },
         };
         let mut stage = Stage::new(Providers::of(&to));
@@ -342,6 +357,7 @@ mod tests {
                 meshes: &mut meshes,
                 materials: &mut materials,
                 bindposes: &mut bindposes,
+                dormant: None,
             },
         };
         let mut stage = Stage::new(Providers::of(&to));

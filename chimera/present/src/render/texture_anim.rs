@@ -66,6 +66,7 @@ pub fn animate_textures(
     anims: Option<ResMut<TextureAnims>>,
     world: Option<ResMut<Assets<WorldMaterial>>>,
     props: Option<ResMut<Assets<PropMaterial>>>,
+    dormant: Option<ResMut<super::prop_material::DormantProps>>,
 ) {
     let Some(mut anims) = anims else { return };
     if anims.anims.is_empty() {
@@ -111,6 +112,14 @@ pub fn animate_textures(
             if let Some(mut m) = props.get_mut(id)
                 && let Some(b) = anims.swap(m.base.as_ref())
             {
+                m.base = Some(b);
+            }
+        }
+    }
+    // The kit's models' materials not drawn yet (`DormantProps`).
+    if let Some(mut dormant) = dormant {
+        for m in dormant.values_mut() {
+            if let Some(b) = anims.swap(m.base.as_ref()) {
                 m.base = Some(b);
             }
         }

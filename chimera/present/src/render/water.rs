@@ -1217,6 +1217,7 @@ pub fn underwater_fog(
     render: Option<Res<MapWaterRender>>,
     world: Option<ResMut<Assets<crate::render::world_material::WorldMaterial>>>,
     props: Option<ResMut<Assets<crate::render::prop_material::PropMaterial>>>,
+    dormant: Option<ResMut<crate::render::prop_material::DormantProps>>,
     mut water: ResMut<Assets<WaterMaterial>>,
     scene: Option<ResMut<crate::render::fog::SceneFog>>,
     surfaces: Query<(&WaterSurface, &MeshMaterial3d<WaterMaterial>)>,
@@ -1280,6 +1281,13 @@ pub fn underwater_fog(
                 m.params.water_fog_color = color;
                 m.params.water_fog_range = range;
             }
+        }
+    }
+    // What the kit's models' drawn copies are made from (`DormantProps`).
+    if let Some(mut dormant) = dormant {
+        for m in dormant.values_mut() {
+            m.params.water_fog_color = color;
+            m.params.water_fog_range = range;
         }
     }
     if let Some(mut scene) = scene {

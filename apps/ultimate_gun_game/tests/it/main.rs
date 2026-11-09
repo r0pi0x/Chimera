@@ -8,6 +8,7 @@ mod fallbacks;
 mod heavy {
     mod rung_frames;
     mod session_maps;
+    mod session_materials;
 }
 mod minimal_hud;
 mod no_stand_ins;

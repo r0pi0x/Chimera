@@ -308,6 +308,9 @@ impl MapLayers for Present {
                 .before(bevy::camera::visibility::VisibilitySystems::CheckVisibility),
         )
         .add_systems(Update, render::bodies::uncull_placed_ragdolls)
+        // The kit's models' materials wait outside the store until drawn.
+        .init_resource::<render::prop_material::DormantProps>()
+        .add_observer(render::prop_material::wake_drawn)
         // Sprite skins: each drawn copy's frame on its own clock.
         .add_observer(render::skin_frames::start_clock)
         .add_systems(Update, render::skin_frames::advance)

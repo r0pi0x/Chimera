@@ -183,6 +183,7 @@ pub fn build_assets(
     view: MapDebugView,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<PropMaterial>,
+    dormant: Option<&mut super::prop_material::DormantProps>,
     bindposes: &mut Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
 ) -> ViewModelAssets {
     let build = Build {
@@ -191,7 +192,7 @@ pub fn build_assets(
         lit: data.light_field.is_some(),
         view,
     };
-    let mut stores = Stores { meshes, materials, bindposes };
+    let mut stores = Stores { meshes, materials, bindposes, dormant };
     let models = data
         .kit.view_models
         .iter()
@@ -248,6 +249,7 @@ pub fn build_late(
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     materials: Option<ResMut<Assets<PropMaterial>>>,
+    mut dormant: Option<ResMut<super::prop_material::DormantProps>>,
     mut bindposes: ResMut<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>,
     compressed: Option<Res<bevy::image::CompressedImageFormatSupport>>,
     mut queue: Local<LateQueue<CookedViewModel>>,
@@ -262,6 +264,7 @@ pub fn build_late(
             meshes: &mut meshes,
             materials: &mut materials,
             bindposes: &mut bindposes,
+            dormant: dormant.as_deref_mut(),
         },
     };
     let bc = super::images::bc_wanted(compressed.as_deref());
@@ -328,6 +331,7 @@ pub fn assets_without_map(
         MapDebugView::Normal,
         &mut meshes,
         &mut materials,
+        None,
         &mut bindposes,
     ));
 }
@@ -384,7 +388,10 @@ pub fn draw_view_models(
     >,
     mut bodies: Query<(&mut ViewModelBody, &mut Transform, &mut Visibility), Without<BodyJoint>>,
     mut joints: Query<&mut Transform, With<BodyJoint>>,
-    mut materials: Option<ResMut<Assets<PropMaterial>>>,
+    (mut materials, dormant): (
+        Option<ResMut<Assets<PropMaterial>>>,
+        Option<Res<super::prop_material::DormantProps>>,
+    ),
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs_f64();
@@ -479,7 +486,7 @@ pub fn draw_view_models(
                 commands.entity(e).try_despawn();
             }
             if let Some((key, a, _)) = shown {
-                spawn_body(&mut commands, camera, key, a, mirror, materials.as_deref_mut());
+                spawn_body(&mut commands, camera, key, a, mirror, materials.as_deref_mut(), dormant.as_deref());
             }
             continue;
         }
@@ -605,6 +612,7 @@ fn spawn_body(
     asset: &ViewModelAsset,
     mirror: bool,
     mut assets: Option<&mut Assets<PropMaterial>>,
+    dormant: Option<&super::prop_material::DormantProps>,
 ) {
     let layer = RenderLayers::layer(VIEW_MODEL_LAYER);
     let body = commands
@@ -639,9 +647,9 @@ fn spawn_body(
         // A skin that is a sequence runs on this body's own clock
         // (`skin_frames`): its own material.
         if let Some(assets) = assets.as_deref_mut()
-            && assets.get(&material).is_some_and(|m| m.skin_frames.len() > 1)
+            && super::prop_material::prop(assets, dormant, &material).is_some_and(|m| m.skin_frames.len() > 1)
         {
-            material = super::probe_lit::instance(assets, &material);
+            material = super::probe_lit::instance(assets, dormant, &material);
         }
         materials.push(material.clone());
         commands.spawn((
