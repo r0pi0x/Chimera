@@ -30,6 +30,10 @@
 //!   attachment suit.md gives for others, for every player; its reach is
 //!   that beam's 200 units. The spec gives no brightness, colour or cone
 //!   (ours are picked: white, 25 degrees, `SpotLight`'s intensity 400000).
+//!   On dm_lockdown it lights nothing visible: the map and the models looked
+//!   the same on and off, also at 10000 times the intensity with a wider
+//!   cone and a 30 m range. Why (likely their materials ignore the light)
+//!   isn't found yet, so the flashlight is the state and its sounds for now.
 //! - Drowning's sounds play from the player; the server's hurt event
 //!   isn't sent. A `trigger_hurt`'s poison and radiation types are their
 //!   own kinds (`DamageKind::Poison`, `Radiation`) and bypass the suit

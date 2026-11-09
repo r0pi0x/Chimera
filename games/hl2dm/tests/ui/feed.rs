@@ -73,8 +73,13 @@ fn the_secondary_ammo_table() {
     f.sim.ticks(2);
     assert_eq!(f.secondary(), Some(("hl2dm:smg1_grenade".into(), 2)));
     assert!(f.state().inputs.weapon.as_ref().unwrap().uses_primary);
-    let frame = &f.state().frame;
-    assert!(frame.find_text("2").is_some(), "the panel's digits drawn");
+    // The panel shows: its count is drawn at r76 (a "2" elsewhere, such as
+    // a selection number, doesn't count).
+    f.sim.ticks(40);
+    let hud = f.state().hud.as_ref().unwrap();
+    assert_eq!(hud.anim.number("HudAmmoSecondary", "Alpha"), Some(255.0));
+    let shown = f.state().frame.0.iter().any(|d| matches!(d, Draw::Text { text, at, .. } if text == "2" && at.x > 640.0 - 76.0));
+    assert!(shown, "the panel's digits drawn");
 
     let ar2 = f.hold(weapons::AR2);
     f.sim.app.world_mut().get_mut::<Hl2Rounds>(ar2).unwrap().count = 1;

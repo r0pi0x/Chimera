@@ -400,7 +400,10 @@ impl Animator {
                     self.running.remove(n);
                 }
             }
-            Command::StopPanelAnimations { panel, .. } => self.running.retain(|r| r.panel != panel),
+            // Not the stopping event's own: an event that stops a panel and
+            // animates it in one list (hud.md 4.6's `WeaponUsesSecondaryAmmo`)
+            // must keep what it just started, or the panel never shows.
+            Command::StopPanelAnimations { panel, .. } => self.running.retain(|r| r.panel != panel || r.event == q.event),
             Command::Animate { .. } => {}
         }
     }
@@ -416,6 +419,29 @@ mod tests {
             "BrightFg" => Some([255, 220, 0, 255]),
             _ => None,
         }
+    }
+
+    /// `StopPanelAnimations` stops others' animations of the panel, not the
+    /// ones its own event started.
+    #[test]
+    fn a_panel_stop_keeps_its_own_events_animations() {
+        let script = Script::parse(
+            "event Other\n{\n\tAnimate P Blur \"9\" Linear 0 10\n}\nevent Show\n{\n\tStopPanelAnimations P 0\n\tAnimate P Alpha \"255\" Linear 0 0.1\n}\n",
+            &colours,
+        );
+        let mut a = Animator::new(script, 640.0);
+        a.set("P", "Alpha", Value::Number(0.0));
+        a.set("P", "Blur", Value::Number(0.0));
+        a.start("Other", 0.0);
+        a.update(0.0);
+        a.update(1.0);
+        let blur = a.number("P", "Blur");
+        a.start("Show", 1.0);
+        a.update(1.0);
+        a.update(1.2);
+        assert_eq!(a.number("P", "Alpha"), Some(255.0), "its own animation ran");
+        a.update(5.0);
+        assert_eq!(a.number("P", "Blur"), blur, "the other event's stopped");
     }
 
     const SCRIPT: &str = r#"
