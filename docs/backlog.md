@@ -172,6 +172,9 @@ the original's own behaviour isn't a bug (say so instead).
 - **Flashlight lights nothing:** the toggle, network path and sounds work,
   but the spot light has no visible effect on dm_lockdown, even at 10,000
   times the brightness; the spec gives no brightness, colour or cone.
+- **Ultimate Gun Game's bots on HL2:DM:** some get stuck, don't shoot or
+  move properly and seem to have no plan. Check their navigation on `dm_*`
+  maps (no `.nav` files ship with HL2:DM).
 - **Battery machine:** at `setpos -3835.25 5745.72 64.02;setang 17.71
   22.85 0.00` its rope or cable looks broken, and the battery doesn't seat
   properly in the slot.
