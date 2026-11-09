@@ -206,6 +206,14 @@ pub struct PickedUp {
     pub weapon: Entity,
 }
 
+/// A loose weapon's ammo couldn't go into `weapon` (carried by `who`): its
+/// reserve is full. For a game's HUD (HL2:DM's "ammo denied").
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AmmoFull {
+    pub who: Entity,
+    pub weapon: Entity,
+}
+
 /// The weapon `owner` would drop: the active one if droppable, else (for
 /// the dead) the droppable one in the lowest slot.
 fn droppable(world: &World, owner: Entity, active_only: bool) -> Option<Entity> {
@@ -881,6 +889,11 @@ fn take_ammo(world: &mut World, item: Entity, weapon: Entity, mine: Entity, remo
     else {
         return;
     };
+    if room == 0
+        && let Some(who) = world.get::<Weapon>(mine).and_then(|w| w.owner)
+    {
+        world.write_message(AmmoFull { who, weapon: mine });
+    }
     let Some(mut theirs) = world.get_mut::<super::Magazine>(weapon) else {
         return;
     };

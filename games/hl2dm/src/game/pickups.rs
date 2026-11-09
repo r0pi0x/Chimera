@@ -31,7 +31,8 @@
 //!   (a charge taking the pool to half or below), `OnEmpty`, `OnFull` (at
 //!   map load and on each refill; suit chargers).
 //!
-//! Server-side.
+//! Server-side. A taken kit or battery and a refused box tell the taker's
+//! HUD (`hud_notes`).
 //!
 //! Known shortcuts:
 //! - Items' and chargers' models aren't read: an item is a 16-unit cube
@@ -55,6 +56,7 @@ use chimera_sim::weapon::respawn::{self, MapPickup, PickupKind, Respawning, Resp
 
 use super::{
     ammo::{self, AmmoLimits, ItemData},
+    hud_notes::{HudPickup, PickupNote},
     suit::{Suit, clear_line},
 };
 use crate::{
@@ -314,6 +316,7 @@ impl Plugin for PickupsPlugin {
             |c| &mut c.weapon_stay,
         );
         super::ammo_crates::plugin(app);
+        super::hud_notes::plugin(app);
         if !app.is_plugin_added::<respawn::MapRespawnPlugin>() {
             app.add_plugins(respawn::MapRespawnPlugin);
         }
@@ -485,16 +488,24 @@ fn take(world: &mut World, item: Entity, who: Entity, what: &Item, index: usize)
             let give = if *what == Item::HealthKit { KIT } else { VIAL };
             let Some(mut h) = world.get_mut::<Health>(who) else { return };
             h.current = (h.current + give / POINTS).min(h.max);
+            let class = if *what == Item::HealthKit { "item_healthkit" } else { "item_healthvial" };
+            world.write_message(HudPickup { player: who, note: PickupNote::Item(class.into()) });
             if *what == Item::HealthKit { "HealthKit.Touch" } else { "HealthVial.Touch" }
         }
         Item::Battery => {
             let Some(mut a) = world.get_mut::<Armor>(who) else { return };
             a.amount = (a.amount + BATTERY / POINTS).min(ARMOUR_CAP / POINTS);
+            world.write_message(HudPickup { player: who, note: PickupNote::Item("item_battery".into()) });
             "ItemBattery.Touch"
         }
         Item::Ammo { ammo: kind, count } => {
             let added = ammo::give(world, who, kind, *count);
             if added == 0 {
+                // The type is full (a type HL2:DM lacks isn't refused:
+                // nothing happens, suit.md).
+                if world.get_resource::<AmmoLimits>().is_some_and(|l| l.0.contains_key(kind.as_str())) {
+                    world.write_message(HudPickup { player: who, note: PickupNote::AmmoDenied(kind.clone()) });
+                }
                 return;
             }
             let total = ammo::carried(world, who, kind);

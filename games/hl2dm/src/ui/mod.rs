@@ -27,14 +27,10 @@
 //!   scoreboard are drawn from boxes, its avatars and section colours'
 //!   background are left out, and its rows start 26 units down (the file
 //!   gives the list the whole panel).
-//! - Items in the pickup history are told from a whole step of armour (15)
-//!   or health (25), not from the server's item message, so a charger or a
-//!   map's `give` of the same size reads as one; ammo, weapon and "FULL"
-//!   rows come from the carried counts and the inventory.
-//! - The secondary ammo panel waits for M5's secondary ammo (the grenades,
-//!   the AR2 ball, the S.L.A.M.); the console selection styles
-//!   (`hud_fastswitch` 2 and 3), the MOTD window, the hints and the
-//!   spectator GUI are not built.
+//! - The console selection styles (`hud_fastswitch` 2 and 3), the MOTD
+//!   window, the hints and the spectator GUI are not built.
+//! - An ammo crate's refused opening sends no "FULL" row (the spec names
+//!   only pickups; `game::hud_notes` has boxes and weapons).
 //! - On another game's map (the party apps) the map's own HUD look is that
 //!   game's, so this HUD draws only when its look is the map's.
 
@@ -71,7 +67,7 @@ impl Plugin for Hl2dmHudPlugin {
                 Update,
                 (
                     systems::build.run_if(resource_exists_and_changed::<ActiveHud>),
-                    (systems::collect, systems::collect_board, systems::sync).chain().run_if(resource_exists::<ActiveHud>),
+                    (systems::target_id, systems::collect, systems::collect_board, systems::sync).chain().run_if(resource_exists::<ActiveHud>),
                 )
                     .chain()
                     .distributive_run_if(chimera_core::gameplay::hud_is(GAME)),

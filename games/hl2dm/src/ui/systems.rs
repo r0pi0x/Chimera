@@ -15,10 +15,10 @@ use chimera_client::client::{
 };
 use chimera_core::{
     console::{Console, resource_cvar},
-    core::{Dead, DamageKind, DamageTaken, Health, LocalPlayer},
+    core::{Dead, DamageKind, DamageTaken, Health, Intent, LocalPlayer, MovementState},
 };
 use chimera_net::net::NetCharacter;
-use chimera_sim::weapon::{Armor, Inventory, Magazine, Weapon, data::WeaponCatalog};
+use chimera_sim::weapon::{Armor, Inventory, Magazine, Weapon, aim_of, data::WeaponCatalog};
 use chimera_world::map::{PlaySound, hud::ActiveHud};
 
 use super::{
@@ -26,16 +26,21 @@ use super::{
     frame::{Draw, Frame, Screen},
     hud::{Hl2Hud, Inputs, Owned, WeaponNow},
     look::Look,
+    notices::Target,
     scoreboard::{Board, BoardPlayer},
     selection::Action,
 };
 use crate::game::{
     GAME,
     hud::{ANIMATIONS, animations, icon_key},
+    hud_notes::{HudPickup, PickupNote},
     rules::deaths::notice_name,
     standing::{Hl2MatchView, Hl2Team},
     suit::Suit,
-    weapons::inventory::{Hl2Ammo, Hl2Item},
+    weapons::{
+        inventory::{Hl2Ammo, Hl2Item, selectable},
+        launch::{Hl2Rounds, U},
+    },
 };
 
 /// What this HUD draws instead of the shell's.
@@ -48,11 +53,12 @@ pub struct HudCvars {
     pub quickinfo: u8,
     pub crosshair: u8,
     pub show_empty_slots: u8,
+    pub centerid: u8,
 }
 
 impl Default for HudCvars {
     fn default() -> Self {
-        HudCvars { fastswitch: 0, quickinfo: 1, crosshair: 1, show_empty_slots: 1 }
+        HudCvars { fastswitch: 0, quickinfo: 1, crosshair: 1, show_empty_slots: 1, centerid: 1 }
     }
 }
 
@@ -71,8 +77,6 @@ pub struct Hl2dmHud {
 struct Seen {
     weapons: HashSet<Entity>,
     ammo: HashMap<String, i32>,
-    health: i32,
-    armour: i32,
     alive: bool,
     kill: u64,
     started: bool,
@@ -89,6 +93,7 @@ pub fn register_cvars(app: &mut App) {
         ("hl2dm:hud_quickinfo", "1: the quick info brackets show health and clip.", (|r: &mut HudCvars| &mut r.quickinfo) as fn(&mut HudCvars) -> &mut u8),
         ("hl2dm:crosshair", "1: the crosshair and quick info show.", |r| &mut r.crosshair),
         ("hl2dm:hud_showemptyweaponslots", "1: empty boxes show in the open bucket.", |r| &mut r.show_empty_slots),
+        ("hl2dm:hud_centerid", "1: the target ID centred; 0: at the bottom left.", |r| &mut r.centerid),
     ] {
         resource_cvar::<HudCvars, u8>(app, name, help, field);
     }
@@ -127,21 +132,86 @@ pub fn teardown(mut state: ResMut<Hl2dmHud>) {
     state.look = None;
 }
 
-/// The weapon in hand as the HUD reads it.
-fn weapon_now(w: &Weapon, mag: Option<&Magazine>, item: Option<&Hl2Item>) -> WeaponNow {
+/// The weapon in hand as the HUD reads it (hud.md 4.6's table): a weapon
+/// with no clip and its own rounds (the frag, the RPG) shows them as its
+/// ammo; the S.L.A.M.'s are its secondary, its ammo panel hidden; beside a
+/// clip they are the secondary (the SMG1's grenades, the AR2's balls).
+pub fn weapon_now(w: &Weapon, mag: Option<&Magazine>, item: Option<&Hl2Item>, rounds: Option<&Hl2Rounds>) -> WeaponNow {
     let class = crate::game::scripts::class_of(w.id).to_string();
-    let uses_primary = item.map_or(mag.is_some(), |i| i.ammo.is_some());
+    let primary_type = item.map_or(mag.is_some(), |i| i.ammo.is_some());
+    let slam = class == "weapon_slam";
+    let beside_clip = primary_type || slam;
+    let own = rounds.filter(|_| !beside_clip).map(|r| r.count as i32);
     WeaponNow {
-        class,
-        uses_primary,
+        uses_primary: primary_type || own.is_some(),
         clip: mag.filter(|m| m.size > 0).map(|m| m.clip as i32),
         max_clip: mag.map_or(0, |m| m.size as i32),
-        reserve: mag.map_or(0, |m| m.reserve as i32),
-        // M5's secondary ammo (the grenades, the AR2 ball, the S.L.A.M.)
-        // comes with its weapons' data.
-        secondary: None,
+        reserve: own.unwrap_or(mag.map_or(0, |m| m.reserve as i32)),
+        secondary: rounds.filter(|_| beside_clip).map(|r| (r.ammo.to_string(), r.count)),
+        class,
     }
 }
+
+/// The player under the crosshair (hud.md 11): a line from eye + 10 units
+/// to eye + 1500 along the view, ignoring the local player; what it hits
+/// first must be a living player. "Starts clear": a start inside the
+/// world finds that at 0.
+#[allow(clippy::type_complexity)]
+pub fn target_id(
+    mut state: ResMut<Hl2dmHud>,
+    me: Option<Single<(Entity, &Transform, &Intent, &MovementState, &Health, Has<Dead>, Option<&Hl2Team>), With<LocalPlayer>>>,
+    others: Query<
+        (Entity, &Transform, &MovementState, &Health, Has<Dead>, Option<&Hl2Team>, Option<&Name>, Option<&NetCharacter>),
+        (With<Intent>, Without<LocalPlayer>),
+    >,
+    all: Query<(), With<Intent>>,
+    views: Query<&Hl2MatchView>,
+    settings: Option<Res<chimera_net::net::NetSettings>>,
+    spatial: avian3d::prelude::SpatialQuery,
+) {
+    let Some(hud) = state.hud.as_mut() else { return };
+    hud.notices.target = None;
+    let Some(me) = me else { return };
+    let (entity, at, intent, move_state, health, dead, team) = *me;
+    if dead || health.current <= 0.0 {
+        return;
+    }
+    let dir = aim_of(intent.yaw, intent.pitch) * Vec3::NEG_Z;
+    let Ok(ray) = Dir3::new(dir) else { return };
+    let from = at.translation + move_state.eye_offset + dir * TARGET_FROM * U;
+    let len = (TARGET_TO - TARGET_FROM) * U;
+    let mut best: Option<(f32, Entity)> = None;
+    for (e, t, s, h, gone, ..) in &others {
+        if gone || h.current <= 0.0 || e == entity {
+            continue;
+        }
+        let hit = super::notices::ray_box(from, dir, len, t.translation + s.hull_min, t.translation + s.hull_max);
+        if let Some(d) = hit
+            && best.is_none_or(|(b, _)| d < b)
+        {
+            best = Some((d, e));
+        }
+    }
+    let Some((d, e)) = best else { return };
+    // The world and props first: no text. Players aren't what blocks here.
+    let filter = avian3d::prelude::SpatialQueryFilter::default().with_mask(chimera_core::core::NOT_SHADOW);
+    if spatial.cast_ray_predicate(from, ray, len, true, &filter, &|c| !all.contains(c)).is_some_and(|h| h.distance <= d) {
+        return;
+    }
+    let Ok((_, _, _, h, _, their_team, name, character)) = others.get(e) else { return };
+    let their_team = their_team.map_or(0, |t| t.0);
+    let teamplay = views.iter().next().is_some_and(|v| v.teamplay);
+    let friend = (teamplay && team.is_some_and(|t| t.0 == their_team)).then(|| h.current / h.max);
+    hud.notices.target = Some(Target {
+        name: chimera_client::client::shown_name(e, false, character, name, settings.as_deref()),
+        team: their_team,
+        friend,
+    });
+}
+
+/// The target ID's line, from the eye (units).
+const TARGET_FROM: f32 = 10.0;
+const TARGET_TO: f32 = 1500.0;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn collect(
@@ -149,10 +219,10 @@ pub fn collect(
     time: Res<Time>,
     windows: Query<&Window>,
     player: Option<Single<(Entity, &Health, Option<&Armor>, Option<&Suit>, Option<&Inventory>, Has<Dead>, Option<&Hl2Team>, Option<&Transform>, Option<&Hl2Ammo>), With<LocalPlayer>>>,
-    weapons: Query<(&Weapon, Option<&Magazine>, Option<&Hl2Item>)>,
+    weapons: Query<(&Weapon, Option<&Magazine>, Option<&Hl2Item>, Option<&Hl2Rounds>)>,
     carrying: Query<(), (With<LocalPlayer>, With<crate::game::carry::Carried>)>,
     catalog: Option<Res<WeaponCatalog>>,
-    mut taken: MessageReader<DamageTaken>,
+    (mut taken, mut notes): (MessageReader<DamageTaken>, MessageReader<HudPickup>),
     feed: Option<Res<KillFeed>>,
     views: Query<&Hl2MatchView>,
     teams: Query<&Hl2Team>,
@@ -163,6 +233,7 @@ pub fn collect(
     let st = &mut *state;
     let (Some(hud), Some(look)) = (st.hud.as_mut(), st.look.as_mut()) else {
         taken.clear();
+        notes.clear();
         return;
     };
     if let Some(w) = windows.iter().next() {
@@ -173,8 +244,9 @@ pub fn collect(
         }
     }
     let now = time.elapsed_secs_f64();
-    let Some((_me, health, armor, suit, inventory, dead, team, at, ammo)) = player.map(|p| *p) else {
+    let Some((me, health, armor, suit, inventory, dead, team, at, ammo)) = player.map(|p| *p) else {
         taken.clear();
+        notes.clear();
         return;
     };
     let view = views.iter().next();
@@ -185,8 +257,6 @@ pub fn collect(
         hud.reset(look);
         st.seen.weapons.clear();
         st.seen.ammo.clear();
-        st.seen.health = points.ceil() as i32;
-        st.seen.armour = armor.map_or(0, |a| (a.amount * 100.0).ceil() as i32);
     }
     st.seen.alive = alive;
 
@@ -206,6 +276,7 @@ pub fn collect(
         hide_empty_slots: cvars.show_empty_slots == 0,
         // The weapon is holstered while carrying by `+use` (gravity_gun.md 8).
         hide_selection: !carrying.is_empty(),
+        target_id_left: cvars.centerid == 0,
         ..Inputs::default()
     };
     if inp.zoomed {
@@ -215,9 +286,9 @@ pub fn collect(
     if let Some(inv) = inventory {
         inp.active = inv.active;
         for &e in &inv.weapons {
-            let Ok((w, mag, item)) = weapons.get(e) else { continue };
+            let Ok((w, mag, item, rounds)) = weapons.get(e) else { continue };
             let data = catalog.as_ref().and_then(|c| c.get(w.id));
-            let has_ammo = mag.is_none_or(|m| m.clip > 0 || m.reserve > 0);
+            let has_ammo = selectable(mag, rounds);
             inp.owned.push(Owned {
                 entity: e,
                 class: crate::game::scripts::class_of(w.id).to_string(),
@@ -228,7 +299,7 @@ pub fn collect(
             });
         }
         if let Some(active) = inv.active.and_then(|a| weapons.get(a).ok()) {
-            let mut now_weapon = weapon_now(active.0, active.1, active.2);
+            let mut now_weapon = weapon_now(active.0, active.1, active.2, active.3);
             // The carried count of a type no clip holds (the frag, the
             // RPG): the player's loose ammo.
             if now_weapon.clip.is_none()
@@ -241,8 +312,8 @@ pub fn collect(
         }
     }
 
-    // Pickups: a weapon new to the inventory, ammo that rose, a battery or
-    // a health kit (a whole step up in armour or health).
+    // Pickups: a weapon new to the inventory, ammo that rose, and the
+    // server's messages (`game::hud_notes`: an item's class, ammo denied).
     if alive {
         for o in &inp.owned {
             if st.seen.weapons.insert(o.entity) {
@@ -254,12 +325,16 @@ pub fn collect(
         }
         let mut carried: HashMap<String, i32> = HashMap::new();
         for e in inventory.map_or(&[][..], |i| &i.weapons[..]) {
-            if let Ok((w, Some(m), Some(i))) = weapons.get(*e).map(|(w, m, i)| (w, m, i))
-                && let Some(t) = i.ammo
+            let Ok((w, mag, item, rounds)) = weapons.get(*e) else { continue };
+            if let (Some(m), Some(t)) = (mag, item.and_then(|i| i.ammo))
                 && w.slot < 6
             {
                 let c = carried.entry(t.to_string()).or_default();
                 *c = (*c).max(m.reserve as i32);
+            }
+            if let Some(r) = rounds {
+                let c = carried.entry(r.ammo.to_string()).or_default();
+                *c = (*c).max(r.count as i32);
             }
         }
         for (t, c) in ammo.map_or(&[][..], |a| &a.0[..]).iter().map(|(t, c)| (t, *c as i32)) {
@@ -271,27 +346,29 @@ pub fn collect(
             if let Some(old) = old
                 && *c > old
             {
-                let icon = inp
-                    .owned
-                    .iter()
-                    .filter_map(|o| weapons.get(o.entity).ok().map(|(_, _, i)| (o, i)))
-                    .find(|(_, i)| i.is_some_and(|i| i.ammo == Some(t.as_str())))
-                    .and_then(|(o, _)| look.glyph(&icon_key(&o.class, "ammo")))
+                // The first owned weapon's "ammo" icon for the type, else
+                // its "ammo2" (hud.md 4.5).
+                let with = |slot: &str, of: &dyn Fn(Option<&Hl2Item>, Option<&Hl2Rounds>) -> bool| {
+                    inp.owned
+                        .iter()
+                        .find(|o| weapons.get(o.entity).is_ok_and(|(_, _, i, r)| of(i, r)))
+                        .and_then(|o| look.glyph(&icon_key(&o.class, slot)))
+                };
+                let is = t.as_str();
+                let icon = with("ammo", &|i, r| i.is_some_and(|i| i.ammo == Some(is)) || (i.is_none_or(|i| i.ammo.is_none()) && r.is_some_and(|r| r.ammo == is)))
+                    .or_else(|| with("ammo2", &|_, r| r.is_some_and(|r| r.ammo == is)))
                     .map(|(f, c)| (super::numeric::static_font(&f), c));
                 hud.history.ammo(t, *c - old, icon, now);
             }
             st.seen.ammo.insert(t.clone(), *c);
         }
-        let (health_i, armour_i) = (points.ceil() as i32, inp.armour.ceil() as i32);
-        let item_icon = |name: &str| look.glyph(name).map(|(f, c)| (super::numeric::static_font(&f), c));
-        if armour_i - st.seen.armour == 15 {
-            hud.history.item(item_icon("item_battery"), now);
+    }
+    for n in notes.read().filter(|n| n.player == me) {
+        match &n.note {
+            // No icon (the vial): nothing.
+            PickupNote::Item(class) => hud.history.item(look.glyph(class).map(|(f, c)| (super::numeric::static_font(&f), c)), now),
+            PickupNote::AmmoDenied(ammo) => hud.history.denied(ammo, now),
         }
-        if health_i - st.seen.health == 25 {
-            hud.history.item(item_icon("item_healthkit"), now);
-        }
-        st.seen.health = health_i;
-        st.seen.armour = armour_i;
     }
 
     // Damage taken.

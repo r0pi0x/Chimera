@@ -540,3 +540,52 @@ fn a_chargers_dial_and_loop() {
     let c = cycle(&w).unwrap();
     assert!((c - (1.0 - 65.0 / 75.0)).abs() < 0.01, "back to the pool: {c}");
 }
+
+/// The HUD's notes (hud.md 9, weapons.md test 42): a battery names its
+/// class; a box of a full type, and a placed weapon of a full reserve, are
+/// denied at each touch and stay.
+#[test]
+fn hud_notes_from_pickups() {
+    use chimera_sim::weapon::Magazine;
+    use hl2dm::game::{hud_notes::{HudPickup, PickupNote}, weapons};
+    let mut g = world(vec![
+        entity("item_battery", Vec3::new(0.0, 0.0, 0.0), &[]),
+        entity("item_ammo_pistol", Vec3::new(500.0, 0.0, 0.0), &[]),
+        entity("weapon_smg1", Vec3::new(1000.0, 0.0, 0.0), &[]),
+    ]);
+    g.sim.ticks(60);
+    let notes = |g: &mut World_, c: &mut bevy::ecs::message::MessageCursor<HudPickup>, n: u64| {
+        let mut got = Vec::new();
+        for _ in 0..n {
+            g.sim.ticks(1);
+            got.extend(c.read(g.sim.app.world().resource::<Messages<HudPickup>>()).cloned());
+        }
+        got
+    };
+    let mut cursor = bevy::ecs::message::MessageCursor::<HudPickup>::default();
+    let p = g.p;
+    let item = |class: &str| HudPickup { player: p, note: PickupNote::Item(class.into()) };
+    let denied = |ammo: &str| HudPickup { player: p, note: PickupNote::AmmoDenied(ammo.into()) };
+
+    g.place(Vec3::new(0.0, 0.0, 0.0));
+    assert!(notes(&mut g, &mut cursor, 5).contains(&item("item_battery")));
+
+    // The pistol at its limit: a box refused, and it stays.
+    g.unarmed();
+    g.set_ammo("hl2dm:pistol", 150);
+    g.place(Vec3::new(500.0, 0.0, 0.0));
+    assert!(notes(&mut g, &mut cursor, 5).contains(&denied("hl2dm:pistol")));
+
+    // A placed SMG1 with the SMG1's reserve full.
+    g.away();
+    let smg = chimera_sim::weapon::give(g.sim.app.world_mut(), p, weapons::SMG1).unwrap();
+    {
+        let mut m = g.sim.app.world_mut().get_mut::<Magazine>(smg).unwrap();
+        m.reserve = m.reserve_max;
+    }
+    g.place(Vec3::new(1000.0, 0.0, 0.0));
+    let got = notes(&mut g, &mut cursor, 30);
+    assert!(got.contains(&denied("hl2dm:smg1")), "{got:?}");
+    let world = g.sim.app.world_mut();
+    assert_eq!(world.query_filtered::<(), With<Loose>>().iter(world).count(), 1, "the weapon stays");
+}

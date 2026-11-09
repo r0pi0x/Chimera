@@ -692,3 +692,93 @@ fn trigger_hurt_radiation_and_poison_bypass_the_suit() {
     assert_eq!(pass("262144"), (80.0, 100.0), "radiation bypasses the suit");
     assert_eq!(pass("131072"), (80.0, 100.0), "poison bypasses the suit");
 }
+
+/// Flashlight: `impulse 100` (`weapon::PlayerImpulse`, the console's and a
+/// network client's) toggles it.
+#[test]
+fn impulse_100_toggles_the_flashlight() {
+    use chimera_sim::weapon::PlayerImpulse;
+    let mut pl = Player::at(FIELD, vec![]);
+    pl.sim.app.world_mut().insert_resource(FlashlightAllowed(true));
+    pl.sim.app.world_mut().write_message(PlayerImpulse { player: pl.p, impulse: 100 });
+    pl.tick();
+    assert!(pl.sim.app.world().get::<FlashlightOn>(pl.p).is_some(), "on");
+    pl.sim.app.world_mut().write_message(PlayerImpulse { player: pl.p, impulse: 100 });
+    pl.tick();
+    assert!(pl.sim.app.world().get::<FlashlightOn>(pl.p).is_none(), "off");
+    assert_eq!(pl.heard("HL2Player.FlashlightOff", 0).len(), 1);
+}
+
+/// Suit zoom: `toggle_zoom` starts and stops it and, not holding `+zoom`,
+/// lets the player fire (test 35's other half).
+#[test]
+fn toggle_zoom_lets_the_player_fire() {
+    use hl2dm::game::suit::ZoomToggle;
+    let mut pl = Player::at(FIELD, vec![]);
+    pl.sim.app.world_mut().entity_mut(pl.p).insert(ZoomToggle);
+    pl.intent().fire = true;
+    pl.sim.ticks(30);
+    let fov = pl.sim.app.world().get::<ViewZoom>(pl.p).map(|v| v.0);
+    assert!(fov.is_some_and(|f| (f - 25.0).abs() < 0.01), "zoomed: {fov:?}");
+    assert!(pl.sim.app.world().get::<Intent>(pl.p).unwrap().fire, "attack kept");
+    pl.sim.app.world_mut().entity_mut(pl.p).insert(ZoomToggle);
+    pl.sim.ticks(20);
+    assert!(pl.sim.app.world().get::<ViewZoom>(pl.p).is_none(), "toggled back");
+}
+
+/// One zoom owner: with the crossbow's scope up the suit zoom doesn't
+/// start; with the suit zoom up the crossbow's zoom toggle (attack2) is
+/// refused.
+#[test]
+fn one_zoom_owner() {
+    use chimera_sim::weapon::{Inventory, Zoomed};
+    use hl2dm::game::suit::ZoomToggle;
+    let mut pl = Player::at(FIELD, vec![]);
+    let bow = chimera_sim::weapon::give(pl.sim.app.world_mut(), pl.p, hl2dm::game::weapons::CROSSBOW).unwrap();
+    pl.sim.app.world_mut().get_mut::<Inventory>(pl.p).unwrap().active = Some(bow);
+    pl.sim.ticks(70);
+    // The scope up: +zoom does nothing.
+    pl.sim.app.world_mut().entity_mut(pl.p).insert(Zoomed { fov: 20.0, scope: true, sensitivity: None });
+    let bit = pl.sim.app.world().resource::<chimera_core::core::ActionRegistry>().bit(suit::ZOOM_ACTION);
+    pl.intent().actions = bit;
+    pl.sim.ticks(10);
+    assert!(pl.suit().zoom.is_none(), "refused while the scope holds");
+    pl.intent().actions = 0;
+    pl.sim.ticks(2);
+    pl.sim.app.world_mut().entity_mut(pl.p).remove::<Zoomed>();
+    pl.sim.ticks(2);
+    // The suit zoom up: attack2 cleared, the scope stays down.
+    pl.sim.app.world_mut().entity_mut(pl.p).insert(ZoomToggle);
+    pl.sim.ticks(2);
+    pl.intent().secondary = true;
+    pl.sim.ticks(3);
+    assert!(!pl.sim.app.world().get::<Intent>(pl.p).unwrap().secondary, "the crossbow's toggle refused");
+    assert!(pl.sim.app.world().get::<Zoomed>(pl.p).is_none_or(|z| z.fov != 20.0), "no scope");
+}
+
+/// `impulse 50` (bound to C): HL2's squad command does nothing here; the
+/// console takes it without an error.
+#[test]
+fn impulse_50_does_nothing() {
+    let mut pl = Player::at(FIELD, vec![]);
+    pl.sim.app.world_mut().insert_resource(FlashlightAllowed(true));
+    chimera_core::console::execute(pl.sim.app.world_mut(), &["impulse".to_string(), "50".to_string()], 0);
+    pl.tick();
+    assert!(pl.sim.app.world().get::<FlashlightOn>(pl.p).is_none());
+}
+
+/// The flashlight's light: one spot light while on, gone when off.
+#[test]
+fn the_flashlight_lights_the_view() {
+    use chimera_sim::weapon::PlayerImpulse;
+    use hl2dm::game::suit::FlashlightBeam;
+    let mut pl = Player::at(FIELD, vec![]);
+    pl.sim.app.world_mut().insert_resource(FlashlightAllowed(true));
+    pl.sim.app.world_mut().write_message(PlayerImpulse { player: pl.p, impulse: 100 });
+    pl.sim.ticks(3);
+    let beams = |pl: &mut Player| pl.sim.app.world_mut().query::<&FlashlightBeam>().iter(pl.sim.app.world()).count();
+    assert_eq!(beams(&mut pl), 1);
+    pl.sim.app.world_mut().write_message(PlayerImpulse { player: pl.p, impulse: 100 });
+    pl.sim.ticks(3);
+    assert_eq!(beams(&mut pl), 0);
+}

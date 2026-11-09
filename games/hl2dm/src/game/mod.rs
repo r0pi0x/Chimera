@@ -34,6 +34,7 @@ pub mod dissolve;
 pub mod effects;
 pub mod flashes;
 pub mod hud;
+pub mod hud_notes;
 pub mod look;
 pub mod maps;
 pub mod mount;

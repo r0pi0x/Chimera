@@ -178,14 +178,14 @@ fn the_target_id_names_who_you_look_at() {
     hud.think(&inp, 0.0);
     hud.notices.target = Some(Target { name: "Alex".into(), team: COMBINE, friend: Some(1.0) });
     let mut f = hl2dm::ui::frame::Frame::default();
-    hud.draw_target(&look, &mut f);
+    hud.draw_target(&look, &inputs(), &mut f);
     match f.find_text("Friend: Alex Health: 1%") {
         Some(Draw::Text { at, color, .. }) => assert_eq!((*at, *color), (Vec2::new(320.0, 260.0), [153, 204, 255, 255])),
         other => panic!("{other:?}"),
     }
     hud.notices.target = Some(Target { name: "Bo".into(), team: REBELS, friend: None });
     let mut f = hl2dm::ui::frame::Frame::default();
-    hud.draw_target(&look, &mut f);
+    hud.draw_target(&look, &inputs(), &mut f);
     assert!(f.find_text("Enemy: Bo").is_some());
     let _ = Screen::base();
 }

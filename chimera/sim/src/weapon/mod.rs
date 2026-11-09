@@ -131,6 +131,15 @@ pub struct FilledUp {
     pub player: Entity,
 }
 
+/// A player's impulse that a game answers (Source's player impulses beside
+/// 101 and 201: `impulse 100`, the flashlight): for `player`, on the
+/// server (a network client's goes there as `net`'s `ImpulseRequest`).
+#[derive(Message, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlayerImpulse {
+    pub player: Entity,
+    pub impulse: u8,
+}
+
 /// Where the thing that dealt a `Damage` was, when that isn't its
 /// attacker: a blast's centre, a projectile (lift C1: `grenade`'s blasts
 /// and `projectile`'s direct hits write it beside their damage, with the
@@ -200,6 +209,7 @@ impl Plugin for WeaponPlugin {
             .add_message::<drop::UsedPickup>()
             .add_message::<ArmourShare>()
             .add_message::<drop::PickedUp>()
+            .add_message::<drop::AmmoFull>()
             .register_type::<economy::Money>()
             .register_type::<economy::DefuseKit>()
             .init_resource::<PassMaterials>()
@@ -213,6 +223,7 @@ impl Plugin for WeaponPlugin {
             .add_systems(Update, notice::mode_notice)
             .add_message::<BulletHit>()
             .add_message::<FilledUp>()
+            .add_message::<PlayerImpulse>()
             .add_message::<crate::map::RagdollShot>()
             .add_message::<PlaySound>()
             // The rules' sounds (`map::GameSound`), played here.
@@ -420,15 +431,20 @@ impl Plugin for WeaponPlugin {
         )
         .console_command(
             "impulse",
-            "impulse 101: every weapon, full clips and reserves, kevlar and helmet (a cheat); impulse 201: spray your logo (T).",
+            "impulse 101: every weapon, full clips and reserves, kevlar and helmet (a cheat); impulse 201: spray your logo (T); impulse 100: the flashlight, 50: a squad command (a game's).",
             |w, a| {
                 match a.first().map(|s| s.trim()) {
                     Some("201") => {
                         let player = local_player(w)?;
                         return spray::spray_or_ask(w, player);
                     }
+                    Some(n @ ("50" | "100")) => {
+                        let player = local_player(w)?;
+                        w.write_message(PlayerImpulse { player, impulse: n.parse().unwrap_or(0) });
+                        return Ok(None);
+                    }
                     Some("101") => {}
-                    _ => return Err("only impulse 101 (all weapons and ammo) and 201 (spray) exist".into()),
+                    _ => return Err("only impulse 50 (squad command), 100 (flashlight), 101 (all weapons and ammo) and 201 (spray) exist".into()),
                 }
                 server_only(w)?;
                 let player = local_player(w)?;

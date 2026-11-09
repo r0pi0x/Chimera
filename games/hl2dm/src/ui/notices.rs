@@ -3,7 +3,13 @@
 //! (a suicide only the skull and the victim), names in their teams'
 //! colours, the icon in `255 80 0`; at most four lines, six seconds each,
 //! no fade. The target ID names the player under the crosshair: "Enemy:
-//! name", or in team play for a teammate "Friend: name Health: n%".
+//! name", or in team play for a teammate "Friend: name Health: n%" (the
+//! health over its maximum, so 100/100 reads "1%"; hud.md's quirk): the
+//! view's ray, eye + 10 to eye + 1500 units, each frame (`systems::target_id`).
+//!
+//! Known shortcut: the ray meets a player's movement box, and the world
+//! and props by the physics scene; dead local players show nothing, not
+//! only those in the chase and death-cam modes.
 
 use bevy::prelude::*;
 
@@ -103,8 +109,9 @@ impl Hl2Hud {
         }
     }
 
-    /// The target ID line, centred at y 260 units.
-    pub fn draw_target(&self, look: &Look, frame: &mut Frame) {
+    /// The target ID line: centred at y 260 units, or with `hud_centerid`
+    /// 0 at (10, 420).
+    pub fn draw_target(&self, look: &Look, inp: &super::hud::Inputs, frame: &mut Frame) {
         let Some(t) = &self.notices.target else { return };
         let s = look.screen;
         let text = match t.friend {
@@ -114,8 +121,34 @@ impl Hl2Hud {
                 .replace("%s2", &format!("{}%", h as i32)),
             None => look.string("#Playerid_diffteam", "Enemy: %s1").replace("%s1", &t.name),
         };
-        frame.push(Draw::text("TargetID", look.tall("TargetID"), text, team_colour(t.team), Vec2::new(s.w / 2.0, s.scaled(260.0)), Align::Centre));
+        let (at, align) = if inp.target_id_left {
+            (Vec2::new(s.scaled(10.0), s.scaled(420.0)), Align::Left)
+        } else {
+            (Vec2::new(s.w / 2.0, s.scaled(260.0)), Align::Centre)
+        };
+        frame.push(Draw::text("TargetID", look.tall("TargetID"), text, team_colour(t.team), at, align));
     }
+}
+
+/// How far along the ray from `from` (`dir` normal) the box `lo`..`hi` is
+/// entered, within `len` (0: starting inside); None: missed.
+pub fn ray_box(from: Vec3, dir: Vec3, len: f32, lo: Vec3, hi: Vec3) -> Option<f32> {
+    let (mut near, mut far) = (0.0f32, len);
+    for i in 0..3 {
+        if dir[i].abs() < 1e-7 {
+            if from[i] < lo[i] || from[i] > hi[i] {
+                return None;
+            }
+            continue;
+        }
+        let (a, b) = ((lo[i] - from[i]) / dir[i], (hi[i] - from[i]) / dir[i]);
+        near = near.max(a.min(b));
+        far = far.min(a.max(b));
+        if near > far {
+            return None;
+        }
+    }
+    Some(near)
 }
 
 #[cfg(test)]
