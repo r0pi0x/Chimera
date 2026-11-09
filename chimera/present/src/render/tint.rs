@@ -34,7 +34,7 @@
 use bevy::prelude::*;
 
 use super::{prop_material::PropMaterial, world_material::WorldMaterial};
-use crate::map::{BrushTint, MapAlpha, RenderLook, ALPHA_TEST_REFERENCE};
+use crate::map::{BrushTint, MapAlpha, RenderLook};
 
 /// A brush entity mesh's texture frames (its base texture's, when it has
 /// several and something can pick one).
@@ -260,6 +260,7 @@ pub fn apply_character_looks(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::map::ALPHA_TEST_REFERENCE;
 
     #[test]
     fn render_modes() {
