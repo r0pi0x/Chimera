@@ -230,7 +230,7 @@ pub fn draw_particles(
             let eye = if skybox { sky_eye.unwrap_or(from) } else { from };
             let depth = (p.position - eye).dot(forward);
             let near = g.motion.draw_factor(depth, p);
-            buckets.entry((p.material, layer)).or_default().push((depth, p, near));
+            buckets.entry((p.current_material(), layer)).or_default().push((depth, p, near));
         }
     }
     let mut used: Vec<(usize, u8)> = assets.meshes.keys().chain(buckets.keys()).copied().collect();

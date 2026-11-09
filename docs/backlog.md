@@ -172,11 +172,6 @@ the original's own behaviour isn't a bug (say so instead).
 - **Ultimate Gun Game: HL2:DM rungs don't use HL2:DM's HUD and crosshair.**
   Holding an HL2:DM gun should show the same HUD and crosshair as HL2:DM
   itself, as other games' rungs do.
-- **Combat Arms melee and the RMS-12 against glass:** knives don't break
-  glass (CS office's windows), so a flamethrower player can't get in; the
-  RMS-12 can't break it either.
-- **RMS-12 flamethrower:** shoots what looks like smoke, not flames, and
-  doesn't seem to do damage to anybody.
 - **Higher priority: frame rate decays over a session.** After about 10
   games the user's FPS is down to about 30. Measure frame and tick cost per
   match over repeated map changes (leaked entities, assets, meshes, audio,
@@ -194,6 +189,12 @@ the original's own behaviour isn't a bug (say so instead).
 - **Kill feed: the crowbar's icon** is just the large word "crowbar".
 - **Scoreboard: guns still top-aligned** in their list item, a lot of the
   Combat Arms ones.
+- **RMS-12 on a gun game's rung (decision):** it burns nobody: its ammo's
+  `ProgDamage` is 0 (specs/combat_arms/special_weapons.md 4, Open question
+  8), so that is the original's data, not a bug. Its flames do show now and
+  cut glass. On a rung, only the knife climbs. Waiting on the user: keep it,
+  leave zero-damage guns (this, the M136_AT4) out of generated ladders, or a
+  party option that burns?
 - **Neon Outlaw ASW338LM (Combat Arms)** looks like it has the wrong UV map.
   Already answered (below, models_ltb.md W1-W3): its skin is painted for a
   layout no ASW338LM model in the install has. Waiting on the user: leave

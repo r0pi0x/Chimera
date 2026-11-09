@@ -93,3 +93,43 @@ fn t114_eye_groups_by_face() {
         }
     }
 }
+
+/// The flame's own keys name a sprite set and no texture (`Y_FLAMESET`):
+/// the library loads its frames as materials, so the puff is drawn as fire,
+/// not only its smoke keys. `RMS12`: its ammo has `ProgDamage` 0 and fires
+/// the same puff (special_weapons.md 4, Open question 8): its spheres burn
+/// nobody, as in the original's data.
+#[test]
+fn the_flame_draws_its_sprite_frames_and_the_rms12_burns_nothing() {
+    let ca = CaData::install();
+    if ca.attributes().and_then(|a| a.weapons.as_ref()).is_none() {
+        eprintln!("skipping: the install's attribute data isn't readable (the V1 key)");
+        return;
+    }
+    let rms = params("combat_arms:rms12").expect("the RMS-12");
+    assert_eq!(rms.look.fx, "Flame_Yellow");
+    assert_eq!(rms.over_time.expect("a sphere").rate, 0.0, "ProgDamage 0");
+    assert!(rms.flame(), "still fire: its puffs cut glass");
+    assert_eq!(params("combat_arms:flamethrower").unwrap().over_time.unwrap().rate, 12.0);
+
+    let Some(install) = LocalConfig::load().ok().and_then(|c| c.game_path(GAME)) else { return };
+    let mount = (INFO.open)(&install).unwrap();
+    let Some(data) = combat_arms::game::world::load_from(&mount, "warehouse").ok() else {
+        eprintln!("skipping: warehouse not readable");
+        return;
+    };
+    let lib = combat_arms::game::effects::library::library(&data.memos).expect("the effect library");
+    let group = lib.group("Flame_Yellow").expect("the flame's group");
+    let sprite_keys: Vec<_> = group.keys.iter().filter(|k| k.path("Texture").is_none() && k.path("Sprite").is_some()).collect();
+    assert!(!sprite_keys.is_empty(), "the flame's sprite keys");
+    for k in sprite_keys {
+        let (frames, time) = lib
+            .sprite_frames
+            .get(&combat_arms::game::effects::library::normalize(k.path("Sprite").unwrap()))
+            .expect("its frames loaded");
+        eprintln!("{:?}: {} frames, {time} s each", k.path("Sprite"), frames.len());
+        assert!(!frames.is_empty() && *time > 0.0);
+        assert!(lib.texture_of(k).is_some());
+        assert!(frames.iter().all(|f| data.particles.find(&combat_arms::game::effects::library::material_name(f, combat_arms::game::effects::library::additive(k))).is_some()));
+    }
+}

@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::super::{grenades::OverTimeParams, weapons::DamageParams};
+use super::super::{grenades::{OverTimeKind, OverTimeParams}, weapons::DamageParams};
 
 /// Hook names (docs/weapon-data.md, "Hooks").
 pub const PROJECTILE: &str = "combat_arms:projectile";
@@ -201,6 +201,12 @@ impl ProjectileLook {
 pub const LOOK_SEPARATOR: char = '~';
 
 impl ProjectileParams {
+    /// Whether it is fire and nothing else: no blast, a lasting burn (the
+    /// flame weapons' puffs, the M32's incendiary).
+    pub fn flame(&self) -> bool {
+        self.area_damage <= 0.0 && self.over_time.is_some_and(|o| o.kind == OverTimeKind::Burn)
+    }
+
     /// The key its projectile is drawn under (`map::loose::ShownItem`, the
     /// held-model kit): one per model, scale, skins and look, whichever
     /// weapon fires it; a model-less projectile's never has a model. The

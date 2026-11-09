@@ -49,6 +49,10 @@
 //! twice for the damage types that reach the player object and its hit
 //! box, friendly fire by `core::DamageRules`, the armour step).
 //!
+//! A flame puff that touches a map's breakable hits it as a club, whatever
+//! its burn's rate (`impact::flame_touch`): our rule for Combat Arms' flame
+//! on another game's glass (a pane where it touches; no spec covers it).
+//!
 //! Bullets and blasts take hit points off an object (`shot_objects`); at 1
 //! or less it goes off where it is, credited to its owner (1.4). Devices
 //! thrown by a player who leaves the game are removed silently; at the end
@@ -58,6 +62,8 @@
 //!
 //! Known shortcuts (the spec's most literal reading where it is unclear,
 //! listed for its open questions):
+//! - Burn spheres reach characters only, not the world objects and props
+//!   section 4 says they also damage (`impact::flame_touch` aside).
 //! - No direct-hit damage from a projectile (every stock rocket and shell
 //!   has `InstDamage` 0 and no type); no stun (`M32_Stun`'s `StunnedTime`)
 //!   or freeze; the snowball gun (8) is not there; the heartbeat sensors,

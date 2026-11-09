@@ -41,10 +41,17 @@
 //!
 //! Several jitters add up (`jitter_at`, Open question 24).
 //!
+//! A particle system's look follows every colour and scale key
+//! (`ParticleCurves`). One with a `Sprite` and no `Texture` (the flame's
+//! `Y_FLAMESET`) draws the sprite's frames, looping on each particle's own
+//! age at the file's frame time (effects_sounds.md names only `Texture` on
+//! this key type: the file's data, read so; a spec session should confirm
+//! whose clock the frames run on).
+//!
 //! Known shortcuts (docs/tech-debt.md): trail keys draw as camera-aligned
 //! strips whatever their `Allignment`; a group not on an entity places
 //! every key at the effect's point (the first-person muzzle flash is the
-//! front end's own, at the view model's socket); multi-key scale and colour curves are
+//! front end's own, at the view model's socket); sprite keys' multi-key scale and colour curves are
 //! drawn as a ramp from the first key to the last (`rules::key_curve` is
 //! the full curve), alpha as a fade-in/hold/fade-out window; cone and
 //! cylinder emitters are circles (`rules::cone_start` is the cone); `AdditionalAcceleration` is left
@@ -61,13 +68,13 @@ use bevy::prelude::*;
 use lithtech_formats::fxf::{FxKey, sample_keys};
 
 use super::{
-    library::{FxLibrary, additive, material_name, shaded},
+    library::{FxLibrary, additive, material_name, normalize, shaded},
     rules::jitter_falloff,
     trail::{Trail, TrailMode, TrailParams},
 };
 use crate::map::{
     ParticleRng,
-    particles::{Bounce, Fade, MapParticles, Motion, Particle, ParticleGroup, Particles, Ramp, Shape, WorldTrace, probe_planes},
+    particles::{Bounce, Fade, MapParticles, Motion, Particle, ParticleCurves, ParticleGroup, Particles, Ramp, Shape, WorldTrace, probe_planes},
 };
 
 /// An effect's frame (columns: local X, Y, Z in world axes): local +Z
@@ -545,6 +552,24 @@ impl CaFx {
             _ => Ramp::constant(size(1.0)),
         };
         let (color, color_fade, alpha, fade) = color_curve(&k.color_keys());
+        // All the keys, where a ramp from the first to the last would lose
+        // some (a flame's white, orange and black), and a sprite's frames.
+        let frames = k
+            .path("Sprite")
+            .filter(|_| k.path("Texture").is_none())
+            .and_then(|s| lib.sprite_frames.get(&normalize(s)));
+        let curves = {
+            let keys = k.color_keys();
+            let c = ParticleCurves {
+                color: if keys.len() > 2 { keys } else { Vec::new() },
+                size: if sizes.len() > 2 { sizes.iter().map(|(t, s)| (*t, size(*s))).collect() } else { Vec::new() },
+                frames: frames
+                    .map(|(f, _)| f.iter().filter_map(|t| materials.find(&material_name(t, additive(k)))).collect())
+                    .unwrap_or_default(),
+                frame_time: frames.map_or(0.0, |(_, t)| *t),
+            };
+            (!c.color.is_empty() || !c.size.is_empty() || !c.frames.is_empty()).then(|| std::sync::Arc::new(c))
+        };
         let mut group = ParticleGroup::new(Motion {
             gravity: -gravity * u,
             damping: if friction > 0.0 && friction < 1.0 { -(1.0 - friction).ln() } else { 0.0 },
@@ -576,8 +601,9 @@ impl CaFx {
             p.size = ramp;
             p.color = color;
             p.color_fade = color_fade;
-            p.alpha = alpha;
+            p.alpha = if curves.as_ref().is_some_and(|c| !c.color.is_empty()) { 1.0 } else { alpha };
             p.fade = fade;
+            p.curves = curves.clone();
             if spin {
                 p.roll = self.rng.float(0.0, std::f32::consts::TAU);
                 p.roll_speed = self.rng.float(w0, w1) * if self.rng.random() < 0.5 { -1.0 } else { 1.0 };

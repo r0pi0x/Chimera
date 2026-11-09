@@ -1175,6 +1175,7 @@ pub(crate) struct GrenadeWorld<'w, 's> {
         Without<CaGrenade>,
     >,
     breakables: Query<'w, 's, (Entity, &'static ColliderAabb), (With<Damageable>, Without<Intent>)>,
+    damageable: Query<'w, 's, (), (With<Damageable>, Without<Intent>)>,
     /// Special weapons' objects (rockets, mines, ...) a blast damages.
     pub(crate) targets: Query<'w, 's, (Entity, &'static super::special::CaTarget)>,
     prop_boxes: Query<'w, 's, (Entity, &'static ColliderAabb), With<PropEntity>>,
@@ -1205,6 +1206,12 @@ pub(crate) struct Body {
 impl GrenadeWorld<'_, '_> {
     pub(crate) fn body(&self, collider: Entity) -> Entity {
         self.colliders.get(collider).map_or(collider, |c| c.body)
+    }
+
+    /// What takes damage for `collider` (a map's breakable: its body, or the
+    /// collider itself), if anything does.
+    pub(crate) fn breakable_of(&self, collider: Entity) -> Option<Entity> {
+        [self.body(collider), collider].into_iter().find(|e| self.damageable.contains(*e))
     }
 
     pub(crate) fn surface(&self, collider: Entity) -> Option<String> {
