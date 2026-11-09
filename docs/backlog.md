@@ -117,13 +117,6 @@ the user's go-ahead: no Actions runs unless asked.
 Delete each when fixed. Check against specs/hl2dm/ and the probe; what's
 the original's own behaviour isn't a bug (say so instead).
 
-- **Props launch or trap the player:** walking into some props (the small
-  bench) throws the player into the air; jumping onto the wheelbarrow
-  sometimes sticks the player until they move backwards.
-- **Showers (dm_lockdown):** a constant sound but no water visible.
-- **Props rotated wrongly:** `setpos -3598.11 5389.92 64.03;setang 4.01
-  101.27 0.00` and pipes at `setpos -3062.89 3939.73 64.03;setang 2.14
-  166.60 0.00`, among others on the map.
 - **Moved props keep their lighting:** a lot of props don't change light
   as they move, as if the environment's lights don't reach them. Check
   whether the original does the same.

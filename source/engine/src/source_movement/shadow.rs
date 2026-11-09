@@ -25,10 +25,10 @@
 //! the shadow has no gravity and doesn't weigh on a prop stood on; a shadow
 //! pushed down below where it was sent (a prop landing on the player's head:
 //! it has no floor under it) is put back up instead of driven, so the prop
-//! isn't thrown off the head (HL2:DM measured: the crate stays on it); only a move
-//! of more than 24 units (a teleport, a respawn) or a duck/unduck puts the
-//! shadow in place, smaller step-ups drive it there; "stepped up" is a rise of
-//! more than 0.1 units in the tick (slopes count); the touch flag counts only
+//! isn't thrown off the head (HL2:DM measured: the crate stays on it); a step-up
+//! raises the shadow (spec 4.1 step 6: over 4 units it is put in place) without
+//! a trace limiting it, and "stepped up" is a rise of more than 0.1 units in the
+//! tick on the ground (slopes count); the touch flag counts only
 //! props of at most 350 kg; reconciliation sweeps the player's box toward the
 //! shadow through avian colliders (characters and multiplayer props left out)
 //! instead of testing the spot for solid; a player's own capsule touches no
@@ -64,8 +64,11 @@ pub const RIDEABLE_MASS: f32 = 2.0 * SHADOW_MASS;
 /// A rise in one tick over this is a step up (units; spec 4.1 step 4).
 const STEP_UP: f32 = 0.1;
 /// Farther than this from its target (units), the shadow is put there
-/// instead of driven (a teleport, a respawn, a big step).
+/// instead of driven (a teleport, a respawn).
 const TELEPORT: f32 = 24.0;
+/// A step-up over this puts the shadow in place, a smaller one raises it
+/// (units; spec 4.1 step 6).
+const STEP_TELEPORT: f32 = 4.0;
 /// Reconciliation stops this far short of what blocks the player (units).
 const BACKOFF: f32 = 0.031_25;
 
@@ -410,11 +413,13 @@ fn drive(
         }
         let feet = to_source(t.translation) - Vec3::Z * ORIGIN_ABOVE_FEET;
         // Moved since the movement (a teleport): no push this step.
-        let target_feet = if touch.feet.distance_squared(feet) < 1.0 {
-            target(touch, me.on_ground)
-        } else {
-            feet
-        };
+        let moved_here = touch.feet.distance_squared(feet) < 1.0;
+        let target_feet = if moved_here { target(touch, me.on_ground) } else { feet };
+        // Spec 4.1 step 6: the shadow goes up with a step, not at the speed
+        // that would get it there in one physics step, which the
+        // reconciliation would hand to the player (the step up onto a bench
+        // threw him up at 18 units a tick, 1200 units/s).
+        let stepped = if moved_here && me.on_ground { touch.feet.z - touch.prev_feet.z } else { 0.0 };
         let height = hull_height(cfg.of(slot), me.ducked);
         let centre = to_engine(target_feet + Vec3::Z * height / 2.0);
         let resized = size.0 != height;
@@ -438,7 +443,11 @@ fn drive(
             pos.0.y = a.y;
             st.translation.y = a.y;
         }
-        if resized || pos.0.distance(centre) > TELEPORT * METERS_PER_UNIT {
+        if stepped > STEP_UP && stepped <= STEP_TELEPORT {
+            pos.0.y = centre.y;
+            st.translation.y = centre.y;
+        }
+        if resized || stepped > STEP_TELEPORT || pos.0.distance(centre) > TELEPORT * METERS_PER_UNIT {
             pos.0 = centre;
             st.translation = centre;
             v.0 = Vec3::ZERO;

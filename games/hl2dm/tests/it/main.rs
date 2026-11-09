@@ -40,6 +40,7 @@ mod heavy {
     mod map_cache;
     mod map_ladders;
     mod map_pickups;
+    mod map_prop_walks;
     mod map_props;
     mod map_set_pieces;
     mod map_stock;
