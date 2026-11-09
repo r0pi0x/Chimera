@@ -162,6 +162,10 @@ the original's own behaviour isn't a bug (say so instead).
   pieces don't show them. Breakable glass itself is right (13 of these on
   dm_lockdown, shared Source code: specs/source/breakables.md). Check
   specs/cs_source/impact_effects.md and whether CS:S's glass has the same bug.
+- **Ultimate Gun Game: no gun pickups (decision).** HL2:DM's guns on the
+  ground can be picked up there, and shouldn't. Turn off gun pickups in UGG
+  (every game's, map-placed or dropped), as a rule the mode sets, so other
+  pickups stay possible later.
 - **Battery machine:** at `setpos -3835.25 5745.72 64.02;setang 17.71
   22.85 0.00` its rope or cable looks broken, and the battery doesn't seat
   properly in the slot.
