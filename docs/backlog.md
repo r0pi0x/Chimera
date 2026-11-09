@@ -202,10 +202,6 @@ the original's own behaviour isn't a bug (say so instead).
   So whatever grows outlives the match and the server: look at per-process
   state (asset caches, GPU meshes and textures, materials, archetypes).
 - **Ultimate Gun Game's menu background** shouldn't use the greybox map.
-- **Ultimate Gun Game must never show the greybox stand-ins:** for a few
-  frames someone flashes as a capsule, or a gun or knife as the template
-  model (seen at low FPS). Goes with the character swap above: keep what's
-  showing until the real model is ready.
 - **Kill feed: the crowbar's icon** is just the large word "crowbar".
 - **Scoreboard: guns still top-aligned** in their list item, a lot of the
   Combat Arms ones.

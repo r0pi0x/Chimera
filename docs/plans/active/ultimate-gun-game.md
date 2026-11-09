@@ -24,7 +24,7 @@ console) and builds from what's there.
 | Gun classes | yes (with the guns) | `GameParts::guns` (`GunClass`, the game's claim) | - |
 | Knife | no | `GameParts::knife` (in the catalogue), given by game (`def::Kit::ByGame`, `runtime::refit_kit` on a rung's swap) | the base game's knife |
 | Movement | yes | `slots::MovementRegistry` (`register_movement`; `of_game` for identity) | none: not in a ladder |
-| Characters (bodies) | no | `map::CharacterModels` with `game` set: the map game's own, `MapSources::players`, `MapSources::guests` (`MapDressing`) | none of its game: the shell's capsule (`CharacterModels::for_identity` returns none, the body is removed) |
+| Characters (bodies) | no | `map::CharacterModels` with `game` set: the map game's own, `MapSources::players`, `MapSources::guests` (`MapDressing`) | none of its game: what it wears stays, else any body here (`render::bodies::attach_bodies`; never the shell's capsule: `game_parts::NoStandIns`, which only apps without the flag draw) |
 | HUD | no | the gameplay's `hud` slot (X1, `hud_is`), switched by `identity::hud_follows_identity`, kept up alone by the shell's `HudSwitchPlugin` | `PartsRegistry::fallback_hud` (the app's base game's; else `MINIMAL_HUD`, the shell's own) |
 | Maps | no | the game's `MapLoader` in the app's `MapSources`, `GameParts::maps` | the other games' maps (the pool is every game's); none at all: the greybox |
 | Bullet impacts (decals, debris, impact sounds) | no | the game's impact systems for what `weapon::impact::ImpactRoute` gives it (`register_impact_provider`), its looks on the map (`MapImpacts::looks`: its loader, a guest dressing), its surfaces by class (`register_surface_classes`, `map::impact::SurfaceClass`) | the map game's impact, else any game's whose looks the map carries, else Chimera's generic mark and puff (`client::effects::GenericImpactsPlugin`) |
@@ -99,8 +99,9 @@ part too.
    stays the base game's (`BASE`); an app that sets `fallback_hud` to
    `MINIMAL_HUD` gets it for a game without a HUD. Weapon shown by id (no
    display-name registry in the shell).
-6. Body fallback is the capsule only; "another game's body" needs
-   `CharacterModels::for_identity` to take a fallback game.
+6. A game without a body here: what the player wears stays, else any body
+   (`render::bodies::attach_bodies` with `NoStandIns`), in its reference
+   pose, no animator for it.
 7. Install filtering ignores the server's own installs and isn't re-run
    when a player joins (at rotation and `ugg_new` only); the client still
    stops without CS:S (`party_kit::requirements`), the pool's first map
