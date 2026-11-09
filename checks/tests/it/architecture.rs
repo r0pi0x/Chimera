@@ -3,7 +3,7 @@
 //! problem, because agents read them.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -729,6 +729,94 @@ fn no_game_assets_tracked() {
         }
     }
     assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
+}
+
+/// Names Windows reserves as devices, with any extension (`aux.rs` too).
+fn windows_reserved(component: &str) -> bool {
+    let stem = component.split('.').next().unwrap_or("").to_lowercase();
+    matches!(stem.as_str(), "con" | "prn" | "aux" | "nul")
+        || (stem.len() == 4
+            && (stem.starts_with("com") || stem.starts_with("lpt"))
+            && matches!(stem.as_bytes()[3], b'1'..=b'9'))
+}
+
+/// The paths that have a component Windows reserves.
+fn reserved_paths<'a>(paths: &[&'a str]) -> Vec<&'a str> {
+    paths
+        .iter()
+        .copied()
+        .filter(|p| p.split('/').any(windows_reserved))
+        .collect()
+}
+
+/// Pairs of paths that differ only by case in some component (a file, or a
+/// directory above it), which collide on case-insensitive file systems. Each
+/// pair is the first path seen with that spelling and the one that clashes.
+fn case_collisions<'a>(paths: &[&'a str]) -> Vec<(&'a str, &'a str)> {
+    // lowercase prefix -> (spelling, first path using it)
+    let mut seen: BTreeMap<String, (&str, &'a str)> = BTreeMap::new();
+    let mut out = Vec::new();
+    for p in paths {
+        let mut end = 0;
+        for comp in p.split('/') {
+            end += comp.len();
+            let prefix = &p[..end];
+            end += 1;
+            match seen.get(&prefix.to_lowercase()) {
+                Some((spelling, first)) if *spelling != prefix => {
+                    if !out.contains(&(*first, *p)) {
+                        out.push((*first, *p));
+                    }
+                    break;
+                }
+                Some(_) => {}
+                None => {
+                    seen.insert(prefix.to_lowercase(), (prefix, p));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn windows_path_errors(paths: &[&str]) -> Vec<String> {
+    let mut errors: Vec<String> = reserved_paths(paths)
+        .into_iter()
+        .map(|p| {
+            format!(
+                "{p}: a path component is a Windows device name (con, prn, aux, nul, com1-9, lpt1-9, with any extension). \
+                 Windows can't check it out and `git pull` fails there. Rename it with `git mv`."
+            )
+        })
+        .collect();
+    errors.extend(case_collisions(paths).into_iter().map(|(a, b)| {
+        format!(
+            "{a} and {b} differ only by case, so they collide on Windows. Rename one of them with `git mv`."
+        )
+    }));
+    errors
+}
+
+/// Every tracked path must check out on Windows (CLAUDE.md, "Hard rules":
+/// Linux and Windows): no reserved device names, no case-only collisions.
+#[test]
+fn tracked_paths_are_windows_safe() {
+    let files = tracked_files();
+    let paths: Vec<&str> = files.iter().map(String::as_str).collect();
+    let errors = windows_path_errors(&paths);
+    assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
+}
+
+/// The matching rules behind `tracked_paths_are_windows_safe`.
+#[test]
+fn windows_path_rules() {
+    let bad = ["a/aux.rs", "AUX", "x/con.tar.gz", "nul/x.rs", "b/Com1.txt", "lpt9"];
+    assert_eq!(reserved_paths(&bad).len(), bad.len());
+    let ok = ["a/aux_power.rs", "console.rs", "com0", "com10.rs", "lpt.rs", "a/b.rs"];
+    assert!(reserved_paths(&ok).is_empty());
+    assert_eq!(case_collisions(&["Foo/a.rs", "foo/b.rs", "x/Y.rs", "x/y.rs"]), vec![("Foo/a.rs", "foo/b.rs"), ("x/Y.rs", "x/y.rs")]);
+    assert_eq!(case_collisions(&["Foo/a.rs", "foo/a.rs"]), vec![("Foo/a.rs", "foo/a.rs")]);
+    assert!(case_collisions(&ok).is_empty());
 }
 
 /// Encryption keys never enter the repo (CLAUDE.md, "Hard rules"): the
