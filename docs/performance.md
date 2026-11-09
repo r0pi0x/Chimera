@@ -2294,7 +2294,7 @@ render world, so materials in the store, not GPU buffers):
 | warehouse | 1,631 | 30 | 30 | 1,601 |
 | de_dust2 again | 2,123 | 163 | 130 | 1,961 |
 
-(dm_lockdown, in the test's list, was not installed on the box.) The test
+The test takes about 13 minutes by design (four maps, a full ladder each), so nextest gives it, and `session_maps`, 60 minutes (`.config/nextest.toml`). (dm_lockdown, in the test's list, was not installed on the box.) The test
 fails if the store holds 600 more than is drawn, or grows on the same map
 after a lap.
 
