@@ -140,6 +140,18 @@ the original's own behaviour isn't a bug (say so instead).
 - **Moved props keep their lighting:** a lot of props don't change light
   as they move, as if the environment's lights don't reach them. Check
   whether the original does the same.
+- **Missing sounds:** the SMG1's right-click grenade launch and its
+  explosion; the AR2's right-click ball launch; a breaking toilet or sink
+  (only the pieces hitting the floor are heard); the crowbar's impact. With the gravity gun's
+  above, look for a shared cause first (a soundscript or game-sound path,
+  possibly Windows-only).
+- **SMG1 grenade trail** doesn't look like it renders correctly.
+- **AR2 ball's explosion** has particles that look wrong.
+- **HUD:** no count of the SMG1's grenades or ammo for them (the
+  secondary ammo panel; branch `hl2dm-gaps1` feeds it, check after merge).
+- **Escape** only frees the cursor (click to return to the game): no menu.
+  HL2:DM's menus were planned for after faithful DM/TDM; the user has now
+  run into it, so it's next once these reports are done.
 - **Battery machine:** at `setpos -3835.25 5745.72 64.02;setang 17.71
   22.85 0.00` its rope or cable looks broken, and the battery doesn't seat
   properly in the slot.
