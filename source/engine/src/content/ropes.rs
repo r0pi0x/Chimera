@@ -5,7 +5,8 @@
 //! `MapRope`; the strip is built per view by the rope shader). The
 //! settled nodes go with it, so that the wind can sway it near the camera
 //! (`map::rope_sway`; not on maps with an env_wind, which isn't
-//! simulated, nor ropes with NoWind).
+//! simulated, nor ropes with NoWind). An end whose keyframe is parented to
+//! an entity follows it (`MapRope::follow`).
 
 use std::collections::HashMap;
 
@@ -170,6 +171,16 @@ pub fn add_ropes(
             by_name.entry(name).or_insert(origin);
         }
     }
+    // A keyframe's parent, by the name its rope gives it.
+    let parent_of = |e: &vbsp::RawEntity<'_>| {
+        key(e, "parentname").filter(|p| !p.is_empty()).and_then(|p| {
+            bsp.entities
+                .iter()
+                .position(|o| o.prop("targetname").is_some_and(|n| n.eq_ignore_ascii_case(p)))
+        })
+    };
+    let parents: std::collections::BTreeMap<&str, Option<usize>> =
+        ropes.iter().filter_map(|e| Some((key(e, "targetname")?, parent_of(e)))).rev().collect();
     // An env_wind blows ropes by its own wind, which isn't simulated:
     // such maps' ropes hang still.
     let windy_map = bsp.entities.iter().any(|e| e.prop("classname") == Some("env_wind"));
@@ -232,6 +243,7 @@ pub fn add_ropes(
             texture,
             normal_map,
             back,
+            follow: [parent_of(e), key(e, "nextkey").and_then(|n| parents.get(n).copied().flatten())],
             ..default()
         };
         let engine = |p: &Vec3| to_engine(vbsp::Vector { x: p.x, y: p.y, z: p.z });

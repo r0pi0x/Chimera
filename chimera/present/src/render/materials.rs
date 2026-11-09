@@ -428,4 +428,15 @@ mod tests {
         let wesl = include_str!("prop.wesl");
         assert!(wesl.contains("1.0 / (1.0 + 19.0 * x)") && wesl.contains("params.dynamic > 1.5"));
     }
+
+    /// A flashlight's spot light reaches the map's own shaders, world and
+    /// props: both walk the clusters' spot lights too, or a `SpotLight`
+    /// lights nothing on a map (the playtest's flashlight).
+    #[test]
+    fn the_map_shaders_take_spot_lights() {
+        for wesl in [include_str!("prop.wesl"), include_str!("world.wesl")] {
+            assert!(wesl.contains("i = ranges.first_spot_light_index_offset; i < ranges.first_rect_light_index_offset"));
+            assert!(wesl.contains("spot_cone("));
+        }
+    }
 }

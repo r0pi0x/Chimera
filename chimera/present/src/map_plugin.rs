@@ -152,6 +152,7 @@ impl MapLayers for Present {
                     .after(render::parts::switch_parts)
                     .before(render::glow::glow_visibility),
                 render::beams::animate_beams.after(render::parts::switch_parts),
+                render::rope_sway::follow_rope_ends.before(render::rope_sway::sway_ropes),
                 render::rope_sway::sway_ropes,
                 render::texture_anim::animate_textures,
             )
@@ -213,6 +214,7 @@ impl MapLayers for Present {
                     render::bodies::pose_bodies.after(DriveAnimation),
                     render::bodies::build_late_held.before(render::bodies::attach_held),
                     render::bodies::attach_held,
+                    render::probe_lit::light_moved_props.before(render::probe_lit::relight),
                     render::probe_lit::relight,
                     render::loose::attach_shown,
                     render::loose::draw_loose,

@@ -27,13 +27,9 @@
 //! - The suit zoom's FOV is stepped per tick on the simulation's clock
 //!   (the client evaluates it at its render time).
 //! - The flashlight's light starts at the eye, not the model's right-hand
-//!   attachment suit.md gives for others, for every player; its reach is
-//!   that beam's 200 units. The spec gives no brightness, colour or cone
-//!   (ours are picked: white, 25 degrees, `SpotLight`'s intensity 400000).
-//!   On dm_lockdown it lights nothing visible: the map and the models looked
-//!   the same on and off, also at 10000 times the intensity with a wider
-//!   cone and a 30 m range. Why (likely their materials ignore the light)
-//!   isn't found yet, so the flashlight is the state and its sounds for now.
+//!   attachment suit.md gives for others, for every player. The spec gives
+//!   no brightness, colour, cone or reach: ours are picked to look right
+//!   (white, 2 lightmap units, a 45 degree cone, 750 units).
 //! - Drowning's sounds play from the player; the server's hurt event
 //!   isn't sent. A `trigger_hurt`'s poison and radiation types are their
 //!   own kinds (`DamageKind::Poison`, `Radiation`) and bypass the suit
@@ -530,8 +526,13 @@ fn drowning(
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FlashlightBeam(pub Entity);
 
-/// How far the flashlight reaches (units; suit.md's beam).
-pub const FLASHLIGHT_REACH: f32 = 200.0;
+/// How far the flashlight reaches (units; picked, the spec has none).
+pub const FLASHLIGHT_REACH: f32 = 750.0;
+/// Its light at the source, in lightmap units (picked; the map's shaders
+/// read colour x intensity / 4 pi as those, `dynamic_light` in world.wesl).
+pub const FLASHLIGHT_LIGHT: f32 = 2.0;
+/// Its cone, the whole angle (degrees; picked).
+pub const FLASHLIGHT_CONE: f32 = 45.0;
 
 /// One light for each player with the flashlight on (suit.md
 /// "Flashlight"): at the eye, along the view (the others' as drawn).
@@ -561,10 +562,10 @@ fn flashlight_lights(
             Name::new("Flashlight"),
             FlashlightBeam(player),
             SpotLight {
-                intensity: 400_000.0,
+                intensity: FLASHLIGHT_LIGHT * 4.0 * std::f32::consts::PI,
                 range: FLASHLIGHT_REACH * super::weapons::launch::U,
-                outer_angle: 25f32.to_radians() / 2.0,
-                inner_angle: 15f32.to_radians() / 2.0,
+                outer_angle: FLASHLIGHT_CONE.to_radians() / 2.0,
+                inner_angle: (FLASHLIGHT_CONE * 0.6).to_radians() / 2.0,
                 shadow_maps_enabled: false,
                 ..default()
             },

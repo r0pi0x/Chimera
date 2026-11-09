@@ -10,12 +10,27 @@ import bevy_pbr::{
     render::mesh_view_bindings::{view, globals},
     render::mesh_view_bindings as view_bindings,
     render::clustered_forward as clustering,
+    render::mesh_view_types::POINT_LIGHT_FLAGS_SPOT_LIGHT_Y_NEGATIVE,
     render::view_transformations::position_world_to_view,
 };
 import chimera_present::render::fog::source_fog;
 
-// The scene's point lights (muzzle flashes; map::DynamicLight), in
-// lightmap units: colour x (1 - d^2/r^2) x cosine. Same as prop.wesl.
+// A spot light's cone at `to`, the line from the point to the light (as
+// Bevy's own: its direction packed in x, z and a flag for y's sign). Same as
+// prop.wesl.
+fn spot_cone(custom: vec4<f32>, flags: u32, to: vec3<f32>) -> f32 {
+    var spot_dir = vec3<f32>(custom.x, 0.0, custom.y);
+    spot_dir.y = sqrt(max(0.0, 1.0 - spot_dir.x * spot_dir.x - spot_dir.z * spot_dir.z));
+    if (flags & POINT_LIGHT_FLAGS_SPOT_LIGHT_Y_NEGATIVE) != 0u {
+        spot_dir.y = -spot_dir.y;
+    }
+    let cone = saturate(dot(-spot_dir, normalize(to)) * custom.z + custom.w);
+    return cone * cone;
+}
+
+// The scene's point lights (muzzle flashes; map::DynamicLight) and spot
+// lights (a flashlight), in lightmap units: colour x (1 - d^2/r^2) x cosine
+// (x the cone). Same as prop.wesl.
 fn dynamic_light(p: vec3<f32>, n: vec3<f32>, frag_coord: vec2<f32>) -> vec3<f32> {
     let view_z = dot(vec4<f32>(
         view.view_from_world[0].z,
@@ -31,6 +46,13 @@ fn dynamic_light(p: vec3<f32>, n: vec3<f32>, frag_coord: vec2<f32>) -> vec3<f32>
         let to = (*light).position_radius.xyz - p;
         let falloff = saturate(1.0 - dot(to, to) * (*light).color_inverse_square_range.w);
         sum = sum + (*light).color_inverse_square_range.rgb * falloff * max(dot(n, normalize(to)), 0.0);
+    }
+    // Spot lights (a flashlight), the same with the cone's attenuation.
+    for (var i = ranges.first_spot_light_index_offset; i < ranges.first_rect_light_index_offset; i = i + 1u) {
+        let light = &view_bindings::clustered_lights.data[clustering::get_clusterable_object_id(i)];
+        let to = (*light).position_radius.xyz - p;
+        let falloff = saturate(1.0 - dot(to, to) * (*light).color_inverse_square_range.w);
+        sum = sum + (*light).color_inverse_square_range.rgb * falloff * spot_cone((*light).light_custom_data, (*light).flags, to) * max(dot(n, normalize(to)), 0.0);
     }
     return sum;
 }

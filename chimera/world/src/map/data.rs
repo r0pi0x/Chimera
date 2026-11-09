@@ -1584,6 +1584,9 @@ pub struct MapRope {
     /// Its settled simulation, which the wind moves again near the camera
     /// (`rope_sway`); None: it hangs still.
     pub sway: Option<rope_sway::RopeSway>,
+    /// The entities (`MapData::entities`) its two ends are parented to,
+    /// whose moves they follow (`dm_lockdown`'s plug on its cable).
+    pub follow: [Option<usize>; 2],
 }
 
 /// A 3D skybox: a miniature scene (meshes and props marked `skybox`) drawn
