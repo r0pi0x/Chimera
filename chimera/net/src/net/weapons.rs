@@ -440,6 +440,9 @@ fn send_weapon_events(
     }
 }
 
+/// `Detonation::weapon` of an explosion that is no registered weapon's.
+const NO_WEAPON: u16 = u16::MAX;
+
 /// Grenades going off, to every client.
 fn send_detonations(
     mut detonated: MessageReader<Detonated>,
@@ -455,7 +458,8 @@ fn send_detonations(
                     GrenadeKind::Flash => 1,
                     GrenadeKind::Smoke => 2,
                 },
-                weapon: registry.index(d.weapon).unwrap_or(0) as u16,
+                // Not a weapon of the registry (a map's explosion).
+                weapon: registry.index(d.weapon).map_or(NO_WEAPON, |i| i as u16),
                 at: d.at.to_array(),
                 ground: d.ground.map(|(p, n, _)| (p.to_array(), n.to_array())),
             },
@@ -762,7 +766,12 @@ fn receive_detonations(mut detonations: MessageReader<Detonation>, mut commands:
     for d in detonations.read() {
         let d = d.clone();
         commands.queue(move |w: &mut World| {
-            let Some(id) = weapon_id(w, d.weapon) else { return };
+            let id = if d.weapon == NO_WEAPON {
+                crate::weapon::grenade::EXPLOSION_WEAPON
+            } else {
+                let Some(id) = weapon_id(w, d.weapon) else { return };
+                id
+            };
             let effect = template(w, id).and_then(|t| w.get::<Throwable>(t)).map(|t| t.effect.clone());
             let at = Vec3::from_array(d.at);
             let (kind, sound, shake) = match &effect {

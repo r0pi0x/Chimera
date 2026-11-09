@@ -212,6 +212,8 @@ pub enum Fade {
     /// `(1 - age/life)^p` (Source's `Bias(1 - t, b)` is this with
     /// `p = ln b / ln 0.5`).
     Power(f32),
+    /// `sin(pi * age/life)`: in and out through a sine.
+    Sine,
     /// Fade in from `start_alpha` to 1 between life fractions `fade_in`,
     /// out to 0 between `fade_out` (particle-system alpha fade). An empty
     /// fade-in window holds `start_alpha` until it.
@@ -233,6 +235,7 @@ impl Fade {
             }
             Fade::Tail(secs) => ((life - age) / secs).clamp(0.0, 1.0),
             Fade::Power(p) => (1.0 - t).clamp(0.0, 1.0).powf(p),
+            Fade::Sine => (t.clamp(0.0, 1.0) * std::f32::consts::PI).sin(),
             Fade::Windows {
                 start_alpha,
                 fade_in,

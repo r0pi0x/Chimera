@@ -1714,14 +1714,18 @@ fn apply_effects(world: &mut World, effects: Vec<Effect>, scale: f32) {
                 }
             }
             Effect::BodyTeleport { id, origin, angles } => {
+                let now = world.get_resource::<crate::core::SimClock>().map_or(0.0, |c| c.now);
                 let Some(node) = entity_node(world, id) else { continue };
                 let Ok(mut e) = world.get_entity_mut(node) else {
                     continue;
                 };
-                // The body's centre goes to `origin`: its origin moves by
-                // the same amount.
+                // Without a landmark (angles given) its origin goes to the
+                // destination (triggers.md, trigger_teleport 4: dm_lockdown's
+                // plug seats so); with one, its centre goes to `origin`, and
+                // its origin by the same amount.
                 let centre = e
                     .get::<ColliderAabb>()
+                    .filter(|_| angles.is_none())
                     .map(|a| (a.min + a.max) / 2.0)
                     .or_else(|| e.get::<Transform>().map(|t| t.translation))
                     .unwrap_or_default();
@@ -1740,6 +1744,9 @@ fn apply_effects(world: &mut World, effects: Vec<Effect>, scale: f32) {
                     && let Some(mut rot) = e.get_mut::<Rotation>()
                 {
                     *rot = Rotation::from(r);
+                }
+                if let Some(t) = e.get::<Transform>().copied() {
+                    e.insert(crate::map::prop_physics::JustTeleported { position: t.translation, rotation: t.rotation, at: now });
                 }
             }
             Effect::DamageFilter { target, filter } => {
@@ -2548,7 +2555,7 @@ fn prop_broke(world: &mut World, id: EntId, sound: Option<String>, explode: Opti
             attacker,
             inflictor: Some(node),
             sound: x.sound,
-            weapon: None,
+            weapon: world.get_resource::<PropBlastWeapon>().map(|w| w.0),
             round_scorch: false,
             through_walls: false,
             bell_sigma: None,
@@ -2690,6 +2697,11 @@ pub struct PromptSideHits;
 /// influence is at most this old (s): HL2:DM's 2 (gravity_gun.md 9).
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct BlastInfluenceWindow(pub f64);
+
+/// What a game's explosive props' kills count as (the death notice); none:
+/// a map explosion's (`weapon::grenade::EXPLOSION_WEAPON`, CS:S's).
+#[derive(Resource, Clone, Copy, Debug)]
+pub struct PropBlastWeapon(pub &'static str);
 
 /// An impact is measured over this many physics steps from its first
 /// contact: avian's contacts are speculative and soft, so a body is

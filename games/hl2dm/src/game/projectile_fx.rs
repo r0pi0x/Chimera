@@ -10,7 +10,9 @@
 //!   entity's rule: a line from 8 above the point to 40 below that, drawn
 //!   24 off what it hits (and where it hits nothing, at the point itself),
 //!   and the server puts a `Scorch` where it hits (`scorches`; Chimera's
-//!   decals reach the clients).
+//!   decals reach the clients). Map logic's blasts (explosive props,
+//!   `env_explosion`s) go by the same rule in HL2:DM's own app
+//!   (`DrawsMapBlasts`).
 //! - **The shot satchel's pop** (`SatchelPop`, the server's, sent to
 //!   clients too: net part `hl2dm_projectile_fx`): a scale-0 explosion,
 //!   the flash and the debris (`explosions::pop`) and its sound.
@@ -35,7 +37,9 @@
 //!   replicated; `mine_beams`, every frame): from the mine along its normal
 //!   for that length, red (255, 55, 52), brightness 64, 0.35 units wide,
 //!   additive `effects/laser1`.
-//! - **The SMG1 grenade** (`SMG1_GRENADE_MODEL`): `env_smoketrail`'s smoke;
+//! - **The SMG1 grenade** (`SMG1_GRENADE_MODEL`): `env_smoketrail`'s smoke
+//!   (`smoke_trail`; the puffs stay where they are born, the one thing not
+//!   as the spec's, which adds the entity's velocity);
 //!   going off, the server's scorch where a 60-unit line along its flight
 //!   hits (`scorches`: `Scorch` on the world, `SmallScorch` on props and
 //!   brush entities).
@@ -56,7 +60,12 @@
 //! part `hl2dm_projectile_fx`, which also replicates `Hl2BallHeld` and
 //! `Hl2MineBeam`).
 //!
-//! Known shortcuts (docs/tech-debt.md): a held ball's model isn't turned
+//! Known shortcuts (docs/tech-debt.md): every map blast has its core and
+//! its boom: `env_explosion`'s spawnflags (no decal, no sound, no fireball;
+//! dm_steamlab's 5 say no decal) and an `explode_fire` prop's silence (the
+//! propane tank and the gas can, 6 on the stock maps, boom as well as
+//! their burst) don't reach `Detonated`; the scale isn't drawn (a look's
+//! size is one, whatever the magnitude); a held ball's model isn't turned
 //! to face the camera, and in flight its model is drawn too (every
 //! `ShownItem` draws its meshes); the ball's bounce goes to every client
 //! (the spec's is the PAS); the ball's body quad takes its frames from the
@@ -80,7 +89,7 @@ use bevy::prelude::*;
 use bevy_replicon::prelude::*;
 use chimera_sim::weapon::{
     WeaponEvent, WeaponEventKind,
-    grenade::Detonated,
+    grenade::{Detonated, EXPLOSION_WEAPON},
     projectile::{Flyer, FlyerGone, FlyerHit},
 };
 use source_engine::effects::{
@@ -170,6 +179,22 @@ pub fn entity_rule_point(at: Vec3, hit: Option<(Vec3, Vec3)>) -> Vec3 {
     hit.map_or(at, |(p, n)| p + n * 24.0 * U)
 }
 
+/// This app is HL2:DM's own: it draws map logic's blasts (explosive props,
+/// `env_explosion`s). In a game of several games, the first game's rule
+/// and its look serve them (CS:S's draws those of no game).
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct DrawsMapBlasts;
+
+/// `look_of`, and map logic's blasts by the explosion entity's rule when
+/// `map_blasts` (a client knows them as `EXPLOSION_WEAPON`: only guns are
+/// on the wire).
+pub fn look_here(weapon: &str, map_blasts: bool) -> Option<Look> {
+    look_of(weapon).or_else(|| {
+        (map_blasts && (weapon == EXPLOSION_WEAPON || weapon == super::physics::PHYSICS_WEAPON))
+            .then_some(Look { core: true, entity_rule: true })
+    })
+}
+
 #[derive(Resource)]
 struct FxRng(ParticleRng);
 
@@ -223,6 +248,7 @@ fn explosions(
     mut particles: ResMut<Particles>,
     mut rng: ResMut<FxRng>,
     mut play: MessageWriter<PlaySound>,
+    map_blasts: Option<Res<DrawsMapBlasts>>,
     world: WorldTracer,
 ) {
     let Some(materials) = materials else {
@@ -231,7 +257,7 @@ fn explosions(
     };
     let mats = FxMaterials::new(&materials.0);
     for d in detonated.read() {
-        let Some(look) = look_of(d.weapon) else { continue };
+        let Some(look) = look_here(d.weapon, map_blasts.is_some()) else { continue };
         let at = if look.entity_rule {
             let hit = world
                 .trace(d.at + Vec3::Y * 8.0 * U, d.at + Vec3::Y * (8.0 - 40.0) * U)
@@ -319,6 +345,7 @@ fn scorches(
     world: WorldTracer,
     line: ScorchLine,
     flyers: Query<(Entity, &Flyer)>,
+    map_blasts: Option<Res<DrawsMapBlasts>>,
     mut flights: Local<BTreeMap<Entity, Vec3>>,
     mut decals: MessageWriter<PlaceDecal>,
 ) {
@@ -346,7 +373,7 @@ fn scorches(
             }
             continue;
         }
-        if !look_of(d.weapon).is_some_and(|l| l.entity_rule) {
+        if !look_here(d.weapon, map_blasts.is_some()).is_some_and(|l| l.entity_rule) {
             continue;
         }
         if let Some((point, normal)) = entity_rule_hit(d.at, &world) {
@@ -1023,14 +1050,22 @@ fn bolt(g: &mut ParticleGroup, m: &impl Fn(&str) -> Option<usize>, at: Vec3, mov
     }
 }
 
-/// The contact grenade's `env_smoketrail` (spec 9): 48 puffs a second for
-/// 10 s, life 1 s, colour from 0.1 grey to black, size 12 to 48 units,
-/// opacity 0.2, spawned within 4 units drifting 4 to 24.
+/// The contact grenade's `env_smoketrail` (spec 9;
+/// particles_and_smoke.md 5): 48 puffs a second for 10 s, spread along the
+/// path of this frame, life 1 s, half-size 12 to 48 units, darkening to
+/// black, each either of the two smoke materials, opacity about 0.2 through
+/// a sine, drifting 4 to 24 units/s.
+///
+/// The puffs don't take the grenade's velocity, against the spec's "+ V":
+/// the entity is parented, the spec doesn't say what its absolute velocity
+/// is on a client, and with the flight's 1000 units/s the trail would be a
+/// blob flying along with it (specs question, plan's progress 2026-11-09).
 fn smoke_trail(
     smoke: &mut ParticleGroup,
     rng: &mut ParticleRng,
     m: &impl Fn(&str) -> Option<usize>,
-    at: Vec3,
+    before: Vec3,
+    moved: Vec3,
     dt: f32,
     age: f64,
     carry: &mut f32,
@@ -1038,20 +1073,27 @@ fn smoke_trail(
     if age > 10.0 {
         return;
     }
-    let Some(mat) = m("particle/particle_smokegrenade") else { return };
+    let mats = [m("particle/particle_smokegrenade"), m("particle/particle_noisesphere")];
     *carry += 48.0 * dt;
     let n = *carry as usize;
     *carry -= n as f32;
-    for _ in 0..n.min(8) {
+    for k in 0..n {
+        let Some(mat) = mats[rng.int(0, 1) as usize].or(mats[0]).or(mats[1]) else { return };
+        let along = before + moved * (k as f32 + rng.float(0.0, 1.0)) / n as f32;
+        let jitter = Vec3::new(rng.float(-4.0, 4.0), rng.float(-4.0, 4.0), rng.float(-4.0, 4.0)) * U;
+        let drift = Vec3::new(rng.float(-1.0, 1.0), rng.float(-1.0, 1.0), rng.float(-1.0, 1.0)) * rng.float(4.0, 24.0) * U;
+        let grey = (0.1 + rng.float(-0.2, 0.2)).clamp(0.0, 1.0);
         smoke.particles.push(Particle {
-            velocity: random_dir(rng) * rng.float(4.0, 24.0) * U,
-            color: Vec3::splat(0.1),
+            velocity: drift,
+            color: Vec3::splat(grey),
             color_fade: Some((Vec3::ZERO, 0.0, 1.0)),
-            alpha: 0.2,
-            fade: Fade::Ramp(Ramp::linear(1.0, 0.0)),
+            alpha: (rng.float(0.75, 1.25) * 0.2).clamp(0.0, 1.0),
+            fade: Fade::Sine,
             size: Ramp::linear(12.0 * U, 48.0 * U),
-            roll: (rng.int(0, 360) as f32).to_radians(),
-            ..Particle::new(at + random_dir(rng) * rng.float(0.0, 4.0) * U, 1.0, mat, 0.0)
+            // The spec's quirk: a whole number of degrees used as radians.
+            roll: rng.int(0, 360) as f32,
+            roll_speed: rng.float(-1.0, 1.0),
+            ..Particle::new(along + jitter, 1.0, mat, 0.0)
         });
     }
 }
@@ -1105,6 +1147,12 @@ fn projectile_looks(
     let mut frame = frame_group();
     let mut smoke = ParticleGroup::new(Motion { roll_decay: Some((8.0, 0.5)), ..default() });
     let mut trail = ParticleGroup::new(Motion::default());
+    // The contact grenade's: invisible nearer than 64 units, whole from 128.
+    let mut grenade_smoke = ParticleGroup::new(Motion {
+        roll_decay: Some((8.0, 0.5)),
+        near_fade: Some((64.0 * U, 128.0 * U)),
+        ..default()
+    });
     let mut seen = Vec::new();
     for (e, shown, at, held) in &items {
         let key = shown.0.as_str();
@@ -1120,13 +1168,13 @@ fn projectile_looks(
             MISSILE_MODEL => rocket(&mut frame, &mut smoke, &mut rng.0, &m, at, moved, &mut t.carry),
             BALL_MODEL => ball(&mut frame, &mut rng.0, &m, at, moved, t.seen, now, held),
             BOLT_MODEL => bolt(&mut frame, &m, at, moved),
-            SMG1_GRENADE_MODEL => smoke_trail(&mut smoke, &mut rng.0, &m, at, dt, now - t.seen, &mut t.carry),
+            SMG1_GRENADE_MODEL => smoke_trail(&mut grenade_smoke, &mut rng.0, &m, before, moved, dt, now - t.seen, &mut t.carry),
             SATCHEL_MODEL => glow_and_trail(&mut frame, &mut trail, &m, at, before, now - t.seen, true),
             _ => glow_and_trail(&mut frame, &mut trail, &m, at, before, now - t.seen, false),
         }
     }
     tracks.retain(|e, _| seen.contains(e));
-    for g in [frame, smoke, trail] {
+    for g in [frame, smoke, grenade_smoke, trail] {
         if !g.particles.is_empty() {
             particles.add(g);
         }

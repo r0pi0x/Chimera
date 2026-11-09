@@ -117,7 +117,6 @@ the user's go-ahead: no Actions runs unless asked.
 Delete each when fixed. Check against specs/hl2dm/ and the probe; what's
 the original's own behaviour isn't a bug (say so instead).
 
-- **Explosive barrels** break without exploding.
 - **Props launch or trap the player:** walking into some props (the small
   bench) throws the player into the air; jumping onto the wheelbarrow
   sometimes sticks the player until they move backwards.
@@ -128,8 +127,6 @@ the original's own behaviour isn't a bug (say so instead).
 - **Moved props keep their lighting:** a lot of props don't change light
   as they move, as if the environment's lights don't reach them. Check
   whether the original does the same.
-- **SMG1 grenade trail** doesn't look like it renders correctly.
-- **AR2 ball's explosion** has particles that look wrong.
 - **HUD:** no count of the SMG1's grenades or ammo for them (the
   secondary ammo panel; branch `hl2dm-gaps1` feeds it, check after merge).
 - **HUD:** no ammo counter bottom right for the RPG (`hl2dm-gaps1` shows

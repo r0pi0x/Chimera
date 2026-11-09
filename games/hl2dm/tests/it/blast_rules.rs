@@ -15,7 +15,10 @@ use chimera_sim::{
 };
 use chimera_world::{
     harness::Sim,
-    map::{MapBrush, MapData, MapEntity, MapHull, MapSimPlugin, MapWaterVolume},
+    map::{
+        MapBrush, MapCollision, MapConvex, MapData, MapEntity, MapHull, MapModel, MapPhysics, MapProp, MapSimPlugin,
+        MapWaterVolume, PropSolid, PushAway,
+    },
 };
 use hl2dm::{
     game::{
@@ -278,4 +281,119 @@ fn a_ball_on_the_sky_ends() {
         }
     }
     assert_eq!(ended, Some(true), "ended as a ball's time running out");
+}
+
+/// A resting explosive drum's keys, as the install's prop data gives them
+/// (health 20, 120 damage in 256 units: `oildrum001_explosive`).
+fn drum(data: &mut MapData, at: Vec3) {
+    let index = data.entities.len();
+    data.entities.push(MapEntity {
+        keyvalues: vec![
+            ("classname".into(), "prop_physics_respawnable".into()),
+            ("origin".into(), format!("{} {} {}", at.x, at.y, at.z)),
+            ("chimera_prop_health".into(), "20".into()),
+            ("chimera_prop_pieces".into(), "0".into()),
+            ("chimera_prop_explode".into(), "120 256".into()),
+        ],
+        hulls: Vec::new(),
+        mover: false,
+        physics: None,
+    });
+    let (lo, hi) = (to_engine(Vec3::splat(-12.0)), to_engine(Vec3::splat(12.0)));
+    let (lo, hi) = (lo.min(hi), lo.max(hi));
+    data.models.push(MapModel {
+        bounds: (lo, hi),
+        collision: Some(MapCollision {
+            pieces: vec![MapConvex {
+                points: (0..8)
+                    .map(|k| Vec3::new([lo.x, hi.x][k & 1], [lo.y, hi.y][(k >> 1) & 1], [lo.z, hi.z][(k >> 2) & 1]))
+                    .collect(),
+                planes: Vec::new(),
+            }],
+            mass: 30.0,
+            ..default()
+        }),
+        ..default()
+    });
+    data.props.push(MapProp {
+        pose: None,
+        ragdoll: None,
+        model: data.models.len() - 1,
+        translation: to_engine(at),
+        rotation: Quat::IDENTITY,
+        solid: PropSolid::Mesh,
+        skybox: false,
+        lighting: None,
+        vertex_light: None,
+        casts_shadow: false,
+        physics: Some(MapPhysics {
+            mass: 30.0,
+            friction: 0.8,
+            elasticity: 0.0,
+            damping: 0.0,
+            rotdamping: 0.0,
+            inertia: None,
+            push: PushAway::Collide,
+            frozen: false,
+            asleep: false,
+        }),
+        fade: None,
+        parent: None,
+        entity: Some(index),
+        skin: 0,
+        body: 0,
+        detail: false,
+    });
+}
+
+#[derive(Resource, Default)]
+struct Blasts {
+    detonated: Vec<&'static str>,
+    damage: Vec<(f32, Option<&'static str>)>,
+    sounds: Vec<String>,
+    decals: usize,
+}
+
+fn watch_blasts(
+    mut detonated: MessageReader<chimera_sim::weapon::grenade::Detonated>,
+    mut damage: MessageReader<chimera_core::core::Damage>,
+    mut sounds: MessageReader<chimera_world::map::PlaySound>,
+    mut decals: MessageReader<chimera_world::map::PlaceDecal>,
+    mut log: ResMut<Blasts>,
+) {
+    log.detonated.extend(detonated.read().map(|d| d.weapon));
+    log.damage.extend(damage.read().map(|d| (d.amount, d.weapon)));
+    log.sounds.extend(sounds.read().map(|s| s.entry.clone()));
+    log.decals += decals.read().count();
+}
+
+/// The playtest's report (prop_damage.md 7.5, effects_sounds.md 8): an
+/// explosive drum that breaks hurts a player by every explosion's rule,
+/// explodes where it can be seen and heard, leaves its scorch, and its kill
+/// names the prop. HL2:DM had no rule for map blasts, so they did nothing.
+#[test]
+fn an_explosive_drum_goes_off() {
+    let mut data = floor();
+    let at = Vec3::new(60.0, 0.0, 12.0);
+    drum(&mut data, at);
+    let mut sim = start(data);
+    sim.app.init_resource::<Blasts>().add_systems(FixedLast, watch_blasts);
+    let p = player(&mut sim, Vec3::ZERO);
+    sim.seconds(0.6);
+    {
+        let mut logic = sim.app.world_mut().resource_mut::<source_logic::logic::Logic>();
+        let id = logic.world.by_map_index(0).expect("the drum");
+        logic.world.queue_direct(id, "Break", source_logic::logic::Value::Void, 0.0, None);
+    }
+    sim.ticks(4);
+    let log = sim.app.world().resource::<Blasts>();
+    assert_eq!(log.detonated, ["prop_physics"], "it went off");
+    let &(amount, weapon) = log.damage.iter().find(|(a, _)| *a > 0.0).expect("the player was hurt");
+    assert_eq!(weapon, Some("prop_physics"), "the death notice's");
+    // The line from the drum to his eye enters his box 44 units along x
+    // of 60: about 54 units, 120 × (1 − 54 / 256).
+    let points = amount * 100.0;
+    assert!((points - 94.7).abs() < 3.0, "{points} points");
+    assert!(log.decals >= 1, "its scorch");
+    assert!(sim.app.world().get::<Health>(p).unwrap().current < 50.0);
 }

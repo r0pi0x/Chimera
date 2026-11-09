@@ -104,6 +104,10 @@ pub const ADDITIVE_SPRITES: &[&str] = &[
     // The RPG's laser beams (`rpg_fx`): beams add.
     "effects/laser1",
     "effects/laser1_noz",
+    // The energy ball's rings and the canister's beams: beams add
+    // (visual_entities.md 1); the file's own shader (Sprite, no $additive)
+    // would draw its black texels (the playtest's "particles look wrong").
+    "sprites/lgtning",
 ];
 
 /// Load the effect materials (runtime, from the install).

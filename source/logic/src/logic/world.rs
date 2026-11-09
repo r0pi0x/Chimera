@@ -399,9 +399,9 @@ pub enum Effect {
         id: EntId,
         velocity: Vec3,
     },
-    /// Move a physics body's centre to `origin` (entity space), turned to
-    /// `angles` when given, its velocity kept (trigger_teleport,
-    /// point_teleport).
+    /// Move a physics body's origin to `origin` (entity space), turned to
+    /// `angles`; with no `angles` (a landmark's teleport) its centre there.
+    /// Its velocity is kept (trigger_teleport, point_teleport).
     BodyTeleport {
         id: EntId,
         origin: Vec3,
