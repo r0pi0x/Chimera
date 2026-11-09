@@ -2554,8 +2554,10 @@ docs/plans/active/sound.md.
 - **`party_kit` `heavy::spawns::every_pool_map_s_spawn_spots_are_inside_it`
   sits at its time limit (2026-11-09).** 449 s, 602 s, then timed out at 723 s
   (67ef9e85's after-push run, 92 min with three agents building). The other
-  4496 tests passed. HL2:DM's maps in the pool and the load both add to it;
-  split it per map or give it a longer limit if it fails again.
+  4496 tests passed. HL2:DM's maps in the pool and the load both add to it.
+  Timed out again at b0af9762: it now has a limit of its own, 30 minutes
+  (.config/nextest.toml, like the soak's). Split it per map if that isn't
+  enough.
 - **Once: `combat_arms bots::merc_27_base_point` index out of bounds
   (2026-11-03).** In 931cda5e's after-push run, `chimera/world/src/map/nav.rs:245`
   read area 67113151 of 26529: that's the valid 4287 with bit 26 set. It
