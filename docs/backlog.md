@@ -112,6 +112,38 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## 0. Playtest feedback (2026-10-07), top priority
 
+### HL2:DM playtest, 2026-11-09 (user, Windows, dm_lockdown)
+
+Delete each when fixed. Check against specs/hl2dm/ and the probe; what's
+the original's own behaviour isn't a bug (say so instead).
+
+- **Console:** pressing 1, 2, 3 prints `Unknown command "choose_1"` (and
+  `choose_3`) on every press.
+- **Stunstick hit marks** look like CS:S knife marks; check what the
+  original places.
+- **Explosive barrels** break without exploding.
+- **Crosshair:** the HUD pieces left and right of the centre look off
+  centre, with their tops cut off.
+- **Props launch or trap the player:** walking into some props (the small
+  bench) throws the player into the air; jumping onto the wheelbarrow
+  sometimes sticks the player until they move backwards.
+- **Gravity gun looks:** the centre glow shows through the gun, and it
+  doesn't keep up one-to-one when the view moves left and right. (The
+  sprites were drawn over the view model in 19164c59; only the `_noz`
+  materials have the spec's backing for that.)
+- **Gravity gun sounds:** none on picking an object up or on throwing it
+  with left click.
+- **Showers (dm_lockdown):** a constant sound but no water visible.
+- **Props rotated wrongly:** `setpos -3598.11 5389.92 64.03;setang 4.01
+  101.27 0.00` and pipes at `setpos -3062.89 3939.73 64.03;setang 2.14
+  166.60 0.00`, among others on the map.
+- **Moved props keep their lighting:** a lot of props don't change light
+  as they move, as if the environment's lights don't reach them. Check
+  whether the original does the same.
+- **Battery machine:** at `setpos -3835.25 5745.72 64.02;setang 17.71
+  22.85 0.00` its rope or cable looks broken, and the battery doesn't seat
+  properly in the slot.
+
 ### Gun game playtest, 2026-10-28 (user)
 
 - **The grenade launcher's projectile is choppy on a client, "maybe all
