@@ -470,6 +470,48 @@ players eject nothing.
   "no additive". "No sparks" (32) clear: sparks (`spark_shower`, 0–3) are
   made only when the origin is **under water** (Quirks). Repeatable (2):
   the entity stays.
+- **Explosion sparks in detail** (answered 2026-11-09). The test is the
+  contents at the explosion entity's **own origin** (not the drawn point):
+  water there and "no sparks" (32) clear → n = I(0, 3) spark showers (0,
+  1, 2 or 3, equally likely), all created at the drawn point (hit + 24·n,
+  or the origin when the down line hit nothing), each aimed along the
+  line's hit normal. Out of water, or with flag 32 set, none. The flag
+  and the test are the explosion entity's only; every explosion made by
+  code (RPG, satchel, trip mine, exploding props, `func_breakable`)
+  carries "no sparks", so only a map `env_explosion` without flag 32 can
+  ever make them. Where the down line starts inside water it reports
+  no usable surface; we read its normal as zero, which aims the showers
+  straight down (Open questions).
+- **`spark_shower`** (a server entity, never drawn itself; no model, not
+  solid, zero size, not saved). At creation, with F = the forward vector
+  of its angles (the normal above):
+  - velocity v = U(200, 300)·F, then v_x += U(−100, 100), v_y +=
+    U(−100, 100), then v_z += 200 if v_z ≥ 0, else v_z −= 200 (a surface
+    normal pointing up gives 400–500 up);
+  - "life" L = U(0.5, 1.5); first think 0.1 s after creation;
+  - moves as a tossed object with bounce (projectiles.md's toss
+    integration) under gravity 400 (scale 400 / `sv_gravity`), colliding
+    with the world and solid entities (players too, mask "solid").
+  - **Each think (every 0.1 s)**: one electric-spark burst at its
+    position (`cs_source/impact_effects.md` §8 exactly: magnitude 1, trail
+    length 1, no aim direction: 2–3 big sparks, 16–32 small sparks, the
+    two flares and the 0.2 s smoke), sent as a temp entity to the PVS of
+    that position; then L −= 0.1; L > 0 → think again in 0.1 s, else the
+    shower is removed. So a shower makes ⌈L / 0.1⌉ bursts, 5 to 15, over
+    0.5–1.5 s.
+  - **On touching something** (during its move): v × 0.1 if it was
+    resting on the ground, else v × 0.6; if then v_x² + v_y² < 10, L := 0
+    (one more burst at the next think, then removed). After the touch the
+    bounce: v reflected off the hit plane and scaled by min(0.9, the hit
+    surface's elasticity × 1) (the `default` surface 0.25, so a bounce
+    keeps 0.6 × 0.25 = 15 % of the speed); on a floor (normal z > 0.7) a
+    speed under 30 stops it on the ground.
+  - Water: on its first movement tick it counts as "entering water" (its
+    remembered contents start empty), so when it is in water then it
+    plays `BaseEntity.EnterWater` and halves v_z; leaving water later plays
+    `BaseEntity.ExitWater`, entering again plays the enter sound and
+    halves v_z again.
+  - Nothing else: no light, no sound of its own, no damage.
 - RPG, satchel and trip mine set "no sparks", "no dynamic lights" and
   "no smoke"; a rocket on a wall well above the floor leaves **no scorch**
   and is drawn at its own origin.
@@ -1010,6 +1052,10 @@ random draws fixed at the stated values):
 | 60 | `NPC_Citizen.die` lookup (two definitions) | – | – | 3-wave `hl2mp` definition (assumed, Open questions 2) |
 | 61 | picking up a new `weapon_crowbar`, `weapon_smg1` or `weapon_357` (default ammo equals the clip size: nothing goes to the reserve) | – | – | no pickup sound |
 | 62 | picking up a new `weapon_frag` (no clips, 1 grenade, reserve below 5) / taking a placed SMG1 as an owner (+45 reserve) | – | – | one `BaseCombatCharacter.AmmoPickup` each |
+| 63 | map `env_explosion` spawnflags 2 (no "no sparks"), origin 10 units under a water surface, nothing else below | Explode | – | 0–3 `spark_shower`s at the water hit + 24·(0, 0, 1); each starts at 400–500 u/s up plus ±100 sideways and makes 5–15 electric-spark bursts 0.1 s apart |
+| 64 | the same with spawnflags 34 (no sparks), or the origin out of water | Explode | – | no `spark_shower` |
+| 65 | a `spark_shower` with L = 0.53 that never touches anything | – | – | 6 bursts at 0.1, 0.2 … 0.6 s, removed at 0.6 s |
+| 66 | a `spark_shower` falling onto a default-surface floor at (100, 0, −300) | touch | – | after the touch × 0.6 and the bounce × 0.25: (15, 0, 45); still above 10 horizontally squared, keeps bursting |
 
 Checks against this install or the probe server (game build 24600434,
 dedicated server build 24600426):
@@ -1073,3 +1119,10 @@ dedicated server build 24600426):
     blood on the attacker's own screen.
 11. **Flesh sound twice.** Confirm the shooter hears two flesh impacts
     per hit (server + own client), and whether the engine merges them.
+12. **Explosion sparks when the down line starts in water.** An
+    `env_explosion` deeper than 8 units under water starts its 8-up /
+    40-down line inside water; the engine's answer there (hit or no hit,
+    which normal) is not in the SDK. Read as "no usable normal" (showers
+    straight down at the origin + 8 + 24·0). Check: an `env_explosion`
+    without flag 32 at the bottom of a deep pool; watch which way the
+    sparks fly.

@@ -165,6 +165,35 @@ player; the value is the default).
     `RotateParticles` with angular velocity in degrees/s. Scale keys give
     the particle size s; a particle is drawn as a camera-facing square of
     side 4·s (Open questions 3).
+    **Sprite sets as particle textures** (answered 2026-11-09). The
+    system has a `Sprite` key (`.spr`) and a `Texture` key (`.dtx`);
+    `Sprite` wins when both are set, else `Texture` is used. The file is
+    judged by its extension (case-insensitive): `.DTX` one texture,
+    `.SPR` a sprite set (e.g. `FX\WEAPONS\FLAME\Y_FLAMESET.SPR` named in a
+    `Texture` key works the same as in `Sprite`). A `.spr` starts with
+    five u32: frame count, frame rate (frames per second, integer),
+    "keyed", "translucent", colour key; then per frame a u16 length and a
+    texture path. `Y_FLAMESET.SPR`: 4 frames, 12 per second.
+    - **One clock per particle system, not per particle.** The system
+      object holds one frame tracker, started at 0 ms when the system is
+      created; every particle of the system is drawn with the **same**
+      current frame, whatever its own age. New and old particles change
+      frame together.
+    - The tracker advances each client frame by that frame's time in
+      whole milliseconds (the engine clock's delta, so 0 on a frame under
+      1 ms), in the engine's particle update, for every particle system
+      that is updated that frame (effect particle systems are created
+      "update unseen", so always; a paused system does not advance).
+    - Frame duration d = ⌊1000 / rate⌋ ms (integer division), animation
+      length = d × frames; time t := (t + Δ) mod length (it **always
+      loops**: the tracker is started in play-and-loop mode and nothing
+      in the effect code changes that); frame = ⌊t / d⌋ mod frames.
+      `Y_FLAMESET.SPR`: d = 83 ms, length 332 ms, frames 0–3 at 0, 83,
+      166, 249 ms of every 332 ms cycle.
+    - A frame rate of 0 or more than 4096 frames makes the file fail to
+      load (no texture). Whether the particle renderer uses the
+      keyed/translucent flags and colour key was not traced; the blend
+      comes from the key's `BlendMode`.
   - **Sprite**: a sprite file, `Facing` (0 camera, 1 along the normal,
     2 parent aligned), `DisableZ` (draw on top of the world),
     `CastVisibleRay` (hide the sprite while the line from it to the camera

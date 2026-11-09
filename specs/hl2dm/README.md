@@ -34,6 +34,7 @@ HL2:DM spec continues it and must not contradict it.
 | H8 | [hud.md](hud.md) | 3 | draft | HUD panels, weapon selection, death notices, scoreboard |
 | H9 | [effects_sounds.md](effects_sounds.md) | 3 | draft | effects and sounds |
 | H10 | [maps_entities.md](maps_entities.md) | 3 | draft | HL2:DM's map entities beyond specs/source/ |
+| – | [game_ui.md](game_ui.md) | – | draft | GameUI data: main menu, Multiplayer options (models, sprays), Create Server |
 
 The "Covers" lines are short; the full brief for each item is in the plan.
 

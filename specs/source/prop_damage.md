@@ -351,6 +351,8 @@ Damage types CS:S produces (as far as the SDK shows):
 | Knife | bullet + never-gib (4098, slash and stab; measured) | dmg.bullets |
 | HE grenade / env_explosion | blast (64, env_explosion measured) | dmg.explosive |
 | Exploding props | blast + blast-surface (64 + 2^27, measured) | dmg.explosive |
+| `env_explosion` with spawnflag 8192 "surface only" / 16384 "generic damage" (answered 2026-11-09) | blast + blast-surface / generic (0, no blast bit) | dmg.explosive / none |
+| Onbreak-explode fallback blast (7.5 step 7), `func_breakable` explosion | blast alone | dmg.explosive |
 | Physics impacts (section 5) | crush (+ slash for spin) | none |
 | Entity flame | burn (+ direct on the burning prop) | none |
 | Break-on-touch | crush | none |
