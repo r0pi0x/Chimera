@@ -4,7 +4,9 @@
 //! Registered at start from the install, not from the HUD's look: a gun game
 //! kills with these guns on any game's map, under any game's HUD (without
 //! them the feed writes the gun's name). A gun with no icon in the file
-//! (the gravity gun, in the original too) keeps its name there.
+//! (the gravity gun, in the original too) keeps its name there. The SMG1's
+//! grenade and the AR2's ball carry their gun's id: their kills (a blast, a
+//! crush) take their own glyphs (`kill_icon_of`, `WeaponIcons::register_kill`).
 
 use std::collections::BTreeMap;
 
@@ -12,7 +14,12 @@ use bevy::prelude::*;
 use chimera_client::client::weapon_icons::{WeaponIcon, WeaponIcons};
 use source_formats::keyvalues::{self, Kv};
 
-use crate::game::{GAME, INFO, mount, rules::deaths::weapon_notice_name};
+use chimera_core::core::DamageKind;
+
+use crate::game::{
+    GAME, INFO, mount,
+    rules::deaths::{kill_notice_name, weapon_notice_name},
+};
 
 /// The file of the death notices' glyphs.
 const TEXTURES: &str = "scripts/mod_textures.txt";
@@ -43,6 +50,17 @@ pub fn icon_of(id: &str, glyphs: &BTreeMap<String, char>, font: &Handle<Font>) -
     Some(WeaponIcon::Glyph { font: font.clone(), ch, em: TALL * 0.5 })
 }
 
+/// The icon of a kill by weapon `id` dealt as `kind` when it isn't the
+/// gun's own (the SMG1's grenade, the AR2's ball: `kill_notice_name`).
+pub fn kill_icon_of(id: &str, kind: DamageKind, glyphs: &BTreeMap<String, char>, font: &Handle<Font>) -> Option<WeaponIcon> {
+    let name = kill_notice_name(id, kind);
+    if name == weapon_notice_name(id) {
+        return None;
+    }
+    let ch = *glyphs.get(&name)?;
+    Some(WeaponIcon::Glyph { font: font.clone(), ch, em: TALL * 0.5 })
+}
+
 /// Reads the glyphs and the font (none without an install: the feed writes
 /// the guns' names).
 pub(super) fn register(mut icons: ResMut<WeaponIcons>, fonts: Option<ResMut<Assets<Font>>>) {
@@ -54,7 +72,9 @@ pub(super) fn register(mut icons: ResMut<WeaponIcons>, fonts: Option<ResMut<Asse
     };
     let glyphs = death_glyphs(&String::from_utf8_lossy(&text));
     let font = fonts.add(Font::from_bytes(file));
+    let (kill_glyphs, kill_font) = (glyphs.clone(), font.clone());
     icons.register(GAME, move |id| icon_of(id, &glyphs, &font));
+    icons.register_kill(GAME, move |id, kind| kill_icon_of(id, kind, &kill_glyphs, &kill_font));
 }
 
 #[cfg(test)]
@@ -71,6 +91,8 @@ mod tests {
             "death_grenade_frag" { "font" "HL2MPTypeDeath" "character" "4" }
             "death_crossbow_bolt" { "font" "HL2MPTypeDeath" "character" "1" }
             "death_smg1" { "font" "HL2MPTypeDeath" "character" "/" }
+            "death_smg1_grenade" { "font" "HL2MPTypeDeath" "character" "7" }
+            "death_combine_ball" { "font" "HL2MPTypeDeath" "character" "8" }
             "d_skull" { "file" "sprites/640hud1" "x" "192" "y" "224" "width" "32" "height" "16" }
         }
     }"#;
@@ -94,5 +116,15 @@ mod tests {
         assert_eq!(ch("hl2dm:weapon_crossbow"), Some('1'));
         assert_eq!(ch("hl2dm:weapon_smg1"), Some('/'));
         assert_eq!(ch("hl2dm:weapon_physcannon"), None);
+        // The launchers' kills: their projectiles' glyphs; their guns'
+        // own kills go on to the gun's.
+        let kill = |id, kind| match kill_icon_of(id, kind, &g, &font) {
+            Some(WeaponIcon::Glyph { ch, .. }) => Some(ch),
+            _ => None,
+        };
+        assert_eq!(kill("hl2dm:weapon_smg1", DamageKind::Blast), Some('7'));
+        assert_eq!(kill("hl2dm:weapon_ar2", DamageKind::Crush), Some('8'));
+        assert_eq!(kill("hl2dm:weapon_smg1", DamageKind::Bullet), None);
+        assert_eq!(kill("hl2dm:weapon_rpg", DamageKind::Blast), None);
     }
 }

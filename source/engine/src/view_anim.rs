@@ -40,6 +40,10 @@ pub const PULL_PIN: &str = "ACT_VM_PULLPIN";
 pub const PULL_BACK: &str = "ACT_VM_PULLBACK_HIGH";
 pub const THROW: &str = "ACT_VM_THROW";
 pub const MISS_CENTER: &str = "ACT_VM_MISSCENTER";
+/// HL2's later shots of a series (its pistol's and machine guns').
+pub const RECOIL1: &str = "ACT_VM_RECOIL1";
+pub const RECOIL2: &str = "ACT_VM_RECOIL2";
+pub const RECOIL3: &str = "ACT_VM_RECOIL3";
 
 /// Model event numbers (spec view_models.md 6): a muzzle flash on the
 /// attachment its option names (1-based); the named client effect that

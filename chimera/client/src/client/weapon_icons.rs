@@ -2,7 +2,9 @@
 //! in another game's HUD, and a HUD draws only its own art. Each game
 //! registers, in `WeaponIcons`, how its weapon ids (`game:name`) resolve to
 //! an icon it can hand over as plain data (`WeaponIcon`: a glyph of an icon
-//! font, or an image), and its kill marks (the headshot's: `mark`), and any HUD asks the registry for an id of another
+//! font, or an image), its kill marks (the headshot's: `mark`) and the
+//! icons of kills its guns make another way (`register_kill`, by the damage kind: a
+//! gun's own grenade; `kill_icon`), and any HUD asks the registry for an id of another
 //! game and draws what comes back with `spawn_weapon_icon`. A HUD that
 //! gets none shows the gun's display name instead (`gun_name`). No game
 //! crate knows another: the registry is keyed by the id's game part, and
@@ -19,6 +21,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use bevy::prelude::*;
 
+use crate::core::DamageKind;
+
 /// What a game hands over for one of its guns.
 #[derive(Clone, Debug, PartialEq)]
 pub enum WeaponIcon {
@@ -30,11 +34,17 @@ pub enum WeaponIcon {
 }
 
 type Resolver = Arc<dyn Fn(&str) -> Option<WeaponIcon> + Send + Sync>;
+type KillResolver = Arc<dyn Fn(&str, DamageKind) -> Option<WeaponIcon> + Send + Sync>;
 
 /// The games' icon resolvers by game name (the id's part before `:`, lower
-/// case), and their kill marks (`mark`).
+/// case), their kill marks (`mark`) and their icons for what a gun's other
+/// parts kill with (`kill_icon`).
 #[derive(Resource, Default, Clone)]
-pub struct WeaponIcons(HashMap<String, Resolver>, HashMap<(String, String), WeaponIcon>);
+pub struct WeaponIcons(
+    HashMap<String, Resolver>,
+    HashMap<(String, String), WeaponIcon>,
+    HashMap<String, KillResolver>,
+);
 
 impl WeaponIcons {
     /// Registers (or replaces) `game`'s resolver for its weapon ids.
@@ -47,6 +57,24 @@ impl WeaponIcons {
     pub fn icon(&self, id: &str) -> Option<WeaponIcon> {
         let (game, _) = id.split_once(':')?;
         self.0.get(&game.to_ascii_lowercase())?(id)
+    }
+
+    /// Registers (or replaces) `game`'s icons for kills its guns make in
+    /// another way than their own (a rifle's grenade, a blast of the
+    /// rifle, with its own icon): asked first by `kill_icon`, None falls back
+    /// to `icon`.
+    pub fn register_kill(&mut self, game: &str, resolver: impl Fn(&str, DamageKind) -> Option<WeaponIcon> + Send + Sync + 'static) {
+        self.2.insert(game.to_ascii_lowercase(), Arc::new(resolver));
+    }
+
+    /// The icon of a kill by weapon `id` dealt as `kind`: its game's kill
+    /// icon for that, else the gun's own (`icon`).
+    pub fn kill_icon(&self, id: &str, kind: DamageKind) -> Option<WeaponIcon> {
+        let (game, _) = id.split_once(':')?;
+        self.2
+            .get(&game.to_ascii_lowercase())
+            .and_then(|f| f(id, kind))
+            .or_else(|| self.icon(id))
     }
 
     /// Registers (or replaces) `game`'s kill mark `name` (`"headshot"`).

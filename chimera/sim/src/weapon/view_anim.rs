@@ -159,6 +159,9 @@ pub struct ViewModelPlay {
     pub burst_started: f64,
     /// Whether the owner was zoomed last frame (`zoom_in`/`zoom_out`).
     pub zoomed: bool,
+    /// Games' rules' count of a series of attacks (HL2's pistol counts
+    /// shots close together).
+    pub series: u32,
     rng: u32,
 }
 
@@ -170,6 +173,7 @@ impl ViewModelPlay {
             idle_started: f64::MIN,
             burst_started: f64::MIN,
             zoomed: false,
+            series: 0,
             rng: owner.to_bits() as u32 ^ 0x9e37_79b9,
         }
     }
@@ -226,6 +230,8 @@ pub struct ViewState<'a> {
     pub shells: bool,
     pub reloading: bool,
     pub zoomed: Option<&'a Zoomed>,
+    /// Shots since the trigger was last released (`WeaponState::burst`).
+    pub shots: u32,
 }
 
 /// One character's view model this frame, for the rules' reactions.
@@ -419,6 +425,7 @@ pub fn drive(
                 shells: shells.is_some(),
                 reloading: ws.is_some_and(|s| s.reloading()),
                 zoomed,
+                shots: ws.map_or(0, |s| s.burst),
             }
         });
         let by_data = state.as_ref().is_some_and(|s| s.data.is_some_and(|d| !d.anim.sequences.is_empty()));

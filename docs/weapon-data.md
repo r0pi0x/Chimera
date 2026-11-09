@@ -226,7 +226,9 @@ hud_icon = "ammo_762"
   `spread = [rest, most]`, the click refire's `click_unlock`,
   `dry_unlock`, `dry`), `hl2dm:punch` (`pitch`, `yaw` ranges in Source
   degrees, `reset`, `alt_pitch`, `alt_yaw`), `hl2dm:machine_gun` (`max`,
-  `slide`) and `hl2dm:shotgun` (`pump`, `pump_sound`, `dry`).
+  `slide`), `hl2dm:shotgun` (`pump`, `pump_sound`, `dry`) and
+  `hl2dm:dry_under_water` (`wait`: the guns that won't fire with the eyes
+  under water).
 - **Errors.** Unknown keys, an unknown base, ammo type or hook, a loop of
   bases, a duplicate ID and hook parameters the hook can't read are load
   errors naming the document and key. A game's own data failing to load

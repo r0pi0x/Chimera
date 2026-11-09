@@ -34,7 +34,7 @@ use crate::game::{
     GAME,
     hud::{ANIMATIONS, animations, icon_key},
     hud_notes::{HudPickup, PickupNote},
-    rules::deaths::weapon_notice_name,
+    rules::deaths::kill_notice_name,
     standing::{Hl2MatchView, Hl2Team},
     suit::Suit,
     weapons::{
@@ -400,7 +400,7 @@ pub fn collect(
             let team_of = |ent: Entity| teams.get(ent).map_or(0, |t| t.0);
             let victim = (e.victim.name.clone(), team_of(e.victim.entity));
             let killer = e.killer.as_ref().map(|k| (k.name.clone(), team_of(k.entity)));
-            let weapon = e.weapon.map_or_else(|| "world".to_string(), weapon_notice_name);
+            let weapon = e.weapon.map_or_else(|| "world".to_string(), |w| kill_notice_name(w, e.kind));
             hud.death_notice(killer.filter(|_| !e.suicide), victim, &weapon);
             st.seen.kill = e.id + 1;
         }
@@ -415,7 +415,8 @@ pub fn collect(
 }
 
 /// The scoreboard's rows: every player with its team, score, ping and name
-/// (a client's from the server's `NetScore` and `NetCharacter`).
+/// (a client's from the server's `NetScore` and `NetCharacter`), and the
+/// server's name over them.
 #[allow(clippy::type_complexity)]
 pub fn collect_board(
     mut state: ResMut<Hl2dmHud>,
@@ -438,6 +439,7 @@ pub fn collect_board(
         Res<ButtonInput<KeyCode>>,
         Option<Res<ButtonInput<MouseButton>>>,
     ),
+    motd: Option<Res<chimera_net::net::ServerMotd>>,
 ) {
     if state.hud.is_none() {
         return;
@@ -463,7 +465,9 @@ pub fn collect_board(
     rows.sort_by_key(|r| r.index);
     let board = Board {
         teamplay: view.is_some_and(|v| v.teamplay),
-        server_name: String::new(),
+        // The server's name (`hostname`, as its message of the day carries
+        // it to every client).
+        server_name: motd.map(|m| m.server.clone()).unwrap_or_default(),
         players: rows,
         team_scores: view.map_or([0; 2], |v| v.scores),
     };

@@ -7,7 +7,9 @@
 //! (`source_engine::hud::anim`); an aux power bar; the quick info
 //! brackets and the crosshair; HL2's horizontal weapon selection; red
 //! damage flashes; the pickup history; death notices; target ID; the
-//! scoreboard and the intermission.
+//! scoreboard and the intermission; the message of the day at join
+//! (GameUI's text window, `source_gameui::motd`, in the install's
+//! `resource/ui/textwindow.res`).
 //!
 //! - `hud`: the state machine (`Hl2Hud`): what each element remembers, the
 //!   events it starts, the `Frame` it draws.
@@ -33,8 +35,9 @@
 //!   scoreboard are drawn from boxes, its avatars and section colours'
 //!   background are left out, and its rows start 26 units down (the file
 //!   gives the list the whole panel).
-//! - The console selection styles (`hud_fastswitch` 2 and 3), the MOTD
-//!   window, the hints and the spectator GUI are not built.
+//! - The console selection styles (`hud_fastswitch` 2 and 3), the hints
+//!   and the spectator GUI are not built. The message of the day
+//!   (`source_gameui::motd`) draws without HL2:DM's own frame.
 //! - An ammo crate's refused opening sends no "FULL" row (the spec names
 //!   only pickups; `game::hud_notes` has boxes and weapons).
 
@@ -119,7 +122,7 @@ impl Plugin for Hl2dmUiPlugin {
         if !app.is_plugin_added::<chimera_client::client::weapon_menu::WeaponMenuPlugin>() {
             app.add_plugins(chimera_client::client::weapon_menu::WeaponMenuPlugin);
         }
-        app.add_plugins((Hl2dmHudPlugin, source_gameui::GameUiPlugin(&MENU_GAME)))
+        app.add_plugins((Hl2dmHudPlugin, source_gameui::GameUiPlugin(&MENU_GAME), source_gameui::motd::MotdWindowPlugin))
             // The selection closes at 1.25 s (a quarter into its fade).
             .add_systems(Update, (lights::flash, lights::fade).chain())
             .insert_resource(WeaponMenuTimes { menu: 1.25, show: 1.25, fade: 0.25, select_hold: 0.15 })

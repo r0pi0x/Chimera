@@ -3,7 +3,8 @@
 //! drawn from the install's own files (`source_engine::hud::gameui`). The
 //! main menu and the Esc menu with their dialogs (`game_menu`), the
 //! options' settings (`options`), the server browser (`server_browser`),
-//! the dialog that finds the install (`first_run`).
+//! the dialog that finds the install (`first_run`), the message of the day
+//! (`motd`).
 //!
 //! What differs per game is data: `MenuGame`, given to `GameMenuPlugin` and
 //! `FirstRunPlugin`. CS:S's: `cs_source::ui::MENU_GAME`, with its bots, teams and
@@ -24,6 +25,7 @@ use chimera_sim::weapon;
 
 pub mod first_run;
 pub mod game_menu;
+pub mod motd;
 pub mod options;
 pub mod server_browser;
 

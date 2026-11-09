@@ -64,3 +64,8 @@ sound = "Weapon_SMG1.Double"
 empty = "Weapon_SMG1.Empty"
 # No server sound: the explosion's boom is the client's (H9 15.10).
 explode = ""
+
+# Eyes under water: the empty sound and 0.2 s (14 ticks) before the next
+# try, no shot (weapons.md 5).
+[hooks."hl2dm:dry_under_water"]
+wait = 0.2

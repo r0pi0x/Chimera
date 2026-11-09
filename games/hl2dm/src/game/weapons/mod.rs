@@ -31,7 +31,10 @@
 //!   refire, attack2's block, the dry fire's wait;
 //! - `hl2dm:punch`, `hl2dm:machine_gun` (`recoil`): the kicks on HL2's
 //!   punch spring;
-//! - `hl2dm:shotgun` (`shotgun::Hl2Shotgun`): the pump.
+//! - `hl2dm:shotgun` (`shotgun::Hl2Shotgun`): the pump;
+//! - `hl2dm:dry_under_water` (`under_water::Hl2DryUnderWater`): the guns
+//!   that won't fire with the eyes under water (the .357, the machine
+//!   guns, the shotgun).
 //!
 //! `Hl2GunsPlugin` is the weapons alone (data, hooks, recoil, the damage
 //! shove of HL2:DM players: `shove`; what a game of several games adds);
@@ -39,8 +42,7 @@
 //! ammo per player, the next best weapon, pickup and drop rules
 //! (`inventory`).
 //!
-//! Known shortcuts: no weapon refuses to fire under water (Chimera's
-//! characters don't tell how deep they are yet; the movement is M3's); an
+//! Known shortcuts: an
 //! odd pellet's box meets a turned hitbox as that hitbox grown 3 units on
 //! its own axes (exact for one lined up); another client draws a tick's
 //! catch-up rounds as lines (each comes as its own round); a melee swing's
@@ -59,6 +61,7 @@ pub mod rpg;
 pub mod shotgun;
 pub mod shove;
 pub mod slam;
+pub mod under_water;
 
 use bevy::prelude::*;
 use chimera_sim::{
@@ -124,6 +127,7 @@ pub const CROSSBOW_HOOK: &str = "hl2dm:crossbow";
 pub const FRAG_HOOK: &str = "hl2dm:frag";
 pub const SLAM_HOOK: &str = "hl2dm:slam";
 pub const PHYSCANNON_HOOK: &str = "hl2dm:physcannon";
+pub const DRY_UNDER_WATER: &str = "hl2dm:dry_under_water";
 
 /// The weapons every player spawns with besides the melee weapon of its
 /// model (`inventory::arm`), in giving order (weapons.md 3): the last
@@ -284,6 +288,9 @@ pub fn register_hooks(app: &mut App) {
     })
     .register_weapon_hook::<physcannon::PhysParams>(PHYSCANNON_HOOK, |e, _, p| {
         e.insert(physcannon::Hl2Physcannon::new(p.clone()));
+    })
+    .register_weapon_hook::<under_water::Hl2DryUnderWater>(DRY_UNDER_WATER, |e, _, p| {
+        e.insert(*p);
     });
 }
 
@@ -375,7 +382,13 @@ impl Plugin for Hl2GunsPlugin {
         app.add_systems(
             Predict::Weapons,
             (
-                (recoil::decay_punch, pistol::before_frame, shotgun::before_frame).before(WeaponFrame),
+                (
+                    recoil::decay_punch,
+                    pistol::before_frame,
+                    shotgun::before_frame,
+                    under_water::before_frame.after(shotgun::before_frame),
+                )
+                    .before(WeaponFrame),
                 (recoil::kick, pistol::after_frame, shotgun::after_frame, inventory::holster_reload).after(WeaponFrame),
                 recoil::nudge_view.after(recoil::kick),
             ),

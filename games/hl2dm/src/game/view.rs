@@ -10,10 +10,15 @@
 //! model at 54 degrees, the player's default 75; right-handed, never
 //! mirrored: each is loaded with flipping off).
 //!
-//! Known shortcuts: the pistol's and machine guns' series of fire
-//! sequences (`ACT_VM_RECOIL1`-`3` after the first shots) play the first
-//! one each time; the AR2's vent pose parameter isn't set (both
-//! cosmetic).
+//! A shot's fire sequence follows its place in a series (`fire_order`,
+//! weapons.md 7.1, 7.3): the pistol's shots less than 0.5 s apart count up
+//! through `ACT_VM_PRIMARYATTACK` and `ACT_VM_RECOIL1`-`3`; the SMG1's and
+//! AR2's first two shots since attack was pressed play the first, then
+//! `RECOIL1`-`3`, the last held. A model without one plays the one before.
+//!
+//! Known shortcuts: the AR2's vent pose parameter isn't set (cosmetic); the
+//! machine guns' count is reset at a release but not at a deploy with
+//! attack held (weapons.md 2).
 
 use bevy::prelude::*;
 use chimera_sim::weapon::{
@@ -21,7 +26,9 @@ use chimera_sim::weapon::{
     view_anim::{self, Pick, ViewAnimAppExt, ViewAnimRules, ViewFrame},
 };
 use source_engine::{
-    view_anim::{self as source, DRAW, DRYFIRE, HIT_CENTER, IDLE, MISS_CENTER, PRIMARY, SECONDARY, SHOTGUN_PUMP},
+    view_anim::{
+        self as source, DRAW, DRYFIRE, HIT_CENTER, IDLE, MISS_CENTER, PRIMARY, RECOIL1, RECOIL2, RECOIL3, SECONDARY, SHOTGUN_PUMP,
+    },
     view_motion::{self, MotionAppExt, MotionRules, Sway, ViewMotion},
 };
 
@@ -73,10 +80,31 @@ pub fn rules() -> ViewAnimRules {
     }
 }
 
+/// The pistol's shots closer than this count as a series (weapons.md 7.1).
+pub const PISTOL_SERIES: f64 = 0.5;
+
+/// A shot's fire sequences, the first the model has, by its place in a
+/// series: `shots` since attack was pressed (the machine guns'), `series`
+/// the pistol's count of shots close together (0 for the first).
+pub fn fire_order(weapon: &str, shots: u32, series: u32) -> &'static [&'static str] {
+    use super::weapons::{AR2, PISTOL, SMG1};
+    const ORDER: [&[&str]; 4] = [&[PRIMARY], &[RECOIL1, PRIMARY], &[RECOIL2, RECOIL1, PRIMARY], &[RECOIL3, RECOIL2, RECOIL1, PRIMARY]];
+    let i = if weapon == PISTOL {
+        series
+    } else if weapon == SMG1 || weapon == AR2 {
+        shots.saturating_sub(2)
+    } else {
+        0
+    };
+    ORDER[i.min(3) as usize]
+}
+
 fn event(f: &mut ViewFrame, kind: &WeaponEventKind) {
     match kind {
         WeaponEventKind::Fired { mode, .. } if !f.fired => {
-            let order: &[&str] = if *mode > 0 { &[SECONDARY, PRIMARY] } else { &[PRIMARY] };
+            let series = if f.now - f.dice.last_attack < PISTOL_SERIES { f.dice.series + 1 } else { 0 };
+            f.dice.series = series;
+            let order: &[&str] = if *mode > 0 { &[SECONDARY, PRIMARY] } else { fire_order(f.state.weapon, f.state.shots, series) };
             f.fired = f.attack(&acts(order));
         }
         WeaponEventKind::DryFire => {
@@ -124,6 +152,23 @@ impl Plugin for Hl2ViewPlugin {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::game::weapons::{AR2, MAGNUM, PISTOL, SMG1};
+
+    /// weapons.md 7.1 and 7.3: the pistol's quick shots count up from the
+    /// first; the machine guns' first two shots play the first sequence,
+    /// then the recoils, the last held; others always the first.
+    #[test]
+    fn a_series_of_shots_plays_the_recoils() {
+        assert_eq!(fire_order(PISTOL, 1, 0)[0], PRIMARY);
+        assert_eq!(fire_order(PISTOL, 1, 1)[0], RECOIL1);
+        assert_eq!(fire_order(PISTOL, 1, 7)[0], RECOIL3);
+        let smg: Vec<&str> = (1..=6).map(|n| fire_order(SMG1, n, 0)[0]).collect();
+        assert_eq!(smg, [PRIMARY, PRIMARY, RECOIL1, RECOIL2, RECOIL3, RECOIL3]);
+        assert_eq!(fire_order(AR2, 3, 0), &[RECOIL1, PRIMARY]);
+        assert_eq!(fire_order(MAGNUM, 5, 5), &[PRIMARY]);
+    }
+
     #[test]
     fn hl2s_view_model_fov_is_54_at_75() {
         let s = super::settings();

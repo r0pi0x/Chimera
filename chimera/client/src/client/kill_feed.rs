@@ -350,7 +350,7 @@ fn draw(
                     text(r, k.name.clone(), name_colour(k));
                 }
                 let game = e.weapon.and_then(|w| w.split_once(':')).map(|(g, _)| g);
-                match e.weapon.and_then(|w| icons.as_ref()?.icon(w)) {
+                match e.weapon.and_then(|w| icons.as_ref()?.kill_icon(w, e.kind)) {
                     Some(icon) => icon_slot(r, &icon, icon_scale, line, 0.9, images.as_deref()),
                     None => {
                         let what = fallback_word(e, |w| gun_name(w, names.as_deref(), catalog.as_deref()));

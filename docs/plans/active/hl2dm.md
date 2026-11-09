@@ -1911,6 +1911,61 @@ implementing (owner branch) / done.
   (no master server, as CS:S's). No team menu: HL2:DM has none (hud.md 14);
   the scoreboard existed (M9). Tests: `games/hl2dm/tests/ui/menus.rs`.
 
+- 2026-11-09: **Gaps round 2** (branch `hl2dm-gaps2`). Ranked by what a
+  player meets in a DM/TDM match. **Kill icons**: the SMG1's grenade and the
+  AR2's ball carry their gun's id (Chimera's flyers), so their kills showed
+  the gun's glyph; a kill's name now follows how it killed
+  (`deaths::kill_notice_name`: the SMG1's blasts `smg1_grenade`, the AR2's
+  crushes `combine_ball`, rules.md step 2's inflictor), in `player_death`,
+  the log, HL2:DM's notices and every app's feed (`WeaponIcons::kill_icon`,
+  `register_kill`, by the damage kind). **Under water** (weapons.md 5, test
+  52): the .357, SMG1, AR2 and shotgun (both shots) refuse attack with the
+  eyes under water: the empty sound, next primary + 0.2, no round
+  (`hl2dm:dry_under_water`, `under_water`); the pistol fires. Tests:
+  `rules::the_launchers_kills_are_named_by_their_projectiles`,
+  `weapons::guns_refuse_under_water_but_the_pistol_52`, `kill_icons`' unit
+  test. The surface-only blast (game_entities.md 6 flag 8192, an explosive
+  prop's): its refusal (suit.md, eyes under water, the inflictor out of it)
+  is already what projectiles.md 2's water rule does for every HL2:DM blast
+  (a dry blast skips the fully submerged), so nothing changes in play; the
+  one difference left is that blast + surface isn't "exactly blast" for the
+  0.5 s spawn grace, which would need the damage's bits on `Damage`.
+  **Message of the day** (hud.md 14, rules.md "Joining"): GameUI's text
+  window, lifted with CS:S's message helpers into `source_gameui::motd`
+  (`motd_shown`, `motd_page`, `cl_disablehtmlmotd`; CS:S's join flow keeps
+  its team and class menus and uses them). HL2:DM's look reads
+  `resource/ui/textwindow.res` and the install's `cfg/motd_default.txt` and
+  `motd_text_default.txt` (and VGUI's strings, for "OK"); a player coming
+  into a game an interactive run starts sees it (`MotdWindowPlugin`,
+  `JoinChoice::Menus`), the mouse free and the game's keys idle; OK or Enter
+  (the default button) closes it. A server's own `motd.txt` reaches clients
+  as CS:S's does (`net::motd`). Tests: `ui::motd`, `heavy::hud_look`
+  (the window's boxes, the install's messages, the launchers' glyphs). Not
+  drawn, the spec unclear: HL2:DM's own frame (which picture fills which
+  part), the title (we show the server's name), whether it shows again
+  after a `changelevel` (ours: whenever a local player entity is new).
+  **View-model fire series** (weapons.md 7.1, 7.3): the pistol's shots
+  under 0.5 s apart count up through `ACT_VM_PRIMARYATTACK`, `RECOIL1`-`3`;
+  the SMG1's and AR2's first two shots since attack was pressed play the
+  first, then the recoils (`view::fire_order`, on `ViewState::shots`, the
+  frame's `burst`, and `ViewModelPlay::series`); unit test
+  `a_series_of_shots_plays_the_recoils`.
+  **Scoreboard's server name** (hud.md 13): it was empty; now the server's
+  `hostname` as its message of the day brings it (`ui::feed::
+  the_scoreboard_names_the_server`).
+  Questions for a spec session: weapons.md 7.1 ends "Can't fire under
+  water" in the pistol's section while 5's table and test 52 say it fires
+  (we follow the table; 7.2's line is the .357's); for the clip weapons other
+  than the shotgun, does the under-water refusal come before or after the
+  empty clip's rules (ours after, as the shotgun's 7.4); `spark_shower`'s
+  look (game_entities.md 6 step 5: under-water `env_explosion`s make 0-3)
+  isn't specced, so neither it nor "no sparks" (32) is built; the AR2's
+  vent pose parameter's name (weapons.md 7.3, H7 doesn't give it); the MOTD
+  window's title, HL2:DM's frame (which of the named pictures fills which
+  part), its keys and whether it shows again after a `changelevel`; the
+  scoreboard's avatars without Steam. Shots of the window, the recoil
+  series and the icons wait for a display (the box had none this session).
+
 ## Decision log
 
 - 2026-10-31 (user): Half-Life 2: Deathmatch is the next game, after
