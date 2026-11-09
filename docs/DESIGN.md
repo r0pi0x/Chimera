@@ -241,7 +241,14 @@ A component that comes and goes on characters is a sparse set
 (`#[component(storage = "SparseSet")]`): Bevy frees no table, and every
 query that matches characters steps over every table it matched, on every
 run; a session's combinations made tens of thousands (docs/performance.md,
-"A session's frame rate"; `ultimate_gun_game`'s `session` test).
+"A session's frame rate"; `ultimate_gun_game`'s `session` test). Archetypes
+aren't freed either, and each costs every tick: a part a character gains
+once and keeps, or whose absence means its default, is on it from the spawn
+(`CharacterPartsExt::on_every_character`, a value meaning "none" in place of
+removing it); parts that go together go on and off in one move (one bundle,
+`insert_if_new` to keep what's there): each step alone is an archetype for
+every combination of the rest. `chimera_census made` says which moves made
+them; `ultimate_gun_game`'s lap test caps what a lap adds.
 
 Prefer, in order: components for facts about an entity, observers for
 reactions to them (`On<Insert<C>>`, `On<Discard<C>>`), messages for

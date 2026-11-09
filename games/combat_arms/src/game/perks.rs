@@ -397,7 +397,9 @@ pub struct CaPerksPlugin;
 
 impl Plugin for CaPerksPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_core::character::CharacterPartsExt;
         super::data::CaData::of(app);
+        app.on_every_character::<CaLastPrimary>();
         app.init_resource::<CaPerksEnabled>()
             .init_resource::<CaPerkRng>()
             .add_message::<Damage>()

@@ -3,8 +3,10 @@
 //! server's map change (`party_kit::server::swap_map`), a new ladder and
 //! bots walking its rungs on each map, three laps over maps of every game,
 //! each map with the same ladder every lap. What a map holds must be what it
-//! held on the first lap, the characters' tables must stop growing, and a
-//! tick must cost what it did on the lap before.
+//! held on the first lap, the characters' tables must stop growing, a lap
+//! after the first must add few characters' archetypes (fewer than 150; a
+//! failure lists the moves that made them, `census::made_by`), and a tick
+//! must cost what it did on the lap before.
 //!
 //! The tick is compared from the second lap on: the first makes the
 //! archetypes of every game's characters on every map, which Bevy keeps, and
@@ -67,6 +69,16 @@ fn play(sim: &mut Sim, seed: u64) {
     sim.seconds(2.0);
 }
 
+/// The archetypes holding `Health` (the characters'), every one made.
+fn characters(c: &Census) -> usize {
+    c.made.iter().filter(|k| k.split('+').any(|n| n == "Health")).count()
+}
+
+/// What made the characters' archetypes (`chimera_census made`).
+fn chimera_census_made(sim: &mut Sim) -> String {
+    chimera_core::metrics::census::made_by(sim.app.world(), "Health", 20)
+}
+
 /// The median of the instructions of `n` ticks, those without a new
 /// archetype.
 fn tick_cost(sim: &mut Sim, n: usize) -> Option<f64> {
@@ -103,6 +115,8 @@ fn laps_of_real_maps_hold_the_same_and_cost_the_same() {
         s.quota_set = true;
     }
     let mut rows: Vec<(usize, &str, Census, Option<f64>)> = Vec::new();
+    // Characters' archetypes at the end of each lap.
+    let mut laps = Vec::new();
     for lap in 0..LAPS {
         for (i, map) in MAPS.iter().enumerate() {
             if lap > 0 || i > 0 {
@@ -117,11 +131,32 @@ fn laps_of_real_maps_hold_the_same_and_cost_the_same() {
             let c = Census::take(sim.app.world_mut());
             let tick = tick_cost(&mut sim, 300);
             eprintln!(
-                "lap {lap} {map:24} {:6} entities {:6} archetypes {:5} tables {:?} instructions a tick",
-                c.entities, c.archetypes_made, c.tables, tick
+                "lap {lap} {map:24} {:6} entities {:6} archetypes {:5} characters' {:5} tables {:?} instructions a tick",
+                c.entities,
+                c.archetypes_made,
+                characters(&c),
+                c.tables,
+                tick
             );
             rows.push((lap, map, c, tick));
         }
+        laps.push(characters(&rows.last().unwrap().2));
+    }
+    // What a lap after the first adds must be what a lap of new deaths and
+    // rungs adds, not every combination again: each archetype costs every
+    // tick for good (before the characters' parts were kept on them from
+    // the spawn, 1,829 after the first lap, then 526 and 277 more).
+    let made = chimera_census_made(&mut sim);
+    for lap in 1..LAPS {
+        let added = laps[lap] - laps[lap - 1];
+        assert!(
+            added < 150,
+            "lap {lap} made {added} more characters' archetypes ({} after the first lap): a part that comes and goes on \
+             characters, one at a time, makes one for every combination of the others. Keep it on them from the spawn \
+             (`chimera_core::character::CharacterPartsExt::on_every_character`), or put a game's parts on and off in \
+             one move (docs/DESIGN.md, \"ECS style\"). {made}",
+            laps[0]
+        );
     }
     for (lap, map, c, tick) in rows.iter().filter(|r| r.0 > 0) {
         let Some((.., was, _)) = rows.iter().find(|r| r.0 == 0 && r.1 == *map) else { continue };
@@ -140,3 +175,4 @@ fn laps_of_real_maps_hold_the_same_and_cost_the_same() {
     let tables = rows.last().unwrap().2.tables;
     assert!(tables < 700, "{tables} tables after three laps: a component that comes and goes on characters isn't a sparse set");
 }
+

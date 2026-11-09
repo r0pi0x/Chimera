@@ -199,6 +199,7 @@ pub struct OwnSelection;
 
 impl Plugin for WeaponPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_core::character::CharacterPartsExt;
         app.init_resource::<WeaponRegistry>()
             .init_resource::<economy::Prices>()
             .init_resource::<economy::BuyWindow>()
@@ -296,7 +297,9 @@ impl Plugin for WeaponPlugin {
             .predicted_part::<AltModes>()
             .predicted::<Hitscan>()
             .predicted_net::<ViewPunch>()
-            .predicted_net::<Zoomed>();
+            .predicted_net::<Zoomed>()
+            // From the spawn, not from the first shot.
+            .on_every_character::<ViewPunch>();
         impact::plugin(app);
         lagcomp::plugin(app);
         remote::plugin(app);

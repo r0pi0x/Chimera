@@ -500,7 +500,9 @@ pub struct CaCharactersPlugin;
 
 impl Plugin for CaCharactersPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_core::character::CharacterPartsExt;
         CaData::of(app);
+        app.on_every_character::<WantHeld>();
         // What on-demand loads add, kept across map changes (`models`).
         app.init_resource::<models::CaLateModels>();
         app.add_message::<WeaponEvent>()

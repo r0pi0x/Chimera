@@ -9,6 +9,9 @@
 //! Headless tests take a `Census` of a `Sim`'s world and compare two.
 //! `chimera_census varies [<component>]` lists what comes and goes on the
 //! archetypes holding a component (`Health`: the characters); `chimera_census
+//! made [<component>]` which moves made them (each archetype is put down
+//! to the insert or removal that first reached it: a part put on or taken
+//! off alone makes one for every combination of the others); `chimera_census
 //! age <n> [sparse]` puts a character through `n` new archetypes (a table
 //! each, unless `sparse`): a long session's world at once, to measure what
 //! that costs a frame (docs/performance.md, "A session's frame rate").
@@ -202,12 +205,13 @@ impl Census {
 struct Censuses(BTreeMap<String, Census>);
 
 /// `chimera_census`'s help line (the client's `perf` registers it).
-pub const HELP: &str = "chimera_census [<top>|diff [<name>]|save <name>|varies [<component>]|age <n> [sparse]]: count \
-     entities by archetype, observers, systems per schedule, resources and assets by type (the <top> largest \
-     archetypes, default 15); `save <name>` keeps this census under a name; `diff`: what changed since the last \
-     census (or since the one saved as <name>), new archetypes and tables included; `varies`: what comes and goes \
-     on the archetypes holding <component> (default Health: the characters); `age`: put a character through <n> \
-     new archetypes, a table each unless `sparse` (a long session's world at once).";
+pub const HELP: &str = "chimera_census [<top>|diff [<name>]|save <name>|varies [<component>]|made [<component>]|age <n> \
+     [sparse]]: count entities by archetype, observers, systems per schedule, resources and assets by type (the <top> \
+     largest archetypes, default 15); `save <name>` keeps this census under a name; `diff`: what changed since the \
+     last census (or since the one saved as <name>), new archetypes and tables included; `varies`: what comes and \
+     goes on the archetypes holding <component> (default Health: the characters); `made`: which inserts and \
+     removals made those archetypes, the most first; `age`: put a character through <n> new archetypes, a table \
+     each unless `sparse` (a long session's world at once).";
 
 /// Marks for `age`: table components, and sparse-set ones.
 #[derive(Component)]
@@ -303,12 +307,63 @@ fn varies(census: &Census, component: &str) -> String {
     )
 }
 
-/// `chimera_census [<top>|diff [<name>]|save <name>|varies [<component>]|age <n> [sparse]]`.
+/// Which moves made the archetypes holding `component` (by short name):
+/// each is put down to the insert or removal (`+` or `-` and the bundle's
+/// components) from the oldest archetype whose cached move reaches it, and
+/// the moves are counted, the most first (`top` of them). The archetypes no
+/// move reached (spawned so) count as `spawn`.
+pub fn made_by(world: &World, component: &str, top: usize) -> String {
+    use bevy::ecs::archetype::ArchetypeId;
+    let components = world.components();
+    let name = |c| components.get_name(c).map(|n| n.shortname().to_string()).unwrap_or_default();
+    let holding: BTreeSet<ArchetypeId> =
+        world.archetypes().iter().filter(|a| a.iter_components().any(|c| name(c) == component)).map(|a| a.id()).collect();
+    // Each archetype's maker: (source, move).
+    let mut maker: BTreeMap<ArchetypeId, (ArchetypeId, String)> = BTreeMap::new();
+    let bundles: Vec<(bevy::ecs::bundle::BundleId, String)> = world
+        .bundles()
+        .iter()
+        .map(|b| {
+            let mut n: Vec<String> = b.explicit_components().iter().map(|c| name(*c)).collect();
+            n.sort();
+            (b.id(), n.join("+"))
+        })
+        .collect();
+    for a in world.archetypes().iter() {
+        let edges = a.edges();
+        for (id, label) in &bundles {
+            let moves = [
+                (edges.get_archetype_after_bundle_insert(*id), '+'),
+                (edges.get_archetype_after_bundle_remove(*id).flatten(), '-'),
+                (edges.get_archetype_after_bundle_take(*id).flatten(), '-'),
+            ];
+            for (to, sign) in moves {
+                let Some(to) = to.filter(|t| *t > a.id() && holding.contains(t)) else { continue };
+                if maker.get(&to).is_none_or(|(from, _)| a.id() < *from) {
+                    maker.insert(to, (a.id(), format!("{sign}{label}")));
+                }
+            }
+        }
+    }
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for a in &holding {
+        *counts.entry(maker.get(a).map_or("spawn", |(_, m)| m.as_str())).or_default() += 1;
+    }
+    let mut rows: Vec<(&str, usize)> = counts.into_iter().collect();
+    rows.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+    let list: Vec<String> = rows.iter().take(top).map(|(m, n)| format!("{m} {n}")).collect();
+    format!("{} archetypes hold {component}; made by: {}", holding.len(), list.join(", "))
+}
+
+/// `chimera_census [<top>|diff [<name>]|save <name>|varies [<component>]|made [<component>]|age <n> [sparse]]`.
 pub fn command(w: &mut World, a: &[String]) -> Result<Option<String>, String> {
     if a.first().map(String::as_str) == Some("age") {
         let n = a.get(1).and_then(|n| n.parse().ok()).ok_or("age: how many?")?;
         let (made, tables) = age(w, n, a.get(2).map(String::as_str) == Some("sparse"))?;
         return Ok(Some(format!("aged: {made} archetypes and {tables} tables made")));
+    }
+    if a.first().map(String::as_str) == Some("made") {
+        return Ok(Some(made_by(w, a.get(1).map_or("Health", String::as_str), 30)));
     }
     let now = Census::take(w);
     let name = a.get(1).cloned().unwrap_or_default();
