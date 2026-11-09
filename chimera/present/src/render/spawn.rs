@@ -338,6 +338,7 @@ fn image_parts(data: &MapData, bc: bool) -> ImageParts {
     let hud: std::collections::HashSet<usize> = data
         .kit.hud
         .iter()
+        .chain(&data.kit.guest_huds)
         .flat_map(|h| h.sprites.values().map(|s| s.texture))
         .collect();
     let textures = data

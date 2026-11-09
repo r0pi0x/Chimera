@@ -24,6 +24,10 @@
 //! weapon thrown by the killing hit's push, `DeathPush`; `weapon_stay`:
 //! nobody takes a kind they carry, HL2:DM's `mp_weaponstay`). A placed
 //! weapon taken starts its copy's wait (`respawn::weapon_taken`).
+//! `NoWeaponPickups`, a mode's rule (`[pickups] weapons = false`, Ultimate
+//! Gun Game's), turns all of it off for guns: no walk-over, no +use, no
+//! drop key (Combat Arms' own items too, `game::inventory`), and
+//! `equip::place_weapons` places none.
 //!
 //! Known shortcuts (docs/tech-debt.md): `cl_autowepswitch`
 //! (`weapon::drop::auto_switch`): weights are the spec's table (the install's
@@ -178,6 +182,19 @@ impl Default for PickupRules {
             death_push: None,
         }
     }
+}
+
+/// A mode without guns off the ground (`minigame::def::PickupsDef::weapons`
+/// false): the ladder alone arms a player. A map's guns aren't placed (a gun
+/// that can't be taken only misleads), nobody takes a dropped one, by walking
+/// over it or with +use, and the drop key is off (a gun thrown away would be
+/// gone until the next life). Other pickups are their games' and go on.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct NoWeaponPickups;
+
+/// The drop key's check: why a character may not drop what it holds now.
+pub fn drops_refused(world: &World) -> Option<&'static str> {
+    world.contains_resource::<NoWeaponPickups>().then_some("this mode has no weapon drops")
 }
 
 /// `chimera_usepickup`: 1 lets +use take the loose weapon looked at
@@ -561,6 +578,7 @@ pub(super) fn pick_up(
     same_type: Option<Res<SameTypeAmmo>>,
     rules: Option<Res<PickupRules>>,
     placed: Query<(), With<super::equip::MapWeapon>>,
+    off: Option<Res<NoWeaponPickups>>,
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs_f64();
@@ -579,6 +597,9 @@ pub(super) fn pick_up(
                 }
             }
         }
+    }
+    if off.is_some() {
+        return;
     }
     for (owner, at, inv, health, team, state) in &owners {
         if health.current <= 0.0 {
@@ -643,6 +664,7 @@ pub(super) fn debug_pickups(
     time: Res<Time>,
     same_type: Option<Res<SameTypeAmmo>>,
     rules: Option<Res<PickupRules>>,
+    off: Option<Res<NoWeaponPickups>>,
     mut console: Option<ResMut<crate::console::Console>>,
 ) {
     let rules = rules.as_deref().copied().unwrap_or_default();
@@ -673,6 +695,8 @@ pub(super) fn debug_pickups(
             ("taken", format!("{}: taken", id_of(w)))
         } else if health.current <= 0.0 {
             ("dead", "dead, takes nothing".to_string())
+        } else if let (Some((_, _, l, ..)), true) = (nearest, off.is_some()) {
+            ("off", format!("{}: this mode has no gun pickups", id_of(l.weapon)))
         } else if let Some((_, item, l, t, b)) = nearest {
             let what = id_of(l.weapon);
             match verdict(&me, l, item, t, b, &weapons, &spatial, now, &rules, |c| owners.contains(c)) {
@@ -767,6 +791,7 @@ pub(super) fn use_pick_up(
     time: Res<Time>,
     mut used: MessageWriter<UsedPickup>,
     rules: Option<Res<PickupRules>>,
+    off: Option<Res<NoWeaponPickups>>,
     mut commands: Commands,
 ) {
     let now = time.elapsed_secs_f64();
@@ -777,7 +802,7 @@ pub(super) fn use_pick_up(
         if inv.prev_use != intent.use_key {
             inv.prev_use = intent.use_key;
         }
-        if !pressed || setting.0 == 0 || health.current <= 0.0 {
+        if !pressed || setting.0 == 0 || off.is_some() || health.current <= 0.0 {
             continue;
         }
         let eye = at.translation + state.map_or(Vec3::ZERO, |s| s.eye_offset);

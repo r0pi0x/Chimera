@@ -1220,12 +1220,13 @@ fn pickups(
     mut users: Query<(Entity, &Transform, &Intent, &MovementState, Option<&Health>, &mut CaSelection), Without<NetDrawn>>,
     items: Query<(Entity, &Transform, Option<&PhysicsProp>), With<Dropped>>,
     spatial: SpatialQuery,
+    off: Option<Res<chimera_sim::weapon::drop::NoWeaponPickups>>,
     mut commands: Commands,
 ) {
     for (owner, at, intent, state, health, mut sel) in &mut users {
         let pressed = intent.use_key && !sel.prev_use;
         sel.prev_use = intent.use_key;
-        if health.is_some_and(|h| h.current <= 0.0) {
+        if off.is_some() || health.is_some_and(|h| h.current <= 0.0) {
             sel.pickup_target = None;
             continue;
         }
@@ -1269,7 +1270,7 @@ pub struct NoPickups;
 
 /// `owner` takes the dropped `item` (11). Returns whether it did.
 pub fn pick_up(world: &mut World, owner: Entity, item: Entity) -> bool {
-    if world.get::<NoPickups>(owner).is_some() {
+    if world.get::<NoPickups>(owner).is_some() || world.contains_resource::<chimera_sim::weapon::drop::NoWeaponPickups>() {
         return false;
     }
     let Some(d) = world.get::<Dropped>(item).copied() else { return false };

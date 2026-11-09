@@ -30,8 +30,10 @@
 //! seed), the players voting for the next one on the end screen
 //! (`map_vote`, `minigame::vote`: the rotation's pick and two others);
 //! its kit each gun's game's knife (the base game's, `BASE`, for a
-//! game without one). `parts` (console) prints each game's capability
-//! report.
+//! game without one); no gun off the ground, any game's, placed or dropped
+//! (`[pickups] weapons = false`: the ladder alone arms a player; a map's
+//! guns aren't placed, since a gun lying there that can't be taken would only
+//! mislead). `parts` (console) prints each game's capability report.
 //!
 //! Known shortcuts: the ladder isn't made again when a player without a
 //! game joins mid-match; with no CS:S install the client still stops
@@ -90,6 +92,9 @@ pub fn options(seed: u64, rungs: usize) -> AutoOptions {
         // The players vote for the next map on the end screen (the
         // built-in settings, chimera/sim/data/map_vote.toml).
         map_vote: Some("true".into()),
+        // The ladder alone arms a player (the user's decision): no gun of
+        // any game off the ground; other pickups stay possible.
+        weapon_pickups: false,
         curve: chimera_sim::minigame::power::PowerCurve::shipped(),
     }
 }

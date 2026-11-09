@@ -512,3 +512,34 @@ fn recent_addresses_are_kept_newest_first() {
     assert_eq!(r.len(), main_menu::RECENT);
     assert_eq!(r[0], "h9");
 }
+
+/// Whether the menu's black backdrop is up.
+fn backdrop_up(sim: &mut Sim) -> bool {
+    let w = sim.app.world_mut();
+    let v = *w.query_filtered::<&Visibility, With<main_menu::MenuBackdrop>>().single(w).unwrap();
+    v != Visibility::Hidden
+}
+
+/// The menu's background is never the greybox: not in the data, and while
+/// the world under the menu is one (leaving a game, no background map
+/// loading) a black backdrop covers it, gone once a real map is in.
+#[test]
+fn the_greybox_is_never_the_menus_background() {
+    let data = MenuData::shipped();
+    assert!(!data.background.maps.is_empty());
+    assert!(data.background.maps.iter().all(|m| net::normalize_map(m) != "greybox"), "{:?}", data.background.maps);
+    for map in ["greybox", "chimera:greybox"] {
+        let text = format!("[background]\nmaps = [\"{map}\"]\n[[entry]]\nlabel = \"x\"\npage = \"play\"");
+        assert!(MenuData::parse(&text).is_err(), "{map} refused");
+    }
+    let mut sim = local(true);
+    sim.app.update();
+    assert!(menu(&sim).shown());
+    assert!(backdrop_up(&mut sim), "on the greybox: covered");
+    sim.app.world_mut().insert_resource(chimera_world::map::LoadedMapName("cs_source:de_dust2".into()));
+    sim.app.update();
+    assert!(!backdrop_up(&mut sim), "a real map behind the menu shows");
+    sim.app.world_mut().insert_resource(chimera_world::map::LoadedMapName("greybox".into()));
+    sim.app.update();
+    assert!(backdrop_up(&mut sim));
+}

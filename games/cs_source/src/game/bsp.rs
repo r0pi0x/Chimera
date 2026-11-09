@@ -307,9 +307,7 @@ pub fn dress_guest(mount: &Mount, map: &mut MapData, kept: &'static [&'static st
     let mut warnings = Vec::new();
     add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
     add_guns(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
-    if map.kit.hud.is_none() {
-        guest.hud = super::hud::load(&mut materials, "").map(std::sync::Arc::new);
-    }
+    guest.hud = super::hud::load(&mut materials, "").map(std::sync::Arc::new);
     // The guns' sounds (and the rest CS:S's maps always carry: steps,
     // pain, impacts) where the map hasn't an entry of that name: a CS:S
     // gun fired on another game's map plays its own sound.
@@ -334,8 +332,6 @@ pub fn dress_guest(mount: &Mount, map: &mut MapData, kept: &'static [&'static st
     map.kit.characters.extend(guest.characters);
     map.kit.held.extend(guest.held);
     map.kit.view_models.extend(guest.view_models);
-    if map.kit.hud.is_none() {
-        map.kit.hud = guest.hud;
-    }
+    map.kit.add_guest_hud(guest.hud);
 }
 

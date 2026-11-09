@@ -18,7 +18,7 @@ use chimera_client::client::{
 };
 use chimera_core::{core::LocalPlayer, gameplay::Gameplay};
 use chimera_sim::minigame::{
-    self,
+    self, MinigameAppExt,
     ladder::{self, Ladder},
 };
 use chimera_world::{
@@ -191,6 +191,8 @@ fn hl2dms_hud_is_down_under_other_games_guns() {
     assert!(shown(&mut sim, cs_source::game::GAME));
     assert!(cs_panels(&mut sim) > 0);
     assert!(sim.app.world().resource::<hl2dm::ui::systems::Hl2dmHud>().hud.is_none());
+    // What its systems read that only its game's own pickups would add.
+    assert!(sim.app.world().contains_resource::<Messages<hl2dm::game::hud_notes::HudPickup>>());
     let _ = me;
 }
 
@@ -271,4 +273,58 @@ fn the_title_follows_the_map_played() {
         let lines = cs_minigame_lines(&mut sim);
         assert!(lines.contains(&(PanelLine::Title, title.to_string())), "CS:S's panel on {map}: {lines:?}");
     }
+}
+
+/// A look of `game`'s (with the panel a HUD builds from).
+fn look_of(game: &str) -> ActiveHud {
+    let look = cs_look();
+    let mut hud = (*look.0).clone();
+    hud.game = game.to_string();
+    ActiveHud(Arc::new(hud), HashMap::new())
+}
+
+fn up_look(sim: &Sim) -> Option<String> {
+    sim.app.world().get_resource::<ActiveHud>().map(|l| l.0.game.clone())
+}
+
+/// Every game's HUD draws in its own look on any game's map (the 2026-11-09
+/// regression: on an HL2:DM map the map's look was HL2:DM's and CS:S's HUD
+/// drew in it, and HL2:DM's own HUD never came up): as on dm_lockdown, a CS:S
+/// gun has CS:S's look (the guest's), an HL2:DM gun HL2:DM's with the
+/// minigame's panel on its HUD, a Combat Arms gun none (its HUD has its own).
+#[test]
+fn each_games_hud_gets_its_own_look_on_any_map() {
+    use chimera_world::map::hud::GuestLooks;
+    let (mut sim, me, _other) = party_with_huds_and(|app| {
+        app.add_plugins(chimera_client::client::minigame_panel::MinigamePanelPlugin(hl2dm::game::GAME));
+    });
+    sim.app.add_minigames(&[("hl2dm.toml", &crate::hl2dm_parts::mixed_text(false))]).unwrap();
+    minigame::start(sim.app.world_mut(), "test:gun_game_hl2dm").expect("the gun game starts");
+    sim.app.world_mut().insert_resource(look_of(hl2dm::game::GAME));
+    sim.app.world_mut().insert_resource(GuestLooks(vec![look_of(cs_source::game::GAME)]));
+    sim.seconds(1.5);
+    let rung_of = |sim: &Sim, game: &str| {
+        let l = sim.app.world().resource::<Ladder>();
+        l.rungs.iter().position(|g| g.starts_with(game)).unwrap_or_else(|| panic!("a rung of {game}"))
+    };
+    let cs = rung_of(&sim, "cs_source:");
+    swap_to(&mut sim, me, cs);
+    assert_eq!(hud(&sim), cs_source::game::GAME);
+    assert_eq!(up_look(&sim).as_deref(), Some(cs_source::game::GAME), "a CS:S gun on HL2:DM's map: CS:S's look");
+    assert!(cs_panels(&mut sim) > 0, "its panels built");
+
+    let ca = rung_of(&sim, "combat_arms:");
+    swap_to(&mut sim, me, ca);
+    assert_eq!(hud(&sim), combat_arms::game::GAME);
+    assert_eq!(up_look(&sim), None, "Combat Arms' HUD has its own");
+    assert_eq!(cs_panels(&mut sim), 0);
+
+    let hl2 = rung_of(&sim, "hl2dm:");
+    swap_to(&mut sim, me, hl2);
+    assert_eq!(hud(&sim), hl2dm::game::GAME);
+    assert_eq!(up_look(&sim).as_deref(), Some(hl2dm::game::GAME), "an HL2:DM gun: its look");
+    let w = sim.app.world_mut();
+    let panels: Vec<&'static str> =
+        w.query_filtered::<&HudRoot, With<chimera_client::client::minigame_panel::MinigamePanel>>().iter(w).map(|r| r.0).collect();
+    assert_eq!(panels, [hl2dm::game::GAME], "the minigame's panel on HL2:DM's HUD");
 }

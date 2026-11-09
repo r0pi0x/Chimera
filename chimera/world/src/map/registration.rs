@@ -340,6 +340,7 @@ fn scoped_resources(app: &mut App) {
         .map_scoped::<super::impact::ActiveImpacts>()
         .map_scoped::<CharacterModels>()
         .map_scoped::<hud::ActiveHud>()
+        .map_scoped::<hud::GuestLooks>()
         .map_scoped::<hud::ActiveOverview>()
         .map_scoped::<surface_color::SurfaceColors>()
         .map_scoped::<particles::ParticleMaterials>()

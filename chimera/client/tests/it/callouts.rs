@@ -101,3 +101,32 @@ fn the_callout_scales_with_the_windows_height() {
     sim.ticks(2);
     assert_eq!(sizes(&mut sim)[0].1, FontSize::Px(line_size(0)));
 }
+
+/// The lines' drawn sizes at a known resolution: 33 and 21 px on 1080 lines,
+/// 44 and 28 on 1440 (the playtest's "far too big": the first line was 60 on
+/// 1080, twice Combat Arms' own callout's), so at most 3.1 % of the height.
+#[test]
+fn a_callouts_text_is_a_small_share_of_the_screen() {
+    use bevy::{text::FontSize, window::{PrimaryWindow, WindowResolution}};
+    for (w, h, first, rest) in [(1920u32, 1080u32, 33.0, 21.0), (2560, 1440, 44.0, 28.0), (1280, 720, 22.0, 14.0)] {
+        let mut sim = Sim::with(SimBasePlugins, |app| {
+            app.add_plugins((GreyboxMapPlugin, CalloutsPlugin)).init_resource::<MinigameHud>();
+        });
+        sim.app.world_mut().spawn((Window { resolution: WindowResolution::new(w, h), ..default() }, PrimaryWindow));
+        sim.ticks(2);
+        let world = sim.app.world_mut();
+        let sizes: Vec<(usize, f32)> = world
+            .query::<(&CalloutLine, &TextFont)>()
+            .iter(world)
+            .map(|(l, f)| match f.font_size {
+                FontSize::Px(px) => (l.0, px),
+                ref other => panic!("not in pixels: {other:?}"),
+            })
+            .collect();
+        for (line, px) in sizes {
+            let want = if line == 0 { first } else { rest };
+            assert!((px - want).abs() < 0.01, "{w}x{h} line {line}: {px} px");
+            assert!(px / h as f32 <= 0.031, "{w}x{h} line {line}: {px} px is too big");
+        }
+    }
+}

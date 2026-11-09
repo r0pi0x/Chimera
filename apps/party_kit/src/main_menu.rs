@@ -47,6 +47,10 @@
 //!   (`chimera_freecam` 2's detached camera, `fly`); the HUD is hidden
 //!   while the menu shows by drawing the UI on a camera of its own
 //!   (`MenuUiCamera`; the shell's UI camera, which the HUD draws on, off).
+//!   Never the greybox (the user's call): the data refuses it, and while
+//!   the world under the menu is the greybox (leaving a game, until the
+//!   background map is in; no background map loading at all) a plain black
+//!   backdrop covers it (`MenuBackdrop`).
 //!
 //! The state is `PartyMenu` (a resource the menu owns, set at known
 //! moments: the front end's events `EnteredGame`, `LeftGame`, `Joining`,
@@ -287,12 +291,16 @@ impl MenuData {
                 .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
                 .map_or(d, |f| f as f32)
         };
+        let maps: Vec<String> = bg
+            .get("maps")
+            .and_then(|v| v.as_array())
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
+        if maps.iter().any(|m| chimera_net::net::normalize_map(m) == "greybox") {
+            return Err("[background] maps: the greybox is no background".into());
+        }
         let background = Background {
-            maps: bg
-                .get("maps")
-                .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
-                .unwrap_or_default(),
+            maps,
             height: num("height", 15.0),
             radius: num("radius", 25.0),
             period: num("period", 150.0).max(1.0),
@@ -605,10 +613,10 @@ impl Plugin for MainMenuPlugin {
             .add_observer(joining)
             .add_observer(join_failed)
             .add_observer(map_load_failed)
-            .add_systems(Startup, (start_look, init_play).chain())
+            .add_systems(Startup, ((start_look, init_play).chain(), spawn_backdrop))
             .add_systems(
                 Update,
-                (look_loaded, typing, clicks, act, follow_loads, refresh_values, ca_loading_gate, fly, cameras, show, progress, entry_hover, music)
+                (look_loaded, typing, clicks, act, follow_loads, refresh_values, ca_loading_gate, fly, cameras, show, backdrop, progress, entry_hover, music)
                     .chain()
                     .in_set(MainMenuSystems)
                     .before(crate::esc_menu::EscMenuSystems),
@@ -1412,6 +1420,45 @@ struct Drawn {
 }
 
 #[allow(clippy::too_many_arguments)]
+/// The plain black behind the menu while the world under it is the greybox.
+#[derive(Component)]
+pub struct MenuBackdrop;
+
+fn spawn_backdrop(mut commands: Commands) {
+    commands.spawn((
+        MenuBackdrop,
+        Node {
+            position_type: PositionType::Absolute,
+            width: percent(100.0),
+            height: percent(100.0),
+            ..default()
+        },
+        BackgroundColor(Color::BLACK),
+        Visibility::Hidden,
+        GlobalZIndex(MENU_Z - 1),
+    ));
+}
+
+/// The backdrop up while the menu shows over the greybox, on the menu's
+/// camera.
+fn backdrop(
+    menu: Res<PartyMenu>,
+    map: Option<Res<chimera_world::map::LoadedMapName>>,
+    camera: Query<Entity, With<MenuUiCamera>>,
+    mut backdrops: Query<(Entity, &mut Visibility, Option<&UiTargetCamera>), With<MenuBackdrop>>,
+    mut commands: Commands,
+) {
+    let greybox = chimera_net::net::normalize_map(map.as_ref().map_or("", |m| m.0.as_str())) == "greybox";
+    for (e, mut v, on) in &mut backdrops {
+        v.set_if_neq(if menu.shown() && greybox { Visibility::Inherited } else { Visibility::Hidden });
+        if let Some(cam) = camera.iter().next()
+            && on.is_none_or(|t| t.0 != cam)
+        {
+            commands.entity(e).insert(UiTargetCamera(cam));
+        }
+    }
+}
+
 fn show(
     menu: Res<PartyMenu>,
     data: Res<MenuData>,

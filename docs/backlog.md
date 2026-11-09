@@ -143,19 +143,9 @@ the original's own behaviour isn't a bug (say so instead).
   pieces don't show them. Breakable glass itself is right (13 of these on
   dm_lockdown, shared Source code: specs/source/breakables.md). Check
   specs/cs_source/impact_effects.md and whether CS:S's glass has the same bug.
-- **Ultimate Gun Game: no gun pickups (decision).** HL2:DM's guns on the
-  ground can be picked up there, and shouldn't. Turn off gun pickups in UGG
-  (every game's, map-placed or dropped), as a rule the mode sets, so other
-  pickups stay possible later.
-- **Ultimate Gun Game's HUD changed:** the CS:S HUD there looks different
-  now, a recent regression by the user's account (no change was meant to
-  touch it; bisect it). The level-up text is far too big on some HUDs.
 - **Flashlight lights nothing:** the toggle, network path and sounds work,
   but the spot light has no visible effect on dm_lockdown, even at 10,000
   times the brightness; the spec gives no brightness, colour or cone.
-- **Ultimate Gun Game's bots on HL2:DM:** some get stuck, don't shoot or
-  move properly and seem to have no plan. Check their navigation on `dm_*`
-  maps (no `.nav` files ship with HL2:DM).
 - **Combat Arms, Blood Money: spawning inside the vault** with no way out
   (`setpos -6.11 -747.55 -179.90;setang 2.98 90.31 0.00`). Check whether
   the map really has a spawn there, what opens the vault in the original,
@@ -169,9 +159,6 @@ the original's own behaviour isn't a bug (say so instead).
   a Combat Arms zombie, it shows some other knife as the gun. Everywhere a
   player's gun is displayed should show their rung's primary, even when
   they've switched to the knife. Check the scoreboard and other places too.
-- **Ultimate Gun Game: HL2:DM rungs don't use HL2:DM's HUD and crosshair.**
-  Holding an HL2:DM gun should show the same HUD and crosshair as HL2:DM
-  itself, as other games' rungs do.
 - **Combat Arms melee and the RMS-12 against glass:** knives don't break
   glass (CS office's windows), so a flamethrower player can't get in; the
   RMS-12 can't break it either.
@@ -186,7 +173,6 @@ the original's own behaviour isn't a bug (say so instead).
   stayed after disconnecting and starting a new match in the same process.
   So whatever grows outlives the match and the server: look at per-process
   state (asset caches, GPU meshes and textures, materials, archetypes).
-- **Ultimate Gun Game's menu background** shouldn't use the greybox map.
 - **Ultimate Gun Game must never show the greybox stand-ins:** for a few
   frames someone flashes as a capsule, or a gun or knife as the template
   model (seen at low FPS). Goes with the character swap above: keep what's
