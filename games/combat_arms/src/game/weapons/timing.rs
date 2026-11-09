@@ -55,9 +55,9 @@
 //! archive) or reads another version predicts on the server's timing.
 //!
 //! Known shortcuts (docs/tech-debt.md):
-//! - The first build of a weapon reads its view model on the frame it is
-//!   built (the gun game's next weapon; about 2 ms, at most ~18 ms: the plan's
-//!   measurement); nothing reads ahead.
+//! - The first build of a weapon outside the match's ladder reads its view
+//!   model on the frame it is built (up to about 100 M instructions, 30 ms: an
+//!   LTB out of a keyed archive); a ladder's are read ahead (`read_ahead`).
 //! - A client still reads the model on the first build of a weapon the
 //!   server has sent the timing for (then takes the server's): one wasted
 //!   read, or one warning when it can't.
@@ -192,6 +192,37 @@ pub fn read(path: &str) -> Option<AnimTimes> {
             warn!("Combat Arms: {key}: {e} (the template's timing stands)");
             None
         }
+    }
+}
+
+/// A match's ladder's view models' lengths, read on tasks as soon as the
+/// ladder is known (`characters::preload`; a front end's): `apply` runs when
+/// a rung gives the weapon, in the middle of a tick, and a read there stops the
+/// frame (docs/performance.md, "Nothing blocks the main thread").
+pub fn read_ahead(
+    ladder: Res<crate::game::characters::preload::LadderModels>,
+    catalog: Option<Res<crate::weapon::data::WeaponCatalog>>,
+    mut times: ResMut<ViewTimes>,
+    mut pending: Local<BTreeMap<String, bevy::tasks::Task<Option<AnimTimes>>>>,
+) {
+    pending.retain(|path, task| {
+        let Some(read) = bevy::tasks::block_on(bevy::tasks::poll_once(task)) else { return true };
+        times.0.insert(path.clone(), read);
+        false
+    });
+    if !ladder.is_changed() {
+        return;
+    }
+    let Some(catalog) = catalog else { return };
+    for key in &ladder.keys {
+        // A key with parts is the weapon's own model's lengths too.
+        let (id, _) = crate::game::view_model::parts::split_key(key);
+        let Some(path) = catalog.get(id).and_then(|d| d.models.view.as_deref()).map(model::normalize) else { continue };
+        if times.0.contains_key(&path) || pending.contains_key(&path) {
+            continue;
+        }
+        let at = path.clone();
+        pending.insert(path, bevy::tasks::AsyncComputeTaskPool::get().spawn(async move { read(&at) }));
     }
 }
 

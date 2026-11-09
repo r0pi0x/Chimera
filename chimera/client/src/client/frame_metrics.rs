@@ -15,7 +15,10 @@
 //! debug UI's Perf tab and `--bench`), the hitch log (`chimera_hitch_ratio`: a
 //! frame over that many times the median logs its slowest schedules (and render
 //! sets; `CHIMERA_RENDER_PHASES=0` leaves those marks out); `span_times`, profile builds: spans'
-//! self time).
+//! self time). `CHIMERA_FRAME_LOG=<file>`: every frame of each world as a CSV
+//! line (`frame_log`), for finding the worst single frames of a run and cutting
+//! them out of a `perf` profile (docs/performance.md, "Nothing blocks the main
+//! thread").
 
 use std::{
     sync::{Arc, Mutex},
@@ -159,6 +162,8 @@ pub struct FrameMetrics {
     pub frames: u64,
     counters: ThreadCounters,
     start: Option<(Instant, Counts)>,
+    /// `frame_log::now` when this frame began.
+    begun_ns: u64,
     /// This frame's marks so far: time and thread CPU ns.
     marks: Vec<(Instant, u64)>,
     prev_ticks: u64,
@@ -193,6 +198,7 @@ impl Default for FrameMetrics {
             frames: 0,
             counters: ThreadCounters::current(),
             start: None,
+            begun_ns: 0,
             marks: Vec::new(),
             prev_ticks: 0,
             ticks_in_frame: 0,
@@ -385,6 +391,8 @@ struct RenderFrames {
 struct RenderMarks {
     counters: ThreadCounters,
     start: Option<(Instant, Counts)>,
+    /// `frame_log::now` when this frame began.
+    begun_ns: u64,
     marks: Vec<(&'static str, Instant, u64)>,
 }
 
@@ -398,6 +406,7 @@ impl RenderMarks {
 fn render_start(mut m: ResMut<RenderMarks>) {
     let c = m.counters.read();
     m.start = Some((Instant::now(), c));
+    m.begun_ns = frame_log::now();
     m.marks.clear();
 }
 
@@ -408,6 +417,7 @@ fn render_end(mut m: ResMut<RenderMarks>, shared: Res<RenderShared>, time: Optio
     if let Some(time) = time {
         time.set_ms(ms);
     }
+    frame_log::write("render", m.begun_ns, ms, c - start, 0, 0);
     let mut phases = Vec::with_capacity(m.marks.len());
     let (mut at, mut cpu) = (t, start.cpu_ns);
     for &(name, i, c) in &m.marks {
@@ -477,11 +487,13 @@ fn frame_start(world: &mut World) {
     m.tick_start = tick_total;
     m.marks.clear();
     m.start = Some((now, c));
+    m.begun_ns = frame_log::now();
 }
 
 fn frame_end(world: &mut World, now: Instant) {
     let gpu = world.get_resource::<DiagnosticsStore>().and_then(gpu_latest_ms);
     let tick_total = world.get_resource::<TickMetrics>().map(|t| t.total);
+    let world_ticks = world.get_resource::<TickMetrics>().map_or(0, |t| t.ticks);
     let mut m = world.resource_mut::<FrameMetrics>();
     let c = m.counters.read();
     let Some((t, start)) = m.start else { return };
@@ -495,11 +507,62 @@ fn frame_end(world: &mut World, now: Instant) {
     let ins = |c: Option<Counts>| c.and_then(|c| c.hw).map_or(0, |h| h.instructions);
     let ticks_ins = ins(tick_total).saturating_sub(ins(m.tick_start));
     m.last.main_frame_instructions = d.hw.map(|h| h.instructions.saturating_sub(ticks_ins));
+    frame_log::write("main", m.begun_ns, main_ms, d, world_ticks.saturating_sub(m.prev_ticks), ticks_ins);
     if let Some(i) = m.last.main_frame_instructions {
         m.main_frame_instructions.ring.push(i as f64);
     }
     if let Some(g) = gpu {
         m.gpu_ms.ring.push(g);
+    }
+}
+
+/// `CHIMERA_FRAME_LOG=<file>`: one CSV line per frame of each world
+/// (`world,begun_s,ms,cpu_ms,instructions,ticks,tick_instructions`;
+/// `begun_s` is `CLOCK_MONOTONIC`, perf's `-k CLOCK_MONOTONIC`; a slow frame
+/// runs many ticks, so look at instructions less tick instructions too). The averages and
+/// percentiles of the readouts hide the one frame this is for.
+mod frame_log {
+    use std::{
+        fs::File,
+        io::Write,
+        sync::{Mutex, OnceLock, mpsc},
+    };
+
+    use crate::metrics::Counts;
+
+    /// The writer's channel: a thread of its own, as a write to a busy disk
+    /// stalls for hundreds of ms (it stalled the frames it measured).
+    fn sender() -> Option<&'static Mutex<mpsc::Sender<String>>> {
+        static SENDER: OnceLock<Option<Mutex<mpsc::Sender<String>>>> = OnceLock::new();
+        SENDER
+            .get_or_init(|| {
+                let path = std::env::var_os("CHIMERA_FRAME_LOG")?;
+                let mut f = File::create(path).ok()?;
+                let _ = writeln!(f, "world,begun_s,ms,cpu_ms,instructions,ticks,tick_instructions");
+                // Monotonic and wall clocks together, to find a log line's frame.
+                let wall = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
+                let mono = crate::metrics::counters::monotonic_ns().unwrap_or(0) as f64 / 1e9;
+                let _ = writeln!(f, "clock,{mono:.6},{wall:.6},0,0,0,0");
+                let (tx, rx) = mpsc::channel::<String>();
+                std::thread::spawn(move || {
+                    for line in rx {
+                        let _ = f.write_all(line.as_bytes());
+                    }
+                });
+                Some(Mutex::new(tx))
+            })
+            .as_ref()
+    }
+
+    /// The clock frames are stamped with; 0 when nothing logs.
+    pub fn now() -> u64 {
+        sender().and_then(|_| crate::metrics::counters::monotonic_ns()).unwrap_or(0)
+    }
+
+    pub fn write(world: &str, begun_ns: u64, ms: f64, d: Counts, ticks: u64, tick_ins: u64) {
+        let Some(tx) = sender().and_then(|s| s.lock().ok()) else { return };
+        let ins = d.hw.map_or(0, |h| h.instructions);
+        let _ = tx.send(format!("{world},{:.6},{ms:.3},{:.3},{ins},{ticks},{tick_ins}\n", begun_ns as f64 / 1e9, d.cpu_ns as f64 / 1e6));
     }
 }
 

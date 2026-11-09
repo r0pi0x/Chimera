@@ -1,8 +1,8 @@
 //! First-person view models (any game): the model a character sees of its
 //! own weapon, with hands, drawn at the eye over the world. Games load
 //! `MapViewModel`s with the map (or later: `map::add_view_model`, built
-//! on the next frame by `build_late` with its own textures, also with no
-//! map spawned: `assets_without_map`), drive each
+//! on a task and over the next frames by `build_late` with its own textures,
+//! also with no map spawned: `assets_without_map`), drive each
 //! character's `ViewAnimator`
 //! (which sequence plays) and `ViewModelOffset` (bob and sway), and send
 //! `ViewModelEvent`s (muzzle flashes; their types are in `map::view_model`);
@@ -48,6 +48,7 @@ use bevy::{
 
 use super::{
     bodies::BodyJoint,
+    late_build::{AddAsset, LateQueue, LateStores, Providers, Stores},
     prop_material::PropMaterial,
     sprite_material::{SpriteMaterial, SpriteParams},
 };
@@ -104,6 +105,9 @@ pub struct ViewModelAssets {
     late_base: MapData,
     lit: bool,
     view: MapDebugView,
+    /// This spawn (`late_build::next_generation`): what was being built for
+    /// an earlier map is dropped.
+    generation: u64,
 }
 
 /// What it takes to build one view model's render assets.
@@ -115,13 +119,10 @@ struct Build<'a> {
 }
 
 impl Build<'_> {
-    fn model(
-        &self,
-        v: &MapViewModel,
-        meshes: &mut Assets<Mesh>,
-        materials: &mut Assets<PropMaterial>,
-        bindposes: &mut Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
-    ) -> ViewModelAsset {
+    fn model<T>(&self, v: &MapViewModel, to: &mut T) -> ViewModelAsset
+    where
+        T: AddAsset<Mesh> + AddAsset<PropMaterial> + AddAsset<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
+    {
         let (textures, data, view) = (self.textures, self.data, self.view);
         let parts = v
             .model
@@ -136,6 +137,8 @@ impl Build<'_> {
                     );
                     mesh.insert_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT, m.joint_weights.clone());
                 }
+                // Nothing in the main world reads its vertices.
+                mesh.asset_usage = bevy::asset::RenderAssetUsages::RENDER_WORLD;
                 let mut material = crate::render::lit_prop_material(m, textures, data, view, false);
                 // Without a light field it shows its texture as is.
                 if !m.unlit && view != MapDebugView::Albedo && self.lit {
@@ -144,8 +147,8 @@ impl Build<'_> {
                 let mut mirrored = material.clone();
                 mirrored.cull_front = true;
                 ViewModelPart {
-                    mesh: meshes.add(mesh),
-                    materials: [materials.add(material), materials.add(mirrored)],
+                    mesh: to.add_asset(mesh),
+                    materials: [to.add_asset(material), to.add_asset(mirrored)],
                     envmap: m.envmap.filter(|_| view == MapDebugView::Normal),
                     normal_map: m.normal_map,
                 }
@@ -164,7 +167,7 @@ impl Build<'_> {
         let inverse: Vec<Mat4> = global.iter().map(|m| m.inverse()).collect();
         ViewModelAsset {
             parts,
-            bindposes: bindposes.add(bevy::mesh::skinning::SkinnedMeshInverseBindposes::from(inverse)),
+            bindposes: to.add_asset(bevy::mesh::skinning::SkinnedMeshInverseBindposes::from(inverse)),
             bones: v.bones.clone(),
             root: v.root,
         }
@@ -188,10 +191,11 @@ pub fn build_assets(
         lit: data.light_field.is_some(),
         view,
     };
+    let mut stores = Stores { meshes, materials, bindposes };
     let models = data
         .kit.view_models
         .iter()
-        .map(|v| (v.key.clone(), build.model(v, meshes, materials, bindposes)))
+        .map(|v| (v.key.clone(), build.model(v, &mut stores)))
         .collect();
     let lighting_scale = if let MapDebugView::Lighting { scale } = view {
         scale
@@ -215,13 +219,27 @@ pub fn build_assets(
         },
         lit: data.light_field.is_some(),
         view,
+        generation: super::late_build::next_generation(),
     }
 }
 
+impl ViewModelAssets {
+    /// Whether view model `key` is built.
+    pub fn has(&self, key: &str) -> bool {
+        self.models.contains_key(key)
+    }
+}
+
+/// A late view model as a task made it: its images (`ViewModelAssets::
+/// textures` takes them when it is done) and its parts, whose `normal_map`s
+/// are still into those images alone.
+type CookedViewModel = (ViewModelAsset, Vec<Handle<Image>>);
+
 /// Build the render assets of view models added after the map spawned
 /// (`map::add_view_model`): their own textures (`LateViewModelTextures`)
-/// become images after the map's, their meshes' indices moved past them.
-/// With no map's assets (`assets_without_map`) only theirs.
+/// become images after the map's, on a task and over the next frames
+/// (`late_build`): until then the key draws as if it had none. With no map's
+/// assets (`assets_without_map`) only theirs.
 #[allow(clippy::too_many_arguments)]
 pub fn build_late(
     models: Option<Res<ViewModels>>,
@@ -232,45 +250,53 @@ pub fn build_late(
     materials: Option<ResMut<Assets<PropMaterial>>>,
     mut bindposes: ResMut<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>,
     compressed: Option<Res<bevy::image::CompressedImageFormatSupport>>,
+    mut queue: Local<LateQueue<CookedViewModel>>,
 ) {
     let (Some(models), Some(late), Some(mut materials)) = (models, late, materials) else {
         return;
     };
+    queue.for_generation(assets.generation);
+    let mut to = LateStores {
+        images: &mut images,
+        stores: Stores {
+            meshes: &mut meshes,
+            materials: &mut materials,
+            bindposes: &mut bindposes,
+        },
+    };
+    let bc = super::images::bc_wanted(compressed.as_deref());
+    let (lit, view) = (assets.lit, assets.view);
     for v in models.0.iter() {
-        let Some(own) = late.0.get(&v.key).filter(|_| !assets.models.contains_key(&v.key)) else {
+        let Some(own) = late.0.get(&v.key).filter(|_| !assets.models.contains_key(&v.key) && !queue.has(&v.key)) else {
             continue;
         };
+        let (v, own) = (v.clone(), own.clone());
+        let base = MapData {
+            fog: assets.late_base.fog.clone(),
+            look: assets.late_base.look.clone(),
+            ..default()
+        };
+        queue.start(v.key.clone(), Providers::of(&to), move |stage| {
+            let textures: Vec<Handle<Image>> =
+                own.iter().map(|t| stage.add_asset(super::images::to_image(t, &base.look, bc))).collect();
+            let asset = Build {
+                textures: &textures,
+                data: &base,
+                lit,
+                view,
+            }
+            .model(&v, stage);
+            (asset, textures)
+        });
+    }
+    if let Some((key, (mut asset, textures))) = queue.step(&mut to) {
+        // Its images after the others': what names them moves past those.
         let base = assets.textures.len();
-        let look = assets.late_base.look.clone();
-        let bc = super::images::bc_wanted(compressed.as_deref());
-        assets
-            .textures
-            .extend(own.iter().map(|t| images.add(super::images::to_image(t, &look, bc))));
-        let mut moved = v.clone();
-        for m in &mut moved.model.meshes {
-            m.texture = m.texture.map(|t| t + base);
-            m.normal_map = m.normal_map.map(|t| t + base);
-            if let Some(d) = &mut m.detail {
-                d.texture += base;
-            }
-            if let Some(s) = &mut m.selfillum {
-                s.mask = s.mask.map(|t| t + base);
-            }
-            if let Some(f) = &mut m.skin_frames {
-                f.frames.iter_mut().for_each(|t| *t += base);
-            }
-            if let Some(l) = &mut m.layer {
-                l.texture = l.texture.map(|t| t + base);
-            }
+        assets.textures.extend(textures);
+        for part in &mut asset.parts {
+            part.normal_map = part.normal_map.map(|t| t + base);
         }
-        let asset = Build {
-            textures: &assets.textures,
-            data: &assets.late_base,
-            lit: assets.lit,
-            view: assets.view,
-        }
-        .model(&moved, &mut meshes, &mut materials, &mut bindposes);
-        assets.models.insert(v.key.clone(), asset);
+        assets.models.insert(key, asset);
     }
 }
 
@@ -1150,7 +1176,9 @@ pub fn size_flash_sprites(
 
 /// Remove drawn view models (map unload); the cameras stay.
 pub fn unload(world: &mut World) {
-    world.remove_resource::<ViewModels>();
+    if let Some(old) = world.remove_resource::<ViewModels>() {
+        crate::map::drop_later(old);
+    }
     world.remove_resource::<LateViewModelTextures>();
     world.remove_resource::<ViewModelAssets>();
     world.remove_resource::<FlashAssets>();

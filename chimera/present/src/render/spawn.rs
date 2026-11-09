@@ -499,6 +499,7 @@ fn build_character_assets(
         lit: data.light_field.is_some(),
         view,
         root: data.kit.characters.first().map(|c| c.root),
+        generation: super::late_build::next_generation(),
     });
     if let Some(view_models) = view_models {
         commands.insert_resource(view_models);

@@ -1081,7 +1081,7 @@ fn the_c4_screen_types_what_its_view_model_says_when_it_says_it() {
     let length = set.duration(0);
     assert!((length - 2.0).abs() < 1e-4, "{length}");
     let mut sim = sim_with(bomb_map(), BombHudStatePlugin);
-    sim.app.insert_resource(ViewModels(Arc::new(vec![MapViewModel {
+    sim.app.insert_resource(ViewModels::of(vec![MapViewModel {
         key: C4.to_string(),
         model: default(),
         bones: Vec::new(),
@@ -1091,7 +1091,7 @@ fn the_c4_screen_types_what_its_view_model_says_when_it_says_it() {
         allow_flipping: true,
         attachments: Vec::new(),
         light_origin: Vec3::ZERO,
-    }])));
+    }]));
     let t = carrier(&mut sim);
     sim.app.world_mut().entity_mut(t).insert(LocalPlayer);
     let want: Vec<(f32, String)> = typed.iter().map(|(c, s)| (c * length, s.to_string())).collect();

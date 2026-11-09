@@ -528,6 +528,7 @@ impl Plugin for CaCharactersPlugin {
                         .before(bodies_on_demand::load_on_demand),
                     held_on_demand::load_on_demand,
                     bodies_on_demand::load_on_demand,
+                    super::weapons::timing::read_ahead,
                 )
                     .run_if(resource_exists::<super::view_model::on_demand::LoadOnDemand>),
             );

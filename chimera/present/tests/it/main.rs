@@ -14,6 +14,7 @@ mod body_bounds;
 mod body_swap;
 mod camera_outputs;
 mod idle_lights;
+mod late_build;
 mod particle_depth;
 mod phong_spec;
 mod map_unload;

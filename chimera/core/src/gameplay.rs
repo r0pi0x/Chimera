@@ -102,6 +102,12 @@ pub fn hud_is(hud: &'static str) -> impl FnMut(Option<Res<Gameplay>>) -> bool + 
     move |g: Option<Res<Gameplay>>| g.is_none_or(|g| g.hud == hud)
 }
 
+/// A HUD being shown behind the loading screen so its first frame in play costs
+/// nothing (`client::hud::warm_huds`): the gameplay's HUD while it is here,
+/// whatever the local player's game.
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HudWarm(pub &'static str);
+
 /// Change the gameplay at run time: the slots, and the fixed tick
 /// (`core::set_tick_length`).
 pub fn switch_gameplay(world: &mut World, gameplay: Gameplay) {

@@ -21,7 +21,9 @@
 //! vote while a vote waits for ours: `VOTE_KEYS`), log mirroring,
 //! overlays (cl_showpos, cl_showfps, snd_show, watch), client commands (noclip,
 //! god, getpos/setpos/setang, kill, `chimera_hurtme` (a bullet hit on yourself
-//! at a hitbox), map (in place, `map::change_map`; `map greybox` puts the
+//! at a hitbox), map (in place, `map::change_map`, then the map's
+//! `MapHooks::settle` work a slice a frame behind the loading screen, at most
+//! `SETTLE_MAX_SECS`, before the game is entered; `map greybox` puts the
 //! greybox back, `load_greybox`), disconnect (the greybox, then the main menu),
 //! toggleconsole, quit), `developer 1` notify lines, the `chimera/console`
 //! remote method.
@@ -2018,13 +2020,34 @@ fn map_source(game: &GameInfo, name: &str) -> &'static str {
 
 /// Whether a `map` command's load is under way.
 pub fn map_loading(w: &World) -> bool {
-    w.contains_resource::<MapLoad>()
+    w.contains_resource::<MapLoad>() || w.contains_resource::<Settling>()
 }
 
 /// The map a `map` command is loading (its name, without the game).
 pub fn loading_map(w: &World) -> Option<String> {
-    let id = &w.get_resource::<MapLoad>()?.id;
+    let id = match w.get_resource::<MapLoad>() {
+        Some(load) => &load.id,
+        None => &w.get_resource::<Settling>()?.id,
+    };
     Some(id.rsplit(':').next().unwrap_or(id).to_string())
+}
+
+/// The longest a spawned map stays behind the loading screen (`Settling`); a
+/// flood not done by then goes on a slice a tick in play.
+const SETTLE_MAX_SECS: f32 = 10.0;
+
+/// Ticks a spawned map runs before its settling starts: the collision is in
+/// the spatial queries' trees after the first physics steps.
+const SETTLE_AFTER_TICKS: u64 = 3;
+
+/// A spawned map still behind the loading screen, doing what needs its physics
+/// a slice a frame (`map::MapHooks::settle`, docs/performance.md, "Nothing
+/// blocks the main thread"): the game is entered when that's done.
+#[derive(Resource)]
+struct Settling {
+    id: String,
+    tick: u64,
+    started: std::time::Instant,
 }
 
 /// A map loading in the background for the `map` command.
@@ -2085,6 +2108,10 @@ pub fn load_server_map(w: &mut World, map: &str, file: Option<std::path::PathBuf
 
 /// Swap in a map once its background load finishes.
 fn finish_map_load(w: &mut World) {
+    if w.contains_resource::<Settling>() {
+        settle_map(w);
+        return;
+    }
     let Some(mut load) = w.get_resource_mut::<MapLoad>() else {
         return;
     };
@@ -2157,6 +2184,36 @@ fn finish_map_load(w: &mut World) {
     }
     crate::gameplay::new_game(w);
     w.resource_mut::<Console>().info(summary);
+    let tick = w.get_resource::<crate::core::SimClock>().map_or(0, |c| c.tick);
+    w.insert_resource(Settling {
+        id,
+        tick,
+        started: std::time::Instant::now(),
+    });
+}
+
+/// A frame of `Settling`: every hook's slice, and into the game when they are
+/// all done.
+fn settle_map(w: &mut World) {
+    let settling = w.resource::<Settling>();
+    let (from, started) = (settling.tick, settling.started);
+    let tick = w.get_resource::<crate::core::SimClock>().map_or(from + SETTLE_AFTER_TICKS, |c| c.tick);
+    if tick < from + SETTLE_AFTER_TICKS {
+        return;
+    }
+    let hooks: Vec<fn(&mut World) -> bool> =
+        w.get_resource::<crate::map::MapHooks>().map(|h| h.settle.clone()).unwrap_or_default();
+    let mut done = true;
+    for hook in hooks {
+        done &= hook(w);
+    }
+    if !done && started.elapsed().as_secs_f32() < SETTLE_MAX_SECS {
+        return;
+    }
+    info!("map settled behind the loading screen in {:.2} s", started.elapsed().as_secs_f32());
+    w.remove_resource::<Settling>();
+    // A HUD still being shown (out of time) gives the HUD back.
+    w.remove_resource::<crate::gameplay::HudWarm>();
     super::front_end::entered_game(w);
     super::net::listen_if_hosting(w);
     if w.remove_resource::<FreshGame>().is_some() {

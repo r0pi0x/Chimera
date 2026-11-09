@@ -11,7 +11,6 @@
 //! and the M4A1 (case 8) are V2-keyed: those parts note and skip. Passes
 //! with a note without `[games.combat_arms] path` in chimera.local.toml.
 
-use std::sync::Arc;
 
 use bevy::prelude::*;
 use chimera_core::{core::Health, mount::config::LocalConfig};
@@ -325,7 +324,7 @@ fn m92fs_in_play() {
         app.add_plugins(GreyboxMapPlugin);
     });
     sim.set_tick_interval(TICK_INTERVAL);
-    sim.app.insert_resource(ViewModels(Arc::new(vec![m92fs])));
+    sim.app.insert_resource(ViewModels::of(vec![m92fs]));
     let p = sim.spawn_character(Vec3::new(30.0, 1.0, 30.0), movement::ID);
     sim.seconds(0.5);
     sim.app

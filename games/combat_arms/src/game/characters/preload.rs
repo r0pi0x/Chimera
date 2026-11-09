@@ -5,7 +5,8 @@
 //! `held_on_demand` and `view_model::on_demand` load next, in the
 //! background, from this machine's own install, on host and client alike.
 //! Only the ladder's: anything else still loads the first time it is worn
-//! or held. CS:S's and HL2:DM's rungs need nothing here: their maps' kits
+//! or held. The weapons' timing, read from the same view models, is read ahead
+//! beside them (`weapons::timing::read_ahead`). CS:S's and HL2:DM's rungs need nothing here: their maps' kits
 //! carry all their bodies, held and view models (`map::sources`).
 //!
 //! A ladder is made as its match starts, once the map is in (a client's

@@ -160,7 +160,10 @@ impl CaModelIndex {
 
     /// `other`'s registrations over this index's.
     pub fn merge(&mut self, other: &CaModelIndex) {
-        self.rigs.extend(other.rigs.iter().map(|(k, v)| (k.clone(), v.clone())));
+        // A rig replaced (an alias's: `alias_rig`) is its whole animation
+        // library: tens of millions of instructions to free.
+        let replaced: Vec<Arc<Rig>> = other.rigs.iter().filter_map(|(k, v)| self.rigs.insert(k.clone(), v.clone())).collect();
+        crate::map::drop_later(replaced);
         for g in &other.groups {
             self.register_group(g.clone());
         }

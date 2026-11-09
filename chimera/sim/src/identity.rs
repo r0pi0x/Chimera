@@ -163,7 +163,17 @@ pub fn hud_follows_identity(
     games: Option<Res<Games>>,
     parts: Option<Res<PartsRegistry>>,
     gameplay: Option<ResMut<Gameplay>>,
+    warm: Option<Res<chimera_core::gameplay::HudWarm>>,
 ) {
+    // A HUD shown behind the loading screen (`HudWarm`) holds it meanwhile.
+    if let Some(warm) = warm {
+        if let Some(mut gameplay) = gameplay
+            && gameplay.hud != warm.0
+        {
+            gameplay.hud = warm.0;
+        }
+        return;
+    }
     let (Ok(identity), Some(mut gameplay)) = (player.single(), gameplay) else { return };
     let hud = parts
         .and_then(|p| p.hud_of(&identity.0))

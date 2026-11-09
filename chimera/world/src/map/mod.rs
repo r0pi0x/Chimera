@@ -311,6 +311,11 @@ pub struct MapHooks {
     /// (`prepare::preparation`): each makes a job from the world as the
     /// load starts.
     pub prepare: Vec<fn(&World) -> prepare::PrepareJob>,
+    /// Work that needs the spawned map's physics, done a slice a frame while
+    /// a front end's loading screen is still up (`client::console`'s
+    /// settling; bots' navigation mesh, spawn spots): each says whether it is
+    /// done.
+    pub settle: Vec<fn(&mut World) -> bool>,
 }
 
 /// A resource that belongs to the loaded map: inserted when it spawns,
@@ -341,11 +346,23 @@ impl MapScopedApp for App {
                 id,
                 name: std::any::type_name::<T>(),
                 remove: |world| {
-                    world.remove_resource::<T>();
+                    if let Some(old) = world.remove_resource::<T>() {
+                        drop_later(old);
+                    }
                 },
             });
         }
         self
+    }
+}
+
+/// Free `old` on a task: a map's models and textures are many allocations,
+/// a good part of a map's unload (docs/performance.md, "Nothing blocks the main
+/// thread").
+pub fn drop_later<T: Send + 'static>(old: T) {
+    match bevy::tasks::AsyncComputeTaskPool::try_get() {
+        Some(pool) => pool.spawn(async move { drop(old) }).detach(),
+        None => drop(old),
     }
 }
 

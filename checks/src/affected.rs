@@ -477,6 +477,8 @@ fn is_docs(path: &str) -> bool {
             "tools/post-push-tests.sh",
             // A profiling script (runs built binaries; no crate reads it).
             "tools/perf-profile.sh",
+            // Cuts a frame log's worst frames out of a profile (no crate reads it).
+            "tools/frame_cut.py",
             // A clone's setup and readiness checks (AGENTS.md, "Setup").
             "tools/setup",
             "tools/doctor",

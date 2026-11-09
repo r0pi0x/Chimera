@@ -15,7 +15,6 @@
 //! - The secondary held 2 s: one `sound_key 1` (`ReloadSnd1`) per 900 ms
 //!   swing and one fire sound per hit key (7 a swing), not one a tick.
 
-use std::sync::Arc;
 
 use bevy::prelude::*;
 use chimera_core::core::{Health, LocalPlayer};
@@ -181,10 +180,10 @@ fn sim() -> (Sim, Entity) {
         app.add_weapon_data(&refs).unwrap();
     });
     sim.set_tick_interval(TICK_INTERVAL);
-    sim.app.insert_resource(ViewModels(Arc::new(vec![
+    sim.app.insert_resource(ViewModels::of(vec![
         view_model(SAW, &saw_anims()),
         view_model(BOMB, &bomb_anims()),
-    ])));
+    ]));
     sim.app.init_resource::<Heard>();
     sim.app.add_systems(
         Last,

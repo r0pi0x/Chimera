@@ -418,3 +418,30 @@ fn spots_are_nudged_off_the_areas_centred_grid() {
     );
     assert!(spots.iter().all(|s| s.x.abs() <= 8.0 + 1e-4 && s.z.abs() <= 8.0 + 1e-4), "inside the area");
 }
+
+/// A front end makes the spots a slice a tick (`spawns::prepare_spots`,
+/// `nav_gen::SliceFloods`: no respawn stops a frame for them): the same
+/// spots, and until they are ready a spawn takes the map's spawn points.
+#[test]
+fn spots_made_a_slice_a_tick_are_the_same_spots() {
+    use chimera_world::map::nav_gen::SliceFloods;
+    let spots = |sim: &Sim| sim.app.world().get_resource::<SpawnSpots>().cloned();
+    let mut whole = started(DEF, |_| {});
+    let _ = respawns(&mut whole, 1);
+    let whole = spots(&whole).unwrap();
+    assert!(whole.ready && whole.from_nav, "{whole:?}");
+
+    let mut sliced = started(DEF, |app| {
+        app.init_resource::<SliceFloods>();
+    });
+    let mut ticks = 0;
+    while !spots(&sliced).is_some_and(|s| s.ready) {
+        sliced.ticks(1);
+        ticks += 1;
+        assert!(ticks < 5000, "never ready");
+    }
+    assert!(ticks > 3, "came in {ticks} ticks");
+    let sliced = spots(&sliced).unwrap();
+    assert_eq!(whole.spots, sliced.spots);
+    assert!(sliced.from_nav);
+}

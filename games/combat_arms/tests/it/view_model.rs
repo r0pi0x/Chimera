@@ -1046,12 +1046,12 @@ fn sim() -> Sim {
     let pistol: Vec<AnimInfo> = m92fs().iter().cloned().collect();
     let shotgun: Vec<AnimInfo> = r870().iter().cloned().collect();
     let grenade: Vec<AnimInfo> = m67().iter().cloned().collect();
-    sim.app.insert_resource(ViewModels(Arc::new(vec![
+    sim.app.insert_resource(ViewModels::of(vec![
         view_model(M92FS, &pistol),
         view_model(ZOOMING, &pistol),
         view_model(R870, &shotgun),
         view_model(M67, &grenade),
-    ])));
+    ]));
     sim
 }
 
@@ -1872,7 +1872,7 @@ fn one_reload_at_frame_rate(id: &str, anims: Arc<Vec<AnimInfo>>, frame: f64, hel
     let mut sim = sim();
     let pistol: Vec<AnimInfo> = m92fs().iter().cloned().collect();
     let rifle: Vec<AnimInfo> = anims.iter().cloned().collect();
-    sim.app.insert_resource(ViewModels(Arc::new(vec![view_model(M92FS, &pistol), view_model(M4A1, &rifle)])));
+    sim.app.insert_resource(ViewModels::of(vec![view_model(M92FS, &pistol), view_model(M4A1, &rifle)]));
     let p = player(&mut sim);
     let w = drawn(&mut sim, p, id);
     {

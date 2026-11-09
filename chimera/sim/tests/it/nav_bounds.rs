@@ -103,3 +103,33 @@ fn a_generated_mesh_is_bounded_to_the_rooms_a_player_walks() {
     let none = nav_gen::generate_within(&q, &|_| false, &seeds, &climber(), None);
     assert_eq!(none.areas.len(), free.areas.len());
 }
+
+/// A flood taken a slice at a time (`NavGenJob`, a front end's) makes the
+/// mesh a whole one makes, bounded or not.
+#[test]
+fn a_sliced_flood_makes_the_same_mesh() {
+    let mut sim = toy();
+    let vis = vis();
+    let w = sim.app.world_mut();
+    let mut state = SystemState::<SpatialQuery>::new(w);
+    let q = state.get(w).unwrap();
+    let seeds = [Vec3::new(-5.0, 0.0, 0.0)];
+    let whole = nav_gen::generate_within(
+        &q,
+        &|_| false,
+        &seeds,
+        &climber(),
+        Some(Bounds { vis: &vis, walker: nav_gen::walking_player() }),
+    );
+    let mut job = nav_gen::NavGenJob::new(&seeds, &climber(), Some(nav_gen::walking_player()));
+    let mut slices = 0;
+    let sliced = loop {
+        slices += 1;
+        if let Some(m) = job.step(&q, &|_| false, Some(&vis), 7) {
+            break m;
+        }
+    };
+    assert!(slices > 10, "{slices} slices");
+    assert_eq!(format!("{:?}", whole.areas), format!("{:?}", sliced.areas));
+    assert!(!whole.areas.is_empty());
+}
