@@ -71,7 +71,23 @@ impl Plugin for KillFeedPlugin {
             app.add_plugins(KillFeedStatePlugin);
         }
         app.add_systems(Startup, spawn_root).add_systems(Update, draw.after(record));
+        super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
     }
+}
+
+/// The feed's names' font at the window's size, laid out ahead
+/// (`text_warm`).
+fn warm_fonts(window: super::text_warm::PrimaryWindows, fonts: Option<Res<UiFonts>>) -> Vec<super::text_warm::WarmText> {
+    let height = super::text_warm::window_height(&window).max(240.0);
+    vec![name_font(fonts.as_deref(), 15.0 * height / 720.0).into()]
+}
+
+/// The feed's names' font at `size` pixels.
+fn name_font(fonts: Option<&UiFonts>, size: f32) -> TextFont {
+    fonts.map(|f| f.em("Verdana", true, size)).unwrap_or(TextFont {
+        font_size: FontSize::Px(size),
+        ..default()
+    })
 }
 
 /// The app draws one kill feed (this module's) for every game's HUD; the
@@ -309,15 +325,7 @@ fn draw(
     node.right = px(14.0 * s);
     node.top = px(12.0 * s);
     node.row_gap = px(3.0 * s);
-    let font = |size: f32| {
-        fonts
-            .as_ref()
-            .map(|f| f.em("Verdana", true, size))
-            .unwrap_or(TextFont {
-                font_size: FontSize::Px(size),
-                ..default()
-            })
-    };
+    let font = |size: f32| name_font(fonts.as_deref(), size);
     let size = 15.0 * s;
     let line = 22.0 * s;
     let icon_scale = height / 480.0;

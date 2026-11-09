@@ -40,11 +40,39 @@ impl Plugin for MinigamePanelPlugin {
         app.world_mut().resource_mut::<PanelGames>().0.push(self.0);
         if first {
             app.add_systems(Update, draw);
+            super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
         }
     }
 
     fn is_unique(&self) -> bool {
         false
+    }
+}
+
+/// The panel's two fonts at the window's size, laid out ahead
+/// (`text_warm`) with the guns' names.
+fn warm_fonts(windows: Query<&Window>, fonts: Option<Res<UiFonts>>, names: Res<WeaponNames>) -> Vec<super::text_warm::WarmText> {
+    // The window `draw` sizes the panel by.
+    let h = windows.iter().next().map_or(480.0, |w| w.height());
+    let names: String = names.0.values().flat_map(|v| v.chars()).collect();
+    PANEL_FONTS
+        .iter()
+        .map(|(name, fallback)| super::text_warm::WarmText { font: panel_font(fonts.as_deref(), name, h, *fallback), extra: names.clone() })
+        .collect()
+}
+
+/// The scheme fonts the panel's lines are in (titles and the first
+/// result; status lines and the other results), with their sizes without
+/// the scheme.
+const PANEL_FONTS: [(&str, f32); 2] = [("CenterPrintText", 18.0), ("ChatFont", 14.0)];
+
+fn panel_font(fonts: Option<&UiFonts>, name: &str, h: f32, fallback: f32) -> TextFont {
+    match fonts {
+        Some(f) => f.client(name, h, fallback),
+        None => TextFont {
+            font_size: bevy::text::FontSize::Px(fallback),
+            ..default()
+        },
     }
 }
 
@@ -161,13 +189,7 @@ fn draw(
         .as_deref()
         .and_then(|h| h.0.color("FgColor"))
         .unwrap_or(Color::srgba_u8(255, 176, 0, 255));
-    let font = |name: &str, fallback: f32| match fonts.as_deref() {
-        Some(f) => f.client(name, h, fallback),
-        None => TextFont {
-            font_size: bevy::text::FontSize::Px(fallback),
-            ..default()
-        },
-    };
+    let font = |name: &str, fallback: f32| panel_font(fonts.as_deref(), name, h, fallback);
     let root = commands
         .spawn((
             MinigamePanel,
@@ -186,13 +208,13 @@ fn draw(
     let mut first_result = true;
     for (kind, text) in lines {
         let (f, c) = match kind {
-            PanelLine::Title => (font("CenterPrintText", 18.0), colour),
-            PanelLine::Status => (font("ChatFont", 14.0), Color::WHITE),
+            PanelLine::Title => (font(PANEL_FONTS[0].0, PANEL_FONTS[0].1), colour),
+            PanelLine::Status => (font(PANEL_FONTS[1].0, PANEL_FONTS[1].1), Color::WHITE),
             PanelLine::Result if first_result => {
                 first_result = false;
-                (font("CenterPrintText", 18.0), Color::srgba_u8(255, 230, 120, 255))
+                (font(PANEL_FONTS[0].0, PANEL_FONTS[0].1), Color::srgba_u8(255, 230, 120, 255))
             }
-            PanelLine::Result => (font("ChatFont", 14.0), Color::WHITE),
+            PanelLine::Result => (font(PANEL_FONTS[1].0, PANEL_FONTS[1].1), Color::WHITE),
         };
         commands.spawn((kind, Text::new(text), f, TextColor(c), TextShadow::default(), ChildOf(root)));
     }

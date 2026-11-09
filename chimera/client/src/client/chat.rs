@@ -55,6 +55,7 @@ impl Plugin for ChatPlugin {
             .init_resource::<ChatInput>()
             .add_systems(PreUpdate, typing.after(InputSystems))
             .add_systems(Update, ((collect, draw_chat, draw_input).chain(), draw_hint));
+        super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
         crate::console::resource_cvar::<ChatLog, f32>(
             app,
             "hud_saytext_time",
@@ -696,6 +697,14 @@ fn draw_hint(
     ));
 }
 
+
+/// The chat's and hints' scheme fonts at the window's size, laid out ahead
+/// (`text_warm`).
+fn warm_fonts(window: super::text_warm::PrimaryWindows, fonts: Option<Res<UiFonts>>) -> Vec<super::text_warm::WarmText> {
+    let Some(fonts) = fonts else { return Vec::new() };
+    let h = super::text_warm::window_height(&window);
+    vec![fonts.client("ChatFont", h, 12.0).into(), fonts.client("HudHintText", h, 12.0).into()]
+}
 #[cfg(test)]
 mod tests {
     use super::*;

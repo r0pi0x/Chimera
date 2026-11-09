@@ -55,6 +55,7 @@ pub mod game_text;
 pub mod senses;
 pub mod spectate;
 pub mod swap_effect;
+pub mod text_warm;
 pub mod vgui;
 pub mod video;
 pub mod view;
@@ -411,6 +412,7 @@ impl PluginGroup for ClientPlugins {
             .add(console::ConsoleUiPlugin)
             .add(net_graph::NetGraphPlugin)
             .add(hud::HudPlugin)
+            .add(text_warm::TextWarmPlugin)
             .add(announcer::AnnouncerPlugin)
             .add(game_text::GameTextPlugin)
             .add(effects::ShotEffectsPlugin)

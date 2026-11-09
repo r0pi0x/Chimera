@@ -1212,6 +1212,10 @@ Details and baseline numbers: [performance.md](performance.md).
   `perf record -k CLOCK_MONOTONIC`) lists what was on the thread during
   each. Percentiles and the hitch log's one line a second hide these
   (performance.md, "Nothing blocks the main thread").
+- Glyph atlases a text made on its own first frame (a HUD font and size no
+  source declared to `client::text_warm`): the log's `text warm: N glyph
+  atlases made on a text's first frame (... at [sizes] px)`; `text warm: N
+  fonts and sizes to lay out ahead` says what the warm-up took on.
 - What a world holds: `chimera_census [<top>]` (console; any app) counts
   entities by archetype (the `<top>` largest component sets), every
   archetype and table made (Bevy frees none), component types,

@@ -79,6 +79,7 @@ impl Plugin for MatchEndPlugin {
             .init_resource::<MapVoteChoice>()
             .add_systems(Update, (vote_input.run_if(resource_exists::<MapVote>), follow, draw, draw_vote).chain())
             .add_systems(Update, vote_cursor.after(follow));
+        super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
         if app.world().contains_resource::<AssetServer>() {
             app.init_resource::<WinSound>()
                 .add_systems(Update, play_sound.after(follow).run_if(resource_exists::<Assets<SoundAsset>>));
@@ -447,6 +448,33 @@ impl MatchEndPart {
             MatchEndPart::Next => 28.0,
         }
     }
+}
+
+/// The screen's fonts at the window's size for as many standings rows as
+/// players now, laid out ahead (`text_warm`) with the guns' names.
+fn warm_fonts(
+    window: super::text_warm::PrimaryWindows,
+    fonts: Option<Res<super::fonts::UiFonts>>,
+    players: Query<(), With<crate::core::Score>>,
+    names: Option<Res<GunNames>>,
+) -> Vec<super::text_warm::WarmText> {
+    let fonts = fonts.as_deref();
+    let s = scale(super::text_warm::window_height(&window), players.iter().count());
+    let names: String = names.map(|n| n.0.values().flat_map(|v| v.chars()).collect()).unwrap_or_default();
+    let mut out = Vec::new();
+    for part in [MatchEndPart::Title, MatchEndPart::Winner, MatchEndPart::Subtitle, MatchEndPart::Next] {
+        out.push(super::fonts::overlay_font(fonts, part.size() * s, part == MatchEndPart::Winner).into());
+    }
+    // The standings' cells and the vote's candidates, plain and bold.
+    for size in [CELL, 22.0] {
+        for bold in [false, true] {
+            out.push(super::text_warm::WarmText {
+                font: super::fonts::overlay_font(fonts, size * s, bold),
+                extra: names.clone(),
+            });
+        }
+    }
+    out
 }
 
 /// Where it draws: over the HUDs, under the Tab scoreboard
