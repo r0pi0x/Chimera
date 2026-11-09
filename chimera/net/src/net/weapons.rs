@@ -464,6 +464,7 @@ fn send_detonations(
                 weapon: registry.index(d.weapon).map_or(NO_WEAPON, |i| i as u16),
                 at: d.at.to_array(),
                 ground: d.ground.map(|(p, n, _)| (p.to_array(), n.to_array())),
+                flags: d.flags.0,
             },
         });
     }
@@ -796,6 +797,7 @@ fn receive_detonations(mut detonations: MessageReader<Detonation>, mut commands:
                     .map(|(p, n)| (Vec3::from_array(p), Vec3::from_array(n), Entity::PLACEHOLDER)),
                 projectile: Entity::PLACEHOLDER,
                 shake,
+                flags: crate::core::BlastFlags(d.flags),
             });
             if let Some(s) = sound {
                 w.write_message(PlaySound::at(s, at));

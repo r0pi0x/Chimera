@@ -368,6 +368,9 @@ pub struct PropExplosion {
     pub radius: f32,
     pub attacker: Option<Who>,
     pub sound: Option<String>,
+    /// The onbreak-explode kind (prop_damage.md 7.5): the blast has no
+    /// boom of its own, only `sound`.
+    pub silent: bool,
 }
 
 /// What the host does to a physics prop's body.
@@ -839,6 +842,7 @@ pub(super) fn prop_break(w: &mut LogicWorld, id: EntId, breaker: Option<Who>, at
             radius: r,
             attacker: p.last_attacker.or(attacker),
             sound: Some(p.explode_sound.clone()).filter(|s| !s.is_empty()),
+            silent: explode_fire,
         })
     } else if explode_fire && !p.client {
         // A 1-damage explosion of the same radius. Its ignition of the
@@ -849,6 +853,7 @@ pub(super) fn prop_break(w: &mut LogicWorld, id: EntId, breaker: Option<Who>, at
             radius: r,
             attacker: p.last_attacker.or(attacker),
             sound: Some(p.explode_sound.clone()).filter(|s| !s.is_empty()),
+            silent: explode_fire,
         })
     } else {
         None

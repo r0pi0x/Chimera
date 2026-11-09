@@ -9,12 +9,12 @@
 
 use bevy::prelude::*;
 
-use crate::map::{
+use crate::{core::BlastFlags, map::{
     LightField, ParticleRng,
     particles::{
         Bounce, Fade, MapParticles, Motion, Particle, ParticleGroup, Ramp, Shape, WorldTrace, probe_planes,
     },
-};
+}};
 
 const UNIT: f32 = 0.0254;
 
@@ -77,7 +77,8 @@ fn rand_unit_cube(rng: &mut ParticleRng, s: f32) -> Vec3 {
 }
 
 /// The HE explosion's particles at `b` blowing along `a` (spec 5.4: core
-/// smoke, embers, fireballs, sparks, flecks), lit by `light`.
+/// smoke, embers, fireballs, sparks, flecks), lit by `light`; `flags` leave
+/// parts out (specs/source/game_entities.md 6).
 pub fn explosion(
     rng: &mut ParticleRng,
     m: &FxMaterials,
@@ -85,8 +86,10 @@ pub fn explosion(
     a: Vec3,
     light: Vec3,
     world: &impl WorldTrace,
+    flags: BlastFlags,
 ) -> Vec<ParticleGroup> {
     let mut out = Vec::new();
+    let fireball = !flags.has(BlastFlags::NO_FIREBALL);
     let sigma = 1.0 - 0.15 * 2.0;
     // Smoke, embers and fireballs share the core's motion: speed decaying
     // to 1/10000 in 0.5 s but not below 32 units/s, roll slowing.
@@ -100,7 +103,7 @@ pub fn explosion(
     let tint = light / light.max_element().max(1e-3);
     let smoke_color = |rng: &mut ParticleRng| tint * rng.int((lum / 2.0) as i32, lum as i32) as f32 / 255.0;
     let fade = Fade::Power(2.0);
-    if let Some(noise) = m.noise {
+    if let Some(noise) = m.noise.filter(|_| fireball && !flags.has(BlastFlags::NO_FIREBALL_SMOKE)) {
         for _ in 0..4 {
             let dir = (rand_unit_cube(rng, sigma) + a * rng.float(1.0, 6.0)).normalize_or(Vec3::Y);
             let speed = rng.float(1.0, 750.0) * 2.0 * sigma * dir.dot(a).abs();
@@ -149,7 +152,7 @@ pub fn explosion(
             });
         }
     }
-    for _ in 0..16 {
+    for _ in 0..(if fireball { 16 } else { 0 }) {
         let pick = rng.int(0, 1) as usize;
         let Some(mat) = m.embers[pick].or(m.embers[1 - pick]) else {
             break;
@@ -168,7 +171,7 @@ pub fn explosion(
             ..Particle::new(at, rng.float(2.0, 3.0), mat, size * UNIT)
         });
     }
-    if let Some(fire) = m.fire {
+    if let Some(fire) = m.fire.filter(|_| fireball) {
         for _ in 0..32 {
             let at = b + rand_unit_cube(rng, 48.0 * UNIT);
             let dir = (rand_unit_cube(rng, 0.525) + a).normalize_or(Vec3::Y);
@@ -188,7 +191,7 @@ pub fn explosion(
     }
     // The flash: one glow, fading out in 0.1 s while growing 16 units/s
     // (its start size isn't in the spec: ours).
-    if let Some(glow) = m.glow {
+    if let Some(glow) = m.glow.filter(|_| fireball) {
         core.particles.push(Particle {
             color: Vec3::new(1.0, 0.9, 0.7),
             fade: Fade::Ramp(Ramp::linear(1.0, 0.0)),
@@ -197,8 +200,9 @@ pub fn explosion(
         });
     }
     // In the order they were always made: sparks, the core, flecks.
-    let mut rest = debris(rng, m, b, a, world).into_iter();
-    if m.fire.is_some() {
+    let particles = !flags.has(BlastFlags::NO_PARTICLES);
+    let mut rest = if particles { debris(rng, m, b, a, world) } else { Vec::new() }.into_iter();
+    if particles && m.fire.is_some() {
         out.extend(rest.next());
     }
     out.push(core);

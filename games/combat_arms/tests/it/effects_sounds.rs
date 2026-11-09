@@ -1367,6 +1367,7 @@ fn c58_mid_air_frag_shows_its_explosion() {
             ground: None,
             projectile,
             shake: None,
+            flags: Default::default(),
         });
         if told {
             sim.app.world_mut().write_message(CaBlastSurface {

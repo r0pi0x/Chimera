@@ -755,6 +755,8 @@ pub struct Detonated {
     pub projectile: Entity,
     /// The view shake around `at`, if any.
     pub shake: Option<Shake>,
+    /// How it is drawn and heard.
+    pub flags: crate::core::BlastFlags,
 }
 
 // ---------------------------------------------------------------------------
@@ -1438,6 +1440,7 @@ fn detonate(
             GrenadeEffect::Blast(b) => b.shake,
             _ => None,
         },
+        flags: Default::default(),
     };
     match &p.effect {
         GrenadeEffect::Blast(b) => {
@@ -1578,6 +1581,9 @@ fn explosions(
             b.armor_ratio = e.armor_ratio;
         }
         b.through_walls |= e.through_walls;
+        if e.flags.has(crate::core::BlastFlags::NO_DECAL) {
+            b.scorch = None;
+        }
         let (origin, probe) = explode_at(
             e.origin,
             &b,
@@ -1607,6 +1613,7 @@ fn explosions(
             ground: probe,
             projectile: Entity::PLACEHOLDER,
             shake: b.shake,
+            flags: e.flags,
         });
     }
 }
@@ -1635,6 +1642,7 @@ fn blast_requests(mut events: MessageReader<BlastAt>, mut world: GrenadeWorld, m
             ground: probe,
             projectile: e.inflictor.unwrap_or(Entity::PLACEHOLDER),
             shake: b.shake,
+            flags: Default::default(),
         });
     }
 }

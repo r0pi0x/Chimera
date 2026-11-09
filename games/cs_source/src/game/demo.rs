@@ -1640,6 +1640,7 @@ fn happen(world: &mut World, p: &mut DemoPlayer, h: &Happening) {
                 ground: None,
                 projectile: Entity::PLACEHOLDER,
                 shake,
+                flags: Default::default(),
             });
             if let Some(s) = sound {
                 world.write_message(PlaySound::at(s, at));

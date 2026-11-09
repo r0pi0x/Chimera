@@ -328,6 +328,7 @@ fn the_contact_grenade_scorches_along_its_flight() {
         ground: None,
         projectile: g,
         shake: None,
+        flags: Default::default(),
     });
     sim.app.world_mut().despawn(g);
     sim.ticks(1);
@@ -349,6 +350,7 @@ fn the_contact_grenade_scorches_along_its_flight() {
         ground: None,
         projectile: stopped,
         shake: None,
+        flags: Default::default(),
     });
     sim.ticks(1);
     assert_eq!(cursor.read(sim.app.world().resource::<Messages<PlaceDecal>>()).count(), 0, "no line, no scorch");

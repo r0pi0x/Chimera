@@ -430,7 +430,7 @@ fn explosions(
         }
         let a = blast_direction(d.at, &world);
         let l = light_at(light.as_deref(), d.at + a * 32.0 * UNIT);
-        for g in explosion(&mut rng.0, &mats, d.at, a, l, &world) {
+        for g in explosion(&mut rng.0, &mats, d.at, a, l, &world, d.flags) {
             particles.add(g);
         }
     }

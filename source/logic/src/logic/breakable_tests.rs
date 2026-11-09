@@ -557,6 +557,7 @@ fn explodes_when_it_breaks() {
             radius,
             attacker,
             inflictor,
+            ..
         } => Some((*at, *damage, *radius, *attacker, *inflictor)),
         _ => None,
     });

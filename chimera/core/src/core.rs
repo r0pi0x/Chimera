@@ -579,6 +579,33 @@ impl Damage {
     }
 }
 
+/// How an explosion is drawn and heard: the temp entity's flags
+/// (specs/source/game_entities.md 6, `env_explosion`'s spawnflag values).
+/// None: all of it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BlastFlags(pub u16);
+
+impl BlastFlags {
+    /// No flash and no core (smoke, embers, fireballs).
+    pub const NO_FIREBALL: u16 = 4;
+    /// No scorch on what's under it.
+    pub const NO_DECAL: u16 = 16;
+    /// No client explosion sound.
+    pub const NO_SOUND: u16 = 64;
+    /// No smoke puffs in the core.
+    pub const NO_FIREBALL_SMOKE: u16 = 256;
+    /// No debris (spark streaks, flecks).
+    pub const NO_PARTICLES: u16 = 512;
+    /// The bits above, out of a map entity's spawnflags.
+    pub fn from_spawnflags(flags: u32) -> Self {
+        let known = Self::NO_FIREBALL | Self::NO_DECAL | Self::NO_SOUND | Self::NO_FIREBALL_SMOKE | Self::NO_PARTICLES;
+        Self(flags as u16 & known)
+    }
+    pub fn has(self, flag: u16) -> bool {
+        self.0 & flag != 0
+    }
+}
+
 /// An explosion to apply (radius damage and pushes, as a grenade's blast
 /// with this magnitude and radius): from map logic (exploding props).
 /// `damage` is normalized like `Damage::amount`, `radius` in meters.
@@ -607,6 +634,8 @@ pub struct Explosion {
     pub armor_ratio: Option<f32>,
     /// Nothing between stops or shields it (`Blast::through_walls`).
     pub through_walls: bool,
+    /// How it is drawn and heard.
+    pub flags: BlastFlags,
 }
 
 /// How damage was dealt (Source damage types, as far as anything here

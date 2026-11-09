@@ -912,6 +912,8 @@ pub struct Detonation {
     pub weapon: u16,
     pub at: [f32; 3],
     pub ground: Option<([f32; 3], [f32; 3])>,
+    /// `core::BlastFlags`.
+    pub flags: u16,
 }
 
 /// Server -> clients: map logic's long-lived sounds (`map::SoundControl`

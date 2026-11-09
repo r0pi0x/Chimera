@@ -393,6 +393,7 @@ fn detonated(cx: &mut Cx, e: Option<Entity>, o: &CaObject, at: Vec3) {
         ground: None,
         projectile: e.unwrap_or(Entity::PLACEHOLDER),
         shake: None,
+        flags: Default::default(),
     });
 }
 

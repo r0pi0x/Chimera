@@ -147,6 +147,7 @@ pub(super) fn detonate(cx: &mut Cx, e: Entity, o: &CaObject, p: &ProjectileParam
         ground: None,
         projectile: e,
         shake: None,
+        flags: Default::default(),
     });
     if o.owner.is_some_and(|w| !cx.world.entities.contains(w)) {
         return;
