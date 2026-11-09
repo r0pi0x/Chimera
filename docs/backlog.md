@@ -124,11 +124,13 @@ the original's own behaviour isn't a bug (say so instead).
 - **Escape** only frees the cursor (click to return to the game): no menu.
   HL2:DM's menus were planned for after faithful DM/TDM; the user has now
   run into it, so it's next once these reports are done.
-- **The explosion's fireball has hard rectangular edges (2026-11-09):** seen
-  on an explosive drum in dm_lockdown (a straight cut along its top and
-  bottom, blocky steps at the sides). It's the effect shared with CS:S, so
-  check there too: sprite clipping against the world, a soft-depth fade, or
-  the frame's subrect.
+- **The explosion's fire is still cut at the world (2026-11-09):** the
+  straight edges and steps of an explosive drum's blast close to walls are
+  its camera-facing sprites meeting the floor, ceiling and walls. HL2's smoke
+  now fades there (its material says `$depthblend`); `effects/fire_cloud2`
+  and CS:S's own `particle_noisesphere` don't ask, so they stay cut, which by
+  their files is the original's look too. A real-game capture (grenades.md
+  Q9) would settle it; softening them all is a one-line choice if wanted.
 - **Combat Arms, Blood Money: spawning inside the vault** with no way out
   (`setpos -6.11 -747.55 -179.90;setang 2.98 90.31 0.00`). Check whether
   the map really has a spawn there, what opens the vault in the original,

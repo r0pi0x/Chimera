@@ -10,13 +10,21 @@
 //! Sprites of sprite-card materials keep to their screen-size limits
 //! (`ParticleMaterial::screen`: capped and faded by their size on screen,
 //! specs/cs_source/impact_effects.md 14); flipped particles show their
-//! texture mirrored.
+//! texture mirrored. Materials that say `$depthblend`
+//! (`ParticleMaterial::depth_blend`, HL2's smoke puffs among them) fade out
+//! as they near the world behind them instead of being cut there, on views
+//! with a depth prepass (`soft_particle_prepass` gives main views one); the
+//! rest are cut at the world, explosions' `effects/fire_cloud2` and CS:S's
+//! own `particle/particle_noisesphere` too, whose files don't ask.
 //!
 //! Known shortcuts (docs/tech-debt.md): Particles blend in linear space (Source
 //! blends in gamma), and each material is one mesh sorted against other
 //! transparent things by its particles' centre; fog is the surfaces' per-pixel
-//! range fog (blended toward the fog colour, added toward black). Why it's OK
-//! for now: Small, fast effects; looks right in screenshots.
+//! range fog (blended toward the fog colour, added toward black); `$depthblend`
+//! fades over 24 units and linearly, and is honoured on any shader (ours: the
+//! spec names no distance or curve and says it of sprite cards, while HL2's
+//! `particle_noisesphere` is UnlitGeneric). Why it's OK for now: Small, fast
+//! effects; looks right in screenshots.
 
 use std::collections::HashMap;
 
@@ -51,6 +59,10 @@ pub struct ParticleDrawMaterial {
     /// model (the gravity gun's core and glows: `sprites/glow04_noz`'s
     /// file has its `$ignorez` commented out, whatever its name says).
     pub over_model: bool,
+    /// The material says `$depthblend` (`ParticleMaterial::depth_blend`):
+    /// fades out as it nears what the depth prepass holds behind it, on
+    /// the views that have one (the world's: `soft_particle_prepass`).
+    pub soft: bool,
 }
 
 #[repr(C)]
@@ -58,6 +70,7 @@ pub struct ParticleDrawMaterial {
 pub struct ParticleDrawKey {
     additive: bool,
     over_model: bool,
+    soft: bool,
 }
 
 impl From<&ParticleDrawMaterial> for ParticleDrawKey {
@@ -65,6 +78,7 @@ impl From<&ParticleDrawMaterial> for ParticleDrawKey {
         Self {
             additive: m.blend == ParticleBlend::Additive,
             over_model: m.over_model,
+            soft: m.soft,
         }
     }
 }
@@ -111,6 +125,11 @@ impl Material for ParticleDrawMaterial {
         {
             fragment.shader_defs.push("ADDITIVE".into());
         }
+        if key.bind_group_data.soft
+            && let Some(fragment) = descriptor.fragment.as_mut()
+        {
+            fragment.shader_defs.push("SOFT_DEPTH".into());
+        }
         Ok(())
     }
 
@@ -129,7 +148,29 @@ pub struct ParticleMaterialPlugin;
 impl Plugin for ParticleMaterialPlugin {
     fn build(&self, app: &mut App) {
         embedded_asset!(app, "particle.wesl");
-        app.add_plugins((fog::FogShaderPlugin, MaterialPlugin::<ParticleDrawMaterial>::default()));
+        app.add_plugins((fog::FogShaderPlugin, MaterialPlugin::<ParticleDrawMaterial>::default()))
+            .add_systems(Update, soft_particle_prepass);
+    }
+}
+
+/// While the map's particles have a `$depthblend` material, main views draw
+/// a depth prepass: what the material fades against.
+pub fn soft_particle_prepass(
+    mut commands: Commands,
+    assets: Option<Res<ParticleAssets>>,
+    main: Query<
+        Entity,
+        (
+            crate::render::water::MainCameraFilter,
+            Without<bevy::core_pipeline::prepass::DepthPrepass>,
+        ),
+    >,
+) {
+    if !assets.is_some_and(|a| a.data.materials.iter().any(|m| m.depth_blend)) {
+        return;
+    }
+    for e in &main {
+        commands.entity(e).insert(bevy::core_pipeline::prepass::DepthPrepass);
     }
 }
 
@@ -262,6 +303,7 @@ pub fn draw_particles(
                             fog: fog.as_ref().map_or_else(Default::default, |f| f.0),
                             blend: def.blend,
                             over_model: layer == VIEW && def.no_depth,
+                            soft: def.depth_blend,
                         })),
                         // The mesh moves with its particles.
                         bevy::camera::visibility::NoFrustumCulling,
