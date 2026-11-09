@@ -184,6 +184,10 @@ the original's own behaviour isn't a bug (say so instead).
   the current character's bones go wrong, as if imitating the new one's. The
   user suggests preloading every rung's model; also swap the body only when
   the new one is ready, so a skeleton never drives the wrong model.
+- **Ultimate Gun Game's winning screen names the wrong weapon:** winning as
+  a Combat Arms zombie, it shows some other knife as the gun. Everywhere a
+  player's gun is displayed should show their rung's primary, even when
+  they've switched to the knife. Check the scoreboard and other places too.
 - **Combat Arms radio menus:** 7, 8 and 9 do nothing. Check what the
   original's menus offer on those keys (`choose_N`, the same commands as
   the console report above).
