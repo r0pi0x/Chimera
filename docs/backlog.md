@@ -188,6 +188,9 @@ the original's own behaviour isn't a bug (say so instead).
   a Combat Arms zombie, it shows some other knife as the gun. Everywhere a
   player's gun is displayed should show their rung's primary, even when
   they've switched to the knife. Check the scoreboard and other places too.
+- **Ultimate Gun Game: HL2:DM rungs don't use HL2:DM's HUD and crosshair.**
+  Holding an HL2:DM gun should show the same HUD and crosshair as HL2:DM
+  itself, as other games' rungs do.
 - **Combat Arms radio menus:** 7, 8 and 9 do nothing. Check what the
   original's menus offer on those keys (`choose_N`, the same commands as
   the console report above).
