@@ -53,7 +53,8 @@
 //!   `parts::PARTS`): what the Ultimate Gun Game builds its ladder from.
 //!
 //! - Bots: Combat Arms' (the gun game's `bots` slot), with CS:S's guns'
-//!   types for their AI rows (data/bot_gun_types.toml); `MaxPlayer` is how
+//!   types for their AI rows (data/bot_gun_types.toml), their generated
+//!   meshes for the widest hull they may wear (`WIDEST_HULL`); `MaxPlayer` is how
 //!   many the server keeps (none for a joiner: `+connect` skips the app's
 //!   default of `DEFAULT_BOTS` and its local minigame, the server's comes
 //!   over the network: `chimera_net::minigame_net`).
@@ -216,6 +217,9 @@ pub static GAME_BINDS: [(&str, &[(&str, &str)]); 3] = [
     (BUNDLES[1].info.id, BUNDLES[1].binds),
 ];
 
+/// The widest player the party's games make (half, m): Source's, 16 u.
+pub const WIDEST_HULL: f32 = 16.0 * 0.0254;
+
 /// Combat Arms' bots' gun types for CS:S's guns (data/bot_gun_types.toml).
 pub const BOT_GUN_TYPES: &str = include_str!("../data/bot_gun_types.toml");
 
@@ -276,6 +280,12 @@ impl Plugin for PartyPartsPlugin {
         }
         if let Some(mut bots) = app.world_mut().get_resource_mut::<combat_arms::game::bots::BotData>() {
             bots.gun_types.extend(bot_gun_types());
+        }
+        // A bot wears the hull of its gun's game: a mesh for Combat Arms'
+        // narrow one (15 u of 0.018 m) leads a Source hull into gaps it
+        // doesn't fit, where it stands pressing on.
+        if let Some(mut bots) = app.world_mut().get_resource_mut::<combat_arms::game::bots::BotSettings>() {
+            bots.walker_radius = Some(WIDEST_HULL);
         }
         even_footsteps(app);
         // The host's settings and the skip-map vote (the Escape menu's).

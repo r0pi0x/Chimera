@@ -162,6 +162,10 @@ pub struct BotSettings {
     pub dont_shoot: u8,
     /// The roster's dice seed.
     pub seed: u64,
+    /// How wide the generated navigation mesh's walker is (half, m), where
+    /// an app's bots may wear a wider hull than Combat Arms' (None: its own,
+    /// `brain::nav_params`).
+    pub walker_radius: Option<f32>,
 }
 
 /// What a bot is doing (2).
