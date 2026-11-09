@@ -206,6 +206,8 @@ pub struct Console {
     /// Command words a stored line keeps as typed (`qualify_line`): the
     /// binds the client polls by their short name (`slot1`, `buymenu`).
     keep_short: std::collections::BTreeSet<String>,
+    /// Commands config.cfg's binds leave out (`bound_for_session`).
+    session_commands: std::collections::BTreeSet<String>,
     pub aliases: BTreeMap<String, String>,
     /// Key name (lower-case) -> command line.
     pub binds: BTreeMap<String, String>,
@@ -568,6 +570,33 @@ impl Console {
             "\"{typed}\" is ambiguous: {}. Type the full name, or pick a game with `scope <game>`.",
             names.join(", ")
         )
+    }
+
+    /// `command` (its short name) is left out of the binds config.cfg
+    /// saves: a game's command it binds again at every start (Combat Arms'
+    /// `choose_N`, on keys its profile holds). config.cfg is shared by every
+    /// app, where this one's command is nothing.
+    pub fn bound_for_session(&mut self, command: &str) {
+        self.session_commands.insert(command.trim().to_lowercase());
+    }
+
+    /// `line` as config.cfg saves it: without `bound_for_session` commands
+    /// (None when nothing is left). Other lines keep their text.
+    fn saved_bind(&self, line: &str) -> Option<String> {
+        let commands = parse(line);
+        let session = |words: &Vec<String>| {
+            let lower = words[0].to_lowercase();
+            self.session_commands.contains(short_name(&lower))
+        };
+        if !commands.iter().any(session) {
+            return Some(line.to_string());
+        }
+        let kept: Vec<String> = commands
+            .iter()
+            .filter(|w| !session(w))
+            .map(|w| w.iter().map(|x| quote(x)).collect::<Vec<_>>().join(" "))
+            .collect();
+        (!kept.is_empty()).then(|| kept.join("; "))
     }
 
     /// A word a stored line keeps as typed (a bind the client polls by its
@@ -1727,7 +1756,9 @@ pub fn config_text(w: &mut World) -> String {
     let scope = console.current_scope();
     out += "unbindall\n";
     for (k, v) in binds {
-        out += &format!("bind {} {}\n", quote(&k), quote(&qualified(&v, scope)));
+        if let Some(v) = console.saved_bind(&v) {
+            out += &format!("bind {} {}\n", quote(&k), quote(&qualified(&v, scope)));
+        }
     }
     // The games' own binds: all of them anew, so one removed stays removed.
     out += "unbindgameall\n";

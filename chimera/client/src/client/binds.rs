@@ -32,6 +32,13 @@
 //! the parts that are not polled run. Source key names, rebind and clear
 //! lines for the options.
 //!
+//! config.cfg is shared by every app on the machine (`console::cfg_dir`),
+//! so a bind may name a command this app doesn't have (Combat Arms' keys 1
+//! to 6 hold `slotN; choose_N`, `choose_N` being its own). A key press
+//! leaves those parts out (`known_here`), without a word: typing one in the
+//! console still says "Unknown command", and the line stays as it is, so
+//! config.cfg keeps it for the app that has the command.
+//!
 //! Named actions: a bind is still a line, so `bind mouse4 +throw` is the
 //! same in saved configs and profiles as before; `+throw` names the action
 //! `throw` the game registered (`core::ActionRegistry`), and the local
@@ -391,6 +398,22 @@ impl PolledBinds {
             .collect();
         (!rest.is_empty()).then(|| rest.join("; "))
     }
+}
+
+/// `line` without the commands this app doesn't know (see the module
+/// docs); None when nothing is left to run. Aliases and names several
+/// games share count as known.
+pub fn known_here(console: &Console, line: &str) -> Option<String> {
+    let rest: Vec<String> = parts(line)
+        .into_iter()
+        .filter(|p| {
+            crate::console::parse(p).first().is_some_and(|words| {
+                let name = words[0].to_lowercase();
+                console.aliases.contains_key(&name) || !matches!(console.resolve(&name), crate::console::Resolved::Unknown)
+            })
+        })
+        .collect();
+    (!rest.is_empty()).then(|| rest.join("; "))
 }
 
 /// A game plugin telling the client what its binds mean.
@@ -754,6 +777,28 @@ mod tests {
         let reg = app.world().resource::<crate::core::ActionRegistry>();
         assert_eq!(reg.bit("throw"), 1);
         assert_eq!(reg.bit("nope"), 0);
+    }
+
+    /// A saved config shared with another app: the key still selects the
+    /// weapon (`slot1` is polled) and the other app's `choose_1` isn't run
+    /// or complained about; the line stays for that app.
+    #[test]
+    fn a_bind_naming_another_apps_command_is_left_out() {
+        let mut app = App::new();
+        app.add_plugins(crate::console::ConsolePlugin);
+        let shared = "slot1; choose_1";
+        let binds = binds(&[("1", shared), ("3", "combat_arms:choose_3")]);
+        assert_eq!(keys_for(&binds, "slot1"), ["1"], "the polled read still finds the key");
+        let polled = PolledBinds::default();
+        let left = polled.runnable(shared).unwrap();
+        assert_eq!(left, "choose_1");
+        let console = app.world().resource::<Console>();
+        assert_eq!(known_here(console, &left), None);
+        assert_eq!(known_here(console, "combat_arms:choose_3"), None);
+        assert_eq!(known_here(console, "echo hi; choose_1").as_deref(), Some("echo hi"), "what this app has still runs");
+        let mut console = app.world_mut().resource_mut::<Console>();
+        console.aliases.insert("mine".into(), "echo hi".into());
+        assert_eq!(known_here(&console, "mine").as_deref(), Some("mine"));
     }
 
     /// A game's default binds file as it might read (CS:S's

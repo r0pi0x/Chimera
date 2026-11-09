@@ -117,8 +117,6 @@ the user's go-ahead: no Actions runs unless asked.
 Delete each when fixed. Check against specs/hl2dm/ and the probe; what's
 the original's own behaviour isn't a bug (say so instead).
 
-- **Console:** pressing 1, 2, 3 prints `Unknown command "choose_1"` (and
-  `choose_3`) on every press.
 - **Stunstick hit marks** look like CS:S knife marks; check what the
   original places.
 - **Explosive barrels** break without exploding.

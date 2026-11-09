@@ -15,12 +15,14 @@
 //!   or a remappable key stolen from every other action in the same slot).
 //! - `apply` writes the engine's binds from a table: each key runs its
 //!   actions' commands (two actions on one key run both), and keys 1 to 6
-//!   also run `choose_1`..`choose_6`.
+//!   also run `choose_1`..`choose_6` (bound for the session: config.cfg,
+//!   shared with the other apps, doesn't save them,
+//!   `Console::bound_for_session`).
 //!
 //! Known shortcuts: the commands of actions whose features aren't built
 //! (recording, the fire mode, co-op, quests, the super-soldier item, night vision, the help popup's draw) are
-//! bound all the same; the console prints "Unknown command" for the ones
-//! nothing registers (`COMMANDS_UNBUILT`); the key a bind is "already
+//! bound all the same; a key press skips the ones nothing registers
+//! (`COMMANDS_UNBUILT`, `client::binds::known_here`); the key a bind is "already
 //! taken" by (K3's remappable rule) is a console bind that isn't one of
 //! the options' own actions, as Tab's scoreboard; the joystick slot is
 //! kept and shown but nothing reads it.
