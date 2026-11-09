@@ -49,8 +49,9 @@ pub struct ParticleMaterial {
     pub vertex_color: bool,
     /// The particle's alpha fades it (else always opaque).
     pub vertex_alpha: bool,
-    /// Drawn over everything (the game ignores depth). Not supported yet:
-    /// drawn depth tested.
+    /// `$ignorez`: the game ignores depth. Honoured on the view model's
+    /// layer (over the model, `ParticleGroup::view_model`); elsewhere drawn
+    /// depth tested for now.
     pub no_depth: bool,
     /// Sprite sheet: sequences of frames, each frame a texture rectangle
     /// (min u, min v, max u, max v). Empty: the whole texture.

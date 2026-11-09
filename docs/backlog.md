@@ -123,10 +123,6 @@ the original's own behaviour isn't a bug (say so instead).
 - **Props launch or trap the player:** walking into some props (the small
   bench) throws the player into the air; jumping onto the wheelbarrow
   sometimes sticks the player until they move backwards.
-- **Gravity gun looks:** the centre glow shows through the gun, and it
-  doesn't keep up one-to-one when the view moves left and right. (The
-  sprites were drawn over the view model in 19164c59; only the `_noz`
-  materials have the spec's backing for that.)
 - **Showers (dm_lockdown):** a constant sound but no water visible.
 - **Props rotated wrongly:** `setpos -3598.11 5389.92 64.03;setang 4.01
   101.27 0.00` and pipes at `setpos -3062.89 3939.73 64.03;setang 2.14
@@ -140,8 +136,6 @@ the original's own behaviour isn't a bug (say so instead).
   secondary ammo panel; branch `hl2dm-gaps1` feeds it, check after merge).
 - **HUD:** no ammo counter bottom right for the RPG (`hl2dm-gaps1` shows
   its own rounds as ammo, check after merge).
-- **RPG laser** lags the view like the gravity gun's glow (same cause
-  expected, `map::attached`).
 - **Escape** only frees the cursor (click to return to the game): no menu.
   HL2:DM's menus were planned for after faithful DM/TDM; the user has now
   run into it, so it's next once these reports are done.

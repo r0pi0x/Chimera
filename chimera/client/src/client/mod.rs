@@ -458,6 +458,15 @@ impl Plugin for ShellSetupPlugin {
     }
 }
 
+/// The frame's eye, in the set what's locked to the view model runs after
+/// (`map::attached::EyePlaced`).
+fn eye_systems(app: &mut App) {
+    app.add_systems(
+        Update,
+        (follow_eye.in_set(crate::map::attached::EyePlaced), zoom_camera).after(spectate::SpectateSet),
+    );
+}
+
 /// The local player and its first-person camera (last of the shell's
 /// plugins), and the remote protocol with `dev`.
 struct ShellCameraPlugin;
@@ -465,8 +474,8 @@ struct ShellCameraPlugin;
 impl Plugin for ShellCameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(PostStartup, (spawn_local_player, join_at_start).chain())
-            .add_systems(Update, camera_for_local_player)
-            .add_systems(Update, (follow_eye, zoom_camera).after(spectate::SpectateSet));
+            .add_systems(Update, camera_for_local_player);
+        eye_systems(app);
 
         // Bevy Remote Protocol: query and edit the live ECS over HTTP
         // (JSON-RPC on localhost:15702, or CHIMERA_REMOTE_PORT: two games at
@@ -817,5 +826,28 @@ mod tests {
         // `-port` still names one (on loopback).
         let a = args("--screenshot a.png -port 27031 +maxplayers 4");
         assert_eq!(a.console[..2], ["ip 127.0.0.1", "hostport 27031"]);
+    }
+}
+
+#[cfg(test)]
+mod eye_tests {
+    use bevy::ecs::schedule::{ScheduleLabel, Schedules, SystemSet};
+
+    use super::*;
+
+    /// Sprites and beams on the view model (`map::attached`) are drawn after
+    /// `EyePlaced`: the eye has to be in it, or they lag the view a frame.
+    #[test]
+    fn the_eye_is_placed_in_its_set() {
+        let mut app = App::new();
+        eye_systems(&mut app);
+        let world = app.world_mut();
+        let mut schedules = world.remove_resource::<Schedules>().unwrap();
+        let schedule = schedules.get_mut(Update.intern()).unwrap();
+        schedule.initialize(world).unwrap();
+        let keys = schedule.graph().systems_in_set(crate::map::attached::EyePlaced.intern()).unwrap().clone();
+        let names: Vec<String> =
+            schedule.systems().unwrap().filter(|(k, _)| keys.contains(k)).map(|(_, s)| s.name().to_string()).collect();
+        assert!(names.iter().any(|n| n.contains("follow_eye")), "{names:?}");
     }
 }

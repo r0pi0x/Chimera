@@ -45,8 +45,10 @@ fn particles_over_the_view_model_always_pass() {
     assert_eq!(depth.depth_write_enabled, Some(false));
 }
 
-/// One additive material drawn by a world group and a view-model group:
-/// the view-model layer's mesh is over the model, the world's isn't.
+/// Two additive materials, one with `$ignorez`, each drawn by a world group
+/// and a view-model group: only the `$ignorez` one's view-model mesh is over
+/// the model (the gravity gun's beams; its core and glows hide behind the
+/// claws, specs/hl2dm/effects_sounds.md 11).
 #[test]
 fn only_the_view_model_layer_draws_over_the_model() {
     let mut app = App::new();
@@ -55,13 +57,16 @@ fn only_the_view_model_layer_draws_over_the_model() {
         .init_asset::<ParticleDrawMaterial>()
         .insert_resource(ParticleAssets::new(
             MapParticles {
-                materials: vec![ParticleMaterial {
-                    name: "sprites/glow04_noz".into(),
-                    blend: ParticleBlend::Additive,
-                    vertex_color: true,
-                    vertex_alpha: true,
-                    ..default()
-                }],
+                materials: [false, true]
+                    .map(|no_depth| ParticleMaterial {
+                        name: format!("no_depth {no_depth}"),
+                        blend: ParticleBlend::Additive,
+                        vertex_color: true,
+                        vertex_alpha: true,
+                        no_depth,
+                        ..default()
+                    })
+                    .to_vec(),
             },
             Vec::new(),
         ))
@@ -72,11 +77,11 @@ fn only_the_view_model_layer_draws_over_the_model() {
         Projection::Perspective(PerspectiveProjection::default()),
         GlobalTransform::default(),
     ));
-    for view_model in [false, true] {
+    for (view_model, material) in [(false, 0), (false, 1), (true, 0), (true, 1)] {
         let mut g = ParticleGroup::new(Motion::default());
         g.skip_first = false;
         g.view_model = view_model;
-        g.particles.push(Particle::new(Vec3::NEG_Z, 1.0, 0, 0.1));
+        g.particles.push(Particle::new(Vec3::NEG_Z, 1.0, material, 0.1));
         app.world_mut().resource_mut::<Particles>().add(g);
     }
     app.update();
@@ -90,7 +95,8 @@ fn only_the_view_model_layer_draws_over_the_model() {
             (layers.is_some_and(|l| *l == RenderLayers::layer(VIEW_MODEL_LAYER)), over)
         })
         .collect();
-    assert_eq!(drawn.len(), 2, "{drawn:?}");
-    assert!(drawn.contains(&(true, true)), "view-model layer, over the model: {drawn:?}");
-    assert!(drawn.contains(&(false, false)), "world, depth tested: {drawn:?}");
+    assert_eq!(drawn.len(), 4, "{drawn:?}");
+    assert_eq!(drawn.iter().filter(|d| **d == (true, true)).count(), 1, "view model, `$ignorez`: over it: {drawn:?}");
+    assert_eq!(drawn.iter().filter(|d| **d == (true, false)).count(), 1, "view model, without: depth tested: {drawn:?}");
+    assert_eq!(drawn.iter().filter(|d| **d == (false, false)).count(), 2, "world, depth tested: {drawn:?}");
 }
