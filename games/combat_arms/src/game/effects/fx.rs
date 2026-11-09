@@ -42,11 +42,12 @@
 //! Several jitters add up (`jitter_at`, Open question 24).
 //!
 //! A particle system's look follows every colour and scale key
-//! (`ParticleCurves`). One with a `Sprite` and no `Texture` (the flame's
-//! `Y_FLAMESET`) draws the sprite's frames, looping on each particle's own
-//! age at the file's frame time (effects_sounds.md names only `Texture` on
-//! this key type: the file's data, read so; a spec session should confirm
-//! whose clock the frames run on).
+//! (`ParticleCurves`). Its picture is its `Sprite` when set, else its
+//! `Texture`, a sprite set by the `.spr` extension (`library::system_file`):
+//! a set's frames run on one clock per system (`KeyRun::clock_ms`: 0 when
+//! the system is made, each frame's time in whole ms), so all its
+//! particles show the same frame, ⌊1000 / rate⌋ ms each, always looping
+//! (effects_sounds.md, "Sprite sets as particle textures").
 //!
 //! Known shortcuts (docs/tech-debt.md): trail keys draw as camera-aligned
 //! strips whatever their `Allignment`; a group not on an entity places
@@ -92,6 +93,9 @@ pub fn effect_frame(normal: Vec3) -> Mat3 {
 #[derive(Clone, Debug, Default, PartialEq)]
 struct KeyRun {
     started: bool,
+    /// A particle system's frame clock (whole ms since it was made): its
+    /// sprite set's frames run on it, the same for all its particles.
+    clock_ms: u32,
     next_emit: f32,
     /// A trail key's points (`PolyTrail`) and what it draws with.
     trail: Trail,
@@ -429,6 +433,12 @@ impl CaFx {
                 }
                 let first = !run.started;
                 run.started = true;
+                // The system's frame tracker: 0 at its creation, then each
+                // frame's time in whole milliseconds.
+                if !first {
+                    run.clock_ms = run.clock_ms.wrapping_add((dt * 1000.0) as u32);
+                }
+                let clock = run.clock_ms;
                 let (base, frame) = place(inst.at, inst.frame, inst.attach.as_ref(), k);
                 let attached = inst.attach.is_some();
                 let tag = attached.then_some(inst.tag);
@@ -440,7 +450,7 @@ impl CaFx {
                         let interval = k.float("EmissionInterval").unwrap_or(-1.0);
                         if interval <= 0.0 {
                             if first {
-                                self.emit(k, base, frame, lib, particles, materials, world, tag);
+                                self.emit(k, base, frame, lib, particles, materials, world, tag, clock);
                             }
                         } else {
                             if first {
@@ -449,7 +459,7 @@ impl CaFx {
                             // At most a second's worth after a stall.
                             run.next_emit = run.next_emit.max(t - 1.0);
                             while run.next_emit <= t.min(end) {
-                                self.emit(k, base, frame, lib, particles, materials, world, tag);
+                                self.emit(k, base, frame, lib, particles, materials, world, tag, clock);
                                 run.next_emit += interval;
                             }
                         }
@@ -518,6 +528,7 @@ impl CaFx {
         materials: &MapParticles,
         world: &impl WorldTrace,
         tag: Option<u64>,
+        clock: u32,
     ) {
         let Some(texture) = lib.texture_of(k) else { return };
         let Some(material) = materials.find(&material_name(&texture, additive(k))) else { return };
@@ -554,9 +565,8 @@ impl CaFx {
         let (color, color_fade, alpha, fade) = color_curve(&k.color_keys());
         // All the keys, where a ramp from the first to the last would lose
         // some (a flame's white, orange and black), and a sprite's frames.
-        let frames = k
-            .path("Sprite")
-            .filter(|_| k.path("Texture").is_none())
+        let frames = super::library::system_file(k)
+            .filter(|f| super::library::is_sprite_set(f))
             .and_then(|s| lib.sprite_frames.get(&normalize(s)));
         let curves = {
             let keys = k.color_keys();
@@ -604,6 +614,9 @@ impl CaFx {
             p.alpha = if curves.as_ref().is_some_and(|c| !c.color.is_empty()) { 1.0 } else { alpha };
             p.fade = fade;
             p.curves = curves.clone();
+            if frames.is_some() {
+                p.frame_clock = Some(clock);
+            }
             if spin {
                 p.roll = self.rng.float(0.0, std::f32::consts::TAU);
                 p.roll_speed = self.rng.float(w0, w1) * if self.rng.random() < 0.5 { -1.0 } else { 1.0 };

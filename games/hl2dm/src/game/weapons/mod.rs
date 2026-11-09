@@ -34,7 +34,8 @@
 //! - `hl2dm:shotgun` (`shotgun::Hl2Shotgun`): the pump;
 //! - `hl2dm:dry_under_water` (`under_water::Hl2DryUnderWater`): the guns
 //!   that won't fire with the eyes under water (the .357, the machine
-//!   guns, the shotgun).
+//!   guns, the shotgun);
+//! - `hl2dm:vent` (`vent::Hl2Vent`): the AR2's vents following its shots.
 //!
 //! `Hl2GunsPlugin` is the weapons alone (data, hooks, recoil, the damage
 //! shove of HL2:DM players: `shove`; what a game of several games adds);
@@ -62,6 +63,7 @@ pub mod shotgun;
 pub mod shove;
 pub mod slam;
 pub mod under_water;
+pub mod vent;
 
 use bevy::prelude::*;
 use chimera_sim::{
@@ -128,6 +130,7 @@ pub const FRAG_HOOK: &str = "hl2dm:frag";
 pub const SLAM_HOOK: &str = "hl2dm:slam";
 pub const PHYSCANNON_HOOK: &str = "hl2dm:physcannon";
 pub const DRY_UNDER_WATER: &str = "hl2dm:dry_under_water";
+pub const VENT_HOOK: &str = "hl2dm:vent";
 
 /// The weapons every player spawns with besides the melee weapon of its
 /// model (`inventory::arm`), in giving order (weapons.md 3): the last
@@ -291,6 +294,9 @@ pub fn register_hooks(app: &mut App) {
     })
     .register_weapon_hook::<under_water::Hl2DryUnderWater>(DRY_UNDER_WATER, |e, _, p| {
         e.insert(*p);
+    })
+    .register_weapon_hook::<vent::VentParams>(VENT_HOOK, |e, _, p| {
+        e.insert(vent::Hl2Vent { params: p.clone(), value: 0.0 });
     });
 }
 
@@ -386,7 +392,9 @@ impl Plugin for Hl2GunsPlugin {
                     recoil::decay_punch,
                     pistol::before_frame,
                     shotgun::before_frame,
-                    under_water::before_frame.after(shotgun::before_frame),
+                    under_water::before_frame.after(shotgun::before_frame).after(alt_fire::before_frame),
+                    // At the start of the AR2's frame (weapons.md 7.3).
+                    vent::before_frame.before(alt_fire::before_frame),
                 )
                     .before(WeaponFrame),
                 (recoil::kick, pistol::after_frame, shotgun::after_frame, inventory::holster_reload).after(WeaponFrame),

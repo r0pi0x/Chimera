@@ -6,7 +6,9 @@
 //! team deathmatch: Combine, Rebels, spectators), each player a row in its
 //! team's colour sorted by frags, then deaths, then index. In deathmatch
 //! the "Deathmatch - N players" text lands on the spectators' header and
-//! the free-for-all's stays empty (a quirk kept).
+//! the free-for-all's stays empty (a quirk kept). Each row's avatar cell
+//! stays empty and keeps its width (no Steam: what the game shows for
+//! bots); a team's average ping is blank below 1.
 //!
 //! `Board` is what the game tells it (`systems` collects it); `frame` lays
 //! it out in window pixels.
@@ -143,7 +145,10 @@ pub fn frame(look: &Look, board: &Board) -> Frame {
                 let score = board.team_scores[(team == REBELS) as usize];
                 f.push(Draw::text("Default", tall, score.to_string(), header_colour, Vec2::new(col(3), y), Align::Right));
                 let avg = if members.is_empty() { 0 } else { members.iter().map(|p| p.ping as u32).sum::<u32>() / members.len() as u32 };
-                f.push(Draw::text("Default", tall, avg.to_string(), header_colour, Vec2::new(col(5), y), Align::Right));
+                // Blank below 1 (hud.md 13).
+                if avg >= 1 {
+                    f.push(Draw::text("Default", tall, avg.to_string(), header_colour, Vec2::new(col(5), y), Align::Right));
+                }
             }
             y += s.scaled(ROW);
         } else {
@@ -238,5 +243,36 @@ mod tests {
             _ => panic!(),
         };
         assert_eq!(y("B") - y("A"), 36.0);
+    }
+
+    /// hud.md 13 (answered 2026-11-09): with no Steam id the avatar cell
+    /// stays empty and keeps its width (names start after it, nothing drawn
+    /// in it); TDM sections in order with a team's average ping blank
+    /// below 1; ties by deaths, then the order added.
+    #[test]
+    fn avatar_cell_empty_and_team_ping_blank() {
+        let look = spec_look(Screen::base());
+        let board = Board {
+            teamplay: true,
+            players: vec![player("A", COMBINE, 3, 1, 2), player("B", COMBINE, 3, 1, 1), player("R", REBELS, 0, 0, 3)],
+            team_scores: [3, 0],
+            ..Default::default()
+        };
+        let f = frame(&look, &board);
+        let s = look.screen;
+        let x0 = panel_rect(s).min.x + s.scaled(LIST_X);
+        let at = |d: &Draw| match d {
+            Draw::Text { at, .. } => *at,
+            _ => panic!(),
+        };
+        for name in ["A", "B", "R"] {
+            let t = f.find_text(name).unwrap();
+            assert!((at(t).x - (x0 + s.scaled(COLUMNS[0]))).abs() < 0.5, "{name} after the avatar cell");
+        }
+        assert_eq!(order(&f, &["A", "B", "R"]), ["B", "A", "R"], "same frags and deaths: the order added");
+        // Pings all 0: no average drawn under Latency (only the heading).
+        let latency_x = x0 + COLUMNS.iter().map(|w| s.scaled(*w)).sum::<f32>();
+        let at_latency: Vec<_> = f.texts().filter_map(|d| d.as_text().map(|t| (t, at(d)))).filter(|(_, a)| (a.x - latency_x).abs() < 0.5).collect();
+        assert_eq!(at_latency.len(), 1, "{at_latency:?}");
     }
 }

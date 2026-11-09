@@ -715,7 +715,7 @@ fn track(
         let killer = d.attacker;
         let kind = match d.damage.kind {
             DamageKind::Crush | DamageKind::Fall => DeathKind::Crush,
-            DamageKind::Blast => DeathKind::Blast,
+            DamageKind::Blast | DamageKind::BlastSurface => DeathKind::Blast,
             DamageKind::Burn => DeathKind::Burn,
             _ => DeathKind::Other,
         };

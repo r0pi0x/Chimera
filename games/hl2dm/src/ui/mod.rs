@@ -32,12 +32,13 @@
 //!   against the real game (no refcmp of GameUI).
 //! - The damage flashes' trapezoids are straight bands and draw alpha
 //!   blended, not added; the corner staircase and border of the
-//!   scoreboard are drawn from boxes, its avatars and section colours'
-//!   background are left out, and its rows start 26 units down (the file
-//!   gives the list the whole panel).
+//!   scoreboard are drawn from boxes (its avatar cells empty, as without
+//!   Steam), its section colours' background is left out, and its rows
+//!   start 26 units down (the file gives the list the whole panel).
 //! - The console selection styles (`hud_fastswitch` 2 and 3), the hints
 //!   and the spectator GUI are not built. The message of the day
-//!   (`source_gameui::motd`) draws without HL2:DM's own frame.
+//!   (`source_gameui::motd`) draws HL2:DM's frame as boxes, without its
+//!   logo.
 //! - An ammo crate's refused opening sends no "FULL" row (the spec names
 //!   only pickups; `game::hud_notes` has boxes and weapons).
 

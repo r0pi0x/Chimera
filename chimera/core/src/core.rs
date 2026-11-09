@@ -596,9 +596,13 @@ impl BlastFlags {
     pub const NO_FIREBALL_SMOKE: u16 = 256;
     /// No debris (spark streaks, flecks).
     pub const NO_PARTICLES: u16 = 512;
+    /// No spark showers under water (specs/hl2dm/effects_sounds.md, the
+    /// explosion's sparks): every explosion made by code carries it.
+    pub const NO_SPARKS: u16 = 32;
     /// The bits above, out of a map entity's spawnflags.
     pub fn from_spawnflags(flags: u32) -> Self {
-        let known = Self::NO_FIREBALL | Self::NO_DECAL | Self::NO_SOUND | Self::NO_FIREBALL_SMOKE | Self::NO_PARTICLES;
+        let known =
+            Self::NO_FIREBALL | Self::NO_DECAL | Self::NO_SOUND | Self::NO_FIREBALL_SMOKE | Self::NO_PARTICLES | Self::NO_SPARKS;
         Self(flags as u16 & known)
     }
     pub fn has(self, flag: u16) -> bool {
@@ -636,6 +640,10 @@ pub struct Explosion {
     pub through_walls: bool,
     /// How it is drawn and heard.
     pub flags: BlastFlags,
+    /// What its damage is: blast (`env_explosion`'s default, the bomb's),
+    /// blast with blast-surface (exploding props, `env_explosion`'s
+    /// "surface only"), generic (`env_explosion`'s "generic damage").
+    pub kind: DamageKind,
 }
 
 /// How damage was dealt (Source damage types, as far as anything here
@@ -650,6 +658,11 @@ pub enum DamageKind {
     /// Melee swings (the knife).
     Melee,
     Blast,
+    /// Blast with Source's blast-surface bit (64 + 134217728): exploding
+    /// props and an `env_explosion` with "surface only"
+    /// (specs/source/prop_damage.md, hl2dm/rules.md spawn grace). Blast
+    /// to every rule (`is_blast`) but one that asks for blast alone.
+    BlastSurface,
     /// Crushed by a mover.
     Crush,
     Fall,
@@ -661,6 +674,13 @@ pub enum DamageKind {
     /// bits 131072 and 262144): HL2's suit lets them through.
     Poison,
     Radiation,
+}
+
+impl DamageKind {
+    /// Carries the blast bit (blast alone or with blast-surface).
+    pub fn is_blast(self) -> bool {
+        matches!(self, Self::Blast | Self::BlastSurface)
+    }
 }
 
 /// Give a character items a map names (`weapon_ak47`, `item_kevlar`, with

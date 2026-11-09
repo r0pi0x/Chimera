@@ -80,7 +80,10 @@ impl FxLibrary {
     /// The texture a key draws (as loaded: `key_texture`).
     pub fn texture_of(&self, key: &FxKey) -> Option<String> {
         match key.kind.as_str() {
-            "ParticleSystem" => key.path("Texture").map(normalize).or_else(|| self.sprites.get(&normalize(key.path("Sprite")?)).cloned()),
+            "ParticleSystem" => {
+                let f = system_file(key)?;
+                if is_sprite_set(f) { self.sprites.get(&normalize(f)).cloned() } else { Some(normalize(f)) }
+            }
             "PolyTrail" | "PolyTube" => key.path("Texture").map(normalize),
             "Sprite" => self.sprites.get(&normalize(key.path("Sprite")?)).cloned(),
             _ => None,
@@ -136,15 +139,28 @@ pub fn material_name(texture: &str, additive: bool) -> String {
     format!("ca_fx:{}|{}", normalize(texture), if additive { "add" } else { "alpha" })
 }
 
-/// The texture an effect key draws: a particle system's `Texture`, a
-/// sprite's `Sprite` (`.spr`: its first frame's texture).
+/// A particle system's picture file (specs/combat_arms/effects_sounds.md,
+/// "Sprite sets as particle textures"): its `Sprite` when set, else its
+/// `Texture`.
+pub fn system_file(key: &FxKey) -> Option<&str> {
+    key.path("Sprite").filter(|s| !s.trim().is_empty()).or_else(|| key.path("Texture"))
+}
+
+/// A picture file is a sprite set by its extension (`.spr`, any case),
+/// else one texture.
+pub fn is_sprite_set(path: &str) -> bool {
+    path.trim().to_ascii_lowercase().ends_with(".spr")
+}
+
+/// The texture an effect key draws: a particle system's file
+/// (`system_file`: a texture, or a sprite set's first frame), a sprite's
+/// `Sprite` (`.spr`: its first frame's texture).
 pub fn key_texture(key: &FxKey, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Option<String> {
     match key.kind.as_str() {
-        // The flame's own keys name a sprite set and no texture.
-        "ParticleSystem" => key
-            .path("Texture")
-            .map(normalize)
-            .or_else(|| sprite_texture(&file(&normalize(key.path("Sprite")?))?)),
+        "ParticleSystem" => {
+            let f = system_file(key)?;
+            if is_sprite_set(f) { sprite_texture(&file(&normalize(f))?) } else { Some(normalize(f)) }
+        }
         "PolyTrail" | "PolyTube" => key.path("Texture").map(normalize),
         "Sprite" => {
             let spr = normalize(key.path("Sprite")?);
@@ -256,15 +272,22 @@ pub fn add_looks(map: &mut MapData, data: &super::super::data::CaDataInner, file
         let Some(g) = fx.group(name) else { continue };
         for k in g.keys.iter().filter(|k| !shaded(k)) {
             let Some(path) = key_texture(k, file) else { continue };
-            if let Some(spr) = k.path("Sprite").filter(|_| k.kind == "Sprite" || k.path("Texture").is_none()) {
+            let spr = match k.kind.as_str() {
+                "Sprite" => k.path("Sprite"),
+                "ParticleSystem" => system_file(k).filter(|f| is_sprite_set(f)),
+                _ => None,
+            };
+            if let Some(spr) = spr {
                 loaded.sprites.insert(normalize(spr), path.clone());
             }
             loaded.material(map, &path, additive(k), file);
-            // A particle system's sprite plays all its frames.
+            // A particle system's sprite set plays all its frames (a rate of
+            // 0 or more than 4096 frames: the file doesn't load).
             if k.kind == "ParticleSystem"
-                && k.path("Texture").is_none()
-                && let Some(spr) = k.path("Sprite").map(normalize)
+                && let Some(spr) = system_file(k).filter(|f| is_sprite_set(f)).map(normalize)
                 && let Some(s) = file(&spr).and_then(|b| lithtech_formats::spr::Sprite::parse(&b).ok())
+                && s.rate > 0
+                && s.frames.len() <= lithtech_formats::spr::MAX_FRAMES as usize
             {
                 let frames: Vec<String> = s.frames.iter().map(|f| normalize(f.trim())).collect();
                 for f in &frames {
@@ -497,5 +520,37 @@ pub fn sound_clip(path: &str, mount: &Mount) -> Option<MapSoundClip> {
             warn!("Combat Arms sound {path}: {e} (silent)");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lithtech_formats::fxf::{FxProp, FxValue};
+
+    fn system(props: &[(&str, &str)]) -> FxKey {
+        FxKey {
+            kind: "ParticleSystem".into(),
+            props: props
+                .iter()
+                .map(|(n, p)| FxProp { name: n.to_string(), value: FxValue::Path { ext: String::new(), path: p.to_string() } })
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    /// effects_sounds.md, ParticleSystem "Sprite sets as particle
+    /// textures": `Sprite` wins over `Texture`; the file's kind is its
+    /// extension, any case (a `.SPR` named in `Texture` is a sprite set).
+    #[test]
+    fn a_systems_picture_is_its_sprite_then_its_texture() {
+        let both = system(&[("Texture", "FX\\a.dtx"), ("Sprite", "FX\\Flame\\Y_FLAMESET.SPR")]);
+        assert_eq!(system_file(&both), Some("FX\\Flame\\Y_FLAMESET.SPR"));
+        assert!(is_sprite_set(system_file(&both).unwrap()));
+        let texture = system(&[("Texture", "FX\\WEAPONS\\FLAME\\Y_FLAMESET.SPR")]);
+        assert!(is_sprite_set(system_file(&texture).unwrap()), "a set named in Texture");
+        let plain = system(&[("Texture", "FX\\smoke.DTX")]);
+        assert!(!is_sprite_set(system_file(&plain).unwrap()));
+        assert_eq!(key_texture(&plain, &|_| None), Some("fx/smoke.dtx".into()));
     }
 }

@@ -294,7 +294,7 @@ impl CaObject {
     fn weak(&self, kind: DamageKind) -> f32 {
         let ty = match kind {
             DamageKind::Bullet => 2,
-            DamageKind::Blast => 7,
+            DamageKind::Blast | DamageKind::BlastSurface => 7,
             DamageKind::Burn => 3,
             DamageKind::Melee => 13,
             _ => -1,

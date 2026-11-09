@@ -16,9 +16,10 @@
 //! AR2's first two shots since attack was pressed play the first, then
 //! `RECOIL1`-`3`, the last held. A model without one plays the one before.
 //!
-//! Known shortcuts: the AR2's vent pose parameter isn't set (cosmetic); the
-//! machine guns' count is reset at a release but not at a deploy with
-//! attack held (weapons.md 2).
+//! The AR2's vents are `weapons::vent`'s (its `VentPoses` pose parameter).
+//!
+//! Known shortcuts: the machine guns' count is reset at a release but not
+//! at a deploy with attack held (weapons.md 2).
 
 use bevy::prelude::*;
 use chimera_sim::weapon::{

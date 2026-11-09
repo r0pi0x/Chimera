@@ -526,6 +526,7 @@ fn explosions_break_windows_and_vents() {
         bell_sigma: None,
         armor_ratio: None,
         flags: Default::default(),
+        kind: crate::stack::core::DamageKind::Blast,
     });
     office.ticks(3);
     let id = id_of(&office, win);
@@ -553,6 +554,7 @@ fn explosions_break_windows_and_vents() {
             bell_sigma: None,
             armor_ratio: None,
             flags: Default::default(),
+            kind: crate::stack::core::DamageKind::Blast,
         });
     }
     nuke.ticks(3);

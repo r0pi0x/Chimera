@@ -191,7 +191,7 @@ fn choose_pack(
 /// the damage's (same hitgroup), else the hitgroup's; none for damage that
 /// can't headshot.
 pub fn special_shot(kind: DamageKind, hitgroup_region: BodyRegion, gun_region: Option<BodyRegion>) -> SpecialShot {
-    if matches!(kind, DamageKind::Blast | DamageKind::Burn) {
+    if matches!(kind, DamageKind::Blast | DamageKind::BlastSurface | DamageKind::Burn) {
         return SpecialShot::None;
     }
     let region = gun_region

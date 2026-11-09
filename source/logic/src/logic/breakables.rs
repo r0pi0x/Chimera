@@ -549,7 +549,7 @@ pub fn scale_damage(amount: f32, kind: DamageKind, dmg: [f32; 3]) -> f32 {
     match kind {
         DamageKind::Bullet => amount * dmg[0],
         DamageKind::Melee => amount * dmg[1],
-        DamageKind::Blast => amount * dmg[2],
+        DamageKind::Blast | DamageKind::BlastSurface => amount * dmg[2],
         _ => amount,
     }
 }
@@ -806,7 +806,9 @@ impl LogicWorld {
                 radius,
                 attacker: breaker,
                 inflictor: id,
-                flags: Default::default(),
+                // Made by code: no sparks; blast alone (prop_damage.md).
+                flags: crate::core::BlastFlags(crate::core::BlastFlags::NO_SPARKS),
+                kind: crate::core::DamageKind::Blast,
             });
         }
     }
@@ -994,8 +996,8 @@ fn window_hit(
                 }
             }
         }
-        DamageKind::Blast if glass => blast_shatter(w, id, local_dir, amount),
-        DamageKind::Blast => {
+        DamageKind::Blast | DamageKind::BlastSurface if glass => blast_shatter(w, id, local_dir, amount),
+        DamageKind::Blast | DamageKind::BlastSurface => {
             // Tile: a diamond of panes around the hit, |dx| + |dy| under
             // 2..5, within 4 panes.
             let at = w.window(id).map_or(Vec2::ZERO, |win| win.pane_at(local));

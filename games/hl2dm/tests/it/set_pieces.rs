@@ -303,6 +303,7 @@ fn the_microphone_hears_blasts() {
         armor_ratio: None,
         through_walls: false,
         flags: Default::default(),
+        kind: chimera_core::core::DamageKind::Blast,
     };
     c.sim.app.world_mut().write_message(blast(Vec3::new(1000.0, 0.0, 0.0)));
     c.sim.seconds(1.0);

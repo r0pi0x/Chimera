@@ -781,6 +781,7 @@ fn gas_can_explodes_as_the_last_attacker() {
             sound: Some("PropaneTank.Burst".into()),
             // The onbreak-explode kind: its burst and no boom (7.5).
             silent: true,
+            surface: true,
         })
     );
 }

@@ -1444,7 +1444,7 @@ fn detonate(
     };
     match &p.effect {
         GrenadeEffect::Blast(b) => {
-            let (origin, probe) = explode_at(at, b, p.thrower, p.weapon, Some(entity), world, rng, false);
+            let (origin, probe) = explode_at(at, b, p.thrower, p.weapon, Some(entity), world, rng, false, DamageKind::Blast);
             message.at = origin;
             message.ground = probe;
             if let Some(s) = &b.sound {
@@ -1512,6 +1512,7 @@ fn explode_at(
     world: &mut GrenadeWorld,
     rng: &mut ParticleRng,
     round: bool,
+    kind: DamageKind,
 ) -> (Vec3, Option<(Vec3, Vec3, Entity)>) {
     let (from, to) = (at + Vec3::Y * b.probe_up, at - Vec3::Y * b.probe_down);
     let filter = SpatialQueryFilter::default().with_mask(SOLID_LAYERS);
@@ -1525,7 +1526,7 @@ fn explode_at(
             .map(|h| (from + *dir * h.distance, h.normal, world.body(h.entity)))
     });
     let origin = probe.map_or(at, |(point, n, _)| point + n * b.pull_out);
-    blast(origin, b, thrower, weapon, inflictor, world, rng);
+    blast(origin, b, thrower, weapon, inflictor, world, rng, kind);
     if let (Some(group), Some((point, n, body))) = (&b.scorch, probe) {
         world.decals.write(PlaceDecal {
             target: Some(body),
@@ -1593,6 +1594,7 @@ fn explosions(
             &mut world,
             &mut rng.0,
             e.round_scorch,
+            e.kind,
         );
         // The rules' (map logic's, the bomb's): clients hear it too.
         if let Some(s) = &e.sound {
@@ -1623,7 +1625,8 @@ fn explosions(
 fn blast_requests(mut events: MessageReader<BlastAt>, mut world: GrenadeWorld, mut rng: ResMut<GrenadeRng>) {
     for e in events.read() {
         let b = &e.blast;
-        let (origin, probe) = explode_at(e.at, b, e.thrower, e.weapon, e.inflictor, &mut world, &mut rng.0, false);
+        let (origin, probe) =
+            explode_at(e.at, b, e.thrower, e.weapon, e.inflictor, &mut world, &mut rng.0, false, DamageKind::Blast);
         if let Some(s) = &b.sound {
             world.play.write(PlaySound {
                 pitch: None,
@@ -1642,7 +1645,8 @@ fn blast_requests(mut events: MessageReader<BlastAt>, mut world: GrenadeWorld, m
             ground: probe,
             projectile: e.inflictor.unwrap_or(Entity::PLACEHOLDER),
             shake: b.shake,
-            flags: Default::default(),
+            // Made by code: never sparks under water.
+            flags: crate::core::BlastFlags(crate::core::BlastFlags::NO_SPARKS),
         });
     }
 }
@@ -1662,6 +1666,7 @@ fn blast(
     skip: Option<Entity>,
     world: &mut GrenadeWorld,
     rng: &mut ParticleRng,
+    kind: DamageKind,
 ) {
     let src = origin + Vec3::Y * b.src_lift;
     // Source's water rule: None without one, else whether it is under.
@@ -1820,7 +1825,7 @@ fn blast(
             point: end,
             dir,
             hitgroup: Hitgroup::Generic,
-            kind: DamageKind::Blast,
+            kind,
             weapon: Some(weapon),
         };
         // Armour takes its share only if the blast lands (`HitArmor`);

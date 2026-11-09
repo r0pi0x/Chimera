@@ -1450,6 +1450,7 @@ fn apply_effects(world: &mut World, effects: Vec<Effect>, scale: f32) {
                 attacker,
                 inflictor,
                 flags,
+                kind,
             } => {
                 let attacker = match attacker {
                     Some(Who::Player(e)) => Some(e),
@@ -1473,6 +1474,7 @@ fn apply_effects(world: &mut World, effects: Vec<Effect>, scale: f32) {
                     // game_entities.md question 7; the HE's is 1.475).
                     armor_ratio: Some(1.0),
                     flags,
+                    kind,
                 });
             }
             Effect::GlassImpact { at, normal } => {
@@ -2065,7 +2067,7 @@ fn with_controls(world: &mut World, target: Entity, f: impl FnOnce(&mut crate::c
 /// BULLET 2, SLASH 4, BURN 8, FALL 32, BLAST 64, DROWN 16384; the public SDK's
 /// names). Melee as slash and bullets without their extra flag bits are
 /// our reading; fall, the one maps filter, is exact.
-const DAMAGE_KINDS: [(DamageKind, u32); 10] = [
+const DAMAGE_KINDS: [(DamageKind, u32); 11] = [
     (DamageKind::Generic, 0),
     (DamageKind::Crush, 1),
     (DamageKind::Bullet, 2),
@@ -2073,6 +2075,7 @@ const DAMAGE_KINDS: [(DamageKind, u32); 10] = [
     (DamageKind::Burn, 8),
     (DamageKind::Fall, 32),
     (DamageKind::Blast, 64),
+    (DamageKind::BlastSurface, 64 | 134_217_728),
     (DamageKind::Drown, 16384),
     (DamageKind::Poison, 131072),
     (DamageKind::Radiation, 262144),
@@ -2562,7 +2565,13 @@ fn prop_broke(world: &mut World, id: EntId, sound: Option<String>, explode: Opti
             through_walls: false,
             bell_sigma: None,
             armor_ratio: None,
-            flags: crate::core::BlastFlags(if x.silent { crate::core::BlastFlags::NO_SOUND } else { 0 }),
+            // Made by code: never sparks; both of a prop's explosion paths
+            // ask for "surface only", its 1-damage fallback doesn't
+            // (prop_damage.md 7.5, hl2dm/rules.md spawn grace).
+            flags: crate::core::BlastFlags(
+                crate::core::BlastFlags::NO_SPARKS | if x.silent { crate::core::BlastFlags::NO_SOUND } else { 0 },
+            ),
+            kind: if x.surface { crate::core::DamageKind::BlastSurface } else { crate::core::DamageKind::Blast },
         });
     }
     if let Some(index) = world.get::<PropIndex>(node).map(|p| p.0) {

@@ -605,7 +605,7 @@ const HITGROUPS: [Hitgroup; 8] = [
     Hitgroup::RightLeg,
 ];
 
-const KINDS: [DamageKind; 8] = [
+const KINDS: [DamageKind; 9] = [
     DamageKind::Generic,
     DamageKind::Bullet,
     DamageKind::Melee,
@@ -614,6 +614,7 @@ const KINDS: [DamageKind; 8] = [
     DamageKind::Fall,
     DamageKind::Burn,
     DamageKind::Drown,
+    DamageKind::BlastSurface,
 ];
 
 fn hitgroup_number(g: Hitgroup) -> u8 {

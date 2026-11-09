@@ -438,6 +438,7 @@ fn a_map_blast_keeps_its_flags() {
         bell_sigma: None,
         armor_ratio: None,
         flags: BlastFlags(flags),
+        kind: chimera_core::core::DamageKind::Blast,
     };
     let mut sim = sim();
     sim.seconds(0.5);

@@ -38,8 +38,8 @@
 //!   for that length, red (255, 55, 52), brightness 64, 0.35 units wide,
 //!   additive `effects/laser1`.
 //! - **The SMG1 grenade** (`SMG1_GRENADE_MODEL`): `env_smoketrail`'s smoke
-//!   (`smoke_trail`; the puffs stay where they are born, the one thing not
-//!   as the spec's, which adds the entity's velocity);
+//!   (`smoke_trail`; V the grenade's velocity as the server last sent it,
+//!   `Hl2FlyerVelocity`);
 //!   going off, the server's scorch where a 60-unit line along its flight
 //!   hits (`scorches`: `Scorch` on the world, `SmallScorch` on props and
 //!   brush entities).
@@ -435,6 +435,7 @@ fn register(app: &mut App) {
         .ordered::<Hl2BallHeld>()
         .replicate::<Hl2MineBeam>()
         .ordered::<Hl2MineBeam>()
+        .replicate::<Hl2FlyerVelocity>()
         .add_systems(
             PostUpdate,
             (forward_pops, forward_flyer_fx)
@@ -850,14 +851,36 @@ pub struct Hl2BallHeld;
 #[reflect(Component)]
 pub struct Hl2MineBeam(pub f32);
 
+/// A contact grenade's velocity as the server last had it (m/s,
+/// replicated, unquantised): its smoke trail's V on a client, held from
+/// one snapshot to the next (particles_and_smoke.md 5, "What V is on a
+/// client").
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Reflect, serde::Serialize, serde::Deserialize)]
+#[reflect(Component)]
+pub struct Hl2FlyerVelocity(pub Vec3);
+
 /// The server's: `Hl2BallHeld` follows `HeldBall`; an armed mine gets its
-/// `Hl2MineBeam`.
+/// `Hl2MineBeam`; a contact grenade its `Hl2FlyerVelocity`.
 #[allow(clippy::type_complexity)]
 fn mark_for_clients(
     balls: Query<(Entity, Has<HeldBall>, Has<Hl2BallHeld>), With<Flyer>>,
     mines: Query<(Entity, &Hl2Mine), Without<Hl2MineBeam>>,
+    mut grenades: Query<(Entity, &Flyer, Option<&mut Hl2FlyerVelocity>)>,
     mut commands: Commands,
 ) {
+    for (e, f, v) in &mut grenades {
+        if f.weapon != weapons::SMG1 {
+            continue;
+        }
+        match v {
+            Some(mut v) => {
+                v.set_if_neq(Hl2FlyerVelocity(f.velocity));
+            }
+            None => {
+                commands.entity(e).insert(Hl2FlyerVelocity(f.velocity));
+            }
+        }
+    }
     for (e, held, marked) in &balls {
         if held && !marked {
             commands.entity(e).insert(Hl2BallHeld);
@@ -1062,16 +1085,17 @@ fn bolt(g: &mut ParticleGroup, m: &impl Fn(&str) -> Option<usize>, at: Vec3, mov
 /// black, each either of the two smoke materials, opacity about 0.2 through
 /// a sine, drifting 4 to 24 units/s.
 ///
-/// The puffs don't take the grenade's velocity, against the spec's "+ V":
-/// the entity is parented, the spec doesn't say what its absolute velocity
-/// is on a client, and with the flight's 1000 units/s the trail would be a
-/// blob flying along with it (specs question, plan's progress 2026-11-09).
+/// V (particles_and_smoke.md 5, answered 2026-11-09) is the grenade's
+/// velocity as the server last sent it (`Hl2FlyerVelocity`, held between
+/// snapshots, none: 0), O its drawn origin: a frame's puffs are spread
+/// over O − V·Δt + V·τ and each takes V on top of its drift.
+#[allow(clippy::too_many_arguments)]
 fn smoke_trail(
     smoke: &mut ParticleGroup,
     rng: &mut ParticleRng,
     m: &impl Fn(&str) -> Option<usize>,
-    before: Vec3,
-    moved: Vec3,
+    at: Vec3,
+    v: Vec3,
     dt: f32,
     age: f64,
     carry: &mut f32,
@@ -1085,12 +1109,13 @@ fn smoke_trail(
     *carry -= n as f32;
     for k in 0..n {
         let Some(mat) = mats[rng.int(0, 1) as usize].or(mats[0]).or(mats[1]) else { return };
-        let along = before + moved * (k as f32 + rng.float(0.0, 1.0)) / n as f32;
+        let tau = dt * (k as f32 + rng.float(0.0, 1.0)) / n as f32;
+        let along = at - v * dt + v * tau;
         let jitter = Vec3::new(rng.float(-4.0, 4.0), rng.float(-4.0, 4.0), rng.float(-4.0, 4.0)) * U;
         let drift = Vec3::new(rng.float(-1.0, 1.0), rng.float(-1.0, 1.0), rng.float(-1.0, 1.0)) * rng.float(4.0, 24.0) * U;
         let grey = (0.1 + rng.float(-0.2, 0.2)).clamp(0.0, 1.0);
         smoke.particles.push(Particle {
-            velocity: drift,
+            velocity: drift + v,
             color: Vec3::splat(grey),
             color_fade: Some((Vec3::ZERO, 0.0, 1.0)),
             alpha: (rng.float(0.75, 1.25) * 0.2).clamp(0.0, 1.0),
@@ -1140,7 +1165,7 @@ fn glow_and_trail(
 
 #[allow(clippy::too_many_arguments)]
 fn projectile_looks(
-    items: Query<(Entity, &ShownItem, &GlobalTransform, Has<Hl2BallHeld>)>,
+    items: Query<(Entity, &ShownItem, &GlobalTransform, Has<Hl2BallHeld>, Option<&Hl2FlyerVelocity>)>,
     materials: Option<Res<ParticleMaterials>>,
     time: Res<Time>,
     mut particles: ResMut<Particles>,
@@ -1160,7 +1185,7 @@ fn projectile_looks(
         ..default()
     });
     let mut seen = Vec::new();
-    for (e, shown, at, held) in &items {
+    for (e, shown, at, held, velocity) in &items {
         let key = shown.0.as_str();
         if ![MISSILE_MODEL, BALL_MODEL, BOLT_MODEL, SMG1_GRENADE_MODEL, SATCHEL_MODEL, weapons::FRAG].contains(&key) {
             continue;
@@ -1174,7 +1199,10 @@ fn projectile_looks(
             MISSILE_MODEL => rocket(&mut frame, &mut smoke, &mut rng.0, &m, at, moved, &mut t.carry),
             BALL_MODEL => ball(&mut frame, &mut rng.0, &m, at, moved, t.seen, now, held),
             BOLT_MODEL => bolt(&mut frame, &m, at, moved),
-            SMG1_GRENADE_MODEL => smoke_trail(&mut grenade_smoke, &mut rng.0, &m, before, moved, dt, now - t.seen, &mut t.carry),
+            SMG1_GRENADE_MODEL => {
+                let v = velocity.map_or(Vec3::ZERO, |v| v.0);
+                smoke_trail(&mut grenade_smoke, &mut rng.0, &m, at, v, dt, now - t.seen, &mut t.carry)
+            }
             SATCHEL_MODEL => glow_and_trail(&mut frame, &mut trail, &m, at, before, now - t.seen, true),
             _ => glow_and_trail(&mut frame, &mut trail, &m, at, before, now - t.seen, false),
         }
@@ -1197,6 +1225,7 @@ impl Plugin for Hl2ProjectileFxPlugin {
             .init_resource::<Pins>()
             .register_type::<Hl2BallHeld>()
             .register_type::<Hl2MineBeam>()
+            .register_type::<Hl2FlyerVelocity>()
             .add_message::<SatchelPop>()
             .add_message::<FlyerFx>()
             .add_message::<PlaceDecal>()
@@ -1247,5 +1276,26 @@ mod tests {
         let [a, b] = ball_rings(Vec3::ZERO, 0.0);
         assert!((a.life - 0.2).abs() < 1e-6 && (b.life - 0.5).abs() < 1e-6);
         assert!((a.to - 1024.0 * U).abs() < 1e-4 && (b.alpha - 64.0 / 255.0).abs() < 1e-6);
+    }
+
+    /// particles_and_smoke.md 5 ("What V is on a client"): the contact
+    /// grenade's puffs spread over O − V·Δt … O and each takes V on top of
+    /// its 4-24 units/s drift.
+    #[test]
+    fn grenade_smoke_takes_the_snapshot_velocity() {
+        let mut g = ParticleGroup::new(Motion::default());
+        let mut rng = ParticleRng::new(3);
+        let m = |_: &str| Some(0usize);
+        let (at, v, dt) = (Vec3::new(1.0, 2.0, 3.0), Vec3::new(1000.0 * U, 0.0, 0.0), 0.1);
+        let mut carry = 0.0;
+        smoke_trail(&mut g, &mut rng, &m, at, v, dt, 0.0, &mut carry);
+        assert!(g.particles.len() >= 4, "48 a second: {}", g.particles.len());
+        let jitter = 4.0 * U * 3f32.sqrt() + 1e-4;
+        for p in &g.particles {
+            // On the segment from O − V·Δt to O, give or take the jitter.
+            let x = p.position.x;
+            assert!(x >= at.x - v.x * dt - jitter && x <= at.x + jitter, "{x}");
+            assert!((p.velocity - v).length() <= 24.0 * U * 3f32.sqrt() + 1e-4, "{}", p.velocity);
+        }
     }
 }

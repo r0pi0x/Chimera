@@ -133,11 +133,12 @@ pub struct CaProtected {
 }
 
 /// Every damage kind there is (the protection's filter).
-const ALL_KINDS: [DamageKind; 8] = [
+const ALL_KINDS: [DamageKind; 9] = [
     DamageKind::Generic,
     DamageKind::Bullet,
     DamageKind::Melee,
     DamageKind::Blast,
+    DamageKind::BlastSurface,
     DamageKind::Crush,
     DamageKind::Fall,
     DamageKind::Burn,
