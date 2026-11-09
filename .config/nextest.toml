@@ -79,6 +79,13 @@ filter = 'binary_id(cs_source::it) & test(/^heavy::map_courses::(kz_bhop_izanami
 test-group = 'heavy'
 priority = 90
 
+# The spawn sweep's own limit: 449 s and 602 s, then past the heavy tests'
+# 12 minutes three times with agents building (2026-11-09). 30 minutes,
+# like the soak.
+[[profile.default.overrides]]
+filter = 'binary_id(party_kit::server) & test(/^heavy::spawns::every_pool_map_s_spawn_spots_are_inside_it$/)'
+slow-timeout = { period = "180s", terminate-after = 10 }
+
 # The longest besides the soak (2-3 minutes: every pool map loaded in
 # turn) and Combat Arms' skins of every rung (2 minutes): party_kit's
 # sweep ended every run alone, its binary's turn coming last

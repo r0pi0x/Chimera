@@ -388,6 +388,63 @@ fn count_continued(mut events: MessageReader<chimera_sim::weapon::WeaponEvent>, 
         .count();
 }
 
+/// Each breaks a window on cs_office as CS:S's knife does: a Combat Arms
+/// knife (a swing's hit) and the flamethrower (a flame puff touching it, our
+/// rule: `special::impact::flame_touch`; any flame gun, a burn of 0 too), so
+/// a flame player can get in.
+#[test]
+fn combat_arms_melee_and_flame_break_an_office_window() {
+    let Some(map) = load("cs_office") else { return };
+    let scale = map.entity_scale;
+    let windows = entities_of(&map, "func_breakable_surf", None);
+    let entities = map.entities.clone();
+    let mut sim = sim(map);
+    for (weapon, hold) in [("combat_arms:m9_knife", 1.0), ("combat_arms:flamethrower", 1.0)] {
+        let mut broke = None;
+        for &target in &windows {
+            if logic_class(&sim, target).is_some_and(|c| matches!(c, Class::Breakable(b) if b.window.as_ref().is_some_and(|w| w.window_broken))) {
+                continue;
+            }
+            let (lo, hi) = bounds(&entities[target]);
+            let (size, centre) = (hi - lo, (lo + hi) / 2.0);
+            let thin = if size.x < size.y { Vec3::X } else { Vec3::Y };
+            let out = thin * (size.dot(thin) / 2.0 + 30.0);
+            for eye in [centre + out, centre - out] {
+                let (eye, at) = (entity_to_engine(eye, scale), entity_to_engine(centre, scale));
+                let p = sim.spawn_character(eye, noclip::ID);
+                sim.ticks(1);
+                let offset = sim.state(p).eye_offset;
+                sim.app.world_mut().get_mut::<Transform>(p).unwrap().translation = eye - offset;
+                let w = chimera_sim::weapon::give(sim.app.world_mut(), p, weapon).expect("given");
+                sim.app.world_mut().get_mut::<Inventory>(p).unwrap().active = Some(w);
+                sim.seconds(2.5);
+                assert_eq!(sim.app.world().get::<Inventory>(p).unwrap().active, Some(w), "{weapon} in hand");
+                aim(&mut sim, p, at);
+                if ray(&mut sim, eye, at, p) > eye.distance(at) + 0.2 {
+                    sim.app.world_mut().entity_mut(p).despawn();
+                    continue;
+                }
+                sim.intent(p).fire = true;
+                sim.seconds(hold);
+                sim.intent(p).fire = false;
+                sim.ticks(3);
+                let gone = matches!(logic_class(&sim, target), Some(Class::Breakable(b)) if b.window.as_ref().is_some_and(|w| w.window_broken));
+                sim.app.world_mut().entity_mut(p).despawn();
+                if gone {
+                    broke = Some(target);
+                    break;
+                }
+            }
+            if broke.is_some() {
+                break;
+            }
+        }
+        assert!(broke.is_some(), "{weapon} breaks one of cs_office's {} windows", windows.len());
+        eprintln!("{weapon} broke window {broke:?}");
+    }
+}
+
+
 /// cs_office's windows (func_breakable_surf glass) under Combat Arms' M4A1
 /// (weapon_firing.md "Penetration": Glass passes): their nodes' surface
 /// is CS:S's glass (`map::BrushSurface`), Combat Arms' Glass through the

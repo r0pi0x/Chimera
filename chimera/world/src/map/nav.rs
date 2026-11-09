@@ -140,9 +140,10 @@ pub struct NavMesh {
     pub areas: Vec<NavArea>,
     pub ladders: Vec<NavLadder>,
     pub places: Vec<String>,
-    /// Made from the collision by a walker (`nav_gen`), not the map's own
-    /// file or volumes: a mesh for its maker's walker (bots' jump-ups),
-    /// which may reach where players can't.
+    /// Made for its maker's walker, not a map's own navigation file: from
+    /// the collision (`nav_gen`, bots' jump-ups), or from a map's AI volumes
+    /// (Combat Arms': links through doors, whether or not anything opens
+    /// them). Either may reach where players can't.
     pub generated: bool,
 }
 

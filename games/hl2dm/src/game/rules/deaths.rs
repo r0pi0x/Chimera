@@ -195,7 +195,7 @@ pub(super) fn subject(world: &World, e: Entity) -> String {
 /// The death notice's weapon name (rules.md "Death-notice weapon name").
 pub fn notice_weapon(world: &World, scorer: Option<Entity>, damage: &Damage) -> String {
     let class = match (damage.weapon, scorer) {
-        (Some(w), _) => w.to_string(),
+        (Some(w), _) => return weapon_notice_name(w),
         (None, Some(k)) => held(world, k).map_or_else(|| "world".to_string(), str::to_string),
         (None, None) => match damage.kind {
             DamageKind::Fall | DamageKind::Drown => "worldspawn".into(),
@@ -204,6 +204,20 @@ pub fn notice_weapon(world: &World, scorer: Option<Entity>, damage: &Damage) -> 
         },
     };
     notice_name(&class)
+}
+
+/// A killing weapon id as its notice names it, its data's `hud.icon` (a
+/// test holds them equal): what the gun's kills are called, an RPG's
+/// `rpg_missile`, a frag's `grenade_frag`, a crossbow's `crossbow_bolt`, the
+/// inflictors'; anything else as `notice_name` reads it.
+pub fn weapon_notice_name(id: &str) -> String {
+    let name = notice_name(id);
+    match name.as_str() {
+        "rpg" => "rpg_missile".into(),
+        "frag" => "grenade_frag".into(),
+        "crossbow" => "crossbow_bolt".into(),
+        _ => name,
+    }
 }
 
 /// What `k` holds (its weapon's id).
@@ -358,6 +372,26 @@ mod tests {
             ("worldspawn", "worldspawn"),
         ] {
             assert_eq!(n(class), name, "{class}");
+        }
+    }
+
+    /// A weapon id's kills are named as its inflictors' are (rules.md).
+    #[test]
+    fn weapon_ids_name_their_notices() {
+        for (id, name) in [
+            ("hl2dm:weapon_crowbar", "crowbar"),
+            ("hl2dm:weapon_rpg", "rpg_missile"),
+            ("hl2dm:weapon_frag", "grenade_frag"),
+            ("hl2dm:weapon_crossbow", "crossbow_bolt"),
+            ("hl2dm:weapon_slam", "slam"),
+            ("worldspawn", "worldspawn"),
+        ] {
+            assert_eq!(super::weapon_notice_name(id), name, "{id}");
+        }
+        for w in &crate::game::weapons::hl2_weapons().weapons {
+            if let Some(icon) = &w.hud.icon {
+                assert_eq!(&super::weapon_notice_name(&w.id), icon, "{}", w.id);
+            }
         }
     }
 }

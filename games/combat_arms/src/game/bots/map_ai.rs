@@ -240,7 +240,10 @@ impl MapAi {
             areas,
             ladders: Vec::new(),
             places: Vec::new(),
-            generated: false,
+            // Made for AI walkers: its links pass doors that may never
+            // open and jump-ups a player can't climb, so a player's spawn
+            // spots come from a walk instead (`minigame::spawns`).
+            generated: true,
         })
     }
 

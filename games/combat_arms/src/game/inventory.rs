@@ -35,7 +35,9 @@
 //!   machine per update: the first update after a press arms it, the next
 //!   starts the swing (the melee class plays no pre-fire: Corrections
 //!   (2026-10-30) 1; an attack's `prefire` is not played); hit keys that
-//!   pass in the same update make one hit (special_weapons.md 5.1);
+//!   pass in the same update make one hit (special_weapons.md 5.1); a map's
+//!   breakable the swing meets takes its damage as a melee hit, as any
+//!   knife's on those brushes (a CS:S window, a vent);
 //!   each hit key casts one ray from the eye with the gun's square spread
 //!   at the knife's cone (`perturb`, n = 1 for the M9), range, first thing
 //!   hit, no penetration, dealing `B x u x b x k_zone` after armour (u
@@ -976,6 +978,7 @@ fn swing_knives(
     >,
     mut knives: Query<(Entity, &Weapon, &mut Knife)>,
     targets: Query<(Option<&Intent>, Has<Health>, Option<&Inventory>)>,
+    breakables: Query<(), (With<core::Damageable>, Without<Health>)>,
     spreads: Query<&super::weapons::CaSpread>,
     ai: super::weapons::AiHits,
     bodies: Query<(
@@ -1078,12 +1081,32 @@ fn swing_knives(
                         replay: !first.0,
                     });
                     let Some(target) = body else { continue };
+                    let mut roll = shared_random(intent.command, "combat_arms:knife", n as i32);
+                    let u = roll.range(1.0 - knife.spread, 1.0 + knife.spread);
+                    // A map's breakable (a window, a vent): the swing's
+                    // damage at the hit, as any knife's on those brushes.
+                    let hit_entity = hit.map_or(target, |h| h.entity);
+                    let thing = [target, hit_entity].into_iter().find(|e| breakables.contains(*e));
+                    if let Some(thing) = thing {
+                        if server && first.0 {
+                            damage.write(Damage {
+                                target: thing,
+                                attacker: Some(owner),
+                                amount: attack.damage * u,
+                                point: end,
+                                dir,
+                                hitgroup: Hitgroup::Generic,
+                                kind: DamageKind::Melee,
+                                weapon: None,
+                                force: Vec3::ZERO,
+                            });
+                        }
+                        continue;
+                    }
                     let Ok((t_intent, alive, t_inv)) = targets.get(target) else { continue };
                     if !alive || !server || !first.0 {
                         continue;
                     }
-                    let mut roll = shared_random(intent.command, "combat_arms:knife", n as i32);
-                    let u = roll.range(1.0 - knife.spread, 1.0 + knife.spread);
                     // The rear sector from the victim's body, not its view
                     // (Corrections 2).
                     let rear = t_intent.is_some_and(|i| {

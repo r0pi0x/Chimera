@@ -129,19 +129,12 @@ the original's own behaviour isn't a bug (say so instead).
   bottom, blocky steps at the sides). It's the effect shared with CS:S, so
   check there too: sprite clipping against the world, a soft-depth fade, or
   the frame's subrect.
-- **Combat Arms, Blood Money: spawning inside the vault** with no way out
-  (`setpos -6.11 -747.55 -179.90;setang 2.98 90.31 0.00`). Check whether
-  the map really has a spawn there, what opens the vault in the original,
-  and whether our spawn picking should refuse it. Decide and fix.
-- **Ultimate Gun Game's winning screen names the wrong weapon:** winning as
-  a Combat Arms zombie, it shows some other knife as the gun. Everywhere a
-  player's gun is displayed should show their rung's primary, even when
-  they've switched to the knife. Check the scoreboard and other places too.
-- **Combat Arms melee and the RMS-12 against glass:** knives don't break
-  glass (CS office's windows), so a flamethrower player can't get in; the
-  RMS-12 can't break it either.
-- **RMS-12 flamethrower:** shoots what looks like smoke, not flames, and
-  doesn't seem to do damage to anybody.
+- **RMS-12 on a gun game's rung (decision):** it burns nobody: its ammo's
+  `ProgDamage` is 0 (specs/combat_arms/special_weapons.md 4, Open question
+  8), so that is the original's data, not a bug. Its flames do show now and
+  cut glass. On a rung, only the knife climbs. Waiting on the user: keep it,
+  leave zero-damage guns (this, the M136_AT4) out of generated ladders, or a
+  party option that burns?
 - **Nothing blocks the main thread (user, 2026-11-09).** A load must never
   cost a visible frame. After the character swap fix one rung with a Combat
   Arms gun still costs 37 ms (31 ms CPU, 169 M instructions) on the frame of
@@ -158,9 +151,6 @@ the original's own behaviour isn't a bug (say so instead).
   Already answered (below, models_ltb.md W1-W3): its skin is painted for a
   layout no ASW338LM model in the install has. Waiting on the user: leave
   it out of the ladder?
-- **Combat Arms radio menus:** 7, 8 and 9 do nothing. Check what the
-  original's menus offer on those keys (`choose_N`, the same commands as
-  the console report above).
 
 ### Gun game playtest, 2026-10-28 (user)
 
@@ -2522,8 +2512,10 @@ docs/plans/active/sound.md.
 - **`party_kit` `heavy::spawns::every_pool_map_s_spawn_spots_are_inside_it`
   sits at its time limit (2026-11-09).** 449 s, 602 s, then timed out at 723 s
   (67ef9e85's after-push run, 92 min with three agents building). The other
-  4496 tests passed. HL2:DM's maps in the pool and the load both add to it;
-  split it per map or give it a longer limit if it fails again.
+  4496 tests passed. HL2:DM's maps in the pool and the load both add to it.
+  Timed out again at b0af9762: it now has a limit of its own, 30 minutes
+  (.config/nextest.toml, like the soak's). Split it per map if that isn't
+  enough.
 - **Once: `combat_arms bots::merc_27_base_point` index out of bounds
   (2026-11-03).** In 931cda5e's after-push run, `chimera/world/src/map/nav.rs:245`
   read area 67113151 of 26529: that's the valid 4287 with bit 26 set. It

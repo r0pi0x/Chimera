@@ -839,6 +839,32 @@ fn t15_flame_puff_in_the_air() {
     assert_eq!(sim.app.world_mut().query::<&CaDamageSphere>().iter(sim.app.world()).count(), 0, "the spheres are gone");
 }
 
+/// The stream as a player meets it: fire held at a victim standing close
+/// (a puff that touches him goes off on him, 1.3), in mid range and at the
+/// puff's end (475 u, section 4's reach): each one burns. Backlog: "doesn't
+/// seem to do damage to anybody".
+#[test]
+fn the_stream_burns_close_at_mid_range_and_at_the_puffs_end() {
+    for distance in [60.0, 240.0, 470.0] {
+        let mut sim = sim();
+        let shooter = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
+        let victim = player(&mut sim, 0.0, distance, 0.0, 2);
+        armed(&mut sim, shooter, FLAME);
+        // At his chest (a level line from the eye passes over a standing
+        // head: a puff touches only by a hit sphere on its line, 1.2).
+        let (chest, _) = body(&mut sim, victim);
+        let from = eye(&sim, shooter);
+        sim.intent(shooter).pitch = (chest.y - from.y).atan2(chest.z - from.z);
+        sim.intent(shooter).fire = true;
+        sim.seconds(1.5);
+        sim.intent(shooter).fire = false;
+        wait(&mut sim, 1.0);
+        let lost = 100.0 - health(&sim, victim);
+        assert!(lost > 10.0, "at {distance} u the victim lost {lost} HP");
+        eprintln!("at {distance} u: {lost:.1} HP in 2.5 s");
+    }
+}
+
 /// Case 16: spheres of three puffs at once stack: 36 HP in that second.
 #[test]
 fn t16_flame_stacking() {
@@ -967,4 +993,66 @@ fn t19_mine_against_a_wall() {
     assert!(o.s.landed, "landed on the floor");
     assert!(o.pos.z > 98.0 && o.pos.z < 100.0 + 1e-3, "at the foot of the wall: {}", o.pos.z);
     assert_near(Vec3::new(0.0, o.pos.y, 0.0), Vec3::new(0.0, 6.6, 0.0), 0.05, "on the floor");
+}
+
+// ---------------------------------------------------------------------------
+// Flames and melee on a map's breakables (ours: another game's glass)
+
+/// A wall that takes damage across `z` u ahead.
+fn breakable_wall(sim: &mut Sim, z: f32) -> Entity {
+    let e = solid(sim, Vec3::new(-5.0, 0.0, z * U), Vec3::new(5.0, 3.0, z * U + 0.1), None);
+    sim.app.world_mut().entity_mut(e).insert(chimera_core::core::Damageable);
+    sim.ticks(2);
+    e
+}
+
+/// The Damage kinds `target` took.
+fn hit_kinds(sim: &mut Sim, target: Entity) -> Vec<chimera_core::core::DamageKind> {
+    sim.app.world().resource::<KindLog>().0.iter().filter(|(t, _)| *t == target).map(|(_, k)| *k).collect()
+}
+
+#[derive(Resource, Default)]
+struct KindLog(Vec<(Entity, chimera_core::core::DamageKind)>);
+
+fn log_kinds(mut damage: MessageReader<Damage>, mut log: ResMut<KindLog>) {
+    for d in damage.read() {
+        log.0.push((d.target, d.kind));
+    }
+}
+
+fn with_kinds(sim: &mut Sim) {
+    sim.app.init_resource::<KindLog>().add_systems(FixedPostUpdate, log_kinds);
+}
+
+/// A melee weapon breaks what a CS:S knife breaks: its swing's damage, as a
+/// melee hit, reaches a map's breakable.
+#[test]
+fn a_swing_hits_a_breakable() {
+    let mut sim = sim();
+    with_kinds(&mut sim);
+    let p = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
+    armed(&mut sim, p, "test:machete_exact");
+    let wall = breakable_wall(&mut sim, 60.0);
+    sim.intent(p).fire = true;
+    sim.seconds(1.0);
+    sim.intent(p).fire = false;
+    assert!(hit_kinds(&mut sim, wall).contains(&chimera_core::core::DamageKind::Melee), "{:?}", hit_kinds(&mut sim, wall));
+}
+
+/// A flame puff that touches a breakable is a melee-kind hit there (a pane
+/// shatters: our rule), and the puff still goes off.
+#[test]
+fn a_flame_puff_hits_a_breakable() {
+    let mut sim = sim();
+    with_kinds(&mut sim);
+    let p = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
+    armed(&mut sim, p, FLAME);
+    let wall = breakable_wall(&mut sim, 200.0);
+    sim.intent(p).fire = true;
+    sim.seconds(1.5);
+    sim.intent(p).fire = false;
+    let kinds = hit_kinds(&mut sim, wall);
+    assert!(kinds.contains(&chimera_core::core::DamageKind::Melee), "{kinds:?}");
+    let spheres = sim.app.world_mut().query::<&CaDamageSphere>().iter(sim.app.world()).count();
+    assert!(spheres > 0, "the puffs went off at the wall");
 }

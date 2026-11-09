@@ -1212,3 +1212,72 @@ fn a_second_observer_of_arming_runs_before_the_weapons_are_given() {
     );
     assert!(!sim.app.world().get::<Inventory>(b).unwrap().weapons.is_empty(), "then armed");
 }
+
+/// The panel's rung and the callout's level are one number at every change
+/// in normal play: a level up, a melee demotion and a suicide's. (A shot
+/// that read "Rung 1/13" under "Level 4/13" forced the callout with
+/// `chimera_callout rung_up 3`, which says what it is told.)
+#[test]
+fn the_panel_and_the_callout_name_the_same_rung() {
+    use chimera_core::core::LocalPlayer;
+    use chimera_sim::minigame::hud::MinigameStatus;
+    let mut sim = started(DEF);
+    let a = player(&mut sim);
+    let b = player(&mut sim);
+    sim.app.world_mut().entity_mut(a).insert(LocalPlayer);
+    settle(&mut sim);
+    let check = |sim: &Sim, want: &str| {
+        let (lines, ..) = callout(sim).expect("a callout");
+        let panel = sim.app.world().get::<MinigameStatus>(a).unwrap().0[0].text.clone();
+        assert_eq!(lines[1], format!("Level {want}"));
+        assert!(panel.starts_with(&format!("Rung {want}:")), "{panel} under {lines:?}");
+    };
+
+    kill(&mut sim, b, a, DamageKind::Bullet);
+    check(&sim, "2/3");
+    settle(&mut sim);
+    kill(&mut sim, a, b, DamageKind::Melee);
+    check(&sim, "1/3");
+    settle(&mut sim);
+    kill(&mut sim, b, a, DamageKind::Bullet);
+    check(&sim, "2/3");
+}
+
+/// The results name the gun the rung gives, not the ladder's entry beneath
+/// a rung character (a zombie's hands, not the knife the rung would have
+/// had) and not what the player last held.
+#[test]
+fn the_results_name_the_weapon_the_rung_gives() {
+    use chimera_sim::minigame::{
+        ladder::{Ladder, RungCharacter, RungExtras},
+        results,
+    };
+    let mut sim = started(DEF);
+    let a = player(&mut sim);
+    let b = player(&mut sim);
+    settle(&mut sim);
+    {
+        let mut l = sim.app.world_mut().resource_mut::<Ladder>();
+        l.extras = vec![
+            None,
+            Some(RungExtras {
+                game: "kit".into(),
+                character: Some(RungCharacter { id: "kit:zombie".into(), weapon: SHOTGUN.into() }),
+                ..Default::default()
+            }),
+            None,
+        ];
+    }
+    sim.app.world_mut().get_mut::<Rung>(a).unwrap().0 = 1;
+    let rows = results::collect(sim.app.world_mut()).expect("results").rows;
+    let gun = |p: Entity| rows.iter().find(|r| r.player == Some(p)).and_then(|r| r.gun.clone());
+    assert_eq!(gun(a).as_deref(), Some(SHOTGUN), "the character's weapon, not the ladder's rifle");
+    assert_eq!(gun(b).as_deref(), Some(PISTOL), "a plain rung's gun");
+
+    // Holding something else changes nothing: the rung decides.
+    let knife = sim.app.world().get::<chimera_sim::weapon::Inventory>(b).unwrap().active;
+    sim.app.world_mut().get_mut::<chimera_sim::weapon::Inventory>(b).unwrap().active = None;
+    let rows = results::collect(sim.app.world_mut()).expect("results").rows;
+    assert_eq!(rows.iter().find(|r| r.player == Some(b)).and_then(|r| r.gun.as_deref()), Some(PISTOL));
+    sim.app.world_mut().get_mut::<chimera_sim::weapon::Inventory>(b).unwrap().active = knife;
+}

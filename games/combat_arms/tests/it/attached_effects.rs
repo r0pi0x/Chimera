@@ -174,7 +174,7 @@ pub(super) fn test_library() -> Arc<FxLibrary> {
     // The smoke trail's sprites are not in the install: its puffs are
     // untextured squares.
     let sprites: HashMap<String, String> = [(EYE_SPR.to_string(), EYE_TEX.to_string())].into_iter().collect();
-    Arc::new(FxLibrary { file, textures, sprites })
+    Arc::new(FxLibrary { file, textures, sprites, ..Default::default() })
 }
 
 /// The materials the groups draw with, in the pool's material list.

@@ -236,17 +236,21 @@ pub fn load_on_demand(
         }
     }
     wanted.extend(shown.iter().filter_map(|v| v.key.clone()));
+    // Those wanted now, then what the ladder preloads (first in `wanted` wins).
+    let wanted_now = wanted.len();
     wanted.extend(ladder.keys.iter().cloned());
     let mut seen: Vec<&str> = Vec::new();
-    for id in &wanted {
+    for (at, id) in wanted.iter().enumerate() {
         let id = id.as_str();
         if !ours(id) || seen.contains(&id) || has(id) || pending.0.contains_key(id) {
             continue;
         }
         seen.push(id);
         match cached(&ca, id) {
-            // No map yet: it stays in the cache for the map coming.
-            Some(Ok(l)) if models.is_some() => {
+            // In use: added, the first one making `ViewModels` where no map
+            // did (the greybox). A ladder's preload with no map yet stays in
+            // the cache for the map coming.
+            Some(Ok(l)) if models.is_some() || at < wanted_now => {
                 let (model, textures) = (l.model.clone(), l.textures.clone());
                 commands.queue(move |world: &mut World| add_view_model(world, model, textures));
             }

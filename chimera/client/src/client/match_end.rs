@@ -552,7 +552,7 @@ fn cell(parent: &mut ChildSpawnerCommands, text: String, width: f32, right: bool
         Text::new(text),
         font.clone(),
         TextColor(color),
-        TextLayout::justify(if right { Justify::Right } else { Justify::Left }),
+        TextLayout::new(if right { Justify::Right } else { Justify::Left }, LineBreak::NoWrap),
         Node {
             width: px(width * s),
             flex_shrink: 0.0,
@@ -635,7 +635,7 @@ fn draw(
     let font = super::fonts::overlay_font(fonts.as_deref(), CELL * s, false);
     let bold = super::fonts::overlay_font(fonts.as_deref(), CELL * s, true);
     commands.entity(board).with_children(|p| {
-        p.spawn((StandingsRow, Node { column_gap: px(GAP * s), ..default() })).with_children(|r| {
+        p.spawn((StandingsRow, Node { column_gap: px(GAP * s), align_items: AlignItems::Center, ..default() })).with_children(|r| {
             for (i, (h, w)) in header.iter().zip(WIDTHS).enumerate() {
                 cell(r, h.to_string(), w, !matches!(i, 1 | 4), DIM, &font, s);
             }
@@ -655,6 +655,7 @@ fn draw(
                 Node {
                     column_gap: px(GAP * s),
                     padding: UiRect::vertical(px(2.0 * s)),
+                    align_items: AlignItems::Center,
                     ..default()
                 },
                 BackgroundColor(if row.local { LOCAL_BG } else { Color::NONE }),

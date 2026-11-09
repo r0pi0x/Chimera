@@ -17,6 +17,7 @@ use super::super::{
     weapons::{EXPLOSION, box_entry},
 };
 use crate::{
+    core::{Damage, DamageKind, Hitgroup},
     weapon::{
         Weapon,
         grenade::{Detonated, GrenadeKind},
@@ -29,6 +30,10 @@ pub const CHAR_LOOKBACK: f32 = 100.0;
 /// A projectile hitting world geometry detonates this far back along its
 /// flight, u.
 pub const BLAST_BACK_OFF: f32 = 1.0;
+
+/// A flame puff's hit on a map's breakable it touches, hit points
+/// (`flame_touch`).
+pub const FLAME_TOUCH_HP: f32 = 1.0;
 
 /// The damage types that reach both the player object and its hit box
 /// (the blast applies twice): bullet, burn, explode, claymore, infected
@@ -132,7 +137,31 @@ pub(super) fn update(cx: &mut Cx, e: Entity, o: &mut CaObject, p: &ProjectilePar
     let q = from_m + dir * distance;
     o.pos = q / unit;
     let at = q - o.s.last_dir * BLAST_BACK_OFF * unit;
+    if p.flame() {
+        flame_touch(cx, o, collider, q, dir);
+    }
     detonate(cx, e, o, p, at, None);
+}
+
+/// A flame puff touching a map's breakable: a club's hit of
+/// `FLAME_TOUCH_HP` at the touch. Our rule, for Combat Arms' flame on
+/// another game's glass (no game has both): whatever its burn's rate,
+/// also a burn of 0 (`RMS12`), a stream cuts a window pane by pane where it
+/// is aimed, as a knife does, so a flame player can get in; a vent of 1
+/// health goes, anything stronger takes about the burn's rate.
+fn flame_touch(cx: &mut Cx, o: &CaObject, collider: Entity, at: Vec3, dir: Vec3) {
+    let Some(target) = cx.world.breakable_of(collider) else { return };
+    cx.out.damage.write(Damage {
+        target,
+        attacker: o.owner,
+        amount: FLAME_TOUCH_HP * o.hp,
+        point: at,
+        dir,
+        hitgroup: Hitgroup::Generic,
+        kind: DamageKind::Melee,
+        weapon: Some(o.weapon),
+        force: Vec3::ZERO,
+    });
 }
 
 /// Detonate at `at` (m): the effect, the blast, the sphere. The projectile

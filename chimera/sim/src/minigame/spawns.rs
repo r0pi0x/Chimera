@@ -5,10 +5,13 @@
 //! - Spots (`SpawnSpots`, made once per loaded map on the first spawn and
 //!   removed with the map, `MapScopedApp::map_scoped`): points on the
 //!   floors of the map's navigation mesh (`map::nav::NavMesh`, the map's
-//!   own file or volumes; else one generated from its collision,
-//!   `map::nav_gen`, with a walking player's step: a mesh someone else
-//!   generated, `NavMesh::generated`, is not used, since bots' own climbs
-//!   0.8 m ledges a player can't, and once left de_aztec over its walls),
+//!   own file; else one generated from its collision, `map::nav_gen`, with
+//!   a walking player's step: a mesh made for another walker,
+//!   `NavMesh::generated`, is not used, since bots' own climbs 0.8 m ledges
+//!   a player can't, and once left de_aztec over its walls, and Combat
+//!   Arms' AI volumes link through closed doors, which once put a player
+//!   in Blood Money's vault: a spot must be walked to from the spawn points
+//!   through the world as it stands),
 //!   a grid
 //!   about `SPOT_GRID` m apart in the areas that can be walked to from the
 //!   spawn points and back (the mesh's main connected region), each spot

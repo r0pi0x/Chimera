@@ -13,8 +13,9 @@
 //! the games' strings, as the minigame panel's `{weapon}` does), else the
 //! weapon data's plain `hud.name` (`WeaponCatalog`), else the id's last
 //! part in capitals. The columns have fixed widths (numbers right-aligned,
-//! cells clipped) so a header never runs into the next. The board is drawn
-//! above the minigame panel with an opaque background.
+//! cells clipped to one line, however long Combat Arms' names run, and
+//! centred in their row) so a header never runs into the next. The board
+//! is drawn above the minigame panel with an opaque background.
 //!
 //! Known shortcuts: plain text, no team colours.
 
@@ -94,10 +95,12 @@ const LOCAL: Color = Color::srgb(1.0, 0.85, 0.3);
 /// Name, Kills, Deaths, Gun, Ping, Wins.
 pub const WIDTHS: [f32; 6] = [240.0, 80.0, 90.0, 260.0, 80.0, 80.0];
 const GAP: f32 = 10.0;
+/// A row's height: a line of the cells' font and a little.
+const ROW_HEIGHT: f32 = 24.0;
 const BOARD_WIDTH: f32 = 840.0 + 5.0 * GAP + 24.0;
 
 fn row_node() -> Node {
-    Node { column_gap: px(GAP), ..default() }
+    Node { column_gap: px(GAP), align_items: AlignItems::Center, min_height: px(ROW_HEIGHT), ..default() }
 }
 
 fn spawn(mut commands: Commands) {
@@ -125,7 +128,7 @@ fn cell(parent: &mut ChildSpawnerCommands, text: String, width: f32, right: bool
         Text::new(text),
         TextFont { font_size: FontSize::Px(18.0), ..default() },
         TextColor(color),
-        TextLayout::justify(if right { Justify::Right } else { Justify::Left }),
+        TextLayout::new(if right { Justify::Right } else { Justify::Left }, LineBreak::NoWrap),
         Node { width: px(width), flex_shrink: 0.0, overflow: Overflow::clip(), ..default() },
     ));
 }
@@ -181,7 +184,7 @@ fn draw(
             let s = score.copied().unwrap_or_default();
             let gun = ladder
                 .as_ref()
-                .and_then(|l| l.rungs.get(rung))
+                .and_then(|l| l.shown_weapon(rung, catalog.as_deref()))
                 .map(|id| gun_name(id, Some(&gun_names), catalog.as_deref()))
                 .unwrap_or_default();
             (

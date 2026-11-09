@@ -25,8 +25,10 @@
 //!   its rows outlined; a row
 //!   fades over its last second. Sized by the window's height. Every row
 //!   is one fixed height; an icon sits in a line-tall box that centres it
-//!   (an image 90 % of the line tall, a glyph cut to fit, `icon_slot`), so
-//!   rows are equal with any icon or none.
+//!   (an image's art, at the size its whole texture would have 90 % of the
+//!   line tall: Combat Arms' are painted in the texture's top rows,
+//!   `weapon_icons::ink_rows`; a glyph cut to fit, `icon_slot`), so rows are
+//!   equal with any icon or none.
 //! - **`SharedKillFeed`**: the app's flag that this feed is the one; the
 //!   games' own feeds (CS:S's death notices, Combat Arms' kill feed) and
 //!   the shell's fallback HUD's leave theirs out while it is in. Plain
@@ -43,7 +45,7 @@ use bevy::{prelude::*, window::PrimaryWindow};
 use super::{
     fonts::UiFonts,
     minigame_scoreboard::{GunNames, gun_name},
-    weapon_icons::{WeaponIcon, WeaponIcons, spawn_weapon_icon},
+    weapon_icons::{WeaponIcon, WeaponIcons, ink_rows, spawn_weapon_icon},
 };
 use crate::{
     core::{DamageKind, Died, Hitgroup, LocalPlayer, MapLoads, Team},
@@ -275,11 +277,12 @@ fn draw(
     feed: Res<KillFeed>,
     time: Res<Time>,
     window: Query<&Window, With<PrimaryWindow>>,
-    (icons, names, catalog, fonts): (
+    (icons, names, catalog, fonts, images): (
         Option<Res<WeaponIcons>>,
         Option<Res<GunNames>>,
         Option<Res<crate::weapon::data::WeaponCatalog>>,
         Option<Res<UiFonts>>,
+        Option<Res<Assets<Image>>>,
     ),
     mut root: Single<(Entity, &mut Visibility, &mut Node), With<KillFeedRoot>>,
     mut last: Local<Option<(Vec<(u64, u8)>, u32, bool)>>,
@@ -348,7 +351,7 @@ fn draw(
                 }
                 let game = e.weapon.and_then(|w| w.split_once(':')).map(|(g, _)| g);
                 match e.weapon.and_then(|w| icons.as_ref()?.icon(w)) {
-                    Some(icon) => icon_slot(r, &icon, icon_scale, line, 0.9),
+                    Some(icon) => icon_slot(r, &icon, icon_scale, line, 0.9, images.as_deref()),
                     None => {
                         let what = fallback_word(e, |w| gun_name(w, names.as_deref(), catalog.as_deref()));
                         text(r, what, Color::srgb(0.78, 0.78, 0.8));
@@ -356,7 +359,7 @@ fn draw(
                 }
                 if e.headshot {
                     match game.and_then(|g| icons.as_ref()?.mark(g, HEADSHOT)) {
-                        Some(mark) => icon_slot(r, &mark, icon_scale, line, 0.8),
+                        Some(mark) => icon_slot(r, &mark, icon_scale, line, 0.8, images.as_deref()),
                         None => text(r, "HS".into(), Color::srgb(1.0, 0.35, 0.3)),
                     }
                 }
@@ -369,11 +372,12 @@ fn draw(
 }
 
 /// Spawns `icon` in a box as tall as the line, centring it vertically
-/// whatever its art: an image is `fill` of the line tall (width by its
-/// shape), a glyph's font is cut down when it would be taller than that.
-/// The row's height is fixed, so a line is as tall with an icon, without
-/// one or with a tall one (widths vary).
-fn icon_slot(r: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale: f32, line: f32, fill: f32) {
+/// whatever its art: an image's whole texture would be `fill` of the line
+/// tall (width by its shape), and only the rows with art are drawn, so the
+/// art is what is centred; a glyph's font is cut down when it would be taller
+/// than that. The row's height is fixed, so a line is as tall with an icon,
+/// without one or with a tall one (widths vary).
+fn icon_slot(r: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale: f32, line: f32, fill: f32, images: Option<&Assets<Image>>) {
     let scale = fitted_scale(icon, scale, line * fill);
     // An icon font's ink sits a little above its line's middle: nudged down.
     let nudge = match icon {
@@ -388,7 +392,27 @@ fn icon_slot(r: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale: f32, line: 
         flex_shrink: 0.0,
         ..default()
     })
-    .with_children(|b| spawn_weapon_icon(b, icon, scale, line * fill, None));
+    .with_children(|b| {
+        if let WeaponIcon::Image { image, size } = icon
+            && let Some((top, bottom)) = images.and_then(|i| i.get(image)).and_then(ink_rows)
+            && size.y > 0.0
+        {
+            let tall = line * fill;
+            b.spawn((
+                Node {
+                    width: px(tall * size.x / size.y),
+                    height: px(tall * (bottom - top) / size.y),
+                    ..default()
+                },
+                ImageNode {
+                    rect: Some(Rect::new(0.0, top, size.x, bottom)),
+                    ..ImageNode::new(image.clone())
+                },
+            ));
+        } else {
+            spawn_weapon_icon(b, icon, scale, line * fill, None);
+        }
+    });
 }
 
 /// `scale`, lowered so a glyph icon's size fits `room` pixels (an image

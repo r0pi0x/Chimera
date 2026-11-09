@@ -315,6 +315,37 @@ pub enum Shape {
     },
 }
 
+/// What a particle's look follows over its life beyond `Particle`'s ramps
+/// (an effect file's keys): colour and opacity keys, size keys, and the
+/// frames of an animated sprite. An empty list leaves that to the ramps.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ParticleCurves {
+    /// (life fraction, red, green, blue, opacity), in order.
+    pub color: Vec<(f32, [f32; 4])>,
+    /// (life fraction, meters), in order.
+    pub size: Vec<(f32, f32)>,
+    /// A material per frame (indexes into `MapParticles::materials`),
+    /// looping, each `frame_time` seconds.
+    pub frames: Vec<usize>,
+    pub frame_time: f32,
+}
+
+/// `keys` read at `t`: linear between keys, held outside them.
+fn sample_curve<const N: usize>(keys: &[(f32, [f32; N])], t: f32) -> Option<[f32; N]> {
+    let first = keys.first()?;
+    if t <= first.0 {
+        return Some(first.1);
+    }
+    for w in keys.windows(2) {
+        let ((a, va), (b, vb)) = (&w[0], &w[1]);
+        if t <= *b {
+            let x = if b > a { (t - a) / (b - a) } else { 1.0 };
+            return Some(std::array::from_fn(|i| va[i] + (vb[i] - va[i]) * x));
+        }
+    }
+    keys.last().map(|k| k.1)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Particle {
     pub position: Vec3,
@@ -347,6 +378,8 @@ pub struct Particle {
     /// Drawn mirrored left to right (a particle system's yaw flip).
     pub flip: bool,
     pub shape: Shape,
+    /// Curves over its life, over `color`, `alpha`, `size` and `material`.
+    pub curves: Option<std::sync::Arc<ParticleCurves>>,
 }
 
 impl Particle {
@@ -371,14 +404,35 @@ impl Particle {
             roll_stop: f32::INFINITY,
             flip: false,
             shape: Shape::Sprite,
+            curves: None,
         }
     }
 
+    fn life_fraction(&self) -> f32 {
+        if self.life > 0.0 { self.age / self.life } else { 1.0 }
+    }
+
     pub fn current_alpha(&self) -> f32 {
+        if let Some(c) = self.curves.as_ref().and_then(|c| sample_curve(&c.color, self.life_fraction())) {
+            return (self.alpha * c[3]).clamp(0.0, 1.0);
+        }
         (self.alpha * self.fade.at(self.age, self.life)).clamp(0.0, 1.0)
     }
 
+    /// The material it draws with now (an animated sprite's frame).
+    pub fn current_material(&self) -> usize {
+        match self.curves.as_deref() {
+            Some(c) if !c.frames.is_empty() && c.frame_time > 0.0 => {
+                c.frames[(self.age / c.frame_time).max(0.0) as usize % c.frames.len()]
+            }
+            _ => self.material,
+        }
+    }
+
     pub fn current_color(&self) -> Vec3 {
+        if let Some(c) = self.curves.as_ref().and_then(|c| sample_curve(&c.color, self.life_fraction())) {
+            return Vec3::new(c[0], c[1], c[2]);
+        }
         match self.color_fade {
             Some((to, from_t, to_t)) => {
                 let t = if self.life > 0.0 { self.age / self.life } else { 1.0 };
@@ -396,7 +450,13 @@ impl Particle {
     }
 
     pub fn current_size(&self) -> f32 {
-        self.size.at(if self.life > 0.0 { self.age / self.life } else { 1.0 })
+        if let Some(c) = self.curves.as_deref().filter(|c| !c.size.is_empty()) {
+            let keys: Vec<(f32, [f32; 1])> = c.size.iter().map(|(t, v)| (*t, [*v])).collect();
+            if let Some([v]) = sample_curve(&keys, self.life_fraction()) {
+                return v;
+            }
+        }
+        self.size.at(self.life_fraction())
     }
 }
 
@@ -997,5 +1057,34 @@ mod tests {
             step_particle(&mut p, &m, 0.1, &NoWorld, &mut rng);
         }
         assert!((p.roll - 0.25).abs() < 1e-6, "{}", p.roll);
+    }
+}
+
+#[cfg(test)]
+mod curve_tests {
+    use super::*;
+
+    /// A flame's look: white hot, orange, then gone; a growing size; an
+    /// animated sprite's frames in a loop.
+    #[test]
+    fn curves_follow_every_key() {
+        let mut p = Particle::new(Vec3::ZERO, 1.0, 7, 1.0);
+        assert_eq!(p.current_material(), 7, "no curves: as made");
+        p.curves = Some(std::sync::Arc::new(ParticleCurves {
+            color: vec![(0.0, [1.0, 1.0, 1.0, 1.0]), (0.5, [1.0, 0.5, 0.0, 1.0]), (1.0, [0.0, 0.0, 0.0, 0.0])],
+            size: vec![(0.0, 1.0), (0.25, 3.0), (1.0, 4.0)],
+            frames: vec![10, 11, 12],
+            frame_time: 0.1,
+        }));
+        p.age = 0.25;
+        assert_eq!(p.current_color(), Vec3::new(1.0, 0.75, 0.5));
+        assert_eq!(p.current_size(), 3.0);
+        assert_eq!(p.current_material(), 12);
+        p.age = 0.5;
+        assert_eq!(p.current_color(), Vec3::new(1.0, 0.5, 0.0), "the middle key is met, not ramped past");
+        p.age = 0.35;
+        assert_eq!(p.current_material(), 10, "the frames loop");
+        p.age = 0.75;
+        assert_eq!(p.current_alpha(), 0.5);
     }
 }

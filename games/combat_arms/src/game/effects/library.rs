@@ -15,7 +15,8 @@
 //!   its puffs use the untextured material `UNTEXTURED_PUFF`), each a
 //!   particle material of the map
 //!   (`material_name`: texture and blend), its size kept for sprites
-//!   (`FxLibrary::texture_size`);
+//!   (`FxLibrary::texture_size`), a particle system with a sprite and no
+//!   texture (the flame's) with every frame (`FxLibrary::sprite_frames`);
 //! - the world's surface types on the drawn meshes (`tag_surfaces`): each
 //!   texture takes the type its solid physics polygons have most (a
 //!   texture none of them uses: its other polygons', non-solid detail and
@@ -62,6 +63,9 @@ pub struct FxLibrary {
     pub textures: HashMap<String, UVec2>,
     /// Sprite file (normalized) -> its first frame's texture.
     pub sprites: HashMap<String, String>,
+    /// A particle system's sprite file (normalized) -> its frames' textures
+    /// and a frame's seconds.
+    pub sprite_frames: HashMap<String, (Vec<String>, f32)>,
 }
 
 impl FxLibrary {
@@ -76,7 +80,8 @@ impl FxLibrary {
     /// The texture a key draws (as loaded: `key_texture`).
     pub fn texture_of(&self, key: &FxKey) -> Option<String> {
         match key.kind.as_str() {
-            "ParticleSystem" | "PolyTrail" | "PolyTube" => key.path("Texture").map(normalize),
+            "ParticleSystem" => key.path("Texture").map(normalize).or_else(|| self.sprites.get(&normalize(key.path("Sprite")?)).cloned()),
+            "PolyTrail" | "PolyTube" => key.path("Texture").map(normalize),
             "Sprite" => self.sprites.get(&normalize(key.path("Sprite")?)).cloned(),
             _ => None,
         }
@@ -135,7 +140,12 @@ pub fn material_name(texture: &str, additive: bool) -> String {
 /// sprite's `Sprite` (`.spr`: its first frame's texture).
 pub fn key_texture(key: &FxKey, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Option<String> {
     match key.kind.as_str() {
-        "ParticleSystem" | "PolyTrail" | "PolyTube" => key.path("Texture").map(normalize),
+        // The flame's own keys name a sprite set and no texture.
+        "ParticleSystem" => key
+            .path("Texture")
+            .map(normalize)
+            .or_else(|| sprite_texture(&file(&normalize(key.path("Sprite")?))?)),
+        "PolyTrail" | "PolyTube" => key.path("Texture").map(normalize),
         "Sprite" => {
             let spr = normalize(key.path("Sprite")?);
             sprite_texture(&file(&spr)?)
@@ -246,10 +256,22 @@ pub fn add_looks(map: &mut MapData, data: &super::super::data::CaDataInner, file
         let Some(g) = fx.group(name) else { continue };
         for k in g.keys.iter().filter(|k| !shaded(k)) {
             let Some(path) = key_texture(k, file) else { continue };
-            if let Some(spr) = k.path("Sprite").filter(|_| k.kind == "Sprite") {
+            if let Some(spr) = k.path("Sprite").filter(|_| k.kind == "Sprite" || k.path("Texture").is_none()) {
                 loaded.sprites.insert(normalize(spr), path.clone());
             }
             loaded.material(map, &path, additive(k), file);
+            // A particle system's sprite plays all its frames.
+            if k.kind == "ParticleSystem"
+                && k.path("Texture").is_none()
+                && let Some(spr) = k.path("Sprite").map(normalize)
+                && let Some(s) = file(&spr).and_then(|b| lithtech_formats::spr::Sprite::parse(&b).ok())
+            {
+                let frames: Vec<String> = s.frames.iter().map(|f| normalize(f.trim())).collect();
+                for f in &frames {
+                    loaded.material(map, f, additive(k), file);
+                }
+                loaded.sprite_frames.insert(spr, (frames, s.frame_ms() as f32 / 1000.0));
+            }
         }
     }
     // Projectiles' flares (unlit, drawn additive) and smoke trails
@@ -287,7 +309,7 @@ pub fn add_looks(map: &mut MapData, data: &super::super::data::CaDataInner, file
         loaded.sprites.insert(spr, path.clone());
         loaded.material(map, &path, add, file);
     }
-    let Loaded { textures, sprites, missing } = loaded;
+    let Loaded { textures, sprites, sprite_frames, missing } = loaded;
     if missing > 0 {
         map.warnings.push(format!("effects: {missing} effect textures missing or unreadable: drawn untextured"));
     }
@@ -295,6 +317,7 @@ pub fn add_looks(map: &mut MapData, data: &super::super::data::CaDataInner, file
         file: fx,
         textures,
         sprites,
+        sprite_frames,
     })));
 }
 
@@ -304,6 +327,7 @@ pub fn add_looks(map: &mut MapData, data: &super::super::data::CaDataInner, file
 struct Loaded {
     textures: HashMap<String, UVec2>,
     sprites: HashMap<String, String>,
+    sprite_frames: HashMap<String, (Vec<String>, f32)>,
     missing: usize,
 }
 

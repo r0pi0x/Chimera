@@ -4,7 +4,8 @@
 # not a file from the game; the install's attribute data overrides them
 # where it can be read (game/data.rs). Where the spec has no value the line
 # says PLACEHOLDER. Units: world units (1.8 cm each, by body size) and hit
-# points. No sounds or models yet (the front end draws a placeholder).
+# points. The install gives its look (`Flame_Yellow`, effects::attached), its
+# sounds and fire keys; no world model, as the spec says.
 id = "combat_arms:flamethrower"
 units = { length = 0.018, damage = 0.01 }
 # Special class (key 5) [inventory.md 1, 4].
