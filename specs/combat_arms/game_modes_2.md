@@ -51,6 +51,40 @@ Hired Guns is a five-minute round of gold collection: 80 bars lie on the map, pl
 | `CAIHuman` `Squad_0` … `Squad_9` | `Template` true, placed off the playable area | mercenary templates (M11.6) |
 | `ActivateTrigger`, `Trigger`, `TargetTrigger` (vault door, lock doors, way-points `WP_SaveZone_A`/`_B`) | map scripting | doors that open by use (2 s), HUD way-point markers over the banks |
 
+**The vault (2026-11-09, partly answered).** The Blood Money world file
+was not available to this session (the Steam install's `WORLDS.rez` is
+encrypted, and the older client's plaintext maps are on the Windows PC),
+so the vault's wiring (which object at about z −464 is the controller,
+its properties and commands, and whether a second one stands inside) is
+**not** answered here (Open questions 15). What decides the answer, from
+the object classes' rules, for whoever reads the map:
+
+- If the controller is an `ActivateTrigger` (the "use (2 s)" reading:
+  `TimeAmount` 2): it exists for clients only when its `GameType` equals
+  the running mode (`SquadMatch` for Hired Guns; any other value, and
+  in any other mode, it is never sent to clients, so nobody can use it).
+  (An empty `GameType` was not traced.) With `CheckTeam` true and a
+  `Team` named, that team id goes to clients with the trigger, i.e. only
+  that team is offered the use; with `CheckTeam` false, or `Team` empty
+  or `<none>`, every team (the client's request path is not in the
+  material, world_objects.md Follow-up 1.2). A use completes when one player has held use on it for
+  `TimeAmount` s (wall clock), dying or a `LOCK` cancelling; then its
+  `ActivateCommand` runs once (unless `LoopActivate`, which repeats it
+  every `TimeAmount` s while held). `UseMutex` false refuses a second
+  user while one is working. The door itself moves only by what that
+  command sends (typically `TRIGGER`/`ON` to the door, `LOCK` to the
+  trigger), world_objects.md §7.
+- If the vault door is a `SlidingDoor`/`RotatingDoor` with
+  `PlayerActivate` true and not `Locked`, anyone, of either team, opens
+  it from **either side** by aiming at it within use range and pressing
+  use (no hold time, no team test on doors); with `PlayerActivate` false
+  or `Locked`, only commands move it.
+- So someone inside can open it, or get out, only if (a) a usable
+  `ActivateTrigger` (right game type and team) has its box reachable from
+  inside, or (b) the door itself is player-activatable and unlocked, or
+  (c) the door closes on its own and is re-opened from outside. Which of
+  these holds is the map's data.
+
 A `BullionSaveTrigger` is a trigger box with an extra `Team` property: a touch from a player of another team (when `Team` is set), or from a player whose pocket holds no money, is ignored; any other touch runs the trigger normally, whose touch command sends the "save bullion" message to that player (M11.5). `Team` empty means every team may use it.
 
 ### M11.3 Bullion bars
@@ -528,3 +562,13 @@ Common setup unless stated: server file client copy (`ObjectStart` 0, `ObjectEnd
     - F4.6 says the VIP is moved to the teleport point "who spawns"; correct, and it happens after the normal spawn-point choice, so the telefrag of GM S4 can still happen at the escort point.
 13. **Contradictions with `movement.md`:** its "VIP account" (penalty from the vest alone, stamina from the figure alone) is the VIP Escort VIP, and the "vest" value used is the VIP model's own `MovePenalty` (0.44 for model 87). Rename there after review.
 14. **Contradictions with `bots.md`:** none in rules; its "Does the game have bots" table omits Hired Guns' mercenaries, which are AI humans spawned by players (M11.7), outside both bots.md's bots and its PvE section.
+15. **Blood Money's vault** (M11.2, 2026-11-09). Read the Blood Money
+    world file's objects around the vault (the controller near z −464,
+    the vault door, any `ActivateTrigger` or door inside): class,
+    `GameType`, `CheckTeam`/`Team`, `TimeAmount`, `UseMutex`,
+    `ActivateCommand`/`WorkCommand`/`ReleaseCommand` for triggers;
+    `PlayerActivate`, `Locked`, `RemainOpen`/`OpenWaitTime`, `DoorLink`
+    and its commands for the door; and the mission file's round-start
+    commands that re-lock it. With those, M11.2's rules answer who opens
+    it and whether anyone inside can get out. Also check in play: stand
+    in the vault with the door closed and press use on the door.

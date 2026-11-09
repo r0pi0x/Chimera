@@ -283,6 +283,26 @@ other flag), whoever deals it. It is meant against S.L.A.M.s on spawn
 points. Which projectiles deal pure blast is H4's. There is no other spawn
 protection.
 
+Map and prop explosions against the grace (answered 2026-11-09). The test
+is equality of the whole damage-kind word with blast (64), so any second
+bit lets the hit through:
+
+| Source of the blast | Damage kind it carries | Refused in the 0.5 s grace? |
+|---|---|---|
+| map `env_explosion`, default flags | blast (64) alone | **yes** |
+| map `env_explosion` with "surface only" (spawnflag 8192) | blast + blast-surface (64 + 134217728) | no |
+| map `env_explosion` with "generic damage" (16384) | generic (0), no blast bit | no |
+| exploding prop (`prop_physics` / `prop_dynamic` with explode damage or radius; both of its paths ask for "surface only") | blast + blast-surface | no |
+| the 1-damage fallback blast of a prop with the onbreak-explode interaction (source/prop_damage.md 7.5 step 7) | blast alone | yes |
+| `func_breakable` explosion on break | blast alone | yes |
+| HL2:DM's grenades, rockets, S.L.A.M.s (H4) | blast alone | yes |
+
+So a barrel blown up on a spawn point kills a player who has just spawned
+there; an `env_explosion` fired by the map at the same moment does not.
+The surface-only bit also gives the prop blast suit.md's under-water
+refusal (a player whose eyes are under water is not hurt by it when the
+prop is out of the water).
+
 ### The spawn itself
 
 On every spawn (first join, respawn, restart):

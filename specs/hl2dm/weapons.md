@@ -313,6 +313,37 @@ A weapon that "can't fire under water" (eyes under water, water level 3):
 pressing attack plays its empty sound, sets next primary = now + 0.2
 (14 ticks) and ends the weapon's frame for this tick; no ammo is used.
 
+**Order against the empty-clip rules** (answered 2026-11-09; .357, SMG1
+and AR2 primaries, all on the generic frame of §7.6): the attack branch
+runs only when attack is held and next primary ≤ now, and inside it the
+**empty test comes first**. Clip ≤ 0 → the generic fired-on-empty step
+(CS:S §3.4: first tick the empty click, at most every 0.5 s, and the
+"fired on empty" mark; a later held tick reloads or auto-switches), and
+the frame then **continues** to the reload-key and no-button rules as on
+land. Only a weapon with rounds in the clip reaches the water test, and
+that refusal **ends the frame** at once: the reload key is not looked at
+on that tick. Consequences: an empty .357 under water clicks and then
+reloads exactly as on land (a reload under water is allowed); holding
+attack under water with rounds in the clip re-refuses every 0.2 s, and
+since next primary is then always in the future or the frame ends, a
+reload pressed together with attack never starts while attack is held
+(release attack to reload). The shotgun keeps its own order (§7.4: clip
+0 handled before the water test, the same answer).
+
+**Secondary fire under water** (correction 2026-11-09 to §7.3's "dry-fire
+animation … +0.5 s"): neither HL2:DM machine gun sets "alt-fires under
+water", so the generic frame refuses the secondary **before** the weapon's
+own secondary code runs, whenever attack2 is held (no timer test in front
+of it): empty sound, next secondary = now + 0.2, frame ends (no primary,
+no reload that tick). With no grenades or balls the earlier "no secondary
+ammo" step answers first instead (empty sound at most every 0.5 s, next
+secondary = now + 0.5, the frame goes on). So the weapon's own dry-fire
+branch (`ACT_VM_DRYFIRE`, 0.5 s) is never reached in HL2:DM. Because the
+water refusal has no timer in front of it, holding attack2 under water
+plays the empty sound on **every** tick (each replaces the last on the
+weapon's channel; the client plays it on its first prediction only).
+Keep (parity).
+
 ### 6. Bullets: damage and force
 
 - **Damage per bullet = the active weapon's script `damage`**, against
@@ -413,6 +444,9 @@ s = 0.00873 + \text{ramp}\,(0.05234 - 0.00873)
 - Shot-series animation: shots less than 0.5 s apart count up and pick
   `ACT_VM_PRIMARYATTACK`, `ACT_VM_RECOIL1`, `…2`, `…3` (each 0.4 s);
   cosmetic.
+- **Fires under water** (eyes under, water level 3): the pistol is the
+  only clip weapon that does (§5's table; answered 2026-11-09, the
+  "can't fire under water" line below belongs to the .357, §7.2).
 
 #### 7.2 .357 (`weapon_357`)
 
@@ -431,7 +465,7 @@ s = 0.00873 + \text{ramp}\,(0.05234 - 0.00873)
 - Empty: generic (§7.6); sound `Weapon_Pistol.Empty`.
 - Reload: `ACT_VM_RELOAD` 3.6667 s (245 ticks); its animation events
   (loader sounds) are effects only.
-- Can't fire under water.
+- The .357 can't fire under water (§5's rule).
 
 #### 7.3 Machine guns: SMG1 (`weapon_smg1`) and AR2 (`weapon_ar2`)
 
@@ -472,13 +506,33 @@ k = \frac{\min(t, L)}{L},\qquad
 - AR2 reload: 1.5667 s (105 ticks), generic (player busy). The AR2 can't
   reload while its secondary is charging (H4).
 - Secondary fire (SMG1 grenade, AR2 ball): H4. Both use their secondary
-  ammo type; both refuse under water with a dry-fire animation and the
-  empty sound, next secondary +0.5 s.
+  ammo type; both refuse under water through the generic frame (§5,
+  "Secondary fire under water": empty sound, next secondary +0.2 s, every
+  tick attack2 is held; corrected 2026-11-09, was "dry-fire animation,
+  +0.5 s").
 - Empty sound: `Weapon_SMG1.Empty`, `Weapon_IRifle.Empty` (AR2).
 - Animation by consecutive shots (reset when attack is released and on
   deploy): `ACT_VM_PRIMARYATTACK` for the first two, then
   `ACT_VM_RECOIL1`, `…2`, `…3`; the AR2's vent pose parameter
-  follows the count 0–5 (H7); cosmetic.
+  follows the count 0–5; cosmetic.
+- **AR2 vents** (answered 2026-11-09): `v_irifle.mdl` has one pose
+  parameter, `VentPoses`, range 0 to 1, not looping, and a 2-blend
+  sequence of the same name (no activity; flags delta, autoplay and
+  "post", i.e. an additive layer the model always plays on top of every
+  view-model sequence) that blends along it. Value = clamp(n / 5, 0, 1),
+  n = the consecutive-shot count above (0 after a release or a deploy,
+  +1 per primary call that fires, before the bullets): 0, 0.2, 0.4, 0.6,
+  0.8, then 1 from the 5th shot on. It is written each tick at the start
+  of the AR2's frame, before the generic frame (so before that tick's
+  shot and before that tick's release reset): it shows the count as it
+  stood at the end of the previous tick, one tick late, and drops to 0 on
+  the tick after the one where attack was released. It jumps, there is no
+  easing or decay over time. Not written while the player is busy
+  (reload, draw), so the vents hold their last value then; a reload does
+  not reset the count, only release and deploy do. Both the server and
+  the predicting client set it on the view model. Which of the two blends
+  is "closed" is the model's (the sequence stores its pose range as
+  1 → 0; Open questions 12).
 
 #### 7.4 Shotgun (`weapon_shotgun`)
 
@@ -863,6 +917,10 @@ from the action at tick 0.
 | 55 | placed `item_battery` | taken at t | – | hidden; visible and touchable again at t + 30 s at its original spot |
 | 56 | placed weapon pushed 100 units away, at rest, not taken | – | – | moved back to its spawn point at its next 20 s check, `AlyxEmp.Charge` |
 | 57 | `phys_swap` with the pistol in hand | – | – | physcannon selected; `phys_swap` again → pistol (last weapon) |
+| 58 | .357 clip 0, reserve 12, eyes under water | hold attack | – | empty click and "fired on empty" on the first tick, then a reload starts (as on land); no water refusal |
+| 59 | SMG1 clip 10, eyes under water | hold attack and reload together | 1 s | no shot, no reload; empty sound every 0.2 s; release attack → the reload starts on the next tick |
+| 60 | SMG1 with 1 grenade, eyes under water | hold attack2 for 3 ticks | – | empty sound on each of the 3 ticks; next secondary = now + 0.2; no dry-fire animation; grenade count unchanged |
+| 61 | AR2, attack held | 7 shots, then release | – | `VentPoses` 0, 0, 0.2, …, written one tick behind the count; 1.0 from the tick after the 5th shot; 0 two ticks after the release tick |
 
 Checks on the real game or the probe server (game build 24600434,
 dedicated server build 24600426), each marked **probe**:
@@ -936,3 +994,8 @@ dedicated server build 24600426), each marked **probe**:
     scale (pistol 8 → 6, SMG1 5 → 3 points), so P4's "8 on both" needs a
     prop without multipliers; `func_breakable` not checked. P16 (from
     round 1): bullets do push players, 5 a point (projectiles.md 3).
+12. **AR2 vent blend direction.** `v_irifle.mdl`'s `VentPoses` sequence
+    stores its own pose range as 1 → 0 while the pose parameter runs
+    0 → 1; whether pose 0 shows closed vents (expected) depends on how the
+    engine maps the sequence range, which is not in the SDK. Look at an
+    AR2 after 5 held shots and at rest: vents open only while firing.

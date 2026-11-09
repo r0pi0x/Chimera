@@ -348,6 +348,28 @@ ignored**, Quirks); alpha = start alpha/255 × sin(π f) × near fade, where
 near fade = 0 for view depth ≤ 64, (depth − 64)/64 up to 128, 1 beyond;
 not drawn when alpha < 0.001.
 
+**What V is on a client** (answered 2026-11-09). The client's absolute
+velocity of an entity is: with no parent, its own networked velocity;
+with a parent, its own local velocity rotated into the parent's frame,
+plus the parent's absolute velocity (or, when attached to a parent's
+attachment point, plus that attachment's velocity instead). A smoke
+trail never networks a velocity of its own (its own part is 0), so:
+- a map `env_smoketrail` without a parent: V = 0 (puffs only get the
+  random and directed speeds; nothing spreads them along a path);
+- one parented (or made to follow) without an attachment, like HL2:DM's
+  SMG1 grenade trail: V = **the parent's absolute velocity as the client
+  knows it**. For the SMG1 grenade that is its networked velocity
+  (grenades send their velocity unquantised), i.e. the server's value
+  at the last snapshot received, held until the next one (not
+  interpolated, not extrapolated, not the change in the drawn origin);
+  for a parent that networks no velocity (a plain `prop_dynamic`, a
+  `func_` brush moved by the server) it is 0 unless that parent itself
+  has a parent with one.
+- O is the trail's interpolated origin (the parent's drawn origin, the
+  trail sitting at the parent's origin with zero offset), so the
+  "O − V·Δt + V·τ" spread uses the drawn position with the snapshot
+  velocity.
+
 ## Per-tick order
 
 Server (each tick): 1. event queue delivers inputs (Start/Stop,

@@ -910,6 +910,34 @@ the sound and colours are rules.md's; note the chat's Rebels red is
   events.
 - Shown while `+showscores` is held, and by the server at intermission
   (rules.md).
+- **Avatars** (answered 2026-11-09). Only players with a Steam account id
+  get one: the client asks Steam for that account's small avatar and
+  draws it in the avatar cell. A bot (account id 0), a player without
+  one, or a client without Steam running gets **nothing**: the cell stays
+  empty (no placeholder image, no default silhouette) and keeps its width,
+  so names do not shift left. An avatar still loading draws nothing
+  either. Drawn avatar: a square of 16 units (16 × screen height / 480 px)
+  at 11 units from the cell's left edge and 0.5 unit down (room left for
+  the friend frame); when the row's player is the viewer's Steam friend,
+  the frame `vgui/ico_friend_indicator_scoreboard` (the hud texture
+  `ico_friend_indicator_avatar`) is drawn first at the cell's left edge,
+  27.5 × 17 units. The image is tinted white (unchanged). For Chimera
+  without Steam: leave the cell empty, which is what the game shows for
+  bots.
+- **Layout per mode** (the rest of this section, restated): header row
+  (always shown): avatar cell, empty name, "Score", "Deaths", "Latency"
+  right-aligned. DM: one free-for-all section (team 0) then Spectators.
+  TDM: Combine (153 204 255), then Rebels (255 64 64), then Spectators
+  (204 204 204); each section always shown, even empty, its header line
+  in the team colour: "<team>    -   N player(s)" in the name column,
+  the team's score in the Score column, the team's average ping in
+  Latency (blank below 1), Deaths empty. Spectators' header gets no score
+  or ping in TDM. Rows inside a section: frags descending, deaths
+  ascending, then the order the rows were first added to the board
+  (players are added in index order on each refresh, so this is the
+  index order unless a row was created later, e.g. a player who joined
+  after the board was built); dead players are not moved. There is no class,
+  voice, friends or MVP column, and no "dead" mark.
 
 ### 14. MOTD and team menu
 
@@ -930,6 +958,65 @@ the sound and colours are rules.md's; note the chat's Rebels red is
   background paint is empty. Pressing the key bound to `showscores` opens
   the scoreboard over it. The default MOTD files are `cfg/motd_default.txt`
   (HTML) and `cfg/motd_text_default.txt`.
+- **MOTD in detail** (answered 2026-11-09).
+  - *When*: every time a client becomes active on a map, right after its
+    first spawn in that map: first join **and again after every
+    `changelevel`** (each new map re-activates every client, and the
+    server sends the window again). The player is already spawned and
+    alive behind it.
+  - *What the server sends*: title = the server's `hostname` value
+    ("Half-Life 2 Deathmatch" from `valve.rc` unless the server sets
+    another; the text "MESSAGE OF THE DAY" only if the cvar were
+    missing), content type "string-table entry", entry `motd`, no exit
+    command (closing it runs nothing), "unload on close" =
+    `sv_motd_unload_on_dismissal` (0). The server fills the `motd` entry
+    at map load from `cfg/<motdfile>` (`motdfile` "motd.txt"), else
+    `<motdfile>` at the game root, else, only while `motdfile` is at its
+    default, `cfg/motd_default.txt`; the `motd_text` entry likewise from
+    `motdfile_text` / `cfg/motd_text_default.txt`. Files over 2048 bytes
+    are not loaded (the entry stays empty).
+  - *What the client shows*: the title in the `MessageTitle` label (font
+    `MenuTitle`, west-aligned). The entry's text decides the area: empty
+    → the area stays blank; starting `http://` or `https://` → that page
+    in the HTML area; starting `<` → the text as an HTML page; anything
+    else → plain text in the text area (read-only, multi-line, scrolled to
+    the top). If the player set `cl_disablehtmlmotd 1`, an HTML MOTD is
+    replaced by the `motd_text` entry as plain text (blank if that is
+    empty). Links to `steam://` are refused inside the page.
+  - *The frame pictures* (s = min(W/640, H/480); the 640 × 480 window is
+    centred, offsets ox = (W − 640s)/2, oy = (H − 480s)/2; at 4:3 both
+    0): corners `gfx/vgui/round_corner_nw` at (ox + 20s, oy + 20s),
+    `_ne` at (W − ox − 30s, oy + 20s), `_sw` at (ox + 20s, H − oy − 30s),
+    `_se` at (W − ox − 30s, H − oy − 30s), each 10s square;
+    `gfx/vgui/solid_background` strips: top (ox + 30s, oy + 20s) of
+    width W − 2ox − 60s, height 10s; title band (ox + 20s, oy + 30s),
+    width W − 2ox − 40s, height 42s; bottom strip (ox + 30s,
+    H − oy − 30s), width W − 2ox − 60s, height 10s; main area
+    (ox + 20s, H − oy − 30s − 376s), width W − 2ox − 40s, height 376s.
+    At 4:3 the title band ends at y 72s and the main area starts at 74s:
+    a 2-unit see-through line between them. `gfx/vgui/trans_background`
+    bands fill the margins: top (0, 0, W, oy + 20s), bottom (0,
+    H − oy − 20s, W, oy + 20s), left (0, oy + 20s, ox + 20s,
+    H − 2oy − 40s), right (W − ox − 20s, oy + 20s, ox + 20s,
+    H − 2oy − 40s). Logo `gfx/vgui/hl2mp_logo` 42s square at
+    (ox + 25s, oy + 25s), tinted `FgColor` (255 220 0 100 or Orange 255 176 0 255, the same duplicate as Open questions 1). All the corner and solid
+    pieces are tinted (255, 255, 255, `BgColor` alpha); the textures are
+    black (solid opaque, corners black with a rounded alpha mask), so the
+    frame is black at `BgColor`'s alpha (Open questions 1 decides 76 or
+    196). `trans_background` is black at alpha about 1/255 and not
+    tinted: the margins are practically clear. The viewport's own
+    backdrop colour `ViewportBG` is `Blank` (0 0 0 0): the game stays
+    visible around and through the frame. Drawn over the frame: the
+    title, HTML/text area and OK button (positions as above, scaled
+    by s and offset by (ox, oy)). An empty caption label sits at
+    (ox + 76s, oy + 25s), screen-wide, 42s tall.
+  - *Keys*: the window takes the mouse and the keyboard focus (game keys
+    do nothing while it is up; the OK button holds focus): Enter or Space
+    press OK; the key bound to `showscores` opens the scoreboard over it
+    (the scoreboard hides again when that key is released); gamepad A or
+    B (Xbox or Steam Controller) close it. Closing (OK or those buttons)
+    hides it and runs no command. Escape is not handled by the window
+    (Open questions 12).
 
 ### 15. Hints
 
@@ -1177,3 +1264,11 @@ server build 24600426):
     hit settles it.
 11. **Steam Deck** values are listed but not verified; Chimera's Deck
     support decides whether they matter.
+
+12. **MOTD and Escape.** The window handles Enter/Space (OK), the
+    `showscores` key and gamepad A/B; Escape is not handled by it. Whether
+    Escape then opens the game menu over the MOTD (expected, the engine's
+    own handling) and whether the MOTD is still there after the menu is
+    closed needs a look in the game. Also whether keyboard movement is
+    really blocked while it is up (expected: the window holds keyboard
+    focus).
