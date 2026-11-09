@@ -266,7 +266,7 @@ pub fn title_font(scheme: &Kv) -> Option<(String, f32, Vec<String>)> {
 }
 
 /// A VTF's first frame as RGBA8.
-fn decode_vtf(bytes: &[u8]) -> Option<UiImage> {
+pub fn decode_vtf(bytes: &[u8]) -> Option<UiImage> {
     let image = vtf::from_bytes(bytes)
         .ok()
         .and_then(|v| v.highres_image.decode(0).ok())
@@ -397,7 +397,9 @@ pub fn load(mount: &Mount, game_strings: &str) -> Option<GameUi> {
     for (page, file) in OPTION_PAGES {
         if let Some(root) = read_res_pc(&mut read, file) {
             let mut layout = vgui::layout(&root, &strings, &ui.colors, &mut |_| None);
-            if page == "multiplayer" {
+            // Not where the layout has a player model picker (HL2:DM's:
+            // the spray words stay, its page has no name entry).
+            if page == "multiplayer" && layout.get("Player model").is_none() {
                 add_player_name(&mut layout, &strings);
             }
             // Its pictures (ImagePanel `image`, under materials/vgui/: the
@@ -416,6 +418,7 @@ pub fn load(mount: &Mount, game_strings: &str) -> Option<GameUi> {
             ui.options.insert(page.to_string(), layout);
         }
     }
+    picker_pictures(mount, &mut ui);
     // The vote setup dialog (hl2's `votehud.res`, its `VoteSetupDialog`
     // block): the file's frames as `VOTE_SETUP.0`, the dialog's controls
     // as `VOTE_SETUP.1`.
@@ -477,6 +480,46 @@ pub fn load(mount: &Mount, game_strings: &str) -> Option<GameUi> {
     Some(ui)
 }
 
+/// Folder of the player model pictures.
+pub const PLAYER_MODELS_DIR: &str = "materials/vgui/playermodels";
+/// Folder of the spray pictures.
+pub const LOGOS_DIR: &str = "materials/vgui/logos";
+
+/// The Multiplayer tab's pickers' lists and pictures: every `.vtf` below
+/// `materials/vgui/playermodels/` (a model each, by its path) and directly
+/// in `materials/vgui/logos/` (a spray each, by its stem), in the
+/// install's search paths, sorted.
+fn picker_pictures(mount: &Mount, ui: &mut GameUi) {
+    let models_prefix = format!("{PLAYER_MODELS_DIR}/");
+    let mut models: Vec<String> = mount
+        .entries()
+        .into_iter()
+        .filter_map(|(e, _)| e.path.strip_prefix(&models_prefix)?.strip_suffix(".vtf").map(str::to_string))
+        .collect();
+    models.sort();
+    models.dedup();
+    for m in &models {
+        if let Some(pic) = mount.read(&format!("{models_prefix}{m}.vtf")).ok().and_then(|b| decode_vtf(&b)) {
+            ui.option_images.insert(format!("playermodels/{m}"), pic);
+        }
+    }
+    let logos_prefix = format!("{LOGOS_DIR}/");
+    let mut sprays: Vec<String> = mount
+        .files_in(LOGOS_DIR)
+        .into_iter()
+        .filter_map(|p| p.strip_prefix(&logos_prefix)?.strip_suffix(".vtf").map(str::to_string))
+        .collect();
+    sprays.sort();
+    sprays.dedup();
+    for s in &sprays {
+        if let Some(pic) = mount.read(&format!("{logos_prefix}{s}.vtf")).ok().and_then(|b| decode_vtf(&b)) {
+            ui.option_images.insert(format!("logos/{s}"), pic);
+        }
+    }
+    ui.player_models = models;
+    ui.sprays = sprays;
+}
+
 /// The options of a GameUI options script (`.scr`: Create Server's Game
 /// page, `cfg/settings.scr`; Multiplayer > Advanced, `cfg/user.scr`):
 /// each cvar's label (localised), its control and default. The script's
@@ -531,12 +574,18 @@ pub fn scr_settings(text: &str, strings: &HashMap<String, String>) -> Vec<Server
         while j < t.len() && get(j) != "}" {
             j += 1;
         }
-        out.push(ServerSetting {
-            cvar,
-            label,
-            kind,
-            default,
-        });
+        // One row per cvar (case-insensitive), at its first place: a later
+        // entry only replaces the default (the shared reader's rule).
+        if let Some(first) = out.iter_mut().find(|s: &&mut ServerSetting| s.cvar.eq_ignore_ascii_case(&cvar)) {
+            first.default = default;
+        } else {
+            out.push(ServerSetting {
+                cvar,
+                label,
+                kind,
+                default,
+            });
+        }
         i = j + 1;
     }
     out

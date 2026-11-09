@@ -43,6 +43,8 @@ pub struct NewGame {
     pub bot_team: usize,
     /// Index into `DIFFICULTIES`.
     pub difficulty: usize,
+    /// Server Type (index into `SERVER_TYPES`).
+    pub visibility: usize,
     /// The Game and Bot pages' cvars.
     pub cvars: Vec<ServerCvar>,
     /// Host a server others can join (Create Server); false: the quick
@@ -59,6 +61,7 @@ impl Default for NewGame {
             bot_count: "0".into(),
             bot_team: 0,
             difficulty: NORMAL,
+            visibility: 0,
             cvars: Vec::new(),
             host: true,
         }
@@ -105,6 +108,32 @@ pub(super) fn game_options(commands: &mut Commands, ctx: &Ctx, parent: Entity, (
         .and_then(|l| l.get("GameOptions"))
         .map(|c| (coord(c.x), coord(c.y), c.wide, c.tall));
     options_list(commands, ctx, parent, at.unwrap_or((10.0, 12.0, w - 20.0, h - 24.0)));
+}
+
+/// The console line a Game page row becomes (the options script reader's
+/// formats): a check box `"1"` or `"0"`, a number as a decimal with six
+/// places clamped to the row's limits, a text quoted (characters a command
+/// can't hold removed), a list's selected value (`"0"` when none matches).
+pub fn scr_line(c: &ServerCvar, value: &str) -> String {
+    let v = match &c.kind {
+        ServerSettingKind::Bool => (value.trim().parse::<f32>().is_ok_and(|v| v != 0.0) as u8).to_string(),
+        ServerSettingKind::Number { min, max } => {
+            let mut n = value.trim().parse::<f32>().unwrap_or(0.0);
+            if let Some(min) = min {
+                n = n.max(*min);
+            }
+            if let Some(max) = max {
+                n = n.min(*max);
+            }
+            format!("{n:.6}")
+        }
+        ServerSettingKind::List(items) => items
+            .iter()
+            .find(|(_, v)| v.trim() == value.trim())
+            .map_or("0".to_string(), |(_, v)| v.clone()),
+        ServerSettingKind::Text => value.chars().filter(|c| !matches!(c, '"' | ';' | '\n' | '\r')).collect(),
+    };
+    format!("{} \"{v}\"", c.cvar)
 }
 
 impl GameMenu {
@@ -257,6 +286,10 @@ impl GameMenu {
         let bots = self.game.bots();
         let rounds_cvar = self.game.rounds_cvar();
         let mut lines = Vec::new();
+        // Server Type first (the real start sequence's order).
+        if self.game.server_types() {
+            lines.extend(self.visibility_lines());
+        }
         if bots.is_some() {
             lines.push("bot_kick".to_string());
         }
@@ -266,8 +299,13 @@ impl GameMenu {
         }
         // The Game and Bot pages' cvars that changed.
         for c in &ng.cvars {
-            if rounds_cvar != Some(c.cvar.as_str()) && c.before.as_ref().is_some_and(|b| b.trim() != c.value.trim()) {
-                lines.push(format!("{} {}", c.cvar, crate::console::quote(&c.value)));
+            if rounds_cvar != Some(c.cvar.as_str())
+                && let Some(b) = c.before.as_ref()
+            {
+                let (now, was) = (scr_line(c, &c.value), scr_line(c, b));
+                if now != was {
+                    lines.push(now);
+                }
             }
         }
         // Hosting needs `maxplayers` above 1 (else the map loads single
@@ -304,6 +342,9 @@ impl GameMenu {
         let mut rows: Vec<Row> = match self.create_tab {
             0 => {
                 let mut r = vec![self.control_row(Field::Map)];
+                if self.game.server_types() && self.layout().is_none_or(|l| l.get("VisibilityType").is_some()) {
+                    r.push(self.visibility_row());
+                }
                 if let Some(b) = self.game.bots() {
                     r.push(self.control_row(Field::BotsOn));
                     if self.new_game.bots_on {

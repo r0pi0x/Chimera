@@ -570,6 +570,9 @@ mod tests {
         teams: None,
         quick_start: None,
         layout_hides: false,
+        player_models: false,
+        sprays: false,
+        server_types: false,
     };
 
     fn open() -> FirstRun {

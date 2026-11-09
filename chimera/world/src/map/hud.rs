@@ -571,6 +571,15 @@ pub struct GameUi {
     /// Pictures the options' layouts show (an ImagePanel's `image`, lower
     /// case: the brightness dialog's `gamma`).
     pub option_images: HashMap<String, UiImage>,
+    /// The player model pictures the install has, as paths below
+    /// `materials/vgui/playermodels/` without the extension (lower case,
+    /// sorted); their pictures are in `option_images` as
+    /// `playermodels/<path>`.
+    pub player_models: Vec<String>,
+    /// The spray pictures directly in `materials/vgui/logos/` (stems,
+    /// lower case, sorted); their pictures are in `option_images` as
+    /// `logos/<stem>`.
+    pub sprays: Vec<String>,
 }
 
 /// An option of a GameUI options script (Create Server's Game page,

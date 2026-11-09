@@ -25,6 +25,12 @@ pub enum Field {
     /// The video tab's aspect ratio: which window sizes its resolution
     /// list offers (`ASPECTS`).
     Aspect,
+    /// Options > Multiplayer's player model and spray combos.
+    Picker(PickerKind),
+    /// Import Spray's file path.
+    ImportPath,
+    /// Create Server's Server Type combo.
+    Visibility,
 }
 
 /// How a control shows its value.
@@ -87,6 +93,10 @@ pub enum Action {
     VoteIssue(usize),
     VoteChoice(usize),
     CallVote,
+    /// Multiplayer's Import Spray... button: its dialog.
+    ImportSpray,
+    /// The dialog's Import.
+    ImportDo,
 }
 
 /// A row of a page: its controls in tab order.
@@ -319,6 +329,17 @@ pub struct GameMenu {
     pub voice_testing: bool,
     /// The vote setup dialog's issues and picks.
     pub vote: VoteSetup,
+    /// The Multiplayer tab's player model and spray pickers.
+    pub pickers: Pickers,
+    /// Where imported sprays are written and listed from (Chimera's user
+    /// data; None: no import).
+    pub logos_dir: Option<std::path::PathBuf>,
+    /// The stems of the imported sprays.
+    pub imported: Vec<String>,
+    /// Import Spray's file path as typed.
+    pub import_path: String,
+    /// The "Spray Import Error" box's words.
+    pub import_error: Option<String>,
 }
 
 /// Keyboard list rows shown at once.
@@ -342,6 +363,7 @@ pub(super) fn advanced_button(action: &Action) -> Option<&'static str> {
         Action::VideoAdvanced => Some("AdvancedButton"),
         Action::Gamma => Some("GammaButton"),
         Action::MultiplayerAdvanced => Some("Advanced"),
+        Action::ImportSpray => Some("ImportSprayImage"),
         _ => None,
     }
 }
@@ -390,7 +412,7 @@ pub(super) fn menu_input(menu: &GameMenu, a: &[String]) -> Result<Input, String>
     let word = a.first().map(|s| s.to_lowercase());
     match word.as_deref() {
         Some("focus") => {
-            let what = a.get(1).map(|s| s.to_lowercase()).ok_or("focus <cvar|map|bots|botcount|botteam|difficulty|aspect>")?;
+            let what = a.get(1).map(|s| s.to_lowercase()).ok_or("focus <cvar|map|bots|botcount|botteam|difficulty|aspect|playermodel|spray|servertype>")?;
             let i = rows
                 .iter()
                 .position(|r| match r.field() {
@@ -402,6 +424,9 @@ pub(super) fn menu_input(menu: &GameMenu, a: &[String]) -> Result<Input, String>
                     Some(Field::ServerCvar(i)) => menu.new_game.cvars[i].cvar == what,
                     Some(Field::UserCvar(i)) => menu.user_cvars[i].cvar == what,
                     Some(Field::Aspect) => what == "aspect",
+                    Some(Field::Picker(k)) => what == if k == PickerKind::Model { "playermodel" } else { "spray" },
+                    Some(Field::Visibility) => what == "servertype",
+                    Some(Field::ImportPath) => what == "importpath",
                     Some(Field::Setting(i)) => SETTINGS[i].cvars().any(|c| c == what),
                     _ => false,
                 })
@@ -473,6 +498,11 @@ impl GameMenu {
         self.new_game.cvars = self.server_cvars(&get);
         self.new_game.random = false;
         self.user_cvars = self.user_cvars_now(&get);
+        self.open_pickers(&get);
+        self.new_game.visibility = get(SERVER_TYPE_CVAR)
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .filter(|k| *k < SERVER_TYPES.len())
+            .unwrap_or(0);
         self.server_name = get("hostname").unwrap_or_default();
         self.go_to(page);
     }
@@ -641,6 +671,16 @@ impl GameMenu {
                     },
                 )
             }
+            Field::Picker(kind) => return self.picker_row(kind).unwrap_or(Row::Info(String::new())),
+            Field::Visibility => return self.visibility_row(),
+            Field::ImportPath => (
+                "File".into(),
+                Control::Text {
+                    text: self.import_path.clone(),
+                    numeric: false,
+                    max: 260,
+                },
+            ),
             Field::Setting(i) | Field::SettingText(i) => {
                 let s = &SETTINGS[i];
                 let label = s.token.and_then(|t| self.game_text(t)).unwrap_or_else(|| s.label.to_string());
@@ -701,6 +741,8 @@ impl GameMenu {
             Page::Debug => self.debug_rows(),
             Page::PlayerList => self.player_list_rows(),
             Page::Vote => self.vote_rows(),
+            Page::ImportSpray => self.import_rows(),
+            Page::SprayError => self.import_error_rows(),
         }
     }
 
@@ -750,6 +792,9 @@ impl GameMenu {
             Field::ServerCvar(i) => self.new_game.cvars.get(i).and_then(|c| c.field),
             Field::UserCvar(_) => None,
             Field::Aspect => Some("AspectRatio"),
+            Field::Picker(kind) => Some(kind.field()),
+            Field::Visibility => Some("VisibilityType"),
+            Field::ImportPath => None,
             Field::Setting(i) => SETTINGS[i].field,
             Field::SettingText(i) => VALUE_ENTRIES.iter().find(|(_, c)| *c == SETTINGS[i].cvar).map(|(f, _)| *f),
         }
@@ -766,6 +811,8 @@ impl GameMenu {
             | Page::MultiplayerAdvanced
             | Page::Extras
             | Page::Debug => Some(Action::Ok),
+            Page::ImportSpray => Some(Action::ImportDo),
+            Page::SprayError => Some(Action::Ok),
             _ => None,
         }
     }
@@ -1150,6 +1197,7 @@ impl GameMenu {
             Field::BotCount => self.new_game.bot_count = text,
             Field::ServerCvar(i) => self.new_game.cvars[i].value = text,
             Field::UserCvar(i) => self.user_cvars[i].value = text,
+            Field::ImportPath => self.import_path = text,
             // A text setting (the player name): set on OK or Apply.
             Field::Setting(i) if matches!(SETTINGS[i].kind, SettingKind::Text(_)) => {
                 if let Some(v) = self.values.get_mut(i) {
@@ -1228,8 +1276,14 @@ impl GameMenu {
         self.scroll = 0;
         match self.page {
             Page::Main => {}
-            Page::KeyboardAdvanced | Page::VideoAdvanced | Page::Gamma | Page::MultiplayerAdvanced => {
+            Page::KeyboardAdvanced
+            | Page::VideoAdvanced
+            | Page::Gamma
+            | Page::MultiplayerAdvanced
+            | Page::ImportSpray
+            | Page::SprayError => {
                 let action = match self.page {
+                    Page::ImportSpray | Page::SprayError => Action::ImportSpray,
                     Page::KeyboardAdvanced => Action::Advanced,
                     Page::VideoAdvanced => Action::VideoAdvanced,
                     Page::Gamma => Action::Gamma,
@@ -1338,7 +1392,13 @@ impl GameMenu {
                 }
                 self.back();
             }
-            Action::Ok if !self.typed.is_empty() && matches!(self.page, Page::Settings | Page::Extras | Page::Debug) => {
+            Action::Ok if self.page == Page::SprayError => self.back(),
+            Action::ImportSpray => {
+                self.import_error = None;
+                self.go_to(Page::ImportSpray);
+            }
+            Action::ImportDo => self.import_spray(),
+            Action::Ok if (!self.typed.is_empty() || self.pickers_pending()) && matches!(self.page, Page::Settings | Page::Extras | Page::Debug) => {
                 self.apply_typed(out);
                 self.options_before.clear();
                 self.back();
@@ -1361,6 +1421,7 @@ impl GameMenu {
                 }
                 Page::Settings | Page::Extras | Page::Debug => {
                     self.typed.clear();
+                    self.revert_pickers();
                     let before = std::mem::take(&mut self.options_before);
                     self.restore(before, out);
                     self.back();
@@ -1408,6 +1469,15 @@ impl GameMenu {
                     _ => {}
                 }
             }
+            Field::Picker(kind) => {
+                let p = self.pickers.get(kind);
+                let k = widgets::combo_step(p.selected, p.entries.len().max(1), dir);
+                self.pick_entry(kind, k);
+            }
+            Field::Visibility => {
+                self.new_game.visibility = widgets::combo_step(self.new_game.visibility, SERVER_TYPES.len(), dir);
+            }
+            Field::ImportPath => {}
             Field::Aspect => {
                 let at = self.aspect.unwrap_or(0);
                 self.pick_aspect(widgets::combo_step(at, ASPECTS.len(), dir), out);
@@ -1443,6 +1513,8 @@ impl GameMenu {
                 }
             }
             Field::Aspect => self.pick_aspect(k, out),
+            Field::Picker(kind) => self.pick_entry(kind, k),
+            Field::Visibility => self.new_game.visibility = k.min(SERVER_TYPES.len() - 1),
             Field::Setting(i) => {
                 let none = |_: &str| None;
                 if let Some((v, _)) = SETTINGS[i].entries(&self.shown_resolutions(), &none).into_iter().nth(k) {

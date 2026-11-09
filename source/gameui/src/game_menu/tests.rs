@@ -61,6 +61,9 @@ static TEST_GAME: crate::MenuGame = crate::MenuGame {
     teams: Some(["Terrorists", "Counter-Terrorists"]),
     quick_start: Some(crate::QuickStart { map: QUICK_MAP, bots: QUICK_BOTS }),
     layout_hides: false,
+    player_models: false,
+    sprays: false,
+    server_types: false,
 };
 
 const TEST: crate::GameRef = crate::GameRef(Some(&TEST_GAME));
@@ -789,7 +792,7 @@ fn create_server_by_its_controls() {
         [
             "bot_kick",
             "chimera_rounds 1",
-            "mp_friendlyfire 1",
+            "mp_friendlyfire \"1\"",
             "maxplayers 32",
             "bot_reaction 0.2",
             "bot_aim_error 1.5",
@@ -2047,4 +2050,388 @@ fn the_vote_setup_dialog_opened_by_callvote_closes_back_to_the_game() {
     let close = m.rows().len() - 1;
     let out = m.handle(Input::Click(Target::Row(close), 0));
     assert!(out.close && !m.open, "Close goes back to the game");
+}
+
+// ---- HL2:DM's pickers, Import Spray and Server Type
+// (specs/hl2dm/game_ui.md 2.1-2.4, 4; its test cases 3-15).
+
+static HL2_GAME: crate::MenuGame = crate::MenuGame {
+    player_models: true,
+    sprays: true,
+    server_types: true,
+    bots: None,
+    rounds_cvar: None,
+    teams: None,
+    quick_start: None,
+    layout_hides: true,
+    ..TEST_GAME_BASE
+};
+
+/// A game like `TEST_GAME` without its extras.
+const TEST_GAME_BASE: crate::MenuGame = crate::MenuGame {
+    info: &TEST_INFO,
+    name: "A Game",
+    steam_folder: "A Game",
+    strings: "resource/a_english.txt",
+    bots: None,
+    rounds_cvar: None,
+    teams: None,
+    quick_start: None,
+    layout_hides: false,
+    player_models: false,
+    sprays: false,
+    server_types: false,
+};
+
+const MODELS: [&str; 5] = ["combine_soldier", "humans/group03/female_01", "humans/group03/male_05", "humans/group03/male_09", "police"];
+const SPRAYS: [&str; 3] = ["spray_canned", "spray_combine", "spray_lambda"];
+
+fn hl2_ui() -> GameUi {
+    let layout = source_engine::hud::gameui::layout_of_res(
+        r#""x" {
+            "TextEntry1" { "ControlName" "TextEntry" "fieldName" "TextEntry1" "xpos" "277" "ypos" "33" "wide" "190" "tall" "203" "editable" "0" "zpos" "-1" }
+            "ModelImage" { "ControlName" "Panel" "fieldName" "ModelImage" "xpos" "277" "ypos" "34" "wide" "240" "tall" "256" }
+            "Player model" { "ControlName" "CLabeledCommandComboBox" "fieldName" "Player model" "xpos" "277" "ypos" "266" "wide" "190" "tall" "24" }
+            "LogoImage" { "ControlName" "ImagePanel" "fieldName" "LogoImage" "xpos" "28" "ypos" "61" "wide" "64" "tall" "64" }
+            "SpraypaintList" { "ControlName" "CLabeledCommandComboBox" "fieldName" "SpraypaintList" "xpos" "100" "ypos" "61" "wide" "124" "tall" "24" }
+            "ImportSprayImage" { "ControlName" "Button" "fieldName" "ImportSprayImage" "xpos" "100" "ypos" "93" "wide" "124" "tall" "24" "labelText" "Import Spray..." }
+        }"#,
+    )
+    .expect("layout");
+    let server = source_engine::hud::gameui::layout_of_res(
+        r#""x" {
+            "MapList" { "ControlName" "ComboBox" "fieldName" "MapList" "xpos" "56" "ypos" "20" "wide" "200" "tall" "24" }
+            "VisibilityType" { "ControlName" "ComboBox" "fieldName" "VisibilityType" "xpos" "16" "ypos" "74" "wide" "200" "tall" "24" }
+        }"#,
+    )
+    .expect("layout");
+    let scr = source_engine::hud::gameui::scr_settings(
+        r#"VERSION 1.0
+        {
+            "hostname" { "Hostname" { STRING } { "Half-Life 2 Deathmatch" } }
+            "sv_password" { "Server password" { STRING } { "" } }
+            "maxplayers" { "Max. players" { NUMBER 1 32 } { "32" } }
+            "sv_password" { "Server password" { STRING } { "" } }
+            "mp_timelimit" { "Time Limit (Min.)" { NUMBER 0 -1 } { "0" } }
+            "mp_fraglimit" { "Frag Limit" { NUMBER 0 -1 } { "0" } }
+            "mp_teamplay" { "Teamplay" { BOOL } { "0" } }
+            "mp_weaponstay" { "Weapons Stay" { BOOL } { "0" } }
+            "mp_footsteps" { "Footsteps" { BOOL } { "1" } }
+            "mp_flashlight" { "Flashlight" { BOOL } { "0" } }
+            "mp_forcerespawn" { "Force Respawn" { BOOL } { "0" } }
+        }"#,
+        &HashMap::new(),
+    );
+    GameUi {
+        options: HashMap::from([("multiplayer".to_string(), layout), ("create_server".to_string(), server)]),
+        player_models: MODELS.iter().map(|s| s.to_string()).collect(),
+        sprays: SPRAYS.iter().map(|s| s.to_string()).collect(),
+        server_settings: scr,
+        ..default()
+    }
+}
+
+fn hl2_menu(cvars: &'static [(&'static str, &'static str)], logos: Option<std::path::PathBuf>) -> GameMenu {
+    let mut m = GameMenu::for_game(&HL2_GAME);
+    m.in_game = true;
+    m.logos_dir = logos;
+    m.set_ui(Some(Arc::new(hl2_ui())));
+    let g = move |n: &str| {
+        cvars
+            .iter()
+            .chain(&[("hostname", "Half-Life 2 Deathmatch"), ("maxplayers", "32"), ("mp_teamplay", "0"), ("mp_timelimit", "0")])
+            .find(|(k, _)| *k == n)
+            .map(|(_, v)| v.to_string())
+    };
+    m.open(Page::Settings, vec!["dm_lockdown".into(), "dm_overwatch".into()], Some("dm_lockdown"), g);
+    m.set_tab(Tab::Multiplayer);
+    m
+}
+
+fn picker_row(m: &GameMenu, k: PickerKind) -> usize {
+    row_with(m, Field::Picker(k))
+}
+
+fn choose_in(m: &mut GameMenu, kind: PickerKind, k: usize) {
+    let row = picker_row(m, kind);
+    choose(m, row, k);
+}
+
+fn choose(m: &mut GameMenu, row: usize, k: usize) {
+    press(m, &[Input::Click(Target::Row(row), 0), Input::Click(Target::ComboItem(k), 0)]);
+}
+
+/// Case 3 and 2.4: the pickers, the import button; no crosshair controls.
+#[test]
+fn the_multiplayer_page_lists_the_models_and_sprays() {
+    let m = hl2_menu(&[], None);
+    let rows = m.rows();
+    match control(&m, picker_row(&m, PickerKind::Model)) {
+        Control::Combo { entries, selected, .. } => {
+            assert_eq!(entries, ["combine_soldier", "female_01", "male_05", "male_09", "police"]);
+            assert_eq!(selected, Some(0), "nothing matches `none`: the first, shown only");
+        }
+        c => panic!("{c:?}"),
+    }
+    match control(&m, picker_row(&m, PickerKind::Spray)) {
+        Control::Combo { entries, selected, .. } => {
+            assert_eq!(entries, SPRAYS);
+            assert_eq!(selected, Some(0));
+        }
+        c => panic!("{c:?}"),
+    }
+    assert!(rows.iter().any(|r| matches!(r, Row::Button { action: Action::ImportSpray, .. })));
+    assert!(rows.iter().all(|r| !matches!(r, Row::Control { field: Field::Setting(i), .. } if SETTINGS[*i].cvar.starts_with("cl_crosshair"))));
+    // The layout keeps its negative `zpos` box and the picture panel.
+    let layout = m.layout().unwrap();
+    assert_eq!(layout.get("TextEntry1").unwrap().keys.get("zpos").map(String::as_str), Some("-1"));
+    assert!(layout.get("ModelImage").is_some());
+    // CS:S's page (no flags) has neither picker.
+    let mut css = GameMenu::for_game(&TEST_GAME_BASE);
+    css.set_ui(Some(Arc::new(hl2_ui())));
+    css.open(Page::Settings, vec![], None, get);
+    css.set_tab(Tab::Multiplayer);
+    assert!(css.rows().iter().all(|r| !matches!(r.field(), Some(Field::Picker(_)))));
+}
+
+/// Cases 4 and 5: OK runs the chosen entries' lines.
+#[test]
+fn ok_runs_the_chosen_model_and_spray() {
+    let mut m = hl2_menu(&[], None);
+    choose_in(&mut m, PickerKind::Model, 2);
+    choose_in(&mut m, PickerKind::Spray, 2);
+    assert_eq!(m.preview_picture(PickerKind::Model), Some("playermodels/humans/group03/male_05"));
+    assert_eq!(m.preview_picture(PickerKind::Spray), Some("logos/spray_lambda"));
+    let out = click_on(&mut m, |m| button(m, Action::Ok));
+    assert_eq!(
+        out.lines,
+        ["cl_playermodel models/humans/group03/male_05.mdl", "cl_logofile materials/vgui/logos/spray_lambda.vtf"]
+    );
+}
+
+/// Cases 6 and 7: Cancel runs nothing; Apply runs at once and the page stays.
+#[test]
+fn cancel_drops_and_apply_runs_the_choice() {
+    let mut m = hl2_menu(&[], None);
+    assert!(!matches!(m.rows()[button(&m, Action::Apply)], Row::Button { enabled: true, .. }), "Apply greyed with nothing chosen");
+    choose_in(&mut m, PickerKind::Model, 4);
+    assert_eq!(m.preview_picture(PickerKind::Model), Some("playermodels/police"));
+    assert!(matches!(m.rows()[button(&m, Action::Apply)], Row::Button { enabled: true, .. }));
+    let out = click_on(&mut m, |m| button(m, Action::Cancel));
+    assert!(out.lines.is_empty());
+    assert_eq!(m.page, Page::Main);
+    // Again, then Apply: the line now, the page open.
+    m.open(Page::Settings, vec![], None, |_| None);
+    m.set_tab(Tab::Multiplayer);
+    choose_in(&mut m, PickerKind::Model, 4);
+    let out = click_on(&mut m, |m| button(m, Action::Apply));
+    assert_eq!(out.lines, ["cl_playermodel models/police.mdl"]);
+    assert_eq!(m.page, Page::Settings);
+    // OK after Apply with no other change: nothing runs twice.
+    let out = click_on(&mut m, |m| button(m, Action::Ok));
+    assert!(out.lines.is_empty(), "{:?}", out.lines);
+}
+
+/// Case 8 and the opening selection: `none` stays; a model the cvar names
+/// is selected and not run again.
+#[test]
+fn nothing_runs_unless_the_selection_changes() {
+    let mut m = hl2_menu(&[], None);
+    let out = click_on(&mut m, |m| button(m, Action::Ok));
+    assert!(out.lines.is_empty(), "cl_playermodel stays none: {:?}", out.lines);
+    let mut m = hl2_menu(
+        &[("cl_playermodel", "models/humans/group03/male_09.mdl"), ("cl_logofile", "materials/vgui/logos/spray_combine.vtf")],
+        None,
+    );
+    assert!(matches!(control(&m, picker_row(&m, PickerKind::Model)), Control::Combo { selected: Some(3), .. }));
+    assert!(matches!(control(&m, picker_row(&m, PickerKind::Spray)), Control::Combo { selected: Some(1), .. }));
+    assert!(click_on(&mut m, |m| button(m, Action::Ok)).lines.is_empty());
+}
+
+fn temp_dir(name: &str) -> std::path::PathBuf {
+    let d = std::env::temp_dir().join(format!("chimera_menu_{name}_{}", std::process::id()));
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+
+fn write_tga(path: &std::path::Path, side: u32) {
+    // An uncompressed 32-bit Targa.
+    let mut f = vec![0u8, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    f.extend_from_slice(&(side as u16).to_le_bytes());
+    f.extend_from_slice(&(side as u16).to_le_bytes());
+    f.extend_from_slice(&[32, 8]);
+    f.extend(std::iter::repeat_n(128u8, (side * side * 4) as usize));
+    std::fs::write(path, f).unwrap();
+}
+
+fn type_path_and_import(m: &mut GameMenu, path: &std::path::Path) {
+    click_on(m, |m| button(m, Action::ImportSpray));
+    assert_eq!(m.page, Page::ImportSpray);
+    let row = row_with(m, Field::ImportPath);
+    press(m, &[Input::FocusRow(row), Input::Type(path.to_string_lossy().into_owned())]);
+    click_on(m, |m| button(m, Action::ImportDo));
+}
+
+/// Case 9: a 100 x 100 TGA is refused in the error box; the list is unchanged.
+#[test]
+fn a_wrong_sized_spray_shows_the_error_box() {
+    let dir = temp_dir("bad");
+    let src = dir.join("big.tga");
+    write_tga(&src, 100);
+    let mut m = hl2_menu(&[], Some(dir.join("logos")));
+    type_path_and_import(&mut m, &src);
+    assert_eq!(m.page, Page::SprayError);
+    assert!(m.import_error.as_deref().unwrap().starts_with("Source image is not the correct size."));
+    assert!(matches!(&m.rows()[0], Row::Info(t) if t.starts_with("Source image")));
+    click_on(&mut m, |m| button(m, Action::Ok));
+    assert_eq!(m.page, Page::Settings);
+    assert_eq!(m.pickers.spray.entries.len(), SPRAYS.len());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Case 10: a 128 x 128 `myspray.tga` joins the list, selected; OK runs its line.
+#[test]
+fn an_imported_spray_is_listed_and_selected() {
+    let dir = temp_dir("good");
+    let src = dir.join("myspray.tga");
+    write_tga(&src, 128);
+    let logos = dir.join("logos");
+    let mut m = hl2_menu(&[], Some(logos.clone()));
+    type_path_and_import(&mut m, &src);
+    assert_eq!(m.page, Page::Settings);
+    assert!(logos.join("myspray.vtf").is_file(), "written to the user's folder");
+    let texts: Vec<&str> = m.pickers.spray.entries.iter().map(|e| e.text.as_str()).collect();
+    assert_eq!(texts, ["myspray", "spray_canned", "spray_combine", "spray_lambda"]);
+    assert_eq!(m.pickers.spray.current().unwrap().text, "myspray");
+    let out = click_on(&mut m, |m| button(m, Action::Ok));
+    assert_eq!(out.lines, ["cl_logofile materials/vgui/logos/myspray.vtf"]);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+fn create_server(m: &mut GameMenu) {
+    m.open(Page::NewGame, vec!["dm_lockdown".into(), "dm_overwatch".into()], Some("dm_lockdown"), |n| {
+        match n {
+            "hostname" => Some("Half-Life 2 Deathmatch".into()),
+            "maxplayers" => Some("32".into()),
+            "mp_teamplay" => Some("0".into()),
+            "mp_timelimit" | "mp_fraglimit" | "mp_weaponstay" | "mp_flashlight" | "mp_forcerespawn" | "sv_password" => Some("0".into()),
+            "mp_footsteps" => Some("1".into()),
+            _ => None,
+        }
+    });
+}
+
+/// Case 11: the Server tab has the map and Server Type, in that order; no bot, name or password.
+#[test]
+fn the_server_tab_has_the_server_type() {
+    let mut m = hl2_menu(&[], None);
+    create_server(&mut m);
+    let rows = m.rows();
+    let fields: Vec<_> = rows.iter().filter_map(Row::field).collect();
+    assert_eq!(fields, [Field::Map, Field::Visibility]);
+    match control(&m, row_with(&m, Field::Visibility)) {
+        Control::Combo { entries, selected, .. } => {
+            assert_eq!(entries, ["Local Network (LAN)", "Public (Unlisted)", "Public (Listed)", "Friends Only"]);
+            assert_eq!(selected, Some(0));
+        }
+        c => panic!("{c:?}"),
+    }
+}
+
+/// Case 12: untouched, Start runs `sv_lan 1` (the LAN default) before the map.
+#[test]
+fn start_defaults_to_a_lan_server() {
+    let mut m = hl2_menu(&[], None);
+    create_server(&mut m);
+    let out = click_on(&mut m, |m| button(m, Action::Start));
+    assert_eq!(&out.lines[..3], ["sv_lan 1", "sv_allow_server_adverisement_to_master_server 0", "sv_friends_only 0"]);
+    assert_eq!(out.lines.last().unwrap(), "map dm_lockdown");
+}
+
+/// Case 13: Public (Listed), and the choice is remembered.
+#[test]
+fn a_listed_server_is_advertised_and_remembered() {
+    let mut m = hl2_menu(&[], None);
+    create_server(&mut m);
+    let row = row_with(&m, Field::Visibility);
+    choose(&mut m, row, 2);
+    let out = click_on(&mut m, |m| button(m, Action::Start));
+    assert_eq!(
+        &out.lines[..5],
+        ["sv_lan 0", "setmaster enable", "sv_allow_server_adverisement_to_master_server 1", "sv_friends_only 0", "chimera_server_type 2"]
+    );
+    // Next time it opens on the last choice.
+    let mut m = hl2_menu(&[("chimera_server_type", "3")], None);
+    create_server(&mut m);
+    assert_eq!(m.new_game.visibility, 0, "this opener's closure has no such cvar");
+    m.open(Page::NewGame, vec!["a".into()], None, |n| (n == SERVER_TYPE_CVAR).then(|| "3".to_string()));
+    assert_eq!(m.new_game.visibility, 3);
+    let lines = m.visibility_lines();
+    assert_eq!(lines[0], "sv_lan 0");
+    assert!(lines.contains(&"sv_friends_only 1".to_string()));
+}
+
+/// Case 14: ten rows, the password once, at position 2.
+#[test]
+fn the_game_tab_has_ten_rows() {
+    let mut m = hl2_menu(&[], None);
+    create_server(&mut m);
+    m.set_create_tab(1);
+    let labels: Vec<String> = m
+        .rows()
+        .iter()
+        .filter_map(|r| match r {
+            Row::Control { label, .. } => Some(label.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(labels.len(), 10, "{labels:?}");
+    assert_eq!(labels[1], "Server password");
+    assert_eq!(labels.iter().filter(|l| *l == "Server password").count(), 1);
+}
+
+/// Case 15 and the row formats: 20 players and Teamplay on, then the map.
+#[test]
+fn the_game_rows_become_commands_in_the_scripts_formats() {
+    let mut m = hl2_menu(&[], None);
+    create_server(&mut m);
+    m.set_create_tab(1);
+    let max = m.new_game.cvars.iter().position(|c| c.cvar == "maxplayers").unwrap();
+    m.new_game.cvars[max].value = "20".into();
+    let limit = m.new_game.cvars.iter().position(|c| c.cvar == "mp_timelimit").unwrap();
+    m.new_game.cvars[limit].value = "30".into();
+    click_on(&mut m, |m| row_with(m, Field::ServerCvar(m.new_game.cvars.iter().position(|c| c.cvar == "mp_teamplay").unwrap())));
+    let out = click_on(&mut m, |m| button(m, Action::Start));
+    assert!(out.lines.contains(&"mp_teamplay \"1\"".to_string()), "{:?}", out.lines);
+    assert!(out.lines.contains(&"mp_timelimit \"30.000000\"".to_string()), "{:?}", out.lines);
+    assert!(out.lines.contains(&"maxplayers 20".to_string()));
+    let (tp, mp, map) = (
+        out.lines.iter().position(|l| l.starts_with("mp_teamplay")).unwrap(),
+        out.lines.iter().position(|l| l == "maxplayers 20").unwrap(),
+        out.lines.iter().position(|l| l.starts_with("map ")).unwrap(),
+    );
+    assert!(tp < map && mp < map);
+}
+
+#[test]
+fn row_formats_by_kind() {
+    let c = |kind, cvar: &str| ServerCvar {
+        cvar: cvar.into(),
+        label: String::new(),
+        kind,
+        value: String::new(),
+        before: None,
+        page: 1,
+        field: None,
+    };
+    assert_eq!(scr_line(&c(ServerSettingKind::Bool, "a"), "1"), "a \"1\"");
+    assert_eq!(scr_line(&c(ServerSettingKind::Bool, "a"), "0"), "a \"0\"");
+    let n = c(ServerSettingKind::Number { min: Some(1.0), max: Some(32.0) }, "maxplayers");
+    assert_eq!(scr_line(&n, "20"), "maxplayers \"20.000000\"");
+    assert_eq!(scr_line(&n, "99"), "maxplayers \"32.000000\"");
+    assert_eq!(scr_line(&n, "0"), "maxplayers \"1.000000\"");
+    assert_eq!(scr_line(&c(ServerSettingKind::Text, "hostname"), "My \"best\"; server"), "hostname \"My best server\"");
+    let l = c(ServerSettingKind::List(vec![("A".into(), "5".into()), ("B".into(), "7".into())]), "x");
+    assert_eq!(scr_line(&l, "7"), "x \"7\"");
+    assert_eq!(scr_line(&l, "9"), "x \"0\"", "no item matches");
 }

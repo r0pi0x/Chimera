@@ -81,6 +81,15 @@ pub struct MenuGame {
     /// False: it shows (CS:S's code shows the controls its layouts hide;
     /// HL2:DM's layout hides its crosshair page for good).
     pub layout_hides: bool,
+    /// Options > Multiplayer lists the install's player model pictures in
+    /// its `Player model` combo (`cl_playermodel`).
+    pub player_models: bool,
+    /// Options > Multiplayer's spray combo (`cl_logofile`) and Import
+    /// Spray work.
+    pub sprays: bool,
+    /// Create Server's Server tab has the Server Type combo
+    /// (`VisibilityType`).
+    pub server_types: bool,
 }
 
 /// The menu's game (none in a model under test, or before the plugin set
@@ -123,6 +132,18 @@ impl GameRef {
 
     pub fn layout_hides(self) -> bool {
         self.0.is_some_and(|g| g.layout_hides)
+    }
+
+    pub fn player_models(self) -> bool {
+        self.0.is_some_and(|g| g.player_models)
+    }
+
+    pub fn sprays(self) -> bool {
+        self.0.is_some_and(|g| g.sprays)
+    }
+
+    pub fn server_types(self) -> bool {
+        self.0.is_some_and(|g| g.server_types)
     }
 
     /// Its full name.

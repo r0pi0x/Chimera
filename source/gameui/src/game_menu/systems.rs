@@ -194,6 +194,7 @@ fn menu_values(w: &mut World) -> MenuValues {
             .chain(game.rounds_cvar().map(str::to_string))
             .chain(game.bots().into_iter().flat_map(|b| b.cvars.iter().map(|(_, c, _)| c.to_string()).chain(["bot_reaction".to_string()])))
             .chain(USER_FALLBACK.iter().map(|(c, ..)| c.to_string()))
+            .chain([SERVER_TYPE_CVAR.to_string(), "cl_playermodel".into(), "cl_logofile".into()])
             .collect();
         if let Some(ui) = w.get_resource::<MenuUi>().and_then(|u| u.ui.clone()) {
             names.extend(ui.server_settings.iter().map(|s| s.cvar.clone()));
@@ -303,6 +304,10 @@ pub(super) fn open_menu(w: &mut World, page: Page) {
     let mode = w.get_resource::<RealWindowMode>().and_then(|r| r.0).or(shown.map(|(_, m)| m));
     window_values(&mut get, window, mode);
     let mut menu = w.resource_mut::<GameMenu>();
+    if menu.logos_dir.is_none() {
+        // Chimera's own user data, beside the configs.
+        menu.logos_dir = crate::console::cfg_dir().and_then(|d| d.parent().map(|p| p.join("logos")));
+    }
     menu.set_counts(bots, players);
     menu.set_binds(binds, known, defaults);
     menu.resolutions = crate::client::video::resolutions(&modes, window);
@@ -1012,5 +1017,59 @@ pub(super) fn vote_setup_arrived(w: &mut World, mut seen: Local<u32>) {
     menu.show_vote_setup(issues);
     if !shown {
         open_menu(w, Page::Vote);
+    }
+}
+
+/// Sprays the player imported (in Chimera's user data) have no picture in
+/// the install's look: read theirs once listed.
+pub(super) fn imported_pictures(menu: Res<GameMenu>, mut ui: ResMut<MenuUi>, mut images: ResMut<Assets<Image>>) {
+    let Some(dir) = menu.logos_dir.as_ref() else { return };
+    for stem in &menu.imported {
+        let key = format!("logos/{stem}");
+        if ui.pictures.contains_key(&key) {
+            continue;
+        }
+        if let Some(pic) = std::fs::read(dir.join(format!("{stem}.vtf")))
+            .ok()
+            .and_then(|b| source_engine::hud::gameui::decode_vtf(&b))
+        {
+            ui.pictures.insert(key, ui_image(&pic, &mut images));
+        }
+    }
+}
+
+/// The Server Type's cvars (specs/hl2dm/game_ui.md 4): what Start sets,
+/// kept for the server code to read, and the last choice (archived).
+#[derive(Resource, Default)]
+pub struct ServerAccess {
+    pub lan: u8,
+    pub friends_only: u8,
+    pub advertise: u8,
+    pub choice: u8,
+}
+
+pub(super) fn register_server_type(app: &mut App) {
+    app.init_resource::<ServerAccess>();
+    for (name, help, field) in [
+        ("sv_lan", "1: the server is for the local network only.", (|r: &mut ServerAccess| &mut r.lan) as fn(&mut ServerAccess) -> &mut u8),
+        ("sv_friends_only", "1: only the host's friends may join (Chimera has no friends list).", |r| &mut r.friends_only),
+        (
+            "sv_allow_server_adverisement_to_master_server",
+            "1: the server is advertised to the server list (Chimera has no master server yet).",
+            |r| &mut r.advertise,
+        ),
+        (SERVER_TYPE_CVAR, "Create Server's last Server Type: 0 LAN, 1 unlisted, 2 listed, 3 friends only.", |r| &mut r.choice),
+    ] {
+        if app.world().resource::<Console>().cvar(name).is_none() {
+            crate::console::resource_cvar::<ServerAccess, u8>(app, name, help, field);
+        }
+    }
+    app.world_mut().resource_mut::<Console>().archive(SERVER_TYPE_CVAR);
+    if app.world().resource::<Console>().command("setmaster").is_none() {
+        app.console_command("setmaster", "setmaster enable|disable: advertise the server to the master server list.", |w, a| {
+            let on = a.first().is_some_and(|v| v.eq_ignore_ascii_case("enable"));
+            w.resource_mut::<ServerAccess>().advertise = on as u8;
+            Ok(None)
+        });
     }
 }

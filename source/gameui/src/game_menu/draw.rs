@@ -253,6 +253,8 @@ pub(super) fn dialog(commands: &mut Commands, ctx: &Ctx, page: Page) {
         Page::PlayerList => menu.player_list_title(),
         // Ours (the file gives none).
         Page::Vote => "Call Vote".into(),
+        Page::ImportSpray => menu.text("#GameUI_ImportSprayImage", "Import Spray Image"),
+        Page::SprayError => source_engine::hud::spray_import::ERROR_TITLE.into(),
     };
     let mut spec = FrameSpec::new(page.window());
     if page.over_options() {
@@ -663,9 +665,33 @@ pub(super) fn page_controls(commands: &mut Commands, ctx: &Ctx, parent: Entity, 
         .filter(|c| c.text.starts_with('#'))
         .filter_map(|c| c.keys.get("associate").map(String::as_str))
         .collect();
-    for (c, r) in layout.controls.iter().zip(&rects) {
+    // Back to front: a negative `zpos` (the Multiplayer tab's empty
+    // TextEntry1 behind the model picture) is drawn first.
+    let zpos = |c: &UiControl| c.keys.get("zpos").and_then(|z| z.trim().parse::<i32>().ok()).unwrap_or(0);
+    let mut order: Vec<usize> = (0..layout.controls.len()).collect();
+    order.sort_by_key(|i| zpos(&layout.controls[*i]));
+    for (c, r) in order.into_iter().map(|i| (&layout.controls[i], &rects[i])) {
         let rect = (r.min.x, r.min.y, r.width(), r.height());
         let row = row_at(&c.name);
+        // A picker's preview picture (the player model, the spray).
+        if row.is_none()
+            && let Some(kind) = [PickerKind::Model, PickerKind::Spray]
+                .into_iter()
+                .find(|k| c.name.eq_ignore_ascii_case(k.preview()) && menu.pickers.get(*k).current().is_some())
+        {
+            if let Some(pic) = menu.preview_picture(kind).and_then(|n| ctx.pictures.get(n)) {
+                commands.spawn((
+                    place(look, rect.0, rect.1, rect.2, rect.3),
+                    ImageNode {
+                        image: pic.clone(),
+                        image_mode: NodeImageMode::Stretch,
+                        ..default()
+                    },
+                    ChildOf(parent),
+                ));
+            }
+            continue;
+        }
         if frame_part(c, (w, h)) || (!c.visible && row.is_none()) {
             continue;
         }
@@ -771,7 +797,9 @@ pub(super) fn page_controls(commands: &mut Commands, ctx: &Ctx, parent: Entity, 
                 );
             }
             "textentry" => {
-                widgets::text_entry(commands, parent, look, (rect.0, rect.1, rect.2, rect.3.min(24.0)), "", None, false, false, ());
+                // An empty box that isn't editable shows whole (a backdrop).
+                let tall = if c.keys.get("editable").is_some_and(|v| v.trim() == "0") { rect.3 } else { rect.3.min(24.0) };
+                widgets::text_entry(commands, parent, look, (rect.0, rect.1, rect.2, tall), "", None, false, false, ());
             }
             "crosshairimagepanelcs" => crosshair_preview(commands, parent, look, menu, rect),
             "imagepanel" if picture.is_some() && image_name.starts_with(METER) => {

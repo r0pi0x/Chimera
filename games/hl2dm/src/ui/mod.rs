@@ -26,10 +26,16 @@
 //! `hl2dm` never uses this module.
 //!
 //! Known shortcuts:
-//! - The menus: the Multiplayer tab's player model picker and spray are
-//!   greyed (`cl_playermodel` is the console's), the Internet tab is
-//!   greyed (no master server), and the layout's look is unmeasured
-//!   against the real game (no refcmp of GameUI).
+//! - The menus: the Internet tab is greyed (no master server), and the
+//!   layout's look is unmeasured against the real game (no refcmp of
+//!   GameUI). The Multiplayer tab's player model and spray pickers work
+//!   (`source_gameui::game_menu::pickers`); Import Spray is an in-game
+//!   dialog taking a typed file path (no native file dialog dependency);
+//!   an imported spray is listed and selectable but the world's spray
+//!   decals draw only the install's logos; Create Server's Server Type
+//!   sets `sv_lan` and the other cvars without any server code reading
+//!   them yet; `TextEntry1` is drawn with the scheme's text-field look,
+//!   unchecked against a capture.
 //! - The damage flashes' trapezoids are straight bands and draw alpha
 //!   blended, not added; the corner staircase and border of the
 //!   scoreboard are drawn from boxes (its avatar cells empty, as without
@@ -78,6 +84,11 @@ pub static MENU_GAME: source_gameui::MenuGame = source_gameui::MenuGame {
     // `nocrosshair` in its gameinfo.txt: its layout hides the crosshair's
     // controls and the Multiplayer tab's Advanced button.
     layout_hides: true,
+    // Its Multiplayer page's player model and spray pickers (specs/hl2dm/
+    // game_ui.md 2.1-2.3) and Create Server's Server Type (4).
+    player_models: true,
+    sprays: true,
+    server_types: true,
 };
 
 /// HL2:DM's HUD panels (the look, the state machine, the nodes), without

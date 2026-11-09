@@ -2003,6 +2003,29 @@ implementing (owner branch) / done.
   main menu (from `GameMenu.res`) and the hidden crosshair and Advanced
   (`layout_hides`) already match. Shots of the MOTD, the Multiplayer page
   and a spark shower wait for a display.
+- 2026-11-09: **GameUI pickers and Server Type** (branch `gameui-wire`;
+  specs/hl2dm/game_ui.md 2.1-2.4, 4). Options > Multiplayer: the `Player
+  model` and `SpraypaintList` combos list the install's pictures (the
+  player models below `materials/vgui/playermodels/`, the sprays in
+  `materials/vgui/logos/` plus Chimera's imported ones), preview in
+  `ModelImage` / `LogoImage`, run `cl_playermodel` / `cl_logofile` on
+  OK / Apply only for a changed selection (`none` stays); Import Spray is
+  an in-game dialog taking a typed path (no file-dialog dependency; rfd
+  is not in the tree), converts TGA/JPG (sides 256..1, powers of two) to a
+  VTF in the user data folder (`source_engine::hud::spray_import`), errors
+  in a "Spray Import Error" box; `TextEntry1` is drawn whole behind
+  `ModelImage` (layout `zpos`). Create Server: `VisibilityType` (LAN
+  default, last choice in the archived `chimera_server_type`) and its
+  commands first in Start's lines; the Game page lists one row per cvar
+  (`scr_settings` dedupes) and runs changed rows as `cvar "value"` (check
+  `"1"`/`"0"`, numbers `"20.000000"` clamped, text quoted, list value;
+  this also changes CS:S's number and check lines to the quoted form, same
+  value). Per-game switches in `MenuGame` (`player_models`, `sprays`,
+  `server_types`); CS:S off. The name entry that GameUI adds in CS:S's
+  spray words' place is no longer added where the layout has `Player
+  model`. Open: the sv_lan cvars are stored only (no server code reads
+  them), imported sprays do not draw in the world, no screenshots (no
+  display).
 
 ## Decision log
 
