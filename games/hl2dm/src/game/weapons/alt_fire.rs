@@ -6,9 +6,12 @@
 //! (Chimera's flyers, `weapon::projectile`).
 //!
 //! - **Contact grenade**: attack2 with the next secondary passed: with no
-//!   grenade or the eyes under water a dry fire (`Weapon_SMG1.Empty`, next
-//!   secondary + 0.5); else 1 used, a running reload cancelled (no ammo
-//!   moved), next primary + 0.5, next secondary + 1.0, the player not made
+//!   grenade the empty sound (`Weapon_SMG1.Empty`, next secondary + 0.5,
+//!   the frame goes on); with the eyes under water the generic frame's
+//!   refusal first, every tick attack2 is held (weapons.md 5: the empty
+//!   sound, next secondary + `hl2dm:dry_under_water`'s 0.2, the frame
+//!   ended, no dry-fire animation; the AR2's alike); else 1 used, a
+//!   running reload cancelled (no ammo moved), next primary + 0.5, next secondary + 1.0, the player not made
 //!   busy; from the eye along view + punch at 1000 units/s (none of the
 //!   shooter's), 400 units/s² of gravity, a ±3 box that explodes on the
 //!   first solid thing it touches (passing loose weapons), 100 in 250
@@ -55,6 +58,7 @@ use chimera_sim::weapon::{
 };
 
 use super::{
+    under_water::Hl2DryUnderWater,
     launch::{self, BALL_MODEL, Hl2Rounds, SMG1_GRENADE_MODEL, U},
     recoil::{Hl2Punch, IMPULSE_SCALE},
 };
@@ -204,8 +208,8 @@ pub fn before_frame(
         ),
         Without<crate::map::interp::NetDrawn>,
     >,
-    mut smgs: Query<(&Hl2SmgGrenade, &mut Hl2Rounds, &mut WeaponState), Without<Hl2Ball>>,
-    mut balls: Query<(&mut Hl2Ball, &mut Hl2Rounds, &mut WeaponState), Without<Hl2SmgGrenade>>,
+    mut smgs: Query<(&Hl2SmgGrenade, &mut Hl2Rounds, &mut WeaponState, Option<&Hl2DryUnderWater>), Without<Hl2Ball>>,
+    mut balls: Query<(&mut Hl2Ball, &mut Hl2Rounds, &mut WeaponState, Option<&Hl2DryUnderWater>), Without<Hl2SmgGrenade>>,
     mut out: Out,
     mut commands: Commands,
 ) {
@@ -216,18 +220,31 @@ pub fn before_frame(
             continue;
         }
         let Some(active) = inv.active else { continue };
-        if let Ok((g, mut rounds, mut st)) = smgs.get_mut(active) {
+        if let Ok((g, mut rounds, mut st, dry)) = smgs.get_mut(active) {
             let p = &g.0;
-            // A reload doesn't stop it (it cancels the reload).
-            let ready = st.reloading() || (due >= inv.next_attack && st.next_secondary <= due);
-            if !intent.secondary || !ready {
+            if !intent.secondary {
                 continue;
             }
             let (eye, fwd, ..) = launch::aim(at, state, intent, punch, true);
-            if rounds.count == 0 || wet {
-                sound(&mut out.play, &out.first, &p.empty, eye, owner);
-                st.next_secondary = now + p.dry as f64;
-                out.event(owner, active, WeaponEventKind::DryFire);
+            let free = due >= inv.next_attack;
+            // A reload doesn't stop it (it cancels the reload).
+            let ready = st.reloading() || (free && st.next_secondary <= due);
+            if rounds.count == 0 {
+                // No grenade: the generic "no secondary ammo" step, at most
+                // every `dry`; the frame goes on.
+                if ready {
+                    sound(&mut out.play, &out.first, &p.empty, eye, owner);
+                    st.next_secondary = now + p.dry as f64;
+                }
+                continue;
+            }
+            if wet {
+                if free {
+                    refuse_wet(&mut out, &mut inv, &mut st, dry, &p.empty, eye, owner);
+                }
+                continue;
+            }
+            if !ready {
                 continue;
             }
             rounds.count -= 1;
@@ -255,7 +272,7 @@ pub fn before_frame(
             }
             continue;
         }
-        let Ok((mut ball, mut rounds, mut st)) = balls.get_mut(active) else {
+        let Ok((mut ball, mut rounds, mut st, dry)) = balls.get_mut(active) else {
             continue;
         };
         let p = ball.params.clone();
@@ -320,14 +337,23 @@ pub fn before_frame(
             }
             continue;
         }
-        if !intent.secondary || due < inv.next_attack || st.next_secondary > due {
+        if !intent.secondary || due < inv.next_attack {
             continue;
         }
         let (eye, ..) = launch::aim(at, state, intent, None, false);
-        if rounds.count == 0 || wet {
-            sound(&mut out.play, &out.first, &p.empty, eye, owner);
-            st.next_secondary = now + p.dry as f64;
-            out.event(owner, active, WeaponEventKind::DryFire);
+        let ready = st.next_secondary <= due;
+        if rounds.count == 0 {
+            if ready {
+                sound(&mut out.play, &out.first, &p.empty, eye, owner);
+                st.next_secondary = now + p.dry as f64;
+            }
+            continue;
+        }
+        if wet {
+            refuse_wet(&mut out, &mut inv, &mut st, dry, &p.empty, eye, owner);
+            continue;
+        }
+        if !ready {
             continue;
         }
         // The charge (5.1).
@@ -337,6 +363,25 @@ pub fn before_frame(
         sound(&mut out.play, &out.first, &p.charge_sound, eye, owner);
         out.event(owner, active, WeaponEventKind::Action("charge"));
     }
+}
+
+/// The generic frame's refusal of attack2 under water (weapons.md 5,
+/// "Secondary fire under water"): with no timer in front of it, every tick
+/// attack2 is held: the empty sound, next secondary + the wait (0.2 s), and
+/// the frame ends (no primary, no reload this tick). No dry-fire animation.
+#[allow(clippy::too_many_arguments)]
+fn refuse_wet(
+    out: &mut Out,
+    inv: &mut Inventory,
+    st: &mut WeaponState,
+    dry: Option<&Hl2DryUnderWater>,
+    empty: &str,
+    eye: Vec3,
+    owner: Entity,
+) {
+    sound(&mut out.play, &out.first, empty, eye, owner);
+    st.next_secondary = out.clock.now + dry.map_or(0.2, |d| d.wait) as f64;
+    inv.frame_ended = true;
 }
 
 /// A charge in hand can't be put away; a charge no longer in hand (its

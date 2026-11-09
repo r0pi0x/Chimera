@@ -386,7 +386,7 @@ impl Plugin for Hl2GunsPlugin {
                     recoil::decay_punch,
                     pistol::before_frame,
                     shotgun::before_frame,
-                    under_water::before_frame.after(shotgun::before_frame),
+                    under_water::before_frame.after(shotgun::before_frame).after(alt_fire::before_frame),
                 )
                     .before(WeaponFrame),
                 (recoil::kick, pistol::after_frame, shotgun::after_frame, inventory::holster_reload).after(WeaponFrame),

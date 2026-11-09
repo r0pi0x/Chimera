@@ -6,9 +6,12 @@
 //! (`LaunchUnderWater`, the movement's water level 3) when the gun would
 //! fire plays its empty sound and sets its next primary `wait` (0.2 s,
 //! 14 ticks) on; no round is used and the frame fires nothing this tick.
-//! The clip's own rules come first: an empty clip dry-fires or reloads as
-//! on land. The machine guns' and the shotgun's attack2s refuse in their
-//! own code (`alt_fire`; the shotgun's double shot here).
+//! The clip's own rules come first (weapons.md 5, "Order against the
+//! empty-clip rules"): an empty clip dry-fires or reloads as on land; a
+//! refusal ends the weapon frame (`Inventory::frame_ended`), so a reload
+//! pressed with attack held never starts. The machine guns' attack2s are
+//! refused in `alt_fire` (the generic frame's refusal, before their own
+//! code, with this hook's wait), the shotgun's double shot here.
 //!
 //! Known shortcuts: a shotgun's shell reload stopped by attack under water
 //! refuses on that tick (the spec has the stop remember the shot and fire
@@ -37,7 +40,7 @@ pub struct Hl2DryUnderWater {
 /// Before the weapon frame: a press that would fire under water is refused.
 #[allow(clippy::type_complexity)]
 pub fn before_frame(
-    owners: Query<(Entity, &Intent, &Inventory, &Transform, &Health), (With<LaunchUnderWater>, Without<crate::map::interp::NetDrawn>)>,
+    mut owners: Query<(Entity, &Intent, &mut Inventory, &Transform, &Health), (With<LaunchUnderWater>, Without<crate::map::interp::NetDrawn>)>,
     mut guns: Query<(&Hl2DryUnderWater, &mut WeaponState, &Magazine, Option<&WeaponSounds>, Option<&Hl2Shotgun>)>,
     mut play: MessageWriter<PlaySound>,
     clock: Res<SimClock>,
@@ -45,8 +48,8 @@ pub fn before_frame(
 ) {
     let now = clock.now;
     let due = now + 1e-5;
-    for (owner, intent, inv, at, health) in &owners {
-        if health.current <= 0.0 {
+    for (owner, intent, mut inv, at, health) in &mut owners {
+        if health.current <= 0.0 || inv.frame_ended {
             continue;
         }
         let Some(Ok((dry, mut st, mag, sounds, shotgun))) = inv.active.map(|a| guns.get_mut(a)) else { continue };
@@ -67,6 +70,8 @@ pub fn before_frame(
             st.postfire_end = None;
         }
         st.next_primary = now + dry.wait as f64;
+        // The refusal ends the frame: the reload key isn't looked at.
+        inv.frame_ended = true;
         if first.0
             && let Some(entry) = sounds.and_then(|s| s.empty.clone())
         {

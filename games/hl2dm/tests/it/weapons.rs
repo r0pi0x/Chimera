@@ -503,12 +503,107 @@ fn guns_refuse_under_water_but_the_pistol_52() {
         assert_eq!(clicks, [0, 14, 28], "{id} (attack2 {secondary}): its empty sound every 0.2 s");
     }
 
-    // The SMG1's grenade: a dry fire.
+}
+
+/// Collects `p`'s plays of `entry` per tick of a run.
+fn empty_clicks(sim: &Sim) -> bevy::ecs::message::MessageCursor<chimera_world::map::PlaySound> {
+    sim.app.world().resource::<Messages<chimera_world::map::PlaySound>>().get_cursor_current()
+}
+
+fn empty_of(sim: &Sim, w: Entity) -> String {
+    sim.app.world().get::<chimera_sim::weapon::WeaponSounds>(w).and_then(|s| s.empty.clone()).unwrap()
+}
+
+/// Test 58 (weapons.md 5, "Order against the empty-clip rules"): an empty
+/// .357 under water clicks once, marks "fired on empty", then reloads as
+/// on land; no water refusal.
+#[test]
+fn an_empty_357_under_water_reloads_as_on_land_58() {
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, weapons::MAGNUM);
+    dunk(&mut sim, p);
+    // Emptied now: with no button held it would reload by itself.
+    set_mag(&mut sim, w, 0, 12);
+    let ran = run(&mut sim, p, 30, |s, _| s.intent(p).fire = true);
+    let dry: Vec<u64> = ran.iter().filter(|(_, k)| matches!(k, WeaponEventKind::DryFire)).map(|(t, _)| *t).collect();
+    let reload: Vec<u64> = ran.iter().filter(|(_, k)| matches!(k, WeaponEventKind::ReloadStarted)).map(|(t, _)| *t).collect();
+    assert_eq!(dry, [0], "{ran:?}");
+    assert_eq!(reload.len(), 1, "a reload starts under water: {ran:?}");
+    assert!(reload[0] > 0, "{ran:?}");
+}
+
+/// Test 59 (weapons.md 5): attack and reload held together under water
+/// with rounds in the clip: no shot, no reload, the empty sound every 0.2
+/// s; once attack is let go the reload starts (the first tick its next
+/// primary has passed).
+#[test]
+fn attack_and_reload_under_water_never_reload_59() {
+    use chimera_world::map::PlaySound;
     let mut sim = sim();
     let (p, w) = holding(&mut sim, weapons::SMG1);
-    sim.app.world_mut().get_mut::<hl2dm::game::weapons::launch::Hl2Rounds>(w).unwrap().count = 1;
+    set_mag(&mut sim, w, 10, 45);
     dunk(&mut sim, p);
-    let ran = run(&mut sim, p, 3, |s, t| s.intent(p).secondary = t == 0);
-    assert!(ran.iter().any(|(_, k)| matches!(k, WeaponEventKind::DryFire)), "{ran:?}");
-    assert_eq!(sim.app.world().get::<hl2dm::game::weapons::launch::Hl2Rounds>(w).unwrap().count, 1);
+    let empty = empty_of(&sim, w);
+    let mut cursor = empty_clicks(&sim);
+    let mut clicks = Vec::new();
+    // 1 s held (refusals at 0, 14 … 56), let go on tick 70 when the
+    // last refusal's 0.2 s are over.
+    let ran = run(&mut sim, p, 72, |s, t| {
+        if t > 0 {
+            let sounds = s.app.world().resource::<Messages<PlaySound>>();
+            clicks.extend(cursor.read(sounds).filter(|m| m.entry == empty && m.source == Some(p)).map(|_| t - 1));
+        }
+        let mut i = s.intent(p);
+        i.fire = t < 70;
+        i.reload = true;
+    });
+    assert_eq!(fired(&ran), Vec::<u64>::new());
+    assert_eq!(clicks, [0, 14, 28, 42, 56], "{ran:?}");
+    let reload: Vec<u64> = ran.iter().filter(|(_, k)| matches!(k, WeaponEventKind::ReloadStarted)).map(|(t, _)| *t).collect();
+    assert_eq!(reload, [70], "the reload once attack is let go: {ran:?}");
+}
+
+/// Test 60 (weapons.md 5, "Secondary fire under water"; 7.3): the SMG1's
+/// attack2 under water with a grenade is refused by the generic frame on
+/// every tick it is held: the empty sound each tick, next secondary = now
+/// + 0.2, no dry-fire animation, the grenade kept. The AR2's ball alike.
+#[test]
+fn attack2_under_water_is_refused_every_tick_60() {
+    use chimera_world::map::PlaySound;
+    use hl2dm::game::weapons::launch::Hl2Rounds;
+    for id in [weapons::SMG1, weapons::AR2] {
+        let mut sim = sim();
+        let (p, w) = holding(&mut sim, id);
+        sim.app.world_mut().get_mut::<Hl2Rounds>(w).unwrap().count = 1;
+        dunk(&mut sim, p);
+        let empty = sim
+            .app
+            .world()
+            .get::<hl2dm::game::weapons::alt_fire::Hl2SmgGrenade>(w)
+            .map(|g| g.0.empty.clone())
+            .or_else(|| sim.app.world().get::<hl2dm::game::weapons::alt_fire::Hl2Ball>(w).map(|b| b.params.empty.clone()))
+            .unwrap();
+        let mut cursor = empty_clicks(&sim);
+        let mut clicks = Vec::new();
+        let mut nexts = Vec::new();
+        let ran = run(&mut sim, p, 4, |s, t| {
+            if t > 0 {
+                let sounds = s.app.world().resource::<Messages<PlaySound>>();
+                clicks.extend(cursor.read(sounds).filter(|m| m.entry == empty && m.source == Some(p)).map(|_| t - 1));
+                let now = s.app.world().resource::<chimera_core::core::SimClock>().now;
+                let next = s.app.world().get::<chimera_sim::weapon::WeaponState>(w).unwrap().next_secondary;
+                nexts.push(next - now);
+            }
+            s.intent(p).secondary = t < 3;
+        });
+        assert_eq!(clicks, [0, 1, 2], "{id}: the empty sound on each held tick");
+        // Read after each tick (the clock may have gone a tick on since).
+        let tick = sim.app.world().resource::<chimera_core::core::SimClock>().dt() as f64;
+        for d in &nexts {
+            let at = |x: f64| (d - x).abs() < 1e-4;
+            assert!(at(0.2) || at(0.2 - tick), "{id}: next secondary now + 0.2: {nexts:?}");
+        }
+        assert!(!ran.iter().any(|(_, k)| matches!(k, WeaponEventKind::DryFire)), "{id}: no dry fire: {ran:?}");
+        assert_eq!(sim.app.world().get::<Hl2Rounds>(w).unwrap().count, 1, "{id}: none used");
+    }
 }

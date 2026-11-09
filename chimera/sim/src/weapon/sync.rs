@@ -203,6 +203,8 @@ pub fn decode(world: &mut World, owner: Entity, bytes: Option<&[u8]>) {
         prev_use: world.get::<Inventory>(owner).is_some_and(|i| i.prev_use),
         // The server's (lag compensation); kept as it was here.
         last_shot: world.get::<Inventory>(owner).and_then(|i| i.last_shot),
+        // Set and cleared within one tick's frame.
+        frame_ended: false,
     };
     world.entity_mut(owner).insert(inv);
 }

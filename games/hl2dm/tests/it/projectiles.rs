@@ -376,9 +376,11 @@ fn the_contact_grenade_explodes_on_a_player_18() {
     assert_eq!(hit.other, Some(t));
     assert!(hit.gone);
     assert!(health(&sim, t) < 100.0);
-    // None left: a dry fire.
+    // None left: the generic "no secondary ammo" step (weapons.md 5,
+    // answered 2026-11-09): the empty sound, no dry-fire animation.
     let ran = run(&mut sim, p, 80, |s, k| s.intent(p).secondary = k == 70);
-    assert!(ran.events.iter().any(|(_, k)| matches!(k, WeaponEventKind::DryFire)));
+    assert!(ran.sounds.iter().any(|(t, e)| *t == 70 && e == "Weapon_SMG1.Empty"), "{:?}", ran.sounds);
+    assert!(!ran.events.iter().any(|(_, k)| matches!(k, WeaponEventKind::DryFire)));
 }
 
 // ---------------------------------------------------------------------------

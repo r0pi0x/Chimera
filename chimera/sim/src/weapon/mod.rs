@@ -777,6 +777,10 @@ pub struct Inventory {
     /// The command number of the last tick it shot or swung
     /// (`lagcomp::RewindChoice`: "fired lately").
     pub last_shot: Option<u32>,
+    /// A game's own step before the frame ended this tick's weapon frame
+    /// (HL2:DM's refusals under water): the frame only takes the button
+    /// edges, then clears it.
+    pub frame_ended: bool,
 }
 
 impl Inventory {
@@ -2040,6 +2044,9 @@ fn weapon_frame(
         let released2 = !intent.secondary && inv.prev_secondary;
         inv.prev_fire = intent.fire;
         inv.prev_secondary = intent.secondary;
+        if std::mem::take(&mut inv.frame_ended) {
+            continue;
+        }
         let Some(active) = inv.active else { continue };
         let Ok(mut w) = weapons.get_mut(active) else { continue };
         if !intent.fire {
