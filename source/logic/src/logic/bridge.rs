@@ -2520,6 +2520,19 @@ fn prop_broke(world: &mut World, id: EntId, sound: Option<String>, explode: Opti
             Some(Who::Ent(e)) => prop_node(world, e),
             None => None,
         };
+        // No player hurt it last: its influencer, while the influence is
+        // fresh (the game's window).
+        let attacker = match (x.attacker, world.get_resource::<BlastInfluenceWindow>().copied()) {
+            (Some(Who::Player(_)), _) | (_, None) => attacker,
+            (_, Some(window)) => {
+                let now = world.get_resource::<crate::core::SimClock>().map_or(0.0, |c| c.now);
+                world
+                    .get::<crate::map::held::PhysicsInfluence>(node)
+                    .filter(|i| now - i.at <= window.0 + 1e-6)
+                    .map(|i| i.by)
+                    .or(attacker)
+            }
+        };
         world.write_message(Explosion {
             origin: centre,
             damage: x.damage / 100.0,
@@ -2649,6 +2662,20 @@ fn player_contact_shares(mass: f32, up: Option<f32>) -> Vec<f32> {
 /// Damage (health points) that breaks any breakable: an impact on one
 /// that breaks on the first physics impact (flag 512).
 const BREAK_NOW: f32 = 1.0e6;
+/// What a game's rule makes of a body's first new contact after it was
+/// launched from a hold (`map::held::LaunchedFromHold`): its own impact
+/// damage this many times over (HL2:DM's 10, specs/hl2dm/gravity_gun.md 9),
+/// and a prop with the `firstimpact_break` interaction breaks whatever the
+/// speed. Without it the mark does nothing.
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct FirstImpactScale(pub f32);
+
+/// A prop that breaks and explodes with no player as its attacker
+/// credits its influencer (`map::held::PhysicsInfluence`) when the
+/// influence is at most this old (s): HL2:DM's 2 (gravity_gun.md 9).
+#[derive(Resource, Clone, Copy, Debug, PartialEq)]
+pub struct BlastInfluenceWindow(pub f64);
+
 /// An impact is measured over this many physics steps from its first
 /// contact: avian's contacts are speculative and soft, so a body is
 /// stopped over a few steps where Source's stops it in one.
@@ -2678,6 +2705,8 @@ struct Impact {
     /// The contact's normal when it began, from `me` toward `other`
     /// (engine space; None: no contact points yet).
     normal: Option<Vec3>,
+    /// `me`'s first contact since its launch from a hold.
+    first_after_launch: bool,
 }
 
 #[derive(Resource, Default)]
@@ -2701,6 +2730,17 @@ impl Default for PlayerImpactScale {
     fn default() -> Self {
         Self(1.0)
     }
+}
+
+/// Whether the logic prop on `node` breaks on its first impact after a
+/// launch (the model's `onfirstimpact` "break").
+fn breaks_on_first_impact(logic: &Logic, node: Entity) -> bool {
+    logic
+        .props
+        .iter()
+        .find(|(_, n)| *n == node)
+        .and_then(|(id, _)| logic.world.prop(*id))
+        .is_some_and(|p| p.interactions.iter().any(|x| x == "firstimpact_break"))
 }
 
 /// Physics impacts (prop_damage.md 5, 6): a new contact of a logic prop's
@@ -2727,7 +2767,13 @@ fn impacts(
     positions: Query<&Position>,
     collisions: avian3d::prelude::Collisions,
     (held, player_scale): (Query<(), With<crate::map::held::Held>>, Res<PlayerImpactScale>),
+    (launched, sensors, first_scale): (
+        Query<(), With<crate::map::held::LaunchedFromHold>>,
+        Query<(), With<avian3d::prelude::Sensor>>,
+        Option<Res<FirstImpactScale>>,
+    ),
     mut damage: MessageWriter<Damage>,
+    mut commands: Commands,
 ) {
     let Some(logic) = logic else {
         started.clear();
@@ -2751,7 +2797,13 @@ fn impacts(
         if b1 == b2 || held.contains(b1) || held.contains(b2) {
             continue;
         }
+        let sensor = sensors.contains(s.collider1) || sensors.contains(s.collider2);
         for (me, other) in [(b1, b2), (b2, b1)] {
+            // The mark goes with the first solid contact, whatever else.
+            let first_after_launch = !sensor && first_scale.is_some() && launched.contains(me);
+            if first_after_launch {
+                commands.entity(me).remove::<crate::map::held::LaunchedFromHold>();
+            }
             let receiver = if let Some((id, _)) = logic.props.iter().find(|(_, n)| *n == me)
                 && let Some((table, energy, mass)) = logic.world.prop_impact(*id)
             {
@@ -2791,6 +2843,7 @@ fn impacts(
                 slowest: before,
                 steps: 0,
                 normal,
+                first_after_launch,
             });
         }
     }
@@ -2868,6 +2921,11 @@ fn impacts(
                         mine.share(share)
                     };
                     let amount = super::prop_damage::impact_damage(&table, energy, mine, theirs, false);
+                    let amount = match first_scale.as_deref().filter(|_| i.first_after_launch) {
+                        Some(_) if breaks_on_first_impact(&logic, i.me) => amount.max(BREAK_NOW),
+                        Some(first) => amount * first.0,
+                        None => amount,
+                    };
                     (amount, velocity(i.me) * m)
                 }
                 Receiver::Breakable(table, energy, m, instant) => {

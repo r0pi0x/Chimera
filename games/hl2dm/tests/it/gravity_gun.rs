@@ -48,6 +48,8 @@ struct Crate {
     inertia: Option<Vec3>,
     /// A `prop_physics_multiplayer` (mode 1, solid) instead.
     multiplayer: bool,
+    /// More keyvalues (the model's data, `PROP_*_KEY`).
+    keys: &'static [(&'static str, &'static str)],
 }
 
 impl Crate {
@@ -59,6 +61,7 @@ impl Crate {
             flags: 0,
             inertia: None,
             multiplayer: false,
+            keys: &[],
         }
     }
     fn mass(self, mass: f32) -> Self {
@@ -69,6 +72,9 @@ impl Crate {
     }
     fn at(self, at: Vec3) -> Self {
         Crate { at, ..self }
+    }
+    fn keys(self, keys: &'static [(&'static str, &'static str)]) -> Self {
+        Crate { keys, ..self }
     }
 }
 
@@ -96,15 +102,17 @@ fn add_crate(data: &mut MapData, c: Crate) {
     if bottom > 1.0 && c.flags & 8 == 0 {
         solid(data, Vec3::new(centre.x - 4.0, centre.y - 4.0, 0.0), Vec3::new(centre.x + 4.0, centre.y + 4.0, bottom - 0.05));
     }
+    let mut keyvalues: Vec<(String, String)> = vec![
+        (
+            "classname".into(),
+            if c.multiplayer { "prop_physics_multiplayer" } else { "prop_physics" }.into(),
+        ),
+        ("origin".into(), format!("{} {} {}", centre.x, centre.y, centre.z)),
+        ("spawnflags".into(), c.flags.to_string()),
+    ];
+    keyvalues.extend(c.keys.iter().map(|(k, v)| (k.to_string(), v.to_string())));
     data.entities.push(MapEntity {
-        keyvalues: vec![
-            (
-                "classname".into(),
-                if c.multiplayer { "prop_physics_multiplayer" } else { "prop_physics" }.into(),
-            ),
-            ("origin".into(), format!("{} {} {}", centre.x, centre.y, centre.z)),
-            ("spawnflags".into(), c.flags.to_string()),
-        ],
+        keyvalues,
         hulls: Vec::new(),
         mover: false,
         physics: None,
@@ -1242,6 +1250,15 @@ fn ball(w: &mut W, ahead: f32) -> (Entity, Entity) {
     f.keep_speed = Some(1000.0 * U);
     f.expires = Some(clock.now + 4.0);
     f.touch = Touch::Bounce;
+    // As the AR2's (`alt_fire`): 1000 crush.
+    f.direct = Some(chimera_sim::weapon::projectile::Direct {
+        damage: 10.0,
+        kind: DamageKind::Crush,
+        head: 1.0,
+        armor_ratio: Some(1.0),
+        quantum: 0.0,
+        force: 0.0,
+    });
     let mut commands = world.commands();
     let e = spawn_flyer(&mut commands, f, start, weapons::launch::BALL_MODEL.into(), &clock);
     world.flush();
@@ -1302,6 +1319,431 @@ fn a_dropped_ball_leaves_at_1500() {
     assert!((v.length() - 1500.0).abs() < 1.0, "{v}");
     let off = v.normalize().dot(Vec3::X).acos().to_degrees();
     assert!(off <= 55.0 * std::f32::consts::SQRT_2 + 0.5, "{off} degrees off the view");
+}
+
+// ---------------------------------------------------------------------------
+// Launches: first impacts, spin and carry angles (9, 4, 7)
+
+/// A logic prop's health, breakable: 1000 health, in pieces when it breaks.
+const TOUGH: &[(&str, &str)] = &[("chimera_prop_health", "1000"), ("chimera_prop_pieces", "1")];
+
+fn prop_health(w: &W, i: usize) -> i32 {
+    let logic = w.sim.app.world().resource::<source_logic::logic::Logic>();
+    logic.world.by_map_index(i).and_then(|id| logic.world.prop(id)).map_or(-1, |p| p.health)
+}
+
+fn prop_broken(w: &W, i: usize) -> bool {
+    let logic = w.sim.app.world().resource::<source_logic::logic::Logic>();
+    logic.world.by_map_index(i).is_none_or(|id| logic.world.prop(id).is_none_or(|p| p.broken))
+}
+
+/// A wall across the line of fire, `x` ahead of the feet.
+fn wall_at(x: f32) -> (Vec3, Vec3) {
+    (Vec3::new(x, -512.0, 0.0), Vec3::new(x + 16.0, 512.0, 512.0))
+}
+
+/// Grab prop 0 and launch it after settling; the launch's tick.
+fn launch_it(w: &mut W) {
+    w.grab(0);
+    w.sim.ticks(20);
+    w.press(true, false, 1, 1);
+}
+
+/// Spec 9: a crate launched from the hold takes 10× its computed impact
+/// damage on its first collision, and only then; the same launch with the
+/// mark taken off (as a throw, or a punt) takes one.
+#[test]
+fn a_launchs_first_impact_counts_ten_times() {
+    let lost = |marked: bool| {
+        let mut w = world_with(&[Crate::ahead(60.0).keys(TOUGH)], &[wall_at(300.0)]);
+        launch_it(&mut w);
+        let n = w.node(0);
+        assert_eq!(w.sim.app.world().get::<chimera_world::map::held::LaunchedFromHold>(n).is_some(), true, "marked");
+        if !marked {
+            w.sim.app.world_mut().entity_mut(n).remove::<chimera_world::map::held::LaunchedFromHold>();
+        }
+        w.sim.seconds(0.4);
+        assert!(w.sim.app.world().get::<chimera_world::map::held::LaunchedFromHold>(n).is_none(), "gone with the contact");
+        1000 - prop_health(&w, 0)
+    };
+    let (once, ten) = (lost(false), lost(true));
+    assert!(once > 0, "the wall hurts it at all: {once}");
+    assert!((ten - 10 * once).abs() <= once, "{ten} after a launch, {once} without");
+}
+
+/// Case 46's first half, and P3's numbers beside it (`cases.py
+/// phys_rules`: an oil drum launched at a wall breaks on it, punted it
+/// doesn't): a prop with `onfirstimpact` "break" breaks on its first
+/// collision after a launch whatever the speed, not after a punt.
+#[test]
+fn first_impact_props_break_only_after_a_launch() {
+    const KEYS: &[(&str, &str)] = &[
+        ("chimera_prop_health", "1000"),
+        ("chimera_prop_pieces", "1"),
+        ("chimera_prop_interactions", "firstimpact_break"),
+    ];
+    let mut w = world_with(&[Crate::ahead(60.0).keys(KEYS)], &[wall_at(300.0)]);
+    launch_it(&mut w);
+    w.sim.seconds(0.4);
+    assert!(prop_broken(&w, 0), "launched: broke on the wall");
+    let mut w = world_with(&[Crate::ahead(60.0).keys(KEYS)], &[wall_at(300.0)]);
+    w.press(true, false, 1, 1);
+    w.sim.seconds(0.6);
+    assert!(!prop_broken(&w, 0), "punted: stays whole");
+}
+
+/// The explosions `n` ticks wrote: their attackers.
+fn explosion_attackers(w: &mut W, n: u64) -> Vec<Option<Entity>> {
+    let mut cursor = w.sim.app.world().resource::<Messages<chimera_core::core::Explosion>>().get_cursor_current();
+    let mut out = Vec::new();
+    for _ in 0..n {
+        w.sim.ticks(1);
+        out.extend(cursor.read(w.sim.app.world().resource::<Messages<chimera_core::core::Explosion>>()).map(|e| e.attacker));
+    }
+    out
+}
+
+/// Spec 9 and cases 45, 46: an explosive prop's blast names its last
+/// attacker (a punt counts, for good); else its influencer while the
+/// influence is at most 2 s old; else the break's own attacker.
+#[test]
+fn an_explosive_props_blast_credit() {
+    const KEYS: &[(&str, &str)] = &[
+        ("chimera_prop_health", "20"),
+        ("chimera_prop_pieces", "1"),
+        ("chimera_prop_explode", "100 200"),
+    ];
+    let break_it = |w: &mut W| {
+        let mut logic = w.sim.app.world_mut().resource_mut::<source_logic::logic::Logic>();
+        let id = logic.world.by_map_index(0).expect("the prop");
+        logic.world.queue_direct(id, "Break", source_logic::logic::Value::Void, 0.0, None);
+    };
+    let spawn = || world(&[Crate::ahead(60.0).keys(KEYS)]);
+    // Grabbed and dropped (an influence, no hit), broken 1.9 s and 2.1 s on.
+    for (after, credited) in [(1.9, true), (2.1, false)] {
+        let mut w = spawn();
+        let n = w.grab(0);
+        w.sim.seconds(0.6);
+        w.press(false, true, 1, 1);
+        let at = w.sim.app.world().get::<PhysicsInfluence>(n).unwrap().at;
+        w.sim.seconds(after - (w.now() - at) - 0.03);
+        break_it(&mut w);
+        let got = explosion_attackers(&mut w, 4);
+        assert_eq!(got.len(), 1, "one blast after {after} s: {got:?}");
+        assert_eq!(got[0] == Some(w.p), credited, "after {after} s: {got:?}");
+    }
+    // Punted: its last attacker, however long ago (case 45).
+    let mut w = spawn();
+    w.press(true, false, 1, 1);
+    w.sim.seconds(3.0);
+    break_it(&mut w);
+    let got = explosion_attackers(&mut w, 4);
+    assert_eq!(got, vec![Some(w.p)], "the punter, 3 s on");
+}
+
+/// Source's angles (pitch, yaw, roll) of an engine rotation's forward and
+/// up: forward (Source) and up (Source).
+fn axes(rot: Quat) -> (Vec3, Vec3) {
+    (to_source(rot * Vec3::X * U), to_source(rot * Vec3::Y * U))
+}
+
+/// Spec 4 step 4: `preferred_carryangles` hold the prop in the yaw-only
+/// frame, whatever the pitch; measured (`cases.py phys_rules2`) the propane
+/// tank ("-90 0 0") held by a bot looking at yaw 180: (−90, 0, 180), the
+/// same rotation as (−90, 180, 0).
+#[test]
+fn preferred_carry_angles_hold_in_the_yaw_frame() {
+    const KEYS: &[(&str, &str)] = &[("chimera_prop_carry_angles", "-90 0 0")];
+    let mut w = world(&[Crate::ahead(60.0).keys(KEYS)]);
+    let n = w.grab(0);
+    w.sim.seconds(0.5);
+    let check = |w: &W, what: &str| {
+        let rot = w.sim.app.world().get::<Transform>(n).unwrap().rotation;
+        let (fwd, up) = axes(rot);
+        // Pitch −90: its +X up, its +Z back along the view.
+        assert!((fwd - Vec3::Z).length() < 0.05, "{what}: forward {fwd}");
+        assert!((up - Vec3::NEG_X).length() < 0.05, "{what}: up {up}");
+    };
+    check(&w, "level");
+    look(&mut w.sim, w.p, EAST, -40.0);
+    w.sim.seconds(0.3);
+    check(&w, "looking down: the frame is the yaw's");
+}
+
+/// Spec 4 step 4, 7: a "spin_zaxis" prop (the sawblade) is held at
+/// (−5, 0, 0) in the view frame and spins about its own z when launched:
+/// measured (`cases.py phys_rules2`) a sawblade held by a bot looking level
+/// at yaw 180: (−5, −180, 0), then 48.7 degrees a tick of yaw (3250 deg/s;
+/// the spec's 5000, under Source's 3600 cap). "spin_none" doesn't spin.
+#[test]
+fn launch_spin_by_the_props_interactions() {
+    const ZAXIS: &[(&str, &str)] = &[("chimera_prop_interactions", "launch_spin_z")];
+    const NONE: &[(&str, &str)] = &[("chimera_prop_interactions", "launch_spin_none")];
+    let mut w = world(&[Crate::ahead(60.0).keys(ZAXIS)]);
+    let n = w.grab(0);
+    w.sim.seconds(0.5);
+    let rot = w.sim.app.world().get::<Transform>(n).unwrap().rotation;
+    let (fwd, up) = axes(rot);
+    let want = Vec3::new(5f32.to_radians().cos(), 0.0, 5f32.to_radians().sin());
+    assert!((fwd - want).length() < 0.05, "held at pitch −5 in the view frame: {fwd}");
+    assert!(up.z > 0.9, "{up}");
+    w.press(true, false, 1, 1);
+    w.sim.ticks(1);
+    let world = w.sim.app.world();
+    let spin = world.get::<AngularVelocity>(n).unwrap().0;
+    let axis = world.get::<Rotation>(n).unwrap().0 * Vec3::Y;
+    // Source's cap, less a tick of the air's drag on it (measured 3250).
+    assert!((spin.length().to_degrees() - 3250.0).abs() < 100.0, "{} deg/s", spin.length().to_degrees());
+    assert!(spin.normalize().dot(axis) > 0.9, "about its own z: {spin} {axis}");
+
+    let mut w = world_(NONE);
+    let n = w.grab(0);
+    w.sim.seconds(0.5);
+    w.press(true, false, 1, 1);
+    w.sim.ticks(1);
+    let spin = w.sim.app.world().get::<AngularVelocity>(n).unwrap().0;
+    assert!(spin.length() < 0.5, "none: {spin}");
+}
+
+fn world_(keys: &'static [(&'static str, &'static str)]) -> W {
+    world(&[Crate::ahead(60.0).keys(keys)])
+}
+
+/// Two bodies of a metal ragdoll (a map's prop_ragdoll, none in the stock
+/// maps), floating at eye height: 20 kg `ahead` on the line, 10 kg 60
+/// to the side.
+fn two_part_ragdoll(w: &mut W, ahead: f32, surface: &str) -> (Entity, Entity) {
+    use chimera_core::core::PropSurface;
+    use chimera_world::map::{MapPart, Ragdoll, RagdollBody};
+    let eye = w.eye();
+    let world = w.sim.app.world_mut();
+    let now = world.resource::<SimClock>().now;
+    let sim = world.spawn((Name::new("test ragdoll"), MapPart, Transform::default())).id();
+    let mut body = |at: Vec3, mass: f32, i: usize| {
+        world
+            .spawn((
+                RagdollBody { ragdoll: sim, index: i, collides: 0 },
+                MapPart,
+                Transform::from_translation(to_engine(at)),
+                RigidBody::Dynamic,
+                Collider::cuboid(20.0 * U, 20.0 * U, 20.0 * U),
+                Mass(mass),
+                LinearVelocity::ZERO,
+                AngularVelocity::ZERO,
+                GravityScale(0.0),
+                PropSurface(surface.to_string()),
+            ))
+            .id()
+    };
+    let a = body(eye + Vec3::new(ahead, 0.0, 0.0), 20.0, 0);
+    let b = body(eye + Vec3::new(ahead, 60.0, 0.0), 10.0, 1);
+    let placed = chimera_world::map::placed_ragdoll::PlacedRagdoll {
+        ragdoll: std::sync::Arc::new(chimera_world::map::MapRagdoll::default()),
+        bones: std::sync::Arc::new(Vec::new()),
+        root: Transform::default(),
+        pose: None,
+        joints: Vec::new(),
+        flags: 0,
+        home: Transform::default(),
+        sim: Some(sim),
+        follow: Transform::default(),
+        pinned: false,
+        asleep: false,
+        gone: false,
+        solid: true,
+    };
+    let node = world.spawn((Name::new("test ragdoll node"), MapPart, Transform::default(), placed)).id();
+    world.entity_mut(sim).insert(Ragdoll::placed(node, vec![a, b], Vec::new(), vec![None, None], U, Vec3::ZERO, now));
+    w.sim.ticks(2);
+    (a, b)
+}
+
+/// Section 2 step 5, 4 step 3: an object of several bodies shares the
+/// punt by mass (M 30: the hit one 1, 1650 in/s; the other 1/6, 550), is
+/// held whole at the summed mass (the hit one 1 kg, the other 1 / max(2 /
+/// 7.5, 1)) and takes its masses back. A ragdoll of flesh isn't there for
+/// the gun.
+#[test]
+fn an_object_of_several_bodies() {
+    let speed = |w: &W, e: Entity| to_source(w.sim.app.world().get::<LinearVelocity>(e).unwrap().0);
+    let mut w = world(&[]);
+    let (a, b) = two_part_ragdoll(&mut w, 100.0, "metal");
+    w.press(true, false, 1, 1);
+    w.sim.ticks(1);
+    let (va, vb) = (speed(&w, a), speed(&w, b));
+    assert!((va.x - 1650.0).abs() < 30.0, "the hit body: {va}");
+    assert!((vb.x - 550.0).abs() < 15.0, "the other: {vb}");
+
+    let mut w = world(&[]);
+    let (a, b) = two_part_ragdoll(&mut w, 100.0, "metal");
+    w.press(false, true, 1, 2);
+    assert!(w.holding(), "held");
+    let mass = |w: &W, e: Entity| w.sim.app.world().get::<Mass>(e).unwrap().0;
+    assert_eq!((mass(&w, a), mass(&w, b)), (1.0, 1.0));
+    assert!(w.sim.app.world().get::<Held>(b).is_some());
+    w.sim.seconds(0.6);
+    w.press(false, true, 1, 1);
+    assert!(!w.holding(), "dropped");
+    assert_eq!((mass(&w, a), mass(&w, b)), (20.0, 10.0));
+    assert!(w.sim.app.world().get::<Held>(b).is_none());
+
+    let mut w = world(&[]);
+    let (a, _) = two_part_ragdoll(&mut w, 100.0, "flesh");
+    let t = w.tick();
+    w.press(true, false, 1, 2);
+    assert_eq!(w.dry_fires(t), 1, "flesh: a dry fire");
+    assert!(speed(&w, a).length() < 1.0);
+}
+
+// ---------------------------------------------------------------------------
+// Items in the gun (11; Open questions 6, 14)
+
+/// A world with one `item_battery` on the floor `ahead` of the player, who
+/// looks down at it; its entity index.
+fn with_battery(ahead: f32) -> (W, Entity) {
+    let mut data = MapData {
+        name: "test:gravity_gun_items".into(),
+        entity_scale: U,
+        gravity: Some(600.0 * U),
+        ..default()
+    };
+    solid(&mut data, Vec3::new(-4096.0, -4096.0, -64.0), Vec3::new(4096.0, 4096.0, 0.0));
+    data.entities.push(MapEntity {
+        keyvalues: vec![
+            ("classname".into(), "item_battery".into()),
+            ("origin".into(), format!("{ahead} 0 0")),
+        ],
+        hulls: Vec::new(),
+        mover: false,
+        physics: None,
+    });
+    let mut sim = Sim::new(Hl2Sim, MapSimPlugin::new(data));
+    sim.set_tick_interval(hl2dm::game::TICK_INTERVAL);
+    sim.app.init_resource::<Log>().add_systems(FixedLast, listen);
+    let p = sim.spawn_character(to_engine(FEET + Vec3::Z * 36.0), movement::ID);
+    let pitch = -(EYE - 8.0).atan2(ahead).to_degrees();
+    look(&mut sim, p, EAST, pitch);
+    sim.seconds(1.0);
+    let world = sim.app.world_mut();
+    let item = world.query_filtered::<Entity, With<hl2dm::game::pickups::Pickup>>().iter(world).next().expect("the battery");
+    world.entity_mut(p).insert(hl2dm::game::suit::Suit { worn: true, ..default() });
+    (W { sim, p }, item)
+}
+
+/// Open questions 6, measured (`cases.py phys_rules`): a battery grabbed
+/// from 100 ahead is taken on its way in, 4 ticks after the grab, and 130
+/// ahead 6 ticks after, armour + 15, the gun's drop sound on that tick
+/// (its touch box grown 48: 72 from the player's axis; the object would
+/// stop 51 away, short of the 48 reach of a 24-unit box). Not held, the
+/// same battery 60 ahead isn't touched.
+#[test]
+fn a_held_battery_is_taken_on_its_way_in() {
+    for (ahead, ticks) in [(100.0, 4i64), (130.0, 6)] {
+        let (mut w, _) = with_battery(ahead);
+        let t0 = w.tick();
+        let armour = |w: &W| w.sim.app.world().get::<chimera_sim::weapon::Armor>(w.p).unwrap().amount;
+        assert_eq!(armour(&w), 0.0);
+        w.press(false, true, 1, 1);
+        assert!(w.holding(), "grabbed from {ahead}");
+        let mut taken = None;
+        for k in 1..30i64 {
+            w.sim.ticks(1);
+            if armour(&w) > 0.0 && taken.is_none() {
+                taken = Some(k);
+                break;
+            }
+        }
+        let taken = taken.expect("taken");
+        assert!((taken - ticks).abs() <= 2, "{ahead} ahead: taken {taken} ticks after the grab, the probe's {ticks}");
+        w.sim.ticks(3);
+        assert!(!w.holding(), "its body gone, the hold ends");
+        assert_eq!(w.sounds("Weapon_PhysCannon.Drop", t0).len(), 1);
+    }
+    let (mut w, _) = with_battery(60.0);
+    w.sim.seconds(0.5);
+    assert_eq!(w.sim.app.world().get::<chimera_sim::weapon::Armor>(w.p).unwrap().amount, 0.0, "24 from 60 is out of reach");
+}
+
+// ---------------------------------------------------------------------------
+// The ball (12; projectiles.md 5)
+
+/// Section 12, measured (`cases.py phys_rules`): a free ball (1000 in/s)
+/// punted leaves at 1959 (959.2 added along the view) with the punter's
+/// credit and a fresh 4 s; it keeps 1959 through its bounces (5.2's rule,
+/// not 12's "restores").
+#[test]
+fn a_free_ball_can_be_punted() {
+    use chimera_sim::weapon::projectile::Flyer;
+    let mut w = world_with(&[], &[wall_at(1200.0)]);
+    let (e, b) = ball(&mut w, 150.0);
+    w.sim.app.world_mut().get_mut::<Flyer>(e).unwrap().velocity = to_engine(Vec3::new(1000.0, 0.0, 0.0));
+    w.press(true, false, 1, 1);
+    let now = w.now();
+    let f = w.sim.app.world().get::<Flyer>(e).unwrap();
+    let v = to_source(f.velocity);
+    assert!((v.x - 1959.2).abs() < 1.0 && v.y.abs() < 1.0 && v.z.abs() < 1.0, "{v}");
+    assert_eq!(f.owner, Some(w.p), "was {b}");
+    assert!((f.expires.unwrap() - (now + 4.0)).abs() < 0.02);
+    assert!((f.keep_speed.unwrap() / U - 1000.0).abs() < 1.0, "its stored speed");
+    w.sim.seconds(1.0);
+    let f = w.sim.app.world().get::<Flyer>(e).unwrap();
+    assert!((to_source(f.velocity).length() - 1959.2).abs() < 1.0, "after its bounce: {}", to_source(f.velocity));
+    assert!(to_source(f.velocity).x < 0.0, "it bounced");
+}
+
+/// Case 55's end, projectiles.md 5.6: a ball kept in the gun ends as any
+/// ball: `FlyerGone` (expired: its rings and shake), its explosion sound,
+/// no damage.
+#[test]
+fn a_held_balls_end_is_a_balls_end() {
+    use chimera_sim::weapon::projectile::FlyerGone;
+    let mut w = world(&[]);
+    let (e, _) = ball(&mut w, 150.0);
+    let t0 = w.tick();
+    w.press(false, true, 1, 2);
+    w.sim.app.world_mut().get_mut::<Health>(w.p).unwrap().current = 1.0;
+    let mut cursor = w.sim.app.world().resource::<Messages<FlyerGone>>().get_cursor_current();
+    let mut ended = None;
+    for _ in 0..600 {
+        w.sim.ticks(1);
+        if let Some(g) = cursor.read(w.sim.app.world().resource::<Messages<FlyerGone>>()).find(|g| g.flyer == e) {
+            ended = Some((g.expired, w.tick() - t0));
+            break;
+        }
+    }
+    let (expired, ticks) = ended.expect("it ended");
+    assert!(expired, "as a ball's time running out");
+    assert!((530..=536).contains(&ticks), "8 s after the catch: {ticks}");
+    assert_eq!(w.sounds("NPC_CombineBall.Explosion", t0).len(), 1, "its sound");
+    assert!(w.sim.app.world().get_entity(e).is_err());
+    assert!(w.sim.app.world().get::<Health>(w.p).unwrap().current > 0.0, "harmless");
+    assert!(!w.holding());
+}
+
+/// Projectiles.md 5.3: a ball into a breakable prop: 1000 crush (it
+/// breaks); into an unbreakable one: knocked (150 kg at 1000 in/s), the
+/// ball flying on at its speed.
+#[test]
+fn the_ball_crushes_and_knocks_props() {
+    use chimera_sim::weapon::projectile::Flyer;
+    let tough: &'static [(&'static str, &'static str)] = &[("chimera_prop_health", "900"), ("chimera_prop_pieces", "1")];
+    let mut w = world(&[Crate::ahead(300.0).keys(tough)]);
+    let (e, b) = ball(&mut w, 150.0);
+    w.sim.app.world_mut().get_mut::<Flyer>(e).unwrap().velocity = to_engine(Vec3::new(1000.0, 0.0, 0.0));
+    w.sim.seconds(0.3);
+    assert!(prop_broken(&w, 0), "{} health left", prop_health(&w, 0));
+    assert!(w.sim.app.world().get_entity(e).is_ok() && b != w.p);
+
+    let mut w = world(&[Crate::ahead(300.0)]);
+    let (e, _) = ball(&mut w, 150.0);
+    w.sim.app.world_mut().get_mut::<Flyer>(e).unwrap().velocity = to_engine(Vec3::new(1000.0, 0.0, 0.0));
+    w.sim.seconds(0.15);
+    let v = w.velocity(0);
+    // 2 · 150 / (150 + 30) of 1000 (1667), a whole elastic knock, less a
+    // little drag.
+    assert!(v.x > 1400.0, "knocked: {v}");
+    let f = w.sim.app.world().get::<Flyer>(e).unwrap();
+    assert!((to_source(f.velocity).length() - 1000.0).abs() < 1.0);
 }
 
 // ---------------------------------------------------------------------------

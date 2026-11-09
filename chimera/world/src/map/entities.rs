@@ -87,7 +87,7 @@ pub const PROP_HEALTH_KEY: &str = "chimera_prop_health";
 /// specs/source/prop_damage.md 2): damage multipliers "bullets club
 /// blast"; how many pieces it breaks into; interactions (space separated:
 /// flammable, explosive_resist, ignite_halfhealth, explode_fire,
-/// firstimpact_break); explosion "damage radius" and its sound; impact
+/// firstimpact_break, launch_spin_z, launch_spin_none); explosion "damage radius" and its sound; impact
 /// damage table name; "1" for a client-only prop (multiplayer physics
 /// mode 3); the break sound entry; its mass (kg).
 pub const PROP_DAMAGE_KEY: &str = "chimera_prop_damage";
@@ -99,6 +99,9 @@ pub const PROP_TABLE_KEY: &str = "chimera_prop_damage_table";
 pub const PROP_CLIENT_KEY: &str = "chimera_prop_client";
 pub const PROP_BREAK_SOUND_KEY: &str = "chimera_prop_break_sound";
 pub const PROP_MASS_KEY: &str = "chimera_prop_mass";
+/// How a gravity gun holds it, "pitch yaw roll" (Source's
+/// `preferred_carryangles`, specs/hl2dm/gravity_gun.md 4).
+pub const PROP_CARRY_ANGLES_KEY: &str = "chimera_prop_carry_angles";
 /// A breakable brush's gib list from its prop data template (Source
 /// "propdata" on func_breakable: the template's `breakable_model`); its
 /// health and multipliers go in `PROP_HEALTH_KEY` and `PROP_DAMAGE_KEY`.
