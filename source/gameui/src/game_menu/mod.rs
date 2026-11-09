@@ -11,7 +11,10 @@
 //! the keyboard, video and multiplayer tabs' Advanced dialogs, the last
 //! listing `cfg/user.scr`), Create Server (its
 //! Server, Game and Bot pages: `CreateMultiplayerGame*Page.res`, the Game
-//! page's options from `cfg/settings.scr`); controls the game has and
+//! page's options from `cfg/settings.scr`, one row per cvar, run as the script
+//! reader's formats; Server Type for a game with `server_types`); Options >
+//! Multiplayer's player model and spray pickers and Import Spray (`pickers`);
+//! controls the game has and
 //! Chimera lacks are drawn greyed. Ours (settings CS:S's options don't
 //! have) are in our own dialog, Lucker Party Options (`menu extras`; the
 //! menus list only `GameMenu.res`'s entries, none of ours).
@@ -129,6 +132,7 @@ mod loading;
 mod main_menu;
 mod model;
 mod options_pages;
+mod pickers;
 mod player_list;
 mod systems;
 mod vote_setup;
@@ -142,6 +146,7 @@ pub use self::{
     loading::*,
     main_menu::*,
     model::*,
+    pickers::*,
     player_list::ListedPlayer,
     vote_setup::{VoteSetup, issue_label},
 };
@@ -230,7 +235,9 @@ impl Plugin for GameMenuPlugin {
                     .in_set(MenuSystems),
             )
             .add_systems(Update, (world_behind_dialogs, mic_meter).after(MenuSystems))
+            .add_systems(Update, imported_pictures.run_if(resource_changed::<GameMenu>))
             .add_systems(Update, vote_setup_arrived.before(MenuSystems));
+        register_server_type(app);
         // The shell's view of the menu (`client::front_end`).
         app.init_resource::<MenuStatus>()
             .add_systems(First, sync_status.in_set(FrontEndSync))
@@ -408,6 +415,10 @@ pub enum Page {
     PlayerList,
     /// The vote setup dialog (`vote_setup.rs`).
     Vote,
+    /// Options > Multiplayer > Import Spray's dialog (over the options).
+    ImportSpray,
+    /// Its "Spray Import Error" box (over the options).
+    SprayError,
 }
 
 impl Page {
@@ -427,11 +438,19 @@ impl Page {
             Page::Debug => "debugoptions",
             Page::PlayerList => "playerlist",
             Page::Vote => "votesetup",
+            Page::ImportSpray => "importspray",
+            Page::SprayError => "sprayerror",
         }
     }
 
     /// A dialog over the options (modal to them).
     fn over_options(self) -> bool {
-        matches!(self, Page::KeyboardAdvanced | Page::VideoAdvanced | Page::Gamma | Page::MultiplayerAdvanced)
+        matches!(self, Page::KeyboardAdvanced
+                | Page::VideoAdvanced
+                | Page::Gamma
+                | Page::MultiplayerAdvanced
+                | Page::ImportSpray
+                | Page::SprayError
+        )
     }
 }

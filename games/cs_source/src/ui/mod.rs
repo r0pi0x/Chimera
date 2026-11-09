@@ -72,6 +72,9 @@ pub static MENU_GAME: MenuGame = MenuGame {
     teams: Some(["Terrorists", "Counter-Terrorists"]),
     quick_start: Some(QuickStart { map: "de_dust2", bots: 9 }),
     layout_hides: false,
+    player_models: false,
+    sprays: false,
+    server_types: false,
 };
 
 /// The client shell's plugins (`client::ClientPlugins`) with CS:S's HUD

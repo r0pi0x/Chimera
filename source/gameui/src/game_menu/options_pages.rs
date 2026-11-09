@@ -396,7 +396,7 @@ impl GameMenu {
     /// The options' OK, Cancel and Apply (Apply greyed with nothing to
     /// apply).
     pub(super) fn dialog_buttons(&self) -> Vec<Row> {
-        let changed = self.options_before.iter().any(|(i, v)| self.values.get(*i) != Some(v));
+        let changed = self.options_before.iter().any(|(i, v)| self.values.get(*i) != Some(v)) || self.pickers_pending();
         vec![
             Row::Button {
                 label: self.text("#GameUI_OK", "OK"),
@@ -424,6 +424,7 @@ impl GameMenu {
                 out.lines.extend(SETTINGS[i].lines(v));
             }
         }
+        self.apply_pickers(out);
     }
 
     /// Put settings back as they were.
@@ -494,6 +495,13 @@ impl GameMenu {
     /// layout's order, OK / Cancel / Apply.
     pub(super) fn options_rows(&self) -> Vec<Row> {
         let mut rows = self.place_rows(Place::Options(self.tab));
+        if self.tab == Tab::Multiplayer {
+            // The model and spray combos, in the layout's order.
+            rows.extend([PickerKind::Model, PickerKind::Spray].into_iter().filter_map(|k| self.picker_row(k)));
+            if self.layout().is_some() {
+                rows.sort_by_key(|r| self.row_order(r));
+            }
+        }
         if self.tab == Tab::Video && !self.resolutions.is_empty() {
             // Its aspect ratio, where the layout has it (else after the
             // resolution).
@@ -508,13 +516,16 @@ impl GameMenu {
             };
             rows.insert(at, row);
         }
-        let buttons: &[Action] = match self.tab {
+        let mut buttons: Vec<Action> = match self.tab {
             // Adjust brightness levels... and Advanced...
-            Tab::Video => &[Action::Gamma, Action::VideoAdvanced],
-            Tab::Multiplayer if self.game.layout_hides() && self.layout().and_then(|l| l.get("Advanced")).is_some_and(|c| !c.visible) => &[],
-            Tab::Multiplayer => &[Action::MultiplayerAdvanced],
-            _ => &[],
+            Tab::Video => vec![Action::Gamma, Action::VideoAdvanced],
+            Tab::Multiplayer if self.game.layout_hides() && self.layout().and_then(|l| l.get("Advanced")).is_some_and(|c| !c.visible) => vec![],
+            Tab::Multiplayer => vec![Action::MultiplayerAdvanced],
+            _ => vec![],
         };
+        if self.tab == Tab::Multiplayer && self.has_import() {
+            buttons.insert(0, Action::ImportSpray);
+        }
         if self.tab == Tab::Voice && self.known_command("voice_test") {
             // Test Microphone / Stop Microphone Test (`voice_test`), where
             // the layout has it.
@@ -534,6 +545,8 @@ impl GameMenu {
         for action in buttons.iter().cloned() {
             let label = if action == Action::Gamma {
                 self.text("#GameUI_AdjustGamma", "Adjust brightness levels...")
+            } else if action == Action::ImportSpray {
+                self.text("#GameUI_ImportSprayEllipsis", "Import Spray...")
             } else {
                 self.text("#GameUI_AdvancedEllipsis", "Advanced...")
             };
