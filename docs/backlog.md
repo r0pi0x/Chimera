@@ -166,6 +166,9 @@ the original's own behaviour isn't a bug (say so instead).
   ground can be picked up there, and shouldn't. Turn off gun pickups in UGG
   (every game's, map-placed or dropped), as a rule the mode sets, so other
   pickups stay possible later.
+- **Ultimate Gun Game's HUD changed:** the CS:S HUD there looks different
+  now, a recent regression by the user's account (no change was meant to
+  touch it; bisect it). The level-up text is far too big on some HUDs.
 - **Battery machine:** at `setpos -3835.25 5745.72 64.02;setang 17.71
   22.85 0.00` its rope or cable looks broken, and the battery doesn't seat
   properly in the slot.
