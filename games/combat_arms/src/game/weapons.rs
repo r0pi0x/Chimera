@@ -1511,6 +1511,7 @@ pub const GAS_MASK: Gear = Gear {
 /// ray per shot (no extra pellets) and no recoil kick. Combat Arms' bots
 /// (bots.md 7.3, Quirk 7), whose brain picks each shot's aim point.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[component(storage = "SparseSet")]
 pub struct ExactAim;
 
 /// Combat Arms' armour: Chimera's `weapon::Armor` (its amount: the

@@ -724,6 +724,7 @@ pub struct Layer {
 /// overlay layers in order, and the pose parameters (stored values).
 /// Games drive it; `pose_bodies` turns it into joint transforms.
 #[derive(Component, Debug, Default, Clone)]
+#[component(storage = "SparseSet")]
 pub struct Animator {
     pub set: Arc<AnimSet>,
     pub params: Vec<f32>,

@@ -2080,3 +2080,77 @@ fn t60_leaves_cut_out() {
     assert!(matches!(m.alpha, MapAlpha::Mask(_)), "not blended: {:?}", m.alpha);
     assert!(m.unlit);
 }
+
+/// What older ladders loaded is forgotten as a map unloads, but for the
+/// ladder just played and what's worn or held; a session's memory and each
+/// map's building stop growing (docs/performance.md, "A session's frame
+/// rate"), and what's forgotten may load again.
+#[test]
+fn a_map_unload_forgets_what_older_ladders_loaded() {
+    use combat_arms::game::{
+        characters::{
+            models::body_name,
+            preload::{Forgotten, LadderModels, forget_old},
+        },
+        view_model::on_demand::LoadOnDemand,
+    };
+    use chimera_world::map;
+
+    let mut app = App::new();
+    let w = app.world_mut();
+    w.insert_resource(LoadOnDemand);
+    w.insert_resource(LadderModels {
+        bodies: vec![7],
+        keys: vec!["combat_arms:kept".into()],
+    });
+    let body = |id: i32| {
+        (
+            Arc::new(map::MapCharacterModel {
+                game: Some(combat_arms::game::GAME),
+                team: None,
+                name: Some(body_name(id)),
+                class: None,
+                model: Default::default(),
+                hitboxes: Vec::new(),
+                bones: Vec::new(),
+                root: Transform::IDENTITY,
+                animations: None,
+                boxes: Vec::new(),
+                ragdoll: None,
+            }),
+            Arc::new(Vec::new()),
+        )
+    };
+    let held = |key: &str| {
+        (
+            Arc::new(map::MapHeldModel {
+                key: key.into(),
+                model: Default::default(),
+                bone: String::new(),
+                muzzle: None,
+                attachments: Vec::new(),
+                merged: Vec::new(),
+                own: None,
+            }),
+            Arc::new(Vec::new()),
+        )
+    };
+    w.insert_resource(map::LateCharacterModels(vec![body(7), body(8)]));
+    w.insert_resource(map::LateHeldModels(vec![held("combat_arms:kept"), held("combat_arms:old"), held("combat_arms:in_hand")]));
+    w.spawn(map::Held(Some("combat_arms:in_hand".into())));
+
+    forget_old(w);
+
+    let bodies: Vec<_> = w.resource::<map::LateCharacterModels>().0.iter().map(|(m, _)| m.name.clone().unwrap()).collect();
+    assert_eq!(bodies, [body_name(7)]);
+    let keys: Vec<_> = w.resource::<map::LateHeldModels>().0.iter().map(|(m, _)| m.key.clone()).collect();
+    assert_eq!(keys, ["combat_arms:kept", "combat_arms:in_hand"]);
+    assert_eq!(
+        *w.resource::<Forgotten>(),
+        Forgotten {
+            bodies: vec![8],
+            keys: vec!["combat_arms:old".into()],
+        },
+        "the loaders may load them again"
+    );
+}

@@ -152,6 +152,12 @@ impl CaModelIndex {
             .insert((weapon.to_string(), name.to_ascii_lowercase()), (bone.to_string(), at));
     }
 
+    /// Forget the groups of body records `ids` (they load again when next
+    /// worn: `preload::forget_old`).
+    pub fn forget_bodies(&mut self, ids: &[i32]) {
+        self.groups.retain(|g| !g.records.iter().any(|r| ids.contains(r)));
+    }
+
     /// `other`'s registrations over this index's.
     pub fn merge(&mut self, other: &CaModelIndex) {
         self.rigs.extend(other.rigs.iter().map(|(k, v)| (k.clone(), v.clone())));

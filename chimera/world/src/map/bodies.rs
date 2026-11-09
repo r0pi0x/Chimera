@@ -118,6 +118,7 @@ pub struct Corpse {
 
 /// Which character model a character uses (index in `CharacterModels`).
 #[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
+#[component(storage = "SparseSet")]
 pub struct BodyModel(pub usize);
 /// The loaded map's character models (see `MapCharacterModel`).
 #[derive(Resource, Clone)]
@@ -237,11 +238,13 @@ impl CharacterModels {
 /// A character drawn with a named model (`MapCharacterModel::name`)
 /// instead of its team's: a hostage.
 #[derive(Component, Clone, Debug, PartialEq)]
+#[component(storage = "SparseSet")]
 pub struct BodyName(pub String);
 
 /// Which skin family a character's body shows (Source `skin`: a map's
 /// hostage keeps its own); without it, the model's first.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[component(storage = "SparseSet")]
 pub struct BodySkin(pub i32);
 
 /// Which choice of each body part a character's body shows (Source's
@@ -249,6 +252,7 @@ pub struct BodySkin(pub i32);
 /// meshes with no `MapMesh::body` always show); without it, choice 0 of
 /// each.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[component(storage = "SparseSet")]
 pub struct BodyNumber(pub i32);
 
 /// Whether the local player's own body is drawn (third person). The

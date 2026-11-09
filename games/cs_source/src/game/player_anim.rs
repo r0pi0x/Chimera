@@ -149,6 +149,7 @@ impl Queue {
 
 /// One character's animation state.
 #[derive(Component, Debug, Clone)]
+#[component(storage = "SparseSet")]
 pub struct PlayerAnim {
     /// The next update is the first (spawn, respawn).
     reset: bool,

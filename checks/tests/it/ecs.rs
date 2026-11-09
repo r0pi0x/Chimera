@@ -60,6 +60,11 @@ const ONE_OFF_SCHEDULES: &[&str] = &[
 /// events, observers or systems (the step named).
 const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
+        "chimera/core/src/metrics/census.rs",
+        "CensusAssets",
+        "a tool: the asset stores the census counts",
+    ),
+    (
         "chimera/client/src/client/debug_ui.rs",
         "GameDebug",
         "a tool: the debug window's game rows",

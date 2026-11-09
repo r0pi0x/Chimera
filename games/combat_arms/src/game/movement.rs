@@ -337,6 +337,7 @@ impl CaCharacter {
 /// The held weapon's `MovePenalty` and its modification's factor
 /// (`c_mod`), on the player. Set by the weapon part; absent: no penalty.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+#[component(storage = "SparseSet")]
 pub struct HeldMovePenalty {
     pub penalty: f32,
     pub mod_factor: f32,
@@ -607,6 +608,7 @@ pub struct Standing {
 /// and everything the movement keeps between ticks. Units are world units
 /// (u, u/s). Public for the HUD (stamina, lock-out) and the tests.
 #[derive(Component, Clone, Debug, Default, Serialize, Deserialize)]
+#[component(storage = "SparseSet")]
 pub struct CaMovement {
     // Control flags (spec "Input to control state"), this tick's.
     pub crouch: bool,

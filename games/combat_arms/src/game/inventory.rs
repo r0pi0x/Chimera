@@ -384,6 +384,7 @@ pub struct KnifeState {
 /// A character's own knife reach (m), over the knife's `range`: a bot's
 /// 130 u (bots.md 8.4; the player's knife reaches 105 u).
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
+#[component(storage = "SparseSet")]
 pub struct KnifeReach(pub f32);
 
 /// A knife (`combat_arms:knife`): two attacks with timed hit events.

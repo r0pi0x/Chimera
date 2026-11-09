@@ -531,6 +531,8 @@ impl Plugin for CaCharactersPlugin {
                 )
                     .run_if(resource_exists::<super::view_model::on_demand::LoadOnDemand>),
             );
+        app.init_resource::<crate::map::MapHooks>();
+        app.world_mut().resource_mut::<crate::map::MapHooks>().unload.push(preload::forget_old);
         look_cvars(app);
         use crate::console::ConsoleAppExt;
         app.console_command(
@@ -699,6 +701,7 @@ fn look_seed(name: Option<&Name>, e: Entity) -> u64 {
 /// server's, replicated with the `Selection` it puts on, so every side's
 /// gear reads the rung's baseline vest for it (`gear::vest_of`).
 #[derive(Component, Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[component(storage = "SparseSet")]
 pub struct CaRungLook(pub Selection);
 
 /// A bot's own look (`CharacterData::bot_look` by its name's seed): what
@@ -1661,4 +1664,5 @@ fn hitboxes(
 
 /// On a character whose `core::Hitboxes` Combat Arms makes (`hitboxes`).
 #[derive(Component, Clone, Copy, Debug, Default)]
+#[component(storage = "SparseSet")]
 pub struct CaHitboxes;

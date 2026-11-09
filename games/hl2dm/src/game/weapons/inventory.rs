@@ -199,6 +199,7 @@ pub const DEFAULT_MODEL: &str = "models/combine_soldier.mdl";
 /// (`bodies`, replicated) and the spawn's melee weapon.
 #[derive(Component, Reflect, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[reflect(Component)]
+#[component(storage = "SparseSet")]
 pub struct Hl2Model(pub String);
 
 /// The melee weapon a model of `kind` spawns with.

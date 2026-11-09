@@ -92,6 +92,7 @@ pub const HOOK: RungExtrasHook = RungExtrasHook {
 /// Marks a player whose `Hl2Model` is a rung's (so leaving the rung takes
 /// it off).
 #[derive(Component, Clone, Copy, Debug)]
+#[component(storage = "SparseSet")]
 pub struct RungModel;
 
 /// An HL2:DM rung's draw.

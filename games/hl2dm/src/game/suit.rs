@@ -123,6 +123,7 @@ pub fn suit_armour() -> ArmorPieces {
 
 /// The suit (suit.md "Aux power", "Sprint"), predicted.
 #[derive(Component, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[component(storage = "SparseSet")]
 pub struct Suit {
     pub worn: bool,
     pub aux: f32,
@@ -244,6 +245,7 @@ pub struct FlashlightAllowed(pub bool);
 
 /// A player's breath (suit.md "Breath under water"), server-side.
 #[derive(Component, Clone, Debug, Default)]
+#[component(storage = "SparseSet")]
 pub struct Breath {
     /// When the air runs out, and when the next drowning hit may come
     /// (seconds).

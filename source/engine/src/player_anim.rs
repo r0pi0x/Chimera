@@ -190,6 +190,7 @@ pub fn inputs(
 
 /// Whether the ground was under the body at its last update (`jumped`).
 #[derive(Component, Debug, Clone, Copy)]
+#[component(storage = "SparseSet")]
 pub struct WasOnGround(pub bool);
 
 impl Default for WasOnGround {

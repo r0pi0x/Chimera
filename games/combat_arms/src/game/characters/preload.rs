@@ -15,10 +15,21 @@
 //!
 //! Only where `view_model::on_demand::LoadOnDemand` is (the front end).
 //!
-//! Known shortcuts (docs/tech-debt.md): nothing is forgotten: a new ladder
-//! adds its models to the session's (`map::LateCharacterModels`,
-//! `LateHeldModels`, the view models' cache), each map builds them again;
-//! a player's own look that no rung gives still loads when first worn.
+//! What older ladders brought is forgotten as a map unloads (`forget_old`,
+//! a `map::MapHooks::unload` hook): everything on demand (`map::
+//! LateCharacterModels`, `LateHeldModels`, the view models' cache) but the
+//! ladder just played and what characters wear and hold, so a session holds
+//! at most the ladder played and the next (each about 1.6 GB of memory, and
+//! each map builds what is kept: docs/performance.md, "A session's frame
+//! rate"); anything forgotten loads again when next wanted (`Forgotten`).
+//!
+//! Known shortcuts (docs/tech-debt.md): a player's own look that no rung
+//! gives still loads when first worn; a forgotten body's rig and a held
+//! model's sockets stay in the app's index (`CaLateModels`; at most one rig
+//! per body record; forgetting the rigs too didn't move the process's
+//! memory, docs/performance.md, "A session's frame rate").
+
+use std::collections::BTreeSet;
 
 use bevy::prelude::*;
 use chimera_sim::minigame::{
@@ -31,11 +42,26 @@ use super::{
         attachments::{ATTACHMENTS, AttachParams, CaModTable, fit, mods_for},
         data::CaData,
         rungs,
-        view_model::{on_demand::ours, parts::view_key},
+        view_model::{
+            on_demand::{self, LoadOnDemand, ours},
+            parts::view_key,
+        },
     },
-    records::CharacterData,
+    WantHeld, models,
+    records::{CharacterData, Selection},
 };
-use crate::weapon::data::WeaponCatalog;
+use crate::{
+    map::{Held, LateCharacterModels, LateHeldModels, LoadContext},
+    weapon::data::WeaponCatalog,
+};
+
+/// What `forget_old` last dropped: the loaders may load it again (they
+/// tried it once, `Pending`).
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Forgotten {
+    pub bodies: Vec<i32>,
+    pub keys: Vec<String>,
+}
 
 /// What this ladder's rungs give that loads on demand: body records and
 /// the keys of held and view models (a weapon's, and its own with parts).
@@ -120,5 +146,62 @@ pub fn plan_ladder(
     if *out != next {
         info!("Combat Arms: this ladder loads {} bodies and {} weapon models", next.bodies.len(), next.keys.len());
         *out = next;
+    }
+}
+
+/// Forget the models loaded on demand that the ladder just played
+/// (`LadderModels`) doesn't give and no character wears or holds: a map's
+/// unload (module doc). Only where the front end loads them.
+pub fn forget_old(world: &mut World) {
+    if !world.contains_resource::<LoadOnDemand>() {
+        return;
+    }
+    let Some(ladder) = world.get_resource::<LadderModels>().cloned() else { return };
+    let chars = world.get_resource::<CaData>().cloned();
+    let mut bodies: BTreeSet<i32> = ladder.bodies.iter().copied().collect();
+    if let Some(data) = &chars {
+        let data = data.characters();
+        let mut looks = world.query::<&Selection>();
+        bodies.extend(looks.iter(world).map(|look| data.effective(look).0.id));
+    }
+    let mut keys: BTreeSet<String> = ladder.keys.iter().cloned().collect();
+    let mut held = world.query::<&Held>();
+    keys.extend(held.iter(world).filter_map(|h| h.0.clone()));
+    let mut want = world.query::<&WantHeld>();
+    keys.extend(want.iter(world).filter_map(|w| w.0.clone()));
+
+    let mut forgotten = Forgotten::default();
+    if let Some(mut late) = world.get_resource_mut::<LateCharacterModels>() {
+        late.0.retain(|(m, _)| {
+            let id = m.name.as_deref().and_then(models::body_record);
+            let keep = id.is_none_or(|id| bodies.contains(&id));
+            if !keep {
+                forgotten.bodies.extend(id);
+            }
+            keep
+        });
+    }
+    if let Some(mut late) = world.get_resource_mut::<LateHeldModels>() {
+        late.0.retain(|(m, _)| {
+            let keep = keys.contains(&m.key);
+            if !keep {
+                forgotten.keys.push(m.key.clone());
+            }
+            keep
+        });
+    }
+    if let Some(mut late) = world.get_resource_mut::<models::CaLateModels>() {
+        late.0.forget_bodies(&forgotten.bodies);
+    }
+    let context = world.get_resource::<LoadContext>();
+    let ca = context.map_or_else(CaData::install, CaData::install_for);
+    on_demand::forget(&ca, &keys);
+    if !forgotten.bodies.is_empty() || !forgotten.keys.is_empty() {
+        info!(
+            "Combat Arms: forgot {} bodies and {} held models older ladders loaded",
+            forgotten.bodies.len(),
+            forgotten.keys.len()
+        );
+        world.insert_resource(forgotten);
     }
 }

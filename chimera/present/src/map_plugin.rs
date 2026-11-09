@@ -66,6 +66,19 @@ impl Plugin for MapPlugin {
         let data = self.data.lock().ok().and_then(|mut d| d.take());
         map::build(app, data.as_ref(), self.view, &Present);
         render::scoped_resources(app);
+        {
+            use chimera_core::metrics::census::CensusAppExt;
+            use render::{
+                decal::DecalMaterial, detail::DetailMaterial, prop_material::PropMaterial, sprite_material::SpriteMaterial,
+                world_material::WorldMaterial,
+            };
+            app.census_asset::<PropMaterial>("PropMaterial")
+                .census_asset::<WorldMaterial>("WorldMaterial")
+                .census_asset::<DecalMaterial>("DecalMaterial")
+                .census_asset::<DetailMaterial>("DetailMaterial")
+                .census_asset::<SpriteMaterial>("SpriteMaterial")
+                .census_asset::<crate::audio::clip_asset::SoundAsset>("SoundAsset");
+        }
         let mut hooks = app.world_mut().resource_mut::<MapHooks>();
         hooks.unload.push(render::unload_map);
         hooks.copied.push(render::merge::show_copied_pieces);

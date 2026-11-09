@@ -14,6 +14,9 @@
 //! same way; the bare gun's is held meanwhile. The match's ladder's held
 //! models load the same way ahead of time (`preload`).
 //!
+//! An older ladder's are forgotten at a map's unload
+//! (`preload::forget_old`) and load again if held again.
+//!
 //! Only Combat Arms' own weapons load here (`view_model::on_demand::ours`);
 //! runs only where `view_model::on_demand::LoadOnDemand` is (the front
 //! end: a dedicated server draws none).
@@ -65,9 +68,13 @@ pub fn load_on_demand(
     assets: Option<Res<LooseAssets>>,
     context: Option<Res<LoadContext>>,
     ladder: Res<super::preload::LadderModels>,
+    forgotten: Option<Res<super::preload::Forgotten>>,
     mut pending: Local<Pending>,
     mut commands: Commands,
 ) {
+    if let Some(f) = forgotten.filter(|f| f.is_changed()) {
+        pending.tried.retain(|id| !f.keys.contains(id));
+    }
     pending.tasks.retain(|_, task| {
         let Some(result) = block_on(poll_once(task)) else { return true };
         match result {

@@ -110,12 +110,14 @@ pub struct JoinOrder(pub u64);
 /// A character the minigame took in (`join`). Replicated to clients
 /// (`minigame_net`), whose HUD counts the players by it.
 #[derive(Component, Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[component(storage = "SparseSet")]
 pub struct InMinigame;
 
 /// Spawn protection the runtime gave: its windows are the character's
 /// `core::SpawnProtected`, its `core::God` (while damage is blocked) the
 /// runtime's own; `fire_ends`: the first shot ends both.
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
+#[component(storage = "SparseSet")]
 pub struct Protected {
     pub fire_ends: bool,
 }
@@ -321,6 +323,7 @@ pub fn spawn_point_in(
 /// `ladder::RungExtras::melee`): the kit's weapon of its slot (the
 /// knife's) is this one; a kit with none in that slot gets none.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+#[component(storage = "SparseSet")]
 pub struct KitMelee(pub &'static str);
 
 /// `e`'s kit for a life whose rules weapon is `gun` (a kit by game: that

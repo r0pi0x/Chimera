@@ -2,8 +2,8 @@
 //! groups only (`models::LOADED`), so a body record no group has (an
 //! install specialist or mercenary a ladder rung dresses its players in,
 //! `game::rungs`) loads in the background (`AsyncComputeTaskPool`) the
-//! first time a character's selection wears it, converted once per
-//! session as its own character model (`models::load_body`: its rig and
+//! first time a character's selection wears it, converted once while
+//! wanted as its own character model (`models::load_body`: its rig and
 //! group registered), kept across map changes in
 //! `map::LateCharacterModels` (`map::add_character_model`), which each
 //! map's `CharacterModels` takes (`map::append_late_characters`) and the
@@ -16,6 +16,9 @@
 //! Only where `view_model::on_demand::LoadOnDemand` is (the front end: a
 //! dedicated server draws none; its hit spheres pose on the stock rig,
 //! `models::alias_rig`), and only on a map that has bodies of ours.
+//!
+//! An older ladder's bodies are forgotten at a map's unload
+//! (`preload::forget_old`) and load again if worn again.
 //!
 //! Known shortcuts (docs/tech-debt.md): a body that doesn't load is tried
 //! once per session (its warning says why); a specialist loads its own
@@ -58,9 +61,13 @@ pub fn load_on_demand(
     loaded: models::LoadedModels,
     context: Option<Res<LoadContext>>,
     ladder: Res<super::preload::LadderModels>,
+    forgotten: Option<Res<super::preload::Forgotten>>,
     mut pending: Local<Pending>,
     mut commands: Commands,
 ) {
+    if let Some(f) = forgotten.filter(|f| f.is_changed()) {
+        pending.tried.retain(|id| !f.bodies.contains(id));
+    }
     pending.tasks.retain(|_, task| {
         let Some(result) = block_on(poll_once(task)) else { return true };
         match result {

@@ -7,10 +7,36 @@
 //! component sets included (the way to find what grows per map change:
 //! take one, change maps, diff).
 //! Headless tests take a `Census` of a `Sim`'s world and compare two.
+//! `chimera_census varies [<component>]` lists what comes and goes on the
+//! archetypes holding a component (`Health`: the characters); `chimera_census
+//! age <n> [sparse]` puts a character through `n` new archetypes (a table
+//! each, unless `sparse`): a long session's world at once, to measure what
+//! that costs a frame (docs/performance.md, "A session's frame rate").
+//! `CensusAssets` counts asset stores that aren't reflect-registered (the
+//! materials, the sounds).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::{asset::ReflectAsset, ecs::observer::Observer, prelude::*};
+
+/// Asset stores the census counts besides the reflect-registered ones
+/// (`CensusAppExt::census_asset`).
+#[derive(Resource, Default)]
+pub struct CensusAssets(Vec<(&'static str, fn(&World) -> usize)>);
+
+/// `census_asset`: a store for the census to count.
+pub trait CensusAppExt {
+    fn census_asset<A: Asset>(&mut self, name: &'static str) -> &mut Self;
+}
+
+impl CensusAppExt for App {
+    fn census_asset<A: Asset>(&mut self, name: &'static str) -> &mut Self {
+        self.world_mut().get_resource_or_init::<CensusAssets>().0.push((name, |w| {
+            w.get_resource::<Assets<A>>().map_or(0, |a| a.len())
+        }));
+        self
+    }
+}
 
 /// One world's counts. Names are short type names; archetype keys their
 /// sorted component names joined by `+`.
@@ -70,6 +96,11 @@ impl Census {
             .map(|s| s.iter().map(|(label, s)| (format!("{label:?}"), s.systems_len())).collect())
             .unwrap_or_default();
         let mut assets = BTreeMap::new();
+        if let Some(counted) = world.get_resource::<CensusAssets>() {
+            for (name, len) in &counted.0 {
+                assets.insert(name.to_string(), len(world));
+            }
+        }
         if let Some(registry) = world.get_resource::<AppTypeRegistry>().cloned() {
             for reg in registry.read().iter() {
                 if let Some(ra) = reg.data::<ReflectAsset>() {
@@ -171,13 +202,114 @@ impl Census {
 struct Censuses(BTreeMap<String, Census>);
 
 /// `chimera_census`'s help line (the client's `perf` registers it).
-pub const HELP: &str = "chimera_census [<top>|diff [<name>]|save <name>]: count entities by archetype, \
-     observers, systems per schedule, resources and assets by type (the <top> largest archetypes, \
-     default 15); `save <name>` keeps this census under a name; `diff`: what changed since the last \
-     census (or since the one saved as <name>), new archetypes and tables included.";
+pub const HELP: &str = "chimera_census [<top>|diff [<name>]|save <name>|varies [<component>]|age <n> [sparse]]: count \
+     entities by archetype, observers, systems per schedule, resources and assets by type (the <top> largest \
+     archetypes, default 15); `save <name>` keeps this census under a name; `diff`: what changed since the last \
+     census (or since the one saved as <name>), new archetypes and tables included; `varies`: what comes and goes \
+     on the archetypes holding <component> (default Health: the characters); `age`: put a character through <n> \
+     new archetypes, a table each unless `sparse` (a long session's world at once).";
 
-/// `chimera_census [<top>|diff [<name>]|save <name>]`.
+/// Marks for `age`: table components, and sparse-set ones.
+#[derive(Component)]
+struct AgeTable<const N: usize>;
+
+#[derive(Component)]
+#[component(storage = "SparseSet")]
+struct AgeSparse<const N: usize>;
+
+macro_rules! age_toggle {
+    ($t:ident, $e:expr, $bit:expr, $on:expr, $($n:literal)*) => {
+        match $bit {
+            $($n => { if $on { $e.insert($t::<$n>); } else { $e.remove::<$t<$n>>(); } })*
+            _ => {}
+        }
+    };
+}
+
+/// Toggle mark `bit` (below 16) on `e`.
+fn age_mark(e: &mut EntityWorldMut, bit: u32, on: bool, sparse: bool) {
+    if sparse {
+        age_toggle!(AgeSparse, e, bit, on, 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15);
+    } else {
+        age_toggle!(AgeTable, e, bit, on, 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15);
+    }
+}
+
+/// How many combinations `age` has: one more mark than this would pass
+/// any session.
+pub const AGE_MOST: u32 = 65535;
+
+/// A character through `n` new archetypes: each step of a Gray code turns
+/// one mark on or off, so each visits one set not seen. Every query
+/// matching characters matches them, as it does a real session's. Err
+/// without a character.
+pub fn age(world: &mut World, n: u32, sparse: bool) -> Result<(usize, usize), String> {
+    // By name: this layer doesn't know the characters' components.
+    let components = world.components();
+    let e = world
+        .archetypes()
+        .iter()
+        .filter(|a| !a.is_empty())
+        .find(|a| {
+            a.iter_components()
+                .filter_map(|c| components.get_name(c))
+                .any(|n| n.shortname().to_string() == "Health")
+        })
+        .and_then(|a| a.entities().first().map(|e| e.id()))
+        .ok_or("no character to age")?;
+    let n = n.min(AGE_MOST);
+    let mut entity = world.entity_mut(e);
+    let mut code = 0u32;
+    for i in 1..=n {
+        let bit = i.trailing_zeros();
+        code ^= 1 << bit;
+        age_mark(&mut entity, bit, code & (1 << bit) != 0, sparse);
+    }
+    for bit in 0..16 {
+        if code & (1 << bit) != 0 {
+            age_mark(&mut entity, bit, false, sparse);
+        }
+    }
+    Ok((world.archetypes().len(), world.storages().tables.iter().count()))
+}
+
+/// The components that come and go on the archetypes holding `component`:
+/// how many of them hold each, the most first, then how many tables they
+/// make and the components all of them hold.
+fn varies(census: &Census, component: &str) -> String {
+    let holding = |sets: &BTreeSet<String>| -> Vec<BTreeSet<String>> {
+        sets.iter()
+            .map(|k| k.split('+').map(str::to_string).collect::<BTreeSet<String>>())
+            .filter(|s| s.contains(component))
+            .collect()
+    };
+    let archetypes = holding(&census.made);
+    let tables = holding(&census.made_tables);
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    for s in &archetypes {
+        for c in s {
+            *counts.entry(c.as_str()).or_default() += 1;
+        }
+    }
+    let always = counts.values().filter(|n| **n == archetypes.len()).count();
+    let mut rows: Vec<(&str, usize)> = counts.into_iter().filter(|(_, n)| *n != archetypes.len()).collect();
+    rows.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+    let list: Vec<String> = rows.iter().map(|(c, n)| format!("{c} {n}")).collect();
+    format!(
+        "{} archetypes and {} tables hold {component}; {always} components are on all of them; the rest: {}",
+        archetypes.len(),
+        tables.len(),
+        list.join(", ")
+    )
+}
+
+/// `chimera_census [<top>|diff [<name>]|save <name>|varies [<component>]|age <n> [sparse]]`.
 pub fn command(w: &mut World, a: &[String]) -> Result<Option<String>, String> {
+    if a.first().map(String::as_str) == Some("age") {
+        let n = a.get(1).and_then(|n| n.parse().ok()).ok_or("age: how many?")?;
+        let (made, tables) = age(w, n, a.get(2).map(String::as_str) == Some("sparse"))?;
+        return Ok(Some(format!("aged: {made} archetypes and {tables} tables made")));
+    }
     let now = Census::take(w);
     let name = a.get(1).cloned().unwrap_or_default();
     let mut saved = w.get_resource_or_init::<Censuses>();
@@ -187,6 +319,7 @@ pub fn command(w: &mut World, a: &[String]) -> Result<Option<String>, String> {
             saved.0.insert(name.clone(), now);
             Ok(Some(format!("census saved as '{name}'")))
         }
+        Some("varies") => Ok(Some(varies(&now, a.get(1).map_or("Health", String::as_str)))),
         Some("diff") => {
             let before = if name.is_empty() { last } else { saved.0.get(&name).cloned() };
             let Some(before) = before else { return Ok(Some("no census to compare with".into())) };
