@@ -34,7 +34,7 @@
 //! - On another game's map (the party apps) the map's own HUD look is that
 //!   game's, so this HUD draws only when its look is the map's.
 
-pub mod aux;
+pub mod aux_power;
 pub mod damage;
 pub mod frame;
 pub mod history;

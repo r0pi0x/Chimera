@@ -14,7 +14,7 @@
 use bevy::prelude::*;
 
 use super::{
-    aux::team_colour,
+    aux_power::team_colour,
     frame::{Align, Draw, Frame, Rgba},
     hud::Hl2Hud,
     look::Look,

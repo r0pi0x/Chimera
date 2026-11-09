@@ -30,9 +30,14 @@
 //! the view model's attachment 1 (re-projected), others' sparks at the
 //! world gun's.
 //!
-//! Known shortcuts (docs/tech-debt.md): the punt's end point is the end
-//! of the eye's 250-unit trace (not the object's centre); the "closed"
-//! effect state is never entered (the spec names no change into it);
+//! The end point of a punt or launch is the punted or launched object's
+//! centre (its box's, the server's `Hl2Physcannon::punted`), else the end
+//! of the eye's 250-unit trace.
+//!
+//! Known shortcuts (docs/tech-debt.md): a network client's own punt (it
+//! doesn't know what the server punted) ends at its eye trace's end; the
+//! "closed" effect state is never entered (the spec names no change into
+//! it, and it looks as the state before it with the end caps hidden);
 //! the beams' texture scrolls at 15
 //! lengths a second (a temporary beam's 0.1 × 150) and their frames don't
 //! play; without a drawn model (headless) the punt beam starts at an
@@ -54,8 +59,10 @@ use super::{
     },
 };
 use crate::{
-    core::{Intent, LocalPlayer, MovementState, NetRole},
+    core::{Intent, LocalPlayer, MovementState, NetRole, SimClock},
     map::{
+        PhysicsProp,
+        prop_physics::FrozenBody,
         ShowLocalBody, ViewAnimator, ViewModelCamera, ViewModelOffset, ViewModelSettings, ViewModels,
         attached::{self, AttachPoint, AttachedFx, AttachedPiece, BeamEnd},
         view_model::HeldAttachment,
@@ -289,6 +296,9 @@ fn launches(
     mut looks: Query<&mut GunLook>,
     held: Query<(&HeldAttachment, &GlobalTransform)>,
     view: FirstPersonView,
+    guns: Query<&Hl2Physcannon>,
+    objects: Query<(&Transform, Option<&PhysicsProp>, Option<&FrozenBody>)>,
+    clock: Res<SimClock>,
 ) {
     for e in events.read().filter(|e| e.shown()) {
         let WeaponEventKind::Action(name) = e.kind else { continue };
@@ -300,7 +310,19 @@ fn launches(
         let q = aim_of(intent.yaw, intent.pitch);
         let fwd = q * Vec3::NEG_Z;
         let far = eye + fwd * 250.0 * U;
-        let end = world.trace(eye, far).map_or(far, |(f, _)| eye + (far - eye) * f);
+        // The punted or launched object's centre (spec 11; the server's,
+        // set on this tick), else the end of the eye's trace.
+        let end = guns
+            .get(e.weapon)
+            .ok()
+            .and_then(|g| g.punted)
+            .filter(|(_, until)| *until > clock.now)
+            .and_then(|(o, _)| objects.get(o).ok())
+            .map(|(t, prop, frozen)| {
+                let b = prop.map(|p| p.bounds).or(frozen.map(|f| f.bounds));
+                t.translation + b.map_or(Vec3::ZERO, |b| t.rotation * (b.0 + b.1) / 2.0)
+            })
+            .unwrap_or_else(|| world.trace(eye, far).map_or(far, |(f, _)| eye + (far - eye) * f));
         let mine = local.contains(e.owner);
         if let Ok(mut look) = looks.get_mut(e.owner) {
             look.blast = Some(time.elapsed_secs_f64());

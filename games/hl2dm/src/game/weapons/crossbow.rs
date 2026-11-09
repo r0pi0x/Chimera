@@ -19,10 +19,12 @@
 //!   Zoomed`, the crossbow's own zoom: `OwnZoom`), also while reloading;
 //!   firing and reloading keep it; putting the crossbow away unzooms.
 //!
+//! The bolt's blur, its glow where it sticks and the ragdolls it pins to
+//! walls (7.5, with the bolt shown there for 30 s) are `projectile_fx`'s.
+//!
 //! Known shortcuts: the zoom is a step (the spec's 0.1 s in, 0.2 s out
 //! are the client's); the unloaded draw (Open question 5) is the loaded
-//! one; the bolt's glow, the stuck bolt's model and pinning ragdolls to
-//! walls (7.5) are M10's.
+//! one.
 
 use bevy::prelude::*;
 use serde::Deserialize;

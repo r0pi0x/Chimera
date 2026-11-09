@@ -418,3 +418,104 @@ fn a_tdm_leavers_satchels_go_off_and_a_dm_leavers_stay() {
         assert_eq!(count(&mut sim), if teamplay { 0 } else { 1 }, "teamplay {teamplay}");
     }
 }
+
+/// Effects 10 (projectiles.md 5.3): the energy ball's victim's dropped
+/// weapon can't be taken and dissolves as the ragdoll does: white to
+/// black over the first second, faded out by 2.0 s, sparks and glows
+/// about it, and gone (with its weapon) 134 ticks after the kill. A
+/// bullet's victim's stays as any other.
+#[test]
+fn the_balls_victims_weapon_dissolves() {
+    use chimera_world::map::{
+        RenderLook,
+        loose::LooseItem,
+        particles::{MapParticles, ParticleMaterial, ParticleMaterials, Particles},
+    };
+    use hl2dm::game::dissolve::Hl2DissolvingItem;
+    for ball in [true, false] {
+        let mut sim = sim();
+        let materials = ["effects/spark", "effects/combinemuzzle2"]
+            .iter()
+            .map(|n| ParticleMaterial { name: n.to_string(), ..default() })
+            .collect();
+        sim.app.insert_resource(ParticleMaterials(MapParticles { materials }));
+        let (p, pistol) = holding(&mut sim, weapons::PISTOL);
+        let point = sim.position(p);
+        sim.app.world_mut().write_message(Damage {
+            target: p,
+            attacker: None,
+            amount: 1000.0,
+            point,
+            dir: Vec3::X,
+            hitgroup: Hitgroup::Generic,
+            kind: if ball { DamageKind::Crush } else { DamageKind::Bullet },
+            weapon: ball.then_some(weapons::AR2),
+            force: Vec3::ZERO,
+        });
+        sim.ticks(3);
+        let w = sim.app.world_mut();
+        let loose: Vec<Entity> = w.query_filtered::<Entity, With<LooseItem>>().iter(w).collect();
+        assert_eq!(loose.len(), 1, "the pistol lies there");
+        let item = loose[0];
+        if !ball {
+            assert!(w.get::<Loose>(item).is_some_and(|l| l.weapon == pistol), "anyone can take it");
+            assert!(w.get::<Hl2DissolvingItem>(item).is_none());
+            continue;
+        }
+        assert!(w.get::<Loose>(item).is_none(), "nobody can take it");
+        assert!(w.get::<Hl2DissolvingItem>(item).is_some());
+        sim.app.world_mut().resource_mut::<Particles>().groups.clear();
+        sim.seconds(1.2);
+        let look = *sim.app.world().get::<RenderLook>(item).expect("its look");
+        assert_eq!((look.color, look.alpha), ([0; 3], 255), "black after a second");
+        let glows = sim.app.world().resource::<ParticleMaterials>().0.find("effects/combinemuzzle2").unwrap();
+        let near = sim
+            .app
+            .world()
+            .resource::<Particles>()
+            .groups
+            .iter()
+            .flat_map(|g| g.particles.iter())
+            .filter(|p| p.material == glows)
+            .count();
+        assert!(near > 0, "glows about it");
+        // 3 + 80 ticks so far; at 134 after the kill it and its weapon go.
+        sim.ticks(134 - 3 - 80 - 2);
+        assert!(sim.app.world().get_entity(item).is_ok(), "still there just before");
+        sim.ticks(4);
+        assert!(sim.app.world().get_entity(item).is_err(), "gone 134 ticks on");
+        assert!(sim.app.world().get_entity(pistol).is_err(), "and its weapon");
+    }
+}
+
+/// Projectiles.md 5.1: the ball's launch fades the shooter's screen white
+/// (255, 255, 255, alpha 64 over 0.1 s).
+#[test]
+fn the_balls_launch_fades_the_shooters_screen_white() {
+    use chimera_world::map::logic_view::ScreenFades;
+    let mut sim = sim();
+    sim.app.init_resource::<ScreenFades>();
+    let (p, ar2) = holding(&mut sim, weapons::AR2);
+    sim.app.world_mut().entity_mut(p).insert(LocalPlayer);
+    sim.app.world_mut().get_mut::<Hl2Rounds>(ar2).unwrap().count = 1;
+    let mut cursor = sim.app.world().resource::<Messages<WeaponEvent>>().get_cursor_current();
+    let mut at = None;
+    for k in 0..60 {
+        sim.intent(p).secondary = k < 2;
+        sim.ticks(1);
+        let launched = cursor
+            .read(sim.app.world().resource::<Messages<WeaponEvent>>())
+            .any(|e| matches!(e.kind, WeaponEventKind::Action("ball")));
+        if launched {
+            at = Some(k);
+            break;
+        }
+        let now = sim.app.world().resource::<Time>().elapsed_secs_f64();
+        assert!(sim.app.world_mut().resource_mut::<ScreenFades>().at(now).is_none(), "no fade before the launch");
+    }
+    assert!(at.is_some(), "the ball left");
+    let now = sim.app.world().resource::<Time>().elapsed_secs_f64();
+    let (color, alpha, _) = sim.app.world_mut().resource_mut::<ScreenFades>().at(now).expect("a fade");
+    assert_eq!(color, [255, 255, 255]);
+    assert!(alpha > 0 && alpha <= 64, "{alpha}");
+}

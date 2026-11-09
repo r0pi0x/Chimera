@@ -385,3 +385,45 @@ fn others_see_the_dot_over_the_network() {
     sim.ticks(1);
     assert!(drawn_dots(sim.clients[1].app.world()).is_empty());
 }
+
+/// Projectiles.md 6.3: at its ignition (tick 20) the missile starts
+/// `Missile.Ignite`, looping from it until it is gone, and its owner's
+/// screen fades (255, 225, 205, alpha 64 over 0.1 s).
+#[test]
+fn the_missile_ignites_with_its_loop_and_the_owners_fade() {
+    use chimera_world::map::{SoundControl, logic_view::ScreenFades};
+    let mut sim = sim();
+    sim.app.init_resource::<ScreenFades>();
+    let (p, _) = holding_rpg(&mut sim);
+    sim.seconds(1.5);
+    let mut cursor = sim.app.world().resource::<Messages<SoundControl>>().get_cursor_current();
+    let (mut started, mut stopped, mut faded) = (None, None, None);
+    for k in 0..200u32 {
+        sim.intent(p).fire = k < 2;
+        sim.ticks(1);
+        let msgs: Vec<SoundControl> = cursor.read(sim.app.world().resource::<Messages<SoundControl>>()).cloned().collect();
+        for m in msgs {
+            match m {
+                SoundControl::Start(s) if s.entry == rpg_fx::IGNITE_SOUND => {
+                    let w = sim.app.world_mut();
+                    let missile = w.query_filtered::<Entity, With<Flyer>>().iter(w).next();
+                    assert_eq!(s.follow, missile, "from the missile");
+                    assert!(s.looping);
+                    started = Some((k, s.key));
+                    let now = sim.app.world().resource::<Time>().elapsed_secs_f64();
+                    faded = sim.app.world_mut().resource_mut::<ScreenFades>().at(now);
+                }
+                SoundControl::Stop(key) if started.is_some_and(|(_, s)| s == key) => stopped = Some(k),
+                _ => {}
+            }
+        }
+    }
+    let (k, _) = started.expect("the loop starts");
+    assert!((19..=21).contains(&k), "at the ignition: tick {k}");
+    let (color, alpha, _) = faded.expect("the owner's fade");
+    assert_eq!(color, [255, 225, 205]);
+    assert!(alpha > 0 && alpha <= 64, "{alpha}");
+    let end = stopped.expect("stopped when the missile is gone");
+    let w = sim.app.world_mut();
+    assert_eq!(w.query_filtered::<(), With<Flyer>>().iter(w).count(), 0, "the missile is gone by {end}");
+}
