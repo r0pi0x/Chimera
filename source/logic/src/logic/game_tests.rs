@@ -383,6 +383,33 @@ fn explosions_radius_scale_and_removal() {
     assert!(w.get(again).is_some());
 }
 
+/// Spec 6 step 3: the spawnflags that change an explosion's look and sound
+/// go with its effect; dm_steamlab's 50 (repeatable, no decal, no sparks) say
+/// no decal.
+#[test]
+fn explosion_flags_reach_its_effect() {
+    use crate::core::BlastFlags;
+    let mut w = world();
+    spawn(&mut w, &[("classname", "env_explosion"), ("targetname", "lab"), ("iMagnitude", "125"), ("spawnflags", "50")]);
+    spawn(&mut w, &[("classname", "env_explosion"), ("targetname", "all"), ("iMagnitude", "125"), ("spawnflags", "836")]);
+    w.activate();
+    w.queue_input("lab", "Explode", Value::Void, 0.0, None);
+    w.queue_input("all", "Explode", Value::Void, 0.0, None);
+    run_to(&mut w, 0);
+    let flags: Vec<BlastFlags> = effects(&mut w)
+        .into_iter()
+        .filter_map(|e| match e {
+            Effect::Explosion { flags, .. } => Some(flags),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(flags[0], BlastFlags(BlastFlags::NO_DECAL));
+    assert_eq!(
+        flags[1],
+        BlastFlags(BlastFlags::NO_FIREBALL | BlastFlags::NO_SOUND | BlastFlags::NO_FIREBALL_SMOKE | BlastFlags::NO_PARTICLES)
+    );
+}
+
 // ------------------------------------------------ wall toggle, conveyor
 
 #[test]

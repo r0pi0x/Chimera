@@ -525,6 +525,7 @@ fn explosions_break_windows_and_vents() {
         through_walls: false,
         bell_sigma: None,
         armor_ratio: None,
+        flags: Default::default(),
     });
     office.ticks(3);
     let id = id_of(&office, win);
@@ -551,6 +552,7 @@ fn explosions_break_windows_and_vents() {
             through_walls: false,
             bell_sigma: None,
             armor_ratio: None,
+            flags: Default::default(),
         });
     }
     nuke.ticks(3);

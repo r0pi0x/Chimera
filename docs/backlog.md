@@ -121,11 +121,13 @@ the original's own behaviour isn't a bug (say so instead).
   secondary ammo panel; branch `hl2dm-gaps1` feeds it, check after merge).
 - **HUD:** no ammo counter bottom right for the RPG (`hl2dm-gaps1` shows
   its own rounds as ammo, check after merge).
-- **The explosion's fireball has hard rectangular edges (2026-11-09):** seen
-  on an explosive drum in dm_lockdown (a straight cut along its top and
-  bottom, blocky steps at the sides). It's the effect shared with CS:S, so
-  check there too: sprite clipping against the world, a soft-depth fade, or
-  the frame's subrect.
+- **The explosion's fire is still cut at the world (2026-11-09):** the
+  straight edges and steps of an explosive drum's blast close to walls are
+  its camera-facing sprites meeting the floor, ceiling and walls. HL2's smoke
+  now fades there (its material says `$depthblend`); `effects/fire_cloud2`
+  and CS:S's own `particle_noisesphere` don't ask, so they stay cut, which by
+  their files is the original's look too. A real-game capture (grenades.md
+  Q9) would settle it; softening them all is a one-line choice if wanted.
 - **RMS-12 on a gun game's rung (decision):** it burns nobody: its ammo's
   `ProgDamage` is 0 (specs/combat_arms/special_weapons.md 4, Open question
   8), so that is the original's data, not a bug. Its flames do show now and

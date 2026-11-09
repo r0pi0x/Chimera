@@ -60,12 +60,14 @@
 //! part `hl2dm_projectile_fx`, which also replicates `Hl2BallHeld` and
 //! `Hl2MineBeam`).
 //!
-//! Known shortcuts (docs/tech-debt.md): every map blast has its core and
-//! its boom: `env_explosion`'s spawnflags (no decal, no sound, no fireball;
-//! dm_steamlab's 5 say no decal) and an `explode_fire` prop's silence (the
-//! propane tank and the gas can, 6 on the stock maps, boom as well as
-//! their burst) don't reach `Detonated`; the scale isn't drawn (a look's
-//! size is one, whatever the magnitude); a held ball's model isn't turned
+//! A blast's flags (`core::BlastFlags` on `Detonated`) leave parts out:
+//! `env_explosion`'s spawnflags (dm_steamlab's 5 say no decal) and an
+//! `explode_fire` prop's silence (the propane tank and the gas can, their
+//! burst and no boom; prop_damage.md 7.5). The temp entity's scale is not
+//! drawn, as the spec's client effect doesn't draw it (grenades.md 5.4: only
+//! a scale of 0, the satchel's pop or "no fireball", shows).
+//!
+//! Known shortcuts (docs/tech-debt.md): a held ball's model isn't turned
 //! to face the camera, and in flight its model is drawn too (every
 //! `ShownItem` draws its meshes); the ball's bounce goes to every client
 //! (the spec's is the PAS); the ball's body quad takes its frames from the
@@ -107,7 +109,7 @@ use super::{
     },
 };
 use crate::{
-    core::{LocalPlayer, MovementState},
+    core::{BlastFlags, LocalPlayer, MovementState},
     map::{
         DecalGroup, ParticleRng, PlaceDecal, PlaySound,
         logic_view::{ScreenFade, ScreenFades},
@@ -269,13 +271,15 @@ fn explosions(
         if look.core {
             let a = explosions::blast_direction(at, &world);
             let l = light(field.as_deref(), at + a * 32.0 * U);
-            for g in explosions::explosion(&mut rng.0, &mats, at, a, l, &world) {
+            for g in explosions::explosion(&mut rng.0, &mats, at, a, l, &world, d.flags) {
                 particles.add(g);
             }
         } else if let Some(g) = flash_overlay(&mats, at) {
             particles.add(g);
         }
-        play.write(PlaySound::at(EXPLOSION_SOUND, at));
+        if !d.flags.has(BlastFlags::NO_SOUND) {
+            play.write(PlaySound::at(EXPLOSION_SOUND, at));
+        }
     }
 }
 
@@ -373,7 +377,9 @@ fn scorches(
             }
             continue;
         }
-        if !look_here(d.weapon, map_blasts.is_some()).is_some_and(|l| l.entity_rule) {
+        if !look_here(d.weapon, map_blasts.is_some()).is_some_and(|l| l.entity_rule)
+            || d.flags.has(BlastFlags::NO_DECAL)
+        {
             continue;
         }
         if let Some((point, normal)) = entity_rule_hit(d.at, &world) {

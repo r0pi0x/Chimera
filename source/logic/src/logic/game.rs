@@ -26,7 +26,8 @@
 //! blend (Q6); env_hudhint uses the hint line (Q5); game_score's team points go
 //! to the rounds won (measured, Q8) and can't go below 0 (ours); env_explosion is
 //! the game's HE blast at its magnitude and radius, armour at ratio 1 (measured,
-//! Q7; its own probe, flags other than "No Damage" and DamageForce ignored);
+//! Q7; its own probe, flags that change neither its look nor its sound, "Damage
+//! above surface only" (the game's water rule) and DamageForce ignored);
 //! func_conveyor carries players only (props stay: measured, Q9) and doesn't scroll its
 //! texture and a network client doesn't predict its push. Why it's OK for now:
 //! Each is its spec's open question or a small look; maps play.
@@ -445,12 +446,14 @@ fn explode(w: &mut LogicWorld, id: EntId, activator: Option<Who>) {
     let Class::Explosion(x) = &e.class else { return };
     let damage = if e.has_flag(SF_EXPLOSION_NO_DAMAGE) { 0.0 } else { x.magnitude.max(0) as f32 };
     let (at, radius, repeat) = (e.origin, x.radius, e.has_flag(SF_EXPLOSION_REPEATABLE));
+    let flags = crate::core::BlastFlags::from_spawnflags(e.spawnflags);
     w.effects.push(Effect::Explosion {
         at,
         damage,
         radius,
         attacker: activator.filter(|a| matches!(a, Who::Player(_))),
         inflictor: id,
+        flags,
     });
     if !repeat {
         w.think_in(id, EXPLOSION_REMOVE_DELAY);

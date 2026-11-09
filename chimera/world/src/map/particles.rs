@@ -53,6 +53,10 @@ pub struct ParticleMaterial {
     /// layer (over the model, `ParticleGroup::view_model`); elsewhere drawn
     /// depth tested for now.
     pub no_depth: bool,
+    /// `$depthblend`: fades out where it nears the world behind it instead
+    /// of being cut there (specs/cs_source/impact_effects.md: "softens the
+    /// intersection with geometry"), on main views.
+    pub depth_blend: bool,
     /// Sprite sheet: sequences of frames, each frame a texture rectangle
     /// (min u, min v, max u, max v). Empty: the whole texture.
     pub sequences: Vec<Vec<[f32; 4]>>,

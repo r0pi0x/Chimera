@@ -613,6 +613,7 @@ fn blast(sim: &mut Sim, at: Vec3) {
         through_walls: false,
         bell_sigma: None,
         armor_ratio: None,
+        flags: Default::default(),
     });
 }
 

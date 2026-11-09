@@ -318,6 +318,8 @@ pub enum Effect {
         radius: f32,
         attacker: Option<Who>,
         inflictor: EntId,
+        /// How it is drawn and heard.
+        flags: crate::core::BlastFlags,
     },
     /// A bullet or club hit shattered the pane it hit: the glass-impact
     /// burst at the hit point with the trace normal (entity space;

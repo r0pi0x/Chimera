@@ -7,7 +7,7 @@
 //! right after a tick: the per-frame looks live one frame.
 
 use bevy::prelude::*;
-use chimera_core::core::{LocalPlayer, SimClock};
+use chimera_core::core::{BlastFlags, Explosion, LocalPlayer, SimClock};
 use chimera_sim::{
     testkit,
     weapon::{
@@ -82,6 +82,20 @@ fn detonated(sim: &mut Sim, weapon: &'static str, at: Vec3) {
         ground: None,
         projectile: Entity::PLACEHOLDER,
         shake: None,
+        flags: Default::default(),
+    });
+}
+
+fn flagged(sim: &mut Sim, flags: u16, at: Vec3) {
+    sim.app.world_mut().write_message(Detonated {
+        kind: GrenadeKind::Blast,
+        weapon: weapons::RPG,
+        thrower: None,
+        at,
+        ground: None,
+        projectile: Entity::PLACEHOLDER,
+        shake: None,
+        flags: BlastFlags(flags),
     });
 }
 
@@ -373,6 +387,69 @@ fn the_rocket_scorches_the_floor_but_not_a_wall_41_42() {
     assert!(scorches(&mut sim, 1).is_empty(), "no scorch in the air");
     detonated(&mut sim, weapons::SLAM, Vec3::new(0.0, 16.0 * U, 0.0));
     assert_eq!(scorches(&mut sim, 1).len(), 1, "a satchel's on the floor below");
+}
+
+/// Spec 8 (game_entities.md 6 step 3): each flag leaves out its part: "no
+/// sound" the boom, "no fireball" the flash and the core, "no fireball
+/// smoke" the puffs, "no particles" the spark streaks and flecks.
+#[test]
+fn a_blasts_flags_leave_parts_out() {
+    const FIRE: &str = "effects/fire_cloud2";
+    const NOISE: &str = "particle/particle_noisesphere";
+    const GLOW: &str = "sprites/light_glow02_add_noz";
+    let at = Vec3::new(0.0, 100.0 * U, 0.0);
+    // What a blast with `flags` draws (fire, puffs, glows) and how many booms.
+    let run = |flags: u16| {
+        let mut sim = sim();
+        sim.seconds(0.5);
+        clear(&mut sim);
+        flagged(&mut sim, flags, at);
+        let booms = heard(&mut sim, 1).iter().filter(|(e, _)| e == projectile_fx::EXPLOSION_SOUND).count();
+        (drawn(&sim, FIRE).len(), drawn(&sim, NOISE).len(), drawn(&sim, GLOW).len(), booms)
+    };
+    let (fire, puffs, glows, booms) = run(0);
+    assert!(fire >= 32 + 8 && puffs == 4 + 8 + 32 && glows == 1 && booms == 1, "{fire} {puffs} {glows} {booms}");
+    let fire_all = fire;
+    let (fire, puffs, glows, booms) = run(BlastFlags::NO_SOUND);
+    assert!(fire >= 32 + 8 && puffs == 44 && glows == 1 && booms == 0, "{fire} {puffs} {glows} {booms}");
+    let (fire, puffs, glows, booms) = run(BlastFlags::NO_FIREBALL);
+    assert!((8..=16).contains(&fire) && puffs == 0 && glows == 0 && booms == 1, "sparks left: {fire} {puffs} {glows} {booms}");
+    let (fire, puffs, glows, _) = run(BlastFlags::NO_FIREBALL_SMOKE);
+    assert!(fire >= 32 + 8 && puffs == 0 && glows == 1, "{fire} {puffs} {glows}");
+    let (fire, puffs, glows, _) = run(BlastFlags::NO_PARTICLES);
+    assert!(fire == 32 && fire < fire_all && puffs == 44 && glows == 1, "{fire} {puffs} {glows}");
+}
+
+/// A map blast's own flags reach what draws it: an `env_explosion`'s "no
+/// decal" leaves no scorch where another leaves one (dm_steamlab's 5), and an
+/// `explode_fire` prop's blast (silent) has no boom.
+#[test]
+fn a_map_blast_keeps_its_flags() {
+    let blast = |flags: u16| Explosion {
+        origin: Vec3::new(0.0, 16.0 * U, 0.0),
+        damage: 0.0,
+        radius: 100.0 * U,
+        attacker: None,
+        inflictor: None,
+        sound: None,
+        weapon: None,
+        round_scorch: false,
+        through_walls: false,
+        bell_sigma: None,
+        armor_ratio: None,
+        flags: BlastFlags(flags),
+    };
+    let mut sim = sim();
+    sim.seconds(0.5);
+    sim.app.world_mut().write_message(blast(0));
+    assert_eq!(scorches(&mut sim, 2).len(), 1, "a plain one scorches");
+    sim.app.world_mut().write_message(blast(BlastFlags::NO_DECAL));
+    assert!(scorches(&mut sim, 2).is_empty(), "no decal");
+    sim.app.world_mut().write_message(blast(0));
+    let booms = |s: &[(String, Option<Vec3>)]| s.iter().filter(|(e, _)| e == projectile_fx::EXPLOSION_SOUND).count();
+    assert_eq!(booms(&heard(&mut sim, 2)), 1, "a plain one booms");
+    sim.app.world_mut().write_message(blast(BlastFlags::NO_SOUND));
+    assert_eq!(booms(&heard(&mut sim, 2)), 0, "silent");
 }
 
 /// Test 40: a shot satchel's pop draws the flash overlay and the debris
