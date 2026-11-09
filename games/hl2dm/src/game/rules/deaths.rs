@@ -195,7 +195,7 @@ pub(super) fn subject(world: &World, e: Entity) -> String {
 /// The death notice's weapon name (rules.md "Death-notice weapon name").
 pub fn notice_weapon(world: &World, scorer: Option<Entity>, damage: &Damage) -> String {
     let class = match (damage.weapon, scorer) {
-        (Some(w), _) => return weapon_notice_name(w),
+        (Some(w), _) => return kill_notice_name(w, damage.kind),
         (None, Some(k)) => held(world, k).map_or_else(|| "world".to_string(), str::to_string),
         (None, None) => match damage.kind {
             DamageKind::Fall | DamageKind::Drown => "worldspawn".into(),
@@ -217,6 +217,20 @@ pub fn weapon_notice_name(id: &str) -> String {
         "frag" => "grenade_frag".into(),
         "crossbow" => "crossbow_bolt".into(),
         _ => name,
+    }
+}
+
+/// A kill's notice name by its weapon id and how it killed: the SMG1's
+/// blasts are its grenade's (`grenade_ar2`, `smg1_grenade`) and the AR2's
+/// crushes its ball's (`prop_combine_ball`, `combine_ball`), as the
+/// inflictor names them (rules.md, step 2: the launchers' projectiles
+/// carry their gun's id); anything else as `weapon_notice_name`.
+pub fn kill_notice_name(id: &str, kind: DamageKind) -> String {
+    use crate::game::weapons::{AR2, SMG1};
+    match kind {
+        DamageKind::Blast if id == SMG1 => notice_name("grenade_ar2"),
+        DamageKind::Crush if id == AR2 => notice_name("prop_combine_ball"),
+        _ => weapon_notice_name(id),
     }
 }
 
@@ -373,6 +387,19 @@ mod tests {
         ] {
             assert_eq!(n(class), name, "{class}");
         }
+    }
+
+    /// The launchers' projectiles carry their gun's id: their kills are
+    /// named by how they killed (hud.md 10's `smg1_grenade`, `combine_ball`).
+    #[test]
+    fn the_launchers_kills_name_their_projectiles() {
+        use chimera_core::core::DamageKind as K;
+        use crate::game::weapons::{AR2, SMG1};
+        assert_eq!(super::kill_notice_name(SMG1, K::Blast), "smg1_grenade");
+        assert_eq!(super::kill_notice_name(SMG1, K::Bullet), "smg1");
+        assert_eq!(super::kill_notice_name(AR2, K::Crush), "combine_ball");
+        assert_eq!(super::kill_notice_name(AR2, K::Bullet), "ar2");
+        assert_eq!(super::kill_notice_name("hl2dm:weapon_rpg", K::Blast), "rpg_missile");
     }
 
     /// A weapon id's kills are named as its inflictors' are (rules.md).

@@ -1911,6 +1911,26 @@ implementing (owner branch) / done.
   (no master server, as CS:S's). No team menu: HL2:DM has none (hud.md 14);
   the scoreboard existed (M9). Tests: `games/hl2dm/tests/ui/menus.rs`.
 
+- 2026-11-09: **Gaps round 2** (branch `hl2dm-gaps2`). Ranked by what a
+  player meets in a DM/TDM match. **Kill icons**: the SMG1's grenade and the
+  AR2's ball carry their gun's id (Chimera's flyers), so their kills showed
+  the gun's glyph; a kill's name now follows how it killed
+  (`deaths::kill_notice_name`: the SMG1's blasts `smg1_grenade`, the AR2's
+  crushes `combine_ball`, rules.md step 2's inflictor), in `player_death`,
+  the log, HL2:DM's notices and every app's feed (`WeaponIcons::kill_icon`,
+  `register_kill`, by the damage kind). **Under water** (weapons.md 5, test
+  52): the .357, SMG1, AR2 and shotgun (both shots) refuse attack with the
+  eyes under water: the empty sound, next primary + 0.2, no round
+  (`hl2dm:dry_under_water`, `under_water`); the pistol fires. Tests:
+  `rules::the_launchers_kills_are_named_by_their_projectiles`,
+  `weapons::guns_refuse_under_water_but_the_pistol_52`, `kill_icons`' unit
+  test. The surface-only blast (game_entities.md 6 flag 8192, an explosive
+  prop's): its refusal (suit.md, eyes under water, the inflictor out of it)
+  is already what projectiles.md 2's water rule does for every HL2:DM blast
+  (a dry blast skips the fully submerged), so nothing changes in play; the
+  one difference left is that blast + surface isn't "exactly blast" for the
+  0.5 s spawn grace, which would need the damage's bits on `Damage`.
+
 ## Decision log
 
 - 2026-10-31 (user): Half-Life 2: Deathmatch is the next game, after

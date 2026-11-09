@@ -1052,3 +1052,42 @@ fn spawn_spots_as_the_probe_measured() {
         assert!(g.world().get::<Spectating>(a).is_some());
     }
 }
+
+/// The launchers' projectiles carry their gun's id (Chimera's flyers): a
+/// kill by the SMG1's grenade is named `smg1_grenade` and by the AR2's
+/// ball `combine_ball` in `player_death` (rules.md "Death-notice weapon
+/// name", the inflictor's class), so their own icons show (hud.md 10).
+#[test]
+fn the_launchers_kills_are_named_by_their_projectiles() {
+    let mut g = game(dm_spots(), |_| {});
+    let a = g.join("none");
+    let b = g.join("none");
+    g.sim.seconds(1.1);
+    for (weapon, kind, name) in [
+        (hl2dm::game::weapons::SMG1, DamageKind::Blast, "smg1_grenade"),
+        (hl2dm::game::weapons::AR2, DamageKind::Crush, "combine_ball"),
+        (hl2dm::game::weapons::SMG1, DamageKind::Bullet, "smg1"),
+    ] {
+        g.world().write_message(Damage {
+            target: b,
+            attacker: Some(a),
+            amount: 10.0,
+            point: Vec3::ZERO,
+            dir: Vec3::NEG_Y,
+            hitgroup: Hitgroup::Generic,
+            kind,
+            weapon: Some(weapon),
+            force: Vec3::ZERO,
+        });
+        g.sim.ticks(1);
+        let e = g.events("player_death").pop().unwrap().1;
+        assert_eq!(e.get("weapon"), Some(&EventValue::Str(name.into())), "{weapon} {kind:?}");
+        g.sim.seconds(3.5);
+        g.sim.intent(b).fire = true;
+        g.sim.ticks(1);
+        g.sim.intent(b).fire = false;
+        g.sim.ticks(1);
+        assert!(!g.dead(b), "respawned");
+        g.sim.seconds(1.0);
+    }
+}

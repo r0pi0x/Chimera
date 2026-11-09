@@ -441,3 +441,74 @@ fn the_pistol_has_spread_and_the_357_none() {
     let (_, w) = holding(&mut sim, weapons::PISTOL);
     assert_eq!(sim.app.world().get::<Hitscan>(w).unwrap().spread, SpreadShape::Cone(0.00873));
 }
+
+/// Put `p` in the greybox's tank, standing on its floor with its eyes
+/// under its 2.8 m of water, and let the movement see it.
+fn dunk(sim: &mut Sim, p: Entity) {
+    let c = (greybox::TANK_MIN + greybox::TANK_MAX) / 2.0;
+    // The hull's centre, 36 units over the feet.
+    let at = Vec3::new(c.x, 0.95, c.y);
+    let w = sim.app.world_mut();
+    w.get_mut::<Transform>(p).unwrap().translation = at;
+    if let Some(mut pos) = w.get_mut::<avian3d::prelude::Position>(p) {
+        pos.0 = at;
+    }
+    sim.app.world_mut().get_mut::<Velocity>(p).unwrap().0 = Vec3::ZERO;
+    sim.ticks(4);
+    let level = sim.app.world().get::<source_engine::source_movement::SourceMovement>(p).unwrap().water_level;
+    assert_eq!(level, 3, "eyes under water");
+}
+
+/// Test 52: with the eyes under water the .357, the SMG1, the AR2 and the
+/// shotgun (both shots) refuse attack: their empty sound, no shot, no
+/// round used, the next try 14 ticks on (0.2 s); the pistol fires. The
+/// SMG1's grenade refuses too (projectiles.md 4: a dry fire, its empty
+/// sound, none used).
+#[test]
+fn guns_refuse_under_water_but_the_pistol_52() {
+    use chimera_world::map::PlaySound;
+    for (id, secondary, fires) in [
+        (weapons::MAGNUM, false, false),
+        (weapons::SMG1, false, false),
+        (weapons::AR2, false, false),
+        (weapons::SHOTGUN, false, false),
+        (weapons::SHOTGUN, true, false),
+        (weapons::PISTOL, false, true),
+    ] {
+        let mut sim = sim();
+        let (p, w) = holding(&mut sim, id);
+        dunk(&mut sim, p);
+        let clip = mag(&sim, w).clip;
+        let empty = sim.app.world().get::<chimera_sim::weapon::WeaponSounds>(w).and_then(|s| s.empty.clone()).unwrap();
+        let mut cursor = sim.app.world().resource::<Messages<PlaySound>>().get_cursor_current();
+        let mut clicks = Vec::new();
+        let ran = run(&mut sim, p, 30, |s, t| {
+            if t > 0 {
+                let sounds = s.app.world().resource::<Messages<PlaySound>>();
+                clicks.extend(cursor.read(sounds).filter(|m| m.entry == empty && m.source == Some(p)).map(|_| t - 1));
+            }
+            let mut i = s.intent(p);
+            if secondary {
+                i.secondary = true;
+            } else {
+                i.fire = true;
+            }
+        });
+        if fires {
+            assert!(!fired(&ran).is_empty(), "{id} fires under water");
+            continue;
+        }
+        assert_eq!(fired(&ran), Vec::<u64>::new(), "{id} (attack2 {secondary})");
+        assert_eq!(mag(&sim, w).clip, clip, "{id}: no round used");
+        assert_eq!(clicks, [0, 14, 28], "{id} (attack2 {secondary}): its empty sound every 0.2 s");
+    }
+
+    // The SMG1's grenade: a dry fire.
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, weapons::SMG1);
+    sim.app.world_mut().get_mut::<hl2dm::game::weapons::launch::Hl2Rounds>(w).unwrap().count = 1;
+    dunk(&mut sim, p);
+    let ran = run(&mut sim, p, 3, |s, t| s.intent(p).secondary = t == 0);
+    assert!(ran.iter().any(|(_, k)| matches!(k, WeaponEventKind::DryFire)), "{ran:?}");
+    assert_eq!(sim.app.world().get::<hl2dm::game::weapons::launch::Hl2Rounds>(w).unwrap().count, 1);
+}
