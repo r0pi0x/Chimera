@@ -23,7 +23,9 @@
 //! iterates, and each new archetype makes it look again at those with its
 //! rarest component. Fewer tables would need the characters' optional
 //! components (spawn protection, the gun's game's movement and view
-//! parts, the body model) as sparse sets, or fewer of them.
+//! parts, the body model) as sparse sets, or fewer of them: done, the
+//! session's tables stay few (docs/performance.md, "A session's frame
+//! rate").
 
 use std::any::{Any, TypeId};
 

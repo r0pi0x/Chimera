@@ -53,6 +53,7 @@ pub const KICK_RESET: f32 = 10.0;
 /// The punch's velocity on a character (Source degrees per second);
 /// the angle itself is its `ViewPunch`.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[component(storage = "SparseSet")]
 pub struct Hl2Punch {
     pub velocity: Vec3,
 }

@@ -340,6 +340,7 @@ pub struct PhysicsShadow {
 /// A character whose contacts with physics props go through its
 /// `PhysicsShadow` (this entity): its own collider never touches them.
 #[derive(Component, Clone, Copy, Debug)]
+#[component(storage = "SparseSet")]
 pub struct Shadowed(pub Entity);
 
 /// The shadow's mass, kg (spec 4.1 step 3).

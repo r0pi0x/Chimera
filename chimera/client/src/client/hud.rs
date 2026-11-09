@@ -1131,6 +1131,7 @@ fn killfeed(
 
 /// A character drawn as a capsule (`character_bodies`).
 #[derive(Component)]
+#[component(storage = "SparseSet")]
 pub struct CapsuleBody;
 
 /// A capsule for every character that isn't the local player, on maps

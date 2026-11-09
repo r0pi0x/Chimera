@@ -1212,7 +1212,13 @@ Details and baseline numbers: [performance.md](performance.md).
   [<name>]` lists what changed since (the last census or the named one),
   new archetypes' and tables' component sets included: take one, change
   maps a few times, diff (performance.md, "Map changes that slowed the
-  tick"). Headless, `metrics::census::Census::take(world)` and `diff`.
+  tick"). `chimera_census varies [<component>]` lists what comes and goes
+  on the archetypes holding a component (`Health`: the characters), and how
+  many tables they make; `chimera_census age <n> [sparse]` puts a character
+  through `n` new archetypes (a long session's world at once: what it costs a
+  frame, "A session's frame rate"). Headless,
+  `metrics::census::Census::take(world)` and `diff`; `CensusAppExt::
+  census_asset` adds a store that isn't reflect-registered to the count.
 - Instructions per system, headless: with `--features dev,trace`,
   `metrics::span_cost::SpanCosts::install()` before the `Sim` is built
   (a system's span is made with it), then `take()` after each window and

@@ -494,11 +494,13 @@ pub fn config_of(world: &World, e: Entity) -> SourceMovementConfig {
 /// "Speed selection"), units/s: replaces the held weapon's and the walk
 /// key's scale; `sv_maxspeed` still caps it.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[component(storage = "SparseSet")]
 pub struct SourceSpeed(pub f32);
 
 /// A character's own footstep entries (left, right), for a movement with
 /// `model_footsteps` (HL2:DM: its model's run steps).
 #[derive(Component, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[component(storage = "SparseSet")]
 pub struct StepSounds {
     pub left: String,
     pub right: String,
@@ -656,6 +658,7 @@ pub struct SettleOnGround;
 
 /// Per-character movement state. Units and seconds as in the spec.
 #[derive(Component, Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[component(storage = "SparseSet")]
 pub struct SourceMovement {
     pub on_ground: bool,
     pub ground_normal: Vec3,

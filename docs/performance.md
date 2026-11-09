@@ -1933,6 +1933,107 @@ Pictures (`perf/pass3` of the session; profsum `--baseline`, before grey,
 after blue): `top`, `families`, `flame` per map; the headless ticks'
 wall time; the frozen and live HUD captures.
 
+## A session's frame rate (2026-11-09)
+
+Playtest report (Windows, Ultimate Gun Game): about 30 fps after ten games,
+built up gradually, each game on another map; it stayed after disconnecting
+and starting again in the same process. Measured on the real app (RTX 3080
+with Vulkan, playtest build, 1280x720, the default 3 bots, `god`, 80 s a map
+through `ugg_new <seed> 13 <map>`, the same path as a rotation; `chimera_perf_log`
+and `chimera_census`, load 15-100 from other agents: instructions are what to
+read, and a sampler of the main and render threads).
+
+**What grows.** Over 15 maps:
+
+| de_dust2 after | archetypes | tables | main w/o ticks | render instr | images / meshes | |
+|---|---|---|---|---|---|---|
+| fresh | 2,356 | 925 | 11.5M | 14.5M | 2,186 / 2,827 | before |
+| 1 other map | 3,094 | 1,618 | 13.3M | 14.8M | 2,298 / 2,893 | |
+| 5 | 4,226 | 2,686 | 15.2M | 18.6M | 2,588 / 3,049 | |
+| 9 | 5,022 | 3,447 | 11.4M | 16.9M | 2,911 / 3,228 | |
+| 13 | 5,554 | 3,945 | 13.5M | 22.3M | 3,099 / 3,375 | |
+| fresh | 2,429 | 837 | 12.8M | 15.7M | 2,589 / 3,139 | after |
+| 1 | 3,014 | 1,152 | 12.1M | 16.9M | 2,890 / 3,303 | |
+| 5 | 3,793 | 1,510 | 12.9M | 22.1M | 3,089 / 3,431 | |
+| 9 | 4,654 | 1,604 | 14.1M | 19.9M | 3,111 / 3,351 | |
+| 13 | 5,224 | 1,731 | 14.3M | 24.5M | 2,815 / 3,127 | |
+
+(`w/o ticks` and render move with the frame rate on a loaded box: the table
+below holds one process still.)
+
+Entities (de_dust2 4,482-4,585), cameras, observers, systems, resources: flat.
+Disconnecting and starting again changes nothing: the same process keeps its
+archetypes, tables and models. What grew: **tables and archetypes** (Bevy frees
+none), and **an old ladder's models** (`characters::preload` and the on-demand
+loaders kept every ladder's, and each map built them all).
+
+**What costs the frame: the tables.** `chimera_census age <n>` makes a fresh
+game's world as old as a long session's on the spot (one character through `n`
+new archetypes, a table each), so the frame can be measured with nothing else
+changed. de_dust2, one process, instructions p50 and main-thread CPU p50 (load
+20-60):
+
+| new tables | frame ms p50 | main CPU ms | tick instr | main w/o ticks | render instr |
+|---|---|---|---|---|---|
+| 0 | 16.7 | 8.2 | 8.3M | 10.5M | 15.0M |
+| 5,000 | 19.9 | 14.4 | 16.6M | 14.6M | 15.5M |
+| 10,000 | 25.5 | 20.7 | 24.2M | 17.8M | 15.3M |
+| 20,000 | 33.1 (30 fps) | 26.8 | 39.8M | 22.6M | 15.1M |
+
+That is the report's 30 fps, linearly: 1,500 instructions a table a tick, and
+more ticks a frame as frames slow. No system stands out (a sampler spreads the
+main thread over every system): every query matching characters steps over
+each table it matched, on every run (Bevy's `fold_over_table_range`), about
+600 systems a tick. A real session made about 200 tables a map in 80 s of
+play (3,945 after 20 minutes), more in a full game (a rung change and a death
+each visit a new combination of about 40 components that come and go): ten
+games of ten minutes is in that table's range.
+
+**The fix.** Those components (spawn protection, the gun's game's movement, HUD
+and view parts, the body model and its hit boxes, `Dead`, `Ragdolled`, `God`,
+`Animator`, ...; `chimera_census varies` lists them) are sparse sets now: a
+combination makes an archetype, not a table.
+
+| | before | after |
+|---|---|---|
+| Fast test (`session`, 8 matches): tables | 1,112 -> 2,272 | 196 -> 237 (flat from match 5) |
+| The same, instructions a tick | 7.5M -> 9.1M | 6.7M -> 7.3M |
+| Real app, 20,000 new archetypes: tick | 8.3M -> 39.8M (4.8x) | 10.3M -> 18.2M (1.8x) |
+| The same, main w/o ticks | 10.5M -> 22.6M (2.2x) | 11.9M -> 19.9M (1.7x) |
+| Real app, tables holding characters after 15 maps | not counted | 290 |
+
+"After" is on newer main (the character preloading came in between); its tick
+starts higher for that. The tables the real app still makes after the fix
+(1,731 after 15 maps, 290 of them characters') are the maps' own kinds of
+entities and stop growing when the maps repeat (the two-lap test below). Two laps of real
+maps, headless (`heavy::session_maps`, 6 bots, the server's map change):
+
+| lap | de_dust2 | cs_office | dm_lockdown | warehouse | de_inferno |
+|---|---|---|---|---|---|
+| entities, first | 1,110 | 1,226 | 1,157 | 700 | 1,527 |
+| entities, second | 1,120 | 1,224 | 1,152 | 706 | 1,526 |
+| tick instr, first | 11.2M | 16.7M | 14.8M | 9.7M | 20.2M |
+| tick instr, second | 14.2M | 19.1M | 17.4M | 12.3M | 19.2M |
+| tables, first | 277 | 390 | 513 | 530 | 589 |
+| tables, second | 605 | 610 | 613 | 613 | 613 |
+
+(Tables stop at 613 on the second lap; archetypes 1,426 -> 4,744, what the tick's
+second lap pays for.)
+
+**The ladders' models.** A map's unload (`characters::preload::forget_old`) now
+forgets what older ladders brought but the ladder just played and what's worn
+or held; it loads again if wanted (`Combat Arms: forgot 10 bodies and 21 held
+models` in the log; the table above's stores; each ladder kept was the character
+change's 1.6 GB).
+
+**Left** (backlog): the archetypes' own cost (table above; Bevy's per-frame
+queries that walk them all, bevy_audio's cleanup a tenth of the main thread at
+20,000); the render thread's slow rise; process memory (5.9 -> 14.5 GB over eight
+maps with the stores flat, which on a smaller machine could page: not found). On Windows a player can
+send a bugreport's `report.txt` or `chimera_perf_log 1` (archetypes are in it),
+and `chimera_census` at the start and at 30 fps; `chimera_census age 20000` in a
+fresh game shows what a long session cost before this fix.
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,

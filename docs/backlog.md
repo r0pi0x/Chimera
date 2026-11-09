@@ -159,21 +159,6 @@ the original's own behaviour isn't a bug (say so instead).
   RMS-12 can't break it either.
 - **RMS-12 flamethrower:** shoots what looks like smoke, not flames, and
   doesn't seem to do damage to anybody.
-- **Higher priority: frame rate decays over a session.** After about 10
-  games the user's FPS is down to about 30. Measure frame and tick cost per
-  match over repeated map changes (leaked entities, assets, meshes, audio,
-  listeners; the bots' archetype churn noted below). Find what grows, and
-  add a test that fails when it grows.
-  The user's details: it built gradually; each game was a different map; it
-  stayed after disconnecting and starting a new match in the same process.
-  So whatever grows outlives the match and the server: look at per-process
-  state (asset caches, GPU meshes and textures, materials, archetypes).
-- **Forget an old ladder's models.** `characters::preload` adds about 1.6 GB
-  per ladder (performance.md, "Combat Arms character changes") and each map
-  builds them all again; nothing is dropped in a session, so this may feed
-  the frame rate decay above. Drop what the new ladder doesn't want at a map
-  change (`LateCharacterModels`, `LateHeldModels`, the view models' cache),
-  and let it load again when worn.
 - **Nothing blocks the main thread (user, 2026-11-09).** A load must never
   cost a visible frame. After the character swap fix one rung with a Combat
   Arms gun still costs 37 ms (31 ms CPU, 169 M instructions) on the frame of
@@ -1124,13 +1109,6 @@ the original's own behaviour isn't a bug (say so instead).
   25% after ten, 28% less from the start (docs/performance.md, "Map
   changes that slowed the tick"). Bots cost about linearly (1.3M
   instructions a tick each at 16), most in Combat Arms' animation.
-- **Fewer character tables.** What the fix above left: every query that
-  matches characters steps over their empty tables (+25-70k instructions
-  a call with 2,000 more). Make the components that come and go on
-  characters (spawn protection, the gun's game's movement and view
-  parts, the body model `map::unload_map` takes off) sparse sets or
-  fewer, measured with `party_kit`'s `archetypes` test (table markers)
-  and `chimera_census diff` (new tables per round trip).
 - **Match end: everyone stops: fixed, confirm in a playtest.** From the
   winning kill every player's and bot's input keeps only the look (server
   side, `core::FreezeTime` for prediction and bots); the win callout
@@ -2573,14 +2551,30 @@ docs/plans/active/sound.md.
   it may be a hardware bit flip (no ECC reporting on the box). If it comes
   back, look at the ragdoll solver's `get_pair_unchecked_mut` first, then
   run a memory test.
-- **Bots make many archetypes, and each new one costs every query a walk
-  (2026-11-04).** In party_kit's gun game the bots make ~2000 archetypes
-  (another game's gun, death, sleeping body, spawn protection); each new
-  archetype makes every query step over all archetypes holding its rarest
-  component (Bevy's `update_archetypes_unsafe_world_cell`). The archetype
-  test now skips ticks that make one (9488d0d6), so this cost is
-  unmeasured and grows over a long session. Cut the churn (sparse-set or
-  always-present components for the toggled states) if ticks spike.
+- **Fewer character archetypes (2026-11-09).** What the session fix left
+  (docs/performance.md, "A session's frame rate"): the characters' tables are
+  few now (their components that come and go are sparse sets), their
+  archetypes aren't: about 200 a map in Ultimate Gun Game. With 20,000 more a
+  tick costs 1.8x and the main world's frame 1.7x (Bevy's own per-frame
+  queries that hold no required component walk them all: bevy_audio's cleanup,
+  five sources, and the render world's sync). Fewer of the toggles that
+  multiply them: spawn protection's three components, sleeping (`Sleeping`,
+  `SolverBodyIndex`), `Shadowed` with `PhysicsTouch`.
+- **The render thread's cost rises over a session (2026-11-09).** de_dust2's
+  render world goes 15M -> 22-25M instructions a frame after a dozen other
+  maps at about the same meshes drawn, with no new entities or stores (same
+  run, `chimera_perf_log`); the frame's samples show nothing new, wgpu's
+  submit and the passes each a little more. Suspect wgpu's trackers (sized by
+  the most textures and buffers ever alive) and Bevy's mesh and material
+  allocators, which keep slabs: measure with a span trace on the Windows box
+  (`scripts\profile.ps1`) at the start of a session and after ten maps.
+- **Process memory over a session (2026-11-09).** Ultimate Gun Game's resident
+  and swapped memory goes 5.9 GB -> 14.5 GB over eight maps (19 GB on cs_militia
+  in a longer lap), flattening at the end, on Linux; the stores stay flat
+  (de_dust2 about 3,100 images and 3,400 meshes). Not glibc's arenas
+  (`MALLOC_ARENA_MAX=2`: 4.8 -> 13 GB), not the forgotten ladders' rigs. Find
+  what's live (`malloc_stats` didn't run from the sampler; a heap profile would
+  say), and whether a player's machine pages: that alone could cost frames.
 
 Measured and culled (docs/performance.md): `chimera_perf`, `refcmp bench`,
 PVS culling by world chunk, areaportals (closed doors hide what's behind

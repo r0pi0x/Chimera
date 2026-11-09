@@ -291,6 +291,7 @@ pub struct CaSoundLengths(pub HashMap<String, f32>);
 
 /// Others' footstep clocks (s of their gait's animation) and last place.
 #[derive(Component, Clone, Copy, Debug, Default)]
+#[component(storage = "SparseSet")]
 pub struct OthersSteps {
     pub clock: f32,
     pub last: Option<Vec3>,

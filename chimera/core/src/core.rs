@@ -327,6 +327,7 @@ pub struct Team(pub u8);
 /// spawn or a death), since no command of its led to it. `rebase` counts
 /// one.
 #[derive(Component, Default, Clone, Copy, Debug, PartialEq, Eq)]
+#[component(storage = "SparseSet")]
 pub struct Rebased(pub u32);
 
 /// Count a change to `e`'s predicted state the server made outside its
@@ -1038,6 +1039,7 @@ impl Hitbox {
 /// A character's hitboxes (see `Hitbox`).
 #[derive(Component, Clone, Debug, Default, Reflect)]
 #[reflect(Component)]
+#[component(storage = "SparseSet")]
 pub struct Hitboxes(pub Vec<Hitbox>);
 
 impl Hitboxes {
@@ -1110,6 +1112,7 @@ impl NoBlock {
 /// Takes no damage (the `god` command).
 #[derive(Component, Reflect, Default, Clone, Copy, Debug)]
 #[reflect(Component)]
+#[component(storage = "SparseSet")]
 pub struct God;
 
 /// Spawn protection's two windows, `SimClock` seconds (a minigame's,
@@ -1127,6 +1130,7 @@ pub struct God;
 /// indicator or name-tag flash: `chimera_sim::weapon::impact::
 /// hide_protected`), so the server and every client agree.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+#[component(storage = "SparseSet")]
 pub struct SpawnProtected {
     pub damage_until: f64,
     pub bullets_until: f64,
@@ -1262,6 +1266,7 @@ pub const ITEM_GROUND_LAYER: avian3d::prelude::LayerMask = avian3d::prelude::Lay
 /// meters per second. Movement implementations that model it read it.
 #[derive(Component, Reflect, Clone, Copy, Debug, Serialize, Deserialize)]
 #[reflect(Component)]
+#[component(storage = "SparseSet")]
 pub struct MaxSpeed(pub f32);
 
 /// A place a character can spawn, provided by the Map slot.
@@ -1325,6 +1330,7 @@ pub struct Score {
 
 /// Dead since this time (fixed-tick seconds).
 #[derive(Component, Clone, Copy, Debug)]
+#[component(storage = "SparseSet")]
 pub struct Dead {
     pub since: f64,
 }
@@ -1522,6 +1528,7 @@ pub struct ChoosingClass;
 /// Replicated; a game's loader draws it (`map::BodyName`).
 #[derive(Component, Reflect, Default, Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[reflect(Component)]
+#[component(storage = "SparseSet")]
 pub struct PlayerClass(pub u8);
 
 impl PlayerClass {

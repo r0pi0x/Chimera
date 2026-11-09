@@ -237,6 +237,12 @@ Prior art: Minecraft's item data components; Unreal's Gameplay Ability System.
 
 ### ECS style
 
+A component that comes and goes on characters is a sparse set
+(`#[component(storage = "SparseSet")]`): Bevy frees no table, and every
+query that matches characters steps over every table it matched, on every
+run; a session's combinations made tens of thousands (docs/performance.md,
+"A session's frame rate"; `ultimate_gun_game`'s `session` test).
+
 Prefer, in order: components for facts about an entity, observers for
 reactions to them (`On<Insert<C>>`, `On<Discard<C>>`), messages for
 per-tick flows (hits, deaths, weapon events) read by normal systems,

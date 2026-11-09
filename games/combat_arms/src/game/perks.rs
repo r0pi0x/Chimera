@@ -1235,6 +1235,7 @@ fn refill(world: &mut World, w: Entity) -> bool {
 /// machine gun, sniper or rocket launcher, if still carried (the server's
 /// "last primary").
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[component(storage = "SparseSet")]
 pub struct CaLastPrimary(pub Option<Entity>);
 
 /// Gun types that become the last primary (weapon_classes.md).

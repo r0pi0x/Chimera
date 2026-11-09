@@ -688,6 +688,7 @@ pub fn spawn_weapon(world: &mut World, id: &str, owner: Entity) -> Option<Entity
 /// `StartingWeapons` (and of a map's spawn equipment) whenever it has no
 /// inventory: a bot's kit (Combat Arms' item sets).
 #[derive(Component, Clone, Debug, Default, PartialEq)]
+#[component(storage = "SparseSet")]
 pub struct OwnKit(pub Vec<&'static str>);
 
 /// A new character's weapons (one with an `Intent` and `Health` but no
@@ -1099,6 +1100,7 @@ pub struct AltShot {
 /// the camera, and its pitch and yaw to shots by `Hitscan::punch_scale`.
 /// Games that model recoil or flinching add and decay it.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[component(storage = "SparseSet")]
 pub struct ViewPunch(pub Vec3);
 
 /// A bullet hit on something with health, as the weapon layer dealt it
@@ -1363,6 +1365,7 @@ impl Armor {
 /// character has one armour value, and what covers it follows its
 /// identity (docs/DESIGN.md "Hits across games").
 #[derive(Component, Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[component(storage = "SparseSet")]
 pub struct ArmorPieces {
     pub pieces: Vec<hits::ArmorPiece>,
     pub depletion: hits::Depletion,

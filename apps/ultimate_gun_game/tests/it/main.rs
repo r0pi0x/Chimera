@@ -5,10 +5,14 @@
 //! dev --test it`; where tests go: docs/OBSERVABILITY.md, section 1.
 
 mod fallbacks;
+mod heavy {
+    mod session_maps;
+}
 mod minimal_hud;
 mod no_stand_ins;
 mod net;
 mod parts;
 mod pickups;
 mod power_curve;
+mod session;
 mod variety;

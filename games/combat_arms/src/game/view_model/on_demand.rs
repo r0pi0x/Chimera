@@ -84,6 +84,14 @@ pub fn cached(ca: &CaDataInner, id: &str) -> Option<Loaded> {
     cache(ca).0.lock().ok()?.get(id).cloned()
 }
 
+/// Forget the view models not in `keep` (`characters::preload::
+/// forget_old`), and a load that failed: they load again when next wanted.
+pub fn forget(ca: &CaDataInner, keep: &std::collections::BTreeSet<String>) {
+    if let Ok(mut c) = cache(ca).0.lock() {
+        c.retain(|k, _| keep.contains(k));
+    }
+}
+
 /// Weapon `id`'s view model from install data `ca`'s install through
 /// `file` (`load`, with the default character's hands when they read),
 /// with its own textures; Err when its data names none or it doesn't

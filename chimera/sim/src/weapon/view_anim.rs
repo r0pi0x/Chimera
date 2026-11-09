@@ -121,6 +121,7 @@ pub fn fov_cvar(app: &mut App, name: &str, help: &str, game: &'static str, (min,
 /// On a character whose view model the game drives itself: the driver
 /// skips it.
 #[derive(Component, Clone, Copy, Debug, Default)]
+#[component(storage = "SparseSet")]
 pub struct OwnViewAnim;
 
 /// Sequences to play: the first activity any sequence has (a weighted

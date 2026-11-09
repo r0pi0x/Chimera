@@ -1137,6 +1137,7 @@ impl CaLoadout {
 /// `weapon`'s, each offered for its own slot; a slot none is offered for
 /// keeps the weapon's default.
 #[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
+#[component(storage = "SparseSet")]
 pub struct CaRungParts {
     pub weapon: String,
     pub parts: Vec<String>,

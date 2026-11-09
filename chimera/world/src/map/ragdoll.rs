@@ -294,6 +294,7 @@ impl SkeletonPose {
 
 /// On a character whose body is a ragdoll now.
 #[derive(Component, Clone, Copy, Debug)]
+#[component(storage = "SparseSet")]
 pub struct Ragdolled;
 
 /// A dead character's ragdoll.
