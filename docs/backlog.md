@@ -201,6 +201,12 @@ the original's own behaviour isn't a bug (say so instead).
   stayed after disconnecting and starting a new match in the same process.
   So whatever grows outlives the match and the server: look at per-process
   state (asset caches, GPU meshes and textures, materials, archetypes).
+- **Forget an old ladder's models.** `characters::preload` adds about 1.6 GB
+  per ladder (performance.md, "Combat Arms character changes") and each map
+  builds them all again; nothing is dropped in a session, so this may feed
+  the frame rate decay above. Drop what the new ladder doesn't want at a map
+  change (`LateCharacterModels`, `LateHeldModels`, the view models' cache),
+  and let it load again when worn.
 - **Ultimate Gun Game's menu background** shouldn't use the greybox map.
 - **Kill feed: the crowbar's icon** is just the large word "crowbar".
 - **Scoreboard: guns still top-aligned** in their list item, a lot of the

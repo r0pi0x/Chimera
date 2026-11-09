@@ -1183,10 +1183,10 @@ A rung change that puts on a body not yet loaded (Ultimate Gun Game, seed
 36336, de_dust2, the dev profile on the dev box at load 50-80, walking the
 ladder with `ladder_rung` in third person, `chimera_hitch_ratio 2`):
 
-| | before | after |
+| | before (load 50) | after (load 15-20) |
 |---|---|---|
-| The frame of the change | 46-78 ms against a median of 18 (main thread 40-61 ms CPU, 130-195 M instructions in 1-2 ticks) | no spike: a rung change often logs no hitch at all (7 of 13 at a median of 38); what it logs is a catch-up of N ticks at the usual 10-15 M instructions each |
-| The frame the body arrives, 0.6-1.2 s later | 63-98 ms (68-76 ms CPU, 150-170 M instructions) | none at the change: it arrived with the ladder, in the first seconds of the match (`build_late_bodies` ~5 ms a body) |
+| The frame of the change | 46-78 ms against a median of 18 (main thread 40-61 ms CPU, 130-195 M instructions in 1-2 ticks) | none logged on 11 of 13 rungs; at most 37 ms (31 ms CPU, one rung, the first into Combat Arms); a tick is its usual 10-30 M instructions |
+| The frame the body arrives, 0.6-1.2 s later | 63-98 ms (68-76 ms CPU, 150-170 M instructions) | none at the change: it arrived with the ladder (`build_late_bodies` ~5 ms a body) |
 | What shows meanwhile | the old body on the new skeleton: limbs garbled, floating; the box gun | the old body on its own skeleton, or the new one already |
 
 Where the time went: `CaAnim::with_family` cloned the whole animation library
@@ -1198,13 +1198,16 @@ A `screenshot` costs the main thread about 1 G instructions and 100 ms (it
 landed on these frames while measuring: don't count it).
 
 Preloading (`characters::preload`, the match's ladder: here 10 bodies and 26
-weapon keys): about 13 s of background load at load 70 from the moment the
-ladder is known; a body's load on one thread is 560 ms on average, 1,015 ms at most, its
-textures 39 MB (`heavy::ladder_bodies`, 41 bodies at load 60). Memory: the
-process grew about 0.8 GB per ladder (4.25 GB in game, 5.87 GB after a second
-ladder's load); walking the same ladder on demand before grew 1.9 GB. Nothing
-is forgotten across ladders in a session (`characters::preload`'s shortcut).
-CS:S's and HL2:DM's rungs add nothing: their kits load with the map.
+weapon keys): a ladder is made as its match starts, once the map is in, so
+the load runs in the first seconds of play, not behind the loading screen:
+about 13 s at load 70 from the moment the ladder is known. A body's load on
+one thread is 560 ms on average, 1,015 ms at most, its textures 39 MB
+(`heavy::ladder_bodies`, 41 bodies at load 60). Memory: the process grew about
+1.6 GB per ladder (4.6 GB in game, 7.9 GB after a second ladder's load, load
+20; about what walking the ladder on demand reached before). Nothing is
+forgotten across ladders in a session (`characters::preload`'s shortcut): see
+the backlog. CS:S's and HL2:DM's rungs add nothing: their kits load with the
+map.
 
 ## Combat Arms map loads (2026-10-19)
 
