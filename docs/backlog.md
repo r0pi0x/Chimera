@@ -169,6 +169,9 @@ the original's own behaviour isn't a bug (say so instead).
 - **Ultimate Gun Game's HUD changed:** the CS:S HUD there looks different
   now, a recent regression by the user's account (no change was meant to
   touch it; bisect it). The level-up text is far too big on some HUDs.
+- **Flashlight lights nothing:** the toggle, network path and sounds work,
+  but the spot light has no visible effect on dm_lockdown, even at 10,000
+  times the brightness; the spec gives no brightness, colour or cone.
 - **Battery machine:** at `setpos -3835.25 5745.72 64.02;setang 17.71
   22.85 0.00` its rope or cable looks broken, and the battery doesn't seat
   properly in the slot.
