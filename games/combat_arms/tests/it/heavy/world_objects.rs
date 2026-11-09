@@ -1193,3 +1193,35 @@ fn hgoilrig_rising_sea_with_a_client_swimming_is_predicted() {
     assert_eq!(errors_after, 0, "the swimmer isn't corrected after the start");
     assert_agrees(&mut sim, "hgoilrig");
 }
+
+/// BLOODMONEY has no start point in its vault (all 16 are at the two teams'
+/// trucks). A gun game's spots come from a walk from the start points: the
+/// AI volumes' mesh, which links through the shut door (`VaultDoor_Close`, its
+/// use trigger on the outside only and for `SquadMatch` alone), is not used
+/// for them, so nobody starts in there with no way out.
+#[test]
+fn bloodmoney_nobody_spawns_in_the_vault() {
+    let Some(mount) = mount() else { return };
+    let Some(data) = world::find(&mount, "bloodmoney").and_then(|_| world::load_from(&mount, "bloodmoney").ok()) else {
+        eprintln!("skipping: bloodmoney not readable");
+        return;
+    };
+    let starts: Vec<Vec3> = data.spawns.iter().map(|(p, _)| *p).collect();
+    let vault = |s: &Vec3| s.y < -3.0 && s.x.abs() < 10.0 && s.z > 8.8;
+    assert!(!starts.iter().any(vault), "the map's start points: {starts:?}");
+    let mut sim = Sim::new(CaSim, MapSimPlugin::new(data));
+    sim.ticks(2);
+    let w = sim.app.world_mut();
+    let without_mesh = chimera_sim::minigame::spawns::candidates(w);
+    assert!(without_mesh.len() > 1000, "the walk covers the map: {}", without_mesh.len());
+    // The bots' mesh in place, as a match with bots has it.
+    let mesh = combat_arms::game::bots::map_ai::MapAi::of(w)
+        .and_then(|ai| ai.nav_mesh(combat_arms::game::inventory::UNIT, |min, _| Some(min.y)))
+        .expect("the map's AI volumes");
+    assert!(mesh.generated, "made for AI walkers");
+    w.insert_resource(mesh);
+    let spots = chimera_sim::minigame::spawns::candidates(w);
+    let inside: Vec<&Vec3> = spots.iter().filter(|s| vault(s)).collect();
+    assert!(inside.is_empty(), "{} of {} spots in the vault: {:?}", inside.len(), spots.len(), inside.first());
+    assert_eq!(spots.len(), without_mesh.len(), "the same walk");
+}

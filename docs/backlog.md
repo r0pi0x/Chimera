@@ -156,10 +156,6 @@ the original's own behaviour isn't a bug (say so instead).
 - **Ultimate Gun Game's bots on HL2:DM:** some get stuck, don't shoot or
   move properly and seem to have no plan. Check their navigation on `dm_*`
   maps (no `.nav` files ship with HL2:DM).
-- **Combat Arms, Blood Money: spawning inside the vault** with no way out
-  (`setpos -6.11 -747.55 -179.90;setang 2.98 90.31 0.00`). Check whether
-  the map really has a spawn there, what opens the vault in the original,
-  and whether our spawn picking should refuse it. Decide and fix.
 - **Higher priority: changing Combat Arms characters hitches and garbles.**
   The new character takes a moment to load, with visible lag, and meanwhile
   the current character's bones go wrong, as if imitating the new one's. The
