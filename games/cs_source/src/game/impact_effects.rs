@@ -28,6 +28,7 @@ pub const STYLE: ImpactStyle = ImpactStyle {
     group_radius: Some(300.0),
     damage_unit: super::weapons::HP,
     flesh: "flesh",
+    melee_decal: Some(source_engine::effects::impacts::SLASH_DECAL),
 };
 
 /// Load the effect materials (runtime, from the install): Source's with

@@ -210,13 +210,25 @@ fn bullet_impacts(
     let mut played: Vec<(Entity, String, Vec3)> = Vec::new();
     for e in events.read().filter(|e| e.shown()) {
         let Some(&style) = styles.drawing(&route, e) else { continue };
-        // Every surface a bullet reaches, also after passing something.
-        let (WeaponEventKind::Shot { from, to, hit, .. } | WeaponEventKind::ShotContinued { from, to, hit, .. }) =
-            &e.kind
-        else {
-            continue;
+        // Every surface a bullet reaches, also after passing something;
+        // a melee hit's generic impact is a bullet's (HL2:DM's crowbar and
+        // stunstick, effects_sounds.md 6; CS:S's knife, impact_effects.md
+        // 12), and a swing into water only splashes.
+        let (from, to, hit) = match &e.kind {
+            WeaponEventKind::Shot { from, to, hit, .. } | WeaponEventKind::ShotContinued { from, to, hit, .. } => {
+                if in_water(*from, *to, water.as_deref()) {
+                    continue;
+                }
+                (from, to, hit)
+            }
+            WeaponEventKind::Swing { at: Some((point, _, hit)), line, .. }
+                if super::impact_effects::knife_splash(*line, water.as_deref()).is_none() =>
+            {
+                (&line.0, point, &Some(*hit))
+            }
+            _ => continue,
         };
-        if hit.is_none() || in_water(*from, *to, water.as_deref()) {
+        if hit.is_none() {
             continue;
         }
         // A player's hit sound is the server's, one per hit: a hurt sound,
@@ -258,11 +270,11 @@ fn in_water(from: Vec3, to: Vec3, water: Option<&MapWater>) -> bool {
     water.is_some_and(|w| super::impact_effects::water_shot(from, to, &w.0) != super::impact_effects::WaterShot::Dry)
 }
 
-/// The knife's mark on walls. Not in the public data and no spec names it
+/// CS:S's knife's mark on walls (`ImpactStyle::melee_decal`). Not in the public data and no spec names it
 /// (impact_effects.md 12 points to overlays_decals.md, which has no knife
 /// entry): a guess from the decal script's slash group, to check against
 /// the game.
-const SLASH_DECAL: &str = "ManhackCut";
+pub const SLASH_DECAL: &str = "ManhackCut";
 
 /// A breakable brush's own impact decal (specs/source/breakables.md:
 /// glass "GlassBreak", unbreakable glass "BulletProof"), when `hit` (or
@@ -287,7 +299,8 @@ fn breakable_decal(
 
 /// Decals where shots and knife swings hit the world: the hit surface's
 /// impact decal ("TranslationData" by its game material), or a breakable
-/// brush's own (`breakable_decal`), the knife's slash, on the world, the
+/// brush's own (`breakable_decal`), the game's melee mark
+/// (`ImpactStyle::melee_decal`) or the surface's, on the world, the
 /// prop or the brush entity that was hit. Characters take none yet.
 #[allow(clippy::too_many_arguments)]
 fn impact_decals(
@@ -358,10 +371,26 @@ fn impact_decals(
                 line,
                 ..
             } if marked(*hit) && super::impact_effects::knife_splash(*line, water.as_deref()).is_none() => {
-                let name = breakable_decal(*hit, &brushes, &parents, map.as_deref()).unwrap_or(SLASH_DECAL);
+                let group = match breakable_decal(*hit, &brushes, &parents, map.as_deref()).or(style.melee_decal) {
+                    Some(name) => DecalGroup::Named(name.into()),
+                    // The surface's, as a bullet's (HL2:DM's melee).
+                    None => {
+                        let name = as_game(
+                            surface_of(Some(*hit), *point, &props, &characters, grid.as_deref()),
+                            classes.as_deref(),
+                            route.map_game(),
+                            style.game,
+                        );
+                        let Some(material) = bank.as_ref().and_then(|b| surface(&b.0, &name)).map(|s| s.game_material)
+                        else {
+                            continue;
+                        };
+                        DecalGroup::Material(material)
+                    }
+                };
                 decals.write(PlaceDecal {
                     target: Some(*hit),
-                    group: DecalGroup::Named(name.into()),
+                    group,
                     point: *point,
                     normal: *normal,
                     dir: -*normal,

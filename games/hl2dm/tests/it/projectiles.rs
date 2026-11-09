@@ -387,6 +387,29 @@ fn the_contact_grenade_explodes_on_a_player_18() {
 /// Test 19: the charge on tick 0, no switch until the launch on tick 34 at
 /// 1000 from the eye; the first shot tick 81, the next charge tick 101;
 /// test 20: its harmless end on tick 301.
+/// The playtest's silent launchers: what the SMG1's and AR2's right clicks
+/// play is sent, and loaded with the map (`sounds::entries`).
+#[test]
+fn the_launchers_sounds_are_sent_and_loaded() {
+    let mut sim = sim();
+    let p = player(&mut sim);
+    let w = holding(&mut sim, p, weapons::SMG1);
+    set_rounds(&mut sim, w, 3);
+    let smg = run(&mut sim, p, 5, |s, t| s.intent(p).secondary = t == 0);
+    let w = holding(&mut sim, p, weapons::AR2);
+    set_rounds(&mut sim, w, 2);
+    let ar2 = run(&mut sim, p, 60, |s, t| s.intent(p).secondary = t == 0);
+    let loaded = hl2dm::game::sounds::entries();
+    for (ran, entry) in [
+        (&smg, "Weapon_SMG1.Double"),
+        (&ar2, "Weapon_CombineGuard.Special1"),
+        (&ar2, "Weapon_IRifle.Single"),
+    ] {
+        assert!(ran.sounds.iter().any(|(_, e)| e == entry), "{entry} not sent: {:?}", ran.sounds);
+        assert!(loaded.iter().any(|e| e == entry), "{entry} not loaded");
+    }
+}
+
 #[test]
 fn the_ball_charges_launches_and_ends_19_20() {
     let mut sim = sim();

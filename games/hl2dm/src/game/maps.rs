@@ -238,7 +238,9 @@ pub fn add_view_models(
 /// where a player holding an HL2:DM gun is HL2:DM's): its 19 bodies, the
 /// guns `kept` names (held and view models), read from the HL2:DM
 /// install, their textures appended to the map's; the bodies go after the
-/// map's own.
+/// map's own; every sound HL2:DM plays (its footsteps, guns, suit: a map's
+/// bank holds only what it asked for) where the map hasn't an entry of
+/// that name.
 pub fn dress_guest(map: &mut MapData, kept: &'static [&'static str]) -> Result<(), String> {
     let install = super::INFO
         .install()
@@ -253,6 +255,9 @@ pub fn dress_guest(map: &mut MapData, kept: &'static [&'static str]) -> Result<(
     super::bodies::add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
     super::bodies::add_held(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
     add_view_models(&mut materials, kit, &mut guest.view_models, &mut warnings);
+    let game = SOUNDS.iter().map(|s| s.to_string()).chain(super::sounds::entries());
+    let sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], game, true);
+    bsp::add_guest_sounds(std::sync::Arc::make_mut(&mut map.sounds), sounds);
     materials.finish_textures();
     warnings.extend(materials.missing);
     map.textures.extend(materials.textures.split_off(textures));
