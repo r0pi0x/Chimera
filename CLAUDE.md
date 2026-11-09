@@ -44,8 +44,8 @@ This file is a map. Follow the links for detail; keep it short.
 - Must build and run on Linux and Windows.
 - Scope: first-person games only; CS:S and Combat Arms first.
 
-`cargo test` enforces layering, the asset rule, the spec rule, the third-party rule and this file's
-links (`checks/tests/it/architecture.rs`). Its failure messages say how to fix things.
+`cargo test` enforces layering, the asset rule, the spec rule, the third-party rule, Windows-safe
+paths and this file's links (`checks/tests/it/architecture.rs`). Its failure messages say how to fix things.
 
 ## Commands
 

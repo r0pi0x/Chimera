@@ -19,7 +19,7 @@
 use bevy::prelude::*;
 
 use super::{
-    aux::Aux,
+    aux_power::Aux,
     damage::Damage,
     frame::Frame,
     history::History,
