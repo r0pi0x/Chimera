@@ -23,6 +23,11 @@
 //! `map::FaceWeights` (`apply_face_morphs`);
 //! `adopt_bodies`/`pose_ragdolls` hand a dead
 //! character's body to its ragdoll and pose it from the ragdoll's bodies.
+//! A skeleton never drives another's model: an animator says which skeleton
+//! its pose is for (`Animator::skeleton`), `pose_bodies` poses only a body
+//! on it, and a character changing bodies keeps the one showing until the
+//! new one is built and its pose is on hand (`attach_bodies`), then changes
+//! both in one frame.
 //!
 //! Known shortcuts (docs/tech-debt.md): Frame-time shortcuts
 //! (docs/performance.md, "Frame time pass"): bodies no camera drew last frame
@@ -203,6 +208,8 @@ pub struct BodyAssets {
     pub skins: Vec<Vec<Handle<PropMaterial>>>,
     pub bindposes: Handle<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
     pub bones: Vec<MapBone>,
+    /// `bones`' shape (`anim::skeleton_signature`).
+    pub skeleton: u64,
     pub root: Transform,
     /// Each part's meshes at every level of detail (LOD 0 first; the
     /// same joints), and the body's `LodGroup`, when the model has levels.
@@ -261,6 +268,9 @@ pub struct BodyJoint(pub usize);
 #[derive(Component)]
 pub struct CharacterBody {
     pub model: usize,
+    /// Its skeleton (`anim::skeleton_signature`): only an animator of it
+    /// poses it (`pose_bodies`).
+    pub skeleton: u64,
     /// The skin family shown (`BodySkin`).
     pub skin: i32,
     /// The body number shown (`BodyNumber`).
@@ -273,9 +283,21 @@ pub struct CharacterBody {
     pub held_parts: Vec<Entity>,
 }
 
+/// How long a character waits for its animator to have a pose for its
+/// new body (s; a game driving it does in a tick or two): after that the
+/// body comes in its reference pose.
+pub const BODY_POSE_WAIT: f64 = 0.25;
+
 /// Give characters their team's body (a child at the feet); the local
 /// player's is hidden unless `ShowLocalBody`.
-#[allow(clippy::type_complexity)]
+///
+/// A new body replaces the one showing only once it is ready: its model
+/// built (`build_late_bodies`) and its animator on its skeleton with
+/// something playing (`Animator::poses`, or `BODY_POSE_WAIT` up); it comes
+/// in that pose, so model and skeleton change together, in one frame.
+/// With `game_parts::NoStandIns` a character whose game has no body here
+/// keeps what it wears, or wears any body.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 pub fn attach_bodies(
     models: Option<Res<CharacterModels>>,
     bodies: Option<Res<PlayModels>>,
@@ -292,45 +314,77 @@ pub fn attach_bodies(
             Option<&ColliderAabb>,
             &GlobalTransform,
             Option<&Children>,
-            (Has<crate::core::LocalPlayer>, Option<&Corpse>, Option<&chimera_core::slots::GameIdentity>),
+            (
+                Has<crate::core::LocalPlayer>,
+                Option<&Corpse>,
+                Option<&chimera_core::slots::GameIdentity>,
+                Option<&anim::Animator>,
+            ),
         ),
         (Or<(With<crate::core::Intent>, With<Corpse>)>, Without<ragdoll::Ragdolled>),
     >,
     existing: Query<&CharacterBody>,
     show_local: Res<ShowLocalBody>,
+    (time, no_stand_ins): (Res<Time>, Option<Res<chimera_core::game_parts::NoStandIns>>),
     mut materials: Option<ResMut<Assets<PropMaterial>>>,
     mut meshes: Option<ResMut<Assets<Mesh>>>,
+    mut waiting: Local<HashMap<Entity, f64>>,
     mut commands: Commands,
 ) {
     let (Some(models), Some(bodies)) = (models, bodies) else {
         return;
     };
-    for (e, (team, name, class, skin, number), aabb, at, children, (local, corpse, identity)) in &characters {
+    let now = time.elapsed_secs_f64();
+    waiting.retain(|e, _| characters.contains(*e));
+    for (e, (team, name, class, skin, number), aabb, at, children, (local, corpse, identity, animator)) in &characters {
         let current = children
             .into_iter()
             .flatten()
             .find_map(|c| existing.get(*c).ok().map(|b| (*c, (b.model, b.skin, b.body))));
-        let Some((index, _)) = models.for_identity(identity, team.copied(), name, class) else {
-            // Its identity's game has no body here: the other game's goes.
-            if let Some((old, _)) = current {
-                commands.entity(old).despawn();
+        let index = match models.for_identity(identity, team.copied(), name, class) {
+            Some((index, _)) => index,
+            None => {
+                // An app without stand-ins: what it wears stays; if nothing,
+                // any body here rather than none (no capsule comes).
+                let any = no_stand_ins.is_some().then(|| current.map(|(_, m)| m.0)).flatten();
+                let any = any.or_else(|| no_stand_ins.is_some().then(|| models.for_identity(None, team.copied(), None, class)).flatten().map(|m| m.0));
+                match any {
+                    Some(index) => index,
+                    None => {
+                        // Its identity's game has no body here: the other game's goes.
+                        if let Some((old, _)) = current {
+                            commands.entity(old).despawn();
+                        }
+                        continue;
+                    }
+                }
             }
-            continue;
         };
         let skin = skin.map_or(0, |s| s.0);
         let number = number.map_or(0, |n| n.0);
-        match current {
-            Some((_, m)) if m == (index, skin, number) => continue,
-            Some((old, _)) => commands.entity(old).despawn(),
-            None => {}
+        if current.is_some_and(|(_, m)| m == (index, skin, number)) {
+            waiting.remove(&e);
+            continue;
         }
         let feet = match (corpse, aabb) {
             (Some(c), _) => c.feet,
             (None, Some(aabb)) => aabb.min.y - at.translation().y,
             (None, None) => continue,
         };
-        // A model appended since (`build_late_bodies`) not built yet.
+        // A model appended since (`build_late_bodies`) not built yet: the
+        // one showing stays.
         let Some(assets) = bodies.bodies.get(index) else { continue };
+        // The same skeleton's pose is on hand; another's isn't until the
+        // animator is on it: until then the one showing stays.
+        let posed = animator.filter(|a| a.poses(assets.skeleton));
+        if animator.is_some() && posed.is_none() && now - *waiting.entry(e).or_insert(now) < BODY_POSE_WAIT {
+            continue;
+        }
+        waiting.remove(&e);
+        if let Some((old, _)) = current {
+            commands.entity(old).despawn();
+        }
+        let pose = posed.map(|a| a.pose(now)).unwrap_or_default();
         let body = commands
             .spawn((
                 Name::new("Body"),
@@ -340,24 +394,25 @@ pub fn attach_bodies(
             ))
             .id();
         // The skeleton: a root in the source game's axes and units, then
-        // each bone under its parent, in the reference pose.
+        // each bone under its parent, in its first pose (the reference
+        // pose without one).
         let root = commands.spawn((assets.root, Visibility::Inherited, ChildOf(body))).id();
         let mut joints: Vec<Entity> = Vec::with_capacity(assets.bones.len());
         for (i, b) in assets.bones.iter().enumerate() {
             let parent = b.parent.and_then(|p| joints.get(p).copied()).unwrap_or(root);
+            let placed = pose.get(i).map_or_else(
+                || Transform::from_translation(b.position).with_rotation(b.rotation),
+                |(q, p)| Transform::from_translation(*p).with_rotation(*q),
+            );
             joints.push(
                 commands
-                    .spawn((
-                        BodyJoint(i),
-                        Transform::from_translation(b.position).with_rotation(b.rotation),
-                        Visibility::Inherited,
-                        ChildOf(parent),
-                    ))
+                    .spawn((BodyJoint(i), placed, Visibility::Inherited, ChildOf(parent)))
                     .id(),
             );
         }
         commands.entity(body).insert(CharacterBody {
             model: index,
+            skeleton: assets.skeleton,
             skin,
             body: number,
             joints: joints.clone(),
@@ -619,7 +674,9 @@ pub fn pose_bodies(
         let Some((body_entity, body, parts)) = children.iter().find_map(|c| bodies.get(c).ok()) else {
             continue;
         };
-        if animator.main.is_none() {
+        // Never another skeleton's pose on this body (a character changing
+        // bodies: `attach_bodies`).
+        if animator.main.is_none() || !animator.drives(body.skeleton) {
             continue;
         }
         if culling
@@ -868,6 +925,7 @@ pub fn body_assets(
         skins,
         bindposes: bindposes.add(bevy::mesh::skinning::SkinnedMeshInverseBindposes::from(inverse)),
         bones: bones.to_vec(),
+        skeleton: anim::skeleton_signature(bones.iter().map(|b| (b.name.as_str(), b.parent))),
         root,
         body_parts: model.body_parts.clone(),
         mesh_bodies: model.meshes.iter().map(|m| m.body).collect(),
@@ -1004,6 +1062,7 @@ mod pose_tests {
         };
         world.spawn((Mesh3d::default(), seen, ChildOf(body)));
         world.entity_mut(body).insert(CharacterBody {
+            skeleton: 0,
             model: 0,
             skin: 0,
             body: 0,

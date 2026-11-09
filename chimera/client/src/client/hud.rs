@@ -1140,9 +1140,10 @@ pub struct CapsuleBody;
 /// all: a client gets them before the server's map is in), so this
 /// follows the map, not the character's arrival: a client that joined
 /// de_dust2 from the greybox kept a capsule through every model (seen
-/// in the network soak's screenshots).
+/// in the network soak's screenshots). Never in an app with
+/// `game_parts::NoStandIns`.
 #[allow(clippy::type_complexity)]
-fn character_bodies(
+pub fn character_bodies(
     characters: Query<
         (
             Entity,
@@ -1157,6 +1158,7 @@ fn character_bodies(
         (With<Intent>, Without<LocalPlayer>),
     >,
     models: Option<Res<crate::map::CharacterModels>>,
+    no_stand_ins: Option<Res<chimera_core::game_parts::NoStandIns>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
@@ -1164,9 +1166,13 @@ fn character_bodies(
     for (e, team, capsule, (name, class, identity)) in &characters {
         // A model for it: the map's, among its identity's game's when it
         // has one (another game's character on this map is a capsule).
-        let modelled = models
-            .as_ref()
-            .is_some_and(|m| identity.is_none() || m.for_identity(identity, Some(*team), name, class).is_some());
+        // An app without stand-ins (`NoStandIns`) never draws one: not on
+        // a join's first frames, before the map's models are in, nor at a
+        // map change.
+        let modelled = no_stand_ins.is_some()
+            || models
+                .as_ref()
+                .is_some_and(|m| identity.is_none() || m.for_identity(identity, Some(*team), name, class).is_some());
         match (modelled, capsule) {
             (true, true) => {
                 commands

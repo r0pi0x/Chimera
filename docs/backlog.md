@@ -150,11 +150,6 @@ the original's own behaviour isn't a bug (say so instead).
   (`setpos -6.11 -747.55 -179.90;setang 2.98 90.31 0.00`). Check whether
   the map really has a spawn there, what opens the vault in the original,
   and whether our spawn picking should refuse it. Decide and fix.
-- **Higher priority: changing Combat Arms characters hitches and garbles.**
-  The new character takes a moment to load, with visible lag, and meanwhile
-  the current character's bones go wrong, as if imitating the new one's. The
-  user suggests preloading every rung's model; also swap the body only when
-  the new one is ready, so a skeleton never drives the wrong model.
 - **Ultimate Gun Game's winning screen names the wrong weapon:** winning as
   a Combat Arms zombie, it shows some other knife as the gun. Everywhere a
   player's gun is displayed should show their rung's primary, even when
@@ -173,10 +168,21 @@ the original's own behaviour isn't a bug (say so instead).
   stayed after disconnecting and starting a new match in the same process.
   So whatever grows outlives the match and the server: look at per-process
   state (asset caches, GPU meshes and textures, materials, archetypes).
-- **Ultimate Gun Game must never show the greybox stand-ins:** for a few
-  frames someone flashes as a capsule, or a gun or knife as the template
-  model (seen at low FPS). Goes with the character swap above: keep what's
-  showing until the real model is ready.
+- **Forget an old ladder's models.** `characters::preload` adds about 1.6 GB
+  per ladder (performance.md, "Combat Arms character changes") and each map
+  builds them all again; nothing is dropped in a session, so this may feed
+  the frame rate decay above. Drop what the new ladder doesn't want at a map
+  change (`LateCharacterModels`, `LateHeldModels`, the view models' cache),
+  and let it load again when worn.
+- **Nothing blocks the main thread (user, 2026-11-09).** A load must never
+  cost a visible frame. After the character swap fix one rung with a Combat
+  Arms gun still costs 37 ms (31 ms CPU, 169 M instructions) on the frame of
+  the change; find what that is, it may not be a load (spawning, materials,
+  GPU upload). Reading and parsing go off the main thread; what must run on
+  it gets a per-frame budget across several frames; what shows stays until
+  the new thing is ready. Cover rung changes, character changes and map
+  transitions in every game, and pin it with a main-thread instruction limit
+  (not wall time, which a busy box makes flaky).
 - **Kill feed: the crowbar's icon** is just the large word "crowbar".
 - **Scoreboard: guns still top-aligned** in their list item, a lot of the
   Combat Arms ones.

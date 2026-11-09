@@ -10,6 +10,9 @@
 //! drawing builds (`render::bodies::build_late_bodies`). Until it is
 //! ready the character wears what it wore (its previous body, or none).
 //!
+//! The match's ladder's bodies load the same way ahead of time
+//! (`preload`), with or without a map; a body worn is first.
+//!
 //! Only where `view_model::on_demand::LoadOnDemand` is (the front end: a
 //! dedicated server draws none; its hit spheres pose on the stock rig,
 //! `models::alias_rig`), and only on a map that has bodies of ours.
@@ -54,6 +57,7 @@ pub fn load_on_demand(
     data: Res<CaData>,
     loaded: models::LoadedModels,
     context: Option<Res<LoadContext>>,
+    ladder: Res<super::preload::LadderModels>,
     mut pending: Local<Pending>,
     mut commands: Commands,
 ) {
@@ -71,15 +75,14 @@ pub fn load_on_demand(
         }
         false
     });
-    // A map that wears none of ours (no bodies loaded, or another game's
-    // kit) loads none.
-    let Some(models) = models else { return };
-    if !models.0.iter().any(|m| m.game == Some(GAME)) {
-        return;
-    }
     let chars = data.characters();
-    for look in &looks {
-        let id = chars.effective(look).0.id;
+    // A map that wears none of ours (no bodies loaded, or another game's
+    // kit) loads none for those worn; the ladder's are for the map coming.
+    let ours = models.is_some_and(|m| m.0.iter().any(|m| m.game == Some(GAME)));
+    let worn = looks.iter().filter(|_| ours).map(|look| chars.effective(look).0.id);
+    let ladder = ladder.bodies.iter().copied().filter(|id| !models::LOADED.contains(id));
+    let wanted: Vec<i32> = worn.chain(ladder).collect();
+    for id in wanted {
         if pending.tried.contains(&id) || pending.stock.contains(&id) {
             continue;
         }

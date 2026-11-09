@@ -6,6 +6,7 @@
 
 mod fallbacks;
 mod minimal_hud;
+mod no_stand_ins;
 mod net;
 mod parts;
 mod pickups;

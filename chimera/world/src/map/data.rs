@@ -869,6 +869,13 @@ pub struct MapCharacterModel {
     pub ragdoll: Option<MapRagdoll>,
 }
 
+impl MapCharacterModel {
+    /// Its skeleton's shape (`anim::skeleton_signature`).
+    pub fn skeleton_signature(&self) -> u64 {
+        super::anim::skeleton_signature(self.bones.iter().map(|b| (b.name.as_str(), b.parent)))
+    }
+}
+
 /// A hitbox in its bone's frame (the source game's axes and units).
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BoneBox {

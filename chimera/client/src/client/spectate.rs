@@ -1118,6 +1118,7 @@ mod tests {
         let body = w
             .spawn((
                 CharacterBody {
+                    skeleton: 0,
                     model: 0,
                     skin: 0,
                     body: 0,

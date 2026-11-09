@@ -39,8 +39,10 @@
 //!   drawn, not worn as gear: `gear::gear_view`); it plays with the
 //!   baseline vest and its own body type only (`gear::vest_of`: no
 //!   drawn armour or speed); a body no stock group
-//!   has loads when first worn (`characters::bodies_on_demand`) and poses
-//!   on its skeleton's stock rig meanwhile (`models::alias_rig`);
+//!   has loads with the ladder (`characters::preload`), else when first
+//!   worn (`characters::bodies_on_demand`), its hit spheres on its skeleton's
+//!   stock rig meanwhile (`models::alias_rig`) and what the player wore
+//!   showing (`characters::CaShownAnim`);
 //! - `melee`: a Combat Arms melee weapon (every weapon of ours with the
 //!   knife's data, `inventory::KNIFE_HOOK`, in a set the definition allows: knives, the shovel, the
 //!   machete, ...) in place of the kit's knife on the rung (Chimera's

@@ -88,6 +88,7 @@ mod world_teleports;
 
 // Slow ones (the user's install): the fast tier skips `heavy::`.
 mod heavy {
+    mod ladder_bodies;
     mod attached_fx;
     mod attributes;
     mod body_skins;

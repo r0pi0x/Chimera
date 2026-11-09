@@ -1209,9 +1209,14 @@ pub fn fit(table: &CaModTable, params: &AttachParams, chosen: &[&str]) -> [Optio
 
 /// The parts as records (`CaMods`) for a weapon's `CaFitted`.
 pub fn mods_of(table: &CaModTable, slots: &CaAttachSlots, fitted: &CaFitted) -> CaMods {
-    let params = &slots.params;
+    mods_for(table, &slots.params, &fitted.slots)
+}
+
+/// The parts as records (`CaMods`) of a weapon with `params` and fitted
+/// record ids `fitted`.
+pub fn mods_for(table: &CaModTable, params: &AttachParams, fitted: &[Option<u16>; SLOTS]) -> CaMods {
     let mut parts: [Option<Part>; SLOTS] = Default::default();
-    for (s, id) in fitted.slots.iter().enumerate() {
+    for (s, id) in fitted.iter().enumerate() {
         let Some(record) = id.and_then(|i| table.get(i)) else { continue };
         let variant = params
             .variant_of(&record.name)

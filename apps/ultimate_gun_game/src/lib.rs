@@ -33,7 +33,10 @@
 //! game without one); no gun off the ground, any game's, placed or dropped
 //! (`[pickups] weapons = false`: the ladder alone arms a player; a map's
 //! guns aren't placed, since a gun lying there that can't be taken would only
-//! mislead). `parts` (console) prints each game's capability report.
+//! mislead). `parts` (console) prints each game's capability report. It
+//! never draws a stand-in (`game_parts::NoStandIns`: no capsule, no box gun
+//! or knife): what shows stays until the real model is ready, a ladder's
+//! models loading ahead (Combat Arms' `characters::preload`).
 //!
 //! Known shortcuts: the ladder isn't made again when a player without a
 //! game joins mid-match; with no CS:S install the client still stops
@@ -230,6 +233,9 @@ impl Plugin for UltimateGunGamePlugin {
         // the rungs' extras do (`ladder::RungSeed`).
         .insert_resource(MapHistory::seeded(self.seed))
         .insert_resource(chimera_sim::minigame::ladder::RungSeed(self.seed))
+        // Never a capsule or a template gun: what shows stays until the
+        // real model is ready (`game_parts::NoStandIns`).
+        .init_resource::<chimera_core::game_parts::NoStandIns>()
         .console_command(
             "chimera:ugg_new",
             "ugg_new [seed] [rungs] [map]: a new Ultimate Gun Game ladder for the players connected, played at once \

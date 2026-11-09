@@ -1376,6 +1376,7 @@ mod tests {
             .spawn((
                 crate::render::bodies::CharacterBody {
                     held_parts: Vec::new(),
+                    skeleton: 0,
                     model: 0,
                     skin: 0,
                     body: 0,
