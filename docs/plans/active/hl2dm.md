@@ -1944,6 +1944,15 @@ implementing (owner branch) / done.
   drawn, the spec unclear: HL2:DM's own frame (which picture fills which
   part), the title (we show the server's name), whether it shows again
   after a `changelevel` (ours: whenever a local player entity is new).
+  **View-model fire series** (weapons.md 7.1, 7.3): the pistol's shots
+  under 0.5 s apart count up through `ACT_VM_PRIMARYATTACK`, `RECOIL1`-`3`;
+  the SMG1's and AR2's first two shots since attack was pressed play the
+  first, then the recoils (`view::fire_order`, on `ViewState::shots`, the
+  frame's `burst`, and `ViewModelPlay::series`); unit test
+  `a_series_of_shots_plays_the_recoils`.
+  **Scoreboard's server name** (hud.md 13): it was empty; now the server's
+  `hostname` as its message of the day brings it (`ui::feed::
+  the_scoreboard_names_the_server`).
 
 ## Decision log
 

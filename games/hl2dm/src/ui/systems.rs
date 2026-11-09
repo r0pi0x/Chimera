@@ -415,7 +415,8 @@ pub fn collect(
 }
 
 /// The scoreboard's rows: every player with its team, score, ping and name
-/// (a client's from the server's `NetScore` and `NetCharacter`).
+/// (a client's from the server's `NetScore` and `NetCharacter`), and the
+/// server's name over them.
 #[allow(clippy::type_complexity)]
 pub fn collect_board(
     mut state: ResMut<Hl2dmHud>,
@@ -438,6 +439,7 @@ pub fn collect_board(
         Res<ButtonInput<KeyCode>>,
         Option<Res<ButtonInput<MouseButton>>>,
     ),
+    motd: Option<Res<chimera_net::net::ServerMotd>>,
 ) {
     if state.hud.is_none() {
         return;
@@ -463,7 +465,9 @@ pub fn collect_board(
     rows.sort_by_key(|r| r.index);
     let board = Board {
         teamplay: view.is_some_and(|v| v.teamplay),
-        server_name: String::new(),
+        // The server's name (`hostname`, as its message of the day carries
+        // it to every client).
+        server_name: motd.map(|m| m.server.clone()).unwrap_or_default(),
         players: rows,
         team_scores: view.map_or([0; 2], |v| v.scores),
     };

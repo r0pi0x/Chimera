@@ -229,3 +229,18 @@ fn own_rounds_rising_add_a_row() {
     let h = &f.state().hud.as_ref().unwrap().history;
     assert!(h.entries.iter().any(|e| e.ammo.as_deref() == Some("hl2dm:smg1_grenade") && e.count == Some(1)), "{:?}", h.entries);
 }
+
+/// hud.md 13: the scoreboard's label is the server's name (`hostname`, as
+/// the message of the day brings it to a client).
+#[test]
+fn the_scoreboard_names_the_server() {
+    let mut f = fed();
+    f.sim
+        .app
+        .init_resource::<chimera_client::client::console::HeldActions>()
+        .init_resource::<ButtonInput<KeyCode>>()
+        .insert_resource(chimera_net::net::ServerMotd { server: "Our server".into(), ..Default::default() })
+        .add_systems(Update, systems::collect_board);
+    f.sim.ticks(2);
+    assert_eq!(f.state().board.as_ref().unwrap().server_name, "Our server");
+}
