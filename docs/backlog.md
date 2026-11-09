@@ -149,6 +149,10 @@ the original's own behaviour isn't a bug (say so instead).
 - **AR2 ball's explosion** has particles that look wrong.
 - **HUD:** no count of the SMG1's grenades or ammo for them (the
   secondary ammo panel; branch `hl2dm-gaps1` feeds it, check after merge).
+- **HUD:** no ammo counter bottom right for the RPG (`hl2dm-gaps1` shows
+  its own rounds as ammo, check after merge).
+- **RPG laser** lags the view like the gravity gun's glow (same cause
+  expected, `map::attached`).
 - **Escape** only frees the cursor (click to return to the game): no menu.
   HL2:DM's menus were planned for after faithful DM/TDM; the user has now
   run into it, so it's next once these reports are done.
