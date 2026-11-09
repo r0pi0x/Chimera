@@ -38,6 +38,8 @@ pub struct HudPlugin;
 
 impl Plugin for HudPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<crate::map::MapHooks>();
+        app.world_mut().resource_mut::<crate::map::MapHooks>().settle.push(warm_huds);
         app.init_resource::<Killfeed>()
             .init_resource::<GameDraws>()
             .init_resource::<CrosshairColor>()
@@ -181,6 +183,78 @@ impl PutAway {
     pub fn look_of(&self, game: &str) -> Option<&crate::map::hud::ActiveHud> {
         self.0.iter().map(|(l, _)| l).find(|l| l.0.game == game)
     }
+}
+
+/// Frames each HUD is shown behind the loading screen (`warm_huds`): its
+/// texts laid out, their glyph atlases made.
+const WARM_FRAMES: u8 = 4;
+
+/// The HUDs `warm_huds` shows in turn, and where it is.
+#[derive(Resource)]
+struct WarmingHuds {
+    huds: Vec<&'static str>,
+    at: usize,
+    frames: u8,
+}
+
+/// Behind the loading screen (`map::MapHooks::settle`), every HUD of the
+/// app's games shown for a few frames (`gameplay::HudWarm`): a HUD's first
+/// frame lays out each of its texts and makes Bevy's glyph atlases for each
+/// font and size (a 1 MB image each): about 116 M instructions and 30 ms for
+/// Combat Arms', on the rung that first gave a Combat Arms gun
+/// (docs/performance.md, "Nothing blocks the main thread"). Kept for the
+/// session: each map warms again only what changed (the screen's size).
+pub fn warm_huds(world: &mut World) -> bool {
+    use crate::gameplay::{Gameplay, HudWarm};
+    let warming = world.remove_resource::<WarmingHuds>().filter(|w| w.at < w.huds.len());
+    let mut warming = match warming {
+        Some(w) => w,
+        None => {
+            if world.remove_resource::<HudWarm>().is_some() {
+                return true;
+            }
+            let Some(registry) = world.get_resource::<chimera_core::game_parts::PartsRegistry>() else {
+                return true;
+            };
+            let mut huds: Vec<&'static str> = Vec::new();
+            for parts in registry.all() {
+                let hud = parts.hud.unwrap_or(registry.fallback_hud);
+                if !huds.contains(&hud) {
+                    huds.push(hud);
+                }
+            }
+            // The HUD showing last, so it is the one on when play starts.
+            if let Some(now) = world.get_resource::<Gameplay>().map(|g| g.hud) {
+                huds.retain(|h| *h != now);
+                huds.push(now);
+            }
+            if huds.len() < 2 {
+                return true;
+            }
+            WarmingHuds { huds, at: 0, frames: 0 }
+        }
+    };
+    let hud = warming.huds[warming.at];
+    if warming.frames == 0 {
+        world.insert_resource(HudWarm(hud));
+        if let Some(mut g) = world.get_resource_mut::<Gameplay>()
+            && g.hud != hud
+        {
+            g.hud = hud;
+        }
+    }
+    warming.frames += 1;
+    if warming.frames >= WARM_FRAMES {
+        warming.at += 1;
+        warming.frames = 0;
+    }
+    if warming.at >= warming.huds.len() {
+        // Done: the next call hands the HUD back (`HudWarm` removed) and
+        // the next map starts over.
+        return false;
+    }
+    world.insert_resource(warming);
+    false
 }
 
 /// Roots of a HUD that isn't the gameplay's hidden; the active one's shown
@@ -1425,4 +1499,69 @@ pub fn additive_as_alpha(image: &Image) -> Option<Image> {
         px[3] = ((px[3] as u32 * peak as u32 + 127) / 255) as u8;
     }
     Some(out)
+}
+
+#[cfg(test)]
+mod warm_tests {
+    use std::time::Duration;
+
+    use bevy::prelude::*;
+    use chimera_core::{
+        game_parts::{GameParts, PartsRegistry},
+        gameplay::{Gameplay, HudWarm},
+    };
+
+    const fn parts(game: &'static str, hud: Option<&'static str>) -> GameParts {
+        GameParts {
+            game,
+            guns: &[],
+            knife: None,
+            movement: None,
+            characters: None,
+            hud,
+            maps: &[],
+            map_patterns: &[],
+            announcer: None,
+            match_won_sound: None,
+            match_lost_sound: None,
+            music: false,
+            cues: None,
+        }
+    }
+    static A: GameParts = parts("a", Some("a"));
+    static B: GameParts = parts("b", Some("b"));
+    static C: GameParts = parts("c", None);
+
+    /// Behind the loading screen every game's HUD is the gameplay's for a few
+    /// frames, the one playing last, and then it is handed back.
+    #[test]
+    fn each_hud_is_shown_then_the_playing_one_stays() {
+        let mut world = World::new();
+        let mut registry = PartsRegistry::default();
+        for p in [&A, &B, &C] {
+            registry.register(p);
+        }
+        world.insert_resource(registry);
+        world.insert_resource(Gameplay {
+            rules: "b",
+            bots: "b",
+            hud: "b",
+            binds: "b",
+            tick: Duration::from_millis(15),
+        });
+        let mut shown = Vec::new();
+        let mut calls = 0;
+        while !super::warm_huds(&mut world) {
+            let hud = world.resource::<Gameplay>().hud;
+            assert_eq!(world.get_resource::<HudWarm>().map(|w| w.0), Some(hud));
+            if shown.last() != Some(&hud) {
+                shown.push(hud);
+            }
+            calls += 1;
+            assert!(calls < 100);
+        }
+        assert_eq!(shown, ["a", chimera_core::game_parts::MINIMAL_HUD, "b"]);
+        assert!(world.get_resource::<HudWarm>().is_none(), "handed back");
+        assert_eq!(world.resource::<Gameplay>().hud, "b");
+    }
 }

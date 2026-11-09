@@ -455,6 +455,7 @@ impl Plugin for ShellSetupPlugin {
         app.insert_resource(ClientArgs(self.args.clone()))
             .insert_resource(self.hooks)
             .init_resource::<crate::map::loading::LoadReporter>()
+            .init_resource::<crate::map::nav_gen::SliceFloods>()
             .insert_resource(self.args.join_choice());
     }
 }

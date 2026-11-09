@@ -22,6 +22,11 @@
 //! jump-up ledges inside the rooms a player walks stay, anything beyond
 //! the rooms goes, and so does whatever is reached only through it.
 //!
+//! A whole flood is thousands of millions of instructions on a large map
+//! (cs_office: about 4 G), so a front end runs it a slice at a time
+//! (`NavGenJob`, docs/performance.md, "Nothing blocks the main thread"); the
+//! result is the same.
+//!
 //! Known shortcuts: no ladders, jumps, crouch-only areas, hiding spots or
 //! visibility data; cells are tested at their centres only (a wall
 //! thinner than a cell between two cell centres is found by the sweep,
@@ -133,6 +138,17 @@ struct Grid<'a, 'w, 's> {
     columns: HashMap<(i32, i32), Vec<usize>>,
     /// Outgoing links per cell: (cell, side).
     links: Vec<Vec<(usize, Side)>>,
+    /// Cells whose neighbours are yet to be looked at.
+    open: VecDeque<usize>,
+}
+
+/// A `Grid`'s state between slices of a `NavGenJob`.
+#[derive(Default)]
+struct Flood {
+    cells: Vec<Cell>,
+    columns: HashMap<(i32, i32), Vec<usize>>,
+    links: Vec<Vec<(usize, Side)>>,
+    open: VecDeque<usize>,
 }
 
 impl Grid<'_, '_, '_> {
@@ -240,57 +256,134 @@ pub fn generate_within(
     p: &NavGenParams,
     bounds: Option<Bounds>,
 ) -> NavMesh {
-    let bounds = bounds.filter(|b| !b.vis.nodes.is_empty());
-    let clusters: Option<(&MapVisibility, std::collections::BTreeSet<u32>)> = bounds.map(|b| {
-        let mut walk = Grid::new(q, ignore, &b.walker);
-        walk.flood(seeds, &|_| true);
-        let set = walk
-            .cells
-            .iter()
-            .filter_map(|c| {
-                let (x, z) = walk.centre(c.ix, c.iz);
-                b.vis.cluster_at(Vec3::new(x, c.y + CHEST, z))
-            })
-            .collect();
-        (b.vis, set)
-    });
-    let keep = |at: Vec3| {
-        clusters
-            .as_ref()
-            .is_none_or(|(vis, set)| vis.cluster_at(at + Vec3::Y * CHEST).is_some_and(|c| set.contains(&c)))
-    };
-    let mut g = Grid::new(q, ignore, p);
-    g.flood(seeds, &keep);
-    merge(&g)
+    let mut job = NavGenJob::new(seeds, p, bounds.map(|b| b.walker));
+    loop {
+        if let Some(mesh) = job.step(q, ignore, bounds.map(|b| b.vis), usize::MAX) {
+            return mesh;
+        }
+    }
+}
+
+/// A front end floods a slice a tick (`NavGenJob`), so a mesh made in play
+/// stops no frame; without it (a dedicated server, a test) a flood runs whole.
+/// The client shell inserts it.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct SliceFloods;
+
+/// Cells of a flood a tick takes where floods are sliced (`SliceFloods`):
+/// about 200 k instructions each.
+pub const CELLS_PER_TICK: usize = 80;
+
+/// Cells a frame takes behind the loading screen (`MapHooks::settle`): about
+/// 50 M instructions, the screen keeps turning over.
+pub const CELLS_PER_LOAD_FRAME: usize = 250;
+
+/// `generate_within` a slice at a time: `step` takes up to that many cells of
+/// the flood, and gives the mesh at the end (the same mesh, whatever the
+/// slices).
+pub struct NavGenJob {
+    seeds: Vec<Vec3>,
+    p: NavGenParams,
+    /// The bound's walker (`Bounds`), its flood first.
+    walker: Option<NavGenParams>,
+    walk: Flood,
+    /// What the walker's flood reached (`Bounds`), once it is done.
+    clusters: Option<std::collections::BTreeSet<u32>>,
+    own: Flood,
+}
+
+impl NavGenJob {
+    pub fn new(seeds: &[Vec3], p: &NavGenParams, walker: Option<NavGenParams>) -> Self {
+        Self {
+            seeds: seeds.to_vec(),
+            p: *p,
+            walker,
+            walk: Flood::default(),
+            clusters: None,
+            own: Flood::default(),
+        }
+    }
+
+    /// Up to `cells` cells more (`vis`: the map's visibility, the bound's
+    /// clusters; none or empty: no bound); the mesh when the flood is done.
+    pub fn step(
+        &mut self,
+        q: &SpatialQuery,
+        ignore: &dyn Fn(Entity) -> bool,
+        vis: Option<&MapVisibility>,
+        cells: usize,
+    ) -> Option<NavMesh> {
+        let vis = vis.filter(|v| !v.nodes.is_empty());
+        if let (Some(walker), Some(vis), None) = (self.walker, vis, &self.clusters) {
+            let mut walk = Grid::resume(q, ignore, &walker, std::mem::take(&mut self.walk));
+            if !walk.flood_some(&self.seeds, &|_| true, cells) {
+                self.walk = walk.pause();
+                return None;
+            }
+            self.clusters = Some(
+                walk.cells
+                    .iter()
+                    .filter_map(|c| {
+                        let (x, z) = walk.centre(c.ix, c.iz);
+                        vis.cluster_at(Vec3::new(x, c.y + CHEST, z))
+                    })
+                    .collect(),
+            );
+            return None;
+        }
+        let set = self.clusters.as_ref().zip(vis);
+        let keep = |at: Vec3| set.is_none_or(|(set, vis)| vis.cluster_at(at + Vec3::Y * CHEST).is_some_and(|c| set.contains(&c)));
+        let mut g = Grid::resume(q, ignore, &self.p, std::mem::take(&mut self.own));
+        if !g.flood_some(&self.seeds, &keep, cells) {
+            self.own = g.pause();
+            return None;
+        }
+        Some(merge(&g))
+    }
 }
 
 impl<'a, 'w, 's> Grid<'a, 'w, 's> {
-    fn new(q: &'a SpatialQuery<'w, 's>, ignore: &'a dyn Fn(Entity) -> bool, p: &NavGenParams) -> Self {
+    fn resume(q: &'a SpatialQuery<'w, 's>, ignore: &'a dyn Fn(Entity) -> bool, p: &NavGenParams, f: Flood) -> Self {
         Grid {
             q,
             filter: SpatialQueryFilter::from_mask(p.mask),
             ignore,
             p: *p,
-            cells: Vec::new(),
-            columns: HashMap::new(),
-            links: Vec::new(),
+            cells: f.cells,
+            columns: f.columns,
+            links: f.links,
+            open: f.open,
         }
     }
 
-    /// The cells reachable from `seeds` through cells whose floor point
-    /// `keep` takes (seeds are always taken).
-    fn flood(&mut self, seeds: &[Vec3], keep: &dyn Fn(Vec3) -> bool) {
-        let p = self.p;
-        let mut open = VecDeque::new();
-        for s in seeds {
-            let (ix, iz) = ((s.x / p.cell).floor() as i32, (s.z / p.cell).floor() as i32);
-            let Some(y) = self.floor(ix, iz, s.y + 0.5, 4.0) else { continue };
-            if self.find(ix, iz, y).is_some() || !self.stands(ix, iz, y) {
-                continue;
-            }
-            open.push_back(self.add(ix, iz, y));
+    fn pause(self) -> Flood {
+        Flood {
+            cells: self.cells,
+            columns: self.columns,
+            links: self.links,
+            open: self.open,
         }
-        while let Some(i) = open.pop_front() {
+    }
+
+    /// Up to `budget` more of the cells reachable from `seeds` through cells
+    /// whose floor point `keep` takes (seeds are always taken, the first
+    /// call): true when there are no more.
+    fn flood_some(&mut self, seeds: &[Vec3], keep: &dyn Fn(Vec3) -> bool, mut budget: usize) -> bool {
+        let p = self.p;
+        if self.cells.is_empty() {
+            for s in seeds {
+                let (ix, iz) = ((s.x / p.cell).floor() as i32, (s.z / p.cell).floor() as i32);
+                let Some(y) = self.floor(ix, iz, s.y + 0.5, 4.0) else { continue };
+                if self.find(ix, iz, y).is_some() || !self.stands(ix, iz, y) {
+                    continue;
+                }
+                let i = self.add(ix, iz, y);
+                self.open.push_back(i);
+            }
+        }
+        while budget > 0 {
+            let Some(i) = self.open.pop_front() else { return true };
+            budget -= 1;
             let Cell { ix, iz, y } = self.cells[i];
             for (dx, dz, side) in DIRS {
                 let (jx, jz) = (ix + dx, iz + dz);
@@ -307,7 +400,7 @@ impl<'a, 'w, 's> Grid<'a, 'w, 's> {
                             continue;
                         }
                         let j = self.add(jx, jz, y1);
-                        open.push_back(j);
+                        self.open.push_back(j);
                         j
                     }
                 };
@@ -316,6 +409,7 @@ impl<'a, 'w, 's> Grid<'a, 'w, 's> {
                 }
             }
         }
+        self.open.is_empty()
     }
 }
 

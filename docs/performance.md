@@ -1209,6 +1209,102 @@ forgotten across ladders in a session (`characters::preload`'s shortcut): see
 the backlog. CS:S's and HL2:DM's rungs add nothing: their kits load with the
 map.
 
+## Nothing blocks the main thread (2026-11-09)
+
+The user's bar: a load never costs a visible frame. Measured with a new per-frame log
+(`CHIMERA_FRAME_LOG`, `tools/frame_cut.py`, OBSERVABILITY.md 3c) on the
+`profiling` build under `perf`, Ultimate Gun Game, seed 36336, de_dust2, 1280x720, vsync
+off, first person, bots playing, load 30-60: the whole walk of the ladder's 13 rungs, then
+`map` to dm_lockdown, warehouse and cs_office. Numbers are the worst single frame, in
+user-space instructions on that thread (the render thread's alone are stable to about
+1%; the main thread's move 5-30% with what it picks up from the task pools, and a frame
+after a stall runs many ticks, so "less ticks" takes out the fixed ticks').
+
+**A trap while measuring:** the first log wrote its lines from the render thread, and
+under the box's load a `write` to the root disk sat 200-560 ms in the file system's
+journal (`handle_reserve_ticket`, read from `/proc/<pid>/task/<tid>/wchan`): the render world's `Cleanup` showed
+500 ms of wall time at 0.1 ms of CPU, and the main thread, waiting for it, then ran 16-17
+catch-up ticks. Stalls of that shape that come and go on this box may be its disk, not us:
+the same goes for anything that logs from a world's thread into a file. The log now
+writes from a thread of its own, and runs keep the game's own log on tmpfs.
+
+What was on the main thread (each with the fix):
+
+| What | Worst single frame | Fix |
+|---|---|---|
+| The bots' navigation mesh (`ensure_nav`, `nav_gen`: rays and box sweeps of a flood) in one tick when bots first play on a map | 3-6.9 G, a 1.5-2.5 s frame in play | `NavGenJob`, a slice at a time, the same mesh: behind the loading screen (`MapHooks::settle`, `CELLS_PER_LOAD_FRAME` 250 cells, about 50 M a frame) after a `map` command or a server's map change; in play (`CELLS_PER_TICK` 80, about 16 M a tick) only on a map nothing loaded behind a screen (the command line's `--map`), bots standing until it is done there (de_dust2 10-13 s at load 40-60). A front end only (`SliceFloods`, the shell's: a listen server too); a dedicated server floods in one tick |
+| The spawn spots' mesh and tests (`spawns::build`) in the first respawn | 1.2 G | the same, behind the loading screen (`settle_spots`) or a slice a tick from the match's start (`prepare_spots`); the same spots; the map's spawn points for a respawn before they are ready |
+| A game's HUD on its first frame in play: Bevy makes a glyph atlas (a 1 MB image) for each new font and size its texts use, and rasterizes them, on `text_system` (the 37 ms rung: the first into Combat Arms) | 116-122 M less ticks, about 30 ms | every game's HUD shown for 4 frames behind the loading screen (`client::hud::warm_huds`, `gameplay::HudWarm`): 70 M. Texts a HUD shows only in some states (a weapon's name, a lead message) still make theirs on first show |
+| Building a late model (`build_late*`: texels and mip levels, vertices, a skinned mesh's bounds, a deep copy of the view model) | 170 M main, 324 M render in one frame (a frame of up to 336 ms wall) | `render::late_build`: all on a task with reserved handles; only `Assets::insert` on the main thread, 4 MB and 12 materials per queue per frame |
+| Keeping those meshes in the main world: extraction copies each whole | in the above | meshes the main world doesn't read are `RENDER_WORLD` only (a face with flexes stays) |
+| The rung's weapon reading its view model for its timing (`weapons::timing`, an LTB out of a keyed archive, in the middle of a tick): **a 30 ms frame on most rungs into a new Combat Arms gun** | 46-102 M | `timing::read_ahead`: the ladder's read on tasks when the ladder is known. Off the ladder it still reads on the frame |
+| A body's rig replacing its alias in the late index (freeing a whole animation library) | 48-78 M | `map::drop_later` |
+| A map's physics props settling after it spawns, every shadow redrawn at once (`update_prop_shadows`) | 300-500 M for several frames | `REDRAWS_PER_FRAME` (6), each prop's latest pose; the rest wait |
+| A map's old models freed in its swap frame | 300 M of 2.4 G | `map::drop_later` for map-scoped resources |
+| A ladder's draw looking weapons up in a list of thousands (`WeaponSet::get`, `rungs::draw`) | 367 M at a match's start | an index by id: 100 M |
+| A game's HUD font files made new fonts each time the HUD came back, and so new glyph atlases (`take_hud_fonts`) | | once per file (`UiFonts::game_loaded`) |
+
+Before and after, each rung's worst main frame less ticks (M instructions) over the second
+after it, and the worst whole (ticks and all):
+
+| Rung | Before, less ticks | whole | After, less ticks | whole |
+|---|---|---|---|---|
+| 1 hl2dm:weapon_pistol | 24.2 | 46.4 | 18.9 | 26.7 |
+| 2 combat_arms:p226_og_cs | 117.0 | 141.1 | 116.2 | 141.5 |
+| 3 combat_arms:scorpion_mod | 75.8 | 126.0 | 23.4 | 48.7 |
+| 4 cs_source:weapon_tmp | 36.5 | 71.7 | 48.0 | 70.6 |
+| 5 combat_arms:ice_dragon_m4a1 | 82.1 | 108.6 | 34.6 | 66.3 |
+| 6 combat_arms:harlequin_s_arx-160 | 102.5 | 123.6 | 32.6 | 60.9 |
+| 7 combat_arms:starcombat_xm8 | 40.7 | 87.0 | 21.9 | 49.9 |
+| 8 combat_arms:groza_bloodhound_lv.4_limit_ | 66.9 | 85.0 | 26.9 | 36.1 |
+| 9 combat_arms:trg-21_event | 58.8 | 82.5 | 21.5 | 41.1 |
+| 10 combat_arms:assassin_bowgun_nor | 31.9 | 59.6 | 26.1 | 43.3 |
+| 11 combat_arms:rms12 | 40.7 | 92.5 | 62.2 | 76.1 |
+| 12 combat_arms:uzun_tamburali_bombaatar | 46.4 | 79.6 | 36.3 | 84.6 |
+| 13 combat_arms | 33.6 | 69.4 | 37.7 | 48.3 |
+
+With the HUDs warmed behind the loading screen (a `map` command first, as a game started from the menu does; a run at load 40-60 that ran 11-17 catch-up ticks in 600 of its frames, so read the "less ticks" column): rung 2 70 M (text 4 of its 70 samples, 17 of 53 before), the others 23-76 M. Rungs 4, 11 and 13 rose in one run and not in the next: their worst frames were text making atlases for a string at a size not shown before (rung 11's 62 M), and rung 13 drew another gun each run (the ladder is drawn again when its match restarts). The once-a-second `chimera_perf` readout (`perf_report`, computed for `bugreport` even when nothing shows it) is 5-20 M in whichever frame it lands.
+
+Behind the loading screen (`client::console`'s `Settling`, at most 10 s): dm_lockdown 3.2 s, warehouse 0.9 s, cs_office 3.9 s, de_dust2 6.6 s at load 40-60; the screen turned over at a median 40-53 ms a frame meanwhile (its worst frames the swap's catch-up ticks, 470-760 M).
+
+Other cases (worst frame anywhere in the run, M instructions):
+
+| Case | Before | After |
+|---|---|---|
+| A body or gun arriving from the ladder, main thread | 170 | no frame stands out: `build_late*` is under 3 M with a body's 39 MB (`tests/it/late_build.rs`: 3.5 M, with 432 MB of texels) |
+| The same, render thread | 324 (336 ms wall) | 49.5, not a load's: p99.9 32.7 |
+| The first ticks on a map, whole frame | 6,857 / 4,760 / 3,711 | 1,327 at startup, 918 at most afterwards |
+| A map's swap frame (`change_map_with`) | 2,507 (5.6 s wall at load 80) / 2,354 / 1,454 | 2,118 / 2,079 / 918 (0.3-0.5 s wall at load 30): less the frees, and no nav in the next frames |
+| Frames over 100 M in the maps run | 615 of 5,718 | 245 of 5,908 |
+| The render world's first frame of a map | 1,236 / 1,036 | 1,213 / 1,035 |
+
+What did not move, and its size (`docs/backlog.md`, "Nothing blocks the main thread"):
+
+- **A map's swap frame**: 0.9-2.1 G on the main thread and 0.65-1.2 G on the render thread (world meshes,
+  materials and their bind groups, `allocate_meshes` 40% of it) in one frame each, the loading
+  screen standing still for it: about 0.3-0.5 s here at load 30. Everything prepared on the
+  loading task is prepared already (`map::prepare`); what is left is `spawn_map`'s spawning and
+  putting assets in. Spreading it means a spawn over frames.
+- **A HUD text at a size not shown before**: 20-60 M on its first frame (glyph atlases); what the warm-up's four frames didn't show. A font per size laid out ahead (each HUD naming its fonts and sizes) would take the rest. A first try laid out each new font as soon as a text had it (`Changed<TextFont>`): it never helped, a text has its font on the frame it first shows.
+- A match's start: 100 M (`ladder::start`, drawing every rung's extras), a `+map`'s first listing of Combat Arms' maps
+  (292 M, opening the install's archives: `read_map_names`, once a session), and the first ladder's
+  `markers::show` opening its archives on the frame (about 40 M).
+- A weapon off the ladder: its timing and its first draw still read or wait as before.
+- Pipelines: no frame in these runs shows pipeline creation on the main or render thread (Bevy compiles them on
+  tasks, and a new material draws once ready); not measured on Windows, where DX12's and the
+  driver's costs differ.
+- Dedicated servers flood at once: a server's first bot tick is still 3-7 G (nobody watches its frames).
+- The command line's `--map` (no loading screen): bots stand 10-13 s on de_dust2 while the flood runs in play.
+
+Guards: `chimera_client`'s `each_hud_is_shown_then_the_playing_one_stays`, `chimera/present/tests/it/late_build.rs` (three models far over any game's size come
+in with no frame over 8 M instructions; here 3.5 M), `apps/ultimate_gun_game/tests/it/heavy/rung_frames.rs`
+(with the installs: de_dust2 headless, a bot walking a seeded ladder, each rung's worst
+main-thread frame under 45 M, ticks included; measured 12.5-27.7 M. It covers the
+simulation and the bodies' and held models' drawing, not the HUD, the render thread or
+install guns: that ladder draws only Combat Arms' own guns, so the real-app numbers above
+remain the check for those), `chimera_sim`'s
+`spots_made_a_slice_a_tick_are_the_same_spots` and `a_sliced_flood_makes_the_same_mesh`.
+
 ## Combat Arms map loads (2026-10-19)
 
 A Combat Arms map took 4-8 s to load and spawn and ~1-1.8 GB in the
@@ -1257,9 +1353,10 @@ What changed:
   user). A map now converts in 0.2-1.3 s, about what reading back its
   textures, mips and f32 lightmap (hundreds of MB) would take, and the
   session's first load is bound by the character models beside it, not
-  the world. The bots' navigation mesh (`bots::brain::ensure_nav`) is
-  still generated on the main thread: a 0.2-0.3 s tick when the first
-  bot plays (WAREHOUSE 550 areas, TERRORDOME 980).
+  the world. The bots' navigation mesh (`bots::brain::ensure_nav`) was
+  generated on the main thread in a 0.2-0.3 s tick when the first bot
+  played (WAREHOUSE 550 areas, TERRORDOME 980); a front end now takes it a
+  slice a tick ("Nothing blocks the main thread").
 
 After (`heavy::map_load`, a process per test; the first load includes
 the 2 s of weapon data the app reads at startup):

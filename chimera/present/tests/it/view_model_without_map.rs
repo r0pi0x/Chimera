@@ -1,7 +1,7 @@
 //! A view model added while no map's drawing is set up (the greybox, or
 //! before the first map: `map::add_view_model`, as Combat Arms' on-demand
 //! loads do) is drawn: `render::view_model::assets_without_map` gives the
-//! drawing assets of its own, `build_late` builds the model, and the
+//! drawing assets of its own, `build_late` builds the model (on a task), and the
 //! anchor's view-model camera shows its meshes. Before, only a map's spawn
 //! built those assets, so on the greybox the model was in `ViewModels`
 //! (and the game's placeholder stepped aside) but nothing drew it.
@@ -90,8 +90,17 @@ fn a_view_model_added_without_a_map_is_drawn() {
     // Loaded on demand, then shown.
     add_view_model(sim.app.world_mut(), gun(), Arc::new(Vec::new()));
     sim.app.world_mut().get_mut::<ViewAnimator>(owner).unwrap().key = Some(KEY.into());
-    sim.ticks(4);
+    sim.ticks(1);
     assert!(sim.app.world().get_resource::<ViewModelAssets>().is_some(), "assets without a map");
+    // Built on a task, over frames (`render::late_build`).
+    let mut frames = 0;
+    while !sim.app.world().resource::<ViewModelAssets>().has(KEY) {
+        sim.ticks(1);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        frames += 1;
+        assert!(frames < 5000, "never built");
+    }
+    sim.ticks(2);
     let world = sim.app.world_mut();
     let bodies: Vec<(Entity, Visibility, Entity)> = world
         .query::<(Entity, &ViewModelBody, &Visibility, &ChildOf)>()

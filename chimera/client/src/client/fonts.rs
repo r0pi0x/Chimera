@@ -65,7 +65,8 @@ impl Plugin for FontsPlugin {
         if let Some(mut fonts) = app.world_mut().get_resource_mut::<Assets<Font>>() {
             load_system_faces(&mut fonts, &mut ui);
         }
-        app.insert_resource(ui).add_systems(PreUpdate, take_hud_fonts);
+        app.insert_resource(ui)
+            .add_systems(PreUpdate, take_hud_fonts);
     }
 }
 
@@ -256,6 +257,10 @@ pub struct UiFonts {
     game_glyphs: HashMap<String, (super::hud_text::GlyphFont, f32)>,
     /// The system faces' file bytes, for `hud_text`.
     face_bytes: HashMap<AssetId<Font>, std::sync::Arc<Vec<u8>>>,
+    /// Each game font file made a font once (by its bytes' address, which
+    /// its `HudFont`s share): a new one each time a game's HUD comes back
+    /// would start its glyph atlases again.
+    game_loaded: HashMap<usize, (std::sync::Arc<Vec<u8>>, Handle<Font>)>,
 }
 
 impl UiFonts {
@@ -667,8 +672,12 @@ fn take_hud_fonts(hud: Option<Res<ActiveHud>>, mut fonts: Option<ResMut<Assets<F
         .collect();
     if let Some(fonts) = fonts.as_mut() {
         for (name, f) in &hud.0.fonts {
-            ui.game
-                .insert(name.clone(), (fonts.add(Font::from_bytes(f.data.to_vec())), f.tall));
+            let (_, font) = ui
+                .game_loaded
+                .entry(std::sync::Arc::as_ptr(&f.data) as usize)
+                .or_insert_with(|| (f.data.clone(), fonts.add(Font::from_bytes(f.data.to_vec()))));
+            let font = font.clone();
+            ui.game.insert(name.clone(), (font, f.tall));
         }
     }
 }

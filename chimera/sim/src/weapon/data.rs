@@ -562,6 +562,9 @@ impl WeaponData {
 #[derive(Debug, Default)]
 pub struct WeaponSet {
     pub weapons: Vec<WeaponData>,
+    /// `weapons` by id, made on the first look (a ladder's draw looks up
+    /// thousands of times in a set of thousands: `get`).
+    index: std::sync::OnceLock<bevy::platform::collections::HashMap<String, usize>>,
     pub ammo: BTreeMap<String, AmmoData>,
     /// Every entry (templates too) merged with its bases, for later sets'
     /// `base`.
@@ -570,7 +573,15 @@ pub struct WeaponSet {
 
 impl WeaponSet {
     pub fn get(&self, id: &str) -> Option<&WeaponData> {
-        self.weapons.iter().find(|w| w.id == id)
+        let index = self.index.get_or_init(|| {
+            let mut m = bevy::platform::collections::HashMap::with_capacity(self.weapons.len());
+            for (i, w) in self.weapons.iter().enumerate() {
+                // The first of an id, as a search from the front finds.
+                m.entry(w.id.to_string()).or_insert(i);
+            }
+            m
+        });
+        self.weapons.get(*index.get(id)?)
     }
 
     /// Parse `docs` ((name for errors, TOML text)); `base` and `ammo` may
@@ -640,7 +651,7 @@ impl WeaponSet {
             }
             weapons.push(w);
         }
-        Ok(Self { weapons, ammo, tables })
+        Ok(Self { weapons, index: Default::default(), ammo, tables })
     }
 
     /// The `.toml` documents in `dir`, by file name (for `parse`).

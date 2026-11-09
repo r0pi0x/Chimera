@@ -57,11 +57,16 @@ pub struct MapAttachment {
 
 /// The loaded map's view models.
 #[derive(Resource, Clone, Default)]
-pub struct ViewModels(pub Arc<Vec<MapViewModel>>);
+pub struct ViewModels(pub Arc<Vec<Arc<MapViewModel>>>);
 
 impl ViewModels {
+    /// The list of `models`.
+    pub fn of(models: impl IntoIterator<Item = MapViewModel>) -> Self {
+        Self(Arc::new(models.into_iter().map(Arc::new).collect()))
+    }
+
     pub fn get(&self, key: &str) -> Option<&MapViewModel> {
-        self.0.iter().find(|v| v.key == key)
+        self.0.iter().find(|v| v.key == key).map(|v| &**v)
     }
 }
 
@@ -74,9 +79,10 @@ pub struct LateViewModelTextures(pub HashMap<String, Arc<Vec<MapTexture>>>);
 /// Add `model` to the loaded map's view models (replacing one with its
 /// key), its meshes' textures from `textures` (indices into that list):
 /// a view model loaded after the map spawned. The drawing builds it on
-/// its next frame (`render::view_model::build_late`); until then the
+/// its next frames (`render::view_model::build_late`); until then the
 /// key draws as if it had none. With no map yet, it waits for one.
-pub fn add_view_model(world: &mut World, model: MapViewModel, textures: Arc<Vec<MapTexture>>) {
+pub fn add_view_model(world: &mut World, model: impl Into<Arc<MapViewModel>>, textures: Arc<Vec<MapTexture>>) {
+    let model = model.into();
     world
         .get_resource_or_init::<LateViewModelTextures>()
         .0

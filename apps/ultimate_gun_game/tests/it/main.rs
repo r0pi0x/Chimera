@@ -6,6 +6,7 @@
 
 mod fallbacks;
 mod heavy {
+    mod rung_frames;
     mod session_maps;
 }
 mod minimal_hud;

@@ -918,7 +918,7 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
         commands.insert_resource(CharacterModels(Arc::new(data.kit.characters.clone())));
     }
     if !data.kit.view_models.is_empty() {
-        commands.insert_resource(ViewModels(Arc::new(data.kit.view_models.clone())));
+        commands.insert_resource(ViewModels::of(data.kit.view_models.iter().cloned()));
     }
     if let Some(field) = &data.light_field {
         commands.insert_resource(LightField(field.clone()));

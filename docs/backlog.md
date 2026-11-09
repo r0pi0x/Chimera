@@ -159,15 +159,10 @@ the original's own behaviour isn't a bug (say so instead).
   RMS-12 can't break it either.
 - **RMS-12 flamethrower:** shoots what looks like smoke, not flames, and
   doesn't seem to do damage to anybody.
-- **Nothing blocks the main thread (user, 2026-11-09).** A load must never
-  cost a visible frame. After the character swap fix one rung with a Combat
-  Arms gun still costs 37 ms (31 ms CPU, 169 M instructions) on the frame of
-  the change; find what that is, it may not be a load (spawning, materials,
-  GPU upload). Reading and parsing go off the main thread; what must run on
-  it gets a per-frame budget across several frames; what shows stays until
-  the new thing is ready. Cover rung changes, character changes and map
-  transitions in every game, and pin it with a main-thread instruction limit
-  (not wall time, which a busy box makes flaky).
+- **Nothing blocks the main thread (user, 2026-11-09).** Rung and character
+  changes, a late model's arrival and the first ticks on a map no longer stop a
+  frame (docs/performance.md, "Nothing blocks the main thread", with numbers
+  and guards). Left: HUD texts at a size not shown before (20-60 M on their first frame, glyph atlases: HUDs naming their fonts and sizes ahead would let them be warmed); bots standing 10-13 s on a map loaded with no loading screen (`--map`); a map's swap frame (0.9-2.1 G main, 0.65-1.2 G render, 0.3-0.5 s with the loading screen standing still: a spawn over frames); a match's start (100 M); weapons off the ladder reading their timing on the frame; dedicated servers' nav flood in one tick.
 - **Kill feed: the crowbar's icon** is just the large word "crowbar".
 - **Scoreboard: guns still top-aligned** in their list item, a lot of the
   Combat Arms ones.

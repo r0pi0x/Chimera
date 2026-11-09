@@ -150,7 +150,7 @@ fn rpg_view_model(sim: &mut Sim, p: Entity, key: &str) -> Vec<MapAttachment> {
         attachments: attachments.clone(),
         light_origin: Vec3::ZERO,
     };
-    sim.app.insert_resource(ViewModels(std::sync::Arc::new(vec![model])));
+    sim.app.insert_resource(ViewModels::of(vec![model]));
     let eye = GlobalTransform::from(Transform::from_xyz(1.0, 2.0, 3.0));
     sim.app.world_mut().spawn((ViewModelAnchor, eye, ChildOf(p)));
     sim.app.world_mut().entity_mut(p).insert(ViewAnimator { key: Some(key.into()), ..default() });

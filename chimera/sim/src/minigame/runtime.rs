@@ -714,14 +714,18 @@ pub(super) fn plugin(app: &mut App) {
         a.is_some() && g.is_none_or(|g| g.rules == MINIGAME)
     };
     use crate::map::MapScopedApp;
+    app.init_resource::<crate::map::MapHooks>();
+    app.world_mut().resource_mut::<crate::map::MapHooks>().settle.push(super::spawns::settle_spots);
     app.init_resource::<SpawnCursor>()
         .map_scoped::<super::spawns::SpawnSpots>()
+        .map_scoped::<super::spawns::SpotsJob>()
         .add_observer(number_players)
         .add_observer(super::results::on_step)
         .add_systems(
             FixedUpdate,
             (
                 (
+                    super::spawns::prepare_spots,
                     join,
                     super::ladder::per_tick(),
                     step_phases,

@@ -1204,6 +1204,14 @@ Details and baseline numbers: [performance.md](performance.md).
   build adds the frame's spans with the most self time (`spans by self
   ms: <system> 12.3 x2, ...`). The debug UI Perf tab has the same percentiles as
   a table, with a frame-time histogram.
+- The worst single frames of a run: `CHIMERA_FRAME_LOG=<csv>` (any app with
+  the shell) writes every frame of each world as a line: its start
+  (`CLOCK_MONOTONIC`), wall and CPU ms, instructions, ticks and their
+  instructions. `tools/frame_cut.py <csv>` ranks them, and with a `perf
+  script` of the same run (its usage says how; a `profiling` build,
+  `perf record -k CLOCK_MONOTONIC`) lists what was on the thread during
+  each. Percentiles and the hitch log's one line a second hide these
+  (performance.md, "Nothing blocks the main thread").
 - What a world holds: `chimera_census [<top>]` (console; any app) counts
   entities by archetype (the `<top>` largest component sets), every
   archetype and table made (Bevy frees none), component types,

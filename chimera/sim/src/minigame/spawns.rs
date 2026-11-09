@@ -2,8 +2,10 @@
 //! whole map and out of the enemies' sight (`pick`, called by
 //! `runtime::spawn_point`).
 //!
-//! - Spots (`SpawnSpots`, made once per loaded map on the first spawn and
-//!   removed with the map, `MapScopedApp::map_scoped`): points on the
+//! - Spots (`SpawnSpots`, made once per loaded map on the first spawn, in a
+//!   front end a slice a tick from the match's start (`prepare_spots`,
+//!   `nav_gen::SliceFloods`: the map's spawn points until they are ready),
+//!   and removed with the map, `MapScopedApp::map_scoped`): points on the
 //!   floors of the map's navigation mesh (`map::nav::NavMesh`, the map's
 //!   own file or volumes; else one generated from its collision,
 //!   `map::nav_gen`, with a walking player's step: a mesh someone else
@@ -292,6 +294,16 @@ fn ensure_spots(world: &mut World, points: &[Vec3]) {
     if world.get_resource::<SpawnSpots>().is_some_and(|s| s.ready) {
         return;
     }
+    // A front end makes them a slice a tick (`prepare_spots`): the map's
+    // spawn points until they are ready.
+    if world.contains_resource::<nav_gen::SliceFloods>() {
+        if world.get_resource::<SpawnSpots>().is_none_or(|s| s.spots.is_empty()) {
+            let mut spots = world.remove_resource::<SpawnSpots>().unwrap_or_default();
+            spots.spots = points.to_vec();
+            world.insert_resource(spots);
+        }
+        return;
+    }
     let tries = world.get_resource::<SpawnSpots>().map_or(0, |s| s.tries);
     let mut spots = build(world, points, MAX_SPOTS);
     spots.tries = tries + 1;
@@ -304,6 +316,200 @@ fn ensure_spots(world: &mut World, points: &[Vec3]) {
         spots.ready = true;
     }
     world.insert_resource(spots);
+}
+
+/// The spots on their way in a front end (`prepare_spots`, `settle_spots`):
+/// the same steps as `build`, so the same spots from the same seed.
+#[derive(Resource)]
+pub struct SpotsJob {
+    points: Vec<Vec3>,
+    seed: u32,
+    hazards: Vec<MapBrush>,
+    /// The flood of the spots' mesh, where the map has none of its own.
+    flood: Option<nav_gen::NavGenJob>,
+    /// Mesh points to test, the shuffled order, and how far along.
+    raw: Vec<(f32, f32, f32)>,
+    at: usize,
+    ready_to_test: bool,
+    found: Vec<Vec3>,
+}
+
+/// Ticks between tries when the collision wasn't there yet.
+const SPOT_RETRY_TICKS: u8 = 30;
+
+/// Mesh points tested for a cell of the flood (a ray and a capsule each, a
+/// third of a cell's work).
+const SPOTS_PER_CELL: usize = 1;
+
+impl SpotsJob {
+    fn new(world: &mut World) -> Option<Self> {
+        let mut points: Vec<Vec3> = world
+            .query_filtered::<&Transform, (With<SpawnPoint>, Without<Intent>)>()
+            .iter(world)
+            .map(|t| t.translation - Vec3::Y * SPAWN_LIFT)
+            .collect();
+        if points.is_empty() {
+            return None;
+        }
+        points.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)).then(a.z.total_cmp(&b.z)));
+        let mut hazards: Vec<MapBrush> = Vec::new();
+        let sources: Vec<_> = world.get_resource::<SpawnHazards>().map(|h| h.0.clone()).unwrap_or_default();
+        for source in sources {
+            hazards.extend(source(world));
+        }
+        if let Some(water) = world.get_resource::<MapWater>() {
+            hazards.extend(water.0.iter().map(|v| v.brush.clone()));
+        }
+        let flood = world
+            .get_resource::<NavMesh>()
+            .is_none_or(|n| n.generated)
+            .then(|| nav_gen::NavGenJob::new(&points, &walker(), None));
+        Some(Self {
+            seed: seed_of(world),
+            points,
+            hazards,
+            flood,
+            raw: Vec::new(),
+            at: 0,
+            ready_to_test: false,
+            found: Vec::new(),
+        })
+    }
+
+    /// Up to `cells` cells' worth more; true when every point is tested.
+    fn slice(
+        &mut self,
+        q: &SpatialQuery,
+        characters: &[Entity],
+        nav: Option<&NavMesh>,
+        vis: Option<&MapVisibility>,
+        cells: usize,
+    ) -> bool {
+        if let Some(mut flood) = self.flood.take() {
+            match flood.step(q, &|e| characters.contains(&e), None, cells) {
+                Some(mesh) => {
+                    self.raw = raw_spots(&mesh, &self.points, self.seed);
+                    self.ready_to_test = true;
+                }
+                None => self.flood = Some(flood),
+            }
+            return false;
+        }
+        if !self.ready_to_test {
+            // The map's own mesh.
+            let Some(nav) = nav else { return true };
+            self.raw = raw_spots(nav, &self.points, self.seed);
+            self.ready_to_test = true;
+        }
+        let floor = SpatialQueryFilter::from_mask(CHARACTER_FILTER).with_excluded_entities(characters.iter().copied());
+        let capsule = Collider::capsule(RADIUS, HEIGHT - 2.0 * RADIUS - LIFT);
+        let end = self.at.saturating_add(cells.saturating_mul(SPOTS_PER_CELL)).min(self.raw.len());
+        for k in self.at..end {
+            if self.found.len() >= MAX_SPOTS {
+                break;
+            }
+            let (x, z, y) = self.raw[k];
+            if let Some(feet) = spot_ok(q, &floor, &capsule, &self.hazards, vis, Vec3::new(x, y, z)) {
+                self.found.push(feet);
+            }
+        }
+        self.at = end;
+        self.at >= self.raw.len() || self.found.len() >= MAX_SPOTS
+    }
+
+    /// The spots it found (none: the map's spawn points, and another try if
+    /// any are left).
+    fn finish(self, tries: u8) -> SpawnSpots {
+        let tries = tries + 1;
+        let empty = self.found.is_empty();
+        SpawnSpots {
+            from_nav: !empty,
+            ready: !empty || tries >= BUILD_TRIES,
+            tries,
+            spots: if empty { self.points } else { self.found },
+        }
+    }
+}
+
+/// Whether the match playing spawns on spots.
+fn spawns_on_spots(active: Option<&super::ActiveMinigame>) -> bool {
+    active.is_some_and(|a| a.def.spawn.points == super::def::Points::RandomHidden)
+}
+
+/// Make the map's spots a slice a tick where floods are sliced
+/// (`nav_gen::SliceFloods`), from the first tick the match plays: the first
+/// respawn doesn't stop the frame for them (over a thousand million
+/// instructions on de_dust2, docs/performance.md, "Nothing blocks the main
+/// thread"). `settle_spots` does it behind the loading screen where it can.
+#[allow(clippy::too_many_arguments)]
+pub fn prepare_spots(
+    floods: Option<Res<nav_gen::SliceFloods>>,
+    active: Option<Res<super::ActiveMinigame>>,
+    spots: Option<Res<SpawnSpots>>,
+    job: Option<ResMut<SpotsJob>>,
+    nav: Option<Res<NavMesh>>,
+    vis: Option<Res<ActiveVisibility>>,
+    characters: Query<Entity, With<Intent>>,
+    q: SpatialQuery,
+    mut wait: Local<u8>,
+    mut commands: Commands,
+) {
+    if floods.is_none() || !spawns_on_spots(active.as_deref()) || spots.as_ref().is_some_and(|s| s.ready) {
+        return;
+    }
+    if *wait > 0 {
+        *wait -= 1;
+        return;
+    }
+    let Some(mut job) = job else {
+        commands.queue(|w: &mut World| {
+            if let Some(job) = SpotsJob::new(w) {
+                w.insert_resource(job);
+            }
+        });
+        return;
+    };
+    let characters: Vec<Entity> = characters.iter().collect();
+    if job.slice(&q, &characters, nav.as_deref(), vis.as_ref().map(|v| &*v.0), nav_gen::CELLS_PER_TICK) {
+        let tries = spots.as_ref().map_or(0, |s| s.tries);
+        commands.queue(move |w: &mut World| {
+            if let Some(job) = w.remove_resource::<SpotsJob>() {
+                w.insert_resource(job.finish(tries));
+            }
+        });
+        // The collision may not have been built yet: another try later.
+        if job.found.is_empty() {
+            *wait = SPOT_RETRY_TICKS;
+        }
+    }
+}
+
+/// `prepare_spots` behind the loading screen (`map::MapHooks::settle`), a
+/// larger slice a frame.
+pub fn settle_spots(world: &mut World) -> bool {
+    if !world.contains_resource::<nav_gen::SliceFloods>()
+        || !spawns_on_spots(world.get_resource::<super::ActiveMinigame>())
+        || world.get_resource::<SpawnSpots>().is_some_and(|s| s.ready)
+    {
+        return true;
+    }
+    let Some(mut job) = world.remove_resource::<SpotsJob>().or_else(|| SpotsJob::new(world)) else { return true };
+    let characters: Vec<Entity> = world.iter_entities().filter(|r| r.contains::<Intent>()).map(|r| r.id()).collect();
+    let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
+    let done = {
+        let mut state = SystemState::<SpatialQuery>::new(world);
+        let Ok(q) = state.get(world) else { return true };
+        job.slice(&q, &characters, world.get_resource::<NavMesh>(), vis.as_deref(), nav_gen::CELLS_PER_LOAD_FRAME)
+    };
+    if !done {
+        world.insert_resource(job);
+        return false;
+    }
+    let tries = world.get_resource::<SpawnSpots>().map_or(0, |s| s.tries);
+    let spots = job.finish(tries);
+    let ready = spots.ready;
+    world.insert_resource(spots);
+    ready || !world.contains_resource::<nav_gen::SliceFloods>()
 }
 
 /// Every spot of the loaded map, in the order tried (no `MAX_SPOTS`
@@ -352,6 +558,29 @@ fn build(world: &mut World, points: &[Vec3], cap: usize) -> SpawnSpots {
             &generated
         }
     };
+    let raw = raw_spots(nav, points, seed);
+    let floor = SpatialQueryFilter::from_mask(CHARACTER_FILTER).with_excluded_entities(characters.iter().copied());
+    let capsule = Collider::capsule(RADIUS, HEIGHT - 2.0 * RADIUS - LIFT);
+    let mut spots = Vec::new();
+    for (x, z, y) in raw {
+        if spots.len() >= cap {
+            break;
+        }
+        if let Some(feet) = spot_ok(&q, &floor, &capsule, &hazards, vis.as_deref(), Vec3::new(x, y, z)) {
+            spots.push(feet);
+        }
+    }
+    SpawnSpots {
+        from_nav: !spots.is_empty(),
+        spots,
+        ready: false,
+        tries: 0,
+    }
+}
+
+/// The points to test on mesh `nav`, in the order tried (a seeded shuffle):
+/// (x, z, height).
+fn raw_spots(nav: &NavMesh, points: &[Vec3], seed: u32) -> Vec<(f32, f32, f32)> {
     let mut rng = Rng::new(seed);
     // Its own draws, so the shuffle's stay as they were.
     let mut nudge = Rng::new(seed ^ SPOT_NUDGE_SEED);
@@ -395,23 +624,7 @@ fn build(world: &mut World, points: &[Vec3], cap: usize) -> SpawnSpots {
         let j = ((rng.next() * (i + 1) as f32) as usize).min(i);
         raw.swap(i, j);
     }
-    let floor = SpatialQueryFilter::from_mask(CHARACTER_FILTER).with_excluded_entities(characters.iter().copied());
-    let capsule = Collider::capsule(RADIUS, HEIGHT - 2.0 * RADIUS - LIFT);
-    let mut spots = Vec::new();
-    for (x, z, y) in raw {
-        if spots.len() >= cap {
-            break;
-        }
-        if let Some(feet) = spot_ok(&q, &floor, &capsule, &hazards, vis.as_deref(), Vec3::new(x, y, z)) {
-            spots.push(feet);
-        }
-    }
-    SpawnSpots {
-        from_nav: !spots.is_empty(),
-        spots,
-        ready: false,
-        tries: 0,
-    }
+    raw
 }
 
 /// The feet of a valid standing spot near the mesh point `p`, if there is

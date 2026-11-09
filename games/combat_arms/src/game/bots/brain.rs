@@ -382,10 +382,18 @@ pub fn camping(
 // ---------------------------------------------------------------------------
 // Navigation mesh
 
+/// The navigation mesh on its way (`ensure_nav`, a front end's). Goes with
+/// the map.
+#[derive(Resource)]
+pub struct NavJob(nav_gen::NavGenJob);
+
 /// The map's navigation mesh: generated from the collision
 /// (`map::nav_gen`) once bots play on a map that has none, from its
 /// spawn points and characters, bounded to the clusters a walking player
-/// reaches where the map has visibility data (`nav_gen::Bounds`).
+/// reaches where the map has visibility data (`nav_gen::Bounds`). A front end
+/// does it behind the loading screen (`settle_nav`), and what that leaves a
+/// slice each tick (`nav_gen::SliceFloods`), bots standing until it is done;
+/// a dedicated server floods at once.
 pub fn ensure_nav(world: &mut World) {
     if world.contains_resource::<NavMesh>() {
         // The brains' shared copy, kept with the map's mesh.
@@ -412,6 +420,25 @@ pub fn ensure_nav(world: &mut World) {
     if world.query_filtered::<(), With<CaBot>>().iter(world).next().is_none() {
         return;
     }
+    let slice = if world.contains_resource::<nav_gen::SliceFloods>() { nav_gen::CELLS_PER_TICK } else { usize::MAX };
+    nav_slice(world, slice);
+}
+
+/// Behind the loading screen (`MapHooks::settle`): the navigation mesh of a
+/// map bots are going to play, so they walk from the first frame shown.
+pub fn settle_nav(world: &mut World) -> bool {
+    let settings = world.resource::<BotSettings>();
+    let client = world.get_resource::<crate::core::NetRole>().is_some_and(|r| *r == crate::core::NetRole::Client);
+    if settings.quota == 0 || client || world.contains_resource::<NavMesh>() {
+        return true;
+    }
+    nav_slice(world, nav_gen::CELLS_PER_LOAD_FRAME);
+    world.contains_resource::<NavMesh>()
+}
+
+/// Up to `cells` cells more of the map's navigation mesh (`NavJob`), inserted
+/// when it is done.
+fn nav_slice(world: &mut World, cells: usize) {
     let mut seeds: Vec<Vec3> = world
         .query_filtered::<&Transform, With<crate::core::SpawnPoint>>()
         .iter(world)
@@ -425,11 +452,13 @@ pub fn ensure_nav(world: &mut World) {
     );
     let ignore = SnapQueries::new(world).moving_bodies(world);
     // The map's AI volumes where it has them (`map_ai`).
-    if let Some(mesh) = MapAi::of(world).and_then(|ai| {
-        let mut state = SystemState::<SpatialQuery>::new(world);
-        let q = state.get(world).unwrap();
-        ai.nav_mesh(UNIT, |min, max| volume_floor(&q, &ignore, min, max))
-    }) {
+    if !world.contains_resource::<NavJob>()
+        && let Some(mesh) = MapAi::of(world).and_then(|ai| {
+            let mut state = SystemState::<SpatialQuery>::new(world);
+            let q = state.get(world).unwrap();
+            ai.nav_mesh(UNIT, |min, max| volume_floor(&q, &ignore, min, max))
+        })
+    {
         info!("bots: the map's {} AI volumes as navigation areas", mesh.areas.len());
         world.insert_resource(mesh);
         return;
@@ -441,17 +470,21 @@ pub fn ensure_nav(world: &mut World) {
     if let Some(radius) = world.get_resource::<BotSettings>().and_then(|s| s.walker_radius) {
         params.radius = radius;
     }
+    let mut job = world
+        .remove_resource::<NavJob>()
+        .unwrap_or_else(|| NavJob(nav_gen::NavGenJob::new(&seeds, &params, vis.is_some().then(nav_gen::walking_player))));
     let mesh = {
         let mut state = SystemState::<SpatialQuery>::new(world);
         let q = state.get(world).unwrap();
-        let bounds = vis.as_deref().map(|vis| nav_gen::Bounds {
-            vis,
-            walker: nav_gen::walking_player(),
-        });
-        nav_gen::generate_within(&q, &|e| ignore.contains(&e), &seeds, &params, bounds)
+        job.0.step(&q, &|e| ignore.contains(&e), vis.as_deref(), cells)
     };
-    info!("bots: generated a navigation mesh of {} areas", mesh.areas.len());
-    world.insert_resource(mesh);
+    match mesh {
+        Some(mesh) => {
+            info!("bots: generated a navigation mesh of {} areas", mesh.areas.len());
+            world.insert_resource(mesh);
+        }
+        None => world.insert_resource(job),
+    }
 }
 
 /// How far under an AI volume's box its floor may be (m, ours).

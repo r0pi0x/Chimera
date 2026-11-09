@@ -104,7 +104,7 @@ fn sim() -> Sim {
         .add_systems(Update, collect.after(DriveAnimation));
     // v_rif_ak47 and v_knife_t's sequences as in the install (dump
     // --sequences; durations match the spec's table).
-    sim.app.insert_resource(ViewModels(Arc::new(vec![
+    sim.app.insert_resource(ViewModels::of(vec![
         view_model(
             AK47,
             &[
@@ -210,7 +210,7 @@ fn sim() -> Sim {
                 ("draw", "ACT_VM_DRAW", 31, 30.0, false),
             ],
         ),
-    ])));
+    ]));
     sim
 }
 

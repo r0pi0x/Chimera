@@ -171,6 +171,23 @@ impl ThreadCounters {
     }
 }
 
+/// `CLOCK_MONOTONIC` in ns (Unix): what `perf record -k CLOCK_MONOTONIC`
+/// stamps its samples with, so a frame log's frames can be cut out of a
+/// profile (`client::frame_metrics`, `CHIMERA_FRAME_LOG`).
+pub fn monotonic_ns() -> Option<u64> {
+    #[cfg(unix)]
+    {
+        let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+        // SAFETY: `ts` is a valid, writable timespec.
+        let r = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
+        (r == 0).then(|| ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64)
+    }
+    #[cfg(not(unix))]
+    {
+        None
+    }
+}
+
 /// The calling thread's CPU time so far, nanoseconds.
 pub fn thread_cpu_ns() -> Option<u64> {
     #[cfg(unix)]

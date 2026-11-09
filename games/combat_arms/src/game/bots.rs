@@ -441,6 +441,7 @@ pub struct CaBotsPlugin;
 
 impl Plugin for CaBotsPlugin {
     fn build(&self, app: &mut App) {
+        use crate::map::MapScopedApp;
         let server = crate::core::authoritative;
         app.add_message::<chat::CaBotChat>()
             .add_message::<chat::CaBotEvent>()
@@ -451,6 +452,8 @@ impl Plugin for CaBotsPlugin {
             .init_resource::<brain::Stimuli>()
             .init_resource::<brain::PatrolClock>()
             .init_resource::<brain::BotFrames>()
+            .map_scoped::<brain::NavJob>()
+            .init_resource::<crate::map::MapHooks>()
             .add_systems(
                 FixedUpdate,
                 (
@@ -468,6 +471,7 @@ impl Plugin for CaBotsPlugin {
                     // rules', or a minigame's that names them).
                     .run_if(crate::gameplay::bots_are(super::GAME)),
             );
+        app.world_mut().resource_mut::<crate::map::MapHooks>().settle.push(brain::settle_nav);
         // The network's `kick <name>` and its quota at serving's start.
         crate::gameplay::GameplayAppExt::game_hook(app, super::GAME, crate::net::BotHooks {
             kick: |w, e| {

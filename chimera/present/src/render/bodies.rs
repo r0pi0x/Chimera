@@ -13,10 +13,10 @@
 //! (`DynamicSkinnedMeshBounds`, not the bind pose's), lit where they are
 //! (`probe_lit`); `PlayModels`/`HeldAssets` are built when the map
 //! spawns (`render::spawn`), held models a game adds later
-//! (`map::add_held_model`) on the next frame and again on each map
-//! (`build_late_held`), and character models a game adds later
-//! (`map::add_character_model`, appended to each map's `CharacterModels`)
-//! likewise (`build_late_bodies`); face parts (`map::face`: eyeballs with
+//! (`map::add_held_model`) on a task and over the next frames, and again on
+//! each map (`build_late_held`, `render::late_build`), and character models a
+//! game adds later (`map::add_character_model`, appended to each map's
+//! `CharacterModels`) likewise (`build_late_bodies`); face parts (`map::face`: eyeballs with
 //! their iris projected toward the character's `EyeTarget`, teeth) set
 //! each frame from where the pose puts the head (`aim_faces`), face meshes
 //! with flexes drawn from the body's own copy, moved by the character's
@@ -46,7 +46,12 @@ use std::collections::HashMap;
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
-use super::{build_mesh, probe_lit, prop_material::PropMaterial};
+use super::{
+    build_mesh,
+    late_build::{AddAsset, LateQueue, LateStores, Providers, Stores},
+    probe_lit,
+    prop_material::PropMaterial,
+};
 #[allow(unused_imports)]
 use crate::map::*;
 use crate::{
@@ -95,13 +100,60 @@ pub struct HeldLateBase {
     pub lit: bool,
     pub view: MapDebugView,
     pub root: Option<Transform>,
+    /// This spawn (`late_build::next_generation`): what was being built for
+    /// an earlier map is dropped.
+    pub generation: u64,
+}
+
+impl HeldLateBase {
+    /// What a task needs of it.
+    fn for_task(&self) -> LateBase {
+        LateBase {
+            data: MapData {
+                fog: self.data.fog.clone(),
+                look: self.data.look.clone(),
+                ..default()
+            },
+            lit: self.lit,
+            view: self.view,
+            root: self.root,
+        }
+    }
+}
+
+/// `HeldLateBase` as a task owns it.
+struct LateBase {
+    data: MapData,
+    lit: bool,
+    view: MapDebugView,
+    root: Option<Transform>,
+}
+
+impl LateBase {
+    /// A late model's material for mesh `m`.
+    fn material(&self, m: &MapMesh, textures: &[Handle<Image>]) -> PropMaterial {
+        let mut material = super::lit_prop_material(m, textures, &self.data, self.view, false);
+        if !m.unlit && self.view != MapDebugView::Albedo && self.lit {
+            material.params.set_probe(&crate::map::LightProbe::default(), 1.0);
+        }
+        material
+    }
+}
+
+/// Mesh `m` as the GPU's alone: nothing in the main world reads a model's
+/// vertices once it is drawn (its bounds stay with the mesh), and a mesh the main world
+/// keeps is copied whole there to go to the render world.
+fn gpu_only(mut mesh: Mesh) -> Mesh {
+    mesh.asset_usage = bevy::asset::RenderAssetUsages::RENDER_WORLD;
+    mesh
 }
 
 /// Build the held models added after the map spawned
 /// (`map::add_held_model`) that the map's `HeldAssets` lack (none at
 /// first after each map spawn): their own textures as images, their
 /// meshes and materials as the spawn builds the kit's, and their loose
-/// (dropped) form.
+/// (dropped) form, on a task and over the next frames (`late_build`): a
+/// weapon whose model is not ready waits with the hand it had.
 #[allow(clippy::too_many_arguments)]
 pub fn build_late_held(
     late: Option<Res<LateHeldModels>>,
@@ -111,58 +163,72 @@ pub fn build_late_held(
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     materials: Option<ResMut<Assets<PropMaterial>>>,
+    mut bindposes: ResMut<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>,
     compressed: Option<Res<bevy::image::CompressedImageFormatSupport>>,
+    mut queue: Local<LateQueue<(HeldParts, Option<crate::map::loose::LooseAsset>)>>,
 ) {
     let (Some(late), Some(base), Some(mut held), Some(mut materials)) = (late, base, held, materials) else {
         return;
     };
     let mut loose = loose;
-    let missing: Vec<_> = late.0.iter().filter(|(h, _)| !held.0.contains_key(&h.key)).collect();
-    for (h, own) in missing {
-        let bc = super::images::bc_wanted(compressed.as_deref());
-        let textures: Vec<Handle<Image>> = own
-            .iter()
-            .map(|t| images.add(super::images::to_image(t, &base.data.look, bc)))
-            .collect();
-        let mut build = |model: &MapModel| -> Vec<(Handle<Mesh>, Handle<PropMaterial>)> {
-            model
-                .meshes
-                .iter()
-                .map(|m| {
-                    let mut material = super::lit_prop_material(m, &textures, &base.data, base.view, false);
-                    if !m.unlit && base.view != MapDebugView::Albedo && base.lit {
-                        material.params.set_probe(&crate::map::LightProbe::default(), 1.0);
-                    }
-                    (meshes.add(build_mesh(m, false)), materials.add(material))
-                })
-                .collect()
-        };
-        let whole = build(&h.model);
-        let own_parts = h.own.as_ref().map_or_else(|| whole.clone(), &mut build);
-        let merged = h.merged.iter().map(|(b, m)| (b.clone(), build(m))).collect();
-        held.0.insert(
-            h.key.clone(),
-            HeldParts {
+    queue.for_generation(base.generation);
+    let mut to = LateStores {
+        images: &mut images,
+        stores: Stores {
+            meshes: &mut meshes,
+            materials: &mut materials,
+            bindposes: &mut bindposes,
+        },
+    };
+    let bc = super::images::bc_wanted(compressed.as_deref());
+    for (h, own) in late.0.iter().filter(|(h, _)| !held.0.contains_key(&h.key)) {
+        if queue.has(&h.key) {
+            continue;
+        }
+        let (h, own, base) = (h.clone(), own.clone(), base.for_task());
+        queue.start(h.key.clone(), Providers::of(&to), move |stage| {
+            let textures: Vec<Handle<Image>> =
+                own.iter().map(|t| stage.add_asset(super::images::to_image(t, &base.data.look, bc))).collect();
+            let mut build = |model: &MapModel| -> Vec<(Handle<Mesh>, Handle<PropMaterial>)> {
+                model
+                    .meshes
+                    .iter()
+                    .map(|m| {
+                        let mesh = stage.add_asset(gpu_only(build_mesh(m, false)));
+                        (mesh, stage.add_asset(base.material(m, &textures)))
+                    })
+                    .collect()
+            };
+            let whole = build(&h.model);
+            let own_parts = h.own.as_ref().map_or_else(|| whole.clone(), &mut build);
+            let merged = h.merged.iter().map(|(b, m)| (b.clone(), build(m))).collect();
+            let parts = HeldParts {
                 bone: h.bone.clone(),
                 whole,
                 own: own_parts,
                 muzzle: h.muzzle,
                 attachments: h.attachments.clone(),
                 merged,
-            },
-        );
-        if let (Some(loose), Some(root)) = (loose.as_mut(), base.root)
-            && !loose.0.contains_key(&h.key)
+            };
+            (parts, base.root.map(|root| crate::map::loose::asset(&h, root)))
+        });
+    }
+    if let Some((key, (parts, shape))) = queue.step(&mut to) {
+        if let (Some(loose), Some(shape)) = (loose.as_mut(), shape)
+            && !loose.0.contains_key(&key)
         {
-            loose.0.insert(h.key.clone(), crate::map::loose::asset(h, root));
+            loose.0.insert(key.clone(), shape);
         }
+        held.0.insert(key, parts);
     }
 }
 
 /// Build the character models appended after the map spawned
 /// (`map::LateCharacterModels`, `map::append_late_characters`) that the
 /// map's `PlayModels` lack (by index: they come after the map's own), as
-/// the spawn builds the kit's, with their own textures.
+/// the spawn builds the kit's, with their own textures, on a task and over
+/// the next frames (`late_build`): until then the character wears what it
+/// wore (`attach_bodies`).
 #[allow(clippy::too_many_arguments)]
 pub fn build_late_bodies(
     late: Option<Res<crate::map::LateCharacterModels>>,
@@ -174,29 +240,38 @@ pub fn build_late_bodies(
     materials: Option<ResMut<Assets<PropMaterial>>>,
     mut bindposes: ResMut<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>,
     compressed: Option<Res<bevy::image::CompressedImageFormatSupport>>,
+    mut queue: Local<LateQueue<BodyAssets>>,
 ) {
     let (Some(late), Some(models), Some(base), Some(mut play), Some(mut materials)) = (late, models, base, play, materials)
     else {
         return;
     };
+    queue.for_generation(base.generation);
     if play.bodies.len() >= models.0.len() {
         return;
     }
-    for c in models.0.iter().skip(play.bodies.len()) {
+    let mut to = LateStores {
+        images: &mut images,
+        stores: Stores {
+            meshes: &mut meshes,
+            materials: &mut materials,
+            bindposes: &mut bindposes,
+        },
+    };
+    let bc = super::images::bc_wanted(compressed.as_deref());
+    // The next ones not on their way (they come out in this order).
+    for c in models.0.iter().skip(play.bodies.len() + queue.len()) {
         // An appended model is a late one; anything else (the map's own:
         // none past the built ones) leaves the rest unbuilt.
-        let Some((_, own)) = c.name.as_deref().and_then(|n| late.get(n)) else { return };
-        let bc = super::images::bc_wanted(compressed.as_deref());
-        let textures: Vec<Handle<Image>> =
-            own.iter().map(|t| images.add(super::images::to_image(t, &base.data.look, bc))).collect();
-        let material = |m: &MapMesh| {
-            let mut material = super::lit_prop_material(m, &textures, &base.data, base.view, false);
-            if !m.unlit && base.view != MapDebugView::Albedo && base.lit {
-                material.params.set_probe(&crate::map::LightProbe::default(), 1.0);
-            }
-            material
-        };
-        let assets = body_assets(&c.model, &c.bones, c.root, &mut meshes, &mut materials, &mut bindposes, &material);
+        let Some((c, own)) = c.name.as_deref().and_then(|n| late.get(n)) else { break };
+        let (c, own, base) = (c.clone(), own.clone(), base.for_task());
+        queue.start(c.name.clone().unwrap_or_default(), Providers::of(&to), move |stage| {
+            let textures: Vec<Handle<Image>> =
+                own.iter().map(|t| stage.add_asset(super::images::to_image(t, &base.data.look, bc))).collect();
+            body_assets_into(&c.model, &c.bones, c.root, stage, &|m| base.material(m, &textures))
+        });
+    }
+    if let Some((_, assets)) = queue.step(&mut to) {
         play.bodies.push(assets);
     }
 }
@@ -850,7 +925,23 @@ pub fn body_assets(
     bindposes: &mut Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
     material: &dyn Fn(&MapMesh) -> PropMaterial,
 ) -> BodyAssets {
-    let mut skinned_mesh = |m: &MapMesh| {
+    let mut stores = Stores { meshes, materials, bindposes };
+    body_assets_into(model, bones, root, &mut stores, material)
+}
+
+/// `body_assets`, its assets going to `to`: a map's stores or a late model's
+/// `late_build::Stage`.
+pub fn body_assets_into<T>(
+    model: &MapModel,
+    bones: &[MapBone],
+    root: Transform,
+    to: &mut T,
+    material: &dyn Fn(&MapMesh) -> PropMaterial,
+) -> BodyAssets
+where
+    T: AddAsset<Mesh> + AddAsset<PropMaterial> + AddAsset<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
+{
+    let skinned_mesh = |m: &MapMesh, to: &mut T| {
         let mut mesh = build_mesh(m, false);
         if m.joints.len() == m.positions.len() && !bones.is_empty() {
             mesh.insert_attribute(
@@ -862,12 +953,17 @@ pub fn body_assets(
             // (`DynamicSkinnedMeshBounds`) instead of the bind pose's.
             let _ = mesh.generate_skinned_mesh_bounds();
         }
-        meshes.add(mesh)
+        // A face with flexes is copied for each body from the main world's
+        // (`attach_bodies`); no other part is read there.
+        to.add_asset(if m.morphs.is_empty() { gpu_only(mesh) } else { mesh })
     };
     let parts: Vec<(Handle<Mesh>, Handle<PropMaterial>)> = model
         .meshes
         .iter()
-        .map(|m| (skinned_mesh(m), materials.add(material(m))))
+        .map(|m| {
+            let mesh = skinned_mesh(m, to);
+            (mesh, to.add_asset(material(m)))
+        })
         .collect();
     // Lower levels (a level without a part keeps the finer one's).
     let levels: Vec<Vec<Handle<Mesh>>> = parts
@@ -877,7 +973,7 @@ pub fn body_assets(
             let mut levels = vec![root.clone()];
             for l in &model.lods {
                 let h = match l.meshes.get(k).and_then(Option::as_ref) {
-                    Some(lm) => skinned_mesh(lm),
+                    Some(lm) => skinned_mesh(lm, to),
                     None => levels.last().cloned().unwrap_or_default(),
                 };
                 levels.push(h);
@@ -903,7 +999,7 @@ pub fn body_assets(
                 .meshes
                 .iter()
                 .zip(looks)
-                .map(|(m, look)| materials.add(material(&look.apply(m))))
+                .map(|(m, look)| to.add_asset(material(&look.apply(m))))
                 .collect()
         })
         .collect();
@@ -923,7 +1019,7 @@ pub fn body_assets(
         levels,
         lod_group,
         skins,
-        bindposes: bindposes.add(bevy::mesh::skinning::SkinnedMeshInverseBindposes::from(inverse)),
+        bindposes: to.add_asset(bevy::mesh::skinning::SkinnedMeshInverseBindposes::from(inverse)),
         bones: bones.to_vec(),
         skeleton: anim::skeleton_signature(bones.iter().map(|b| (b.name.as_str(), b.parent))),
         root,
@@ -1126,10 +1222,12 @@ mod late_held_tests {
     /// `HeldAssets`) it is built again.
     #[test]
     fn late_held_models_are_built() {
+        bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::default);
         let mut app = App::new();
         app.init_resource::<Assets<Image>>()
             .init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<PropMaterial>>()
+            .init_resource::<Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>>()
             .insert_resource(HeldAssets(HashMap::new()))
             .init_resource::<crate::map::loose::LooseAssets>()
             .insert_resource(HeldLateBase {
@@ -1137,6 +1235,7 @@ mod late_held_tests {
                 lit: false,
                 view: MapDebugView::Normal,
                 root: Some(Transform::IDENTITY),
+                generation: 1,
             })
             .add_systems(Update, build_late_held);
         let mesh = MapMesh {
@@ -1169,7 +1268,18 @@ mod late_held_tests {
             bc: None,
         };
         crate::map::add_held_model(app.world_mut(), model, Arc::new(vec![texture]));
-        app.update();
+        // It comes from a task, over frames (`late_build`).
+        let until_built = |app: &mut App| {
+            for _ in 0..20_000 {
+                app.update();
+                if app.world().resource::<HeldAssets>().0.contains_key("game:gun") {
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_micros(100));
+            }
+            panic!("never built");
+        };
+        until_built(&mut app);
         let parts = &app.world().resource::<HeldAssets>().0["game:gun"];
         assert_eq!((parts.bone.as_str(), parts.whole.len(), parts.own.len()), ("hand", 1, 1));
         let material = app.world().resource::<Assets<PropMaterial>>().get(&parts.whole[0].1).unwrap();
@@ -1177,7 +1287,6 @@ mod late_held_tests {
         assert!(app.world().resource::<crate::map::loose::LooseAssets>().0.contains_key("game:gun"));
         // The next map's spawn replaces `HeldAssets`.
         app.world_mut().insert_resource(HeldAssets(HashMap::new()));
-        app.update();
-        assert!(app.world().resource::<HeldAssets>().0.contains_key("game:gun"));
+        until_built(&mut app);
     }
 }

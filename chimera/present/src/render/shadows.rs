@@ -851,6 +851,10 @@ pub struct ShadowSource {
     pub blob_material: Option<Handle<ShadowMaterial>>,
 }
 
+/// Physics props' shadows redrawn a frame (`update_prop_shadows`; a redraw is
+/// about 0.8 ms, its silhouette over its triangles).
+const REDRAWS_PER_FRAME: usize = 6;
+
 /// Build the map's prop shadows as shadow detail asks: render-to-texture
 /// (Medium, High), blobs straight down (Low) or none (`r_shadows 0`);
 /// again, at once, when it changes (physics props where they are now,
@@ -1091,7 +1095,9 @@ pub struct ShadowState {
 /// keep their shadow until they have moved by a quarter of a shadow texel
 /// (`moved_visibly`), and a redrawn cell updates only its part of
 /// the atlas image: with seven props rebuilt and the whole atlas converted
-/// every frame this cost 16 ms a frame there.
+/// every frame this cost 16 ms a frame there. At most `REDRAWS_PER_FRAME` a
+/// frame, the others waiting at their latest pose (a map's props settling
+/// in its first seconds).
 #[allow(clippy::type_complexity)]
 pub fn update_prop_shadows(
     mut commands: Commands,
@@ -1105,11 +1111,13 @@ pub fn update_prop_shadows(
     shadow_meshes: Query<&Mesh3d, With<PropShadow>>,
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut waiting: Local<std::collections::BTreeMap<usize, (Vec3, Quat)>>,
 ) {
     let Some(mut state) = state else {
         shown.clear();
         return;
     };
+    let state_added = state.is_added();
     let state = &mut *state;
     for index in &hidden {
         if let Some(e) = state.entities.get(&index.0) {
@@ -1128,22 +1136,33 @@ pub fn update_prop_shadows(
         }
     }
     let mut redrawn: Vec<Cell> = Vec::new();
+    // A map's physics props settling in its first seconds would all redraw
+    // at once: a frame's share, each at its latest pose; the rest wait.
+    if state_added {
+        waiting.clear();
+    }
     for (index, t) in &moved {
-        let Some(cell) = state.cells.get(&index.0).copied() else {
+        waiting.insert(index.0, (t.translation, t.rotation));
+    }
+    let mut share = REDRAWS_PER_FRAME;
+    while share > 0 {
+        let Some((index, (translation, rotation))) = waiting.pop_first() else { break };
+        let Some(cell) = state.cells.get(&index).copied() else {
             continue;
         };
-        let model = &state.data.models[state.data.props[index.0].model];
-        if let Some(&from) = state.built.get(&index.0)
-            && !moved_visibly(model.bounds, cell.size, from, (t.translation, t.rotation))
+        let model = &state.data.models[state.data.props[index].model];
+        if let Some(&from) = state.built.get(&index)
+            && !moved_visibly(model.bounds, cell.size, from, (translation, rotation))
         {
             continue;
         }
-        state.built.insert(index.0, (t.translation, t.rotation));
+        share -= 1;
+        state.built.insert(index, (translation, rotation));
         let mesh = if state.blob {
             let frame = ShadowFrame::blob(
                 model.bounds,
-                t.translation,
-                t.rotation,
+                translation,
+                rotation,
                 DOWN,
                 state.settings.distance,
             );
@@ -1156,11 +1175,11 @@ pub fn update_prop_shadows(
                 &state.receivers,
                 &mut state.atlas,
                 &cell,
-                t.translation,
-                t.rotation,
+                translation,
+                rotation,
             )
         };
-        match (mesh, state.entities.get(&index.0).copied()) {
+        match (mesh, state.entities.get(&index).copied()) {
             (Some(mesh), Some(e)) => match shadow_meshes.get(e) {
                 // The same mesh asset, rewritten: a new handle every
                 // frame left the shadow undrawn while its prop moved
@@ -1187,9 +1206,9 @@ pub fn update_prop_shadows(
             (Some(mesh), None) => {
                 let e = commands
                     .spawn((
-                        Name::new(format!("Shadow of prop {}", index.0)),
+                        Name::new(format!("Shadow of prop {}", index)),
                         MapPart,
-                        PropShadow { prop: index.0 },
+                        PropShadow { prop: index },
                         Mesh3d(meshes.add(mesh)),
                         MeshMaterial3d(state.material.clone()),
                         bevy::light::NotShadowCaster,
@@ -1197,11 +1216,11 @@ pub fn update_prop_shadows(
                         ChildOf(state.root),
                     ))
                     .id();
-                state.entities.insert(index.0, e);
+                state.entities.insert(index, e);
             }
             (None, Some(e)) => {
                 commands.entity(e).despawn();
-                state.entities.remove(&index.0);
+                state.entities.remove(&index);
             }
             (None, None) => {}
         }

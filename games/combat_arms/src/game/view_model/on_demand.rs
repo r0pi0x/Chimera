@@ -61,7 +61,7 @@ pub struct LoadOnDemand;
 /// A weapon's view model as loaded: its textures, which its meshes'
 /// indices name.
 pub struct LoadedViewModel {
-    pub model: MapViewModel,
+    pub model: Arc<MapViewModel>,
     pub textures: Arc<Vec<MapTexture>>,
     /// What didn't load with it (the hands): the map's warnings would
     /// have said.
@@ -135,7 +135,7 @@ pub fn load_weapon(ca: &CaDataInner, id: &str, file: &dyn Fn(&str) -> Option<Vec
         }
     }
     Ok(LoadedViewModel {
-        model: v,
+        model: Arc::new(v),
         textures: Arc::new(own.textures),
         warnings,
     })
@@ -151,7 +151,7 @@ fn load_with_parts(ca: &CaDataInner, key: &str, base: &str, file: &dyn Fn(&str) 
         .get(base)
         .and_then(|w| w.hook::<super::super::attachments::AttachParams>(super::super::attachments::ATTACHMENTS))
         .unwrap_or_default();
-    let mut model = bare.model.clone();
+    let mut model = (*bare.model).clone();
     model.key = key.to_string();
     let mut own = MapData {
         textures: (*bare.textures).clone(),
@@ -164,7 +164,7 @@ fn load_with_parts(ca: &CaDataInner, key: &str, base: &str, file: &dyn Fn(&str) 
         }
     }
     Ok(LoadedViewModel {
-        model,
+        model: Arc::new(model),
         textures: Arc::new(own.textures),
         warnings,
     })
