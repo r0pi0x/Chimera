@@ -162,10 +162,6 @@ the original's own behaviour isn't a bug (say so instead).
   pieces don't show them. Breakable glass itself is right (13 of these on
   dm_lockdown, shared Source code: specs/source/breakables.md). Check
   specs/cs_source/impact_effects.md and whether CS:S's glass has the same bug.
-- **Ultimate Gun Game: no gun pickups (decision).** HL2:DM's guns on the
-  ground can be picked up there, and shouldn't. Turn off gun pickups in UGG
-  (every game's, map-placed or dropped), as a rule the mode sets, so other
-  pickups stay possible later.
 - **Ultimate Gun Game's HUD changed:** the CS:S HUD there looks different
   now, a recent regression by the user's account (no change was meant to
   touch it; bisect it). The level-up text is far too big on some HUDs.

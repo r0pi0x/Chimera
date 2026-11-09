@@ -289,7 +289,9 @@ fn receive_drops(mut requests: MessageReader<FromClient<DropRequest>>, players: 
         let Ok(p) = players.get(client) else { continue };
         let character = p.character;
         commands.queue(move |w: &mut World| {
-            crate::weapon::drop::drop_weapon(w, character, true);
+            if crate::weapon::drop::drops_refused(w).is_none() {
+                crate::weapon::drop::drop_weapon(w, character, true);
+            }
         });
     }
 }

@@ -411,6 +411,11 @@ fn begin(world: &mut World, id: &str, fresh: bool) -> Result<&'static MinigameDe
         restart(world);
     }
     world.remove_resource::<crate::weapon::drop::NoDeathDrops>();
+    if def.pickups.weapons {
+        world.remove_resource::<crate::weapon::drop::NoWeaponPickups>();
+    } else {
+        world.insert_resource(crate::weapon::drop::NoWeaponPickups);
+    }
     (rules.start)(world, def);
     let modifiers: Vec<(Modifier, toml::Value)> = def
         .modifiers
