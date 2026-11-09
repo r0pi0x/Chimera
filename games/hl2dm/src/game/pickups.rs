@@ -13,7 +13,8 @@
 //!   its type, no weapon of it needed, and is used up whole even when only
 //!   part fitted (`BaseCombatCharacter.AmmoPickup`, the `ammo_pickup`
 //!   event); a box of a type HL2:DM lacks (flares, sniper rounds) is never
-//!   taken. A taken item fires `OnPlayerTouch` and comes back 30 s later
+//!   taken. Held by a gravity gun an item's touch box is grown 48 on every
+//!   side, so pulling it in takes it (gravity_gun.md 11, measured). A taken item fires `OnPlayerTouch` and comes back 30 s later
 //!   at the spot where it first came to rest, with `AlyxEMP.Charge`
 //!   (Chimera's `weapon::respawn`, `sv_hl2mp_item_respawn_time`), or with
 //!   spawnflag 1 << 30 is removed; one moved more than 64 units away
@@ -47,8 +48,6 @@
 //!   `emptyclick` sequence isn't played. `Recharge`/`SetCharge` arrive as
 //!   `MapEntityInput`s (`set_pieces` registers the classes); the value
 //!   outputs go out as `FireEntityOutputValue`s.
-//! - A held item's bigger touch box (the gravity gun's feeding) waits for
-//!   the gravity gun (M6).
 
 use avian3d::prelude::{Collider, CollisionLayers, LayerMask, LinearDamping, Mass, RigidBody};
 use bevy::prelude::*;
@@ -88,6 +87,10 @@ pub const NO_RESPAWN: i64 = 1 << 30;
 pub const ITEM_HALF: f32 = 8.0;
 const TOUCH_SIDE: f32 = 24.0;
 const TOUCH_UP: f32 = 12.0;
+/// Held by a gravity gun: its touch box grown this much on every side
+/// (gravity_gun.md 11, test 59; measured: a battery pulled toward the bot
+/// is taken on the way, Open questions 6).
+const TOUCH_HELD: f32 = 48.0;
 /// An item's mass (kg).
 const ITEM_MASS: f32 = 2.0;
 /// Chargers: pools, the armour caps, the charge gap, switch-off, deny
@@ -425,18 +428,19 @@ type Touchers<'w, 's> = Query<
 /// movement: `OnCacheInteraction` each tick of a touch in sight; a taken
 /// item goes away to come back (`respawn::taken`).
 fn touch(
-    items: Query<(Entity, &Transform, &Pickup), Without<Respawning>>,
+    items: Query<(Entity, &Transform, &Pickup, Has<crate::map::held::Held>), Without<Respawning>>,
     players: Touchers,
     spatial: avian3d::prelude::SpatialQuery,
     mut outputs: MessageWriter<FireEntityOutput>,
     mut commands: Commands,
 ) {
     let mut taken_by: Vec<Entity> = Vec::new();
-    for (item, t, p) in &items {
-        let half = Vec3::new(ITEM_HALF + TOUCH_SIDE, 0.0, ITEM_HALF + TOUCH_SIDE) * UNIT;
+    for (item, t, p, held) in &items {
+        let (side, up, down) = if held { (TOUCH_HELD, TOUCH_HELD, TOUCH_HELD) } else { (TOUCH_SIDE, TOUCH_UP, 0.0) };
+        let half = Vec3::new(ITEM_HALF + side, 0.0, ITEM_HALF + side) * UNIT;
         let bottom = t.translation - Vec3::Y * ITEM_HALF * UNIT;
-        let lo = bottom - Vec3::new(half.x, 0.0, half.z);
-        let hi = bottom + Vec3::new(half.x, (2.0 * ITEM_HALF + TOUCH_UP) * UNIT, half.z);
+        let lo = bottom - Vec3::new(half.x, down * UNIT, half.z);
+        let hi = bottom + Vec3::new(half.x, (2.0 * ITEM_HALF + up) * UNIT, half.z);
         let centre = t.translation;
         for (who, pt, state, health, armor, suit) in &players {
             if health.current <= 0.0 || taken_by.contains(&item) {

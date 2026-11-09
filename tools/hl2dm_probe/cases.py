@@ -1099,11 +1099,148 @@ def models(r):
     change_map(r, "dm_lockdown", 0)
 
 
+def punt_shove(r, a, b, mass, dist=200):
+    """The bot `b` a crate is punted into (gravity_gun.md 13): the crate's
+    and b's forward steps (in/s) around the hit, hit's row first."""
+    probe.wait_alive(r)
+    r.exec(f"probe_bot {a}")
+    arm(r, "weapon_physcannon")
+    r.exec("probe_track clear")
+    probe.run_full(r, measure.start(), hold(30, 0, 0, 0, 0, 180, select="weapon_physcannon"))
+    r.exec(f"probe_tp {b} {SPOT[0] - dist} {SPOT[1]} {SPOT[2]} 0 0")
+    r.exec(f"probe_setprop {b} data m_iHealth int 5000")
+    r.exec(f"probe_setprop {b} data m_ArmorValue int 0")
+    idx = r.exec(f"probe_prop prop_physics {CRATE} {SPOT[0] - 50} {SPOT[1]} {SPOT[2] + 64} {mass} 72").split()[-1]
+    r.exec(f"probe_track {b}")
+    out = probe.run_full(r, measure.start(), hold(1, ATTACK, 0, 0, 0, 180) + hold(60, 0, 0, 0, 0, 180))
+    crate = {int(x[0]): x for x in out["ents"] if x[1] == idx}
+    bot_rows = {int(x[0]): x for x in out["ents"] if x[1] == str(b)}
+    hits = [(int(x[0]), round(float(x[4]))) for x in out["damage"] if x[1] == str(b)]
+    r.exec(f"probe_fire {idx} Kill")
+    if not hits:
+        return hits, [], []
+    t = hits[0][0]
+    steps = lambda rows: [[round(q) for q in speed(rows[k - 1], rows[k])] for k in range(t - 1, t + 6) if k in rows and k - 1 in rows]
+    return hits, steps(crate), steps(bot_rows), [bot_rows[k][6:9] for k in range(t - 1, t + 6) if k in bot_rows]
+
+
+def ball_punt(r):
+    """gravity_gun.md 12: a free AR2 ball punted a few ticks after it left
+    the bot's own gun: its speed by tick and owner."""
+    probe.wait_alive(r)
+    arm(r, "weapon_physcannon", "weapon_ar2")
+    r.exec("probe_set 5000 0")
+    r.exec("probe_track clear")
+    r.exec("probe_track prop_combine_ball")
+    best = None
+    for wait in (35, 36, 37, 38, 40):
+        probe.wait_alive(r)
+        arm(r, "weapon_physcannon", "weapon_ar2")
+        ticks = (hold(75, 0, 0, 0, 0, 180, select="weapon_ar2") + hold(1, ATTACK2, 0, 0, 0, 180) + hold(wait, 0, 0, 0, 0, 180)
+                 + hold(1, ATTACK, 0, 0, 0, 180, select="weapon_physcannon") + hold(120, 0, 0, 0, 0, 180))
+        out = probe.run_full(r, measure.start(), ticks)
+        e = [x for x in out["ents"] if x[2] == "prop_combine_ball"]
+        sp = [round(math.dist([float(q) for q in a[3:6]], [float(q) for q in b[3:6]]) / 0.015) for a, b in zip(e, e[1:])]
+        snd = [(int(x[0]), x[5]) for x in out["sounds"] if "PhysCannon" in x[5] or "physcannon" in x[5]]
+        print("ball_punt wait", wait, "speeds", sp[:90], "gun sounds", snd[:4])
+        time.sleep(4.5)
+
+
+def held_item(r, ahead, cls="item_battery", mdl="models/items/battery.mdl"):
+    """gravity_gun.md Open questions 6: an item `ahead` units in front on the
+    floor, grabbed: where it is and the armour by row (its touch box 48 held)."""
+    probe.wait_alive(r)
+    arm(r, "weapon_physcannon")
+    r.exec("probe_set 100 0 100")
+    r.exec("probe_track clear")
+    probe.run_full(r, measure.start(pitch=30), hold(30, 0, 0, 0, 30, 180, select="weapon_physcannon"))
+    r.exec("probe_set 100 0 100")
+    z = r.exec(f"probe_prop {cls} {mdl} {SPOT[0] - ahead} {SPOT[1]} {SPOT[2] + 8}")
+    idx = z.split()[-1]
+    out = probe.run_full(r, measure.start(pitch=30), hold(10, 0, 0, 0, 30, 180) + hold(1, ATTACK2, 0, 0, 30, 180) + hold(120, 0, 0, 0, 30, 180))
+    rows = out["rows"]
+    e = {int(x[0]): x for x in out["ents"] if x[1] == idx}
+    arm_at = [(i, x["armor"]) for i, (x, y) in enumerate(zip(rows[1:], rows)) if x["armor"] != y["armor"]]
+    far = [(int(k), round(float(v[3]) - rows[0]["x"], 1), round(float(v[5]) - rows[0]["z"], 1)) for k, v in sorted(e.items())][::10]
+    snd = [(int(x[0]), x[5]) for x in out["sounds"]][:8]
+    r.exec(f"probe_fire {idx} Kill")
+    return z, arm_at, far, snd, rows[-1]["armor"]
+
+
+def sawblade_launch(r, model, pitch=47):
+    """gravity_gun.md 4, 7: a prop grabbed and launched; its angles by row
+    while held (in the bot's frame) and after."""
+    probe.wait_alive(r)
+    arm(r, "weapon_physcannon")
+    r.exec("probe_track clear")
+    probe.run_full(r, measure.start(pitch=pitch), hold(30, 0, 0, 0, pitch, 180, select="weapon_physcannon"))
+    idx = r.exec(f"probe_prop prop_physics {model} {SPOT[0] - 60} {SPOT[1]} {SPOT[2] + 8}").split()[-1]
+    out = probe.run_full(r, measure.start(pitch=pitch), hold(30, 0, 0, 0, pitch, 180) + hold(1, ATTACK2, 0, 0, pitch, 180)
+                         + hold(50, 0, 0, 0, 0, 180) + hold(1, ATTACK, 0, 0, 0, 180) + hold(12, 0, 0, 0, 0, 180))
+    e = [x for x in out["ents"] if x[1] == idx]
+    r.exec(f"probe_fire {idx} Kill")
+    return [[round(float(q), 1) for q in x[3:6]] + [x[12:15]] for x in e[26:]][:6] + ["..."] + [[round(float(q), 1) for q in x[3:6]] + [x[12:15]] for x in e[-16:]]
+
+
+def first_impact(r, model, launch=True):
+    """gravity_gun.md 9: a prop launched (or punted) at a wall: its health by
+    row, the damage logged on it."""
+    probe.wait_alive(r)
+    arm(r, "weapon_physcannon")
+    r.exec("probe_track clear")
+    probe.run_full(r, measure.start(pitch=30), hold(30, 0, 0, 0, 30, 180, select="weapon_physcannon"))
+    idx = r.exec(f"probe_prop prop_physics {model} {SPOT[0] - 45} {SPOT[1]} {SPOT[2] + 22}").split()[-1]
+    hp0 = r.exec(f"probe_get {idx} data m_iHealth int")
+    if launch:
+        t = hold(30, 0, 0, 0, 30, 180) + hold(1, ATTACK2, 0, 0, 30, 180) + hold(40, 0, 0, 0, 0, 180) + hold(1, ATTACK, 0, 0, 0, 180)
+    else:
+        t = hold(30, 0, 0, 0, 30, 180) + hold(1, ATTACK, 0, 0, 30, 180)
+    out = probe.run_full(r, measure.start(pitch=30), t + hold(120, 0, 0, 0, 0, 180))
+    gone = "unknown" in r.exec(f"probe_get {idx} data m_iHealth int") or "invalid" in r.exec(f"probe_get {idx} data m_iHealth int")
+    hp1 = r.exec(f"probe_get {idx} data m_iHealth int")
+    e = [x for x in out["ents"] if x[1] == idx]
+    dmg = [x for x in out["damage"] if x[1] == idx]
+    sp = [round(math.dist([float(q) for q in a[3:6]], [float(q) for q in b[3:6]]) / 0.015) for a, b in zip(e, e[1:])]
+    r.exec(f"probe_fire {idx} Kill")
+    return hp0, hp1, gone, sp[28:], dmg[:6]
+
+
+def phys_rules2(r):
+    a, b = two_bots(r)
+    for m in (30, 100):
+        show(f"{m} kg punted into a bot: hits, crate, bot steps, bot velocity fields", punt_shove(r, a, b, m), "-")
+    r.exec(f"probe_tp {b} {ROOF[0]} {ROOF[1]} {ROOF[2] + 100} 0 0")
+    r.exec(f"probe_bot {a}")
+    for m in ("models/props_junk/sawblade001a.mdl", "models/props_junk/propane_tank001a.mdl"):
+        show(f"{m} held, launched: origin + angles", sawblade_launch(r, m), "-")
+
+
+def phys_rules(r):
+    """Round 5 (gravity_gun.md 14): the bot a punted crate hits, a punted
+    free ball, a held item's touch, launch spin and carry angles, first impacts."""
+    a, b = two_bots(r)
+    for m in (10, 30, 100, 250):
+        show(f"{m} kg punted into a bot 150 ahead: hits, crate steps, bot steps from the row before the hit", punt_shove(r, a, b, m), "-")
+    show("30 kg, bot 50 ahead of the crate", punt_shove(r, a, b, 30, dist=100), "-")
+    r.exec(f"probe_tp {b} {ROOF[0]} {ROOF[1]} {ROOF[2] + 100} 0 0")
+    r.exec(f"probe_bot {a}")
+    for ahead in (60, 100, 130):
+        show(f"battery {ahead} ahead, grabbed", held_item(r, ahead), "-")
+    for m in ("models/props_junk/sawblade001a.mdl", "models/props_junk/propane_tank001a.mdl",
+              "models/props_c17/oildrum001_explosive.mdl"):
+        show(f"{m} held, launched: origin + angles", sawblade_launch(r, m), "-")
+    for m in ("models/props_junk/wood_crate001a.mdl", "models/props_junk/gascan001a.mdl",
+              "models/props_c17/oildrum001_explosive.mdl"):
+        show(f"{m} launched", first_impact(r, m), "-")
+        show(f"{m} punted", first_impact(r, m, False), "-")
+    ball_punt(r)
+
+
 CASES = {"respawn": respawn, "armour": armour, "weapons": weapons, "drops": drops, "pushes": pushes,
          "projectiles": projectiles, "gravity": gravity, "heads": heads, "frag_drag": frag_drag, "pickups": pickups, "chargers": chargers, "cvars": cvars,
          "swim": swim, "drown": drown, "tdm": tdm, "tdm_spawns": tdm_spawns, "crate_hits": crate_hits,
          "floor_punts": floor_punts, "use_carry": use_carry, "gravity_more": gravity_more, "log_lines": log_lines,
-         "ready": ready, "spawns_more": spawns_more, "watcher": watcher, "models": models}
+         "ready": ready, "phys_rules": phys_rules, "phys_rules2": phys_rules2, "spawns_more": spawns_more, "watcher": watcher, "models": models}
 LOCKDOWN = ["cvars", "respawn", "armour", "weapons", "drops", "projectiles", "frag_drag", "gravity", "pickups",
             "chargers", "pushes", "heads"]
 

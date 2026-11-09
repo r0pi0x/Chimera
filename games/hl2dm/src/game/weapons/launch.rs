@@ -9,7 +9,9 @@
 //!   of the victim's own damage up to 30000 (kg·in/s) with a 0.85-1.15
 //!   jitter, blast damage through the suit at two armour per point
 //!   (`suit`), the shake; the shove of the victims is `shove`'s, from the
-//!   blast point (`weapon::Inflicted`).
+//!   blast point (`weapon::Inflicted`); under water (the point and 24 above
+//!   it in water) it reaches only those with their feet in water, dry only
+//!   those not wholly under; doors on the line block it whole.
 //! - `Hl2Rounds`: a weapon's own count of a second ammo type (the SMG1's
 //!   grenades, the AR2's balls) or of its only one (rockets, grenades,
 //!   S.L.A.M.s), predicted with the weapon, with its carry limit.
@@ -21,9 +23,9 @@
 //! - The projectiles' models (`MODELS`): drawn by key on clients
 //!   (`ShownItem`), loaded with the weapons' world models.
 //!
-//! Known shortcuts: the blast's water rule (a blast under water reaching
-//! only wet victims, 2 step 2) and the doors that block whole aren't told
-//! apart (a moving door shields 0.25); the hearing effects (DSP presets)
+//! Known shortcuts: a prop's water level in the blast's rule is its box's
+//! bottom and top at its centre (a push on a loose body, its centre alone);
+//! the hearing effects (DSP presets)
 //! and the spawn grace of rules.md (0.5 s) wait for M9/M7.
 
 use std::sync::Arc;
@@ -100,6 +102,8 @@ pub fn hl2_blast(damage: f32, radius: f32, probe: Option<(f32, f32, f32)>, sound
             // 300 kg·in/s per point, at most 30000.
             per_damage: 300.0 * U / HP,
             force_cap: 30000.0 * U,
+            water_lift: 24.0 * U,
+            stoppers: &["prop_door_rotating", "func_door", "func_door_rotating"],
         }),
     }
 }

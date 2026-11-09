@@ -2197,6 +2197,9 @@ fn prop_keys(
     if !pd.interactions.is_empty() {
         put(PROP_INTERACTIONS_KEY, pd.interactions.join(" "));
     }
+    if let Some([pitch, yaw, roll]) = pd.carry_angles {
+        put(crate::map::entities::PROP_CARRY_ANGLES_KEY, format!("{pitch} {yaw} {roll}"));
+    }
     let (d, r) = (pd.explosive_damage.unwrap_or(0.0), pd.explosive_radius.unwrap_or(0.0));
     if d > 0.0 || r > 0.0 {
         put(PROP_EXPLODE_KEY, format!("{d} {r}"));

@@ -33,10 +33,9 @@
 //!   after the explosion.
 //!
 //! The ignition's looks (the owner's screen fade, `Missile.Ignite`'s loop
-//! until the missile is gone) are `rpg_fx`'s.
-//!
-//! Known shortcuts: the missile's sky test (removed silently) is
-//! Chimera's flyers' (none yet).
+//! until the missile is gone) are `rpg_fx`'s. A missile that touches the sky
+//! (a 16-unit line ahead finds a sky face, `Flyer::sky_end`) is removed
+//! silently, no blast.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -44,7 +43,7 @@ use serde::Deserialize;
 
 use chimera_sim::weapon::{
     HolsterLocked, Inventory, NetPart, Weapon, WeaponEvent, WeaponEventKind, WeaponState,
-    projectile::{Flyer, FlyerGone, FlyerSet, LaunchRequest, Launched, Touch},
+    projectile::{Flyer, FlyerGone, FlyerSet, LaunchRequest, Launched, SkyEnd, Touch},
 };
 
 use super::{
@@ -63,6 +62,7 @@ pub const MISSILE_TAG: u64 = 0x5250_4700;
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct RpgParams {
+    pub sky_probe: f32,
     #[serde(flatten)]
     pub rounds: launch::RoundsParams,
     pub refire: f32,
@@ -200,6 +200,8 @@ pub fn before_frame(
                     f.turn = chimera_sim::weapon::projectile::MODEL_X_FORWARD;
                     f.half = Vec3::splat(p.half * U);
                     f.touch = Touch::Explode;
+                    // 6.5: removed silently on the sky.
+                    f.sky_end = Some(SkyEnd { probe: p.sky_probe * U, expired: false });
                     f.blast = Some(launch::blast(p.damage, p.radius, None, Some(&p.explode)));
                     // The grace: nothing within 128 along the view.
                     let filter = SpatialQueryFilter::from_excluded_entities([owner]).with_mask(SOLID_LAYERS);

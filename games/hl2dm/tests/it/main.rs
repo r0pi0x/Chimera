@@ -8,6 +8,7 @@
 //! The gameinfo parser's fast tests are `source_engine`'s own.
 
 mod animation;
+mod blast_rules;
 mod effects;
 mod gravity_gun;
 mod hitboxes;

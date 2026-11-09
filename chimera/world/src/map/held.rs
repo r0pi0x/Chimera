@@ -20,6 +20,8 @@
 //!   movement, `chimera_sim`'s shots read `Held`).
 //! - `PhysicsInfluence`: who last moved a body by hand and when (a punt, a
 //!   grab, a throw), for the game's damage credit.
+//! - `LaunchedFromHold`: thrown from a hold and not yet touched anything
+//!   (the logic's impacts read it: `source_logic`).
 //!
 //! Known shortcuts: the controller is a model of Source's shadow control
 //! (gravity_gun.md Open questions 1): one-tick arrival, capped, with no
@@ -67,6 +69,18 @@ pub struct PhysicsInfluence {
     pub by: Entity,
     pub at: f64,
 }
+
+/// On a network client's copy of the prop its own player holds: where the
+/// last snapshots have it (it is drawn at the view instead): what the
+/// client's prediction of the hold's rules reads.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct ServerPose(pub Vec3, pub Quat);
+
+/// A body launched from a hold, until its next new contact: that contact
+/// counts more (specs/hl2dm/gravity_gun.md 9, the game's own rule, read by
+/// the logic's impact damage).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct LaunchedFromHold;
 
 /// `holder` holds `body` from now: it weighs `mass` kg (its inertia
 /// scaled with it), spins down with `angular_damping`, has no linear

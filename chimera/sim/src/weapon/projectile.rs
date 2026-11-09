@@ -32,8 +32,11 @@
 //!
 //! Units: meters, seconds, damage normalized like `Health`.
 //!
-//! Known shortcuts: no sky test (a flyer touching the sky box touches a
-//! wall); a bounce or a glance spends the rest of its tick's move; the
+//! A flyer with `Flyer::sky_end` ends on the sky (a line that far along its
+//! flight meets `map::MapSkyFaces` with nothing before it): gone, no touch
+//! rule, its `FlyerGone::expired` as said.
+//!
+//! Known shortcuts: a bounce or a glance spends the rest of its tick's move; the
 //! hitbox test of `Flyer::hitboxes` runs on the swept line's segment
 //! through the character's hull (a hit on the hull that misses every
 //! hitbox lets it fly on); breakable glass stops a bolt like any body; a
@@ -154,11 +157,22 @@ pub struct Flyer {
     pub blast: Option<Arc<Blast>>,
     /// A stuck bolt, gone at this time.
     pub stuck_until: Option<f64>,
+    /// It ends touching the sky.
+    pub sky_end: Option<SkyEnd>,
     /// Hit this tick: what (the game's `FlyerSet::Touch` reads `FlyerHit`).
     pub last_hit: Option<Entity>,
     /// Its model's own turn before it faces its flight (`facing` puts −Z
     /// along it; a Source model's nose is its +X: `MODEL_X_FORWARD`).
     pub turn: Quat,
+}
+
+/// How a flyer ends on the sky: the line ahead that finds it (m), and
+/// whether `FlyerGone` says its time ran out (a ball's harmless end) or not
+/// (silently gone).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SkyEnd {
+    pub probe: f32,
+    pub expired: bool,
 }
 
 /// `Flyer::turn` for a model whose nose is its +X (Source's models).
@@ -191,6 +205,7 @@ impl Flyer {
             direct: None,
             blast: None,
             stuck_until: None,
+            sky_end: None,
             last_hit: None,
             turn: Quat::IDENTITY,
         }
@@ -327,6 +342,9 @@ pub struct LauncherParams {
     /// leaves it: `MODEL_Y_FORWARD`).
     #[serde(default)]
     pub y_forward: bool,
+    /// Ends on the sky a line this long finds (data length; 0: never).
+    #[serde(default)]
+    pub sky_probe: f32,
 }
 
 fn report() -> String {
@@ -370,6 +388,10 @@ impl LauncherParams {
             .half
             .map_or(Vec3::ZERO, |h| Vec3::new(h[0], h[2], h[1]).abs() * unit);
         f.pass_items = self.pass_items;
+        f.sky_end = (self.sky_probe > 0.0).then_some(SkyEnd {
+            probe: self.sky_probe * unit,
+            expired: false,
+        });
         f.hitboxes = self.hitboxes;
         if self.x_forward {
             f.turn = MODEL_X_FORWARD;
@@ -599,6 +621,7 @@ struct Body {
 #[derive(bevy::ecs::system::SystemParam)]
 struct FlyWorld<'w, 's> {
     spatial: SpatialQuery<'w, 's>,
+    sky: Option<Res<'w, crate::map::MapSkyFaces>>,
     bodies: Query<'w, 's, Body, Without<Flyer>>,
     colliders: Query<'w, 's, &'static ColliderOf>,
     rigid: Query<'w, 's, (&'static RigidBody, Option<&'static MovingSolid>, Option<&'static LinearVelocity>, Option<&'static AngularVelocity>)>,
@@ -655,6 +678,17 @@ impl FlyWorld<'_, '_> {
             .get(collider)
             .or_else(|_| self.rigid.get(body))
             .is_ok_and(|(rb, solid, v, w)| f(rb, solid, v, w))
+    }
+
+    /// A sky face within `probe` of `from` along `dir`, nothing solid well
+    /// before it.
+    fn on_sky(&self, from: Vec3, dir: Dir3, probe: f32, filter: &SpatialQueryFilter) -> bool {
+        let Some(at) = self.sky.as_ref().and_then(|s| s.along(from, *dir, probe)) else {
+            return false;
+        };
+        // The sky brush's own face stops the line at `at`.
+        const FACE: f32 = 0.02;
+        at <= FACE || self.spatial.cast_ray(from, dir, at - FACE, true, filter).is_none()
     }
 
     fn takes_damage(&self, e: Entity) -> bool {
@@ -839,6 +873,20 @@ fn fly(
         let body = world.body(collider);
         let point = from + *dir * distance;
         t.translation = from + *dir * (distance - SKIN).max(0.0);
+        // The sky: nothing else of what stopped it is asked.
+        if let Some(end) = f.sky_end
+            && world.on_sky(t.translation, dir, end.probe, &filter)
+        {
+            world.gone.write(FlyerGone {
+                flyer: e,
+                weapon: f.weapon,
+                owner: f.owner,
+                at: t.translation,
+                expired: end.expired,
+            });
+            commands.entity(e).despawn();
+            continue;
+        }
         let mut n = normal.normalize_or(-*dir);
         if n.dot(*dir) > 0.0 {
             n = -n;

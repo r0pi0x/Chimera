@@ -628,8 +628,9 @@ whatever its speed, and "paintsplat" paint cans decal what they hit.
   and in yaw.
 - **Punt** (primary at a free ball): its target speed := its current
   speed, owner := the punter, mass 750, life restarted; then 959.2 in/s
-  along the unflattened view is **added** to its current velocity; the
-  next bounce restores its speed.
+  along the unflattened view is **added** to its current velocity; a
+  faster arrival raises the stored speed, so it keeps that speed through
+  its bounces (measured, Open questions 14).
 
 ### 13. `prop_physics_respawnable` (329 placed)
 
@@ -737,6 +738,8 @@ For each player command (weapons.md's order), then the physics frame:
   nothing grabbable (a wall, the sky, a player) plays the TooHeavy sound.
 - **Instant draw**: the gun works the tick it is selected.
 - **Caught balls are slow until they bounce** (959 then 1500).
+- **A punted ball stays fast**: its speed after a punt (1959) is its speed
+  through every bounce (Open questions 14).
 - **Punting a grenade shortens its fuse to 1.5 s** even if it had more.
 - **Self prop-kills count as suicides** after the first tick.
 - **A punt makes you the prop's last attacker** for good: a barrel you
@@ -1025,3 +1028,38 @@ dedicated server build 24600426), marked **(probe)**:
       friction not at all, and no value gives both the climb and the
       spin; the first tick's step is (773, 728) where the real crate's
       is (773, 898): vphysics' edge contact acts within the punt's tick.
+14. **Probe results, round 5 (2026-11-08, build 24600426, `cases.py
+    phys_rules phys_rules2`).**
+    - Punts into a player, the bot's motion by tick (a crate 50 ahead of a
+      bot 200 away; hits on tick t): its step t to t + 1, then t + 1 to
+      t + 2, in/s forward: 10 kg 340, 263; 30 kg 199, 454; 100 kg 320, 775;
+      250 kg 253, 922, then 1094; the 30 kg crate with the bot 100 away 47,
+      568. Its velocity on t + 1 reads 454 (30 kg) and 795 (100 kg), then
+      falls 6 % a tick (friction). Round 4's 650 and 1110 are the first two
+      steps added (199 + 454, 320 + 775), not a speed. Less the damage's
+      shove (5 per point: 150, 175, 350, 575) the bot gains what a hit on
+      85 kg with an elasticity of about 0.07 gives: 158-190, 279, 445, 519.
+      The crate after, in/s: 8, 165, 337, 445; as a hit on 85 kg with an
+      elasticity of about 0.15.
+    - Open questions 6: a battery on the floor grabbed from 100 and 130
+      ahead is taken 4 and 6 ticks after the grab (armour + 15, the battery
+      sound and the gun's drop sound on one tick): on its way in at 1000
+      in/s, as a touch box grown 48 reaches it (about 69 from the bot's axis)
+      one tick earlier and one grown 24 (45) never would (it stops 51 away).
+    - Section 12, a free ball punted: an AR2 ball (1000 in/s) a few ticks
+      after it left the bot's own gun, punted along its flight: 1959 at
+      once (959.2 added), and **1959 through every later bounce**: the
+      stored speed is raised by the faster arrival (projectiles.md 5.2),
+      not "restored".
+    - Section 4 step 4 and 7: `models/props_junk/sawblade001a.mdl` held by a
+      bot looking level at yaw 180 reads (−5, −180, 0); launched, its yaw
+      turns 48.7 degrees a tick (3250 deg/s, not 5000: the 3600 cap, less
+      drag), pitch and roll wobbling ±13. The propane tank
+      (`preferred_carryangles` "-90 0 0") held likewise reads (−90, 0, 180),
+      the same rotation as (−90, 180, 0), and its launch adds the random
+      spin. The model data's keys: `physgun_interactions` `onlaunch`
+      `spin_zaxis` or `spin_none`, `preferred_carryangles`.
+    - Section 9: launched at a wall a 30-health wood crate and the
+      explosive drum break on it; punted at it at about 1000 and 1100 in/s
+      they don't (0 lost, the punt's 0-damage hit logged); a gas can punted
+      took 10 from a later bounce.

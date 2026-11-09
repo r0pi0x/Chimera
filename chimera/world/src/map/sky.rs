@@ -12,6 +12,44 @@ pub const SKYBOX_LAYER: usize = 1;
 #[derive(Component)]
 pub struct SkyboxCamera;
 
+/// The playable world's sky faces as triangles (`MapData::sky_surfaces`),
+/// for what ends on the sky rather than touching a wall.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct MapSkyFaces(pub Vec<[Vec3; 3]>);
+
+impl MapSkyFaces {
+    pub fn of(points: &[[f32; 3]]) -> Self {
+        Self(
+            points
+                .chunks_exact(3)
+                .map(|t| [Vec3::from_array(t[0]), Vec3::from_array(t[1]), Vec3::from_array(t[2])])
+                .collect(),
+        )
+    }
+
+    /// How far along `dir` (unit) from `from`, within `len`, the first sky
+    /// face is.
+    pub fn along(&self, from: Vec3, dir: Vec3, len: f32) -> Option<f32> {
+        self.0
+            .iter()
+            .filter_map(|[a, b, c]| {
+                let (e1, e2) = (*b - *a, *c - *a);
+                let p = dir.cross(e2);
+                let det = e1.dot(p);
+                if det.abs() < 1e-9 {
+                    return None;
+                }
+                let s = from - *a;
+                let u = s.dot(p) / det;
+                let q = s.cross(e1);
+                let v = dir.dot(q) / det;
+                let t = e2.dot(q) / det;
+                (u >= 0.0 && v >= 0.0 && u + v <= 1.0 && (0.0..=len).contains(&t)).then_some(t)
+            })
+            .min_by(f32::total_cmp)
+    }
+}
+
 /// Holds nothing: the sky camera's layer when only the 2D sky shows.
 pub const EMPTY_LAYER: usize = 31;
 

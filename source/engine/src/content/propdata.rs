@@ -26,8 +26,12 @@ pub struct PropData {
     pub allowstatic: bool,
     /// Interactions that matter (spec 2.1 step 4): `flammable`,
     /// `explosive_resist`, `ignite_halfhealth`, `explode_fire`,
-    /// `firstimpact_break`.
+    /// `firstimpact_break`, `launch_spin_z`, `launch_spin_none` (the
+    /// gravity gun's launch: specs/hl2dm/gravity_gun.md 7).
     pub interactions: Vec<&'static str>,
+    /// `physgun_interactions`' `preferred_carryangles` (pitch, yaw, roll):
+    /// how the gravity gun holds it (gravity_gun.md 4).
+    pub carry_angles: Option<[f32; 3]>,
     /// A template it names doesn't exist.
     pub missing_template: bool,
 }
@@ -48,6 +52,7 @@ impl Default for PropData {
             explosive_radius: None,
             allowstatic: false,
             interactions: Vec::new(),
+            carry_angles: None,
             missing_template: false,
         }
     }
@@ -78,10 +83,23 @@ fn interactions(block: &Kv, kind: &str, out: &mut Vec<&'static str>) {
             ("fire", "ignite", "halfhealth") => "ignite_halfhealth",
             ("physgun", "onbreak", "explode_fire") => "explode_fire",
             ("physgun", "onfirstimpact", "break") => "firstimpact_break",
+            ("physgun", "onlaunch", "spin_zaxis") => "launch_spin_z",
+            ("physgun", "onlaunch", "spin_none") => "launch_spin_none",
             _ => continue,
         };
         if !out.contains(&found) {
             out.push(found);
+        }
+    }
+}
+
+/// A `physgun_interactions` block: its interactions and carry angles.
+fn physgun(block: &Kv, pd: &mut PropData) {
+    interactions(block, "physgun", &mut pd.interactions);
+    if let Some(a) = block.str("preferred_carryangles") {
+        let v: Vec<f32> = a.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+        if let [pitch, yaw, roll] = v[..] {
+            pd.carry_angles = Some([pitch, yaw, roll]);
         }
     }
 }
@@ -102,7 +120,7 @@ fn apply(block: &Kv, templates: &Kv, pd: &mut PropData, depth: u32) {
         match v {
             Kv::Block(_) => match k.to_ascii_lowercase().as_str() {
                 "fire_interactions" => interactions(v, "fire", &mut pd.interactions),
-                "physgun_interactions" => interactions(v, "physgun", &mut pd.interactions),
+                "physgun_interactions" => physgun(v, pd),
                 _ => {}
             },
             Kv::Value(v) => match k.to_ascii_lowercase().as_str() {
@@ -140,7 +158,7 @@ pub fn resolve(model_kv: &str, templates: &Kv) -> Option<PropData> {
     for (k, v) in kv.items().iter().chain(kv.items().iter().flat_map(|(_, v)| v.items())) {
         match k.to_ascii_lowercase().as_str() {
             "fire_interactions" => interactions(v, "fire", &mut pd.interactions),
-            "physgun_interactions" => interactions(v, "physgun", &mut pd.interactions),
+            "physgun_interactions" => physgun(v, &mut pd),
             _ => {}
         }
     }
@@ -402,6 +420,18 @@ mod tests {
         assert!(brush_keys("func_breakable", 25, &t, &lists).is_empty());
         assert!(brush_keys("func_breakable", 24, &t, &lists).is_empty());
         assert!(brush_keys("func_door", 3, &t, &lists).is_empty());
+    }
+
+    #[test]
+    fn the_guns_launch_and_carry_rules() {
+        let t = templates(r#""PropData" { }"#);
+        let kv = r#""prop_data" { "health" "5" }
+            "physgun_interactions" { "onlaunch" "spin_zaxis" "preferred_carryangles" "-90 0 0" }"#;
+        let pd = resolve(kv, &t).unwrap();
+        assert_eq!(pd.interactions, vec!["launch_spin_z"]);
+        assert_eq!(pd.carry_angles, Some([-90.0, 0.0, 0.0]));
+        let kv = r#""prop_data" { "health" "5" } "physgun_interactions" { "onlaunch" "spin_none" }"#;
+        assert_eq!(resolve(kv, &t).unwrap().interactions, vec!["launch_spin_none"]);
     }
 
     #[test]

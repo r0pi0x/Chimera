@@ -273,6 +273,70 @@ fn others_see_the_claws_hold() {
 /// presses primary (the throw, the weapon deployed again a draw time on)
 /// and holds it down after: no prediction error, the same state bit for
 /// bit; the pick-up itself is the server's.
+/// Section 5: primary with the object over 250 from the holder is a dry
+/// fire, no launch: a client predicts it from the snapshots' pose (it draws
+/// the object at its view), so no launch's timers or punch are undone. Near,
+/// it predicts the launch.
+#[test]
+fn a_client_predicts_the_launchs_distance_check() {
+    use chimera_core::core::SimClock;
+    use chimera_sim::weapon::{Inventory, WeaponState};
+    use hl2dm::game::weapons::physcannon::Hl2Physcannon;
+
+    let gun_of = |w: &World, who: Entity| {
+        w.get::<Inventory>(who)
+            .unwrap()
+            .weapons
+            .iter()
+            .copied()
+            .find(|g| w.get::<Hl2Physcannon>(*g).is_some())
+            .unwrap()
+    };
+    let grabbed = || {
+        let mut sim = joined();
+        place(&mut sim, 1, Vec3::new(0.0, -300.0, 0.0));
+        place(&mut sim, 0, Vec3::ZERO);
+        press(&mut sim, 0, 3);
+        sim.ticks(3);
+        sim
+    };
+    // Far: the prop stays (its controller given no speed), the holder is put
+    // far off, inside the hold's 1 s of grace.
+    let mut sim = grabbed();
+    let prop = node(sim.server.app.world_mut());
+    let holder = sim.character_of(0).unwrap();
+    sim.server.app.world_mut().get_mut::<Held>(prop).unwrap().max_speed = 0.0;
+    sim.server.app.world_mut().get_mut::<Transform>(holder).unwrap().translation = to_engine(Vec3::new(-300.0, 0.0, 36.0));
+    sim.ticks(16);
+    let me = sim.local_player(0).unwrap();
+    let mine = node(sim.clients[0].app.world_mut());
+    let drawn = pos(sim.clients[0].app.world(), mine).distance(pos(sim.clients[0].app.world(), me));
+    assert!(drawn < 120.0, "drawn at the view: {drawn}");
+    let gun = gun_of(sim.clients[0].app.world(), me);
+    sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = true;
+    for k in 0..4 {
+        sim.step();
+        let w = sim.clients[0].app.world();
+        assert!(w.get::<Hl2Physcannon>(gun).unwrap().holding, "tick {k}: no launch predicted");
+        let wait = w.get::<WeaponState>(gun).unwrap().next_primary - w.resource::<SimClock>().now;
+        assert!(wait < 0.2, "tick {k}: no launch's timer: {wait}");
+    }
+    sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = false;
+    sim.ticks(20);
+    let server_gun = gun_of(sim.server.app.world(), holder);
+    assert!(sim.server.app.world().get::<Hl2Physcannon>(server_gun).unwrap().holding, "nor on the server");
+
+    // Near: predicted at once.
+    let mut sim = grabbed();
+    let me = sim.local_player(0).unwrap();
+    let gun = gun_of(sim.clients[0].app.world(), me);
+    sim.ticks(16);
+    assert!(sim.clients[0].app.world().get::<Hl2Physcannon>(gun).unwrap().holding);
+    sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = true;
+    sim.step();
+    assert!(!sim.clients[0].app.world().get::<Hl2Physcannon>(gun).unwrap().holding, "the launch, predicted");
+}
+
 #[test]
 fn a_client_predicts_the_carry_as_the_server_runs_it() {
     use chimera_core::core::{PredictedComponents, SimTick};

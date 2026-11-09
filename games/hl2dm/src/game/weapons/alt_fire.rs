@@ -40,15 +40,17 @@
 //!
 //! Known shortcuts: the contact grenade's 3-tick check has no ground
 //! entity to test (a flyer has none: any touch ends it), and its random
-//! spin isn't given (a flyer faces its flight); the ball knocks props as a bounce (no 1000 crush
-//! to props), and its harmless end is removed at once.
+//! spin isn't given (a flyer faces its flight); the knock of what a
+//! ball hits is a whole elastic hit of its 150 kg (the spec gives only that
+//! it is knocked; the 750 kg after a gun isn't kept); its harmless end is
+//! removed at once.
 
 use bevy::prelude::*;
 use serde::Deserialize;
 
 use chimera_sim::weapon::{
     HolsterLocked, Inventory, NetPart, ViewPunch, WeaponEvent, WeaponEventKind, WeaponState,
-    projectile::{Direct, Flyer, FlyerGone, FlyerHit, LaunchRequest, LaunchUnderWater, Touch},
+    projectile::{Direct, Flyer, FlyerGone, FlyerHit, LaunchRequest, LaunchUnderWater, SkyEnd, Touch},
     random::shared_random,
 };
 
@@ -93,6 +95,7 @@ pub struct BallParams {
     pub dry: f32,
     pub speed: f32,
     pub radius: f32,
+    pub mass: f32,
     pub life: f32,
     pub damage: f32,
     pub punch_pitch: [i32; 2],
@@ -296,6 +299,8 @@ pub fn before_frame(
                 f.keep_speed = Some(p.speed * U);
                 f.expires = Some(now + p.life as f64);
                 f.touch = Touch::Bounce;
+                // 5.2: its end at once on a sky surface.
+                f.sky_end = Some(SkyEnd { probe: p.radius * 2.0 * U, expired: true });
                 f.direct = Some(Direct {
                     damage: p.damage * launch::HP,
                     kind: DamageKind::Crush,
@@ -365,21 +370,31 @@ pub fn ball_touches(
     mut hits: MessageReader<FlyerHit>,
     mut flyers: Query<(&mut Flyer, Option<&mut BallFlight>, &Transform)>,
     players: Query<(Entity, &Transform, &MovementState, &Health, Option<&crate::core::Team>), With<Intent>>,
-    weapons: Query<&Hl2Ball>,
+    mut params: Local<Option<BallParams>>,
     game: Option<Res<crate::game::rules::Hl2Match>>,
     spatial: avian3d::prelude::SpatialQuery,
     colliders: Query<&avian3d::prelude::ColliderOf>,
+    bodies: Query<(&avian3d::prelude::RigidBody, Option<&avian3d::prelude::ComputedMass>)>,
     clock: Res<SimClock>,
     mut play: MessageWriter<PlaySound>,
     mut commands: Commands,
 ) {
-    let Some(p) = weapons.iter().next().map(|b| b.params.clone()) else {
-        hits.clear();
-        return;
-    };
     for h in hits.read() {
         if h.weapon != super::AR2 || h.gone {
             continue;
+        }
+        // From the weapon's data: the ball can outlive every AR2.
+        let p = params.get_or_insert_with(|| launch::hook_params(super::AR2, super::BALL_HOOK)).clone();
+        // What moves is knocked (5.3): a whole elastic hit of its 150 kg
+        // along the contact's normal.
+        if let Some(other) = h.other.filter(|_| !h.character)
+            && let Ok((rb, mass)) = bodies.get(other)
+            && rb.is_dynamic()
+        {
+            let m = mass.map_or(1.0, |m| m.value()).max(1e-3);
+            let into = h.velocity.dot(-h.normal).max(0.0);
+            let dv = -h.normal * into * 2.0 * p.mass / (p.mass + m);
+            commands.queue(move |w: &mut World| super::physcannon::push(w, other, dv, Vec3::ZERO));
         }
         let Ok((mut f, flight, t)) = flyers.get_mut(h.flyer) else {
             continue;
@@ -533,13 +548,11 @@ fn launch_ray_box(min: Vec3, max: Vec3, from: Vec3, dir: Vec3, limit: f32) -> Op
 }
 
 /// A ball's harmless end (5.6): its sound where it was.
-pub fn ball_ends(mut gone: MessageReader<FlyerGone>, weapons: Query<&Hl2Ball>, mut play: MessageWriter<PlaySound>) {
-    let sound = weapons.iter().next().map(|b| b.params.explode_sound.clone());
+pub fn ball_ends(mut gone: MessageReader<FlyerGone>, mut sound: Local<Option<String>>, mut play: MessageWriter<PlaySound>) {
     for g in gone.read() {
-        if g.weapon == super::AR2
-            && g.expired
-            && let Some(s) = &sound
-        {
+        if g.weapon == super::AR2 && g.expired {
+            // From the weapon's data: the ball can outlive every AR2.
+            let s = sound.get_or_insert_with(|| launch::hook_params::<BallParams>(super::AR2, super::BALL_HOOK).explode_sound);
             play.write(PlaySound::at(s.clone(), g.at));
         }
     }

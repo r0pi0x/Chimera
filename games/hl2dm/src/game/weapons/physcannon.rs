@@ -57,22 +57,40 @@
 //!   launched it leaves at 959.2 (750 kg's speed) with 1500 again after its
 //!   first contact and 4 s of life; dropped, at 1500 within ±55 whole
 //!   degrees of the view (12).
+//! - **Objects of several bodies** (a map's non-flesh `prop_ragdoll`): the
+//!   mass is their sum, a punt shared by mass (2 step 5: `punt_shares`), the
+//!   others weighing 1 / max(n / 7.5, 1) while held (4 step 3). A flesh
+//!   ragdoll isn't seen.
+//! - **The model's rules** (`physgun_interactions`, `PROP_*_KEY`):
+//!   `preferred_carryangles` hold it at those angles in the yaw-only frame;
+//!   `spin_zaxis` holds it at (−5, 0, 0) in the view frame and launches it at
+//!   5000 deg/s about its own z (Source's 3600 cap, less the air's drag:
+//!   measured 3250); `spin_none` launches it without spin; a launch marks the
+//!   prop for its first impact (`map::held::LaunchedFromHold`, `physics`).
+//! - **A free combine ball** can be punted (12, measured: 959.2 added along
+//!   the view, the punter's, 4 s more) and pulled; a kept one ends as any
+//!   ball's time (`Flyer::expires`).
 //! - `phys_swap`: with the gun in hand, a forced drop and the last weapon;
 //!   otherwise the gun.
 //!
-//! Known shortcuts: several bodies per object aren't split (every object
-//! is one body; the mass shares of 2.5 are 1); the "launch spin" of a
-//! sawblade, `preferred_carryangles`, the 10× first-impact damage and
-//! first-impact breaks of props launched from the hold (9) aren't done;
-//! the claws' view-model pose, the hold's idle shake (`ACT_VM_RELOAD`),
-//! the white fade, the launch effect and the hold loops are
-//! `physcannon_fx`'s (the claws' glows and beams too); the cone search's line for a ball checks only the world; held
-//! items' grown touch box (11, Open questions 6) isn't done; the client
-//! doesn't predict the launch's distance check (it predicts a launch) nor
-//! a grab (the server's); a free combine ball can't be punted (it has no
-//! collider for the punt's traces: only the grab's cone finds it); a held
-//! ball's 8 s end is its explosion sound and removal (its blast is H4's,
-//! not built); satchels and loose items are held as plain bodies.
+//! Known shortcuts: the
+//! claws' view-model pose, the hold's idle shake (`ACT_VM_RELOAD`), the
+//! white fade, the launch effect and the hold loops are `physcannon_fx`'s
+//! (the claws' glows and beams too); the cone search's line for a ball
+//! checks only the world; a free ball is met as its sphere grown by the
+//! trace's box (its own collider isn't a body), and its mass of 750 after
+//! the gun isn't kept for what it knocks later; satchels and loose items are
+//! held as plain bodies; the other bodies of a several-bodied object float
+//! beside the held one with no joint rule of their own, and the launch gives
+//! each the same velocity and spin; `onfirstimpact` "paintsplat" and the
+//! rest of the `physgun_interactions` the stock models name (`bloodsplat`,
+//! `impale`, `lose_energy`, `onworldimpact`, `onpickup` "boogie", `damage`)
+//! aren't done; the client doesn't predict a grab (3: "the client predicts
+//! nothing of it", the server's choice of object), and a launch's repunt
+//! guard not at all (the gun's own 0.5 s refire comes first). It predicts a
+//! launch's distance check from the snapshots' pose of the prop it holds
+//! (`map::held::ServerPose`), a held ball's not at all (a ball has no pose
+//! sent as held).
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -91,9 +109,9 @@ use super::{
     recoil::{Hl2Punch, IMPULSE_SCALE},
 };
 use crate::{
-    core::{Damage, DamageKind, Died, FirstTimePredicted, Health, Hitgroup, Intent, MovementState, NetRole, SOLID_LAYERS, SimClock},
+    core::{Damage, DamageKind, Died, FirstTimePredicted, Health, Hitgroup, Intent, MovementState, NetRole, PropSurface, SOLID_LAYERS, SimClock},
     map::{
-        MapBrushEntity, MapEntities, PhysicsProp, PlaySound, PropEntity, RagdollBody,
+        MapBrushEntity, MapEntities, PhysicsProp, PlaySound, PropEntity, Ragdoll, RagdollBody,
         held::{self, Held, PhysicsInfluence},
         interp::NetDrawn,
         prop_physics::{FrozenBody, StartAsleep},
@@ -130,6 +148,8 @@ pub struct PhysParams {
     pub drop_speed: f32,
     pub drop_spin: f32,
     pub launch_spin: f32,
+    pub spin_zaxis: f32,
+    pub spin_held_pitch: f32,
     pub punch_pitch: f32,
     pub punch_yaw: i32,
     pub recoil_pitch: [f32; 2],
@@ -144,6 +164,7 @@ pub struct PhysParams {
     pub ball_mass: f32,
     pub ball_held_mass: f32,
     pub ball_flight_life: f32,
+    pub ball_flight_mass: f32,
     pub ball_drop_spread: i32,
     pub launch_sound: String,
     pub dry_sound: String,
@@ -192,6 +213,25 @@ pub struct Hl2Physcannon {
     pub last_target: Option<Vec3>,
     /// The gun made the holder its owner.
     pub owned: bool,
+    /// `relative` is after the holder's yaw alone (`preferred_carryangles`,
+    /// 4 step 4), else after his whole view.
+    pub yaw_frame: bool,
+    /// How the object spins when launched (7).
+    pub launch_spin: LaunchSpin,
+    /// The object's other bodies (a ragdoll's), held with it.
+    pub parts: Vec<Entity>,
+}
+
+/// The launch's spin by the object's interactions (7, 4).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum LaunchSpin {
+    /// U(−600, 600) on each axis.
+    #[default]
+    Random,
+    /// `spin_none`: none.
+    None,
+    /// `spin_zaxis`: 5000 deg/s about its own z.
+    ZAxis,
 }
 
 impl Hl2Physcannon {
@@ -215,6 +255,9 @@ impl Hl2Physcannon {
             error_clock: -1.0,
             last_target: None,
             owned: false,
+            yaw_frame: false,
+            launch_spin: LaunchSpin::Random,
+            parts: Vec::new(),
         }
     }
 }
@@ -258,6 +301,24 @@ pub struct HeldBall {
 /// centre (2): (15000 + 600 min(m, 250)) / m, before the speed cap.
 pub fn punt_speed(p: &PhysParams, mass: f32) -> f32 {
     (p.punt_base + p.punt_mass * mass.min(p.max_mass)) / mass.max(1e-3)
+}
+
+/// Each body's share of a punt's impulses (2 step 5), its masses `masses`
+/// (the current ones) and the hit body `main`: m/M, plus 0.5 (capped at 1)
+/// for the main body, × 0.5 for the others.
+pub fn punt_shares(masses: &[f32], main: usize) -> Vec<f32> {
+    let total: f32 = masses.iter().sum::<f32>().max(1e-3);
+    masses
+        .iter()
+        .enumerate()
+        .map(|(i, m)| if i == main { (m / total + 0.5).min(1.0) } else { m / total * 0.5 })
+        .collect()
+}
+
+/// What the rest of a several-bodied object's bodies weigh while held (4
+/// step 3), of `n`.
+pub fn held_part_mass(n: usize) -> f32 {
+    1.0 / (n as f32 / 7.5).max(1.0)
 }
 
 /// A punt's direction (2 step 3): the view's, a downward z × −0.65
@@ -372,6 +433,9 @@ pub struct Objects<'w, 's> {
     of: Query<'w, 's, &'static ColliderOf>,
     flyers: Query<'w, 's, (Entity, &'static Flyer, &'static Transform, Has<HeldBall>)>,
     entities: Option<Res<'w, MapEntities>>,
+    parts: Query<'w, 's, (&'static RagdollBody, Option<&'static PropSurface>)>,
+    held_here: Query<'w, 's, (&'static Held, &'static held::ServerPose, Option<&'static PhysicsProp>)>,
+    sets: Query<'w, 's, &'static Ragdoll>,
 }
 
 impl Objects<'_, '_> {
@@ -426,8 +490,21 @@ impl Objects<'_, '_> {
         Some(t.translation + b.map_or(Vec3::ZERO, |b| t.rotation * (b.0 + b.1) / 2.0))
     }
 
+    /// A body of flesh (a corpse, 2 step 4; its surface says): the gun
+    /// sees it not. A ragdoll of another surface is an object of several
+    /// bodies.
     fn ragdoll(&self, e: Entity) -> bool {
-        self.bodies.get(e).is_ok_and(|b| b.8)
+        self.parts
+            .get(e)
+            .is_ok_and(|(_, surface)| surface.is_none_or(|s| s.0.to_ascii_lowercase().contains("flesh")))
+    }
+
+    /// All of `e`'s object's bodies' masses summed (kg).
+    fn object_mass(&self, e: Entity) -> f32 {
+        match self.parts.get(e).ok().and_then(|(p, _)| self.sets.get(p.ragdoll).ok()) {
+            Some(set) => set.bodies.iter().map(|b| self.mass(*b)).sum(),
+            None => self.mass(e),
+        }
     }
 
     /// Whether the gun may hold what was found, for a player standing on
@@ -436,8 +513,8 @@ impl Objects<'_, '_> {
         match f {
             Found::Ball(b) => self.flyers.get(b).is_ok_and(|x| !x.3),
             Found::Body(e) => {
-                let Ok((_, _, rb, _, prop, frozen, _, held, ragdoll, asleep)) = self.bodies.get(e) else { return false };
-                if held || ragdoll || ground == Some(e) {
+                let Ok((_, _, rb, _, prop, frozen, _, held, _, asleep)) = self.bodies.get(e) else { return false };
+                if held || self.ragdoll(e) || ground == Some(e) {
                     return false;
                 }
                 let flags = self.flags(e);
@@ -449,7 +526,7 @@ impl Objects<'_, '_> {
                 if pinned && ((prop.is_none() && frozen.is_none()) || flags & SF_ENABLE_ON_GUN == 0) {
                     return false;
                 }
-                self.mass(e) <= p.max_mass + 1e-3
+                self.object_mass(e) <= p.max_mass + 1e-3
             }
             _ => false,
         }
@@ -483,15 +560,35 @@ fn trace(o: &Objects, spatial: &SpatialQuery, eye: Vec3, dir: Dir3, len: f32, ha
         .map(|h| (h.entity, h.distance, eye + *dir * h.distance))
 }
 
+/// What a gun's trace meets first: `trace`'s, or a free combine ball on the
+/// way (a ball has no collider: its sphere, grown by the trace's box, is
+/// tested here): (what, distance, the trace's end).
+fn gun_trace(o: &Objects, spatial: &SpatialQuery, eye: Vec3, dir: Dir3, len: f32, half: f32, owner: Entity) -> Option<(Found, f32, Vec3)> {
+    let hit = trace(o, spatial, eye, dir, len, half, owner).map(|(c, d, at)| (o.classify(c), d, at));
+    let to = eye + *dir * len;
+    let ball = o
+        .flyers
+        .iter()
+        .filter(|(_, f, _, held)| f.weapon == super::AR2 && !held)
+        .filter_map(|(b, f, t, _)| {
+            let d = chimera_sim::weapon::projectile::ray_sphere(eye, to, t.translation, f.half.x + half)? * len;
+            Some((Found::Ball(b), d, eye + *dir * d))
+        })
+        .min_by(|a, b| a.1.total_cmp(&b.1));
+    match (hit, ball) {
+        (Some(h), Some(b)) => Some(if b.1 < h.1 { b } else { h }),
+        (h, b) => h.or(b),
+    }
+}
+
 /// The punt's target (2 step 2): the box's hit if it is something, else
 /// the line's.
 fn punt_target(spatial: &SpatialQuery, o: &Objects, p: &PhysParams, eye: Vec3, dir: Dir3, owner: Entity) -> Option<(Found, Vec3)> {
     for half in [p.punt_hull * U, 0.0] {
-        if let Some((c, _, point)) = trace(o, spatial, eye, dir, p.trace_length * U, half, owner) {
-            let f = o.classify(c);
-            if f != Found::World {
-                return Some((f, point));
-            }
+        if let Some((f, _, point)) = gun_trace(o, spatial, eye, dir, p.trace_length * U, half, owner)
+            && f != Found::World
+        {
+            return Some((f, point));
         }
     }
     None
@@ -501,9 +598,9 @@ fn punt_target(spatial: &SpatialQuery, o: &Objects, p: &PhysParams, eye: Vec3, d
 /// grab (else it is pulled).
 fn search(spatial: &SpatialQuery, o: &Objects, p: &PhysParams, eye: Vec3, dir: Dir3, owner: Entity) -> Option<(Found, bool)> {
     let len = p.search_length * U;
-    let line = trace(o, spatial, eye, dir, len, 0.0, owner).map(|(c, d, _)| (o.classify(c), d));
+    let line = gun_trace(o, spatial, eye, dir, len, 0.0, owner).map(|(f, d, _)| (f, d));
     let hit = match line {
-        Some((Found::World, _)) | None => trace(o, spatial, eye, dir, len, p.grab_hull * U, owner).map(|(c, d, _)| (o.classify(c), d)),
+        Some((Found::World, _)) | None => gun_trace(o, spatial, eye, dir, len, p.grab_hull * U, owner).map(|(f, d, _)| (f, d)),
         some => some,
     };
     if let Some((f, d)) = hit
@@ -640,9 +737,8 @@ pub fn frame(
                 close(gun, &mut play);
             }
             if due >= gun.suppress_until {
-                let found = trace(&objects, &spatial, eye, dir, p.trace_length * U, p.grab_hull * U, owner)
-                    .map(|(c, ..)| objects.classify(c))
-                    .is_some_and(|f| objects.can_hold(&p, f, state.ground));
+                let found = gun_trace(&objects, &spatial, eye, dir, p.trace_length * U, p.grab_hull * U, owner)
+                    .is_some_and(|(f, ..)| objects.can_hold(&p, f, state.ground));
                 if found {
                     open(gun, &mut play);
                 } else {
@@ -694,8 +790,22 @@ pub fn frame(
                         close(gun, &mut play);
                         if let Some(c) = objects.centre(e) {
                             let m = objects.mass(e);
-                            let dv = (eye - c).normalize_or_zero() * pull_impulse(&p, m) / m.max(1e-3) * U;
+                            let dv = (eye - c).normalize_or_zero() * pull_impulse(&p, objects.object_mass(e)) / m.max(1e-3) * U;
                             commands.queue(move |w: &mut World| push(w, e, dv, Vec3::ZERO));
+                        }
+                    }
+                    // A free ball out of reach: tugged, its speed kept at
+                    // its next bounce (its 150 kg, projectiles.md 5.2).
+                    Some((Found::Ball(b), false)) => {
+                        st.next_secondary = now + p.search_refire as f64;
+                        close(gun, &mut play);
+                        if let Ok((_, _, t, _)) = objects.flyers.get(b) {
+                            let dv = (eye - t.translation).normalize_or_zero() * pull_impulse(&p, p.ball_flight_mass) / p.ball_flight_mass * U;
+                            commands.queue(move |w: &mut World| {
+                                if let Some(mut f) = w.get_mut::<Flyer>(b) {
+                                    f.velocity += dv;
+                                }
+                            });
                         }
                     }
                     _ => {
@@ -741,14 +851,17 @@ pub fn frame(
                 continue;
             }
             let object = gun.object;
-            let far = server
-                && object.is_some_and(|o| {
-                    let centre = objects
-                        .centre(o)
-                        .or(objects.flyers.get(o).ok().map(|f| f.2.translation));
-                    let mine = at.translation + (state.hull_min + state.hull_max) / 2.0;
-                    centre.is_some_and(|c| c.distance(mine) > p.trace_length * U)
-                });
+            let mine = at.translation + (state.hull_min + state.hull_max) / 2.0;
+            let centre = if server {
+                object.and_then(|o| objects.centre(o).or(objects.flyers.get(o).ok().map(|f| f.2.translation)))
+            } else {
+                // A client: what the snapshots say of the prop it draws at
+                // its view (the hold's end, the object, are the server's).
+                objects.held_here.iter().find(|(h, ..)| h.holder == owner).map(|(_, pose, prop)| {
+                    pose.0 + pose.1 * prop.map_or(Vec3::ZERO, |x| (x.bounds.0 + x.bounds.1) / 2.0)
+                })
+            };
+            let far = centre.is_some_and(|c| c.distance(mine) > p.trace_length * U);
             let again = server && gun.punted.is_some_and(|(o, until)| Some(o) == object && due < until);
             if far {
                 sound(&mut play, &first, &p.dry_sound, eye, owner);
@@ -818,6 +931,14 @@ pub fn frame(
                 }
                 fire(gun, false, &mut punch, &mut commands);
             }
+            Found::Ball(b) => {
+                if server {
+                    let p2 = p.clone();
+                    commands.queue(move |w: &mut World| punt_ball(w, &p2, owner, b, fwd));
+                }
+                st.next_secondary = now + p.refire as f64;
+                fire(gun, true, &mut punch, &mut commands);
+            }
             _ => {
                 if server {
                     // A 0-damage hit makes the punter its last attacker.
@@ -850,7 +971,7 @@ fn launch_view(intent: &Intent) -> Quat {
 }
 
 /// Add `dv` (m/s) and `dw` (rad/s) to a body, waking it.
-fn push(world: &mut World, e: Entity, dv: Vec3, dw: Vec3) {
+pub(super) fn push(world: &mut World, e: Entity, dv: Vec3, dw: Vec3) {
     crate::map::prop_physics::wake(world, e);
     let Ok(mut b) = world.get_entity_mut(e) else { return };
     if !b.get::<RigidBody>().is_some_and(|r| r.is_dynamic()) {
@@ -901,6 +1022,46 @@ fn prop_flags(world: &World, e: Entity) -> u32 {
         .unwrap_or(0)
 }
 
+/// A map prop's model-data value `key` (`PROP_*_KEY`).
+fn prop_key(world: &World, e: Entity, key: &str) -> Option<String> {
+    let index = world.get::<PropEntity>(e)?;
+    world.get_resource::<MapEntities>()?.entities.get(index.0)?.get(key).map(str::to_string)
+}
+
+/// A prop's `physgun_interactions` as the gun reads them: its launch spin
+/// and the rotation it is held in (4 step 4, 7): (the rotation after the
+/// frame, whether that frame is the yaw alone). A Source object facing along
+/// the frame is the frame turned a quarter about up, as a view looks along
+/// −Z and a Source object along its +X.
+fn gun_rules(world: &World, e: Entity, p: &PhysParams) -> (LaunchSpin, Option<(Quat, bool)>) {
+    let interactions = prop_key(world, e, crate::map::entities::PROP_INTERACTIONS_KEY).unwrap_or_default();
+    let has = |i: &str| interactions.split_whitespace().any(|x| x == i);
+    let spin = if has("launch_spin_z") {
+        LaunchSpin::ZAxis
+    } else if has("launch_spin_none") {
+        LaunchSpin::None
+    } else {
+        LaunchSpin::Random
+    };
+    let held = |angles: Vec3| {
+        Quat::from_rotation_y(std::f32::consts::FRAC_PI_2)
+            * crate::map::entities::rotation_to_engine(crate::map::entities::entity_rotation(angles))
+    };
+    let carry = prop_key(world, e, crate::map::entities::PROP_CARRY_ANGLES_KEY).and_then(|v| {
+        let a: Vec<f32> = v.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+        match a[..] {
+            [pitch, yaw, roll] => Some(Vec3::new(pitch, yaw, roll)),
+            _ => None,
+        }
+    });
+    let frame = match (carry, spin) {
+        (Some(a), _) => Some((held(a), true)),
+        (None, LaunchSpin::ZAxis) => Some((held(Vec3::new(p.spin_held_pitch, 0.0, 0.0)), false)),
+        _ => None,
+    };
+    (spin, frame)
+}
+
 /// A physics punt (2) of `e` by `by` along `d` from the hit `point`.
 fn punt(world: &mut World, p: &PhysParams, by: Entity, e: Entity, d: Vec3, point: Vec3) {
     let flags = prop_flags(world, e);
@@ -918,29 +1079,65 @@ fn punt(world: &mut World, p: &PhysParams, by: Entity, e: Entity, d: Vec3, point
     }
     influence(world, e, by);
     take_frag(world, e, by, p.frag_fuse);
-    let Ok(b) = world.get_entity(e) else { return };
-    let mass = enabled
-        .map(|(m, _)| m)
-        .or(b.get::<ComputedMass>().map(|m| m.value()).filter(|m| m.is_finite() && *m > 0.0))
-        .or(b.get::<PhysicsProp>().map(|p| p.mass))
-        .unwrap_or(1.0);
-    let centre_j = p.punt_base * d;
-    let point_j = p.punt_mass * mass.min(p.max_mass) * d;
-    let dv = (centre_j + point_j) / mass * U;
-    // The point impulse's turn about the mass centre (kg m/s at m).
-    let pos = b.get::<Position>().map_or(Vec3::ZERO, |x| x.0);
-    let rot = b.get::<Rotation>().map_or(Quat::IDENTITY, |r| r.0);
-    let com = pos + rot * b.get::<ComputedCenterOfMass>().map_or(Vec3::ZERO, |c| c.0);
-    let torque = (point - com).cross(point_j * U);
-    let dw = match enabled {
-        Some((_, i)) => rot * ((rot.inverse() * torque) / i.max(Vec3::splat(1e-5))),
-        None => b
-            .get::<ComputedAngularInertia>()
-            .map(|i| i.rotated(rot).inverse().mul_vec3(torque))
-            .unwrap_or(Vec3::ZERO),
+    let parts = object_parts(world, e);
+    let mass_of = |x: Entity| {
+        world
+            .get::<ComputedMass>(x)
+            .map(|m| m.value())
+            .filter(|m| m.is_finite() && *m > 0.0)
+            .or(world.get::<PhysicsProp>(x).map(|p| p.mass))
+            .unwrap_or(1.0)
     };
-    let dw = if dw.is_finite() { dw } else { Vec3::ZERO };
-    push(world, e, dv, dw);
+    let masses: Vec<f32> = parts.iter().map(|x| if *x == e { enabled.map_or(mass_of(*x), |(m, _)| m) } else { mass_of(*x) }).collect();
+    let main = parts.iter().position(|x| *x == e).unwrap_or(0);
+    let shares = punt_shares(&masses, main);
+    let effective = masses.iter().sum::<f32>().min(p.max_mass);
+    for ((part, mass), share) in parts.iter().copied().zip(masses).zip(shares) {
+        let Ok(b) = world.get_entity(part) else { continue };
+        let centre_j = p.punt_base * share * d;
+        let point_j = p.punt_mass * effective * share * d;
+        let dv = (centre_j + point_j) / mass * U;
+        // The point impulse's turn about the mass centre (kg m/s at m).
+        let pos = b.get::<Position>().map_or(Vec3::ZERO, |x| x.0);
+        let rot = b.get::<Rotation>().map_or(Quat::IDENTITY, |r| r.0);
+        let com = pos + rot * b.get::<ComputedCenterOfMass>().map_or(Vec3::ZERO, |c| c.0);
+        let torque = (point - com).cross(point_j * U);
+        let dw = match enabled.filter(|_| part == e) {
+            Some((_, i)) => rot * ((rot.inverse() * torque) / i.max(Vec3::splat(1e-5))),
+            None => b
+                .get::<ComputedAngularInertia>()
+                .map(|i| i.rotated(rot).inverse().mul_vec3(torque))
+                .unwrap_or(Vec3::ZERO),
+        };
+        let dw = if dw.is_finite() { dw } else { Vec3::ZERO };
+        push(world, part, dv, dw);
+    }
+}
+
+/// The bodies of `e`'s object: a ragdoll's, else `e` alone.
+fn object_parts(world: &World, e: Entity) -> Vec<Entity> {
+    world
+        .get::<RagdollBody>(e)
+        .and_then(|p| world.get::<Ragdoll>(p.ragdoll))
+        .map_or_else(|| vec![e], |r| r.bodies.clone())
+}
+
+/// A free combine ball punted (12): its stored speed its speed now, the
+/// punter's, a fresh life, and 750 kg's launch speed added along the view.
+/// (Measured: a 1000 in/s ball leaves at 1959 and keeps 1959 through its
+/// bounces, the stored speed raised by the faster arrival: projectiles.md
+/// 5.2, not 12's "restores".)
+fn punt_ball(world: &mut World, p: &PhysParams, by: Entity, b: Entity, fwd: Vec3) {
+    let now = world.resource::<SimClock>().now;
+    if let Some(mut f) = world.get_mut::<Flyer>(b) {
+        f.keep_speed = Some(f.velocity.length());
+        f.owner = Some(by);
+        f.expires = Some(now + p.ball_flight_life as f64);
+        f.velocity += fwd * launch_speed(p, p.ball_mass) * U;
+    }
+    if let Some(mut s) = world.get_mut::<ShownBody>(b) {
+        s.owner = Some(by);
+    }
 }
 
 /// The gun `gun` of `by` grabs what was found (4), the view `view`.
@@ -968,6 +1165,7 @@ fn grab(world: &mut World, gun: Entity, by: Entity, found: Found, view: Quat) {
             if let Some(mut g) = world.get_mut::<Hl2Physcannon>(gun) {
                 g.object = Some(b);
                 g.relative = Quat::IDENTITY;
+                g.yaw_frame = false;
                 g.anchor = Vec3::ZERO;
                 g.bounds = (Vec3::splat(-10.0 * U), Vec3::splat(10.0 * U));
                 g.error = 0.0;
@@ -984,6 +1182,8 @@ fn grab(world: &mut World, gun: Entity, by: Entity, found: Found, view: Quat) {
             influence(world, e, by);
             take_frag(world, e, by, p.frag_fuse);
             let rot = world.get::<Transform>(e).map_or(Quat::IDENTITY, |t| t.rotation);
+            let (launch_spin, frame) = gun_rules(world, e, &p);
+            world.entity_mut(e).remove::<held::LaunchedFromHold>();
             let bounds = world
                 .get::<PhysicsProp>(e)
                 .map(|x| x.bounds)
@@ -1004,9 +1204,38 @@ fn grab(world: &mut World, gun: Entity, by: Entity, found: Found, view: Quat) {
                 p.held_mass,
                 p.held_rot_damping,
             );
+            // The others: lighter, damped, still falling and dragged (4 step 3).
+            let parts: Vec<Entity> = object_parts(world, e).into_iter().filter(|x| *x != e).collect();
+            let part_mass = held_part_mass(parts.len() + 1);
+            for part in parts.iter().copied() {
+                let (gravity, drag) = world.get_entity(part).map_or((1.0, 0.0), |b| {
+                    (b.get::<GravityScale>().map_or(1.0, |g| g.0), b.get::<LinearDamping>().map_or(0.0, |d| d.0))
+                });
+                held::hold(
+                    world,
+                    part,
+                    Held {
+                        holder: by,
+                        target: None,
+                        view_offset: None,
+                        arrive: dt,
+                        max_speed: p.hold_speed * U,
+                        max_angular: p.hold_angular.to_radians(),
+                    },
+                    part_mass,
+                    p.held_rot_damping,
+                );
+                if let Ok(mut b) = world.get_entity_mut(part) {
+                    b.insert((GravityScale(gravity), LinearDamping(drag)));
+                }
+            }
             if let Some(mut g) = world.get_mut::<Hl2Physcannon>(gun) {
                 g.object = Some(e);
-                g.relative = view.inverse() * rot;
+                g.parts = parts;
+                let (relative, yaw_frame) = frame.unwrap_or((view.inverse() * rot, false));
+                g.relative = relative;
+                g.yaw_frame = yaw_frame;
+                g.launch_spin = launch_spin;
                 g.anchor = (bounds.0 + bounds.1) / 2.0;
                 g.bounds = bounds;
                 g.error = 0.0;
@@ -1053,30 +1282,52 @@ pub fn let_go(world: &mut World, gun: Entity, how: LetGo) {
         world_sound(world, &p.ball_launch_sound, at, object);
         return;
     }
+    let (launch_spin, parts) = world
+        .get_mut::<Hl2Physcannon>(gun)
+        .map_or((LaunchSpin::Random, Vec::new()), |mut g| (g.launch_spin, std::mem::take(&mut g.parts)));
     held::release(world, object);
+    for part in parts.iter().copied() {
+        held::release(world, part);
+    }
     if let Some(by) = by {
         influence(world, object, by);
     }
-    let Ok(mut b) = world.get_entity_mut(object) else { return };
-    let mass = b.get::<Mass>().map_or(1.0, |m| m.0);
-    let (v, w) = match how {
-        LetGo::Drop => {
-            let v = b.get::<LinearVelocity>().map_or(Vec3::ZERO, |v| v.0);
-            let w = b.get::<AngularVelocity>().map_or(Vec3::ZERO, |w| w.0);
-            (v.clamp_length_max(p.drop_speed * U), w.clamp_length_max(p.drop_spin.to_radians()))
-        }
-        LetGo::Launch { dir, seed } => {
-            let mut rng = shared_random(seed, "hl2dm:physcannon_spin", 0);
-            let s = p.launch_spin;
-            let spin = Vec3::new(rng.range(-s, s), rng.range(-s, s), rng.range(-s, s));
-            (dir * launch_speed(&p, mass) * U, spin * std::f32::consts::PI / 180.0)
-        }
-    };
-    if let Some(mut x) = b.get_mut::<LinearVelocity>() {
-        x.0 = v;
+    if matches!(how, LetGo::Launch { .. })
+        && let Ok(mut b) = world.get_entity_mut(object)
+    {
+        b.insert(held::LaunchedFromHold);
     }
-    if let Some(mut x) = b.get_mut::<AngularVelocity>() {
-        x.0 = w;
+    // Its mass after the release: all its bodies'.
+    let mass: f32 = std::iter::once(object)
+        .chain(parts.iter().copied())
+        .map(|e| world.get::<Mass>(e).map_or(1.0, |m| m.0))
+        .sum();
+    for body in std::iter::once(object).chain(parts) {
+        let Ok(mut b) = world.get_entity_mut(body) else { continue };
+        let (v, w) = match how {
+            LetGo::Drop => {
+                let v = b.get::<LinearVelocity>().map_or(Vec3::ZERO, |v| v.0);
+                let w = b.get::<AngularVelocity>().map_or(Vec3::ZERO, |w| w.0);
+                (v.clamp_length_max(p.drop_speed * U), w.clamp_length_max(p.drop_spin.to_radians()))
+            }
+            LetGo::Launch { dir, seed } => {
+                let mut rng = shared_random(seed, "hl2dm:physcannon_spin", 0);
+                let s = p.launch_spin;
+                let spin = match launch_spin {
+                    LaunchSpin::Random => Vec3::new(rng.range(-s, s), rng.range(-s, s), rng.range(-s, s)).map(f32::to_radians),
+                    LaunchSpin::None => Vec3::ZERO,
+                    // About its own z (engine: its y).
+                    LaunchSpin::ZAxis => b.get::<Rotation>().map_or(Quat::IDENTITY, |r| r.0) * Vec3::Y * p.spin_zaxis.to_radians(),
+                };
+                (dir * launch_speed(&p, mass) * U, spin)
+            }
+        };
+        if let Some(mut x) = b.get_mut::<LinearVelocity>() {
+            x.0 = v;
+        }
+        if let Some(mut x) = b.get_mut::<AngularVelocity>() {
+            x.0 = w;
+        }
     }
 }
 
@@ -1108,10 +1359,8 @@ pub fn hold(
     mut balls: Query<(&HeldBall, &mut Flyer, &Transform), Without<Held>>,
     statics: Query<(Option<&RigidBody>, Has<PropEntity>, Has<Intent>)>,
     of: Query<&ColliderOf>,
-    ball_params: Query<&super::alt_fire::Hl2Ball>,
     spatial: SpatialQuery,
     clock: Res<SimClock>,
-    mut play: MessageWriter<PlaySound>,
     mut commands: Commands,
 ) {
     let (now, dt) = (clock.now, clock.dt());
@@ -1135,14 +1384,14 @@ pub fn hold(
         let axis = Vec2::new(axis.x, axis.y);
         // A ball: carried by its flight, no body.
         if let Ok((b, mut fl, t)) = balls.get_mut(object) {
+            // Its end as any ball's (`Flyer::expires`: `FlyerGone`, its sound,
+            // effect and shake; projectiles.md 5.6).
             if now + 1e-6 >= b.explode_at {
-                let entry = ball_params.iter().next().map(|x| x.params.explode_sound.clone());
-                if let Some(entry) = entry {
-                    play.write(PlaySound::at(entry, t.translation));
-                }
+                fl.velocity = Vec3::ZERO;
+                fl.expires = Some(now);
                 g.object = None;
                 g.holding = false;
-                commands.entity(object).despawn();
+                commands.entity(object).remove::<HeldBall>();
                 continue;
             }
             let e = 10.0;
@@ -1182,7 +1431,8 @@ pub fn hold(
             .and_then(|dir| spatial.cast_ray_predicate(eye, dir, d * U, true, &filter, &world_only))
             .map(|h| h.distance / U);
         let point = hold_point(&p, launch::to_source(eye), launch::to_source(f).normalize_or_zero(), e, wall, axis);
-        let rot = (view * g.relative).normalize();
+        let frame = if g.yaw_frame { chimera_sim::weapon::aim_of(intent.yaw, 0.0) } else { view };
+        let rot = (frame * g.relative).normalize();
         let origin = launch::to_engine(point) - rot * g.anchor;
         held.target = Some((origin, rot));
         held.arrive = dt;
@@ -1260,6 +1510,18 @@ mod tests {
         for (m, dv) in [(10.0, 84.0), (30.0, 81.333), (50.0, 80.0), (250.0, 16.0)] {
             assert!((pull_impulse(&p, m) / m - dv).abs() < 1e-2, "{m}");
         }
+    }
+
+    /// Section 2 step 5, 4 step 3: the shares of an object of several
+    /// bodies, 1 for a single body.
+    #[test]
+    fn several_bodies_share() {
+        assert_eq!(punt_shares(&[30.0], 0), vec![1.0]);
+        let s = punt_shares(&[20.0, 10.0, 10.0], 1);
+        assert!((s[1] - 0.75).abs() < 1e-5 && (s[0] - 0.25).abs() < 1e-5 && (s[2] - 0.125).abs() < 1e-5, "{s:?}");
+        assert_eq!(punt_shares(&[90.0, 10.0], 0)[0], 1.0, "capped at 1");
+        assert_eq!(held_part_mass(2), 1.0);
+        assert!((held_part_mass(15) - 0.5).abs() < 1e-5);
     }
 
     /// Test case 3: a downward punt goes up, flattened.
