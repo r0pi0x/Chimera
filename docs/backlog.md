@@ -163,9 +163,6 @@ the original's own behaviour isn't a bug (say so instead).
   pieces don't show them. Breakable glass itself is right (13 of these on
   dm_lockdown, shared Source code: specs/source/breakables.md). Check
   specs/cs_source/impact_effects.md and whether CS:S's glass has the same bug.
-- **Ultimate Gun Game's HUD changed:** the CS:S HUD there looks different
-  now, a recent regression by the user's account (no change was meant to
-  touch it; bisect it). The level-up text is far too big on some HUDs.
 - **Flashlight lights nothing:** the toggle, network path and sounds work,
   but the spot light has no visible effect on dm_lockdown, even at 10,000
   times the brightness; the spec gives no brightness, colour or cone.
@@ -185,9 +182,6 @@ the original's own behaviour isn't a bug (say so instead).
   a Combat Arms zombie, it shows some other knife as the gun. Everywhere a
   player's gun is displayed should show their rung's primary, even when
   they've switched to the knife. Check the scoreboard and other places too.
-- **Ultimate Gun Game: HL2:DM rungs don't use HL2:DM's HUD and crosshair.**
-  Holding an HL2:DM gun should show the same HUD and crosshair as HL2:DM
-  itself, as other games' rungs do.
 - **Combat Arms melee and the RMS-12 against glass:** knives don't break
   glass (CS office's windows), so a flamethrower player can't get in; the
   RMS-12 can't break it either.

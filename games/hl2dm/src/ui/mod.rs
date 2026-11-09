@@ -31,8 +31,6 @@
 //!   window, the hints and the spectator GUI are not built.
 //! - An ammo crate's refused opening sends no "FULL" row (the spec names
 //!   only pickups; `game::hud_notes` has boxes and weapons).
-//! - On another game's map (the party apps) the map's own HUD look is that
-//!   game's, so this HUD draws only when its look is the map's.
 
 pub mod aux_power;
 pub mod damage;
@@ -61,7 +59,12 @@ pub struct Hl2dmHudPlugin;
 impl Plugin for Hl2dmHudPlugin {
     fn build(&self, app: &mut App) {
         systems::register_cvars(app);
+        // What it draws instead of the shell's, in an app that switches HUDs
+        // too (the shell's `HudDraws`).
+        app.world_mut().get_resource_or_init::<chimera_client::client::hud::HudDraws>().0.push((GAME, systems::DRAWS));
         app.init_resource::<systems::Hl2dmHud>()
+            // The game's pickups say them (not composed in the party apps).
+            .add_message::<crate::game::hud_notes::HudPickup>()
             .add_systems(Startup, systems::spawn_root)
             .add_systems(
                 Update,
@@ -97,16 +100,35 @@ impl Plugin for Hl2dmUiPlugin {
 
 /// HL2:DM's front end in an app made of several games (its bundle's
 /// client parts, `game::BUNDLE`): the HUD panels on the client's shell,
-/// drawing while HL2:DM's HUD is the gameplay's (an HL2:DM gun in hand)
-/// and the map's look is HL2:DM's.
+/// drawing while HL2:DM's HUD is the gameplay's (an HL2:DM gun in hand), on
+/// any game's map (its look comes with the map: `game::maps::dress_guest`),
+/// with the minigame's panel and its weapon selection and lights while it
+/// is up.
 pub mod party {
-    use bevy::app::PluginGroupBuilder;
+    use bevy::{app::PluginGroupBuilder, prelude::*};
+    use chimera_core::gameplay::hud_is;
     use chimera_world::game_bundle::GameClient;
 
-    pub static CLIENT: GameClient = GameClient { game: crate::game::GAME, hud: Some(with_hud), app: None };
+    use super::{GAME, lights, systems};
+
+    pub static CLIENT: GameClient = GameClient { game: GAME, hud: Some(with_hud), app: Some(client_app) };
 
     /// The HUD over the shell's plugins, after the base game's.
     pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
-        shell.add_after::<chimera_client::client::hud::HudPlugin>(super::Hl2dmHudPlugin)
+        shell
+            .add_after::<chimera_client::client::hud::HudPlugin>(super::Hl2dmHudPlugin)
+            .add_after::<super::Hl2dmHudPlugin>(chimera_client::client::minigame_panel::MinigamePanelPlugin(GAME))
+    }
+
+    /// The selection's commands (the weapon menu's data is the shell's, the
+    /// row CS:S's or this HUD's) and the suit's lights while its HUD is up.
+    pub fn client_app(app: &mut App) {
+        app.add_systems(
+            Update,
+            (
+                (lights::flash, lights::fade).chain().run_if(hud_is(GAME)),
+                systems::selection_commands.before(chimera_client::client::weapon_menu::menu_input).run_if(hud_is(GAME)),
+            ),
+        );
     }
 }

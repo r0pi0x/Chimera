@@ -104,6 +104,10 @@ pub struct HudSprite {
 /// A game's HUD look.
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct GameHud {
+    /// The game whose look this is (empty: the app has only one, or a
+    /// test's), so an app with several knows whose HUD it is for
+    /// (`client::hud::HudLookOwner`).
+    pub game: String,
     /// By the game's font name (e.g. `HudNumbers`, `Icons`).
     pub fonts: HashMap<String, HudFont>,
     /// By panel name (e.g. `HudHealth`).
@@ -508,6 +512,12 @@ pub struct ActiveOverview(pub MapOverview, pub Handle<Image>);
 /// The loaded map's game HUD (see `GameHud`).
 #[derive(Resource, Clone, Debug)]
 pub struct ActiveHud(pub Arc<GameHud>, pub HashMap<usize, Handle<Image>>);
+
+/// The looks of the map's guest games (`GameKit::guest_huds`), for the app's
+/// HUD switch: what `ActiveHud` becomes while their HUD draws
+/// (`client::hud::PutAway`).
+#[derive(Resource, Clone, Debug)]
+pub struct GuestLooks(pub Vec<ActiveHud>);
 
 /// A game's own game menu and options dialog look (Source's GameUI), read
 /// from the install once, independent of the map: the scheme's colours,

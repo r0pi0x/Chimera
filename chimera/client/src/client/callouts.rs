@@ -26,7 +26,8 @@
 //! the pack's volume) play where there is an asset server.
 //!
 //! Sized for a 720-line screen and scaled with the window's height
-//! (`fonts::overlay_scale`: 40 px for the first line, 22 for the others),
+//! (`fonts::overlay_scale`: 22 px for the first line, 14 for the others,
+//! so 3 % of the height as Combat Arms' own callout is: `LINE_SIZES`),
 //! in the HUD's face (`fonts::overlay_font`: the client scheme's
 //! `CenterPrintText`, CS:S's Trebuchet MS), on a band shaded as it would
 //! be blended in display space (`widgets::display_alpha`).
@@ -106,8 +107,14 @@ pub struct CalloutLine(pub usize);
 /// A line's font size on a 720-line screen (the first big, the others
 /// under it), scaled with the window (`fonts::overlay_scale`).
 pub fn line_size(index: usize) -> f32 {
-    if index == 0 { 40.0 } else { 22.0 }
+    LINE_SIZES[(index != 0) as usize]
 }
+
+/// The first line's and the others' size on a 720-line screen. As big as
+/// Combat Arms' callout draws on its HUD (20 and 14 on 768 lines): the same
+/// moment shouldn't double in size with the HUD up, and a long gun's name
+/// has to fit.
+pub const LINE_SIZES: [f32; 2] = [22.0, 14.0];
 
 fn spawn(mut commands: Commands) {
     commands

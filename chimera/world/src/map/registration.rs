@@ -330,6 +330,7 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
 /// are built (`MapPlugin`).
 fn scoped_resources(app: &mut App) {
     app.map_scoped::<PendingMap>()
+        .map_scoped::<super::sky::MapSkyFaces>()
         .map_scoped::<MapMemos>()
         .map_scoped::<MapFile>()
         .map_scoped::<PlayableArea>()
@@ -338,6 +339,7 @@ fn scoped_resources(app: &mut App) {
         .map_scoped::<super::impact::ActiveImpacts>()
         .map_scoped::<CharacterModels>()
         .map_scoped::<hud::ActiveHud>()
+        .map_scoped::<hud::GuestLooks>()
         .map_scoped::<hud::ActiveOverview>()
         .map_scoped::<surface_color::SurfaceColors>()
         .map_scoped::<particles::ParticleMaterials>()

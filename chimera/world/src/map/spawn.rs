@@ -892,13 +892,19 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
     commands.insert_resource(surface_color::SurfaceColors::new(data));
     commands.insert_resource(particles::ParticleMaterials(data.particles.clone()));
     D::insert_drawn(drawn, commands, s, DrawnResource::Particles);
-    if let Some(h) = &data.kit.hud {
+    let look = |h: &Arc<hud::GameHud>| {
         let images = h
             .sprites
             .values()
             .filter_map(|s| Some((s.texture, texture_handles.get(s.texture)?.clone())))
             .collect();
-        commands.insert_resource(hud::ActiveHud(h.clone(), images));
+        hud::ActiveHud(h.clone(), images)
+    };
+    if let Some(h) = &data.kit.hud {
+        commands.insert_resource(look(h));
+    }
+    if !data.kit.guest_huds.is_empty() {
+        commands.insert_resource(hud::GuestLooks(data.kit.guest_huds.iter().map(look).collect()));
     }
     if let Some(o) = &data.overview
         && let Some(image) = texture_handles.get(o.texture)

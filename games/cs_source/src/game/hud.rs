@@ -70,6 +70,7 @@ pub fn load(materials: &mut MaterialLoader, map: &str) -> Option<GameHud> {
 
     hud.screens = screens(materials).collect();
     hud.menus = super::vgui::load(materials, &mut hud, map);
+    hud.game = crate::game::GAME.to_string();
     (!hud.panels.is_empty()).then_some(hud)
 }
 

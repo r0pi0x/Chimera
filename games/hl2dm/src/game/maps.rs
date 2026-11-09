@@ -10,7 +10,7 @@
 //! its weapons' world models held on them (`bodies::add_held`) and view
 //! models (the `held` hook, `add_view_models`), right-handed and never
 //! mirrored (specs/hl2dm/player_models.md 12.1), and with a whole kit the
-//! SMG1's and shotgun's shells (`shells`). `dress_guest` brings them
+//! SMG1's and shotgun's shells (`shells`). `dress_guest` brings its HUD look and them
 //! onto another game's map (the party's), read from the HL2:DM install.
 //! Also its chat formats (`chat`: no radio, the dead read by the living).
 //!
@@ -253,6 +253,7 @@ pub fn dress_guest(map: &mut MapData, kept: &'static [&'static str]) -> Result<(
     super::bodies::add_bodies(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
     super::bodies::add_held(&mut materials, &surfaces, kit, &mut guest, &mut warnings);
     add_view_models(&mut materials, kit, &mut guest.view_models, &mut warnings);
+    let look = super::hud::load(&mut materials).map(std::sync::Arc::new);
     materials.finish_textures();
     warnings.extend(materials.missing);
     map.textures.extend(materials.textures.split_off(textures));
@@ -262,6 +263,7 @@ pub fn dress_guest(map: &mut MapData, kept: &'static [&'static str]) -> Result<(
     map.kit.characters.extend(guest.characters);
     map.kit.held.extend(guest.held);
     map.kit.view_models.extend(guest.view_models);
+    map.kit.add_guest_hud(look);
     Ok(())
 }
 

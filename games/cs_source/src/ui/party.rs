@@ -33,8 +33,9 @@ pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
         .add_after::<super::freeze_cam::FreezeCamPlugin>(super::voice_hud::VoiceHudPlugin)
 }
 
-/// The rest of CS:S's front end on the client: the map's HUD look is
-/// CS:S's (`client::hud::HudLookOwner`), and what CS:S's bodies play.
+/// The rest of CS:S's front end on the client: each game's HUD gets its
+/// own look, a look naming no game being CS:S's (`client::hud::HudLookOwner`),
+/// and what CS:S's bodies play.
 pub fn client_app(app: &mut App) {
     app.insert_resource(crate::client::hud::HudLookOwner(crate::game::GAME))
         .add_plugins(crate::game::player_anim::PlayerAnimPlugin);

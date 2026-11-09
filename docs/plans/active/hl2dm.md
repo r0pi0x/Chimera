@@ -655,7 +655,8 @@ implementing (owner branch) / done.
   shotgun, AR2 rifle, the crowbar, `hl2dm:movement`, dm_lockdown and
   dm_overwatch, `dm_*`), `rungs.rs` with data/rung_characters.toml (a
   model per rung from the 19, Combine or Rebels; the Combine's give the
-  stunstick), the guns on the power curve; no bodies or HUD (M8, M9: the
+  stunstick), the guns on the power curve; no bodies or HUD then (M8, M9: since 2026-11-09 a rung of its gun shows
+  its HUD on any map, `client::hud::HudLookOwner`; before that the
   fallbacks). Party tests: `hl2dm_parts.rs`, identity across three
   games, an HL2:DM rung over the network; UGG `parts.rs` with three
   games; hl2dm heavy and UGG tests on the installs. C7 (the plan's

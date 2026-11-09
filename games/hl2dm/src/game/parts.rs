@@ -4,9 +4,10 @@
 //! and the shotgun rise, the AR2 is a rifle) and its knife (the crowbar;
 //! a Combine rung's stunstick, `rungs`), its movement (`movement::ID`),
 //! its stock maps (the map cycle's, and any `dm_*` map the install holds).
-//! Its characters and HUD aren't lent yet (M8, M9): the app's fallbacks
-//! (the capsule body, the base game's HUD) stand in. The app registers it
-//! through the game's bundle (`super::BUNDLE`).
+//! Its HUD is its own id: a rung of its gun shows it, on any game's map
+//! (`ui::party`). Its characters aren't claimed here (its bodies come with
+//! the bundle's dressing, M8). The app registers it through the game's
+//! bundle (`super::BUNDLE`).
 
 use chimera_core::game_parts::{GameParts, GunClass, GunPart};
 

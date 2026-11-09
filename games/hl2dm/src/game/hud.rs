@@ -133,6 +133,7 @@ pub fn load(materials: &mut MaterialLoader) -> Option<GameHud> {
         menus.strings.insert(ANIMATIONS.to_string(), String::from_utf8_lossy(&bytes).into_owned());
     }
     hud.menus = Some(menus);
+    hud.game = crate::game::GAME.to_string();
     (!hud.panels.is_empty()).then_some(hud)
 }
 
