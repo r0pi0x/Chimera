@@ -8,7 +8,10 @@
 //! docs/OBSERVABILITY.md): a font's `tall` is its cell height in pixels,
 //! the em is that over the face's Windows line height (OS/2 `usWinAscent +
 //! usWinDescent`), and the baseline sits `tall · ascender / (ascender −
-//! descender)` (hhea) below the cell's top; glyphs advance by their
+//! descender)` (hhea) below the cell's top, except on a face with no
+//! Windows descent (HL2's `hl2crosshairs.ttf`, win 573 + 0, hhea 750 −
+//! 170: its brackets fill the cell from the bottom), whose baseline is the
+//! cell's bottom; glyphs advance by their
 //! advance widths rounded to whole pixels, and the cell starts on a whole
 //! pixel. Coverage is drawn as is: additive text adds `colour · alpha ·
 //! coverage` to what is under it.
@@ -103,6 +106,8 @@ pub struct FaceMetrics {
     /// hhea ascender and descender (descender negative).
     pub ascender: f32,
     pub descender: f32,
+    /// OS/2 usWinDescent (None without OS/2).
+    pub win_descent: Option<f32>,
 }
 
 impl FaceMetrics {
@@ -116,6 +121,7 @@ impl FaceMetrics {
             win_line,
             ascender,
             descender,
+            win_descent: win_descent(data),
         })
     }
 
@@ -127,6 +133,9 @@ impl FaceMetrics {
 
     /// The baseline's distance below the cell's top.
     pub fn baseline(&self, tall: f32) -> f32 {
+        if self.win_descent == Some(0.0) {
+            return tall;
+        }
         tall * self.ascender / (self.ascender - self.descender)
     }
 }
@@ -143,6 +152,18 @@ fn hhea(ttf: &[u8]) -> Option<(f32, f32)> {
     let a = u16_at(at + 4)? as i16 as f32;
     let d = u16_at(at + 6)? as i16 as f32;
     (a > d).then_some((a, d))
+}
+
+/// OS/2 usWinDescent (font units).
+fn win_descent(ttf: &[u8]) -> Option<f32> {
+    let u16_at = |o: usize| ttf.get(o..o + 2).map(|b| u16::from_be_bytes([b[0], b[1]]));
+    let u32_at = |o: usize| ttf.get(o..o + 4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]));
+    let tables = u16_at(4)? as usize;
+    let at = (0..tables)
+        .map(|i| 12 + i * 16)
+        .find(|&o| ttf.get(o..o + 4) == Some(b"OS/2".as_slice()))
+        .and_then(|o| u32_at(o + 8))? as usize;
+    u16_at(at + 76).map(f32::from)
 }
 
 /// Text laid out in pixels: each glyph's pen x (cell-relative) and the
@@ -457,9 +478,26 @@ mod tests {
             win_line: 1129.0,
             ascender: 985.0,
             descender: -226.0,
+            win_descent: Some(144.0),
         };
         assert_eq!(m.em(63.0), 55.0);
         assert!((m.baseline(63.0) - 51.24).abs() < 0.01);
+    }
+
+    /// HL2's hl2crosshairs.ttf: Windows line 573 + 0, hhea 750 / -170. Its
+    /// brackets fill the cell; hhea's baseline (51.4 of 63) cut off the
+    /// top 18% of them (the crosshair's look in the HL2:DM playtest).
+    #[test]
+    fn a_face_without_a_windows_descent_fills_its_cell() {
+        let m = FaceMetrics {
+            units_per_em: 1000.0,
+            win_line: 573.0,
+            ascender: 750.0,
+            descender: -170.0,
+            win_descent: Some(0.0),
+        };
+        assert_eq!(m.em(63.0), 109.0);
+        assert_eq!(m.baseline(63.0), 63.0);
     }
 
     #[test]

@@ -116,3 +116,31 @@ fn the_additive_picture_is_there() {
     let Some(hud) = look() else { return };
     assert!(hud.sprites.contains_key("white_additive"), "the dead view would be a solid red");
 }
+
+/// The playtest's cut-off crosshair brackets: the crosshairs font fills its
+/// cell (no Windows descent; its hhea says otherwise), so a bracket's ink
+/// is the cell's, centred on the crosshair when drawn at cy - h/2 (6.2).
+#[cfg(feature = "ui")]
+#[test]
+fn the_brackets_fill_their_cell() {
+    use chimera_client::client::hud_text::{Align, GlyphFont, HudText, ink_rect};
+    use bevy::prelude::*;
+    let Some(h) = look() else { return };
+    let e = font_for_height(&h.text_fonts["QuickInfo"], 1080.0).unwrap();
+    let family = e.family.to_lowercase();
+    let file = h.fonts.get(&format!("file:{family}")).or_else(|| h.fonts.get(&format!("family:{family}"))).expect("its file");
+    let tall = 63.0;
+    for glyph in ["[", "]", "{", "}", "(", ")"] {
+        let text = HudText {
+            font: GlyphFont { data: file.data.clone(), additive: true },
+            tall,
+            text: glyph.into(),
+            color: Color::WHITE,
+            at: Vec2::new(100.0, 100.0),
+            align: Align::Left,
+        };
+        let ink = ink_rect(&text).expect("ink");
+        assert!(ink.min.y >= 99.0 && ink.max.y <= 100.0 + tall + 1.0, "{glyph}: {ink:?} outside the cell");
+        assert!((ink.center().y - (100.0 + tall / 2.0)).abs() <= 1.5, "{glyph}: {ink:?} not centred");
+    }
+}

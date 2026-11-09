@@ -118,8 +118,6 @@ Delete each when fixed. Check against specs/hl2dm/ and the probe; what's
 the original's own behaviour isn't a bug (say so instead).
 
 - **Explosive barrels** break without exploding.
-- **Crosshair:** the HUD pieces left and right of the centre look off
-  centre, with their tops cut off.
 - **Props launch or trap the player:** walking into some props (the small
   bench) throws the player into the air; jumping onto the wheelbarrow
   sometimes sticks the player until they move backwards.

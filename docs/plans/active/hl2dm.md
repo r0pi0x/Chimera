@@ -1743,6 +1743,44 @@ implementing (owner branch) / done.
   in flight too); a pin has no sky test and the pinned bone isn't moved
   onto the impact; a client's own punt ends at its eye trace.
 
+- 2026-11-09: **Playtest group 1** (branch `hl2dm-play1`; the user's
+  Windows reports on dm_lockdown). Console: `choose_N` is Combat Arms'
+  (its options write `slotN; choose_N` into the binds, and config.cfg is
+  shared by every app): a key press leaves out what this app doesn't know
+  (`binds::known_here`), typing it still says so; shared with CS:S. Silent
+  sounds, one cause, not Windows-only: a map's sound bank holds only the
+  entries asked for and `sounds::entries` skipped what weapons' hooks and
+  the effects' code name (all of the gravity gun's, the launchers', the
+  ball's, the frag's and S.L.A.M.'s, the explosion's, the RPG's laser and
+  ignition, the hold loop), so `PlaySound` found nothing and said nothing.
+  On another game's map (de_dust2 in Ultimate Gun Game) it was all of
+  HL2:DM's, footsteps and guns too: `maps::dress_guest` brought no sounds;
+  it now brings them as CS:S's does. On HL2:DM's own maps the footsteps
+  were always in the bank.
+  Melee: a hit's generic impact (effects_sounds.md 6) had no surface sound
+  and placed CS:S's slash; now the surface's sound and decal
+  (`ImpactStyle::melee_decal`: CS:S's knife keeps its mark and gains the
+  sound impact_effects.md 12 gives it). The original's own: a toilet (`porcelain`)
+  and a sink (`concrete`) have no break sound (prop_damage.md 7.4);
+  `TripmineGrenade.StopSound` isn't in the install's scripts. Gravity gun:
+  depth on the view model is each material's `$ignorez` from its file, and
+  `glow04_noz` and `orangecore1` have theirs commented out, so only the
+  `orangelight1_noz` beams and the RPG's `laser1_noz` draw over the model.
+  The lag (gravity gun, RPG): `draw_attached` read the camera's
+  `GlobalTransform`, last frame's until `PostUpdate`; it now reads this
+  frame's `Transform`s, after `attached::EyePlaced` (`follow_eye`) and
+  `DriveAnimation` (the sway). Crosshair: `hl2crosshairs.ttf` has no
+  Windows descent (win 573 + 0, hhea 750, -170), and the hhea baseline put
+  the brackets 18% above their cell, whose clip cut them; a face with no
+  Windows descent now sits on the cell's bottom. What's left of "off
+  centre" is the spec's own: the left bracket's ink is 3 px further out at
+  1080 lines (pens at cx - 2w and cx + w, ink from the pen). Tests:
+  `binds`/`console` unit tests, `melee.rs`, `projectiles.rs`
+  (`the_launchers_sounds_are_sent_and_loaded`), `game::sounds`,
+  `heavy::sound_stock`, `particle_depth.rs`, `heavy::effect_materials`,
+  `rpg_laser.rs` and `gravity_gun.rs` (`keep_up_with_the_view_this_frame`),
+  `client::eye_tests`, `hud_text`, `heavy::hud_look`.
+
 ## Decision log
 
 - 2026-10-31 (user): Half-Life 2: Deathmatch is the next game, after
