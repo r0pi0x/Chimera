@@ -34,7 +34,7 @@ use crate::game::{
     GAME,
     hud::{ANIMATIONS, animations, icon_key},
     hud_notes::{HudPickup, PickupNote},
-    rules::deaths::notice_name,
+    rules::deaths::weapon_notice_name,
     standing::{Hl2MatchView, Hl2Team},
     suit::Suit,
     weapons::{
@@ -400,7 +400,7 @@ pub fn collect(
             let team_of = |ent: Entity| teams.get(ent).map_or(0, |t| t.0);
             let victim = (e.victim.name.clone(), team_of(e.victim.entity));
             let killer = e.killer.as_ref().map(|k| (k.name.clone(), team_of(k.entity)));
-            let weapon = e.weapon.map_or_else(|| "world".to_string(), notice_name);
+            let weapon = e.weapon.map_or_else(|| "world".to_string(), weapon_notice_name);
             hud.death_notice(killer.filter(|_| !e.suicide), victim, &weapon);
             st.seen.kill = e.id + 1;
         }

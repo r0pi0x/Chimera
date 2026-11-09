@@ -14,6 +14,7 @@
 //!   `notices`, `scoreboard`: the elements; `look`: the install's layout,
 //!   scheme and fonts at a window size; `frame`: the draw list.
 //! - `lights`: the respawn light.
+//! - `kill_icons`: its guns' icons for any app's kill feed.
 //! - `systems`: the Bevy side (inputs from the simulation, the messages,
 //!   the selection's commands, the nodes).
 //!
@@ -39,6 +40,7 @@ pub mod damage;
 pub mod frame;
 pub mod history;
 pub mod hud;
+pub mod kill_icons;
 pub mod lights;
 pub mod look;
 pub mod notices;
@@ -62,7 +64,8 @@ impl Plugin for Hl2dmHudPlugin {
     fn build(&self, app: &mut App) {
         systems::register_cvars(app);
         app.init_resource::<systems::Hl2dmHud>()
-            .add_systems(Startup, systems::spawn_root)
+            .init_resource::<chimera_client::client::weapon_icons::WeaponIcons>()
+            .add_systems(Startup, (systems::spawn_root, kill_icons::register))
             .add_systems(
                 Update,
                 (

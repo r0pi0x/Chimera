@@ -178,7 +178,6 @@ the original's own behaviour isn't a bug (say so instead).
   frames someone flashes as a capsule, or a gun or knife as the template
   model (seen at low FPS). Goes with the character swap above: keep what's
   showing until the real model is ready.
-- **Kill feed: the crowbar's icon** is just the large word "crowbar".
 - **RMS-12 on a gun game's rung (decision):** it burns nobody: its ammo's
   `ProgDamage` is 0 (specs/combat_arms/special_weapons.md 4, Open question
   8), so that is the original's data, not a bug. Its flames do show now and
