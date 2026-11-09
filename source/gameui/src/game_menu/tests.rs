@@ -1,7 +1,69 @@
-use crate::client::widgets::Interaction;
 use super::*;
-use crate::ui::options::setting_index;
+use crate::options::setting_index;
 use crate::map::hud::{GameUiItem, ServerSetting};
+
+/// A game with everything the menus can hold of a game's own (CS:S's
+/// shape, as `cs_source::ui::MENU_GAME`; CS:S's own numbers aren't
+/// needed here).
+const DIFFICULTIES: [(&str, f32, f32, f32); 4] =
+    [("Easy", 0.6, 5.0, 220.0), ("Normal", 0.35, 2.5, 360.0), ("Hard", 0.2, 1.5, 540.0), ("Expert", 0.12, 0.75, 720.0)];
+const QUICK_MAP: &str = "de_dust2";
+const QUICK_BOTS: u8 = 9;
+const ROUNDS_CVAR: &str = "chimera_rounds";
+const BOT_TEAMS: [(&str, &str); 3] = [("", "Any"), ("#Team_T", "Terrorists"), ("#Team_CT", "Counter-Terrorists")];
+
+static TEST_INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo {
+    id: "a_game",
+    short_name: "A",
+    content_dir: "a",
+    tick_interval: 0.015,
+    open: |_| Err(std::io::Error::other("no install")),
+    map_cycle: |_| Vec::new(),
+    map_names: |_| Vec::new(),
+    map_file: |n| Some(format!("maps/{n}.bsp")),
+    steam: None,
+    import_map: |_| Err("no".into()),
+    default_binds_cfg: "cfg/default.cfg",
+    default_binds: &[
+        ("tab", "+showscores"),
+        ("space", "+jump"),
+        ("mouse1", "+attack"),
+        ("w", "+forward"),
+        ("ctrl", "+duck"),
+        ("f1", "autobuy"),
+        ("mwheelup", "invprev"),
+    ],
+    old_default_binds: &[],
+    movement_cvars: &[],
+    meters_per_unit: 0.0254,
+    console_namespaces: &[],
+};
+
+static TEST_GAME: crate::MenuGame = crate::MenuGame {
+    info: &TEST_INFO,
+    name: "A Game",
+    steam_folder: "A Game",
+    strings: "resource/a_english.txt",
+    bots: Some(crate::BotMenu {
+        difficulties: &DIFFICULTIES,
+        teams: BOT_TEAMS,
+        cvars: [
+            ("BotPrefixEntry", "bot_prefix", "#Bot_NamePrefix"),
+            ("BotJoinAfterPlayerCheck", "bot_join_after_player", "#Bot_JoinAfterPlayer"),
+        ],
+        include_token: "#Bot_IncludeBots",
+        count_token: "#Bot_NumberOfBots",
+        difficulty_token: "#Bot_Difficulty",
+        join_team_token: "#Bot_JoinTeam",
+        team_words: ["terrorist", "counter-terrorist"],
+    }),
+    rounds_cvar: Some(ROUNDS_CVAR),
+    teams: Some(["Terrorists", "Counter-Terrorists"]),
+    quick_start: Some(crate::QuickStart { map: QUICK_MAP, bots: QUICK_BOTS }),
+    layout_hides: false,
+};
+
+const TEST: crate::GameRef = crate::GameRef(Some(&TEST_GAME));
 
 const CVARS: [(&str, &str); 19] = [
     ("sensitivity", "3"),
@@ -36,6 +98,7 @@ fn get(n: &str) -> Option<String> {
 /// The menu opened in a game (Esc).
 fn menu() -> GameMenu {
     let mut m = GameMenu {
+        game: TEST,
         in_game: true,
         ..default()
     };
@@ -45,7 +108,7 @@ fn menu() -> GameMenu {
 
 /// The menu at startup: the main menu, out of a game.
 fn main_menu() -> GameMenu {
-    let mut m = GameMenu::default();
+    let mut m = GameMenu::for_game(&TEST_GAME);
     m.open(Page::Main, vec!["cs_office".into(), "de_dust2".into(), "de_nuke".into()], None, |_| None);
     m
 }
@@ -214,6 +277,7 @@ fn control(m: &GameMenu, i: usize) -> Control {
 fn the_player_name_in_the_multiplayer_options() {
     let named = |n: &str| if n == "name" { Some("Player".to_string()) } else { get(n) };
     let mut m = GameMenu {
+        game: TEST,
         in_game: true,
         ..default()
     };
@@ -241,7 +305,7 @@ fn the_player_name_in_the_multiplayer_options() {
 /// names you from Steam): it gets one in the spray words' place.
 #[test]
 fn the_multiplayer_layout_gets_a_name_entry() {
-    let root = crate::game::gameui::layout_of_res(
+    let root = source_engine::hud::gameui::layout_of_res(
         r#""Resource/OptionsSubMultiplayer.res" {
             "Label2" { "ControlName" "Label" "fieldName" "Label2" "xpos" "16" "ypos" "148" "wide" "150" "tall" "24" "labelText" "Spray" }
             "Label3" { "ControlName" "Label" "fieldName" "Label3" "xpos" "95" "ypos" "175" "wide" "150" "tall" "80" "labelText" "Note" }
@@ -249,14 +313,14 @@ fn the_multiplayer_layout_gets_a_name_entry() {
     );
     let mut layout = root.expect("a layout");
     let strings = HashMap::from([("gameui_playername".to_string(), "Player name".to_string())]);
-    crate::game::gameui::add_player_name(&mut layout, &strings);
+    source_engine::hud::gameui::add_player_name(&mut layout, &strings);
     let entry = layout.get("NameEntry").expect("added");
     let label = layout.get("NameLabel").expect("added");
     assert_eq!(label.text, "Player name");
     assert!(class_of(entry).eq_ignore_ascii_case("TextEntry"));
     assert!(!layout.get("Label2").unwrap().visible && !layout.get("Label3").unwrap().visible);
     let before = layout.controls.len();
-    crate::game::gameui::add_player_name(&mut layout, &strings);
+    source_engine::hud::gameui::add_player_name(&mut layout, &strings);
     assert_eq!(layout.controls.len(), before, "once");
 }
 
@@ -445,6 +509,7 @@ fn the_camera_and_crosshair_are_the_windows_after_every_dialog() {
         .add_message::<WindowScaleFactorChanged>()
         .init_resource::<bevy::render::texture::ManualTextureViews>()
         .insert_resource(GameMenu {
+            game: TEST,
             in_game: true,
             ..default()
         })
@@ -520,6 +585,7 @@ fn disconnect_and_the_greybox_on_the_world() {
     let mut app = App::new();
     app.add_plugins(crate::console::ConsolePlugin)
         .insert_resource(GameMenu {
+            game: TEST,
             in_game: true,
             ..default()
         })
@@ -574,13 +640,6 @@ fn disconnect_returns_to_the_main_menu() {
     // Esc no longer leaves the menu.
     press(&mut m, &[Input::Close]);
     assert!(m.open);
-}
-
-#[test]
-fn normal_difficulty_is_the_bots_default() {
-    let c = crate::bot::BotConfig::default();
-    let (_, r, a, t) = DIFFICULTIES[NORMAL];
-    assert_eq!((r, a, t), (c.reaction, c.aim_error, c.turn_rate));
 }
 
 #[test]
@@ -772,7 +831,7 @@ fn create_servers_combo_boxes_take_the_wheel_letters_and_escape() {
 
 #[test]
 fn no_maps_no_start() {
-    let mut m = GameMenu::default();
+    let mut m = GameMenu::for_game(&TEST_GAME);
     m.open(Page::NewGame, Vec::new(), None, |_| None);
     let start = button(&m, Action::Start);
     let o = press(&mut m, &[Input::Click(Target::Row(start), 0)]);
@@ -915,7 +974,7 @@ fn keyboard() -> GameMenu {
     let mut m = menu();
     let mut b = BTreeMap::new();
     let mut defaults = binds::BindDefaults::default();
-    defaults.use_game(&crate::game::INFO);
+    defaults.use_game(&TEST_INFO);
     let defaults = defaults.default_binds();
     binds::bind_defaults(&mut b, true, &defaults);
     let known = binds::POLLED.iter().map(|c| c.to_string()).chain(["bugreport".to_string()]);
@@ -1092,6 +1151,7 @@ fn the_video_tab_shows_the_window_as_it_is() {
     let window = UVec2::new(1600, 900);
     window_values(&mut values, Some(window), Some(2));
     let mut m = GameMenu {
+        game: TEST,
         in_game: true,
         resolutions: crate::client::video::resolutions(&monitor, Some(window)),
         ..default()
@@ -1230,6 +1290,7 @@ fn escape_opens_and_closes_and_the_mouse_follows() {
         .init_resource::<ButtonInput<KeyCode>>()
         .init_resource::<ButtonInput<MouseButton>>()
         .insert_resource(GameMenu {
+            game: TEST,
             in_game: true,
             ..default()
         })
@@ -1298,6 +1359,7 @@ fn a_key_rebound_in_the_options_drives_the_action() {
         .init_resource::<crate::client::console::ConsoleUi>()
         .init_resource::<ButtonInput<KeyCode>>()
         .insert_resource(GameMenu {
+            game: TEST,
             in_game: true,
             ..default()
         })
@@ -1305,7 +1367,7 @@ fn a_key_rebound_in_the_options_drives_the_action() {
         .init_resource::<RegrabCursor>()
         .add_systems(Update, keys.before(crate::client::console::toggle))
         .add_systems(Update, crate::client::console::toggle);
-    crate::client::binds::test_binds(&mut app, &crate::game::INFO);
+    crate::client::binds::test_binds(&mut app, &TEST_INFO);
     binds::commands(&mut app);
     app.world_mut()
         .spawn((crate::client::console::ConsoleRoot, Visibility::Hidden));
@@ -1397,6 +1459,7 @@ fn create_server_offers_a_random_map() {
 #[test]
 fn water_detail_sets_both_water_cvars() {
     let mut m = GameMenu {
+        game: TEST,
         in_game: true,
         ..default()
     };
@@ -1424,6 +1487,7 @@ fn water_detail_sets_both_water_cvars() {
 #[test]
 fn shadow_detail_sets_cs_s_shadow_cvars() {
     let mut m = GameMenu {
+        game: TEST,
         in_game: true,
         ..default()
     };
@@ -1453,6 +1517,7 @@ fn shadow_detail_sets_cs_s_shadow_cvars() {
 #[test]
 fn the_aspect_ratio_filters_the_resolutions() {
     let mut m = GameMenu {
+        game: TEST,
         in_game: true,
         ..default()
     };
@@ -1513,6 +1578,7 @@ fn advanced_menu() -> GameMenu {
         ..default()
     };
     let mut m = GameMenu {
+        game: TEST,
         in_game: true,
         ..default()
     };
@@ -1536,7 +1602,7 @@ fn advanced_menu() -> GameMenu {
 fn multiplayer_advanced_lists_the_scripts_options() {
     let mut m = advanced_menu();
     let rows = m.rows();
-    let labels: Vec<String> = rows.iter().map(crate::ui::game_menu::label_of).collect();
+    let labels: Vec<String> = rows.iter().map(crate::game_menu::label_of).collect();
     assert_eq!(labels, ["Decal limit", "Weapon alignment", "Clan Tag", "Defuse progress bar", "Auto-help", "OK", "Cancel"]);
     // Ours as controls with their values now; Chimera lacks the clan tag
     // and auto-help: greyed, showing the script's defaults, not focused.
@@ -1588,7 +1654,7 @@ fn multiplayer_advanced_has_the_switch_names_and_freeze_cam() {
     click(&mut m, MainItem::Options);
     press(&mut m, &[Input::Click(Target::Tab(5), 0)]);
     click_on(&mut m, |m| button(m, Action::MultiplayerAdvanced));
-    let rows: Vec<String> = m.rows().iter().map(crate::ui::game_menu::label_of).collect();
+    let rows: Vec<String> = m.rows().iter().map(crate::game_menu::label_of).collect();
     assert_eq!(
         rows[1..4],
         [
@@ -1626,6 +1692,7 @@ fn the_voice_tab_is_there_and_greyed() {
 #[test]
 fn the_voice_tab_sets_voice_chats_cvars() {
     let mut m = GameMenu {
+        game: TEST,
         in_game: true,
         ..default()
     };
@@ -1677,6 +1744,7 @@ fn the_microphone_meter_is_in_decibels() {
 /// settings and the brightness.
 fn av_menu() -> GameMenu {
     let mut m = GameMenu {
+        game: TEST,
         in_game: true,
         ..default()
     };
@@ -1780,7 +1848,7 @@ fn the_brightness_dialog_sets_the_gamma() {
     click(&mut m, MainItem::Options);
     press(&mut m, &[Input::Click(Target::Tab(3), 0)]);
     let gamma_button = button(&m, Action::Gamma);
-    assert_eq!(crate::ui::game_menu::label_of(&m.rows()[gamma_button]), "Adjust brightness levels...");
+    assert_eq!(crate::game_menu::label_of(&m.rows()[gamma_button]), "Adjust brightness levels...");
     press(&mut m, &[Input::Click(Target::Row(gamma_button), 0)]);
     assert_eq!(m.page, Page::Gamma);
     let slider = row_of(&m, "mat_monitorgamma");
@@ -1794,7 +1862,7 @@ fn the_brightness_dialog_sets_the_gamma() {
     assert_eq!(o.lines, ["mat_monitorgamma 2.2"], "as it was");
     assert_eq!((m.page, m.focus), (Page::Settings, gamma_button));
     // VR mode is left out of the video tab on purpose.
-    assert!(crate::ui::game_menu::draw::LEFT_OUT.contains(&"VRMode"));
+    assert!(crate::game_menu::draw::LEFT_OUT.contains(&"VRMode"));
 }
 
 /// The dialogs' frames (`client::widgets`) draw over the menu's title and
@@ -1807,110 +1875,6 @@ fn frames_draw_over_the_menu_and_the_menu_over_the_panels() {
     assert!(MENU_Z > 60, "over the scoreboard and the VGUI panels");
 }
 
-/// Who a press reached, in order: "entry" (a game-menu entry), "panel" (a
-/// join menu's button); "panel hovered" if the pointer reached a panel
-/// at all.
-#[derive(Resource, Default)]
-struct Reached(Vec<&'static str>);
-
-#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
-struct Panels;
-
-fn record_reached(
-    q: Query<(&Interaction, Option<&Hit>, Option<&crate::client::vgui::VguiButton>), Changed<Interaction>>,
-    mut reached: ResMut<Reached>,
-) {
-    for (i, hit, panel) in &q {
-        match (i, hit, panel) {
-            (Interaction::Pressed, Some(Hit(Target::Main(_), _)), _) => reached.0.push("entry"),
-            (Interaction::Pressed, _, Some(_)) => reached.0.push("panel"),
-            (Interaction::Hovered, _, Some(_)) => reached.0.push("panel hovered"),
-            _ => {}
-        }
-    }
-}
-
-/// Playtest 2026-10-17: Esc over the message of the day or the class menu
-/// (z 50) left them drawn over the game menu's entries (46), and the
-/// panels' buttons took the clicks meant for the entries. The game menu
-/// now draws over them and its backdrop takes their clicks: a press on an
-/// entry reaches only it, with a panel button covering the whole screen
-/// under it. Closed, the panels are back and take the press.
-#[test]
-fn the_game_menu_takes_the_clicks_over_the_join_menus_and_gives_them_back() {
-    use crate::{
-        client::{vgui::VguiOpen, widgets::PointerScript},
-        map::hud::{ActiveHud, GameHud, GameMenus, UiControl, UiKind, UiLayout},
-        ui::{join_menus::JoinMenus, team_menu::TeamMenu},
-    };
-    use std::collections::HashMap;
-    for class in [false, true] {
-        let mut app = crate::client::widgets::pointer_test_app();
-        app.add_plugins(crate::console::ConsolePlugin);
-        crate::ui::join_menus::motd_cvar(&mut app);
-        // A panel button over the whole 640x480 screen (the window is
-        // 400x300: the same 4:3).
-        let mut ok = UiControl::new("ok", UiKind::Button, 0.0, 0.0, 640.0, 480.0);
-        ok.command = Some(if class { "joinclass 5" } else { "okay" }.into());
-        let page = UiLayout { controls: vec![ok] };
-        let menus = GameMenus {
-            layouts: HashMap::from([("panel.res".to_string(), page)]),
-            motd: (!class).then(|| "panel.res".into()),
-            class: if class { HashMap::from([(2, "panel.res".to_string())]) } else { HashMap::new() },
-            ..default()
-        };
-        let hud = GameHud {
-            menus: Some(menus),
-            ..default()
-        };
-        app.insert_resource(ActiveHud(Arc::new(hud), HashMap::new()))
-            .insert_resource({
-                let mut j = JoinMenus::default();
-                (j.motd, j.joining, j.class) = (!class, !class, class.then_some(2));
-                j
-            })
-            .init_resource::<TeamMenu>()
-            .init_resource::<VguiOpen>()
-            .insert_resource(menu())
-            .init_resource::<MenuUi>()
-            .init_resource::<LoadingDetails>()
-            .init_resource::<crate::client::fonts::UiFonts>()
-            .init_resource::<Windows>()
-            .init_resource::<Reached>()
-            // Recorded before a press closes a panel (and despawns it).
-            .configure_sets(Update, Panels.after(record_reached).before(draw))
-            .add_systems(Update, (record_reached, draw));
-        crate::ui::join_menus::add_panels(&mut app, Panels);
-        app.update();
-        app.update();
-        assert!(app.world().resource::<VguiOpen>().any(), "the panel is up");
-        // An entry's centre.
-        let mut q = app.world_mut().query::<(&Hit, &bevy::ui::UiGlobalTransform)>();
-        let at = q
-            .iter(app.world())
-            .find(|(h, _)| matches!(h.0, Target::Main(_)))
-            .map(|(_, t)| t.translation)
-            .expect("the menu's entries are drawn");
-        let click = |app: &mut App| {
-            app.world_mut().resource_mut::<PointerScript>().click(at);
-            for _ in 0..8 {
-                app.update();
-            }
-            std::mem::take(&mut app.world_mut().resource_mut::<Reached>().0)
-        };
-        assert_eq!(click(&mut app), ["entry"], "class menu: {class}");
-        let joins = app.world().resource::<JoinMenus>().clone();
-        assert_eq!((joins.motd, joins.class), (!class, class.then_some(2)), "the panel stays under the menu");
-        // Closed (Resume): the panel takes the press again.
-        app.world_mut().resource_mut::<GameMenu>().open = false;
-        app.update();
-        assert!(click(&mut app).contains(&"panel"), "class menu: {class}");
-        let joins = app.world().resource::<JoinMenus>().clone();
-        assert_eq!((joins.motd, joins.class), (false, None), "its button worked");
-        assert_eq!(app.world().resource::<TeamMenu>().0, !class, "the message's OK opens the team menu");
-    }
-}
-
 /// Opening the game menu keeps the in-game panels for when it closes
 /// (CS:S's GameUI over the viewport), the mouse left free for them.
 #[test]
@@ -1920,6 +1884,7 @@ fn opening_the_game_menu_keeps_the_panels_and_the_mouse_for_them() {
     app.add_plugins((MinimalPlugins, crate::console::ConsolePlugin))
         .init_resource::<crate::net::NetSettings>()
         .insert_resource(GameMenu {
+            game: TEST,
             in_game: true,
             ..default()
         })
@@ -1930,13 +1895,9 @@ fn opening_the_game_menu_keeps_the_panels_and_the_mouse_for_them() {
             team: true,
             ..default()
         })
-        .insert_resource(crate::ui::team_menu::TeamMenu(true))
-        .insert_resource(crate::ui::radio::RadioMenu(Some(0)))
         .add_systems(Update, cursor);
     app.world_mut().spawn(CursorOptions::default());
     open_menu(app.world_mut(), Page::Main);
-    assert!(app.world().resource::<crate::ui::team_menu::TeamMenu>().0);
-    assert_eq!(app.world().resource::<crate::ui::radio::RadioMenu>().0, Some(0));
     app.update();
     // Resume.
     app.world_mut().resource_mut::<GameMenu>().open = false;

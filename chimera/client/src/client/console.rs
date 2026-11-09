@@ -2472,7 +2472,11 @@ pub fn client_commands(app: &mut App) {
         "Leave the game (or stop hosting it): bots kicked, the map unloaded, back to the main menu.",
         |w, _| {
             crate::net::disconnect(w, "Disconnect by user.");
-            w.resource_mut::<Console>().submit("bot_kick");
+            // A game without bots (HL2:DM) has no such command.
+            let mut console = w.resource_mut::<Console>();
+            if console.command("bot_kick").is_some() {
+                console.submit("bot_kick");
+            }
             load_greybox(w);
             super::front_end::left_game(w);
             Ok(None)

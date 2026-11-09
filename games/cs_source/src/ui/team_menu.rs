@@ -33,7 +33,8 @@ impl Plugin for TeamMenuPlugin {
         use crate::client::binds::BindsAppExt;
         app.polled_bind("chooseteam");
         app.init_resource::<TeamMenu>()
-            .add_systems(Update, (keys, pointer, draw, draw_vgui).chain());
+            .add_systems(Update, (keys, pointer, draw, draw_vgui).chain())
+            .add_systems(Update, sync_game_menu.before(super::game_menu::MenuSystems));
         crate::client::front_end::sync_panel::<TeamMenu, _>(app, "team", true, |m| m.0, draw_vgui);
         app.console_command("chooseteam", "Open the team menu (M).", |w, _| {
             w.resource_mut::<TeamMenu>().0 = true;
@@ -48,8 +49,15 @@ pub struct TeamMenu(pub bool);
 
 /// Auto-assign: the team with fewer players (terrorists on a tie), as
 /// Source's `jointeam` number.
-pub(super) fn auto_team(t: usize, ct: usize) -> u8 {
-    if ct < t { 3 } else { 2 }
+pub(super) use source_gameui::game_menu::auto_team;
+
+/// The game menu's Team dialog greys Spectate as the server says.
+fn sync_game_menu(rules: Option<Res<crate::rules::Deathmatch>>, menu: Option<ResMut<super::game_menu::GameMenu>>) {
+    let Some(mut menu) = menu else { return };
+    let no_spectators = !spectators_allowed(rules.as_deref());
+    if menu.no_spectators != no_spectators {
+        menu.no_spectators = no_spectators;
+    }
 }
 
 /// Whether the server lets players join the spectators

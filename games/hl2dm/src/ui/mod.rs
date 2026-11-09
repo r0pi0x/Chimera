@@ -1,5 +1,6 @@
 //! HL2:DM's front end (the `ui` feature, M9 of docs/plans/active/hl2dm.md;
-//! specs/hl2dm/hud.md, H8): its HUD on the client shell. The panels are
+//! specs/hl2dm/hud.md, H8): its menus (GameUI's, `source_gameui`, with
+//! `MENU_GAME`) and its HUD on the client shell. The panels are
 //! Half-Life 2's: translucent rounded boxes in the bottom corners with a
 //! dim-yellow label and large digits that glow and flash when they change,
 //! driven by the named events of the install's `scripts/hudanimations.txt`
@@ -23,6 +24,10 @@
 //! `hl2dm` never uses this module.
 //!
 //! Known shortcuts:
+//! - The menus: the Multiplayer tab's player model picker and spray are
+//!   greyed (`cl_playermodel` is the console's), the Internet tab is
+//!   greyed (no master server), and the layout's look is unmeasured
+//!   against the real game (no refcmp of GameUI).
 //! - The damage flashes' trapezoids are straight bands and draw alpha
 //!   blended, not added; the corner staircase and border of the
 //!   scoreboard are drawn from boxes, its avatars and section colours'
@@ -54,6 +59,23 @@ use chimera_world::map::hud::ActiveHud;
 
 use crate::game::GAME;
 
+/// What's HL2:DM's own in GameUI's menus (`source_gameui`): its names. Its
+/// real menus have no bots (`hl2mp_bot_*` isn't built), no team dialog (specs/
+/// hl2dm/hud.md 14: the client creates none) and no rounds.
+pub static MENU_GAME: source_gameui::MenuGame = source_gameui::MenuGame {
+    info: &crate::game::INFO,
+    name: "Half-Life 2: Deathmatch",
+    steam_folder: "Half-Life 2 Deathmatch",
+    strings: "resource/hl2mp_english.txt",
+    bots: None,
+    rounds_cvar: None,
+    teams: None,
+    quick_start: None,
+    // `nocrosshair` in its gameinfo.txt: its layout hides the crosshair's
+    // controls and the Multiplayer tab's Advanced button.
+    layout_hides: true,
+};
+
 /// HL2:DM's HUD panels (the look, the state machine, the nodes), without
 /// the weapon selection's commands: what a party app adds (`party`).
 pub struct Hl2dmHudPlugin;
@@ -78,7 +100,11 @@ impl Plugin for Hl2dmHudPlugin {
                     .chain()
                     .distributive_run_if(chimera_core::gameplay::hud_is(GAME)),
             )
-            .add_systems(Update, systems::teardown.run_if(resource_removed::<ActiveHud>));
+            .add_systems(Update, systems::teardown.run_if(resource_removed::<ActiveHud>))
+            .add_systems(
+                Update,
+                systems::hide_at_main_menu.after(systems::sync).run_if(resource_exists::<chimera_client::client::front_end::MenuStatus>),
+            );
     }
 }
 
@@ -93,7 +119,7 @@ impl Plugin for Hl2dmUiPlugin {
         if !app.is_plugin_added::<chimera_client::client::weapon_menu::WeaponMenuPlugin>() {
             app.add_plugins(chimera_client::client::weapon_menu::WeaponMenuPlugin);
         }
-        app.add_plugins(Hl2dmHudPlugin)
+        app.add_plugins((Hl2dmHudPlugin, source_gameui::GameUiPlugin(&MENU_GAME)))
             // The selection closes at 1.25 s (a quarter into its fade).
             .add_systems(Update, (lights::flash, lights::fade).chain())
             .insert_resource(WeaponMenuTimes { menu: 1.25, show: 1.25, fade: 0.25, select_hold: 0.15 })

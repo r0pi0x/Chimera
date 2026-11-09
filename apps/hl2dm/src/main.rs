@@ -27,7 +27,7 @@ fn main() {
              \x20 join:    hl2dm +connect 127.0.0.1:27016\n"
         );
     }
-    let mut args = Args::parse();
+    let args = Args::parse();
     let mut app = App::new();
     match args.game_map() {
         Some(id) => match hl2dm_app::load_map(id, 0) {
@@ -51,8 +51,9 @@ fn main() {
             }
         },
         None => {
-            // No menus yet: straight into the greybox.
-            args.map.get_or_insert_with(|| "chimera:greybox".into());
+            // The greybox (behind the main menu unless the run starts
+            // playing), and map systems without a map, so `map <name>` can
+            // load one.
             app.add_plugins((greybox::GreyboxMapPlugin, MapPlugin::empty()));
         }
     }

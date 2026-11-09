@@ -8,7 +8,7 @@ use super::*;
 /// Lines waiting for a map load the menu started (`map` loads in the
 /// background, `console::finish_map_load` swaps it in).
 #[derive(Resource, Default)]
-pub(super) struct AfterLoad {
+pub struct AfterLoad {
     pub(super) lines: Vec<String>,
     /// Frames waited for the load to start; it started once seen.
     pub(super) waited: u32,
@@ -18,11 +18,11 @@ pub(super) struct AfterLoad {
 /// The menu closed: grab the mouse again once the button that closed it is
 /// up (else the click would fire the gun).
 #[derive(Resource, Default)]
-pub(super) struct RegrabCursor(pub(super) bool);
+pub struct RegrabCursor(pub bool);
 
 /// The install's GameUI look, read in the background at startup.
 #[derive(Resource, Default)]
-pub(in crate::ui) struct MenuUi {
+pub struct MenuUi {
     pub(super) loading: Option<Arc<Mutex<Option<Option<GameUi>>>>>,
     pub(super) ui: Option<Arc<GameUi>>,
     /// The main menu's backgrounds: 4:3, widescreen.
@@ -34,11 +34,11 @@ pub(in crate::ui) struct MenuUi {
     pub(super) pictures: HashMap<String, Handle<Image>>,
     /// The interface's sounds, loading from the install as assets
     /// (`GameUi::sound_files`).
-    pub(in crate::ui) sounds: HashMap<crate::map::hud::UiSound, Handle<SoundAsset>>,
+    pub sounds: HashMap<crate::map::hud::UiSound, Handle<SoundAsset>>,
 }
 
 /// An interface sound to play now (`MenuUi::sounds`), once loaded.
-pub(in crate::ui) fn ui_sound(
+pub fn ui_sound(
     menu_ui: Option<&MenuUi>,
     sounds: Option<&Assets<SoundAsset>>,
     sound: crate::map::hud::UiSound,
@@ -64,7 +64,7 @@ impl MenuUi {
 }
 
 /// A decoded picture as a UI image.
-pub(in crate::ui) fn ui_image(pic: &crate::map::hud::UiImage, images: &mut Assets<Image>) -> Handle<Image> {
+pub fn ui_image(pic: &crate::map::hud::UiImage, images: &mut Assets<Image>) -> Handle<Image> {
     use bevy::{
         asset::RenderAssetUsages,
         render::render_resource::{Extent3d, TextureDimension, TextureFormat},
@@ -83,14 +83,16 @@ pub(in crate::ui) fn ui_image(pic: &crate::map::hud::UiImage, images: &mut Asset
 }
 
 /// Read the GameUI files on a thread (the install's archives).
-pub(super) fn start_loading_ui(mut ui: ResMut<MenuUi>) {
+pub(super) fn start_loading_ui(mut ui: ResMut<MenuUi>, menu: Res<GameMenu>) {
+    let Some(game) = menu.game.0 else { return };
     let slot = Arc::new(Mutex::new(None));
     ui.loading = Some(slot.clone());
     std::thread::spawn(move || {
-        let loaded = crate::game::INFO
+        let loaded = game
+            .info
             .install()
-            .and_then(|p| crate::game::mount::open(&p).ok())
-            .and_then(|m| crate::game::gameui::load(&m));
+            .and_then(|p| (game.info.open)(&p).ok())
+            .and_then(|m| source_engine::hud::gameui::load(&m, game.strings));
         if let Ok(mut s) = slot.lock() {
             *s = Some(loaded);
         }
@@ -99,7 +101,7 @@ pub(super) fn start_loading_ui(mut ui: ResMut<MenuUi>) {
 
 /// The install changed (the first-run dialog, `chimera_install`): read
 /// its GameUI look again, and the open page's maps.
-pub(in crate::ui) fn reload_install(w: &mut World) {
+pub fn reload_install(w: &mut World) {
     if let Err(e) = w.run_system_cached(start_loading_ui) {
         warn!("game menu: reading the GameUI look again: {e}");
     }
@@ -134,7 +136,7 @@ pub(super) fn ui_loaded(
         game_ui
             .sound_files
             .iter()
-            .map(|(sound, file)| (*sound, server.load(crate::assets::install_path(crate::game::GAME, file))))
+            .map(|(sound, file)| (*sound, server.load(crate::assets::install_path(menu.game.0.map_or("", |g| g.info.id), file))))
             .collect()
     });
     ui.pictures = game_ui
@@ -185,11 +187,12 @@ type MenuValues = (HashMap<String, String>, BTreeMap<String, String>, BTreeSet<S
 
 fn menu_values(w: &mut World) -> MenuValues {
     {
+        let game = w.resource::<GameMenu>().game;
         let mut names: Vec<String> = SETTINGS
             .iter()
             .flat_map(|s| s.cvars().map(str::to_string))
-            .chain([ROUNDS_CVAR.to_string(), "bot_reaction".into()])
-            .chain(BOT_CVARS.iter().map(|(_, c, _)| c.to_string()))
+            .chain(game.rounds_cvar().map(str::to_string))
+            .chain(game.bots().into_iter().flat_map(|b| b.cvars.iter().map(|(_, c, _)| c.to_string()).chain(["bot_reaction".to_string()])))
             .chain(USER_FALLBACK.iter().map(|(c, ..)| c.to_string()))
             .collect();
         if let Some(ui) = w.get_resource::<MenuUi>().and_then(|u| u.ui.clone()) {
@@ -276,7 +279,7 @@ pub(super) fn open_menu(w: &mut World, page: Page) {
         .map(|m| m.0.rsplit(':').next().unwrap_or(&m.0).to_string());
     let maps = crate::client::console::map_names(w, crate::game_registry::default_game(w));
     let (mut bots, mut players) = ([0; 2], [0; 2]);
-    let mut q = w.query_filtered::<(&Team, Has<crate::bot::Bot>), With<Intent>>();
+    let mut q = w.query_filtered::<(&Team, Has<crate::core::Bot>), With<Intent>>();
     for (team, bot) in q.iter(w) {
         if let Some(i) = [1, 2].iter().position(|t| *t == team.0) {
             players[i] += 1;
@@ -299,10 +302,8 @@ pub(super) fn open_menu(w: &mut World, page: Page) {
     // The display mode as the system has it, else as asked for.
     let mode = w.get_resource::<RealWindowMode>().and_then(|r| r.0).or(shown.map(|(_, m)| m));
     window_values(&mut get, window, mode);
-    let no_spectators = !crate::ui::team_menu::spectators_allowed(w.get_resource::<crate::rules::Deathmatch>());
     let mut menu = w.resource_mut::<GameMenu>();
     menu.set_counts(bots, players);
-    menu.no_spectators = no_spectators;
     menu.set_binds(binds, known, defaults);
     menu.resolutions = crate::client::video::resolutions(&modes, window);
     menu.open(page, maps, current.as_deref(), |n| get.get(n).cloned());
@@ -317,14 +318,9 @@ pub(super) fn open_menu(w: &mut World, page: Page) {
         .map_or(0, |d| d.as_nanos() as u64 / 1000);
     // The in-game panels (message of the day, team, class, buy, radio and
     // spectator menus) stay, under the menu (`MENU_Z`), taking no input
-    // until it closes, as under CS:S's GameUI; the spectator menu's open
-    // drop-down (a popup, over everything) closes.
-    if let Some(mut l) = w.get_resource_mut::<crate::ui::spectator_menu::MenuLists>()
-        && (l.open.is_some() || l.sub.is_some())
-    {
-        l.open = None;
-        l.sub = None;
-    }
+    // until it closes, as under GameUI; a panel's open popup (over
+    // everything) closes (`GameMenuOpened`).
+    w.trigger(crate::GameMenuOpened);
     if page != Page::Main
         && let Some(mut windows) = w.get_resource_mut::<Windows>()
     {
@@ -335,14 +331,14 @@ pub(super) fn open_menu(w: &mut World, page: Page) {
 
 /// The menu open (on its main page unless it is open already): for the
 /// server browser, which shows over it.
-pub(in crate::ui) fn open_main(w: &mut World) {
+pub fn open_main(w: &mut World) {
     if !w.resource::<GameMenu>().open {
         open_menu(w, Page::Main);
     }
 }
 
 /// A map is in (`map`, `map greybox`): playing it, the menu closed.
-pub(in crate::ui) fn entered_game(w: &mut World) {
+pub fn entered_game(w: &mut World) {
     let Some(mut menu) = w.get_resource_mut::<GameMenu>() else { return };
     if menu.enter_game()
         && let Some(mut regrab) = w.get_resource_mut::<RegrabCursor>()
@@ -352,7 +348,7 @@ pub(in crate::ui) fn entered_game(w: &mut World) {
 }
 
 /// Out of the game (`disconnect`): the main menu.
-pub(in crate::ui) fn left_game(w: &mut World) {
+pub fn left_game(w: &mut World) {
     let Some(mut menu) = w.get_resource_mut::<GameMenu>() else { return };
     menu.in_game = false;
     menu.loading = None;
@@ -399,8 +395,8 @@ pub(super) fn apply(input: Input, menu: &mut ResMut<GameMenu>, console: &mut Con
 /// (the server browser in front, the first-run dialog).
 pub(super) fn menu_has_keys(
     menu: &GameMenu,
-    browser: Option<&crate::ui::server_browser::ServerBrowser>,
-    first_run: Option<&crate::ui::first_run::FirstRun>,
+    browser: Option<&crate::server_browser::ServerBrowser>,
+    first_run: Option<&crate::first_run::FirstRun>,
     windows: Option<&Windows>,
 ) -> bool {
     if first_run.is_some_and(|f| f.open) {
@@ -411,7 +407,7 @@ pub(super) fn menu_has_keys(
     }
     // The browser and a dialog of the menu both open: the front one.
     menu.page != Page::Main
-        && windows.is_some_and(|w| w.front(&[crate::ui::server_browser::WINDOW, menu.page.window()]) == Some(menu.page.window()))
+        && windows.is_some_and(|w| w.front(&[crate::server_browser::WINDOW, menu.page.window()]) == Some(menu.page.window()))
 }
 
 /// The focused row is a text entry (typing goes to it: `text_keys`).
@@ -472,7 +468,7 @@ pub(super) const LETTERS: [(KeyCode, char); 36] = [
 /// the console's toggle, so the Esc that closes the console doesn't open
 /// the menu.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn keys(
+pub fn keys(
     keys: Res<ButtonInput<KeyCode>>,
     (mouse, scroll): (Option<Res<ButtonInput<MouseButton>>>, Option<Res<AccumulatedMouseScroll>>),
     ui: Res<crate::client::console::ConsoleUi>,
@@ -482,8 +478,8 @@ pub(super) fn keys(
     mut regrab: ResMut<RegrabCursor>,
     mut commands: Commands,
     (browser, first_run, windows): (
-        Option<Res<crate::ui::server_browser::ServerBrowser>>,
-        Option<Res<crate::ui::first_run::FirstRun>>,
+        Option<Res<crate::server_browser::ServerBrowser>>,
+        Option<Res<crate::first_run::FirstRun>>,
         Option<Res<Windows>>,
     ),
 ) {
@@ -554,8 +550,8 @@ pub(super) fn text_keys(
     mut after: ResMut<AfterLoad>,
     mut regrab: ResMut<RegrabCursor>,
     (browser, first_run, windows): (
-        Option<Res<crate::ui::server_browser::ServerBrowser>>,
-        Option<Res<crate::ui::first_run::FirstRun>>,
+        Option<Res<crate::server_browser::ServerBrowser>>,
+        Option<Res<crate::first_run::FirstRun>>,
         Option<Res<Windows>>,
     ),
 ) {
@@ -598,7 +594,7 @@ pub(super) fn text_keys(
 
 /// What a UI node stands for: a row (step 0) or one of its parts.
 #[derive(Component, Clone, Copy)]
-pub(super) struct Hit(pub(super) Target, pub(super) i32);
+pub struct Hit(pub Target, pub i32);
 
 /// A combo box row the wheel steps.
 #[derive(Component, Clone, Copy)]
@@ -633,7 +629,7 @@ pub(super) fn pointer(
     mut console: ResMut<Console>,
     mut after: ResMut<AfterLoad>,
     mut regrab: ResMut<RegrabCursor>,
-    (browser, first_run): (Option<Res<crate::ui::server_browser::ServerBrowser>>, Option<Res<crate::ui::first_run::FirstRun>>),
+    (browser, first_run): (Option<Res<crate::server_browser::ServerBrowser>>, Option<Res<crate::first_run::FirstRun>>),
 ) {
     if !menu.open || menu.capture.is_some() || first_run.is_some_and(|f| f.open) {
         return;
@@ -710,20 +706,19 @@ pub(super) fn pointer(
 pub(super) fn sync(
     mut menu: ResMut<GameMenu>,
     console: Res<Console>,
-    characters: Query<(&Team, Has<crate::bot::Bot>), With<Intent>>,
+    characters: Query<(&Team, Has<crate::core::Bot>), With<Intent>>,
     people: Query<
         (
             Option<&crate::net::NetCharacter>,
             Option<&Name>,
             Has<crate::core::LocalPlayer>,
-            Has<crate::bot::Bot>,
+            Has<crate::core::Bot>,
         ),
         With<Intent>,
     >,
     mutes: Option<Res<crate::net::voice::VoiceMutes>>,
     net: Option<Res<crate::net::NetSettings>>,
     test: Option<ResMut<crate::client::voice::VoiceTest>>,
-    rules: Option<Res<crate::rules::Deathmatch>>,
 ) {
     // The microphone test runs while the Voice tab shows (CS:S's stops
     // with it).
@@ -763,10 +758,6 @@ pub(super) fn sync(
             menu.set_roster(roster);
         }
     }
-    let no_spectators = !crate::ui::team_menu::spectators_allowed(rules.as_deref());
-    if menu.no_spectators != no_spectators {
-        menu.no_spectators = no_spectators;
-    }
     let (mut bots, mut players) = ([0; 2], [0; 2]);
     for (team, bot) in &characters {
         let Some(i) = [1, 2].iter().position(|t| *t == team.0) else {
@@ -788,7 +779,7 @@ pub(super) fn sync(
 /// The mouse is free while the menu is open (whoever grabbed it); once
 /// closed, grabbed again when the mouse button is up, unless an in-game
 /// panel it covered (`VguiOpen`) is still up and wants it.
-pub(super) fn cursor(
+pub fn cursor(
     menu: Res<GameMenu>,
     mut regrab: ResMut<RegrabCursor>,
     mouse: Res<ButtonInput<MouseButton>>,

@@ -786,6 +786,15 @@ original.**
 - Also ours and not from the original: a timer's `mm:ss` rounding up, the
   warning colour, the marks before objectives.
 
+### GameUI's menus, one implementation for Source games
+
+CS:S's and HL2:DM's main and Escape menus are one: `source_gameui`, drawn
+from each install's own GameUI files, so entries, words, layouts, title and
+background are that game's at run time. What's a game's own in them is data
+(`MenuGame`): its strings file, and whether it has bots, a team dialog, rounds
+or a quick start (HL2:DM: none of these). A setting whose cvar the app lacks
+is greyed, as under CS:S.
+
 ### The party apps' Escape menu
 
 Ultimate Gun Game and Lucker Party have a menu of their own

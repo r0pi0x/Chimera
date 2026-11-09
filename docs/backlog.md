@@ -121,9 +121,6 @@ the original's own behaviour isn't a bug (say so instead).
   secondary ammo panel; branch `hl2dm-gaps1` feeds it, check after merge).
 - **HUD:** no ammo counter bottom right for the RPG (`hl2dm-gaps1` shows
   its own rounds as ammo, check after merge).
-- **Escape** only frees the cursor (click to return to the game): no menu.
-  HL2:DM's menus were planned for after faithful DM/TDM; the user has now
-  run into it, so it's next once these reports are done.
 - **The explosion's fireball has hard rectangular edges (2026-11-09):** seen
   on an explosive drum in dm_lockdown (a straight cut along its top and
   bottom, blocky steps at the sides). It's the effect shared with CS:S, so

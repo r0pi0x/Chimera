@@ -1,4 +1,4 @@
-//! Finding the CS:S install on first run. At startup the log says which
+//! Finding the game's install on first run (`crate::MenuGame`). At startup the log says which
 //! install is used and how it was found (`mount::install`: the config,
 //! the user's saved choice, a Steam library) or that none was. With none,
 //! at the main menu, a dialog drawn as the game menu's GameUI dialogs
@@ -12,10 +12,10 @@
 //! As the other menus, the model (`FirstRun::handle`) is unit-tested
 //! without a window.
 //!
-//! Finding CS:S on first run: the startup log line saying which install is used
+//! Finding the game on first run: the startup log line saying which install is used
 //! and how it was found (`mount::install`), or that none was; with none at the
 //! main menu, a modal dialog drawn with the GameUI dialogs' controls
-//! (`widgets.rs`; Counter-Strike: Source Not Found: a text entry to paste the
+//! (`widgets.rs`; "<the game> Not Found": a text entry to paste the
 //! folder into, why a folder doesn't do, Retry (that folder, or search Steam
 //! again when empty), Continue Without); a folder that checks out is saved in
 //! the user's settings and the menu's look read again
@@ -40,43 +40,43 @@ use crate::client::{
 };
 use crate::{
     console::ConsoleAppExt,
-    game::GAME,
     mount::{
         config::LocalConfig,
         install::{self, Resolved},
     },
 };
 
-pub struct FirstRunPlugin;
+pub struct FirstRunPlugin(pub &'static crate::MenuGame);
 
 impl Plugin for FirstRunPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<FirstRun>()
+        let game = self.0;
+        app.insert_resource(FirstRun { game: crate::GameRef(Some(game)), ..default() })
             .add_systems(Startup, startup)
             .add_systems(Update, (keys, pointer, draw).chain().after(super::game_menu::MenuSystems));
         app.console_command(
             "chimera:install",
-            "install [folder|auto]: show which CS:S install is used and how it was found; with a folder \
-             (the one holding cstrike/ and hl2/), use and remember it; auto: forget it and search Steam again.",
-            |w, a| {
+            "install [folder|auto]: show which install of the game is used and how it was found; with a folder \
+             (the one holding the game's folder and hl2/), use and remember it; auto: forget it and search Steam again.",
+            move |w, a| {
                 let arg = a.join(" ");
                 match arg.trim() {
-                    "" => Ok(Some(resolve_now().describe(NAME))),
+                    "" => Ok(Some(resolve_now(game).describe(game.name))),
                     "auto" => {
                         if let Some(settings) = install::settings_path() {
-                            install::save_install(&settings, GAME, None)?;
+                            install::save_install(&settings, game.info.id, None)?;
                         }
                         reload(w);
-                        Ok(Some(resolve_now().describe(NAME)))
+                        Ok(Some(resolve_now(game).describe(game.name)))
                     }
-                    folder => use_folder(w, folder).map(Some),
+                    folder => use_folder(w, game, folder).map(Some),
                 }
             },
         )
         .console_command(
             "chimera:firstrun",
             "firstrun [open | type <text> | clear | retry | continue]: drive the first-run dialog \
-             (CS:S not found) as typing and clicks would; prints its state.",
+             (the game not found) as typing and clicks would; prints its state.",
             |w, a| {
                 let input = match a.first().map(String::as_str) {
                     None => None,
@@ -105,14 +105,14 @@ impl Plugin for FirstRunPlugin {
     }
 }
 
-const NAME: &str = "Counter-Strike: Source";
-
 // ---------------------------------------------------------------------------
 // The model.
 
 /// The dialog's state.
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub struct FirstRun {
+    /// The game it looks for.
+    pub game: crate::GameRef,
     pub open: bool,
     /// The folder typed or pasted.
     pub text: String,
@@ -225,16 +225,16 @@ impl FirstRun {
 /// The folder the user meant: `path` itself, or the install around or
 /// under it (its `cstrike/` or `hl2/` folder pasted, or the Steam
 /// library's `common/` folder).
-pub fn install_folder(path: &Path) -> Result<PathBuf, String> {
-    let game = &crate::game::INFO.steam.ok_or("no Steam game entry")?;
+pub fn install_folder(of: &crate::MenuGame, path: &Path) -> Result<PathBuf, String> {
+    let game = &of.info.steam.ok_or("no Steam game entry")?;
     let first = install::check(path, game);
     if first.is_ok() {
         return Ok(path.to_path_buf());
     }
     let nearby = [
         path.parent().map(Path::to_path_buf),
-        Some(path.join("Counter-Strike Source")),
-        Some(path.join("steamapps/common/Counter-Strike Source")),
+        Some(path.join(of.steam_folder)),
+        Some(path.join("steamapps/common").join(of.steam_folder)),
     ];
     nearby.into_iter().flatten().find(|p| install::check(p, game).is_ok()).ok_or_else(|| first.unwrap_err())
 }
@@ -242,21 +242,21 @@ pub fn install_folder(path: &Path) -> Result<PathBuf, String> {
 // ---------------------------------------------------------------------------
 // Running it.
 
-fn resolve_now() -> Resolved {
+fn resolve_now(game: &crate::MenuGame) -> Resolved {
     let config = LocalConfig::load().unwrap_or_default();
-    install::resolve(&config, GAME, crate::game::INFO.steam.as_ref())
+    install::resolve(&config, game.info.id, game.info.steam.as_ref())
 }
 
 /// Check, remember and use `folder`; what is used now.
-fn use_folder(w: &mut World, folder: &str) -> Result<String, String> {
+fn use_folder(w: &mut World, game: &crate::MenuGame, folder: &str) -> Result<String, String> {
     let path = install::expand_home(Path::new(folder));
     let path = std::path::absolute(&path).unwrap_or(path);
-    let path = install_folder(&path)?;
+    let path = install_folder(game, &path)?;
     let settings = install::settings_path().ok_or("no folder for the user's settings")?;
-    install::save_install(&settings, GAME, Some(&path))?;
+    install::save_install(&settings, game.info.id, Some(&path))?;
     reload(w);
-    let now = resolve_now();
-    let mut text = now.describe(NAME);
+    let now = resolve_now(game);
+    let mut text = now.describe(game.name);
     if now.install.as_ref().is_some_and(|i| i.path != path) {
         text.push_str(&format!(" (saved {}, but the config's path comes first)", path.display()));
     }
@@ -265,14 +265,14 @@ fn use_folder(w: &mut World, folder: &str) -> Result<String, String> {
 }
 
 /// Search again (Steam, the saved folder); found or why not.
-fn search(w: &mut World) -> Result<String, String> {
+fn search(w: &mut World, game: &crate::MenuGame) -> Result<String, String> {
     install::forget_steam();
-    let now = resolve_now();
+    let now = resolve_now(game);
     if now.install.is_none() {
-        return Err(format!("{NAME} still wasn't found: {}.", now.notes.join("; ")));
+        return Err(format!("{} still wasn't found: {}.", game.name, now.notes.join("; ")));
     }
     reload(w);
-    let text = now.describe(NAME);
+    let text = now.describe(game.name);
     info!("{text}");
     Ok(text)
 }
@@ -288,9 +288,10 @@ fn apply(w: &mut World, input: Input) {
     let Some(request) = w.resource_mut::<FirstRun>().handle(input) else {
         return;
     };
+    let Some(game) = w.resource::<FirstRun>().game.0 else { return };
     let outcome = match request {
-        Request::Use(folder) => use_folder(w, &folder),
-        Request::Search => search(w),
+        Request::Use(folder) => use_folder(w, game, &folder),
+        Request::Search => search(w, game),
     };
     w.resource_mut::<FirstRun>().answer(outcome);
 }
@@ -298,12 +299,13 @@ fn apply(w: &mut World, input: Input) {
 /// Say which install is used; with none at the main menu, open the
 /// dialog.
 fn startup(args: Option<Res<crate::client::ClientArgs>>, mut first_run: ResMut<FirstRun>) {
-    let found = resolve_now();
-    let line = found.describe(NAME);
+    let Some(game) = first_run.game.0 else { return };
+    let found = resolve_now(game);
+    let line = found.describe(game.name);
     if found.install.is_some() {
         info!("{line}");
         for n in &found.notes {
-            warn!("{NAME} install: {n}");
+            warn!("{} install: {n}", game.name);
         }
     } else {
         warn!("{line}; built-in looks (set one with chimera_install <folder>)");
@@ -455,20 +457,21 @@ fn draw(
         &look,
         FrameSpec::new("firstrun").modal().no_close(),
         (W, H),
-        &format!("{NAME} Not Found"),
+        &format!("{} Not Found", first_run.game.name()),
     )
     .frame;
     // Over the modal frames' own stacking: the root's.
     commands.entity(dialog).insert(GlobalZIndex(widgets::POPUP_Z - 10));
     let text_font = look.font("Default", (16.0, false));
+    let (content, folder) = first_run.game.0.map_or(("the game's", ""), |g| (g.info.content_dir, g.steam_folder));
     let lines = [
-        format!("{NAME} wasn't found on this computer. Lucker Party plays with its"),
+        format!("{} wasn't found on this computer. This game plays with its", first_run.game.name()),
         "maps, models and sounds, read from your own install.".to_string(),
-        "Paste the folder that holds its cstrike and hl2 folders, for example".to_string(),
+        format!("Paste the folder that holds its {content} and hl2 folders, for example"),
         if cfg!(windows) {
-            "...\\steamapps\\common\\Counter-Strike Source".to_string()
+            format!("...\\steamapps\\common\\{folder}")
         } else {
-            ".../steamapps/common/Counter-Strike Source".to_string()
+            format!(".../steamapps/common/{folder}")
         },
     ];
     for (i, line) in lines.iter().enumerate() {
@@ -539,6 +542,36 @@ fn draw(
 mod tests {
     use super::*;
 
+    static INFO: crate::game_registry::GameInfo = crate::game_registry::GameInfo {
+        id: "a_game",
+        short_name: "A",
+        content_dir: "cstrike",
+        tick_interval: 0.015,
+        open: |_| Err(std::io::Error::other("no install")),
+        map_cycle: |_| Vec::new(),
+        map_names: |_| Vec::new(),
+        map_file: |n| Some(format!("maps/{n}.bsp")),
+        steam: Some(install::SteamGame { app_id: 1, name: "Counter-Strike Source", required: &["cstrike/a_dir.vpk", "hl2/b_dir.vpk"] }),
+        import_map: |_| Err("no".into()),
+        default_binds_cfg: "cfg/default.cfg",
+        default_binds: &[],
+        old_default_binds: &[],
+        movement_cvars: &[],
+        meters_per_unit: 0.0254,
+        console_namespaces: &[],
+    };
+    static GAME: crate::MenuGame = crate::MenuGame {
+        info: &INFO,
+        name: "A Game",
+        steam_folder: "Counter-Strike Source",
+        strings: "resource/a_english.txt",
+        bots: None,
+        rounds_cvar: None,
+        teams: None,
+        quick_start: None,
+        layout_hides: false,
+    };
+
     fn open() -> FirstRun {
         FirstRun { open: true, ..default() }
     }
@@ -581,16 +614,16 @@ mod tests {
     fn a_pasted_subfolder_finds_its_install() {
         let dir = std::env::temp_dir().join(format!("chimera-first-run-{}", std::process::id()));
         let css = dir.join("steamapps/common/Counter-Strike Source");
-        for f in crate::game::INFO.steam.unwrap().required {
+        for f in GAME.info.steam.unwrap().required {
             let p = css.join(f);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(p, "").unwrap();
         }
-        assert_eq!(install_folder(&css).unwrap(), css);
-        assert_eq!(install_folder(&css.join("cstrike")).unwrap(), css);
-        assert_eq!(install_folder(&dir.join("steamapps/common")).unwrap(), css);
-        assert_eq!(install_folder(&dir).unwrap(), css, "the library");
-        assert!(install_folder(&dir.join("nowhere")).is_err());
+        assert_eq!(install_folder(&GAME, &css).unwrap(), css);
+        assert_eq!(install_folder(&GAME, &css.join("cstrike")).unwrap(), css);
+        assert_eq!(install_folder(&GAME, &dir.join("steamapps/common")).unwrap(), css);
+        assert_eq!(install_folder(&GAME, &dir).unwrap(), css, "the library");
+        assert!(install_folder(&GAME, &dir.join("nowhere")).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

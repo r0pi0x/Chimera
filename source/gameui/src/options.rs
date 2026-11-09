@@ -826,7 +826,7 @@ mod tests {
 
     /// The cvars of the options' controls added for parity, with CS:S's
     /// defaults and a changed value.
-    const PARITY_CVARS: [(&str, &str, &str); 25] = [
+    const PARITY_CVARS: [(&str, &str, &str); 23] = [
         ("fov_desired", "90", "80"),
         ("cl_crosshairsize", "5", "3"),
         ("cl_crosshairthickness", "0.5", "1.5"),
@@ -839,10 +839,8 @@ mod tests {
         ("m_filter", "0", "1"),
         ("m_customaccel", "0", "3"),
         ("m_customaccel_exponent", "1.05", "1.2"),
-        ("cl_radar_locked", "0", "1"),
         ("cl_downloadfilter", "all", "none"),
         ("mp_decals", "200", "50"),
-        ("cl_c4progressbar", "1", "0"),
         ("volume", "0.5", "0.75"),
         ("snd_surround_speakers", "2", "0"),
         ("snd_pitchquality", "1", "0"),
@@ -863,9 +861,7 @@ mod tests {
             .init_resource::<crate::client::input::MouseSettings>();
         crate::client::hud::crosshair_cvars(&mut app);
         crate::client::input::mouse_cvars(&mut app);
-        crate::ui::radar::radar_cvars(&mut app);
         crate::client::perf::decal_cvars(&mut app);
-        crate::ui::objectives_hud::c4_bar_cvar(&mut app);
         crate::net::maps::download_filter_cvar(&mut app);
         app
     }

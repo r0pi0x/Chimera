@@ -232,6 +232,10 @@ const ALLOWED: &[(&str, &[&str])] = &[
         "games_ui",
         &[
             "lib",
+            "game_menu",
+            "options",
+            "server_browser",
+            "first_run",
             "core",
             "console",
             "slots",
@@ -304,6 +308,7 @@ const CRATE_SRC: &[&str] = &[
     "chimera/net/src",
     "source/logic/src",
     "source/engine/src",
+    "source/gameui/src",
     "games/cs_source/src",
     "games/combat_arms/src",
     "games/hl2dm/src",
@@ -357,6 +362,10 @@ fn module_of(src: &Path, file: &Path) -> Option<String> {
         return Some("games".to_string());
     }
     if (first == "ui" || first == "ui.rs") && crate_game(src).is_some() {
+        return Some("games_ui".to_string());
+    }
+    // GameUI drawn, the front end of a Source game (`source_gameui`).
+    if src == root().join("source/gameui/src") {
         return Some("games_ui".to_string());
     }
     Some(first.trim_end_matches(".rs").to_string())
@@ -1509,6 +1518,13 @@ fn workspace_crates() {
                 "lucker_party",
                 "party_kit",
             ],
+            SOURCE,
+        ),
+        // Source's GameUI drawn: a Source game's front end, on the client
+        // shell and Source's readers, below the games (hl2dm.md, lift S7).
+        (
+            "source/gameui",
+            &["mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"],
             SOURCE,
         ),
         (

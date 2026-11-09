@@ -3,23 +3,13 @@
 
 use super::*;
 
-/// Create Server's four difficulty buttons (`#Cstrike_Bot_Difficulty0..3`)
-/// pick one of the bots' skill presets.
-pub use crate::bot::DIFFICULTIES;
+/// The difficulty buttons' default (`BotMenu::difficulties`).
 pub(super) const NORMAL: usize = 1;
 /// Bots a new game offers at most (the box takes two digits).
 pub(super) const MAX_BOTS: u8 = 30;
 
 /// Create Server's pages: the token of each tab and our word.
 pub const CREATE_TABS: [(&str, &str); 3] = [("#GameUI_Server", "Server"), ("#GameUI_Game", "Game"), ("", "Bot")];
-
-/// Which team bots join (Create Server's Bot page): any (split between
-/// them), terrorists, counter-terrorists.
-pub const BOT_TEAMS: [(&str, &str); 3] = [
-    ("", "Any"),
-    ("#Cstrike_Team_T", "Terrorists"),
-    ("#Cstrike_Team_CT", "Counter-Terrorists"),
-];
 
 /// A cvar Create Server sets when it starts (the Game page's options
 /// from the install's `settings.scr`, the Bot page's cvars, ours): its
@@ -38,15 +28,6 @@ pub struct ServerCvar {
     /// page's list.
     pub field: Option<&'static str>,
 }
-
-/// The Bot page's cvars, by its layout's controls (fieldName, cvar, kind).
-pub(super) const BOT_CVARS: [(&str, &str, &str); 2] = [
-    ("BotPrefixEntry", "bot_prefix", "#CStrike_Bot_NamePrefix"),
-    ("BotJoinAfterPlayerCheck", "bot_join_after_player", "#CStrike_Bot_JoinAfterPlayer"),
-];
-
-/// Ours on the Game page, after the game's own: rounds or deathmatch.
-pub(super) const ROUNDS_CVAR: &str = "chimera_rounds";
 
 /// What a new game starts with.
 #[derive(Clone, Debug, PartialEq)]
@@ -154,17 +135,19 @@ impl GameMenu {
                 });
             }
         }
-        let before = get(ROUNDS_CVAR);
-        out.push(ServerCvar {
-            cvar: ROUNDS_CVAR.into(),
-            label: "Rounds (off: deathmatch; Lucker Party)".into(),
-            kind: ServerSettingKind::Bool,
-            value: before.clone().unwrap_or_else(|| "0".into()),
-            before,
-            page: 1,
-            field: None,
-        });
-        for (field, cvar, token) in BOT_CVARS {
+        if let Some(rounds) = self.game.rounds_cvar() {
+            let before = get(rounds);
+            out.push(ServerCvar {
+                cvar: rounds.into(),
+                label: "Rounds (off: deathmatch; Lucker Party)".into(),
+                kind: ServerSettingKind::Bool,
+                value: before.clone().unwrap_or_else(|| "0".into()),
+                before,
+                page: 1,
+                field: None,
+            });
+        }
+        for (field, cvar, token) in self.game.bots().map(|b| b.cvars).into_iter().flatten() {
             let before = get(cvar);
             out.push(ServerCvar {
                 cvar: cvar.into(),
@@ -183,12 +166,17 @@ impl GameMenu {
         out
     }
 
+    /// Create Server's pages in this game (the Bot page with bots).
+    pub fn create_tabs(&self) -> &'static [(&'static str, &'static str)] {
+        if self.game.bots().is_some() { &CREATE_TABS } else { &CREATE_TABS[..2] }
+    }
+
     /// Show a page of Create Server.
     pub fn set_create_tab(&mut self, tab: usize) {
         if self.page != Page::NewGame {
             return;
         }
-        self.create_tab = tab.min(CREATE_TABS.len() - 1);
+        self.create_tab = tab.min(self.create_tabs().len() - 1);
         self.combo = None;
         self.scroll = 0;
         self.focus = self.first_focusable_from(0, 1);
@@ -212,8 +200,8 @@ impl GameMenu {
         }
     }
 
-    /// A quick start (`chimera_quickstart`): rounds on `QUICK_MAP` with
-    /// `QUICK_BOTS` normal bots, started at once as Create Server's Start
+    /// A quick start (`chimera_quickstart`): rounds on the game's quick
+    /// map with its normal bots, started at once as Create Server's Start
     /// would (single player).
     pub fn quick_start(&mut self, out: &mut Outcome) {
         self.quick_setup();
@@ -222,17 +210,19 @@ impl GameMenu {
 
     /// The quick start's settings in Create Server.
     pub(super) fn quick_setup(&mut self) {
-        let map = self.maps.iter().position(|m| m == QUICK_MAP).unwrap_or(0);
+        let Some(quick) = self.game.quick_start() else { return };
+        let map = self.maps.iter().position(|m| m == quick.map).unwrap_or(0);
         self.new_game.map = map;
         self.new_game.random = false;
         self.new_game.bots_on = true;
-        self.new_game.bot_count = QUICK_BOTS.to_string();
+        self.new_game.bot_count = quick.bots.to_string();
         self.new_game.bot_team = 0;
         self.new_game.difficulty = NORMAL;
         self.new_game.host = false;
         // Rounds; the rest as they are.
+        let rounds = self.game.rounds_cvar();
         for c in &mut self.new_game.cvars {
-            c.value = if c.cvar == ROUNDS_CVAR {
+            c.value = if rounds == Some(c.cvar.as_str()) {
                 "1".into()
             } else {
                 c.before.clone().unwrap_or_default()
@@ -264,14 +254,19 @@ impl GameMenu {
     pub fn start_lines(&self) -> Option<(Vec<String>, Vec<String>)> {
         let ng = &self.new_game;
         let map = self.maps.get(self.chosen_map()?)?;
-        let (_, reaction, aim, turn) = DIFFICULTIES[ng.difficulty];
-        let rounds = self
-            .server_cvar(ROUNDS_CVAR)
-            .is_some_and(|c| c.value.trim().parse::<f32>().is_ok_and(|v| v != 0.0));
-        let mut lines = vec!["bot_kick".to_string(), format!("{ROUNDS_CVAR} {}", rounds as u8)];
+        let bots = self.game.bots();
+        let rounds_cvar = self.game.rounds_cvar();
+        let mut lines = Vec::new();
+        if bots.is_some() {
+            lines.push("bot_kick".to_string());
+        }
+        if let Some(cvar) = rounds_cvar {
+            let rounds = self.server_cvar(cvar).is_some_and(|c| c.value.trim().parse::<f32>().is_ok_and(|v| v != 0.0));
+            lines.push(format!("{cvar} {}", rounds as u8));
+        }
         // The Game and Bot pages' cvars that changed.
         for c in &ng.cvars {
-            if c.cvar != ROUNDS_CVAR && c.before.as_ref().is_some_and(|b| b.trim() != c.value.trim()) {
+            if rounds_cvar != Some(c.cvar.as_str()) && c.before.as_ref().is_some_and(|b| b.trim() != c.value.trim()) {
                 lines.push(format!("{} {}", c.cvar, crate::console::quote(&c.value)));
             }
         }
@@ -286,12 +281,15 @@ impl GameMenu {
             lines.retain(|l| !l.starts_with("maxplayers "));
             lines.push(format!("maxplayers {max}"));
         }
-        lines.extend([
-            format!("bot_reaction {reaction}"),
-            format!("bot_aim_error {aim}"),
-            format!("bot_turn_rate {turn}"),
-            format!("map {}", crate::console::quote(map)),
-        ]);
+        if let Some(b) = bots {
+            let (_, reaction, aim, turn) = b.difficulties[ng.difficulty];
+            lines.extend([
+                format!("bot_reaction {reaction}"),
+                format!("bot_aim_error {aim}"),
+                format!("bot_turn_rate {turn}"),
+            ]);
+        }
+        lines.push(format!("map {}", crate::console::quote(map)));
         let (t, ct) = ng.split();
         let after = std::iter::repeat_n("bot_add 1".to_string(), t as usize)
             .chain(std::iter::repeat_n("bot_add 2".to_string(), ct as usize))
@@ -305,10 +303,13 @@ impl GameMenu {
     pub(super) fn create_server_rows(&self) -> Vec<Row> {
         let mut rows: Vec<Row> = match self.create_tab {
             0 => {
-                let mut r = vec![self.control_row(Field::Map), self.control_row(Field::BotsOn)];
-                if self.new_game.bots_on {
-                    r.push(self.control_row(Field::BotCount));
-                    r.extend((0..DIFFICULTIES.len()).map(|k| self.control_row(Field::Difficulty(k))));
+                let mut r = vec![self.control_row(Field::Map)];
+                if let Some(b) = self.game.bots() {
+                    r.push(self.control_row(Field::BotsOn));
+                    if self.new_game.bots_on {
+                        r.push(self.control_row(Field::BotCount));
+                        r.extend((0..b.difficulties.len()).map(|k| self.control_row(Field::Difficulty(k))));
+                    }
                 }
                 r
             }

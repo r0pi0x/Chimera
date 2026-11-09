@@ -232,6 +232,8 @@ impl std::fmt::Debug for UiText {
 /// The menu's state.
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub struct GameMenu {
+    /// What's the game's own in it.
+    pub game: crate::GameRef,
     pub open: bool,
     /// A map is loaded and played: false at the main menu (startup with no
     /// map, after `disconnect`), where the menu stays open over the game's
@@ -369,7 +371,7 @@ pub(super) fn jump(entries: &[String], from: usize, c: char) -> Option<usize> {
 }
 
 /// A layout control's VGUI class (`ComboBox`, `CCvarSlider` ...).
-pub(in crate::ui) fn class_of(c: &UiControl) -> &str {
+pub fn class_of(c: &UiControl) -> &str {
     match &c.kind {
         UiKind::Other(class) => class,
         UiKind::Label => "Label",
@@ -453,13 +455,10 @@ impl GameMenu {
             .unwrap_or(0);
         self.maps = maps;
         // The preset nearest the bots' reaction now.
-        if let Some(r) = num("bot_reaction") {
-            self.new_game.difficulty = (0..DIFFICULTIES.len())
-                .min_by(|&a, &b| {
-                    (DIFFICULTIES[a].1 - r)
-                        .abs()
-                        .total_cmp(&(DIFFICULTIES[b].1 - r).abs())
-                })
+        if let (Some(r), Some(bots)) = (num("bot_reaction"), self.game.bots()) {
+            let difficulties = bots.difficulties;
+            self.new_game.difficulty = (0..difficulties.len())
+                .min_by(|&a, &b| (difficulties[a].1 - r).abs().total_cmp(&(difficulties[b].1 - r).abs()))
                 .unwrap_or(NORMAL);
         }
         // As many bots as there are now (`set_counts` first).
@@ -492,6 +491,11 @@ impl GameMenu {
         self.select_focused_key();
         self.focus_changed();
         self.keep_visible();
+    }
+
+    /// The menu of `game`, before anything is known.
+    pub fn for_game(game: &'static crate::MenuGame) -> Self {
+        Self { game: crate::GameRef(Some(game)), ..default() }
     }
 
     /// The game's look and words (None: ours).
@@ -589,11 +593,11 @@ impl GameMenu {
                 )
             }
             Field::BotsOn => (
-                self.text("#Cstrike_Bot_IncludeBots", "Include CPU players (bots) in this game"),
+                self.text(self.game.bots().map_or("", |b| b.include_token), "Include CPU players (bots) in this game"),
                 Control::Check(ng.bots_on),
             ),
             Field::BotCount => (
-                self.text("#Cstrike_Bot_NumberOfBots", "Number of CPU players"),
+                self.text(self.game.bots().map_or("", |b| b.count_token), "Number of CPU players"),
                 Control::Text {
                     text: ng.bot_count.clone(),
                     numeric: true,
@@ -601,13 +605,17 @@ impl GameMenu {
                 },
             ),
             Field::Difficulty(k) => (
-                self.text(&format!("#Cstrike_Bot_Difficulty{k}"), DIFFICULTIES[k].0),
+                self.text(
+                    &format!("{}{k}", self.game.bots().map_or("", |b| b.difficulty_token)),
+                    self.game.bots().map_or("", |b| b.difficulties[k].0),
+                ),
                 Control::Radio(ng.difficulty == k),
             ),
             Field::BotTeam => {
-                let entries: Vec<String> = BOT_TEAMS.iter().map(|(t, o)| self.text(t, o)).collect();
+                let teams = self.game.bots().map_or(&[][..], |b| &b.teams[..]);
+                let entries: Vec<String> = teams.iter().map(|(t, o)| self.text(t, o)).collect();
                 (
-                    self.text("#CStrike_Bot_JoinTeam", "Bots join team"),
+                    self.text(self.game.bots().map_or("", |b| b.join_team_token), "Bots join team"),
                     Control::Combo {
                         text: entries[ng.bot_team].clone(),
                         entries,
@@ -954,7 +962,7 @@ impl GameMenu {
             Input::NextTab(dir) => match self.page {
                 Page::Settings => self.set_tab(self.tab.step(dir)),
                 Page::NewGame => {
-                    let n = CREATE_TABS.len() as i32;
+                    let n = self.create_tabs().len() as i32;
                     self.set_create_tab((self.create_tab as i32 + dir).rem_euclid(n) as usize)
                 }
                 _ => {}
@@ -1382,7 +1390,7 @@ impl GameMenu {
             Field::BotsOn => ng.bots_on = !ng.bots_on,
             Field::BotCount => {}
             Field::Difficulty(k) => ng.difficulty = k,
-            Field::BotTeam => ng.bot_team = widgets::combo_step(ng.bot_team, BOT_TEAMS.len(), dir),
+            Field::BotTeam => ng.bot_team = widgets::combo_step(ng.bot_team, self.game.bots().map_or(1, |b| b.teams.len()), dir),
             Field::ServerCvar(i) | Field::UserCvar(i) => {
                 let c = match field {
                     Field::ServerCvar(_) => &mut ng.cvars[i],
@@ -1422,7 +1430,7 @@ impl GameMenu {
                     self.new_game.set_map_entry(k);
                 }
             }
-            Field::BotTeam => self.new_game.bot_team = k.min(BOT_TEAMS.len() - 1),
+            Field::BotTeam => self.new_game.bot_team = k.min(self.game.bots().map_or(0, |b| b.teams.len() - 1)),
             Field::ServerCvar(i) | Field::UserCvar(i) => {
                 let c = match field {
                     Field::ServerCvar(_) => &mut self.new_game.cvars[i],

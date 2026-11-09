@@ -45,6 +45,8 @@ toml.workspace = true
 # presentation it draws with.
 chimera_client = { workspace = true, optional = true }
 chimera_present = { workspace = true, optional = true }
+# GameUI's main and Esc menus and their dialogs, shared with CS:S.
+source_gameui = { workspace = true, optional = true }
 workspace-hack.workspace = true
 
 # The tests' own: the presentation's Bevy and Avian features, for this
@@ -73,7 +75,7 @@ required-features = ["ui"]
 [features]
 # HL2:DM's front end (`ui`): its HUD on the client shell. The game's client
 # turns it on; the dedicated server and the simulation's tests build without.
-ui = ["dep:chimera_client", "dep:chimera_present"]
+ui = ["dep:chimera_client", "dep:chimera_present", "dep:source_gameui"]
 # Bevy as a dynamic library, as an app's `dev` (which turns this on):
 # `cargo test -p hl2dm --features dev` shares the apps' Bevy build.
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "source_engine/dev", "source_logic/dev", "chimera_client?/dev", "chimera_present?/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "source_engine/dev", "source_logic/dev", "chimera_client?/dev", "chimera_present?/dev", "source_gameui?/dev"]

@@ -20,8 +20,7 @@
 //! (`hl2dm::game::maps`), or from a copy of the map's file (a server's
 //! map downloaded); the greybox otherwise.
 //!
-//! Known shortcuts: no menus (straight into the map or the greybox) and
-//! HL2:DM's HUD (M9); the shell keeps its config (binds, cvars) in the same
+//! Known shortcuts: the shell keeps its config (binds, cvars) in the same
 //! folder as the other apps' (`console::cfg_dir`).
 
 use bevy::prelude::*;
@@ -125,6 +124,9 @@ impl Plugin for ClientPlugin {
             hooks: client_hooks(),
         })
         .insert_resource(chimera_client::client::video::PlayerFov(DEFAULT_FOV))
+        // Its server name until the player's own (`cfg/settings.scr`'s
+        // default, Create Server's Game page).
+        .insert_resource(chimera_net::net::query::Hosting { hostname: "Half-Life 2 Deathmatch".into(), ..default() })
         // HL2:DM's HUD (hl2dm::ui), over the shell's fallback.
         .add_plugins(hl2dm::ui::Hl2dmUiPlugin);
     }

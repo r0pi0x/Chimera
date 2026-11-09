@@ -59,6 +59,7 @@ const BASELINE: &[(&str, usize, usize)] = &[
     // sides simulate. The statics: Source movement's debug switches (S6;
     // `CHIMERA_SLIDE_DEBUG`, `CHIMERA_GROUND_DEBUG`, read once).
     ("source/engine/src", 111, 3),
+    ("source/gameui/src", 1, 0),
     ("games/combat_arms/src", 103, 14),
     // Plain-data loaders (no Bevy, so no fixed-hasher maps at hand): what
     // they read becomes the map both sides simulate.

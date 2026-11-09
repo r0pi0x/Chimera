@@ -53,6 +53,8 @@ vtf.workspace = true
 # The front end (`ui`, the `ui` feature): the client shell, the
 # presentation it draws with, the clipboard and the window icon.
 chimera_client = { workspace = true, optional = true }
+# GameUI's menus and dialogs, shared with HL2:DM (the front end's).
+source_gameui = { workspace = true, optional = true }
 chimera_present = { workspace = true, optional = true }
 arboard = { workspace = true, optional = true }
 winit = { workspace = true, optional = true }
@@ -96,7 +98,7 @@ required-features = ["ui"]
 # CS:S's front end (`ui`): its menus, panels and HUD on the client shell.
 # The game's client turns it on (`mashup`'s `present`); the dedicated
 # server and the simulation's tests build without it.
-ui = ["dep:chimera_client", "dep:chimera_present", "dep:arboard", "dep:winit", "dep:bevy_replicon_renet"]
+ui = ["dep:chimera_client", "dep:chimera_present", "dep:source_gameui", "dep:arboard", "dep:winit", "dep:bevy_replicon_renet"]
 # Bevy as a dynamic library, as the game's `dev` (which turns this on):
 # `cargo test -p cs_source --features dev` shares the game's Bevy build.
 dev = [
@@ -105,6 +107,7 @@ dev = [
     "chimera_sim/dev",
     "chimera_net/dev",
     "chimera_client?/dev",
+    "source_gameui?/dev",
     "chimera_present?/dev",
     "source_logic/dev",
     "source_engine/dev",

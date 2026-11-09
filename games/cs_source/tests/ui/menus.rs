@@ -32,7 +32,7 @@ fn row(m: &GameMenu, f: Field) -> usize {
 
 #[test]
 fn create_server_by_keyboard_and_mouse() {
-    let mut m = GameMenu::default();
+    let mut m = GameMenu::for_game(&cs_source::ui::MENU_GAME);
     let maps = ["cs_italy", "de_dust2", "de_inferno", "de_nuke"]
         .map(String::from)
         .to_vec();
@@ -89,7 +89,7 @@ fn create_server_by_keyboard_and_mouse() {
 
 #[test]
 fn create_server_cancel_and_escape() {
-    let mut m = GameMenu::default();
+    let mut m = GameMenu::for_game(&cs_source::ui::MENU_GAME);
     m.open(Page::NewGame, vec!["de_dust2".into()], None, |_| None);
     // Esc with a list open closes only the list; again, the dialog.
     let map = row(&m, Field::Map);
