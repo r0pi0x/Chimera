@@ -214,8 +214,10 @@ the original's own behaviour isn't a bug (say so instead).
 - **Kill feed: the crowbar's icon** is just the large word "crowbar".
 - **Scoreboard: guns still top-aligned** in their list item, a lot of the
   Combat Arms ones.
-- **Neon Outlaw ASW338LM (Combat Arms)** still looks like it has the wrong
-  UV map. Find the cause.
+- **Neon Outlaw ASW338LM (Combat Arms)** looks like it has the wrong UV map.
+  Already answered (below, models_ltb.md W1-W3): its skin is painted for a
+  layout no ASW338LM model in the install has. Waiting on the user: leave
+  it out of the ladder?
 - **Combat Arms radio menus:** 7, 8 and 9 do nothing. Check what the
   original's menus offer on those keys (`choose_N`, the same commands as
   the console report above).
