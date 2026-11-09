@@ -5,13 +5,19 @@
 //! (`map::particles`): on the first-person view model when this
 //! character's is the one drawn (the attachment posed by the view model's
 //! animation and offset, mirrored with it; on the view-model layer, so it
-//! is drawn over the world as the model is, and over the model itself, not
-//! depth tested against it: `ParticleGroup::view_model`),
+//! is drawn over the world as the model is; against the model itself by
+//! the material's own `$ignorez`: `ParticleGroup::view_model`,
+//! `ParticleMaterial::no_depth`),
 //! else on the weapon its body holds (`HeldAttachment`s, the held world
 //! model's attachments, `MapHeldModel::attachments`). A beam's end may be a
 //! point in the world instead (a gravity gun's punt): then the view
 //! model's end is re-projected into the world view (`reproject`), as
 //! muzzle flashes are, and the beam is drawn in the world pass.
+//!
+//! Locked to the attachment, the same frame: `draw_attached` runs after the
+//! frame's eye (`EyePlaced`) and the view model's animation and sway
+//! (`DriveAnimation`; both `order_sets`), and reads the eye from the
+//! `Transform`s, as `GlobalTransform`s are last frame's until `PostUpdate`.
 //!
 //! Beams follow the beam primitive of specs/source/visual_entities.md 1
 //! with the caller's segment count: fractal noise new every frame,
@@ -26,14 +32,17 @@
 //!
 //! Known shortcuts (docs/tech-debt.md): beams are drawn as separate quads
 //! per segment (no mitred joints) and without shading or a halo; sprites
-//! show their material's first frame. Why it's OK for now: the gravity
-//! gun's (the first user's) beams are short and thin and its sprites
-//! single-frame glows.
+//! show their material's first frame; on a held world model (others' guns)
+//! the attachments are last frame's `GlobalTransform`s; sprites face the
+//! camera of `render::particles`, one frame old. Why it's OK for now: the
+//! gravity gun's (the first user's) beams are short and thin and its
+//! sprites single-frame glows; a frame's walk or turn is small on someone
+//! else's gun, and a round glow's facing doesn't show.
 
-use bevy::prelude::*;
+use bevy::{prelude::*, transform::helper::TransformHelper};
 
 use super::{
-    ParticleRng, ShowLocalBody, anim,
+    DriveAnimation, ParticleRng, ShowLocalBody, anim,
     emitters::{BEAM_NOISE_SAMPLES, fractal_noise},
     particles::{Motion, Particle, ParticleGroup, Particles, Shape},
     view_model::*,
@@ -127,11 +136,22 @@ pub struct AttachedFx {
 #[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct AttachedSet;
 
+/// What places the frame's first-person eye (the client's camera): sprites
+/// and beams on the view model are drawn after it, so they turn with it.
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct EyePlaced;
+
+/// `AttachedSet` after this frame's eye and view-model motion.
+pub fn order_sets(app: &mut App) {
+    app.configure_sets(Update, AttachedSet.after(EyePlaced).after(DriveAnimation));
+}
+
 /// The view model drawn for `owner` at an anchor, if one is (the drawing's
 /// own rule, `render::view_model`: not in third person, not hidden, not
 /// put away, `ViewModelSettings::draw`): the anchor's transform and
 /// projection, the model and whether it is mirrored.
 pub struct FirstPerson<'a> {
+    pub anchor: Entity,
     pub eye: GlobalTransform,
     /// The world camera's and the view model camera's vertical fields of
     /// view (degrees); None without cameras (headless).
@@ -168,7 +188,7 @@ impl FirstPerson<'_> {
 pub type AnchorQuery<'w, 's> = Query<
     'w,
     's,
-    (&'static ChildOf, &'static GlobalTransform, Option<&'static Projection>, Option<&'static Children>, Option<&'static ViewModelSource>),
+    (Entity, &'static ChildOf, &'static GlobalTransform, Option<&'static Projection>, Option<&'static Children>, Option<&'static ViewModelSource>),
     (With<ViewModelAnchor>, Without<ViewModelCamera>),
 >;
 
@@ -190,7 +210,7 @@ pub fn first_person_shown<'a>(
     if third_person || settings.draw == 0 || view.hidden || controls.is_some_and(|c| c.weapon_hidden != 0) {
         return None;
     }
-    let (_, eye, projection, children, _) = anchors.iter().find(|(p, _, _, _, s)| anchor_owner(p, *s) == owner)?;
+    let (anchor, _, eye, projection, children, _) = anchors.iter().find(|(_, p, _, _, _, s)| anchor_owner(p, *s) == owner)?;
     let model = models?.get(view.key.as_deref()?)?;
     let mirror = mirrored(model.right_handed, model.allow_flipping, settings.right_hand != 0);
     let placed = placement(&offset.copied().unwrap_or_default(), mirror);
@@ -202,7 +222,7 @@ pub fn first_person_shown<'a>(
         }
         _ => None,
     };
-    Some(FirstPerson { eye: *eye, fovs, model, placed, pose })
+    Some(FirstPerson { anchor, eye: *eye, fovs, model, placed, pose })
 }
 
 /// `owner`'s held weapon's attachment `at` (world space), if its body holds
@@ -302,22 +322,26 @@ pub fn draw_attached(
     models: Option<Res<ViewModels>>,
     settings: Option<Res<ViewModelSettings>>,
     third_person: Option<Res<ShowLocalBody>>,
+    transforms: TransformHelper,
     mut rng: Local<AttachedRng>,
     mut particles: ResMut<Particles>,
 ) {
     let now = time.elapsed_secs_f64();
     let settings = settings.map(|s| *s).unwrap_or_default();
     let third_person = third_person.is_some_and(|t| t.0);
+    // This frame's, not the last propagation's (without a `Transform`, a
+    // test's fixed anchor: its `GlobalTransform`).
+    let now_eye = |anchor: Entity, was: GlobalTransform| transforms.compute_global_transform(anchor).unwrap_or(was);
     let camera_eye = anchors
         .iter()
         .next()
-        .map(|(_, g, ..)| g.translation())
+        .map(|(e, _, g, ..)| now_eye(e, *g).translation())
         .or_else(|| cameras.iter().next().map(GlobalTransform::translation));
     for (owner, fx, view, offset, controls) in &owners {
         if fx.view.is_empty() && fx.world.is_empty() {
             continue;
         }
-        let fp = first_person_shown(
+        let mut fp = first_person_shown(
             owner,
             view,
             offset,
@@ -329,6 +353,9 @@ pub fn draw_attached(
             third_person,
             now,
         );
+        if let Some(f) = fp.as_mut() {
+            f.eye = now_eye(f.anchor, f.eye);
+        }
         let pieces = if fp.is_some() { &fx.view } else { &fx.world };
         let eye = fp.as_ref().map(|f| f.eye.translation()).or(camera_eye).unwrap_or(Vec3::ZERO);
         let mut on_model = frame_group(fp.is_some());

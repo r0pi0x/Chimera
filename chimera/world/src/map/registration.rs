@@ -290,6 +290,7 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
     .add_systems(FixedUpdate, loose::attach_loose.before(crate::core::SimSet::Movement));
     let step = particles::step_particles.in_set(particles::ParticleSet::Step);
     // Sprites and beams on weapons' attachments, after the games set them.
+    attached::order_sets(app);
     app.add_systems(
         Update,
         attached::draw_attached
@@ -330,6 +331,7 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
 /// are built (`MapPlugin`).
 fn scoped_resources(app: &mut App) {
     app.map_scoped::<PendingMap>()
+        .map_scoped::<super::sky::MapSkyFaces>()
         .map_scoped::<MapMemos>()
         .map_scoped::<MapFile>()
         .map_scoped::<PlayableArea>()

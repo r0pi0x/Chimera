@@ -1928,6 +1928,79 @@ fn drawn(w: &W, material: &str) -> Vec<(Vec3, bool)> {
         .collect()
 }
 
+/// The playtest's lag: as the view turns, the claws' core and glows are on
+/// their attachments in the same frame (the view model is the camera's
+/// child and turns this frame; the camera's `GlobalTransform` waits for
+/// `PostUpdate`).
+#[test]
+fn the_claws_keep_up_with_the_view_this_frame() {
+    use chimera_world::map::{
+        MapAttachment, MapBone, MapViewModel, ViewAnimator, ViewModelAnchor, ViewModelOffset, ViewModels, attached,
+        particles::Particles, view_model::placement,
+    };
+    use hl2dm::game::physcannon_fx::{CORE, GLOW, VIEW_GLOWS};
+    #[derive(Resource)]
+    struct Anchor(Entity);
+    fn turn(anchor: Res<Anchor>, mut t: Query<&mut Transform>) {
+        t.get_mut(anchor.0).unwrap().rotate_y(0.1);
+    }
+    let mut w = world(&[Crate::ahead(200.0)]);
+    with_effects(&mut w);
+    let attachments: Vec<MapAttachment> = claw_attachments()
+        .into_iter()
+        .map(|(name, at)| MapAttachment { name, bone: 0, local: Transform::from_translation(at) })
+        .collect();
+    let model = MapViewModel {
+        key: weapons::PHYSCANNON.into(),
+        model: MapModel::default(),
+        bones: vec![MapBone { name: "root".into(), parent: None, position: Vec3::ZERO, rotation: Quat::IDENTITY }],
+        root: Transform::IDENTITY,
+        animations: None,
+        right_handed: true,
+        allow_flipping: false,
+        attachments: attachments.clone(),
+        light_origin: Vec3::ZERO,
+    };
+    w.sim.app.insert_resource(ViewModels(std::sync::Arc::new(vec![model])));
+    let p = w.p;
+    let anchor = w
+        .sim
+        .app
+        .world_mut()
+        .spawn((ViewModelAnchor, Transform::from_xyz(0.0, 0.6, 0.0), GlobalTransform::default(), ChildOf(p)))
+        .id();
+    if w.sim.app.world().get::<ViewAnimator>(p).is_none() {
+        w.sim.app.world_mut().entity_mut(p).insert(ViewAnimator { key: Some(weapons::PHYSCANNON.into()), ..default() });
+    }
+    w.sim.app.insert_resource(Anchor(anchor));
+    attached::order_sets(&mut w.sim.app);
+    w.sim.app.add_systems(
+        Update,
+        (
+            turn.in_set(attached::EyePlaced),
+            attached::draw_attached.in_set(attached::AttachedSet).after(chimera_world::map::particles::ParticleSet::Step).before(chimera_world::map::particles::ParticleSet::Draw),
+        ),
+    );
+    w.sim.ticks(30);
+    for _ in 0..3 {
+        w.sim.app.world_mut().resource_mut::<Particles>().groups.clear();
+        w.sim.ticks(1);
+        let world = w.sim.app.world();
+        let eye = *world.get::<Transform>(p).unwrap() * *world.get::<Transform>(anchor).unwrap();
+        let offset = world.get::<ViewModelOffset>(p).copied().unwrap_or_default();
+        let at = |name: &str| {
+            let local = attachments.iter().find(|a| a.name == name).unwrap().local.translation;
+            eye.transform_point(placement(&offset, false).transform_point(local))
+        };
+        let core = drawn(&w, CORE);
+        assert!(core.iter().any(|(q, vm)| *vm && q.distance(at("core")) < 1e-3), "core {:?} not {}", core, at("core"));
+        let glows = drawn(&w, GLOW);
+        for name in VIEW_GLOWS {
+            assert!(glows.iter().any(|(q, _)| q.distance(at(name)) < 1e-3), "{name}: {glows:?}");
+        }
+    }
+}
+
 /// H9 48 (effects_sounds.md 11, "Gravity gun sprites and beams"), first
 /// person: ready, the core and six glows sit on the view model's
 /// attachments (drawn on its layer); holding, the end caps on the two

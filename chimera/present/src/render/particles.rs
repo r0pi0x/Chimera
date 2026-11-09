@@ -2,8 +2,8 @@
 //! rebuilt mesh per material (particles outside the playable area, in the
 //! 3D skybox, in a mesh of their own on the sky camera's layer; groups on
 //! a first-person view model, `ParticleGroup::view_model`, on the view
-//! model camera's layer, over the world as the model is, and over the
-//! model too: drawn after it without the depth test,
+//! model camera's layer, over the world as the model is; against the model
+//! by the material's `$ignorez`, `ParticleMaterial::no_depth`:
 //! `ParticleDrawMaterial::over_model`)
 //! (`ParticleDrawMaterial`, particle.wesl: fogged, added ones toward
 //! black), camera-facing sprites, trails and flat quads, back to front.
@@ -44,11 +44,12 @@ pub struct ParticleDrawMaterial {
     #[uniform(2)]
     pub fog: fog::FogUniform,
     pub blend: ParticleBlend,
-    /// On the view model's layer: drawn over the view model (no depth
-    /// test; after it, in the transparent pass), as the game draws the
-    /// sprites and beams on a first-person weapon's attachments (the
-    /// gravity gun's `_noz` glows and beams, specs/hl2dm/effects_sounds.md
-    /// 11).
+    /// On the view model's layer with a material that says `$ignorez`:
+    /// drawn over the view model (no depth test; after it, in the
+    /// transparent pass), as the gravity gun's first-person beams and the
+    /// RPG's laser. Other materials there are depth tested against the
+    /// model (the gravity gun's core and glows: `sprites/glow04_noz`'s
+    /// file has its `$ignorez` commented out, whatever its name says).
     pub over_model: bool,
 }
 
@@ -71,9 +72,9 @@ impl From<&ParticleDrawMaterial> for ParticleDrawKey {
 impl ParticleDrawMaterial {
     /// Particles (CS:S's tracers and impact effects, Combat Arms' effect
     /// groups) are depth tested and write no depth: Bevy's compare is
-    /// kept, so a wall hides them (`ParticleMaterial::no_depth` isn't
-    /// supported). Those over a view model (`over_model`) always pass, so
-    /// the model doesn't hide them. A test checks it, as the pipeline
+    /// kept, so a wall hides them (`ParticleMaterial::no_depth` is only
+    /// honoured on the view model's layer). Those over a view model
+    /// (`over_model`) always pass, so the model doesn't hide them. A test checks it, as the pipeline
     /// can't be built without a GPU.
     pub fn apply_depth(depth: &mut bevy::render::render_resource::DepthStencilState, over_model: bool) {
         depth.depth_write_enabled = Some(false);
@@ -260,7 +261,7 @@ pub fn draw_particles(
                             texture,
                             fog: fog.as_ref().map_or_else(Default::default, |f| f.0),
                             blend: def.blend,
-                            over_model: layer == VIEW,
+                            over_model: layer == VIEW && def.no_depth,
                         })),
                         // The mesh moves with its particles.
                         bevy::camera::visibility::NoFrustumCulling,

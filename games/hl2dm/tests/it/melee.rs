@@ -13,6 +13,10 @@ use chimera_sim::{
 use chimera_world::{
     greybox::{self, GreyboxMapPlugin},
     harness::Sim,
+    map::{
+        DecalGroup, MapSounds, MapSurface, PlaceDecal, PlaySound,
+        sound::SoundBank,
+    },
 };
 use hl2dm::{
     game::{movement, weapons},
@@ -79,6 +83,41 @@ fn swing(sim: &mut Sim, p: Entity, n: u64) -> Vec<(u64, bool)> {
     }
     sim.intent(p).fire = false;
     out
+}
+
+/// Effects 6: a crowbar's or stunstick's hit on the world is the generic
+/// impact: the surface's bullet-impact sound and the surface's decal, as a
+/// bullet's (not CS:S's knife slash, and not silent).
+#[test]
+fn melee_hits_make_the_surfaces_impact_and_decal() {
+    for (id, extra) in [(weapons::CROWBAR, "Weapon_Crowbar.Single"), (weapons::STUNSTICK, "Weapon_StunStick.Melee_Hit")] {
+        let (mut sim, p, _) = duel(id, 30.0, 0.0);
+        let mut bank = MapSounds::default();
+        bank.surfaces.insert(
+            "default".into(),
+            MapSurface { bullet_impact: Some("Default.BulletImpact".into()), game_material: 'C', ..default() },
+        );
+        sim.app.insert_resource(SoundBank(std::sync::Arc::new(bank)));
+        // At the floor, well within the 75-unit line.
+        sim.intent(p).pitch = -70f32.to_radians();
+        let mut sounds = sim.app.world().resource::<Messages<PlaySound>>().get_cursor_current();
+        let mut decals = sim.app.world().resource::<Messages<PlaceDecal>>().get_cursor_current();
+        let (mut heard, mut marks) = (Vec::new(), Vec::new());
+        sim.intent(p).fire = true;
+        for _ in 0..3 {
+            sim.ticks(1);
+            let w = sim.app.world();
+            heard.extend(sounds.read(w.resource::<Messages<PlaySound>>()).map(|s| s.entry.clone()));
+            marks.extend(decals.read(w.resource::<Messages<PlaceDecal>>()).cloned());
+        }
+        sim.intent(p).fire = false;
+        assert!(heard.iter().any(|e| e == "Default.BulletImpact"), "{id}: {heard:?}");
+        assert!(heard.iter().any(|e| e == extra), "{id}: {heard:?}");
+        assert_eq!(marks.len(), 1, "{id}: {marks:?}");
+        assert!(matches!(marks[0].group, DecalGroup::Material('C')), "{id}: {:?}", marks[0].group);
+        // And loaded with the map: what isn't plays nothing.
+        assert!(hl2dm::game::sounds::entries().iter().any(|e| e == extra), "{id}");
+    }
 }
 
 fn health(sim: &Sim, e: Entity) -> f32 {

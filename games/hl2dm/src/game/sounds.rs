@@ -1,6 +1,8 @@
 //! HL2:DM's sounds (specs/hl2dm/effects_sounds.md 15; S5's rest): the
 //! sound-script entries a map loads for it (`entries`: the weapons' own
-//! from their data, the suit's and pickups' in `maps::SOUNDS`, these),
+//! from their data, their hooks' parameters too, the suit's and pickups'
+//! in `maps::SOUNDS`, these; an entry not loaded plays nothing, without a
+//! word: `SoundBank` only has what the map asked for),
 //! what a hit player sounds like (`hurt_sounds`: there is no pain voice;
 //! a bullet makes `Flesh.BulletImpact` from the victim, fire `HL2Player.
 //! BurnPain`), a death (`death_sounds`: `<type>.Die` by the model's kind,
@@ -48,16 +50,42 @@ pub const SOUNDS: &[&str] = &[
     "Physics.WaterSplash",
     "Bounce.Shell",
     "Bounce.ShotgunShell",
+    // Named by the effects' code, not the weapons' data.
+    super::projectile_fx::EXPLOSION_SOUND,
+    "BaseGrenade.Explode",
+    super::physcannon_fx::HOLD_SOUND,
+    super::physcannon_fx::BALL_HOLD_SOUND,
+    super::rpg_fx::LASER_ON,
+    super::rpg_fx::LASER_OFF,
+    super::rpg_fx::IGNITE_SOUND,
+    "Weapon_Crossbow.BoltSkewer",
 ];
 
+/// The strings of a hook's parameters whose key says they name a sound
+/// (`launch_sound`, the launcher's `sound`), at any depth.
+fn hook_sounds<'a>(table: &'a toml::Table, out: &mut Vec<&'a str>) {
+    for (key, value) in table {
+        match value {
+            toml::Value::Table(t) => hook_sounds(t, out),
+            toml::Value::String(s) if !s.is_empty() && (key.contains("sound") || matches!(key.as_str(), "empty" | "explode" | "blip")) => {
+                out.push(s)
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Every entry a map loads for HL2:DM's sounds: `SOUNDS` and the
-/// weapons' (their data's sounds, melee hits and swings).
+/// weapons' (their data's sounds, melee hits and swings, what their hooks
+/// play).
 pub fn entries() -> Vec<String> {
     let mut out: Vec<String> = SOUNDS.iter().map(|s| s.to_string()).collect();
     for w in &super::weapons::hl2_weapons().weapons {
         let swings = w.melee.iter().flat_map(|m| [Some(&m.primary), m.secondary.as_ref()]).flatten();
         let swung = swings.flat_map(|s| [&s.sound_hit, &s.sound_hit_world, &s.sound_miss]).flatten();
-        for s in w.sounds.iter().flat_map(|s| s.entries()).chain(swung.map(String::as_str)) {
+        let mut hooked = Vec::new();
+        hook_sounds(&w.hooks, &mut hooked);
+        for s in w.sounds.iter().flat_map(|s| s.entries()).chain(swung.map(String::as_str)).chain(hooked) {
             if !out.iter().any(|o| o == s) {
                 out.push(s.to_string());
             }
@@ -201,6 +229,44 @@ mod tests {
     fn the_entries_include_the_weapons() {
         let all = entries();
         for want in ["Weapon_Pistol.Single", "Weapon_SMG1.Single", "Weapon_Shotgun.Double", FLESH_IMPACT] {
+            assert!(all.iter().any(|e| e == want), "{want}");
+        }
+    }
+
+    /// The HL2:DM playtest's silent sounds: what hooks and effects play
+    /// must be loaded with the map (a name that isn't plays nothing, with
+    /// no error). The install's check of these: `heavy::sound_stock`.
+    #[test]
+    fn the_entries_include_what_hooks_and_effects_play() {
+        let all = entries();
+        for want in [
+            "Weapon_PhysCannon.Pickup",
+            "Weapon_PhysCannon.Launch",
+            "Weapon_PhysCannon.Drop",
+            "Weapon_PhysCannon.DryFire",
+            "Weapon_PhysCannon.TooHeavy",
+            "Weapon_PhysCannon.OpenClaws",
+            "Weapon_PhysCannon.CloseClaws",
+            "Weapon_PhysCannon.HoldSound",
+            "NPC_CombineBall.HoldingInPhysCannon",
+            "Weapon_SMG1.Double",
+            "Weapon_RPG.Single",
+            "Weapon_IRifle.Single",
+            "Weapon_CombineGuard.Special1",
+            "NPC_CombineBall.Launch",
+            "NPC_CombineBall.Impact",
+            "NPC_CombineBall.Explosion",
+            "Weapon_Shotgun.Special1",
+            "WeaponFrag.Roll",
+            "Grenade.Blip",
+            "TripmineGrenade.Place",
+            "Weapon_SLAM.SatchelThrow",
+            "BaseExplosionEffect.Sound",
+            "BaseGrenade.Explode",
+            "Weapon_RPG.LaserOn",
+            "Missile.Ignite",
+            "Weapon_Crossbow.BoltSkewer",
+        ] {
             assert!(all.iter().any(|e| e == want), "{want}");
         }
     }

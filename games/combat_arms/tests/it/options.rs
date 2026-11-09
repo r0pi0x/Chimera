@@ -728,6 +728,12 @@ fn t39_the_number_keys_also_choose() {
     s.app.world_mut().resource_mut::<Console>().submit("choose_3");
     s.app.update();
     assert_eq!(s.app.world().resource::<combat_arms::game::options::derive::CaChoose>().0, [3]);
+    // Not saved: config.cfg is shared with apps that have no `choose_N`
+    // (the HL2:DM playtest's "Unknown command" on every press); the keys'
+    // own commands are.
+    let saved = chimera_core::console::config_text(s.app.world_mut());
+    assert!(!saved.contains("choose_"), "{saved}");
+    assert!(saved.lines().any(|l| l.starts_with("bind") && l.contains("slot2")), "{saved}");
 }
 
 #[test]

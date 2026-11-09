@@ -194,6 +194,48 @@ fn the_view_model_shows_the_beam_and_glow() {
     assert!(drawn(&sim, rpg_fx::WORLD_BEAM).is_empty(), "not the world model's");
 }
 
+/// The playtest's lag: as the view turns, the laser and its glow are on
+/// the attachment in the same frame, not where it was a frame ago. The
+/// view model is the camera's child, so it turns this frame; the camera's
+/// `GlobalTransform` is only updated after `Update`.
+#[test]
+fn the_beam_and_glow_keep_up_with_the_view_this_frame() {
+    #[derive(Resource)]
+    struct Anchor(Entity);
+    /// What the client's `follow_eye` does: the eye's `Transform`.
+    fn turn(anchor: Res<Anchor>, mut t: Query<&mut Transform>) {
+        t.get_mut(anchor.0).unwrap().rotate_y(0.1);
+    }
+    let mut sim = sim();
+    let (p, _) = holding_rpg(&mut sim);
+    let attachments = rpg_view_model(&mut sim, p, weapons::RPG);
+    sim.ticks(90);
+    let anchor = sim.app.world_mut().query_filtered::<Entity, With<ViewModelAnchor>>().single(sim.app.world()).unwrap();
+    sim.app.world_mut().entity_mut(anchor).insert(Transform::from_xyz(0.0, 0.6, 0.0));
+    sim.app.insert_resource(Anchor(anchor));
+    attached::order_sets(&mut sim.app);
+    sim.app.add_systems(Update, turn.in_set(attached::EyePlaced));
+    sim.ticks(2);
+    for _ in 0..3 {
+        clear(&mut sim);
+        sim.ticks(1);
+        let w = sim.app.world();
+        let eye = *w.get::<Transform>(p).unwrap() * *w.get::<Transform>(anchor).unwrap();
+        let offset = w.get::<ViewModelOffset>(p).copied().unwrap_or_default();
+        let at = |name: &str| {
+            let local = attachments.iter().find(|a| a.name == name).unwrap().local.translation;
+            eye.transform_point(placement(&offset, false).transform_point(local))
+        };
+        let (from, to) = (at("laser"), at("laser_end"));
+        let glows = drawn(&sim, rpg_fx::GLOW);
+        assert!(glows.iter().any(|(q, vm)| *vm && q.distance(from) < 1e-3), "the glow on `laser` {from}: {glows:?}");
+        let beam = drawn(&sim, rpg_fx::VIEW_BEAM);
+        assert_eq!(beam.len(), 4);
+        let on_line = |q: Vec3| (q - from).cross((to - from).normalize()).length() < 1e-3;
+        assert!(beam.iter().all(|(q, _)| on_line(*q)), "the beam on the attachments {from} {to}: {beam:?}");
+    }
+}
+
 /// Others see the beam on the world model's attachments 4 and 5; a model
 /// with fewer draws none.
 #[test]

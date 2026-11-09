@@ -244,6 +244,9 @@ pub fn register(app: &mut App) {
         Ok(None)
     });
     for n in 1u8..=6 {
+        // Its profile binds them again at every start; other apps sharing
+        // config.cfg have no such command.
+        app.world_mut().get_resource_or_init::<crate::console::Console>().bound_for_session(&format!("choose_{n}"));
         app.console_command(&format!("combat_arms:choose_{n}"), "A menu line pick (keys 1 to 6).", move |w, _| {
             w.resource_mut::<CaChoose>().0.push(n);
             Ok(None)

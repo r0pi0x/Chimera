@@ -1893,6 +1893,10 @@ fn run_binds(
         let Some(cmd) = polled.runnable(&cmd) else {
             continue;
         };
+        // config.cfg is shared: another app's commands aren't this one's.
+        let Some(cmd) = super::binds::known_here(&console, &cmd) else {
+            continue;
+        };
         if pressed {
             console.submit(cmd);
         } else {
@@ -2873,6 +2877,34 @@ mod tests {
     }
 
     /// A console with its editing system, open, and keys typed into it.
+    /// config.cfg is shared by the apps: a bind holding another app's
+    /// command doesn't complain on every press (the HL2:DM playtest's
+    /// `choose_1`, Combat Arms'); what this app has still runs.
+    #[test]
+    fn a_key_press_leaves_out_commands_this_app_has_not() {
+        let mut app = App::new();
+        app.add_plugins(ConsolePlugin)
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .add_message::<MouseWheel>()
+            .add_systems(Update, run_binds);
+        {
+            let mut c = app.world_mut().resource_mut::<Console>();
+            c.binds.insert("1".into(), "slot1; choose_1".into());
+            c.binds.insert("2".into(), "choose_2; echo still here".into());
+        }
+        for key in [KeyCode::Digit1, KeyCode::Digit2] {
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(key);
+            app.update();
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(key);
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().clear();
+            app.update();
+        }
+        let text: Vec<String> = app.world().resource::<Console>().output.iter().map(|l| l.text.clone()).collect();
+        assert!(!text.iter().any(|l| l.contains("Unknown command")), "{text:?}");
+        assert!(text.iter().any(|l| l.contains("still here")), "{text:?}");
+    }
+
     fn typing_app() -> App {
         let mut app = App::new();
         app.add_plugins(ConsolePlugin)

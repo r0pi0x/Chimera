@@ -117,22 +117,10 @@ the user's go-ahead: no Actions runs unless asked.
 Delete each when fixed. Check against specs/hl2dm/ and the probe; what's
 the original's own behaviour isn't a bug (say so instead).
 
-- **Console:** pressing 1, 2, 3 prints `Unknown command "choose_1"` (and
-  `choose_3`) on every press.
-- **Stunstick hit marks** look like CS:S knife marks; check what the
-  original places.
 - **Explosive barrels** break without exploding.
-- **Crosshair:** the HUD pieces left and right of the centre look off
-  centre, with their tops cut off.
 - **Props launch or trap the player:** walking into some props (the small
   bench) throws the player into the air; jumping onto the wheelbarrow
   sometimes sticks the player until they move backwards.
-- **Gravity gun looks:** the centre glow shows through the gun, and it
-  doesn't keep up one-to-one when the view moves left and right. (The
-  sprites were drawn over the view model in 19164c59; only the `_noz`
-  materials have the spec's backing for that.)
-- **Gravity gun sounds:** none on picking an object up or on throwing it
-  with left click.
 - **Showers (dm_lockdown):** a constant sound but no water visible.
 - **Props rotated wrongly:** `setpos -3598.11 5389.92 64.03;setang 4.01
   101.27 0.00` and pipes at `setpos -3062.89 3939.73 64.03;setang 2.14
@@ -140,20 +128,12 @@ the original's own behaviour isn't a bug (say so instead).
 - **Moved props keep their lighting:** a lot of props don't change light
   as they move, as if the environment's lights don't reach them. Check
   whether the original does the same.
-- **Missing sounds:** the SMG1's right-click grenade launch and its
-  explosion; the AR2's right-click ball launch; a breaking toilet or sink
-  (only the pieces hitting the floor are heard); the crowbar's impact. With the gravity gun's
-  above, and an HL2:DM character's footsteps (running on de_dust2 in
-  Ultimate Gun Game), look for a shared cause first (a soundscript or game-sound path,
-  possibly Windows-only).
 - **SMG1 grenade trail** doesn't look like it renders correctly.
 - **AR2 ball's explosion** has particles that look wrong.
 - **HUD:** no count of the SMG1's grenades or ammo for them (the
   secondary ammo panel; branch `hl2dm-gaps1` feeds it, check after merge).
 - **HUD:** no ammo counter bottom right for the RPG (`hl2dm-gaps1` shows
   its own rounds as ammo, check after merge).
-- **RPG laser** lags the view like the gravity gun's glow (same cause
-  expected, `map::attached`).
 - **Escape** only frees the cursor (click to return to the game): no menu.
   HL2:DM's menus were planned for after faithful DM/TDM; the user has now
   run into it, so it's next once these reports are done.

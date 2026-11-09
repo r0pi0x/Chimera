@@ -22,8 +22,10 @@
 //! I(24, 32), and while holding the end caps (`sprites/orangeflare1`) and
 //! the beams from the fork tips to attachment 1 (noise 16, 8 segments);
 //! widths are full widths (the spec's "glow quads"); the view model's set
-//! in first person (drawn over the claws, not depth tested against the
-//! view model), the world model's (`fork3`
+//! in first person (depth against the claws is each material's `$ignorez`:
+//! the install's `orangelight1_noz` beams have it; the core, the end caps
+//! and `glow04_noz`, whose `$ignorez` is commented out, don't), the world
+//! model's (`fork3`
 //! too) for everyone else. A punt or launch adds the blast sprite
 //! (`sprites/orangecore2`, width 8 to 64 in 0.1 s, alpha 255 to 0 in
 //! 0.2 s) for every machine drawing the gun; the punter's beam starts at

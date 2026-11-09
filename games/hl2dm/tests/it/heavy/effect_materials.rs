@@ -32,3 +32,24 @@ fn effect_materials_load_and_glows_add() {
         assert!(m.texture.is_some(), "{name}: no texture");
     }
 }
+
+/// Depth comes from what each material's file says, not its name:
+/// `glow04_noz` and `orangecore1` have their `$ignorez` commented out.
+#[test]
+fn ignorez_is_what_the_files_say() {
+    let Some(mount) = install_mount() else { return };
+    let mut loader = MaterialLoader::guest(&mount, 0, 0);
+    let particles = effects::load_materials(&mut loader);
+    for (name, no_depth) in [
+        (physcannon_fx::CORE, false),
+        (physcannon_fx::BLAST, false),
+        (physcannon_fx::GLOW, false),
+        (physcannon_fx::END_CAP, false),
+        (physcannon_fx::WORLD_BEAM, false),
+        (physcannon_fx::VIEW_BEAM, true),
+        (rpg_fx::VIEW_BEAM, true),
+    ] {
+        let m = &particles.materials[particles.find(name).unwrap_or_else(|| panic!("{name}"))];
+        assert_eq!(m.no_depth, no_depth, "{name}");
+    }
+}

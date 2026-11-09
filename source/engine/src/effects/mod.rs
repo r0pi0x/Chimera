@@ -43,6 +43,10 @@ pub struct ImpactStyle {
     /// The surface a character's hitbox is: its bullet impact is a body
     /// hit's sound where the game's hurt sounds don't play one.
     pub flesh: &'static str,
+    /// The decal group a melee hit places (CS:S's knife slash); None: the
+    /// surface's, as a bullet's (HL2:DM's crowbar and stunstick,
+    /// specs/hl2dm/effects_sounds.md 6).
+    pub melee_decal: Option<&'static str>,
 }
 
 /// The styles of the games in this app (`impact_effects::ImpactEffectsPlugin`,

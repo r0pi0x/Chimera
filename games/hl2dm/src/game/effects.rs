@@ -68,6 +68,7 @@ pub const STYLE: ImpactStyle = ImpactStyle {
     group_radius: None,
     damage_unit: 0.01,
     flesh: "flesh",
+    melee_decal: None,
 };
 
 /// The effect materials HL2:DM's effects add to Source's (the AR2's
