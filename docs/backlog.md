@@ -202,7 +202,6 @@ the original's own behaviour isn't a bug (say so instead).
   stayed after disconnecting and starting a new match in the same process.
   So whatever grows outlives the match and the server: look at per-process
   state (asset caches, GPU meshes and textures, materials, archetypes).
-- **Ultimate Gun Game's menu background** shouldn't use the greybox map.
 - **Ultimate Gun Game must never show the greybox stand-ins:** for a few
   frames someone flashes as a capsule, or a gun or knife as the template
   model (seen at low FPS). Goes with the character swap above: keep what's
