@@ -30,8 +30,13 @@
 //! seed), the players voting for the next one on the end screen
 //! (`map_vote`, `minigame::vote`: the rotation's pick and two others);
 //! its kit each gun's game's knife (the base game's, `BASE`, for a
-//! game without one). `parts` (console) prints each game's capability
-//! report.
+//! game without one); no gun off the ground, any game's, placed or dropped
+//! (`[pickups] weapons = false`: the ladder alone arms a player; a map's
+//! guns aren't placed, since a gun lying there that can't be taken would only
+//! mislead). `parts` (console) prints each game's capability report. It
+//! never draws a stand-in (`game_parts::NoStandIns`: no capsule, no box gun
+//! or knife): what shows stays until the real model is ready, a ladder's
+//! models loading ahead (Combat Arms' `characters::preload`).
 //!
 //! Known shortcuts: the ladder isn't made again when a player without a
 //! game joins mid-match; with no CS:S install the client still stops
@@ -90,6 +95,9 @@ pub fn options(seed: u64, rungs: usize) -> AutoOptions {
         // The players vote for the next map on the end screen (the
         // built-in settings, chimera/sim/data/map_vote.toml).
         map_vote: Some("true".into()),
+        // The ladder alone arms a player (the user's decision): no gun of
+        // any game off the ground; other pickups stay possible.
+        weapon_pickups: false,
         curve: chimera_sim::minigame::power::PowerCurve::shipped(),
     }
 }
@@ -225,6 +233,9 @@ impl Plugin for UltimateGunGamePlugin {
         // the rungs' extras do (`ladder::RungSeed`).
         .insert_resource(MapHistory::seeded(self.seed))
         .insert_resource(chimera_sim::minigame::ladder::RungSeed(self.seed))
+        // Never a capsule or a template gun: what shows stays until the
+        // real model is ready (`game_parts::NoStandIns`).
+        .init_resource::<chimera_core::game_parts::NoStandIns>()
         .console_command(
             "chimera:ugg_new",
             "ugg_new [seed] [rungs] [map]: a new Ultimate Gun Game ladder for the players connected, played at once \

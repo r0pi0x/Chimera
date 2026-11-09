@@ -46,9 +46,11 @@ mod switches;
 
 mod heavy {
     mod bot_cost;
+    mod bots_on_rungs;
     mod cs_decals;
     mod cross_hits;
     mod css_map_moves;
+    mod hud_looks;
     mod impacts;
     mod nav_bounds;
 }

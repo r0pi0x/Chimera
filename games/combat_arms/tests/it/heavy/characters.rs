@@ -173,7 +173,7 @@ fn aimed(rig: &Rig, pitch: f32, twist: f32, server: bool) -> Posed {
 #[test]
 fn install_states() {
     let Some(rig) = load(false) else { return };
-    let mut d = Driver::new(Arc::new(rig.list.clone()));
+    let mut d = Driver::new(rig.list.clone());
     d.update(15, &Inputs::default());
     assert_eq!((d.name_of(&d.upper), d.name_of(&d.lower), d.name_of(&d.crouch)), ("URFRAmS", "LST", "LC"));
     for (name, len) in [("LST", 4000), ("LWF", 1000), ("LRF", 600), ("LCF", 1400), ("LSJ", 666), ("URFRFiS", 100), ("URFRSReS", 1866), ("D_HIT", 467), ("DT", 3033)] {

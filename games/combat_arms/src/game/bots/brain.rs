@@ -265,7 +265,7 @@ pub struct StepClock {
 pub fn post_stimuli(
     mut events: MessageReader<WeaponEvent>,
     mut damage: MessageReader<Damage>,
-    weapons: Query<(&Weapon, Option<&CaMods>, Has<Magazine>)>,
+    weapons: Query<(&Weapon, Option<&CaMods>, Has<Magazine>, Option<&crate::weapon::Trigger>)>,
     mut bots: Query<&mut CaBot>,
     chars: Query<
         (Entity, &Team, &Transform, &MovementState, Option<&super::super::characters::CaAnim>, Option<&StepClock>),
@@ -287,7 +287,7 @@ pub fn post_stimuli(
             continue;
         }
         let WeaponEventKind::Fired { origin, .. } = e.kind else { continue };
-        let Ok((w, fitted, gun)) = weapons.get(e.weapon) else { continue };
+        let Ok((w, fitted, gun, trigger)) = weapons.get(e.weapon) else { continue };
         if gun {
             let radius = fitted.map_or(2000, |f| f.fire_sound().radius) as f32;
             let team = teams.get(e.owner).map_or(0, |t| t.0);
@@ -295,9 +295,14 @@ pub fn post_stimuli(
         }
         if let Ok(mut b) = bots.get_mut(e.owner) {
             // The next round no sooner than the fire animation allows
-            // (8.3).
-            let class = ca.characters().weapon(Some(w.id)).ani_type;
-            b.next_shot = now + math::fire_interval_ms(class) as f64 / 1000.0;
+            // (8.3); another game's gun (no record here, so no animation:
+            // the default's 1 s would fire an SMG once a second) as fast as
+            // its own cycle.
+            b.next_shot = now
+                + match ca.characters().weapons.get(w.id) {
+                    Some(look) => math::fire_interval_ms(look.ani_type) as f64 / 1000.0,
+                    None => trigger.map_or(0.1, |t| t.cycle as f64),
+                };
             b.aim_offset = None;
             b.release = true;
             if gun && data.gun_type(w.id) != Some("Knife") {
@@ -432,6 +437,10 @@ pub fn ensure_nav(world: &mut World) {
     // Bounded to the rooms a walking player reaches (`nav_gen::Bounds`):
     // the jump-ups climb out of de_aztec otherwise.
     let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
+    let mut params = nav_params();
+    if let Some(radius) = world.get_resource::<BotSettings>().and_then(|s| s.walker_radius) {
+        params.radius = radius;
+    }
     let mesh = {
         let mut state = SystemState::<SpatialQuery>::new(world);
         let q = state.get(world).unwrap();
@@ -439,7 +448,7 @@ pub fn ensure_nav(world: &mut World) {
             vis,
             walker: nav_gen::walking_player(),
         });
-        nav_gen::generate_within(&q, &|e| ignore.contains(&e), &seeds, &nav_params(), bounds)
+        nav_gen::generate_within(&q, &|e| ignore.contains(&e), &seeds, &params, bounds)
     };
     info!("bots: generated a navigation mesh of {} areas", mesh.areas.len());
     world.insert_resource(mesh);

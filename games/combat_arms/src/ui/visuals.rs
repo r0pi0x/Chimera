@@ -8,7 +8,9 @@
 //! model: nothing is drawn for it until its trail group is specified) and, without the install's effect file,
 //! smoke clouds as grey balls of the cloud's size (`smoke_balls`; with it
 //! the cloud is the `Smoke_Grenade_01` group's particles, `ui::effects`).
-//! Other characters are the shell's capsules (`client::hud`).
+//! Other characters are the shell's capsules (`client::hud`). An app with
+//! `game_parts::NoStandIns` (Ultimate Gun Game) draws no box: nothing until
+//! the view model is ready.
 //!
 //! The seam: Combat Arms' models (players, view models, held weapons)
 //! come from its install through its loader (specs/combat_arms/models_ltb.md,
@@ -40,7 +42,9 @@ impl Plugin for CaVisualsPlugin {
         app.add_systems(
             Update,
             (
-                box_gun,
+                // Never in an app that draws no stand-ins (`NoStandIns`): its
+                // weapon shows nothing until its view model is ready.
+                box_gun.run_if(not(resource_exists::<chimera_core::game_parts::NoStandIns>)),
                 grenade_balls,
                 smoke_balls,
             ),

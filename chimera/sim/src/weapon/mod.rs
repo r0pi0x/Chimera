@@ -404,6 +404,9 @@ impl Plugin for WeaponPlugin {
             .add_message::<economy::BuyRequested>();
         app.console_command("drop", "Drop the weapon you hold (G); walk over one to pick it up.", |w, _| {
             let player = local_player(w)?;
+            if let Some(why) = drop::drops_refused(w) {
+                return Err(why.to_string());
+            }
             if client(w) {
                 // The server drops it; what we carry follows.
                 w.write_message(drop::DropRequested);

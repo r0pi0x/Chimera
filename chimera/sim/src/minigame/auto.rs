@@ -440,6 +440,8 @@ pub struct AutoOptions {
     /// The end screen's map vote (`def::MinigameDef::map_vote`, `vote`):
     /// its TOML value (`"true"`, `"{ candidates = 4 }"`); None: none.
     pub map_vote: Option<String>,
+    /// Whether guns can be taken off the ground (`def::PickupsDef::weapons`).
+    pub weapon_pickups: bool,
     /// The power curve the ladder follows (`PowerCurve::shipped`).
     pub curve: PowerCurve,
 }
@@ -517,9 +519,10 @@ pub fn definition(
          identity = \"weapon\"\nweapons = {sets}\n\n\
          [spawn]\nrespawn = {{ delay = \"2s\", protection = \"2s\" }}\npoints = \"random_hidden\"\n\
          min_distance = 20.32\nkit = {kit}\n\n\
-         [rules]\nmodule = \"chimera:ladder\"\nladder = {ladder}\nadvance_on = \"kill\"\n\
+         {pickups}[rules]\nmodule = \"chimera:ladder\"\nladder = {ladder}\nadvance_on = \"kill\"\n\
          demote_on = \"melee_death\"\n{finale}refill_ammo = true\nwin = {{ kind = \"ladder_end\" }}\n",
         seed = opts.seed,
+        pickups = if opts.weapon_pickups { "" } else { "[pickups]\nweapons = false\n\n" },
         id = q(&opts.id),
         name = q(&opts.name),
         maps = list(&maps),
@@ -716,6 +719,7 @@ mod tests {
             time_limit: 600.0,
             avoid_recent: Some(10),
             map_vote: Some("true".into()),
+            weapon_pickups: true,
             curve: PowerCurve::shipped(),
         };
         let caps = [a, c, d];

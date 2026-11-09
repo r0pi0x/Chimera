@@ -11,7 +11,8 @@
 //! `render::bodies::build_late_held`). Until it is ready the character's
 //! hand is empty and a dropped one waits undrawn. A held weapon with
 //! drawn parts (`characters::WantHeld`) loads its model with them the
-//! same way; the bare gun's is held meanwhile.
+//! same way; the bare gun's is held meanwhile. The match's ladder's held
+//! models load the same way ahead of time (`preload`).
 //!
 //! Only Combat Arms' own weapons load here (`view_model::on_demand::ours`);
 //! runs only where `view_model::on_demand::LoadOnDemand` is (the front
@@ -63,6 +64,7 @@ pub fn load_on_demand(
     late: Option<Res<LateHeldModels>>,
     assets: Option<Res<LooseAssets>>,
     context: Option<Res<LoadContext>>,
+    ladder: Res<super::preload::LadderModels>,
     mut pending: Local<Pending>,
     mut commands: Commands,
 ) {
@@ -83,18 +85,22 @@ pub fn load_on_demand(
     // The map's kit's held models, ours included where it carries them
     // (none on a map whose kit wasn't loaded), and those added.
     let has = |id: &str| assets.as_ref().is_some_and(|a| a.0.contains_key(id)) || late.as_ref().is_some_and(|l| l.has(id));
+    // A ladder's, before the map is in: not those its kit will carry.
+    let ca = context.as_deref().map_or_else(CaData::install, CaData::install_for);
+    let kit = ca.builtin_weapon_ids();
     let keys = held
         .iter()
         .filter_map(|h| h.0.as_deref())
         .chain(want.iter().filter_map(|w| w.0.as_deref()))
-        .chain(loose.iter().map(|l| l.0.as_str()));
+        .chain(loose.iter().map(|l| l.0.as_str()))
+        .chain(ladder.keys.iter().map(String::as_str).filter(|k| assets.is_some() || !kit.contains(*k)));
     for id in keys {
         if pending.tried.contains(id) || !wanted(id, has) {
             continue;
         }
         pending.tried.insert(id.to_string());
         let key = id.to_string();
-        let ca = context.as_deref().map_or_else(CaData::install, CaData::install_for);
+        let ca = ca.clone();
         let task = AsyncComputeTaskPool::get().spawn(async move {
             let mount = ca.mount().ok_or_else(|| format!("{key}: no Combat Arms install"))?;
             load_held_weapon(&ca, &key, &|p: &str| mount.read(p).ok())

@@ -430,24 +430,38 @@ fn register_icons(
     hud: Option<Res<ActiveHud>>,
     put_away: Option<Res<crate::client::hud::PutAway>>,
     fonts: Res<UiFonts>,
+    mut font_assets: Option<ResMut<Assets<Font>>>,
+    mut registered: Local<Option<usize>>,
     mut icons: ResMut<WeaponIcons>,
 ) {
-    // The look in, or put away while another game's HUD draws (a party
-    // app that starts on another game's gun: its fonts load meanwhile).
-    let hud = match (&hud, &put_away) {
+    // The look up, or put away while another game's HUD draws (a party
+    // app that starts on another game's gun or map: CS:S's fonts are then
+    // not the shell's, so they come from the look itself, once a look).
+    let ours = hud.as_ref().filter(|h| h.0.game.is_empty() || h.0.game == crate::game::GAME);
+    let away = put_away.as_ref().and_then(|p| p.look_of(crate::game::GAME));
+    let up = ours.is_some();
+    let hud = match (ours, away) {
         (Some(h), _) if h.is_changed() || fonts.is_changed() => &**h,
-        (None, Some(p)) if p.is_changed() || fonts.is_changed() => match p.look() {
-            Some(l) => l,
-            None => return,
-        },
+        (None, Some(l)) if *registered != Some(std::sync::Arc::as_ptr(&l.0) as usize) => l,
         _ => return,
+    };
+    *registered = Some(std::sync::Arc::as_ptr(&hud.0) as usize);
+    let mut own: HashMap<&str, Option<(Handle<Font>, f32)>> = HashMap::new();
+    let mut font_of = |name: &'_ str| -> Option<(Handle<Font>, f32)> {
+        if up {
+            return fonts.game(name);
+        }
+        let (key, f) = hud.0.fonts.get_key_value(name)?;
+        own.entry(key.as_str())
+            .or_insert_with(|| Some((font_assets.as_mut()?.add(Font::from_bytes(f.data.to_vec())), f.tall)))
+            .clone()
     };
     let glyphs: HashMap<String, WeaponIcon> = hud
         .0
         .icons
         .iter()
         .filter_map(|(name, (font, ch))| {
-            let (font, tall) = fonts.game(font)?;
+            let (font, tall) = font_of(font)?;
             Some((name.clone(), WeaponIcon::Glyph { font, ch: *ch, em: tall * 0.5 }))
         })
         .collect();

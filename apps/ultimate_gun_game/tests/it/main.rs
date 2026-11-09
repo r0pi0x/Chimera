@@ -6,7 +6,9 @@
 
 mod fallbacks;
 mod minimal_hud;
+mod no_stand_ins;
 mod net;
 mod parts;
+mod pickups;
 mod power_curve;
 mod variety;

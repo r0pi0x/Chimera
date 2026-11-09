@@ -166,16 +166,19 @@ pub(super) fn apply_equips(mut asks: MessageReader<Equip>, mut commands: Command
 
 /// On a new map: its spawn equipment, and its placed weapons; at a round
 /// restart the placed weapons still lying there are put back as new.
-pub(super) fn map_equipment(world: &mut World, mut seen: Local<(Option<usize>, u32)>) {
+pub(super) fn map_equipment(world: &mut World, mut seen: Local<(Option<usize>, u32, bool)>) {
     let Some(map) = world.get_resource::<MapEntities>() else { return };
     let (entities, scale) = (map.entities.clone(), map.scale);
     let key = std::sync::Arc::as_ptr(&entities) as usize;
     let restarts = world.get_resource::<RoundRestarts>().map_or(0, |r| r.0);
     let new_map = seen.0 != Some(key);
-    if !new_map && seen.1 == restarts {
+    // A mode without gun pickups starting on a map already loaded takes
+    // its guns away (and its end puts them back).
+    let off = world.contains_resource::<super::drop::NoWeaponPickups>();
+    if !new_map && seen.1 == restarts && seen.2 == off {
         return;
     }
-    *seen = (Some(key), restarts);
+    *seen = (Some(key), restarts, off);
     if new_map {
         world.insert_resource(spawn_equipment(&entities));
     }
@@ -231,7 +234,8 @@ pub(super) fn remove_killed_weapons(
 }
 
 /// Put the map's `weapon_*` entities down as loose weapons (any placed
-/// before and still lying there go first).
+/// before and still lying there go first; in a mode without gun pickups,
+/// `drop::NoWeaponPickups`, none come).
 pub fn place_weapons(world: &mut World, entities: &[crate::map::MapEntity], scale: f32) {
     let old: Vec<(Entity, Entity)> = world
         .query::<(Entity, &Loose, &MapWeapon)>()
@@ -254,6 +258,14 @@ pub fn place_weapons(world: &mut World, entities: &[crate::map::MapEntity], scal
         .collect();
     for e in carried {
         world.entity_mut(e).remove::<MapWeapon>();
+    }
+    // Copies waiting to appear go with the weapons they stand for.
+    let copies: Vec<Entity> = world.query_filtered::<Entity, With<super::respawn::WeaponCopy>>().iter(world).collect();
+    for c in copies {
+        world.despawn(c);
+    }
+    if world.contains_resource::<super::drop::NoWeaponPickups>() {
+        return;
     }
     let delay = world.get_resource::<super::drop::PickupRules>().copied().unwrap_or_default().touch_delay;
     let since = super::drop::tick_time(world) - delay;
@@ -280,11 +292,6 @@ pub fn place_weapons(world: &mut World, entities: &[crate::map::MapEntity], scal
                 .entity_mut(loose)
                 .insert(super::respawn::MapPickup::new(super::respawn::PickupKind::Weapon, flags & (1 << 30) != 0));
         }
-    }
-    // Copies waiting to appear go with the weapons they stand for.
-    let copies: Vec<Entity> = world.query_filtered::<Entity, With<super::respawn::WeaponCopy>>().iter(world).collect();
-    for c in copies {
-        world.despawn(c);
     }
 }
 

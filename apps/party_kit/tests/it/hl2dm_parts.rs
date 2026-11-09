@@ -174,3 +174,41 @@ fn an_hl2dm_gun_kills_in_the_party() {
     sim.ticks(3);
     assert_eq!(held(&sim, a), Some("cs_source:weapon_glock"), "the next rung's gun");
 }
+
+/// Rounds fired, with the clock.
+#[derive(Resource, Default)]
+struct Shots(std::collections::HashMap<Entity, Vec<f64>>);
+
+fn note_shots(mut events: MessageReader<chimera_sim::weapon::WeaponEvent>, time: Res<Time>, mut shots: ResMut<Shots>) {
+    for e in events.read() {
+        if matches!(e.kind, chimera_sim::weapon::WeaponEventKind::Fired { .. }) {
+            shots.0.entry(e.owner).or_default().push(time.elapsed_secs_f64());
+        }
+    }
+}
+
+/// A Combat Arms bot fires another game's gun at that gun's rate: within a
+/// burst the SMG1's rounds are its cycle apart, not the second of Combat
+/// Arms' default fire animation (which had bots on it stand firing slowly,
+/// each fight taking a minute).
+#[test]
+fn a_bot_fires_another_games_gun_at_its_own_rate() {
+    let text = mixed_text(false);
+    let start = text.find("ladder = [").unwrap();
+    let end = start + text[start..].find(']').unwrap() + 1;
+    let text = format!("{}ladder = [\"{}\", \"{}\"]{}", &text[..start], hl2::SMG1, hl2::AR2, &text[end..]).replace("test:gun_game_hl2dm", "test:smg1");
+    let mut sim = Sim::new(CaSim, (GreyboxMapPlugin, PartyPartsPlugin));
+    no_finale(sim.app.world_mut());
+    sim.app.add_minigames(&[("smg1.toml", &text)]).unwrap();
+    minigame::start(sim.app.world_mut(), "test:smg1").expect("the gun game starts");
+    sim.app.init_resource::<Shots>().add_systems(FixedUpdate, note_shots);
+    let mut s = sim.app.world_mut().resource_mut::<combat_arms::game::bots::BotSettings>();
+    s.quota = 4;
+    s.quota_set = true;
+    sim.seconds(25.0);
+    let shots = sim.app.world().resource::<Shots>();
+    let gaps: Vec<f64> = shots.0.values().flat_map(|t| t.windows(2).map(|w| w[1] - w[0])).collect();
+    assert!(gaps.len() > 5, "the bots fight: {} gaps", gaps.len());
+    let least = gaps.iter().copied().fold(f64::MAX, f64::min);
+    assert!(least < 0.15, "rounds of a burst come a cycle apart (0.075 s): least gap {least:.3} s");
+}

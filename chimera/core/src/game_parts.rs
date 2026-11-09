@@ -161,6 +161,14 @@ impl GameParts {
 /// ammo; no game's HUD drawn).
 pub const MINIMAL_HUD: &str = "chimera";
 
+/// An app that never draws a stand-in for a model it hasn't got (a
+/// player's capsule, a first-person box gun or knife: Ultimate Gun Game):
+/// what is showing stays until the real model is ready, or nothing shows
+/// for a moment. Without it (the greybox app, Combat Arms without its
+/// keys, tests) the stand-ins draw.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NoStandIns;
+
 /// The registered games' parts, in the order registered, and the HUD a
 /// game without one falls back to.
 #[derive(Resource, Clone, Debug)]

@@ -853,7 +853,7 @@ fn t30_spheres_follow_the_animation() {
     }
     let list = AnimList::build(&model, &[]);
     let rig = Rig::new(model, list);
-    let mut d = Driver::new(Arc::new(rig.list.clone()));
+    let mut d = Driver::new(rig.list.clone());
     let fwd = Inputs { forward: true, ..rifle() };
     d.update(0, &fwd);
     assert_eq!(d.name_of(&d.lower), "LRF");
@@ -1159,6 +1159,110 @@ fn scenario_modelled_body() {
     assert!(pose.spheres[groin].is_some());
     let shoulder = skel.spheres.iter().position(|s| s.name == "Left_Shld").unwrap();
     assert!(pose.spheres[shoulder].is_none());
+}
+
+/// A character changing bodies keeps the body showing, on its own
+/// skeleton, until the new one is ready (a load on demand: backlog
+/// "changing Combat Arms characters hitches and garbles"): the new body's
+/// skeleton (here of another shape, as a male's and a female's are) goes
+/// on `CaAnim`, for the hit spheres, at once, but the pose going to the
+/// drawing stays the old skeleton's until the new model is in; then both
+/// change together.
+#[test]
+fn a_character_change_keeps_the_shown_body_on_its_own_skeleton() {
+    use chimera_world::map::{BodyModel, BodyName, CharacterModels, MapBone, MapCharacterModel, anim::{AnimSet, Animator}};
+    use combat_arms::game::{GAME, characters::{CaShownAnim, models::BodyGroup}, view_model::on_demand::LoadOnDemand};
+    let model_of = |id: i32, stand_in: &StandIn| MapCharacterModel {
+        game: Some(GAME),
+        team: None,
+        name: Some(models::body_name(id)),
+        class: None,
+        model: Default::default(),
+        hitboxes: Vec::new(),
+        bones: stand_in
+            .nodes
+            .iter()
+            .map(|(name, parent, _)| MapBone { name: name.to_string(), parent: *parent, position: Vec3::ZERO, rotation: Quat::IDENTITY })
+            .collect(),
+        root: Transform::IDENTITY,
+        animations: Some(Arc::new(AnimSet::default())),
+        boxes: Vec::new(),
+        ragdoll: None,
+    };
+    let (from, to) = (1, 2);
+    let a = male_stand_in(true);
+    // Another tree: one node more.
+    let mut b = male_stand_in(true);
+    b.nodes.push(("Extra_Node", Some(0), [0.0, 1.0, 0.0]));
+    let mut sim = Sim::new(CaSim, (GreyboxMapPlugin, chimera_world::map::MapSimPlugin::empty()));
+    sim.set_tick_interval(TICK_INTERVAL);
+    sim.app.init_resource::<LoadOnDemand>();
+    let world = sim.app.world_mut();
+    models::register(world, &builtin().model(from).unwrap().file, Arc::new(a.rig(STAND_IN_ANIMS)));
+    models::late_in(world).0.register_group(BodyGroup { records: vec![from], ..default() });
+    world.insert_resource(CharacterModels(Arc::new(vec![model_of(from, &a)])));
+    let p = player(&mut sim, Vec3::new(0.0, 1.0, 12.0), 0.0);
+    sim.app.world_mut().entity_mut(p).insert(Selection { model: from, ..default() });
+    sim.ticks(6);
+    // The drawing's pose goes with the model the character wears, always.
+    let check = |sim: &Sim, what: &str| {
+        let w = sim.app.world();
+        let animator = w.get::<Animator>(p).unwrap();
+        let worn = &w.resource::<CharacterModels>().0[w.get::<BodyModel>(p).unwrap().0];
+        assert_eq!(animator.skeleton, Some(worn.skeleton_signature()), "{what}: the pose is the worn model's skeleton's");
+        if let Some(pose) = &animator.fixed {
+            assert_eq!(pose.len(), worn.bones.len(), "{what}: one pose per bone of the worn model");
+        }
+        worn.name.clone().unwrap()
+    };
+    let name = |sim: &Sim| sim.app.world().get::<BodyName>(p).map(|n| n.0.clone());
+    assert_eq!(check(&sim, "before"), models::body_name(from));
+    assert_eq!(name(&sim).as_deref(), Some(models::body_name(from).as_str()));
+    // The change: its rig is known (stood in, or read), its model loading.
+    let world = sim.app.world_mut();
+    models::register(world, &builtin().model(to).unwrap().file, Arc::new(b.rig(STAND_IN_ANIMS)));
+    world.entity_mut(p).insert(Selection { model: to, ..default() });
+    for _ in 0..30 {
+        sim.ticks(1);
+        assert_eq!(check(&sim, "while it loads"), models::body_name(from));
+    }
+    let world = sim.app.world();
+    assert!(world.get::<CaShownAnim>(p).is_some(), "the old body plays on");
+    assert_eq!(world.get::<CaAnim>(p).unwrap().body, to, "the new body is the logic's at once");
+    assert!(world.get::<Animator>(p).unwrap().fixed.is_some());
+    // It moves: the old skeleton's driver runs while it shows.
+    sim.intent(p).move_axis = Vec2::Y;
+    sim.ticks(10);
+    let shown = sim.app.world().get::<CaShownAnim>(p).unwrap();
+    assert_eq!(shown.0.driver.name_of(&shown.0.driver.lower), "LRF", "the old body runs");
+    // The model comes.
+    let world = sim.app.world_mut();
+    models::late_in(world).0.register_group(BodyGroup { records: vec![to], ..default() });
+    let mut all = (*world.resource::<CharacterModels>().0).clone();
+    all.push(model_of(to, &b));
+    world.resource_mut::<CharacterModels>().0 = Arc::new(all);
+    let mut swapped = false;
+    for _ in 0..8 {
+        sim.ticks(1);
+        swapped = check(&sim, "the swap") == models::body_name(to);
+        if swapped {
+            break;
+        }
+    }
+    assert!(swapped, "the new body comes");
+    sim.ticks(2);
+    assert!(sim.app.world().get::<CaShownAnim>(p).is_none(), "the old body's driver goes with it");
+    assert_eq!(sim.app.world().get::<Animator>(p).unwrap().fixed.as_ref().unwrap().len(), b.nodes.len());
+    // Back to a body whose model is here, from a character whose state was
+    // never on it (it arrives from another game's body): that body's own
+    // rig poses it from the start.
+    let world = sim.app.world_mut();
+    let mut only_a = (*world.resource::<CharacterModels>().0).clone();
+    only_a.pop();
+    world.resource_mut::<CharacterModels>().0 = Arc::new(only_a);
+    world.entity_mut(p).insert(chimera_world::map::BodyName(models::body_name(from)));
+    sim.ticks(4);
+    assert_eq!(check(&sim, "the rig kept for what it wears"), models::body_name(from));
 }
 
 // ---------------------------------------------------------------------

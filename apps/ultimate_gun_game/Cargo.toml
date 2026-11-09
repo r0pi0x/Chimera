@@ -33,6 +33,7 @@ bevy = { workspace = true, features = ["default", "wav"] }
 avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
 chimera_sim = { workspace = true, features = ["testkit"] }
 chimera_world.workspace = true
+chimera_present.workspace = true
 combat_arms.workspace = true
 hl2dm.workspace = true
 

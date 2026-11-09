@@ -869,6 +869,13 @@ pub struct MapCharacterModel {
     pub ragdoll: Option<MapRagdoll>,
 }
 
+impl MapCharacterModel {
+    /// Its skeleton's shape (`anim::skeleton_signature`).
+    pub fn skeleton_signature(&self) -> u64 {
+        super::anim::skeleton_signature(self.bones.iter().map(|b| (b.name.as_str(), b.parent)))
+    }
+}
+
 /// A hitbox in its bone's frame (the source game's axes and units).
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct BoneBox {
@@ -1287,6 +1294,10 @@ pub struct GameKit {
     pub decals: decal::MapDecals,
     /// The game's own HUD look, when it has one.
     pub hud: Option<Arc<hud::GameHud>>,
+    /// The other games' HUD looks in an app made of several: each guest's
+    /// (`add_guest_hud`), so every game's HUD draws in its own look on any
+    /// game's map.
+    pub guest_huds: Vec<Arc<hud::GameHud>>,
     /// What characters see of what they hold (weapons' view models).
     #[serde(with = "crate::map::pod_serde::par_vec")]
     pub view_models: Vec<MapViewModel>,
@@ -1301,6 +1312,18 @@ pub struct GameKit {
 }
 
 impl GameKit {
+    /// A guest's HUD look: the kit's own where the map's game brings none,
+    /// else beside it (never over it, and never lost: each game's HUD wants
+    /// its own).
+    pub fn add_guest_hud(&mut self, look: Option<Arc<hud::GameHud>>) {
+        let Some(look) = look else { return };
+        if self.hud.is_none() {
+            self.hud = Some(look);
+        } else {
+            self.guest_huds.push(look);
+        }
+    }
+
     /// The part of this kit that stays on a map of another game: the held
     /// and view models whose keys start with one of `kept` (another game's
     /// weapons an app offers in the gameplay's slots), and with `players`

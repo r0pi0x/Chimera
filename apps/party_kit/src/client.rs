@@ -12,10 +12,11 @@
 //!
 //! CS:S's HUD here is its health, armour and ammo panels, death notices,
 //! damage sprites and weapon selection row (`ui::game_hud`,
-//! `hud_sprites`, `weapon_select`), from the map's CS:S HUD look (kept on
-//! CS:S's maps, `MapSources::players`; put away while Combat Arms' HUD
-//! draws: `client::hud::HudLookOwner`), with the shell's crosshair, and
-//! the minigame's panel (`ui::minigame_hud`). Over both: one kill feed, the
+//! `hud_sprites`, `weapon_select`), from CS:S's HUD look, HL2:DM's HUD from
+//! its own (each map carries every game's, `MapSources::players` and
+//! `guests`; up only with its game's HUD: `client::hud::HudLookOwner`), with
+//! the shell's crosshair on CS:S's, and the minigame's panel
+//! (`client::minigame_panel`). Over all: one kill feed, the
 //! shell's, and no radars unless `hud_radar 1` (`PartyHudPlugin`); with
 //! `party_swap_effect 1` (default 0) a short flash when the local
 //! player's gun changes game, a puff at others' (`client::swap_effect`). Known
@@ -64,9 +65,9 @@ pub fn map_file_bytes(id: &str) -> Option<Vec<u8>> {
 /// `WeaponMenuPlugin`, added once, by CS:S's), the minigame's panel on
 /// CS:S's HUD, and the rest of CS:S's HUD that follows the gun in hand
 /// (the radar, target ID, freeze cam, voice status: each drawing only
-/// while CS:S's HUD is the gameplay's), and HL2:DM's panels (M9, drawing
-/// while its HUD is the gameplay's and the map's look is HL2:DM's: a
-/// player holding its gun otherwise sees the shell's).
+/// while CS:S's HUD is the gameplay's), and HL2:DM's panels with the
+/// minigame's (M9, drawing while its HUD is the gameplay's: on any map, its
+/// look coming with the map, `MapSources::guests`).
 pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
     let mut shell = shell;
     for client in CLIENTS {
@@ -83,7 +84,7 @@ pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 3] =
     [&combat_arms::ui::PARTY_CLIENT, &cs_source::ui::party::CLIENT, &hl2dm::ui::party::CLIENT];
 
 /// The client: the shell's plugins with the app's hooks and both games'
-/// HUDs (`with_huds`), the map's HUD look CS:S's (`HudLookOwner`).
+/// HUDs (`with_huds`), each drawing in its own look (`HudLookOwner`).
 pub struct ClientPlugin {
     pub args: Args,
 }

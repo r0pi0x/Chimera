@@ -52,6 +52,9 @@
 //! module = "chimera:ladder"   # a registered rules module; the other keys are its own
 //! ladder = ["cs_source:weapon_glock", "combat_arms:m4a1"]
 //!
+//! [pickups]                   # what players may take off the ground, each on by default
+//! weapons = false             # no gun of any game: none placed, none taken, no drop key
+//!
 //! [modifiers]                 # registered modifiers by name, each with its value
 //! ```
 //!
@@ -109,6 +112,9 @@ pub struct MinigameDef {
     #[serde(default)]
     pub spawn: SpawnDef,
     pub rules: RulesDef,
+    /// What players may take off the ground (`PickupsDef`).
+    #[serde(default)]
+    pub pickups: PickupsDef,
     /// Modifiers by name, each with its value (`ModifierAppExt`).
     #[serde(default)]
     pub modifiers: toml::Table,
@@ -193,6 +199,26 @@ pub struct Slots {
     /// Game ids whose weapons the definition may name (empty: any).
     #[serde(default)]
     pub weapons: Vec<String>,
+}
+
+/// What players may take off the ground in this mode, by kind, each on by
+/// default. Only guns so far; health kits, batteries and the like are their
+/// games' items, untouched by it, and get their own key when a mode wants
+/// them off.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PickupsDef {
+    /// Guns, every game's, placed by the map or dropped. False: none lie on
+    /// the map, none is taken, the drop key does nothing
+    /// (`weapon::drop::NoWeaponPickups`).
+    #[serde(default = "yes")]
+    pub weapons: bool,
+}
+
+impl Default for PickupsDef {
+    fn default() -> Self {
+        Self { weapons: true }
+    }
 }
 
 /// What a player's own game identity follows (`slots::FollowsWeapon`).

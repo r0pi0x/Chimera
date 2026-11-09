@@ -143,27 +143,9 @@ the original's own behaviour isn't a bug (say so instead).
   pieces don't show them. Breakable glass itself is right (13 of these on
   dm_lockdown, shared Source code: specs/source/breakables.md). Check
   specs/cs_source/impact_effects.md and whether CS:S's glass has the same bug.
-- **Ultimate Gun Game: no gun pickups (decision).** HL2:DM's guns on the
-  ground can be picked up there, and shouldn't. Turn off gun pickups in UGG
-  (every game's, map-placed or dropped), as a rule the mode sets, so other
-  pickups stay possible later.
-- **Ultimate Gun Game's HUD changed:** the CS:S HUD there looks different
-  now, a recent regression by the user's account (no change was meant to
-  touch it; bisect it). The level-up text is far too big on some HUDs.
 - **Flashlight lights nothing:** the toggle, network path and sounds work,
   but the spot light has no visible effect on dm_lockdown, even at 10,000
   times the brightness; the spec gives no brightness, colour or cone.
-- **Ultimate Gun Game's bots on HL2:DM:** some get stuck, don't shoot or
-  move properly and seem to have no plan. Check their navigation on `dm_*`
-  maps (no `.nav` files ship with HL2:DM).
-- **Higher priority: changing Combat Arms characters hitches and garbles.**
-  The new character takes a moment to load, with visible lag, and meanwhile
-  the current character's bones go wrong, as if imitating the new one's. The
-  user suggests preloading every rung's model; also swap the body only when
-  the new one is ready, so a skeleton never drives the wrong model.
-- **Ultimate Gun Game: HL2:DM rungs don't use HL2:DM's HUD and crosshair.**
-  Holding an HL2:DM gun should show the same HUD and crosshair as HL2:DM
-  itself, as other games' rungs do.
 - **Higher priority: frame rate decays over a session.** After about 10
   games the user's FPS is down to about 30. Measure frame and tick cost per
   match over repeated map changes (leaked entities, assets, meshes, audio,
@@ -173,17 +155,30 @@ the original's own behaviour isn't a bug (say so instead).
   stayed after disconnecting and starting a new match in the same process.
   So whatever grows outlives the match and the server: look at per-process
   state (asset caches, GPU meshes and textures, materials, archetypes).
-- **Ultimate Gun Game's menu background** shouldn't use the greybox map.
-- **Ultimate Gun Game must never show the greybox stand-ins:** for a few
-  frames someone flashes as a capsule, or a gun or knife as the template
-  model (seen at low FPS). Goes with the character swap above: keep what's
-  showing until the real model is ready.
 - **RMS-12 on a gun game's rung (decision):** it burns nobody: its ammo's
   `ProgDamage` is 0 (specs/combat_arms/special_weapons.md 4, Open question
   8), so that is the original's data, not a bug. Its flames do show now and
   cut glass. On a rung, only the knife climbs. Waiting on the user: keep it,
   leave zero-damage guns (this, the M136_AT4) out of generated ladders, or a
   party option that burns?
+- **Forget an old ladder's models.** `characters::preload` adds about 1.6 GB
+  per ladder (performance.md, "Combat Arms character changes") and each map
+  builds them all again; nothing is dropped in a session, so this may feed
+  the frame rate decay above. Drop what the new ladder doesn't want at a map
+  change (`LateCharacterModels`, `LateHeldModels`, the view models' cache),
+  and let it load again when worn.
+- **Nothing blocks the main thread (user, 2026-11-09).** A load must never
+  cost a visible frame. After the character swap fix one rung with a Combat
+  Arms gun still costs 37 ms (31 ms CPU, 169 M instructions) on the frame of
+  the change; find what that is, it may not be a load (spawning, materials,
+  GPU upload). Reading and parsing go off the main thread; what must run on
+  it gets a per-frame budget across several frames; what shows stays until
+  the new thing is ready. Cover rung changes, character changes and map
+  transitions in every game, and pin it with a main-thread instruction limit
+  (not wall time, which a busy box makes flaky).
+- **Kill feed: the crowbar's icon** is just the large word "crowbar".
+- **Scoreboard: guns still top-aligned** in their list item, a lot of the
+  Combat Arms ones.
 - **Neon Outlaw ASW338LM (Combat Arms)** looks like it has the wrong UV map.
   Already answered (below, models_ltb.md W1-W3): its skin is painted for a
   layout no ASW338LM model in the install has. Waiting on the user: leave

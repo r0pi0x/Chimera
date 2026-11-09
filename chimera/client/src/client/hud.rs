@@ -15,9 +15,10 @@
 //! local player follows its weapon's game, `chimera_sim::identity`) keeps
 //! only the active one up: a game's HUD roots (`HudRoot`) show only while
 //! its HUD is the gameplay's; `GameDraws` is the active HUD's
-//! (`HudDraws`); the map's own HUD look (`map::hud::ActiveHud`) is put
-//! away while another game's HUD draws (`HudLookOwner`: its game's HUD
-//! takes its parts down when it goes and builds them when it is back).
+//! (`HudDraws`); the look (`map::hud::ActiveHud`) is the look of the game
+//! whose HUD draws, among the map's and its guests' (`HudLookOwner`,
+//! `PutAway`), and none for a HUD without one: a game's HUD takes its parts
+//! down when the look goes and builds them when it is back.
 //! `Radars` (`hud_radar`) says whether the games' radars draw; an app with
 //! one kill feed for all its HUDs (`kill_feed::SharedKillFeed`) has this
 //! HUD's left out too.
@@ -158,23 +159,27 @@ pub fn default_radars(app: &mut App, shown: bool) {
     app.world_mut().resource_mut::<crate::console::Console>().set_default("hud_radar", &v.to_string());
 }
 
-/// Whose HUD the map's own HUD look (`map::hud::ActiveHud`) is, in an app
-/// with several HUDs: while another game's HUD is the gameplay's the look
-/// is put away (removed: its game's HUD takes its parts down, this HUD
-/// acts as without one) and it comes back with its game's HUD (the same
-/// map's only). Without it the look stays.
+/// An app with several HUDs and looks (`map::hud::ActiveHud`, `GameHud::
+/// game`): `ActiveHud` is only ever the look of the game whose HUD is the
+/// gameplay's, from the map's own and its guests' (`map::hud::GuestLooks`),
+/// or none while that HUD has no look (Combat Arms' draws from its own
+/// data). Each swap leaves a frame without one, so every game's HUD takes
+/// its parts down as when a map has no look. The value is the game a look
+/// that names none belongs to (and what shows with no gameplay). Without
+/// the resource the look stays.
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct HudLookOwner(pub &'static str);
 
-/// The look put away, and the map it is of (`map::LoadedMapName`).
+/// The looks not up (`HudLookOwner`), and the map they are of
+/// (`map::LoadedMapName`).
 #[derive(Resource, Default)]
-pub struct PutAway(Option<(crate::map::hud::ActiveHud, Option<String>)>);
+pub struct PutAway(Vec<(crate::map::hud::ActiveHud, Option<String>)>);
 
 impl PutAway {
-    /// The look put away while another game's HUD draws (its game still
+    /// `game`'s look while another game's HUD draws (its game still
     /// registers its icons from it: `weapon_icons`).
-    pub fn look(&self) -> Option<&crate::map::hud::ActiveHud> {
-        self.0.as_ref().map(|(l, _)| l)
+    pub fn look_of(&self, game: &str) -> Option<&crate::map::hud::ActiveHud> {
+        self.0.iter().map(|(l, _)| l).find(|l| l.0.game == game)
     }
 }
 
@@ -206,21 +211,35 @@ fn draws_follow_hud(
     }
 }
 
-/// The map's HUD look away while another game's HUD draws, back with its
-/// owner's (`HudLookOwner`).
+/// The look of the game whose HUD draws, the others put away
+/// (`HudLookOwner`).
 fn put_away_hud_look(world: &mut World) {
+    use crate::map::hud::{ActiveHud, GuestLooks};
     let Some(owner) = world.get_resource::<HudLookOwner>().map(|o| o.0) else { return };
-    let shown = world.get_resource::<crate::gameplay::Gameplay>().is_none_or(|g| g.hud == owner);
+    let want = world.get_resource::<crate::gameplay::Gameplay>().map_or(owner, |g| g.hud);
     let map = world.get_resource::<crate::map::LoadedMapName>().map(|m| m.0.clone());
-    if !shown {
-        if let Some(look) = world.remove_resource::<crate::map::hud::ActiveHud>() {
-            world.resource_mut::<PutAway>().0 = Some((look, map));
+    let guests = world.remove_resource::<GuestLooks>();
+    let whose = |look: &ActiveHud| if look.0.game.is_empty() { owner.to_string() } else { look.0.game.clone() };
+    let up = world.get_resource::<ActiveHud>().map(whose);
+    let taken = up.as_ref().is_some_and(|g| g != want).then(|| world.remove_resource::<ActiveHud>()).flatten();
+    let mut away = world.resource_mut::<PutAway>();
+    // A map's guests come with its load: the old map's looks are over.
+    if guests.is_some() {
+        away.0.clear();
+    }
+    away.0.retain(|(_, of)| *of == map);
+    for look in guests.into_iter().flat_map(|g| g.0).chain(taken) {
+        let game = whose(&look);
+        away.0.retain(|(l, _)| whose(l) != game);
+        away.0.push((look, map.clone()));
+    }
+    // After a frame without one when one just went.
+    if up.is_none() {
+        let back = away.0.iter().position(|(l, _)| whose(l) == want);
+        if let Some(i) = back {
+            let (look, _) = away.0.remove(i);
+            world.insert_resource(look);
         }
-    } else if !world.contains_resource::<crate::map::hud::ActiveHud>()
-        && let Some((look, of)) = world.resource_mut::<PutAway>().0.take()
-        && of == map
-    {
-        world.insert_resource(look);
     }
 }
 
@@ -1121,9 +1140,10 @@ pub struct CapsuleBody;
 /// all: a client gets them before the server's map is in), so this
 /// follows the map, not the character's arrival: a client that joined
 /// de_dust2 from the greybox kept a capsule through every model (seen
-/// in the network soak's screenshots).
+/// in the network soak's screenshots). Never in an app with
+/// `game_parts::NoStandIns`.
 #[allow(clippy::type_complexity)]
-fn character_bodies(
+pub fn character_bodies(
     characters: Query<
         (
             Entity,
@@ -1138,6 +1158,7 @@ fn character_bodies(
         (With<Intent>, Without<LocalPlayer>),
     >,
     models: Option<Res<crate::map::CharacterModels>>,
+    no_stand_ins: Option<Res<chimera_core::game_parts::NoStandIns>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut commands: Commands,
@@ -1145,9 +1166,13 @@ fn character_bodies(
     for (e, team, capsule, (name, class, identity)) in &characters {
         // A model for it: the map's, among its identity's game's when it
         // has one (another game's character on this map is a capsule).
-        let modelled = models
-            .as_ref()
-            .is_some_and(|m| identity.is_none() || m.for_identity(identity, Some(*team), name, class).is_some());
+        // An app without stand-ins (`NoStandIns`) never draws one: not on
+        // a join's first frames, before the map's models are in, nor at a
+        // map change.
+        let modelled = no_stand_ins.is_some()
+            || models
+                .as_ref()
+                .is_some_and(|m| identity.is_none() || m.for_identity(identity, Some(*team), name, class).is_some());
         match (modelled, capsule) {
             (true, true) => {
                 commands

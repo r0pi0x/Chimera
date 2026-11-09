@@ -123,6 +123,16 @@
 //! legs' animation; the body is a drawn object (`corpses`: `map::Corpse`,
 //! the death animation at its age), and the dead player itself is hidden.
 //!
+//! Changing bodies (a rung's look, `ca_wear`): `CaAnim` is the selection's
+//! at once (its rig, or its tree's stock rig on a machine that draws none:
+//! the hit spheres and the network), but the body showing stays until the
+//! new one is ready: `setup` keeps its state as `CaShownAnim`, `drive` plays
+//! both and hands the drawing the shown skeleton's pose
+//! (`Animator::skeleton`), until the character's `BodyModel` is on `CaAnim`'s
+//! skeleton (the model loaded, `bodies_on_demand`, `dress`). Then model and
+//! skeleton change in one frame (`render::bodies::attach_bodies`). A rung's
+//! bodies and guns load ahead of the swap (`preload`).
+//!
 //! Known shortcuts (docs/tech-debt.md; the most literal reading where the
 //! spec is unclear, listed for its open questions):
 //! - NPC and boss bodies (13.8): the hull stays the player's for every
@@ -205,6 +215,7 @@ pub mod driver;
 pub mod families;
 pub mod held_on_demand;
 pub mod models;
+pub mod preload;
 pub mod records;
 pub mod skeleton;
 
@@ -230,7 +241,7 @@ use crate::{
         self, Damage, Dead, Died, Health, Hitgroup, Intent, LocalPlayer, MovementState, NetRole, RoundRestarts,
         SimClock, SimSet, Team,
     },
-    map::{BodyName, BodyNumber, BodySkin, CharacterModels, Corpse, Held, anim::Animator},
+    map::{BodyModel, BodyName, BodyNumber, BodySkin, CharacterModels, Corpse, Held, anim::Animator},
     net::{NetAppExt, game::ServerTime, ordered::OrderedAppExt, server::Player},
     slots::GameIdentity,
     weapon::{Inventory, Magazine, Weapon, WeaponEvent, WeaponEventKind, WeaponState},
@@ -285,6 +296,20 @@ pub struct CaAnim {
     dice: u32,
 }
 
+/// The animation state of the body a character still shows while the
+/// one its selection wears isn't ready (front end only): a skeleton other
+/// than `CaAnim`'s, which plays on (`setup`, `drive`). Its pose goes on the
+/// shown body until the character's `BodyModel` is on `CaAnim`'s skeleton:
+/// `CaAnim` itself stays the selection's, for the hit spheres and the
+/// network, on every machine alike.
+#[derive(Component, Clone, Debug)]
+pub struct CaShownAnim(pub CaAnim);
+
+/// The skeleton (`map::anim::skeleton_signature`) of a state's rig.
+fn rig_skeleton(anim: &CaAnim) -> Option<u64> {
+    anim.rig.as_ref().map(|r| r.shape.signature)
+}
+
 impl CaAnim {
     /// A male player body's state (`with_family` for any other).
     pub fn new(body: i32, skeleton: usize, rig: Option<Arc<Rig>>) -> Self {
@@ -294,7 +319,7 @@ impl CaAnim {
 
     /// Body `body` (record `record`) of `family` on hit table `skeleton`.
     pub fn with_family(body: i32, skeleton: usize, rig: Option<Arc<Rig>>, family: &'static families::Family, record: &str) -> Self {
-        let list = rig.as_ref().map_or_else(|| driver::spec_library(family.aim == Some(1)), |r| Arc::new(r.list.clone()));
+        let list = rig.as_ref().map_or_else(|| driver::spec_library(family.aim == Some(1)), |r| r.list.clone());
         let mut driver = Driver::new(list);
         driver.family = Some(family);
         Self {
@@ -493,9 +518,17 @@ impl Plugin for CaCharactersPlugin {
             .add_systems(FixedUpdate, hitboxes.after(drive))
             .add_systems(FixedUpdate, wear_looks.before(setup).run_if(core::authoritative))
             .add_systems(FixedUpdate, client_clock.before(drive).run_if(core::shows_others))
+            .init_resource::<preload::LadderModels>()
             .add_systems(
                 Update,
-                (held_on_demand::load_on_demand, bodies_on_demand::load_on_demand)
+                (
+                    preload::plan_ladder
+                        .run_if(resource_exists_and_changed::<chimera_sim::minigame::ladder::Ladder>)
+                        .before(held_on_demand::load_on_demand)
+                        .before(bodies_on_demand::load_on_demand),
+                    held_on_demand::load_on_demand,
+                    bodies_on_demand::load_on_demand,
+                )
                     .run_if(resource_exists::<super::view_model::on_demand::LoadOnDemand>),
             );
         look_cvars(app);
@@ -739,8 +772,12 @@ fn wear_looks(
 fn setup(
     data: Res<CaData>,
     loaded: models::LoadedModels,
-    characters: Query<(Entity, Option<&Selection>, Option<&CaAnim>), (With<Intent>, With<MovementState>)>,
+    #[allow(clippy::type_complexity)] characters: Query<
+        (Entity, Option<&Selection>, Option<&CaAnim>, (Option<&BodyModel>, Option<&GameIdentity>, Option<&CaShownAnim>)),
+        (With<Intent>, With<MovementState>),
+    >,
     females: Option<ResMut<crate::core::FemaleBodies>>,
+    drawn: (Option<Res<CharacterModels>>, Option<Res<super::view_model::on_demand::LoadOnDemand>>),
     mut commands: Commands,
 ) {
     // The bodies' sex, for what is gendered (the announcer's groin-shot
@@ -749,7 +786,8 @@ fn setup(
     if let Some(f) = females.as_mut() {
         f.0.retain(|e| characters.contains(*e));
     }
-    for (e, look, anim) in &characters {
+    let (models, front_end) = drawn;
+    for (e, look, anim, (wears, identity, shown)) in &characters {
         let look = look.copied().unwrap_or_default();
         let (body, skeleton, rig) = body_of(&data, loaded.get(), &look);
         let (family, record) = family_of(&data, &look);
@@ -768,7 +806,28 @@ fn setup(
             let table = super::weapons::hit_table(skeleton);
             commands
                 .entity(e)
-                .insert((look, CaAnim::with_family(body, skeleton, rig, family, &record), CaPose::default(), HitSpheres(table)));
+                .insert((look, CaAnim::with_family(body, skeleton, rig.clone(), family, &record), CaPose::default(), HitSpheres(table)));
+        }
+        // The body showing stays until the new one is ready (a load on
+        // demand, its drawing built), on its own skeleton, never the new
+        // one's (the garbled bones of a character change).
+        let worn = wears.zip(models.as_ref()).and_then(|(b, m)| m.0.get(b.0));
+        if let (true, Some(worn)) = (front_end.is_some() && GameIdentity::allows(identity, super::GAME), worn) {
+            let on = worn.skeleton_signature();
+            let on_it = |a: &CaAnim| rig_skeleton(a) == Some(on);
+            if rig.as_ref().map(|r| r.shape.signature) != Some(on) && !shown.is_some_and(|s| on_it(&s.0)) {
+                // What it played on that skeleton, else (it came from another
+                // game's body) that body's own rig from the start.
+                let held = anim.filter(|a| on_it(a)).cloned().or_else(|| {
+                    let id = worn.name.as_deref().and_then(models::body_record)?;
+                    let r = data.characters().model(id)?;
+                    let rig = loaded.get().rig(&r.file).filter(|r| r.shape.signature == on)?;
+                    Some(CaAnim::with_family(id, r.skeleton, Some(rig), data.characters().family(r), &r.name))
+                });
+                if let Some(held) = held {
+                    commands.entity(e).insert(CaShownAnim(held));
+                }
+            }
         }
     }
 }
@@ -985,17 +1044,18 @@ fn drive(
         (&mut CaAnim, &mut CaPose, Option<&mut CaAnimNet>),
         (&Intent, &MovementState, Option<&CaMovement>, &Health, Has<Dead>, Has<LocalPlayer>),
         (Option<&Inventory>, Option<&CaProtected>, Option<&Visibility>),
-        (Option<&mut Animator>, Option<&GameIdentity>, Option<&Selection>),
+        (Option<&mut Animator>, Option<&GameIdentity>, Option<&Selection>, Option<&mut CaShownAnim>, Option<&BodyModel>),
     )>,
     weapons: Query<(&Weapon, Option<&WeaponState>, Option<&Magazine>, Option<&CaZoom>, Option<&CaSpread>)>,
     loaded: models::LoadedModels,
+    drawn: Option<Res<CharacterModels>>,
     mut commands: Commands,
 ) {
     let loaded = loaded.get();
     let client = role.as_deref().is_some_and(|r| *r == NetRole::Client);
     let ms = (clock.delta.as_secs_f64() * 1000.0).round() as u32;
     let unit = unit();
-    for (e, (mut anim, mut pose, net), (intent, state, movement, health, dead, local), (inventory, protected, visibility), (animator, identity, look)) in
+    for (e, (mut anim, mut pose, net), (intent, state, movement, health, dead, local), (inventory, protected, visibility), (animator, identity, look, mut shown, wears)) in
         &mut characters
     {
         // Our body only on our characters (another game's identity wears
@@ -1020,6 +1080,31 @@ fn drive(
         let height = (state.hull_max.y - state.hull_min.y) / unit;
         let squash = if height > 1.0 { (height / STAND_HEIGHT).min(1.0) } else { 1.0 };
         let followed = client && !local;
+        // The body still showing plays what the character does, on its own
+        // skeleton, until the character wears the new one's (or dies, or
+        // is another game's: nothing of it shows).
+        if shown.is_some() {
+            let worn = wears.zip(drawn.as_ref()).and_then(|(b, m)| m.0.get(b.0)).map(|m| m.skeleton_signature());
+            if !alive || !ours || worn == rig_skeleton(&anim) {
+                commands.entity(e).remove::<CaShownAnim>();
+                shown = None;
+            }
+        }
+        if let Some(CaShownAnim(old)) = shown.as_deref_mut() {
+            if followed {
+                if let (Some(net), Some(clock)) = (net.as_deref(), server_time.as_deref()) {
+                    follow(old, net, clock.0, clock.1);
+                }
+            } else {
+                (old.pending, old.shot, old.damaged) = (anim.pending, anim.shot, anim.damaged);
+                let mut inputs = inputs(data.characters(), old, intent, movement, weapon, protected, r, !client, clock.now);
+                inputs.no_footing = movement.is_some_and(|m| m.no_footing);
+                inputs.grounded = state.on_ground;
+                old.driver.update(ms, &inputs);
+                old.pitch = skeleton::clamp_aim(-intent.pitch);
+                old.twist = anim.twist;
+            }
+        }
         if !alive {
             let list = anim.driver.list.clone();
             anim.driver.main.update(&list, ms, &mut |_| {});
@@ -1067,8 +1152,15 @@ fn drive(
             pose.server_spheres = pose_of(&anim, &server, body_yaw, squash, face, loaded, held_id).spheres;
             posed
         };
-        if let (true, Some(mut animator)) = (anim.rig.is_some() && ours, animator) {
-            animator.fixed = Some(Arc::new(posed.locals_rh()));
+        if let (true, Some(mut animator)) = ((anim.rig.is_some() || shown.is_some()) && ours, animator) {
+            // The body still showing takes its own skeleton's pose; a body
+            // is never posed by another skeleton (`pose_bodies`).
+            let (locals, skeleton) = match shown.as_deref() {
+                Some(CaShownAnim(old)) => (old.posed(r, squash, false).locals_rh(), rig_skeleton(old)),
+                None => (posed.locals_rh(), rig_skeleton(&anim)),
+            };
+            animator.fixed = Some(Arc::new(locals));
+            animator.skeleton = skeleton;
             if animator.main.is_none() {
                 animator.main = Some(0);
             }
@@ -1442,20 +1534,21 @@ fn dress(
             }
             continue;
         }
-        let Some((want, body)) = models::drawn(&data, loaded, look) else { continue };
-        if !models.0.iter().any(|m| m.name.as_deref() == Some(want.as_str())) {
-            continue;
-        }
-        if name.is_none_or(|n| n.0 != want) {
-            commands.entity(e).insert(BodyName(want));
-        }
-        if number.is_none_or(|n| n.0 != body) {
-            commands.entity(e).insert(BodyNumber(body));
-        }
-        let teammate = models::shows_mark(mine.is_some() && team.copied() == mine, quarantine);
-        let family = BodySkin(models::family(look.camouflage, teammate));
-        if skin != Some(&family) {
-            commands.entity(e).insert(family);
+        // Not loaded yet (`bodies_on_demand`): it wears what it wore, but
+        // holds what it holds.
+        let worn = models::drawn(&data, loaded, look).filter(|(want, _)| models.0.iter().any(|m| m.name.as_deref() == Some(want.as_str())));
+        if let Some((want, body)) = worn {
+            if name.is_none_or(|n| n.0 != want) {
+                commands.entity(e).insert(BodyName(want));
+            }
+            if number.is_none_or(|n| n.0 != body) {
+                commands.entity(e).insert(BodyNumber(body));
+            }
+            let teammate = models::shows_mark(mine.is_some() && team.copied() == mine, quarantine);
+            let family = BodySkin(models::family(look.camouflage, teammate));
+            if skin != Some(&family) {
+                commands.entity(e).insert(family);
+            }
         }
         // An emote hides the weapon in hand (2).
         let emoting = anims.get(e).is_ok_and(|a| a.driver.emote.is_some());
