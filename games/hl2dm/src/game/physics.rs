@@ -224,6 +224,8 @@ pub struct Hl2PhysicsPlugin;
 impl Plugin for Hl2PhysicsPlugin {
     fn build(&self, app: &mut App) {
         super::carry::plugin(app);
+        // Map explosions' sparks under water (effects_sounds.md).
+        app.add_plugins(super::spark_shower::SparkShowerPlugin);
         app.add_plugins(source_engine::source_movement::shadow::ShadowKnockPlugin(PROP_KNOCK));
         app.insert_resource(source_logic::logic::PlayerImpactScale(PLAYER_IMPACT_SCALE))
             // A prop broken by an input stays (gravity_gun.md Corrections 2).

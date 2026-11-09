@@ -371,6 +371,9 @@ pub struct PropExplosion {
     /// The onbreak-explode kind (prop_damage.md 7.5): the blast has no
     /// boom of its own, only `sound`.
     pub silent: bool,
+    /// Blast with blast-surface (the prop's explode damage or radius);
+    /// false: the 1-damage onbreak-explode fallback, blast alone.
+    pub surface: bool,
 }
 
 /// What the host does to a physics prop's body.
@@ -622,7 +625,7 @@ fn multiplier(p: &Prop, kind: DamageKind) -> f32 {
     match kind {
         DamageKind::Bullet => p.dmg[0],
         DamageKind::Melee => p.dmg[1],
-        DamageKind::Blast => p.dmg[2],
+        DamageKind::Blast | DamageKind::BlastSurface => p.dmg[2],
         _ => 1.0,
     }
 }
@@ -658,7 +661,7 @@ pub(super) fn prop_damage(w: &mut LogicWorld, id: EntId, hit: Hit) -> bool {
     }
     let deadly = scaled >= p.health as f32;
     let mut ignite = false;
-    if !deadly && matches!(hit.kind, DamageKind::Blast | DamageKind::Burn) {
+    if !deadly && matches!(hit.kind, DamageKind::Blast | DamageKind::BlastSurface | DamageKind::Burn) {
         ignite = true;
     }
     if !deadly && hit.kind == DamageKind::Bullet && has("ignite_halfhealth") {
@@ -732,7 +735,7 @@ fn client_damage(w: &mut LogicWorld, id: EntId, p: &Prop, hit: Hit) {
     }
     let damage = match hit.kind {
         DamageKind::Bullet => CLIENT_BULLET_DAMAGE,
-        DamageKind::Blast => {
+        DamageKind::Blast | DamageKind::BlastSurface => {
             if hit.amount <= 1.0 {
                 return;
             }
@@ -843,6 +846,7 @@ pub(super) fn prop_break(w: &mut LogicWorld, id: EntId, breaker: Option<Who>, at
             attacker: p.last_attacker.or(attacker),
             sound: Some(p.explode_sound.clone()).filter(|s| !s.is_empty()),
             silent: explode_fire,
+            surface: true,
         })
     } else if explode_fire && !p.client {
         // A 1-damage explosion of the same radius. Its ignition of the
@@ -854,6 +858,7 @@ pub(super) fn prop_break(w: &mut LogicWorld, id: EntId, breaker: Option<Who>, at
             attacker: p.last_attacker.or(attacker),
             sound: Some(p.explode_sound.clone()).filter(|s| !s.is_empty()),
             silent: explode_fire,
+            surface: false,
         })
     } else {
         None

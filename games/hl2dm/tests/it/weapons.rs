@@ -607,3 +607,33 @@ fn attack2_under_water_is_refused_every_tick_60() {
         assert_eq!(sim.app.world().get::<Hl2Rounds>(w).unwrap().count, 1, "{id}: none used");
     }
 }
+
+/// Test 61 (weapons.md 7.3, "AR2 vents"): `VentPoses` follows the shots
+/// held, written at the start of each tick's frame from the count the last
+/// tick left: 0 on the first shot's tick, n/5 on the ticks after the n-th
+/// shot, 1 from the tick after the 5th; 0 on the tick after the release.
+#[test]
+fn the_ar2_vents_follow_the_shots_61() {
+    use hl2dm::game::weapons::vent::Hl2Vent;
+    let mut sim = sim();
+    let (p, w) = holding(&mut sim, weapons::AR2);
+    set_mag(&mut sim, w, 30, 0);
+    let mut poses = Vec::new();
+    // 7 shots held (the 7th on tick 39 or 40), let go on tick 42.
+    let ev = run(&mut sim, p, 45, |s, t| {
+        if t > 0 {
+            poses.push(s.app.world().get::<Hl2Vent>(w).unwrap().value);
+        }
+        s.intent(p).fire = t < 42;
+    });
+    poses.push(sim.app.world().get::<Hl2Vent>(w).unwrap().value);
+    let shots = fired(&ev);
+    assert!(shots.len() >= 7, "{shots:?}");
+    // The pose read after tick t was written at its start: the shots
+    // before t.
+    for (t, pose) in poses.iter().enumerate() {
+        let before = shots.iter().filter(|s| (**s as usize) < t).count() as f32;
+        let want = if t <= 42 { (before / 5.0).min(1.0) } else { 0.0 };
+        assert!((pose - want).abs() < 1e-6, "tick {t}: {pose}, want {want} ({shots:?}, {poses:?})");
+    }
+}

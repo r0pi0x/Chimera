@@ -1558,7 +1558,7 @@ fn bounce_sounds(
 pub fn hurt_kinds(kind: DamageKind, zone: Hitgroup, gas: bool) -> [Option<HurtKind>; 2] {
     let by_type = match kind {
         DamageKind::Bullet | DamageKind::Melee => Some(HurtKind::Guns),
-        DamageKind::Blast => Some(HurtKind::Explosions),
+        DamageKind::Blast | DamageKind::BlastSurface => Some(HurtKind::Explosions),
         DamageKind::Burn => Some(HurtKind::Burning),
         DamageKind::Fall => Some(HurtKind::Falling),
         _ if gas => Some(HurtKind::Gas),

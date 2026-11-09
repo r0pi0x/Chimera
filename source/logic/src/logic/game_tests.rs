@@ -403,11 +403,36 @@ fn explosion_flags_reach_its_effect() {
             _ => None,
         })
         .collect();
-    assert_eq!(flags[0], BlastFlags(BlastFlags::NO_DECAL));
+    assert_eq!(flags[0], BlastFlags(BlastFlags::NO_DECAL | BlastFlags::NO_SPARKS));
     assert_eq!(
         flags[1],
         BlastFlags(BlastFlags::NO_FIREBALL | BlastFlags::NO_SOUND | BlastFlags::NO_FIREBALL_SMOKE | BlastFlags::NO_PARTICLES)
     );
+}
+
+/// prop_damage.md (answered 2026-11-09): an env_explosion's damage is
+/// blast alone, blast with blast-surface with "surface only" (8192), and
+/// generic with "generic damage" (16384).
+#[test]
+fn explosion_damage_kind_follows_its_flags() {
+    use crate::core::DamageKind;
+    let mut w = world();
+    for (name, flags) in [("plain", "0"), ("surface", "8192"), ("generic", "16384")] {
+        spawn(&mut w, &[("classname", "env_explosion"), ("targetname", name), ("iMagnitude", "100"), ("spawnflags", flags)]);
+    }
+    w.activate();
+    for name in ["plain", "surface", "generic"] {
+        w.queue_input(name, "Explode", Value::Void, 0.0, None);
+    }
+    run_to(&mut w, 0);
+    let kinds: Vec<DamageKind> = effects(&mut w)
+        .into_iter()
+        .filter_map(|e| match e {
+            Effect::Explosion { kind, .. } => Some(kind),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(kinds, [DamageKind::Blast, DamageKind::BlastSurface, DamageKind::Generic]);
 }
 
 // ------------------------------------------------ wall toggle, conveyor

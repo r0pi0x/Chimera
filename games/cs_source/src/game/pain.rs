@@ -155,7 +155,7 @@ pub fn hurt_sound(kind: DamageKind, group: Hitgroup, armor: Option<Armor>) -> Op
         DamageKind::Bullet if group == Hitgroup::Head => Some(if covered { DAMAGE_HELMET } else { DAMAGE_HEADSHOT }),
         // An HE blast too (measured 2026-10-17: kevlar on an armoured
         // player, the flesh impact on a bare one).
-        DamageKind::Bullet | DamageKind::Blast if covered => Some(DAMAGE_KEVLAR),
+        DamageKind::Bullet | DamageKind::Blast | DamageKind::BlastSurface if covered => Some(DAMAGE_KEVLAR),
         _ => None,
     }
 }
@@ -213,7 +213,7 @@ fn hurt_sounds(
                 source: Some(d.target),
                 ..PlaySound::at(entry, at.translation)
             }));
-        } else if matches!(d.kind, DamageKind::Bullet | DamageKind::Blast)
+        } else if matches!(d.kind, DamageKind::Bullet | DamageKind::Blast | DamageKind::BlastSurface)
             && dealt_by_ours(d, &holders, &weapons)
             && let Some(entry) = &flesh
             && !under_water(d.point, water.as_deref())

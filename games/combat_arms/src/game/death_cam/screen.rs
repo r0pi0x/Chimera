@@ -49,7 +49,7 @@ pub fn zone_of(hitgroup: Hitgroup, groin: bool) -> Zone {
 /// Damage types the figure is doubled for: explosions, claymores,
 /// infected explosions, burns and EMP (our blasts and burns).
 pub fn doubled(kind: DamageKind) -> bool {
-    matches!(kind, DamageKind::Blast | DamageKind::Burn)
+    matches!(kind, DamageKind::Blast | DamageKind::BlastSurface | DamageKind::Burn)
 }
 
 /// The last damage as shown: the amount, doubled for the types above,

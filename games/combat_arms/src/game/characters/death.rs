@@ -25,7 +25,7 @@ pub enum DeathKind {
 pub fn kind_of(catalog: &crate::weapon::data::WeaponCatalog, kind: crate::core::DamageKind, weapon: Option<&str>) -> DeathKind {
     use crate::core::DamageKind as K;
     match kind {
-        K::Blast => DeathKind::Explosion,
+        K::Blast | K::BlastSurface => DeathKind::Explosion,
         K::Melee => DeathKind::Melee,
         _ if weapon == Some(super::super::volumes::ENDLESS_FALL) => DeathKind::EndlessFall,
         K::Generic if weapon.is_some_and(|w| is_thrown(catalog, w)) => DeathKind::Poison,

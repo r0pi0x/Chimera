@@ -523,6 +523,54 @@ fn spawn_blast_grace_30_31() {
     assert!(g.world().get::<Health>(p).unwrap().current < 1.0, "test 31");
 }
 
+/// The grace against map and prop blasts (rules.md, the spawn grace table;
+/// prop_damage.md): only blast alone is refused; blast with blast-surface
+/// (an exploding prop, `env_explosion`'s "surface only") and generic (its
+/// "generic damage") land. Both as damage and as map explosions.
+#[test]
+fn spawn_grace_refuses_blast_alone_not_surface_or_generic() {
+    use chimera_core::core::{BlastFlags, Explosion};
+    let respawn = |g: &mut Game, p: Entity, k: Entity| {
+        g.kill(p, Some(k));
+        g.sim.seconds(3.5);
+        g.sim.intent(p).fire = true;
+        g.sim.ticks(1);
+        g.sim.intent(p).fire = false;
+        assert!(!g.dead(p));
+    };
+    for (kind, lands) in [(DamageKind::Blast, false), (DamageKind::BlastSurface, true), (DamageKind::Generic, true)] {
+        let mut g = game(dm_spots(), |_| {});
+        let p = g.join("none");
+        let k = g.join("none");
+        respawn(&mut g, p, k);
+        g.hurt(p, Some(k), 30.0, kind);
+        g.sim.ticks(1);
+        let health = g.world().get::<Health>(p).unwrap().current;
+        assert_eq!(health < 1.0, lands, "{kind:?} as damage: health {health}");
+        // A map explosion of that kind at the player's feet.
+        respawn(&mut g, p, k);
+        let at = to_engine(g.feet(p) + Vec3::Z * 8.0);
+        g.world().write_message(Explosion {
+            origin: at,
+            damage: 0.3,
+            radius: 100.0 * UNIT,
+            attacker: None,
+            inflictor: None,
+            sound: None,
+            weapon: None,
+            round_scorch: false,
+            bell_sigma: None,
+            armor_ratio: Some(1.0),
+            through_walls: false,
+            flags: BlastFlags::default(),
+            kind,
+        });
+        g.sim.ticks(2);
+        let health = g.world().get::<Health>(p).unwrap().current;
+        assert_eq!(health < 1.0, lands, "{kind:?} as an explosion: health {health}");
+    }
+}
+
 /// Tests 33, 34, 56: the frag limits; team kills; intermission frozen.
 #[test]
 fn frag_limits_33_34_56() {

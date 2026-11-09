@@ -736,6 +736,7 @@ pub fn spawn_ragdolls(
             crate::core::DamageKind::Bullet
                 | crate::core::DamageKind::Melee
                 | crate::core::DamageKind::Blast
+                | crate::core::DamageKind::BlastSurface
                 | crate::core::DamageKind::Crush
         );
         let death = DeathSide::from_force(b1.root.rotation.inverse() * d.damage.dir)

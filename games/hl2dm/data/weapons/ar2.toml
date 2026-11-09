@@ -83,3 +83,9 @@ explode_sound = "NPC_CombineBall.Explosion"
 # try, no shot (weapons.md 5).
 [hooks."hl2dm:dry_under_water"]
 wait = 0.2
+
+# The vents open with the held shots: VentPoses = shots / 5, at most 1
+# (weapons.md 7.3).
+[hooks."hl2dm:vent"]
+pose = "VentPoses"
+shots = 5

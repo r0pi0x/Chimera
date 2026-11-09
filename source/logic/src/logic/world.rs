@@ -320,6 +320,8 @@ pub enum Effect {
         inflictor: EntId,
         /// How it is drawn and heard.
         flags: crate::core::BlastFlags,
+        /// Its damage's kind (blast, blast with blast-surface, generic).
+        kind: crate::core::DamageKind,
     },
     /// A bullet or club hit shattered the pane it hit: the glass-impact
     /// burst at the hit point with the trace normal (entity space;

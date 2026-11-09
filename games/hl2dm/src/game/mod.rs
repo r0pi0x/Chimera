@@ -52,6 +52,7 @@ pub mod scripts;
 pub mod set_piece_fx;
 pub mod set_pieces;
 pub mod shells;
+pub mod spark_shower;
 pub mod sounds;
 pub mod standing;
 pub mod suit;

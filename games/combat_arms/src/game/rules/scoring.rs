@@ -110,7 +110,7 @@ pub(super) fn scale_friendly_fire(
     }
     let scaled = on != 0 && super::mode_by_key(&settings.mode).is_some_and(|m| m.ff_scaled);
     for d in damage.read() {
-        if !scaled || matches!(d.kind, DamageKind::Blast | DamageKind::Burn) {
+        if !scaled || matches!(d.kind, DamageKind::Blast | DamageKind::BlastSurface | DamageKind::Burn) {
             continue;
         }
         let Some(a) = d.attacker.filter(|a| *a != d.target) else { continue };

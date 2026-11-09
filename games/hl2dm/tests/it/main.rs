@@ -28,6 +28,7 @@ mod rpg_laser;
 mod rules;
 mod set_pieces;
 mod skeleton;
+mod spark_showers;
 mod suit;
 mod weapon_details;
 mod weapons;

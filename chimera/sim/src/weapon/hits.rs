@@ -89,7 +89,7 @@ impl DamageClass {
         match kind {
             DamageKind::Bullet => Self::BULLET,
             DamageKind::Melee => Self::MELEE,
-            DamageKind::Blast => Self::BLAST,
+            DamageKind::Blast | DamageKind::BlastSurface => Self::BLAST,
             DamageKind::Burn => Self::BURN,
             DamageKind::Crush => Self::CRUSH,
             DamageKind::Fall => Self::FALL,

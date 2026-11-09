@@ -36,6 +36,8 @@ pub(super) fn refuse(
     let now = clock.now;
     for d in damage.read() {
         let Ok((mut p, health)) = players.get_mut(d.target) else { continue };
+        // Blast alone (the whole kind word equal to blast): an exploding
+        // prop's blast-surface and generic damage pass (rules.md's table).
         if d.kind == DamageKind::Blast && now < p.spawned_at + SPAWN_BLAST_GRACE {
             d.amount = 0.0;
         } else if d.is_suicide() && health.current > 0.0 {

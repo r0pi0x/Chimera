@@ -73,6 +73,10 @@ pub struct Explosion {
 /// env_explosion's "Repeatable" and "No Damage" flags.
 pub const SF_EXPLOSION_NO_DAMAGE: u32 = 1;
 pub const SF_EXPLOSION_REPEATABLE: u32 = 2;
+/// env_explosion's "Surface only" (blast with blast-surface) and "Generic
+/// damage" (no blast bit) flags (specs/source/prop_damage.md).
+pub const SF_EXPLOSION_SURFACE_ONLY: u32 = 8192;
+pub const SF_EXPLOSION_GENERIC_DAMAGE: u32 = 16384;
 /// Seconds before a non-repeatable env_explosion removes itself.
 pub const EXPLOSION_REMOVE_DELAY: f32 = 0.3;
 
@@ -447,6 +451,15 @@ fn explode(w: &mut LogicWorld, id: EntId, activator: Option<Who>) {
     let damage = if e.has_flag(SF_EXPLOSION_NO_DAMAGE) { 0.0 } else { x.magnitude.max(0) as f32 };
     let (at, radius, repeat) = (e.origin, x.radius, e.has_flag(SF_EXPLOSION_REPEATABLE));
     let flags = crate::core::BlastFlags::from_spawnflags(e.spawnflags);
+    // "Generic damage" (16384): no blast bit; else "surface only" (8192):
+    // blast and blast-surface (prop_damage.md, hl2dm/rules.md).
+    let kind = if e.has_flag(SF_EXPLOSION_GENERIC_DAMAGE) {
+        crate::core::DamageKind::Generic
+    } else if e.has_flag(SF_EXPLOSION_SURFACE_ONLY) {
+        crate::core::DamageKind::BlastSurface
+    } else {
+        crate::core::DamageKind::Blast
+    };
     w.effects.push(Effect::Explosion {
         at,
         damage,
@@ -454,6 +467,7 @@ fn explode(w: &mut LogicWorld, id: EntId, activator: Option<Who>) {
         attacker: activator.filter(|a| matches!(a, Who::Player(_))),
         inflictor: id,
         flags,
+        kind,
     });
     if !repeat {
         w.think_in(id, EXPLOSION_REMOVE_DELAY);

@@ -614,6 +614,7 @@ fn blast(sim: &mut Sim, at: Vec3) {
         bell_sigma: None,
         armor_ratio: None,
         flags: Default::default(),
+        kind: crate::stack::core::DamageKind::Blast,
     });
 }
 
