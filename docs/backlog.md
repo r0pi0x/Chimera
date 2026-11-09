@@ -179,6 +179,9 @@ the original's own behaviour isn't a bug (say so instead).
   (`setpos -6.11 -747.55 -179.90;setang 2.98 90.31 0.00`). Check whether
   the map really has a spawn there, what opens the vault in the original,
   and whether our spawn picking should refuse it. Decide and fix.
+- **Combat Arms radio menus:** 7, 8 and 9 do nothing. Check what the
+  original's menus offer on those keys (`choose_N`, the same commands as
+  the console report above).
 - **Battery machine:** at `setpos -3835.25 5745.72 64.02;setang 17.71
   22.85 0.00` its rope or cable looks broken, and the battery doesn't seat
   properly in the slot.
