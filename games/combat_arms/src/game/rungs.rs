@@ -636,8 +636,12 @@ fn apply(world: &mut World, e: Entity, extras: Option<&RungExtras>) {
             };
             world.entity_mut(e).insert(parts);
         }
+        // Kept on the character, empty (no weapon's): taken off and put
+        // back, each combination of its other parts was made again.
         None => {
-            world.entity_mut(e).remove::<CaRungParts>();
+            if world.get::<CaRungParts>(e).is_some_and(|p| *p != CaRungParts::default()) {
+                world.entity_mut(e).insert(CaRungParts::default());
+            }
         }
     }
     let model = extras.and_then(|x| x.value(MODEL)?.parse::<i32>().ok());

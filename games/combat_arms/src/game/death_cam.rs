@@ -278,7 +278,9 @@ pub struct CaDeathCamPlugin;
 
 impl Plugin for CaDeathCamPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_core::character::CharacterPartsExt;
         let tips = install_tips(&super::data::CaData::of(app));
+        app.on_every_character::<CaKillMe>();
         app.init_resource::<CaSlots>()
             .init_resource::<CaEnemyCam>()
             .init_resource::<CaKillCamRoom>()

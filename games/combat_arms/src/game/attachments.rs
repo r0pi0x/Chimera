@@ -1135,7 +1135,8 @@ impl CaLoadout {
 /// The parts a ladder rung fits to its gun for every player on it
 /// (`game::rungs`), in place of the player's own (`CaLoadout`): weapon
 /// `weapon`'s, each offered for its own slot; a slot none is offered for
-/// keeps the weapon's default.
+/// keeps the weapon's default. On every character, empty (no weapon's)
+/// off a Combat Arms rung.
 #[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
 #[component(storage = "SparseSet")]
 pub struct CaRungParts {
@@ -1411,6 +1412,8 @@ pub struct CaAttachmentsPlugin;
 
 impl Plugin for CaAttachmentsPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_core::character::CharacterPartsExt;
+        app.on_every_character::<CaRungParts>();
         let loadout = std::env::var("CHIMERA_CA_MODS").map(|s| CaLoadout::parse(&s)).unwrap_or_default();
         let table = super::data::CaData::of(app).attachments().clone();
         app.register_weapon_hook::<AttachParams>(ATTACHMENTS, |e, d, p| {

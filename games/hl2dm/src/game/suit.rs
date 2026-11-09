@@ -366,39 +366,26 @@ fn wear(
         (
             Entity,
             &MovementSlot,
-            (Has<Suit>, Has<Breath>, Has<ArmorPieces>, Has<SourceSpeed>, Has<StepSounds>),
-            Has<Armor>,
-            Has<DamageRemainder>,
+            Has<Suit>,
         ),
         Or<(Changed<MovementSlot>, Added<Suit>)>,
     >,
 ) {
-    for (e, slot, (suit, breath, pieces, speed, steps), armoured, remainder) in &on {
+    for (e, slot, suit) in &on {
         let mut ent = commands.entity(e);
         if slot.0 == super::movement::ID {
-            // Each part on its own: a network client's suit may come
-            // first with the server's state.
-            if !suit {
-                ent.insert(Suit::default());
-            }
-            if !breath {
-                ent.insert(Breath::default());
-            }
-            if !pieces {
-                ent.insert(suit_armour());
-            }
-            if !speed {
-                ent.insert(SourceSpeed(190.0));
-            }
-            if !steps {
-                ent.insert(citizen_steps());
-            }
-            if !armoured {
-                ent.insert(Armor::default());
-            }
-            if !remainder {
-                ent.insert(DamageRemainder::default());
-            }
+            // The parts missing, each kept where it is (a network client's
+            // suit may come first with the server's state), in one move:
+            // each step is an archetype of its own.
+            ent.insert_if_new((
+                Suit::default(),
+                Breath::default(),
+                suit_armour(),
+                SourceSpeed(190.0),
+                citizen_steps(),
+                Armor::default(),
+                DamageRemainder::default(),
+            ));
         } else if suit {
             ent.remove::<(Suit, Breath, ArmorPieces, SourceSpeed, StepSounds, ViewZoom, FlashlightOn)>();
         }

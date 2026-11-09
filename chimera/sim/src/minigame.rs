@@ -510,6 +510,8 @@ pub struct MinigamePlugin;
 
 impl Plugin for MinigamePlugin {
     fn build(&self, app: &mut App) {
+        use chimera_core::character::CharacterPartsExt;
+        app.on_every_character::<runtime::KitMelee>();
         app.init_resource::<Minigames>()
             .init_resource::<Match>()
             .add_message::<MinigameEvent>()

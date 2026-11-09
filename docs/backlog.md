@@ -2517,15 +2517,20 @@ docs/plans/active/sound.md.
   it may be a hardware bit flip (no ECC reporting on the box). If it comes
   back, look at the ragdoll solver's `get_pair_unchecked_mut` first, then
   run a memory test.
-- **Fewer character archetypes (2026-11-09).** What the session fix left
-  (docs/performance.md, "A session's frame rate"): the characters' tables are
-  few now (their components that come and go are sparse sets), their
-  archetypes aren't: about 200 a map in Ultimate Gun Game. With 20,000 more a
-  tick costs 1.8x and the main world's frame 1.7x (Bevy's own per-frame
-  queries that hold no required component walk them all: bevy_audio's cleanup,
-  five sources, and the render world's sync). Fewer of the toggles that
-  multiply them: spawn protection's three components, sleeping (`Sleeping`,
-  `SolverBodyIndex`), `Shadowed` with `PhysicsTouch`.
+- **Fewer character archetypes, what's left (2026-11-09).** Parts a
+  character gained once (`ViewPunch`, `Hl2Punch`, `NextPush`, ...) are on it
+  from the spawn, characters never sleep, and rung parts stay with an empty
+  value (docs/performance.md, "A session's archetypes"): three laps of real
+  maps make 1,664 archetypes, not 4,892, and a lap after the first 25-50
+  characters' (the lap test caps it at 150). Left: a game switch still puts
+  its parts on one at a time (movement marker, `MaxSpeed`,
+  `HeldMovePenalty`, body, hit boxes, `Shadowed`, `OwnViewAnim`, each a
+  step: `chimera_census made`), about 8 archetypes for every combination
+  it starts from; one move per game's set would cut most of the rest. The
+  queries that pay most per archetype (the aged profile): Source movement's
+  main query, `ladder::write_status`, the minigame roster query,
+  `perks::track_last_primary` (its `collect` walks them twice, through
+  `size_hint`), `moments::update`'s rung query.
 - **The render thread's cost rises over a session, what's left (2026-11-09).**
   The kit's undrawn `PropMaterial`s no longer reach the render world
   (`prop_material::DormantProps`; docs/performance.md, "A session's render

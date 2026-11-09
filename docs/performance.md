@@ -2134,20 +2134,34 @@ combination makes an archetype, not a table.
 "After" is on newer main (the character preloading came in between); its tick
 starts higher for that. The tables the real app still makes after the fix
 (1,731 after 15 maps, 290 of them characters') are the maps' own kinds of
-entities and stop growing when the maps repeat (the two-lap test below). Two laps of real
-maps, headless (`heavy::session_maps`, 6 bots, the server's map change):
+entities and stop growing when the maps repeat (the lap test below). Three laps of real
+maps, headless (`heavy::session_maps`, 6 bots, the server's map change, each map
+the same ladder every lap; a tick is the median of 300, 2026-11-09):
 
 | lap | de_dust2 | cs_office | dm_lockdown | warehouse | de_inferno |
 |---|---|---|---|---|---|
-| entities, first | 1,110 | 1,226 | 1,157 | 700 | 1,527 |
-| entities, second | 1,120 | 1,224 | 1,152 | 706 | 1,526 |
-| tick instr, first | 11.2M | 16.7M | 14.8M | 9.7M | 20.2M |
-| tick instr, second | 14.2M | 19.1M | 17.4M | 12.3M | 19.2M |
-| tables, first | 277 | 390 | 513 | 530 | 589 |
-| tables, second | 605 | 610 | 613 | 613 | 613 |
+| entities, first | 1,111 | 1,223 | 1,157 | 701 | 1,528 |
+| entities, third | 1,117 | 1,223 | 1,155 | 704 | 1,528 |
+| tick instr, first | 10.7M | 15.9M | 14.4M | 10.3M | 20.3M |
+| tick instr, second | 12.6M | 19.1M | 17.6M | 11.4M | 20.7M |
+| tick instr, third | 13.6M | 18.1M | 19.4M | 10.9M | 21.3M |
+| tables, first | 294 | 390 | 515 | 527 | 589 |
+| tables, third | 601 | 605 | 605 | 605 | 605 |
 
-(Tables stop at 613 on the second lap; archetypes 1,426 -> 4,744, what the tick's
-second lap pays for.)
+(Archetypes 1,456 after the first map, 4,068 at the second lap's start, 4,892
+at the end: the first lap makes nearly all of them, and the test compares a tick
+with the lap before from the second lap on.) Each archetype costs every tick
+whether anything is in it: with the bots kicked (no character on the map) a
+de_dust2 tick was 5.5M instructions at 1,474 archetypes and 7.4M at 3,839, about
+800 instructions an archetype on every map (on de_inferno 440). So de_dust2, the
+first map, pays all of the first lap's on its second visit (up to ~1.35x with
+nothing else on the map). A tick's mean is no measure of that: in one 200-tick
+window on de_dust2 single ticks ranged from 6.7M to 24M (deaths, grenades,
+ragdolls), so a map's mean moved by a fifth from run to run (warehouse 9.3M to
+13.6M on the first lap) and with the ladder; the test's first version
+(the mean, a new ladder each lap, the first lap against the second) failed by
+turns on de_dust2 and warehouse at each of the merges after it. Medians of the
+same ladder stay within 3% between runs.
 
 **The ladders' models.** A map's unload (`characters::preload::forget_old`) now
 forgets what older ladders brought but the ladder just played and what's worn
@@ -2155,13 +2169,79 @@ or held; it loads again if wanted (`Combat Arms: forgot 10 bodies and 21 held
 models` in the log; the table above's stores; each ladder kept was the character
 change's 1.6 GB).
 
-**Left** (backlog): the archetypes' own cost (table above; Bevy's per-frame
+**Left** (backlog): the archetypes' own cost (table above, and "A session's
+archetypes" below for what was cut; Bevy's per-frame
 queries that walk them all, bevy_audio's cleanup a tenth of the main thread at
 20,000); the render thread's slow rise and process memory (5.9 -> 14.5 GB over
 eight maps with the stores flat): the next section. On Windows a player can
 send a bugreport's `report.txt` or `chimera_perf_log 1` (archetypes are in it),
 and `chimera_census` at the start and at 30 fps; `chimera_census age 20000` in a
 fresh game shows what a long session cost before this fix.
+
+## A session's archetypes (2026-11-09)
+
+What the section above left: archetypes, which Bevy never frees and each
+costs a tick about 800 instructions (queries walk every matching one,
+empty or not): 4,892 after three laps of the lap test, nearly all of them
+characters'.
+
+**What made them.** `chimera_census made [<component>]` (new) puts each
+archetype holding `Health` down to the insert or removal that first reached
+it (Bevy's cached archetype moves); counted per settled state (where a
+character is at a tick's end) against the transient ones. In the fast
+`session` test only 236 of 1,637 characters' archetypes were ever occupied
+at a tick's end: the rest were steps of a rung change or a respawn (about
+twelve single inserts and removals: the rung's look, `MaxSpeed`, the
+movement marker, `HeldMovePenalty`, hit boxes, `RecomputeMassProperties`,
+...), each made again for every combination of the parts that didn't take
+part. What multiplied the combinations: parts a character gains once and
+keeps from then on (`ViewPunch` at the first shot, `Hl2Punch`, `NextPush`,
+`CaLastPrimary`, `OthersSteps`, `CaKillMe`, `WantHeld`, `Rebased`,
+`Drowning`), sleeping (`Sleeping` and `SolverBodyIndex` came and went on
+standing characters), and rung parts taken off between rungs (`KitMelee`,
+`CaRungParts`). Each doubled what was visited before it, and new bots on
+every map visit it all again.
+
+**The cut.** Those parts are on every character from the spawn
+(`CharacterPartsExt::on_every_character`: required by `Intent`, so they come
+in the spawn's move), `KitMelee` holds an `Option` and `CaRungParts` an
+empty value in place of being removed, characters never sleep
+(`SleepingDisabled` in `character_bundle`), and spawn protection with `God`
+and HL2's suit parts go on in one move (`insert_if_new` keeps a client's).
+DESIGN.md "ECS style" has the rule; the lap test fails when a lap after the
+first adds 150 characters' archetypes or more, and its message lists the
+moves (`census::made_by`).
+
+Three laps of real maps (`heavy::session_maps`, as in the table above;
+before is that table's run, after is this branch, archetypes at each map's
+end, instructions the median tick):
+
+| | before | after |
+|---|---|---|
+| archetypes after the first map | 1,456 | 988 |
+| archetypes after lap 1 / 2 / 3 | 4,068 / not counted / 4,892 | 1,584 / 1,612 / 1,664 |
+| characters' after lap 1 / 2 / 3 | | 591 / 617 / 667 |
+| de_dust2 tick, lap 1 / 2 / 3 | 10.7M / 12.6M / 13.6M | 10.0M / 13.6M / 10.7M |
+| cs_office | 15.9M / 19.1M / 18.1M | 16.3M / 16.2M / 15.5M |
+| dm_lockdown | 14.4M / 17.6M / 19.4M | 15.0M / 14.0M / 16.0M |
+| warehouse | 10.3M / 11.4M / 10.9M | 10.2M / 8.7M / 7.9M |
+| de_inferno | 20.3M / 20.7M / 21.3M | 19.3M / 18.4M / 16.9M |
+
+The fast `session` test (8 matches, greybox): 2,316 archetypes after four
+matches and rising before, 1,180 after eight now and none new from the
+sixth. At the measured 800 instructions an archetype, the 3,200 fewer
+after three laps are about 2.5M instructions a tick with nobody on the map.
+
+**Who pays per archetype.** `perf` (instructions, user space) over 3,000
+ticks of the fast test's world fresh (949 archetypes, 4.8M a tick) and with
+20,000 more on one character (`census::age`, sparse: 20.8M a tick, 800 an
+archetype): the cost is spread over every system whose query matches
+characters, each about the same; the five that gained most were Source
+movement's main query, `ladder::write_status`, the minigame's roster query
+(`Team`, `JoinOrder`, `Name`, `MatchesWon`), `perks::track_last_primary`
+(whose `collect` walks the archetypes twice, the second time for
+`size_hint`) and `moments::update`'s rung query; then Bevy's observer
+lookup per archetype.
 
 ## A session's memory (2026-11-09)
 
