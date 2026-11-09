@@ -370,6 +370,13 @@ pub struct SourceRadius {
     pub character_mass: f32,
     pub per_damage: f32,
     pub force_cap: f32,
+    /// Under water when the blast point and the point this far above it
+    /// (m) are in water: it then reaches only those with their feet in
+    /// water, and a blast not under water only those not wholly under. 0:
+    /// no such rule.
+    pub water_lift: f32,
+    /// Map classes that block it whole (doors), wherever on the line.
+    pub stoppers: &'static [&'static str],
 }
 
 /// A blast a game's projectile asks for (lift C1: `projectile`): `blast`
@@ -1097,6 +1104,8 @@ struct GrenadeWorld<'w, 's> {
     blinded: Query<'w, 's, &'static Blinded>,
     blockers: Query<'w, 's, &'static SightBlocker>,
     water: Option<Res<'w, MapWater>>,
+    map_nodes: Query<'w, 's, (Option<&'static crate::map::MapBrushEntity>, Option<&'static crate::map::PropEntity>)>,
+    map_entities: Option<Res<'w, crate::map::MapEntities>>,
     damage: MessageWriter<'w, Damage>,
     play: MessageWriter<'w, PlaySound>,
     decals: MessageWriter<'w, PlaceDecal>,
@@ -1229,6 +1238,33 @@ impl GrenadeWorld<'_, '_> {
             .get(e)
             .is_ok_and(|b| b.intent.is_some() && b.health.is_some_and(|h| h.current > 0.0))
             && !self.passing(e)
+    }
+
+    /// Whether something of the classes `stoppers` is on the line (other
+    /// than `target`).
+    fn stopper_on_line(&self, from: Vec3, to: Vec3, target: Entity, stoppers: &[&str]) -> bool {
+        let d = to - from;
+        if stoppers.is_empty() {
+            return false;
+        }
+        let Ok(dir) = Dir3::new(d) else { return false };
+        let filter = SpatialQueryFilter::default().with_mask(SOLID_LAYERS);
+        self.spatial
+            .cast_ray_predicate(from, dir, d.length(), true, &filter, &|e| {
+                let body = self.body(e);
+                body != target && self.is_of_class(body, stoppers)
+            })
+            .is_some()
+    }
+
+    /// A map entity's class is one of `classes`.
+    fn is_of_class(&self, body: Entity, classes: &[&str]) -> bool {
+        let Ok((brush, prop)) = self.map_nodes.get(body) else { return false };
+        let Some(index) = brush.map(|b| b.0).or(prop.map(|p| p.0)) else { return false };
+        self.map_entities
+            .as_ref()
+            .and_then(|m| m.entities.get(index))
+            .is_some_and(|e| classes.iter().any(|c| e.classname().eq_ignore_ascii_case(c)))
     }
 
     fn in_water(&self, p: Vec3) -> bool {
@@ -1603,6 +1639,8 @@ fn blast_requests(mut events: MessageReader<BlastAt>, mut world: GrenadeWorld, m
     }
 }
 
+const Y_UP: Vec3 = Vec3::Y;
+
 /// The weapon name explosions from map logic count as (kill notices).
 pub const EXPLOSION_WEAPON: &str = "env_explosion";
 
@@ -1618,6 +1656,12 @@ fn blast(
     rng: &mut ParticleRng,
 ) {
     let src = origin + Vec3::Y * b.src_lift;
+    // Source's water rule: None without one, else whether it is under.
+    let under = b
+        .radius_rule
+        .filter(|r| r.water_lift > 0.0)
+        .map(|r| world.in_water(origin) && world.in_water(origin + Y_UP * r.water_lift));
+    let stoppers: &[&str] = b.radius_rule.map_or(&[], |r| r.stoppers);
     let mut hits: Vec<(Entity, Vec3, f32)> = Vec::new();
     // Characters' shield sample points (`BlastShield`): eye, and the two
     // sides at half the eye height.
@@ -1641,6 +1685,18 @@ fn blast(
             .map_or((t.transform.translation, t.transform.translation), |a| (a.min, a.max));
         if src.clamp(lo, hi).distance(src) > b.radius {
             continue;
+        }
+        if let Some(under) = under {
+            let (bottom, top) = match (t.intent, t.state) {
+                (Some(_), Some(s)) => (t.transform.translation + s.hull_min.with_x(0.0).with_z(0.0), t.transform.translation + s.eye_offset),
+                _ => {
+                    let c = (lo + hi) / 2.0;
+                    (c.with_y(lo.y), c.with_y(hi.y))
+                }
+            };
+            if (under && !world.in_water(bottom)) || (!under && world.in_water(top)) {
+                continue;
+            }
         }
         let target = match (t.intent, t.state) {
             (Some(_), Some(state)) => {
@@ -1666,6 +1722,9 @@ fn blast(
         boxes.push((t.entity, lo, hi));
     }
     for (target, point, amount) in &mut hits {
+        if world.stopper_on_line(src, *point, *target, stoppers) {
+            continue;
+        }
         // Characters aren't in the trace (it sees world brushes only);
         // breakable brushes are, and a hit on the target itself counts.
         let own = (!world.is_character(*target)).then_some(*target);
@@ -1782,9 +1841,13 @@ fn blast(
         .iter()
         .filter(|(e, rb, ..)| rb.is_dynamic() && Some(*e) != skip)
         .filter(|(_, _, pos, ..)| pos.0.distance(src) < b.radius)
+        .filter(|(_, _, pos, ..)| under.is_none_or(|u| u == world.in_water(pos.0)))
         .map(|(e, _, pos, mass, _)| (e, pos.0, mass.map_or(1.0, |m| m.value())))
         .collect();
     for (e, centre, mass) in pushes {
+        if world.stopper_on_line(src, centre, e, stoppers) {
+            continue;
+        }
         if !b.through_walls
             && world
             .world_trace(src, centre, Some(e))

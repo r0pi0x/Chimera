@@ -13,6 +13,17 @@
 //!   the bridge's impact measurement, `SELF_SPARED_TICKS`), else it is
 //!   his own damage (a suicide if it kills); a teammate's credited impact
 //!   is refused with `mp_friendlyfire` 0 (the engine's rule, after this).
+//! - **A prop running into a player** (Open questions 14, measured:
+//!   `PROP_KNOCK`, `source_movement::shadow::ShadowKnock`): on the hit's tick
+//!   he gains speed as from a hit on his 85 kg and the prop goes on forward;
+//!   the crush hits land on that tick too, their shove next.
+//! - **First impacts** (9, `source_logic::logic::FirstImpactScale`): a prop
+//!   launched from the hold takes 10× its own impact damage on its first
+//!   collision; with `onfirstimpact` "break" it breaks on it, whatever the
+//!   speed (not after a punt or a throw: measured).
+//! - **An explosive prop's blast** names its last attacker (a punt counts),
+//!   else its influencer within 2 s (`source_logic::logic::
+//!   BlastInfluenceWindow`), else the break's own attacker.
 //! - `prop_physics_multiplayer` in modes 1 and 2 collides with players as
 //!   a `prop_physics` (Corrections 1: HL2:DM drops CS:S's exception).
 //! - **`+use` at props** (`use_props`, `hl2mp_allow_pickup` 0, the
@@ -28,10 +39,9 @@
 //!   (Corrections 2, measured P15: `source_logic::logic::KeepPropsOnBreak`).
 //!
 //! Known shortcuts: a prop kept after a `Break` input is non-solid to the
-//! logic only (as `DisableCollision`): its body still collides; an explosive prop's blast credit
-//! (the last attacker, else the influencer within 2 s) is the logic's
-//! last-attacker rule only; the 10× first impact after a launch from the
-//! hold and first-impact breaks aren't done. `prop_physics_respawnable`
+//! logic only (as `DisableCollision`): its body still collides; a `+use`
+//! carry doesn't read `preferred_carryangles` (8 says the same hold with its
+//! own yaw frame; not measured). `prop_physics_respawnable`
 //! (section 13) is source_logic's prop (`RespawnTime`, 60 s by default, the
 //! prop stays with its name and outputs, hidden with its body off, and
 //! comes back at its home pose after the time if its box there is free of
@@ -53,6 +63,20 @@ use crate::{
 
 /// HL2:DM's players' physics impact energy scale (9).
 pub const PLAYER_IMPACT_SCALE: f32 = 4.0;
+/// A prop launched from the hold takes this many times its own impact
+/// damage on its first collision (9).
+pub const FIRST_IMPACT_SCALE: f32 = 10.0;
+/// A breaking prop's blast credits its influencer this long after the
+/// influence (s, 9), when no player hurt it last.
+pub const BLAST_CREDIT_WINDOW: f64 = 2.0;
+/// A prop running into a player (measured, Open questions 14): fits to
+/// punts of 10 to 250 kg at 650 to 1500 in/s into a standing bot.
+pub const PROP_KNOCK: source_engine::source_movement::shadow::ShadowKnock = source_engine::source_movement::shadow::ShadowKnock {
+    player_rebound: 0.07,
+    prop_rebound: 0.15,
+    min_speed: 50.0,
+    side: 0.7,
+};
 /// An impact on a player this long after the prop's influence credits
 /// the influencer (s).
 pub const CREDIT_WINDOW: f64 = 1.0;
@@ -188,9 +212,14 @@ pub struct Hl2PhysicsPlugin;
 impl Plugin for Hl2PhysicsPlugin {
     fn build(&self, app: &mut App) {
         super::carry::plugin(app);
+        app.add_plugins(source_engine::source_movement::shadow::ShadowKnockPlugin(PROP_KNOCK));
         app.insert_resource(source_logic::logic::PlayerImpactScale(PLAYER_IMPACT_SCALE))
             // A prop broken by an input stays (gravity_gun.md Corrections 2).
             .insert_resource(source_logic::logic::KeepPropsOnBreak(true))
+            // A launch's first impact and an explosive prop's credit (9).
+            .insert_resource(source_logic::logic::FirstImpactScale(FIRST_IMPACT_SCALE))
+            .insert_resource(source_logic::logic::BlastInfluenceWindow(BLAST_CREDIT_WINDOW))
+            .insert_resource(source_logic::logic::PromptSideHits)
             .add_systems(
                 FixedUpdate,
                 (

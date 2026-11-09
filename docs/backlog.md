@@ -143,7 +143,8 @@ the original's own behaviour isn't a bug (say so instead).
 - **Missing sounds:** the SMG1's right-click grenade launch and its
   explosion; the AR2's right-click ball launch; a breaking toilet or sink
   (only the pieces hitting the floor are heard); the crowbar's impact. With the gravity gun's
-  above, look for a shared cause first (a soundscript or game-sound path,
+  above, and an HL2:DM character's footsteps (running on de_dust2 in
+  Ultimate Gun Game), look for a shared cause first (a soundscript or game-sound path,
   possibly Windows-only).
 - **SMG1 grenade trail** doesn't look like it renders correctly.
 - **AR2 ball's explosion** has particles that look wrong.
@@ -165,6 +166,57 @@ the original's own behaviour isn't a bug (say so instead).
 - **Ultimate Gun Game's HUD changed:** the CS:S HUD there looks different
   now, a recent regression by the user's account (no change was meant to
   touch it; bisect it). The level-up text is far too big on some HUDs.
+- **Flashlight lights nothing:** the toggle, network path and sounds work,
+  but the spot light has no visible effect on dm_lockdown, even at 10,000
+  times the brightness; the spec gives no brightness, colour or cone.
+- **Ultimate Gun Game's bots on HL2:DM:** some get stuck, don't shoot or
+  move properly and seem to have no plan. Check their navigation on `dm_*`
+  maps (no `.nav` files ship with HL2:DM).
+- **Combat Arms, Blood Money: spawning inside the vault** with no way out
+  (`setpos -6.11 -747.55 -179.90;setang 2.98 90.31 0.00`). Check whether
+  the map really has a spawn there, what opens the vault in the original,
+  and whether our spawn picking should refuse it. Decide and fix.
+- **Higher priority: changing Combat Arms characters hitches and garbles.**
+  The new character takes a moment to load, with visible lag, and meanwhile
+  the current character's bones go wrong, as if imitating the new one's. The
+  user suggests preloading every rung's model; also swap the body only when
+  the new one is ready, so a skeleton never drives the wrong model.
+- **Ultimate Gun Game's winning screen names the wrong weapon:** winning as
+  a Combat Arms zombie, it shows some other knife as the gun. Everywhere a
+  player's gun is displayed should show their rung's primary, even when
+  they've switched to the knife. Check the scoreboard and other places too.
+- **Ultimate Gun Game: HL2:DM rungs don't use HL2:DM's HUD and crosshair.**
+  Holding an HL2:DM gun should show the same HUD and crosshair as HL2:DM
+  itself, as other games' rungs do.
+- **Combat Arms melee and the RMS-12 against glass:** knives don't break
+  glass (CS office's windows), so a flamethrower player can't get in; the
+  RMS-12 can't break it either.
+- **RMS-12 flamethrower:** shoots what looks like smoke, not flames, and
+  doesn't seem to do damage to anybody.
+- **Higher priority: frame rate decays over a session.** After about 10
+  games the user's FPS is down to about 30. Measure frame and tick cost per
+  match over repeated map changes (leaked entities, assets, meshes, audio,
+  listeners; the bots' archetype churn noted below). Find what grows, and
+  add a test that fails when it grows.
+  The user's details: it built gradually; each game was a different map; it
+  stayed after disconnecting and starting a new match in the same process.
+  So whatever grows outlives the match and the server: look at per-process
+  state (asset caches, GPU meshes and textures, materials, archetypes).
+- **Ultimate Gun Game's menu background** shouldn't use the greybox map.
+- **Ultimate Gun Game must never show the greybox stand-ins:** for a few
+  frames someone flashes as a capsule, or a gun or knife as the template
+  model (seen at low FPS). Goes with the character swap above: keep what's
+  showing until the real model is ready.
+- **Kill feed: the crowbar's icon** is just the large word "crowbar".
+- **Scoreboard: guns still top-aligned** in their list item, a lot of the
+  Combat Arms ones.
+- **Neon Outlaw ASW338LM (Combat Arms)** looks like it has the wrong UV map.
+  Already answered (below, models_ltb.md W1-W3): its skin is painted for a
+  layout no ASW338LM model in the install has. Waiting on the user: leave
+  it out of the ladder?
+- **Combat Arms radio menus:** 7, 8 and 9 do nothing. Check what the
+  original's menus offer on those keys (`choose_N`, the same commands as
+  the console report above).
 - **Battery machine:** at `setpos -3835.25 5745.72 64.02;setang 17.71
   22.85 0.00` its rope or cable looks broken, and the battery doesn't seat
   properly in the slot.

@@ -1771,6 +1771,33 @@ implementing (owner branch) / done.
   probe; a crate's refused opening sends no "FULL" (the spec names
   pickups); the flashlight's brightness, colour and cone aren't in the
   spec; the suit charger's pool (30 or 75) is the user's call.
+- 2026-11-08: **Gravity gun's physics rules** (branch `hl2dm-physrules`,
+  probe round 5: `cases.py phys_rules phys_rules2`, gravity_gun.md Open
+  questions 14).
+
+  | Item | Spec or measured | Ours before | Ours now |
+  |---|---|---|---|
+  | launched prop's first impact | 10x its impact damage; "onfirstimpact break" breaks (9); measured on a crate and a drum | 1x, no break | as spec (`FirstImpactScale`, `LaunchedFromHold`); pinned (`a_launchs_first_impact_counts_ten_times`, `first_impact_props_break_only_after_a_launch`) |
+  | explosive prop's credit | last attacker, influencer within 2 s, break's attacker (9) | last attacker, break's | as spec (`BlastInfluenceWindow`); pinned (`an_explosive_props_blast_credit`) |
+  | several bodies | shares of 2.5, held weights of 4 | every object one body, ragdolls dry | a non-flesh prop_ragdoll: as spec (`punt_shares`); pinned (`an_object_of_several_bodies`) |
+  | sawblade, carry angles | (−5, 0, 0) in the view frame, 5000 deg/s about z; measured (−5, −180, 0), 3250 deg/s; preferred angles in the yaw frame | kept rotation, random spin | as measured (the cap and drag give 3280); pinned (`launch_spin_by_the_props_interactions`, `preferred_carry_angles_hold_in_the_yaw_frame`) |
+  | held item's touch box | 48; measured: a battery taken 4 and 6 ticks after the grab from 100 and 130 | 24, never taken | 48; pinned (`a_held_battery_is_taken_on_its_way_in`) |
+  | free ball | punt adds 959.2; measured 1959 through its bounces | no punt | as measured; pinned (`a_free_ball_can_be_punted`) |
+  | held ball's end | as any ball's (projectiles.md 5.6) | sound and removal | `FlyerGone` expired; pinned (`a_held_balls_end_is_a_balls_end`) |
+  | ball on props | 1000 crush; knocked (5.3) | crush only (the shortcut's note was stale); no knock | crush; knock a whole elastic hit of 150 kg (a model); pinned (`the_ball_crushes_and_knocks_props`) |
+  | punt into a player | bot's fastest 340, 454, 795, 1094 in/s by 10, 30, 100, 250 kg (round 4's 650, 1110 were two ticks' steps added); crate after 8, 165, 337, 445 | crate back off the shadow, bot by the shove only, 4 ticks late | knocked on the hit's tick, hits on that tick, crate forward (`ShadowKnock`, HL2:DM's own; CS:S adds neither system nor rule); pinned (`a_punted_crate_knocks_a_player_and_goes_on`) |
+  | blast and water, doors | 2 steps 2-4 | no rule; a door shields 0.25 | as spec (`SourceRadius::water_lift`, `stoppers`); pinned (`blast_rules`) |
+  | missile, bolt, ball on the sky | removed silently (6.5, 7.4); ball's end (5.2) | a wall | as spec (`Flyer::sky_end`, `MapSkyFaces`); pinned (`blast_rules`) |
+  | launch's distance check on a client | spec's rule, the held entity networked (14) | the server's alone | the client reads the snapshot's pose (`map::held::ServerPose`); pinned (`a_client_predicts_the_launchs_distance_check`) |
+
+  Fits and guesses: `PROP_KNOCK`'s elasticities (0.07, 0.15) are fits to one
+  punt per mass; its 50 in/s floor and the side test (0.7) are ours; the
+  ball's knock is a model; a held item's box above and below is the spec's
+  ±48 (test 59), not measured apart from the sideways reach. Left: a grab
+  isn't predicted (section 3: "the client predicts nothing of it", and the
+  object is the server's choice); `paintsplat` and the other interactions
+  stock models name; a `+use` carry and `preferred_carryangles` (section 8
+  doesn't say); the knock on a moving player and glancing hits, unmeasured.
 
 ## Decision log
 
