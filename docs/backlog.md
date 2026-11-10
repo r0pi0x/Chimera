@@ -164,6 +164,15 @@ the original's own behaviour isn't a bug (say so instead).
 
 ### Gun game playtest, 2026-10-28 (user)
 
+- **dm_lockdown after a swap from junk_flea draws broken (offscreen clip,
+  2026-11-10).** `ugg_new 777 13 hl2dm:dm_lockdown` sent on
+  `combat_arms:junk_flea`: the player stands where walls and floors are
+  missing over a void and the view-model gun draws almost black; started
+  directly on `hl2dm:dm_lockdown` it looks right. State carried across a
+  swap between games (lighting, visibility, culling, materials, spawn
+  position); check the other cross-game orders too.
+- **combat_arms:bloodmoney has no ground (offscreen clip, 2026-11-10):**
+  the floor shows a mirrored sky.
 - **The grenade launcher's projectile is choppy on a client, "maybe all
   projectiles" (user, 2026-10-29): fixed, confirm in a playtest.** Not
   the client's interpolation (every `NetItem` was already drawn between
