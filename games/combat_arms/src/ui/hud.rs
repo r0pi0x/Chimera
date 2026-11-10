@@ -1214,7 +1214,7 @@ fn update(
             // our skeleton's socket, which it doesn't show.
             let body = (!alive).then(|| bodies.get(&e)).flatten();
             let aabb = world.characters.get(e).ok().and_then(|c| c.6);
-            let anchor = match body {
+            let anchor_of = || match body {
                 Some(b) => b.at,
                 None => world
                     .poses
@@ -1231,14 +1231,17 @@ fn update(
                     })
                     .unwrap_or(t.translation),
             };
-            let inputs = TagInputs {
+            let mut inputs = TagInputs {
                 local_alive,
                 teammate: !enemies(my_team, team),
                 alive,
                 aimed: target == Some(e),
                 revealed: false,
                 flashing: memory.flashes.contains_key(&e),
-                seen: aim::clear_line(&world.spatial, ray.eye, anchor, &[me, e]),
+                // Whether the anchor is in sight changes only the tag's
+                // opacity: worked out (and the pose read for the anchor)
+                // only for a tag that shows.
+                seen: false,
                 chased: in_eye == Some(e) || world.death.as_ref().is_some_and(|d| d.watched == Some(e)),
                 everyone: !local_alive && world.death.as_ref().is_some_and(|d| d.rules.hunted),
                 state_viewer: false,
@@ -1246,6 +1249,11 @@ fn update(
                 flag: world.carry.get(e).is_ok_and(|c| c.flag.is_some()),
                 revenge: false,
             };
+            if name_tag(inputs).is_none() {
+                continue;
+            }
+            let anchor = anchor_of();
+            inputs.seen = aim::clear_line(&world.spatial, ray.eye, anchor, &[me, e]);
             if let Some(tag) = name_tag(inputs) {
                 next.tags.push(TagView {
                     entity: e,

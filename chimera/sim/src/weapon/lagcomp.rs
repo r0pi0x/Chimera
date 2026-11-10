@@ -38,15 +38,16 @@
 //! a 64-unit teleport; `sv_unlag`, `sv_showlagcompensation`, `LagCompStats`);
 //! a weapon's `RewindChoice` (HL2:DM's whom, weapons.md 12).
 
-use std::{collections::VecDeque, sync::Arc};
+use std::collections::VecDeque;
 
 use avian3d::prelude::ColliderAabb;
 use bevy::prelude::*;
 
 use crate::{
     console::resource_cvar,
-    core::{Health, Hitbox, Hitboxes, Intent, NetRole, SimClock},
+    core::{Health, HitShapes, Hitboxes, Intent, NetRole, SimClock},
 };
+use chimera_core::later::Later;
 
 /// Source's teleport distance for lag compensation: 64 units, m.
 pub const TELEPORT: f32 = 64.0 * 0.0254;
@@ -152,8 +153,10 @@ pub struct HitFrame {
     /// Its box, relative to `origin`.
     pub min: Vec3,
     pub max: Vec3,
-    /// Its hitboxes (character space), if it has any.
-    pub hitboxes: Option<Arc<Vec<Hitbox>>>,
+    /// Its hitboxes (character space), if it has any: a game's
+    /// `LazyHitboxes` are kept as they are, made only if a rewind needs
+    /// them.
+    pub hitboxes: Option<Later<Hitboxes>>,
 }
 
 /// A living character's recent hit volumes, oldest first, one per tick
@@ -171,7 +174,7 @@ pub struct Rewound {
     pub yaw: f32,
     pub min: Vec3,
     pub max: Vec3,
-    pub hitboxes: Option<Arc<Vec<Hitbox>>>,
+    pub hitboxes: Option<Later<Hitboxes>>,
 }
 
 impl Rewound {
@@ -238,7 +241,7 @@ fn record(
         &Intent,
         &Health,
         Option<&ColliderAabb>,
-        Option<&Hitboxes>,
+        HitShapes,
         Option<&mut HitHistory>,
     )>,
     mut commands: Commands,
@@ -256,10 +259,16 @@ fn record(
         }
         let origin = t.translation;
         let (min, max) = aabb.map_or(DEFAULT_BOX, |b| (b.min - origin, b.max - origin));
-        let hitboxes = boxes.map(|b| match history.frames.back().and_then(|f| f.hitboxes.clone()) {
-            Some(last) if *last == b.0 => last,
-            _ => Arc::new(b.0.clone()),
-        });
+        // A game's hitboxes made on demand are kept unmade (one tick's
+        // capture); ready ones share the last tick's when unchanged.
+        let hitboxes = match (boxes.lazy, boxes.eager) {
+            (Some(l), _) => Some(l.0.clone()),
+            (None, Some(b)) => Some(match history.frames.back().and_then(|f| f.hitboxes.clone()) {
+                Some(last) if last.is_made() && last.get().0 == b.0 => last,
+                _ => Later::ready(b.clone()),
+            }),
+            (None, None) => None,
+        };
         history.frames.push_back(HitFrame {
             tick: clock.tick,
             origin,
@@ -352,12 +361,12 @@ pub fn rewind<'a>(
 fn lerp(entity: Entity, a: &HitFrame, b: &HitFrame, f: f32) -> Rewound {
     let turn = (b.yaw - a.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
     let hitboxes = match (&a.hitboxes, &b.hitboxes) {
-        (Some(x), Some(y)) if f > 0.0 && x.len() == y.len() && !Arc::ptr_eq(x, y) => Some(Arc::new(
-            x.iter()
-                .zip(y.iter())
+        (Some(x), Some(y)) if f > 0.0 && !Later::ptr_eq(x, y) && x.get().0.len() == y.get().0.len() => Some(Later::ready(Hitboxes(
+            x.get().0.iter()
+                .zip(y.get().0.iter())
                 .map(|(p, q)| p.lerp(q, f))
                 .collect(),
-        )),
+        ))),
         (x, _) => x.clone(),
     };
     Rewound {

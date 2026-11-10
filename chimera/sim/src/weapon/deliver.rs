@@ -33,7 +33,7 @@ use super::{
 };
 use crate::{
     core::{
-        BodyRegion, Damage, DamageKind, Damageable, FirstTimePredicted, Health, Hitboxes, Hitgroup, Intent, NetRole,
+        BodyRegion, Damage, DamageKind, Damageable, FirstTimePredicted, Health, HitShapes, Hitgroup, Intent, NetRole,
         SOLID_LAYERS,
     },
     map::{
@@ -55,7 +55,8 @@ pub(super) struct Target {
     health: Option<&'static Health>,
     damageable: Option<&'static Damageable>,
     intent: Option<&'static Intent>,
-    hitboxes: Option<&'static Hitboxes>,
+    /// `Hitboxes` or a game's `LazyHitboxes` (made when a ray tests them).
+    hitboxes: HitShapes,
     bullet: Option<&'static BulletTarget>,
 }
 
@@ -173,6 +174,7 @@ fn volume_entry(r: &Rewound, from: Vec3, dir: Dir3, limit: f32, grow: f32) -> Op
         Some(boxes) => {
             let (feet, turn) = r.frame();
             let (o, d) = (turn * (from - feet), turn * *dir);
+            let boxes = &boxes.get().0;
             let boxes: std::borrow::Cow<[crate::core::Hitbox]> = if grow > 0.0 { grown(boxes, grow).into() } else { (&boxes[..]).into() };
             nearest_box(&boxes, o, d, limit).map(|(enter, leave, group)| (enter, Some(leave), Some(group)))
         }
@@ -338,7 +340,8 @@ impl Shot<'_, '_, '_> {
             let Some((o, d)) = self.local_ray(e, from, dir) else {
                 continue;
             };
-            let Some(boxes) = self.w.targets.get(e).ok().and_then(|t| t.hitboxes) else {
+            let Ok(target) = self.w.targets.get(e) else { continue };
+            let Some(boxes) = target.hitboxes.get() else {
                 continue;
             };
             let limit = best.as_ref().map_or(end, |b| b.distance) - start;
@@ -403,12 +406,12 @@ impl Shot<'_, '_, '_> {
                 Some(boxes) => {
                     let (feet, turn) = r.frame();
                     let (o, d) = (turn * (self.eye - feet), turn * *dir);
-                    boxes.iter().filter_map(|b| b.ray_span(o, d)).map(|(_, out)| out).reduce(f32::max)
+                    boxes.get().0.iter().filter_map(|b| b.ray_span(o, d)).map(|(_, out)| out).reduce(f32::max)
                 }
                 None => aabb_span(&r.aabb(), self.eye, *dir).map(|(_, out)| out),
             };
         }
-        if let Some(boxes) = self.w.targets.get(hit.entity).ok().and_then(|t| t.hitboxes) {
+        if let Some(boxes) = self.w.targets.get(hit.entity).ok().and_then(|t| t.hitboxes.get()) {
             let (o, d) = self.local_ray(hit.entity, self.eye, dir)?;
             return boxes
                 .0

@@ -49,6 +49,7 @@ fn dust2() -> Option<Arc<crate::stack::map::MapData>> {
 fn head(f: &HitFrame) -> Vec3 {
     let boxes = f.hitboxes.as_ref().expect("hitboxes");
     let b = boxes
+        .0
         .iter()
         .filter(|b| b.group() == Hitgroup::Head)
         .max_by(|a, b| a.center.y.total_cmp(&b.center.y))

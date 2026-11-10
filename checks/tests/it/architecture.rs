@@ -12,7 +12,10 @@ use std::{
 /// Top-level module -> top-level modules it may use via `crate::`.
 /// Keep in sync with the layer diagram in docs/ARCHITECTURE.md.
 const ALLOWED: &[(&str, &[&str])] = &[
-    ("core", &[]),
+    // The shared vocabulary; `LazyHitboxes` are `later` cells.
+    ("core", &["later"]),
+    // Values made on first use (`Later`): std only.
+    ("later", &[]),
     // Environment variables and per-user folders under their new and old
     // names (`CHIMERA_*`/`MASHUP_*`): std only.
     ("env", &[]),

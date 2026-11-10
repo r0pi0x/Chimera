@@ -2155,3 +2155,144 @@ fn a_map_unload_forgets_what_older_ladders_loaded() {
         "the loaders may load them again"
     );
 }
+
+// ---------------------------------------------------------------------
+// Poses on demand (docs/performance.md, "Poses on demand")
+
+/// One tick of what the pose decides: per character its hit spheres (the
+/// client's view and the server's), sockets, legs' yaw, the hitboxes
+/// other games' guns test, the drawn pose (a body with a model) and its
+/// health.
+type PoseTick = Vec<(Vec<Option<Vec3>>, Vec<Option<Vec3>>, [Option<Vec3>; 6], f32, Option<Vec<chimera_core::core::Hitbox>>, Option<Vec<(Quat, Vec3)>>, f32)>;
+
+/// Two players with a model each (a stand-in), a duel of 300 ticks: they
+/// walk, strafe, crouch, look up and down and fire the rifle at each other
+/// (the second as a bot: its rounds trace the server's pose), the drawing's
+/// models in (`Animator::fixed`). `every_tick`: `CaPoseEveryTick`, the
+/// poses made in the tick as before. Each tick's health, and every
+/// `sample`-th tick the poses read (the others left to the shots' demand).
+fn duel_poses(every_tick: bool, sample: usize) -> (Vec<PoseTick>, usize) {
+    use chimera_world::map::{CharacterModels, MapBone, MapCharacterModel, anim::{AnimSet, Animator}};
+    use combat_arms::game::{GAME, characters::{CaPoseEveryTick, models::BodyGroup}};
+    let stand_in = male_stand_in(true);
+    let id = 1;
+    let model = MapCharacterModel {
+        game: Some(GAME),
+        team: None,
+        name: Some(models::body_name(id)),
+        class: None,
+        model: Default::default(),
+        hitboxes: Vec::new(),
+        bones: stand_in
+            .nodes
+            .iter()
+            .map(|(name, parent, _)| MapBone { name: name.to_string(), parent: *parent, position: Vec3::ZERO, rotation: Quat::IDENTITY })
+            .collect(),
+        root: Transform::IDENTITY,
+        animations: Some(Arc::new(AnimSet::default())),
+        boxes: Vec::new(),
+        ragdoll: None,
+    };
+    let mut sim = sim();
+    if every_tick {
+        sim.app.insert_resource(CaPoseEveryTick);
+    }
+    let world = sim.app.world_mut();
+    models::register(world, &builtin().model(id).unwrap().file, Arc::new(stand_in.rig(STAND_IN_ANIMS)));
+    models::late_in(world).0.register_group(BodyGroup { records: vec![id], ..default() });
+    world.insert_resource(CharacterModels(Arc::new(vec![model])));
+    let a = player(&mut sim, Vec3::new(0.0, 1.0, 12.0), std::f32::consts::PI);
+    let b = player(&mut sim, Vec3::new(0.5, 1.0, 4.0), 0.0);
+    for p in [a, b] {
+        sim.app.world_mut().entity_mut(p).insert(Selection { model: id, ..default() });
+        weapon::give(sim.app.world_mut(), p, RIFLE).unwrap();
+    }
+    sim.app.world_mut().entity_mut(b).insert(chimera_core::core::Bot);
+    sim.seconds(1.3);
+    let mut out = Vec::new();
+    let mut unposed = 0;
+    for i in 0..300usize {
+        let phase = i as f32 * 0.05;
+        for (k, p) in [a, b].into_iter().enumerate() {
+            let mut intent = sim.intent(p);
+            intent.pitch = 0.3 * (phase + k as f32).sin();
+            intent.move_axis = Vec2::new((phase * 0.7).sin(), (phase * 0.3 + k as f32).cos()) * 0.6;
+            intent.crouch = (i / 40 + k) % 3 == 0;
+            intent.fire = (i + 7 * k) % 12 < 2;
+            if i % 25 == 0 {
+                intent.yaw += 0.05;
+            }
+        }
+        sim.ticks(1);
+        let w = sim.app.world();
+        unposed += [a, b].iter().filter(|p| !w.get::<CaPose>(**p).unwrap().is_posed()).count();
+        let tick = [a, b]
+            .iter()
+            .map(|&p| {
+                let health = w.get::<chimera_core::core::Health>(p).unwrap().current;
+                if i % sample != 0 {
+                    return (Vec::new(), Vec::new(), [None; 6], 0.0, None, None, health);
+                }
+                let pose = w.get::<CaPose>(p).unwrap();
+                let sockets = [pose.name_tag, pose.left_foot, pose.right_hand, pose.eyes[0], pose.flash[0], pose.flash_point()];
+                (
+                    pose.spheres.clone(),
+                    pose.server_spheres().to_vec(),
+                    sockets,
+                    pose.body_yaw,
+                    chimera_core::core::hitboxes_in(w, p).map(|h| h.0.clone()),
+                    w.get::<Animator>(p).and_then(|a| a.fixed.as_ref()).map(|f| f.to_vec()),
+                    health,
+                )
+            })
+            .collect();
+        out.push(tick);
+    }
+    (out, unposed)
+}
+
+/// The poses made only when something reads them give what making them
+/// every tick gave, bit for bit: the hit spheres, the server's, the
+/// sockets, the hitboxes, the drawn pose and every round's damage, over a
+/// duel read every tick and one read every seventh tick (the shots'
+/// demand alone in between).
+#[test]
+fn poses_on_demand_match_poses_every_tick() {
+    let (eager, made_unposed) = duel_poses(true, 1);
+    assert_eq!(made_unposed, 0, "CaPoseEveryTick makes every pose in the tick");
+    for sample in [1, 7] {
+        let (lazy, unposed) = duel_poses(false, sample);
+        let hurt = lazy.last().unwrap().iter().any(|c| c.6 < 100.0);
+        assert!(hurt, "the duel draws blood");
+        for (i, (e, l)) in eager.iter().zip(&lazy).enumerate() {
+            if i % sample == 0 {
+                assert!(e == l, "tick {i} (read every {sample}): {e:?}\n vs {l:?}");
+            } else {
+                let health = |t: &PoseTick| t.iter().map(|c| c.6).collect::<Vec<_>>();
+                assert_eq!(health(e), health(l), "tick {i}: the same damage");
+            }
+        }
+        if sample > 1 {
+            assert!(unposed > 0, "some ticks nobody read a pose: none was made");
+        }
+    }
+}
+
+/// A character nobody reads is never posed: its pose, its hitboxes and
+/// its drawn pose wait; read, each is what it would have been.
+#[test]
+fn a_pose_nobody_reads_is_not_made() {
+    let mut sim = sim();
+    let p = player(&mut sim, Vec3::new(0.0, 1.0, 12.0), 0.3);
+    sim.ticks(2);
+    let w = sim.app.world();
+    let pose = w.get::<CaPose>(p).unwrap().clone();
+    let boxes = w.get::<chimera_core::core::LazyHitboxes>(p).expect("hitboxes on demand").clone();
+    assert!(!pose.is_posed() && !boxes.0.is_made(), "nothing asked");
+    // Read: made once, and the hitboxes are the spheres where shots test them.
+    let head = builtin().skeleton(0).spheres.iter().position(|s| s.name == "Head").unwrap();
+    assert!(pose.spheres[head].is_some());
+    assert!(pose.is_posed());
+    assert_eq!(boxes.0.get().0.len(), builtin().skeleton(0).spheres.len());
+    assert!(boxes.0.is_made());
+}

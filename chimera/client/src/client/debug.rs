@@ -224,7 +224,7 @@ fn draw_hitboxes(
     on: Res<DrawHitboxes>,
     characters: Query<
         (
-            &crate::core::Hitboxes,
+            crate::core::HitShapes,
             &GlobalTransform,
             &ColliderAabb,
             Option<&crate::core::Intent>,
@@ -238,6 +238,7 @@ fn draw_hitboxes(
         return;
     }
     for (boxes, at, aabb, intent) in &characters {
+        let Some(boxes) = boxes.get() else { continue };
         let feet = at.translation().with_y(aabb.min.y);
         let yaw = intent.map_or(Quat::IDENTITY, |i| i.yaw_rotation());
         for h in &boxes.0 {

@@ -79,8 +79,8 @@ fn sig(bones: &[(&str, Option<usize>)]) -> u64 {
     chimera_world::map::anim::skeleton_signature(bones.iter().copied())
 }
 
-fn pose(n: usize, x: f32) -> Arc<Vec<BonePose>> {
-    Arc::new(vec![(Quat::IDENTITY, Vec3::X * x); n])
+fn pose(n: usize, x: f32) -> chimera_core::later::Later<Vec<BonePose>> {
+    chimera_core::later::Later::ready(vec![(Quat::IDENTITY, Vec3::X * x); n])
 }
 
 fn drive(sim: &mut Sim, e: Entity, skeleton: u64, n: usize, x: f32) {
