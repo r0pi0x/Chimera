@@ -1538,6 +1538,10 @@ Main-thread frames over 33 ms of CPU while the map spawns and settles: cs_office
 moves these most). The spawn takes more frames (cs_office 40 steps before, 82 after) but no
 longer: its frames were already over budget.
 
+After merging main's render pass (probe light in a table, shadows and dust placed by shaders;
+two runs): main worst 219-250 M, render worst 76-93 M (render CPU 20-50 ms), the spawn and
+settling with 2-5 frames over 33 ms wall a swap on the quieter run.
+
 What is left over 33 ms, and why:
 
 - **The frame the map goes into the world** (220-255 M, about 35-55 ms here): a third is
