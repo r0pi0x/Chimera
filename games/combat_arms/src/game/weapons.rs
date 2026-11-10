@@ -229,6 +229,7 @@ use std::{
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
+use chimera_core::character::CharacterPartsExt;
 use chimera_sim::server_docs::DocsAppExt;
 use serde::{Deserialize, Serialize};
 
@@ -275,8 +276,10 @@ pub struct CaHandling {
 }
 
 /// The weapon whose handling a character's `HeldMovePenalty` was last set
-/// from.
-#[derive(Component, Clone, Copy, Debug, PartialEq)]
+/// from. Both on every character from the spawn (a part that comes and
+/// goes is a new archetype for every combination of the rest).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+#[component(storage = "SparseSet")]
 struct HandlingOf(Option<Entity>);
 
 /// On drawing a weapon, its `MovePenalty` becomes the carrier's
@@ -293,17 +296,12 @@ fn apply_handling(
         }
         let mut e = commands.entity(owner);
         e.insert(HandlingOf(inv.active));
-        match inv.active.and_then(|w| handling.get(w).ok()) {
-            Some(h) => {
-                e.insert(super::movement::HeldMovePenalty {
-                    penalty: h.move_penalty,
-                    mod_factor: 0.0,
-                });
-            }
-            None => {
-                e.remove::<super::movement::HeldMovePenalty>();
-            }
-        }
+        // None: no penalty (its default).
+        let penalty = inv.active.and_then(|w| handling.get(w).ok()).map_or(0.0, |h| h.move_penalty);
+        e.insert(super::movement::HeldMovePenalty {
+            penalty,
+            mod_factor: 0.0,
+        });
     }
 }
 
@@ -1808,6 +1806,8 @@ impl Plugin for CaWeaponsPlugin {
             // In the predicted tick: a client replaying a switch moves
             // with the penalty of the weapon it held then.
             .add_systems(Predict::Select, apply_handling.after(crate::weapon::SelectWeapons))
+            .on_every_character::<HandlingOf>()
+            .on_every_character::<super::movement::HeldMovePenalty>()
             // The meters are predicted with the weapon and go to the
             // client predicting it (`weapon::sync`); the kick with the
             // player.

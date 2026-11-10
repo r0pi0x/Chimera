@@ -76,7 +76,10 @@ pub struct ShadowPlugin;
 
 impl Plugin for ShadowPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(FixedUpdate, attach.before(crate::core::SimSet::Movement))
+        use chimera_core::character::CharacterPartsExt;
+        app.on_every_character::<Shadowed>()
+            .on_every_character::<PhysicsTouch>()
+            .add_systems(FixedUpdate, attach.before(crate::core::SimSet::Movement))
             .add_systems(
                 FixedPostUpdate,
                 (
@@ -322,25 +325,34 @@ struct ShadowBox(f32);
 struct ShadowAim(Option<Vec3>);
 
 /// Give every Source player a shadow; remove the shadows of players gone
-/// or no longer moving the Source way.
+/// or no longer moving the Source way. `Shadowed` and `PhysicsTouch` are on
+/// every character from the spawn (`ShadowPlugin`), a shadow or none: they
+/// came and went with the movement, each a new archetype for every
+/// combination of the character's other parts.
+#[allow(clippy::type_complexity)]
 fn attach(
     mut commands: Commands,
-    new: Query<(Entity, &Transform, Option<&crate::slots::MovementSlot>), (With<SourceMovement>, Without<Shadowed>)>,
-    gone: Query<(Entity, &Shadowed), Without<SourceMovement>>,
+    characters: Query<(Entity, &Transform, Option<&crate::slots::MovementSlot>, &Shadowed, Has<SourceMovement>)>,
     shadows: Query<(Entity, &PhysicsShadow)>,
-    owners: Query<(), With<Shadowed>>,
+    owners: Query<&Shadowed>,
     cfg: MovementConfigs,
 ) {
     for (shadow, s) in &shadows {
-        if !owners.contains(s.owner) {
-            commands.entity(shadow).try_despawn();
+        if owners.get(s.owner).is_ok_and(|o| o.0 == Some(shadow)) {
+            continue;
         }
+        commands.entity(shadow).try_despawn();
     }
-    for (owner, s) in &gone {
-        commands.entity(s.0).try_despawn();
-        commands.entity(owner).remove::<(Shadowed, PhysicsTouch)>();
-    }
-    for (owner, t, slot) in &new {
+    for (owner, t, slot, shadowed, source) in &characters {
+        match (shadowed.0, source) {
+            (Some(shadow), false) => {
+                commands.entity(shadow).try_despawn();
+                commands.entity(owner).insert((Shadowed(None), PhysicsTouch::default()));
+                continue;
+            }
+            (None, true) => {}
+            _ => continue,
+        }
         let height = cfg.of(slot).stand_height;
         let centre = t.translation + Vec3::Y * (height / 2.0 - ORIGIN_ABOVE_FEET) * METERS_PER_UNIT;
         let shadow = commands
@@ -369,7 +381,7 @@ fn attach(
             .id();
         commands
             .entity(owner)
-            .insert((Shadowed(shadow), PhysicsTouch::default()));
+            .insert((Shadowed(Some(shadow)), PhysicsTouch::default()));
     }
 }
 
@@ -404,7 +416,8 @@ fn drive(
 ) {
     let dt = time.delta_secs();
     for (t, me, touch, shadowed, health, controls, slot) in &owners {
-        let Ok((mut s, mut size, mut aim, mut pos, mut st, mut v)) = shadows.get_mut(shadowed.0) else {
+        let Some(shadow) = shadowed.0 else { continue };
+        let Ok((mut s, mut size, mut aim, mut pos, mut st, mut v)) = shadows.get_mut(shadow) else {
             continue;
         };
         // A parented player (riding a kart) touches nothing either.
@@ -426,7 +439,7 @@ fn drive(
         let resized = size.0 != height;
         if resized {
             size.0 = height;
-            commands.entity(shadowed.0).insert(shadow_collider(height));
+            commands.entity(shadow).insert(shadow_collider(height));
         }
         if !alive || dt <= 0.0 {
             v.0 = Vec3::ZERO;
@@ -481,7 +494,7 @@ fn reconcile(
     held: Query<(Entity, &crate::map::held::Held, Option<&RigidBodyColliders>)>,
 ) {
     for (owner, mut t, mut vel, me, touch, shadowed, slot) in &mut owners {
-        let Ok((s, size, pos, sv)) = shadows.get(shadowed.0) else {
+        let Some(Ok((s, size, pos, sv))) = shadowed.0.map(|e| shadows.get(e)) else {
             continue;
         };
         if !s.active || !(touch.touched || touch.standing_on.is_some()) {

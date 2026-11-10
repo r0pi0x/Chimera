@@ -1312,11 +1312,14 @@ pub const CHARACTER_FILTER: avian3d::prelude::LayerMask =
 pub const ITEM_GROUND_LAYER: avian3d::prelude::LayerMask = avian3d::prelude::LayerMask(1 << 3);
 
 /// A speed cap the character's equipment imposes (e.g. the held weapon),
-/// meters per second. Movement implementations that model it read it.
-#[derive(Component, Reflect, Clone, Copy, Debug, Serialize, Deserialize)]
+/// meters per second; None: none (the movement's own). Movement
+/// implementations that model it read it. On every character from the
+/// spawn (`CharacterPartsExt::on_every_character`): coming and going with
+/// the weapon, it was a new archetype for every combination of the rest.
+#[derive(Component, Reflect, Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[reflect(Component)]
 #[component(storage = "SparseSet")]
-pub struct MaxSpeed(pub f32);
+pub struct MaxSpeed(pub Option<f32>);
 
 /// A place a character can spawn, provided by the Map slot.
 #[derive(Component, Reflect, Default, Clone, Copy, Debug)]
@@ -2483,6 +2486,9 @@ impl Plugin for CorePlugin {
             .predicted_net::<MovementState>()
             .predicted_net::<BaseVelocity>()
             .predicted_net::<MaxSpeed>();
+        // On every character from the spawn (`character::CharacterPartsExt::
+        // on_every_character`'s way, which this layer can't name).
+        app.register_required_components::<Intent, MaxSpeed>();
         for stage in Predict::ALL {
             app.init_schedule(stage);
         }

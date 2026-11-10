@@ -2,7 +2,11 @@
 //! loadout picks one per slot by ID. Nothing outside a game plugin names that
 //! plugin's types.
 //!
-//! `MovementRegistry`, `Loadout`, `set_movement` (swap an entity's movement).
+//! `MovementRegistry`, `Loadout`, `set_movement` (swap an entity's movement:
+//! the marker goes on with its `MovementSlot` in one move, and two
+//! movements on one marker, CS:S's and HL2:DM's, switch by a new value in
+//! place: each move alone is an archetype for every combination of the
+//! character's other parts, docs/DESIGN.md "ECS style").
 //! A movement with a hull can say where its character's feet are and how
 //! it stands (`Footing`, `MovementImpl::footing`) and put a character
 //! there with its own hull (`MovementImpl::seat`; `RegisterSlots::
@@ -28,8 +32,14 @@ use bevy::prelude::*;
 pub struct MovementImpl {
     /// Namespaced ID, e.g. `combat_arms:movement`.
     pub id: &'static str,
-    pub insert: fn(&mut EntityWorldMut),
+    /// Puts the marker on with the slot (`MovementSlot`), in one move.
+    pub insert: fn(&mut EntityWorldMut, MovementSlot),
     pub remove: fn(&mut EntityWorldMut),
+    /// The marker component's type: two movements on the same marker (CS:S's
+    /// and HL2:DM's, both `SourceMovement`) switch by a new value in place,
+    /// not a removal and an insert (each a new archetype for every
+    /// combination of the character's other parts).
+    pub marker: std::any::TypeId,
     /// Where a character on this movement stands (None: no hull, as
     /// noclip's).
     pub footing: Option<fn(&World, Entity) -> Option<Footing>>,
@@ -124,8 +134,8 @@ pub trait RegisterSlots {
 
 impl RegisterSlots for App {
     fn register_movement<M: Component + Default>(&mut self, id: &'static str) -> &mut Self {
-        fn insert<M: Component + Default>(e: &mut EntityWorldMut) {
-            e.insert(M::default());
+        fn insert<M: Component + Default>(e: &mut EntityWorldMut, slot: MovementSlot) {
+            e.insert((M::default(), slot));
         }
         fn remove<M: Component>(e: &mut EntityWorldMut) {
             e.remove::<M>();
@@ -138,6 +148,7 @@ impl RegisterSlots for App {
                 id,
                 insert: insert::<M>,
                 remove: remove::<M>,
+                marker: std::any::TypeId::of::<M>(),
                 footing: None,
                 seat: None,
             });
@@ -169,10 +180,11 @@ pub fn set_movement(entity: Entity, id: &'static str) -> impl Command {
             warn!("unknown movement implementation {id}");
             return;
         };
-        let (insert, seat) = (new.insert, new.seat);
+        let (insert, seat, marker) = (new.insert, new.seat, new.marker);
         let old = world.get::<MovementSlot>(entity).and_then(|s| registry.get(s.0));
         let footing = old.filter(|o| o.id != id).and_then(|o| o.footing);
-        let removes: Vec<_> = registry.0.iter().map(|m| m.remove).collect();
+        // The other markers go; the new one's own is replaced in place.
+        let removes: Vec<_> = registry.0.iter().filter(|m| m.marker != marker).map(|m| m.remove).collect();
         let footing = footing.and_then(|f| f(world, entity));
         let Ok(mut e) = world.get_entity_mut(entity) else {
             return;
@@ -180,8 +192,7 @@ pub fn set_movement(entity: Entity, id: &'static str) -> impl Command {
         for remove in removes {
             remove(&mut e);
         }
-        insert(&mut e);
-        e.insert(MovementSlot(id));
+        insert(&mut e, MovementSlot(id));
         if let (Some(seat), Some(footing)) = (seat, footing) {
             seat(world, entity, footing);
         }

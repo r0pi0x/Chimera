@@ -461,7 +461,7 @@ fn zoomed(sim: &Sim, p: Entity) -> Option<Zoomed> {
 }
 
 fn speed(sim: &Sim, p: Entity) -> f32 {
-    sim.app.world().get::<MaxSpeed>(p).unwrap().0 / UNIT
+    sim.app.world().get::<MaxSpeed>(p).unwrap().0.unwrap() / UNIT
 }
 
 #[test]

@@ -604,3 +604,76 @@ fn an_hl2dm_rung_plays_over_the_network() {
     kill_once(&mut sim, 0, a, b, &LADDER);
     assert!(sim.until(300, |s| held(s, 0) == Some(LADDER[1])), "the Glock on the client after the kill");
 }
+
+/// Parts on every character from its spawn (`weapon::ViewPunch`, Combat
+/// Arms' `CaKillMe`: docs/performance.md, "A session's archetypes"; the
+/// client puts the defaults on its characters too) reach a client as the
+/// server has them: at rest zero and empty on both sides; client 0's shots
+/// with CS:S's AK-47 (rung 7) kick its view on its machine and the
+/// server's, the victim's flinch shows on its own client when the server's
+/// has one; and the kill counts on the victim's client as on the server.
+#[test]
+fn parts_kept_from_the_spawn_reach_the_client_as_the_server_has_them() {
+    use chimera_sim::weapon::ViewPunch;
+    use combat_arms::game::death_cam::{CaKillMe, CaSlot};
+    let mut sim = joined();
+    let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+    let (me, victim) = (sim.local_player(0).unwrap(), sim.local_player(1).unwrap());
+    let punch = |w: &World, e: Entity| w.get::<ViewPunch>(e).map(|p| p.0);
+    let kills = |w: &World, e: Entity| w.get::<CaKillMe>(e).cloned();
+    assert!(
+        sim.until(600, |s| server_alive(s, b) && s.server.app.world().get::<God>(b).is_none()),
+        "the victim is in play"
+    );
+    for (side, w, e) in [
+        ("server", sim.server.app.world(), a),
+        ("server", sim.server.app.world(), b),
+        ("client 0", sim.clients[0].app.world(), me),
+        ("client 1", sim.clients[1].app.world(), victim),
+    ] {
+        assert_eq!(punch(w, e), Some(Vec3::ZERO), "{side}: a view punch at rest");
+        assert_eq!(kills(w, e), Some(CaKillMe::default()), "{side}: no kills counted yet");
+    }
+    {
+        let w = sim.server.app.world_mut();
+        let l = w.resource::<minigame::ladder::Ladder>().clone();
+        minigame::ladder::set_rung(w, a, 6, &l);
+    }
+    assert!(sim.until(300, |s| held(s, 0) == Some("cs_source:weapon_ak47")), "the AK-47 on the client");
+    let at = sim.server.position(a) + Vec3::new(0.0, 0.0, -4.0);
+    {
+        let w = sim.server.app.world_mut();
+        w.get_mut::<Transform>(b).unwrap().translation = at;
+        w.get_mut::<avian3d::prelude::Position>(b).unwrap().0 = at;
+    }
+    sim.ticks(90);
+    let (mut kick, mut flinch) = ([0.0f32; 2], [0.0f32; 2]);
+    let mut dead = false;
+    for t in 0..(10.0 / TICK_INTERVAL) as u64 {
+        let target = sim.server.position(b);
+        testkit::aim_at(&mut sim.clients[0], me, target);
+        sim.clients[0].intent(me).fire = t % 2 == 0;
+        sim.step();
+        let len = |p: Option<Vec3>| p.map_or(0.0, Vec3::length);
+        kick[0] = kick[0].max(len(punch(sim.server.app.world(), a)));
+        kick[1] = kick[1].max(len(punch(sim.clients[0].app.world(), me)));
+        if !server_alive(&sim, b) {
+            dead = true;
+            break;
+        }
+        flinch[0] = flinch[0].max(len(punch(sim.server.app.world(), b)));
+        flinch[1] = flinch[1].max(len(punch(sim.clients[1].app.world(), victim)));
+    }
+    sim.clients[0].intent(me).fire = false;
+    assert!(dead, "the AK-47 killed in 10 s");
+    assert!(kick[0] > 0.01 && kick[1] > 0.01, "the AK-47's kick on the server and the shooter's client: {kick:?}");
+    assert!(flinch[0] <= 1e-6 || flinch[1] > 1e-6, "the victim's flinch on the server, not on its client: {flinch:?}");
+    let slot = sim.server.app.world().get::<CaSlot>(a).expect("the shooter's client id").0;
+    let server_kills = kills(sim.server.app.world(), b).unwrap();
+    assert_eq!(server_kills.count(slot), 1, "the kill counted on the server: {server_kills:?}");
+    assert!(
+        sim.until(300, |s| kills(s.clients[1].app.world(), victim).as_ref() == Some(&server_kills)),
+        "the victim's client counts it as the server: {:?} against {server_kills:?}",
+        kills(sim.clients[1].app.world(), victim)
+    );
+}

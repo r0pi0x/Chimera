@@ -55,11 +55,14 @@ pub(super) fn publish(
     mut commands: Commands,
 ) {
     let Some(wins) = wins else { return };
-    let mut order: Vec<(u64, Entity)> = players
-        .iter()
-        .filter(|(_, t, ..)| plays(t.0))
-        .map(|(e, _, o, ..)| (o.map_or(u64::MAX, |o| o.0), e))
-        .collect();
+    // A loop, not `collect`: its `size_hint` walks every matched archetype
+    // again (characters', a session makes hundreds).
+    let mut order: Vec<(u64, Entity)> = Vec::new();
+    for (e, t, o, ..) in &players {
+        if plays(t.0) {
+            order.push((o.map_or(u64::MAX, |o| o.0), e));
+        }
+    }
     order.sort();
     for (i, (_, e)) in order.into_iter().enumerate() {
         let Ok((_, _, _, name, won)) = players.get_mut(e) else { continue };

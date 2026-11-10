@@ -3067,7 +3067,7 @@ fn stress(
         }
         let mut received = 0.0;
         let mut large = false;
-        for me in std::iter::once(player).chain(shadow.map(|s| s.0)) {
+        for me in std::iter::once(player).chain(shadow.and_then(|s| s.0)) {
             for pair in collisions.collisions_with(me) {
                 if !pair.flags.contains(avian3d::prelude::ContactPairFlags::TOUCHING) {
                     continue;

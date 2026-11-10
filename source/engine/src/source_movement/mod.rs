@@ -2985,7 +2985,7 @@ fn step(
             push_input,
             sounds: Vec::new(),
             // The held weapon's speed (spec: MaxPlayerSpeed), else the default.
-            player_maxspeed: weapon_speed.map_or(cfg.player_maxspeed, |s| s.0 / METERS_PER_UNIT),
+            player_maxspeed: weapon_speed.and_then(|s| s.0).map_or(cfg.player_maxspeed, |s| s / METERS_PER_UNIT),
             fall_damage: 0.0,
             base: base.as_ref().map_or(Vec3::ZERO, |b| to_source(b.velocity)),
             base_touched: base.as_ref().is_some_and(|b| b.touched),

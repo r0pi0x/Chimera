@@ -248,9 +248,9 @@ fn a_cs_source_player_moves_as_in_cs_source() {
     party.set_tick_interval(combat_arms::game::TICK_INTERVAL);
     let p = css.spawn_character(Vec3::new(10.0, 1.0, 0.0), cs_movement::ID);
     css.seconds(1.5);
-    let speed = party.app.world().get::<chimera_core::core::MaxSpeed>(a).expect("the Glock's max speed").0;
+    let speed = party.app.world().get::<chimera_core::core::MaxSpeed>(a).and_then(|s| s.0).expect("the Glock's max speed");
     assert!((speed / 0.0254 - 250.0).abs() < 1e-3, "the Glock's 250: {}", speed / 0.0254);
-    assert!(css.app.world().get::<chimera_core::core::MaxSpeed>(p).is_none(), "CS:S's default, 250");
+    assert!(css.app.world().get::<chimera_core::core::MaxSpeed>(p).is_none_or(|s| s.0.is_none()), "CS:S's default, 250");
     assert_eq!(party.tick_hz(), css.tick_hz(), "the same tick");
     // Both at the same place, still, looking the same way.
     let start = Vec3::new(10.0, footing(&party, a).feet.y + 36.0 * 0.0254, 5.0);
