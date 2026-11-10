@@ -142,21 +142,25 @@ pub struct PropParams {
     pub phong_env: Vec4,
     /// A lightwarp (x) and a phong warp (y) texture are bound.
     pub phong_warp: Vec4,
+    /// The probe light comes from this slot of the probe table
+    /// (`probe_lit::ProbeTable`, bound as `probes`) instead of `probe_cube`
+    /// and the lights above: a moving model's, rewritten there as it moves
+    /// so its materials stay unchanged. 0: the material's own.
+    pub probe_slot: u32,
+    /// A face part's face (`face_center` to `face_v`) comes from this
+    /// slot of the same table (its first four rows; `bodies::FaceSlot`),
+    /// rewritten every frame as the head moves. 0: the material's own.
+    pub face_slot: u32,
 }
 
 impl PropParams {
     /// Light the material per pixel with `probe` (times `scale`).
     pub fn set_probe(&mut self, probe: &crate::map::LightProbe, scale: f32) {
         self.probe = 1.0;
-        for (c, v) in self.probe_cube.iter_mut().zip(probe.cube) {
-            *c = (v * scale).extend(0.0);
-        }
-        let mut lights: Vec<&(Vec3, Vec3)> = probe.lights.iter().collect();
-        lights.sort_by(|a, b| b.1.max_element().total_cmp(&a.1.max_element()));
-        for i in 0..4 {
-            let (dir, color) = lights.get(i).map_or((Vec3::ZERO, Vec3::ZERO), |l| (l.0, l.1 * scale));
-            self.probe_light_dir[i] = dir.extend(0.0);
-            self.probe_light_color[i] = color.extend(0.0);
+        let rows = super::probe_lit::probe_rows(probe, scale);
+        let own = self.probe_cube.iter_mut().chain(&mut self.probe_light_dir).chain(&mut self.probe_light_color);
+        for (v, r) in own.zip(rows) {
+            *v = Vec4::from_array(r);
         }
     }
 }
@@ -206,6 +210,10 @@ pub struct PropMaterial {
     pub lightwarp: Option<Handle<Image>>,
     #[texture(12)]
     pub phong_warp: Option<Handle<Image>>,
+    /// The probe table (`probe_lit::ProbeTable`): the same buffer in every
+    /// material, read at `PropParams::probe_slot`.
+    #[storage(13, read_only)]
+    pub probes: super::probe_lit::ProbeTableBinding,
 }
 
 impl Material for PropMaterial {
@@ -395,6 +403,7 @@ impl Plugin for PropMaterialPlugin {
         bevy::shader::load_shader_library!(app, "dither.wesl");
         bevy::asset::load_internal_asset!(app, DITHER_PREPASS_SHADER, "prop_dither_prepass.wesl", Shader::from_wesl);
         app.add_plugins((super::fog::FogShaderPlugin, MaterialPlugin::<PropMaterial>::default()));
+        super::probe_lit::ProbeTable::add_to(app);
     }
 }
 

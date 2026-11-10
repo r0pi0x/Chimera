@@ -41,6 +41,7 @@ impl bevy::app::PluginGroup for PresentationPlugins {
             .add(render::sprite_material::SpriteMaterialPlugin)
             .add(render::prop_material::PropMaterialPlugin)
             .add(render::shadows::ShadowMaterialPlugin)
+            .add(render::dust::DustMaterialPlugin)
             .add(render::decal::DecalMaterialPlugin)
             .add(render::spray::SprayMaterialPlugin)
             .add(render::water::WaterMaterialPlugin)

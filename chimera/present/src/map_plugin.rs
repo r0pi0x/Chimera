@@ -263,6 +263,12 @@ impl MapLayers for Present {
     }
 
     fn drawing(&self, app: &mut App) {
+        // Moving models' probe light, by slot (uploaded by
+        // `PropMaterialPlugin` where there is a renderer).
+        app.init_resource::<render::probe_lit::ProbeTable>();
+        // Moving shadows' frames, by slot (uploaded by
+        // `ShadowMaterialPlugin`).
+        app.init_resource::<render::shadows::ShadowFrames>();
         // Blended meshes at the same depth in an order of their own, not
         // the one earlier frames left.
         if !app.is_plugin_added::<render::blend_order::BlendOrderPlugin>() {

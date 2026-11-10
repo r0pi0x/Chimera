@@ -59,6 +59,7 @@ use crate::map::{
 
 /// The drawn view model under a `ViewModelCamera`.
 #[derive(Component)]
+#[component(on_discard = free_probe_slot)]
 pub struct ViewModelBody {
     key: String,
     mirrored: bool,
@@ -67,6 +68,18 @@ pub struct ViewModelBody {
     /// Where the probe was last sampled (world), and the cubemap used.
     lit_at: Option<Vec3>,
     cubemap: Option<usize>,
+    /// Its probe light's slot (`probe_lit::ProbeTable`; 0: none yet).
+    probe_slot: u32,
+}
+
+/// Give a view model body's probe table slot back.
+fn free_probe_slot(mut world: bevy::ecs::world::DeferredWorld, ctx: bevy::ecs::lifecycle::HookContext) {
+    let slot = world.get::<ViewModelBody>(ctx.entity).map_or(0, |b| b.probe_slot);
+    if slot != 0
+        && let Some(mut table) = world.get_resource_mut::<super::probe_lit::ProbeTable>()
+    {
+        table.free(slot);
+    }
 }
 
 /// One drawable part of a view model: its mesh and its material drawn
@@ -388,9 +401,10 @@ pub fn draw_view_models(
     >,
     mut bodies: Query<(&mut ViewModelBody, &mut Transform, &mut Visibility), Without<BodyJoint>>,
     mut joints: Query<&mut Transform, With<BodyJoint>>,
-    (mut materials, dormant): (
+    (mut materials, dormant, mut probe_table): (
         Option<ResMut<Assets<PropMaterial>>>,
         Option<Res<super::prop_material::DormantProps>>,
+        Option<ResMut<super::probe_lit::ProbeTable>>,
     ),
     mut commands: Commands,
 ) {
@@ -536,11 +550,31 @@ pub fn draw_view_models(
             .is_none_or(|at| at.distance(origin) > 0.5 * asset.root.scale.x);
         if let (true, Some(field)) = (moved, light_field.as_ref()) {
             let probe = (field.0.0)(origin);
-            for m in &body.materials {
-                if let Some(mut material) = materials.get_mut(m)
-                    && material.params.probe > 0.5
-                {
-                    material.params.set_probe(&probe, assets.light_scale);
+            match probe_table.as_mut() {
+                // Into its table slot: its materials stay unchanged
+                // (`probe_lit::ProbeTable`).
+                Some(table) => {
+                    if body.probe_slot == 0 {
+                        body.probe_slot = table.alloc();
+                    }
+                    let slot = body.probe_slot;
+                    table.set_probe(slot, &probe, assets.light_scale);
+                    for m in &body.materials {
+                        if materials.get(m).is_some_and(|x| x.params.probe > 0.5 && x.params.probe_slot != slot)
+                            && let Some(mut material) = materials.get_mut(m)
+                        {
+                            material.params.probe_slot = slot;
+                        }
+                    }
+                }
+                None => {
+                    for m in &body.materials {
+                        if let Some(mut material) = materials.get_mut(m)
+                            && material.params.probe > 0.5
+                        {
+                            material.params.set_probe(&probe, assets.light_scale);
+                        }
+                    }
                 }
             }
             body.lit_at = Some(origin);
@@ -674,6 +708,7 @@ fn spawn_body(
         materials,
         lit_at: None,
         cubemap: None,
+        probe_slot: 0,
     });
 }
 
