@@ -2276,13 +2276,138 @@ or held; it loads again if wanted (`Combat Arms: forgot 10 bodies and 21 held
 models` in the log; the table above's stores; each ladder kept was the character
 change's 1.6 GB).
 
-**Left** (backlog): the archetypes' own cost (table above; Bevy's per-frame
+**Left** (backlog): the archetypes' own cost (table above, and "A session's
+archetypes" below for what was cut; Bevy's per-frame
 queries that walk them all, bevy_audio's cleanup a tenth of the main thread at
 20,000); the render thread's slow rise and process memory (5.9 -> 14.5 GB over
 eight maps with the stores flat): the next section. On Windows a player can
 send a bugreport's `report.txt` or `chimera_perf_log 1` (archetypes are in it),
 and `chimera_census` at the start and at 30 fps; `chimera_census age 20000` in a
 fresh game shows what a long session cost before this fix.
+
+## A session's archetypes (2026-11-09)
+
+What the section above left: archetypes, which Bevy never frees and each
+costs a tick about 800 instructions (queries walk every matching one,
+empty or not): 4,892 after three laps of the lap test, nearly all of them
+characters'.
+
+**What made them.** `chimera_census made [<component>]` (new) puts each
+archetype holding `Health` down to the insert or removal that first reached
+it (Bevy's cached archetype moves); counted per settled state (where a
+character is at a tick's end) against the transient ones. In the fast
+`session` test only 236 of 1,637 characters' archetypes were ever occupied
+at a tick's end: the rest were steps of a rung change or a respawn (about
+twelve single inserts and removals: the rung's look, `MaxSpeed`, the
+movement marker, `HeldMovePenalty`, hit boxes, `RecomputeMassProperties`,
+...), each made again for every combination of the parts that didn't take
+part. What multiplied the combinations: parts a character gains once and
+keeps from then on (`ViewPunch` at the first shot, `Hl2Punch`, `NextPush`,
+`CaLastPrimary`, `OthersSteps`, `CaKillMe`, `WantHeld`, `Rebased`,
+`Drowning`), sleeping (`Sleeping` and `SolverBodyIndex` came and went on
+standing characters), and rung parts taken off between rungs (`KitMelee`,
+`CaRungParts`). Each doubled what was visited before it, and new bots on
+every map visit it all again.
+
+**The cut.** Those parts are on every character from the spawn
+(`CharacterPartsExt::on_every_character`: required by `Intent`, so they come
+in the spawn's move), `KitMelee` holds an `Option` and `CaRungParts` an
+empty value in place of being removed, characters never sleep
+(`SleepingDisabled` in `character_bundle`), and spawn protection with `God`
+and HL2's suit parts go on in one move (`insert_if_new` keeps a client's).
+DESIGN.md "ECS style" has the rule; the lap test fails when a lap after the
+first adds 150 characters' archetypes or more, and its message lists the
+moves (`census::made_by`).
+
+Three laps of real maps (`heavy::session_maps`, as in the table above;
+before is that table's run, after is this branch, archetypes at each map's
+end, instructions the median tick):
+
+| | before | after |
+|---|---|---|
+| archetypes after the first map | 1,456 | 988 |
+| archetypes after lap 1 / 2 / 3 | 4,068 / not counted / 4,892 | 1,584 / 1,612 / 1,664 |
+| characters' after lap 1 / 2 / 3 | | 591 / 617 / 667 |
+| de_dust2 tick, lap 1 / 2 / 3 | 10.7M / 12.6M / 13.6M | 10.0M / 13.6M / 10.7M |
+| cs_office | 15.9M / 19.1M / 18.1M | 16.3M / 16.2M / 15.5M |
+| dm_lockdown | 14.4M / 17.6M / 19.4M | 15.0M / 14.0M / 16.0M |
+| warehouse | 10.3M / 11.4M / 10.9M | 10.2M / 8.7M / 7.9M |
+| de_inferno | 20.3M / 20.7M / 21.3M | 19.3M / 18.4M / 16.9M |
+
+The fast `session` test (8 matches, greybox): 2,316 archetypes after four
+matches and rising before, 1,180 after eight now and none new from the
+sixth. At the measured 800 instructions an archetype, the 3,200 fewer
+after three laps are about 2.5M instructions a tick with nobody on the map.
+
+**Who pays per archetype.** `perf` (instructions, user space) over 3,000
+ticks of the fast test's world fresh (949 archetypes, 4.8M a tick) and with
+20,000 more on one character (`census::age`, sparse: 20.8M a tick, 800 an
+archetype): the cost is spread over every system whose query matches
+characters, each about the same; the five that gained most were Source
+movement's main query, `ladder::write_status`, the minigame's roster query
+(`Team`, `JoinOrder`, `Name`, `MatchesWon`), `perks::track_last_primary`
+(whose `collect` walks the archetypes twice, the second time for
+`size_hint`) and `moments::update`'s rung query; then Bevy's observer
+lookup per archetype.
+
+## A session's archetypes: the game switch (2026-11-09)
+
+What the section above left: a switch between games still put its parts on
+one at a time. Counted in the fast `session` test (8 matches, greybox) by
+which characters' archetypes were ever occupied at a tick's end: 73 of 530,
+the other 457 in-between steps of a switch, a rung swap or a respawn,
+`chimera_census made` naming their moves (`-SourceMovement` 43,
+`+RecomputeMassProperties` 35, `+CaMovement` 32, `+HeldMovePenalty` 21,
+`+Hitboxes` 21, `-Hl2Model` and `-RungModel` 18 each, `-MaxSpeed` 14,
+`±PhysicsTouch+Shadowed` 24, `-RungClass` and `-PlayerClass` 12 each, ...).
+
+**The cut.** Parts whose absence meant "none" are on every character from
+the spawn with a value meaning none: `MaxSpeed(Option)`, Combat Arms'
+`HeldMovePenalty` (no penalty) and `HandlingOf`, the Source movement's
+`PhysicsTouch` and `Shadowed(Option<Entity>)` (the shadow body comes and
+goes, the part stays). Parts that go together go in one move: a movement's
+marker with its `MovementSlot` (`slots::set_movement`), and CS:S's and
+HL2:DM's movements, both `SourceMovement`, switch by a new value in place
+(`MovementImpl::marker`); a body's `BodyModel`, `Hitboxes` and `Animator`
+(`map::bodies::attach_hitboxes`); Combat Arms' `Hitboxes` with
+`CaHitboxes`; a rung look's removal (`RungModel` with `Hl2Model`, `RungClass`
+with `PlayerClass`).
+
+| | before | after |
+|---|---|---|
+| fast test: archetypes after 8 matches / characters' | 1,138 / 530 | 959 / 351 |
+| fast test: of the characters', occupied at a tick's end | 73 | 64 |
+| real maps: archetypes after lap 1 / 2 / 3 | 1,584 / 1,612 / 1,664 | 1,401 / 1,428 / 1,471 |
+| real maps: characters' after lap 1 / 2 / 3 | 591 / 617 / 667 | 410 / 429 / 472 |
+| de_dust2 tick, lap 1 / 2 / 3 | 10.0M / 13.6M / 10.7M | 10.1M / 10.3M / 10.5M |
+| cs_office | 16.3M / 16.2M / 15.5M | 15.6M / 15.1M / 15.5M |
+| dm_lockdown | 15.0M / 14.0M / 16.0M | 16.6M / 15.1M / 14.9M |
+| warehouse | 10.2M / 8.7M / 7.9M | 7.7M / 7.7M / 8.4M |
+| de_inferno | 19.3M / 18.4M / 16.9M | 18.0M / 17.8M / 17.5M |
+
+(Real maps: `heavy::session_maps`, before is the section above's run;
+ticks are medians and move by a few percent between runs.) The guards are
+tightened to match: the lap test fails at 100 characters' archetypes a lap
+after the first (was 150), the fast test at 1,150 archetypes after eight
+matches and 100 after the fourth (was 1,600 and 200).
+
+**Per archetype.** Of the five queries that paid most per archetype, three
+walked them twice: a query's `collect` asks the iterator's `size_hint`,
+which sums every matched archetype's length before the walk
+(`perks::track_last_primary`, `runtime::players`, `wins::publish`), and
+`ladder::write_status` iterated its climbers twice. Each now walks once.
+
+**Left** (backlog): what still makes most of the in-between archetypes is
+the switch's own steps, each a different game's system: avian's
+`RecomputeMassProperties` after Combat Arms' collider changes (34; it
+comes and goes on every crouch too), the movement swap's removal and
+insert (`-SourceMovement` 30, `+CaMovement` 31: Bevy moves an entity once
+per insert or removal), Combat Arms' rung look and view model
+(`+CaRungLook`, `±OwnViewAnim`), CS:S's rung class, HL2:DM's suit and
+`ArmorPieces` (whose absence means "the armour's own kit", so it can't
+simply stay). Folding those into one move would need a Chimera command that
+gathers a switch's inserts and removals per character and applies them
+together (`insert_by_ids` and `remove_by_ids`).
 
 ## A session's memory (2026-11-09)
 
@@ -2401,7 +2526,7 @@ render world, so materials in the store, not GPU buffers):
 | warehouse | 1,631 | 30 | 30 | 1,601 |
 | de_dust2 again | 2,123 | 163 | 130 | 1,961 |
 
-(dm_lockdown, in the test's list, was not installed on the box.) The test
+The test takes about 13 minutes by design (four maps, a full ladder each), so nextest gives it, and `session_maps`, 60 minutes (`.config/nextest.toml`). (dm_lockdown, in the test's list, was not installed on the box.) The test
 fails if the store holds 600 more than is drawn, or grows on the same map
 after a lap.
 

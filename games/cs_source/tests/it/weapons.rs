@@ -67,7 +67,7 @@ fn characters_start_with_knife_pistol_and_ak47_drawn() {
     assert_eq!(inv.weapons.len(), 3, "knife, USP (no team: CT), AK-47");
     assert_eq!(active_id(&sim, p), AK47);
     // The AK-47's MaxPlayerSpeed, 221 units/s.
-    let speed = sim.app.world().get::<MaxSpeed>(p).unwrap().0;
+    let speed = sim.app.world().get::<MaxSpeed>(p).unwrap().0.unwrap();
     assert!((speed - 221.0 * 0.0254).abs() < 1e-4, "{speed}");
 }
 
@@ -133,7 +133,7 @@ fn switching_cancels_a_reload() {
     let m = sim.app.world().get::<Magazine>(ak).unwrap();
     assert_eq!((m.clip, m.reserve), (10, 90));
     // Knife speed.
-    let speed = sim.app.world().get::<MaxSpeed>(p).unwrap().0;
+    let speed = sim.app.world().get::<MaxSpeed>(p).unwrap().0.unwrap();
     assert!((speed - 250.0 * 0.0254).abs() < 1e-4);
 }
 

@@ -126,8 +126,10 @@ fn apply(world: &mut World, e: Entity, extras: Option<&RungExtras>) {
             world.entity_mut(e).insert((Hl2Model(path.to_string()), RungModel));
         }
         None => {
-            if world.entity_mut(e).take::<RungModel>().is_some() {
-                world.entity_mut(e).remove::<Hl2Model>();
+            // Both in one move (each alone is an archetype for every
+            // combination of the rest).
+            if world.get::<RungModel>(e).is_some() {
+                world.entity_mut(e).remove::<(RungModel, Hl2Model)>();
             }
         }
     }

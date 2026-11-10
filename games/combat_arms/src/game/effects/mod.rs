@@ -306,7 +306,9 @@ pub struct CaEffectsPlugin;
 
 impl Plugin for CaEffectsPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_core::character::CharacterPartsExt;
         use crate::{map::impact::SurfaceClassesAppExt, net::NetAppExt, weapon::impact::ImpactAppExt};
+        app.on_every_character::<OthersSteps>();
         app.net_part("combat_arms_flight_looks", attached::register);
         app.net_part("combat_arms_debris", |app| {
             use bevy_replicon::prelude::{Channel, ServerMessageAppExt};

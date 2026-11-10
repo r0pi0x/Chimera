@@ -133,10 +133,15 @@ pub(crate) type Playing = (With<Intent>, With<Health>, With<InMinigame>, Without
 pub fn players(world: &mut World) -> Vec<(Entity, u8)> {
     let mut all: Vec<(u64, Entity, u8)> =
         cached_query::<(Entity, &Team, Option<&JoinOrder>), Playing, _>(world, |q, world| {
-            q.iter(world)
-                .filter(|(_, t, _)| plays(t.0))
-                .map(|(e, t, o)| (o.map_or(u64::MAX, |o| o.0), e, t.0))
-                .collect()
+            // A loop, not `collect`: its `size_hint` walks every matched
+            // archetype again (characters', a session makes hundreds).
+            let mut out = Vec::new();
+            for (e, t, o) in q.iter(world) {
+                if plays(t.0) {
+                    out.push((o.map_or(u64::MAX, |o| o.0), e, t.0));
+                }
+            }
+            out
         });
     all.sort();
     all.into_iter().map(|(_, e, t)| (e, t)).collect()
@@ -222,7 +227,7 @@ pub fn respawn(world: &mut World, e: Entity) {
     if protection.any() && free {
         let now = world.resource::<SimClock>().now;
         let mut ent = world.entity_mut(e);
-        ent.insert((
+        let parts = (
             SpawnProtected {
                 damage_until: now + protection.damage as f64,
                 bullets_until: now + protection.bullets as f64,
@@ -230,9 +235,12 @@ pub fn respawn(world: &mut World, e: Entity) {
             Protected {
                 fire_ends: protection.fire_ends,
             },
-        ));
+        );
+        // In one move: each step is an archetype of its own.
         if protection.damage > 0.0 {
-            ent.insert(God);
+            ent.insert((parts, God));
+        } else {
+            ent.insert(parts);
         }
     }
 }
@@ -322,9 +330,11 @@ pub fn spawn_point_in(
 /// A melee weapon in place of the kit's on this player (a ladder rung's,
 /// `ladder::RungExtras::melee`): the kit's weapon of its slot (the
 /// knife's) is this one; a kit with none in that slot gets none.
-#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+/// On every character (None: the kit's own), so a rung's melee weapon
+/// doesn't make each of its other combinations again.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[component(storage = "SparseSet")]
-pub struct KitMelee(pub &'static str);
+pub struct KitMelee(pub Option<&'static str>);
 
 /// `e`'s kit for a life whose rules weapon is `gun` (a kit by game: that
 /// gun's game's), its weapon of `KitMelee`'s slot that one.
@@ -332,7 +342,7 @@ fn kit_for(world: &World, def: &MinigameDef, e: Entity, gun: Option<&str>) -> Ve
     let empty = crate::weapon::data::WeaponCatalog::default();
     let catalog = world.get_resource::<crate::weapon::data::WeaponCatalog>().unwrap_or(&empty);
     let game = gun.and_then(|g| g.split_once(':')).map(|(g, _)| g);
-    let swap = world.get::<KitMelee>(e).map(|m| m.0);
+    let swap = world.get::<KitMelee>(e).and_then(|m| m.0);
     let slot = |id: &str| catalog.get(id).map(|w| w.slot);
     let mut out: Vec<&'static str> = Vec::new();
     for id in def.spawn.kit.for_game(game).into_iter().filter_map(|id| super::weapon(def, catalog, id).ok()) {
@@ -355,7 +365,7 @@ fn kit_for(world: &World, def: &MinigameDef, e: Entity, gun: Option<&str>) -> Ve
 /// `gun`, which is then drawn. A kit list without either stays as it is.
 pub fn refit_kit(world: &mut World, e: Entity, gun: &str, also: &[&'static str]) {
     let Some(def) = world.get_resource::<ActiveMinigame>().map(|a| a.def) else { return };
-    if !matches!(def.spawn.kit, Kit::ByGame(_)) && world.get::<KitMelee>(e).is_none() && also.is_empty() {
+    if !matches!(def.spawn.kit, Kit::ByGame(_)) && world.get::<KitMelee>(e).is_none_or(|m| m.0.is_none()) && also.is_empty() {
         return;
     }
     let wanted = kit_for(world, def, e, Some(gun));

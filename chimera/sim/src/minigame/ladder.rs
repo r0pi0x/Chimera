@@ -984,13 +984,8 @@ pub fn arm(world: &mut World, e: Entity, ladder: &Ladder, rung: usize) {
         .as_ref()
         .and_then(|x| x.melee.as_deref())
         .and_then(|m| world.get_resource::<WeaponCatalog>()?.get(m).map(|w| w.id.as_str()));
-    match melee {
-        Some(m) => {
-            world.entity_mut(e).insert(runtime::KitMelee(m));
-        }
-        None => {
-            world.entity_mut(e).remove::<runtime::KitMelee>();
-        }
+    if world.get::<runtime::KitMelee>(e).is_none_or(|k| k.0 != melee) {
+        world.entity_mut(e).insert(runtime::KitMelee(melee));
     }
     let hooks = world.get_resource::<RungExtrasHooks>().cloned().unwrap_or_default();
     for h in &hooks.0 {
@@ -1495,7 +1490,11 @@ pub(super) fn write_status(
     let total = ladder.rungs.len();
     let mut best: Option<((usize, i32), Entity)> = None;
     let mut tied = false;
+    // The climbers once: each walk of the query visits every archetype it
+    // matches (characters', a session makes hundreds).
+    let mut all = Vec::new();
     for (e, t, r, s) in &climbers {
+        all.push(e);
         if !crate::mode::plays(t.0) {
             continue;
         }
@@ -1510,7 +1509,7 @@ pub(super) fn write_status(
         }
     }
     let catalog = catalog.as_deref();
-    let viewers = climbers.iter().map(|(e, ..)| e).chain(local.iter());
+    let viewers = all.into_iter().chain(local.iter());
     for viewer in viewers {
         let rung = rungs.get(viewer).map_or(0, |r| r.0).min(total.saturating_sub(1));
         let mut lines = Vec::new();

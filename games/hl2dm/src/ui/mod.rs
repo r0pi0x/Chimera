@@ -31,8 +31,8 @@
 //!   GameUI). The Multiplayer tab's player model and spray pickers work
 //!   (`source_gameui::game_menu::pickers`); Import Spray is an in-game
 //!   dialog taking a typed file path (no native file dialog dependency);
-//!   an imported spray is listed and selectable but the world's spray
-//!   decals draw only the install's logos; Create Server's Server Type
+//!   an imported spray draws in the world like an install's (its picture,
+//!   reduced to 64 x 64, travels with the spray); Create Server's Server Type
 //!   sets `sv_lan` and the other cvars without any server code reading
 //!   them yet; `TextEntry1` is drawn with the scheme's text-field look,
 //!   unchecked against a capture.

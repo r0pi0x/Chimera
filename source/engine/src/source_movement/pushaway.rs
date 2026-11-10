@@ -41,7 +41,9 @@ pub struct PushAwayPlugin;
 
 impl Plugin for PushAwayPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_core::character::CharacterPartsExt;
         app.add_message::<PropAwakened>()
+            .on_every_character::<NextPush>()
             .add_systems(FixedUpdate, push_props.after(SimSet::Movement));
     }
 }
@@ -142,7 +144,7 @@ fn push_props(
 }
 
 /// When a player may next shove props (`push_props`).
-#[derive(Component, Clone, Copy, Debug)]
+#[derive(Component, Clone, Copy, Debug, Default)]
 #[component(storage = "SparseSet")]
 pub struct NextPush(pub f64);
 

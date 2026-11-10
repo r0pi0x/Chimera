@@ -370,7 +370,7 @@ fn follow(
         } else {
             rules.run_speed
         };
-        commands.entity(e).insert(MaxSpeed(speed * UNIT));
+        commands.entity(e).insert(MaxSpeed(Some(speed * UNIT)));
         // The route over the navigation mesh (straight without one).
         h.repath -= dt;
         h.progress.1 += dt;
@@ -562,7 +562,7 @@ fn spawn_hostage(
         },
         // No weapons for them.
         Inventory::default(),
-        MaxSpeed(rules.walk_speed * UNIT),
+        MaxSpeed(Some(rules.walk_speed * UNIT)),
         rules.bullets,
         // They fall from the map's origin and rest on the floor, 1/32
         // above it, as CS:S's do (measured, spec 9 "Spawn").

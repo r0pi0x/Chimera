@@ -500,7 +500,9 @@ pub struct CaCharactersPlugin;
 
 impl Plugin for CaCharactersPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_core::character::CharacterPartsExt;
         CaData::of(app);
+        app.on_every_character::<WantHeld>();
         // What on-demand loads add, kept across map changes (`models`).
         app.init_resource::<models::CaLateModels>();
         app.add_message::<WeaponEvent>()
@@ -1623,12 +1625,15 @@ fn hitboxes(
             // Checked when the command runs: that game's body may have put
             // its own in this tick (`map::bodies::attach_hitboxes`).
             if made {
+                // In one move (each alone is an archetype for every
+                // combination of the rest).
                 commands.entity(e).queue(|mut ent: EntityWorldMut| {
                     let ours = ent.get::<core::Hitboxes>().is_some_and(|h| h.0.iter().all(|b| b.radius.is_some()));
                     if ours {
-                        ent.remove::<core::Hitboxes>();
+                        ent.remove::<(core::Hitboxes, CaHitboxes)>();
+                    } else {
+                        ent.remove::<CaHitboxes>();
                     }
-                    ent.remove::<CaHitboxes>();
                 });
             }
             continue;
@@ -1651,14 +1656,12 @@ fn hitboxes(
                 ..core::Hitbox::sphere(turn * (*c - feet), *r, s.region())
             })
             .collect();
-        match current {
-            Some(mut h) => h.0 = shapes,
-            None => {
-                commands.entity(e).insert(core::Hitboxes(shapes));
+        match (current, made) {
+            (Some(mut h), true) => h.0 = shapes,
+            // Ours from now on: both in one move.
+            _ => {
+                commands.entity(e).insert((core::Hitboxes(shapes), CaHitboxes));
             }
-        }
-        if !made {
-            commands.entity(e).insert(CaHitboxes);
         }
     }
 }

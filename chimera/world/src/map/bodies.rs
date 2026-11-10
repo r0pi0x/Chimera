@@ -300,20 +300,21 @@ pub fn attach_hitboxes(
             continue;
         }
         let mut c = commands.entity(e);
-        c.insert(BodyModel(index));
         // A body without hitboxes (a game whose hits are its own, as
         // Combat Arms' spheres) leaves other games' bullets its collider.
-        if m.hitboxes.is_empty() {
-            c.remove::<crate::core::Hitboxes>();
-        } else {
-            c.insert(crate::core::Hitboxes(m.hitboxes.clone()));
-        }
-        match &m.animations {
-            Some(set) => c.insert(anim::Animator {
-                skeleton: Some(m.skeleton_signature()),
-                ..anim::Animator::new(set.clone())
-            }),
-            None => c.remove::<anim::Animator>(),
+        let hitboxes = (!m.hitboxes.is_empty()).then(|| crate::core::Hitboxes(m.hitboxes.clone()));
+        let animator = m.animations.as_ref().map(|set| anim::Animator {
+            skeleton: Some(m.skeleton_signature()),
+            ..anim::Animator::new(set.clone())
+        });
+        // What goes, then what comes, each in one move (each part alone
+        // is an archetype for every combination of the rest).
+        let body = BodyModel(index);
+        match (hitboxes, animator) {
+            (Some(h), Some(a)) => c.insert((body, h, a)),
+            (Some(h), None) => c.remove::<anim::Animator>().insert((body, h)),
+            (None, Some(a)) => c.remove::<crate::core::Hitboxes>().insert((body, a)),
+            (None, None) => c.remove::<(crate::core::Hitboxes, anim::Animator)>().insert(body),
         };
     }
 }

@@ -397,7 +397,9 @@ pub struct CaPerksPlugin;
 
 impl Plugin for CaPerksPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_core::character::CharacterPartsExt;
         super::data::CaData::of(app);
+        app.on_every_character::<CaLastPrimary>();
         app.init_resource::<CaPerksEnabled>()
             .init_resource::<CaPerkRng>()
             .add_message::<Damage>()
@@ -1246,9 +1248,17 @@ fn records_as_last_primary(ty: i32) -> bool {
 /// Each server tick: the weapon in hand becomes the player's last primary
 /// when its gun type says so.
 fn track_last_primary(world: &mut World) {
+    // A loop, not `collect`: its `size_hint` walks every matched archetype
+    // again (characters', a session makes hundreds).
     let held: Vec<(Entity, Entity, Option<Entity>)> =
         cached_query::<(Entity, &Inventory, Option<&CaLastPrimary>), (), _>(world, |q, w| {
-            q.iter(w).filter_map(|(e, i, l)| Some((e, i.active?, l.and_then(|l| l.0)))).collect()
+            let mut out = Vec::new();
+            for (e, i, l) in q.iter(w) {
+                if let Some(a) = i.active {
+                    out.push((e, a, l.and_then(|l| l.0)));
+                }
+            }
+            out
         });
     for (e, w, last) in held {
         if last == Some(w) {

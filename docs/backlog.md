@@ -2519,15 +2519,20 @@ docs/plans/active/sound.md.
   it may be a hardware bit flip (no ECC reporting on the box). If it comes
   back, look at the ragdoll solver's `get_pair_unchecked_mut` first, then
   run a memory test.
-- **Fewer character archetypes (2026-11-09).** What the session fix left
-  (docs/performance.md, "A session's frame rate"): the characters' tables are
-  few now (their components that come and go are sparse sets), their
-  archetypes aren't: about 200 a map in Ultimate Gun Game. With 20,000 more a
-  tick costs 1.8x and the main world's frame 1.7x (Bevy's own per-frame
-  queries that hold no required component walk them all: bevy_audio's cleanup,
-  five sources, and the render world's sync). Fewer of the toggles that
-  multiply them: spawn protection's three components, sleeping (`Sleeping`,
-  `SolverBodyIndex`), `Shadowed` with `PhysicsTouch`.
+- **Fewer character archetypes, what's left (2026-11-09).** Parts a
+  character gained once are on it from the spawn, parts whose absence meant
+  "none" hold a value meaning none (`MaxSpeed`, `HeldMovePenalty`,
+  `Shadowed`, ...), and parts that go together go in one move
+  (docs/performance.md, "A session's archetypes: the game switch"): three
+  laps of real maps make 472 characters' archetypes (1,471 in all), a lap
+  after the first 19-43 (the lap test caps it at 100). Left: a switch's own
+  steps, each another game's system (avian's `RecomputeMassProperties` after
+  Combat Arms' collider changes, the movement swap's removal and insert,
+  Combat Arms' rung look and view model, CS:S's rung class, HL2:DM's suit,
+  `ArmorPieces`): one Chimera command gathering a character's inserts and
+  removals of a tick and applying them together (`insert_by_ids`,
+  `remove_by_ids`) would cut most of the rest. Not measured: a quiet tick
+  with the bots kicked against the 800 instructions an archetype.
 - **The render thread's cost rises over a session, what's left (2026-11-09).**
   The kit's undrawn `PropMaterial`s no longer reach the render world
   (`prop_material::DormantProps`; docs/performance.md, "A session's render

@@ -377,6 +377,8 @@ pub struct Hl2GunsPlugin;
 
 impl Plugin for Hl2GunsPlugin {
     fn build(&self, app: &mut App) {
+        use chimera_core::character::CharacterPartsExt;
+        app.on_every_character::<recoil::Hl2Punch>();
         register_hooks(app);
         projectile_systems(app);
         physcannon_systems(app);

@@ -104,8 +104,8 @@ fn cost(sim: &mut Sim, n: usize) -> Option<f64> {
     (steady > 0).then(|| total as f64 / steady as f64)
 }
 
-/// Match after match the characters' tables stop growing and a tick costs
-/// the same. Before their components that come and go were sparse sets
+/// Match after match the characters' tables and archetypes stop growing
+/// and a tick costs the same. Before their components that come and go were sparse sets
 /// (8 matches): 1112 -> 2272 tables, 7.5M -> 9.1M instructions a tick
 /// (20,000 tables in the real app: 8.3M -> 39.8M, and 60 -> 30 fps).
 #[test]
@@ -129,8 +129,25 @@ fn a_session_of_matches_stops_making_tables() {
         first.1,
         last.1
     );
-    assert!(last.0 < 4000, "{} archetypes after eight matches: {what:?}", last.0);
+    // Archetypes: each costs every tick for good, so the characters must
+    // stop making them (before their parts were kept from the spawn: 2,300
+    // after four matches and rising; then about 1,140, none new from the
+    // sixth; with a game switch's parts kept or moved together, about 960,
+    // 351 of them characters', and 40 more after the fourth match).
+    let made = chimera_core::metrics::census::made_by(sim.app.world(), "Health", 20);
+    eprintln!("{made}");
+    assert!(
+        last.0 < 1150 && last.0 - rows[3].0 < 100,
+        "{} archetypes after four matches, {} after eight: a part that comes and goes on characters, one at a time, makes \
+         one for every combination of the others. Keep it on them from the spawn \
+         (`chimera_core::character::CharacterPartsExt::on_every_character`) or put a game's parts on and off in one move \
+         (docs/DESIGN.md, \"ECS style\"). {made}",
+        rows[3].0,
+        last.0
+    );
     if let (Some(a), Some(b)) = (first.2, last.2) {
         assert!(b < a * 1.25, "a tick cost {a:.0} instructions after a match, {b:.0} after seven more");
     }
 }
+
+
