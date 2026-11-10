@@ -33,10 +33,7 @@ use std::{
     fs,
 };
 
-use super::architecture::{root, rust_files};
-
-/// Folders under the repository root holding crates (`<group>/<crate>`).
-const GROUPS: &[&str] = &["chimera", "source", "lithtech", "games", "apps"];
+use super::architecture::{crate_groups, root, rust_files};
 
 /// Crates not scanned: developer tools and generated code.
 const NOT_SCANNED: &[&str] = &["chimera/dev", "chimera/tools", "chimera/workspace-hack", "source/tools"];
@@ -249,10 +246,6 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
 /// the map-logic interpreter, servers' state changes), with the reason.
 /// Their systems don't count in `EXCLUSIVE_BASELINE`.
 const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
-    ("apps/combat_arms_server/src/lib.rs", "the server's level changes"),
-    ("apps/combat_arms_server/src/main.rs", "the server's state changes"),
-    ("apps/hl2dm_server/src/lib.rs", "the server's level changes"),
-    ("apps/hl2dm_server/src/main.rs", "the server's state changes"),
     (
         "apps/cs_source_server/src/main.rs",
         "the server's level and state changes",
@@ -266,6 +259,7 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("chimera/client/src/client/net.rs", "the connection's state"),
     ("chimera/core/src/console.rs", "the console"),
     ("chimera/core/src/game_log.rs", "writing the log (IO)"),
+    ("chimera/net/src/dedicated.rs", "a dedicated server's level and state changes"),
     ("chimera/net/src/minigame_net.rs", "network apply and capture"),
     ("chimera/net/src/net/chat.rs", "network apply and capture"),
     ("chimera/net/src/net/client.rs", "network apply and capture"),
@@ -311,7 +305,8 @@ fn is_ident(c: char) -> bool {
 /// Every scanned crate (`<group>/<crate>`), found on disk, sorted.
 fn crates() -> Vec<String> {
     let mut out = Vec::new();
-    for group in GROUPS {
+    // Chimera's, each loader layer's, the games' and the apps' folders.
+    for group in &crate_groups() {
         let Ok(entries) = fs::read_dir(root().join(group)) else {
             continue;
         };

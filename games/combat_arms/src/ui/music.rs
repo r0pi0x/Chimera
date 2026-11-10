@@ -270,12 +270,12 @@ fn play_music(
             None => match pb.paths.get(&file).cloned() {
                 Some(path) => Clip::Loading(AsyncComputeTaskPool::get().spawn(async move {
                     let bytes = std::fs::read(&path).ok()?;
-                    source_formats::wav::decode_any(&bytes).ok()
+                    chimera_formats::wav::decode_any(&bytes).ok()
                 })),
                 None => match pb.mounted.get(&file).cloned() {
                     Some(path) => Clip::Loading(AsyncComputeTaskPool::get().spawn(async move {
                         let bytes = crate::game::world::mount()?.read(&path).ok()?;
-                        source_formats::wav::decode_any(&bytes).ok()
+                        chimera_formats::wav::decode_any(&bytes).ok()
                     })),
                     None => Clip::Failed,
                 },

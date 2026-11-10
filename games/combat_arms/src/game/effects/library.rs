@@ -509,7 +509,7 @@ pub fn tag_surfaces(map: &mut MapData, world: &World) {
 /// sound; warned once per file).
 pub fn sound_clip(path: &str, mount: &Mount) -> Option<MapSoundClip> {
     match mount.read(path) {
-        Ok(b) => match source_formats::wav::decode_any(&b) {
+        Ok(b) => match chimera_formats::wav::decode_any(&b) {
             Ok(c) => Some(c),
             Err(e) => {
                 warn!("Combat Arms sound {path}: {e}");

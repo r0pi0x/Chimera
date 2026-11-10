@@ -240,6 +240,10 @@ pub struct Console {
     /// (`player_command`; beside `PLAYER_COMMANDS`): a network client
     /// sends them to its server, full names, lower case.
     player_commands: std::collections::BTreeSet<String>,
+    /// Commands a game marks as the server operator's (`server_command`;
+    /// beside `SERVER_COMMANDS`): a network client can't run them. Full
+    /// names, lower case, as the game wrote them.
+    server_commands: std::collections::BTreeSet<String>,
     /// Also log what commands print (info, errors as `error: ...`, target
     /// `console`): the client sets it, so a run's log holds the results of
     /// its `+commands` (the dedicated servers print them on stdout).
@@ -746,6 +750,23 @@ impl Console {
             || self.full_name(name).is_some_and(|f| self.player_commands.contains(&self.canonical_full(&f)))
     }
 
+    /// Mark command `name` (full) as the server operator's: it changes
+    /// the server's game (a game's bots, its match restart), so a network
+    /// client can't run it (`SERVER_COMMANDS` holds Chimera's own).
+    pub fn server_command(&mut self, name: &str) {
+        self.server_commands.insert(name.to_lowercase());
+    }
+
+    /// Whether command `name` (any name `resolve` takes) is the server
+    /// operator's (`SERVER_COMMANDS`, or a game's `server_command`;
+    /// namespace aliases followed).
+    pub fn is_server_command(&self, name: &str) -> bool {
+        in_table(self, SERVER_COMMANDS, name)
+            || self
+                .full_name(name)
+                .is_some_and(|full| self.server_commands.iter().any(|t| self.canonical_full(t) == full))
+    }
+
     /// Mark a cvar as the player's own setting the simulation reads
     /// (`core::UserInfo`).
     pub fn userinfo(&mut self, name: &str) {
@@ -1036,7 +1057,7 @@ pub fn execute(world: &mut World, words: &[String], depth: usize) {
     let result = if let Some(cmd) = command {
         let console = world.resource::<Console>();
         let (server_command, cheat, player_command) = (
-            in_table(console, SERVER_COMMANDS, &name),
+            console.is_server_command(&name),
             is_cheat(console, &name, args),
             console.is_player_command(&name),
         );
@@ -1261,23 +1282,12 @@ pub fn is_cheat(console: &Console, name: &str, args: &[String]) -> bool {
             && args.first().is_some_and(|a| PLAYER_IMPULSES.contains(&a.trim())))
 }
 
-/// Commands that change the server's game (bots, the map), by full name:
-/// a network client can't run them (its world isn't the game's; the
-/// server's operator runs them on the server's console).
-pub const SERVER_COMMANDS: &[&str] = &[
-    "cs_source:bot_add",
-    "cs_source:bot_add_t",
-    "cs_source:bot_add_ct",
-    "cs_source:bot_kick",
-    "cs_source:bot_give",
-    "cs_source:bot_goto",
-    "cs_source:bot_freeze",
-    "cs_source:bot_unfreeze",
-    "chimera:changelevel",
-    "cs_source:mp_restartgame",
-    "chimera:kick",
-    "chimera:kickid",
-];
+/// Chimera's commands that change the server's game (the map, who
+/// plays), by full name: a network client can't run them (its world isn't
+/// the game's; the server's operator runs them on the server's console).
+/// A game adds its own (`Console::server_command`: CS:S's bots and
+/// `mp_restartgame`).
+pub const SERVER_COMMANDS: &[&str] = &["chimera:changelevel", "chimera:kick", "chimera:kickid"];
 
 /// `sv_cheats`.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -132,9 +132,9 @@ fn t20_loose_bgm_folder() {
     };
     let decode = |k: &str| {
         let bytes = find(k);
-        (bytes.len(), source_formats::wav::decode_mp3(&bytes).unwrap())
+        (bytes.len(), chimera_formats::wav::decode_mp3(&bytes).unwrap())
     };
-    let secs = |c: &source_formats::wav::SoundClip| c.samples.len() as f64 / c.channels as f64 / c.rate as f64;
+    let secs = |c: &chimera_formats::wav::SoundClip| c.samples.len() as f64 / c.channels as f64 / c.rate as f64;
     // (file, bytes, seconds, kbit/s or 0, rate, channels)
     for (k, bytes, len, kbps, rate, ch) in [
         ("bgm/bgm_loop.mp3", 3_439_514, 143.31, 192.0, 44_100, 2),
@@ -176,7 +176,7 @@ fn the_built_in_table_matches_the_folder() {
             missing.push(key.clone());
             continue;
         };
-        let Ok(clip) = source_formats::wav::decode_any(&file.bytes()) else {
+        let Ok(clip) = chimera_formats::wav::decode_any(&file.bytes()) else {
             continue;
         };
         let got = clip.samples.len() as f64 / clip.channels as f64 / clip.rate as f64;
@@ -273,7 +273,7 @@ fn t21_one_maps_ambience() {
     assert_eq!(f.filter, "UnFiltered");
     assert_eq!(f.priority, 0);
     // The sound is in SND.rez, 7.995 s, 44.1 kHz 16-bit stereo.
-    let clip = source_formats::wav::decode(&mount.read(&f.file.to_lowercase().replace('\\', "/")).unwrap()).unwrap();
+    let clip = chimera_formats::wav::decode(&mount.read(&f.file.to_lowercase().replace('\\', "/")).unwrap()).unwrap();
     assert_eq!((clip.rate, clip.channels), (44_100, 2));
     let len = clip.samples.len() as f64 / 2.0 / 44_100.0;
     assert!((len - 7.995).abs() < 0.01, "{len}");
@@ -354,7 +354,7 @@ fn t29_the_partys_interface_sounds_are_in_the_install() {
     files.extend(MusicData::built_in().party.interface.values().cloned());
     for f in &files {
         let bytes = mount.read(&f.to_lowercase()).unwrap_or_else(|e| panic!("{f}: {e}"));
-        let clip = source_formats::wav::decode(&bytes).unwrap_or_else(|e| panic!("{f}: {e:?}"));
+        let clip = chimera_formats::wav::decode(&bytes).unwrap_or_else(|e| panic!("{f}: {e:?}"));
         if f.eq_ignore_ascii_case("UI_SND/WIN.WAV") {
             assert_eq!(clip.channels, 2, "{f}");
             let secs = clip.samples.len() as f64 / clip.channels as f64 / clip.rate as f64;

@@ -175,6 +175,12 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // which `net` itself may not use; an app that plays minigames over the
     // network adds its plugin.
     ("minigame_net", &["core", "console", "net", "minigame", "mode"]),
+    // A game's dedicated server, once for every game (chimera_net's own
+    // module, above `net`): the game is data (`GameServer`).
+    (
+        "dedicated",
+        &["core", "console", "game_registry", "gameplay", "map", "greybox", "harness", "net"],
+    ),
     // The headless harness (chimera_world's `Sim`, chimera_net's `NetSim`,
     // cs_source's base and test maps). `lib` = crate-root items such as
     // `SimPlugins`.
@@ -1248,6 +1254,7 @@ fn workspace_crates() {
         "chimera/workspace-hack",
         "chimera/dev",
         "chimera/vfs",
+        "chimera/formats",
         "chimera/assets",
         "source/formats",
         "lithtech/formats",
@@ -1361,6 +1368,29 @@ fn workspace_crates() {
         // The neutral VFS under both format crates: no dependency at all.
         (
             "chimera/vfs",
+            &[
+                "bevy",
+                "avian",
+                "mashup",
+                "source_",
+                "lithtech_",
+                "chimera_",
+                "cs_source",
+                "combat_arms",
+                "hl2dm",
+                "games",
+                "originals",
+                "lucker_party",
+                "party_kit",
+                "workspace-hack",
+            ],
+            PURE_DATA,
+        ),
+        // The formats no engine owns (sound files, KeyValues text): no
+        // workspace crate under them, so every loader layer and Chimera's
+        // base may use them.
+        (
+            "chimera/formats",
             &[
                 "bevy",
                 "avian",
@@ -1792,16 +1822,330 @@ fn workspace_crates() {
             } else {
                 ui_only(dep)
             };
-            // `chimera_vfs` is the neutral layer under the format crates, so
-            // the `chimera_` prefix in their rules doesn't cover it (its own
-            // rules do list the whole prefix, and it has no dependencies).
-            let neutral = dep == "chimera_vfs" && *krate != "chimera/vfs";
+            // `chimera_vfs` and `chimera_formats` are the neutral layer
+            // under the format crates, so the `chimera_` prefix in their
+            // rules doesn't cover them (their own rules do list the whole
+            // prefix: neither has a workspace dependency).
+            let neutral = matches!(dep.as_str(), "chimera_vfs" | "chimera_formats")
+                && !matches!(*krate, "chimera/vfs" | "chimera/formats");
             if forbidden.iter().any(|f| dep.starts_with(f) && !(neutral && *f == "chimera_")) && !allowed {
                 errors.push(format!("{path} depends on `{dep}`: {krate} {why}"));
             }
         }
     }
     assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
+}
+
+/// The layer a workspace member is in, from its path alone
+/// (docs/ARCHITECTURE.md, "Layers by path"), so a new game, loader or app
+/// is under the rules the day its folder exists, with no table to edit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Layer {
+    /// `chimera/<crate>`: the engine.
+    Engine,
+    /// `<family>/<crate>` for any other top-level folder (`source`,
+    /// `lithtech`): one engine family's formats and shared behaviour.
+    Loader(String),
+    /// `games/<id>`: a game as a library.
+    Game,
+    /// `apps/<name>`, a game's tools (`games/<id>/tools`) and the root
+    /// package: what composes games.
+    App,
+    /// `checks`: plain crates only.
+    Checks,
+}
+
+fn layer_of(member: &str) -> Layer {
+    let parts: Vec<&str> = member.split('/').collect();
+    match parts.as_slice() {
+        ["."] | ["apps", _] | ["games", _, _] => Layer::App,
+        ["checks"] => Layer::Checks,
+        ["chimera", _] => Layer::Engine,
+        ["games", _] => Layer::Game,
+        [family, ..] => Layer::Loader(family.to_string()),
+        [] => unreachable!(),
+    }
+}
+
+/// The folders under the repository root that hold crates
+/// (`<group>/<crate>`): Chimera's, each loader layer's, the games' and the
+/// apps', from the workspace's members, so a new loader layer's folder is
+/// scanned by every check without being listed.
+pub(crate) fn crate_groups() -> BTreeSet<String> {
+    workspace_members()
+        .iter()
+        .filter_map(|m| m.split_once('/').map(|(group, _)| group.to_string()))
+        .collect()
+}
+
+/// What a member's manifest declares of the layers it builds on
+/// (`[package.metadata.chimera]`): `loaders`, the loader families a game
+/// uses; `apps`, the app crates an app builds on.
+fn declared(manifest: &toml::Table, key: &str) -> BTreeSet<String> {
+    manifest
+        .get("package")
+        .and_then(|p| p.get("metadata"))
+        .and_then(|m| m.get("chimera"))
+        .and_then(|c| c.get(key))
+        .and_then(|l| l.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect()
+}
+
+/// Every workspace package a manifest depends on, whatever the table
+/// (build, dev, per target; optional ones too), by package name.
+fn workspace_deps(manifest: &toml::Table, names: &BTreeMap<String, String>) -> BTreeSet<String> {
+    fn collect(t: &toml::Table, names: &BTreeMap<String, String>, out: &mut BTreeSet<String>) {
+        for table in ["dependencies", "dev-dependencies", "build-dependencies"] {
+            for (key, value) in t.get(table).and_then(|d| d.as_table()).into_iter().flatten() {
+                let package = value.get("package").and_then(|p| p.as_str()).unwrap_or(key);
+                if names.contains_key(package) {
+                    out.insert(package.to_string());
+                }
+            }
+        }
+    }
+    let mut out = BTreeSet::new();
+    collect(manifest, names, &mut out);
+    for (_, target) in manifest.get("target").and_then(|t| t.as_table()).into_iter().flatten() {
+        if let Some(t) = target.as_table() {
+            collect(t, names, &mut out);
+        }
+    }
+    out
+}
+
+/// The layering every member is under by its path (`layer_of`), beside
+/// `workspace_crates`' finer rules per crate: the engine builds on no
+/// loader, game or app; a loader family on the engine and itself; a game
+/// on the engine and the loader families its manifest declares, never on
+/// another game or an app; an app on another app only when its manifest
+/// says so. A thirtieth game is covered without a line here.
+#[test]
+fn layers_follow_paths() {
+    let members = workspace_members();
+    let manifest = |m: &str| -> toml::Table {
+        let path = if m == "." {
+            "Cargo.toml".to_string()
+        } else {
+            format!("{m}/Cargo.toml")
+        };
+        fs::read_to_string(root().join(&path))
+            .unwrap_or_else(|e| panic!("{path}: {e}"))
+            .parse()
+            .unwrap()
+    };
+    let manifests: Vec<(String, toml::Table)> = members.iter().map(|m| (m.clone(), manifest(m))).collect();
+    // Package name -> member path.
+    let names: BTreeMap<String, String> = manifests
+        .iter()
+        .map(|(m, t)| (t["package"]["name"].as_str().unwrap().to_string(), m.clone()))
+        .collect();
+    let families: BTreeSet<String> = members
+        .iter()
+        .filter_map(|m| match layer_of(m) {
+            Layer::Loader(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+    let mut errors = Vec::new();
+    for (member, table) in &manifests {
+        let layer = layer_of(member);
+        let (loaders, apps) = (declared(table, "loaders"), declared(table, "apps"));
+        for f in loaders.difference(&families) {
+            errors.push(format!(
+                "{member}/Cargo.toml declares the loader layer `{f}` ([package.metadata.chimera] loaders), but no \
+                 workspace member lives under `{f}/`. The loader layers are: {families:?}."
+            ));
+        }
+        for a in &apps {
+            if names.get(a).map(|m| layer_of(m)) != Some(Layer::App) {
+                errors.push(format!(
+                    "{member}/Cargo.toml declares the app `{a}` ([package.metadata.chimera] apps), which is no \
+                     app crate (apps/<name>, games/<id>/tools) of the workspace."
+                ));
+            }
+        }
+        if layer != Layer::Game && !loaders.is_empty() {
+            errors.push(format!(
+                "{member}/Cargo.toml declares loader layers, which only a game (games/<id>) does: the engine uses \
+                 none, a loader its own family, an app whatever its games use."
+            ));
+        }
+        for dep in workspace_deps(table, &names) {
+            let dep_member = &names[&dep];
+            if dep_member == member || dep == "workspace-hack" {
+                continue;
+            }
+            let dep_layer = layer_of(dep_member);
+            let problem = match (&layer, &dep_layer) {
+                (Layer::Checks, _) => Some(
+                    "the repository's checks use plain crates only, so they build in seconds and never depend \
+                     on the code they check. Read what is needed from files or `cargo metadata`."
+                        .to_string(),
+                ),
+                (_, Layer::Checks) => Some("nothing builds on the repository's checks.".to_string()),
+                (Layer::Engine, Layer::Engine) => None,
+                (Layer::Engine, _) => Some(format!(
+                    "Chimera (chimera/) builds on no loader layer, game or app: it would then know one engine's \
+                     formats or one game. Give Chimera a hook (a registry, a trait, plain data) that `{dep}`'s \
+                     side fills, or move what both sides need down into a Chimera crate (`chimera_formats` \
+                     holds the formats no engine owns)."
+                )),
+                (Layer::Loader(_), Layer::Engine) => None,
+                (Layer::Loader(a), Layer::Loader(b)) if a == b => None,
+                (Layer::Loader(a), Layer::Loader(b)) => Some(format!(
+                    "the loader layer `{a}/` never builds on another engine's (`{b}/`): what both need moves \
+                     into Chimera (`chimera_vfs`, `chimera_formats`, or an engine crate), not across."
+                )),
+                (Layer::Loader(a), _) => Some(format!(
+                    "the loader layer `{a}/` sits below the games and apps: its games give it their own data \
+                     and hooks (as `source_engine::content::bsp::SourceGame` does)."
+                )),
+                (Layer::Game, Layer::Engine) => None,
+                (Layer::Game, Layer::Loader(f)) if loaders.contains(f) => None,
+                (Layer::Game, Layer::Loader(f)) => Some(format!(
+                    "a game builds only on the loader layers its manifest declares. If `{member}` really is a \
+                     `{f}` engine game, add `{f}` to `[package.metadata.chimera] loaders` in its Cargo.toml; \
+                     otherwise move what it needs of `{dep}` into Chimera (a lift), never across."
+                )),
+                (Layer::Game, Layer::Game) => Some(
+                    "games never use each other (docs/DESIGN.md): what two games need moves into Chimera or \
+                     their loader layer (a lift), and a game's parts reach another game's match only through \
+                     Chimera's registries (`GameBundle`, `GameParts`, a weapon or movement by id), composed by \
+                     an app."
+                        .to_string(),
+                ),
+                (Layer::Game, Layer::App) => Some(
+                    "a game is a library below the apps: move the piece into the game, or give the game a \
+                     hook the app fills."
+                        .to_string(),
+                ),
+                (Layer::App, Layer::App) if apps.contains(&dep) => None,
+                (Layer::App, Layer::App) => Some(format!(
+                    "an app builds on another app only when its manifest says so. If `{member}` is meant to \
+                     be a thin crate over `{dep}` (as a dedicated server over its app, or a party app over \
+                     `party_kit`), add `{dep}` to `[package.metadata.chimera] apps` in its Cargo.toml; \
+                     otherwise move what both need into a game, a kit crate or Chimera."
+                )),
+                (Layer::App, _) => None,
+            };
+            if let Some(why) = problem {
+                errors.push(format!("{member}/Cargo.toml depends on `{dep}` ({dep_member}): {why}"));
+            }
+        }
+    }
+    assert!(errors.is_empty(), "\n{}\n", errors.join("\n\n"));
+}
+
+/// Every game crate has the same public seams (docs/new-game.md, "The
+/// game crate's shape"), so apps, tools and party modes find a game's
+/// parts in the same places whichever game it is, and a new port starts
+/// from a known skeleton. A game is a `games/<id>` crate whose manifest
+/// declares its loader layers (`[package.metadata.chimera] loaders`,
+/// empty for none); `originals` (minigame definitions, no install) isn't
+/// one.
+#[test]
+fn games_share_one_shape() {
+    let mut errors = Vec::new();
+    let mut games = 0;
+    for member in workspace_members().iter().filter(|m| layer_of(m) == Layer::Game) {
+        let dir = root().join(member);
+        let manifest: toml::Table = fs::read_to_string(dir.join("Cargo.toml")).unwrap().parse().unwrap();
+        let is_game = manifest
+            .get("package")
+            .and_then(|p| p.get("metadata"))
+            .and_then(|m| m.get("chimera"))
+            .and_then(|c| c.get("loaders"))
+            .is_some();
+        if !is_game {
+            continue;
+        }
+        games += 1;
+        let id = member.rsplit('/').next().unwrap();
+        let mut need = |ok: bool, what: &str| {
+            if !ok {
+                errors.push(format!("{member}: {what} (docs/new-game.md, \"The game crate's shape\")."));
+            }
+        };
+        need(
+            manifest["package"]["name"].as_str() == Some(id),
+            &format!("the package is named after its folder and the game's id, `{id}`"),
+        );
+        let features = manifest.get("features").and_then(|f| f.as_table());
+        need(
+            features.is_some_and(|f| f.contains_key("ui")),
+            "a `ui` feature turns on its front end and the front end's optional dependencies",
+        );
+        let read = |rel: &str| fs::read_to_string(dir.join(rel)).unwrap_or_default();
+        let lib = read("src/lib.rs");
+        need(lib.contains("pub struct SimPlugins"), "src/lib.rs has `pub struct SimPlugins`, its simulation's base");
+        need(
+            lib.contains("pub mod game;") && lib.contains("pub mod harness;"),
+            "src/lib.rs has `pub mod game;` and `pub mod harness;`",
+        );
+        need(
+            lib.contains("#[cfg(feature = \"ui\")]\npub mod ui;"),
+            "src/lib.rs has its front end as `#[cfg(feature = \"ui\")] pub mod ui;`",
+        );
+        let mut files = Vec::new();
+        if dir.join("src/game").is_dir() {
+            rust_files(&dir.join("src/game"), &mut files);
+        }
+        let game: String = files.iter().map(|f| fs::read_to_string(f).unwrap_or_default()).collect();
+        let game_mod = read("src/game/mod.rs");
+        need(
+            game_mod.contains("pub const GAME: &str"),
+            "src/game/mod.rs has `pub const GAME: &str`, the game's id",
+        );
+        need(
+            game_mod.contains("pub static INFO:"),
+            "src/game/mod.rs has `pub static INFO: GameInfo`, what the engine knows of the game",
+        );
+        need(
+            game.contains("pub static BUNDLE:")
+                && (game_mod.contains("pub static BUNDLE:") || game_mod.contains("BUNDLE")),
+            "src/game/ has `pub static BUNDLE: GameBundle`, reachable as `game::BUNDLE`: the game for a party app",
+        );
+        need(
+            game.contains("pub static MAP_LOADER:"),
+            "src/game/ has `pub static MAP_LOADER: MapLoader`, its maps",
+        );
+        need(
+            read("src/harness.rs").contains("pub struct "),
+            "src/harness.rs has the base of its scenario tests (`pub struct <Game>Sim`)",
+        );
+        let mut ui = Vec::new();
+        if dir.join("src/ui").is_dir() {
+            rust_files(&dir.join("src/ui"), &mut ui);
+        }
+        let ui: String = ui.iter().map(|f| fs::read_to_string(f).unwrap_or_default()).collect();
+        need(
+            ui.contains("pub fn with_hud(") && ui.contains("CLIENT") && ui.contains("pub mod party"),
+            "src/ui/ has `with_hud` (its HUD on the client shell) and `party::CLIENT` (its `GameClient`)",
+        );
+        need(dir.join("tests/it/main.rs").is_file(), "its tests are one binary, tests/it/main.rs");
+        need(
+            root().join("specs").join(id).is_dir(),
+            &format!("its behaviour is specified in specs/{id}/ before it is implemented"),
+        );
+    }
+    assert!(games >= 3, "found {games} game crates; the check reads `[package.metadata.chimera] loaders`");
+    assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
+}
+
+#[test]
+fn layers_by_path() {
+    assert_eq!(layer_of("chimera/core"), Layer::Engine);
+    assert_eq!(layer_of("source/formats"), Layer::Loader("source".into()));
+    assert_eq!(layer_of("lithtech/formats"), Layer::Loader("lithtech".into()));
+    assert_eq!(layer_of("games/hl2dm"), Layer::Game);
+    assert_eq!(layer_of("games/cs_source/tools"), Layer::App);
+    assert_eq!(layer_of("apps/party_kit"), Layer::App);
+    assert_eq!(layer_of("."), Layer::App);
+    assert_eq!(layer_of("checks"), Layer::Checks);
 }
 
 /// A game crate's front end feature and the dependencies only it may

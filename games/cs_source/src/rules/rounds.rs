@@ -535,6 +535,10 @@ pub(super) fn plugin(app: &mut App) {
             Ok(Some(format!("Game will restart in {secs} seconds")))
         },
     );
+    // The server operator's: a network client can't run it.
+    app.world_mut()
+        .resource_mut::<crate::console::Console>()
+        .server_command(&format!("{}:mp_restartgame", crate::game::GAME));
 }
 
 /// `mp_restartgame` when its time comes: a fresh game (rounds), or

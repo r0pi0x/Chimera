@@ -20,6 +20,7 @@ This file is a map. Follow the links for detail; keep it short.
 | Ready-to-run task briefs | [docs/tasks/](docs/tasks/README.md) |
 | Design decisions and why (slots, mounts, weapon model, legal rules) | [docs/DESIGN.md](docs/DESIGN.md) |
 | Code layout, layers, data flow | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| Porting a new game (checklist, the crate's shape) | [docs/new-game.md](docs/new-game.md) |
 | Every source file, one line (generated) | [docs/modules.md](docs/modules.md) |
 | How to check your work (tests, screenshots, live ECS queries) | [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) |
 | Current plan and progress | [docs/plans/active/](docs/plans/active/engine-split.md) |

@@ -1,9 +1,9 @@
 //! What playback hands the audio backend (`audio::sound::stereo_wav`),
-//! decoded back with Source's WAV reader (`source_formats::wav`).
+//! decoded back with the WAV reader (`chimera_formats::wav`).
 
 use chimera_present::audio::sound::stereo_wav;
 use chimera_world::map::MapSoundClip;
-use source_formats::wav;
+use chimera_formats::wav;
 
 /// What playback hands the audio backend: a 16-bit stereo WAV with each
 /// channel's gain applied, which decodes back to the scaled samples.

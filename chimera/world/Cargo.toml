@@ -18,7 +18,8 @@ doctest = false
 # the game's builds.
 [dependencies]
 chimera_core.workspace = true
-source_formats.workspace = true
+# Sound files decoded (`map::sound`).
+chimera_formats.workspace = true
 avian3d.workspace = true
 bevy.workspace = true
 bevy_replicon.workspace = true

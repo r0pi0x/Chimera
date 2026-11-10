@@ -33,9 +33,9 @@ fn server(args: &[&str]) -> (Sim, std::net::SocketAddr) {
     let mut args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     args.extend(["+ip", "127.0.0.1", "-port", "0"].map(String::from));
     let Ok(Parsed::Run(options)) = combat_arms_server::parse(args) else { panic!("options") };
-    let start = StartMap::load(&options).unwrap();
+    let start = StartMap::load(&combat_arms_server::SERVER, &options).unwrap();
     let mut sim = Sim::with((), |app| {
-        app.add_plugins(ServerPlugin::new(start, &options));
+        app.add_plugins(ServerPlugin::new(&combat_arms_server::SERVER, start, &options));
         let w = app.world_mut();
         for (k, team) in [1u8, 2].into_iter().enumerate() {
             for i in 0..4 {

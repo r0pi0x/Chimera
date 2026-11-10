@@ -26,7 +26,7 @@ pub(crate) fn server(args: &[&str]) -> Option<(Sim, std::net::SocketAddr)> {
     let mut args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     args.extend(["+ip", "127.0.0.1", "-port", "0"].map(String::from));
     let Ok(Parsed::Run(options)) = hl2dm_server::parse(args) else { panic!("options") };
-    let start = match StartMap::load(&options) {
+    let start = match StartMap::load(&hl2dm_server::SERVER, &options) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("skipping: {e}");
@@ -34,7 +34,7 @@ pub(crate) fn server(args: &[&str]) -> Option<(Sim, std::net::SocketAddr)> {
         }
     };
     let mut sim = Sim::with((), |app| {
-        app.add_plugins(ServerPlugin::new(start, &options));
+        app.add_plugins(ServerPlugin::new(&hl2dm_server::SERVER, start, &options));
     });
     frame(&mut sim);
     // The command line's console lines run.

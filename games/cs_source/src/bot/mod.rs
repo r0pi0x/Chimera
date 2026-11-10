@@ -480,8 +480,17 @@ impl Plugin for BotPlugin {
             }),
             complete: None,
         });
+        // The server operator's: a network client can't run them.
+        for name in SERVER_COMMANDS {
+            console.server_command(&format!("{}:{name}", crate::game::GAME));
+        }
     }
 }
+
+/// The bot commands that change the server's game: a network client can't
+/// run them (`Console::server_command`).
+pub const SERVER_COMMANDS: &[&str] =
+    &["bot_add", "bot_add_t", "bot_add_ct", "bot_kick", "bot_give", "bot_goto", "bot_freeze", "bot_unfreeze"];
 
 /// `bot_quota` and `bot_quota_mode` (CS:S's): how many bots a network
 /// server keeps. `bot_add` (`add_bot`) raises the quota by one and `bot_kick` sets it

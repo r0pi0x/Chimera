@@ -24,9 +24,9 @@ half.workspace = true
 image.workspace = true
 workspace-hack.workspace = true
 
-# Source's WAV reader decodes what playback writes (tests/it/wav_playback.rs).
+# The WAV reader decodes what playback writes (tests/it/wav_playback.rs).
 [dev-dependencies]
-source_formats.workspace = true
+chimera_formats.workspace = true
 
 # The integration tests (tests/it/): the renderer's and audio's spec cases.
 [[test]]
