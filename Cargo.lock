@@ -2711,6 +2711,7 @@ dependencies = [
  "bevy",
  "bevy-inspector-egui",
  "bevy_egui",
+ "bevy_winit",
  "chimera_core",
  "chimera_net",
  "chimera_present",
@@ -2731,6 +2732,7 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "bevy_winit",
  "chimera_assets",
  "chimera_dev",
  "chimera_formats",
@@ -2768,6 +2770,7 @@ dependencies = [
  "bevy",
  "bevy_replicon",
  "bevy_replicon_renet",
+ "bevy_winit",
  "bzip2",
  "chimera_core",
  "chimera_sim",
@@ -2786,6 +2789,7 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "bevy_winit",
  "chimera_core",
  "chimera_formats",
  "chimera_world",
@@ -2800,6 +2804,7 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "bevy_winit",
  "chimera_core",
  "chimera_sim",
  "chimera_world",
@@ -2813,6 +2818,9 @@ dependencies = [
 name = "chimera_tools"
 version = "0.1.0"
 dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
  "chimera_core",
  "image",
  "serde",
@@ -2831,6 +2839,7 @@ dependencies = [
  "avian3d",
  "bevy",
  "bevy_replicon",
+ "bevy_winit",
  "bytemuck",
  "chimera_core",
  "chimera_formats",
@@ -2973,6 +2982,7 @@ dependencies = [
  "avian3d",
  "bevy",
  "bevy_replicon",
+ "bevy_winit",
  "chimera_client",
  "chimera_core",
  "chimera_formats",
@@ -2980,6 +2990,7 @@ dependencies = [
  "chimera_present",
  "chimera_sim",
  "chimera_world",
+ "combat_arms",
  "lithtech_formats",
  "postcard",
  "serde",
@@ -3009,6 +3020,7 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "bevy_winit",
  "chimera_core",
  "chimera_net",
  "chimera_sim",
@@ -3356,6 +3368,7 @@ dependencies = [
  "bevy",
  "bevy_replicon",
  "bevy_replicon_renet",
+ "bevy_winit",
  "bzip2",
  "chimera_client",
  "chimera_core",
@@ -3364,6 +3377,7 @@ dependencies = [
  "chimera_sim",
  "chimera_world",
  "crc32fast",
+ "cs_source",
  "half",
  "image",
  "postcard",
@@ -4450,12 +4464,14 @@ dependencies = [
  "avian3d",
  "bevy",
  "bevy_replicon",
+ "bevy_winit",
  "chimera_client",
  "chimera_core",
  "chimera_net",
  "chimera_present",
  "chimera_sim",
  "chimera_world",
+ "hl2dm",
  "postcard",
  "serde",
  "sha2",
@@ -4490,6 +4506,7 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "bevy_winit",
  "chimera_core",
  "chimera_net",
  "chimera_sim",
@@ -6154,7 +6171,9 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "bevy_winit",
  "chimera_sim",
+ "chimera_world",
  "workspace-hack",
 ]
 
@@ -6364,6 +6383,7 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "bevy_winit",
  "chimera_client",
  "chimera_core",
  "chimera_net",
@@ -7452,6 +7472,7 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "bevy_winit",
  "bzip2",
  "chimera_core",
  "chimera_sim",
@@ -7503,6 +7524,7 @@ dependencies = [
  "avian3d",
  "bevy",
  "bevy_replicon",
+ "bevy_winit",
  "chimera_core",
  "chimera_net",
  "chimera_world",
@@ -8168,6 +8190,7 @@ version = "0.1.0"
 dependencies = [
  "avian3d",
  "bevy",
+ "bevy_winit",
  "chimera_client",
  "chimera_core",
  "chimera_net",

@@ -24,7 +24,7 @@ doctest = false
 # harness is the app's, so these game tools sit on the CS:S app
 # (docs/tech-debt.md).
 [dependencies]
-cs_source_app = { workspace = true, features = ["present"] }
+cs_source_app = { workspace = true, features = ["default"] }
 cs_source.workspace = true
 chimera_tools.workspace = true
 source_tools.workspace = true
@@ -66,4 +66,4 @@ required-features = ["tools"]
 # The debugging binaries (docs/OBSERVABILITY.md).
 tools = []
 # Bevy as a dynamic library, as the game's `dev`.
-dev = ["cs_source_app/dev", "chimera_tools/dev"]
+dev = ["cs_source_app/dev", "chimera_tools/dev", "cs_source/dev", "source_tools/dev"]

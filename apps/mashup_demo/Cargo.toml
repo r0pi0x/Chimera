@@ -68,3 +68,9 @@ dev = [
 trace = ["chimera_core/trace", "chimera_client/trace"]
 profile = ["chimera_core/profile", "chimera_client/profile"]
 tracy = ["chimera_core/tracy", "chimera_client/tracy"]
+
+[dev-dependencies]
+# CS:S with its front end, as every other build has it: this app's tests
+# share that build instead of making one without (the app itself doesn't
+# use the front end and ships without it).
+cs_source = { workspace = true, features = ["ui"] }

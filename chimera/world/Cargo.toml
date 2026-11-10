@@ -40,7 +40,7 @@ workspace-hack.workspace = true
 [features]
 # Bevy as a dynamic library, as the game's `dev` (which turns this on):
 # `cargo test -p chimera_world --features dev` shares the game's Bevy build.
-dev = ["chimera_core/dev"]
+dev = ["chimera_core/dev", "chimera_formats/dev"]
 # What needs Bevy's render crates (`bevy_pbr`, `bevy_render`): the greybox's
 # `StandardMaterial`s, the maps' blend states and view fog. `chimera_present`
 # turns it on; the dedicated servers build without it (A5).
@@ -54,3 +54,7 @@ chimera_world = { workspace = true, features = ["render"] }
 # the clients' builds of Bevy instead of building its own (hakari.toml).
 bevy = { workspace = true, features = ["default", "wav"] }
 avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+# bevy_winit with its default feature, as the debug UI (bevy_egui) asks for it:
+# without this line a build that leaves the client shell out builds another
+# bevy_winit, and with it another Bevy and every crate of ours.
+bevy_winit.workspace = true

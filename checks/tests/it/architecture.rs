@@ -1246,6 +1246,38 @@ fn workspace_crates() {
             ));
         }
     }
+    // A member's `dev` turns on the `dev` of every workspace crate it
+    // depends on. With `--workspace --features dev` cargo gives `dev` to
+    // every member; with `-p <crate> --features dev` only to that crate
+    // and what its `dev` names. A dependency left out (even one whose
+    // `dev` is empty) is then built a second time without it, and so is
+    // every crate between it and the selected one: each selection had its
+    // own build of the engine (docs/performance.md, "Iteration speed").
+    let manifests: BTreeMap<String, (String, toml::Table)> = members
+        .iter()
+        .map(|m| {
+            let path = if m.as_str() == "." { "Cargo.toml".to_string() } else { format!("{m}/Cargo.toml") };
+            let manifest: toml::Table = fs::read_to_string(root().join(&path)).unwrap().parse().unwrap();
+            (manifest["package"]["name"].as_str().unwrap().to_string(), (path, manifest))
+        })
+        .collect();
+    let dev_of = |m: &toml::Table| -> Option<Vec<String>> {
+        m.get("features")?.get("dev")?.as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+    };
+    for (name, (path, manifest)) in &manifests {
+        let Some(dev) = dev_of(manifest) else { continue };
+        let Some(deps) = manifest.get("dependencies").and_then(|d| d.as_table()) else { continue };
+        for dep in deps.keys().filter(|d| *d != name) {
+            if !manifests.get(dep).is_some_and(|(_, m)| dev_of(m).is_some()) {
+                continue;
+            }
+            if !dev.iter().any(|f| *f == format!("{dep}/dev") || *f == format!("{dep}?/dev")) {
+                errors.push(format!(
+                    "{path}: `dev` doesn't turn on `{dep}/dev`, so `cargo test -p {name} --features dev` builds                      `{dep}` without `dev` and the whole workspace build with it: two builds of `{dep}` and of                      every crate above it. Add \"{dep}/dev\" (\"{dep}?/dev\" for an optional dependency) to                      `dev` in {path}."
+                ));
+            }
+        }
+    }
     // Every member builds third-party crates with the workspace's features
     // (the workspace-hack), so `cargo test -p <crate>` reuses the
     // workspace's builds; but the hack itself, Bevy's development features
@@ -2218,6 +2250,100 @@ fn game_ui_only_with_its_feature() {
              checks/tests/it/architecture.rs and docs/ARCHITECTURE.md (\"Crates\")."
         );
     }
+}
+
+/// Every package's features in the build of `selection` (`cargo tree`
+/// arguments) with `--features dev`, tests included: package and version
+/// to its feature set.
+fn features_built(selection: &[&str]) -> BTreeMap<String, BTreeSet<String>> {
+    let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+    let out = Command::new(&cargo)
+        .current_dir(root())
+        .args(["tree", "--offline", "--locked", "--features", "dev"])
+        .args(["-e", "features,normal,build,dev", "--prefix", "none", "-f", "{p} [{f}]"])
+        .args(selection)
+        .output()
+        .expect("running cargo tree");
+    assert!(out.status.success(), "cargo tree {selection:?} failed: {}", String::from_utf8_lossy(&out.stderr));
+    let mut built: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for line in String::from_utf8_lossy(&out.stdout).lines() {
+        // `name v1.2.3 (path) [a,b]`; a feature's own line (`name feature "a"`) has no list.
+        let (Some(open), Some(close)) = (line.find('['), line.rfind(']')) else { continue };
+        let mut words = line[..open].split_whitespace();
+        let (Some(name), Some(version)) = (words.next(), words.next()) else { continue };
+        built
+            .entry(format!("{name} {version}"))
+            .or_default()
+            .extend(line[open + 1..close].split(',').filter(|f| !f.is_empty()).map(String::from));
+    }
+    built
+}
+
+/// `cargo test -p <crate> --features dev` builds every crate below the
+/// selected one exactly as `cargo test --workspace --features dev` does:
+/// the same features, so the same artifacts, and one selection reuses what
+/// another built. A package that gets a feature only in the larger build
+/// is built twice, and so is every crate above it: with `bevy_winit`'s
+/// `default` (asked for by the debug UI's `bevy_egui` alone) a crate's own
+/// tests built a second Bevy and the whole engine under it; with the
+/// format crates' empty `dev` a second `chimera_core` and up
+/// (docs/performance.md, "Iteration speed": each `-p` selection cost
+/// 48-355 s after a full workspace build, and its own incremental caches).
+/// The selected crate counts too: a game's tests build it with its front
+/// end (a dev-dependency on itself with `ui`), as the apps do. The
+/// dedicated servers, which build without the presentation on purpose,
+/// and the crates kept free of Bevy are not compared.
+#[test]
+fn selections_share_one_build() {
+    let whole = features_built(&["--workspace"]);
+    let members: Vec<(String, String)> = workspace_members()
+        .into_iter()
+        .filter_map(|m| {
+            let path = if m == "." { "Cargo.toml".to_string() } else { format!("{m}/Cargo.toml") };
+            let manifest: toml::Table = fs::read_to_string(root().join(&path)).unwrap().parse().unwrap();
+            let name = manifest["package"]["name"].as_str().unwrap().to_string();
+            let hack = manifest.get("dependencies").and_then(|d| d.get("workspace-hack")).is_some();
+            (hack && !name.ends_with("_server")).then_some((name, path))
+        })
+        .collect();
+    let errors: Vec<String> = std::thread::scope(|scope| {
+        let whole = &whole;
+        let checks: Vec<_> = members
+            .iter()
+            .map(|(name, path)| {
+                scope.spawn(move || {
+                    let mut differ = Vec::new();
+                    for (package, features) in features_built(&["-p", name]) {
+                        let Some(all) = whole.get(&package) else { continue };
+                        if *all != features {
+                            let missing: Vec<&str> = all.difference(&features).map(String::as_str).collect();
+                            let extra: Vec<&str> = features.difference(all).map(String::as_str).collect();
+                            differ.push(match extra.is_empty() {
+                                true => format!("  {package}: without {}", missing.join(", ")),
+                                false => format!("  {package}: without {}; with {}", missing.join(", "), extra.join(", ")),
+                            });
+                        }
+                    }
+                    if differ.is_empty() {
+                        return None;
+                    }
+                    Some(format!(
+                        "`cargo test -p {name} --features dev` builds {} package(s) with other features than \
+                         `--workspace` does, so each is built twice, and every crate above it:\n{}\nGive \
+                         {path} the same features. A workspace crate: name the feature in `dev`, or in a \
+                         dev-dependency (`chimera_world = {{ workspace = true, features = [\"render\"] }}`). A \
+                         third-party crate: a dev-dependency with the feature (as `bevy_winit.workspace = \
+                         true`), or the workspace-hack (.config/hakari.toml) if the dedicated servers may \
+                         build it.",
+                        differ.len(),
+                        differ.join("\n")
+                    ))
+                })
+            })
+            .collect();
+        checks.into_iter().filter_map(|c| c.join().unwrap()).collect()
+    });
+    assert!(errors.is_empty(), "{}", errors.join("\n\n"));
 }
 
 /// The dedicated servers build without the presentation

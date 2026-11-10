@@ -24,6 +24,10 @@ chimera_sim.workspace = true
 chimera_present.workspace = true
 chimera_net.workspace = true
 avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+# bevy_winit with its default feature, as the debug UI (bevy_egui) asks for it:
+# without this line a build that leaves the client shell out builds another
+# bevy_winit, and with it another Bevy and every crate of ours.
+bevy_winit.workspace = true
 bevy = { workspace = true, features = ["default", "wav"] }
 # HUD glyphs rasterized and placed as Source's HUD does (`hud_text`).
 ab_glyph.workspace = true

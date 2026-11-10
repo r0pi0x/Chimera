@@ -58,8 +58,23 @@ workspace-hack.workspace = true
 # crate's own tests only (the dedicated server builds without them), so
 # `cargo test -p hl2dm` shares the clients' builds of Bevy (hakari.toml).
 [dev-dependencies]
+# This crate with its front end (`ui`), as the apps build it: its tests then
+# use the one build of it every other selection uses (the workspace's, the
+# hooks', `cargo run`'s) instead of a second one without the front end, with
+# its own incremental cache (docs/performance.md, "Iteration speed"). That
+# the simulation builds without `ui` the dedicated server's build checks
+# (tools/post-push-tests.sh) and architecture.rs (`game_parts_do_not_use_their_ui`).
+hl2dm = { workspace = true, features = ["ui"] }
+# The map's `render` feature, as every build with the presentation has it:
+# this crate's own tests then share the workspace's build of `chimera_world`
+# and of everything above it (docs/performance.md, "Iteration speed").
+chimera_world = { workspace = true, features = ["render"] }
 bevy = { workspace = true, features = ["default", "wav"] }
 avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+# bevy_winit with its default feature, as the debug UI (bevy_egui) asks for it:
+# without this line a build that leaves the client shell out builds another
+# bevy_winit, and with it another Bevy and every crate of ours.
+bevy_winit.workspace = true
 # The test kit's readers (`chimera_sim::testkit`: what is in hand, aim).
 chimera_sim = { workspace = true, features = ["testkit"] }
 # Digests of converted maps (tests/it/heavy/map_cache.rs).
@@ -79,8 +94,9 @@ required-features = ["ui"]
 
 [features]
 # HL2:DM's front end (`ui`): its HUD on the client shell. The game's client
-# turns it on; the dedicated server and the simulation's tests build without.
+# turns it on, and this crate's own tests (the dev-dependency on itself); the
+# dedicated server builds without.
 ui = ["dep:chimera_client", "dep:chimera_present", "dep:source_gameui"]
 # Bevy as a dynamic library, as an app's `dev` (which turns this on):
 # `cargo test -p hl2dm --features dev` shares the apps' Bevy build.
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "source_engine/dev", "source_logic/dev", "chimera_client?/dev", "chimera_present?/dev", "source_gameui?/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "source_engine/dev", "source_logic/dev", "chimera_client?/dev", "chimera_present?/dev", "source_gameui?/dev", "source_formats/dev"]

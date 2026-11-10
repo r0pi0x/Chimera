@@ -28,7 +28,7 @@ required-features = ["present"]
 
 [features]
 default = ["present"]
-present = ["dep:chimera_client", "party_kit/present"]
+present = ["dep:chimera_client", "party_kit/default"]
 
 # Faster iteration: link Bevy as a dynamic library, serve the remote
 # protocol. `cargo run --features dev --bin lucker_party`. Never for

@@ -1,7 +1,8 @@
 # Performance
 
 How to measure, what the numbers were, and what the map visibility culling
-does; at the end, how long the tests take to build and run ("Test cycle"). Tools are listed in [OBSERVABILITY.md](OBSERVABILITY.md) ("3c.
+does; at the end, how long the tests take to build and run ("Test cycle")
+and the edit-to-verified loop as a whole ("Iteration speed"). Tools are listed in [OBSERVABILITY.md](OBSERVABILITY.md) ("3c.
 Performance").
 
 ## Measuring
@@ -3608,3 +3609,219 @@ figure) is the same to within 1-3%: the pool adds almost no work. The case
 that motivated it (a minigame lobby, 64 bots in each other's PVS and in the
 way of each other's rays, ~25 ms a tick) is not measurable here, its map
 (mg_jacks_multigames_v1) not being on this box.
+
+## Iteration speed (2026-11-10)
+
+The whole loop, from an edit to knowing it works, measured on the Linux
+dev box (12 threads, 31 GB) in an agent slot while two or three other
+agents, the main checkout's commit checks and the after-push tests ran:
+the 1-minute load is given with each number, and comparisons were taken
+interleaved. Times are wall time; `CARGO_BUILD_JOBS` 4-6, sccache and
+mold as `tools/agent-env.sh` sets them in a slot.
+
+### Where the time goes
+
+| Loop | Time | What it is made of |
+|---|---|---|
+| An edit in `combat_arms` (the most edited crate: 1,096 file changes in three weeks, 102k lines), then one test (`cargo test -p combat_arms --features dev --test it <test>`) | 31.8, 32.9, 41.0, 58.5 s (load 8-17) | rustc on the library 25.2 s (incremental; the edit was one new function), the test crate and its link 5.8 s, the test 0.1 s |
+| The same, then every target (`--no-run`: library, its unit-test build, `it`, `ui`) | 36.8-57.9 s (load 13-29) | the library twice (with and without `cfg(test)`) |
+| The commit hook after that edit | 168 s (load 14) | type-checking 11 dependents' targets, then Combat Arms' fast tier |
+| Combat Arms' fast tier alone (1,659 tests in `it`) | 119, 130 s `cargo test`; 148-174 s nextest with 8 or 12 at once (load 13-25) | the tests' own simulation, at the dev profile's `opt-level = 1`; a test process starts in 20-40 ms |
+| An edit in `chimera_sim`, then `cargo test --workspace --features dev --no-run` | 181-335 s (load 11-71) | the crate chain one after another (core, world, sim, net, client, the games, the party kit, the apps), then 69 test binaries and apps linked: 27.9 GB written |
+| A slot's first build after merging main (`cargo test --workspace --features dev --no-run`) | 1,284 s (load 7-15) | 891 units one at a time (below); the registry crates from sccache took the first 186 s |
+| Another selection after a workspace build (`-p <crate>`, `cargo build`) | 48-355 s each (below) | its own copy of the engine |
+| The tests after a push (`tools/post-push-tests.sh`) | 52-125 minutes (the last 14 runs); the last: 16 min building, 53 min running 5,334 tests | the heavy tests: 10,873 s of test time on five slots, one test 1,096 s by itself |
+
+Three things were broken rather than slow, and each made everything else
+slower:
+
+- **The shared jobserver was empty.** `tools/agent-env.sh` gives every
+  agent's cargo one FIFO of 12 tokens. It held 0 (counted with `FIONREAD`,
+  no build attached), 27 hours after it was made: a cargo killed mid-build
+  (a tool timeout) keeps the tokens it took, and nothing returned them. A
+  cargo without tokens runs one job at a time: the after-merge build's 891
+  units took 1,283.1 s summed in 1,284.1 s of wall time (`--timings`),
+  with `CARGO_BUILD_JOBS=5`.
+- **Every selection had its own build of the engine.** A package that
+  got a feature in one selection and not in another was built again, with
+  every crate above it. After a full workspace test build:
+
+  | then | before | after |
+  |---|---|---|
+  | `cargo test -p combat_arms --features dev --no-run` | 48.3 s (chimera_sim, chimera_net, combat_arms) | 2.4 s, nothing compiled |
+  | `cargo test -p chimera_sim --features dev --no-run` | 137.2 s | 1.1 s |
+  | `cargo test -p cs_source --features dev --no-run` | 272.4 s (8 crates, chimera_world up) | 0.8 s |
+  | `cargo test -p cs_source --features dev,ui --no-run` | 243.9 s (10 crates, chimera_core up) | 1.0 s |
+  | `cargo build --features dev` | 355.3 s (25 crates) | 17.6 s (five binaries no test builds, linked) |
+
+  (Before at load 26-59, after at load 32-35, `CARGO_BUILD_JOBS=4`.) An
+  agent that tests its crate with `-p`, commits (the hook checks the
+  dependents) and runs the game paid for each of them after every edit
+  low in the graph, and kept an incremental cache for each: one slot had
+  five builds of `chimera_net` (770 MB of cache each) and six of
+  `chimera_sim` from one day's work.
+- **The disk filled** (8.4 GB free of 930 during these measurements; it
+  had been 100% on 2026-10-31). The build folders held 493 GB, 238 GB of
+  it incremental caches (a slot's: 57-65 GB after a day). A slot over
+  its 60 GB limit was swept by size on its next `acquire`, and
+  `cargo sweep` never removes incremental caches: a dry run on a free
+  74 GB slot (28 GB of built crates and binaries, 44 GB of caches) would
+  have removed 27.27 GiB, all of it built crates, so the next holder
+  compiled everything again and was over the limit again.
+
+### What changed
+
+- `tools/jobserver-heal.sh`, run by each `source tools/agent-env.sh` (at
+  most every 20 s; 42 ms): counts the tokens without taking them out and
+  puts back the ones no running build can hold (no cargo attached: the
+  full set exactly; with builds attached: the full set minus one per
+  running job of each cargo). Measured on private FIFOs holding 0 and 12
+  tokens, interleaved: the workspace build after a `chimera_sim` edit
+  204.8 and 311.5 s drained (load 11, 71) against 180.7 and 334.9 s full
+  (load 12, 17); a `combat_arms` edit with `-p combat_arms --no-run`
+  51.0, 56.5, 42.4 s drained against 57.9, 55.1, 36.8 s full. So no
+  measurable gain on an edit: one crate's rustc, or a chain of crates
+  that each wait for the one below, has nothing to run beside it, and six
+  links of 700-900 MB at once pushed the box to load 85 with 45-64% of
+  CPU time waiting on the disk. Where the graph is wide (a new slot's 600
+  registry crates, the after-push build of every test binary) the serial
+  build above is what it costs; that case was not timed again with a
+  full FIFO.
+- `tools/agent-slot.sh`: a slot's trim removes old incremental sessions
+  (past `CHIMERA_INCREMENTAL_MAX_GB`) before it sweeps by size.
+- One build for every selection (Cargo.toml files only). What differed:
+  `bevy_winit`'s `default`, an empty flag only the debug UI's `bevy_egui`
+  asks for, so a selection without the client shell built another
+  `bevy_winit`, another Bevy (the 850 MB dylib) and all our crates on it;
+  the format crates' empty `dev`, on with `--workspace --features dev`
+  and off with `-p`; `chimera_sim`'s `testkit`, `chimera_world`'s
+  `render`, the games' `ui`, the `default` of `cs_source_app` and
+  `party_kit`. Now every crate's `dev` turns on the `dev` of each
+  workspace crate under it, the crates that take the presentation's Bevy
+  for their tests take `bevy_winit` and `chimera_world`'s `render` too,
+  and a game's tests build it with its front end (a dev-dependency on
+  itself: `cargo test -p cs_source --features dev` now builds and runs
+  `tests/ui/` as well; that the simulation builds without `ui` is still
+  checked by the dedicated servers' builds). `architecture.rs`:
+  `selections_share_one_build` compares every package's features in each
+  member's `-p` test build with the workspace's (`cargo tree`, 7 s) and
+  names the package that differs; `workspace_crates` checks `dev`
+  reaches every workspace dependency. The dedicated servers stay a build
+  of their own (no presentation), as before.
+
+### Tried, not changed
+
+- **The runner for a crate's fast tier.** Combat Arms' 1,659 tests:
+  `cargo test` 130.5 and 119.3 s, nextest with 8 processes 173.9 and
+  163.1 s, with 12 processes 148.4 s (load 13-25). The hook keeps
+  `cargo test`.
+- **Per-test process start.** A filter that matches nothing: 0.04 s; a
+  test that builds a `Sim`: 0.06-0.25 s. Not where the fast tier's time
+  is.
+- **Debug info out of the test binaries.** Combat Arms' `it` is 702 MB,
+  73 MB of it code (an app's test binary 860 MB: `.debug_str` 326 MB,
+  `.debug_info` 169, `.debug_line` 86, `.debug_ranges` 76). Its link
+  replayed five times each, interleaved (load 21): mold 0.80-1.46 s
+  (median 0.95) as it is, 0.48-0.82 s (median 0.69) with
+  `--strip-debug`, 137 MB; LLD 1.10-2.52 s against 0.80-0.94 s, 128 MB.
+  A quarter of a second a link, so not a time win by itself; it is a
+  disk and memory one (the 69 binaries of a workspace test build: 27.9 GB,
+  about 5.5 GB stripped, rewritten after every edit low in the graph).
+  Left as a proposal: it costs line numbers in backtraces or a rebuild of
+  everything (below).
+- **Where an incremental rebuild of `combat_arms` goes** (the stable
+  compiler's `-Ztime-passes` with `RUSTC_BOOTSTRAP=1`, for measuring
+  only; the library alone, one new function, load 10): 19.3 s, of which
+  **`LLVM_thinlto` 12.3 s**, writing the crate's metadata 2.0 s, macro
+  expansion 0.9 s, the dependency graph and query cache written back
+  1.3 s; type checking and borrow checking under 0.4 s each. The dev
+  profile's `opt-level = 1` with incremental code generation units makes
+  rustc run ThinLTO over the whole crate's units on every build, changed
+  or not. With `-Clto=off` on that crate, back to back (load 14-17):
+  18.5, 20.5, 15.7 s against 26.8, 31.4, 26.9 s (medians 18.5 and 26.9 s,
+  -31%); a full compile of the library 111.7 s against 130.1 s. Not
+  switched on: Cargo allows `lto` only for a whole profile, so it also
+  takes the cross-unit inlining out of Bevy and Avian (built with 256
+  units), and the tests' and the game's run time with it was not
+  measured (proposal 1).
+- **The parallel front end** (`-Zthreads=8`, the same way): the library
+  from scratch 73.5 and 73.3 s against 75.7 s with one thread; after an
+  edit 18.8 s against 19.9-20.7 s. Nothing: the time is in LLVM, not in
+  the front end. (Changing the flag throws the incremental cache away, so
+  each switch cost a full compile.) No reason for a nightly toolchain
+  here.
+
+### Proposals that need a decision
+
+1. **`lto = "off"` in `[profile.dev]`** (one line; `test` and `devfull`
+   inherit it). Expected: 30-60% off every rebuild of a workspace crate
+   after an edit (8-12 s of Combat Arms' 20-27 s; the same share of each
+   crate up the chain, so of the 181-335 s workspace rebuild too). Cost:
+   one rebuild of everything on every machine, and slower code in debug
+   builds, ours and Bevy's, by an amount to measure first:
+   `CARGO_PROFILE_DEV_LTO=off cargo test -p combat_arms --features dev
+   --test it -- --skip heavy::` against the same without (119-130 s now),
+   and `refcmp bench` on a dev build. If Bevy's share of the loss is the
+   larger, add `codegen-units = 16` (or 1) under
+   `[profile.dev.package."*"]`: the registry crates are built once and
+   come from sccache.
+2. **Debug info out of the linked test binaries.** Either `strip =
+   "debuginfo"` in `[profile.test]` (both systems; a test's backtrace
+   keeps function names and the panic its file and line, the frames lose
+   theirs), or `-Csplit-debuginfo=unpacked` in the slots' environment
+   (Linux only, beside mold in `tools/agent-env.sh`; everything kept).
+   Expected: a workspace test build's binaries 27.9 GB to about 5.5 GB, a
+   slot's whole build 52 GB to about 30 GB (under the 60 GB limit with
+   its caches, so no sweeps), a quarter of a second a link, and no 28 GB
+   rewritten after an engine edit. Cost: one rebuild of everything.
+3. **The slot's size limits**, if 2 is not taken: one workspace test
+   build is 34 GB of `deps/` and 18 GB of incremental caches, and the
+   hook's type-check build comes on top, so `AGENT_SLOT_MAX_GB=60` is
+   passed in normal use. Raise it to 80 (four slots, the after-push slot
+   and the main checkout: about 450 GB), or lower
+   `CHIMERA_INCREMENTAL_MAX_GB` to 20.
+4. **Run `tools/jobserver-heal.sh` on the box's FIFO now.** It runs by
+   itself once this branch is merged and an agent sources
+   `tools/agent-env.sh`; the measurements here used private FIFOs so the
+   other agents' builds were left as they were. With the tokens back, up
+   to 12 compile jobs run at once across all agents again, which is what
+   the jobserver was sized for, and more memory in use than in the last
+   day.
+
+### What to do next, by expected gain
+
+1. **The after-push tests** (52-125 minutes a push; the push is when a
+   change is known to work). One test,
+   `ultimate_gun_game::it heavy::session_materials`, is 1,047-1,096 s of
+   a 2,300-3,200 s run, and three session tests of that binary 1,560 s;
+   `cs_source::it`'s 363 heavy tests grew from 1,174 s (2026-10-31) to
+   3,200-10,000 s summed with the community maps now present and the box
+   busier; a run overlaps the agents' builds, which each slow the other.
+   Shorten or split the session tests (one map lap instead of the
+   ladder), give the heavy tier its own time or machine, and build its
+   test binaries with the jobserver full (16 minutes now).
+2. **Proposal 1**, measured and switched on: the largest cut to the edit
+   loop found here.
+3. **`combat_arms` as more than one crate** (the architecture plan's step
+   14 asked for a measurement first): an edit costs 25 s of rustc before
+   any test runs, and what is left after `lto = "off"` (metadata, macro
+   expansion, the caches written back: about 7 s) grows with the crate,
+   not with the edit. Its data tables and its `ui` are the natural
+   first cuts; the tests (70k lines in one `it` crate, 5.8 s a rebuild
+   and link) can follow the same cut.
+4. **The crate chain.** core, world, sim, net, client and the games each
+   wait for the one below, so an engine edit's rebuild is serial however
+   many cores are free: 181-335 s. Narrower dependencies (a game on
+   `chimera_net`'s types without its whole crate, `chimera_client`
+   beside the games instead of under them) let cargo run them side by
+   side.
+5. **The fast tier's own time.** Combat Arms' 1,659 tests take two
+   minutes on 12 threads, in our own code at `opt-level = 1`: try
+   `opt-level = 2` for the game crates in the test profile against the
+   longer compile, and find the tests that simulate seconds of play for
+   one assertion (109 fast tests over 2 s were 41% of the fast tier's
+   test time in the 2026-10-31 run).
+6. **Seeing a change without restarting the game**: Bevy 0.20's
+   `hotpatching` feature (systems patched into the running app by the
+   Dioxus CLI's `dx serve --hot-patch`) for a human at the game; not
+   tried here (no display on this box).

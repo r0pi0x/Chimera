@@ -41,3 +41,11 @@ required-features = ["tools"]
 tools = []
 # Bevy as a dynamic library, as the game's `dev`.
 dev = ["chimera_core/dev"]
+
+[dev-dependencies]
+# The presentation's Bevy and Avian features, for this crate's own tests only
+# (the dedicated servers build without them): `cargo test -p <crate>` shares
+# the clients' builds of Bevy instead of building its own (hakari.toml).
+bevy = { workspace = true, features = ["default", "wav"] }
+avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+bevy_winit.workspace = true

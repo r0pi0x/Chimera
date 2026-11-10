@@ -48,3 +48,7 @@ dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/
 # the clients' builds of Bevy instead of building its own (hakari.toml).
 bevy = { workspace = true, features = ["default", "wav"] }
 avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+# bevy_winit with its default feature, as the debug UI (bevy_egui) asks for it:
+# without this line a build that leaves the client shell out builds another
+# bevy_winit, and with it another Bevy and every crate of ours.
+bevy_winit.workspace = true

@@ -224,6 +224,14 @@ symphonia = { version = "0.5.5", default-features = false, features = ["mp3"] }
 # HUD glyphs rasterized and placed as Source's HUD does (chimera_client's
 # `hud_text`).
 ab_glyph = "0.2.32"
+# bevy_winit's default feature (an empty flag over `x11`, which Bevy's own
+# default already turns on): bevy_egui asks for it, so every build with the
+# client shell has it. The crates that take the presentation's Bevy for their
+# tests take this too, or `cargo test -p <crate>` of one that leaves the
+# shell out builds a second bevy_winit, a second Bevy and every crate of
+# ours again (docs/performance.md, "Iteration speed";
+# checks/tests/it/architecture.rs, `selections_share_one_build`).
+bevy_winit = { version = "0.20.0" }
 # The client shell's debug UI and inspector (chimera_client); egui drawn
 # over Bevy's UI (the debug UI over the HUD).
 bevy-inspector-egui = "0.38"
@@ -320,14 +328,17 @@ default = ["present"]
 
 # The app with its presentation, client shell and CS:S's front end
 # (`cs_source_app`'s `present`): what the integration tests drive.
-present = ["cs_source_app/present"]
+# (Its `default`, not `present` alone, and the other games' front ends: the
+# same builds of them as every other selection's; architecture.rs,
+# `selections_share_one_build`.)
+present = ["cs_source_app/default", "combat_arms/ui", "hl2dm/ui"]
 
 # Host tools (`chimera_pack`), not in releases.
 tools = []
 
 # Faster iteration: link Bevy as a dynamic library (the app's `dev` and
 # every crate's under it). Never enable for release builds.
-dev = ["cs_source_app/dev"]
+dev = ["cs_source_app/dev", "cs_source/dev", "combat_arms/dev", "hl2dm/dev", "source_engine/dev", "chimera_core/dev", "chimera_assets/dev", "source_formats/dev", "lithtech_formats/dev"]
 
 # CPU profile: every system and render step as a span in a Chrome trace
 # (docs/performance.md). Slower; only for measuring.

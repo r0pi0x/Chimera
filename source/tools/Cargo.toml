@@ -32,6 +32,6 @@ name = "testmap"
 [features]
 # Nothing: lets `--features dev` name this package alongside the others
 # (cargo test -p ... -p <crate> --features dev; .githooks/pre-commit).
-dev = []
+dev = ["source_formats/dev"]
 # The debugging binaries (docs/OBSERVABILITY.md).
 tools = []

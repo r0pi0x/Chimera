@@ -49,7 +49,7 @@ libc.workspace = true
 # `cargo test -p chimera_core --features dev` shares the game's Bevy build.
 # Every crate's `dev` comes here; the Bevy features are `chimera_dev`'s
 # (left out of the workspace-hack: chimera/dev/Cargo.toml).
-dev = ["dep:chimera_dev", "chimera_dev/dev"]
+dev = ["dep:chimera_dev", "chimera_dev/dev", "chimera_vfs/dev", "chimera_assets/dev", "chimera_formats/dev"]
 # Every system as a span in a Chrome trace (the game's `profile`).
 profile = ["dep:chimera_dev", "chimera_dev/profile", "trace"]
 # Spans for a short capture (the game's `trace`), and Tracy (`tracy`):
@@ -63,3 +63,7 @@ tracy = ["dep:chimera_dev", "chimera_dev/tracy", "trace"]
 # the clients' builds of Bevy instead of building its own (hakari.toml).
 bevy = { workspace = true, features = ["default", "wav"] }
 avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+# bevy_winit with its default feature, as the debug UI (bevy_egui) asks for it:
+# without this line a build that leaves the client shell out builds another
+# bevy_winit, and with it another Bevy and every crate of ours.
+bevy_winit.workspace = true

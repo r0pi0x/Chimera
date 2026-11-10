@@ -25,7 +25,7 @@
 # holds which, `release slotN` frees one whose agent is gone.
 # Settings: AGENT_SLOTS (number of slots, default 3), AGENT_SLOT_MAX_GB
 # (trim target/ past this, default 60: a whole-workspace test build is
-# ~40 GB; acquire trims the slot it takes),
+# ~40 GB; acquire trims the slot it takes, its incremental caches first),
 # AGENT_SLOTS_DIR (where the slots live).
 #
 # trim-incremental: cargo's incremental caches (target/<profile>/incremental,
@@ -55,6 +55,12 @@ target_gb() { # <slot>: its target/ in whole GB
 # caches go, then the whole folder if that wasn't enough.
 trim_slot() {
   local slot=$1 gb
+  # The incremental caches first, by their own limit: cargo-sweep never
+  # removes them, and in a used slot they are most of target/ (60 of 67 GB
+  # in one on 2026-11-10), so sweeping by size alone took every built
+  # crate and test binary (27 of 28 GB of deps/ in another) and left the
+  # caches: the next holder built from cold, and was over the limit again.
+  trim_incremental "$slot/target"
   gb=$(target_gb "$slot")
   [ "$gb" -gt "$max_gb" ] || return 0
   say "$(basename "$slot")/target is $gb GB (limit $max_gb): trimming"
