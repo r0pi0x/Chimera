@@ -2638,6 +2638,24 @@ sphere, which is smaller than the box a turned prop's corners span).
 | before (with the bridge's change) | 11.56G |
 | after | 10.98G (-5.0%) |
 
+### Buoyancy (`map::buoyancy::float_bodies`)
+
+On a map with water, each physics step gathered every collider of every
+body (its box, its volume, its hulls made and kept on first sight) and only
+then dropped the bodies that aren't dynamic: nearly all of a map's
+colliders. It asks for the body's kind first now; what floats, and how, is
+unchanged (the same colliders in the same order for each dynamic body;
+`logic_physics`' and HL2:DM's floating tests). The hull cache holds
+dynamic bodies' colliders only.
+
+| `perfgate`, instructions for 2,000 ticks | mg_lego_multigames_v2 |
+|---|---|
+| before (with the bridge's change) | 10.93G |
+| after | 8.94G (-18.2%) |
+
+Together with the two above: de_dust2 13.40G to 10.98G (-18%), mg_lego
+17.72G to 8.94G (-50%); the median tick 5.9M to 4.5M and 8.4M to 4.3M.
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,
