@@ -62,19 +62,23 @@ pub fn glow_visibility(
             centre - (right + up) * r,
             centre - (right - up) * r,
         ];
-        let seen = points
-            .iter()
-            .filter(|to| {
-                Dir3::new(**to - from).map_or(true, |dir| {
-                    query.cast_ray(from, dir, from.distance(**to), true, &filter).is_none()
+        // The fraction of the lines that get through, times the fraction
+        // of the proxy's screen rectangle inside the viewport (0 if any
+        // corner is behind the eye), as the game's occlusion queries are
+        // clipped to the screen. Off the screen nothing is seen whatever
+        // the lines say: they aren't cast (most of a map's glows in the
+        // potentially visible set are behind or beside the eye).
+        let seen = seen_fraction(clip_fraction(camera, eye, &points[1..]), || {
+            points
+                .iter()
+                .filter(|to| {
+                    Dir3::new(**to - from).map_or(true, |dir| {
+                        query.cast_ray(from, dir, from.distance(**to), true, &filter).is_none()
+                    })
                 })
-            })
-            .count() as f32
-            / points.len() as f32;
-        // Times the fraction of the proxy's screen rectangle inside the
-        // viewport (0 if any corner is behind the eye), as the game's
-        // occlusion queries are clipped to the screen.
-        let seen = seen * clip_fraction(camera, eye, &points[1..]);
+                .count() as f32
+                / points.len() as f32
+        });
         visibility.set_if_neq(if seen > 0.0 {
             Visibility::Inherited
         } else {
@@ -89,6 +93,12 @@ pub fn glow_visibility(
             m.params.color = color;
         }
     }
+}
+
+/// `lines() * clip`: the lines' fraction asked only where the proxy is on
+/// the screen at all (`clip` not 0: the product is 0 then anyway).
+fn seen_fraction(clip: f32, lines: impl FnOnce() -> f32) -> f32 {
+    if clip == 0.0 { 0.0 } else { lines() * clip }
 }
 
 /// How much of the screen rectangle around `corners` lies in the viewport.
@@ -108,4 +118,28 @@ fn clip_fraction(camera: &Camera, eye: &GlobalTransform, corners: &[Vec3]) -> f3
     let area = (hi - lo).max(Vec2::splat(1e-6));
     let inside = (hi.min(Vec2::ONE) - lo.max(Vec2::NEG_ONE)).max(Vec2::ZERO);
     (inside.x * inside.y / (area.x * area.y)).clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Off the screen the lines aren't cast, and the result is what the
+    /// product gives everywhere.
+    #[test]
+    fn the_lines_are_cast_only_on_screen() {
+        for clip in [0.0f32, -0.0, 1e-6, 0.25, 1.0, f32::NAN] {
+            for lines in [0.0f32, 0.2, 0.6, 1.0] {
+                let mut cast = false;
+                let got = seen_fraction(clip, || {
+                    cast = true;
+                    lines
+                });
+                let want = lines * clip;
+                assert!(got == want || (got.is_nan() && want.is_nan()), "{lines} x {clip}: {got}");
+                assert_eq!(got > 0.0, want > 0.0);
+                assert_eq!(cast, clip != 0.0, "clip {clip}");
+            }
+        }
+    }
 }

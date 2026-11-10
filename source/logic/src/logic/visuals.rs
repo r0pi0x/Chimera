@@ -23,6 +23,7 @@
 //! Activate/Deactivate/Toggle, as `LogicWorld::inactive_occluders`, written to
 //! `map::OccluderStates`.
 
+use super::classes::kinds;
 use bevy::math::Vec3;
 
 use super::classes::Class;
@@ -270,7 +271,7 @@ impl LogicWorld {
     /// Sprites and dust volumes from the map, in entity order: (map
     /// index, on). Removed ones are missing.
     pub fn part_states(&self) -> Vec<(usize, PartKind, bool)> {
-        self.ids()
+        self.ids_of(kinds::PART)
             .into_iter()
             .filter_map(|id| {
                 let e = self.get(id)?;
@@ -282,7 +283,7 @@ impl LogicWorld {
 
     /// Steam jets the value inputs changed: (map index, what they set).
     pub fn steam_jets(&self) -> Vec<(usize, JetSet)> {
-        self.ids()
+        self.ids_of(kinds::PART)
             .into_iter()
             .filter_map(|id| {
                 let e = self.get(id)?;
@@ -331,8 +332,12 @@ impl LogicWorld {
     /// closed; a name matching no door leaves the portal's own state),
     /// the rest by their own state.
     pub fn closed_area_portals(&self) -> Vec<u16> {
-        let ids = self.ids();
-        let mut closed: Vec<u16> = ids
+        let portals = self.ids_of(kinds::AREA_PORTAL);
+        if portals.is_empty() {
+            return Vec::new();
+        }
+        let ids = self.ids_of(kinds::DOOR | kinds::PROP_DOOR);
+        let mut closed: Vec<u16> = portals
             .iter()
             .filter_map(|&id| {
                 let Class::AreaPortal(p) = &self.get(id)?.class else { return None };
@@ -426,7 +431,7 @@ impl LogicWorld {
     /// The keys of the occluders that are off now, sorted.
     pub fn inactive_occluders(&self) -> Vec<u16> {
         let mut off: Vec<u16> = self
-            .ids()
+            .ids_of(kinds::OCCLUDER)
             .into_iter()
             .filter_map(|id| match &self.get(id)?.class {
                 Class::Occluder(o) if !o.active => Some(o.key),

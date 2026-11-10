@@ -42,6 +42,7 @@
 //! source/logic/src/logic/fire_tests.rs); de_dust2's A fires light 0.2 s after the bomb and
 //! burn a bot 26 a second (apps/cs_source/tests/it/heavy/map_fire.rs).
 
+use super::classes::kinds;
 use bevy::prelude::*;
 
 use super::classes::Class;
@@ -599,7 +600,7 @@ pub(super) fn think(w: &mut LogicWorld, id: EntId) {
 /// within `radius` of `at` (at most `max`).
 fn heat_fires_near(w: &mut LogicWorld, at: Vec3, radius: f32, heat: f32, max: usize) {
     let near: Vec<EntId> = w
-        .ids()
+        .ids_of(kinds::FIRE)
         .into_iter()
         .filter(|f| {
             w.get(*f)
@@ -620,7 +621,7 @@ fn sensor_think(w: &mut LogicWorld, id: EntId, s: FireSensor) {
     let origin = w.get(id).unwrap().origin;
     let tau = sensor_interval(&s);
     let sum: f32 = w
-        .ids()
+        .ids_of(kinds::FIRE)
         .into_iter()
         .filter_map(|f| {
             let e = w.get(f)?;
@@ -759,6 +760,7 @@ pub fn create_flame(w: &mut LogicWorld, target: Who, lifetime: f32) -> Option<En
         life_end: now + FLAME_DEFAULT_LIFE as f64,
         stopping: false,
     }));
+    w.sync_kind(id.index as usize);
     w.think_in(id, FLAME_FIRST_THINK);
     w.effects.push(Effect::FlameStart { id, target });
     set_flame_life(w, id, lifetime);
@@ -774,7 +776,7 @@ fn set_flame_life(w: &mut LogicWorld, id: EntId, lifetime: f32) {
 
 /// The flames burning `target`.
 pub fn flames_on(w: &LogicWorld, target: Who) -> Vec<EntId> {
-    w.ids()
+    w.ids_of(kinds::FLAME)
         .into_iter()
         .filter(|id| {
             w.get(*id)
@@ -970,7 +972,7 @@ impl LogicWorld {
 
     /// Lit fires (their effect exists), for the host to draw.
     pub fn fire_looks(&self) -> Vec<FireLook> {
-        self.ids()
+        self.ids_of(kinds::FIRE)
             .into_iter()
             .filter_map(|id| {
                 let e = self.get(id)?;
@@ -989,7 +991,7 @@ impl LogicWorld {
 
     /// Burning flames (not stopped), for the host to draw.
     pub fn flame_looks(&self) -> Vec<FlameLook> {
-        self.ids()
+        self.ids_of(kinds::FLAME)
             .into_iter()
             .filter_map(|id| {
                 let e = self.get(id)?;

@@ -834,3 +834,218 @@ fn a_prop_animation_ending_fires_on_animation_done() {
     sim.ticks(3);
     assert!(!exists(&sim, 0), "OnAnimationDone killed it");
 }
+
+/// The bridge skips the mover and prop nodes it has nothing to write to
+/// (kept queries tell: docs/performance.md, "Performance pass"). The same
+/// scenario with and without the skip (`SyncEveryNode`: every node gets
+/// every test and write, as before) leaves every node the same after
+/// every tick: a door opening and staying open, a brush switched off and
+/// on by a timer, a vent shot to pieces, a prop switched off and on and
+/// then killed, a round restart putting all of it back.
+#[test]
+fn skipping_unchanged_nodes_changes_nothing() {
+    use avian3d::prelude::{ColliderDisabled, CollisionLayers, RigidBodyDisabled};
+    use crate::stack::logic::SyncEveryNode;
+    use crate::stack::map::{BrushTint, LogicHidden, MapModel, MapProp, PropEntity, PropLook, PropSequence, PropSolid};
+
+    fn run(every: bool) -> Vec<String> {
+        let entities = vec![
+            // 0: a door the trigger opens and that stays open.
+            entity(
+                &[("classname", "func_door"), ("targetname", "door"), ("origin", "100 0 64"), ("lip", "4"), ("speed", "200"), ("wait", "-1")],
+                vec![hull(Vec3::new(-32.0, -4.0, -64.0), Vec3::new(32.0, 4.0, 64.0))],
+                true,
+            ),
+            // 1: a trigger_once around the player's start.
+            entity(
+                &[("classname", "trigger_once"), ("spawnflags", "1"), ("OnTrigger", "door,Open,,0,-1")],
+                vec![hull(Vec3::new(-64.0, -64.0, 0.0), Vec3::new(64.0, 64.0, 72.0))],
+                false,
+            ),
+            // 2: a metal vent, health 1.
+            entity(
+                &[("classname", "func_breakable"), ("material", "2"), ("health", "1"), ("origin", "0 300 32")],
+                vec![hull(Vec3::new(-32.0, -4.0, -16.0), Vec3::new(32.0, 4.0, 16.0))],
+                true,
+            ),
+            // 3: a wall a timer switches off and on, coloured on the way.
+            entity(
+                &[("classname", "func_brush"), ("targetname", "wall"), ("origin", "-200 200 32")],
+                vec![hull(Vec3::new(-16.0, -16.0, -32.0), Vec3::new(16.0, 16.0, 32.0))],
+                true,
+            ),
+            // 4: the timer (every 0.2 s).
+            entity(
+                &[
+                    ("classname", "logic_timer"),
+                    ("RefireTime", "0.2"),
+                    ("OnTimer", "wall,Toggle,,0,-1"),
+                    ("OnTimer", "wall,Color,255 0 0,0.1,-1"),
+                    ("OnTimer", "crate,Skin,1,0.05,-1"),
+                    ("OnTimer", "crate,TurnOff,,0.1,3"),
+                    ("OnTimer", "crate,TurnOn,,0.15,3"),
+                ],
+                Vec::new(),
+                false,
+            ),
+            // 5: a prop the timer switches off and on; killed late.
+            entity(&[("classname", "prop_dynamic"), ("targetname", "crate"), ("origin", "300 0 0")], Vec::new(), false),
+            // 6: kills the prop 1.5 s into each round.
+            entity(&[("classname", "logic_auto"), ("OnMapSpawn", "crate,Kill,,1.5,-1")], Vec::new(), false),
+        ];
+        let mut data = map(entities);
+        data.models.push(MapModel::default());
+        data.props.push(MapProp {
+            pose: None,
+            ragdoll: None,
+            model: 0,
+            translation: to_engine(Vec3::new(300.0, 0.0, 0.0)),
+            rotation: Quat::IDENTITY,
+            solid: PropSolid::None,
+            skybox: false,
+            lighting: None,
+            vertex_light: None,
+            casts_shadow: false,
+            physics: None,
+            fade: None,
+            parent: None,
+            entity: Some(5),
+            skin: 0,
+            body: 0,
+            detail: false,
+        });
+        let mut sim = Sim::new(CsSim, (MapPlugin::new(data), SourceMovementPlugin));
+        sim.set_tick_interval(cs_source::TICK_INTERVAL);
+        if every {
+            sim.app.insert_resource(SyncEveryNode);
+        }
+        let p = sim.spawn_character(to_engine(Vec3::new(0.0, 0.0, 37.0)), movement::ID);
+        let mut out = Vec::new();
+        for tick in 0..260 {
+            if tick == 60 {
+                let vent = node(&mut sim, 2);
+                sim.app.world_mut().write_message(Damage {
+                    force: bevy::math::Vec3::ZERO,
+                    target: vent,
+                    attacker: None,
+                    amount: 0.5,
+                    point: to_engine(Vec3::new(0.0, 296.0, 32.0)),
+                    dir: Vec3::NEG_Z,
+                    hitgroup: Hitgroup::Generic,
+                    kind: DamageKind::Bullet,
+                    weapon: None,
+                });
+            }
+            if tick == 150 {
+                sim.app.world_mut().get_mut::<Transform>(p).unwrap().translation = to_engine(Vec3::new(-300.0, 0.0, 37.0));
+            }
+            if tick == 160 {
+                crate::stack::core::restart_round(sim.app.world_mut());
+            }
+            sim.ticks(1);
+            // Every mover's and prop's node, by its map entity or prop.
+            let world = sim.app.world_mut();
+            let mut nodes: Vec<(String, Entity)> = world
+                .query::<(Entity, &MapBrushEntity)>()
+                .iter(world)
+                .map(|(e, n)| (format!("mover {}", n.0), e))
+                .collect();
+            let mut props = world.query::<(Entity, &PropEntity)>();
+            nodes.extend(props.iter(world).map(|(e, n)| (format!("prop {}", n.0), e)));
+            nodes.sort();
+            let mut line = format!("tick {tick}:");
+            for (name, e) in nodes {
+                let e = world.entity(e);
+                line += &format!(
+                    "\n  {name}: {:?} {:?} hidden {} off {} body off {} {:?} {:?} {:?} {:?} {:?} damageable {}",
+                    e.get::<Transform>(),
+                    e.get::<Visibility>(),
+                    e.contains::<LogicHidden>(),
+                    e.contains::<ColliderDisabled>(),
+                    e.contains::<RigidBodyDisabled>(),
+                    e.get::<MovingSolid>().map(|m| (m.solid, m.velocity, m.brushes.len())),
+                    e.get::<BrushTint>(),
+                    e.get::<CollisionLayers>(),
+                    e.get::<PropLook>(),
+                    e.get::<PropSequence>(),
+                    e.contains::<Damageable>(),
+                );
+            }
+            out.push(line);
+        }
+        out
+    }
+
+    let (skipping, every) = (run(false), run(true));
+    for (a, b) in skipping.iter().zip(&every) {
+        assert_eq!(a, b);
+    }
+    // The scenario did what it says: the nodes changed many times, the
+    // wall was hidden and shown, the door moved, the prop went and came
+    // back with the round.
+    let changes = skipping.windows(2).filter(|w| w[0].split_once(':').unwrap().1 != w[1].split_once(':').unwrap().1).count();
+    assert!(changes > 40, "{changes} ticks changed a node");
+    let wall = |line: &String| line.lines().find(|l| l.contains("mover 3:")).unwrap().contains("hidden true");
+    assert!(skipping.iter().any(wall) && !skipping.iter().all(wall), "the wall was switched off and on");
+    let prop = |line: &String| line.lines().find(|l| l.contains("prop 5:")).unwrap().to_string();
+    assert!(prop(&skipping[140]).contains("hidden true"), "the prop was killed: {}", prop(&skipping[140]));
+    assert!(prop(&skipping[170]).contains("hidden false"), "and is back after the restart: {}", prop(&skipping[170]));
+    assert_ne!(prop(&skipping[5]), prop(&skipping[40]), "its skin changed");
+    let door = |line: &String| line.lines().find(|l| l.contains("mover 0:")).unwrap().to_string();
+    assert_ne!(door(&skipping[0]), door(&skipping[100]), "the door opened");
+    assert_eq!(door(&skipping[0]).split("hidden").next(), door(&skipping[200]).split("hidden").next(), "and is back after the restart");
+}
+
+/// A tick's cost with many idle entities (docs/performance.md,
+/// "Performance pass"): the logic's passes ask for the entities of their
+/// classes and the bridge passes over the nodes it has nothing to write
+/// to, so a map's thousands of standing brushes and points cost little.
+/// 1,200 idle brushes and 2,400 points: a tick must cost well under what
+/// it costs when every node is written through (`SyncEveryNode`), and each
+/// idle entity little. Passes with a note where the hardware counters
+/// can't be read.
+#[test]
+fn idle_entities_cost_a_tick_little() {
+    use chimera_core::metrics::ThreadCounters;
+    use crate::stack::logic::SyncEveryNode;
+
+    /// The median tick's instructions with `brushes` idle brushes and
+    /// twice as many points.
+    fn tick(brushes: usize, every: bool) -> Option<u64> {
+        let mut entities = Vec::new();
+        for i in 0..brushes {
+            let at = format!("{} {} 32", 400 + (i % 40) * 96, 400 + (i / 40) * 96);
+            entities.push(entity(
+                &[("classname", "func_brush"), ("targetname", &format!("wall{i}")), ("origin", &at)],
+                vec![hull(Vec3::new(-16.0, -16.0, -32.0), Vec3::new(16.0, 16.0, 32.0))],
+                true,
+            ));
+            entities.push(entity(&[("classname", "info_target"), ("targetname", &format!("spot{i}")), ("origin", &at)], Vec::new(), false));
+            entities.push(entity(&[("classname", "logic_relay"), ("targetname", &format!("relay{i}"))], Vec::new(), false));
+        }
+        let (mut sim, _) = sim(entities, Vec3::ZERO, 0.0);
+        if every {
+            sim.app.insert_resource(SyncEveryNode);
+        }
+        sim.ticks(20);
+        let mut counters = ThreadCounters::current();
+        let mut costs = Vec::new();
+        for _ in 0..41 {
+            let before = counters.read().hw.map(|h| h.instructions)?;
+            sim.ticks(1);
+            costs.push(counters.read().hw.map(|h| h.instructions)? - before);
+        }
+        costs.sort_unstable();
+        Some(costs[costs.len() / 2])
+    }
+
+    const BRUSHES: usize = 1200;
+    let (Some(none), Some(idle), Some(every)) = (tick(0, false), tick(BRUSHES, false), tick(BRUSHES, true)) else {
+        eprintln!("skipping: no hardware counters here");
+        return;
+    };
+    let each = idle.saturating_sub(none) / (3 * BRUSHES as u64);
+    let each_every = every.saturating_sub(none) / (3 * BRUSHES as u64);
+    eprintln!("a tick: {none} instructions without the entities, {idle} with them ({each} each), {every} writing every node through ({each_every} each)");
+    assert!(idle < every, "passing over idle nodes costs more than writing them through: {idle} against {every}");
+}

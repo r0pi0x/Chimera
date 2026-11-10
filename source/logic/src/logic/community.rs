@@ -111,6 +111,7 @@
 //! mg_escape_prison_beta, mg_crazykart_v1_1, mg_swag_multigames_v1,
 //! surf_halloween_tf2).
 
+use super::classes::kinds;
 use bevy::prelude::*;
 
 use super::anchors::angles_of;
@@ -339,7 +340,7 @@ impl LogicWorld {
     /// The point_camera monitors show: the first one that is on and named
     /// by a shown func_monitor's target.
     fn active_monitor_camera(&self) -> Option<EntId> {
-        for id in self.ids() {
+        for id in self.ids_of(kinds::BRUSH) {
             let Some(e) = self.get(id) else { continue };
             if !e.classname.eq_ignore_ascii_case("func_monitor") {
                 continue;
@@ -349,7 +350,7 @@ impl LogicWorld {
             if !shown || target.is_empty() {
                 continue;
             }
-            for cam in self.ids() {
+            for cam in self.ids_of(kinds::EXTRA) {
                 let Some(c) = self.get(cam) else { continue };
                 if let Class::Extra(x) = &c.class
                     && let Extra::Camera { on: true, .. } = **x
@@ -419,7 +420,7 @@ fn push(w: &mut LogicWorld, id: EntId) {
     let dt = w.dt;
     let dir = |at: Vec3| along.unwrap_or_else(|| (at - origin).normalize_or_zero());
     if flags & SF_PUSH_PHYSICS != 0 {
-        for body in w.ids() {
+        for body in w.ids_of(kinds::PROP) {
             let Some((lo, hi)) = super::triggers::physics_body(w, body) else {
                 continue;
             };
@@ -640,7 +641,7 @@ pub(super) fn input(w: &mut LogicWorld, id: EntId, input: &str, value: &Value, a
         }
         (Extra::Camera { .. }, "seton" | "setoff" | "setonandturnothersoff") => {
             if input == "setonandturnothersoff" {
-                for other in w.ids() {
+                for other in w.ids_of(kinds::EXTRA) {
                     if other != id
                         && let Some(Extra::Camera { on, .. }) = extra_mut(w, other)
                     {

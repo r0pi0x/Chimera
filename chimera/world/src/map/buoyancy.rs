@@ -266,6 +266,11 @@ fn float_bodies(
     // Each body's box, volume and surfaces, from its colliders.
     let mut wets: HashMap<Entity, Wet> = HashMap::new();
     for (e, of, aabb, props, collider, pos, rot) in &colliders {
+        // Only dynamic bodies float: a map's static colliders (most of
+        // them) are passed over here, not gathered and dropped below.
+        if !bodies.get(of.body).is_ok_and(|b| b.0.is_dynamic()) {
+            continue;
+        }
         let w = wets.entry(of.body).or_insert(Wet {
             min: Vec3::splat(f32::MAX),
             max: Vec3::splat(f32::MIN),

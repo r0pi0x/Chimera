@@ -344,3 +344,41 @@ fn lists_share_the_models_animations() {
     assert!(std::sync::Arc::ptr_eq(&a.entries[0].animation, &b.entries[0].animation));
     assert!(std::sync::Arc::ptr_eq(&a.entries[0].animation, &m.animations[0]));
 }
+
+
+/// The sum over k, as `mul` was written before it was unrolled.
+fn mul_by_sum(a: &lithtech_formats::ltb::Mat4, b: &lithtech_formats::ltb::Mat4) -> lithtech_formats::ltb::Mat4 {
+    let mut o = [[0.0; 4]; 4];
+    for (r, row) in o.iter_mut().enumerate() {
+        for (c, v) in row.iter_mut().enumerate() {
+            *v = (0..4).map(|k| a[r][k] * b[k][c]).sum();
+        }
+    }
+    o
+}
+
+#[test]
+fn mul_gives_the_sum_s_bits() {
+    let mut x = 0x2545_f491_4f6c_dd1du64;
+    let mut next = || {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        // Signed, of many magnitudes, zeros of both signs among them.
+        match x % 11 {
+            0 => 0.0,
+            1 => -0.0,
+            _ => ((x >> 11) as f32 / (1u64 << 53) as f32 - 0.5) * 10f32.powi((x % 7) as i32 - 3),
+        }
+    };
+    for _ in 0..20_000 {
+        let a: lithtech_formats::ltb::Mat4 = std::array::from_fn(|_| std::array::from_fn(|_| next()));
+        let b: lithtech_formats::ltb::Mat4 = std::array::from_fn(|_| std::array::from_fn(|_| next()));
+        let (got, want) = (lithtech_formats::anim::mul(&a, &b), mul_by_sum(&a, &b));
+        for r in 0..4 {
+            for c in 0..4 {
+                assert_eq!(got[r][c].to_bits(), want[r][c].to_bits(), "{a:?} x {b:?} at {r},{c}");
+            }
+        }
+    }
+}

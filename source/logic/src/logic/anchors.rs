@@ -423,9 +423,14 @@ impl LogicWorld {
     /// Whether `id` is carried by a physics brush or prop (through its parents):
     /// its own collider must not collide with that body.
     pub fn rides_body(&self, id: EntId) -> bool {
+        self.rides_body_by(id, |at| self.follows.iter().find(|(c, _)| *c == at).map(|(_, f)| f))
+    }
+
+    /// `rides_body` with the search for an entity's link given.
+    fn rides_body_by<'a>(&'a self, id: EntId, link: impl Fn(EntId) -> Option<&'a Follow>) -> bool {
         let mut at = id;
         for _ in 0..16 {
-            let Some((_, f)) = self.follows.iter().find(|(c, _)| *c == at) else {
+            let Some(f) = link(at) else {
                 return false;
             };
             let Who::Ent(parent) = f.parent else { return false };
@@ -435,5 +440,45 @@ impl LogicWorld {
             at = parent;
         }
         false
+    }
+
+    /// `rides_body` for many entities (the bridge asks for every mover,
+    /// every phase): the links looked up by slot, not by a search of the
+    /// whole list for each (docs/performance.md, "Performance pass").
+    pub fn body_riders(&self) -> BodyRiders<'_> {
+        // Each slot's first link, as 1 + its place in `follows` (0: none).
+        let mut first: Vec<u32> = Vec::new();
+        for (i, (child, _)) in self.follows.iter().enumerate() {
+            let slot = child.index as usize;
+            if first.len() <= slot {
+                first.resize(slot + 1, 0);
+            }
+            if first[slot] == 0 {
+                first[slot] = i as u32 + 1;
+            }
+        }
+        BodyRiders { world: self, first }
+    }
+}
+
+/// `LogicWorld::rides_body` for many entities (`LogicWorld::body_riders`).
+pub struct BodyRiders<'a> {
+    world: &'a LogicWorld,
+    first: Vec<u32>,
+}
+
+impl BodyRiders<'_> {
+    /// `LogicWorld::rides_body(id)`.
+    pub fn rides(&self, id: EntId) -> bool {
+        let follows = &self.world.follows;
+        self.world.rides_body_by(id, |at| {
+            let place = *self.first.get(at.index as usize)?;
+            let (child, f) = follows.get(place.checked_sub(1)? as usize)?;
+            if *child == at {
+                return Some(f);
+            }
+            // The slot's first link is an older entity's: the search.
+            follows.iter().find(|(c, _)| *c == at).map(|(_, f)| f)
+        })
     }
 }

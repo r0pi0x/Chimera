@@ -23,6 +23,7 @@
 //! (then welded); no phys_spring or phys_pulleyconstraint (no stock map
 //! has one; measured, physics_constraints.md Q4, Q8).
 
+use super::classes::kinds;
 use bevy::prelude::*;
 
 use super::classes::Class;
@@ -492,7 +493,7 @@ impl LogicWorld {
     /// socket broken by its Break input; physics_constraints.md question 5).
     pub fn break_orphan_joints(&mut self) {
         let orphans: Vec<EntId> = self
-            .ids()
+            .ids_of(kinds::JOINT)
             .into_iter()
             .filter(|id| match self.get(*id).map(|e| (&e.class, e.killed)) {
                 Some((Class::Joint(j), false)) if j.connected => [j.body1, j.body2]
@@ -518,7 +519,7 @@ impl LogicWorld {
     /// The constraints holding bodies (connected, not broken), with
     /// phys_motors' "Hinge Object" hinges.
     pub fn joints(&self) -> Vec<JointExport> {
-        self.ids()
+        self.ids_of(kinds::JOINT | kinds::MOTOR)
             .into_iter()
             .filter_map(|id| {
                 let e = self.get(id)?;
@@ -554,7 +555,7 @@ impl LogicWorld {
     /// The thrusters and keep-uprights that are on, on bodies that are
     /// there.
     pub fn controls(&self) -> Vec<Control> {
-        self.ids()
+        self.ids_of(kinds::THRUSTER | kinds::UPRIGHT | kinds::MOTOR | kinds::JOINT)
             .into_iter()
             .filter_map(|id| {
                 let e = self.get(id)?;

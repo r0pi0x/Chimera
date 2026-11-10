@@ -2,6 +2,12 @@
 //! each fixed tick in the spec's order around the characters' movement
 //! (entity_io.md "Per-tick order"): thinks, movers and +use before
 //! movement; trigger touches, untouch, the event queue and removals after.
+//! Each phase ends by bringing the nodes in line with the logic
+//! (`sync_movers`, `sync_props`, ...): a mover's or prop's node that
+//! already reads as the logic wants is passed over after one look through
+//! a kept query (`MoverWants::differ`, `prop_differs`: the writes' own
+//! tests; `SyncEveryNode` runs every write's code for every node, which
+//! `map_logic::skipping_unchanged_nodes_changes_nothing` compares with).
 //!
 //! Covers: `carry_player`: a network client's own player pushed by its movers'
 //! steps as `LogicSet::Pre` does; `LogicPlugin`: built from `map::MapEntities`,
@@ -651,9 +657,26 @@ fn sync_physics_clips(world: &mut World, logic: &Logic) {
 /// Prop nodes follow their logic prop: hidden and not solid once it is
 /// gone (broken, killed) until a round restart, or as its inputs say.
 fn sync_props(world: &mut World, logic: &mut Logic) {
+    // In entity order (`prop_states`): found by slot, the generation
+    // checked.
     let states = logic.world.prop_states();
-    for (id, node) in logic.props.clone() {
-        match states.iter().find(|s| s.id == id) {
+    let props = std::mem::take(&mut logic.props);
+    let every = world.contains_resource::<SyncEveryNode>();
+    for &(id, node) in &props {
+        let state = states
+            .binary_search_by_key(&id.index, |s| s.id.index)
+            .ok()
+            .map(|i| &states[i])
+            .filter(|s| s.id == id);
+        // Nothing to write (most props, most ticks): told from the node
+        // as it is, read through kept queries, by the tests of
+        // `set_prop_shown` and `set_prop_look`.
+        let (visible, solid, exists) = state.map_or((false, false, false), |s| (s.visible, s.solid, !s.gone));
+        let round = logic.world.round;
+        if !every && !prop_differs(world, node, visible, solid, exists, state.map(|s| (s, round))) {
+            continue;
+        }
+        match state {
             Some(state) => {
                 set_prop_shown(world, node, state.visible, state.solid, !state.gone);
                 set_prop_look(world, node, state, logic.world.round);
@@ -661,6 +684,69 @@ fn sync_props(world: &mut World, logic: &mut Logic) {
             None => set_prop_shown(world, node, false, false, false),
         }
     }
+    logic.props = props;
+}
+
+/// What `sync_props` reads of a prop's node to tell whether it has
+/// anything to write there.
+type PropView = (
+    (Has<LogicHidden>, Has<RigidBody>, Has<RigidBodyDisabled>, Has<Collider>, Has<ColliderDisabled>),
+    Option<&'static Children>,
+    Option<&'static MovingSolid>,
+    Has<Damageable>,
+    Option<&'static crate::map::placed_ragdoll::PlacedRagdoll>,
+    Option<&'static PropLook>,
+    Option<&'static PropSequence>,
+);
+
+/// Whether `set_prop_shown(world, node, visible, solid, exists)` and, with
+/// `look` (the prop's state and the round), `set_prop_look` would write
+/// anything: each of their tests. A node that is gone has nothing to
+/// write.
+fn prop_differs(
+    world: &mut World,
+    node: Entity,
+    visible: bool,
+    solid: bool,
+    exists: bool,
+    look: Option<(&super::props::PropState, u32)>,
+) -> bool {
+    cached_query::<PropView, (), _>(world, |view, world| {
+        let Ok(((hidden, body, body_off, collider, collider_off), children, moving, damageable, ragdoll, have_look, have_sequence)) =
+            view.get(world, node)
+        else {
+            return false;
+        };
+        // `set_prop_shown`: shown or hidden, its body back, its own
+        // collider, its brushes, a body that is gone, its damage, its
+        // placed ragdoll.
+        if visible == hidden
+            || (exists && body && body_off)
+            || (collider && solid == collider_off)
+            || moving.is_some_and(|m| m.solid != solid)
+            || (!exists && body && !body_off)
+            || (!exists && damageable)
+            || ragdoll.is_some_and(|r| r.gone == exists || r.solid != solid)
+        {
+            return true;
+        }
+        // `set_prop_look`.
+        if let Some((state, round)) = look
+            && (have_look.is_none_or(|l| l.skin != state.skin || l.body_group != state.body_group)
+                || have_sequence
+                    .is_none_or(|s| s.play != state.sequence || s.default != state.default_sequence || s.round != round))
+        {
+            return true;
+        }
+        // Its children's colliders.
+        children.is_some_and(|children| {
+            children.iter().any(|c| {
+                world
+                    .get_entity(c)
+                    .is_ok_and(|c| c.contains::<Collider>() && solid == c.contains::<ColliderDisabled>())
+            })
+        })
+    })
 }
 
 /// A prop node shows the logic prop's skin, body group and sequence
@@ -800,7 +886,7 @@ fn sync_soundscapes(world: &mut World, logic: &Logic) {
     let touched: Vec<usize> = match local {
         Some(p) => logic
             .world
-            .ids()
+            .ids_of(super::classes::kinds::TRIGGER)
             .into_iter()
             .filter_map(|id| {
                 let e = logic.world.get(id)?;
@@ -1193,9 +1279,28 @@ fn sync_movers(world: &mut World, logic: &mut Logic) {
         alive
     });
     let logic = &*logic;
-    let nodes: std::collections::HashMap<EntId, Entity> = logic.nodes.iter().copied().collect();
+    // Each mover's node by its entity's slot (the generation checked): a
+    // hash map made here every phase was a tenth of a tick on a map with
+    // thousands of movers (docs/performance.md, "Performance pass").
+    let mut nodes: Vec<Option<(u32, Entity)>> = Vec::new();
+    for (id, node) in &logic.nodes {
+        let i = id.index as usize;
+        if nodes.len() <= i {
+            nodes.resize(i + 1, None);
+        }
+        nodes[i] = Some((id.generation, *node));
+    }
+    let every = world.contains_resource::<SyncEveryNode>();
+    let riders = logic.world.body_riders();
+    // What the logic wants of each mover's node (the logic alone says).
+    let mut wants: Vec<MoverWants> = Vec::new();
     for (id, origin, angles, velocity, visible, solid) in logic.world.mover_poses() {
-        let Some(node) = nodes.get(&id) else {
+        let Some(node) = nodes
+            .get(id.index as usize)
+            .and_then(|n| n.as_ref())
+            .filter(|(generation, _)| *generation == id.generation)
+            .map(|(_, node)| *node)
+        else {
             continue;
         };
         // A brush riding a physics brush or prop touches no physics body
@@ -1203,7 +1308,7 @@ fn sync_movers(world: &mut World, logic: &mut Logic) {
         // (cs_havana's monitor screen); players meet its brushes
         // (`MovingSolid`).
         let shootable = logic.world.shootable(id);
-        let rides = logic.world.rides_body(id);
+        let rides = riders.rides(id);
         let panes = logic.world.window(id).filter(|w| w.window_broken).map(|w| {
             let e = logic.world.get(id).unwrap();
             let s = logic.scale;
@@ -1229,9 +1334,6 @@ fn sync_movers(world: &mut World, logic: &mut Logic) {
                 broken: w.broken.clone(),
             }
         });
-        let Ok(mut e) = world.get_entity_mut(*node) else {
-            continue;
-        };
         let transform = Transform::from_translation(entity_to_engine(origin, logic.scale))
             .with_rotation(rotation_to_engine(entity_rotation(angles)));
         // A broken window's panes are for shots only
@@ -1244,6 +1346,69 @@ fn sync_movers(world: &mut World, logic: &mut Logic) {
         } else {
             CollisionLayers::default()
         };
+        // Its render colour (rendercolor, the Color input).
+        let look = logic.world.get(id).map_or_else(Default::default, |e| e.render_look());
+        let frame = logic.world.get(id).map_or(0, |e| e.texture_frame);
+        wants.push(MoverWants {
+            id,
+            node,
+            transform,
+            layers,
+            rides,
+            visible,
+            tint: crate::map::BrushTint(look, frame),
+            solid,
+            velocity: entity_to_engine(velocity, logic.scale),
+            solids: logic.world.mover_solid(id).map_or(0, |b| b.len()),
+            panes,
+            shootable,
+        });
+    }
+    // The nodes with something to write: all but those that already read
+    // as wanted (most movers, most ticks), told in one walk over the
+    // nodes through a kept query (a node gets its brushes, `MovingSolid`,
+    // at its first write; one without them isn't in the walk and is
+    // written). A node two movers share is written as before: the second
+    // would be judged by what the first has yet to write.
+    let mut write = vec![true; wants.len()];
+    if !every {
+        const SHARED: usize = usize::MAX;
+        let mut by_node = bevy::ecs::entity::EntityHashMap::<usize>::with_capacity(wants.len());
+        for (i, w) in wants.iter().enumerate() {
+            if by_node.insert(w.node, i).is_some() {
+                by_node.insert(w.node, SHARED);
+            }
+        }
+        cached_query::<(Entity, MoverView), With<MovingSolid>, _>(world, |nodes, world| {
+            for (node, have) in nodes.iter(world) {
+                if let Some(&i) = by_node.get(&node)
+                    && i != SHARED
+                    && !wants[i].differ(&have)
+                {
+                    write[i] = false;
+                }
+            }
+        });
+    }
+    // The writes, in the movers' order: each only where the node differs.
+    for (want, _) in wants.into_iter().zip(write).filter(|(_, write)| *write) {
+        let MoverWants {
+            id,
+            node,
+            transform,
+            layers,
+            rides,
+            visible,
+            tint,
+            solid,
+            velocity,
+            panes,
+            shootable,
+            ..
+        } = want;
+        let Ok(mut e) = world.get_entity_mut(node) else {
+            continue;
+        };
         if e.get::<CollisionLayers>().is_some_and(|l| *l != layers) || (rides && !e.contains::<CollisionLayers>()) {
             e.insert(layers);
         }
@@ -1255,10 +1420,6 @@ fn sync_movers(world: &mut World, logic: &mut Logic) {
             }
         }
         set_node_shown(&mut e, visible);
-        // Its render colour (rendercolor, the Color input).
-        let look = logic.world.get(id).map_or_else(Default::default, |e| e.render_look());
-        let frame = logic.world.get(id).map_or(0, |e| e.texture_frame);
-        let tint = crate::map::BrushTint(look, frame);
         if e.get::<crate::map::BrushTint>()
             .map_or(!tint.is_white(), |t| *t != tint)
         {
@@ -1267,7 +1428,6 @@ fn sync_movers(world: &mut World, logic: &mut Logic) {
         // Its brushes follow its pose: rebuilt (and the component written,
         // which movement reads) only when it moved or changed.
         let solids = logic.world.mover_solid(id);
-        let velocity = entity_to_engine(velocity, logic.scale);
         let same = !moved
             && e.get::<MovingSolid>().is_some_and(|m| {
                 m.solid == solid && m.velocity == velocity && m.brushes.len() == solids.map_or(0, |b| b.len())
@@ -1294,6 +1454,93 @@ fn sync_movers(world: &mut World, logic: &mut Logic) {
             } else {
                 e.insert(ColliderDisabled);
             }
+        }
+    }
+}
+
+/// With this resource every phase runs the whole of `sync_movers` and
+/// `sync_props` for every node, as before the kept queries' checks that
+/// pass over the nodes with nothing to write (tests compare the two:
+/// games/cs_source/tests/it/map_logic.rs, `skipping_unchanged_nodes_changes_nothing`).
+#[derive(Resource, Default)]
+pub struct SyncEveryNode;
+
+/// What `sync_movers` reads of a mover's node to tell whether it has
+/// anything to write there.
+type MoverView = (
+    Option<&'static CollisionLayers>,
+    Option<&'static Transform>,
+    Has<LogicHidden>,
+    Option<&'static VisClusters>,
+    Option<&'static Visibility>,
+    Option<&'static crate::map::BrushTint>,
+    Option<&'static MovingSolid>,
+    Option<&'static BrushPanes>,
+    Has<ColliderDisabled>,
+);
+
+/// What the logic wants of a mover's node this phase.
+struct MoverWants {
+    id: EntId,
+    node: Entity,
+    transform: Transform,
+    layers: CollisionLayers,
+    rides: bool,
+    visible: bool,
+    tint: crate::map::BrushTint,
+    solid: bool,
+    velocity: Vec3,
+    /// Its brushes' count.
+    solids: usize,
+    panes: Option<BrushPanes>,
+    shootable: bool,
+}
+
+impl MoverWants {
+    /// Whether `sync_movers` would write anything to a node that reads
+    /// `have`: each of its tests, in its order.
+    #[allow(clippy::type_complexity)]
+    fn differ(
+        &self,
+        have: &(
+            Option<&CollisionLayers>,
+            Option<&Transform>,
+            bool,
+            Option<&VisClusters>,
+            Option<&Visibility>,
+            Option<&crate::map::BrushTint>,
+            Option<&MovingSolid>,
+            Option<&BrushPanes>,
+            bool,
+        ),
+    ) -> bool {
+        let (layers, transform, hidden, vis, visibility, tint, moving, panes, disabled) = *have;
+        if layers.is_some_and(|l| *l != self.layers) || (self.rides && layers.is_none()) {
+            return true;
+        }
+        // Without a transform its brushes are written every time.
+        if transform != Some(&self.transform) {
+            return true;
+        }
+        // `set_node_shown`.
+        if self.visible {
+            let culled = vis.is_some_and(|v| !v.potentially_visible);
+            let want = if culled { Visibility::Hidden } else { Visibility::Inherited };
+            if hidden || visibility != Some(&want) {
+                return true;
+            }
+        } else if !hidden || visibility != Some(&Visibility::Hidden) {
+            return true;
+        }
+        if tint.map_or(!self.tint.is_white(), |t| *t != self.tint) {
+            return true;
+        }
+        if !moving.is_some_and(|m| m.solid == self.solid && m.velocity == self.velocity && m.brushes.len() == self.solids) {
+            return true;
+        }
+        match &self.panes {
+            Some(p) => panes != Some(p),
+            None => self.shootable == disabled,
         }
     }
 }
@@ -2278,7 +2525,8 @@ fn set_anchor_poses(world: &World, logic: &mut Logic) {
 /// fire (flame size and place, damage boxes).
 fn prop_bounds(world: &mut World, logic: &mut Logic) {
     let scale = logic.scale;
-    for (id, node) in logic.props.clone() {
+    let props = std::mem::take(&mut logic.props);
+    for &(id, node) in &props {
         let aabb = std::iter::once(node)
             .chain(world.get::<Children>(node).map(|c| c.to_vec()).unwrap_or_default())
             .find_map(|e| world.get::<ColliderAabb>(e).copied());
@@ -2291,6 +2539,7 @@ fn prop_bounds(world: &mut World, logic: &mut Logic) {
             logic.world.set_prop_spin(id, engine_to_entity(v.0, 1.0) * 180.0 / std::f32::consts::PI);
         }
     }
+    logic.props = props;
 }
 
 /// Lit fires and burning entities for the game to draw

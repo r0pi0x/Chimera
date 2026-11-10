@@ -25,6 +25,11 @@ Guide: docs/performance.md, "Measuring". Linux needs `perf`.
 4. Put the before/after numbers in the PR; for a lasting gain add a line
    to docs/performance.md.
 
+- No display (the dev box): `perf record -e instructions:u -c 500000
+  --call-graph fp -- target/profiling/perfgate --scenario de_dust2 --ticks
+  8000` for a tick (build `--features tools --bin perfgate`), and the
+  `frame_bench` example of ultimate_gun_game for a frame with the renderer
+  (docs/OBSERVABILITY.md 3c); `perf script --no-inline` into profsum.
 - Headless tick cost without a window: the instruction counters in tests
   (`chimera_core::metrics::ThreadCounters`; `apps/party_kit/tests/it/archetypes.rs`).
 - Frame time across many views: `refcmp bench --views tools/refcmp/<map>.toml`.

@@ -32,6 +32,7 @@
 //! texture and a network client doesn't predict its push. Why it's OK for now:
 //! Each is its spec's open question or a small look; maps play.
 
+use super::classes::kinds;
 use bevy::prelude::*;
 
 use super::classes::Class;
@@ -480,7 +481,7 @@ impl LogicWorld {
     /// command (added to a push trigger's from the last command).
     pub fn push_conveyors(&mut self) {
         let belts: Vec<(EntId, Vec3)> = self
-            .ids()
+            .ids_of(kinds::CONVEYOR)
             .into_iter()
             .filter_map(|id| match &self.get(id)?.class {
                 Class::Conveyor(c) if !c.no_push => Some((id, c.dir * c.speed)),

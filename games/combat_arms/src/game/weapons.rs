@@ -2274,7 +2274,12 @@ pub fn box_holding(min: Vec3, max: Vec3, shapes: &crate::core::Hitboxes) -> (Vec
 /// first sphere of that region (data/characters.toml), else of its
 /// hitgroup's region, else 1.
 pub fn zone_factor(region: crate::core::BodyRegion) -> f32 {
-    let of = |r: crate::core::BodyRegion| MALE.iter().find(|s| s.radius > 0.0 && s.region() == r).map(|s| s.factor);
+    // The male spheres' regions as the character data keeps them (made
+    // once: a sphere's region is read from its node's name, a lower-cased
+    // copy and several searches, and every other game's hitbox asks on
+    // each look at the bodies).
+    let zones = &characters::records::builtin().male_zones;
+    let of = |r: crate::core::BodyRegion| zones.iter().find(|(region, _)| *region == r).map(|(_, factor)| *factor);
     of(region)
         .or_else(|| of(crate::core::BodyRegion::from_hitgroup(region.hitgroup())))
         .unwrap_or(1.0)

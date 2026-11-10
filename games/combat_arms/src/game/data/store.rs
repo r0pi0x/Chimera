@@ -46,7 +46,7 @@ use bevy::prelude::*;
 use toml::Table;
 
 use super::{
-    InstallAttributes, WEAPON_DATA, WeaponRecord, doc_id, install_weapon_in, is_install_name, merge_mods,
+    InstallAttributes, WEAPON_DATA, WeaponRecord, doc_id, install_weapons_by_id, is_install_name, merge_mods,
     merge_weapon_docs_with_mods, open_attributes, with_install_movement,
 };
 use crate::{mount::Mount, weapon::data::WeaponSet};
@@ -105,6 +105,9 @@ pub struct CaDataInner {
     characters: OnceLock<CharacterData>,
     missions: OnceLock<Option<InstallMissions>>,
     builtin_ids: OnceLock<BTreeSet<String>>,
+    /// `install_weapon`'s index: each id to its record's place in the
+    /// install's weapons file (`install_weapons_by_id`), made on first use.
+    install_index: OnceLock<bevy::platform::collections::HashMap<String, usize>>,
 }
 
 impl CaData {
@@ -133,6 +136,7 @@ impl CaData {
             characters: OnceLock::new(),
             missions: OnceLock::new(),
             builtin_ids: OnceLock::new(),
+            install_index: OnceLock::new(),
         }
     }
 
@@ -404,6 +408,16 @@ impl CaDataInner {
     /// install: `combat_arms:<slug of its Name>`), when the install's
     /// weapons file was read.
     pub fn install_weapon(&self, id: &str) -> Option<&WeaponRecord> {
-        install_weapon_in(self.attributes()?.weapons.as_ref()?, id)
+        // By an index: the file has some 2,400 weapons, and a search made
+        // each one's slug again on every call (a zoomed sniper asks every
+        // tick: docs/performance.md, "Performance pass").
+        let file = self.attributes()?.weapons.as_ref()?;
+        let index = self.install_index.get_or_init(|| {
+            install_weapons_by_id(file)
+                .into_iter()
+                .filter_map(|(id, r)| Some((id, file.weapons.iter().position(|w| std::ptr::eq(w, r))?)))
+                .collect()
+        });
+        index.get(id).map(|i| &file.weapons[*i])
     }
 }
