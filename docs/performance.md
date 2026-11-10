@@ -1345,7 +1345,56 @@ pool (an idle frame of that world 0.7 M). With the feed's icon glyphs declared t
 kill: the gun's glyph and the mark, at their own sizes) the same first show is 72.2 M without the
 warm-up and 9.2 M after it, no atlas made; a game menu's first opening (a label in a scheme font of
 its own size and a button) 23.8 M without, 3.5 M after (`a_menus_first_opening_makes_no_atlas_after_the_warm_up`). The real app's walk (each rung's worst frame
-less ticks, `CHIMERA_FRAME_LOG`) waits for a display: this box's session is down.
+less ticks, `CHIMERA_FRAME_LOG`), taken offscreen (`--offscreen`, docs/OBSERVABILITY.md
+section 2: the whole client, HUD and pipelined render thread, no display):
+
+### The real app's rungs and swaps, offscreen (2026-11-10)
+
+`ultimate_gun_game --offscreen 1920x1080 --map cs_source:de_dust2 --frame-log ...`,
+dev build, RTX 3080, box at load 10-16 (another agent building): `+after 2 ugg_new 36336 13
+cs_source:de_dust2`, then `ladder_rung 2` ... `ladder_rung 13` 3 s apart from 22 s, then `map
+cs_source:cs_office`, `map hl2dm:dm_lockdown`, `map combat_arms:warehouse` 20 s apart (each
+marked with an `echo` whose log time, through the frame log's `clock` line, finds its frames).
+A frame in play there: main 12 M instructions less ticks (p99 24 M), 3.8 ms; render world 3.9 ms.
+
+Each rung's second after `ladder_rung`, worst main frame (M instructions less ticks / whole),
+main and render world ms, wall ms:
+
+| Rung | Less ticks | Whole | Main ms | Render ms | Wall ms |
+|---|---|---|---|---|---|
+| 2 | 51.0 | 51.0 | 10.3 | 5.2 | 10.9 |
+| 3 | 57.8 | 66.8 | 8.8 | 5.2 | 9.5 |
+| 4 | 65.1 | 79.1 | 15.5 | 5.6 | 16.6 |
+| 5 | 59.9 | 59.9 | 13.1 | 5.9 | 13.7 |
+| 6 | 47.9 | 47.9 | 6.7 | 5.8 | 7.4 |
+| 7 | 45.4 | 77.7 | 13.1 | 4.5 | 13.8 |
+| 8 | 60.7 | 69.9 | 13.7 | 5.7 | 14.3 |
+| 9 | 59.2 | 65.0 | 8.7 | 5.4 | 9.3 |
+| 10 | 53.3 | 59.5 | 13.0 | 5.2 | 13.6 |
+| 11 | 63.6 | 63.6 | 9.6 | 5.5 | 10.6 |
+| 12 | 49.3 | 57.2 | 12.6 | 5.9 | 13.5 |
+| 13 | 48.6 | 48.6 | 14.9 | 6.9 | 15.9 |
+
+No rung frame reached 17 ms wall; the render thread never over 7 ms. The HUD texts made one
+glyph atlas on a text's first frame in the rungs (`text warm: 1 glyph atlases ... at [16.875]
+px`, rung 12) and five at the match's start (16.0, 21.2, 23.8, 16.1, 15.3 px: sizes no source
+declares), and one in the first frame of the cs_office swap (21.5 px). What the rest of a rung's
+45-65 M is wasn't profiled here (a `perf` run cut to those frames, "Nothing blocks the main
+thread", would say).
+
+A map's swap, 20 s from the `map` command (the loading screen, the load, the settling, the first
+seconds of play): frames, frames over 33 ms wall, worst wall, worst main (its M instructions),
+worst render world, median wall in the first 8 s; the command to the log's `map settled`:
+
+| Swap to | Frames | Over 33 ms | Worst wall | Worst main | Worst render | Median first 8 s | Entered |
+|---|---|---|---|---|---|---|---|
+| cs_source:cs_office | 3058 | 9 | 74 | 73 (461 M) | 62 | 6.8 | 7.7 s (load 1.8 s, settled in 0.97 s) |
+| hl2dm:dm_lockdown | 2934 | 7 | 71 | 66 (483 M) | 62 | 8.2 | 6.9 s (load 1.0 s, settled in 1.13 s) |
+| combat_arms:warehouse | 3835 | 6 | 53 | 42 (201 M) | 50 | 4.0 | 2.9 s (settled in 0.22 s) |
+
+So in the real app a swap no longer stops a frame: the worst is 53-74 ms, with the render
+world's worst (50-62 ms, the new map's first frames drawn: pipelines and uploads) as long as the
+main world's.
 
 ### A map's swap (`map::prepare::begin_map_change`)
 

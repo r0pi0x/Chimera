@@ -15,7 +15,7 @@
 //! debug UI's Perf tab and `--bench`), the hitch log (`chimera_hitch_ratio`: a
 //! frame over that many times the median logs its slowest schedules (and render
 //! sets; `CHIMERA_RENDER_PHASES=0` leaves those marks out); `span_times`, profile builds: spans'
-//! self time). `CHIMERA_FRAME_LOG=<file>`: every frame of each world as a CSV
+//! self time). `CHIMERA_FRAME_LOG=<file>` (`--frame-log <file>`): every frame of each world as a CSV
 //! line (`frame_log`), for finding the worst single frames of a run and cutting
 //! them out of a `perf` profile (docs/performance.md, "Nothing blocks the main
 //! thread").
@@ -516,7 +516,13 @@ fn frame_end(world: &mut World, now: Instant) {
     }
 }
 
-/// `CHIMERA_FRAME_LOG=<file>`: one CSV line per frame of each world
+/// Log every frame to `path` (`--frame-log`) as `CHIMERA_FRAME_LOG` does;
+/// before the first frame. A path set first wins over the variable.
+pub fn set_frame_log(path: std::path::PathBuf) {
+    let _ = frame_log::PATH.set(path);
+}
+
+/// `CHIMERA_FRAME_LOG=<file>` (or `--frame-log <file>`): one CSV line per frame of each world
 /// (`world,begun_s,ms,cpu_ms,instructions,ticks,tick_instructions`;
 /// `begun_s` is `CLOCK_MONOTONIC`, perf's `-k CLOCK_MONOTONIC`; a slow frame
 /// runs many ticks, so look at instructions less tick instructions too). The averages and
@@ -530,13 +536,16 @@ mod frame_log {
 
     use crate::metrics::Counts;
 
+    /// `--frame-log`'s file, in place of the variable's.
+    pub(super) static PATH: OnceLock<std::path::PathBuf> = OnceLock::new();
+
     /// The writer's channel: a thread of its own, as a write to a busy disk
     /// stalls for hundreds of ms (it stalled the frames it measured).
     fn sender() -> Option<&'static Mutex<mpsc::Sender<String>>> {
         static SENDER: OnceLock<Option<Mutex<mpsc::Sender<String>>>> = OnceLock::new();
         SENDER
             .get_or_init(|| {
-                let path = std::env::var_os("CHIMERA_FRAME_LOG")?;
+                let path = PATH.get().map(|p| p.clone().into_os_string()).or_else(|| std::env::var_os("CHIMERA_FRAME_LOG"))?;
                 let mut f = File::create(path).ok()?;
                 let _ = writeln!(f, "world,begun_s,ms,cpu_ms,instructions,ticks,tick_instructions");
                 // Monotonic and wall clocks together, to find a log line's frame.

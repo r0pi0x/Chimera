@@ -274,7 +274,8 @@ protocol that expect a player on a team: add `+jointeam 3`.
 
 Runs 90 frames, saves the primary window, exits. Read the PNG to check
 rendering. Write screenshots to a scratch directory, never into the repo.
-Needs a display: on the Linux dev box set `WAYLAND_DISPLAY=wayland-1` and
+Needs a display, unless `--offscreen <WxH>` (below, "Offscreen"): on the
+Linux dev box set `WAYLAND_DISPLAY=wayland-1` and
 `XDG_RUNTIME_DIR=/run/user/1000` if the shell lacks them. `--frames N`
 without `--screenshot` just runs N frames and exits (smoke test).
 `--scale 1.25` gives the window that scale factor (Windows at 125 %: UI
@@ -302,13 +303,55 @@ fixed and `Predict` schedule, its dedicated server's and its game's
 ambiguous pairs, and the conflicting pairs the two run in opposite orders
 (prediction's at zero); a count that rises fails with the pairs to order.
 
+### Offscreen (no display, no compositor)
+
+`--offscreen <WxH>` runs any game client (cs_source, hl2dm,
+ultimate_gun_game, lucker_party, combat_arms, mashup_demo: one
+implementation, `chimera_client::client::offscreen`, through
+`client::app::default_plugins`) with no window system: no winit, no
+surface, nothing needs `WAYLAND_DISPLAY`. The primary `Window` entity
+stays (pinned to that size, scale 1), so cameras, the HUD, menus, the
+console and the default UI camera behave as in a window; the render world
+gets the window with an image as its swap chain, so every camera that
+draws to the window, post effects and pipelined rendering included,
+draws into it. `--screenshot`, the `screenshot` command and `bugreport`
+work (they read the image back). The GPU or the software adapter wgpu
+finds draws it.
+
+```
+cargo run --features dev --bin ultimate_gun_game -- --offscreen 1920x1080 \
+    --frames 600 --screenshot $OUT/ugg.png --dump $OUT/frames --dump-every 60 \
+    --frame-log $OUT/frames.csv
+```
+
+- `--dump <dir>` saves every `--dump-every`th frame (default 60) as
+  `frame_NNNNNN.png` (encoded off the frame, on threads); with
+  `--dump-every 1` and `ffmpeg` on the PATH the run ends by writing
+  `clip.mp4` at the frames' real rate (without ffmpeg the PNGs stay,
+  numbered for `ffmpeg -i frame_%06d.png`). Works with a window too.
+- At the end an offscreen run prints its frame times over the whole
+  run: frame (wall, `First` to `First`), main world and render world ms
+  (p50, p90, p99, max).
+- `--frame-log <file.csv>` (any run; as `CHIMERA_FRAME_LOG`, section 3c):
+  every frame of each world (`main`/`render`, start on the monotonic
+  clock, ms, CPU ms, instructions, ticks); a frame's wall time is the
+  difference between two `main` lines' starts.
+- An offscreen run is a tool run (loopback ports, no config written)
+  but runs until something ends it: `--frames`, `--screenshot`, `quit`
+  over the remote console (section 3b), or its pid killed. `fps_max`
+  still spaces frames (300); `+fps_max 0` for none. No vsync.
+- Test: `cargo test -p cs_source_app --features dev --test it
+  heavy::offscreen` (the binary on the greybox at 320x200; passes with a
+  note without an adapter).
+
 To photograph a live run step by step (e.g. before and after a round
 restart, where frame counts are too uncertain), run the game without
 `--screenshot` and send `screenshot <file.png>` over the remote console
 (section 3b) between other commands: `setpos ...; setang ...`, `+attack`,
 `-attack`, then `screenshot /scratch/after.png`.
 
-Ports: tool runs (`--screenshot`, `--views`, `--frames`, `--bench`, so
+Ports: tool runs (`--screenshot`, `--views`, `--frames`, `--bench`,
+`--offscreen`, so
 also refcmp and mapsweep) never bind UDP 27015, so several agents can
 capture at once beside a real CS:S. They start with `ip 127.0.0.1;
 hostport 0`: a run that hosts (`+maxplayers 4 +map ...`) listens on
