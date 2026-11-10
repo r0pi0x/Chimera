@@ -1,29 +1,48 @@
 //! Ultimate Gun Game's dedicated server (apps/ultimate_gun_game_server,
 //! binary `ultimate_gun_game_server`): the party's server
-//! (`party_kit::server::run`) with the Ultimate Gun Game's parts
+//! (`party_kit::server::PARTY`, on Chimera's `chimera_net::dedicated::run`)
+//! with the Ultimate Gun Game's parts at launch
 //! (`ultimate_gun_game::UltimateGunGamePlugin::launch`: a fresh seed,
 //! printed, and a new ladder and a random map at every rotation), playing
 //! the automatic gun game (`+minigame` names another) on its pool's first
-//! map unless `+map` names one. `ugg_new [seed] [rungs]` on the console
-//! makes a new ladder for the players connected (a seed replays one); `parts` lists what each game lends.
-//! The options are the kit server's (`--help`).
+//! map unless `+map` names one (`ultimate_gun_game::first_map`).
+//! `ugg_new [seed] [rungs]` on the console makes a new ladder for the
+//! players connected (a seed replays one); `parts` lists what each game
+//! lends. Options: `--help` (`USAGE`).
 
-use party_kit::server::{Parsed, USAGE};
+use chimera_net::dedicated::{GameServer, ServerHooks, ServerMinigame};
+use party_kit::server::PARTY;
+
+const USAGE: &str = "\
+usage: ultimate_gun_game_server [-port <n>] [+minigame <id>] [+map <name>] [+<command> [args...]]
+  -port <n>          UDP port (hostport; default 27015)
+  +minigame <id>     the minigame (default ultimate_gun_game:auto); its first map unless +map
+  +map <name>        greybox, cs_source:<name> or combat_arms:<name> (a bare name is CS:S's)
+  +<command>         any console command or cvar, e.g. +maxplayers 8 +MaxPlayer 3 (bots)
+Type console commands on stdin: status, minigames, minigame_status, minigame_restart,
+change_match <minigame> [map], ugg_new [seed] [rungs], parts, changelevel <map>, quit.";
+
+/// The party's server playing the automatic gun game.
+static SERVER: GameServer = GameServer {
+    usage: USAGE,
+    hooks: ServerHooks {
+        minigame: Some(ServerMinigame {
+            default: ultimate_gun_game::MINIGAME,
+            first_map: ultimate_gun_game::first_map,
+        }),
+        launch: Some(launch),
+        ..PARTY.hooks
+    },
+    ..PARTY
+};
+
+/// The party's launch (a fresh rung seed) and the Ultimate Gun Game's
+/// parts with a fresh seed.
+fn launch(app: &mut bevy::app::App) {
+    party_kit::server::launch(app);
+    app.add_plugins(ultimate_gun_game::UltimateGunGamePlugin::launch());
+}
 
 fn main() {
-    let first = |id: &str| ultimate_gun_game::first_map(id);
-    let options = match party_kit::server::parse_for(std::env::args().skip(1), ultimate_gun_game::MINIGAME, &first) {
-        Ok(Parsed::Run(o)) => o,
-        Ok(Parsed::Help) => {
-            println!("{}\n(this server's default minigame: {})", USAGE, ultimate_gun_game::MINIGAME);
-            return;
-        }
-        Err(e) => {
-            eprintln!("{e}\n\n{USAGE}");
-            std::process::exit(2);
-        }
-    };
-    party_kit::server::run(&options, |app| {
-        app.add_plugins(ultimate_gun_game::UltimateGunGamePlugin::launch());
-    });
+    chimera_net::dedicated::run(&SERVER);
 }

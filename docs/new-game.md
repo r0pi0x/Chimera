@@ -33,7 +33,7 @@ a game of a new engine family, Combat Arms is the example:
 | `<family>_formats` | `<family>/formats` | the engine family's file formats as plain data: no Bevy, fixtures written by tests, `heavy::` tests on the install that skip without it. Only for a new family | `lithtech/formats` |
 | `<id>` | `games/<id>` | the game as a library (below) | `games/hl2dm` |
 | `<id>_app` | `apps/<id>` | the game's binary | `apps/hl2dm` |
-| `<id>_server` | `apps/<id>_server` | a static and one call (below) | `apps/hl2dm_server` |
+| `<id>_server` | `apps/<id>_server` | a static and one call (below); Chimera and the game only, never an app (`game_servers_use_no_app`) | `apps/hl2dm_server` |
 
 A new family's folder is a loader layer the day a crate lives in it;
 its formats crate may use `chimera_vfs` (archives as mount layers) and
@@ -95,7 +95,12 @@ replace one part at a time, each behind its spec and a scenario test.
    install mounts. HL2:DM's M0 was 167 lines of game crate.
 2. **M1, the apps**: the server is a `GameServer` static and
    `chimera_net::dedicated::run(&SERVER)` (apps/hl2dm_server: its usage
-   text, the static, and a build.rs for the version stamp); the app is the shell with the
+   text, the static, and a build.rs for the version stamp). What only
+   some servers have is an optional hook on the static
+   (`ServerHooks { .., ..ServerHooks::NONE }`): the map cycle, the map's
+   file for clients without it (`map_files`), the greybox's own tick,
+   another player count, several games' maps, a minigame
+   (apps/cs_source_server, `party_kit::server`). The app is the shell with the
    game's parts (apps/hl2dm). Placeholder movement
    (`chimera_sim::movement`) and a test weapon as data.
 3. **Maps**: a `MapLoader` that returns `MapData` in metres (the world

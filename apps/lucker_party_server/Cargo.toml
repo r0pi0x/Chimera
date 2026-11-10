@@ -12,14 +12,16 @@ license.workspace = true
 [package.metadata.chimera]
 apps = ["party_kit"]
 
-# A thin binary over the party kit (apps/party_kit) without its default
-# `present`, so nothing of chimera_present, the client shell or Combat Arms'
+# A thin binary: the party kit's server (apps/party_kit) on Chimera's
+# (`chimera_net::dedicated`), the kit without its default `present`, so
+# nothing of chimera_present, the client shell or Combat Arms'
 # front end links (checks/tests/it/architecture.rs,
 # `server_builds_without_presentation`). In a workspace build features unify:
 # the released server is built alone, `cargo build --release -p
 # lucker_party_server`.
 [dependencies]
 party_kit.workspace = true
+chimera_net.workspace = true
 workspace-hack.workspace = true
 
 [[bin]]
@@ -29,4 +31,4 @@ test = false
 
 [features]
 # Bevy as a dynamic library, as the other crates' `dev`.
-dev = ["party_kit/dev"]
+dev = ["party_kit/dev", "chimera_net/dev"]

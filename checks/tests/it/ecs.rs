@@ -246,14 +246,9 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
 /// the map-logic interpreter, servers' state changes), with the reason.
 /// Their systems don't count in `EXCLUSIVE_BASELINE`.
 const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
-    (
-        "apps/cs_source_server/src/main.rs",
-        "the server's level and state changes",
-    ),
     ("apps/party_kit/src/controls.rs", "a menu"),
     ("apps/party_kit/src/esc_menu.rs", "a menu"),
     ("apps/party_kit/src/main_menu.rs", "a menu: its clicks as console lines and cvars, the map loads it follows"),
-    ("apps/party_kit/src/server.rs", "the server's level and state changes"),
     ("chimera/client/src/client/console.rs", "the console and map loading"),
     ("chimera/client/src/client/debug_ui.rs", "a tool"),
     ("chimera/client/src/client/net.rs", "the connection's state"),

@@ -1386,9 +1386,10 @@ fn workspace_crates() {
     const UGG_SERVER: &str = "is the Ultimate Gun Game's dedicated server (docs/ARCHITECTURE.md, \"Crates\"): \
         the party kit (`party_kit::server`) and `ultimate_gun_game` without their default `present`, so no \
         presentation or client shell links (`server_builds_without_presentation`).";
-    const SERVER: &str = "is the dedicated server (docs/ARCHITECTURE.md, \"Crates\"): it builds without the \
-        presentation and the client shell (`server_builds_without_presentation`). Move what needs them \
-        into the client's side or behind `cs_source_app`'s `present`.";
+    const SERVER: &str = "is CS:S's dedicated server (docs/ARCHITECTURE.md, \"Crates\"): Chimera's \
+        simulation crates and CS:S without its front end (`ui`), no presentation, client shell or CS:S app \
+        (`server_builds_without_presentation`, `game_servers_use_no_app`), and never another game. Move what \
+        needs them into the client's side (the app, `ui`).";
     const CA_SERVER: &str = "is Combat Arms' dedicated server (docs/ARCHITECTURE.md, \"Crates\"): Chimera's \
         simulation crates and Combat Arms without its front end (`ui`), no presentation, client shell or \
         Combat Arms app (`server_builds_without_presentation`), and never CS:S or Source's logic. Move what \
@@ -1757,6 +1758,10 @@ fn workspace_crates() {
                 "bevy_egui",
                 "bevy-inspector-egui",
                 "arboard",
+                "cs_source_app",
+                "combat_arms",
+                "hl2dm",
+                "source_gameui",
                 "mashup",
             ],
             SERVER,
@@ -2075,6 +2080,58 @@ fn layers_follow_paths() {
     assert!(errors.is_empty(), "\n{}\n", errors.join("\n\n"));
 }
 
+/// A game's dedicated server (`apps/<id>_server` for a game crate
+/// `games/<id>`) stands on Chimera and its game alone, never on an app
+/// crate (its game's app draws; the party kit composes other games): its
+/// shape is Chimera's (`chimera_net::dedicated`), its own part a
+/// `GameServer` static. Party servers, built on the party kit, are apps
+/// over apps and declare it.
+#[test]
+fn game_servers_use_no_app() {
+    let members = workspace_members();
+    let manifest = |m: &str| -> toml::Table {
+        fs::read_to_string(root().join(format!("{m}/Cargo.toml")))
+            .unwrap_or_else(|e| panic!("{m}/Cargo.toml: {e}"))
+            .parse()
+            .unwrap()
+    };
+    let manifests: Vec<(String, toml::Table)> =
+        members.iter().filter(|m| m.as_str() != ".").map(|m| (m.clone(), manifest(m))).collect();
+    let names: BTreeMap<String, String> = manifests
+        .iter()
+        .map(|(m, t)| (t["package"]["name"].as_str().unwrap().to_string(), m.clone()))
+        .collect();
+    let games: BTreeSet<&str> = manifests
+        .iter()
+        .filter(|(m, _)| layer_of(m) == Layer::Game)
+        .map(|(_, t)| t["package"]["name"].as_str().unwrap())
+        .collect();
+    let mut errors = Vec::new();
+    let mut servers = 0;
+    for (member, table) in &manifests {
+        let name = table["package"]["name"].as_str().unwrap();
+        let is_game_server = layer_of(member) == Layer::App
+            && name.strip_suffix("_server").is_some_and(|game| games.contains(game));
+        if !is_game_server {
+            continue;
+        }
+        servers += 1;
+        for dep in workspace_deps(table, &names) {
+            if layer_of(&names[&dep]) == Layer::App && dep != name {
+                errors.push(format!(
+                    "{member}/Cargo.toml (`{name}`, a game's dedicated server) depends on the app crate `{dep}`. \
+                     A game's server is its game on Chimera's dedicated server: a `GameServer` static and \
+                     `chimera_net::dedicated::run(&SERVER)` (docs/new-game.md, apps/hl2dm_server). Move what it \
+                     takes from `{dep}` into the game (a plugin, a loader) or give `GameServer` a neutral hook \
+                     (`ServerHooks`)."
+                ));
+            }
+        }
+    }
+    assert!(servers >= 3, "found {servers} game servers: is the `<game>_server` naming gone? Update this test.");
+    assert!(errors.is_empty(), "\n{}\n", errors.join("\n\n"));
+}
+
 /// Every game crate has the same public seams (docs/new-game.md, "The
 /// game crate's shape"), so apps, tools and party modes find a game's
 /// parts in the same places whichever game it is, and a new port starts
@@ -2350,10 +2407,9 @@ fn selections_share_one_build() {
 }
 
 /// The dedicated servers build without the presentation
-/// (docs/ARCHITECTURE.md, "Crates"): `cs_source_server` uses the app's
-/// glue (`cs_source_app`) without its default feature `present`, and
-/// `combat_arms_server` Chimera's simulation crates and Combat Arms
-/// without `ui`, and `lucker_party_server` the party kit
+/// (docs/ARCHITECTURE.md, "Crates"): `cs_source_server`, `hl2dm_server`
+/// and `combat_arms_server` use Chimera's simulation crates and their
+/// game without `ui`, and `lucker_party_server` the party kit
 /// (`party_kit`) without its `present`, so none depends on
 /// `chimera_present` or links render or audio code. (That they compile that way the pre-push hook checks:
 /// `cargo check -p cs_source_server`, `-p combat_arms_server`.)
@@ -2417,10 +2473,10 @@ fn server_builds_without_presentation() {
         .collect();
     assert!(
         present.is_empty(),
-        "`cs_source_server` (the dedicated server's build) depends on {present:?}. The presentation \
-         (chimera_present) and the client-only crates are optional in `cs_source_app`, behind its default \
-         feature `present` (apps/cs_source/Cargo.toml): make the new dependency optional and add it to \
-         `present`, or move what the simulation needs out of the presentation."
+        "`cs_source_server` (the CS:S dedicated server's build) depends on {present:?}. It uses Chimera's \
+         simulation crates and `cs_source` without its `ui` feature (apps/cs_source_server/Cargo.toml): don't \
+         turn on `ui` or depend on the app (`cs_source_app`), and keep the new dependency out of the \
+         simulation crates (the front end's optional ones: UI_FEATURES)."
     );
     let server = tree("combat_arms_server");
     let present: Vec<&str> = server
