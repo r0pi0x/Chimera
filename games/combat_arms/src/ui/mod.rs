@@ -101,6 +101,12 @@ pub static PARTY_CLIENT: chimera_world::game_bundle::GameClient = chimera_world:
     app: None,
 };
 
+/// The same under the name every game's front end has it
+/// (`ui::party::CLIENT`; docs/new-game.md).
+pub mod party {
+    pub use super::PARTY_CLIENT as CLIENT;
+}
+
 /// Combat Arms' front end but its HUD: the in-game menu and the
 /// placeholder visuals.
 pub struct CaUiPlugin;

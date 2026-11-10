@@ -64,7 +64,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   never on a game or an app; `apps/*` (and a game's tools, and the root
   package) compose them, and build on another app only when their
   manifest says so (`apps = ["party_kit"]`). The rows of
-  `workspace_crates` add each crate's finer rules;
+  `workspace_crates` add each crate's finer rules. Every game crate has
+  the same public seams (checked: `games_share_one_shape`);
+  [new-game.md](new-game.md) is the checklist for a port, and
   docs/plans/active/architecture-pass.md has where this is going.
 - The loader layers: `source/` (Source's formats and map logic) and
   `lithtech/` (LithTech's, for Combat Arms), each beside the other under

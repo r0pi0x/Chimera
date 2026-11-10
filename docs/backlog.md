@@ -6,6 +6,17 @@ Things to build, **in priority order** (top first; reprioritized
 [plans/active/](plans/active/engine-split.md). Move items into a
 plan when work starts; delete them when done.
 
+## Architecture pass for many games (2026-11-09)
+
+[plans/active/architecture-pass.md](plans/active/architecture-pass.md):
+what game number 30 costs and what must not grow with the number of
+games. Steps 1-5 are done (neutral formats out of Source's crate, layers
+by path, server commands registered by games, the dedicated server once,
+the new-game guide and its check); steps 6-15 in its section 6, in
+order: the other two servers on the kit, the client app once, a roster
+of game descriptors for the tools and party apps, the party kit's base
+game by descriptor, Chimera's remaining Source words.
+
 ## Architecture review (2026-10-20)
 
 Address the feedback in

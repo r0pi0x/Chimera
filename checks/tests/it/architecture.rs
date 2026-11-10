@@ -2040,6 +2040,102 @@ fn layers_follow_paths() {
     assert!(errors.is_empty(), "\n{}\n", errors.join("\n\n"));
 }
 
+/// Every game crate has the same public seams (docs/new-game.md, "The
+/// game crate's shape"), so apps, tools and party modes find a game's
+/// parts in the same places whichever game it is, and a new port starts
+/// from a known skeleton. A game is a `games/<id>` crate whose manifest
+/// declares its loader layers (`[package.metadata.chimera] loaders`,
+/// empty for none); `originals` (minigame definitions, no install) isn't
+/// one.
+#[test]
+fn games_share_one_shape() {
+    let mut errors = Vec::new();
+    let mut games = 0;
+    for member in workspace_members().iter().filter(|m| layer_of(m) == Layer::Game) {
+        let dir = root().join(member);
+        let manifest: toml::Table = fs::read_to_string(dir.join("Cargo.toml")).unwrap().parse().unwrap();
+        let is_game = manifest
+            .get("package")
+            .and_then(|p| p.get("metadata"))
+            .and_then(|m| m.get("chimera"))
+            .and_then(|c| c.get("loaders"))
+            .is_some();
+        if !is_game {
+            continue;
+        }
+        games += 1;
+        let id = member.rsplit('/').next().unwrap();
+        let mut need = |ok: bool, what: &str| {
+            if !ok {
+                errors.push(format!("{member}: {what} (docs/new-game.md, \"The game crate's shape\")."));
+            }
+        };
+        need(
+            manifest["package"]["name"].as_str() == Some(id),
+            &format!("the package is named after its folder and the game's id, `{id}`"),
+        );
+        let features = manifest.get("features").and_then(|f| f.as_table());
+        need(
+            features.is_some_and(|f| f.contains_key("ui")),
+            "a `ui` feature turns on its front end and the front end's optional dependencies",
+        );
+        let read = |rel: &str| fs::read_to_string(dir.join(rel)).unwrap_or_default();
+        let lib = read("src/lib.rs");
+        need(lib.contains("pub struct SimPlugins"), "src/lib.rs has `pub struct SimPlugins`, its simulation's base");
+        need(
+            lib.contains("pub mod game;") && lib.contains("pub mod harness;"),
+            "src/lib.rs has `pub mod game;` and `pub mod harness;`",
+        );
+        need(
+            lib.contains("#[cfg(feature = \"ui\")]\npub mod ui;"),
+            "src/lib.rs has its front end as `#[cfg(feature = \"ui\")] pub mod ui;`",
+        );
+        let mut files = Vec::new();
+        if dir.join("src/game").is_dir() {
+            rust_files(&dir.join("src/game"), &mut files);
+        }
+        let game: String = files.iter().map(|f| fs::read_to_string(f).unwrap_or_default()).collect();
+        let game_mod = read("src/game/mod.rs");
+        need(
+            game_mod.contains("pub const GAME: &str"),
+            "src/game/mod.rs has `pub const GAME: &str`, the game's id",
+        );
+        need(
+            game_mod.contains("pub static INFO:"),
+            "src/game/mod.rs has `pub static INFO: GameInfo`, what the engine knows of the game",
+        );
+        need(
+            game.contains("pub static BUNDLE:")
+                && (game_mod.contains("pub static BUNDLE:") || game_mod.contains("BUNDLE")),
+            "src/game/ has `pub static BUNDLE: GameBundle`, reachable as `game::BUNDLE`: the game for a party app",
+        );
+        need(
+            game.contains("pub static MAP_LOADER:"),
+            "src/game/ has `pub static MAP_LOADER: MapLoader`, its maps",
+        );
+        need(
+            read("src/harness.rs").contains("pub struct "),
+            "src/harness.rs has the base of its scenario tests (`pub struct <Game>Sim`)",
+        );
+        let mut ui = Vec::new();
+        if dir.join("src/ui").is_dir() {
+            rust_files(&dir.join("src/ui"), &mut ui);
+        }
+        let ui: String = ui.iter().map(|f| fs::read_to_string(f).unwrap_or_default()).collect();
+        need(
+            ui.contains("pub fn with_hud(") && ui.contains("CLIENT") && ui.contains("pub mod party"),
+            "src/ui/ has `with_hud` (its HUD on the client shell) and `party::CLIENT` (its `GameClient`)",
+        );
+        need(dir.join("tests/it/main.rs").is_file(), "its tests are one binary, tests/it/main.rs");
+        need(
+            root().join("specs").join(id).is_dir(),
+            &format!("its behaviour is specified in specs/{id}/ before it is implemented"),
+        );
+    }
+    assert!(games >= 3, "found {games} game crates; the check reads `[package.metadata.chimera] loaders`");
+    assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
+}
+
 #[test]
 fn layers_by_path() {
     assert_eq!(layer_of("chimera/core"), Layer::Engine);
