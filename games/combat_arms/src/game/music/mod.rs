@@ -23,8 +23,9 @@
 //!   `CaMusicOff` to every client, the late joiner's one trigger.
 //! - `ambient` (6): the map's `SoundFX` objects as every client holds them
 //!   (`CaAmbient`: all looping sounds live from the load, muted by
-//!   distance with effects_sounds.md 10's gain); `ui::music` plays them
-//!   and the music.
+//!   distance with effects_sounds.md 10's gain; empty from a map's unload
+//!   until the next map's objects are built, so no old sound plays on);
+//!   `ui::music` plays them and the music.
 //! - `mix` (8): the two channels, music and effects, 0..100 with on/off
 //!   switches, both silenced while the window is minimized (`CaVolumes`;
 //!   `effects::sounds::play` scales effects by the effects master).
@@ -317,7 +318,26 @@ fn drive(
 }
 
 /// The map's `SoundFX` objects: the list, and a one-shot's starts.
-fn ambient_sync(objects: Res<CaObjects>, mut ambient: ResMut<CaAmbient>, mut out: MessageWriter<CaSound>) {
+/// Between a map's unload and the first tick of the next (`objects::load`
+/// rebuilds `CaObjects` then) the objects are the old map's: the list is
+/// empty meanwhile, so nothing of the old map plays again.
+fn ambient_sync(
+    objects: Res<CaObjects>,
+    entities: Option<Res<crate::map::MapEntities>>,
+    mut ambient: ResMut<CaAmbient>,
+    mut out: MessageWriter<CaSound>,
+) {
+    let current = match (&objects.from, &entities) {
+        (Some(from), Some(e)) => std::sync::Arc::ptr_eq(from, &e.entities),
+        (None, None) => true,
+        _ => false,
+    };
+    if !current {
+        if !ambient.sounds.is_empty() || ambient.built_from != 0 {
+            *ambient = CaAmbient::default();
+        }
+        return;
+    }
     ambient::sync(&mut ambient, &objects);
     let scale = if objects.scale > 0.0 { objects.scale } else { 1.0 };
     let a = &mut *ambient;
