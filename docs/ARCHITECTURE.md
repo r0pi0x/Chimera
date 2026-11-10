@@ -54,6 +54,18 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
                       lithtech_formats (lithtech/formats/)   LithTech's formats as plain data (`.rez`, attribute files, worlds, textures, models, animation, effect files)
 ```
 
+- **Layers by path** (checked: `layers_follow_paths`): a crate's folder
+  says what it is, so a new game, loader layer or app is under the rules
+  with no table to edit. `chimera/*` is the engine and builds on no
+  loader, game or app; any other folder of crates (`source/`,
+  `lithtech/`) is a loader layer, on the engine and its own family
+  only; `games/<id>` is a game, on the engine and the loader layers its
+  manifest declares (`[package.metadata.chimera] loaders = ["source"]`),
+  never on a game or an app; `apps/*` (and a game's tools, and the root
+  package) compose them, and build on another app only when their
+  manifest says so (`apps = ["party_kit"]`). The rows of
+  `workspace_crates` add each crate's finer rules;
+  docs/plans/active/architecture-pass.md has where this is going.
 - The loader layers: `source/` (Source's formats and map logic) and
   `lithtech/` (LithTech's, for Combat Arms), each beside the other under
   the games, by the same rules (checked: `workspace_crates`). Their

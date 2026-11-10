@@ -242,6 +242,11 @@ rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
 
+# The app crates this one is built on (checks/tests/it/architecture.rs,
+# `layers_follow_paths`; docs/ARCHITECTURE.md, "Layers by path").
+[package.metadata.chimera]
+apps = ["cs_source_app"]
+
 # `mashup`, the repository root's package, is now a thin shim: the CS:S
 # app's glue (`cs_source_app`, apps/cs_source) re-exported at the old
 # `mashup::` paths (src/lib.rs), for `dump` (an install inspector for

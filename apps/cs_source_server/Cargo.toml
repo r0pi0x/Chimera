@@ -7,6 +7,11 @@ rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
 
+# The app crates this one is built on (checks/tests/it/architecture.rs,
+# `layers_follow_paths`; docs/ARCHITECTURE.md, "Layers by path").
+[package.metadata.chimera]
+apps = ["cs_source_app"]
+
 # The CS:S app's glue without its default feature `present`: nothing of
 # chimera_present, the client shell or CS:S's front end links
 # (checks/tests/it/architecture.rs, `server_builds_without_presentation`, checks
