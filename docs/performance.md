@@ -2700,6 +2700,58 @@ for every character every tick whether anything asks for its spheres; the
 ragdolls' pose record samples every Source body's animation each tick and
 a server poses its hitboxes from a second sample (`pose_sim_hitboxes`).
 
+### Searches of the map's entities every frame (HL2:DM's set pieces)
+
+`hl2dm::game::set_piece_fx`'s `flares` looked through every map entity for
+`env_flare`s each frame, and `canisters` for the sky camera (a class-name
+search of some thousand entities, each a search of its keys), on every map
+of every game and on the dedicated servers: 6% of the sampled Ultimate Gun
+Game server's tick on de_dust2, which has neither. The flares' entities
+are found when the map's entities change (`MapEntities`' change tick), the
+sky camera only when a canister in the sky is there to draw.
+
+| `heavy::bot_cost`, instructions a tick | 2 bots | 4 | 8 | 16 |
+|---|---|---|---|---|
+| before (with the changes above) | 5.30M | 8.62M | 14.01M | 22.17M |
+| after | 5.11M | 8.40M | 13.78M | 21.87M |
+
+### A frame offscreen (`frame_bench`), and the glows' rays
+
+No window can open on the dev box, so a frame in play had no profile
+there. `cargo build --profile profiling -p ultimate_gun_game --example
+frame_bench` is one: the gun game's simulation with Bevy's whole renderer,
+six bots on a seeded ladder, a camera at a bot's eyes drawing into an
+image, frames of 1/60 s, each frame's main schedule, extraction and
+render world counted apart on one thread (as `heavy::map_swap_render`;
+no HUD, no local player, no view model, one camera). Its fights differ
+from run to run, so its medians move by about a tenth: it is for `perf`,
+not for comparing builds by its printout. de_dust2, 1280x720, RTX 3080:
+main schedule 11-13M instructions a frame at the median (with its 1.1
+ticks), extraction 0.8M, render world 8.4-9.5M; 4.6-5.4 ms of wall time a
+frame with everything on one thread at load 20.
+
+What the main schedule's instructions went to (3,000 frames sampled): the
+ticks' systems as above (Combat Arms' `drive` 7.6%, its bots 4.9%, Source
+movement 4.9%, the pose record 3.5%), and per frame `glow::glow_visibility`
+5.4%, `shadows::update_prop_shadows` 4.2% (its silhouettes),
+`update_character_blobs` 3.2%, Bevy's transform propagation 6%, its
+visibility 5%, `dust::update_dust` 1.8%, the two searches above 2.0%. The
+render world: submitting the frame 15%, the mesh allocator 11% (the blob
+shadows, prop shadows, dust and particles are new mesh data every frame),
+the opaque pass 10%, the prepass 9%, preparing `PropMaterial`s and their
+bind groups 14% (each body's probe light is in its materials, so a moving
+body's eight are prepared again every frame), light clustering 8% (with
+no light in view).
+
+**The glows.** Every glow sprite in the potentially visible set got five
+rays a frame to its occlusion proxy, then the result was scaled by how
+much of the proxy is on the screen: nothing, for the glows behind or
+beside the eye. The screen test comes first now and the rays are cast only
+when it isn't 0 (`seen_fraction`; the product is the same). In the
+sampled frames `glow_visibility` went from 5.4% of the main schedule's
+instructions to 1.7%, the two searches from 2.0% to 0.05%, the whole from
+57.2k samples to 53.3k (-7%).
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,
