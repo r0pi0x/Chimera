@@ -471,6 +471,7 @@ fn is_docs(path: &str) -> bool {
             // The agents' shell tools: no crate reads them.
             "tools/agent-env.sh",
             "tools/sccache-heal.sh",
+            "tools/jobserver-heal.sh",
             "tools/clean-worktrees.sh",
             "tools/agent-slot.sh",
             "tools/disk-free.sh",

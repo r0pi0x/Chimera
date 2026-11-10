@@ -23,7 +23,12 @@
 #    has leaked its own jobserver tokens (the "hung at 0% CPU" failure).
 # The FIFO only holds its tokens while some process has it open, so a small
 # holder process (`sleep infinity`) is started once, race-free under flock.
+# A cargo killed mid-build (a tool timeout) takes its tokens with it; each
+# `source` runs tools/jobserver-heal.sh, which puts lost ones back (without
+# it the FIFO drained to 0 in a day and every agent's build ran one rustc
+# at a time: docs/performance.md, "Iteration speed").
 # Override: AGENT_JOBS (token count), AGENT_JS_DIR (where the FIFO lives),
+# AGENT_JS_HEAL_EVERY (seconds between jobserver checks, default 20),
 # AGENT_NO_SLICE=1 (skip the slice), AGENT_NO_SCCACHE=1 (build without it),
 # SCCACHE_BIN (the sccache to use), AGENT_INCREMENTAL=1|0 (incremental builds
 # on or off; default on in a slot only), AGENT_NO_MOLD=1 (in a slot, link
@@ -51,6 +56,9 @@ _agent_env_init() {
         exec sleep infinity' _ "$fifo" "$jobs" "$pidf" 5>&- >/dev/null 2>&1 &
       for _ in $(seq 1 50); do [ "$(cat "$pidf" 2>/dev/null)" ] && [ -d "/proc/$(cat "$pidf")" ] && break; sleep 0.1; done
     fi
+    # Tokens a killed cargo held are gone for good: put them back
+    # (tools/jobserver-heal.sh; its fds exclude the lock fd too).
+    "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/jobserver-heal.sh" "$fifo" "$jobs" "$(cat "$pidf" 2>/dev/null)" 5>&- || true
   ) 5>"$dir/lock" || return 1
   export MAKEFLAGS="--jobserver-auth=fifo:$fifo -j$jobs"
   export AGENT_ENV=1

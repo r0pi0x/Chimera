@@ -1445,7 +1445,16 @@ the builds finished 10% sooner and `git status` took 26 ms; the slice on
 top cut that to 14 ms. A cap on concurrent test suites (flock semaphore) and
 the slice by itself did not help once the jobserver was in, so they are not
 included. The holder's tokens are lost if the holder dies (the next `source`
-recreates it); a client killed mid-build loses at most the tokens it held.
+recreates it). A cargo killed mid-build (a tool timeout, an out-of-memory
+kill) takes the tokens it held with it, and with kills every day the FIFO
+drained: on 2026-11-10 it held 0 of 12, 27 hours after it was made, and
+every agent's cargo ran one compile job at a time (a cold slot build's
+units summed to 1,283 s in 1,284 s of wall time). `tools/jobserver-heal.sh`
+(run by each `source tools/agent-env.sh`, at most every 20 s) counts the
+tokens in the FIFO without taking them out and puts back the ones no
+running build can be holding: with no cargo attached, exactly the full
+set; with builds attached, the full set minus one per running job of each
+(docs/performance.md, "Iteration speed").
 
 ### Shared compile cache (sccache)
 
@@ -1528,7 +1537,12 @@ workspace crate, each rebuilt per change.
 `tools/agent-slot.sh trim` (and `tools/clean-worktrees.sh`, which
 otherwise leaves slots alone) shrinks a free slot's `target/` past
 `AGENT_SLOT_MAX_GB` (60) with `cargo sweep`; `acquire` trims the slot it
-takes. A whole-workspace test build is about 40 GB with the test
+takes. The slot's incremental caches go first (past
+`CHIMERA_INCREMENTAL_MAX_GB`, below): `cargo sweep` never removes them, and
+they were most of a used slot's `target/` (60 of 67 GB), so sweeping by
+size alone removed the built crates and test binaries instead (27 of the 28
+GB of `deps/` in a dry run on another slot) and the next holder built from
+cold. A whole-workspace test build is about 40 GB with the test
 profile's line tables, a `cargo run --features dev` build more.
 
 Disk guards (the dev box's disk filled to 100% on 2026-10-31: the main
