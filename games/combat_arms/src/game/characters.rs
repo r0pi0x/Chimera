@@ -1048,6 +1048,12 @@ fn setup(
             commands
                 .entity(e)
                 .insert((look, CaAnim::with_family(body, skeleton, rig.clone(), family, &record), CaPose::default(), HitSpheres(table)));
+            // The old rig may be the last hold on a whole animation
+            // library (the old map's, on a map's first tick: 70 M
+            // instructions freeing it): freed on a task after the insert.
+            if let Some(old) = anim.and_then(|a| a.rig.clone()) {
+                commands.queue(move |_: &mut World| crate::map::drop_later(old));
+            }
         }
         // The body showing stays until the new one is ready (a load on
         // demand, its drawing built), on its own skeleton, never the new

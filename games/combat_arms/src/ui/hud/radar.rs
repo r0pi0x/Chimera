@@ -505,7 +505,7 @@ pub fn ensure_picture(key: &str, art: &mut CaArt, images: &mut Assets<Image>, fa
     if failed.contains(key) {
         return false;
     }
-    match crate::game::INFO.mount().and_then(|m| crate::ui::install::decode(&m, key)) {
+    match crate::game::world::mount().and_then(|m| crate::ui::install::decode(&m, key)) {
         Some(a) => {
             let handle = images.add(crate::ui::draw::rgba_image(&a));
             art.0.insert(texture_key(key), (handle, a.size));

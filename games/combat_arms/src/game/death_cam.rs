@@ -111,7 +111,7 @@ pub fn install_tips(data: &super::data::CaData) -> Vec<screen::Tip> {
     if data.builtin_only() {
         return Vec::new();
     }
-    let Some(mount) = super::INFO.mount() else { return Vec::new() };
+    let Some(mount) = data.mount() else { return Vec::new() };
     let Ok(bytes) = mount.read(GUIDE_FILE) else { return Vec::new() };
     match lithtech_formats::attributes::Document::parse(&bytes) {
         Ok(doc) => screen::parse_guide(&doc),

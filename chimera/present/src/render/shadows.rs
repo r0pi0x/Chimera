@@ -703,30 +703,42 @@ pub fn casters(data: &MapData) -> impl Iterator<Item = (usize, &MapProp)> {
 /// collision and entities, and the texels of every texture they don't
 /// sample (`shed_unread_textures`). What stays is what `build_posed` and
 /// the casters' silhouettes read: props, models, textures, visibility.
-pub fn shed_unread(data: &mut MapData) {
-    data.kit = Default::default();
-    data.extras = Default::default();
-    data.meshes = Vec::new();
-    data.lightmap = None;
-    data.cubemaps = Vec::new();
-    data.collision_positions = Vec::new();
-    data.collision_indices = Vec::new();
-    data.collision_sets = Vec::new();
-    data.collision_hulls = Vec::new();
-    data.collision_brushes = Vec::new();
-    data.brush_tree = None;
-    data.entities = Vec::new();
-    data.sky_surfaces = Vec::new();
-    shed_unread_textures(data);
+pub fn shed_unread(data: &mut MapData) -> Shed {
+    use std::mem::take;
+    let parts: Box<dyn std::any::Any + Send> = Box::new((
+        take(&mut data.kit),
+        take(&mut data.extras),
+        take(&mut data.meshes),
+        take(&mut data.lightmap),
+        take(&mut data.cubemaps),
+        (
+            take(&mut data.collision_positions),
+            take(&mut data.collision_indices),
+            take(&mut data.collision_sets),
+            take(&mut data.collision_hulls),
+            take(&mut data.collision_brushes),
+        ),
+        take(&mut data.brush_tree),
+        take(&mut data.entities),
+        take(&mut data.sky_surfaces),
+    ));
+    let texels = shed_unread_textures(data);
+    Shed(parts, texels)
 }
+
+/// What `shed_unread` took out of the data, for its caller to free where
+/// it costs no frame (`map::drop_later`: a map's meshes, collision and
+/// texels are many allocations).
+pub struct Shed(#[allow(dead_code)] Box<dyn std::any::Any + Send>, #[allow(dead_code)] Vec<Box<dyn std::any::Any + Send>>);
 
 /// Drops the texels of every texture the shadows never read: a caster's
 /// silhouette samples the alpha of its alpha-tested and translucent
 /// meshes' textures (`silhouette`), nothing else of `data.textures` is
 /// read after the map is spawned (the images were made from it). The
 /// shadows keep `data` for the map's life (`ShadowSource`), so this is
-/// what keeps the decoded textures from being resident twice.
-pub fn shed_unread_textures(data: &mut MapData) {
+/// what keeps the decoded textures from being resident twice. Returns
+/// what it took, to be freed by the caller.
+pub fn shed_unread_textures(data: &mut MapData) -> Vec<Box<dyn std::any::Any + Send>> {
     let mut read = vec![false; data.textures.len()];
     for (_, prop) in casters(data) {
         for m in &data.models[prop.model].meshes {
@@ -739,13 +751,14 @@ pub fn shed_unread_textures(data: &mut MapData) {
             }
         }
     }
+    let mut taken: Vec<Box<dyn std::any::Any + Send>> = Vec::with_capacity(data.textures.len());
     for (t, read) in data.textures.iter_mut().zip(read) {
-        t.mips = Vec::new();
-        t.bc = None;
-        if !read {
-            t.rgba8 = Vec::new();
-        }
+        let mips = std::mem::take(&mut t.mips);
+        let bc = t.bc.take();
+        let rgba8 = if read { Vec::new() } else { std::mem::take(&mut t.rgba8) };
+        taken.push(Box::new((mips, bc, rgba8)));
     }
+    taken
 }
 
 /// `build` with each caster where `pose` says it is now (translation,

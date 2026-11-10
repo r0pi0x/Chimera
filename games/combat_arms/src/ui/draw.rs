@@ -99,7 +99,7 @@ pub fn load_art(ui: Res<super::CaUi>, images: Option<ResMut<Assets<Image>>>, mut
 pub fn load_faces(mut commands: Commands, fonts: Option<ResMut<Assets<Font>>>) {
     let mut faces = CaFaces::default();
     if let Some(mut assets) = fonts
-        && let Some(mount) = crate::game::INFO.mount()
+        && let Some(mount) = crate::game::world::mount()
     {
         for face in &FontList::ours().faces {
             let Some(file) = &face.file else { continue };

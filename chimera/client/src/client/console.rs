@@ -66,6 +66,8 @@ impl Plugin for ConsoleUiPlugin {
             .init_resource::<HeldActions>()
             .init_resource::<SoundMarks>()
             .add_systems(Startup, (spawn_ui, load_history, autoexec).chain())
+            .add_systems(Startup, read_map_lists_ahead)
+            .add_systems(Update, take_map_lists_ahead)
             .add_systems(
                 Update,
                 (
@@ -1958,6 +1960,44 @@ impl MapLists {
     }
 }
 
+/// Every game's map list read on a task when the app starts
+/// (`read_map_lists_ahead`): the first `map` command (or completion) read
+/// it on its frame (and the map cycle when the map changed), opening the install's archives (Combat Arms': 300 M
+/// instructions, a 60 ms frame at the start of the swap; docs/performance.md,
+/// "A map's swap in the real app"). An ask before it is in reads as before.
+#[derive(Resource)]
+struct MapListsAhead(bevy::tasks::Task<Vec<(&'static str, Vec<String>, Vec<String>)>>);
+
+fn read_map_lists_ahead(mut commands: Commands, games: Option<Res<Games>>) {
+    let games: Vec<&'static GameInfo> = games.iter().flat_map(|g| g.all()).collect();
+    let Some(pool) = bevy::tasks::AsyncComputeTaskPool::try_get().filter(|_| !games.is_empty()) else { return };
+    let task = pool.spawn(async move {
+        games
+            .into_iter()
+            .map(|g| {
+                let Some(mount) = g.mount() else { return (g.id, Vec::new(), Vec::new()) };
+                let mut names = (g.map_names)(&mount);
+                names.sort();
+                names.dedup();
+                (g.id, names, (g.map_cycle)(&mount))
+            })
+            .collect()
+    });
+    commands.insert_resource(MapListsAhead(task));
+}
+
+fn take_map_lists_ahead(mut commands: Commands, ahead: Option<ResMut<MapListsAhead>>, lists: Res<MapLists>) {
+    let Some(mut ahead) = ahead else { return };
+    let Some(read) = bevy::tasks::block_on(bevy::tasks::poll_once(&mut ahead.0)) else { return };
+    commands.remove_resource::<MapListsAhead>();
+    let mut names = lists.names.lock().unwrap_or_else(|e| e.into_inner());
+    let mut cycles = lists.cycles.lock().unwrap_or_else(|e| e.into_inner());
+    for (id, list, cycle) in read {
+        names.entry(id).or_insert(list);
+        cycles.entry(id).or_insert(cycle);
+    }
+}
+
 fn read_map_names(game: &GameInfo) -> Vec<String> {
     let Some(mount) = game.mount() else { return Vec::new() };
     let mut names = (game.map_names)(&mount);
@@ -2082,16 +2122,20 @@ struct Settling {
 
 /// The most of a frame a loaded map's spawn takes behind the loading screen
 /// (`Spawning`): its steps run until this is spent, at least one a frame.
-/// The loading screen still turns over at 30-50 frames a second, and a map
-/// takes few frames more to come in than in one (each frame's own work, the
-/// render world's above all, is paid once per frame).
-const SPAWN_BUDGET: std::time::Duration = std::time::Duration::from_millis(20);
+/// With the frame's own work (the HUD, the loading screen, extraction) a
+/// frame stays under 33 ms on an optimized build (it was 20 ms, and its
+/// frames reached 30-90 ms: docs/performance.md, "A map's swap in the real
+/// app"); a map takes a few frames more to come in than in one (each
+/// frame's own work, the render world's above all, is paid once per frame).
+const SPAWN_BUDGET: std::time::Duration = std::time::Duration::from_millis(12);
 
 /// The most the GPU is sent a frame while a map comes in (Bevy's
 /// `RenderAssetBytesPerFrame`, images' and meshes' bytes; at least one
 /// asset a frame): the map's are uploaded over frames behind the loading
-/// screen, not in one. Unlimited again once in the game.
-const LOAD_UPLOAD_BYTES: usize = 32 << 20;
+/// screen, not in one (32 MiB of textures cost the render thread 10-15 ms
+/// a frame; meshes have their own pace, `upload_pace`). Unlimited again
+/// once in the game, which waits for them (`upload_pace::uploads_settled`).
+const LOAD_UPLOAD_BYTES: usize = 16 << 20;
 
 /// A loaded map spawning a step at a time behind the loading screen
 /// (`map::prepare::begin_map_change`; docs/performance.md, "A map's
@@ -2967,6 +3011,49 @@ mod tests {
         // Without a default game, maps need their game's id.
         assert_eq!(map_target(None, "some_game:x"), Some(("some_game:x".into(), false)));
         assert_eq!(map_target(None, "greybox"), None);
+    }
+
+    /// Every game's map list (and cycle) is read on a task at startup, so
+    /// the first `map` command doesn't open the install on its frame.
+    #[test]
+    fn map_lists_are_read_ahead_off_the_frame() {
+        static GAME: GameInfo = GameInfo {
+            id: "ahead_game",
+            short_name: "AG",
+            content_dir: "ag",
+            tick_interval: 0.015,
+            open: |_| Err(std::io::ErrorKind::NotFound.into()),
+            map_cycle: |_| Vec::new(),
+            map_names: |_| Vec::new(),
+            map_file: |n| Some(format!("maps/{n}.bsp")),
+            steam: None,
+            import_map: |_| Err("no".into()),
+            default_binds_cfg: "cfg/config_default.cfg",
+            default_binds: &[],
+            old_default_binds: &[],
+            movement_cvars: &[],
+            meters_per_unit: 0.0254,
+            console_namespaces: &[],
+        };
+        bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::default);
+        let mut app = App::new();
+        let mut games = Games::default();
+        games.register(&GAME);
+        app.insert_resource(games)
+            .init_resource::<MapLists>()
+            .add_systems(Startup, read_map_lists_ahead)
+            .add_systems(Update, take_map_lists_ahead);
+        for _ in 0..200 {
+            app.update();
+            if !app.world().contains_resource::<MapListsAhead>() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let lists = app.world().resource::<MapLists>();
+        assert!(!app.world().contains_resource::<MapListsAhead>(), "the read finished");
+        assert_eq!(lists.names_by("ahead_game", || panic!("read on the frame")), Vec::<String>::new());
+        assert!(lists.cycles.lock().unwrap().contains_key("ahead_game"));
     }
 
     #[test]
