@@ -1574,6 +1574,15 @@ in order, at least one a frame; a held mesh removed or extracted again is droppe
 after two clear render frames, and at once without a render world) and
 `map_lists_are_read_ahead_off_the_frame`.
 
+Held or deferred meshes come in after their entities were first specialized, and Bevy's
+`specialize_material_meshes` skips an entity whose mesh isn't on the GPU without retrying it: a
+map swapped in drew almost none of its world (de_dust2 from the greybox, dm_lockdown after
+junk_flea, bloodmoney's ground, 2026-11-10) until something else re-specialized those entities.
+`upload_pace::respecialize_late_meshes` marks the entities of each mesh that came late as
+needing specialization (Bevy's `DirtySpecializations`) in the frame it arrives. Guards:
+`late_meshes_are_reported_once_they_arrive` and cs_source_app's `heavy::map_swap_draws` (the
+binary offscreen, `map de_dust2` from the greybox: mean grey about 37 of 255, 1 without it).
+
 ## Combat Arms map loads (2026-10-19)
 
 A Combat Arms map took 4-8 s to load and spawn and ~1-1.8 GB in the

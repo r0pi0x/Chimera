@@ -164,6 +164,14 @@ the original's own behaviour isn't a bug (say so instead).
 
 ### Gun game playtest, 2026-10-28 (user)
 
+- **A Combat Arms map's ambient loops start again on the next map
+  (2026-11-10).** Swapping from junk_flea to dm_lockdown, the log shows
+  junk_flea's looping `SoundFX` (`ca:amb:snd/junk_flea/amb_lower.wav` and
+  others) started anew as dm_lockdown spawns, behind the loading screen:
+  `ui::music::play_ambient` plays `CaAmbient`, which likely still holds the old
+  map's sounds until `objects::load` rebuilds `CaObjects` on the first
+  tick. Check whether they are heard and for how long; clear `CaAmbient`
+  when the map changes.
 - **The grenade launcher's projectile is choppy on a client, "maybe all
   projectiles" (user, 2026-10-29): fixed, confirm in a playtest.** Not
   the client's interpolation (every `NetItem` was already drawn between
