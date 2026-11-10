@@ -2758,6 +2758,19 @@ sampled frames `glow_visibility` went from 5.4% of the main schedule's
 instructions to 1.7%, the two searches from 2.0% to 0.05%, the whole from
 57.2k samples to 53.3k (-7%).
 
+### A flood every tick (found after merging main at e863d9c6)
+
+`bots::brain::nav_whole` (a dedicated server's and the tests' whole
+navigation flood in one tick) took one step of a new `NavGenJob` each
+tick; since the flood went onto a task (8a162689) a bounded flood is two
+steps (the walk that finds the bound's clusters, then the mesh), so on a
+map with visibility data the first step never ended in a mesh and every
+tick flooded the map again: 2.15G instructions a tick on de_dust2
+(`heavy::rung_frames`' worst frames, limit 45M), `heavy::bot_cost` and
+`bots_on_rungs` past their 12 minutes, `nav_bounds` with no mesh. Both
+steps run on one job now; `bot_cost` is back at 38 s (16 bots 21.0M a
+tick).
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,
