@@ -1232,7 +1232,7 @@ What was on the main thread (each with the fix):
 
 | What | Worst single frame | Fix |
 |---|---|---|
-| The bots' navigation mesh (`ensure_nav`, `nav_gen`: rays and box sweeps of a flood) in one tick when bots first play on a map | 3-6.9 G, a 1.5-2.5 s frame in play | `NavGenJob`, a slice at a time, the same mesh: behind the loading screen (`MapHooks::settle`, `CELLS_PER_LOAD_FRAME` 250 cells, about 50 M a frame) after a `map` command or a server's map change; in play (`CELLS_PER_TICK` 80, about 16 M a tick) only on a map nothing loaded behind a screen (the command line's `--map`), bots standing until it is done there (de_dust2 10-13 s at load 40-60). A front end only (`SliceFloods`, the shell's: a listen server too); a dedicated server floods in one tick |
+| The bots' navigation mesh (`ensure_nav`, `nav_gen`: rays and box sweeps of a flood) in one tick when bots first play on a map | 3-6.9 G, a 1.5-2.5 s frame in play | The flood on a task (`nav_gen::NavGenTask`: the `NavGenJob` on the async compute pool, yielding every 500 cells, against `CollisionSnapshot`, a copy of Avian's collider trees, poses and shapes taken once), the same mesh; the main thread only polls it, behind the loading screen (`MapHooks::settle`) after a `map` command or a server's map change, or in play on a map nothing loaded behind a screen (the command line's `--map`). There the bots stood while it was flooded a slice a tick (`CELLS_PER_TICK`, 22.5 M a tick median): de_dust2 headless, a bot first walking 7.3-7.6 s after the round's start (10-13 s in the real app at load 40-60), now 0.43-1.33 s, the main thread 0.2-0.5 M a tick while it waits (one tick taking the snapshot, the rest polling). A front end only (`SliceFloods`, the shell's: a listen server too); a dedicated server floods in one tick |
 | The spawn spots' mesh and tests (`spawns::build`) in the first respawn | 1.2 G | the same, behind the loading screen (`settle_spots`) or a slice a tick from the match's start (`prepare_spots`); the same spots; the map's spawn points for a respawn before they are ready |
 | A game's HUD on its first frame in play: Bevy makes a glyph atlas (a 1 MB image) for each new font and size its texts use, and rasterizes them, on `text_system` (the 37 ms rung: the first into Combat Arms) | 116-122 M less ticks, about 30 ms | every game's HUD shown for 4 frames behind the loading screen (`client::hud::warm_huds`, `gameplay::HudWarm`): 70 M. Texts a HUD shows only in some states (a weapon's name, a lead message, the kill feed, the scoreboard): each HUD's fonts and sizes declared and laid out ahead, the atlases filled on a task (`client::text_warm`, below) |
 | Building a late model (`build_late*`: texels and mip levels, vertices, a skinned mesh's bounds, a deep copy of the view model) | 170 M main, 324 M render in one frame (a frame of up to 336 ms wall) | `render::late_build`: all on a task with reserved handles; only `Assets::insert` on the main thread, 4 MB and 12 materials per queue per frame |
@@ -1288,7 +1288,7 @@ What did not move, and its size (`docs/backlog.md`, "Nothing blocks the main thr
   (45-270 M dev, was 110-335 M: no longer the map's colliders' mass properties again, but the
   colliders the tick's own spawns make from the map's entities (the logic's world, pickups),
   their props' shadows redrawn as they settle, the first physics step).
-- **A HUD text at a font and size nobody declared**: still 20-60 M on its first frame; each one logs `text warm: N glyph atlases made on a text's first frame (... at [sizes] px)`, so a playtest's log names what is left (`client::text_warm`, below). Declared now: the shell's kill feed, minigame scoreboard, minigame panel, match-end screen, chat, hints and `game_text`, every text that exists empty (callouts, the respawn countdown, hidden HUDs' labels), and Combat Arms' HUD (its panels' fonts and each text of the install's HUD, score, result, team list and death screen layouts). Not declared: CS:S's and HL2:DM's own UI texts that are spawned on demand (their scoreboards, menus), the kill feed's icon glyph fonts (`weapon_icons`), and other games' HUD texts drawn by `hud_text` (its own rasterizer, not Bevy's atlases).
+- **A HUD text at a font and size nobody declared**: still 20-60 M on its first frame; each one logs `text warm: N glyph atlases made on a text's first frame (... at [sizes] px)`, so a playtest's log names what is left (`client::text_warm`, below). Declared now: the shell's kill feed, minigame scoreboard, minigame panel, match-end screen, chat, hints and `game_text`, every text that exists empty (callouts, the respawn countdown, hidden HUDs' labels), and Combat Arms' HUD (its panels' fonts and each text of the install's HUD, score, result, team list and death screen layouts). Since declared too: every game menu layout's label, button and rich-text fonts (`client::vgui::warm_fonts`: CS:S's buy and team menus, scoreboard, spectator bars, message of the day), CS:S's texts spawned on demand (`cs_source::ui::ON_DEMAND_FONTS`: the radio and plain menus, the target's name, the centre print, the radar's and overview's place names, the voice and vote panels, the plain scoreboard; its death notices' names and icon glyphs when the app has no shared feed) and the games' kill-feed icon fonts and glyph kill marks at the sizes the feed draws them (`WeaponIcons::register_glyph_fonts`: CS:S's and HL2:DM's). Not declared: other games' HUD texts drawn by `hud_text` (its own rasterizer, not Bevy's atlases), and any text whose size no source names (the log says which).
 - A match's start: 100 M (`ladder::start`, drawing every rung's extras), a `+map`'s first listing of Combat Arms' maps
   (292 M, opening the install's archives: `read_map_names`, once a session), and the first ladder's
   `markers::show` opening its archives on the frame (about 40 M).
@@ -1297,16 +1297,19 @@ What did not move, and its size (`docs/backlog.md`, "Nothing blocks the main thr
   tasks, and a new material draws once ready); not measured on Windows, where DX12's and the
   driver's costs differ.
 - Dedicated servers flood at once: a server's first bot tick is still 3-7 G (nobody watches its frames).
-- The command line's `--map` (no loading screen): bots stand 10-13 s on de_dust2 while the flood runs in play.
 
-Guards: `chimera_client`'s `each_hud_is_shown_then_the_playing_one_stays` and `text_warm` (`chimera/client/tests/it/text_warm.rs`: after the warm-up the feed's first kill, the board and the panel make no atlas, Bevy's `FontAtlasSet` counted; every atlas put in ahead was under Bevy's own key; an undeclared size is noticed; in play no frame lays out more than `GLYPHS_PER_FRAME` glyphs), `combat_arms`' `ui::text_warm` (its drawn HUD, with and without the warm-up: the feed's first line makes an atlas only without), `chimera/present/tests/it/late_build.rs` (three models far over any game's size come
+Guards: `chimera_client`'s `each_hud_is_shown_then_the_playing_one_stays` and `text_warm` (`chimera/client/tests/it/text_warm.rs`: after the warm-up the feed's first kill (its gun's icon glyph and headshot mark too), the board, the panel and a game menu's first opening make no atlas, Bevy's `FontAtlasSet` counted; every atlas put in ahead was under Bevy's own key; an undeclared size is noticed; in play no frame lays out more than `GLYPHS_PER_FRAME` glyphs), `combat_arms`' `ui::text_warm` (its drawn HUD, with and without the warm-up: the feed's first line makes an atlas only without), `chimera/present/tests/it/late_build.rs` (three models far over any game's size come
 in with no frame over 8 M instructions; here 3.5 M), `apps/ultimate_gun_game/tests/it/heavy/rung_frames.rs`
 (with the installs: de_dust2 headless, a bot walking a seeded ladder, each rung's worst
 main-thread frame under 45 M, ticks included; measured 12.5-27.7 M. It covers the
 simulation and the bodies' and held models' drawing, not the HUD, the render thread or
 install guns: that ladder draws only Combat Arms' own guns, so the real-app numbers above
 remain the check for those), `chimera_sim`'s
-`spots_made_a_slice_a_tick_are_the_same_spots` and `a_sliced_flood_makes_the_same_mesh`.
+`spots_made_a_slice_a_tick_are_the_same_spots`, `a_sliced_flood_makes_the_same_mesh` and
+`a_flood_on_a_task_makes_the_same_mesh` (the snapshot's queries make the world's mesh, bounded or
+not, ignored colliders alike), and `apps/ultimate_gun_game/tests/it/heavy/nav_in_play.rs` (with the
+installs: de_dust2 headless, no loading screen, a bot walking within 6 s of the round's start, no
+tick over 60 M meanwhile).
 
 ### HUD texts' glyph atlases ahead (`client::text_warm`)
 
@@ -1337,7 +1340,10 @@ Measured headless (instructions on the main thread; Bevy's text pipeline at opt-
 default face): the frame that first shows the kill feed's line, the scoreboard and the
 panel 39.9 M without the warm-up, 8.9 M after it; a frame warming in play 29.1 M with
 32 glyphs and the atlas made on the frame, 7.5 M with 16 glyphs and the atlas from the
-pool (an idle frame of that world 0.7 M). The real app's walk (each rung's worst frame
+pool (an idle frame of that world 0.7 M). With the feed's icon glyphs declared too (a headshot
+kill: the gun's glyph and the mark, at their own sizes) the same first show is 72.2 M without the
+warm-up and 9.2 M after it, no atlas made; a game menu's first opening (a label in a scheme font of
+its own size and a button) 23.8 M without, 3.5 M after (`a_menus_first_opening_makes_no_atlas_after_the_warm_up`). The real app's walk (each rung's worst frame
 less ticks, `CHIMERA_FRAME_LOG`) waits for a display: this box's session is down.
 
 ### A map's swap (`map::prepare::begin_map_change`)

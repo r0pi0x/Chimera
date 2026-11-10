@@ -52,6 +52,7 @@ postfire = 0.333
 # u alive `ProgDamageLifetime` 2 s that keeps a 12 HP/s burn entry of 1 s on
 # each player inside; a Guntype 9 weapon's burn never hurts its shooter.
 [hooks."combat_arms:projectile"]
+model_scale = [0.0, 0.0, 0.0]
 speed = 500.0
 gravity = false
 lifetime = 1.0

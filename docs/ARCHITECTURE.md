@@ -50,9 +50,24 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
  (chimera/core/)       core, console, console_names, console_scope, slots, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, query_cache, memo
                       chimera_vfs (chimera/vfs/)   the neutral VFS (`FileSource`, `Mount`) under both format crates and `mount`
                       chimera_assets (chimera/assets/)   the asset store over the VFS: records, manifests and sets, `CachedFiles`, the vfs log, the asset service (server, HTTPS client); `mount::served` layers it
+                      chimera_formats (chimera/formats/)   formats no engine owns, plain data: `wav` (sound files), `keyvalues` (Steam's library files); under `mount`, `map::sound` and both format crates
                       lithtech_formats (lithtech/formats/)   LithTech's formats as plain data (`.rez`, attribute files, worlds, textures, models, animation, effect files)
 ```
 
+- **Layers by path** (checked: `layers_follow_paths`): a crate's folder
+  says what it is, so a new game, loader layer or app is under the rules
+  with no table to edit. `chimera/*` is the engine and builds on no
+  loader, game or app; any other folder of crates (`source/`,
+  `lithtech/`) is a loader layer, on the engine and its own family
+  only; `games/<id>` is a game, on the engine and the loader layers its
+  manifest declares (`[package.metadata.chimera] loaders = ["source"]`),
+  never on a game or an app; `apps/*` (and a game's tools, and the root
+  package) compose them, and build on another app only when their
+  manifest says so (`apps = ["party_kit"]`). The rows of
+  `workspace_crates` add each crate's finer rules. Every game crate has
+  the same public seams (checked: `games_share_one_shape`);
+  [new-game.md](new-game.md) is the checklist for a port, and
+  docs/plans/active/architecture-pass.md has where this is going.
 - The loader layers: `source/` (Source's formats and map logic) and
   `lithtech/` (LithTech's, for Combat Arms), each beside the other under
   the games, by the same rules (checked: `workspace_crates`). Their
@@ -80,13 +95,18 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   Source units); it never depends on Bevy, avian or `mashup` (checked).
   Conversion into engine types stays in the game (`cs_source`), which
   re-exports the readers at their old paths.
-- An edit in `source_formats` rebuilds every crate (`mount` in
-  `chimera_core` uses it); `cargo test -p source_formats` builds and runs
+- `chimera_formats` (chimera/formats/) holds the formats no one engine
+  owns, as plain data: `wav` (sound files decoded to 16-bit samples;
+  WAV, MP3) and `keyvalues` (KeyValues text: Steam's library files,
+  which find any Steam game's install). Chimera's base and a game of
+  another engine use it, never `source_formats`, which re-exports both
+  at their old paths. An edit in `source_formats` rebuilds Source's
+  crates and games only; `cargo test -p source_formats` builds and runs
   only its own tests (seconds).
 - `chimera_core` is the engine's stable base: the modules every layer
   uses and that rarely change (`core` but the build's `VERSION`,
   `console`, `slots`, `character`, `metrics`, and `mount`, which uses
-  `source_formats`' VFS and KeyValues). It never depends on
+  `chimera_vfs` and `chimera_formats`' KeyValues). It never depends on
   `mashup` or a game (checked); `mashup` re-exports its modules at their
   old paths (`mashup::core` adds `VERSION`, stamped in the app's crate
   so a commit doesn't rebuild the base). The layering table covers its
@@ -94,7 +114,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
 - `chimera_world` is the simulation's map (`map`): the neutral map data,
   collision, spawning a map's simulated parts (the drawn ones through
   `map::MapDrawer`), the map's systems. It uses `chimera_core` and
-  `source_formats` of ours and never what draws or plays the map, `mashup`
+  `chimera_formats` (decoded sounds) of ours and never what draws or plays the map, `mashup`
   or a game (checked). It registers the map's systems itself
   (`map::build`): alone as `map::MapSimPlugin` (the dedicated server's,
   nothing drawn or played), or with what draws and plays the map at
@@ -226,6 +246,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   part of the network (`MinigameNetPlugin`: the match, the ladder rung and
   the match's events replicated, a client starting the server's minigame);
   an app that plays minigames over the network adds it.
+  `dedicated` (its own module) is a game's dedicated server, once for
+  every game: the options, the start map, `ServerPlugin`, `changelevel`,
+  the stdin console and the run loop (`run`), on what the game says of
+  itself as data (`GameServer`). HL2:DM's and Combat Arms' servers are a
+  `GameServer` static and that call; CS:S's and the party apps' servers
+  are still their own (architecture-pass.md, step 6).
   `cargo test -p chimera_net --features dev` tests it alone.
 - `cs_source_app` (apps/cs_source/) is the faithful CS:S app: the game
   binary (`cs_source`, the workspace's `default-run`) and the app's glue:
@@ -319,7 +345,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   workspace build features unify, so releases build it with `-p`.
 - `combat_arms_server` (apps/combat_arms_server/) is Combat Arms'
   dedicated server (`combat_arms_server`): Chimera's simulation crates,
-  the network and `combat_arms` without `ui` (its `ServerPlugin`, which
+  the network and `combat_arms` without `ui`, on Chimera's dedicated
+  server (`chimera_net::dedicated`: its `SERVER`, whose `ServerPlugin`
   its tests build too), so it links no render or audio code and never
   the app (`combat_arms_app`), CS:S or Source's logic (checked the same
   way); built alone with `-p` for release.
@@ -327,7 +354,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   and `hl2dm` composed, maps `hl2dm:<name>` from the install or a
   downloaded file, the greybox otherwise; `hl2dm_server`
   (apps/hl2dm_server/) its dedicated server: Chimera's simulation crates,
-  the network and `hl2dm` (`ServerPlugin`), no presentation, client shell
+  the network and `hl2dm` on `chimera_net::dedicated` (its `SERVER`), no presentation, client shell
   or app (checked: `server_builds_without_presentation`); built alone with
   `-p` for release.
 - `mashup` (the repository root; the old name) is a thin shim: `cs_source_app`
@@ -365,7 +392,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   An app's own tools only for app concerns (launch, packaging, budgets).
 - `workspace-hack` (chimera/workspace-hack/, generated by `cargo hakari`,
   .config/hakari.toml) unifies third-party features: every member but
-  `source_formats`, `lithtech_formats`, `source_tools`, `chimera_dev` and
+  `chimera_vfs`, `chimera_formats`, `chimera_assets`, `source_formats`, `lithtech_formats`, `source_tools`, `chimera_dev` and
   `repo_checks` depends on it (checked), so `cargo test -p <crate>` reuses the workspace's Bevy build.
   `chimera_dev` (chimera/dev/) carries Bevy's development features
   (`dev`: dynamic linking, the remote protocol; `profile`: Chrome traces),
@@ -415,7 +442,8 @@ game_log uses core, console and gameplay (the gameplay's
 game names players in the log); net uses the engine's
 simulation (core, console, game_log, slots, character, movement, map,
 weapon) and names no game or Source logic (`minigame_net` uses net,
-minigame, mode and core):
+minigame, mode and core; `dedicated`, a game's dedicated server, uses
+net, the map, the greybox, the harness's headless base and core):
 logic and games/<name> use it to register what they replicate (their
 parts, `net::parts`), and harness and client use it; bot uses core, console,
 slots, character, map, weapon (grenades

@@ -7,8 +7,9 @@
 //! Both rules are ratchets: each crate has a stored count of existing
 //! uses (`BASELINE`); a count above it fails (a new use), a count below it
 //! fails too until the number is lowered, so the counts only ever fall.
-//! The crates are found, not listed: every `chimera/*`, `source/*`,
-//! `lithtech/*` and `games/*` crate with a `src/` folder except those on
+//! The crates are found, not listed: every crate of Chimera, a loader
+//! layer (`source/*`, `lithtech/*`, whichever the workspace has) and
+//! `games/*` with a `src/` folder except those on
 //! `NOT_SIMULATION`, so a new crate (`games/hl2dm`) is checked from its
 //! first commit and starts at 0.
 //! Skipped: code under `#[cfg(test)]` (from a column-0 attribute to the
@@ -16,10 +17,10 @@
 
 use std::{fs, path::Path};
 
-use super::architecture::{root, rust_files};
+use super::architecture::{crate_groups, root, rust_files};
 
-/// Folders under the repository root holding crates (`<group>/<crate>`).
-const GROUPS: &[&str] = &["chimera", "source", "lithtech", "games"];
+/// The folder of crates that are never simulation: the apps compose it.
+const APPS: &str = "apps";
 
 /// Crates of those folders that are not simulation, with the reason.
 const NOT_SIMULATION: &[(&str, &str)] = &[
@@ -49,7 +50,7 @@ const NOT_SIMULATION: &[(&str, &str)] = &[
 const BASELINE: &[(&str, usize, usize)] = &[
     ("chimera/core/src", 0, 2),
     ("chimera/sim/src", 10, 0),
-    ("chimera/world/src", 22, 0),
+    ("chimera/world/src", 19, 0),
     ("chimera/net/src", 27, 0),
     ("source/logic/src", 8, 0),
     ("games/cs_source/src", 28, 3),
@@ -194,7 +195,7 @@ fn ratchet(what: &str, dir: &str, now: usize, stored: usize, fix: &str, errors: 
 /// on disk, sorted.
 fn simulation_crates() -> Vec<String> {
     let mut dirs = Vec::new();
-    for group in GROUPS {
+    for group in crate_groups().iter().filter(|g| *g != APPS) {
         let Ok(entries) = fs::read_dir(root().join(group)) else {
             continue;
         };

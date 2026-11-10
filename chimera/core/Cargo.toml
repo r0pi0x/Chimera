@@ -27,7 +27,7 @@ chimera_vfs.workspace = true
 # `mount::served`: the asset store (`[assets]`) layered into a game's mount,
 # and the vfs access log (`CHIMERA_VFS_LOG`).
 chimera_assets.workspace = true
-source_formats.workspace = true
+chimera_formats.workspace = true
 dirs.workspace = true
 toml.workspace = true
 workspace-hack.workspace = true

@@ -1,5 +1,5 @@
-//! Source sound files (RIFF WAVE), per specs/cs_source/sounds.md "Mapping
-//! to our engine": PCM (8-bit unsigned, 16-bit signed) and Microsoft ADPCM,
+//! Sound files (RIFF WAVE; every game's, Source's first: specs/cs_source/sounds.md
+//! "Mapping to our engine"): PCM (8-bit unsigned, 16-bit signed) and Microsoft ADPCM,
 //! mono or stereo, with an optional loop start from a `cue ` or `smpl`
 //! chunk. Decoded to interleaved 16-bit samples. MP3 files (the engine
 //! plays them too; community maps pack music and effects as MP3) decode

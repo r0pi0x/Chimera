@@ -133,3 +133,44 @@ fn a_sliced_flood_makes_the_same_mesh() {
     assert_eq!(format!("{:?}", whole.areas), format!("{:?}", sliced.areas));
     assert!(!whole.areas.is_empty());
 }
+
+/// A flood on a task against a copy of the world's collision
+/// (`NavGenTask`, `CollisionSnapshot`: a front end's, off the main thread)
+/// makes the mesh a whole one makes on the world, bounded or not, its
+/// ignored colliders left out alike (a box standing on the floor).
+#[test]
+fn a_flood_on_a_task_makes_the_same_mesh() {
+    let mut sim = toy();
+    let crate_box = sim
+        .app
+        .world_mut()
+        .spawn((Transform::from_xyz(-10.0, 0.5, 0.0), RigidBody::Static, Collider::cuboid(1.0, 1.0, 1.0)))
+        .id();
+    sim.ticks(2);
+    let vis = std::sync::Arc::new(vis());
+    let seeds = [Vec3::new(-5.0, 0.0, 0.0)];
+    for (bounded, ignore) in [(true, false), (false, false), (true, true)] {
+        let skip = |e: Entity| ignore && e == crate_box;
+        let whole = {
+            let w = sim.app.world_mut();
+            let mut state = SystemState::<SpatialQuery>::new(w);
+            let q = state.get(w).unwrap();
+            let bounds = bounded.then(|| Bounds { vis: &vis, walker: nav_gen::walking_player() });
+            nav_gen::generate_within(&q, &skip, &seeds, &climber(), bounds)
+        };
+        let job = nav_gen::NavGenJob::new(&seeds, &climber(), bounded.then(nav_gen::walking_player));
+        let snapshot = nav_gen::CollisionSnapshot::of(sim.app.world_mut());
+        let ignored = if ignore { [crate_box].into() } else { Default::default() };
+        let mut task = nav_gen::NavGenTask::spawn(job, snapshot, ignored, bounded.then(|| vis.clone()));
+        let started = std::time::Instant::now();
+        let on_task = loop {
+            if let Some(m) = task.poll() {
+                break m;
+            }
+            assert!(started.elapsed().as_secs() < 60, "the task ends");
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        };
+        assert!(!whole.areas.is_empty());
+        assert_eq!(format!("{:?}", whole.areas), format!("{:?}", on_task.areas), "bounded {bounded}, ignoring {ignore}");
+    }
+}

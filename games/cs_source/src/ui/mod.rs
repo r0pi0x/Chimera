@@ -124,7 +124,40 @@ impl Plugin for CsSourceUiPlugin {
             hints::HintsHudPlugin,
             textures::CsTexturesPlugin,
         ));
+        client::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
     }
+}
+
+/// The client scheme fonts (name, fallback at 480 lines) CS:S's texts
+/// spawned as they show are in, beside its menu layouts' (`client::vgui`)
+/// and its HUD's (`game_hud`): the radio and plain menus, the target's
+/// name, the centre print, the radar's place names, the overview's, the
+/// voice and vote panels and the plain scoreboard.
+pub const ON_DEMAND_FONTS: &[(&str, f32)] = &[
+    ("Default", 12.0),
+    ("Default", 10.0),
+    ("CenterPrintText", 18.0),
+    ("TargetID", 12.0),
+    ("ChatFont", 12.0),
+    ("DefaultVerySmall", 8.0),
+    ("ScoreboardTeamName", 14.0),
+    ("ScoreboardColumns", 8.0),
+    ("ScoreboardBody_1", 10.0),
+];
+
+/// `ON_DEMAND_FONTS` at the window's size while CS:S's look is up, laid out
+/// ahead (`client::text_warm`).
+fn warm_fonts(
+    window: client::text_warm::PrimaryWindows,
+    hud: Option<Res<crate::map::hud::ActiveHud>>,
+    fonts: Option<Res<client::fonts::UiFonts>>,
+) -> Vec<client::text_warm::WarmText> {
+    let (Some(hud), Some(fonts)) = (hud, fonts) else { return Vec::new() };
+    if !(hud.0.game.is_empty() || hud.0.game == crate::game::GAME) {
+        return Vec::new();
+    }
+    let h = client::text_warm::window_height(&window);
+    ON_DEMAND_FONTS.iter().map(|(name, fallback)| fonts.client(name, h, *fallback).into()).collect()
 }
 
 #[cfg(test)]

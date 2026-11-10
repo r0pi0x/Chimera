@@ -15,11 +15,10 @@ doctest = false
 # avian, no `mashup` (checks/tests/it/architecture.rs checks it).
 [dependencies]
 chimera_vfs.workspace = true
+# `keyvalues` and `wav`, re-exported at their old paths (lib.rs).
+chimera_formats.workspace = true
 glam.workspace = true
 lzma-rs.workspace = true
-symphonia.workspace = true
-# The converted-map cache serializes decoded clips (`wav::SoundClip`).
-serde.workspace = true
 
 [features]
 # Nothing: lets `--features dev` name this package alongside the others

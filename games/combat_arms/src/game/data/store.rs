@@ -85,6 +85,8 @@ impl Deref for CaData {
 /// What a `CaData` holds.
 pub struct CaDataInner {
     builtin_only: bool,
+    /// Built by hand (`with_attributes`): its files name no install file.
+    hand_built: bool,
     /// The install's attribute files: given (`with_attributes`), none
     /// (`builtin`), or read on first use (`install`).
     attributes: OnceLock<Option<InstallAttributes>>,
@@ -121,6 +123,7 @@ impl CaData {
         }
         CaDataInner {
             builtin_only,
+            hand_built: false,
             attributes: cell,
             mount: OnceLock::new(),
             memos: Default::default(),
@@ -187,7 +190,9 @@ impl CaData {
     /// An install's attribute files, as read, over the built-in data
     /// (tests that build an install by hand). Not shared.
     pub fn with_attributes(attributes: InstallAttributes) -> Self {
-        Self::new(false, Some(Some(attributes)), Self::built_in_docs())
+        let mut inner = Self::inner(false, Some(Some(attributes)), Self::built_in_docs());
+        inner.hand_built = true;
+        Self(Arc::new(inner))
     }
 
     /// The app's data: its resource if a plugin or the game's setup put
@@ -221,6 +226,16 @@ impl CaDataInner {
         self.mount
             .get_or_init(|| crate::mount::assets::shared::shared_opt(MOUNT_KEY, || super::super::INFO.mount()))
             .clone()
+    }
+
+    /// Whether the install has `path`: `None` when this data can't say
+    /// (no install, `builtin()` or hand-built data: its file names are
+    /// stand-ins).
+    pub fn install_has(&self, path: &str) -> Option<bool> {
+        if self.hand_built {
+            return None;
+        }
+        self.mount().map(|m| m.contains(path))
     }
 
     /// The install's attribute data: `None` without an install, with

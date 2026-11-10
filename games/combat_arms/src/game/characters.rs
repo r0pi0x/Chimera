@@ -146,7 +146,10 @@
 //!   another tree poses before its drawn model loads on its own rig, read
 //!   at once from the install where the rung dresses it
 //!   (`models::alias_rig`); an NPC body's `ClientFX#` are worn as its
-//!   face's are (markers over its head too).
+//!   face's are (markers over its head too); the equip-slot rule (case
+//!   71) has no code to test; the install differs from the spec in two
+//!   counts (113 of the 303 `Character#` records are `ItemType` 38, not
+//!   22; a fifth extend item, 44, has `SubType` 18).
 //! - No V2 key: no body, head piece, goggle or third-person weapon model
 //!   loads (the unkeyed corpses and zombie bodies on the stock trees
 //!   aren't player records; `heavy::characters` poses them; characters

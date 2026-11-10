@@ -7,6 +7,11 @@ rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
 
+# The app crates this one is built on (checks/tests/it/architecture.rs,
+# `layers_follow_paths`; docs/ARCHITECTURE.md, "Layers by path").
+[package.metadata.chimera]
+apps = ["cs_source_app"]
+
 # No doc tests (none written): skips a rustdoc pass on every test run.
 [lib]
 doctest = false

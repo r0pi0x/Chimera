@@ -33,6 +33,7 @@ bevy_time = { version = "0.20", features = ["serialize"] }
 bevy_utils = { version = "0.20", features = ["debug", "serialize", "std"] }
 bitflags = { version = "2", default-features = false, features = ["bytemuck", "serde", "std"] }
 bytemuck = { version = "1", default-features = false, features = ["aarch64_simd", "derive", "extern_crate_alloc", "min_const_generics", "must_cast", "wasm_simd"] }
+byteorder = { version = "1" }
 crossbeam-channel = { version = "0.5" }
 crypto-common = { version = "0.1", default-features = false, features = ["getrandom", "std"] }
 derive_more = { version = "2", features = ["as_ref", "constructor", "deref", "deref_mut", "display", "from", "into", "is_variant", "try_unwrap", "unwrap"] }

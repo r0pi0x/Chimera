@@ -41,7 +41,7 @@ workspace-members = ["chimera_dev"]
 # repository's checks (`repo_checks`: the hooks build it first), and
 # `chimera_dev` isn't managed.
 [final-excludes]
-workspace-members = ["chimera_vfs", "chimera_assets", "source_formats", "lithtech_formats", "source_tools", "chimera_dev", "repo_checks"]
+workspace-members = ["chimera_vfs", "chimera_formats", "chimera_assets", "source_formats", "lithtech_formats", "source_tools", "chimera_dev", "repo_checks"]
 # Also not given the hack: the crates only the presentation (render, window,
 # input devices, audio) builds. A hack entry is a normal dependency of every
 # member, so listing them made the dedicated servers compile them (A5):
