@@ -306,7 +306,7 @@ pub(super) fn open_menu(w: &mut World, page: Page) {
     let mut menu = w.resource_mut::<GameMenu>();
     if menu.logos_dir.is_none() {
         // Chimera's own user data, beside the configs.
-        menu.logos_dir = crate::console::cfg_dir().and_then(|d| d.parent().map(|p| p.join("logos")));
+        menu.logos_dir = source_engine::effects::spray_pictures::user_logos_dir();
     }
     menu.set_counts(bots, players);
     menu.set_binds(binds, known, defaults);

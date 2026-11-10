@@ -8,7 +8,10 @@
 //! Sprays stay through round restarts and go with the map (a
 //! `map::MapHooks::unload` hook). A network client asks the server
 //! (`SprayRequested`); the server's `Spray` entities replicate (`net`) and
-//! each client draws them from its own install's logos (`render::spray`).
+//! each client draws them from its own install's logos (`render::spray`),
+//! or from the picture a spray carries when the logo is one the player
+//! imported (`SprayPictureSource` finds it; the client sends it with its
+//! request).
 //!
 //! Players' sprays (`impulse 201`): the eye's trace up to `SprayRules::reach`
 //! onto the static world (not props, brush entities or characters) puts the
@@ -23,18 +26,18 @@
 //! its top away from the player are the well-known Counter-Strike values and
 //! ours, not measured; only the static world takes them (no props or brush
 //! entities); a refused spray (too soon, nothing in reach) says nothing; the
-//! logo travels as its name (`cl_logofile` userinfo), so another player's own
-//! imported logo (`spray.vtf`) can't be shown (`map::decal::CUSTOM_LOGO`; CS:S
-//! uploads the picture) and a logo missing from an install isn't drawn there.
-//! Why it's OK for now: Sprays work with the stock logos; capture C23 measures
-//! reach and size.
+//! logo travels as its name (`cl_logofile` userinfo), so a logo missing from
+//! an install isn't drawn there; an imported picture is reduced to 64 x 64
+//! (`map::decal::SPRAY_PICTURE_MAX_SIDE`) and goes whole with each spray, not
+//! once per player. Why it's OK for now: Sprays work with the stock logos;
+//! capture C23 measures reach and size.
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemState, prelude::*};
 
 use crate::{
     core::{Health, Intent, MovementState, Spectating},
-    map::decal::Spray,
+    map::decal::{Spray, SprayPicture},
 };
 
 /// `cl_logofile`'s default: CS:S's import slot (Options > Multiplayer >
@@ -79,14 +82,21 @@ impl Default for LogoFile {
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
 pub struct LastSpray(pub f64);
 
+/// Finds the picture of a `cl_logofile` value that is the player's own
+/// import (a game's front end sets it; None: every logo is the install's).
+#[derive(Resource, Clone, Copy, Default)]
+pub struct SprayPictureSource(pub Option<fn(&str) -> Option<SprayPicture>>);
+
 /// A network client's `impulse 201`: what it asks the server for (`net`
-/// sends it, the server runs `spray`).
-#[derive(Message, Clone, Copy, Debug, Default, PartialEq)]
-pub struct SprayRequested;
+/// sends it, the server runs `spray_with`), with the picture of an
+/// imported logo.
+#[derive(Message, Clone, Debug, Default, PartialEq)]
+pub struct SprayRequested(pub Option<SprayPicture>);
 
 pub(super) fn plugin(app: &mut App) {
     app.init_resource::<SprayRules>()
         .init_resource::<LogoFile>()
+        .init_resource::<SprayPictureSource>()
         .add_message::<SprayRequested>();
     crate::console::resource_cvar::<SprayRules, f32>(
         app,
@@ -132,15 +142,39 @@ pub fn logo_name(file: &str) -> Option<String> {
 /// (`SprayRequested`), else `spray`.
 pub fn spray_or_ask(world: &mut World, player: Entity) -> Result<Option<String>, String> {
     if world.get_resource::<crate::core::NetRole>() == Some(&crate::core::NetRole::Client) {
-        world.write_message(SprayRequested);
+        let file = world.get_resource::<LogoFile>().map(|l| l.0.clone()).unwrap_or_default();
+        let picture = picture_of(world, &file);
+        world.write_message(SprayRequested(picture));
         return Ok(None);
     }
     spray(world, player).map(Some)
 }
 
-/// Spray `player`'s logo where it looks, if it may (alive, `decalfrequency`
-/// since its last, a static surface in reach). Returns what happened.
+/// The picture of `file` if it is an import (`SprayPictureSource`).
+fn picture_of(world: &World, file: &str) -> Option<SprayPicture> {
+    let source = world.get_resource::<SprayPictureSource>()?.0?;
+    source(file).filter(SprayPicture::valid)
+}
+
+/// Spray `player`'s logo where it looks, if it may (see `spray_with`); the
+/// picture of an imported logo is found here (for a player on this machine).
 pub fn spray(world: &mut World, player: Entity) -> Result<String, String> {
+    let file = world
+        .get::<crate::core::UserInfo>(player)
+        .and_then(|u| u.0.get(LOGO_KEY).cloned())
+        .unwrap_or_else(|| LOGO_FILE_DEFAULT.into());
+    let picture = picture_of(world, &file);
+    spray_with(world, player, picture)
+}
+
+/// Spray `player`'s logo where it looks, if it may (alive, `decalfrequency`
+/// since its last, a static surface in reach), with `picture` when the logo
+/// is an import (a client's, as it sent it: refused if out of range).
+/// Returns what happened.
+pub fn spray_with(world: &mut World, player: Entity, picture: Option<SprayPicture>) -> Result<String, String> {
+    if picture.as_ref().is_some_and(|p| !p.valid()) {
+        return Err("bad spray picture".into());
+    }
     let rules = world.get_resource::<SprayRules>().cloned().unwrap_or_default();
     let alive = world.get::<Health>(player).is_some_and(|h| h.current > 0.0);
     if !alive || world.get::<Spectating>(player).is_some() {
@@ -195,6 +229,7 @@ pub fn spray(world: &mut World, player: Entity) -> Result<String, String> {
             point,
             normal,
             up,
+            picture,
         },
         Transform::default(),
         Visibility::default(),
