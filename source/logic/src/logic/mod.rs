@@ -41,7 +41,7 @@ mod community_tests;
 #[cfg(test)]
 mod set_piece_tests;
 
-pub use bridge::set_node_shown;
+pub use bridge::{SyncEveryNode, set_node_shown};
 pub use bridge::{
     CarriedMover, BlastInfluenceWindow, PropBlastWeapon, FirstImpactScale, KeepPropsOnBreak, Logic, LogicOneShot, LogicPlugin, LogicSeed, LogicSet, PlayerImpactScale, PromptSideHits, brush_to_engine, carry_player,
     mover_brushes_at,

@@ -403,6 +403,12 @@ pub struct CharacterData {
     /// (`weapons::hit_table`), by index.
     #[serde(skip)]
     pub hit_spheres: Vec<Vec<crate::game::weapons::HitSphere>>,
+    /// The male table's spheres' regions and factors, in its order (those
+    /// with a radius): `weapons::zone_factor` asks for every hitbox of
+    /// another game's body, and a sphere's region is read from its node's
+    /// name each time (`HitSphere::region`).
+    #[serde(skip)]
+    pub male_zones: Vec<(crate::core::BodyRegion, f32)>,
 }
 
 /// The built-in character data without any install, a read-only table
@@ -428,6 +434,11 @@ impl CharacterData {
         }
         data.families = super::families::built_in();
         data.hit_spheres = data.skeleton.iter().enumerate().map(|(i, s)| crate::game::weapons::make_hit_table(s, i)).collect();
+        data.male_zones = data
+            .hit_spheres
+            .first()
+            .map(|male| male.iter().filter(|s| s.radius > 0.0).map(|s| (s.region(), s.factor)).collect())
+            .unwrap_or_default();
         data
     }
 }

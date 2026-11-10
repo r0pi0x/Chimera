@@ -52,7 +52,11 @@ fn the_installs_weapons_map_to_their_holders() {
     let mut catalog = chimera_sim::weapon::data::WeaponCatalog::default();
     catalog.sets.push(set);
     let ch = ca.characters();
-    let (players, zombies) = (ch.rung_bodies(), ch.infected_bodies());
+    // Without the bodies whose file the install lacks: no pool has them
+    // (`rungs::missing_bodies`).
+    let missing = rungs::missing_bodies(&ca);
+    let present = |ids: Vec<i32>| -> Vec<i32> { ids.into_iter().filter(|id| !missing.0.contains(id)).collect() };
+    let (players, zombies) = (present(ch.rung_bodies()), present(ch.infected_bodies()));
     let h = rungs::holders();
     let (mut to_players, mut to_zombies, mut named) = (0, 0, 0);
     for w in &set.weapons {

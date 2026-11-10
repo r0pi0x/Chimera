@@ -1212,6 +1212,13 @@ Details and baseline numbers: [performance.md](performance.md).
   `perf record -k CLOCK_MONOTONIC`) lists what was on the thread during
   each. Percentiles and the hitch log's one line a second hide these
   (performance.md, "Nothing blocks the main thread").
+- A frame in play without a display, for `perf` (performance.md,
+  "Performance pass"): `cargo build --profile profiling -p
+  ultimate_gun_game --example frame_bench`, then
+  `target/profiling/examples/frame_bench [<map>] [--bots <n>] [--frames
+  <n>]`: the gun game with Bevy's whole renderer drawing into an image,
+  bots playing, the main schedule, extraction and render world of each
+  frame counted apart (no HUD; its medians move a tenth between runs).
 - A map change's frames without a display: `cargo test -p ultimate_gun_game
   --features dev --test it heavy::map_swap_frames -- --nocapture` (the
   shell's `map` flow headless over four maps, each frame's main-thread

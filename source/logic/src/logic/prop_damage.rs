@@ -85,6 +85,7 @@
 //! computer cases, sleeping phones; cs_italy's drawer; a crate's pieces;
 //! cs_militia's gas can and roof boards on the real maps.
 
+use super::classes::kinds;
 use bevy::prelude::*;
 
 use super::classes::Class;
@@ -1043,7 +1044,7 @@ impl LogicWorld {
     /// Break-on-pressure props someone stands on: break after their
     /// `PressureDelay` (after movement; spec 7.1).
     pub fn pressure_props(&mut self) {
-        for id in self.ids() {
+        for id in self.ids_of(kinds::PROP) {
             let Some(e) = self.get(id) else { continue };
             let Class::Prop(p) = &e.class else { continue };
             if p.broken || !e.has_flag(SF_PHYSPROP_BREAK_ON_PRESSURE) {
@@ -1082,7 +1083,7 @@ impl LogicWorld {
 
     /// Map props the logic keeps, in entity order.
     pub fn prop_states(&self) -> Vec<PropState> {
-        self.ids()
+        self.ids_of(kinds::PROP)
             .into_iter()
             .filter_map(|id| {
                 let e = self.get(id)?;

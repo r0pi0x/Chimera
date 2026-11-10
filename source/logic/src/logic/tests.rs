@@ -1869,3 +1869,147 @@ mod game_cases;
 
 #[path = "template_tests.rs"]
 mod template_cases;
+
+/// Scans by class (`LogicWorld::ids_of`) give what a scan of every entity
+/// filtered by its class gives, through spawns, kills, a flame made at run
+/// time and a round restart; `kinds::PUSHERS` names the classes with a
+/// pusher.
+#[test]
+fn scans_by_class_match_full_scans() {
+    use super::classes::kinds;
+    fn check(w: &LogicWorld) {
+        let ids = w.ids();
+        let mut seen = 0;
+        for bit in 1..64u8 {
+            let want: Vec<EntId> = ids
+                .iter()
+                .copied()
+                .filter(|id| w.get(*id).unwrap().class.kind() == bit)
+                .collect();
+            seen += want.len();
+            assert_eq!(w.ids_of(1 << bit), want, "class number {bit}");
+        }
+        assert_eq!(seen, ids.len(), "every entity has a class number");
+        assert_eq!(w.ids_of(!0), ids);
+        for id in &ids {
+            let class = &w.get(*id).unwrap().class;
+            assert_eq!(pusher(class).is_some(), kinds::PUSHERS & (1 << class.kind()) != 0, "{class:?}");
+        }
+        let pushers: Vec<EntId> = ids
+            .iter()
+            .copied()
+            .filter(|id| pusher(&w.get(*id).unwrap().class).is_some())
+            .collect();
+        assert_eq!(w.ids_of(kinds::PUSHERS), pushers);
+    }
+    let classes = [
+        "func_door",
+        "info_target",
+        "func_button",
+        "func_brush",
+        "trigger_multiple",
+        "prop_physics",
+        "logic_relay",
+        "func_rotating",
+        "func_breakable",
+        "env_sprite",
+        "func_areaportal",
+        "logic_timer",
+        "func_movelinear",
+        "func_tracktrain",
+        "phys_thruster",
+        "point_viewcontrol",
+        "func_conveyor",
+        "momentary_rot_button",
+        "prop_door_rotating",
+        "env_fire",
+        "trigger_hurt",
+        "func_door_rotating",
+        "phys_ballsocket",
+        "func_occluder",
+        "point_template",
+        "logic_case",
+        "prop_dynamic",
+    ];
+    let map: Vec<crate::map::MapEntity> = classes
+        .iter()
+        .enumerate()
+        .map(|(i, c)| crate::map::MapEntity {
+            keyvalues: kv(&[("classname", c), ("targetname", &format!("e{i}")), ("origin", "0 0 0")]),
+            hulls: vec![hull(Vec3::splat(i as f32 * 100.0), Vec3::splat(i as f32 * 100.0 + 32.0))],
+            mover: false,
+            physics: None,
+        })
+        .collect();
+    let mut w = world();
+    let ids = w.load_map(&map);
+    check(&w);
+    // Several classes are there, movers among them.
+    assert!(w.ids_of(kinds::PUSHERS).len() >= 8, "{:?}", w.ids_of(kinds::PUSHERS).len());
+    assert_eq!(w.ids_of(kinds::TRIGGER).len(), 2);
+    // Killed entities leave at the frame's end; a flame is made at run time.
+    w.kill(ids[0]);
+    w.kill(ids[4]);
+    let flame = super::fire::create_flame(&mut w, Who::Ent(ids[5]), 5.0);
+    check(&w);
+    w.frame(&NoCollision);
+    check(&w);
+    assert_eq!(w.ids_of(kinds::TRIGGER).len(), 1);
+    assert_eq!(w.ids_of(kinds::FLAME).len(), flame.is_some() as usize);
+    for _ in 0..40 {
+        w.frame(&NoCollision);
+    }
+    check(&w);
+    // A round restart re-creates most and keeps some in their slots.
+    w.round_restart(&map);
+    check(&w);
+    assert_eq!(w.ids_of(kinds::TRIGGER).len(), 2);
+    w.frame(&NoCollision);
+    check(&w);
+}
+
+/// `body_riders` (links looked up by slot) answers as `rides_body` (a
+/// search of the list) for every entity: brushes parented to a physics
+/// brush, to each other, to a door, and unparented ones; also after an
+/// entity went and a round restart re-made the links.
+#[test]
+fn body_riders_answer_as_the_search() {
+    fn check(w: &LogicWorld) -> usize {
+        let riders = w.body_riders();
+        let mut riding = 0;
+        for id in w.ids() {
+            assert_eq!(riders.rides(id), w.rides_body(id), "{:?}", w.get(id).map(|e| &e.targetname));
+            riding += w.rides_body(id) as usize;
+        }
+        // Ids that name nothing (a slot never made, an older generation).
+        for id in [EntId { index: 9999, generation: 0 }, EntId { index: 1, generation: 7 }] {
+            assert_eq!(riders.rides(id), w.rides_body(id));
+        }
+        riding
+    }
+    let brush = |class: &str, name: &str, parent: &str, at: f32| crate::map::MapEntity {
+        keyvalues: kv(&[("classname", class), ("targetname", name), ("parentname", parent), ("origin", &format!("{at} 0 0"))]),
+        hulls: vec![hull(Vec3::new(at - 8.0, -8.0, -8.0), Vec3::new(at + 8.0, 8.0, 8.0))],
+        mover: true,
+        physics: None,
+    };
+    let map = vec![
+        brush("func_physbox", "box", "", 0.0),
+        brush("func_brush", "on_box", "box", 32.0),
+        brush("func_brush", "on_that", "on_box", 64.0),
+        brush("func_door", "door", "", 200.0),
+        brush("func_brush", "on_door", "door", 232.0),
+        brush("func_brush", "alone", "", 400.0),
+        brush("func_breakable", "glass_on_box", "box", 96.0),
+    ];
+    let mut w = world();
+    let ids = w.load_map(&map);
+    let riding = check(&w);
+    assert!(riding >= 1 && !w.follows.is_empty(), "{riding} of {} linked entities ride the box", w.follows.len());
+    w.kill(ids[1]);
+    w.frame(&NoCollision);
+    check(&w);
+    // A restart keeps some classes as they are and links again.
+    w.round_restart(&map);
+    assert!(check(&w) >= 1);
+}

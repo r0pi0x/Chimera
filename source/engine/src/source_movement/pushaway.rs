@@ -62,6 +62,21 @@ pub fn prop_box(transform: &Transform, bounds: (Vec3, Vec3)) -> (Vec3, Vec3) {
     corners.fold((Vec3::MAX, Vec3::MIN), |(a, b), c| (a.min(c), b.max(c)))
 }
 
+/// Whether a prop's world box (`prop_box`) surely misses `query` (Source
+/// units): the cube around its bounds' centre that holds the box at any
+/// turn (half a side: the bounds' half diagonal, with slack for rounding)
+/// does. Tells nothing else: a prop that isn't surely apart gets the exact
+/// test. Every player asks about every prop each tick, and the exact box
+/// is eight transformed corners (docs/performance.md, "Performance pass").
+pub fn surely_apart(transform: &Transform, bounds: (Vec3, Vec3), query: (Vec3, Vec3)) -> bool {
+    let (lo, hi) = bounds;
+    let centre = to_source(transform.transform_point((lo + hi) * 0.5));
+    let radius = (hi - lo).length() * 0.5 * transform.scale.abs().max_element() / super::METERS_PER_UNIT;
+    let reach = Vec3::splat(radius * 1.01 + 1.0);
+    // Written so a NaN anywhere says "not surely apart".
+    (centre - reach).cmpgt(query.1).any() || (centre + reach).cmplt(query.0).any()
+}
+
 /// The player's box (Source units) from the movement transform.
 pub fn player_box(transform: &Transform, me: &SourceMovement, cfg: &SourceMovementConfig) -> (Vec3, Vec3) {
     let feet = to_source(transform.translation) - Vec3::Z * ORIGIN_ABOVE_FEET;
@@ -121,6 +136,9 @@ fn push_props(
             if p.push == PushAway::Solid && speed < MIN_PLAYER_SPEED {
                 continue;
             }
+            if surely_apart(t, p.bounds, player) {
+                continue;
+            }
             let b = prop_box(t, p.bounds);
             if !overlap(player, b) {
                 continue;
@@ -168,17 +186,20 @@ pub fn push_back<'a>(
 ) -> Vec2 {
     let centre = (player.0 + player.1) / 2.0;
     let mut out = Vec2::ZERO;
+    // Props within the gap count (the spec's cases: 2 units pushes, 6
+    // doesn't).
+    let reach = (
+        player.0 - Vec3::splat(PUSHBACK_GAP),
+        player.1 + Vec3::splat(PUSHBACK_GAP),
+    );
     for (t, p) in props {
         if p.push != PushAway::Solid {
             continue;
         }
+        if surely_apart(t, p.bounds, reach) {
+            continue;
+        }
         let b = prop_box(t, p.bounds);
-        // Props within the gap count (the spec's cases: 2 units pushes, 6
-        // doesn't).
-        let reach = (
-            player.0 - Vec3::splat(PUSHBACK_GAP),
-            player.1 + Vec3::splat(PUSHBACK_GAP),
-        );
         if !overlap(reach, b) {
             continue;
         }
@@ -239,6 +260,30 @@ mod tests {
         };
         let t = Transform::IDENTITY;
         push_back(player, Vec3::X, Vec3::NEG_Y, [(&t, &prop)].into_iter())
+    }
+
+    /// `surely_apart` never rejects a prop whose exact box overlaps the
+    /// query: boxes at many places, turns and scales around a player's.
+    #[test]
+    fn the_far_test_never_drops_an_overlap() {
+        let query = (Vec3::new(-19.0, -19.0, -3.0), Vec3::new(19.0, 19.0, 75.0));
+        let bounds = (Vec3::new(-0.3, -0.1, -0.5), Vec3::new(0.4, 0.9, 0.2));
+        let (mut near, mut far) = (0, 0);
+        for i in 0..40_000u32 {
+            // A cheap fixed sequence of places and turns.
+            let f = |k: u32| ((i.wrapping_mul(2654435761).rotate_left(k) % 2001) as f32 / 1000.0) - 1.0;
+            let at = to_engine(Vec3::new(f(3) * 90.0, f(7) * 90.0, 36.0 + f(11) * 110.0));
+            let t = Transform::from_translation(at)
+                .with_rotation(Quat::from_euler(EulerRot::XYZ, f(13) * 3.1, f(17) * 3.1, f(19) * 3.1))
+                .with_scale(Vec3::new(1.0 + f(23) * 0.5, 1.0 + f(29) * 0.5, 1.0 + f(5) * 0.5));
+            let overlaps = overlap(query, prop_box(&t, bounds));
+            let apart = surely_apart(&t, bounds, query);
+            assert!(!(overlaps && apart), "dropped an overlapping prop at {at}");
+            near += overlaps as u32;
+            far += apart as u32;
+        }
+        // Both cases happened, and most misses were cut.
+        assert!(near > 1_000 && far > 10_000, "near {near}, far {far}");
     }
 
     #[test]

@@ -21,6 +21,7 @@
 //! ignored. Why it's OK for now: The minigame maps' templates are props,
 //! brushes and logic; cameras are intro shots.
 
+use super::classes::kinds;
 use bevy::prelude::*;
 
 use super::anchors::angles_of;
@@ -279,7 +280,7 @@ impl LogicWorld {
 
     /// The first point_template named `name`.
     fn template_named(&self, name: &str) -> Option<EntId> {
-        self.ids().into_iter().find(|id| {
+        self.ids_of(kinds::TEMPLATE).into_iter().find(|id| {
             self.get(*id).is_some_and(|e| {
                 matches!(e.class, Class::Template(_)) && !e.targetname.is_empty() && name_matches(name, &e.targetname)
             })

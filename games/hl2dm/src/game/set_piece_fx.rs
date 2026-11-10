@@ -136,7 +136,10 @@ fn canisters(
     entities: Option<Res<MapEntities>>,
 ) {
     let Some(materials) = materials else { return };
-    let sky_scale = sky_camera(entities.as_deref()).map_or(1.0, |(_, s)| s);
+    // Looked up when a canister in the sky is there to draw (a search of
+    // the map's entities: not every frame for nothing).
+    let sky_scale = std::cell::OnceCell::new();
+    let sky_scale = || *sky_scale.get_or_init(|| sky_camera(entities.as_deref()).map_or(1.0, |(_, s)| s));
     let dt = time.delta_secs();
     let (trail_mat, smoke_mat) = (materials.0.find("sprites/smoke"), materials.0.find("particle/particle_smokegrenade"));
     let mut trail = ParticleGroup::new(Motion::default());
@@ -148,7 +151,7 @@ fn canisters(
         let flying = key == CANISTER_MODEL || in_sky;
         // In the 3D skybox its trail is drawn at the sky's scale (its
         // image as wide as in the world).
-        let k = if in_sky { sky_scale } else { 1.0 };
+        let k = if in_sky { sky_scale() } else { 1.0 };
         let smoking = key.starts_with("hl2dm:headcrabcanister_open");
         if !flying && !smoking {
             continue;
@@ -243,17 +246,27 @@ fn flares(
     mut particles: ResMut<Particles>,
     mut rng: ResMut<FxRng>,
     mut owed: Local<std::collections::BTreeMap<usize, f32>>,
+    mut flares: Local<Option<Vec<usize>>>,
     mut commands: Commands,
 ) {
-    let Some(entities) = entities else { return };
+    let Some(entities) = entities else {
+        *flares = None;
+        return;
+    };
+    // The map's env_flares, found when its entities change, not by a
+    // search of every entity's class each frame (6% of an Ultimate Gun
+    // Game server's tick with the canisters' search: docs/performance.md,
+    // "Performance pass").
+    if entities.is_changed() || flares.is_none() {
+        let found = entities.entities.iter().enumerate();
+        *flares = Some(found.filter(|(_, e)| e.classname().eq_ignore_ascii_case("env_flare")).map(|(i, _)| i).collect());
+    }
     let dt = time.delta_secs();
     let smoke_mat = materials.as_ref().and_then(|m| m.0.find("particle/particle_noisesphere"));
     let mut smoke = ParticleGroup::new(Motion::default());
     let mut lit = Vec::new();
-    for (i, e) in entities.entities.iter().enumerate() {
-        if !e.classname().eq_ignore_ascii_case("env_flare") {
-            continue;
-        }
+    for &i in flares.as_deref().unwrap_or_default() {
+        let e = &entities.entities[i];
         let flags: u32 = e.get("spawnflags").and_then(|v| v.trim().parse().ok()).unwrap_or(0);
         let on = match parts.iter().find(|p| p.entity == i) {
             Some(p) => p.on && p.exists,

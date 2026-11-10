@@ -98,6 +98,7 @@
 //! or a knife opens de_nuke's vents; cs_office windows lose the shot panes; the
 //! spec's numeric cases pass.
 
+use super::classes::kinds;
 use bevy::prelude::*;
 
 use super::classes::Class;
@@ -825,7 +826,7 @@ impl LogicWorld {
     /// Break-on-touch breakables and broken windows touched by players
     /// (after movement).
     pub fn touch_breakables(&mut self) {
-        for id in self.ids() {
+        for id in self.ids_of(kinds::BREAKABLE) {
             let Some(e) = self.get(id) else { continue };
             let Class::Breakable(b) = &e.class else { continue };
             if b.window.as_ref().is_some_and(|w| w.window_broken) {
@@ -1157,7 +1158,7 @@ fn window_touch(w: &mut LogicWorld, id: EntId) {
         .filter(|p| p.alive)
         .map(|p| (p.origin + p.mins, p.origin + p.maxs, p.velocity))
         .collect();
-    touchers.extend(w.ids().into_iter().filter_map(|pid| {
+    touchers.extend(w.ids_of(kinds::PROP).into_iter().filter_map(|pid| {
         let p = w.prop(pid)?;
         let (lo, hi) = p.bounds?;
         (p.physics && !p.frozen && !p.broken && p.solid).then_some((lo, hi, Vec3::ZERO))

@@ -509,7 +509,14 @@ fn nav_whole(world: &mut World) {
     let mesh = {
         let mut state = SystemState::<SpatialQuery>::new(world);
         let q = state.get(world).unwrap();
-        start.job().step(&q, &|e| start.ignore.contains(&e), start.vis.as_deref(), usize::MAX)
+        // A bounded flood is two steps (the walk that finds the bound's
+        // clusters, then the mesh): both here, on one job. One step of a
+        // new job every tick never got past the first, and flooded the
+        // whole map again each tick (2 G instructions on de_dust2) with
+        // no mesh ever made (docs/performance.md, "Performance pass").
+        let mut job = start.job();
+        let mut step = || job.step(&q, &|e| start.ignore.contains(&e), start.vis.as_deref(), usize::MAX);
+        step().or_else(&mut step)
     };
     if let Some(mesh) = mesh {
         insert_mesh(world, mesh, false);

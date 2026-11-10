@@ -42,6 +42,7 @@
 //! skeleton. Why it's OK for now: The spec's cs_assault cases pass; de_nuke's
 //! steam and cs_office's projector work; see the prop damage row.
 
+use super::classes::kinds;
 use bevy::prelude::*;
 
 use super::classes::Class;
@@ -223,7 +224,7 @@ const LEAF_SHRINK: f32 = 0.2;
 /// Loose physics props a door can push or be blocked by: id, box centre
 /// and (shrunk) half size, entity space.
 pub(super) fn door_props(w: &LogicWorld) -> Vec<(EntId, Vec3, Vec3)> {
-    w.ids()
+    w.ids_of(kinds::PROP)
         .into_iter()
         .filter_map(|id| {
             let p = w.prop(id)?;
