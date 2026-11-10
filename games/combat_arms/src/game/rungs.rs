@@ -100,6 +100,7 @@
 //! and radius are ours (the spec's auto-cast record isn't read), played
 //! on each machine (the spec's is a server sound), one at a time on it.
 
+use std::{collections::BTreeSet, sync::Arc};
 use bevy::prelude::*;
 use serde::Deserialize;
 use chimera_sim::minigame::{
@@ -548,6 +549,27 @@ pub fn derived(catalog: Option<&WeaponCatalog>, weapon: &str) -> Option<&'static
     catalog.is_some_and(|c| is_infected_weapon(c, weapon)).then_some(INFECTED_VALUE)
 }
 
+/// The body records whose model file the install lacks (279 `Medium_NM`,
+/// 280 `medium_NM_female`): left out of every pool, since the game would
+/// draw its placeholder shape and ours keeps the previous body. Found once
+/// per data, logged then; empty without an install to ask.
+pub struct MissingBodies(pub BTreeSet<i32>);
+
+/// `MissingBodies` of `data`'s body records.
+pub fn missing_bodies(data: &CaData) -> Arc<MissingBodies> {
+    data.memo(|| {
+        let ch = data.characters();
+        let gone: BTreeSet<i32> =
+            ch.model.iter().filter(|m| !m.file.is_empty() && data.install_has(&m.file) == Some(false)).map(|m| m.id).collect();
+        for id in &gone {
+            if let Some(m) = ch.model(*id) {
+                info!("rung characters: body {id} `{}` left out: `{}` isn't in the install", m.name, m.file);
+            }
+        }
+        MissingBodies(gone)
+    })
+}
+
 /// The body records allowed to hold `weapon` under `holders`, in the
 /// data's order, each once: `@players` the rung bodies
 /// (`CharacterData::rung_bodies`), `@infected` the infected's
@@ -556,6 +578,7 @@ pub fn derived(catalog: Option<&WeaponCatalog>, weapon: &str) -> Option<&'static
 pub fn bodies_for(holders: &Holders, catalog: Option<&WeaponCatalog>, data: Option<&CaData>, weapon: &str) -> Vec<i32> {
     let Some(data) = data else { return Vec::new() };
     let ch = data.characters();
+    let missing = missing_bodies(data);
     let mut out: Vec<i32> = Vec::new();
     for n in holders.of(weapon, derived(catalog, weapon)) {
         // A record no player may wear (the HQ raid boss's gunship, the
@@ -574,7 +597,7 @@ pub fn bodies_for(holders: &Holders, catalog: Option<&WeaponCatalog>, data: Opti
             debug!("rung characters: `{n}` names no body record here");
         }
         for id in ids {
-            if !out.contains(&id) {
+            if !out.contains(&id) && !missing.0.contains(&id) {
                 out.push(id);
             }
         }

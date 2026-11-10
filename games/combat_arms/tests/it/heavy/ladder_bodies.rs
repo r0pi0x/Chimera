@@ -119,3 +119,31 @@ fn bodies_share_their_animation_files() {
     assert!(shared, "no two bodies share an animation: their child models are parsed for each");
     assert!(files < 8 * 8, "{files} animation files for 8 bodies: the cache isn't keyed by file");
 }
+
+/// A rung's body pool leaves out the records whose model file the install
+/// lacks (`rungs::missing_bodies`: 279 and 280 on build 26236938), and
+/// keeps every other one. Skips without the install.
+#[test]
+fn the_pool_leaves_out_bodies_with_no_file() {
+    let Some(mount) = mount() else { return };
+    let ca = CaData::install();
+    if ca.attributes().and_then(|a| a.models.as_ref()).is_none() {
+        eprintln!("skipping: the install's attribute data isn't readable (the V1 key)");
+        return;
+    }
+    let data = ca.characters();
+    let holders = chimera_sim::minigame::holders::Holders::parse(
+        r#"default = "x"
+        [groups]
+        x = ["@players"]"#,
+    )
+    .unwrap();
+    let pool = combat_arms::game::rungs::bodies_for(&holders, None, Some(&ca), "combat_arms:any");
+    let all = data.rung_bodies();
+    let gone: Vec<i32> = all.iter().copied().filter(|&b| !mount.contains(&data.model(b).unwrap().file)).collect();
+    eprintln!("{} of {} rung bodies have no file: {gone:?}", gone.len(), all.len());
+    for b in &all {
+        assert_eq!(pool.contains(b), !gone.contains(b), "body {b}");
+    }
+    assert_eq!(combat_arms::game::rungs::missing_bodies(&ca).0.iter().filter(|b| all.contains(b)).count(), gone.len());
+}

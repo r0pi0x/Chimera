@@ -15,7 +15,9 @@
 //! fonts (`fonts.rs`); hotkeys (`&1`), hover lighting; `VguiOpen` says which
 //! is open (the mouse is free while one is and grabbed again when it
 //! closes, unless the console or the game menu took over); `keys_live`
-//! (whether the menus may read the keyboard).
+//! (whether the menus may read the keyboard). Every layout's text fonts
+//! are declared to `text_warm` (`warm_fonts`), so a menu's first opening
+//! makes no glyph atlas.
 
 use std::collections::HashMap;
 
@@ -36,7 +38,32 @@ impl Plugin for VguiPlugin {
         app.init_resource::<VguiOpen>()
             .add_systems(Update, style_buttons)
             .add_systems(PostUpdate, cursor.after(super::front_end::FrontEndSync));
+        super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
     }
+}
+
+/// Every text font of the active look's menu layouts (`GameMenus`: a
+/// game's buy and team menus, scoreboard, spectator bars, message of the
+/// day) at the window's size, laid out ahead (`text_warm`): the menus are
+/// spawned only when they open.
+pub fn warm_fonts(
+    window: super::text_warm::PrimaryWindows,
+    hud: Option<Res<ActiveHud>>,
+    fonts: Option<Res<UiFonts>>,
+) -> Vec<super::text_warm::WarmText> {
+    let (Some(hud), Some(fonts)) = (hud, fonts) else { return Vec::new() };
+    let Some(menus) = hud.0.menus.as_ref() else { return Vec::new() };
+    let painter = Painter::new(&hud, &fonts, super::text_warm::window_height(&window));
+    let mut names: Vec<Option<&str>> = menus
+        .layouts
+        .values()
+        .flat_map(|l| &l.controls)
+        .filter(|c| matches!(c.kind, UiKind::Label | UiKind::RichText | UiKind::Button))
+        .map(|c| c.font.as_deref())
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names.into_iter().map(|n| painter.font(n).into()).collect()
 }
 
 /// Which game-look menu is drawn open now (set by the menus as they draw):

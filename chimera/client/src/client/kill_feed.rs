@@ -45,7 +45,7 @@ use bevy::{prelude::*, window::PrimaryWindow};
 use super::{
     fonts::UiFonts,
     minigame_scoreboard::{GunNames, gun_name},
-    weapon_icons::{WeaponIcon, WeaponIcons, ink_rows, spawn_weapon_icon},
+    weapon_icons::{WeaponIcon, WeaponIcons, glyph_font, ink_rows, spawn_weapon_icon},
 };
 use crate::{
     core::{DamageKind, Died, Hitgroup, LocalPlayer, MapLoads, Team},
@@ -75,12 +75,34 @@ impl Plugin for KillFeedPlugin {
     }
 }
 
-/// The feed's names' font at the window's size, laid out ahead
-/// (`text_warm`).
-fn warm_fonts(window: super::text_warm::PrimaryWindows, fonts: Option<Res<UiFonts>>) -> Vec<super::text_warm::WarmText> {
+/// The feed's names' font at the window's size, and the games' icon fonts
+/// (`WeaponIcons::glyph_fonts`; their kill marks') at the sizes the feed
+/// draws their glyphs (`icon_slot`), laid out ahead (`text_warm`).
+fn warm_fonts(
+    window: super::text_warm::PrimaryWindows,
+    fonts: Option<Res<UiFonts>>,
+    icons: Option<Res<WeaponIcons>>,
+) -> Vec<super::text_warm::WarmText> {
     let height = super::text_warm::window_height(&window).max(240.0);
-    vec![name_font(fonts.as_deref(), 15.0 * height / 720.0).into()]
+    let mut out = vec![name_font(fonts.as_deref(), 15.0 * height / 720.0).into()];
+    let Some(icons) = icons else { return out };
+    // As `draw` computes them (the same bits: the atlas is keyed by the size).
+    let (icon_scale, line) = (height / 480.0, 22.0 * (height / 720.0));
+    let glyph = |font: &Handle<Font>, em: f32, chars: String, fill: f32| {
+        let icon = WeaponIcon::Glyph { font: font.clone(), ch: ' ', em };
+        super::text_warm::WarmText { font: glyph_font(font, em, fitted_scale(&icon, icon_scale, line * fill)), extra: chars }
+    };
+    out.extend(icons.glyph_fonts().map(|g| glyph(&g.font, g.em, g.chars.clone(), WEAPON_FILL)));
+    out.extend(icons.marks().filter_map(|m| match m {
+        WeaponIcon::Glyph { font, ch, em } => Some(glyph(font, *em, ch.to_string(), MARK_FILL)),
+        WeaponIcon::Image { .. } => None,
+    }));
+    out
 }
+
+/// How much of a row's line a gun's icon and a kill mark fill (`icon_slot`).
+const WEAPON_FILL: f32 = 0.9;
+const MARK_FILL: f32 = 0.8;
 
 /// The feed's names' font at `size` pixels.
 fn name_font(fonts: Option<&UiFonts>, size: f32) -> TextFont {
@@ -359,7 +381,7 @@ fn draw(
                 }
                 let game = e.weapon.and_then(|w| w.split_once(':')).map(|(g, _)| g);
                 match e.weapon.and_then(|w| icons.as_ref()?.kill_icon(w, e.kind)) {
-                    Some(icon) => icon_slot(r, &icon, icon_scale, line, 0.9, images.as_deref()),
+                    Some(icon) => icon_slot(r, &icon, icon_scale, line, WEAPON_FILL, images.as_deref()),
                     None => {
                         let what = fallback_word(e, |w| gun_name(w, names.as_deref(), catalog.as_deref()));
                         text(r, what, Color::srgb(0.78, 0.78, 0.8));
@@ -367,7 +389,7 @@ fn draw(
                 }
                 if e.headshot {
                     match game.and_then(|g| icons.as_ref()?.mark(g, HEADSHOT)) {
-                        Some(mark) => icon_slot(r, &mark, icon_scale, line, 0.8, images.as_deref()),
+                        Some(mark) => icon_slot(r, &mark, icon_scale, line, MARK_FILL, images.as_deref()),
                         None => text(r, "HS".into(), Color::srgb(1.0, 0.35, 0.3)),
                     }
                 }

@@ -494,7 +494,7 @@ pub fn add_character_models(map: &mut MapData, ca: &CaDataInner, file: &dyn Fn(&
     let mut keys = std::collections::BTreeSet::new();
     for w in &ca.weapon_set().weapons {
         let Some(p) = w.hook::<ProjectileParams>(PROJECTILE) else { continue };
-        let Some(path) = p.model.as_deref() else { continue };
+        let Some(path) = p.drawn_model() else { continue };
         let key = p.shown_key();
         if !keys.insert(key.clone()) {
             continue;

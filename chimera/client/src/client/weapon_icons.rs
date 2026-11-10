@@ -40,14 +40,25 @@ type KillResolver = Arc<dyn Fn(&str, DamageKind) -> Option<WeaponIcon> + Send + 
 /// The games' icon resolvers by game name (the id's part before `:`, lower
 /// case), their kill marks (`mark`), their icons for what a gun's other
 /// parts kill with (`kill_icon`) and their resolvers for ids of no game
-/// (`register_class`), in the order registered.
+/// (`register_class`), in the order registered, and the icon fonts their
+/// glyphs are in (`register_glyph_fonts`).
 #[derive(Resource, Default, Clone)]
 pub struct WeaponIcons(
     HashMap<String, Resolver>,
     HashMap<(String, String), WeaponIcon>,
     HashMap<String, KillResolver>,
     Vec<(String, Resolver)>,
+    HashMap<String, Vec<GlyphFont>>,
 );
+
+/// An icon font a game's glyph icons are drawn in: the font, the icons' `em`
+/// (`WeaponIcon::Glyph`'s) and the characters they use.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GlyphFont {
+    pub font: Handle<Font>,
+    pub em: f32,
+    pub chars: String,
+}
 
 impl WeaponIcons {
     /// Registers (or replaces) `game`'s resolver for its weapon ids.
@@ -105,6 +116,23 @@ impl WeaponIcons {
     pub fn mark(&self, game: &str, name: &str) -> Option<WeaponIcon> {
         self.1.get(&(game.to_ascii_lowercase(), name.to_string())).cloned()
     }
+
+    /// Every game's kill marks.
+    pub fn marks(&self) -> impl Iterator<Item = &WeaponIcon> {
+        self.1.values()
+    }
+
+    /// Registers (or replaces) the icon fonts `game`'s glyph icons are in, so
+    /// a feed can lay them out ahead (`kill_feed`'s warm source for
+    /// `text_warm`): a glyph's first kill then makes no glyph atlas.
+    pub fn register_glyph_fonts(&mut self, game: &str, fonts: Vec<GlyphFont>) {
+        self.4.insert(game.to_ascii_lowercase(), fonts);
+    }
+
+    /// Every game's icon fonts.
+    pub fn glyph_fonts(&self) -> impl Iterator<Item = &GlyphFont> {
+        self.4.values().flatten()
+    }
 }
 
 /// The rows of `image` that hold its art (first row, one past the last, in
@@ -127,6 +155,16 @@ pub fn ink_rows(image: &Image) -> Option<(f32, f32)> {
     Some((first as f32, last as f32 + 1.0))
 }
 
+/// The text font a glyph icon of `em` is drawn in at `scale`
+/// (`spawn_weapon_icon`).
+pub fn glyph_font(font: &Handle<Font>, em: f32, scale: f32) -> TextFont {
+    TextFont {
+        font: font.clone().into(),
+        font_size: FontSize::Px(em * scale),
+        ..default()
+    }
+}
+
 /// Spawns `icon` as a child of `p`: a line `height` tall in pixels
 /// (`scale` is pixels per reference pixel, for a glyph's size), absolutely
 /// at `at` or, with none, in the parent's flex flow.
@@ -146,11 +184,7 @@ pub fn spawn_weapon_icon(p: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale:
             p.spawn((
                 Text::new(ch.to_string()),
                 TextColor(Color::WHITE),
-                TextFont {
-                    font: font.clone().into(),
-                    font_size: FontSize::Px(em * scale),
-                    ..default()
-                },
+                glyph_font(font, *em, scale),
                 place(Node {
                     margin: UiRect::top(px(em * scale * 0.5)),
                     ..default()

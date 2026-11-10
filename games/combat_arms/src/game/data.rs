@@ -1280,10 +1280,12 @@ fn projectile_patch(doc: &mut Table, w: &WeaponRecord, a: &AmmoRecord, file: &We
         }
         if p.model.is_empty() {
             if let Some(Value::Table(t)) = doc.get_mut("hooks").and_then(|h| h.get_mut(PROJECTILE)) {
-                for k in ["model", "model_scale", "skins"] {
+                for k in ["model", "skins"] {
                     t.remove(k);
                 }
             }
+            // The scale still counts: the placeholder is drawn at it.
+            out.push(set(&["hooks", PROJECTILE, "model_scale"], floats(p.model_scale)));
         } else {
             let skins = skin_paths(&p.skins).into_iter().map(Value::String).collect::<Vec<_>>();
             out.extend([
