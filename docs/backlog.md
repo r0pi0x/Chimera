@@ -2535,6 +2535,27 @@ docs/plans/active/sound.md.
   compare frozen-scene screenshots before and after on a Combat Arms and a CS:S
   map; then price what's left of the 14M -> 19M (Bevy's mesh allocator and
   render-asset hash tables keep their peak capacity).
+- **The tick and the frame, what's left (2026-11-10).** docs/performance.md,
+  "Performance pass": the logic bridge, the push-away, buoyancy, Combat
+  Arms' posing math and HL2:DM's per-frame searches were cut (de_dust2's
+  CS:S tick -18%, mg_lego's -50%, the party's -13 to -15%). Left, by size:
+  Combat Arms poses every character's whole skeleton every tick on servers
+  and clients whether anything asks for its hit spheres (18% of an Ultimate
+  Gun Game server's tick; pose on demand, or keep the trackers and pose
+  when a trace or the drawing asks); `sync_movers` works out what every
+  mover wants twice a tick (40% of mg_lego's tick: a change stamp from
+  `LogicWorld::get_mut` would pass idle movers over); a moving body's eight
+  `PropMaterial`s are prepared again every frame because the probe light is
+  in the material (14% of the render world with six bodies about); blob
+  shadows, prop shadows and dust are new meshes every frame (the mesh
+  allocator, 11% of the render world); Bevy's light clustering runs with
+  no light in view (8%); `NavMesh::area_at` walks every area (2% of a tick
+  with bots: a grid); the ragdolls' pose record and the server's hitbox
+  pose each sample a Source body's animation every tick; the server's
+  documents are packed with bzip2 at every start (3-7 s of a core on a
+  thread: keep the packed bytes by hash). `perfgate`'s stored baseline is
+  from 6b95f1c (three times today's counts): take a new one on a playtest
+  build (`perfgate --update`).
 - **Process memory over a session, what's left (2026-11-09).** After the
   animation sharing and `malloc_trim` (5.5 GB after eight maps, was 15.4) the
   heap still holds the current ladder's Combat Arms model textures on the CPU
