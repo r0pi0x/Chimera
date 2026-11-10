@@ -3,7 +3,9 @@
 //! done (behind the loading screen, or a slice a frame in play), the first
 //! kill in the feed, the first look at the scoreboard and the minigame panel
 //! with its lines make no new glyph atlas (Bevy's `FontAtlasSet`, counted:
-//! not time); without it each makes its own. On Bevy's own text pipeline
+//! not time); without it each makes its own. The same for a game's icon
+//! glyphs in the feed (`WeaponIcons::register_glyph_fonts`, its headshot
+//! mark) and a game's menu layout opening (`vgui::warm_fonts`). On Bevy's own text pipeline
 //! and layout headless (a dummy camera), in Bevy's default face (no system
 //! faces headless).
 
@@ -13,7 +15,9 @@ use chimera_client::client::{
     kill_feed::{KillFeedPlugin, KillFeedStatePlugin, SharedKillFeed},
     minigame_panel::MinigamePanelPlugin,
     minigame_scoreboard::{GunNames, MinigameScoreboardPlugin},
-    text_warm::{self, TextWarm, TextWarmPlugin},
+    text_warm::{self, TextWarm, TextWarmAppExt, TextWarmPlugin},
+    vgui::{self, Painter},
+    weapon_icons::{GlyphFont, WeaponIcon, WeaponIcons},
 };
 use chimera_core::{
     core::{Damage, DamageKind, Died, Hitgroup, Score},
@@ -36,9 +40,17 @@ fn atlases(sim: &Sim) -> (usize, usize) {
     (set.values().filter(|a| !a.is_empty()).count(), set.values().map(Vec::len).sum())
 }
 
+/// The kit's icon font's em (the feed's glyphs: another size than the names').
+const ICON_EM: f32 = 16.0;
+
 /// The shell's feed, board and panel on a laid-out UI, with the warm-up's
-/// systems or without.
+/// systems or without; the kit's guns have glyph icons and a headshot mark
+/// (in the default face: no icon font headless).
 fn hud_sim(warm: bool) -> Sim {
+    hud_sim_with(warm, |_| {})
+}
+
+fn hud_sim_with(warm: bool, extra: impl Fn(&mut App) + Send + Sync + 'static) -> Sim {
     use bevy::camera::{ComputedCameraValues, RenderTargetInfo, Viewport};
     let mut sim = Sim::with(SimBasePlugins, move |app| {
         app.add_plugins((GreyboxMapPlugin, MinigameScoreboardPlugin, KillFeedStatePlugin, KillFeedPlugin));
@@ -59,6 +71,14 @@ fn hud_sim(warm: bool) -> Sim {
             .init_resource::<HeldActions>()
             .insert_resource(SharedKillFeed);
         app.add_plugins((bevy::text::TextPlugin, bevy::ui::UiPlugin));
+        let mut icons = WeaponIcons::default();
+        let font = Handle::<Font>::default();
+        let rifle = WeaponIcon::Glyph { font: font.clone(), ch: 'R', em: ICON_EM };
+        icons.register("kit", move |id| (id == "kit:rifle").then(|| rifle.clone()));
+        icons.register_mark("kit", chimera_client::client::kill_feed::HEADSHOT, WeaponIcon::Glyph { font: font.clone(), ch: 'H', em: ICON_EM });
+        icons.register_glyph_fonts("kit", vec![GlyphFont { font: font.clone(), em: ICON_EM, chars: "R".into() }]);
+        app.insert_resource(icons);
+        extra(app);
     });
     sim.app.world_mut().spawn((
         Camera2d,
@@ -81,7 +101,8 @@ fn hud_sim(warm: bool) -> Sim {
     sim
 }
 
-/// The first kill in the feed and the scoreboard's first showing, in one
+/// The first kill in the feed (a headshot: the gun's glyph and the mark) and
+/// the scoreboard's first showing, in one
 /// frame: the atlases made, and the main thread's instructions (0 without
 /// counters).
 fn first_show(sim: &mut Sim) -> ((usize, usize), u64) {
@@ -99,7 +120,7 @@ fn first_show(sim: &mut Sim) -> ((usize, usize), u64) {
             amount: 1.0,
             point: Vec3::ZERO,
             dir: Vec3::NEG_Z,
-            hitgroup: Hitgroup::Chest,
+            hitgroup: Hitgroup::Head,
             kind: DamageKind::Bullet,
             weapon: Some("kit:rifle"),
             force: Vec3::ZERO,
@@ -210,3 +231,73 @@ fn in_play_the_warm_up_goes_a_slice_a_frame() {
     assert_eq!(sim.app.world().resource::<TextWarm>().missed, 0, "every atlas put in ahead was Bevy's key");
 }
 
+
+/// A game's menu (`GameMenus`: a buy or team menu, a message of the day)
+/// opening for the first time: its labels' and buttons' fonts were declared
+/// (`vgui::warm_fonts`), so it makes no atlas after the warm-up; without it,
+/// one.
+#[test]
+fn a_menus_first_opening_makes_no_atlas_after_the_warm_up() {
+    use chimera_client::client::fonts::UiFonts;
+    use chimera_world::map::hud::{ActiveHud, GameHud, GameMenus, UiControl, UiFontSize, UiKind, UiLayout};
+    let layout = UiLayout {
+        controls: vec![
+            UiControl {
+                text: "Pick a side".into(),
+                font: Some("KitMenuTitle".into()),
+                ..UiControl::new("Title", UiKind::Label, 20.0, 20.0, 200.0, 24.0)
+            },
+            UiControl { text: "Join".into(), ..UiControl::new("Join", UiKind::Button, 20.0, 60.0, 120.0, 24.0) },
+        ],
+        ..default()
+    };
+    let hud = GameHud {
+        menus: Some(GameMenus { layouts: [("kit_menu".to_string(), layout.clone())].into(), ..default() }),
+        ..default()
+    };
+    let open = |warm: bool| {
+        let hud = hud.clone();
+        let mut sim = hud_sim_with(warm, move |app| {
+            // The title in a scheme font of its own size (the buttons'
+            // `Default` is the panel's, up already).
+            let mut fonts = UiFonts::default();
+            let title = UiFontSize { family: "Kit Sans".into(), tall: 22.0, weight: 700, yres: None, antialias: true, additive: false };
+            fonts.set_client([("KitMenuTitle".to_string(), vec![title])].into());
+            app.insert_resource(fonts).insert_resource(ActiveHud(std::sync::Arc::new(hud.clone()), default()));
+            if warm {
+                app.warm_texts(vgui::warm_fonts);
+            }
+        });
+        let mut frames = 0;
+        while warm && !text_warm::settle(sim.app.world_mut()) {
+            sim.app.update();
+            frames += 1;
+            assert!(frames < 30, "the warm-up ends");
+        }
+        let before = atlases(&sim);
+        let mut counters = ThreadCounters::current();
+        let start = counters.read();
+        let w = sim.app.world_mut();
+        let root = w.spawn(Node { width: percent(100.0), height: percent(100.0), ..default() }).id();
+        let hud = w.resource::<ActiveHud>().clone();
+        let fonts = w.remove_resource::<UiFonts>().unwrap();
+        {
+            let painter = Painter::new(&hud, &fonts, 720.0);
+            let mut commands = w.commands();
+            let drawn = painter.spawn(&mut commands, root, Vec2::new(1280.0, 720.0), &layout, vgui::VguiMenu::Team, &mut vgui::Shown::of);
+            assert_eq!(drawn.len(), 2);
+        }
+        w.flush();
+        w.insert_resource(fonts);
+        sim.app.update();
+        sim.app.update();
+        let spent = (counters.read() - start).hw.map_or(0, |h| h.instructions);
+        let after = atlases(&sim);
+        ((after.0 - before.0, after.1 - before.1), spent)
+    };
+    let (made, cold) = open(false);
+    assert!(made.0 >= 1, "the menu's font makes an atlas as it opens");
+    let (made, warm) = open(true);
+    assert_eq!(made, (0, 0), "a menu font declared ahead made an atlas on the menu's opening");
+    eprintln!("menu's first opening: {:.1} M instructions cold, {:.1} M warmed", cold as f64 / 1e6, warm as f64 / 1e6);
+}

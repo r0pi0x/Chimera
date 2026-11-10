@@ -459,6 +459,12 @@ impl UiFonts {
         self.source = ui.fonts.clone();
     }
 
+    /// The client scheme's text fonts (a map's HUD's `text_fonts`, which
+    /// `take_hud_fonts` takes as the HUD arrives).
+    pub fn set_client(&mut self, fonts: HashMap<String, Vec<UiFontSize>>) {
+        self.client = fonts;
+    }
+
     /// Which face each family resolved to, for the log.
     fn report(&self) -> String {
         let mut v: Vec<String> = self
