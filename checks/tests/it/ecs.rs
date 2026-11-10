@@ -236,6 +236,7 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
         "a tool: the map-logic inspector",
     ),
     ("chimera/world/src/map/mod.rs", "MapHooks", "map loading and unloading"),
+    ("chimera/world/src/map/mod.rs", "SteppedSpawn", "map spawning, a step a frame"),
     (
         "chimera/world/src/map/mod.rs",
         "MapScopedResource",

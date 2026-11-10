@@ -1212,6 +1212,15 @@ Details and baseline numbers: [performance.md](performance.md).
   `perf record -k CLOCK_MONOTONIC`) lists what was on the thread during
   each. Percentiles and the hitch log's one line a second hide these
   (performance.md, "Nothing blocks the main thread").
+- A map change's frames without a display: `cargo test -p ultimate_gun_game
+  --features dev --test it heavy::map_swap_frames -- --nocapture` (the
+  shell's `map` flow headless over four maps, each frame's main-thread
+  instructions by stage: loading, spawning, settling; `CHIMERA_SWAP_FRAMES=1`
+  each frame with its `CLOCK_MONOTONIC` span for `perf`,
+  `CHIMERA_SPAWN_AT_ONCE=1` the old one-frame spawn) and, with a GPU,
+  `CHIMERA_RENDER_BENCH=1 ... heavy::map_swap_render` (Bevy's renderer
+  offscreen: the main schedule, extraction and the render world counted
+  apart; performance.md, "A map's swap").
 - Glyph atlases a text made on its own first frame (a HUD font and size no
   source declared to `client::text_warm`): the log's `text warm: N glyph
   atlases made on a text's first frame (... at [sizes] px)`; `text warm: N

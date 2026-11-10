@@ -21,9 +21,12 @@
 //! vote while a vote waits for ours: `VOTE_KEYS`), log mirroring,
 //! overlays (cl_showpos, cl_showfps, snd_show, watch), client commands (noclip,
 //! god, getpos/setpos/setang, kill, `chimera_hurtme` (a bullet hit on yourself
-//! at a hitbox), map (in place, `map::change_map`, then the map's
-//! `MapHooks::settle` work a slice a frame behind the loading screen, at most
-//! `SETTLE_MAX_SECS`, before the game is entered; `map greybox` puts the
+//! at a hitbox), map (loaded on a task, spawned in place a step at a time
+//! behind the loading screen with the simulation waiting,
+//! `map::prepare::begin_map_change`, `SPAWN_BUDGET` a frame and the GPU's
+//! uploads capped, `LOAD_UPLOAD_BYTES`; then the map's `MapHooks::settle` work
+//! a slice a frame, at most `SETTLE_MAX_SECS`, a frame advancing the
+//! simulation by at most one tick, before the game is entered; `map greybox` puts the
 //! greybox back, `load_greybox`), disconnect (the greybox, then the main menu),
 //! toggleconsole, quit), `developer 1` notify lines, the `chimera/console`
 //! remote method.
@@ -2020,14 +2023,41 @@ fn map_source(game: &GameInfo, name: &str) -> &'static str {
 
 /// Whether a `map` command's load is under way.
 pub fn map_loading(w: &World) -> bool {
-    w.contains_resource::<MapLoad>() || w.contains_resource::<Settling>()
+    w.contains_resource::<MapLoad>() || w.contains_resource::<Spawning>() || w.contains_resource::<Settling>()
+}
+
+/// Where a `map` command's load is (`map_load_stage`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MapLoadStage {
+    /// No load under way.
+    None,
+    /// Loading on a task.
+    Loading,
+    /// Spawning a step a frame.
+    Spawning,
+    /// Spawned, settling behind the loading screen.
+    Settling,
+}
+
+/// Where a `map` command's load is.
+pub fn map_load_stage(w: &World) -> MapLoadStage {
+    if w.contains_resource::<Spawning>() {
+        MapLoadStage::Spawning
+    } else if w.contains_resource::<Settling>() {
+        MapLoadStage::Settling
+    } else if w.contains_resource::<MapLoad>() {
+        MapLoadStage::Loading
+    } else {
+        MapLoadStage::None
+    }
 }
 
 /// The map a `map` command is loading (its name, without the game).
 pub fn loading_map(w: &World) -> Option<String> {
-    let id = match w.get_resource::<MapLoad>() {
-        Some(load) => &load.id,
-        None => &w.get_resource::<Settling>()?.id,
+    let id = match (w.get_resource::<MapLoad>(), w.get_resource::<Spawning>()) {
+        (Some(load), _) => &load.id,
+        (None, Some(spawning)) => &spawning.id,
+        (None, None) => &w.get_resource::<Settling>()?.id,
     };
     Some(id.rsplit(':').next().unwrap_or(id).to_string())
 }
@@ -2048,6 +2078,78 @@ struct Settling {
     id: String,
     tick: u64,
     started: std::time::Instant,
+}
+
+/// The most of a frame a loaded map's spawn takes behind the loading screen
+/// (`Spawning`): its steps run until this is spent, at least one a frame.
+/// The loading screen still turns over at 30-50 frames a second, and a map
+/// takes few frames more to come in than in one (each frame's own work, the
+/// render world's above all, is paid once per frame).
+const SPAWN_BUDGET: std::time::Duration = std::time::Duration::from_millis(20);
+
+/// The most the GPU is sent a frame while a map comes in (Bevy's
+/// `RenderAssetBytesPerFrame`, images' and meshes' bytes; at least one
+/// asset a frame): the map's are uploaded over frames behind the loading
+/// screen, not in one. Unlimited again once in the game.
+const LOAD_UPLOAD_BYTES: usize = 32 << 20;
+
+/// A loaded map spawning a step at a time behind the loading screen
+/// (`map::prepare::begin_map_change`; docs/performance.md, "A map's
+/// swap"). The simulation waits meanwhile (`Time<Virtual>` paused): its
+/// first tick on the map is after the whole map is in, as when it was
+/// spawned in one frame.
+#[derive(Resource)]
+struct Spawning {
+    id: String,
+    summary: String,
+    /// `Time<Virtual>` was paused already (`host_timescale 0`).
+    was_paused: bool,
+}
+
+/// What a map's load changes while it comes in, given back on entering the
+/// game: the longest a frame may advance the simulation (one tick's worth
+/// meanwhile, so a slow frame behind the loading screen leaves no
+/// catch-up ticks owed) and the GPU's upload budget.
+#[derive(Resource)]
+struct LoadCaps {
+    max_delta: std::time::Duration,
+    upload: Option<usize>,
+}
+
+impl LoadCaps {
+    /// Caps the frames' advance at one tick and the uploads, keeping what
+    /// they were (once per load).
+    fn apply(w: &mut World) {
+        if w.contains_resource::<LoadCaps>() {
+            return;
+        }
+        let tick = w.get_resource::<Time<Fixed>>().map(|t| t.timestep());
+        let max_delta = match (w.get_resource_mut::<Time<Virtual>>(), tick) {
+            (Some(mut time), Some(tick)) if !tick.is_zero() => {
+                let before = time.max_delta();
+                time.set_max_delta(tick);
+                before
+            }
+            (Some(time), _) => time.max_delta(),
+            (None, _) => return,
+        };
+        let upload = w
+            .get_resource_mut::<bevy::render::render_asset::RenderAssetBytesPerFrame>()
+            .map(|mut b| b.max_bytes.replace(LOAD_UPLOAD_BYTES))
+            .unwrap_or(None);
+        w.insert_resource(LoadCaps { max_delta, upload });
+    }
+
+    /// Gives them back.
+    fn lift(w: &mut World) {
+        let Some(caps) = w.remove_resource::<LoadCaps>() else { return };
+        if let Some(mut time) = w.get_resource_mut::<Time<Virtual>>() {
+            time.set_max_delta(caps.max_delta);
+        }
+        if let Some(mut b) = w.get_resource_mut::<bevy::render::render_asset::RenderAssetBytesPerFrame>() {
+            b.max_bytes = caps.upload;
+        }
+    }
 }
 
 /// A map loading in the background for the `map` command.
@@ -2106,10 +2208,16 @@ pub fn load_server_map(w: &mut World, map: &str, file: Option<std::path::PathBuf
     start_map_load(w, &id, file);
 }
 
-/// Swap in a map once its background load finishes.
-fn finish_map_load(w: &mut World) {
+/// Swap in a map once its background load finishes, then settle it behind
+/// the loading screen (the console's system; public for a headless test
+/// of the whole `map` flow, `heavy::map_swap_frames`).
+pub fn finish_map_load(w: &mut World) {
     if w.contains_resource::<Settling>() {
         settle_map(w);
+        return;
+    }
+    if w.contains_resource::<Spawning>() {
+        spawn_map_steps(w, SPAWN_BUDGET);
         return;
     }
     let Some(mut load) = w.get_resource_mut::<MapLoad>() else {
@@ -2154,7 +2262,37 @@ fn finish_map_load(w: &mut World) {
         data.spawns.len()
     );
     unload_greybox(w);
-    crate::map::prepare::change_map_prepared(w, data, prepared, crate::map::MapDebugView::Normal);
+    // Spawned over the next frames (`spawn_map_steps`), the simulation
+    // waiting.
+    crate::map::prepare::begin_map_change(w, data, prepared, crate::map::MapDebugView::Normal);
+    let was_paused = w.get_resource::<Time<Virtual>>().is_none_or(|t| t.is_paused());
+    if let Some(mut time) = w.get_resource_mut::<Time<Virtual>>() {
+        time.pause();
+    }
+    LoadCaps::apply(w);
+    w.insert_resource(Spawning { id, summary, was_paused });
+    // `CHIMERA_SPAWN_AT_ONCE=1`: every step and the commands in this frame,
+    // as before the spawn was spread (an A/B for measuring).
+    if chimera_core::env::var("CHIMERA_SPAWN_AT_ONCE").is_ok_and(|v| v == "1") {
+        while w.contains_resource::<Spawning>() {
+            spawn_map_steps(w, std::time::Duration::MAX);
+        }
+        return;
+    }
+    spawn_map_steps(w, SPAWN_BUDGET);
+}
+
+/// A frame of `Spawning`: the map's next steps; once it is all in, the
+/// game goes on with it (the tick, the look, a new game) behind the loading
+/// screen while it settles (`Settling`).
+fn spawn_map_steps(w: &mut World, budget: std::time::Duration) {
+    if !crate::map::prepare::spawn_some(w, budget) {
+        return;
+    }
+    let Some(Spawning { id, summary, was_paused }) = w.remove_resource::<Spawning>() else { return };
+    if !was_paused && let Some(mut time) = w.get_resource_mut::<Time<Virtual>>() {
+        time.unpause();
+    }
     // At the gameplay's server tick (a mashup plays another game's map at
     // its gameplay's tick); without a gameplay the default game's, else
     // the map's game's.
@@ -2168,6 +2306,11 @@ fn finish_map_load(w: &mut World) {
     });
     let tick = tick.unwrap_or(std::time::Duration::from_secs_f64(1.0 / crate::core::DEFAULT_TICK_HZ));
     crate::core::set_tick_length(w, tick);
+    // At most a tick's worth a frame until in the game (the cap was set at
+    // the old tick).
+    if let Some(mut time) = w.get_resource_mut::<Time<Virtual>>() {
+        time.set_max_delta(tick);
+    }
     // Follow the map's presentation (Source LDR: no tonemapping).
     let tonemapping = w.resource::<crate::map::ActiveMapLook>().0.tonemapping;
     let cams: Vec<Entity> = w
@@ -2212,6 +2355,7 @@ fn settle_map(w: &mut World) {
     }
     info!("map settled behind the loading screen in {:.2} s", started.elapsed().as_secs_f32());
     w.remove_resource::<Settling>();
+    LoadCaps::lift(w);
     // A HUD still being shown (out of time) gives the HUD back.
     w.remove_resource::<crate::gameplay::HudWarm>();
     super::front_end::entered_game(w);
@@ -2232,6 +2376,14 @@ struct FreshGame;
 /// on it at the default tick.
 pub fn load_greybox(w: &mut World) {
     w.remove_resource::<MapLoad>();
+    // A spawn under way is called off (`unload_map` drops it).
+    if let Some(spawning) = w.remove_resource::<Spawning>()
+        && !spawning.was_paused
+        && let Some(mut time) = w.get_resource_mut::<Time<Virtual>>()
+    {
+        time.unpause();
+    }
+    LoadCaps::lift(w);
     crate::map::unload_map(w);
     unload_greybox(w);
     if let Some(hooks) = w.get_resource::<super::AppHooks>().copied() {

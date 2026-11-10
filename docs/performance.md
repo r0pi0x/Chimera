@@ -1265,7 +1265,7 @@ after it, and the worst whole (ticks and all):
 
 With the HUDs warmed behind the loading screen (a `map` command first, as a game started from the menu does; a run at load 40-60 that ran 11-17 catch-up ticks in 600 of its frames, so read the "less ticks" column): rung 2 70 M (text 4 of its 70 samples, 17 of 53 before), the others 23-76 M. Rungs 4, 11 and 13 rose in one run and not in the next: their worst frames were text making atlases for a string at a size not shown before (rung 11's 62 M), and rung 13 drew another gun each run (the ladder is drawn again when its match restarts). The once-a-second `chimera_perf` readout (`perf_report`, computed for `bugreport` even when nothing shows it) is 5-20 M in whichever frame it lands.
 
-Behind the loading screen (`client::console`'s `Settling`, at most 10 s): dm_lockdown 3.2 s, warehouse 0.9 s, cs_office 3.9 s, de_dust2 6.6 s at load 40-60; the screen turned over at a median 40-53 ms a frame meanwhile (its worst frames the swap's catch-up ticks, 470-760 M).
+Behind the loading screen (`client::console`'s `Settling`, at most 10 s): dm_lockdown 3.2 s, warehouse 0.9 s, cs_office 3.9 s, de_dust2 6.6 s at load 40-60; the screen turned over at a median 40-53 ms a frame meanwhile (its worst frames the swap's catch-up ticks, 470-760 M; since, a frame behind the loading screen advances the simulation by one tick at most: "A map's swap", below).
 
 Other cases (worst frame anywhere in the run, M instructions):
 
@@ -1274,17 +1274,19 @@ Other cases (worst frame anywhere in the run, M instructions):
 | A body or gun arriving from the ladder, main thread | 170 | no frame stands out: `build_late*` is under 3 M with a body's 39 MB (`tests/it/late_build.rs`: 3.5 M, with 432 MB of texels) |
 | The same, render thread | 324 (336 ms wall) | 49.5, not a load's: p99.9 32.7 |
 | The first ticks on a map, whole frame | 6,857 / 4,760 / 3,711 | 1,327 at startup, 918 at most afterwards |
-| A map's swap frame (`change_map_with`) | 2,507 (5.6 s wall at load 80) / 2,354 / 1,454 | 2,118 / 2,079 / 918 (0.3-0.5 s wall at load 30): less the frees, and no nav in the next frames |
+| A map's swap frame (`change_map_with`) | 2,507 (5.6 s wall at load 80) / 2,354 / 1,454 | 2,118 / 2,079 / 918 (0.3-0.5 s wall at load 30): less the frees, and no nav in the next frames; since spread over frames ("A map's swap", below) |
 | Frames over 100 M in the maps run | 615 of 5,718 | 245 of 5,908 |
 | The render world's first frame of a map | 1,236 / 1,036 | 1,213 / 1,035 |
 
 What did not move, and its size (`docs/backlog.md`, "Nothing blocks the main thread"):
 
-- **A map's swap frame**: 0.9-2.1 G on the main thread and 0.65-1.2 G on the render thread (world meshes,
-  materials and their bind groups, `allocate_meshes` 40% of it) in one frame each, the loading
-  screen standing still for it: about 0.3-0.5 s here at load 30. Everything prepared on the
-  loading task is prepared already (`map::prepare`); what is left is `spawn_map`'s spawning and
-  putting assets in. Spreading it means a spawn over frames.
+- **A map's swap** (below, "A map's swap"): spread over 4-10 frames behind the loading screen
+  now; what is left in one frame is the frame the whole map goes into the world (the
+  spawn's commands together: 100-200 M dev-build main, the colliders' mass properties in
+  Avian's insert hook a third of it; the render world's first look at every new entity,
+  220-350 M offscreen) and the first tick on the map (120-330 M dev: Avian computing every new
+  collider's mass properties again, `update_collider_mass_properties` on `Changed<C>`, and
+  the first physics step).
 - **A HUD text at a font and size nobody declared**: still 20-60 M on its first frame; each one logs `text warm: N glyph atlases made on a text's first frame (... at [sizes] px)`, so a playtest's log names what is left (`client::text_warm`, below). Declared now: the shell's kill feed, minigame scoreboard, minigame panel, match-end screen, chat, hints and `game_text`, every text that exists empty (callouts, the respawn countdown, hidden HUDs' labels), and Combat Arms' HUD (its panels' fonts and each text of the install's HUD, score, result, team list and death screen layouts). Not declared: CS:S's and HL2:DM's own UI texts that are spawned on demand (their scoreboards, menus), the kill feed's icon glyph fonts (`weapon_icons`), and other games' HUD texts drawn by `hud_text` (its own rasterizer, not Bevy's atlases).
 - A match's start: 100 M (`ladder::start`, drawing every rung's extras), a `+map`'s first listing of Combat Arms' maps
   (292 M, opening the install's archives: `read_map_names`, once a session), and the first ladder's
@@ -1336,6 +1338,81 @@ panel 39.9 M without the warm-up, 8.9 M after it; a frame warming in play 29.1 M
 32 glyphs and the atlas made on the frame, 7.5 M with 16 glyphs and the atlas from the
 pool (an idle frame of that world 0.7 M). The real app's walk (each rung's worst frame
 less ticks, `CHIMERA_FRAME_LOG`) waits for a display: this box's session is down.
+
+### A map's swap (`map::prepare::begin_map_change`)
+
+A `map` command's map (and a server's change on a client or listen server) came into the
+world in one frame, `spawn_map` and its commands at once: measured headless (the gun game's
+simulation with the drawing's asset stores, dev build, `heavy::map_swap_frames`) that frame
+was 1.0-2.9 G instructions on the main thread, 0.2-1.5 s wall at load 15-35. In it
+(cs_office, M):
+
+| What | Swap frame | Now |
+|---|---|---|
+| Prop shadows (`apply_shadow_detail`: `build_posed`'s silhouettes, the atlas image) | 900 | on the loading task (`shadows::ShadowsAhead`) |
+| The sky's cube (`sky_image`) | 450 | on the loading task (`ImageParts::sky`) |
+| What characters draw (`build_character_assets`: bodies, held models, view models) | 200-450 | steps: `BODIES_PER_STEP`, `HELD_PER_STEP`, the rest |
+| Props (`spawn_prop`) | 80-260 | `PROPS_PER_STEP` a step |
+| World meshes (`spawn_world_meshes`: chunks, materials, merging) | 160-230 | `WORLD_MESHES_PER_STEP` a step |
+| Where decals land (`DecalSurfaces::new`) | 150 | on the loading task |
+| Surfaces' colours (`SurfaceColors::new`) | 95 | on the loading task |
+| The spawn's commands applied (entities, hierarchy, colliders' hooks) | 85-210 | a frame of its own |
+| The first tick: a Source map's light field building its occluders on first use | 90 | on the loading task (the field used once) |
+
+Now (`console::finish_map_load`): the load's task prepares those parts too; then the map is
+spawned a step at a time (`spawn::SpawnProgress`; the same phases in the same order, the
+drawer's in steps of their own) until `SPAWN_BUDGET` (20 ms) of a frame is spent, the
+commands held in a queue of the spawn's own until the last step and applied together in the
+next frame, so the world never holds part of a map; the simulation waits meanwhile
+(`Time<Virtual>` paused: its first tick on the map is after the whole map is in, as before).
+Until the game is entered a frame advances the simulation by at most one tick
+(`Time<Virtual>::max_delta`, `LoadCaps`: the long frames behind the loading screen left
+470-760 M of catch-up ticks owed) and the GPU is sent at most `LOAD_UPLOAD_BYTES` (32 MiB)
+a frame (Bevy's `RenderAssetBytesPerFrame`; both given back on entering the game).
+`CHIMERA_SPAWN_AT_ONCE=1` spawns in one frame as before (the A/B; its parts still
+prepared ahead). The world is the same: `heavy::map_spawn_dump` with
+`CHIMERA_SPAWN_DUMP_VIA=change` and `=stepped` gives the same entities, components and
+resources for de_dust2 and de_nuke (but the stepped spawn's own resource, one entity id
+earlier, and the asset slots Bevy reuses), and the prepared parts the same as computed ones
+(`CHIMERA_SPAWN_DUMP_PREPARED=1`).
+
+Measured headless (dev build, M instructions on the main thread, the map command's frames
+until in the game; load 13-15):
+
+| Map | Swap frame before | At once, parts ahead | Now: worst frame | Spawn frames | Spawn ms (now / at once) |
+|---|---|---|---|---|---|
+| de_dust2 | 1,834 | 864-875 | 151-217 | 5-10 | 111-315 / 104-109 |
+| cs_office | 2,900 | 1,303-1,321 | 223-274 | 6-9 | 158-269 / 151-242 |
+| dm_lockdown | 2,839 | 850 | 237-331 | 4 | 146 / 112 |
+| warehouse | 1,037 | 711 | 126-280 | 4 | 115 / 91 |
+
+The spawn's instructions in all are the same as at once (de_dust2 853 M over 5 frames, 864
+in one); its wall time moves with the box's load more than with the steps. The worst frame
+left is the first tick (dm_lockdown 331 M), the frame the map goes into the world, or a
+frame of steps at the budget.
+
+The render world, offscreen (`heavy::map_swap_render`, `CHIMERA_RENDER_BENCH=1`: Bevy's
+renderer on the GPU without a window, a camera drawing into an image from the map's first
+spawn, every schedule single-threaded so that one thread's counter takes all; dev build,
+M; at once / now):
+
+| Map | Main, worst | Extraction, worst | Render world, worst | Spawn + settle wall ms |
+|---|---|---|---|---|
+| de_dust2 | 883 / 163 | 32 / 10 | 629 / 262 | 871 / 896 |
+| cs_office | 1,370 / 306 | 57 / 18 | 885 / 234 | 870 / 1,119 |
+| dm_lockdown | 915 / 338 | 42 / 16 | 682 / 346 | 815 / 1,122 |
+| warehouse | 729 / 217 | 24 / 21 | 441 / 221 | 492 / 605 |
+
+What waits for a display: the real app's walk (`CHIMERA_FRAME_LOG`, `tools/frame_cut.py`, a
+`profiling` build under `perf`) on a window, the render thread pipelined as the app runs it,
+and the loading screen's frame times; time to enter each map there (the offscreen wall times
+above are a dev build's, at load 15-30, and moved by 0.1-0.3 s between runs).
+
+Guards: `apps/ultimate_gun_game/tests/it/heavy/map_swap_frames.rs` (the four maps in a row
+through the shell's `map` flow; no frame from the command to the game over
+`WORST_LOAD_FRAME`, 500 M; measured 150-340 M) and `chimera_client`'s `map_load_steps` (a
+map spawned in steps: no tick and no part of the map while it spawns, the same parts as a
+spawn in one go, one tick's advance a frame while settling, given back in the game).
 
 ## Combat Arms map loads (2026-10-19)
 

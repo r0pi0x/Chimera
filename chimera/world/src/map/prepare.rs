@@ -11,7 +11,11 @@
 //! world's, a drawer adds its own: `render`'s images); `preparation` makes each
 //! job from the world as it is when the load starts (a drawer reads the
 //! device's formats there), `MapPrepare::run` runs them on the loaded
-//! data, and `change_map_prepared` swaps the map in with the results.
+//! data, and `change_map_prepared` swaps the map in with the results
+//! (`begin_map_change` and `spawn_some`: the same a step a frame). The
+//! world's job also makes the surfaces' colours and uses the light field
+//! once (what it builds on its first use); the drawer's the images, the
+//! sky's cube, what decals land on and the props' shadows.
 
 use std::{
     any::{Any, TypeId},
@@ -83,6 +87,31 @@ impl MapPrepare {
 /// `change_map` with parts prepared for it (`MapPrepare::run` on `data`).
 pub fn change_map_prepared(world: &mut World, data: MapData, prepared: Prepared, view: super::MapDebugView) {
     super::change_map_with(world, data, prepared, view);
+}
+
+/// `change_map_prepared` spread over frames: the old map is unloaded now
+/// and the new one spawned a step at a time by `spawn_some`, each frame,
+/// until it says it is done; the world gets the whole map in that last
+/// frame (`spawn::SpawnProgress`). Without a stepped spawner (no map
+/// systems) the map is spawned now, as `change_map_prepared` does.
+pub fn begin_map_change(world: &mut World, data: MapData, prepared: Prepared, view: super::MapDebugView) {
+    match world.get_resource::<super::MapHooks>().and_then(|h| h.stepped) {
+        Some(stepped) => {
+            super::pend_map(world, data, prepared, view);
+            (stepped.begin)(world);
+        }
+        None => change_map_prepared(world, data, prepared, view),
+    }
+}
+
+/// One frame's share of a spawn `begin_map_change` started: steps until
+/// `budget` is spent (at least one). Returns whether the map is in (also
+/// when no spawn is under way).
+pub fn spawn_some(world: &mut World, budget: std::time::Duration) -> bool {
+    match world.get_resource::<super::MapHooks>().and_then(|h| h.stepped) {
+        Some(stepped) => (stepped.step)(world, budget),
+        None => true,
+    }
 }
 
 /// Prepare the map waiting to spawn (`PendingMap`: one given at startup)
