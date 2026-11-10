@@ -69,7 +69,8 @@ use crate::client::{
     fonts::UiFonts,
     hud_text::{Align, GlyphFont, HudText, width},
     minigame_scoreboard::{GunNames, gun_name},
-    weapon_icons::{WeaponIcon, WeaponIcons, spawn_weapon_icon},
+    text_warm::{PrimaryWindows, WarmText, window_height},
+    weapon_icons::{self, WeaponIcon, WeaponIcons, spawn_weapon_icon},
 };
 
 use crate::{
@@ -94,6 +95,7 @@ impl Plugin for GameHudPlugin {
         // The round's end it announces (an app without CS:S's rounds:
         // never written).
         app.add_message::<crate::rules::rounds::RoundEnded>();
+        crate::client::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
         app.init_resource::<DeathNotices>()
             .init_resource::<LastHits>()
             .init_resource::<WeaponIcons>()
@@ -471,6 +473,16 @@ fn register_icons(
     if let Some(mark) = glyphs.get("d_headshot") {
         icons.register_mark(crate::game::GAME, crate::client::kill_feed::HEADSHOT, mark.clone());
     }
+    // The icon fonts, for a feed to lay out ahead (`text_warm`).
+    let mut fonts: Vec<weapon_icons::GlyphFont> = Vec::new();
+    for icon in glyphs.values() {
+        let WeaponIcon::Glyph { font, ch, em } = icon else { continue };
+        match fonts.iter_mut().find(|f| f.font == *font && f.em == *em) {
+            Some(f) => f.chars.push(*ch),
+            None => fonts.push(weapon_icons::GlyphFont { font: font.clone(), em: *em, chars: ch.to_string() }),
+        }
+    }
+    icons.register_glyph_fonts(crate::game::GAME, fonts);
     icons.register(crate::game::GAME, move |id| kill_icon(id, &glyphs));
 }
 
@@ -967,6 +979,61 @@ fn menus_string(hud: &ActiveHud, token: &str, fallback: &str) -> String {
         .to_string()
 }
 
+/// The texts this HUD spawns as they show, laid out ahead (`text_warm`):
+/// the death notices' names and icon glyphs (unless the app draws one feed
+/// for every HUD) and the round's centre print, at the window's size.
+fn warm_fonts(
+    window: PrimaryWindows,
+    hud: Option<Res<ActiveHud>>,
+    fonts: Option<Res<UiFonts>>,
+    shared: Option<Res<crate::client::kill_feed::SharedKillFeed>>,
+) -> Vec<WarmText> {
+    let (Some(hud), Some(fonts)) = (hud, fonts) else { return Vec::new() };
+    if !(hud.0.game.is_empty() || hud.0.game == crate::game::GAME) {
+        return Vec::new();
+    }
+    let h = window_height(&window);
+    let mut out: Vec<WarmText> = vec![fonts.client("CenterPrintText", h, 18.0).into()];
+    if shared.is_some() {
+        return out;
+    }
+    out.push(death_notice_font(&hud.0, &fonts, h / 480.0 * 480.0).into());
+    let scale = h / 480.0;
+    let mut glyphs: HashMap<&str, String> = HashMap::new();
+    for (font, ch) in hud.0.icons.values() {
+        glyphs.entry(font.as_str()).or_default().push(*ch);
+    }
+    for (font, chars) in glyphs {
+        if let Some((handle, tall)) = fonts.game(font) {
+            out.push(WarmText { font: notice_glyph_font(handle, tall, scale), extra: chars });
+        }
+    }
+    out
+}
+
+/// The death notices' text font (`HudDeathNotice`'s `TextFont`: the client
+/// scheme's Default) in a window `height` pixels tall.
+fn death_notice_font(hud: &GameHud, fonts: &UiFonts, height: f32) -> TextFont {
+    fonts.client(
+        hud.panels
+            .get("HudDeathNotice")
+            .and_then(|p| p.keys.get("textfont"))
+            .map_or("Default", String::as_str),
+        height,
+        12.0,
+    )
+}
+
+/// A death notice's icon glyph font: the game's font `tall` at 480 lines,
+/// at half its height.
+fn notice_glyph_font(handle: Handle<Font>, tall: f32, scale: f32) -> TextFont {
+    TextFont {
+        font: handle.into(),
+        font_size: FontSize::Px(tall * scale * 0.5),
+        ..default()
+    }
+}
+
 /// The notice lines: attacker, weapon glyph, headshot glyph, victim, in
 /// team colours, right-justified.
 fn rebuild_notices(
@@ -987,14 +1054,7 @@ fn rebuild_notices(
         .unwrap_or(Color::WHITE)
     };
     // HudDeathNotice's TextFont: the client scheme's Default.
-    let text_font = fonts.client(
-        hud.panels
-            .get("HudDeathNotice")
-            .and_then(|p| p.keys.get("textfont"))
-            .map_or("Default", String::as_str),
-        scale * 480.0,
-        12.0,
-    );
+    let text_font = death_notice_font(hud, fonts, scale * 480.0);
     for n in &notices.0 {
         let row = commands
             .spawn((
@@ -1017,11 +1077,7 @@ fn rebuild_notices(
                 // Icon fonts draw their glyphs high in the line: lower
                 // them to sit with the names.
                 Some((handle, tall)) => e.insert((
-                    TextFont {
-                        font: handle.into(),
-                        font_size: FontSize::Px(tall * scale * 0.5),
-                        ..default()
-                    },
+                    notice_glyph_font(handle, tall, scale),
                     Node {
                         margin: UiRect::top(px(tall * scale * 0.25)),
                         ..default()

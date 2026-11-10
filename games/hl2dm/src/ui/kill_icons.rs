@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
-use chimera_client::client::weapon_icons::{WeaponIcon, WeaponIcons};
+use chimera_client::client::weapon_icons::{GlyphFont, WeaponIcon, WeaponIcons};
 use source_formats::keyvalues::{self, Kv};
 
 use chimera_core::core::DamageKind;
@@ -74,8 +74,11 @@ pub fn class_icon_of(class: &str, glyphs: &BTreeMap<String, char>, font: &Handle
 
 /// Registers `glyphs` in `font` as HL2:DM's icons: its guns', its guns'
 /// other kills' and its classes' (`icon_of`, `kill_icon_of`,
-/// `class_icon_of`).
+/// `class_icon_of`), and the font for a feed to lay out ahead
+/// (`WeaponIcons::register_glyph_fonts`).
 pub fn register_glyphs(icons: &mut WeaponIcons, glyphs: BTreeMap<String, char>, font: Handle<Font>) {
+    let chars: String = glyphs.values().collect();
+    icons.register_glyph_fonts(GAME, vec![GlyphFont { font: font.clone(), em: TALL * 0.5, chars }]);
     let (kill_glyphs, kill_font) = (glyphs.clone(), font.clone());
     let (class_glyphs, class_font) = (glyphs.clone(), font.clone());
     icons.register(GAME, move |id| icon_of(id, &glyphs, &font));

@@ -1225,6 +1225,12 @@ Details and baseline numbers: [performance.md](performance.md).
   source declared to `client::text_warm`): the log's `text warm: N glyph
   atlases made on a text's first frame (... at [sizes] px)`; `text warm: N
   fonts and sizes to lay out ahead` says what the warm-up took on.
+- Bots on a map started with no loading screen (`--map`): `cargo test -p
+  ultimate_gun_game --features dev --test it heavy::nav_in_play --
+  --nocapture` prints when the navigation mesh (flooded on a task,
+  `nav_gen::NavGenTask`) is in, when a bot first walks, and the main
+  thread's ticks meanwhile (performance.md, "Nothing blocks the main
+  thread").
 - What a world holds: `chimera_census [<top>]` (console; any app) counts
   entities by archetype (the `<top>` largest component sets), every
   archetype and table made (Bevy frees none), component types,

@@ -8,6 +8,7 @@ mod fallbacks;
 mod heavy {
     mod map_swap_frames;
     mod map_swap_render;
+    mod nav_in_play;
     mod rung_frames;
     mod session_maps;
     mod session_materials;
