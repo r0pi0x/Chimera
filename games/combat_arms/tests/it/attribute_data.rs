@@ -763,3 +763,53 @@ fn install_copies_keep_a_guns_class_not_a_grenades() {
     assert_eq!(class("combat_arms:m67"), Some(GunClass::Grenade));
     assert_eq!(class("combat_arms:smoke_x"), None, "a thrown copy isn't a lethal grenade");
 }
+
+/// `CaData::install_weapon` (an index by id) finds the record the search
+/// finds (`install_weapon_in`): slugs, the two names that aren't their
+/// slugs, a name twice (the first wins), an empty name, unknown ids and
+/// ids without the namespace.
+#[test]
+fn the_install_weapon_index_finds_what_the_search_finds() {
+    use combat_arms::game::data::{CaData, install_weapon_in};
+    let text = r#"[Ammo0] Name="a"
+        [Weapon0] Name="M60" AmmoName0="a" Guntype=5
+        [Weapon1] Name="5.56mm M4A1" AmmoName0="a" Guntype=4
+        [Weapon2] Name="M9" AmmoName0="a" Guntype=0
+        [Weapon3] Name="M-23F" AmmoName0="a" Guntype=7
+        [Weapon4] Name="m60" AmmoName0="a" Guntype=6
+        [Weapon5] Name="" AmmoName0="a" Guntype=1
+        [Weapon6] Name="L96A1 (Event)" AmmoName0="a" Guntype=6
+        [Weapon7] Name="m9_knife" AmmoName0="a" Guntype=3
+        [Weapon8] Name="M9" AmmoName0="a" Guntype=2"#;
+    let file = weapons(text).unwrap();
+    let ca = CaData::with_attributes(InstallAttributes {
+        weapons: Some(file.clone()),
+        ..Default::default()
+    });
+    let mut found = 0;
+    for id in [
+        "combat_arms:m60",
+        "combat_arms:5.56mm_m4a1",
+        "combat_arms:m9",
+        "combat_arms:m9_knife",
+        "combat_arms:m23f",
+        "combat_arms:m-23f",
+        "combat_arms:l96a1__event_",
+        "combat_arms:",
+        "combat_arms:nothing",
+        "combat_arms:M60",
+        "m60",
+        "cs_source:m60",
+        "",
+    ] {
+        let want = install_weapon_in(&file, id);
+        let got = ca.install_weapon(id);
+        assert_eq!(got.map(|r| (&r.name, r.gun_type)), want.map(|r| (&r.name, r.gun_type)), "{id}");
+        found += got.is_some() as usize;
+        // Twice: the index is made once.
+        assert_eq!(ca.install_weapon(id).map(|r| r.gun_type), want.map(|r| r.gun_type), "{id}");
+    }
+    assert!(found >= 5, "{found} found");
+    // The first record of a name.
+    assert_eq!(ca.install_weapon("combat_arms:m60").map(|r| r.gun_type), Some(5));
+}

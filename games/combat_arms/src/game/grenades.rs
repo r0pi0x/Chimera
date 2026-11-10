@@ -1607,7 +1607,15 @@ fn run_frame(
         }
     }
     // 3. Lasting explosions refresh the entries of the players inside.
-    let bodies = world.bodies();
+    // The bodies only when a lasting explosion or an over-time entry asks
+    // for them (steps 3 and 4 below read them for nothing else): every
+    // character's hit spheres posed 20 times a second otherwise
+    // (docs/performance.md, "Performance pass").
+    let bodies = if spheres.is_empty() && out.effects.over_time.is_empty() {
+        Vec::new()
+    } else {
+        world.bodies()
+    };
     for (e, s) in spheres.iter() {
         if s.thrower.is_some_and(|t| !world.entities.contains(t)) || f.time + 1e-9 >= s.until {
             out.commands.entity(e).try_despawn();
