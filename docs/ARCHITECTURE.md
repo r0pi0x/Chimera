@@ -147,7 +147,14 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   crates, the presentation and the network included, and never Source's
   logic, `mashup` or a game (checked): a game says what the shell needs as
   data (`game_registry`, `core`, `debug_ui::GameDebug`), the map logic as
-  `map::logic_view`, the app as `client::AppHooks`.
+  `map::logic_view`, the app as `client::AppHooks`. `client::app` is a
+  game's client app, once for every game (architecture-pass.md step 7):
+  an app crate's `GameApp` static (the game it plays, its window title,
+  maps, installs, simulation, HUD and front end, optional
+  `GameAppHooks`: command-line defaults, requirements, a default or own
+  start map, the debug views, a last word) and its binary is
+  `run(&APP)`; the command line, the usage text (from the game's
+  `GameInfo`), the start map and the plugins' order are there.
   `cargo test -p chimera_client --features dev` tests it alone.
 - `chimera_sim` is the simulation's frameworks: `weapon` (the weapon
   system), `movement` (the movement slot's placeholder and noclip) and
@@ -294,7 +301,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `ui` uses the presentation and the shell. `apps/combat_arms`
   (`combat_arms_app`) is its game binary (`combat_arms`): the greybox
   or `--map combat_arms:<name>`, the shell with its HUD, the network (a
-  listen server or a client, the shell's options), its build's stamp.
+  listen server or a client, the shell's options), its build's stamp:
+  a `GameApp` static (`APP`) on `chimera_client::client::app`, as every
+  client app is.
   What Combat Arms needs that lives
   in `cs_source` today moves into Chimera first (a lift), never across.
 - `mashup_demo` (apps/mashup_demo/) is the first mashup app (binary
@@ -311,7 +320,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   depends on another app (checked): the two-game composition
   (`PartyPlugins`, `PartyPartsPlugin`, `GAME_PARTS`, `MAP_SOURCES`), the
   requirements and mount report, the minigame a command line names, and
-  with `present` the client app (`client_app`, `with_defaults_for`,
+  with `present` the client app (`client::PARTY`, a `GameApp`; Lucker
+  Party's `client::APP`; `with_defaults_for`, `start_at_menu`,
   controls); its `server` module is the party's dedicated server as a
   `GameServer` (`PARTY`, Lucker Party's `SERVER`) on `chimera_net::
   dedicated`. Its tests are the party's and the
@@ -331,7 +341,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   or audio code (checked the same way as the other servers).
 - `ultimate_gun_game` (apps/ultimate_gun_game/) is the Ultimate Gun Game
   (binary `ultimate_gun_game`; docs/plans/active/ultimate-gun-game.md):
-  `party_kit`'s client app and composition plus a gun game made
+  `party_kit`'s client app (its `APP`: `GameApp { .., ..PARTY }` with
+  its own command line, main-menu start and launch) and composition plus a gun game made
   at run time from each game's parts (`chimera_core::game_parts`,
   `chimera_sim::minigame::auto`). It names no game crate.
   `ultimate_gun_game_server` (apps/ultimate_gun_game_server/) is its
@@ -516,7 +527,7 @@ A module may use only the modules below it. Enforced by
   `client` (the shell: input, camera, console UI, VGUI-like widgets, debug
   tools, net glue); the rest of the game never uses it. The shell reaches
   it only through `client::front_end` (hooks the game registers), and the
-  app adds it (main.rs). The shell names no game (checked): what it needs
+  app adds it (its `GameApp`'s `hud` and `front_end`). The shell names no game (checked): what it needs
   of one (install, map cycle, tick, default binds, movement cvars) is data
   the game registers (`game_registry::GameInfo`, the first registered
   being the default game, for bare map names); which game's rules, HUD,

@@ -32,7 +32,7 @@ a game of a new engine family, Combat Arms is the example:
 |---|---|---|---|
 | `<family>_formats` | `<family>/formats` | the engine family's file formats as plain data: no Bevy, fixtures written by tests, `heavy::` tests on the install that skip without it. Only for a new family | `lithtech/formats` |
 | `<id>` | `games/<id>` | the game as a library (below) | `games/hl2dm` |
-| `<id>_app` | `apps/<id>` | the game's binary | `apps/hl2dm` |
+| `<id>_app` | `apps/<id>` | the game's binary: a `GameApp` static and one call (below) | `apps/hl2dm` |
 | `<id>_server` | `apps/<id>_server` | a static and one call (below); Chimera and the game only, never an app (`game_servers_use_no_app`) | `apps/hl2dm_server` |
 
 A new family's folder is a loader layer the day a crate lives in it;
@@ -100,8 +100,17 @@ replace one part at a time, each behind its spec and a scenario test.
    (`ServerHooks { .., ..ServerHooks::NONE }`): the map cycle, the map's
    file for clients without it (`map_files`), the greybox's own tick,
    another player count, several games' maps, a minigame
-   (apps/cs_source_server, `party_kit::server`). The app is the shell with the
-   game's parts (apps/hl2dm). Placeholder movement
+   (apps/cs_source_server, `party_kit::server`). The app is the same
+   shape: a `GameApp` static (`chimera_client::client::app`: the game's
+   `INFO` for the usage text, its title, maps, installs, `sim`, `hud`
+   and `front_end`) and `chimera_client::client::app::run(&APP)` in
+   main.rs (apps/hl2dm); what only some apps have is a
+   `GameAppHooks { .., ..GameAppHooks::NONE }` hook: command-line
+   defaults, what the machine lacks, a default map, a start of its own
+   (a main menu), the start map at the HDR level, the debug views, its
+   server's name for `--help`, a last word (apps/cs_source,
+   `party_kit::client`). An app's main.rs stays a call
+   (`app_mains_are_small`). Placeholder movement
    (`chimera_sim::movement`) and a test weapon as data.
 3. **Maps**: a `MapLoader` that returns `MapData` in metres (the world
    and the game's kit apart; engine-specific features in typed

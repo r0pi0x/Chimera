@@ -29,7 +29,7 @@
 //!   `CombatArmsPlugins`: the default game, for bare map names), CS:S
 //!   registered after it for its install (`map` lists the default game's
 //!   maps; `map cs_source:<name>` loads a CS:S one) and
-//!   `MashupPartsPlugin`. The app (main.rs) sets Combat Arms as the
+//!   `MashupPartsPlugin`. The app (`APP`) sets Combat Arms as the
 //!   gameplay (`chimera_core::gameplay`: its rules, HUD, binds and tick);
 //!   CS:S's rules aren't in the app, only its maps, logic and guns.
 //! - `MashupPartsPlugin`: what the app adds to Combat Arms' simulation
@@ -42,8 +42,10 @@
 //!   `weapon::StartingWeapons`) given either game's weapon, the local
 //!   player's at once, everyone's from their next spawn (`+loadout_slot
 //!   primary cs_source:weapon_ak47`).
-//! - `ClientPlugin`: the shell with this app's hooks (`client_hooks`) and
-//!   Combat Arms' HUD.
+//! - `APP`: the binary's app on Chimera's client app (`chimera_client::
+//!   client::app`; main.rs is `run(&APP)`): the shell with this app's
+//!   hooks (`client_hooks`) and Combat Arms' HUD, CS:S's guns' names in
+//!   it.
 //!
 //! Known shortcuts: maps load by id only (no downloaded map files, no map
 //! offer to network clients); CS:S's guns have Combat Arms' effects only
@@ -55,14 +57,14 @@
 //! where the bones match; on a Combat Arms map they have no view model.
 
 use bevy::{app::PluginGroupBuilder, prelude::*};
-use chimera_client::client::{AppHooks, Args, ClientPlugins};
+use chimera_client::client::{
+    AppHooks, Args,
+    app::{AppMaps, GameApp, GameAppHooks},
+};
 use chimera_core::{console::ConsoleAppExt, game_registry::GameAppExt};
 use chimera_core::core::LocalPlayer;
 use chimera_sim::weapon::{Inventory, StartingWeapons, data};
-use chimera_world::{
-    greybox,
-    map::{MapData, MapSources, SpawnTeams, SurfaceTable},
-};
+use chimera_world::map::{MapData, MapSources, SpawnTeams, SurfaceTable};
 
 /// This build's version (`version` command, bug reports); stamped by
 /// build.rs.
@@ -124,17 +126,57 @@ pub fn load_map(id: &str, hdr_level: u8) -> Result<MapData, String> {
 }
 
 /// What this app tells the client shell: its commit, its maps
-/// (`MAP_SOURCES`) and the greybox's own hooks.
+/// (`MAP_SOURCES`) and the greybox's own hooks (`APP`'s).
 pub fn client_hooks() -> AppHooks {
-    AppHooks {
-        build: BUILD,
-        load_map: |id, options| MAP_SOURCES.load_with(id, options),
-        load_map_file: |id, _, _| Err(format!("{id}: the mashup loads maps by id only, not from a file")),
-        map_file_bytes: |_| None,
-        unload_greybox: greybox::unload,
-        respawn_greybox: greybox::respawn,
-    }
+    APP.app_hooks()
 }
+
+/// The game binary's app (`mashup_demo`, main.rs), on Chimera's client
+/// app (`chimera_client::client::app`): `with_defaults`' command line,
+/// `DEFAULT_MAP` without `--map`, `MashupPlugins` with Combat Arms the
+/// gameplay on every map (its rules, HUD, binds and tick; CS:S's parts in
+/// the app are its maps, logic and guns only), both installs as assets,
+/// the shell with Combat Arms' HUD, CS:S's guns' names in it
+/// (`cs_source_names`) and Combat Arms' other looks.
+pub static APP: GameApp = GameApp {
+    bin: "mashup_demo",
+    info: &combat_arms::game::INFO,
+    title: "Lucker Party: mashup demo",
+    about: || {
+        format!(
+            "mashup_demo: Counter-Strike: Source's maps played as Combat Arms (its soldier, movement, M4A1,\n\
+             knife and grenades, HUD, bots and Team Death Match). Starts on {DEFAULT_MAP} with {DEFAULT_BOTS} bots;\n\
+             --map cs_source:<name> (or combat_arms:<name>) and +MaxPlayer <n> change them.\n"
+        )
+    },
+    version: VERSION,
+    build: BUILD,
+    maps: AppMaps {
+        load: |id, options| MAP_SOURCES.load_with(id, options),
+        load_file: |id, _, _| Err(format!("{id}: the mashup loads maps by id only, not from a file")),
+        file_bytes: |_| None,
+    },
+    // Both installs as `cs_source://` and `combat_arms://` assets.
+    installs: || {
+        vec![
+            chimera_present::assets::InstallSource::of(&cs_source::game::INFO),
+            chimera_present::assets::InstallSource::shared(combat_arms::game::INFO.id, combat_arms::game::world::mount),
+        ]
+    },
+    sim: |app, _| {
+        use chimera_core::gameplay::{Gameplay, GameplayAppExt};
+        app.add_plugins(MashupPlugins).set_gameplay(Gameplay::of(&combat_arms::game::INFO));
+    },
+    hud: combat_arms::ui::with_hud,
+    front_end: |app, _| {
+        app.add_systems(Startup, cs_source_names).add_plugins(combat_arms::ui::CaUiPlugin);
+    },
+    hooks: GameAppHooks {
+        args: Some(with_defaults),
+        default_map: Some(DEFAULT_MAP),
+        ..GameAppHooks::NONE
+    },
+};
 
 /// The mashup's simulation: Combat Arms' (the engine's base, then its
 /// parts, registering it as the default game), then CS:S registered as
@@ -225,25 +267,6 @@ pub fn set_slot(kit: &mut StartingWeapons, catalog: &data::WeaponCatalog, slot: 
     let at = kit.all.iter().position(|w| slot_of(w) > slot).unwrap_or(kit.all.len());
     kit.all.insert(at, weapon.id.as_str());
     Ok(())
-}
-
-/// The client as this app runs it: the shell's plugins with the app's
-/// hooks and Combat Arms' HUD.
-pub struct ClientPlugin {
-    pub args: Args,
-}
-
-impl Plugin for ClientPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugins(combat_arms::ui::with_hud(
-            ClientPlugins {
-                args: self.args.clone(),
-                hooks: client_hooks(),
-            }
-            .build(),
-        ))
-        .add_systems(Startup, cs_source_names);
-    }
 }
 
 /// CS:S's guns' names for Combat Arms' HUD (`ItemNames`), from CS:S's own

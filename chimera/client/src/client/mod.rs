@@ -134,21 +134,36 @@ pub struct Args {
     pub frame_log: Option<PathBuf>,
 }
 
-const USAGE: &str = "\
-usage: cs_source [options]
+/// The shell's options for `--help` (`usage`), written for game `info`'s
+/// binary `bin`: its maps (`<id>:<name>`) and movement cvars
+/// (`GameInfo::movement_cvars`), and its dedicated server's binary
+/// (`server`, None: the game has none).
+pub fn usage(bin: &str, info: &crate::game_registry::GameInfo, server: Option<&str>) -> String {
+    let id = info.id;
+    let cvars = if info.movement_cvars.is_empty() {
+        format!("{id} has none")
+    } else {
+        let names: Vec<&str> = info.movement_cvars.iter().map(|(name, _)| *name).collect();
+        format!("{id}: {}", names.join(", "))
+    };
+    let cvars = wrap(&format!("(repeatable; {cvars})"), 28, 100);
+    let server = match server {
+        Some(server) => format!("\n  server:  cargo run --bin {server} -- -port 27016 +map greybox"),
+        None => String::new(),
+    };
+    format!(
+        "\
+usage: {bin} [options]
   --screenshot <file.png>   save a screenshot after --frames frames, then exit
   --frames <n>              frames to run before the screenshot or exit (default 60)
   --movement <id>           movement implementation for the local player
   --spawn <x,y,z>           spawn position in meters
   --look <yaw,pitch>        initial look angles in degrees (yaw 0 = -Z)
-  --map <game:name>         load a game's map, e.g. cs_source:de_dust2, or greybox (Chimera's
+  --map <game:name>         load a game's map, e.g. {id}:<name>, or greybox (Chimera's
                             test map). Without it the game starts at the main menu, unless
                             --spawn, --look, --movement or --views is given (then: greybox)
-  --cvar <name=value>       set a movement console variable, e.g. sv_airaccelerate=150
-                            (repeatable; cs_source: sv_accelerate, sv_airaccelerate,
-                            sv_friction, sv_stopspeed, sv_gravity, sv_maxspeed,
-                            sv_stepsize, sv_maxvelocity, sv_bounce,
-                            sv_enablebunnyhopping, sv_autobunnyhopping, cl_forwardspeed)
+  --cvar <name=value>       set one of the game's movement console variables
+{cvars}
   --exec <file.cfg>         apply a Source-style config file (\"name value\" lines)
   --lightmap-only           debug view: white surfaces, only baked lighting
   --debug-view <kind>       lighting (x0.25) | albedo, untonemapped, magenta background
@@ -164,11 +179,11 @@ usage: cs_source [options]
                             a tiling window manager may still resize it)
   --scale <f>               the window's scale factor (physical pixels per logical one) in place of
                             the display's, e.g. 1.25 as Windows at 125 % (with --window: 1)
-  --join <how>              how you come into a game you start or join: menus (CS:S's message of
-                            the day, team and class menus), auto (the smaller team) or a jointeam
-                            number (1 spectators, 2 terrorists, 3 counter-terrorists). Default:
-                            menus, but auto in --screenshot/--views runs, with --spawn or --look,
-                            and with +jointeam/+spectate (that team)
+  --join <how>              how you come into a game you start or join: menus ({short}'s join
+                            menus), auto (the smaller team) or a jointeam number (1 spectators,
+                            2 and 3 the game's teams). Default: menus, but auto in
+                            --screenshot/--views runs, with --spawn or --look, and with
+                            +jointeam/+spectate (that team)
   --offscreen <WxH>         no window: draw the window into an image of that size (no window system or
                             compositor needed; renderer, HUD, menus and cameras as in a window), e.g.
                             1920x1080; prints the frame times when it ends (--frames ends it)
@@ -185,9 +200,34 @@ usage: cs_source [options]
                             ++attack holds an action, e.g. to fire in a --screenshot run)
 
 network play (docs/OBSERVABILITY.md, \"Network play\"):
-  host:    cs_source -port 27016 +maxplayers 4 +map greybox
-  join:    cs_source +connect 127.0.0.1:27016
-  server:  cargo run --bin cs_source_server -- -port 27016 +map greybox";
+  host:    {bin} -port 27016 +maxplayers 4 +map greybox
+  join:    {bin} +connect 127.0.0.1:27016{server}",
+        short = info.short_name,
+    )
+}
+
+/// `text` in lines of at most `width` characters (at word breaks), each
+/// indented `indent` spaces.
+fn wrap(text: &str, indent: usize, width: usize) -> String {
+    let pad = " ".repeat(indent);
+    let mut lines = vec![pad.clone()];
+    for word in text.split(' ') {
+        let line = lines.last_mut().unwrap();
+        if line.len() > indent && line.len() + 1 + word.len() > width {
+            lines.push(format!("{pad}{word}"));
+        } else {
+            if line.len() > indent {
+                line.push(' ');
+            }
+            line.push_str(word);
+        }
+    }
+    lines.join("\n")
+}
+
+/// What `Args::parse_from` says to a `--help`: the caller prints the
+/// usage (`Args::parse_for` does).
+pub const HELP: &str = "--help";
 
 impl Args {
     /// Whether the run starts playing (a map given, or the player placed
@@ -229,13 +269,24 @@ impl Args {
             .filter(|m| !matches!(m.to_lowercase().as_str(), "greybox" | "chimera:greybox" | "mashup:greybox"))
     }
 
-    pub fn parse() -> Self {
-        Self::parse_from(std::env::args().skip(1)).unwrap_or_else(|e| {
-            eprintln!("{e}\n\n{USAGE}");
-            std::process::exit(2);
-        })
+    /// The process's command line: `--help` prints `usage` and ends the
+    /// process (0), a bad option says so with `usage` (2).
+    pub fn parse_for(usage: &str) -> Self {
+        match Self::parse_from(std::env::args().skip(1)) {
+            Ok(args) => args,
+            Err(e) if e == HELP => {
+                println!("{usage}");
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("{e}\n\n{usage}");
+                std::process::exit(2);
+            }
+        }
     }
 
+    /// The command line (without the program's name); `--help` is
+    /// `Err(HELP)`.
     pub fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Self, String> {
         fn floats<const N: usize>(flag: &str, v: &str) -> Result<[f32; N], String> {
             let parts: Vec<f32> = v
@@ -276,8 +327,7 @@ impl Args {
                 continue;
             }
             if flag == "--help" || flag == "-h" {
-                println!("{USAGE}");
-                std::process::exit(0);
+                return Err(HELP.into());
             }
             if flag == "--bench" {
                 out.bench = true;

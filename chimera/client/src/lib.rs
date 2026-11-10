@@ -13,7 +13,9 @@
 //! the map logic as `map::logic_view`, the app as `client::AppHooks`. A
 //! game's front end builds on it (CS:S's: `cs_source::ui`, its `ui`
 //! feature) and puts its HUD among the shell's plugins
-//! (`client::ClientPlugins`).
+//! (`client::ClientPlugins`). A game's client app is a `GameApp` static
+//! run by `client::app::run` (the start map, the plugins' order, the
+//! usage text from the game's `GameInfo`), as every app's is.
 //!
 //! `mashup::client` re-exports `client` at its old path.
 

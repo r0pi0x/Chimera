@@ -1,6 +1,6 @@
 # Plan: architecture pass for many games
 
-Status: started 2026-11-09 on main at 71a2d568. Steps 1-6 are done
+Status: started 2026-11-09 on main at 71a2d568. Steps 1-7 are done
 (section 5); the rest is ordered in section 6. The second review
 ([architecture-review.md](architecture-review.md), 2026-10-20) asked
 "can two games' gameplay run in one app"; its roadmap is done. This
@@ -289,12 +289,36 @@ Each is one commit; behaviour unchanged.
    743, hooks and their tests included) and the other two servers, the
    server code went from 1,632 lines to 1,419. *Unlocks:* one server shape for every game and party app;
    a fix to the run loop, `changelevel` or the console reaches them all.
+7. **The client app once** (`chimera_client::client::app`, `GameApp`):
+   the six client apps (CS:S, HL2:DM, Combat Arms, the mashup demo,
+   Lucker Party, the Ultimate Gun Game) are a static and `run(&APP)`;
+   the command line, `--help` (the app's `about`, then the shell's
+   options written from the game's `GameInfo`: its binary, map id, name
+   and movement cvars, no longer "named after the CS:S app"), what the
+   machine lacks, the start map and the plugins' order (map, installs,
+   window, physics, the game's `sim`, presentation, version, network,
+   the shell with the game's `hud`, its `front_end`) are Chimera's.
+   Optional `GameAppHooks`: command-line defaults, requirements, a
+   default map, a start of the app's own (the party's main menu over a
+   background map, never the greybox: `party_kit::start_at_menu`),
+   HDR level and debug views on the start map (CS:S's), the server's
+   name for the usage text, a last word (the Ultimate Gun Game's menu
+   and ladder). The party kit's client is the `PARTY` const and the
+   Ultimate Gun Game's `APP` is `GameApp { .., ..PARTY }`. The system
+   order of every app (`CHIMERA_SYSTEM_DUMP`) is unchanged. New check:
+   `app_mains_are_small` (an app's main.rs builds no `App` and stays
+   under 30 code lines). The six apps' main.rs went from 452 lines to
+   80; with their glue (their lib.rs, the party kit's lib.rs and
+   client.rs, CS:S's client.rs) the client apps went from 2,568 lines
+   to 2,344, and Chimera's `client::app` and usage text grew by 425
+   (with the descriptor's tests, 284 more).
+   *Unlocks:* a new game's app is a static; the shell's usage text is
+   the game's.
 
 ## 6. Next, in order
 
 | # | Step | Size | Unlocks |
 |---|---|---|---|
-| 7 | The client app once (`chimera_client::app`): window, log layer, physics, presentation, network, shell, start map from a `GameApp` descriptor; the three apps' `main.rs` become a static | M | a new game's app is a static; the shell's usage text from `GameInfo` |
 | 8 | `games/roster`: the games' descriptors in one list, a cargo feature per game; `dump`, `chimera_pack`, `mapsweep` and the party kit iterate it (each game's tool hooks move into the game: `open_install`, what `chimera_pack` roots a set at) | M | tools and party apps cost nothing per game; subset builds; a check that apps name a game crate only for its descriptors |
 | 9 | The party kit's base game by descriptor: the loading screen, menu music, mouse options, requirements text and bots settings it takes from Combat Arms become `GameClient`/`GameBundle` hooks; `TEAMS` and `SURFACES` per game to a neutral vocabulary (review A3's surface kinds) | M-L | any game as the base; no pairwise tables |
 | 10 | Chimera's Source words: the console's home namespace from the registered games instead of `SOURCE_NAMESPACE`, `SERVER_NAMES` registered like step 3, the 90 `0.0254` literals to `GameInfo::meters_per_unit` or named constants of the game that measured them, a ratchet on the literal | M (slices) | a non-Source game doesn't inherit inches or CS:S's cvars |
@@ -304,8 +328,7 @@ Each is one commit; behaviour unchanged.
 | 14 | Compile and test scale: the party kit's tests against two reference games only; a game's fast tier split by module with nextest filters; `cargo test -p` of a game never builds another | M | time per game flat |
 | 15 | Second user of LithTech or of a Combat Arms subsystem (objects, effects library, lobby): lift into `lithtech/engine` or Chimera, as the Source lifts went | L | the first-of-a-family cost falls for the next one |
 
-Steps 7-8 are mechanical moves like steps 4 and 6 and can go to parallel
-agents (different files). Step 9 touches the party kit's client, which
+Step 8 is a mechanical move like steps 4, 6 and 7. Step 9 touches the party kit's client, which
 other work edits often: do it in one sitting. Step 10's literal sweep
 is the "big mechanical move": last, alone.
 
