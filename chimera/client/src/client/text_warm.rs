@@ -61,8 +61,10 @@ use bevy::{
 
 /// Glyphs laid out ahead per frame in play.
 pub const GLYPHS_PER_FRAME: usize = 16;
-/// Glyphs laid out ahead per frame behind the loading screen.
-pub const GLYPHS_PER_SETTLE_FRAME: usize = 256;
+/// Glyphs laid out ahead per frame behind the loading screen (with the
+/// settling's other slices a frame stays under 33 ms: 256 made 10 ms of
+/// rasterizing alone, docs/performance.md, "A map's swap in the real app").
+pub const GLYPHS_PER_SETTLE_FRAME: usize = 128;
 /// Frames between two askings of the sources in play when nothing changed.
 pub const RECOLLECT_FRAMES: u32 = 120;
 /// Frames a warm node waits for its layout before it goes anyway (no UI

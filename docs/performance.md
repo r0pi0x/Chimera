@@ -1333,7 +1333,7 @@ shaping, so the warm-up uses the pipeline itself:
   (`AtlasPool`, 4 ready) and one is put in under the key Bevy will look the font up
   by (`atlas_key`) before the hidden text lays out; a wrong key is counted
   (`TextWarm::missed`, 0 in the tests) and Bevy makes its own.
-- **When:** behind the loading screen (`MapHooks::settle`, 256 glyphs a frame), and in
+- **When:** behind the loading screen (`MapHooks::settle`, 128 glyphs a frame, 256 before "A map's swap in the real app"), and in
   play 16 glyphs a frame, the sources asked again when the window, the fonts or the
   map's HUD change: so the command line's `--map` (no loading screen) is covered too.
 
@@ -1419,14 +1419,16 @@ was 1.0-2.9 G instructions on the main thread, 0.2-1.5 s wall at load 15-35. In 
 
 Now (`console::finish_map_load`): the load's task prepares those parts too; then the map is
 spawned a step at a time (`spawn::SpawnProgress`; the same phases in the same order, the
-drawer's in steps of their own) until `SPAWN_BUDGET` (20 ms) of a frame is spent, the
+drawer's in steps of their own) until `SPAWN_BUDGET` (12 ms; 20 ms before "A map's swap in the real app") of a frame is spent, the
 commands held in a queue of the spawn's own until the last step and applied together in the
 next frame, so the world never holds part of a map; the simulation waits meanwhile
 (`Time<Virtual>` paused: its first tick on the map is after the whole map is in, as before).
 Until the game is entered a frame advances the simulation by at most one tick
 (`Time<Virtual>::max_delta`, `LoadCaps`: the long frames behind the loading screen left
-470-760 M of catch-up ticks owed) and the GPU is sent at most `LOAD_UPLOAD_BYTES` (32 MiB)
-a frame (Bevy's `RenderAssetBytesPerFrame`; both given back on entering the game).
+470-760 M of catch-up ticks owed) and the GPU is sent at most `LOAD_UPLOAD_BYTES` (16 MiB
+since "A map's swap in the real app", below; 32 MiB before) a frame (Bevy's
+`RenderAssetBytesPerFrame`; both given back on entering the game), new meshes at most
+`upload_pace::MESH_BYTES_PER_FRAME` (6 MiB).
 `CHIMERA_SPAWN_AT_ONCE=1` spawns in one frame as before (the A/B; its parts still
 prepared ahead). The world is the same: `heavy::map_spawn_dump` with
 `CHIMERA_SPAWN_DUMP_VIA=change` and `=stepped` gives the same entities, components and
@@ -1499,6 +1501,74 @@ through the shell's `map` flow; no frame from the command to the game over
 `WORST_LOAD_FRAME`, 500 M; measured 150-340 M, 150-300 M with the colliders' mass kept) and `chimera_client`'s `map_load_steps` (a
 map spawned in steps: no tick and no part of the map while it spawns, the same parts as a
 spawn in one go, one tick's advance a frame while settling, given back in the game).
+
+### A map's swap in the real app (2026-11-10)
+
+What each frame over 33 ms of a swap was, and the fixes. Ultimate Gun Game offscreen at
+1920x1080 (`--offscreen`, `--frame-log`), the same script as above (`+after` a `map` to
+cs_office, dm_lockdown and warehouse 20 s apart, each marked by an `echo`), on the
+**`profiling` build** (optimized, frame pointers: what a player runs, not the dev build of the
+tables above), RTX 3080, box at load 15-35 (another agent building), sampled with `perf record -F
+1999 -e cpu-clock:u --call-graph fp -k CLOCK_MONOTONIC` and cut to each frame by its
+`CLOCK_MONOTONIC` span (the frame log's `begun_s`; tools/frame_cut.py's method, the swap's
+window found by the `echo` line's time through the log's `clock` line). Wall times on this box
+move 2-5x with its load; the instructions and each thread's CPU time are what to compare.
+
+| Frame | Before (worst, M instructions) | What was in it | Fix |
+|---|---|---|---|
+| Render world while the map's steps add meshes | 150-385 M, 45-120 ms; with slab growth up to 1.5 s of CPU (kernel time in the driver) | Bevy's mesh allocator (`allocate_and_free_meshes`) packs and writes **every** mesh extracted in the frame, `Mesh::write_packed_vertex_buffer_data`: Bevy's per-frame budget (`RenderAssetBytesPerFrame`, which `LoadCaps` sets) holds back images and `RenderMesh`es but not the allocator | `client::upload_pace`: the meshes over 6 MiB a frame are held in the render world and handed to the allocator in later frames, oldest first (only while the load caps uploads or some are held); `Settling` waits for them (`uploads_settled`) |
+| Render world, textures | 25-30 samples of 40 ms frames | `GpuImage::prepare_asset` (`create_texture_with_data`) at 32 MiB a frame | `LOAD_UPLOAD_BYTES` 16 MiB |
+| The `map` command's frame | 300 M, 58 ms | `read_map_names`: the first `map` of a session opening Combat Arms' install to list its maps (`MapLists`) | every game's list and cycle read on a task at startup (`console::read_map_lists_ahead`) |
+| The first tick on the map | 320-420 M (tick 300-350 M), 100 ms | Combat Arms' radar (`radar::install_image`) opening the whole install again (`GameInfo::mount`: every archive's directory) for the map's image, a third of it; each character's old `CaAnim` freeing the old map's rig, the last hold on an animation library (27 samples, 13 ms); the old `CaObjects` freed (old map's entities); the logic world's spawn (`LogicWorld::spawn_map`); the colliders the tick's spawns make | the radar and the other on-the-frame reads (markers, death tips, radio, the HUD's art, fonts) use the shared mount (`world::mount`, `CaData::mount`); the old rig and objects freed on a task (`map::drop_later`). Now 120-125 M of tick (186 M whole, office) |
+| The frame the map goes into the world | 206-242 M, 60 ms | the spawn's commands: Avian's insert hook computing every collider's mass properties (`MassProperties::from_compound`, `ConvexPolyhedron::mass_properties`: a third), the entities, the collider tree's observer; `retire` shedding what the shadows never read (`shed_unread`: meshes, collision, texels, 3-8 ms); the props' first shadow draws; `calculate_bounds` | the shed parts and the old shadow source freed on a task. Left: 220-255 M (below) |
+| Spawn steps | 120-185 M, 30-90 ms | `spawn_prop` evaluating each prop's light probe (`LightProbe::eval`, 64 props a step), a body's skinned bounds (`generate_skinned_mesh_bounds`, 2 a step), Combat Arms' sounds; `SPAWN_BUDGET` 20 ms plus the frame's own work | `SPAWN_BUDGET` 12 ms, `PROPS_PER_STEP` 16, `BODIES_PER_STEP` 1, `WORLD_MESHES_PER_STEP` 150 (fewer meshes a step too) |
+| Settling (behind the loading screen) | 150-240 M, 35-50 ms, 8-12 frames a swap on dm_lockdown | the HUD's glyphs rasterized (`GLYPHS_PER_SETTLE_FRAME` 256: 10 ms), the spawn spots' flood (`CELLS_PER_LOAD_FRAME` 250), the props' shadows redrawn as they settle (`update_prop_shadows`, `silhouette`: a quarter of the settling), the text sources' strings | 128 glyphs and 160 cells a frame. Left: the prop shadows |
+
+Before and after, three runs each (worst over the 20 s from the command, M instructions;
+render CPU ms; render frames over 33 ms of CPU; seconds from the command to `map settled`):
+
+| Swap to | Main worst before | after | Render worst before | after | Render CPU before | after | Render >33 ms before | after | Entered before | after |
+|---|---|---|---|---|---|---|---|---|---|---|
+| cs_office | 364-388 | 220-225 | 211-223 | 74-82 | 67-70 | 16-25 | 5-6 | 0 | 7.0-8.1 | 5.8-7.7 |
+| dm_lockdown | 408-439 | 228-255 | 265-269 | 90-102 | 82-93 | 21-32 | 4-7 | 0 | 6.6-8.2 | 4.4-8.7 |
+| combat_arms:warehouse | 219-224 | 108-165 | 137-187 | 81-86 | 58-134 | 29-76 | 4-6 | 0-1 | 3.6-5.3 | 3.8-6.3 |
+
+Main-thread frames over 33 ms of CPU while the map spawns and settles: cs_office 5-7 before,
+2-4 after; dm_lockdown 12-17 before, 1-8 after; warehouse 3-4 before, 0-6 after (the box's load
+moves these most). The spawn takes more frames (cs_office 40 steps before, 82 after) but no
+longer: its frames were already over budget.
+
+What is left over 33 ms, and why:
+
+- **The frame the map goes into the world** (220-255 M, about 35-55 ms here): a third is
+  Avian's insert hook computing each new collider's mass properties, which Avian 0.8 can't be
+  told to skip; the rest the entities themselves and their observers. Splitting the commands
+  over frames would let the world hold part of a map (systems reading the new map's resources,
+  inserted last, with entities of it already there), so it stays one frame; moving the colliders'
+  inserts to the following frames (the simulation still paused) would take a second queue
+  through every collider spawn (`spawn_world_collision`, `spawn_entity_nodes`,
+  `insert_prop_collider`).
+- **The first tick on the map** (120-125 M of tick): the logic world's spawn
+  (`source_logic::bridge::load`), Combat Arms' objects (`objects::load`), the colliders those
+  spawns make and their mass, the first physics step.
+- **Settling's prop shadows** (`update_prop_shadows`, 6 redraws a frame, each `silhouette`):
+  in chimera_present's shadows, where another change was under way; left to it.
+- **In play, not the swap**: a ragdoll's first frame (its bodies' convex hulls,
+  `ragdoll::BodyShape::new`, at each death: 150-280 M dev build) and dm_lockdown's play frames
+  over 33 ms on the loaded box (40-140 a run, CPU far under wall: the box, mostly).
+
+A rung change, profiled the same way (each rung's second after `ladder_rung`, the profiling
+build): the worst frame 25-41 M (7-15 ms wall), the gun's old entities despawned, the HUD's
+text measured, and the once-a-second `chimera_perf` readout (`perf_report`'s percentiles, about
+5 M) when it lands there: no frame near 33 ms, nothing changed.
+
+The profiling build hung at startup twice in about twenty runs (after the adapter line, every
+thread in a futex wait, under memory pressure with 3-10 GB swapped): not looked into.
+
+Guards: `chimera_client`'s `upload_pace` tests (a frame writes at most the budget, the rest follow
+in order, at least one a frame; a held mesh removed or extracted again is dropped; settled only
+after two clear render frames, and at once without a render world) and
+`map_lists_are_read_ahead_off_the_frame`.
 
 ## Combat Arms map loads (2026-10-19)
 

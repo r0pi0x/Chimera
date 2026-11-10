@@ -79,7 +79,7 @@ impl TriggerResources {
 
     /// The install's table (empty without it).
     pub fn install() -> Self {
-        let Some(mount) = super::super::INFO.mount() else { return Self::default() };
+        let Some(mount) = crate::game::world::mount() else { return Self::default() };
         let Ok(bytes) = mount.read(FILE) else { return Self::default() };
         match Document::parse(&bytes) {
             Ok(doc) => Self::parse(&doc),

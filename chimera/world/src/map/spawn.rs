@@ -237,7 +237,7 @@ enum Stage {
 
 /// Props a step spawns at most (each is a few entities and, drawn, its
 /// meshes' and materials' assets).
-const PROPS_PER_STEP: usize = 64;
+const PROPS_PER_STEP: usize = 16;
 
 /// Runs the spawn's next steps: all of them without a `deadline`, else at
 /// least one and then more until the deadline passes. Returns whether the

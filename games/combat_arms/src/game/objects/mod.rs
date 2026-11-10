@@ -609,7 +609,7 @@ fn load(world: &mut World) {
     }
     let start = w.objects.iter().map(|o| (o.pose, net::flags_of(o))).collect();
     let want_nodes = w.objects.iter().filter(|o| o.node).count();
-    *world.resource_mut::<CaObjects>() = CaObjects {
+    let fresh = CaObjects {
         want_nodes,
         start,
         world: w,
@@ -618,6 +618,9 @@ fn load(world: &mut World) {
         next_frame: now,
         ..default()
     };
+    // The old map's objects (and its last hold on that map's entities)
+    // are freed on a task, not in the map's first tick.
+    crate::map::drop_later(std::mem::replace(&mut *world.resource_mut::<CaObjects>(), fresh));
     bind(world);
     mark_all(world);
     apply(world);

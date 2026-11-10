@@ -71,9 +71,20 @@ impl MapDrawer for MapAssets<'static> {
         // take this one (theirs goes) and drop what they never read (the
         // kit, the world's meshes and collision, most texels).
         if let Some(mut source) = world.get_resource_mut::<shadows::ShadowSource>() {
-            drop(std::mem::replace(&mut source.data, data));
+            // Both freed on a task: the old map's share, and what the shadows
+            // shed (meshes, collision, texels: 3-8 ms of the frame the map
+            // goes into the world, docs/performance.md, "A map's swap in the
+            // real app").
+            // (A share of this same map, kept since startup, goes now:
+            // it is no frees, and `get_mut` needs the data alone.)
+            let old = std::mem::replace(&mut source.data, data);
+            if Arc::ptr_eq(&old, &source.data) {
+                drop(old);
+            } else {
+                crate::map::drop_later(old);
+            }
             if let Some(data) = Arc::get_mut(&mut source.data) {
-                shadows::shed_unread(data);
+                crate::map::drop_later(shadows::shed_unread(data));
             }
         }
     }
@@ -188,7 +199,7 @@ enum Phase {
 }
 
 /// Bodies a step builds at most.
-const BODIES_PER_STEP: usize = 2;
+const BODIES_PER_STEP: usize = 1;
 
 /// Held models a step builds at most.
 const HELD_PER_STEP: usize = 16;
@@ -816,7 +827,7 @@ impl WorldMeshes {
 
 /// The map's meshes a world-mesh step spawns at most (each split into its
 /// chunks, `vis::split_mesh`).
-const WORLD_MESHES_PER_STEP: usize = 400;
+const WORLD_MESHES_PER_STEP: usize = 150;
 
 /// World meshes in chunks with tight bounds, tagged with the clusters
 /// they touch (see `vis`). Meshes of entities with their own node

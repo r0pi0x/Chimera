@@ -280,7 +280,7 @@ fn draw(
     if let (Some(key), Some(art), Some(images)) = (image.clone(), art.as_mut(), images.as_mut())
         && art.get(&key).is_none()
     {
-        match crate::game::INFO.mount().and_then(|m| super::install::decode(&m, &key)) {
+        match crate::game::world::mount().and_then(|m| super::install::decode(&m, &key)) {
             Some(a) => {
                 let handle = images.add(draw::rgba_image(&a));
                 art.0.insert(key, (handle, a.size));

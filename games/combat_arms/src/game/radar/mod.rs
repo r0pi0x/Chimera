@@ -116,7 +116,7 @@ impl RadarImageSource {
 }
 
 fn install_image(map: &str, mode: &str) -> Option<MapImage> {
-    let mount = super::INFO.mount()?;
+    let mount = crate::game::world::mount()?;
     mission::image_of(&mount, map, mode)
 }
 

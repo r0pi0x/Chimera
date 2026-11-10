@@ -64,6 +64,7 @@ pub mod voice;
 pub mod weapon_icons;
 pub mod weapon_menu;
 pub mod ui_write;
+pub mod upload_pace;
 pub mod widgets;
 
 
@@ -442,6 +443,7 @@ impl PluginGroup for ClientPlugins {
             .add(offscreen::OffscreenPlugin)
             .add(perf::PerfPlugin)
             .add(memory::MemoryPlugin)
+            .add(upload_pace::UploadPacePlugin)
             .add(console::ConsoleUiPlugin)
             .add(net_graph::NetGraphPlugin)
             .add(hud::HudPlugin)

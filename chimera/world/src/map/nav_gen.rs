@@ -380,8 +380,10 @@ pub struct SliceFloods;
 pub const CELLS_PER_TICK: usize = 80;
 
 /// Cells a frame takes behind the loading screen (`MapHooks::settle`): about
-/// 50 M instructions, the screen keeps turning over.
-pub const CELLS_PER_LOAD_FRAME: usize = 250;
+/// 30 M instructions, so that with the settling's other slices (glyphs,
+/// prop shadows) a frame stays under 33 ms (250 cells' 50 M did not: docs/performance.md,
+/// "A map's swap in the real app").
+pub const CELLS_PER_LOAD_FRAME: usize = 160;
 
 /// `generate_within` a slice at a time: `step` takes up to that many cells of
 /// the flood, and gives the mesh at the end (the same mesh, whatever the
