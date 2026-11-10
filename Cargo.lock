@@ -3409,6 +3409,7 @@ dependencies = [
  "chimera_sim",
  "chimera_world",
  "cs_source",
+ "image",
  "source_formats",
  "source_logic",
  "workspace-hack",

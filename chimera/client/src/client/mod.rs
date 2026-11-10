@@ -45,6 +45,7 @@ pub mod match_end;
 pub mod net;
 pub mod net_graph;
 pub mod night_vision;
+pub mod offscreen;
 pub mod frame_metrics;
 pub mod memory;
 pub mod perf;
@@ -120,6 +121,16 @@ pub struct Args {
     /// `--join`: how the local player comes into games, in place of
     /// `join_choice`'s pick.
     pub join: Option<crate::core::JoinChoice>,
+    /// `--offscreen <WxH>`: no window system; the window is drawn into an
+    /// image of this size (`offscreen`).
+    pub offscreen: Option<UVec2>,
+    /// `--dump <dir>`: save every `dump_every`th frame there as a PNG
+    /// (`offscreen::FrameDumps`).
+    pub dump_dir: Option<PathBuf>,
+    pub dump_every: Option<u32>,
+    /// `--frame-log <file.csv>`: every frame's main and render world times
+    /// (`frame_metrics`, as `CHIMERA_FRAME_LOG`).
+    pub frame_log: Option<PathBuf>,
 }
 
 const USAGE: &str = "\
@@ -157,6 +168,14 @@ usage: cs_source [options]
                             number (1 spectators, 2 terrorists, 3 counter-terrorists). Default:
                             menus, but auto in --screenshot/--views runs, with --spawn or --look,
                             and with +jointeam/+spectate (that team)
+  --offscreen <WxH>         no window: draw the window into an image of that size (no window system or
+                            compositor needed; renderer, HUD, menus and cameras as in a window), e.g.
+                            1920x1080; prints the frame times when it ends (--frames ends it)
+  --dump <dir>              save frames as numbered PNGs there (every --dump-every'th, default 60;
+                            with --dump-every 1 and ffmpeg installed, also clip.mp4 at the end)
+  --dump-every <n>          frames between --dump frames
+  --frame-log <file.csv>    one line per frame of each world: wall start, ms, CPU ms
+                            (as CHIMERA_FRAME_LOG; docs/OBSERVABILITY.md)
   --playdemo <file.dem>     watch a demo (the game's playdemo command: its map loads, then it plays)
   -port <n>                 UDP port to host on (hostport; default 27015; tool runs: --screenshot,
                             --views, --frames, --bench host on 127.0.0.1 on a port the system picks)
@@ -291,6 +310,17 @@ impl Args {
                     out.cvars.push((name.to_string(), v.to_string()));
                 }
                 "--exec" => out.exec.push(value.into()),
+                "--dump" => out.dump_dir = Some(value.into()),
+                "--dump-every" => {
+                    out.dump_every = Some(
+                        value
+                            .parse()
+                            .ok()
+                            .filter(|n| *n > 0)
+                            .ok_or_else(|| format!("--dump-every: expected a number above 0, got {value}"))?,
+                    )
+                }
+                "--frame-log" => out.frame_log = Some(value.into()),
                 // The game's `playdemo` (CS:S: `games::cs_source::ui::demo`).
                 "--playdemo" => out.console.push(format!("playdemo {}", crate::console::quote(&value))),
                 "--scale" => {
@@ -300,16 +330,16 @@ impl Args {
                     }
                     out.scale = Some(s);
                 }
-                "--window" | "--view-size" => {
+                "--window" | "--view-size" | "--offscreen" => {
                     let size = value
                         .split_once(['x', 'X'])
                         .and_then(|(w, h)| Some(UVec2::new(w.trim().parse().ok()?, h.trim().parse().ok()?)))
                         .filter(|s| s.x > 0 && s.y > 0)
                         .ok_or_else(|| format!("{flag}: expected WxH, got {value}"))?;
-                    if flag == "--window" {
-                        out.window = Some(size);
-                    } else {
-                        out.view_size = Some(size);
+                    match flag.as_str() {
+                        "--window" => out.window = Some(size),
+                        "--offscreen" => out.offscreen = Some(size),
+                        _ => out.view_size = Some(size),
                     }
                 }
                 _ => return Err(format!("unknown option {flag}")),
@@ -329,12 +359,14 @@ impl Args {
     }
 
     /// Whether this is a scripted run that captures or exits by itself
-    /// (`--screenshot`, `--views`, `--frames`, `--bench`): the tools'
-    /// (refcmp, mapsweep, agents' screenshots). It hosts on loopback on a
-    /// port the system picks (see `parse_from`), and with `dev` serves
-    /// the remote protocol on one too unless `CHIMERA_REMOTE_PORT` says.
+    /// (`--screenshot`, `--views`, `--frames`, `--bench`) or runs without a
+    /// window (`--offscreen`): the tools' (refcmp, mapsweep, agents'
+    /// screenshots and measurements). It hosts on loopback on a port the
+    /// system picks (see `parse_from`), with `dev` serves the remote
+    /// protocol on one too unless `CHIMERA_REMOTE_PORT` says, and leaves
+    /// the user's config alone.
     pub fn tool_run(&self) -> bool {
-        self.screenshot.is_some() || self.views.is_some() || self.frames.is_some() || self.bench
+        self.screenshot.is_some() || self.views.is_some() || self.frames.is_some() || self.bench || self.offscreen.is_some()
     }
 }
 
@@ -407,6 +439,7 @@ impl PluginGroup for ClientPlugins {
             .add(debug::DebugPlugin)
             .add(debug_views::DebugViewsPlugin)
             .add(capture::CapturePlugin)
+            .add(offscreen::OffscreenPlugin)
             .add(perf::PerfPlugin)
             .add(memory::MemoryPlugin)
             .add(console::ConsoleUiPlugin)
@@ -455,6 +488,9 @@ impl Plugin for ShellSetupPlugin {
     fn build(&self, app: &mut App) {
         if let Some(map) = &self.args.map {
             app.insert_resource(crate::map::LoadedMapName(map.clone()));
+        }
+        if let Some(path) = &self.args.frame_log {
+            frame_metrics::set_frame_log(path.clone());
         }
         app.insert_resource(ClientArgs(self.args.clone()))
             .insert_resource(self.hooks)
@@ -824,7 +860,7 @@ mod tests {
         // Normal play: Source's 27015 on every interface (the defaults).
         assert!(args("+maxplayers 4 +map de_dust2").console.iter().all(|l| !l.starts_with("ip ")));
         assert_eq!(args("-port 27016 +map de_dust2").console[0], "hostport 27016");
-        for run in ["--screenshot a.png", "--views v.json", "--frames 100", "--bench --views v.json"] {
+        for run in ["--screenshot a.png", "--views v.json", "--frames 100", "--bench --views v.json", "--offscreen 640x360"] {
             let a = args(&format!("{run} +maxplayers 4 +map de_dust2"));
             assert!(a.tool_run(), "{run}");
             assert_eq!(a.console[..2], ["ip 127.0.0.1", "hostport 0"], "{run}");
@@ -832,6 +868,21 @@ mod tests {
         // `-port` still names one (on loopback).
         let a = args("--screenshot a.png -port 27031 +maxplayers 4");
         assert_eq!(a.console[..2], ["ip 127.0.0.1", "hostport 27031"]);
+    }
+
+    #[test]
+    fn offscreen_runs_read_their_size_dumps_and_frame_log() {
+        let a = args("--offscreen 1920x1080 --dump out --dump-every 2 --frame-log f.csv");
+        assert_eq!(a.offscreen, Some(UVec2::new(1920, 1080)));
+        assert_eq!((a.dump_dir, a.dump_every), (Some("out".into()), Some(2)));
+        assert_eq!(a.frame_log, Some("f.csv".into()));
+        // The window takes the offscreen size, at scale 1, fixed.
+        let w = app::window(&args("--offscreen 800x600"), "t");
+        assert_eq!(w.resolution.physical_size(), UVec2::new(800, 600));
+        assert!(!w.resizable);
+        for bad in ["--offscreen 0x10", "--offscreen big", "--dump-every 0"] {
+            assert!(Args::parse_from(bad.split(' ').map(str::to_string)).is_err(), "{bad}");
+        }
     }
 }
 

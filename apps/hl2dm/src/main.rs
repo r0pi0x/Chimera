@@ -58,26 +58,9 @@ fn main() {
         }
     }
     app.add_plugins((
-        DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: "Half-Life 2: Deathmatch".into(),
-                    resolution: match (args.window, args.scale) {
-                        (Some(s), scale) => bevy::window::WindowResolution::new(s.x, s.y)
-                            .with_scale_factor_override(scale.unwrap_or(1.0)),
-                        (None, Some(scale)) => bevy::window::WindowResolution::default().with_scale_factor_override(scale),
-                        (None, None) => default(),
-                    },
-                    resizable: args.window.is_none(),
-                    ..default()
-                }),
-                ..default()
-            })
-            // Warnings and errors also show in the in-game console.
-            .set(bevy::log::LogPlugin {
-                custom_layer: chimera_client::client::console::log_layer,
-                ..default()
-            }),
+        // The window (none with `--offscreen`), the log into the console
+        // too (`client::app::default_plugins`, shared by every client).
+        chimera_client::client::app::default_plugins(&args, "Half-Life 2: Deathmatch"),
         // Avian as Chimera runs it (rendering eases between ticks with
         // `map::interp`).
         chimera_world::physics_plugins(),

@@ -76,6 +76,9 @@ cargo test -p repo_checks      # architecture and docs checks (seconds)
 scripts\testbench.ps1 -Scenario fast-cargo   # test-cycle timings (wall, CPU, peak RSS)
                                    # and baselines (plans/active/test-speed.md)
 cargo run --features dev -- --help    # screenshot, spawn, look, movement options
+cargo run --features dev -- --offscreen 1920x1080 --frames 600 --dump <dir>   # any client
+                                   # with no display: frames as PNGs, frame times
+                                   # (OBSERVABILITY 2, "Offscreen")
 cargo run --features dev,tools --bin mapsweep   # debugging tools need `tools`
 cargo run --features dev --bin cs_source_server -- +map de_dust2   # dedicated server
 cargo build --release -p cs_source_server   # the server as released: no render/audio
