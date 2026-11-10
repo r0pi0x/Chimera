@@ -72,13 +72,20 @@ pub fn matrix(p: Vec3, q: Quat) -> Mat4 {
 }
 
 pub fn mul(a: &Mat4, b: &Mat4) -> Mat4 {
-    let mut o = [[0.0; 4]; 4];
-    for (r, row) in o.iter_mut().enumerate() {
-        for (c, v) in row.iter_mut().enumerate() {
-            *v = (0..4).map(|k| a[r][k] * b[k][c]).sum();
+    // Each element's four products added in order from the left, as the
+    // sum over k it was (`-0.0 + x` is x: a float sum starts at -0.0), so
+    // the bits are the same; written out, the rows vectorize. A posed
+    // skeleton multiplies one of these per node per tick
+    // (docs/performance.md, "Performance pass").
+    let row = |r: usize| -> [f32; 4] {
+        let [a0, a1, a2, a3] = a[r];
+        let mut o = [0.0; 4];
+        for (c, v) in o.iter_mut().enumerate() {
+            *v = -0.0 + a0 * b[0][c] + a1 * b[1][c] + a2 * b[2][c] + a3 * b[3][c];
         }
-    }
-    o
+        o
+    };
+    [row(0), row(1), row(2), row(3)]
 }
 
 /// Inverse of an affine matrix (rotation and scale, then translation;

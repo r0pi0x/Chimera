@@ -2656,6 +2656,50 @@ dynamic bodies' colliders only.
 Together with the two above: de_dust2 13.40G to 10.98G (-18%), mg_lego
 17.72G to 8.94G (-50%); the median tick 5.9M to 4.5M and 8.4M to 4.3M.
 
+### Combat Arms' characters on the server
+
+`ultimate_gun_game_server`, 6 bots on de_dust2, sampled (the bots'
+navigation flood left out): Combat Arms' `characters::drive` 18% of the
+tick (every character's skeleton posed every tick: four trackers' keys
+blended per node, the nodes' matrices multiplied down the tree, the hit
+spheres read off it, twice on a server), its grenades' server frames 8%,
+`perks::perk_tick` 5%, Source movement 7%, the ragdolls' pose record
+6%, the bots 5%, the logic bridge 9%.
+
+- **The matrix product** (`lithtech_formats::anim::mul`, one per node per
+  pose): a sum over an iterator per element, not inlined; written out now,
+  each element's products added in the same order, so the bits are the
+  same (`mul_gives_the_sum_s_bits`, 20,000 matrices against the sum).
+- **`CaData::install_weapon`** searched the install's 2,400 weapons making
+  each one's slug (a new string) on every call, and a zoomed sniper's perk
+  tick asks every tick (3% of the sampled tick): an index by id, made on
+  first use (`the_install_weapon_index_finds_what_the_search_finds`).
+- **The grenades' server frames** (20 a second) posed every character's hit
+  spheres (`GrenadeWorld::bodies`) for the lasting explosions and
+  over-time entries, with none of either there: only when one is. For
+  another game's body each hitbox's zone factor read the male table's
+  regions from their node names again (`HitSphere::region`: a lower-cased
+  copy and several searches per sphere): the character data keeps them
+  (`CharacterData::male_zones`).
+
+`party_kit`'s `heavy::bot_cost` (the gun game on de_dust2 with Combat Arms
+bots, a test build, the schedules' thread's instructions a tick over 600
+ticks; two runs each, within 2%):
+
+| bots | before | the matrix product | and the index, the grenades' bodies, the zones |
+|---|---|---|---|
+| 2 | 5.65M | 5.49M | 5.30M (-6%) |
+| 4 | 9.68M | 9.31M | 8.62M (-11%) |
+| 8 | 15.54M | 15.12M | 14.01M (-10%) |
+| 16 | 25.21M | 24.18M | 22.17M (-12%) |
+
+Left there: the pose itself (`Rig::layered`'s four trackers a node, the
+matrices turned back into rotations and translations, the hit spheres found
+by name through a lower-cased copy: `pose_of` is a sixth of `drive`), done
+for every character every tick whether anything asks for its spheres; the
+ragdolls' pose record samples every Source body's animation each tick and
+a server poses its hitboxes from a second sample (`pose_sim_hitboxes`).
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,
