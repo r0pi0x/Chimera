@@ -1595,8 +1595,12 @@ takes. The slot's incremental caches go first (past
 they were most of a used slot's `target/` (60 of 67 GB), so sweeping by
 size alone removed the built crates and test binaries instead (27 of the 28
 GB of `deps/` in a dry run on another slot) and the next holder built from
-cold. A whole-workspace test build is about 40 GB with the test
-profile's line tables, a `cargo run --features dev` build more.
+cold. A whole-workspace test build is about 30 GB (19 GB of `deps/`, its
+71 test binaries 12.3 GB, and 10 GB of incremental caches) since the dev
+profile splits the debug info out of the linked binaries
+(`split-debuginfo = "unpacked"`; it was 34 + 15 GB with the binaries at
+29.6 GB: docs/performance.md, "Iteration speed"), a `cargo run
+--features dev` build a little more.
 
 Disk guards (the dev box's disk filled to 100% on 2026-10-31: the main
 checkout's `target/debug/incremental` was 206 GB, a slot's 195 GB, the
