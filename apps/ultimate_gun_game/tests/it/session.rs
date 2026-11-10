@@ -131,11 +131,13 @@ fn a_session_of_matches_stops_making_tables() {
     );
     // Archetypes: each costs every tick for good, so the characters must
     // stop making them (before their parts were kept from the spawn: 2,300
-    // after four matches and rising; now about 1,200, none new from the
-    // sixth).
+    // after four matches and rising; then about 1,140, none new from the
+    // sixth; with a game switch's parts kept or moved together, about 960,
+    // 351 of them characters', and 40 more after the fourth match).
     let made = chimera_core::metrics::census::made_by(sim.app.world(), "Health", 20);
+    eprintln!("{made}");
     assert!(
-        last.0 < 1600 && last.0 - rows[3].0 < 200,
+        last.0 < 1150 && last.0 - rows[3].0 < 100,
         "{} archetypes after four matches, {} after eight: a part that comes and goes on characters, one at a time, makes \
          one for every combination of the others. Keep it on them from the spawn \
          (`chimera_core::character::CharacterPartsExt::on_every_character`) or put a game's parts on and off in one move \
@@ -147,4 +149,5 @@ fn a_session_of_matches_stops_making_tables() {
         assert!(b < a * 1.25, "a tick cost {a:.0} instructions after a match, {b:.0} after seven more");
     }
 }
+
 

@@ -4,7 +4,7 @@
 //! bots walking its rungs on each map, three laps over maps of every game,
 //! each map with the same ladder every lap. What a map holds must be what it
 //! held on the first lap, the characters' tables must stop growing, a lap
-//! after the first must add few characters' archetypes (fewer than 150; a
+//! after the first must add few characters' archetypes (fewer than 100; a
 //! failure lists the moves that made them, `census::made_by`), and a tick
 //! must cost what it did on the lap before.
 //!
@@ -145,12 +145,14 @@ fn laps_of_real_maps_hold_the_same_and_cost_the_same() {
     // What a lap after the first adds must be what a lap of new deaths and
     // rungs adds, not every combination again: each archetype costs every
     // tick for good (before the characters' parts were kept on them from
-    // the spawn, 1,829 after the first lap, then 526 and 277 more).
+    // the spawn, 1,829 after the first lap, then 526 and 277 more; with
+    // them, 591, then 26 and 50; with a game switch's parts kept or moved
+    // together, 410, then 19 and 43).
     let made = chimera_census_made(&mut sim);
     for lap in 1..LAPS {
         let added = laps[lap] - laps[lap - 1];
         assert!(
-            added < 150,
+            added < 100,
             "lap {lap} made {added} more characters' archetypes ({} after the first lap): a part that comes and goes on \
              characters, one at a time, makes one for every combination of the others. Keep it on them from the spawn \
              (`chimera_core::character::CharacterPartsExt::on_every_character`), or put a game's parts on and off in \

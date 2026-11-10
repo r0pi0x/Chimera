@@ -136,8 +136,10 @@ fn apply(world: &mut World, e: Entity, extras: Option<&RungExtras>) {
             world.entity_mut(e).insert((PlayerClass(c), RungClass));
         }
         None => {
-            if world.entity_mut(e).take::<RungClass>().is_some() {
-                world.entity_mut(e).remove::<PlayerClass>();
+            // Both in one move (each alone is an archetype for every
+            // combination of the rest).
+            if world.get::<RungClass>(e).is_some() {
+                world.entity_mut(e).remove::<(RungClass, PlayerClass)>();
             }
         }
     }

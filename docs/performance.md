@@ -2243,6 +2243,65 @@ movement's main query, `ladder::write_status`, the minigame's roster query
 `size_hint`) and `moments::update`'s rung query; then Bevy's observer
 lookup per archetype.
 
+## A session's archetypes: the game switch (2026-11-09)
+
+What the section above left: a switch between games still put its parts on
+one at a time. Counted in the fast `session` test (8 matches, greybox) by
+which characters' archetypes were ever occupied at a tick's end: 73 of 530,
+the other 457 in-between steps of a switch, a rung swap or a respawn,
+`chimera_census made` naming their moves (`-SourceMovement` 43,
+`+RecomputeMassProperties` 35, `+CaMovement` 32, `+HeldMovePenalty` 21,
+`+Hitboxes` 21, `-Hl2Model` and `-RungModel` 18 each, `-MaxSpeed` 14,
+`±PhysicsTouch+Shadowed` 24, `-RungClass` and `-PlayerClass` 12 each, ...).
+
+**The cut.** Parts whose absence meant "none" are on every character from
+the spawn with a value meaning none: `MaxSpeed(Option)`, Combat Arms'
+`HeldMovePenalty` (no penalty) and `HandlingOf`, the Source movement's
+`PhysicsTouch` and `Shadowed(Option<Entity>)` (the shadow body comes and
+goes, the part stays). Parts that go together go in one move: a movement's
+marker with its `MovementSlot` (`slots::set_movement`), and CS:S's and
+HL2:DM's movements, both `SourceMovement`, switch by a new value in place
+(`MovementImpl::marker`); a body's `BodyModel`, `Hitboxes` and `Animator`
+(`map::bodies::attach_hitboxes`); Combat Arms' `Hitboxes` with
+`CaHitboxes`; a rung look's removal (`RungModel` with `Hl2Model`, `RungClass`
+with `PlayerClass`).
+
+| | before | after |
+|---|---|---|
+| fast test: archetypes after 8 matches / characters' | 1,138 / 530 | 959 / 351 |
+| fast test: of the characters', occupied at a tick's end | 73 | 64 |
+| real maps: archetypes after lap 1 / 2 / 3 | 1,584 / 1,612 / 1,664 | 1,401 / 1,428 / 1,471 |
+| real maps: characters' after lap 1 / 2 / 3 | 591 / 617 / 667 | 410 / 429 / 472 |
+| de_dust2 tick, lap 1 / 2 / 3 | 10.0M / 13.6M / 10.7M | 10.1M / 10.3M / 10.5M |
+| cs_office | 16.3M / 16.2M / 15.5M | 15.6M / 15.1M / 15.5M |
+| dm_lockdown | 15.0M / 14.0M / 16.0M | 16.6M / 15.1M / 14.9M |
+| warehouse | 10.2M / 8.7M / 7.9M | 7.7M / 7.7M / 8.4M |
+| de_inferno | 19.3M / 18.4M / 16.9M | 18.0M / 17.8M / 17.5M |
+
+(Real maps: `heavy::session_maps`, before is the section above's run;
+ticks are medians and move by a few percent between runs.) The guards are
+tightened to match: the lap test fails at 100 characters' archetypes a lap
+after the first (was 150), the fast test at 1,150 archetypes after eight
+matches and 100 after the fourth (was 1,600 and 200).
+
+**Per archetype.** Of the five queries that paid most per archetype, three
+walked them twice: a query's `collect` asks the iterator's `size_hint`,
+which sums every matched archetype's length before the walk
+(`perks::track_last_primary`, `runtime::players`, `wins::publish`), and
+`ladder::write_status` iterated its climbers twice. Each now walks once.
+
+**Left** (backlog): what still makes most of the in-between archetypes is
+the switch's own steps, each a different game's system: avian's
+`RecomputeMassProperties` after Combat Arms' collider changes (34; it
+comes and goes on every crouch too), the movement swap's removal and
+insert (`-SourceMovement` 30, `+CaMovement` 31: Bevy moves an entity once
+per insert or removal), Combat Arms' rung look and view model
+(`+CaRungLook`, `±OwnViewAnim`), CS:S's rung class, HL2:DM's suit and
+`ArmorPieces` (whose absence means "the armour's own kit", so it can't
+simply stay). Folding those into one move would need a Chimera command that
+gathers a switch's inserts and removals per character and applies them
+together (`insert_by_ids` and `remove_by_ids`).
+
 ## A session's memory (2026-11-09)
 
 What the section above left: Ultimate Gun Game's process memory rising over a

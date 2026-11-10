@@ -133,10 +133,15 @@ pub(crate) type Playing = (With<Intent>, With<Health>, With<InMinigame>, Without
 pub fn players(world: &mut World) -> Vec<(Entity, u8)> {
     let mut all: Vec<(u64, Entity, u8)> =
         cached_query::<(Entity, &Team, Option<&JoinOrder>), Playing, _>(world, |q, world| {
-            q.iter(world)
-                .filter(|(_, t, _)| plays(t.0))
-                .map(|(e, t, o)| (o.map_or(u64::MAX, |o| o.0), e, t.0))
-                .collect()
+            // A loop, not `collect`: its `size_hint` walks every matched
+            // archetype again (characters', a session makes hundreds).
+            let mut out = Vec::new();
+            for (e, t, o) in q.iter(world) {
+                if plays(t.0) {
+                    out.push((o.map_or(u64::MAX, |o| o.0), e, t.0));
+                }
+            }
+            out
         });
     all.sort();
     all.into_iter().map(|(_, e, t)| (e, t)).collect()

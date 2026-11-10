@@ -335,7 +335,8 @@ impl CaCharacter {
 }
 
 /// The held weapon's `MovePenalty` and its modification's factor
-/// (`c_mod`), on the player. Set by the weapon part; absent: no penalty.
+/// (`c_mod`), on the player. Set by the weapon part; on every character
+/// (`weapons`), its default no penalty.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
 #[component(storage = "SparseSet")]
 pub struct HeldMovePenalty {

@@ -1847,10 +1847,7 @@ pub(crate) fn select_weapons(
         inv.last = inv.active;
         inv.active = Some(want);
         inv.touch_slot(w.slot);
-        match w.max_speed {
-            Some(s) => commands.entity(owner).insert(MaxSpeed(s)),
-            None => commands.entity(owner).remove::<MaxSpeed>(),
-        };
+        commands.entity(owner).insert(MaxSpeed(w.max_speed));
         if let Some(s) = sounds.and_then(|s| s.deploy.clone())
             && first.0
         {
@@ -2614,11 +2611,8 @@ fn apply_zoom(
                 None => commands.entity(owner).remove::<Zoomed>(),
             };
         }
-        if speed.map(|s| s.0) != want_speed {
-            match want_speed {
-                Some(s) => commands.entity(owner).insert(MaxSpeed(s)),
-                None => commands.entity(owner).remove::<MaxSpeed>(),
-            };
+        if speed.and_then(|s| s.0) != want_speed {
+            commands.entity(owner).insert(MaxSpeed(want_speed));
         }
     }
 }

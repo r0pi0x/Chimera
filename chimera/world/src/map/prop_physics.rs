@@ -366,10 +366,12 @@ pub struct PhysicsShadow {
 }
 
 /// A character whose contacts with physics props go through its
-/// `PhysicsShadow` (this entity): its own collider never touches them.
-#[derive(Component, Clone, Copy, Debug)]
+/// `PhysicsShadow` (this entity; None: none, its own collider touches
+/// them): its own collider never touches them. On every character of a
+/// movement with shadows from the spawn, a shadow or none.
+#[derive(Component, Clone, Copy, Debug, Default)]
 #[component(storage = "SparseSet")]
-pub struct Shadowed(pub Entity);
+pub struct Shadowed(pub Option<Entity>);
 
 /// The shadow's mass, kg (spec 4.1 step 3).
 pub const SHADOW_MASS: f32 = 85.0;
@@ -383,7 +385,7 @@ pub const SHADOW_PUSH_MASS: f32 = 350.0;
 #[derive(SystemParam)]
 pub struct ShadowContacts<'w, 's> {
     shadows: Query<'w, 's, &'static PhysicsShadow>,
-    shadowed: Query<'w, 's, (), With<Shadowed>>,
+    shadowed: Query<'w, 's, &'static Shadowed>,
     of: Query<'w, 's, &'static ColliderOf>,
     props: Query<'w, 's, &'static PhysicsProp>,
 }
@@ -403,7 +405,7 @@ impl ShadowContacts<'_, '_> {
             }
         }
         for (me, other) in [(a, b), (b, a)] {
-            if self.shadowed.contains(me)
+            if self.shadowed.get(me).is_ok_and(|s| s.0.is_some())
                 && let Ok(p) = self.props.get(other)
             {
                 return Some(p.push == super::PushAway::Collide && !pushable(p));

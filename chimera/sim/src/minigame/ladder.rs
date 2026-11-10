@@ -1490,7 +1490,11 @@ pub(super) fn write_status(
     let total = ladder.rungs.len();
     let mut best: Option<((usize, i32), Entity)> = None;
     let mut tied = false;
+    // The climbers once: each walk of the query visits every archetype it
+    // matches (characters', a session makes hundreds).
+    let mut all = Vec::new();
     for (e, t, r, s) in &climbers {
+        all.push(e);
         if !crate::mode::plays(t.0) {
             continue;
         }
@@ -1505,7 +1509,7 @@ pub(super) fn write_status(
         }
     }
     let catalog = catalog.as_deref();
-    let viewers = climbers.iter().map(|(e, ..)| e).chain(local.iter());
+    let viewers = all.into_iter().chain(local.iter());
     for viewer in viewers {
         let rung = rungs.get(viewer).map_or(0, |r| r.0).min(total.saturating_sub(1));
         let mut lines = Vec::new();

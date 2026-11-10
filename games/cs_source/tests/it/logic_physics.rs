@@ -403,7 +403,7 @@ fn running_into_a_prop_hurts_nobody() {
         let mut sim = sim(data);
         let p = sim.spawn_character(to_engine(Vec3::new(-60.0, 0.0, 37.0)), movement::ID);
         sim.intent(p).yaw = -std::f32::consts::FRAC_PI_2;
-        sim.app.world_mut().entity_mut(p).insert(crate::stack::core::MaxSpeed(speed * SCALE));
+        sim.app.world_mut().entity_mut(p).insert(crate::stack::core::MaxSpeed(Some(speed * SCALE)));
         sim.ticks(30);
         let mut cursor = sim.app.world().resource::<Messages<Damage>>().get_cursor_current();
         sim.intent(p).move_axis = Vec2::Y;

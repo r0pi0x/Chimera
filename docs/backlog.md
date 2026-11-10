@@ -2518,19 +2518,19 @@ docs/plans/active/sound.md.
   back, look at the ragdoll solver's `get_pair_unchecked_mut` first, then
   run a memory test.
 - **Fewer character archetypes, what's left (2026-11-09).** Parts a
-  character gained once (`ViewPunch`, `Hl2Punch`, `NextPush`, ...) are on it
-  from the spawn, characters never sleep, and rung parts stay with an empty
-  value (docs/performance.md, "A session's archetypes"): three laps of real
-  maps make 1,664 archetypes, not 4,892, and a lap after the first 25-50
-  characters' (the lap test caps it at 150). Left: a game switch still puts
-  its parts on one at a time (movement marker, `MaxSpeed`,
-  `HeldMovePenalty`, body, hit boxes, `Shadowed`, `OwnViewAnim`, each a
-  step: `chimera_census made`), about 8 archetypes for every combination
-  it starts from; one move per game's set would cut most of the rest. The
-  queries that pay most per archetype (the aged profile): Source movement's
-  main query, `ladder::write_status`, the minigame roster query,
-  `perks::track_last_primary` (its `collect` walks them twice, through
-  `size_hint`), `moments::update`'s rung query.
+  character gained once are on it from the spawn, parts whose absence meant
+  "none" hold a value meaning none (`MaxSpeed`, `HeldMovePenalty`,
+  `Shadowed`, ...), and parts that go together go in one move
+  (docs/performance.md, "A session's archetypes: the game switch"): three
+  laps of real maps make 472 characters' archetypes (1,471 in all), a lap
+  after the first 19-43 (the lap test caps it at 100). Left: a switch's own
+  steps, each another game's system (avian's `RecomputeMassProperties` after
+  Combat Arms' collider changes, the movement swap's removal and insert,
+  Combat Arms' rung look and view model, CS:S's rung class, HL2:DM's suit,
+  `ArmorPieces`): one Chimera command gathering a character's inserts and
+  removals of a tick and applying them together (`insert_by_ids`,
+  `remove_by_ids`) would cut most of the rest. Not measured: a quiet tick
+  with the bots kicked against the 800 instructions an archetype.
 - **The render thread's cost rises over a session, what's left (2026-11-09).**
   The kit's undrawn `PropMaterial`s no longer reach the render world
   (`prop_material::DormantProps`; docs/performance.md, "A session's render
