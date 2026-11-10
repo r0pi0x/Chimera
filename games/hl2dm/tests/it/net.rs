@@ -87,6 +87,42 @@ fn join_team_and_respawn() {
     assert!(sim.server.app.world().get::<Dead>(theirs).is_none(), "respawned after 3 s");
 }
 
+/// The client's deaths (`core::Died`), with their weapons.
+#[derive(Resource, Default)]
+struct SeenDeaths(Vec<Option<&'static str>>);
+
+fn see_deaths(mut died: MessageReader<chimera_core::core::Died>, mut seen: ResMut<SeenDeaths>) {
+    seen.0.extend(died.read().map(|d| d.damage.weapon));
+}
+
+/// A prop's kill reaches a client named by the prop's class, as the host
+/// names it (gravity_gun.md "Who is credited": the notice's `physics`), not
+/// as whatever the killer holds: the class is no registered gun, so it
+/// travels by name (`net::Killed::class`).
+#[test]
+fn a_props_kill_reaches_the_client_by_its_class() {
+    use hl2dm::game::physics::PHYSICS_WEAPON;
+    let mut sim = tdm();
+    sim.clients[0].app.init_resource::<SeenDeaths>().add_systems(Update, see_deaths);
+    let theirs = sim.character_of(0).unwrap();
+    sim.ticks(60);
+    sim.server.app.world_mut().write_message(Damage {
+        target: theirs,
+        attacker: None,
+        amount: 10.0,
+        point: Vec3::ZERO,
+        dir: Vec3::NEG_Y,
+        hitgroup: Hitgroup::Generic,
+        kind: DamageKind::Crush,
+        weapon: Some(PHYSICS_WEAPON),
+        force: Vec3::ZERO,
+    });
+    sim.ticks(20);
+    assert!(sim.server.app.world().get::<Dead>(theirs).is_some(), "killed");
+    let seen = &sim.clients[0].app.world().resource::<SeenDeaths>().0;
+    assert_eq!(seen.as_slice(), [Some(PHYSICS_WEAPON)], "the client's death names the prop's class");
+}
+
 /// Models (rules.md): the server rewrites a remote client's
 /// `cl_playermodel` to the model it resolved (an invalid setting, a TDM
 /// team's replacement) and back after a change refused within 5 s.

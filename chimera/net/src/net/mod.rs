@@ -994,7 +994,9 @@ pub struct Senses {
 
 /// Server -> clients: a character died (`core::Died`): who, by whom, and
 /// the killing hit (its weapon's registry index: the gun that killed,
-/// thrown or held, `weapon::DamageWeapons`; hitgroup and kind as `net::weapons` numbers them, where
+/// thrown or held, `weapon::DamageWeapons`; else, for a kill no gun dealt,
+/// the class the rules named it by, `class`: HL2:DM's `prop_physics`;
+/// hitgroup and kind as `net::weapons` numbers them, where
 /// and which way), for the kill feed and the client's ragdoll; with the
 /// announcer's facts.
 #[derive(Message, Serialize, Deserialize, Clone, Debug, PartialEq, bevy::ecs::entity::MapEntities)]
@@ -1004,6 +1006,9 @@ pub struct Killed {
     #[entities]
     pub attacker: Option<Entity>,
     pub weapon: Option<u16>,
+    /// The killing hit's weapon id when it is no registered gun (a class
+    /// of no game: a prop's, a map's): the death notices name it.
+    pub class: Option<String>,
     pub hitgroup: u8,
     pub kind: u8,
     pub point: [f32; 3],
