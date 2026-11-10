@@ -23,4 +23,4 @@ lzma-rs.workspace = true
 [features]
 # Nothing: lets `--features dev` name this package alongside the others
 # (cargo test -p ... -p <crate> --features dev; .githooks/pre-commit).
-dev = []
+dev = ["chimera_vfs/dev", "chimera_formats/dev"]

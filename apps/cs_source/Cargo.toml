@@ -75,6 +75,7 @@ dev = [
     "chimera_sim/dev",
     "chimera_net/dev",
     "cs_source/dev",
+    "source_formats/dev",
 ]
 
 # CPU profile: every system and render step as a span in a Chrome trace

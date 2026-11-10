@@ -34,8 +34,16 @@ workspace-hack.workspace = true
 dev = ["chimera_core/dev", "chimera_world/dev", "chimera_net/dev"]
 
 [dev-dependencies]
+# The map's `render` feature, as every build with the presentation has it:
+# this crate's own tests then share the workspace's build of `chimera_world`
+# and of everything above it (docs/performance.md, "Iteration speed").
+chimera_world = { workspace = true, features = ["render"] }
 # The presentation's Bevy and Avian features, for this crate's own tests only
 # (the dedicated servers build without them): `cargo test -p <crate>` shares
 # the clients' builds of Bevy instead of building its own (hakari.toml).
 bevy = { workspace = true, features = ["default", "wav"] }
 avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+# bevy_winit with its default feature, as the debug UI (bevy_egui) asks for it:
+# without this line a build that leaves the client shell out builds another
+# bevy_winit, and with it another Bevy and every crate of ours.
+bevy_winit.workspace = true

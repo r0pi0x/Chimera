@@ -74,11 +74,22 @@ workspace-hack.workspace = true
 # build, checks/tests/it/architecture.rs); the network's client side and
 # wire format (tests/it/net*.rs).
 [dev-dependencies]
+# This crate with its front end (`ui`), as the apps build it: its tests then
+# use the one build of it every other selection uses (the workspace's, the
+# hooks', `cargo run`'s) instead of a second one without the front end, with
+# its own incremental cache (docs/performance.md, "Iteration speed"). That
+# the simulation builds without `ui` the dedicated server's build checks
+# (tools/post-push-tests.sh) and architecture.rs (`game_parts_do_not_use_their_ui`).
+cs_source = { workspace = true, features = ["ui"] }
 # The presentation's Bevy and Avian features, for this crate's own tests only
 # (the dedicated servers build without them): `cargo test -p <crate>` shares
 # the clients' builds of Bevy instead of building its own (hakari.toml).
 bevy = { workspace = true, features = ["default", "wav"] }
 avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
+# bevy_winit with its default feature, as the debug UI (bevy_egui) asks for it:
+# without this line a build that leaves the client shell out builds another
+# bevy_winit, and with it another Bevy and every crate of ours.
+bevy_winit.workspace = true
 crc32fast = "1.5.2"
 serde_json.workspace = true
 chimera_present.workspace = true
@@ -102,7 +113,8 @@ required-features = ["ui"]
 [features]
 # CS:S's front end (`ui`): its menus, panels and HUD on the client shell.
 # The game's client turns it on (`mashup`'s `present`); the dedicated
-# server and the simulation's tests build without it.
+# server builds without it. This crate's own tests build with it (the
+# dev-dependency on itself), as every other build does.
 ui = ["dep:chimera_client", "dep:chimera_present", "dep:source_gameui", "dep:arboard", "dep:winit", "dep:bevy_replicon_renet"]
 # Bevy as a dynamic library, as the game's `dev` (which turns this on):
 # `cargo test -p cs_source --features dev` shares the game's Bevy build.
@@ -116,6 +128,7 @@ dev = [
     "chimera_present?/dev",
     "source_logic/dev",
     "source_engine/dev",
+    "source_formats/dev",
 ]
 # CPU profile: spans in a Chrome trace (docs/performance.md), for the
 # capacity test's server (tests/it/heavy/net_capacity.rs). Only for

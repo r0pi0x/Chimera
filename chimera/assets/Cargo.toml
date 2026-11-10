@@ -13,7 +13,7 @@ doctest = false
 
 # Empty: the hooks and tools pass `--features dev` to every crate they select.
 [features]
-dev = []
+dev = ["chimera_vfs/dev"]
 
 # Plain data over the VFS (docs/plans/active/asset-service.md, M1): no
 # Bevy, no format, no game (checks/tests/it/architecture.rs checks it), so
