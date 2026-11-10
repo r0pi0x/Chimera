@@ -65,7 +65,8 @@ part too.
   by game (each gun's game's knife, the base's for a game without one).
 - The app: `apps/ultimate_gun_game` (`UltimateGunGamePlugin` on
   `party_kit::client_app`) and `apps/ultimate_gun_game_server`
-  (`party_kit::server::run`). Made at `Plugin::finish`, again at
+  (`party_kit::server::PARTY` with its minigame and launch, on
+  `chimera_net::dedicated::run`). Made at `Plugin::finish`, again at
   `PostStartup` with this machine's installs, at each rotation for the
   players then connected, and on `ugg_new [seed] [rungs] [map]` for the
   players connected.

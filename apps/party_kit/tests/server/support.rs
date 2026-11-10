@@ -16,7 +16,7 @@ use party_kit::server::{Parsed, ServerPlugin, StartMap};
 pub fn server(args: &[&str]) -> Option<Sim> {
     let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     let Ok(Parsed::Run(options)) = party_kit::server::parse(args) else { panic!("options") };
-    let start = match StartMap::load(&options) {
+    let start = match StartMap::load(&party_kit::server::SERVER, &options) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("skipping: {e}");
@@ -24,7 +24,7 @@ pub fn server(args: &[&str]) -> Option<Sim> {
         }
     };
     let mut sim = Sim::with((), |app| {
-        app.add_plugins(ServerPlugin::new(start, &options));
+        app.add_plugins(ServerPlugin::new(&party_kit::server::SERVER, start, &options));
     });
     sim.app
         .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(TICK_INTERVAL)));

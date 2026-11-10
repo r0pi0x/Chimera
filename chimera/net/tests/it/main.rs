@@ -7,6 +7,7 @@
 //! section 1.
 
 mod console_names;
+mod dedicated;
 mod game_hooks;
 mod minigame_callouts;
 mod prediction;

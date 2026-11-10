@@ -12,13 +12,16 @@ license.workspace = true
 [package.metadata.chimera]
 apps = ["party_kit", "ultimate_gun_game"]
 
-# The party kit's server (`party_kit::server`) with the Ultimate Gun Game's
+# The party kit's server (`party_kit::server::PARTY`, on Chimera's
+# `chimera_net::dedicated`) with the Ultimate Gun Game's
 # parts (`ultimate_gun_game` without its default `present`), so no
 # presentation links (checks/tests/it/architecture.rs,
 # `server_builds_without_presentation`).
 [dependencies]
 party_kit.workspace = true
 ultimate_gun_game.workspace = true
+chimera_net.workspace = true
+bevy.workspace = true
 workspace-hack.workspace = true
 
 [[bin]]
@@ -27,4 +30,4 @@ path = "src/main.rs"
 test = false
 
 [features]
-dev = ["party_kit/dev", "ultimate_gun_game/dev"]
+dev = ["party_kit/dev", "ultimate_gun_game/dev", "chimera_net/dev"]

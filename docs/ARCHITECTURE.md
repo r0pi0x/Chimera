@@ -12,17 +12,17 @@ nextest run` at the root test them all (`checks/tests/it/architecture.rs`,
 
 ```
 mashup (repository root: src/, tests/it/)   `dump`; `cs_source_app` at the old paths
-  |    cs_source_server (apps/cs_source_server/)   the dedicated server: the app without `present`
-  |   /
+  |
 cs_source_app (apps/cs_source/)   the CS:S app: the game binary, SimPlugins (+ its version), games::load_map
   |    combat_arms_app (apps/combat_arms/)   the Combat Arms app: its game binary (beside, not above, CS:S)
   |    mashup_demo (apps/mashup_demo/)   the first mashup app: CS:S's maps played as Combat Arms (both games as libraries)
   |    party_kit (apps/party_kit/)   the party kit: both games composed, minigames, client app, server run loop (`present`: the client)
   |    lucker_party (apps/lucker_party/)   Lucker Party: a thin binary over `party_kit`
-  |    lucker_party_server (apps/lucker_party_server/)   its dedicated server: `party_kit` without `present`
+  |    lucker_party_server (apps/lucker_party_server/)   its dedicated server: `party_kit::server` on `chimera_net::dedicated`
   |    ultimate_gun_game (apps/ultimate_gun_game/)   the automatic gun game from every game's parts, on `party_kit`
-  |    ultimate_gun_game_server (apps/ultimate_gun_game_server/)   its server: `party_kit`'s run loop with its parts
+  |    ultimate_gun_game_server (apps/ultimate_gun_game_server/)   its server: the party's `GameServer` with its minigame and parts
   |    originals (games/originals/)   the original minigames: definitions (minigames/) and rules hooks, Chimera only
+  |    cs_source_server (apps/cs_source_server/)   CS:S's dedicated server: the game without `ui`, no app
   |    combat_arms_server (apps/combat_arms_server/)   Combat Arms' dedicated server: the game without `ui`
   |    hl2dm_app (apps/hl2dm/)   the HL2:DM app: its game binary `hl2dm` (its maps, the greybox)
   |    hl2dm_server (apps/hl2dm_server/)   HL2:DM's dedicated server: no presentation
@@ -249,9 +249,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `dedicated` (its own module) is a game's dedicated server, once for
   every game: the options, the start map, `ServerPlugin`, `changelevel`,
   the stdin console and the run loop (`run`), on what the game says of
-  itself as data (`GameServer`). HL2:DM's and Combat Arms' servers are a
-  `GameServer` static and that call; CS:S's and the party apps' servers
-  are still their own (architecture-pass.md, step 6).
+  itself as data (`GameServer`), and what only some servers have as
+  optional, neutral hooks (`ServerHooks`: player count, several games'
+  maps, the map cycle, `MapFiles`, the greybox's tick, a minigame, what
+  the machine lacks, a launch-only part). Every dedicated server is a
+  `GameServer` static and that call: CS:S's, HL2:DM's, Combat Arms' and
+  the party apps' (architecture-pass.md, steps 4 and 6).
   `cargo test -p chimera_net --features dev` tests it alone.
 - `cs_source_app` (apps/cs_source/) is the faithful CS:S app: the game
   binary (`cs_source`, the workspace's `default-run`) and the app's glue:
@@ -309,8 +312,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   (`PartyPlugins`, `PartyPartsPlugin`, `GAME_PARTS`, `MAP_SOURCES`), the
   requirements and mount report, the minigame a command line names, and
   with `present` the client app (`client_app`, `with_defaults_for`,
-  controls); its `server` module is the dedicated server's run loop
-  (`parse_for`, `run`, `ServerPlugin`). Its tests are the party's and the
+  controls); its `server` module is the party's dedicated server as a
+  `GameServer` (`PARTY`, Lucker Party's `SERVER`) on `chimera_net::
+  dedicated`. Its tests are the party's and the
   server's (tests/it/, tests/server/).
 - `lucker_party` (apps/lucker_party/) is Lucker Party (binary
   `lucker_party`), a thin binary over `party_kit`: minigames (`chimera_sim::minigame`, definitions as data
@@ -321,8 +325,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   pool's first map. Its presentation, shell and Combat Arms' front end are
   behind `party_kit`'s default feature `present`. Never another app (checked).
 - `lucker_party_server` (apps/lucker_party_server/) is Lucker Party's
-  dedicated server (a thin binary): `party_kit` without
-  `present`, the network and the minigame the command line names
+  dedicated server (a thin binary): `party_kit::server::SERVER` (the kit
+  without `present`) on `chimera_net::dedicated::run`, playing the minigame the command line names
   (`+minigame <id>`, its first map unless `+map`), so it links no render
   or audio code (checked the same way as the other servers).
 - `ultimate_gun_game` (apps/ultimate_gun_game/) is the Ultimate Gun Game
@@ -331,18 +335,21 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   at run time from each game's parts (`chimera_core::game_parts`,
   `chimera_sim::minigame::auto`). It names no game crate.
   `ultimate_gun_game_server` (apps/ultimate_gun_game_server/) is its
-  dedicated server: `party_kit::server::run` with those parts,
-  no presentation (checked).
+  dedicated server: the party's `GameServer` (`party_kit::server::PARTY`)
+  with its minigame and launch parts, no presentation (checked).
 - `originals` (games/originals/) is Lucker Party's original minigames:
   their definitions, our own TOML in the repository's `minigames/`
   (compiled in, parsed at run time), and the rules hooks Chimera's
   built-in modules don't cover. It uses Chimera only: a game's parts
   reach it by id through Chimera's registries (checked; review A5).
-- `cs_source_server` (apps/cs_source_server/) is the dedicated server
-  (`cs_source_server`): `cs_source_app` without `present`, so built alone it
-  links no render or audio code (checked:
-  `server_builds_without_presentation`, `workspace_crates`); in a
-  workspace build features unify, so releases build it with `-p`.
+- `cs_source_server` (apps/cs_source_server/) is CS:S's dedicated server
+  (`cs_source_server`): Chimera's simulation crates, the network and
+  `cs_source` without `ui` on `chimera_net::dedicated` (its `SERVER`, with
+  the map cycle, `MapFiles` and the greybox's 64 Hz tick as hooks), so
+  built alone it links no render or audio code and never an app (checked:
+  `server_builds_without_presentation`, `workspace_crates`,
+  `game_servers_use_no_app`); in a workspace build features unify, so
+  releases build it with `-p`.
 - `combat_arms_server` (apps/combat_arms_server/) is Combat Arms'
   dedicated server (`combat_arms_server`): Chimera's simulation crates,
   the network and `combat_arms` without `ui`, on Chimera's dedicated
@@ -444,7 +451,8 @@ game names players in the log); net uses the engine's
 simulation (core, console, game_log, slots, character, movement, map,
 weapon) and names no game or Source logic (`minigame_net` uses net,
 minigame, mode and core; `dedicated`, a game's dedicated server, uses
-net, the map, the greybox, the harness's headless base and core):
+net, the map, the greybox, the harness's headless base, core and the
+minigame runtime):
 logic and games/<name> use it to register what they replicate (their
 parts, `net::parts`), and harness and client use it; bot uses core, console,
 slots, character, map, weapon (grenades

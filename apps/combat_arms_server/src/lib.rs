@@ -33,7 +33,7 @@
 //! no tick of its own).
 
 pub use chimera_net::dedicated::{
-    GameServer, Options, Parsed, ServerPlugin, StartMap, change_level, listen, parse, swap_map,
+    GameServer, Options, Parsed, ServerHooks, ServerPlugin, StartMap, change_level, listen, parse, swap_map,
 };
 use chimera_world::map::{self, MapData};
 use combat_arms::game::{CombatArmsPlugins, INFO};
@@ -63,6 +63,7 @@ pub static SERVER: GameServer = GameServer {
         app.add_plugins(CombatArmsPlugins);
     },
     load_map: combat_arms::game::world::load_with,
+    hooks: ServerHooks::NONE,
 };
 
 /// A map's id as the server serves it: `greybox`, or `combat_arms:<name>`
