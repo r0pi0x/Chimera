@@ -175,6 +175,12 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // which `net` itself may not use; an app that plays minigames over the
     // network adds its plugin.
     ("minigame_net", &["core", "console", "net", "minigame", "mode"]),
+    // A game's dedicated server, once for every game (chimera_net's own
+    // module, above `net`): the game is data (`GameServer`).
+    (
+        "dedicated",
+        &["core", "console", "game_registry", "gameplay", "map", "greybox", "harness", "net"],
+    ),
     // The headless harness (chimera_world's `Sim`, chimera_net's `NetSim`,
     // cs_source's base and test maps). `lib` = crate-root items such as
     // `SimPlugins`.

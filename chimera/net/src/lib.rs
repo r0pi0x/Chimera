@@ -17,6 +17,7 @@
 //! `harness`: `NetSim`, a server and clients in one process over the
 //! in-memory link, each a headless `Sim` on the caller's base plugins.
 
+pub mod dedicated;
 pub mod harness;
 pub mod minigame_net;
 pub mod net;

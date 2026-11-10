@@ -244,6 +244,12 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   part of the network (`MinigameNetPlugin`: the match, the ladder rung and
   the match's events replicated, a client starting the server's minigame);
   an app that plays minigames over the network adds it.
+  `dedicated` (its own module) is a game's dedicated server, once for
+  every game: the options, the start map, `ServerPlugin`, `changelevel`,
+  the stdin console and the run loop (`run`), on what the game says of
+  itself as data (`GameServer`). HL2:DM's and Combat Arms' servers are a
+  `GameServer` static and that call; CS:S's and the party apps' servers
+  are still their own (architecture-pass.md, step 6).
   `cargo test -p chimera_net --features dev` tests it alone.
 - `cs_source_app` (apps/cs_source/) is the faithful CS:S app: the game
   binary (`cs_source`, the workspace's `default-run`) and the app's glue:
@@ -337,7 +343,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   workspace build features unify, so releases build it with `-p`.
 - `combat_arms_server` (apps/combat_arms_server/) is Combat Arms'
   dedicated server (`combat_arms_server`): Chimera's simulation crates,
-  the network and `combat_arms` without `ui` (its `ServerPlugin`, which
+  the network and `combat_arms` without `ui`, on Chimera's dedicated
+  server (`chimera_net::dedicated`: its `SERVER`, whose `ServerPlugin`
   its tests build too), so it links no render or audio code and never
   the app (`combat_arms_app`), CS:S or Source's logic (checked the same
   way); built alone with `-p` for release.
@@ -345,7 +352,7 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   and `hl2dm` composed, maps `hl2dm:<name>` from the install or a
   downloaded file, the greybox otherwise; `hl2dm_server`
   (apps/hl2dm_server/) its dedicated server: Chimera's simulation crates,
-  the network and `hl2dm` (`ServerPlugin`), no presentation, client shell
+  the network and `hl2dm` on `chimera_net::dedicated` (its `SERVER`), no presentation, client shell
   or app (checked: `server_builds_without_presentation`); built alone with
   `-p` for release.
 - `mashup` (the repository root; the old name) is a thin shim: `cs_source_app`
@@ -433,7 +440,8 @@ game_log uses core, console and gameplay (the gameplay's
 game names players in the log); net uses the engine's
 simulation (core, console, game_log, slots, character, movement, map,
 weapon) and names no game or Source logic (`minigame_net` uses net,
-minigame, mode and core):
+minigame, mode and core; `dedicated`, a game's dedicated server, uses
+net, the map, the greybox, the harness's headless base and core):
 logic and games/<name> use it to register what they replicate (their
 parts, `net::parts`), and harness and client use it; bot uses core, console,
 slots, character, map, weapon (grenades

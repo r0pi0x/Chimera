@@ -246,10 +246,6 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
 /// the map-logic interpreter, servers' state changes), with the reason.
 /// Their systems don't count in `EXCLUSIVE_BASELINE`.
 const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
-    ("apps/combat_arms_server/src/lib.rs", "the server's level changes"),
-    ("apps/combat_arms_server/src/main.rs", "the server's state changes"),
-    ("apps/hl2dm_server/src/lib.rs", "the server's level changes"),
-    ("apps/hl2dm_server/src/main.rs", "the server's state changes"),
     (
         "apps/cs_source_server/src/main.rs",
         "the server's level and state changes",
@@ -263,6 +259,7 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("chimera/client/src/client/net.rs", "the connection's state"),
     ("chimera/core/src/console.rs", "the console"),
     ("chimera/core/src/game_log.rs", "writing the log (IO)"),
+    ("chimera/net/src/dedicated.rs", "a dedicated server's level and state changes"),
     ("chimera/net/src/minigame_net.rs", "network apply and capture"),
     ("chimera/net/src/net/chat.rs", "network apply and capture"),
     ("chimera/net/src/net/client.rs", "network apply and capture"),
