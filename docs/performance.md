@@ -1282,11 +1282,12 @@ What did not move, and its size (`docs/backlog.md`, "Nothing blocks the main thr
 
 - **A map's swap** (below, "A map's swap"): spread over 4-10 frames behind the loading screen
   now; what is left in one frame is the frame the whole map goes into the world (the
-  spawn's commands together: 100-200 M dev-build main, the colliders' mass properties in
-  Avian's insert hook a third of it; the render world's first look at every new entity,
-  220-350 M offscreen) and the first tick on the map (120-330 M dev: Avian computing every new
-  collider's mass properties again, `update_collider_mass_properties` on `Changed<C>`, and
-  the first physics step).
+  spawn's commands together: 90-270 M dev-build main, the colliders' mass properties in
+  Avian's insert hook a third of it, which Avian's API gives no way around; the render
+  world's first look at every new entity, 220-350 M offscreen) and the first tick on the map
+  (45-270 M dev, was 110-335 M: no longer the map's colliders' mass properties again, but the
+  colliders the tick's own spawns make from the map's entities (the logic's world, pickups),
+  their props' shadows redrawn as they settle, the first physics step).
 - **A HUD text at a font and size nobody declared**: still 20-60 M on its first frame; each one logs `text warm: N glyph atlases made on a text's first frame (... at [sizes] px)`, so a playtest's log names what is left (`client::text_warm`, below). Declared now: the shell's kill feed, minigame scoreboard, minigame panel, match-end screen, chat, hints and `game_text`, every text that exists empty (callouts, the respawn countdown, hidden HUDs' labels), and Combat Arms' HUD (its panels' fonts and each text of the install's HUD, score, result, team list and death screen layouts). Not declared: CS:S's and HL2:DM's own UI texts that are spawned on demand (their scoreboards, menus), the kill feed's icon glyph fonts (`weapon_icons`), and other games' HUD texts drawn by `hud_text` (its own rasterizer, not Bevy's atlases).
 - A match's start: 100 M (`ladder::start`, drawing every rung's extras), a `+map`'s first listing of Combat Arms' maps
   (292 M, opening the install's archives: `read_map_names`, once a session), and the first ladder's
@@ -1358,6 +1359,7 @@ was 1.0-2.9 G instructions on the main thread, 0.2-1.5 s wall at load 15-35. In 
 | Surfaces' colours (`SurfaceColors::new`) | 95 | on the loading task |
 | The spawn's commands applied (entities, hierarchy, colliders' hooks) | 85-210 | a frame of its own |
 | The first tick: a Source map's light field building its occluders on first use | 90 | on the loading task (the field used once) |
+| The first tick: Avian computing every new collider's mass properties again | 55-75 | none: the hook's are kept (`spawn::counted_colliders`, below) |
 
 Now (`console::finish_map_load`): the load's task prepares those parts too; then the map is
 spawned a step at a time (`spawn::SpawnProgress`; the same phases in the same order, the
@@ -1376,6 +1378,33 @@ resources for de_dust2 and de_nuke (but the stepped spawn's own resource, one en
 earlier, and the asset slots Bevy reuses), and the prepared parts the same as computed ones
 (`CHIMERA_SPAWN_DUMP_PREPARED=1`).
 
+The map's colliders get their mass properties once: Avian's insert hook computes them as
+each collider goes into the world (`ColliderMassProperties`, from the shape at its scale
+then), and its `update_collider_mass_properties` computed them all again in the first tick
+(the collider and its `ColliderDensity` new there, `Changed`). Avian 0.8 has no way to skip
+either (`NoAutoMass`, a zero density, a static body or no body at all leave them computed;
+only a `Sensor` doesn't, and that changes collision), so the spawn's last command
+(`spawn::counted_colliders`) puts back both change ticks of each collider its commands
+inserted and nothing changed after: that system and the size margins (the same value
+again) are the only readers, and a later change (a scale differing from the hook's, a
+density, a shape) marks it anew and is computed as before. Guards: `chimera_client`'s
+`map_load_steps` (no map collider computed again in the ticks after a stepped spawn, each
+holding what Avian computes from its shape; physics props of a convex model weigh, turn and
+fall the same as with every collider marked changed after the spawn, as before).
+
+| Map | First tick before | After |
+|---|---|---|
+| de_dust2 | 153-157 | 85-100 |
+| cs_office | 219-236 | 163-188 |
+| dm_lockdown | 223-334 | 191-268 |
+| warehouse | 109-127 | 43-50 |
+
+(Headless as below, M, three runs each at load 20-30.) Offscreen (`heavy::map_swap_render`), the settling
+frames' worst main-thread frame went from 140 / 247 / 331 / 124 M to 109 / 214 / 310 / 49 M. The frame the map goes into the world
+did not move (de_dust2 149-156, cs_office 250-297, dm_lockdown 155-210, warehouse 71-89):
+its third in Avian's insert hook stays, as the hook can't be told to skip a collider, and
+inserting the colliders earlier would let the world hold part of the map.
+
 Measured headless (dev build, M instructions on the main thread, the map command's frames
 until in the game; load 13-15):
 
@@ -1388,8 +1417,9 @@ until in the game; load 13-15):
 
 The spawn's instructions in all are the same as at once (de_dust2 853 M over 5 frames, 864
 in one); its wall time moves with the box's load more than with the steps. The worst frame
-left is the first tick (dm_lockdown 331 M), the frame the map goes into the world, or a
-frame of steps at the budget.
+left is the frame the map goes into the world (cs_office 250-300 M), the first tick
+(dm_lockdown 190-270 M since its colliders' mass isn't computed again, above), or a frame of
+steps at the budget.
 
 The render world, offscreen (`heavy::map_swap_render`, `CHIMERA_RENDER_BENCH=1`: Bevy's
 renderer on the GPU without a window, a camera drawing into an image from the map's first
@@ -1410,7 +1440,7 @@ above are a dev build's, at load 15-30, and moved by 0.1-0.3 s between runs).
 
 Guards: `apps/ultimate_gun_game/tests/it/heavy/map_swap_frames.rs` (the four maps in a row
 through the shell's `map` flow; no frame from the command to the game over
-`WORST_LOAD_FRAME`, 500 M; measured 150-340 M) and `chimera_client`'s `map_load_steps` (a
+`WORST_LOAD_FRAME`, 500 M; measured 150-340 M, 150-300 M with the colliders' mass kept) and `chimera_client`'s `map_load_steps` (a
 map spawned in steps: no tick and no part of the map while it spawns, the same parts as a
 spawn in one go, one tick's advance a frame while settling, given back in the game).
 

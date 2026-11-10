@@ -35,8 +35,9 @@ const MAPS: [&str; 4] = [
 /// The worst frame from a `map` command to entering the game, its tick
 /// included (instructions, this test's dev build): 150-340 M measured
 /// (2026-11-09: the frame the whole map goes into the world, and the first
-/// tick on it); the map spawned in one frame was 0.7-1.3 G with its parts
-/// prepared ahead, 1.0-2.9 G before.
+/// tick on it; 150-300 M since the first tick keeps the colliders' mass
+/// properties, `spawn::counted_colliders`); the map spawned in one frame was
+/// 0.7-1.3 G with its parts prepared ahead, 1.0-2.9 G before.
 const WORST_LOAD_FRAME: u64 = 500_000_000;
 
 fn combat_arms_installed() -> bool {
