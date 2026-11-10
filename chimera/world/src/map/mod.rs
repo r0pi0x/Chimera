@@ -300,6 +300,9 @@ pub struct MapHooks {
     /// Spawns the pending map (`spawn_map` with the drawer
     /// `build` picks: `MapLayers::Drawer`), for `change_map`.
     pub spawn: Option<fn(&mut World)>,
+    /// The same spawn a step at a time (`spawn::SpawnProgress`), for
+    /// `prepare::begin_map_change` and `prepare::spawn_some`.
+    pub stepped: Option<SteppedSpawn>,
     /// The resources that belong to the loaded map (`MapScopedApp::
     /// map_scoped`): `unload_map` removes each.
     pub scoped: Vec<MapScopedResource>,
@@ -316,6 +319,15 @@ pub struct MapHooks {
     /// settling; bots' navigation mesh, spawn spots): each says whether it is
     /// done.
     pub settle: Vec<fn(&mut World) -> bool>,
+}
+
+/// `MapHooks::stepped`: starts a stepped spawn of the pending map, and runs
+/// one frame's share of it (at least one step, more until the budget is
+/// spent), saying whether it is done.
+#[derive(Clone, Copy)]
+pub struct SteppedSpawn {
+    pub begin: fn(&mut World),
+    pub step: fn(&mut World, std::time::Duration) -> bool,
 }
 
 /// A resource that belongs to the loaded map: inserted when it spawns,
@@ -374,14 +386,19 @@ pub fn change_map(world: &mut World, data: MapData, view: MapDebugView) {
 /// `change_map` with the parts of its spawn already done
 /// (`prepare::change_map_prepared`).
 fn change_map_with(world: &mut World, data: MapData, prepared: prepare::Prepared, view: MapDebugView) {
-    unload_map(world);
-    let data = Arc::new(data);
-    world.insert_resource(ActiveMapLook(data.look.clone()));
-    world.insert_resource(PendingMap(data, view, prepared));
+    pend_map(world, data, prepared, view);
     match world.get_resource::<MapHooks>().and_then(|h| h.spawn) {
         Some(spawn) => spawn(world),
         None => error!("spawning the map: no map spawner (MapPlugin or MapSimPlugin missing)"),
     }
+}
+
+/// Unloads the map and makes `data` the one to spawn (`PendingMap`).
+fn pend_map(world: &mut World, data: MapData, prepared: prepare::Prepared, view: MapDebugView) {
+    unload_map(world);
+    let data = Arc::new(data);
+    world.insert_resource(ActiveMapLook(data.look.clone()));
+    world.insert_resource(PendingMap(data, view, prepared));
 }
 
 /// A brush entity node's (mover, breakable) or a moving prop's mesh

@@ -7,8 +7,9 @@
 //!
 //! Dynamic shadows as Video > Advanced's shadow detail asks (`ShadowSettings`:
 //! `r_shadows`, `r_shadowrendertotexture`, `r_flashlightdepthtexture`;
-//! `apply_shadow_detail` builds them from `ShadowSource` at map load and again
-//! at once on a change): at Low Source's blob shadows (`ShadowFrame::blob`, a
+//! `apply_shadow_detail` builds them from `ShadowSource` at map load, from
+//! what a background load built ahead at the props' places, `ShadowsAhead`,
+//! and again at once on a change): at Low Source's blob shadows (`ShadowFrame::blob`, a
 //! round picture straight down under each prop), at Medium/High
 //! render-to-texture prop shadows; characters' blob shadows at every level
 //! (`update_character_blobs`, bodies drawn only). Render-to-texture:
@@ -849,6 +850,43 @@ pub struct ShadowSource {
     pub built: Option<ShadowMode>,
     /// The blob picture's material (characters' blobs; props' at Low).
     pub blob_material: Option<Handle<ShadowMaterial>>,
+    /// The props' render-to-texture shadows built on the loading thread, at
+    /// the props' places in the map (`ShadowsAhead`): the first build takes
+    /// them when it is for that mode.
+    pub ahead: Option<ShadowsBuilt>,
+}
+
+/// Render-to-texture prop shadows built: the mode, the atlas, its image,
+/// each caster's cell and each shadow's mesh.
+pub type ShadowsBuilt = (ShadowMode, Atlas, Image, Vec<Cell>, Vec<(usize, Mesh)>);
+
+/// A map's shadow work done where it loads (`render::prepare_images`, off
+/// the main thread): the receivers, and at render-to-texture the props'
+/// shadows as `build_posed` makes them with each prop where the map puts
+/// it (as the first build after the spawn does; physics props that moved
+/// since are redrawn by `update_prop_shadows`).
+pub struct ShadowsAhead {
+    pub receivers: std::sync::Arc<Receivers>,
+    pub built: Option<ShadowsBuilt>,
+}
+
+impl ShadowsAhead {
+    /// For `data` at shadow mode `mode`; none for a map without shadows.
+    pub fn build(data: &MapData, mode: ShadowMode) -> Option<Self> {
+        let settings = data.shadows.as_ref()?;
+        let receivers = std::sync::Arc::new(Receivers::new(data));
+        let built = (mode == ShadowMode::Texture).then(|| {
+            let (atlas, cells, built) = build_posed(data, settings, &receivers, &|i| home(data, i));
+            let image = atlas.image();
+            (mode, atlas, image, cells, built)
+        });
+        Some(Self { receivers, built })
+    }
+}
+
+/// Prop `i` where the map puts it.
+fn home(data: &MapData, i: usize) -> (Vec3, Quat) {
+    (data.props[i].translation, data.props[i].rotation)
 }
 
 /// Physics props' shadows redrawn a frame (`update_prop_shadows`; a redraw is
@@ -888,8 +926,13 @@ pub fn apply_shadow_detail(
         info!("prop shadows: off (r_shadows 0)");
         return;
     }
-    let poses: std::collections::HashMap<usize, (Vec3, Quat)> =
-        moved.iter().map(|(i, t)| (i.0, (t.translation, t.rotation))).collect();
+    // Built ahead at the props' homes (the map's first build): drawn as
+    // they were there, those that moved since redrawn as any moved prop.
+    let ahead = source.ahead.take().filter(|a| a.0 == mode);
+    let poses: std::collections::HashMap<usize, (Vec3, Quat)> = match ahead {
+        Some(_) => default(),
+        None => moved.iter().map(|(i, t)| (i.0, (t.translation, t.rotation))).collect(),
+    };
     let hidden: std::collections::HashSet<usize> = hidden.iter().map(|i| i.0).collect();
     let data = source.data.clone();
     let pose = |i: usize| poses.get(&i).copied().unwrap_or((data.props[i].translation, data.props[i].rotation));
@@ -909,8 +952,15 @@ pub fn apply_shadow_detail(
     });
     source.blob_material = Some(blob_material.clone());
     let (atlas, cells, built, material, image) = if mode == ShadowMode::Texture {
-        let (atlas, cells, built) = build_posed(&data, &source.settings, &source.receivers, &pose);
-        let image = images.add(atlas.image());
+        let (atlas, image, cells, built) = match ahead {
+            Some((_, atlas, image, cells, built)) => (atlas, image, cells, built),
+            None => {
+                let (atlas, cells, built) = build_posed(&data, &source.settings, &source.receivers, &pose);
+                let image = atlas.image();
+                (atlas, image, cells, built)
+            }
+        };
+        let image = images.add(image);
         let material = materials.add(ShadowMaterial {
             params: params(Vec2::new(1.0 / atlas.width as f32, 1.0 / atlas.height as f32)),
             atlas: image.clone(),
@@ -1367,6 +1417,7 @@ mod tests {
             tag: false,
             built: None,
             blob_material: None,
+            ahead: None,
         });
         struct Sim {
             app: App,

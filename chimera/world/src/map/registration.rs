@@ -79,7 +79,9 @@ impl MapDrawer for () {
 
     fn spawn_undrawn(_: &mut (), _: &mut Commands, _: &MapSpawn) {}
 
-    fn spawn_drawn(_: &mut (), _: &mut Commands, _: &MapSpawn) {}
+    fn spawn_drawn(_: &mut (), _: &mut Commands, _: &MapSpawn, _: &mut (), _: usize) -> bool {
+        false
+    }
 
     fn spawn_prop(_: &mut (), _: &mut Commands, _: &MapSpawn, _: &mut (), _: PropSpawn) {}
 
@@ -321,8 +323,14 @@ pub fn build<L: MapLayers>(app: &mut App, data: Option<&Arc<MapData>>, view: Map
     app.init_resource::<MapHooks>().init_resource::<super::LoadContext>();
     let mut hooks = app.world_mut().resource_mut::<MapHooks>();
     hooks.spawn = Some(spawn_pending_map::<L::Drawer>);
+    hooks.stepped = Some(super::SteppedSpawn {
+        begin: spawn::begin_spawn::<L::Drawer>,
+        step: spawn_pending_steps::<L::Drawer>,
+    });
     hooks.prepare.push(spawn::prepare_world);
     scoped_resources(app);
+    // A spawn under way when the map is unloaded is called off.
+    app.map_scoped::<spawn::SpawnProgress<L::Drawer>>();
 }
 
 /// The resources `spawn_map` inserts for the loaded map, which
@@ -363,6 +371,21 @@ fn scoped_resources(app: &mut App) {
         .map_scoped::<MapTerrain>()
         .map_scoped::<MapTraceSkip>()
         .map_scoped::<MapPropBrushStart>();
+}
+
+/// `prepare::spawn_some`'s: a frame's steps of the pending map's spawn.
+fn spawn_pending_steps<D: MapDrawer>(world: &mut World, budget: std::time::Duration) -> bool {
+    if !world.contains_resource::<spawn::SpawnProgress<D>>() {
+        return true;
+    }
+    match world.run_system_cached_with(spawn::spawn_steps::<D>, budget) {
+        Ok(done) => done,
+        Err(e) => {
+            error!("spawning the map: {e}");
+            world.remove_resource::<spawn::SpawnProgress<D>>();
+            true
+        }
+    }
 }
 
 /// `change_map`'s spawner: the pending map, drawn by `D`.

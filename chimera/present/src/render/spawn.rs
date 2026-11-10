@@ -4,6 +4,11 @@
 //! entities), model materials, detail sprites, effects, sprites, beams,
 //! ropes and shadows; and each placed prop's skeleton, meshes and skins,
 //! ragdoll or rig. `MapAssets` (the asset stores) is the `map::MapDrawer`.
+//! Its drawn parts come in steps (`Phase`: a stepped spawn may run each in
+//! its own frame): the images, the bodies `BODIES_PER_STEP` at a time, the
+//! held models `HELD_PER_STEP` at a time, the rest of the characters' assets,
+//! the lightmaps with the sky and water, the world's meshes
+//! `WORLD_MESHES_PER_STEP` at a time, the rest.
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -57,8 +62,8 @@ impl MapDrawer for MapAssets<'static> {
         }
     }
 
-    fn spawn_drawn(a: &mut MapAssets, commands: &mut Commands, s: &MapSpawn) -> Drawn {
-        spawn_drawn(commands, s, a)
+    fn spawn_drawn(a: &mut MapAssets, commands: &mut Commands, s: &MapSpawn, drawn: &mut Drawn, step: usize) -> bool {
+        spawn_drawn(commands, s, a, drawn, step)
     }
 
     fn retire(world: &mut World, data: Arc<MapData>) {
@@ -85,7 +90,10 @@ impl MapDrawer for MapAssets<'static> {
 
     fn insert_drawn(drawn: &Drawn, commands: &mut Commands, s: &MapSpawn, which: DrawnResource) {
         match which {
-            DrawnResource::DecalSurfaces => commands.insert_resource(super::decal::DecalSurfaces::new(s.data)),
+            DrawnResource::DecalSurfaces => {
+                let surfaces = s.prepared.take::<super::decal::DecalSurfaces>();
+                commands.insert_resource(surfaces.unwrap_or_else(|| super::decal::DecalSurfaces::new(s.data)));
+            }
             DrawnResource::Particles => super::particles::insert_assets(commands, s.data, &drawn.textures),
             DrawnResource::Decals => super::decal::insert_assets(commands, s.data, &drawn.textures),
             DrawnResource::Fog => {
@@ -141,7 +149,49 @@ pub struct Drawn {
     skin_model_materials: Vec<Vec<Vec<[Handle<PropMaterial>; 2]>>>,
     /// What the props' drawn parts share as they are spawned.
     shared: PropShared,
+    /// What the drawn steps hand on to the later ones (`spawn_drawn`).
+    between: Between,
 }
+
+/// What `spawn_drawn`'s steps hand on to the later ones.
+#[derive(Default)]
+struct Between {
+    /// The characters' bodies, then each held model's parts.
+    bodies: Option<Vec<super::bodies::BodyAssets>>,
+    held: Option<HashMap<String, HeldParts>>,
+    /// The lightmap's layers and the sky's image, built ahead
+    /// (`ImageParts`), put in the store at their places (asset ids follow
+    /// the order).
+    layers: Option<LightmapLayers>,
+    sky: Option<Image>,
+    lightmaps: Option<Lightmaps>,
+    water_drawn: bool,
+    /// The world's meshes under way.
+    world: Option<WorldMeshes>,
+    phase: Phase,
+}
+
+/// Which of `spawn_drawn`'s steps is next.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Phase {
+    #[default]
+    Images,
+    /// The characters' bodies, from this one.
+    Bodies(usize),
+    /// The held models, from this one.
+    Held(usize),
+    /// The rest of what characters draw.
+    CharacterRest,
+    LightmapsSkyWater,
+    WorldMeshes,
+    Rest,
+}
+
+/// Bodies a step builds at most.
+const BODIES_PER_STEP: usize = 2;
+
+/// Held models a step builds at most.
+const HELD_PER_STEP: usize = 16;
 
 /// The lightmap images surfaces sample.
 struct Lightmaps {
@@ -155,9 +205,12 @@ struct Lightmaps {
 }
 
 /// Everything drawn, when rendering exists (meshes, standard materials
-/// and images): nothing headless.
-fn spawn_drawn(commands: &mut Commands, s: &MapSpawn, a: &mut MapAssets) -> Drawn {
-    let mut drawn = Drawn::default();
+/// and images): nothing headless. In steps (`MapDrawer::spawn_drawn`):
+/// the images; the characters' bodies; the held models; the rest of what
+/// characters draw; the lightmaps, sky and water; the world's meshes; the
+/// models' materials, detail sprites, effects, sprites, beams, ropes and
+/// shadows. Returns whether more steps follow.
+fn spawn_drawn(commands: &mut Commands, s: &MapSpawn, a: &mut MapAssets, drawn: &mut Drawn, _step: usize) -> bool {
     let MapAssets {
         meshes,
         materials,
@@ -176,129 +229,164 @@ fn spawn_drawn(commands: &mut Commands, s: &MapSpawn, a: &mut MapAssets) -> Draw
         compressed,
     } = a;
     let (Some(meshes), Some(materials), Some(images)) = (meshes.as_mut(), materials.as_mut(), images.as_mut()) else {
-        return drawn;
+        return false;
     };
     let (data, view) = (s.data, s.view);
-    // The images, built ahead on the loading thread (`prepare_images`)
-    // when they were for this device's formats, else here.
-    let bc = super::images::bc_wanted(compressed.as_deref());
-    let parts = s
-        .prepared
-        .take::<ImageParts>()
-        .filter(|p| p.bc == bc)
-        .unwrap_or_else(|| image_parts(data, bc));
-    let ImageParts {
-        textures: texture_images,
-        cubemaps: cubemap_images,
-        lightmaps: lightmap_layers,
-        ..
-    } = parts;
-    let (textures, cubemaps) = load_images(commands, data, images, texture_images, cubemap_images);
-    drawn.cubemaps = cubemaps.clone();
-    drawn.textures = textures.clone();
-    // Character bodies, drawn by `attach_bodies`: skinned when the
-    // model has a skeleton.
-    if let Some(bindposes) = bindposes.as_mut() {
-        build_character_assets(
-            commands,
-            s,
-            &textures,
-            &cubemaps,
-            meshes,
-            bindposes,
-            prop_materials,
-            dormant.as_deref_mut(),
-            sprite_materials,
-        );
+    match drawn.between.phase {
+        Phase::Images => {
+            // The images, built ahead on the loading thread (`prepare_images`)
+            // when they were for this device's formats, else here.
+            let bc = super::images::bc_wanted(compressed.as_deref());
+            let parts = s
+                .prepared
+                .take::<ImageParts>()
+                .filter(|p| p.bc == bc)
+                .unwrap_or_else(|| image_parts(data, bc));
+            let ImageParts {
+                textures: texture_images,
+                cubemaps: cubemap_images,
+                lightmaps: lightmap_layers,
+                sky,
+                ..
+            } = parts;
+            let (textures, cubemaps) = load_images(commands, data, images, texture_images, cubemap_images);
+            drawn.cubemaps = cubemaps;
+            drawn.textures = textures;
+            drawn.between.layers = lightmap_layers;
+            drawn.between.sky = sky;
+            drawn.between.phase = if bindposes.is_some() { Phase::Bodies(0) } else { Phase::LightmapsSkyWater };
+        }
+        // Character bodies, drawn by `attach_bodies`: skinned when the
+        // model has a skeleton.
+        phase @ (Phase::Bodies(_) | Phase::Held(_) | Phase::CharacterRest) => {
+            let Some(bindposes) = bindposes.as_mut() else { unreachable!("characters only with bind poses") };
+            drawn.between.phase = build_character_assets(
+                commands,
+                s,
+                drawn,
+                phase,
+                meshes,
+                bindposes,
+                prop_materials,
+                dormant.as_deref_mut(),
+                sprite_materials,
+            );
+        }
+        Phase::LightmapsSkyWater => {
+            let layers = drawn.between.layers.take();
+            drawn.between.lightmaps = Some(build_lightmaps(commands, data, images, layers, world_materials.is_none()));
+            let sky_handle = spawn_sky(commands, s, drawn.between.sky.take(), images, meshes);
+            // Water surfaces have their own material (`water`).
+            let water_drawn = water_materials.is_some() && view == MapDebugView::Normal;
+            if water_drawn && let Some(water_materials) = water_materials.as_mut() {
+                water::spawn_surfaces(
+                    commands,
+                    data,
+                    s.root,
+                    meshes,
+                    images,
+                    water_materials,
+                    &drawn.cubemaps,
+                    sky_handle.as_ref(),
+                    &|i| s.node(i),
+                );
+            }
+            drawn.between.water_drawn = water_drawn;
+            drawn.between.world = Some(WorldMeshes::new(s));
+            drawn.between.phase = Phase::WorldMeshes;
+        }
+        Phase::WorldMeshes => {
+            let lightmaps = drawn.between.lightmaps.as_ref().expect("the lightmaps, a step before");
+            let mut state = drawn.between.world.take().expect("begun a step before");
+            let last = spawn_world_meshes(
+                commands,
+                s,
+                meshes,
+                materials,
+                world_materials,
+                &drawn.textures,
+                &drawn.cubemaps,
+                lightmaps,
+                drawn.between.water_drawn,
+                &mut state,
+            );
+            if last {
+                drawn.between.lightmaps = None;
+                drawn.between.phase = Phase::Rest;
+            } else {
+                drawn.between.world = Some(state);
+            }
+        }
+        Phase::Rest => {
+            build_model_materials(drawn, s, meshes, materials, prop_materials);
+            let textures = drawn.textures.clone();
+            if view == MapDebugView::Normal
+                && let Some(props) = &data.source_fx().detail_props
+                && let Some(detail_materials) = detail_materials.as_mut()
+            {
+                super::detail::spawn(
+                    commands,
+                    meshes,
+                    detail_materials,
+                    props,
+                    textures[props.texture].clone(),
+                    fog::world_fog(data.fog.as_ref()),
+                    s.statics,
+                    |e, lo, hi| {
+                        s.tag(
+                            e,
+                            s.visibility.map(|v| vis::box_clusters(v, lo, hi)).unwrap_or_default(),
+                        )
+                    },
+                );
+            }
+            if view == MapDebugView::Normal {
+                spawn_effects(commands, s, meshes, materials, heat_materials.as_deref_mut(), &textures);
+            }
+            if let Some(sprite_materials) = sprite_materials.as_mut()
+                && view == MapDebugView::Normal
+            {
+                spawn_sprites(commands, s, meshes, sprite_materials, &textures);
+            }
+            // Beams (point_spotlight, env_laser, env_beam), spotlights' halos
+            // and light glows (`beams`).
+            if let (Some(beam_materials), Some(sprite_materials)) = (beam_materials.as_mut(), sprite_materials.as_mut())
+                && view == MapDebugView::Normal
+            {
+                spawn_beams(commands, s, meshes, beam_materials, sprite_materials, &textures);
+            }
+            if let Some(rope_materials) = rope_materials.as_mut()
+                && view == MapDebugView::Normal
+            {
+                spawn_ropes(commands, s, meshes, rope_materials, &textures);
+            }
+            // Dynamic shadows: built by `shadows::apply_shadow_detail` as
+            // Video > Advanced's shadow detail asks (and again when it changes).
+            if let (Some(settings), true) = (&data.shadows, shadow_materials.is_some())
+                && view == MapDebugView::Normal
+            {
+                let ahead = s.prepared.take::<shadows::ShadowsAhead>();
+                let receivers = match &ahead {
+                    Some(a) => a.receivers.clone(),
+                    None => Arc::new(shadows::Receivers::new(data)),
+                };
+                commands.insert_resource(shadows::ShadowSource {
+                    data: data.clone(),
+                    settings: settings.clone(),
+                    receivers,
+                    ahead: ahead.and_then(|a| a.built),
+                    root: s.statics,
+                    fog_color: fog_color(data.fog.as_ref()),
+                    fog_range: fog_range(data.fog.as_ref()),
+                    tag: s.visibility.is_some(),
+                    built: None,
+                    blob_material: None,
+                });
+            }
+            return false;
+        }
     }
-    let lightmaps = build_lightmaps(commands, data, images, lightmap_layers, world_materials.is_none());
-    let sky_handle = spawn_sky(commands, s, images, meshes);
-    // Water surfaces have their own material (`water`).
-    let water_drawn = water_materials.is_some() && view == MapDebugView::Normal;
-    if water_drawn && let Some(water_materials) = water_materials.as_mut() {
-        water::spawn_surfaces(
-            commands,
-            data,
-            s.root,
-            meshes,
-            images,
-            water_materials,
-            &cubemaps,
-            sky_handle.as_ref(),
-            &|i| s.node(i),
-        );
-    }
-    spawn_world_meshes(
-        commands,
-        s,
-        meshes,
-        materials,
-        world_materials,
-        &textures,
-        &cubemaps,
-        &lightmaps,
-        water_drawn,
-    );
-    build_model_materials(&mut drawn, s, meshes, materials, prop_materials);
-
-    if view == MapDebugView::Normal
-        && let Some(props) = &data.source_fx().detail_props
-        && let Some(detail_materials) = detail_materials.as_mut()
-    {
-        super::detail::spawn(
-            commands,
-            meshes,
-            detail_materials,
-            props,
-            textures[props.texture].clone(),
-            fog::world_fog(data.fog.as_ref()),
-            s.statics,
-            |e, lo, hi| {
-                s.tag(
-                    e,
-                    s.visibility.map(|v| vis::box_clusters(v, lo, hi)).unwrap_or_default(),
-                )
-            },
-        );
-    }
-    if view == MapDebugView::Normal {
-        spawn_effects(commands, s, meshes, materials, heat_materials.as_deref_mut(), &textures);
-    }
-    if let Some(sprite_materials) = sprite_materials.as_mut()
-        && view == MapDebugView::Normal
-    {
-        spawn_sprites(commands, s, meshes, sprite_materials, &textures);
-    }
-    // Beams (point_spotlight, env_laser, env_beam), spotlights' halos
-    // and light glows (`beams`).
-    if let (Some(beam_materials), Some(sprite_materials)) = (beam_materials.as_mut(), sprite_materials.as_mut())
-        && view == MapDebugView::Normal
-    {
-        spawn_beams(commands, s, meshes, beam_materials, sprite_materials, &textures);
-    }
-    if let Some(rope_materials) = rope_materials.as_mut()
-        && view == MapDebugView::Normal
-    {
-        spawn_ropes(commands, s, meshes, rope_materials, &textures);
-    }
-    // Dynamic shadows: built by `shadows::apply_shadow_detail` as
-    // Video > Advanced's shadow detail asks (and again when it changes).
-    if let (Some(settings), true) = (&data.shadows, shadow_materials.is_some())
-        && view == MapDebugView::Normal
-    {
-        commands.insert_resource(shadows::ShadowSource {
-            data: data.clone(),
-            settings: settings.clone(),
-            receivers: Arc::new(shadows::Receivers::new(data)),
-            root: s.statics,
-            fog_color: fog_color(data.fog.as_ref()),
-            fog_range: fog_range(data.fog.as_ref()),
-            tag: s.visibility.is_some(),
-            built: None,
-            blob_material: None,
-        });
-    }
-    drawn
+    true
 }
 
 /// How many of `textures` are block compressed images, and their texel
@@ -319,20 +407,31 @@ fn image_sizes(images: &Assets<Image>, textures: &[Handle<Image>]) -> (usize, us
 /// texture is its render target), and the resources that name them.
 /// A map's images as its drawer builds them from the data alone: each
 /// texture's (None for the monitor's screen, made at the spawn), the
-/// baked cubemaps and the lightmap's layers, for a device that does or
+/// baked cubemaps, the lightmap's layers and the sky's cube, for a device that does or
 /// doesn't take BC (`bc`).
 pub struct ImageParts {
     bc: bool,
     textures: Vec<Option<Image>>,
     cubemaps: Vec<Image>,
     lightmaps: Option<LightmapLayers>,
+    /// The sky's cube (`sky_image`).
+    sky: Option<Image>,
 }
 
 /// The drawer's job for `MapHooks::prepare`: the images, for the device's
-/// formats as the load starts.
+/// formats as the load starts, what decals land on and the props' shadows.
 pub fn prepare_images(world: &World) -> crate::map::prepare::PrepareJob {
     let bc = super::images::bc_wanted(world.get_resource::<bevy::image::CompressedImageFormatSupport>());
-    Box::new(move |data, prepared| prepared.insert(image_parts(data, bc)))
+    let shadow_mode = world.get_resource::<shadows::ShadowSettings>().map_or(shadows::ShadowMode::Texture, |d| d.mode());
+    Box::new(move |data, prepared| {
+        prepared.insert(image_parts(data, bc));
+        // What runtime decals land on, and the props' shadows at the shadow
+        // detail set now (`shadows::ShadowsAhead`).
+        prepared.insert(super::decal::DecalSurfaces::new(data));
+        if let Some(ahead) = shadows::ShadowsAhead::build(data, shadow_mode) {
+            prepared.insert(ahead);
+        }
+    })
 }
 
 fn image_parts(data: &MapData, bc: bool) -> ImageParts {
@@ -365,11 +464,13 @@ fn image_parts(data: &MapData, bc: bool) -> ImageParts {
         .lightmap
         .as_ref()
         .map(|l| LightmapLayers::build(&l.rgb, l.bumped.as_ref(), l.width, l.height, source_ldr));
+    let sky = data.sky.as_ref().map(|sky| sky_image(sky, &data.textures));
     ImageParts {
         bc,
         textures,
         cubemaps,
         lightmaps,
+        sky,
     }
 }
 
@@ -417,15 +518,16 @@ fn load_images(
 fn build_character_assets(
     commands: &mut Commands,
     s: &MapSpawn,
-    textures: &[Handle<Image>],
-    cubemaps: &[Handle<Image>],
+    drawn: &mut Drawn,
+    phase: Phase,
     meshes: &mut Assets<Mesh>,
     bindposes: &mut Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
     prop_materials: &mut Option<ResMut<Assets<PropMaterial>>>,
     mut dormant: Option<&mut super::prop_material::DormantProps>,
     sprite_materials: &mut Option<ResMut<Assets<SpriteMaterial>>>,
-) {
+) -> Phase {
     let (data, view) = (s.data, s.view);
+    let (textures, cubemaps) = (&drawn.textures, &drawn.cubemaps);
     let Some(pm) = prop_materials.as_deref_mut() else {
         panic!("PropMaterial assets exist wherever StandardMaterial does");
     };
@@ -436,51 +538,68 @@ fn build_character_assets(
         }
         material
     };
-    let lighting_scale = if let MapDebugView::Lighting { scale } = view {
-        scale
-    } else {
-        1.0
-    };
-    commands.insert_resource(probe_lit::ProbeLightScale(data.look.light_scale * lighting_scale));
-    let bodies = data
-        .kit.characters
-        .iter()
-        .map(|c| body_assets(&c.model, &c.bones, c.root, meshes, pm, dormant.as_deref_mut(), bindposes, &model_material))
-        .collect();
-    let held = data
-        .kit.held
-        .iter()
-        .map(|h| {
-            let mut build = |model: &MapModel| -> Vec<(Handle<Mesh>, Handle<PropMaterial>)> {
-                model
-                    .meshes
-                    .iter()
-                    .map(|m| {
-                        let material = model_material(m);
-                        let material = match dormant.as_deref_mut() {
-                            Some(d) => d.add(pm, material),
-                            None => pm.add(material),
-                        };
-                        (meshes.add(build_mesh(m, false)), material)
-                    })
-                    .collect()
+    // In steps: the bodies a few at a time, the held models a few at a
+    // time, the rest.
+    if let Phase::Bodies(from) = phase {
+        if from == 0 {
+            let lighting_scale = if let MapDebugView::Lighting { scale } = view {
+                scale
+            } else {
+                1.0
             };
-            let whole = build(&h.model);
-            let own = h.own.as_ref().map_or_else(|| whole.clone(), &mut build);
-            let merged = h.merged.iter().map(|(b, m)| (b.clone(), build(m))).collect();
-            (
-                h.key.clone(),
-                HeldParts {
-                    bone: h.bone.clone(),
-                    whole,
-                    own,
-                    muzzle: h.muzzle,
-                    attachments: h.attachments.clone(),
-                    merged,
-                },
-            )
-        })
-        .collect::<HashMap<_, _>>();
+            commands.insert_resource(probe_lit::ProbeLightScale(data.look.light_scale * lighting_scale));
+        }
+        let to = (from + BODIES_PER_STEP).min(data.kit.characters.len());
+        let bodies = drawn.between.bodies.get_or_insert_with(Vec::new);
+        bodies.extend(
+            data.kit.characters[from..to]
+                .iter()
+                .map(|c| body_assets(&c.model, &c.bones, c.root, meshes, pm, dormant.as_deref_mut(), bindposes, &model_material)),
+        );
+        return if to < data.kit.characters.len() { Phase::Bodies(to) } else { Phase::Held(0) };
+    }
+    if let Phase::Held(from) = phase {
+        let to = (from + HELD_PER_STEP).min(data.kit.held.len());
+        let held = drawn.between.held.get_or_insert_with(HashMap::new);
+        held.extend(
+            data.kit
+                .held[from..to]
+                .iter()
+                .map(|h| {
+                    let mut build = |model: &MapModel| -> Vec<(Handle<Mesh>, Handle<PropMaterial>)> {
+                        model
+                            .meshes
+                            .iter()
+                            .map(|m| {
+                                let material = model_material(m);
+                                let material = match dormant.as_deref_mut() {
+                                    Some(d) => d.add(pm, material),
+                                    None => pm.add(material),
+                                };
+                                (meshes.add(build_mesh(m, false)), material)
+                            })
+                            .collect()
+                    };
+                    let whole = build(&h.model);
+                    let own = h.own.as_ref().map_or_else(|| whole.clone(), &mut build);
+                    let merged = h.merged.iter().map(|(b, m)| (b.clone(), build(m))).collect();
+                    (
+                        h.key.clone(),
+                        HeldParts {
+                            bone: h.bone.clone(),
+                            whole,
+                            own,
+                            muzzle: h.muzzle,
+                            attachments: h.attachments.clone(),
+                            merged,
+                        },
+                    )
+                })
+        );
+        return if to < data.kit.held.len() { Phase::Held(to) } else { Phase::CharacterRest };
+    }
+    let bodies = drawn.between.bodies.take().unwrap_or_default();
+    let held = drawn.between.held.take().unwrap_or_default();
     let view_models = prop_materials
         .as_mut()
         .map(|pm| build_view_models(data, textures, cubemaps, view, meshes, pm, dormant.as_deref_mut(), bindposes));
@@ -526,6 +645,7 @@ fn build_character_assets(
     if let Some(gibs) = breakables::build_assets(data) {
         commands.insert_resource(gibs);
     }
+    Phase::LightmapsSkyWater
 }
 
 /// The lightmap images. Switchable and animated light styles relight
@@ -564,11 +684,13 @@ fn build_lightmaps(
     }
 }
 
-/// The sky: its cubemap image (returned), the 3D skybox's camera, the
+/// The sky: its cubemap image (returned; `built` ahead, else built here),
+/// the 3D skybox's camera, the
 /// sky's visibility and its faces as occluders; and the playable area.
 fn spawn_sky(
     commands: &mut Commands,
     s: &MapSpawn,
+    built: Option<Image>,
     images: &mut Assets<Image>,
     meshes: &mut Assets<Mesh>,
 ) -> Option<Handle<Image>> {
@@ -577,7 +699,7 @@ fn spawn_sky(
     if let Some(sky) = &data.sky
         && view == MapDebugView::Normal
     {
-        let handle = images.add(sky_image(sky, &data.textures));
+        let handle = images.add(built.unwrap_or_else(|| sky_image(sky, &data.textures)));
         sky_handle = Some(handle.clone());
         commands.insert_resource(MapSkybox(handle));
     }
@@ -620,9 +742,87 @@ fn spawn_sky(
     sky_handle
 }
 
+/// What the steps spawning the world's meshes share (`spawn_world_meshes`).
+#[derive(Default)]
+struct WorldMeshes {
+    /// Areaportal windows' brushes (materials of their own).
+    window_brushes: std::collections::HashSet<usize>,
+    /// Brush entities with broken looks (never merged).
+    paned: std::collections::HashSet<usize>,
+    /// Brush entities' mesh bounds (map space).
+    node_centres: HashMap<usize, (Vec3, Vec3)>,
+    world_merger: Option<merge::Merger<(Handle<WorldMaterial>, bool)>>,
+    standard_merger: Option<merge::Merger<(Handle<StandardMaterial>, bool)>>,
+    world_shared: HashMap<(bool, Option<usize>, String), Handle<WorldMaterial>>,
+    standard_shared: HashMap<(bool, Option<usize>, String), Handle<StandardMaterial>>,
+    /// Brush entity nodes' mesh bounds (node space), for culling them.
+    node_bounds: HashMap<Entity, (Vec3, Vec3)>,
+    /// Overlays and infodecals draw in the map's order (`blend_order`).
+    decal_order: u32,
+    section: u32,
+    /// The next of the map's meshes.
+    next: usize,
+}
+
+impl WorldMeshes {
+    fn new(s: &MapSpawn) -> Self {
+        let (data, root) = (s.data, s.root);
+        // One material asset per distinct material (brush entities have a
+        // mesh per material each): meshes sharing one are drawn in batches
+        // (one bind group, multi-draw) instead of one draw call apiece.
+        // Keyed by the material's whole description, and by whether it is
+        // in the 3D skybox (water fog skips skybox materials).
+        // Areaportal windows' brushes keep materials of their own:
+        // `super::vis::fade_windows` changes their alpha per brush.
+        let window_brushes = data
+            .visibility
+            .as_deref()
+            .map(|v| {
+                v.areas
+                    .portals
+                    .iter()
+                    .filter_map(|p| p.fade.and_then(|f| f.brush))
+                    .collect()
+            })
+            .unwrap_or_default();
+        // Windows with broken looks switch meshes when they break: never
+        // merged.
+        let paned = data
+            .meshes
+            .iter()
+            .filter(|m| m.pane_look != PaneLook::Whole)
+            .filter_map(|m| m.entity)
+            .collect();
+        let mut node_centres: HashMap<usize, (Vec3, Vec3)> = HashMap::new();
+        for m in data.meshes.iter().filter(|m| !m.skybox && s.parent_of(m) != root) {
+            let Some(i) = m.entity else { continue };
+            let b = node_centres.entry(i).or_insert((Vec3::MAX, Vec3::MIN));
+            for p in &m.positions {
+                b.0 = b.0.min(Vec3::from(*p));
+                b.1 = b.1.max(Vec3::from(*p));
+            }
+        }
+        let chunk_size = vis::chunk_size();
+        Self {
+            window_brushes,
+            paned,
+            node_centres,
+            world_merger: Some(merge::Merger::new(chunk_size)),
+            standard_merger: Some(merge::Merger::new(chunk_size)),
+            ..default()
+        }
+    }
+}
+
+/// The map's meshes a world-mesh step spawns at most (each split into its
+/// chunks, `vis::split_mesh`).
+const WORLD_MESHES_PER_STEP: usize = 400;
+
 /// World meshes in chunks with tight bounds, tagged with the clusters
 /// they touch (see `vis`). Meshes of entities with their own node
-/// (movers, breakables) stay whole and untagged.
+/// (movers, breakables) stay whole and untagged. A step at a time
+/// (`WORLD_MESHES_PER_STEP` of the map's meshes from `state.next`); the
+/// last spawns the merged brush entities. Returns whether it was the last.
 #[allow(clippy::too_many_arguments)]
 fn spawn_world_meshes(
     commands: &mut Commands,
@@ -634,49 +834,32 @@ fn spawn_world_meshes(
     cubemaps: &[Handle<Image>],
     lightmaps: &Lightmaps,
     water_drawn: bool,
-) {
+    state: &mut WorldMeshes,
+) -> bool {
     let (data, view, root, statics) = (s.data, s.view, s.root, s.statics);
     let visibility = s.visibility;
     let chunk_size = vis::chunk_size();
-    // One material asset per distinct material (brush entities have a
-    // mesh per material each): meshes sharing one are drawn in batches
-    // (one bind group, multi-draw) instead of one draw call apiece.
-    // Keyed by the material's whole description, and by whether it is
-    // in the 3D skybox (water fog skips skybox materials).
-    // Areaportal windows' brushes keep materials of their own:
-    // `super::vis::fade_windows` changes their alpha per brush.
-    let window_brushes: std::collections::HashSet<usize> = data
-        .visibility
-        .as_deref()
-        .map(|v| {
-            v.areas
-                .portals
-                .iter()
-                .filter_map(|p| p.fade.and_then(|f| f.brush))
-                .collect()
-        })
-        .unwrap_or_default();
+    let WorldMeshes {
+        window_brushes,
+        paned,
+        node_centres,
+        world_merger,
+        standard_merger,
+        world_shared,
+        standard_shared,
+        node_bounds,
+        decal_order,
+        section,
+        next,
+    } = state;
+    let (world_merger, standard_merger) = (
+        world_merger.as_mut().expect("merged until the last step"),
+        standard_merger.as_mut().expect("merged until the last step"),
+    );
     let own = |m: &MapMesh| m.entity.filter(|e| window_brushes.contains(e));
     // Brush entities' opaque meshes are drawn merged per material and
     // chunk while they stay put (`merge`); their own meshes wait hidden.
     let merging = merge::enabled();
-    // Windows with broken looks switch meshes when they break: never
-    // merged.
-    let paned: std::collections::HashSet<usize> = data
-        .meshes
-        .iter()
-        .filter(|m| m.pane_look != PaneLook::Whole)
-        .filter_map(|m| m.entity)
-        .collect();
-    let mut node_centres: HashMap<usize, (Vec3, Vec3)> = HashMap::new();
-    for m in data.meshes.iter().filter(|m| !m.skybox && s.parent_of(m) != root) {
-        let Some(i) = m.entity else { continue };
-        let b = node_centres.entry(i).or_insert((Vec3::MAX, Vec3::MIN));
-        for p in &m.positions {
-            b.0 = b.0.min(Vec3::from(*p));
-            b.1 = b.1.max(Vec3::from(*p));
-        }
-    }
     let merge_spot = |m: &MapMesh| -> Option<(usize, Entity, Transform, Vec3)> {
         let i = m.entity?;
         let node = s.parent_of(m);
@@ -687,16 +870,10 @@ fn spawn_world_meshes(
         let (lo, hi) = node_centres.get(&i)?;
         Some((i, node, home, home.transform_point((*lo + *hi) / 2.0)))
     };
-    let mut world_merger: merge::Merger<(Handle<WorldMaterial>, bool)> = merge::Merger::new(chunk_size);
-    let mut standard_merger: merge::Merger<(Handle<StandardMaterial>, bool)> = merge::Merger::new(chunk_size);
-    let mut world_shared: HashMap<(bool, Option<usize>, String), Handle<WorldMaterial>> = HashMap::new();
-    let mut standard_shared: HashMap<(bool, Option<usize>, String), Handle<StandardMaterial>> = HashMap::new();
-    // Brush entity nodes' mesh bounds (node space), for culling them.
-    let mut node_bounds: HashMap<Entity, (Vec3, Vec3)> = HashMap::new();
-    // Overlays and infodecals draw in the map's order (`blend_order`).
-    let mut decal_order = 0u32;
-    let mut section = 0u32;
-    for m in &data.meshes {
+    let end = (*next + WORLD_MESHES_PER_STEP).min(data.meshes.len());
+    let range = *next..end;
+    *next = end;
+    for m in &data.meshes[range] {
         // Fog-only water (another shader: de_nuke's pool) is drawn as the
         // world.
         if water_drawn && m.water.is_some_and(|i| !data.water_materials[i].fog_only) {
@@ -736,7 +913,7 @@ fn spawn_world_meshes(
             // A sprite section keeps its own material, so its clock is its
             // own (two sections with one sprite run apart).
             let animated = material.skin_frames.len() > 1;
-            section += 1;
+            *section += 1;
             let key = if animated { format!("{material:?}#{section}") } else { format!("{material:?}") };
             let material = world_shared
                 .entry((m.skybox, own(m), key))
@@ -770,8 +947,8 @@ fn spawn_world_meshes(
                     e.insert((PanePart(m.pane_look), Visibility::Hidden));
                 }
                 if decal {
-                    e.insert(super::blend_order::DecalOrder(decal_order));
-                    decal_order += 1;
+                    e.insert(super::blend_order::DecalOrder(*decal_order));
+                    *decal_order += 1;
                 }
                 s.tag(&mut e, clusters);
             }
@@ -822,19 +999,23 @@ fn spawn_world_meshes(
             s.tag(&mut part, clusters);
         }
     }
+    if end < data.meshes.len() {
+        return false;
+    }
     spawn_merged(
         commands,
         s,
         meshes,
-        world_merger,
-        standard_merger,
+        state.world_merger.take().expect("merged once"),
+        state.standard_merger.take().expect("merged once"),
         lightmaps.plain.as_ref(),
     );
-    for (node, (min, max)) in node_bounds {
+    for (node, (min, max)) in std::mem::take(&mut state.node_bounds) {
         commands
             .entity(node)
             .insert((BrushEntityBounds { min, max }, VisClusters::new(Vec::new())));
     }
+    true
 }
 
 /// A lightmapped world surface's material (Source-style texture x baked

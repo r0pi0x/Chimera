@@ -12,6 +12,13 @@
 //! parameter: `world_material`, `draws`, `spawn_undrawn`, `spawn_drawn`,
 //! `spawn_prop`, `textures`, `insert_drawn` (`DrawnResource`).
 //!
+//! `spawn_map` runs them all at once (a map at startup, a server's change,
+//! `change_map`); behind a front end's loading screen they run a few a
+//! frame instead (`SpawnProgress`, `spawn_steps`: the drawer's phases in
+//! their own steps, the props `PROPS_PER_STEP` at a time), the same order,
+//! their commands held until the last step and applied together in a frame
+//! of their own, so the world never holds part of a map.
+//!
 //! What needs only the data (the world's colliders, the models' colliders
 //! and hulls, the props' brushes: `WorldParts`) comes prepared ahead when
 //! the map was loaded in the background (`prepare`, `prepare_world`), else
@@ -27,8 +34,8 @@ use super::*;
 /// would draw isn't spawned). `spawn_map` calls it at fixed places.
 pub trait MapDrawer: SystemParam + 'static {
     /// What the drawn phases make that the props and the resources use
-    /// (render handles; empty headless).
-    type Drawn;
+    /// (render handles; empty headless), and where its steps are.
+    type Drawn: Default + Send + Sync + 'static;
     /// Whether the world material exists (for the spawn log).
     fn world_material(p: &SystemParamItem<Self>) -> bool;
     /// Which of the headless stand-ins it draws itself.
@@ -39,8 +46,16 @@ pub trait MapDrawer: SystemParam + 'static {
     fn spawn_undrawn(p: &mut SystemParamItem<Self>, commands: &mut Commands, s: &MapSpawn);
     /// Everything drawn: images, character assets, lightmaps, sky, water,
     /// world meshes, model materials, detail sprites, effects, sprites,
-    /// beams, ropes and shadows.
-    fn spawn_drawn(p: &mut SystemParamItem<Self>, commands: &mut Commands, s: &MapSpawn) -> Self::Drawn;
+    /// beams, ropes and shadows, in steps (`step` counts from 0, each
+    /// called once, in order): returns whether more steps follow. A
+    /// stepped spawn (`SpawnProgress`) may run each in its own frame.
+    fn spawn_drawn(
+        p: &mut SystemParamItem<Self>,
+        commands: &mut Commands,
+        s: &MapSpawn,
+        drawn: &mut Self::Drawn,
+        step: usize,
+    ) -> bool;
     /// A placed prop's drawn parts on its node (`prop.id`): its skeleton,
     /// levels of detail, meshes, skins and bodies, and what moves its
     /// bones (a ragdoll or an animation).
@@ -147,36 +162,191 @@ impl MapSpawn<'_> {
     }
 }
 
-/// Spawns the pending map, its drawn parts by `D`.
+/// Spawns the pending map, its drawn parts by `D`, all at once.
 pub fn spawn_map<D: MapDrawer>(mut commands: Commands, pending: Res<PendingMap>, mut assets: StaticSystemParam<D>) {
-    let assets = &mut *assets;
+    let mut progress = SpawnProgress::<D>::default();
+    while !advance(&mut commands, &pending, &mut *assets, &mut progress, None) {}
+}
+
+/// A map's spawn under way a step at a time (`spawn_steps`; behind a front
+/// end's loading screen, docs/performance.md, "A map's swap"): the same
+/// phases in the same order as `spawn_map`, their commands kept here and
+/// applied together after the last step, so the world sees the whole map
+/// at once (and never part of one); only the computing and the asset
+/// stores' additions are spread over the frames.
+#[derive(Resource)]
+pub struct SpawnProgress<D: MapDrawer> {
+    queue: bevy::ecs::world::CommandQueue,
+    stage: Stage,
+    root: Entity,
+    statics: Entity,
+    entity_nodes: Vec<Option<Entity>>,
+    props: Option<PropParts>,
+    brushes: Vec<MapBrush>,
+    drawn: D::Drawn,
+    drawn_step: usize,
+    next_prop: usize,
+    steps: usize,
+    /// Every step is done: the next frame applies the commands, alone.
+    built: bool,
+    _drawer: std::marker::PhantomData<fn() -> D>,
+}
+
+impl<D: MapDrawer> Default for SpawnProgress<D> {
+    fn default() -> Self {
+        Self {
+            queue: default(),
+            stage: Stage::Start,
+            root: Entity::PLACEHOLDER,
+            statics: Entity::PLACEHOLDER,
+            entity_nodes: Vec::new(),
+            props: None,
+            brushes: Vec::new(),
+            drawn: default(),
+            drawn_step: 0,
+            next_prop: 0,
+            steps: 0,
+            built: false,
+            _drawer: default(),
+        }
+    }
+}
+
+/// Where a spawn is (`SpawnProgress`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Stage {
+    /// The roots, the world's collision, the entities' nodes and the
+    /// headless stand-ins.
+    Start,
+    /// The drawer's steps (`MapDrawer::spawn_drawn`).
+    Drawn,
+    /// The placed props, from `next_prop`.
+    Props,
+    /// The map's resources, the sun and the spawn points.
+    Finish,
+}
+
+/// Props a step spawns at most (each is a few entities and, drawn, its
+/// meshes' and materials' assets).
+const PROPS_PER_STEP: usize = 64;
+
+/// Runs the spawn's next steps: all of them without a `deadline`, else at
+/// least one and then more until the deadline passes. Returns whether the
+/// spawn is done (its last commands queued).
+fn advance<D: MapDrawer>(
+    commands: &mut Commands,
+    pending: &PendingMap,
+    assets: &mut SystemParamItem<D>,
+    progress: &mut SpawnProgress<D>,
+    deadline: Option<std::time::Instant>,
+) -> bool {
     let data = &pending.0;
-    let view = pending.1;
-    let prepared = &pending.2;
-    let world = prepared.take::<WorldParts>().unwrap_or_else(|| world_parts(data));
-    let (root, statics) = spawn_roots(&mut commands, data, D::world_material(assets));
-    spawn_world_collision(&mut commands, data, world.collision, root);
-    super::physics_clip::spawn_clips(&mut commands, data, root);
-    let entity_nodes = spawn_entity_nodes(&mut commands, data, root);
-    let s = MapSpawn {
-        data,
-        view,
-        root,
-        statics,
-        entity_nodes,
-        visibility: data.visibility.as_deref().filter(|_| !merged_world()),
-        prepared,
-    };
-    insert_entities(&mut commands, &s);
-    insert_headless_assets(&mut commands, &s, D::draws(assets));
-    D::spawn_undrawn(assets, &mut commands, &s);
-    let mut drawn = D::spawn_drawn(assets, &mut commands, &s);
-    let brushes = spawn_props::<D>(&mut commands, &s, assets, &mut drawn, world.props);
-    insert_resources::<D>(&mut commands, &s, &drawn, brushes);
-    spawn_sun_and_spawn_points(&mut commands, data);
-    // Last: the pending data goes (nothing reads it after the spawn), and
-    // with it the textures' texels, unless something kept a share.
-    commands.queue(retire_pending::<D>);
+    let (view, prepared) = (pending.1, &pending.2);
+    loop {
+        progress.steps += 1;
+        if progress.stage == Stage::Start {
+            let world = prepared.take::<WorldParts>().unwrap_or_else(|| world_parts(data));
+            let (root, statics) = spawn_roots(commands, data, D::world_material(assets));
+            spawn_world_collision(commands, data, world.collision, root);
+            super::physics_clip::spawn_clips(commands, data, root);
+            progress.entity_nodes = spawn_entity_nodes(commands, data, root);
+            (progress.root, progress.statics, progress.props) = (root, statics, Some(world.props));
+        }
+        let s = MapSpawn {
+            data,
+            view,
+            root: progress.root,
+            statics: progress.statics,
+            entity_nodes: std::mem::take(&mut progress.entity_nodes),
+            visibility: data.visibility.as_deref().filter(|_| !merged_world()),
+            prepared,
+        };
+        match progress.stage {
+            Stage::Start => {
+                insert_entities(commands, &s);
+                insert_headless_assets(commands, &s, D::draws(assets));
+                D::spawn_undrawn(assets, commands, &s);
+                progress.stage = Stage::Drawn;
+            }
+            Stage::Drawn => {
+                let more = D::spawn_drawn(assets, commands, &s, &mut progress.drawn, progress.drawn_step);
+                progress.drawn_step += 1;
+                if !more {
+                    progress.brushes = start_props(data, progress.props.as_ref());
+                    progress.stage = Stage::Props;
+                }
+            }
+            Stage::Props => {
+                let parts = progress.props.as_mut().expect("the props' parts, from the start");
+                let end = (progress.next_prop + PROPS_PER_STEP).min(data.props.len());
+                for i in progress.next_prop..end {
+                    let placed = std::mem::take(&mut parts.brushes[i]);
+                    spawn_prop::<D>(
+                        commands,
+                        &s,
+                        assets,
+                        &mut progress.drawn,
+                        &mut progress.brushes,
+                        i,
+                        &data.props[i],
+                        &parts.model_colliders,
+                        placed,
+                    );
+                }
+                progress.next_prop = end;
+                if end == data.props.len() {
+                    progress.stage = Stage::Finish;
+                }
+            }
+            Stage::Finish => {
+                insert_resources::<D>(commands, &s, &progress.drawn, std::mem::take(&mut progress.brushes));
+                spawn_sun_and_spawn_points(commands, data);
+                // Last: the pending data goes (nothing reads it after the
+                // spawn), and with it the textures' texels, unless something
+                // kept a share.
+                commands.queue(retire_pending::<D>);
+                return true;
+            }
+        }
+        progress.entity_nodes = s.entity_nodes;
+        if deadline.is_some_and(|d| std::time::Instant::now() >= d) {
+            return false;
+        }
+    }
+}
+
+/// One frame's share of the pending map's spawn (`SpawnProgress`, which
+/// `begin_spawn` inserted): steps until `budget` is spent (at least one).
+/// Returns whether the map is spawned: its commands, held since the first
+/// step, then go to the world together at the end of this system.
+pub(super) fn spawn_steps<D: MapDrawer>(
+    In(budget): In<std::time::Duration>,
+    mut commands: Commands,
+    pending: Res<PendingMap>,
+    mut assets: StaticSystemParam<D>,
+    mut progress: ResMut<SpawnProgress<D>>,
+) -> bool {
+    let progress = &mut *progress;
+    if progress.built {
+        // A frame of its own: what the world does with a whole new map
+        // (the colliders' hooks, the hierarchy, a frame's first look at
+        // thousands of entities) is the most of any step.
+        info!("map spawned in {} steps", progress.steps);
+        commands.append(&mut progress.queue);
+        commands.remove_resource::<SpawnProgress<D>>();
+        return true;
+    }
+    // A budget past any instant: every step now.
+    let deadline = std::time::Instant::now().checked_add(budget);
+    let mut queue = std::mem::take(&mut progress.queue);
+    progress.built = advance(&mut commands.rebound_to(&mut queue), &pending, &mut *assets, progress, deadline);
+    progress.queue = queue;
+    false
+}
+
+/// Starts a stepped spawn of the pending map (`spawn_steps`).
+pub(super) fn begin_spawn<D: MapDrawer>(world: &mut World) {
+    world.insert_resource(SpawnProgress::<D>::default());
 }
 
 /// Takes `PendingMap` out of the world once the map is spawned
@@ -232,9 +402,18 @@ pub(super) struct WorldParts {
     props: PropParts,
 }
 
-/// The world's job for `MapHooks::prepare`.
+/// The world's job for `MapHooks::prepare`: its parts, the surfaces'
+/// colours (`SurfaceColors`) and the light field's first use.
 pub(super) fn prepare_world(_: &World) -> prepare::PrepareJob {
-    Box::new(|data, prepared| prepared.insert(world_parts(data)))
+    Box::new(|data, prepared| {
+        prepared.insert(world_parts(data));
+        prepared.insert(surface_color::SurfaceColors::new(data));
+        // A light field may build what it needs on its first use (Source's:
+        // the occluding brushes' hulls): here, not in the first tick.
+        if let Some(field) = &data.light_field {
+            (field.0)(Vec3::ZERO);
+        }
+    })
 }
 
 fn world_parts(data: &MapData) -> WorldParts {
@@ -589,30 +768,21 @@ fn prop_brushes(
     (prop_brush, placed)
 }
 
-/// Placed props: a node each with its collision, culling, meshes,
-/// skeleton and what the logic may switch. Returns the map's brushes for
-/// movement (the world's, plus props that are (close to) convex).
-fn spawn_props<D: MapDrawer>(
-    commands: &mut Commands,
-    s: &MapSpawn,
-    a: &mut SystemParamItem<D>,
-    drawn: &mut D::Drawn,
-    parts: PropParts,
-) -> Vec<MapBrush> {
-    let data = s.data;
+/// Before the placed props (`spawn_prop`, a node each with its collision,
+/// culling, meshes, skeleton and what the logic may switch): the map's
+/// brushes for movement they add to (the world's; each prop that is
+/// (close to) convex adds its own).
+fn start_props(data: &MapData, parts: Option<&PropParts>) -> Vec<MapBrush> {
     // Exact brushes for movement that sweeps them (Source): the world's,
     // plus props that are (close to) convex, in world space.
-    let mut brushes = data.collision_brushes.clone();
+    let brushes = data.collision_brushes.clone();
     info!(
         "props: {} of {} models collide by their collision model, {} more as convex hulls; {} have levels of detail",
         data.models.iter().filter(|m| m.collision.is_some()).count(),
         data.models.len(),
-        parts.model_hulls.iter().filter(|h| h.is_some()).count(),
+        parts.map_or(0, |p| p.model_hulls.iter().filter(|h| h.is_some()).count()),
         data.models.iter().filter(|m| !m.lods.is_empty()).count(),
     );
-    for ((i, prop), placed) in data.props.iter().enumerate().zip(parts.brushes) {
-        spawn_prop::<D>(commands, s, a, drawn, &mut brushes, i, prop, &parts.model_colliders, placed);
-    }
     brushes
 }
 
@@ -889,7 +1059,8 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
         commands.insert_resource(vis::ActiveVisibility(v.clone()));
     }
     D::insert_drawn(drawn, commands, s, DrawnResource::DecalSurfaces);
-    commands.insert_resource(surface_color::SurfaceColors::new(data));
+    let colors = s.prepared.take::<surface_color::SurfaceColors>();
+    commands.insert_resource(colors.unwrap_or_else(|| surface_color::SurfaceColors::new(data)));
     commands.insert_resource(particles::ParticleMaterials(data.particles.clone()));
     D::insert_drawn(drawn, commands, s, DrawnResource::Particles);
     let look = |h: &Arc<hud::GameHud>| {

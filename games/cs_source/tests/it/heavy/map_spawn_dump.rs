@@ -12,7 +12,11 @@
 //! `<dir>/<map>.systems.txt`, for refactors of the map's registration
 //! (`map::build`). `CHIMERA_SPAWN_DUMP_PREPARED=1` spawns each map with its
 //! parts prepared ahead (`map::prepare`, as the client's background load
-//! does): the dumps must not differ.
+//! does): the dumps must not differ. `CHIMERA_SPAWN_DUMP_VIA=change` swaps
+//! each map in after the start instead (`map::prepare::change_map_prepared`,
+//! all at once), `=stepped` the same a step a frame
+//! (`map::prepare::begin_map_change`, the simulation paused between, as the
+//! client's loading screen does): those two dumps must not differ either.
 //!
 //! `cargo test --features dev --test it heavy::map_spawn_dump -- --nocapture`
 
@@ -120,6 +124,34 @@ fn dump_spawned_maps() {
                 continue;
             }
         };
+        let via = chimera_core::env::var("CHIMERA_SPAWN_DUMP_VIA").ok();
+        if let Some(via) = via.as_deref() {
+            let mut sim = Sim::with(CsSim, |app| {
+                app.add_plugins((render_assets, MapPlugin::empty()));
+            });
+            let w = sim.app.world_mut();
+            let prepared = crate::stack::map::prepare::preparation(w).run(&map);
+            let view = crate::stack::map::MapDebugView::Normal;
+            if via == "stepped" {
+                crate::stack::map::prepare::begin_map_change(w, map, prepared, view);
+                w.resource_mut::<Time<Virtual>>().pause();
+                let mut frames = 0;
+                while !crate::stack::map::prepare::spawn_some(sim.app.world_mut(), std::time::Duration::ZERO) {
+                    sim.app.update();
+                    frames += 1;
+                }
+                sim.app.world_mut().resource_mut::<Time<Virtual>>().unpause();
+                eprintln!("{name}: spawned over {frames} frames");
+            } else {
+                crate::stack::map::prepare::change_map_prepared(w, map, prepared, view);
+            }
+            sim.app.update();
+            let text = dump(sim.app.world_mut());
+            let path = dir.join(format!("{name}.txt"));
+            std::fs::write(&path, &text).unwrap();
+            eprintln!("{name}: {} lines to {}", text.lines().count(), path.display());
+            continue;
+        }
         let mut sim = Sim::with(CsSim, |app| {
             app.add_plugins((render_assets, MapPlugin::new(map)));
             // `CHIMERA_SPAWN_DUMP_PREPARED=1`: its spawn's parts computed
