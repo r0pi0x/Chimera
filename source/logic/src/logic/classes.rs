@@ -139,6 +139,95 @@ pub enum Class {
     Extra(Box<super::community::Extra>),
 }
 
+/// Each class's number for `LogicWorld`'s scans by class (`ids_of`: the
+/// world keeps every slot's number beside the slots, so a scan for one
+/// class reads a byte per entity instead of the entity), and the masks
+/// naming them (`kinds::DOOR | kinds::BUTTON`). 0 is an empty slot. A new
+/// class gets the next number here (the match is exhaustive); under 64.
+macro_rules! class_kinds {
+    ($($n:literal $name:ident $pat:pat),* $(,)?) => {
+        impl Class {
+            pub(super) fn kind(&self) -> u8 {
+                match self {
+                    $($pat => $n,)*
+                }
+            }
+        }
+        /// One bit per class, for `LogicWorld::ids_of`.
+        pub mod kinds {
+            $(pub const $name: u64 = 1 << $n;)*
+            /// The classes with a pusher (`movers::pusher`).
+            pub const PUSHERS: u64 = ATTACHED
+                | BREAKABLE
+                | DOOR
+                | BUTTON
+                | MOVE_LINEAR
+                | ROTATING
+                | TRAIN
+                | BRUSH
+                | PROP_DOOR
+                | CONVEYOR
+                | MOMENTARY;
+        }
+    };
+}
+
+class_kinds! {
+    1 NONE Class::None,
+    2 AUTO Class::Auto,
+    3 RELAY Class::Relay(..),
+    4 TIMER Class::Timer(..),
+    5 COUNTER Class::Counter(..),
+    6 CASE Class::Case(..),
+    7 COMPARE Class::Compare { .. },
+    8 BRANCH Class::Branch { .. },
+    9 FILTER Class::Filter(..),
+    10 GAME_TEXT Class::GameText(..),
+    11 SERVER_COMMAND Class::ServerCommand,
+    12 CLIENT_COMMAND Class::ClientCommand,
+    13 TRIGGER Class::Trigger(..),
+    14 DOOR Class::Door(..),
+    15 BUTTON Class::Button(..),
+    16 MOVE_LINEAR Class::MoveLinear(..),
+    17 ROTATING Class::Rotating(..),
+    18 TRAIN Class::Train(..),
+    19 PATH_TRACK Class::PathTrack(..),
+    20 BRUSH Class::Brush(..),
+    21 ATTACHED Class::Attached(..),
+    22 BREAKABLE Class::Breakable(..),
+    23 AMBIENT Class::Ambient(..),
+    24 PROP_DOOR Class::PropDoor(..),
+    25 PROP Class::Prop(..),
+    26 PART Class::Part(..),
+    27 LIGHT Class::Light(..),
+    28 GLOBAL Class::Global(..),
+    29 FIRE Class::Fire(..),
+    30 FIRE_SOURCE Class::FireSource(..),
+    31 FIRE_SENSOR Class::FireSensor(..),
+    32 FLAME Class::Flame(..),
+    33 AREA_PORTAL Class::AreaPortal(..),
+    34 OCCLUDER Class::Occluder(..),
+    35 TONEMAP Class::Tonemap,
+    36 IGNITER Class::Igniter,
+    37 EQUIP Class::Equip(..),
+    38 SPEED_MOD Class::SpeedMod,
+    39 GAME_UI Class::GameUi(..),
+    40 FADE Class::Fade,
+    41 SCORE Class::Score,
+    42 HUD_HINT Class::HudHint,
+    43 EXPLOSION Class::Explosion(..),
+    44 CONVEYOR Class::Conveyor(..),
+    45 TEMPLATE Class::Template(..),
+    46 MAKER Class::Maker(..),
+    47 CAMERA Class::Camera(..),
+    48 THRUSTER Class::Thruster(..),
+    49 UPRIGHT Class::Upright(..),
+    50 MOTOR Class::Motor(..),
+    51 JOINT Class::Joint(..),
+    52 MOMENTARY Class::Momentary(..),
+    53 EXTRA Class::Extra(..),
+}
+
 /// game_player_equip: its items (keyvalue name, count) and whether it
 /// strips the player's weapons first (spawnflag 2); player_weaponstrip:
 /// no items, strips. (Spawning players with a non-"Use Only" equip is

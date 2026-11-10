@@ -10,7 +10,11 @@
 //! Covers: the I/O core (`LogicWorld`: named entities, output connections, the
 //! time-ordered event queue serviced once per tick, target matching with
 //! `!activator`/`!caller`/`!self`/`!player`, `*` and the classname fallback,
-//! Kill/AddOutput/FireUser, value typing in `value.rs`).
+//! Kill/AddOutput/FireUser, value typing in `value.rs`). The per-tick
+//! passes ask for the entities of their classes (`ids_of` with
+//! `classes::kinds`' masks: each class's slots are kept in a list), not for
+//! every entity (`ids`): a map has thousands, and some forty passes a tick
+//! each read them all (docs/performance.md, "Performance pass").
 //!
 //! Queue delays are whole ticks, ceil(d/dt − 1e-4), and a killed entity
 //! takes no more inputs, even in the tick it was killed in (both measured
@@ -648,6 +652,13 @@ pub const MAX_DELIVERIES_PER_TICK: usize = 10_000;
 /// The logic world.
 pub struct LogicWorld {
     slots: Vec<(u32, Option<LogicEntity>)>,
+    /// Each slot's class number (`Class::kind`; 0: empty), beside the
+    /// slots, and each class's slots in order (`by_kind[class number]`):
+    /// what `ids_of` reads, so a scan for a class doesn't touch every
+    /// entity. Kept by `sync_kind` wherever a slot is filled, emptied or
+    /// its class set (`check_kinds` in debug builds).
+    kinds: Vec<u8>,
+    by_kind: Vec<Vec<u32>>,
     queue: VecDeque<Event>,
     /// Current tick; 0 is the activation tick.
     pub tick: i64,
@@ -772,6 +783,8 @@ impl LogicWorld {
     pub fn new(dt: f32) -> Self {
         Self {
             slots: Vec::new(),
+            kinds: Vec::new(),
+            by_kind: vec![Vec::new(); 64],
             queue: VecDeque::new(),
             tick: 0,
             dt,
@@ -840,6 +853,7 @@ impl LogicWorld {
         {
             *slot = None;
             *g += 1;
+            self.sync_kind(id.index as usize);
         }
     }
 
@@ -896,6 +910,7 @@ impl LogicWorld {
                 continue;
             }
             fresh.slots[i] = old.clone();
+            fresh.sync_kind(i);
             ids[i] = EntId {
                 index: i as u32,
                 generation: old.0,
@@ -1019,11 +1034,67 @@ impl LogicWorld {
         let index = self.slots.len() as u32;
         self.slots.push((0, Some(ent)));
         let id = EntId { index, generation: 0 };
+        self.sync_kind(index as usize);
         let class = Class::spawn(self, id);
         if let Some(e) = self.get_mut(id) {
             e.class = class;
         }
+        self.sync_kind(index as usize);
         id
+    }
+
+    /// Slot `index`'s class number into `kinds`: after the slot was
+    /// filled or emptied, or its entity's class became another.
+    pub(super) fn sync_kind(&mut self, index: usize) {
+        if self.kinds.len() < self.slots.len() {
+            self.kinds.resize(self.slots.len(), 0);
+        }
+        let Some((_, slot)) = self.slots.get(index) else { return };
+        let kind = slot.as_ref().map_or(0, |e| e.class.kind());
+        self.set_kind(index, kind);
+    }
+
+    /// `sync_kind` with the class number given.
+    fn set_kind(&mut self, index: usize, kind: u8) {
+        let old = std::mem::replace(&mut self.kinds[index], kind);
+        if old == kind {
+            return;
+        }
+        let slot = index as u32;
+        if old != 0 {
+            let list = &mut self.by_kind[old as usize];
+            if let Ok(at) = list.binary_search(&slot) {
+                list.remove(at);
+            }
+        }
+        if kind != 0 {
+            let list = &mut self.by_kind[kind as usize];
+            if let Err(at) = list.binary_search(&slot) {
+                list.insert(at, slot);
+            }
+        }
+    }
+
+    /// Debug builds: `kinds` says what the slots hold (an entity whose
+    /// class became another without `sync_kind` would be missed by the
+    /// scans by class).
+    fn check_kinds(&self) {
+        debug_assert!(
+            self.kinds.len() == self.slots.len()
+                && self
+                    .slots
+                    .iter()
+                    .zip(&self.kinds)
+                    .all(|((_, slot), k)| slot.as_ref().map_or(0, |e| e.class.kind()) == *k),
+            "LogicWorld::kinds is stale: call sync_kind where an entity's class changes"
+        );
+        debug_assert!(
+            self.by_kind.iter().skip(1).map(Vec::len).sum::<usize>() == self.kinds.iter().filter(|k| **k != 0).count()
+                && self.by_kind.iter().enumerate().skip(1).all(|(kind, list)| {
+                    list.is_sorted() && list.iter().all(|i| self.kinds[*i as usize] as usize == kind)
+                }),
+            "LogicWorld::by_kind doesn't list what kinds holds"
+        );
     }
 
     pub fn get(&self, id: EntId) -> Option<&LogicEntity> {
@@ -1045,6 +1116,47 @@ impl LogicWorld {
             Who::Ent(id) => self.get(id).is_some(),
             Who::Player(e) => self.players.iter().any(|p| p.entity == e),
         }
+    }
+
+    /// The live entities of the classes in `mask` (`classes::kinds`), in
+    /// entity-list order: `ids` filtered by class, without reading the
+    /// entities.
+    pub fn ids_of(&self, mask: u64) -> Vec<EntId> {
+        let id = |i: usize| EntId {
+            index: i as u32,
+            generation: self.slots[i].0,
+        };
+        let mask = mask & !1;
+        // Every slot's number, in order: for most classes, or many
+        // entities of several.
+        let scan = || -> Vec<EntId> {
+            self.kinds
+                .iter()
+                .enumerate()
+                .filter(|(_, k)| mask & (1u64 << **k) != 0)
+                .map(|(i, _)| id(i))
+                .collect()
+        };
+        if mask.count_ones() > 12 {
+            return scan();
+        }
+        // A few classes: their lists, put in order when more than one has
+        // any (unless they hold a good part of the entities: the scan is
+        // in order already).
+        let lists = || (1..64).filter(|k| mask & (1u64 << k) != 0).map(|k| &self.by_kind[k]).filter(|l| !l.is_empty());
+        let mut some = lists();
+        let (Some(first), second) = (some.next(), some.next()) else {
+            return Vec::new();
+        };
+        if second.is_none() {
+            return first.iter().map(|i| id(*i as usize)).collect();
+        }
+        if lists().map(Vec::len).sum::<usize>() * 8 > self.kinds.len() {
+            return scan();
+        }
+        let mut all: Vec<u32> = lists().flatten().copied().collect();
+        all.sort_unstable();
+        all.into_iter().map(|i| id(i as usize)).collect()
     }
 
     /// Every live entity id, in entity-list order.
@@ -1132,6 +1244,8 @@ impl LogicWorld {
 
     /// End of a frame: remove killed entities; next tick.
     pub fn end_frame(&mut self) {
+        self.check_kinds();
+        let mut gone = Vec::new();
         for (i, (g, slot)) in self.slots.iter_mut().enumerate() {
             if let Some(e) = slot.as_ref().filter(|e| e.killed)
                 && let Class::Ambient(a) = &e.class
@@ -1170,7 +1284,11 @@ impl LogicWorld {
             if slot.as_ref().is_some_and(|e| e.killed) {
                 *slot = None;
                 *g += 1;
+                gone.push(i);
             }
+        }
+        for i in gone {
+            self.set_kind(i, 0);
         }
         self.tick += 1;
     }
@@ -1740,7 +1858,7 @@ impl LogicWorld {
 
     /// Run due thinks, in entity order.
     pub fn run_thinks(&mut self) {
-        for id in self.ids() {
+        for id in self.ids_of(!super::classes::kinds::PUSHERS) {
             // Movers think after their push step (`step_movers`).
             let due = self.get(id).is_some_and(|e| {
                 !e.killed && e.next_think.is_some_and(|t| t <= self.tick) && super::movers::pusher(&e.class).is_none()

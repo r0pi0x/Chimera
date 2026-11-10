@@ -9,6 +9,7 @@
 //! hold time, freeze, invulnerability, interrupt, `camera_views` →
 //! `core::MapView`.
 
+use super::classes::kinds;
 use bevy::prelude::*;
 
 use super::classes::Class;
@@ -351,7 +352,7 @@ impl LogicWorld {
         let players = &self.players;
         self.views
             .retain(|(p, _)| players.iter().find(|x| x.entity == *p).is_none_or(|x| x.alive));
-        for id in self.ids() {
+        for id in self.ids_of(kinds::CAMERA) {
             let Some(Class::Camera(c)) = self.get(id).map(|e| &e.class) else { continue };
             if !c.on || c.thinking || c.velocity == Vec3::ZERO {
                 continue;

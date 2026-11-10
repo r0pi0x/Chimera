@@ -24,6 +24,7 @@
 //! (`core::MapBrush::sweep_box`). Why it's OK for now: Enough for doors,
 //! buttons, lifts and fans; trains and physics need more.
 
+use super::classes::kinds;
 use bevy::prelude::*;
 
 use super::classes::Class;
@@ -1755,7 +1756,7 @@ impl LogicWorld {
 
     /// Mover brush entities in entity order: (id, pose, visible, solid).
     pub fn mover_poses(&self) -> Vec<(EntId, Vec3, Vec3, Vec3, bool, bool)> {
-        self.ids()
+        self.ids_of(kinds::PUSHERS)
             .into_iter()
             .filter_map(|id| {
                 let e = self.get(id)?;
@@ -1774,7 +1775,7 @@ impl LogicWorld {
     /// basics" and "Pushing, riding and blocking").
     pub fn step_movers(&mut self, collision: &dyn Collision) {
         let dt = self.dt as f64;
-        for id in self.ids() {
+        for id in self.ids_of(kinds::PUSHERS) {
             let Some(e) = self.get(id) else { continue };
             if pusher(&e.class).is_none() || e.killed || matches!(e.class, Class::Attached(_)) {
                 continue;
@@ -1845,7 +1846,7 @@ impl LogicWorld {
 
     /// Parented brushes take their parent's pose.
     fn follow_parents(&mut self) {
-        for id in self.ids() {
+        for id in self.ids_of(kinds::ATTACHED | kinds::BREAKABLE) {
             let Some(a) = self.get(id).and_then(|e| attached(&e.class)) else { continue };
             let Some(parent) = a.parent else { continue };
             let Some(pp) = self.get(parent).and_then(|e| pusher(&e.class)).cloned() else {
@@ -2012,7 +2013,7 @@ impl LogicWorld {
         let (sy, cy) = pl.view.y.to_radians().sin_cos();
         let up = Vec3::new(sp * cy, sp * sy, cp);
         let usable: Vec<EntId> = self
-            .ids()
+            .ids_of(kinds::DOOR | kinds::BUTTON | kinds::ROTATING | kinds::PROP_DOOR)
             .into_iter()
             .filter(|id| match self.get(*id) {
                 Some(e) => match &e.class {
@@ -2125,7 +2126,7 @@ impl LogicWorld {
     /// (flag 256, "Touch Activates"; a locked one does nothing): a player
     /// against them.
     pub(super) fn touch_movers(&mut self) {
-        for id in self.ids() {
+        for id in self.ids_of(kinds::DOOR | kinds::BUTTON) {
             let Some(e) = self.get(id) else { continue };
             let door = matches!(e.class, Class::Door(_)) && e.has_flag(1024);
             let button = matches!(&e.class, Class::Button(b) if !b.locked) && e.has_flag(256);

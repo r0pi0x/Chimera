@@ -17,6 +17,7 @@
 //! measured (`core::MapDamage`; 2026-10-18). Why it's OK for now: de_port's
 //! sea bites as measured.
 
+use super::classes::kinds;
 use bevy::prelude::*;
 
 use super::classes::{Class, filter_passes};
@@ -242,7 +243,7 @@ impl LogicWorld {
         // a teleport's volume still acts, whichever index (measured
         // 2026-10-18, triggers.md question 3).
         let triggers: Vec<EntId> = self
-            .ids()
+            .ids_of(kinds::TRIGGER)
             .into_iter()
             .rev()
             .filter(|id| matches!(self.get(*id).map(|e| &e.class), Some(Class::Trigger(_))))
@@ -301,7 +302,7 @@ impl LogicWorld {
     /// boost and finish triggers).
     fn touch_bodies(&mut self) {
         let bodies: Vec<(EntId, Vec3, Vec3)> = self
-            .ids()
+            .ids_of(kinds::PROP)
             .into_iter()
             .filter_map(|id| {
                 let (lo, hi) = physics_body(self, id)?;
@@ -312,7 +313,7 @@ impl LogicWorld {
             return;
         }
         let triggers: Vec<EntId> = self
-            .ids()
+            .ids_of(kinds::TRIGGER)
             .into_iter()
             .filter(|id| {
                 self.get(*id)
@@ -344,7 +345,7 @@ impl LogicWorld {
 
     /// End touch for links not refreshed this frame.
     pub fn untouch(&mut self) {
-        for id in self.ids() {
+        for id in self.ids_of(kinds::TRIGGER) {
             let Some(t) = trig_mut(self, id) else { continue };
             let mut ended = Vec::new();
             t.links.retain_mut(|(who, fresh)| {
@@ -717,7 +718,7 @@ pub(super) fn input(
 /// (damage above 0), for what places a player (spawn spots keep out of
 /// them).
 pub fn hurt_zones(w: &LogicWorld) -> Vec<&MapBrush> {
-    w.ids()
+    w.ids_of(kinds::TRIGGER)
         .into_iter()
         .filter_map(|id| trig(w, id))
         .filter(|t| t.enabled && matches!(&t.kind, Kind::Hurt(h) if h.damage > 0.0))

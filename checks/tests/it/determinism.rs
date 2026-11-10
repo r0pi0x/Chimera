@@ -51,7 +51,7 @@ const BASELINE: &[(&str, usize, usize)] = &[
     ("chimera/sim/src", 10, 0),
     ("chimera/world/src", 22, 0),
     ("chimera/net/src", 27, 0),
-    ("source/logic/src", 9, 0),
+    ("source/logic/src", 8, 0),
     ("games/cs_source/src", 28, 3),
     // Source's content converters, lifted from CS:S's loaders with their
     // maps (docs/plans/active/hl2dm.md, S2-S4) and sound scripts (S5),

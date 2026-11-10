@@ -2535,6 +2535,91 @@ session of maps (de_dust2 fresh and after eight other maps, as above), and froze
 and after on a Combat Arms and a CS:S map (no visual change is expected: the
 same materials draw, made at the same moment).
 
+## Performance pass (2026-11-10)
+
+A pass over the server tick for what scales with a map's entities and with
+the games composed, each change measured before and after. The box ran at
+load 15-40 the whole time (other agents building), so the numbers are
+user-space instructions, which move under 1% between runs here:
+`perfgate` (the CS:S scenarios, 2,000 ticks each, every thread; a
+`profiling` build, which is the playtest build with line tables, here
+with frame pointers too) and `perf record -e instructions:u` on it and on
+`ultimate_gun_game_server` (6 bots on de_dust2), folded by the innermost
+system on the stack.
+
+**Where a tick went** (before; share of the tick's instructions):
+
+| | de_dust2, CS:S, 10 bots (5.9M a tick) | mg_lego_multigames_v2, nobody on it (8.4M) |
+|---|---|---|
+| the logic bridge (`source_logic::logic::bridge::pre` and `post`) | 21% | 63% |
+| Source movement (`source_movement::step`) | 20% | 2% |
+| of that, the push-back from props (`pushaway::push_back`) | 4% | |
+| `pushaway::push_props` | 3% | |
+| avian's narrow phase and contact solver | 14% | 1% |
+| bots (`bot::think`) | 6% | |
+| ragdoll joints | 6% | |
+| buoyancy (`map::buoyancy::float_bodies`) | 0% (no water) | 12% |
+| Bevy's transform propagation (per frame, not per tick) | 4% | 9% |
+
+### The logic bridge
+
+Map logic (`source_logic`) is a world of its own that the bridge runs
+twice a tick (before and after movement) and then brings the ECS in line
+with. Both halves read everything every time:
+
+- **Scans.** Some forty passes a phase each asked for every entity
+  (`LogicWorld::ids`: a list made by walking every slot) and looked at each
+  one's class: thinks, movers, cameras, triggers, breakables, props, fires,
+  joints, areaportals, occluders, the monitor's camera. Every slot now has
+  its class number beside it and every class a list of its slots
+  (`LogicWorld::ids_of` with `classes::kinds`' masks, kept by `sync_kind`
+  wherever a slot is filled, emptied or its class set; debug builds check
+  them at every frame's end), so a pass visits only its classes'
+  entities, in the same order. The passes still filter as before: the
+  mask only has to hold their classes.
+- **A hash map per phase.** `sync_movers` made a `HashMap<EntId, Entity>` of
+  every mover's node each phase (SipHash: a tenth of mg_lego's tick); the
+  nodes are found by slot now. `rides_body` searched the list of parent
+  links for every mover (`body_riders`: by slot).
+- **A search per prop.** `sync_props` searched the props' states for each
+  prop's (`states.iter().find`), quadratic in a map's props: a binary
+  search (the states are in entity order).
+- **Writes' tests through `EntityWorldMut`.** Every mover's and prop's node
+  got some ten component lookups and comparisons each phase to find, almost
+  always, nothing to write. The bridge now tells the nodes with something
+  to write first: the movers' in one walk over the nodes through a kept
+  query (`MoverWants::differ`), a prop's with one kept-query read
+  (`prop_differs`), each the writes' own tests in their order; only those
+  nodes run the old code. `SyncEveryNode` (a resource) runs the old code
+  for every node.
+
+| `perfgate`, instructions for 2,000 ticks | de_dust2 | mg_lego_multigames_v2 | greybox |
+|---|---|---|---|
+| before | 13.40G | 17.72G | 1.29G |
+| scans by class (a byte per slot), nodes by slot, the prop search | 12.32G | 13.20G | 1.30G |
+| class lists, nodes with nothing to write passed over, riders by slot | 11.56G (-13.7%) | 10.93G (-38.3%) | 1.29G |
+
+(Two runs each; they differ by under 0.5%. The median tick: de_dust2 5.9M
+to 4.9M, mg_lego 8.4M to 5.4M.) What is left of the bridge on mg_lego (about
+40% of its tick) is `sync_movers` working out what each of its thousands of
+movers wants, twice a tick (its pose's rotation, its colour, its panes), and
+the logic's own mover step; passing those over needs the logic to say which
+entities changed since the last phase (a stamp set by `get_mut`), which
+nothing tracks yet.
+
+Guards: `source_logic`'s `scans_by_class_match_full_scans` (every class's
+scan against a filtered full scan, through kills, a flame made at run time
+and a round restart; `kinds::PUSHERS` against `movers::pusher`) and
+`body_riders_answer_as_the_search`; `cs_source`'s
+`map_logic::skipping_unchanged_nodes_changes_nothing` (a door, a brush a
+timer switches and colours, a vent shot to pieces, a prop switched, skinned
+and killed, a round restart: every mover's and prop's node the same after
+each of 260 ticks with and without the skip; it fails with a test of
+`differ` or `prop_differs` taken out) and `map_logic::idle_entities_cost_a_tick_little`
+(1,200 idle brushes and 2,400 points: the tick with the skip must cost less
+than with every node written through; it prints both, 9.0M against 11.9M
+instructions in a test build).
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,
