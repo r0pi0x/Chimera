@@ -229,7 +229,7 @@ use std::{
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
-use chimera_core::character::CharacterPartsExt;
+use chimera_core::{character::CharacterPartsExt, later::Later};
 use chimera_sim::server_docs::DocsAppExt;
 use serde::{Deserialize, Serialize};
 
@@ -1169,7 +1169,19 @@ impl HitSphere {
     /// but the neck (its hitgroup is the chest either way).
     pub fn region(&self) -> crate::core::BodyRegion {
         use crate::core::BodyRegion as R;
-        let n = self.name.to_ascii_lowercase();
+        // Lower-cased on the stack (every Combat Arms character's hitboxes
+        // ask each tick); a long name on the heap.
+        let mut buf = [0u8; 64];
+        let heap;
+        let n: &str = if self.name.len() <= buf.len() {
+            let out = &mut buf[..self.name.len()];
+            out.copy_from_slice(self.name.as_bytes());
+            out.make_ascii_lowercase();
+            std::str::from_utf8(out).expect("ASCII lower-casing keeps UTF-8")
+        } else {
+            heap = self.name.to_ascii_lowercase();
+            &heap
+        };
         // The side by where it sits; an install table's (no measured
         // place) by its name (`Left_*`, `Bip01 L *`, `*_L`).
         let left = if self.at == Vec3::ZERO {
@@ -1951,8 +1963,10 @@ struct Body {
     /// Its body's forward and right (the legs': Corrections 6).
     forward: Vec3,
     right: Vec3,
-    /// Its hit shapes in the world (`body_shapes`).
-    shapes: crate::core::Hitboxes,
+    /// Its hit shapes in the world (`body_shapes`), made when a ray first
+    /// reaches its box (every test of the shapes comes after a box test):
+    /// a body no round comes near is never posed (`characters::CaPose`).
+    shapes: Later<crate::core::Hitboxes>,
 }
 
 #[derive(bevy::ecs::system::SystemParam)]
@@ -2094,7 +2108,7 @@ impl Delivery<'_, '_> {
                     Some(r) if !crate::slots::GameIdentity::allows(identity, super::GAME) => {
                         r.hitboxes.as_ref().map(|h| {
                             let (feet, _) = r.frame();
-                            body_shapes(&h[..], feet, Quat::from_rotation_y(r.yaw))
+                            body_shapes(&h.get().0, feet, Quat::from_rotation_y(r.yaw))
                         })
                     }
                     Some(_) => None,
@@ -2103,23 +2117,28 @@ impl Delivery<'_, '_> {
                 // The body's twist from its view (the legs lag the mouse).
                 let twist = yaws.get(&entity).map_or(0.0, |b| wrap_angle(b - intent.yaw));
                 // A body model's own pose; else the spec's skeleton.
-                let modelled = pose.filter(|p| p.modelled && p.skeleton == data.first().map_or(0, |s| s.skeleton));
-                let (origin, min, max, spheres, body) = match rewound {
+                let modelled = pose.filter(|p| p.modelled_on(data.first().map_or(0, |s| s.skeleton))).cloned();
+                let pitch = -intent.pitch;
+                let (origin, min, max, body, spheres): (_, _, _, _, Box<dyn FnOnce() -> Vec<(Vec3, f32)> + Send>) = match rewound {
                     Some(r) => {
                         let b = r.aabb();
                         let turn = Quat::from_rotation_y(r.yaw);
-                        let (min, max, mut spheres) = geometry_at_by(r.origin, turn, b.min, b.max, data, -intent.pitch, server);
-                        if let Some(p) = modelled {
-                            spheres = posed_geometry_by(r.origin, min, r.yaw + (p.body_yaw - intent.yaw), p, data, server);
-                        }
-                        (r.origin, min, max, spheres, r.yaw + twist)
+                        let (origin, (min, max)) = (r.origin, (b.min, b.max));
+                        let (yaw, view) = (r.yaw, intent.yaw);
+                        let spheres = move || match modelled {
+                            Some(p) => posed_geometry_by(origin, min, yaw + (p.legs_yaw() - view), &p, data, server),
+                            None => geometry_at_by(origin, turn, min, max, data, pitch, server).2,
+                        };
+                        (r.origin, min, max, r.yaw + twist, Box::new(spheres))
                     }
                     None => {
-                        let (min, max, mut spheres) = body_geometry_by(t, intent, state, aabb, data, server)?;
-                        if let Some(p) = modelled {
-                            spheres = posed_geometry_by(t.translation, min, p.body_yaw, p, data, server);
-                        }
-                        (t.translation, min, max, spheres, intent.yaw + twist)
+                        let (min, max) = body_box(t, state, aabb)?;
+                        let (origin, look) = (t.translation, intent.yaw_rotation());
+                        let spheres = move || match modelled {
+                            Some(p) => posed_geometry_by(origin, min, p.legs_yaw(), &p, data, server),
+                            None => geometry_at_by(origin, look, min, max, data, pitch, server).2,
+                        };
+                        (t.translation, min, max, intent.yaw + twist, Box::new(spheres))
                     }
                 };
                 let turn = Quat::from_rotation_y(body);
@@ -2129,7 +2148,10 @@ impl Delivery<'_, '_> {
                 // player's two, characters.md 13.6: the hull is the
                 // player's, Open question 35).
                 let held = theirs.is_some() || data.first().is_some_and(|s| s.skeleton >= 2);
-                let shapes = theirs.unwrap_or_else(|| sphere_shapes(data, &spheres));
+                let shapes = match theirs {
+                    Some(t) => Later::ready(t),
+                    None => Later::new(move || sphere_shapes(data, &spheres())),
+                };
                 let (min, max) = if held {
                     box_holding(min, max, &shapes)
                 } else {
@@ -2335,6 +2357,16 @@ pub fn body_geometry_by(
     Some(geometry_at_by(t.translation, intent.yaw_rotation(), min, max, data, -intent.pitch, server))
 }
 
+/// A character's box (world min, max) as `body_geometry` takes it: its
+/// movement's hull, else its collider's bounds; None without either.
+pub fn body_box(t: &Transform, state: &MovementState, aabb: Option<&ColliderAabb>) -> Option<(Vec3, Vec3)> {
+    if state.hull_max != state.hull_min {
+        Some((t.translation + state.hull_min, t.translation + state.hull_max))
+    } else {
+        aabb.map(|b| (b.min, b.max))
+    }
+}
+
 /// A character's spheres `data` in the world for its box `min..max`
 /// (world) around `origin`, turned by `turn`, with the third-person aim
 /// pitch `pitch` (radians, positive down): (min, max, spheres). The
@@ -2392,7 +2424,10 @@ pub fn posed_geometry_by(
     let unit = super::movement::movement_data().meters_per_unit;
     let feet = origin.with_y(min.y);
     let turn = Quat::from_rotation_y(yaw);
-    let centres = if server && !pose.server_spheres.is_empty() { &pose.server_spheres } else { &pose.spheres };
+    let centres: &[Option<Vec3>] = match server.then(|| pose.server_spheres()).filter(|s| !s.is_empty()) {
+        Some(s) => s,
+        None => &pose.spheres,
+    };
     data.iter()
         .enumerate()
         .map(|(i, s)| match centres.get(i).copied().flatten() {
@@ -3185,7 +3220,7 @@ fn hurt(
 ) {
     // The shape hit: its region (its hitgroup, armour location) and zone
     // factor (the body's own, Combat Arms' spheres'; else by region).
-    let shape = b.shapes.0[si];
+    let shape = b.shapes.get().0[si];
     let location = location_of(shape.region);
     let factor = shape.scale.unwrap_or_else(|| zone_factor(shape.region));
     // Hit points from here on (armour points are).
