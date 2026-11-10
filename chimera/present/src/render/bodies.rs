@@ -324,9 +324,27 @@ pub enum Face {
 
 /// A body's mesh drawn as a face part, on its bone's joint.
 #[derive(Component, Clone, Debug)]
+#[require(FaceSlot)]
 pub struct FacePart {
     pub face: Face,
     pub joint: Entity,
+}
+
+/// A face part's slot in the prop table (`probe_lit::ProbeTable`: its
+/// first rows are the face's centre, up and iris planes, as
+/// `PropParams::face_center` to `face_v`), rewritten every frame by
+/// `aim_faces` so the part's material stays unchanged (0: none yet).
+#[derive(Component, Debug, Default)]
+#[component(on_discard = free_face_slot)]
+pub struct FaceSlot(u32);
+
+fn free_face_slot(mut world: bevy::ecs::world::DeferredWorld, ctx: bevy::ecs::lifecycle::HookContext) {
+    let slot = world.get::<FaceSlot>(ctx.entity).map_or(0, |s| s.0);
+    if slot != 0
+        && let Some(mut table) = world.get_resource_mut::<probe_lit::ProbeTable>()
+    {
+        table.free(slot);
+    }
 }
 
 impl BodyAssets {
@@ -1089,33 +1107,53 @@ pub fn apply_face_morphs(
 /// 10.2), teeth toward the mouth's forward, unlit while the mouth is shut
 /// (spec 11.5 at rest).
 pub fn aim_faces(
-    parts: Query<(&FacePart, &MeshMaterial3d<PropMaterial>, &ChildOf)>,
+    mut parts: Query<(&FacePart, &mut FaceSlot, &MeshMaterial3d<PropMaterial>, &ChildOf)>,
     bodies: Query<Option<&ChildOf>, With<CharacterBody>>,
     targets: Query<&EyeTarget>,
     joints: Query<&GlobalTransform, With<BodyJoint>>,
     materials: Option<ResMut<Assets<PropMaterial>>>,
+    mut table: Option<ResMut<probe_lit::ProbeTable>>,
 ) {
     let Some(mut materials) = materials else { return };
-    for (part, material, body) in &parts {
+    for (part, mut slot, material, body) in &mut parts {
         let Ok(bone) = joints.get(part.joint) else { continue };
         let owner = bodies.get(body.parent()).ok().flatten().map(ChildOf::parent);
         let target = owner.and_then(|o| targets.get(o).ok()).map(|t| t.0);
         let scale = bone.compute_transform().scale.x;
-        let Some(mut m) = materials.get_mut(&material.0) else { continue };
-        let p = &mut m.params;
+        let Some(m) = materials.get(&material.0) else { continue };
+        // The face as the material's `face_center`, `face_up`, `face_u`
+        // and `face_v`.
+        let mut rows = [m.params.face_center, m.params.face_up, m.params.face_u, m.params.face_v];
         match &part.face {
             Face::Eye(eye) => {
                 let aim = eye.aim(bone, target, scale);
                 let (centre, up, _) = eye.world(bone);
                 let [u, v] = eye.projection(bone, aim, scale);
-                p.face_center = centre.extend(1.0);
-                p.face_up = up.extend(0.0);
-                p.face_u = u;
-                p.face_v = v;
+                rows = [centre.extend(1.0), up.extend(0.0), u, v];
             }
             Face::Teeth(t) => {
                 let forward = bone.affine().transform_vector3(t.forward).normalize_or_zero();
-                p.face_up = forward.extend(0.0);
+                rows[1] = forward.extend(0.0);
+            }
+        }
+        match table.as_mut() {
+            // Into its table slot: the material points there once.
+            Some(table) => {
+                if slot.0 == 0 {
+                    slot.0 = table.alloc();
+                }
+                table.set(slot.0, &rows.map(|r| r.to_array()));
+                if m.params.face_slot != slot.0
+                    && let Some(mut m) = materials.get_mut(&material.0)
+                {
+                    m.params.face_slot = slot.0;
+                }
+            }
+            None => {
+                if let Some(mut m) = materials.get_mut(&material.0) {
+                    let p = &mut m.params;
+                    [p.face_center, p.face_up, p.face_u, p.face_v] = rows;
+                }
             }
         }
     }

@@ -2570,7 +2570,7 @@ pub fn client_commands(app: &mut App) {
         "chimera:hurtme",
         "hurtme <head|chest|stomach|leftarm|rightarm|leftleg|rightleg|generic> [amount=100] [from yaw, degrees: 0 = shot from the front] [attacker name]: a bullet hit on yourself at that hitbox (e.g. to see your ragdoll in thirdperson; killed by a named player, its death cam and freeze cam).",
         |w, a| {
-            use crate::core::{Damage, DamageKind, Health, Hitboxes, Hitgroup, Intent};
+            use crate::core::{Damage, DamageKind, Health, Hitgroup, Intent};
             let group = match a.first().map(|s| s.to_ascii_lowercase()).as_deref() {
                 Some("head") => Hitgroup::Head,
                 Some("chest") => Hitgroup::Chest,
@@ -2601,8 +2601,7 @@ pub fn client_commands(app: &mut App) {
             let feet = w
                 .get::<avian3d::prelude::ColliderAabb>(p)
                 .map_or(t.translation, |b| t.translation.with_y(b.min.y));
-            let point = w
-                .get::<Hitboxes>(p)
+            let point = crate::core::hitboxes_in(w, p)
                 .and_then(|h| h.0.iter().find(|b| b.group() == group).map(|b| feet + yaw * b.center))
                 .unwrap_or(t.translation);
             // Shot from `from` around the facing: travelling toward it.

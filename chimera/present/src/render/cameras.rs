@@ -2,7 +2,16 @@
 //! shows it (`CamerasPlugin`): mesh instances batched on the CPU for each
 //! view instead of Bevy's GPU preprocessing (`NoIndirectDrawing` on every
 //! camera), and only the last camera drawing into a target copies the
-//! frame out to it (`skip_covered_outputs`).
+//! frame out to it (`skip_covered_outputs`). While nothing in the world is
+//! clustered (no point, spot or rect light, light probe or clustered
+//! decal), every 3D camera clusters into one cluster instead of Bevy's
+//! default grid (`cluster_by_lights`): the grid's thousands of empty
+//! clusters were assigned, extracted and uploaded every frame for every
+//! camera (8% of the render world, docs/performance.md, "Render
+//! performance"). The cluster count is a uniform, not a shader setting, so
+//! the switch back when the first muzzle flash lights up changes no
+//! pipeline; and one cluster draws any lights correctly, only slower, so a
+//! light spawned after the switch in its frame is still drawn.
 //!
 //! GPU preprocessing (Bevy's default where compute shaders run) builds
 //! each view's instance data and indirect draw parameters on the GPU:
@@ -52,12 +61,49 @@ impl Plugin for CamerasPlugin {
             // At spawn (Bevy reads it then; added later it is unspecified).
             app.register_required_components::<Camera, NoIndirectDrawing>();
         }
+        app.add_systems(
+            PostUpdate,
+            cluster_by_lights.before(bevy::light::SimulationLightSystems::AssignLightsToClusters),
+        );
         // After everything that turns cameras on or off (PostUpdate's view
         // model and sky cameras), before extraction.
         if chimera_core::env::var("CHIMERA_SKIP_OUTPUTS").is_ok_and(|v| v == "0") {
             return;
         }
         app.add_systems(Last, skip_covered_outputs);
+    }
+}
+
+/// One light cluster per 3D camera while nothing is clustered, Bevy's
+/// default grid while something is (see the module doc). Cameras with a
+/// clustering of their own (any but one or the default) are left alone.
+#[allow(clippy::type_complexity)]
+pub fn cluster_by_lights(
+    clustered: Query<
+        (),
+        Or<(
+            With<PointLight>,
+            With<SpotLight>,
+            With<bevy::light::RectLight>,
+            With<bevy::light::LightProbe>,
+            With<bevy::light::ClusteredDecal>,
+        )>,
+    >,
+    cameras: Query<(Entity, Option<&bevy::light::cluster::ClusterConfig>), With<Camera3d>>,
+    mut commands: Commands,
+) {
+    use bevy::light::cluster::ClusterConfig;
+    let single = clustered.is_empty();
+    for (camera, config) in &cameras {
+        match (config, single) {
+            (None, true) => {
+                commands.entity(camera).insert(ClusterConfig::Single);
+            }
+            (Some(ClusterConfig::Single), false) => {
+                commands.entity(camera).remove::<ClusterConfig>();
+            }
+            _ => {}
+        }
     }
 }
 

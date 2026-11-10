@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use chimera_present::{
     MapPlugin,
     render::{
-        prop_material::PropMaterial, rope_material::RopeMaterial, shadows::ShadowMaterial, sprite_material::SpriteMaterial,
+        probe_lit::ProbeTable, prop_material::PropMaterial, rope_material::RopeMaterial, shadows::ShadowMaterial, sprite_material::SpriteMaterial,
         world_material::WorldMaterial,
     },
 };
@@ -103,9 +103,12 @@ fn step(sim: &mut Sim) {
     sim.app.update();
 }
 
+/// Whether the material is probe lit, and its ambient cube's +X red as
+/// drawn (its probe table slot's, `ProbeTable::drawn`).
 fn lit(sim: &Sim, h: &Handle<PropMaterial>) -> (f32, f32) {
-    let m = sim.app.world().resource::<Assets<PropMaterial>>().get(h).expect("the material");
-    (m.params.probe, m.params.probe_cube[0].x)
+    let world = sim.app.world();
+    let m = world.resource::<Assets<PropMaterial>>().get(h).expect("the material");
+    (m.params.probe, world.resource::<ProbeTable>().drawn(m)[0][0])
 }
 
 #[test]
@@ -132,6 +135,45 @@ fn a_physics_prop_is_lit_where_it_goes() {
     let (_, light) = lit(&sim, &own);
     assert!(light > was + 2.0, "and again where it goes next: {light}");
     assert_eq!(lit(&sim, &baked).0, 0.0, "the shared material isn't touched");
+}
+
+/// A moved prop's light changes in the probe table, not in its material:
+/// the material (and so its GPU copy, prepared again on every change: a
+/// uniform buffer and a bind group) stays unchanged while the prop moves
+/// on (docs/performance.md, "Render performance").
+#[test]
+fn moving_on_changes_the_probe_table_not_the_material() {
+    let mut sim = start(true);
+    sim.ticks(2);
+    let (node, _) = prop_material(&mut sim);
+    step(&mut sim);
+    let move_to = |sim: &mut Sim, y: f32| sim.app.world_mut().get_mut::<Transform>(node).unwrap().translation.y = y;
+    move_to(&mut sim, 2.0);
+    step(&mut sim);
+    step(&mut sim);
+    let (_, own) = prop_material(&mut sim);
+    let slot = sim.app.world().resource::<Assets<PropMaterial>>().get(&own).unwrap().params.probe_slot;
+    assert_ne!(slot, 0, "lit from a table slot");
+    #[derive(Resource, Default)]
+    struct Modified(usize);
+    sim.app.init_resource::<Modified>().add_systems(
+        Last,
+        |mut events: MessageReader<AssetEvent<PropMaterial>>, mut n: ResMut<Modified>| {
+            n.0 += events.read().filter(|e| matches!(e, AssetEvent::Modified { .. })).count();
+        },
+    );
+    step(&mut sim);
+    sim.app.world_mut().resource_mut::<Modified>().0 = 0;
+    let mut last = lit(&sim, &own).1;
+    for i in 0..8 {
+        move_to(&mut sim, 3.0 + i as f32);
+        step(&mut sim);
+        let now = lit(&sim, &own).1;
+        assert!(now > last, "step {i}: relit as it goes: {last} -> {now}");
+        last = now;
+    }
+    let changes = sim.app.world().resource::<Modified>().0;
+    assert_eq!(changes, 0, "no prop material changed while it moved");
 }
 
 #[test]

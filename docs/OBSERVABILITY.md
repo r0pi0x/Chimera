@@ -1261,7 +1261,10 @@ Details and baseline numbers: [performance.md](performance.md).
   `target/profiling/examples/frame_bench [<map>] [--bots <n>] [--frames
   <n>]`: the gun game with Bevy's whole renderer drawing into an image,
   bots playing, the main schedule, extraction and render world of each
-  frame counted apart (no HUD; its medians move a tenth between runs).
+  frame counted apart (no HUD; its medians move a tenth between runs),
+  and how many prop materials and meshes changed a frame (each prepared
+  or allocated again in the render world; performance.md, "Render
+  performance").
 - A map change's frames without a display: `cargo test -p ultimate_gun_game
   --features dev --test it heavy::map_swap_frames -- --nocapture` (the
   shell's `map` flow headless over four maps, each frame's main-thread

@@ -16,12 +16,26 @@
 //! silhouettes rasterized into a coverage atlas, clipped onto world surfaces,
 //! multiplied over them; redrawn where physics props move by a quarter of a
 //! shadow texel or more (`update_prop_shadows`, `moved_visibly`; only the
-//! redrawn cell of the atlas image is rewritten; each shadow keeps one mesh
-//! asset, rewritten in place: a new handle a frame left a moving prop's shadow
-//! undrawn), hidden while the logic hides their prop (broken, killed).
+//! redrawn cell of the atlas image is rewritten), hidden while the logic
+//! hides their prop (broken, killed).
+//!
+//! A resting caster's shadow is its clipped geometry (atlas coordinates and
+//! fade per vertex). A moving one (characters' blobs; a physics prop's once
+//! it moves) is projected (`Projected`): its frame goes into the frame
+//! table (`ShadowFrames`, one storage buffer, the entity's `MeshTag` its
+//! slot) and shadow.wesl projects it per pixel onto receiver geometry
+//! around it (`region_mesh`, `REGION_MARGIN` past the frame's box), which
+//! is rewritten only when the frame leaves that region: a mesh rewritten
+//! every frame is freed and allocated again in Bevy's mesh slabs (11% of
+//! the render world with six bots, docs/performance.md, "Render
+//! performance"). Each shadow keeps one mesh asset, rewritten in place (a
+//! new handle a frame left a moving prop's shadow undrawn).
 //!
 //! Known shortcuts (docs/tech-debt.md): Dynamic shadows (`render::shadows`, shadow
-//! detail): characters cast blob shadows only, at every level (Source draws
+//! detail): a projected shadow's fade is worked out per pixel, a clipped
+//! one's per vertex (so where a receiver triangle spans the fade's start,
+//! as on a wall beside a blob, the two differ by a few levels, at most 7 of
+//! 255 seen); characters cast blob shadows only, at every level (Source draws
 //! players render-to-texture; theirs would need the posed silhouette each
 //! frame), straight down at Low and along the map's direction at Medium/High,
 //! hidden when no world surface lies within reach under them; the blob's box is
@@ -43,9 +57,16 @@ use bevy::{
     mesh::{Indices, PrimitiveTopology},
     prelude::*,
     reflect::TypePath,
-    render::render_resource::{AsBindGroup, Extent3d, TextureDimension, TextureFormat},
+    ecs::{lifecycle::HookContext, world::DeferredWorld},
+    mesh::MeshTag,
+    render::{
+        render_resource::{AsBindGroup, Extent3d, TextureDimension, TextureFormat},
+        storage::ShaderBuffer,
+    },
     shader::ShaderRef,
 };
+
+use super::gpu_table::SlotTable;
 
 use std::sync::Arc;
 
@@ -149,6 +170,46 @@ impl ShadowFrame {
     fn fade(&self, z: f32) -> f32 {
         let span = (self.max_dist - self.falloff_start).max(1e-4);
         FALLOFF_AMOUNT * ((z - self.falloff_start) / span).clamp(0.0, 1.0)
+    }
+
+    /// The box the shadow can fall in (world, axis-aligned): its rectangle
+    /// swept along `d` to its reach.
+    pub fn bounds(&self) -> (Vec3, Vec3) {
+        let (hx, hy) = (self.size.x / 2.0, self.size.y / 2.0);
+        let mut lo = Vec3::MAX;
+        let mut hi = Vec3::MIN;
+        for sx in [-1.0f32, 1.0] {
+            for sy in [-1.0f32, 1.0] {
+                for z in [0.0, self.max_dist] {
+                    let c = self.origin + self.x * (sx * hx) + self.y * (sy * hy) + self.d * z;
+                    lo = lo.min(c);
+                    hi = hi.max(c);
+                }
+            }
+        }
+        (lo, hi)
+    }
+
+    /// The frame as shadow.wesl's projected path reads it (`ShadowFrames`,
+    /// `FRAME_STRIDE` rows): origin and fade start, x and width, y and
+    /// height, d and reach, the atlas cell `rect`, up to three of the
+    /// caster's light-facing planes (unused: always passed), the lift and
+    /// the fade's amount.
+    pub fn gpu(&self, rect: (Vec2, Vec2)) -> [[f32; 4]; FRAME_STRIDE] {
+        let mut rows = [[0.0; 4]; FRAME_STRIDE];
+        rows[0] = self.origin.extend(self.falloff_start).to_array();
+        rows[1] = self.x.extend(self.size.x).to_array();
+        rows[2] = self.y.extend(self.size.y).to_array();
+        rows[3] = self.d.extend(self.max_dist).to_array();
+        rows[4] = [rect.0.x, rect.0.y, rect.1.x, rect.1.y];
+        for i in 0..3 {
+            rows[5 + i] = match self.light_faces.get(i) {
+                Some((n, d)) => n.extend(*d).to_array(),
+                None => [0.0, 0.0, 0.0, 1.0],
+            };
+        }
+        rows[8] = [LIFT * SOURCE_UNIT, FALLOFF_AMOUNT, 0.0, 0.0];
+        rows
     }
 }
 
@@ -357,6 +418,135 @@ pub fn shadow_mesh(frame: &ShadowFrame, receivers: &Receivers, rect: (Vec2, Vec2
     mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors);
     mesh.insert_indices(Indices::U32(indices));
     Some(mesh)
+}
+
+/// How far a moving shadow's receiver geometry reaches past its frame's
+/// box, metres (`region_mesh`): rebuilt once the frame leaves it, so a
+/// running character's blob gets new geometry every 10-20 frames, not
+/// every frame.
+pub const REGION_MARGIN: f32 = 1.0;
+
+/// The receiver geometry for a moving shadow (drawn by shadow.wesl's
+/// projected path, its frame from `ShadowFrames`): every world triangle
+/// facing against `d` clipped to the box `lo..hi`, lifted off its surface
+/// by `LIFT` along its normal, the normal in each vertex (the shader takes
+/// the lift back off before projecting). None when nothing is there.
+pub fn region_mesh(receivers: &Receivers, d: Vec3, lo: Vec3, hi: Vec3) -> Option<Mesh> {
+    let planes = [
+        (Vec3::X, hi.x),
+        (Vec3::NEG_X, -lo.x),
+        (Vec3::Y, hi.y),
+        (Vec3::NEG_Y, -lo.y),
+        (Vec3::Z, hi.z),
+        (Vec3::NEG_Z, -lo.z),
+    ];
+    let (mut positions, mut normals, mut indices) = (Vec::new(), Vec::new(), Vec::new());
+    for tri in receivers.near(lo, hi) {
+        let n = (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalize_or_zero();
+        if n.dot(d) >= 0.0 {
+            continue;
+        }
+        if tri[0].min(tri[1]).min(tri[2]).cmpgt(hi).any() || tri[0].max(tri[1]).max(tri[2]).cmplt(lo).any() {
+            continue;
+        }
+        let mut poly = tri.to_vec();
+        for (pn, pd) in &planes {
+            poly = clip(poly, *pn, *pd);
+            if poly.len() < 3 {
+                break;
+            }
+        }
+        if poly.len() < 3 {
+            continue;
+        }
+        let base = positions.len() as u32;
+        for p in &poly {
+            positions.push((*p + n * (LIFT * SOURCE_UNIT)).to_array());
+            normals.push(n.to_array());
+        }
+        for i in 1..poly.len() as u32 - 1 {
+            indices.extend([base, base + i, base + i + 1]);
+        }
+    }
+    if indices.is_empty() {
+        return None;
+    }
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+    mesh.insert_indices(Indices::U32(indices));
+    Some(mesh)
+}
+
+/// A frame's region: its box grown by `REGION_MARGIN`.
+fn region_of(frame: &ShadowFrame) -> (Vec3, Vec3) {
+    let (lo, hi) = frame.bounds();
+    (lo - Vec3::splat(REGION_MARGIN), hi + Vec3::splat(REGION_MARGIN))
+}
+
+/// The shadow-frame table's buffer (`ShadowFrames`).
+pub const SHADOW_FRAMES: Handle<ShaderBuffer> = bevy::asset::uuid_handle!("8e2f4a63-1b9d-4c7e-a05f-6d3c2e91b4a8");
+
+/// vec4s a frame takes in the table (`ShadowFrame::gpu`).
+pub const FRAME_STRIDE: usize = 9;
+
+/// The frame table as a shadow material binds it: always `SHADOW_FRAMES`.
+#[derive(Clone, Debug, Deref)]
+pub struct ShadowFramesBinding(pub Handle<ShaderBuffer>);
+
+impl Default for ShadowFramesBinding {
+    fn default() -> Self {
+        Self(SHADOW_FRAMES)
+    }
+}
+
+/// Moving shadows' frames (characters' blobs, physics props' shadows once
+/// they move), one slot each (`Projected`, the entity's `MeshTag`): the
+/// shader projects the atlas onto receiver geometry kept while the frame
+/// stays in its region (`region_mesh`), so a moving shadow rewrites a
+/// table row a frame instead of a mesh (a rewritten mesh is freed and
+/// allocated again in Bevy's mesh slabs: docs/performance.md, "Render
+/// performance").
+#[derive(Resource, Debug, Deref, DerefMut)]
+pub struct ShadowFrames(pub SlotTable);
+
+impl Default for ShadowFrames {
+    fn default() -> Self {
+        Self(SlotTable::new(SHADOW_FRAMES, FRAME_STRIDE))
+    }
+}
+
+/// Upload the frame table when it changed.
+pub fn upload_frames(table: Option<ResMut<ShadowFrames>>, buffers: Option<ResMut<Assets<ShaderBuffer>>>) {
+    if let (Some(mut table), Some(mut buffers)) = (table, buffers) {
+        table.upload(&mut buffers);
+    }
+}
+
+/// A shadow drawn by projection: its `ShadowFrames` slot (also its
+/// `MeshTag`) and the region its receiver geometry covers.
+#[derive(Component, Debug)]
+#[component(on_discard = free_frame_slot)]
+pub struct Projected {
+    pub slot: u32,
+    pub region: (Vec3, Vec3),
+}
+
+impl Projected {
+    /// Whether the region still holds `frame`'s box.
+    pub fn holds(&self, frame: &ShadowFrame) -> bool {
+        let (lo, hi) = frame.bounds();
+        lo.cmpge(self.region.0).all() && hi.cmple(self.region.1).all()
+    }
+}
+
+fn free_frame_slot(mut world: DeferredWorld, ctx: HookContext) {
+    let slot = world.get::<Projected>(ctx.entity).map_or(0, |p| p.slot);
+    if slot != 0
+        && let Some(mut table) = world.get_resource_mut::<ShadowFrames>()
+    {
+        table.free(slot);
+    }
 }
 
 /// Coverage cells packed into one atlas (shelves of equal-height cells).
@@ -762,17 +952,16 @@ pub fn moved_visibly(bounds: (Vec3, Vec3), n: u32, from: (Vec3, Quat), to: (Vec3
     from.0.distance(to.0) + turn * radius > texel / 4.0
 }
 
-/// A caster's shadow (silhouette into its atlas cell, and its mesh) for
-/// where its prop is now.
-pub fn rebuild(
+/// A caster's silhouette for where its prop is now, into its atlas cell;
+/// its frame.
+pub fn redraw_silhouette(
     data: &MapData,
     settings: &MapShadows,
-    receivers: &Receivers,
     atlas: &mut Atlas,
     cell: &Cell,
     translation: Vec3,
     rotation: Quat,
-) -> Option<Mesh> {
+) -> ShadowFrame {
     let model = &data.models[data.props[cell.prop].model];
     let frame = ShadowFrame::new(
         model.bounds,
@@ -783,7 +972,7 @@ pub fn rebuild(
     );
     let coverage = silhouette(model, &data.textures, &frame, translation, rotation, cell.size);
     atlas.write(cell.at, cell.size, &coverage);
-    shadow_mesh(&frame, receivers, cell.rect)
+    frame
 }
 
 #[derive(Clone, Copy, Debug, Default, bevy::render::render_resource::ShaderType)]
@@ -804,6 +993,9 @@ pub struct ShadowMaterial {
     #[texture(1)]
     #[sampler(2)]
     pub atlas: Handle<Image>,
+    /// Moving shadows' frames (`ShadowFrames`), read by the projected path.
+    #[storage(3, read_only)]
+    pub frames: ShadowFramesBinding,
 }
 
 impl Material for ShadowMaterial {
@@ -831,7 +1023,15 @@ pub struct ShadowMaterialPlugin;
 impl Plugin for ShadowMaterialPlugin {
     fn build(&self, app: &mut App) {
         embedded_asset!(app, "shadow.wesl");
-        app.add_plugins(MaterialPlugin::<ShadowMaterial>::default());
+        app.add_plugins(MaterialPlugin::<ShadowMaterial>::default())
+            .init_resource::<ShadowFrames>()
+            .add_systems(PostUpdate, upload_frames.before(bevy::asset::AssetEventSystems));
+        // The buffer at once: no material is prepared without it.
+        app.world_mut().resource_scope(|world, mut table: Mut<ShadowFrames>| {
+            if let Some(mut buffers) = world.get_resource_mut::<Assets<ShaderBuffer>>() {
+                table.upload(&mut buffers);
+            }
+        });
     }
 }
 
@@ -962,6 +1162,7 @@ pub fn apply_shadow_detail(
     let blob_material = materials.add(ShadowMaterial {
         params: params(Vec2::splat(1.0 / BLOB_TEX as f32)),
         atlas: blob_image.clone(),
+        frames: default(),
     });
     source.blob_material = Some(blob_material.clone());
     let (atlas, cells, built, material, image) = if mode == ShadowMode::Texture {
@@ -977,6 +1178,7 @@ pub fn apply_shadow_detail(
         let material = materials.add(ShadowMaterial {
             params: params(Vec2::new(1.0 / atlas.width as f32, 1.0 / atlas.height as f32)),
             atlas: image.clone(),
+            frames: default(),
         });
         (atlas, cells, built, material, image)
     } else {
@@ -1051,7 +1253,9 @@ pub struct CharacterBlob {
 /// have no render-to-texture shadow; straight down at Low, along the
 /// map's direction at Medium and High): one per living character whose
 /// body is drawn (not your own in first person, not one watched through
-/// its eyes), its mesh rewritten in place when it moves.
+/// its eyes), projected (`Projected`): its frame rewritten in
+/// `ShadowFrames` when it moves, its receiver geometry only when the frame
+/// leaves the region it covers.
 #[allow(clippy::type_complexity)]
 pub fn update_character_blobs(
     mut commands: Commands,
@@ -1068,12 +1272,17 @@ pub fn update_character_blobs(
         (With<crate::core::Intent>, Without<crate::core::Spectating>, Without<crate::map::ragdoll::Ragdolled>),
     >,
     bodies: Query<&Visibility, (With<crate::render::bodies::CharacterBody>, Without<CharacterBlob>)>,
-    mut blobs: Query<(Entity, &mut CharacterBlob, &Mesh3d, &mut Visibility), Without<crate::render::bodies::CharacterBody>>,
+    mut blobs: Query<
+        (Entity, &mut CharacterBlob, &Mesh3d, &mut Visibility, &mut Projected),
+        Without<crate::render::bodies::CharacterBody>,
+    >,
     mut meshes: ResMut<Assets<Mesh>>,
+    frames: Option<ResMut<ShadowFrames>>,
 ) {
     let mode = detail.map_or(ShadowMode::Texture, |d| d.mode());
     let material = source.as_ref().and_then(|s| s.blob_material.clone());
-    let (Some(source), Some(material), false) = (source, material, mode == ShadowMode::Off) else {
+    let (Some(source), Some(material), Some(mut frames), false) = (source, material, frames, mode == ShadowMode::Off)
+    else {
         for (e, ..) in &blobs {
             commands.entity(e).despawn();
         }
@@ -1098,23 +1307,38 @@ pub fn update_character_blobs(
         }
         let hull = movement.map_or((Vec3::ZERO, Vec3::ZERO), |m| (m.hull_min, m.hull_max));
         let frame = character_frame(hull, pose, mode, &source.settings);
-        let mesh = shadow_mesh(&frame, &source.receivers, BLOB_RECT);
-        match (blob.and_then(|b| blobs.get_mut(b).ok()), mesh) {
-            (Some((_, mut b, handle, mut vis)), Some(mesh)) => {
+        match blob.and_then(|b| blobs.get_mut(b).ok()) {
+            Some((_, mut b, handle, mut vis, mut projected)) => {
                 b.drawn = pose;
-                vis.set_if_neq(Visibility::Inherited);
-                let _ = meshes.insert(handle.id(), mesh);
+                frames.set(projected.slot, &frame.gpu(BLOB_RECT));
+                if !projected.holds(&frame) {
+                    let region = region_of(&frame);
+                    projected.region = region;
+                    match region_mesh(&source.receivers, frame.d, region.0, region.1) {
+                        Some(mesh) => {
+                            vis.set_if_neq(Visibility::Inherited);
+                            let _ = meshes.insert(handle.id(), mesh);
+                        }
+                        // Nothing under it within reach (jumping, falling).
+                        None => {
+                            vis.set_if_neq(Visibility::Hidden);
+                        }
+                    }
+                }
             }
-            (Some((_, mut b, _, mut vis)), None) => {
-                // Nothing under it within reach (jumping, falling).
-                b.drawn = pose;
-                vis.set_if_neq(Visibility::Hidden);
-            }
-            (None, Some(mesh)) => {
+            None => {
+                let region = region_of(&frame);
+                let Some(mesh) = region_mesh(&source.receivers, frame.d, region.0, region.1) else {
+                    continue;
+                };
+                let slot = frames.alloc();
+                frames.set(slot, &frame.gpu(BLOB_RECT));
                 commands.spawn((
                     Name::new("Character blob shadow"),
                     crate::map::MapPart,
                     CharacterBlob { owner, drawn: pose },
+                    Projected { slot, region },
+                    MeshTag::new(slot),
                     Mesh3d(meshes.add(mesh)),
                     MeshMaterial3d(material.clone()),
                     bevy::light::NotShadowCaster,
@@ -1123,7 +1347,6 @@ pub fn update_character_blobs(
                     ChildOf(source.root),
                 ));
             }
-            (None, None) => {}
         }
     }
     // Characters gone, dead or not drawn.
@@ -1172,11 +1395,13 @@ pub fn update_prop_shadows(
     mut shadow_vis: Query<Option<&mut VisClusters>, With<PropShadow>>,
     vis: Option<Res<vis::ActiveVisibility>>,
     shadow_meshes: Query<&Mesh3d, With<PropShadow>>,
+    mut projected: Query<&mut Projected, With<PropShadow>>,
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut waiting: Local<std::collections::BTreeMap<usize, (Vec3, Quat)>>,
+    frames: Option<ResMut<ShadowFrames>>,
 ) {
-    let Some(mut state) = state else {
+    let (Some(mut state), Some(mut frames)) = (state, frames) else {
         shown.clear();
         return;
     };
@@ -1221,7 +1446,7 @@ pub fn update_prop_shadows(
         }
         share -= 1;
         state.built.insert(index, (translation, rotation));
-        let mesh = if state.blob {
+        let (frame, rect) = if state.blob {
             let frame = ShadowFrame::blob(
                 model.bounds,
                 translation,
@@ -1229,49 +1454,80 @@ pub fn update_prop_shadows(
                 DOWN,
                 state.settings.distance,
             );
-            shadow_mesh(&frame, &state.receivers, BLOB_RECT)
+            (frame, BLOB_RECT)
         } else {
             redrawn.push(cell);
-            rebuild(
+            let frame = redraw_silhouette(
                 &state.data,
                 &state.settings,
-                &state.receivers,
                 &mut state.atlas,
                 &cell,
                 translation,
                 rotation,
-            )
+            );
+            (frame, cell.rect)
         };
-        match (mesh, state.entities.get(&index).copied()) {
-            (Some(mesh), Some(e)) => match shadow_meshes.get(e) {
-                // The same mesh asset, rewritten: a new handle every
-                // frame left the shadow undrawn while its prop moved
-                // (Bevy re-specializes an entity whose `Mesh3d` changed
-                // and skipped it while the new mesh wasn't prepared yet).
-                // (The handle keeps the asset alive: the id stays valid.)
-                Ok(handle) => {
-                    // Hidden where the camera can't see where it now lies.
-                    if let Some(v) = vis.as_ref()
-                        && let Some(aabb) = bevy::camera::primitives::MeshAabb::get_aabb(&mesh)
-                        && let Ok(Some(mut tag)) = shadow_vis.get_mut(e)
-                    {
-                        let clusters = vis::box_clusters(&v.0, Vec3::from(aabb.min()), Vec3::from(aabb.max()));
-                        if !clusters.is_empty() && *tag.clusters != clusters[..] {
-                            tag.clusters = clusters.into_boxed_slice();
-                        }
+        let existing = state.entities.get(&index).copied();
+        // A projected shadow whose region still holds the frame: only its
+        // table row changes.
+        if let Some(e) = existing
+            && let Ok(projected) = projected.get(e)
+            && projected.holds(&frame)
+        {
+            frames.set(projected.slot, &frame.gpu(rect));
+            continue;
+        }
+        let region = region_of(&frame);
+        let mesh = region_mesh(&state.receivers, frame.d, region.0, region.1);
+        match (mesh, existing) {
+            (Some(mesh), Some(e)) => {
+                // Projected from now on (a resting prop's shadow is its
+                // clipped mesh): its slot, the frame, the region's mesh.
+                let slot = match projected.get(e) {
+                    Ok(p) => p.slot,
+                    Err(_) => {
+                        let slot = frames.alloc();
+                        commands.entity(e).insert((Projected { slot, region }, MeshTag::new(slot)));
+                        slot
                     }
-                    let _ = meshes.insert(handle.id(), mesh);
+                };
+                if let Ok(mut p) = projected.get_mut(e) {
+                    p.region = region;
                 }
-                Err(_) => {
-                    commands.entity(e).insert(Mesh3d(meshes.add(mesh)));
+                frames.set(slot, &frame.gpu(rect));
+                // Hidden where the camera can't see where it now lies.
+                if let Some(v) = vis.as_ref()
+                    && let Ok(Some(mut tag)) = shadow_vis.get_mut(e)
+                {
+                    let clusters = vis::box_clusters(&v.0, region.0, region.1);
+                    if !clusters.is_empty() && *tag.clusters != clusters[..] {
+                        tag.clusters = clusters.into_boxed_slice();
+                    }
                 }
-            },
+                match shadow_meshes.get(e) {
+                    // The same mesh asset, rewritten: a new handle left the
+                    // shadow undrawn while its prop moved (Bevy
+                    // re-specializes an entity whose `Mesh3d` changed and
+                    // skipped it while the new mesh wasn't prepared yet).
+                    // (The handle keeps the asset alive: the id stays valid.)
+                    Ok(handle) => {
+                        let _ = meshes.insert(handle.id(), mesh);
+                    }
+                    Err(_) => {
+                        commands.entity(e).insert(Mesh3d(meshes.add(mesh)));
+                    }
+                }
+            }
             (Some(mesh), None) => {
+                let slot = frames.alloc();
+                frames.set(slot, &frame.gpu(rect));
                 let e = commands
                     .spawn((
                         Name::new(format!("Shadow of prop {}", index)),
                         MapPart,
                         PropShadow { prop: index },
+                        Projected { slot, region },
+                        MeshTag::new(slot),
                         Mesh3d(meshes.add(mesh)),
                         MeshMaterial3d(state.material.clone()),
                         bevy::light::NotShadowCaster,
@@ -1417,11 +1673,13 @@ mod tests {
         ))
         .init_asset::<Image>()
         .init_asset::<ShadowMaterial>()
+        .init_resource::<ShadowFrames>()
         .add_systems(Update, (apply_shadow_detail, update_character_blobs).chain());
         let data = std::sync::Arc::new(floor_map());
+        let receivers = std::sync::Arc::new(Receivers::new(&data));
         let root = app.world_mut().spawn((Transform::default(), Visibility::default())).id();
         app.insert_resource(ShadowSource {
-            receivers: std::sync::Arc::new(Receivers::new(&data)),
+            receivers: receivers.clone(),
             settings: data.shadows.clone().unwrap(),
             data,
             root,
@@ -1470,18 +1728,34 @@ mod tests {
                 ChildOf(character),
             ))
             .id();
+        // The blob as drawn: its frame from the table, clipped onto the
+        // floor as the shader projects it (`shadow_mesh`).
+        let drawn = move |world: &mut World, slot: u32| {
+            let rows = world.resource::<ShadowFrames>().get(slot).to_vec();
+            let v = |i: usize| Vec3::new(rows[i][0], rows[i][1], rows[i][2]);
+            let frame = ShadowFrame {
+                origin: v(0),
+                x: v(1),
+                y: v(2),
+                d: v(3),
+                size: Vec2::new(rows[1][3], rows[2][3]),
+                falloff_start: rows[0][3],
+                max_dist: rows[3][3],
+                light_faces: (5..8).map(|i| (v(i), rows[i][3])).filter(|(n, _)| *n != Vec3::ZERO).collect(),
+            };
+            let mesh = shadow_mesh(&frame, &receivers, BLOB_RECT).expect("the blob on the floor");
+            let aabb = bevy::camera::primitives::MeshAabb::get_aabb(&mesh).unwrap();
+            (Vec3::from(aabb.center), Vec3::from(aabb.half_extents))
+        };
         let blob_centre = |sim: &mut Sim| {
             let world = sim.app.world_mut();
-            let found: Vec<Handle<Mesh>> = world
-                .query::<(&CharacterBlob, &Mesh3d, &Visibility)>()
+            let found: Vec<u32> = world
+                .query::<(&CharacterBlob, &Projected, &Visibility)>()
                 .iter(world)
                 .filter(|(_, _, v)| **v != Visibility::Hidden)
-                .map(|(_, m, _)| m.0.clone())
+                .map(|(_, p, _)| p.slot)
                 .collect();
-            found.first().map(|m| {
-                let mesh = world.resource::<Assets<Mesh>>().get(m).unwrap();
-                Vec3::from(bevy::camera::primitives::MeshAabb::get_aabb(mesh).unwrap().center)
-            })
+            found.first().map(|&slot| drawn(world, slot).0)
         };
         let set = |sim: &mut Sim, shadows: u8, rtt: u8| {
             sim.app.insert_resource(ShadowSettings {
@@ -1501,10 +1775,8 @@ mod tests {
         // it: one shadow throughout (it grew, shrank and slid in steps).
         let blob_box = |sim: &mut Sim| {
             let world = sim.app.world_mut();
-            let m = world.query::<(&CharacterBlob, &Mesh3d)>().single(world).unwrap().1.0.clone();
-            let mesh = world.resource::<Assets<Mesh>>().get(&m).unwrap();
-            let aabb = bevy::camera::primitives::MeshAabb::get_aabb(mesh).unwrap();
-            (Vec3::from(aabb.center), Vec3::from(aabb.half_extents))
+            let slot = world.query::<(&CharacterBlob, &Projected)>().single(world).unwrap().1.slot;
+            drawn(world, slot)
         };
         let first = blob_box(&mut sim);
         for step in 1..=24 {

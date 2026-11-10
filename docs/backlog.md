@@ -2258,18 +2258,17 @@ docs/plans/active/sound.md.
 - **The tick and the frame, what's left (2026-11-10).** docs/performance.md,
   "Performance pass": the logic bridge, the push-away, buoyancy, Combat
   Arms' posing math and HL2:DM's per-frame searches were cut (de_dust2's
-  CS:S tick -18%, mg_lego's -50%, the party's -13 to -15%). Left, by size:
-  Combat Arms poses every character's whole skeleton every tick on servers
-  and clients whether anything asks for its hit spheres (18% of an Ultimate
-  Gun Game server's tick; pose on demand, or keep the trackers and pose
-  when a trace or the drawing asks); `sync_movers` works out what every
+  CS:S tick -18%, mg_lego's -50%, the party's -13 to -15%), and Combat
+  Arms' poses are made on demand ("Poses on demand": 16 of them a tick to
+  3.7 with 16 bots). Left, by size: Chimera's hitscan still makes every
+  boxed character's hitboxes on each ray (a broad phase first: a bound the
+  game declares with its `LazyHitboxes`, so a ray far from a body leaves
+  it unposed); `sync_movers` works out what every
   mover wants twice a tick (40% of mg_lego's tick: a change stamp from
-  `LogicWorld::get_mut` would pass idle movers over); a moving body's eight
-  `PropMaterial`s are prepared again every frame because the probe light is
-  in the material (14% of the render world with six bodies about); blob
-  shadows, prop shadows and dust are new meshes every frame (the mesh
-  allocator, 11% of the render world); Bevy's light clustering runs with
-  no light in view (8%); `NavMesh::area_at` walks every area (2% of a tick
+  `LogicWorld::get_mut` would pass idle movers over); particles, steam
+  and the other effects still write new mesh data every frame (the blob
+  shadows', moving prop shadows', dust's, probe light's and faces' per-frame
+  changes are done: docs/performance.md, "Render performance"); `NavMesh::area_at` walks every area (2% of a tick
   with bots: a grid); the ragdolls' pose record and the server's hitbox
   pose each sample a Source body's animation every tick; the server's
   documents are packed with bzip2 at every start (3-7 s of a core on a
@@ -2349,13 +2348,10 @@ dithered fade bands. Left:
   layout (0.25-0.30 ms, two walks over every node, changed or not:
   despawn Combat Arms' 254 hidden HUD nodes while its HUD is away,
   fewer UI roots: Bevy inserts `Propagate` into all 73 each frame);
-  one light probe per body instead of a copy in each of its 8 materials
-  (`probe_lit::relight` writes ~14 materials a frame with 4 bots
-  moving; needs a per-entity probe uniform in the prop shader); Bevy's
+  Bevy's
   per-frame `QueryState`s in bevy_audio's `cleanup_finished_audio`
   (0.10 ms) and the screenshot plugin (0.04 ms), upstream; ropes
-  rebuilt only while the PVS shows them; light clustering per view
-  (0.37 ms, Bevy's); a party `perfgate` scenario; whether CPU batching
+  rebuilt only while the PVS shows them; a party `perfgate` scenario; whether CPU batching
   stays cheaper on maps with thousands of meshes in view (`refcmp
   bench` with and without `CHIMERA_GPU_PREPROCESS=1` on
   mg_lego_multigames_v2).

@@ -62,7 +62,7 @@ fn duel_on_dust2(shooter: usize, target: usize) -> Option<(Sim, Entity, Entity)>
 /// (CS:S's head group has its neck box too).
 fn top_shape_at(sim: &Sim, b: Entity, region: BodyRegion) -> Vec3 {
     let w = sim.app.world();
-    let boxes = w.get::<Hitboxes>(b).expect("hitboxes");
+    let boxes = chimera_core::core::hitboxes_in(w, b).expect("hitboxes");
     let shape = boxes
         .0
         .iter()

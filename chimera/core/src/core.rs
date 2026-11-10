@@ -18,7 +18,9 @@
 //! (takes `Damage` without `Health`: breakables), `Hitgroup` and the
 //! finer `BodyRegion` (with `BodyPart`, what armour covers), `Hitbox`/`Hitboxes`
 //! (boxes or spheres with their region, and the shape queries every gun's
-//! rule uses: docs/DESIGN.md "Hits across games"), physics layers (`RAGDOLL_LAYER`, also prop pieces;
+//! rule uses: docs/DESIGN.md "Hits across games"; `LazyHitboxes`, a
+//! game's made only when a shot asks, read with `Hitboxes` through
+//! `HitShapes`), physics layers (`RAGDOLL_LAYER`, also prop pieces;
 //! `ITEM_LAYER` for loose items, which slide on their own copy of the
 //! displacement mesh with its internal edges fixed (`ITEM_GROUND_LAYER`);
 //! gameplay queries mask with `SOLID_LAYERS`, characters' bodies and movement
@@ -1090,6 +1092,48 @@ impl Hitbox {
 #[reflect(Component)]
 #[component(storage = "SparseSet")]
 pub struct Hitboxes(pub Vec<Hitbox>);
+
+/// A character's hitboxes made only when something asks (`later::Later`):
+/// a game that poses its bodies on demand (Combat Arms) sets these each
+/// tick instead of `Hitboxes`, from what the pose was made of then, and a
+/// shot that tests the character makes them (docs/performance.md, "Poses
+/// on demand"). Read both kinds through `HitShapes`; where both are on a
+/// character, these are the ones that count (the game that set them owns
+/// its body).
+#[derive(Component, Clone, Debug, Default)]
+#[component(storage = "SparseSet")]
+pub struct LazyHitboxes(pub crate::later::Later<Hitboxes>);
+
+/// A character's hitboxes whichever way its game keeps them (`Hitboxes`
+/// or `LazyHitboxes`), for the shots' queries.
+#[derive(bevy::ecs::query::QueryData)]
+pub struct HitShapes {
+    pub eager: Option<&'static Hitboxes>,
+    pub lazy: Option<&'static LazyHitboxes>,
+}
+
+impl<'w> HitShapesItem<'w, '_> {
+    /// Its hitboxes (made now if they are a `LazyHitboxes` nobody asked
+    /// for yet); None: it has none.
+    pub fn get(&self) -> Option<&'w Hitboxes> {
+        hit_shapes(self.eager, self.lazy)
+    }
+
+    /// Whether it has hitboxes (without making them).
+    pub fn is_some(&self) -> bool {
+        self.eager.is_some() || self.lazy.is_some()
+    }
+}
+
+/// `HitShapes::get` from the two components.
+pub fn hit_shapes<'a>(eager: Option<&'a Hitboxes>, lazy: Option<&'a LazyHitboxes>) -> Option<&'a Hitboxes> {
+    lazy.map(|l| l.0.get()).or(eager)
+}
+
+/// A character's hitboxes in `world` either way (tests, tools).
+pub fn hitboxes_in(world: &World, e: Entity) -> Option<&Hitboxes> {
+    hit_shapes(world.get::<Hitboxes>(e), world.get::<LazyHitboxes>(e))
+}
 
 impl Hitboxes {
     /// The axis-aligned box around every shape (min, max; in their

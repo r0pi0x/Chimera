@@ -58,7 +58,7 @@ use super::{
     grenade::{Blast, BlastAt, gravity_step},
 };
 use crate::{
-    core::{Damage, DamageKind, Damageable, Health, Hitboxes, Hitgroup, ITEM_LAYER, Intent, MovingSolid, SOLID_LAYERS, SimClock},
+    core::{Damage, DamageKind, Damageable, Health, Hitgroup, ITEM_LAYER, Intent, MovingSolid, SOLID_LAYERS, SimClock},
     map::loose::ShownItem,
 };
 
@@ -614,7 +614,7 @@ struct Body {
     health: Option<&'static Health>,
     damageable: Option<&'static Damageable>,
     intent: Option<&'static Intent>,
-    hitboxes: Option<&'static Hitboxes>,
+    hitboxes: crate::core::HitShapes,
 }
 
 /// The world access flyers need.
@@ -701,7 +701,7 @@ impl FlyWorld<'_, '_> {
     /// hitboxes (None: it misses them all); without hitboxes, by height.
     fn hitbox_group(&self, e: Entity, from: Vec3, dir: Vec3, len: f32) -> Option<Hitgroup> {
         let b = self.bodies.get(e).ok()?;
-        match b.hitboxes {
+        match b.hitboxes.get() {
             Some(boxes) if !boxes.0.is_empty() => {
                 let feet = b
                     .aabb

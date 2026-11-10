@@ -207,7 +207,7 @@ fn duel(shooter: usize, target: usize, bodies: Option<fn(&mut App)>) -> (Sim, En
 /// Where the centre of `b`'s first hitbox of `region` is in the world.
 pub(crate) fn shape_at(sim: &Sim, b: Entity, region: chimera_core::core::BodyRegion) -> Vec3 {
     let w = sim.app.world();
-    let boxes = w.get::<chimera_core::core::Hitboxes>(b).expect("hitboxes");
+    let boxes = chimera_core::core::hitboxes_in(w, b).expect("hitboxes");
     let shape = boxes.0.iter().find(|h| h.region == region).unwrap_or_else(|| panic!("no {region:?}"));
     let t = w.get::<Transform>(b).unwrap().translation;
     let feet = w.get::<avian3d::prelude::ColliderAabb>(b).map_or(t, |a| t.with_y(a.min.y));
@@ -234,7 +234,7 @@ fn a_cs_source_gun_hits_a_combat_arms_body_where_it_is_drawn() {
     // Rung 6: CS:S's AK-47; rung 7: Combat Arms' M4A1 (its body, its
     // hit spheres as the target's hitboxes).
     let (mut sim, a, b) = duel(6, 7, None);
-    let boxes = sim.app.world().get::<chimera_core::core::Hitboxes>(b).expect("Combat Arms' body has hitboxes");
+    let boxes = chimera_core::core::hitboxes_in(sim.app.world(), b).expect("Combat Arms' body has hitboxes");
     assert!(boxes.0.iter().all(|h| h.radius.is_some()), "spheres");
     // The head is the head; the right hand and shin are the right arm and
     // leg (height bands on the collider would say left for both).
@@ -375,7 +375,7 @@ fn a_combat_arms_knife_hits_a_cs_source_body_by_its_boxes() {
 fn a_swap_leaves_only_the_current_identitys_hitboxes() {
     let (mut sim, _a, b) = duel(7, 6, Some(tall_cs_body));
     let shapes = |sim: &Sim| {
-        let h = sim.app.world().get::<chimera_core::core::Hitboxes>(b).expect("hitboxes");
+        let h = chimera_core::core::hitboxes_in(sim.app.world(), b).expect("hitboxes");
         (h.0.iter().all(|s| s.radius.is_none()), h.0.iter().all(|s| s.radius.is_some()))
     };
     assert_eq!(shapes(&sim), (true, false), "CS:S's boxes");

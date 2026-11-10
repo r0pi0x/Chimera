@@ -2822,9 +2822,82 @@ ticks; two runs each, within 2%):
 Left there: the pose itself (`Rig::layered`'s four trackers a node, the
 matrices turned back into rotations and translations, the hit spheres found
 by name through a lower-cased copy: `pose_of` is a sixth of `drive`), done
-for every character every tick whether anything asks for its spheres; the
+for every character every tick whether anything asks for its spheres (made
+on demand since: "Poses on demand" below); the
 ragdolls' pose record samples every Source body's animation each tick and
 a server poses its hitboxes from a second sample (`pose_sim_hitboxes`).
+
+### Poses on demand (Combat Arms' characters)
+
+What read a Combat Arms character's pose, and when:
+
+- **`characters::hitboxes`**, every tick, every character: Chimera's
+  `core::Hitboxes` from the spheres, for other games' guns. It also posed
+  the spec's skeleton (`skeleton::fallback`, a name index made per call)
+  under a modelled body only to throw it away, and read each sphere's
+  region through a lower-cased copy of its name.
+- **Shots.** Chimera's hitscan (`weapon::deliver`) and flyers test every
+  boxed character's hitboxes on each ray; Combat Arms' own rounds
+  (`weapons::Delivery::bodies`) made every living character's spheres
+  per round, though every test of them comes after a test of that
+  character's box. A bot's round reads the server's pose
+  (`server_spheres`), a player's the client's.
+- **Lag compensation** (`weapon::lagcomp::record`, a network server)
+  kept every living character's hitboxes every tick, read only by a
+  remote player's shot.
+- **The drawing**: `Animator::fixed`, every tick for every body with a
+  model; `render::bodies::pose_bodies` uses it only for bodies some
+  camera drew (others every few frames).
+- **Sockets**: the HUD's name tags (every other character every frame,
+  though most tags don't show), attached effect groups (characters
+  wearing one), third-person flashes (per shot), drops at the left foot,
+  a death's body yaw.
+
+Ragdolls and grenades don't read it (the grenades' bodies are the spec's
+skeleton; a corpse is posed by its own death animation).
+
+So the pose is made when asked (`characters::CaPose`): each tick `drive`
+keeps what it is made from (the four trackers, aim, crouch, legs' yaw,
+the worn face's and held weapon's sockets: a few hundred bytes) and the
+first reader poses it, the client's view and the server's from one
+unaimed pose as before, the same bits whenever it is made. The hitboxes
+are `core::LazyHitboxes` (`later::Later`, Chimera's made-on-first-use
+cell; shots read them and plain `Hitboxes` through `core::HitShapes`),
+lag compensation keeps them unmade until a rewind, the drawing's pose is
+a `Later` made when `pose_bodies` draws the body, Combat Arms' rounds make
+a body's spheres when the ray reaches its box, and a name tag reads the
+pose (and casts its sight ray) only when it shows. The regions are read
+without a copy. `CaPoseEveryTick` (a resource) makes everything in the
+tick, as before.
+
+`party_kit`'s `heavy::bot_cost`, 16 Combat Arms bots, the instructions a
+tick in posing (`drive`, `hitboxes`, and the poses made where asked),
+counted around them in a test build (two runs each):
+
+| | `drive` | `hitboxes` | posing where asked | together | poses made a tick |
+|---|---|---|---|---|---|
+| before (main at 259bf019) | 3.65-4.46M | 0.76-0.79M | | 4.4-5.2M | 16 |
+| `CaPoseEveryTick` | 3.47M | 0.19M | | 3.67M | 16 |
+| on demand | 0.46-0.48M | 0.05M | 0.68-0.74M | 1.18-1.27M | 3.7 |
+
+2, 4 and 8 bots: 0.14M, 0.19-0.20M and 0.50-0.69M on demand against
+0.42M, 0.77-1.01M and 1.62-1.95M every tick. About 4M of a 20-25M tick
+with 16 bots (16-18%), three quarters of it the pose; the whole tick's
+mean and median move by about as much from one run to the next (the
+fights differ), so the table counts the posing itself. What still poses
+in this match: Chimera's hitscan tests every boxed character's hitboxes
+on each ray (all sixteen on a tick with another game's shot: 1 in 18
+here), each shot's third-person flash poses its shooter, and the poses
+Combat Arms' rounds reach.
+
+Guards (`combat_arms`' `characters` tests):
+`poses_on_demand_match_poses_every_tick` (two players with a model, 300
+ticks of walking, crouching, looking and rifle fire at each other, one a
+bot: the hit spheres, the server's, the sockets, the hitboxes, the
+drawn pose and every tick's health bit for bit against
+`CaPoseEveryTick`, read every tick and every seventh) and
+`a_pose_nobody_reads_is_not_made`; `chimera_core`'s `later` tests (made
+once, from any thread).
 
 ### Searches of the map's entities every frame (HL2:DM's set pieces)
 
@@ -2908,6 +2981,88 @@ day before:
 
 A quarter off every map. `heavy::rung_frames`' worst frames (a bot walking
 the ladder on de_dust2, ticks included): 8.1-17.7M, were 12.5-27.7M.
+
+## Render performance (2026-11-10)
+
+The render world's three items from "A frame offscreen (`frame_bench`)"
+above, and the light clustering. `frame_bench` (de_dust2, six bots, 600
+frames at 1280x720, a `profiling` build, load 25-45) now also prints how
+many prop materials and meshes changed a frame (each one prepared or
+allocated again in the render world). Its fights differ from run to run;
+medians of interleaved runs:
+
+| | prop materials changed a frame | meshes changed a frame | main schedule p50 | render world p50 |
+|---|---|---|---|---|
+| before | 26.6-26.7 | 10.5-11.4 | 10.91-11.60M (median 11.24M, 9 runs) | 8.72-10.90M (median 9.08M) |
+| after | 0.0 | 3.2-5.5 | 10.13-10.33M (median 10.20M, 3 runs; -9%) | 6.56-6.82M (median 6.63M; -27%) |
+
+**A moving model's light, a face's aim: in a table, not in the
+material.** A changed material is prepared again: for a non-bindless one
+like `PropMaterial` that is a new uniform buffer and a new bind group. A
+body's probe light was in each of its eight or so materials, rewritten
+every 0.25 m it moved, and every face part's eye centre, up and iris
+planes were written into its material every frame (`aim_faces`, three
+parts a CS:S body: the 18 materials a frame of the table). Both now live
+in one storage buffer every prop material binds (`probe_lit::ProbeTable`,
+`render::gpu_table::SlotTable`): each lit entity (`ProbeLit`, a view
+model's body) and face part (`bodies::FaceSlot`) has a slot, the material
+says which (`PropParams::probe_slot`, `face_slot`, set once), and
+prop.wesl reads the slot's rows where it read the material's. The buffer
+is rewritten when a row changed, at the same size (Bevy writes a
+same-sized `ShaderBuffer` into its GPU buffer), so the material and its
+bind group stay. Guard: `prop_relight::moving_on_changes_the_probe_table_not_the_material`.
+
+**Moving shadows: projected, not rebuilt.** A character's blob and a
+moving physics prop's shadow were clipped against the world again
+whenever it moved (every frame for a walking bot) and the mesh rewritten:
+Bevy frees a rewritten mesh and allocates it again in its slabs. Now a
+moving shadow's frame (origin, axes, size, reach, fade start, atlas cell,
+the caster's lit faces) goes into a second table
+(`shadows::ShadowFrames`, its slot the entity's `MeshTag`) and
+shadow.wesl projects it per pixel onto receiver geometry kept around it
+(`region_mesh`: the world's triangles in the frame's box grown by
+`REGION_MARGIN`, 1 m), rebuilt only when the frame leaves that box: about
+every 10-20 frames for a running bot instead of every frame. Resting
+props' shadows keep their clipped meshes. Guards:
+`prop_shadows::a_walking_character_s_blob_moves_by_its_frame` (6 m in 60
+frames: at most 8 rewrites, 60 before) and
+`a_moving_prop_keeps_its_shadow_mesh_and_moves_it` (the frame follows the
+crate each tick, at most 3 rewrites in 20 ticks).
+
+**Dust: quads placed by the shader.** A dust volume's mesh was its motes'
+camera-facing quads, rewritten every frame. Now its mesh is only the
+quads' corners and numbers (made again when the motes outgrow it), and a
+storage buffer of the motes in view (position, half-width, colour, far to
+near) and the camera's axes is rewritten instead; dust.wesl places the
+quads (`dust::DustMotes`, an extension of the volume's unlit
+`StandardMaterial`, whose fragment stage is unchanged).
+
+**Light clustering with nothing to cluster.** Bevy clusters every 3D
+camera's view into its default grid every frame, lights or not. While the
+world has no point, spot or rect light, light probe or clustered decal,
+the cameras now cluster into one cluster (`cameras::cluster_by_lights`);
+the default grid comes back with the first light. The cluster count is a
+uniform, not a shader setting, so the switch changes no pipeline, and a
+single cluster draws any light correctly (only slower), so a light that
+appears after the switch in its frame is still drawn.
+
+**The picture.** `cs_source` offscreen at 1280x720 on de_dust2, third
+person (`--spawn -7.5,0.6,-27.4 --look 0,-15 +thirdperson`, 300 frames),
+before against after: the body's probe light and the blob shadow on the
+floor as before (the body's shading the same; its outline moves by a
+pixel between any two runs, the animation's phase, as does a swaying
+cable). One difference is real: the blob's fade, at most 7 of 255, in
+the parts of the floor and the wall beside the player where a receiver
+triangle spans the fade's start (a projected shadow's fade is worked out
+per pixel, a clipped one's per vertex; noted in `shadows`' known
+shortcuts). Elsewhere the two pictures are the same. The view model
+(probe lit from the table too) and refcmp's `dust_long_doors` view of
+de_dust2 (`--views`): the same picture but for the motes, which drift (121
+pixels, the motes' own); the motes are drawn as before.
+
+Left: particles, steam and the other effects still write their meshes
+every frame (most of the 3-5 meshes a frame left); a moving prop's
+render-to-texture silhouette still rewrites its atlas image's cell.
 
 ## See a frame yourself
 

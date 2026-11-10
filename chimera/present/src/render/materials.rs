@@ -133,6 +133,7 @@ pub fn lit_prop_material(
         phong_exponent: None,
         lightwarp: None,
         phong_warp: None,
+        probes: default(),
     };
     if let Some(phong) = m.phong.as_deref().filter(|_| !lighting_only && !m.unlit && phong_enabled()) {
         set_prop_phong(&mut material, phong, m.normal_map, textures);
