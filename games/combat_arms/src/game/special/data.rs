@@ -207,12 +207,25 @@ impl ProjectileParams {
         self.area_damage <= 0.0 && self.over_time.is_some_and(|o| o.kind == OverTimeKind::Burn)
     }
 
+    /// The model its projectile is drawn with: the record's, else the
+    /// engine's placeholder (`DEFAULT_PROJECTILE`) when the record's
+    /// `ModelScale` isn't zero (special_weapons.md Corrections
+    /// (2026-10-30) 3, case 57: `Scorpion_Venom`'s 0.35; the flame's 0
+    /// draws nothing).
+    pub fn drawn_model(&self) -> Option<&str> {
+        match &self.model {
+            Some(m) => Some(m),
+            None if self.model_scale.iter().any(|s| *s != 0.0) => Some(DEFAULT_PROJECTILE),
+            None => None,
+        }
+    }
+
     /// The key its projectile is drawn under (`map::loose::ShownItem`, the
     /// held-model kit): one per model, scale, skins and look, whichever
     /// weapon fires it; a model-less projectile's never has a model. The
     /// look follows `LOOK_SEPARATOR` (none when it has none).
     pub fn shown_key(&self) -> String {
-        let base = match &self.model {
+        let base = match self.drawn_model() {
             Some(m) => format!(
                 "{}{m}|{:?}|{}",
                 PROJECTILE_KEY,
@@ -236,6 +249,10 @@ impl ProjectileParams {
     /// The drawn key of a projectile without a model.
     pub const NO_MODEL_KEY: &'static str = "combat_arms:projectile#none";
 }
+
+/// The engine's placeholder model, drawn for a projectile record with no
+/// `Model` (archive path, as `model::normalize` writes it).
+pub const DEFAULT_PROJECTILE: &str = "models/default_projectile.ltb";
 
 /// What every impact projectile's drawn key starts with.
 pub const PROJECTILE_KEY: &str = "combat_arms:projectile#";

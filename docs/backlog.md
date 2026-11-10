@@ -136,10 +136,20 @@ the original's own behaviour isn't a bug (say so instead).
   no catch-up ticks after) no longer stop a frame (docs/performance.md,
   "Nothing blocks the main thread" and "A map's swap", with numbers and
   guards). Left: measuring the HUD texts' warm-up (`client::text_warm`) in the real app on a display (each rung's worst frame less ticks, before and after; a text no source declares logs `text warm: ... glyph atlases made on a text's first frame`); of a map's swap, the frame the whole map goes into the world (90-300 M dev-build main, 220-350 M render world offscreen; Avian's insert hook computing every new collider's mass properties a third of the main thread's, which Avian 0.8 can't be told to skip) and the first tick on the map (45-270 M dev since the hook's mass properties are kept, `spawn::counted_colliders`: the colliders the tick's own spawns make from the map's entities, props' shadows redrawn as they settle, the first physics step), and measuring the swap in the real app on a display (the render thread pipelined, the loading screen's frame times, the time to enter each map); a match's start (100 M); weapons off the ladder reading their timing on the frame; dedicated servers' nav flood in one tick.
-- **Neon Outlaw ASW338LM (Combat Arms)** looks like it has the wrong UV map.
-  Already answered (below, models_ltb.md W1-W3): its skin is painted for a
-  layout no ASW338LM model in the install has. Waiting on the user: leave
-  it out of the ladder?
+- **Neon Outlaw ASW338LM (Combat Arms)** looks like it has the wrong UV
+  map, and the AUG A3 Champions Lightning draws grey. Answered on build
+  26236938 (models_ltb.md W1-W3): Neon Outlaw is `ASW338LMspunk`; its view
+  skin (and the Royal Gold, graf, sakura, sea and weastland ASW338LM
+  skins) is painted for a UV layout no ASW338LM model of the install has,
+  so it scatters as the files say (same header, model and UVs as the skins
+  that fit: no reading bug); its held skin and the AUG A3 Champions
+  Lightning's (`AUGA3ChampionsLighting`) view skin aren't in the install
+  (grey, as the game leaves them). `CHIMERA_SKINS_SHOW=outlaw,champions`
+  prints them. Tests: `attribute_data::sprite_skins_and_an_added_weapons_held_look`,
+  `model::a_sprite_skin_draws_its_first_frame`; the sweep:
+  `cargo test -p combat_arms --features dev,ui --test it
+  heavy::weapon_skins -- --nocapture`. Waiting on the user: leave the
+  Neon Outlaw out of the ladder?
 
 ### Gun game playtest, 2026-10-28 (user)
 
@@ -194,41 +204,15 @@ the original's own behaviour isn't a bug (say so instead).
   at most; the last rung is melee either way and its kill wins. The
   draw is the host's and replicated (`NetMinigame::rungs`). Docs/DESIGN.md
   "Gun game rules".
-- **Tracers seen through walls (user, 2026-10-29): done, decided by the
-  user 2026-10-30.** Found: CS:S's tracers (and impacts, flashes, every
-  effect group's particles) were already depth tested
-  (`ParticleDrawMaterial`; tests `particle_depth::`), and no CS:S effect
-  showed through walls. Combat Arms' tracers drew with no depth test
-  (effects_sounds.md section 4, Quirk 1); the user called that a bug, so
-  they are depth tested by default everywhere (Combat Arms' app and the
-  party apps), and `cl_tracer_through_walls 1` (archived, default 0)
-  draws them over everything (`OnTop`). The party option
-  `party_tracer_depth` is not needed. The spec has since agreed
-  (effects_sounds.md Corrections (2026-10-30) 3: the game depth-tests
-  tracers too; Quirk 1 withdrawn).
-- **The All-Star chainsaw doesn't stay on; its right click spams sound
-  (user, 2026-10-29).** view_models.md section 3, "Attached effects": a
-  weapon's `PVAttachFXName#` effects (the chainsaw's idle, the PSY bomb's
-  fire, the time bombs' lights) are made with the view model and loop
-  while the weapon shows, hidden and shown by `HIDE_PVATTACHFX` and
-  `SHOW_PVATTACHFX` keys. We don't play them yet. The secondary hits 7
-  times in each 900 ms swing (special_weapons.md case 37). Check that
-  each sound plays as the spec says and isn't restarted every tick or
-  hit.
-  Done 2026-10-29: the attached groups are made, shown and hidden with
-  the view model (`view_model::attached`), their looping sounds played
-  (the chainsaws' idle engine; the PSY bombs' burning) and their sprites
-  and particles drawn camera-relative at their sockets (`ui::attached_fx`;
-  the PSY bombs' wick, the Ice Ball's cold air). 23 install weapons have
-  them: 5 chainsaws, 16 bombs, the Ice Ball, the XK-2 (whose five lights
-  aren't in the Steam effect file, so nothing plays). The right-click
-  spam: each of the 7 hits played the 2.9 s `fire.wav` on top of the
-  last (nothing restarted per tick); a hit's fire sound now replaces the
-  last on the player's fire channel, as a gun's, plus `ReloadSnd1` once a
-  swing (its `sound_key 1`). What the spec doesn't say (one fire sound
-  per hit or per swing, a hidden group's sound, others hearing the idle,
-  the XK-2's lights): docs/plans/active/combat-arms.md, "View-model
-  attached effects and melee sounds".
+- **The All-Star chainsaw's attached effects (user, 2026-10-29): done
+  except what the spec doesn't say.** The attached groups and their
+  looping sounds are made with the view model (`view_model::attached`,
+  `ui::attached_fx`), and a hit's fire sound replaces the last one on
+  the fire channel. Left, for a spec session: one fire sound per hit or
+  per swing, a hidden group's sound, others hearing the idle, the XK-2's
+  five lights (not in the Steam effect file). Plan:
+  docs/plans/active/combat-arms.md, "View-model attached effects and
+  melee sounds".
 - **The infected rung is a melee option, and the hook fires on every rung
   (user, 2026-10-29): done, confirm in a playtest.** *Hook:* the callback
   registry (`RungCharacterHook`, `RungCharacterHooks`, `AsRungCharacter`,
@@ -405,81 +389,6 @@ the original's own behaviour isn't a bug (say so instead).
   - Clearer name tags when you aim at someone (their name and more),
     kept unobtrusive.
   - A flaming aura around the current leader.
-- **NPC bodies, then NPC and boss guns on them (user, 2026-10-31):
-  done.** The install's `AIModel#` records are body records a player may
-  wear (`characters::records`, id = the `Model#` count + the index: skins
-  by slot, face, head piece and goggles by name), in body families
-  (`characters::families`, data/npc_bodies.toml): the male and female
-  trees unchanged; the Tanker and Assassin on the hand class 39 and the
-  `V` legs whatever is held; the powered suits on the robot classes (the
-  right strafe on the left names; a gun of no suit class on the SMG
-  suit's, the melee record's on the melee suit's, the big suit's on its
-  machine gun's); the bosses on a minimal idle/walk/fire/melee/hit/death
-  mapping (not the HQ raid boss's gunship, nor the dummy). Hit tables
-  2-18 are the install's, spheres on nodes or sockets. The rungs'
-  mapping (data/rung_characters.toml) carries characters.md 12's links:
-  world NPC hands on their `AIModel`s, suit sets on their suits, the HQ
-  raid boss's guns on the big suit (our stand-in), infected hands on
-  every infected type the worlds give them, the spec's guesses for
-  unlinked guns (67, 421, 561, 864, 344 and the crossbows keep the
-  derived rule). `ca_wear <record>` wears a body until the next rung.
-  Tests: combat_arms `npc_bodies`, `heavy::npc_bodies` (cases 62-89 on
-  the install), `heavy::infected`. **Left** (characters.rs Known
-  shortcuts): the hull stays the player's for every body (Open question
-  35: a suit's or boss's body rises above it; shots reach its spheres
-  through a widened box; a suit's eye height and crouch speed are the
-  player's); the EOD boss's `AL` pulse; the Shining's missing weight
-  sets (Quirk 13); case 71 (the equip-slot rule) has no code to test; the
-  install differs from the spec in two counts (113 of the 303
-  `Character#` records are `ItemType` 38, not 22; a fifth extend item,
-  44, has `SubType` 18).
-- **Characters follow the gun (user, 2026-10-31): done; a spec session
-  for the rest.** A rung's character is drawn among the characters
-  allowed to hold its weapon (`chimera_sim::minigame::holders`, each
-  game's data/rung_characters.toml, overridable per weapon in the data
-  and in a definition's `rung_extras = { character = { weapons = .. }
-  }`). Derived: CS:S from the weapon data's buy team (12 team-only guns:
-  AK-47, Galil, SG 552, G3SG1, Dual Elites, MAC-10 give a T model; M4A1,
-  FAMAS, AUG, SG 550, Five-SeveN, TMP a CT model; every other gun
-  either); Combat Arms from the infected leg set (`LowerAniType` 1 or 2:
-  the infected's hands, zombie bodies only) and every other weapon any
-  player body (the rung bodies: never a zombie). Tests: party_kit
-  `rung_holders`. **For a spec session** (the specs don't say, so no
-  guesses were made): (1) which guns only Combat Arms' specialist
-  characters may hold, and which `Model#` records are those specialists
-  (lobby.md says only "specialist and assassin characters use their own
-  special slot rules"; is the assassin weapon type, the crossbows,
-  tied to an assassin body?); (2) the AI boss weapons (special_weapons.md
-  names the `HQRAID_*`, `Powered_Suit_Boss_*` families and the guided
-  `Boss_Missile`, and 35 AI boss launchers of `Guntype` 9): which body
-  record or `AIModel#` each belongs to (the powered suits are on
-  skeletons 5 and 6, characters.md 1, but nothing links weapon to body),
-  and whether any can be a player's; (3) NPC-only weapons of the PvE
-  modes (bots.md 11 leaves them out of scope) and their models; (4) any
-  weapon field in the weapons file that restricts who holds it. With
-  those, the data's `[weapons]` overrides take them; until then such a
-  gun on a rung is worn by any player body. **Answered** in
-  specs/combat_arms/characters.md section 12 (holders by data link, the
-  equip-slot rule, infected hands; test cases 62–74, Open questions 24–30),
-  and taken into the data (the entry above).
-- **Map vote on the end screen (user, 2026-10-31): done.** A
-  definition's `map_vote` (`chimera_sim::minigame::vote`, settings in
-  chimera/sim/data/map_vote.toml: 3 candidates, 12 s, a 3 s reveal):
-  the rotation's pick and the pool's other playable maps (fresh ones
-  first, this map when the pool is short) on the end screen, votes by
-  number key, click or `vote_map <n>`, counted by the server; the most
-  votes win, a tie at random, none: the rotation's pick. On in Ultimate
-  Gun Game. Tests: party_kit `map_vote`, chimera_sim `minigame::vote`.
-  Bots don't vote.
-- **Swap sound per game (user, 2026-10-31): done.** CS:S swaps keep
-  `items/battery_pickup.wav`; swaps into Combat Arms play its weapon
-  change sound, `UI_SND/VWRM/WEAPONRACE_CHANGE.WAV` (music_ambience.md
-  Section 10's `weapon_change_sound`; on a rung up into Combat Arms its
-  `rung_up` cue is the same file). Test: party_kit
-  `swap_effect::a_swap_sounds_the_new_games_own_swap_cue`.
-- **Combat Arms movers keep client prediction (user, 2026-10-31).** The
-  original draws sliding movers 100 ms in the past and snaps rotating
-  ones; ours predicts them. Kept as a known difference.
 - **A rung's character: stats only when intrinsic (user, 2026-10-29):
   done, confirm in a playtest.** A drawn Combat Arms body keeps only its
   body type (`FigureType`: sprint, stamina, variable terms), what is its
@@ -490,22 +399,6 @@ the original's own behaviour isn't a bug (say so instead).
   replicates, so a client derives the same and isn't corrected at a
   swap). The install's two body types are identical, so in practice
   every rung body plays as the stock one.
-- **Rung bodies with a missing file (2026-10-30).** Records 279
-  `Medium_NM` and 280 `medium_NM_female` are in the rungs' body pool but
-  their body files aren't in the install (build 26236938 either); the
-  game draws the engine's placeholder (`models\default.ltb`, a small
-  untextured shape) for them (characters.md Corrections (2026-10-30) 3,
-  case 61), ours keeps the previous body. For the gun game, leave them
-  out of the pool (no one wants the placeholder); parity only matters if
-  a mode ever forces those records.
-- **Scorpion_Venom draws the placeholder projectile (2026-10-30).**
-  special_weapons.md Corrections (2026-10-30) 3, case 57: a projectile
-  record with an empty `Model` keeps the engine's placeholder model
-  (`MODELS\DEFAULT_PROJECTILE.LTB`) at the record's `ModelScale`; the
-  flame's scale is 0 (nothing, as ours), `Scorpion_Venom`'s 0.35 (a
-  small untextured shape in flight). Ours draws nothing for an empty
-  `Model` (`special::data::NO_MODEL_KEY`). Small; the
-  projectile looks it waited for landed 2026-10-31 (`effects::attached`).
 - **Zombies: a character tied to its weapon (user idea, 2026-10-29):
   done, confirm in a playtest.** Chimera's `ladder::RungCharacter`
   (arriving and leaving: `ladder::OnRung`'s observers); Combat Arms'
@@ -540,21 +433,6 @@ the original's own behaviour isn't a bug (say so instead).
   - *Specs:* game_modes.md (Quarantine M8, infected knock-back S14),
     gear_perks.md 15 (infection-mode perks), missions.md F4.1; anything
     the specs lack goes to a spec session.
-- **Hosting from inside the app crashes (user, 2026-10-29): fixed,
-  confirm in a playtest.** `ultimate_gun_game +maxplayers 4` (a listen
-  server) panicked on its first send in bevy_replicon's
-  `collect_changes` (`replication_query.rs`: no read access to a
-  replicated component); Lucker Party's and CS:S's apps host through
-  the same plugins, and all three listen without it now. Since
-  perf-pass3 (abf4fde4), `IdleLightsPlugin` took Bevy's directional
-  light check out of `PostUpdate` in its `finish`, which builds the
-  schedule and initializes its systems; that ran before
-  `NetPlugin::finish` registered the network parts' replicated
-  components, so replicon's query was made without them. The swap now
-  runs in `PreStartup`, once every plugin is in. Tests: party_kit
-  `listen_server` (a listen server with its own player, two bots, two
-  clients and rung swaps), chimera_present
-  `idle_lights::post_update_initializes_after_every_plugins_finish`.
 - **Party panels draw washed out with no darkened backdrop (user,
   2026-10-29): fixed, confirm in a playtest.** The Escape menu and the
   Controls page asked for a 0.55 (0.5) black shade and a 0.96 panel, but
@@ -609,10 +487,6 @@ the original's own behaviour isn't a bug (say so instead).
   `nav_bounds` (toy wall climbed by ledges onto an outside floor);
   party_kit `heavy::nav_bounds` (de_aztec: no area in the jungle, four
   bots three minutes never there; the four maps' counts).
-- **`combat_arms:junkflea` is in the map pool but doesn't load: fixed.**
-  The install's world is `junk_flea` (the lobby's key `junkflea` is
-  another name); the pool says `combat_arms:junk_flea` now. Test
-  (party_kit `heavy::pools`): every map in every pool resolves.
 - **Some Combat Arms bodies draw grey pieces: fixed, confirm in a
   playtest** (a ghillie-suit specialist; the Ice Mas Knight was fine).
   A body's texture slots 5 on are its record's `AdditionalSkins#`
@@ -635,7 +509,7 @@ the original's own behaviour isn't a bug (say so instead).
     rung drawing them keeps what its players wore (build 26236938 still
     lacks both; the game would draw the engine's small placeholder
     `models\default.ltb` there, characters.md Corrections (2026-10-30)
-    3: see "Rung bodies with a missing file" below);
+    3); the rungs' body pool leaves them out now (`rungs::missing_bodies`);
   - drawn but maybe not as the game: 163 pieces with a second texture
     slot (mostly slot 5 or 6, `textures\128xPV_SpecialSpecR.dtx`: not
     drawn), render styles our table doesn't know, drawn opaque
@@ -645,10 +519,6 @@ the original's own behaviour isn't a bug (say so instead).
     read. Open questions: docs/plans/active/combat-arms.md, "Body
     skins". Tests: models `body_texture_slots`, attribute_data
     `body_additional_skins`, `heavy::body_skins`.
-- **Tool runs write the user's config: fixed.** `--frames` and `--bench`
-  skipped nothing; now the exit write checks `Args::tool_run()` (all four
-  options), in every app. `CHIMERA_CFG_DIR` names a throwaway config
-  folder. Test: chimera_client `tool_runs_do_not_write_the_config_on_exit`.
 - **Firing animation on the match-end screen: fixed, confirm in a
   playtest** (user). The rules hold a frozen player's intent only at the
   simulation's tick (`FreezeTime`, the end freeze), but the input writes
@@ -698,8 +568,10 @@ the original's own behaviour isn't a bug (say so instead).
   show), its `FlySound` loops and follows it, its flare and smoke trail,
   its model faces its fire direction, launchers show their FireFX record
   at the fire position, launched ammo's blast plays the surface's impact
-  group (tests `attached_effects`, `install_launchers` t48-t53). Left:
-  `ActivateSound`, `FinishSound`, `CreateSound`; the trail key's width
+  group (tests `attached_effects`, `install_launchers` t48-t53). The
+  activate, finish and create sounds are done too (Corrections
+  (2026-10-31) 3: `attached_effects` t61-t63, `net_projectiles`). Left:
+  the trail key's width
   styles and `UAdd`. The M32 family firing
   copies of itself: fixed with the rest (the shell was drawn by the
   weapon's key, the M32's held model; now `M32_Shell.ltb`). The
@@ -710,16 +582,6 @@ the original's own behaviour isn't a bug (say so instead).
   Its 134 ms single-key fire loop (spec 4) isn't taken yet (the copy has
   the flamethrower's keys, brief 24b item 9).
 
-- **In progress (agents working, 2026-10-29):**
-  - Grey Combat Arms skins and the R870 in characters' hands: fixed
-    (below, "Grey Combat Arms gun skins", "Combat Arms install guns had
-    no gun in third person"); the Neon Outlaw ASW338LM's scattered
-    texture and the AUG A3 Champions Lightning: the data, not our
-    reading (below, answered on build 26236938).
-  - On the end screen, guns still play their firing animation and WASD
-    still plays footsteps.
-  - de_piranesi's sky draws blank, showing only through some
-    transparent edges.
 - **Spawned outside de_aztec: fixed, confirm in a playtest** (user: `setpos
   2519.69 2283.46 210.62`). The gun game's `random_hidden` spots
   (`chimera_sim::minigame::spawns`) come from the map's navigation mesh.
@@ -810,30 +672,6 @@ the original's own behaviour isn't a bug (say so instead).
   whether CS:S bounces off the "grenade" surface property's elasticity
   (not the flat 1.0). Measured data in the spec (Q7: an HE dropped on tile
   stops in 4 contacts, a smoke in 3) is the thing to compare ours with.
-- **Combat Arms tracers look flat and wide** (fixed 2026-10-29, confirm
-  in a playtest, esp. through a sniper scope). Ours already turned the
-  strip toward the eye, but once for the whole strip (by its midpoint):
-  for your own shot, with the eye beside the muzzle, the near end lay
-  flat across the view. Now each end turns about the strip's axis toward
-  the eye from its own place (`ui::effects::strip_corners`, a mesh
-  rebuilt per frame; width constant `Width` u = 1.8 cm each, texture u
-  along the strip). Not checked live: a sniper's scope (no sniper
-  without the V2 key on this box). Open questions for a spec session on
-  the Windows PC (effects_sounds.md section 4): how does Combat Arms
-  orient the strip (turned about its axis toward the eye, fixed, or
-  something else)? Does its width change with the zoomed field of view
-  or with distance (a floor or cap)? Where does a scoped shooter's own
-  tracer start (the view model's muzzle, the eye, a point ahead of it),
-  and is it drawn at all while scoped? Ours starts at the view model's
-  flash point, which keeps its camera offset when zoomed.
-  **Answered (2026-10-30)**, effects_sounds.md Corrections (2026-10-30)
-  3: one width direction for the whole strip, parallel to the screen and
-  perpendicular to its camera-space direction; world width `Width`/2, no
-  zoom or distance compensation; texture only (no colour or alpha fade);
-  depth-tested, not written (so not through walls); own tracer from the
-  data flash point, drawn while scoped. **Done (2026-10-30)**:
-  `rules::tracer_corners` (one camera-space width direction, `Width`/2
-  across), the texture alone; effects_sounds tests t73, t74, t76.
 - **Ultimate Gun Game's Escape menu (user, 2026-10-29): fixed, confirm
   in a playtest** (`party_kit::esc_menu`, `party_kit::host`; DESIGN.md
   "The party apps' Escape menu"). It's
@@ -860,145 +698,24 @@ the original's own behaviour isn't a bug (say so instead).
   M2 LAN browser, M3 master server; menu music (Combat Arms' menu
   playlist). Plan:
   [docs/plans/active/main-menu.md](plans/active/main-menu.md).
-- **Combat Arms grenade not thrown while sprinting: matches Combat Arms.**
-  Pin pulled, then sprint, then release: the throw waits until sprint
-  ends. view_models.md says so ("Grenade and sprint": the cocked and
-  throw stages wait until sprint ends). Kept for parity; a party-mode
-  option to throw while sprinting only if the user asks.
 - **Kill feed: Combat Arms gun icons sit at the top of the line: fixed,
   confirm in a playtest.** Rows are one fixed height and each icon sits in
   a line-tall centring box (`kill_feed::icon_slot`).
-- **Combat Arms guns' own sounds, scopes and models: audit** (2026-10-29,
-  with the install's attribute data read: 2,298 weapons, 61 ours and
-  2,237 copies; 1,996 have a `class` and can be given by Ultimate Gun
-  Game: 15 of ours, 1,981 copies). An install weapon none of our
-  documents matches is a copy of our first matched document of its
-  `Guntype` (`game/data.rs`, `merge_weapon_docs`), so the user is right
-  about sounds and most effects. Per field, for the 1,981 given copies
-  (how many play a value other than their own record's; "own" means
-  the record's value reaches the game):
-  - fire sound (`FireSnd`): template's on all; 1,827 play the wrong
-    file (154 variants share the template's). Not parsed at all.
-  - silenced (`SilencedFireSnd#`), dry-fire, reload 1-3, select,
-    deselect: template's. Wrong file on 48, 1,800, 1,836, 1,627 and
-    1,749 copies. Not parsed.
-  - fire-sound radii (`FireSndRadius`, `SilencedFireRadius#`): own, but
-    only in documents with a `combat_arms:attachments` table. The 46
-    copies without one (special weapons) and our 8 launchers, crossbow
-    and grenade use the effects default of 2000. `ReloadSndRadius` and
-    `SelectSndRadius` are parsed but not mapped (every stock value is
-    300, so nothing audible yet).
-  - muzzle flashes (`PVMuzzleFXName`, `HHMuzzleFXName`): template's.
-    Wrong on 339 and 36 copies (water guns, coloured variants; 1,353
-    stock weapons use `AK47_PV_Muzz`, so most match by chance).
-  - the ammo's FireFX (casings), TracerFX and ImpactFX names: the
-    template's. Wrong on 561, 599 and 49 copies. Not parsed.
-  - fitted sight (`DefaultScopeAttach`): own, and the overlay sprite
-    and zoom levels come from the install's attachment record for it.
-    The 46 copies without an attachments table get no sight
-    (`optical_buster_apollo`'s L115 scope), nor does our XM25 (its own
-    XM25 scope is dropped). `DotSightName` is read (fix 5, below).
-  - view model and skins (`PVModelNormal`, `PVSkin#`, `PVRenderStyle#`):
-    own, loaded on demand (`view_model::on_demand`).
-  - held model (`HHModel`): own in the data, but drawn for none of the
-    1,981 copies: a map loads the held models of our ids only
-    (`characters::models`, `builtin_weapon_ids`). The copies' `AniType`,
-    `LowerAniType` and `HHSkin#` aren't merged either
-    (`characters::records::merge_install_weapons`: ours only). Without
-    the V1 key no Combat Arms weapon has a held model, because none of
-    our documents names one. This covers 11 R870 variants (R870 MCS,
-    R870SE, ...) but not Lucker Party's `combat_arms:remington_870`,
-    which is ours, has its `HHModel` mapped and loads at map load.
-  - rates: `trigger.cycle` (the rate of fire), `magazine.reload` and
-    `draw` are the template's on all 1,981 copies. Every rifle copy
-    cycles at the M4A1's 105 ms; every sniper copy, semi-automatic ones
-    included, at the L96A1's bolt 1.4 s, though the view model plays the
-    copy's own animations. `FireAniRate` is written on 812 copies and dropped
-    on 83 whose template has no `combat_arms:inventory` table. (Fixed:
-    fix 3; with parts 2 and 3 also the post-fire, pre-fire latency,
-    spin, flame keys, knife swings and the vest's and sets' rates:
-    2,152 of 2,160 timed copies on their own model's numbers.)
-  - numbers (clip, damage, `FireDelay`, spread, recoil, zoom fields):
-    own, as `weapon_values` maps them (where the template has the
-    table).
-
-  Our own documents are wrong too. The LAW, RPG-7, M32, M79, MZP-1, XM25,
-  normal crossbow and the M67 have no `combat_arms:effects` table, so
-  they fire silently with no impact effect (their records name sounds,
-  `Rocket`/`M32_Exp`/`HandGrenade` impacts and `WEAPON_HH` flashes).
-  (Fixed 2026-10-29 for every impact projectile weapon, the launchers
-  and their copies: the table is made, with the record's `FireSnd`,
-  `FireSndRadius` and the ammo's ImpactFX; the crossbow, the M67 and
-  the launchers' `HHMuzzleFXName` are still open; their `FireFXName`
-  done 2026-10-31.) The
-  MP5A4 and Dragunov have no first-person muzzle flash (no view-model
-  table). The M60's FireFX should be `5.56mm`, not `7.62mm`, the R870's
-  `12Gauge_R`, not `_G`. The R870 has no deselect sound.
-
-  Fixes, most audible or visible first:
-  1. (Done 2026-10-29, with 4: `effects_patch` in `game/data.rs`; the
-     heavy `heavy::own_sounds` finds all 2,225 weapons naming a `FireSnd`
-     playing it; ammo FX names unknown to our built-in tables, e.g.
-     `Standard`, keep the template's: their `FX.TXT` records aren't read.)
-     Read `FireSnd`, `SilencedFireSnd1..10`, `DryFireSnd`,
-     `ReloadSnd1..3`, `SelectSnd`, `DeselectSnd`, `PVMuzzleFXName`,
-     `HHMuzzleFXName` per weapon, and the ammo's `ImpactFXName`,
-     `FireFXName` and `TracerFXName` with effects_sounds.md's
-     missing/empty fallbacks, into `combat_arms:effects` and
-     `combat_arms:view_model`. Make the effects table for documents
-     without one (the launchers, the crossbow, the grenades). Map
-     `ReloadSndRadius` and `SelectSndRadius` there too. Ready to
-     implement: attribute_data.md's field table and effects_sounds.md
-     "How effects are described as data" and 11.
-  2. (Done 2026-10-29: `characters::held_on_demand`, below.) Load held
-     models on demand for every Combat Arms weapon (as view
-     models are), not only ours at map load, and merge the copies'
-     `AniType`, `LowerAniType`, `HHSkin#` and `HHRenderStyle#`. Ready to
-     implement: characters.md 2, "Third-person weapon model and
-     animation class". This overlaps the open "R870 not in Combat Arms
-     characters' hands" work.
-  3. (Done 2026-10-29: `weapons::timing`, the `combat_arms:timing` hook
-     on every copied gun reads its view model when first built, server
-     and client alike; `FireAniRate` in every weapon's inventory table;
-     plan and open questions: docs/plans/active/ca-weapon-timings.md;
-     part 2, the vest's and sets' reload, draw and fire rates in the
-     weapon's own times, done the same day: `gear::CaGearRates`; part 3,
-     the post-fire (Chimera's `Trigger::postfire`), the pre-fire's
-     presence, spinning guns' spin, flame keys and knife swings from the
-     model, done too; its open questions 5-8 remain.)
-     Take each copy's rate of fire, reload and draw from its own view
-     model's animations (`fire_0`, `reload` or the shell timings,
-     `select`; at rate 1 + `FireAniRate`), not the template's, and write
-     `FireAniRate` even where the template has no inventory table. Ready
-     to implement: weapon_classes.md "Typical weapons" and view_models.md
-     say the cycle is the fire animation's length. Reading 2,000 models
-     at merge time is too slow, so it needs a small plan (at give time,
-     or cached).
-  4. (Done 2026-10-29, with 1: the install gives them, and the built-in values are fixed.) Correct our documents (M60 and R870 FireFX, R870 deselect, MP5A4
-     and Dragunov muzzle flash). Item 1 makes this automatic with the
-     install; the built-in values still matter without it.
-  5. (Done 2026-10-29: `DotSightName` is read into `combat_arms:hud`'s `dot_sight`, creating the table, and `ui::hud` draws the install's texture over A8's rect; on 161 weapons, all knives, robot guns and infected hands, none a rifle's red dot. Open questions: docs/plans/active/combat-arms.md, "Dot-sight reticles".) `DotSightName` reticles. Covered by hud_crosshair.md.
-  6. Special weapons' own scopes (XM25 Scope, L115 scope on specials,
-     `LGB_scope`): needs a spec session. How a special weapon zooms isn't
-     specified (data.rs "Known shortcuts").
-     **Answered (2026-10-30):** exactly like a gun, through its scope
-     part's zoom levels (weapon_classes.md Corrections (2026-10-30) 2).
-     **Done (2026-10-30):** a weapon document without a parts table whose
-     record names a `DefaultScopeAttach` gets one (`data::patch`), so it
-     fits its scope from its accepted list and zooms with that part's
-     levels and overlay; on the dev box's install 5 specials do (LGB
-     `LGB_scope`, both napalm strikes `napalm_scope`, XM_25 `XM25 scope`,
-     Optical_Buster_Apollo `L115 Scope`; `heavy::scopes`, test
-     `attachments::special_weapon_zooms_through_its_scope`).
-
-  Stale in `game/data.rs`'s "Known shortcuts": "sounds and sound radii"
-  aren't all unmapped (`MiscSound1..5`, `PlayAutoThrowSound`,
-  `FireSndRadius` and `SilencedFireRadius#` are mapped); "render styles"
-  are read, just not into the documents (`PVRenderStyle#` per weapon at
-  view-model load, `HHRenderStyle#` for ours). The claims on
-  `DotSightName`, special weapons' scopes and held models hold. Not
-  listed there: the ammo's effect names, the rates above, the muzzle
-  effect names.
+- **Combat Arms guns' own sounds, scopes and models: audit (2026-10-29),
+  what's left.** The six fixes are done (the install's sounds, muzzle
+  groups and ammo effect names per weapon, held models on demand, rates
+  from the models, our documents' wrong values, `DotSightName`, special
+  weapons' scopes). Left:
+  - the ammo's FireFX, TracerFX and ImpactFX names that our built-in
+    tables don't know (e.g. `Standard`) keep the template's: their
+    `FX.TXT` records aren't read;
+  - `HHMuzzleFXName` of the crossbow and the M67: effects_sounds.md and
+    special_weapons.md case 59 define a third-person muzzle group for
+    launchers only (done: `WEAPON_HH` for the LAW, RPG-7, M136 and M79,
+    none for the M32 and the flamethrower). Spec question: do another
+    player's crossbow shot and grenade throw make their record's
+    `HHMuzzleFXName` group, and at which point?
+  - the timing work's open questions 5-8 (docs/plans/active/ca-weapon-timings.md).
 - **Can Combat Arms guns shoot through glass? Fixed, confirm in a
   playtest.** Checked against weapon_firing.md "Penetration" (Glass,
   surface 40: passes up to 10 u, damage x 0.9, re-perturb 5; Bullet-Proof
@@ -1272,16 +989,8 @@ the original's own behaviour isn't a bug (say so instead).
     styles our table doesn't know, drawn opaque: `RS\ENV_ALPHA_MASK.ltb`
     (12: power suits, swords), `RS\ItemEdge.ltb` (6), `RS\envmap.ltb`
     (2) (open questions 2, 3).
-  "Neon Outlaw ASW338LM" (texture scattered over the gun) and "AUG A3
-  Champions Lightning": answered on build 26236938 (models_ltb.md
-  W1-W3). Neon Outlaw is `ASW338LMspunk`; its view skin (and the Royal
-  Gold, graf, sakura, sea and weastland ASW338LM skins) is painted for a
-  UV layout no ASW338LM model of the install has, so it scatters as the
-  files say (same header, model and UVs as the skins that fit: no
-  reading bug); its held skin and the AUG A3 Champions Lightning's
-  (`AUGA3ChampionsLighting`) view skin aren't in the install (grey, as
-  the game leaves them). `CHIMERA_SKINS_SHOW=outlaw,champions` prints
-  them.
+  The Neon Outlaw ASW338LM and AUG A3 Champions Lightning skins: see "Neon
+  Outlaw ASW338LM" above (the data, not our reading).
   Tests: `attribute_data::sprite_skins_and_an_added_weapons_held_look`,
   `model::a_sprite_skin_draws_its_first_frame`; the sweep:
   `cargo test -p combat_arms --features dev,ui --test it

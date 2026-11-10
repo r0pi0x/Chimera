@@ -290,6 +290,13 @@ fn t48_t50_projectile_looks_from_the_records() {
     assert_eq!((flame.look.fx.as_str(), flame.look.fx_smooth), ("Test_Flame", true));
     assert!(flame.look.fly_sound.is_empty(), "FlySound 0: no sound");
     assert!(ProjectileParams::is_modelless(&flame.shown_key()));
+    assert_eq!(flame.drawn_model(), None, "ModelScale 0: nothing drawn");
+    // Case 57: an empty `Model` at a scale (`Scorpion_Venom`'s 0.35) draws
+    // the engine's placeholder at that scale, under its own key.
+    let venom = ProjectileParams { model_scale: [0.35; 3], ..flame.clone() };
+    assert_eq!(venom.drawn_model(), Some(combat_arms::game::special::data::DEFAULT_PROJECTILE));
+    assert!(!ProjectileParams::is_modelless(&venom.shown_key()));
+    assert!(venom.shown_key().starts_with(&format!("{}models/default_projectile.ltb|[0.35, 0.35, 0.35]|", combat_arms::game::special::data::PROJECTILE_KEY)));
     // A look without a fly sound carries no radius.
     assert_eq!(ProjectileLook::parse(&flame.shown_key()), ProjectileLook { sound_radius: 0.0, ..flame.look.clone() });
     // Follow-up 7, 8: the launcher's FireFX record; its round is launched
