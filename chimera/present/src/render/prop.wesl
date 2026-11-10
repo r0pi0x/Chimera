@@ -65,6 +65,16 @@ struct PropParams {
     phong_flags: vec4<f32>,
     phong_env: vec4<f32>,
     phong_warp: vec4<f32>,
+    probe_slot: u32,
+    face_slot: u32,
+}
+
+// A moving model's probe light (probe_lit::ProbeTable): what probe_cube,
+// probe_light_dir and probe_light_color hold for a material with its own.
+struct Probe {
+    cube: array<vec4<f32>, 6>,
+    dir: array<vec4<f32>, 4>,
+    color: array<vec4<f32>, 4>,
 }
 
 @group(constants::MATERIAL_BIND_GROUP) @binding(0) var<uniform> params: PropParams;
@@ -80,6 +90,60 @@ struct PropParams {
 @group(constants::MATERIAL_BIND_GROUP) @binding(10) var phong_exponent_texture: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(11) var lightwarp_texture: texture_2d<f32>;
 @group(constants::MATERIAL_BIND_GROUP) @binding(12) var phong_warp_texture: texture_2d<f32>;
+@group(constants::MATERIAL_BIND_GROUP) @binding(13) var<storage, read> probes: array<Probe>;
+
+// The probe's ambient cube, lights' directions and colours: from the probe
+// table's slot (params.probe_slot), else the material's own.
+fn probe_cube(i: u32) -> vec4<f32> {
+    if params.probe_slot != 0u {
+        return probes[params.probe_slot].cube[i];
+    }
+    return params.probe_cube[i];
+}
+
+fn probe_dir(i: u32) -> vec4<f32> {
+    if params.probe_slot != 0u {
+        return probes[params.probe_slot].dir[i];
+    }
+    return params.probe_light_dir[i];
+}
+
+// A face part's centre, up and iris planes (rows 0-3, as face_center to
+// face_v): from the table's slot (params.face_slot), else the material's.
+fn face_center() -> vec4<f32> {
+    if params.face_slot != 0u {
+        return probes[params.face_slot].cube[0];
+    }
+    return params.face_center;
+}
+
+fn face_up() -> vec4<f32> {
+    if params.face_slot != 0u {
+        return probes[params.face_slot].cube[1];
+    }
+    return params.face_up;
+}
+
+fn face_u() -> vec4<f32> {
+    if params.face_slot != 0u {
+        return probes[params.face_slot].cube[2];
+    }
+    return params.face_u;
+}
+
+fn face_v() -> vec4<f32> {
+    if params.face_slot != 0u {
+        return probes[params.face_slot].cube[3];
+    }
+    return params.face_v;
+}
+
+fn probe_color(i: u32) -> vec4<f32> {
+    if params.probe_slot != 0u {
+        return probes[params.probe_slot].color[i];
+    }
+    return params.probe_light_color[i];
+}
 
 // A texture transform (map::MapUvTransform): rows . (u, v, 1), plus the
 // TextureScroll translation, wrapped to [0, 1) as the proxy does.
@@ -151,15 +215,15 @@ fn layer_uv(n: vec3<f32>, p: vec3<f32>) -> vec2<f32> {
 // weighted by the squared normal, plus each light by its cosine.
 fn probe_ambient(n: vec3<f32>) -> vec3<f32> {
     let n2 = n * n;
-    return n2.x * select(params.probe_cube[1].rgb, params.probe_cube[0].rgb, n.x >= 0.0)
-        + n2.y * select(params.probe_cube[3].rgb, params.probe_cube[2].rgb, n.y >= 0.0)
-        + n2.z * select(params.probe_cube[5].rgb, params.probe_cube[4].rgb, n.z >= 0.0);
+    return n2.x * select(probe_cube(1u).rgb, probe_cube(0u).rgb, n.x >= 0.0)
+        + n2.y * select(probe_cube(3u).rgb, probe_cube(2u).rgb, n.y >= 0.0)
+        + n2.z * select(probe_cube(5u).rgb, probe_cube(4u).rgb, n.z >= 0.0);
 }
 
 fn probe_direct(n: vec3<f32>) -> vec3<f32> {
     var light = vec3<f32>(0.0);
     for (var i = 0u; i < 4u; i = i + 1u) {
-        light = light + params.probe_light_color[i].rgb * max(dot(n, params.probe_light_dir[i].xyz), 0.0);
+        light = light + probe_color(i).rgb * max(dot(n, probe_dir(i).xyz), 0.0);
     }
     return light;
 }
@@ -169,8 +233,8 @@ fn probe_direct(n: vec3<f32>) -> vec3<f32> {
 fn probe_direct_half(n: vec3<f32>) -> vec3<f32> {
     var light = vec3<f32>(0.0);
     for (var i = 0u; i < 4u; i = i + 1u) {
-        let h = dot(n, params.probe_light_dir[i].xyz) * 0.5 + 0.5;
-        light = light + params.probe_light_color[i].rgb * h * h;
+        let h = dot(n, probe_dir(i).xyz) * 0.5 + 0.5;
+        light = light + probe_color(i).rgb * h * h;
     }
     return light;
 }
@@ -189,8 +253,8 @@ fn layer_specular(n: vec3<f32>, p: vec3<f32>) -> vec3<f32> {
     let to_eye = normalize(view.world_position - p);
     var sum = vec3<f32>(0.0);
     for (var i = 0u; i < 4u; i = i + 1u) {
-        let h = normalize(params.probe_light_dir[i].xyz + to_eye);
-        sum = sum + params.probe_light_color[i].rgb * pow(max(dot(n, h), 0.0), power);
+        let h = normalize(probe_dir(i).xyz + to_eye);
+        sum = sum + probe_color(i).rgb * pow(max(dot(n, h), 0.0), power);
     }
     return params.layer_specular.rgb * sum;
 }
@@ -394,7 +458,7 @@ fn phong_shade(in: VertexOutput, uv: vec2<f32>, base: vec4<f32>, a: vec3<f32>, n
     if params.probe > 0.5 {
         sum.diffuse = probe_ambient(n);
         for (var i = 0u; i < 4u; i = i + 1u) {
-            sum = phong_light(sum, n, r, params.probe_light_dir[i].xyz, params.probe_light_color[i].rgb, k, fresnel);
+            sum = phong_light(sum, n, r, probe_dir(i).xyz, probe_color(i).rgb, k, fresnel);
         }
     } else {
         sum.diffuse = vertex_light;
@@ -479,11 +543,11 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     // An eyeball: lit along the direction from its centre, flattened
     // along its up (11.4); the iris projected over the sclera.
     if params.face > 0.5 && params.face < 1.5 {
-        let d = in.world_position.xyz - params.face_center.xyz;
-        let u = params.face_up.xyz;
+        let d = in.world_position.xyz - face_center().xyz;
+        let u = face_up().xyz;
         n = normalize(d - 0.5 * dot(d, u) * u);
         let p = vec4<f32>(in.world_position.xyz, 1.0);
-        let iris_uv = vec2<f32>(dot(params.face_u, p), dot(params.face_v, p));
+        let iris_uv = vec2<f32>(dot(face_u(), p), dot(face_v(), p));
         if all(iris_uv >= vec2<f32>(0.0)) && all(iris_uv <= vec2<f32>(1.0)) {
             let iris = textureSample(layer_texture, base_sampler, iris_uv);
             color = vec4<f32>(mix(color.rgb, iris.rgb * params.base_color.rgb, iris.a), color.a);
@@ -505,7 +569,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     }
     // Teeth: darker as the mouth closes and away from its forward (11.5).
     if params.face > 1.5 {
-        light = light * params.face_up.w * saturate(dot(n, params.face_up.xyz));
+        light = light * face_up().w * saturate(dot(n, face_up().xyz));
     }
     if params.dynamic > 0.5 {
         direct_extra = dynamic_light(in.world_position.xyz, n, in.position.xy, params.dynamic > 1.5);

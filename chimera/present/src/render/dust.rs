@@ -4,10 +4,29 @@
 //! dies out toward the wind, vertical stays), fade in and out over their
 //! life and with view depth, and keep a constant size on screen (dust
 //! clouds: a size in the world). Frozen volumes make their motes once, and
-//! those never move, age or die. One mesh per volume, rebuilt each frame
-//! facing the camera while it is shown and has motes in view.
+//! those never move, age or die.
+//!
+//! Drawn as a volume's quads, one per mote, made by the vertex shader
+//! (dust.wesl, `DustMotes` extending the volume's unlit `StandardMaterial`)
+//! from a buffer of the motes in view (position, half-width, colour; far to
+//! near) and the camera's axes, rewritten each frame while the volume is
+//! shown and has motes in view. Its mesh is only the quads' corners and
+//! numbers, made again when the motes outgrow it: a mesh rewritten every
+//! frame is freed and allocated again in Bevy's mesh slabs
+//! (docs/performance.md, "Render performance").
 
-use bevy::{asset::RenderAssetUsages, mesh::Indices, prelude::*, render::render_resource::PrimitiveTopology};
+use bevy::{
+    asset::{RenderAssetUsages, embedded_asset},
+    mesh::Indices,
+    pbr::{ExtendedMaterial, MaterialExtension},
+    prelude::*,
+    reflect::TypePath,
+    render::{
+        render_resource::{AsBindGroup, PrimitiveTopology},
+        storage::ShaderBuffer,
+    },
+    shader::ShaderRef,
+};
 
 use crate::map::{EntityPart, MapDust, SkyboxCamera, ViewModelCamera, monitor, water};
 
@@ -24,10 +43,47 @@ struct Mote {
     size: f32,
 }
 
+/// The motes a volume draws, for dust.wesl's vertex shader: the camera's
+/// right (w: the motes' count), up and the quads' normal, then each mote's
+/// position (w: half-width) and linear colour with its alpha.
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
+pub struct DustMotes {
+    #[storage(100, read_only)]
+    pub motes: Handle<ShaderBuffer>,
+}
+
+impl MaterialExtension for DustMotes {
+    fn vertex_shader() -> ShaderRef {
+        "embedded://chimera_present/render/dust.wesl".into()
+    }
+}
+
+/// A dust volume's material: its unlit `StandardMaterial` drawing quads
+/// the shader places (`DustMotes`).
+pub type DustMaterial = ExtendedMaterial<StandardMaterial, DustMotes>;
+
+pub struct DustMaterialPlugin;
+
+impl Plugin for DustMaterialPlugin {
+    fn build(&self, app: &mut App) {
+        embedded_asset!(app, "dust.wesl");
+        app.add_plugins(MaterialPlugin::<DustMaterial>::default());
+    }
+}
+
+/// Header vec4s before the motes in a volume's buffer.
+const MOTES_HEADER: usize = 3;
+
 #[derive(Component)]
 pub struct DustEmitter {
     pub dust: MapDust,
     pub mesh: Handle<Mesh>,
+    /// The motes in view, for the shader (`DustMotes`): made with the
+    /// volume's `DustMaterial`, which replaces its `StandardMaterial` on
+    /// its first draw.
+    motes_buffer: Option<Handle<ShaderBuffer>>,
+    /// Quads the mesh has (0: not made yet).
+    quads: usize,
     motes: Vec<Mote>,
     pending: f32,
     rng: u64,
@@ -44,6 +100,8 @@ impl DustEmitter {
         Self {
             dust,
             mesh,
+            motes_buffer: None,
+            quads: 0,
             motes: Vec::new(),
             pending: 0.0,
             rng: seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1,
@@ -152,6 +210,33 @@ pub fn write_dynamic_mesh(
     mesh.insert_indices(Indices::U32(indices));
 }
 
+/// `quads` quads for dust.wesl to place: each corner's coordinates in UV0
+/// (and so which corner: u for left or right, v for top or bottom) and its
+/// quad's number in UV1's x; positions are the shader's.
+pub fn mote_quads(quads: usize) -> Mesh {
+    let mut uvs = Vec::with_capacity(quads * 4);
+    let mut numbers = Vec::with_capacity(quads * 4);
+    let mut indices = Vec::with_capacity(quads * 6);
+    for q in 0..quads {
+        let base = (q * 4) as u32;
+        for uv in [[0.0, 1.0], [0.0, 0.0], [1.0, 0.0], [1.0, 1.0]] {
+            uvs.push(uv);
+            numbers.push([q as f32, 0.0]);
+        }
+        indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+    let n = quads * 4;
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vec![[0.0f32; 3]; n]);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vec![[0.0f32, 1.0, 0.0]; n]);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+    mesh.insert_attribute(Mesh::ATTRIBUTE_UV_1, numbers);
+    // Only so the material reads the vertex colour (the shader's).
+    mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vec![[0.0f32; 4]; n]);
+    mesh.insert_indices(Indices::U32(indices));
+    mesh
+}
+
 /// Smallest vertex count `write_dynamic_mesh` writes.
 pub const MIN_DYNAMIC_VERTICES: usize = 64;
 
@@ -168,8 +253,20 @@ pub fn update_dust(
             Without<water::WaterReflectionCamera>,
         ),
     >,
-    mut emitters: Query<(&mut DustEmitter, Option<&EntityPart>, Option<&Visibility>)>,
+    mut emitters: Query<(
+        Entity,
+        &mut DustEmitter,
+        Option<&EntityPart>,
+        Option<&Visibility>,
+        Option<&MeshMaterial3d<StandardMaterial>>,
+    )>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut gpu: (
+        Option<ResMut<Assets<ShaderBuffer>>>,
+        Option<ResMut<Assets<DustMaterial>>>,
+        Option<Res<Assets<StandardMaterial>>>,
+    ),
+    mut commands: Commands,
 ) {
     let dt = time.delta_secs();
     let Some(eye) = cameras.iter().next() else { return };
@@ -179,8 +276,8 @@ pub fn update_dust(
         eye.right().as_vec3(),
         eye.up().as_vec3(),
     );
-    let mut total: usize = emitters.iter().map(|(e, ..)| e.motes.len()).sum();
-    for (mut e, part, visibility) in &mut emitters {
+    let mut total: usize = emitters.iter().map(|(_, e, ..)| e.motes.len()).sum();
+    for (entity, mut e, part, visibility, standard) in &mut emitters {
         // Turned off (TurnOff): no new motes, the others live out their
         // life; removed (Kill): gone at once.
         if part.is_some_and(|p| !p.exists) {
@@ -253,29 +350,54 @@ pub fn update_dust(
             .collect();
         visible.sort_by(|a, b| b.0.total_cmp(&a.0));
         let color = Color::srgb(e.dust.color[0], e.dust.color[1], e.dust.color[2]).to_linear();
-        let (mut positions, mut uvs, mut colors, mut indices) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        // The motes for the shader (`DustMotes`): the camera's axes, then
+        // each mote far to near.
+        let count = visible.len();
+        let mut data = Vec::with_capacity(MOTES_HEADER + 2 * count);
+        data.push(right.extend(count as f32).to_array());
+        data.push(up.extend(0.0).to_array());
+        data.push((-forward).extend(0.0).to_array());
         for (depth, alpha, m) in visible {
-            let alpha = alpha * e.dust.color[3];
             let half = half_width(&e.dust, m.size, depth);
-            let base = positions.len() as u32;
-            for (cx, cy, u, v) in [
-                (-1.0, -1.0, 0.0, 1.0),
-                (-1.0, 1.0, 0.0, 0.0),
-                (1.0, 1.0, 1.0, 0.0),
-                (1.0, -1.0, 1.0, 1.0),
-            ] {
-                positions.push((m.position + (right * cx + up * cy) * half).to_array());
-                uvs.push([u, v]);
-                colors.push([color.red, color.green, color.blue, alpha]);
-            }
-            indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+            data.push(m.position.extend(half).to_array());
+            data.push([color.red, color.green, color.blue, alpha * e.dust.color[3]]);
         }
-        if positions.is_empty() && e.drawn_empty {
+        if count == 0 && e.drawn_empty {
             continue;
         }
-        e.drawn_empty = positions.is_empty();
-        if let Some(mut mesh) = meshes.get_mut(&e.mesh) {
-            write_dynamic_mesh(&mut mesh, -forward, positions, uvs, colors, indices);
+        e.drawn_empty = count == 0;
+        let (Some(buffers), Some(dust_materials)) = (gpu.0.as_mut(), gpu.1.as_mut()) else {
+            continue;
+        };
+        let quads = count.max(1).next_power_of_two().max(MIN_DYNAMIC_VERTICES / 4);
+        // Its mesh only grows (and so is rarely made again).
+        if quads > e.quads {
+            e.quads = quads;
+            let _ = meshes.insert(e.mesh.id(), mote_quads(quads));
+        }
+        data.resize(MOTES_HEADER + 2 * e.quads, [0.0; 4]);
+        let motes = ShaderBuffer::new(data, RenderAssetUsages::RENDER_WORLD);
+        match e.motes_buffer.clone() {
+            Some(h) => {
+                let _ = buffers.insert(h.id(), motes);
+            }
+            None => {
+                // The first draw: its material becomes the same unlit one
+                // with its quads placed by the shader.
+                let h = buffers.add(motes);
+                e.motes_buffer = Some(h.clone());
+                let base = standard
+                    .and_then(|m| gpu.2.as_ref().and_then(|s| s.get(&m.0)).cloned())
+                    .unwrap_or_default();
+                let material = dust_materials.add(DustMaterial {
+                    base,
+                    extension: DustMotes { motes: h },
+                });
+                commands
+                    .entity(entity)
+                    .remove::<MeshMaterial3d<StandardMaterial>>()
+                    .insert(MeshMaterial3d(material));
+            }
         }
     }
 }
@@ -344,6 +466,62 @@ mod tests {
         // No brushes: anywhere in the bounds.
         e.dust.brushes.clear();
         assert!(e.spawn_point().is_some());
+    }
+
+    /// Drawn motes go to the volume's buffer each frame, its quads placed
+    /// by the shader: its material becomes a `DustMaterial` once, and its
+    /// mesh is made again only when the motes outgrow it, not every frame
+    /// (docs/performance.md, "Render performance").
+    #[test]
+    fn motes_go_to_a_buffer_not_a_new_mesh_each_frame() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, AssetPlugin::default()));
+        app.init_asset::<Mesh>()
+            .init_asset::<Image>()
+            .init_asset::<ShaderBuffer>()
+            .init_asset::<StandardMaterial>()
+            .init_asset::<DustMaterial>();
+        #[derive(Resource, Default)]
+        struct Rewrites(usize);
+        app.init_resource::<Rewrites>().add_systems(Update, update_dust).add_systems(
+            Last,
+            |mut events: MessageReader<AssetEvent<Mesh>>, mut n: ResMut<Rewrites>| {
+                n.0 += events.read().filter(|e| matches!(e, AssetEvent::Modified { .. })).count();
+            },
+        );
+        app.world_mut().spawn((Camera3d::default(), GlobalTransform::default()));
+        let mut d = dust();
+        // In front of the camera (it looks down -Z), plenty of motes.
+        d.min = Vec3::new(-1.0, -1.0, -5.0);
+        d.max = Vec3::new(1.0, 1.0, -3.0);
+        d.rate = 200.0;
+        d.life = (100.0, 100.0);
+        let w = app.world_mut();
+        let mesh = w.resource_mut::<Assets<Mesh>>().add(empty_mesh());
+        let standard = w.resource_mut::<Assets<StandardMaterial>>().add(StandardMaterial {
+            unlit: true,
+            alpha_mode: AlphaMode::Blend,
+            ..default()
+        });
+        let e = w.spawn((DustEmitter::new(d, mesh, 5), Mesh3d(Handle::default()), MeshMaterial3d(standard))).id();
+        for _ in 0..30 {
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            app.update();
+        }
+        let w = app.world();
+        assert!(w.get::<MeshMaterial3d<StandardMaterial>>(e).is_none(), "the plain material replaced");
+        let material = w.get::<MeshMaterial3d<DustMaterial>>(e).expect("a dust material");
+        let dm = w.resource::<Assets<DustMaterial>>().get(&material.0).unwrap();
+        assert!(dm.base.unlit && dm.base.alpha_mode == AlphaMode::Blend, "the volume's own look");
+        let buffer = w.resource::<Assets<ShaderBuffer>>().get(&dm.extension.motes).expect("its motes");
+        let rows = buffer.cast_slice::<[f32; 4]>().expect("written");
+        let count = rows[0][3] as usize;
+        assert!(count > 0 && count <= w.get::<DustEmitter>(e).unwrap().motes.len(), "{count} motes in view");
+        assert_eq!(rows.len(), MOTES_HEADER + 2 * w.get::<DustEmitter>(e).unwrap().quads, "padded to the mesh's quads");
+        let quads = w.resource::<Assets<Mesh>>().get(&w.get::<DustEmitter>(e).unwrap().mesh).unwrap();
+        assert!(quads.attribute(Mesh::ATTRIBUTE_UV_1).is_some(), "the quads' numbers");
+        let rewrites = w.resource::<Rewrites>().0;
+        assert!(rewrites <= 3, "the quads' mesh made again only as the motes grew: {rewrites} in 30 frames");
     }
 
     #[test]

@@ -1,7 +1,9 @@
 //! Physics props' shadows on the world (Source's render-to-texture
 //! shadows, specs/cs_source/shadows_sky.md) while the prop moves, headless:
-//! the shadow follows the prop every frame through one mesh asset that is
-//! rewritten in place. A new mesh handle each frame left a moving prop's
+//! the shadow follows the prop every frame through its frame in the frame
+//! table (`ShadowFrames`, projected by the shader), over receiver geometry
+//! in one mesh asset rewritten in place only when the frame leaves the
+//! region it covers. A new mesh handle each frame left a moving prop's
 //! shadow undrawn until it came to rest (Bevy re-specializes an entity
 //! whose `Mesh3d` changed, and skipped it while the new mesh wasn't
 //! prepared on the GPU yet). The render world's extraction is emulated
@@ -24,7 +26,7 @@ use chimera_present::{
         rope_material::RopeMaterial,
         sprite_material::SpriteMaterial,
         world_material::WorldMaterial,
-        shadows::{PropShadow, ShadowMaterial},
+        shadows::{Projected, PropShadow, ShadowFrames, ShadowMaterial},
     },
 };
 
@@ -174,6 +176,22 @@ fn crate_at(sim: &mut Sim) -> (Entity, Vec3) {
         .expect("the crate")
 }
 
+/// The shadow's direction, from the frame table (a projected shadow).
+fn frame_direction(sim: &mut Sim, e: Entity) -> Vec3 {
+    let world = sim.app.world();
+    let slot = world.get::<Projected>(e).expect("projected").slot;
+    let row = world.resource::<ShadowFrames>().get(slot)[3];
+    Vec3::new(row[0], row[1], row[2])
+}
+
+/// The shadow's frame origin, from the frame table (a projected shadow).
+fn frame_origin(sim: &mut Sim, e: Entity) -> Vec3 {
+    let world = sim.app.world();
+    let slot = world.get::<Projected>(e).expect("projected once it moves").slot;
+    let row = world.resource::<ShadowFrames>().get(slot)[0];
+    Vec3::new(row[0], row[1], row[2])
+}
+
 #[test]
 fn a_moving_prop_keeps_its_shadow_mesh_and_moves_it() {
     let mut sim = sim();
@@ -181,20 +199,41 @@ fn a_moving_prop_keeps_its_shadow_mesh_and_moves_it() {
     let (entity, mesh, start) = shadow(&mut sim);
     let (node, at) = crate_at(&mut sim);
     assert!(start.xz().distance(at.xz()) < 0.5, "under the crate: {start} {at}");
+    #[derive(Resource, Default)]
+    struct Rewrites(usize);
+    sim.app.init_resource::<Rewrites>().add_systems(
+        Last,
+        |mut events: MessageReader<AssetEvent<Mesh>>, mut n: ResMut<Rewrites>| {
+            n.0 += events.read().filter(|e| matches!(e, AssetEvent::Modified { .. })).count();
+        },
+    );
     sim.app.world_mut().entity_mut(node).insert(LinearVelocity(Vec3::X * 2.0));
-    let mut last = start;
+    let mut first = None;
+    let mut last = (start, at);
     for tick in 0..20 {
         sim.ticks(1);
-        let (e, m, centre) = shadow(&mut sim);
+        let (e, m, _) = shadow(&mut sim);
         let (_, at) = crate_at(&mut sim);
         assert_eq!((e, m), (entity, mesh), "tick {tick}: the same shadow entity and mesh asset");
+        let origin = frame_origin(&mut sim, e);
         assert!(
-            centre.xz().distance(at.xz()) < 0.5,
-            "tick {tick}: the shadow follows the crate: {centre} {at}"
+            origin.xz().distance(at.xz()) < 0.5,
+            "tick {tick}: the shadow follows the crate: {origin} {at}"
         );
-        last = centre;
+        first.get_or_insert((origin, at));
+        last = (origin, at);
     }
-    assert!(last.x - start.x > 0.3, "the shadow moved with the crate: {start} -> {last}");
+    let ((o0, c0), (o1, c1)) = (first.unwrap(), last);
+    assert!(c1.x - c0.x > 0.2, "the crate moved: {c0} -> {c1}");
+    assert!(
+        ((o1.x - o0.x) - (c1.x - c0.x)).abs() < 0.02,
+        "the shadow moved with the crate: {o0} -> {o1}, the crate {c0} -> {c1}"
+    );
+    let rewrites = sim.app.world().resource::<Rewrites>().0;
+    assert!(
+        rewrites <= 3,
+        "the receiver geometry is rewritten only when the shadow leaves its region, not each frame: {rewrites}"
+    );
     // Coming to rest: no shadow update is announced after the render
     // world took its data (a rewrite announced a frame late, after
     // `AssetEventSystems`, was extracted twice: Bevy logged "RenderMesh
@@ -263,6 +302,81 @@ fn shadow_detail_switches_between_silhouettes_and_blobs_at_once() {
     let back = shadows_now(&mut sim);
     assert_eq!(back.len(), 1);
     assert_ne!(back[0].1, BLOB_TEX);
+}
+
+/// A walking character's blob shadow follows it through its frame in the
+/// frame table; its receiver geometry (one mesh asset) is rewritten only
+/// when the blob leaves the region it covers, not every frame (a mesh
+/// rewritten every frame is freed and allocated again in Bevy's mesh slabs:
+/// docs/performance.md, "Render performance").
+#[test]
+fn a_walking_character_s_blob_moves_by_its_frame() {
+    use chimera_present::render::{bodies::CharacterBody, shadows::CharacterBlob};
+    let mut sim = sim();
+    sim.ticks(5);
+    let w = sim.app.world_mut();
+    let character = w
+        .spawn((chimera_core::core::Intent::default(), Transform::from_xyz(3.0, 0.0, 3.0), Visibility::Inherited))
+        .id();
+    w.spawn((
+        CharacterBody {
+            model: 0,
+            skeleton: 0,
+            skin: 0,
+            body: 0,
+            joints: Vec::new(),
+            held: None,
+            held_parts: Vec::new(),
+        },
+        Visibility::Inherited,
+        ChildOf(character),
+    ));
+    #[derive(Resource, Default)]
+    struct Rewrites(usize);
+    sim.app.init_resource::<Rewrites>().add_systems(
+        Last,
+        |mut events: MessageReader<AssetEvent<Mesh>>, mut n: ResMut<Rewrites>| {
+            n.0 += events.read().filter(|e| matches!(e, AssetEvent::Modified { .. })).count();
+        },
+    );
+    sim.app.update();
+    let blob = |sim: &mut Sim| {
+        let world = sim.app.world_mut();
+        world
+            .query::<(Entity, &CharacterBlob, &Mesh3d)>()
+            .iter(world)
+            .find(|(_, b, _)| b.owner == character)
+            .map(|(e, _, m)| (e, m.id()))
+            .expect("a blob under the character")
+    };
+    let (entity, mesh) = blob(&mut sim);
+    sim.app.world_mut().resource_mut::<Rewrites>().0 = 0;
+    for frame in 0..60 {
+        // 6 m/s at 60 frames a second.
+        let x = 3.0 + 0.1 * frame as f32;
+        sim.app.world_mut().get_mut::<Transform>(character).unwrap().translation.x = x;
+        sim.app.update();
+        assert_eq!(blob(&mut sim), (entity, mesh), "frame {frame}: the same blob and mesh asset");
+        // Where the frame's axis meets the floor (y = 0): the map's
+        // direction leans 0.2 sideways a unit down.
+        let origin = frame_origin(&mut sim, entity);
+        let d = frame_direction(&mut sim, entity);
+        let hit = origin + d * (-origin.y / d.y);
+        assert!(
+            (hit.x - x).abs() < 0.4 && (hit.z - 3.0).abs() < 0.4,
+            "frame {frame}: the blob by the character: {hit} at x {x}"
+        );
+    }
+    let rewrites = sim.app.world().resource::<Rewrites>().0;
+    assert!(
+        (1..=8).contains(&rewrites),
+        "6 m walked: the blob's geometry rewritten a few times, not each of 60 frames: {rewrites}"
+    );
+    // Gone with its character: its table slot back.
+    let live = sim.app.world().resource::<ShadowFrames>().live();
+    sim.app.world_mut().entity_mut(character).despawn();
+    sim.app.update();
+    assert_eq!(sim.app.world().resource::<ShadowFrames>().live(), live - 1, "its slot given back");
 }
 
 /// The engine's base the props need (`core`'s sets and the console's

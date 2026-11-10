@@ -2912,6 +2912,88 @@ day before:
 A quarter off every map. `heavy::rung_frames`' worst frames (a bot walking
 the ladder on de_dust2, ticks included): 8.1-17.7M, were 12.5-27.7M.
 
+## Render performance (2026-11-10)
+
+The render world's three items from "A frame offscreen (`frame_bench`)"
+above, and the light clustering. `frame_bench` (de_dust2, six bots, 600
+frames at 1280x720, a `profiling` build, load 25-45) now also prints how
+many prop materials and meshes changed a frame (each one prepared or
+allocated again in the render world). Its fights differ from run to run;
+medians of interleaved runs:
+
+| | prop materials changed a frame | meshes changed a frame | main schedule p50 | render world p50 |
+|---|---|---|---|---|
+| before | 26.6-26.7 | 10.5-11.4 | 10.91-11.60M (median 11.24M, 9 runs) | 8.72-10.90M (median 9.08M) |
+| after | 0.0 | 3.2-5.5 | 10.13-10.33M (median 10.20M, 3 runs; -9%) | 6.56-6.82M (median 6.63M; -27%) |
+
+**A moving model's light, a face's aim: in a table, not in the
+material.** A changed material is prepared again: for a non-bindless one
+like `PropMaterial` that is a new uniform buffer and a new bind group. A
+body's probe light was in each of its eight or so materials, rewritten
+every 0.25 m it moved, and every face part's eye centre, up and iris
+planes were written into its material every frame (`aim_faces`, three
+parts a CS:S body: the 18 materials a frame of the table). Both now live
+in one storage buffer every prop material binds (`probe_lit::ProbeTable`,
+`render::gpu_table::SlotTable`): each lit entity (`ProbeLit`, a view
+model's body) and face part (`bodies::FaceSlot`) has a slot, the material
+says which (`PropParams::probe_slot`, `face_slot`, set once), and
+prop.wesl reads the slot's rows where it read the material's. The buffer
+is rewritten when a row changed, at the same size (Bevy writes a
+same-sized `ShaderBuffer` into its GPU buffer), so the material and its
+bind group stay. Guard: `prop_relight::moving_on_changes_the_probe_table_not_the_material`.
+
+**Moving shadows: projected, not rebuilt.** A character's blob and a
+moving physics prop's shadow were clipped against the world again
+whenever it moved (every frame for a walking bot) and the mesh rewritten:
+Bevy frees a rewritten mesh and allocates it again in its slabs. Now a
+moving shadow's frame (origin, axes, size, reach, fade start, atlas cell,
+the caster's lit faces) goes into a second table
+(`shadows::ShadowFrames`, its slot the entity's `MeshTag`) and
+shadow.wesl projects it per pixel onto receiver geometry kept around it
+(`region_mesh`: the world's triangles in the frame's box grown by
+`REGION_MARGIN`, 1 m), rebuilt only when the frame leaves that box: about
+every 10-20 frames for a running bot instead of every frame. Resting
+props' shadows keep their clipped meshes. Guards:
+`prop_shadows::a_walking_character_s_blob_moves_by_its_frame` (6 m in 60
+frames: at most 8 rewrites, 60 before) and
+`a_moving_prop_keeps_its_shadow_mesh_and_moves_it` (the frame follows the
+crate each tick, at most 3 rewrites in 20 ticks).
+
+**Dust: quads placed by the shader.** A dust volume's mesh was its motes'
+camera-facing quads, rewritten every frame. Now its mesh is only the
+quads' corners and numbers (made again when the motes outgrow it), and a
+storage buffer of the motes in view (position, half-width, colour, far to
+near) and the camera's axes is rewritten instead; dust.wesl places the
+quads (`dust::DustMotes`, an extension of the volume's unlit
+`StandardMaterial`, whose fragment stage is unchanged).
+
+**Light clustering with nothing to cluster.** Bevy clusters every 3D
+camera's view into its default grid every frame, lights or not. While the
+world has no point, spot or rect light, light probe or clustered decal,
+the cameras now cluster into one cluster (`cameras::cluster_by_lights`);
+the default grid comes back with the first light. The cluster count is a
+uniform, not a shader setting, so the switch changes no pipeline, and a
+single cluster draws any light correctly (only slower), so a light that
+appears after the switch in its frame is still drawn.
+
+**The picture.** `cs_source` offscreen at 1280x720 on de_dust2, third
+person (`--spawn -7.5,0.6,-27.4 --look 0,-15 +thirdperson`, 300 frames),
+before against after: the body's probe light and the blob shadow on the
+floor as before (the body's shading the same; its outline moves by a
+pixel between any two runs, the animation's phase, as does a swaying
+cable). One difference is real: the blob's fade, at most 7 of 255, in
+the parts of the floor and the wall beside the player where a receiver
+triangle spans the fade's start (a projected shadow's fade is worked out
+per pixel, a clipped one's per vertex; noted in `shadows`' known
+shortcuts). Elsewhere the two pictures are the same. The view model
+(probe lit from the table too) and refcmp's `dust_long_doors` view of
+de_dust2 (`--views`): the same picture but for the motes, which drift (121
+pixels, the motes' own); the motes are drawn as before.
+
+Left: particles, steam and the other effects still write their meshes
+every frame (most of the 3-5 meshes a frame left); a moving prop's
+render-to-texture silhouette still rewrites its atlas image's cell.
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,

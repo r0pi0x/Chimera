@@ -7,7 +7,9 @@
 //! schedule single-threaded, no pipelined rendering, as
 //! `heavy::map_swap_render`), and their medians and worst frames printed.
 //! No HUD and no local player: the simulation, the bodies' and the map's
-//! drawing, the render world. The thing to run under `perf` for what a
+//! drawing, the render world. It also prints how many prop materials and
+//! meshes changed a frame (each one prepared or allocated again in the
+//! render world). The thing to run under `perf` for what a
 //! frame's time goes to where no window can open:
 //!
 //! ```text
@@ -40,6 +42,26 @@ use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 #[derive(Component)]
 struct Eye;
 
+/// Prop materials and meshes changed (added or modified) since the count
+/// was last taken.
+#[derive(Resource, Default)]
+struct Churn {
+    materials: u64,
+    meshes: u64,
+}
+
+fn count_churn(
+    mut materials: MessageReader<AssetEvent<chimera_present::render::prop_material::PropMaterial>>,
+    mut meshes: MessageReader<AssetEvent<Mesh>>,
+    mut churn: ResMut<Churn>,
+) {
+    fn changed<A: Asset>(e: &&AssetEvent<A>) -> bool {
+        matches!(e, AssetEvent::Added { .. } | AssetEvent::Modified { .. })
+    }
+    churn.materials += materials.read().filter(changed).count() as u64;
+    churn.meshes += meshes.read().filter(changed).count() as u64;
+}
+
 fn app(size: (u32, u32)) -> App {
     let mut app = App::new();
     app.add_plugins(
@@ -64,7 +86,9 @@ fn app(size: (u32, u32)) -> App {
     ))
     .add_plugins(chimera_present::PresentationPlugins)
     .insert_resource(party_kit::client_hooks())
-    .add_systems(Update, console::finish_map_load);
+    .init_resource::<Churn>()
+    .add_systems(Update, console::finish_map_load)
+    .add_systems(Last, count_churn);
     while app.plugins_state() == PluginsState::Adding {
         bevy::tasks::tick_global_task_pools_on_main_thread();
     }
@@ -181,6 +205,7 @@ fn main() {
         place_eye(&mut app);
     }
     let mut parts: [Vec<u64>; 3] = Default::default();
+    *app.world_mut().resource_mut::<Churn>() = Churn::default();
     let t = std::time::Instant::now();
     for _ in 0..frames {
         let f = frame(&mut app, &mut c);
@@ -191,9 +216,13 @@ fn main() {
     }
     let wall = t.elapsed().as_secs_f64() * 1e3 / frames.max(1) as f64;
     let w = app.world_mut();
+    let churn = w.resource::<Churn>();
+    let per = |n: u64| n as f64 / frames.max(1) as f64;
+    let (materials, meshes) = (per(churn.materials), per(churn.meshes));
     let characters = w.query::<&Health>().iter(w).count();
     let entities = w.entities().len();
     println!("{map}, {characters} characters, {entities} entities, {frames} frames at {}x{}, {wall:.2} ms a frame (wall)", size.0, size.1);
+    println!("changed a frame: {materials:.1} prop materials, {meshes:.1} meshes");
     if c.read().hw.is_none() {
         println!("no hardware counters here: instructions not counted");
         return;
