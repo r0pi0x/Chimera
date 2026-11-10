@@ -23,8 +23,13 @@
 //! and hulls, the props' brushes: `WorldParts`) comes prepared ahead when
 //! the map was loaded in the background (`prepare`, `prepare_world`), else
 //! is computed here by the same functions (the props' brushes on threads).
+//! The colliders keep the mass properties Avian's insert hook gave them:
+//! the first tick doesn't compute them again (`counted_colliders`).
 
-use bevy::ecs::system::{StaticSystemParam, SystemParam, SystemParamItem};
+use bevy::ecs::{
+    change_detection::Tick,
+    system::{StaticSystemParam, SystemParam, SystemParamItem},
+};
 
 #[allow(unused_imports)]
 use super::*;
@@ -189,6 +194,9 @@ pub struct SpawnProgress<D: MapDrawer> {
     steps: usize,
     /// Every step is done: the next frame applies the commands, alone.
     built: bool,
+    /// The world's change tick when the spawn's commands began to apply
+    /// (`counted_colliders`).
+    since: std::sync::Arc<std::sync::atomic::AtomicU32>,
     _drawer: std::marker::PhantomData<fn() -> D>,
 }
 
@@ -207,6 +215,7 @@ impl<D: MapDrawer> Default for SpawnProgress<D> {
             next_prop: 0,
             steps: 0,
             built: false,
+            since: default(),
             _drawer: default(),
         }
     }
@@ -245,6 +254,11 @@ fn advance<D: MapDrawer>(
     loop {
         progress.steps += 1;
         if progress.stage == Stage::Start {
+            // First: where the spawn's ticks begin (`counted_colliders`).
+            let since = progress.since.clone();
+            commands.queue(move |world: &mut World| {
+                since.store(world.change_tick().get(), std::sync::atomic::Ordering::Relaxed)
+            });
             let world = prepared.take::<WorldParts>().unwrap_or_else(|| world_parts(data));
             let (root, statics) = spawn_roots(commands, data, D::world_material(assets));
             spawn_world_collision(commands, data, world.collision, root);
@@ -305,6 +319,10 @@ fn advance<D: MapDrawer>(
                 // spawn), and with it the textures' texels, unless something
                 // kept a share.
                 commands.queue(retire_pending::<D>);
+                let since = progress.since.clone();
+                commands.queue(move |world: &mut World| {
+                    counted_colliders(world, Tick::new(since.load(std::sync::atomic::Ordering::Relaxed)))
+                });
                 return true;
             }
         }
@@ -347,6 +365,42 @@ pub(super) fn spawn_steps<D: MapDrawer>(
 /// Starts a stepped spawn of the pending map (`spawn_steps`).
 pub(super) fn begin_spawn<D: MapDrawer>(world: &mut World) {
     world.insert_resource(SpawnProgress::<D>::default());
+}
+
+/// The spawn's colliders have their mass properties already: Avian's
+/// insert hook computed them from the shape as inserted, and its
+/// `update_collider_mass_properties` would compute them all again in the
+/// first tick, the collider and its `ColliderDensity` being new there
+/// (`Changed`): 55-75 M instructions of a map's first tick (dev build;
+/// docs/performance.md, "A map's swap"). Avian 0.8 has no way to skip
+/// either. So each collider the spawn's commands inserted (from `since`,
+/// the tick they began to apply at), at its shape's own scale (no
+/// `GlobalTransform` given, so the hook's is one too) and with nothing
+/// changed after them, gets both change ticks put back to the oldest a
+/// tick can be. Avian's other readers of a changed collider get the same
+/// from it again (a body's AABB margin, made on its add from this shape)
+/// or see its new `Transform`, `ColliderTransform` or `Position` anyway
+/// (its scale, a body's size); a later change (a scale, a density, a shape)
+/// marks it anew and is computed as before. Nothing in the spawn sets a
+/// collider's shape after inserting it.
+fn counted_colliders(world: &mut World, since: Tick) {
+    use bevy::ecs::change_detection::MAX_CHANGE_AGE;
+    let now = world.change_tick();
+    let before = Tick::new(since.get().wrapping_sub(1));
+    let oldest = Tick::new(now.get().wrapping_sub(MAX_CHANGE_AGE));
+    // Inserted and last changed by these commands: the add hook runs
+    // systems, so the insert hook's change comes a few ticks after the add.
+    let fresh = |added: Tick, changed: Tick| added.is_newer_than(before, now) && changed.is_newer_than(before, now);
+    let mut q = world.query::<(Mut<Collider>, Mut<ColliderDensity>)>();
+    for (mut collider, mut density) in q.iter_mut(world) {
+        if collider.scale() == Vec3::ONE
+            && fresh(collider.added(), collider.last_changed())
+            && fresh(density.added(), density.last_changed())
+        {
+            collider.set_last_changed(oldest);
+            density.set_last_changed(oldest);
+        }
+    }
 }
 
 /// Takes `PendingMap` out of the world once the map is spawned

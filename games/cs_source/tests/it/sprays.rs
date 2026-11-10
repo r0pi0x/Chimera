@@ -4,7 +4,7 @@
 //! sound; kept through a round restart, gone with the map; over the
 //! network the server sprays for a client and every client gets the spray.
 
-use std::time::Duration;
+use std::{path::PathBuf, sync::OnceLock, time::Duration};
 
 use bevy::{ecs::message::Messages, prelude::*};
 use crate::stack::{
@@ -17,11 +17,14 @@ use crate::stack::{
     },
     greybox::{GreyboxMapPlugin, NORTH_WALL_Z},
     harness::{CsSim, NetSim, Sim},
-    map::{GameSound, PlaySound, decal::Spray},
+    map::{
+        GameSound, PlaySound,
+        decal::{Spray, SprayPicture},
+    },
     movement::placeholder,
     net::{NetCharacter, memory::LinkConditions},
     slots::Loadout,
-    weapon::spray::{LOGO_KEY, clear_sprays},
+    weapon::spray::{LOGO_KEY, SprayPictureSource, clear_sprays, spray_with},
 };
 
 fn sprays(world: &mut World) -> Vec<Spray> {
@@ -208,4 +211,111 @@ fn a_clients_spray_reaches_every_client() {
             .is_some()
     });
     assert!(ok, "the owner's client knows it has goggles");
+}
+
+/// The folder the tests' imports go to (the user's folder in the games).
+static LOGOS: OnceLock<PathBuf> = OnceLock::new();
+
+/// A 128 x 128 Targa, import it as `stem`, return the file `cl_logofile`
+/// takes: a quarter of it red, the rest blue, all opaque.
+fn import_test_spray(stem: &str) -> String {
+    let dir = LOGOS
+        .get_or_init(|| {
+            let d = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("sprays_{}", std::process::id()));
+            std::fs::create_dir_all(&d).unwrap();
+            d
+        })
+        .clone();
+    let mut img = image::RgbaImage::new(128, 128);
+    for (x, y, p) in img.enumerate_pixels_mut() {
+        *p = if x < 64 && y < 64 { image::Rgba([255, 0, 0, 255]) } else { image::Rgba([0, 0, 255, 255]) };
+    }
+    let tga = dir.join(format!("{stem}.tga"));
+    img.save_with_format(&tga, image::ImageFormat::Tga).unwrap();
+    let got = source_engine::hud::spray_import::import(&tga, &dir.join("logos")).unwrap();
+    assert_eq!(got, stem);
+    format!("materials/vgui/logos/{stem}.vtf")
+}
+
+#[test]
+fn an_imported_spray_carries_its_picture_and_an_installed_one_none() {
+    let file = import_test_spray("kilroy_test");
+    let (mut sim, me) = setup();
+    sim.app.world_mut().insert_resource(SprayPictureSource(Some(test_picture_in_logos)));
+    say(&mut sim, &format!("{LOGO_KEY} {file}"));
+    say(&mut sim, "impulse 201");
+    let all = sprays(sim.app.world_mut());
+    assert_eq!(all.len(), 1, "{all:?}");
+    assert_eq!((all[0].owner, all[0].logo.as_str()), (me, "kilroy_test"));
+    let p = all[0].picture.as_ref().expect("the imported picture");
+    // 128 x 128 reduced to 64 x 64: the red quarter is the top-left 32 x 32.
+    assert_eq!((p.width, p.height, p.rgba.len()), (64, 64, 64 * 64 * 4));
+    assert_eq!(&p.rgba[(5 * 64 + 5) * 4..][..4], &[255, 0, 0, 255]);
+    assert_eq!(&p.rgba[(5 * 64 + 40) * 4..][..4], &[0, 0, 255, 255]);
+    // An installed logo is by name only.
+    sim.seconds(10.0);
+    say(&mut sim, &format!("{LOGO_KEY} materials/vgui/logos/spray_kilroy.vtf"));
+    say(&mut sim, "impulse 201");
+    let all = sprays(sim.app.world_mut());
+    assert_eq!((all.len(), all[0].picture.is_none()), (1, true), "{all:?}");
+    // A picture over the limit (a client's) is refused.
+    sim.seconds(10.0);
+    let big = SprayPicture { width: 128, height: 128, rgba: vec![0; 128 * 128 * 4] };
+    assert!(spray_with(sim.app.world_mut(), me, Some(big)).is_err());
+}
+
+fn test_picture_in_logos(file: &str) -> Option<SprayPicture> {
+    source_engine::effects::spray_pictures::picture_in(&LOGOS.get()?.join("logos"), file)
+}
+
+#[test]
+fn a_clients_imported_spray_reaches_the_server_and_every_client() {
+    let file = import_test_spray("kilroy_net");
+    let link = LinkConditions { latency: Duration::from_millis(30), jitter: Duration::ZERO, loss: 0.0 };
+    // Only the spraying client has the file: the others get the picture
+    // from the server.
+    let mut sim = NetSim::new(CsSim, link, 62, 0, |app| {
+        net_setup(app);
+        app.insert_resource(SprayPictureSource(None));
+    });
+    for i in 0..2 {
+        sim.add_client(move |w| {
+            w.resource_mut::<crate::stack::net::NetSettings>().name = format!("Player {}", i + 1);
+            if i == 0 {
+                w.insert_resource(SprayPictureSource(Some(test_picture_in_logos)));
+            }
+        });
+    }
+    sim.clients[0].app.world_mut().resource_mut::<Console>().submit(&format!("{LOGO_KEY} {file}"));
+    sim.until_joined(600);
+    sim.ticks(60);
+    let e = sim.character_of(0).unwrap();
+    let at = Vec3::new(0.0, 1.0, NORTH_WALL_Z + 2.0);
+    {
+        let w = sim.server.app.world_mut();
+        w.get_mut::<Transform>(e).unwrap().translation = at;
+        if let Some(mut p) = w.get_mut::<avian3d::prelude::Position>(e) {
+            p.0 = at;
+        }
+    }
+    let me = sim.local_player(0).unwrap();
+    {
+        let mut i = sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap();
+        i.yaw = 0.0;
+        i.pitch = 0.0;
+    }
+    sim.ticks(30);
+    sim.clients[0].app.world_mut().resource_mut::<Console>().submit("impulse 201");
+    let ok = sim.until(180, |s| (0..2).all(|i| !sprays(s.clients[i].app.world_mut()).is_empty()));
+    assert!(ok, "every client has the spray");
+    let server = sprays(sim.server.app.world_mut());
+    assert_eq!(server.len(), 1);
+    assert_eq!(server[0].logo, "kilroy_net");
+    let sent = server[0].picture.clone().expect("the server has the picture");
+    assert_eq!((sent.width, sent.height), (64, 64));
+    assert_eq!(&sent.rgba[(5 * 64 + 5) * 4..][..4], &[255, 0, 0, 255]);
+    for i in 0..2 {
+        let got = sprays(sim.clients[i].app.world_mut()).remove(0);
+        assert_eq!(got.picture.as_ref(), Some(&sent), "client {i}");
+    }
 }

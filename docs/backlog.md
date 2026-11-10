@@ -117,10 +117,6 @@ the user's go-ahead: no Actions runs unless asked.
 Delete each when fixed. Check against specs/hl2dm/ and the probe; what's
 the original's own behaviour isn't a bug (say so instead).
 
-- **HUD:** no count of the SMG1's grenades or ammo for them (the
-  secondary ammo panel; branch `hl2dm-gaps1` feeds it, check after merge).
-- **HUD:** no ammo counter bottom right for the RPG (`hl2dm-gaps1` shows
-  its own rounds as ammo, check after merge).
 - **The explosion's fire is still cut at the world (2026-11-09):** the
   straight edges and steps of an explosive drum's blast close to walls are
   its camera-facing sprites meeting the floor, ceiling and walls. HL2's smoke
@@ -139,7 +135,7 @@ the original's own behaviour isn't a bug (say so instead).
   (spawned a step a frame behind the loading screen, the simulation waiting,
   no catch-up ticks after) no longer stop a frame (docs/performance.md,
   "Nothing blocks the main thread" and "A map's swap", with numbers and
-  guards). Left: measuring the HUD texts' warm-up (`client::text_warm`) in the real app on a display (each rung's worst frame less ticks, before and after), and HUD texts no source declares yet (CS:S's and HL2:DM's UI texts spawned on demand, the kill feed's icon glyph fonts; each logs `text warm: ... glyph atlases made on a text's first frame`); bots standing 10-13 s on a map loaded with no loading screen (`--map`); of a map's swap, the frame the whole map goes into the world (100-200 M dev-build main, 220-350 M render world offscreen; Avian's mass properties for every new collider a third of the main thread's) and the first tick on the map (120-330 M dev, Avian computing them again), and measuring the swap in the real app on a display (the render thread pipelined, the loading screen's frame times, the time to enter each map); a match's start (100 M); weapons off the ladder reading their timing on the frame; dedicated servers' nav flood in one tick.
+  guards). Left: measuring the HUD texts' warm-up (`client::text_warm`) in the real app on a display (each rung's worst frame less ticks, before and after), and HUD texts no source declares yet (CS:S's and HL2:DM's UI texts spawned on demand, the kill feed's icon glyph fonts; each logs `text warm: ... glyph atlases made on a text's first frame`); bots standing 10-13 s on a map loaded with no loading screen (`--map`); of a map's swap, the frame the whole map goes into the world (90-300 M dev-build main, 220-350 M render world offscreen; Avian's insert hook computing every new collider's mass properties a third of the main thread's, which Avian 0.8 can't be told to skip) and the first tick on the map (45-270 M dev since the hook's mass properties are kept, `spawn::counted_colliders`: the colliders the tick's own spawns make from the map's entities, props' shadows redrawn as they settle, the first physics step), and measuring the swap in the real app on a display (the render thread pipelined, the loading screen's frame times, the time to enter each map); a match's start (100 M); weapons off the ladder reading their timing on the frame; dedicated servers' nav flood in one tick.
 - **Neon Outlaw ASW338LM (Combat Arms)** looks like it has the wrong UV map.
   Already answered (below, models_ltb.md W1-W3): its skin is painted for a
   layout no ASW338LM model in the install has. Waiting on the user: leave

@@ -100,6 +100,49 @@ fn the_secondary_ammo_table() {
     assert_eq!(w.ammo_value(), 4);
 }
 
+/// Playtest 2026-11-09: the SMG1's grenades and the RPG's rockets on the
+/// HUD (hud.md 4.5, 4.6). The SMG1 shows its grenade count in the secondary
+/// panel and it follows a fired or picked up one; the panel goes away on a
+/// weapon with no second type. The RPG has no clip, so its rockets are the
+/// ammo panel's value (no reserve number), changing as one is fired.
+#[test]
+fn smg1_grenades_and_rpg_rockets_follow_their_counts() {
+    let mut f = fed();
+    let drawn = |f: &Fed, at_least_x: f32, t: &str| {
+        f.state().frame.0.iter().any(|d| matches!(d, Draw::Text { text, at, .. } if text == t && at.x > at_least_x && at.y > 400.0))
+    };
+    let smg = f.hold(weapons::SMG1);
+    f.sim.app.world_mut().get_mut::<Hl2Rounds>(smg).unwrap().count = 3;
+    f.sim.ticks(40);
+    assert_eq!(f.secondary(), Some(("hl2dm:smg1_grenade".into(), 3)));
+    assert_eq!(f.state().hud.as_ref().unwrap().anim.number("HudAmmoSecondary", "Alpha"), Some(255.0));
+    assert!(drawn(&f, 640.0 - 76.0, "3"), "the grenade count in the secondary panel");
+    // One fired: the count drops.
+    f.sim.app.world_mut().get_mut::<Hl2Rounds>(smg).unwrap().count = 2;
+    f.sim.ticks(40);
+    assert_eq!(f.secondary(), Some(("hl2dm:smg1_grenade".into(), 2)));
+    assert!(drawn(&f, 640.0 - 76.0, "2") && !drawn(&f, 640.0 - 76.0, "3"));
+    // One picked up: it rises.
+    f.sim.app.world_mut().get_mut::<Hl2Rounds>(smg).unwrap().count = 4;
+    f.sim.ticks(40);
+    assert!(drawn(&f, 640.0 - 76.0, "4"));
+
+    // The RPG: its rockets as the ammo, no clip, no reserve, no secondary.
+    let rpg = f.hold(weapons::RPG);
+    f.sim.app.world_mut().get_mut::<Hl2Rounds>(rpg).unwrap().count = 3;
+    f.sim.ticks(60);
+    let w = f.state().inputs.weapon.clone().unwrap();
+    assert!(w.uses_primary && w.clip.is_none() && f.secondary().is_none(), "{w:?}");
+    assert_eq!(w.ammo_value(), 3);
+    assert_eq!(f.state().hud.as_ref().unwrap().anim.number("HudAmmoSecondary", "Alpha"), Some(0.0), "secondary hidden");
+    assert!(drawn(&f, 640.0 - 150.0, "3"), "the rockets in the ammo panel, bottom right");
+    assert!(f.state().frame.find_text("AMMO").is_some() && f.state().frame.find_text("ALT").is_none());
+    f.sim.app.world_mut().get_mut::<Hl2Rounds>(rpg).unwrap().count = 2;
+    f.sim.ticks(60);
+    assert_eq!(f.state().inputs.weapon.as_ref().unwrap().ammo_value(), 2);
+    assert!(drawn(&f, 640.0 - 150.0, "2"));
+}
+
 /// Target ID's ray: another player straight ahead within 1500 units reads
 /// "Enemy: name"; past it (test 63), or looking away, nothing.
 #[test]

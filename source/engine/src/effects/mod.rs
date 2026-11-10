@@ -20,6 +20,7 @@ pub mod explosions;
 pub mod impact_effects;
 pub mod impacts;
 pub mod scrapes;
+pub mod spray_pictures;
 
 /// How one Source game's impacts differ (specs/cs_source/impact_effects.md,
 /// specs/hl2dm/effects_sounds.md 6, 7).

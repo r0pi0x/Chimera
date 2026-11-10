@@ -2024,8 +2024,17 @@ implementing (owner branch) / done.
   `server_types`); CS:S off. The name entry that GameUI adds in CS:S's
   spray words' place is no longer added where the layout has `Player
   model`. Open: the sv_lan cvars are stored only (no server code reads
-  them), imported sprays do not draw in the world, no screenshots (no
-  display).
+  them), no screenshots (no display).
+  Follow-up (branch `imported-sprays`): imported sprays draw in the world,
+  in HL2:DM and CS:S. A `cl_logofile` naming a file in the user's logos
+  folder becomes the spray's picture (`spray_import::picture_of`, reduced
+  to at most 64 x 64, 16 KiB; `weapon::spray::SprayPictureSource`), carried
+  in `map::decal::Spray::picture`; a network client sends it with its
+  `SprayRequest` (the server refuses over 64 x 64) and the replicated
+  `Spray` brings it to every client, which draws it as an install logo
+  (the old name-only rule skipped others' `spray`). Install sprays are by
+  name only; HL2:DM now loads the install's logos (`spray_logos`) too.
+  Tests: `sprays::an_imported_spray_*`, `sprays::a_clients_imported_*`.
 
 ## Decision log
 
