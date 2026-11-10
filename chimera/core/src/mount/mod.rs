@@ -5,7 +5,7 @@
 //!
 //! `Mount` (ordered layers, first match wins), `FileSource`, `LooseDir`,
 //! path normalization and KeyValues text (Steam's files and our saved ones
-//! read with `Escapes::On`) come from `source_formats` (`fs`, `keyvalues`),
+//! read with `Escapes::On`) come from `chimera_vfs` and `chimera_formats` (`keyvalues`),
 //! re-exported here; `chimera.local.toml` loading (`config.rs`); finding
 //! installs (`install.rs`: the config's path, else the one saved in the
 //! user's `settings.toml` (beside the cfg folder; `$CHIMERA_SETTINGS`), else
@@ -24,4 +24,4 @@ pub mod served;
 
 pub use chimera_assets as assets;
 pub use chimera_vfs::{Entry, FileSource, LooseDir, Mount, normalize};
-pub use source_formats::keyvalues;
+pub use chimera_formats::keyvalues;

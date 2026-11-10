@@ -38,7 +38,7 @@ postcard.workspace = true
 # LithTech's formats: the install's `.rez` archives (`game::mount`).
 lithtech_formats.workspace = true
 # Sound files (WAV) from the install's archives (`game::effects`).
-source_formats.workspace = true
+chimera_formats.workspace = true
 avian3d.workspace = true
 bevy.workspace = true
 serde.workspace = true

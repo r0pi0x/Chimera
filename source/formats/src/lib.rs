@@ -8,9 +8,12 @@
 //! across the workspace), in the file's own units and axes (Source:
 //! inches, Z up) unless a reader says otherwise.
 
+// Formats Source shares with every engine live in `chimera_formats`
+// (sound files, KeyValues text); here at their old paths.
+pub use chimera_formats::{keyvalues, wav};
+
 pub mod dem;
 pub mod detail;
-pub mod keyvalues;
 pub mod localization;
 pub mod lumps;
 pub mod nav;
@@ -19,4 +22,3 @@ pub mod pcf;
 pub mod phy;
 pub mod vhv;
 pub mod vpk;
-pub mod wav;

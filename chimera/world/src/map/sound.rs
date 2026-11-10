@@ -17,12 +17,12 @@ use bevy::prelude::*;
 
 /// Decoded audio: interleaved 16-bit samples (what the format readers
 /// decode to).
-pub use source_formats::wav::SoundClip as MapSoundClip;
+pub use chimera_formats::wav::SoundClip as MapSoundClip;
 
 /// A sound file decoded (RIFF WAVE, else MP3): what the presentation's
 /// sound assets load (`audio::clip_asset`).
 pub fn decode_clip(bytes: &[u8]) -> Result<MapSoundClip, String> {
-    source_formats::wav::decode_any(bytes)
+    chimera_formats::wav::decode_any(bytes)
 }
 
 /// How a sound falls off with distance.

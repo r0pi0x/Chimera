@@ -19,6 +19,7 @@ members = [
     "chimera/net",
     "chimera/tools",
     "chimera/vfs",
+    "chimera/formats",
     "chimera/assets",
     "source/formats",
     "source/logic",
@@ -57,6 +58,7 @@ default-members = [
     "chimera/net",
     "chimera/tools",
     "chimera/vfs",
+    "chimera/formats",
     "chimera/assets",
     "source/formats",
     "source/logic",
@@ -104,6 +106,7 @@ chimera_sim = { path = "chimera/sim" }
 chimera_client = { path = "chimera/client" }
 chimera_net = { path = "chimera/net" }
 chimera_vfs = { path = "chimera/vfs" }
+chimera_formats = { path = "chimera/formats" }
 # Game files as content-addressed records: the store, manifests, the
 # `CachedFiles` mount layer, the vfs access log (docs/plans/active/asset-service.md).
 chimera_assets = { path = "chimera/assets" }

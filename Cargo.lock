@@ -2733,13 +2733,13 @@ dependencies = [
  "bevy",
  "chimera_assets",
  "chimera_dev",
+ "chimera_formats",
  "chimera_vfs",
  "dirs",
  "libc",
  "perf-event2",
  "postcard",
  "serde",
- "source_formats",
  "toml",
  "windows-sys 0.61.2",
  "workspace-hack",
@@ -2750,6 +2750,14 @@ name = "chimera_dev"
 version = "0.1.0"
 dependencies = [
  "bevy",
+]
+
+[[package]]
+name = "chimera_formats"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "symphonia",
 ]
 
 [[package]]
@@ -2779,10 +2787,10 @@ dependencies = [
  "avian3d",
  "bevy",
  "chimera_core",
+ "chimera_formats",
  "chimera_world",
  "half",
  "image",
- "source_formats",
  "workspace-hack",
 ]
 
@@ -2825,12 +2833,12 @@ dependencies = [
  "bevy_replicon",
  "bytemuck",
  "chimera_core",
+ "chimera_formats",
  "chimera_world",
  "half",
  "image",
  "postcard",
  "serde",
- "source_formats",
  "texpresso",
  "toml",
  "wgpu-types",
@@ -2967,6 +2975,7 @@ dependencies = [
  "bevy_replicon",
  "chimera_client",
  "chimera_core",
+ "chimera_formats",
  "chimera_net",
  "chimera_present",
  "chimera_sim",
@@ -2974,7 +2983,6 @@ dependencies = [
  "lithtech_formats",
  "postcard",
  "serde",
- "source_formats",
  "toml",
  "workspace-hack",
 ]
@@ -7464,11 +7472,10 @@ dependencies = [
 name = "source_formats"
 version = "0.1.0"
 dependencies = [
+ "chimera_formats",
  "chimera_vfs",
  "glam 0.33.12",
  "lzma-rs",
- "serde",
- "symphonia",
 ]
 
 [[package]]
@@ -9468,6 +9475,7 @@ dependencies = [
  "bevy_utils",
  "bitflags 2.13.2",
  "bytemuck",
+ "byteorder 1.5.0",
  "cc",
  "crossbeam-channel",
  "crypto-common 0.1.7",

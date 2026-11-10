@@ -1,0 +1,26 @@
+[package]
+name = "chimera_formats"
+version = "0.1.0"
+description = "File formats no one game engine owns, as plain data: sound files (WAV, MP3), KeyValues text (Steam's library files)"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+# No doc tests (none written): skips a rustdoc pass on every test run.
+[lib]
+doctest = false
+
+# Pure data, under Chimera's base and every loader layer: no Bevy, no
+# avian, no loader, no game (checks/tests/it/architecture.rs checks it),
+# so Chimera and a game of one engine never build on another engine's
+# format crate for a sound decoder or Steam's library files.
+[dependencies]
+symphonia.workspace = true
+# The converted-map cache serializes decoded clips (`wav::SoundClip`).
+serde.workspace = true
+
+[features]
+# Nothing: lets `--features dev` name this package alongside the others
+# (cargo test -p ... -p <crate> --features dev; .githooks/pre-commit).
+dev = []
