@@ -502,6 +502,9 @@ impl Plugin for CsWeaponsPlugin {
         }
         // Touching a gun of a type carried takes nothing (measured: M20).
         app.insert_resource(crate::weapon::drop::SameTypeAmmo(false));
+        app.insert_resource(crate::weapon::spray::SprayPictureSource(Some(
+            source_engine::effects::spray_pictures::picture_of,
+        )));
         app.insert_resource(crate::weapon::spray::SprayRules {
             sound: Some(SPRAY_SOUND.into()),
             ..default()

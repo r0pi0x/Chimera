@@ -12,8 +12,9 @@
 //! despawning a replaced spray or the map's takes them off every client. A
 //! client's `impulse 201` (`weapon::spray::SprayRequested`) goes to the
 //! server as a `SprayRequest`, which sprays for its player
-//! (`weapon::spray::spray`; its logo from the player's `cl_logofile`
-//! userinfo). Its other player impulses (`weapon::PlayerImpulse`:
+//! (`weapon::spray::spray_with`; its logo from the player's `cl_logofile`
+//! userinfo). An imported logo's picture (at most 64 x 64, 16 KiB) rides
+//! the request and then the replicated `Spray`, so every client draws it. Its other player impulses (`weapon::PlayerImpulse`:
 //! `impulse 100`, a game's flashlight) go as `ImpulseRequest`.
 
 use std::collections::VecDeque;
@@ -34,9 +35,10 @@ use crate::{
 #[derive(Message, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq)]
 pub struct ImpulseRequest(pub u8);
 
-/// Client -> server: spray my logo (`impulse 201`).
-#[derive(Message, Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq)]
-pub struct SprayRequest;
+/// Client -> server: spray my logo (`impulse 201`), with its picture when
+/// it is one I imported (at most 64 x 64: the server refuses larger).
+#[derive(Message, Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct SprayRequest(pub Option<crate::map::decal::SprayPicture>);
 
 /// One world decal: its group (a named one or a surface material's), where,
 /// the surface's normal, the direction of what made it, spun or upright.
@@ -188,8 +190,8 @@ fn replicate_sprays(new: Query<Entity, (Added<Spray>, Without<Replicated>)>, mut
 
 /// Our `impulse 201`, to the server.
 fn send_sprays(mut asked: MessageReader<SprayRequested>, mut out: MessageWriter<SprayRequest>) {
-    for _ in asked.read() {
-        out.write(SprayRequest);
+    for a in asked.read() {
+        out.write(SprayRequest(a.0.clone()));
     }
 }
 
@@ -224,9 +226,10 @@ fn receive_sprays(
         let Some(client) = r.client_id.entity() else { continue };
         let Ok(p) = players.get(client) else { continue };
         let character = p.character;
+        let picture = r.message.0.clone();
         commands.queue(move |w: &mut World| {
             if w.get_entity(character).is_ok() {
-                let _ = crate::weapon::spray::spray(w, character);
+                let _ = crate::weapon::spray::spray_with(w, character, picture);
             }
         });
     }

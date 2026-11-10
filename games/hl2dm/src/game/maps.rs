@@ -155,6 +155,8 @@ fn body_kit(k: &mut Kit) {
     // by surface letter, the effect materials; its guns' impacts can be
     // drawn on the map (specs/hl2dm/effects_sounds.md 6).
     k.data.kit.decals = source_engine::content::decals::impact_decals(k.materials);
+    // Players' sprays: the install's logos (`materials/vgui/logos/`).
+    source_engine::content::decals::spray_logos(k.materials, &mut k.data.kit.decals);
     k.data.particles = super::effects::load_materials(k.materials);
     k.data.impacts.add(super::GAME);
 }

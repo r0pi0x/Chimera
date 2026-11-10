@@ -4,14 +4,13 @@
 //! runtime decal (`decal::project`), alpha blended and lit by the baked
 //! light where it lies (`map::surface_color::SurfaceColors`), as the game
 //! draws a lightmapped translucent decal. The mesh is the spray entity's
-//! child, so a replaced or removed spray takes it along. Another player's
-//! logo named `map::decal::CUSTOM_LOGO` (its own import) isn't drawn: this
-//! install's file of that name is a different picture.
+//! child, so a replaced or removed spray takes it along. A logo a player
+//! imported travels as a picture (`map::decal::Spray::picture`) and is drawn
+//! from that, the same way as an install's logo.
 //!
 //! Players' sprays drawn (`SprayMaterial`, `spray.wesl`): the logo projected
 //! onto the world near the spray, alpha blended, times the baked light at its
-//! centre; a child of the `map::decal::Spray` entity; others' imported logos
-//! (`CUSTOM_LOGO`) left out.
+//! centre; a child of the `map::decal::Spray` entity.
 //!
 //! Known shortcuts (docs/tech-debt.md): Sprays drawn: one light value (the
 //! lightmap at the centre) for the whole logo, no fog, no dynamic lights;
@@ -19,18 +18,26 @@
 //! right on lit walls; compare with the game in capture C23.
 
 use bevy::{
-    asset::embedded_asset, prelude::*, reflect::TypePath, render::render_resource::AsBindGroup, shader::ShaderRef,
+    asset::{RenderAssetUsages, embedded_asset},
+    image::ImageSampler,
+    prelude::*,
+    reflect::TypePath,
+    render::render_resource::{AsBindGroup, Extent3d, TextureDimension, TextureFormat},
+    shader::ShaderRef,
 };
 
 use super::decal::{DecalAssets, DecalSurfaces, project};
 use crate::{
-    core::LocalPlayer,
     map::{
         MapPart,
-        decal::{CUSTOM_LOGO, Spray},
+        decal::{DecalBlend, MapDecal, Spray},
         surface_color::SurfaceColors,
     },
 };
+
+/// How wide an imported spray is on a wall, meters: the install's logos'
+/// (`content::decals::SPRAY_SIZE`, 64 units).
+const IMPORTED_SIZE: f32 = 64.0 * 0.0254;
 
 /// A spray's mesh, under its `Spray` entity.
 #[derive(Component)]
@@ -42,16 +49,17 @@ pub struct SprayDrawn;
 pub fn draw_sprays(
     sprays: Query<(Entity, Ref<Spray>, Option<&Children>)>,
     drawn: Query<(), With<SprayDrawn>>,
-    local: Query<(), With<LocalPlayer>>,
     surfaces: Option<Res<DecalSurfaces>>,
     assets: Option<Res<DecalAssets>>,
+    images: Option<ResMut<Assets<Image>>>,
     colors: Option<Res<SurfaceColors>>,
     meshes: Option<ResMut<Assets<Mesh>>>,
     materials: Option<ResMut<Assets<SprayMaterial>>>,
     mut done: Local<Vec<Entity>>,
     mut commands: Commands,
 ) {
-    let (Some(surfaces), Some(assets), Some(mut meshes), Some(mut materials)) = (surfaces, assets, meshes, materials)
+    let (Some(surfaces), Some(mut meshes), Some(mut materials), Some(mut images)) =
+        (surfaces, meshes, materials, images)
     else {
         done.clear();
         return;
@@ -68,15 +76,38 @@ pub fn draw_sprays(
             commands.entity(*child).despawn();
         }
         let logo = spray.logo.to_lowercase();
-        if logo == CUSTOM_LOGO && !local.contains(spray.owner) {
-            continue;
-        }
-        let Some(&index) = assets.data.logos.get(&logo) else {
-            continue;
-        };
-        let decal = assets.data.decals[index].clone();
-        let Some(texture) = assets.textures.get(decal.texture).cloned() else {
-            continue;
+        let (decal, texture) = if let Some(p) = spray.picture.as_ref().filter(|p| p.valid()) {
+            // An imported logo: its own picture, the size of an install's.
+            let mut image = Image::new(
+                Extent3d { width: p.width as u32, height: p.height as u32, depth_or_array_layers: 1 },
+                TextureDimension::D2,
+                p.rgba.clone(),
+                TextureFormat::Rgba8UnormSrgb,
+                RenderAssetUsages::default(),
+            );
+            image.sampler = ImageSampler::linear();
+            let decal = MapDecal {
+                texture: 0,
+                uv_min: Vec2::ZERO,
+                uv_max: Vec2::ONE,
+                size: Vec2::splat(IMPORTED_SIZE),
+                blend: DecalBlend::Alpha,
+            };
+            (decal, images.add(image))
+        } else {
+            let Some(assets) = assets.as_ref() else {
+                // The map's logos aren't there yet: try again.
+                done.retain(|d| *d != e);
+                continue;
+            };
+            let Some(&index) = assets.data.logos.get(&logo) else {
+                continue;
+            };
+            let decal = assets.data.decals[index].clone();
+            let Some(texture) = assets.textures.get(decal.texture).cloned() else {
+                continue;
+            };
+            (decal, texture)
         };
         let normal = spray.normal.normalize_or_zero();
         let up = spray.up.normalize_or_zero();

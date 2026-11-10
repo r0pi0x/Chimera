@@ -378,6 +378,11 @@ impl Plugin for Hl2EffectsPlugin {
             source_engine::effects::impacts::ImpactSoundsPlugin(STYLE),
         ))
         .init_resource::<EffectRng>()
+        // An imported spray (Options > Multiplayer > Import Spray) is a
+        // picture that travels with the spray.
+        .insert_resource(crate::weapon::spray::SprayPictureSource(Some(
+            source_engine::effects::spray_pictures::picture_of,
+        )))
         .register_surface_classes(source_engine::effects::impacts::surfaces(GAME))
         .init_resource::<MuzzleCache>()
         .add_message::<Tracer>()

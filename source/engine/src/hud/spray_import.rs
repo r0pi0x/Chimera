@@ -5,6 +5,9 @@
 //! install); a VTF is taken as it is. The VTF is written as version 7.2,
 //! one uncompressed RGBA8888 level, clamped, without mip maps.
 //!
+//! `effects::spray_pictures` reads the imported VTFs back for the world's
+//! sprays.
+//!
 //! Known shortcuts (docs/tech-debt.md): a spray of a name that exists is
 //! overwritten (the real game's behaviour is not known: the spec's open
 //! question 7); the file name's characters other than letters, digits,
