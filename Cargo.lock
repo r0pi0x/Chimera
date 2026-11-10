@@ -3419,8 +3419,13 @@ dependencies = [
 name = "cs_source_server"
 version = "0.1.0"
 dependencies = [
+ "avian3d",
  "bevy",
- "cs_source_app",
+ "bevy_winit",
+ "chimera_core",
+ "chimera_net",
+ "chimera_world",
+ "cs_source",
  "workspace-hack",
 ]
 
@@ -5288,6 +5293,7 @@ dependencies = [
 name = "lucker_party_server"
 version = "0.1.0"
 dependencies = [
+ "chimera_net",
  "party_kit",
  "workspace-hack",
 ]
@@ -8208,6 +8214,8 @@ dependencies = [
 name = "ultimate_gun_game_server"
 version = "0.1.0"
 dependencies = [
+ "bevy",
+ "chimera_net",
  "party_kit",
  "ultimate_gun_game",
  "workspace-hack",

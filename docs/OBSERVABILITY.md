@@ -135,6 +135,11 @@ in the lowest crate whose public API it needs:
   data and the room's default mode, unlike `CaSim`) on the headless
   harness, maps loaded as `--map` loads them (`heavy::map_start`: a map
   started on plays its mission, V1 key);
+- `cs_source_server` (apps/cs_source_server/tests/it/): CS:S's
+  dedicated server as its binary composes it with a headless client over
+  UDP on loopback (`dedicated`: the greybox at 64 Hz, the map cycle,
+  `MapFiles`); the dedicated server's hooks themselves, on stand-in
+  games, are `chimera_net`'s (tests/it/dedicated.rs);
 - `cs_source_app` (apps/cs_source/tests/it/): only what the app alone
   has (its build's version, its hooks, map loading by id);
 - `repo_checks` (checks/tests/it/architecture.rs): the repository's

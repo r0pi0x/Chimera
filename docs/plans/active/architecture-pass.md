@@ -1,6 +1,6 @@
 # Plan: architecture pass for many games
 
-Status: started 2026-11-09 on main at 71a2d568. Steps 1-5 are done
+Status: started 2026-11-09 on main at 71a2d568. Steps 1-6 are done
 (section 5); the rest is ordered in section 6. The second review
 ([architecture-review.md](architecture-review.md), 2026-10-20) asked
 "can two games' gameplay run in one app"; its roadmap is done. This
@@ -270,12 +270,30 @@ Each is one commit; behaviour unchanged.
 5. **The new-game guide and its check** (docs/new-game.md,
    `games_share_one_shape`). *Unlocks:* ports by other people and
    agents without reading three plans.
+6. **Every dedicated server on `chimera_net::dedicated`**: `GameServer`
+   gained `ServerHooks`, optional and neutral (`ServerHooks::NONE` for
+   none): the player count, several games' maps (`ServerMaps`: the game
+   a bare name is, a loader of whole ids), the map cycle following the
+   map loaded (`GameInfo::map_cycle`), `MapFiles` from `GameInfo::
+   map_file`, the greybox's own tick, a minigame (`ServerMinigame`:
+   `+minigame`, its first map, its console line, restarted on a map
+   change, in the banner), what the machine lacks before a map loads,
+   and a launch-only part (`dedicated::app`). CS:S's server is a
+   `GameServer` static on `cs_source` without `ui` and no longer
+   depends on `cs_source_app`; the party kit's server is the `PARTY`
+   const, Lucker Party's `SERVER`, and the Ultimate Gun Game's server
+   is `PARTY` with its own minigame and launch. New check:
+   `game_servers_use_no_app` (a game's `<id>_server` uses no app crate).
+   CS:S's and the party's servers went from 879 lines (their own run
+   loops) to 408 (statics, usage texts, tests); with `dedicated` (now
+   743, hooks and their tests included) and the other two servers, the
+   server code went from 1,632 lines to 1,419. *Unlocks:* one server shape for every game and party app;
+   a fix to the run loop, `changelevel` or the console reaches them all.
 
 ## 6. Next, in order
 
 | # | Step | Size | Unlocks |
 |---|---|---|---|
-| 6 | CS:S's server and the party kit's on `chimera_net::dedicated`: `GameServer` gains what they have more of (a map cycle, `MapFiles`, extra options, a minigame) as optional hooks | M | one server shape; `cs_source_server` stops depending on `cs_source_app` |
 | 7 | The client app once (`chimera_client::app`): window, log layer, physics, presentation, network, shell, start map from a `GameApp` descriptor; the three apps' `main.rs` become a static | M | a new game's app is a static; the shell's usage text from `GameInfo` |
 | 8 | `games/roster`: the games' descriptors in one list, a cargo feature per game; `dump`, `chimera_pack`, `mapsweep` and the party kit iterate it (each game's tool hooks move into the game: `open_install`, what `chimera_pack` roots a set at) | M | tools and party apps cost nothing per game; subset builds; a check that apps name a game crate only for its descriptors |
 | 9 | The party kit's base game by descriptor: the loading screen, menu music, mouse options, requirements text and bots settings it takes from Combat Arms become `GameClient`/`GameBundle` hooks; `TEAMS` and `SURFACES` per game to a neutral vocabulary (review A3's surface kinds) | M-L | any game as the base; no pairwise tables |
@@ -286,7 +304,7 @@ Each is one commit; behaviour unchanged.
 | 14 | Compile and test scale: the party kit's tests against two reference games only; a game's fast tier split by module with nextest filters; `cargo test -p` of a game never builds another | M | time per game flat |
 | 15 | Second user of LithTech or of a Combat Arms subsystem (objects, effects library, lobby): lift into `lithtech/engine` or Chimera, as the Source lifts went | L | the first-of-a-family cost falls for the next one |
 
-Steps 6-8 are mechanical moves like step 4 and can go to parallel
+Steps 7-8 are mechanical moves like steps 4 and 6 and can go to parallel
 agents (different files). Step 9 touches the party kit's client, which
 other work edits often: do it in one sitting. Step 10's literal sweep
 is the "big mechanical move": last, alone.

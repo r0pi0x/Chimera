@@ -27,7 +27,7 @@
 //! its own).
 
 pub use chimera_net::dedicated::{
-    GameServer, Options, Parsed, ServerPlugin, StartMap, change_level, listen, parse, swap_map,
+    GameServer, Options, Parsed, ServerHooks, ServerPlugin, StartMap, change_level, listen, parse, swap_map,
 };
 use chimera_world::map::{self, MapData};
 use hl2dm::game::{Hl2dmPlugins, INFO, maps};
@@ -59,6 +59,7 @@ pub static SERVER: GameServer = GameServer {
             .insert_resource(hl2dm::game::rules::AutoStart(true));
     },
     load_map: maps::load_installed_map,
+    hooks: ServerHooks::NONE,
 };
 
 /// A map's id as the server serves it: `greybox`, or `hl2dm:<name>` (a
