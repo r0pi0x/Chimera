@@ -195,6 +195,15 @@ impl CaData {
         Self(Arc::new(inner))
     }
 
+    /// The built-in numbers with `mount` as the install's files (tests of
+    /// what plays or reads a file: sounds built in the test). Not shared.
+    pub fn builtin_with_mount(mount: Mount) -> Self {
+        let mut inner = Self::inner(false, Some(None), Self::built_in_docs());
+        inner.hand_built = true;
+        let _ = inner.mount.set(Some(Arc::new(mount)));
+        Self(Arc::new(inner))
+    }
+
     /// The app's data: its resource if a plugin or the game's setup put
     /// one there, else the default (inserted now, so every plugin of the
     /// app agrees whatever order they build in). The install data its map

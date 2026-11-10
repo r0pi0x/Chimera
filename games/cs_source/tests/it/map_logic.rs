@@ -1049,3 +1049,50 @@ fn idle_entities_cost_a_tick_little() {
     eprintln!("a tick: {none} instructions without the entities, {idle} with them ({each} each), {every} writing every node through ({each_every} each)");
     assert!(idle < every, "passing over idle nodes costs more than writing them through: {idle} against {every}");
 }
+
+/// The `SoundControl` starts seen (for `ambient_loops_end_with_their_map`).
+#[derive(Resource, Default)]
+struct Starts(Vec<String>);
+
+fn collect_starts(mut r: MessageReader<crate::stack::map::SoundControl>, mut seen: ResMut<Starts>) {
+    for m in r.read() {
+        if let crate::stack::map::SoundControl::Start(s) = m {
+            seen.0.push(s.entry.clone());
+        }
+    }
+}
+
+/// A map's ambient_generic loops end with it: across a swap nothing of
+/// the old map's logic starts again (the logic world is rebuilt from the
+/// new map's entities and asks for its sounds as events; the map's
+/// unload stops every long-lived sound). Combat Arms keeps its map
+/// sounds as a list instead: its own test is combat_arms' ui
+/// `music::ambient_loops_end_with_their_map`.
+#[test]
+fn ambient_loops_end_with_their_map() {
+    let ambient = |wave: &str| {
+        entity(
+            &[
+                ("classname", "ambient_generic"),
+                ("message", wave),
+                ("health", "10"),
+                ("radius", "1250"),
+                ("origin", "0 0 64"),
+            ],
+            Vec::new(),
+            false,
+        )
+    };
+    let (mut sim, _) = sim(vec![ambient("ambient/old_loop.wav")], Vec3::ZERO, 0.0);
+    sim.app.init_resource::<Starts>().add_systems(PostUpdate, collect_starts);
+    // A restart of the first map's logic would start its loop again.
+    crate::stack::map::change_map(
+        sim.app.world_mut(),
+        map(vec![ambient("ambient/new_loop.wav")]),
+        crate::stack::map::MapDebugView::Normal,
+    );
+    sim.ticks(20);
+    let seen = &sim.app.world().resource::<Starts>().0;
+    assert!(!seen.iter().any(|e| e.contains("old_loop")), "the old map's loop started again: {seen:?}");
+    assert!(seen.iter().any(|e| e.contains("new_loop")), "the new map's loop plays: {seen:?}");
+}

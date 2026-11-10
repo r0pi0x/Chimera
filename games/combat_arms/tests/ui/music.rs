@@ -3,33 +3,44 @@
 //! (`map::SoundControl`), the volume following the fade; a stream that
 //! leaves the player stops; the loading screen and a window with no
 //! pixels are told to the music (specs/combat_arms/music_ambience.md 2,
-//! 3, 8; cases 1, 5, 18 as the front end sees them).
+//! 3, 8; cases 1, 5, 18 as the front end sees them); a map's ambient
+//! loops end with it (no old loop starts again across a swap).
 
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use bevy::{
     prelude::*,
+    time::TimeUpdateStrategy,
     window::{PrimaryWindow, WindowResolution},
 };
 use chimera_world::{
     greybox::GreyboxMapPlugin,
     harness::Sim,
-    map::{SoundControl, SoundKey},
+    map::{
+        MapData, MapDebugView, MapSimPlugin, SoundControl, SoundKey,
+        prepare::{begin_map_change, spawn_some},
+    },
 };
 use combat_arms::{
-    game::music::{
-        CaMusicSet, MusicClock, MusicLoading,
-        ambient::SoundFx,
-        data::MusicData,
-        director::{CaMusic, MusicFacts, Screen},
-        mix::CaVolumes,
+    game::{
+        data::CaData,
+        movement,
+        music::{
+            CaMusicSet, MusicClock, MusicLoading,
+            ambient::SoundFx,
+            data::MusicData,
+            director::{CaMusic, MusicFacts, Screen},
+            mix::CaVolumes,
+        },
+        world,
     },
-    harness::CaSim,
+    harness::{CaSim, CaSimWith},
     ui::{
         loading::CaLoading,
         music::{CaMusicPlayPlugin, Playback, ambient_volume},
     },
 };
+use lithtech_formats::world::{Object, Property, Value, World as LtWorld};
 
 #[derive(Resource, Default)]
 struct Seen(Vec<SoundControl>);
@@ -54,6 +65,13 @@ fn sim() -> Sim {
 fn wav(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join("ca_music_ui_test");
     std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(name);
+    std::fs::write(&path, wav_bytes()).unwrap();
+    path
+}
+
+/// A one-second 16-bit mono WAV.
+fn wav_bytes() -> Vec<u8> {
     let samples = 8000usize;
     let mut b = Vec::new();
     b.extend(b"RIFF");
@@ -69,9 +87,7 @@ fn wav(name: &str) -> PathBuf {
     b.extend(b"data");
     b.extend((samples as u32 * 2).to_le_bytes());
     b.extend((0..samples).flat_map(|i| ((i as i16 % 100) * 50).to_le_bytes()));
-    let path = dir.join(name);
-    std::fs::write(&path, b).unwrap();
-    path
+    b
 }
 
 fn set_now(sim: &mut Sim, ms: f64) {
@@ -242,4 +258,127 @@ fn ambient_volumes() {
     assert_eq!(ambient_volume(&fx, None, 1.0), 0.0);
     fx.ambient = false;
     assert!((ambient_volume(&fx, at(6500.0), 0.8) - 0.4).abs() < 1e-5);
+}
+
+/// Sound files of our own, as an install's archive serves them.
+struct Sounds(Vec<&'static str>);
+
+impl chimera_core::mount::FileSource for Sounds {
+    fn name(&self) -> String {
+        "test sounds".into()
+    }
+    fn entries(&self) -> Vec<chimera_core::mount::Entry> {
+        self.0
+            .iter()
+            .map(|p| chimera_core::mount::Entry { path: p.to_string(), size: 1 })
+            .collect()
+    }
+    fn read(&self, path: &str) -> Option<std::io::Result<Vec<u8>>> {
+        self.0.contains(&path).then(|| Ok(wav_bytes()))
+    }
+}
+
+fn prop(name: &str, value: Value) -> Property {
+    Property {
+        name: name.into(),
+        flags: 0,
+        len: 0,
+        value,
+    }
+}
+
+/// A level with a start point and one looping `SoundFX` playing `file`.
+fn looping_map(name: &str, file: &str) -> MapData {
+    let mut w = LtWorld::default();
+    w.objects.push(Object {
+        class: "GameStartPoint".into(),
+        properties: vec![
+            prop("Name", Value::String("GameStartPoint00".into())),
+            prop("Pos", Value::Vector([0.0, 66.0, 0.0])),
+            prop("Rotation", Value::Rotation([0.0; 4])),
+        ],
+    });
+    w.objects.push(Object {
+        class: "SoundFX".into(),
+        properties: vec![
+            prop("Name", Value::String(format!("{name}_loop"))),
+            prop("Pos", Value::Vector([0.0, 66.0, 0.0])),
+            prop("Sound", Value::String(file.into())),
+            prop("OuterRadius", Value::Real(2000.0)),
+            prop("InnerRadius", Value::Real(500.0)),
+        ],
+    });
+    world::convert(&w, name, movement::movement_data().meters_per_unit, &|_| None)
+}
+
+/// The ambient files started since the last `Seen` clear.
+fn ambient_starts(sim: &Sim) -> Vec<String> {
+    sim.app
+        .world()
+        .resource::<Seen>()
+        .0
+        .iter()
+        .filter_map(|c| match c {
+            SoundControl::Start(s) if s.entry.starts_with("ca:amb:") => Some(s.entry.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Frames drawn between fixed ticks (a client draws faster than its
+/// tick, and goes on drawing behind the loading screen).
+fn frames(sim: &mut Sim, n: usize) {
+    let tick = sim.tick();
+    for _ in 0..n {
+        sim.app.update();
+    }
+    assert_eq!(sim.tick(), tick, "no fixed tick in these frames");
+}
+
+/// A map's ambient loops end with it: after a swap no sound of the old
+/// map starts again, neither while the next one loads (the front end's
+/// stand-in sound bank) nor in the frames before its objects are built on
+/// its first tick; the new map's own loop starts then.
+#[test]
+fn ambient_loops_end_with_their_map() {
+    let mut mount = chimera_core::mount::Mount::default();
+    mount.push(Sounds(vec!["snd/old/amb.wav", "snd/new/amb.wav"]));
+    let mut sim = Sim::with(CaSimWith(CaData::builtin_with_mount(mount)), |app| {
+        app.add_plugins((MapSimPlugin::new(looping_map("old", "SND\\Old\\amb.wav")), CaMusicPlayPlugin))
+            .add_message::<SoundControl>()
+            .init_resource::<Seen>()
+            .add_systems(Update, collect.after(CaMusicSet));
+    });
+    sim.ticks(5);
+    assert_eq!(ambient_starts(&sim), ["ca:amb:snd/old/amb.wav"], "the old map's loop plays");
+    sim.app.world_mut().resource_mut::<Seen>().0.clear();
+    // Frames shorter than a tick from here on.
+    sim.app
+        .insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_micros(100)));
+    // The swap as a client makes it: the old map unloads now, the next
+    // spawns over frames, the loading screen up meanwhile.
+    begin_map_change(
+        sim.app.world_mut(),
+        looping_map("new", "SND\\New\\amb.wav"),
+        Default::default(),
+        MapDebugView::Normal,
+    );
+    frames(&mut sim, 3);
+    while !spawn_some(sim.app.world_mut(), Duration::from_secs(1)) {
+        frames(&mut sim, 1);
+    }
+    frames(&mut sim, 3);
+    let early = ambient_starts(&sim);
+    assert!(
+        !early.iter().any(|e| e.contains("snd/old/")),
+        "the old map's loop started again after the swap: {early:?}"
+    );
+    // Back to whole ticks: the new map's objects are built and its loop
+    // plays, the old one's still not.
+    let tick = Duration::from_secs_f64(1.0 / sim.tick_hz());
+    sim.app.insert_resource(TimeUpdateStrategy::ManualDuration(tick));
+    sim.ticks(5);
+    let all = ambient_starts(&sim);
+    assert!(!all.iter().any(|e| e.contains("snd/old/")), "{all:?}");
+    assert!(all.iter().any(|e| e == "ca:amb:snd/new/amb.wav"), "the new map's loop plays: {all:?}");
 }

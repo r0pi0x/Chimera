@@ -20,7 +20,9 @@
 //!   by its distance gain (`ambient::gain`, times `Volume` and the effects
 //!   master); a sound with `Ambient` off is placed at its object with
 //!   Chimera's radius level, following it with `PlayAttached` (the
-//!   object's anchor, `objects::sound`).
+//!   object's anchor, `objects::sound`). A map's sounds stop with it:
+//!   between its unload and the next map's first tick `CaAmbient` is
+//!   empty (`game::music`), and sounds of another map are stopped.
 //! - **The window** (`minimized`): both masters go to 0 while the window
 //!   has no size.
 //!
@@ -86,6 +88,8 @@ pub struct Playback {
     next_key: u64,
     /// Ambient sounds (object id) to their last volume.
     ambient: HashMap<u32, f32>,
+    /// The map those ids are of (`CaAmbient::built_from`).
+    ambient_map: usize,
     /// Decoded ambient files by name.
     sound_files: HashMap<String, Option<usize>>,
 }
@@ -338,6 +342,14 @@ fn play_ambient(
     let scale = if objects.scale > 0.0 { objects.scale } else { UNIT };
     let listener = me.iter().next().map(|t| from_engine(t.translation, scale));
     let s_master = volumes.sound();
+    // Another map's sounds: its ids are not ours (a new map's object 3
+    // isn't the old one's).
+    if pb.ambient_map != ambient.built_from {
+        pb.ambient_map = ambient.built_from;
+        for (id, _) in pb.ambient.drain() {
+            control.write(SoundControl::Stop(SoundKey(AMBIENT_KEYS | id as u64)));
+        }
+    }
     let live: Vec<u32> = ambient.live().map(|s| s.id).collect();
     let gone: Vec<u32> = pb.ambient.keys().filter(|id| !live.contains(id)).copied().collect();
     for id in gone {

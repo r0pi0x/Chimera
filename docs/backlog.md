@@ -165,13 +165,18 @@ the original's own behaviour isn't a bug (say so instead).
 ### Gun game playtest, 2026-10-28 (user)
 
 - **A Combat Arms map's ambient loops start again on the next map
-  (2026-11-10).** Swapping from junk_flea to dm_lockdown, the log shows
-  junk_flea's looping `SoundFX` (`ca:amb:snd/junk_flea/amb_lower.wav` and
-  others) started anew as dm_lockdown spawns, behind the loading screen:
-  `ui::music::play_ambient` plays `CaAmbient`, which likely still holds the old
-  map's sounds until `objects::load` rebuilds `CaObjects` on the first
-  tick. Check whether they are heard and for how long; clear `CaAmbient`
-  when the map changes.
+  (2026-11-10): fixed, confirm in a playtest.** Swapping from junk_flea to
+  dm_lockdown, junk_flea's looping `SoundFX` started anew behind the
+  loading screen. The unload stopped them and took the sound bank;
+  `ui::music` put a stand-in bank in its place, forgot what it played,
+  and started `CaAmbient` again, which still held the old map's sounds
+  until `objects::load` rebuilt `CaObjects` on the next map's first tick
+  (heard until then). `CaAmbient` is now empty while `CaObjects` isn't
+  the loaded map's, and `play_ambient` stops sounds of another map
+  (test: combat_arms ui `music::ambient_loops_end_with_their_map`). CS:S
+  and HL2:DM are fine: their ambient_generics are events of a logic
+  world rebuilt per map and soundscapes reset on the unload (test:
+  cs_source `map_logic::ambient_loops_end_with_their_map`).
 - **The grenade launcher's projectile is choppy on a client, "maybe all
   projectiles" (user, 2026-10-29): fixed, confirm in a playtest.** Not
   the client's interpolation (every `NetItem` was already drawn between
