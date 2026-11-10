@@ -117,10 +117,6 @@ the user's go-ahead: no Actions runs unless asked.
 Delete each when fixed. Check against specs/hl2dm/ and the probe; what's
 the original's own behaviour isn't a bug (say so instead).
 
-- **HUD:** no count of the SMG1's grenades or ammo for them (the
-  secondary ammo panel; branch `hl2dm-gaps1` feeds it, check after merge).
-- **HUD:** no ammo counter bottom right for the RPG (`hl2dm-gaps1` shows
-  its own rounds as ammo, check after merge).
 - **The explosion's fire is still cut at the world (2026-11-09):** the
   straight edges and steps of an explosive drum's blast close to walls are
   its camera-facing sprites meeting the floor, ceiling and walls. HL2's smoke
