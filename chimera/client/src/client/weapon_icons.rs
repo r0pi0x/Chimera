@@ -4,7 +4,8 @@
 //! an icon it can hand over as plain data (`WeaponIcon`: a glyph of an icon
 //! font, or an image), its kill marks (the headshot's: `mark`) and the
 //! icons of kills its guns make another way (`register_kill`, by the damage kind: a
-//! gun's own grenade; `kill_icon`), and any HUD asks the registry for an id of another
+//! gun's own grenade; `kill_icon`), and of kills by ids of no game, the map's
+//! and its props' classes (`register_class`: HL2:DM's `prop_physics`), and any HUD asks the registry for an id of another
 //! game and draws what comes back with `spawn_weapon_icon`. A HUD that
 //! gets none shows the gun's display name instead (`gun_name`). No game
 //! crate knows another: the registry is keyed by the id's game part, and
@@ -37,13 +38,15 @@ type Resolver = Arc<dyn Fn(&str) -> Option<WeaponIcon> + Send + Sync>;
 type KillResolver = Arc<dyn Fn(&str, DamageKind) -> Option<WeaponIcon> + Send + Sync>;
 
 /// The games' icon resolvers by game name (the id's part before `:`, lower
-/// case), their kill marks (`mark`) and their icons for what a gun's other
-/// parts kill with (`kill_icon`).
+/// case), their kill marks (`mark`), their icons for what a gun's other
+/// parts kill with (`kill_icon`) and their resolvers for ids of no game
+/// (`register_class`), in the order registered.
 #[derive(Resource, Default, Clone)]
 pub struct WeaponIcons(
     HashMap<String, Resolver>,
     HashMap<(String, String), WeaponIcon>,
     HashMap<String, KillResolver>,
+    Vec<(String, Resolver)>,
 );
 
 impl WeaponIcons {
@@ -53,10 +56,26 @@ impl WeaponIcons {
     }
 
     /// The icon of weapon `id` from its own game's resolver, if that game
-    /// registered one and has art for the gun.
+    /// registered one and has art for the gun; an id of no game (a class
+    /// name, `prop_physics`) from the first class resolver that has one.
     pub fn icon(&self, id: &str) -> Option<WeaponIcon> {
-        let (game, _) = id.split_once(':')?;
-        self.0.get(&game.to_ascii_lowercase())?(id)
+        match id.split_once(':') {
+            Some((game, _)) => self.0.get(&game.to_ascii_lowercase())?(id),
+            None => self.3.iter().find_map(|(_, f)| f(id)),
+        }
+    }
+
+    /// Registers (or replaces) `game`'s resolver for ids of no game: the
+    /// classes its rules name a kill's weapon by when no gun dealt it (a
+    /// thrown prop's, HL2:DM's `prop_physics`). Asked by `icon` in the
+    /// order the games registered.
+    pub fn register_class(&mut self, game: &str, resolver: impl Fn(&str) -> Option<WeaponIcon> + Send + Sync + 'static) {
+        let game = game.to_ascii_lowercase();
+        let resolver: Resolver = Arc::new(resolver);
+        match self.3.iter_mut().find(|(g, _)| *g == game) {
+            Some(slot) => slot.1 = resolver,
+            None => self.3.push((game, resolver)),
+        }
     }
 
     /// Registers (or replaces) `game`'s icons for kills its guns make in
@@ -70,9 +89,8 @@ impl WeaponIcons {
     /// The icon of a kill by weapon `id` dealt as `kind`: its game's kill
     /// icon for that, else the gun's own (`icon`).
     pub fn kill_icon(&self, id: &str, kind: DamageKind) -> Option<WeaponIcon> {
-        let (game, _) = id.split_once(':')?;
-        self.2
-            .get(&game.to_ascii_lowercase())
+        id.split_once(':')
+            .and_then(|(game, _)| self.2.get(&game.to_ascii_lowercase()))
             .and_then(|f| f(id, kind))
             .or_else(|| self.icon(id))
     }

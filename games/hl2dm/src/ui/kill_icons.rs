@@ -18,13 +18,13 @@ use chimera_core::core::DamageKind;
 
 use crate::game::{
     GAME, INFO, mount,
-    rules::deaths::{kill_notice_name, weapon_notice_name},
+    rules::deaths::{kill_notice_name, notice_name, weapon_notice_name},
 };
 
 /// The file of the death notices' glyphs.
-const TEXTURES: &str = "scripts/mod_textures.txt";
+pub const TEXTURES: &str = "scripts/mod_textures.txt";
 /// Their font's file (`HL2MP`).
-const FONT: &str = "resource/hl2mp.ttf";
+pub const FONT: &str = "resource/hl2mp.ttf";
 /// The font's height on a 480-line screen (hud.md's `HL2MPTypeDeath`).
 const TALL: f32 = 32.0;
 
@@ -61,6 +61,28 @@ pub fn kill_icon_of(id: &str, kind: DamageKind, glyphs: &BTreeMap<String, char>,
     Some(WeaponIcon::Glyph { font: font.clone(), ch, em: TALL * 0.5 })
 }
 
+/// The icon of a kill named by class `class`, an id of no game (a prop's
+/// `prop_physics`, a projectile's class), as the death notice names it; a
+/// gun's class (`weapon_*`) is a game's gun, not this.
+pub fn class_icon_of(class: &str, glyphs: &BTreeMap<String, char>, font: &Handle<Font>) -> Option<WeaponIcon> {
+    if class.contains(':') || class.to_ascii_lowercase().starts_with("weapon_") {
+        return None;
+    }
+    let ch = *glyphs.get(&notice_name(class))?;
+    Some(WeaponIcon::Glyph { font: font.clone(), ch, em: TALL * 0.5 })
+}
+
+/// Registers `glyphs` in `font` as HL2:DM's icons: its guns', its guns'
+/// other kills' and its classes' (`icon_of`, `kill_icon_of`,
+/// `class_icon_of`).
+pub fn register_glyphs(icons: &mut WeaponIcons, glyphs: BTreeMap<String, char>, font: Handle<Font>) {
+    let (kill_glyphs, kill_font) = (glyphs.clone(), font.clone());
+    let (class_glyphs, class_font) = (glyphs.clone(), font.clone());
+    icons.register(GAME, move |id| icon_of(id, &glyphs, &font));
+    icons.register_kill(GAME, move |id, kind| kill_icon_of(id, kind, &kill_glyphs, &kill_font));
+    icons.register_class(GAME, move |id| class_icon_of(id, &class_glyphs, &class_font));
+}
+
 /// Reads the glyphs and the font (none without an install: the feed writes
 /// the guns' names).
 pub(super) fn register(mut icons: ResMut<WeaponIcons>, fonts: Option<ResMut<Assets<Font>>>) {
@@ -72,9 +94,7 @@ pub(super) fn register(mut icons: ResMut<WeaponIcons>, fonts: Option<ResMut<Asse
     };
     let glyphs = death_glyphs(&String::from_utf8_lossy(&text));
     let font = fonts.add(Font::from_bytes(file));
-    let (kill_glyphs, kill_font) = (glyphs.clone(), font.clone());
-    icons.register(GAME, move |id| icon_of(id, &glyphs, &font));
-    icons.register_kill(GAME, move |id, kind| kill_icon_of(id, kind, &kill_glyphs, &kill_font));
+    register_glyphs(&mut icons, glyphs, font);
 }
 
 #[cfg(test)]
@@ -93,6 +113,7 @@ mod tests {
             "death_smg1" { "font" "HL2MPTypeDeath" "character" "/" }
             "death_smg1_grenade" { "font" "HL2MPTypeDeath" "character" "7" }
             "death_combine_ball" { "font" "HL2MPTypeDeath" "character" "8" }
+            "death_physics" { "font" "HL2MPTypeDeath" "character" "9" }
             "d_skull" { "file" "sprites/640hud1" "x" "192" "y" "224" "width" "32" "height" "16" }
         }
     }"#;
@@ -126,5 +147,26 @@ mod tests {
         assert_eq!(kill("hl2dm:weapon_ar2", DamageKind::Crush), Some('8'));
         assert_eq!(kill("hl2dm:weapon_smg1", DamageKind::Bullet), None);
         assert_eq!(kill("hl2dm:weapon_rpg", DamageKind::Blast), None);
+    }
+
+    /// A prop's kill (a class of no game) through the shared registry: the
+    /// physics glyph, not the class's name; a gun's class or another
+    /// game's id is not ours to answer, a class without a glyph has none
+    /// (the death notice's skull).
+    #[test]
+    fn a_props_kill_finds_the_physics_glyph() {
+        let mut icons = WeaponIcons::default();
+        register_glyphs(&mut icons, death_glyphs(FILE), Handle::default());
+        let ch = |id, kind| match icons.kill_icon(id, kind) {
+            Some(WeaponIcon::Glyph { ch, .. }) => Some(ch),
+            _ => None,
+        };
+        assert_eq!(ch(crate::game::physics::PHYSICS_WEAPON, DamageKind::Crush), Some('9'));
+        assert_eq!(ch(crate::game::physics::PHYSICS_WEAPON, DamageKind::BlastSurface), Some('9'));
+        assert_eq!(ch("hl2dm:weapon_crowbar", DamageKind::Melee), Some('6'));
+        assert_eq!(ch("weapon_crowbar", DamageKind::Melee), None, "a gun's class");
+        assert_eq!(ch("env_explosion", DamageKind::Blast), None);
+        assert_eq!(ch("worldspawn", DamageKind::Generic), None);
+        assert_eq!(ch("cs_source:weapon_knife", DamageKind::Melee), None);
     }
 }

@@ -36,7 +36,8 @@
 //! `SmokeCloud::weapon`), sends each round fired to the other clients in the
 //! shooter's PAS (`FireBullets`), reloads/swings/throws (`WeaponFx`), detonations, flashes
 //! and ringing to the player hit (`Senses`), damage that reached a player's
-//! health to its client (`Hurt`: the damage indicators), deaths (`Killed`) and
+//! health to its client (`Hurt`: the damage indicators), deaths (`Killed`:
+//! the gun's index, or a kill's class of no game by name) and
 //! hit confirmations (`HitConfirm`), and drops what a client asks to
 //! (`DropRequest`); a client puts others' weapons in their hands
 //! (`weapon::remote::show_held`), traces their rounds again
@@ -571,18 +572,17 @@ fn send_deaths(
             .iter()
             .find(|a| a.victim == d.entity && Some(a.killer) == d.attacker && replicated.contains(a.killer))
             .map(|a| a.facts.clone());
+        // The gun that killed, held or not (`DamageWeapons`: the killer may
+        // hold the next rung's already); a class that is no gun by name.
+        let id = held.as_deref().map_or(damage.weapon, |h| h.of(damage));
+        let index = id.and_then(|w| registry.index(w));
         out.write(ToClients {
             targets: SendTargets::CLIENTS_ONLY,
             message: Killed {
                 victim: d.entity,
                 attacker: d.attacker.filter(|a| replicated.contains(*a)),
-                // The gun that killed, held or not (`DamageWeapons`: the
-                // killer may hold the next rung's already).
-                weapon: held
-                    .as_deref()
-                    .map_or(damage.weapon, |h| h.of(damage))
-                    .and_then(|w| registry.index(w))
-                    .map(|i| i as u16),
+                weapon: index.map(|i| i as u16),
+                class: id.filter(|_| index.is_none()).map(str::to_string),
                 hitgroup: hitgroup_number(damage.hitgroup),
                 kind: kind_number(damage.kind),
                 point: damage.point.to_array(),
@@ -636,7 +636,7 @@ fn receive_deaths(mut killed: MessageReader<Killed>, mut commands: Commands) {
             if w.get_entity(k.victim).is_err() {
                 return;
             }
-            let weapon = k.weapon.and_then(|i| weapon_id(w, i));
+            let weapon = k.weapon.and_then(|i| weapon_id(w, i)).or_else(|| class_id(w, k.class.as_deref()?));
             w.write_message(Died {
                 entity: k.victim,
                 attacker: k.attacker,
@@ -663,6 +663,30 @@ fn receive_deaths(mut killed: MessageReader<Killed>, mut commands: Commands) {
             }
         });
     }
+}
+
+/// Most classes a client keeps (`KillClasses`): a server naming more gets
+/// none for the rest.
+const MAX_CLASSES: usize = 256;
+
+/// The kills' classes a client has heard (`Killed::class`), each kept once
+/// as the `'static` id a `Damage` carries.
+#[derive(Resource, Default)]
+struct KillClasses(Vec<&'static str>);
+
+/// Class `name` as a `'static` id: each name kept once, at most
+/// `MAX_CLASSES` of them.
+fn class_id(world: &mut World, name: &str) -> Option<&'static str> {
+    let mut known = world.get_resource_or_init::<KillClasses>();
+    if let Some(c) = known.0.iter().find(|c| **c == name) {
+        return Some(*c);
+    }
+    if known.0.len() >= MAX_CLASSES || name.len() > 64 {
+        return None;
+    }
+    let c: &'static str = Box::leak(name.to_string().into_boxed_str());
+    known.0.push(c);
+    Some(c)
 }
 
 /// Our hits the server confirmed, as weapon events of our player.

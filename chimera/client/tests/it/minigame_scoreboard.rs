@@ -206,11 +206,58 @@ fn the_rows_cells_are_drawn_centred() {
     }
 }
 
+/// A Combat Arms gun's long name stays on one line in its fixed-width
+/// cell, so its row is no taller than a short name's and every cell sits
+/// at the row's middle (wrapped, the row grew and the others sat at its
+/// top).
+#[test]
+fn a_long_gun_name_keeps_its_row_one_line() {
+    let mut sim = laid_out_sim(|_| {});
+    sim.app.init_resource::<HeldActions>();
+    sim.app.insert_resource(Ladder { rungs: vec!["kit:short", "kit:long"], ..default() });
+    let mut names = GunNames::default();
+    names.0.insert("kit:short".into(), "Pistol".into());
+    names.0.insert("kit:long".into(), "Ironclad Lever Action Rifle Mk. IV Engraved Lv.4 Edition".into());
+    sim.app.insert_resource(names);
+    sim.app.world_mut().insert_resource(MinigameHud { title: "Kit".into(), ..default() });
+    player(&mut sim, "Alpha", 0, 1, 0, 0, None);
+    player(&mut sim, "Bravo", 1, 0, 0, 0, None);
+    sim.app.world_mut().resource_mut::<HeldActions>().showscores = true;
+    sim.ticks(3);
+    sim.app.update();
+    let w = sim.app.world_mut();
+    let rows: Vec<(Entity, String)> = w.query::<(Entity, &ScoreboardRow)>().iter(w).map(|(e, r)| (e, r.gun.clone())).collect();
+    let w = sim.app.world();
+    let tall = |gun: &str| drawn_y(w, rows.iter().find(|(_, g)| g.starts_with(gun)).expect("the row").0).1;
+    let (short, long) = (tall("Pistol"), tall("Ironclad"));
+    assert!((short - long).abs() < 0.5, "the long name's row {long} as tall as the short one's {short}");
+    for (row, gun) in &rows {
+        let (mid, _) = drawn_y(w, *row);
+        for c in w.get::<Children>(*row).unwrap().iter() {
+            let (at, _) = drawn_y(w, c);
+            assert!((at - mid).abs() < 0.5, "{gun}: a cell at {at} in a row centred at {mid}");
+        }
+    }
+}
+
 /// A kill icon painted in the top rows of its texture (Combat Arms': 20 of
 /// 32) is drawn with its art at the row's middle, at the scale the whole
 /// texture would have.
 #[test]
 fn a_kill_icons_art_is_drawn_centred_in_its_row() {
+    icon_art_drawn_centred(64, 32, 0, 20);
+}
+
+/// A wide, short picture (a long gun's: 8 to 1, its art in rows 3 to 19 of
+/// 24) is centred in its row too, not left at the row's top.
+#[test]
+fn a_wide_short_icon_is_drawn_centred_in_its_row() {
+    icon_art_drawn_centred(192, 24, 3, 19);
+}
+
+/// A `w` x `h` icon inked in rows `top..bottom` as a kill's icon: its art's
+/// rows are what is drawn, centred on its feed row.
+fn icon_art_drawn_centred(w: usize, h: usize, top: usize, bottom: usize) {
     use chimera_client::client::{
         kill_feed::{KillFeed, KillFeedPlugin, KillFeedRow, KillFeedStatePlugin, SharedKillFeed},
         weapon_icons::{WeaponIcon, WeaponIcons, ink_rows},
@@ -222,9 +269,8 @@ fn a_kill_icons_art_is_drawn_centred_in_its_row() {
         app.add_plugins((KillFeedStatePlugin, KillFeedPlugin));
     });
     sim.app.insert_resource(SharedKillFeed);
-    let (w, h) = (64usize, 32usize);
     let mut data = vec![0u8; w * h * 4];
-    for y in 0..20 {
+    for y in top..bottom {
         for x in 0..w {
             data[(y * w + x) * 4 + 3] = 255;
         }
@@ -236,11 +282,12 @@ fn a_kill_icons_art_is_drawn_centred_in_its_row() {
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::default(),
     );
-    assert_eq!(ink_rows(&image), Some((0.0, 20.0)));
+    assert_eq!(ink_rows(&image), Some((top as f32, bottom as f32)));
     let handle = sim.app.world_mut().resource_mut::<Assets<Image>>().add(image);
     let mut icons = WeaponIcons::default();
     let art = handle.clone();
-    icons.register("kit", move |_| Some(WeaponIcon::Image { image: art.clone(), size: Vec2::new(64.0, 32.0) }));
+    let size = Vec2::new(w as f32, h as f32);
+    icons.register("kit", move |_| Some(WeaponIcon::Image { image: art.clone(), size }));
     sim.app.insert_resource(icons);
     let a = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), chimera_sim::movement::placeholder::ID);
     let b = sim.spawn_character(Vec3::new(5.0, 1.0, 0.0), chimera_sim::movement::placeholder::ID);
@@ -266,7 +313,7 @@ fn a_kill_icons_art_is_drawn_centred_in_its_row() {
     let row = world.query_filtered::<Entity, With<KillFeedRow>>().single(world).unwrap();
     let mut q = world.query_filtered::<(Entity, &ImageNode), ()>();
     let (icon, node) = q.iter(world).find(|(_, n)| n.image == handle).expect("the icon is drawn");
-    assert_eq!(node.rect, Some(Rect::new(0.0, 0.0, 64.0, 20.0)), "its art's rows");
+    assert_eq!(node.rect, Some(Rect::new(0.0, top as f32, w as f32, bottom as f32)), "its art's rows");
     let world = sim.app.world();
     let (mid, row_tall) = drawn_y(world, row);
     let (at, tall) = drawn_y(world, icon);
