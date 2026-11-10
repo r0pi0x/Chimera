@@ -351,19 +351,38 @@ tracy = ["cs_source_app/tracy"]
 # Our own code: a little optimization so the game is playable in debug.
 # Match tests' line tables so switching between run/build and test reuses
 # dependency artifacts. Use `--profile devfull` to inspect local variables.
+# Debug info split out of the linked binaries (Linux: each crate's
+# `.dwo` files beside its objects, the line tables stay in the binary so
+# backtraces keep every frame's file and line): a workspace test build's
+# binaries 12.3 GB instead of 29.6 (docs/performance.md, "Iteration
+# speed"). Cargo passes it only where the target supports it, so Windows
+# (MSVC: packed only, its `.pdb`) is unaffected.
+# No LTO: with several codegen units and opt-level above 0, rustc's
+# default runs ThinLTO over all of a crate's units on every build, changed
+# or not; off, a one-line edit in combat_arms rebuilds its tests in 11 s
+# instead of 32 (docs/performance.md, "Iteration speed").
 [profile.dev]
 opt-level = 1
 debug = "line-tables-only"
+split-debuginfo = "unpacked"
+lto = "off"
 
 # Dependencies (Bevy, parsers): fully optimized, compiled once and cached.
+# One codegen unit each gives back the inlining across units that
+# `lto = "off"` takes away (they are built once, from sccache after that):
+# with it the game's frames are as fast as with LTO (de_dust2 offscreen:
+# 3.21 ms p50 against 3.19, 3.95 with 256 units), the tests 8-10% slower.
 [profile.dev.package."*"]
 opt-level = 3
+codegen-units = 1
 
 # The `.rez` ciphers' block functions are inlined into lithtech_formats'
 # CBC loop, so they build at its level: at 1, V1 (Twofish) decrypts at
-# about 2 MB/s and stalls loading Combat Arms' keyed archives.
+# about 2 MB/s and stalls loading Combat Arms' keyed archives. One unit,
+# as the registry crates, so `lto = "off"` can't split them from the loop.
 [profile.dev.package.lithtech_formats]
 opt-level = 3
+codegen-units = 1
 
 # Build scripts, proc macros and their dependencies: no debuginfo, always.
 # Left to cargo, a build-time dependency keeps debuginfo only when a
@@ -386,9 +405,12 @@ debug = "line-tables-only"
 
 # Opt-in full debugger information, in target/devfull rather than disturbing
 # the warm default dev/test artifacts. Build-time units still omit debuginfo.
+# Not split: sccache restores a cached crate without its `.dwo` files, so
+# a split build from the cache would lose the variables a debugger reads.
 [profile.devfull]
 inherits = "dev"
 debug = 2
+split-debuginfo = "off"
 
 [profile.release]
 codegen-units = 1

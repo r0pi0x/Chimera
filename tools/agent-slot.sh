@@ -25,7 +25,8 @@
 # holds which, `release slotN` frees one whose agent is gone.
 # Settings: AGENT_SLOTS (number of slots, default 3), AGENT_SLOT_MAX_GB
 # (trim target/ past this, default 60: a whole-workspace test build is
-# ~40 GB; acquire trims the slot it takes, its incremental caches first),
+# ~30 GB with the dev profile's split debug info, ~50 GB before it;
+# acquire trims the slot it takes, its incremental caches first),
 # AGENT_SLOTS_DIR (where the slots live).
 #
 # trim-incremental: cargo's incremental caches (target/<profile>/incremental,

@@ -3637,7 +3637,10 @@ cargo run --profile devfull --features dev
 line tables, so their debug-info setting is unchanged. A dev-only cache
 will need one rebuild when adopting the default; keep the warm target.
 This does not eliminate rebuilds caused by different feature sets or
-changes to foundational workspace crates.
+changes to foundational workspace crates. Since 2026-11-10 the dev profile also splits
+that debug info out of the binaries on Linux and builds without LTO;
+`devfull` keeps it unsplit ("Iteration speed", "Debug info and LTO,
+taken").
 
 Windows measurement, same warm worktree, `cargo test -p source_formats
 --no-run` followed by `cargo build -p source_formats` (Cargo JSON artifact
@@ -4040,6 +4043,9 @@ slower:
 
 ### Proposals that need a decision
 
+1 and 2 were measured and taken the same day (below, "Debug info and
+LTO, taken"); 3 is no longer needed.
+
 1. **`lto = "off"` in `[profile.dev]`** (one line; `test` and `devfull`
    inherit it). Expected: 30-60% off every rebuild of a workspace crate
    after an edit (8-12 s of Combat Arms' 20-27 s; the same share of each
@@ -4075,6 +4081,86 @@ slower:
    the jobserver was sized for, and more memory in use than in the last
    day.
 
+### Debug info and LTO, taken (2026-11-10)
+
+Measured in a slot (mold, sccache, `CARGO_BUILD_JOBS=6`) with the other
+agents running; comparisons interleaved, the 1-minute load with each.
+
+**Debug info: `split-debuginfo = "unpacked"` in `[profile.dev]`** (so
+`test` too; `devfull` sets `"off"`). Three ways tried on the whole
+workspace's test build (`cargo test --workspace --features dev
+--no-run`, 71 binaries):
+
+| | the 71 binaries | the largest (an app's `it`) | what a binary keeps |
+|---|---|---|---|
+| as it was (line tables in each binary) | 29.6 GB | 873 MB (`.debug_str` 333, `.debug_info` 169, `.debug_line` 86, `.debug_ranges` 76, code 73) | everything |
+| split, DWARF 4 (taken) | 12.3 GB, plus 2.0 GB of `.dwo` files once per crate | 395 MB; the app 449 MB (`.debug_line` 84, `.debug_ranges` 76, `.debug_addr` 25, `.debug_info` 2) | line tables in the binary; the rest in the `.dwo` files |
+| split, DWARF 5 (`-Cdwarf-version=5`) | 38.9 GB | the app 1,191 MB: `.debug_str` 653, `.debug_names` 194 | rejected: the name index brings the strings back into every binary |
+| `strip = "debuginfo"` (not built; from the replayed links) | about 5.5 GB | 137 MB | function names only: a panic keeps its file and line, the frames lose theirs |
+
+Split keeps more than strip: the line tables stay in each binary, so a
+failing test's panic and every frame of its backtrace keep their file
+and line (checked: a probe test panicking two calls deep printed
+`panicked at source/formats/src/lib.rs:29:42` and `at ./src/lib.rs:29:42`,
+`31:64` on its frames; in a probe crate, a frame in a dependency that
+came from sccache kept its line too), and what a
+debugger reads beyond lines (the variables) is in the `.dwo` files. The
+other 7 GB that strip would save are those line tables and address
+ranges. The slot after a whole workspace test build: `deps/` 19 GB
+instead of 34, incremental caches 10 GB fresh (15 before, after a day
+of builds), so about 30 GB instead of about 50 (`AGENT_SLOT_MAX_GB` 60
+now has room for the hook's build and a day's caches; unchanged).
+
+- **Windows.** Cargo passes `split-debuginfo` only where the target
+  supports the value (`rustc --print split-debuginfo`; MSVC supports
+  `packed` only, its `.pdb`), so Windows builds get the flag not at all
+  (checked: `cargo build -v --target x86_64-pc-windows-msvc` on a
+  probe crate with the setting: no `-C split-debuginfo` on its command
+  line). No target-specific config needed.
+- **sccache** caches split builds (a registry crate cleaned and rebuilt:
+  3 of 3 hits, 0 misses), but restores only the rlib, not the `.dwo`
+  files: line tables are in the rlib's objects, so backtraces stay
+  whole; a debugger loses the variables of crates that came from the
+  cache. Hence `devfull` (`debug = 2`, for inspecting locals) sets
+  `split-debuginfo = "off"` and keeps all of it in the binary as before
+  (checked: `.debug_info` in its binary, no `.dwo`, gdb's `info scope`
+  lists a function's locals). In a slot the workspace crates build
+  incrementally (not through sccache), their `.dwo` files beside the
+  incremental session; a session `trim-incremental` removes takes its
+  `.dwo` files with it (only variables, again, until the crate rebuilds).
+- Cost: one rebuild of everything (the slot's: 20-28 minutes at load
+  20-50; 572 registry crates missed the cache once).
+
+**LTO: `lto = "off"` in `[profile.dev]`, with `codegen-units = 1` for
+the registry crates** (`[profile.dev.package."*"]`, and
+`lithtech_formats`, whose cipher must inline into its loop). `lto` was
+not set: the default (`false`) is ThinLTO across a crate's own units,
+which at `opt-level` above 0 and with incremental's units ran on every
+build. Three builds side by side (same split debug info): as it was
+("LTO"), `lto = "off"` alone ("off"), and off with one unit per registry
+crate ("off + 1 unit", taken):
+
+| | LTO | off | off + 1 unit |
+|---|---|---|---|
+| Combat Arms' tests after a one-line edit in `combat_arms` (`cargo test -p combat_arms --features dev --test it --no-run`) | 28.2, 31.3, 24.6, 36.8, 41.5, 42.7 s (median 34.1) | 11.2, 11.4, 22.9 s | 10.5, 10.8, 11.0, 14.2 s (median 10.9; load 6-10) |
+| Combat Arms' fast tier (1,662 tests, the run alone) | 55.9, 55.9, 57.3 s | 67.7, 67.8, 68.0 s (+21%) | 62.3, 62.5 s (+10%) |
+| cs_source's fast tier (525 tests) | 17.3, 18.0 s | | 19.2, 19.2 s (+9%) |
+| party_kit `heavy::bot_cost`, instructions per tick (mean), 2 / 16 bots | 5.05M / 19.34M | 6.11M / 22.27M (+21% / +15%) | 5.41M / 21.37M (+7% / +10%) |
+| `cs_source --offscreen 1280x720 --frames 1200 --map cs_source:de_dust2 +fps_max 0`, frame p50 / p90 | 3.18, 3.19 / 4.36-4.47 ms | 3.91, 3.99 / 5.39-5.44 ms (+24%) | 3.20, 3.22 / 4.62-4.75 ms (+1% / +5%) |
+| the same, main world p50 / render world p50 | 2.43-2.49 / 2.61 ms | 3.14-3.18 / 3.19-3.25 ms | 2.61-2.65 / 2.59-2.60 ms (+7% / 0) |
+| the main menu, 900 frames, frame p50 | 1.55, 1.57 ms | 2.05, 2.09 ms (+33%) | |
+
+So most of what `lto = "off"` cost was Bevy's and the other registry
+crates' 256 units losing their inlining across units; one unit each
+gives it back (the render world as fast as before), and they are built
+once a slot and come from sccache after (their first build: 13.0 minutes
+with the three crates' tests, against 12.2 with 256 units). What is
+left is our own crates at `opt-level = 1` without ThinLTO: the
+simulation 7-10% slower, the fast tiers 9-10% (6 s of Combat Arms' 57),
+against 20-30 s off each rebuild of a crate after an edit. Taken. If
+the fast tier's share grows, `opt-level = 2` for the game crates in the
+test profile is the next thing to measure ("What to do next", 5).
+
 ### What to do next, by expected gain
 
 1. **The after-push tests** (52-125 minutes a push; the push is when a
@@ -4088,7 +4174,7 @@ slower:
    ladder), give the heavy tier its own time or machine, and build its
    test binaries with the jobserver full (16 minutes now).
 2. **Proposal 1**, measured and switched on: the largest cut to the edit
-   loop found here.
+   loop found here. Done (above, "Debug info and LTO, taken").
 3. **`combat_arms` as more than one crate** (the architecture plan's step
    14 asked for a measurement first): an edit costs 25 s of rustc before
    any test runs, and what is left after `lto = "off"` (metadata, macro
