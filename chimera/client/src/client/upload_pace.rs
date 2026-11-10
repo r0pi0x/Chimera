@@ -16,13 +16,22 @@
 //! queue (the newer data wins). A mesh is drawn once its upload is done,
 //! as with Bevy's own budget.
 //!
+//! A mesh whose GPU data comes frames after its extraction (held here, or
+//! deferred by Bevy's budget) has its entities specialized again once it
+//! is in (`respecialize_late_meshes`, `LateMeshes`): Bevy's
+//! `specialize_material_meshes` skips an entity whose `RenderMesh` isn't
+//! prepared without queueing it for a retry, so such an entity was never
+//! drawn (a map swapped in from another drew almost none of its world:
+//! dm_lockdown after junk_flea or de_dust2, bloodmoney's ground; the test:
+//! cs_source_app's `heavy::map_swap_draws`).
+//!
 //! The map's `Settling` waits for the uploads (`uploads_settled`, a
 //! `MapHooks::settle` hook): nothing held and Bevy's budget not used up in
 //! two render frames in a row, so the game is entered with every map
 //! mesh and image on the GPU and lifting the cap moves nothing at once.
 
 use std::{
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -57,16 +66,23 @@ impl Plugin for UploadPacePlugin {
             app.insert_resource(state.clone());
         }
         if let Some(render) = app.get_sub_app_mut(RenderApp) {
-            render.insert_resource(state).init_resource::<HeldMeshes>().add_systems(
-                Render,
-                (
-                    pace_mesh_uploads
-                        .in_set(RenderSystems::PrepareAssets)
-                        .before(allocate_and_free_meshes)
-                        .before(prepare_assets::<RenderMesh>),
-                    report_uploads.in_set(RenderSystems::PrepareResources),
-                ),
-            );
+            render
+                .insert_resource(state)
+                .init_resource::<HeldMeshes>()
+                .init_resource::<LateMeshes>()
+                .add_systems(
+                    Render,
+                    (
+                        pace_mesh_uploads
+                            .in_set(RenderSystems::PrepareAssets)
+                            .before(allocate_and_free_meshes)
+                            .before(prepare_assets::<RenderMesh>),
+                        respecialize_late_meshes
+                            .in_set(RenderSystems::PrepareAssets)
+                            .after(prepare_assets::<RenderMesh>),
+                        report_uploads.in_set(RenderSystems::PrepareResources),
+                    ),
+                );
         }
     }
 }
@@ -122,10 +138,90 @@ pub fn mesh_bytes(mesh: &Mesh) -> usize {
 fn pace_mesh_uploads(
     mut extracted: ResMut<ExtractedAssets<RenderMesh>>,
     mut held: ResMut<HeldMeshes>,
+    mut late: ResMut<LateMeshes>,
     limiter: Res<RenderAssetBytesPerFrameLimiter>,
 ) {
     let budget = (limiter.max_bytes.is_some() || !held.is_empty()).then_some(MESH_BYTES_PER_FRAME);
     pace(&mut extracted, &mut held, budget);
+    // While uploads are capped (Bevy's budget may defer any of these) or
+    // some wait: what `respecialize_late_meshes` checks after the prepare.
+    if budget.is_some() || !late.waiting.is_empty() {
+        late.extracted.extend(extracted.extracted.iter().map(|(id, _)| *id));
+        late.extracted.extend(held.0.iter().map(|(id, _, _)| *id));
+        late.removed.extend(extracted.removed.iter().copied());
+    }
+}
+
+/// Meshes whose GPU data came later than their extraction
+/// (`respecialize_late_meshes`).
+#[derive(Resource, Default)]
+pub struct LateMeshes {
+    /// Extracted or held this frame (filled before the prepare).
+    extracted: Vec<AssetId<Mesh>>,
+    /// Removed this frame.
+    removed: Vec<AssetId<Mesh>>,
+    /// Extracted in an earlier frame and not on the GPU yet.
+    waiting: HashSet<AssetId<Mesh>>,
+}
+
+impl LateMeshes {
+    /// One frame after the prepare: the waiting meshes now on the GPU
+    /// (`ready`), which are no longer waiting; this frame's meshes not on
+    /// it yet wait from now on.
+    pub fn step(&mut self, ready: impl Fn(AssetId<Mesh>) -> bool) -> HashSet<AssetId<Mesh>> {
+        for id in self.removed.drain(..) {
+            self.waiting.remove(&id);
+        }
+        let came: HashSet<AssetId<Mesh>> = self.waiting.iter().copied().filter(|id| ready(*id)).collect();
+        self.waiting.retain(|id| !came.contains(id));
+        for id in self.extracted.drain(..) {
+            if !ready(id) {
+                self.waiting.insert(id);
+            }
+        }
+        came
+    }
+
+    /// Meshes waiting for their GPU data.
+    pub fn waiting(&self) -> usize {
+        self.waiting.len()
+    }
+}
+
+/// Entities whose mesh was not on the GPU when they were first specialized
+/// are specialized again once it is: Bevy's `specialize_material_meshes`
+/// skips an entity whose `RenderMesh` isn't prepared yet without queueing
+/// it for a retry (unlike a missing material), and its `AssetChanged<Mesh3d>`
+/// fired in the frame the mesh was added in the main world, so an entity
+/// whose mesh was held back (by `pace`, or Bevy's per-frame byte budget
+/// while a map loads) was never drawn until it left and re-entered the view
+/// or its material changed: a map swapped in from another had most of its
+/// world missing (dm_lockdown after junk_flea or de_dust2, 2026-11-10).
+#[allow(clippy::type_complexity)]
+fn respecialize_late_meshes(
+    mut late: ResMut<LateMeshes>,
+    held: Res<HeldMeshes>,
+    meshes: Res<bevy::render::render_asset::RenderAssets<RenderMesh>>,
+    instances: Res<bevy::pbr::RenderMeshInstances>,
+    mut dirty: ResMut<bevy::render::camera::DirtySpecializations>,
+) {
+    if late.extracted.is_empty() && late.waiting.is_empty() {
+        return;
+    }
+    let held: HashSet<AssetId<Mesh>> = held.0.iter().map(|(id, _, _)| *id).collect();
+    let came = late.step(|id| !held.contains(&id) && meshes.get(id).is_some());
+    if came.is_empty() {
+        return;
+    }
+    let entities: Vec<bevy::render::sync_world::MainEntity> = match &*instances {
+        bevy::pbr::RenderMeshInstances::CpuBuilding(m) => m.keys().copied().collect(),
+        bevy::pbr::RenderMeshInstances::GpuBuilding(m) => m.keys().copied().collect(),
+    };
+    for e in entities {
+        if instances.mesh_asset_id(e).is_some_and(|id| came.contains(&id)) {
+            dirty.changed_renderables.insert(e);
+        }
+    }
 }
 
 /// One frame's pacing: with a `budget`, the held meshes then this frame's
@@ -233,6 +329,26 @@ mod tests {
             all.extend(released(&e));
         }
         assert_eq!(all, vec![6, 7, 8, 9, 10]);
+    }
+
+    /// Meshes not on the GPU after their frame's prepare wait; once on it
+    /// they are reported, once; removed ones stop waiting.
+    #[test]
+    fn late_meshes_are_reported_once_they_arrive() {
+        let mut late = LateMeshes::default();
+        let on_gpu = std::cell::RefCell::new(HashSet::from([id(1)]));
+        late.extracted = vec![id(1), id(2), id(3), id(4)];
+        let ready = |i: AssetId<Mesh>| on_gpu.borrow().contains(&i);
+        assert!(late.step(ready).is_empty(), "1 came in its own frame: nothing to redo");
+        assert_eq!(late.waiting(), 3);
+        on_gpu.borrow_mut().insert(id(2));
+        late.removed = vec![id(4)];
+        assert_eq!(late.step(ready), HashSet::from([id(2)]));
+        assert_eq!(late.waiting(), 1, "3 waits; 4 was removed");
+        assert!(late.step(ready).is_empty());
+        on_gpu.borrow_mut().insert(id(3));
+        assert_eq!(late.step(ready), HashSet::from([id(3)]));
+        assert!(late.step(ready).is_empty() && late.waiting() == 0);
     }
 
     #[test]

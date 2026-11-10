@@ -12,5 +12,6 @@ mod console_commands;
 
 // Slow ones (a GPU, the game binary built): the fast tier skips `heavy::`.
 mod heavy {
+    mod map_swap_draws;
     mod offscreen;
 }
