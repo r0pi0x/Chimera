@@ -2,7 +2,9 @@
 //! "more bots also seemed to make it slower"; docs/performance.md, "Map
 //! changes that slowed the tick"): the gun game with 2, 4, 8 and 16
 //! Combat Arms bots, the tick's instructions on the thread that runs the
-//! schedules over 600 ticks of play, printed as a table (`--nocapture`);
+//! schedules over 600 ticks of play (the mean and the median tick: the
+//! fights differ from run to run, and the mean moves with a few big
+//! ticks), printed as a table (`--nocapture`);
 //! with `--features dev,trace` also the systems that grow most from the
 //! fewest bots to the most (`metrics::span_cost`). Checks only that the
 //! cost per bot stays within reach of linear: 16 bots under 12x the
@@ -76,7 +78,19 @@ fn each_bot_costs_about_the_same() {
             eprintln!("skipping: no hardware counters ({})", chimera_core::metrics::hw_status());
             return;
         };
-        sim.ticks(ticks);
+        // Each tick's own count too: the median isn't moved by the odd
+        // tick that does a large one-off job (a navigation flood, a bot's
+        // first route), which the mean is.
+        let mut each = Vec::with_capacity(ticks);
+        let mut last = a;
+        for _ in 0..ticks {
+            sim.ticks(1);
+            let now = instructions().unwrap_or(last);
+            each.push(now.saturating_sub(last));
+            last = now;
+        }
+        each.sort_unstable();
+        let median = each[ticks / 2] as f64;
         let wall = t0.elapsed().as_secs_f64() * 1e3 / ticks as f64;
         let b = instructions().unwrap_or(a);
         #[cfg(feature = "trace")]
@@ -85,13 +99,13 @@ fn each_bot_costs_about_the_same() {
             let w = sim.app.world_mut();
             w.query_filtered::<(), With<combat_arms::game::bots::CaBot>>().iter(w).count()
         };
-        rows.push((bots, n, b.saturating_sub(a) as f64 / ticks as f64, wall));
+        rows.push((bots, n, b.saturating_sub(a) as f64 / ticks as f64, median, wall));
     }
-    eprintln!("bots (in game) | instructions per tick | per bot over 2 bots | wall ms per tick (load-dependent)");
+    eprintln!("bots (in game) | instructions per tick | the median tick | per bot over 2 bots | wall ms per tick (load-dependent)");
     let base = rows[0].2;
-    for (bots, n, ins, wall) in &rows {
+    for (bots, n, ins, median, wall) in &rows {
         let per = if *bots > 2 { (ins - base) / (*bots - 2) as f64 } else { 0.0 };
-        eprintln!("{bots:4} ({n:2}) | {:8.2}M | {:6.3}M | {wall:6.2}", ins / 1e6, per / 1e6);
+        eprintln!("{bots:4} ({n:2}) | {:8.2}M | {:8.2}M | {:6.3}M | {wall:6.2}", ins / 1e6, median / 1e6, per / 1e6);
     }
     #[cfg(feature = "trace")]
     if let (Some(Some(first)), Some(Some(last))) = (costs.first(), costs.last()) {

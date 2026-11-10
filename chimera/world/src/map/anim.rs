@@ -741,7 +741,9 @@ pub struct Animator {
     /// A pose the game laid out itself (its own layering and bone
     /// controllers: Combat Arms' trackers and aim), one per bone:
     /// `pose` returns it as it is, and the sequences above are ignored.
-    pub fixed: Option<Arc<Vec<BonePose>>>,
+    /// Made when first drawn (`later::Later`): a body nobody draws (out of
+    /// view, `render::bodies::pose_bodies`) is never posed for drawing.
+    pub fixed: Option<chimera_core::later::Later<Vec<BonePose>>>,
     /// Apply the set's autoplay sequences (`Sequence::autoplay`) after the
     /// layers, at weight 1 (HL2:DM's head and spine turns: specs/hl2dm/
     /// player_models.md 7 step 5); off for games that don't ask.
@@ -942,7 +944,7 @@ mod tests {
         });
         let mut a = Animator::new(set);
         let pose = vec![(Quat::from_rotation_y(0.5), Vec3::X)];
-        a.fixed = Some(Arc::new(pose.clone()));
+        a.fixed = Some(chimera_core::later::Later::ready(pose.clone()));
         assert_eq!(a.pose(0.0), pose);
     }
 

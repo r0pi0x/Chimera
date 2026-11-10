@@ -434,7 +434,10 @@ numbers (pinned by `parity_pin_*` tests in each game).
   own game's way, converted into Chimera's shapes (boxes or spheres with
   region, priority and the body's own damage scale): CS:S from the
   model's hitbox set (regions by bone), Combat Arms its skeleton's hit
-  spheres posed every tick. Lag compensation keeps them
+  spheres, posed only when a shot asks (`LazyHitboxes`, made from that
+  tick's pose on first use: a game may hand out the shapes as a
+  `later::Later`; shots read either kind through `HitShapes`). Lag
+  compensation keeps them, unmade until a rewind needs them
   (`weapon::lagcomp::HitHistory`). A gun's rule (CS:S's nearest box
   entered, Combat Arms' client test and server walk) asks only shape
   queries (`ray_span`, `segment_passes`/`power`, `line_passes`), so it

@@ -2258,11 +2258,12 @@ docs/plans/active/sound.md.
 - **The tick and the frame, what's left (2026-11-10).** docs/performance.md,
   "Performance pass": the logic bridge, the push-away, buoyancy, Combat
   Arms' posing math and HL2:DM's per-frame searches were cut (de_dust2's
-  CS:S tick -18%, mg_lego's -50%, the party's -13 to -15%). Left, by size:
-  Combat Arms poses every character's whole skeleton every tick on servers
-  and clients whether anything asks for its hit spheres (18% of an Ultimate
-  Gun Game server's tick; pose on demand, or keep the trackers and pose
-  when a trace or the drawing asks); `sync_movers` works out what every
+  CS:S tick -18%, mg_lego's -50%, the party's -13 to -15%), and Combat
+  Arms' poses are made on demand ("Poses on demand": 16 of them a tick to
+  3.7 with 16 bots). Left, by size: Chimera's hitscan still makes every
+  boxed character's hitboxes on each ray (a broad phase first: a bound the
+  game declares with its `LazyHitboxes`, so a ray far from a body leaves
+  it unposed); `sync_movers` works out what every
   mover wants twice a tick (40% of mg_lego's tick: a change stamp from
   `LogicWorld::get_mut` would pass idle movers over); particles, steam
   and the other effects still write new mesh data every frame (the blob

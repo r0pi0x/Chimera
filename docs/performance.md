@@ -2752,9 +2752,82 @@ ticks; two runs each, within 2%):
 Left there: the pose itself (`Rig::layered`'s four trackers a node, the
 matrices turned back into rotations and translations, the hit spheres found
 by name through a lower-cased copy: `pose_of` is a sixth of `drive`), done
-for every character every tick whether anything asks for its spheres; the
+for every character every tick whether anything asks for its spheres (made
+on demand since: "Poses on demand" below); the
 ragdolls' pose record samples every Source body's animation each tick and
 a server poses its hitboxes from a second sample (`pose_sim_hitboxes`).
+
+### Poses on demand (Combat Arms' characters)
+
+What read a Combat Arms character's pose, and when:
+
+- **`characters::hitboxes`**, every tick, every character: Chimera's
+  `core::Hitboxes` from the spheres, for other games' guns. It also posed
+  the spec's skeleton (`skeleton::fallback`, a name index made per call)
+  under a modelled body only to throw it away, and read each sphere's
+  region through a lower-cased copy of its name.
+- **Shots.** Chimera's hitscan (`weapon::deliver`) and flyers test every
+  boxed character's hitboxes on each ray; Combat Arms' own rounds
+  (`weapons::Delivery::bodies`) made every living character's spheres
+  per round, though every test of them comes after a test of that
+  character's box. A bot's round reads the server's pose
+  (`server_spheres`), a player's the client's.
+- **Lag compensation** (`weapon::lagcomp::record`, a network server)
+  kept every living character's hitboxes every tick, read only by a
+  remote player's shot.
+- **The drawing**: `Animator::fixed`, every tick for every body with a
+  model; `render::bodies::pose_bodies` uses it only for bodies some
+  camera drew (others every few frames).
+- **Sockets**: the HUD's name tags (every other character every frame,
+  though most tags don't show), attached effect groups (characters
+  wearing one), third-person flashes (per shot), drops at the left foot,
+  a death's body yaw.
+
+Ragdolls and grenades don't read it (the grenades' bodies are the spec's
+skeleton; a corpse is posed by its own death animation).
+
+So the pose is made when asked (`characters::CaPose`): each tick `drive`
+keeps what it is made from (the four trackers, aim, crouch, legs' yaw,
+the worn face's and held weapon's sockets: a few hundred bytes) and the
+first reader poses it, the client's view and the server's from one
+unaimed pose as before, the same bits whenever it is made. The hitboxes
+are `core::LazyHitboxes` (`later::Later`, Chimera's made-on-first-use
+cell; shots read them and plain `Hitboxes` through `core::HitShapes`),
+lag compensation keeps them unmade until a rewind, the drawing's pose is
+a `Later` made when `pose_bodies` draws the body, Combat Arms' rounds make
+a body's spheres when the ray reaches its box, and a name tag reads the
+pose (and casts its sight ray) only when it shows. The regions are read
+without a copy. `CaPoseEveryTick` (a resource) makes everything in the
+tick, as before.
+
+`party_kit`'s `heavy::bot_cost`, 16 Combat Arms bots, the instructions a
+tick in posing (`drive`, `hitboxes`, and the poses made where asked),
+counted around them in a test build (two runs each):
+
+| | `drive` | `hitboxes` | posing where asked | together | poses made a tick |
+|---|---|---|---|---|---|
+| before (main at 259bf019) | 3.65-4.46M | 0.76-0.79M | | 4.4-5.2M | 16 |
+| `CaPoseEveryTick` | 3.47M | 0.19M | | 3.67M | 16 |
+| on demand | 0.46-0.48M | 0.05M | 0.68-0.74M | 1.18-1.27M | 3.7 |
+
+2, 4 and 8 bots: 0.14M, 0.19-0.20M and 0.50-0.69M on demand against
+0.42M, 0.77-1.01M and 1.62-1.95M every tick. About 4M of a 20-25M tick
+with 16 bots (16-18%), three quarters of it the pose; the whole tick's
+mean and median move by about as much from one run to the next (the
+fights differ), so the table counts the posing itself. What still poses
+in this match: Chimera's hitscan tests every boxed character's hitboxes
+on each ray (all sixteen on a tick with another game's shot: 1 in 18
+here), each shot's third-person flash poses its shooter, and the poses
+Combat Arms' rounds reach.
+
+Guards (`combat_arms`' `characters` tests):
+`poses_on_demand_match_poses_every_tick` (two players with a model, 300
+ticks of walking, crouching, looking and rifle fire at each other, one a
+bot: the hit spheres, the server's, the sockets, the hitboxes, the
+drawn pose and every tick's health bit for bit against
+`CaPoseEveryTick`, read every tick and every seventh) and
+`a_pose_nobody_reads_is_not_made`; `chimera_core`'s `later` tests (made
+once, from any thread).
 
 ### Searches of the map's entities every frame (HL2:DM's set pieces)
 

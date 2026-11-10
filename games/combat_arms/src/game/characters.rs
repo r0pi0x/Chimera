@@ -43,16 +43,21 @@
 //! Each tick (`FixedUpdate`, after the weapons: the spec's server runs the
 //! driver per movement frame) every living character's `CaAnim` advances
 //! by the tick and decides (a network client only its own player), then
-//! its skeleton is posed into `CaPose`: hit-sphere centres and the sockets
-//! the game uses (`NAME_socket` for the name tag, `Left_foot` for drops,
-//! `RightHand` for the weapon and the third-person flash), in the
-//! character's frame. `weapons` hits the spheres, `inventory` drops at the
-//! left foot, the HUD anchors name tags at the name socket. With a body
+//! what its skeleton is posed from goes into `CaPose`, which poses it only
+//! when something reads it (the trackers, aim and crouch of that tick: the
+//! same pose whenever it is made; `CaPoseEveryTick` makes every one in the
+//! tick, to compare): hit-sphere centres and the sockets the game uses
+//! (`NAME_socket` for the name tag, `Left_foot` for drops, `RightHand` for
+//! the weapon and the third-person flash), in the character's frame.
+//! `weapons` hits the spheres (a body's when a round reaches its box),
+//! `inventory` drops at the left foot, the HUD anchors name tags at the
+//! name socket (a tag that shows), the drawing takes the pose of a body it
+//! draws (`Animator::fixed`, made when first drawn). With a body
 //! model (`models::rig` has the selection's body file) the pose is the
 //! model's own, drawn through Chimera's body (`map::BodyName`,
 //! `Animator::fixed`) with the weapon held at `RightHand` (`map::Held`).
 //! After the pose (`hitboxes`) a Combat Arms character's spheres are also
-//! Chimera's hitboxes (`core::Hitboxes`, marked `CaHitboxes`: spheres with
+//! Chimera's hitboxes (`core::LazyHitboxes`, made when a shot asks: spheres with
 //! their region, `Node#Priority` and zone factor as the body's own scale;
 //! docs/DESIGN.md "Hits across games"), so other games' guns hit the
 //! drawn body by region.
@@ -222,7 +227,7 @@ pub mod preload;
 pub mod records;
 pub mod skeleton;
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use bevy::prelude::*;
 use bevy_replicon::prelude::*;
@@ -371,7 +376,7 @@ impl CaAnim {
     /// The seven aim nodes its family pitches and twists (8; none: no
     /// aim, 13.5): the male or female player's names.
     pub fn aim_nodes(&self) -> &'static [String] {
-        self.family.aim.map_or(&[], |a| records::table(a).aim.as_slice())
+        aim_nodes(self.family)
     }
 
     /// `posed` for the client's view and the server's (`posed(.., false)`,
@@ -388,33 +393,156 @@ impl CaAnim {
     /// The pose before the aim.
     fn unaimed(&self, crouch: f32, squash: f32) -> Posed {
         let d = &self.driver;
-        let skel = records::table(self.family.aim.unwrap_or(0));
-        match &self.rig {
-            Some(rig) => {
-                let pose = if self.death.is_some() {
-                    // A body has only its main tracker (10).
-                    (0..rig.model.nodes.len()).map(|j| d.main.pose(&rig.list, j)).collect()
-                } else {
-                    rig.layered(&d.main, &d.upper, &d.lower, &d.crouch, crouch)
-                };
-                rig.posed(&pose, crouch)
-            }
-            None => skeleton::fallback(skel, squash),
+        unaimed(self.rig.as_deref(), [&d.main, &d.upper, &d.lower, &d.crouch], self.death.is_some(), self.family, crouch, squash)
+    }
+}
+
+/// A family's aim nodes (`CaAnim::aim_nodes`).
+fn aim_nodes(family: &families::Family) -> &'static [String] {
+    family.aim.map_or(&[], |a| records::table(a).aim.as_slice())
+}
+
+/// The pose before the aim of a body on `rig` (None: the spec's skeleton)
+/// with the trackers main, upper, lower and crouch; a dead body plays
+/// only its main tracker (10).
+fn unaimed(rig: Option<&Rig>, [main, upper, lower, crouch_tracker]: [&lithtech_formats::anim::Tracker; 4], dead: bool, family: &families::Family, crouch: f32, squash: f32) -> Posed {
+    let skel = records::table(family.aim.unwrap_or(0));
+    match rig {
+        Some(rig) => {
+            let pose = if dead {
+                (0..rig.model.nodes.len()).map(|j| main.pose(&rig.list, j)).collect()
+            } else {
+                rig.layered(main, upper, lower, crouch_tracker, crouch)
+            };
+            rig.posed(&pose, crouch)
         }
+        None => skeleton::fallback(skel, squash),
+    }
+}
+
+/// What a character's pose is made from, as `drive` left it on a tick
+/// (its trackers, aim, crouch, legs' yaw, worn face and held weapon's
+/// sockets): `CaPose` poses the skeleton from it when first asked.
+#[derive(Clone)]
+struct PoseInputs {
+    rig: Option<Arc<Rig>>,
+    /// Main, upper, lower, crouch.
+    trackers: [lithtech_formats::anim::Tracker; 4],
+    dead: bool,
+    family: &'static families::Family,
+    skeleton: usize,
+    pitch: f32,
+    twist: f32,
+    crouch: f32,
+    squash: f32,
+    body_yaw: f32,
+    /// The worn face's sockets (`models::Models::face_sockets`).
+    face: Option<Arc<models::PieceSockets>>,
+    /// The held weapon's `Flash` and `Flash01` sockets: the hand node and
+    /// the place in its frame (`models::Models::held_socket`).
+    flash: [Option<(String, Vec3)>; 2],
+    /// Whether the server's pose is wanted too (`CaPose::server_spheres`).
+    server: bool,
+}
+
+impl PoseInputs {
+    /// `anim`'s now, the crouch `crouch` and squash, the legs at `body_yaw`.
+    #[allow(clippy::too_many_arguments)]
+    fn of(anim: &CaAnim, crouch: f32, squash: f32, body_yaw: f32, face: Option<Arc<models::PieceSockets>>, flash: [Option<(String, Vec3)>; 2], server: bool) -> Self {
+        let d = &anim.driver;
+        Self {
+            rig: anim.rig.clone(),
+            trackers: [d.main.clone(), d.upper.clone(), d.lower.clone(), d.crouch.clone()],
+            dead: anim.death.is_some(),
+            family: anim.family,
+            skeleton: anim.skeleton,
+            pitch: anim.pitch,
+            twist: anim.twist,
+            crouch,
+            squash,
+            body_yaw,
+            face,
+            flash,
+            server,
+        }
+    }
+
+    fn unaimed(&self) -> Posed {
+        let [a, b, c, d] = &self.trackers;
+        unaimed(self.rig.as_deref(), [a, b, c, d], self.dead, self.family, self.crouch, self.squash)
+    }
+
+    /// `posed` aimed: the client's view, or (`server`) the server's.
+    fn aimed(&self, mut posed: Posed, server: bool) -> Posed {
+        posed.aim(aim_nodes(self.family), self.pitch, self.twist, server);
+        posed
+    }
+}
+
+/// A pose made when first asked for (`CaPose`): the skeleton as the
+/// client sees it and as the server does, each posed once from one
+/// unaimed pose, and what is read off them.
+struct PoseJob {
+    inputs: Option<PoseInputs>,
+    unaimed: OnceLock<Posed>,
+    seen: OnceLock<Posed>,
+    server: OnceLock<Posed>,
+    data: OnceLock<CaPoseData>,
+    server_spheres: OnceLock<Vec<Option<Vec3>>>,
+}
+
+impl PoseJob {
+    fn new(inputs: PoseInputs) -> Self {
+        Self {
+            inputs: Some(inputs),
+            unaimed: OnceLock::new(),
+            seen: OnceLock::new(),
+            server: OnceLock::new(),
+            data: OnceLock::new(),
+            server_spheres: OnceLock::new(),
+        }
+    }
+
+    fn inputs(&self) -> &PoseInputs {
+        self.inputs.as_ref().expect("a pose made from inputs")
+    }
+
+    fn unaimed(&self) -> &Posed {
+        self.unaimed.get_or_init(|| self.inputs().unaimed())
+    }
+
+    /// The client's view of the skeleton (the drawing's, the spheres').
+    fn seen(&self) -> &Posed {
+        self.seen.get_or_init(|| self.inputs().aimed(self.unaimed().clone(), false))
+    }
+
+    fn server(&self) -> &Posed {
+        self.server.get_or_init(|| self.inputs().aimed(self.unaimed().clone(), true))
+    }
+
+    fn data(&self) -> &CaPoseData {
+        self.data.get_or_init(|| {
+            let i = self.inputs();
+            pose_data(i, self.seen())
+        })
+    }
+
+    fn server_spheres(&self) -> &[Option<Vec3>] {
+        self.server_spheres.get_or_init(|| match &self.inputs {
+            Some(i) if i.server => pose_data(i, self.server()).spheres,
+            _ => Vec::new(),
+        })
     }
 }
 
 /// The posed skeleton's results in the character's frame (right-handed,
 /// facing -Z, +X its right, feet at the origin; world units), turned by
-/// `body_yaw` in the world.
-#[derive(Component, Clone, Debug, Default)]
-pub struct CaPose {
+/// `body_yaw` in the world (`CaPose`, which makes them when first read).
+#[derive(Clone, Debug, Default)]
+pub struct CaPoseData {
     /// Per entry of the skeleton's hit table: its centre (None: the body
     /// has no node or socket of that name, or its radius is 0).
     pub spheres: Vec<Option<Vec3>>,
-    /// The same on the server's pose (no `Torso` pitch, 8): the hits the
-    /// server traces itself (bots' shots).
-    pub server_spheres: Vec<Option<Vec3>>,
     /// The skeleton (hit table) index.
     pub skeleton: usize,
     /// `NAME_socket`, `Left_foot`, `RightHand`.
@@ -434,7 +562,111 @@ pub struct CaPose {
     pub modelled: bool,
 }
 
+/// A character's posed skeleton (`CaPoseData`, which it derefs to), made
+/// from this tick's animation state only when something reads it
+/// (docs/performance.md, "Poses on demand"): the hit spheres a shot tests,
+/// the sockets an effect or name tag sits on. Each tick `drive` leaves
+/// what the pose is made of; nothing is posed for a character nobody
+/// reads. The same inputs give the same pose whenever it is made
+/// (`CaPoseEveryTick` makes them at once, the old way, to compare).
+#[derive(Component, Clone)]
+pub struct CaPose(Arc<PoseJob>);
+
+impl Default for CaPose {
+    fn default() -> Self {
+        CaPoseData::default().into()
+    }
+}
+
+impl From<CaPoseData> for CaPose {
+    /// A pose already made (tests, stand-ins).
+    fn from(data: CaPoseData) -> Self {
+        Self(Arc::new(PoseJob {
+            inputs: None,
+            unaimed: OnceLock::new(),
+            seen: OnceLock::new(),
+            server: OnceLock::new(),
+            data: OnceLock::from(data),
+            server_spheres: OnceLock::from(Vec::new()),
+        }))
+    }
+}
+
+impl std::ops::Deref for CaPose {
+    type Target = CaPoseData;
+
+    /// The pose's results, made now if nothing read them before.
+    fn deref(&self) -> &CaPoseData {
+        self.0.data()
+    }
+}
+
+impl std::fmt::Debug for CaPose {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0.data.get() {
+            Some(d) => f.debug_tuple("CaPose").field(d).finish(),
+            None => f.write_str("CaPose(<not posed>)"),
+        }
+    }
+}
+
 impl CaPose {
+    fn new(inputs: PoseInputs) -> Self {
+        Self(Arc::new(PoseJob::new(inputs)))
+    }
+
+    /// The hit spheres' centres on the server's pose (no `Torso` pitch,
+    /// 8): the hits the server traces itself (bots' shots). Empty on a
+    /// network client.
+    pub fn server_spheres(&self) -> &[Option<Vec3>] {
+        self.0.server_spheres()
+    }
+
+    /// The legs' yaw (as `CaPoseData::body_yaw`, without posing).
+    pub fn legs_yaw(&self) -> f32 {
+        match &self.0.inputs {
+            Some(i) => i.body_yaw,
+            None => self.body_yaw,
+        }
+    }
+
+    /// Whether the pose is a body model's on hit table `skeleton` (as
+    /// `modelled` and `skeleton` say, without posing).
+    pub fn modelled_on(&self, skeleton: usize) -> bool {
+        match &self.0.inputs {
+            Some(i) => i.rig.is_some() && i.skeleton == skeleton,
+            None => self.modelled && self.skeleton == skeleton,
+        }
+    }
+
+    /// Whether the pose has been made (tests, statistics).
+    pub fn is_posed(&self) -> bool {
+        self.0.data.get().is_some()
+    }
+
+    /// The client's view of the skeleton as the drawing takes it
+    /// (`Posed::locals_rh`), made when first drawn; None for a pose made
+    /// without inputs.
+    fn drawn(&self) -> Option<chimera_core::later::Later<Vec<crate::map::anim::BonePose>>> {
+        self.0.inputs.as_ref()?;
+        let job = self.0.clone();
+        Some(chimera_core::later::Later::new(move || job.seen().locals_rh()))
+    }
+
+    /// Make everything now (`CaPoseEveryTick`).
+    fn make_all(&self) {
+        let _ = self.0.data();
+        let _ = self.0.server_spheres();
+    }
+}
+
+/// Makes every character's pose, hitboxes and drawn pose in the tick, as
+/// before poses were made on demand (`CaPose`): for tests comparing the
+/// two (identical results) and for measuring what the demand saves.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct CaPoseEveryTick;
+
+impl CaPoseData {
     /// A point of the pose in the world for a character at `t` with
     /// `state`'s hull, `unit` metres per unit.
     pub fn world(&self, t: &Transform, state: &MovementState, unit: f32, p: Vec3) -> Vec3 {
@@ -914,7 +1146,7 @@ fn die(
         // Another game's character for now leaves its own body (its
         // ragdoll), not ours.
         let ours = GameIdentity::allows(identity, super::GAME);
-        let yaw = pose.map_or(intent.yaw, |p| p.body_yaw);
+        let yaw = pose.map_or(intent.yaw, |p| p.legs_yaw());
         let (forward, right) = axes(yaw);
         let kind = death::kind_of(&catalog, d.damage.kind, d.damage.weapon);
         let location = location_of(d.damage.hitgroup);
@@ -1058,8 +1290,10 @@ fn drive(
     weapons: Query<(&Weapon, Option<&WeaponState>, Option<&Magazine>, Option<&CaZoom>, Option<&CaSpread>)>,
     loaded: models::LoadedModels,
     drawn: Option<Res<CharacterModels>>,
+    every_tick: Option<Res<CaPoseEveryTick>>,
     mut commands: Commands,
 ) {
+    let every_tick = every_tick.is_some();
     let loaded = loaded.get();
     let client = role.as_deref().is_some_and(|r| *r == NetRole::Client);
     let ms = (clock.delta.as_secs_f64() * 1000.0).round() as u32;
@@ -1149,26 +1383,26 @@ fn drive(
         };
         // The worn face's sockets (its eyes), on the body's nodes.
         let face = look.and_then(|l| data.characters().worn_face(l)).and_then(|f| loaded.face_sockets(f.id));
-        let face = face.as_deref().map(Vec::as_slice);
-        let held_id = weapon.map(|w| w.0.id);
-        let posed = if client {
-            let posed = anim.posed(r, squash, false);
-            *pose = pose_of(&anim, &posed, body_yaw, squash, face, loaded, held_id);
-            posed
-        } else {
-            let (posed, server) = anim.posed_both(r, squash);
-            *pose = pose_of(&anim, &posed, body_yaw, squash, face, loaded, held_id);
-            pose.server_spheres = pose_of(&anim, &server, body_yaw, squash, face, loaded, held_id).spheres;
-            posed
-        };
+        // What the pose is made of; posed when something asks (`CaPose`).
+        let flash = held_flash(loaded, weapon.map(|w| w.0.id));
+        *pose = CaPose::new(PoseInputs::of(&anim, r, squash, body_yaw, face, flash, !client));
+        if every_tick {
+            pose.make_all();
+        }
         if let (true, Some(mut animator)) = ((anim.rig.is_some() || shown.is_some()) && ours, animator) {
             // The body still showing takes its own skeleton's pose; a body
             // is never posed by another skeleton (`pose_bodies`).
             let (locals, skeleton) = match shown.as_deref() {
-                Some(CaShownAnim(old)) => (old.posed(r, squash, false).locals_rh(), rig_skeleton(old)),
-                None => (posed.locals_rh(), rig_skeleton(&anim)),
+                Some(CaShownAnim(old)) => {
+                    let old_pose = CaPose::new(PoseInputs::of(old, r, squash, body_yaw, None, [None, None], false));
+                    (old_pose.drawn(), rig_skeleton(old))
+                }
+                None => (pose.drawn(), rig_skeleton(&anim)),
             };
-            animator.fixed = Some(Arc::new(locals));
+            if every_tick {
+                let _ = locals.as_ref().map(|l| l.get());
+            }
+            animator.fixed = locals;
             animator.skeleton = skeleton;
             if animator.main.is_none() {
                 animator.main = Some(0);
@@ -1273,7 +1507,7 @@ fn inputs(
     }
 }
 
-/// The pose's results in the character's frame.
+/// The pose's results in the character's frame, made at once (`CaPose`).
 /// `face`: the worn face piece's sockets (`models::piece_sockets`), for
 /// the eyes when the body has none of theirs. `held`: the weapon held
 /// (its ID), for its `Flash` sockets.
@@ -1286,23 +1520,36 @@ pub fn pose_of(
     models: models::Models,
     held: Option<&str>,
 ) -> CaPose {
-    let skel = records::table(anim.skeleton);
+    let inputs = PoseInputs::of(anim, 0.0, squash, body_yaw, face.map(|f| Arc::new(f.to_vec())), held_flash(models, held), false);
+    pose_data(&inputs, posed).into()
+}
+
+/// The held weapon `held`'s `Flash` and `Flash01` sockets as `models`
+/// registered them (`PoseInputs::flash`).
+fn held_flash(models: models::Models, held: Option<&str>) -> [Option<(String, Vec3)>; 2] {
+    ["Flash", "Flash01"].map(|n| models.held_socket(held?, n))
+}
+
+/// What is read off `posed` (`CaPoseData`) for a pose made of `inputs`.
+fn pose_data(inputs: &PoseInputs, posed: &Posed) -> CaPoseData {
+    let skel = records::table(inputs.skeleton);
     let body = |p: Vec3| skeleton::to_body(p, posed.feet);
-    let left_foot = if anim.rig.is_some() {
+    let modelled = inputs.rig.is_some();
+    let left_foot = if modelled {
         posed.node("Left_foot").map(|j| posed.globals[j].0)
     } else {
         // The spec's stand pose, squashed (the aim never moves the legs).
         let [x, y, z] = skel.left_foot;
-        Some(Vec3::new(x, skeleton::STAND_FEET + (y - skeleton::STAND_FEET) * squash, z))
+        Some(Vec3::new(x, skeleton::STAND_FEET + (y - skeleton::STAND_FEET) * inputs.squash, z))
     };
-    CaPose {
+    let face = inputs.face.as_deref();
+    CaPoseData {
         spheres: skel
             .spheres
             .iter()
             .map(|s| (s.radius > 0.0).then(|| posed.sphere(&s.name)).flatten().map(body))
             .collect(),
-        server_spheres: Vec::new(),
-        skeleton: anim.skeleton,
+        skeleton: inputs.skeleton,
         name_tag: posed.place("NAME_socket").map(|p| body(p.0)),
         left_foot: left_foot.map(body),
         right_hand: posed.place("RightHand").map(|p| body(p.0)),
@@ -1317,9 +1564,12 @@ pub fn pose_of(
                 })
                 .map(body)
         }),
-        flash: ["Flash", "Flash01"].map(|n| held_socket_point(models, posed, held?, n).map(body)),
-        body_yaw,
-        modelled: anim.rig.is_some(),
+        flash: [0, 1].map(|i| {
+            let (bone, at) = inputs.flash[i].as_ref()?;
+            socket_on(posed, bone, *at).map(body)
+        }),
+        body_yaw: inputs.body_yaw,
+        modelled,
     }
 }
 
@@ -1328,7 +1578,12 @@ pub fn pose_of(
 /// registered it (in `models`), on its hand node's posed place.
 pub fn held_socket_point(models: models::Models, posed: &Posed, weapon: &str, name: &str) -> Option<Vec3> {
     let (bone, at) = models.held_socket(weapon, name)?;
-    let (p, q) = *posed.globals.get(posed.node(&bone)?)?;
+    socket_on(posed, &bone, at)
+}
+
+/// A held model's socket at `at` (its frame, right-handed) on node `bone`.
+fn socket_on(posed: &Posed, bone: &str, at: Vec3) -> Option<Vec3> {
+    let (p, q) = *posed.globals.get(posed.node(bone)?)?;
     Some(p + q * Vec3::new(at.x, at.y, -at.z))
 }
 
@@ -1480,7 +1735,7 @@ fn dress_corpses(
         let mut tracker = lithtech_formats::anim::Tracker::on(entry.unwrap_or(0), false);
         tracker.set_time(&rig.list, age);
         let locals: Vec<_> = (0..rig.model.nodes.len()).map(|j| tracker.pose(&rig.list, j)).collect();
-        pose.fixed = Some(Arc::new(rig.posed(&locals, 0.0).locals_rh()));
+        pose.fixed = Some(chimera_core::later::Later::ready(rig.posed(&locals, 0.0).locals_rh()));
         pose.main = Some(0);
         entity.insert(pose);
     }
@@ -1610,66 +1865,73 @@ mod visibility_tests {
 /// `weapons::posed_geometry`), as a `core::Hitbox` sphere in the frame
 /// shots turn it by (feet at its box's bottom, the look's yaw), with its
 /// region (`HitSphere::region`), `Node#Priority` and zone factor as the
-/// body's own scale. Characters of another game's identity wear that
-/// game's body and hitboxes.
+/// body's own scale: `core::LazyHitboxes`, made from this tick's pose
+/// and place only when a shot (or lag compensation's rewind) tests them.
+/// Characters of another game's identity wear that game's body and
+/// hitboxes.
 #[allow(clippy::type_complexity)]
 fn hitboxes(
     mut characters: Query<(
         Entity,
         (&Transform, &Intent, &MovementState, Option<&avian3d::prelude::ColliderAabb>),
         (&HitSpheres, Option<&CaPose>, Option<&GameIdentity>),
-        (Option<&mut core::Hitboxes>, Has<CaHitboxes>),
+        (Option<&mut core::LazyHitboxes>, Has<core::Hitboxes>),
     )>,
+    every_tick: Option<Res<CaPoseEveryTick>>,
     mut commands: Commands,
 ) {
-    for (e, (t, intent, state, aabb), (table, pose, identity), (current, made)) in &mut characters {
+    for (e, (t, intent, state, aabb), (table, pose, identity), (current, theirs)) in &mut characters {
         if !GameIdentity::allows(identity, super::GAME) {
             // Now another game's: its body's hitboxes (or none), not ours.
-            // Checked when the command runs: that game's body may have put
-            // its own in this tick (`map::bodies::attach_hitboxes`).
-            if made {
-                // In one move (each alone is an archetype for every
-                // combination of the rest).
-                commands.entity(e).queue(|mut ent: EntityWorldMut| {
-                    let ours = ent.get::<core::Hitboxes>().is_some_and(|h| h.0.iter().all(|b| b.radius.is_some()));
-                    if ours {
-                        ent.remove::<(core::Hitboxes, CaHitboxes)>();
-                    } else {
-                        ent.remove::<CaHitboxes>();
-                    }
-                });
+            if current.is_some() {
+                commands.entity(e).remove::<core::LazyHitboxes>();
             }
             continue;
         }
         let data = table.0;
-        let Some((min, _, mut world)) = super::weapons::body_geometry(t, intent, state, aabb, data) else {
+        // The box as `weapons::body_geometry` takes it (none: no hull and
+        // no collider yet, the shapes left as they were).
+        let (min, max) = if state.hull_max != state.hull_min {
+            (t.translation + state.hull_min, t.translation + state.hull_max)
+        } else if let Some(b) = aabb {
+            (b.min, b.max)
+        } else {
             continue;
         };
-        if let Some(p) = pose.filter(|p| p.modelled && p.skeleton == data.first().map_or(0, |s| s.skeleton)) {
-            world = super::weapons::posed_geometry(t.translation, min, p.body_yaw, p, data);
+        let origin = t.translation;
+        let (look, pitch) = (intent.yaw_rotation(), intent.pitch);
+        let feet = aabb.map_or(origin, |b| origin.with_y(b.min.y));
+        let posed = pose.filter(|p| p.modelled_on(data.first().map_or(0, |s| s.skeleton))).cloned();
+        let shapes = chimera_core::later::Later::new(move || {
+            let world = match &posed {
+                Some(p) => super::weapons::posed_geometry(origin, min, p.legs_yaw(), p, data),
+                None => super::weapons::geometry_at(origin, look, min, max, data, -pitch).2,
+            };
+            let turn = look.inverse();
+            core::Hitboxes(
+                data.iter()
+                    .zip(&world)
+                    .map(|(s, (c, r))| core::Hitbox {
+                        priority: s.priority,
+                        scale: Some(s.factor),
+                        ..core::Hitbox::sphere(turn * (*c - feet), *r, s.region())
+                    })
+                    .collect(),
+            )
+        });
+        if every_tick.is_some() {
+            let _ = shapes.get();
         }
-        let feet = aabb.map_or(t.translation, |b| t.translation.with_y(b.min.y));
-        let turn = intent.yaw_rotation().inverse();
-        let shapes: Vec<core::Hitbox> = data
-            .iter()
-            .zip(&world)
-            .map(|(s, (c, r))| core::Hitbox {
-                priority: s.priority,
-                scale: Some(s.factor),
-                ..core::Hitbox::sphere(turn * (*c - feet), *r, s.region())
-            })
-            .collect();
-        match (current, made) {
-            (Some(mut h), true) => h.0 = shapes,
-            // Ours from now on: both in one move.
-            _ => {
-                commands.entity(e).insert((core::Hitboxes(shapes), CaHitboxes));
+        match current {
+            Some(mut h) => h.0 = shapes,
+            None => {
+                commands.entity(e).insert(core::LazyHitboxes(shapes));
             }
+        }
+        if theirs {
+            // Ours from now on (another game's left from before).
+            commands.entity(e).remove::<core::Hitboxes>();
         }
     }
 }
 
-/// On a character whose `core::Hitboxes` Combat Arms makes (`hitboxes`).
-#[derive(Component, Clone, Copy, Debug, Default)]
-#[component(storage = "SparseSet")]
-pub struct CaHitboxes;

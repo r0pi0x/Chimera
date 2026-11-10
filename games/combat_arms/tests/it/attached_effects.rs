@@ -35,7 +35,7 @@ use chimera_world::{
 use combat_arms::{
     game::{
         TICK_INTERVAL,
-        characters::{CaPose, CaRungLook, records::Selection},
+        characters::{CaPose, CaPoseData, CaRungLook, records::Selection},
         data::{CaData, attributes::MODELS_FILE, read_attributes},
         effects::{
             attached::{AttachedGroup, CaAttachedGroups, CaFlightLook, CaFlightSounds, FlightSound, fly_sound_key, flight_sounds, pose_of, worn_groups},
@@ -652,10 +652,10 @@ fn t114_eye_groups_by_face() {
 /// 114 (sockets): a character's groups sit at its pose's eye sockets.
 #[test]
 fn t114_eye_sockets() {
-    let pose = CaPose {
+    let pose = CaPose::from(CaPoseData {
         eyes: [Some(Vec3::new(-2.0, 64.0, -5.0)), Some(Vec3::new(2.0, 64.0, -5.0))],
         ..default()
-    };
+    });
     let state = chimera_core::core::MovementState {
         hull_min: Vec3::new(-0.3, -0.9, -0.3),
         hull_max: Vec3::new(0.3, 0.9, 0.3),
@@ -855,7 +855,7 @@ fn t58_own_launcher_group_on_the_shooter() {
     use combat_arms::game::effects::{CaFxRequest, FxKind};
     let mut sim = sim_with(None);
     let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), combat_arms::game::movement::ID);
-    sim.app.world_mut().entity_mut(me).insert(CaPose { right_hand: Some(Vec3::new(8.0, 40.0, -12.0)), ..default() });
+    sim.app.world_mut().entity_mut(me).insert(CaPose::from(CaPoseData { right_hand: Some(Vec3::new(8.0, 40.0, -12.0)), ..default() }));
     sim.ticks(2);
     let (t, state) = {
         let w = sim.app.world();
