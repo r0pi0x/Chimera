@@ -293,26 +293,9 @@ fn client_app_with(args: Args, title: &str, map: Option<chimera_world::map::MapD
                 )])
                 .collect(),
         ),
-        DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: title.into(),
-                    resolution: match (args.window, args.scale) {
-                        (Some(s), scale) => bevy::window::WindowResolution::new(s.x, s.y)
-                            .with_scale_factor_override(scale.unwrap_or(1.0)),
-                        (None, Some(scale)) => bevy::window::WindowResolution::default().with_scale_factor_override(scale),
-                        (None, None) => default(),
-                    },
-                    resizable: args.window.is_none(),
-                    ..default()
-                }),
-                ..default()
-            })
-            // Warnings and errors also show in the in-game console.
-            .set(bevy::log::LogPlugin {
-                custom_layer: chimera_client::client::console::log_layer,
-                ..default()
-            }),
+        // The window (none with `--offscreen`), the log into the console
+        // too (`client::app::default_plugins`, shared by every client).
+        chimera_client::client::app::default_plugins(&args, title),
         // Avian as Chimera runs it (rendering eases between ticks).
         chimera_world::physics_plugins(),
         PartyPlugins,

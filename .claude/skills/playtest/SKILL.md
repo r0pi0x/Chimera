@@ -20,7 +20,11 @@ Without installs, use a scenario test instead (new-scenario-test skill).
    ```
    `cargo run --features dev -- --help` lists `--window WxH`, `--views`,
    `--join`, `--scale`. On Linux the run needs a display
-   (`WAYLAND_DISPLAY`/`DISPLAY` set).
+   (`WAYLAND_DISPLAY`/`DISPLAY` set), unless it runs offscreen: add
+   `--offscreen 1920x1080` (no window system at all; `--dump <dir>
+   --dump-every <n>` saves frames, `--dump-every 1` with ffmpeg a clip,
+   and the run prints its frame times; docs/OBSERVABILITY.md section 2,
+   "Offscreen").
 3. Read the PNG and check what changed. Put before/after images in the PR,
    never in the repo.
 4. Step by step (a live run): start without `--screenshot`, find the

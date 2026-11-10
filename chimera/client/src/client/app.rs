@@ -6,11 +6,74 @@
 //! `CHIMERA_SYSTEM_DUMP=<file>` is set (`dump_systems`,
 //! docs/OBSERVABILITY.md), and runs the app.
 //!
+//! `default_plugins` is Bevy's `DefaultPlugins` as every game's client
+//! takes them: the window from the command line (`window`: `--window`,
+//! `--scale`), the log into the in-game console too, and with
+//! `--offscreen` no window system at all (no winit: Bevy's schedule
+//! runner drives the frames; `offscreen` draws the window into an image).
+//!
 //! The build's version stamp, the other piece every app shares, is a
 //! build script's: chimera/core/build_stamp.rs, which each app's build.rs
 //! includes.
 
 use bevy::{ecs::schedule::SingleThreadedExecutor, prelude::*};
+
+/// Bevy's `DefaultPlugins` as a game's client takes them: the primary
+/// window titled `title` (`window`), warnings and errors in the in-game
+/// console too, and with `--offscreen` no winit (nothing opens a window or
+/// needs a display) and Bevy's schedule runner looping frames as fast as
+/// they come (`fps_max` still spaces them); the window entity stays, so
+/// everything that sizes itself by it works, and `offscreen` gives the
+/// renderer an image in place of its surface.
+pub fn default_plugins(args: &super::Args, title: &str) -> bevy::app::PluginGroupBuilder {
+    let group = DefaultPlugins
+        .set(WindowPlugin {
+            primary_window: Some(window(args, title)),
+            ..default()
+        })
+        .set(bevy::log::LogPlugin {
+            custom_layer: super::console::log_layer,
+            ..default()
+        });
+    match args.offscreen {
+        Some(_) => group
+            .disable::<bevy::winit::WinitPlugin>()
+            .add(bevy::app::ScheduleRunnerPlugin::run_loop(std::time::Duration::ZERO)),
+        None => group,
+    }
+}
+
+/// The primary window from the command line: `--window` (physical pixels
+/// whatever the display's scaling, a fixed size: tiling window managers
+/// float such windows instead of resizing them), `--scale` (as a display
+/// scaled that much), `--offscreen` (that size at scale 1, or `--scale`).
+pub fn window(args: &super::Args, title: &str) -> Window {
+    let fixed = args.offscreen.or(args.window);
+    Window {
+        title: title.into(),
+        resolution: match (fixed, args.scale) {
+            (Some(s), scale) => {
+                bevy::window::WindowResolution::new(s.x, s.y).with_scale_factor_override(scale.unwrap_or(1.0))
+            }
+            (None, Some(scale)) => bevy::window::WindowResolution::default().with_scale_factor_override(scale),
+            (None, None) => default(),
+        },
+        resizable: fixed.is_none(),
+        resize_constraints: fixed
+            .map(|s| {
+                // In logical pixels.
+                let s = s.as_vec2() / args.scale.unwrap_or(1.0);
+                bevy::window::WindowResizeConstraints {
+                    min_width: s.x,
+                    min_height: s.y,
+                    max_width: s.x,
+                    max_height: s.y,
+                }
+            })
+            .unwrap_or_default(),
+        ..default()
+    }
+}
 
 /// Run a game's app as its binary does: the executors
 /// (`single_threaded_schedules`, unless `CHIMERA_EXECUTOR=multi`), then

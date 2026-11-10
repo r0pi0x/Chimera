@@ -63,43 +63,9 @@ fn main() {
         chimera_present::assets::InstallSourcesPlugin(vec![chimera_present::assets::InstallSource::of(
             &cs_source_app::games::cs_source::INFO,
         )]),
-        DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: Some(Window {
-                    title: "Counter-Strike Source".into(),
-                    // Physical pixels whatever the display's scaling.
-                    // (`--scale`: as a display scaled that much.)
-                    resolution: match (args.window, args.scale) {
-                        (Some(s), scale) => bevy::window::WindowResolution::new(s.x, s.y)
-                            .with_scale_factor_override(scale.unwrap_or(1.0)),
-                        (None, Some(scale)) => bevy::window::WindowResolution::default().with_scale_factor_override(scale),
-                        (None, None) => default(),
-                    },
-                    // A fixed size: tiling window managers float such
-                    // windows instead of resizing them.
-                    resizable: args.window.is_none(),
-                    resize_constraints: args
-                        .window
-                        .map(|s| {
-                            // In logical pixels.
-                            let s = s.as_vec2() / args.scale.unwrap_or(1.0);
-                            bevy::window::WindowResizeConstraints {
-                                min_width: s.x,
-                                min_height: s.y,
-                                max_width: s.x,
-                                max_height: s.y,
-                            }
-                        })
-                        .unwrap_or_default(),
-                    ..default()
-                }),
-                ..default()
-            })
-            // Warnings and errors also show in the in-game console.
-            .set(bevy::log::LogPlugin {
-                custom_layer: client::console::log_layer,
-                ..default()
-            }),
+        // The window (none with `--offscreen`), the log into the console
+        // too (`client::app::default_plugins`, shared by every client).
+        client::app::default_plugins(&args, "Counter-Strike Source"),
         // Avian as Chimera runs it: rendering eases between ticks with
         // `map::interp` (characters' eyes and looks too).
         chimera_world::physics_plugins(),

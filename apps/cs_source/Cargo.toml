@@ -56,6 +56,10 @@ test = false
 doc = false
 required-features = ["present"]
 
+# The offscreen test reads the PNGs the game saved (tests/it/heavy/offscreen.rs).
+[dev-dependencies]
+image.workspace = true
+
 [features]
 default = ["present"]
 
