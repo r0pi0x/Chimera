@@ -551,6 +551,96 @@ fn shoot_boxes(bullet: crate::stack::weapon::BulletTarget) -> f32 {
     (1.0 - health(&sim, target)) * 100.0
 }
 
+/// Chimera's broad phase (docs/performance.md, "A broad phase for the
+/// hitscan"): a body whose hitboxes are made on demand with a bound
+/// (`core::LazyHitboxes`, `core::HitBound`) is left unmade by a shot whose
+/// ray can't reach the bound, and a shot that reaches it hits exactly as
+/// the same shapes ready (`core::Hitboxes`): the same damage, region and
+/// order of hits, while a second body 3 m to the side has its bound
+/// tested on every ray and its shapes never made.
+#[test]
+fn a_far_ray_leaves_a_body_unmade_and_a_near_one_hits_as_before() {
+    use crate::stack::core::{BodyRegion, HitBound, Hitbox, Hitboxes, LazyHitboxes, RegionHit};
+    use chimera_core::later::Later;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    };
+    #[derive(Resource, Default)]
+    struct Regions(Vec<(Entity, BodyRegion)>);
+    fn collect(mut hits: MessageReader<RegionHit>, mut out: ResMut<Regions>) {
+        out.0.extend(hits.read().map(|h| (h.target, h.region)));
+    }
+    let shapes = || {
+        Hitboxes(vec![
+            Hitbox::cuboid(Vec3::new(0.0, 1.3, 0.1), Vec3::new(0.15, 0.15, 0.05), Quat::IDENTITY, BodyRegion::Chest),
+            Hitbox::sphere(Vec3::new(0.0, 1.65, 0.0), 0.12, BodyRegion::Head),
+            Hitbox::cuboid(Vec3::new(0.35, 1.2, 0.0), Vec3::new(0.05, 0.2, 0.05), Quat::from_rotation_z(0.4), BodyRegion::RightUpperArm),
+        ])
+    };
+    // Each target's shapes: ready, or made on demand with a bound
+    // (counting how often each is made).
+    let run = |lazy: bool, aim: Vec3| {
+        let mut sim = sim();
+        sim.app.init_resource::<Regions>().add_systems(Update, collect);
+        let shooter = sim.spawn_character(greybox::SPAWNS[0], placeholder::ID);
+        let near = sim.spawn_character(greybox::SPAWNS[0] - Vec3::Z * 6.0, placeholder::ID);
+        let aside = sim.spawn_character(greybox::SPAWNS[0] - Vec3::Z * 6.0 + Vec3::X * 3.0, placeholder::ID);
+        let made = Arc::new(AtomicU32::new(0));
+        let bounds = Arc::new(AtomicU32::new(0));
+        let keep = |e: Entity, sim: &mut Sim| {
+            if lazy {
+                let (m, b) = (made.clone(), bounds.clone());
+                let all = shapes().bounds().unwrap();
+                let cell = LazyHitboxes(
+                    Later::new(move || {
+                        m.fetch_add(1, Ordering::Relaxed);
+                        shapes()
+                    }),
+                    Some(Later::new(move || {
+                        b.fetch_add(1, Ordering::Relaxed);
+                        HitBound { min: all.0, max: all.1 }
+                    })),
+                );
+                sim.app.world_mut().entity_mut(e).insert(cell);
+            } else {
+                sim.app.world_mut().entity_mut(e).insert(shapes());
+            }
+        };
+        for e in [near, aside] {
+            sim.intent(e).yaw = 0.0;
+        }
+        sim.seconds(1.1);
+        keep(near, &mut sim);
+        keep(aside, &mut sim);
+        let at = sim.position(near) + aim;
+        aim_at(&mut sim, shooter, at);
+        sim.intent(shooter).fire = true;
+        sim.ticks(1);
+        sim.intent(shooter).fire = false;
+        sim.ticks(1);
+        let lost = (lost_hp(&sim, near), lost_hp(&sim, aside));
+        let regions = std::mem::take(&mut sim.app.world_mut().resource_mut::<Regions>().0);
+        let regions: Vec<(bool, BodyRegion)> = regions.into_iter().map(|(t, r)| (t == near, r)).collect();
+        (lost, regions, made.load(Ordering::Relaxed), bounds.load(Ordering::Relaxed))
+    };
+    // The chest, the head, the arm out of the hull: hit as before, the
+    // near body's shapes made, the one aside's never.
+    for aim in [Vec3::new(0.0, 1.3 - 0.9, 0.0), Vec3::new(0.0, 1.65 - 0.9, 0.0), Vec3::new(0.35, 1.2 - 0.9, 0.0)] {
+        let (ready, ready_regions, ..) = run(false, aim);
+        let (lazy, lazy_regions, made, bounds) = run(true, aim);
+        assert_eq!(ready, lazy, "the same damage aiming at {aim}");
+        assert_eq!(ready_regions, lazy_regions, "the same hits in the same order aiming at {aim}");
+        assert!(ready.0 > 0 && !ready_regions.is_empty(), "the shot hits: {ready:?}");
+        assert_eq!(made, 1, "the near body made, the one aside never");
+        assert!(bounds >= 2, "both bounds tested: {bounds}");
+    }
+    // Wide of both: nothing made, nothing hit.
+    let (lost, regions, made, bounds) = run(true, Vec3::new(1.5, 0.4, 0.0));
+    assert_eq!((lost, regions.len(), made), ((0, 0), 0, 0), "a far ray poses nothing");
+    assert!(bounds >= 2, "{bounds}");
+}
+
 #[test]
 fn a_target_s_own_hitgroup_multipliers_replace_the_weapon_s() {
     // The front (chest) box only: 36 x 0.98^(315/500) = 35.55 x the

@@ -20,7 +20,8 @@
 //! (boxes or spheres with their region, and the shape queries every gun's
 //! rule uses: docs/DESIGN.md "Hits across games"; `LazyHitboxes`, a
 //! game's made only when a shot asks, read with `Hitboxes` through
-//! `HitShapes`), physics layers (`RAGDOLL_LAYER`, also prop pieces;
+//! `HitShapes`, with the box the game says holds them whatever they turn
+//! out to be (`HitBound`: a ray that misses it leaves them unmade), physics layers (`RAGDOLL_LAYER`, also prop pieces;
 //! `ITEM_LAYER` for loose items, which slide on their own copy of the
 //! displacement mesh with its internal edges fixed (`ITEM_GROUND_LAYER`);
 //! gameplay queries mask with `SOLID_LAYERS`, characters' bodies and movement
@@ -1100,9 +1101,63 @@ pub struct Hitboxes(pub Vec<Hitbox>);
 /// on demand"). Read both kinds through `HitShapes`; where both are on a
 /// character, these are the ones that count (the game that set them owns
 /// its body).
+///
+/// The second field, if the game can say it, is a box that holds every
+/// shape whatever the pose turns out to be (`HitBound`, itself made when
+/// first asked: it must cost far less than the shapes). A shot tests it
+/// first (`HitShapes::may_meet`) and makes the shapes only when its ray
+/// can reach them: a ray far from a body leaves it unposed
+/// (docs/performance.md, "A broad phase for the hitscan").
 #[derive(Component, Clone, Debug, Default)]
 #[component(storage = "SparseSet")]
-pub struct LazyHitboxes(pub crate::later::Later<Hitboxes>);
+pub struct LazyHitboxes(pub crate::later::Later<Hitboxes>, pub Option<crate::later::Later<HitBound>>);
+
+/// An axis-aligned box in a character's hitbox space (its `Hitbox`es'
+/// own: feet at the origin, turned by its look) that holds every shape of
+/// its `LazyHitboxes` (`LazyHitboxes`' second field). A game declares it
+/// conservatively: a shape outside it would be missed by every ray that
+/// misses the box.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HitBound {
+    pub min: Vec3,
+    pub max: Vec3,
+}
+
+impl HitBound {
+    /// Whether a ray (hitbox space, from `origin` along the about-unit
+    /// `dir`) may enter a shape inside the box, grown by `grow` (a box
+    /// trace's, as the shapes are), nearer than `limit`: false only when it
+    /// surely can't, so a shot that passes the shapes over when this says
+    /// no finds what testing them would have found. The box is widened by
+    /// a little for rounding (a millimetre, more for a far origin); one
+    /// that isn't finite never rules anything out.
+    pub fn may_meet(&self, origin: Vec3, dir: Vec3, limit: f32, grow: f32) -> bool {
+        if !(self.min.is_finite() && self.max.is_finite()) {
+            return true;
+        }
+        let slack = 1e-3 + 1e-5 * origin.abs().max_element();
+        let half = (self.max - self.min) / 2.0 + Vec3::splat(grow.max(0.0) + slack);
+        Hitbox::cuboid((self.min + self.max) / 2.0, half.max(Vec3::ZERO), Quat::IDENTITY, BodyRegion::Generic)
+            .ray_span(origin, dir)
+            .is_some_and(|(enter, _)| enter < limit + slack)
+    }
+
+    /// The smallest box holding both.
+    pub fn union(self, other: HitBound) -> HitBound {
+        HitBound {
+            min: self.min.min(other.min),
+            max: self.max.max(other.max),
+        }
+    }
+
+    /// Whether every shape of `boxes` is inside (tests).
+    pub fn holds(&self, boxes: &Hitboxes) -> bool {
+        boxes.0.iter().all(|b| {
+            let (lo, hi) = b.bounds();
+            lo.cmpge(self.min).all() && hi.cmple(self.max).all()
+        })
+    }
+}
 
 /// A character's hitboxes whichever way its game keeps them (`Hitboxes`
 /// or `LazyHitboxes`), for the shots' queries.
@@ -1122,6 +1177,18 @@ impl<'w> HitShapesItem<'w, '_> {
     /// Whether it has hitboxes (without making them).
     pub fn is_some(&self) -> bool {
         self.eager.is_some() || self.lazy.is_some()
+    }
+
+    /// Whether a ray (hitbox space) may enter one of its shapes, grown by
+    /// `grow`, nearer than `limit`, as far as its game's bound
+    /// (`HitBound::may_meet`) can tell without making them: always true
+    /// for ready `Hitboxes`, for lazy ones already made and for a game
+    /// that declares no bound.
+    pub fn may_meet(&self, origin: Vec3, dir: Vec3, limit: f32, grow: f32) -> bool {
+        match self.lazy {
+            Some(LazyHitboxes(shapes, Some(bound))) if !shapes.is_made() => bound.get().may_meet(origin, dir, limit, grow),
+            _ => true,
+        }
     }
 }
 

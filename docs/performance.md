@@ -2743,8 +2743,8 @@ to 4.9M, mg_lego 8.4M to 5.4M.) What is left of the bridge on mg_lego (about
 40% of its tick) is `sync_movers` working out what each of its thousands of
 movers wants, twice a tick (its pose's rotation, its colour, its panes), and
 the logic's own mover step; passing those over needs the logic to say which
-entities changed since the last phase (a stamp set by `get_mut`), which
-nothing tracks yet.
+entities changed since the last phase (a stamp set by `get_mut`): done
+since ("A change stamp for the movers" below).
 
 Guards: `source_logic`'s `scans_by_class_match_full_scans` (every class's
 scan against a filtered full scan, through kills, a flame made at run time
@@ -2900,7 +2900,8 @@ mean and median move by about as much from one run to the next (the
 fights differ), so the table counts the posing itself. What still poses
 in this match: Chimera's hitscan tests every boxed character's hitboxes
 on each ray (all sixteen on a tick with another game's shot: 1 in 18
-here), each shot's third-person flash poses its shooter, and the poses
+here; since then only those a ray comes near: "A broad phase for the
+hitscan"), each shot's third-person flash poses its shooter, and the poses
 Combat Arms' rounds reach.
 
 Guards (`combat_arms`' `characters` tests):
@@ -2994,6 +2995,138 @@ day before:
 
 A quarter off every map. `heavy::rung_frames`' worst frames (a bot walking
 the ladder on de_dust2, ticks included): 8.1-17.7M, were 12.5-27.7M.
+
+## The tick's two largest leftovers (2026-11-10)
+
+The two largest items of the backlog's "The tick and the frame, what's
+left": Chimera's hitscan posing every Combat Arms body on each ray, and
+`sync_movers` working out every mover's wants twice a tick. Measured on
+this branch before and after, after main's new build settings (dev LTO
+off, split debug info: the test build's counts are higher than the
+older tables above, so compare within this section only).
+
+### A broad phase for the hitscan
+
+Chimera's hitscan (`weapon::deliver`'s `trace`) tested every boxed
+character's hitboxes on each ray, so every Combat Arms body's
+`core::LazyHitboxes` were made (its pose with them) on every tick with
+another game's shot. A game now declares, beside the lazy hitboxes, a box
+that holds them whatever the pose turns out to be (`core::HitBound`,
+itself made on first use: `LazyHitboxes`' second field); the trace tests
+the ray against it first, with the same limit as the shapes (what it hit
+so far) and the same growth for a box trace, and makes the shapes only
+when the ray can enter it (`HitShapes::may_meet`). A shape inside the box
+can't be entered by a ray that misses the box, so the hits, their order
+and the damage are the same; the box is widened by a millimetre (more for
+a far origin) for rounding. Characters rewound by lag compensation and
+flyers' hitbox tests are as before.
+
+Combat Arms' bound (`characters::hit_bound`): each sphere's centre stays
+in a ball around its root's place (the root's translation, known
+exactly) as wide as the translations' lengths from there down to its node
+add up to (`skeleton::Rig::reach`; for the spec's skeleton
+`skeleton::FallbackReach`): every local matrix is a rotation and a
+translation, and the aim turns whole subtrees about one of their nodes,
+which keeps every node's distance from its parent. The translations are
+the pose's own (`Tracker::position`, `blend_layer_position`: no rotation
+sampled), for the spheres' nodes and their ancestors only: 18-20k
+instructions a call against 135-154k for the pose it stands for
+(`heavy::characters::reach_holds_every_node_of_the_install_s_poses`, a
+test build). It is loose: 3-4.5 m across a standing soldier (the head's
+ball is 83 units, 1.5 m, around the feet; the hands' 122), so a ray within
+a couple of metres of a body still poses it.
+
+`party_kit`'s `heavy::bot_cost` now also counts the poses and hitbox sets
+the ticks made (kept from each tick and read after the next: shots read
+the last tick's), and `CHIMERA_BOT_COST_GUNS=cs_source` puts every bot on
+the ladder's first CS:S gun (the default ladder starts on one already, so
+the two runs are much alike). Instructions a tick on the schedules'
+thread, 600 ticks, mean (the fights differ from run to run by more than
+the change: 16 bots ran 23-29M before it on the same build), and the
+hitbox sets made a tick:
+
+| bots | before: mean | hitbox sets a tick | after: mean | hitbox sets a tick |
+|---|---|---|---|---|
+| 2 | 5.46M / 5.48M | 0.00 | 5.41M / 5.49M | 0.00 |
+| 4 | 9.06M / 11.39M | 0.00 | 9.22M / 12.93M | 0.00 |
+| 8 | 15.78M / 18.96M | 0.03 | 13.40M / 17.86M | 0.00 |
+| 16 | 23.35M / 23.48M | 0.16 | 21.12M / 26.22M | 0.02 |
+| 2, CS:S guns | 5.37M / 5.33M | 0.00 | 5.38M / 5.35M | 0.00 |
+| 16, CS:S guns | 19.76M / 17.94M | 0.12 | 20.73M / 17.89M | 0.02 |
+
+So seven in eight of the hitbox sets this match made are no longer made
+(each a pose and its spheres, 135k+ instructions, for 18k for a bound),
+some 15k instructions a tick with 16 bots: well under the run-to-run
+spread. Shots at another game's bodies are rare in these 600 ticks (a
+tick with one in some hundred); the saving is per ray, so it grows with
+the shooting. The poses made a tick (now counted whichever skeleton was
+posed, the client's view or the server's for bots' rounds) are 0.7, 0.07,
+1.3 and 3.5 with 2, 4, 8 and 16 bots: Combat Arms' own rounds, which test
+a body's box first.
+
+CS:S's bodies keep ready `Hitboxes` (posed each tick on the server) and
+declare no bound: the path is the same for them, so `perfgate`'s de_dust2
+doesn't move (10.75G and 10.72G for 2,000 ticks before, 10.76G and 10.71G
+after).
+
+Guards: `cs_source`'s `weapons::a_far_ray_leaves_a_body_unmade_and_a_near_one_hits_as_before`
+(a chest, a head and an arm out of the hull hit with lazy, bounded shapes
+as with ready ones: the same damage and regions in the same order; the
+body aside never made, a wide shot making nothing); `party_kit`'s
+`cross_game::a_cs_source_round_poses_only_the_combat_arms_bodies_it_passes`
+(a CS:S round at a Combat Arms head: that body posed, one 3 m aside
+not); `combat_arms`' `characters::the_hit_bound_holds_every_sphere` (300
+ticks of a duel, a body with a model and one on the spec's skeleton) and
+`heavy::characters::reach_holds_every_node_of_the_install_s_poses` (the
+install's bodies, a spread of their animations layered, crossing, looping,
+crouched, aimed and dead: 0.9M nodes inside their bounds);
+`lithtech_formats`' `anim::positions_are_the_poses_translations`.
+
+### A change stamp for the movers
+
+`sync_movers` worked out each mover's wants (its pose's rotation, its
+colour, its panes) every phase and then looked at every mover's node
+through a kept query to find, almost always, nothing to write. Now:
+
+- Every slot of the logic world carries a change stamp, set whenever its
+  entity may change (`LogicWorld::get_mut`, a spawn, a round restart's
+  copy); `mark` and `changed_since` say which entities may differ from
+  when a reader last looked. A mover's entity-derived wants (`MoverLook`)
+  are kept between phases and worked out again only when its entity is
+  stamped.
+- A mover whose node read as wanted at the last phase (nothing written)
+  is passed over without a look while nothing its wants or the node's
+  test depend on changed: its entity, whether it rides a physics body
+  (asked every phase: it depends on other entities), its brushes' count,
+  its node's components (the change ticks since the last phase's writes:
+  a filtered query, `MoverViewChanged`, with the world's last change tick
+  set to the tick taken after the writes) and its archetype (a component
+  added or taken away). Nodes two movers share are written every phase,
+  as before. The rest are tested one by one through the kept query.
+
+On mg_lego_multigames_v2, 767 movers, idle: some 500 of 767,000 mover
+phases saw a stamped entity. `perfgate` (a playtest build, 2,000 ticks,
+two runs each):
+
+| instructions for 2,000 ticks | mg_lego_multigames_v2 | median tick | de_dust2 |
+|---|---|---|---|
+| before | 8.84G / 8.75G | 4.27M / 4.22M | 10.75G / 10.72G |
+| the wants kept by the stamp | 7.95G / 7.95G | 3.82M / 3.40M | 10.71G / 10.73G |
+| and settled movers passed over | 6.71G / 6.73G (-24%) | 3.27M / 3.25M | 10.76G / 10.71G |
+
+(With the wants kept, a phase of `sync_movers` on mg_lego was 42k
+instructions to find the nodes, 217k for the wants, 250k for the walk over
+the nodes and 28k for the writes: the walk is what the second step
+passes over.) `map_logic::idle_entities_cost_a_tick_little` now prints
+7.0M instructions a tick with the skip against 13.6M writing every node
+through (a test build).
+
+Guards: `cs_source`'s `map_logic::skipping_unchanged_nodes_changes_nothing`
+(every node the same after each of 260 ticks with and without the skips,
+`SyncEveryNode` turning both off; now also with idle movers' nodes changed
+from outside: a place, a visibility, the brushes taken away, a collider
+switched off, a tint, each put back as before) and the other map-logic
+tests.
 
 ## Render performance (2026-11-10)
 

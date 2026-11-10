@@ -2268,12 +2268,15 @@ docs/plans/active/sound.md.
   Arms' posing math and HL2:DM's per-frame searches were cut (de_dust2's
   CS:S tick -18%, mg_lego's -50%, the party's -13 to -15%), and Combat
   Arms' poses are made on demand ("Poses on demand": 16 of them a tick to
-  3.7 with 16 bots). Left, by size: Chimera's hitscan still makes every
-  boxed character's hitboxes on each ray (a broad phase first: a bound the
-  game declares with its `LazyHitboxes`, so a ray far from a body leaves
-  it unposed); `sync_movers` works out what every
-  mover wants twice a tick (40% of mg_lego's tick: a change stamp from
-  `LogicWorld::get_mut` would pass idle movers over); particles, steam
+  3.7 with 16 bots). Since done: Chimera's hitscan tests a bound each
+  game may declare with its `LazyHitboxes` first, so a ray far from a
+  Combat Arms body leaves it unposed ("A broad phase for the hitscan":
+  hitbox sets made 0.12-0.16 a tick to 0.02 with 16 bots; the bound is
+  loose, 3-4.5 m across a soldier: posing the root's first nodes exactly
+  would tighten it), and `sync_movers` passes over idle movers by a
+  change stamp from `LogicWorld::get_mut` and their nodes' change ticks
+  ("A change stamp for the movers": mg_lego's tick -24%). Left, by size:
+  the logic's own mover step and the other passes on mg_lego; particles, steam
   and the other effects still write new mesh data every frame (the blob
   shadows', moving prop shadows', dust's, probe light's and faces' per-frame
   changes are done: docs/performance.md, "Render performance"); `NavMesh::area_at` walks every area (2% of a tick

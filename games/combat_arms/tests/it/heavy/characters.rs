@@ -654,3 +654,99 @@ fn thrown_grenades_draw_their_projectile_model() {
         assert!((1.6..2.4).contains(&ratio), "{key}: {ratio} x the held model");
     }
 }
+
+/// The broad phase's bound (`Rig::reach`; docs/performance.md, "A broad
+/// phase for the hitscan": a ball around the root) holds every node of the install's bodies in
+/// every kind of pose: each of a spread of the library's animations as
+/// the main tracker with three others layered (some mid-transition),
+/// through a loop's wrap, standing, half and fully crouched, aimed up and
+/// down, twisted, the server's aim, and dead (the main tracker alone).
+/// Prints how far the furthest node got against its bound.
+#[test]
+fn reach_holds_every_node_of_the_install_s_poses() {
+    for female in [false, true] {
+        let Some(rig) = load(female) else { return };
+        let aim = &records::builtin().skeleton(if female { 1 } else { 0 }).aim;
+        let n = rig.list.entries.len();
+        let (mut checked, mut tightest, mut reach_max) = (0usize, 0f32, 0f32);
+        for e in (0..n).step_by((n / 150).max(1)) {
+            let mut t = [e, (e * 7 + 3) % n, (e * 13 + 5) % n, (e * 3 + 1) % n].map(|i| Tracker::on(i, true));
+            for step in 0..12u32 {
+                for (k, tr) in t.iter_mut().enumerate() {
+                    if step == 5 && k == 1 {
+                        tr.start((e + 11) % n);
+                    }
+                    tr.update(&rig.list, 97 + step * 211 + k as u32 * 37, &mut |_| {});
+                }
+                for (r, pitch, twist, server, dead) in [
+                    (0.0, 0.0, 0.0, false, false),
+                    (0.5, 40f32, -30f32, false, false),
+                    (1.0, -45.0, 45.0, true, false),
+                    (0.0, 20.0, 10.0, false, true),
+                ] {
+                    let [main, upper, lower, crouch] = &t;
+                    let pose = if dead {
+                        (0..rig.model.nodes.len()).map(|j| main.pose(&rig.list, j)).collect()
+                    } else {
+                        rig.layered(main, upper, lower, crouch, r)
+                    };
+                    let mut posed = rig.posed(&pose, r);
+                    posed.aim(aim, pitch.to_radians(), twist.to_radians(), server);
+                    let reach = rig.reach([main, upper, lower, crouch], dead, r);
+                    let names = records::builtin().skeleton(if female { 1 } else { 0 }).spheres.iter().map(|s| s.name.as_str());
+                    let needed = rig.needed_for(names);
+                    let some = rig.reach_of([main, upper, lower, crouch], dead, r, Some(&needed));
+                    for (j, n) in needed.iter().enumerate() {
+                        if *n {
+                            assert_eq!(some[j], reach[j], "the needed nodes' bounds as all nodes'");
+                        }
+                    }
+                    for (j, (p, _)) in posed.globals.iter().enumerate() {
+                        let (anchor, radius) = reach[j];
+                        let d = p.distance(anchor);
+                        assert!(
+                            d <= radius * (1.0 + 1e-4) + 0.01,
+                            "node {} {d} from its root, past its bound {radius} (entry {e}, step {step}, r {r}, dead {dead})",
+                            rig.model.nodes[j].name,
+                        );
+                        if radius > 1.0 {
+                            tightest = tightest.max(d / radius);
+                        }
+                        reach_max = reach_max.max(radius);
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        let stand = ["baseAnim", "URFRAmS", "LST", "LC"].map(|n| on(&rig, n));
+        // What each costs (instructions on this thread, a test build):
+        // the bound against the pose it stands for.
+        let mut counters = chimera_core::metrics::ThreadCounters::current();
+        let mut count = |f: &mut dyn FnMut()| {
+            let a = counters.read().hw.map(|h| h.instructions);
+            for _ in 0..100 {
+                f();
+            }
+            let b = counters.read().hw.map(|h| h.instructions);
+            a.zip(b).map(|(a, b)| (b - a) / 100)
+        };
+        let [m, u, l, c] = &stand;
+        let names: Vec<&str> = records::builtin().skeleton(if female { 1 } else { 0 }).spheres.iter().map(|s| s.name.as_str()).collect();
+        let needed = rig.needed_for(names.iter().copied());
+        let bound = count(&mut || {
+            std::hint::black_box(rig.reach_of([m, u, l, c], false, 0.0, Some(&needed)));
+        });
+        let pose = count(&mut || {
+            let mut p = rig.posed(&rig.layered(m, u, l, c, 0.0), 0.0);
+            p.aim(aim, 0.2, 0.1, false);
+            std::hint::black_box(p);
+        });
+        eprintln!("instructions a call: the bound {bound:?}, the pose {pose:?}");
+        let head = rig.shape.node("Head").map(|j| rig.reach([&stand[0], &stand[1], &stand[2], &stand[3]], false, 0.0)[j].1);
+        eprintln!(
+            "female {female}: {checked} nodes checked, the furthest at {:.0}% of its bound; the largest bound {reach_max:.1} units, the head's {head:?}",
+            tightest * 100.0
+        );
+    }
+}
+

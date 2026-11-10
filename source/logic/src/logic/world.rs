@@ -14,7 +14,11 @@
 //! passes ask for the entities of their classes (`ids_of` with
 //! `classes::kinds`' masks: each class's slots are kept in a list), not for
 //! every entity (`ids`): a map has thousands, and some forty passes a tick
-//! each read them all (docs/performance.md, "Performance pass").
+//! each read them all (docs/performance.md, "Performance pass"). Every
+//! slot carries a change stamp, set whenever its entity may change
+//! (`get_mut`, a spawn, a round restart's copy): `mark` and `changed_since`
+//! tell a reader which entities may differ from when it last looked (the
+//! bridge passes idle movers over so: "A change stamp for the movers").
 //!
 //! Queue delays are whole ticks, ceil(d/dt − 1e-4), and a killed entity
 //! takes no more inputs, even in the tick it was killed in (both measured
@@ -659,6 +663,11 @@ pub struct LogicWorld {
     /// its class set (`check_kinds` in debug builds).
     kinds: Vec<u8>,
     by_kind: Vec<Vec<u32>>,
+    /// Each slot's change stamp: `clock` when its entity was last handed
+    /// out to change (`get_mut`) or put in its slot (`touch`).
+    stamps: Vec<u64>,
+    /// What a stamp set now gets; `mark` moves it on.
+    clock: u64,
     queue: VecDeque<Event>,
     /// Current tick; 0 is the activation tick.
     pub tick: i64,
@@ -785,6 +794,8 @@ impl LogicWorld {
             slots: Vec::new(),
             kinds: Vec::new(),
             by_kind: vec![Vec::new(); 64],
+            stamps: Vec::new(),
+            clock: 1,
             queue: VecDeque::new(),
             tick: 0,
             dt,
@@ -866,6 +877,9 @@ impl LogicWorld {
     /// they don't resolve).
     pub fn round_restart(&mut self, entities: &[crate::map::MapEntity]) -> Vec<EntId> {
         let mut fresh = LogicWorld::new(self.dt);
+        // Stamps go on from this world's (every slot of the new one is
+        // stamped after any mark taken of this one).
+        fresh.clock = self.clock + 1;
         fresh.tick = self.tick;
         fresh.rng = self.rng;
         fresh.record = self.record;
@@ -911,6 +925,7 @@ impl LogicWorld {
             }
             fresh.slots[i] = old.clone();
             fresh.sync_kind(i);
+            fresh.touch(i);
             ids[i] = EntId {
                 index: i as u32,
                 generation: old.0,
@@ -1033,6 +1048,7 @@ impl LogicWorld {
         };
         let index = self.slots.len() as u32;
         self.slots.push((0, Some(ent)));
+        self.touch(index as usize);
         let id = EntId { index, generation: 0 };
         self.sync_kind(index as usize);
         let class = Class::spawn(self, id);
@@ -1104,11 +1120,42 @@ impl LogicWorld {
             .and_then(|(_, e)| e.as_ref())
     }
 
+    /// The entity to change: its slot is stamped (`changed_since`)
+    /// whether or not the caller changes anything.
     pub fn get_mut(&mut self, id: EntId) -> Option<&mut LogicEntity> {
-        self.slots
-            .get_mut(id.index as usize)
+        let i = id.index as usize;
+        let e = self
+            .slots
+            .get_mut(i)
             .filter(|(g, _)| *g == id.generation)
-            .and_then(|(_, e)| e.as_mut())
+            .and_then(|(_, e)| e.as_mut())?;
+        if let Some(s) = self.stamps.get_mut(i) {
+            *s = self.clock;
+        }
+        Some(e)
+    }
+
+    /// Stamp slot `i` (its entity may have changed other than through
+    /// `get_mut`: put there, copied in).
+    fn touch(&mut self, i: usize) {
+        if self.stamps.len() <= i {
+            self.stamps.resize(i + 1, 0);
+        }
+        self.stamps[i] = self.clock;
+    }
+
+    /// A mark to ask `changed_since` about later: every entity handed out
+    /// to change (`get_mut`) or put in a slot after this call counts as
+    /// changed since it.
+    pub fn mark(&mut self) -> u64 {
+        self.clock += 1;
+        self.clock
+    }
+
+    /// Whether `id`'s entity may have changed since `mark` was taken
+    /// (true for an id that names nothing: ask `get`).
+    pub fn changed_since(&self, id: EntId, mark: u64) -> bool {
+        self.stamps.get(id.index as usize).is_none_or(|s| *s >= mark)
     }
 
     pub fn exists(&self, who: Who) -> bool {

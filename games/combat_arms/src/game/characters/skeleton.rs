@@ -20,6 +20,11 @@
 //! spec measured (`LST` at t = 0 for nodes and spheres, the "stand" pose
 //! for sockets), squashed towards the feet by the crouch, with the same
 //! aim rotations; orientations stay identity (only positions are known).
+//!
+//! `Rig::reach` and `FallbackReach` bound where each node of a pose can
+//! be without posing it (a ball around its root, as wide as the
+//! translations down to the node add up to): what a shot's broad phase tests first
+//! (docs/performance.md, "A broad phase for the hitscan").
 
 use bevy::prelude::*;
 use lithtech_formats::{
@@ -267,6 +272,57 @@ pub fn fallback(skel: &SkeletonRecord, squash: f32) -> Posed {
     }
 }
 
+/// A bound on where each node of `fallback(skel, squash)`, aimed, can be,
+/// as `Rig::reach` (a ball around its root's place, as wide as the
+/// offsets down to it add up to; the aim keeps each node's distance from
+/// its parent): the squash scales heights about the feet, so a root is
+/// at its flat place plus `s` times its standing height above it, and a
+/// node's offset from its parent is at most its standing one times
+/// max(1, s) (`FallbackReach::at`). Made once per skeleton.
+#[derive(Clone, Debug)]
+pub struct FallbackReach {
+    /// The fallback's names (for the spheres' lookups).
+    pub shape: std::sync::Arc<Shape>,
+    /// Per node: its root's place squashed flat and standing, and the
+    /// standing offsets' lengths from the root down to it.
+    flat: Vec<Vec3>,
+    standing: Vec<Vec3>,
+    chain: Vec<f32>,
+}
+
+impl FallbackReach {
+    pub fn new(skel: &SkeletonRecord) -> Self {
+        let (flat_pose, standing_pose) = (fallback(skel, 0.0), fallback(skel, 1.0));
+        let n = standing_pose.globals.len();
+        let (mut flat, mut standing, mut chain) = (vec![Vec3::ZERO; n], vec![Vec3::ZERO; n], vec![0.0; n]);
+        for j in 0..n {
+            match standing_pose.shape.parents[j] {
+                Some(k) => {
+                    flat[j] = flat[k];
+                    standing[j] = standing[k];
+                    chain[j] = chain[k] + (standing_pose.globals[j].0 - standing_pose.globals[k].0).length();
+                }
+                None => {
+                    flat[j] = flat_pose.globals[j].0;
+                    standing[j] = standing_pose.globals[j].0;
+                }
+            }
+        }
+        Self {
+            shape: standing_pose.shape,
+            flat,
+            standing,
+            chain,
+        }
+    }
+
+    /// Node `j`'s ball (centre, radius) for the squash `s`.
+    pub fn at(&self, j: usize, s: f32) -> (Vec3, f32) {
+        let s = s.max(0.0);
+        (self.flat[j] + (self.standing[j] - self.flat[j]) * s, s.max(1.0) * self.chain[j])
+    }
+}
+
 /// A body model loaded for posing: its nodes, sockets, weight sets and
 /// combined animation list.
 #[derive(Clone, Debug)]
@@ -282,6 +338,10 @@ pub struct Rig {
     /// The model's node and socket names, parents and sockets, as every
     /// pose shares them (`Posed::shape`; made once, not per pose).
     pub shape: std::sync::Arc<Shape>,
+    /// The nodes a hit table's spheres stand on, with their ancestors
+    /// (`needed_for`), for the first table asked about: what a pose's
+    /// bound (`reach_of`) works out.
+    pub sphere_nodes: std::sync::OnceLock<(usize, Vec<bool>)>,
 }
 
 impl Rig {
@@ -318,6 +378,7 @@ impl Rig {
             lower: set("lower"),
             half_heights: (stand[1], crouch[1]),
             shape: std::sync::Arc::new(shape),
+            sphere_nodes: std::sync::OnceLock::new(),
             model,
             list: std::sync::Arc::new(list),
         }
@@ -355,6 +416,80 @@ impl Rig {
             globals,
             feet: -(hs + (hc - hs) * r),
         }
+    }
+
+    /// A bound on where each node of a pose made from these trackers
+    /// (`layered` and `posed`, or the main tracker alone for the dead) can
+    /// be, the aim's rotations included: a ball (model space) around its
+    /// root's place, which is the root's translation exactly, as wide as
+    /// the translations' lengths from there down to the node add up to.
+    /// Every local matrix is a rotation and a translation, so a node is
+    /// never further from its parent than its own translation, and the
+    /// aim turns whole subtrees about one of their nodes, which keeps
+    /// every node's distance from its parent (and the roots in place).
+    /// The translations are the pose's own (`Tracker::position`,
+    /// `blend_layer_position`: no rotation sampled), so the bound costs a
+    /// small part of the pose (docs/performance.md, "A broad phase for
+    /// the hitscan").
+    pub fn reach(&self, [main, upper, lower, crouch]: [&Tracker; 4], dead: bool, r: f32) -> Vec<(Vec3, f32)> {
+        self.reach_of([main, upper, lower, crouch], dead, r, None)
+    }
+
+    /// `reach` for the nodes `needed` marks only (with every ancestor of
+    /// each: `needed_for`); the others' entries are a zero ball.
+    pub fn reach_of(&self, [main, upper, lower, crouch]: [&Tracker; 4], dead: bool, r: f32, needed: Option<&[bool]>) -> Vec<(Vec3, f32)> {
+        let weight = |set: Option<usize>, j: usize| set.map_or(0.0, |s| self.model.weight_sets[s].weights.get(j).copied().unwrap_or(0.0));
+        let base = |t: &Tracker, j: usize| self.list.entries[t.previous].animation.key_value(j, 0).0;
+        // `blend_layer_position`, the layer's translations read only when
+        // it counts.
+        let layer = |p: [f32; 3], t: &Tracker, w: f32, m: f32, j: usize| {
+            if m == 0.0 || w == 0.0 {
+                p
+            } else {
+                lta::blend_layer_position(p, t.position(&self.list, j), w, m, base(t, j))
+            }
+        };
+        let mut reach: Vec<(Vec3, f32)> = Vec::with_capacity(self.model.nodes.len());
+        for (j, node) in self.model.nodes.iter().enumerate() {
+            if needed.is_some_and(|n| !n.get(j).copied().unwrap_or(true)) {
+                reach.push((Vec3::ZERO, 0.0));
+                continue;
+            }
+            let p = if node.flags & ltb::NODE_ROTATION_ONLY != 0 && node.parent.is_some() {
+                let l = lta::bind_local(&self.model, j);
+                [l[0][3], l[1][3], l[2][3]]
+            } else if dead {
+                main.position(&self.list, j)
+            } else {
+                let p = main.position(&self.list, j);
+                let p = layer(p, upper, weight(self.upper, j), 1.0, j);
+                let p = layer(p, lower, weight(self.lower, j), 1.0, j);
+                layer(p, crouch, weight(self.lower, j), r, j)
+            };
+            let p = Vec3::from(p);
+            reach.push(match node.parent.and_then(|k| reach.get(k).copied()) {
+                Some((anchor, up)) => (anchor, up + p.length()),
+                None => (p, 0.0),
+            });
+        }
+        reach
+    }
+
+    /// The nodes `names` (nodes or sockets' parents) stand on, with all
+    /// their ancestors: what `reach_of` needs for them.
+    pub fn needed_for<'a>(&self, names: impl IntoIterator<Item = &'a str>) -> Vec<bool> {
+        let mut needed = vec![false; self.model.nodes.len()];
+        for name in names {
+            let mut at = self.shape.node(name).or_else(|| self.shape.socket(name).map(|k| self.shape.sockets[k].1));
+            while let Some(j) = at {
+                if needed.get(j).copied().unwrap_or(true) {
+                    break;
+                }
+                needed[j] = true;
+                at = self.model.nodes[j].parent;
+            }
+        }
+        needed
     }
 
     /// The bind pose (every node at its stored bind transform).

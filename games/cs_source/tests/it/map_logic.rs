@@ -841,7 +841,11 @@ fn a_prop_animation_ending_fires_on_animation_done() {
 /// every test and write, as before) leaves every node the same after
 /// every tick: a door opening and staying open, a brush switched off and
 /// on by a timer, a vent shot to pieces, a prop switched off and on and
-/// then killed, a round restart putting all of it back.
+/// then killed, a round restart putting all of it back, and idle movers'
+/// nodes changed from outside (a place, a visibility, brushes taken away,
+/// a collider switched off, a tint: the movers passed over by their
+/// change stamp and their nodes' change ticks, docs/performance.md, "A
+/// change stamp for the movers").
 #[test]
 fn skipping_unchanged_nodes_changes_nothing() {
     use avian3d::prelude::{ColliderDisabled, CollisionLayers, RigidBodyDisabled};
@@ -942,6 +946,28 @@ fn skipping_unchanged_nodes_changes_nothing() {
             if tick == 160 {
                 crate::stack::core::restart_round(sim.app.world_mut());
             }
+            // Something else changes idle movers' nodes (a component
+            // changed, added, taken away): the bridge puts back what the
+            // logic wants, as when it writes every node.
+            if (200..=240).contains(&tick) && tick % 10 == 0 {
+                let (wall, door) = (node(&mut sim, 3), node(&mut sim, 0));
+                let world = sim.app.world_mut();
+                match tick {
+                    200 => world.get_mut::<Transform>(wall).unwrap().translation.x += 1.0,
+                    210 => {
+                        world.entity_mut(door).insert(Visibility::Hidden);
+                    }
+                    220 => {
+                        world.entity_mut(door).remove::<MovingSolid>();
+                    }
+                    230 => {
+                        world.entity_mut(door).insert(ColliderDisabled);
+                    }
+                    _ => {
+                        world.entity_mut(door).insert(BrushTint(Default::default(), 3));
+                    }
+                }
+            }
             sim.ticks(1);
             // Every mover's and prop's node, by its map entity or prop.
             let world = sim.app.world_mut();
@@ -994,6 +1020,11 @@ fn skipping_unchanged_nodes_changes_nothing() {
     let door = |line: &String| line.lines().find(|l| l.contains("mover 0:")).unwrap().to_string();
     assert_ne!(door(&skipping[0]), door(&skipping[100]), "the door opened");
     assert_eq!(door(&skipping[0]).split("hidden").next(), door(&skipping[200]).split("hidden").next(), "and is back after the restart");
+    assert_eq!(door(&skipping[199]), door(&skipping[235]), "what else changed of the idle door was put back");
+    assert!(door(&skipping[255]).contains("[255, 255, 255], alpha: 255, mode: 0 }, 0))"), "and its tint: {}", door(&skipping[255]));
+    let wall_at = |line: &String| line.lines().find(|l| l.contains("mover 3:")).unwrap().to_string();
+    let place = |l: String| l.split("rotation").next().unwrap().to_string();
+    assert_eq!(place(wall_at(&skipping[199])), place(wall_at(&skipping[201])), "and the wall's place");
 }
 
 /// A tick's cost with many idle entities (docs/performance.md,

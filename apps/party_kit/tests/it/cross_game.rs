@@ -246,6 +246,43 @@ fn a_cs_source_gun_hits_a_combat_arms_body_where_it_is_drawn() {
     assert_eq!(shot_at(&mut sim, a, b, shin), vec![G::RightLeg]);
 }
 
+/// Chimera's broad phase on Combat Arms' bodies (docs/performance.md, "A
+/// broad phase for the hitscan"): a CS:S round at one Combat Arms body's
+/// head makes that body's hitboxes and pose (and hits the head), while a
+/// second Combat Arms body 3 m to the side, which the ray passes far from,
+/// is left unposed.
+#[test]
+fn a_cs_source_round_poses_only_the_combat_arms_bodies_it_passes() {
+    use chimera_core::core::{BodyRegion as R, Hitgroup as G, LazyHitboxes};
+    use combat_arms::game::characters::CaPose;
+    let (mut sim, a, b) = duel(6, 7, None);
+    let c = soldier(&mut sim);
+    sim.seconds(0.5);
+    place(&mut sim, c, Vec3::new(3.0, 1.0, -4.0));
+    set_rung(&mut sim, c, 7);
+    sim.intent(c).yaw = std::f32::consts::PI;
+    sim.seconds(1.5);
+    let head = shape_at(&sim, b, R::Head);
+    testkit::aim_at(&mut sim, a, head);
+    sim.ticks(1);
+    // The shot's tick reads the cells the tick before left.
+    let cells = |sim: &Sim, e: Entity| {
+        let w = sim.app.world();
+        (w.get::<LazyHitboxes>(e).expect("made on demand").clone(), w.get::<CaPose>(e).unwrap().clone())
+    };
+    let (near, far) = (cells(&sim, b), cells(&sim, c));
+    assert!(!near.0.0.is_made() && !far.0.0.is_made() && !far.1.is_posed_any(), "nothing asked yet");
+    sim.app.world_mut().resource_mut::<Hits>().0.clear();
+    sim.intent(a).fire = true;
+    sim.ticks(1);
+    sim.intent(a).fire = false;
+    let hits: Vec<_> = sim.app.world().resource::<Hits>().0.clone();
+    assert_eq!(hits, vec![(b, G::Head)], "the head, as before");
+    assert!(near.0.0.is_made(), "the body the ray reaches is posed");
+    assert!(far.0.1.as_ref().is_some_and(|b| b.is_made()), "the far body's bound was tested");
+    assert!(!far.0.0.is_made() && !far.1.is_posed_any(), "the far body is left unposed");
+}
+
 /// The map's bodies: Combat Arms' (no hitboxes: it makes its own) and a
 /// short CS:S stand-in whose head box is 1 m up, below where Combat Arms'
 /// own skeleton has its chest, so only its own boxes give a head shot.
