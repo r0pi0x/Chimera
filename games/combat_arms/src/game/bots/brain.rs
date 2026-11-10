@@ -382,18 +382,20 @@ pub fn camping(
 // ---------------------------------------------------------------------------
 // Navigation mesh
 
-/// The navigation mesh on its way (`ensure_nav`, a front end's). Goes with
-/// the map.
+/// The navigation mesh on its way (`ensure_nav`, a front end's): flooded on a
+/// task (`nav_gen::NavGenTask`). Goes with the map (and the task with it).
 #[derive(Resource)]
-pub struct NavJob(nav_gen::NavGenJob);
+pub struct NavJob(nav_gen::NavGenTask);
 
 /// The map's navigation mesh: generated from the collision
 /// (`map::nav_gen`) once bots play on a map that has none, from its
 /// spawn points and characters, bounded to the clusters a walking player
 /// reaches where the map has visibility data (`nav_gen::Bounds`). A front end
-/// does it behind the loading screen (`settle_nav`), and what that leaves a
-/// slice each tick (`nav_gen::SliceFloods`), bots standing until it is done;
-/// a dedicated server floods at once.
+/// floods it on a task (`nav_gen::NavGenTask`, the main thread only polling),
+/// started behind the loading screen (`settle_nav`) or, on a map nothing
+/// loaded behind one (the command line's `--map`), from the third tick, bots
+/// standing until it is done (a second or two on de_dust2); a dedicated
+/// server floods at once.
 pub fn ensure_nav(world: &mut World) {
     if world.contains_resource::<NavMesh>() {
         // The brains' shared copy, kept with the map's mesh.
@@ -420,8 +422,11 @@ pub fn ensure_nav(world: &mut World) {
     if world.query_filtered::<(), With<CaBot>>().iter(world).next().is_none() {
         return;
     }
-    let slice = if world.contains_resource::<nav_gen::SliceFloods>() { nav_gen::CELLS_PER_TICK } else { usize::MAX };
-    nav_slice(world, slice);
+    if world.contains_resource::<nav_gen::SliceFloods>() {
+        nav_on_task(world);
+    } else {
+        nav_whole(world);
+    }
 }
 
 /// Behind the loading screen (`MapHooks::settle`): the navigation mesh of a
@@ -432,59 +437,102 @@ pub fn settle_nav(world: &mut World) -> bool {
     if settings.quota == 0 || client || world.contains_resource::<NavMesh>() {
         return true;
     }
-    nav_slice(world, nav_gen::CELLS_PER_LOAD_FRAME);
+    nav_on_task(world);
     world.contains_resource::<NavMesh>()
 }
 
-/// Up to `cells` cells more of the map's navigation mesh (`NavJob`), inserted
-/// when it is done.
-fn nav_slice(world: &mut World, cells: usize) {
-    let mut seeds: Vec<Vec3> = world
-        .query_filtered::<&Transform, With<crate::core::SpawnPoint>>()
-        .iter(world)
-        .map(|t| t.translation)
-        .collect();
-    seeds.extend(
-        world
-            .query_filtered::<&Transform, (With<Intent>, Without<Dead>)>()
+/// What a flood of the map starts from: its seeds (the spawn points, the
+/// living characters' feet), the moving bodies it looks through, the walker
+/// and the map's visibility (the bound, `nav_gen::Bounds`).
+struct NavStart {
+    seeds: Vec<Vec3>,
+    ignore: HashSet<Entity>,
+    params: nav_gen::NavGenParams,
+    vis: Option<std::sync::Arc<crate::map::vis::MapVisibility>>,
+}
+
+impl NavStart {
+    fn of(world: &mut World) -> Self {
+        let mut seeds: Vec<Vec3> = world
+            .query_filtered::<&Transform, With<crate::core::SpawnPoint>>()
             .iter(world)
-            .map(|t| t.translation - Vec3::Y * 0.8),
-    );
-    let ignore = SnapQueries::new(world).moving_bodies(world);
-    // The map's AI volumes where it has them (`map_ai`).
-    if !world.contains_resource::<NavJob>()
-        && let Some(mesh) = MapAi::of(world).and_then(|ai| {
+            .map(|t| t.translation)
+            .collect();
+        seeds.extend(
+            world
+                .query_filtered::<&Transform, (With<Intent>, Without<Dead>)>()
+                .iter(world)
+                .map(|t| t.translation - Vec3::Y * 0.8),
+        );
+        let ignore = SnapQueries::new(world).moving_bodies(world);
+        // Bounded to the rooms a walking player reaches (`nav_gen::Bounds`):
+        // the jump-ups climb out of de_aztec otherwise.
+        let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
+        let mut params = nav_params();
+        if let Some(radius) = world.get_resource::<BotSettings>().and_then(|s| s.walker_radius) {
+            params.radius = radius;
+        }
+        Self { seeds, ignore, params, vis }
+    }
+
+    fn job(&self) -> nav_gen::NavGenJob {
+        nav_gen::NavGenJob::new(&self.seeds, &self.params, self.vis.is_some().then(nav_gen::walking_player))
+    }
+
+    /// The map's AI volumes as the mesh, where it has them (`map_ai`).
+    fn map_ai(&self, world: &mut World) -> Option<NavMesh> {
+        let ignore = &self.ignore;
+        MapAi::of(world).and_then(|ai| {
             let mut state = SystemState::<SpatialQuery>::new(world);
             let q = state.get(world).unwrap();
-            ai.nav_mesh(UNIT, |min, max| volume_floor(&q, &ignore, min, max))
+            ai.nav_mesh(UNIT, |min, max| volume_floor(&q, &|e| ignore.contains(&e), min, max))
         })
-    {
+    }
+}
+
+/// The mesh in, said in the log.
+fn insert_mesh(world: &mut World, mesh: NavMesh, ai: bool) {
+    if ai {
         info!("bots: the map's {} AI volumes as navigation areas", mesh.areas.len());
-        world.insert_resource(mesh);
-        return;
+    } else {
+        info!("bots: generated a navigation mesh of {} areas", mesh.areas.len());
     }
-    // Bounded to the rooms a walking player reaches (`nav_gen::Bounds`):
-    // the jump-ups climb out of de_aztec otherwise.
-    let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
-    let mut params = nav_params();
-    if let Some(radius) = world.get_resource::<BotSettings>().and_then(|s| s.walker_radius) {
-        params.radius = radius;
+    world.insert_resource(mesh);
+}
+
+/// The whole mesh on this thread (a dedicated server, a test).
+fn nav_whole(world: &mut World) {
+    let start = NavStart::of(world);
+    if let Some(mesh) = start.map_ai(world) {
+        return insert_mesh(world, mesh, true);
     }
-    let mut job = world
-        .remove_resource::<NavJob>()
-        .unwrap_or_else(|| NavJob(nav_gen::NavGenJob::new(&seeds, &params, vis.is_some().then(nav_gen::walking_player))));
     let mesh = {
         let mut state = SystemState::<SpatialQuery>::new(world);
         let q = state.get(world).unwrap();
-        job.0.step(&q, &|e| ignore.contains(&e), vis.as_deref(), cells)
+        start.job().step(&q, &|e| start.ignore.contains(&e), start.vis.as_deref(), usize::MAX)
     };
-    match mesh {
-        Some(mesh) => {
-            info!("bots: generated a navigation mesh of {} areas", mesh.areas.len());
-            world.insert_resource(mesh);
-        }
-        None => world.insert_resource(job),
+    if let Some(mesh) = mesh {
+        insert_mesh(world, mesh, false);
     }
+}
+
+/// The mesh's task polled, or started (on a copy of the world's collision):
+/// inserted when it is done.
+fn nav_on_task(world: &mut World) {
+    if let Some(mut job) = world.remove_resource::<NavJob>() {
+        match job.0.poll() {
+            Some(mesh) => insert_mesh(world, mesh, false),
+            None => world.insert_resource(job),
+        }
+        return;
+    }
+    let start = NavStart::of(world);
+    if let Some(mesh) = start.map_ai(world) {
+        return insert_mesh(world, mesh, true);
+    }
+    let job = start.job();
+    let snapshot = nav_gen::CollisionSnapshot::of(world);
+    world.insert_resource(NavJob(nav_gen::NavGenTask::spawn(job, snapshot, start.ignore, start.vis)));
 }
 
 /// How far under an AI volume's box its floor may be (m, ours).
@@ -494,11 +542,11 @@ pub const FLOOR_BELOW: f32 = 1.5;
 /// surface a ray down from the top of the box meets at its centre, within
 /// the box or under it within `FLOOR_BELOW` (costarecon_cp's boxes sit
 /// 0.2-0.8 m above their floors); None where there is none.
-fn volume_floor(q: &SpatialQuery, ignore: &HashSet<Entity>, min: Vec3, max: Vec3) -> Option<f32> {
+fn volume_floor(q: &SpatialQuery, ignore: &dyn Fn(Entity) -> bool, min: Vec3, max: Vec3) -> Option<f32> {
     let c = (min + max) * 0.5;
     let top = Vec3::new(c.x, max.y, c.z);
     let reach = max.y - min.y + FLOOR_BELOW;
-    q.cast_ray_predicate(top, Dir3::NEG_Y, reach, true, &sight_filter(), &|e| !ignore.contains(&e))
+    q.cast_ray_predicate(top, Dir3::NEG_Y, reach, true, &sight_filter(), &|e| !ignore(e))
         .map(|h| top.y - h.distance)
 }
 

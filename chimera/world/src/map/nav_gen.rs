@@ -23,9 +23,12 @@
 //! the rooms goes, and so does whatever is reached only through it.
 //!
 //! A whole flood is thousands of millions of instructions on a large map
-//! (cs_office: about 4 G), so a front end runs it a slice at a time
-//! (`NavGenJob`, docs/performance.md, "Nothing blocks the main thread"); the
-//! result is the same.
+//! (cs_office: about 4 G), so a front end runs it off the main thread
+//! (`NavGenTask`: a task flooding a slice at a time against a copy of the
+//! world's collision taken once, `CollisionSnapshot`), or a slice at a time
+//! on it (`NavGenJob`, docs/performance.md, "Nothing blocks the main
+//! thread"); the result is the same (`FloodQueries`: the same queries on
+//! the live world or the copy).
 //!
 //! Known shortcuts: no ladders, jumps, crouch-only areas, hiding spots or
 //! visibility data; cells are tested at their centres only (a wall
@@ -39,10 +42,16 @@
 //! into a walked cluster stays; a map without visibility data (Combat
 //! Arms') isn't bounded; the walk is generated a second time for it.
 
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    sync::Arc,
+};
 
-use avian3d::prelude::*;
-use bevy::prelude::*;
+use avian3d::{collider_tree::ColliderTrees, collision::collider::contact_query, prelude::*};
+use bevy::{
+    prelude::*,
+    tasks::{AsyncComputeTaskPool, Task, TaskPool, block_on, futures_lite::future, poll_once},
+};
 
 use super::{
     nav::{NavArea, NavMesh, Side, Via},
@@ -128,8 +137,137 @@ const DIRS: [(i32, i32, Side); 4] = [
     (0, -1, Side::MinZ),
 ];
 
-struct Grid<'a, 'w, 's> {
-    q: &'a SpatialQuery<'w, 's>,
+/// The three spatial queries a flood makes, answered by the live world
+/// (`SpatialQuery`) or by a copy of its collision (`CollisionSnapshot`, on
+/// a task): the same answers from either.
+pub trait FloodQueries {
+    /// The closest hit of a solid ray: its distance and normal.
+    fn ray_hit(&self, origin: Vec3, dir: Dir3, max: f32, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> Option<(f32, Vec3)>;
+    /// Whether `shape` at `at` (unrotated) overlaps a collider.
+    fn overlaps(&self, shape: &Collider, at: Vec3, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> bool;
+    /// Whether `shape` swept from `at` along `dir` for `max` meets a collider.
+    fn sweep_hits(&self, shape: &Collider, at: Vec3, dir: Dir3, max: f32, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> bool;
+}
+
+impl FloodQueries for SpatialQuery<'_, '_> {
+    fn ray_hit(&self, origin: Vec3, dir: Dir3, max: f32, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> Option<(f32, Vec3)> {
+        self.cast_ray_predicate(origin, dir, max, true, filter, &|e| !ignore(e)).map(|h| (h.distance, h.normal))
+    }
+
+    fn overlaps(&self, shape: &Collider, at: Vec3, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> bool {
+        let mut blocked = false;
+        self.shape_intersections_callback(shape, at, Quat::IDENTITY, filter, |e| {
+            if ignore(e) {
+                true
+            } else {
+                blocked = true;
+                false
+            }
+        });
+        blocked
+    }
+
+    fn sweep_hits(&self, shape: &Collider, at: Vec3, dir: Dir3, max: f32, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> bool {
+        let config = ShapeCastConfig::from_max_distance(max);
+        self.cast_shape_predicate(shape, at, Quat::IDENTITY, dir, &config, filter, &|e| !ignore(e)).is_some()
+    }
+}
+
+/// The world's collision at one moment, for a flood on a task: Avian's
+/// collider trees (`ColliderTrees`, cloned) and each collider's shape and
+/// pose (shapes are shared, not copied). The queries walk the same trees
+/// and test the same shapes as `SpatialQuery`'s.
+pub struct CollisionSnapshot {
+    trees: ColliderTrees,
+    colliders: HashMap<Entity, (Vec3, Quat, Collider)>,
+}
+
+impl CollisionSnapshot {
+    pub fn of(world: &mut World) -> Self {
+        let trees = world.get_resource::<ColliderTrees>().cloned().unwrap_or_default();
+        let colliders = world
+            .query::<(Entity, &Position, &Rotation, &Collider)>()
+            .iter(world)
+            .map(|(e, p, r, c)| (e, (p.0, r.0, c.clone())))
+            .collect();
+        Self { trees, colliders }
+    }
+
+    /// The collider behind a tree's proxy, if the filter and `ignore` take it.
+    fn collider(
+        &self,
+        proxy: Option<&avian3d::collider_tree::ColliderTreeProxy>,
+        filter: &SpatialQueryFilter,
+        ignore: &dyn Fn(Entity) -> bool,
+    ) -> Option<&(Vec3, Quat, Collider)> {
+        let proxy = proxy?;
+        if !filter.test(proxy.collider, proxy.layers) || ignore(proxy.collider) {
+            return None;
+        }
+        self.colliders.get(&proxy.collider)
+    }
+}
+
+impl FloodQueries for CollisionSnapshot {
+    fn ray_hit(&self, origin: Vec3, dir: Dir3, max: f32, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> Option<(f32, Vec3)> {
+        let ray = Ray3d::new(origin, dir);
+        let mut best = max;
+        let mut hit = None;
+        for tree in self.trees.iter_trees() {
+            tree.ray_traverse_closest(ray, best, |id| {
+                let Some((p, r, c)) = self.collider(tree.get_proxy(id), filter, ignore) else { return f32::MAX };
+                let Some((d, n)) = c.cast_ray(*p, *r, origin, dir.as_vec3(), best, true) else { return f32::MAX };
+                if d < best {
+                    best = d;
+                    hit = Some((d, n));
+                }
+                d
+            });
+        }
+        hit
+    }
+
+    fn overlaps(&self, shape: &Collider, at: Vec3, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> bool {
+        let aabb = shape.aabb(at, Quat::IDENTITY, 0.0);
+        let mut blocked = false;
+        for tree in self.trees.iter_trees() {
+            tree.aabb_traverse(aabb.into(), |id| {
+                let Some((p, r, c)) = self.collider(tree.get_proxy(id), filter, ignore) else { return true };
+                blocked = contact_query::intersection_test(c, *p, *r, shape, at, Quat::IDENTITY).unwrap_or(false);
+                !blocked
+            });
+            if blocked {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn sweep_hits(&self, shape: &Collider, at: Vec3, dir: Dir3, max: f32, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> bool {
+        let aabb = shape.aabb(at, Quat::IDENTITY, 0.0);
+        let mut hit = false;
+        for tree in self.trees.iter_trees() {
+            tree.sweep_traverse_closest(aabb.into(), dir, max, 0.0, |id| {
+                let Some((p, r, c)) = self.collider(tree.get_proxy(id), filter, ignore) else { return f32::MAX };
+                match contact_query::time_of_impact(c, *p, *r, Vec3::ZERO, shape, at, Quat::IDENTITY, dir.as_vec3(), max) {
+                    Ok(Some(t)) => {
+                        hit = true;
+                        // Any hit answers: nothing nearer is needed.
+                        t.time_of_impact.min(0.0)
+                    }
+                    _ => f32::MAX,
+                }
+            });
+            if hit {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+struct Grid<'a> {
+    q: &'a dyn FloodQueries,
     filter: SpatialQueryFilter,
     ignore: &'a dyn Fn(Entity) -> bool,
     p: NavGenParams,
@@ -151,7 +289,7 @@ struct Flood {
     open: VecDeque<usize>,
 }
 
-impl Grid<'_, '_, '_> {
+impl Grid<'_> {
     fn centre(&self, ix: i32, iz: i32) -> (f32, f32) {
         ((ix as f32 + 0.5) * self.p.cell, (iz as f32 + 0.5) * self.p.cell)
     }
@@ -160,15 +298,8 @@ impl Grid<'_, '_, '_> {
     /// centre (None: no floor, or too steep).
     fn floor(&self, ix: i32, iz: i32, from_y: f32, depth: f32) -> Option<f32> {
         let (x, z) = self.centre(ix, iz);
-        let hit = self.q.cast_ray_predicate(
-            Vec3::new(x, from_y, z),
-            Dir3::NEG_Y,
-            depth,
-            true,
-            &self.filter,
-            &|e| !(self.ignore)(e),
-        )?;
-        (hit.normal.y >= self.p.min_normal_y).then_some(from_y - hit.distance)
+        let (distance, normal) = self.q.ray_hit(Vec3::new(x, from_y, z), Dir3::NEG_Y, depth, &self.filter, self.ignore)?;
+        (normal.y >= self.p.min_normal_y).then_some(from_y - distance)
     }
 
     /// Whether a walker stands on the floor `y` of a column: room above it
@@ -177,22 +308,7 @@ impl Grid<'_, '_, '_> {
         let (x, z) = self.centre(ix, iz);
         let half = (self.p.height - self.p.step) * 0.5;
         let shape = Collider::cuboid(self.p.radius * 2.0, half * 2.0, self.p.radius * 2.0);
-        let mut blocked = false;
-        self.q.shape_intersections_callback(
-            &shape,
-            Vec3::new(x, y + self.p.step + half, z),
-            Quat::IDENTITY,
-            &self.filter,
-            |e| {
-                if (self.ignore)(e) {
-                    true
-                } else {
-                    blocked = true;
-                    false
-                }
-            },
-        );
-        !blocked
+        !self.q.overlaps(&shape, Vec3::new(x, y + self.p.step + half, z), &self.filter, self.ignore)
     }
 
     /// Whether a walker passes from one column's floor `y` to the next
@@ -202,18 +318,7 @@ impl Grid<'_, '_, '_> {
         let half = (self.p.height - self.p.step) * 0.5 - 0.02;
         let shape = Collider::cuboid(self.p.radius, half * 2.0, self.p.radius);
         let dir = Dir3::new(Vec3::new(dx as f32, 0.0, dz as f32)).unwrap();
-        let config = ShapeCastConfig::from_max_distance(self.p.cell);
-        self.q
-            .cast_shape_predicate(
-                &shape,
-                Vec3::new(x, y + self.p.step + 0.02 + half, z),
-                Quat::IDENTITY,
-                dir,
-                &config,
-                &self.filter,
-                &|e| !(self.ignore)(e),
-            )
-            .is_none()
+        !self.q.sweep_hits(&shape, Vec3::new(x, y + self.p.step + 0.02 + half, z), dir, self.p.cell, &self.filter, self.ignore)
     }
 
     /// The cell of column (ix, iz) whose floor is within a step of `y`.
@@ -238,7 +343,7 @@ impl Grid<'_, '_, '_> {
 /// standing on or just above a floor, metres), by the colliders the
 /// spatial query sees but those `ignore` says to (characters, items).
 pub fn generate(
-    q: &SpatialQuery,
+    q: &dyn FloodQueries,
     ignore: &dyn Fn(Entity) -> bool,
     seeds: &[Vec3],
     p: &NavGenParams,
@@ -250,7 +355,7 @@ pub fn generate(
 /// walking player reaches from the same seeds (the module doc; without
 /// visibility data, as `generate`).
 pub fn generate_within(
-    q: &SpatialQuery,
+    q: &dyn FloodQueries,
     ignore: &dyn Fn(Entity) -> bool,
     seeds: &[Vec3],
     p: &NavGenParams,
@@ -264,9 +369,9 @@ pub fn generate_within(
     }
 }
 
-/// A front end floods a slice a tick (`NavGenJob`), so a mesh made in play
-/// stops no frame; without it (a dedicated server, a test) a flood runs whole.
-/// The client shell inserts it.
+/// A front end floods off the main thread (`NavGenTask`) or a slice a tick
+/// (`NavGenJob`), so a mesh made in play stops no frame; without it (a
+/// dedicated server, a test) a flood runs whole. The client shell inserts it.
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct SliceFloods;
 
@@ -308,7 +413,7 @@ impl NavGenJob {
     /// clusters; none or empty: no bound); the mesh when the flood is done.
     pub fn step(
         &mut self,
-        q: &SpatialQuery,
+        q: &dyn FloodQueries,
         ignore: &dyn Fn(Entity) -> bool,
         vis: Option<&MapVisibility>,
         cells: usize,
@@ -342,8 +447,38 @@ impl NavGenJob {
     }
 }
 
-impl<'a, 'w, 's> Grid<'a, 'w, 's> {
-    fn resume(q: &'a SpatialQuery<'w, 's>, ignore: &'a dyn Fn(Entity) -> bool, p: &NavGenParams, f: Flood) -> Self {
+/// Cells a task floods between two looks at whether it was dropped.
+const CELLS_PER_TASK_SLICE: usize = 500;
+
+/// A `NavGenJob` run to its end on a task (`AsyncComputeTaskPool`) against a
+/// `CollisionSnapshot` (the colliders `ignore` names left out, as
+/// `generate_within`'s), the main thread only polling: the same mesh as on
+/// the world. Dropping it stops the flood at its next slice (a map's
+/// change).
+pub struct NavGenTask(Task<NavMesh>);
+
+impl NavGenTask {
+    pub fn spawn(mut job: NavGenJob, snapshot: CollisionSnapshot, ignore: HashSet<Entity>, vis: Option<Arc<MapVisibility>>) -> Self {
+        let pool = AsyncComputeTaskPool::get_or_init(TaskPool::default);
+        Self(pool.spawn(async move {
+            loop {
+                if let Some(mesh) = job.step(&snapshot, &|e| ignore.contains(&e), vis.as_deref(), CELLS_PER_TASK_SLICE) {
+                    return mesh;
+                }
+                // Other tasks get their turn, and a dropped task stops here.
+                future::yield_now().await;
+            }
+        }))
+    }
+
+    /// The mesh, once the task is done.
+    pub fn poll(&mut self) -> Option<NavMesh> {
+        block_on(poll_once(&mut self.0))
+    }
+}
+
+impl<'a> Grid<'a> {
+    fn resume(q: &'a dyn FloodQueries, ignore: &'a dyn Fn(Entity) -> bool, p: &NavGenParams, f: Flood) -> Self {
         Grid {
             q,
             filter: SpatialQueryFilter::from_mask(p.mask),
@@ -414,7 +549,7 @@ impl<'a, 'w, 's> Grid<'a, 'w, 's> {
 }
 
 /// Cells into rectangles and their links into area links.
-fn merge(g: &Grid<'_, '_, '_>) -> NavMesh {
+fn merge(g: &Grid<'_>) -> NavMesh {
     let n = g.cells.len();
     let linked = |a: usize, b: usize| g.links[a].iter().any(|l| l.0 == b) && g.links[b].iter().any(|l| l.0 == a);
     let level = |a: usize, b: usize| (g.cells[a].y - g.cells[b].y).abs() <= g.p.step * 0.5;
