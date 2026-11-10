@@ -2771,6 +2771,24 @@ tick flooded the map again: 2.15G instructions a tick on de_dust2
 steps run on one job now; `bot_cost` is back at 38 s (16 bots 21.0M a
 tick).
 
+### The session's maps after the pass
+
+`heavy::session_maps` (three laps of real maps, six bots on a ladder, a
+test build, the median tick's instructions) after the pass and main's
+merge, against the table of "A session's archetypes: the game switch" the
+day before:
+
+| | before, lap 1 / 2 / 3 | after |
+|---|---|---|
+| de_dust2 | 10.1M / 10.3M / 10.5M | 7.5M / 7.3M / 7.9M |
+| cs_office | 15.6M / 15.1M / 15.5M | 11.1M / 12.4M / 12.4M |
+| dm_lockdown | 16.6M / 15.1M / 14.9M | 10.3M / 11.1M / 11.4M |
+| warehouse | 7.7M / 7.7M / 8.4M | 5.8M / 6.3M / 6.5M |
+| de_inferno | 18.0M / 17.8M / 17.5M | 13.8M / 12.8M / 13.9M |
+
+A quarter off every map. `heavy::rung_frames`' worst frames (a bot walking
+the ladder on de_dust2, ticks included): 8.1-17.7M, were 12.5-27.7M.
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,
