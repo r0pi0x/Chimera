@@ -2620,6 +2620,24 @@ each of 260 ticks with and without the skip; it fails with a test of
 than with every node written through; it prints both, 9.0M against 11.9M
 instructions in a test build).
 
+### Players and props (`source_movement::pushaway`)
+
+Every Source player asks about every multiplayer physics prop each tick
+(the push-back that goes into its move input, `push_back`) and every 0.1 s
+(`push_props`), and each answer started with the prop's world box: eight
+corners through its transform. A test that can only say "surely apart"
+comes first now (`surely_apart`: the cube that holds the prop's box at any
+turn, with slack for rounding, against the player's box); a prop it doesn't rule out
+gets the exact box as before, so the results are the same
+(`the_far_test_never_drops_an_overlap`: 40,000 places, turns and scales,
+none of the overlapping ones ruled out; the test caught the first try, a
+sphere, which is smaller than the box a turned prop's corners span).
+
+| `perfgate`, instructions for 2,000 ticks | de_dust2 (10 bots) |
+|---|---|
+| before (with the bridge's change) | 11.56G |
+| after | 10.98G (-5.0%) |
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,
