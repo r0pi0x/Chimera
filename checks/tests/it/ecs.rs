@@ -261,6 +261,7 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("chimera/core/src/game_log.rs", "writing the log (IO)"),
     ("chimera/net/src/dedicated.rs", "a dedicated server's level and state changes"),
     ("chimera/net/src/minigame_net.rs", "network apply and capture"),
+    ("chimera/net/src/prematch.rs", "a new match held and started (`minigame::restart`), network capture"),
     ("chimera/net/src/net/assets.rs", "joining: the match's files fetched before the join goes on"),
     ("chimera/net/src/net/chat.rs", "network apply and capture"),
     ("chimera/net/src/net/client.rs", "network apply and capture"),

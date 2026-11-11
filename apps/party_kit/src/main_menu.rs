@@ -35,7 +35,8 @@
 //!   dialog's place and parts (its stage line from `JoinProgress`'s stage,
 //!   the map's load or the download's bytes, a bar, Cancel =
 //!   `disconnect`), also for a map change in a game (a rotation, the
-//!   server's level change); Combat Arms' own loading screen instead for
+//!   server's level change); at the screen's foot while the server's
+//!   pre-match lobby shows over it (`loading_under_lobby`); Combat Arms' own loading screen instead for
 //!   its maps (user decision 5: `combat_arms::ui::loading`, its map
 //!   picture), gated here (`ca_loading_gate`).
 //! - **The failure box**: a failed or refused join, a drop, a failed load
@@ -46,7 +47,9 @@
 //!   the camera on a slow orbit around the middle of its spawn points
 //!   (`chimera_freecam` 2's detached camera, `fly`); the HUD is hidden
 //!   while the menu shows by drawing the UI on a camera of its own
-//!   (`MenuUiCamera`; the shell's UI camera, which the HUD draws on, off).
+//!   (`MenuUiCamera`; the shell's UI camera, which the HUD draws on, off;
+//!   the console and the pre-match lobby's screen move to it, so a player
+//!   still downloading sees the lobby over the loading panel).
 //!   Never the greybox (the user's call): the data refuses it, and while
 //!   the world under the menu is the greybox (leaving a game, until the
 //!   background map is in; no background map loading at all) a plain black
@@ -616,7 +619,7 @@ impl Plugin for MainMenuPlugin {
             .add_systems(Startup, ((start_look, init_play).chain(), spawn_backdrop))
             .add_systems(
                 Update,
-                (look_loaded, typing, clicks, act, follow_loads, refresh_values, ca_loading_gate, fly, cameras, show, backdrop, progress, entry_hover, music)
+                (look_loaded, typing, clicks, act, follow_loads, refresh_values, ca_loading_gate, fly, cameras, show, backdrop, progress, loading_under_lobby, entry_hover, music)
                     .chain()
                     .in_set(MainMenuSystems)
                     .before(crate::esc_menu::EscMenuSystems),
@@ -1341,7 +1344,10 @@ fn cameras(
     ca: Option<Res<combat_arms::ui::loading::CaLoading>>,
     mut shell: Query<&mut Camera, (With<IsDefaultUiCamera>, Without<MenuUiCamera>)>,
     mut ours: Query<(Entity, &mut Camera), With<MenuUiCamera>>,
-    consoles: Query<(Entity, Has<UiTargetCamera>), With<ConsoleRoot>>,
+    consoles: Query<
+        (Entity, Has<UiTargetCamera>),
+        Or<(With<ConsoleRoot>, With<chimera_client::client::prematch_lobby::LobbyRoot>)>,
+    >,
     mut commands: Commands,
 ) {
     if shell.is_empty() {
@@ -2120,7 +2126,7 @@ fn loading_frame(commands: &mut Commands, root: Entity, look: &Look, what: &str)
         commands,
         root,
         look,
-        FrameSpec::new("partyloading").no_close(),
+        FrameSpec::new(LOADING_FRAME).no_close(),
         (w, h),
         &title,
     )
@@ -2315,6 +2321,36 @@ fn progress(
         }
     }
 }
+
+/// While the server's pre-match lobby is up (`chimera_net::prematch`,
+/// drawn by `client::prematch_lobby` from the top), the loading panel goes
+/// to the screen's foot, out of its way; back to the middle after.
+fn loading_under_lobby(
+    menu: Res<PartyMenu>,
+    lobby: Query<(), With<chimera_net::prematch::NetLobby>>,
+    screen: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    windows: Option<ResMut<widgets::Windows>>,
+    mut moved: Local<bool>,
+) {
+    let (Some(mut windows), Some(win)) = (windows, screen.iter().next()) else { return };
+    let Some(placed) = windows.placed(LOADING_FRAME) else { return };
+    let size = Vec2::new(win.width(), win.height());
+    let want = menu.loading.is_some() && !lobby.is_empty();
+    let pos = if want {
+        Vec2::new((size.x - placed.size.x) / 2.0, size.y - placed.size.y - size.y * 0.06)
+    } else if *moved {
+        (size - placed.size) / 2.0
+    } else {
+        return;
+    };
+    *moved = want;
+    if (placed.pos - pos).length() > 0.5 {
+        windows.put(LOADING_FRAME, pos.max(Vec2::ZERO), placed.size);
+    }
+}
+
+/// The loading panel's frame id.
+const LOADING_FRAME: &str = "partyloading";
 
 /// The local player's entity (tests).
 pub fn local_player(world: &mut World) -> Option<Entity> {

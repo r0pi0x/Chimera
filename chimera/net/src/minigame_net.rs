@@ -52,7 +52,8 @@
 //!   get `ChangingLevel` and show the loading dialog), and starts the
 //!   match only once the map is in here and every client reported it
 //!   loaded (`server::ClientMap`), or `CLIENT_GRACE` s after the map came
-//!   in; a load that fails (or none in `MAP_LOAD_TIMEOUT` s) starts it
+//!   in (with the pre-match lobby on, `prematch`, as soon as the map is in
+//!   here: the lobby waits for the clients); a load that fails (or none in `MAP_LOAD_TIMEOUT` s) starts it
 //!   where the server is. The manifest names the coming minigame
 //!   meanwhile, and its asset offer the coming ladder's draw (its melee
 //!   weapons, a game's rung bodies: `match_ladder`, `ladder::draw`). A server rotates through it by itself once a match has
@@ -216,6 +217,16 @@ fn register(app: &mut App) {
         .add_server_message::<PartyOffer>(Channel::Ordered)
         .make_message_independent::<PartyOffer>()
         .add_client_message::<MapVoteCast>(Channel::Ordered);
+    // The pre-match lobby (`prematch`), after the tick's minigame (a
+    // match started by a map change is held at once).
+    crate::prematch::register(app);
+    app.add_systems(
+        FixedLast,
+        (crate::prematch::begin, crate::prematch::serve)
+            .chain()
+            .after(serve_minigame)
+            .run_if(resource_equals(NetRole::Server)),
+    );
     {
         let mut hooks = app.world_mut().resource_mut::<NetHooks>();
         hooks.stopped_serving.push(stopped_serving);
@@ -612,9 +623,15 @@ fn follow_map_change(world: &mut World) {
         None => {
             let arrived = crate::net::maps::loaded_map(world).is_some_and(|(id, _)| id == c.map);
             if arrived {
-                info!("{} is in: the next match waits for the players to load it", c.map);
                 c.arrived = Some(now);
-                clients_have(world, &c.map)
+                if crate::prematch::lobby_on(world) {
+                    // The pre-match lobby waits for them, showing who.
+                    info!("{} is in: the next match's lobby waits for the players", c.map);
+                    true
+                } else {
+                    info!("{} is in: the next match waits for the players to load it", c.map);
+                    clients_have(world, &c.map)
+                }
             } else if here == c.map {
                 c.loading = true;
                 false

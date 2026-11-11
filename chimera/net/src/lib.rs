@@ -21,6 +21,7 @@ pub mod dedicated;
 pub mod harness;
 pub mod minigame_net;
 pub mod net;
+pub mod prematch;
 
 // `crate::core`, `crate::map` and the rest inside `net`, as in the game
 // crate.

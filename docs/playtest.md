@@ -100,6 +100,18 @@ off; the host may cap it). If the small window shows an error, it says why:
 - "This match needs ... start the game once with +chimera:asset_token": you
   joined without a token.
 
+**The lobby before each match.** Each match (the first, and each new map)
+waits until everyone has the map. Over the map (or over your loading panel
+while you still download) a panel shows the mode, the map and every player
+with their status: Connecting, Downloading (a bar with MB done of the total
+and the percentage), Loading map, Ready; bots are ready at once, and your
+own row is on a gold band. A line says how many players it waits for and
+when it starts anyway (the host's longest wait, 90 s by default, counted
+from when the first player arrived). Once everyone is ready a big countdown
+(5 s) runs and everyone spawns together. If you are ready first you stand
+frozen at your spawn until then. If you are still downloading when it
+starts, you join the running match when you are ready, as a late joiner.
+
 If a join is refused, the message on the menu says why. "Different build"
 means the host and you are on different versions: download the newest release.
 

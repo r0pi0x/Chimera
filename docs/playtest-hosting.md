@@ -23,6 +23,8 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
+   The network version is `net41` since the pre-match lobby (a client
+   reports its download to the server); earlier builds are refused.
 2. **Send each tester privately:** the release link, `<host address>:<port>`,
    their token, and `docs/playtest.md` if they are not unzipping it.
 3. **Check the asset service has everything the match needs** ("Publishing
@@ -243,11 +245,33 @@ Maps and matches:
   `mp_spawn_protection`, `mp_demote_on_suicide` (the list is
   `apps/party_kit/data/host_settings.toml`).
 - A match needs 2 players; bots count (`+MaxPlayer`). Late joiners are fine.
+- **The pre-match lobby.** Each new match (the first after the server
+  starts, each rotation and map change) waits on its loaded map until every
+  connected player has it, showing everyone each player's status
+  (connecting, downloading with MB done of the total, loading the map,
+  ready; bots are ready at once) and ping; then a countdown and everyone
+  spawns together. Players who join while the match runs join late, as
+  before. The server's log says when it waits, counts down and starts.
+  Cvars (on the command line, `+mp_lobby_max_wait 120`, or the console):
+
+  | Cvar | Default | Meaning |
+  |---|---|---|
+  | `mp_lobby` | 1 (the party servers; 0 elsewhere) | 0 starts each match at once, as before |
+  | `mp_lobby_countdown` | 5 | the countdown once everyone is ready, s |
+  | `mp_lobby_max_wait` | 90 | the longest wait, s, from the lobby's start or the first player's arrival (whichever is later), before the countdown starts anyway; the stragglers join late |
+  | `mp_lobby_min_players` | 1 | players (not bots) connected before being ready counts; set it to the testers you expect for the first match, so it doesn't start for the first one in (the max wait still applies) |
+
+  `lobby` on the console lists the players and what it waits for;
+  `lobby_start` starts the countdown now (`lobby_start 0`: the match at
+  once). With no player connected it waits without a limit. A tester still
+  in the first start's download (the small window before the game opens)
+  isn't connected yet and isn't listed.
 
 Console commands on the server's stdin (type in its window; run it inside
 `tmux` or `screen`, or a PowerShell window you keep open):
 
-`status`, `tick_stats` (the last ticks' cost and the server's memory),
+`status`, `lobby`, `lobby_start [s]` (the pre-match lobby, above),
+`tick_stats` (the last ticks' cost and the server's memory),
 `minigames`, `minigame_status`, `minigame_restart`,
 `change_match <minigame> [map]`, `ugg_new [seed] [rungs]` (a new ladder now;
 a seed replays one), `parts` (what each game lends), `changelevel <map>`,

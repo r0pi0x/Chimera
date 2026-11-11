@@ -34,7 +34,11 @@
 //!   time limit, a single round whose winner wins the match, then the
 //!   match over (`minigame_restart` plays it again). `MatchHold` holds
 //!   the match (no joins, respawns or phases) while a server changes map
-//!   for the next one; `start` lifts it.
+//!   for the next one; `start` lifts it. `PreMatch` (a server's pre-match
+//!   lobby, `chimera_net::prematch`, which begins at each new
+//!   `Minigames::starts`)
+//!   lets players join and spawn but freezes everyone and holds the
+//!   phases until it ends with `restart`.
 //! - `MinigameEvent`: named events (`rung_up`, `rung_down`, `match_won`,
 //!   the ladder's `last_rung`, `suicide_down` and `lead_taken`,
 //!   `lead_lost`, `lead_tied`)
@@ -197,6 +201,10 @@ pub struct Minigames {
     defs: Vec<(&'static MinigameDef, &'static str)>,
     rules: Vec<RulesModule>,
     modifiers: Vec<Modifier>,
+    /// How many matches `start` began in this process: a host's pre-match
+    /// lobby (`chimera_net::prematch`) begins at each new count. Kept here,
+    /// not in a resource of its own, so a start makes no new entity.
+    pub starts: u64,
 }
 
 impl Minigames {
@@ -357,7 +365,24 @@ pub fn start(world: &mut World, id: &str) -> Result<&'static MinigameDef, String
     }
     let def = begin(world, id, true)?;
     world.remove_resource::<MatchHold>();
+    world.remove_resource::<PreMatch>();
+    if let Some(mut m) = world.get_resource_mut::<Minigames>() {
+        m.starts += 1;
+    }
     Ok(def)
+}
+
+/// The pre-match lobby (a server's: `chimera_net::prematch`): while it is
+/// in, players join and spawn as usual but stand frozen (the match's
+/// end freeze, `runtime::end_holds`) and the phases don't step, so
+/// nothing counts until the lobby ends with `restart` (everyone spawns
+/// again together). `start` lifts it.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct PreMatch;
+
+/// Whether the match waits in the pre-match lobby (`PreMatch`).
+pub fn in_lobby(world: &World) -> bool {
+    world.contains_resource::<PreMatch>()
 }
 
 /// The match held (a server changing map for its next match:
