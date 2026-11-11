@@ -289,6 +289,14 @@ placed in logical pixels, e.g. the crosshair after a dialog; with
 floats under Hyprland instead of being tiled), for UI checked at a known
 resolution. `--help` lists all options.
 
+Party apps (Lucker Party, Ultimate Gun Game; client and server) draw each
+ladder's rung extras (Combat Arms bodies, attachments and drawn melee,
+CS:S player models) from a seed that is fresh at every launch, even with
+`+ugg_new <seed>` (that seed picks the guns and maps, not these). For
+before/after shots of one scene set `CHIMERA_RUNG_SEED=<number>`: the
+same number draws the same extras every launch (a non-number is ignored).
+Unset keeps the random draw.
+
 System order: `CHIMERA_SYSTEM_DUMP=<file>` builds the game (either app:
 `client::app::run`) as it would run (with the same options and plugins; needs the display) and writes
 every schedule's systems in the order they run, the main world's then the
