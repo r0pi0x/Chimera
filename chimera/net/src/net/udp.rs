@@ -245,6 +245,20 @@ impl UdpServer {
         self.netcode.user_data(client_id)
     }
 
+    /// Each connected client's address and how long it has been silent
+    /// (no payload; `PeerTable`).
+    pub fn peers(&self) -> std::collections::BTreeMap<u64, (std::net::IpAddr, Duration)> {
+        self.netcode
+            .clients_id()
+            .into_iter()
+            .filter_map(|id| {
+                let ip = self.netcode.client_addr(id)?.ip();
+                let silent = self.heard.get(&id).map_or(Duration::ZERO, |t| self.clock.saturating_sub(*t));
+                Some((id, (ip, silent)))
+            })
+            .collect()
+    }
+
     /// Hang up on every client now (their disconnect packets, a few copies
     /// each: `HANG_UP_COPIES`).
     pub fn disconnect_all(&mut self, server: &mut RenetServer) {

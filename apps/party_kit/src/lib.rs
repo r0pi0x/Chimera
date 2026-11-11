@@ -471,22 +471,31 @@ pub fn requirements() -> Vec<Missing> {
 /// stops it (`served_by_servers`), so the menu and Join work with no
 /// install and no config. A server's lacks stay fatal (`server::requirements`).
 pub fn client_requirements() -> (String, bool) {
-    report(&served_by_servers(requirements(), chimera_net::net::assets::has_token()))
+    use chimera_core::mount::config::LocalConfig;
+    let service = chimera_net::net::assets::has_token()
+        || LocalConfig::load().is_ok_and(|c| c.assets.resolve().remote.is_some());
+    report(&served_by_servers(requirements(), service))
 }
 
 /// A missing install never stops the game: a server that offers its game
 /// files (`net::assets`) provides what isn't installed when the player
 /// joins, so the menu and Join work with no install and no config. The
-/// lines stay as warnings, saying how (`token`: an asset token is set).
-pub fn served_by_servers(mut out: Vec<Missing>, token: bool) -> Vec<Missing> {
-    for m in out.iter_mut().filter(|m| m.install && m.fatal) {
-        m.fatal = false;
-        m.text.push_str(if token {
-            " Your asset token is set: a server that offers its game files provides them when you join."
-        } else {
-            " A server that offers its game files can provide them: start the game once with \
-             +chimera:asset_token <token> (from the server's admin), then join it."
-        });
+/// lines stay as warnings, saying how. `service`: an asset token is set
+/// or an asset service is configured: then the lines say the files come
+/// from the service, without the install hints (the config file).
+pub fn served_by_servers(mut out: Vec<Missing>, service: bool) -> Vec<Missing> {
+    for m in out.iter_mut().filter(|m| m.install) {
+        if service {
+            m.fatal = false;
+            let name = if m.game == cs_source::game::GAME { "Counter-Strike: Source" } else { "Combat Arms" };
+            m.text = format!("{name} isn't installed here: its files come from the asset service when you join.");
+        } else if m.fatal {
+            m.fatal = false;
+            m.text.push_str(
+                " A server that offers its game files can provide them: start the game once with \
+                 +chimera:asset_token <token> (from the server's admin), then join it.",
+            );
+        }
     }
     out
 }
@@ -618,17 +627,20 @@ mod tests {
     /// and how to get it, with or without an asset token.
     #[test]
     fn no_install_never_stops_the_game() {
-        for token in [false, true] {
-            let out = super::served_by_servers(super::missing(None, None, &[]), token);
+        for service in [false, true] {
+            let out = super::served_by_servers(super::missing(None, None, &[]), service);
             assert_eq!(out.len(), 2);
             assert!(out.iter().all(|m| !m.fatal), "{out:?}");
             assert!(out[0].text.contains("Counter-Strike: Source isn't installed"));
-            let how = if token {
-                "Your asset token is set"
+            if service {
+                // The files come from the service: no config-file hint.
+                for m in &out {
+                    assert!(m.text.contains("asset service") && !m.text.contains("chimera.local.toml"), "{}", m.text);
+                }
             } else {
-                "+chimera:asset_token <token>"
-            };
-            assert!(out[0].text.contains(how), "{}", out[0].text);
+                assert!(out[0].text.contains("+chimera:asset_token <token>"), "{}", out[0].text);
+                assert!(out[0].text.contains("chimera.local.toml"), "the plain warning stays");
+            }
             let (text, fatal) = super::report(&out);
             assert!(!fatal && text.starts_with("warning: Counter-Strike"), "{text}");
         }

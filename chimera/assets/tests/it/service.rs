@@ -477,3 +477,12 @@ fn no_path_reaches_outside_the_served_files() {
         assert!(!answer.contains(key.trim()), "{path}");
     }
 }
+
+/// `user list` prints creation times as UTC dates.
+#[test]
+fn creation_times_print_as_utc_dates() {
+    use chimera_assets::accounts::utc_text;
+    assert_eq!(utc_text(0), "1970-01-01 00:00 UTC");
+    assert_eq!(utc_text(951_782_400 + 3_600 * 23 + 60 * 59 + 59), "2000-02-29 23:59 UTC");
+    assert_eq!(utc_text(1_794_398_100), "2026-11-11 11:55 UTC");
+}

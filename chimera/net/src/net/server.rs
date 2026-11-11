@@ -21,7 +21,9 @@
 //! tick `NetBody` and each player's `OwnState` (predicted components, lead,
 //! buffer) from the simulation's values, the host's and bots' characters marked
 //! for replication, leaving players' characters and weapons removed; `players`
-//! for `status`; players in the server log (`game_log::LogSubjects`: name,
+//! for `status`; a player who rejoins from the same address under the same name
+//! while its old connection is silent drops that connection at once
+//! (`PeerTable`, `drop_stale_twins`: the wire carries no account); players in the server log (`game_log::LogSubjects`: name,
 //! client id, `STEAM_ID_LAN` or `BOT`).
 //!
 //! Known shortcuts (docs/tech-debt.md): Every character's body goes to
@@ -40,7 +42,7 @@
 
 use std::{
     net::{SocketAddr, UdpSocket},
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 use bevy::prelude::*;
@@ -105,7 +107,14 @@ pub(super) fn plugin(app: &mut App) {
     chimera_core::gameplay::GameplayAppExt::any_game_hook(app, crate::game_log::LogSubjects(log_subject));
     app.add_observer(join)
         .add_observer(left)
+        .init_resource::<PeerTable>()
         .add_systems(Update, drop_refused.run_if(in_state(ServerState::Running)))
+        .add_systems(
+            PreUpdate,
+            track_peers
+                .before(ServerSystems::Receive)
+                .run_if(in_state(ServerState::Running)),
+        )
         .add_systems(
             PreUpdate,
             (receive_commands, receive_loaded)
@@ -378,6 +387,50 @@ pub fn kick_userid(world: &mut World, id: u64, reason: &str) -> Option<String> {
     kick_by(world, |_, i| i == Some(id), reason)
 }
 
+/// Each connected client's address and silence, by client id, kept
+/// current from the UDP transport (empty on the memory link; a test sets
+/// it). A client has no account on the wire, so a returning player is
+/// told by address and name (`drop_stale_twins`).
+#[derive(Resource, Default, Debug)]
+pub struct PeerTable(pub std::collections::BTreeMap<u64, (std::net::IpAddr, Duration)>);
+
+/// A connection this long silent is dead, not a second client of the same
+/// name on the same machine.
+const STALE_AFTER: Duration = Duration::from_secs(2);
+
+fn track_peers(udp: Option<Res<super::udp::UdpServer>>, mut table: ResMut<PeerTable>) {
+    if let Some(udp) = udp {
+        table.0 = udp.peers();
+    }
+}
+
+/// A player who dropped (a killed client) and joins again shows twice
+/// until the dead connection times out. A player named `name` from the
+/// same address as new client `client` (id `id`), silent for
+/// `STALE_AFTER`, is that connection: dropped at once. Two live clients
+/// of one name on one machine stay (neither is silent).
+fn drop_stale_twins(world: &mut World, client: Entity, id: u64, name: &str) {
+    let Some(&(ip, _)) = world.resource::<PeerTable>().0.get(&id) else { return };
+    let stale: Vec<(Entity, u64)> = world
+        .query::<(Entity, &Player, &NetworkId)>()
+        .iter(world)
+        .filter(|(e, p, _)| *e != client && p.name == name)
+        .map(|(e, _, n)| (e, n.get()))
+        .filter(|(_, other)| {
+            world
+                .resource::<PeerTable>()
+                .0
+                .get(other)
+                .is_some_and(|(addr, silent)| *addr == ip && *silent >= STALE_AFTER)
+        })
+        .collect();
+    for (old, other) in stale {
+        info!("{name}: dropping client {other}, silent, for the rejoin (client {id})");
+        world.entity_mut(old).insert(LeaveReason("Reconnected.".to_string()));
+        world.write_message(DisconnectRequest { client: old });
+    }
+}
+
 /// Drop refused clients that didn't hang up.
 fn drop_refused(q: Query<(Entity, &RefusedAt)>, time: Res<Time<Real>>, mut out: MessageWriter<DisconnectRequest>) {
     let now = time.elapsed_secs_f64();
@@ -598,6 +651,7 @@ fn admit(world: &mut World, client: Entity, msg: Join) {
         return;
     }
     let name = clean_name(&msg.name, id);
+    drop_stale_twins(world, client, id, &name);
     // How it comes in (`JoinRules`; CS:S's `rules::JoinChoice`, in its
     // userinfo): on a team at once unless it asked for the join menus.
     let choice = msg
