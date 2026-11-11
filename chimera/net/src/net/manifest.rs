@@ -65,6 +65,9 @@ pub struct MatchManifest {
     /// The server's weapon registry (`server_docs`): a client's must
     /// match once it has the server's documents.
     pub registry: super::server_docs::RegistryOffer,
+    /// Where a client without a game's install gets its files, and which
+    /// (`assets`; `chimera:asset_url` on the server).
+    pub assets: Option<super::assets::AssetOffer>,
 }
 
 /// A game a match reads from the client's install.
@@ -302,6 +305,7 @@ pub fn current(world: &mut World) -> MatchManifest {
         hook(world, &mut m);
     }
     super::server_docs::offer(world, &mut m);
+    super::assets::offer(world, &mut m);
     m
 }
 

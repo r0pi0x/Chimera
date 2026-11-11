@@ -3,7 +3,9 @@
 //! `use_install`, `builds.<game>`, `url`, `token`, `key`), with the
 //! environment over it (`CHIMERA_ASSET_STORE`, `CHIMERA_ASSET_USE_INSTALL`
 //! = 0/1, `CHIMERA_ASSET_URL`, `CHIMERA_ASSET_TOKEN`, `CHIMERA_ASSET_KEY`)
-//! and the repository's `assets.lock` (`lock`). The default store is per
+//! and the repository's `assets.lock` (`lock`). With no service named
+//! there, a player's bound access (`access`: a token and the service a game
+//! server named, pinned by its certificate) is the service. The default store is per
 //! user and shared by every checkout and slot: `~/.cache/chimera/assets`
 //! (Linux), `%LOCALAPPDATA%\chimera\assets` (Windows).
 //!
@@ -91,7 +93,9 @@ impl AssetsConfig {
         let url = env(remote::URL_ENV).or_else(|| self.url.clone());
         let token = env(remote::TOKEN_ENV).or_else(|| self.token.clone());
         let key = env(remote::KEY_ENV).or_else(|| self.key.clone());
-        s.remote = remote_config(url, token, key);
+        // Else the service a game server bound this user's token to
+        // (`access`: a player's, not a developer's).
+        s.remote = remote_config(url, token, key).or_else(|| crate::access::Access::load().remote());
         s.lock = AssetsLock::current();
         s
     }
@@ -114,8 +118,16 @@ impl AssetsConfig {
 }
 
 fn remote_config(url: Option<String>, token: Option<String>, key: Option<String>) -> Option<RemoteConfig> {
-    let (url, token) = (url.filter(|u| !u.trim().is_empty())?, token.filter(|t| !t.trim().is_empty())?);
-    Some(RemoteConfig { url: url.trim().into(), token: token.trim().into(), key: key.filter(|k| !k.trim().is_empty()) })
+    let (url, token) = (
+        url.filter(|u| !u.trim().is_empty())?,
+        token.filter(|t| !t.trim().is_empty())?,
+    );
+    Some(RemoteConfig {
+        url: url.trim().into(),
+        token: token.trim().into(),
+        key: key.filter(|k| !k.trim().is_empty()),
+        fingerprint: None,
+    })
 }
 
 /// (service url, game or game build) pairs the service failed for in this process: not

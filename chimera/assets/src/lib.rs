@@ -23,6 +23,12 @@
 //! `Fetcher` behind `CachedFiles`, missing records on demand, checked
 //! before they are stored; `lock` is the repository's `assets.lock`.
 //!
+//! For players over the internet ("Playtest delivery" in the plan): `tls`
+//! gives the service HTTPS with its own self-signed certificate (a TLS
+//! front before the plain service) and the client a connection that trusts
+//! exactly the certificate whose fingerprint it was given; `access` keeps a
+//! player's token and the service a game server bound it to.
+//!
 //! `progress` reports fetches in words people read: a live line for
 //! `chimera_assets fetch`, periodic lines while a load fetches on demand.
 //!
@@ -42,6 +48,7 @@
 //! cap on the store; `chimera_pack`'s `put` doesn't check free space (an
 //! explicit fill fails loudly instead).
 
+pub mod access;
 pub mod accounts;
 pub mod cached;
 pub mod config;
@@ -57,6 +64,7 @@ pub mod server;
 pub mod shared;
 pub mod sign;
 pub mod store;
+pub mod tls;
 
 pub use cached::CachedFiles;
 pub use config::{AssetSettings, AssetsConfig};

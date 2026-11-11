@@ -43,6 +43,7 @@ pub mod interp;
 pub mod map_screen;
 pub mod match_end;
 pub mod net;
+pub mod relaunch;
 pub mod net_graph;
 pub mod night_vision;
 pub mod offscreen;
@@ -230,10 +231,33 @@ impl Args {
     }
 
     pub fn parse() -> Self {
-        Self::parse_from(std::env::args().skip(1)).unwrap_or_else(|e| {
+        let mut args = Self::parse_from(std::env::args().skip(1)).unwrap_or_else(|e| {
             eprintln!("{e}\n\n{USAGE}");
             std::process::exit(2);
-        })
+        });
+        args.take_asset_token();
+        args
+    }
+
+    /// `+chimera:asset_token <token>` is kept at once, before the app (and
+    /// its mounts and install checks) starts, and taken off the console's
+    /// lines so the token isn't echoed (`net::assets`).
+    fn take_asset_token(&mut self) {
+        let command = chimera_net::net::assets::TOKEN_COMMAND;
+        self.console.retain(|line| {
+            let words = crate::console::parse(line).into_iter().next().unwrap_or_default();
+            if !words.first().is_some_and(|w| w.eq_ignore_ascii_case(command)) {
+                return true;
+            }
+            match (words.get(1), chimera_net::net::assets::access_path()) {
+                (Some(token), Some(path)) => match chimera_net::net::assets::save_token(&path, token) {
+                    Ok(()) => println!("asset token saved ({})", path.display()),
+                    Err(e) => eprintln!("{command}: {e}"),
+                },
+                _ => eprintln!("usage: +{command} <token>"),
+            }
+            false
+        });
     }
 
     pub fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Self, String> {

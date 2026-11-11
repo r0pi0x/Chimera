@@ -19,7 +19,9 @@
 //! Tokens and files go over HTTPS only: a URL must be `https://`, except
 //! on this machine (`localhost`, `127.0.0.1`, `[::1]`: tests, a server on
 //! the same box). The token goes only to the configured server (never
-//! along a redirect).
+//! along a redirect). With a certificate fingerprint (`fingerprint`, as a
+//! game server hands it out), HTTPS trusts exactly that certificate
+//! (`tls::PinnedTls`), not the usual authorities.
 
 use std::{
     collections::HashMap,
@@ -73,12 +75,21 @@ pub struct RemoteConfig {
     pub token: String,
     /// The server's public key (hex), pinned.
     pub key: Option<String>,
+    /// The SHA-256 of the server's TLS certificate (hex): with it, HTTPS
+    /// trusts exactly that certificate (`tls::PinnedTls`: a self-signed
+    /// one, as a game server hands out at join); without, the usual
+    /// authorities (Mozilla's roots).
+    pub fingerprint: Option<String>,
 }
 
 impl std::fmt::Debug for RemoteConfig {
     // Never the token.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RemoteConfig").field("url", &self.url).field("key", &self.key).finish_non_exhaustive()
+        f.debug_struct("RemoteConfig")
+            .field("url", &self.url)
+            .field("key", &self.key)
+            .field("fingerprint", &self.fingerprint)
+            .finish_non_exhaustive()
     }
 }
 
@@ -125,6 +136,7 @@ fn status_error(status: u16, what: &str, body: &str) -> io::Error {
         401 => "the token was refused (missing, unknown or revoked)",
         403 => "this account may not fetch that game",
         404 => "not on the server",
+        429 => "the service is limiting this account or address (too many requests, or today's allowance used up)",
         _ => "the server failed",
     };
     io::Error::new(kind, format!("{what}: HTTP {status}: {why} ({body})"))
@@ -133,16 +145,35 @@ fn status_error(status: u16, what: &str, body: &str) -> io::Error {
 impl Remote {
     pub fn new(config: RemoteConfig) -> Result<Self, String> {
         let base = config.base()?;
-        let agent = Agent::config_builder()
+        let settings = Agent::config_builder()
             .http_status_as_error(false)
             .timeout_connect(Some(Duration::from_secs(10)))
             .timeout_recv_response(Some(Duration::from_secs(60)))
             .timeout_per_read(Some(Duration::from_secs(60)))
             .max_redirects(0)
             .user_agent(concat!("chimera_assets/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .new_agent();
-        Ok(Self { config, base, agent, key: OnceLock::new() })
+            .build();
+        let agent = match config.fingerprint.as_deref().filter(|f| !f.trim().is_empty()) {
+            Some(fingerprint) => {
+                use ureq::unversioned::{
+                    resolver::DefaultResolver,
+                    transport::{Connector, TcpConnector},
+                };
+                let tls = crate::tls::PinnedTls::new(fingerprint)?;
+                Agent::with_parts(
+                    settings,
+                    ().chain(TcpConnector::default()).chain(tls),
+                    DefaultResolver::default(),
+                )
+            }
+            None => settings.new_agent(),
+        };
+        Ok(Self {
+            config,
+            base,
+            agent,
+            key: OnceLock::new(),
+        })
     }
 
     /// The process's `Remote` for `config` (connections are kept).

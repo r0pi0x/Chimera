@@ -982,9 +982,10 @@ pub fn usage(name: &str, help: &str) -> (Vec<String>, String) {
     (Vec::new(), help.to_string())
 }
 
-/// Quote a word if it needs it, for writing configs and echoing commands.
+/// Quote a word if it needs it, for writing configs and echoing commands
+/// (a URL's `//` too, which unquoted starts a comment: `parse`).
 pub fn quote(word: &str) -> String {
-    if word.is_empty() || word.contains(|c: char| c.is_whitespace() || c == ';' || c == '"') {
+    if word.is_empty() || word.contains(|c: char| c.is_whitespace() || c == ';' || c == '"') || word.contains("//") {
         format!("\"{}\"", word.replace('"', "'"))
     } else {
         word.to_string()
@@ -1799,6 +1800,15 @@ pub fn config_text(w: &mut World) -> String {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// A URL on the command line (`+chimera:asset_url https://...`) keeps
+    /// its `//`: quoted, it isn't a comment.
+    #[test]
+    fn a_url_survives_quoting_and_parsing() {
+        let line = ["chimera:asset_url", "https://203.0.113.5:27031"].map(quote).join(" ");
+        assert_eq!(parse(&line), [vec!["chimera:asset_url".to_string(), "https://203.0.113.5:27031".to_string()]]);
+        assert_eq!(quote("plain"), "plain");
+    }
 
     #[test]
     fn cvar_scopes_follow_the_server_prefixes() {

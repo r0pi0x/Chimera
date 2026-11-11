@@ -55,6 +55,16 @@ CS:S, 26236938 of Combat Arms, 24600434 of HL2:DM; measured 2026-10-31, HL2:DM
 
 `chimera_assets status` lists the sets and sizes of what you have.
 
+Players rather than developers (a playtest over the internet, no
+checkout): the game server names the service at join and the client
+downloads what the match needs; they enter only a token
+([playtest-hosting.md](playtest-hosting.md)). The service then runs with
+HTTPS of its own (`chimera_asset_server --tls`, a self-signed certificate
+clients pin by fingerprint). A developer can use it the same way: join
+such a server once with a token, and later runs read from it (the bound
+access in `%LOCALAPPDATA%\chimera\asset-access.toml`, used when
+`[assets]` names no service).
+
 ## Day to day
 
 Work as with an install: `cargo run --features dev`, `cargo test ...`,

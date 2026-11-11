@@ -341,6 +341,7 @@ pub(super) fn stop(world: &mut World) {
     world.remove_resource::<RefusedReason>();
     world.remove_resource::<ServerWelcome>();
     world.remove_resource::<super::manifest::ServerManifest>();
+    super::assets::reset(world);
     super::predict::reset(world);
     super::interp::reset(world);
     super::weapons::reset(world);
@@ -381,6 +382,10 @@ fn send_join(world: &mut World) {
             // app made one.
             if let Some(m) = world.get_resource::<super::manifest::LocalMounts>() {
                 info.push((super::manifest::MOUNTS_KEY.to_string(), super::manifest::encode(&m.0)));
+                // It can fetch the files of games an offer names (`assets`).
+                if super::assets::session(world).can_fetch() {
+                    info.push((super::assets::ASSETS_KEY.to_string(), "1".to_string()));
+                }
             }
             info
         },
@@ -417,17 +422,35 @@ fn welcome(w: On<Welcome>, mut commands: Commands) {
             p.map = Some(welcome.map.clone());
         }
         world.insert_resource(ServerWelcome(welcome.clone()));
-        // What the match needs, before anything loads.
-        if !super::manifest::accept_or_leave(world, &welcome.manifest) {
-            return;
+        // The match's game files from the server's asset service first,
+        // for games this machine reads from it (`assets`).
+        let manifest = welcome.manifest.clone();
+        if let super::assets::Next::Go =
+            super::assets::begin(world, &manifest, super::assets::Then::Welcome(welcome.clone()))
+        {
+            proceed(world, super::assets::Then::Welcome(welcome));
         }
-        world.insert_resource(Handshake {
-            welcome,
-            fetch: default(),
-            reload: false,
-            loads_before: None,
-        });
     });
+}
+
+/// Joining goes on once the match's files are here (`assets::begin`): the
+/// manifest checked, then the map (`Handshake`).
+pub(super) fn proceed(world: &mut World, then: super::assets::Then) {
+    match then {
+        super::assets::Then::Welcome(welcome) => {
+            // What the match needs, before anything loads.
+            if !super::manifest::accept_or_leave(world, &welcome.manifest) {
+                return;
+            }
+            world.insert_resource(Handshake {
+                welcome,
+                fetch: default(),
+                reload: false,
+                loads_before: None,
+            });
+        }
+        super::assets::Then::Change(c) => changed_level(world, c),
+    }
 }
 
 /// The server started changing level: the loading dialog says so while
@@ -464,33 +487,44 @@ fn change_level(c: On<ChangeLevel>, mut commands: Commands) {
         welcome.allow_download = c.allow_download;
         welcome.tick_nanos = c.tick_nanos;
         welcome.manifest = c.manifest.clone();
-        world.insert_resource(ServerWelcome(welcome.clone()));
-        // What the new match needs, before the map loads.
-        if !super::manifest::accept_or_leave(world, &c.manifest) {
-            return;
-        }
-        world.remove_resource::<Joined>();
-        // What was predicted and drawn was on the old map.
-        super::predict::reset(world);
-        super::interp::reset(world);
+        world.insert_resource(ServerWelcome(welcome));
+        // The new match's game files first (`assets`).
+        if let super::assets::Next::Go =
+            super::assets::begin(world, &c.manifest, super::assets::Then::Change(c.clone()))
         {
-            let mut p = world.resource_mut::<JoinProgress>();
-            p.map = Some(c.map.clone());
-            p.download = None;
-            if let Some(s) = &mut p.server {
-                s.map = c.map.clone();
-            }
+            changed_level(world, c);
         }
-        if world.resource::<JoinProgress>().stage != JoinStage::ChangingLevel {
-            set_stage(world, JoinStage::ChangingLevel);
-            world.write_message(NetEvent::ChangingLevel(c.map.clone()));
+    });
+}
+
+/// `change_level` once the match's files are here.
+fn changed_level(world: &mut World, c: ChangeLevel) {
+    let welcome = world.resource::<ServerWelcome>().0.clone();
+    // What the new match needs, before the map loads.
+    if !super::manifest::accept_or_leave(world, &c.manifest) {
+        return;
+    }
+    world.remove_resource::<Joined>();
+    // What was predicted and drawn was on the old map.
+    super::predict::reset(world);
+    super::interp::reset(world);
+    {
+        let mut p = world.resource_mut::<JoinProgress>();
+        p.map = Some(c.map.clone());
+        p.download = None;
+        if let Some(s) = &mut p.server {
+            s.map = c.map.clone();
         }
-        world.insert_resource(Handshake {
-            welcome,
-            fetch: default(),
-            reload: true,
-            loads_before: None,
-        });
+    }
+    if world.resource::<JoinProgress>().stage != JoinStage::ChangingLevel {
+        set_stage(world, JoinStage::ChangingLevel);
+        world.write_message(NetEvent::ChangingLevel(c.map.clone()));
+    }
+    world.insert_resource(Handshake {
+        welcome,
+        fetch: default(),
+        reload: true,
+        loads_before: None,
     });
 }
 

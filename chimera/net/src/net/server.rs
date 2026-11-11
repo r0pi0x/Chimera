@@ -573,10 +573,14 @@ fn admit(world: &mut World, client: Entity, msg: Join) {
         } else {
             // The mount doctor's report (none: taken as having all).
             let report = super::manifest::from_userinfo(msg.userinfo.iter().map(|(k, v)| (k.as_str(), v.as_str())));
-            report.and_then(|r| {
+            report.and_then(|mut r| {
                 let manifest = super::manifest::current(world);
+                // A client that fetches the offered games' files has them.
+                super::assets::count_offered(&manifest, &msg.userinfo, &mut r);
                 let games = world.get_resource::<chimera_core::game_registry::Games>();
-                super::manifest::check(&manifest, &r, games).err()
+                super::manifest::check(&manifest, &r, games)
+                    .err()
+                    .map(|why| why + &super::assets::refusal_hint(&manifest).unwrap_or_default())
             })
         }
     };

@@ -224,6 +224,11 @@ fn sync_gun_names(
 /// minigame takes it, the network and the client shell with both games'
 /// HUDs. `chimera_client::client::app::run` runs it.
 pub fn client_app(args: Args, title: &str) -> App {
+    // A joiner without the default map's game (`with_defaults_for` left
+    // the map out) waits on the greybox for the server's map.
+    if args.game_map().is_none() && super::joins_server(&args.console) {
+        return client_app_with(args, title, None);
+    }
     let id = args.game_map().unwrap_or("cs_source:de_dust2").to_string();
     match super::load_map(&id, 0) {
         Ok(data) => client_app_on(args, title, &id, data),
@@ -328,7 +333,7 @@ pub fn joins_server(console: &[String]) -> bool {
 /// sets `MaxPlayer`. A joiner (`+connect`) gets neither the minigame nor
 /// the bots: the server plays its minigame (`minigame_net`) and fills its
 /// own slots; the map is the default's, loaded at once, until the server
-/// says its own.
+/// says its own (none, the greybox, without its game's install).
 pub fn with_defaults(args: Args) -> Args {
     with_defaults_for(args, super::DEFAULT_MINIGAME, &|id| {
         super::first_map(id).or_else(|_| super::first_map(super::DEFAULT_MINIGAME))
@@ -351,9 +356,24 @@ pub fn with_defaults_for(mut args: Args, minigame: &str, first_map: &dyn Fn(&str
         }
     };
     if args.map.is_none() {
-        args.map = first_map(&minigame).ok();
+        // A joiner without the map's game installed waits on the greybox:
+        // the server's offer brings the files (`net::assets`).
+        args.map = first_map(&minigame).ok().filter(|m| !joining || map_installed(m));
     }
     args
+}
+
+/// Whether map `id`'s game has an install here: its map loads at once,
+/// without a download (a game read from the asset store would fetch it
+/// before the join's download, with no progress shown).
+pub fn map_installed(id: &str) -> bool {
+    let info = match id.split_once(':').map(|(g, _)| g) {
+        Some(cs_source::game::GAME) => &cs_source::game::INFO,
+        Some(combat_arms::game::GAME) => &combat_arms::game::INFO,
+        Some(hl2dm::game::GAME) => &hl2dm::game::INFO,
+        _ => return true,
+    };
+    info.install().is_some() && !info.served_alone()
 }
 
 #[cfg(test)]
@@ -382,7 +402,12 @@ mod tests {
         let join = super::with_defaults(join);
         assert!(super::joins_server(&join.console));
         assert_eq!(join.console, ["connect 127.0.0.1:28930"], "no local minigame or bots");
-        assert_eq!(join.map.as_deref(), Some("cs_source:de_dust2"), "the default map meanwhile");
+        let installed = super::map_installed("cs_source:de_dust2");
+        assert_eq!(
+            join.map.as_deref(),
+            installed.then_some("cs_source:de_dust2"),
+            "the default map meanwhile, if its game is installed"
+        );
         assert!(!super::joins_server(&super::with_defaults(Args::default()).console));
     }
 }
