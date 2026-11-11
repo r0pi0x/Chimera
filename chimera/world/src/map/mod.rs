@@ -321,6 +321,14 @@ pub struct MapHooks {
     pub settle: Vec<fn(&mut World) -> bool>,
 }
 
+/// A spawned map is still settling behind a front end's loading screen
+/// (`client::console`'s settling, `MapHooks::settle`): its frames advance
+/// the simulation at most a tick each, so a network client can't keep its
+/// command clock with the server's meanwhile and doesn't start predicting
+/// until it's gone (`net::predict`).
+#[derive(Resource, Default)]
+pub struct MapSettling;
+
 /// `MapHooks::stepped`: starts a stepped spawn of the pending map, and runs
 /// one frame's share of it (at least one step, more until the budget is
 /// spent), saying whether it is done.

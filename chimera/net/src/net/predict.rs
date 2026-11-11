@@ -12,6 +12,10 @@
 //!   ticks (2, more with jitter) by running its fixed ticks a little faster
 //!   or slower (`nudge_clock`), or jumps when far off (startup, a stall).
 //!   So the client runs ahead of the server by RTT/2 plus the buffer.
+//!   While a new map settles behind the loading screen (`map::MapSettling`:
+//!   a frame runs at most a tick there) no state is taken: the clock
+//!   starts with the first one after, not falling behind and jumping every
+//!   few frames meanwhile.
 //! - **Prediction.** The local player runs its commands at once through
 //!   the normal tick (movement, the weapon frame: the `core::Predict`
 //!   schedules; on a client only it has their components), and each tick's
@@ -437,11 +441,15 @@ pub(super) fn plugin(app: &mut App) {
         .add_systems(
             PreUpdate,
             // Only once in the game: while the server's map loads here, its
-            // states are of a player on a map we don't have yet.
+            // states are of a player on a map we don't have yet; while it
+            // settles behind the loading screen (`map::MapSettling`) a
+            // frame runs at most a tick, so the clock would fall behind
+            // and jump again and again: the first state after starts it.
             receive_own_states
                 .after(rebuild_own_states)
                 .run_if(client())
-                .run_if(resource_exists::<super::client::Joined>),
+                .run_if(resource_exists::<super::client::Joined>)
+                .run_if(not(resource_exists::<crate::map::MapSettling>)),
         )
         .add_systems(
             RunFixedMainLoop,

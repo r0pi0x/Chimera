@@ -434,5 +434,11 @@ server restart.
 Found and fixed: a token entered again on a later start left the game
 with no service (nothing fetched); the TLS front's 16 connections per
 address; startup and join downloads that lost files when the service
-restarted; the waiting launcher processes' memory. Open items:
+restarted; the waiting launcher processes' memory; the command clock's
+bursts after each map change (the client predicted while the new map
+settled behind the loading screen, a frame running at most a tick, so its
+clock fell behind and jumped every few frames: 16-26 jumps and 53-94
+"nothing predicted" restarts per client per map change, on a quiet box
+too; now it starts predicting once in the game: 0 jumps and 1-2 restarts,
+also with 80 ms lag and 20 ms jitter). Open items:
 [backlog.md](backlog.md), "UGG playtest rehearsal".
