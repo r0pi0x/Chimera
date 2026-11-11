@@ -45,6 +45,7 @@ pub mod map_screen;
 pub mod match_end;
 pub mod net;
 pub mod relaunch;
+pub mod startup;
 pub mod net_graph;
 pub mod night_vision;
 pub mod offscreen;

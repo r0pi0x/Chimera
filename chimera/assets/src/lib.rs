@@ -31,6 +31,8 @@
 //!
 //! `progress` reports fetches in words people read: a live line for
 //! `chimera_assets fetch`, periodic lines while a load fetches on demand.
+//! `sets` fetches whole sets as the game does (a join's, the startup's,
+//! the prefetch's); `pace` caps a background fetch's rate, with a pause.
 //!
 //! `map_cache`: converted maps on disk beside the store, keyed by the
 //! converter and checked against every file the conversion read
@@ -56,11 +58,13 @@ pub mod disk;
 pub mod lock;
 pub mod manifest;
 pub mod map_cache;
+pub mod pace;
 pub mod pack;
 pub mod progress;
 pub mod recording;
 pub mod remote;
 pub mod server;
+pub mod sets;
 pub mod shared;
 pub mod sign;
 pub mod store;

@@ -29,6 +29,15 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    the game files", below) and that it answers over HTTPS from outside your
    network (`curl -k https://<host address>:<asset port>/key` prints a hex
    key).
+4. **Let testers fetch ahead on Friday.** A tester's first start downloads
+   about 0.5 GB from your asset service (what the games read at startup,
+   then the first match's files); ten testers doing that at 1pm on Saturday
+   share your upload. With the asset service and the game server up the
+   day before, ask each tester to run their first start then
+   (`Play-UGG.bat +chimera:asset_token <token> +connect <host address>:<port>`),
+   wait for the progress window and the first match to load, and quit.
+   On Saturday they start from what they already have; only new maps and
+   guns come.
 
 ## Publishing the game files (once, and after a game update)
 
@@ -128,6 +137,7 @@ Options (`ultimate_gun_game_server --help`):
 | `+sv_password <pw>` | password (testers type it on the Join screen) |
 | `+chimera:asset_url <url>` | the asset service joining clients fetch from |
 | `+chimera:asset_fingerprint <hex>` | its certificate's fingerprint (default: the one on this machine) |
+| `+chimera:asset_prefetch_max <KB/s>` | the most each client downloads later maps at in the background (default -1: the clients' own 2 MB/s; 0: none). See "Download speed and your upload" |
 | `+<command> [args]` | any other console command or cvar |
 
 Maps and matches:
@@ -170,7 +180,51 @@ On the router and the host's firewall:
 - Windows: allow `ultimate_gun_game_server.exe` through Defender Firewall
   (the first-run prompt) for the networks that matter.
 
-Bandwidth: roughly 0.15 Mbit/s up per connected player.
+Bandwidth: roughly 0.15 Mbit/s up per connected player for the game
+itself; the asset service's downloads are what fill an upload ("Download
+speed and your upload", below).
+
+## Download speed and your upload
+
+What a tester without the games downloads from the asset service:
+
+- **First start**, before the game's window: what the games read at startup
+  (about 270 MB: each game's `base` set), behind a small window that says
+  "Downloading game files: X of Y MB" with the speed and time left. Errors
+  (a refused token, the service unreachable, another certificate) show
+  there with what to do; the game then starts by itself. Testers with the
+  games installed download nothing of those games.
+- **Each join**: what the match needs that isn't there yet (the first one
+  about 170 MB), at full speed, on the loading panel.
+- **In the background, while playing**: the pool's other maps (about
+  170 MB), at a capped rate, held while the tester joins or changes map.
+
+The background rate is each tester's `chimera:asset_prefetch_rate` (KB/s,
+default 2000: 2 MB/s; 0 turns it off; saved in their config). You set the
+most any tester may use with the game server's
+`+chimera:asset_prefetch_max <KB/s>` (default -1: the testers' own rate;
+0: no background download for anyone, maps then come at the join).
+It reaches clients in the match manifest at each join and map change.
+
+Your upload is shared by everyone downloading at once. Rough first-download
+times if all testers start together (0.5 GB each), and a suggested cap
+(about half your upload, split between the testers):
+
+| Your upload | Testers | First downloads, all at once | `chimera:asset_prefetch_max` |
+|---|---|---|---|
+| 10 Mbit/s | 5 | ~35 min | 100 |
+| 10 Mbit/s | 10+ | ~70 min: fetch on Friday | 0 (off) |
+| 20 Mbit/s | 10 | ~35 min | 100 |
+| 50 Mbit/s | 10 | ~15 min | 300 |
+| 50 Mbit/s | 15 | ~20 min | 200 |
+| 100 Mbit/s | 10 | ~7 min | 600 |
+| 100 Mbit/s | 15 | ~10 min | 400 |
+| 500 Mbit/s or more | 15 | ~2 min | -1 (the testers' 2 MB/s) |
+
+In general: cap ≈ (your upload in KB/s ÷ 2) ÷ testers (1 Mbit/s is about
+125 KB/s). Measure your upload (any speed test) the day before. Testers
+who fetched on Friday ("The day before", 4) take nearly nothing from it on
+the day.
 
 ## Accounts and tokens
 
@@ -218,8 +272,10 @@ which clears the binding.
    folder, quit. Token entry and the download: run
    `Play-UGG.bat +chimera:asset_token <token> +connect <host address>:<port>`
    once; the game binds the token, starts again by itself (one restart, the
-   first time only), shows "Downloading game files: X of Y MB" on the
-   loading panel, then spawns. Later joins download only what is new.
+   first time only), shows a small window "Downloading game files: X of Y
+   MB" while it fetches what the games read at startup, opens the game,
+   shows the same line on the loading panel for the match's files, then
+   spawns. Later joins download only what is new.
 3. `chimera_pack user revoke` that test token, join again, confirm the
    download is refused with a clear message.
 4. Join with two clients and check a match starts with bots off

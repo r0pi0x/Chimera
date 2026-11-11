@@ -14,7 +14,8 @@
 //! (`progress::on_demand`). `batch_each` reads a batch answer record by
 //! record as it arrives; `fill` fetches a set's missing records in batches
 //! on a few connections at once, with a `progress::Transfer`
-//! (`chimera_assets fetch`).
+//! (`chimera_assets fetch`); `fill_paced` does it at a `pace::Pace`'s rate
+//! on one connection (the game's background prefetch).
 //!
 //! Tokens and files go over HTTPS only: a URL must be `https://`, except
 //! on this machine (`localhost`, `127.0.0.1`, `[::1]`: tests, a server on
@@ -36,7 +37,9 @@ use std::{
 use ureq::Agent;
 
 use crate::{
-    Manifest, Store, progress, sign,
+    Manifest, Store,
+    pace::{Pace, Paced},
+    progress, sign,
     store::{is_id, is_name, sha256_hex, sort_builds, write_atomic},
 };
 
@@ -66,6 +69,8 @@ pub const FILL_BATCH: usize = 256;
 pub const FILL_BATCH_BYTES: u64 = 16_000_000;
 /// Batches `fill` has in flight at once.
 pub const FILL_CONNECTIONS: usize = 4;
+/// Stored bytes one paced batch (`fill_paced`) asks for, about.
+pub const PACED_BATCH_BYTES: u64 = 4_000_000;
 
 /// Where the service is and who asks.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -337,9 +342,21 @@ impl Remote {
 
     /// Many records at once, each handed to `each` (id, status, stored
     /// bytes: unchecked, empty unless 200) as soon as it has arrived.
-    pub fn batch_each(&self, ids: &[String], mut each: impl FnMut(&str, u16, Vec<u8>)) -> io::Result<()> {
+    pub fn batch_each(&self, ids: &[String], each: impl FnMut(&str, u16, Vec<u8>)) -> io::Result<()> {
+        self.batch_each_paced(ids, None, each)
+    }
+
+    /// `batch_each`, the answer read at `pace`'s rate (when given).
+    pub fn batch_each_paced(
+        &self,
+        ids: &[String],
+        pace: Option<&Pace>,
+        mut each: impl FnMut(&str, u16, Vec<u8>),
+    ) -> io::Result<()> {
         let body = ids.join("\n");
-        let mut reader = BufReader::with_capacity(1 << 16, self.post_stream("/batch", body.as_bytes())?);
+        let unpaced = Pace::default();
+        let inner = Paced { inner: self.post_stream("/batch", body.as_bytes())?, pace: pace.unwrap_or(&unpaced) };
+        let mut reader = BufReader::with_capacity(1 << 16, inner);
         let bad = |why: &str| io::Error::new(io::ErrorKind::InvalidData, format!("/batch: a broken answer ({why})"));
         let mut head = String::new();
         loop {
@@ -372,6 +389,22 @@ impl Remote {
         wanted: &[(String, u64, u64)],
         transfer: Option<&progress::Transfer>,
     ) -> (usize, u64, Vec<String>) {
+        self.fill_paced(store, wanted, transfer, None)
+    }
+
+    /// `fill` at `pace` (when given): the answers read at its rate, held
+    /// while it is paused, ended when it stops; on one connection, in
+    /// batches of about `PACED_BATCH_BYTES` (a batch a pause or a stop
+    /// cuts short is little to fetch again).
+    pub fn fill_paced(
+        &self,
+        store: &Store,
+        wanted: &[(String, u64, u64)],
+        transfer: Option<&progress::Transfer>,
+        pace: Option<&Pace>,
+    ) -> (usize, u64, Vec<String>) {
+        let (connections, batch_bytes) =
+            if pace.is_some() { (1, PACED_BATCH_BYTES) } else { (FILL_CONNECTIONS, FILL_BATCH_BYTES) };
         let sizes: HashMap<&str, u64> = wanted.iter().map(|(id, s, _)| (id.as_str(), *s)).collect();
         let mut asked = std::collections::HashSet::new();
         let missing: Vec<&(String, u64, u64)> =
@@ -380,7 +413,7 @@ impl Remote {
         let mut batches: Vec<Vec<String>> = Vec::new();
         let mut bytes = 0;
         for (id, _, stored) in missing {
-            if batches.last().is_none_or(|b| b.len() >= FILL_BATCH || bytes >= FILL_BATCH_BYTES) {
+            if batches.last().is_none_or(|b| b.len() >= FILL_BATCH || bytes >= batch_bytes) {
                 batches.push(Vec::new());
                 bytes = 0;
             }
@@ -390,12 +423,15 @@ impl Remote {
         let next = AtomicUsize::new(0);
         let totals = Mutex::new((0usize, 0u64, Vec::new()));
         std::thread::scope(|s| {
-            for _ in 0..FILL_CONNECTIONS.min(batches.len()) {
+            for _ in 0..connections.min(batches.len()) {
                 s.spawn(|| {
                     while let Some(chunk) = batches.get(next.fetch_add(1, Ordering::Relaxed)) {
+                        if pace.is_some_and(Pace::stopped) {
+                            break;
+                        }
                         let (mut n, mut got, mut failed) = (0, 0, Vec::new());
                         let mut answered = std::collections::HashSet::new();
-                        let result = self.batch_each(chunk, |id, status, data| {
+                        let result = self.batch_each_paced(chunk, pace, |id, status, data| {
                             let Some(size) = sizes.get(id) else { return };
                             answered.insert(id.to_string());
                             let len = data.len() as u64;

@@ -124,6 +124,11 @@ impl Transfer {
         (s.files, s.bytes, self.bytes)
     }
 
+    /// How long since it started.
+    pub fn elapsed(&self) -> Duration {
+        self.started.elapsed()
+    }
+
     /// The summary (the live line replaced by it).
     pub fn finish(&self) -> String {
         let s = self.state.lock().unwrap_or_else(|e| e.into_inner());

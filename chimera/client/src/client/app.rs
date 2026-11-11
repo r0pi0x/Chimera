@@ -25,7 +25,8 @@
 //! the party's main menu over a background map), the start map at the
 //! console's `mat_hdr_level` (`hdr_start`), `--debug-view` and
 //! `--lightmap-only` on it (`debug_views`), its dedicated server's binary
-//! for the usage text (`server`) and what it adds last (`launch`).
+//! for the usage text (`server`), what it adds last (`launch`) and every
+//! game it plays (`games`: the startup fetch's, `startup`).
 //! `--offscreen` and the window are `default_plugins`'s, for every app.
 //!
 //! `run_app` is what every game binary does with its app once its
@@ -135,6 +136,9 @@ pub struct GameAppHooks {
     pub server: Option<&'static str>,
     /// What the app adds last (a main menu, a launch's seed).
     pub launch: Option<fn(&mut App, &Args)>,
+    /// Every game the app plays, for the startup fetch (`startup`; None:
+    /// its own, `GameApp::info`).
+    pub games: Option<fn() -> Vec<&'static GameInfo>>,
 }
 
 impl GameAppHooks {
@@ -148,6 +152,7 @@ impl GameAppHooks {
         debug_views: false,
         server: None,
         launch: None,
+        games: None,
     };
 }
 
@@ -249,13 +254,20 @@ impl GameApp {
     }
 }
 
-/// The game's binary: the command line (`--help`: `GameApp::usage`), what
-/// the machine lacks, the start map, the app (`app`), run (`run_app`).
+/// The game's binary: the command line (`--help`: `GameApp::usage`), the
+/// startup fetch (`startup`: a progress window, then the game in a new
+/// process), what the machine lacks, the start map, the app (`app`), run
+/// (`run_app`).
 /// Exits the process on a bad command line (2), or a lack that stops it or
 /// a start map that doesn't load (1).
 pub fn run(game: &'static GameApp) -> AppExit {
     let args = game.args(Args::parse_for(&game.usage()));
     super::offscreen::silence_audio_device(&args);
+    // The files the games read at startup, behind a progress window, when
+    // they come from the asset service and aren't here yet.
+    if let Some(exit) = super::startup::run_if_needed(game, &args) {
+        return exit;
+    }
     let (lacks, fatal) = game.requirements();
     if fatal {
         exit_fatal(&lacks);

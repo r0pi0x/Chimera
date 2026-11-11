@@ -4,7 +4,8 @@
 //! quits, since the games' mounts are opened at startup; the process waits
 //! for the new one and ends with its status (`app::run_app`: a launcher
 //! script's log and error check cover the game that plays). Registered by
-//! `net::ClientNetPlugin`.
+//! `net::ClientNetPlugin`. The startup fetch's window starts the game the
+//! same way (`start_game`, `startup`).
 
 use std::{process::Child, sync::Mutex};
 
@@ -29,7 +30,13 @@ pub fn wait_for_restart() -> Option<AppExit> {
 /// was just bound to, and quit.
 pub fn relaunch(asked: Res<crate::net::assets::AssetRelaunch>, mut exit: MessageWriter<AppExit>) {
     let args = relaunch_args(std::env::args().skip(1), asked.0);
-    let started = std::env::current_exe().and_then(|exe| std::process::Command::new(exe).args(&args).spawn());
+    let started = std::env::current_exe().and_then(|exe| {
+        // A new token's game fetches what it reads at startup again.
+        std::process::Command::new(exe)
+            .args(&args)
+            .env_remove(crate::net::asset_startup::FETCHED_ENV)
+            .spawn()
+    });
     match started {
         Ok(child) => {
             info!("starting again with the server's game files (process {})", child.id());
@@ -40,23 +47,45 @@ pub fn relaunch(asked: Res<crate::net::assets::AssetRelaunch>, mut exit: Message
     }
 }
 
+/// After the startup fetch (`startup`): the game started with `args` (as
+/// this process was, without the token), told it has fetched
+/// (`asset_startup::FETCHED_ENV`); this process waits for it
+/// (`wait_for_restart`).
+pub fn start_game(args: &[String]) -> std::io::Result<u32> {
+    let exe = std::env::current_exe()?;
+    let child = std::process::Command::new(exe)
+        .args(args)
+        .env(crate::net::asset_startup::FETCHED_ENV, "1")
+        .spawn()?;
+    let id = child.id();
+    *STARTED.lock().unwrap_or_else(|e| e.into_inner()) = Some(child);
+    Ok(id)
+}
+
 /// The options a game started again gets: these, without an earlier
 /// `+connect` (replaced by `server`'s) and without the token (kept already).
 pub fn relaunch_args(args: impl IntoIterator<Item = String>, server: Option<std::net::SocketAddr>) -> Vec<String> {
+    let mut out = without(args, &["+connect"]);
+    if let Some(server) = server {
+        out.extend(["+connect".to_string(), server.to_string()]);
+    }
+    out
+}
+
+/// `args` without the token (kept already) and the `+` commands `drop`,
+/// each with its words.
+pub fn without(args: impl IntoIterator<Item = String>, drop: &[&str]) -> Vec<String> {
     let token = format!("+{}", crate::net::assets::TOKEN_COMMAND);
     let mut out = Vec::new();
     let mut it = args.into_iter().peekable();
     while let Some(a) = it.next() {
-        if a.eq_ignore_ascii_case("+connect") || a.eq_ignore_ascii_case(&token) {
+        if drop.iter().any(|d| a.eq_ignore_ascii_case(d)) || a.eq_ignore_ascii_case(&token) {
             while it.peek().is_some_and(|n| !n.starts_with('+') && !n.starts_with("--")) {
                 it.next();
             }
             continue;
         }
         out.push(a);
-    }
-    if let Some(server) = server {
-        out.extend(["+connect".to_string(), server.to_string()]);
     }
     out
 }

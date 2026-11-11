@@ -30,7 +30,8 @@ use chimera_net::{
     harness::NetSim,
     net::{
         NetHooks,
-        assets::{AssetHost, AssetRelaunch, AssetSession, FILES},
+        asset_startup::{self, AppGame, StartupFetch, Status},
+        assets::{self, AssetHooks, AssetHost, AssetRelaunch, AssetSession, FILES, PrefetchRate},
         client::{JoinFailure, JoinProgress, JoinStage},
         manifest::{GameMount, LocalMounts, MatchManifest, MountReport},
         memory::LinkConditions,
@@ -53,6 +54,20 @@ fn setup(host: AssetHost) -> impl Fn(&mut App) + Send + Sync + 'static {
         });
         app.world_mut().resource_mut::<NetHooks>().manifest.push(needs_game);
         app.insert_resource(host.clone());
+    }
+}
+
+/// The match's pool: a later map of the stand-in game (prefetched).
+fn pool(_: &World) -> (Vec<String>, Vec<String>) {
+    (Vec::new(), vec![format!("{GAME}:later")])
+}
+
+/// `setup` with a pool (the offer's `later`).
+fn setup_pool(host: AssetHost) -> impl Fn(&mut App) + Send + Sync + 'static {
+    let base = setup(host);
+    move |app: &mut App| {
+        base(app);
+        app.world_mut().resource_mut::<AssetHooks>().0.push(pool);
     }
 }
 
@@ -94,6 +109,20 @@ impl Fixture {
         }
         put("models/player.mdl".into(), b"a player".to_vec(), "players");
         put("extra/big.dat".into(), vec![9u8; 50_000], "extra");
+        // A later map (`map/later`, the pool's: prefetched): 60 kB a record.
+        for i in 0..8u32 {
+            // xorshift: bytes zstd can't shrink.
+            let mut x = 0x9E37_79B9_7F4A_7C15u64 ^ u64::from(i + 1);
+            let bytes: Vec<u8> = (0..60_000)
+                .map(|_| {
+                    x ^= x << 13;
+                    x ^= x >> 7;
+                    x ^= x << 17;
+                    (x >> 24) as u8
+                })
+                .collect();
+            put(format!("maps/later{i}.dat"), bytes, "map/later");
+        }
         m.save(&store.manifest_path(GAME, "7")).unwrap();
         let running = server::serve(
             Service::new(store.clone()).unwrap().with_latency(latency),
@@ -399,4 +428,151 @@ fn a_client_without_files_binds_its_token_and_starts_again() {
     let (_, reason) = progress(&sim, 0).failure.unwrap();
     assert!(reason.contains("refused your token"), "{reason}");
     assert!(!sim.clients[0].app.world().contains_resource::<AssetRelaunch>());
+}
+
+fn prefetch(sim: &NetSim, i: usize) -> Option<assets::PrefetchState> {
+    assets::prefetch_state(sim.clients[i].app.world())
+}
+
+/// The pool's later map comes in the background at the prefetch's rate:
+/// the client's, capped by the server's hint; held while the client is
+/// changing level; none at all when the server says 0.
+#[test]
+fn the_prefetch_keeps_to_its_rate_and_holds_for_the_foreground() {
+    let svc = Fixture::new("prefetch", 2, Duration::ZERO);
+    let token = svc.user("tester");
+    let later = svc.ids("map/later");
+    let bytes: u64 = svc.manifest.sets["map/later"].iter().map(|p| svc.manifest.files[p].stored).sum();
+    assert!(bytes > 300_000, "{bytes}");
+
+    // The server caps it at 100 KB/s (the client's own is 2 MB/s).
+    let mut host = svc.host();
+    host.prefetch_max = 100;
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup_pool(host));
+    let session = svc.session("client", &token, true);
+    let store = session.settings.as_ref().unwrap().store.clone().unwrap();
+    sim.add_client(client_with(session, true));
+    assert!(until(&mut sim, 30.0, |s| joined(s, 0)));
+    assert!(until(&mut sim, 10.0, |s| prefetch(s, 0).is_some_and(|p| p.running)));
+    let state = prefetch(&sim, 0).unwrap();
+    assert_eq!(state.rate_kb, 100, "{state:?}");
+    assert!(!state.paused);
+    // Changing level: held.
+    sim.clients[0].app.world_mut().resource_mut::<JoinProgress>().stage = JoinStage::ChangingLevel;
+    sim.step();
+    assert!(prefetch(&sim, 0).unwrap().paused, "held while changing level");
+    sim.clients[0].app.world_mut().resource_mut::<JoinProgress>().stage = JoinStage::Joined;
+    sim.step();
+    assert!(!prefetch(&sim, 0).unwrap().paused);
+    // At 100 KB/s the set (> 300 kB) takes more than 2.5 s: after 1 s of
+    // play, never all of it (a lower bound: pacing is never faster).
+    let start = std::time::Instant::now();
+    until(&mut sim, 1.0, |_| false);
+    let elapsed = start.elapsed().as_secs_f64();
+    let have = later.iter().filter(|id| store.has(id)).count();
+    assert!(have < later.len() || elapsed > 2.5, "{have} of {} after {elapsed:.1} s", later.len());
+    // The client may lower it further (the cvar), and it all arrives.
+    sim.clients[0].app.world_mut().insert_resource(PrefetchRate(50));
+    sim.step();
+    assert_eq!(prefetch(&sim, 0).unwrap().rate_kb, 50);
+    sim.clients[0].app.world_mut().insert_resource(PrefetchRate(100_000));
+    assert!(
+        until(&mut sim, 30.0, |_| later.iter().all(|id| store.has(id))),
+        "the later map prefetched"
+    );
+
+    // The server says 0: no prefetch for anyone.
+    let mut host = svc.host();
+    host.prefetch_max = 0;
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup_pool(host));
+    let session = svc.session("client0", &token, true);
+    let store = session.settings.as_ref().unwrap().store.clone().unwrap();
+    sim.add_client(client_with(session, true));
+    assert!(until(&mut sim, 30.0, |s| joined(s, 0)));
+    until(&mut sim, 1.0, |_| false);
+    let state = prefetch(&sim, 0).unwrap();
+    assert_eq!((state.rate_kb, state.running), (0, false), "{state:?}");
+    assert!(later.iter().all(|id| !store.has(id)), "nothing prefetched");
+}
+
+/// A session's settings for the startup fetch with `token` at `url`
+/// pinning `fingerprint`.
+fn startup_settings(svc: &Fixture, client: &str, token: &str, url: String, fingerprint: &str) -> AssetSettings {
+    let mut s = svc.session(client, token, true).settings.unwrap();
+    let remote = s.remote.as_mut().unwrap();
+    remote.url = url;
+    remote.fingerprint = Some(fingerprint.to_string());
+    s
+}
+
+fn run_startup(settings: AssetSettings, wanted: Vec<chimera_assets::sets::Wanted>) -> (Status, Vec<Status>) {
+    let mut fetch = StartupFetch::start(settings, wanted);
+    let start = std::time::Instant::now();
+    let mut seen = Vec::new();
+    while start.elapsed() < Duration::from_secs(30) {
+        let s = fetch.status();
+        if matches!(s, Status::Done(_) | Status::Failed(_)) {
+            return (s, seen);
+        }
+        seen.push(s);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    panic!("the startup fetch didn't end: {seen:?}");
+}
+
+/// The startup fetch (before the window): planned only for a game that
+/// isn't installed and whose startup sets the store lacks; it fetches
+/// them (and nothing else) with its progress, then plans nothing; a game
+/// the service doesn't list is skipped; a refused token, an unreachable
+/// service and another certificate end it with the reason.
+#[test]
+fn the_startup_fetch_gets_what_the_games_read_first_or_says_why_not() {
+    let svc = Fixture::new("startup", 300, Duration::from_millis(100));
+    let token = svc.user("tester");
+    let settings = startup_settings(&svc, "client", &token, svc.front.url(), &svc.fingerprint);
+    let store = settings.store.clone().unwrap();
+    let game = |installed| AppGame { game: GAME.into(), installed };
+    let mut settings_install = settings.clone();
+    settings_install.use_install = true;
+    assert!(
+        asset_startup::plan(&settings_install, &[game(true)]).is_none(),
+        "an installed game is never fetched"
+    );
+    let mut no_service = settings.clone();
+    no_service.remote = None;
+    assert!(asset_startup::plan(&no_service, &[game(false)]).is_none(), "no service: nothing");
+    let other = AppGame { game: "not_served".into(), installed: false };
+    let wanted = asset_startup::plan(&settings, &[game(false), other]).expect("planned");
+    assert_eq!(wanted[0].sets, ["base"]);
+
+    let (end, seen) = run_startup(settings.clone(), wanted);
+    assert!(matches!(end, Status::Done(_)), "{end:?}");
+    assert!(svc.ids("base").iter().all(|id| store.has(id)), "base fetched");
+    assert!(svc.ids("players").iter().all(|id| !store.has(id)), "only the startup sets");
+    let total: u64 = svc.manifest.sets["base"].iter().map(|p| svc.manifest.files[p].stored).sum();
+    assert!(
+        seen.iter().any(|s| matches!(s, Status::Downloading { total: t, .. } if *t == total)),
+        "the bytes in all shown: {seen:?}"
+    );
+    assert!(
+        asset_startup::plan(&settings, &[game(false)]).is_none(),
+        "all here: no window next time"
+    );
+
+    // Errors, each with what to do.
+    let fresh = |name: &str, token: &str, url: String, fp: &str| {
+        let s = startup_settings(&svc, name, token, url, fp);
+        let wanted = asset_startup::plan(&s, &[game(false)]).expect("planned");
+        match run_startup(s, wanted).0 {
+            Status::Failed(why) => why,
+            other => panic!("{other:?}"),
+        }
+    };
+    let why = fresh("mistyped", "chimera1_mistyped", svc.front.url(), &svc.fingerprint);
+    assert!(why.contains("refused your token") && why.contains("chimera:asset_token"), "{why}");
+    let why = fresh("other_cert", &token, svc.front.url(), &"ab".repeat(32));
+    assert!(why.contains("another certificate"), "{why}");
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
+    let why = fresh("unreachable", &token, format!("https://{closed}"), &svc.fingerprint);
+    assert!(why.contains("can't reach the asset service"), "{why}");
 }
