@@ -3471,9 +3471,17 @@ server's), and maps its blocks of 4 MB and more for good
 | held after 28 maps (MB) | | 2,318 (2,157-2,392 on the last lap) |
 | free in arenas (MB) | 844-1,863 | given back |
 
-The test fails if the server has 2.5 GB in use on any map, holds 500 MB more
-than it has in use, or a map has 32 MB more in use on its third visit than
-on its second.
+The test fails if the server has 2.5 GB in use on any map (2.9 GB with
+HL2:DM installed), holds 500 MB more than it has in use, or a map has 32 MB
+more in use on its third visit than on its second.
+
+**With HL2:DM installed** (`CHIMERA_HL2DM_ROOT`, as the after-push run had
+it): its parts join the ladder and its kit dresses every other game's map
+for its players, 0.45 GB more in use (2.61-2.69 GB), of which 0.12 GB were
+the guests' textures: HL2:DM's and CS:S's dressing of another game's map
+(`dress_guest`) decoded them on a load without textures. They follow the
+load now (`dress_guest_with(.., lean)`, `MaterialLoader::lean`): 2.35-2.56
+GB. The rest is HL2:DM's bodies' and models' animations and its sounds.
 
 **Left** (bounded, not per map): of the 2.2 GB in use, the Combat Arms view
 models' animations sampled for each map's dressing (510 MB, converted again

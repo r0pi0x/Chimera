@@ -297,10 +297,11 @@ fn add_guns(
 /// a CS:S gun is CS:S's, `slots::GameIdentity`). The kit's textures are
 /// appended to the map's (`MaterialLoader::guest`: its indices begin past
 /// them), so the bodies and models are the same as CS:S's own maps give.
-/// The bodies go after the map's own.
-pub fn dress_guest(mount: &Mount, map: &mut MapData, kept: &'static [&'static str]) {
+/// The bodies go after the map's own. `lean`: the textures' sizes only
+/// (`MaterialLoader::lean`: a load without textures, the dedicated server's).
+pub fn dress_guest(mount: &Mount, map: &mut MapData, kept: &'static [&'static str], lean: bool) {
     let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
-    let mut materials = MaterialLoader::guest(mount, textures, cubemaps);
+    let mut materials = MaterialLoader::guest(mount, textures, cubemaps).lean(lean);
     let surfaces = super::surfaceprops::SurfaceProps::load(&mut materials);
     let kit = crate::map::KitLoad::Players(kept);
     let mut guest = crate::map::GameKit::default();

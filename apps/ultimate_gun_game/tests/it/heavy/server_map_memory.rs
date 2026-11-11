@@ -16,11 +16,13 @@
 //!
 //! What it holds: a map has in use on its third visit what it had on its
 //! second (`LAP_GROWTH`) and about the same entities; the server has less
-//! than `IN_USE_LIMIT` in use (Combat Arms' models' textures were decoded on
-//! the server, which draws nothing: 3.3 GB in use), and holds little more
-//! than that (`HELD_BEYOND_IN_USE`: glibc kept 1.3-1.8 GB free in its
-//! arenas, more each map, before the server gave them back). Prints a row per map (`--nocapture`). Passes
-//! with a note without the installs, or off Linux with glibc (no counts).
+//! than `IN_USE_LIMIT` in use, `HL2DM_IN_USE` more with HL2:DM installed (its
+//! parts join the ladder; Combat Arms' models' textures, and the guests'
+//! dressing's, were decoded on the server, which draws nothing: 3.3 GB in
+//! use), and holds little more than that (`HELD_BEYOND_IN_USE`: glibc kept
+//! 1.3-1.8 GB free in its arenas, more each map, before the server gave them
+//! back). Prints a row per map (`--nocapture`). Passes with a note without
+//! the installs, or off Linux with glibc (no counts).
 
 use std::time::Duration;
 
@@ -60,10 +62,16 @@ const MAPS: [&str; 4] = [
 
 const LAPS: usize = 3;
 
-/// The server's bytes in use at most, on any map. Measured 2026-11-11: 3.20-3.40
-/// GB before the server kept Combat Arms' textures' sizes only, 2.02-2.24 GB
-/// after.
+/// The server's bytes in use at most, on any map, with CS:S and Combat Arms
+/// installed. Measured 2026-11-11: 3.20-3.40 GB before the server kept Combat
+/// Arms' textures' sizes only, 2.02-2.24 GB after.
 const IN_USE_LIMIT: u64 = 2560 << 20;
+
+/// What HL2:DM's install adds to that (its parts in the ladder, its kit
+/// dressing every other game's map: bodies, held and view models with their
+/// animations, sounds): measured 2.35-2.56 GB in all, 0.33 GB more; 2.47-2.69
+/// GB while the guests' dressing decoded their textures on the server.
+const HL2DM_IN_USE: u64 = 400 << 20;
 
 /// What a map may have in use more on its third visit than on its second:
 /// measured 3-11 MB (the archetypes' tables, which Bevy keeps); over seven
@@ -185,14 +193,18 @@ fn map_changes_keep_no_memory() {
             rows.push(Row { lap, map, in_use, held, entities });
         }
     }
+    // The ladder is made of the installed games' parts: HL2:DM's adds its kit.
+    let hl2dm = hl2dm::game::INFO.install().is_some();
+    let limit = IN_USE_LIMIT + if hl2dm { HL2DM_IN_USE } else { 0 };
     for r in &rows {
         assert!(
-            r.in_use < IN_USE_LIMIT,
-            "{} MB in use on {} (lap {}): more than {} MB. Does the server keep textures' texels (`world::SizesOnly`)?",
+            r.in_use < limit,
+            "{} MB in use on {} (lap {}): more than {} MB (HL2:DM installed: {hl2dm}). Does the server keep textures' \
+             texels (`world::SizesOnly`, a guest's `MaterialLoader::lean`)?",
             r.in_use >> 20,
             r.map,
             r.lap,
-            IN_USE_LIMIT >> 20
+            limit >> 20
         );
         assert!(
             r.held < r.in_use + HELD_BEYOND_IN_USE,

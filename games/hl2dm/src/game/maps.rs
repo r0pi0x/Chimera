@@ -244,12 +244,19 @@ pub fn add_view_models(
 /// bank holds only what it asked for) where the map hasn't an entry of
 /// that name.
 pub fn dress_guest(map: &mut MapData, kept: &'static [&'static str]) -> Result<(), String> {
+    dress_guest_with(map, kept, false)
+}
+
+/// `dress_guest`; `lean` (a load without textures, `MapLoadOptions::
+/// textures` off: the dedicated server's): the kit's textures' sizes only
+/// (`MaterialLoader::lean`), as the map's own.
+pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: bool) -> Result<(), String> {
     let install = super::INFO
         .install()
         .ok_or_else(|| format!("no `{}` install found (Steam, [games.hl2dm] path, or $CHIMERA_HL2DM_ROOT)", super::GAME))?;
     let mount = super::mount::open(&install).map_err(|e| e.to_string())?;
     let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
-    let mut materials = MaterialLoader::guest(&mount, textures, cubemaps);
+    let mut materials = MaterialLoader::guest(&mount, textures, cubemaps).lean(lean);
     let surfaces = SurfaceProps::load(&mut materials);
     let kit = crate::map::KitLoad::Players(kept);
     let mut guest = crate::map::GameKit::default();
