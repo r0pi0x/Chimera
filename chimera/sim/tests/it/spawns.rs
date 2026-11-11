@@ -371,6 +371,10 @@ fn respawned_players_face_open_space_not_a_fixed_direction() {
     assert!(!on_grid, "yaw {} is a fixed heading", i.yaw);
 }
 
+/// A spawn's facing costs well under a millisecond: counted in
+/// instructions (`metrics::work::now`, the same on every run; a
+/// millisecond is a few million: 0.2M in the dev build), not timed. Skips the bound without
+/// hardware counters.
 #[test]
 fn facing_costs_well_under_a_millisecond() {
     let mut sim = started(DEF, |_| {});
@@ -380,14 +384,17 @@ fn facing_costs_well_under_a_millisecond() {
     assert!(spots.len() > 40);
     let w = sim.app.world_mut();
     spawns::facing_at(w, spots[0], &f, 0);
-    let n = 300;
-    let t = std::time::Instant::now();
-    for k in 0..n {
+    let n = 300u64;
+    let Some(before) = chimera_core::metrics::work::now() else {
+        eprintln!("skipping: no hardware counters ({})", chimera_core::metrics::hw_status());
+        return;
+    };
+    for k in 0..n as usize {
         spawns::facing_at(w, spots[k % spots.len()], &f, k as u32);
     }
-    let each = t.elapsed() / n as u32;
-    println!("facing_at: {each:?} per spawn");
-    assert!(each < std::time::Duration::from_millis(1), "{each:?} per spawn");
+    let each = chimera_core::metrics::work::now().unwrap_or(before).saturating_sub(before) / n;
+    println!("facing_at: {each} instructions per spawn");
+    assert!(each < 1_000_000, "{each} instructions per spawn");
 }
 
 /// An area symmetric about x = 0 and z = 0, as nav areas often are about

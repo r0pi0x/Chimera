@@ -181,6 +181,13 @@ log> --set <name>` (a set from a recorded run), `chimera_pack sets <game>
   `determinism.rs` ratchet this.
 - **Generalize for the second game.** When a second game needs a piece of
   the first, lift it into Chimera; games never depend on each other.
+- **Judge performance by deterministic counts, never by wall clock.** A
+  tick's or frame's cost is the instructions its systems retire in a
+  repeatable scenario (`sim.repeatable()`, `sim.work(n)`, `perfgate`,
+  `frame_bench`: the same to under 0.1% idle or loaded); wall and CPU
+  times are for reading only, never an assertion or a gate. A failing
+  cost check prints the systems that grew (`WorkCounts::diff_table`).
+  [docs/performance.md](docs/performance.md), "Work counts".
 
 ## Pitfalls (from experience)
 

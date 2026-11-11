@@ -8,10 +8,10 @@
 use bevy::prelude::*;
 use chimera_core::{
     core::{Damage, DamageKind, Health, Hitgroup, SpawnPoint},
-    metrics::{ThreadCounters, census::Census},
+    metrics::census::Census,
 };
 use chimera_sim::minigame::{self, ladder::{Ladder, set_rung}};
-use chimera_world::harness::Sim;
+use chimera_world::harness::{Sim, Work};
 use ultimate_gun_game::{MINIGAME, RUNGS, generate};
 
 use crate::parts::ugg;
@@ -84,33 +84,20 @@ fn play_match(sim: &mut Sim, seed: u64) {
     }
 }
 
-/// The median of the instructions each of `n` ticks used on this thread,
-/// over the ticks that made no new archetype; None without hardware
-/// counters. The median, not the mean: a few ticks cost three to five
-/// times the rest, and with them in a mean two matches' costs differed by
-/// up to a quarter on the same build (3.39M and 4.30M under a whole
-/// suite's load; 3.4M to 4.5M idle) where their medians differ by a few
-/// per cent (2.8M to 3.0M).
-fn cost(sim: &mut Sim, n: usize) -> Option<(u64, u64)> {
-    let mut c = ThreadCounters::current();
-    let mut ticks = Vec::new();
-    let mut last = sim.app.world().archetypes().len();
-    for _ in 0..n {
-        let a = c.read().hw?.instructions;
-        sim.ticks(1);
-        let used = c.read().hw?.instructions.saturating_sub(a);
-        let now = sim.app.world().archetypes().len();
-        if now == last {
-            ticks.push(used);
-        }
-        last = now;
-    }
-    if ticks.is_empty() {
-        return None;
-    }
-    let mean = ticks.iter().sum::<u64>() / ticks.len() as u64;
-    ticks.sort_unstable();
-    Some((ticks[ticks.len() / 2], mean))
+/// What `n` ticks cost (`Sim::work`: instructions in the tick's systems,
+/// the same on every run of the same build, idle or loaded); None without
+/// hardware counters.
+fn cost(sim: &mut Sim, n: u64) -> Option<Work> {
+    sim.work(n)
+}
+
+/// The median of the ticks that made no new archetype
+/// (`Work::steady_ticks`): a death or a ragdoll makes a tick several times
+/// another, and each match's fights differ, so a mean follows the fight.
+fn steady(w: &Work) -> f64 {
+    let mut t = w.steady_ticks();
+    t.sort_unstable();
+    t.get(t.len() / 2).copied().unwrap_or(0) as f64
 }
 
 /// Match after match the characters' tables and archetypes stop growing
@@ -120,18 +107,22 @@ fn cost(sim: &mut Sim, n: usize) -> Option<(u64, u64)> {
 #[test]
 fn a_session_of_matches_stops_making_tables() {
     let (mut sim, _) = session();
+    sim.repeatable();
     let mut rows = Vec::new();
     for m in 0..8u64 {
         play_match(&mut sim, 100 + m);
         let c = Census::take(sim.app.world_mut());
         let tick = cost(&mut sim, 60);
         eprintln!(
-            "match {m}: {} archetypes, {} tables, {:?} instructions a tick (median, mean)",
-            c.archetypes_made, c.tables, tick
+            "match {m}: {} archetypes, {} tables, {:?} instructions a tick (steady median; all ticks' median {:?})",
+            c.archetypes_made,
+            c.tables,
+            tick.as_ref().map(steady),
+            tick.as_ref().map(Work::median)
         );
         rows.push((c.archetypes_made, c.tables, tick));
     }
-    let (first, last) = (rows[1], rows[7]);
+    let (first, last) = ((rows[1].0, rows[1].1), (rows[7].0, rows[7].1));
     let what = chimera_core::metrics::census::command(sim.app.world_mut(), &["varies".to_string()]);
     assert!(
         last.1 < 500 && last.1 - first.1 < 60,
@@ -157,12 +148,55 @@ fn a_session_of_matches_stops_making_tables() {
         rows[3].0,
         last.0
     );
-    if let (Some((a, _)), Some((b, _))) = (first.2, last.2) {
+    // Each match plays a ladder of its own, so their ticks differ; the
+    // counts repeat from run to run (the session plays out the same:
+    // `a_match_repeats_tick_for_tick`), so the bound only has to hold the
+    // ladders' spread, not the machine's.
+    if let (Some(a), Some(b)) = (&rows[1].2, &rows[7].2) {
+        let (sa, sb) = (steady(a), steady(b));
         assert!(
-            (b as f64) < a as f64 * 1.25,
-            "a tick cost {a} instructions (median) after a match, {b} after seven more"
+            sb < sa * 1.25,
+            "a tick cost {sa:.0} instructions after a match, {sb:.0} after seven more (per tick, by system):\n{}",
+            b.systems.per(60).diff_table(&a.systems.per(60), 25)
         );
     }
 }
+
+/// The session's matches play out the same on every run, and cost the
+/// same to well under a per cent (docs/performance.md, "Work counts"):
+/// sessions in one process end in the same state (`Sim::state_hash`),
+/// and their ticks count the same instructions.
+#[test]
+fn a_match_repeats_tick_for_tick() {
+    if !chimera_world::harness::own_process("session::a_match_repeats_tick_for_tick") {
+        return;
+    }
+    let mut runs = Vec::new();
+    // The first run fills the process's caches (models, data); the next
+    // two must agree.
+    for _ in 0..3 {
+        let (mut sim, _) = session();
+        sim.repeatable();
+        play_match(&mut sim, 100);
+        let work = cost(&mut sim, 60);
+        runs.push((sim.state_hash(), work));
+    }
+    assert!(
+        runs[0].0 == runs[1].0 && runs[1].0 == runs[2].0,
+        "three runs of the same match ended apart: something in the simulation isn't deterministic"
+    );
+    let (Some(a), Some(b)) = (&runs[1].1, &runs[2].1) else {
+        eprintln!("skipping the counts: no hardware counters ({})", chimera_core::metrics::hw_status());
+        return;
+    };
+    let (ta, tb) = (a.total() as f64, b.total() as f64);
+    eprintln!("a match's 60 ticks: {ta:.0} and {tb:.0} instructions");
+    assert!(
+        (ta - tb).abs() / ta < 0.01,
+        "the same ticks cost {ta:.0} and {tb:.0} instructions:\n{}",
+        b.systems.diff_table(&a.systems, 20)
+    );
+}
+
 
 

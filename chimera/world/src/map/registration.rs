@@ -378,6 +378,9 @@ fn spawn_pending_steps<D: MapDrawer>(world: &mut World, budget: std::time::Durat
     if !world.contains_resource::<spawn::SpawnProgress<D>>() {
         return true;
     }
+    // Repeatable runs spawn in one go: a time budget ends steps where the
+    // machine's load says (`chimera_core::tasks::WaitForTasks`).
+    let budget = if chimera_core::tasks::waits(world) { std::time::Duration::MAX } else { budget };
     match world.run_system_cached_with(spawn::spawn_steps::<D>, budget) {
         Ok(done) => done,
         Err(e) => {

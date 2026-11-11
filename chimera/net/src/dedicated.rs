@@ -543,10 +543,11 @@ pub fn swap_map(world: &mut World, id: &str, data: Option<MapData>) {
 }
 
 fn finish_level_change(world: &mut World) {
+    let wait = chimera_core::tasks::waits(world);
     let Some(mut load) = world.get_resource_mut::<LevelLoad>() else {
         return;
     };
-    let Some(result) = bevy::tasks::block_on(bevy::tasks::poll_once(&mut load.task)) else {
+    let Some(result) = chimera_core::tasks::poll(&mut load.task, wait) else {
         return;
     };
     let id = load.id.clone();

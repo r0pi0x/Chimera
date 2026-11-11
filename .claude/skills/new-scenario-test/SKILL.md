@@ -32,6 +32,12 @@ assert!(sim.velocity(p).xz().length() > 4.9);
   (chimera_net `harness`), maps built in code (`cs_source::harness::TestMaps`).
 - A spec's test cases each become one test; name the spec section in the
   test's doc comment.
+- A cost (how much a tick does): `sim.repeatable()`, then
+  `let w = sim.work(n)` (None without hardware counters: skip with a
+  note) and assert on `w.total()` / `w.steady_ticks()`, printing
+  `w.systems.diff_table(&before.systems, 20)` on failure. Never time it
+  with `Instant`: wall time moves with the machine's load
+  (docs/performance.md, "Work counts").
 
 **Run:** `cargo test -p <crate> --features dev --test it <topic>::`.
 Write the test first and watch it fail, then implement.

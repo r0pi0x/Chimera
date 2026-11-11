@@ -7,6 +7,13 @@ description: Find what takes a frame's or tick's time and measure a fix (Linux p
 
 Guide: docs/performance.md, "Measuring". Linux needs `perf`.
 
+Judge a cost (and a fix) by deterministic counts, never by wall clock
+(docs/performance.md, "Work counts"): headless, `sim.repeatable()` then
+`sim.work(n)` (per tick and per system; `systems.diff_table(&before, 20)`
+for what grew), `perfgate` for the simulation's scenarios, the
+`frame_bench` example for a frame with the renderer. Sampling (below)
+says where inside a system the instructions go.
+
 1. Build with frame pointers, and the summarizer:
    ```
    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-Cforce-frame-pointers=yes" \
@@ -30,9 +37,11 @@ Guide: docs/performance.md, "Measuring". Linux needs `perf`.
   8000` for a tick (build `--features tools --bin perfgate`), and the
   `frame_bench` example of ultimate_gun_game for a frame with the renderer
   (docs/OBSERVABILITY.md 3c); `perf script --no-inline` into profsum.
-- Headless tick cost without a window: the instruction counters in tests
-  (`chimera_core::metrics::ThreadCounters`; `apps/party_kit/tests/it/archetypes.rs`).
+- Headless tick cost without a window: `Sim::work` in a test
+  (`apps/party_kit/tests/it/archetypes.rs`,
+  `apps/ultimate_gun_game/tests/it/session.rs`).
 - Frame time across many views: `refcmp bench --views tools/refcmp/<map>.toml`.
 - Windows: `scripts\profile.ps1` (span trace), then
   `tracesum <trace> --folded f.txt` and `profsum f.txt --unit us --frames N --out <dir>`.
-- Measure on a quiet machine; note the load (`uptime`) with the numbers.
+- Work counts need no quiet machine. Timings (wall, CPU, GPU, `perf`
+  sample shares) do: note the load (`uptime`) with them.

@@ -1037,12 +1037,13 @@ fn skipping_unchanged_nodes_changes_nothing() {
 /// can't be read.
 #[test]
 fn idle_entities_cost_a_tick_little() {
-    use chimera_core::metrics::ThreadCounters;
+    use chimera_core::metrics::work::WorkCounts;
     use crate::stack::logic::SyncEveryNode;
 
-    /// The median tick's instructions with `brushes` idle brushes and
-    /// twice as many points.
-    fn tick(brushes: usize, every: bool) -> Option<u64> {
+    /// The ticks' instructions (`Sim::work`: their systems', the same on
+    /// every run) with `brushes` idle brushes and twice as many points,
+    /// per tick, and by system.
+    fn tick(brushes: usize, every: bool) -> Option<(u64, WorkCounts)> {
         let mut entities = Vec::new();
         for i in 0..brushes {
             let at = format!("{} {} 32", 400 + (i % 40) * 96, 400 + (i / 40) * 96);
@@ -1059,26 +1060,25 @@ fn idle_entities_cost_a_tick_little() {
             sim.app.insert_resource(SyncEveryNode);
         }
         sim.ticks(20);
-        let mut counters = ThreadCounters::current();
-        let mut costs = Vec::new();
-        for _ in 0..41 {
-            let before = counters.read().hw.map(|h| h.instructions)?;
-            sim.ticks(1);
-            costs.push(counters.read().hw.map(|h| h.instructions)? - before);
-        }
-        costs.sort_unstable();
-        Some(costs[costs.len() / 2])
+        let w = sim.work(41)?;
+        Some((w.total() / 41, w.systems.per(41)))
     }
 
     const BRUSHES: usize = 1200;
-    let (Some(none), Some(idle), Some(every)) = (tick(0, false), tick(BRUSHES, false), tick(BRUSHES, true)) else {
+    let (Some((none, _)), Some((idle, idle_systems)), Some((every, every_systems))) =
+        (tick(0, false), tick(BRUSHES, false), tick(BRUSHES, true))
+    else {
         eprintln!("skipping: no hardware counters here");
         return;
     };
     let each = idle.saturating_sub(none) / (3 * BRUSHES as u64);
     let each_every = every.saturating_sub(none) / (3 * BRUSHES as u64);
     eprintln!("a tick: {none} instructions without the entities, {idle} with them ({each} each), {every} writing every node through ({each_every} each)");
-    assert!(idle < every, "passing over idle nodes costs more than writing them through: {idle} against {every}");
+    assert!(
+        idle < every,
+        "passing over idle nodes costs more than writing them through: {idle} against {every}. Per tick:\n{}",
+        idle_systems.diff_table(&every_systems, 15)
+    );
 }
 
 /// The `SoundControl` starts seen (for `ambient_loops_end_with_their_map`).

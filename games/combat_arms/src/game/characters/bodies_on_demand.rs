@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use bevy::{
     prelude::*,
-    tasks::{AsyncComputeTaskPool, Task, block_on, poll_once},
+    tasks::{AsyncComputeTaskPool, Task},
 };
 
 use super::{
@@ -63,13 +63,14 @@ pub fn load_on_demand(
     ladder: Res<super::preload::LadderModels>,
     forgotten: Option<Res<super::preload::Forgotten>>,
     mut pending: Local<Pending>,
+    wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
     mut commands: Commands,
 ) {
     if let Some(f) = forgotten.filter(|f| f.is_changed()) {
         pending.tried.retain(|id| !f.bodies.contains(id));
     }
     pending.tasks.retain(|_, task| {
-        let Some(result) = block_on(poll_once(task)) else { return true };
+        let Some(result) = chimera_core::tasks::poll(task, wait.is_some()) else { return true };
         match result {
             Ok(models::OnDemand { model, textures, index }) => {
                 let textures = std::sync::Arc::new(textures);

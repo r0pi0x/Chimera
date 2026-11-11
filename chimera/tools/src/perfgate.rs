@@ -1,8 +1,12 @@
 //! An instructions-per-tick regression gate (docs/performance.md,
-//! "Regression gate"): scenarios with fixed inputs, measured by hardware
-//! counters (user-space instructions retired, summed over every thread),
-//! compared with a stored baseline per build profile. Unlike frame times,
-//! the counts barely move with the machine's load.
+//! "Regression gate"): scenarios with fixed inputs that play out the same
+//! on every run (`harness::Sim::repeatable`), measured by work counts
+//! (`chimera_core::metrics::work`: user-space instructions in the tick's
+//! systems, on the schedules' thread), compared
+//! with a stored baseline per build profile. The same build counts the
+//! same to a few hundredths of a per cent, idle or loaded; a failure
+//! prints the systems that grew against the baseline's. CPU and wall
+//! time are printed for reading, never gated.
 //!
 //! The gate is game-neutral: an app or game names its scenarios and
 //! builds each as something to tick (`Gate`, `main`); this module parses
@@ -15,32 +19,41 @@ use std::{
     time::Instant,
 };
 
-use chimera_core::metrics::{AllThreads, Counts, Percentiles, ThreadCounters, hw_status, short};
+use chimera_core::metrics::{Percentiles, counters::process_cpu_ns, hw_status, short, work};
 use serde::{Deserialize, Serialize};
 
 /// Default allowed rise (percent): see docs/performance.md, "Regression
-/// gate", for the measured run-to-run spread it is chosen from.
-pub const DEFAULT_TOLERANCE: f64 = 3.0;
+/// gate", for the measured run-to-run spread it is chosen from (under
+/// 0.1%; the rest is room for a change that isn't worth a look).
+pub const DEFAULT_TOLERANCE: f64 = 1.0;
+
+/// Systems kept per scenario in a baseline, the costliest first (a
+/// failure's diff compares them).
+const SYSTEMS_KEPT: usize = 80;
 
 /// One scenario's measurements.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Measured {
     pub ticks: u64,
-    /// Instructions per tick, all threads.
+    /// The ticks' work counts together (`metrics::work`): what is gated.
     pub instructions_total: u64,
+    /// Per tick.
     pub instructions_p50: f64,
     pub instructions_p99: f64,
-    /// Instructions per tick on the main thread only.
-    pub main_instructions_p50: f64,
-    pub main_instructions_total: u64,
+    /// The costliest systems' instructions over the run (`SYSTEMS_KEPT`),
+    /// by schedule and name: a failure's diff.
+    #[serde(default)]
+    pub systems: BTreeMap<String, u64>,
+    /// The simulation's state after the run (`Scenario::state_hash`): the
+    /// same on every run of a build when the scenario is deterministic.
+    #[serde(default)]
+    pub state_hash: Option<u64>,
     /// CPU time per tick, all threads (ms), and wall time per tick: for
     /// reading, not gated (they follow the machine's load).
     pub cpu_ms_p50: f64,
     pub cpu_ms_p99: f64,
     pub wall_ms_p50: f64,
     pub wall_ms_p99: f64,
-    pub cycles_total: u64,
-    pub cache_misses_total: u64,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -63,6 +76,20 @@ struct Profile {
     scenarios: BTreeMap<String, Measured>,
 }
 
+/// A scenario to measure: one tick at a time, and a hash of its state
+/// (`harness::Sim::state_hash`) to tell whether two runs played alike.
+pub trait Scenario {
+    fn tick(&mut self);
+    fn state_hash(&mut self) -> Option<u64> {
+        None
+    }
+    /// The state hashed, one line per entity (`--repeat` prints the first
+    /// that differ).
+    fn state_lines(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+}
+
 /// What a gate measures: its scenarios' names, its baseline file and the
 /// build it runs (the commit, recorded with an updated baseline).
 pub struct Gate<'a> {
@@ -80,6 +107,7 @@ struct Args {
     baseline: PathBuf,
     update: bool,
     json: Option<PathBuf>,
+    repeat: bool,
 }
 
 fn usage(gate: &Gate) -> String {
@@ -87,10 +115,12 @@ fn usage(gate: &Gate) -> String {
         "\
 usage: {name} [--scenario <name>]... [--ticks N] [--warmup N] [--tolerance PCT]
                 [--baseline <file>] [--update] [--json <file>]
-  Runs headless scenarios with fixed inputs and counts user-space
-  instructions per tick (all threads) with hardware counters; fails when a
-  scenario's total rises more than the tolerance above the baseline for
-  this build profile. Skips (exit 0) where counters are unavailable.
+  Runs headless scenarios with fixed inputs and counts the user-space
+  instructions of each tick's systems with hardware counters (the same on
+  every run, idle or loaded); fails when a scenario's total rises more
+  than the tolerance above the baseline for this build profile, and
+  prints the systems that grew. Skips (exit 0) where counters are
+  unavailable (Windows).
   --scenario <name>  {scenarios} (default: all
                      available)
   --ticks N          ticks measured per scenario (default 2000)
@@ -99,7 +129,10 @@ usage: {name} [--scenario <name>]... [--ticks N] [--warmup N] [--tolerance PCT]
   --baseline <file>  default {baseline}
   --update           write this run's numbers as the baseline for this
                      build profile (after checking a change is wanted)
-  --json <file>      also write this run's numbers there",
+  --json <file>      also write this run's numbers there
+  --repeat           check the scenarios repeat: build each twice, tick both
+                     side by side and report the first tick their states
+                     differ (and the entities that differ); measures nothing",
         name = gate.name,
         scenarios = gate.scenarios.join(", "),
         baseline = gate.baseline.display()
@@ -115,6 +148,7 @@ fn parse_args(gate: &Gate) -> Result<Args, String> {
         baseline: gate.baseline.clone(),
         update: false,
         json: None,
+        repeat: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
@@ -127,6 +161,7 @@ fn parse_args(gate: &Gate) -> Result<Args, String> {
             "--baseline" => a.baseline = value()?.into(),
             "--json" => a.json = Some(value()?.into()),
             "--update" => a.update = true,
+            "--repeat" => a.repeat = true,
             "-h" | "--help" => return Err(String::new()),
             other => return Err(format!("unknown argument {other}")),
         }
@@ -140,10 +175,10 @@ fn parse_args(gate: &Gate) -> Result<Args, String> {
 }
 
 /// The gate's binary: parse the command line, build each wanted scenario
-/// with `scenario` (None: skipped, e.g. its map isn't installed; Some: a
-/// function running one tick), measure, then compare with the baseline or
-/// (`--update`) write it. Exits the process with the verdict.
-pub fn main<'s>(gate: Gate, mut scenario: impl FnMut(&str) -> Option<Box<dyn FnMut() + 's>>) {
+/// with `scenario` (None: skipped, e.g. its map isn't installed), measure,
+/// then compare with the baseline or (`--update`) write it. Exits the
+/// process with the verdict.
+pub fn main<'s>(gate: Gate, mut scenario: impl FnMut(&str) -> Option<Box<dyn Scenario + 's>>) {
     let args = match parse_args(&gate) {
         Ok(a) => a,
         Err(e) => {
@@ -155,8 +190,7 @@ pub fn main<'s>(gate: Gate, mut scenario: impl FnMut(&str) -> Option<Box<dyn FnM
         }
     };
     // Counters first: without them there is nothing to gate.
-    let mut probe = ThreadCounters::current();
-    if probe.read().hw.is_none() {
+    if work::now().is_none() && !args.repeat {
         println!("{}: skipped, hardware counters {}", gate.name, hw_status());
         return;
     }
@@ -166,25 +200,64 @@ pub fn main<'s>(gate: Gate, mut scenario: impl FnMut(&str) -> Option<Box<dyn FnM
     } else {
         args.scenarios.iter().map(String::as_str).collect()
     };
+    if args.repeat {
+        let mut apart = Vec::new();
+        for name in &wanted {
+            let (Some(mut a), Some(mut b)) = (scenario(name), scenario(name)) else {
+                println!("{name}: skipped (map not installed or cached)");
+                continue;
+            };
+            let total = args.warmup + args.ticks;
+            let mut first = None;
+            for t in 0..total {
+                a.tick();
+                b.tick();
+                if a.state_hash() != b.state_hash() {
+                    first = Some(t);
+                    break;
+                }
+            }
+            match first {
+                None => println!("{name}: {total} ticks, the same state on every tick"),
+                Some(t) => {
+                    println!("{name}: the states differ from tick {t} on (after the scenario's start):");
+                    let (la, lb) = (a.state_lines(), b.state_lines());
+                    for (x, y) in la.iter().zip(&lb).filter(|(x, y)| x != y).take(12) {
+                        println!("  {x}\n  {y}");
+                    }
+                    if la.len() != lb.len() {
+                        println!("  {} entities against {}", la.len(), lb.len());
+                    }
+                    apart.push(name.to_string());
+                }
+            }
+        }
+        if !apart.is_empty() {
+            eprintln!("{}: {} didn't repeat", gate.name, apart.join(", "));
+            std::process::exit(1);
+        }
+        return;
+    }
     let mut results = BTreeMap::new();
     for name in wanted {
-        let Some(tick) = scenario(name) else {
+        let Some(mut s) = scenario(name) else {
             println!("{name}: skipped (map not installed or cached)");
             continue;
         };
-        let r = measure(tick, args.warmup, args.ticks);
+        let mut r = measure(|| s.tick(), args.warmup, args.ticks);
+        r.state_hash = s.state_hash();
         println!(
-            "{name}: {} ticks, instructions per tick p50 {} p99 {} total {} (main thread p50 {}); \
-             cpu ms p50 {:.3} p99 {:.3}; wall ms p50 {:.3} p99 {:.3}",
+            "{name}: {} ticks, instructions per tick p50 {} p99 {} total {}; \
+             cpu ms p50 {:.3} p99 {:.3}; wall ms p50 {:.3} p99 {:.3} (read only); state {}",
             r.ticks,
             short(r.instructions_p50),
             short(r.instructions_p99),
             short(r.instructions_total as f64),
-            short(r.main_instructions_p50),
             r.cpu_ms_p50,
             r.cpu_ms_p99,
             r.wall_ms_p50,
-            r.wall_ms_p99
+            r.wall_ms_p99,
+            r.state_hash.map_or("-".to_string(), |h| format!("{h:016x}"))
         );
         results.insert(name.to_string(), r);
     }
@@ -266,11 +339,30 @@ pub fn main<'s>(gate: Gate, mut scenario: impl FnMut(&str) -> Option<Box<dyn FnM
             short(r.instructions_total as f64),
             short(b.instructions_total as f64)
         );
+        if let (Some(a), Some(h)) = (b.state_hash, r.state_hash)
+            && a != h
+        {
+            println!(
+                "{name}: played differently from the baseline (state {h:016x}, baseline {a:016x}): a change of \
+                 behaviour, or something in the scenario isn't deterministic"
+            );
+        }
+        if change.abs() > tolerance && !b.systems.is_empty() {
+            // The systems both kept (each keeps its costliest: one just
+            // past the other's cut would look new).
+            let counts = |m: &BTreeMap<String, u64>, other: &BTreeMap<String, u64>| {
+                work::WorkCounts(m.iter().filter(|(k, _)| other.contains_key(*k)).map(|(k, v)| (k.clone(), (*v, 0))).collect())
+            };
+            let (now, base) = (counts(&r.systems, &b.systems), counts(&b.systems, &r.systems));
+            println!("{name}: systems by instructions over the run, against the baseline (the costliest both kept):");
+            print!("{}", now.diff_table(&base, 20));
+        }
     }
     if !failed.is_empty() {
         eprintln!(
-            "{}: {} rose by more than the tolerance in instructions: find the cause (tracesum, \
-             chimera_hitch_ratio), or if the cost is wanted, `{} --update` (docs/performance.md)",
+            "{}: {} rose by more than the tolerance in instructions: the systems above grew (`perf record -e \
+             instructions:u` on the scenario says where), or if the cost is wanted, `{} --update` \
+             (docs/performance.md, \"Regression gate\")",
             gate.name,
             failed.join(", "),
             gate.name
@@ -280,47 +372,51 @@ pub fn main<'s>(gate: Gate, mut scenario: impl FnMut(&str) -> Option<Box<dyn FnM
 }
 
 /// Run `warmup` ticks, then measure `ticks` ticks one at a time (`tick`
-/// runs one).
+/// runs one) by their work counts (`metrics::work`, which the scenario's
+/// systems must be wrapped for: `harness::Sim` does it).
 pub fn measure(mut tick: impl FnMut(), warmup: u64, ticks: u64) -> Measured {
     for _ in 0..warmup {
         tick();
     }
-    let mut all = AllThreads::default();
-    let mut main = ThreadCounters::current();
-    let (mut ins, mut main_ins, mut cpu, mut wall) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    let mut total = Counts::default();
-    let mut main_total = 0u64;
-    all.read();
+    // CPU time from the process's clock, not per-thread counter groups:
+    // more hardware events on the thread than the PMU has counters would
+    // have the kernel multiplex them, and the counts become estimates.
+    let (mut ins, mut cpu, mut wall) = (Vec::new(), Vec::new(), Vec::new());
+    work::set_enabled(true);
+    let _ = work::WorkCounts::take();
+    let mut total = 0u64;
     for _ in 0..ticks {
-        let (a0, m0, t0) = (all.read(), main.read(), Instant::now());
+        let (c0, w0, t0) = (process_cpu_ns().unwrap_or(0), work::now().unwrap_or(0), Instant::now());
         tick();
+        let w = work::now().unwrap_or(0).saturating_sub(w0);
         let wall_ms = t0.elapsed().as_secs_f64() * 1e3;
-        let (a, m) = (all.read() - a0, main.read() - m0);
-        let hw = a.hw.unwrap_or_default();
-        let mhw = m.hw.unwrap_or_default();
-        ins.push(hw.instructions as f64);
-        main_ins.push(mhw.instructions as f64);
-        cpu.push(a.cpu_ns as f64 / 1e6);
+        let c = process_cpu_ns().unwrap_or(0).saturating_sub(c0);
+        ins.push(w as f64);
+        total += w;
+        cpu.push(c as f64 / 1e6);
         wall.push(wall_ms);
-        total = if total.hw.is_none() { a } else { total + a };
-        main_total += mhw.instructions;
+    }
+    let systems = work::WorkCounts::take();
+    work::set_enabled(false);
+    if work::multiplexed() {
+        println!(
+            "note: the kernel multiplexed the instruction counter (more hardware events on the thread than the PMU \
+             has counters): these counts are estimates and won't repeat"
+        );
     }
     let p = |v: &[f64]| Percentiles::of(v).unwrap_or_default();
-    let (pi, pm, pc, pw) = (p(&ins), p(&main_ins), p(&cpu), p(&wall));
-    let hw = total.hw.unwrap_or_default();
+    let (pi, pc, pw) = (p(&ins), p(&cpu), p(&wall));
     Measured {
         ticks,
-        instructions_total: hw.instructions,
+        instructions_total: total,
         instructions_p50: pi.p50,
         instructions_p99: pi.p99,
-        main_instructions_p50: pm.p50,
-        main_instructions_total: main_total,
+        systems: systems.top(SYSTEMS_KEPT).into_iter().map(|(k, i, _)| (k.to_string(), i)).collect(),
+        state_hash: None,
         cpu_ms_p50: pc.p50,
         cpu_ms_p99: pc.p99,
         wall_ms_p50: pw.p50,
         wall_ms_p99: pw.p99,
-        cycles_total: hw.cycles,
-        cache_misses_total: hw.cache_misses,
     }
 }
 

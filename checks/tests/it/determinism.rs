@@ -41,6 +41,14 @@ const NOT_SIMULATION: &[(&str, &str)] = &[
     ("source/tools", "developer tools, not run in a game"),
 ];
 
+/// Files of simulation crates that are not simulation, with the reason
+/// (their statics never reach a `World`'s state).
+const NOT_SIMULATION_FILES: &[(&str, &str)] = &[(
+    "chimera/core/src/metrics/work.rs",
+    "measurement: hardware counters per thread and the systems' counted instructions, read by tests and \
+     gates, never by the simulation (docs/performance.md, \"Work counts\")",
+)];
+
 /// Simulation crates' source folders with their stored counts:
 /// occurrences of std's `HashMap`/`HashSet`, then mutable statics
 /// (`static mut`, statics of a `OnceLock`/`LazyLock`/`Mutex`/`RwLock`/
@@ -166,6 +174,9 @@ fn counts(dir: &str) -> (usize, usize) {
     let (mut hash, mut statics) = (0, 0);
     for file in files {
         let rel = file.strip_prefix(&src).unwrap().to_string_lossy().replace('\\', "/");
+        if NOT_SIMULATION_FILES.iter().any(|(f, _)| *f == format!("{dir}/{rel}")) {
+            continue;
+        }
         if rel.ends_with("tests.rs")
             || rel.ends_with("ui.rs")
             || rel.split('/').any(|p| p == "tests" || p == "ui")
@@ -223,6 +234,13 @@ fn simulation_is_deterministic() {
             errors.push(format!(
                 "{dir}: in BASELINE in checks/tests/it/determinism.rs but not a simulation crate \
                  (moved, removed or on NOT_SIMULATION): remove its row."
+            ));
+        }
+    }
+    for (file, _) in NOT_SIMULATION_FILES {
+        if !root().join(file).is_file() {
+            errors.push(format!(
+                "{file}: on NOT_SIMULATION_FILES in checks/tests/it/determinism.rs but no such file: remove its row."
             ));
         }
     }

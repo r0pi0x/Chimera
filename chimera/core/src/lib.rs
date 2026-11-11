@@ -37,3 +37,4 @@ pub mod mount;
 pub mod profile;
 pub mod query_cache;
 pub mod slots;
+pub mod tasks;

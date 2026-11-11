@@ -527,7 +527,7 @@ fn nav_whole(world: &mut World) {
 /// inserted when it is done.
 fn nav_on_task(world: &mut World) {
     if let Some(mut job) = world.remove_resource::<NavJob>() {
-        match job.0.poll() {
+        match job.0.poll(chimera_core::tasks::waits(world)) {
             Some(mesh) => insert_mesh(world, mesh, false),
             None => world.insert_resource(job),
         }

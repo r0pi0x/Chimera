@@ -164,7 +164,7 @@ fn a_flood_on_a_task_makes_the_same_mesh() {
         let mut task = nav_gen::NavGenTask::spawn(job, snapshot, ignored, bounded.then(|| vis.clone()));
         let started = std::time::Instant::now();
         let on_task = loop {
-            if let Some(m) = task.poll() {
+            if let Some(m) = task.poll(false) {
                 break m;
             }
             assert!(started.elapsed().as_secs() < 60, "the task ends");

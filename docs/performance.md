@@ -5,6 +5,16 @@ does; at the end, how long the tests take to build and run ("Test cycle")
 and the edit-to-verified loop as a whole ("Iteration speed"). Tools are listed in [OBSERVABILITY.md](OBSERVABILITY.md) ("3c.
 Performance").
 
+**The rule: judge performance by deterministic counts, never by wall
+clock.** A tick's or a frame's cost is the instructions its systems
+retire in a repeatable scenario ("Work counts": `Sim::work`,
+`metrics::work`, `perfgate`, `frame_bench`), which the same build repeats
+to under 0.1% on an idle box and a loaded one. Wall time, CPU time and a
+whole thread's instructions move with the machine (2-10x, 30%, 5-15%):
+print them for reading, never assert on them or gate on them. A test
+that compares costs uses `Sim::repeatable` and `Sim::work`, and its
+failure prints the systems that grew (`WorkCounts::diff_table`).
+
 ## Measuring
 
 - `chimera_perf 1` in the console: frame times, main-world CPU, GPU time
@@ -72,6 +82,11 @@ Performance").
   `bench.csv`; `chimera_hitch_ratio` logs what a slow frame spent its
   time on; `perfgate` fails when the simulation's instructions per tick
   rise ("Load-independent metrics" below).
+
+- Work counts ("Work counts" below): `Sim::work(n)` in a headless test,
+  `perfgate` for the simulation's scenarios, `frame_bench` for a frame
+  with the renderer: instructions per tick or frame by system, the same
+  on every run.
 
 Frame times move with machine load (other builds on the dev box): compare
 runs taken back to back, and trust ratios more than absolute numbers.
@@ -953,7 +968,8 @@ runs swing 2-10x. What now measures besides wall time (`chimera/core/src/metrics
   median logs its main-world schedules and render sets by wall and CPU
   ms, ticks run, and with `--features profile` its spans by self time.
 - **`perfgate`**: instructions per tick of fixed headless scenarios
-  against a stored baseline ("Regression gate").
+  against a stored baseline ("Regression gate"), by work counts since
+  2026-11-10 ("Work counts").
 
 ### How stable they are under load
 
@@ -988,7 +1004,8 @@ What this says:
   frame, so the bench also reports it less its ticks' instructions
   (`main_frame_instructions`, "main ins*"), which halves the spread.
   Main-thread tick counts (`tick ins`) have the same parallel-share
-  problem; `perfgate` counts every thread instead.
+  problem; `perfgate` counted every thread instead, and now counts the
+  systems' own work ("Work counts").
 - **CPU time** moves almost as much as wall time on this box (clock
   speed, caches, hyperthread siblings shared with other builds), and
   GPU time doubles at load 20 (timestamps include waits). Wall and CPU
@@ -1055,27 +1072,33 @@ fixed inputs: `greybox` (two characters walking, turning and jumping on
 a fixed pattern), `de_dust2` (rounds, 5 bots a side, `mp_freezetime 2;
 mp_roundtime 2`), `mg_lego_multigames_v2` (the map's logic and props, no
 players), each 300 ticks of warm-up and 2000 measured ticks, on the
-game's single-threaded schedules. It counts user-space instructions per
-tick summed over every thread of the process (`metrics::AllThreads`):
-the main thread alone moves with how much parallel work it picked up,
-the sum doesn't.
+game's single-threaded schedules, repeatable (`Sim::repeatable`). Since
+2026-11-10 it counts work ("Work counts"): the user-space instructions
+of each tick's systems on the schedules' thread, by system, and the
+state hash after the run. (Before, it summed every thread's instructions,
+`metrics::AllThreads`, with a counter group per thread that made the
+kernel multiplex the counters.)
 
-Six runs at load 30-33 (playtest build):
+Five runs of the playtest build at 16f4ea34 plus the gate's changes,
+three at load 25-35 and two more with 16 busy loops on top:
 
-| scenario | instructions per tick p50 | total (2000 ticks) | spread of total | main thread total spread | CPU ms p50 spread | wall ms p50 spread |
+| scenario | instructions per tick p50 | total (2000 ticks) | spread of total | state hash | CPU ms p50 | wall ms p50 |
 |---|---|---|---|---|---|---|
-| greybox | 0.84M | 1.79-1.86G | 3.8% | 4.0% | 30% | 34% |
-| de_dust2 | 17.9M | 35.59-35.86G | 0.8% | 3.7% | 6% | 30% |
-| mg_lego_multigames_v2 | 6.6M | 13.91-14.20G | 2.0% | 2.2% | 2.7% | 61% |
+| greybox | 0.82M | 1.6564-1.6602G | 0.24% | the same in all 5 | 0.90-1.16 | 0.90-2.93 |
+| de_dust2 | 4.52M | 11.1815-11.1843G | 0.024% | the same | 2.32-3.06 | 2.34-9.40 |
+| mg_lego_multigames_v2 | 3.62M | 7.2684-7.2745G | 0.084% | the same | 1.74-2.50 | 1.75-7.70 |
 
-So the gate compares the total: a rise of more than 3% fails (8% for
-greybox, whose small ticks are dominated by the task pools' own
-bookkeeping); the stored numbers are `tools/perfgate/baseline.json`,
-per build profile (counts differ between `playtest` and the dev
-profile's opt-level 1) and noting the CPU (counts also differ between
-CPU models and thread counts: take a baseline on the machine that
-checks). Its de_dust2 p99 is 26-27M per tick (rounds starting, bots
-seeing each other); the run takes about a minute plus map loading.
+The old gate's spread (six runs at load 30-33, `AllThreads`): 3.8%, 0.8%
+and 2.0%, with an 8% tolerance for greybox. What is left on greybox is
+Bevy's `mark_dirty_trees`, whose scope tasks wait for each other on
+channels a varying number of times (about 1.3k instructions a tick).
+So the gate fails on a rise of more than 1% in any scenario
+(`tools/perfgate/baseline.json`, per build profile, noting the CPU and
+the build: counts differ between profiles and CPU models), and prints
+the systems that rose against the baseline's 80 costliest; a state hash
+apart from the baseline's is printed too (the scenario played otherwise:
+a change of behaviour, or something nondeterministic). Counts include
+the counting's own ~2,000 instructions per system run.
 
 - Check: `cargo build --profile playtest --features tools --bin perfgate &&
   target/playtest/perfgate` (exit 1 on a rise; `--scenario de_dust2`
@@ -1085,8 +1108,152 @@ seeing each other); the run takes about a minute plus map loading.
   N` with `--update` sets the default tolerance. Scenarios whose map
   isn't installed are skipped, and so is everything where counters
   can't open (Windows, `perf_event_paranoid` 3).
-- Checked: against a baseline lowered by 8% for de_dust2 it fails
-  (`+8.14%, tolerance 3%: FAIL`, exit 1).
+- Determinism: `perfgate --repeat` builds each scenario twice in one
+  process, ticks them side by side and reports the first tick their
+  state hashes differ and the entities that differ (works without
+  counters, on Windows too). All three repeat over 1000 ticks.
+- Checked: against a baseline lowered by 2% for de_dust2 (and its
+  movement step by 10%) it fails (`+2.06%, tolerance 1%: FAIL`, exit 1)
+  with the movement step on top of the systems' diff.
+
+## Work counts (2026-11-10)
+
+What judges a tick's or a frame's cost now: the user-space instructions
+its systems retire in a scenario that plays out the same on every run,
+counted per system (`chimera_core::metrics::work`). The same build and
+scenario count the same to under 0.1%, idle or under load, so a test or a
+gate can hold a tight bound, and a failure names the systems that grew.
+
+### Why the earlier counts moved
+
+`ultimate_gun_game`'s `session::a_session_of_matches_stops_making_tables`
+failed under a suite's load ("a tick cost 3394439 instructions after a
+match, 4303213 after seven more") although it counted instructions: the
+main thread's, whose share of the work depends on scheduling. Measured on
+the session's greybox match (8 Combat Arms bots, 60 ticks after a match),
+the same build, each row a separate process:
+
+| measure | idle | 16 busy loops |
+|---|---|---|
+| main thread, median tick (the test's patch) | 2.62-2.85M (8.4%) | 2.65-2.79M |
+| main thread, mean tick | 3.03-3.23M (6.4%) | 3.03-3.17M |
+| work counts, Avian's tree task on (first try) | 589-627M a window (6.3%) | |
+| work counts, final | 316.52-316.65M a window (0.04%) | 316.39-316.73M (0.1%) |
+
+(The first two rows already ran on one compute thread; on two, as before,
+the spread was the ±15% the report gave.) The state hashes
+(`Sim::state_hash`) of all nine runs were the same: the play was
+deterministic all along. The cost was not, for these reasons:
+
+- **Work moved between threads.** Bevy's parallel queries hand chunks to
+  the compute pool and the main thread does what is left; Bevy's
+  transform propagation runs workers that spin while they wait for each
+  other (`propagation_worker`); Avian optimizes its collider trees on a
+  compute task beside the narrow phase and solver
+  (`ColliderTreeOptimization::use_compute_task`), so its work landed in
+  whichever system the main thread was running (`respawn_dead` 5.6M
+  against 7.9M over the window, the movement step 30.8M against 36.1M,
+  with the same state). Counting every thread (`AllThreads`, the old
+  `perfgate`) takes in the spinning and the pools' waking and stealing.
+- **Task results landed on load-dependent ticks.** The navigation mesh
+  (`NavGenTask`), Combat Arms' bodies, held models and view models on
+  demand and the view models' timings are polled once a tick
+  (`poll_once`), so the tick they land on, and all the play after it,
+  depended on the task thread's speed; the stepped map spawn
+  (`map::spawn::spawn_steps`) cut its steps by a wall-clock budget.
+- **The kernel multiplexed the counters.** The games' `TickMetrics`
+  holds a group of four hardware events on the schedules' thread; the
+  old `perfgate` opened another group on every thread (`AllThreads`), and
+  with the work counter that is more events on the thread than the
+  Ryzen's six counters (one taken by the NMI watchdog): the kernel
+  time-shares them and the reads are scaled estimates. The same play (the
+  same state hash) then counted 0.5-6% apart between runs, spread over
+  every system. `perfgate` now takes CPU time from the process clock;
+  `work::multiplexed()` says when a count was an estimate (`Sim::work`
+  and `perfgate` print a note).
+- Not a cause here: std's randomly seeded hash maps cost a little more or
+  less per run (probe lengths), under 0.01% of the window.
+
+### What changed
+
+- `metrics::work`: `count_systems(world)` puts each system of the
+  schedules that have not run yet behind a wrapper (`Counted`) that reads
+  this thread's instruction counter (one counter, `InstructionCounter`:
+  a small `read`, no group) before and after the system and its
+  commands, less the schedules it runs inside.
+  Per thread: `set_enabled`, `WorkCounts::take` (a test's systems run on
+  its thread). `WorkCounts::diff_table(&base, n)` prints the systems that
+  rose most. The counting costs about 2,000 instructions per system run
+  (a tick of the session: 4.1M counted against 2.8M uncounted), the same
+  on every run: compare counted with counted.
+- `harness::Sim`: one compute thread (`sim_task_pools`; parallel queries
+  are plain loops, transform propagation spawns no workers), kept busy
+  for good (`work::occupy_compute_pool`: the tasks scopes still spawn,
+  Bevy's `mark_dirty_trees` and Avian's broad phase, run on the waiting
+  schedule thread, counted with their system, instead of on a pool
+  thread whose waking and stealing cost a varying amount); Avian's tree
+  optimization in the tick's order; every system wrapped at the start. `Sim::work(n)` returns each tick's
+  instructions, the archetypes after it (`steady_ticks`: those that made
+  none) and the systems' counts; `Sim::repeatable()` (or
+  `CHIMERA_REPEATABLE=1`) inserts `chimera_core::tasks::WaitForTasks`:
+  task results land on the tick they're polled (`tasks::poll`) and a map
+  spawns in one step; `Sim::state_hash()` hashes every entity's place,
+  turn, velocity and health; `harness::own_process(test)` reruns a test
+  alone in a child process under `cargo test` (the compute pool is the
+  process's: another test's tasks would count).
+- Tests on work counts: `session::a_session_of_matches_stops_making_tables`
+  (the median tick making no archetype, match 7 under 1.25x match 1's,
+  systems' diff on failure; a median, as each match's fights differ),
+  `session::a_match_repeats_tick_for_tick` (three sessions in one
+  process: the same state hash, the last two within 1%: 233,827,894 and
+  233,828,785 instructions), `party_kit`'s `archetypes` (1.17x with 2,000 more archetypes,
+  1.60x with 2,000 more tables) and `heavy::bot_cost` (systems growing
+  from 2 to 16 bots printed always, no `trace` build needed),
+  `cs_source`'s `map_logic::idle_entities_cost_a_tick_little`,
+  `ultimate_gun_game`'s `heavy::session_maps`; two tests that timed with
+  `Instant`: `chimera_sim`'s `spawns::facing_costs_well_under_a_millisecond`
+  (instructions per call) and Combat Arms' ui
+  `frame_cost::screens_that_are_down_cost_nothing_per_string`
+  (instructions of 20 frames); `perfgate` ("Regression gate": 0.02-0.24%
+  between runs, gated at 1%, `--repeat` checks determinism);
+  `frame_bench` (frames, below: two runs of de_dust2 gave the same main
+  schedule, 13.96M a frame, extraction, 1.25M, meshes drawn and bytes
+  uploaded; the render world 11.27M and 11.31M: the GPU driver's command
+  submission, `submit_pending_command_buffers`, runs a varying amount of
+  user-space code).
+- Frames (`ultimate_gun_game`'s `frame_bench`): the main schedule,
+  extraction and the render world by work counts with the costliest
+  systems, the meshes drawn and the bytes of meshes and textures uploaded
+  a frame (Bevy's `RenderAssetBytesPerFrameLimiter` with no limit:
+  counting only) as deterministic counts; GPU time from timestamp
+  queries (`RenderDiagnosticsPlugin`, Vulkan and DX12) and wall time
+  printed apart as timings.
+
+### Windows
+
+Hardware counters are Linux's (`perf_event_open`); Windows has thread
+CPU time only, in 15.6 ms scheduler steps, which moves with load as wall
+time does. There `Sim::work` and `work::now` return None, the tests that
+compare costs print `skipping ... no hardware counters` and pass, and
+`perfgate` exits 0 with `skipped`. Determinism (`Sim::state_hash`,
+`a_match_repeats_tick_for_tick`'s hash check) holds on Windows too. Judge
+a change's cost on Linux.
+
+### Left
+
+- Draw calls themselves aren't counted (Bevy has no counter; meshes
+  drawn stands in) and neither are GPU work counts: wgpu's pipeline
+  statistics (`PIPELINE_STATISTICS_QUERY`: vertex and fragment shader
+  invocations) would be, but need the feature asked for at device
+  creation.
+- The client's live readouts (`chimera_perf`, `refcmp bench`, the hitch
+  log) still count whole threads (`metrics::TickMetrics`,
+  `frame_metrics`): for reading a run, not for comparing builds.
+- Tests on absolute instruction budgets of a single frame or tick with
+  the real loading path (`late_build`, `heavy::rung_frames`,
+  `heavy::map_swap_frames`, `heavy::nav_in_play`) count the main thread
+  only and judge loads that run on tasks by design: far above their
+  spread, but not work counts.
 
 ## Light-style hitches (mg_jacks_multigames_v1)
 

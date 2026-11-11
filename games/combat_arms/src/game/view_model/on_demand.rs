@@ -38,7 +38,7 @@ use std::{
 
 use bevy::{
     prelude::*,
-    tasks::{AsyncComputeTaskPool, Task, block_on, poll_once},
+    tasks::{AsyncComputeTaskPool, Task},
 };
 
 use super::{
@@ -204,13 +204,14 @@ pub fn load_on_demand(
     context: Option<Res<LoadContext>>,
     ladder: Res<crate::game::characters::preload::LadderModels>,
     mut pending: Local<Pending>,
+    wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
     mut commands: Commands,
 ) {
     let ca = context.as_deref().map_or_else(CaData::install, CaData::install_for);
     let has = |k: &str| models.as_ref().is_some_and(|m| m.get(k).is_some());
     // Finished loads first.
     pending.0.retain(|id, task| {
-        let Some(result) = block_on(poll_once(task)) else { return true };
+        let Some(result) = chimera_core::tasks::poll(task, wait.is_some()) else { return true };
         match &result {
             Ok(l) => {
                 for w in &l.warnings {

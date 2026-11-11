@@ -1192,6 +1192,33 @@ the LAN's own broadcast address, e.g. `net_lan_broadcast "255.255.255.255
 
 Details and baseline numbers: [performance.md](performance.md).
 
+**Judge performance by deterministic counts, never by wall clock.** Wall
+time, CPU time and a whole thread's instructions move with the machine's
+load; work counts don't (performance.md, "Work counts"):
+
+- Headless, in a test: `sim.repeatable()` (task results on the tick
+  they're polled, a map spawned in one step: the same play every run),
+  then `sim.work(n)`: each tick's instructions in its systems (this
+  thread, scopes' tasks included), the archetypes after each tick
+  (`steady_ticks()`: those that made none) and every system's count
+  (`systems: WorkCounts`). The same build counts the same to under 0.1%,
+  idle or loaded; assert on those, and print
+  `after.systems.diff_table(&before.systems, 20)` in the failure (the
+  systems that grew). `sim.state_hash()` checks two runs played alike.
+  A test comparing counts closely starts with
+  `if !harness::own_process("<path::to::test>") { return; }` (under
+  `cargo test` other tests share the compute pool). Without hardware
+  counters (Windows) `work` returns None: skip with a note.
+- Any app: `metrics::work::count_systems(world)` before its schedules
+  first run (`Sim` does it), `work::set_enabled(true)` on the thread that
+  runs them, `work::now()` around what to count, `WorkCounts::take()`.
+  Keep schedules single-threaded, the compute pool at one thread
+  (`harness::sim_task_pools`) and that thread busy
+  (`work::occupy_compute_pool`), and open no more hardware counters on
+  the thread (a `ThreadCounters` group besides `TickMetrics`' makes the
+  kernel multiplex them: `work::multiplexed()`, and the counts become
+  estimates).
+
 - `chimera_perf 1` (2: every render pass) shows frame times (avg, p95,
   max), the main world's CPU time and the render world's time (its
   `Render` schedule), GPU time per render pass (every camera's run of
@@ -1261,12 +1288,14 @@ Details and baseline numbers: [performance.md](performance.md).
   each. Percentiles and the hitch log's one line a second hide these
   (performance.md, "Nothing blocks the main thread").
 - A frame in play without a display, for `perf` (performance.md,
-  "Performance pass"): `cargo build --profile profiling -p
+  "Performance pass", "Work counts"): `cargo build --profile profiling -p
   ultimate_gun_game --example frame_bench`, then
   `target/profiling/examples/frame_bench [<map>] [--bots <n>] [--frames
   <n>]`: the gun game with Bevy's whole renderer drawing into an image,
   bots playing, the main schedule, extraction and render world of each
-  frame counted apart (no HUD; its medians move a tenth between runs),
+  frame by work counts with the 30 costliest systems, meshes drawn and
+  bytes of meshes and textures uploaded a frame (deterministic counts),
+  then GPU time (timestamps) and wall time apart (timings, never a gate),
   and how many prop materials and meshes changed a frame (each prepared
   or allocated again in the render world; performance.md, "Render
   performance").
@@ -1304,12 +1333,12 @@ Details and baseline numbers: [performance.md](performance.md).
   frame, "A session's frame rate"). Headless,
   `metrics::census::Census::take(world)` and `diff`; `CensusAppExt::
   census_asset` adds a store that isn't reflect-registered to the count.
-- Instructions per system, headless: with `--features dev,trace`,
+- Instructions per system, headless: `sim.work(n).systems` (above; no
+  special build). With `--features dev,trace`,
   `metrics::span_cost::SpanCosts::install()` before the `Sim` is built
   (a system's span is made with it), then `take()` after each window and
   `rises(&before, &after, n)`: every span's own instructions on the
-  schedules' thread, load-independent (`party_kit`'s `archetypes` and
-  `heavy::bot_cost` print them). Where the time goes outside spans
+  schedules' thread, spans inside systems too. Where the time goes outside spans
   (Bevy's command application is in none): run the test under gdb and
   sample it (a thread sending the process `SIGUSR1`, gdb set to stop on
   it and print the test thread's backtrace).
@@ -1348,12 +1377,13 @@ Details and baseline numbers: [performance.md](performance.md).
   itself `chimera/tools/src/perfgate.rs`): the instructions-per-tick
   regression gate: `cargo build --profile playtest --features tools --bin perfgate &&
   target/playtest/perfgate` runs greybox, de_dust2 (rounds, 10 bots) and
-  mg_lego_multigames_v2 headless for 2000 ticks each, prints instructions
-  per tick (all threads: p50, p99, total; main thread) and CPU and wall
-  ms per tick, and exits 1 when a scenario's total rose more than the
-  tolerance above `tools/perfgate/baseline.json` for that build
-  profile. A wanted rise: `perfgate --update` and commit the file, saying
-  why. Skips where counters are unavailable (Windows); `--scenario`,
+  mg_lego_multigames_v2 headless and repeatable for 2000 ticks each,
+  prints work counts per tick (p50, p99, total) and CPU and wall ms per
+  tick (read only), and exits 1 when a scenario's total rose more than
+  the tolerance (1%) above `tools/perfgate/baseline.json` for that build
+  profile, printing the systems that grew against the baseline's. A
+  wanted rise: `perfgate --update` and commit the file, saying why.
+  Skips where counters are unavailable (Windows); `--scenario`,
   `--ticks`, `--json <file>`. performance.md, "Regression gate", has the
   spread it was measured with.
 - `r_portalsopenall 1` ignores areaportals (closed doors no longer hide
