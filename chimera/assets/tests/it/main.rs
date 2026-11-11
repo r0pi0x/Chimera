@@ -148,6 +148,42 @@ fn a_miss_fetches_its_group() {
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// A set's on-demand batches start at `RAMP_BYTES` and grow four times
+/// with each miss from it, up to `GROUP_BYTES`: a stray file of another
+/// map's set takes little of it, a load of the map soon takes full
+/// batches; records a fill is fetching now are left out.
+#[test]
+fn a_sets_batches_start_small_and_grow() {
+    use chimera_assets::cached::{GROUP_BYTES, RAMP_BYTES};
+    let dir = scratch("ramp");
+    let mut m = Manifest::new("g", "1", None);
+    let stored = 300_000;
+    for i in 0..400u32 {
+        let id = sha256_hex(&i.to_le_bytes());
+        let path = format!("maps/big/{i:04}.dat");
+        m.files.insert(path.clone(), chimera_assets::FileRecord { id, size: 1, stored });
+        m.sets.entry("map/big".into()).or_default().insert(path);
+    }
+    let client = Store::new(dir.join("client"));
+    let index = chimera_assets::cached::Index::new(&m);
+    let mut sizes = Vec::new();
+    for i in [0, 10, 50, 150, 300] {
+        let group = index.group(&client, &format!("maps/big/{i:04}.dat"));
+        sizes.push(group.len() as u64 * stored);
+    }
+    let budgets: Vec<u64> = (0..5u32).map(|k| (RAMP_BYTES << (2 * k)).min(GROUP_BYTES)).collect();
+    for (got, budget) in sizes.iter().zip(&budgets) {
+        assert!(*got >= *budget && *got < budget + stored, "{sizes:?} for budgets {budgets:?}");
+    }
+    // A record being fetched by a fill isn't asked for again.
+    let next = m.files["maps/big/0391.dat"].id.clone();
+    let claim = chimera_assets::pending::claim([next.as_str()]);
+    let group = index.group(&client, "maps/big/0390.dat");
+    assert!(group.iter().all(|g| g.0 != next), "the pending record left out");
+    drop(claim);
+    let _ = fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn cached_files_read_the_store_and_refuse_a_corrupt_record() {
     let dir = scratch("cached");

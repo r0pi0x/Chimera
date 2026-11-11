@@ -14,8 +14,10 @@
 //! (`progress::on_demand`). `batch_each` reads a batch answer record by
 //! record as it arrives; `fill` fetches a set's missing records in batches
 //! on a few connections at once, with a `progress::Transfer`
-//! (`chimera_assets fetch`); `fill_paced` does it at a `pace::Pace`'s rate
-//! on one connection (the game's background prefetch).
+//! (`chimera_assets fetch`), claiming them meanwhile (`pending`: an
+//! on-demand miss of one waits for it); `fill_paced` does it at a
+//! `pace::Pace`'s rate on one connection (the game's background
+//! prefetch), unclaimed.
 //!
 //! Tokens and files go over HTTPS only: a URL must be `https://`, except
 //! on this machine (`localhost`, `127.0.0.1`, `[::1]`: tests, a server on
@@ -420,6 +422,10 @@ impl Remote {
             batches.last_mut().expect("pushed").push(id.clone());
             bytes += stored;
         }
+        // A foreground fill's records are waited for by on-demand misses
+        // (`pending`), not fetched twice; the paced prefetch's aren't (it
+        // is held while the player joins: a load would wait on it).
+        let claim = pace.is_none().then(|| crate::pending::claim(batches.iter().flatten().map(String::as_str)));
         let next = AtomicUsize::new(0);
         let totals = Mutex::new((0usize, 0u64, Vec::new()));
         std::thread::scope(|s| {
@@ -447,12 +453,18 @@ impl Remote {
                                     }
                                 }
                             };
+                            if let Some(c) = &claim {
+                                c.release(id);
+                            }
                             n += usize::from(ok);
                             got += len;
                             if let Some(t) = transfer {
                                 t.add(u64::from(ok), u64::from(!ok), len);
                             }
                         });
+                        if let Some(c) = &claim {
+                            chunk.iter().for_each(|id| c.release(id));
+                        }
                         if let Err(e) = result {
                             // What the batch didn't bring.
                             let lost: Vec<String> = chunk
