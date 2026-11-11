@@ -1493,6 +1493,24 @@ mod tests {
         assert_eq!(files.len(), WEAPON_DATA.len());
     }
 
+    /// Install data made again with the same weapon documents (a client's
+    /// startup map's, then its app's) shares the one parsed set, leaked
+    /// once (`store::interned`; docs/performance.md, "A client's memory":
+    /// 240 MB a set); other documents parse their own.
+    #[test]
+    fn equal_weapon_documents_share_one_parsed_set() {
+        let docs = || WEAPON_DATA.iter().map(|(n, t)| (n.to_string(), t.to_string())).collect::<Vec<_>>();
+        let (a, b) = (CaData::builtin_with_weapons(docs()), CaData::builtin_with_weapons(docs()));
+        assert!(!a.same(&b), "two data values");
+        assert!(std::ptr::eq(a.weapon_set(), b.weapon_set()), "one set for the same documents");
+        assert_eq!(a.weapon_docs().as_ptr(), b.weapon_docs().as_ptr(), "and one copy of them");
+        let mut other = docs();
+        other[0].1.push('\n');
+        let c = CaData::builtin_with_weapons(other);
+        assert!(!std::ptr::eq(c.weapon_set(), a.weapon_set()), "other documents: their own set");
+        assert_eq!(c.weapon_set().weapons.len(), a.weapon_set().weapons.len());
+    }
+
     /// Every placeholder document says its numbers are placeholders until
     /// the specs replace them.
     #[test]
