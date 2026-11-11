@@ -14,6 +14,11 @@ use bevy::prelude::*;
 /// The game started again, waited for once the app has ended.
 static STARTED: Mutex<Option<Child>> = Mutex::new(None);
 
+/// Whether the game was started again (`wait_for_restart` will wait).
+pub fn restarted() -> bool {
+    STARTED.lock().unwrap_or_else(|e| e.into_inner()).is_some()
+}
+
 /// After the app: the game started again's exit, once it has ended (None:
 /// none was started).
 pub fn wait_for_restart() -> Option<AppExit> {

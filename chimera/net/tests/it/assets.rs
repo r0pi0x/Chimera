@@ -393,6 +393,24 @@ fn a_client_without_files_binds_its_token_and_starts_again() {
     assert_eq!(bound.fingerprint.as_deref(), Some(svc.fingerprint.as_str()));
     assert!(progress(&sim, 0).failure.is_none(), "{:?}", progress(&sim, 0).failure);
 
+    // Files in the store from an earlier session, the token entered again
+    // (its binding forgotten, so no service this start): bound, and the
+    // game starts again rather than playing on with nothing to fetch.
+    let again = svc.dir.join("again.toml");
+    chimera_net::net::assets::save_token(&again, &token).unwrap();
+    let mut session = svc.session("warm", &token, true);
+    if let Some(s) = session.settings.as_mut() {
+        s.remote = None;
+    }
+    session.access = Some(again.clone());
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
+    sim.add_client(client_with(session, true));
+    assert!(until(&mut sim, 20.0, |s| s.clients[0]
+        .app
+        .world()
+        .contains_resource::<AssetRelaunch>()));
+    assert_eq!(Access::load_from(&again).fingerprint.as_deref(), Some(svc.fingerprint.as_str()));
+
     // No token: the server refuses it (it can't fetch), saying how to
     // enter one.
     let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));

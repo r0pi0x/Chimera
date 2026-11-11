@@ -37,7 +37,10 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    (`Play-UGG.bat +chimera:asset_token <token> +connect <host address>:<port>`),
    wait for the progress window and the first match to load, and quit.
    On Saturday they start from what they already have; only new maps and
-   guns come.
+   guns come. Tell them to start on Saturday **without** the token
+   (`Play-UGG.bat`, then Join, or `Play-UGG.bat +connect <host address>:<port>`):
+   entering it again forgets which service it is for, and the game then
+   starts again once at the join to bind it anew.
 
 ## Publishing the game files (once, and after a game update)
 
@@ -58,11 +61,34 @@ cargo run --release --features tools --bin chimera_pack -- sets hl2dm --sign
 A whole publish serves every file, on demand. Sets make a match's first
 download one batch instead of a request per file: `sets` records each gun's
 `weapon/<id>` and `players`; `base` and each map's `map/<name>` come from a
-run of the client with the vfs log on (with the installs; per pool map):
+run of the client with the vfs log on (with the installs; per pool map).
+**Do this for every map of the pool**, not only the ones listed below: the
+automatic gun game draws at random from all of them, and a map without its
+set loads file group by file group on demand. In the rehearsal
+(2026-11-11) 16 of the pool's 24 maps had no set (every CS:S map but
+de_dust2 and cs_office); a match on one started 20 s after the vote
+without the players still loading it, who joined it late (about 50 s on
+a loaded machine). The pool is CS:S's 18 stock maps (cs_assault,
+cs_compound, cs_havana, cs_italy, cs_militia, cs_office, de_aztec,
+de_cbble, de_chateau, de_dust, de_dust2, de_inferno, de_nuke, de_piranesi,
+de_port, de_prodigy, de_tides, de_train), Combat Arms' WAREHOUSE,
+JUNK_FLEA, DARKHILLS, BLOODMONEY and HL2:DM's dm_lockdown, dm_overwatch;
+a client's log names a map without a set when it prefetches
+(`prefetched cs_source:map/<name>: ... not on the service`). For one map:
 
 ```
 CHIMERA_VFS_LOG=/tmp/m.log cargo run --release --bin ultimate_gun_game -- --map cs_source:de_dust2 --offscreen 1280x720 --frames 400 --dump /tmp/x
 cargo run --release --features tools --bin chimera_pack -- publish cs_source --from /tmp/m.log --set map/de_dust2 --sets-from /nonexistent
+```
+
+Every CS:S map of the pool (Linux; build both binaries once first):
+
+```
+for m in cs_assault cs_compound cs_havana cs_italy cs_militia de_aztec de_cbble de_chateau de_dust de_inferno de_nuke de_piranesi de_port de_prodigy de_tides de_train; do
+  rm -f /tmp/m.log
+  CHIMERA_VFS_LOG=/tmp/m.log target/release/ultimate_gun_game --map cs_source:$m --offscreen 1280x720 --frames 400 --dump /tmp/x
+  target/release/chimera_pack publish cs_source --from /tmp/m.log --set map/$m --sets-from /nonexistent
+done
 ```
 
 `base` for a game: the same from a run on the other games' maps (what a
@@ -80,6 +106,10 @@ demand while the map loads, slower (a request per group of files).
 cargo run --release -p chimera_assets --bin chimera_asset_server -- --tls 0.0.0.0:<asset port>
 ```
 
+It serves this machine's server store (`--store <dir>` serves another;
+then see "Starting it" for the fingerprint). Its plain listener takes
+127.0.0.1:8731; if that port is taken (another asset server on the same
+machine, e.g. a developer's), add `--listen 127.0.0.1:<other port>`.
 It prints `HTTPS at ...` and the **certificate fingerprint**. The
 certificate is its own (self-signed, made on first start in
 `<server store>/server/tls/`; keep that folder: a new certificate means each
@@ -87,8 +117,12 @@ tester's token has to be entered again). Clients trust exactly that
 certificate, by the fingerprint the game server hands out at join; the
 address may change. Limits (defaults): 100 requests a second per account
 (bursts of 1000), 20 GB a day per account, 30 bad tokens a minute per
-address (then 10 minutes refused), 16 connections at once per address;
-`--rate`, `--burst`, `--daily-gb`, `--bad-tokens` change them. Each request
+address (then 10 minutes refused), 48 connections at once per address
+(testers behind one home address share it; one game holds up to about 8
+while it joins); `--rate`, `--burst`, `--daily-gb`, `--bad-tokens`,
+`--connections` change them. A connection past the limit is closed
+(`tls: refused a connection from <ip>: too many at once` on its console);
+the game asks again for a file that failed that way. Each request
 is a line of `<server store>/server/access.log` (account, path, status,
 bytes, `ip=`). The plain listener stays on 127.0.0.1:8731 for this
 machine's own tools; only the `--tls` port faces the internet.
@@ -119,8 +153,11 @@ ultimate_gun_game_server -port 27015 +maxplayers 12 +MaxPlayer 3 +chimera:asset_
 
 `+chimera:asset_url` is what joining clients are told (the address testers
 reach, not localhost). On the same machine as the asset service the server
-reads the certificate's fingerprint itself; on another machine add
-`+chimera:asset_fingerprint <fingerprint>`. In a `.cfg` file or the
+reads the certificate's fingerprint itself, from the default server store
+(`<server store>/server/tls/`); on another machine, or with the asset
+service on another store (`--store`), add
+`+chimera:asset_fingerprint <fingerprint>` (the one it printed). The
+server listens on every interface (`+ip <address>` for one). In a `.cfg` file or the
 console, quote the URL (`chimera:asset_url "https://..."`: `//` starts a
 comment there); on the command line it needs no quotes.
 
@@ -155,7 +192,8 @@ Maps and matches:
 Console commands on the server's stdin (type in its window; run it inside
 `tmux` or `screen`, or a PowerShell window you keep open):
 
-`status`, `minigames`, `minigame_status`, `minigame_restart`,
+`status`, `tick_stats` (the last ticks' cost and the server's memory),
+`minigames`, `minigame_status`, `minigame_restart`,
 `change_match <minigame> [map]`, `ugg_new [seed] [rungs]` (a new ladder now;
 a seed replays one), `parts` (what each game lends), `changelevel <map>`,
 `quit` (Ctrl+C is the same).
@@ -251,7 +289,8 @@ chimera_pack user revoke <tester> --token <n>   # one
 Revoking stops downloads; a player already in a match keeps playing it. To
 remove one from the server use its console, or end the match.
 
-Nothing else is needed per tester: the token is all they enter. The game
+Nothing else is needed per tester: the token is all they enter, once
+(`chimera_pack user add` prints the line for them). The game
 server checks nothing of it; the asset service checks it on every request.
 The first server that offers its files binds the token to that service's
 certificate on the tester's machine (`%LOCALAPPDATA%\chimera\asset-access.toml`);
@@ -293,7 +332,9 @@ which clears the binding.
 - Lines worth watching: joins and refusals (build or mount mismatch), the
   seed and map at each rotation, `error:`/`warning:`, panics.
 - `status` lists players, ping and the outside address; `minigame_status`
-  shows the match and rungs.
+  shows the match and rungs; `tick_stats` the tick's cost (CPU ms p50 and
+  p99: under 15 ms, a tick's length, is fine; the rehearsal measured
+  2.9 ms p50 and 4-7 ms p99 with 3 players and 7 bots) and the memory.
 - The asset service logs each request to `<server store>/server/access.log`:
   watch for 401 (bad or revoked token), 403 and hash-refusal lines.
   A tester's join is a burst of `POST /batch` lines (the match's sets),
@@ -313,3 +354,34 @@ which clears the binding.
 Revoke all tokens (`user revoke <tester>` each, or stop the asset service),
 stop the server, close the ports (UPnP mappings expire, a manual forward does
 not), and collect the reports.
+
+## Rehearsal
+
+A dress rehearsal on one Linux machine (2026-11-11), everything on
+127.0.0.1 at test ports: `chimera_asset_server --tls` on a scratch server
+store (the real store's manifests and records, its own key, certificate
+and accounts; `--latency-ms 150` for the later half), the
+`ultimate_gun_game_server` with `+maxplayers 12 +MaxPlayer 7` and the
+installs, and `ultimate_gun_game` clients started like testers: each with
+its own empty home (`HOME`, `XDG_*`), `CHIMERA_CONFIG` an empty file,
+`CHIMERA_STEAM_ROOT=` (no Steam), `CHIMERA_CFG_DIR`, `--offscreen 640x360
++fps_max 30 +cl_showerror 1`, `+chimera:asset_token <token> +connect
+127.0.0.1:<port>`; the server's stdin a fifo (`echo tick_stats > fifo`
+each minute). Eleven matches over nine maps in about 50 minutes, with a
+server restart.
+
+| Measured | |
+|---|---|
+| Server tick (3 players, 7 bots) | CPU p50 2.0-3.3 ms, p99 3.7-7.4 ms; 4.8-8.4M instructions p50; a map change one tick of 0.3-1.4 s |
+| Server memory (RSS + swap) | 2.4 GB at start; 5.2 GB after 3 maps, 5.5 GB after 6 (about +100 MB a map) |
+| Client memory (offscreen 640x360) | 3.5-5.5 GB resident each |
+| First start to spawn, de_dust2 (sets published), 150 ms per answer | 36 s, 581 MB in 157 requests |
+| A map without a set, 150 ms per answer | 2 min 25 s to 2 min 41 s from loading to joined |
+| A tester over a session (4-9 maps, prefetch on) | 820-990 MB |
+| 429s | none; 44 connections refused per address (with the old limit of 16) |
+
+Found and fixed: a token entered again on a later start left the game
+with no service (nothing fetched); the TLS front's 16 connections per
+address; startup and join downloads that lost files when the service
+restarted; the waiting launcher processes' memory. Open items:
+[backlog.md](backlog.md), "UGG playtest rehearsal".

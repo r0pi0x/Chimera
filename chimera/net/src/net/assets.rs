@@ -36,7 +36,10 @@
 //!   to the offered service and the game starts again joining the same
 //!   server (`AssetRelaunch`, which the client app acts on: the mounts are opened at startup, so a
 //!   game that had no files then gets them only in a new process); without
-//!   one, the join fails saying how to enter it. A refused token, an
+//!   one, the join fails saying how to enter it. A game read from the
+//!   store with no service and a token bound to none (entered again on
+//!   this start, which forgets the binding) is bound and started again the
+//!   same way, else nothing new would come. A refused token, an
 //!   unreachable service or another certificate than the bound one fails
 //!   the join with the reason on screen (`JoinFailure::Download`).
 //!
@@ -518,6 +521,27 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
         return without_files(world, &offer, &session, &missing);
     }
     let served = |g: &GameSets| session.served.contains(&g.game);
+    // Games read from the store alone with no service to fill it, and a
+    // token not bound to any: the token was entered again on this start
+    // (which forgets its binding), so the store holds what an earlier
+    // session fetched and nothing more would come. Bind it and start
+    // again, as for a game with no files (2026-11-11 rehearsal: a tester
+    // starting with the same `+chimera:asset_token` line twice joined
+    // with no fetching at all, every new file a miss).
+    if !session.settings.as_ref().is_some_and(|s| s.remote.is_some()) {
+        let unfilled: Vec<String> = offer
+            .games()
+            .filter(|g| session.served.contains(*g))
+            .map(String::from)
+            .collect();
+        let unbound = session.access_path().is_some_and(|p| {
+            let a = Access::load_from(&p);
+            a.token.is_some() && a.remote().is_none()
+        });
+        if !unfilled.is_empty() && unbound {
+            return without_files(world, &offer, &session, &unfilled);
+        }
+    }
     let running = world.remove_resource::<Prefetch>().and_then(|p| p.running);
     world.insert_resource(Prefetch {
         waiting: offer.later.iter().filter(|g| served(g)).cloned().collect(),

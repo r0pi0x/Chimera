@@ -269,7 +269,10 @@ fn user(args: &[String]) -> Result<(), String> {
             println!("account {name}, token {id} (shown once; revoke: chimera_pack user revoke {name} --token {id}):");
             println!("{token}");
             println!(
-                "\nfor the tester's chimera.local.toml:\n[assets]\nurl = \"https://<the server's name>\"\ntoken = \"{token}\""
+                "\na playtester enters it once (docs/playtest.md):\n  Play-UGG.bat +chimera:asset_token {token} +connect <host address>:<port>"
+            );
+            println!(
+                "\na developer puts it in chimera.local.toml:\n[assets]\nurl = \"https://<the server's name>\"\ntoken = \"{token}\""
             );
         }
         ("add", name) => return Err(format!("{name:?}: an account name is letters, digits, `_`, `-` or `.`")),

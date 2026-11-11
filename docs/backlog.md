@@ -123,6 +123,48 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## 0. Playtest feedback (2026-10-07), top priority
 
+### UGG playtest rehearsal, 2026-11-11 (agent, this box, no-install clients)
+
+What the rehearsal found and didn't fix (fixed ones: the commits of
+branch `playtest-rehearsal`; numbers: playtest-hosting.md, "Rehearsal").
+Delete each when done.
+
+- **Maps without a set load very slowly over a real link.** The pool
+  (every CS:S stock map, 4 Combat Arms maps, 2 HL2:DM maps) has sets for
+  8 of 24; the rest load file group by file group on demand, one group
+  at a time per manifest: with 150 ms per answer (`--latency-ms 150`)
+  de_inferno took 2 min 25 s to 2 min 41 s from "loading it" to joined
+  (~780 batches of ~220 KB), while the match had started 20 s after the
+  vote; one client was still loading when the next map came. Host side:
+  publish every pool map's set (playtest-hosting.md). Code: fetch a map's
+  missing files as one batch when the offer names a map with no set (its
+  BSP's packed files and the materials it names are known after the
+  BSP is read), several groups at once, or a rotation that prefers maps
+  with sets for clients that fetch.
+- **The dedicated server's memory grows with each map.** RSS plus swap
+  2.4 GB at the start, 5.24 GB after 3 maps, 5.31 after 4, 5.53 after 6
+  (36 min): about 100 MB a map after the first few. Over a 4-hour
+  session (~30 maps) that may be 3 GB more. Find what each map change
+  keeps (`chimera_mem`'s regions, on the server).
+- **Client memory**: 3.5-5.5 GB resident per offscreen client at 640x360
+  (more with the GPU driver's share); the box held 3 at once beside a
+  build, not 4-6.
+- **Command clock jumps in bursts** around joins and map loads (80-93
+  jumps and ~300 "nothing predicted" restarts per client in 8 min on a
+  box swapping 13-20 GB, clients at 18 fps). Recheck on a quiet machine;
+  a player sees a stutter after each load.
+- When the server quits, clients go back to the menu (its background
+  map) with no reconnect; testers rejoin by hand (as the hosting doc says).
+- The UGG server's banner says "Lucker Party dedicated server" and its
+  hostname defaults to "Lucker Party"; testers see the hostname.
+- A no-install first start prints "Counter-Strike: Source isn't
+  installed: ... chimera.local.toml" warnings on the tester's console
+  before the token's restart: say instead that the files come from the
+  asset service.
+- A player who drops (killed client) and rejoins shows twice on the
+  scoreboard until the dead connection times out (~10 s).
+- `chimera_pack user list` prints creation times as Unix seconds.
+
 ### HL2:DM playtest, 2026-11-09 (user, Windows, dm_lockdown)
 
 Delete each when fixed. Check against specs/hl2dm/ and the probe; what's

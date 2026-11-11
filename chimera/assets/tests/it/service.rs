@@ -416,6 +416,35 @@ fn past_a_limit_the_answer_is_429_with_the_reason() {
     assert!(e.contains("HTTP 429") && e.contains("bad tokens"), "{e}");
 }
 
+/// A set's records the service refused for a moment (429: the account's
+/// requests a second) are asked again after a wait and arrive; the fetch
+/// doesn't end with files missing.
+#[test]
+fn a_fetch_asks_again_for_what_did_not_arrive() {
+    // Three requests at once (whoami, the build list, the manifest), then
+    // one a second: the batch is refused at first.
+    let limits = server::Limits { rate: 1.0, burst: 3.0, ..Default::default() };
+    let f = Fixture::with_limits("svc_retry", limits);
+    let settings = AssetSettings {
+        store: Some(f.client_store("client")),
+        use_install: false,
+        builds: Default::default(),
+        remote: Some(f.config(&f.user("tester", None))),
+        lock: None,
+    };
+    let wanted = [chimera_assets::sets::Wanted { game: "fixture".into(), sets: vec!["all".into()] }];
+    let shared = std::sync::Mutex::new(None);
+    let waits = [Duration::from_millis(1500), Duration::from_millis(1500)];
+    let options = chimera_assets::sets::Options { retry_delays: Some(&waits), ..Default::default() };
+    let summary = chimera_assets::sets::fetch(&settings, &wanted, "files", &shared, options).unwrap();
+    assert!(summary.contains("again"), "{summary}");
+    let store = f.client_store("client");
+    for r in f.fixture.files.values() {
+        assert!(store.has(&r.id), "{summary}");
+    }
+    assert!(f.access_log_with(" 429 ").contains(" 429 "), "the first batch was refused");
+}
+
 /// Paths that try to leave the routes (dot segments, encoded slashes, a
 /// record id that isn't one) never reach a file: 400 or 404, never the
 /// server's own files.

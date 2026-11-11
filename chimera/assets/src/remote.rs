@@ -477,9 +477,41 @@ impl Remote {
     }
 }
 
+/// Waits before each retry of an on-demand record (`Remote::fetch`).
+pub const RETRY_DELAYS: [Duration; 2] = [Duration::from_millis(500), Duration::from_secs(2)];
+
+/// Whether a failed request may succeed if asked again: a connection
+/// refused, reset or timed out (the TLS front past its connections at once
+/// per address closes new ones), a 429 or a server error. Not a refused
+/// token (401, 403), a missing record (404) or bad bytes.
+pub fn transient(e: &io::Error) -> bool {
+    use io::ErrorKind::*;
+    matches!(
+        e.kind(),
+        Other | ConnectionReset | ConnectionAborted | ConnectionRefused | TimedOut | WouldBlock | UnexpectedEof
+    )
+}
+
+/// `f`, asked again after each of `delays` while it fails `transient`ly.
+pub fn retrying<T>(delays: &[Duration], mut f: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    let mut delays = delays.iter();
+    loop {
+        match f() {
+            Err(e) if transient(&e) => match delays.next() {
+                Some(d) => std::thread::sleep(*d),
+                None => return Err(e),
+            },
+            got => return got,
+        }
+    }
+}
+
 impl Fetcher for Remote {
+    /// The record, asked again twice on a transient failure
+    /// (`RETRY_DELAYS`): a file a loader misses stays missing for the
+    /// session (a grey texture, a gun without a model).
     fn fetch(&self, store: &Store, id: &str, size: u64) -> io::Result<Vec<u8>> {
-        let packed = self.record(id)?;
+        let packed = retrying(&RETRY_DELAYS, || self.record(id))?;
         let plain = store.put_stored(id, size, &packed)?;
         progress::on_demand(self.url(), 1, packed.len() as u64);
         Ok(plain)
@@ -498,5 +530,38 @@ impl Fetcher for Remote {
             })?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reset_connection_is_asked_again_a_refused_token_is_not() {
+        let no_wait = [Duration::ZERO; 2];
+        let mut calls = 0;
+        let got = retrying(&no_wait, || {
+            calls += 1;
+            if calls < 3 { Err(io::Error::other("io: Connection reset by peer")) } else { Ok(7) }
+        });
+        assert_eq!((got.unwrap(), calls), (7, 3));
+
+        let mut calls = 0;
+        let got: io::Result<()> = retrying(&no_wait, || {
+            calls += 1;
+            Err(io::Error::other("io: Connection reset by peer"))
+        });
+        assert!(got.is_err());
+        assert_eq!(calls, 3, "once and twice again");
+
+        for (status, retried) in [(401, false), (403, false), (404, false), (429, true), (503, true)] {
+            let mut calls = 0;
+            let _: io::Result<()> = retrying(&no_wait, || {
+                calls += 1;
+                Err(status_error(status, "/r/x", ""))
+            });
+            assert_eq!(calls > 1, retried, "HTTP {status}");
+        }
     }
 }
