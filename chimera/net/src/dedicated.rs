@@ -24,7 +24,9 @@
 //! - `run`: at most 300 frames a second (`FPS_MAX`), schedules on one
 //!   thread each (`single_threaded_schedules`; `CHIMERA_EXECUTOR=multi`
 //!   keeps Bevy's), the console on stdin and its output on stdout,
-//!   Ctrl+C as `quit`.
+//!   Ctrl+C as `quit`. `tick_stats` prints the last ticks' wall and CPU
+//!   ms and instructions (`metrics::TickMetrics`, when the game's sim adds
+//!   it) and the process's resident memory, for watching a live server.
 //! - What only some servers have, `ServerHooks` (all off in
 //!   `ServerHooks::NONE`): several games' maps (`maps`: a loader of whole
 //!   ids, the game a bare name is); the map cycle (`map_cycle`:
@@ -437,6 +439,11 @@ impl Plugin for ServerPlugin {
             "map <map>: the same as changelevel on a dedicated server.",
             |w, a| change_level(w, a.first().ok_or("map <map>")?),
         )
+        .console_command(
+            "tick_stats",
+            "The last ticks' wall and CPU ms and main-thread instructions, and the process's memory (Linux).",
+            |w, _| Ok(Some(tick_stats(w))),
+        )
         .console_command("quit", "Stop the server.", quit)
         .console_command("exit", "Stop the server.", quit);
         let mut console = app.world_mut().resource_mut::<Console>();
@@ -469,6 +476,28 @@ fn follow_map_cycle(name: Option<Res<LoadedMapName>>, serving: Res<Serving>, mut
         let info = serving.0.info;
         cycle.maps = info.mount().map(|m| (info.map_cycle)(&m)).unwrap_or_default();
     }
+}
+
+/// `tick_stats`: each simulation tick's cost over the last ticks
+/// (`metrics::TickMetrics`, when the game's sim adds it; the schedules
+/// run on the main thread, so its instructions are the tick's work) and
+/// the process's resident memory, for watching a live server.
+pub fn tick_stats(world: &mut World) -> String {
+    let mut lines = match world.get_resource::<chimera_core::metrics::TickMetrics>() {
+        Some(m) if m.ticks > 0 => {
+            let mut l = m.work.summary("tick");
+            l.insert(0, format!("ticks   : {} since the start", m.ticks));
+            l
+        }
+        _ => vec!["ticks   : not measured (no TickMetricsPlugin in this server)".into()],
+    };
+    if let Some(kb) = std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|s| s.lines().find(|l| l.starts_with("VmRSS:")).map(str::to_owned))
+    {
+        lines.push(format!("memory  : {}", kb.trim_start_matches("VmRSS:").trim()));
+    }
+    lines.join("\n")
 }
 
 fn quit(world: &mut World, _: &[String]) -> Result<Option<String>, String> {

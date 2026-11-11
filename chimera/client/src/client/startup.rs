@@ -60,6 +60,8 @@ pub fn run_if_needed(game: &'static GameApp, args: &Args) -> Option<AppExit> {
         tool_frames: args.offscreen.and(args.frames),
     });
     let exit = app.run();
+    // The window's app is done; the game (a new process) is what runs now.
+    drop(app);
     Some(super::relaunch::wait_for_restart().unwrap_or(exit))
 }
 

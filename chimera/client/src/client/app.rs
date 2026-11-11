@@ -477,7 +477,12 @@ pub fn run_app(mut app: App) -> AppExit {
         std::process::exit(0);
     }
     let exit = app.run();
-    // The game started again with a server's game files (`relaunch`).
+    // The game started again with a server's game files (`relaunch`):
+    // this process only waits for it, so let the app (its GPU device, its
+    // loaded files: 400-550 MB measured) go first.
+    if super::relaunch::restarted() {
+        drop(app);
+    }
     super::relaunch::wait_for_restart().unwrap_or(exit)
 }
 

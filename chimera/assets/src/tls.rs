@@ -400,7 +400,11 @@ pub struct FrontLimits {
 impl Default for FrontLimits {
     fn default() -> Self {
         Self {
-            per_address: 16,
+            // Testers behind one home address share it, and one game
+            // holds several (the join's four, the prefetch, files on
+            // demand, kept open between requests): 16 refused the third of
+            // three games joining from one address (2026-11-11 rehearsal).
+            per_address: 48,
             total: 256,
             handshake: Duration::from_secs(10),
             idle: Duration::from_secs(120),
@@ -478,7 +482,14 @@ pub fn front(
             let (config, peers, counts, total) = (config.clone(), peers.clone(), counts.clone(), total.clone());
             std::thread::spawn(move || {
                 if let Err(e) = relay(stream, config, backend, &peers, limits)
-                    && !matches!(e.kind(), io::ErrorKind::UnexpectedEof | io::ErrorKind::ConnectionReset)
+                    && !matches!(
+                        e.kind(),
+                        io::ErrorKind::UnexpectedEof
+                            | io::ErrorKind::ConnectionReset
+                            // A connection quiet past the idle timeout.
+                            | io::ErrorKind::WouldBlock
+                            | io::ErrorKind::TimedOut
+                    )
                 {
                     eprintln!("tls: {ip}: {e}");
                 }

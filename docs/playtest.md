@@ -63,6 +63,11 @@ files; that is normal. The token looks like `chimera1_...`; paste it
 exactly, and keep it private: it is yours alone and the host can revoke it.
 To enter a new one, run the same line with the new token.
 
+After that first time, start the game **without** the token: `Play-UGG.bat`
+(then Join), or `Play-UGG.bat +connect <host address>:<port>`. Entering the
+token again works too, but the game then starts again once more when it
+joins.
+
 ## Joining the server
 
 1. At the main menu choose **Join**.

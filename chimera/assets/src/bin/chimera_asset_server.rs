@@ -14,7 +14,9 @@
 //! (`<store>/server/tls/`, made on first use); it prints the certificate's
 //! fingerprint, which game servers hand out at join
 //! (`chimera:asset_fingerprint`) and clients pin. `--rate`, `--burst`,
-//! `--daily-gb` and `--bad-tokens` set the limits (`server::Limits`).
+//! `--daily-gb` and `--bad-tokens` set the limits (`server::Limits`),
+//! `--connections` the HTTPS connections at once per address
+//! (`tls::FrontLimits`).
 //! docs/playtest-hosting.md has the steps. A host tool: not in releases.
 
 use std::process::ExitCode;
@@ -26,6 +28,7 @@ use chimera_assets::{
 
 const USAGE: &str = "usage: chimera_asset_server [--store <dir>] [--listen <ip:port>] [--tls <ip:port>] [--threads <n>]
        [--latency-ms <n>] [--rate <requests/s>] [--burst <n>] [--daily-gb <n>] [--bad-tokens <n per minute>]
+       [--connections <n per address>]
   --listen     plain HTTP, default 127.0.0.1:8731 (keep it on this machine)
   --tls        HTTPS with the server's own certificate (its fingerprint is printed), e.g. 0.0.0.0:27031";
 
@@ -35,6 +38,7 @@ fn run() -> Result<(), String> {
     let mut latency = 0u64;
     let mut tls = None;
     let mut limits = chimera_assets::server::Limits::default();
+    let mut front_limits = chimera_assets::tls::FrontLimits::default();
     let number = |v: String, what: &str| v.parse::<f64>().map_err(|_| format!("{what}: a number"));
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -49,6 +53,7 @@ fn run() -> Result<(), String> {
             "--burst" => limits.burst = number(value()?, arg)?,
             "--daily-gb" => limits.daily_bytes = (number(value()?, arg)? * 1e9) as u64,
             "--bad-tokens" => limits.bad_tokens = number(value()?, arg)? as u32,
+            "--connections" => front_limits.per_address = number(value()?, arg)?.max(1.0) as usize,
             _ => return Err(USAGE.into()),
         }
     }
@@ -68,10 +73,11 @@ fn run() -> Result<(), String> {
             let dir = chimera_assets::server::tls_dir(&store);
             let identity =
                 chimera_assets::tls::Identity::load_or_create(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-            let front = chimera_assets::tls::front(&at, running.addr, &identity, peers, Default::default())
+            let front = chimera_assets::tls::front(&at, running.addr, &identity, peers, front_limits)
                 .map_err(|e| e.to_string())?;
             println!("HTTPS at {} (this machine's port; testers use your public address and port)", front.url());
             println!("certificate fingerprint: {}", identity.fingerprint());
+            println!("connections: {} at once per address", front_limits.per_address);
             Some(front)
         }
         None => None,
