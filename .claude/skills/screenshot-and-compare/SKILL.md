@@ -20,6 +20,9 @@ Images go to a scratch folder, never the repo. Needs CS:S installed.
    (`magick <img> -crop WxH+X+Y`).
 4. Live scenes over the remote console (`setpos`, `setang`, `give`,
    `screenshot <file>`): docs/OBSERVABILITY.md sections 2 and 3b.
+5. Party apps (Ultimate Gun Game, Lucker Party) draw a ladder's bodies,
+   attachments and melee at random per launch: set
+   `CHIMERA_RUNG_SEED=<n>` for both runs (docs/OBSERVABILITY.md section 2).
 
 **Against our own captures, many views** (no reference needed):
 ```
