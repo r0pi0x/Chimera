@@ -6,7 +6,10 @@
 //! weapon, a character's weapon), so a client fetches those with the
 //! match instead of one by one while it plays; and the sets a game's own
 //! `AssetHooks` entry names for its rung extras (Combat Arms' drawn
-//! bodies, `character/<record>`, `combat_arms::game::rungs`).
+//! bodies, `character/<record>`, `combat_arms::game::rungs`). While a
+//! rotation changes map (`MapChange`), the offer names the coming
+//! ladder's draw (`minigame_net::match_ladder`, `ladder::draw`), the one
+//! its match then deals.
 
 use bevy::prelude::*;
 use chimera_core::{
@@ -15,7 +18,7 @@ use chimera_core::{
 };
 use chimera_net::{
     harness::NetSim,
-    minigame_net::{MinigameNetPlugin, match_weapons, playing_ladder},
+    minigame_net::{MapChange, MinigameNetPlugin, change_match, match_ladder, match_weapons},
     net::{
         assets::{self, AssetHooks, AssetHost, AssetNames},
         manifest::{self, MatchManifest},
@@ -26,10 +29,12 @@ use chimera_sim::{
     SimBasePlugins,
     minigame::{
         self, MinigameAppExt, MinigamePlugin,
-        ladder::{Ladder, RungCharacter, RungExtras},
+        auto::Rng,
+        ladder::{self, Ladder, RungCharacter, RungDraw, RungExtras, RungExtrasAppExt, RungExtrasHook, RungSeed},
     },
     movement::placeholder,
     testkit,
+    weapon::data::WeaponDataAppExt,
 };
 use chimera_world::greybox::GreyboxMapPlugin;
 
@@ -134,13 +139,12 @@ static LT: GameInfo = GameInfo {
 };
 
 /// The stand-in's `AssetHooks` entry, as Combat Arms' (`rungs::
-/// asset_names`): the body each of its rungs' extras drew (`model`), as
-/// that body's `character/<record>` set.
+/// asset_names`): the body each of the match's ladder's rungs' extras
+/// drew (`model`), as that body's `character/<record>` set.
 fn rung_bodies(world: &World) -> AssetNames {
-    let sets = playing_ladder(world)
-        .into_iter()
+    let sets = match_ladder(world)
+        .iter()
         .flat_map(|l| l.extras.iter().flatten())
-        .filter(|x| x.game == "lt")
         .filter_map(|x| x.values.iter().find(|(k, _)| k == "model"))
         .map(|(_, body)| format!("lt:character/{body}"))
         .collect();
@@ -173,4 +177,130 @@ fn the_offer_names_the_ladders_drawn_bodies() {
     ladder.extras[2] = body("17");
     let m = manifest::current(world);
     assert_eq!(sets_of(&m, "lt"), ["base", "players", "character/17", "character/42"]);
+}
+
+/// A ladder with a knife finale and rung extras: the host draws its melee
+/// rungs' knives and, per gun rung, a melee weapon and a body.
+const ROTATION_DEF: &str = r#"
+id = "kit:offer_rotation"
+name = "Kit gun game"
+players = { min = 2, max = 4 }
+maps = ["chimera:greybox", "lt:dm_next"]
+teams = "free_for_all"
+time_limit = "60s"
+
+[spawn]
+respawn = { delay = "1s", protection = "0.5s" }
+points = "map"
+
+[rules]
+module = "chimera:ladder"
+ladder = ["kit:pistol", "kit:rifle", "kit:shotgun"]
+knife_finale = true
+melee_rungs = 2
+"#;
+
+/// The test kit as a game the server knows (its weapons' sets offered).
+static KIT: GameInfo = GameInfo {
+    id: "kit",
+    short_name: "Kit",
+    content_dir: "kit",
+    ..LT
+};
+
+const KNIVES: [&str; 6] = ["kit:knife_a", "kit:knife_b", "kit:knife_c", "kit:knife_d", "kit:knife_e", "kit:knife_f"];
+
+fn knife(id: &str) -> String {
+    format!(
+        "id = \"{id}\"\nbase = \"kit:base\"\nslot = 2\ndraw = 0.5\n\n[melee.primary]\nrange = 2.0\nhull = 0.5\n\
+         facing_cos = 0.7\ndamage = 50.0\nhit_refire = 0.5\nmiss_refire = 0.4\nmiss_refire_other = 0.5\nforce = 0.0\n"
+    )
+}
+
+/// The kit's stand-in draw: each gun rung a melee weapon and a body.
+fn draw(_: &World, d: &RungDraw, rng: &mut Rng) -> Option<RungExtras> {
+    (!d.melee).then(|| RungExtras {
+        melee: Some(KNIVES[rng.below(KNIVES.len())].to_string()),
+        values: vec![("model".into(), (rng.next() % 100_000).to_string())],
+        ..default()
+    })
+}
+
+const HOOK: RungExtrasHook = RungExtrasHook {
+    game: "kit",
+    options: &[],
+    melee: |_| Vec::new(),
+    characters: |_| Vec::new(),
+    draw,
+    apply: |_, _, _| {},
+};
+
+/// What a ladder's draw puts in the offer: its melee rungs' and extras'
+/// melee weapons as `kit` weapon sets, its bodies as `lt` character sets.
+fn drawn_sets(l: &Ladder) -> (Vec<String>, Vec<String>) {
+    let mut weapons: Vec<String> = l.rungs[l.rungs.len() - l.melee_rungs..].iter().map(|w| w.to_string()).collect();
+    let mut bodies = Vec::new();
+    for x in l.extras.iter().flatten() {
+        weapons.extend(x.melee.clone());
+        bodies.extend(x.values.iter().filter(|(k, _)| k == "model").map(|(_, b)| format!("character/{b}")));
+    }
+    let set = |w: &String| format!("weapon/{}", w.strip_prefix("kit:").unwrap());
+    (weapons.iter().map(set).collect(), bodies)
+}
+
+/// A rotation to another map (`change_match`, as `go_to` does) deals a
+/// new ladder only once the map is in, but the offer of the level change
+/// (built while the map changes, `MapChange`) already names that
+/// ladder's drawn melee weapons and bodies, not the old ladder's: a
+/// client fetches them with the level change, not one by one in the
+/// match. The match then deals exactly that draw.
+#[test]
+fn a_rotations_offer_names_the_coming_ladders_draw() {
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 3, 0, |app| {
+        app.add_plugins((GreyboxMapPlugin, MinigamePlugin, MinigameNetPlugin)).insert_resource(Loadout {
+            movement: placeholder::ID,
+        });
+        testkit::add_weapons(app);
+        let docs: Vec<(String, String)> = KNIVES.iter().map(|id| (format!("{id}.toml"), knife(id))).collect();
+        let docs: Vec<(&str, &str)> = docs.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+        app.add_weapon_data(&docs).expect("the knives load");
+        app.add_rung_extras(HOOK).insert_resource(RungSeed(217_377));
+        app.add_minigames(&[("kit_offer_rotation.toml", ROTATION_DEF)]).expect("the definition reads");
+        let mut games = app.world_mut().get_resource_or_init::<Games>();
+        games.register(&LT);
+        games.register(&KIT);
+        app.world_mut().resource_mut::<AssetHooks>().0.push(rung_bodies);
+        app.insert_resource(AssetHost::new("https://assets.invalid:1", "ab".repeat(32)));
+    });
+    minigame::start(sim.server.app.world_mut(), "kit:offer_rotation").expect("it starts");
+    sim.ticks(10);
+    let world = sim.server.app.world_mut();
+    let old = world.resource::<Ladder>().clone();
+    let (old_weapons, old_bodies) = drawn_sets(&old);
+    assert!(!old_bodies.is_empty() && old_weapons.len() > 2, "the stand-in draws: {old:?}");
+
+    change_match(world, "kit:offer_rotation", Some("lt:dm_next")).expect("the rotation starts");
+    assert!(world.contains_resource::<MapChange>(), "a map change is under way");
+    let def = world.resource::<MapChange>().def;
+    let coming = ladder::draw(world, def).expect("a ladder to come");
+    assert_ne!(coming, old, "a new ladder's draw");
+    let (weapons, bodies) = drawn_sets(&coming);
+    let m = manifest::current(world);
+    let kit = sets_of(&m, "kit");
+    let lt = sets_of(&m, "lt");
+    for w in &weapons {
+        assert!(kit.contains(w), "the coming ladder's {w} is offered: {kit:?}");
+    }
+    for b in &bodies {
+        assert!(lt.contains(b), "the coming ladder's {b} is offered: {lt:?}");
+    }
+    for b in old_bodies.iter().filter(|b| !bodies.contains(b)) {
+        assert!(!lt.contains(b), "the old ladder's {b} isn't: {lt:?}");
+    }
+
+    // The match starts there once the map is in (`follow_map_change`:
+    // `minigame::start`) and deals the offered draw.
+    world.remove_resource::<MapChange>();
+    minigame::start(world, "kit:offer_rotation").expect("it starts");
+    assert_eq!(*world.resource::<Ladder>(), coming, "the match deals the ladder its offer named");
 }

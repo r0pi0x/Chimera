@@ -77,10 +77,12 @@
 //!   effect (`INFECTION_FX`, M8's `Quarantine_Exp_01`) at the player. A
 //!   gun rung's melee draw never gives a hand.
 //!
-//! The match's asset offer names each body the playing ladder's rungs
+//! The match's asset offer names each body the match's ladder's rungs
 //! give (`asset_names`, an `AssetHooks` entry: its `character/<record>`
-//! set, `body_set`, which `chimera_pack sets combat_arms` records), so a
-//! client without the install fetches them with the join.
+//! set, `body_set`, which `chimera_pack sets combat_arms` records; during a
+//! rotation's map change the coming ladder's, `minigame_net::match_ladder`),
+//! so a client without the install fetches them with the join or the
+//! level change.
 //!
 //! Each is on by default and turned off in the definition's `[rules]`
 //! (`rung_extras = { attachments = false, character = false, melee =
@@ -187,17 +189,18 @@ pub fn body_set(id: i32) -> String {
     format!("character/{id}")
 }
 
-/// What the match's asset offer names of the playing ladder's draw
-/// (`chimera_net::net::assets::AssetHooks`): each rung's body
+/// What the match's asset offer names of its ladder's draw (the coming
+/// one during a rotation: `match_ladder`;
+/// `chimera_net::net::assets::AssetHooks`): each rung's body
 /// (`body_set`), so a client without the install fetches them with the
 /// match, not file by file as players reach the rungs.
 fn asset_names(world: &World) -> chimera_net::net::assets::AssetNames {
-    let (Some(ladder), Some(data)) = (chimera_net::minigame_net::playing_ladder(world), world.get_resource::<CaData>())
+    let (Some(ladder), Some(data)) = (chimera_net::minigame_net::match_ladder(world), world.get_resource::<CaData>())
     else {
         return default();
     };
     let mut sets = Vec::new();
-    for id in characters::preload::ladder_bodies(data.characters(), ladder) {
+    for id in characters::preload::ladder_bodies(data.characters(), &ladder) {
         sets.push(format!("{GAME}:{}", body_set(id)));
     }
     chimera_net::net::assets::AssetNames { sets, ..default() }

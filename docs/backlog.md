@@ -142,10 +142,6 @@ Delete each when done.
     17-20 body textures -> 10-19, 2.5-4.9 MB, none of them a body's).
     Code: sets for a gun's parts (per gun and part they would be
     thousands; per gun, every part it takes), named the same way.
-  - A new ladder dealt at a rotation (`MapChange`) offers its definition's
-    guns but not its drawn melee weapons or bodies (the playing `Ladder`
-    is the old one then): they come as one weapon or `character/<record>`
-    set each.
   - Maps outside the pool (a `changelevel` to one) have no set and load
     group by group (2 min 25 s with 150 ms per answer in the rehearsal).
 - **The dedicated server's Combat Arms view models.** (Its growth per map
