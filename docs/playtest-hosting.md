@@ -47,15 +47,16 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
 On the machine with the installs and Combat Arms' keys, from a checkout
 (`chimera_pack` is a host tool, not in releases), into the server's store
 (Linux `~/.local/share/chimera/asset-server`, Windows
-`%LOCALAPPDATA%\chimera\asset-server`):
+`%LOCALAPPDATA%\chimera\asset-server`; `<server store>` below; `sets`
+without `--store` writes the user's cache instead):
 
 ```
 cargo run --release --features tools --bin chimera_pack -- publish cs_source
 cargo run --release --features tools --bin chimera_pack -- publish combat_arms
 cargo run --release --features tools --bin chimera_pack -- publish hl2dm
-cargo run --release --features tools --bin chimera_pack -- sets cs_source --sign
-cargo run --release --features tools --bin chimera_pack -- sets combat_arms --sign
-cargo run --release --features tools --bin chimera_pack -- sets hl2dm --sign
+cargo run --release --features tools --bin chimera_pack -- sets cs_source --store <server store> --sign
+cargo run --release --features tools --bin chimera_pack -- sets combat_arms --store <server store> --sign
+cargo run --release --features tools --bin chimera_pack -- sets hl2dm --store <server store> --sign
 ```
 
 `sets <game> --only <prefix>` records only the sets whose names start
