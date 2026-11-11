@@ -63,7 +63,8 @@ cargo run --release --features tools --bin chimera_pack -- sets hl2dm --store <s
 
 `sets <game> --only <prefix>` records only the sets whose names start
 with it and leaves the others as they are (`sets combat_arms --only
-character/ --sign`: the bodies' sets alone, in under a minute).
+character/ --sign`: the bodies' sets alone, in under a minute; `--only
+parts/`: the guns' fitted parts alone, about a minute).
 
 A whole publish serves every file, on demand. Sets make a match's first
 download one batch instead of a request per file: `sets` records each gun's
@@ -110,6 +111,7 @@ server's. On this box (2026-11-11) the server has, per game:
 | `map/<name>` | the 18 pool maps, 90-190 MB each | the 4 pool maps | dm_lockdown, dm_overwatch and six more |
 | `weapon/<id>` | every gun | every gun: view model with hands and parts, and the held model (what other players hold) | every gun |
 | `character/<record>` | - | each of the 689 body records with a file (a rung's body: its model, faces, head pieces and textures; beyond `base` and `players` mostly its vest and legs textures, 0.3 MB at the median) | - |
+| `parts/<id>` | - | each of the 1,265 guns with parts: the parts a rung may draw for it and its default ones (their view and held models and textures, beyond its `weapon/<id>`; 2 MB at the median, mostly shared: 326 files, 7.5 MB in all) | - |
 
 The weapon sets are named as the offer asks (`weapon/ak47`, not
 `weapon/weapon_ak47`), and the offer names the ladder's drawn melee
@@ -128,11 +130,16 @@ write them with the set's current files as a `CHIMERA_VFS_LOG`-style list
 combat_arms` records all of Combat Arms' 2,363 weapon sets again (each
 a superset of the last); it leaves the other sets alone.
 
-What still comes on demand in a match (2026-11-11): Combat Arms' rung
-guns' fitted parts (drawn per rung: up to 9 files, a request each, up
-to 1.1 MB). The rung bodies are named in the join's offer
-(`character/<record>`), and at a rotation the level change's offer
-names the coming ladder's drawn melee weapons and bodies (its match
+The rung bodies are named in the join's offer
+(`character/<record>`), and so are the rung guns' fitted parts
+(`parts/<id>`, for each Combat Arms rung gun showing parts; before them 0-9
+requests a session, a part each, up to 2.8 MB: a seeded session over
+warehouse, de_aztec and de_dust2, ladder seeds 217377-217379, prefetch
+off, went from 7 such requests, 2.8 MB, to none (two runs), the joins' downloads
+growing by 3.3 MB, from 165 to 168.6 MB; the parts sets add 3.1 MB to
+Combat Arms' manifest, 7.4 to 10.5 MB, fetched once per tester and
+publish); at a rotation the level change's offer
+names the coming ladder's drawn melee weapons, bodies and parts (its match
 deals them only once the map is in: `ladder::draw` makes the same draw
 ahead). After a rotation (`ugg_new 217377 13 cs_source:de_aztec` from
 warehouse, prefetch off, two runs each) a client fetched 19-23 requests,

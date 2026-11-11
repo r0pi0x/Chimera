@@ -106,8 +106,16 @@ pub fn ladder_bodies(data: &CharacterData, ladder: &Ladder) -> Vec<i32> {
 /// (`attachments::fit_given`, `parts::view_key`).
 fn key_with_parts(catalog: &WeaponCatalog, table: &CaModTable, weapon: &str, parts: &[&str]) -> Option<String> {
     let params = catalog.get(weapon)?.hook::<AttachParams>(ATTACHMENTS)?;
-    let fitted = fit(table, &params, parts).map(|p| p.map(|(id, ..)| id));
-    Some(view_key(weapon, Some(&mods_for(table, &params, &fitted))))
+    Some(fitted_key(table, &params, weapon, parts))
+}
+
+/// The view (and held) model key of `weapon`, of `params`, fitted with
+/// `parts` (its default parts in the slots they leave): `key_with_parts`,
+/// also what `chimera_pack sets` loads for a gun's `parts/<id>` set
+/// (`rungs::parts_set`).
+pub fn fitted_key(table: &CaModTable, params: &AttachParams, weapon: &str, parts: &[&str]) -> String {
+    let fitted = fit(table, params, parts).map(|p| p.map(|(id, ..)| id));
+    view_key(weapon, Some(&mods_for(table, params, &fitted)))
 }
 
 /// What `ladder` and the minigame's kit (`kit`) load here.

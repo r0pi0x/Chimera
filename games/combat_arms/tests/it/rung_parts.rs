@@ -5,11 +5,20 @@
 //! default part (it stays), keeps the stock part most of the time at the data's odds (sights most often,
 //! power parts rarely, at most two: data/attachments/rung_odds.toml),
 //! which a definition tunes (`rung_extras = { attachments = { ... } }`);
-//! the rung line names the parts by display name, shortened and capped.
+//! the rung line names the parts by display name, shortened and capped;
+//! the match's asset offer names each rung gun's parts set
+//! (`rungs::parts_set`) when its view model shows parts.
 
-use chimera_sim::minigame::{auto::Rng, ladder::RungOptions};
+use chimera_sim::{
+    minigame::{
+        auto::Rng,
+        ladder::{Ladder, RungExtras, RungOptions},
+    },
+    weapon::data::WeaponCatalog,
+};
 use combat_arms::game::{
     attachments::{ATTACHMENTS, AttachParams, BULLET, CaModTable, MAGAZINE, MECH_SIGHT, MUZZLE, SIGHT, SLOTS},
+    characters::preload,
     data::CaData,
     rungs::{self, CaPartNames, LABEL_MAX, RungOdds},
 };
@@ -118,4 +127,55 @@ fn the_rung_line_names_parts_by_display_name() {
     let many: Vec<String> = (0..5).map(|_| "Bullet_PVP_Damage_III_AR".to_string()).collect();
     let l = rungs::label(None, &many);
     assert!(l.chars().count() <= LABEL_MAX && l.ends_with('…'), "{l}");
+}
+
+/// The offer's parts sets (`rungs::ladder_parts_sets`, what
+/// `rungs::asset_names` names): one per Combat Arms rung gun whose view
+/// model shows parts (drawn on its rung, or its own defaults), as
+/// `parts/<id>` without the game, once each; none for a gun shown bare
+/// or another game's.
+#[test]
+fn the_offer_names_each_rung_guns_parts_set() {
+    let set = CaData::builtin().weapon_set();
+    let catalog = WeaponCatalog { sets: vec![set] };
+    let params = m4a1();
+    // The built-in records name no models: one of the M4A1's muzzle parts
+    // gets one (the install's have them).
+    let mut table = CaModTable::built_in().clone();
+    let part = rungs::slot_candidates(&table, &params, MUZZLE)[0].to_string();
+    let i = table.find(&part).unwrap();
+    let record = &mut table.records[usize::from(i)];
+    record.socket = Some("Muzzle".into());
+    record.attach_models = vec!["guns_m_pv_option/test.ltb".into(); 9];
+    let table = &table;
+    assert_ne!(preload::fitted_key(table, &params, "combat_arms:m4a1", &[&part]), "combat_arms:m4a1");
+    // A gun shown bare: no part drawn, no default shown.
+    let bare = |id: &str| {
+        let p = catalog.get(id).unwrap().hook::<AttachParams>(ATTACHMENTS).unwrap();
+        preload::fitted_key(table, &p, id, &[]) == id
+    };
+    assert!(bare("combat_arms:m4a1"));
+    let other = set
+        .weapons
+        .iter()
+        .find(|w| w.id != "combat_arms:m4a1" && w.hook::<AttachParams>(ATTACHMENTS).is_some() && bare(&w.id))
+        .map(|w| w.id.as_str())
+        .expect("a gun shown bare");
+    let drawn = |parts: &str| {
+        Some(RungExtras {
+            game: "combat_arms".into(),
+            values: vec![(rungs::PARTS.into(), parts.into())],
+            ..Default::default()
+        })
+    };
+    let mut ladder = Ladder {
+        rungs: vec![other, "combat_arms:m4a1", "cs_source:weapon_ak47", "combat_arms:m4a1"],
+        ..Default::default()
+    };
+    ladder.extras = vec![drawn(""), drawn(&part), drawn(&part), drawn(&part)];
+    assert_eq!(rungs::parts_set("combat_arms:m4a1"), "parts/m4a1");
+    assert_eq!(rungs::ladder_parts_sets(&catalog, table, &ladder), ["parts/m4a1"]);
+    // Nothing drawn: the guns shown bare, nothing named.
+    ladder.extras = vec![None; 4];
+    assert!(rungs::ladder_parts_sets(&catalog, table, &ladder).is_empty());
 }
