@@ -43,7 +43,10 @@
 //! Combat Arms' `character/<record>` per body record with a file (its
 //! model, animation library and textures, as a rung's body loads them:
 //! `characters::models::load_body`; the asset offer names a ladder's
-//! drawn bodies' sets, `rungs::body_set`). `--only <prefix>` records only
+//! drawn bodies' sets, `rungs::body_set`) and `parts/<id>` per gun with
+//! parts (its view and held models with each part a rung may draw for
+//! it and with its default parts, less the bare gun's files: the offer
+//! names a ladder's rung guns' sets, `rungs::parts_set`). `--only <prefix>` records only
 //! the sets whose names start with it (`--only character/`), leaving the
 //! others as they are. `--sign` signs the manifest again with
 //! the server's key (a server store). `base` and the maps' sets come from
@@ -69,7 +72,8 @@ const USAGE: &str = "\
 usage: chimera_pack pack <game> [options]       into a store (default the user's)
        chimera_pack publish <game> [options]    into the asset server's store, signed
        chimera_pack sets <game> [--store <dir>] [--sign] [--only <prefix>]
-                                                record weapon/<id>, players and character/<record> sets
+                                                record weapon/<id>, players, character/<record>
+                                                and parts/<id> sets
        chimera_pack user add <name> [--games <a,b>] [--note <text>]
        chimera_pack user revoke <name> [--token <n>]
        chimera_pack user list                   (user: --store <server store>)
@@ -373,7 +377,13 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
             out.push(("players".into(), take()));
         }
         "combat_arms" => {
-            use combat_arms::game::{characters::models, data::CaData, rungs, view_model::on_demand};
+            use combat_arms::game::{
+                attachments::{ATTACHMENTS, AttachParams, SLOTS},
+                characters::{models, preload},
+                data::CaData,
+                rungs,
+                view_model::on_demand,
+            };
             let read = |p: &str| tapped.read(p).ok();
             let ca = CaData::install();
             for w in &ca.weapon_set().weapons {
@@ -389,6 +399,42 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 let _ = combat_arms::game::characters::models::load_held_weapon(&ca, &w.id, &read);
                 let id = w.id.rsplit(':').next().unwrap_or(&w.id);
                 out.push((format!("weapon/{id}"), take()));
+            }
+            // Each gun's fitted parts (`parts/<id>`): the view and held
+            // models of the gun with each part a rung may draw for it
+            // (`rungs::slot_candidates`), and with its default parts, as
+            // `characters::preload` loads them, less the bare gun's files
+            // (its `weapon/<id>`).
+            let wanted = "parts/".starts_with(only) || only.starts_with("parts/");
+            let table = ca.attachments();
+            for w in ca.weapon_set().weapons.iter().filter(|w| wanted && on_demand::ours(&w.id)) {
+                let name = rungs::parts_set(&w.id);
+                let Some(params) = w.hook::<AttachParams>(ATTACHMENTS).filter(|_| name.starts_with(only)) else {
+                    continue;
+                };
+                let mut keys = std::collections::BTreeSet::new();
+                keys.insert(preload::fitted_key(table, &params, &w.id, &[]));
+                for slot in 0..SLOTS {
+                    for part in rungs::slot_candidates(table, &params, slot) {
+                        keys.insert(preload::fitted_key(table, &params, &w.id, &[part]));
+                    }
+                }
+                keys.remove(&w.id);
+                if keys.is_empty() {
+                    continue;
+                }
+                take();
+                let _ = on_demand::load_cached(&ca, &w.id, &read);
+                let _ = models::load_held_weapon(&ca, &w.id, &read);
+                let bare: std::collections::BTreeSet<String> = take().into_iter().collect();
+                for key in &keys {
+                    let _ = on_demand::load_weapon(&ca, key, &read);
+                    let _ = models::load_held_weapon(&ca, key, &read);
+                }
+                let got: Vec<String> = take().into_iter().filter(|p| !bare.contains(p)).collect();
+                // The bare view model stays cached only while its parts load.
+                on_demand::forget(&ca, &Default::default());
+                out.push((name, got));
             }
             // Each body a rung may dress its players in (any record with a
             // body file: the player bodies, the NPC bodies, the infected

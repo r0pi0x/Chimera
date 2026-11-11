@@ -80,9 +80,11 @@
 //! The match's asset offer names each body the match's ladder's rungs
 //! give (`asset_names`, an `AssetHooks` entry: its `character/<record>`
 //! set, `body_set`, which `chimera_pack sets combat_arms` records; during a
-//! rotation's map change the coming ladder's, `minigame_net::match_ladder`),
-//! so a client without the install fetches them with the join or the
-//! level change.
+//! rotation's map change the coming ladder's, `minigame_net::match_ladder`)
+//! and each rung gun's fitted parts (its `parts/<id>` set, `parts_set`:
+//! every part a rung may draw for the gun, one set per gun, when its view
+//! model shows parts, `ladder_parts_sets`), so a client without the
+//! install fetches them with the join or the level change.
 //!
 //! Each is on by default and turned off in the definition's `[rules]`
 //! (`rung_extras = { attachments = false, character = false, melee =
@@ -113,7 +115,7 @@ use serde::Deserialize;
 use chimera_sim::minigame::{
     auto::Rng,
     holders::{self, Holders},
-    ladder::{OnRung, RungCharacter, RungDraw, RungExtras, RungExtrasAppExt, RungExtrasHook, RungOptions},
+    ladder::{Ladder, OnRung, RungCharacter, RungDraw, RungExtras, RungExtrasAppExt, RungExtrasHook, RungOptions},
 };
 
 use avian3d::prelude::{SpatialQuery, SpatialQueryFilter};
@@ -189,11 +191,23 @@ pub fn body_set(id: i32) -> String {
     format!("character/{id}")
 }
 
+/// The set of weapon `id`'s fitted parts on the asset service
+/// (`chimera_pack sets combat_arms`: the gun's view and held models with
+/// each part a rung may draw for it, `slot_candidates`, and with its
+/// default parts, as `characters::preload` loads them, less the bare
+/// gun's files, which are its `weapon/<id>`). One set per gun, not per
+/// gun and part (thousands).
+pub fn parts_set(id: &str) -> String {
+    format!("parts/{}", id.rsplit(':').next().unwrap_or(id))
+}
+
 /// What the match's asset offer names of its ladder's draw (the coming
 /// one during a rotation: `match_ladder`;
 /// `chimera_net::net::assets::AssetHooks`): each rung's body
-/// (`body_set`), so a client without the install fetches them with the
-/// match, not file by file as players reach the rungs.
+/// (`body_set`) and the fitted parts of each rung gun drawn with parts
+/// or having default ones (`parts_set`), so a client without the install
+/// fetches them with the match, not file by file as players reach the
+/// rungs.
 fn asset_names(world: &World) -> chimera_net::net::assets::AssetNames {
     let (Some(ladder), Some(data)) = (chimera_net::minigame_net::match_ladder(world), world.get_resource::<CaData>())
     else {
@@ -203,7 +217,37 @@ fn asset_names(world: &World) -> chimera_net::net::assets::AssetNames {
     for id in characters::preload::ladder_bodies(data.characters(), &ladder) {
         sets.push(format!("{GAME}:{}", body_set(id)));
     }
+    if let Some(catalog) = world.get_resource::<WeaponCatalog>() {
+        let table = world.get_resource::<CaModTable>().unwrap_or(CaModTable::built_in());
+        for name in ladder_parts_sets(catalog, table, &ladder) {
+            sets.push(format!("{GAME}:{name}"));
+        }
+    }
     chimera_net::net::assets::AssetNames { sets, ..default() }
+}
+
+/// The `parts_set`s of `ladder`'s Combat Arms rung guns whose view model
+/// has parts (drawn, `PARTS`, or default: `preload::fitted_key`), each
+/// once, in rung order.
+pub fn ladder_parts_sets(catalog: &WeaponCatalog, table: &CaModTable, ladder: &Ladder) -> Vec<String> {
+    let mut out = Vec::new();
+    for (rung, gun) in ladder.rungs.iter().enumerate() {
+        let Some(params) = catalog
+            .get(gun)
+            .filter(|_| super::view_model::on_demand::ours(gun))
+            .and_then(|w| w.hook::<AttachParams>(ATTACHMENTS))
+        else {
+            continue;
+        };
+        let given = ladder.extras(rung).and_then(|x| x.value(PARTS)).unwrap_or("");
+        let parts: Vec<&str> = given.split(',').filter(|p| !p.is_empty()).collect();
+        let key = characters::preload::fitted_key(table, &params, gun, &parts);
+        let name = parts_set(gun);
+        if key != *gun && !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out
 }
 
 /// Whether rung `on` makes its players the infected.
