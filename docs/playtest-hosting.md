@@ -94,10 +94,11 @@ done
 `base` for a game: the same from a run on the other games' maps (what a
 match reads of a game whose map isn't played). `--sets-from /nonexistent`
 keeps `publish` from copying the sets of your own user cache over the
-server's. On this box (2026-11-11) the server has `base` and `players` for
-the three games, `map/<name>` for de_dust2, cs_office, WAREHOUSE,
-JUNK_FLEA, DARKHILLS, BLOODMONEY and HL2:DM's eight maps, and every gun's
-`weapon/<id>`. A set the service lacks is skipped: its files arrive on
+server's. On this box (2026-11-11, after the rehearsal) the server has
+`base` for the three games, `players` for CS:S and HL2:DM (Combat Arms'
+has none), `map/<name>` for every map of the pool (CS:S's 18 with the
+loop above, 90-190 MB each, 2.3 GB together) and HL2:DM's other six, and
+every gun's `weapon/<id>`. A set the service lacks is skipped: its files arrive on
 demand while the map loads, slower (a request per group of files).
 
 ## The asset service (each session)
