@@ -255,6 +255,7 @@ impl GameApp {
 /// a start map that doesn't load (1).
 pub fn run(game: &'static GameApp) -> AppExit {
     let args = game.args(Args::parse_for(&game.usage()));
+    super::offscreen::silence_audio_device(&args);
     let (lacks, fatal) = game.requirements();
     if fatal {
         exit_fatal(&lacks);

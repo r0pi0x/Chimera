@@ -345,9 +345,26 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1920x1080 \
   but runs until something ends it: `--frames`, `--screenshot`, `quit`
   over the remote console (section 3b), or its pid killed. `fps_max`
   still spaces frames (300); `+fps_max 0` for none. No vsync.
+- No sound device: on Linux an offscreen run's ALSA default is the null
+  device (`ALSA_CONFIG_PATH` set to a temp file unless already set).
+  Opening the system's devices from a shell without `XDG_RUNTIME_DIR`
+  froze 7 starts of 51, in PipeWire's ALSA or JACK plugin, right after
+  the adapter's log line (`offscreen::silence_audio_device`).
+- Any client's exit waits for the pipelines still compiling (logged as
+  `exit: waited <ms> ms for <n> pipelines`); ending while they compiled
+  crashed 2 exits of 40 (9 of 40 under gdb) in the GPU driver (`free(): invalid
+  size`, SIGSEGV) (`chimera_client::client::exit_drain`).
+- A run that hangs: make it attachable and take every thread's stack.
+  `kernel.yama.ptrace_scope` is 1 on the dev box, so `gdb -p` works only
+  on a process that allowed it (`prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY)`
+  before `exec`, e.g. from a three-line Python wrapper) or under gdb
+  itself (`gdb -batch -ex run -ex 'thread apply all bt' --args ...`, then
+  `kill -INT` the game). A core from `kill -ABRT` is cut at 2 GB by
+  systemd-coredump and useless for a running client.
 - Test: `cargo test -p cs_source_app --features dev --test it
   heavy::offscreen` (the binary on the greybox at 320x200; passes with a
-  note without an adapter).
+  note without an adapter; also six runs ended at frame 3, while
+  pipelines compile, each must exit with success).
 
 To photograph a live run step by step (e.g. before and after a round
 restart, where frame counts are too uncertain), run the game without

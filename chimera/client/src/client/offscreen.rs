@@ -27,6 +27,18 @@
 //! render world: percentiles over the whole run) when it ends;
 //! `--frame-log` has each frame (`frame_metrics`).
 //!
+//! No sound device either (`silence_audio_device`, called by `app::run`
+//! before anything starts a thread): on Linux ALSA's default device is
+//! its null one for the run, unless `ALSA_CONFIG_PATH` is set. Bevy's
+//! audio opens the default output while its plugin builds, on the main
+//! thread, and where that fails (no `XDG_RUNTIME_DIR`, as in agents'
+//! and tools' shells: PipeWire's and Pulse's plugins can't reach the
+//! server) rodio tries every ALSA device in turn; PipeWire's JACK one
+//! then sometimes never returns from closing its client
+//! (`jack_client_close` waiting in `pw_thread_loop_stop`), and the run
+//! froze for good right after the GPU adapter's log line, before any
+//! frame (7 of 51 starts on the dev box under load, 2026-11-10).
+//!
 //! Known shortcuts:
 //! - The image is `Rgba8UnormSrgb`; a window's surface is usually
 //!   `Bgra8UnormSrgb`. Pipelines specialize on the view's format, so the
@@ -65,6 +77,35 @@ use bevy::{
 };
 
 use super::ClientArgs;
+
+/// ALSA's configuration for an offscreen run: every output into the
+/// null device (`silence_audio_device`).
+const NULL_ALSA_CONFIG: &str = "pcm.!default { type null }\nctl.!default { type hw card 0 }\n";
+
+/// `--offscreen` on Linux: point ALSA (`ALSA_CONFIG_PATH`) at a
+/// configuration whose default output is the null device, so Bevy's
+/// audio opens it at once and never searches the system's devices (see
+/// the module doc). Does nothing without `--offscreen`, elsewhere than
+/// Linux, or when `ALSA_CONFIG_PATH` is set already. Call it before the
+/// process starts any thread: it sets an environment variable.
+pub fn silence_audio_device(args: &super::Args) {
+    if args.offscreen.is_none() || !cfg!(target_os = "linux") || std::env::var_os("ALSA_CONFIG_PATH").is_some() {
+        return;
+    }
+    let path = std::env::temp_dir().join("chimera-offscreen-alsa.conf");
+    if std::fs::read_to_string(&path).ok().as_deref() != Some(NULL_ALSA_CONFIG) {
+        // Whole or not at all, for runs starting side by side.
+        let part = path.with_extension(format!("conf.{}", std::process::id()));
+        if std::fs::write(&part, NULL_ALSA_CONFIG).and_then(|()| std::fs::rename(&part, &path)).is_err() {
+            let _ = std::fs::remove_file(&part);
+            eprintln!("offscreen: couldn't write {}: the sound device stays", path.display());
+            return;
+        }
+    }
+    // SAFETY: called from `app::run` before the app (or anything else of
+    // the process) has started a thread.
+    unsafe { std::env::set_var("ALSA_CONFIG_PATH", &path) };
+}
 
 /// Frames between `--dump` frames without `--dump-every`.
 const DEFAULT_DUMP_EVERY: u32 = 60;

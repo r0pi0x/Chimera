@@ -26,6 +26,7 @@ pub mod debug_ui;
 pub mod debug_views;
 pub mod dialog;
 pub mod effects;
+pub mod exit_drain;
 pub mod clip_quad;
 pub mod fonts;
 pub mod front_end;
@@ -516,6 +517,7 @@ impl PluginGroup for ClientPlugins {
             .add(debug_views::DebugViewsPlugin)
             .add(capture::CapturePlugin)
             .add(offscreen::OffscreenPlugin)
+            .add(exit_drain::ExitDrainPlugin)
             .add(perf::PerfPlugin)
             .add(memory::MemoryPlugin)
             .add(upload_pace::UploadPacePlugin)
