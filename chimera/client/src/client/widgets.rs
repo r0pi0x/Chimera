@@ -296,6 +296,12 @@ impl Windows {
         pos
     }
 
+    /// Put frame `id` (`size` window pixels) at `pos` from now on, as if
+    /// dragged there (an app moving a dialog out of another's way).
+    pub fn put(&mut self, id: WindowId, pos: Vec2, size: Vec2) {
+        self.placed.insert(id, Placed { pos, size });
+    }
+
     pub fn placed(&self, id: WindowId) -> Option<Placed> {
         self.placed.get(id).copied()
     }

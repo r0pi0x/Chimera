@@ -188,7 +188,7 @@ const BAR_BG: Color = Color::srgba(1.0, 1.0, 1.0, 0.12);
 /// Name, status, progress (bar and bytes), ping, on a 720-line screen.
 const WIDTHS: [f32; 4] = [220.0, 170.0, 250.0, 70.0];
 const GAP: f32 = 16.0;
-const CELL: f32 = 19.0;
+const CELL: f32 = 17.0;
 
 fn status_color(s: u8) -> Color {
     match s {
@@ -202,7 +202,12 @@ fn status_color(s: u8) -> Color {
 /// The screen's scale at a window `height` pixels tall with `rows` rows:
 /// for a 720-line screen, less when that many rows wouldn't fit.
 pub fn scale(height: f32, rows: usize) -> f32 {
-    let need = 40.0 + 20.0 * 1.3 + 40.0 * 1.3 + 22.0 * 1.3 + 30.0 + (CELL * 1.3 + 8.0) * (rows + 1) as f32 + 30.0 + 120.0 * 1.2;
+    // From the top: the padding, the panel (its padding, three lines, the
+    // table's margin and padding, the header and the rows with their
+    // gaps), the countdown's box; a fifth over for the fonts' line boxes.
+    let panel = 2.0 * 14.0 + (17.0 + 34.0 + 20.0) * 1.3 + 2.0 * 6.0 + 10.0 + 2.0 * 8.0 + (CELL * 1.3 + 4.0 + 4.0) * (rows + 1) as f32;
+    let countdown = 12.0 + 2.0 * 4.0 + (22.0 + 64.0) * 1.3;
+    let need = 0.15 * 720.0 + 1.2 * (panel + countdown) + 10.0;
     height.max(240.0) / 720f32.max(need)
 }
 
@@ -219,7 +224,8 @@ fn spawn(mut commands: Commands) {
             height: percent(100.0),
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
-            padding: UiRect::top(percent(5.0)),
+            // Under the games' minigame panel (its title and rung lines).
+            padding: UiRect::top(percent(15.0)),
             ..default()
         },
     ));
@@ -278,7 +284,7 @@ fn draw(
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
                 row_gap: px(6.0 * s),
-                padding: UiRect::axes(px(26.0 * s), px(18.0 * s)),
+                padding: UiRect::axes(px(26.0 * s), px(14.0 * s)),
                 ..default()
             },
             BackgroundColor(super::widgets::display_alpha(Color::srgba(0.02, 0.02, 0.03, 0.72))),
@@ -288,14 +294,14 @@ fn draw(
     let cell_font = font(CELL, false);
     let cell_bold = font(CELL, true);
     commands.entity(panel).with_children(|p| {
-        label(p, view.mode.to_uppercase(), font(20.0, false), DIM);
-        label(p, view.map.clone(), font(40.0, true), GOLD);
-        label(p, view.line.clone(), font(22.0, false), TEXT);
+        label(p, view.mode.to_uppercase(), font(17.0, false), DIM);
+        label(p, view.map.clone(), font(34.0, true), GOLD);
+        label(p, view.line.clone(), font(20.0, false), TEXT);
         p.spawn(Node {
             flex_direction: FlexDirection::Column,
             row_gap: px(4.0 * s),
-            margin: UiRect::top(px(14.0 * s)),
-            padding: UiRect::all(px(10.0 * s)),
+            margin: UiRect::top(px(10.0 * s)),
+            padding: UiRect::all(px(8.0 * s)),
             ..default()
         })
         .insert(BackgroundColor(super::widgets::display_alpha(Color::srgba(0.0, 0.0, 0.0, 0.45))))
@@ -309,7 +315,7 @@ fn draw(
                 t.spawn((
                     Node {
                         column_gap: px(GAP * s),
-                        padding: UiRect::vertical(px(3.0 * s)),
+                        padding: UiRect::vertical(px(2.0 * s)),
                         align_items: AlignItems::Center,
                         ..default()
                     },
@@ -368,14 +374,16 @@ fn draw(
             Node {
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
-                margin: UiRect::top(px(18.0 * s)),
+                margin: UiRect::top(px(12.0 * s)),
+                padding: UiRect::axes(px(36.0 * s), px(4.0 * s)),
                 ..default()
             },
+            BackgroundColor(super::widgets::display_alpha(Color::srgba(0.02, 0.02, 0.03, 0.72))),
             ChildOf(root),
         ))
         .with_children(|c| {
-            label(c, "Match starts in", font(28.0, false), TEXT);
-            label(c, left.to_string(), font(110.0, true), GOLD);
+            label(c, "Match starts in", font(22.0, false), TEXT);
+            label(c, left.to_string(), font(64.0, true), GOLD);
         });
     }
 }
