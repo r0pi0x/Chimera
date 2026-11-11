@@ -244,6 +244,22 @@ fn the_longest_wait_starts_the_match_and_the_straggler_joins_late() {
 }
 
 #[test]
+fn a_second_start_while_the_lobby_is_up_keeps_the_one_lobby() {
+    // The automatic gun game starts its match twice at launch and at each
+    // map change: one lobby, begun once (one log line).
+    let mut sim = sim(1);
+    minigame::start(sim.server.app.world_mut(), ID).expect("it starts");
+    sim.ticks(HZ / 2);
+    assert!(in_lobby(&sim));
+    let began = sim.server.app.world().resource::<chimera_net::prematch::Lobby>().began;
+    minigame::start(sim.server.app.world_mut(), ID).expect("it starts again");
+    sim.ticks(HZ / 2);
+    assert!(in_lobby(&sim), "still the lobby");
+    let again = sim.server.app.world().resource::<chimera_net::prematch::Lobby>().began;
+    assert_eq!(began, again, "the lobby began once");
+}
+
+#[test]
 fn bots_are_ready_at_once() {
     let mut sim = sim(1);
     let w = sim.server.app.world_mut();

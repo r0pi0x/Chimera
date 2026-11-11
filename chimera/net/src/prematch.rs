@@ -41,7 +41,10 @@
 //!   seconds, default `mp_lobby_countdown`; 0 starts at once).
 //!
 //! A match change during the lobby (`MatchHold`) drops it; the next start
-//! begins another. A map change no longer waits for the clients to load
+//! begins another. A start while the lobby is up (the automatic gun game
+//! starts its match twice) keeps it: one lobby, one log line. The
+//! `mp_lobby*` cvars and `lobby*` commands are engine names
+//! (`chimera:`, `console_names`), not CS:S's. A map change no longer waits for the clients to load
 //! the map before the next match starts when the lobby is on
 //! (`minigame_net`'s `CLIENT_GRACE`): the lobby waits for them, showing
 //! who.
@@ -330,6 +333,15 @@ pub(crate) fn begin(world: &mut World, mut seen: Local<u64>) {
         return;
     }
     *seen = starts;
+    // A second start while the lobby is up (the automatic gun game starts
+    // its match twice; `start` lifted `PreMatch`) keeps the one lobby:
+    // held again, no reset and no second log line.
+    if world.contains_resource::<Lobby>() {
+        if lobby_on(world) && world.get_resource::<ActiveMinigame>().is_some() && !minigame::held(world) {
+            world.insert_resource(PreMatch);
+        }
+        return;
+    }
     if !lobby_on(world) || world.get_resource::<ActiveMinigame>().is_none() || minigame::held(world) {
         return;
     }
