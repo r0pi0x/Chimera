@@ -12,12 +12,14 @@
 //! archetypes of every game's characters on every map, which Bevy keeps, and
 //! each costs every tick (about 800 instructions with no character on the
 //! map: docs/performance.md, "A session's frame rate"); de_dust2, the first
-//! map, pays all of them on its second visit. A tick is the mean of its
-//! map's ticks' work counts (`Sim::work`, ticks making no archetype): the
-//! session plays out the same on every run (`Sim::repeatable`), so the
-//! same build counts the same, and a failure lists the systems that grew.
-//! Prints a row per map (`--nocapture`). Passes with a note without the
-//! installs.
+//! map, pays all of them on its second visit. A tick is the median of
+//! its map's ticks' work counts (`Sim::work`, ticks making no archetype):
+//! a death, a grenade or a ragdoll makes a tick several times another, and
+//! each lap's fights differ, so a mean follows the fight. The session
+//! plays out the same on every run (`Sim::repeatable`), so the same build
+//! counts the same, and a failure lists the systems that grew (by their
+//! means: a fight shows there). Prints a row per map (`--nocapture`).
+//! Passes with a note without the installs.
 
 use bevy::prelude::*;
 use chimera_core::{
@@ -81,13 +83,14 @@ fn chimera_census_made(sim: &mut Sim) -> String {
     chimera_core::metrics::census::made_by(sim.app.world(), "Health", 20)
 }
 
-/// The mean instructions of `n` ticks' systems (`Sim::work`, the same on
-/// every run), over those that made no new archetype; and the systems'
-/// counts per tick.
+/// The median of `n` ticks' instructions (`Sim::work`, the same on every
+/// run), over those that made no new archetype; and the systems' counts
+/// per tick.
 fn tick_cost(sim: &mut Sim, n: u64) -> Option<(f64, chimera_core::metrics::work::WorkCounts)> {
     let w = sim.work(n)?;
-    let steady = w.steady_ticks();
-    (!steady.is_empty()).then(|| (steady.iter().sum::<u64>() as f64 / steady.len() as f64, w.systems.per(n)))
+    let mut steady = w.steady_ticks();
+    steady.sort_unstable();
+    steady.get(steady.len() / 2).map(|m| (*m as f64, w.systems.per(n)))
 }
 
 #[test]

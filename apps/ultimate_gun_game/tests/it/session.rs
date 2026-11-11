@@ -91,10 +91,13 @@ fn cost(sim: &mut Sim, n: u64) -> Option<Work> {
     sim.work(n)
 }
 
-/// The mean of the ticks that made no new archetype (`Work::steady_ticks`).
+/// The median of the ticks that made no new archetype
+/// (`Work::steady_ticks`): a death or a ragdoll makes a tick several times
+/// another, and each match's fights differ, so a mean follows the fight.
 fn steady(w: &Work) -> f64 {
-    let t = w.steady_ticks();
-    t.iter().sum::<u64>() as f64 / t.len().max(1) as f64
+    let mut t = w.steady_ticks();
+    t.sort_unstable();
+    t.get(t.len() / 2).copied().unwrap_or(0) as f64
 }
 
 /// Match after match the characters' tables and archetypes stop growing
@@ -111,7 +114,7 @@ fn a_session_of_matches_stops_making_tables() {
         let c = Census::take(sim.app.world_mut());
         let tick = cost(&mut sim, 60);
         eprintln!(
-            "match {m}: {} archetypes, {} tables, {:?} instructions a tick (steady mean; median {:?})",
+            "match {m}: {} archetypes, {} tables, {:?} instructions a tick (steady median; all ticks' median {:?})",
             c.archetypes_made,
             c.tables,
             tick.as_ref().map(steady),

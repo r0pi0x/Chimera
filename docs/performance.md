@@ -1202,10 +1202,11 @@ deterministic all along. The cost was not, for these reasons:
   alone in a child process under `cargo test` (the compute pool is the
   process's: another test's tasks would count).
 - Tests on work counts: `session::a_session_of_matches_stops_making_tables`
-  (steady mean of match 7 under 1.25x match 1's, systems' diff on
-  failure), `session::a_match_repeats_tick_for_tick` (three sessions in
-  one process: the same state hash, the last two within 1%: 272.78M and
-  273.00M), `party_kit`'s `archetypes` (1.17x with 2,000 more archetypes,
+  (the median tick making no archetype, match 7 under 1.25x match 1's,
+  systems' diff on failure; a median, as each match's fights differ),
+  `session::a_match_repeats_tick_for_tick` (three sessions in one
+  process: the same state hash, the last two within 1%: 233,827,894 and
+  233,828,785 instructions), `party_kit`'s `archetypes` (1.17x with 2,000 more archetypes,
   1.60x with 2,000 more tables) and `heavy::bot_cost` (systems growing
   from 2 to 16 bots printed always, no `trace` build needed),
   `cs_source`'s `map_logic::idle_entities_cost_a_tick_little`,
@@ -1215,8 +1216,11 @@ deterministic all along. The cost was not, for these reasons:
   `frame_cost::screens_that_are_down_cost_nothing_per_string`
   (instructions of 20 frames); `perfgate` ("Regression gate": 0.02-0.24%
   between runs, gated at 1%, `--repeat` checks determinism);
-  `frame_bench` (frames, below: two runs gave the same main schedule,
-  15.15M, render world, 11.80M, meshes drawn and bytes uploaded).
+  `frame_bench` (frames, below: two runs of de_dust2 gave the same main
+  schedule, 13.96M a frame, extraction, 1.25M, meshes drawn and bytes
+  uploaded; the render world 11.27M and 11.31M: the GPU driver's command
+  submission, `submit_pending_command_buffers`, runs a varying amount of
+  user-space code).
 - Frames (`ultimate_gun_game`'s `frame_bench`): the main schedule,
   extraction and the render world by work counts with the costliest
   systems, the meshes drawn and the bytes of meshes and textures uploaded
