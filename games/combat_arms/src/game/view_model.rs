@@ -3,7 +3,8 @@
 //!
 //! Loading (`on_demand`: a weapon's when it is first wanted, in the
 //! background, once per session; `add_view_models`: every one of ours
-//! into a map, for tests): each weapon whose
+//! into a map, another game's map's dressing for a client (`world::
+//! dress_with`; none on the dedicated server's) and tests): each weapon whose
 //! data names a player-view model (`[models] view`, an archive path of the
 //! install, with `view_skins`: its skins by texture index, 2, and
 //! `view_offset`: its `Pos`, 4; its pieces drawn in the install

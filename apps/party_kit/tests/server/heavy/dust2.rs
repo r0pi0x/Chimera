@@ -219,3 +219,89 @@ fn every_rungs_gun_has_rounds_at_a_respawn() {
         }
     }
 }
+
+/// The server's de_dust2 (loaded without textures, dressed for Combat Arms)
+/// carries none of Combat Arms' view models: a server draws none, as on its
+/// own maps (`world::DRESSING`; they were 0.5 GB of its memory,
+/// docs/performance.md, "The dedicated server's memory"). Its Combat Arms
+/// guns time as before, on their own view models' animation lengths
+/// (`weapons::timing`, which reads the model's animation list, not the
+/// map's): each gun with a timing table built on the server carries the
+/// same timing (`CaTimingValues`, which the server sends its clients, and
+/// the weapon's own cycle, reload and draw) as one built in a world with
+/// no map at all.
+#[test]
+fn the_servers_combat_arms_guns_time_without_the_dressings_view_models() {
+    use chimera_sim::weapon::{self, Magazine, Trigger, Weapon, data::WeaponCatalog};
+    use chimera_world::{harness::Sim, map::ViewModels};
+    use combat_arms::{
+        game::{
+            data::CaData,
+            view_model::on_demand::ours,
+            weapons::timing::{CaTimingValues, TIMING},
+        },
+        harness::CaSimWith,
+    };
+    if !installs() {
+        eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
+        return;
+    }
+    let Some(mut sim) = server(&PLAIN_LADDER) else { return };
+    let ours_drawn: Vec<String> = sim
+        .app
+        .world()
+        .get_resource::<ViewModels>()
+        .map(|m| m.0.iter().map(|v| v.key.clone()).filter(|k| ours(k)).collect())
+        .unwrap_or_default();
+    assert!(ours_drawn.is_empty(), "the server's dust2 carries Combat Arms' view models: {ours_drawn:?}");
+    let ca = CaData::install();
+    if ca.attributes().and_then(|a| a.weapons.as_ref()).is_none() {
+        eprintln!("skipping the timing: the install's weapons file isn't readable (the V1 key)");
+        return;
+    }
+    let ids: Vec<&'static str> = {
+        let catalog = sim.app.world().resource::<WeaponCatalog>();
+        ca.weapon_set()
+            .weapons
+            .iter()
+            .filter(|d| d.hooks.contains_key(TIMING))
+            .filter_map(|d| catalog.get(&d.id).map(|c| c.id.as_str()))
+            .collect()
+    };
+    let timing = |w: &World, e: Entity| {
+        (
+            w.get::<CaTimingValues>(e).cloned(),
+            w.get::<Trigger>(e).map(|t| (t.cycle, t.latency, t.postfire)),
+            w.get::<Magazine>(e).map(|m| m.reload_time),
+            w.get::<Weapon>(e).map(|w| w.draw_time),
+        )
+    };
+    let owner = soldier(&mut sim, Vec3::new(0.0, 1.0, 0.0));
+    let mut bare = Sim::with(CaSimWith(ca.clone()), |_| {});
+    let bare_owner = bare.spawn_character(Vec3::new(0.0, 1.0, 0.0), combat_arms::game::movement::ID);
+    let (mut read, mut differ) = (0, Vec::new());
+    for id in &ids {
+        let on_server = {
+            let w = sim.app.world_mut();
+            let e = weapon::spawn_weapon(w, id, owner).expect("registered on the server");
+            let t = timing(w, e);
+            w.despawn(e);
+            t
+        };
+        let alone = {
+            let w = bare.app.world_mut();
+            let Some(e) = weapon::spawn_weapon(w, id, bare_owner) else { continue };
+            let t = timing(w, e);
+            w.despawn(e);
+            t
+        };
+        assert!(on_server.0.is_some(), "{id}: the server's copy has no settled timing");
+        read += 1;
+        if on_server != alone {
+            differ.push(format!("{id}: server {on_server:?}, no map {alone:?}"));
+        }
+    }
+    eprintln!("{} Combat Arms guns with a timing table on the server; {read} compared", ids.len());
+    assert!(read > 0, "no Combat Arms gun with a timing table on the server");
+    assert!(differ.is_empty(), "{} guns time differently on the server: {:#?}", differ.len(), &differ[..differ.len().min(10)]);
+}

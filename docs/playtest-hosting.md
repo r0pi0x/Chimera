@@ -452,7 +452,7 @@ server restart.
 | Measured | |
 |---|---|
 | Server tick (3 players, 7 bots) | CPU p50 2.0-3.3 ms, p99 3.7-7.4 ms; 4.8-8.4M instructions p50; a map change one tick of 0.3-1.4 s |
-| Server memory (RSS + swap) | 2.4 GB at start; 5.2 GB after 3 maps, 5.5 GB after 6 (about +100 MB a map; since fixed: about 2.3 GB after 28 maps headless, performance.md, "The dedicated server's memory") |
+| Server memory (RSS + swap) | 2.4 GB at start; 5.2 GB after 3 maps, 5.5 GB after 6 (about +100 MB a map; since fixed: about 2.3 GB after 28 maps headless, 1.8 GB after 12 once its Combat Arms view models went, performance.md, "The dedicated server's memory") |
 | Client memory (offscreen 640x360) | 3.5-5.5 GB resident each (since: 3.2-3.3 GB after each of three maps with the installs, performance.md, "A client's memory") |
 | First start to spawn, de_dust2 (sets published), 150 ms per answer | 36 s, 581 MB in 157 requests |
 | First start to spawn, de_cbble, 150 ms per answer, before and after the sets above (later that day) | 26.6 s (108 on-demand requests, 181 MB) -> 12.6 s (28, 92 MB) |

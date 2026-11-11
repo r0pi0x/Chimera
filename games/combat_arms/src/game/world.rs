@@ -134,7 +134,9 @@
 //!   `<none>` neither.
 //! - Other apps: `MAP_LOADER` is these maps for an app's
 //!   `map::MapSources`; `DRESSING` (`dress`) is Combat Arms' parts on
-//!   another game's map (a mashup: a CS:S map played as Combat Arms).
+//!   another game's map (a mashup: a CS:S map played as Combat Arms);
+//!   a load without textures (the dedicated server's) takes no view
+//!   models (`dress_with`), as Combat Arms' own maps never do.
 //!   `MapLoadOptions::kit` limits the character models every map carries
 //!   (`MapData::kit`): none for an app whose gameplay is another game's.
 //! - No map file hash (Q15): the game checks none, a client loads its own
@@ -267,7 +269,13 @@ pub static DRESSING: MapDressing = MapDressing {
         if sized {
             map.memos.insert(SizesOnly);
         }
-        dress(&data, &mount, map);
+        // A map that can't be drawn (the dedicated server's) takes no view
+        // models, as Combat Arms' own maps never carry them: they are the
+        // picture and its sounds alone; the weapons' timing reads each
+        // view model's animation list itself (`weapons::timing`). They were
+        // 0.5 GB of the server's memory (docs/performance.md, "The
+        // dedicated server's memory").
+        dress_with(&data, &mount, map, options.textures);
         if sized {
             map.memos.remove::<SizesOnly>();
         }
@@ -307,9 +315,20 @@ pub fn decodes(map: &MapData) -> bool {
 /// map's surfaces keep their own names (Combat Arms' effects take an
 /// unknown surface's).
 pub fn dress(data: &super::data::CaData, mount: &Mount, map: &mut MapData) {
+    dress_with(data, mount, map, true);
+}
+
+/// `dress`, with the weapons' view models (and their hands) only when
+/// `view_models`: a map loaded without textures (`MapLoadOptions::
+/// textures` off, the dedicated server's) is never drawn, and nothing but
+/// the drawing and its key sounds reads them (the weapons' timing reads
+/// the models' animation lists itself, `weapons::timing`).
+pub fn dress_with(data: &super::data::CaData, mount: &Mount, map: &mut MapData, view_models: bool) {
     let file = |path: &str| mount.read(path).ok();
     super::effects::library::add_looks(map, data, &file);
-    super::view_model::add_view_models(map, data, &file);
+    if view_models {
+        super::view_model::add_view_models(map, data, &file);
+    }
     super::characters::models::add_character_models(map, data, &file);
 }
 

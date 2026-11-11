@@ -144,14 +144,13 @@ Delete each when done.
     thousands; per gun, every part it takes), named the same way.
   - Maps outside the pool (a `changelevel` to one) have no set and load
     group by group (2 min 25 s with 150 ms per answer in the rehearsal).
-- **The dedicated server's Combat Arms view models.** (Its growth per map
-  is fixed: docs/performance.md, "The dedicated server's memory".) Of the
-  server's 2.2 GB in use, 510 MB are the Combat Arms view models'
-  animations from dressing each map for Combat Arms (`world::DRESSING`,
-  converted again at every map change), 430 MB the character models'
-  animation files, 270 MB the effects' library, 230 MB the merged weapon
-  data. Find whether the server needs the view models (their timing is
-  read from them) and what of the rest; and check the playtest build's
+- **The dedicated server's memory, what's left** (its Combat Arms view
+  models are gone: 1.70-1.85 GB in use, docs/performance.md, "The
+  dedicated server's memory"). The effects' library (270 MB, the parsed
+  effect file) looks safe to skip on a load without textures if Combat
+  Arms' impacts stay registered (`add_looks`' `map.impacts`): check which
+  server paths read it first. The character models' animation files (430
+  MB) pose the hit spheres: they stay. Then check the playtest build's
   server over a session of maps (`tick_stats`' memory).
 - **Client memory**: (the rehearsal's 3.5-5.5 GB per offscreen client
   is down to 3.2-3.3 GB after each of three maps: docs/performance.md, "A

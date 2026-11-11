@@ -3483,12 +3483,54 @@ the guests' textures: HL2:DM's and CS:S's dressing of another game's map
 load now (`dress_guest_with(.., lean)`, `MaterialLoader::lean`): 2.35-2.56
 GB. The rest is HL2:DM's bodies' and models' animations and its sounds.
 
-**Left** (bounded, not per map): of the 2.2 GB in use, the Combat Arms view
-models' animations sampled for each map's dressing (510 MB, converted again
-at each map change), the character models' animation files (430 MB, once
-per process: `model::ChildModels`), the effects' library (270 MB) and the
-merged weapon data (230 MB). Whether the server needs the view models at
-all (their timing is read from them) is open (backlog).
+**The view models (later that day).** Of the 2.2 GB left in use, 510 MB
+were the Combat Arms view models (their animations sampled, their meshes,
+the hands) that dressing another game's map for Combat Arms
+(`world::DRESSING`) converted again at every map change; and as a map
+without view models of its own (Combat Arms' own: theirs load on demand,
+the front end's) leaves the last map's `ViewModels` in place, warehouse
+kept the previous map's. What the server read of them: the view-model
+machine (`view_model::drive`), the picture and its key sounds only (local
+`CaSound`s, never sent: `GameSound` is the server's) and the attached
+effects. The weapons' timing doesn't come from them: the
+`combat_arms:timing` hook reads each weapon's view model's animation list
+itself (`weapons::timing::read`, `ViewTimes`) and settles
+`CaTimingValues`, which the server sends its clients. So a load without
+textures (the dedicated server's) dresses another game's map without them
+(`world::dress_with`), as Combat Arms' own maps always were.
+`heavy::server_map_memory`, bytes in use after each map (glibc, MB):
+
+| | before | after |
+|---|---|---|
+| cs_office, de_inferno, de_dust2 (laps 0-2) | 2,262-2,321 | 1,696-1,768 |
+| warehouse (laps 0-2) | 2,115-2,141 | 1,814-1,846 |
+| heap and anonymous held, after 12 maps | 2,402 | 1,816 |
+| entities | the same | the same |
+
+Its limit is 2 GB in use now (`IN_USE_LIMIT`). party_kit's
+`heavy::dust2::the_servers_combat_arms_guns_time_without_the_dressings_view_models`
+checks the server's de_dust2 has none of Combat Arms' view models and that
+every Combat Arms gun with a timing table built on it carries the same
+timing (`CaTimingValues`, the trigger's cycle, latency and post-fire, the
+reload and draw) as one built in a world with no map.
+
+**Left** (bounded, once per process, not per map), with what the server
+does with each:
+
+- The character models' animation files (430 MB, `model::ChildModels`):
+  gameplay. The server poses every body by them and its hit spheres follow
+  the pose (`characters::models::alias_rig`); not touched.
+- The effects' library (270 MB, the parsed effect file, `effects::library::
+  load_fx_file`, a memo of the install data): the particles, attached
+  effects and their sounds, none of them sent; but `add_looks` also
+  registers Combat Arms' impacts on the map (`map.impacts`), which may
+  route impacts. Probably safe to skip the parse on a load without
+  textures, keeping the impacts' registration; not done before the
+  release (not checked which server paths read the library).
+- The merged weapon data (230 MB): the server's weapons themselves.
+- The guests' view models (CS:S's and HL2:DM's dressing of another game's
+  map, `dress_guest_with`): not measured here (HL2:DM wasn't installed);
+  CS:S's bomb rules read its C4 view model's screen (`objectives::bomb`).
 
 ## A client's memory (2026-11-11)
 
