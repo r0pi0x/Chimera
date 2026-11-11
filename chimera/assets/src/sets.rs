@@ -5,13 +5,15 @@
 //! (`STARTUP_SETS`, fetched behind the client's progress window). `fetch`
 //! reads each game's manifest (fetched when the store lacks it), the sets'
 //! records the store lacks, and fills them with a `progress::Transfer` the
-//! caller can watch; `missing` says, from the store alone (no network),
+//! caller can watch (what didn't arrive is asked again after
+//! `RETRY_DELAYS`, unless the token was refused); `missing` says, from the store alone (no network),
 //! whether a fetch would have anything to do; `explain` turns a service's
 //! error into what a player can act on.
 
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 use crate::{AssetSettings, Manifest, pace::Pace, progress::Transfer};
@@ -19,6 +21,11 @@ use crate::{AssetSettings, Manifest, pace::Pace, progress::Transfer};
 /// The sets a game reads at startup: what its client fetches before the
 /// game's window when the store lacks them.
 pub const STARTUP_SETS: &[&str] = &["base"];
+
+/// Waits before each new try at the records a fetch didn't get (a
+/// connection closed or refused, a 429): the service restarted or busy
+/// for a few seconds shouldn't leave a player without files.
+pub const RETRY_DELAYS: &[Duration] = &[Duration::from_secs(2), Duration::from_secs(5), Duration::from_secs(10)];
 
 /// The sets `sets` of `game`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -37,6 +44,9 @@ pub struct Options<'a> {
     /// startup fetch: an app's games the service doesn't serve come from
     /// elsewhere or not at all).
     pub skip_unlisted: bool,
+    /// Waits before each new try at what didn't arrive (None:
+    /// `RETRY_DELAYS`).
+    pub retry_delays: Option<&'a [Duration]>,
 }
 
 /// `wanted`'s records the store lacks, fetched from the service; the
@@ -95,7 +105,28 @@ pub fn fetch(
     let bytes = records.iter().map(|w| w.2).sum();
     let transfer = Arc::new(Transfer::with_live(what, records.len() as u64, bytes, false));
     *shared.lock().unwrap_or_else(|e| e.into_inner()) = Some(transfer.clone());
-    let (_, _, failed) = remote.fill_paced(&store, &records, Some(&transfer), options.pace);
+    let (_, _, mut failed) = remote.fill_paced(&store, &records, Some(&transfer), options.pace);
+    let mut summary = transfer.finish();
+    // What didn't arrive is asked again after a wait, unless the token was
+    // refused (401, 403: no wait helps); each try's progress is its own.
+    for wait in options.retry_delays.unwrap_or(RETRY_DELAYS) {
+        let refused = failed.iter().any(|f| ["HTTP 401", "HTTP 403"].iter().any(|s| f.contains(s)));
+        if failed.is_empty() || refused || options.pace.is_some_and(Pace::stopped) {
+            break;
+        }
+        eprintln!(
+            "{} of the {what} didn't arrive ({}): asking again in {} s",
+            failed.len(),
+            failed[0],
+            wait.as_secs_f32()
+        );
+        std::thread::sleep(*wait);
+        let left: Vec<(String, u64, u64)> = records.iter().filter(|r| !store.has(&r.0)).cloned().collect();
+        let again = Arc::new(Transfer::with_live(what, left.len() as u64, left.iter().map(|w| w.2).sum(), false));
+        *shared.lock().unwrap_or_else(|e| e.into_inner()) = Some(again.clone());
+        failed = remote.fill_paced(&store, &left, Some(&again), options.pace).2;
+        summary.push_str(&format!("; again: {}", again.finish()));
+    }
     if options.pace.is_some_and(Pace::stopped) {
         return Err("stopped".into());
     }
@@ -106,7 +137,6 @@ pub fn fetch(
         }
         eprintln!("{} of the {what} didn't arrive (they are fetched again as needed): {}", failed.len(), failed[0]);
     }
-    let mut summary = transfer.finish();
     if !absent.is_empty() {
         summary.push_str(&format!(" (not on the service, so fetched as needed: {})", absent.join(", ")));
     }

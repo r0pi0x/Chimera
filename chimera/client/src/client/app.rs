@@ -482,6 +482,7 @@ pub fn run_app(mut app: App) -> AppExit {
     // loaded files: 400-550 MB measured) go first.
     if super::relaunch::restarted() {
         drop(app);
+        crate::metrics::memory::release_free();
     }
     super::relaunch::wait_for_restart().unwrap_or(exit)
 }

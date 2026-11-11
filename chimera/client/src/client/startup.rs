@@ -62,6 +62,7 @@ pub fn run_if_needed(game: &'static GameApp, args: &Args) -> Option<AppExit> {
     let exit = app.run();
     // The window's app is done; the game (a new process) is what runs now.
     drop(app);
+    crate::metrics::memory::release_free();
     Some(super::relaunch::wait_for_restart().unwrap_or(exit))
 }
 
