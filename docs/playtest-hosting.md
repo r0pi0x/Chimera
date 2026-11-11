@@ -94,12 +94,36 @@ done
 `base` for a game: the same from a run on the other games' maps (what a
 match reads of a game whose map isn't played). `--sets-from /nonexistent`
 keeps `publish` from copying the sets of your own user cache over the
-server's. On this box (2026-11-11, after the rehearsal) the server has
-`base` for the three games, `players` for CS:S and HL2:DM (Combat Arms'
-has none), `map/<name>` for every map of the pool (CS:S's 18 with the
-loop above, 90-190 MB each, 2.3 GB together) and HL2:DM's other six, and
-every gun's `weapon/<id>`. A set the service lacks is skipped: its files arrive on
+server's. On this box (2026-11-11) the server has, per game:
+
+| Set | CS:S | Combat Arms | HL2:DM |
+|---|---|---|---|
+| `base` (fetched at the first start) | 62.6 MB | 250 MB: also the music (`Game/BGM`), the G23's sounds, the pool maps' loading images | 62 MB: also all 12 guns, the 19 player models, the weapon and headcrab-canister sounds every match plays |
+| `players` (each join) | 12.9 MB | 66 MB, nearly all in `base`: the stock characters and footsteps | 18 MB |
+| `map/<name>` | the 18 pool maps, 90-190 MB each | the 4 pool maps | dm_lockdown, dm_overwatch and six more |
+| `weapon/<id>` | every gun | every gun: view model with hands and parts, and the held model (what other players hold) | every gun |
+
+The weapon sets are named as the offer asks (`weapon/ak47`, not
+`weapon/weapon_ak47`), and the offer names the ladder's drawn melee
+weapons too. A set the service lacks is skipped: its files arrive on
 demand while the map loads, slower (a request per group of files).
+
+`base` and `players` beyond what `sets` records were made from what
+no-install clients fetched outside their sets: run a client like a
+tester (see "Rehearsal") with `CHIMERA_ASSET_FETCH_LOG=<file>` (a line
+per on-demand fetch: game, the set its group came from or `-`, records,
+bytes, path) and `CHIMERA_VFS_LOG`, list the files every session read,
+write them with the set's current files as a `CHIMERA_VFS_LOG`-style list
+(`<game>\t<path>\t<size>\t<id>`), and publish it as the whole set:
+`chimera_pack publish <game> --from <list> --set base --sets-from
+/nonexistent` (a set is replaced, not merged). `chimera_pack sets
+combat_arms` records all of Combat Arms' 2,363 weapon sets again (each
+a superset of the last); it leaves the other sets alone.
+
+What still comes on demand in a match (2026-11-11, three maps): Combat
+Arms' rung bodies and fitted parts (drawn per rung: about 25 files, a
+request each), and a body or part whose only set is another pool map's
+pulls a 25-32 MB group of that map early (a prefetch made at the join).
 
 ## The asset service (each session)
 
@@ -228,13 +252,13 @@ speed and your upload", below).
 What a tester without the games downloads from the asset service:
 
 - **First start**, before the game's window: what the games read at startup
-  (about 270 MB: each game's `base` set), behind a small window that says
+  (about 360 MB: each game's `base` set), behind a small window that says
   "Downloading game files: X of Y MB" with the speed and time left. Errors
   (a refused token, the service unreachable, another certificate) show
   there with what to do; the game then starts by itself. Testers with the
   games installed download nothing of those games.
 - **Each join**: what the match needs that isn't there yet (the first one
-  about 170 MB), at full speed, on the loading panel.
+  about 50-100 MB), at full speed, on the loading panel.
 - **In the background, while playing**: the pool's other maps (about
   170 MB), at a capped rate, held while the tester joins or changes map.
 
@@ -377,6 +401,8 @@ server restart.
 | Server memory (RSS + swap) | 2.4 GB at start; 5.2 GB after 3 maps, 5.5 GB after 6 (about +100 MB a map) |
 | Client memory (offscreen 640x360) | 3.5-5.5 GB resident each |
 | First start to spawn, de_dust2 (sets published), 150 ms per answer | 36 s, 581 MB in 157 requests |
+| First start to spawn, de_cbble, 150 ms per answer, before and after the sets above (later that day) | 26.6 s (108 on-demand requests, 181 MB) -> 12.6 s (28, 92 MB) |
+| On demand over three maps (de_cbble, darkhills, de_aztec), before and after the sets | 144 requests, 252 MB -> 31, 39 MB |
 | A map without a set, 150 ms per answer | 2 min 25 s to 2 min 41 s from loading to joined |
 | A tester over a session (4-9 maps, prefetch on) | 820-990 MB |
 | 429s | none; 44 connections refused per address (with the old limit of 16) |

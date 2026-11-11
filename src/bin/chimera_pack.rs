@@ -37,7 +37,8 @@
 //! in the manifest of the install's build (which must list those files: a
 //! whole pack or publish): `weapon/<id>` per weapon (CS:S: its view and
 //! world models with their materials and the waves of its sound entries;
-//! Combat Arms: its view model with hands and parts' textures), `players`
+//! Combat Arms: its view model with hands and parts' textures, and its
+//! held model with its textures), `players`
 //! (CS:S: the eight class models; HL2:DM: its 19 player models). `--sign` signs the manifest again with
 //! the server's key (a server store). `base` and the maps' sets come from
 //! `CHIMERA_VFS_LOG` logs (`--from`).
@@ -373,6 +374,9 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>) -> Vec<(String, Vec<
                 }
                 take();
                 let _ = on_demand::load_weapon(&ca, &w.id, &read);
+                // Its held (third-person) model: what other players and
+                // bots hold of it.
+                let _ = combat_arms::game::characters::models::load_held_weapon(&ca, &w.id, &read);
                 let id = w.id.rsplit(':').next().unwrap_or(&w.id);
                 out.push((format!("weapon/{id}"), take()));
             }

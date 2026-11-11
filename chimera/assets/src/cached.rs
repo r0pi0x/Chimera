@@ -11,7 +11,10 @@
 //! before it is kept. One group is fetched at a time per manifest, so
 //! loads that miss files of the same group at once wait for one batch.
 //! `CHIMERA_ASSET_BATCH=0` fetches only the file asked for (measuring,
-//! debugging). Without a fetcher, or when it fails, the read is an error
+//! debugging); `CHIMERA_ASSET_FETCH_LOG=<file>` appends a line per
+//! on-demand fetch (`on_demand_log`: time, game, the path asked for, the
+//! set its group came from, records and stored bytes), to find what a
+//! match reads outside the sets it was offered. Without a fetcher, or when it fails, the read is an error
 //! that names the path (`asset miss`), so a set missing a file shows at
 //! once.
 
@@ -33,6 +36,8 @@ pub const GROUP_BYTES: u64 = 32_000_000;
 pub const GROUP_FILES: usize = 1024;
 /// `0` turns batching off: an on-demand fetch is the one record.
 pub const BATCH_ENV: &str = "CHIMERA_ASSET_BATCH";
+/// A file each on-demand fetch is logged to (`on_demand_log`).
+pub const FETCH_LOG_ENV: &str = "CHIMERA_ASSET_FETCH_LOG";
 
 /// A manifest indexed for lookups (shared between mounts of it).
 #[derive(Debug)]
@@ -109,6 +114,15 @@ impl Index {
             present.insert(id.to_string());
         }
         has
+    }
+
+    /// The smallest set holding `path`, the one its on-demand group comes
+    /// from (None: its companions).
+    pub fn group_set(&self, path: &str) -> Option<&str> {
+        self.in_sets
+            .get(path)
+            .and_then(|sets| sets.iter().map(|i| &self.sets[*i as usize]).min_by_key(|s| (s.2, s.1.len())))
+            .map(|s| s.0.as_str())
     }
 
     /// The records to fetch with `path`'s (which `store` lacks): `path`
@@ -223,6 +237,7 @@ impl CachedFiles {
         }
         if batching() {
             let group = self.index.group(&self.store, path);
+            on_demand_log(&self.index, path, &group);
             if group.len() > 1 {
                 let _ = fetcher.fetch_many(&self.store, &group);
                 match self.store.get(&f.id, f.size) {
@@ -230,8 +245,30 @@ impl CachedFiles {
                     got => return got,
                 }
             }
+        } else {
+            on_demand_log(&self.index, path, &[(f.id.clone(), f.size)]);
         }
         fetcher.fetch(&self.store, &f.id, f.size)
+    }
+}
+
+/// With `FETCH_LOG_ENV` set, appends `group` (fetched on demand because
+/// `path` was read) to that file: `<unix ms> <game> <set or -> <records>
+/// <stored bytes> <path>`.
+fn on_demand_log(index: &Index, path: &str, group: &[(String, u64)]) {
+    let Some(file) = std::env::var_os(FETCH_LOG_ENV).filter(|f| !f.is_empty()) else { return };
+    let mut ids: HashSet<&str> = group.iter().map(|(id, _)| id.as_str()).collect();
+    let stored: u64 = index.files.values().filter(|f| ids.remove(f.id.as_str())).map(|f| f.stored).sum();
+    let ms = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+    let line = format!(
+        "{ms} {} {} {} {stored} {path}\n",
+        index.game,
+        index.group_set(path).unwrap_or("-"),
+        group.len()
+    );
+    use std::io::Write as _;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(file) {
+        let _ = f.write_all(line.as_bytes());
     }
 }
 

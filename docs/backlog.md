@@ -129,18 +129,28 @@ What the rehearsal found and didn't fix (fixed ones: the commits of
 branch `playtest-rehearsal`; numbers: playtest-hosting.md, "Rehearsal").
 Delete each when done.
 
-- **Maps without a set load very slowly over a real link.** The pool
-  (every CS:S stock map, 4 Combat Arms maps, 2 HL2:DM maps) has sets for
-  8 of 24; the rest load file group by file group on demand, one group
-  at a time per manifest: with 150 ms per answer (`--latency-ms 150`)
-  de_inferno took 2 min 25 s to 2 min 41 s from "loading it" to joined
-  (~780 batches of ~220 KB), while the match had started 20 s after the
-  vote; one client was still loading when the next map came. Host side:
-  publish every pool map's set (playtest-hosting.md). Code: fetch a map's
-  missing files as one batch when the offer names a map with no set (its
-  BSP's packed files and the materials it names are known after the
-  BSP is read), several groups at once, or a rotation that prefers maps
-  with sets for clients that fetch.
+- **What a match still fetches outside its sets** (measured 2026-11-11
+  after every pool map got its set and `base`/`players` were widened:
+  playtest-hosting.md, "Publishing the game files"; three maps, 31
+  on-demand requests and 39 MB, from 144 and 252 MB). Find them with
+  `CHIMERA_ASSET_FETCH_LOG`.
+  - Combat Arms' rung bodies and fitted parts (drawn per rung from
+    hundreds: about 25 single-file requests per new ladder). Code: let
+    Combat Arms' rung extras name their bodies' and parts' files in the
+    offer (an `AssetHooks` entry giving sets, or `character/<body>`
+    sets), as the drawn melee weapons are now.
+  - A miss whose smallest set is another pool map's (a body texture only
+    in `map/warehouse`) fetches 25-32 MB of that map in the foreground:
+    the next map's prefetch, early, while the player waits. Code: take
+    the companions instead when that set is big and mostly absent (the
+    playing map's set is fetched before the load).
+  - A new ladder dealt at a rotation (`MapChange`) offers its definition's
+    guns but not its drawn melee weapons (the playing `Ladder` is the old
+    one then): they come as one weapon set each.
+  - The ladder's view models start loading while the join's sets still
+    download: 1-2 groups fetched twice.
+  - Maps outside the pool (a `changelevel` to one) have no set and load
+    group by group (2 min 25 s with 150 ms per answer in the rehearsal).
 - **The dedicated server's memory grows with each map.** RSS plus swap
   2.4 GB at the start, 5.24 GB after 3 maps, 5.31 after 4, 5.53 after 6
   (36 min): about 100 MB a map after the first few. Over a 4-hour
