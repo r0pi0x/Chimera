@@ -57,6 +57,13 @@ pub const ENGINE_NAMES: &[&str] = &[
     "sv_voiceenable",
     "callvote",
     "vote",
+    // The pre-match lobby (`chimera_net::prematch`): the engine's, any game's.
+    "mp_lobby",
+    "mp_lobby_countdown",
+    "mp_lobby_max_wait",
+    "mp_lobby_min_players",
+    "lobby_start",
+    "lobby",
     // The network: rates, interpolation, lag compensation, downloads.
     "rate",
     "sv_maxrate",
@@ -169,7 +176,7 @@ mod tests {
 
     #[test]
     fn engine_names_are_chimeras_and_game_values_stay_per_game() {
-        for n in ["map", "quit", "fps_max", "connect", "noclip", "r_shadows", "mat_vsync", "+attack", "net_graph", "m_pitch"] {
+        for n in ["map", "quit", "fps_max", "connect", "noclip", "r_shadows", "mat_vsync", "+attack", "net_graph", "m_pitch", "mp_lobby", "mp_lobby_min_players", "lobby_start"] {
             assert!(is_engine(n), "{n}");
         }
         for n in [
