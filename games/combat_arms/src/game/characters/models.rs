@@ -358,6 +358,8 @@ pub fn load_body(ca: &CaDataInner, id: i32, file: &dyn Fn(&str) -> Option<Vec<u8
     let r = data.model(id).ok_or_else(|| format!("body record {id}: none"))?;
     let scale = super::super::movement::movement_data().meters_per_unit;
     let mut own = MapData::default();
+    // Kept for later maps: its textures as their blocks.
+    own.memos.insert(super::super::world::BlocksOnly);
     let c = body_group(ca, &[r], scale, &mut own, file).map_err(|e| format!("body {} ({}): {e}", r.name, r.file))?;
     Ok(OnDemand::of(c, own))
 }
@@ -528,6 +530,8 @@ pub fn load_held_weapon(ca: &CaDataInner, id: &str, file: &dyn Fn(&str) -> Optio
     let data = ca.characters();
     let hand = data.skeleton(0).socket("RightHand").ok_or("the skeleton has no RightHand socket")?;
     let mut own = MapData::default();
+    // Kept for later maps: its textures as their blocks.
+    own.memos.insert(super::super::world::BlocksOnly);
     let path = w.models.world.as_deref().ok_or_else(|| format!("{base}: no third-person model in its data"))?;
     let (mut h, sockets) = held_with_sockets(path, id, &data.weapon(Some(base)), hand, &mut own, file)
         .map_err(|e| format!("{base} third-person model: {e}"))?;
@@ -677,11 +681,15 @@ pub fn shared_character_models(ca: &CaData, file: &dyn Fn(&str) -> Option<Vec<u8
         return models.clone();
     }
     let mut data = MapData::default();
-    if !decode {
+    if decode {
+        // Kept for the process's life: the textures as their blocks.
+        data.memos.insert(super::super::world::BlocksOnly);
+    } else {
         data.memos.insert(super::super::world::SizesOnly);
     }
     add_character_models(&mut data, ca, file);
     data.memos.remove::<super::super::world::SizesOnly>();
+    data.memos.remove::<super::super::world::BlocksOnly>();
     let models = Arc::new(SharedModels { data });
     *cached = Some((models.clone(), decode));
     models

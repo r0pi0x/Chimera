@@ -157,9 +157,15 @@ Delete each when done.
   data. Find whether the server needs the view models (their timing is
   read from them) and what of the rest; and check the playtest build's
   server over a session of maps (`tick_stats`' memory).
-- **Client memory**: 3.5-5.5 GB resident per offscreen client at 640x360
-  (more with the GPU driver's share); the box held 3 at once beside a
-  build, not 4-6.
+- **Client memory**: (the rehearsal's 3.5-5.5 GB per offscreen client
+  is down to 3.2-3.3 GB after each of three maps: docs/performance.md, "A
+  client's memory".) Of the 2.4-2.5 GB malloc has in use, the Combat Arms
+  view models' animations converted again for each map's dressing beside
+  the ones loaded on demand (260-290 MB on another game's map), the
+  character models' animation files (260-370 MB), the Combat Arms weapon
+  set (250 MB for 2,363 weapons); the first map's load peaks at 6.1 GB
+  until glibc's trim 20 s after it spawns. Check a client without
+  installs (the asset service's) the same way.
 - When the server quits, clients go back to the menu (its background
   map) with no reconnect; testers rejoin by hand (as the hosting doc says).
 

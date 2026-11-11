@@ -274,7 +274,8 @@ pub fn silhouette(
                         let uv = uvs[0] * w0 + uvs[1] * w1 + uvs[2] * w2;
                         let tx = (uv.x.rem_euclid(1.0) * t.width as f32) as u32 % t.width.max(1);
                         let ty = (uv.y.rem_euclid(1.0) * t.height as f32) as u32 % t.height.max(1);
-                        t.rgba8[((ty * t.width + tx) * 4 + 3) as usize] as f32 / 255.0
+                        // A texture without texels (its blocks only) reads opaque.
+                        t.rgba8.get(((ty * t.width + tx) * 4 + 3) as usize).map_or(1.0, |a| *a as f32 / 255.0)
                     });
                     let cell = &mut out[(py * n + px) as usize];
                     *cell = (*cell + alpha).min(1.0);

@@ -1,7 +1,9 @@
 //! `chimera_mem`: what holds the process's memory, in one readout
 //! (docs/performance.md, "A session's memory"): the mappings by kind and
 //! glibc's counts (`chimera_core::metrics::memory`), the GPU allocator's blocks
-//! (wgpu's report), the bytes in the main world's image and mesh stores, and
+//! (wgpu's report), the bytes in the main world's image and mesh stores (with
+//! `<n>`: the largest groups of images whose bytes it keeps, by size, format
+//! and usage), and
 //! the render world's own numbers, which a console command can't reach: a
 //! render system writes them about once a second into `RenderWorldStats`.
 //! Also how many `PropMaterial`s the store holds against those an entity
@@ -46,7 +48,8 @@ impl Plugin for MemoryPlugin {
             "chimera:mem",
             "chimera_mem [<files>]: what holds this process's memory: mappings by kind (heap, anonymous, device, \
              file), the allocator's bytes, the GPU allocator's blocks, the image and mesh stores' bytes, the render \
-             world's; with the <files> largest mapped files and device mappings.",
+             world's; with the <files> largest mapped files and device mappings, and the largest groups of images the \
+             main world keeps the bytes of.",
             |w, a| {
                 if a.first().map(String::as_str) == Some("pad") {
                     let n = a.get(1).and_then(|n| n.parse().ok()).ok_or("pad: how many?")?;
@@ -245,6 +248,9 @@ fn readout(w: &mut World, files: usize) -> String {
         mesh_bytes.0,
         size(mesh_bytes.1)
     ));
+    if files > 0 {
+        lines.extend(held_images(w, files));
+    }
     if let Some((store, used)) = props {
         let dormant = w.get_resource::<crate::render::prop_material::DormantProps>().map_or(0, |d| d.live());
         lines.push(format!(
@@ -268,6 +274,25 @@ fn readout(w: &mut World, files: usize) -> String {
         ));
     }
     lines.join("\n")
+}
+
+/// The images whose bytes the main world holds (a `MAIN_WORLD` usage, or
+/// not yet extracted), grouped by size, format and usage: the `n` largest
+/// groups.
+fn held_images(w: &World, n: usize) -> Vec<String> {
+    let Some(images) = w.get_resource::<Assets<Image>>() else { return Vec::new() };
+    let mut groups = std::collections::BTreeMap::<String, (usize, u64)>::new();
+    for (_, i) in images.iter() {
+        let Some(d) = i.data.as_ref().filter(|d| !d.is_empty()) else { continue };
+        let t = &i.texture_descriptor;
+        let key = format!("{}x{} {:?} {:?}", t.size.width, t.size.height, t.format, i.asset_usage);
+        let e = groups.entry(key).or_default();
+        e.0 += 1;
+        e.1 += d.len() as u64;
+    }
+    let mut rows: Vec<_> = groups.into_iter().collect();
+    rows.sort_by_key(|r| std::cmp::Reverse(r.1.1));
+    rows.into_iter().take(n).map(|(k, (c, b))| format!("  image {k}: {c}, {}", size(b))).collect()
 }
 
 /// The bytes a mesh holds on the CPU: none once only the render world has it.

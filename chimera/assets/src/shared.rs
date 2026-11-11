@@ -6,6 +6,9 @@
 //! map loads' `LoadContext`), and the value is freed when the last app
 //! holding it goes; the next one to ask reads it again.
 //!
+//! `leaked` keeps, for the process's life, values the code holds as
+//! `&'static` anyway (a game's weapon set), once per equal input.
+//!
 //! The register is process-wide by nature (it is the machine's install, as
 //! the asset store is), so it lives here, under the mounts, rather than in
 //! a simulation crate (`checks/tests/it/determinism.rs`).
@@ -65,6 +68,50 @@ pub fn is_live<T: Any + Send + Sync>(key: &str) -> bool {
     find::<T>(key).is_some()
 }
 
+/// The values leaked for the process's life (`leaked`), by type and key.
+type Leaked = (TypeId, String, &'static (dyn Any + Send + Sync));
+static LEAKED: Mutex<Vec<Leaked>> = Mutex::new(Vec::new());
+
+/// `make(&input)`'s value leaked for the process's life, once per key and
+/// equal input: a value made from an equal input before is given back
+/// (with that input, leaked with it), so data read again from the install
+/// (a client's startup map's install data, freed after, then its app's)
+/// doesn't leak a second copy. For values the code holds as `&'static`
+/// already (a game's weapon set). `make` runs without the register's
+/// lock; two racing on an equal input keep the first stored. None when
+/// `make` gives none (nothing kept).
+pub fn leaked<I, T>(key: &str, input: I, make: impl FnOnce(&I) -> Option<T>) -> Option<(&'static I, &'static T)>
+where
+    I: PartialEq + Send + Sync + 'static,
+    T: Send + Sync + 'static,
+{
+    let find = |input: &I| -> Option<(&'static I, &'static T)> {
+        let leaked = LEAKED.lock().unwrap_or_else(|e| e.into_inner());
+        leaked
+            .iter()
+            .filter(|(t, k, _)| *t == TypeId::of::<(I, T)>() && k == key)
+            .filter_map(|(_, _, v)| v.downcast_ref::<(I, T)>())
+            .find(|(i, _)| i == input)
+            .map(|(i, v)| (i, v))
+    };
+    if let Some(found) = find(&input) {
+        return Some(found);
+    }
+    let value = make(&input)?;
+    let mut leaked = LEAKED.lock().unwrap_or_else(|e| e.into_inner());
+    let stored = leaked
+        .iter()
+        .filter(|(t, k, _)| *t == TypeId::of::<(I, T)>() && k == key)
+        .filter_map(|(_, _, v)| v.downcast_ref::<(I, T)>())
+        .find(|(i, _)| *i == input);
+    if let Some((i, v)) = stored {
+        return Some((i, v));
+    }
+    let pair: &'static (I, T) = Box::leak(Box::new((input, value)));
+    leaked.push((TypeId::of::<(I, T)>(), key.to_string(), pair));
+    Some((&pair.0, &pair.1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,5 +127,16 @@ mod tests {
         assert!(!is_live::<Data>("test:data"), "freed with its last holder");
         assert_eq!(shared("test:data", || Data(4)).0, 4, "read again");
         assert!(shared_opt::<Data>("test:none", || None).is_none());
+    }
+
+    #[test]
+    fn a_leaked_value_is_made_once_per_equal_input() {
+        let a = leaked("test:leaked", vec![1u8, 2], |i| Some(i.len())).unwrap();
+        let b = leaked("test:leaked", vec![1u8, 2], |_| -> Option<usize> { panic!("made again") }).unwrap();
+        assert!(std::ptr::eq(a.0, b.0) && std::ptr::eq(a.1, b.1), "one value for equal inputs");
+        let c = leaked("test:leaked", vec![3u8], |i| Some(i.len())).unwrap();
+        assert!(!std::ptr::eq(a.1, c.1) && *c.1 == 1, "another input, its own");
+        assert!(leaked("test:leaked", vec![4u8], |_| None::<usize>).is_none(), "nothing kept");
+        assert_eq!(*leaked("test:leaked", vec![4u8], |_| Some(9usize)).unwrap().1, 9);
     }
 }

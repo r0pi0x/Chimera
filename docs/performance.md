@@ -3490,6 +3490,86 @@ per process: `model::ChildModels`), the effects' library (270 MB) and the
 merged weapon data (230 MB). Whether the server needs the view models at
 all (their timing is read from them) is open (backlog).
 
+## A client's memory (2026-11-11)
+
+What the playtest rehearsal left (playtest-hosting.md, "Rehearsal"): 3.5-5.5
+GB resident per offscreen client at 640x360; the tester guide asks for 16 GB.
+
+**The session.** `ultimate_gun_game --offscreen 640x360 +fps_max 30` (dev
+build, the installs) joined to a temporary `ultimate_gun_game_server` on a
+test port, the server's stdin a fifo: `ugg_new 7 13 cs_source:cs_office`
+before the join, `ugg_new 7 13 combat_arms:warehouse` and `ugg_new 7 13
+cs_source:de_dust2` two minutes apart (the same ladder each time). Every 30
+s `chimera_mem 8` over the remote protocol (now with the largest groups of
+images the main world keeps) and `VmRSS`; a second run with jemalloc
+preloaded (`prof:true,lg_prof_sample:20,lg_prof_interval:31`), its last
+dump before each map change read with `jeprof --collapsed` and summed by
+allocation site. Bytes, not times.
+
+**Where it went.** Not Bevy's main-world copies: the image store held
+109-119 MB (Bevy's font atlases, which glyphs are added to on the CPU:
+`MAIN_WORLD`), the mesh store 9-72 MB (72 MB on cs_office). glibc's trim
+after a load (`release_after_change`) works: 20 s after a map spawns the
+process holds what malloc has in use plus the driver's and the files'
+mappings (0.6 GB); a load peaks before it (7.3 GB on the first map). The
+heap in use, by site (jemalloc, MB; cs_office, warehouse, de_dust2):
+
+| | before | after |
+|---|---|---|
+| Combat Arms bodies loaded on demand, their textures | 496, 1003, 952 | 57, 116, 119 |
+| the shared character models' textures (`shared_character_models`) | 0, 406, 406 | 0, 41, 41 |
+| view models loaded on demand, their textures (and their parts' copies) | 327, 661, 489 | 24, 61, 43 |
+| held models loaded on demand, their textures | 27, 45, 39 | 2, 15, 15 |
+| Combat Arms weapon sets | 494 | 249 |
+| view models' animations (each map's dressing, on demand) | 393, 207, 391 | 343, 151, 381 |
+| character models' animations (`ltb`; not changed here, the bodies loaded by then differ) | 259 | 365 |
+| Source animations | 114, 130, 0 | 122, 132, 0 |
+| the map's spawn (meshes, materials, entities) | 285, 261, 178 | 292, 263, 179 |
+| the app (plugins, the GPU driver's) | 247 | 204 |
+| the rest (Source and Combat Arms loaders, text atlases, sounds, the render world, ...) | 812, 922, 1,184 | 818, 920, 1,178 |
+| total | 3,454, 4,635, 4,639 | 2,476, 2,517, 2,774 |
+
+- The Combat Arms models kept past their map (bodies, held and view models
+  loaded on demand, kept across map changes in `LateCharacterModels`,
+  `LateHeldModels` and the view models' cache; the shared character models
+  for the process's life) kept each texture three times: its DXT blocks,
+  the RGBA8 texels decoded from them and their box-filtered mips (5.3
+  bytes a texel beside DXT1's half byte). The GPU takes the blocks; nothing
+  read the texels.
+- The Combat Arms weapon set was parsed twice: the startup map (the menu's
+  background) loads with install data of its own, freed after, and its
+  weapon set (leaked, as every set) stayed beside the app's.
+
+**The fixes.** A model loaded to be kept (`load_body`, `load_held_weapon`,
+the view models' `load_weapon`, `shared_character_models`) is
+`world::BlocksOnly` while it loads: a texture whose file holds whole DXT
+blocks keeps those alone (`MapTexture::keep_blocks_only`, not decoded at
+all); the drawing decodes them (`MapTexture::decoded`, `to_image`) where the
+GPU takes no BC. A weapon set is parsed once per process for the same
+documents (`store::interned`). The client's malloc in use and resident
+(`chimera_mem`, glibc, 120 s after each map change):
+
+| map | in use, before | after | resident, before | after |
+|---|---|---|---|---|
+| cs_office (the first) | 3.18 GB | 2.36 GB | 3.95 GB | 3.15 GB |
+| warehouse | 4.32 GB | 2.39 GB | 5.17 GB | 3.21 GB |
+| de_dust2 | 4.34 GB | 2.52 GB | 4.98 GB | 3.27 GB |
+
+A map change's peak before the trim went too (5.1 and 7.3 GB 30 s into
+warehouse and de_dust2 before, 3.1 GB after); the first map's is 6.1 GB
+(7.5 before). The tests: combat_arms' `heavy::kept_textures` (a body, view
+and held model loaded on demand keep no decoded texels beside whole
+blocks: a body 38 MB -> 3.6 MB), `world::tests::blocks_only_keeps_the_blocks_alone`,
+`data::tests::equal_weapon_documents_share_one_parsed_set`, chimera_present's
+`images::tests::a_blocks_only_texture_is_decoded_where_bc_does_not_go_up`.
+
+**Left** (backlog): the Combat Arms view models' animations, converted
+again for each map's dressing beside the ones loaded on demand (260-290 MB
+on another game's map), and the character models' animation files (260-370
+MB); the weapon set itself (250 MB for 2,363 weapons); the main world's
+meshes (72 MB on cs_office: merged brushes, breakables and face flexes read
+or rewrite theirs on the CPU, so not all can drop them).
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,

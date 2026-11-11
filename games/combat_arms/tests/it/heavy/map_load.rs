@@ -212,7 +212,8 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
     for (l, f) in lean.textures.iter().zip(&full.textures) {
         assert_eq!((&l.name, l.width, l.height), (&f.name, f.width, f.height));
         if l.rgba8.is_empty() {
-            assert!(l.mips.is_empty() && f.rgba8.len() == (f.width * f.height * 4) as usize, "{}", l.name);
+            // (The shared character models' keep their blocks only: decoded.)
+            assert!(l.mips.is_empty() && f.decoded().rgba8.len() == (f.width * f.height * 4) as usize, "{}", l.name);
         }
     }
     let texture_of = |m: &MapData| m.meshes.iter().map(|m| (m.texture, m.alpha)).collect::<Vec<_>>();

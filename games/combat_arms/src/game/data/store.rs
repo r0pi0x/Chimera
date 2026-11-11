@@ -98,7 +98,7 @@ pub struct CaDataInner {
     docs: Vec<(String, String)>,
     weapon_set: OnceLock<&'static WeaponSet>,
     /// The documents `weapon_set` was parsed from (merged or built in).
-    weapon_docs: OnceLock<Vec<(String, String)>>,
+    weapon_docs: OnceLock<&'static [(String, String)]>,
     attachments: OnceLock<CaModTable>,
     movement: OnceLock<MovementData>,
     gear: OnceLock<GearData>,
@@ -292,26 +292,36 @@ impl CaDataInner {
     /// built-in documents, with the install's attribute data over them
     /// when it can be read. Bad built-in data panics (the tests load it);
     /// merged data that fails falls back to it. Leaked (`&'static`, as
-    /// every weapon set).
+    /// every weapon set), once per process for the same documents
+    /// (`interned`): a client's startup map loads with install data of its
+    /// own, freed after, and its set (about 240 MB) stayed beside the
+    /// app's (docs/performance.md, "A client's memory").
     pub fn weapon_set(&self) -> &'static WeaponSet {
         self.weapon_set.get_or_init(|| {
             let docs: Vec<(&str, &str)> = self.docs.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
-            let builtin = || WeaponSet::parse(&docs, &[]).unwrap_or_else(|e| panic!("Combat Arms weapon data: {e}"));
             let mods = self.attributes().and_then(|a| a.mods.as_ref());
             let merged = self.attributes().and_then(|a| a.weapons.as_ref()).and_then(|w| {
                 let mpu = movement_data().meters_per_unit as f64;
-                let merged = merge_weapon_docs_with_mods(&docs, w, mods, mpu)
+                merge_weapon_docs_with_mods(&docs, w, mods, mpu)
                     .map_err(|e| warn!("Combat Arms: the install's weapons weren't merged: {e}"))
-                    .ok()?;
-                let refs: Vec<(&str, &str)> = merged.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
-                let set = WeaponSet::parse(&refs, &[])
-                    .map_err(|e| warn!("Combat Arms: the install's weapons don't load, using the built-in ones: {e}"))
-                    .ok()?;
-                Some((set, merged))
+                    .ok()
             });
-            let (set, used) = merged.unwrap_or_else(|| (builtin(), self.docs.clone()));
+            let parsed = merged.and_then(|merged| {
+                interned(merged, |m| {
+                    let refs: Vec<(&str, &str)> = m.iter().map(|(n, t)| (n.as_str(), t.as_str())).collect();
+                    WeaponSet::parse(&refs, &[])
+                        .map_err(|e| warn!("Combat Arms: the install's weapons don't load, using the built-in ones: {e}"))
+                        .ok()
+                })
+            });
+            let (set, used) = parsed.unwrap_or_else(|| {
+                interned(self.docs.clone(), |_| {
+                    Some(WeaponSet::parse(&docs, &[]).unwrap_or_else(|e| panic!("Combat Arms weapon data: {e}")))
+                })
+                .expect("the built-in set parses or panics")
+            });
             let _ = self.weapon_docs.set(used);
-            Box::leak(Box::new(set))
+            set
         })
     }
 
@@ -429,4 +439,16 @@ impl CaDataInner {
         });
         index.get(id).map(|i| &file.weapons[*i])
     }
+}
+
+/// The weapon set parsed from `docs` (`parse`, leaked), once per process
+/// for the same documents (`shared::leaked`): install data made again (a
+/// client's startup map's, an app made again) costs no second set. None
+/// when `parse` gives none (nothing kept).
+fn interned(
+    docs: Vec<(String, String)>,
+    parse: impl FnOnce(&[(String, String)]) -> Option<WeaponSet>,
+) -> Option<(&'static WeaponSet, &'static [(String, String)])> {
+    let (docs, set) = crate::mount::assets::shared::leaked("combat_arms:weapon_set", docs, |d| parse(d))?;
+    Some((set, docs.as_slice()))
 }

@@ -113,6 +113,8 @@ pub fn load_weapon(ca: &CaDataInner, id: &str, file: &dyn Fn(&str) -> Option<Vec
     let offset = w.models.view_offset.unwrap_or_default();
     // Its textures: indices into this map's list.
     let mut own = MapData::default();
+    // Kept for later maps: its textures as their blocks.
+    own.memos.insert(super::super::world::BlocksOnly);
     let choice = hands::choose(&hands::builtin(), &hands::HandProfile {
         character: true,
         ..default()
@@ -157,6 +159,7 @@ fn load_with_parts(ca: &CaDataInner, key: &str, base: &str, file: &dyn Fn(&str) 
         textures: (*bare.textures).clone(),
         ..default()
     };
+    own.memos.insert(super::super::world::BlocksOnly);
     let mut warnings = bare.warnings.clone();
     for part in parts::parts_of(key, ca.attachments(), &params) {
         if let Err(e) = parts::attach(&mut model, &part, &mut own, file) {

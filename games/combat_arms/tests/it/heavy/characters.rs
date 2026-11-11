@@ -486,7 +486,8 @@ fn default_bodies_wear_face_and_head() {
             assert!(matches!(mate[k].alpha, MapAlpha::Mask(_)));
             assert!(enemy[k].material.eq_ignore_ascii_case(&data.marks.enemy));
             let opacity = |t: Option<usize>| {
-                let t = &map.textures[t.expect("textured")];
+                // The shared models keep their blocks only: decoded here.
+                let t = map.textures[t.expect("textured")].decoded();
                 t.rgba8.chunks(4).map(|p| p[3] as f32).sum::<f32>() / (t.rgba8.len() / 4) as f32
             };
             let (clear, shown) = (opacity(enemy[k].texture), opacity(mate[k].texture));
