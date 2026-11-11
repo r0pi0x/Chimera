@@ -1,16 +1,20 @@
-//! How long a Combat Arms map takes to load from the install and how much
+//! What a Combat Arms map's load from the install costs and how much
 //! memory it takes (docs/performance.md, "Combat Arms map loads"): the
 //! session's first load (the weapon data and character models, converted
 //! once, beside the world) and a second map after it, each under a budget
-//! with room for a busy box; and a weapon's view model loading on demand
-//! (`view_model::on_demand`), once per session. Passes with a note
+//! of instructions (the loading thread's and the helpers it starts:
+//! `InstructionCounter::current_with_children`, the same on an idle box
+//! and a busy one; wall seconds are printed for reading); and a weapon's
+//! view model loading on demand (`view_model::on_demand`), once per
+//! session. Without hardware counters (Windows) the budgets are skipped
+//! with a note. Passes with a note
 //! without `[games.combat_arms] path` in chimera.local.toml (or an asset
 //! store serving Combat Arms); served by the store alone, a map or model
 //! the packed sets lack is skipped with a note.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use chimera_core::mount::config::LocalConfig;
+use chimera_core::{metrics::InstructionCounter, mount::config::LocalConfig};
 use chimera_world::{
     harness::Sim,
     map::{MapData, MapSimPlugin, nav::NavMesh},
@@ -56,11 +60,32 @@ fn peak_mb() -> u64 {
         .map_or(0, |kb| kb / 1024)
 }
 
-/// Map `name`, then `next` in the same session: each within `budget`
-/// (wall time, measured at a few seconds on the dev box: the budget is a
-/// regression check with room for load), the process's peak memory under
-/// `peak_budget` MB.
-fn loads_within(name: &str, next: &str, budget: Duration, peak_budget: u64) {
+/// `f`'s instructions on this thread and the threads it starts (None
+/// without hardware counters), and its result.
+fn counted<T>(f: impl FnOnce() -> T) -> (T, Option<u64>) {
+    let mut c = InstructionCounter::current_with_children();
+    let a = c.read();
+    let out = f();
+    let b = c.read();
+    (out, a.zip(b).map(|(a, b)| b.saturating_sub(a)))
+}
+
+fn giga(n: Option<u64>) -> String {
+    n.map_or("-".into(), |n| format!("{:.2} G instructions", n as f64 / 1e9))
+}
+
+/// Budgets of instructions: `load` for each map's load, `spawn` for the
+/// spawn into a simulation and for its longest tick while the navigation
+/// mesh is made.
+struct Budget {
+    load: u64,
+    spawn: u64,
+}
+
+/// Map `name`, then `next` in the same session: each within its budget of
+/// instructions (measured, with room for the maps' and code's growth: a
+/// regression check), the process's peak memory under `peak_budget` MB.
+fn loads_within(name: &str, next: &str, budget: Budget, peak_budget: u64) {
     let Some(mount) = mount() else { return };
     for map in [name, next] {
         if not_served(&mount, world::find(&mount, map).as_deref(), map) {
@@ -69,11 +94,12 @@ fn loads_within(name: &str, next: &str, budget: Duration, peak_budget: u64) {
     }
     for (k, map) in [name, next].into_iter().enumerate() {
         let started = Instant::now();
-        let data = world::load_from(&mount, map).unwrap_or_else(|e| panic!("{map}: {e}"));
+        let (data, count) = counted(|| world::load_from(&mount, map).unwrap_or_else(|e| panic!("{map}: {e}")));
         let took = started.elapsed();
         eprintln!(
-            "{map} ({}): {:.2} s, peak {} MB; {} meshes, {} textures, {} bodies, {} held, {} view models",
+            "{map} ({}): {}, {:.2} s, peak {} MB; {} meshes, {} textures, {} bodies, {} held, {} view models",
             if k == 0 { "first load" } else { "second" },
+            giga(count),
             took.as_secs_f32(),
             peak_mb(),
             data.meshes.len(),
@@ -84,9 +110,12 @@ fn loads_within(name: &str, next: &str, budget: Duration, peak_budget: u64) {
         );
         // View models load on demand, not with the map.
         assert!(data.kit.view_models.is_empty(), "{map}");
-        assert!(took < budget, "{map}: {took:?} (budget {budget:?})");
+        match count {
+            Some(n) => assert!(n < budget.load, "{map}: {} (budget {})", giga(Some(n)), giga(Some(budget.load))),
+            None => eprintln!("skipping the budget: no hardware counters ({})", chimera_core::metrics::hw_status()),
+        }
         if k == 0 {
-            spawn_and_navigate(map, data, budget);
+            spawn_and_navigate(map, data, budget.spawn);
         }
     }
     let peak = peak_mb();
@@ -95,40 +124,57 @@ fn loads_within(name: &str, next: &str, budget: Duration, peak_budget: u64) {
 
 /// The map spawned into a simulation (the main thread's part of a load:
 /// the collision world), then a bot added: the navigation mesh generated
-/// from the collision on the frame it wants one. Each within `budget`.
-fn spawn_and_navigate(name: &str, map: MapData, budget: Duration) {
+/// from the collision on the frame it wants one. The spawn and the
+/// longest tick (`Sim::work`) each within `budget` instructions.
+fn spawn_and_navigate(name: &str, map: MapData, budget: u64) {
     let started = Instant::now();
-    let mut sim = Sim::new(CaSim, MapSimPlugin::new(map));
-    sim.ticks(2);
+    let (mut sim, spawn) = counted(|| {
+        let mut sim = Sim::new(CaSim, MapSimPlugin::new(map));
+        sim.ticks(2);
+        sim
+    });
     let spawned = started.elapsed();
     bots::add_bot(sim.app.world_mut(), Some(1)).unwrap();
     let started = Instant::now();
-    let mut longest = Duration::ZERO;
+    let mut longest: Option<u64> = None;
     for _ in 0..20 {
-        let tick = Instant::now();
-        sim.ticks(1);
-        longest = longest.max(tick.elapsed());
+        let tick = sim.work(1).map(|w| w.ticks[0]);
+        longest = longest.max(tick);
         if sim.app.world().contains_resource::<NavMesh>() {
             break;
         }
     }
     let areas = sim.app.world().get_resource::<NavMesh>().map_or(0, |m| m.areas.len());
     eprintln!(
-        "{name}: spawned in {:.2} s; navigation ({areas} areas) after {:.2} s, the longest tick {:.2} s",
+        "{name}: spawned in {} ({:.2} s); navigation ({areas} areas) after {:.2} s, the longest tick {}",
+        giga(spawn),
         spawned.as_secs_f32(),
         started.elapsed().as_secs_f32(),
-        longest.as_secs_f32()
+        giga(longest)
     );
     assert!(areas > 0, "{name}: no navigation mesh");
-    assert!(spawned < budget && longest < budget, "{name}");
+    if let (Some(spawn), Some(longest)) = (spawn, longest) {
+        assert!(
+            spawn < budget && longest < budget,
+            "{name}: spawned in {}, the longest tick {} (budget {})",
+            giga(Some(spawn)),
+            giga(Some(longest)),
+            giga(Some(budget))
+        );
+    }
 }
 
 /// The peak after the second map varies from run to run on the same code
 /// (2,267 to 2,716 MB over eight runs on the dev box, 2026-11-03; the first
 /// load's 1,663 to 1,695 MB): the budget sits above that spread.
+///
+/// Instructions (2026-11-11, the same on every run): warehouse 56.6 G,
+/// junk_flea after it 54.7 G (3.0-3.3 s idle; 20.3 s once under a whole
+/// after-push run's load, which the old 20 s wall budget failed on); the
+/// spawn 1.7 G, the longest tick 1.0 G.
 #[test]
 fn warehouse_loads_within_budget() {
-    loads_within("warehouse", "junk_flea", Duration::from_secs(20), 3000);
+    loads_within("warehouse", "junk_flea", Budget { load: 80_000_000_000, spawn: 3_000_000_000 }, 3000);
 }
 
 /// A lean load (`MapLoadOptions::lean`, the dedicated server's): the same
@@ -165,9 +211,11 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
 
 /// TERRORDOME: the biggest lightmaps (4096 x 19428, laid out at half
 /// resolution).
+/// Instructions (2026-11-11): terrordome 85.4 G, warehouse after it 56.6 G;
+/// the spawn 3.3 G, the longest tick 1.9 G.
 #[test]
 fn terrordome_loads_within_budget() {
-    loads_within("terrordome", "warehouse", Duration::from_secs(30), 3500);
+    loads_within("terrordome", "warehouse", Budget { load: 120_000_000_000, spawn: 5_000_000_000 }, 3500);
 }
 
 /// A weapon's view model on demand: with its hands and own textures (the
@@ -203,8 +251,11 @@ fn view_model_loads_on_demand_once() {
             assert!(t < first.textures.len(), "{}: texture {t} of {}", m.material, first.textures.len());
         }
     }
-    let started = Instant::now();
-    let again = on_demand::load_cached(&ca, weapons::RIFLE, &file).unwrap();
+    let (again, count) = counted(|| on_demand::load_cached(&ca, weapons::RIFLE, &file).unwrap());
     assert!(std::sync::Arc::ptr_eq(&first, &again));
-    assert!(started.elapsed() < Duration::from_millis(50));
+    eprintln!("{} again, from the session's cache: {}", weapons::RIFLE, giga(count));
+    // A lookup, not a load (the old wall budget: 50 ms).
+    if let Some(n) = count {
+        assert!(n < 10_000_000, "{n} instructions from the cache");
+    }
 }

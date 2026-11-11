@@ -1231,7 +1231,9 @@ load; work counts don't (performance.md, "Work counts"):
   runs them, `work::now()` around what to count, `WorkCounts::take()`.
   Keep schedules single-threaded, the compute pool at one thread
   (`harness::sim_task_pools`) and that thread busy
-  (`work::occupy_compute_pool`), and open no more hardware counters on
+  while counting (`work::set_enabled` holds it; a multi-threaded
+  executor's schedules count with `set_enabled_sharing_pool`, not
+  exactly), and open no more hardware counters on
   the thread (a `ThreadCounters` group besides `TickMetrics`' makes the
   kernel multiplex them: `work::multiplexed()`, and the counts become
   estimates).
@@ -1264,7 +1266,9 @@ load; work counts don't (performance.md, "Work counts"):
   decal and surface grids) is not in it: time `Sim::new(MapPlugin::new(map))`
   plus a tick. Combat Arms' map loads (first and second of a session,
   peak memory, the spawn into a simulation, the bots' navigation mesh,
-  a view model on demand), each under a budget: `cargo test -p
+  a view model on demand), each under a budget of instructions (the
+  loading thread's and its helpers': `InstructionCounter::
+  current_with_children`; the spawn's ticks by `Sim::work`): `cargo test -p
   combat_arms --features dev --test it heavy::map_load -- --nocapture`
   (performance.md, "Combat Arms map loads").
 - Load-independent numbers (`metrics`, `client::frame_metrics`;

@@ -47,9 +47,10 @@ pub struct Sim {
 /// makes Bevy's parallel queries plain loops on the thread running the
 /// schedule and leaves no workers spinning while they wait for each other
 /// (Bevy's transform propagation), so a tick's instructions repeat from
-/// run to run (`metrics::work`; docs/performance.md, "Work counts"); a
-/// `Sim` keeps that thread busy (`work::occupy_compute_pool`) so scopes'
-/// tasks run on the schedules' thread. The pools are process-wide;
+/// run to run (`metrics::work`; docs/performance.md, "Work counts"); while
+/// a `Sim` counts (`Sim::work`) that thread is held busy
+/// (`work::hold_compute_pool`) so scopes' tasks run on the schedules'
+/// thread. The pools are process-wide;
 /// the first app built in a process sets them.
 pub const SIM_TASK_THREADS: usize = 3;
 
@@ -158,6 +159,17 @@ pub fn add_headless_with(app: &mut App, minimal: bevy::app::PluginGroupBuilder) 
     ));
 }
 
+/// The main world's schedules run on Bevy's multi-threaded executor
+/// (`Sim::multi_threaded`, `CHIMERA_EXECUTOR=multi`): `Sim::work` then
+/// leaves the compute pool to them.
+#[derive(Resource)]
+struct MultiThreaded;
+
+/// How many schedules the world had when `Sim::work` last put them all on
+/// one thread.
+#[derive(Resource)]
+struct KnownSchedules(usize);
+
 /// `Sim::pad`'s resource.
 #[derive(Resource)]
 struct Padding(#[allow(dead_code)] usize);
@@ -192,6 +204,10 @@ impl Sim {
         // (`CHIMERA_EXECUTOR=multi`: Bevy's, as there).
         if chimera_core::env::var("CHIMERA_EXECUTOR").as_deref() != Ok("multi") {
             single_threaded_schedules(&mut app);
+            let count = app.world().get_resource::<bevy::ecs::schedule::Schedules>().map_or(0, |s| s.iter().count());
+            app.insert_resource(KnownSchedules(count));
+        } else {
+            app.insert_resource(MultiThreaded);
         }
         app.insert_resource(TimeUpdateStrategy::ManualDuration(Duration::from_secs_f64(
             1.0 / DEFAULT_TICK_HZ,
@@ -209,8 +225,6 @@ impl Sim {
         if chimera_core::env::var("CHIMERA_REPEATABLE").as_deref() == Ok("1") {
             app.insert_resource(chimera_core::tasks::WaitForTasks);
         }
-        // Scopes' tasks on this thread, counted with their system.
-        chimera_core::metrics::work::occupy_compute_pool();
         // Every system behind a counter (idle until `Sim::work` or
         // `metrics::work::set_enabled`): before the first run, while the
         // schedules' systems are still in their graphs.
@@ -230,6 +244,7 @@ impl Sim {
     /// for every `Sim`).
     pub fn multi_threaded(&mut self) {
         set_executors(self.app.world_mut(), || bevy::ecs::schedule::MultiThreadedExecutor::new());
+        self.app.insert_resource(MultiThreaded);
     }
 
     /// Spawn `n` empty entities and a resource: every entity spawned
@@ -290,7 +305,23 @@ impl Sim {
     /// judge a tick's cost by (docs/performance.md, "Work counts").
     pub fn work(&mut self, n: u64) -> Option<Work> {
         use chimera_core::metrics::work;
-        work::set_enabled(true);
+        // Holding the compute pool (scopes' tasks on this thread) would
+        // stop a multi-threaded executor's systems, which run on it.
+        let multi = self.app.world().contains_resource::<MultiThreaded>();
+        if multi {
+            work::set_enabled_sharing_pool(true);
+        } else {
+            // Schedules made since the start (a plugin's, a test's) are on
+            // Bevy's default executor, whose systems would wait for the
+            // held pool: every one on this thread, as the `Sim` runs them.
+            let w = self.app.world_mut();
+            let count = w.get_resource::<bevy::ecs::schedule::Schedules>().map_or(0, |s| s.iter().count());
+            if w.get_resource::<KnownSchedules>().is_none_or(|k| k.0 != count) {
+                set_executors(w, bevy::ecs::schedule::SingleThreadedExecutor::new);
+                w.insert_resource(KnownSchedules(count));
+            }
+            work::set_enabled(true);
+        }
         let _ = work::WorkCounts::take();
         let mut ticks = Vec::with_capacity(n as usize);
         let mut archetypes = Vec::with_capacity(n as usize);

@@ -4,13 +4,15 @@
 //! floods (`nav_gen::SliceFloods`), the gun game started at once, ticks paced
 //! at the game's tick in wall time; the navigation mesh made off the main
 //! thread (`nav_gen::NavGenTask`) arrives and a bot walks within
-//! `BOTS_WALK_WITHIN`, no tick meanwhile over `WORST_TICK` main-thread
-//! instructions. Passes with a note without the installs.
+//! `BOTS_WALK_WITHIN`, no tick meanwhile over `WORST_TICK` instructions
+//! (work counts: `Sim::work`, the tick's systems), and the task's start
+//! (`ensure_nav`: the collision's copy) under `TASK_START`. Passes with a
+//! note without the installs.
 
 use std::time::{Duration, Instant};
 
 use bevy::prelude::*;
-use chimera_core::{core::Dead, metrics::ThreadCounters, mount::config::LocalConfig};
+use chimera_core::{core::Dead, mount::config::LocalConfig};
 use chimera_sim::minigame;
 use chimera_world::{
     harness::Sim,
@@ -32,11 +34,19 @@ use ultimate_gun_game::{MINIGAME, UltimateGunGamePlugin};
 /// the app.
 const BOTS_WALK_WITHIN: Duration = Duration::from_secs(6);
 
-/// The worst tick while the mesh is made (main-thread instructions; from the
-/// tenth tick, and the task's first: the match's start, 38-53 M with the
-/// collision's copy's 0.2-0.5 M): the gun game's tick with bots standing, the
-/// task only polled; 45-50 M measured, 55-58 M when the flood was sliced.
+/// The worst tick while the mesh is made (work counts, from the tenth
+/// tick): the gun game's tick with bots standing, the task only polled;
+/// 54 M measured (2026-11-11, the tick's whole work on one thread with the
+/// counting's own share; 45-50 M of the main thread's when the pool shared
+/// it), 55-58 M of the main thread's when the flood was sliced.
 const WORST_TICK: u64 = 60_000_000;
+
+/// What starting the task costs its tick (`ensure_nav`: the collision's
+/// copy and the task's spawn): 1.3 M measured. The rest of that tick is the
+/// match's start (the bots joining and their first contacts, 58-64 M in
+/// all), not the task's: a flood on the main thread would cost tens of
+/// millions here.
+const TASK_START: u64 = 5_000_000;
 
 fn combat_arms_installed() -> bool {
     let Ok(config) = LocalConfig::load() else { return false };
@@ -70,8 +80,7 @@ fn bots_walk_soon_on_a_map_loaded_without_a_screen() {
         s.quota_set = true;
     }
     minigame::start(sim.app.world_mut(), MINIGAME).expect("the automatic gun game starts");
-    let mut counters = ThreadCounters::current();
-    let hw = counters.read().hw.is_some();
+    let hw = chimera_core::metrics::work::now().is_some();
     let start = Instant::now();
     let tick = Duration::from_secs_f64(TICK_INTERVAL);
     let (mut mesh_at, mut walked_at) = (None, None);
@@ -79,22 +88,25 @@ fn bots_walk_soon_on_a_map_loaded_without_a_screen() {
     let mut waiting: Vec<u64> = Vec::new();
     let mut last: Vec<(Entity, Vec3)> = Vec::new();
     let mut ticks = 0;
-    let mut started_on = None;
+    let mut started_on: Option<(u64, u64, u64, chimera_core::metrics::work::WorkCounts)> = None;
+    let mut worst_systems = None;
     while start.elapsed() < Duration::from_secs(30) && walked_at.is_none() {
         let frame = Instant::now();
-        let a = counters.read().hw.map_or(0, |h| h.instructions);
-        sim.ticks(1);
+        let w = sim.work(1);
         ticks += 1;
-        let spent = counters.read().hw.map_or(0, |h| h.instructions).saturating_sub(a);
+        let spent = w.as_ref().map_or(0, |w| w.ticks[0]);
         if ticks >= 10 && spent > worst.0 {
             worst = (spent, start.elapsed());
+            worst_systems = w.as_ref().map(|w| w.systems.clone());
         }
         if ticks >= 10 && mesh_at.is_none() {
             waiting.push(spent);
         }
         // The tick that started the flood's task (the collision copied).
         if started_on.is_none() && sim.app.world().contains_resource::<NavJob>() {
-            started_on = Some((ticks, spent));
+            let systems = w.map(|w| w.systems).unwrap_or_default();
+            let nav = systems.0.iter().filter(|(k, _)| k.ends_with(" ensure_nav")).map(|(_, v)| v.0).sum::<u64>();
+            started_on = Some((ticks, spent, nav, systems));
         }
         if mesh_at.is_none() && sim.app.world().contains_resource::<NavMesh>() {
             mesh_at = Some(start.elapsed());
@@ -123,17 +135,18 @@ fn bots_walk_soon_on_a_map_loaded_without_a_screen() {
         }
     }
     // What the task's start costs the main thread: the collision's copy.
-    let a = counters.read().hw.map_or(0, |h| h.instructions);
+    let a = chimera_core::metrics::work::now().unwrap_or(0);
     let copy = chimera_world::map::nav_gen::CollisionSnapshot::of(sim.app.world_mut());
-    let copy_cost = counters.read().hw.map_or(0, |h| h.instructions).saturating_sub(a);
+    let copy_cost = chimera_core::metrics::work::now().unwrap_or(0).saturating_sub(a);
     drop(copy);
     eprintln!("the collision's copy for the task: {:.1} M instructions", copy_cost as f64 / 1e6);
     let total: u64 = waiting.iter().sum();
     waiting.sort_unstable();
     eprintln!(
-        "nav mesh at {mesh_at:?}, a bot walking at {walked_at:?}, the task started on tick {:?} ({:.1} M), worst tick {:.1} M at {:?}; while waiting {} ticks, median {:.1} M, {:.0} M in all{}",
-        started_on.map(|s| s.0),
-        started_on.map_or(0, |s| s.1) as f64 / 1e6,
+        "nav mesh at {mesh_at:?}, a bot walking at {walked_at:?}, the task started on tick {:?} ({:.1} M, {:.1} M of it the task's start), worst tick {:.1} M at {:?}; while waiting {} ticks, median {:.1} M, {:.0} M in all{}",
+        started_on.as_ref().map(|s| s.0),
+        started_on.as_ref().map_or(0, |s| s.1) as f64 / 1e6,
+        started_on.as_ref().map_or(0, |s| s.2) as f64 / 1e6,
         worst.0 as f64 / 1e6,
         worst.1,
         waiting.len(),
@@ -143,10 +156,24 @@ fn bots_walk_soon_on_a_map_loaded_without_a_screen() {
     );
     let walked = walked_at.expect("a bot walks");
     assert!(walked < BOTS_WALK_WITHIN, "a bot walked {walked:?} after the round started (limit {BOTS_WALK_WITHIN:?})");
-    if let Some((_, spent)) = started_on.filter(|_| hw) {
-        assert!(spent < WORST_TICK, "the task's first tick: {spent} instructions (limit {WORST_TICK})");
+    let top = |w: &chimera_core::metrics::work::WorkCounts| {
+        w.top(15).into_iter().map(|(l, i, _)| format!("{i:>12}  {l}")).collect::<Vec<_>>().join("\n")
+    };
+    if let Some((_, spent, nav, systems)) = started_on.as_ref().filter(|_| hw) {
+        assert!(
+            *nav < TASK_START,
+            "the task's start (ensure_nav) cost {nav} instructions (limit {TASK_START}) in a tick of {spent}; its \
+             costliest systems:\n{}",
+            top(systems)
+        );
     }
     if hw {
-        assert!(worst.0 < WORST_TICK, "a tick of {} instructions at {:?} (limit {WORST_TICK})", worst.0, worst.1);
+        assert!(
+            worst.0 < WORST_TICK,
+            "a tick of {} instructions at {:?} (limit {WORST_TICK}); its costliest systems:\n{}",
+            worst.0,
+            worst.1,
+            worst_systems.as_ref().map(top).unwrap_or_default()
+        );
     }
 }

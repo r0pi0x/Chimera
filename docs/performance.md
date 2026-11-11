@@ -1188,7 +1188,9 @@ deterministic all along. The cost was not, for these reasons:
   on every run: compare counted with counted.
 - `harness::Sim`: one compute thread (`sim_task_pools`; parallel queries
   are plain loops, transform propagation spawns no workers), kept busy
-  for good (`work::occupy_compute_pool`: the tasks scopes still spawn,
+  while counting (`work::set_enabled` holds it: `hold_compute_pool`;
+  held for good it stopped any multi-threaded executor in the process,
+  2026-11-11: the tasks scopes still spawn,
   Bevy's `mark_dirty_trees` and Avian's broad phase, run on the waiting
   schedule thread, counted with their system, instead of on a pool
   thread whose waking and stealing cost a varying amount); Avian's tree
@@ -1228,6 +1230,43 @@ deterministic all along. The cost was not, for these reasons:
   counting only) as deterministic counts; GPU time from timestamp
   queries (`RenderDiagnosticsPlugin`, Vulkan and DX12) and wall time
   printed apart as timings.
+
+### Held only while counting (2026-11-11)
+
+The first version kept the compute pool's thread parked for good from
+every `Sim`'s start. Bevy's multi-threaded executor runs its systems on
+that pool, so in any process that also ran one (a test's plain `App`,
+`Sim::multi_threaded`, a schedule a plugin made after the `Sim` set its
+executors) the schedule waited for good: seven tests timed out after
+merging (party_kit's `controls::` and `esc_menu::`, cs_source's
+`bot_sight::a_crowd_sees_the_same_on_any_executor`; gdb: the test thread
+in `MultiThreadedExecutor::run`, the pool's thread parked in
+`occupy_compute_pool`). Now `work::set_enabled(true)` holds the pool
+(`hold_compute_pool`) and `set_enabled(false)`, or the counting thread
+ending, lets it go; `Sim::work` first puts any schedule made since the
+start on one thread, and on a multi-threaded `Sim` counts without holding
+(`set_enabled_sharing_pool`, not exact).
+
+`heavy::nav_in_play` checked the task's first tick as a whole (60 M
+main-thread instructions) and failed at 64 M: that tick is the match's
+start (the bots joining and their first contacts: the narrow phase 14.9
+M and `prepare_spots` 13.2 M, which the one compute thread now runs on
+the schedules' thread), while starting the task itself (`ensure_nav`, the
+collision's copy) costs 1.3 M. It now counts work (`Sim::work` per tick:
+its old `ThreadCounters` group beside `TickMetrics`' was multiplexed too)
+and bounds the task's start at 5 M (a flood on the main thread costs tens
+of millions a tick) and the worst tick after the tenth at 60 M (54 M
+measured), printing the costliest systems on a failure.
+
+Combat Arms' `heavy::map_load` judged loads by wall seconds (20 s and
+30 s, 50 ms for a cached view model) and failed once at 20.3 s for
+junk_flea after the merge. Not a slower load: its load runs on
+`std::thread::scope` threads of its own, untouched by these changes, and
+measured 3.0-3.3 s idle here, 54.7 G instructions on every run (the same
+under the after-push run's load, which took 20 s). It now counts
+instructions (`InstructionCounter::current_with_children`: the loading
+thread and the helpers it starts) against budgets about 1.4x what was
+measured, and the spawn's ticks by `Sim::work`.
 
 ### Windows
 
