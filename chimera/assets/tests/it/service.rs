@@ -89,6 +89,22 @@ impl Fixture {
     fn client_store(&self, name: &str) -> Store {
         Store::new(self.dir.join(name))
     }
+
+    /// The access log once it holds `line`. The server writes a request's
+    /// line after the answer is sent (a batch's bytes are counted while
+    /// sending), so the client can see the answer first: wait for it, at
+    /// most 10 s; returns the log as it is then.
+    fn access_log_with(&self, line: &str) -> String {
+        let path = self.server_store.root.join("server/access.log");
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let log = fs::read_to_string(&path).unwrap_or_default();
+            if log.contains(line) || std::time::Instant::now() > deadline {
+                return log;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
 }
 
 impl Drop for Fixture {
@@ -129,7 +145,7 @@ fn a_valid_token_gets_signed_manifests_and_records() {
     assert!(bytes > 0);
     assert_eq!(remote.fill(&client, &wanted, None).0, 0, "nothing again");
     // The access log names the account and what it got.
-    let log = fs::read_to_string(f.server_store.root.join("server/access.log")).unwrap();
+    let log = f.access_log_with("internal:tester#1 POST /batch 200 records=3");
     assert!(log.contains(&format!("internal:tester#1 GET /r/{id} 200 records=1 bytes=")), "{log}");
     assert!(log.contains("internal:tester#1 POST /batch 200 records=3"), "{log}");
 }
@@ -156,7 +172,7 @@ fn files_arrive_on_demand_through_the_settings_a_game_uses() {
     // The first miss brought its set (`all`) in the same batch.
     let wav = &f.fixture.files["sound/a.wav"].id;
     assert!(client.has(wav), "the rest of the set came with the first miss");
-    let log = fs::read_to_string(f.server_store.root.join("server/access.log")).unwrap();
+    let log = f.access_log_with("POST /batch 200 records=3");
     assert!(log.contains("POST /batch 200 records=3"), "one batch for the set: {log}");
     assert!(!log.contains("GET /r/"), "no record asked for alone: {log}");
     // Without the service the same mount misses.
