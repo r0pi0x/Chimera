@@ -64,8 +64,10 @@ const LAPS: usize = 3;
 
 /// The server's bytes in use at most, on any map, with CS:S and Combat Arms
 /// installed. Measured 2026-11-11: 3.20-3.40 GB before the server kept Combat
-/// Arms' textures' sizes only, 2.02-2.24 GB after.
-const IN_USE_LIMIT: u64 = 2560 << 20;
+/// Arms' textures' sizes only, 2.02-2.24 GB after (2.12-2.32 GB later that
+/// day), 1.70-1.85 GB once another game's map dressed for Combat Arms took no
+/// view models on the server (`world::dress_with`).
+const IN_USE_LIMIT: u64 = 2048 << 20;
 
 /// What HL2:DM's install adds to that (its parts in the ladder, its kit
 /// dressing every other game's map: bodies, held and view models with their
@@ -200,7 +202,8 @@ fn map_changes_keep_no_memory() {
         assert!(
             r.in_use < limit,
             "{} MB in use on {} (lap {}): more than {} MB (HL2:DM installed: {hl2dm}). Does the server keep textures' \
-             texels (`world::SizesOnly`, a guest's `MaterialLoader::lean`)?",
+             texels (`world::SizesOnly`, a guest's `MaterialLoader::lean`) or Combat Arms' view models \
+             (`world::dress_with`)?",
             r.in_use >> 20,
             r.map,
             r.lap,
