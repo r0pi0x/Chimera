@@ -77,6 +77,11 @@
 //!   effect (`INFECTION_FX`, M8's `Quarantine_Exp_01`) at the player. A
 //!   gun rung's melee draw never gives a hand.
 //!
+//! The match's asset offer names each body the playing ladder's rungs
+//! give (`asset_names`, an `AssetHooks` entry: its `character/<record>`
+//! set, `body_set`, which `chimera_pack sets combat_arms` records), so a
+//! client without the install fetches them with the join.
+//!
 //! Each is on by default and turned off in the definition's `[rules]`
 //! (`rung_extras = { attachments = false, character = false, melee =
 //! false, infected = false }`, or `rung_extras = false` for all); off,
@@ -168,7 +173,34 @@ pub struct CaRungsPlugin;
 impl Plugin for CaRungsPlugin {
     fn build(&self, app: &mut App) {
         app.add_rung_extras(HOOK).add_observer(arrive).add_observer(leave);
+        app.world_mut()
+            .get_resource_or_init::<chimera_net::net::assets::AssetHooks>()
+            .0
+            .push(asset_names);
     }
+}
+
+/// The set of body record `id`'s files on the asset service (`chimera_pack
+/// sets combat_arms`: its model, animation library and textures, as
+/// `characters::models::load_body` reads them).
+pub fn body_set(id: i32) -> String {
+    format!("character/{id}")
+}
+
+/// What the match's asset offer names of the playing ladder's draw
+/// (`chimera_net::net::assets::AssetHooks`): each rung's body
+/// (`body_set`), so a client without the install fetches them with the
+/// match, not file by file as players reach the rungs.
+fn asset_names(world: &World) -> chimera_net::net::assets::AssetNames {
+    let (Some(ladder), Some(data)) = (chimera_net::minigame_net::playing_ladder(world), world.get_resource::<CaData>())
+    else {
+        return default();
+    };
+    let mut sets = Vec::new();
+    for id in characters::preload::ladder_bodies(data.characters(), ladder) {
+        sets.push(format!("{GAME}:{}", body_set(id)));
+    }
+    chimera_net::net::assets::AssetNames { sets, ..default() }
 }
 
 /// Whether rung `on` makes its players the infected.

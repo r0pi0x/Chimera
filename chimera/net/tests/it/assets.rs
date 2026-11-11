@@ -31,7 +31,7 @@ use chimera_net::{
     net::{
         NetHooks,
         asset_startup::{self, AppGame, StartupFetch, Status},
-        assets::{self, AssetHooks, AssetHost, AssetRelaunch, AssetSession, FILES, PrefetchRate},
+        assets::{self, AssetHooks, AssetHost, AssetNames, AssetRelaunch, AssetSession, FILES, PrefetchRate},
         client::{JoinFailure, JoinProgress, JoinStage},
         manifest::{GameMount, LocalMounts, MatchManifest, MountReport},
         memory::LinkConditions,
@@ -58,8 +58,11 @@ fn setup(host: AssetHost) -> impl Fn(&mut App) + Send + Sync + 'static {
 }
 
 /// The match's pool: a later map of the stand-in game (prefetched).
-fn pool(_: &World) -> (Vec<String>, Vec<String>) {
-    (Vec::new(), vec![format!("{GAME}:later")])
+fn pool(_: &World) -> AssetNames {
+    AssetNames {
+        pool: vec![format!("{GAME}:later")],
+        ..default()
+    }
 }
 
 /// `setup` with a pool (the offer's `later`).

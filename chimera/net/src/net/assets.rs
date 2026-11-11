@@ -12,7 +12,9 @@
 //!   fingerprint, and the sets the match needs now per game (`base`,
 //!   `players`, the map's `map/<name>`, each ladder and kit weapon's
 //!   `weapon/<name>`: the weapons and pool come from `AssetHooks`, which
-//!   `minigame_net` fills) and later (the pool's other maps, prefetched).
+//!   `minigame_net` fills; other sets a game names there, Combat Arms'
+//!   rung bodies' `character/<record>`) and later (the pool's other maps,
+//!   prefetched).
 //!   A joining client that says it can fetch (`ASSETS_KEY` in its userinfo:
 //!   it has a token) counts as having the offered games (`count_offered`),
 //!   so a client with no install isn't refused before it hears the offer.
@@ -257,11 +259,26 @@ pub fn session(world: &mut World) -> AssetSession {
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct AssetRelaunch(pub Option<SocketAddr>);
 
+/// What one part names for a match's offer (an `AssetHooks` answer).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AssetNames {
+    /// Weapons the match hands out (`game:weapon`): their `weapon/<id>`
+    /// sets, and their games' `base` and `players`.
+    pub weapons: Vec<String>,
+    /// The maps a rotation can play next (`game:map`): their `map/<name>`
+    /// sets, prefetched.
+    pub pool: Vec<String>,
+    /// Other sets the match needs now (`game:set`, as published: a game's
+    /// rung bodies, `combat_arms:character/<record>`).
+    pub sets: Vec<String>,
+}
+
 /// Extra things a match's offer names, from the parts that know them
-/// (`minigame_net`: its ladder's and kit's weapons, `game:weapon`, and its
-/// map pool): registered per part, asked in order.
+/// (`minigame_net`: its ladder's and kit's weapons and its map pool; a
+/// game: what its rung extras drew, Combat Arms' bodies): registered per
+/// part, asked in order.
 #[derive(Resource, Clone, Default)]
-pub struct AssetHooks(pub Vec<fn(&World) -> (Vec<String>, Vec<String>)>);
+pub struct AssetHooks(pub Vec<fn(&World) -> AssetNames>);
 
 /// What `begin` decided.
 pub(super) enum Next {
@@ -422,15 +439,17 @@ pub fn offer(world: &mut World, m: &mut MatchManifest) {
     };
     let mut in_play: Vec<String> = m.games.iter().map(|g| g.game.clone()).collect();
     in_play.extend(m.weapons.iter().cloned());
-    let (mut weapons, mut pool) = (Vec::new(), Vec::new());
+    let (mut weapons, mut pool, mut named) = (Vec::new(), Vec::new(), Vec::new());
     for hook in world.get_resource::<AssetHooks>().cloned().unwrap_or_default().0 {
-        let (w, p) = hook(world);
-        weapons.extend(w);
-        pool.extend(p);
+        let n = hook(world);
+        weapons.extend(n.weapons);
+        pool.extend(n.pool);
+        named.extend(n.sets);
     }
     in_play.extend(
         weapons
             .iter()
+            .chain(&named)
             .filter_map(|w| w.split_once(':').map(|(g, _)| g.to_string())),
     );
     for g in in_play.iter().filter(|g| known(g)) {
@@ -450,6 +469,9 @@ pub fn offer(world: &mut World, m: &mut MatchManifest) {
         // Weapon sets are named without the `weapon_` Source ids start
         // with (`chimera_pack sets`).
         add(&mut offer.now, game, format!("weapon/{}", name.strip_prefix("weapon_").unwrap_or(name)));
+    }
+    for (game, set) in named.iter().filter_map(|s| s.split_once(':')).filter(|(g, _)| known(g)) {
+        add(&mut offer.now, game, set.to_string());
     }
     for map in pool {
         if let Some((game, name)) = map.split_once(':')

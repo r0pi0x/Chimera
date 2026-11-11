@@ -225,7 +225,11 @@ fn register(app: &mut App) {
     app.world_mut()
         .get_resource_or_init::<crate::net::assets::AssetHooks>()
         .0
-        .push(|w| (match_weapons(w), match_pool(w)));
+        .push(|w| crate::net::assets::AssetNames {
+            weapons: match_weapons(w),
+            pool: match_pool(w),
+            ..Default::default()
+        });
     use crate::console::ConsoleAppExt;
     app.console_command(
         "chimera:change_match",
@@ -697,7 +701,7 @@ pub fn match_weapons(world: &World) -> Vec<String> {
         .map(|l| l.iter().filter_map(|w| w.as_str().map(String::from)).collect())
         .unwrap_or_default();
     out.extend(def.spawn.kit.all().into_iter().map(String::from));
-    if let Some(ladder) = world.get_resource::<Ladder>().filter(|_| !world.contains_resource::<MapChange>()) {
+    if let Some(ladder) = playing_ladder(world) {
         out.extend(ladder.rungs.iter().map(|w| w.to_string()));
         for extras in ladder.extras.iter().flatten() {
             out.extend(extras.melee.iter().cloned());
@@ -708,6 +712,14 @@ pub fn match_weapons(world: &World) -> Vec<String> {
     let mut seen = std::collections::BTreeSet::new();
     out.retain(|w| seen.insert(w.clone()));
     out
+}
+
+/// The playing ladder (`Ladder`), while no map change for another match
+/// is under way (then the ladder is the old match's): what the asset
+/// offer names of a ladder's draw (`match_weapons`, a game's
+/// `net::assets::AssetHooks` entry for its rung extras).
+pub fn playing_ladder(world: &World) -> Option<&Ladder> {
+    world.get_resource::<Ladder>().filter(|_| !world.contains_resource::<MapChange>())
 }
 
 /// The match's map pool (`net::normalize_map`'s form), the first first:
