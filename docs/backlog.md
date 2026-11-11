@@ -155,15 +155,6 @@ Delete each when done.
   a player sees a stutter after each load.
 - When the server quits, clients go back to the menu (its background
   map) with no reconnect; testers rejoin by hand (as the hosting doc says).
-- The UGG server's banner says "Lucker Party dedicated server" and its
-  hostname defaults to "Lucker Party"; testers see the hostname.
-- A no-install first start prints "Counter-Strike: Source isn't
-  installed: ... chimera.local.toml" warnings on the tester's console
-  before the token's restart: say instead that the files come from the
-  asset service.
-- A player who drops (killed client) and rejoins shows twice on the
-  scoreboard until the dead connection times out (~10 s).
-- `chimera_pack user list` prints creation times as Unix seconds.
 
 ### HL2:DM playtest, 2026-11-09 (user, Windows, dm_lockdown)
 

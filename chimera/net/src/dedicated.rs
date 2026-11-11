@@ -409,6 +409,11 @@ impl Plugin for ServerPlugin {
             app.insert_resource(Time::<Fixed>::from_duration(Duration::from_secs_f64(secs)));
         }
         app.insert_resource(BuildVersion(server.version)).add_plugins(NetPlugin);
+        // The server lists it under the app's own name until `hostname` says otherwise.
+        app.insert_resource(net::query::Hosting {
+            hostname: server.title.to_string(),
+            ..default()
+        });
         (server.parts)(app);
         if hooks.map_cycle {
             app.init_resource::<MapCycle>().add_systems(Update, follow_map_cycle);

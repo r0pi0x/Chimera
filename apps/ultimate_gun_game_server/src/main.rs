@@ -24,24 +24,24 @@ change_match <minigame> [map], ugg_new [seed] [rungs], parts, changelevel <map>,
 
 /// The party's server playing the automatic gun game.
 static SERVER: GameServer = GameServer {
+    title: "Ultimate Gun Game",
+    a_title: "an Ultimate Gun Game",
     usage: USAGE,
     hooks: ServerHooks {
         minigame: Some(ServerMinigame {
             default: ultimate_gun_game::MINIGAME,
             first_map: ultimate_gun_game::first_map,
         }),
-        launch: Some(launch),
+        // The party's launch (a fresh rung seed) and the Ultimate Gun Game's
+        // parts with a fresh seed.
+        launch: Some(|app| {
+            party_kit::server::launch(app);
+            app.add_plugins(ultimate_gun_game::UltimateGunGamePlugin::launch());
+        }),
         ..PARTY.hooks
     },
     ..PARTY
 };
-
-/// The party's launch (a fresh rung seed) and the Ultimate Gun Game's
-/// parts with a fresh seed.
-fn launch(app: &mut bevy::app::App) {
-    party_kit::server::launch(app);
-    app.add_plugins(ultimate_gun_game::UltimateGunGamePlugin::launch());
-}
 
 fn main() {
     chimera_net::dedicated::run(&SERVER);

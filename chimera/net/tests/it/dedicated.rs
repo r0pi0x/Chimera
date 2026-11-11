@@ -242,6 +242,11 @@ fn a_minigame_server_plays_its_minigame_on_other_games_maps() {
             chimera_net::net::NET_VERSION
         )
     );
+    // The server lists itself under the app's own name (`title`).
+    assert_eq!(
+        sim.app.world().resource::<chimera_net::net::query::Hosting>().hostname,
+        "Kit Party"
+    );
     // A map change starts the minigame's match over.
     sim.app.world_mut().insert_resource(MatchResults::default());
     dedicated::change_level(sim.app.world_mut(), "greybox").unwrap();
