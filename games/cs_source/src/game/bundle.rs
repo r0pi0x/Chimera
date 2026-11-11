@@ -29,7 +29,7 @@ pub static BUNDLE: GameBundle = GameBundle {
 /// CS:S's players, guns and HUD look on the maps of other games.
 pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
     game: GAME,
-    dress: |map, _| super::dress_guest(map, BUNDLE.kept),
+    dress: |map, options| super::dress_guest_with(map, BUNDLE.kept, !options.textures),
 };
 
 /// CS:S's view models' field of view (its `viewmodel_fov` and

@@ -272,11 +272,18 @@ pub fn load_installed_map(name: &str, options: &crate::map::MapLoadOptions) -> R
 /// (`map::MapSources::guests`), from the install; the map gets no CS:S
 /// parts when there is no install.
 pub fn dress_guest(map: &mut crate::map::MapData, kept: &'static [&'static str]) -> Result<(), String> {
+    dress_guest_with(map, kept, false)
+}
+
+/// `dress_guest`; `lean` (a load without textures, `MapLoadOptions::
+/// textures` off: the dedicated server's): the kit's textures' sizes only
+/// (`MaterialLoader::lean`), as the map's own.
+pub fn dress_guest_with(map: &mut crate::map::MapData, kept: &'static [&'static str], lean: bool) -> Result<(), String> {
     let install = INFO
         .install()
         .ok_or_else(|| format!("no `{GAME}` install found (chimera_install <folder>, or chimera.local.toml)"))?;
     let mount = mount::open(&install).map_err(|e| e.to_string())?;
-    bsp::dress_guest(&mount, map, kept);
+    bsp::dress_guest(&mount, map, kept, lean);
     Ok(())
 }
 

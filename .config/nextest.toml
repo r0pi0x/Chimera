@@ -79,6 +79,15 @@ filter = 'binary_id(cs_source::it) & test(/^heavy::map_courses::(kz_bhop_izanami
 test-group = 'heavy'
 priority = 90
 
+# The dedicated server's memory over a session of maps: 2.4-2.9 GB in use
+# with the installs, beside the client-side heavy tests of its crate
+# (2026-11-11: with the box in swap, `map_swap_frames` beside it missed its
+# 120 s for one load).
+[[profile.default.overrides]]
+filter = 'binary_id(ultimate_gun_game::it) & test(/^heavy::server_map_memory::/)'
+test-group = 'heavy'
+threads-required = 2
+
 # The session tests play whole ladders on several real maps in one process:
 # `session_materials` takes about 13 minutes by design (killed at the heavy
 # tests' 720 s on 00e10257), `session_maps` 535 s and more. 60 minutes
