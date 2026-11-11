@@ -12,4 +12,5 @@ mod dedicated;
 mod game_hooks;
 mod minigame_callouts;
 mod prediction;
+mod rejoin;
 mod spawn_protection;

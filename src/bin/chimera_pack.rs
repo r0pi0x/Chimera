@@ -287,7 +287,7 @@ fn user(args: &[String]) -> Result<(), String> {
                 println!("{} (games {games})", a.name);
                 for t in &a.tokens {
                     let state = if t.revoked { "revoked" } else { "active" };
-                    println!("  token {} {state}, created {} {}", t.id, t.created, t.note);
+                    println!("  token {} {state}, created {} {}", t.id, chimera_assets::accounts::utc_text(t.created), t.note);
                 }
             }
         }
