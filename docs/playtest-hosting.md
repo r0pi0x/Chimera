@@ -354,3 +354,34 @@ which clears the binding.
 Revoke all tokens (`user revoke <tester>` each, or stop the asset service),
 stop the server, close the ports (UPnP mappings expire, a manual forward does
 not), and collect the reports.
+
+## Rehearsal
+
+A dress rehearsal on one Linux machine (2026-11-11), everything on
+127.0.0.1 at test ports: `chimera_asset_server --tls` on a scratch server
+store (the real store's manifests and records, its own key, certificate
+and accounts; `--latency-ms 150` for the later half), the
+`ultimate_gun_game_server` with `+maxplayers 12 +MaxPlayer 7` and the
+installs, and `ultimate_gun_game` clients started like testers: each with
+its own empty home (`HOME`, `XDG_*`), `CHIMERA_CONFIG` an empty file,
+`CHIMERA_STEAM_ROOT=` (no Steam), `CHIMERA_CFG_DIR`, `--offscreen 640x360
++fps_max 30 +cl_showerror 1`, `+chimera:asset_token <token> +connect
+127.0.0.1:<port>`; the server's stdin a fifo (`echo tick_stats > fifo`
+each minute). Eleven matches over nine maps in about 50 minutes, with a
+server restart.
+
+| Measured | |
+|---|---|
+| Server tick (3 players, 7 bots) | CPU p50 2.0-3.3 ms, p99 3.7-7.4 ms; 4.8-8.4M instructions p50; a map change one tick of 0.3-1.4 s |
+| Server memory (RSS + swap) | 2.4 GB at start; 5.2 GB after 3 maps, 5.5 GB after 6 (about +100 MB a map) |
+| Client memory (offscreen 640x360) | 3.5-5.5 GB resident each |
+| First start to spawn, de_dust2 (sets published), 150 ms per answer | 36 s, 581 MB in 157 requests |
+| A map without a set, 150 ms per answer | 2 min 25 s to 2 min 41 s from loading to joined |
+| A tester over a session (4-9 maps, prefetch on) | 820-990 MB |
+| 429s | none; 44 connections refused per address (with the old limit of 16) |
+
+Found and fixed: a token entered again on a later start left the game
+with no service (nothing fetched); the TLS front's 16 connections per
+address; startup and join downloads that lost files when the service
+restarted; the waiting launcher processes' memory. Open items:
+[backlog.md](backlog.md), "UGG playtest rehearsal".

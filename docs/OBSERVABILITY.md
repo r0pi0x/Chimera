@@ -966,7 +966,14 @@ the trace hid). A live
 check of the real binary: start `cs_source_server -port 27141 +map de_dust2
 +maxplayers 32 +chimera_rounds 0 +bot_join_after_player 0 +bot_quota_mode
 fill +bot_quota 32` and read its CPU time (`/proc/<pid>/stat` fields 14
-and 15) and RSS over a minute.
+and 15) and RSS over a minute. Any dedicated server's console has
+`tick_stats`: the last 4096 ticks' wall and CPU ms and main-thread
+instructions (p50, p99, max; the schedules run on that thread) where the
+game's sim adds `metrics::TickMetrics` (Combat Arms' and the party
+servers'), and the process's resident memory; with its stdin on a fifo,
+`echo tick_stats > <fifo>` once a minute logs a session's cost. A
+playtest's rehearsal on this box (no-install clients offscreen, the
+asset service over HTTPS): docs/playtest-hosting.md, "Rehearsal".
 
 A live soak (real processes, this box): `cs_source_server -port 27111 +map
 de_dust2 +maxplayers 12 +chimera_rounds 1 +bot_quota_mode fill +bot_quota

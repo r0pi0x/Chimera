@@ -200,6 +200,10 @@ worse than described):
 
 - **Hitches when a new map loads.** The map swap and the first seconds on a
   map can stutter. A load takes 3 to 8 seconds once the files are saved.
+  The first time you play a map its files download; for a map the host
+  didn't prepare that can take minutes on a slow line, and the match
+  starts without you 20 seconds after the vote (you join it when your
+  load ends).
 - **Memory grows over a long session.** If the game slows down after an hour,
   restart it.
 - **Some guns look or work oddly**: the Combat Arms "Neon Outlaw" ASW338LM
