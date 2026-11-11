@@ -1,5 +1,6 @@
-# Release builds: on a version tag (v*), build the game and the dedicated
-# server for Windows and Linux, zip each with dist/README.txt and attach
+# Release builds: on a version tag (v*), build the CS:S game and server and
+# Ultimate Gun Game and its server for Windows and Linux, zip them (the CS:S
+# pair with dist/README.txt, the gun game with docs/playtest.md) and attach
 # them to a GitHub Release. Nothing from other games is packaged: the game
 # loads them from the player's own install at run time.
 name: release
@@ -45,6 +46,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y pkg-config libasound2-dev libudev-dev libwayland-dev libxkbcommon-dev
       - uses: Swatinem/rust-cache@v2
       - name: Build
+        env:
+          # Windows: link the C runtime in, so a machine without the Visual C++
+          # redistributable (a fresh install) starts the game.
+          RUSTFLAGS: ${{ matrix.platform == 'windows' && '-C target-feature=+crt-static' || '' }}
         # The game, then the dedicated server without the presentation
         # alone (no render or audio code: apps/cs_source_server uses the app
         # without its `present` feature).
@@ -52,6 +57,22 @@ jobs:
         run: |
           cargo build --release --locked -p cs_source_app --bin cs_source
           cargo build --release --locked -p cs_source_server --bin cs_source_server
+          # Ultimate Gun Game and its dedicated server (docs/playtest.md).
+          cargo build --release --locked -p ultimate_gun_game --bin ultimate_gun_game
+          cargo build --release --locked -p ultimate_gun_game_server --bin ultimate_gun_game_server
+      - name: Scan the binaries for the builder's traces
+        # `env!` paths (CARGO_MANIFEST_DIR) escape path remapping: the build must
+        # run from a neutral checkout path, and nothing of a developer's machine
+        # may be in a binary.
+        shell: bash
+        run: |
+          bad=0
+          for f in target/release/{cs_source,cs_source_server,ultimate_gun_game,ultimate_gun_game_server}${{ matrix.exe }}; do
+            if grep -aEiq '/home/[p]ara|Users.[p]ara|dev.mashup' "$f"; then
+              echo "::error::$f holds a developer path or name"; bad=1
+            fi
+          done
+          exit $bad
       - name: Package
         shell: bash
         run: |
@@ -60,14 +81,23 @@ jobs:
           cp "target/release/cs_source${{ matrix.exe }}" "target/release/cs_source_server${{ matrix.exe }}" "pkg/$name/"
           cp dist/README.txt "pkg/$name/README.txt"
           cp LICENSE-MIT LICENSE-APACHE "pkg/$name/" 2>/dev/null || true
+          # Ultimate Gun Game: its own zip (game, dedicated server, tester guide).
+          ugg="UltimateGunGame-${TAG}-${{ matrix.platform }}"
+          mkdir -p "pkg/$ugg"
+          cp "target/release/ultimate_gun_game${{ matrix.exe }}" "target/release/ultimate_gun_game_server${{ matrix.exe }}" "pkg/$ugg/"
+          cp docs/playtest.md "pkg/$ugg/PLAYTEST.md"
+          if [ "${{ matrix.platform }}" = windows ]; then cp dist/Play-UGG.bat "pkg/$ugg/"; fi
+          cp LICENSE-MIT LICENSE-APACHE "pkg/$ugg/" 2>/dev/null || true
           cd pkg
           if [ "${{ matrix.platform }}" = windows ]; then
             7z a -tzip "$name.zip" "$name" > /dev/null
+            7z a -tzip "$ugg.zip" "$ugg" > /dev/null
           else
-            strip "$name/cs_source" "$name/cs_source_server"
+            strip "$name/cs_source" "$name/cs_source_server" "$ugg/ultimate_gun_game" "$ugg/ultimate_gun_game_server"
             zip -qr "$name.zip" "$name"
+            zip -qr "$ugg.zip" "$ugg"
           fi
-          ls -l "$name.zip"
+          ls -l "$name.zip" "$ugg.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}
@@ -87,5 +117,5 @@ jobs:
         run: |
           gh release view "$TAG" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 \
             || gh release create "$TAG" -R "$GITHUB_REPOSITORY" --prerelease --title "Lucker Party $TAG" \
-                 --notes "Playtest build. Needs Counter-Strike: Source installed through Steam; see README.txt in the zip."
+                 --notes "Playtest build. UltimateGunGame-*: Ultimate Gun Game and its server (see PLAYTEST.md in the zip; no game installs needed). LuckerParty-*: the Counter-Strike: Source remake (needs CS:S installed through Steam; see README.txt)."
           gh release upload "$TAG" zips/*.zip -R "$GITHUB_REPOSITORY" --clobber
