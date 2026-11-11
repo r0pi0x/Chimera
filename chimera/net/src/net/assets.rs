@@ -447,11 +447,9 @@ pub fn offer(world: &mut World, m: &mut MatchManifest) {
         .filter_map(|w| w.split_once(':'))
         .filter(|(g, _)| known(g))
     {
-        add(&mut offer.now, game, format!("weapon/{name}"));
-        // CS:S's sets are named without the `weapon_` its ids start with.
-        if let Some(short) = name.strip_prefix("weapon_") {
-            add(&mut offer.now, game, format!("weapon/{short}"));
-        }
+        // Weapon sets are named without the `weapon_` Source ids start
+        // with (`chimera_pack sets`).
+        add(&mut offer.now, game, format!("weapon/{}", name.strip_prefix("weapon_").unwrap_or(name)));
     }
     for map in pool {
         if let Some((game, name)) = map.split_once(':')

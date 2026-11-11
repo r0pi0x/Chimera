@@ -682,8 +682,11 @@ fn match_def(world: &World) -> Option<&'static MinigameDef> {
 }
 
 /// The weapons the match can hand out (`game:weapon`): its ladder's (a
-/// `chimera:ladder` module's `ladder`) and its kit's. The asset offer's
-/// `weapon/<id>` sets (`net::assets`).
+/// `chimera:ladder` module's `ladder`), its kit's, and, while no map
+/// change for another match is under way, the playing ladder's own
+/// (`Ladder`: a drawn ladder's rungs, its melee rungs, and each rung's
+/// extras' melee weapon and character weapon, which the host draws). The
+/// asset offer's `weapon/<id>` sets (`net::assets`).
 pub fn match_weapons(world: &World) -> Vec<String> {
     let Some(def) = match_def(world) else { return Vec::new() };
     let mut out: Vec<String> = def
@@ -694,8 +697,16 @@ pub fn match_weapons(world: &World) -> Vec<String> {
         .map(|l| l.iter().filter_map(|w| w.as_str().map(String::from)).collect())
         .unwrap_or_default();
     out.extend(def.spawn.kit.all().into_iter().map(String::from));
+    if let Some(ladder) = world.get_resource::<Ladder>().filter(|_| !world.contains_resource::<MapChange>()) {
+        out.extend(ladder.rungs.iter().map(|w| w.to_string()));
+        for extras in ladder.extras.iter().flatten() {
+            out.extend(extras.melee.iter().cloned());
+            out.extend(extras.character.iter().map(|c| c.weapon.clone()));
+        }
+    }
     out.retain(|w| w.contains(':'));
-    out.dedup();
+    let mut seen = std::collections::BTreeSet::new();
+    out.retain(|w| seen.insert(w.clone()));
     out
 }
 
