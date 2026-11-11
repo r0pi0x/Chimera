@@ -141,11 +141,15 @@ Delete each when done.
   BSP's packed files and the materials it names are known after the
   BSP is read), several groups at once, or a rotation that prefers maps
   with sets for clients that fetch.
-- **The dedicated server's memory grows with each map.** RSS plus swap
-  2.4 GB at the start, 5.24 GB after 3 maps, 5.31 after 4, 5.53 after 6
-  (36 min): about 100 MB a map after the first few. Over a 4-hour
-  session (~30 maps) that may be 3 GB more. Find what each map change
-  keeps (`chimera_mem`'s regions, on the server).
+- **The dedicated server's Combat Arms view models.** (Its growth per map
+  is fixed: docs/performance.md, "The dedicated server's memory".) Of the
+  server's 2.2 GB in use, 510 MB are the Combat Arms view models'
+  animations from dressing each map for Combat Arms (`world::DRESSING`,
+  converted again at every map change), 430 MB the character models'
+  animation files, 270 MB the effects' library, 230 MB the merged weapon
+  data. Find whether the server needs the view models (their timing is
+  read from them) and what of the rest; and check the playtest build's
+  server over a session of maps (`tick_stats`' memory).
 - **Client memory**: 3.5-5.5 GB resident per offscreen client at 640x360
   (more with the GPU driver's share); the box held 3 at once beside a
   build, not 4-6.

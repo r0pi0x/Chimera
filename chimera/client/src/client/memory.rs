@@ -8,10 +8,10 @@
 //! draws, and `chimera_mem pad <n>`: `n` undrawn materials held (0 drops them),
 //! to measure what they cost the render thread.
 //!
-//! `release_after_map`: 20 s after each map spawns, `memory::release_free` on a
-//! thread gives glibc's free pages back to the system. A map change frees
-//! gigabytes that glibc kept (9 GB "free in arenas" after eight maps, still
-//! counted resident or swapped).
+//! `memory::release_after_change` on the map's file: 20 s after each map
+//! spawns, `memory::release_free` on a thread gives glibc's free pages back to
+//! the system. A map change frees gigabytes that glibc kept (9 GB "free in
+//! arenas" after eight maps, still counted resident or swapped).
 
 use std::sync::{Arc, Mutex};
 
@@ -41,7 +41,7 @@ impl Plugin for MemoryPlugin {
         if let Some(render) = app.get_sub_app_mut(RenderApp) {
             render.insert_resource(stats).add_systems(Render, render_stats.in_set(RenderSystems::Cleanup));
         }
-        app.add_systems(Update, release_after_map);
+        app.add_systems(Update, crate::metrics::memory::release_after_change::<crate::map::MapFile>);
         app.console_command(
             "chimera:mem",
             "chimera_mem [<files>]: what holds this process's memory: mappings by kind (heap, anonymous, device, \
@@ -55,22 +55,6 @@ impl Plugin for MemoryPlugin {
                 Ok(Some(readout(w, a.first().and_then(|n| n.parse().ok()).unwrap_or(0))))
             },
         );
-    }
-}
-
-/// How long after a map starts its loads have ended, mostly: the ladder's
-/// models come in the seconds after it.
-const RELEASE_AFTER_SECONDS: f32 = 20.0;
-
-/// A while after each map's spawn, on a thread, give the allocator's free pages
-/// back (`memory::release_free`): the old map and its load's scratch.
-fn release_after_map(map: Option<Res<crate::map::MapFile>>, mut at: Local<Option<std::time::Instant>>) {
-    if map.is_some_and(|m| m.is_changed()) {
-        *at = Some(std::time::Instant::now());
-    }
-    if at.is_some_and(|t| t.elapsed().as_secs_f32() > RELEASE_AFTER_SECONDS) {
-        *at = None;
-        std::thread::spawn(crate::metrics::memory::release_free);
     }
 }
 

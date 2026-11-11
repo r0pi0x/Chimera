@@ -4,7 +4,9 @@
 //! files (whose pages the system can drop for free) and the GPU driver's
 //! mappings. The client's `chimera_mem` adds the GPU allocator and the stores'
 //! bytes. Nothing here is read outside that command: reading smaps walks
-//! the page tables (milliseconds at this size).
+//! the page tables (milliseconds at this size). `release_after_change` gives
+//! glibc's free pages back a while after each map change (the client's and
+//! the dedicated server's).
 
 use std::collections::BTreeMap;
 
@@ -151,6 +153,69 @@ pub fn release_free() {
         libc::malloc_trim(0);
     }
 }
+
+/// How long after a map starts its loads have ended, mostly (the ladder's
+/// models come in the seconds after it): `release_after_change`'s wait.
+pub const RELEASE_AFTER_SECONDS: f32 = 20.0;
+
+/// A system: `RELEASE_AFTER_SECONDS` of the app's time after resource `R`
+/// changes (a map's file: a map swapped in), `release_free` on a thread, to
+/// give back the old map and its load's scratch. The client and the dedicated
+/// server run it with `chimera_world::map::MapFile`: without it glibc kept
+/// 1.3-1.8 GB free in its arenas on Ultimate Gun Game's server, counted
+/// resident or swapped, more after each map (docs/performance.md, "The
+/// dedicated server's memory").
+pub fn release_after_change<R: bevy::prelude::Resource>(
+    r: Option<bevy::prelude::Res<R>>,
+    time: bevy::prelude::Res<bevy::prelude::Time>,
+    releases: Option<bevy::prelude::Res<Releases>>,
+    mut at: bevy::prelude::Local<Option<f64>>,
+) {
+    let now = time.elapsed_secs_f64();
+    use bevy::ecs::change_detection::DetectChanges;
+    if r.is_some_and(|r| r.is_changed()) {
+        *at = Some(now);
+    }
+    if at.is_some_and(|t| now - t > RELEASE_AFTER_SECONDS as f64) {
+        *at = None;
+        let releases = releases.map(|r| r.0.clone());
+        std::thread::spawn(move || {
+            release_free();
+            if let Some(r) = releases {
+                r.fetch_add(1, std::sync::atomic::Ordering::Release);
+            }
+        });
+    }
+}
+
+/// How many of `release_after_change`'s releases have finished, where an app
+/// has it (a test inserts it and waits for one).
+#[derive(bevy::prelude::Resource, Clone, Default)]
+pub struct Releases(pub std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl Releases {
+    pub fn count(&self) -> usize {
+        self.0.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+
+/// Blocks of `MMAP_THRESHOLD` and more in mappings of their own, for good: a
+/// freed one goes back to the system at once. glibc raises its threshold
+/// (up to 32 MB) each time such a block is freed, so after a map change the
+/// next map's big buffers come from the arenas, between what stays, where
+/// `release_free` can't return them whole: the dedicated server held about
+/// 50 MB more on each lap of four maps with it. The dedicated server's
+/// (`dedicated::ServerPlugin`); nothing elsewhere than Linux with glibc.
+pub fn big_blocks_mapped() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: no pointers; a setting of the allocator's.
+    unsafe {
+        libc::mallopt(libc::M_MMAP_THRESHOLD, MMAP_THRESHOLD as libc::c_int);
+    }
+}
+
+/// `big_blocks_mapped`'s threshold: glibc's starting one is 128 KB.
+pub const MMAP_THRESHOLD: usize = 4 << 20;
 
 /// Bytes as gigabytes or megabytes.
 pub fn size(b: u64) -> String {

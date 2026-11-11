@@ -178,8 +178,11 @@ fn warehouse_loads_within_budget() {
 }
 
 /// A lean load (`MapLoadOptions::lean`, the dedicated server's): the same
-/// world textures by name and size, no texels or mip levels; the whole
-/// load has both. The lean one first, so its peak memory shows alone.
+/// textures by name and size, no texels or mip levels, the character, held
+/// and view models' and the effects' too (`world::SizesOnly`: the server held
+/// 1-2 GB of them, docs/performance.md, "The dedicated server's memory");
+/// the whole load has both. The lean one first, so its peak memory shows
+/// alone.
 #[test]
 fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
     use chimera_world::map::MapLoadOptions;
@@ -199,6 +202,13 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
     assert_eq!(lean.textures.len(), full.textures.len());
     let world_textures = lean.textures.iter().zip(&full.textures).filter(|(l, _)| l.rgba8.is_empty()).count();
     assert!(world_textures > 10, "{world_textures} placeholders");
+    let decoded: Vec<&str> = lean
+        .textures
+        .iter()
+        .filter(|t| !t.rgba8.is_empty() || !t.mips.is_empty() || t.bc.is_some())
+        .map(|t| t.name.as_str())
+        .collect();
+    assert!(decoded.len() <= 1, "the lean load decoded {} textures: {:?}", decoded.len(), &decoded[..decoded.len().min(8)]);
     for (l, f) in lean.textures.iter().zip(&full.textures) {
         assert_eq!((&l.name, l.width, l.height), (&f.name, f.width, f.height));
         if l.rgba8.is_empty() {

@@ -147,7 +147,11 @@
 //! (`LightLut`) and kept as bytes until the atlas is laid out; each
 //! texture file is read once and decoded with its mip chain on threads
 //! (`decode_all`, on `map::parallel::par_map`; none of it with
-//! `MapLoadOptions::textures` off). Converted maps aren't cached on disk: a map converts in
+//! `MapLoadOptions::textures` off, the dedicated server's: then the map is
+//! `SizesOnly` while it loads, so the models' textures added to it, the
+//! character models' shared conversion, the view models and the effects'
+//! looks, the dressing of another game's map too, keep their sizes only).
+//! Converted maps aren't cached on disk: a map converts in
 //! 0.2-1.3 s, about what reading a cached copy of its textures and
 //! lightmaps (hundreds of MB) would take.
 //!
@@ -253,10 +257,33 @@ pub static DRESSING: MapDressing = MapDressing {
         let mount = data.mount().ok_or_else(|| {
             "no Combat Arms install: set [games.combat_arms] path in chimera.local.toml".to_string()
         })?;
+        // A load without textures (the dedicated server's): the models'
+        // keep their sizes only, as the map's own (`SizesOnly`).
+        let sized = !options.textures && decodes(map);
+        if sized {
+            map.memos.insert(SizesOnly);
+        }
         dress(&data, &mount, map);
+        if sized {
+            map.memos.remove::<SizesOnly>();
+        }
         Ok(())
     },
 };
+
+/// A map's memo (`MapData::memos`) while it loads without textures
+/// (`MapLoadOptions::textures` off: the dedicated server's): the models'
+/// textures added to it (`model_textures`, the effects' looks) keep their
+/// sizes only, no texels or mip levels, as the world's do. The server drew
+/// none of them and held 1-2 GB of them (docs/performance.md, "The dedicated
+/// server's memory").
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SizesOnly;
+
+/// Whether textures added to `map` are decoded (it isn't `SizesOnly`).
+pub fn decodes(map: &MapData) -> bool {
+    map.memos.get::<SizesOnly>().is_none()
+}
 
 /// Combat Arms' parts on any map (another game's, in a mashup): the
 /// effect looks (`effects::library::add_looks`), the weapons' view models
@@ -350,7 +377,7 @@ pub fn load_from_with(mount: &Mount, name: &str, options: &MapLoadOptions) -> Re
     let (map, models) = std::thread::scope(|s| {
         let models = s.spawn(|| {
             ca.weapon_set();
-            super::characters::models::shared_character_models(&ca, &file)
+            super::characters::models::shared_character_models(&ca, &file, options.textures)
         });
         let map = load_world_with(mount, name, options);
         (map, models.join().unwrap_or_else(|e| std::panic::resume_unwind(e)))
@@ -410,6 +437,10 @@ pub fn load_world_in(
         .part("scale", scale.to_le_bytes())
         .part("textures", [options.textures as u8]);
     let (mut map, outcome) = crate::map::cache::cached(cache, mount, key, convert)?;
+    // Not in the cache: a hit's map has no memos.
+    if !options.textures {
+        map.memos.insert(SizesOnly);
+    }
     if outcome == crate::map::cache::Outcome::Hit {
         info!("{name}: world read from the map cache in {:.2} s", start.elapsed().as_secs_f32());
     }
@@ -448,6 +479,9 @@ pub fn convert_with(
         name: format!("{MAP_PREFIX}{name}"),
         ..default()
     };
+    if !decode {
+        map.memos.insert(SizesOnly);
+    }
     // The game's output is clamped, not tonemapped.
     map.look.tonemapping = false;
 
@@ -1312,7 +1346,8 @@ pub(crate) fn model_textures(meshes: &mut [MapMesh], map: &mut MapData, file: &d
     }
     let base = meshes.len();
     let mut all: Vec<MapMesh> = meshes.iter().cloned().chain(extra).collect();
-    textures_with(&mut all, map, file, true);
+    let decode = decodes(map);
+    textures_with(&mut all, map, file, decode);
     let (own, extra) = all.split_at(base);
     for (k, m) in meshes.iter_mut().enumerate() {
         *m = own[k].clone();
@@ -1369,7 +1404,8 @@ pub fn world_sprites(meshes: &mut [MapMesh], map: &mut MapData, file: &dyn Fn(&s
     if extra.is_empty() {
         return;
     }
-    textures_with(&mut extra, map, file, true);
+    let decode = decodes(map);
+    textures_with(&mut extra, map, file, decode);
     for (k, range, frame_ms) in at {
         let frames: Vec<usize> = extra[range].iter().filter_map(|f| f.texture).collect();
         if frames.len() > 1 {

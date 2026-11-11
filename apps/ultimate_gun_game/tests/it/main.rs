@@ -11,6 +11,7 @@ mod heavy {
     mod nav_in_play;
     mod rung_frames;
     mod session_maps;
+    mod server_map_memory;
     mod session_materials;
 }
 mod minimal_hud;

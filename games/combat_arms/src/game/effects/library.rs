@@ -373,7 +373,8 @@ impl Loaded {
                         mips: Vec::new(),
                         width: dtx.width,
                         height: dtx.height,
-                        rgba8: dtx.rgba(0),
+                        // Sizes only for a load without textures.
+                        rgba8: if crate::game::world::decodes(map) { dtx.rgba(0) } else { Vec::new() },
                         bc: None,
                     });
                     Some(map.textures.len() - 1)
