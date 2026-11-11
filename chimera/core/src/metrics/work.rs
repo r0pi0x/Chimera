@@ -18,10 +18,10 @@
 //! three) run its schedules on one thread (`SingleThreadedExecutor`),
 //! have a compute pool of one thread, so parallel queries run inline
 //! (Bevy's `par_iter` with one thread is a plain loop, Bevy's transform
-//! propagation spawns no spinning workers), and keep that thread busy
-//! (`occupy_compute_pool`), so the few tasks still spawned in scopes
-//! (Bevy's `mark_dirty_trees`, Avian's broad phase) run on the thread
-//! waiting in the scope, counted with the system.
+//! propagation spawns no spinning workers), and keep that thread busy while
+//! counting (`set_enabled` holds it: `hold_compute_pool`), so the few
+//! tasks still spawned in scopes (Bevy's `mark_dirty_trees`, Avian's broad
+//! phase) run on the thread waiting in the scope, counted with the system.
 //!
 //! Known shortcuts: Linux only (hardware counters); elsewhere every
 //! count is None and the gates skip. Run conditions and the executor's
@@ -39,7 +39,10 @@ use std::{
     any::TypeId,
     cell::{Cell, RefCell},
     collections::{BTreeMap, BTreeSet},
-    sync::{Mutex, OnceLock},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use bevy::ecs::{
@@ -70,14 +73,41 @@ thread_local! {
     /// Open systems on this thread: instructions at entry, instructions
     /// of the systems run inside.
     static STACK: RefCell<Vec<(u64, u64)>> = const { RefCell::new(Vec::new()) };
+    /// This thread's hold on the compute pool while it counts.
+    static HOLDING: RefCell<Option<Hold>> = const { RefCell::new(None) };
 }
 
 /// Count the systems this thread runs from now on (true) or stop (false).
+/// While any thread counts, the compute pool's threads are held
+/// (`hold_compute_pool`): a scope's tasks then run on the thread waiting
+/// in it, counted with its system. Not for schedules on Bevy's
+/// multi-threaded executor, whose systems run on those threads: use
+/// `set_enabled_sharing_pool` there.
 pub fn set_enabled(on: bool) {
+    enable(on, true);
+}
+
+/// `set_enabled` without holding the compute pool (a multi-threaded
+/// executor's schedules: their systems run on the pool, so holding it would
+/// stop them; the counts then aren't exact).
+pub fn set_enabled_sharing_pool(on: bool) {
+    enable(on, false);
+}
+
+fn enable(on: bool, hold: bool) {
     if on {
         // Open the counters before the first system needs them.
         let _ = now();
     }
+    HOLDING.with(|h| {
+        let mut h = h.borrow_mut();
+        if on && hold && h.is_none() {
+            *h = Some(hold_compute_pool());
+        } else if !on {
+            // Dropping the hold lets the pool's threads go.
+            *h = None;
+        }
+    });
     ENABLED.with(|e| e.set(on));
 }
 
@@ -86,39 +116,87 @@ pub fn enabled() -> bool {
     ENABLED.with(Cell::get)
 }
 
-/// Keep the compute pool's threads busy for good (each parked inside a
-/// task that never ends), so every task a scope spawns (Bevy's
-/// `mark_dirty_trees`, Avian's broad phase) runs on the thread waiting in
-/// the scope: the system's own thread, where it is counted, and always
-/// the same work (a pool thread woken for a task also searches and steals
-/// for a varying number of instructions). Only for repeatable runs (the
-/// harness's `Sim`, `frame_bench`): anything that spawns on the compute
-/// pool and waits without running the pool itself would wait for good
-/// (Avian's tree optimization on a task: `harness::Sim` turns it off).
-pub fn occupy_compute_pool() {
-    static DONE: OnceLock<()> = OnceLock::new();
-    DONE.get_or_init(|| {
-        let Some(pool) = bevy::tasks::ComputeTaskPool::try_get() else {
-            return;
-        };
+/// The compute pool's threads, each parked inside a task, while some
+/// thread counts (`Hold`s alive: `set_enabled(true)`), so every task a
+/// scope spawns (Bevy's `mark_dirty_trees`, Avian's broad phase) runs on
+/// the thread waiting in the scope: the system's own thread, where it is
+/// counted, and always the same work (a pool thread woken for a task also
+/// searches and steals for a varying number of instructions). Held only
+/// while counting: Bevy's multi-threaded executor runs its systems on
+/// those threads and would stop meanwhile (an app on it in the same
+/// process, e.g. a test's plain `App`), and so would anything that spawns
+/// on the pool and waits without running it (Avian's tree optimization on
+/// a task: `harness::Sim` turns that off).
+struct Occupation {
+    users: usize,
+    stop: Arc<AtomicBool>,
+    parked: Arc<Mutex<Vec<std::thread::Thread>>>,
+}
+
+static OCCUPATION: Mutex<Option<Occupation>> = Mutex::new(None);
+
+/// One thread's share of the pool's hold; dropped (counting stopped, or
+/// the thread ended), the last one lets the threads go.
+pub struct Hold(());
+
+impl Drop for Hold {
+    fn drop(&mut self) {
+        let mut o = OCCUPATION.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(occ) = o.as_mut() else { return };
+        occ.users = occ.users.saturating_sub(1);
+        if occ.users == 0 {
+            occ.stop.store(true, Ordering::Release);
+            for t in occ.parked.lock().unwrap_or_else(|e| e.into_inner()).iter() {
+                t.unpark();
+            }
+            *o = None;
+        }
+    }
+}
+
+/// Hold the compute pool's threads until the returned `Hold` drops (see
+/// `Occupation`).
+pub fn hold_compute_pool() -> Hold {
+    let mut o = OCCUPATION.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(occ) = o.as_mut() {
+        occ.users += 1;
+        return Hold(());
+    }
+    let occ = Occupation {
+        users: 1,
+        stop: Arc::new(AtomicBool::new(false)),
+        parked: Arc::new(Mutex::new(Vec::new())),
+    };
+    if let Some(pool) = bevy::tasks::ComputeTaskPool::try_get() {
         let me = std::thread::current().id();
         for _ in 0..pool.thread_num() {
             let (tx, rx) = std::sync::mpsc::channel::<()>();
+            let (stop, parked) = (occ.stop.clone(), occ.parked.clone());
             pool.spawn(async move {
                 // Never on the thread that asked: it would stop there.
                 if std::thread::current().id() == me {
                     return;
                 }
+                {
+                    let mut p = parked.lock().unwrap_or_else(|e| e.into_inner());
+                    if stop.load(Ordering::Acquire) {
+                        return;
+                    }
+                    p.push(std::thread::current());
+                }
                 let _ = tx.send(());
-                loop {
+                while !stop.load(Ordering::Acquire) {
                     std::thread::park();
                 }
             })
             .detach();
-            // Wait until a pool thread holds it.
+            // Wait until a pool thread holds it (one busy elsewhere picks it
+            // up later, or finds the hold over and returns).
             let _ = rx.recv_timeout(std::time::Duration::from_secs(10));
         }
-    });
+    }
+    *o = Some(occ);
+    Hold(())
 }
 
 /// Whether this thread's counter was multiplexed by the kernel (more

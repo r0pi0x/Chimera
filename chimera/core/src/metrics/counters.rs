@@ -191,14 +191,27 @@ impl InstructionCounter {
     }
 
     /// Thread `tid` of this process (Linux; 0: the calling thread).
-    #[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
     pub fn open(tid: i32) -> Self {
+        Self::open_with(tid, false)
+    }
+
+    /// The calling thread and the threads it starts from now on (their
+    /// counts join when each ends: a load's `std::thread::scope` helpers,
+    /// joined before it returns). Threads started earlier (Bevy's task
+    /// pools) aren't counted.
+    pub fn current_with_children() -> Self {
+        Self::open_with(0, true)
+    }
+
+    #[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
+    fn open_with(tid: i32, children: bool) -> Self {
         #[cfg(target_os = "linux")]
         {
             let mut b = perf_event::Builder::new(perf_event::events::Hardware::INSTRUCTIONS);
             if tid != 0 {
                 b.observe_pid(tid);
             }
+            b.inherit(children);
             b.exclude_kernel(true).exclude_hv(true).read_format(
                 perf_event::ReadFormat::TOTAL_TIME_ENABLED | perf_event::ReadFormat::TOTAL_TIME_RUNNING,
             );

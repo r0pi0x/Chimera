@@ -86,9 +86,9 @@ fn app(size: (u32, u32)) -> App {
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
-            // One compute thread, kept busy (as `harness::Sim`'s): parallel
-            // queries inline, scopes' tasks on this thread, the counts the
-            // same on every run.
+            // One compute thread (as `harness::Sim`'s), held while counting
+            // (`work::set_enabled`): parallel queries inline, scopes' tasks
+            // on this thread, the counts the same on every run.
             .set(bevy::app::TaskPoolPlugin {
                 task_pool_options: chimera_world::harness::sim_task_pools(),
             })
@@ -129,7 +129,6 @@ fn app(size: (u32, u32)) -> App {
     chimera_world::harness::single_threaded_schedules(&mut app);
     // Every system counted (before any schedule ran), and Avian's tree
     // optimizing in the tick's order, not on a task beside it.
-    work::occupy_compute_pool();
     work::count_systems(app.world_mut());
     work::count_systems(app.sub_app_mut(bevy::render::RenderApp).world_mut());
     if let Some(mut o) = app.world_mut().get_resource_mut::<avian3d::collider_tree::ColliderTreeOptimization>() {
