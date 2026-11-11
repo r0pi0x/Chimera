@@ -131,8 +131,14 @@ a superset of the last); it leaves the other sets alone.
 What still comes on demand in a match (2026-11-11): Combat Arms' rung
 guns' fitted parts (drawn per rung: up to 9 files, a request each, up
 to 1.1 MB). The rung bodies are named in the join's offer
-(`character/<record>`; a ladder dealt at a later rotation isn't: each
-of its bodies then comes as its set, one request): a seeded session on
+(`character/<record>`), and at a rotation the level change's offer
+names the coming ladder's drawn melee weapons and bodies (its match
+deals them only once the map is in: `ladder::draw` makes the same draw
+ahead). After a rotation (`ugg_new 217377 13 cs_source:de_aztec` from
+warehouse, prefetch off, two runs each) a client fetched 19-23 requests,
+5.9-7.1 MB on demand, 14-16 of them a melee weapon's or body's set, and
+since then 1-3 requests, 0.01-0.5 MB (fitted parts only), the level
+change's download growing from 39.4 to 45.6-47.6 MB. A seeded session on
 warehouse (ladder seed 217377, no prefetch, three runs each) went from
 32-39 on-demand requests and 9-19 MB (17-20 of them body textures) to
 10-19 requests and 2.5-4.9 MB, and from 78-85 requests to the service

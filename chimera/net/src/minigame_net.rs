@@ -55,7 +55,8 @@
 //!   in (with the pre-match lobby on, `prematch`, as soon as the map is in
 //!   here: the lobby waits for the clients); a load that fails (or none in `MAP_LOAD_TIMEOUT` s) starts it
 //!   where the server is. The manifest names the coming minigame
-//!   meanwhile. A server rotates through it by itself once a match has
+//!   meanwhile, and its asset offer the coming ladder's draw (its melee
+//!   weapons, a game's rung bodies: `match_ladder`, `ladder::draw`). A server rotates through it by itself once a match has
 //!   been over for `RESULTS_HOLD` s (`serve_minigame`,
 //!   `MinigameDef::rotate`: the pool's next map, or a random one but the
 //!   last played, `minigame::rotation::MapHistory`, which the host keeps
@@ -703,11 +704,10 @@ fn match_def(world: &World) -> Option<&'static MinigameDef> {
 }
 
 /// The weapons the match can hand out (`game:weapon`): its ladder's (a
-/// `chimera:ladder` module's `ladder`), its kit's, and, while no map
-/// change for another match is under way, the playing ladder's own
-/// (`Ladder`: a drawn ladder's rungs, its melee rungs, and each rung's
-/// extras' melee weapon and character weapon, which the host draws). The
-/// asset offer's `weapon/<id>` sets (`net::assets`).
+/// `chimera:ladder` module's `ladder`), its kit's, and the match's drawn
+/// ladder's own (`match_ladder`: a drawn ladder's rungs, its melee rungs,
+/// and each rung's extras' melee weapon and character weapon, which the
+/// host draws). The asset offer's `weapon/<id>` sets (`net::assets`).
 pub fn match_weapons(world: &World) -> Vec<String> {
     let Some(def) = match_def(world) else { return Vec::new() };
     let mut out: Vec<String> = def
@@ -718,7 +718,7 @@ pub fn match_weapons(world: &World) -> Vec<String> {
         .map(|l| l.iter().filter_map(|w| w.as_str().map(String::from)).collect())
         .unwrap_or_default();
     out.extend(def.spawn.kit.all().into_iter().map(String::from));
-    if let Some(ladder) = playing_ladder(world) {
+    if let Some(ladder) = match_ladder(world) {
         out.extend(ladder.rungs.iter().map(|w| w.to_string()));
         for extras in ladder.extras.iter().flatten() {
             out.extend(extras.melee.iter().cloned());
@@ -732,11 +732,24 @@ pub fn match_weapons(world: &World) -> Vec<String> {
 }
 
 /// The playing ladder (`Ladder`), while no map change for another match
-/// is under way (then the ladder is the old match's): what the asset
-/// offer names of a ladder's draw (`match_weapons`, a game's
-/// `net::assets::AssetHooks` entry for its rung extras).
+/// is under way (then the ladder is the old match's; `match_ladder` has
+/// the coming one's).
 pub fn playing_ladder(world: &World) -> Option<&Ladder> {
     world.get_resource::<Ladder>().filter(|_| !world.contains_resource::<MapChange>())
+}
+
+/// The match's ladder: the playing one (`playing_ladder`), and while the
+/// map changes for the next match (`MapChange`, a rotation) the ladder
+/// that match will deal there (`ladder::draw`: the host's next draw, the
+/// same its start makes). What the asset offer names of a ladder's draw
+/// (`match_weapons`, a game's `net::assets::AssetHooks` entry for its
+/// rung extras: Combat Arms' bodies), so a client fetches the next
+/// match's melee weapons and bodies with the level change.
+pub fn match_ladder(world: &World) -> Option<std::borrow::Cow<'_, Ladder>> {
+    match world.get_resource::<MapChange>() {
+        Some(c) => minigame::ladder::draw(world, c.def).map(std::borrow::Cow::Owned),
+        None => world.get_resource::<Ladder>().map(std::borrow::Cow::Borrowed),
+    }
 }
 
 /// The match's map pool (`net::normalize_map`'s form), the first first:

@@ -42,7 +42,9 @@
 //! weapon's game registered a hook (`RungExtrasHook`,
 //! `RungExtrasAppExt::add_rung_extras`) gets that game's draw for it,
 //! from the match's seeded generator (`RungSeed`, the definition's id and
-//! the host's count of ladders made): the same for every player on the
+//! the host's count of ladders made; `draw` makes the next one without
+//! changing anything, the same the next start makes, so a rotation's
+//! asset offer names what it will deal): the same for every player on the
 //! rung, kept in `Ladder::extras` (replicated with the match,
 //! `chimera_net::minigame_net`), so a late joiner, a respawn and a
 //! network client get the same. What they hold is the game's (its own
@@ -784,7 +786,30 @@ fn finale(
 }
 
 fn start(world: &mut World, def: &MinigameDef) {
-    let Ok(p) = params(def) else { return };
+    let Some(ladder) = make(world, def, true) else { return };
+    // A ladder made: the next draws anew (the host's count; a network
+    // client takes the server's draw).
+    if world.get_resource::<crate::core::NetRole>() != Some(&crate::core::NetRole::Client) {
+        world.get_resource_or_init::<LaddersMade>().0 += 1;
+    }
+    world.insert_resource(crate::weapon::drop::NoDeathDrops);
+    world.insert_resource(ladder);
+}
+
+/// The ladder minigame `def` would make if its match started now (none:
+/// not a ladder, or its rules don't read), nothing changed: the same
+/// draw as the match's start (the host's next ladder's seed, `LaddersMade`
+/// plus one), so what the next match deals is known before it starts (a
+/// rotation's asset offer names its drawn melee weapons and bodies while
+/// the map changes, `chimera_net::minigame_net`).
+pub fn draw(world: &World, def: &MinigameDef) -> Option<Ladder> {
+    (def.rules.module == LADDER).then(|| make(world, def, false)).flatten()
+}
+
+/// The ladder of `def` from this host's next draw (`draw`); `say`: warn
+/// about what the definition lacks (the match's start, once).
+fn make(world: &World, def: &MinigameDef, say: bool) -> Option<Ladder> {
+    let p = params(def).ok()?;
     let catalog = world.get_resource::<WeaponCatalog>().cloned().unwrap_or_default();
     let hooks = world.get_resource::<RungExtrasHooks>().cloned().unwrap_or_default();
     // The melee rungs' weapons (and a drawn ladder's guns) are the host's
@@ -800,7 +825,7 @@ fn start(world: &mut World, def: &MinigameDef) {
         }
         LadderParam::Auto(_) => {
             let seed = if client { 0 } else { ladder_rng(world, def, 0x4155_544F).next() };
-            let drawn = drawn_ladder(world, def, &p, seed);
+            let drawn = drawn_ladder(world, def, &p, seed, say);
             (drawn.rungs, drawn.melee)
         }
     };
@@ -809,15 +834,16 @@ fn start(world: &mut World, def: &MinigameDef) {
         rng = Rng::new(0);
     }
     let melee = finale(def, &catalog, &hooks.0, &p, auto, &mut rng).unwrap_or_else(|e| {
-        warn!("{}: {e}; no finale", def.id);
+        if say {
+            warn!("{}: {e}; no finale", def.id);
+        }
         Vec::new()
     });
     let melee_rungs = melee.len();
     rungs.extend(melee);
-    world.insert_resource(crate::weapon::drop::NoDeathDrops);
     let options = RungOptions::of(&p.rung_extras);
-    let extras = draw_extras(world, def, &rungs, &options);
-    world.insert_resource(Ladder {
+    let extras = draw_extras(world, def, &rungs, &options, say);
+    Some(Ladder {
         rungs,
         demote_on_melee: p.demote_on == Demote::MeleeDeath,
         refill_ammo: p.refill_ammo,
@@ -827,13 +853,13 @@ fn start(world: &mut World, def: &MinigameDef) {
         melee_rungs,
         extras,
         options,
-    });
+    })
 }
 
 /// `ladder = "auto"`: a ladder of `rungs` drawn on the definition's power
 /// curve from `seed` (`auto::ladder`) over the composed games' guns and
 /// grenades the definition allows.
-fn drawn_ladder(world: &World, def: &MinigameDef, p: &Params, seed: u64) -> super::auto::Drawn {
+fn drawn_ladder(world: &World, def: &MinigameDef, p: &Params, seed: u64, say: bool) -> super::auto::Drawn {
     use super::{auto, power};
     let curve = curve(p).unwrap_or_else(|_| power::PowerCurve::shipped());
     let mut caps = auto::report(world);
@@ -847,7 +873,7 @@ fn drawn_ladder(world: &World, def: &MinigameDef, p: &Params, seed: u64) -> supe
     let powers = auto::powers(&caps, catalog, &readers, &curve);
     let refs: Vec<&auto::Capabilities> = caps.iter().collect();
     let drawn = auto::ladder(&refs, &powers, &curve, p.rungs, seed);
-    if drawn.rungs.is_empty() {
+    if drawn.rungs.is_empty() && say {
         warn!("{}: [rules] ladder = \"auto\": no game lends guns the definition allows", def.id);
     }
     drawn
@@ -865,37 +891,38 @@ fn ladder_rng(world: &World, def: &MinigameDef, salt: u64) -> Rng {
 
 /// The rungs' extras (`RungExtras`), one per rung: each rung whose
 /// weapon's game has a hook drawn by it from this ladder's seeded
-/// generator; the melee band's (`melee_band`) by the first hook whose draw
-/// gives it a character, else none. All none with `rung_extras = false`;
-/// empty on a network client (it takes the server's).
-fn draw_extras(world: &mut World, def: &MinigameDef, rungs: &[&'static str], options: &RungOptions) -> Vec<Option<RungExtras>> {
+/// generator (the host's next ladder's: `LaddersMade` plus one); the melee
+/// band's (`melee_band`) by the first hook whose draw gives it a
+/// character, else none. All none with `rung_extras = false`; empty on a
+/// network client (it takes the server's). `say`: warn about option keys
+/// no game reads.
+fn draw_extras(
+    world: &World,
+    def: &MinigameDef,
+    rungs: &[&'static str],
+    options: &RungOptions,
+    say: bool,
+) -> Vec<Option<RungExtras>> {
     let client = world.get_resource::<crate::core::NetRole>() == Some(&crate::core::NetRole::Client);
     if client {
         return Vec::new();
     }
     let hooks = world.get_resource::<RungExtrasHooks>().cloned().unwrap_or_default();
     if options.off || hooks.0.is_empty() {
-        // Still a ladder made (the melee rungs' draw moves on).
-        world.get_resource_or_init::<LaddersMade>().0 += 1;
         return vec![None; rungs.len()];
     }
-    for key in options.keys.keys() {
+    for key in options.keys.keys().filter(|_| say) {
         if !hooks.0.iter().any(|h| h.options.contains(&key.as_str())) {
             warn!("{}: [rules] rung_extras: no game reads `{key}`", def.id);
         }
     }
-    let made = {
-        let mut n = world.get_resource_or_init::<LaddersMade>();
-        n.0 += 1;
-        n.0
-    };
+    let made = world.get_resource::<LaddersMade>().map_or(0, |n| n.0) + 1;
     let seed = world.get_resource::<RungSeed>().map_or(0, |s| s.0);
     let id = def.id.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3));
     let mut rng = Rng::new(seed ^ id ^ made.wrapping_mul(0x9E37_79B9_7F4A_7C15));
     let catalog = world.get_resource::<WeaponCatalog>().cloned().unwrap_or_default();
     let melee = |m: &str| super::weapon(def, &catalog, m).ok();
     let band = melee_band(rungs, &catalog, &hooks.0);
-    let world: &World = world;
     let mut drawn: Vec<Option<RungExtras>> = Vec::new();
     for (rung, weapon) in rungs.iter().enumerate() {
         let in_band = rung >= band;
