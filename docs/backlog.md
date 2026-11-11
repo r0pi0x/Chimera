@@ -135,20 +135,17 @@ Delete each when done.
   on-demand requests and 39 MB, from 144 and 252 MB). Find them with
   `CHIMERA_ASSET_FETCH_LOG`.
   - Combat Arms' rung bodies and fitted parts (drawn per rung from
-    hundreds: about 25 single-file requests per new ladder). Code: let
+    hundreds: about 25 single-file requests per new ladder; 2026-11-11,
+    branch `asset-refresh`: 15-30 single requests of 0.05-0.45 MB, 2-5 MB
+    a session, nearly all the body textures `chars_t_body/*.dtx`, a
+    vest and legs pair per body; which bodies varies run to run even
+    with the ladder's seed fixed). Code: let
     Combat Arms' rung extras name their bodies' and parts' files in the
     offer (an `AssetHooks` entry giving sets, or `character/<body>`
     sets), as the drawn melee weapons are now.
-  - A miss whose smallest set is another pool map's (a body texture only
-    in `map/warehouse`) fetches 25-32 MB of that map in the foreground:
-    the next map's prefetch, early, while the player waits. Code: take
-    the companions instead when that set is big and mostly absent (the
-    playing map's set is fetched before the load).
   - A new ladder dealt at a rotation (`MapChange`) offers its definition's
     guns but not its drawn melee weapons (the playing `Ladder` is the old
     one then): they come as one weapon set each.
-  - The ladder's view models start loading while the join's sets still
-    download: 1-2 groups fetched twice.
   - Maps outside the pool (a `changelevel` to one) have no set and load
     group by group (2 min 25 s with 150 ms per answer in the rehearsal).
 - **The dedicated server's Combat Arms view models.** (Its growth per map

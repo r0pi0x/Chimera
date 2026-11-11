@@ -125,10 +125,12 @@ The repository's `assets.lock` (when there is one) pins each game's build
 and manifest id. When a branch changes it, the next run finds its kept
 manifest isn't the pinned one and fetches the pinned manifest; the files
 it changed arrive on demand. Without a lock, a game is served at the build
-first fetched (the newest on the server then); `chimera_assets fetch
-<game>` takes the server's newer copy of that build's manifest (new sets),
-and `chimera_assets lock` writes the server's newest builds into
-`assets.lock` for a commit.
+first fetched (the newest on the server then); when the server publishes
+that build again (new or bigger sets), a game client's next start and
+its next join's download take the newer manifest (`sets::refresh`), then
+fetch the sets' new files with the rest, and `chimera_assets fetch
+<game>` takes it too. `chimera_assets lock` writes the server's newest
+builds into `assets.lock` for a commit.
 
 ## What still needs an install
 

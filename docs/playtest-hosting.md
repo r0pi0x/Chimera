@@ -120,10 +120,22 @@ write them with the set's current files as a `CHIMERA_VFS_LOG`-style list
 combat_arms` records all of Combat Arms' 2,363 weapon sets again (each
 a superset of the last); it leaves the other sets alone.
 
-What still comes on demand in a match (2026-11-11, three maps): Combat
-Arms' rung bodies and fitted parts (drawn per rung: about 25 files, a
-request each), and a body or part whose only set is another pool map's
-pulls a 25-32 MB group of that map early (a prefetch made at the join).
+What still comes on demand in a match (2026-11-11): Combat Arms' rung
+bodies and fitted parts (drawn per rung: 15-30 files, a request each,
+2-5 MB). A body or part whose only set is another pool map's now takes
+half a megabyte of that map's set, not 25-32 MB (a set's on-demand
+batches start small and grow with each miss from it), and a file the
+join's download is already fetching is waited for, not fetched again.
+A seeded session (Combat Arms' warehouse, ladder seed 217377, then de_aztec;
+prefetch off), before and after: 17 and 34 on-demand requests, 34.5 and
+67.8 MB (one or two 30 MB groups of `map/darkhills`) -> 23-33 requests,
+4.4-10.2 MB.
+
+Publishing again at the same build reaches testers who fetched before:
+each start asks the service whether it has a newer manifest than the
+one kept (waiting at most 5 s) and fetches the startup sets' new files
+behind the progress window; each join fetches the offered sets' new
+files before the tester spawns. Nothing more for the tester to do.
 
 ## The asset service (each session)
 

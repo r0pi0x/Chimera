@@ -12,13 +12,20 @@
 //!   records. An installed game is never fetched (the hybrid model).
 //!   `plan_here` asks this machine (its config, its installs, Steam's
 //!   library); a process started after a startup fetch (`FETCHED_ENV`)
-//!   plans nothing, so a record that won't come can't loop.
+//!   plans nothing, so a record that won't come can't loop. Before it
+//!   plans, `refresh` asks the service (waiting at most `REFRESH_WAIT`)
+//!   whether it now has another manifest for a kept build (the host
+//!   published sets again) and fetches it, so a player who fetched before
+//!   gets the new sets' files at this start, not one by one as the
+//!   loaders read them.
 //! - `StartupFetch` runs it on a thread (`chimera_assets::sets::fetch`,
 //!   games the service doesn't list skipped) and says how it goes
 //!   (`Status`); `progress_lines` is what the window shows.
 //!
 //! Known shortcuts: what the games read at startup beyond the startup sets
-//! still comes on demand (in the console only); a game the service doesn't
+//! still comes on demand (in the console only); each start asks the
+//! service once for its manifests' ids (a service that doesn't answer
+//! delays the start by up to `REFRESH_WAIT`); a game the service doesn't
 //! serve and the store has no manifest of opens the window each start
 //! (briefly: nothing to fetch).
 
@@ -44,6 +51,10 @@ pub const FETCHED_ENV: &str = "CHIMERA_STARTUP_FETCHED";
 /// What the window calls the download.
 pub const WHAT: &str = "game files";
 
+/// The longest a start waits for the service to say whether it has newer
+/// manifests (`refresh`).
+pub const REFRESH_WAIT: Duration = Duration::from_secs(5);
+
 /// One of the app's games, and whether this machine has it installed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppGame {
@@ -64,6 +75,44 @@ pub fn plan(settings: &AssetSettings, games: &[AppGame]) -> Option<Vec<Wanted>> 
     (!wanted.is_empty() && sets::missing(settings, &wanted)).then_some(wanted)
 }
 
+/// The kept manifests of `games` (those `plan` would fetch for) that the
+/// service has replaced, fetched again (`chimera_assets::sets::refresh`),
+/// waiting at most `wait` for the service (it goes on in the background
+/// after that). The games refreshed in time.
+pub fn refresh(settings: &AssetSettings, games: &[AppGame], wait: Duration) -> Vec<String> {
+    let Some(remote) = settings.remote() else {
+        return Vec::new();
+    };
+    let names: Vec<String> = games
+        .iter()
+        .filter(|g| !(g.installed && settings.use_install))
+        .filter(|g| settings.store.as_ref().is_some_and(|s| s.latest_build(&g.game).is_some()))
+        .map(|g| g.game.clone())
+        .collect();
+    if names.is_empty() {
+        return Vec::new();
+    }
+    let settings = settings.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let spawned = std::thread::Builder::new().name("manifest refresh".into()).spawn(move || {
+        let refreshed = match remote.games() {
+            Ok(listing) => {
+                let names: Vec<&str> = names.iter().map(String::as_str).collect();
+                sets::refresh(&settings, &remote, &listing, &names)
+            }
+            Err(e) => {
+                eprintln!("assets: couldn't ask {} for newer manifests: {e}", remote.url());
+                Vec::new()
+            }
+        };
+        let _ = tx.send(refreshed);
+    });
+    if spawned.is_err() {
+        return Vec::new();
+    }
+    rx.recv_timeout(wait).unwrap_or_default()
+}
+
 /// `plan` on this machine for `games`: its local config's asset settings,
 /// its installs (the config, `$CHIMERA_<GAME>_ROOT`, Steam's library).
 /// None in a game a startup fetch started (`FETCHED_ENV`).
@@ -81,6 +130,7 @@ pub fn plan_here(games: &[&'static GameInfo]) -> Option<(AssetSettings, Vec<Want
             installed: install::resolve(&config, g.id, g.steam.as_ref()).install.is_some(),
         })
         .collect();
+    refresh(&settings, &games, REFRESH_WAIT);
     let wanted = plan(&settings, &games)?;
     Some((settings, wanted))
 }
