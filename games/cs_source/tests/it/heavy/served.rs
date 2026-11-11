@@ -134,7 +134,7 @@ fn de_dust2_loads_from_the_asset_service_with_no_install() {
         store: Some(client.clone()),
         use_install: false,
         builds: Default::default(),
-        remote: Some(RemoteConfig { url: running.url(), token, key: None }),
+        remote: Some(RemoteConfig { url: running.url(), token, key: None, fingerprint: None }),
         lock: None,
     };
     let no_install = dir.join("no-install");

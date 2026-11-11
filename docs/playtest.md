@@ -3,10 +3,6 @@
 Thanks for helping. This is an early build made by AI coding agents; it will
 have bugs, and finding them is the point. This page is everything you need.
 
-Anything marked `TODO(asset flow)` is a step that is still being built and
-will be filled in before the playtest. The host will tell you the exact
-words in the meantime.
-
 ## What it is
 
 Ultimate Gun Game is a free-for-all shooter. Everyone climbs the same ladder
@@ -25,8 +21,9 @@ needs from our server.
 - A GPU with DirectX 12 or Vulkan (anything from the last 8 years or so).
 - 16 GB of RAM recommended (8 GB is tight: memory grows over a long session,
   and quitting and rejoining after an hour or so resets it).
-- Free disk space for the downloaded game files: TODO(asset flow) (the
-  maps and guns the matches use; expect several GB over the day).
+- Free disk space for the downloaded game files: about 1 GB for the first
+  match, a few GB over the day (the maps and guns the matches use; kept in
+  `%LOCALAPPDATA%\chimera\assets`, delete it to start over).
 - A wired or good Wi-Fi connection; the game needs roughly 0.15 Mbit/s per
   player once it is running (the first download is the big one).
 - From the host: the **release link**, your **token** and the **server
@@ -50,11 +47,21 @@ needs from our server.
 
 ## First run: your token
 
-TODO(asset flow): how the game asks for the token and server's asset address
-(a prompt in the game, or a settings file next to the exe), and what
-confirms it worked. Until then the host will tell you. The token looks like
-`chimera1_...`; paste it exactly, and keep it private: it is yours alone and
-the host can revoke it.
+Enter your token once, with the server's address, in a command prompt or
+PowerShell in the game's folder:
+
+```
+Play-UGG.bat +chimera:asset_token <your token> +connect <host address>:<port>
+```
+
+The game keeps the token for your Windows user
+(`%LOCALAPPDATA%\chimera\asset-access.toml`; the log says `asset token
+saved`). You don't need the server's asset address: joining tells the game
+where it is. The first time, the game starts again by itself once (the
+window closes and reopens, joining the same server) to use the server's
+files; that is normal. The token looks like `chimera1_...`; paste it
+exactly, and keep it private: it is yours alone and the host can revoke it.
+To enter a new one, run the same line with the new token.
 
 ## Joining the server
 
@@ -66,11 +73,22 @@ the host can revoke it.
 Or from the console (`~`): `connect <host address>:<port>`.
 
 The first time you join, the game downloads the files the match needs.
-TODO(asset flow): the real screen, its text and its progress display. Expect
-a loading screen with a progress bar and the speed of the download; the
-first join takes the longest (minutes on a slow line), and the next ones
-read what is already saved. If it stalls, wait a minute, then see
-"Reporting a bug".
+The loading panel shows "Downloading game files: X of Y MB" with a bar,
+then the map loads and you spawn. The first join takes the longest (a few
+hundred MB: minutes on a slow line; before the window appears the game also
+fetches what it reads at startup, shown only in the console window), and
+the next ones read what is already saved; later maps download in the
+background while you play. If it stalls, wait a minute, then see
+"Reporting a bug". Messages you may see instead:
+
+- "the asset service refused your token (revoked or mistyped)": ask the
+  host for a new token and run the line above with it.
+- "can't reach the asset service at ...": the host's asset service is down
+  or its port isn't open; tell the host.
+- "isn't the one your token is for": the host's service changed; enter your
+  token again (the line above).
+- "This match needs ... start the game once with +chimera:asset_token": you
+  joined without a token.
 
 If a join is refused, the message on the menu says why. "Different build"
 means the host and you are on different versions: download the newest release.

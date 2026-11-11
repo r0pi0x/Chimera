@@ -2238,6 +2238,22 @@ pub fn loading_state(
                 None => (stage, 0.0),
             },
             JoinStage::Downloading => match j.download.as_ref() {
+                // The match's game files from the server's asset service
+                // (`net::assets`): MB, they run to hundreds.
+                Some(d) if d.file == chimera_net::net::assets::FILES => {
+                    let f = if d.total > 0 {
+                        (d.done as f64 / d.total as f64) as f32
+                    } else {
+                        0.0
+                    };
+                    let mb = |b: u64| b as f64 / 1e6;
+                    let line = if d.total > 0 {
+                        format!("Downloading game files: {:.1} of {:.1} MB", mb(d.done), mb(d.total))
+                    } else {
+                        "Downloading game files...".to_string()
+                    };
+                    (line, f.clamp(0.0, 1.0))
+                }
                 Some(d) if d.total > 0 => {
                     let f = (d.done as f64 / d.total as f64) as f32;
                     (
@@ -2303,4 +2319,34 @@ fn progress(
 /// The local player's entity (tests).
 pub fn local_player(world: &mut World) -> Option<Entity> {
     world.query_filtered::<Entity, With<LocalPlayer>>().iter(world).next()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chimera_net::net::client::DownloadInfo;
+
+    /// The match's game files from the asset service: the loading line in
+    /// MB and the bar's share (`net::assets`).
+    #[test]
+    fn the_loading_panel_shows_the_game_files_download() {
+        let mut join = JoinProgress {
+            stage: JoinStage::Downloading,
+            ..Default::default()
+        };
+        join.download = Some(DownloadInfo {
+            file: chimera_net::net::assets::FILES.into(),
+            from: "asset service".into(),
+            done: 25_000_000,
+            total: 100_000_000,
+        });
+        let (line, f) = loading_state(None, Some(&join), None, false, "x");
+        assert_eq!(line, "Downloading game files: 25.0 of 100.0 MB");
+        assert!((f - 0.25).abs() < 1e-6);
+        join.download.as_mut().unwrap().total = 0;
+        assert_eq!(
+            loading_state(None, Some(&join), None, false, "x").0,
+            "Downloading game files..."
+        );
+    }
 }

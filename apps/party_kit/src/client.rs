@@ -210,8 +210,8 @@ fn sync_gun_names(
 /// The party's client app (Lucker Party's, `APP`; another party app's is
 /// `GameApp { title, hooks: .., ..PARTY }`, apps/ultimate_gun_game) on
 /// Chimera's client app (`chimera_client::client::app`): what this
-/// machine lacks told first (`crate::requirements`; CS:S's missing stops
-/// it), the command line as it plays (`with_defaults`), the map
+/// machine lacks told first (`crate::client_requirements`: a missing
+/// install is a warning, a server's offer brings the files), the command line as it plays (`with_defaults`), the map
 /// (`cs_source:de_dust2` without one; an error ends the process), every
 /// install as asset sources, the party's simulation (`PartyPlugins`),
 /// Combat Arms' gameplay until a minigame takes it, the network and the
@@ -254,9 +254,9 @@ pub const PARTY: GameApp = GameApp {
     front_end,
     hooks: GameAppHooks {
         args: Some(with_defaults),
-        // What this machine lacks, said exactly (a joiner needs both games
-        // too: each player loads the maps, models and sounds from their own).
-        requirements: Some(crate::server::requirements),
+        // What this machine lacks, said exactly (a joiner without an install
+        // gets the files from a server that offers them: `net::assets`).
+        requirements: Some(crate::client_requirements),
         default_map: Some("cs_source:de_dust2"),
         server: Some("lucker_party_server"),
         ..GameAppHooks::NONE
@@ -286,7 +286,10 @@ pub fn sim(app: &mut App, _: &Args) {
 /// command line plays (the usual start map).
 pub fn start_at_menu(game: &'static GameApp, args: &Args) -> Option<StartMap> {
     if !crate::main_menu::starts_at_menu(args) {
-        return None;
+        // A joiner with no map of its own (`with_defaults_for`: the default
+        // map's game isn't installed) waits on the greybox.
+        let no_map = args.game_map().is_none() && joins_server(&args.console);
+        return no_map.then_some(StartMap::Greybox);
     }
     let data = crate::main_menu::MenuData::shipped();
     let load = |id: &str| (game.maps.load)(id, &chimera_world::map::MapLoadOptions::hdr(0));
@@ -310,7 +313,7 @@ pub fn joins_server(console: &[String]) -> bool {
 /// sets `MaxPlayer`. A joiner (`+connect`) gets neither the minigame nor
 /// the bots: the server plays its minigame (`minigame_net`) and fills its
 /// own slots; the map is the default's, loaded at once, until the server
-/// says its own.
+/// says its own (none, the greybox, without its game's install).
 pub fn with_defaults(args: Args) -> Args {
     with_defaults_for(args, super::DEFAULT_MINIGAME, &|id| {
         super::first_map(id).or_else(|_| super::first_map(super::DEFAULT_MINIGAME))
@@ -333,9 +336,25 @@ pub fn with_defaults_for(mut args: Args, minigame: &str, first_map: &dyn Fn(&str
         }
     };
     if args.map.is_none() {
-        args.map = first_map(&minigame).ok();
+        // A joiner without the map's game installed waits on the greybox
+        // (`start_at_menu`): the server's offer brings the files
+        // (`net::assets`).
+        args.map = first_map(&minigame).ok().filter(|m| !joining || map_installed(m));
     }
     args
+}
+
+/// Whether map `id`'s game has an install here: its map loads at once,
+/// without a download (a game read from the asset store would fetch it
+/// before the join's download, with no progress shown).
+pub fn map_installed(id: &str) -> bool {
+    let info = match id.split_once(':').map(|(g, _)| g) {
+        Some(cs_source::game::GAME) => &cs_source::game::INFO,
+        Some(combat_arms::game::GAME) => &combat_arms::game::INFO,
+        Some(hl2dm::game::GAME) => &hl2dm::game::INFO,
+        _ => return true,
+    };
+    info.install().is_some() && !info.served_alone()
 }
 
 #[cfg(test)]
@@ -364,7 +383,12 @@ mod tests {
         let join = super::with_defaults(join);
         assert!(super::joins_server(&join.console));
         assert_eq!(join.console, ["connect 127.0.0.1:28930"], "no local minigame or bots");
-        assert_eq!(join.map.as_deref(), Some("cs_source:de_dust2"), "the default map meanwhile");
+        let installed = super::map_installed("cs_source:de_dust2");
+        assert_eq!(
+            join.map.as_deref(),
+            installed.then_some("cs_source:de_dust2"),
+            "the default map meanwhile, if its game is installed"
+        );
         assert!(!super::joins_server(&super::with_defaults(Args::default()).console));
     }
 }

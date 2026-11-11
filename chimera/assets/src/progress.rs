@@ -117,6 +117,13 @@ impl Transfer {
         }
     }
 
+    /// What arrived so far: records, bytes transferred, and the bytes
+    /// expected in all.
+    pub fn done(&self) -> (u64, u64, u64) {
+        let s = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        (s.files, s.bytes, self.bytes)
+    }
+
     /// The summary (the live line replaced by it).
     pub fn finish(&self) -> String {
         let s = self.state.lock().unwrap_or_else(|e| e.into_inner());

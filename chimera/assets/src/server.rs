@@ -33,14 +33,23 @@
 //! every answer, to measure clients as over a slower link (Tailscale, a
 //! VPS) from this machine.
 //!
-//! Known shortcuts: no rate limits (section 8) yet: the server is private on
-//! Tailscale; a batch answer is sent with chunked encoding, so a client
+//! Limits (`Limits`, section 8; the service may face the internet behind
+//! its TLS front, `tls::front`): each account may make `rate` requests a
+//! second on average (bursts of `burst`) and fetch `daily_bytes` of records
+//! a day; an address that sends `bad_tokens` unknown or revoked tokens in a
+//! minute is refused for `ban`. Past a limit the answer is 429 with the
+//! reason. Behind the front, each request's address is the client's
+//! (`tls::Peers`), and the log names it (`ip=`).
+//!
+//! Known shortcuts: a revoke stops a token's next request, not a batch
+//! already being sent; a batch answer is sent with chunked encoding, so a client
 //! learns its length only at the end; no range requests.
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     fs::{self, File, OpenOptions},
     io::{self, Cursor, Read, Write},
+    net::IpAddr,
     net::SocketAddr,
     path::PathBuf,
     sync::{
@@ -71,6 +80,11 @@ pub fn server_dir(store: &Store) -> PathBuf {
     store.root.join("server")
 }
 
+/// The server's TLS certificate's folder (`tls::Identity`).
+pub fn tls_dir(store: &Store) -> PathBuf {
+    server_dir(store).join("tls")
+}
+
 /// The server's signing key file.
 pub fn key_path(store: &Store) -> PathBuf {
     server_dir(store).join("signing.key")
@@ -82,6 +96,55 @@ pub fn key_path(store: &Store) -> PathBuf {
 /// on one box they write straight into what the server serves.
 pub fn default_store() -> Option<Store> {
     Some(Store::new(dirs::data_local_dir()?.join("chimera").join("asset-server")))
+}
+
+/// What the service lets one account or address do (section 8).
+#[derive(Clone, Copy, Debug)]
+pub struct Limits {
+    /// Requests a second an account may make, on average.
+    pub rate: f64,
+    /// Requests an account may make at once before `rate` holds it.
+    pub burst: f64,
+    /// Bytes of records an account may fetch a day (UTC); 0: no cap.
+    pub daily_bytes: u64,
+    /// Requests with an unknown or revoked token an address may make in a
+    /// minute before it is refused for `ban`.
+    pub bad_tokens: u32,
+    pub ban: Duration,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            rate: 100.0,
+            burst: 1000.0,
+            daily_bytes: 20_000_000_000,
+            bad_tokens: 30,
+            ban: Duration::from_secs(600),
+        }
+    }
+}
+
+/// An account's use so far.
+struct Meter {
+    allowance: f64,
+    last: Instant,
+    day: u64,
+    bytes: u64,
+}
+
+/// An address's bad tokens.
+#[derive(Default)]
+struct Strikes {
+    minute: u64,
+    count: u32,
+    banned_until: Option<Instant>,
+}
+
+#[derive(Default)]
+struct Guard {
+    accounts: HashMap<String, Meter>,
+    addresses: HashMap<IpAddr, Strikes>,
 }
 
 /// One build's manifest as served.
@@ -110,6 +173,10 @@ pub struct Service {
     log: Mutex<Option<File>>,
     /// Added before each answer (measuring a slow link).
     latency: Duration,
+    limits: Limits,
+    guard: Mutex<Guard>,
+    /// Behind the TLS front: whose each relayed connection is.
+    peers: Option<crate::tls::Peers>,
 }
 
 fn now_secs() -> u64 {
@@ -165,6 +232,9 @@ impl Service {
             catalog: Mutex::new(Catalog::default()),
             log: Mutex::new(Some(log)),
             latency: Duration::ZERO,
+            limits: Limits::default(),
+            guard: Mutex::default(),
+            peers: None,
         })
     }
 
@@ -172,6 +242,98 @@ impl Service {
     pub fn with_latency(mut self, latency: Duration) -> Self {
         self.latency = latency;
         self
+    }
+
+    /// With these limits.
+    pub fn with_limits(mut self, limits: Limits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// Behind a TLS front: `peers` says whose each relayed connection is.
+    pub fn with_peers(mut self, peers: crate::tls::Peers) -> Self {
+        self.peers = Some(peers);
+        self
+    }
+
+    /// The client's address of `request` (through the front, its own).
+    fn address(&self, request: &Request) -> Option<IpAddr> {
+        let at = *request.remote_addr()?;
+        let relayed = self
+            .peers
+            .as_ref()
+            .and_then(|p| p.lock().unwrap_or_else(|e| e.into_inner()).get(&at).copied());
+        Some(relayed.unwrap_or(at.ip()))
+    }
+
+    /// Whether `ip` is refused for bad tokens now.
+    fn banned(&self, ip: Option<IpAddr>) -> bool {
+        let Some(ip) = ip else { return false };
+        let guard = self.guard.lock().unwrap_or_else(|e| e.into_inner());
+        guard
+            .addresses
+            .get(&ip)
+            .and_then(|s| s.banned_until)
+            .is_some_and(|t| Instant::now() < t)
+    }
+
+    /// `ip` sent a bad token.
+    fn strike(&self, ip: Option<IpAddr>) {
+        let Some(ip) = ip else { return };
+        let mut guard = self.guard.lock().unwrap_or_else(|e| e.into_inner());
+        let s = guard.addresses.entry(ip).or_default();
+        let minute = now_secs() / 60;
+        if s.minute != minute {
+            s.minute = minute;
+            s.count = 0;
+        }
+        s.count += 1;
+        if s.count >= self.limits.bad_tokens {
+            s.banned_until = Some(Instant::now() + self.limits.ban);
+        }
+    }
+
+    /// Whether `who` may make a request now (and one more is counted): the
+    /// refusal if not.
+    fn throttle(&self, who: &Principal) -> Option<Outcome> {
+        let mut guard = self.guard.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        let day = now_secs() / 86_400;
+        let m = guard.accounts.entry(who.label()).or_insert(Meter {
+            allowance: self.limits.burst,
+            last: now,
+            day,
+            bytes: 0,
+        });
+        if m.day != day {
+            m.day = day;
+            m.bytes = 0;
+        }
+        m.allowance =
+            (m.allowance + now.duration_since(m.last).as_secs_f64() * self.limits.rate).min(self.limits.burst);
+        m.last = now;
+        if self.limits.daily_bytes > 0 && m.bytes >= self.limits.daily_bytes {
+            return Some(Outcome::text(
+                429,
+                format!(
+                    "this account fetched its {} for today; try again tomorrow (UTC)\n",
+                    crate::progress::mb(m.bytes)
+                ),
+            ));
+        }
+        if m.allowance < 1.0 {
+            return Some(Outcome::text(429, "too many requests: slow down\n"));
+        }
+        m.allowance -= 1.0;
+        None
+    }
+
+    /// `who` was sent `bytes` of records.
+    fn count(&self, who: &Principal, bytes: u64) {
+        let mut guard = self.guard.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(m) = guard.accounts.get_mut(&who.label()) {
+            m.bytes += bytes;
+        }
     }
 
     pub fn public_key(&self) -> String {
@@ -272,7 +434,8 @@ impl Service {
     pub fn handle(&self, mut request: Request) {
         let path = request.url().split('?').next().unwrap_or("").to_string();
         let method = request.method().clone();
-        let (who, outcome) = match self.route(&mut request, &method, &path) {
+        let ip = self.address(&request);
+        let (who, outcome) = match self.route(&mut request, &method, &path, ip) {
             Ok((who, outcome)) => (Some(who), outcome),
             Err(outcome) => (None, outcome),
         };
@@ -282,18 +445,30 @@ impl Service {
             std::thread::sleep(self.latency);
         }
         let _ = request.respond(response);
-        let sent = length.filter(|_| status == 200 && records == 1).unwrap_or_else(|| bytes.load(Ordering::Relaxed));
+        let sent = length
+            .filter(|_| status == 200 && records == 1)
+            .unwrap_or_else(|| bytes.load(Ordering::Relaxed));
+        if let Some(w) = &who {
+            self.count(w, sent);
+        }
         let line = format!(
-            "{} {} {method} {path} {status} records={records} bytes={sent}\n",
+            "{} {} {method} {path} {status} records={records} bytes={sent} ip={}\n",
             now_secs(),
             who.map_or("-".into(), |w| w.label()),
+            ip.map_or("-".into(), |i| i.to_string()),
         );
         if let Some(log) = self.log.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
             let _ = log.write_all(line.as_bytes());
         }
     }
 
-    fn route(&self, request: &mut Request, method: &Method, path: &str) -> Result<(Principal, Outcome), Outcome> {
+    fn route(
+        &self,
+        request: &mut Request,
+        method: &Method,
+        path: &str,
+        ip: Option<IpAddr>,
+    ) -> Result<(Principal, Outcome), Outcome> {
         if path == "/key" {
             return Err(Outcome::text(200, format!("{}\n", self.public_key())));
         }
@@ -308,7 +483,20 @@ impl Service {
         if !known {
             return Err(Outcome::text(404, "no such endpoint\n"));
         }
-        let who = self.who(request)?;
+        if self.banned(ip) {
+            return Err(Outcome::text(
+                429,
+                "too many bad tokens from this address: wait a few minutes\n",
+            ));
+        }
+        let who = self.who(request).inspect_err(|o| {
+            if o.status == 401 {
+                self.strike(ip);
+            }
+        })?;
+        if let Some(refused) = self.throttle(&who) {
+            return Ok((who, refused));
+        }
         let outcome = match parts.as_slice() {
             ["whoami"] => {
                 let games = match &who.games {

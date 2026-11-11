@@ -463,7 +463,9 @@ pub fn run_app(mut app: App) -> AppExit {
         // Without the event loop having run, dropping the app crashes.
         std::process::exit(0);
     }
-    app.run()
+    let exit = app.run();
+    // The game started again with a server's game files (`relaunch`).
+    super::relaunch::wait_for_restart().unwrap_or(exit)
 }
 
 /// `CHIMERA_SYSTEM_DUMP=<file>`: the app built as it would run (plugins

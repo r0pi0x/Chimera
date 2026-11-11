@@ -43,6 +43,7 @@ pub mod interp;
 pub mod map_screen;
 pub mod match_end;
 pub mod net;
+pub mod relaunch;
 pub mod net_graph;
 pub mod night_vision;
 pub mod offscreen;
@@ -269,11 +270,35 @@ impl Args {
             .filter(|m| !matches!(m.to_lowercase().as_str(), "greybox" | "chimera:greybox" | "mashup:greybox"))
     }
 
+    /// `+chimera:asset_token <token>` is kept at once, before the app (and
+    /// its mounts and install checks) starts, and taken off the console's
+    /// lines so the token isn't echoed (`net::assets`).
+    fn take_asset_token(&mut self) {
+        let command = chimera_net::net::assets::TOKEN_COMMAND;
+        self.console.retain(|line| {
+            let words = crate::console::parse(line).into_iter().next().unwrap_or_default();
+            if !words.first().is_some_and(|w| w.eq_ignore_ascii_case(command)) {
+                return true;
+            }
+            match (words.get(1), chimera_net::net::assets::access_path()) {
+                (Some(token), Some(path)) => match chimera_net::net::assets::save_token(&path, token) {
+                    Ok(()) => println!("asset token saved ({})", path.display()),
+                    Err(e) => eprintln!("{command}: {e}"),
+                },
+                _ => eprintln!("usage: +{command} <token>"),
+            }
+            false
+        });
+    }
+
     /// The process's command line: `--help` prints `usage` and ends the
     /// process (0), a bad option says so with `usage` (2).
     pub fn parse_for(usage: &str) -> Self {
         match Self::parse_from(std::env::args().skip(1)) {
-            Ok(args) => args,
+            Ok(mut args) => {
+                args.take_asset_token();
+                args
+            }
             Err(e) if e == HELP => {
                 println!("{usage}");
                 std::process::exit(0);

@@ -19,6 +19,9 @@ doctest = false
 # `cargo test -p chimera_net` reuses the game's builds.
 [dependencies]
 chimera_core.workspace = true
+# The asset service's client and settings (`net::assets`: a match's game
+# files for a client without the game's install).
+chimera_assets.workspace = true
 chimera_world.workspace = true
 chimera_sim.workspace = true
 avian3d.workspace = true
@@ -47,7 +50,7 @@ path = "tests/it/main.rs"
 [features]
 # Bevy as a dynamic library, as the game's `dev` (which turns this on):
 # `cargo test -p chimera_net --features dev` shares the game's Bevy build.
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev"]
+dev = ["chimera_core/dev", "chimera_assets/dev", "chimera_world/dev", "chimera_sim/dev"]
 
 [dev-dependencies]
 # The map's `render` feature, as every build with the presentation has it:

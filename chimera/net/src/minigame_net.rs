@@ -221,6 +221,11 @@ fn register(app: &mut App) {
         hooks.manifest.push(add_to_manifest);
         hooks.accept.push(accept_minigame);
     }
+    // What a match's asset offer names of the minigame (`net::assets`).
+    app.world_mut()
+        .get_resource_or_init::<crate::net::assets::AssetHooks>()
+        .0
+        .push(|w| (match_weapons(w), match_pool(w)));
     use crate::console::ConsoleAppExt;
     app.console_command(
         "chimera:change_match",
@@ -667,6 +672,39 @@ fn wanted(def: &MinigameDef) -> Vec<String> {
     out.extend(s.weapons.iter().cloned());
     out.extend(def.spawn.kit.all().into_iter().filter_map(prefix));
     out
+}
+
+/// The minigame of the match (the coming one while the map changes for
+/// it), if any.
+fn match_def(world: &World) -> Option<&'static MinigameDef> {
+    let coming = world.get_resource::<MapChange>().map(|c| c.def);
+    coming.or_else(|| world.get_resource::<ActiveMinigame>().map(|a| a.def))
+}
+
+/// The weapons the match can hand out (`game:weapon`): its ladder's (a
+/// `chimera:ladder` module's `ladder`) and its kit's. The asset offer's
+/// `weapon/<id>` sets (`net::assets`).
+pub fn match_weapons(world: &World) -> Vec<String> {
+    let Some(def) = match_def(world) else { return Vec::new() };
+    let mut out: Vec<String> = def
+        .rules
+        .params
+        .get("ladder")
+        .and_then(|l| l.as_array())
+        .map(|l| l.iter().filter_map(|w| w.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    out.extend(def.spawn.kit.all().into_iter().map(String::from));
+    out.retain(|w| w.contains(':'));
+    out.dedup();
+    out
+}
+
+/// The match's map pool (`net::normalize_map`'s form), the first first:
+/// what a rotation can play next (the asset offer's prefetch).
+pub fn match_pool(world: &World) -> Vec<String> {
+    match_def(world)
+        .map(|d| d.maps.iter().map(|m| crate::net::normalize_map(m)).collect())
+        .unwrap_or_default()
 }
 
 /// The server's manifest hook: the playing minigame (the coming one

@@ -6,12 +6,13 @@ For the host of the internal playtest (the tester guide is
 the release notes or chat channels the testers do not share. Give each
 tester their address and token privately.
 
-Sections marked `TODO(asset flow)` belong to the join-and-download work
-(joining tells the client where the asset service is, HTTPS with a pinned
-certificate; the client downloads what the match needs). Fill them in when
-that lands; the rest stands on its own. The asset service itself is
-described in [assets-for-developers.md](assets-for-developers.md) and
-[plans/active/asset-service.md](plans/active/asset-service.md).
+How testers without the games get them: the game server names the asset
+service when a player joins (its URL and its certificate's fingerprint);
+the client downloads what the match needs over HTTPS, pinning that
+certificate, before it spawns. A tester with the games installed uses the
+installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-service.md),
+"Playtest delivery"; the service in general:
+[assets-for-developers.md](assets-for-developers.md).
 
 ## The day before
 
@@ -24,8 +25,64 @@ described in [assets-for-developers.md](assets-for-developers.md) and
    Run the server from the same release's zip, or from the same commit.
 2. **Send each tester privately:** the release link, `<host address>:<port>`,
    their token, and `docs/playtest.md` if they are not unzipping it.
-3. **Check the asset service has everything the match needs** (below) and
-   that it answers over HTTPS from outside your network.
+3. **Check the asset service has everything the match needs** ("Publishing
+   the game files", below) and that it answers over HTTPS from outside your
+   network (`curl -k https://<host address>:<asset port>/key` prints a hex
+   key).
+
+## Publishing the game files (once, and after a game update)
+
+On the machine with the installs and Combat Arms' keys, from a checkout
+(`chimera_pack` is a host tool, not in releases), into the server's store
+(Linux `~/.local/share/chimera/asset-server`, Windows
+`%LOCALAPPDATA%\chimera\asset-server`):
+
+```
+cargo run --release --features tools --bin chimera_pack -- publish cs_source
+cargo run --release --features tools --bin chimera_pack -- publish combat_arms
+cargo run --release --features tools --bin chimera_pack -- publish hl2dm
+cargo run --release --features tools --bin chimera_pack -- sets cs_source --sign
+cargo run --release --features tools --bin chimera_pack -- sets combat_arms --sign
+cargo run --release --features tools --bin chimera_pack -- sets hl2dm --sign
+```
+
+A whole publish serves every file, on demand. Sets make a match's first
+download one batch instead of a request per file: `sets` records each gun's
+`weapon/<id>` and `players`; `base` and each map's `map/<name>` come from a
+run of the client with the vfs log on (with the installs; per pool map):
+
+```
+CHIMERA_VFS_LOG=/tmp/m.log cargo run --release --bin ultimate_gun_game -- --map cs_source:de_dust2 --offscreen 1280x720 --frames 400 --dump /tmp/x
+cargo run --release --features tools --bin chimera_pack -- publish cs_source --from /tmp/m.log --set map/de_dust2 --sets-from /nonexistent
+```
+
+`base` for a game: the same from a run on the other games' maps (what a
+match reads of a game whose map isn't played). `--sets-from /nonexistent`
+keeps `publish` from copying the sets of your own user cache over the
+server's. On this box (2026-11-11) the server has `base` and `players` for
+the three games, `map/<name>` for de_dust2, cs_office, WAREHOUSE,
+JUNK_FLEA, DARKHILLS, BLOODMONEY and HL2:DM's eight maps, and every gun's
+`weapon/<id>`. A set the service lacks is skipped: its files arrive on
+demand while the map loads, slower (a request per group of files).
+
+## The asset service (each session)
+
+```
+cargo run --release -p chimera_assets --bin chimera_asset_server -- --tls 0.0.0.0:<asset port>
+```
+
+It prints `HTTPS at ...` and the **certificate fingerprint**. The
+certificate is its own (self-signed, made on first start in
+`<server store>/server/tls/`; keep that folder: a new certificate means each
+tester's token has to be entered again). Clients trust exactly that
+certificate, by the fingerprint the game server hands out at join; the
+address may change. Limits (defaults): 100 requests a second per account
+(bursts of 1000), 20 GB a day per account, 30 bad tokens a minute per
+address (then 10 minutes refused), 16 connections at once per address;
+`--rate`, `--burst`, `--daily-gb`, `--bad-tokens` change them. Each request
+is a line of `<server store>/server/access.log` (account, path, status,
+bytes, `ip=`). The plain listener stays on 127.0.0.1:8731 for this
+machine's own tools; only the `--tls` port faces the internet.
 
 ## Building or updating the server
 
@@ -48,8 +105,15 @@ anywhere; it holds keys.
 ## Starting it
 
 ```
-ultimate_gun_game_server -port 27015 +maxplayers 12 +MaxPlayer 3
+ultimate_gun_game_server -port 27015 +maxplayers 12 +MaxPlayer 3 +chimera:asset_url https://<host address>:<asset port>
 ```
+
+`+chimera:asset_url` is what joining clients are told (the address testers
+reach, not localhost). On the same machine as the asset service the server
+reads the certificate's fingerprint itself; on another machine add
+`+chimera:asset_fingerprint <fingerprint>`. In a `.cfg` file or the
+console, quote the URL (`chimera:asset_url "https://..."`: `//` starts a
+comment there); on the command line it needs no quotes.
 
 Options (`ultimate_gun_game_server --help`):
 
@@ -62,6 +126,8 @@ Options (`ultimate_gun_game_server --help`):
 | `+MaxPlayer <n>` | bots kept in the match (Combat Arms' bots); 0 for humans only |
 | `+hostname "<name>"` | server name |
 | `+sv_password <pw>` | password (testers type it on the Join screen) |
+| `+chimera:asset_url <url>` | the asset service joining clients fetch from |
+| `+chimera:asset_fingerprint <hex>` | its certificate's fingerprint (default: the one on this machine) |
 | `+<command> [args]` | any other console command or cvar |
 
 Maps and matches:
@@ -95,10 +161,12 @@ On the router and the host's firewall:
   whether the router agreed, and `status` shows the outside address. If the
   ISP gives no public address (carrier-grade NAT), forwarding cannot work:
   use a VPN everyone joins, or a host with a public address.
-- **TCP `<asset port>`** for the asset service: TODO(asset flow) (the port
-  the HTTPS front serves; the service itself listens on localhost only and a
-  reverse proxy or tunnel puts HTTPS in front, see asset-service.md "Deployment").
-  Testers need to reach it from outside your network.
+- **TCP `<asset port>`** for the asset service: the port given to
+  `chimera_asset_server --tls` (its own HTTPS; nothing in front). Testers
+  need to reach it from outside your network. Linux: `sudo ufw allow
+  <asset port>/tcp`; Windows: `New-NetFirewallRule -DisplayName "Chimera
+  assets" -Direction Inbound -Protocol TCP -LocalPort <asset port> -Action
+  Allow`. The plain port 8731 stays closed.
 - Windows: allow `ultimate_gun_game_server.exe` through Defender Firewall
   (the first-run prompt) for the networks that matter.
 
@@ -129,9 +197,14 @@ chimera_pack user revoke <tester> --token <n>   # one
 Revoking stops downloads; a player already in a match keeps playing it. To
 remove one from the server use its console, or end the match.
 
-TODO(asset flow): where tokens are checked on join, anything beyond
-`user add` the new flow needs (a join token, a certificate to pin), how to
-rotate the pinned certificate, and the exact `<asset url>` testers use.
+Nothing else is needed per tester: the token is all they enter. The game
+server checks nothing of it; the asset service checks it on every request.
+The first server that offers its files binds the token to that service's
+certificate on the tester's machine (`%LOCALAPPDATA%\chimera\asset-access.toml`);
+from then on the token is only ever sent to that certificate, whatever
+address the server names. To change the certificate (a lost `tls` folder),
+every tester enters their token again (`+chimera:asset_token <token>`),
+which clears the binding.
 
 ## Pre-flight smoke test (the evening before, and an hour before)
 
@@ -142,8 +215,11 @@ rotate the pinned certificate, and the exact `<asset url>` testers use.
    download the release zip, unzip, `Play-UGG.bat`, enter a test token,
    join `<host address>:<port>`, watch the first download finish, spawn,
    shoot, climb a rung, open Esc > Options, press F9 and find the report
-   folder, quit. TODO(asset flow): the exact steps for token entry and the
-   download.
+   folder, quit. Token entry and the download: run
+   `Play-UGG.bat +chimera:asset_token <token> +connect <host address>:<port>`
+   once; the game binds the token, starts again by itself (one restart, the
+   first time only), shows "Downloading game files: X of Y MB" on the
+   loading panel, then spawns. Later joins download only what is new.
 3. `chimera_pack user revoke` that test token, join again, confirm the
    download is refused with a clear message.
 4. Join with two clients and check a match starts with bots off
@@ -164,7 +240,8 @@ rotate the pinned certificate, and the exact `<asset url>` testers use.
   shows the match and rungs.
 - The asset service logs each request to `<server store>/server/access.log`:
   watch for 401 (bad or revoked token), 403 and hash-refusal lines.
-  TODO(asset flow): the join-time lines.
+  A tester's join is a burst of `POST /batch` lines (the match's sets),
+  then `/batch` lines for the pool's other maps in the background.
 - Half-Life style logs: `log on` on the console writes `logs/L<MMDD><NNN>.log`
   in the data folder.
 - Testers' bug reports arrive as zipped `bugreports` folders and

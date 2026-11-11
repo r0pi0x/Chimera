@@ -47,6 +47,11 @@ getrandom = "0.3"
 # `read` can fetch a missing record. Builds on Linux and Windows (no
 # system TLS library).
 ureq = { version = "3.5", default-features = false, features = ["rustls"] }
+# HTTPS without a certificate authority (`tls`): the server's self-signed
+# certificate, a client pinning it by fingerprint (a custom verifier on
+# ureq's connector API), the server's TLS front. The rustls ureq uses, with
+# ring as its crypto (as ureq's `rustls` feature has it).
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 # The dev server's HTTP/1.1 listener (plain HTTP on localhost; Tailscale
 # serve or a reverse proxy adds HTTPS in front). Small and blocking.
 tiny_http = "0.12"

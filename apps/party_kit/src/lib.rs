@@ -444,7 +444,7 @@ pub fn missing(css: Option<&std::path::Path>, ca: Option<&std::path::Path>, keys
 }
 
 /// `missing` for this machine: its config (`chimera.local.toml`) and
-/// Steam's library.
+/// Steam's library; a game read from the asset store isn't missing.
 pub fn requirements() -> Vec<Missing> {
     use chimera_core::mount::config::LocalConfig;
     let config = LocalConfig::load().unwrap_or_default();
@@ -454,7 +454,41 @@ pub fn requirements() -> Vec<Missing> {
         .game_keys(combat_arms::game::GAME)
         .map(|k| k.keys().map(String::as_str).collect())
         .unwrap_or_default();
-    missing(css.as_deref(), ca.as_deref(), &keys)
+    let served =
+        |game: &str, path: Option<&std::path::Path>| path.is_some_and(|p| chimera_core::mount::served::alone(game, p));
+    let (css_served, ca_served) = (
+        served(cs_source::game::GAME, css.as_deref()),
+        served(combat_arms::game::GAME, ca.as_deref()),
+    );
+    let mut out = missing(css.as_deref(), ca.as_deref(), &keys);
+    // A game read from the asset store (the service) has no install folder
+    // and needs no keys (its records are stored decrypted).
+    out.retain(|m| !(m.game == cs_source::game::GAME && css_served || m.game == combat_arms::game::GAME && ca_served));
+    out
+}
+
+/// What a client lacks (`requirements`), told: a missing install never
+/// stops it (`served_by_servers`), so the menu and Join work with no
+/// install and no config. A server's lacks stay fatal (`server::requirements`).
+pub fn client_requirements() -> (String, bool) {
+    report(&served_by_servers(requirements(), chimera_net::net::assets::has_token()))
+}
+
+/// A missing install never stops the game: a server that offers its game
+/// files (`net::assets`) provides what isn't installed when the player
+/// joins, so the menu and Join work with no install and no config. The
+/// lines stay as warnings, saying how (`token`: an asset token is set).
+pub fn served_by_servers(mut out: Vec<Missing>, token: bool) -> Vec<Missing> {
+    for m in out.iter_mut().filter(|m| m.install && m.fatal) {
+        m.fatal = false;
+        m.text.push_str(if token {
+            " Your asset token is set: a server that offers its game files provides them when you join."
+        } else {
+            " A server that offers its game files can provide them: start the game once with \
+             +chimera:asset_token <token> (from the server's admin), then join it."
+        });
+    }
+    out
 }
 
 /// The mount doctor's report for the network (`net::manifest`): each
@@ -575,6 +609,35 @@ mod tests {
         assert!(super::missing(Some(&dir), Some(&dir), &both).is_empty());
         let (text, fatal) = super::report(&nothing);
         assert!(fatal && text.starts_with("error: Counter-Strike") && text.contains("\nwarning: Combat Arms"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A tester with no install and no config reaches the menu and can
+    /// join: no missing install stops the game (a server offering its game
+    /// files provides them, `net::assets`); each still says what is missing
+    /// and how to get it, with or without an asset token.
+    #[test]
+    fn no_install_never_stops_the_game() {
+        for token in [false, true] {
+            let out = super::served_by_servers(super::missing(None, None, &[]), token);
+            assert_eq!(out.len(), 2);
+            assert!(out.iter().all(|m| !m.fatal), "{out:?}");
+            assert!(out[0].text.contains("Counter-Strike: Source isn't installed"));
+            let how = if token {
+                "Your asset token is set"
+            } else {
+                "+chimera:asset_token <token>"
+            };
+            assert!(out[0].text.contains(how), "{}", out[0].text);
+            let (text, fatal) = super::report(&out);
+            assert!(!fatal && text.starts_with("warning: Counter-Strike"), "{text}");
+        }
+        // A missing key isn't an install: left as it was.
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/party_kit_served_test");
+        std::fs::create_dir_all(dir.join("cstrike")).unwrap();
+        std::fs::create_dir_all(dir.join("Game")).unwrap();
+        let keys = super::served_by_servers(super::missing(Some(&dir), Some(&dir), &["V1"]), false);
+        assert!(keys[0].text.ends_with("look wrong."), "{keys:?}");
         std::fs::remove_dir_all(&dir).ok();
     }
 
