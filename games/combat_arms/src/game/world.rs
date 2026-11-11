@@ -150,7 +150,11 @@
 //! `MapLoadOptions::textures` off, the dedicated server's: then the map is
 //! `SizesOnly` while it loads, so the models' textures added to it, the
 //! character models' shared conversion, the view models and the effects'
-//! looks, the dressing of another game's map too, keep their sizes only).
+//! looks, the dressing of another game's map too, keep their sizes only;
+//! a model loaded on its own to be kept for later maps, a body, held or
+//! view model loaded on demand or the shared character models, is
+//! `BlocksOnly`: a texture with whole DXT blocks keeps them alone, not
+//! decoded).
 //! Converted maps aren't cached on disk: a map converts in
 //! 0.2-1.3 s, about what reading a cached copy of its textures and
 //! lightmaps (hundreds of MB) would take.
@@ -279,6 +283,17 @@ pub static DRESSING: MapDressing = MapDressing {
 /// server's memory").
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SizesOnly;
+
+/// A memo (`MapData::memos`) of a model's own data loaded to be kept past
+/// its map (a body, held or view model loaded on demand, the shared
+/// character models): a texture added to it whose file holds whole DXT
+/// blocks keeps those alone (`MapTexture::keep_blocks_only`: no RGBA8
+/// texels, no box-filtered mips), which is what the GPU takes; nothing
+/// reads these textures' texels on the CPU, and the drawing decodes the
+/// blocks where the GPU takes no BC. A client held 1.9 GB of decoded
+/// texels for them (docs/performance.md, "A client's memory").
+#[derive(Clone, Copy, Debug, Default)]
+pub struct BlocksOnly;
 
 /// Whether textures added to `map` are decoded (it isn't `SizesOnly`).
 pub fn decodes(map: &MapData) -> bool {
@@ -1478,7 +1493,8 @@ pub(crate) fn textures_with(
             }
         }
     }
-    let decoded = decode_all(files, decode);
+    let blocks = map.memos.get::<BlocksOnly>().is_some();
+    let decoded = decode_all(files, decode, blocks);
     let mut slots: Vec<Option<(usize, Option<u8>)>> = Vec::with_capacity(decoded.len());
     for ((material, path), d) in names.into_iter().zip(decoded) {
         match d {
@@ -1515,24 +1531,28 @@ pub(crate) fn textures_with(
 /// "DetailLevel" loads, with their box-filtered mip chains
 /// (`MapTexture::box_mips`) and `alpharef`, on up to 8 threads (in
 /// order).
-/// With `decode` off only the sizes (and `alpharef`) are read.
-fn decode_all(files: Vec<(String, Vec<u8>)>, decode: bool) -> Vec<Result<(MapTexture, Option<u8>), String>> {
+/// With `decode` off only the sizes (and `alpharef`) are read; with
+/// `blocks` (`BlocksOnly`) a texture whose blocks fit keeps them alone.
+fn decode_all(files: Vec<(String, Vec<u8>)>, decode: bool, blocks: bool) -> Vec<Result<(MapTexture, Option<u8>), String>> {
     crate::map::parallel::par_map(files, |(_, bytes)| -> Result<(MapTexture, Option<u8>), String> {
         let dtx = Dtx::parse(bytes).map_err(|e| e.to_string())?;
         let level = dtx.skipped_levels(DETAIL_LEVEL, 0);
         let (width, height) = dtx.level_dims(level);
+        let bc = if decode { dtx_bc(&dtx, level) } else { None };
+        // Its blocks alone (`BlocksOnly`): nothing decoded.
+        let lean = blocks && bc.as_ref().is_some_and(|b| b.fits(width, height));
         let mut texture = MapTexture {
             name: String::new(),
             srgb: true,
             mips: Vec::new(),
             width,
             height,
-            rgba8: if decode { dtx.rgba(level) } else { Vec::new() },
-            bc: if decode { dtx_bc(&dtx, level) } else { None },
+            rgba8: if decode && !lean { dtx.rgba(level) } else { Vec::new() },
+            bc,
         };
         // The mip chain here, on these threads, not on the main thread when
         // the map spawns (the drawing's own box filter).
-        if decode {
+        if decode && !lean {
             texture.mips = texture.box_mips();
         }
         Ok((texture, dtx.alpha_ref()))
@@ -2383,5 +2403,51 @@ impl LaidOut {
             (x as f32 + 1.0 + u * w as f32) / self.map.width as f32,
             (y as f32 + 1.0 + v * h as f32) / self.map.height as f32,
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An 8 x 8 DXT1 texture file of two levels (8 x 8, 4 x 4), every
+    /// texel white (each block's colour 0, all indices 0).
+    fn white_dxt1() -> Vec<u8> {
+        let mut b = vec![0u8; 164];
+        b[4..6].copy_from_slice(&8u16.to_le_bytes());
+        b[6..8].copy_from_slice(&8u16.to_le_bytes());
+        b[8..12].copy_from_slice(&(-5i32).to_le_bytes());
+        b[0x0C..0x0E].copy_from_slice(&2u16.to_le_bytes());
+        b[0x18] = 49; // no group offset: level 0 loads
+        b[0x1A] = 4;
+        let block = [0xFF, 0xFF, 0, 0, 0, 0, 0, 0];
+        b.extend((0..4 + 1).flat_map(|_| block));
+        b
+    }
+
+    /// A model kept past its map (`BlocksOnly`) keeps a texture with whole
+    /// blocks as those alone: no RGBA8 texels, no mip levels (5.3 bytes a
+    /// texel beside DXT1's half a byte); decoded again (the drawing's
+    /// fallback) it is what a full decode gives.
+    #[test]
+    fn blocks_only_keeps_the_blocks_alone() {
+        let file = || vec![("t.dtx".to_string(), white_dxt1())];
+        let (full, _) = decode_all(file(), true, false).remove(0).unwrap();
+        let (lean, _) = decode_all(file(), true, true).remove(0).unwrap();
+        assert_eq!((full.width, full.height), (8, 8));
+        assert_eq!(full.rgba8.len(), 8 * 8 * 4);
+        assert_eq!(full.mips.len(), 3, "4 x 4, 2 x 2, 1 x 1");
+        assert!(full.bc.is_some() && !full.blocks_only());
+        assert!(lean.rgba8.is_empty() && lean.mips.is_empty(), "no decoded texels");
+        assert_eq!(lean.bc, full.bc, "the same blocks");
+        assert!(lean.blocks_only());
+        let kept = |t: &MapTexture| {
+            t.rgba8.len() + t.mips.iter().map(Vec::len).sum::<usize>() + t.bc.as_ref().map_or(0, |b| b.levels.iter().map(Vec::len).sum())
+        };
+        assert_eq!((kept(&full), kept(&lean)), (256 + 84 + 40, 40));
+        assert_eq!(lean.decoded().rgba8, full.rgba8);
+        // Without blocks to keep (sizes only), nothing changes.
+        let (sized, _) = decode_all(file(), false, true).remove(0).unwrap();
+        assert!(sized.rgba8.is_empty() && sized.bc.is_none() && !sized.blocks_only());
     }
 }

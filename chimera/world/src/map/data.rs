@@ -71,9 +71,67 @@ impl MapBc {
         let block = if format == MapBcFormat::Bc1 { 8 } else { 16 };
         w.div_ceil(4) as usize * h.div_ceil(4) as usize * block
     }
+
+    /// Whether these blocks are a whole texture of `width` x `height`, as a
+    /// GPU takes them: whole blocks at the top level, each level the size
+    /// its format says, never more levels than the size has.
+    pub fn fits(&self, width: u32, height: u32) -> bool {
+        width % 4 == 0
+            && height % 4 == 0
+            && !self.levels.is_empty()
+            && self.levels.len() <= width.max(height).max(1).ilog2() as usize + 1
+            && self
+                .levels
+                .iter()
+                .enumerate()
+                .all(|(i, l)| l.len() == Self::level_bytes(self.format, (width >> i).max(1), (height >> i).max(1)))
+    }
 }
 
 impl MapTexture {
+    /// Whether this texture is its blocks only (`keep_blocks_only`): no
+    /// decoded texels, its BC copy whole.
+    pub fn blocks_only(&self) -> bool {
+        self.rgba8.is_empty() && self.bc.as_ref().is_some_and(|b| b.fits(self.width, self.height))
+    }
+
+    /// Drop the decoded texels and mip levels when the BC copy is a whole
+    /// texture (`MapBc::fits`): it is what the GPU takes, and the drawing
+    /// decodes it where the GPU can't (`decoded`). For textures nothing
+    /// reads on the CPU (models' kept for later maps: docs/performance.md,
+    /// "A client's memory"). Whether it did.
+    pub fn keep_blocks_only(&mut self) -> bool {
+        if !self.bc.as_ref().is_some_and(|b| b.fits(self.width, self.height)) {
+            return false;
+        }
+        self.rgba8 = Vec::new();
+        self.mips = Vec::new();
+        true
+    }
+
+    /// This texture with its texels: itself, or (`blocks_only`) a copy
+    /// with level 0 of its blocks decoded (no mip levels: the drawing
+    /// filters them).
+    pub fn decoded(&self) -> std::borrow::Cow<'_, MapTexture> {
+        let Some(rgba8) = self
+            .bc
+            .as_ref()
+            .filter(|_| self.blocks_only())
+            .and_then(|b| super::texture_serde::decode_level(b, self.width, self.height, 0))
+        else {
+            return std::borrow::Cow::Borrowed(self);
+        };
+        std::borrow::Cow::Owned(MapTexture {
+            name: self.name.clone(),
+            srgb: self.srgb,
+            mips: Vec::new(),
+            width: self.width,
+            height: self.height,
+            rgba8,
+            bc: self.bc.clone(),
+        })
+    }
+
     /// The mip levels below `rgba8`'s, box-filtered (each texel the mean
     /// of the 2 x 2 above it, edges clamped), down to 1 x 1: what the
     /// drawing generates for a texture without its own. A loader that

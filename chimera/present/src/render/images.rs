@@ -119,18 +119,10 @@ fn bc_format(format: MapBcFormat, srgb: bool) -> TextureFormat {
     }
 }
 
-/// Whether `b`'s blocks are a valid texture of `t`'s size: whole blocks at
-/// the top level (the device rejects anything else) and each level the size
-/// its format says, never more levels than the size has.
+/// Whether `b`'s blocks are a valid texture of `t`'s size (`MapBc::fits`:
+/// the device rejects anything else).
 fn bc_fits(t: &MapTexture, b: &MapBc) -> bool {
-    t.width % 4 == 0
-        && t.height % 4 == 0
-        && !b.levels.is_empty()
-        && b.levels.len() <= t.width.max(t.height).ilog2() as usize + 1
-        && b.levels
-            .iter()
-            .enumerate()
-            .all(|(i, l)| l.len() == MapBc::level_bytes(b.format, (t.width >> i).max(1), (t.height >> i).max(1)))
+    b.fits(t.width, t.height)
 }
 
 /// A repeating, mipmapped GPU image: the texture's own mip levels when it
@@ -138,8 +130,17 @@ fn bc_fits(t: &MapTexture, b: &MapBc) -> bool {
 /// loader off the main thread), else box-filtered here
 /// (`MapTexture::box_mips`). With `bc` (`bc_wanted`) and a compressed copy
 /// (`MapTexture::bc`) whose levels fit the format, the blocks as stored,
-/// with the file's mip levels (the chain may stop above 1 x 1).
+/// with the file's mip levels (the chain may stop above 1 x 1). A texture
+/// kept as its blocks only (`MapTexture::keep_blocks_only`) is decoded here
+/// when the blocks don't go up as they are.
 pub fn to_image(t: &MapTexture, look: &MapLook, bc: bool) -> Image {
+    let decoded;
+    let t = if t.blocks_only() && !bc {
+        decoded = t.decoded();
+        &*decoded
+    } else {
+        t
+    };
     let compressed = t.bc.as_ref().filter(|b| bc && bc_fits(t, b));
     let mut data;
     let mut levels = 1;
@@ -382,4 +383,43 @@ pub fn source_ldr_page_texels(flat: &[[f32; 3]], pages: &[Vec<[f32; 3]>; 3]) -> 
         }
     }
     texels
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A texture kept as its blocks only (`MapTexture::keep_blocks_only`)
+    /// goes up as its blocks where the GPU takes BC, else decoded here
+    /// with its whole mip chain filtered.
+    #[test]
+    fn a_blocks_only_texture_is_decoded_where_bc_does_not_go_up() {
+        let white = [0xFF, 0xFF, 0, 0, 0, 0, 0, 0];
+        let mut t = MapTexture {
+            name: "t".into(),
+            srgb: true,
+            mips: Vec::new(),
+            width: 8,
+            height: 8,
+            rgba8: vec![255; 8 * 8 * 4],
+            bc: Some(MapBc {
+                format: MapBcFormat::Bc1,
+                levels: vec![white.repeat(4), white.to_vec()],
+            }),
+        };
+        assert!(t.keep_blocks_only() && t.rgba8.is_empty() && t.blocks_only());
+        let look = MapLook::default();
+        let up = to_image(&t, &look, true);
+        assert_eq!(up.texture_descriptor.format, TextureFormat::Bc1RgbaUnormSrgb);
+        assert_eq!((up.texture_descriptor.mip_level_count, up.data.as_ref().map(Vec::len)), (2, Some(40)));
+        let decoded = to_image(&t, &look, false);
+        assert_eq!(decoded.texture_descriptor.format, TextureFormat::Rgba8UnormSrgb);
+        assert_eq!(decoded.texture_descriptor.mip_level_count, 4);
+        let data = decoded.data.unwrap();
+        assert_eq!(data.len(), 256 + 64 + 16 + 4);
+        assert!(data.iter().all(|b| *b == 255), "white, every level");
+        // Blocks that aren't a whole texture keep the texels.
+        let mut odd = MapTexture { width: 6, rgba8: vec![255; 6 * 8 * 4], ..t.clone() };
+        assert!(!odd.keep_blocks_only() && !odd.rgba8.is_empty());
+    }
 }
