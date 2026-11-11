@@ -1199,7 +1199,7 @@ load; work counts don't (performance.md, "Work counts"):
 - Headless, in a test: `sim.repeatable()` (task results on the tick
   they're polled, a map spawned in one step: the same play every run),
   then `sim.work(n)`: each tick's instructions in its systems (this
-  thread and the one compute thread), the archetypes after each tick
+  thread, scopes' tasks included), the archetypes after each tick
   (`steady_ticks()`: those that made none) and every system's count
   (`systems: WorkCounts`). The same build counts the same to under 0.1%,
   idle or loaded; assert on those, and print
@@ -1212,8 +1212,12 @@ load; work counts don't (performance.md, "Work counts"):
 - Any app: `metrics::work::count_systems(world)` before its schedules
   first run (`Sim` does it), `work::set_enabled(true)` on the thread that
   runs them, `work::now()` around what to count, `WorkCounts::take()`.
-  Keep schedules single-threaded and the compute pool at one thread
-  (`harness::sim_task_pools`).
+  Keep schedules single-threaded, the compute pool at one thread
+  (`harness::sim_task_pools`) and that thread busy
+  (`work::occupy_compute_pool`), and open no more hardware counters on
+  the thread (a `ThreadCounters` group besides `TickMetrics`' makes the
+  kernel multiplex them: `work::multiplexed()`, and the counts become
+  estimates).
 
 - `chimera_perf 1` (2: every render pass) shows frame times (avg, p95,
   max), the main world's CPU time and the render world's time (its

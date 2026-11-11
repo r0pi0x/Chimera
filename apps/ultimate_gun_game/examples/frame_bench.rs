@@ -4,8 +4,8 @@
 //! ladder, a camera at a bot's eyes drawing into an image, frames of
 //! 1/60 s. Each frame's main schedule, the render world's extraction and
 //! its own update are counted apart by work counts (`metrics::work`: the
-//! systems' user-space instructions on this thread and the one compute
-//! thread; every schedule single-threaded, no pipelined rendering, the
+//! systems' user-space instructions on this thread; every schedule
+//! single-threaded, no pipelined rendering, the
 //! scenario repeatable: the same build counts the same on every run), with
 //! the costliest systems of each, the meshes drawn and the bytes of meshes
 //! and textures uploaded a frame (deterministic counts too). GPU time from
@@ -86,8 +86,9 @@ fn app(size: (u32, u32)) -> App {
     let mut app = App::new();
     app.add_plugins(
         DefaultPlugins
-            // One compute thread, counted (as `harness::Sim`'s): parallel
-            // queries inline, the counts the same on every run.
+            // One compute thread, kept busy (as `harness::Sim`'s): parallel
+            // queries inline, scopes' tasks on this thread, the counts the
+            // same on every run.
             .set(bevy::app::TaskPoolPlugin {
                 task_pool_options: chimera_world::harness::sim_task_pools(),
             })
@@ -128,6 +129,7 @@ fn app(size: (u32, u32)) -> App {
     chimera_world::harness::single_threaded_schedules(&mut app);
     // Every system counted (before any schedule ran), and Avian's tree
     // optimizing in the tick's order, not on a task beside it.
+    work::occupy_compute_pool();
     work::count_systems(app.world_mut());
     work::count_systems(app.sub_app_mut(bevy::render::RenderApp).world_mut());
     if let Some(mut o) = app.world_mut().get_resource_mut::<avian3d::collider_tree::ColliderTreeOptimization>() {

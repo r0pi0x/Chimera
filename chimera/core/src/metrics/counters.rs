@@ -178,6 +178,10 @@ impl ThreadCounters {
 pub struct InstructionCounter {
     #[cfg(target_os = "linux")]
     counter: Option<perf_event::Counter>,
+    /// Whether a read was scaled up: the kernel multiplexed the counter
+    /// (more events wanted on the thread than the PMU has counters), so
+    /// that count was an estimate.
+    scaled: bool,
 }
 
 impl InstructionCounter {
@@ -205,13 +209,18 @@ impl InstructionCounter {
                     None
                 }
             };
-            Self { counter }
+            Self { counter, scaled: false }
         }
         #[cfg(not(target_os = "linux"))]
         {
             let _ = HW_STATUS.set("not supported on this platform (Linux only)".into());
-            Self {}
+            Self { scaled: false }
         }
+    }
+
+    /// Whether any read so far was an estimate (multiplexed).
+    pub fn scaled(&self) -> bool {
+        self.scaled
     }
 
     /// Instructions so far (scaled up if the kernel multiplexed the
@@ -224,6 +233,7 @@ impl InstructionCounter {
                 return (c.time_enabled == 0).then_some(c.count);
             }
             Some(if c.time_running < c.time_enabled {
+                self.scaled = true;
                 (c.count as u128 * c.time_enabled as u128 / c.time_running as u128) as u64
             } else {
                 c.count
@@ -245,6 +255,21 @@ pub fn monotonic_ns() -> Option<u64> {
         let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
         // SAFETY: `ts` is a valid, writable timespec.
         let r = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
+        (r == 0).then(|| ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64)
+    }
+    #[cfg(not(unix))]
+    {
+        None
+    }
+}
+
+/// The process's CPU time so far (every thread), nanoseconds; Unix.
+pub fn process_cpu_ns() -> Option<u64> {
+    #[cfg(unix)]
+    {
+        let mut ts = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+        // SAFETY: a valid clock id and a pointer to a live timespec.
+        let r = unsafe { libc::clock_gettime(libc::CLOCK_PROCESS_CPUTIME_ID, &mut ts) };
         (r == 0).then(|| ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64)
     }
     #[cfg(not(unix))]

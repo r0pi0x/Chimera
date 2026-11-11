@@ -47,8 +47,9 @@ pub struct Sim {
 /// makes Bevy's parallel queries plain loops on the thread running the
 /// schedule and leaves no workers spinning while they wait for each other
 /// (Bevy's transform propagation), so a tick's instructions repeat from
-/// run to run (`metrics::work`; docs/performance.md, "Work counts"); the
-/// compute thread is registered for counting. The pools are process-wide;
+/// run to run (`metrics::work`; docs/performance.md, "Work counts"); a
+/// `Sim` keeps that thread busy (`work::occupy_compute_pool`) so scopes'
+/// tasks run on the schedules' thread. The pools are process-wide;
 /// the first app built in a process sets them.
 pub const SIM_TASK_THREADS: usize = 3;
 
@@ -126,7 +127,7 @@ pub fn sim_task_pools() -> bevy::app::TaskPoolOptions {
     };
     o.io = one(None);
     o.async_compute = one(None);
-    o.compute = one(Some(std::sync::Arc::new(chimera_core::metrics::work::register_pool_thread)));
+    o.compute = one(None);
     o
 }
 
@@ -208,6 +209,8 @@ impl Sim {
         if chimera_core::env::var("CHIMERA_REPEATABLE").as_deref() == Ok("1") {
             app.insert_resource(chimera_core::tasks::WaitForTasks);
         }
+        // Scopes' tasks on this thread, counted with their system.
+        chimera_core::metrics::work::occupy_compute_pool();
         // Every system behind a counter (idle until `Sim::work` or
         // `metrics::work::set_enabled`): before the first run, while the
         // schedules' systems are still in their graphs.
@@ -281,7 +284,7 @@ impl Sim {
     }
 
     /// Run `n` ticks counting their work (`metrics::work`): each tick's
-    /// instructions on this thread and the compute pool's, and every
+    /// instructions in its systems, on this thread, and every
     /// system's over the `n`. None without hardware counters (Windows,
     /// `perf_event_paranoid` 3): callers skip their checks. The measure to
     /// judge a tick's cost by (docs/performance.md, "Work counts").
@@ -303,6 +306,12 @@ impl Sim {
         }
         let systems = work::WorkCounts::take();
         work::set_enabled(false);
+        if work::multiplexed() {
+            eprintln!(
+                "work counts: the kernel multiplexed the instruction counter (more hardware events open on this \
+                 thread than the PMU has counters): the counts are estimates and won't repeat"
+            );
+        }
         (ticks.len() as u64 == n).then_some(Work { ticks, archetypes, systems })
     }
 
@@ -312,31 +321,43 @@ impl Sim {
     /// measures repeats: docs/performance.md, "Work counts").
     pub fn state_hash(&mut self) -> u64 {
         use std::hash::{Hash, Hasher};
-        let world = self.app.world_mut();
-        let mut rows: Vec<_> = world
-            .query::<(Entity, Option<&Transform>, Option<&Velocity>, Option<&chimera_core::core::Health>)>()
-            .iter(world)
-            .filter(|(_, t, v, h)| t.is_some() || v.is_some() || h.is_some())
-            .map(|(e, t, v, h)| {
-                let mut bits = vec![e.to_bits()];
-                if let Some(t) = t {
-                    bits.extend(t.translation.to_array().map(|f| f.to_bits() as u64));
-                    bits.extend(t.rotation.to_array().map(|f| f.to_bits() as u64));
-                }
-                if let Some(v) = v {
-                    bits.extend(v.0.to_array().map(|f| f.to_bits() as u64));
-                }
-                if let Some(h) = h {
-                    bits.push(h.current.to_bits() as u64);
-                }
-                bits
-            })
-            .collect();
-        rows.sort_unstable();
+        let rows = self.state_rows();
         let mut h = std::collections::hash_map::DefaultHasher::new();
         self.tick().hash(&mut h);
-        rows.hash(&mut h);
+        for (e, _, bits) in &rows {
+            e.to_bits().hash(&mut h);
+            bits.hash(&mut h);
+        }
         h.finish()
+    }
+
+    /// What `state_hash` hashes, by entity (sorted): the entity, its
+    /// `Name` and the bits of its place, turn, velocity and health. Two
+    /// runs that hash apart differ in some row (`perfgate --repeat`
+    /// prints the first ones).
+    pub fn state_rows(&mut self) -> Vec<(Entity, Option<String>, Vec<u32>)> {
+        let world = self.app.world_mut();
+        let mut rows: Vec<_> = world
+            .query::<(Entity, Option<&Name>, Option<&Transform>, Option<&Velocity>, Option<&chimera_core::core::Health>)>()
+            .iter(world)
+            .filter(|(_, _, t, v, h)| t.is_some() || v.is_some() || h.is_some())
+            .map(|(e, name, t, v, h)| {
+                let mut bits = Vec::new();
+                if let Some(t) = t {
+                    bits.extend(t.translation.to_array().map(f32::to_bits));
+                    bits.extend(t.rotation.to_array().map(f32::to_bits));
+                }
+                if let Some(v) = v {
+                    bits.extend(v.0.to_array().map(f32::to_bits));
+                }
+                if let Some(h) = h {
+                    bits.push(h.current.to_bits());
+                }
+                (e, name.map(|n| n.as_str().to_string()), bits)
+            })
+            .collect();
+        rows.sort_unstable_by_key(|r| r.0);
+        rows
     }
 
     /// Advance by whole ticks covering `secs` seconds.

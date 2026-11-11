@@ -35,10 +35,24 @@ fn main() {
         baseline: cs_source_tools::repo_root().join("tools/perfgate/baseline.json"),
         build: cs_source_app::core::BUILD,
     };
-    perfgate::main(gate, |name| {
-        let mut sim = scenario(name)?;
-        Some(Box::new(move || sim.ticks(1)))
-    });
+    perfgate::main(gate, |name| Some(Box::new(Run(scenario(name)?))));
+}
+
+/// A scenario's simulation, ticked and hashed for the gate.
+struct Run(Sim);
+
+impl perfgate::Scenario for Run {
+    fn tick(&mut self) {
+        self.0.ticks(1);
+    }
+
+    fn state_hash(&mut self) -> Option<u64> {
+        Some(self.0.state_hash())
+    }
+
+    fn state_lines(&mut self) -> Vec<String> {
+        self.0.state_rows().into_iter().map(|(e, name, bits)| format!("{e} {name:?} {bits:x?}")).collect()
+    }
 }
 
 /// The scenario's simulation, ready to tick; None when its map is missing.

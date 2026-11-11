@@ -1,6 +1,5 @@
 //! Work counts: user-space instructions per system, counted on the
-//! thread that runs it plus the compute pool's threads (docs/performance.md,
-//! "Work counts"). The measure for judging a tick's cost: the same build and
+//! thread that runs it (docs/performance.md, "Work counts"). The measure for judging a tick's cost: the same build and
 //! scenario give the same counts on an idle box and a loaded one, where
 //! wall time, CPU time and a whole thread's instructions (which take in
 //! the task pools' waiting, spinning and stealing) do not.
@@ -15,30 +14,32 @@
 //! thread's systems counted since the last take; `diff_table`, `rises`
 //! and `top` say which systems grew.
 //!
-//! For the counts to repeat, the scenario must (the `harness::Sim`'s
-//! `measured` mode does both): run its schedules on one thread
-//! (`SingleThreadedExecutor`) and have a compute pool of one thread, so
-//! parallel queries run inline (Bevy's `par_iter` with one thread is a
-//! plain loop, Bevy's transform propagation spawns no spinning workers);
-//! the few tasks still spawned (Bevy's `mark_dirty_trees`, Avian's broad
-//! phase) run on the pool's thread or the waiting one, so the pool's
-//! threads registered with `register_pool_thread` count too.
+//! For the counts to repeat, the scenario must (`harness::Sim` does all
+//! three) run its schedules on one thread (`SingleThreadedExecutor`),
+//! have a compute pool of one thread, so parallel queries run inline
+//! (Bevy's `par_iter` with one thread is a plain loop, Bevy's transform
+//! propagation spawns no spinning workers), and keep that thread busy
+//! (`occupy_compute_pool`), so the few tasks still spawned in scopes
+//! (Bevy's `mark_dirty_trees`, Avian's broad phase) run on the thread
+//! waiting in the scope, counted with the system.
 //!
 //! Known shortcuts: Linux only (hardware counters); elsewhere every
 //! count is None and the gates skip. Run conditions and the executor's
 //! own bookkeeping are in no row (in a tick's total, not its systems' sum).
-//! Systems added after a schedule first ran aren't wrapped. Pool threads
-//! are read on every system boundary while counting (two syscalls each),
-//! so a counted tick takes longer in wall time. Another test's tasks on a
+//! Systems added after a schedule first ran aren't wrapped. Each counted
+//! run costs about 2,000 instructions of its own (the counters' reads,
+//! the same every run: compare counted with counted), two syscalls, so a
+//! counted tick takes longer in wall time. Another test's tasks on a
 //! shared compute pool (several tests in one process: `cargo test`, not
-//! `nextest`) land in whichever system is waiting: a test that compares
-//! counts closely runs in a process of its own (`harness::own_process`).
+//! `nextest`) may run on a thread waiting in a scope: a test that
+//! compares counts closely runs in a process of its own
+//! (`harness::own_process`).
 
 use std::{
     any::TypeId,
     cell::{Cell, RefCell},
     collections::{BTreeMap, BTreeSet},
-    sync::Mutex,
+    sync::{Mutex, OnceLock},
 };
 
 use bevy::ecs::{
@@ -54,9 +55,6 @@ use super::InstructionCounter;
 
 /// Rows' labels by index (`Counted::row`).
 static LABELS: Mutex<Vec<String>> = Mutex::new(Vec::new());
-
-/// Compute pool threads (Linux thread ids) counted with every system.
-static POOL: Mutex<Vec<(i32, Option<InstructionCounter>)>> = Mutex::new(Vec::new());
 
 /// (world, schedule, system key) already wrapped.
 static WRAPPED: Mutex<BTreeSet<(String, SystemKey)>> = Mutex::new(BTreeSet::new());
@@ -88,49 +86,55 @@ pub fn enabled() -> bool {
     ENABLED.with(Cell::get)
 }
 
-/// Count this thread of the compute pool along with every system (call
-/// it from `TaskPoolThreadAssignmentPolicy::on_thread_spawn`; the
-/// harness's measured mode does). Linux; elsewhere nothing.
-pub fn register_pool_thread() {
-    #[cfg(target_os = "linux")]
-    {
-        // SAFETY: gettid has no preconditions.
-        let tid = unsafe { libc::gettid() };
-        if let Ok(mut p) = POOL.lock() {
-            p.push((tid, None));
+/// Keep the compute pool's threads busy for good (each parked inside a
+/// task that never ends), so every task a scope spawns (Bevy's
+/// `mark_dirty_trees`, Avian's broad phase) runs on the thread waiting in
+/// the scope: the system's own thread, where it is counted, and always
+/// the same work (a pool thread woken for a task also searches and steals
+/// for a varying number of instructions). Only for repeatable runs (the
+/// harness's `Sim`, `frame_bench`): anything that spawns on the compute
+/// pool and waits without running the pool itself would wait for good
+/// (Avian's tree optimization on a task: `harness::Sim` turns it off).
+pub fn occupy_compute_pool() {
+    static DONE: OnceLock<()> = OnceLock::new();
+    DONE.get_or_init(|| {
+        let Some(pool) = bevy::tasks::ComputeTaskPool::try_get() else {
+            return;
+        };
+        let me = std::thread::current().id();
+        for _ in 0..pool.thread_num() {
+            let (tx, rx) = std::sync::mpsc::channel::<()>();
+            pool.spawn(async move {
+                // Never on the thread that asked: it would stop there.
+                if std::thread::current().id() == me {
+                    return;
+                }
+                let _ = tx.send(());
+                loop {
+                    std::thread::park();
+                }
+            })
+            .detach();
+            // Wait until a pool thread holds it.
+            let _ = rx.recv_timeout(std::time::Duration::from_secs(10));
         }
-    }
+    });
 }
 
-/// Pool threads registered.
-pub fn pool_threads() -> usize {
-    POOL.lock().map_or(0, |p| p.len())
+/// Whether this thread's counter was multiplexed by the kernel (more
+/// hardware events open on the thread than the PMU has counters, e.g. a
+/// `ThreadCounters` group per thread besides `TickMetrics`'): its counts
+/// were then estimates and won't repeat. Close the other counters.
+pub fn multiplexed() -> bool {
+    COUNTER.with(|c| c.borrow().as_ref().is_some_and(InstructionCounter::scaled))
 }
 
-/// Instructions so far of this thread plus the registered pool threads
-/// (excluding this thread if it is one of them); None without hardware
-/// counters.
+/// This thread's instructions so far; None without hardware counters.
 pub fn now() -> Option<u64> {
-    let own = COUNTER.with(|c| {
+    COUNTER.with(|c| {
         let mut c = c.borrow_mut();
         c.get_or_insert_with(InstructionCounter::current).read()
-    })?;
-    let mut sum = own;
-    #[cfg(target_os = "linux")]
-    if let Ok(mut pool) = POOL.lock() {
-        // SAFETY: gettid has no preconditions.
-        let me = unsafe { libc::gettid() };
-        for (tid, c) in pool.iter_mut() {
-            if *tid == me {
-                continue;
-            }
-            sum += c
-                .get_or_insert_with(|| InstructionCounter::open(*tid))
-                .read()
-                .unwrap_or(0);
-        }
-    }
-    Some(sum)
+    })
 }
 
 fn enter() {
