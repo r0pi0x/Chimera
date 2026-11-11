@@ -81,7 +81,7 @@
 //! - A gun game's rung extras (`chimera_sim::minigame::ladder::RungExtras`:
 //!   Combat Arms' rungs' fitted parts, character and melee weapon and CS:S's rungs' player model,
 //!   `combat_arms::game::rungs`) are seeded anew at every launch of the
-//!   apps (`launch_rung_seed`); the plugins alone (the tests) keep seed 0.
+//!   apps (`launch_rung_seed`; `CHIMERA_RUNG_SEED=<n>` fixes it); the plugins alone (the tests) keep seed 0.
 //!
 //! Known shortcuts: maps load by id only (no downloaded map files); the
 //! minigame's map pool isn't rotated (its first map plays); the bots fight
@@ -567,6 +567,15 @@ pub use client::{
 #[cfg(test)]
 mod tests {
     #[test]
+    fn the_rung_seed_variable_is_a_number_or_nothing() {
+        assert_eq!(super::parse_rung_seed(Some(" 42 ")), Some(42));
+        assert_eq!(super::parse_rung_seed(Some("0")), Some(0));
+        assert_eq!(super::parse_rung_seed(Some("abc")), None);
+        assert_eq!(super::parse_rung_seed(Some("")), None);
+        assert_eq!(super::parse_rung_seed(None), None);
+    }
+
+    #[test]
     fn the_build_is_stamped() {
         assert!(!super::BUILD.is_empty() && !super::VERSION.is_empty());
     }
@@ -661,9 +670,29 @@ mod tests {
     }
 }
 
-/// A fresh seed for the ladders' rung extras (the clock's and the
+/// The environment variable that fixes a launch's rung seed (a number).
+pub const RUNG_SEED_ENV: &str = "CHIMERA_RUNG_SEED";
+
+/// The seed `text` names (`CHIMERA_RUNG_SEED`'s value): a whole number;
+/// none for anything else, so a typo keeps the random launch seed.
+pub fn parse_rung_seed(text: Option<&str>) -> Option<u64> {
+    text?.trim().parse().ok()
+}
+
+/// `CHIMERA_RUNG_SEED`, when set to a number: the apps' fixed rung seed,
+/// so the bodies, attachments and melee a ladder draws repeat from launch
+/// to launch (before/after screenshots of one scene).
+pub fn rung_seed_override() -> Option<u64> {
+    parse_rung_seed(chimera_core::env::var(RUNG_SEED_ENV).ok().as_deref())
+}
+
+/// The seed for the ladders' rung extras: `CHIMERA_RUNG_SEED` when set
+/// (`rung_seed_override`), else a fresh one (the clock's and the
 /// process's, mixed): the apps' at launch.
 pub fn launch_rung_seed() -> chimera_sim::minigame::ladder::RungSeed {
+    if let Some(seed) = rung_seed_override() {
+        return chimera_sim::minigame::ladder::RungSeed(seed);
+    }
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos() as u64);

@@ -205,12 +205,20 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
     let decoded: Vec<&str> = lean
         .textures
         .iter()
-        .filter(|t| !t.rgba8.is_empty() || !t.mips.is_empty() || t.bc.is_some())
+        .filter(|t| !t.rgba8.is_empty() || !t.mips.is_empty())
         .map(|t| t.name.as_str())
         .collect();
+    // (Texels only: the shared models may arrive as blocks, below.)
     assert!(decoded.len() <= 1, "the lean load decoded {} textures: {:?}", decoded.len(), &decoded[..decoded.len().min(8)]);
     for (l, f) in lean.textures.iter().zip(&full.textures) {
         assert_eq!((&l.name, l.width, l.height), (&f.name, f.width, f.height));
+        // Blocks the lean load holds are the process's shared character
+        // models' kept from an earlier load in this process (cargo test
+        // runs the tests in one; nextest, one each): this load decoded
+        // none, and the whole load holds those textures as blocks alone.
+        if l.bc.is_some() {
+            assert!(f.rgba8.is_empty() && f.mips.is_empty(), "{}: blocks in the lean load, texels in the whole", l.name);
+        }
         if l.rgba8.is_empty() {
             // (The shared character models' keep their blocks only: decoded.)
             assert!(l.mips.is_empty() && f.decoded().rgba8.len() == (f.width * f.height * 4) as usize, "{}", l.name);

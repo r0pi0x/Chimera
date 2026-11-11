@@ -19,7 +19,8 @@
 //! at once: `minigame_net::change_match`). The apps (client and dedicated
 //! server, apps/ultimate_gun_game_server: `UltimateGunGamePlugin::launch`) take a fresh seed at launch
 //! (`random_seed`), said on the console and in the log with each ladder;
-//! `ugg_new <seed>` replays one; the default plugin (tests) keeps `SEED`.
+//! `ugg_new <seed>` replays one; `CHIMERA_RUNG_SEED=<n>` fixes the seed
+//! of the rungs' extras (bodies, attachments, melee: `party_kit::launch_rung_seed`); the default plugin (tests) keeps `SEED`.
 //! Its ladder has `RUNGS` rungs in all, drawn from every gun of the games
 //! every connected player has (`minigame_net::installed_by_all`, L3's
 //! mount reports; their install's weapons too) on the power curve
@@ -207,6 +208,9 @@ pub struct UltimateGunGamePlugin {
     /// Look for the maps the installs hold (`auto::find_installed_maps`)
     /// for the pool: the apps do; tests (default) keep the claimed maps.
     pub find_maps: bool,
+    /// The seed of the rungs' extras (bodies, attachments, melee), when
+    /// not the ladder's own: the apps take `CHIMERA_RUNG_SEED`'s.
+    pub rung_seed: Option<u64>,
 }
 
 impl Default for UltimateGunGamePlugin {
@@ -215,17 +219,20 @@ impl Default for UltimateGunGamePlugin {
             seed: SEED,
             rungs: RUNGS,
             find_maps: false,
+            rung_seed: None,
         }
     }
 }
 
 impl UltimateGunGamePlugin {
-    /// The apps': a fresh seed (`random_seed`), the installs' maps.
+    /// The apps': a fresh seed (`random_seed`), the installs' maps, the
+    /// rung seed `CHIMERA_RUNG_SEED` fixes (else the ladder's seed).
     pub fn launch() -> Self {
         Self {
             seed: random_seed(),
             rungs: RUNGS,
             find_maps: true,
+            rung_seed: party_kit::rung_seed_override(),
         }
     }
 }
@@ -239,7 +246,7 @@ impl Plugin for UltimateGunGamePlugin {
         // The rotation's random picks follow the launch's seed too, as
         // the rungs' extras do (`ladder::RungSeed`).
         .insert_resource(MapHistory::seeded(self.seed))
-        .insert_resource(chimera_sim::minigame::ladder::RungSeed(self.seed))
+        .insert_resource(chimera_sim::minigame::ladder::RungSeed(self.rung_seed.unwrap_or(self.seed)))
         // Never a capsule or a template gun: what shows stays until the
         // real model is ready (`game_parts::NoStandIns`).
         .init_resource::<chimera_core::game_parts::NoStandIns>()
@@ -354,5 +361,22 @@ mod tests {
     fn the_first_map_is_the_pools() {
         assert_eq!(super::first_map(super::MINIGAME).unwrap(), "cs_source:de_dust2");
         assert_eq!(super::first_map(party_kit::DEFAULT_MINIGAME).unwrap(), "cs_source:de_dust2");
+    }
+
+    #[test]
+    fn the_rung_seed_is_the_ladders_unless_one_is_fixed() {
+        use bevy::prelude::App;
+        use chimera_sim::minigame::ladder::RungSeed;
+        let seed_of = |plugin: super::UltimateGunGamePlugin| {
+            let mut app = App::new();
+            app.add_plugins(plugin);
+            app.world().resource::<RungSeed>().0
+        };
+        // No fixed seed: today's, the ladder's own.
+        assert_eq!(seed_of(super::UltimateGunGamePlugin { seed: 7, ..Default::default() }), 7);
+        // Fixed: the draws follow it, not the ladder's seed.
+        let fixed = |seed| super::UltimateGunGamePlugin { seed, rung_seed: Some(42), ..Default::default() };
+        assert_eq!(seed_of(fixed(7)), 42);
+        assert_eq!(seed_of(fixed(8)), 42);
     }
 }
