@@ -97,7 +97,7 @@ fn dm_lockdown_converts_from_the_asset_service_with_no_install() {
         store: Some(client.clone()),
         use_install: false,
         builds: Default::default(),
-        remote: Some(RemoteConfig { url: running.url(), token, key: None }),
+        remote: Some(RemoteConfig { url: running.url(), token, key: None, fingerprint: None }),
         lock: None,
     };
     let served_mount = served::open_with(&settings, GAME, &dir.join("no-install"), mount::open_install).unwrap();

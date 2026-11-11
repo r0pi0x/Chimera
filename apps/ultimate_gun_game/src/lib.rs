@@ -45,10 +45,11 @@
 //! plugin with a fresh seed, the minimal HUD).
 //!
 //! Known shortcuts: the ladder isn't made again when a player without a
-//! game joins mid-match; with no CS:S install the client still stops
-//! (`party_kit::requirements`), its pool's first map (the launch's)
-//! being CS:S's; the installs' maps are the host's (a client lacking one
-//! gets it as any server map: CS:S's by download).
+//! game joins mid-match; with no CS:S install the client starts (a server
+//! offering its game files provides them: `party_kit::served_by_servers`),
+//! but its own first map (the launch's, CS:S's) doesn't load; the
+//! installs' maps are the host's (a client lacking one gets it as any
+//! server map: CS:S's by download).
 
 use bevy::prelude::*;
 use chimera_core::{

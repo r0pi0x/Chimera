@@ -129,7 +129,7 @@ fn service(settings: &AssetSettings) -> Result<std::sync::Arc<Remote>, String> {
 
 fn login(settings: &AssetSettings, args: &[&str]) -> Result<(), String> {
     let config = match args {
-        [url, token] => chimera_assets::RemoteConfig { url: url.to_string(), token: token.to_string(), key: None },
+        [url, token] => chimera_assets::RemoteConfig { url: url.to_string(), token: token.to_string(), key: None, fingerprint: None },
         [] => settings.remote.clone().ok_or("no asset service configured: chimera_assets login <url> <token>")?,
         _ => return Err(USAGE.into()),
     };

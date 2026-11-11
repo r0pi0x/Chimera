@@ -1,6 +1,8 @@
 # Plan: assets served by the host (ownership-checked)
 
-Status: M1 built 2026-10-30 (section 9, "M1 results"); M2 built with
+Status: playtest delivery (mode 1-lite: HTTPS on the service, the join
+names it, testers with no install fetch a match's sets) built 2026-11-11
+(section "Playtest delivery"). M1 built 2026-10-30 (section 9, "M1 results"); M2 built with
 internal accounts 2026-10-30 (section 9, "M2 results", with the
 deployment steps), not yet deployed; made ready for an outside developer
 2026-10-31 (section 9, "M2 for developers": whole-game publishes, the
@@ -755,6 +757,94 @@ the same commit.
   a token gate (nginx `auth_request`, CDN token auth); range requests,
   cache headers. Tests: a local static server with the gate; switching
   from mode 1 to 2 downloads nothing again.
+
+## Playtest delivery (mode 1-lite, built 2026-11-11)
+
+For the internal Ultimate Gun Game playtest (2026-11-14; the user's
+choices of 2026-11-10): testers on clean Windows PCs with no games
+installed join a dedicated server over the user's public address and get
+the match's files automatically. Internal accounts (one `chimera_pack user
+add` token per tester), no Steam. Operator steps:
+[docs/playtest-hosting.md](../../playtest-hosting.md).
+
+Design (the smallest step to 4.5's goal; the game connection carries only
+where the files are, the existing HTTP service carries the files):
+
+- **HTTPS on the service itself** (`chimera_assets::tls`): `chimera_asset_server
+  --tls <ip:port>` puts a TLS front (rustls, ring) before the plain service on
+  127.0.0.1, with the server's own self-signed certificate (Ed25519, made on
+  first use in `<server store>/server/tls/`, a minimal X.509 written by us).
+  Clients pin it by its SHA-256 fingerprint (a custom rustls verifier on ureq's
+  connector API): names, dates and authorities don't matter, so a home address
+  that changes keeps the certificate, and nothing else is accepted.
+- **Safe to expose** (section 8): every asset path needs a token (401
+  otherwise); ids and names are checked before any file is touched (no path
+  leaves the store's records and manifests: tested with dot segments and
+  encoded slashes); limits per account (requests a second with bursts, bytes a
+  day) and per address (bad tokens a minute, then a ban; connections at once
+  in the front; a handshake timeout, an idle timeout), each answered 429 with
+  the reason; the access log names the client's address; a revoke is read at
+  the next request (the accounts file is re-read when it changes).
+- **The offer in the match manifest** (`chimera_net::net::assets`):
+  `MatchManifest::assets: Option<AssetOffer>` (the URL, the fingerprint, the
+  sets needed now per game: `base`, `players`, `map/<map>`, each ladder and kit
+  gun's `weapon/<name>`; later: the pool's other maps). The server names its
+  service with `chimera:asset_url` and `chimera:asset_fingerprint` (empty: the
+  certificate of the asset service on the same machine). A joining client
+  that can fetch (`_assets` in its userinfo) counts as having the offered
+  games, so it isn't refused before it hears the offer; one that can't is
+  told how to enter a token.
+- **The token, entered once** (`chimera_assets::access`): `+chimera:asset_token
+  <token>` on the command line (kept before the app starts) or the console;
+  kept per user (`%LOCALAPPDATA%\chimera\asset-access.toml`). The first server
+  that offers its service binds the token to it (URL and fingerprint, trust on
+  first use); from then on the token goes only to that certificate (the URL may
+  change). A game started with a bound access reads every game it hasn't
+  installed from the service (`AssetsConfig::resolve`), as a developer's
+  `[assets]` does (M2).
+- **At join** (`assets::begin`, before the manifest is accepted): games the
+  install provides are never fetched (hybrid); the offered sets of games read
+  from the store are fetched on a thread (`Remote::fill`: batches on 4
+  connections) with the bytes on the loading screen ("Downloading game files:
+  X of Y MB"), then the join goes on and the player spawns. The later sets are
+  prefetched in the game, one at a time. Files no set lists arrive on demand as
+  before. A game with no files at all (the first join with a new token): the
+  token is bound and the game starts again joining the same server
+  (`relaunch_requested`, `chimera_client::client::app::run`), since the mounts
+  open at startup. A refused token, an unreachable service, another
+  certificate: the join fails with the reason on screen.
+- **Verified on this box (2026-11-11)**, everything on 127.0.0.1 at test
+  ports: `chimera_asset_server --tls` on a scratch server store (the real
+  store's records, its own key, certificate and accounts), the
+  `ultimate_gun_game_server` with the installs on de_dust2 naming it, and the
+  `ultimate_gun_game` client offscreen with no install, no Steam folder, an
+  empty config, an empty asset cache and no converted maps, started with
+  `+chimera:asset_token <token> +connect 127.0.0.1:<port>`. It bound the token,
+  started again (once), fetched the match's sets with the loading panel's
+  "Downloading game files: X of Y MB", joined and played de_dust2 with CS:S's,
+  Combat Arms' and HL2:DM's guns. **First match: 568 MB over 144 requests
+  before spawning, 23 s from start to spawn on localhost** (the restart
+  included): ~172 MB the join's download (the sets), ~300 MB on demand at
+  startup (what the games read before the window: Combat Arms' data, menus),
+  ~45 MB on demand while the map loaded; then 172 MB of the pool's other
+  maps prefetched in the background. With 400 ms added to every answer
+  (`--latency-ms`), the join's 172 MB took 2.6 s (batches on 4 connections).
+  A revoked token then failed the join with the reason. Published for it
+  into the real server store: `base` (CS:S, Combat Arms), `map/<name>` for
+  de_dust2, cs_office, WAREHOUSE, JUNK_FLEA, DARKHILLS, BLOODMONEY, from
+  `CHIMERA_VFS_LOG` runs of the client with the installs.
+- **Known shortcuts:** what the games read at startup (~300 MB the first
+  time) comes on demand before the window shows, with no progress on screen
+  (the console says `assets: downloading ...`); the first join with a new
+  token restarts the game once; Combat Arms has no `players` set (its
+  character models come on demand); the pool's prefetch has no rate cap of
+  its own; a revoke stops a token's next request, not a batch being sent.
+- Tests: chimera_assets `service` (HTTPS pinned and refused, the limits, paths),
+  `access`, `tls`; chimera_net `assets` (NetSim with a real service on
+  127.0.0.1 and fixture files: join, offer, fetch, spawn; the hybrid client
+  fetching nothing; a revoked or mistyped token's reason; the progress; the
+  token bound and the restart asked, no token, another certificate); party_kit's
+  loading line.
 
 ## 10. Later, each justified by a measurement
 

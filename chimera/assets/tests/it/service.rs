@@ -16,6 +16,7 @@ use chimera_assets::{
     server::{self, Running, Service},
     sign,
     store::sha256_hex,
+    tls::{self, Identity, Peers},
 };
 use chimera_vfs::{FileSource, LooseDir, Mount};
 
@@ -59,12 +60,16 @@ struct Fixture {
 
 impl Fixture {
     fn new(name: &str) -> Self {
+        Self::with_limits(name, server::Limits::default())
+    }
+
+    fn with_limits(name: &str, limits: server::Limits) -> Self {
         let dir = scratch(name);
         let (a, b) = write_games(&dir.join("install"));
         let server_store = Store::new(dir.join("server"));
         let fixture = publish(&server_store, "fixture", "100", &a);
         let other = publish(&server_store, "other", "1", &b);
-        let service = Service::new(server_store.clone()).unwrap();
+        let service = Service::new(server_store.clone()).unwrap().with_limits(limits);
         let running = server::serve(service, "127.0.0.1:0", 2).unwrap();
         Self { dir, server_store, running, fixture, other }
     }
@@ -83,7 +88,7 @@ impl Fixture {
     }
 
     fn config(&self, token: &str) -> RemoteConfig {
-        RemoteConfig { url: self.running.url(), token: token.into(), key: None }
+        RemoteConfig { url: self.running.url(), token: token.into(), key: None, fingerprint: None }
     }
 
     fn client_store(&self, name: &str) -> Store {
@@ -279,7 +284,7 @@ fn the_client_refuses_a_tampered_record_or_manifest() {
 
 #[test]
 fn tokens_go_over_https_only_off_this_machine() {
-    let config = |url: &str| RemoteConfig { url: url.into(), token: "t".into(), key: None };
+    let config = |url: &str| RemoteConfig { url: url.into(), token: "t".into(), key: None, fingerprint: None };
     for url in ["https://assets.example.ts.net", "http://127.0.0.1:8731", "http://localhost:1/", "http://[::1]:5"] {
         assert!(config(url).base().is_ok(), "{url}");
     }
@@ -332,4 +337,114 @@ fn accounts_and_the_lock_round_trip() {
     assert!(fs::read_to_string(&lock_path).unwrap().contains("[cs_source]\nbuild = \"25338318\""));
     assert!(AssetsLock::parse("[cs_source]\nbuild = \"../x\"\nmanifest = \"00\"\n").is_err());
     let _ = fs::remove_dir_all(&dir);
+}
+
+/// HTTPS through the service's TLS front with its own self-signed
+/// certificate: a client pinning that certificate's fingerprint gets
+/// manifests and records; one pinning another certificate is refused before
+/// any token is sent; the log names the client's address.
+#[test]
+fn https_with_a_pinned_self_signed_certificate() {
+    let f = Fixture::new("svc_tls");
+    let token = f.user("tester", None);
+    let identity = Identity::load_or_create(&server::tls_dir(&f.server_store)).unwrap();
+    assert_eq!(Identity::load_or_create(&server::tls_dir(&f.server_store)).unwrap().cert, identity.cert, "kept");
+    let peers = Peers::default();
+    let front = tls::front("127.0.0.1:0", f.running.addr, &identity, peers, Default::default()).unwrap();
+    let pinned = |fingerprint: String| {
+        Remote::new(RemoteConfig { url: front.url(), token: token.clone(), key: None, fingerprint: Some(fingerprint) })
+            .unwrap()
+    };
+    let remote = pinned(identity.fingerprint());
+    assert!(remote.whoami().unwrap().starts_with("internal tester 1"));
+    let client = f.client_store("client");
+    remote.fetch_manifest(&client, "fixture", "100", None).unwrap();
+    let wanted: Vec<(String, u64, u64)> = f.fixture.files.values().map(|r| (r.id.clone(), r.size, r.stored)).collect();
+    let (n, _, failed) = remote.fill(&client, &wanted, None);
+    assert_eq!((n, failed.len()), (3, 0), "{failed:?}");
+    // A revoked or unknown token: the answer, at once, through the front.
+    let t0 = std::time::Instant::now();
+    let unknown = Remote::new(RemoteConfig {
+        url: front.url(),
+        token: "chimera1_unknown".into(),
+        key: None,
+        fingerprint: Some(identity.fingerprint()),
+    });
+    let e = unknown.unwrap().whoami().unwrap_err().to_string();
+    assert!(e.contains("HTTP 401"), "{e}");
+    assert!(t0.elapsed() < Duration::from_secs(5), "{:?}", t0.elapsed());
+    // Another certificate (a stranger's, or the same name re-made): refused.
+    let other = Identity::from_seed(&[9; 32], [1; 16]);
+    let e = pinned(other.fingerprint()).whoami().unwrap_err().to_string();
+    assert!(e.contains("certificate"), "{e}");
+    // Unpinned, the usual authorities don't know a self-signed certificate.
+    let plain = Remote::new(RemoteConfig { url: front.url(), token: token.clone(), key: None, fingerprint: None });
+    assert!(plain.unwrap().whoami().is_err());
+    let log = fs::read_to_string(f.server_store.root.join("server/access.log")).unwrap();
+    assert!(log.contains("internal:tester#1 GET /whoami 200 records=0 bytes=0 ip=127.0.0.1"), "{log}");
+}
+
+/// The limits: an account past its requests a second, or its bytes a day,
+/// gets 429 with the reason; an address sending bad tokens is refused for a
+/// while, a good token from it too.
+#[test]
+fn past_a_limit_the_answer_is_429_with_the_reason() {
+    let limits = server::Limits { rate: 0.0, burst: 3.0, ..Default::default() };
+    let f = Fixture::with_limits("svc_rate", limits);
+    let remote = f.remote(&f.user("tester", None));
+    for _ in 0..3 {
+        remote.whoami().unwrap();
+    }
+    let e = remote.whoami().unwrap_err().to_string();
+    assert!(e.contains("HTTP 429") && e.contains("slow down"), "{e}");
+
+    let limits = server::Limits { daily_bytes: 1, ..Default::default() };
+    let f = Fixture::with_limits("svc_daily", limits);
+    let remote = f.remote(&f.user("tester", None));
+    let id = &f.fixture.files["maps/test.bsp"].id;
+    remote.record(id).unwrap();
+    let e = remote.record(id).unwrap_err().to_string();
+    assert!(e.contains("HTTP 429") && e.contains("for today"), "{e}");
+
+    let limits = server::Limits { bad_tokens: 3, ..Default::default() };
+    let f = Fixture::with_limits("svc_strikes", limits);
+    let good = f.remote(&f.user("tester", None));
+    for _ in 0..3 {
+        assert!(f.remote("chimera1_wrong").whoami().unwrap_err().to_string().contains("HTTP 401"));
+    }
+    let e = good.whoami().unwrap_err().to_string();
+    assert!(e.contains("HTTP 429") && e.contains("bad tokens"), "{e}");
+}
+
+/// Paths that try to leave the routes (dot segments, encoded slashes, a
+/// record id that isn't one) never reach a file: 400 or 404, never the
+/// server's own files.
+#[test]
+fn no_path_reaches_outside_the_served_files() {
+    use std::io::{Read, Write};
+    let f = Fixture::new("svc_paths");
+    let token = f.user("tester", None);
+    let get = |path: &str| -> String {
+        let mut s = std::net::TcpStream::connect(f.running.addr).unwrap();
+        write!(s, "GET {path} HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n").unwrap();
+        let mut out = String::new();
+        let _ = s.read_to_string(&mut out);
+        out
+    };
+    for path in [
+        "/m/fixture/../../server/signing.key",
+        "/m/fixture/..%2F..%2Fserver%2Faccounts",
+        "/m/..%2Fserver/100",
+        "/r/../server/signing.key",
+        "/r/..%2F..%2Fserver%2Fsigning.key",
+        "/r/ABCDEF",
+        "/server/signing.key",
+        "/../server/access.log",
+    ] {
+        let answer = get(path);
+        let status: u16 = answer.split(' ').nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+        assert!(matches!(status, 400 | 403 | 404), "{path}: {answer}");
+        let key = fs::read_to_string(server::key_path(&f.server_store)).unwrap();
+        assert!(!answer.contains(key.trim()), "{path}");
+    }
 }

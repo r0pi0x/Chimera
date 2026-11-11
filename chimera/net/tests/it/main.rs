@@ -6,6 +6,7 @@
 //! --features dev --test it`; where tests go: docs/OBSERVABILITY.md,
 //! section 1.
 
+mod assets;
 mod console_names;
 mod dedicated;
 mod game_hooks;

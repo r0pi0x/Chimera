@@ -57,6 +57,11 @@ const ONE_OFF_SCHEDULES: &[&str] = &[
 /// events, observers or systems (the step named).
 const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
+        "chimera/net/src/net/assets.rs",
+        "AssetHooks",
+        "read-only answers (`&World`): the match's weapons and map pool for the asset offer",
+    ),
+    (
         "chimera/core/src/metrics/census.rs",
         "CensusAssets",
         "a tool: the asset stores the census counts",
@@ -256,6 +261,7 @@ const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("chimera/core/src/game_log.rs", "writing the log (IO)"),
     ("chimera/net/src/dedicated.rs", "a dedicated server's level and state changes"),
     ("chimera/net/src/minigame_net.rs", "network apply and capture"),
+    ("chimera/net/src/net/assets.rs", "joining: the match's files fetched before the join goes on"),
     ("chimera/net/src/net/chat.rs", "network apply and capture"),
     ("chimera/net/src/net/client.rs", "network apply and capture"),
     ("chimera/net/src/net/cvars.rs", "network apply and capture"),
