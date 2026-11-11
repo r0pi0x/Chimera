@@ -2264,10 +2264,11 @@ pub fn finish_map_load(w: &mut World) {
         spawn_map_steps(w, SPAWN_BUDGET);
         return;
     }
+    let wait = chimera_core::tasks::waits(w);
     let Some(mut load) = w.get_resource_mut::<MapLoad>() else {
         return;
     };
-    let Some(result) = bevy::tasks::block_on(bevy::tasks::poll_once(&mut load.task)) else {
+    let Some(result) = chimera_core::tasks::poll(&mut load.task, wait) else {
         return;
     };
     let id = load.id.clone();

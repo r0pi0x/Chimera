@@ -5,6 +5,16 @@ does; at the end, how long the tests take to build and run ("Test cycle")
 and the edit-to-verified loop as a whole ("Iteration speed"). Tools are listed in [OBSERVABILITY.md](OBSERVABILITY.md) ("3c.
 Performance").
 
+**The rule: judge performance by deterministic counts, never by wall
+clock.** A tick's or a frame's cost is the instructions its systems
+retire in a repeatable scenario ("Work counts": `Sim::work`,
+`metrics::work`, `perfgate`, `frame_bench`), which the same build repeats
+to under 0.1% on an idle box and a loaded one. Wall time, CPU time and a
+whole thread's instructions move with the machine (2-10x, 30%, 5-15%):
+print them for reading, never assert on them or gate on them. A test
+that compares costs uses `Sim::repeatable` and `Sim::work`, and its
+failure prints the systems that grew (`WorkCounts::diff_table`).
+
 ## Measuring
 
 - `chimera_perf 1` in the console: frame times, main-world CPU, GPU time
@@ -72,6 +82,11 @@ Performance").
   `bench.csv`; `chimera_hitch_ratio` logs what a slow frame spent its
   time on; `perfgate` fails when the simulation's instructions per tick
   rise ("Load-independent metrics" below).
+
+- Work counts ("Work counts" below): `Sim::work(n)` in a headless test,
+  `perfgate` for the simulation's scenarios, `frame_bench` for a frame
+  with the renderer: instructions per tick or frame by system, the same
+  on every run.
 
 Frame times move with machine load (other builds on the dev box): compare
 runs taken back to back, and trust ratios more than absolute numbers.
@@ -1087,6 +1102,122 @@ seeing each other); the run takes about a minute plus map loading.
   can't open (Windows, `perf_event_paranoid` 3).
 - Checked: against a baseline lowered by 8% for de_dust2 it fails
   (`+8.14%, tolerance 3%: FAIL`, exit 1).
+
+## Work counts (2026-11-10)
+
+What judges a tick's or a frame's cost now: the user-space instructions
+its systems retire in a scenario that plays out the same on every run,
+counted per system (`chimera_core::metrics::work`). The same build and
+scenario count the same to under 0.1%, idle or under load, so a test or a
+gate can hold a tight bound, and a failure names the systems that grew.
+
+### Why the earlier counts moved
+
+`ultimate_gun_game`'s `session::a_session_of_matches_stops_making_tables`
+failed under a suite's load ("a tick cost 3394439 instructions after a
+match, 4303213 after seven more") although it counted instructions: the
+main thread's, whose share of the work depends on scheduling. Measured on
+the session's greybox match (8 Combat Arms bots, 60 ticks after a match),
+the same build, each row a separate process:
+
+| measure | idle | 16 busy loops |
+|---|---|---|
+| main thread, median tick (the test's patch) | 2.62-2.85M (8.4%) | 2.65-2.79M |
+| main thread, mean tick | 3.03-3.23M (6.4%) | 3.03-3.17M |
+| work counts, Avian's tree task on (first try) | 589-627M a window (6.3%) | |
+| work counts, final | 316.52-316.65M a window (0.04%) | 316.39-316.73M (0.1%) |
+
+(The first two rows already ran on one compute thread; on two, as before,
+the spread was the ±15% the report gave.) The state hashes
+(`Sim::state_hash`) of all nine runs were the same: the play was
+deterministic all along. The cost was not, for these reasons:
+
+- **Work moved between threads.** Bevy's parallel queries hand chunks to
+  the compute pool and the main thread does what is left; Bevy's
+  transform propagation runs workers that spin while they wait for each
+  other (`propagation_worker`); Avian optimizes its collider trees on a
+  compute task beside the narrow phase and solver
+  (`ColliderTreeOptimization::use_compute_task`), so its work landed in
+  whichever system the main thread was running (`respawn_dead` 5.6M
+  against 7.9M over the window, the movement step 30.8M against 36.1M,
+  with the same state). Counting every thread (`AllThreads`, the old
+  `perfgate`) takes in the spinning and the pools' waking and stealing.
+- **Task results landed on load-dependent ticks.** The navigation mesh
+  (`NavGenTask`), Combat Arms' bodies, held models and view models on
+  demand and the view models' timings are polled once a tick
+  (`poll_once`), so the tick they land on, and all the play after it,
+  depended on the task thread's speed; the stepped map spawn
+  (`map::spawn::spawn_steps`) cut its steps by a wall-clock budget.
+- Not a cause here: std's randomly seeded hash maps cost a little more or
+  less per run (probe lengths), under 0.01% of the window.
+
+### What changed
+
+- `metrics::work`: `count_systems(world)` puts each system of the
+  schedules that have not run yet behind a wrapper (`Counted`) that reads
+  this thread's instruction counter (one counter, `InstructionCounter`:
+  a small `read`, no group) and the compute pool's threads' before and
+  after the system and its commands, less the schedules it runs inside.
+  Per thread: `set_enabled`, `WorkCounts::take` (a test's systems run on
+  its thread). `WorkCounts::diff_table(&base, n)` prints the systems that
+  rose most. The counting costs about 2,000 instructions per system run
+  (a tick of the session: 4.1M counted against 2.8M uncounted), the same
+  on every run: compare counted with counted.
+- `harness::Sim`: one compute thread (`sim_task_pools`; parallel queries
+  are plain loops, transform propagation spawns no workers), registered
+  for counting; Avian's tree optimization in the tick's order; every
+  system wrapped at the start. `Sim::work(n)` returns each tick's
+  instructions, the archetypes after it (`steady_ticks`: those that made
+  none) and the systems' counts; `Sim::repeatable()` (or
+  `CHIMERA_REPEATABLE=1`) inserts `chimera_core::tasks::WaitForTasks`:
+  task results land on the tick they're polled (`tasks::poll`) and a map
+  spawns in one step; `Sim::state_hash()` hashes every entity's place,
+  turn, velocity and health; `harness::own_process(test)` reruns a test
+  alone in a child process under `cargo test` (the compute pool is the
+  process's: another test's tasks would count).
+- Tests on work counts: `session::a_session_of_matches_stops_making_tables`
+  (steady mean of match 7 under 1.25x match 1's, systems' diff on
+  failure), `session::a_match_repeats_tick_for_tick` (three sessions in
+  one process: the same state hash, the last two within 1%: 272.78M and
+  273.00M), `party_kit`'s `archetypes` (1.17x with 2,000 more archetypes,
+  1.60x with 2,000 more tables) and `heavy::bot_cost` (systems growing
+  from 2 to 16 bots printed always, no `trace` build needed),
+  `cs_source`'s `map_logic::idle_entities_cost_a_tick_little`,
+  `ultimate_gun_game`'s `heavy::session_maps`; `perfgate` ("Regression
+  gate"); `frame_bench` (frames, below).
+- Frames (`ultimate_gun_game`'s `frame_bench`): the main schedule,
+  extraction and the render world by work counts with the costliest
+  systems, the meshes drawn and the bytes of meshes and textures uploaded
+  a frame (Bevy's `RenderAssetBytesPerFrameLimiter` with no limit:
+  counting only) as deterministic counts; GPU time from timestamp
+  queries (`RenderDiagnosticsPlugin`, Vulkan and DX12) and wall time
+  printed apart as timings.
+
+### Windows
+
+Hardware counters are Linux's (`perf_event_open`); Windows has thread
+CPU time only, in 15.6 ms scheduler steps, which moves with load as wall
+time does. There `Sim::work` and `work::now` return None, the tests that
+compare costs print `skipping ... no hardware counters` and pass, and
+`perfgate` exits 0 with `skipped`. Determinism (`Sim::state_hash`,
+`a_match_repeats_tick_for_tick`'s hash check) holds on Windows too. Judge
+a change's cost on Linux.
+
+### Left
+
+- Draw calls themselves aren't counted (Bevy has no counter; meshes
+  drawn stands in) and neither are GPU work counts: wgpu's pipeline
+  statistics (`PIPELINE_STATISTICS_QUERY`: vertex and fragment shader
+  invocations) would be, but need the feature asked for at device
+  creation.
+- The client's live readouts (`chimera_perf`, `refcmp bench`, the hitch
+  log) still count whole threads (`metrics::TickMetrics`,
+  `frame_metrics`): for reading a run, not for comparing builds.
+- Tests on absolute instruction budgets of a single frame or tick with
+  the real loading path (`late_build`, `heavy::rung_frames`,
+  `heavy::map_swap_frames`, `heavy::nav_in_play`) count the main thread
+  only and judge loads that run on tasks by design: far above their
+  spread, but not work counts.
 
 ## Light-style hitches (mg_jacks_multigames_v1)
 

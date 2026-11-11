@@ -19,12 +19,13 @@
 //!   every query that matches characters still steps over their empty
 //!   tables, Bevy's own cost (docs/tech-debt.md).
 //!
-//! Both count only the ticks that make no new archetype
-//! (`instructions_per_tick`): a new one costs a step over the others,
-//! once.
+//! Both count the tick's systems' instructions (`Sim::work`, the same on
+//! every run, and the systems that grew on a failure) over the ticks that
+//! make no new archetype (`instructions_per_tick`): a new one costs a
+//! step over the others, once.
 
 use bevy::prelude::*;
-use chimera_core::metrics::{ThreadCounters, census::Census};
+use chimera_core::metrics::{census::Census, work::WorkCounts};
 use chimera_world::harness::Sim;
 
 use crate::gun_game::party;
@@ -80,6 +81,8 @@ markers!(mark_sparse, unmark_sparse, S);
 /// settled.
 fn bots_playing() -> (Sim, Vec<Entity>) {
     let mut sim = party();
+    // The same play on every run, so the counts compare.
+    sim.repeatable();
     for x in [-8.0, 8.0] {
         for z in [-25.0, -15.0, -5.0, 5.0] {
             sim.app.world_mut().spawn((
@@ -102,51 +105,20 @@ fn bots_playing() -> (Sim, Vec<Entity>) {
     (sim, bots)
 }
 
-/// The calling thread's instructions (the schedules run on it) per tick
-/// over `n` ticks, counting only the ticks that met no new archetype
-/// (none made in that tick or the one before); None without hardware
-/// counters. A new archetype has every query that its components could
-/// match step once over all the archetypes holding the query's rarest
-/// component (Bevy's `QueryState::update_archetypes`), here the bots'
-/// thousands: Bevy's cost, paid per archetype made, not per tick, and the
-/// bots make some while they play (a gun of another game, a death, a
-/// sleeping body), more or fewer as the schedule's order plays the game
-/// out (2026-11: 14 against 57 in the same window, 1.0x against 1.33x).
-fn instructions_per_tick(sim: &mut Sim, n: u64) -> Option<f64> {
-    let archetypes = |sim: &Sim| sim.app.world().archetypes().len();
-    let (mut total, mut steady) = (0u64, 0u64);
-    let mut last = archetypes(sim);
-    let mut fresh = true;
-    for _ in 0..n {
-        let a = instructions()?;
-        sim.ticks(1);
-        let used = instructions()?.saturating_sub(a);
-        let now = archetypes(sim);
-        let made = now != last;
-        if !made && !fresh {
-            total += used;
-            steady += 1;
-        }
-        (last, fresh) = (now, made);
-    }
-    assert!(steady >= n / 4, "only {steady} of {n} ticks made no archetype");
-    Some(total as f64 / steady as f64)
-}
-
-/// This thread's instructions so far (with `trace`, from the span
-/// layer's counters: a second group may not get the hardware's).
-#[cfg(feature = "trace")]
-thread_local!(static SPANS: std::cell::RefCell<Option<std::rc::Rc<chimera_core::metrics::span_cost::SpanCosts>>> = const { std::cell::RefCell::new(None) });
-
-fn instructions() -> Option<u64> {
-    #[cfg(feature = "trace")]
-    if let Some(n) = SPANS.with(|s| s.borrow().as_ref().map(|s| s.instructions())) {
-        return n;
-    }
-    {
-        thread_local!(static C: std::cell::RefCell<ThreadCounters> = std::cell::RefCell::new(ThreadCounters::current()));
-        C.with(|c| c.borrow_mut().read().hw.map(|h| h.instructions))
-    }
+/// The instructions per tick of `n` ticks (`Sim::work`: the tick's
+/// systems, the same on every run), counting only the ticks that met no
+/// new archetype (`Work::steady_ticks`), and the systems' counts per
+/// tick; None without hardware counters. A new archetype has every query
+/// that its components could match step once over all the archetypes
+/// holding the query's rarest component (Bevy's
+/// `QueryState::update_archetypes`), here the bots' thousands: Bevy's
+/// cost, paid per archetype made, not per tick, and the bots make some
+/// while they play (a gun of another game, a death, a sleeping body).
+fn instructions_per_tick(sim: &mut Sim, n: u64) -> Option<(f64, WorkCounts)> {
+    let w = sim.work(n)?;
+    let steady = w.steady_ticks();
+    assert!(steady.len() as u64 >= n / 4, "only {} of {n} ticks made no archetype", steady.len());
+    Some((steady.iter().sum::<u64>() as f64 / steady.len() as f64, w.systems.per(n)))
 }
 
 /// Runs the bots' component sets through every combination of 11
@@ -157,7 +129,7 @@ fn inflate(
     bots: &[Entity],
     mark: fn(&mut World, Entity, usize),
     unmark: fn(&mut World, Entity),
-) -> ((usize, usize), (usize, usize), Option<f64>, Option<f64>) {
+) -> ((usize, usize), (usize, usize), Option<(f64, WorkCounts)>, Option<(f64, WorkCounts)>) {
     let counts = |sim: &mut Sim| {
         let c = Census::take(sim.app.world_mut());
         (c.archetypes_made, c.tables)
@@ -182,32 +154,16 @@ fn inflate(
 
 #[test]
 fn the_tick_costs_the_same_with_many_more_character_archetypes() {
-    // With `trace`: which systems' instructions rose (printed; installed
-    // first: a system's span is made with the system).
-    #[cfg(feature = "trace")]
-    let spans = chimera_core::metrics::span_cost::SpanCosts::install().map(std::rc::Rc::new);
-    #[cfg(feature = "trace")]
-    SPANS.with(|s| *s.borrow_mut() = spans.clone());
     let (mut sim, bots) = bots_playing();
     // Warm (the first ticks make their own archetypes).
     sim.seconds(3.0);
-    #[cfg(feature = "trace")]
-    let _ = spans.as_ref().map(|s| s.take());
     let (was, now, before, after) = inflate(&mut sim, &bots, mark_sparse, unmark_sparse);
     assert!(now.0 >= was.0 + 2000, "the markers made archetypes: {was:?} -> {now:?}");
     let (was_t, now_t, before_t, after_t) = inflate(&mut sim, &bots, mark_table, unmark_table);
     assert!(now_t.1 >= was_t.1 + 2000, "the table markers made tables: {was_t:?} -> {now_t:?}");
-    #[cfg(feature = "trace")]
-    if let Some(s) = &spans {
-        eprintln!("spans' instructions per call over the last window:");
-        let costs = s.take();
-        let mut rows: Vec<_> = costs.0.iter().collect();
-        rows.sort_by_key(|(_, (i, _))| std::cmp::Reverse(*i));
-        for (label, (i, n)) in rows.into_iter().take(30) {
-            eprintln!("{:10.0} x {n:6}  {label}", *i as f64 / *n as f64);
-        }
-    }
-    let (Some(before), Some(after), Some(before_t), Some(after_t)) = (before, after, before_t, after_t) else {
+    let (Some((before, sys_before)), Some((after, sys_after)), Some((before_t, sys_before_t)), Some((after_t, sys_after_t))) =
+        (before, after, before_t, after_t)
+    else {
         eprintln!("skipping the comparison: no hardware counters ({})", chimera_core::metrics::hw_status());
         return;
     };
@@ -226,18 +182,20 @@ fn the_tick_costs_the_same_with_many_more_character_archetypes() {
     assert!(
         after < before * 1.3,
         "a tick cost {:.2}M instructions with {} archetypes, {:.2}M with {}: something walks every archetype \
-         each tick (a `world.query` in per-tick exclusive code: keep it, `chimera_core::query_cache`)",
+         each tick (a `world.query` in per-tick exclusive code: keep it, `chimera_core::query_cache`). Per tick:\n{}",
         before / 1e6,
         was.0,
         after / 1e6,
-        now.0
+        now.0,
+        sys_after.diff_table(&sys_before, 20)
     );
     assert!(
         after_t < before_t * 2.2,
-        "a tick cost {:.2}M instructions with {} tables, {:.2}M with {}",
+        "a tick cost {:.2}M instructions with {} tables, {:.2}M with {}. Per tick:\n{}",
         before_t / 1e6,
         was_t.1,
         after_t / 1e6,
-        now_t.1
+        now_t.1,
+        sys_after_t.diff_table(&sys_before_t, 20)
     );
 }

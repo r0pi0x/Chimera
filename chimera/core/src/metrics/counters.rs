@@ -171,6 +171,71 @@ impl ThreadCounters {
     }
 }
 
+/// One thread's user-space instructions alone: a single counter, read
+/// with one small `read` and no group bookkeeping (`metrics::work` reads
+/// one at every system's start and end). None where `ThreadCounters` has
+/// none.
+pub struct InstructionCounter {
+    #[cfg(target_os = "linux")]
+    counter: Option<perf_event::Counter>,
+}
+
+impl InstructionCounter {
+    /// The calling thread's (Linux; elsewhere always None).
+    pub fn current() -> Self {
+        Self::open(0)
+    }
+
+    /// Thread `tid` of this process (Linux; 0: the calling thread).
+    #[cfg_attr(not(target_os = "linux"), allow(unused_variables))]
+    pub fn open(tid: i32) -> Self {
+        #[cfg(target_os = "linux")]
+        {
+            let mut b = perf_event::Builder::new(perf_event::events::Hardware::INSTRUCTIONS);
+            if tid != 0 {
+                b.observe_pid(tid);
+            }
+            b.exclude_kernel(true).exclude_hv(true).read_format(
+                perf_event::ReadFormat::TOTAL_TIME_ENABLED | perf_event::ReadFormat::TOTAL_TIME_RUNNING,
+            );
+            let counter = match b.build() {
+                Ok(mut c) => c.enable().ok().map(|_| c),
+                Err(e) => {
+                    let _ = HW_STATUS.set(format!("unavailable ({e})"));
+                    None
+                }
+            };
+            Self { counter }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = HW_STATUS.set("not supported on this platform (Linux only)".into());
+            Self {}
+        }
+    }
+
+    /// Instructions so far (scaled up if the kernel multiplexed the
+    /// counter), or None.
+    pub fn read(&mut self) -> Option<u64> {
+        #[cfg(target_os = "linux")]
+        {
+            let c = self.counter.as_mut()?.read_count_and_time().ok()?;
+            if c.time_running == 0 {
+                return (c.time_enabled == 0).then_some(c.count);
+            }
+            Some(if c.time_running < c.time_enabled {
+                (c.count as u128 * c.time_enabled as u128 / c.time_running as u128) as u64
+            } else {
+                c.count
+            })
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            None
+        }
+    }
+}
+
 /// `CLOCK_MONOTONIC` in ns (Unix): what `perf record -k CLOCK_MONOTONIC`
 /// stamps its samples with, so a frame log's frames can be cut out of a
 /// profile (`client::frame_metrics`, `CHIMERA_FRAME_LOG`).

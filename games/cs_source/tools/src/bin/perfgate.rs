@@ -6,8 +6,10 @@
 //! Scenarios: `greybox` (always), `de_dust2` (rounds with 10 bots; needs a
 //! CS:S install), `mg_lego_multigames_v2` (a community map, when it is in
 //! the content cache). Each runs `--warmup` ticks, then measures `--ticks`
-//! ticks one by one, compared with `tools/perfgate/baseline.json` per
-//! build profile (`--update` rewrites it).
+//! ticks one by one by their work counts (`metrics::work`), compared with
+//! `tools/perfgate/baseline.json` per build profile (`--update` rewrites
+//! it). The scenarios are `Sim::repeatable`: they play out the same on
+//! every run.
 
 use bevy::prelude::*;
 use chimera_tools::perfgate::{self, Gate};
@@ -82,6 +84,8 @@ fn scenario(name: &str) -> Option<Sim> {
     // and fixed schedule on one thread, so the counts don't depend on how
     // work was handed out.
     cs_source_app::single_threaded_schedules(&mut sim.app);
+    // Tasks' results on the tick they're polled: the same run every time.
+    sim.repeatable();
     Some(sim)
 }
 

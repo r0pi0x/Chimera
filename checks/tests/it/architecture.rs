@@ -25,6 +25,9 @@ const ALLOWED: &[(&str, &[&str])] = &[
     ("query_cache", &[]),
     // Values worked out once and kept by their owner (`Memos`): std only.
     ("memo", &[]),
+    // Tasks the simulation polls, waited for in repeatable runs
+    // (`WaitForTasks`): Bevy only.
+    ("tasks", &[]),
     ("console", &["core", "env", "query_cache", "console_names"]),
     ("console_names", &[]),
     // The console's scope (the game played: the local player's identity,

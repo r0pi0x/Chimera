@@ -204,9 +204,10 @@ pub fn read_ahead(
     catalog: Option<Res<crate::weapon::data::WeaponCatalog>>,
     mut times: ResMut<ViewTimes>,
     mut pending: Local<BTreeMap<String, bevy::tasks::Task<Option<AnimTimes>>>>,
+    wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
 ) {
     pending.retain(|path, task| {
-        let Some(read) = bevy::tasks::block_on(bevy::tasks::poll_once(task)) else { return true };
+        let Some(read) = chimera_core::tasks::poll(task, wait.is_some()) else { return true };
         times.0.insert(path.clone(), read);
         false
     });

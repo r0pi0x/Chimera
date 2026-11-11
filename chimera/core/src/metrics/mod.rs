@@ -14,6 +14,7 @@ pub mod census;
 pub mod counters;
 pub mod dist;
 pub mod memory;
+pub mod work;
 #[cfg(feature = "trace")]
 pub mod span_cost;
 
@@ -25,7 +26,7 @@ use bevy::{
     prelude::*,
 };
 
-pub use counters::{AllThreads, Counts, Hw, ThreadCounters, hw_status};
+pub use counters::{AllThreads, Counts, Hw, InstructionCounter, ThreadCounters, hw_status};
 pub use dist::{Percentiles, Ring, short};
 
 /// Values kept per series: about 17 s at 240 fps, a minute of ticks at

@@ -12,14 +12,16 @@
 //! archetypes of every game's characters on every map, which Bevy keeps, and
 //! each costs every tick (about 800 instructions with no character on the
 //! map: docs/performance.md, "A session's frame rate"); de_dust2, the first
-//! map, pays all of them on its second visit. A tick is the median of its
-//! map's ticks: a death, a grenade or a ragdoll makes a tick several times
-//! another, so a mean follows the fight. Prints a row per map
-//! (`--nocapture`). Passes with a note without the installs.
+//! map, pays all of them on its second visit. A tick is the mean of its
+//! map's ticks' work counts (`Sim::work`, ticks making no archetype): the
+//! session plays out the same on every run (`Sim::repeatable`), so the
+//! same build counts the same, and a failure lists the systems that grew.
+//! Prints a row per map (`--nocapture`). Passes with a note without the
+//! installs.
 
 use bevy::prelude::*;
 use chimera_core::{
-    metrics::{ThreadCounters, census::Census},
+    metrics::census::Census,
     mount::config::LocalConfig,
 };
 use chimera_sim::minigame::{
@@ -79,24 +81,13 @@ fn chimera_census_made(sim: &mut Sim) -> String {
     chimera_core::metrics::census::made_by(sim.app.world(), "Health", 20)
 }
 
-/// The median of the instructions of `n` ticks, those without a new
-/// archetype.
-fn tick_cost(sim: &mut Sim, n: usize) -> Option<f64> {
-    let mut c = ThreadCounters::current();
-    let mut steady = Vec::with_capacity(n);
-    let mut last = sim.app.world().archetypes().len();
-    for _ in 0..n {
-        let a = c.read().hw?.instructions;
-        sim.ticks(1);
-        let used = c.read().hw?.instructions.saturating_sub(a);
-        let now = sim.app.world().archetypes().len();
-        if now == last {
-            steady.push(used);
-        }
-        last = now;
-    }
-    steady.sort_unstable();
-    steady.get(steady.len() / 2).map(|m| *m as f64)
+/// The mean instructions of `n` ticks' systems (`Sim::work`, the same on
+/// every run), over those that made no new archetype; and the systems'
+/// counts per tick.
+fn tick_cost(sim: &mut Sim, n: u64) -> Option<(f64, chimera_core::metrics::work::WorkCounts)> {
+    let w = sim.work(n)?;
+    let steady = w.steady_ticks();
+    (!steady.is_empty()).then(|| (steady.iter().sum::<u64>() as f64 / steady.len() as f64, w.systems.per(n)))
 }
 
 #[test]
@@ -107,6 +98,8 @@ fn laps_of_real_maps_hold_the_same_and_cost_the_same() {
         return;
     };
     let mut sim = Sim::new(CaSim, (MapSimPlugin::new(first), PartyPartsPlugin, UltimateGunGamePlugin::default()));
+    // The same play on every run, so laps' counts compare.
+    sim.repeatable();
     sim.ticks(2);
     {
         let w = sim.app.world_mut();
@@ -114,7 +107,7 @@ fn laps_of_real_maps_hold_the_same_and_cost_the_same() {
         s.quota = 6;
         s.quota_set = true;
     }
-    let mut rows: Vec<(usize, &str, Census, Option<f64>)> = Vec::new();
+    let mut rows: Vec<(usize, &str, Census, Option<(f64, chimera_core::metrics::work::WorkCounts)>)> = Vec::new();
     // Characters' archetypes at the end of each lap.
     let mut laps = Vec::new();
     for lap in 0..LAPS {
@@ -136,7 +129,7 @@ fn laps_of_real_maps_hold_the_same_and_cost_the_same() {
                 c.archetypes_made,
                 characters(&c),
                 c.tables,
-                tick
+                tick.as_ref().map(|t| t.0)
             );
             rows.push((lap, map, c, tick));
         }
@@ -169,9 +162,14 @@ fn laps_of_real_maps_hold_the_same_and_cost_the_same() {
             c.entities,
             c.diff(was).iter().filter(|l| l.starts_with("entities ")).take(12).collect::<Vec<_>>()
         );
-        let before = rows.iter().find(|r| r.0 == lap - 1 && r.1 == *map).and_then(|r| r.3);
-        if let (true, Some(a), Some(b)) = (*lap > 1, before, tick) {
-            assert!(*b < a * 1.3, "a tick on {map} cost {a:.0} instructions on lap {}, {b:.0} on lap {lap}", lap - 1);
+        let before = rows.iter().find(|r| r.0 == lap - 1 && r.1 == *map).and_then(|r| r.3.as_ref());
+        if let (true, Some((a, sa)), Some((b, sb))) = (*lap > 1, before, tick) {
+            assert!(
+                *b < a * 1.3,
+                "a tick on {map} cost {a:.0} instructions on lap {}, {b:.0} on lap {lap}. Per tick:\n{}",
+                lap - 1,
+                sb.diff_table(sa, 20)
+            );
         }
     }
     let tables = rows.last().unwrap().2.tables;

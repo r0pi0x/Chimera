@@ -20,7 +20,10 @@
 //! tests run the executors that ship; `Sim::multi_threaded` or
 //! `CHIMERA_EXECUTOR=multi` puts them back on Bevy's multi-threaded one);
 //! `Sim`'s task pools are capped (`SIM_TASK_THREADS`) so parallel test
-//! processes don't each start a thread per core; `schedule_systems` and
+//! processes don't each start a thread per core, with one compute thread
+//! so parallel queries run inline and a tick's work repeats; every `Sim`'s
+//! systems are wrapped for counting (`metrics::work`; `Sim::work` measures
+//! ticks by it, `Sim::state_hash` checks two runs played alike); `schedule_systems` and
 //! `ambiguities` list a schedule's systems in run order and its
 //! unordered conflicting pairs (the games' tests/it/schedules.rs: the
 //! ambiguity ratchet and the server/client order comparison).
@@ -38,12 +41,94 @@ pub struct Sim {
     pub app: App,
 }
 
-/// Threads of the task pools every `Sim` (`add_headless`) process starts (Bevy's
-/// `TaskPoolOptions::with_num_threads`: one I/O, one async compute, two
-/// compute): nextest runs tests as parallel processes, each would
-/// otherwise start a full set. The pools are process-wide; the first app
-/// built in a process sets them.
-pub const SIM_TASK_THREADS: usize = 4;
+/// Threads of the task pools every `Sim` (`add_headless`) process starts:
+/// one I/O, one async compute, one compute. nextest runs tests as parallel
+/// processes, each would otherwise start a full set. One compute thread
+/// makes Bevy's parallel queries plain loops on the thread running the
+/// schedule and leaves no workers spinning while they wait for each other
+/// (Bevy's transform propagation), so a tick's instructions repeat from
+/// run to run (`metrics::work`; docs/performance.md, "Work counts"); the
+/// compute thread is registered for counting. The pools are process-wide;
+/// the first app built in a process sets them.
+pub const SIM_TASK_THREADS: usize = 3;
+
+/// `Sim::work`'s result: each tick's instructions (this thread and the
+/// compute pool's) and every system's over the window.
+#[derive(Clone, Debug)]
+pub struct Work {
+    pub ticks: Vec<u64>,
+    /// The world's archetypes after each tick: a tick that made one paid
+    /// Bevy's one-off cost of matching it to every query
+    /// (`steady_ticks` leaves those out).
+    pub archetypes: Vec<usize>,
+    pub systems: chimera_core::metrics::work::WorkCounts,
+}
+
+impl Work {
+    /// Every tick's instructions together.
+    pub fn total(&self) -> u64 {
+        self.ticks.iter().sum()
+    }
+
+    /// The median tick.
+    pub fn median(&self) -> u64 {
+        let mut t = self.ticks.clone();
+        t.sort_unstable();
+        t.get(t.len() / 2).copied().unwrap_or(0)
+    }
+
+    /// Instructions per tick (the mean).
+    pub fn per_tick(&self) -> f64 {
+        self.total() as f64 / self.ticks.len().max(1) as f64
+    }
+
+    /// The ticks that made no new archetype, nor followed one that did:
+    /// the steady cost, without Bevy's one-off matching of a new
+    /// archetype to every query.
+    pub fn steady_ticks(&self) -> Vec<u64> {
+        (0..self.ticks.len())
+            .filter(|&i| i >= 2 && self.archetypes[i] == self.archetypes[i - 1] && self.archetypes[i - 1] == self.archetypes[i - 2])
+            .map(|i| self.ticks[i])
+            .collect()
+    }
+}
+
+/// For a test that compares work counts closely (`Sim::work`): the
+/// compute pool is the process's, and tests beside it in one process
+/// (`cargo test`) put their tasks in it. True where the test has the
+/// process to itself (nextest gives every test one, or this is the child
+/// started here); otherwise runs `test` (its path in the test binary,
+/// e.g. `session::a_match_repeats_tick_for_tick`) again alone in a child
+/// process, asserts it passed and returns false: the caller returns.
+pub fn own_process(test: &str) -> bool {
+    const CHILD: &str = "CHIMERA_OWN_PROCESS";
+    if std::env::var_os("NEXTEST").is_some() || std::env::var_os(CHILD).is_some() {
+        return true;
+    }
+    let status = std::process::Command::new(std::env::current_exe().expect("the test binary"))
+        .args(["--exact", test, "--nocapture", "--test-threads", "1"])
+        .env(CHILD, "1")
+        .status()
+        .expect("the test binary runs again");
+    assert!(status.success(), "{test} in its own process failed (its output is above)");
+    false
+}
+
+/// The task pools `add_headless` makes (`SIM_TASK_THREADS`).
+pub fn sim_task_pools() -> bevy::app::TaskPoolOptions {
+    let mut o = bevy::app::TaskPoolOptions::with_num_threads(SIM_TASK_THREADS);
+    let one = |spawn: Option<std::sync::Arc<dyn Fn() + Send + Sync>>| bevy::app::TaskPoolThreadAssignmentPolicy {
+        min_threads: 1,
+        max_threads: 1,
+        percent: 1.0,
+        on_thread_spawn: spawn,
+        on_thread_destroy: None,
+    };
+    o.io = one(None);
+    o.async_compute = one(None);
+    o.compute = one(Some(std::sync::Arc::new(chimera_core::metrics::work::register_pool_thread)));
+    o
+}
 
 /// The engine with no window or rendering: what `Sim` runs (stepped by
 /// hand) under its base plugins, its task pools capped
@@ -52,7 +137,7 @@ pub fn add_headless(app: &mut App) {
     add_headless_with(
         app,
         MinimalPlugins.build().set(bevy::app::TaskPoolPlugin {
-            task_pool_options: bevy::app::TaskPoolOptions::with_num_threads(SIM_TASK_THREADS),
+            task_pool_options: sim_task_pools(),
         }),
     );
 }
@@ -112,6 +197,21 @@ impl Sim {
         )));
         app.finish();
         app.cleanup();
+        // Avian optimizes its collider trees on a compute task alongside
+        // the narrow phase and solver: done on the pool's thread while this
+        // one runs other systems, its work would land in whichever system
+        // was running. In the tick's own order instead (the same trees).
+        if let Some(mut o) = app.world_mut().get_resource_mut::<avian3d::collider_tree::ColliderTreeOptimization>() {
+            o.use_compute_task = false;
+        }
+        // `CHIMERA_REPEATABLE=1`: every `Sim` waits for its tasks (`repeatable`).
+        if chimera_core::env::var("CHIMERA_REPEATABLE").as_deref() == Ok("1") {
+            app.insert_resource(chimera_core::tasks::WaitForTasks);
+        }
+        // Every system behind a counter (idle until `Sim::work` or
+        // `metrics::work::set_enabled`): before the first run, while the
+        // schedules' systems are still in their graphs.
+        chimera_core::metrics::work::count_systems(app.world_mut());
         // Startup, and one tick so the physics spatial index contains the map.
         app.update();
         let mut sim = Self { app };
@@ -166,6 +266,77 @@ impl Sim {
         while self.tick() < target {
             self.app.update();
         }
+    }
+
+    /// Play out the same on every run from now on, whatever the machine's
+    /// load: tasks' results (a navigation mesh, a body's model) land on the
+    /// tick they are first polled and a map spawns in one go
+    /// (`chimera_core::tasks::WaitForTasks`). For measuring (`work`) and
+    /// determinism checks (`state_hash`); not for tests of what happens
+    /// while a task runs. `CHIMERA_REPEATABLE=1` does it for every `Sim`
+    /// from its start.
+    pub fn repeatable(&mut self) -> &mut Self {
+        self.app.insert_resource(chimera_core::tasks::WaitForTasks);
+        self
+    }
+
+    /// Run `n` ticks counting their work (`metrics::work`): each tick's
+    /// instructions on this thread and the compute pool's, and every
+    /// system's over the `n`. None without hardware counters (Windows,
+    /// `perf_event_paranoid` 3): callers skip their checks. The measure to
+    /// judge a tick's cost by (docs/performance.md, "Work counts").
+    pub fn work(&mut self, n: u64) -> Option<Work> {
+        use chimera_core::metrics::work;
+        work::set_enabled(true);
+        let _ = work::WorkCounts::take();
+        let mut ticks = Vec::with_capacity(n as usize);
+        let mut archetypes = Vec::with_capacity(n as usize);
+        let mut last = work::now();
+        for _ in 0..n {
+            self.ticks(1);
+            let now = work::now();
+            if let (Some(a), Some(b)) = (last, now) {
+                ticks.push(b.saturating_sub(a));
+            }
+            archetypes.push(self.app.world().archetypes().len());
+            last = work::now();
+        }
+        let systems = work::WorkCounts::take();
+        work::set_enabled(false);
+        (ticks.len() as u64 == n).then_some(Work { ticks, archetypes, systems })
+    }
+
+    /// A hash of the simulation's state: every entity's place, turn,
+    /// velocity and health, by entity, and the tick. Two runs of a
+    /// scenario that played alike hash alike (a check that what a test
+    /// measures repeats: docs/performance.md, "Work counts").
+    pub fn state_hash(&mut self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let world = self.app.world_mut();
+        let mut rows: Vec<_> = world
+            .query::<(Entity, Option<&Transform>, Option<&Velocity>, Option<&chimera_core::core::Health>)>()
+            .iter(world)
+            .filter(|(_, t, v, h)| t.is_some() || v.is_some() || h.is_some())
+            .map(|(e, t, v, h)| {
+                let mut bits = vec![e.to_bits()];
+                if let Some(t) = t {
+                    bits.extend(t.translation.to_array().map(|f| f.to_bits() as u64));
+                    bits.extend(t.rotation.to_array().map(|f| f.to_bits() as u64));
+                }
+                if let Some(v) = v {
+                    bits.extend(v.0.to_array().map(|f| f.to_bits() as u64));
+                }
+                if let Some(h) = h {
+                    bits.push(h.current.to_bits() as u64);
+                }
+                bits
+            })
+            .collect();
+        rows.sort_unstable();
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.tick().hash(&mut h);
+        rows.hash(&mut h);
+        h.finish()
     }
 
     /// Advance by whole ticks covering `secs` seconds.

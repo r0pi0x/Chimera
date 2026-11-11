@@ -50,7 +50,7 @@ use std::{
 use avian3d::{collider_tree::ColliderTrees, collision::collider::contact_query, prelude::*};
 use bevy::{
     prelude::*,
-    tasks::{AsyncComputeTaskPool, Task, TaskPool, block_on, futures_lite::future, poll_once},
+    tasks::{AsyncComputeTaskPool, Task, TaskPool, futures_lite::future},
 };
 
 use super::{
@@ -473,9 +473,10 @@ impl NavGenTask {
         }))
     }
 
-    /// The mesh, once the task is done.
-    pub fn poll(&mut self) -> Option<NavMesh> {
-        block_on(poll_once(&mut self.0))
+    /// The mesh, once the task is done (with `wait`, waits for it:
+    /// `chimera_core::tasks::WaitForTasks`).
+    pub fn poll(&mut self, wait: bool) -> Option<NavMesh> {
+        chimera_core::tasks::poll(&mut self.0, wait)
     }
 }
 

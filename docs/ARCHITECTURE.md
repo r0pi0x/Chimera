@@ -47,7 +47,7 @@ chimera_present (chimera/present/)   render, audio, MapPlugin, assets (installs 
 chimera_world (chimera/world/)   map: map data, collision, sim-side spawning; music; game_bundle (a game for a party app's composer); greybox, harness::Sim
   |                \
 chimera_core          source_formats (source/formats/)   formats as plain data: no Bevy
- (chimera/core/)       core, console, console_names, console_scope, slots, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, query_cache, memo, later
+ (chimera/core/)       core, console, console_names, console_scope, slots, character, metrics, mount, game_registry, gameplay, game_parts, announcer, cues, query_cache, memo, tasks, later
                       chimera_vfs (chimera/vfs/)   the neutral VFS (`FileSource`, `Mount`) under both format crates and `mount`
                       chimera_assets (chimera/assets/)   the asset store over the VFS: records, manifests and sets, `CachedFiles`, the vfs log, the asset service (server, HTTPS client); `mount::served` layers it
                       chimera_formats (chimera/formats/)   formats no engine owns, plain data: `wav` (sound files), `keyvalues` (Steam's library files); under `mount`, `map::sound` and both format crates
@@ -452,6 +452,8 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
                                   profile beside them: a player's settings file;
                                   query_cache under console: kept query states;
                                   memo beside them: values kept by their owner;
+                                  tasks beside them: tasks polled, or waited
+                                  for in repeatable runs;
                                   later under core: values made on first use)
 ```
 
