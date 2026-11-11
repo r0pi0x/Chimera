@@ -259,6 +259,9 @@ pub const PARTY: GameApp = GameApp {
         requirements: Some(crate::client_requirements),
         default_map: Some("cs_source:de_dust2"),
         server: Some("lucker_party_server"),
+        // Every composed game's startup files come before the window when
+        // they are read from the asset service (`client::startup`).
+        games: Some(|| super::BUNDLES.iter().map(|b| b.info).collect()),
         ..GameAppHooks::NONE
     },
 };

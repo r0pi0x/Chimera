@@ -833,18 +833,38 @@ where the files are, the existing HTTP service carries the files):
   into the real server store: `base` (CS:S, Combat Arms), `map/<name>` for
   de_dust2, cs_office, WAREHOUSE, JUNK_FLEA, DARKHILLS, BLOODMONEY, from
   `CHIMERA_VFS_LOG` runs of the client with the installs.
-- **Known shortcuts:** what the games read at startup (~300 MB the first
-  time) comes on demand before the window shows, with no progress on screen
-  (the console says `assets: downloading ...`); the first join with a new
-  token restarts the game once; Combat Arms has no `players` set (its
-  character models come on demand); the pool's prefetch has no rate cap of
-  its own; a revoke stops a token's next request, not a batch being sent.
+- **Startup progress and a capped prefetch (2026-11-10):** a client whose
+  games come from the service and whose store lacks their `base` sets
+  (`chimera_net::net::asset_startup::plan_here`: no network, installed
+  games skipped) opens a small window before anything loads
+  (`chimera_client::client::startup`): "Downloading game files: X of Y MB",
+  a bar, the speed and time left; errors with their reason and "Try again",
+  "Start anyway", "Quit". When done it starts the game in a new process
+  (`CHIMERA_STARTUP_FETCHED` set: no second window) and waits for it, since
+  winit opens one event loop per process. `base` of the three games is
+  ~267 MB of the ~300 MB the games read at startup. The background
+  prefetch reads at a `chimera_assets::pace::Pace` (one connection, 4 MB
+  batches, the answer read in 16 KB steps): the client's
+  `chimera:asset_prefetch_rate` (KB/s, default 2000, archived), at most the
+  server's `chimera:asset_prefetch_max` (`AssetOffer::prefetch_rate`; 0:
+  none), held while the client joins or changes level. Hosting table:
+  playtest-hosting.md, "Download speed and your upload".
+- **Known shortcuts:** what the games read at startup beyond the `base`
+  sets still comes on demand (console only); the startup window closes a
+  few seconds before the game's opens; the first join with a new token
+  restarts the game once (and the startup window is a second start); Combat
+  Arms has no `players` set (its character models come on demand); on-demand
+  fetches during a map load don't hold the prefetch (only the join and level
+  change around them do); a revoke stops a token's next request, not a batch
+  being sent.
 - Tests: chimera_assets `service` (HTTPS pinned and refused, the limits, paths),
   `access`, `tls`; chimera_net `assets` (NetSim with a real service on
   127.0.0.1 and fixture files: join, offer, fetch, spawn; the hybrid client
   fetching nothing; a revoked or mistyped token's reason; the progress; the
-  token bound and the restart asked, no token, another certificate); party_kit's
-  loading line.
+  token bound and the restart asked, no token, another certificate; the
+  prefetch's rate, cap and hold; the startup fetch's plan, progress and
+  errors); chimera_assets `pace`, `sets`; chimera_client `startup`'s lines;
+  party_kit's loading line.
 
 ## 10. Later, each justified by a measurement
 

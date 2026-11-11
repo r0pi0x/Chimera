@@ -201,6 +201,7 @@
 //! check and replication too (`games/cs_source/tests/it/net.rs`).
 
 pub mod anchors;
+pub mod asset_startup;
 pub mod assets;
 pub mod breakables;
 pub mod chat;
@@ -261,7 +262,7 @@ pub const PROTOCOL_ID: u64 = 0x4C55_434B_4552_5059;
 /// This build's network version. A server refuses clients of another
 /// version. Bump the suffix when the protocol changes in a way the
 /// replicon protocol hash can't see (a field added to a message).
-pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net39");
+pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net40");
 
 /// The owner id of the listen server's own player (`NetCharacter::owner`).
 /// Remote clients' ids are never 0.

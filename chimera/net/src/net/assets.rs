@@ -21,10 +21,16 @@
 //!   hybrid model). One the process reads from the asset store alone
 //!   (`AssetSession::served`, opened at startup from a bound access or
 //!   `[assets]`) has its offered sets fetched on a thread (`fetch`: the
-//!   service's manifest, the sets' records the store lacks, in batches),
+//!   service's manifest, the sets' records the store lacks, in batches:
+//!   `chimera_assets::sets::fetch`),
 //!   the bytes shown as the join's `Downloading` stage (`DownloadInfo`,
 //!   "game files"); then the join goes on (`client::proceed`). The later
-//!   sets are fetched once in the game (`poll_prefetch`, one set at a time).
+//!   sets are fetched once in the game (`poll_prefetch`, one set at a time)
+//!   at a capped rate (`pace_prefetch`): the client's
+//!   `chimera:asset_prefetch_rate` (KB/s, `PREFETCH_RATE_DEFAULT`; 0: none),
+//!   at most the server's `chimera:asset_prefetch_max` (in the offer,
+//!   `AssetOffer::prefetch_rate`; 0: no prefetch for anyone), held while the
+//!   client is joining or changing level (a foreground fetch, a map load).
 //!   A game neither installed nor served: with a token
 //!   (`chimera_assets::access`, `chimera:asset_token`), the token is bound
 //!   to the offered service and the game starts again joining the same
@@ -34,26 +40,33 @@
 //!   unreachable service or another certificate than the bound one fails
 //!   the join with the reason on screen (`JoinFailure::Download`).
 //!
+//! The startup fetch (what the games read before the window, behind the
+//! client's progress window) is `asset_startup`'s.
+//!
 //! Known shortcuts: the first join with a new token restarts the game
 //! once; sets the service doesn't have are skipped (their files come on
-//! demand as the loaders read them); the prefetch of later maps has no
-//! rate cap of its own (one set at a time).
+//! demand as the loaders read them); files fetched on demand (a map's
+//! load) don't hold the prefetch, only the join and level change around
+//! them do.
 
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::BTreeSet,
     net::SocketAddr,
     path::PathBuf,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex},
     thread::JoinHandle,
 };
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use chimera_assets::{AssetSettings, Manifest, access::Access, progress::Transfer};
+use chimera_assets::{
+    AssetSettings,
+    access::Access,
+    pace::Pace,
+    progress::Transfer,
+    sets::{self, Wanted},
+};
 use chimera_core::{
     console::{ConsoleAppExt, resource_cvar},
     game_registry::Games,
@@ -70,6 +83,13 @@ use crate::core::NetRole;
 pub const URL_CVAR: &str = "chimera:asset_url";
 /// Its certificate's fingerprint (cvar).
 pub const FINGERPRINT_CVAR: &str = "chimera:asset_fingerprint";
+/// The server's cap on every client's prefetch, KB/s (cvar; negative:
+/// none, 0: no prefetch).
+pub const PREFETCH_MAX_CVAR: &str = "chimera:asset_prefetch_max";
+/// The client's prefetch rate, KB/s (cvar, archived; 0: no prefetch).
+pub const PREFETCH_RATE_CVAR: &str = "chimera:asset_prefetch_rate";
+/// `PREFETCH_RATE_CVAR`'s default: 2 MB/s.
+pub const PREFETCH_RATE_DEFAULT: u32 = 2000;
 /// Enter this player's asset token (command).
 pub const TOKEN_COMMAND: &str = "chimera:asset_token";
 /// The userinfo key of a client that can fetch from an offered service.
@@ -88,6 +108,25 @@ pub struct AssetOffer {
     pub now: Vec<GameSets>,
     /// What later matches may need (the pool's other maps): prefetched.
     pub later: Vec<GameSets>,
+    /// The server's cap on the prefetch, KB/s (`PREFETCH_MAX_CVAR`; 0:
+    /// none); None: the client's own rate.
+    pub prefetch_rate: Option<u32>,
+}
+
+/// The prefetch's rate in KB/s: the client's, at most the server's cap
+/// (0: no prefetch).
+pub fn prefetch_rate(client_kb: u32, server_kb: Option<u32>) -> u32 {
+    server_kb.map_or(client_kb, |s| client_kb.min(s))
+}
+
+/// On a client: the prefetch rate, KB/s (`PREFETCH_RATE_CVAR`).
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PrefetchRate(pub u32);
+
+impl Default for PrefetchRate {
+    fn default() -> Self {
+        Self(PREFETCH_RATE_DEFAULT)
+    }
 }
 
 /// Sets of one game (`base`, `map/de_dust2`, `weapon/ak47`).
@@ -122,19 +161,28 @@ impl AssetOffer {
 
 /// On a server: where this host's asset service is (`URL_CVAR`,
 /// `FINGERPRINT_CVAR`). Empty URL: none offered.
-#[derive(Resource, Clone, Debug, Default)]
+#[derive(Resource, Clone, Debug)]
 pub struct AssetHost {
     pub url: String,
     pub fingerprint: String,
+    /// The cap on every client's prefetch, KB/s (`PREFETCH_MAX_CVAR`;
+    /// negative: none).
+    pub prefetch_max: i64,
     /// Said once that no fingerprint was found.
     warned: bool,
+}
+
+impl Default for AssetHost {
+    fn default() -> Self {
+        Self::new("", "")
+    }
 }
 
 impl AssetHost {
     /// The service at `url` with the certificate `fingerprint` (empty: the
     /// one on this machine).
     pub fn new(url: impl Into<String>, fingerprint: impl Into<String>) -> Self {
-        Self { url: url.into(), fingerprint: fingerprint.into(), warned: false }
+        Self { url: url.into(), fingerprint: fingerprint.into(), prefetch_max: -1, warned: false }
     }
 
     /// The fingerprint to hand out: the cvar's, else that of the asset
@@ -238,15 +286,45 @@ struct AssetFetch {
     from: String,
 }
 
-/// The later sets to prefetch once in the game, and the prefetch running.
+/// The later sets to prefetch once in the game, the server's cap, and the
+/// prefetch running (its pace: `pace_prefetch` sets its rate and pause).
 #[derive(Resource, Default)]
 struct Prefetch {
     waiting: Vec<GameSets>,
-    running: Option<(JoinHandle<()>, Arc<AtomicBool>)>,
+    cap: Option<u32>,
+    running: Option<(JoinHandle<()>, Arc<Pace>)>,
+}
+
+/// On a client: the prefetch's state, for tests and the console.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PrefetchState {
+    /// The rate it reads at, KB/s (0: none).
+    pub rate_kb: u32,
+    /// Running now (a set being fetched).
+    pub running: bool,
+    /// Held: the client is joining or changing level.
+    pub paused: bool,
+    /// Sets still to start.
+    pub waiting: usize,
+}
+
+/// The prefetch as it stands (None: nothing offered).
+pub fn prefetch_state(world: &World) -> Option<PrefetchState> {
+    let p = world.get_resource::<Prefetch>()?;
+    let client = world.get_resource::<PrefetchRate>().copied().unwrap_or_default().0;
+    let running = p.running.as_ref().filter(|(j, _)| !j.is_finished());
+    Some(PrefetchState {
+        rate_kb: prefetch_rate(client, p.cap),
+        running: running.is_some(),
+        paused: running.is_some_and(|(_, pace)| pace.paused()),
+        waiting: p.waiting.iter().map(|g| g.sets.len()).sum(),
+    })
 }
 
 pub(super) fn plugin(app: &mut App) {
-    app.init_resource::<AssetHost>().init_resource::<AssetHooks>();
+    app.init_resource::<AssetHost>()
+        .init_resource::<AssetHooks>()
+        .init_resource::<PrefetchRate>();
     resource_cvar::<AssetHost, String>(
         app,
         URL_CVAR,
@@ -259,6 +337,22 @@ pub(super) fn plugin(app: &mut App) {
         "Server: the asset service's certificate fingerprint (chimera_asset_server prints it); empty: the one on this machine.",
         |h| &mut h.fingerprint,
     );
+    resource_cvar::<AssetHost, i64>(
+        app,
+        PREFETCH_MAX_CVAR,
+        "Server: the most KB/s each client prefetches the pool's other maps at, in the background (0: no prefetch; \
+         -1: the clients' own rate).",
+        |h| &mut h.prefetch_max,
+    );
+    resource_cvar::<PrefetchRate, u32>(
+        app,
+        PREFETCH_RATE_CVAR,
+        "KB/s the game fetches later maps' files at in the background, while playing (0: none; a server may cap it).",
+        |r| &mut r.0,
+    );
+    app.world_mut()
+        .resource_mut::<chimera_core::console::Console>()
+        .archive(PREFETCH_RATE_CVAR);
     app.console_command(
         TOKEN_COMMAND,
         "Enter your asset token (from the asset service's admin), kept for this user; the next server offering its service binds it.",
@@ -272,7 +366,9 @@ pub(super) fn plugin(app: &mut App) {
     );
     app.add_systems(
         Update,
-        (poll_fetch, poll_prefetch).run_if(resource_equals(NetRole::Client)),
+        (poll_fetch, poll_prefetch, pace_prefetch)
+            .chain()
+            .run_if(resource_equals(NetRole::Client)),
     );
 }
 
@@ -318,6 +414,7 @@ pub fn offer(world: &mut World, m: &mut MatchManifest) {
     let mut offer = AssetOffer {
         url,
         fingerprint,
+        prefetch_rate: u32::try_from(host.prefetch_max).ok(),
         ..default()
     };
     let mut in_play: Vec<String> = m.games.iter().map(|g| g.game.clone()).collect();
@@ -424,6 +521,7 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
     let running = world.remove_resource::<Prefetch>().and_then(|p| p.running);
     world.insert_resource(Prefetch {
         waiting: offer.later.iter().filter(|g| served(g)).cloned().collect(),
+        cap: offer.prefetch_rate,
         running,
     });
     let wants: Vec<GameSets> = offer.now.iter().filter(|g| served(g)).cloned().collect();
@@ -448,7 +546,9 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
     );
     let transfer: Arc<Mutex<Option<Arc<Transfer>>>> = Arc::default();
     let shared = transfer.clone();
-    let job = std::thread::spawn(move || fetch(&settings, &wants, &shared));
+    let job = std::thread::spawn(move || {
+        sets::fetch(&settings, &wanted(&wants), FILES, &shared, sets::Options::default())
+    });
     client::set_stage(world, JoinStage::Downloading);
     world.resource_mut::<JoinProgress>().download = Some(DownloadInfo {
         file: FILES.into(),
@@ -513,7 +613,7 @@ fn without_files(world: &mut World, offer: &AssetOffer, session: &AssetSession, 
         let why = chimera_assets::Remote::shared(&remote)
             .and_then(|r| r.whoami().map_err(|e| e.to_string()))
             .err()
-            .map(|e| explain(&offer.url, &e))
+            .map(|e| sets::explain(&offer.url, &e))
             .unwrap_or_else(|| {
                 format!("the asset service at {} doesn't serve {names}; tell the server's admin", offer.url)
             });
@@ -534,85 +634,9 @@ fn without_files(world: &mut World, offer: &AssetOffer, session: &AssetSession, 
     Next::Left
 }
 
-/// Turn a service error into what a player can act on.
-fn explain(url: &str, e: &str) -> String {
-    if e.contains("HTTP 401") {
-        format!(
-            "the asset service refused your token (revoked or mistyped): ask the server's admin for a new one and \
-             enter it with +{TOKEN_COMMAND} <token>"
-        )
-    } else if e.contains("HTTP 403") {
-        format!("your account on the asset service may not fetch this game ({e})")
-    } else if e.contains("HTTP 429") {
-        format!("the asset service is limiting you: {e}")
-    } else if e.contains("certificate") {
-        format!("the asset service at {url} isn't the one the server named: {e}")
-    } else {
-        format!("can't reach the asset service at {url} ({e}); is it running and its port open?")
-    }
-}
-
-/// The fetch: `wants`' sets' records the store lacks, from the service.
-fn fetch(
-    settings: &AssetSettings,
-    wants: &[GameSets],
-    shared: &Mutex<Option<Arc<Transfer>>>,
-) -> Result<String, String> {
-    let url = settings.remote.as_ref().map(|r| r.url.clone()).unwrap_or_default();
-    let remote = settings.remote().ok_or_else(|| explain(&url, "not usable"))?;
-    remote.whoami().map_err(|e| explain(&url, &e.to_string()))?;
-    let store = settings.store.clone().ok_or("no asset store folder")?;
-    let mut wanted = Vec::new();
-    let mut seen = HashSet::new();
-    let mut absent = Vec::new();
-    for g in wants {
-        let build = settings.build(&g.game).ok_or_else(|| {
-            format!(
-                "the asset service at {url} has no {} (or refused it: the log says)",
-                g.game
-            )
-        })?;
-        let manifest = Manifest::load(&store.manifest_path(&g.game, &build)).map_err(|e| format!("{}: {e}", g.game))?;
-        for set in &g.sets {
-            let Some(paths) = manifest.sets.get(set) else {
-                absent.push(format!("{}:{set}", g.game));
-                continue;
-            };
-            for p in paths {
-                if let Some(r) = manifest.files.get(p)
-                    && seen.insert(r.id.clone())
-                    && !store.has(&r.id)
-                {
-                    wanted.push((r.id.clone(), r.size, r.stored));
-                }
-            }
-        }
-    }
-    let bytes = wanted.iter().map(|w| w.2).sum();
-    let transfer = Arc::new(Transfer::with_live(FILES, wanted.len() as u64, bytes, false));
-    *shared.lock().unwrap_or_else(|e| e.into_inner()) = Some(transfer.clone());
-    let (_, _, failed) = remote.fill(&store, &wanted, Some(&transfer));
-    if !failed.is_empty() {
-        let refused = failed
-            .iter()
-            .any(|f| ["HTTP 401", "HTTP 403", "HTTP 429"].iter().any(|s| f.contains(s)));
-        if refused || failed.len() == wanted.len() {
-            return Err(explain(&url, &failed[0]));
-        }
-        warn!(
-            "{} of the match's files didn't arrive (they are fetched again as needed): {}",
-            failed.len(),
-            failed[0]
-        );
-    }
-    let mut summary = transfer.finish();
-    if !absent.is_empty() {
-        summary.push_str(&format!(
-            " (not on the service, so fetched as needed: {})",
-            absent.join(", ")
-        ));
-    }
-    Ok(summary)
+/// `GameSets` as `sets::fetch` takes them.
+fn wanted(list: &[GameSets]) -> Vec<Wanted> {
+    list.iter().map(|g| Wanted { game: g.game.clone(), sets: g.sets.clone() }).collect()
 }
 
 /// The fetch's progress into the loading screen; once done, the join goes
@@ -662,51 +686,74 @@ fn poll_fetch(world: &mut World) {
     }
 }
 
-/// In the game: the later sets, one at a time, in the background.
+/// In the game: the later sets, one at a time, in the background, at the
+/// prefetch's rate (`pace_prefetch`).
 fn poll_prefetch(world: &mut World) {
     if !world.contains_resource::<client::Joined>() {
         return;
     }
+    let client = world.get_resource::<PrefetchRate>().copied().unwrap_or_default().0;
     let Some(mut p) = world.get_resource_mut::<Prefetch>() else {
         return;
     };
-    if p.running.as_ref().is_some_and(|(j, _)| !j.is_finished()) || p.waiting.is_empty() {
+    let rate = prefetch_rate(client, p.cap);
+    if rate == 0 || p.running.as_ref().is_some_and(|(j, _)| !j.is_finished()) || p.waiting.is_empty() {
         return;
     }
     let waiting = std::mem::take(&mut p.waiting);
-    let stop = Arc::new(AtomicBool::new(false));
     let settings = world.get_resource::<AssetSession>().and_then(|s| s.settings.clone());
     let Some(settings) = settings.filter(|s| s.remote.is_some()) else {
         return;
     };
-    let flag = stop.clone();
+    let pace = Arc::new(Pace::kb_per_sec(rate.into()));
+    let shared = pace.clone();
     let job = std::thread::spawn(move || {
         for g in waiting {
             for set in &g.sets {
-                if flag.load(Ordering::Relaxed) {
+                if shared.stopped() {
                     return;
                 }
-                let one = [GameSets {
-                    game: g.game.clone(),
-                    sets: vec![set.clone()],
-                }];
-                match fetch(&settings, &one, &Mutex::new(None)) {
+                let one = [Wanted { game: g.game.clone(), sets: vec![set.clone()] }];
+                let options = sets::Options { pace: Some(&shared), ..default() };
+                match sets::fetch(&settings, &one, "prefetched files", &Mutex::new(None), options) {
                     Ok(summary) => info!("prefetched {}:{set}: {summary}", g.game),
                     Err(e) => info!("prefetching {}:{set}: {e}", g.game),
                 }
             }
         }
     });
-    world.resource_mut::<Prefetch>().running = Some((job, stop));
+    world.resource_mut::<Prefetch>().running = Some((job, pace));
 }
 
-/// The client left: no fetch goes on for it; a prefetch stops after its
-/// set.
+/// The running prefetch's rate (the client's, at most the server's cap)
+/// and its pause: held while the client isn't in the game (joining,
+/// changing level, fetching the match's files in the foreground).
+fn pace_prefetch(
+    prefetch: Option<Res<Prefetch>>,
+    rate: Option<Res<PrefetchRate>>,
+    joined: Option<Res<client::Joined>>,
+    fetch: Option<Res<AssetFetch>>,
+    progress: Option<Res<JoinProgress>>,
+) {
+    let Some((_, pace)) = prefetch.as_ref().and_then(|p| p.running.as_ref()) else {
+        return;
+    };
+    let cap = prefetch.as_ref().and_then(|p| p.cap);
+    let kb = prefetch_rate(rate.map_or(PREFETCH_RATE_DEFAULT, |r| r.0), cap);
+    pace.set_rate(u64::from(kb) * 1000);
+    let busy = fetch.is_some() || joined.is_none() || progress.is_some_and(|p| !matches!(p.stage, JoinStage::Idle | JoinStage::Joined));
+    if pace.paused() != busy {
+        pace.pause(busy);
+    }
+}
+
+/// The client left: no fetch goes on for it; a prefetch stops (its
+/// batch cut short).
 pub(super) fn reset(world: &mut World) {
     world.remove_resource::<AssetFetch>();
     if let Some(p) = world.remove_resource::<Prefetch>()
-        && let Some((_, stop)) = p.running
+        && let Some((_, pace)) = p.running
     {
-        stop.store(true, Ordering::Relaxed);
+        pace.stop();
     }
 }

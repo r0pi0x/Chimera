@@ -72,21 +72,26 @@ To enter a new one, run the same line with the new token.
 
 Or from the console (`~`): `connect <host address>:<port>`.
 
-The first time you join, the game downloads the files the match needs.
-The loading panel shows "Downloading game files: X of Y MB" with a bar,
-then the map loads and you spawn. The first join takes the longest (a few
-hundred MB: minutes on a slow line; before the window appears the game also
-fetches what it reads at startup, shown only in the console window), and
-the next ones read what is already saved; later maps download in the
-background while you play. If it stalls, wait a minute, then see
+The first time, the game downloads the files it needs. Right after the
+token's restart a small window says "Downloading game files: X of Y MB"
+with the speed and time left (what the games read at startup, a few hundred
+MB); then the game's window opens, and the loading panel shows the same
+line for the match's files, then the map loads and you spawn. The first
+start takes the longest (minutes on a slow line; the host may ask you to do
+it the day before), and the next ones read what is already saved; later
+maps download in the background while you play, at most 2 MB/s
+(`chimera:asset_prefetch_rate <KB/s>` in the console changes it, 0 turns it
+off; the host may cap it). If the small window shows an error, it says why:
+"Try again" once the host has fixed it, or "Start anyway". If it stalls, wait a minute, then see
 "Reporting a bug". Messages you may see instead:
 
 - "the asset service refused your token (revoked or mistyped)": ask the
   host for a new token and run the line above with it.
 - "can't reach the asset service at ...": the host's asset service is down
   or its port isn't open; tell the host.
-- "isn't the one your token is for": the host's service changed; enter your
-  token again (the line above).
+- "isn't the one your token is for" or "has another certificate than the
+  one your token is for": the host's service changed; enter your token again
+  (the line above) if the host says so.
 - "This match needs ... start the game once with +chimera:asset_token": you
   joined without a token.
 
