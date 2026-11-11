@@ -3,8 +3,9 @@
 //! join's offer names (`chimera_net::net::assets`), the later maps it
 //! prefetches (at a `Pace`), and what the games read at startup
 //! (`STARTUP_SETS`, fetched behind the client's progress window). `fetch`
-//! reads each game's manifest (fetched when the store lacks it), the sets'
-//! records the store lacks, and fills them with a `progress::Transfer` the
+//! reads each game's manifest (fetched when the store lacks it, and again
+//! when the service lists another one for the same build: `refresh`), the
+//! sets' records the store lacks, and fills them with a `progress::Transfer` the
 //! caller can watch (what didn't arrive is asked again after
 //! `RETRY_DELAYS`, unless the token was refused); `missing` says, from the store alone (no network),
 //! whether a fetch would have anything to do; `explain` turns a service's
@@ -16,7 +17,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{AssetSettings, Manifest, pace::Pace, progress::Transfer};
+use crate::{AssetSettings, Manifest, Remote, pace::Pace, progress::Transfer, sha256_hex};
 
 /// The sets a game reads at startup: what its client fetches before the
 /// game's window when the store lacks them.
@@ -62,19 +63,21 @@ pub fn fetch(
     let url = settings.remote.as_ref().map(|r| r.url.clone()).unwrap_or_default();
     let remote = settings.remote().ok_or_else(|| explain(&url, "not usable"))?;
     remote.whoami().map_err(|e| explain(&url, &e.to_string()))?;
-    let listed: Option<HashSet<String>> = if options.skip_unlisted {
-        Some(
-            remote
-                .games()
-                .map_err(|e| explain(&url, &e.to_string()))?
-                .into_iter()
-                .map(|g| g.0)
-                .collect(),
-        )
-    } else {
-        None
-    };
     let store = settings.store.clone().ok_or("no asset store folder")?;
+    // The service's builds and manifest ids: to skip games it doesn't
+    // list, and to see whether a kept manifest is older than its own.
+    let kept = wanted.iter().any(|g| store.latest_build(&g.game).is_some());
+    let listing = (options.skip_unlisted || kept).then(|| remote.games());
+    let listed: Option<HashSet<String>> = match &listing {
+        Some(l) if options.skip_unlisted => {
+            Some(l.as_ref().map_err(|e| explain(&url, &e.to_string()))?.iter().map(|g| g.0.clone()).collect())
+        }
+        _ => None,
+    };
+    if let Some(Ok(listing)) = &listing {
+        let games: Vec<&str> = wanted.iter().map(|g| g.game.as_str()).collect();
+        refresh(settings, &remote, listing, &games);
+    }
     let mut records = Vec::new();
     let mut seen = HashSet::new();
     let mut absent = Vec::new();
@@ -141,6 +144,49 @@ pub fn fetch(
         summary.push_str(&format!(" (not on the service, so fetched as needed: {})", absent.join(", ")));
     }
     Ok(summary)
+}
+
+/// The kept manifests of `games` (at the pinned build, else the store's
+/// newest) fetched again where the service's `listing` (`Remote::games`)
+/// names another manifest for that build: the host published again
+/// (new or bigger sets, new files) without a new game build. Without
+/// this, a player who fetched before keeps the old sets for good: a set's
+/// added files are then never fetched with it, only one by one as the
+/// loaders read them. A build `assets.lock` pins keeps the locked
+/// manifest (`AssetSettings::build`). The games whose manifest was
+/// replaced; one that couldn't be is said and keeps the old one. Mounts
+/// already open keep reading the manifest they opened (a new process
+/// reads the new one).
+pub fn refresh(settings: &AssetSettings, remote: &Remote, listing: &[(String, String, String)], games: &[&str]) -> Vec<String> {
+    let Some(store) = settings.store.as_ref() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for game in games {
+        if out.iter().any(|g| g == game) || settings.lock.as_ref().is_some_and(|l| l.games.contains_key(*game)) {
+            continue;
+        }
+        let Some(build) = settings.builds.get(*game).cloned().or_else(|| store.latest_build(game)) else {
+            continue;
+        };
+        let Ok(kept) = std::fs::read(store.manifest_path(game, &build)) else {
+            continue;
+        };
+        let Some((_, _, id)) = listing.iter().find(|(g, b, _)| g == game && *b == build) else {
+            continue;
+        };
+        if sha256_hex(&kept) == *id {
+            continue;
+        }
+        match remote.fetch_manifest(store, game, &build, None) {
+            Ok(_) => {
+                eprintln!("assets: {game} build {build}: the service has a newer manifest (sets published again): fetched it");
+                out.push(game.to_string());
+            }
+            Err(e) => eprintln!("assets: {game} build {build}: the service's newer manifest didn't arrive ({e}); the kept one is used"),
+        }
+    }
+    out
 }
 
 /// Whether `fetch` of `wanted` would have something to fetch, from the

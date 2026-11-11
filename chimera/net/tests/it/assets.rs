@@ -194,6 +194,25 @@ impl Fixture {
         }
     }
 
+    /// The host publishes again at the same build: `path` (new bytes)
+    /// added to `set`, the manifest's other lines unchanged. Waits until
+    /// the service has read it (it looks at most once a second).
+    fn republish(&mut self, set: &str, path: &str, bytes: &[u8]) -> String {
+        let p = self.store.put(bytes).unwrap();
+        self.manifest.files.insert(
+            path.into(),
+            FileRecord {
+                id: p.id.clone(),
+                size: bytes.len() as u64,
+                stored: p.stored,
+            },
+        );
+        self.manifest.sets.entry(set.into()).or_default().insert(path.into());
+        self.manifest.save(&self.store.manifest_path(GAME, "7")).unwrap();
+        std::thread::sleep(Duration::from_millis(1100));
+        p.id
+    }
+
     /// Record ids of `set`.
     fn ids(&self, set: &str) -> Vec<String> {
         self.manifest.sets[set]
@@ -511,6 +530,71 @@ fn the_prefetch_keeps_to_its_rate_and_holds_for_the_foreground() {
     let state = prefetch(&sim, 0).unwrap();
     assert_eq!((state.rate_kb, state.running), (0, false), "{state:?}");
     assert!(later.iter().all(|id| !store.has(id)), "nothing prefetched");
+}
+
+/// A player who fetched before the host published again (same build, sets
+/// grown: the 2026-11-11 republish of Combat Arms' `base`, `players` and
+/// weapon sets): the next start fetches the service's newer manifest and
+/// the startup sets' added files behind the window; the next join fetches
+/// the offered sets' added files before it spawns; none is left to come
+/// on demand, and the kept manifest is the service's.
+#[test]
+fn a_player_who_fetched_before_a_republish_gets_the_new_sets() {
+    let mut svc = Fixture::new("republish", 5, Duration::ZERO);
+    let token = svc.user("tester");
+    let session = svc.session("client", &token, true);
+    let settings = session.settings.clone().unwrap();
+    let store = settings.store.clone().unwrap();
+    let game = AppGame { game: GAME.into(), installed: false };
+
+    // Before: the first start and join fetch the sets as they were.
+    let wanted = asset_startup::plan(&settings, &[game.clone()]).expect("planned");
+    assert!(matches!(run_startup(settings.clone(), wanted).0, Status::Done(_)));
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
+    sim.add_client(client_with(session.clone(), true));
+    assert!(until(&mut sim, 30.0, |s| joined(s, 0)), "joined: {:?}", progress(&sim, 0));
+    drop(sim);
+    let kept = store.manifest_path(GAME, "7");
+    let old = fs::read(&kept).unwrap();
+
+    // The host publishes again: `base` and `players` each gain a file.
+    let in_base = svc.republish("base", "base/added.dat", b"added to base");
+    let in_players = svc.republish("players", "models/added.mdl", b"added to players");
+    assert!(
+        asset_startup::plan(&settings, &[game.clone()]).is_none(),
+        "from the kept manifest alone, nothing looks missing"
+    );
+
+    // The next start: the newer manifest, then its `base` behind the window.
+    assert_eq!(asset_startup::refresh(&settings, &[game.clone()], Duration::from_secs(10)), [GAME]);
+    assert_ne!(fs::read(&kept).unwrap(), old, "the kept manifest replaced");
+    let wanted = asset_startup::plan(&settings, &[game.clone()]).expect("the new base file is planned");
+    assert!(matches!(run_startup(settings.clone(), wanted).0, Status::Done(_)));
+    assert!(store.has(&in_base), "base's added file fetched at startup");
+    assert!(
+        asset_startup::refresh(&settings, &[game.clone()], Duration::from_secs(10)).is_empty(),
+        "up to date: nothing fetched again"
+    );
+
+    // The next join: the offered `players`' added file before it spawns.
+    assert!(!store.has(&in_players));
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
+    sim.add_client(client_with(session.clone(), true));
+    assert!(until(&mut sim, 30.0, |s| joined(s, 0)), "joined: {:?}", progress(&sim, 0));
+    assert!(store.has(&in_players), "players' added file fetched at the join");
+    drop(sim);
+
+    // A join alone (no start between) refreshes too: a third publish.
+    let in_players2 = svc.republish("players", "models/added2.mdl", b"added again");
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
+    sim.add_client(client_with(session, true));
+    assert!(until(&mut sim, 30.0, |s| joined(s, 0)), "joined: {:?}", progress(&sim, 0));
+    assert!(store.has(&in_players2), "fetched at the join");
+    assert_eq!(
+        chimera_assets::sha256_hex(&fs::read(&kept).unwrap()),
+        chimera_assets::sha256_hex(&fs::read(svc.store.manifest_path(GAME, "7")).unwrap()),
+        "the kept manifest is the service's"
+    );
 }
 
 /// A session's settings for the startup fetch with `token` at `url`

@@ -101,6 +101,12 @@ loop above, 90-190 MB each, 2.3 GB together) and HL2:DM's other six, and
 every gun's `weapon/<id>`. A set the service lacks is skipped: its files arrive on
 demand while the map loads, slower (a request per group of files).
 
+Publishing again at the same build reaches testers who fetched before:
+each start asks the service whether it has a newer manifest than the
+one kept (waiting at most 5 s) and fetches the startup sets' new files
+behind the progress window; each join fetches the offered sets' new
+files before the tester spawns. Nothing more for the tester to do.
+
 ## The asset service (each session)
 
 ```
