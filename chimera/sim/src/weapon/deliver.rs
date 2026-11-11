@@ -21,6 +21,13 @@
 //! told with no `hit`, no push, no damage, a swing as a miss, and the
 //! round ends there. A body its shooter holds (`map::held::Held`) isn't
 //! there for the shooter's own shots either (gravity_gun.md 5).
+//!
+//! A character whose game makes its hitboxes on demand (`core::LazyHitboxes`)
+//! and says what box holds them (`core::HitBound`) is tested against that
+//! box first: a ray that can't enter it nearer than what the trace hit so
+//! far leaves the shapes unmade (the same hits, in the same order, as
+//! testing them: docs/performance.md, "A broad phase for the hitscan").
+//! Characters rewound by lag compensation are tested as before.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -341,10 +348,16 @@ impl Shot<'_, '_, '_> {
                 continue;
             };
             let Ok(target) = self.w.targets.get(e) else { continue };
+            let limit = best.as_ref().map_or(end, |b| b.distance) - start;
+            // The broad phase: a body whose game's bound the ray can't
+            // reach within the limit is passed over unposed (no shape of
+            // it could be entered nearer: the same hits as testing them).
+            if !target.hitboxes.may_meet(o, d, limit, grow) {
+                continue;
+            }
             let Some(boxes) = target.hitboxes.get() else {
                 continue;
             };
-            let limit = best.as_ref().map_or(end, |b| b.distance) - start;
             let boxes: std::borrow::Cow<[crate::core::Hitbox]> = if grow > 0.0 { grown(&boxes.0, grow).into() } else { (&boxes.0[..]).into() };
             if let Some((distance, leave, group)) = nearest_box(&boxes, o, d, limit) {
                 best = Some(Hit {
