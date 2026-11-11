@@ -190,6 +190,19 @@ const WIDTHS: [f32; 4] = [220.0, 170.0, 250.0, 70.0];
 const GAP: f32 = 16.0;
 const CELL: f32 = 17.0;
 
+/// Text on this machine's own row, which sits on the gold band: near-black
+/// (the status colours and the grey ping do not read there; the status word
+/// says what the colour would).
+const ON_LOCAL: Color = Color::srgb(0.06, 0.05, 0.03);
+/// The download bar's track and fill on the own row: a dark track, a white fill.
+const LOCAL_BAR_BG: Color = Color::srgba(0.0, 0.0, 0.0, 0.4);
+const LOCAL_BAR_FILL: Color = Color::WHITE;
+
+/// The status text's colour; `local` for this machine's own row.
+fn status_text(s: u8, local: bool) -> Color {
+    if local { ON_LOCAL } else { status_color(s) }
+}
+
 fn status_color(s: u8) -> Color {
     match s {
         status::READY => READY,
@@ -323,9 +336,9 @@ fn draw(
                 ))
                 .with_children(|r| {
                     let f = if row.local { &cell_bold } else { &cell_font };
-                    let name_color = if row.local { Color::WHITE } else if row.bot { DIM } else { TEXT };
+                    let name_color = if row.local { ON_LOCAL } else if row.bot { DIM } else { TEXT };
                     cell(r, row.name.clone(), WIDTHS[0], false, name_color, f, s);
-                    cell(r, row.state.clone(), WIDTHS[1], false, status_color(row.status), f, s);
+                    cell(r, row.state.clone(), WIDTHS[1], false, status_text(row.status, row.local), f, s);
                     // The download: a bar and its bytes.
                     r.spawn(Node {
                         width: px(WIDTHS[2] * s),
@@ -343,7 +356,7 @@ fn draw(
                                     flex_shrink: 0.0,
                                     ..default()
                                 },
-                                BackgroundColor(super::widgets::display_alpha(BAR_BG)),
+                                BackgroundColor(super::widgets::display_alpha(if row.local { LOCAL_BAR_BG } else { BAR_BG })),
                             ))
                             .with_children(|b| {
                                 b.spawn((
@@ -352,18 +365,18 @@ fn draw(
                                         height: percent(100.0),
                                         ..default()
                                     },
-                                    BackgroundColor(DOWNLOADING),
+                                    BackgroundColor(if row.local { LOCAL_BAR_FILL } else { DOWNLOADING }),
                                 ));
                             });
                             d.spawn((
                                 Text::new(row.bytes.clone()),
                                 font(CELL - 3.0, false),
-                                TextColor(TEXT),
+                                TextColor(if row.local { ON_LOCAL } else { TEXT }),
                                 TextLayout::new(Justify::Left, LineBreak::NoWrap),
                             ));
                         }
                     });
-                    cell(r, row.ping.clone(), WIDTHS[3], true, DIM, &cell_font, s);
+                    cell(r, row.ping.clone(), WIDTHS[3], true, if row.local { ON_LOCAL } else { DIM }, &cell_font, s);
                 });
             }
         });
@@ -392,6 +405,14 @@ fn draw(
 mod tests {
     use super::*;
     use chimera_net::prematch::LobbyRow;
+
+    #[test]
+    fn the_own_row_status_is_dark_on_the_gold_band_and_others_keep_their_colour() {
+        for st in [status::READY, status::DOWNLOADING, status::LOADING] {
+            assert_eq!(status_text(st, true), ON_LOCAL);
+            assert_eq!(status_text(st, false), status_color(st));
+        }
+    }
 
     #[test]
     fn rows_and_lines_read_as_the_lobby_stands() {
