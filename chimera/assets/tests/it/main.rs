@@ -136,9 +136,13 @@ fn a_miss_fetches_its_group() {
     let ids = |paths: &[&str]| paths.iter().map(|p| m.files[*p].id.clone()).collect::<Vec<_>>();
     let group = |path: &str| index.group(&client, path).into_iter().map(|g| g.0).collect::<Vec<_>>();
     assert_eq!(group("materials/a1.vtf"), ids(&["materials/a1.vtf", "maps/a.bsp"]), "the map's set, from a1 on, wrapping");
+    // The set a group comes from (what the on-demand fetch log names).
+    assert_eq!(index.group_set("materials/a1.vtf"), Some("map/a"), "the smallest set holding it");
+    assert_eq!(index.group_set("models/gun.mdl"), Some("all"));
     let mut no_set = m.clone();
     no_set.sets.clear();
     let index = chimera_assets::cached::Index::new(&no_set);
+    assert_eq!(index.group_set("models/gun.mdl"), None, "no set: its companions");
     let group: Vec<String> = index.group(&client, "models/gun.mdl").into_iter().map(|g| g.0).collect();
     assert_eq!(group, ids(&["models/gun.mdl", "models/gun.dx90.vtx", "models/gun.vvd"]), "its companions, not gunner");
     let _ = fs::remove_dir_all(&dir);
