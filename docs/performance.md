@@ -3416,6 +3416,72 @@ Left: particles, steam and the other effects still write their meshes
 every frame (most of the 3-5 meshes a frame left); a moving prop's
 render-to-texture silhouette still rewrites its atlas image's cell.
 
+## The dedicated server's memory (2026-11-11)
+
+What the playtest rehearsal left (playtest-hosting.md, "Rehearsal"):
+`ultimate_gun_game_server`'s resident plus swapped memory 2.4 GB at the
+start, 5.24 GB after 3 maps, 5.53 GB after 6, about 100 MB more a map.
+
+**The repro.** `heavy::server_map_memory` in ultimate_gun_game: the server
+as its binary composes it (`ServerPlugin` over the party's `GameServer`, the
+launch hook, 4 bots), a new ladder on another map each time (`ugg_new <seed>
+13 <map>`, the rotation's path), laps over cs_office, warehouse, de_inferno
+and de_dust2 in one process, the session the same on every run
+(`Sim::repeatable`). After each map: glibc's bytes in use (`mallinfo2`),
+what the process holds of its heap and anonymous mappings (resident or
+swapped, `/proc/self/smaps`), the entities; a heap profile (jemalloc
+preloaded with `prof:true`, a `prof.dump` after each map, `jeprof --base`
+between visits of the same map) said what holds the bytes. Dev profile;
+bytes, not times.
+
+**What it found.** Not a leak of the live heap: after the first lap a map
+had in use on its next visit what it had on the last (3-11 MB more a lap of
+four maps, the archetypes' tables Bevy keeps; under 1 MB a map from the
+third lap). Two things held the rest:
+
+- glibc kept what a map change freed: 0.8 GB "free in arenas" after the
+  first map, 1.3-1.9 GB after a few, counted resident or swapped, more after
+  each map, the way the client's did before it gave them back (the section
+  above): the server never did.
+- The server decoded the Combat Arms models' textures it never draws: the
+  world's textures were loaded as sizes only (`MapLoadOptions::textures`
+  off), but not the character models' shared conversion (410 MB of RGBA
+  texels and mips held for the process's life after the first map with
+  Combat Arms bodies), nor the view models, hands, held models and
+  effects' looks that dress every other game's map for Combat Arms
+  (`world::DRESSING`: about 1.2 GB more for each map while it played,
+  converted again for each map).
+
+**The fixes.** Combat Arms' models' textures follow the load: a map loaded
+without textures is `world::SizesOnly` while it loads (a memo), so
+`model_textures` and the effects' looks keep sizes only, for the shared
+character models too (`shared_character_models(.., decode)`: a load with
+textures converts them again with texels, which serve both). The dedicated
+server gives glibc's free pages back 20 s of its time after each map comes
+in (`metrics::memory::release_after_change`, now the client's and the
+server's), and maps its blocks of 4 MB and more for good
+(`big_blocks_mapped`, `M_MMAP_THRESHOLD`: freed, they go back at once).
+
+| | before | after |
+|---|---|---|
+| in use, first lap (MB) | 2,851-3,304 | 2,024-2,216 |
+| in use, third lap (MB) | 3,141-3,323 | 2,057-2,237 |
+| heap and anonymous held, first map (MB) | 3,688 | 2,166 |
+| held after 4, 8, 12 maps (MB) | 4,744, 4,836, 4,878 | 2,224, 2,256, 2,313 |
+| held after 28 maps (MB) | | 2,318 (2,157-2,392 on the last lap) |
+| free in arenas (MB) | 844-1,863 | given back |
+
+The test fails if the server has 2.5 GB in use on any map, holds 500 MB more
+than it has in use, or a map has 32 MB more in use on its third visit than
+on its second.
+
+**Left** (bounded, not per map): of the 2.2 GB in use, the Combat Arms view
+models' animations sampled for each map's dressing (510 MB, converted again
+at each map change), the character models' animation files (430 MB, once
+per process: `model::ChildModels`), the effects' library (270 MB) and the
+merged weapon data (230 MB). Whether the server needs the view models at
+all (their timing is read from them) is open (backlog).
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,

@@ -660,20 +660,31 @@ pub struct SharedModels {
 
 /// `add_character_models`, converted once per install data (`ca`'s
 /// `memo`: the first map load; the next ones copy it, `append_shared`).
-pub fn shared_character_models(ca: &CaData, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Arc<SharedModels> {
+/// `decode` off (a load without textures, the dedicated server's): their
+/// textures' sizes only (`world::SizesOnly`), about 400 MB less held for the
+/// process's life; a load with textures then converts them again with
+/// texels, which serve both from then on.
+pub fn shared_character_models(ca: &CaData, file: &dyn Fn(&str) -> Option<Vec<u8>>, decode: bool) -> Arc<SharedModels> {
     // A lock of its own: two loads at once (a server's and a client's)
-    // convert once.
+    // convert once. The models, and whether their textures are decoded.
     #[derive(Default)]
-    struct Shared(Mutex<Option<Arc<SharedModels>>>);
+    struct Shared(Mutex<Option<(Arc<SharedModels>, bool)>>);
     let shared = ca.memo(Shared::default);
     let mut cached = shared.0.lock().unwrap_or_else(|e| e.into_inner());
-    cached
-        .get_or_insert_with(|| {
-            let mut data = MapData::default();
-            add_character_models(&mut data, ca, file);
-            Arc::new(SharedModels { data })
-        })
-        .clone()
+    if let Some((models, decoded)) = cached.as_ref()
+        && (*decoded || !decode)
+    {
+        return models.clone();
+    }
+    let mut data = MapData::default();
+    if !decode {
+        data.memos.insert(super::super::world::SizesOnly);
+    }
+    add_character_models(&mut data, ca, file);
+    data.memos.remove::<super::super::world::SizesOnly>();
+    let models = Arc::new(SharedModels { data });
+    *cached = Some((models.clone(), decode));
+    models
 }
 
 /// The shared character models into `map`: their textures appended to

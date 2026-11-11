@@ -27,6 +27,9 @@
 //!   Ctrl+C as `quit`. `tick_stats` prints the last ticks' wall and CPU
 //!   ms and instructions (`metrics::TickMetrics`, when the game's sim adds
 //!   it) and the process's resident memory, for watching a live server.
+//!   20 s after each map change the allocator's free pages go back to the
+//!   system (`metrics::memory::release_after_change`; glibc kept 1.3-1.8 GB
+//!   of them on Ultimate Gun Game's server, more each map).
 //! - What only some servers have, `ServerHooks` (all off in
 //!   `ServerHooks::NONE`): several games' maps (`maps`: a loader of whole
 //!   ids, the game a bare name is); the map cycle (`map_cycle`:
@@ -385,6 +388,8 @@ impl ServerPlugin {
 impl Plugin for ServerPlugin {
     fn build(&self, app: &mut App) {
         let start = self.map.lock().unwrap().take();
+        // Big blocks go back to the system when freed (a map change's).
+        chimera_core::metrics::memory::big_blocks_mapped();
         if let Some(StartMap::Loaded { context, .. }) = &start {
             app.insert_resource(context.clone());
         }
@@ -434,6 +439,8 @@ impl Plugin for ServerPlugin {
             ..default()
         })
         .add_systems(Update, finish_level_change)
+        // glibc's free pages back a while after each map change.
+        .add_systems(Update, chimera_core::metrics::memory::release_after_change::<map::MapFile>)
         .console_command(
             "changelevel",
             &format!("changelevel <map>: move the server and its players to another map ({maps})."),
