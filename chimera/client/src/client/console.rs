@@ -2378,6 +2378,8 @@ fn spawn_map_steps(w: &mut World, budget: std::time::Duration) {
         tick,
         started: std::time::Instant::now(),
     });
+    // A network client predicts once in the game (`net::predict`).
+    w.insert_resource(crate::map::MapSettling);
 }
 
 /// A frame of `Settling`: every hook's slice, and into the game when they are
@@ -2400,6 +2402,7 @@ fn settle_map(w: &mut World) {
     }
     info!("map settled behind the loading screen in {:.2} s", started.elapsed().as_secs_f32());
     w.remove_resource::<Settling>();
+    w.remove_resource::<crate::map::MapSettling>();
     LoadCaps::lift(w);
     // A HUD still being shown (out of time) gives the HUD back.
     w.remove_resource::<crate::gameplay::HudWarm>();

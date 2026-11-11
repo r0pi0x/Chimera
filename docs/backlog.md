@@ -160,10 +160,6 @@ Delete each when done.
 - **Client memory**: 3.5-5.5 GB resident per offscreen client at 640x360
   (more with the GPU driver's share); the box held 3 at once beside a
   build, not 4-6.
-- **Command clock jumps in bursts** around joins and map loads (80-93
-  jumps and ~300 "nothing predicted" restarts per client in 8 min on a
-  box swapping 13-20 GB, clients at 18 fps). Recheck on a quiet machine;
-  a player sees a stutter after each load.
 - When the server quits, clients go back to the menu (its background
   map) with no reconnect; testers rejoin by hand (as the hosting doc says).
 

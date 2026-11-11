@@ -10,6 +10,9 @@
 //! - With loss and jitter mistakes are corrected: the client ends where the
 //!   server has it.
 //! - An own-state part (`NetAppExt::own_part`) reaches the client's player.
+//! - Joining while the map settles behind the loading screen (a frame runs
+//!   at most a tick, `map::MapSettling`) the clock doesn't jump: it starts
+//!   once the map is in.
 
 use std::time::Duration;
 
@@ -167,4 +170,66 @@ fn an_own_state_part_reaches_the_clients_player() {
     sim.server.app.world_mut().entity_mut(theirs).remove::<Tag>();
     sim.ticks(40);
     assert!(sim.clients[0].app.world().get::<Tag>(me).is_none());
+}
+
+/// A client joins while its map still settles behind the loading screen
+/// (`map::MapSettling`, as after a map change): its frames are two ticks
+/// long but run at most one (`Time<Virtual>`'s cap, `client::console`'s
+/// `LoadCaps`). A clock started then falls a tick behind every frame and
+/// jumped every few frames (25 jumps and 85 restarts per client after a
+/// map change, 2026-11-11); it waits for the game instead and starts with
+/// its first state.
+#[test]
+fn a_map_settling_behind_the_loading_screen_makes_no_clock_jumps() {
+    let tick = Duration::from_secs_f64(1.0 / chimera_core::core::DEFAULT_TICK_HZ);
+    let mut sim = NetSim::new(SimBasePlugins, link(30, 0, 0.0), 41, 0, setup);
+    let c = sim.add_client(|w| {
+        w.insert_resource(chimera_world::map::MapSettling);
+    });
+    fn client(sim: &mut NetSim) -> &mut World {
+        sim.clients[0].app.world_mut()
+    }
+    client(&mut sim).resource_mut::<Time<Virtual>>().set_max_delta(tick);
+    sim.clients[c]
+        .app
+        .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(tick * 2));
+    // A frame: two server ticks, one client frame.
+    let frame = |sim: &mut NetSim| {
+        for _ in 0..2 {
+            sim.link.lock().unwrap().advance(tick);
+            sim.server.app.update();
+        }
+        sim.clients[c].app.update();
+    };
+    let mut joined = false;
+    for _ in 0..400 {
+        frame(&mut sim);
+        if client(&mut sim).contains_resource::<chimera_net::net::client::Joined>() {
+            joined = true;
+            break;
+        }
+    }
+    assert!(joined, "the client didn't join");
+    // Five seconds of settling.
+    for _ in 0..(5.0 / (2.0 * tick.as_secs_f64())) as u32 {
+        frame(&mut sim);
+    }
+    let w = client(&mut sim);
+    let (clock, graph) = (w.resource::<CommandClock>().clone(), w.resource::<NetGraph>().clone());
+    assert_eq!(clock.jumps, 0, "the clock jumped while the map settled ({graph:?})");
+    assert_eq!(graph.resyncs, 0, "prediction restarted while the map settled");
+    // In the game: frames uncapped, a tick each.
+    let w = client(&mut sim);
+    w.remove_resource::<chimera_world::map::MapSettling>();
+    w.resource_mut::<Time<Virtual>>().set_max_delta(Duration::from_millis(250));
+    sim.clients[c]
+        .app
+        .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(tick));
+    sim.ticks(320);
+    let w = client(&mut sim);
+    let (clock, graph) = (w.resource::<CommandClock>().clone(), w.resource::<NetGraph>().clone());
+    assert!(clock.tick.is_some(), "the client predicts once in the game");
+    assert_eq!(clock.jumps, 0, "the clock jumped after the map settled ({graph:?})");
+    assert!(graph.resyncs <= 1, "{} prediction restarts after the map settled", graph.resyncs);
+    assert_eq!(graph.errors, 0, "prediction errors after the map settled");
 }
