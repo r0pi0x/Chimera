@@ -49,6 +49,7 @@ CS:S, 26236938 of Combat Arms, 24600434 of HL2:DM; measured 2026-10-31, HL2:DM
 | `base` (what every start and match reads: menus, fonts, UI sounds; 2026-11-11) | 1,725 files, 63 MB | 2,965 files, 250 MB (the music included) | 1,509 files, 62 MB (scripts, decals, impact and footstep sounds, every gun and player model) |
 | `map/de_dust2`, `map/warehouse` (a client's load, HUD and kit included) | 143 MB | 93 MB | `map/<dm_lockdown, dm_overwatch, dm_powerhouse, dm_resistance, dm_runoff, dm_steamlab, dm_underpass, halls3>`: 2,014-3,318 records, 90-153 MB each (the app on the map) |
 | `weapon/<id>` (view and world models, materials, sounds; CA: view models with hands and parts, and the held model) | 29 sets, 0.7-1.9 MB each, 21 MB together | 2,363 sets, 0.4-20 MB each, 1.0 GB together (2026-11-11, with the held models) | 12 sets, 0.7-1.8 MB each, 13 MB together (view and world models, projectile models, materials, sounds) |
+| `character/<record>` (a rung's body: model, faces, head pieces, textures; 2026-11-11) | - | 689 sets, 1,348 records, 290 MB together; beyond `base` and `players` 0.3 MB at the median | - |
 | `players` (the eight class models) | 12.9 MB | 257 files, 66 MB (the stock characters, footsteps) | 166 records, 18 MB (the 19 player models) |
 | `music` (`Game/BGM`, loose files) | - | 72 MB | - |
 | `heavy-tests` (what the whole suite reads) | 15,703 records, 922 MB | 13,322 records, 2.6 GB | 6,598 records, 366 MB |

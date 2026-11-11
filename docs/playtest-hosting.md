@@ -58,6 +58,10 @@ cargo run --release --features tools --bin chimera_pack -- sets combat_arms --si
 cargo run --release --features tools --bin chimera_pack -- sets hl2dm --sign
 ```
 
+`sets <game> --only <prefix>` records only the sets whose names start
+with it and leaves the others as they are (`sets combat_arms --only
+character/ --sign`: the bodies' sets alone, in under a minute).
+
 A whole publish serves every file, on demand. Sets make a match's first
 download one batch instead of a request per file: `sets` records each gun's
 `weapon/<id>` and `players`; `base` and each map's `map/<name>` come from a
@@ -102,6 +106,7 @@ server's. On this box (2026-11-11) the server has, per game:
 | `players` (each join) | 12.9 MB | 66 MB, nearly all in `base`: the stock characters and footsteps | 18 MB |
 | `map/<name>` | the 18 pool maps, 90-190 MB each | the 4 pool maps | dm_lockdown, dm_overwatch and six more |
 | `weapon/<id>` | every gun | every gun: view model with hands and parts, and the held model (what other players hold) | every gun |
+| `character/<record>` | - | each of the 689 body records with a file (a rung's body: its model, faces, head pieces and textures; beyond `base` and `players` mostly its vest and legs textures, 0.3 MB at the median) | - |
 
 The weapon sets are named as the offer asks (`weapon/ak47`, not
 `weapon/weapon_ak47`), and the offer names the ladder's drawn melee
@@ -121,8 +126,14 @@ combat_arms` records all of Combat Arms' 2,363 weapon sets again (each
 a superset of the last); it leaves the other sets alone.
 
 What still comes on demand in a match (2026-11-11): Combat Arms' rung
-bodies and fitted parts (drawn per rung: 15-30 files, a request each,
-2-5 MB). A body or part whose only set is another pool map's now takes
+guns' fitted parts (drawn per rung: up to 9 files, a request each, up
+to 1.1 MB). The rung bodies are named in the join's offer
+(`character/<record>`; a ladder dealt at a later rotation isn't: each
+of its bodies then comes as its set, one request): a seeded session on
+warehouse (ladder seed 217377, no prefetch, three runs each) went from
+32-39 on-demand requests and 9-19 MB (17-20 of them body textures) to
+10-19 requests and 2.5-4.9 MB, and from 78-85 requests to the service
+in all to 56-65, the bytes the same (about 410 MB). A body or part whose only set is another pool map's now takes
 half a megabyte of that map's set, not 25-32 MB (a set's on-demand
 batches start small and grow with each miss from it), and a file the
 join's download is already fetching is waited for, not fetched again.

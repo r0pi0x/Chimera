@@ -39,7 +39,13 @@
 //! world models with their materials and the waves of its sound entries;
 //! Combat Arms: its view model with hands and parts' textures, and its
 //! held model with its textures), `players`
-//! (CS:S: the eight class models; HL2:DM: its 19 player models). `--sign` signs the manifest again with
+//! (CS:S: the eight class models; HL2:DM: its 19 player models), and
+//! Combat Arms' `character/<record>` per body record with a file (its
+//! model, animation library and textures, as a rung's body loads them:
+//! `characters::models::load_body`; the asset offer names a ladder's
+//! drawn bodies' sets, `rungs::body_set`). `--only <prefix>` records only
+//! the sets whose names start with it (`--only character/`), leaving the
+//! others as they are. `--sign` signs the manifest again with
 //! the server's key (a server store). `base` and the maps' sets come from
 //! `CHIMERA_VFS_LOG` logs (`--from`).
 //!
@@ -62,7 +68,8 @@ use chimera_core::{
 const USAGE: &str = "\
 usage: chimera_pack pack <game> [options]       into a store (default the user's)
        chimera_pack publish <game> [options]    into the asset server's store, signed
-       chimera_pack sets <game> [--store <dir>] [--sign]   record weapon/<id> and players sets
+       chimera_pack sets <game> [--store <dir>] [--sign] [--only <prefix>]
+                                                record weapon/<id>, players and character/<record> sets
        chimera_pack user add <name> [--games <a,b>] [--note <text>]
        chimera_pack user revoke <name> [--token <n>]
        chimera_pack user list                   (user: --store <server store>)
@@ -329,9 +336,10 @@ impl chimera_core::mount::FileSource for Tap {
     }
 }
 
-/// Each named piece of `game` (a weapon, the players) and the paths
-/// loading it read through `mount`.
-fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>) -> Vec<(String, Vec<String>)> {
+/// Each named piece of `game` (a weapon, the players, a Combat Arms body)
+/// whose set name starts with `only`, and the paths loading it read
+/// through `mount`.
+fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(String, Vec<String>)> {
     let seen = std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeSet::new()));
     let mut tapped = Mount::default();
     tapped.push(Tap { inner: mount.clone(), seen: seen.clone() });
@@ -365,11 +373,13 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>) -> Vec<(String, Vec<
             out.push(("players".into(), take()));
         }
         "combat_arms" => {
-            use combat_arms::game::{data::CaData, view_model::on_demand};
+            use combat_arms::game::{characters::models, data::CaData, rungs, view_model::on_demand};
             let read = |p: &str| tapped.read(p).ok();
             let ca = CaData::install();
             for w in &ca.weapon_set().weapons {
-                if !on_demand::ours(&w.id) {
+                // Only weapons whose set `only` may keep.
+                let wanted = "weapon/".starts_with(only) || only.starts_with("weapon/");
+                if !on_demand::ours(&w.id) || !wanted {
                     continue;
                 }
                 take();
@@ -379,6 +389,21 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>) -> Vec<(String, Vec<
                 let _ = combat_arms::game::characters::models::load_held_weapon(&ca, &w.id, &read);
                 let id = w.id.rsplit(':').next().unwrap_or(&w.id);
                 out.push((format!("weapon/{id}"), take()));
+            }
+            // Each body a rung may dress its players in (any record with a
+            // body file: the player bodies, the NPC bodies, the infected
+            // overrides).
+            let bodies: Vec<i32> = ca.characters().model.iter().filter(|m| !m.file.is_empty()).map(|m| m.id).collect();
+            for id in bodies {
+                let name = rungs::body_set(id);
+                if !name.starts_with(only) {
+                    continue;
+                }
+                take();
+                if let Err(e) = models::load_body(&ca, id, &read) {
+                    println!("{name}: {e}");
+                }
+                out.push((name, take()));
             }
         }
         "hl2dm" => {
@@ -420,7 +445,7 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>) -> Vec<(String, Vec<
         }
         _ => {}
     }
-    out.retain(|(_, paths)| !paths.is_empty());
+    out.retain(|(name, paths)| !paths.is_empty() && name.starts_with(only));
     out
 }
 
@@ -429,11 +454,12 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>) -> Vec<(String, Vec<
 fn sets(args: &[String]) -> Result<(), String> {
     let mut it = args.iter();
     let game_id = it.next().ok_or(USAGE)?;
-    let (mut store, mut sign_it) = (None, false);
+    let (mut store, mut sign_it, mut only) = (None, false, String::new());
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--store" => store = Some(Store::new(it.next().ok_or("--store needs a value")?)),
             "--sign" => sign_it = true,
+            "--only" => only = it.next().ok_or("--only needs a value")?.clone(),
             _ => return Err(format!("unknown option {arg}\n{USAGE}")),
         }
     }
@@ -450,7 +476,7 @@ fn sets(args: &[String]) -> Result<(), String> {
     let path = store.manifest_path(game.info.id, &build);
     let mut manifest = Manifest::load(&path)?;
     let mount = std::sync::Arc::new((game.open_install)(&install).map_err(|e| format!("{}: {e}", install.display()))?);
-    for (name, paths) in record_pieces(game.info.id, &mount) {
+    for (name, paths) in record_pieces(game.info.id, &mount, &only) {
         let (kept, left): (Vec<String>, Vec<String>) = paths.into_iter().partition(|p| manifest.files.contains_key(p));
         if !left.is_empty() {
             println!("set {name}: {} files not in the manifest left out (pack the whole install first)", left.len());

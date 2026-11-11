@@ -89,6 +89,19 @@ fn body_of(data: &CharacterData, x: &chimera_sim::minigame::ladder::RungExtras) 
     Some(data.effective(&look).0.id)
 }
 
+/// The bodies `ladder`'s rungs give (`body_of`), each once, in rung
+/// order: what `plan` loads, and the sets the asset offer names
+/// (`rungs::body_set`).
+pub fn ladder_bodies(data: &CharacterData, ladder: &Ladder) -> Vec<i32> {
+    let mut out = Vec::new();
+    for x in ladder.extras.iter().flatten() {
+        if let Some(id) = body_of(data, x) {
+            push(&mut out, id);
+        }
+    }
+    out
+}
+
 /// The view (and held) model key of `weapon` fitted with `parts`
 /// (`attachments::fit_given`, `parts::view_key`).
 fn key_with_parts(catalog: &WeaponCatalog, table: &CaModTable, weapon: &str, parts: &[&str]) -> Option<String> {
@@ -124,10 +137,8 @@ pub fn plan(data: &CharacterData, catalog: &WeaponCatalog, table: &CaModTable, l
         if let Some(c) = &x.character {
             weapon(&mut out, &c.weapon, &[]);
         }
-        if let Some(id) = body_of(data, x) {
-            push(&mut out.bodies, id);
-        }
     }
+    out.bodies = ladder_bodies(data, ladder);
     out
 }
 
