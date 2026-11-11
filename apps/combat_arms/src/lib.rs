@@ -5,13 +5,15 @@
 //! `SimPlugin`: the simulation as the binary runs it (its tests run it on
 //! the headless harness, tests/it/).
 //!
-//! `ClientPlugin`: the client shell (`chimera_client`) with this app's
-//! hooks (`client_hooks`) and Combat Arms' HUD in its place
-//! (`combat_arms::ui::with_hud`).
+//! `APP`: the game binary's app on Chimera's client app (`chimera_client::
+//! client::app`; main.rs is `run(&APP)`): `SimPlugin`, the client shell
+//! with this app's hooks (`client_hooks`) and Combat Arms' HUD in its
+//! place (`combat_arms::ui::with_hud`), its field of view, its looks and
+//! the player's profile.
 //!
 //! `VERSION` and `BUILD`: this build's version and commit, stamped by
 //! build.rs (the script every app shares, chimera/core/build_stamp.rs);
-//! main.rs inserts `core::BuildVersion`, the hooks carry the commit.
+//! `APP` carries both (`core::BuildVersion`, the hooks' commit).
 //!
 //! Maps: `combat_arms:<name>` from the install (`load_map`, through
 //! `combat_arms::game::world`), the greybox otherwise.
@@ -21,8 +23,11 @@
 //! folder as the CS:S app's (`console::cfg_dir`).
 
 use bevy::prelude::*;
-use chimera_client::client::{AppHooks, Args, ClientPlugins};
-use chimera_world::{greybox, map::{MapData, MapLoadOptions}};
+use chimera_client::client::{
+    AppHooks,
+    app::{AppMaps, GameApp, GameAppHooks},
+};
+use chimera_world::map::{MapData, MapLoadOptions};
 
 /// This build's version (`version` command, bug reports): see
 /// `version::format_version`; stamped by build.rs.
@@ -33,17 +38,61 @@ pub const VERSION: &str = env!("CHIMERA_VERSION");
 pub const BUILD: &str = env!("CHIMERA_GIT");
 
 /// What this app tells the client shell: its commit, Combat Arms' maps
-/// by id (`load_map`), and the greybox's own hooks.
+/// by id (`load_map`), and the greybox's own hooks (`APP`'s).
 pub fn client_hooks() -> AppHooks {
-    AppHooks {
-        build: BUILD,
-        load_map: |id, options| load_map_with(id, options),
-        load_map_file: |id, _, _| Err(no_maps(id)),
-        map_file_bytes: |_| None,
-        unload_greybox: greybox::unload,
-        respawn_greybox: greybox::respawn,
-    }
+    APP.app_hooks()
 }
+
+/// The game binary's app (`combat_arms`, main.rs), on Chimera's client
+/// app (`chimera_client::client::app`): `SimPlugin` on a map of the
+/// install, else straight into the greybox (no menus yet); the shell with
+/// Combat Arms' HUD (`combat_arms::ui::with_hud`), then its field of
+/// view, its other looks (`CaUiPlugin`) and the player's profile
+/// (options: loaded at start, saved at exit).
+pub static APP: GameApp = GameApp {
+    bin: "combat_arms",
+    info: &combat_arms::game::INFO,
+    title: "Combat Arms",
+    about: || {
+        "combat_arms: Combat Arms on Chimera (its movement, the M4A1 and the M9 on the greybox,\n\
+         or a map of the install: --map combat_arms:<name>, e.g. combat_arms:warehouse).\n"
+            .into()
+    },
+    version: VERSION,
+    build: BUILD,
+    maps: AppMaps {
+        load: load_map_with,
+        load_file: |id, _, _| Err(no_maps(id)),
+        file_bytes: |_| None,
+    },
+    // The install as `combat_arms://` assets.
+    installs: || {
+        vec![chimera_present::assets::InstallSource::shared(
+            combat_arms::game::INFO.id,
+            combat_arms::game::world::mount,
+        )]
+    },
+    // The simulation at Combat Arms' tick (the app's tests run it
+    // headless).
+    sim: |app, _| {
+        app.add_plugins(SimPlugin);
+    },
+    hud: combat_arms::ui::with_hud,
+    front_end: |app, _| {
+        app.insert_resource(chimera_client::client::video::PlayerFov(combat_arms::game::view_model::DEFAULT_FOV))
+            .add_plugins(combat_arms::ui::CaUiPlugin);
+        combat_arms::game::options::use_user_profile(app, None);
+    },
+    hooks: GameAppHooks {
+        // No menus yet: straight into the greybox.
+        args: Some(|mut args| {
+            args.map.get_or_insert_with(|| "chimera:greybox".into());
+            args
+        }),
+        server: Some("combat_arms_server"),
+        ..GameAppHooks::NONE
+    },
+};
 
 fn no_maps(id: &str) -> String {
     format!("{id}: Combat Arms maps load by id only (combat_arms:<name>), not from a file")
@@ -79,25 +128,6 @@ impl Plugin for SimPlugin {
         use chimera_core::gameplay::{Gameplay, GameplayAppExt};
         app.add_plugins((combat_arms::SimPlugins, combat_arms::game::CombatArmsPlugins))
             .set_gameplay(Gameplay::of(&combat_arms::game::INFO));
-    }
-}
-
-/// The client as this app runs it: the shell's plugins with the app's
-/// hooks and Combat Arms' HUD (`combat_arms::ui::with_hud`).
-pub struct ClientPlugin {
-    pub args: Args,
-}
-
-impl Plugin for ClientPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugins(combat_arms::ui::with_hud(
-            ClientPlugins {
-                args: self.args.clone(),
-                hooks: client_hooks(),
-            }
-            .build(),
-        ))
-        .insert_resource(chimera_client::client::video::PlayerFov(combat_arms::game::view_model::DEFAULT_FOV));
     }
 }
 

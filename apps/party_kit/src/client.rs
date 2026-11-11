@@ -1,5 +1,7 @@
-//! The client's side of Lucker Party (feature `present`): the shell with
-//! this app's hooks and both games' HUDs (`ClientPlugin`, `with_huds`:
+//! The client's side of Lucker Party (feature `present`): the party's
+//! client app (`PARTY`, Lucker Party's `APP`, on Chimera's
+//! `chimera_client::client::app`), the shell with this app's hooks and
+//! both games' HUDs (`with_huds`:
 //! Combat Arms' and CS:S's, the one drawn the local player's game, which
 //! follows its gun in the gun game: `chimera_sim::identity`; each shows the
 //! minigame's panel; CS:S's body animation for a player holding a CS:S
@@ -19,31 +21,26 @@
 //! (`client::minigame_panel`). Over all: one kill feed, the
 //! shell's, and no radars unless `hud_radar 1` (`PartyHudPlugin`); with
 //! `party_swap_effect 1` (default 0) a short flash when the local
-//! player's gun changes game, a puff at others' (`client::swap_effect`). Known
+//! player's gun changes game, a puff at others' (`client::swap_effect`).
 //! The Escape menu is the party's own (`esc_menu`), titled by the app;
-//! `client_app_at_menu` starts the app at the main menu (`main_menu`)
-//! over the first of its background maps that loads.
+//! `start_at_menu` starts an app at the main menu (`main_menu`) over the
+//! first of its background maps that loads.
 //! Known shortcuts: not CS:S's spectator panel or overview;
 //! on Combat Arms' maps there is no CS:S HUD look (the shell's plain HUD
 //! with CS:S's guns).
 
 use bevy::{app::PluginGroupBuilder, prelude::*};
-use chimera_client::client::{AppHooks, Args, ClientPlugins};
+use chimera_client::client::{
+    AppHooks, Args,
+    app::{AppMaps, GameApp, GameAppHooks, RunningApp, StartMap},
+};
 use chimera_core::game_registry::Games;
 use combat_arms::ui::hud::ItemNames;
-use chimera_world::greybox;
 
 /// What this app tells the client shell: its commit, its maps
-/// (`MAP_SOURCES`) and the greybox's own hooks.
+/// (`MAP_SOURCES`) and the greybox's own hooks (`PARTY`'s).
 pub fn client_hooks() -> AppHooks {
-    AppHooks {
-        build: super::BUILD,
-        load_map: super::load_map_with,
-        load_map_file: |id, _, _| Err(format!("{id}: Lucker Party loads maps by id only, not from a file")),
-        map_file_bytes,
-        unload_greybox: greybox::unload,
-        respawn_greybox: greybox::respawn,
-    }
+    PARTY.app_hooks()
 }
 
 /// The bytes of map `id`'s file as this app loads it, for the network's
@@ -83,24 +80,16 @@ pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
 pub static CLIENTS: [&chimera_world::game_bundle::GameClient; 3] =
     [&combat_arms::ui::PARTY_CLIENT, &cs_source::ui::party::CLIENT, &hl2dm::ui::party::CLIENT];
 
-/// The client: the shell's plugins with the app's hooks and both games'
-/// HUDs (`with_huds`), each drawing in its own look (`HudLookOwner`).
-pub struct ClientPlugin {
-    pub args: Args,
-}
-
-impl Plugin for ClientPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugins(with_huds(
-            ClientPlugins {
-                args: self.args.clone(),
-                hooks: client_hooks(),
-            }
-            .build(),
-        ))
-        // The key binds page (F6, `controls`): shared binds and each
-        // game's own.
-        .add_plugins(crate::controls::ControlsPlugin)
+/// The client after the shell with both games' HUDs (`PARTY`'s front
+/// end; `with_huds` puts them among the shell's plugins, each drawing in
+/// its own look, `HudLookOwner`): the key binds page, the party's Escape
+/// menu, mouse and HUD settings, the minigame scoreboard, the swap
+/// effect, the mount doctor and the guests' guns' names, each guest's
+/// front end, then Combat Arms' other looks.
+pub fn front_end(app: &mut App, _: &Args) {
+    // The key binds page (F6, `controls`): shared binds and each
+    // game's own.
+    app.add_plugins(crate::controls::ControlsPlugin)
         // The party's own Escape menu (Combat Arms' yields Esc to it).
         .add_plugins(crate::esc_menu::EscMenuPlugin)
         .add_plugins(PartyMousePlugin)
@@ -110,15 +99,16 @@ impl Plugin for ClientPlugin {
         .add_plugins(chimera_client::client::swap_effect::SwapEffectPlugin)
         .add_systems(Startup, (guest_names, mount_doctor))
         .add_systems(Update, sync_gun_names);
-        // The rest of each guest's front end (CS:S's: the map's HUD look
-        // is its, and what its bodies play for a player holding its gun,
-        // the gun game's `identity = "weapon"`).
-        for client in CLIENTS {
-            if let Some(add) = client.app {
-                add(app);
-            }
+    // The rest of each guest's front end (CS:S's: the map's HUD look
+    // is its, and what its bodies play for a player holding its gun,
+    // the gun game's `identity = "weapon"`).
+    for client in CLIENTS {
+        if let Some(add) = client.app {
+            add(app);
         }
     }
+    // Combat Arms' other looks.
+    app.add_plugins(combat_arms::ui::CaUiPlugin);
 }
 
 /// The party's HUD settings over both games' HUDs: one kill feed, the
@@ -217,104 +207,96 @@ fn sync_gun_names(
     out.0.extend(ca.0.iter().map(|(k, v)| (k.clone(), v.clone())));
 }
 
-/// The game's app (the binary's, and other party apps' built on it): map
-/// `args.game_map()` loaded (an error ends the process), both installs as
-/// asset sources, the window titled `title`, the party's simulation
-/// (`PartyPlugins`), the presentation, Combat Arms' gameplay until a
-/// minigame takes it, the network and the client shell with both games'
-/// HUDs. `chimera_client::client::app::run` runs it.
-pub fn client_app(args: Args, title: &str) -> App {
-    let id = args.game_map().unwrap_or("cs_source:de_dust2").to_string();
-    match super::load_map(&id, 0) {
-        Ok(data) => client_app_on(args, title, &id, data),
-        Err(e) => {
-            eprintln!("error: --map {id}: {e}");
-            std::process::exit(1);
-        }
-    }
+/// The party's client app (Lucker Party's, `APP`; another party app's is
+/// `GameApp { title, hooks: .., ..PARTY }`, apps/ultimate_gun_game) on
+/// Chimera's client app (`chimera_client::client::app`): what this
+/// machine lacks told first (`crate::requirements`; CS:S's missing stops
+/// it), the command line as it plays (`with_defaults`), the map
+/// (`cs_source:de_dust2` without one; an error ends the process), every
+/// install as asset sources, the party's simulation (`PartyPlugins`),
+/// Combat Arms' gameplay until a minigame takes it, the network and the
+/// client shell with every game's HUD (`with_huds`), then the party's
+/// front end (`front_end`).
+pub const PARTY: GameApp = GameApp {
+    bin: "lucker_party",
+    info: &combat_arms::game::INFO,
+    title: "Lucker Party",
+    about: || {
+        format!(
+            "lucker_party: minigames with Counter-Strike: Source's and Combat Arms' parts. Starts {} on\n\
+             its first map; +minigame <id> picks another ({}), --map cs_source:<name> (or\n\
+             combat_arms:<name>) the map.\n",
+            super::DEFAULT_MINIGAME,
+            super::ids().join(", "),
+        )
+    },
+    version: super::VERSION,
+    build: super::BUILD,
+    maps: AppMaps {
+        load: super::load_map_with,
+        load_file: |id, _, _| Err(format!("{id}: Lucker Party loads maps by id only, not from a file")),
+        file_bytes: map_file_bytes,
+    },
+    // Every install as `cs_source://`, `hl2dm://` and `combat_arms://`
+    // assets.
+    installs: || {
+        super::GUESTS
+            .iter()
+            .map(|b| chimera_present::assets::InstallSource::of(b.info))
+            .chain([chimera_present::assets::InstallSource::shared(
+                combat_arms::game::INFO.id,
+                combat_arms::game::world::mount,
+            )])
+            .collect()
+    },
+    sim,
+    hud: with_huds,
+    front_end,
+    hooks: GameAppHooks {
+        args: Some(with_defaults),
+        // What this machine lacks, said exactly (a joiner needs both games
+        // too: each player loads the maps, models and sounds from their own).
+        requirements: Some(crate::server::requirements),
+        default_map: Some("cs_source:de_dust2"),
+        server: Some("lucker_party_server"),
+        ..GameAppHooks::NONE
+    },
+};
+
+/// Lucker Party's client app (`PARTY`): the `lucker_party` binary's.
+pub static APP: GameApp = PARTY;
+
+/// The party's simulation (`PartyPlugins`), Combat Arms' gameplay until
+/// the minigame (`+minigame`, its console line) takes the rules slot and
+/// names the others, the Escape menu titled by the app, and a ladder's
+/// rung extras that differ every launch.
+pub fn sim(app: &mut App, _: &Args) {
+    use chimera_core::gameplay::{Gameplay, GameplayAppExt};
+    let title = app.world().resource::<RunningApp>().0.title;
+    app.add_plugins(super::PartyPlugins)
+        .set_gameplay(Gameplay::of(&combat_arms::game::INFO))
+        .insert_resource(crate::esc_menu::EscMenuTitle(title.into()))
+        .insert_resource(super::launch_rung_seed());
 }
 
-/// `client_app` starting at the party's main menu (`main_menu`): the map
-/// behind it the first of data/main_menu.toml's background maps that
-/// loads (the greybox if none does), Play starting `minigame`.
-pub fn client_app_at_menu(args: Args, title: &str, minigame: &str) -> App {
+/// A party app's start at its main menu (`main_menu`; its
+/// `GameAppHooks::start`) when the command line doesn't play
+/// (`main_menu::starts_at_menu`): the first of data/main_menu.toml's
+/// background maps that loads, else no map at all behind it. None: the
+/// command line plays (the usual start map).
+pub fn start_at_menu(game: &'static GameApp, args: &Args) -> Option<StartMap> {
+    if !crate::main_menu::starts_at_menu(args) {
+        return None;
+    }
     let data = crate::main_menu::MenuData::shipped();
-    let mut app = match crate::main_menu::background_map(&data, |id| super::load_map(id, 0)) {
-        Some((id, map)) => client_app_on(args, title, &id, map),
+    let load = |id: &str| (game.maps.load)(id, &chimera_world::map::MapLoadOptions::hdr(0));
+    Some(match crate::main_menu::background_map(&data, load) {
+        Some((id, map)) => StartMap::loaded(&id, map),
         None => {
             eprintln!("warning: none of the main menu's background maps loads: the greybox behind it");
-            let mut args = args;
-            args.map = None;
-            client_app_with(args, title, None)
+            StartMap::Empty
         }
-    };
-    app.add_plugins(crate::main_menu::MainMenuPlugin {
-        at_start: true,
-        minigame: minigame.into(),
-        keep_recent: true,
-    });
-    app
-}
-
-/// `client_app` on map `id` (its data loaded).
-fn client_app_on(args: Args, title: &str, id: &str, data: chimera_world::map::MapData) -> App {
-    eprintln!(
-        "loaded {id}: {} triangles, {} textures, {} spawns, {} warnings",
-        data.triangle_count(),
-        data.textures.len(),
-        data.spawns.len(),
-        data.warnings.len()
-    );
-    for w in &data.warnings {
-        eprintln!("  warning: {w}");
-    }
-    client_app_with(args, title, Some(data))
-}
-
-fn client_app_with(args: Args, title: &str, map: Option<chimera_world::map::MapData>) -> App {
-    use chimera_core::gameplay::{Gameplay, GameplayAppExt};
-    use chimera_present::{MapPlugin, PresentationPlugins};
-    use super::PartyPlugins;
-    let mut app = App::new();
-    app.add_plugins(match map {
-        Some(data) => MapPlugin::new(data),
-        None => MapPlugin::empty(),
-    });
-    app.add_plugins((
-        // Every install as `cs_source://`, `hl2dm://` and
-        // `combat_arms://` assets (before `AssetPlugin`).
-        chimera_present::assets::InstallSourcesPlugin(
-            super::GUESTS
-                .iter()
-                .map(|b| chimera_present::assets::InstallSource::of(b.info))
-                .chain([chimera_present::assets::InstallSource::shared(
-                    combat_arms::game::INFO.id,
-                    combat_arms::game::world::mount,
-                )])
-                .collect(),
-        ),
-        // The window (none with `--offscreen`), the log into the console
-        // too (`client::app::default_plugins`, shared by every client).
-        chimera_client::client::app::default_plugins(&args, title),
-        // Avian as Chimera runs it (rendering eases between ticks).
-        chimera_world::physics_plugins(),
-        PartyPlugins,
-    ))
-    // What the map's drawing needs.
-    .add_plugins(PresentationPlugins)
-    // Combat Arms' gameplay until the minigame (`+minigame`, its console
-    // line) takes the rules slot and names the others.
-    .set_gameplay(Gameplay::of(&combat_arms::game::INFO))
-    .insert_resource(chimera_core::core::BuildVersion(super::VERSION))
-    .insert_resource(crate::esc_menu::EscMenuTitle(title.into()))
-    // A ladder's rung extras differ every launch.
-    .insert_resource(super::launch_rung_seed())
-    // Network play: a listen server, or a client (`connect`).
-    .add_plugins(chimera_net::net::NetPlugin)
-    // The client shell with Combat Arms' HUD, then its other looks.
-    .add_plugins(ClientPlugin { args })
-    .add_plugins(combat_arms::ui::CaUiPlugin);
-    app
+    })
 }
 
 /// Whether the command line joins a server (`+connect <address>`).

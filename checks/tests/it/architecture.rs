@@ -2132,6 +2132,47 @@ fn game_servers_use_no_app() {
     assert!(errors.is_empty(), "\n{}\n", errors.join("\n\n"));
 }
 
+/// Code lines (not blank, not comments) an app's `src/main.rs` may hold.
+const APP_MAIN_LINES: usize = 30;
+
+/// An app's binary runs a descriptor: a client app is a `GameApp` static
+/// and `chimera_client::client::app::run(&APP)`, a server a `GameServer`
+/// static and `chimera_net::dedicated::run(&SERVER)` (architecture-pass.md
+/// steps 6 and 7). Its main.rs builds no `App` of its own and stays short
+/// (`APP_MAIN_LINES` code lines: a static built on another's, a usage
+/// text, a launch hook at most), so the app's shape stays Chimera's and a
+/// fix to it reaches every game.
+#[test]
+fn app_mains_are_small() {
+    let mut errors = Vec::new();
+    let mut mains = 0;
+    for member in workspace_members().iter().filter(|m| layer_of(m) == Layer::App) {
+        let main = root().join(member).join("src/main.rs");
+        let Ok(text) = fs::read_to_string(&main) else { continue };
+        mains += 1;
+        let code: Vec<&str> =
+            text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("//")).collect();
+        if code.iter().any(|l| l.contains("App::new")) {
+            errors.push(format!(
+                "{member}/src/main.rs builds its own `App`. An app's binary runs its descriptor: \
+                 `chimera_client::client::app::run(&APP)` with a `GameApp` static in the crate's lib.rs \
+                 (apps/hl2dm), or `chimera_net::dedicated::run(&SERVER)` with a `GameServer` (apps/hl2dm_server). \
+                 What the app adds goes into the descriptor's hooks (`GameAppHooks`, `ServerHooks`); a shape \
+                 none has yet is a new neutral hook in Chimera."
+            ));
+        }
+        if code.len() > APP_MAIN_LINES {
+            errors.push(format!(
+                "{member}/src/main.rs has {} code lines (at most {APP_MAIN_LINES}). Move the app's parts into its \
+                 lib.rs as a descriptor (`GameApp`, `GameServer`) and leave main.rs the call that runs it.",
+                code.len()
+            ));
+        }
+    }
+    assert!(mains >= 6, "found {mains} app binaries: did apps/*/src/main.rs move? Update this test.");
+    assert!(errors.is_empty(), "\n{}\n", errors.join("\n\n"));
+}
+
 /// Every game crate has the same public seams (docs/new-game.md, "The
 /// game crate's shape"), so apps, tools and party modes find a game's
 /// parts in the same places whichever game it is, and a new port starts

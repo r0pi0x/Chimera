@@ -38,11 +38,13 @@
 //!   (`DEFAULT_MINIGAME` without one) and its pool's first map, which the
 //!   app and the server load unless the command line names a map.
 //! - With `present` (the default; not the dedicated server's,
-//!   `server`): `ClientPlugin` (the shell with this app's
-//!   hooks and both games' HUDs, the local player's game's drawn),
-//!   `client_app` (the whole client app, the binary's and the Ultimate
-//!   Gun Game's, apps/ultimate_gun_game) and `with_defaults` (the command
-//!   line as the app plays it; `with_defaults_for` another app's minigame).
+//!   `server`): `client::PARTY`, the whole client app as Chimera's
+//!   `GameApp` (Lucker Party's `client::APP`; the Ultimate Gun Game's,
+//!   apps/ultimate_gun_game, is built on it): the shell with this app's
+//!   hooks and both games' HUDs (`with_huds`, the local player's game's
+//!   drawn), the party's front end (`client::front_end`), and
+//!   `with_defaults` (the command line as the app plays it;
+//!   `with_defaults_for` another app's minigame).
 //! - CS:S's radar, target ID, freeze cam and voice HUD (`client::with_huds`)
 //!   draw only while CS:S's HUD is the gameplay's (a CS:S gun in hand);
 //!   the radars (CS:S's and Combat Arms') only with `hud_radar 1`, and
@@ -58,12 +60,12 @@
 //!   many the server keeps (none for a joiner: `+connect` skips the app's
 //!   default of `DEFAULT_BOTS` and its local minigame, the server's comes
 //!   over the network: `chimera_net::minigame_net`).
-//! - `requirements`, `missing`, `report`, `exit_fatal` (waits for Enter on Windows): what this machine lacks to play
+//! - `requirements`, `missing`, `report`: what this machine lacks to play
 //!   (CS:S's install, Combat Arms' install and its V1 and V2 keys), told
 //!   exactly at start by both binaries; CS:S's missing stops them.
 //!   `mount_report`: the same as the network's mount doctor report
 //!   (`net::manifest::MountReport`), which the client sends when it joins
-//!   (`LocalMounts`, set by `ClientPlugin`).
+//!   (`LocalMounts`, set by the client's front end).
 //! - Party options, off by default (parity first): `party_even_footsteps`
 //!   (one footstep profile for both games' identities, CS:S's; the
 //!   server's, replicated) and, on the client, `party_swap_effect` (a
@@ -73,7 +75,7 @@
 //! - The host's settings and the vote to skip the map (`host`): the
 //!   Escape menu's server side (`esc_menu`, with `present`).
 //! - The main menu (`main_menu`, with `present`): Ultimate Gun Game starts
-//!   at it (`client_app_at_menu`) unless the command line plays; Lucker
+//!   at it (`start_at_menu`) unless the command line plays; Lucker
 //!   Party doesn't use it.
 //!
 //! - A gun game's rung extras (`chimera_sim::minigame::ladder::RungExtras`:
@@ -485,18 +487,6 @@ pub fn report(problems: &[Missing]) -> (String, bool) {
     (text, problems.iter().any(|m| m.fatal))
 }
 
-/// Ends a client app that can't start: `report`'s `text` on stderr, and on
-/// Windows a wait for Enter first, so a double-clicked window stays open
-/// long enough to read it.
-pub fn exit_fatal(text: &str) -> ! {
-    eprintln!("{text}");
-    if cfg!(windows) {
-        eprintln!("\nPress Enter to close.");
-        let _ = std::io::stdin().read_line(&mut String::new());
-    }
-    std::process::exit(1)
-}
-
 /// The first map of built-in minigame `id`'s pool.
 pub fn first_map(id: &str) -> Result<String, String> {
     originals::MINIGAMES
@@ -525,11 +515,10 @@ pub mod esc_menu;
 #[cfg(feature = "present")]
 pub mod main_menu;
 #[cfg(feature = "present")]
-mod client;
+pub mod client;
 #[cfg(feature = "present")]
 pub use client::{
-    ClientPlugin, PartyHudPlugin, PartyMousePlugin, client_app, client_app_at_menu, client_hooks, joins_server, with_defaults,
-    with_defaults_for, with_huds,
+    PartyHudPlugin, PartyMousePlugin, client_hooks, joins_server, start_at_menu, with_defaults, with_defaults_for, with_huds,
 };
 
 #[cfg(test)]
