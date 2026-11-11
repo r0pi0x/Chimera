@@ -12,6 +12,7 @@ mod console_names;
 mod dedicated;
 mod game_hooks;
 mod minigame_callouts;
+mod prematch_lobby;
 mod prediction;
 mod rejoin;
 mod spawn_protection;

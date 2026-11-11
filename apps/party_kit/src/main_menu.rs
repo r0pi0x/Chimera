@@ -46,7 +46,9 @@
 //!   the camera on a slow orbit around the middle of its spawn points
 //!   (`chimera_freecam` 2's detached camera, `fly`); the HUD is hidden
 //!   while the menu shows by drawing the UI on a camera of its own
-//!   (`MenuUiCamera`; the shell's UI camera, which the HUD draws on, off).
+//!   (`MenuUiCamera`; the shell's UI camera, which the HUD draws on, off;
+//!   the console and the pre-match lobby's screen move to it, so a player
+//!   still downloading sees the lobby over the loading panel).
 //!   Never the greybox (the user's call): the data refuses it, and while
 //!   the world under the menu is the greybox (leaving a game, until the
 //!   background map is in; no background map loading at all) a plain black
@@ -1341,7 +1343,10 @@ fn cameras(
     ca: Option<Res<combat_arms::ui::loading::CaLoading>>,
     mut shell: Query<&mut Camera, (With<IsDefaultUiCamera>, Without<MenuUiCamera>)>,
     mut ours: Query<(Entity, &mut Camera), With<MenuUiCamera>>,
-    consoles: Query<(Entity, Has<UiTargetCamera>), With<ConsoleRoot>>,
+    consoles: Query<
+        (Entity, Has<UiTargetCamera>),
+        Or<(With<ConsoleRoot>, With<chimera_client::client::prematch_lobby::LobbyRoot>)>,
+    >,
     mut commands: Commands,
 ) {
     if shell.is_empty() {

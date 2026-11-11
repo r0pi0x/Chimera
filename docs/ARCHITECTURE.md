@@ -252,7 +252,10 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `minigame_net` (its own module, above `net`) is the minigame runtime's
   part of the network (`MinigameNetPlugin`: the match, the ladder rung and
   the match's events replicated, a client starting the server's minigame);
-  an app that plays minigames over the network adds it.
+  an app that plays minigames over the network adds it. With it comes
+  `prematch`, a server's pre-match lobby (each new match held on its map
+  until every player has it, their download progress replicated, then a
+  countdown), which the client shell draws (`client::prematch_lobby`).
   `dedicated` (its own module) is a game's dedicated server, once for
   every game: the options, the start map, `ServerPlugin`, `changelevel`,
   the stdin console and the run loop (`run`), on what the game says of
@@ -463,7 +466,8 @@ game_log uses core, console and gameplay (the gameplay's
 game names players in the log); net uses the engine's
 simulation (core, console, game_log, slots, character, movement, map,
 weapon) and names no game or Source logic (`minigame_net` uses net,
-minigame, mode and core; `dedicated`, a game's dedicated server, uses
+minigame, mode, core and `prematch`, the pre-match lobby, which uses net,
+minigame, console and core; `dedicated`, a game's dedicated server, uses
 net, the map, the greybox, the harness's headless base, core and the
 minigame runtime):
 logic and games/<name> use it to register what they replicate (their

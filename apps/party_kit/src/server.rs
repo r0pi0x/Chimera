@@ -35,7 +35,10 @@
 //!   minigame's `bots` slot names them.
 //! - Players join with the `lucker_party` client's `+connect <ip>:<port>`;
 //!   a server takes sixteen unless told otherwise (`maxplayers`). The
-//!   binaries' ladders take a fresh seed at launch (`ServerHooks::launch`).
+//!   binaries' ladders take a fresh seed at launch (`ServerHooks::launch`),
+//!   which also turns on the pre-match lobby (`mp_lobby 1`,
+//!   `chimera_net::prematch`: each new match waits until every player has
+//!   its map, then counts down).
 //!
 //! Known shortcuts: no `MapFiles` (a client loads the map from its own
 //! install by id); the minigame's map pool isn't rotated; a map change
@@ -104,9 +107,12 @@ pub fn requirements() -> (String, bool) {
     crate::report(&crate::requirements())
 }
 
-/// The binaries' own: a ladder's rung extras differ every launch.
+/// The binaries' own: a ladder's rung extras differ every launch, and
+/// each new match waits in the pre-match lobby (`mp_lobby 1`;
+/// `chimera_net::prematch`).
 pub fn launch(app: &mut bevy::app::App) {
     app.insert_resource(crate::launch_rung_seed());
+    chimera_net::prematch::enable(app);
 }
 
 /// Lucker Party's server's command line (without the program's name).

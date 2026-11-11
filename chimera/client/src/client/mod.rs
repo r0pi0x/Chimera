@@ -43,6 +43,7 @@ pub mod kill_feed;
 pub mod interp;
 pub mod map_screen;
 pub mod match_end;
+pub mod prematch_lobby;
 pub mod net;
 pub mod relaunch;
 pub mod startup;
@@ -537,6 +538,7 @@ impl PluginGroup for ClientPlugins {
             .add(spectate::SpectatePlugin)
             .add(respawn_countdown::RespawnCountdownPlugin)
             .add(match_end::MatchEndPlugin)
+            .add(prematch_lobby::PreMatchLobbyPlugin)
             .add(kill_feed::KillFeedPlugin)
             .add(callouts::CalloutsPlugin)
             .add(hit_marker::HitMarkerPlugin)

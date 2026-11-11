@@ -36,7 +36,9 @@
 //!   HUD's countdown and the shell's death view read as
 //!   `core::RespawnDue`).
 //! - Held (`MatchHold`, a server changing map for the next match): no
-//!   one joins or respawns, the phases don't step.
+//!   one joins or respawns, the phases don't step. In the pre-match lobby
+//!   (`PreMatch`) players join and spawn but are frozen (as at the end)
+//!   and the phases don't step.
 //! - The match's end pauses everyone (`hold_the_end`): from the win (the
 //!   round over) through the intermission, the match over and a map
 //!   change's hold, every intent (players' and bots') keeps only its look
@@ -450,7 +452,7 @@ fn take_in(world: &mut World, new: &[(Entity, u8)]) {
 /// The runtime's phases, once `players.min` are in.
 fn step_phases(world: &mut World) {
     let Some(min) = world.get_resource::<ActiveMinigame>().map(|a| a.def.players.min) else { return };
-    if super::held(world) {
+    if super::held(world) || super::in_lobby(world) {
         return;
     }
     if world.resource::<Match>().phase == Phase::Waiting && (players(world).len() as u32) < min {
@@ -665,9 +667,10 @@ pub fn end_frozen(i: &Intent) -> Intent {
 
 /// Whether the match's end holds everyone: from the win (the round over)
 /// through the intermission, the match over and a map change's
-/// `MatchHold`, until the next match.
+/// `MatchHold`, until the next match; and the pre-match lobby
+/// (`PreMatch`).
 pub fn end_holds(world: &World) -> bool {
-    holds_at_end(super::held(world), world.get_resource::<Match>())
+    holds_at_end(super::held(world) || super::in_lobby(world), world.get_resource::<Match>())
 }
 
 /// `end_holds` from the hold and the match.
@@ -683,13 +686,14 @@ fn holds_at_end(held: bool, game: Option<&Match>) -> bool {
 /// the tick); `EndFreeze` through commands.
 fn hold_the_end(
     hold: Option<Res<super::MatchHold>>,
+    lobby: Option<Res<super::PreMatch>>,
     game: Option<Res<Match>>,
     ours: Option<Res<EndFreeze>>,
     freeze: Option<ResMut<FreezeTime>>,
     mut intents: Query<&mut Intent>,
     mut commands: Commands,
 ) {
-    if holds_at_end(hold.is_some(), game.as_deref()) {
+    if holds_at_end(hold.is_some() || lobby.is_some(), game.as_deref()) {
         if ours.is_none() {
             commands.insert_resource(EndFreeze);
         }
