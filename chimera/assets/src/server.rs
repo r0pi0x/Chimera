@@ -25,7 +25,9 @@
 //! most once a second), so a publish needs no restart; one without a
 //! signature is signed with the server's key when loaded. Every request
 //! is one line of `<store>/server/access.log`: time, account, method,
-//! path, status, records sent, bytes sent.
+//! path, status, records sent, bytes sent. The line is written once the
+//! answer has been sent (a batch's bytes are counted while sending), so a
+//! client may have its answer before the line is in the log.
 //!
 //! `Service::with_latency` (`chimera_asset_server --latency-ms`) delays
 //! every answer, to measure clients as over a slower link (Tailscale, a

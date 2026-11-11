@@ -60,7 +60,14 @@
 //! Chimera's hitboxes (`core::LazyHitboxes`, made when a shot asks: spheres with
 //! their region, `Node#Priority` and zone factor as the body's own scale;
 //! docs/DESIGN.md "Hits across games"), so other games' guns hit the
-//! drawn body by region.
+//! drawn body by region. Beside them the box that holds them whatever the
+//! pose (`core::HitBound`, from `CaPose::sphere_reach` or the spec's
+//! skeleton's `skeleton::FallbackReach`: each sphere's centre is no
+//! further from its root's place than the translations down to its node
+//! add up to), so a shot whose ray passes far from a body leaves it
+//! unposed (docs/performance.md, "A broad phase for the hitscan"). The
+//! bound is loose (3-4.5 m across a standing soldier: a chain of
+//! translations, not the pose), a tenth of a pose's cost.
 //!
 //! A character whose identity is another game's (`slots::GameIdentity`:
 //! Lucker Party's players follow their weapon's game) keeps its trackers,
@@ -140,6 +147,11 @@
 //!
 //! Known shortcuts (docs/tech-debt.md; the most literal reading where the
 //! spec is unclear, listed for its open questions):
+//! - The hitboxes' bound (`hit_bound`) is a chain of translations' lengths
+//!   from the root, so it is far wider than the body (3-4.5 m across a
+//!   standing soldier): a ray within a couple of metres of a body still
+//!   poses it. Posing the root's first few nodes exactly would tighten
+//!   it. A pose made from data (tests) declares no bound.
 //! - NPC and boss bodies (13.8): the hull stays the player's for every
 //!   body (Open question 35): a suit's or boss's body stands on the
 //!   hull's bottom (its feet where its `LST`, else its first animation,
@@ -533,6 +545,49 @@ impl PoseJob {
             _ => Vec::new(),
         })
     }
+
+    /// `CaPose::sphere_reach`, from the inputs (never posing).
+    fn reach(&self) -> Option<SphereReach> {
+        let i = self.inputs.as_ref()?;
+        let rig = i.rig.as_deref()?;
+        let [a, b, c, d] = &i.trackers;
+        let table = records::table(i.skeleton);
+        // Only the nodes the spheres stand on and their ancestors.
+        let (of, needed) = rig.sphere_nodes.get_or_init(|| {
+            (i.skeleton, rig.needed_for(table.spheres.iter().filter(|s| s.radius > 0.0).map(|s| s.name.as_str())))
+        });
+        let needed = (*of == i.skeleton).then_some(&needed[..]);
+        let nodes = rig.reach_of([a, b, c, d], i.dead, i.crouch, needed);
+        let shape = &rig.shape;
+        let at = |name: &str| match shape.node(name) {
+            Some(j) => nodes.get(j).copied(),
+            None => shape.socket(name).and_then(|k| {
+                let (_, parent, offset, _) = &shape.sockets[k];
+                let (anchor, r) = nodes.get(*parent)?;
+                Some((*anchor, r + offset.length()))
+            }),
+        };
+        let (hs, hc) = rig.half_heights;
+        Some(SphereReach {
+            reach: table
+                .spheres
+                .iter()
+                .map(|s| (s.radius > 0.0).then(|| at(&s.name)).flatten())
+                .collect(),
+            feet: -(hs + (hc - hs) * i.crouch),
+        })
+    }
+}
+
+/// Where a pose's hit spheres can be, made without posing it
+/// (`CaPose::sphere_reach`): a ball (model space: centre, radius) each
+/// centre stays in (the hit table's order; None: no sphere there, as
+/// `CaPoseData::spheres`) and the feet's height there (the centres in the
+/// character's frame are `skeleton::to_body` of them).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SphereReach {
+    pub reach: Vec<Option<(Vec3, f32)>>,
+    pub feet: f32,
 }
 
 /// The posed skeleton's results in the character's frame (right-handed,
@@ -642,6 +697,20 @@ impl CaPose {
     /// Whether the pose has been made (tests, statistics).
     pub fn is_posed(&self) -> bool {
         self.0.data.get().is_some()
+    }
+
+    /// Whether any of its skeletons has been posed: the client's view
+    /// (`is_posed`) or only the server's (a bot's rounds: `server_spheres`).
+    pub fn is_posed_any(&self) -> bool {
+        self.0.unaimed.get().is_some() || self.is_posed()
+    }
+
+    /// A bound on where each hit sphere's centre can be in this pose,
+    /// client's or server's (they differ by the aim alone), worked out from what the pose is made of without making it
+    /// (`skeleton::Rig::reach`): a small part of the pose's cost. None for
+    /// a pose without a body model or made from data.
+    pub fn sphere_reach(&self) -> Option<SphereReach> {
+        self.0.reach()
     }
 
     /// The client's view of the skeleton as the drawing takes it
@@ -1908,6 +1977,39 @@ fn hitboxes(
         let (look, pitch) = (intent.yaw_rotation(), intent.pitch);
         let feet = aabb.map_or(origin, |b| origin.with_y(b.min.y));
         let posed = pose.filter(|p| p.modelled_on(data.first().map_or(0, |s| s.skeleton))).cloned();
+        // The box every sphere stays in (`hit_bound`), made when a shot
+        // first asks (for each body near or far, so far cheaper than the
+        // spheres): from the pose's inputs, or the spec's skeleton squashed
+        // as `weapons::geometry_at` squashes it.
+        let dy = min.y - feet.y;
+        let bound = match &posed {
+            // A pose made from data (tests, stand-ins) says nothing.
+            Some(p) if p.0.inputs.as_ref().is_none_or(|i| i.rig.is_none()) => None,
+            Some(p) => {
+                let p = p.clone();
+                // `weapons::posed_geometry` turns the body by the legs' yaw,
+                // the hitboxes undo the look's.
+                let turn = look.inverse() * Quat::from_rotation_y(p.legs_yaw());
+                Some(chimera_core::later::Later::new(move || {
+                    let r = p.sphere_reach().expect("a pose with a body model's inputs");
+                    hit_bound(&r.reach, data, r.feet, turn, dy)
+                }))
+            }
+            None => {
+                let unit = super::movement::movement_data().meters_per_unit;
+                let squash = ((max.y - min.y) / (STAND_HEIGHT * unit)).max(0.0);
+                let skeleton = data.first().map_or(0, |s| s.skeleton);
+                Some(chimera_core::later::Later::new(move || {
+                    let fallback = fallback_reach(skeleton);
+                    let reach: Vec<Option<(Vec3, f32)>> = data
+                        .iter()
+                        .map(|s| fallback.shape.node(s.name).map(|j| fallback.at(j, squash)))
+                        .collect();
+                    // `weapons::geometry_at` turns the body by the look.
+                    hit_bound(&reach, data, skeleton::STAND_FEET, Quat::IDENTITY, dy)
+                }))
+            }
+        };
         let shapes = chimera_core::later::Later::new(move || {
             let world = match &posed {
                 Some(p) => super::weapons::posed_geometry(origin, min, p.legs_yaw(), p, data),
@@ -1929,9 +2031,9 @@ fn hitboxes(
             let _ = shapes.get();
         }
         match current {
-            Some(mut h) => h.0 = shapes,
+            Some(mut h) => *h = core::LazyHitboxes(shapes, bound),
             None => {
-                commands.entity(e).insert(core::LazyHitboxes(shapes));
+                commands.entity(e).insert(core::LazyHitboxes(shapes, bound));
             }
         }
         if theirs {
@@ -1939,5 +2041,40 @@ fn hitboxes(
             commands.entity(e).remove::<core::Hitboxes>();
         }
     }
+}
+
+/// The box (in `core::Hitbox` space: the feet at the origin, `dy` under
+/// where the spheres' feet are, turned by the look) that holds every hit
+/// sphere of `data` whose centre stays in the model-space ball
+/// `reach[i]`, the feet at height `feet` there: each centre is
+/// `skeleton::to_body` of a point in that ball, in metres, turned by
+/// `turn` (`weapons::posed_geometry`'s legs against the look), so the
+/// ball's image is a ball of the same radius; a sphere without a centre
+/// sits at the feet. Widened by a little for the rounding of the products
+/// down the chain.
+pub fn hit_bound(reach: &[Option<(Vec3, f32)>], data: &[super::weapons::HitSphere], feet: f32, turn: Quat, dy: f32) -> core::HitBound {
+    let unit = super::movement::movement_data().meters_per_unit;
+    let origin = Vec3::new(0.0, dy, 0.0);
+    let mut bound = core::HitBound { min: origin, max: origin };
+    for (i, s) in data.iter().enumerate() {
+        let Some((centre, r)) = reach.get(i).copied().flatten() else { continue };
+        let r = r * (1.0 + 1e-4) + 0.01 + centre.length() * 1e-5;
+        let at = origin + turn * (skeleton::to_body(centre, feet) * unit);
+        let half = Vec3::splat((r + s.radius.max(0.0)) * unit);
+        bound = bound.union(core::HitBound { min: at - half, max: at + half });
+    }
+    bound
+}
+
+/// The spec's skeleton `index`'s `skeleton::FallbackReach`, made once.
+fn fallback_reach(index: usize) -> Arc<skeleton::FallbackReach> {
+    static MADE: std::sync::Mutex<Vec<(usize, Arc<skeleton::FallbackReach>)>> = std::sync::Mutex::new(Vec::new());
+    let mut made = MADE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, r)) = made.iter().find(|(i, _)| *i == index) {
+        return r.clone();
+    }
+    let r = Arc::new(skeleton::FallbackReach::new(records::builtin().skeleton(index)));
+    made.push((index, r.clone()));
+    r
 }
 

@@ -382,3 +382,37 @@ fn mul_gives_the_sum_s_bits() {
         }
     }
 }
+
+/// `Tracker::position` and `blend_layer_position` are `pose`'s and
+/// `blend_layer`'s translations, bit for bit: through play, a loop's
+/// wrap, a transition, and every kind of layer.
+#[test]
+fn positions_are_the_poses_translations() {
+    let mut w = W::default();
+    w.f32s(&[1.; 3]).str("from").u32(2).u32(0).u32(2).u32(0).str("").u32(500).str("");
+    w.u32(1).i16(0).i16(0).i16(0).u32(0);
+    let m = model(2, vec![w.0]);
+    let list = AnimList::build(&m, &[]);
+    let mut t = Tracker::on(1, true);
+    let mut other = Tracker::default();
+    for step in 0..40u32 {
+        if step == 11 {
+            t.start(0);
+        }
+        run(&mut t, &list, 7 + step * 13 % 50);
+        run(&mut other, &list, 31);
+        for node in 0..m.nodes.len() {
+            let (p, q) = t.pose(&list, node);
+            assert_eq!(t.position(&list, node), p, "step {step} node {node}");
+            let layer = other.pose(&list, node);
+            let base = list.entries[other.previous].animation.key_value(node, 0);
+            for (wt, mul) in [(0.0, 1.0), (0.5, 1.0), (1.0, 0.3), (2.0, 1.0), (0.7, 0.0)] {
+                assert_eq!(
+                    anim::blend_layer_position(p, layer.0, wt, mul, base.0),
+                    anim::blend_layer((p, q), layer, wt, mul, base).0,
+                    "weight {wt} multiplier {mul}"
+                );
+            }
+        }
+    }
+}

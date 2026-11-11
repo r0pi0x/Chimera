@@ -84,11 +84,16 @@ fn play_match(sim: &mut Sim, seed: u64) {
     }
 }
 
-/// Instructions per tick on this thread, over `n` ticks without a new
-/// archetype; None without hardware counters.
-fn cost(sim: &mut Sim, n: usize) -> Option<f64> {
+/// The median of the instructions each of `n` ticks used on this thread,
+/// over the ticks that made no new archetype; None without hardware
+/// counters. The median, not the mean: a few ticks cost three to five
+/// times the rest, and with them in a mean two matches' costs differed by
+/// up to a quarter on the same build (3.39M and 4.30M under a whole
+/// suite's load; 3.4M to 4.5M idle) where their medians differ by a few
+/// per cent (2.8M to 3.0M).
+fn cost(sim: &mut Sim, n: usize) -> Option<(u64, u64)> {
     let mut c = ThreadCounters::current();
-    let (mut total, mut steady) = (0u64, 0u64);
+    let mut ticks = Vec::new();
     let mut last = sim.app.world().archetypes().len();
     for _ in 0..n {
         let a = c.read().hw?.instructions;
@@ -96,17 +101,21 @@ fn cost(sim: &mut Sim, n: usize) -> Option<f64> {
         let used = c.read().hw?.instructions.saturating_sub(a);
         let now = sim.app.world().archetypes().len();
         if now == last {
-            total += used;
-            steady += 1;
+            ticks.push(used);
         }
         last = now;
     }
-    (steady > 0).then(|| total as f64 / steady as f64)
+    if ticks.is_empty() {
+        return None;
+    }
+    let mean = ticks.iter().sum::<u64>() / ticks.len() as u64;
+    ticks.sort_unstable();
+    Some((ticks[ticks.len() / 2], mean))
 }
 
 /// Match after match the characters' tables and archetypes stop growing
 /// and a tick costs the same. Before their components that come and go were sparse sets
-/// (8 matches): 1112 -> 2272 tables, 7.5M -> 9.1M instructions a tick
+/// (8 matches): 1112 -> 2272 tables, 7.5M -> 9.1M instructions a tick (means)
 /// (20,000 tables in the real app: 8.3M -> 39.8M, and 60 -> 30 fps).
 #[test]
 fn a_session_of_matches_stops_making_tables() {
@@ -116,7 +125,10 @@ fn a_session_of_matches_stops_making_tables() {
         play_match(&mut sim, 100 + m);
         let c = Census::take(sim.app.world_mut());
         let tick = cost(&mut sim, 60);
-        eprintln!("match {m}: {} archetypes, {} tables, {:?} instructions a tick", c.archetypes_made, c.tables, tick);
+        eprintln!(
+            "match {m}: {} archetypes, {} tables, {:?} instructions a tick (median, mean)",
+            c.archetypes_made, c.tables, tick
+        );
         rows.push((c.archetypes_made, c.tables, tick));
     }
     let (first, last) = (rows[1], rows[7]);
@@ -145,8 +157,11 @@ fn a_session_of_matches_stops_making_tables() {
         rows[3].0,
         last.0
     );
-    if let (Some(a), Some(b)) = (first.2, last.2) {
-        assert!(b < a * 1.25, "a tick cost {a:.0} instructions after a match, {b:.0} after seven more");
+    if let (Some((a, _)), Some((b, _))) = (first.2, last.2) {
+        assert!(
+            (b as f64) < a as f64 * 1.25,
+            "a tick cost {a} instructions (median) after a match, {b} after seven more"
+        );
     }
 }
 

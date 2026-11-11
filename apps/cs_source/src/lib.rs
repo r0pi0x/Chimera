@@ -1,6 +1,7 @@
 //! The faithful Counter-Strike: Source app's glue (apps/cs_source, crate
 //! `cs_source_app`): what composes Chimera, Source's logic and CS:S into
-//! the game (the `cs_source` binary, `main.rs`), the dedicated server
+//! the game (`APP`, a `client::app::GameApp` the `cs_source` binary,
+//! `main.rs`, runs), the dedicated server
 //! (apps/cs_source_server), the tools that drive the simulation, and its
 //! own integration tests (tests/it/: what only the app has, its build's
 //! version). `mashup`, the repository root, re-exports this crate at the
@@ -87,15 +88,60 @@ impl Plugin for SimPlugins {
 
 /// What this app tells the client shell (`client::AppHooks`): its commit,
 /// how it loads maps (`games::load_map_level`, `load_map_file`,
-/// `map_file_bytes`) and its greybox.
+/// `map_file_bytes`) and its greybox (`APP`'s).
 #[cfg(feature = "present")]
 pub fn client_hooks() -> client::AppHooks {
-    client::AppHooks {
-        build: core::BUILD,
-        load_map: games::load_map_with,
-        load_map_file: games::load_map_file_with,
-        map_file_bytes: games::map_file_bytes,
-        unload_greybox: greybox::unload,
-        respawn_greybox: greybox::respawn,
-    }
+    APP.app_hooks()
 }
+
+/// The game (the `cs_source` binary, `main.rs`), on Chimera's client app
+/// (`client::app`): CS:S's simulation (`SimPlugins`, `CsSourcePlugins`)
+/// as the gameplay, on a map of the install at the console's HDR level,
+/// with the debug views (`--debug-view`, `--lightmap-only`), or the
+/// greybox (behind the main menu unless the run starts playing; at the
+/// engine's tick, as another game's map); `--exec` and `--cvar` set its
+/// movement (`client::movement_config`); the shell with CS:S's HUD
+/// (`games::cs_source::ui::with_hud`), then its menus and panels
+/// (`CsSourceUiPlugin`).
+#[cfg(feature = "present")]
+pub static APP: client::app::GameApp = client::app::GameApp {
+    bin: "cs_source",
+    info: &games::cs_source::INFO,
+    title: "Counter-Strike Source",
+    about: String::new,
+    version: core::VERSION,
+    build: core::BUILD,
+    maps: client::app::AppMaps {
+        load: games::load_map_with,
+        load_file: games::load_map_file_with,
+        file_bytes: games::map_file_bytes,
+    },
+    // The install as `cs_source://` assets.
+    installs: || vec![chimera_present::assets::InstallSource::of(&games::cs_source::INFO)],
+    sim: |app, args| {
+        use gameplay::{Gameplay, GameplayAppExt};
+        app.add_plugins((SimPlugins, games::cs_source::CsSourcePlugins))
+            // CS:S is the gameplay: its rules, HUD, binds and tick.
+            .set_gameplay(Gameplay::of(&games::cs_source::INFO));
+        // The greybox (or another game's map) runs at the engine's tick, a
+        // CS:S map at the gameplay's.
+        if !args.game_map().is_some_and(|id| id.starts_with("cs_source:")) {
+            app.insert_resource(Time::<Fixed>::from_hz(DEFAULT_TICK_HZ));
+        }
+        app.insert_resource(client::movement_config(args)).insert_resource(slots::Loadout {
+            movement: games::cs_source::movement::ID,
+        });
+    },
+    hud: games::cs_source::ui::with_hud,
+    // CS:S's menus, panels and HUD (the shell reaches them through
+    // `client::front_end`).
+    front_end: |app, _| {
+        app.add_plugins(games::cs_source::ui::CsSourceUiPlugin);
+    },
+    hooks: client::app::GameAppHooks {
+        hdr_start: true,
+        debug_views: true,
+        server: Some("cs_source_server"),
+        ..client::app::GameAppHooks::NONE
+    },
+};

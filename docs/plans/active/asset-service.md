@@ -813,6 +813,32 @@ where the files are, the existing HTTP service carries the files):
   (`relaunch_requested`, `chimera_client::client::app::run`), since the mounts
   open at startup. A refused token, an unreachable service, another
   certificate: the join fails with the reason on screen.
+- **Verified on this box (2026-11-11)**, everything on 127.0.0.1 at test
+  ports: `chimera_asset_server --tls` on a scratch server store (the real
+  store's records, its own key, certificate and accounts), the
+  `ultimate_gun_game_server` with the installs on de_dust2 naming it, and the
+  `ultimate_gun_game` client offscreen with no install, no Steam folder, an
+  empty config, an empty asset cache and no converted maps, started with
+  `+chimera:asset_token <token> +connect 127.0.0.1:<port>`. It bound the token,
+  started again (once), fetched the match's sets with the loading panel's
+  "Downloading game files: X of Y MB", joined and played de_dust2 with CS:S's,
+  Combat Arms' and HL2:DM's guns. **First match: 568 MB over 144 requests
+  before spawning, 23 s from start to spawn on localhost** (the restart
+  included): ~172 MB the join's download (the sets), ~300 MB on demand at
+  startup (what the games read before the window: Combat Arms' data, menus),
+  ~45 MB on demand while the map loaded; then 172 MB of the pool's other
+  maps prefetched in the background. With 400 ms added to every answer
+  (`--latency-ms`), the join's 172 MB took 2.6 s (batches on 4 connections).
+  A revoked token then failed the join with the reason. Published for it
+  into the real server store: `base` (CS:S, Combat Arms), `map/<name>` for
+  de_dust2, cs_office, WAREHOUSE, JUNK_FLEA, DARKHILLS, BLOODMONEY, from
+  `CHIMERA_VFS_LOG` runs of the client with the installs.
+- **Known shortcuts:** what the games read at startup (~300 MB the first
+  time) comes on demand before the window shows, with no progress on screen
+  (the console says `assets: downloading ...`); the first join with a new
+  token restarts the game once; Combat Arms has no `players` set (its
+  character models come on demand); the pool's prefetch has no rate cap of
+  its own; a revoke stops a token's next request, not a batch being sent.
 - Tests: chimera_assets `service` (HTTPS pinned and refused, the limits, paths),
   `access`, `tls`; chimera_net `assets` (NetSim with a real service on
   127.0.0.1 and fixture files: join, offer, fetch, spawn; the hybrid client

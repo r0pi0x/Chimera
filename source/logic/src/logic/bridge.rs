@@ -8,6 +8,17 @@
 //! a kept query (`MoverWants::differ`, `prop_differs`: the writes' own
 //! tests; `SyncEveryNode` runs every write's code for every node, which
 //! `map_logic::skipping_unchanged_nodes_changes_nothing` compares with).
+//! What a mover's node should read is worked out again only for movers
+//! whose logic entity may have changed since the last phase
+//! (`LogicWorld::changed_since`, stamped by `get_mut`); the others' is
+//! kept from then (`MoverLook`). A mover whose node read as wanted at the
+//! last phase is passed over without a look while nothing its wants or
+//! the node's test depend on changed: its entity, whether it rides a
+//! physics body, its brushes' count, the node's components (their change
+//! ticks since the last phase's writes, `MoverViewChanged`) and its
+//! archetype (a component added or taken away); nodes two movers share
+//! are written every phase as before (`MoverCache`; docs/performance.md,
+//! "A change stamp for the movers").
 //!
 //! Covers: `carry_player`: a network client's own player pushed by its movers'
 //! steps as `LogicSet::Pre` does; `LogicPlugin`: built from `map::MapEntities`,
@@ -106,6 +117,8 @@ pub struct Logic {
     restarts: u32,
     /// The map's placed weapons (`weapon_*` entities), by index.
     weapons: Vec<usize>,
+    /// What `sync_movers` saw of each mover at the last phase.
+    movers_seen: MoverCache,
 }
 
 /// Where the logic runs in the fixed tick.
@@ -360,6 +373,7 @@ fn load(world: &mut World) {
                     .collect(),
                 source: m.entities.clone(),
                 restarts,
+                movers_seen: MoverCache::default(),
             });
         }
         _ => {
@@ -1278,7 +1292,6 @@ fn sync_movers(world: &mut World, logic: &mut Logic) {
         }
         alive
     });
-    let logic = &*logic;
     // Each mover's node by its entity's slot (the generation checked): a
     // hash map made here every phase was a tenth of a tick on a map with
     // thousands of movers (docs/performance.md, "Performance pass").
@@ -1292,9 +1305,28 @@ fn sync_movers(world: &mut World, logic: &mut Logic) {
     }
     let every = world.contains_resource::<SyncEveryNode>();
     let riders = logic.world.body_riders();
-    // What the logic wants of each mover's node (the logic alone says).
+    let mut cache = std::mem::take(&mut logic.movers_seen);
+    // The mover nodes whose components something changed since the last
+    // phase (`synced`: the change tick after its writes), sorted.
+    let mut touched: Vec<Entity> = match cache.synced {
+        Some(t) if !every => world.last_change_tick_scope(t, |world| {
+            cached_query::<Entity, (With<MovingSolid>, MoverViewChanged), _>(world, |q, world| q.iter(world).collect())
+        }),
+        _ => Vec::new(),
+    };
+    touched.sort_unstable();
+    // Which movers share a node (written every phase, as before), worked
+    // out again when the movers or their nodes change.
+    let mut print = (0u64, 0usize);
+    // What the logic wants of each mover's node (the logic alone says):
+    // its entity's part kept from the last phase unless the entity may
+    // have changed since (`LogicWorld::changed_since`). A mover whose
+    // node read as wanted then, and of which nothing it depends on has
+    // changed since (its entity, its node's components, whether it rides
+    // a body, its brushes), would read so again: it is passed over.
     let mut wants: Vec<MoverWants> = Vec::new();
-    for (id, origin, angles, velocity, visible, solid) in logic.world.mover_poses() {
+    let mut slots: Vec<usize> = Vec::new();
+    for id in logic.world.ids_of(super::classes::kinds::PUSHERS) {
         let Some(node) = nodes
             .get(id.index as usize)
             .and_then(|n| n.as_ref())
@@ -1303,89 +1335,102 @@ fn sync_movers(world: &mut World, logic: &mut Logic) {
         else {
             continue;
         };
+        let i = id.index as usize;
+        if cache.seen.len() <= i {
+            cache.seen.resize_with(i + 1, || None);
+        }
+        let unchanged = !every && !logic.world.changed_since(id, cache.mark);
+        let seen = match cache.seen[i].as_mut().filter(|seen| unchanged && seen.id == id) {
+            Some(seen) => seen,
+            None => {
+                let Some(look) = MoverLook::of(logic, id) else {
+                    cache.seen[i] = None;
+                    continue;
+                };
+                cache.seen[i].insert(SeenMover { id, look, settled: None })
+            }
+        };
+        print.0 ^= (id.index as u64) << 32 ^ id.generation as u64 ^ node.to_bits().rotate_left(17);
+        print.1 += 1;
         // A brush riding a physics brush or prop touches no physics body
         // (it would shove the body carrying it) but shots still hit it
         // (cs_havana's monitor screen); players meet its brushes
         // (`MovingSolid`).
-        let shootable = logic.world.shootable(id);
         let rides = riders.rides(id);
-        let panes = logic.world.window(id).filter(|w| w.window_broken).map(|w| {
-            let e = logic.world.get(id).unwrap();
-            let s = logic.scale;
-            let n = w.normal;
-            let depth = e
-                .hulls
-                .iter()
-                .flat_map(|h| &h.points)
-                .map(|p| (*p - w.corner).dot(n))
-                .fold((f32::MAX, f32::MIN), |(lo, hi), d| (lo.min(d), hi.max(d)));
-            let depth = if depth.0 > depth.1 {
-                (0.0, 0.0)
-            } else {
-                (depth.0 * s, depth.1 * s)
-            };
-            BrushPanes {
-                corner: entity_to_engine(w.corner, s),
-                u: entity_to_engine(w.u, s),
-                v: entity_to_engine(w.v, s),
-                depth,
-                cols: w.cols,
-                rows: w.rows,
-                broken: w.broken.clone(),
-            }
-        });
-        let transform = Transform::from_translation(entity_to_engine(origin, logic.scale))
-            .with_rotation(rotation_to_engine(entity_rotation(angles)));
+        let solids = logic.world.mover_solid(id).map_or(0, |b| b.len());
+        let settled = seen.settled.take();
+        if let Some(was) = settled
+            && was.node == node
+            && was.rides == rides
+            && was.solids == solids
+            && world.entities().get_spawned(node).is_ok_and(|l| l.archetype_id == was.archetype)
+            && touched.binary_search(&node).is_err()
+        {
+            seen.settled = Some(was);
+            continue;
+        }
+        let look = &seen.look;
         // A broken window's panes are for shots only
         // (`map::breakables::update_panes`): every game's characters pass
         // them, and touching them shatters them (`touch_breakables`).
-        let layers = if panes.is_some() {
+        let layers = if look.panes.is_some() {
             CollisionLayers::new(crate::core::TRACE_ONLY_LAYER, LayerMask::NONE)
         } else if rides {
             CollisionLayers::new(LayerMask::DEFAULT, LayerMask::NONE)
         } else {
             CollisionLayers::default()
         };
-        // Its render colour (rendercolor, the Color input).
-        let look = logic.world.get(id).map_or_else(Default::default, |e| e.render_look());
-        let frame = logic.world.get(id).map_or(0, |e| e.texture_frame);
         wants.push(MoverWants {
             id,
             node,
-            transform,
+            transform: look.transform,
             layers,
             rides,
-            visible,
-            tint: crate::map::BrushTint(look, frame),
-            solid,
-            velocity: entity_to_engine(velocity, logic.scale),
-            solids: logic.world.mover_solid(id).map_or(0, |b| b.len()),
-            panes,
-            shootable,
+            visible: look.visible,
+            tint: look.tint,
+            solid: look.solid,
+            velocity: look.velocity,
+            solids,
+            panes: look.panes.clone(),
+            shootable: look.shootable,
         });
+        slots.push(i);
     }
+    drop(riders);
+    if cache.print != print {
+        // Nodes two movers share, from every mover's node.
+        let mut all: Vec<Entity> = nodes.iter().flatten().map(|(_, n)| *n).collect();
+        all.sort_unstable();
+        cache.shared = all.windows(2).filter(|w| w[0] == w[1]).map(|w| w[0]).collect();
+        cache.shared.dedup();
+        cache.print = print;
+    }
+    cache.mark = logic.world.mark();
     // The nodes with something to write: all but those that already read
-    // as wanted (most movers, most ticks), told in one walk over the
-    // nodes through a kept query (a node gets its brushes, `MovingSolid`,
-    // at its first write; one without them isn't in the walk and is
-    // written). A node two movers share is written as before: the second
-    // would be judged by what the first has yet to write.
+    // as wanted (most movers, most ticks), each told through a kept query
+    // (a node gets its brushes, `MovingSolid`, at its first write; one
+    // without them isn't in the query and is written). A node two movers
+    // share is written as before: the second would be judged by what the
+    // first has yet to write.
     let mut write = vec![true; wants.len()];
     if !every {
-        const SHARED: usize = usize::MAX;
-        let mut by_node = bevy::ecs::entity::EntityHashMap::<usize>::with_capacity(wants.len());
-        for (i, w) in wants.iter().enumerate() {
-            if by_node.insert(w.node, i).is_some() {
-                by_node.insert(w.node, SHARED);
-            }
-        }
-        cached_query::<(Entity, MoverView), With<MovingSolid>, _>(world, |nodes, world| {
-            for (node, have) in nodes.iter(world) {
-                if let Some(&i) = by_node.get(&node)
-                    && i != SHARED
-                    && !wants[i].differ(&have)
-                {
-                    write[i] = false;
+        cached_query::<(Entity, MoverView), With<MovingSolid>, _>(world, |q, world| {
+            for (k, w) in wants.iter().enumerate() {
+                if cache.shared.binary_search(&w.node).is_ok() {
+                    continue;
+                }
+                let Ok((_, have)) = q.get(world, w.node) else { continue };
+                if !w.differ(&have) {
+                    write[k] = false;
+                    let archetype = world.entities().get_spawned(w.node).map(|l| l.archetype_id);
+                    if let (Some(Some(seen)), Ok(archetype)) = (cache.seen.get_mut(slots[k]), archetype) {
+                        seen.settled = Some(Settled {
+                            node: w.node,
+                            archetype,
+                            rides: w.rides,
+                            solids: w.solids,
+                        });
+                    }
                 }
             }
         });
@@ -1456,6 +1501,9 @@ fn sync_movers(world: &mut World, logic: &mut Logic) {
             }
         }
     }
+    // Changes after this (other systems', later passes') have newer ticks.
+    cache.synced = Some(world.increment_change_tick());
+    logic.movers_seen = cache;
 }
 
 /// With this resource every phase runs the whole of `sync_movers` and
@@ -1494,6 +1542,113 @@ struct MoverWants {
     solids: usize,
     panes: Option<BrushPanes>,
     shootable: bool,
+}
+
+/// What `sync_movers` keeps between phases (docs/performance.md, "A
+/// change stamp for the movers").
+#[derive(Default)]
+struct MoverCache {
+    /// By slot: each mover's `MoverLook` and, if its node read as wanted
+    /// at the last phase, what that depended on (`Settled`).
+    seen: Vec<Option<SeenMover>>,
+    /// The logic's mark (`LogicWorld::mark`) and the change tick taken at
+    /// the end of the last phase.
+    mark: u64,
+    synced: Option<bevy::ecs::change_detection::Tick>,
+    /// Nodes two movers share (sorted), and a print of the movers and
+    /// their nodes they were worked out for.
+    shared: Vec<Entity>,
+    print: (u64, usize),
+}
+
+struct SeenMover {
+    id: EntId,
+    look: MoverLook,
+    settled: Option<Settled>,
+}
+
+/// A mover whose node read as wanted (nothing written) at the last
+/// phase: its node, the node's archetype (a component added or taken
+/// away moves it), and what else its wants were made of.
+#[derive(Clone, Copy)]
+struct Settled {
+    node: Entity,
+    archetype: bevy::ecs::archetype::ArchetypeId,
+    rides: bool,
+    solids: usize,
+}
+
+/// A change to what `MoverView` reads (`Changed` of each component a
+/// node may hold; one added or taken away moves it to another archetype).
+type MoverViewChanged = Or<(
+    Changed<CollisionLayers>,
+    Changed<Transform>,
+    Changed<VisClusters>,
+    Changed<Visibility>,
+    Changed<crate::map::BrushTint>,
+    Changed<MovingSolid>,
+    Changed<BrushPanes>,
+)>;
+
+/// What a mover's logic entity alone says its node should read (its
+/// pose, whether it shows, its colour, solidity, velocity, broken panes,
+/// whether shots hit it): kept between phases while the entity isn't
+/// changed (`LogicWorld::changed_since`).
+#[derive(Clone)]
+struct MoverLook {
+    transform: Transform,
+    visible: bool,
+    tint: crate::map::BrushTint,
+    solid: bool,
+    velocity: Vec3,
+    panes: Option<BrushPanes>,
+    shootable: bool,
+}
+
+impl MoverLook {
+    /// `id`'s, if it is a mover (as `LogicWorld::mover_poses` says).
+    fn of(logic: &Logic, id: EntId) -> Option<Self> {
+        let e = logic.world.get(id)?;
+        let p = super::movers::pusher(&e.class)?;
+        let (origin, angles, velocity, visible, solid) = (p.origin, p.angles, p.velocity + p.carry, p.visible, p.solid);
+        let shootable = logic.world.shootable(id);
+        let panes = logic.world.window(id).filter(|w| w.window_broken).map(|w| {
+            let s = logic.scale;
+            let n = w.normal;
+            let depth = e
+                .hulls
+                .iter()
+                .flat_map(|h| &h.points)
+                .map(|p| (*p - w.corner).dot(n))
+                .fold((f32::MAX, f32::MIN), |(lo, hi), d| (lo.min(d), hi.max(d)));
+            let depth = if depth.0 > depth.1 {
+                (0.0, 0.0)
+            } else {
+                (depth.0 * s, depth.1 * s)
+            };
+            BrushPanes {
+                corner: entity_to_engine(w.corner, s),
+                u: entity_to_engine(w.u, s),
+                v: entity_to_engine(w.v, s),
+                depth,
+                cols: w.cols,
+                rows: w.rows,
+                broken: w.broken.clone(),
+            }
+        });
+        let transform = Transform::from_translation(entity_to_engine(origin, logic.scale))
+            .with_rotation(rotation_to_engine(entity_rotation(angles)));
+        Some(Self {
+            transform,
+            visible,
+            // Its render colour (rendercolor, the Color input).
+            tint: crate::map::BrushTint(e.render_look(), e.texture_frame),
+            solid,
+            velocity: entity_to_engine(velocity, logic.scale),
+            panes,
+            shootable,
+        })
+    }
 }
 
 impl MoverWants {

@@ -38,6 +38,12 @@
 //! or knife): what shows stays until the real model is ready, a ladder's
 //! models loading ahead (Combat Arms' `characters::preload`).
 //!
+//! `APP` (feature `present`): the binary's client app, the party's
+//! (`party_kit::client::PARTY`) with its own command line (`args`), the
+//! party's main-menu start over a background map (never the greybox or a
+//! stand-in behind it) and its last word (`launch`: the main menu, the
+//! plugin with a fresh seed, the minimal HUD).
+//!
 //! Known shortcuts: the ladder isn't made again when a player without a
 //! game joins mid-match; with no CS:S install the client starts (a server
 //! offering its game files provides them: `party_kit::served_by_servers`),
@@ -283,6 +289,63 @@ fn with_installs(world: &mut World) {
     if let Err(e) = generate(world, l.seed, l.rungs) {
         world.resource_mut::<Console>().print(Level::Error, e);
     }
+}
+
+/// The game binary's app (`ultimate_gun_game`, main.rs): the party's
+/// client app (`party_kit::client::PARTY`) on Chimera's client app,
+/// playing the automatic gun game (`with_defaults_for` with `MINIGAME`
+/// and `first_map`) unless it starts at the party's main menu
+/// (`party_kit::start_at_menu`: nothing on the command line plays; the
+/// menu over a background map, never the greybox), with the main menu
+/// (Play hosts the automatic gun game, Join connects), the Ultimate Gun
+/// Game's parts with a fresh seed (`UltimateGunGamePlugin::launch`) and
+/// the minimal HUD last (`launch`).
+#[cfg(feature = "present")]
+pub static APP: chimera_client::client::app::GameApp = chimera_client::client::app::GameApp {
+    bin: "ultimate_gun_game",
+    title: "Ultimate Gun Game",
+    about: || {
+        format!(
+            "ultimate_gun_game: a gun game whose ladder is every composed game's guns; each gun makes you its\n\
+             game. Starts {MINIGAME} on its first map; `ugg_new [seed] [rungs]` (console) a new ladder, `parts`\n\
+             what each game lends. The options are the shell's (below).\n"
+        )
+    },
+    hooks: chimera_client::client::app::GameAppHooks {
+        args: Some(args),
+        start: Some(party_kit::start_at_menu),
+        server: Some("ultimate_gun_game_server"),
+        launch: Some(launch),
+        ..party_kit::client::PARTY.hooks
+    },
+    ..party_kit::client::PARTY
+};
+
+/// The command line as the app plays it: as given at the main menu (no
+/// map, minigame, server or capture on it: `main_menu::starts_at_menu`),
+/// else the automatic gun game on its pool's first map unless it names
+/// others (`party_kit::with_defaults_for`).
+#[cfg(feature = "present")]
+pub fn args(args: chimera_client::client::Args) -> chimera_client::client::Args {
+    if party_kit::main_menu::starts_at_menu(&args) {
+        args
+    } else {
+        party_kit::with_defaults_for(args, MINIGAME, &first_map)
+    }
+}
+
+/// What the app adds last: the party's main menu (shown at start when the
+/// command line doesn't play; Play starts `MINIGAME`), the Ultimate Gun
+/// Game's parts with a fresh seed, and the minimal HUD.
+#[cfg(feature = "present")]
+fn launch(app: &mut App, args: &chimera_client::client::Args) {
+    let at_menu = party_kit::main_menu::starts_at_menu(args);
+    app.add_plugins(party_kit::main_menu::MainMenuPlugin {
+        at_start: at_menu,
+        minigame: MINIGAME.into(),
+        keep_recent: at_menu,
+    })
+    .add_plugins((UltimateGunGamePlugin::launch(), chimera_client::client::hud_minimal::MinimalHudPlugin));
 }
 
 #[cfg(test)]

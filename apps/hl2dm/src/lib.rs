@@ -8,10 +8,12 @@
 //! `SimPlugin`: the simulation as the binary runs it (its tests run it on
 //! the headless harness, tests/it/).
 //!
-//! `ClientPlugin`: the client shell (`chimera_client`) with this app's
-//! hooks (`client_hooks`) and HL2:DM's field of view (75, specs/hl2dm/
-//! source_deltas.md 1.8) and its HUD (M9: `hl2dm::ui`; the shell's own draws
-//! until a map brings the look).
+//! `APP`: the game binary's app on Chimera's client app (`chimera_client::
+//! client::app`; main.rs is `run(&APP)`): `SimPlugin`, the client shell
+//! with this app's hooks (`client_hooks`) and, after it (`front_end`),
+//! HL2:DM's field of view (75, specs/hl2dm/source_deltas.md 1.8) and its
+//! HUD (M9: `hl2dm::ui`; the shell's own draws until a map brings the
+//! look).
 //!
 //! `VERSION` and `BUILD`: this build's version and commit, stamped by
 //! build.rs (the script every app shares, chimera/core/build_stamp.rs).
@@ -24,11 +26,11 @@
 //! folder as the other apps' (`console::cfg_dir`).
 
 use bevy::prelude::*;
-use chimera_client::client::{AppHooks, Args, ClientPlugins};
-use chimera_world::{
-    greybox,
-    map::{MapData, MapLoadOptions},
+use chimera_client::client::{
+    AppHooks, Args,
+    app::{self, AppMaps, GameApp, GameAppHooks},
 };
+use chimera_world::map::{MapData, MapLoadOptions};
 use hl2dm::game::{self, GAME, maps};
 
 /// This build's version (`version` command, bug reports); stamped by
@@ -45,17 +47,44 @@ pub const DEFAULT_FOV: f32 = 75.0;
 
 /// What this app tells the client shell: its commit, HL2:DM's maps by id
 /// (`load_map_with`) or from a downloaded file (`load_map_file`), the
-/// install's map files for the network's offer, and the greybox's hooks.
+/// install's map files for the network's offer, and the greybox's hooks
+/// (`APP`'s).
 pub fn client_hooks() -> AppHooks {
-    AppHooks {
-        build: BUILD,
-        load_map: load_map_with,
-        load_map_file,
-        map_file_bytes,
-        unload_greybox: greybox::unload,
-        respawn_greybox: greybox::respawn,
-    }
+    APP.app_hooks()
 }
+
+/// The game binary's app (`hl2dm`, main.rs), on Chimera's client app
+/// (`chimera_client::client::app`): `SimPlugin` on a map of the install
+/// or the greybox, the shell at HL2:DM's field of view with its HUD
+/// (`front_end`).
+pub static APP: GameApp = GameApp {
+    bin: "hl2dm",
+    info: &game::INFO,
+    title: "Half-Life 2: Deathmatch",
+    about: || {
+        "hl2dm: Half-Life 2: Deathmatch on Chimera (M1: its maps, a stand-in movement, its bullet and melee weapons;\n\
+         --map hl2dm:<name>, e.g. hl2dm:dm_lockdown, else the greybox).\n"
+            .into()
+    },
+    version: VERSION,
+    build: BUILD,
+    maps: AppMaps {
+        load: load_map_with,
+        load_file: load_map_file,
+        file_bytes: map_file_bytes,
+    },
+    installs: app::no_installs,
+    // The simulation at HL2:DM's tick (the app's tests run it headless).
+    sim: |app, _| {
+        app.add_plugins(SimPlugin);
+    },
+    hud: app::no_hud,
+    front_end,
+    hooks: GameAppHooks {
+        server: Some("hl2dm_server"),
+        ..GameAppHooks::NONE
+    },
+};
 
 /// The map's name in `id` (`hl2dm:<name>` or a bare name), or why it
 /// isn't HL2:DM's.
@@ -111,25 +140,15 @@ impl Plugin for SimPlugin {
     }
 }
 
-/// The client as this app runs it: the shell's plugins with the app's
-/// hooks, at HL2:DM's field of view.
-pub struct ClientPlugin {
-    pub args: Args,
-}
-
-impl Plugin for ClientPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugins(ClientPlugins {
-            args: self.args.clone(),
-            hooks: client_hooks(),
-        })
-        .insert_resource(chimera_client::client::video::PlayerFov(DEFAULT_FOV))
+/// The client after the shell (`APP`'s front end): HL2:DM's field of
+/// view, its server name and its HUD.
+pub fn front_end(app: &mut App, _: &Args) {
+    app.insert_resource(chimera_client::client::video::PlayerFov(DEFAULT_FOV))
         // Its server name until the player's own (`cfg/settings.scr`'s
         // default, Create Server's Game page).
         .insert_resource(chimera_net::net::query::Hosting { hostname: "Half-Life 2 Deathmatch".into(), ..default() })
         // HL2:DM's HUD (hl2dm::ui), over the shell's fallback.
         .add_plugins(hl2dm::ui::Hl2dmUiPlugin);
-    }
 }
 
 #[cfg(test)]

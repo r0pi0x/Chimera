@@ -386,4 +386,17 @@ fn a_client_without_files_binds_its_token_and_starts_again() {
     assert!(reason.contains("isn't the one your token is for"), "{reason}");
     assert_eq!(Access::load_from(&other), a, "not rebound");
     assert!(!sim.clients[0].app.world().contains_resource::<AssetRelaunch>());
+
+    // Started again with that service, which refused the token at startup
+    // (revoked since): the reason, not a loop of restarts.
+    svc.revoke("tester");
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
+    let mut session = svc.session("again", &token, true);
+    session.served.clear();
+    session.access = Some(access.clone());
+    sim.add_client(client_with(session, false));
+    assert!(until(&mut sim, 20.0, |s| progress(s, 0).failure.is_some()));
+    let (_, reason) = progress(&sim, 0).failure.unwrap();
+    assert!(reason.contains("refused your token"), "{reason}");
+    assert!(!sim.clients[0].app.world().contains_resource::<AssetRelaunch>());
 }

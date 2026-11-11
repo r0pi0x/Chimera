@@ -506,17 +506,18 @@ fn without_files(world: &mut World, offer: &AssetOffer, session: &AssetSession, 
     if let Err(e) = access.bind(&offer.url, &offer.fingerprint) {
         return fail(world, e);
     }
-    if using.is_some_and(|u| Some(u) == access.remote()) {
+    if let Some(remote) = using.filter(|u| Some(u) == access.remote().as_ref()) {
         // This process already reads from that service, which didn't serve
-        // the game when the game started.
-        return fail(
-            world,
-            format!(
-                "the asset service at {} didn't serve {names} when the game started (refused, unreachable or \
-                 without it: the log says which); start the game again to retry",
-                offer.url
-            ),
-        );
+        // the game when the game started: say why (a refused token, an
+        // unreachable service), else that it lacks the game.
+        let why = chimera_assets::Remote::shared(&remote)
+            .and_then(|r| r.whoami().map_err(|e| e.to_string()))
+            .err()
+            .map(|e| explain(&offer.url, &e))
+            .unwrap_or_else(|| {
+                format!("the asset service at {} doesn't serve {names}; tell the server's admin", offer.url)
+            });
+        return fail(world, why);
     }
     if let Err(e) = access.save_to(&path) {
         return fail(world, e);

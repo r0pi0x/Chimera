@@ -7,6 +7,8 @@
 //! transitions (`Tracker`, "Playback"), key strings split into commands
 //! ("String keys"), layered blending ("Layered playback") and node
 //! evaluation and skinning matrices ("Node evaluation order", "Skinning").
+//! `Tracker::position` and `blend_layer_position` give a pose's
+//! translations alone (a game's bound on how far a pose reaches).
 //! Plain data: the model's bytes are `crate::ltb`'s; a game drives
 //! trackers with its own clock and converts poses into its engine.
 //!
@@ -561,6 +563,29 @@ impl Tracker {
         }
         (p, q)
     }
+
+    /// The translation of `pose` alone (no rotation sampled: what a bound
+    /// on a pose's reach needs; the same sums, so the same value).
+    pub fn position(&self, list: &AnimList, node: usize) -> Vec3 {
+        let cur = &list.entries[self.current];
+        if self.transition.is_some() {
+            let prev = &list.entries[self.previous];
+            let pp = prev.animation.key_value(node, self.previous_key).0;
+            let pc = cur.animation.key_value(node, 0).0;
+            let mut p = lerp3(pp, pc, self.blend);
+            if node == 0 {
+                p = add(p, lerp3(prev.translation, cur.translation, self.blend));
+            }
+            return p;
+        }
+        let pa = cur.animation.key_value(node, self.a).0;
+        let pb = cur.animation.key_value(node, self.b).0;
+        let mut p = lerp3(pa, pb, self.u);
+        if node == 0 {
+            p = add(p, cur.translation);
+        }
+        p
+    }
 }
 
 /// The game's first-person rule: a rate above 2.0 becomes 1.0.
@@ -585,6 +610,18 @@ pub fn blend_layer(base: (Vec3, Quat), layer: (Vec3, Quat), w: f32, m: f32, addi
     }
     let f = w * m;
     (lerp3(p, pt, f), slerp(q, qt, f))
+}
+
+/// The translation of `blend_layer` alone (the same sums).
+pub fn blend_layer_position(base: Vec3, layer: Vec3, w: f32, m: f32, additive_base: Vec3) -> Vec3 {
+    if m == 0.0 || w == 0.0 {
+        return base;
+    }
+    if w == ADDITIVE_WEIGHT {
+        let p0 = additive_base;
+        return add(base, [layer[0] - p0[0], layer[1] - p0[1], layer[2] - p0[2]]);
+    }
+    lerp3(base, layer, w * m)
 }
 
 /// The bind local of node j, B_parent^-1 B_j (B_root for the root).

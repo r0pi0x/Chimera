@@ -2278,6 +2278,85 @@ fn poses_on_demand_match_poses_every_tick() {
     }
 }
 
+/// The box a body's hitboxes stay in (`core::HitBound`, the broad phase's:
+/// docs/performance.md, "A broad phase for the hitscan") holds every
+/// sphere, tick after tick of a duel (walking, crouching, looking up and
+/// down, firing, taking hits), for a body with a model (`CaPose::
+/// sphere_reach`) and one on the spec's skeleton (`FallbackReach`); and
+/// it is a body's size, not the map's (under 4 m on a side; printed).
+#[test]
+fn the_hit_bound_holds_every_sphere() {
+    use chimera_world::map::{CharacterModels, MapBone, MapCharacterModel, anim::AnimSet};
+    use combat_arms::game::{GAME, characters::models::BodyGroup};
+    let stand_in = male_stand_in(true);
+    let id = 1;
+    let model = MapCharacterModel {
+        game: Some(GAME),
+        team: None,
+        name: Some(models::body_name(id)),
+        class: None,
+        model: Default::default(),
+        hitboxes: Vec::new(),
+        bones: stand_in
+            .nodes
+            .iter()
+            .map(|(name, parent, _)| MapBone { name: name.to_string(), parent: *parent, position: Vec3::ZERO, rotation: Quat::IDENTITY })
+            .collect(),
+        root: Transform::IDENTITY,
+        animations: Some(Arc::new(AnimSet::default())),
+        boxes: Vec::new(),
+        ragdoll: None,
+    };
+    let mut sim = sim();
+    let world = sim.app.world_mut();
+    models::register(world, &builtin().model(id).unwrap().file, Arc::new(stand_in.rig(STAND_IN_ANIMS)));
+    models::late_in(world).0.register_group(BodyGroup { records: vec![id], ..default() });
+    world.insert_resource(CharacterModels(Arc::new(vec![model])));
+    let a = player(&mut sim, Vec3::new(0.0, 1.0, 12.0), std::f32::consts::PI);
+    let b = player(&mut sim, Vec3::new(0.5, 1.0, 4.0), 0.0);
+    sim.app.world_mut().entity_mut(a).insert(Selection { model: id, ..default() });
+    for p in [a, b] {
+        weapon::give(sim.app.world_mut(), p, RIFLE).unwrap();
+    }
+    sim.seconds(1.3);
+    let (mut modelled, mut fallback) = (0, 0);
+    let mut sizes = [Vec3::ZERO; 2];
+    for i in 0..300usize {
+        let phase = i as f32 * 0.05;
+        for (k, p) in [a, b].into_iter().enumerate() {
+            let mut intent = sim.intent(p);
+            intent.pitch = 0.7 * (phase + k as f32).sin();
+            intent.move_axis = Vec2::new((phase * 0.7).sin(), (phase * 0.3 + k as f32).cos()) * 0.6;
+            intent.crouch = (i / 40 + k) % 3 == 0;
+            intent.fire = (i + 7 * k) % 12 < 2;
+            if i % 25 == 0 {
+                intent.yaw += 0.3;
+            }
+        }
+        sim.ticks(1);
+        let w = sim.app.world();
+        for p in [a, b] {
+            let lazy = w.get::<chimera_core::core::LazyHitboxes>(p).expect("hitboxes on demand");
+            let bound = *lazy.1.as_ref().expect("a bound").get();
+            let shapes = lazy.0.get();
+            assert!(bound.holds(shapes), "tick {i}: {bound:?} doesn't hold {shapes:?}");
+            let size = bound.max - bound.min;
+            assert!(size.max_element() < 4.0, "tick {i}: a body's size: {size}");
+            let pose = w.get::<CaPose>(p).unwrap();
+            let k = if pose.sphere_reach().is_some() {
+                modelled += 1;
+                0
+            } else {
+                fallback += 1;
+                1
+            };
+            sizes[k] = sizes[k].max(size);
+        }
+    }
+    eprintln!("the largest bounds (m): with a model {}, on the spec's skeleton {}", sizes[0], sizes[1]);
+    assert!(modelled == 300 && fallback == 300, "both kinds of body: {modelled} modelled, {fallback} on the spec's skeleton");
+}
+
 /// A character nobody reads is never posed: its pose, its hitboxes and
 /// its drawn pose wait; read, each is what it would have been.
 #[test]
