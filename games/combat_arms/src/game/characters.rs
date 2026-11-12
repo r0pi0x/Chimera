@@ -48,7 +48,9 @@
 //! same pose whenever it is made; `CaPoseEveryTick` makes every one in the
 //! tick, to compare): hit-sphere centres and the sockets the game uses
 //! (`NAME_socket` for the name tag, `Left_foot` for drops, `RightHand` for
-//! the weapon and the third-person flash), in the character's frame.
+//! the weapon, the held model's own `Flash` and `Breach` sockets for others'
+//! muzzle, tracer, shot sound and casings: effects_sounds.md 3, 8), in the
+//! character's frame.
 //! `weapons` hits the spheres (a body's when a round reaches its box),
 //! `inventory` drops at the left foot, the HUD anchors name tags at the
 //! name socket (a tag that shows), the drawing takes the pose of a body it
@@ -450,9 +452,10 @@ struct PoseInputs {
     body_yaw: f32,
     /// The worn face's sockets (`models::Models::face_sockets`).
     face: Option<Arc<models::PieceSockets>>,
-    /// The held weapon's `Flash` and `Flash01` sockets: the hand node and
-    /// the place in its frame (`models::Models::held_socket`).
-    flash: [Option<(String, Vec3)>; 2],
+    /// The held weapon's `Flash`, `Flash01`, `Breach` and `Breach01`
+    /// sockets: the hand node and the place in its frame
+    /// (`models::Models::held_socket`).
+    flash: [Option<(String, Vec3)>; 4],
     /// Whether the server's pose is wanted too (`CaPose::server_spheres`).
     server: bool,
 }
@@ -460,7 +463,7 @@ struct PoseInputs {
 impl PoseInputs {
     /// `anim`'s now, the crouch `crouch` and squash, the legs at `body_yaw`.
     #[allow(clippy::too_many_arguments)]
-    fn of(anim: &CaAnim, crouch: f32, squash: f32, body_yaw: f32, face: Option<Arc<models::PieceSockets>>, flash: [Option<(String, Vec3)>; 2], server: bool) -> Self {
+    fn of(anim: &CaAnim, crouch: f32, squash: f32, body_yaw: f32, face: Option<Arc<models::PieceSockets>>, flash: [Option<(String, Vec3)>; 4], server: bool) -> Self {
         let d = &anim.driver;
         Self {
             rig: anim.rig.clone(),
@@ -611,6 +614,9 @@ pub struct CaPoseData {
     /// in its `Hand` pose on the hand's node: `models::held_socket`);
     /// None when the weapon has none or its model isn't loaded.
     pub flash: [Option<Vec3>; 2],
+    /// The held weapon's `Breach` and `Breach01` sockets (where its
+    /// casings leave, effects_sounds.md 8), as `flash`.
+    pub breach: [Option<Vec3>; 2],
     /// The legs' yaw (as `Intent::yaw`).
     pub body_yaw: f32,
     /// From a body model (not the spec's skeleton).
@@ -747,6 +753,12 @@ impl CaPoseData {
     /// else the hand's (the third-person muzzle of others' launchers).
     pub fn flash_point(&self) -> Option<Vec3> {
         self.flash[0].or(self.right_hand)
+    }
+
+    /// The place of the held weapon's `Breach` socket (others' casings,
+    /// effects_sounds.md 8); None when its model has none posed.
+    pub fn breach_point(&self) -> Option<Vec3> {
+        self.breach[0]
     }
 
     /// The sockets effect groups attach to on a character (`EYE_L`,
@@ -1469,7 +1481,7 @@ fn drive(
             // is never posed by another skeleton (`pose_bodies`).
             let (locals, skeleton) = match shown.as_deref() {
                 Some(CaShownAnim(old)) => {
-                    let old_pose = CaPose::new(PoseInputs::of(old, r, squash, body_yaw, None, [None, None], false));
+                    let old_pose = CaPose::new(PoseInputs::of(old, r, squash, body_yaw, None, [None, None, None, None], false));
                     (old_pose.drawn(), rig_skeleton(old))
                 }
                 None => (pose.drawn(), rig_skeleton(&anim)),
@@ -1599,10 +1611,10 @@ pub fn pose_of(
     pose_data(&inputs, posed).into()
 }
 
-/// The held weapon `held`'s `Flash` and `Flash01` sockets as `models`
-/// registered them (`PoseInputs::flash`).
-fn held_flash(models: models::Models, held: Option<&str>) -> [Option<(String, Vec3)>; 2] {
-    ["Flash", "Flash01"].map(|n| models.held_socket(held?, n))
+/// The held weapon `held`'s `Flash`, `Flash01`, `Breach` and `Breach01`
+/// sockets as `models` registered them (`PoseInputs::flash`).
+fn held_flash(models: models::Models, held: Option<&str>) -> [Option<(String, Vec3)>; 4] {
+    ["Flash", "Flash01", "Breach", "Breach01"].map(|n| models.held_socket(held?, n))
 }
 
 /// What is read off `posed` (`CaPoseData`) for a pose made of `inputs`.
@@ -1640,6 +1652,10 @@ fn pose_data(inputs: &PoseInputs, posed: &Posed) -> CaPoseData {
                 .map(body)
         }),
         flash: [0, 1].map(|i| {
+            let (bone, at) = inputs.flash[i].as_ref()?;
+            socket_on(posed, bone, *at).map(body)
+        }),
+        breach: [2, 3].map(|i| {
             let (bone, at) = inputs.flash[i].as_ref()?;
             socket_on(posed, bone, *at).map(body)
         }),

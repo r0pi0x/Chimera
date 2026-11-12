@@ -2154,3 +2154,121 @@ fn a_round_on_bullet_proof_glass_takes_its_impact() {
     let marks = sim.app.world().resource::<CaMarks>();
     assert_eq!(marks.marks.last().map(|m| m.sprite.as_str()), Some("fx/i_mark/im_glass_bp.spr"));
 }
+
+/// What another player's shot was drawn from (`others_shots_come_from_the_held_models_sockets`):
+/// each frame's muzzle groups, fire sounds' and new casings' places, with
+/// the watched shooter's posed `Flash` and `Breach` sockets and hand that
+/// frame (the world's, m).
+#[derive(Resource)]
+struct ShotPoints {
+    shooter: Entity,
+    frames: Vec<ShotFrame>,
+}
+
+#[derive(Debug, Default)]
+struct ShotFrame {
+    muzzles: Vec<Vec3>,
+    sounds: Vec<Vec3>,
+    casings: Vec<Vec3>,
+    flash: Option<Vec3>,
+    breach: Option<Vec3>,
+    hand: Option<Vec3>,
+}
+
+fn watch_shots(sim: &mut Sim, shooter: Entity) {
+    use combat_arms::game::characters::CaPose;
+    use chimera_core::core::MovementState;
+    sim.app.insert_resource(ShotPoints { shooter, frames: Vec::new() });
+    sim.app.add_systems(
+        Update,
+        (|mut fx: MessageReader<CaFxRequest>,
+          mut sounds: MessageReader<CaSound>,
+          shells: Query<(&CaShell, &Transform), Added<CaShell>>,
+          poses: Query<(&CaPose, &Transform, &MovementState)>,
+          mut points: ResMut<ShotPoints>| {
+            let mut f = ShotFrame {
+                muzzles: fx.read().filter(|r| r.kind == FxKind::Muzzle).map(|r| r.at).collect(),
+                sounds: sounds.read().filter(|s| s.file.ends_with("fire.wav")).filter_map(|s| s.at).collect(),
+                casings: shells.iter().filter(|(s, _)| s.owner == points.shooter).map(|(_, t)| t.translation).collect(),
+                ..default()
+            };
+            if let Ok((p, t, s)) = poses.get(points.shooter) {
+                f.flash = p.flash[0].map(|x| p.world(t, s, UNIT, x));
+                f.breach = p.breach[0].map(|x| p.world(t, s, UNIT, x));
+                f.hand = p.right_hand.map(|x| p.world(t, s, UNIT, x));
+            }
+            if !(f.muzzles.is_empty() && f.sounds.is_empty() && f.casings.is_empty()) {
+                points.frames.push(f);
+            }
+        })
+        .after(effects::CaEffectsSet),
+    );
+}
+
+/// effects_sounds.md 3 and 8, Open question 18: another player's shot
+/// with a gun whose held (third-person) model has `Flash` and `Breach`
+/// sockets makes its muzzle group, its fire sound and its tracer's start
+/// at the `Flash` socket as posed when the effect is built (not the hand:
+/// the M4A1's is 24 u up the barrel), and its casing at the `Breach`
+/// socket. A gun whose model has neither keeps the hand.
+#[test]
+fn others_shots_come_from_the_held_models_sockets() {
+    let mut sim = self::sim();
+    // Looking down -Z at the shooter 10 m ahead, who shoots away from me.
+    let me = player(&mut sim, Vec3::new(20.0, 1.0, 30.0), 0.0);
+    sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
+    let other = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
+    // The M4A1's held model's sockets on the hand's node (the stock
+    // model's, spec 3: `Flash` 24.44 u along the barrel, `breach` 2.58).
+    let hand_node = CaData::builtin().characters().skeleton(0).socket("RightHand").unwrap().parent.clone();
+    let late = &mut combat_arms::game::characters::models::late_in(sim.app.world_mut()).0;
+    late.register_held_socket("combat_arms:m4a1", "Flash", &hand_node, Vec3::new(0.0, 2.685, 24.44));
+    late.register_held_socket("combat_arms:m4a1", "breach", &hand_node, Vec3::new(0.765, 3.17, 2.58));
+    arm(&mut sim, other, "combat_arms:m4a1");
+    watch_shots(&mut sim, other);
+    for _ in 0..8 {
+        fire_once(&mut sim, other);
+    }
+    let frames = std::mem::take(&mut sim.app.world_mut().resource_mut::<ShotPoints>().frames);
+    let shots: Vec<&ShotFrame> = frames.iter().filter(|f| !f.muzzles.is_empty()).collect();
+    assert!(!shots.is_empty(), "his muzzle groups: {frames:?}");
+    for f in &shots {
+        let (flash, breach, hand) = (f.flash.expect("his Flash socket"), f.breach.expect("his Breach socket"), f.hand.expect("his hand"));
+        assert!(flash.distance(hand) > 20.0 * UNIT, "the socket is up the barrel: {flash} vs the hand {hand}");
+        for m in &f.muzzles {
+            assert!(m.distance(flash) < 1e-4, "the muzzle at the Flash socket {flash}: {m}");
+        }
+        for s in &f.sounds {
+            assert!(s.distance(flash) < 1e-4, "the fire sound at the Flash socket {flash}: {s}");
+        }
+        assert!(!f.sounds.is_empty(), "his fire sound: {f:?}");
+        // (Seen after its first step: within a frame's flight.)
+        for c in &f.casings {
+            assert!(c.distance(breach) < 0.05 && c.distance(breach) < c.distance(flash) / 4.0, "the casing at the Breach socket {breach}: {c}");
+        }
+    }
+    assert!(shots.iter().any(|f| !f.casings.is_empty()), "a casing: {shots:?}");
+    // His tracers start at the Flash socket of their shot.
+    let tracers = &sim.app.world().resource::<CaTracers>().0;
+    assert!(!tracers.is_empty(), "a tracer in 8 rounds");
+    for t in tracers {
+        let from = t.path.from * UNIT;
+        assert!(shots.iter().any(|f| f.flash.is_some_and(|x| x.distance(from) < 1e-3)), "a tracer from a Flash socket: {from}");
+    }
+
+    // A gun whose held model has no sockets: the hand, as before.
+    drop(sim);
+    let mut sim = self::sim();
+    let me = player(&mut sim, Vec3::new(20.0, 1.0, 30.0), 0.0);
+    sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
+    let other = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
+    arm(&mut sim, other, "combat_arms:m4a1");
+    watch_shots(&mut sim, other);
+    fire_once(&mut sim, other);
+    let frames = std::mem::take(&mut sim.app.world_mut().resource_mut::<ShotPoints>().frames);
+    let f = frames.iter().find(|f| !f.muzzles.is_empty()).unwrap_or_else(|| panic!("his muzzle group: {frames:?}"));
+    assert!(f.flash.is_none() && f.breach.is_none(), "no sockets: {f:?}");
+    let hand = f.hand.expect("his hand");
+    assert!(f.muzzles.iter().chain(&f.sounds).all(|m| m.distance(hand) < 1e-4), "at the hand {hand}: {f:?}");
+    assert!(f.casings.iter().all(|c| c.distance(hand) < 0.05), "the casing at the hand too: {f:?}");
+}
