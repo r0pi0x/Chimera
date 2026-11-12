@@ -165,7 +165,7 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
 };
 
 /// What HL2:DM adds to a game of several games: the game registered, map
-/// logic for its maps, its movement (not the match's) with the suit, its
+/// logic for its maps (with its set pieces: `set_pieces`), its movement (not the match's) with the suit, its
 /// guns (data, hooks, recoil, the shove, its rung extras) and their view
 /// models' rules and motion. Not its game's rules (the loadout, pickups).
 pub fn party_sim(app: &mut bevy::app::App) {
@@ -173,6 +173,12 @@ pub fn party_sim(app: &mut bevy::app::App) {
     app.register_game(&INFO);
     if !app.is_plugin_added::<source_logic::logic::LogicPlugin>() {
         app.add_plugins(source_logic::logic::LogicPlugin);
+    }
+    // The set pieces of its stock maps (dm_runoff's headcrab canisters,
+    // dm_steamlab's gas trap hearing shots: the AI sound list), which
+    // the map's logic drives on any game's simulation.
+    if !app.is_plugin_added::<set_pieces::SetPiecesPlugin>() {
+        app.add_plugins(set_pieces::SetPiecesPlugin);
     }
     movement::add_movement(app);
     if !app.is_plugin_added::<suit::SuitPlugin>() {
