@@ -519,3 +519,43 @@ fn the_balls_launch_fades_the_shooters_screen_white() {
     assert_eq!(color, [255, 255, 255]);
     assert!(alpha > 0 && alpha <= 64, "{alpha}");
 }
+
+/// Effects_sounds.md 7 "Blood": crush damage (a prop's hit too) flashes the
+/// victim's screen red (128, 0, 0), drowning blue (0, 0, 128), alpha 128
+/// over 1.0 s; a bullet flashes nothing.
+#[test]
+fn crush_flashes_the_screen_red_and_drowning_blue() {
+    use chimera_core::core::DamageTaken;
+    use chimera_world::map::logic_view::ScreenFades;
+    let mut sim = sim();
+    sim.app.init_resource::<ScreenFades>();
+    let (p, _) = holding(&mut sim, weapons::AR2);
+    sim.app.world_mut().entity_mut(p).insert(LocalPlayer);
+    let flash = |sim: &mut Sim, kind: DamageKind| {
+        sim.app.world_mut().resource_mut::<ScreenFades>().fades.clear();
+        let damage = Damage {
+            target: p,
+            attacker: None,
+            amount: 0.1,
+            point: Vec3::ZERO,
+            dir: Vec3::X,
+            hitgroup: Hitgroup::Generic,
+            kind,
+            weapon: None,
+            force: Vec3::ZERO,
+        };
+        sim.app.world_mut().write_message(DamageTaken { damage, directed: false });
+        sim.ticks(1);
+        let now = sim.app.world().resource::<Time>().elapsed_secs_f64();
+        sim.app.world_mut().resource_mut::<ScreenFades>().at(now)
+    };
+    let (color, alpha, _) = flash(&mut sim, DamageKind::Crush).expect("crush flashes");
+    assert_eq!(color, [128, 0, 0]);
+    assert!(alpha > 100 && alpha <= 128, "{alpha}");
+    let (color, alpha, _) = flash(&mut sim, DamageKind::Drown).expect("drowning flashes");
+    assert_eq!(color, [0, 0, 128]);
+    assert!(alpha > 100 && alpha <= 128, "{alpha}");
+    assert!(flash(&mut sim, DamageKind::Bullet).is_none(), "a bullet doesn't");
+    let f = hl2dm::game::projectile_fx::CRUSH_FLASH;
+    assert_eq!((f.2, f.3), (1.0, 0.1));
+}

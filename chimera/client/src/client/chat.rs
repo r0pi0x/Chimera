@@ -13,7 +13,9 @@
 //! The chat area (`ChatLine` messages: coloured runs, also printed to the
 //! console; 12 s per line, `hud_saytext_time`) in the HUD's `HudChat` box, and
 //! hint text (`Hint` messages: buy refusals such as "You cannot carry any
-//! more.") in its `HudHintDisplay` box, coloured from the scheme; text chat: Y
+//! more.") in its `HudHintDisplay` box, coloured from the scheme (a name's
+//! team colour is the scheme's for CS:S and HL2:DM's own in its look:
+//! Combine light blue, Rebels red, anyone else amber); text chat: Y
 //! / U (`messagemode`, `messagemode2`) open a typing line ("Say :", "Say (TEAM)
 //! :") that takes the keyboard (the game sees no keys) until Enter or Esc, sent
 //! as `say` / `say_team` would (the game's `SayFormats`, the sender's nav place
@@ -542,6 +544,13 @@ pub fn run_color(hud: Option<&ActiveHud>, c: ChatColor, team: Option<crate::core
     match c {
         ChatColor::Normal => Color::srgb_u8(255, 255, 255),
         ChatColor::Location => Color::srgb_u8(153, 255, 153),
+        // HL2:DM's own (rules.md "Chat"): Combine is team 2, Rebels 3, and
+        // everyone else (DM players, spectators) is amber.
+        ChatColor::Team if hud.is_some_and(|h| h.0.game == "hl2dm") => match team.map(|t| t.0) {
+            Some(2) => Color::srgb_u8(153, 204, 255),
+            Some(3) => Color::srgb_u8(255, 63, 63),
+            _ => Color::srgb_u8(255, 178, 0),
+        },
         ChatColor::Team => match team.map(|t| t.0) {
             Some(1) => named("T_Red").unwrap_or(Color::srgb_u8(255, 64, 64)),
             Some(2) => named("CT_Blue").unwrap_or(Color::srgb_u8(153, 204, 255)),
@@ -745,5 +754,26 @@ mod tests {
             run_color(None, ChatColor::Team, Some(Team(2))),
             Color::srgb_u8(153, 204, 255)
         );
+    }
+
+    /// hl2dm/hud.md 12, case 70, rules.md "Chat": in HL2:DM Combine (team
+    /// 2) is light blue, Rebels (3) red, anyone else (DM, spectators)
+    /// amber; CS:S's look keeps its own.
+    #[test]
+    fn hl2dm_names_take_its_team_colours() {
+        use crate::core::Team;
+        use crate::map::hud::GameHud;
+        let look = |game: &str| ActiveHud(std::sync::Arc::new(GameHud { game: game.into(), ..default() }), Default::default());
+        let hl2 = look("hl2dm");
+        let c = |hud: &ActiveHud, t: Option<u8>| run_color(Some(hud), ChatColor::Team, t.map(Team));
+        assert_eq!(c(&hl2, Some(2)), Color::srgb_u8(153, 204, 255));
+        assert_eq!(c(&hl2, Some(3)), Color::srgb_u8(255, 63, 63));
+        for t in [None, Some(0), Some(1)] {
+            assert_eq!(c(&hl2, t), Color::srgb_u8(255, 178, 0));
+        }
+        let cs = look("cs_source");
+        assert_eq!(c(&cs, Some(1)), Color::srgb_u8(255, 64, 64));
+        assert_eq!(c(&cs, Some(2)), Color::srgb_u8(153, 204, 255));
+        assert_eq!(c(&cs, None), Color::srgb_u8(204, 204, 204));
     }
 }

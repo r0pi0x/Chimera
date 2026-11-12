@@ -1768,15 +1768,19 @@ fn a_free_ball_can_be_punted() {
 #[test]
 fn a_held_balls_end_is_a_balls_end() {
     use chimera_sim::weapon::projectile::FlyerGone;
+    use chimera_world::map::logic_view::MapShake;
     let mut w = world(&[]);
     let (e, _) = ball(&mut w, 150.0);
     let t0 = w.tick();
     w.press(false, true, 1, 2);
     w.sim.app.world_mut().get_mut::<Health>(w.p).unwrap().current = 1.0;
     let mut cursor = w.sim.app.world().resource::<Messages<FlyerGone>>().get_cursor_current();
+    let mut shakes = w.sim.app.world().resource::<Messages<MapShake>>().get_cursor_current();
+    let mut shaken = Vec::new();
     let mut ended = None;
     for _ in 0..600 {
         w.sim.ticks(1);
+        shaken.extend(shakes.read(w.sim.app.world().resource::<Messages<MapShake>>()).copied());
         if let Some(g) = cursor.read(w.sim.app.world().resource::<Messages<FlyerGone>>()).find(|g| g.flyer == e) {
             ended = Some((g.expired, w.tick() - t0));
             break;
@@ -1786,6 +1790,11 @@ fn a_held_balls_end_is_a_balls_end() {
     assert!(expired, "as a ball's time running out");
     assert!((530..=536).contains(&ticks), "8 s after the catch: {ticks}");
     assert_eq!(w.sounds("NPC_CombineBall.Explosion", t0).len(), 1, "its sound");
+    // 5.6: the screen shake (20, 150 Hz, 1 s, radius 1250 units).
+    assert_eq!(shaken.len(), 1, "its shake");
+    let s = shaken[0];
+    assert!((s.amplitude - 20.0 * 0.0254).abs() < 1e-4 && s.frequency == 150.0 && s.duration == 1.0);
+    assert!((s.radius - 1250.0 * 0.0254).abs() < 1e-3, "{}", s.radius);
     assert!(w.sim.app.world().get_entity(e).is_err());
     assert!(w.sim.app.world().get::<Health>(w.p).unwrap().current > 0.0, "harmless");
     assert!(!w.holding());

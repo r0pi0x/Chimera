@@ -724,3 +724,53 @@ fn bullets_push_loose_weapons() {
     let went = sim.position(item) - start;
     assert!(went.z < -0.2, "pushed along the shot: {went}");
 }
+
+/// ragdolls.md Q2 and weapons.md Q8: the killing shot pushes the ragdoll
+/// with its gun's own impulse (an AWP's 2800 against a Glock's 2000
+/// kg*in/s), not one push for every gun. CS:S's rules take the damage's
+/// force; a death that carries none keeps the default 2400.
+#[test]
+fn a_kill_pushes_with_its_guns_impulse() {
+    use chimera_world::map::ragdoll::{DEATH_IMPULSE, RagdollGameRules, death_push};
+    let rules = {
+        let (sim, _) = armed_sim();
+        sim.app.world().resource::<RagdollGameRules>().of(Some("cs_source"))
+    };
+    assert!(rules.damage_force && rules.death_pose && !rules.push_root);
+    let hit = |impulse: f32| Damage {
+        force: Vec3::NEG_Z * impulse * SCALE,
+        target: Entity::PLACEHOLDER,
+        attacker: None,
+        amount: 5.0,
+        point: Vec3::ZERO,
+        dir: Vec3::NEG_Z,
+        hitgroup: Hitgroup::Chest,
+        kind: DamageKind::Bullet,
+        weapon: None,
+    };
+    for (gun, impulse) in [("glock", 2000.0), ("usp", 2100.0), ("ak47", 2400.0), ("awp", 2800.0), ("m3", 600.0)] {
+        let (k, f) = death_push(rules, Some(1), &hit(impulse));
+        assert_eq!(k, Some(1), "{gun}: the hit body");
+        assert!((f.length() / SCALE - impulse).abs() < 0.01, "{gun}: {}", f.length() / SCALE);
+    }
+    let none = Damage { force: Vec3::ZERO, ..hit(0.0) };
+    assert!((death_push(rules, Some(1), &none).1.length() - DEATH_IMPULSE).abs() < 1e-4, "no force: the default");
+
+    // In the running simulation: the same kill, thrown by two guns.
+    let speed = |impulse: f32| {
+        let mut m = model();
+        m.game = Some("cs_source");
+        let mut sim = Sim::new(CsSim, (
+            MapPlugin::new(floor_map(m)),
+            crate::stack::games::cs_source::weapons::CsWeaponsPlugin,
+        ));
+        sim.app.world_mut().resource_mut::<Deathmatch>().respawn_delay = 1000.0;
+        let p = crate::common::spawn_still(&mut sim, Vec3::new(0.0, 0.9, 0.0));
+        sim.ticks(10);
+        sim.app.world_mut().write_message(Damage { target: p, point: Vec3::new(0.0, 1.2, 0.0), ..hit(impulse) });
+        sim.ticks(2);
+        bodies(&mut sim).iter().map(|b| b.2.length()).fold(0.0f32, f32::max)
+    };
+    let (glock, awp) = (speed(2000.0), speed(2800.0));
+    assert!(glock > 0.1 && awp > glock * 1.2, "glock {glock}, awp {awp}");
+}

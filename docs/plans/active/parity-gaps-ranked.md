@@ -85,30 +85,10 @@ first, done on the Windows PC. Delete a row when it lands.
     3 "Hidden pieces", "Projectile piece", case 37. Code:
     `games/combat_arms/src/game/view_model/machine.rs`; data lacks
     `ProjectilePiece`/`HiddenPiece#`. S-M. No spec.
-12. **HL2:DM: the energy ball's end has no screen shake** (20, 150 Hz,
-    1 s, radius 1250). Spec: hl2dm/projectiles.md 5.6. Code:
-    `games/hl2dm/src/game/weapons/alt_fire.rs` `ball_ends`. S. No spec.
-13. **HL2:DM: no red screen flash on crush damage, blue on drowning.**
-    Prop hits are crush. Spec: hl2dm/effects_sounds.md 7 "Blood". Code:
-    missing (beside `games/hl2dm/src/game/sounds.rs` `hurt_sounds`). S.
-    No spec.
 14. **Combat Arms: no per-shot back push** (`BaseCamBackJitter`,
     recovering at 5 x `BackJitterRecover`/s); read and unused, default
     0.5. Spec: combat_arms/weapon_firing.md "Recoil (view kick)". Code:
     `games/combat_arms/src/game/weapons.rs` `back_jitter`. S. No spec.
-15. **HL2:DM: chat name colours are CS:S's.** Team 1 red, 2 blue, else
-    grey: Combine and Rebels swapped in TDM, DM names grey not 255 178 0.
-    Spec: hl2dm/hud.md 12, case 70; rules.md "Chat". Code:
-    `chimera/client/src/client/chat.rs` `run_color`. S. No spec.
-16. **HL2:DM: dm_runoff's canisters and dm_steamlab's gas trap dead in
-    UGG** (`SetPiecesPlugin` not in `party_sim`). Spec:
-    hl2dm/maps_entities.md 8, 16. Code: `party_sim`,
-    `games/hl2dm/src/game/set_pieces.rs`. S. No spec.
-17. **CS:S: every kill pushes the ragdoll the same** (2400 for all; the
-    per-ammo impulses are measured and in each gun's `[damage] impulse`).
-    Spec: cs_source/ragdolls.md Q2, weapons.md Q8. Code:
-    `chimera/world/src/map/ragdoll.rs` `DEATH_IMPULSE`, `death_push`
-    (CS:S's `RagdollRules::damage_force` off). S. No spec.
 
 ## Later (spec is clear, less often seen)
 
