@@ -20,9 +20,14 @@
 //! identity in camera space, 4). Each animation's key strings become its
 //! sequence's events (cycle = key time / length), the sockets (`Flash`,
 //! `Breach`; names without case) its attachments. The hand model
-//! (`hands`: the character's from data/hands.toml, `CHARS_M_HAND`, V2-keyed)
-//! is attached to every view model when it reads: its bones matched to
-//! the weapon's nodes by name, its sleeve the character's (2). Drawn with
+//! (`hands`: the worn character record's, the install's `HandIndex` and
+//! `HandsSkin#` or data/hands.toml's, `CHARS_M_HAND`, V2-keyed) is
+//! attached to every view model when it reads: its bones matched to the
+//! weapon's nodes by name, its sleeve the character's (2). The local
+//! player's look picks them (`drive`: a look whose hands aren't the
+//! default character's shows the view model keyed with its hands once
+//! `on_demand` made it, the default one until then; a ladder rung's body
+//! brings its own). Drawn with
 //! its own projection (`settings`: 50 degrees vertical, 5.1).
 //!
 //! Playing (`drive`, each rendered frame in `map::DriveAnimation`; the
@@ -132,10 +137,9 @@
 //!   sets to `DEFAULT_FOV` (5.2: 75 degrees vertical, 91.31 at 4:3), kept
 //!   vertical on every screen shape and recomputed every frame rather than
 //!   at a world start only (the party apps keep the shell's 90).
-//! - No left-handed mirroring (none in the game); the character's model
-//!   id, face, uniform and colour are `hands::HandProfile`'s defaults
-//!   (no character data yet); the hands' render styles aren't read
-//!   (their default style).
+//! - No left-handed mirroring (none in the game); the hands follow the
+//!   local player's look only, at once (`hands`' shortcuts); the hands'
+//!   render styles aren't read (their default style).
 
 pub mod attached;
 pub mod hands;
@@ -286,6 +290,9 @@ pub struct CaViewModel {
     /// A throwable's grenade left the hand (`Thrown`): its clip is 0 to
     /// the machine until its re-ready (`reload`) ends (Grenade timings Q5).
     pub thrown: bool,
+    /// The local player's worn look and the hands part of its view
+    /// models' keys (`hands::key_for`; None: the default character's).
+    pub hands: Option<(super::characters::records::Selection, Option<String>)>,
     rng: u32,
 }
 
@@ -581,10 +588,7 @@ pub fn load_hands(
 /// warning for each that doesn't), with the default character's hands
 /// when they read.
 pub fn add_view_models(map: &mut MapData, data: &super::data::CaDataInner, file: &dyn Fn(&str) -> Option<Vec<u8>>) {
-    let choice = hands::choose(&hands::builtin(), &hands::HandProfile {
-        character: true,
-        ..default()
-    });
+    let choice = hands::default_choice(data.characters());
     let hand = match choice.as_ref().map(|c| load_hands(c, map, file)) {
         Some(Ok(h)) => Some(h),
         Some(Err(e)) => {
@@ -721,6 +725,7 @@ fn drive(
     volumes: Query<&CaVolume>,
     spatial: avian3d::prelude::SpatialQuery,
     games: Option<Res<chimera_core::game_registry::Games>>,
+    data: Option<Res<super::data::CaData>>,
 ) {
     let (dt, now) = (time.delta_secs_f64(), time.elapsed_secs_f64());
     let events: Vec<&WeaponEvent> = events.read().filter(|e| e.shown()).collect();
@@ -769,9 +774,29 @@ fn drive(
         // once it is made, the bare gun's until then.
         let with_parts = parts.as_ref().map(|p| self::parts::view_key(p.0.id, p.5.2));
         let loaded = |k: &str| models.as_ref().is_some_and(|m| m.get(k).is_some());
-        let key = match (&with_parts, parts.as_ref()) {
-            (Some(k), _) if loaded(k) => Some(k.as_str()),
-            (_, Some(p)) => Some(p.0.id),
+        // The local player's hands (1, 2): his worn look's, where they
+        // aren't the default character's (`hands::key_for`), worked out
+        // again when the look changes (a ladder rung's body).
+        let hand_part = match (local, look, data.as_deref()) {
+            (true, Some(l), Some(d)) => {
+                if vm.hands.as_ref().is_none_or(|(was, _)| was != l) {
+                    vm.hands = Some((*l, hands::key_for(d.characters(), l)));
+                }
+                vm.hands.as_ref().and_then(|(_, h)| h.clone())
+            }
+            _ => None,
+        };
+        // The first made of: with its parts and hands, the bare gun with
+        // its hands, with its parts, the bare gun (shown while those load,
+        // `on_demand`).
+        let with_hands = hand_part.as_deref().and_then(|h| {
+            let id = parts.as_ref()?.0.id;
+            [with_parts.as_deref(), Some(id)].into_iter().flatten().map(|k| hands::with_hands(k, Some(h))).find(|k| loaded(k))
+        });
+        let key = match (&with_hands, &with_parts, parts.as_ref()) {
+            (Some(k), _, _) => Some(k.as_str()),
+            (_, Some(k), _) if loaded(k) => Some(k.as_str()),
+            (_, _, Some(p)) => Some(p.0.id),
             _ => None,
         };
         // Its view model loaded since the weapon was drawn (`on_demand`):

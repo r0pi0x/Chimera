@@ -1500,7 +1500,7 @@ fn t38_hand_colour() {
     table.hands[0] = ghillie;
     let pick = |colour: u32| {
         hands::choose(&table, &HandProfile {
-            colour,
+            colour: Some(colour),
             ..HandProfile::default()
         })
         .unwrap()
@@ -2000,4 +2000,80 @@ fn vm52_player_view_key_in_an_attached_group() {
     let fixed_made = at(key_place(&model, &[], &made, None, off, Some(0), &made));
     let fixed_swayed = at(key_place(&model, &[], &swayed, None, off, Some(0), &made));
     assert!(!fixed_made.abs_diff_eq(fixed_swayed, 1e-4), "a fixed key follows the model");
+}
+
+/// 1, 2: the hands follow the worn character record: a female body's
+/// view model wears its own sleeves (its `HandsSkin` entry for its face,
+/// the women's), the default character's the stock ones; a look whose
+/// hands aren't the default's names its own view model (`hands::key_for`).
+#[test]
+fn hands_follow_the_character_record() {
+    use combat_arms::game::{characters::records::Selection, data::CaData};
+    let data = CaData::builtin();
+    let chars = data.characters();
+    let default = Selection::default();
+    let female = Selection {
+        model: 7,
+        face: 4,
+        camouflage: 2,
+        ..default
+    };
+    let pick = |look: &Selection| hands::choose_in(chars, &hands::profile_of(chars, look)).expect("hands");
+    assert_eq!(pick(&default).skins[0], "chars_t_hand/hand_00_00.dtx");
+    assert_eq!(pick(&default), hands::default_choice(chars).unwrap());
+    let theirs = pick(&female);
+    assert_eq!(theirs.model, "chars_m_hand/normal_m_hand.ltb", "the stock male hand model");
+    assert_eq!(theirs.skins[0], "chars_t_hand/hand_w_00_02.dtx", "her face's sleeve, her uniform");
+    // A male body's face 2 in uniform 3 (case 3); a body without hands of
+    // its own in our table wears the default body's.
+    let male = Selection { face: 2, camouflage: 3, ..default };
+    assert_eq!(pick(&male).skins[0], "chars_t_hand/hand_02_03.dtx");
+    // Keys: none for the default's hands, one naming hers.
+    assert_eq!(hands::key_for(chars, &default), None);
+    let key = hands::key_for(chars, &female).expect("her own view model");
+    let full = hands::with_hands("combat_arms:m4a1+Silencer_A_AR", Some(&key));
+    let (rest, profile) = hands::split_key(&full);
+    assert_eq!(rest, "combat_arms:m4a1+Silencer_A_AR");
+    assert_eq!(profile, Some(hands::profile_of(chars, &female)));
+    assert_eq!(
+        combat_arms::game::view_model::parts::split_key(&full),
+        ("combat_arms:m4a1", vec!["Silencer_A_AR"]),
+        "the parts without the hands"
+    );
+}
+
+/// 1, 2 in play: the local player's view model is the one with his worn
+/// body's hands once it is made (`on_demand`), the default character's
+/// until then; a ladder rung's new body (`CaRungLook`) changes them, the
+/// gun's animation playing on.
+#[test]
+fn view_model_hands_change_with_the_body() {
+    use combat_arms::game::{
+        characters::{CaRungLook, records::Selection},
+        data::CaData,
+    };
+    let mut sim = sim();
+    let p = player(&mut sim);
+    sim.app.world_mut().entity_mut(p).insert(LocalPlayer);
+    let female = Selection { model: 7, face: 4, ..default() };
+    let key = hands::key_for(CaData::builtin().characters(), &female).expect("her hands are her own");
+    let hers = hands::with_hands(M92FS, Some(&key));
+    sim.app.world_mut().entity_mut(p).insert((CaRungLook(female), female));
+    drawn(&mut sim, p, M92FS);
+    let key_of = |s: &Sim| s.app.world().get::<ViewAnimator>(p).unwrap().key.clone();
+    assert_eq!(key_of(&sim).as_deref(), Some(M92FS), "the default hands while hers aren't made");
+    // Hers made (as `on_demand` adds it): shown, the machine playing on.
+    let pistol: Vec<AnimInfo> = m92fs().iter().cloned().collect();
+    chimera_world::map::add_view_model(sim.app.world_mut(), view_model(&hers, &pistol), Arc::new(Vec::new()));
+    sim.ticks(2);
+    assert_eq!(key_of(&sim).as_deref(), Some(hers.as_str()), "her hands");
+    assert_eq!(playing(&sim, p).as_deref(), Some("idle_0"), "not drawn again");
+    // The next rung's body: the default character's.
+    sim.app.world_mut().entity_mut(p).insert((CaRungLook(Selection::default()), Selection::default()));
+    sim.ticks(2);
+    assert_eq!(key_of(&sim).as_deref(), Some(M92FS), "the default body's hands");
+    // And back to hers.
+    sim.app.world_mut().entity_mut(p).insert((CaRungLook(female), female));
+    sim.ticks(2);
+    assert_eq!(key_of(&sim).as_deref(), Some(hers.as_str()));
 }

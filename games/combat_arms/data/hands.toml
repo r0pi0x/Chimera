@@ -2,12 +2,13 @@
 # and 2): which hand model a character's view model wears and its sleeve
 # texture. Our numbers from the spec, not a file from the game; the
 # install's character-model table (124 hand records, 426 models) replaces
-# this once it can be read (V2-keyed).
+# this where it reads (`HandIndex`, `HandsSkin#`, `Hand#`).
 #
 # `hands`: the `[HandN]` records (model file, skins by texture index).
-# `models`: the character models' `HandIndex` and `HandsSkin` patterns, one
-# per face, filled with the uniform item index (`%02d`). Archive paths
-# lower case with `/`.
+# `models`: by body record id (data/characters.toml), the character
+# models' `HandIndex` and `HandsSkin` patterns, one per face, filled with
+# the uniform item index (`%02d`); a body without one wears model 0's.
+# Archive paths lower case with `/`.
 
 # Hand 0: the stock male hand (43 nodes: the weapon skeleton's arm nodes;
 # pieces `arm_SH`, the sleeves, and `Object01`, the hands).
@@ -15,12 +16,78 @@
 model = "chars_m_hand/normal_m_hand.ltb"
 skins = ["chars_t_hand/hand_00_00.dtx"]
 
-# Model 0: the default character (case 3: face 0, uniform 0 ->
-# hand_00_00; face 2, uniform 3 -> hand_02_03).
+# The male bodies (case 3: face 0, uniform 0 -> hand_00_00; face 2,
+# uniform 3 -> hand_02_03): four entries, faces 0-3.
 [[models]]
+id = 0
 hand_index = 0
 hands_skins = [
     "chars_t_hand/hand_00_%02d.dtx",
     "chars_t_hand/hand_01_%02d.dtx",
     "chars_t_hand/hand_02_%02d.dtx",
+    "chars_t_hand/hand_03_%02d.dtx",
+]
+
+[[models]]
+id = 1
+hand_index = 0
+hands_skins = [
+    "chars_t_hand/hand_00_%02d.dtx",
+    "chars_t_hand/hand_01_%02d.dtx",
+    "chars_t_hand/hand_02_%02d.dtx",
+    "chars_t_hand/hand_03_%02d.dtx",
+]
+
+[[models]]
+id = 2
+hand_index = 0
+hands_skins = [
+    "chars_t_hand/hand_00_%02d.dtx",
+    "chars_t_hand/hand_01_%02d.dtx",
+    "chars_t_hand/hand_02_%02d.dtx",
+    "chars_t_hand/hand_03_%02d.dtx",
+]
+
+# The female bodies (2: the stock male hand model with women's sleeves):
+# four more entries, the female faces 4-7's.
+[[models]]
+id = 7
+hand_index = 0
+hands_skins = [
+    "chars_t_hand/hand_00_%02d.dtx",
+    "chars_t_hand/hand_01_%02d.dtx",
+    "chars_t_hand/hand_02_%02d.dtx",
+    "chars_t_hand/hand_03_%02d.dtx",
+    "chars_t_hand/hand_w_00_%02d.dtx",
+    "chars_t_hand/hand_w_01_%02d.dtx",
+    "chars_t_hand/hand_w_02_%02d.dtx",
+    "chars_t_hand/hand_w_03_%02d.dtx",
+]
+
+[[models]]
+id = 8
+hand_index = 0
+hands_skins = [
+    "chars_t_hand/hand_00_%02d.dtx",
+    "chars_t_hand/hand_01_%02d.dtx",
+    "chars_t_hand/hand_02_%02d.dtx",
+    "chars_t_hand/hand_03_%02d.dtx",
+    "chars_t_hand/hand_w_00_%02d.dtx",
+    "chars_t_hand/hand_w_01_%02d.dtx",
+    "chars_t_hand/hand_w_02_%02d.dtx",
+    "chars_t_hand/hand_w_03_%02d.dtx",
+]
+
+[[models]]
+id = 9
+hand_index = 0
+hands_skins = [
+    "chars_t_hand/hand_00_%02d.dtx",
+    "chars_t_hand/hand_01_%02d.dtx",
+    "chars_t_hand/hand_02_%02d.dtx",
+    "chars_t_hand/hand_03_%02d.dtx",
+    "chars_t_hand/hand_w_00_%02d.dtx",
+    "chars_t_hand/hand_w_01_%02d.dtx",
+    "chars_t_hand/hand_w_02_%02d.dtx",
+    "chars_t_hand/hand_w_03_%02d.dtx",
 ]

@@ -2,23 +2,41 @@
 //! view_models.md 1 and 2): a separate skinned hand model chosen by the
 //! player's character, its bones matched to the weapon model's nodes by
 //! name (case ignored), its sleeve texture from the character, face and
-//! uniform. `choose` picks the hand model and its skins from the
-//! character-model table (`HandTable`, data/hands.toml); `attach` puts a
-//! converted hand model onto a view model.
+//! uniform. `choose` picks the hand model and its skins from a
+//! character-model table (`HandTable`); `choose_in` from the worn
+//! character's record (`profile_of`: the cosmetic character's or the
+//! body's model, after the face's redirect, its face and camouflage):
+//! the install's `HandIndex`, `HandsSkin#` and `Hand#` records
+//! (`records::ModelRecord::hands`, `CharacterData::hand_records`), else
+//! ours by record id (data/hands.toml: the stock bodies), else the
+//! default body's. A look whose hands differ from the default
+//! character's has a view model of its own, keyed `<view key>#h<model>_
+//! <face>_<uniform>` (`key_for`, `split_key`): the worn look's, made on
+//! demand like a fitted part's (`on_demand`), so a ladder rung's body
+//! brings its own hands. `attach` puts a converted hand model onto a view
+//! model.
 //!
 //! Known shortcuts:
 //! - The hand's vertices are moved from the hand's bind pose into the
 //!   weapon skeleton's (per influence, weighted) so that they skin with
 //!   the weapon's bones; exact when the two binds agree per bone (the
 //!   stock hand has the weapon's arm nodes) or a vertex has one bone.
-//! - No colour variants are in our table yet (the code reads them), no
-//!   cosmetic costumes, overridable models or clan marks (skins 7, 8).
+//! - No colour variants are in our table yet (the code reads them; every
+//!   player's model colour is none), no overridable models or clan marks
+//!   (skins 7, 8); the uniform item index is the look's camouflage index;
+//!   the faces' `RedirectForHandsSkin` aren't read from the install.
+//! - Only the local player's own look picks its hands (a spectated
+//!   player's gun shows the default character's unless the local player's
+//!   look made the same model), and a look change shows at once, not at
+//!   the next draw (Open question 13: a rung's look and gun may arrive in
+//!   either order on a client).
 
 use std::collections::BTreeMap;
 
 use bevy::prelude::*;
 use serde::Deserialize;
 
+use super::super::characters::records::{CharacterData, Selection};
 use crate::map::{MapBone, MapMesh, MapViewModel};
 
 /// What tattoo-slot skins become (2).
@@ -42,6 +60,8 @@ pub struct HandRecord {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct CharacterHands {
+    /// The body (`Model#`) record id this is for (data/hands.toml).
+    pub id: i32,
     /// `HandIndex` (-1: no hand model).
     pub hand_index: i32,
     /// `HandsSkin0..`: per face, a pattern with one two-digit number
@@ -75,12 +95,14 @@ pub fn builtin() -> HandTable {
 /// What the player wears (the local profile's face and uniform: Quirk 5).
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
 pub struct HandProfile {
-    /// The character model id (a cosmetic costume's when one is worn).
-    pub model: usize,
+    /// The character model id (a cosmetic costume's when one is worn,
+    /// after the face's redirect).
+    pub model: i32,
     pub face: u32,
     /// The equipped uniform (camo) item index.
     pub uniform: u32,
-    pub colour: u32,
+    /// The model colour (None: none, every player's).
+    pub colour: Option<u32>,
     /// The player's character exists (else the hand keeps its record's
     /// own skins).
     pub character: bool,
@@ -98,26 +120,32 @@ fn fill(pattern: &str, n: u32) -> String {
     pattern.replacen("%02d", &format!("{n:02}"), 1)
 }
 
-/// The hand model and skins for `profile` (1, 2); None for hand index -1
-/// (no arms).
+/// The hand model and skins for `profile` (1, 2) from `table` (its
+/// model `profile.model`, else its first); None for hand index -1 (no
+/// arms).
 pub fn choose(table: &HandTable, profile: &HandProfile) -> Option<HandChoice> {
-    let model = table.models.get(profile.model)?;
-    let hand = table.hands.get(usize::try_from(model.hand_index).ok()?)?;
-    let mut skins = hand
-        .colour_skins
-        .get(&profile.colour)
+    let model = table.models.iter().find(|m| m.id == profile.model).or(table.models.first())?;
+    choose_with(&table.hands, model, &table.faces, profile)
+}
+
+/// `choose` with the hand records `hands`, the body's hand fields `model`
+/// and the faces' redirects `faces`.
+fn choose_with(hands: &[HandRecord], model: &CharacterHands, faces: &BTreeMap<u32, Face>, profile: &HandProfile) -> Option<HandChoice> {
+    let hand = hands.get(usize::try_from(model.hand_index).ok()?)?;
+    let mut skins = profile
+        .colour
+        .and_then(|c| hand.colour_skins.get(&c))
         .filter(|l| !l.is_empty())
         .unwrap_or(&hand.skins)
         .clone();
     if profile.character {
-        let f = table
-            .faces
+        let f = faces
             .get(&profile.face)
             .and_then(|f| f.redirect_for_hands_skin)
             .unwrap_or(profile.face) as usize;
-        let list = model
-            .colour_hands_skins
-            .get(&profile.colour)
+        let list = profile
+            .colour
+            .and_then(|c| model.colour_hands_skins.get(&c))
             .filter(|l| !l.is_empty())
             .unwrap_or(&model.hands_skins);
         let sleeve = match list.get(f) {
@@ -138,6 +166,85 @@ pub fn choose(table: &HandTable, profile: &HandProfile) -> Option<HandChoice> {
         model: hand.model.clone(),
         skins,
     })
+}
+
+/// What separates a view-model key from its hands (`key_for`).
+pub const SEP: char = '#';
+
+/// The hands `look` wears in `data` (1): the cosmetic character's model,
+/// else the body's, after the face's redirect; its face and its
+/// camouflage index as the uniform item; no model colour.
+pub fn profile_of(data: &CharacterData, look: &Selection) -> HandProfile {
+    HandProfile {
+        model: data.hands_record(look).id,
+        face: u32::try_from(look.face).unwrap_or(0),
+        uniform: u32::try_from(look.camouflage).unwrap_or(0),
+        colour: None,
+        character: true,
+    }
+}
+
+/// The hand model and skins `profile` wears in `data` (`choose`): the
+/// record's hand fields and the hand records `data` carries (the
+/// install's, else ours, `CharacterData::load`); a record without hands
+/// (an NPC body): the default body's.
+pub fn choose_in(data: &CharacterData, profile: &HandProfile) -> Option<HandChoice> {
+    let model = data
+        .model(profile.model)
+        .and_then(|m| m.hands.as_ref())
+        .or(data.default_model().hands.as_ref())?;
+    choose_with(&data.hand_records, model, &BTreeMap::new(), profile)
+}
+
+/// The default character's hands in `data` (the default look's): those
+/// every view model without a key of hands (`key_for`) wears.
+pub fn default_choice(data: &CharacterData) -> Option<HandChoice> {
+    choose_in(data, &profile_of(data, &Selection::default()))
+}
+
+/// The hands part of a view-model key for `look` (`SEP`, then
+/// `h<model>_<face>_<uniform>`), None when they are the default
+/// character's (paths compared without case or slash kind).
+pub fn key_for(data: &CharacterData, look: &Selection) -> Option<String> {
+    let profile = profile_of(data, look);
+    let norm = |c: Option<HandChoice>| {
+        c.map(|c| {
+            let n = |s: &str| s.to_ascii_lowercase().replace('\\', "/");
+            (n(&c.model), c.skins.iter().map(|s| n(s)).collect::<Vec<_>>())
+        })
+    };
+    if norm(choose_in(data, &profile)) == norm(default_choice(data)) {
+        return None;
+    }
+    Some(format!("{SEP}h{}_{}_{}", profile.model, profile.face, profile.uniform))
+}
+
+/// View-model key `key` with the hands part `hands` (`key_for`).
+pub fn with_hands(key: &str, hands: Option<&str>) -> String {
+    match hands {
+        Some(h) => format!("{key}{h}"),
+        None => key.to_string(),
+    }
+}
+
+/// A view-model key without its hands part, and the hands it names (None:
+/// the default character's).
+pub fn split_key(key: &str) -> (&str, Option<HandProfile>) {
+    let Some((rest, hands)) = key.split_once(SEP) else { return (key, None) };
+    let profile = hands.strip_prefix('h').and_then(|h| {
+        let mut it = h.split('_');
+        let model = it.next()?.parse().ok()?;
+        let face = it.next()?.parse().ok()?;
+        let uniform = it.next()?.parse().ok()?;
+        Some(HandProfile {
+            model,
+            face,
+            uniform,
+            colour: None,
+            character: true,
+        })
+    });
+    (rest, profile)
 }
 
 /// Global bind matrices of a skeleton (parents before children).

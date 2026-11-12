@@ -16,7 +16,11 @@
 //! backpack found by name, the `AIFace#` records joining the faces the
 //! same way: `NpcRecord`, `npc_bodies`, `default_look`), and its hit
 //! tables past ours (`Skeleton#` 2-18) join the skeletons (`table`: the
-//! install's data's, the only one with bodies on them).
+//! install's data's, the only one with bodies on them). Its bodies'
+//! first-person hands (`HandIndex`, `HandsSkin#`: `ModelRecord::hands`)
+//! and hand models (`Hand#`: `CharacterData::hand_records`) are what
+//! `view_model::hands` dresses a view model in, for the record a look's
+//! hands come from (`hands_record`).
 
 use std::collections::BTreeMap;
 
@@ -89,6 +93,11 @@ pub struct ModelRecord {
     /// them.
     #[serde(default)]
     pub colour_skins: Vec<crate::game::data::attributes::ColourSkins>,
+    /// Its first-person hands (`HandIndex`, `HandsSkin#`, the colour
+    /// lists' `HandsSkin#`: view_models.md 1, 2). Only the install's
+    /// models file gives them (None: data/hands.toml's, `hands::choose_in`).
+    #[serde(default)]
+    pub hands: Option<crate::game::view_model::hands::CharacterHands>,
     /// An NPC body (`AIModel#`, characters.md 13.2; the install's): its
     /// own look. None: a player body.
     #[serde(default)]
@@ -396,6 +405,10 @@ pub struct CharacterData {
     /// The infection overrides (`Overidable_Model#`, the install's).
     #[serde(default)]
     pub infection: Vec<InfectionRecord>,
+    /// The first-person hand models (`Hand#`, the install's; empty:
+    /// data/hands.toml's).
+    #[serde(default)]
+    pub hand_records: Vec<crate::game::view_model::hands::HandRecord>,
     /// The body families (data/npc_bodies.toml, `families`).
     #[serde(skip)]
     pub families: super::families::Families,
@@ -427,9 +440,18 @@ impl CharacterData {
             toml::from_str(include_str!("../../../data/characters.toml")).expect("data/characters.toml");
         merge_install_weapons(&mut data, ca);
         merge_install_pieces(&mut data, ca);
+        // Hands the install didn't give: ours (data/hands.toml) by record
+        // id, else the default body's.
+        let ours = crate::game::view_model::hands::builtin();
+        if data.hand_records.is_empty() {
+            data.hand_records = ours.hands.clone();
+        }
         for m in &mut data.model {
             if m.render_styles.is_empty() {
                 m.render_styles = data.body_render_styles.clone();
+            }
+            if m.hands.is_none() && m.npc.is_none() {
+                m.hands = ours.models.iter().find(|h| h.id == m.id).or(ours.models.first()).cloned();
             }
         }
         data.families = super::families::built_in();
@@ -511,6 +533,7 @@ fn merge_install_pieces(data: &mut CharacterData, ca: &CaDataInner) {
         m.footprint_volume = r.footprint_volume;
         m.infected = r.infected;
         m.colour_skins = colour_lists(&r.colour_skins);
+        m.hands = Some(hands_of(m.id, r));
     }
     // The install's other bodies (named mercenaries and specialists,
     // cosmetics, NPCs: characters.md 1 counts 431 records), each `Model#`
@@ -543,9 +566,25 @@ fn merge_install_pieces(data: &mut CharacterData, ca: &CaDataInner) {
             footprint_volume: r.footprint_volume,
             infected: r.infected,
             colour_skins: colour_lists(&r.colour_skins),
+            hands: Some(hands_of(id, r)),
             npc: None,
         });
     }
+    data.hand_records = models
+        .hands
+        .iter()
+        .map(|h| crate::game::view_model::hands::HandRecord {
+            model: h.file.clone(),
+            skins: h.skins.clone(),
+            colour_skins: h
+                .colour_skins
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| !l.is_empty())
+                .map(|(c, l)| (c as u32, l.clone()))
+                .collect(),
+        })
+        .collect();
     data.infection = models
         .overrides
         .iter()
@@ -589,6 +628,23 @@ fn merge_install_pieces(data: &mut CharacterData, ca: &CaDataInner) {
         }
     }
     merge_npcs(data, models, ca);
+}
+
+/// Body record `id`'s first-person hand fields from its install record
+/// `r` (view_models.md 1, 2).
+fn hands_of(id: i32, r: &crate::game::data::attributes::BodyLook) -> crate::game::view_model::hands::CharacterHands {
+    crate::game::view_model::hands::CharacterHands {
+        id,
+        hand_index: r.hand,
+        hands_skins: r.hands_skins.clone(),
+        colour_hands_skins: r
+            .colour_skins
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| !c.hands.is_empty())
+            .map(|(m, c)| (m as u32, c.hands.clone()))
+            .collect(),
+    }
 }
 
 /// The install's NPC bodies (characters.md 13.2): each `AIModel#` as a
@@ -641,6 +697,7 @@ fn merge_npcs(data: &mut CharacterData, models: &crate::game::data::attributes::
             footprint_volume: 0.0,
             infected: -1,
             colour_skins: Vec::new(),
+            hands: None,
             npc: Some(NpcRecord {
                 skins: r.skins.iter().map(|s| if super::super::data::is_skin_file(s) { s.clone() } else { String::new() }).collect(),
                 face: if r.attach_face { by_name(&faces, &r.face) } else { -1 },
@@ -895,6 +952,15 @@ impl CharacterData {
             face,
             ..Selection::default()
         }
+    }
+
+    /// The record whose first-person hands `s` wears (view_models.md 1):
+    /// the cosmetic character's model if one is worn, else the body's,
+    /// after the face's redirect.
+    pub fn hands_record(&self, s: &Selection) -> &ModelRecord {
+        let base = self.model(s.model).unwrap_or(self.default_model());
+        let own = if s.cosmetic_character >= 0 { self.model(s.cosmetic_character).unwrap_or(base) } else { base };
+        self.redirect(own, s.face)
     }
 
     /// Model 0, the default.

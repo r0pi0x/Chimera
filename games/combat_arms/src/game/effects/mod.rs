@@ -8,7 +8,10 @@
 //!   silencer's radius, `CaMods`: silenced level ℓ plays `SilencedFireSnd`ℓ,
 //!   a silenced part without a level nothing); the third-person muzzle
 //!   group (`hh_muzzle`, the muzzle part's first) for others when the fire
-//!   point is seen; your FireFX group (`test`) at your flash point (a
+//!   point is seen, their fire point (muzzle, sound and tracer start) the
+//!   held model's own `Flash` socket as posed (Open question 18; its hand
+//!   where the model has none, else the shot's origin) and their casings'
+//!   its `Breach` socket (else the fire point); your FireFX group (`test`) at your flash point (a
 //!   launcher's, its ammo's install record `CaWeaponFx::fire_record`:
 //!   parented to the shooter, shown only when the fire point as the
 //!   server sent it (`rules::compress_position`) passes the view test from
@@ -989,18 +992,21 @@ fn shot_effects(
             WeaponEventKind::Fired { origin, yaw, pitch, .. } => {
                 let dir = aim_of(*yaw, *pitch) * Vec3::NEG_Z;
                 let vm = characters.get(e.owner).ok().and_then(|c| c.2);
-                // Others': their weapon's socket (`RightHand`, characters.md
-                // 3), else the shot's origin.
-                let hand = hands
-                    .get(e.owner)
-                    .ok()
-                    .and_then(|(p, t, s)| Some(p.world(t, s, UNIT, p.right_hand?)));
-                // The held launcher's own `Flash` socket as posed this tick
-                // (the hand's where its model has none).
+                // Others': the held weapon model's own `Flash` socket as
+                // posed this tick (3, Open question 18: the muzzle, the
+                // tracer's start, the shot sound), the hand's (`RightHand`,
+                // characters.md 3) where its model has none, else the
+                // shot's origin.
                 let flash = hands
                     .get(e.owner)
                     .ok()
                     .and_then(|(p, t, s)| Some(p.world(t, s, UNIT, p.flash_point()?)));
+                // And its `Breach` socket (8: the casing), else the fire
+                // point.
+                let breach = hands
+                    .get(e.owner)
+                    .ok()
+                    .and_then(|(p, t, s)| Some(p.world(t, s, UNIT, p.breach_point()?)));
                 // A launcher's (a projectile round's) fire-only event comes
                 // from the server's fire position (the shooter's camera when
                 // he fired), compressed to the world's grid; his own client
@@ -1017,7 +1023,7 @@ fn shot_effects(
                 } else if mine {
                     vm.map_or(*origin, |v| v.flash_point)
                 } else {
-                    hand.unwrap_or(*origin)
+                    flash.unwrap_or(*origin)
                 };
                 let mut round = Round {
                     fire,
@@ -1086,7 +1092,7 @@ fn shot_effects(
                     && gates.fire_seen
                     && !gates.fire_far
                 {
-                    let breach = if mine { vm.map_or(fire, |v| v.breach_point) } else { fire };
+                    let breach = if mine { vm.map_or(fire, |v| v.breach_point) } else { breach.unwrap_or(fire) };
                     // The camera's frame (first person) or the shot's: the
                     // same view here.
                     let frame = aim_of(*yaw, *pitch);
