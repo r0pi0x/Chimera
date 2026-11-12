@@ -108,6 +108,11 @@ kind = "scope"                  # fov = [..], max_speed, unzoom_after_shot,
 # kind = "burst", interval, refire, count, step, texts = [per mode],
 #   once_per_press, step_blocks_primary (CA: one burst a pull, the
 #   toggle's lockout)
+# kind = "modes", key (a named action that steps them, once a press;
+#   none: attack2), step, step_blocks_primary, burst = { count, interval
+#   (0: the trigger's cycle), refire, from_last, once_per_press },
+#   automatic (a continuous-fire mode, `AutoMode`): modes in that order
+#   after the trigger's own (Combat Arms' fire-mode key)
 # kind = "shot", pellets, rounds, cycle: attack2 fires a bigger shot
 #   from the clip (`AltShot`: HL2:DM's shotgun's double shot, 12 pellets
 #   for 2 shells; fewer rounds: a normal shot)

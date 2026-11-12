@@ -111,7 +111,8 @@
 //!   it).
 //! - The weapon panel's class is the inventory class (the data's `slot`,
 //!   Q16); the fire-mode icon's `RapidFireCount` comes from the trigger
-//!   (`rapid_fire_count`); continuous fire isn't done, so never on. The
+//!   (`rapid_fire_count`), continuous fire from the mode the fire-mode
+//!   key stepped to (`AutoMode`), a burst from `Burst`'s mode. The
 //!   install's weapon names fill `ItemNames` (`install::weapon_names`, the
 //!   item file's `ItemName` through the string table); a weapon without
 //!   one shows the weapon data's name, else its id as words (`plain_name`).
@@ -193,7 +194,7 @@ use crate::{
     map::interp::RenderedView,
     net::{NetCharacter, NetSettings},
     weapon::{
-        AltModes, Armor, Burst, Hitscan, Inventory, Magazine, Trigger, Weapon, WeaponEvent, WeaponEventKind,
+        AltModes, Armor, AutoMode, Burst, Hitscan, Inventory, Magazine, Trigger, Weapon, WeaponEvent, WeaponEventKind,
         Zoomed, grenade::Throwable,
     },
 };
@@ -883,7 +884,7 @@ type HeldWeapon<'a> = (
     Option<&'a Magazine>,
     Option<&'a CaItem>,
     Option<&'a CaSpread>,
-    (Option<&'a Trigger>, Option<&'a Throwable>, Option<&'a CaMods>),
+    (Option<&'a Trigger>, Option<&'a Throwable>, Option<&'a CaMods>, Option<&'a AutoMode>),
 );
 
 type Character<'a> = (
@@ -1120,7 +1121,7 @@ fn update(
     }
 
     // The weapon panel (D4).
-    if let Some((_, (id, _, hud_data, modes, burst, mag, item, _, (trigger, throw, _)))) = weapon {
+    if let Some((_, (id, _, hud_data, modes, burst, mag, item, _, (trigger, throw, _, auto)))) = weapon {
         let bursting = match (modes, burst) {
             (Some(m), Some(b)) if b.mode == m.current && b.count > 0 => Some(b.count),
             _ => None,
@@ -1140,8 +1141,8 @@ fn update(
             total,
             burst: bursting,
             rapid_fire_count: rapid_fire_count(trigger),
-            // Continuous fire isn't done (weapon_firing.md): never on.
-            continuous: false,
+            // Continuous fire switched on (`AutoMode`, the fire-mode key).
+            continuous: matches!((modes, auto), (Some(m), Some(a)) if a.0 == m.current && a.0 > 0),
         };
         next.weapon = model::weapon_panel(&inputs, status_shown && !options.infected);
     }

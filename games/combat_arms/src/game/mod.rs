@@ -187,6 +187,9 @@ pub const DEFAULT_BINDS: &[(&str, &str)] = &[
     ("r", "+reload"),
     ("e", "+use"),
     ("q", "lastinv"),
+    // The fire-mode key (options.md K1 14, `TripleShotMode`: F;
+    // weapon_firing.md "Toggling burst"), a named action.
+    ("f", "+firemode"),
     ("1", "slot1"),
     ("2", "slot2"),
     ("3", "slot3"),

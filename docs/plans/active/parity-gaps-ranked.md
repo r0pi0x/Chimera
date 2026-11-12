@@ -92,11 +92,6 @@ first, done on the Windows PC. Delete a row when it lands.
 
 ## Later (spec is clear, less often seen)
 
-18. **Combat Arms: no burst or continuous fire modes for install
-    guns**; `firemode` unbuilt, HUD icon never shows burst. Spec:
-    combat_arms/weapon_firing.md "Trigger and fire cycle", "Toggling
-    burst". Code: `game/data.rs`, `options/bindings.rs`
-    `COMMANDS_UNBUILT`, `ui/hud.rs`. M. No spec.
 19. **Combat Arms: install guns whose ammo effect name we lack keep
     their template's muzzle, tracer and impact** (`FX.TXT` records not
     read). Spec: combat_arms/effects_sounds.md "Effect tables". Code:

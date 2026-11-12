@@ -1043,6 +1043,56 @@ fn t54_fire_mode_icon() {
     assert_eq!(hud(&sim).weapon.unwrap().icon, Some(FireIcon::Auto));
 }
 
+/// Case 76 with the fire-mode key (attribute_data.md case 32): a
+/// semi-automatic primary with a 2-round burst and continuous fire shows
+/// the single-shot icon, the 2-round icon once the key steps to burst, the
+/// full-auto icon in continuous fire, then single again.
+#[test]
+fn t54_fire_mode_icon_follows_the_key() {
+    const MODES: &str = r#"
+id = "test:hud_modes"
+base = "combat_arms:test_hud_rifle"
+[trigger]
+automatic = false
+[alt]
+kind = "modes"
+key = "firemode"
+step = 0.3
+step_blocks_primary = true
+burst = { count = 2, refire = 0.2, from_last = true, once_per_press = true }
+automatic = true
+"#;
+    let mut sim = Sim::with(CaSim, |app| {
+        app.add_plugins((GreyboxMapPlugin, CaHudStatePlugin));
+        app.add_weapon_data(&[("test_hud_rifle.toml", include_str!("../data/test_hud_rifle.toml")), ("modes", MODES)])
+            .unwrap();
+        app.insert_resource(StartingWeapons {
+            team: Vec::new(),
+            all: vec!["test:hud_modes"],
+        });
+    });
+    let me = sim.spawn_character(greybox::SPAWNS[0], movement::ID);
+    sim.app.world_mut().entity_mut(me).insert((LocalPlayer, Team(1), Name::new("Me")));
+    sim.seconds(1.0);
+    let bit = sim
+        .app
+        .world()
+        .resource::<chimera_core::core::ActionRegistry>()
+        .bit(combat_arms::game::data::FIRE_MODE_ACTION);
+    let mut icons = vec![hud(&sim).weapon.unwrap().icon];
+    for _ in 0..3 {
+        sim.intent(me).actions = bit;
+        sim.ticks(1);
+        sim.intent(me).actions = 0;
+        sim.ticks(2);
+        icons.push(hud(&sim).weapon.unwrap().icon);
+    }
+    assert_eq!(
+        icons,
+        [Some(FireIcon::Single), Some(FireIcon::Burst2), Some(FireIcon::Auto), Some(FireIcon::Single)]
+    );
+}
+
 #[test]
 fn t55_name_box() {
     let (at, size) = panel::NAME_BOX;

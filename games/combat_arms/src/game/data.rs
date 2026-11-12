@@ -82,6 +82,12 @@
 //!   rung, `rungs`);
 //!   every weapon's `FireAniRate` goes in `combat_arms:inventory` (made
 //!   when the template has none, the record's other item fields with it);
+//!   a gun's fire modes (`fire_modes_patch`): `TripleShotMode` 1 and
+//!   `ContinuousFire` 1 make an `[alt]` of kind `modes` stepped by the
+//!   fire-mode key (`FIRE_MODE_ACTION`, `+firemode`): a burst of
+//!   `TripleShotRoundNum` a fire cycle apart, `TripleShotDelay` after its
+//!   last round, one a pull; continuous fire; `TripleShotSelectDelay` the
+//!   step's lockout;
 //! - movement (`merge_movement`): the body type `FigureType0` replaces
 //!   `character.figure` (`StiffDuration` with it), and every `FigureType#`
 //!   is `MovementData::figures` (each vest record's body type, `gear`);
@@ -132,11 +138,7 @@
 //!   (the projectile record's `ActivateSound`, `FinishSound`,
 //!   `FinishSoundTime` and `CreateSound` are read, `look_table`,
 //!   `create_values`, into the projectile, device and grenade hooks),
-//!   `TripleShot*` timing (the trigger's `latency`, a
-//!   flame copy's fire keys and a knife copy's swings come from the
-//!   copy's view model: `timing`),
-
-//!   `ContinuousFire`, render styles,
+//!   render styles,
 //!   armour, `[Perturb]`, `[Player]` (the client's
 //!   speeds are movement.md's: the spec's open question 2), `Model#`/`Hair#`
 //!   and worn gear, the modification file's gear lists and per-slot
@@ -724,6 +726,51 @@ fn string_array(items: &[String], lead: usize, normalize: bool) -> Value {
     )
 }
 
+/// The named action of the fire-mode key (options.md K1 14, `TripleShotMode`,
+/// F): `+firemode`.
+pub const FIRE_MODE_ACTION: &str = "firemode";
+
+/// A gun's fire modes (weapon_firing.md "Trigger and fire cycle",
+/// "Toggling burst"): with `TripleShotMode` 1 a burst mode of
+/// `TripleShotRoundNum` rounds a fire cycle apart (`interval` 0), the next
+/// pull `TripleShotDelay` after its last round, one burst a pull; with
+/// `ContinuousFire` 1 a mode of continuous fire after it; the fire-mode
+/// key steps auto -> burst -> continuous, each step blocking the trigger
+/// for `TripleShotSelectDelay`. A gun with neither has no `[alt]` of
+/// ours (a template's goes).
+fn fire_modes_patch(doc: &mut Table, w: &WeaponRecord) {
+    let is_gun = doc.contains_key("trigger") && doc.contains_key("hitscan") && w.gun_type != THROWN_GUNTYPE;
+    let burst = w.triple_shot_mode == 1;
+    let continuous = w.continuous_fire == 1;
+    let ours = doc
+        .get("alt")
+        .and_then(|a| a.get("kind"))
+        .and_then(Value::as_str)
+        .is_some_and(|k| k == "modes");
+    if !is_gun || !(burst || continuous) {
+        if ours {
+            doc.remove("alt");
+        }
+        return;
+    }
+    let ms = |v: i32| Value::Float(f64::from(v.max(0)) / 1000.0);
+    let mut alt = Table::new();
+    alt.insert("kind".into(), Value::String("modes".into()));
+    alt.insert("key".into(), Value::String(FIRE_MODE_ACTION.into()));
+    alt.insert("step".into(), ms(w.triple_shot_select_delay));
+    alt.insert("step_blocks_primary".into(), Value::Boolean(true));
+    if burst {
+        let mut b = Table::new();
+        b.insert("count".into(), Value::Integer(i64::from(w.triple_shot_round_num.max(1))));
+        b.insert("refire".into(), ms(w.triple_shot_delay));
+        b.insert("from_last".into(), Value::Boolean(true));
+        b.insert("once_per_press".into(), Value::Boolean(true));
+        alt.insert("burst".into(), Value::Table(b));
+    }
+    alt.insert("automatic".into(), Value::Boolean(continuous));
+    doc.insert("alt".into(), Value::Table(alt));
+}
+
 /// An effect name from an ammo record, as written into
 /// `combat_arms:effects`: `None` keeps what the document has. A missing
 /// key is no effect (""); a present but empty one is `empty_means`
@@ -1024,6 +1071,7 @@ fn patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile, mods: Option<&Mo
     if let Some(r) = projectile_range {
         apply(doc, &set(&["hitscan", "range"], r));
     }
+    fire_modes_patch(doc, w);
     // Its own sounds and effects, not its template's.
     effects_patch(doc, w, file.default_ammo(w));
     for s in sound_values(w) {

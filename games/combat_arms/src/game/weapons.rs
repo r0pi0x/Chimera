@@ -1778,6 +1778,9 @@ impl Plugin for CaWeaponsPlugin {
         .register_weapon_hook::<toml::Table>(super::rungs::INFECTED, |_, _, _| {})
         // The server's timing goes to its clients (`weapon::params`).
         .weapon_param(timing::TIMING, timing::encode, timing::push);
+        // The fire-mode key (`+firemode`): steps a gun's fire modes
+        // (`AltModes::key`, the merge's `fire_modes_patch`).
+        crate::core::ActionAppExt::intent_action(app, super::data::FIRE_MODE_ACTION);
         let data = super::data::CaData::of(app);
         if let Err(e) = app.add_weapon_set(data.weapon_set()) {
             panic!("Combat Arms weapon data: {e}");

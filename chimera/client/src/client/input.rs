@@ -355,7 +355,7 @@ pub fn write_local_intent(
             ..default()
         };
         if let Some(h) = held {
-            apply_held(&mut intent, &mut wheel, &h);
+            apply_held(&mut intent, &mut wheel, &h, actions.as_deref());
         }
         return;
     }
@@ -422,7 +422,7 @@ pub fn write_local_intent(
     intent.use_key = bound("+use");
     // The game's named actions: `+name` held.
     intent.actions = 0;
-    if let Some(registry) = actions {
+    if let Some(registry) = actions.as_deref() {
         for name in registry.names() {
             if bound(&format!("+{name}")) {
                 intent.actions |= registry.bit(name);
@@ -441,11 +441,16 @@ pub fn write_local_intent(
     // Actions held from the console (`+duck` typed, `++attack`) add to the
     // keys.
     if let Some(h) = held {
-        apply_held(&mut intent, &mut wheel, &h);
+        apply_held(&mut intent, &mut wheel, &h, actions.as_deref());
     }
 }
 
-fn apply_held(intent: &mut Intent, wheel: &mut WheelJump, h: &super::console::HeldActions) {
+fn apply_held(
+    intent: &mut Intent,
+    wheel: &mut WheelJump,
+    h: &super::console::HeldActions,
+    actions: Option<&crate::core::ActionRegistry>,
+) {
     let add = |a: bool, b: bool| a as i8 as f32 - b as i8 as f32;
     intent.move_axis += Vec2::new(add(h.moveright, h.moveleft), add(h.forward, h.back));
     intent.move_axis = intent.move_axis.clamp(Vec2::NEG_ONE, Vec2::ONE);
@@ -459,6 +464,11 @@ fn apply_held(intent: &mut Intent, wheel: &mut WheelJump, h: &super::console::He
     intent.secondary |= h.attack2;
     intent.reload |= h.reload;
     intent.use_key |= h.use_key;
+    if let Some(registry) = actions {
+        for name in &h.named {
+            intent.actions |= registry.bit(name);
+        }
+    }
 }
 
 #[cfg(test)]

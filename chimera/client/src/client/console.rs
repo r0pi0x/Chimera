@@ -1816,6 +1816,9 @@ pub struct HeldActions {
     pub showscores: bool,
     /// Free look (`+freelook`, Left Alt): the mouse turns the camera only.
     pub freelook: bool,
+    /// The game's named actions held from the console (`+firemode`,
+    /// `BindsAppExt::bound_action`).
+    pub named: std::collections::BTreeSet<String>,
 }
 
 const ACTIONS: &[&str] = &[

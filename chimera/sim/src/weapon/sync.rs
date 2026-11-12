@@ -9,7 +9,7 @@
 //!   its parts that prediction runs (`NetPart`: timers, clip, mode,
 //!   accuracy, recoil, grenade count); which one is drawn, the last one
 //!   and the one wanted as indices; the player-level timer and button
-//!   edges. Entity ids never go over the wire.
+//!   edges (the named actions' too: `AltModes::key`). Entity ids never go over the wire.
 //! - **On the client** (`decode`): the weapons are its own entities, built
 //!   from the registry like any weapon (`spawn_weapon`); a different list
 //!   (one picked up, bought, dropped, a respawn) builds them again, then
@@ -105,6 +105,7 @@ struct NetCarried {
     prev_secondary: bool,
     prev_select: Option<u8>,
     prev_last: bool,
+    prev_actions: u32,
 }
 
 /// The name the inventory goes by in the predicted state.
@@ -141,6 +142,7 @@ pub fn encode(world: &World, owner: Entity) -> Option<Vec<u8>> {
         prev_secondary: inv.prev_secondary,
         prev_select: inv.prev_select,
         prev_last: inv.prev_last,
+        prev_actions: inv.prev_actions,
     })
     .ok()
 }
@@ -200,6 +202,7 @@ pub fn decode(world: &mut World, owner: Entity, bytes: Option<&[u8]>) {
         prev_secondary: net.prev_secondary,
         prev_select: net.prev_select,
         prev_last: net.prev_last,
+        prev_actions: net.prev_actions,
         prev_use: world.get::<Inventory>(owner).is_some_and(|i| i.prev_use),
         // The server's (lag compensation); kept as it was here.
         last_shot: world.get::<Inventory>(owner).and_then(|i| i.last_shot),

@@ -993,6 +993,9 @@ pub struct CaOptionsStatePlugin;
 impl Plugin for CaOptionsStatePlugin {
     fn build(&self, app: &mut App) {
         let ui = app.world().get_resource::<CaUi>().cloned().unwrap_or_default();
+        // The fire-mode key is a named action the weapon frame reads
+        // (`game::data::FIRE_MODE_ACTION`), not a command to run.
+        crate::client::binds::BindsAppExt::bound_action(app, crate::game::data::FIRE_MODE_ACTION);
         app.insert_resource(OptionsScreen::new(&ui))
             .insert_resource(ui)
             .init_resource::<MenuPointer>()

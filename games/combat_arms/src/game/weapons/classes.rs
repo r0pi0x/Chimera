@@ -205,6 +205,7 @@ impl CaAltFire {
             count: self.rounds,
             interval: self.interval,
             refire: self.cycle,
+            from_last: false,
             once_per_press: true,
         }
     }

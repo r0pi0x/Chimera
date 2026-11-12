@@ -20,7 +20,7 @@
 //!   `Console::bound_for_session`).
 //!
 //! Known shortcuts: the commands of actions whose features aren't built
-//! (recording, the fire mode, co-op, quests, the super-soldier item, night vision, the help popup's draw) are
+//! (recording, co-op, quests, the super-soldier item, night vision, the help popup's draw) are
 //! bound all the same; a key press skips the ones nothing registers
 //! (`COMMANDS_UNBUILT`, `client::binds::known_here`); the key a bind is "already
 //! taken" by (K3's remappable rule) is a console bind that isn't one of
@@ -92,7 +92,7 @@ pub const ACTIONS: &[Action] = &[
     a("Sprint", "Dash", "+sprint", NoFallback),
     a("Fire", "Fire", "+attack", NoFallback),
     a("Reload", "Reload", "+reload", NoFallback),
-    a("FiringMode", "TripleShotMode", "firemode", Always("##33")),
+    a("FiringMode", "TripleShotMode", "+firemode", Always("##33")),
     a("Zoomin", "ZoomIn", "+attack2", NoFallback),
     a("Map", "FullTacticalMap", "+fulltacticalmap", NoFallback),
     a("PreviousWeapon", "Prev_Weapon", "lastinv", Always("##16")),
@@ -126,7 +126,6 @@ pub const ACTIONS: &[Action] = &[
 /// Commands in `ACTIONS` that nothing registers yet (their features
 /// aren't built): the console reports them unknown when pressed.
 pub const COMMANDS_UNBUILT: &[&str] = &[
-    "firemode",
     "record",
     "usemutationitem",
     "commandnpcshop",
