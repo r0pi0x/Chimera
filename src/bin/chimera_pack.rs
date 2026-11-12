@@ -54,7 +54,8 @@
 //! the game's `base` and `players`; the offer names the loaded map's set,
 //! in the pool or not). `map/<name>` and Combat Arms' `base` (its effect
 //! tables' sounds: impacts, shells, surfaces, the event sounds and the
-//! heartbeat) are merged into what the manifest has (sets recorded from
+//! heartbeat; the air strike surprise's shells' sounds,
+//! `special::devices::strike_sound_files`) are merged into what the manifest has (sets recorded from
 //! logs too); the other sets are replaced. `--only <prefix>` records only
 //! the sets whose names start with it (`--only character/`), leaving the
 //! others as they are. `--sign` signs the manifest again with
@@ -481,6 +482,11 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 take();
                 for path in CaFxTables::built_in().sound_files() {
                     let _ = tapped.read(&normalize(path));
+                }
+                // A party host's air strike: its shells' explosion and
+                // flight sounds (`special::devices::strike_sound_files`).
+                for path in combat_arms::game::special::devices::strike_sound_files(ca.weapon_set(), CaFxTables::built_in()) {
+                    let _ = tapped.read(&path);
                 }
                 out.push(("base".into(), take()));
             }

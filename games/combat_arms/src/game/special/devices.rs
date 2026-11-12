@@ -18,6 +18,12 @@
 //! Each device's rules are its function below, in the spec's order: the
 //! removal tests (owner gone, round over, lifetime, replaced), marks and
 //! triggers, then its physics.
+//!
+//! A strike without a designator (`drop_strike_shell`, a party host's
+//! surprise): one shell of a designator's `strike.shell` with no owner,
+//! straight down onto a floor point from `AirDropHeight` or from under
+//! the sky or ceiling above it if that is lower (`strike_start`), drawn
+//! in flight and blowing up as a projectile weapon the caller names.
 
 use bevy::prelude::*;
 
@@ -802,4 +808,119 @@ fn air_strike(cx: &mut Cx, o: &mut CaObject, s: &StrikeParams) -> bool {
         o.s.dropped += 1;
     }
     o.s.dropped >= s.points.len()
+}
+
+// ---------------------------------------------------------------------------
+// A strike without a designator
+
+/// How far below the sky (or a ceiling) a shell dropped by `drop_strike_shell`
+/// starts, u.
+pub const STRIKE_CEILING_GAP: f32 = 40.0;
+
+/// Where a shell of designator `designator`'s strike (6.10) dropped on the
+/// floor point `ground` (metres) starts: `AirDropHeight` above it as the
+/// designator drops its shells, or `STRIKE_CEILING_GAP` under the first
+/// surface above if that is lower (a Source map's sky is often lower than
+/// 3000 u: a shell starting above it would touch the sky on its first step
+/// and be removed silently, 1.2). The flag: open to the sky (the first thing
+/// above is the map's sky, or nothing); false under a roof.
+pub fn strike_start(world: &mut World, designator: &str, ground: Vec3) -> Option<(Vec3, bool)> {
+    let data = world.get_resource::<crate::weapon::data::WeaponCatalog>()?.get(designator)?;
+    let strike = data.hook::<DeviceParams>(super::DEVICE)?.strike?;
+    let unit = data.units.length;
+    let height = strike.height * unit;
+    let from = ground + Vec3::Y * (2.0 * unit);
+    let mut state = bevy::ecs::system::SystemState::<grenades::GrenadeWorld>::new(world);
+    let wall = {
+        let gw = state.get(world).ok()?;
+        gw.cast(from, from + Vec3::Y * height, None).map(|(d, ..)| d)
+    };
+    let sky = world
+        .get_resource::<crate::map::MapSkyFaces>()
+        .and_then(|s| s.along(from, Vec3::Y, height));
+    let gap = STRIKE_CEILING_GAP * unit;
+    let (top, open) = match (wall, sky) {
+        (None, None) => (height, true),
+        (Some(w), Some(s)) if s <= w + 0.05 => (s, true),
+        (None, Some(s)) => (s, true),
+        (Some(w), _) => (w, false),
+    };
+    let top = (top - gap).max(0.5).min(height);
+    Some((from + Vec3::Y * top, open))
+}
+
+/// Drop one shell of designator `designator`'s strike (6.10: its
+/// `strike.shell`, straight down at the shell's speed) on the floor point
+/// `ground` (metres) from `strike_start`'s point, with no owner: a strike
+/// of the world's (a party's surprise). Its blast and burning sphere are
+/// the shell's and credit nobody (`Damage::attacker` None, the damage's
+/// weapon the designator's). With `look` (a loaded weapon of the
+/// `combat_arms:projectile` hook) it is drawn in flight as that weapon's
+/// projectile (model, skin, looks in flight) and its explosion drawn and
+/// heard as that weapon's: our designators' shells have no model, and
+/// their own explosion records aren't any loaded weapon's, while a client
+/// draws only projectile models its weapon set names and explosions of
+/// weapons it knows. None: no such designator.
+pub fn drop_strike_shell(world: &mut World, designator: &str, ground: Vec3, look: Option<&str>) -> Option<Entity> {
+    let (start, _) = strike_start(world, designator, ground)?;
+    let catalog = world.get_resource::<crate::weapon::data::WeaponCatalog>()?;
+    let data: &'static WeaponData = catalog.get(designator)?;
+    let mut shell = data.hook::<DeviceParams>(super::DEVICE)?.strike?.shell;
+    let stand_in = look.and_then(|l| catalog.get(l));
+    if let Some(p) = stand_in.and_then(|d| d.hook::<super::ProjectileParams>(super::PROJECTILE)) {
+        shell.model = p.model;
+        shell.model_scale = p.model_scale;
+        shell.skins = p.skins;
+        shell.look = p.look;
+    }
+    let unit = data.units.length;
+    let mut o = impact::projectile(
+        data.id.as_str(),
+        None,
+        unit,
+        data.units.damage,
+        &shell,
+        start / unit,
+        Vec3::new(0.0, -shell.speed, 0.0),
+    );
+    o.look = stand_in.map(|d| d.id.as_str());
+    Some(spawn_object(world, o))
+}
+
+/// The floor below `at` (metres) within `depth` metres, as a strike's
+/// marker finds it (the world's surfaces, not characters or props).
+pub fn strike_floor(world: &mut World, at: Vec3, depth: f32) -> Option<Vec3> {
+    let mut state = bevy::ecs::system::SystemState::<grenades::GrenadeWorld>::new(world);
+    let gw = state.get(world).ok()?;
+    gw.cast(at, at - Vec3::Y * depth, None).map(|(d, ..)| at - Vec3::Y * d)
+}
+
+/// The projectile weapon a party's air strike shells are drawn and blow up
+/// as (`drop_strike_shell`'s `look`): the RPG-7's rocket, whose model
+/// every client's map loads with the weapon set's projectiles.
+pub const STRIKE_LOOK: &str = "combat_arms:rpg-7";
+
+/// The sound files a client plays for shells drawn as `STRIKE_LOOK` that
+/// it doesn't load with the map: its explosion's (the impact record's
+/// sound) and its projectile's in flight (fly, activate, finish and
+/// create sounds), normalized, sorted, once each. Combat Arms' `base` set
+/// on the asset service holds them (`chimera_pack sets`), so a client
+/// without the install has them before the first shell falls.
+pub fn strike_sound_files(set: &crate::weapon::data::WeaponSet, tables: &crate::game::effects::data::CaFxTables) -> Vec<String> {
+    use crate::game::effects::data::{CaWeaponFx, EFFECTS};
+    let Some(w) = set.get(STRIKE_LOOK) else { return Vec::new() };
+    let mut out = Vec::new();
+    if let Some(fx) = w.hook::<CaWeaponFx>(EFFECTS)
+        && let Some(i) = fx.impact_of(tables)
+        && i.sound != "surface"
+    {
+        out.push(i.sound.clone());
+    }
+    if let Some(p) = w.hook::<super::ProjectileParams>(super::PROJECTILE) {
+        out.extend([p.look.fly_sound, p.look.activate_sound, p.look.finish_sound, p.create_sound]);
+    }
+    let mut out: Vec<String> = out.iter().filter(|s| !s.is_empty()).map(|s| crate::game::model::normalize(s)).collect();
+    out.sort_unstable();
+    out.dedup();
+    out
 }

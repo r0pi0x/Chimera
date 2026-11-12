@@ -118,3 +118,29 @@ fn launchers_as_the_install_has_them() {
     let shots = &sim.app.world().resource::<Shots>().0;
     assert!(shots[0].2.abs() < 1e-3, "a level shot leaves level: {:?}", shots[0]);
 }
+
+/// A party host's air strike (`special::devices::drop_strike_shell` with
+/// `STRIKE_LOOK`): the sounds its shells play beyond the map's load (the
+/// rocket's explosion and flight sounds), which Combat Arms' `base` set
+/// holds (`chimera_pack sets`), all named and read from the install.
+#[test]
+fn the_air_strike_shells_sounds_are_named_for_base() {
+    use combat_arms::game::{effects::data::CaFxTables, special::devices::strike_sound_files};
+    if LocalConfig::load().ok().and_then(|c| c.game_path(GAME)).is_none() {
+        eprintln!("skipping: no Combat Arms install configured");
+        return;
+    }
+    let ca = CaData::install();
+    if ca.attributes().and_then(|a| a.weapons.as_ref()).is_none() {
+        eprintln!("skipping: the install's attribute data isn't readable (the V1 key)");
+        return;
+    }
+    let files = strike_sound_files(ca.weapon_set(), CaFxTables::built_in());
+    eprintln!("the air strike's sounds: {files:?}");
+    assert!(files.len() >= 2, "the explosion's and the flight's: {files:?}");
+    assert!(files.iter().any(|f| f.contains("snd")), "{files:?}");
+    let mount = ca.mount().expect("the install's mount");
+    for f in &files {
+        assert!(mount.read(f).is_ok(), "{f} reads from the install");
+    }
+}
