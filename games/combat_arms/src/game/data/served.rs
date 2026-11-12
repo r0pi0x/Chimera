@@ -66,6 +66,21 @@ pub fn apply_attachments(world: &mut World, docs: &[(String, String)]) -> Result
     Ok(())
 }
 
+/// The attachment documents' format (`data_format`): a `[[mod]]` record.
+pub fn attachments_format() -> String {
+    chimera_sim::data_format::describe::<ModRecord>()
+}
+
+/// The movement document's format.
+pub fn movement_format() -> String {
+    chimera_sim::data_format::describe::<MovementData>()
+}
+
+/// The gear document's format.
+pub fn gear_format() -> String {
+    GearData::format()
+}
+
 /// The movement numbers as one document (movement.toml's format).
 pub fn movement_doc(data: &MovementData) -> Vec<(String, String)> {
     let text = toml::to_string(data).expect("movement data serializes");

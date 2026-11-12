@@ -838,11 +838,22 @@ impl WeaponDataAppExt for App {
             .get_resource_or_init::<WeaponHooks>()
             .0
             .insert(name.to_string(), prepare);
+        // Its parameters' format, for the join's check (`data_format`).
+        let format = crate::data_format::describe::<P>();
+        self.world_mut()
+            .get_resource_or_init::<crate::data_format::DataFormats>()
+            .0
+            .insert(name.to_string(), format);
         self
     }
 
     fn add_weapon_set(&mut self, set: &'static WeaponSet) -> Result<(), String> {
         let world = self.world_mut();
+        // The weapon document's format, for the join's check (`data_format`).
+        let mut formats = world.get_resource_or_init::<crate::data_format::DataFormats>();
+        if !formats.0.contains_key(crate::data_format::WEAPON) {
+            formats.0.insert(crate::data_format::WEAPON.to_string(), weapon_format());
+        }
         let defs = weapon_defs(world, set)?;
         for (d, def) in defs {
             let mut registry = world.get_resource_or_init::<WeaponRegistry>();
@@ -866,6 +877,18 @@ impl WeaponDataAppExt for App {
         self.add_weapon_set(set)?;
         Ok(set)
     }
+}
+
+/// The weapon document's format (`data_format::describe` of a weapon,
+/// its ammo types and units).
+pub fn weapon_format() -> String {
+    use crate::data_format::describe;
+    format!(
+        "{}\n[ammo]\n{}\n[units]\n{}",
+        describe::<WeaponData>(),
+        describe::<AmmoData>(),
+        describe::<Units>()
+    )
 }
 
 /// `set`'s registry entries (its data's parts, then its hooks'); every
@@ -1338,5 +1361,11 @@ mod tests {
         assert!(e.contains("hook t:hook"), "{e}");
         app.add_weapon_data(&[("a", &doc("t:hook"))]).unwrap();
         assert!(app.world().resource::<WeaponRegistry>().find("t:a").is_some());
+    }
+
+    #[test]
+    fn the_weapon_document_has_a_format() {
+        let w = weapon_format();
+        assert!(w.contains(".magazine.clip") && w.contains(".hooks"), "{w}");
     }
 }

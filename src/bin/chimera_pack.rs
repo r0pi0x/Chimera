@@ -63,7 +63,8 @@
 //! its pieces' models, skins and sounds; its cue pack's sounds; the air
 //! strike surprise's alarm and its shells' model, sounds and effect
 //! groups' files, `special::devices::strike_files`)
-//! and CS:S's `base` (its minigame cue pack's sounds) are merged into what the manifest has (sets recorded from
+//! and CS:S's `base` (its minigame cue pack's sounds, the party match-end
+//! screen's winner sound) are merged into what the manifest has (sets recorded from
 //! logs too); the other sets are replaced. `--only <prefix>` records only
 //! the sets whose names start with it (`--only character/`), leaving the
 //! others as they are. `--sign` signs the manifest again with
@@ -402,6 +403,10 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                         let _ = tapped.read(file);
                     }
                 }
+                // The party match-end screen's winner sound (a bot's cheer,
+                // `parts::MATCH_WON_SOUND`; the 2026-11-12 rehearsal fetched
+                // it on demand at a match's end).
+                let _ = tapped.read(cs_source::game::parts::MATCH_WON_SOUND);
                 out.push(("base".into(), take()));
             }
             let options = map_options(false);

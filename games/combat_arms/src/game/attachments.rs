@@ -1440,7 +1440,10 @@ impl Plugin for CaAttachmentsPlugin {
         .server_docs(
             super::data::served::ATTACHMENTS,
             super::data::served::attachments_doc(&table),
-            chimera_sim::server_docs::DocApply::With(super::data::served::apply_attachments),
+            chimera_sim::server_docs::DocApply::With(
+                super::data::served::apply_attachments,
+                super::data::served::attachments_format,
+            ),
         )
         .insert_resource(table)
         .insert_resource(CaDefaultLoadout(loadout))

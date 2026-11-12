@@ -351,6 +351,11 @@ impl GearData {
             .map_or((0.0, 0.0), |v| (v.reload_ani_rate, v.select_ani_rate))
     }
 
+    /// The document's format (`chimera_sim::data_format`).
+    pub fn format() -> String {
+        chimera_sim::data_format::describe::<File>()
+    }
+
     /// Parse a gear document (data/gear.toml's format).
     pub fn parse(text: &str) -> Result<Self, String> {
         let file: File = toml::from_str(text).map_err(|e| e.to_string())?;

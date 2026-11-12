@@ -246,3 +246,26 @@ fn a_registry_that_differs_ends_the_join() {
     assert_eq!(kind, JoinFailure::Mounts);
     assert!(reason.starts_with(DATA) && reason.contains("weapon list"), "{reason}");
 }
+
+/// Every format Combat Arms' data is read in has its fields traced
+/// (`chimera_sim::data_format`: the join compares them, `net::formats`),
+/// the view model's `hidden_pieces` (the 2026-11-12 rehearsal's change)
+/// among them, and the list a client sends stays small.
+#[test]
+fn combat_arms_data_formats_are_traced() {
+    use chimera_net::net::formats::{encode, fingerprints};
+    use chimera_sim::data_format::formats;
+    let sim = chimera_world::harness::Sim::new(combat_arms::harness::CaSim, GreyboxMapPlugin);
+    let world = sim.app.world();
+    let all = formats(world);
+    for name in [combat_arms::game::view_model::VIEW, ATTACHMENTS, MOVEMENT, combat_arms::game::data::served::GEAR] {
+        assert!(all.contains_key(name), "{name}: {:?}", all.keys().collect::<Vec<_>>());
+    }
+    assert!(all[combat_arms::game::view_model::VIEW].contains("hidden_pieces"));
+    for (name, f) in all.iter().filter(|(n, _)| n.starts_with("combat_arms:")) {
+        assert!(f.contains("struct ") || f.contains(". map"), "{name}: {f}");
+    }
+    let sent = encode(&fingerprints(world));
+    println!("{} formats, {} bytes: {sent}", all.len(), sent.len());
+    assert!(sent.len() < 4096);
+}

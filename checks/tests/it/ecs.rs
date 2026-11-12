@@ -132,6 +132,11 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
         "the match change: map loading and spawning",
     ),
     (
+        "chimera/net/src/net/mod.rs",
+        "HostChangeLevel",
+        "the console's changelevel: a match change, map loading and spawning",
+    ),
+    (
         "chimera/net/src/net/parts.rs",
         "BotHooks",
         "the bots' quota and kicks: spawning, keyed by game (`gameplay::GameHooks`)",

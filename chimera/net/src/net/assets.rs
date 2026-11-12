@@ -11,7 +11,8 @@
 //!   manifest then carries an `AssetOffer` (`offer`): the URL and
 //!   fingerprint, and the sets the match needs now per game (`base`,
 //!   `players`, the map's `map/<name>`, each ladder and kit weapon's
-//!   `weapon/<name>`: the weapons and pool come from `AssetHooks`, which
+//!   `weapon/<name>` and the starting weapons a joiner holds until the
+//!   minigame arms it: the weapons and pool come from `AssetHooks`, which
 //!   `minigame_net` fills; other sets a game names there, Combat Arms'
 //!   rung bodies' `character/<record>`) and later (the pool's other maps,
 //!   prefetched).

@@ -322,7 +322,9 @@ Maps and matches:
   `apps/party_kit/data/host_settings.toml`).
 - A match needs 2 players; bots count (`+MaxPlayer`). Late joiners are fine.
 - **The pre-match lobby.** Each new match (the first after the server
-  starts, each rotation and map change) waits on its loaded map until every
+  starts, each rotation and map change: a host's `changelevel <map>` is the
+  running minigame's next match there, a new ladder as a rotation's)
+  waits on its loaded map until every
   connected player has it, showing everyone each player's status
   (connecting, downloading with MB done of the total, loading the map,
   ready; bots are ready at once) and ping; then a countdown and everyone
@@ -350,8 +352,8 @@ Console commands on the server's stdin (type in its window; run it inside
 `tick_stats` (the last ticks' cost and the server's memory),
 `minigames`, `minigame_status`, `minigame_restart`,
 `change_match <minigame> [map]`, `ugg_new [seed] [rungs]` (a new ladder now;
-a seed replays one), `parts` (what each game lends), `changelevel <map>`,
-`quit` (Ctrl+C is the same).
+a seed replays one), `parts` (what each game lends), `changelevel <map>`
+(the next match there, with its lobby), `quit` (Ctrl+C is the same).
 
 Keep it simple on the day: `+maxplayers 12 +MaxPlayer 3` and no `+map`.
 
@@ -616,9 +618,12 @@ about 30 minutes, with a server `quit` and restart. Found:
   ... unknown field `hidden_pieces`": main had added `projectile_piece`
   and `hidden_pieces` to Combat Arms' `view_model` hook data, which the
   server sends and an older client parses strictly. Run testers and the
-  server from the same commit (as "The day before" says); a change to the
-  hooks' data needs a new network version (main is `net42` since). The
-  rest of the rehearsal ran a server with those two keys left out.
+  server from the same commit (as "The day before" says). The rest of
+  the rehearsal ran a server with those two keys left out. Since, a
+  client says the format of each data it reads (`net::formats`, generated
+  from the types), and a server of another build refuses it at connect,
+  before any download, naming the data ("This game reads the server's
+  game data in another format (combat_arms:view_model) ...").
 - **No client can join an HL2:DM map in Ultimate Gun Game.** The server
   offers its maps by name and hash and has no file to send; the party
   client read only CS:S maps for the check, found none and asked the
@@ -629,11 +634,13 @@ about 30 minutes, with a server `quit` and restart. Found:
   (`party_kit::client::map_file_bytes` reading HL2:DM's maps too, branch
   `rehearsal-fixes`); a playtest5 client can't play them, so with those
   clients keep HL2:DM's maps out of the rotation.
-- **`changelevel` keeps the running match**: the map changes, the ladder
-  and scores go on, and there is no lobby (players spawn as their loads
-  end). For a new match on a chosen map use `change_match
-  ultimate_gun_game:auto <map>`; the vote's rotation and `change_match`
-  both held the lobby.
+- **`changelevel` kept the running match**: the map changed, the ladder
+  and scores went on, and there was no lobby (players spawned as their
+  loads ended); the vote's rotation and `change_match
+  ultimate_gun_game:auto <map>` both held the lobby. Since, a host's
+  `changelevel <map>` in a party app starts the minigame's next match
+  there as a rotation does (a new ladder, scores anew, the lobby;
+  `minigame_net::host_changelevel`).
 - **Lobby** (from its start to the match): 27-74 s at each map change
   with the three clients, everyone ready in all of them (22-69 s, the
   slow ones de_inferno's and de_aztec's loads on the loaded machine, 13-17
@@ -650,9 +657,18 @@ about 30 minutes, with a server `quit` and restart. Found:
   (warehouse) showed on every client.
 - **On demand** (the clients' `CHIMERA_ASSET_FETCH_LOG`; playtest5 sends
   no `on-demand` mark, so the access log has none): one request at a
-  join (a rung gun's reload sound, 0.46 MB, in its offered set) and one
-  at a match's end (CS:S's `sound/bot/yea_baby.wav`, 16 KB, in no set);
-  the installed client made no request at all. Requests: 1,258, all 200;
+  join (Combat Arms' `guns_snd_ar/m4a1/reload3.wav` with the rest of its
+  group, 0.46 MB) and one at a match's end (CS:S's
+  `sound/bot/yea_baby.wav`, 16 KB, in no set); the installed client made
+  no request at all. The first was the base game's starting M4A1, which
+  a joining player holds from its spawn until the minigame arms it, and
+  which no offer named: the offer now names the app's starting weapons
+  too (`minigame_net::match_weapons`; ultimate_gun_game
+  `offered_weapons`: every weapon any character holds, bots' too, is
+  offered). The second is CS:S's party match-end winner sound (a bot's
+  cheer, `parts::MATCH_WON_SOUND`), now recorded into CS:S's `base` by
+  `sets` (publish: `chimera_pack -- sets cs_source --store <server
+  store> --sign --only base`). Requests: 1,258, all 200;
   a tester without installs 1.15-1.62 GB over the session (prefetch on).
 - **Memory** (resident plus swap): the server 1.2-1.3 GB at start,
   1.8-2.4 GB during play over 5 maps, back to 1.8 GB between them

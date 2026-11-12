@@ -111,7 +111,10 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // mount) and what texture loaders ask of the device; used by apps and
     // games' front ends.
     ("assets", &["core", "mount", "game_registry", "render"]),
-    ("weapon", &["core", "console", "map"]),
+    // Data formats (chimera/sim): a type's serde shape, generated, for the
+    // join's check of what a client reads from a server.
+    ("data_format", &[]),
+    ("weapon", &["core", "console", "map", "data_format"]),
     // The rule-module interface (chimera/sim): a game registers its modes
     // by name; `rules::module` at its old path.
     ("rule_module", &["console"]),
@@ -137,7 +140,7 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // Server data documents (chimera/sim): a game's derived data as named
     // documents a network client takes from the server (weapon sets
     // rebuilt in place).
-    ("server_docs", &["weapon"]),
+    ("server_docs", &["weapon", "data_format"]),
     // The test kit (chimera/sim, feature `testkit`): a weapon set as data
     // and the base on the greybox, for tests; nothing outside the crate's
     // frameworks.
@@ -605,6 +608,7 @@ fn simulation_builds_no_drawn_parts() {
         "mode",
         "spawning",
         "server_docs",
+        "data_format",
         "games",
     ];
     let mut files = Vec::new();

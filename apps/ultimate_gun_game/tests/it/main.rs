@@ -21,6 +21,7 @@ mod heavy {
 mod minimal_hud;
 mod no_damage;
 mod no_stand_ins;
+mod offered_weapons;
 mod net;
 mod parts;
 mod pickups;
