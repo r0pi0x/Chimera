@@ -429,12 +429,58 @@ impl RagdollBlast {
     }
 }
 
+// The blast hearing presets (specs/cs_source/grenades.md 5.5): the install's
+// DSP presets (values from scripts/dsp_presets.txt), shared by every game
+// whose blasts use Source's base player rule (CS:S, HL2:DM). Each row's
+// duration holds the preset; its fade time -1 means a 1 s exponential
+// fade. We use the top of each preset's mix range and stand in for its
+// parts: a low-pass filter as is, a diffusor as a gentle low-pass, a 3 kHz
+// sine LFO as a ringing tone at the LFO's gain.
+
+/// Blast damage from which the shock effect plays, hp (specs/cs_source/grenades.md 5.5, hl2dm/projectiles.md 2.2).
+pub const SHOCK_DAMAGE: f32 = 30.0;
+/// Closer than this (units) the ring effect plays (specs/cs_source/grenades.md 5.5, hl2dm/projectiles.md 2.2).
+pub const EAR_RING_DISTANCE: f32 = 240.0;
+/// Our stand-in cutoff for a diffusor, Hz (ours).
+pub const DIFFUSOR_CUTOFF: f32 = 2500.0;
+/// The presets' ringing LFO, Hz.
+pub const RING_HZ: f32 = 3000.0;
+
+/// Presets 32-34, "explosion ring" (identical rows): diffusor, then a
+/// 1 kHz low-pass at gain 0.25; mix 0.2-0.7; 1.6 s, exponential fade.
+pub const EXPLOSION_RING: HearingEffect = HearingEffect {
+    hold: 1.6,
+    fade: 1.0,
+    exponential: true,
+    mix: 0.7,
+    cutoff: 1000.0,
+    wet_gain: 0.25,
+    ring_hz: RING_HZ,
+    ring_gain: 0.0,
+};
+
+/// Presets 35-37, "shock muffle" (identical rows): diffusor, then a 3 kHz
+/// sine LFO at gain 0.25; mix 0.2-0.7; 1.6 s, exponential fade.
+pub const SHOCK_MUFFLE: HearingEffect = HearingEffect {
+    hold: 1.6,
+    fade: 1.0,
+    exponential: true,
+    mix: 0.7,
+    cutoff: DIFFUSOR_CUTOFF,
+    wet_gain: 1.0,
+    ring_hz: RING_HZ,
+    ring_gain: 0.25,
+};
+
 /// What a blast does to the hearing of a character it hurts (Source's
 /// base player, specs/cs_source/grenades.md 5.5): `shock` when the damage
 /// is at least `shock_damage`, else `ring` when the character's origin
-/// is closer than `ring_distance` (m) to the blast.
+/// is closer than `ring_distance` (m) to the blast. The damage compared
+/// is the hit before armour (CS:S), or with `after_armour` the health's
+/// share left after it (HL2:DM: the suit takes 80 %).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BlastHearing {
+    pub after_armour: bool,
     pub shock_damage: f32,
     pub shock: HearingEffect,
     pub ring_distance: f32,
@@ -1836,7 +1882,7 @@ fn blast(
         if let Some(hearing) = &b.hearing
             && world.armor.lands(&damage)
             && let Some(&(_, at)) = origins.iter().find(|(e, _)| *e == target)
-            && let Some(effect) = hearing.effect(raw, at.distance(origin))
+            && let Some(effect) = hearing.effect(if hearing.after_armour { damage.amount } else { raw }, at.distance(origin))
         {
             world.deafened.write(Deafened { target, effect });
         }

@@ -144,6 +144,8 @@ impl Plugin for SimPlugin {
 /// view, its server name and its HUD.
 pub fn front_end(app: &mut App, _: &Args) {
     app.insert_resource(chimera_client::client::video::PlayerFov(DEFAULT_FOV))
+        // The view model keeps its 54 whatever the slider's base (12.4).
+        .insert_resource(chimera_world::map::SettingsFollowPlayerFov)
         // Its server name until the player's own (`cfg/settings.scr`'s
         // default, Create Server's Game page).
         .insert_resource(chimera_net::net::query::Hosting { hostname: "Half-Life 2 Deathmatch".into(), ..default() })

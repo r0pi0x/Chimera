@@ -40,6 +40,7 @@ pub fn fov() -> crate::map::GameFov {
         game: GAME,
         fov: s.fov,
         default_fov: s.default_fov,
+        follows_player: false,
     }
 }
 

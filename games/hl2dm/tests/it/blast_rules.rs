@@ -397,3 +397,55 @@ fn an_explosive_drum_goes_off() {
     assert!(log.decals >= 1, "its scorch");
     assert!(sim.app.world().get::<Health>(p).unwrap().current < 50.0);
 }
+
+/// Spec 2.2: a blast's hearing. A health part of 30 shocks; below it, a
+/// player whose origin is within 240 units of the blast rings; farther
+/// (hurt or not), nothing. Each stands on a side of the blast so none
+/// shields another.
+#[test]
+fn a_blast_rings_or_shocks_the_ears_near_it() {
+    let mut sim = start(floor());
+    sim.seconds(0.5);
+    let centre = Vec3::new(0.0, 400.0, 0.0);
+    let (shocked, rung, hurt_far, clear) = (
+        centre + Vec3::new(50.0, 0.0, 0.0),
+        centre + Vec3::new(-200.0, 0.0, 0.0),
+        centre + Vec3::new(0.0, 245.0, 0.0),
+        centre + Vec3::new(0.0, -400.0, 0.0),
+    );
+    let ids: Vec<Entity> = [shocked, rung, hurt_far, clear].iter().map(|&at| player(&mut sim, at)).collect();
+    for (p, at) in ids.iter().zip([shocked, rung, hurt_far, clear]) {
+        place(&mut sim, *p, at);
+    }
+    sim.ticks(2);
+    deaf_log(&mut sim);
+    // 100 damage over 250 units: 80 at the first (shock), 20 at 200
+    // (inside 240, below 30: rings), 2 at 245 (hurt, too far to ring), none
+    // past the radius.
+    sim.app.world_mut().write_message(BlastAt {
+        at: to_engine(centre),
+        blast: launch::blast(100.0, 250.0, None, None),
+        thrower: None,
+        weapon: weapons::FRAG,
+        inflictor: None,
+    });
+    sim.ticks(3);
+    let got = sim.app.world().resource::<DeafLog>().0.clone();
+    let of = |p: Entity| got.iter().find(|d| d.target == p).map(|d| d.effect);
+    assert_eq!(of(ids[0]), Some(chimera_sim::weapon::grenade::SHOCK_MUFFLE), "a health part of 30 or more shocks");
+    assert_eq!(of(ids[1]), Some(chimera_sim::weapon::grenade::EXPLOSION_RING), "within 240, below 30: rings");
+    assert_eq!(of(ids[2]), None, "hurt but past 240: nothing");
+    assert_eq!(of(ids[3]), None, "outside the radius: nothing");
+}
+
+/// What `Deafened` messages the blast sent.
+#[derive(Resource, Default)]
+struct DeafLog(Vec<chimera_core::core::Deafened>);
+
+/// Start collecting `Deafened`.
+fn deaf_log(sim: &mut Sim) {
+    fn collect(mut m: MessageReader<chimera_core::core::Deafened>, mut log: ResMut<DeafLog>) {
+        log.0.extend(m.read().copied());
+    }
+    sim.app.init_resource::<DeafLog>().add_systems(Update, collect);
+}

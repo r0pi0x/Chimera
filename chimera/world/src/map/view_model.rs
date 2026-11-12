@@ -139,9 +139,31 @@ pub struct GameFov {
     pub game: &'static str,
     pub fov: f32,
     pub default_fov: f32,
+    /// `default_fov` is the player's own unzoomed field of view
+    /// (`fov_desired`, which the client keeps in it: `follow_player`), so
+    /// the view model keeps its `fov` whatever the player's base is
+    /// (HL2:DM, player_models.md 12.4). False: `default_fov` stays as set
+    /// (CS:S's 90, Combat Arms').
+    pub follows_player: bool,
 }
 
+/// An app of one game whose `ViewModelSettings.default_fov` is the
+/// player's unzoomed field of view (`GameFov::follows_player`'s meaning
+/// for the app's only game): the client keeps it so.
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct SettingsFollowPlayerFov;
+
 impl GameViewModelFovs {
+    /// The games that follow the player's field of view take `base` (the
+    /// player's unzoomed field of view) as their `default_fov`.
+    pub fn follow_player(&mut self, base: f32) {
+        for f in self.0.iter_mut().filter(|f| f.follows_player) {
+            if f.default_fov != base {
+                f.default_fov = base;
+            }
+        }
+    }
+
     /// `base` with the fields of view of `game` (None: unchanged).
     pub fn settings_for(&self, base: ViewModelSettings, game: Option<&str>) -> ViewModelSettings {
         match game.and_then(|g| self.0.iter().find(|f| f.game == g)) {
@@ -155,7 +177,7 @@ impl GameViewModelFovs {
         if let Some(i) = self.0.iter().position(|f| f.game == game) {
             return &mut self.0[i];
         }
-        self.0.push(GameFov { game, fov, default_fov });
+        self.0.push(GameFov { game, fov, default_fov, follows_player: false });
         self.0.last_mut().expect("just pushed")
     }
 }
