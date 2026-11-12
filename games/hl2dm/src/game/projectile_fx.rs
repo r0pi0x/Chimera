@@ -16,6 +16,10 @@
 //! - **The shot satchel's pop** (`SatchelPop`, the server's, sent to
 //!   clients too: net part `hl2dm_projectile_fx`): a scale-0 explosion,
 //!   the flash and the debris (`explosions::pop`) and its sound.
+//! - **Crush and drowning flashes** (effects_sounds.md 7 "Blood",
+//!   `damage_flashes`): the victim's screen flashes red (128, 0, 0) for
+//!   crush damage, a prop's hit too, blue (0, 0, 128) for drowning;
+//!   alpha 128, fade 1.0 s, hold 0.1 s.
 //! - **The rocket** (`MISSILE_MODEL`, every frame): 8 flare sprites behind
 //!   it and a smoke puff for each 4 units it travelled.
 //! - **The energy ball** (`BALL_MODEL`, every frame): the animated body
@@ -109,7 +113,7 @@ use super::{
     },
 };
 use crate::{
-    core::{BlastFlags, LocalPlayer, MovementState},
+    core::{BlastFlags, DamageKind, DamageTaken, LocalPlayer, MovementState},
     map::{
         DecalGroup, ParticleRng, PlaceDecal, PlaySound,
         logic_view::{ScreenFade, ScreenFades},
@@ -465,6 +469,51 @@ fn shooter_fades(
                 ScreenFade {
                     duration: ScreenFade::quantize(duration),
                     hold: 0.0,
+                    color,
+                    alpha,
+                    fade_in: true,
+                    modulate: false,
+                    stay_out: false,
+                    purge: false,
+                },
+                time.elapsed_secs_f64(),
+            );
+        }
+    }
+}
+
+/// The screen flash of crush damage (a prop's hit counts) and of drowning
+/// (effects_sounds.md 7 "Blood"): colour, alpha, fade seconds, hold seconds.
+pub const CRUSH_FLASH: ([u8; 3], u8, f32, f32) = ([128, 0, 0], 128, 1.0, 0.1);
+pub const DROWN_FLASH: ([u8; 3], u8, f32, f32) = ([0, 0, 128], 128, 1.0, 0.1);
+
+/// The flash a damage kind makes on its victim's screen, if any.
+pub fn damage_flash(kind: DamageKind) -> Option<([u8; 3], u8, f32, f32)> {
+    match kind {
+        DamageKind::Crush => Some(CRUSH_FLASH),
+        DamageKind::Drown => Some(DROWN_FLASH),
+        _ => None,
+    }
+}
+
+/// The local player's screen flashes red when crushed and blue when
+/// drowning (`DamageTaken`: the server's report on a network client).
+fn damage_flashes(
+    mut taken: MessageReader<DamageTaken>,
+    local: Query<(), With<LocalPlayer>>,
+    mut fades: Option<ResMut<ScreenFades>>,
+    time: Res<Time>,
+) {
+    for t in taken.read() {
+        let Some((color, alpha, duration, hold)) = damage_flash(t.damage.kind) else { continue };
+        if !local.contains(t.damage.target) || t.damage.amount <= 0.0 {
+            continue;
+        }
+        if let Some(f) = fades.as_mut() {
+            f.show(
+                ScreenFade {
+                    duration: ScreenFade::quantize(duration),
+                    hold,
                     color,
                     alpha,
                     fade_in: true,
@@ -1228,11 +1277,12 @@ impl Plugin for Hl2ProjectileFxPlugin {
             .register_type::<Hl2FlyerVelocity>()
             .add_message::<SatchelPop>()
             .add_message::<FlyerFx>()
+            .add_message::<DamageTaken>()
             .add_message::<PlaceDecal>()
             .add_systems(
                 FixedUpdate,
                 (
-                    (explosions, shooter_fades).after(crate::core::SimSet::Weapons),
+                    (explosions, shooter_fades, damage_flashes).after(crate::core::SimSet::Weapons),
                     (scorches, flyer_fx, mark_for_clients)
                         .after(crate::core::SimSet::Weapons)
                         .run_if(crate::core::authoritative),
