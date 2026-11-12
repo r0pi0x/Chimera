@@ -272,10 +272,17 @@ fn power_accuracy(
     s.follow = Some(tighter(&|k| k.spread + k.stand + k.fire * 4.0 * at.firing));
 }
 
+/// Whether a grenade hurts (`weapon::harm`): the HE's blast; the flash
+/// and the smoke don't.
+fn harm_grenade(p: &chimera_sim::weapon::harm::HookParams) -> bool {
+    p.get("effect").and_then(|e| e.as_str()) == Some("he")
+}
+
 /// Register the behaviour CS:S's weapon data names.
 pub fn register_hooks(app: &mut App) {
-    use chimera_sim::minigame::power::PowerAppExt;
+    use chimera_sim::{minigame::power::PowerAppExt, weapon::harm::HarmAppExt};
     app.add_power_reader(ACCURACY, power_accuracy);
+    app.add_harm_reader(GRENADE, harm_grenade);
     app.register_weapon_hook::<AccuracyParams>(ACCURACY, |e, _, p| {
         let acc = Inaccuracy::new(p.keys(), p.alt, (p.recovery_crouch, p.recovery_stand));
         if let Some(mut scan) = e.get_mut::<Hitscan>() {

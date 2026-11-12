@@ -101,6 +101,7 @@ mod heavy {
     mod infected;
     mod junk_flea2;
     mod launchers_install;
+    mod no_damage_install;
     mod map_cache;
     mod map_load;
     mod missions;

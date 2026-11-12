@@ -165,35 +165,18 @@ the original's own behaviour isn't a bug (say so instead).
   and CS:S's own `particle_noisesphere` don't ask, so they stay cut, which by
   their files is the original's look too. A real-game capture (grenades.md
   Q9) would settle it; softening them all is a one-line choice if wanted.
-- **RMS-12 on a gun game's rung (decision):** it burns nobody: its ammo's
-  `ProgDamage` is 0 (specs/combat_arms/special_weapons.md 4, Open question
-  8), so that is the original's data, not a bug. Its flames do show now and
-  cut glass. On a rung, only the knife climbs. Waiting on the user: keep it,
-  leave zero-damage guns (this, the M136_AT4) out of generated ladders, or a
-  party option that burns?
+- **Decided (user, 2026-11-12): guns that do no damage stay off drawn
+  ladders** (the RMS-12, the M136_AT4, the stun launchers; DESIGN.md "Gun
+  game rules"), and so do the skins drawn wrong (the Neon Outlaw and the
+  other ASW338LM skins painted for a missing UV layout, the AUG A3
+  Champions Lightning): `weapon::harm`, Combat Arms'
+  data/ladder_exclusions.toml, `ladder_skipped`.
 - **Nothing blocks the main thread (user, 2026-11-09).** Rung and character
   changes, a late model's arrival, the first ticks on a map and a map's swap
   (spawned a step a frame behind the loading screen, the simulation waiting,
   no catch-up ticks after) no longer stop a frame (docs/performance.md,
   "Nothing blocks the main thread" and "A map's swap", with numbers and
   guards). Measured in the real app offscreen (2026-11-10, docs/performance.md "The real app's rungs and swaps, offscreen"): each rung's worst frame 45-65 M less ticks, 7-17 ms wall, render thread under 7 ms; a swap's worst frame 53-74 ms wall (main 42-73 ms, render world 50-62 ms), entering cs_office 7.7 s, dm_lockdown 6.9 s, warehouse 2.9 s from the command. Each swap frame over 33 ms profiled and the biggest fixed (2026-11-10, docs/performance.md "A map's swap in the real app"; profiling build): the render world's mesh uploads paced (`client::upload_pace`: Bevy's allocator wrote every new mesh in one frame, up to 385 M and 1.5 s), textures 16 MiB a frame, the first `map`'s map list read ahead, the first tick's install reopening and old rigs/objects freed on tasks, smaller spawn steps and settling slices: render worst 74-102 M (was 211-269), no render frame over 33 ms of CPU; main worst 220-255 M (was 364-439). A rung's worst frame is 25-41 M on that build (perf_report, despawns, text): fine. Left: the text sizes no source declares (16.0, 21.2, 23.8, 16.1, 15.3, 16.875, 21.5 px in that run); of a map's swap, the frame the whole map goes into the world (220-255 M profiling build; Avian's insert hook computing every new collider's mass properties a third, which Avian 0.8 can't be told to skip; a fix would insert the map's colliders in the next frames through a second queue, the simulation still paused) and the first tick on the map (120-125 M profiling: the logic world's and Combat Arms' objects' spawns, their colliders, the first physics step), props' shadows redrawn as they settle (a quarter of settling's frames), a ragdoll's first frame (convex hulls per death), a match's start (100 M); weapons off the ladder reading their timing on the frame; dedicated servers' nav flood in one tick.
-- **Neon Outlaw ASW338LM (Combat Arms)** looks like it has the wrong UV
-  map, and the AUG A3 Champions Lightning draws grey. Answered on build
-  26236938 (models_ltb.md W1-W3): Neon Outlaw is `ASW338LMspunk`; its view
-  skin (and the Royal Gold, graf, sakura, sea and weastland ASW338LM
-  skins) is painted for a UV layout no ASW338LM model of the install has,
-  so it scatters as the files say (same header, model and UVs as the skins
-  that fit: no reading bug); its held skin and the AUG A3 Champions
-  Lightning's (`AUGA3ChampionsLighting`) view skin aren't in the install
-  (grey, as the game leaves them). `CHIMERA_SKINS_SHOW=outlaw,champions`
-  prints them. Tests: `attribute_data::sprite_skins_and_an_added_weapons_held_look`,
-  `model::a_sprite_skin_draws_its_first_frame`; the sweep:
-  `cargo test -p combat_arms --features dev,ui --test it
-  heavy::weapon_skins -- --nocapture`. Waiting on the user: leave the
-  Neon Outlaw out of the ladder?
-
-### Gun game playtest, 2026-10-28 (user)
-
 - **A Combat Arms map's ambient loops start again on the next map
   (2026-11-10): fixed, confirm in a playtest.** Swapping from junk_flea to
   dm_lockdown, junk_flea's looping `SoundFX` started anew behind the

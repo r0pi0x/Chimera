@@ -630,6 +630,16 @@ that):
   Game's ladder is drawn this way; a hand-written definition keeps its
   ladder unless it opts in (`ladder = "auto"`, `rungs`, `power_curve` to
   tune it), drawn on the host at each match's start and replicated.
+- **No gun that does no damage on a drawn rung** (user, 2026-11-12): a
+  weapon that can't hurt a player is lame on a rung, so a draw leaves it
+  out, by its own data, not a list (`weapon::harm::can_damage_player`:
+  every damage path its data names, Chimera's ray, swing and flyer and
+  each game's hooks through its registered readers; Combat Arms' RMS12
+  burns 0, its M136_AT4 blasts 0). A game's data may leave out more, each
+  with its reason (`auto::DrawExclusions`; Combat Arms'
+  data/ladder_exclusions.toml: the infection stun launchers, the skins
+  drawn wrong). `ladder_skipped` lists them; a hand-written ladder may
+  still name any of them.
 - **Rung extras, the same for everyone on a rung** (`rung_extras`,
   default on): when a ladder is made (each map, each new ladder) a game
   may draw something for each of its rungs from the match's seeded
