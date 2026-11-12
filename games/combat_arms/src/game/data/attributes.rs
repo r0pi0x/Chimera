@@ -1229,6 +1229,33 @@ pub struct BodyLook {
     /// `_HandsSkin#` for model colours m = 0..4 (characters.md Corrections
     /// (2026-10-30) 1).
     pub colour_skins: Vec<ColourSkins>,
+    /// `HandIndex`: its first-person hands' `Hand#` record (-1: none;
+    /// view_models.md 1). A record without the key: 0, the stock hand.
+    pub hand: i32,
+    /// `HandsSkin0..`: the sleeve texture per face, a pattern with one
+    /// two-digit number (the uniform item index; view_models.md 2).
+    pub hands_skins: Vec<String>,
+}
+
+/// `Hand<N>`: a first-person hand model record (view_models.md 1, 2): its
+/// file (`ModelFile`), skins by texture index (`Skin0..`) and colour
+/// variants (`ColorSkin{c}_0..`, each replacing the whole list).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HandLook {
+    pub file: String,
+    pub skins: Vec<String>,
+    pub colour_skins: Vec<Vec<String>>,
+}
+
+impl HandLook {
+    pub fn read(s: &Section) -> Self {
+        let list = |prefix: &str| -> Vec<String> { s.string_list(prefix).iter().map(|v| text(v)).collect() };
+        Self {
+            file: s.string("ModelFile").map(text).unwrap_or_default(),
+            skins: list("Skin"),
+            colour_skins: (0..MODEL_COLOURS).map(|c| list(&format!("ColorSkin{c}_"))).collect(),
+        }
+    }
 }
 
 /// One model colour's skin lists (empty: the base list stays).
@@ -1289,6 +1316,8 @@ impl BodyLook {
                     hands: list(&format!("ColorSkin{m}_HandsSkin")),
                 })
                 .collect(),
+            hand: s.int("HandIndex", 0),
+            hands_skins: list("HandsSkin"),
         }
     }
 }
@@ -1363,6 +1392,8 @@ pub struct ModelsFile {
     pub bodies: Vec<BodyLook>,
     /// `Overidable_Model<N>`, by record index.
     pub overrides: Vec<InfectionLook>,
+    /// `Hand<N>`: the first-person hand models, by record index.
+    pub hands: Vec<HandLook>,
     /// `AIModel<N>` (characters.md 13.2), by record index.
     pub npcs: Vec<NpcLook>,
     /// `AIFace<N>` (the same fields as `Face<N>`), by record index.
@@ -1384,6 +1415,7 @@ impl ModelsFile {
             faces: doc.records("Face").into_iter().map(PieceRecord::read).collect(),
             bodies: doc.records("Model").into_iter().map(BodyLook::read).collect(),
             overrides: doc.records("Overidable_Model").into_iter().map(InfectionLook::read).collect(),
+            hands: doc.records("Hand").into_iter().map(HandLook::read).collect(),
         }
     }
 }

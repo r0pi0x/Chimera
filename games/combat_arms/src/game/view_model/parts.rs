@@ -52,8 +52,10 @@ pub fn view_key(id: &str, mods: Option<&CaMods>) -> String {
     key
 }
 
-/// A view-model key's weapon id and part names.
+/// A view-model key's weapon id and part names (its hands part,
+/// `hands::split_key`, left out).
 pub fn split_key(key: &str) -> (&str, Vec<&str>) {
+    let key = super::hands::split_key(key).0;
     let mut it = key.split(SEP);
     let id = it.next().unwrap_or(key);
     (id, it.collect())

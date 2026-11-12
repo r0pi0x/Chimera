@@ -16,6 +16,10 @@
 //! A weapon with drawn parts shows its own view model (`parts::view_key`:
 //! `<weapon>+<part>+...`), made here from the weapon's with the parts'
 //! models on it (`load_with_parts`); the bare gun's stands in meanwhile.
+//! A local player whose look's hands aren't the default character's
+//! (`hands::key_for`: a ladder rung's body) gets each of his weapons'
+//! again with his hands (`<key>#h<model>_<face>_<uniform>`), the default
+//! one standing in meanwhile.
 //!
 //! Only Combat Arms' own weapons load here (`ours`): another game's gun in
 //! a mashup (CS:S's in Lucker Party) has its own game's view model, which
@@ -51,6 +55,7 @@ use super::{
     },
     hands, load_hands, load_sharing, parts,
 };
+use super::super::characters::records::Selection;
 use crate::{
     core::LocalPlayer,
     map::{LoadContext, MapData, MapTexture, MapViewModel, ViewAnimator, ViewModels, add_view_model},
@@ -129,21 +134,23 @@ pub fn forget(ca: &CaDataInner, keep: &std::collections::BTreeSet<String>) {
 }
 
 /// Weapon `id`'s view model from install data `ca`'s install through
-/// `file` (`load`, with the default character's hands when they read),
-/// with its own textures; Err when its data names none or it doesn't
-/// read.
+/// `file` (`load`, with the hands its key names when they read: the
+/// default character's without a hands part, `hands::key_for`), with its
+/// own textures; Err when its data names none or it doesn't read.
 pub fn load_weapon(ca: &CaDataInner, id: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<LoadedViewModel, String> {
     // A weapon with fitted parts (`parts::view_key`): its own view model,
-    // the parts on it.
-    let (base, names) = parts::split_key(id);
+    // the parts on it (the bare gun's with the same hands under them).
+    let (body, profile) = hands::split_key(id);
+    let (base, names) = parts::split_key(body);
     if !names.is_empty() {
-        return load_with_parts(ca, id, base, file);
+        let bare = format!("{base}{}", &id[body.len()..]);
+        return load_with_parts(ca, id, &bare, file);
     }
     let w = ca
         .weapon_set()
         .weapons
         .iter()
-        .find(|w| w.id == id)
+        .find(|w| w.id == base)
         .ok_or_else(|| format!("{id}: no such weapon"))?;
     let path = w.models.view.as_deref().ok_or_else(|| format!("{id}: no view model in its data"))?;
     let offset = w.models.view_offset.unwrap_or_default();
@@ -151,10 +158,11 @@ pub fn load_weapon(ca: &CaDataInner, id: &str, file: &dyn Fn(&str) -> Option<Vec
     let mut own = MapData::default();
     // Kept for later maps: its textures as their blocks.
     own.memos.insert(super::super::world::BlocksOnly);
-    let choice = hands::choose(&hands::builtin(), &hands::HandProfile {
-        character: true,
-        ..default()
-    });
+    let characters = ca.characters();
+    let choice = match profile {
+        Some(p) => hands::choose_in(characters, &p),
+        None => hands::default_choice(characters),
+    };
     let mut warnings = Vec::new();
     let hand = match choice.as_ref().map(|c| load_hands(c, &mut own, file)) {
         Some(Ok(h)) => Some(h),
@@ -167,6 +175,8 @@ pub fn load_weapon(ca: &CaDataInner, id: &str, file: &dyn Fn(&str) -> Option<Vec
     let mut v =
         load_sharing(path, &w.id, &w.models.view_skins, offset, &mut own, file, &ca.memo(super::ViewAnimations::default))
             .map_err(|e| format!("{id} view model: {e}"))?;
+    // Its own key (the hands part with it).
+    v.key = id.to_string();
     if let Some((meshes, bones)) = hand {
         let at = Vec3::from(lithtech_formats::ltb::to_rh_vec(offset)) * super::VIEW_SCALE;
         if let Err(e) = hands::attach(&mut v, meshes, &bones, super::VIEW_SCALE, at) {
@@ -180,11 +190,12 @@ pub fn load_weapon(ca: &CaDataInner, id: &str, file: &dyn Fn(&str) -> Option<Vec
     })
 }
 
-/// View-model key `key` (`parts::view_key`): weapon `base`'s view model
-/// (`load_cached`) with its parts' models on it, its textures with
-/// theirs.
-fn load_with_parts(ca: &CaDataInner, key: &str, base: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<LoadedViewModel, String> {
-    let bare = load_cached(ca, base, file)?;
+/// View-model key `key` (`parts::view_key`): weapon `bare`'s view model
+/// (`load_cached`, its key with the same hands) with its parts' models on
+/// it, its textures with theirs.
+fn load_with_parts(ca: &CaDataInner, key: &str, bare: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<LoadedViewModel, String> {
+    let base = parts::split_key(bare).0;
+    let bare = load_cached(ca, bare, file)?;
     let params = ca
         .weapon_set()
         .get(base)
@@ -238,7 +249,7 @@ pub struct Pending(BTreeMap<String, Task<Loaded>>);
 /// when done.
 pub fn load_on_demand(
     models: Option<Res<ViewModels>>,
-    local: Query<&Inventory, With<LocalPlayer>>,
+    local: Query<(&Inventory, Option<&Selection>), With<LocalPlayer>>,
     shown: Query<&ViewAnimator>,
     weapons: Query<(&Weapon, Option<&CaMods>)>,
     context: Option<Res<LoadContext>>,
@@ -269,11 +280,19 @@ pub fn load_on_demand(
     // characters show (a spectated player's).
     // A weapon with drawn parts: its bare view model first (the parts'
     // is made from it), then the one with its parts (`parts::view_key`).
+    // The local player's worn look's hands (`hands::key_for`): each of
+    // those again with them, after the default character's.
     let mut wanted: Vec<String> = Vec::new();
-    for inv in &local {
+    for (inv, look) in &local {
+        let hand = look.and_then(|l| hands::key_for(ca.characters(), l));
         for (w, mods) in inv.active.iter().chain(&inv.weapons).filter_map(|e| weapons.get(*e).ok()) {
-            wanted.push(w.id.to_string());
-            wanted.push(parts::view_key(w.id, mods));
+            let (bare, with_parts) = (w.id.to_string(), parts::view_key(w.id, mods));
+            if let Some(h) = hand.as_deref() {
+                wanted.push(hands::with_hands(&bare, Some(h)));
+                wanted.push(hands::with_hands(&with_parts, Some(h)));
+            }
+            wanted.push(bare);
+            wanted.push(with_parts);
         }
     }
     wanted.extend(shown.iter().filter_map(|v| v.key.clone()));
