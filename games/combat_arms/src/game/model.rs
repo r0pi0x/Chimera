@@ -21,8 +21,8 @@
 //!   before children (the file's depth-first order).
 //! - Meshes: LOD 0 of every piece, one `MapMesh` per piece, skinned with
 //!   each vertex's nodes and weights (`ltb::Mesh::vertex_influences`):
-//!   rigid pieces follow their node, bone sets and palettes blend.
-//!   `texture` names each piece's skin (by its first texture index; the
+//!   rigid pieces follow their node, bone sets and palettes blend; each
+//!   mesh keeps its piece's name (`MapModel::mesh_names`). `texture` names each piece's skin (by its first texture index; the
 //!   caller's skin list, e.g. a world object's `Skin`).
 //! - Animations: the combined list (`lithtech_formats::anim::AnimList`:
 //!   own, then each child's), each entry one looping `Sequence` sampled
@@ -373,10 +373,12 @@ pub fn convert_with(
     let bones = bones(model);
     let animations = animations(&bones);
     let mut meshes = Vec::new();
+    let mut mesh_names = Vec::new();
     let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
     for piece in &model.pieces {
         let Some(lod) = piece.lods.first() else { continue };
         let Some(g) = lod.mesh.geometry() else { continue };
+        mesh_names.push(piece.name.clone());
         let positions: Vec<[f32; 3]> = g.positions.iter().map(|&p| (rh(p) * scale).to_array()).collect();
         for p in &positions {
             lo = lo.min(Vec3::from(*p));
@@ -407,6 +409,7 @@ pub fn convert_with(
     }
     MapModel {
         meshes,
+        mesh_names,
         bounds: (lo, hi),
         rig: Some(Arc::new(MapRig {
             bones,

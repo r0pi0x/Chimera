@@ -46,7 +46,8 @@
 //! a game's own pieces worn with it, `ArmorPieces`: `coverage`),
 //! with a `BulletHit` for each bullet hit on something with health (games'
 //! reactions: CS:S's slowdown and flinch); `ViewPunch` (pitch, yaw, roll) on
-//! the view and, scaled, on the shots; `HolsterLocked` (a weapon that can't
+//! the view and, scaled, on the shots; `ViewBackPush` (the camera pushed
+//! back along its view, Combat Arms' shots: predicted, not sent); `HolsterLocked` (a weapon that can't
 //! be put away now), `Unselectable` (one that can't be switched to);
 //! `ArmourShare` (a hit's damage before the armour took its share);
 //! `Inflicted` (where a projectile's or blast's damage
@@ -298,6 +299,7 @@ impl Plugin for WeaponPlugin {
             .predicted_part::<AltModes>()
             .predicted::<Hitscan>()
             .predicted_net::<ViewPunch>()
+            .predicted::<ViewBackPush>()
             .predicted_net::<Zoomed>()
             // From the spawn, not from the first shot.
             .on_every_character::<ViewPunch>();
@@ -1110,6 +1112,16 @@ pub struct AltShot {
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[component(storage = "SparseSet")]
 pub struct ViewPunch(pub Vec3);
+
+/// How far a character's first-person camera sits back along its own
+/// forward axis, metres (Combat Arms' per-shot back push,
+/// specs/combat_arms/weapon_firing.md "Recoil (view kick)"): the world
+/// moves, not the view model, and shots still leave from the eye. Games
+/// that push set and return it; predicted with the player but not sent
+/// (the client's own view only).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+#[component(storage = "SparseSet")]
+pub struct ViewBackPush(pub f32);
 
 /// A bullet hit on something with health, as the weapon layer dealt it
 /// (the server's, once per target per shot: a shotgun's pellets on one

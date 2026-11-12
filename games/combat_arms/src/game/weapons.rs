@@ -89,7 +89,11 @@
 //!   mode. The state is the player's (`CaKick`: Corrections 1), read with
 //!   the weapon in hand's data (the record defaults when it has none).
 //!   With another game's weapon in hand (`weapon::impact::RecoilGame`)
-//!   the kick ends and neither kicks nor returns touch the punch.
+//!   the kick ends and neither kicks nor returns touch the punch. The
+//!   back push: `BaseCamBackJitter` added to a backward offset per shot,
+//!   returned at 5 x `BackJitterRecover` a second, the camera 10 x it
+//!   units back along its view (Chimera's `ViewBackPush`: predicted with
+//!   the player, not sent).
 //! - Pushes: a round that meets a physics object gives it
 //!   `IMPULSE_PER_HIT_POINT` N·s a hit point of its damage there
 //!   (`weapon::impact::BulletImpulse`, also the damage's force).
@@ -205,8 +209,10 @@
 //!   pieces go over the network by name (`GEARS`). Figure modifiers are 0
 //!   (both figure types). Nothing marks a character infected yet (no game
 //!   modes).
-//! - Not done: the back push (`BaseCamBackJitter`) and the view-model
-//!   jiggle (presentation), continuous fire, perk and set bonuses (Q8:
+//! - The back push moves the camera only: shots still leave from the eye
+//!   (the spec's first-person ray starts at the pushed camera), and it
+//!   steps per tick, not per frame.
+//! - Not done: continuous fire, perk and set bonuses (Q8:
 //!   identity in a plain match), the fire-mode key (the toggle is attack2
 //!   until the binds come), the out-of-ammo voice line. The pre-fire is the
 //!   trigger's latency, not an animation (the minigun's spin is,
@@ -241,7 +247,8 @@ use crate::{
     },
     map::{SurfaceNames, sound::SurfaceGrid},
     weapon::{
-        AltModes, Burst, CarriedAppExt, Hitscan, ParamsAppExt, Inventory, NetPart, SpreadShape, ViewPunch, WeaponEvent,
+        AltModes, Burst, CarriedAppExt, Hitscan, ParamsAppExt, Inventory, NetPart, SpreadShape, ViewBackPush, ViewPunch,
+        WeaponEvent,
         Armor, ArmorPieces, WeaponEventKind, WeaponFrame, Zoom, aim_of,
         hits,
         data::{WeaponData, WeaponDataAppExt},
@@ -615,7 +622,8 @@ pub struct RecoilParams {
     pub max_wag: f32,
     /// `MaxRandomwag`, radians.
     pub random_wag: f32,
-    /// `BaseCamBackJitter`, `BackJitterRecover` (not used yet).
+    /// `BaseCamBackJitter`, `BackJitterRecover`: the back push per shot
+    /// and its return, 5 x this per second (`CaRecoil::back_kick`).
     pub back_jitter: f32,
     pub back_jitter_recover: f32,
     /// `TripleShotBaseCamRecoilPitch`, `TripleShotMaxCamRecoilPitch`: the
@@ -1023,6 +1031,13 @@ pub struct CaRecoil {
     pub mods: RecoilMods,
 }
 
+/// The camera moves back along its forward axis by this times the back
+/// push's offset, units (view_models.md 4).
+pub const BACK_PUSH_SCALE: f32 = 10.0;
+/// The back push returns at this times `BackJitterRecover` a second
+/// (weapon_firing.md, "Back push").
+pub const BACK_RECOVER_SCALE: f32 = 5.0;
+
 /// The recoil of a weapon with no `combat_arms:recoil` table: the record
 /// defaults (a knife or a grenade in hand still returns the view).
 pub static DEFAULT_RECOIL: LazyLock<CaRecoil> = LazyLock::new(|| CaRecoil::new(RecoilParams::default()));
@@ -1094,6 +1109,19 @@ impl CaRecoil {
         }
         // Combat Arms turns yaw by -w (+ right); the engine's yaw is + left.
         w
+    }
+
+    /// One shot's back push on the backward offset `back` (the data's
+    /// units; the camera sits `BACK_PUSH_SCALE` x it units back).
+    pub fn back_kick(&self, back: &mut f32) {
+        *back += self.params.back_jitter;
+    }
+
+    /// The back push's return over `dt` seconds: `BACK_RECOVER_SCALE` x
+    /// `BackJitterRecover` a second, down to none.
+    pub fn back_recover(&self, back: &mut f32, dt: f32) {
+        let step = dt * BACK_RECOVER_SCALE * self.params.back_jitter_recover;
+        *back = if *back > 0.0 { (*back - step).max(0.0) } else { (*back + step).min(0.0) };
     }
 
     /// The return of `k` over `dt` seconds at `now` (`burst`: the weapon
@@ -2473,6 +2501,7 @@ fn after_shots(
             Option<&super::movement::CaMovement>,
             Option<&mut CaKick>,
             Option<&crate::weapon::impact::RecoilGame>,
+            Option<&mut ViewBackPush>,
         ),
     >,
     mut weapons: Query<(
@@ -2643,7 +2672,9 @@ fn after_shots(
     // The recoil returns, the spread steps for each owner's active
     // weapon, then the kicks.
     let dt = clock.dt();
-    for (owner, inv, intent, state, vel, mut punch, ca_move, kick, recoil_game) in &mut owners {
+    // The back push's offset (units) as the camera's metres.
+    let back_metres = BACK_PUSH_SCALE * super::inventory::UNIT;
+    for (owner, inv, intent, state, vel, mut punch, ca_move, kick, recoil_game, push) in &mut owners {
         let active = inv.active.and_then(|a| weapons.get_mut(a).ok().map(|w| (a, w)));
         let (recoil, mode, burst_mode) = match &active {
             Some((_, (_, _, recoil, _, modes, burst, zoom, ca_zoom))) => {
@@ -2668,14 +2699,19 @@ fn after_shots(
         // id: tests' `test:` guns.)
         let ours = crate::weapon::impact::RecoilGame::is(recoil_game, crate::game::GAME)
             || active.as_ref().is_some_and(|(_, w)| w.2.is_some());
+        let mut back = push.as_deref().map_or(0.0, |p| p.0) / back_metres;
         if !ours {
             k.pitch = 0.0;
             k.yaw = 0.0;
+            back = 0.0;
         }
         // The return, with the data of the weapon in hand (Corrections 1).
         if ours && (k.pitch > 0.0 || k.yaw != 0.0) {
             let (down, side) = recoil.recover(&mut k, dt, now, burst_mode);
             add_punch(&mut punch, &mut commands, owner, Vec3::new(-down, side, 0.0));
+        }
+        if back != 0.0 {
+            recoil.back_recover(&mut back, dt);
         }
         let mine: Vec<&Round> = active
             .as_ref()
@@ -2703,6 +2739,20 @@ fn after_shots(
                 let roll = shared_random(intent.command, "combat_arms:wag", i as i32).next();
                 let side = recoil.wag(&mut k, roll);
                 add_punch(&mut punch, &mut commands, owner, Vec3::new(up, side, 0.0));
+                recoil.back_kick(&mut back);
+            }
+        }
+        let back = ViewBackPush(back * back_metres);
+        match push {
+            Some(mut have) => {
+                if *have != back {
+                    *have = back;
+                }
+            }
+            None => {
+                if back.0 != 0.0 {
+                    commands.entity(owner).insert(back);
+                }
             }
         }
         match kick {

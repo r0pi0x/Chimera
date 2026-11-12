@@ -2077,3 +2077,73 @@ fn view_model_hands_change_with_the_body() {
     sim.ticks(2);
     assert_eq!(key_of(&sim).as_deref(), Some(hers.as_str()));
 }
+
+/// A launcher with a projectile piece and a hidden piece (3, case 37 in
+/// play): the RPG-7 with the install's kind of names on a stand-in model
+/// whose meshes are its pieces.
+const PIECES: &str = "test:rpg7_pieces";
+const PIECES_DOC: &str = r#"
+id = "test:rpg7_pieces"
+base = "combat_arms:rpg-7"
+[hooks."combat_arms:view_model"]
+projectile_piece = "Rocket"
+hidden_pieces = ["sight", "Missing"]
+# No blast: the greybox keeps its shooter alive.
+[hooks."combat_arms:projectile"]
+area_damage = 0.0
+"#;
+
+/// 3 in play: the rocket shows at the draw, goes with the shot, comes
+/// back when the reload starts; the last rocket fired, the hidden pieces
+/// go at the fire sequence's end and nothing comes back. The model's
+/// meshes go by name (`hidden_meshes`, without case), a missing one
+/// skipped.
+#[test]
+fn launcher_pieces_follow_fire_and_reload() {
+    let mut sim = sim();
+    sim.app.add_weapon_data(&[("pieces", PIECES_DOC)]).unwrap();
+    let launcher = vec![
+        a("select", 500, &[]),
+        a("idle_0", 2000, &[]),
+        a("fire_0", 300, &[(0, "FIRE_KEY")]),
+        a("reload", 1000, &[]),
+    ];
+    let mut model = view_model(PIECES, &launcher);
+    model.model.meshes = vec![MapMesh::default(); 3];
+    model.model.mesh_names = vec!["Body".into(), "Rocket".into(), "Sight".into()];
+    chimera_world::map::add_view_model(sim.app.world_mut(), model, Arc::new(Vec::new()));
+    let p = player(&mut sim);
+    let w = drawn(&mut sim, p, PIECES);
+    // The weapon's own draw (1.3 s) outlasts the stand-in's `select`.
+    sim.seconds(1.0);
+    let hidden = |s: &Sim| s.app.world().get::<ViewAnimator>(p).unwrap().hidden_meshes.clone();
+    assert_eq!(hidden(&sim), Vec::<usize>::new(), "drawn loaded: the rocket shows");
+    // A shot: the rocket goes.
+    sim.intent(p).fire = true;
+    sim.ticks(1);
+    sim.intent(p).fire = false;
+    assert!(until(&mut sim, 5, |s| hidden(s) == vec![1]), "{:?}", hidden(&sim));
+    assert!(until(&mut sim, 60, |s| s.app.world().get::<Magazine>(w).unwrap().clip == 0), "the weapon fired");
+    assert_eq!(hidden(&sim), vec![1]);
+    // The automatic reload: back when it starts, kept when it ends.
+    assert!(until(&mut sim, 120, |s| playing(s, p).as_deref() == Some("reload")));
+    assert_eq!(hidden(&sim), Vec::<usize>::new(), "back at the reload's start");
+    // (The weapon's own 3 s reload outlasts the stand-in's.)
+    assert!(until(&mut sim, 400, |s| s.app.world().get::<Magazine>(w).unwrap().clip == 1), "reloaded");
+    sim.ticks(5);
+    assert_eq!(hidden(&sim), Vec::<usize>::new());
+    // The last rocket: gone with the shot, the sight at the fire
+    // sequence's end (total 0), and no reload brings anything back.
+    sim.app.world_mut().get_mut::<Magazine>(w).unwrap().reserve = 0;
+    sim.intent(p).fire = true;
+    sim.ticks(1);
+    sim.intent(p).fire = false;
+    assert!(until(&mut sim, 5, |s| hidden(s) == vec![1]), "{:?}", hidden(&sim));
+    assert!(until(&mut sim, 60, |s| hidden(s) == vec![1, 2]), "{:?}", hidden(&sim));
+    sim.seconds(2.0);
+    assert_eq!(hidden(&sim), vec![1, 2]);
+    // Another weapon shown: every mesh of it drawn.
+    weapon::give(sim.app.world_mut(), p, M92FS).unwrap();
+    sim.ticks(3);
+    assert_eq!(hidden(&sim), Vec::<usize>::new());
+}

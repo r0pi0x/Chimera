@@ -1017,6 +1017,7 @@ fn convert_model_in(
         breaks: None,
         lods: Vec::new(),
         face: None,
+        mesh_names: Vec::new(),
     }
 }
 

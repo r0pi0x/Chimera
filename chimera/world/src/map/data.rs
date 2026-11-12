@@ -859,6 +859,11 @@ pub struct MapModel {
     /// flexes.
     #[serde(default)]
     pub face: Option<Arc<super::face::MapFace>>,
+    /// Each mesh's name in its source model, in `meshes`' order (LithTech
+    /// pieces: a view model hides one by name, `ViewAnimator::
+    /// hidden_meshes`); shorter or empty where the source names none.
+    #[serde(default)]
+    pub mesh_names: Vec<String>,
 }
 
 impl MapModel {

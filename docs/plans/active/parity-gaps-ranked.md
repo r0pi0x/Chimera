@@ -84,11 +84,17 @@ first, done on the Windows PC. Delete a row when it lands.
     RPG-7 keeps its rocket after firing. Spec: combat_arms/view_models.md
     3 "Hidden pieces", "Projectile piece", case 37. Code:
     `games/combat_arms/src/game/view_model/machine.rs`; data lacks
-    `ProjectilePiece`/`HiddenPiece#`. S-M. No spec.
+    `ProjectilePiece`/`HiddenPiece#`. S-M. No spec. **Done** (branch
+    `ca-parity-pieces-jitter`): read from the install, the view model's
+    pieces hidden by name (`ViewAnimator::hidden_meshes`); the spec
+    names no third-person piece hiding.
 14. **Combat Arms: no per-shot back push** (`BaseCamBackJitter`,
     recovering at 5 x `BackJitterRecover`/s); read and unused, default
     0.5. Spec: combat_arms/weapon_firing.md "Recoil (view kick)". Code:
     `games/combat_arms/src/game/weapons.rs` `back_jitter`. S. No spec.
+    **Done** (branch `ca-parity-pieces-jitter`): Chimera's
+    `ViewBackPush` on the camera, predicted, not sent (net41 kept);
+    shots still leave from the eye.
 
 ## Later (spec is clear, less often seen)
 
@@ -186,8 +192,7 @@ Do next 17, later 7, needs a spec or capture 10.
 
 `games/cs_source/src/game/weapons.rs` (recoil measured for a few guns:
 all 24 are), `chimera/sim/src/weapon/random.rs` (no lag compensation:
-there is), `games/combat_arms/src/game/weapons.rs` (view-model jiggle not
-done: it is), `games/combat_arms/src/game/special/mod.rs` (launchers
+there is), `games/combat_arms/src/game/special/mod.rs` (launchers
 without view models), `games/hl2dm/src/game/pickups.rs` (respawn light),
 `launch.rs` (spawn grace), `frag.rs` (gravity-gun catch), `rungs.rs`
 (bodies), `physcannon.rs` (claims a shake at the ball's end),

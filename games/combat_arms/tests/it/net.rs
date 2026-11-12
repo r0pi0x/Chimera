@@ -6,8 +6,8 @@
 //!   with the rifle drawn and its armour (the default join flow).
 //! - Movement (walking, sprinting, jumping, crouching) is predicted with
 //!   no error, and the other client sees it.
-//! - Shots: the shooter's client predicts its spread, kick and clip
-//!   without error; the server's hit reaches both clients (health and
+//! - Shots: the shooter's client predicts its spread, kick, back push
+//!   and clip without error; the server's hit reaches both clients (health and
 //!   armour replicated, the shooter's hit confirmed, the target hurt) and
 //!   the target's client draws the shots.
 //! - A scoped sniper (zoom, sway, the bolt's zoom-out) is predicted
@@ -34,7 +34,7 @@ use chimera_net::{
     },
 };
 use chimera_sim::weapon::{
-    Inventory, Magazine, Weapon, WeaponEvent, WeaponEventKind, lagcomp::LagCompStats, remote::RemoteShot,
+    Inventory, Magazine, ViewBackPush, Weapon, WeaponEvent, WeaponEventKind, lagcomp::LagCompStats, remote::RemoteShot,
 };
 use chimera_world::greybox::{self, GreyboxMapPlugin};
 use combat_arms::{
@@ -42,7 +42,7 @@ use combat_arms::{
         TICK_INTERVAL,
         inventory::{CaSelection, KNIFE, Knife, KnifePhase},
         movement::CaMovement,
-        weapons::{CaKick, CaSpread, CaZoom, RIFLE},
+        weapons::{CaKick, CaRecoil, CaSpread, CaZoom, RIFLE},
 
     },
     harness::CaSim,
@@ -281,6 +281,41 @@ fn movement_is_predicted_without_errors() {
         let drawn = sim.clients[1].app.world().get::<Transform>(copy).unwrap().translation;
         assert!(drawn.distance(end) < 0.1, "{latency} ms: client 1 draws it at {drawn}, the server has {end}");
     }
+}
+
+/// The back push (`ViewBackPush`) is the shooter's client's own: worked
+/// out in its predicted ticks (saved and replayed with them, never sent),
+/// so its camera goes back with each shot at once, with no prediction
+/// error, and comes back. The rifle (no push of its own) is given the
+/// record defaults' push (0.5 a shot, a return of 15 a second) on both
+/// sides.
+#[test]
+fn back_push_is_predicted_by_the_shooter() {
+    let mut sim = joined(100, 23);
+    face_off(&mut sim, 6.0);
+    let me = sim.local_player(0).unwrap();
+    let theirs = sim.character_of(0).unwrap();
+    for (world, who) in [(sim.clients[0].app.world_mut(), me), (sim.server.app.world_mut(), theirs)] {
+        let rifle = world.get::<Inventory>(who).unwrap().active.unwrap();
+        let mut r = world.get_mut::<CaRecoil>(rifle).unwrap();
+        r.params.back_jitter = 0.5;
+        r.params.back_jitter_recover = 3.0;
+    }
+    client_intent(&mut sim, 0).pitch = 0.3;
+    client_intent(&mut sim, 0).fire = true;
+    let mut most = 0.0f32;
+    for _ in 0..40 {
+        sim.step();
+        let push = sim.clients[0].app.world().get::<ViewBackPush>(me).map_or(0.0, |b| b.0);
+        most = most.max(push);
+    }
+    client_intent(&mut sim, 0).fire = false;
+    // 0.5 a shot is 5 u, 0.09 m; it returns within a few ticks.
+    assert!(most > 0.05 && most <= 0.0901, "the camera went back {most} m");
+    sim.ticks(60);
+    let push = sim.clients[0].app.world().get::<ViewBackPush>(me).map_or(0.0, |b| b.0);
+    assert_eq!(push, 0.0, "and came back");
+    assert_no_errors(&sim, "back push");
 }
 
 #[test]

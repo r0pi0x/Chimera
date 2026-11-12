@@ -1,8 +1,8 @@
 //! First-person view models (any game), what games and the drawing
 //! share: games load `MapViewModel`s with the map (or later, on demand:
 //! `add_view_model`, its own textures in `LateViewModelTextures`), drive each character's
-//! `ViewAnimator` (which sequence plays) and `ViewModelOffset` (bob and
-//! sway), and send `ViewModelEvent`s (muzzle flashes, brass);
+//! `ViewAnimator` (which sequence plays, which meshes are hidden) and
+//! `ViewModelOffset` (bob and sway), and send `ViewModelEvent`s (muzzle flashes, brass);
 //! `render::view_model` draws the view model of the character whose
 //! camera carries `ViewModelAnchor`, with the placement maths here
 //! (`placement`, `reproject`, `attachment_transform`, the fields of view).
@@ -221,16 +221,21 @@ pub struct ViewAnimator {
     pub animator: Option<anim::Animator>,
     /// Not drawn for now, though still animated (e.g. behind a scope).
     pub hidden: bool,
+    /// Meshes of the model (indices into its `model.meshes`) not drawn
+    /// for now, the rest drawn (Combat Arms' fired rocket: a piece by
+    /// name, `MapModel::mesh_names`). Cleared when another model shows.
+    pub hidden_meshes: Vec<usize>,
 }
 
 impl ViewAnimator {
-    /// Show `key`'s view model (a fresh animator on its sequences); no
-    /// change if it is already shown.
+    /// Show `key`'s view model (a fresh animator on its sequences, every
+    /// mesh drawn); no change if it is already shown.
     pub fn show(&mut self, key: Option<&str>, models: Option<&ViewModels>) -> bool {
         if self.key.as_deref() == key {
             return false;
         }
         self.key = key.map(str::to_string);
+        self.hidden_meshes.clear();
         self.animator = key
             .and_then(|k| models?.get(k)?.animations.clone())
             .map(anim::Animator::new);

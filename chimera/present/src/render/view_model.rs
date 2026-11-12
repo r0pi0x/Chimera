@@ -24,7 +24,8 @@
 //! `ViewModelSource` on it: a spectator in first person; a child camera on
 //! `VIEW_MODEL_LAYER` with its own depth and FOV, so the model never clips into
 //! walls; mirrored when its hand differs from the player's; lit per pixel by
-//! the `LightField` at its lighting origin; it draws only while something
+//! the `LightField` at its lighting origin; the meshes its `ViewAnimator`
+//! hides (`hidden_meshes`) left out; it draws only while something
 //! on its layer is visible, or in HDR: `view_model_cameras_draw`); muzzle flashes from
 //! `ViewModelEvent`s (sprites re-projected into the world view, or at a held
 //! weapon's muzzle, and a pooled `DynamicLight`); `ViewModelScreen`: a picture
@@ -65,6 +66,10 @@ pub struct ViewModelBody {
     mirrored: bool,
     joints: Vec<Entity>,
     materials: Vec<Handle<PropMaterial>>,
+    /// Its meshes' entities (the model's `meshes` order), and the ones
+    /// hidden now (`ViewAnimator::hidden_meshes`).
+    meshes: Vec<Entity>,
+    hidden_meshes: Vec<usize>,
     /// Where the probe was last sampled (world), and the cubemap used.
     lit_at: Option<Vec3>,
     cubemap: Option<usize>,
@@ -531,6 +536,15 @@ pub fn draw_view_models(
         // rather than T-posed: CS:S draws no hands without a weapon.
         // (A finished sequence keeps its last pose: only no animator at
         // all hides it again.)
+        // The meshes the game hides (a fired rocket).
+        let hide: &[usize] = state.map_or(&[], |(s, _)| &s.hidden_meshes);
+        if body.hidden_meshes != hide {
+            for (i, mesh) in body.meshes.iter().enumerate() {
+                let v = if hide.contains(&i) { Visibility::Hidden } else { Visibility::Inherited };
+                commands.entity(*mesh).insert(v);
+            }
+            body.hidden_meshes = hide.to_vec();
+        }
         let unanimated = model.animations.is_some() && state.is_none_or(|(s, _)| s.animator.is_none());
         if unanimated {
             visibility.set_if_neq(Visibility::Hidden);
@@ -674,6 +688,7 @@ fn spawn_body(
         );
     }
     let mut materials = Vec::with_capacity(asset.parts.len());
+    let mut meshes = Vec::with_capacity(asset.parts.len());
     for part in &asset.parts {
         // Mirroring turns triangles inside out: the mirrored material culls
         // front faces.
@@ -686,7 +701,7 @@ fn spawn_body(
             material = super::probe_lit::instance(assets, dormant, &material);
         }
         materials.push(material.clone());
-        commands.spawn((
+        let mesh = commands.spawn((
             Mesh3d(part.mesh.clone()),
             MeshMaterial3d(material),
             bevy::mesh::skinning::SkinnedMesh {
@@ -700,12 +715,15 @@ fn spawn_body(
             bevy::camera::visibility::NoFrustumCulling,
             ChildOf(body),
         ));
+        meshes.push(mesh.id());
     }
     commands.entity(body).insert(ViewModelBody {
         key: key.to_string(),
         mirrored: mirror,
         joints,
         materials,
+        meshes,
+        hidden_meshes: Vec::new(),
         lit_at: None,
         cubemap: None,
         probe_slot: 0,

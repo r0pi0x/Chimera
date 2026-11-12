@@ -410,6 +410,11 @@ pub struct WeaponRecord {
     /// and `PVAttachFXAlwaysShow` (keys can't hide them).
     pub pv_attach_fx: Vec<String>,
     pub pv_attach_fx_always: bool,
+    /// `ProjectilePiece`: the view model's piece that is the round in it
+    /// (a launcher's rocket), and `HiddenPiece0..`: pieces hidden with no
+    /// ammunition left (view_models.md 3; empty: none).
+    pub projectile_piece: String,
+    pub hidden_pieces: Vec<String>,
 }
 
 impl WeaponRecord {
@@ -562,6 +567,13 @@ impl WeaponRecord {
             scope_hh_off: offsets("ScopeHH"),
             pv_attach_fx: s.string_list("PVAttachFXName").iter().map(|v| text(v)).collect(),
             pv_attach_fx_always: s.bool("PVAttachFXAlwaysShow", false) || i("PVAttachFXAlwaysShow", 0) != 0,
+            projectile_piece: s.string("ProjectilePiece").map(text).unwrap_or_default(),
+            hidden_pieces: s
+                .string_list("HiddenPiece")
+                .iter()
+                .map(|v| text(v))
+                .filter(|n| !n.is_empty())
+                .collect(),
         }
     }
 
