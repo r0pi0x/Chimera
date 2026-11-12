@@ -11,7 +11,9 @@
 //!   (`suit`), the shake; the shove of the victims is `shove`'s, from the
 //!   blast point (`weapon::Inflicted`); under water (the point and 24 above
 //!   it in water) it reaches only those with their feet in water, dry only
-//!   those not wholly under; doors on the line block it whole.
+//!   those not wholly under; doors on the line block it whole; the hearing
+//!   (2.2): shock past a health part of 30, else ringing within 240 units
+//!   (the shared presets, `weapon::grenade`).
 //! - `Hl2Rounds`: a weapon's own count of a second ammo type (the SMG1's
 //!   grenades, the AR2's balls) or of its only one (rockets, grenades,
 //!   S.L.A.M.s), predicted with the weapon, with its carry limit.
@@ -25,8 +27,7 @@
 //!
 //! Known shortcuts: a prop's water level in the blast's rule is its box's
 //! bottom and top at its centre (a push on a loose body, its centre alone);
-//! the hearing effects (DSP presets)
-//! and the spawn grace of rules.md (0.5 s) wait for M9/M7.
+//! the spawn grace of rules.md (0.5 s) waits for M7.
 
 use std::sync::Arc;
 
@@ -35,7 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use chimera_sim::weapon::{
     NetPart, ViewPunch, aim_of,
-    grenade::{Blast, Shake, SourceRadius},
+    grenade::{Blast, BlastHearing, EAR_RING_DISTANCE, EXPLOSION_RING, SHOCK_DAMAGE, SHOCK_MUFFLE, Shake, SourceRadius},
     projectile::LaunchUnderWater,
 };
 use source_engine::source_movement::SourceMovement;
@@ -86,7 +87,15 @@ pub fn hl2_blast(damage: f32, radius: f32, probe: Option<(f32, f32, f32)>, sound
         // An empty entry is no server sound (the rocket's and the
         // satchel's boom is each client's own: `projectile_fx`).
         sound: sound.filter(|s| !s.is_empty()).map(str::to_string),
-        hearing: None,
+        // After the suit: a health part of 30 shocks, else within 240 of
+        // the blast rings (2.2), CS:S's presets.
+        hearing: Some(BlastHearing {
+            after_armour: true,
+            shock_damage: SHOCK_DAMAGE * HP,
+            shock: SHOCK_MUFFLE,
+            ring_distance: EAR_RING_DISTANCE * U,
+            ring: EXPLOSION_RING,
+        }),
         shake: Some(Shake {
             amplitude: 25.0 * U,
             frequency: 150.0,

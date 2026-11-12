@@ -187,6 +187,7 @@ pub fn he_blast() -> Blast {
         scorch: Some("scorch".into()),
         sound: Some("BaseGrenade.Explode".into()),
         hearing: Some(BlastHearing {
+            after_armour: false,
             shock_damage: SHOCK_DAMAGE * HP,
             shock: SHOCK_MUFFLE,
             ring_distance: EAR_RING_DISTANCE * UNIT,
@@ -227,39 +228,8 @@ pub fn he_shake() -> Shake {
 // smearing) as a gentle low-pass (`DIFFUSOR_CUTOFF`), a 3 kHz sine LFO as
 // a ringing tone at the LFO's gain.
 
-/// Blast damage from which the shock effect plays, hp (spec 5.5).
-pub const SHOCK_DAMAGE: f32 = 30.0;
-/// Closer than this (units) the ring effect plays (spec 5.5).
-pub const EAR_RING_DISTANCE: f32 = 240.0;
-/// Our stand-in cutoff for a diffusor, Hz (ours).
-pub const DIFFUSOR_CUTOFF: f32 = 2500.0;
-/// The presets' ringing LFO, Hz.
-pub const RING_HZ: f32 = 3000.0;
-
-/// Presets 32-34, "explosion ring" (identical rows): diffusor, then a
-/// 1 kHz low-pass at gain 0.25; mix 0.2-0.7; 1.6 s, exponential fade.
-pub const EXPLOSION_RING: HearingEffect = HearingEffect {
-    hold: 1.6,
-    fade: 1.0,
-    exponential: true,
-    mix: 0.7,
-    cutoff: 1000.0,
-    wet_gain: 0.25,
-    ring_hz: RING_HZ,
-    ring_gain: 0.0,
-};
-
-/// Presets 35-37, "shock muffle" (identical rows): diffusor, then a 3 kHz
-/// sine LFO at gain 0.25; mix 0.2-0.7; 1.6 s, exponential fade.
-pub const SHOCK_MUFFLE: HearingEffect = HearingEffect {
-    hold: 1.6,
-    fade: 1.0,
-    exponential: true,
-    mix: 0.7,
-    cutoff: DIFFUSOR_CUTOFF,
-    wet_gain: 1.0,
-    ring_hz: RING_HZ,
-    ring_gain: 0.25,
+pub use chimera_sim::weapon::grenade::{
+    DIFFUSOR_CUTOFF, EAR_RING_DISTANCE, EXPLOSION_RING, RING_HZ, SHOCK_DAMAGE, SHOCK_MUFFLE,
 };
 
 /// Presets 134-136, "flashbang muffle" long / medium / short (spec 6.4):

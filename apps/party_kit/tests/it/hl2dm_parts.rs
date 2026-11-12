@@ -17,7 +17,7 @@ use chimera_sim::{
     testkit,
     weapon::{Inventory, Weapon},
 };
-use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim, map::GameViewModelFovs};
+use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim, map::{GameViewModelFovs, ViewModelSettings, view_model::view_model_fov}};
 use combat_arms::harness::CaSim;
 use hl2dm::game::{
     movement as hl2_movement,
@@ -161,6 +161,33 @@ fn hl2dms_view_models_play_with_its_rules_motion_and_field_of_view() {
     assert!(w.resource::<source_engine::view_motion::GameMotionRules>().get("hl2dm").is_some());
     let fov = w.resource::<GameViewModelFovs>().0.iter().find(|f| f.game == "hl2dm").cloned().unwrap();
     assert_eq!((fov.fov, fov.default_fov), (54.0, 75.0));
+}
+
+/// player_models.md 12.4: HL2:DM's view model is at 54 degrees unzoomed
+/// whatever `fov_desired` is (UGG's 90 as well as 75), and zooms by the
+/// degrees the view does; CS:S's and Combat Arms' keep their own
+/// `default_fov` whatever the player's base.
+#[test]
+fn view_model_fov_per_game_follows_the_spec() {
+    let sim = party(false);
+    let mut fovs = sim.app.world().resource::<GameViewModelFovs>().clone();
+    let before = fovs.clone();
+    let at = |fovs: &GameViewModelFovs, game: &str, player: f32| {
+        let base = ViewModelSettings { fov: 1.0, default_fov: 1.0, right_hand: 1, draw: 1 };
+        view_model_fov(&fovs.settings_for(base, Some(game)), player)
+    };
+    // The client keeps the base in the entries that follow it.
+    for base in [75.0, 82.0, 90.0] {
+        fovs.follow_player(base);
+        assert_eq!(at(&fovs, "hl2dm", base), 54.0, "HL2:DM unzoomed at base {base}");
+        assert_eq!(at(&fovs, "hl2dm", base - 20.0), 34.0, "HL2:DM zoomed 20 degrees at base {base}");
+        for game in ["cs_source", "combat_arms"] {
+            assert_eq!(at(&fovs, game, base), at(&before, game, base), "{game} is unchanged at base {base}");
+        }
+    }
+    assert_eq!(at(&before, "cs_source", 90.0), 54.0, "CS:S at its 90");
+    // Without the follow, UGG's 90 drew HL2:DM at 69.
+    assert_eq!(at(&before, "hl2dm", 90.0), 69.0);
 }
 
 #[test]

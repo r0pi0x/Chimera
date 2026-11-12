@@ -30,7 +30,7 @@ impl Plugin for VideoPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<VideoSettings>()
             .init_resource::<PlayerFov>()
-            .add_systems(Update, apply_video)
+            .add_systems(Update, (apply_video, follow_player_fov))
             .add_systems(PostUpdate, apply_msaa);
         resource_cvar::<VideoSettings, u8>(
             app,
@@ -236,6 +236,29 @@ pub struct PlayerFov(pub f32);
 impl Default for PlayerFov {
     fn default() -> Self {
         Self(90.0)
+    }
+}
+
+/// Games whose view models follow the player's base field of view
+/// (`GameFov::follows_player`, `SettingsFollowPlayerFov`) take
+/// `fov_desired` as their `default_fov`: the view model is then at its own
+/// `fov` unzoomed, and zooms by as many degrees as the view does.
+fn follow_player_fov(
+    fov: Res<PlayerFov>,
+    games: Option<ResMut<chimera_world::map::GameViewModelFovs>>,
+    settings: Option<ResMut<chimera_world::map::ViewModelSettings>>,
+    follows: Option<Res<chimera_world::map::SettingsFollowPlayerFov>>,
+) {
+    if let Some(mut g) = games
+        && g.0.iter().any(|f| f.follows_player && f.default_fov != fov.0)
+    {
+        g.follow_player(fov.0);
+    }
+    if follows.is_some()
+        && let Some(mut s) = settings
+        && s.default_fov != fov.0
+    {
+        s.default_fov = fov.0;
     }
 }
 

@@ -7,7 +7,9 @@
 //! launch (its secondary attack) and grab or drop (its primary); how they move
 //! (`MOTION`: HL2's fixed bob and spring sway with pitch offsets,
 //! `source_engine::view_motion`); how they are drawn (`settings`: the view
-//! model at 54 degrees, the player's default 75; right-handed, never
+//! model at 54 degrees minus how far the player's view is zoomed from its
+//! base, which is `fov_desired` 75-90 (`GameFov::follows_player`, kept by
+//! the client; 75 until it does); right-handed, never
 //! mirrored: each is loaded with flipping off).
 //!
 //! A shot's fire sequence follows its place in a series (`fire_order`,
@@ -35,7 +37,8 @@ use source_engine::{
 
 use crate::map::{DriveAnimation, GameFov, ViewModelSettings};
 
-/// `viewmodel_fov` (54) and the player's base FOV (`fov_desired` 75).
+/// `viewmodel_fov` (54) and the player's base FOV (`fov_desired`: 75 by
+/// default, the starting value of `default_fov`).
 pub const VIEWMODEL_FOV: f32 = 54.0;
 pub const DEFAULT_FOV: f32 = 75.0;
 
@@ -64,6 +67,8 @@ pub fn fov() -> GameFov {
         game: super::GAME,
         fov: VIEWMODEL_FOV,
         default_fov: DEFAULT_FOV,
+        // The base follows `fov_desired` (12.4): 54 unzoomed whatever it is.
+        follows_player: true,
     }
 }
 
