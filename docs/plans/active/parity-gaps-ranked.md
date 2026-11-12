@@ -106,9 +106,6 @@ first, done on the Windows PC. Delete a row when it lands.
     rung; `+zoom` unbound in the party bundle. Spec: hl2dm/suit.md
     "Flashlight" (Q7), "Suit zoom". Code: `games/hl2dm/src/game/suit.rs`,
     `mod.rs` `BUNDLE.binds`. S. No spec; the user's call.
-21. **HL2:DM: `func_clip_vphysics` lets frags, items and weapons
-    through** (they're on `ITEM_LAYER`). Spec: hl2dm/maps_entities.md 11,
-    case 40. Code: `chimera/world/src/map/physics_clip.rs`. S. No spec.
 22. **Combat Arms: kill-streak banners and voices ignore weapon skins**
     (`HUDEffectOverride`). Spec: combat_arms/kill_streaks.md A8, B7,
     cases 29-31, 41, 54. Code: `chimera/sim/src/announce.rs`,

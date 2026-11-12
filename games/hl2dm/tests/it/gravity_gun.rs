@@ -32,14 +32,14 @@ use hl2dm::{
 };
 
 /// Looking east: engine and Source +X.
-const EAST: f32 = -90.0;
+pub(super) const EAST: f32 = -90.0;
 /// The player's feet (Source).
-const FEET: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+pub(super) const FEET: Vec3 = Vec3::new(0.0, 0.0, 0.0);
 
 /// A prop to place: its centre relative to the player's eye (Source), its
 /// half size, mass, spawnflags and whether it starts pinned (flag 8).
 #[derive(Clone, Copy)]
-struct Crate {
+pub(super) struct Crate {
     at: Vec3,
     half: Vec3,
     mass: f32,
@@ -53,7 +53,7 @@ struct Crate {
 }
 
 impl Crate {
-    fn ahead(x: f32) -> Self {
+    pub(super) fn ahead(x: f32) -> Self {
         Crate {
             at: Vec3::new(x, 0.0, 0.0),
             half: Vec3::splat(10.0),
@@ -81,7 +81,7 @@ impl Crate {
 /// The eye's height above the feet (Source).
 const EYE: f32 = 64.0;
 
-fn solid(data: &mut MapData, lo: Vec3, hi: Vec3) {
+pub(super) fn solid(data: &mut MapData, lo: Vec3, hi: Vec3) {
     let (a, b) = (to_engine(lo), to_engine(hi));
     let (a, b) = (a.min(b), a.max(b));
     data.collision_brushes.push(MapBrush::from_box(a, b));
@@ -95,7 +95,7 @@ fn solid(data: &mut MapData, lo: Vec3, hi: Vec3) {
 /// A crate, on a thin pillar when it floats (so it stays where it is
 /// put: the cases place crates at eye height), unless motion-disabled
 /// (flag 8: it hangs).
-fn add_crate(data: &mut MapData, c: Crate) {
+pub(super) fn add_crate(data: &mut MapData, c: Crate) {
     let index = data.entities.len();
     let centre = FEET + Vec3::Z * EYE + c.at;
     let bottom = centre.z - c.half.z;
@@ -183,9 +183,9 @@ fn listen(
     log.died.extend(died.read().map(|d| (t, d.entity, d.attacker)));
 }
 
-struct W {
-    sim: Sim,
-    p: Entity,
+pub(super) struct W {
+    pub(super) sim: Sim,
+    pub(super) p: Entity,
 }
 
 /// The map with `crates` (and walls), the player at `FEET` looking east
@@ -196,6 +196,11 @@ fn world_with(crates: &[Crate], walls: &[(Vec3, Vec3)]) -> W {
 
 /// `world_with` on the floor `floor` (lowest and highest corners).
 fn world_on(crates: &[Crate], walls: &[(Vec3, Vec3)], floor: (Vec3, Vec3)) -> W {
+    world_of(map_data(crates, walls, floor))
+}
+
+/// The map: `floor`, `walls`, `crates`.
+pub(super) fn map_data(crates: &[Crate], walls: &[(Vec3, Vec3)], floor: (Vec3, Vec3)) -> MapData {
     let mut data = MapData {
         name: "test:gravity_gun".into(),
         entity_scale: U,
@@ -210,6 +215,12 @@ fn world_on(crates: &[Crate], walls: &[(Vec3, Vec3)], floor: (Vec3, Vec3)) -> W 
     for c in crates {
         add_crate(&mut data, *c);
     }
+    data
+}
+
+/// `data` loaded, the player at `FEET` looking east with the gravity gun
+/// in hand (the spawn's), settled.
+pub(super) fn world_of(data: MapData) -> W {
     let mut sim = Sim::new(Hl2Sim, MapSimPlugin::new(data));
     sim.set_tick_interval(hl2dm::game::TICK_INTERVAL);
     sim.app.init_resource::<Log>().add_systems(FixedLast, listen);
@@ -225,18 +236,18 @@ fn world(crates: &[Crate]) -> W {
     world_with(crates, &[])
 }
 
-fn look(sim: &mut Sim, p: Entity, yaw: f32, pitch: f32) {
+pub(super) fn look(sim: &mut Sim, p: Entity, yaw: f32, pitch: f32) {
     let mut i = sim.intent(p);
     i.yaw = yaw.to_radians();
     i.pitch = pitch.to_radians();
 }
 
 impl W {
-    fn tick(&self) -> u64 {
+    pub(super) fn tick(&self) -> u64 {
         self.sim.app.world().resource::<SimClock>().tick
     }
 
-    fn eye(&self) -> Vec3 {
+    pub(super) fn eye(&self) -> Vec3 {
         let w = self.sim.app.world();
         to_source(self.sim.position(self.p) + w.get::<MovementState>(self.p).unwrap().eye_offset)
     }
@@ -261,7 +272,7 @@ impl W {
     }
 
     /// Map prop `i` (in placing order).
-    fn node(&mut self, i: usize) -> Entity {
+    pub(super) fn node(&mut self, i: usize) -> Entity {
         let world = self.sim.app.world_mut();
         world
             .query::<(Entity, &PropEntity)>()
@@ -272,13 +283,13 @@ impl W {
     }
 
     /// Where prop `i`'s centre is (Source).
-    fn at(&mut self, i: usize) -> Vec3 {
+    pub(super) fn at(&mut self, i: usize) -> Vec3 {
         let n = self.node(i);
         to_source(self.sim.position(n))
     }
 
     /// Prop `i`'s velocity (Source units/s).
-    fn velocity(&mut self, i: usize) -> Vec3 {
+    pub(super) fn velocity(&mut self, i: usize) -> Vec3 {
         let n = self.node(i);
         self.sim
             .app
@@ -302,7 +313,7 @@ impl W {
         self.sim.app.world().get::<WeaponState>(self.gun()).unwrap().clone()
     }
 
-    fn holding(&self) -> bool {
+    pub(super) fn holding(&self) -> bool {
         self.sim.app.world().get::<Hl2Physcannon>(self.gun()).unwrap().holding
     }
 
@@ -312,7 +323,7 @@ impl W {
 
     /// Press (`fire`, `secondary`) for `hold` ticks, then let go; run
     /// `n` ticks in all.
-    fn press(&mut self, fire: bool, secondary: bool, hold: u64, n: u64) {
+    pub(super) fn press(&mut self, fire: bool, secondary: bool, hold: u64, n: u64) {
         for k in 0..n {
             {
                 let mut i = self.sim.intent(self.p);
@@ -340,7 +351,7 @@ impl W {
     }
 
     /// Grab prop `i` with a secondary click (and let go of the button).
-    fn grab(&mut self, i: usize) -> Entity {
+    pub(super) fn grab(&mut self, i: usize) -> Entity {
         self.press(false, true, 1, 2);
         let n = self.node(i);
         assert!(self.sim.app.world().get::<Held>(n).is_some(), "grabbed");

@@ -13,7 +13,7 @@
 //! (`grenade::gravity_step`, exact for constant gravity) and a swept shape
 //! against `core::SOLID_LAYERS`, never touching its owner (nor loose
 //! items with `Flyer::pass_items`, nor anything before
-//! `Flyer::solid_after`); a flyer made during a tick first moves on the
+//! `Flyer::solid_after`), and physics clips with `Flyer::meets_clips`; a flyer made during a tick first moves on the
 //! next. The server's (`core::authoritative`); clients draw it from the
 //! network's `NetItem` (its `ShownItem` and `Transform`, facing its
 //! flight), as thrown grenades.
@@ -58,7 +58,10 @@ use super::{
     grenade::{Blast, BlastAt, gravity_step},
 };
 use crate::{
-    core::{Damage, DamageKind, Damageable, Health, Hitgroup, ITEM_LAYER, Intent, MovingSolid, SOLID_LAYERS, SimClock},
+    core::{
+        Damage, DamageKind, Damageable, Health, Hitgroup, ITEM_LAYER, Intent, MovingSolid, PHYSICS_CLIP_LAYER, SOLID_LAYERS,
+        SimClock,
+    },
     map::loose::ShownItem,
 };
 
@@ -150,6 +153,9 @@ pub struct Flyer {
     pub keep_speed: Option<f32>,
     /// It passes loose items (dropped weapons, `core::ITEM_LAYER`).
     pub pass_items: bool,
+    /// A physics object: physics clips (`map::physics_clip`, those whose
+    /// filter passes it) stop it as they stop props.
+    pub meets_clips: bool,
     /// Characters with hitboxes are hit only where a hitbox is.
     pub hitboxes: bool,
     pub touch: Touch,
@@ -200,6 +206,7 @@ impl Flyer {
             expires: None,
             keep_speed: None,
             pass_items: false,
+            meets_clips: false,
             hitboxes: false,
             touch: Touch::Report,
             direct: None,
@@ -626,6 +633,7 @@ struct FlyWorld<'w, 's> {
     colliders: Query<'w, 's, &'static ColliderOf>,
     rigid: Query<'w, 's, (&'static RigidBody, Option<&'static MovingSolid>, Option<&'static LinearVelocity>, Option<&'static AngularVelocity>)>,
     flyers: Query<'w, 's, (), With<Flyer>>,
+    clips: Query<'w, 's, (&'static crate::map::physics_clip::ClipPasses, Has<ColliderDisabled>)>,
     armor: HitArmor<'w, 's>,
     damage: MessageWriter<'w, Damage>,
     inflicted: MessageWriter<'w, Inflicted>,
@@ -816,19 +824,30 @@ fn fly(
         if f.pass_items {
             mask &= !ITEM_LAYER.0;
         }
+        if f.meets_clips {
+            mask |= PHYSICS_CLIP_LAYER.0;
+        }
         let excluded: Vec<Entity> = f.owner.into_iter().chain(dead.iter().copied()).collect();
         let filter = SpatialQueryFilter::from_excluded_entities(excluded).with_mask(LayerMask(mask));
         let flyers_q = &world.flyers;
         let colliders_q = &world.colliders;
+        let clips_q = &world.clips;
         let not_flyer = |c: Entity| {
             let b = colliders_q.get(c).map_or(c, |o| o.body);
             !flyers_q.contains(b) && !flyers_q.contains(c)
+        };
+        // A filtered clip stops only what its filter passes.
+        let clip_stops = |c: Entity| {
+            clips_q
+                .get(c)
+                .ok()
+                .is_none_or(|(passes, off)| !off && passes.0.as_ref().is_none_or(|p| p.contains(&e)))
         };
         let mut skip_chars: Vec<Entity> = Vec::new();
         let hit = loop {
             let pred = |c: Entity| {
                 let b = colliders_q.get(c).map_or(c, |o| o.body);
-                not_flyer(c) && !skip_chars.contains(&b)
+                not_flyer(c) && clip_stops(c) && !skip_chars.contains(&b)
             };
             let h = if f.half == Vec3::ZERO {
                 world
