@@ -21,11 +21,13 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
     [ "$local_sha" = "$zero" ] && continue
     pushing=1
     if [ "$remote_sha" = "$zero" ]; then
-        range="$local_sha"
+        # A new ref (a branch or tag the remote lacks): only the commits
+        # the remote doesn't have yet, not the whole published history.
+        range="$local_sha --not --remotes"
     else
         range="$remote_sha..$local_sha"
     fi
-    out=$(git log --format='%h %an|%ae|%ad|%cn|%ce|%cd' --date=format:%z "$range" |
+    out=$(git log --format='%h %an|%ae|%ad|%cn|%ce|%cd' --date=format:%z $range |
         awk -F'|' -v n="$want_name" -v e="$want_email" '{
             split($1, a, " "); an = substr($1, length(a[1]) + 2)
             if (an != n || $2 != e || $3 != "+0000" || $4 != n || $5 != e || $6 != "+0000") print
@@ -44,7 +46,7 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
         extra=$(grep -v -e '^#' -e '^[[:space:]]*$' .githooks/private-patterns | paste -sd'|' -)
         [ -n "$extra" ] && patterns="$patterns|$extra"
     fi
-    hits=$(git log -p --no-color --format='%n%B' "$range" | grep -E -i -n -e "^\+.*($patterns)" -e "^[^-+@ ].*($patterns)" | grep -v '^[0-9]*:+++ ' | head -10)
+    hits=$(git log -p --no-color --format='%n%B' $range | grep -E -i -n -e "^\+.*($patterns)" -e "^[^-+@ ].*($patterns)" | grep -v '^[0-9]*:+++ ' | head -10)
     if [ -n "$hits" ]; then
         echo "pre-push: personal traces (paths or private patterns) in what's being pushed:" >&2
         echo "$hits" | cut -c1-160 >&2
