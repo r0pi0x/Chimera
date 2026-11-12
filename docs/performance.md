@@ -3202,6 +3202,20 @@ day before:
 A quarter off every map. `heavy::rung_frames`' worst frames (a bot walking
 the ladder on de_dust2, ticks included): 8.1-17.7M, were 12.5-27.7M.
 
+### A ragdoll in the measured ticks (2026-11-11)
+
+`heavy::session_maps` failed once on main (de_dust2 8.03M a tick on the
+second lap, 10.44M on the third: limit 1.3 times) and passed on the next
+runs at 1.296 and 1.293 times: the session plays the same on every run
+(the same entities, the same deaths), and the counts move by a few tenths
+of a percent between runs, which crossed the limit. The rise was one
+death in the third lap's 300 measured ticks: its ragdoll (15 bodies on the
+map) was awake for most of them, so it set the median (avian's narrow
+phase against the map +0.98M a tick, the ragdoll joints and contacts
++0.6M, spawning it 52M once). The median now leaves out the ticks with a
+ragdoll body awake while at least 100 remain: de_dust2's third lap counts
+7.6M, the second 8.0M.
+
 ## The tick's two largest leftovers (2026-11-10)
 
 The two largest items of the backlog's "The tick and the frame, what's

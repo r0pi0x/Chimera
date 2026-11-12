@@ -13,9 +13,13 @@
 //! each costs every tick (about 800 instructions with no character on the
 //! map: docs/performance.md, "A session's frame rate"); de_dust2, the first
 //! map, pays all of them on its second visit. A tick is the median of
-//! its map's ticks' work counts (`Sim::work`, ticks making no archetype):
-//! a death, a grenade or a ragdoll makes a tick several times another, and
-//! each lap's fights differ, so a mean follows the fight. The session
+//! its map's ticks' work counts (`Sim::work`, ticks making no archetype
+//! and with no ragdoll awake): a death, a grenade or a ragdoll makes a
+//! tick several times another, and each lap's fights differ, so a mean
+//! follows the fight. A ragdoll stays awake for seconds (one on de_dust2's
+//! third lap, 15 bodies against the map, was awake for most of the 300
+//! ticks and put its median 30% over the second lap's), so its ticks are
+//! left out too while at least 100 remain. The session
 //! plays out the same on every run (`Sim::repeatable`), so the same build
 //! counts the same, and a failure lists the systems that grew (by their
 //! means: a fight shows there). Prints a row per map (`--nocapture`).
@@ -84,13 +88,35 @@ fn chimera_census_made(sim: &mut Sim) -> String {
 }
 
 /// The median of `n` ticks' instructions (`Sim::work`, the same on every
-/// run), over those that made no new archetype; and the systems' counts
-/// per tick.
+/// run), over those that made no new archetype, nor followed one that did,
+/// and had no ragdoll body awake (all of them when fewer than 100 had
+/// none); and the systems' counts per tick.
 fn tick_cost(sim: &mut Sim, n: u64) -> Option<(f64, chimera_core::metrics::work::WorkCounts)> {
-    let w = sim.work(n)?;
-    let mut steady = w.steady_ticks();
-    steady.sort_unstable();
-    steady.get(steady.len() / 2).map(|m| (*m as f64, w.systems.per(n)))
+    use chimera_world::map::ragdoll::RagdollBody;
+    let mut systems = chimera_core::metrics::work::WorkCounts::default();
+    let (mut steady, mut quiet) = (Vec::new(), Vec::new());
+    let mut archetypes = [sim.app.world().archetypes().len(); 3];
+    // Held over the `n` ticks, as one `Sim::work(n)` holds it: taking the
+    // pool's threads again for every tick takes as long as the ticks.
+    let _pool = chimera_core::metrics::work::hold_compute_pool();
+    for _ in 0..n {
+        let w = sim.work(1)?;
+        systems.add(&w.systems);
+        let tick = *w.ticks.first()?;
+        archetypes = [archetypes[1], archetypes[2], *w.archetypes.first()?];
+        if archetypes[0] != archetypes[1] || archetypes[1] != archetypes[2] {
+            continue;
+        }
+        steady.push(tick);
+        let world = sim.app.world_mut();
+        let awake = world.query_filtered::<(), (With<RagdollBody>, Without<avian3d::prelude::Sleeping>)>().iter(world).count();
+        if awake == 0 {
+            quiet.push(tick);
+        }
+    }
+    let mut ticks = if quiet.len() >= 100 { quiet } else { steady };
+    ticks.sort_unstable();
+    ticks.get(ticks.len() / 2).map(|m| (*m as f64, systems.per(n)))
 }
 
 #[test]
