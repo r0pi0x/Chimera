@@ -454,6 +454,17 @@ impl CaWeaponFx {
             .filter(|s| !s.is_empty())
     }
 
+    /// The files it names as the mount reads them (normalized, sorted,
+    /// once each): what the weapon's set on the asset service holds of
+    /// its sounds (`chimera_pack sets combat_arms`, `weapon/<id>`), so a
+    /// client without the install has them before the gun first fires.
+    pub fn sound_paths(&self) -> Vec<String> {
+        let mut out: Vec<String> = self.sound_files().map(super::super::model::normalize).collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
     /// The sound of view-model `sound_key n` (1-3 reload, 4 select, 5
     /// deselect, 10-14 misc) and its radius.
     pub fn key_sound(&self, n: u32) -> Option<(&str, f32)> {

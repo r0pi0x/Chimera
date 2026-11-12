@@ -68,48 +68,42 @@ parts/`: the guns' fitted parts alone, about a minute).
 
 A whole publish serves every file, on demand. Sets make a match's first
 download one batch instead of a request per file: `sets` records each gun's
-`weapon/<id>` and `players`; `base` and each map's `map/<name>` come from a
-run of the client with the vfs log on (with the installs; per pool map).
-**Do this for every map of the pool**, not only the ones listed below: the
-automatic gun game draws at random from all of them, and a map without its
-set loads file group by file group on demand. In the rehearsal
-(2026-11-11) 16 of the pool's 24 maps had no set (every CS:S map but
-de_dust2 and cs_office); a match on one started 20 s after the vote
-without the players still loading it, who joined it late (about 50 s on
-a loaded machine). The pool is CS:S's 18 stock maps (cs_assault,
-cs_compound, cs_havana, cs_italy, cs_militia, cs_office, de_aztec,
-de_cbble, de_chateau, de_dust, de_dust2, de_inferno, de_nuke, de_piranesi,
-de_port, de_prodigy, de_tides, de_train), Combat Arms' WAREHOUSE,
-JUNK_FLEA, DARKHILLS, BLOODMONEY and HL2:DM's dm_lockdown, dm_overwatch;
-a client's log names a map without a set when it prefetches
-(`prefetched cs_source:map/<name>: ... not on the service`). For one map:
+`weapon/<id>` (Combat Arms': with the gun's own sounds), `players`, and
+`map/<name>` for **every map of the install**, in the pool or not (the
+files loading the map reads as another game's gameplay loads it, never
+from the converted-map cache, less `base` and `players`; Combat Arms'
+also the sounds its objects name, the ambient loops): the offer names the
+loaded map's set, so a `changelevel` to any installed map arrives as one
+download too. CS:S's 109 maps take about 4 minutes, Combat Arms' 105
+about a minute, HL2:DM's 8 seconds (`--only map/` for the maps alone).
+`map/<name>` and Combat Arms' `base` are merged into what the manifest
+has; the other sets are replaced. Before (rehearsal, 2026-11-11) 16 of
+the pool's 24 maps had no set; a match on one started 20 s after the
+vote without the players still loading it, and a map without a set took
+2 min 25 s to load group by group with 150 ms per answer.
+
+The maps' sets made from a client's run with the vfs log on (the pool's,
+before `sets` recorded maps) stay as they are, with what `sets` adds
+merged in; it read everything those runs read beyond `base` and
+`players` (0 files missed on CS:S's and HL2:DM's, only the run's own
+guns and bodies on Combat Arms'). A set from a run, for one map:
 
 ```
 CHIMERA_VFS_LOG=/tmp/m.log cargo run --release --bin ultimate_gun_game -- --map cs_source:de_dust2 --offscreen 1280x720 --frames 400 --dump /tmp/x
 cargo run --release --features tools --bin chimera_pack -- publish cs_source --from /tmp/m.log --set map/de_dust2 --sets-from /nonexistent
 ```
 
-Every CS:S map of the pool (Linux; build both binaries once first):
-
-```
-for m in cs_assault cs_compound cs_havana cs_italy cs_militia de_aztec de_cbble de_chateau de_dust de_inferno de_nuke de_piranesi de_port de_prodigy de_tides de_train; do
-  rm -f /tmp/m.log
-  CHIMERA_VFS_LOG=/tmp/m.log target/release/ultimate_gun_game --map cs_source:$m --offscreen 1280x720 --frames 400 --dump /tmp/x
-  target/release/chimera_pack publish cs_source --from /tmp/m.log --set map/$m --sets-from /nonexistent
-done
-```
-
 `base` for a game: the same from a run on the other games' maps (what a
 match reads of a game whose map isn't played). `--sets-from /nonexistent`
 keeps `publish` from copying the sets of your own user cache over the
-server's. On this box (2026-11-11) the server has, per game:
+server's. With `sets` run as above (2026-11-12) the server has, per game:
 
 | Set | CS:S | Combat Arms | HL2:DM |
 |---|---|---|---|
-| `base` (fetched at the first start) | 62.6 MB | 250 MB: also the music (`Game/BGM`), the G23's sounds, the pool maps' loading images | 62 MB: also all 12 guns, the 19 player models, the weapon and headcrab-canister sounds every match plays |
+| `base` (fetched at the first start) | 62.6 MB | 268 MB: also the music (`Game/BGM`), the G23's sounds, the pool maps' loading images, the guns' impact and shell sounds and models and every sound the effect tables name (`sets`: surfaces, event sounds, the heartbeat) | 62 MB: also all 12 guns, the 19 player models, the weapon and headcrab-canister sounds every match plays |
 | `players` (each join) | 12.9 MB | 66 MB, nearly all in `base`: the stock characters and footsteps | 18 MB |
-| `map/<name>` | the 18 pool maps, 90-190 MB each | the 4 pool maps | dm_lockdown, dm_overwatch and six more |
-| `weapon/<id>` | every gun | every gun: view model with hands and parts, and the held model (what other players hold) | every gun |
+| `map/<name>` | all 109 maps (the 18 stock ones and the publisher's community maps), 0.3-196 MB each, median 18 MB, 4.7 GB together | all 105 maps, 0.9-174 MB each, median 25 MB, 3.2 GB together | its 8 maps, 91-154 MB each |
+| `weapon/<id>` | every gun | every gun: view model with hands and parts, the held model (what other players hold) and its own sounds (fire, silenced, dry, reload, select, misc) | every gun |
 | `character/<record>` | - | each of the 689 body records with a file (a rung's body: its model, faces, head pieces and textures; beyond `base` and `players` mostly its vest and legs textures, 0.3 MB at the median) | - |
 | `parts/<id>` | - | each of the 1,265 guns with parts: the parts a rung may draw for it and its default ones (their view and held models and textures, beyond its `weapon/<id>`; 2 MB at the median, mostly shared: 326 files, 7.5 MB in all) | - |
 
@@ -188,8 +182,14 @@ the offered `weapon/`, `character/` and `players` sets) to 19 and 14.8
 MB, the joins' downloads from 162.6 to 176.6 MB; with Combat Arms'
 `base` widened as above, 50 requests and 17.6 MB before the hold and
 9-13 and 0.7-1.1 MB with it (two runs; each a Combat Arms gun's own
-sound, `guns_snd_*`, in no set), the startup download from 355.5 to
-368.7 MB.
+sound, `guns_snd_*`, then in no set), the startup download from 355.5 to
+368.7 MB. Since then the guns' sounds are in their `weapon/<id>` sets,
+the effect tables' sounds and `ui_snd/heartbeat.wav` in Combat Arms'
+`base` (61 files, 1.6 MB more), and every installed map has a
+`map/<name>` set: the last measured session's 6 on-demand requests
+(0.45 MB) are all in sets now (not measured again). The manifests grew
+by 3.24 MB in all: Combat Arms 10.55 to 12.76 MB, CS:S 9.41 to 10.41,
+HL2:DM 5.545 to 5.573.
 
 Publishing again at the same build reaches testers who fetched before:
 each start asks the service whether it has a newer manifest than the

@@ -37,8 +37,9 @@
 //! in the manifest of the install's build (which must list those files: a
 //! whole pack or publish): `weapon/<id>` per weapon (CS:S: its view and
 //! world models with their materials and the waves of its sound entries;
-//! Combat Arms: its view model with hands and parts' textures, and its
-//! held model with its textures), `players`
+//! Combat Arms: its view model with hands and parts' textures, its
+//! held model with its textures, and its own sounds,
+//! `CaWeaponFx::sound_paths`), `players`
 //! (CS:S: the eight class models; HL2:DM: its 19 player models), and
 //! Combat Arms' `character/<record>` per body record with a file (its
 //! model, animation library and textures, as a rung's body loads them:
@@ -46,11 +47,19 @@
 //! drawn bodies' sets, `rungs::body_set`) and `parts/<id>` per gun with
 //! parts (its view and held models with each part a rung may draw for
 //! it and with its default parts, less the bare gun's files: the offer
-//! names a ladder's rung guns' sets, `rungs::parts_set`). `--only <prefix>` records only
+//! names a ladder's rung guns' sets, `rungs::parts_set`), and
+//! `map/<name>` for every map of the install (`GameInfo::map_names`: the
+//! files loading it reads as another game's gameplay loads it, the
+//! world with its players' kit, never from the converted-map cache; less
+//! the game's `base` and `players`; the offer names the loaded map's set,
+//! in the pool or not). `map/<name>` and Combat Arms' `base` (its effect
+//! tables' sounds: impacts, shells, surfaces, the event sounds and the
+//! heartbeat) are merged into what the manifest has (sets recorded from
+//! logs too); the other sets are replaced. `--only <prefix>` records only
 //! the sets whose names start with it (`--only character/`), leaving the
 //! others as they are. `--sign` signs the manifest again with
-//! the server's key (a server store). `base` and the maps' sets come from
-//! `CHIMERA_VFS_LOG` logs (`--from`).
+//! the server's key (a server store). `base` (beyond Combat Arms'
+//! sounds) comes from `CHIMERA_VFS_LOG` logs (`--from`).
 //!
 //! Known shortcuts: publishing to a server on another machine (upload over
 //! HTTPS with a publisher token) isn't built: on a VPS, publish there or
@@ -72,8 +81,8 @@ const USAGE: &str = "\
 usage: chimera_pack pack <game> [options]       into a store (default the user's)
        chimera_pack publish <game> [options]    into the asset server's store, signed
        chimera_pack sets <game> [--store <dir>] [--sign] [--only <prefix>]
-                                                record weapon/<id>, players, character/<record>
-                                                and parts/<id> sets
+                                                record weapon/<id>, players, map/<name>,
+                                                character/<record> and parts/<id> sets
        chimera_pack user add <name> [--games <a,b>] [--note <text>]
        chimera_pack user revoke <name> [--token <n>]
        chimera_pack user list                   (user: --store <server store>)
@@ -375,6 +384,11 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 let _ = props::load_held(&mut materials, model, model, &[]);
             }
             out.push(("players".into(), take()));
+            let options = map_options(false);
+            record_maps(source_engine::maps::map_names(mount), only, &take, &mut out, |name| {
+                let bytes = tapped.read(&format!("maps/{name}.bsp")).map_err(|e| e.to_string())?;
+                cs_source::game::bsp::load_level_bytes_in(&tapped, name, bytes, &options, None).map(|_| ())
+            });
         }
         "combat_arms" => {
             use combat_arms::game::{
@@ -382,7 +396,10 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 characters::{models, preload},
                 data::CaData,
                 rungs,
+                effects::data::{CaFxTables, CaWeaponFx, EFFECTS},
+                model::normalize,
                 view_model::on_demand,
+                world,
             };
             let read = |p: &str| tapped.read(p).ok();
             let ca = CaData::install();
@@ -397,6 +414,12 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 // Its held (third-person) model: what other players and
                 // bots hold of it.
                 let _ = combat_arms::game::characters::models::load_held_weapon(&ca, &w.id, &read);
+                // Its own sounds (fire, silenced, dry, reload, select,
+                // misc keys): played from the install when it first
+                // fires, else a request each on demand.
+                for path in w.hook::<CaWeaponFx>(EFFECTS).map(|fx| fx.sound_paths()).unwrap_or_default() {
+                    let _ = tapped.read(&path);
+                }
                 let id = w.id.rsplit(':').next().unwrap_or(&w.id);
                 out.push((format!("weapon/{id}"), take()));
             }
@@ -451,6 +474,37 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 }
                 out.push((name, take()));
             }
+            // What any match with Combat Arms' guns plays, into `base`
+            // (merged): the effect tables' files (impact, shell and
+            // surface sounds, the event sounds, the heartbeat).
+            if "base".starts_with(only) {
+                take();
+                for path in CaFxTables::built_in().sound_files() {
+                    let _ = tapped.read(&normalize(path));
+                }
+                out.push(("base".into(), take()));
+            }
+            // Each map's world (its textures decoded: the sprites are
+            // read only so), as another game's gameplay loads it, and the
+            // sounds its objects name (the ambient `SoundFX` loops, doors'
+            // and triggers' sounds), which play from the install later.
+            let options = map_options(true);
+            record_maps(world::map_names(mount), only, &take, &mut out, |name| {
+                world::load_world_in(&tapped, name, &options, None)?;
+                let path = world::find(mount, name).ok_or("no world file")?;
+                let bytes = mount.read(&path).map_err(|e| e.to_string())?;
+                let parsed = lithtech_formats::world::World::parse(&bytes).map_err(|e| e.to_string())?;
+                for o in &parsed.objects {
+                    for p in &o.properties {
+                        if let lithtech_formats::world::Value::String(v) = &p.value
+                            && v.trim().to_ascii_lowercase().ends_with(".wav")
+                        {
+                            let _ = tapped.read(&normalize(v.trim()));
+                        }
+                    }
+                }
+                Ok(())
+            });
         }
         "hl2dm" => {
             use hl2dm::game::{bodies, weapons, weapons::inventory::DEFAULT_MODEL};
@@ -488,11 +542,69 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 let _ = bodies::load_one(&tapped, model);
             }
             out.push(("players".into(), take()));
+            let options = map_options(false);
+            record_maps(source_engine::maps::map_names(mount), only, &take, &mut out, |name| {
+                let bytes = tapped.read(&format!("maps/{name}.bsp")).map_err(|e| e.to_string())?;
+                source_engine::content::bsp::load_level_bytes_in(
+                    &hl2dm::game::maps::HL2DM,
+                    &tapped,
+                    name,
+                    bytes,
+                    &options,
+                    None,
+                )
+                .map(|_| ())
+            });
         }
         _ => {}
     }
     out.retain(|(name, paths)| !paths.is_empty() && name.starts_with(only));
     out
+}
+
+/// How `sets` loads a map: as another game's gameplay loads it (the
+/// world with its players' kit, `KitLoad::Players`, none of its guns),
+/// never from the converted-map cache (a hit reads none of the files);
+/// `textures` decoded or only read (Source's loader reads each texture
+/// either way).
+fn map_options(textures: bool) -> chimera_world::map::MapLoadOptions {
+    chimera_world::map::MapLoadOptions {
+        textures,
+        kit: chimera_world::map::KitLoad::Players(&[]),
+        ..Default::default()
+    }
+}
+
+/// `map/<name>` for each map of `names` whose set starts with `only`:
+/// the paths `load` reads of it (a map that fails or panics keeps what
+/// it read, with a note).
+fn record_maps(
+    names: Vec<String>,
+    only: &str,
+    take: &dyn Fn() -> Vec<String>,
+    out: &mut Vec<(String, Vec<String>)>,
+    load: impl Fn(&str) -> Result<(), String>,
+) {
+    for name in names {
+        let set = format!("map/{name}");
+        if !set.starts_with(only) {
+            continue;
+        }
+        take();
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| load(&name))) {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => println!("{set}: {e}"),
+            Err(_) => println!("{set}: the load panicked"),
+        }
+        out.push((set, take()));
+    }
+}
+
+/// Whether `sets` merges set `name` into what the manifest has (`base`
+/// and the maps' sets, also recorded from `CHIMERA_VFS_LOG` logs) rather
+/// than replacing it.
+fn merged_set(name: &str) -> bool {
+    name == "base" || name.starts_with("map/")
 }
 
 /// `sets <game>`: record the pieces' sets into the install build's
@@ -527,7 +639,22 @@ fn sets(args: &[String]) -> Result<(), String> {
         if !left.is_empty() {
             println!("set {name}: {} files not in the manifest left out (pack the whole install first)", left.len());
         }
-        manifest.sets.insert(name.clone(), kept.into_iter().collect());
+        let mut kept: std::collections::BTreeSet<String> = kept.into_iter().collect();
+        if name.starts_with("map/") {
+            // What every match fetches anyway: the game's `base` and
+            // `players`.
+            for shared in ["base", "players"] {
+                if let Some(s) = manifest.sets.get(shared) {
+                    kept.retain(|p| !s.contains(p));
+                }
+            }
+        }
+        if merged_set(&name)
+            && let Some(old) = manifest.sets.get(&name)
+        {
+            kept.extend(old.iter().filter(|p| manifest.files.contains_key(*p)).cloned());
+        }
+        manifest.sets.insert(name.clone(), kept);
         let (n, plain, stored) = manifest.set_size(&name);
         println!("set {name}: {n} records, {} plain, {} stored", mb(plain), mb(stored));
     }

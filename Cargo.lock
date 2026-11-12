@@ -5339,6 +5339,7 @@ dependencies = [
  "bzip2",
  "chimera_assets",
  "chimera_core",
+ "chimera_world",
  "combat_arms",
  "cs_source",
  "cs_source_app",
