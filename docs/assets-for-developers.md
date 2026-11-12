@@ -85,7 +85,10 @@ and nothing when nothing is fetched. A first load is as slow as the link;
 later ones read the cache.
 `CHIMERA_ASSET_FETCH_LOG=<file>` writes a line per on-demand fetch (the
 set its group came from, or `-` for none): what a run reads outside
-the sets it fetched.
+the sets it fetched. A game client also prints each on-demand fetch made
+while a match runs (`assets: fetched on demand during the match on
+...`, with the match's running total) and each match's total when it
+ends; the service marks those requests ` on-demand` in its access log.
 
 ## The cache
 

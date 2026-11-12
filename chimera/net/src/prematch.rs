@@ -196,6 +196,20 @@ pub struct Lobby {
     written: f64,
 }
 
+/// The lobby shows: on a client, the match on screen hasn't started (what
+/// it fetches on demand counts as loading: `net::on_demand`).
+fn lobby_shown(_: On<Add<NetLobby>>, showing: Option<ResMut<crate::net::on_demand::LobbyShowing>>) {
+    if let Some(mut s) = showing {
+        s.0 = true;
+    }
+}
+
+fn lobby_gone(_: On<Remove<NetLobby>>, showing: Option<ResMut<crate::net::on_demand::LobbyShowing>>) {
+    if let Some(mut s) = showing {
+        s.0 = false;
+    }
+}
+
 /// How often (s) at most a client reports its download's bytes.
 pub const REPORT_EVERY: f64 = 0.25;
 /// A client reports again this often (s) even when nothing changed (a
@@ -209,7 +223,9 @@ pub const WRITE_EVERY: f64 = 0.25;
 pub(crate) fn register(app: &mut App) {
     app.init_resource::<LobbySettings>()
         .replicate::<NetLobby>()
-        .add_client_message::<LobbyReport>(Channel::Ordered);
+        .add_client_message::<LobbyReport>(Channel::Ordered)
+        .add_observer(lobby_shown)
+        .add_observer(lobby_gone);
     resource_cvar::<LobbySettings, u8>(
         app,
         "mp_lobby",

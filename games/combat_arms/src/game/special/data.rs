@@ -106,6 +106,47 @@ pub struct ProjectileLook {
     pub lifetime: f32,
 }
 
+impl ProjectileLook {
+    /// The files it names: its sounds and its flare's sprite.
+    pub fn files(&self) -> Vec<&str> {
+        let mut out = vec![self.fly_sound.as_str(), self.activate_sound.as_str(), self.finish_sound.as_str()];
+        out.extend(self.flare.as_ref().map(|f| f.sprite.as_str()));
+        out.retain(|f| !f.trim().is_empty());
+        out
+    }
+}
+
+/// The files weapon `w`'s thrown or fired object names, which play or
+/// show when it is used, not when it is drawn: its projectile's,
+/// grenade's, device's or bolt's looks and sounds in flight, its create
+/// sound, its model and skins. `chimera_pack sets` adds them to the
+/// weapon's `weapon/<id>` set.
+pub fn object_files(w: &chimera_sim::weapon::data::WeaponData) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut add = |look: &ProjectileLook, create: &str, model: Option<&String>, skins: &[String]| {
+        out.extend(look.files().into_iter().map(String::from));
+        out.push(create.to_string());
+        out.extend(model.cloned());
+        out.extend(skins.iter().cloned());
+    };
+    if let Some(p) = w.hook::<ProjectileParams>(PROJECTILE) {
+        add(&p.look, &p.create_sound, p.model.as_ref(), &p.skins);
+    }
+    if let Some(g) = w.hook::<super::super::grenades::GrenadeParams>(super::super::grenades::HOOK) {
+        add(&g.look, &g.create_sound, g.thrown_model.as_ref(), &g.thrown_skins);
+    }
+    if let Some(d) = w.hook::<DeviceParams>(DEVICE) {
+        add(&d.look, &d.create_sound, None, &[]);
+    }
+    if let Some(b) = w.hook::<BoltParams>(BOLT) {
+        add(&b.look, "", None, &[]);
+    }
+    out.retain(|f| !f.trim().is_empty());
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// A projectile's flare sprite (special_weapons.md Follow-up 3).
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 #[serde(default, deny_unknown_fields)]

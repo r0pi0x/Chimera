@@ -323,10 +323,15 @@ impl Remote {
 
     /// Record `id` as stored on the server (zstd), unchecked.
     pub fn record(&self, id: &str) -> io::Result<Vec<u8>> {
+        self.record_as(id, "")
+    }
+
+    /// `record`, `query` after the path (`ON_DEMAND`, or "").
+    fn record_as(&self, id: &str, query: &str) -> io::Result<Vec<u8>> {
         if !is_id(id) {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{id:?} is not a record id")));
         }
-        let path = format!("/r/{id}");
+        let path = format!("/r/{id}{query}");
         let (status, _, bytes) = self.call(&path, None, &[])?;
         if status != 200 {
             return Err(status_error(status, &path, &String::from_utf8_lossy(&bytes)));
@@ -353,11 +358,22 @@ impl Remote {
         &self,
         ids: &[String],
         pace: Option<&Pace>,
+        each: impl FnMut(&str, u16, Vec<u8>),
+    ) -> io::Result<()> {
+        self.batch_at("/batch", ids, pace, each)
+    }
+
+    /// `batch_each_paced` posted to `path` (`/batch`, with a query or not).
+    fn batch_at(
+        &self,
+        path: &str,
+        ids: &[String],
+        pace: Option<&Pace>,
         mut each: impl FnMut(&str, u16, Vec<u8>),
     ) -> io::Result<()> {
         let body = ids.join("\n");
         let unpaced = Pace::default();
-        let inner = Paced { inner: self.post_stream("/batch", body.as_bytes())?, pace: pace.unwrap_or(&unpaced) };
+        let inner = Paced { inner: self.post_stream(path, body.as_bytes())?, pace: pace.unwrap_or(&unpaced) };
         let mut reader = BufReader::with_capacity(1 << 16, inner);
         let bad = |why: &str| io::Error::new(io::ErrorKind::InvalidData, format!("/batch: a broken answer ({why})"));
         let mut head = String::new();
@@ -532,12 +548,18 @@ pub fn retrying<T>(delays: &[Duration], mut f: impl FnMut() -> io::Result<T>) ->
     }
 }
 
+/// The query an on-demand fetch's requests carry (`Fetcher for Remote`:
+/// only `CachedFiles` asks it), so the service's access log tells them
+/// from the sets' downloads (`server`: ` on-demand` on the line). A
+/// service that predates it ignores the query.
+pub const ON_DEMAND: &str = "?on-demand";
+
 impl Fetcher for Remote {
     /// The record, asked again twice on a transient failure
     /// (`RETRY_DELAYS`): a file a loader misses stays missing for the
     /// session (a grey texture, a gun without a model).
     fn fetch(&self, store: &Store, id: &str, size: u64) -> io::Result<Vec<u8>> {
-        let packed = retrying(&RETRY_DELAYS, || self.record(id))?;
+        let packed = retrying(&RETRY_DELAYS, || self.record_as(id, ON_DEMAND))?;
         let plain = store.put_stored(id, size, &packed)?;
         progress::on_demand(self.url(), 1, packed.len() as u64);
         Ok(plain)
@@ -547,7 +569,7 @@ impl Fetcher for Remote {
         let sizes: HashMap<&str, u64> = wanted.iter().map(|(id, s)| (id.as_str(), *s)).collect();
         let ids: Vec<String> = wanted.iter().map(|w| w.0.clone()).collect();
         for chunk in ids.chunks(crate::server::BATCH_MAX) {
-            self.batch_each(chunk, |id, status, data| {
+            self.batch_at(&format!("/batch{ON_DEMAND}"), chunk, None, |id, status, data| {
                 if let (200, Some(size)) = (status, sizes.get(id))
                     && store.put_stored(id, *size, &data).is_ok()
                 {

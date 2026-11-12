@@ -311,6 +311,56 @@ fn a_client_without_the_install_fetches_the_offered_sets_then_spawns() {
     assert!(p.failure.is_none());
 }
 
+/// A file the match reads that its sets didn't bring is fetched on demand:
+/// the client counts it against the match on screen (`net::on_demand`)
+/// and the service marks the request ` on-demand` in its access log; the
+/// match's end ends its count.
+#[test]
+fn an_on_demand_fetch_during_the_match_is_counted_and_marked() {
+    use chimera_assets::{CachedFiles, Remote};
+    use chimera_net::net::on_demand::OnDemandCount;
+    use chimera_core::mount::FileSource;
+
+    let svc = Fixture::new("on_demand", 5, Duration::ZERO);
+    let token = svc.user("tester");
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
+    let session = svc.session("client", &token, true);
+    let settings = session.settings.clone().unwrap();
+    sim.add_client(client_with(session, true));
+    assert!(until(&mut sim, 30.0, |s| joined(s, 0)), "joined: {:?}", progress(&sim, 0));
+    sim.step();
+    // A loader reads a file of a set the match didn't offer.
+    let store = settings.store.clone().unwrap();
+    let remote = Remote::new(settings.remote.clone().unwrap()).unwrap();
+    let files = CachedFiles::open(&store, GAME, "7").unwrap().with_fetcher(Some(std::sync::Arc::new(remote)));
+    assert!(files.read("extra/big.dat").unwrap().is_ok());
+    sim.step();
+    let count = sim.clients[0].app.world().resource::<OnDemandCount>().clone();
+    assert!(count.map.is_some(), "in the match: {count:?}");
+    assert!(count.during.iter().any(|f| f.path == "extra/big.dat" && f.game == GAME), "{count:?}");
+    // The service writes its line once the answer is sent.
+    let marked = |log: &str| log.lines().any(|l| l.contains("GET /r/") && l.ends_with(" on-demand"));
+    let mut log = String::new();
+    for _ in 0..50 {
+        log = fs::read_to_string(svc.store.root.join("server/access.log")).unwrap_or_default();
+        if marked(&log) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(marked(&log), "{log}");
+    assert!(
+        !log.lines().any(|l| l.contains("POST /batch") && l.ends_with(" on-demand")),
+        "the join's download isn't marked: {log}"
+    );
+    // The match ends (here: the next match's lobby shows): its count
+    // starts again.
+    sim.clients[0].app.world_mut().resource_mut::<chimera_net::net::on_demand::LobbyShowing>().0 = true;
+    sim.step();
+    let count = sim.clients[0].app.world().resource::<OnDemandCount>().clone();
+    assert!(count.map.is_none() && count.during.is_empty(), "{count:?}");
+}
+
 /// A client whose install has the game (the hybrid model) fetches nothing.
 #[test]
 fn a_client_with_the_install_downloads_nothing() {

@@ -21,7 +21,9 @@
 //! debugging); `CHIMERA_ASSET_FETCH_LOG=<file>` appends a line per
 //! on-demand fetch (`on_demand_log`: time, game, the path asked for, the
 //! set its group came from, records and stored bytes), to find what a
-//! match reads outside the sets it was offered. Without a fetcher, or when it fails, the read is an error
+//! match reads outside the sets it was offered. Each on-demand fetch is
+//! also kept for the process (`on_demand_since`, `OnDemand`: the game
+//! client counts those made while a match runs, `net::on_demand`). Without a fetcher, or when it fails, the read is an error
 //! that names the path (`asset miss`), so a set missing a file shows at
 //! once.
 
@@ -289,13 +291,69 @@ impl CachedFiles {
     }
 }
 
+/// One on-demand fetch (a group asked for because `path` was read and the
+/// store lacked it), as `on_demand_since` hands it out.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OnDemand {
+    pub game: String,
+    /// The file whose read caused it.
+    pub path: String,
+    /// The set its group came from (None: its companions).
+    pub set: Option<String>,
+    /// Records asked for.
+    pub records: usize,
+    /// Their stored (transferred) bytes.
+    pub stored: u64,
+}
+
+/// The process's on-demand fetches: the sequence number of the first
+/// kept, and the last `ON_DEMAND_KEPT` (older ones are dropped).
+static ON_DEMAND: Mutex<(u64, std::collections::VecDeque<OnDemand>)> =
+    Mutex::new((0, std::collections::VecDeque::new()));
+/// The most on-demand fetches kept for `on_demand_since`.
+pub const ON_DEMAND_KEPT: usize = 4096;
+
+/// The on-demand fetches made since `cursor` (a sequence number: 0 for
+/// all kept), oldest first; `cursor` moves past them. Each reader keeps
+/// its own cursor, so every reader sees every fetch.
+pub fn on_demand_since(cursor: &mut u64) -> Vec<OnDemand> {
+    let kept = ON_DEMAND.lock().unwrap_or_else(|e| e.into_inner());
+    let (first, list) = (&kept.0, &kept.1);
+    let skip = cursor.saturating_sub(*first) as usize;
+    let out: Vec<OnDemand> = list.iter().skip(skip).cloned().collect();
+    *cursor = first + list.len() as u64;
+    out
+}
+
+/// The sequence number the next on-demand fetch will have (a cursor that
+/// skips those made so far).
+pub fn on_demand_end() -> u64 {
+    let kept = ON_DEMAND.lock().unwrap_or_else(|e| e.into_inner());
+    kept.0 + kept.1.len() as u64
+}
+
 /// With `FETCH_LOG_ENV` set, appends `group` (fetched on demand because
 /// `path` was read) to that file: `<unix ms> <game> <set or -> <records>
 /// <stored bytes> <path>`.
+/// Also keeps it for `on_demand_since`.
 fn on_demand_log(index: &Index, path: &str, group: &[(String, u64)]) {
-    let Some(file) = std::env::var_os(FETCH_LOG_ENV).filter(|f| !f.is_empty()) else { return };
     let mut ids: HashSet<&str> = group.iter().map(|(id, _)| id.as_str()).collect();
     let stored: u64 = index.files.values().filter(|f| ids.remove(f.id.as_str())).map(|f| f.stored).sum();
+    {
+        let mut kept = ON_DEMAND.lock().unwrap_or_else(|e| e.into_inner());
+        if kept.1.len() >= ON_DEMAND_KEPT {
+            kept.1.pop_front();
+            kept.0 += 1;
+        }
+        kept.1.push_back(OnDemand {
+            game: index.game.clone(),
+            path: path.to_string(),
+            set: index.group_set(path).map(String::from),
+            records: group.len(),
+            stored,
+        });
+    }
+    let Some(file) = std::env::var_os(FETCH_LOG_ENV).filter(|f| !f.is_empty()) else { return };
     let ms = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_millis());
     let line = format!(
         "{ms} {} {} {} {stored} {path}\n",
