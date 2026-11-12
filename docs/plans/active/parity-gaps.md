@@ -1,5 +1,8 @@
 # Parity gaps with CS:S (what players see and hear)
 
+The three games ranked together for a gun-game player:
+[parity-gaps-ranked.md](parity-gaps-ranked.md).
+
 Started 2026-10-13. An inventory of known and suspected differences
 between Lucker Party and Counter-Strike: Source, by area, from (a) refcmp
 on the maps with reference captures, (b) every tech-debt row and spec

@@ -36,6 +36,9 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## Roadmap after the gun game settles (user, 2026-10-29)
 
+- **Parity gaps, ranked (audit 2026-11-12):** the top gaps vs CS:S,
+  Combat Arms and HL2:DM for a gun-game player, in
+  [plans/active/parity-gaps-ranked.md](plans/active/parity-gaps-ranked.md).
 - **Order (user, 2026-10-30):** the asset service's first milestone (M1:
   per-file packer, local cache mount, recording what a load opens), then
   the ECS cleanup, then the main menu. Update (user, 2026-10-31): the
