@@ -332,6 +332,12 @@ impl ViewMachine {
         self.pieces.projectile = clip > 0 || (self.setup.ammo_max > 0 && total >= self.setup.ammo_max);
     }
 
+    /// A shot the weapon fired (3): the projectile piece hides, as on a
+    /// shot a key raised (`Update::shot`).
+    pub fn fired(&mut self) {
+        self.pieces.projectile = false;
+    }
+
     /// The model shown or hidden (the draw, a scope, 11): attached effects
     /// not hidden by a key show (all of them with `PVAttachFXAlwaysShow`),
     /// and all hide with the model.

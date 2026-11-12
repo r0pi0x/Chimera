@@ -98,7 +98,10 @@
 //! machine plays `reload_1` for the double barrel with rounds left, a
 //! file's `deselect` on a holster (`ViewMachine::holster`; no stock file
 //! has one), keeps the pieces (`Pieces`: the `HiddenPiece` list by the
-//! total, the `ProjectilePiece` by shots, reloads and the draw) and the
+//! total, the `ProjectilePiece` by shots, the weapon's own included,
+//! reloads and the draw; the install's names in `CaViewParams`, the model's
+//! meshes by piece name hidden through `ViewAnimator::hidden_meshes`,
+//! `hidden_meshes`: a launcher's rocket goes with the shot) and the
 //! attached effects (`PVAttachFX`: hidden at creation, shown with the
 //! model, `HIDE_PVATTACHFX` / `SHOW_PVATTACHFX` keys; the weapon's
 //! `PVAttachFXName#` groups played and drawn by `attached`); dry fire never plays
@@ -122,8 +125,7 @@
 //! - The tracker counts exact frame time (the spec's test arithmetic), not
 //!   whole milliseconds of a millisecond clock; the pose between samples
 //!   is `model`'s resampling (`VIEW_SAMPLE_FPS`, nlerp between samples).
-//! - The pieces' states aren't drawn (no piece hiding on the view model
-//!   yet; the attached effects are, `attached`); no player-view
+//! - No player-view
 //!   attachments (no character record has any); the hands' file-name
 //!   reset at the local character's creation isn't there (every draw
 //!   builds fresh hands); the weapons' `PVFlashHiderFXName#` aren't read
@@ -225,6 +227,11 @@ pub struct CaViewParams {
     /// and `PVAttachFXAlwaysShow`.
     pub attach_fx: Vec<String>,
     pub attach_fx_always: bool,
+    /// `ProjectilePiece`: the model's piece that is the round in it (a
+    /// launcher's rocket; empty: none), and `HiddenPiece0..`: pieces
+    /// hidden with no ammunition left (3; names without case).
+    pub projectile_piece: String,
+    pub hidden_pieces: Vec<String>,
 }
 
 impl Default for CaViewParams {
@@ -240,6 +247,8 @@ impl Default for CaViewParams {
             flash_hider_fx: Vec::new(),
             attach_fx: Vec::new(),
             attach_fx_always: false,
+            projectile_piece: String::new(),
+            hidden_pieces: Vec::new(),
         }
     }
 }
@@ -671,6 +680,7 @@ fn setup_of(parts: &WeaponParts, vest: (f32, f32)) -> Setup {
             reload: animation_rate(1.0 + model_reload + reload),
             draw: animation_rate(1.0 + item.map_or(0.0, |i| i.select_rate) + model_select + select),
         },
+        ammo_max: magazine.map_or(0, |m| m.size + m.reserve_max),
         attach_fx: params.map_or(0, |p| p.attach_fx.len()),
         attach_fx_always: params.is_some_and(|p| p.attach_fx_always),
         ..Setup::default()
@@ -898,12 +908,25 @@ fn drive(
             m.set_rates(setup_of(&parts, model).rates);
             m.set_weapon_reloading(active.and_then(|w| states.get(w).ok()).is_some_and(|s| s.reloading()));
             let out = m.update(&inputs);
-            if out.reloaded {
-                vm.thrown = false;
+            // The weapon frame's shot takes the round from the model too
+            // (3: hidden right after the fire sound).
+            if shot {
+                m.fired();
             }
             for k in out.events {
                 keys.write(CaViewKey { owner: e, key: k });
             }
+            if out.reloaded {
+                vm.thrown = false;
+            }
+        }
+        // 3: the pieces the machine hides, by name on the model shown.
+        let hide = match (vm.machine.as_ref(), view.key.as_deref().and_then(|k| models.as_deref()?.get(k))) {
+            (Some(m), Some(model)) => hidden_meshes(&model.model.mesh_names, &params, &m.pieces),
+            _ => Vec::new(),
+        };
+        if view.hidden_meshes != hide {
+            view.hidden_meshes = hide;
         }
         // A shot: the jiggle's draws and the flash timer.
         let recoil = Vec3::from(params.recoil);
@@ -967,6 +990,26 @@ fn drive(
             }
         }
     }
+}
+
+/// The meshes (indices into a view model's meshes, named `names`) that
+/// `pieces` hides (3): the `HiddenPiece` list while it is hidden, the
+/// `ProjectilePiece` while it is not shown. Names match without case; a
+/// name the model lacks is skipped.
+pub fn hidden_meshes(names: &[String], params: &CaViewParams, pieces: &machine::Pieces) -> Vec<usize> {
+    let mut wanted: Vec<&str> = Vec::new();
+    if pieces.hidden_list {
+        wanted.extend(params.hidden_pieces.iter().map(String::as_str));
+    }
+    if !pieces.projectile && !params.projectile_piece.is_empty() {
+        wanted.push(&params.projectile_piece);
+    }
+    names
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| wanted.iter().any(|w| w.eq_ignore_ascii_case(n)))
+        .map(|(i, _)| i)
+        .collect()
 }
 
 /// The camera: the eye (metres, world) and its axes in the game's sense

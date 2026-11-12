@@ -4,7 +4,8 @@
 //! drawing assets of its own, `build_late` builds the model (on a task), and the
 //! anchor's view-model camera shows its meshes. Before, only a map's spawn
 //! built those assets, so on the greybox the model was in `ViewModels`
-//! (and the game's placeholder stepped aside) but nothing drew it.
+//! (and the game's placeholder stepped aside) but nothing drew it. The
+//! meshes its `ViewAnimator` hides aren't drawn.
 
 use std::sync::Arc;
 
@@ -118,4 +119,20 @@ fn a_view_model_added_without_a_map_is_drawn() {
         .filter(|(_, l, c)| c.parent() == body && l.intersects(&layer))
         .count();
     assert_eq!(meshes, 2, "its meshes on the view-model layer");
+    // A mesh the game hides (`ViewAnimator::hidden_meshes`: a launcher's
+    // fired rocket) isn't drawn, the rest are; shown again once cleared.
+    let hidden = |sim: &mut Sim| {
+        let world = sim.app.world_mut();
+        world
+            .query::<(&Mesh3d, &Visibility, &ChildOf)>()
+            .iter(world)
+            .filter(|(_, v, c)| c.parent() == body && **v == Visibility::Hidden)
+            .count()
+    };
+    sim.app.world_mut().get_mut::<ViewAnimator>(owner).unwrap().hidden_meshes = vec![1];
+    sim.ticks(2);
+    assert_eq!(hidden(&mut sim), 1, "one mesh hidden");
+    sim.app.world_mut().get_mut::<ViewAnimator>(owner).unwrap().hidden_meshes.clear();
+    sim.ticks(2);
+    assert_eq!(hidden(&mut sim), 0, "both drawn again");
 }
