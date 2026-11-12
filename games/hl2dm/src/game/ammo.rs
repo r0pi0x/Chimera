@@ -4,7 +4,9 @@
 //! itself, `weapons::launch::Hl2Rounds`, or the reserve of one that uses
 //! it, else the count waiting in `Hl2Ammo`, capped by the limit; no
 //! weapon of it needed) and the boxes and crates as data
-//! (data/items.toml: `ItemData`, specs/hl2dm/maps_entities.md 1, 3).
+//! (data/items.toml: `ItemData`, specs/hl2dm/maps_entities.md 1, 3), and
+//! every item's and crate's model (`item_model`, the crates' types; the
+//! map loader places them, `maps::fixed_models`).
 
 use std::collections::BTreeMap;
 
@@ -55,10 +57,21 @@ pub struct CrateType {
     pub weapon: Option<String>,
 }
 
+/// The suit's walk-over items' models (data/items.toml `[[item]]`: kits,
+/// vials, batteries).
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct SuitItem {
+    pub class: String,
+    pub model: String,
+}
+
 /// data/items.toml.
 #[derive(Resource, Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ItemData {
+    #[serde(rename = "item", default)]
+    pub items: Vec<SuitItem>,
     #[serde(rename = "box")]
     pub boxes: Vec<AmmoBox>,
     #[serde(rename = "crate")]
@@ -70,6 +83,16 @@ pub const ITEMS: &str = include_str!("../../data/items.toml");
 impl ItemData {
     pub fn hl2() -> Self {
         toml::from_str(ITEMS).unwrap_or_else(|e| panic!("data/items.toml: {e}"))
+    }
+
+    /// The model of item class `class` (a suit item or an ammo box), the
+    /// map's `model` key ignored (maps_entities.md 1).
+    pub fn item_model(&self, class: &str) -> Option<&str> {
+        self.items
+            .iter()
+            .find(|i| i.class.eq_ignore_ascii_case(class))
+            .map(|i| i.model.as_str())
+            .or_else(|| self.ammo_box(class).map(|b| b.model.as_str()))
     }
 
     /// The box of map class `class` (or one of its aliases).

@@ -2,6 +2,11 @@
 //! dx90 VTX, parsed by `vmdl`) placed around the map. Each model is
 //! converted once; props reference it with a transform.
 //!
+//! Entities a game gives fixed models (`FixedModels`, its
+//! `bsp::SourceGame::fixed_models`: HL2:DM's items and ammo crates) are
+//! placed as prop entities with that model: an item (`FixedKind::Item`) as
+//! a physics prop players walk through, a crate as a solid static model.
+//!
 //! Known shortcuts (docs/tech-debt.md): Models vmdl can't read: animations in
 //! `.ani` blocks are dropped from vmdl's read (our `anim` reads them), and a
 //! model whose `.vtx` indexes past its `.vvd` (surf_surreal) is skipped with a
@@ -1072,6 +1077,24 @@ fn body(
     const MOTION_DISABLED: u32 = 0x8;
     const FORCE_SERVER_SIDE: u32 = 0x2000;
     let class = prop.class.as_deref()?;
+    // A walk-over item: a physics object players walk through, pinned by
+    // its "start constrained" flag (maps_entities.md 1).
+    if prop.item {
+        let c = model.collision.as_ref()?;
+        let surface = surfaces.get(&c.surfaceprop);
+        let mass = c.mass.clamp(0.1, 50_000.0);
+        return Some(MapPhysics {
+            mass,
+            friction: surface.friction,
+            elasticity: surface.elasticity,
+            damping: c.damping,
+            rotdamping: c.rotdamping,
+            inertia: c.unit_inertia.map(|i| i * mass * c.inertia.max(0.01)),
+            push: PushAway::Ignore,
+            frozen: prop.spawnflags & 1 != 0,
+            asleep: false,
+        });
+    }
     if !class.starts_with("prop_physics") {
         return None;
     }
@@ -1160,6 +1183,37 @@ struct PropPlacement {
     static_index: Option<usize>,
     /// A detail model (`detail`).
     detail: bool,
+    /// A game's walk-over item (`FixedKind::Item`): a physics object
+    /// players walk through.
+    item: bool,
+}
+
+/// What a game's fixed model of an entity is (`FixedModel`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FixedKind {
+    /// A walk-over item (HL2's ammo boxes, kits, batteries): a physics
+    /// object at its placed origin and angles that players walk through
+    /// (`PushAway::Ignore`); spawnflag 1 pins it (welded to the world).
+    Item,
+    /// A solid model that never moves (HL2's ammo crate).
+    Solid,
+}
+
+/// The model a game gives an entity class whatever the map's `model` key
+/// says (HL2:DM's items and ammo crates, specs/hl2dm/maps_entities.md 1, 3).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FixedModel {
+    pub model: String,
+    pub kind: FixedKind,
+}
+
+/// A game's fixed models (`bsp::SourceGame::fixed_models`): the entity's
+/// class and its keys (by name, any case) to its model, None for the rest.
+pub type FixedModels = fn(class: &str, key: &dyn Fn(&str) -> Option<String>) -> Option<FixedModel>;
+
+/// No fixed models (a game without such entities).
+pub fn no_fixed_models(_: &str, _: &dyn Fn(&str) -> Option<String>) -> Option<FixedModel> {
+    None
 }
 
 pub fn add_static_props(
@@ -1171,6 +1225,7 @@ pub fn add_static_props(
     hdr: bool,
     detail_models: &[(String, Vec3, Vec3)],
     detail_fade: (f32, f32),
+    fixed: FixedModels,
 ) {
     let mut placements = Vec::new();
     for (static_index, prop) in bsp.static_props().enumerate() {
@@ -1213,6 +1268,7 @@ pub fn add_static_props(
             enable_threshold: false,
             static_index: Some(static_index),
             detail: false,
+            item: false,
         });
     }
     // Detail models (`detail`): drawn like static props without
@@ -1245,9 +1301,10 @@ pub fn add_static_props(
             enable_threshold: false,
             static_index: None,
             detail: true,
+            item: false,
         });
     }
-    placements.extend(entity_props(bsp));
+    placements.extend(entity_props(bsp, fixed));
     placements.extend(fish_pool_props(bsp));
     place_props(bsp, materials, lighting, occluders, data, placements, hdr);
 }
@@ -1329,7 +1386,7 @@ const CHARGERS: [(&str, &str); 2] = [
 /// Props placed as entities: physics props (barrels, baskets; static here
 /// until there's physics) and dynamic props. Both collide by their physics
 /// model (the visible mesh until `.phy` is parsed).
-fn entity_props(bsp: &Bsp) -> Vec<PropPlacement> {
+fn entity_props(bsp: &Bsp, fixed_models: FixedModels) -> Vec<PropPlacement> {
     let parse = |v: &str| -> Option<[f32; 3]> {
         let mut it = v.split_whitespace().filter_map(|p| p.parse::<f32>().ok());
         Some([it.next()?, it.next()?, it.next()?])
@@ -1348,7 +1405,18 @@ fn entity_props(bsp: &Bsp) -> Vec<PropPlacement> {
             // dm_underpass; it sweeps in the game, maps_entities.md 14).
             let camera = class == COMBINE_CAMERA;
             let charger = CHARGERS.iter().find(|(c, _)| *c == class).map(|(_, m)| *m);
-            if !physics && !door && !ragdoll && !camera && charger.is_none() && !class.starts_with("prop_dynamic") {
+            // The game's own models: its items and crates.
+            let fixed = fixed_models(class, &|k| {
+                e.properties().find(|(n, _)| n.eq_ignore_ascii_case(k)).map(|(_, v)| v.to_string())
+            });
+            if !physics
+                && !door
+                && !ragdoll
+                && !camera
+                && charger.is_none()
+                && fixed.is_none()
+                && !class.starts_with("prop_dynamic")
+            {
                 return None;
             }
             let [x, y, z] = parse(e.prop("origin")?)?;
@@ -1361,7 +1429,7 @@ fn entity_props(bsp: &Bsp) -> Vec<PropPlacement> {
                 // Its parts are bodies of their own when its model has a
                 // ragdoll (`map::ragdoll::PlacedRagdoll`).
                 PropSolid::None
-            } else if camera || charger.is_some() {
+            } else if camera || charger.is_some() || fixed.is_some() {
                 PropSolid::Mesh
             } else if !physics && !door && solid_key == Some("2") {
                 PropSolid::Box
@@ -1378,9 +1446,10 @@ fn entity_props(bsp: &Bsp) -> Vec<PropPlacement> {
                         || e.prop("targetname")
                             .is_some_and(|n| animated_names.contains(&n.to_ascii_lowercase())));
             Some(PropPlacement {
-                model: match (camera, charger) {
-                    (true, _) => COMBINE_CAMERA_MODEL.to_string(),
-                    (_, Some(m)) => m.to_string(),
+                model: match (camera, charger, &fixed) {
+                    (true, ..) => COMBINE_CAMERA_MODEL.to_string(),
+                    (_, Some(m), _) => m.to_string(),
+                    (.., Some(f)) => f.model.to_lowercase(),
                     _ => e.prop("model")?.to_lowercase(),
                 },
                 skin: e.prop("skin").and_then(|s| s.trim().parse().ok()).unwrap_or(0),
@@ -1419,6 +1488,7 @@ fn entity_props(bsp: &Bsp) -> Vec<PropPlacement> {
                 }),
                 static_index: None,
                 detail: false,
+                item: fixed.as_ref().is_some_and(|f| f.kind == FixedKind::Item),
             })
         })
         .collect()
@@ -1475,6 +1545,7 @@ fn fish_pool_props(bsp: &Bsp) -> Vec<PropPlacement> {
                 enable_threshold: false,
                 static_index: None,
                 detail: false,
+                item: false,
             });
         }
     }

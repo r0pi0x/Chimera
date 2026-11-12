@@ -2,6 +2,21 @@
 # (specs/hl2dm/maps_entities.md 1 and 3): what each gives. The kits,
 # vials and batteries are the suit's (game::pickups). An ammo type HL2:DM
 # lacks (the flare and sniper boxes) is never taken.
+#
+# Every item's model (the map's `model` key is ignored): the boxes' below,
+# the suit's items here (specs/hl2dm/suit.md "Pickups").
+
+[[item]]
+class = "item_healthkit"
+model = "models/items/healthkit.mdl"
+
+[[item]]
+class = "item_healthvial"
+model = "models/healthvial.mdl"
+
+[[item]]
+class = "item_battery"
+model = "models/items/battery.mdl"
 
 [[box]]
 class = "item_ammo_pistol"

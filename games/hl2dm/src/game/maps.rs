@@ -12,7 +12,10 @@
 //! mirrored (specs/hl2dm/player_models.md 12.1), and with a whole kit the
 //! SMG1's and shotgun's shells (`shells`). `dress_guest` brings its HUD look and them
 //! onto another game's map (the party's), read from the HL2:DM install.
-//! Also its chat formats (`chat`: no radio, the dead read by the living).
+//! Also its chat formats (`chat`: no radio, the dead read by the living),
+//! and its items' and ammo crates' models (`fixed_models`, data/items.toml:
+//! drawn in every app that loads its maps, the items as physics props
+//! players walk through, the crates solid).
 //!
 //! Known shortcuts:
 //! - Its sounds (Source's sound scripts and soundscapes, lift S5) are the
@@ -52,7 +55,34 @@ pub static HL2DM: SourceGame = SourceGame {
     extra_particles: no_extra_particles,
     held: held_kit,
     sounds,
+    fixed_models,
 };
+
+/// The models HL2:DM gives its items and ammo crates, whatever the map's
+/// `model` key says (specs/hl2dm/maps_entities.md 1, 3; data/items.toml):
+/// an item (a kit, vial, battery, ammo box) a physics object players walk
+/// through, a crate a solid static model by its `AmmoType` (0 to 9).
+pub fn fixed_models(class: &str, key: &dyn Fn(&str) -> Option<String>) -> Option<props::FixedModel> {
+    if !class.get(..5).is_some_and(|c| c.eq_ignore_ascii_case("item_")) {
+        return None;
+    }
+    // Read for each item (a few dozen a map): no state outlives the load.
+    let data = super::ammo::ItemData::hl2();
+    if class.eq_ignore_ascii_case("item_ammo_crate") {
+        let kind = key("AmmoType")
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .unwrap_or(0)
+            .min(9);
+        return data.crates.get(kind).map(|c| props::FixedModel {
+            model: c.model.clone(),
+            kind: props::FixedKind::Solid,
+        });
+    }
+    data.item_model(class).map(|m| props::FixedModel {
+        model: m.to_string(),
+        kind: props::FixedKind::Item,
+    })
+}
 
 /// The sound entries HL2:DM plays whatever the map (beyond the
 /// surfaces' and the map's own): the model footsteps, the ladder, the

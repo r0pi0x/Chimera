@@ -167,7 +167,10 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
 /// What HL2:DM adds to a game of several games: the game registered, map
 /// logic for its maps, its movement (not the match's) with the suit, its
 /// guns (data, hooks, recoil, the shove, its rung extras) and their view
-/// models' rules and motion. Not its game's rules (the loadout, pickups).
+/// models' rules and motion, its physics props' rules on its own maps
+/// (`physics::MapPhysicsRules`). Not its game's rules (the loadout,
+/// pickups); its maps' items and crates are drawn (the map loader's) but
+/// inert.
 pub fn party_sim(app: &mut bevy::app::App) {
     use crate::game_registry::GameAppExt;
     app.register_game(&INFO);
@@ -184,6 +187,9 @@ pub fn party_sim(app: &mut bevy::app::App) {
         app.add_plugins(sounds::Hl2SoundsPlugin);
     }
     view::add_rules(app);
+    if !app.is_plugin_added::<physics::MapPhysicsRules>() {
+        app.add_plugins(physics::MapPhysicsRules);
+    }
     if !app.is_plugin_added::<bodies::Hl2BodiesPlugin>() {
         app.add_plugins((bodies::Hl2BodiesPlugin, player_anim::Hl2AnimPlugin));
     }

@@ -3,7 +3,9 @@
 //! ammo boxes: 329 in all), chargers and ammo crates, each item come to
 //! rest at a spot and listed for relocation; on dm_lockdown a kit taken
 //! comes back 2000 ticks later at its spot and a placed weapon's copy
-//! 1333 ticks after it is taken (Chimera's `weapon::respawn`). Converted
+//! 1333 ticks after it is taken (Chimera's `weapon::respawn`); each
+//! item's model follows its body and each crate's model is its collision
+//! (`pickups::ItemModel`, `ammo_crates::CrateModel`). Converted
 //! lean from the install; skips without one.
 
 use bevy::prelude::*;
@@ -20,8 +22,8 @@ use chimera_world::{
 use hl2dm::{
     game::{
         STOCK_MAPS,
-        ammo_crates::AmmoCrate,
-        pickups::{Charger, Item, Pickup},
+        ammo_crates::{AmmoCrate, CrateModel},
+        pickups::{Charger, Item, ItemModel, Pickup},
     },
     harness::Hl2Sim,
 };
@@ -63,6 +65,21 @@ fn each_stock_maps_pickups() {
         );
         let want = COUNTS.iter().find(|c| c.0 == *name).unwrap();
         assert_eq!((items.len(), chargers, crates), (want.1, want.2, want.3), "{name}");
+        // Each item drawn by its model, on its body's bottom; each crate's
+        // model its collision.
+        let models: Vec<(usize, Transform)> = w
+            .query_filtered::<(&chimera_world::map::PropEntity, &Transform), With<ItemModel>>()
+            .iter(w)
+            .map(|(p, t)| (p.0, *t))
+            .collect();
+        assert_eq!(models.len(), items.len(), "{name}: every item's model follows it");
+        for (index, t) in &models {
+            let (_, _, body) = items.iter().find(|(p, ..)| p.map_index == *index).expect("its item");
+            let bottom = body.transform_point(Vec3::new(0.0, -8.0 * 0.0254, 0.0));
+            assert!(t.translation.distance(bottom) < 1e-3, "{name}: item {index}'s model at its body");
+        }
+        let linked = w.query_filtered::<(), With<CrateModel>>().iter(w).count();
+        assert_eq!(linked, crates, "{name}: every crate's model");
         // Nearly all settle within 5 s (a few may still roll).
         assert!(rested * 10 >= items.len() * 9, "{name}: {rested} of {} at rest", items.len());
         total += items.len();
@@ -81,8 +98,18 @@ fn each_stock_maps_pickups() {
         };
         let taken = sim.app.world().resource::<SimClock>().tick;
         respawn::taken(sim.app.world_mut(), kit);
+        sim.ticks(1);
+        {
+            let index = sim.app.world().get::<Pickup>(kit).unwrap().map_index;
+            let w = sim.app.world_mut();
+            let hidden = w
+                .query_filtered::<(&chimera_world::map::PropEntity, &Visibility), With<ItemModel>>()
+                .iter(w)
+                .any(|(p, v)| p.0 == index && *v == Visibility::Hidden);
+            assert!(hidden, "a taken kit's model is hidden");
+        }
         let mut back = None;
-        for _ in 0..2100 {
+        for _ in 0..2099 {
             sim.ticks(1);
             if back.is_none() && sim.app.world().get::<Respawning>(kit).is_none() {
                 back = Some(sim.app.world().resource::<SimClock>().tick - taken);

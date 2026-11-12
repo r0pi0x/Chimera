@@ -13,6 +13,7 @@ mod effects;
 mod gravity_gun;
 mod hitboxes;
 mod info;
+mod map_physics_rules;
 mod melee;
 mod movement;
 mod net;

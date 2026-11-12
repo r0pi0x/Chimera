@@ -38,6 +38,10 @@
 //!   input, pressure) stays where it is, drawn, non-solid and undamageable
 //!   (Corrections 2, measured P15: `source_logic::logic::KeepPropsOnBreak`).
 //!
+//! In a game of several (Ultimate Gun Game) the same rules hold on
+//! HL2:DM's maps only (`MapPhysicsRules`, by the loaded map's game): they
+//! swap in when such a map loads and the other game's come back after.
+//!
 //! Known shortcuts: a prop kept after a `Break` input is non-solid to the
 //! logic only (as `DisableCollision`): its body still collides; a `+use`
 //! carry doesn't read `preferred_carryangles` (8 says the same hold with its
@@ -218,6 +222,66 @@ pub fn map_blast() -> chimera_sim::weapon::grenade::Blast {
     }
 }
 
+/// HL2:DM's prop rules as resources (what `Hl2PhysicsPlugin` puts in, and
+/// a game of several swaps in on HL2:DM's maps: `MapPhysicsRules`), each
+/// with what was there before.
+#[derive(Default)]
+struct Rules {
+    impact: Option<source_logic::logic::PlayerImpactScale>,
+    keep: Option<source_logic::logic::KeepPropsOnBreak>,
+    first: Option<source_logic::logic::FirstImpactScale>,
+    window: Option<source_logic::logic::BlastInfluenceWindow>,
+    explosion: Option<chimera_sim::weapon::grenade::ExplosionRule>,
+    blast_weapon: Option<source_logic::logic::PropBlastWeapon>,
+    draws: Option<super::projectile_fx::DrawsMapBlasts>,
+    prompt: Option<source_logic::logic::PromptSideHits>,
+    knock: Option<source_engine::source_movement::shadow::ShadowKnock>,
+}
+
+impl Rules {
+    fn hl2() -> Self {
+        Self {
+            impact: Some(source_logic::logic::PlayerImpactScale(PLAYER_IMPACT_SCALE)),
+            // A prop broken by an input stays (gravity_gun.md Corrections 2).
+            keep: Some(source_logic::logic::KeepPropsOnBreak(true)),
+            // A launch's first impact and an explosive prop's credit (9).
+            first: Some(source_logic::logic::FirstImpactScale(FIRST_IMPACT_SCALE)),
+            window: Some(source_logic::logic::BlastInfluenceWindow(BLAST_CREDIT_WINDOW)),
+            // Map logic's blasts: its explosive props and `env_explosion`s
+            // (prop_damage.md 7.5): every explosion's rule, at their own
+            // damage and radius, drawn by `projectile_fx`; a prop's kills
+            // name the prop (rules.md, the death notice).
+            explosion: Some(chimera_sim::weapon::grenade::ExplosionRule(map_blast())),
+            blast_weapon: Some(source_logic::logic::PropBlastWeapon(PHYSICS_WEAPON)),
+            draws: Some(super::projectile_fx::DrawsMapBlasts),
+            prompt: Some(source_logic::logic::PromptSideHits),
+            knock: Some(PROP_KNOCK),
+        }
+    }
+
+    /// Put these in, returning what they replace (absent ones removed).
+    fn swap(self, world: &mut World) -> Self {
+        fn one<R: Resource>(world: &mut World, put: Option<R>) -> Option<R> {
+            let old = world.remove_resource::<R>();
+            if let Some(r) = put {
+                world.insert_resource(r);
+            }
+            old
+        }
+        Self {
+            impact: one(world, self.impact),
+            keep: one(world, self.keep),
+            first: one(world, self.first),
+            window: one(world, self.window),
+            explosion: one(world, self.explosion),
+            blast_weapon: one(world, self.blast_weapon),
+            draws: one(world, self.draws),
+            prompt: one(world, self.prompt),
+            knock: one(world, self.knock),
+        }
+    }
+}
+
 /// HL2:DM's physics rules in its own game.
 pub struct Hl2PhysicsPlugin;
 
@@ -226,34 +290,85 @@ impl Plugin for Hl2PhysicsPlugin {
         super::carry::plugin(app);
         // Map explosions' sparks under water (effects_sounds.md).
         app.add_plugins(super::spark_shower::SparkShowerPlugin);
-        app.add_plugins(source_engine::source_movement::shadow::ShadowKnockPlugin(PROP_KNOCK));
-        app.insert_resource(source_logic::logic::PlayerImpactScale(PLAYER_IMPACT_SCALE))
-            // A prop broken by an input stays (gravity_gun.md Corrections 2).
-            .insert_resource(source_logic::logic::KeepPropsOnBreak(true))
-            // A launch's first impact and an explosive prop's credit (9).
-            .insert_resource(source_logic::logic::FirstImpactScale(FIRST_IMPACT_SCALE))
-            .insert_resource(source_logic::logic::BlastInfluenceWindow(BLAST_CREDIT_WINDOW))
-            // Map logic's blasts: its explosive props and `env_explosion`s
-            // (prop_damage.md 7.5): every explosion's rule, at their own
-            // damage and radius, drawn by `projectile_fx`; a prop's kills
-            // name the prop (rules.md, the death notice).
-            .insert_resource(chimera_sim::weapon::grenade::ExplosionRule(map_blast()))
-            .insert_resource(source_logic::logic::PropBlastWeapon(PHYSICS_WEAPON))
-            .insert_resource(super::projectile_fx::DrawsMapBlasts)
-            .insert_resource(source_logic::logic::PromptSideHits)
-            .add_systems(
-                FixedUpdate,
-                (
-                    solid_multiplayer,
-                    use_props
-                        .after(source_logic::logic::LogicSet::Pre)
-                        .before(SimSet::Movement)
-                        .run_if(crate::core::authoritative),
-                    credit
-                        .after(SimSet::Weapons)
-                        .before(crate::core::apply_damage)
-                        .run_if(crate::core::authoritative),
-                ),
-            );
+        app.add_plugins(source_engine::source_movement::shadow::ShadowKnockPlugin(None));
+        Rules::hl2().swap(app.world_mut());
+        add_systems(app, || true);
     }
+}
+
+/// The rules' systems, running while `on` says.
+fn add_systems<M>(app: &mut App, on: impl bevy::ecs::schedule::SystemCondition<M> + Clone) {
+    app.add_systems(
+        FixedUpdate,
+        (
+            solid_multiplayer,
+            use_props
+                .after(source_logic::logic::LogicSet::Pre)
+                .before(SimSet::Movement)
+                .run_if(crate::core::authoritative),
+            credit
+                .after(SimSet::Weapons)
+                .before(crate::core::apply_damage)
+                .run_if(crate::core::authoritative),
+        )
+            .run_if(on),
+    );
+}
+
+/// Whether the loaded map is HL2:DM's (its `map::impact::ActiveImpacts`).
+pub fn on_hl2_map(impacts: Option<Res<crate::map::impact::ActiveImpacts>>) -> bool {
+    impacts.is_some_and(|i| i.0.map_game().is_some_and(|g| g.eq_ignore_ascii_case(super::GAME)))
+}
+
+/// What the rules replaced while an HL2:DM map is loaded (None: another
+/// game's map, the other game's rules in).
+#[derive(Resource, Default)]
+struct OtherRules(Option<Rules>);
+
+/// HL2:DM's prop rules on HL2:DM's maps only, in a game of several
+/// (Ultimate Gun Game; specs/hl2dm/source_deltas.md 1.5, gravity_gun.md
+/// Corrections 1, 2 and 9): while such a map is loaded its players take
+/// props' impacts at energy scale 4, its multiplayer props collide with
+/// players, a prop running into a player knocks him, a launch's first
+/// impact counts ten times, a prop broken by an input stays, its map's
+/// blasts are HL2:DM's and credit a prop's influencer, and `+use` at a
+/// prop plays HL2:DM's sounds (no carrying: `hl2mp_allow_pickup` 0). The
+/// rules swap in when such a map loads (before its logic reads them) and
+/// the other game's come back when another's does. Its own game takes
+/// `Hl2PhysicsPlugin` (always in).
+pub struct MapPhysicsRules;
+
+impl Plugin for MapPhysicsRules {
+    fn build(&self, app: &mut App) {
+        if app.is_plugin_added::<Hl2PhysicsPlugin>() {
+            return;
+        }
+        app.add_plugins(source_engine::source_movement::shadow::ShadowKnockPlugin(None))
+            .init_resource::<OtherRules>()
+            .add_systems(FixedUpdate, follow_map.before(source_logic::logic::LogicSet::Pre));
+        add_systems(app, on_hl2_map);
+    }
+}
+
+/// Swap HL2:DM's rules in or out as the loaded map's game changes (the
+/// swap queued: it lands before the map logic's load reads them).
+fn follow_map(impacts: Option<Res<crate::map::impact::ActiveImpacts>>, other: Res<OtherRules>, mut commands: Commands) {
+    let on = on_hl2_map(impacts);
+    if on == other.0.is_some() {
+        return;
+    }
+    commands.queue(move |world: &mut World| {
+        let back = world.resource_mut::<OtherRules>().0.take();
+        match back {
+            Some(rules) if !on => {
+                rules.swap(world);
+            }
+            Some(rules) => world.resource_mut::<OtherRules>().0 = Some(rules),
+            None if on => {
+                let replaced = Rules::hl2().swap(world);
+                world.resource_mut::<OtherRules>().0 = Some(replaced);
+            }
+            None => {}
+        }
+    });
 }

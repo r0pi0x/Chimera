@@ -130,8 +130,9 @@ fn flares_and_the_camera_are_drawn() {
     assert_eq!(drawn, 14, "a red flare and a white core each");
     let underpass = convert(&mount, "dm_underpass", &MapLoadOptions::default());
     // 692 props before the ceiling camera stood in as a model, and its
-    // five chargers (3 suit, 2 health) as theirs.
-    assert_eq!(underpass.props.len(), 698, "the ceiling camera's and the chargers' models");
+    // five chargers (3 suit, 2 health) as theirs, and its 75 items as
+    // theirs (maps_entities.md 1).
+    assert_eq!(underpass.props.len(), 773, "the ceiling camera's, the chargers' and the items' models");
     let chargers: Vec<_> = underpass
         .props
         .iter()
