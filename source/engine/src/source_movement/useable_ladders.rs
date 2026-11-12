@@ -13,13 +13,19 @@
 //! lines are published as `core::MapLadders::lines` (engine space) for the
 //! other games' movement, and the other ladders are climbed this way too,
 //! as lines (`lines_of_volume`, ours: the specs are silent on mixing): a
-//! ladder volume's two climbing faces (its thinnest across, upright) each
-//! give a line 18 units out from the face's middle (the hull's half width
-//! and Source's 2-unit ladder reach), bottom to top of the face, left over
-//! the top (beyond the volume, on the floor it leads to) or at the foot;
-//! a face with no room for a player in front of it (a wall) gives none
-//! (`fix_ends`). Another game's ladder volumes (`LadderZone`, Combat Arms')
-//! always; the map's ladder brushes (`MapLadders::volumes`) only on a map
+//! ladder volume's two climbing faces (its thinnest across, upright or
+//! leaning) each give a line 18 units out from the face (the hull's half
+//! width, more for a face at an angle, and Source's 2-unit ladder reach),
+//! from its bottom edge's middle to its top edge's, left over the top
+//! (beyond the volume, else on it or at its edge: a ledge with a wall
+//! behind) or at the foot; lines of volumes stacked one on another join
+//! into one (`join_stacked`); a face with no room for a player in front
+//! of it (a wall) gives none (`fix_ends`). The top and its dismount points
+//! are then put on the floor it leads to (`to_floors`): a ladder brush
+//! often ends a little under that floor, or below a ledge with a wall
+//! behind, where a dismount point would be in a solid and refused.
+//! Another game's ladder volumes (`LadderZone`, Combat Arms') always; the
+//! map's ladder brushes (`MapLadders::volumes`) only on a map
 //! that isn't the movement's game's (`core::foreign_map`), so HL2:DM on its
 //! own maps keeps contents ladders solid. They follow the map's own ladders
 //! in `UseableLadders` (whose indices stay), sorted, so a client builds the
@@ -103,6 +109,10 @@ pub struct UseableLadder {
     /// The end points were fixed up against the world (`fix_ends`).
     pub fixed: bool,
     pub from: LadderFrom,
+    /// A ladder made from a volume: its ends and dismount points as made,
+    /// before `fix_ends` (what tells two builds of it apart); empty for the
+    /// map's own.
+    pub made: Vec<Vec3>,
 }
 
 impl UseableLadder {
@@ -193,6 +203,7 @@ pub fn ladders_of(entities: &[MapEntity]) -> Vec<UseableLadder> {
                 dismounts,
                 fixed: false,
                 from: LadderFrom::Map,
+                made: Vec::new(),
             }
         })
         .collect()
@@ -223,10 +234,14 @@ fn corners(b: &MapBrush) -> Vec<Vec3> {
 
 /// A ladder volume (engine space) as useable ladders (Source units), one
 /// per climbing face: its upright faces thinnest across (a slab's two big
-/// faces; a square post's four), each a line 18 units out from the face's
-/// middle from its bottom to its top, with two dismount points: over the
-/// top beyond the volume (20 units past its far side) and at the foot (8
-/// out). Enabled until `fix_ends` finds no room in front.
+/// faces; a square post's four), each a line 18 units out from the face
+/// (more for a face at an angle: where the box's edge is 2 units off it),
+/// from its bottom edge's middle to its top edge's (leaning with a leaning
+/// face), with dismount points over the top
+/// (beyond the volume, 20, 12 and 4 units past its far side; on it, at its
+/// middle; at its near edge, up to 12 units toward the climber: the floor
+/// `fix_ends` finds among them) and at the foot (8 out). Enabled until
+/// `fix_ends` finds no room in front.
 pub fn lines_of_volume(b: &MapBrush, from: LadderFrom) -> Vec<UseableLadder> {
     let v = corners(b);
     if v.len() < 4 {
@@ -249,21 +264,39 @@ pub fn lines_of_volume(b: &MapBrush, from: LadderFrom) -> Vec<UseableLadder> {
             continue;
         }
         let flat = Vec3::new(n.x, 0.0, n.z).normalize_or_zero();
-        let mid = face.iter().copied().sum::<Vec3>() / face.len() as f32;
         let lo = face.iter().map(|p| p.y).fold(f32::MAX, f32::min);
         let hi = face.iter().map(|p| p.y).fold(f32::MIN, f32::max);
-        let out_by = flat * (super::HALF_WIDTH + super::LADDER_REACH) * u;
-        let bottom = Vec3::new(mid.x, lo, mid.z) + out_by;
-        let top = Vec3::new(mid.x, hi, mid.z) + out_by;
-        let over = Vec3::new(mid.x, hi, mid.z) - flat * (thin + (super::HALF_WIDTH + 4.0) * u);
+        // The middles of its bottom and top edges (a leaning ladder's
+        // line leans with it).
+        let edge = |y: f32| {
+            let e: Vec<Vec3> = face.iter().copied().filter(|p| (p.y - y).abs() < 0.5 * u).collect();
+            e.iter().sum::<Vec3>() / e.len().max(1) as f32
+        };
+        let (low, high) = (edge(lo), edge(hi));
+        // The box's reach toward a face at an angle is more than its half
+        // width (23 units at 45 degrees).
+        let reach = super::HALF_WIDTH * (flat.x.abs() + flat.z.abs());
+        let out_by = flat * (reach + super::LADDER_REACH) * u;
+        let bottom = low + out_by;
+        let top = high + out_by;
+        // Over the top: beyond the volume, else on it or at its edge (a
+        // ledge with a wall behind), farthest first; `to_floors` keeps
+        // those standing on a floor.
+        let over = |back: f32| super::to_source(high - flat * back);
         let foot = bottom + flat * 8.0 * u;
+        let (top, bottom) = (super::to_source(top), super::to_source(bottom));
+        let mut dismounts: Vec<Vec3> = OVER_BACK.iter().map(|b| over(thin + b * u)).collect();
+        dismounts.push(over(thin / 2.0));
+        dismounts.extend(OVER_EDGE.iter().map(|b| over(b * u)));
+        dismounts.push(super::to_source(foot));
         out.push(UseableLadder {
             map_index: NO_ENTITY,
-            top: super::to_source(top),
-            bottom: super::to_source(bottom),
+            top,
+            bottom,
             enabled: true,
             dont_get_on: false,
-            dismounts: vec![super::to_source(over), super::to_source(foot)],
+            made: [vec![bottom, top], dismounts.clone()].concat(),
+            dismounts,
             fixed: false,
             from,
         });
@@ -310,8 +343,12 @@ pub(super) enum LadderStep {
 /// face against a wall) is off.
 pub(super) fn fix_ends(trace: &super::Tracer, ladders: &mut [UseableLadder]) {
     for l in ladders.iter_mut().filter(|l| !l.fixed) {
-        if l.from != LadderFrom::Map && trace.solid(false, (l.top + l.bottom) / 2.0) {
-            l.enabled = false;
+        if l.from != LadderFrom::Map {
+            if trace.solid(false, (l.top + l.bottom) / 2.0) {
+                l.enabled = false;
+            } else {
+                to_floors(trace, l);
+            }
         }
         for p in [&mut l.top, &mut l.bottom] {
             let tr = trace.sweep(false, *p + Vec3::Z * 4.0, *p);
@@ -322,6 +359,88 @@ pub(super) fn fix_ends(trace: &super::Tracer, ladders: &mut [UseableLadder]) {
         l.fixed = true;
     }
 }
+
+/// Lines made from volumes stacked one on another (a ladder built of
+/// several brushes: one's top within `JOIN` of the next's bottom, facing
+/// the same way) as one line, from the lowest bottom to the highest top,
+/// with the top one's dismount points over the top and the bottom one's
+/// at the foot (moved out where they lean by different amounts), so the climber goes on up as a contents ladder's does
+/// (ours). In order, so every machine joins the same.
+fn join_stacked(lines: &mut Vec<UseableLadder>) {
+    let out = |l: &UseableLadder| l.dismounts.last().map_or(Vec3::ZERO, |f| (*f - l.bottom).with_z(0.0).normalize_or_zero());
+    loop {
+        let pair = (0..lines.len()).find_map(|i| {
+            (0..lines.len()).find(|&j| {
+                let (a, b) = (&lines[i], &lines[j]);
+                i != j && a.from == b.from && a.top.distance(b.bottom) <= JOIN && out(a).dot(out(b)) > 0.9
+            })
+            .map(|j| (i, j))
+        });
+        let Some((i, j)) = pair else { break };
+        let upper = lines.remove(j);
+        let lower = &mut lines[if j < i { i - 1 } else { i }];
+        // Leaning by different amounts: moved out until the joint is
+        // behind it, so the straight line stays clear of both.
+        let (joint, dir) = (lower.top, out(lower));
+        let rise = (upper.top.z - lower.bottom.z).max(1e-3);
+        let chord = lower.bottom + (upper.top - lower.bottom) * ((joint.z - lower.bottom.z) / rise);
+        let shift = dir * (joint - chord).dot(dir).max(0.0);
+        let foot = lower.dismounts.pop();
+        lower.bottom += shift;
+        lower.top = upper.top + shift;
+        lower.dismounts = upper.dismounts[..upper.dismounts.len().saturating_sub(1)].to_vec();
+        lower.dismounts.extend(foot);
+        lower.made.extend(upper.made);
+    }
+}
+
+/// How near (units) one made line's top and the next's bottom are joined.
+const JOIN: f32 = 16.0;
+
+/// Where a made ladder's dismount points over the top are tried (units):
+/// past the volume's far side, then (after its middle) from its near
+/// face, negative toward the climber.
+const OVER_BACK: [f32; 3] = [20.0, 12.0, 4.0];
+const OVER_EDGE: [f32; 4] = [0.0, -4.0, -8.0, -12.0];
+
+/// A ladder made from a volume onto the floor it leads to (a volume's top
+/// needn't be where a player stands: a ladder brush often ends a little
+/// under that floor, or below a ledge with a wall behind): of the dismount
+/// points over the top, those where a standing hull swept down from
+/// `OVER_REACH` over (from lower under a ceiling) lands on a floor within
+/// `SETTLE` under, moved onto it (if none, the farthest as
+/// it was), and the top raised to the highest, so the climber's feet
+/// reach that floor (ours).
+fn to_floors(trace: &super::Tracer, l: &mut UseableLadder) {
+    let top = l.top.z;
+    let (over, foot): (Vec<Vec3>, Vec<Vec3>) = l.dismounts.iter().partition(|d| d.z >= top - 1.0);
+    let mut floors = Vec::new();
+    for d in &over {
+        // From lower under a ceiling.
+        let Some(tr) = OVER_REACH
+            .iter()
+            .map(|up| trace.sweep(false, *d + Vec3::Z * *up, *d - Vec3::Z * SETTLE))
+            .find(|tr| !tr.start_solid)
+        else {
+            continue;
+        };
+        if tr.hit() {
+            l.top.z = l.top.z.max(tr.end.z);
+            floors.push(tr.end);
+        }
+    }
+    if floors.is_empty() {
+        floors.extend(over.first());
+    }
+    l.dismounts = [floors, foot].concat();
+}
+
+/// `to_floors`' reach (units): how far over a volume's top a floor beyond
+/// it may be (a climber of contents ladders leaving the top at 200
+/// units/s rises 25 more, and steps up 18), lower under a ceiling; and how
+/// far under a dismount point a floor is looked for.
+const OVER_REACH: [f32; 4] = [36.0, 18.0, 6.0, 1.0];
+const SETTLE: f32 = 24.0;
 
 impl Mover<'_, '_, '_, '_> {
     fn ladder_at(&self, i: u32) -> Option<&UseableLadder> {
@@ -638,10 +757,11 @@ pub fn build_ladders(
     }
     let key = |l: &UseableLadder| (l.from, [l.bottom.x, l.bottom.y, l.bottom.z, l.top.z].map(f32::to_bits));
     more.sort_by_key(key);
+    join_stacked(&mut more);
     // Replaced only when they differ (a change elsewhere keeps their
     // fixed ends and the indices of those climbed).
     let keep = ladders.0.iter().filter(|l| l.from == LadderFrom::Map).count();
-    let unfixed = |l: &UseableLadder| (l.from, l.dismounts.clone());
+    let unfixed = |l: &UseableLadder| (l.from, l.made.clone());
     if ladders.0[keep..].iter().map(unfixed).ne(more.iter().map(unfixed)) {
         ladders.0.truncate(keep);
         ladders.0.extend(more);
@@ -687,5 +807,58 @@ mod tests {
         assert_eq!(l[0].closest(Vec3::new(-20.0, 0.0, 0.0)), Vec3::new(0.0, 0.0, 8.0));
         assert!((l[0].param(Vec3::new(5.0, 0.0, 136.0)) - 0.5).abs() < 1e-6);
         assert!((l[0].line_distance(Vec3::new(3.0, 4.0, 50.0)) - 5.0).abs() < 1e-6);
+    }
+
+    /// A ladder brush (engine metres, Y up) of two stacked boxes: each
+    /// face's line 18 units out, the stacked ones joined into one from the
+    /// lower box's bottom to the upper's top, with the upper's dismount
+    /// points over the top and the lower's at the foot.
+    #[test]
+    fn stacked_ladder_volumes_join_into_one_line() {
+        let m = 0.0254;
+        // 4 units thick along Z, 32 wide, 0..128 and 128..256 units up.
+        let brush = |lo: f32, hi: f32| {
+            MapBrush::from_box(Vec3::new(-16.0, lo, -2.0) * m, Vec3::new(16.0, hi, 2.0) * m)
+        };
+        let mut lines: Vec<UseableLadder> = [brush(0.0, 128.0), brush(128.0, 256.0)]
+            .iter()
+            .flat_map(|b| lines_of_volume(b, LadderFrom::Brush))
+            .collect();
+        assert_eq!(lines.len(), 4, "two faces each");
+        join_stacked(&mut lines);
+        assert_eq!(lines.len(), 2, "one line a face");
+        for l in &lines {
+            assert!((l.bottom.z - 0.0).abs() < 0.01 && (l.top.z - 256.0).abs() < 0.01, "{l:?}");
+            assert!((l.bottom.y.abs() - 20.0).abs() < 0.01, "18 units out from the face: {l:?}");
+            let foot = *l.dismounts.last().unwrap();
+            assert!((foot.z - 0.0).abs() < 0.01, "the foot's at the bottom: {foot}");
+            assert!(l.dismounts[..l.dismounts.len() - 1].iter().all(|d| (d.z - 256.0).abs() < 0.01));
+        }
+    }
+
+    /// A face at 45 degrees: its line is out by the box's reach that way
+    /// (16 √2) and the 2-unit ladder reach.
+    #[test]
+    fn a_face_at_an_angle_has_its_line_clear_of_it() {
+        let m = 0.0254;
+        let (a, b) = (Vec3::new(1.0, 0.0, 1.0).normalize(), Vec3::new(1.0, 0.0, -1.0).normalize());
+        // 4 units thick along `a`, 32 wide along `b`, 0..128 up.
+        let brush = MapBrush {
+            planes: vec![
+                (a, 2.0 * m),
+                (-a, 2.0 * m),
+                (b, 16.0 * m),
+                (-b, 16.0 * m),
+                (Vec3::Y, 128.0 * m),
+                (Vec3::NEG_Y, 0.0),
+            ],
+            ..MapBrush::from_box(Vec3::splat(-24.0 * m).with_y(0.0), Vec3::splat(24.0 * m).with_y(128.0 * m))
+        };
+        let lines = lines_of_volume(&brush, LadderFrom::Brush);
+        assert_eq!(lines.len(), 2);
+        for l in &lines {
+            let from_face = l.bottom.xy().length() - 2.0;
+            assert!((from_face - (16.0 * 2f32.sqrt() + 2.0)).abs() < 0.05, "{from_face}");
+        }
     }
 }
