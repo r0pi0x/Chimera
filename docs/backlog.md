@@ -131,8 +131,8 @@ Delete each when done.
 
 - **What a match still fetches outside its sets** (measured 2026-11-12:
   playtest-hosting.md, "Publishing the game files"; a seeded three-map
-  session, 13 on-demand requests and 1.1 MB once Combat Arms' `base`
-  has its impacts and shells, from 62 and 32.1 MB). Find them with
+  session, 9-13 on-demand requests and 0.7-1.1 MB once Combat Arms'
+  `base` has its impacts and shells, from 62 and 32.1 MB). Find them with
   `CHIMERA_ASSET_FETCH_LOG`.
   - Combat Arms guns' own sounds (`guns_snd_*`: fire, select, reload)
     are in no set: about a request each the first time a gun fires

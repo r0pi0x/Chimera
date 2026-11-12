@@ -186,9 +186,10 @@ session (warehouse, de_aztec, de_dust2 by `ugg_new` with ladder seeds
 from 62 on-demand requests and 32.1 MB (39 of them, 17.4 MB, files of
 the offered `weapon/`, `character/` and `players` sets) to 19 and 14.8
 MB, the joins' downloads from 162.6 to 176.6 MB; with Combat Arms'
-`base` widened as above, to 13 requests and 1.1 MB (each a Combat Arms
-gun's own sound: `guns_snd_*`, in no set), the startup download from
-355.5 to 368.7 MB.
+`base` widened as above, 50 requests and 17.6 MB before the hold and
+9-13 and 0.7-1.1 MB with it (two runs; each a Combat Arms gun's own
+sound, `guns_snd_*`, in no set), the startup download from 355.5 to
+368.7 MB.
 
 Publishing again at the same build reaches testers who fetched before:
 each start asks the service whether it has a newer manifest than the
