@@ -1138,6 +1138,10 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
     }
     D::insert_drawn(drawn, commands, s, DrawnResource::Decals);
     commands.insert_resource(sound::SoundBank(data.sounds.clone()));
+    // Whose map it is (its ladders' rules: `core::MapLadders`).
+    if let Some(game) = data.impacts.map_game() {
+        commands.insert_resource(crate::core::MapGame(game.to_string()));
+    }
     commands.insert_resource(super::impact::ActiveImpacts(data.impacts.clone()));
     if !data.kit.characters.is_empty() {
         commands.insert_resource(CharacterModels(Arc::new(data.kit.characters.clone())));

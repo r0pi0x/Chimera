@@ -27,7 +27,10 @@
 //! standing box, so feet = origin - 36 units. Ladders and water (swimming,
 //! water jumps) follow the spec's sections; other games' liquid and ladder
 //! volumes (`WaterZone`, `LadderZone`: Combat Arms' maps') count as the
-//! map's water and ladder brushes (a ladder zone is swept as a solid). Not implemented yet: base
+//! map's water and ladder brushes (a ladder zone is swept as a solid); for
+//! a movement climbing contents ladders on another game's map, the map's
+//! ladder lines (`core::MapLadders::lines`, HL2's) are thin solid ladder
+//! posts (docs/DESIGN.md "Ladders across games"). Not implemented yet: base
 //! velocity (conveyors, water currents). Landings and wall slams roll the
 //! view (the punch angle's roll, `MovementState::view_roll`); hard
 //! landings deal fall damage (specs/cs_source/fall_damage.md) and play
@@ -113,7 +116,7 @@ pub mod pushaway;
 pub mod shadow;
 pub mod useable_ladders;
 
-pub use useable_ladders::{ForcedMove, UseableLadder, UseableLadders};
+pub use useable_ladders::{ForcedMove, LadderFrom, UseableLadder, UseableLadders};
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -585,6 +588,9 @@ const UPWARD_AIR_FRICTION: f32 = 0.25;
 
 // Ladders and water (spec "Ladders", "Water").
 const LADDER_REACH: f32 = 2.0;
+/// Half the width of the post another game's ladder line stands for, for
+/// a movement climbing contents ladders (units; ours).
+const POST_HALF: f32 = 1.0;
 const LADDER_SPEED: f32 = 200.0;
 const LADDER_JUMP_OFF: f32 = 270.0;
 const LADDER_BACK_OFF: f32 = 200.0;
@@ -1411,8 +1417,11 @@ struct Mover<'a, 'b, 'w, 's> {
     speed: Option<f32>,
     /// The character's own footsteps (`StepSounds`).
     step_sounds: Option<&'a StepSounds>,
-    /// The map's useable ladders.
+    /// The map's useable ladders (and the other ladders as lines).
     ladders: &'a [UseableLadder],
+    /// The map isn't this movement's game's (`core::foreign_map`): its
+    /// ladder brushes are climbed as lines too.
+    foreign_map: bool,
     /// Map outputs fired this tick (entity index, output).
     outputs: Vec<(usize, &'static str)>,
 }
@@ -2773,10 +2782,11 @@ fn step(
     bank: Option<Res<SoundBank>>,
     mut play: MessageWriter<PlaySound>,
     mut damage: MessageWriter<Damage>,
-    (configs, mut ladders, mut outputs): (
+    (configs, mut ladders, mut outputs, (published, map_game)): (
         MovementConfigs,
         Option<ResMut<UseableLadders>>,
         MessageWriter<crate::map::entities::FireEntityOutput>,
+        (Option<Res<crate::core::MapLadders>>, Option<Res<crate::core::MapGame>>),
     ),
     (clock, first, mut grid_cache, mut waist_steps): (
         Res<crate::core::SimClock>,
@@ -2802,6 +2812,23 @@ fn step(
     // movers without an owner).
     let water_zones: Vec<MapBrush> = zones.0.iter().map(|z| z.0.clone()).collect();
     let ladder_zones: Vec<MapBrush> = zones.1.iter().map(|z| MapBrush { ladder: true, ..z.0.clone() }).collect();
+    // Another game's ladder lines (HL2's `func_useableladder`s) for a
+    // movement climbing contents ladders: thin solid ladder posts along
+    // them (2 units across), so its probe finds a ladder face where that
+    // game's climber stands (ours: docs/DESIGN.md "Ladders across games").
+    let posts: Vec<MapBrush> = published
+        .as_ref()
+        .map(|p| {
+            p.lines
+                .iter()
+                .map(|l| {
+                    let r = Vec3::new(POST_HALF, 0.0, POST_HALF) * METERS_PER_UNIT;
+                    let (lo, hi) = (l.bottom.min(l.top) - r, l.bottom.max(l.top) + r);
+                    MapBrush { ladder: true, ..MapBrush::from_box(lo, hi) }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     // Every living character's box: Source hulls for Source movers, else
     // the collider's bounds. Those whose collider is off (the dead, also
     // those waiting to respawn with their health, unseen) block nobody.
@@ -2911,6 +2938,8 @@ fn step(
     ) in &mut q
     {
         let cfg = configs.of(slot);
+        // A character without a movement slot is the app's own game's.
+        let foreign = slot.is_some_and(|s| crate::core::foreign_map(map_game.as_deref(), crate::core::movement_game(s.0)));
         // player_speedmod: the movement runs as if this many ticks passed
         // (specs/source/game_entities.md 1, lagged movement); 0 (or less:
         // our choice) holds it still, gravity included.
@@ -2942,6 +2971,12 @@ fn step(
         for b in &ladder_zones {
             others.push(b);
             owners.push(None);
+        }
+        if cfg.contents_ladders && foreign {
+            for b in &posts {
+                others.push(b);
+                owners.push(None);
+            }
         }
         let (forward, right) = Mover::view(intent);
         let push_input = pushaway::push_back(
@@ -3001,6 +3036,7 @@ fn step(
             speed: speed.map(|s| s.0),
             step_sounds,
             ladders,
+            foreign_map: foreign,
             outputs: Vec::new(),
         };
         if let Some(on_ground) = mover.me.seat.take() {

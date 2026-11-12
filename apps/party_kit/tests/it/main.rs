@@ -26,6 +26,7 @@ mod identity;
 mod identity_sounds;
 mod kill_feed;
 mod kill_icons;
+mod ladders_across_games;
 mod last_shot;
 mod listen_server;
 mod main_menu;
@@ -53,5 +54,6 @@ mod heavy {
     mod css_map_moves;
     mod hud_looks;
     mod impacts;
+    mod ladders_across_maps;
     mod nav_bounds;
 }

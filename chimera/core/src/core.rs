@@ -2574,6 +2574,8 @@ impl Plugin for CorePlugin {
             .init_resource::<PredictedComponents>()
             .add_systems(FixedFirst, start_tick)
             .init_resource::<RoundRestarts>()
+            .init_resource::<MapLadders>()
+            .add_systems(First, publish_brush_ladders)
             .init_resource::<FreezeTime>()
             .init_resource::<RespawnDue>()
             .configure_sets(
@@ -2967,9 +2969,66 @@ pub struct WaterZone(pub MapBrush);
 
 /// A game's ladder volume, in the form any game's movement reads: climbed
 /// like a map ladder brush (`MapBrush::ladder`). It is swept as a solid, so
-/// a player climbs its faces rather than through it.
+/// a player climbs its faces rather than through it. A game keeps it on its
+/// own volume, in step with it (Combat Arms' `Ladder`s: moved, hidden:
+/// removed); the map's still ladders are `MapLadders`.
 #[derive(Component, Clone, Debug)]
 pub struct LadderZone(pub MapBrush);
+
+/// A ladder as a line its climber's feet follow, bottom to top, with the
+/// points it may be left at (HL2's `func_useableladder` and its
+/// `info_ladder_dismount`s). Engine space, metres.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LadderLine {
+    pub bottom: Vec3,
+    pub top: Vec3,
+    pub dismounts: Vec<Vec3>,
+}
+
+/// The loaded map's ladders in the form every game's movement reads
+/// (docs/DESIGN.md "Ladders across games"): each map loader publishes its
+/// own, and each game's movement climbs every one by its own rules,
+/// another game's map's too. `volumes`: climbable volumes, the map's
+/// ladder brushes (Source's ladder contents, `MapBrush::ladder`: Chimera
+/// keeps them in step with `MapBrushes`, `publish_brush_ladders`);
+/// `lines`: ladders as lines (Source's `func_useableladder`s, which its
+/// movement publishes from the map's entities). A game's own moving
+/// ladder volumes are `LadderZone`s. On a map of its own game a movement
+/// climbs only what that game climbs (`MapGame`, `foreign_map`).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct MapLadders {
+    pub volumes: Vec<MapBrush>,
+    pub lines: Vec<LadderLine>,
+}
+
+/// The loaded map's own game (`cs_source` for de_dust2), when its loader
+/// says (none: the greybox, a hand-made test map).
+#[derive(Resource, Clone, Debug, PartialEq, Eq)]
+pub struct MapGame(pub String);
+
+/// Whether the loaded map isn't of `game` (a movement's game, the prefix
+/// of its id): the ladders it has that `game`'s own maps wouldn't are
+/// climbed then (none told: the map is nobody's, `None` everybody's).
+pub fn foreign_map(map: Option<&MapGame>, game: Option<&str>) -> bool {
+    map.map(|m| m.0.as_str()) != game
+}
+
+/// The game of a movement id (`hl2dm:movement`: `hl2dm`).
+pub fn movement_game(id: &str) -> Option<&str> {
+    id.split_once(':').map(|(g, _)| g)
+}
+
+/// `MapLadders::volumes` in step with the map's brushes: every ladder
+/// brush, whoever put them there (a map's spawn, the greybox, a test).
+pub fn publish_brush_ladders(brushes: Option<Res<MapBrushes>>, mut ladders: ResMut<MapLadders>) {
+    match brushes {
+        Some(b) if b.is_changed() => {
+            ladders.volumes = b.0.iter().filter(|b| b.ladder).cloned().collect();
+        }
+        None if !ladders.volumes.is_empty() => ladders.volumes.clear(),
+        _ => {}
+    }
+}
 
 /// The loaded map's brushes (`MapData::collision_brushes`).
 #[derive(Resource, Clone, Debug, Default)]

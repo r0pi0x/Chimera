@@ -35,6 +35,11 @@ party has no pickups, so attack2 clicked empty from the first press. Now
 the rules' weapons are `minigame::LoadoutWeapon`s and the SMG1's and
 AR2's hooks say `loadout = 2`.
 
+Decided (user, 2026-11-12): ladders cross every game (was item 6): each
+map's ladders are published in one form (`core::MapLadders`,
+`LadderZone`) and each movement climbs them by its own rules; each game's
+own maps unchanged. docs/DESIGN.md, "Ladders across games".
+
 ## Do next (spec is clear)
 
 1. **HL2:DM: view model drawn at 69 degrees, not 54.** `view_model_fov`
@@ -61,13 +66,6 @@ AR2's hooks say `loadout = 2`.
    crates are invisible solid blocks. Spec: hl2dm/maps_entities.md 1, 3
    (touch box: bounds grown 24 sideways, 12 up). Code:
    `games/hl2dm/src/game/pickups.rs`, `ammo_crates.rs`. M. No spec.
-6. **Ladders don't cross into HL2:DM's movement.** An HL2 rung can't
-   climb CS:S ladder brushes or Combat Arms ladder zones
-   (`contents_ladders: false`); a CS:S rung can't use
-   `func_useableladder`. Crossing was fixed for CS:S and Combat Arms on
-   2026-10-27, before HL2:DM came. Spec: silent on mixing (DESIGN.md
-   rules apply). Code: `games/hl2dm/src/game/movement.rs`,
-   `source/engine/src/source_movement/mod.rs`. M. No spec; a design call.
 7. **HL2:DM: prop physics rules missing in UGG.** Without
    `Hl2PhysicsPlugin`, dm_ maps' `prop_physics_multiplayer` (92 on
    dm_underpass) follow CS:S's walk-through rule, hit players at impact
@@ -183,7 +181,7 @@ grates and glass, damageable projectiles, the combine camera.
 
 ## Counts
 
-Do next 15, later 7, needs a spec or capture 10.
+Do next 14, later 7, needs a spec or capture 10.
 
 ## Stale `//!` docs found on the way
 
