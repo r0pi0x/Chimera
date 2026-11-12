@@ -79,7 +79,9 @@
 //!
 //! The match's asset offer names each body the match's ladder's rungs
 //! give (`asset_names`, an `AssetHooks` entry: its `character/<record>`
-//! set, `body_set`, which `chimera_pack sets combat_arms` records; during a
+//! set, `body_set`, with the first-person hands its rung looks wear when
+//! they aren't the default character's, `body_hands`, which `chimera_pack
+//! sets combat_arms` records; during a
 //! rotation's map change the coming ladder's, `minigame_net::match_ladder`)
 //! and each rung gun's fitted parts (its `parts/<id>` set, `parts_set`:
 //! every part a rung may draw for the gun, one set per gun, when its view
@@ -189,6 +191,31 @@ impl Plugin for CaRungsPlugin {
 /// `characters::models::load_body` reads them).
 pub fn body_set(id: i32) -> String {
     format!("character/{id}")
+}
+
+/// The first-person hands each `body_set` brings, by body record: the
+/// hand model and skins (`view_model::hands::choice_for_key`) of every
+/// look a rung may give whose drawn body is that record (any record's
+/// default look and its infected look, as `apply` wears them, by
+/// `CharacterData::effective`) and whose hands aren't the default
+/// character's (`hands::key_for`: those are in every weapon's view model
+/// and the game's `base`). A local player on that rung loads his guns'
+/// view models again with them (`view_model::on_demand`); `chimera_pack
+/// sets combat_arms` puts their files in the body's set.
+pub fn body_hands(data: &characters::records::CharacterData) -> std::collections::BTreeMap<i32, Vec<super::view_model::hands::HandChoice>> {
+    use super::view_model::hands;
+    let mut out: std::collections::BTreeMap<i32, Vec<hands::HandChoice>> = default();
+    for m in &data.model {
+        for look in [data.default_look(m.id), data.infected_look(m.id)] {
+            let Some(key) = hands::key_for(data, &look) else { continue };
+            let Some(choice) = hands::choice_for_key(data, &key) else { continue };
+            let list = out.entry(data.effective(&look).0.id).or_default();
+            if !list.contains(&choice) {
+                list.push(choice);
+            }
+        }
+    }
+    out
 }
 
 /// The set of weapon `id`'s fitted parts on the asset service

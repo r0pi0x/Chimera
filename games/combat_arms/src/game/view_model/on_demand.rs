@@ -140,7 +140,7 @@ pub fn forget(ca: &CaDataInner, keep: &std::collections::BTreeSet<String>) {
 pub fn load_weapon(ca: &CaDataInner, id: &str, file: &dyn Fn(&str) -> Option<Vec<u8>>) -> Result<LoadedViewModel, String> {
     // A weapon with fitted parts (`parts::view_key`): its own view model,
     // the parts on it (the bare gun's with the same hands under them).
-    let (body, profile) = hands::split_key(id);
+    let body = hands::split_key(id).0;
     let (base, names) = parts::split_key(body);
     if !names.is_empty() {
         let bare = format!("{base}{}", &id[body.len()..]);
@@ -159,10 +159,7 @@ pub fn load_weapon(ca: &CaDataInner, id: &str, file: &dyn Fn(&str) -> Option<Vec
     // Kept for later maps: its textures as their blocks.
     own.memos.insert(super::super::world::BlocksOnly);
     let characters = ca.characters();
-    let choice = match profile {
-        Some(p) => hands::choose_in(characters, &p),
-        None => hands::default_choice(characters),
-    };
+    let choice = hands::choice_for_key(characters, id);
     let mut warnings = Vec::new();
     let hand = match choice.as_ref().map(|c| load_hands(c, &mut own, file)) {
         Some(Ok(h)) => Some(h),

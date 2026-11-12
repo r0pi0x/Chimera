@@ -2042,6 +2042,33 @@ fn hands_follow_the_character_record() {
     );
 }
 
+/// A body's `character/<record>` set brings the hands its rung look
+/// wears when they aren't the default character's (`rungs::body_hands`,
+/// what `chimera_pack sets` loads into it): a female body's, her sleeves
+/// on the stock hand model; the default body's set none (its hands are
+/// every view model's, in `base`). The same choice the view model keyed
+/// with those hands attaches (`hands::choice_for_key`).
+#[test]
+fn a_character_set_lists_its_hands() {
+    use combat_arms::game::{data::CaData, rungs};
+    let data = CaData::builtin();
+    let chars = data.characters();
+    let sets = rungs::body_hands(chars);
+    assert!(sets.get(&0).is_none_or(Vec::is_empty), "the default body's hands are the default's");
+    let hers = sets.get(&7).expect("the female body's set has hands");
+    assert_eq!(hers.len(), 1);
+    assert_eq!(hers[0].model, "chars_m_hand/normal_m_hand.ltb");
+    assert!(hers[0].skins[0].starts_with("chars_t_hand/hand_w_"), "her sleeves: {:?}", hers[0].skins);
+    let look = chars.default_look(7);
+    let key = hands::key_for(chars, &look).expect("her own view model");
+    let view = hands::with_hands("combat_arms:m4a1", Some(&key));
+    assert_eq!(hands::choice_for_key(chars, &view).as_ref(), Some(&hers[0]));
+    assert_eq!(hands::choice_for_key(chars, "combat_arms:m4a1"), hands::default_choice(chars));
+    // No set lists the default character's hands.
+    let default = hands::default_choice(chars).unwrap();
+    assert!(sets.values().flatten().all(|c| *c != default));
+}
+
 /// 1, 2 in play: the local player's view model is the one with his worn
 /// body's hands once it is made (`on_demand`), the default character's
 /// until then; a ladder rung's new body (`CaRungLook`) changes them, the
