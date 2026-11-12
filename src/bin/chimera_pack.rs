@@ -57,7 +57,8 @@
 //! the game's `base` and `players`; the offer names the loaded map's set,
 //! in the pool or not). `map/<name>` and Combat Arms' `base` (its effect
 //! tables' sounds: impacts, shells, surfaces, the event sounds and the
-//! heartbeat, the infection and grenade call-outs; the default
+//! heartbeat, the infection and grenade call-outs, the result screen's
+//! win and lose sounds; the default
 //! character's first-person hand model and skins; the debris table with
 //! its pieces' models, skins and sounds; its cue pack's sounds; the air
 //! strike surprise's alarm and its shells' model, sounds and effect
@@ -538,6 +539,10 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                     for file in pack.sounds.values() {
                         let _ = tapped.read(&normalize(file));
                     }
+                }
+                // The result screen's win and lose sounds (a match's end).
+                for file in [combat_arms::game::parts::RESULT_WIN_SOUND, combat_arms::game::parts::RESULT_LOSE_SOUND] {
+                    let _ = tapped.read(&normalize(file));
                 }
                 // The default character's first-person hands, on every
                 // view model (`view_model::hands::default_choice`).
