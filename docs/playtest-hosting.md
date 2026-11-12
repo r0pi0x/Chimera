@@ -322,7 +322,9 @@ Maps and matches:
   `apps/party_kit/data/host_settings.toml`).
 - A match needs 2 players; bots count (`+MaxPlayer`). Late joiners are fine.
 - **The pre-match lobby.** Each new match (the first after the server
-  starts, each rotation and map change) waits on its loaded map until every
+  starts, each rotation and map change: a host's `changelevel <map>` is the
+  running minigame's next match there, a new ladder as a rotation's)
+  waits on its loaded map until every
   connected player has it, showing everyone each player's status
   (connecting, downloading with MB done of the total, loading the map,
   ready; bots are ready at once) and ping; then a countdown and everyone
@@ -350,8 +352,8 @@ Console commands on the server's stdin (type in its window; run it inside
 `tick_stats` (the last ticks' cost and the server's memory),
 `minigames`, `minigame_status`, `minigame_restart`,
 `change_match <minigame> [map]`, `ugg_new [seed] [rungs]` (a new ladder now;
-a seed replays one), `parts` (what each game lends), `changelevel <map>`,
-`quit` (Ctrl+C is the same).
+a seed replays one), `parts` (what each game lends), `changelevel <map>`
+(the next match there, with its lobby), `quit` (Ctrl+C is the same).
 
 Keep it simple on the day: `+maxplayers 12 +MaxPlayer 3` and no `+map`.
 
@@ -632,11 +634,13 @@ about 30 minutes, with a server `quit` and restart. Found:
   (`party_kit::client::map_file_bytes` reading HL2:DM's maps too, branch
   `rehearsal-fixes`); a playtest5 client can't play them, so with those
   clients keep HL2:DM's maps out of the rotation.
-- **`changelevel` keeps the running match**: the map changes, the ladder
-  and scores go on, and there is no lobby (players spawn as their loads
-  end). For a new match on a chosen map use `change_match
-  ultimate_gun_game:auto <map>`; the vote's rotation and `change_match`
-  both held the lobby.
+- **`changelevel` kept the running match**: the map changed, the ladder
+  and scores went on, and there was no lobby (players spawned as their
+  loads ended); the vote's rotation and `change_match
+  ultimate_gun_game:auto <map>` both held the lobby. Since, a host's
+  `changelevel <map>` in a party app starts the minigame's next match
+  there as a rotation does (a new ladder, scores anew, the lobby;
+  `minigame_net::host_changelevel`).
 - **Lobby** (from its start to the match): 27-74 s at each map change
   with the three clients, everyone ready in all of them (22-69 s, the
   slow ones de_inferno's and de_aztec's loads on the loaded machine, 13-17

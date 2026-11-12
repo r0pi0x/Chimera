@@ -23,8 +23,11 @@
 //! - Maps of several games (`ServerHooks::maps`): `greybox`,
 //!   `cs_source:<name>`, `combat_arms:<name>` (a bare name is CS:S's),
 //!   loaded without textures (`crate::load_map_with`); `changelevel <map>`
-//!   (or `map <map>`) loads another in the background and moves every
-//!   player there, a fresh match (the minigame's starts over).
+//!   (or `map <map>`) is the minigame's next match there, as a
+//!   rotation's (`chimera_net::minigame_net::host_changelevel`: the
+//!   next-match hooks, a new ladder in Ultimate Gun Game, then
+//!   `change_match`: the map loads in the background, every player moves
+//!   there, and the pre-match lobby waits for them).
 //! - Before a map of the installs loads, what this machine lacks is told
 //!   (`crate::requirements`), and a lack that stops the game stops the
 //!   server (`ServerHooks::requirements`).

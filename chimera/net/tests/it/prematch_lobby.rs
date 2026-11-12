@@ -6,7 +6,8 @@
 //! then once everyone is ready a countdown and the round with everyone
 //! spawned together; the longest wait starts it anyway (the straggler
 //! joins late); bots are ready at once; `lobby_start` ends it; the next
-//! match on another map (a rotation's map change) has its lobby again.
+//! match on another map (a rotation's map change, a host's `changelevel`) has
+//! its lobby again.
 //! Ticks only (64 a second).
 
 use std::time::Duration;
@@ -365,6 +366,52 @@ fn a_map_change_runs_the_lobby_again() {
     assert_eq!(l.map, "test:next");
     assert!(l.rows.iter().all(|r| r.status != status::READY), "the clients still load it: {l:?}");
     assert_eq!(l.countdown, None);
+    assert!(sim.until(600, |s| server_lobby(s).is_some_and(|l| l.countdown.is_some())), "both have it: the countdown");
+    assert!(sim.until(6 * HZ, |s| !in_lobby(s)));
+    assert!(sim.until(HZ, |s| playing(s, 2)), "the next match plays");
+    assert_eq!(sim.server.app.world().resource::<LoadedMapName>().0, "test:next");
+}
+
+/// How many times the app's `NextMatchHooks` ran (a new ladder in
+/// Ultimate Gun Game).
+#[derive(Resource, Default)]
+struct NextMatches(Vec<String>);
+
+fn next_match_hook(world: &mut World, _: &str, map: &str) {
+    world.get_resource_or_init::<NextMatches>().0.push(map.to_string());
+}
+
+/// A host's `changelevel` in a party app starts the minigame's next match
+/// on that map, as a rotation does: the app's next-match hooks run and the
+/// lobby is held there (`minigame_net::host_changelevel`, which the apps'
+/// `changelevel` commands ask first, as this test's does).
+#[test]
+fn a_hosts_changelevel_runs_the_lobby() {
+    let mut sim = sim(2);
+    sim.server.app.add_systems(Update, server_loads);
+    sim.server.app.console_command("changelevel", "changelevel <map>: a test's, as the apps'.", |w, a| {
+        let map = a.first().cloned().unwrap_or_default();
+        if let Some(r) = chimera_net::net::host_changelevel(w, &map) {
+            return r;
+        }
+        w.insert_resource(LoadedMapName(map.clone()));
+        w.insert_resource(FakeLoad(map, 30));
+        Ok(None)
+    });
+    sim.server
+        .app
+        .insert_resource(minigame_net::NextMatchHooks(vec![next_match_hook]));
+    for c in &mut sim.clients {
+        c.app.add_systems(Update, client_loads);
+    }
+    minigame::start(sim.server.app.world_mut(), ID).expect("it starts");
+    assert!(sim.until(900, |s| joined(s, 0) && joined(s, 1)), "both in");
+    assert!(sim.until(8 * HZ, |s| playing(s, 2)), "the first match plays");
+    sim.server.app.world_mut().resource_mut::<Console>().submit("changelevel test:next");
+    assert!(sim.until(600, |s| in_lobby(s)), "a lobby on the new map");
+    assert_eq!(sim.server.app.world().resource::<NextMatches>().0, ["test:next"], "as a rotation");
+    let l = server_lobby(&mut sim).unwrap();
+    assert_eq!(l.map, "test:next");
     assert!(sim.until(600, |s| server_lobby(s).is_some_and(|l| l.countdown.is_some())), "both have it: the countdown");
     assert!(sim.until(6 * HZ, |s| !in_lobby(s)));
     assert!(sim.until(HZ, |s| playing(s, 2)), "the next match plays");

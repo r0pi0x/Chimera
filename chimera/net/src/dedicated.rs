@@ -39,7 +39,9 @@
 //!   mounted install); the greybox's own tick (`greybox_tick`); a minigame
 //!   (`minigame`: `+minigame <id>`, its pool's first map without `+map`,
 //!   started by the console line `minigame <id>` after the command line's
-//!   others, restarted on a map change, named in the banner); what the
+//!   others, restarted on a map change, named in the banner; a host's
+//!   `changelevel` while it plays is its next match there, with the
+//!   lobby: `net::host_changelevel`); what the
 //!   machine lacks for a map of the installs, told before it loads
 //!   (`requirements`); and what the binary adds that the tests don't
 //!   (`launch`).
@@ -443,7 +445,10 @@ impl Plugin for ServerPlugin {
         .add_systems(Update, chimera_core::metrics::memory::release_after_change::<map::MapFile>)
         .console_command(
             "changelevel",
-            &format!("changelevel <map>: move the server and its players to another map ({maps})."),
+            &format!(
+                "changelevel <map>: move the server and its players to another map ({maps}); in a party app, the \
+                 minigame's next match there (its lobby)."
+            ),
             |w, a| change_level(w, a.first().ok_or("changelevel <map>")?),
         )
         .console_command(
@@ -560,6 +565,10 @@ struct LevelLoad {
 pub fn change_level(world: &mut World, name: &str) -> Result<Option<String>, String> {
     let server = world.resource::<Serving>().0;
     let id = server.map_id(name);
+    // A party app's minigame: a new match there (its lobby), not only the map.
+    if let Some(r) = net::host_changelevel(world, &id) {
+        return r;
+    }
     if id == net::GREYBOX {
         swap_map(world, net::GREYBOX, None);
         return Ok(Some("changed level to the greybox".into()));

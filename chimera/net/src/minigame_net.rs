@@ -54,7 +54,12 @@
 //!   loaded (`server::ClientMap`), or `CLIENT_GRACE` s after the map came
 //!   in (with the pre-match lobby on, `prematch`, as soon as the map is in
 //!   here: the lobby waits for the clients); a load that fails (or none in `MAP_LOAD_TIMEOUT` s) starts it
-//!   where the server is. The manifest names the coming minigame
+//!   where the server is. A host's own `changelevel <map>` in a party
+//!   app (this part's `net::HostChangeLevel`) while a minigame is
+//!   the rules is that minigame's next match there, as a rotation's
+//!   (`host_changelevel`, which the apps' `changelevel` commands ask
+//!   first: the next-match hooks, then `change_match`), not only a new
+//!   map under the running match. The manifest names the coming minigame
 //!   meanwhile, and its asset offer the coming ladder's draw (its melee
 //!   weapons, a game's rung bodies: `match_ladder`, `ladder::draw`). A server rotates through it by itself once a match has
 //!   been over for `RESULTS_HOLD` s (`serve_minigame`,
@@ -192,6 +197,8 @@ impl Plugin for MinigameNetPlugin {
 
 /// The protocol (in this order on every side) and the systems.
 fn register(app: &mut App) {
+    // A host's `changelevel` is the minigame's next match there.
+    app.insert_resource(crate::net::HostChangeLevel(host_changelevel));
     // The events exist in an app without a minigame runtime too.
     app.add_message::<MinigameEvent>();
     // While a minigame is the rules, a predicting client is held as the
@@ -1141,6 +1148,45 @@ fn go_to(world: &mut World, def: &'static MinigameDef, target: &str) {
     if let Err(e) = change_match(world, &def.id, Some(target)) {
         warn!("rotating {}: {e}", def.id);
     }
+}
+
+/// A host's `changelevel` to `map` (the app's map id) in a party app,
+/// while a minigame is the rules: the minigame's next match there, as a
+/// rotation moves it on (`go_to`: the app's `NextMatchHooks`, a new
+/// ladder; `change_match`: the match held, the pre-match lobby on the new
+/// map). None: a client, no minigame, the map being played, or a match's
+/// map change under way (`MapChange`: this is its own `changelevel`): the
+/// plain level change. This part's `net::HostChangeLevel`, which the apps'
+/// `changelevel` commands ask first (`net::host_changelevel`).
+pub fn host_changelevel(world: &mut World, map: &str) -> Option<Result<Option<String>, String>> {
+    if world.get_resource::<NetRole>() == Some(&NetRole::Client)
+        || world.contains_resource::<MapChange>()
+    {
+        return None;
+    }
+    let def = world.get_resource::<ActiveMinigame>()?.def;
+    let target = crate::net::normalize_map(map);
+    // The map being played: loaded again, as before (the match restarts).
+    if target == crate::net::current_map(world) {
+        return None;
+    }
+    let hooks = world.get_resource::<NextMatchHooks>().map(|h| h.0.clone()).unwrap_or_default();
+    // Checked before the hooks act (a new ladder for a match that can't
+    // start there would be lost).
+    let p = playable_on(world, def, Some(&target));
+    if !p.ok() {
+        let games = world.get_resource::<Games>().cloned();
+        return Some(Err(format!(
+            "not every player can play {} on {target}: {}",
+            def.id,
+            lacking_text(games.as_ref(), &p.lacking)
+        )));
+    }
+    info!("changelevel {target}: a new match of {}", def.id);
+    for hook in hooks {
+        hook(world, &def.id, &target);
+    }
+    Some(change_match(world, &def.id, Some(&target)).map(Some))
 }
 
 /// What an app does as a rotation moves a minigame on (called with its id

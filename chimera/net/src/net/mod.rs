@@ -266,6 +266,20 @@ pub const PROTOCOL_ID: u64 = 0x4C55_434B_4552_5059;
 /// replicon protocol hash can't see (a field added to a message).
 pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net42");
 
+/// What a host's `changelevel` is in this app beyond a new map
+/// (`host_changelevel`): set by an app part (`minigame_net`'s, a party
+/// app's: the minigame's next match there, with its lobby).
+#[derive(Resource, Clone, Copy)]
+pub struct HostChangeLevel(pub fn(&mut World, &str) -> Option<Result<Option<String>, String>>);
+
+/// A host's `changelevel` to `map` (the app's map id) as the app takes it
+/// (`HostChangeLevel`); None: a plain level change. The apps'
+/// `changelevel` commands ask this first.
+pub fn host_changelevel(world: &mut World, map: &str) -> Option<Result<Option<String>, String>> {
+    let hook = world.get_resource::<HostChangeLevel>()?.0;
+    hook(world, map)
+}
+
 /// The owner id of the listen server's own player (`NetCharacter::owner`).
 /// Remote clients' ids are never 0.
 pub const HOST_ID: u64 = 0;

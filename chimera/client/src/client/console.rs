@@ -2712,7 +2712,14 @@ pub fn client_commands(app: &mut App) {
                 return Err("Can't changelevel, not running server.".into());
             }
             let game = crate::game_registry::default_game(w);
-            let Some((id, check)) = map_target(game, &name) else {
+            let target = map_target(game, &name);
+            // A party app's minigame: a new match there (its lobby), not
+            // only the map.
+            let id = target.as_ref().map_or(crate::net::GREYBOX, |(id, _)| id.as_str()).to_string();
+            if let Some(r) = crate::net::host_changelevel(w, &id) {
+                return r;
+            }
+            let Some((id, check)) = target else {
                 load_greybox(w);
                 super::front_end::entered_game(w);
                 return Ok(Some("changed level to the greybox".into()));
