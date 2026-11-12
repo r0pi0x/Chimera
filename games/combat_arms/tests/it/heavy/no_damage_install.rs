@@ -9,10 +9,13 @@
 
 use chimera_core::mount::config::LocalConfig;
 use chimera_sim::{
-    minigame::auto::{self, Capabilities},
+    minigame::{
+        auto::{self, Capabilities},
+        power::PowerReaders,
+    },
     weapon::{
         data::WeaponCatalog,
-        harm::{HarmReaders, can_damage_player},
+        harm::can_damage_player,
     },
 };
 use chimera_world::harness::Sim;
@@ -35,7 +38,7 @@ fn the_installs_guns_without_damage_stay_off_drawn_ladders() {
     let sim = Sim::with(CaSimWith(ca), |_| {});
     let w = sim.app.world();
     let catalog = w.resource::<WeaponCatalog>();
-    let readers = w.resource::<HarmReaders>();
+    let readers = &w.resource::<PowerReaders>().harm;
     let harm = |id: &str| can_damage_player(catalog.get(id).unwrap_or_else(|| panic!("{id}")), readers);
     for id in ["combat_arms:rms12", "combat_arms:m136_at4", "combat_arms:optical_buster_apollo", "combat_arms:m4devgru"] {
         assert_eq!(harm(id), Some(false), "{id}");

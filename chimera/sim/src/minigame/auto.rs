@@ -185,8 +185,9 @@ pub fn report(world: &World) -> Vec<Capabilities> {
 
 /// Weapons a drawn ladder never deals, with why (`DrawExclusionsAppExt`:
 /// each game's data, e.g. Combat Arms' data/ladder_exclusions.toml). A
-/// hand-written ladder may still name them.
-#[derive(Resource, Clone, Debug, Default)]
+/// hand-written ladder may still name them. Kept in
+/// `power::PowerReaders::exclusions`, not a resource of its own.
+#[derive(Clone, Debug, Default)]
 pub struct DrawExclusions(pub Vec<(String, String)>);
 
 impl DrawExclusions {
@@ -232,7 +233,7 @@ pub trait DrawExclusionsAppExt {
 impl DrawExclusionsAppExt for App {
     fn add_draw_exclusions(&mut self, name: &str, text: &str) -> &mut Self {
         let list = parse_exclusions(text).unwrap_or_else(|e| panic!("{name}: {e}"));
-        self.world_mut().get_resource_or_init::<DrawExclusions>().0.extend(list);
+        self.world_mut().get_resource_or_init::<PowerReaders>().exclusions.0.extend(list);
         self
     }
 }
@@ -252,14 +253,14 @@ pub struct Skipped {
 pub fn drawable(world: &World, caps: &mut [Capabilities]) -> Vec<Skipped> {
     let empty = WeaponCatalog::default();
     let catalog = world.get_resource::<WeaponCatalog>().unwrap_or(&empty);
-    let readers = world.get_resource::<crate::weapon::harm::HarmReaders>().cloned().unwrap_or_default();
-    let none = DrawExclusions::default();
-    let excluded = world.get_resource::<DrawExclusions>().unwrap_or(&none);
+    let none = PowerReaders::default();
+    let registered = world.get_resource::<PowerReaders>().unwrap_or(&none);
+    let (readers, excluded) = (&registered.harm, &registered.exclusions);
     let mut skipped = Vec::new();
     let mut why = |id: &'static str| -> Option<String> {
         let r = if let Some(r) = excluded.reason(id) {
             Some(r.to_string())
-        } else if catalog.get(id).is_some_and(|d| crate::weapon::harm::harmless(d, &readers)) {
+        } else if catalog.get(id).is_some_and(|d| crate::weapon::harm::harmless(d, readers)) {
             Some("no damage".to_string())
         } else {
             None

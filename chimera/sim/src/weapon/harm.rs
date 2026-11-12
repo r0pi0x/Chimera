@@ -29,22 +29,20 @@ pub type HookParams = toml::Value;
 /// hurt a player.
 pub type HarmReader = fn(&HookParams) -> bool;
 
-/// The games' readers, by hook name (`HarmAppExt::add_harm_reader`).
-#[derive(Resource, Clone, Default)]
+/// The games' readers, by hook name (`HarmAppExt::add_harm_reader`);
+/// kept in `minigame::power::PowerReaders::harm`, not a resource of its
+/// own (a new resource is a new entity, shifting later entities' ids).
+#[derive(Clone, Default)]
 pub struct HarmReaders(pub Vec<(&'static str, HarmReader)>);
 
+/// Implemented by `minigame::power`, whose `PowerReaders` keeps the
+/// readers (this layer may not name it).
 pub trait HarmAppExt {
     /// `reader` says whether the damage path of hook `hook` hurts, for a
     /// weapon whose data names that hook.
     fn add_harm_reader(&mut self, hook: &'static str, reader: HarmReader) -> &mut Self;
 }
 
-impl HarmAppExt for App {
-    fn add_harm_reader(&mut self, hook: &'static str, reader: HarmReader) -> &mut Self {
-        self.world_mut().get_resource_or_init::<HarmReaders>().0.push((hook, reader));
-        self
-    }
-}
 
 /// A number of a hook's table (float or integer).
 pub fn num(v: &HookParams, key: &str) -> Option<f32> {
