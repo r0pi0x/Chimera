@@ -25,7 +25,8 @@
 //!   or is gone.
 //! - A game's rules may differ (`RagdollGameRules` by the body's game:
 //!   HL2:DM's push the root body with the hit's own force, aim at no death
-//!   pose and stay after the respawn until the owner dies again).
+//!   pose and stay after the respawn until the owner dies again; CS:S's
+//!   keep the death pose and the hit body but push with the gun's impulse).
 //!
 //! Ragdolls for any game (specs/cs_source/ragdolls.md): `MapRagdoll` on a
 //! character model (bodies on bones, joints with per-axis limits),
@@ -49,8 +50,11 @@
 //! living owner whose ragdoll went with the map loses `Ragdolled` as well).
 //!
 //! Known shortcuts (docs/tech-debt.md): Ragdolls (specs/cs_source/ragdolls.md):
-//! the killing push is a fixed 2400 kg·in/s along the hit (the template's .50
-//! AE; spec Q2) for every weapon; death poses use the body's yaw for the side
+//! the killing push is the damage's own force where a game's rules say so
+//! (CS:S's: the gun's measured impulse, weapons.md Q8), else a fixed 2400
+//! kg·in/s along the hit (the template's .50 AE; spec Q2), also for a death
+//! that carries no force; whether a player's death push uses the ammo's
+//! impulse is unchecked (capture C13); death poses use the body's yaw for the side
 //! and our crouch flag for the crouched set (spec Q3); blasts push every
 //! ragdoll within their radius by grenades.md 5.3's effect rule (a line of 100
 //! × (1 − d/R) units from 32 below the blast toward the root body, pushed as
@@ -173,9 +177,9 @@ const BONE_DT: f64 = 0.05;
 /// How much pose history characters keep, s: as far back as lag
 /// compensation may rewind (Source's `sv_maxunlag`, spec weapons.md 4.6).
 const HISTORY: f64 = 1.0;
-/// The killing hit's push, kg·m/s: CS:S's ammo impulses are unknown (spec
-/// Open question 2); this is the SDK template's .50 AE value, 2400
-/// kg·in/s, the same one our guns give props.
+/// The killing hit's push when the game's rules don't use the damage's own
+/// force (or it has none), kg·m/s: the SDK template's .50 AE value, 2400
+/// kg·in/s.
 pub const DEATH_IMPULSE: f32 = 2400.0 * 0.0254;
 /// Source clamps every body to 2000 in/s and 3600 °/s.
 const MAX_LINEAR_SPEED: f32 = 2000.0 * 0.0254;

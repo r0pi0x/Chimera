@@ -18,6 +18,7 @@
 //! (`grenades::throwable`) and `cs_source:c4` (`objectives::c4_part`);
 //! the gun game's power curve reads the accuracy's numbers as a spread
 //! (`power_accuracy`).
+//! A kill pushes the ragdoll with the gun's own impulse (`RAGDOLL`).
 //! `CsGunsPlugin` is the weapons alone (data, hooks, accuracy, recoil,
 //! penetration materials: what a mashup offers in another game's slots);
 //! `CsWeaponsPlugin` is CS:S's game, with the shop, rules and effects.
@@ -460,6 +461,15 @@ impl Plugin for CsGunsPlugin {
         if let Err(e) = app.add_weapon_set(cs_weapons()) {
             panic!("CS:S weapon data: {e}");
         }
+        // Its ragdolls take the killing shot's own force, the gun's
+        // measured `[damage] impulse` (ragdolls.md Q2, weapons.md Q8), not
+        // one push for every gun (`RAGDOLL`).
+        {
+            let mut rules = app.world_mut().get_resource_or_init::<crate::map::ragdoll::RagdollGameRules>();
+            if !rules.0.iter().any(|(g, _)| *g == super::GAME) {
+                rules.0.push((super::GAME, RAGDOLL));
+            }
+        }
         app.add_message::<WeaponEvent>()
             // Inaccuracy, punch and recoil are predicted with the weapon
             // frame (`core::Predict`).
@@ -472,6 +482,13 @@ impl Plugin for CsGunsPlugin {
             .insert_resource(pass_materials());
     }
 }
+
+/// CS:S's ragdoll rules (ragdolls.md): the default (the death pose, the
+/// hit body takes the push) with the push the damage's own force, the
+/// gun's `[damage] impulse` along the shot (the default `DEATH_IMPULSE`
+/// stays for a death with no force).
+pub const RAGDOLL: crate::map::ragdoll::RagdollRules =
+    crate::map::ragdoll::RagdollRules { death_pose: true, push_root: false, damage_force: true, outlive_respawn: false };
 
 /// CS:S's weapons as its game plays them: `CsGunsPlugin` and the rest
 /// around them (the shop and spawn kit, pickup and spray rules, impact
