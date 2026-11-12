@@ -438,7 +438,7 @@ impl Remote {
         // A foreground fill's records are waited for by on-demand misses
         // (`pending`), not fetched twice; the paced prefetch's aren't (it
         // is held while the player joins: a load would wait on it).
-        let claim = pace.is_none().then(|| crate::pending::claim(batches.iter().flatten().map(String::as_str)));
+        let claim = pace.is_none().then(|| crate::pending::claim(store, batches.iter().flatten().map(String::as_str)));
         claimed();
         let next = AtomicUsize::new(0);
         let totals = Mutex::new((0usize, 0u64, Vec::new()));

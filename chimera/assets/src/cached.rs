@@ -196,7 +196,7 @@ impl Index {
                 break;
             }
             let Some(f) = self.files.get(p.as_str()) else { continue };
-            if !seen.insert(f.id.as_str()) || self.has(store, &f.id) || crate::pending::is_pending(&f.id) {
+            if !seen.insert(f.id.as_str()) || self.has(store, &f.id) || crate::pending::is_pending(store, &f.id) {
                 continue;
             }
             out.push((f.id.clone(), f.size));
@@ -259,8 +259,8 @@ impl CachedFiles {
     fn fetch(&self, fetcher: &dyn Fetcher, path: &str, f: &FileRecord) -> io::Result<Vec<u8>> {
         // A fill fetching it now (the join's sets): wait for that, and for
         // a fill still asking the service what to fetch to claim first.
-        crate::pending::wait_started(PENDING_WAIT);
-        if crate::pending::wait(&f.id, PENDING_WAIT) {
+        crate::pending::wait_started(&self.store, PENDING_WAIT);
+        if crate::pending::wait(&self.store, &f.id, PENDING_WAIT) {
             match self.store.get(&f.id, f.size) {
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {}
                 got => return got,

@@ -177,7 +177,7 @@ fn a_sets_batches_start_small_and_grow() {
     }
     // A record being fetched by a fill isn't asked for again.
     let next = m.files["maps/big/0391.dat"].id.clone();
-    let claim = chimera_assets::pending::claim([next.as_str()]);
+    let claim = chimera_assets::pending::claim(&client, [next.as_str()]);
     let group = index.group(&client, "maps/big/0390.dat");
     assert!(group.iter().all(|g| g.0 != next), "the pending record left out");
     drop(claim);

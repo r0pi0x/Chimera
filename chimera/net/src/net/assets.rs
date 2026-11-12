@@ -25,7 +25,7 @@
 //!   `[assets]`) has its offered sets fetched on a thread (`fetch`: the
 //!   service's manifest, the sets' records the store lacks, in batches:
 //!   `chimera_assets::sets::fetch`; from `begin` until the fill claims
-//!   its records, `pending::starting` holds on-demand misses, so models
+//!   its records, `pending::starting` holds on-demand misses in its store, so models
 //!   the new match starts loading at once wait for the fetch instead of
 //!   coming a group each), the bytes shown as the join's `Downloading` stage (`DownloadInfo`,
 //!   "game files"); then the join goes on (`client::proceed`). The later
@@ -595,7 +595,8 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
     // From now until the fill claims its records, on-demand misses wait
     // for it (`pending::starting`): the new match's ladder, arriving with
     // the level change, starts loading its models at once.
-    let starting = chimera_assets::pending::starting();
+    let store = settings.store.as_ref().expect("filtered for a store");
+    let starting = chimera_assets::pending::starting(store);
     let job = std::thread::spawn(move || {
         let options = sets::Options {
             starting: Some(&starting),

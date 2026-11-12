@@ -403,6 +403,9 @@ fn past_a_limit_the_answer_is_429_with_the_reason() {
     let remote = f.remote(&f.user("tester", None));
     let id = &f.fixture.files["maps/test.bsp"].id;
     remote.record(id).unwrap();
+    // A record's bytes are counted after it is sent, before its log line:
+    // the client can ask again first.
+    f.access_log_with(&format!("GET /r/{id} 200"));
     let e = remote.record(id).unwrap_err().to_string();
     assert!(e.contains("HTTP 429") && e.contains("for today"), "{e}");
 
@@ -463,7 +466,7 @@ fn a_miss_while_a_fetch_starts_waits_for_it() {
     };
     assert_eq!(settings.build("fixture").as_deref(), Some("100"));
     let cached = CachedFiles::open(&client, "fixture", "100").unwrap().with_fetcher(settings.fetcher());
-    let starting = chimera_assets::pending::starting();
+    let starting = chimera_assets::pending::starting(&client);
     std::thread::scope(|s| {
         let reader = s.spawn(|| cached.read("maps/test.bsp").unwrap().unwrap());
         // The read is held while the fetch starts.

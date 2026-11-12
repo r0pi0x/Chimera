@@ -176,7 +176,7 @@ prefetch off), before and after: 17 and 34 on-demand requests, 34.5 and
 67.8 MB (one or two 30 MB groups of `map/darkhills`) -> 23-33 requests,
 4.4-10.2 MB.
 
-A join or level change that fetches holds every on-demand miss until its
+A join or level change that fetches holds every on-demand miss in its store until its
 download has claimed what it fetches (`chimera_assets::pending`,
 `starting`): the new ladder's held models and bodies, which a client
 starts loading as the match arrives with the level change, came a group
