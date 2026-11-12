@@ -13,7 +13,9 @@
 //! - A scoped sniper (zoom, sway, the bolt's zoom-out) is predicted
 //!   without error.
 //! - Switching (class keys, Q) and the knife (its swing predicted, its hit
-//!   the server's) are predicted without error.
+//!   the server's) are predicted without error; the knife is lag
+//!   compensated: at 100 ms its hits are where the swinger saw the target
+//!   (in reach on its screen: hit; out of reach there: missed).
 //! - From the first state on: joining and dying are restarts (the server
 //!   moves the player in, gives or drops its weapons), not errors.
 //!
@@ -55,6 +57,8 @@ struct Seen {
     taken: Vec<f32>,
     /// Hits confirmed to our player (`WeaponEventKind::Hit`).
     hits: Vec<(Entity, f32)>,
+    /// Knife swings traced here: (swinger, what it hit, a replay).
+    swings: Vec<(Entity, Option<Entity>, bool)>,
 }
 
 fn watch(
@@ -66,8 +70,10 @@ fn watch(
     seen.remote_shots.extend(shots.read().map(|s| s.shooter));
     seen.taken.extend(taken.read().map(|t| t.damage.amount));
     for e in events.read() {
-        if let WeaponEventKind::Hit { target, amount, .. } = e.kind {
-            seen.hits.push((target, amount));
+        match e.kind {
+            WeaponEventKind::Hit { target, amount, .. } => seen.hits.push((target, amount)),
+            WeaponEventKind::Swing { at, .. } => seen.swings.push((e.owner, at.map(|a| a.2), e.replay)),
+            _ => {}
         }
     }
 }
@@ -430,6 +436,109 @@ fn a_knife_hit_is_predicted_and_the_servers() {
     assert!(!sim.clients[1].app.world().resource::<Seen>().taken.is_empty(), "client 1 hurt");
     assert_no_errors(&sim, "knifing");
     assert_agrees(&mut sim, 0, "knifing");
+}
+
+/// Yaw and pitch that look from `eye` at `at`.
+fn look_at(eye: Vec3, at: Vec3) -> (f32, f32) {
+    let d = at - eye;
+    ((-d.x).atan2(-d.z).rem_euclid(std::f32::consts::TAU), d.y.atan2(d.xz().length()))
+}
+
+/// What one knife run saw: each hit event of client 0's swings, in order,
+/// as client 0 traced it on its screen and as the server did.
+#[derive(Debug, Default)]
+struct KnifeRun {
+    /// (client 0's own trace met client 1, the server's met client 1)
+    events: Vec<(bool, bool)>,
+}
+
+impl KnifeRun {
+    fn count(&self, client: bool, server: bool) -> usize {
+        self.events.iter().filter(|e| **e == (client, server)).count()
+    }
+}
+
+/// Client 0 (100 ms each way) stands at the north end of the floor with
+/// the knife, aiming at client 1's body as it draws it and holding fire,
+/// while client 1 starts at `start` facing it and runs along `axis` for
+/// `ticks` ticks (`sv_unlag` as `unlag`; client 1 can't die of it).
+fn knife_run(unlag: bool, start: Vec3, axis: Vec2, ticks: u32) -> KnifeRun {
+    let mut sim = joined(100, 47);
+    sim.server.app.world_mut().resource_mut::<chimera_sim::weapon::lagcomp::LagCompSettings>().unlag = unlag as u8;
+    let (shooter, target) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+    sim.server.app.world_mut().entity_mut(target).insert(chimera_core::core::God);
+    key(&mut sim, 0, 3);
+    place(&mut sim, 0, Vec3::new(0.0, 1.0, 12.0), 0.0, 0.0);
+    place(&mut sim, 1, start, std::f32::consts::PI, 0.0);
+    sim.ticks(90);
+    assert_eq!(active_id(&mut sim, 0), KNIFE);
+    sim.server.app.world_mut().resource_mut::<Seen>().swings.clear();
+    sim.clients[0].app.world_mut().resource_mut::<Seen>().swings.clear();
+    let (me, seen) = (sim.local_player(0).unwrap(), copy_of(&mut sim, 0, 1));
+    for _ in 0..ticks {
+        client_intent(&mut sim, 1).move_axis = axis;
+        let w = sim.clients[0].app.world();
+        let eye = w.get::<Transform>(me).unwrap().translation
+            + w.get::<chimera_core::core::MovementState>(me).unwrap().eye_offset;
+        let (yaw, pitch) = look_at(eye, w.get::<Transform>(seen).unwrap().translation);
+        let mut i = client_intent(&mut sim, 0);
+        (i.yaw, i.pitch, i.fire) = (yaw, pitch, true);
+        sim.step();
+    }
+    client_intent(&mut sim, 0).fire = false;
+    client_intent(&mut sim, 1).move_axis = Vec2::ZERO;
+    sim.ticks(90);
+    let mine: Vec<bool> = sim.clients[0].app.world().resource::<Seen>().swings.iter()
+        .filter(|(o, _, replay)| *o == me && !replay)
+        .map(|(_, hit, _)| *hit == Some(seen))
+        .collect();
+    let servers: Vec<bool> = sim.server.app.world().resource::<Seen>().swings.iter()
+        .filter(|(o, ..)| *o == shooter)
+        .map(|(_, hit, _)| *hit == Some(target))
+        .collect();
+    assert_eq!(mine.len(), servers.len(), "the server ran each hit event the client predicted");
+    assert!(!mine.is_empty(), "client 0 swung");
+    KnifeRun {
+        events: mine.into_iter().zip(servers).collect(),
+    }
+}
+
+/// Combat Arms' knife is lag compensated (inventory.md 8.3, the server
+/// re-checks the target the client hit; specs/cs_source/weapons.md 4.6):
+/// at 100 ms, client 1 running across client 0's reach is hit by the
+/// server wherever client 0 hit it on its screen (and missed without
+/// compensation); running at client 0 from beyond reach, the server hits
+/// it only once client 0's screen has it in reach (without compensation,
+/// before).
+#[test]
+fn knife_swings_hit_where_the_swinger_saw_the_target() {
+    let print = |what: &str, unlag: bool, r: &KnifeRun| {
+        println!(
+            "{what}, sv_unlag {}: {} hit events; both hit {}, screen only {}, server only {}, neither {}",
+            unlag as u8,
+            r.events.len(),
+            r.count(true, true),
+            r.count(true, false),
+            r.count(false, true),
+            r.count(false, false)
+        )
+    };
+    // Across: 1.2 m ahead, running sideways.
+    let across = |unlag| knife_run(unlag, Vec3::new(-3.0, 1.0, 10.8), Vec2::new(-1.0, 0.0), 110);
+    let (on, off) = (across(true), across(false));
+    print("across", true, &on);
+    print("across", false, &off);
+    assert!(on.count(true, true) >= 2, "swings in reach on the screen hit ({on:?})");
+    assert_eq!(on.count(true, false) + on.count(false, true), 0, "the server agrees with the screen ({on:?})");
+    assert!(off.count(true, false) >= 2, "without compensation those miss ({off:?})");
+    // Towards: from 5 m, running at client 0.
+    let towards = |unlag| knife_run(unlag, Vec3::new(0.0, 1.0, 7.0), Vec2::new(0.0, 1.0), 110);
+    let (on, off) = (towards(true), towards(false));
+    print("towards", true, &on);
+    print("towards", false, &off);
+    assert!(on.count(false, false) >= 1, "swings out of reach on the screen ({on:?})");
+    assert_eq!(on.count(false, true), 0, "out of reach on the screen: missed ({on:?})");
+    assert!(off.count(false, true) >= 1, "without compensation the server hit what the screen had out of reach ({off:?})");
 }
 
 /// From the very first state, no prediction error (the counters never

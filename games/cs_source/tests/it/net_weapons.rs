@@ -2,7 +2,9 @@
 //! `NetSim`'s in-memory link on the greybox with CS:S's weapons.
 //!
 //! - A client shooting a moving target at 100 and 150 ms hits where it
-//!   saw it with lag compensation, and misses the same shots without.
+//!   saw it with lag compensation, and misses the same shots without; so
+//!   does its knife's box sweep (the line aimed past the target, the box
+//!   meeting it), Chimera's swing as HL2:DM's crowbar and stunstick share.
 //! - Its predicted ammo, timers, punch, recoil, accuracy, zoom and
 //!   weapon switches are the server's bit for bit with no loss.
 //! - Another client draws its shots with the same pellets the server
@@ -28,7 +30,7 @@ use crate::stack::{
     games::cs_source::{
         grenades::HEGRENADE,
         movement::{self as source, SourceMovementPlugin},
-        weapons::{AK47, AWP, CsWeaponsPlugin, M3},
+        weapons::{AK47, AWP, CsWeaponsPlugin, KNIFE, M3},
     },
     greybox::GreyboxMapPlugin,
     harness::{CsSim, NetSim},
@@ -303,6 +305,83 @@ fn lag_compensation_hits_where_the_shooter_saw_the_target() {
         assert_eq!(off.shots, 6);
         assert_eq!(off.hits, 0, "{latency} ms: without compensation the same shots miss ({off:?})");
     }
+}
+
+/// The knife at 100 ms (spec 4.6: "a player's shot or melee swing"):
+/// client 1 runs across 1 m ahead of client 0, which slashes with its
+/// line aimed 0.55 m to the side of client 1's body as drawn, so its
+/// line misses and its box sweep (spec 6.1) meets the body. Each swing
+/// as client 0 traced it on its screen and as the server did:
+/// (screen hit, server hit) per swing.
+fn knife_box_run(unlag: bool) -> Vec<(bool, bool)> {
+    let mut sim = joined(link(100, 0, 0.0), 47, 2);
+    sim.server.app.world_mut().resource_mut::<LagCompSettings>().unlag = unlag as u8;
+    let (shooter, target) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+    sim.server.app.world_mut().entity_mut(target).insert(crate::stack::core::God);
+    give(sim.server.app.world_mut(), shooter, KNIFE).unwrap();
+    sim.ticks(10);
+    for k in 0..4 {
+        client_intent(&mut sim, 0).select = (k < 2).then_some(2);
+        sim.step();
+    }
+    place(&mut sim, 0, Vec3::new(0.0, 1.0, 12.0), 0.0);
+    place(&mut sim, 1, Vec3::new(-3.0, 1.0, 11.0), std::f32::consts::PI);
+    sim.ticks(80);
+    let me = sim.local_player(0).unwrap();
+    let w = sim.clients[0].app.world();
+    let active = w.get::<Inventory>(me).unwrap().active.unwrap();
+    assert_eq!(w.get::<Weapon>(active).unwrap().id, KNIFE, "the knife drawn");
+    let id = sim.client_id(1);
+    let seen = NetSim::owned_by(&mut sim.clients[0], Some(id)).unwrap();
+    let mut events = Log::<WeaponEvent>::new(&sim, 0);
+    let mut client_events = Log::<WeaponEvent>::new(&sim, 1);
+    for _ in 0..110u32 {
+        client_intent(&mut sim, 1).move_axis = Vec2::new(-1.0, 0.0);
+        let w = sim.clients[0].app.world();
+        let eye = w.get::<Transform>(me).unwrap().translation + w.get::<MovementState>(me).unwrap().eye_offset;
+        let body = w.get::<Transform>(seen).unwrap().translation;
+        // 0.55 m to the side of the body, across the line of sight.
+        let side = (body - eye).with_y(0.0).normalize_or_zero().cross(Vec3::Y);
+        let (yaw, pitch) = look_at(eye, body + side * 0.55);
+        let mut i = client_intent(&mut sim, 0);
+        (i.yaw, i.pitch, i.fire) = (yaw, pitch, true);
+        step(&mut sim, &mut [&mut events, &mut client_events]);
+    }
+    client_intent(&mut sim, 0).fire = false;
+    client_intent(&mut sim, 1).move_axis = Vec2::ZERO;
+    steps(&mut sim, 60, &mut [&mut events, &mut client_events]);
+    let swings = |all: &[WeaponEvent], owner: Entity, victim: Entity| -> Vec<bool> {
+        all.iter()
+            .filter(|e| e.owner == owner && e.shown())
+            .filter_map(|e| match e.kind {
+                WeaponEventKind::Swing { at, .. } => Some(at.is_some_and(|a| a.2 == victim)),
+                _ => None,
+            })
+            .collect()
+    };
+    let mine = swings(&client_events.all, me, seen);
+    let servers = swings(&events.all, shooter, target);
+    assert_eq!(mine.len(), servers.len(), "the server ran each swing the client predicted");
+    mine.into_iter().zip(servers).collect()
+}
+
+#[test]
+fn knife_box_sweeps_hit_where_the_swinger_saw_the_target() {
+    let count = |r: &[(bool, bool)], e: (bool, bool)| r.iter().filter(|x| **x == e).count();
+    let (on, off) = (knife_box_run(true), knife_box_run(false));
+    for (unlag, r) in [(1, &on), (0, &off)] {
+        println!(
+            "knife box at 100 ms, sv_unlag {unlag}: {} swings; both hit {}, screen only {}, server only {}, neither {}",
+            r.len(),
+            count(r, (true, true)),
+            count(r, (true, false)),
+            count(r, (false, true)),
+            count(r, (false, false))
+        );
+    }
+    assert!(count(&on, (true, true)) >= 1, "box sweeps in reach on the screen hit ({on:?})");
+    assert_eq!(count(&on, (true, false)) + count(&on, (false, true)), 0, "the server agrees with the screen ({on:?})");
+    assert!(count(&off, (true, false)) >= 1, "without compensation those miss ({off:?})");
 }
 
 #[test]

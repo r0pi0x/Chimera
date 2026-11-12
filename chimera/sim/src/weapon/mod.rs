@@ -2021,23 +2021,18 @@ fn weapon_frame(
         &MovementState,
         Option<&Health>,
         Option<&ViewPunch>,
-        Option<&lagcomp::ViewTick>,
     ), Without<NetDrawn>>,
     mut weapons: Query<WeaponParts>,
     mut world: deliver::World,
     clock: Res<SimClock>,
-    (histories, lag, mut lag_stats): (
-        Query<(Entity, &lagcomp::HitHistory, &Health, Option<&lagcomp::RewindSpeed>)>,
-        Res<lagcomp::LagCompSettings>,
-        ResMut<lagcomp::LagCompStats>,
-    ),
+    mut lag: lagcomp::LagComp,
 ) {
     // The command's time (Source's curtime).
     let now = clock.now;
     // Compare timers against this; record new ones from `now`.
     let due = now + TIME_SLACK;
     let dt = clock.dt();
-    for (owner, intent, mut inv, transform, state, health, punch, view) in &mut owners {
+    for (owner, intent, mut inv, transform, state, health, punch) in &mut owners {
         if health.is_some_and(|h| h.current <= 0.0) {
             continue;
         }
@@ -2099,27 +2094,12 @@ fn weapon_frame(
         // then by distance and view; otherwise every other character.
         let choice = w.rewind_choice.copied();
         let wanted = choice.is_none_or(|c| c.wanted(intent.fire, intent.command, inv.last_shot));
-        let rewound = match view.and_then(|v| v.0) {
-            Some(view_tick) if lag.unlag != 0 && may_trace && wanted && world.authoritative() => {
-                let origin = transform.translation;
-                let forward = deliver::aim_of(intent.yaw, intent.pitch) * Vec3::NEG_Z;
-                lagcomp::rewind(
-                    owner,
-                    view_tick,
-                    clock.tick,
-                    clock.delta.as_secs_f64(),
-                    &lag,
-                    histories
-                        .iter()
-                        .filter(|(_, _, h, _)| h.current > 0.0)
-                        .filter(|(_, history, _, speed)| {
-                            choice.is_none_or(|c| c.picks(origin, forward, history, speed.copied(), lag.maxunlag))
-                        })
-                        .map(|(e, history, ..)| (e, history)),
-                    &mut lag_stats,
-                )
-            }
-            _ => Vec::new(),
+        let rewound = if may_trace && wanted {
+            let origin = transform.translation;
+            let forward = deliver::aim_of(intent.yaw, intent.pitch) * Vec3::NEG_Z;
+            lag.rewind(owner, world.authoritative(), choice.map(|c| (c, origin, forward)))
+        } else {
+            Vec::new()
         };
         let mut ctx = deliver::Shot {
             owner,

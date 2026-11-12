@@ -112,8 +112,7 @@
 //! elapsed no longer matches the server's (`SimClock` is set from the server's
 //! instead); `net_fakelag`/`net_fakeloss` apply only on a client's UDP
 //! transport (not a server's, not `NetSim`'s link); weapons: lag compensation
-//! doesn't rewind the knife's box sweep (only its line) or grenades' blasts,
-//! and a client's own traces test others' colliders a frame or two behind where
+//! doesn't rewind grenades' blasts, and a client's own traces test others' colliders a frame or two behind where
 //! it draws them (cosmetic: the server's hits count), others' reload, draw and
 //! knife sounds aren't sent (their fire sounds are), map logic's long-lived
 //! sounds go to clients as they start, change and stop (`net::mapfx`), so a
