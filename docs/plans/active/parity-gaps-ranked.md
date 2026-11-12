@@ -84,7 +84,10 @@ first, done on the Windows PC. Delete a row when it lands.
     RPG-7 keeps its rocket after firing. Spec: combat_arms/view_models.md
     3 "Hidden pieces", "Projectile piece", case 37. Code:
     `games/combat_arms/src/game/view_model/machine.rs`; data lacks
-    `ProjectilePiece`/`HiddenPiece#`. S-M. No spec.
+    `ProjectilePiece`/`HiddenPiece#`. S-M. No spec. **Done** (branch
+    `ca-parity-pieces-jitter`): read from the install, the view model's
+    pieces hidden by name (`ViewAnimator::hidden_meshes`); the spec
+    names no third-person piece hiding.
 12. **HL2:DM: the energy ball's end has no screen shake** (20, 150 Hz,
     1 s, radius 1250). Spec: hl2dm/projectiles.md 5.6. Code:
     `games/hl2dm/src/game/weapons/alt_fire.rs` `ball_ends`. S. No spec.
@@ -96,6 +99,9 @@ first, done on the Windows PC. Delete a row when it lands.
     recovering at 5 x `BackJitterRecover`/s); read and unused, default
     0.5. Spec: combat_arms/weapon_firing.md "Recoil (view kick)". Code:
     `games/combat_arms/src/game/weapons.rs` `back_jitter`. S. No spec.
+    **Done** (branch `ca-parity-pieces-jitter`): Chimera's
+    `ViewBackPush` on the camera, predicted, not sent (net41 kept);
+    shots still leave from the eye.
 15. **HL2:DM: chat name colours are CS:S's.** Team 1 red, 2 blue, else
     grey: Combine and Rebels swapped in TDM, DM names grey not 255 178 0.
     Spec: hl2dm/hud.md 12, case 70; rules.md "Chat". Code:
@@ -206,8 +212,7 @@ Do next 17, later 7, needs a spec or capture 10.
 
 `games/cs_source/src/game/weapons.rs` (recoil measured for a few guns:
 all 24 are), `chimera/sim/src/weapon/random.rs` (no lag compensation:
-there is), `games/combat_arms/src/game/weapons.rs` (view-model jiggle not
-done: it is), `games/combat_arms/src/game/special/mod.rs` (launchers
+there is), `games/combat_arms/src/game/special/mod.rs` (launchers
 without view models), `games/hl2dm/src/game/pickups.rs` (respawn light),
 `launch.rs` (spawn grace), `frag.rs` (gravity-gun catch), `rungs.rs`
 (bodies), `physcannon.rs` (claims a shake at the ball's end),

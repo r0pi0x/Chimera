@@ -6,7 +6,8 @@
 //! per count; Left Alt / `+freelook` turns only the camera; E or `+use` sets
 //! `Intent::use_key`; a click grabs the mouse (not while the console, a menu or
 //! the debug UI is open, nor on an egui window), Esc opens the game menu, which
-//! frees it), first-person camera (FOV from `Zoomed`), debug UI, `--screenshot`
+//! frees it), first-person camera (FOV from `Zoomed`, pushed back along
+//! its view by `ViewBackPush`), debug UI, `--screenshot`
 //! and the `screenshot <file>` and `jpeg` (CS:S's F5: the screenshots folder,
 //! `<map>NNNN.png`) console commands (`capture.rs`), remote protocol.
 
@@ -810,6 +811,7 @@ fn follow_eye(
             Option<&crate::map::interp::RenderedView>,
             Option<&crate::core::MapView>,
             Option<&avian3d::prelude::Collider>,
+            Option<&crate::weapon::ViewBackPush>,
         ),
         (With<LocalPlayer>, Without<FirstPersonCamera>),
     >,
@@ -844,7 +846,7 @@ fn follow_eye(
             let offset = view::camera_offset(&chase, t.translation, eye.eye_offset, look, &spatial, &characters);
             (t.translation + offset, look)
         });
-    for (at, intent, state, children, punch, view, map_view, hull) in &players {
+    for (at, intent, state, children, punch, view, map_view, hull, back) in &players {
         let eye = match view {
             Some(v) => v.now,
             None => crate::map::interp::EyeView {
@@ -867,6 +869,12 @@ fn follow_eye(
         let hull_radius = hull.map_or(f32::INFINITY, view::hull_radius);
         let offset =
             view::camera_offset_for_hull(&mode, at.translation, eye.eye_offset, look, &spatial, &characters, hull_radius);
+        // A shot's back push (first person): the camera back along its
+        // view.
+        let offset = match back {
+            Some(b) if !mode.third_person && b.0 != 0.0 => offset + look * Vec3::Z * b.0,
+            _ => offset,
+        };
         // Detached: starts where the camera is; placed in the world (the
         // camera is the player's child, so undo the player's transform).
         // Spectating while dead comes first; then the debug cameras.

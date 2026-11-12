@@ -15,15 +15,16 @@ use avian3d::prelude::*;
 use bevy::prelude::*;
 use chimera_core::core::{Health, Intent, MovementState, PropSurface};
 use chimera_sim::weapon::{
-    self, AltModes, Hitscan, Inventory, Magazine, SpreadShape, ViewPunch, WeaponState, data::WeaponDataAppExt,
+    self, AltModes, Hitscan, Inventory, Magazine, SpreadShape, ViewBackPush, ViewPunch, WeaponState,
+    data::WeaponDataAppExt,
 };
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
 use combat_arms::{
     game::{
         movement,
         weapons::{
-            self as ca, CaDamage, CaKick, CaRecoil, CaSpread, DEFAULT_BODY_GEAR, DEFAULT_HEAD_GEAR, FireMode,
-            HEAVY_BODY_GEAR, MALE, SpreadScales,
+            self as ca, BACK_PUSH_SCALE, CaDamage, CaKick, CaRecoil, CaSpread, DEFAULT_BODY_GEAR, DEFAULT_HEAD_GEAR,
+            FireMode, HEAVY_BODY_GEAR, MALE, RecoilParams, SpreadScales,
         },
     },
     harness::CaSim,
@@ -734,6 +735,91 @@ fn t25_recoil_return() {
         close(side, 0.0, 0.0, "no side");
         close(k.pitch, left, 1e-7, "J");
     }
+}
+
+/// The back push ("Recoil (view kick)", Back push; view_models.md 4: the
+/// camera 10 x the offset units back along its view). The spec gives no
+/// case; these are its rule's numbers. The record defaults (0.5, 3.0):
+/// a shot puts the offset at 0.5 (the camera 5 u, 0.09 m, back); it
+/// returns 5 x 3.0 = 15 a second, so a 16 ms frame leaves 0.26 (2.6 u)
+/// and 40 ms none (never below 0). Two shots 20 ms apart: 0.5 - 0.3 +
+/// 0.5 = 0.7. The M4A1 (0, 1.0): no push.
+#[test]
+fn back_push_numbers() {
+    let r = CaRecoil::new(RecoilParams::default());
+    let mut back = 0.0;
+    r.back_kick(&mut back);
+    close(back, 0.5, 1e-6, "one shot");
+    close(back * BACK_PUSH_SCALE * U, 0.09, 1e-6, "the camera 0.09 m back");
+    let mut frame = back;
+    r.back_recover(&mut frame, 0.016);
+    close(frame, 0.26, 1e-6, "after 16 ms");
+    r.back_recover(&mut back, 0.040);
+    close(back, 0.0, 0.0, "gone after 40 ms");
+    r.back_kick(&mut back);
+    r.back_recover(&mut back, 0.020);
+    r.back_kick(&mut back);
+    close(back, 0.7, 1e-6, "two shots 20 ms apart");
+    let mut sim = sim();
+    let (_, w) = m4a1(&mut sim);
+    let m4 = sim.app.world().get::<CaRecoil>(w).unwrap().clone();
+    let mut back = 0.0;
+    m4.back_kick(&mut back);
+    close(back, 0.0, 0.0, "the M4A1 pushes nothing");
+}
+
+/// The back push in play: an M4A1 with the push (0.5, 0.2: a return of
+/// 1 a second) held. The camera's offset (`ViewBackPush`, metres) on each
+/// shot's tick is the last one's less the return over the ticks between,
+/// plus 0.5 (the return runs before the shot's push); let go, it returns
+/// to none. The plain M4A1 never pushes.
+#[test]
+fn back_push_in_play() {
+    let mut sim = sim();
+    sim.app
+        .add_weapon_data(&[(
+            "push",
+            r#"
+            id = "test:m4a1_push"
+            base = "combat_arms:m4a1"
+            [hooks."combat_arms:recoil"]
+            back_jitter = 0.5
+            back_jitter_recover = 0.2
+            "#,
+        )])
+        .unwrap();
+    let (p, plain) = m4a1(&mut sim);
+    sim.seconds(1.3);
+    let push = |sim: &Sim| sim.app.world().get::<ViewBackPush>(p).map_or(0.0, |b| b.0) / (BACK_PUSH_SCALE * U);
+    let before = mag(&sim, plain).clip;
+    sim.intent(p).fire = true;
+    sim.ticks(10);
+    sim.intent(p).fire = false;
+    assert!(mag(&sim, plain).clip < before, "it fired");
+    close(push(&sim), 0.0, 0.0, "no push from the plain M4A1");
+    let w = arm(&mut sim, p, "test:m4a1_push");
+    let dt = combat_arms::game::TICK_INTERVAL as f32;
+    sim.intent(p).fire = true;
+    let mut clip = mag(&sim, w).clip;
+    let (mut last, mut since) = (0.0f32, 0u32);
+    let mut shots = 0;
+    while shots < 3 {
+        sim.ticks(1);
+        since += 1;
+        let now = mag(&sim, w).clip;
+        if now < clip {
+            clip = now;
+            let want = if shots == 0 { 0.5 } else { (last - since as f32 * dt * 1.0).max(0.0) + 0.5 };
+            close(push(&sim), want, 1e-4, &format!("shot {}", shots + 1));
+            (last, since) = (push(&sim), 0);
+            shots += 1;
+        }
+    }
+    sim.intent(p).fire = false;
+    sim.ticks(1);
+    close(push(&sim), last - dt, 1e-4, "returning");
+    sim.seconds(2.0);
+    close(push(&sim), 0.0, 0.0, "back to none");
 }
 
 // ---------------------------------------------------------------------------
