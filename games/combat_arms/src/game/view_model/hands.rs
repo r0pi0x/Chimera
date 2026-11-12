@@ -227,6 +227,16 @@ pub fn with_hands(key: &str, hands: Option<&str>) -> String {
     }
 }
 
+/// The hands view-model key `key` wears (`split_key`): those its hands
+/// part names (`choose_in`), else the default character's; what
+/// `on_demand::load_weapon` attaches and `chimera_pack sets` records.
+pub fn choice_for_key(data: &CharacterData, key: &str) -> Option<HandChoice> {
+    match split_key(key).1 {
+        Some(p) => choose_in(data, &p),
+        None => default_choice(data),
+    }
+}
+
 /// A view-model key without its hands part, and the hands it names (None:
 /// the default character's).
 pub fn split_key(key: &str) -> (&str, Option<HandProfile>) {

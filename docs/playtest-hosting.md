@@ -105,7 +105,7 @@ server's. With `sets` run as above (2026-11-12) the server has, per game:
 | `players` (each join) | 12.9 MB | 66 MB, nearly all in `base`: the stock characters and footsteps | 18 MB |
 | `map/<name>` | all 109 maps (the 18 stock ones and the publisher's community maps), 0.3-196 MB each, median 18 MB, 4.7 GB together | all 105 maps, 0.9-174 MB each, median 25 MB, 3.2 GB together | its 8 maps, 91-154 MB each |
 | `weapon/<id>` | every gun | every gun: view model with hands and parts, the held model (what other players hold), its own sounds (fire, silenced, dry, reload, select, misc) and what it throws or fires (sounds, model, skins, flare) | every gun |
-| `character/<record>` | - | each of the 689 body records with a file (a rung's body: its model, faces, head pieces and textures; beyond `base` and `players` mostly its vest and legs textures, 0.3 MB at the median) | - |
+| `character/<record>` | - | each of the 691 body records with a file (a rung's body: its model, faces, head pieces and textures; beyond `base` and `players` mostly its vest and legs textures, 0.3 MB at the median), with the first-person hand model and sleeves its rung look wears when they aren't the default character's (`rungs::body_hands`; 669 sets, 0.3 MB more at the median; the default hands are in `base`) | - |
 | `parts/<id>` | - | each of the 1,265 guns with parts: the parts a rung may draw for it and its default ones (their view and held models and textures, beyond its `weapon/<id>`; 2 MB at the median, mostly shared: 326 files, 7.5 MB in all) | - |
 
 The weapon sets are named as the offer asks (`weapon/ak47`, not

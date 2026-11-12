@@ -44,7 +44,9 @@
 //! (CS:S: the eight class models; HL2:DM: its 19 player models), and
 //! Combat Arms' `character/<record>` per body record with a file (its
 //! model, animation library and textures, as a rung's body loads them:
-//! `characters::models::load_body`; the asset offer names a ladder's
+//! `characters::models::load_body`, and the hand model and skins of the
+//! rung looks of that body whose first-person hands aren't the default
+//! character's, `rungs::body_hands`; the asset offer names a ladder's
 //! drawn bodies' sets, `rungs::body_set`) and `parts/<id>` per gun with
 //! parts (its view and held models with each part a rung may draw for
 //! it and with its default parts, less the bare gun's files: the offer
@@ -55,7 +57,8 @@
 //! the game's `base` and `players`; the offer names the loaded map's set,
 //! in the pool or not). `map/<name>` and Combat Arms' `base` (its effect
 //! tables' sounds: impacts, shells, surfaces, the event sounds and the
-//! heartbeat, the infection and grenade call-outs; the debris table with
+//! heartbeat, the infection and grenade call-outs; the default
+//! character's first-person hand model and skins; the debris table with
 //! its pieces' models, skins and sounds; its cue pack's sounds; the air
 //! strike surprise's shells' sounds, `special::devices::strike_sound_files`)
 //! and CS:S's `base` (its minigame cue pack's sounds) are merged into what the manifest has (sets recorded from
@@ -413,8 +416,14 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 rungs,
                 effects::data::{CaFxTables, CaWeaponFx, EFFECTS},
                 model::normalize,
-                view_model::on_demand,
+                view_model::{self, on_demand},
                 world,
+            };
+            // Where a view model's hands load (`on_demand::load_weapon`'s).
+            let hands_map = || {
+                let mut map = chimera_world::map::MapData::default();
+                map.memos.insert(world::BlocksOnly);
+                map
             };
             let read = |p: &str| tapped.read(p).ok();
             let ca = CaData::install();
@@ -492,7 +501,13 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
             // Each body a rung may dress its players in (any record with a
             // body file: the player bodies, the NPC bodies, the infected
             // overrides).
+            // With it, the first-person hands a rung's look of that body
+            // wears when they aren't the default character's
+            // (`rungs::body_hands`): its hand model and skins, as the
+            // local player's view models (`<key>#h<model>_<face>_<uniform>`)
+            // load them over the gun's own (`view_model::on_demand`).
             let bodies: Vec<i32> = ca.characters().model.iter().filter(|m| !m.file.is_empty()).map(|m| m.id).collect();
+            let hands = rungs::body_hands(ca.characters());
             for id in bodies {
                 let name = rungs::body_set(id);
                 if !name.starts_with(only) {
@@ -501,6 +516,11 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 take();
                 if let Err(e) = models::load_body(&ca, id, &read) {
                     println!("{name}: {e}");
+                }
+                for choice in hands.get(&id).into_iter().flatten() {
+                    if let Err(e) = view_model::load_hands(choice, &mut hands_map(), &read) {
+                        println!("{name}: hands {}: {e}", choice.model);
+                    }
                 }
                 out.push((name, take()));
             }
@@ -517,6 +537,11 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                     for file in pack.sounds.values() {
                         let _ = tapped.read(&normalize(file));
                     }
+                }
+                // The default character's first-person hands, on every
+                // view model (`view_model::hands::default_choice`).
+                if let Some(choice) = view_model::hands::default_choice(ca.characters()) {
+                    let _ = view_model::load_hands(&choice, &mut hands_map(), &read);
                 }
                 // The debris table, read at a prop's first death, and the
                 // models, skins and sounds of its records (the pieces).
