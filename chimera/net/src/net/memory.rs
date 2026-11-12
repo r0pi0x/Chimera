@@ -58,6 +58,12 @@ pub struct Link {
     /// included: what each end put on the wire).
     pub bytes_to: std::collections::HashMap<u64, u64>,
     pub bytes_from: std::collections::HashMap<u64, u64>,
+    /// A server is on the link (`serve` until it stops): what a client
+    /// reconnecting asks before joining again (`reconnect`), as it asks a
+    /// UDP server for its info.
+    pub serving: bool,
+    /// The next id a client joining again takes (`fresh_id`).
+    next_id: u64,
 }
 
 impl Link {
@@ -72,7 +78,16 @@ impl Link {
             per_client: Default::default(),
             bytes_to: Default::default(),
             bytes_from: Default::default(),
+            serving: false,
+            next_id: 1 << 32,
         }))
+    }
+
+    /// An id for a client joining again (`reconnect`): never one a test
+    /// gave (those count from 1), never one given before.
+    pub fn fresh_id(&mut self) -> u64 {
+        self.next_id += 1;
+        self.next_id
     }
 
     pub fn advance(&mut self, by: Duration) {
@@ -177,6 +192,7 @@ impl MemoryServer {
     /// Stopping: every client hears it.
     pub(super) fn hang_up(&self, server: &RenetServer) {
         let mut link = self.0.lock().unwrap();
+        link.serving = false;
         for id in server.clients_id() {
             link.send(false, id, Kind::Disconnect);
         }
@@ -290,6 +306,7 @@ fn client_send(
 /// Become a server on `link` (tests: `harness::NetSim`).
 pub fn serve(world: &mut World, link: Arc<Mutex<Link>>) -> Result<(), String> {
     super::server::start(world)?;
+    link.lock().unwrap().serving = true;
     world.insert_resource(MemoryServer(link));
     Ok(())
 }
@@ -297,6 +314,7 @@ pub fn serve(world: &mut World, link: Arc<Mutex<Link>>) -> Result<(), String> {
 /// Become client `id` of the server on `link` (tests).
 pub fn join(world: &mut World, link: Arc<Mutex<Link>>, id: u64) -> Result<(), String> {
     super::client::start(world, id)?;
+    world.insert_resource(super::reconnect::LastServer(super::reconnect::Redial::Memory(link.clone())));
     world.insert_resource(MemoryClient::new(link, id));
     Ok(())
 }

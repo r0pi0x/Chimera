@@ -153,8 +153,6 @@ Delete each when done.
   set (250 MB for 2,363 weapons); the first map's load peaks at 6.1 GB
   until glibc's trim 20 s after it spawns. Check a client without
   installs (the asset service's) the same way.
-- When the server quits, clients go back to the menu (its background
-  map) with no reconnect; testers rejoin by hand (as the hosting doc says).
 
 ### HL2:DM playtest, 2026-11-09 (user, Windows, dm_lockdown)
 

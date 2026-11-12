@@ -226,6 +226,7 @@ pub mod props;
 pub mod quant;
 pub mod query;
 pub mod ragdolls;
+pub mod reconnect;
 pub mod server;
 pub mod stats;
 pub mod udp;
@@ -366,6 +367,9 @@ pub enum NetEvent {
     Joined { map: String },
     /// Left the game (or stopped serving): why.
     Disconnected(String),
+    /// Reconnecting to a server that went away (`reconnect`) stopped: it
+    /// didn't come back in time (why, for the failure box).
+    GaveUpReconnecting(String),
 }
 
 // --- Protocol: messages and replicated components. Registered in the same
@@ -1398,6 +1402,7 @@ impl Plugin for NetPlugin {
         voice::plugin(app);
         query::plugin(app);
         memory::plugin(app);
+        reconnect::plugin(app);
         vote::plugin(app);
         stats::plugin(app);
         weapon_params::plugin(app);
@@ -1427,6 +1432,7 @@ fn log_events(mut events: MessageReader<NetEvent>) {
             NetEvent::ChangingLevel(m) => info!("the server is changing level to {m}"),
             NetEvent::Joined { map } => info!("joined the game on {map}"),
             NetEvent::Disconnected(r) => info!("disconnected: {r}"),
+            NetEvent::GaveUpReconnecting(r) => info!("gave up reconnecting: {r}"),
         }
     }
 }
@@ -1483,6 +1489,10 @@ pub fn map_matches(world: &World, map: &str, hash: Option<[u8; 32]>) -> Option<b
 /// the server sent go. Reports `NetEvent::Disconnected(reason)`.
 pub fn disconnect(world: &mut World, reason: &str) {
     let role = world.get_resource::<NetRole>().copied().unwrap_or_default();
+    // A lost connection (`reconnect::Lost`) goes on reconnecting; leaving
+    // (also while waiting on the menu), a refusal or a failure stops it.
+    let lost = world.remove_resource::<reconnect::Lost>().is_some();
+    let prior = world.remove_resource::<reconnect::Reconnecting>();
     match role {
         NetRole::Standalone => return,
         NetRole::Server => {
@@ -1492,6 +1502,7 @@ pub fn disconnect(world: &mut World, reason: &str) {
         NetRole::Client => {
             client::stop(world);
             client::ended(world, reason);
+            reconnect::after(world, reason, lost, prior);
         }
     }
     world.insert_resource(NetRole::Standalone);
@@ -1562,6 +1573,7 @@ fn commands(app: &mut App) {
         "connect <ip[:port]>: join a server (port 27015 unless given).",
         |w, a| {
             let addr = parse_address(&a.join(" "))?;
+            reconnect::cancel(w);
             client::connect(w, addr)?;
             Ok(Some(format!("Connecting to {addr}...")))
         },

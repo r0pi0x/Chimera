@@ -3,7 +3,8 @@
 //! the command line plays; Play's console lines and the game it starts
 //! (the minigame once the map is in); Join on `NetSim`'s in-memory link
 //! (in the game; a refused join, a full server and a host leaving land on
-//! the menu with why); Cancel while joining and loading; the Escape
+//! the menu with why; a server that goes away: the reconnect box, joined
+//! again once it's back, Cancel); Cancel while joining and loading; the Escape
 //! menu's Disconnect (back at the menu, a host with people connected asked
 //! first); Combat Arms' loading screen kept to its own maps; the data.
 
@@ -335,6 +336,47 @@ fn join_connects_with_the_password_and_ends_in_the_game() {
     );
     assert_eq!(client_menu(&sim, c).recent, ["127.0.0.1:28015"], "remembered");
     assert!(!w.resource::<chimera_client::client::front_end::AppMenu>().open, "the game has the mouse");
+}
+
+#[test]
+fn a_server_that_goes_away_shows_the_reconnect_box_and_is_joined_again() {
+    let (mut sim, c) = server_and_menu_client();
+    type_in(&mut sim, c, "mainmenu_type address 127.0.0.1:28015");
+    client_act(&mut sim, c, A::Connect);
+    assert!(sim.until(900, |s| client_menu(s, c).screen == Screen::InGame));
+    // The server quits: the menu with the reconnect box, no failure box.
+    sim.stop_server();
+    assert!(
+        sim.until(300, |s| client_menu(s, c).reconnecting.is_some()),
+        "{:?}",
+        client_menu(&sim, c)
+    );
+    let m = client_menu(&sim, c);
+    assert_eq!(m.screen, Screen::MainMenu);
+    assert!(m.failure.is_none(), "{:?}", m.failure);
+    assert!(
+        m.reconnecting.as_deref().unwrap().starts_with("Connection lost - reconnecting... (attempt 1)"),
+        "{:?}",
+        m.reconnecting
+    );
+    // Back up: joined again on its own, in the game.
+    sim.start_server();
+    assert!(
+        sim.until(900, |s| client_menu(s, c).screen == Screen::InGame),
+        "{:?}",
+        client_menu(&sim, c)
+    );
+    assert!(client_menu(&sim, c).reconnecting.is_none());
+
+    // Gone again; Escape (Cancel) stops reconnecting: the plain menu.
+    sim.stop_server();
+    assert!(sim.until(300, |s| client_menu(s, c).reconnecting.is_some()));
+    client_act(&mut sim, c, A::Cancel);
+    assert!(client_menu(&sim, c).reconnecting.is_none());
+    assert!(!sim.clients[c].app.world().contains_resource::<net::reconnect::Reconnecting>());
+    sim.start_server();
+    sim.ticks(600);
+    assert_eq!(client_menu(&sim, c).screen, Screen::MainMenu, "not joined again after Cancel");
 }
 
 #[test]

@@ -11,7 +11,8 @@
 //! server given their local components (no movement slot), ours `LocalPlayer`
 //! (its `NetBody` into `Transform`/`Velocity`/`MovementState` until it is
 //! predicted), others `map::interp::NetDrawn` (drawn by `interp`), dropped
-//! connections back to single player with the reason.
+//! connections back to single player with the reason (a server that went
+//! away: joined again on its own, `reconnect`).
 
 use std::{
     net::{Ipv4Addr, SocketAddr, UdpSocket},
@@ -279,6 +280,7 @@ pub fn connect(world: &mut World, server: SocketAddr) -> Result<(), String> {
     start(world, id)?;
     world.insert_resource(transport);
     world.insert_resource(ServerAddress(server));
+    world.insert_resource(super::reconnect::LastServer(super::reconnect::Redial::Udp(server)));
     world.resource_mut::<JoinProgress>().address = Some(server);
     world.write_message(NetEvent::Connecting(server));
     Ok(())
@@ -634,6 +636,10 @@ fn watch_join(world: &mut World) {
     {
         let now = world.resource::<Time<Real>>().elapsed_secs_f64();
         if now - since > JOIN_TIMEOUT {
+            // Joining a server again that answered: go on reconnecting.
+            if world.contains_resource::<super::reconnect::Reconnecting>() {
+                world.insert_resource(super::reconnect::Lost);
+            }
             fail(world, JoinFailure::Timeout, "Connection to server timed out.");
         }
     }
@@ -660,10 +666,10 @@ fn watch_connection(world: &mut World) {
         .get_resource::<super::udp::UdpClient>()
         .and_then(|t| t.disconnect_reason())
         .map(|r| format!("{r:?}"));
-    let reason = netcode_reason
+    let raw = netcode_reason
         .or(renet_reason)
         .unwrap_or_else(|| "connection lost".into());
-    let reason = match reason.as_str() {
+    let reason = match raw.as_str() {
         // Netcode's names, in the game's words.
         "ConnectionRequestTimedOut" | "ConnectionResponseTimedOut" => "Connection to server timed out.".to_string(),
         "ConnectionTimedOut" => "Connection to server timed out (ConnectionTimedOut).".to_string(),
@@ -677,8 +683,17 @@ fn watch_connection(world: &mut World) {
             HOST_LEFT.to_string()
         }
         "DisconnectedByServer" => SHUTTING_DOWN.to_string(),
-        _ => reason,
+        _ => raw.clone(),
     };
+    // The server went away (quit, crashed, timed out) from a connection
+    // that was up, or while reconnecting: join it again once it's back
+    // (`reconnect`). Not a full server, nor a listen server whose host
+    // left (a kick or refusal came as `RefusedReason`, above).
+    let was_up = world.resource::<JoinProgress>().reached(JoinStage::ServerInfo).is_some()
+        || world.contains_resource::<super::reconnect::Reconnecting>();
+    if was_up && raw != "ConnectionDenied" && reason != HOST_LEFT {
+        world.insert_resource(super::reconnect::Lost);
+    }
     super::disconnect(world, &reason);
 }
 
@@ -724,6 +739,9 @@ fn check_map(world: &mut World) {
             world.insert_resource(Time::<Fixed>::from_duration(std::time::Duration::from_nanos(tick_nanos)));
             world.remove_resource::<Handshake>();
             world.insert_resource(Joined { map: map.clone() });
+            if let Some(r) = world.remove_resource::<super::reconnect::Reconnecting>() {
+                info!("rejoined the server after {} attempts", r.attempt);
+            }
             // The server puts us in the game now.
             world.write_message(super::Loaded { map: map.clone() });
             set_stage(world, JoinStage::Joined);

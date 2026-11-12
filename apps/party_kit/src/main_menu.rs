@@ -42,6 +42,11 @@
 //! - **The failure box**: a failed or refused join, a drop, a failed load
 //!   land on the menu with why (CS:S's "Disconnected" frame; the server's
 //!   or the game's words, `failure_text`), Close.
+//! - **The reconnect box**: the server went away (quit, crashed, timed
+//!   out) and the client asks it every few seconds whether it's back
+//!   (`chimera_net::net::reconnect`): "Connection lost - reconnecting...
+//!   (attempt N)", the server's reason, Cancel (Escape too); joining it
+//!   again shows the loading panel as any join (`follow_reconnect`).
 //! - **Background**: a live map (`[background]`: the first that loads,
 //!   the app's own map load at start; again after leaving a game) with
 //!   the camera on a slow orbit around the middle of its spawn points
@@ -413,6 +418,9 @@ pub struct PartyMenu {
     pub caret: Caret,
     /// Why the last game ended or a join failed (the failure box).
     pub failure: Option<String>,
+    /// The server went away and is being asked whether it's back
+    /// (`chimera_net::net::reconnect`): the reconnect box's text.
+    pub reconnecting: Option<String>,
     /// What is loading: a map, or the server's address.
     pub loading: Option<String>,
     /// The last addresses joined, newest first.
@@ -443,6 +451,7 @@ impl Default for PartyMenu {
             focus: None,
             caret: Caret::default(),
             failure: None,
+            reconnecting: None,
             loading: None,
             recent: Vec::new(),
             values: BTreeMap::new(),
@@ -619,7 +628,7 @@ impl Plugin for MainMenuPlugin {
             .add_systems(Startup, ((start_look, init_play).chain(), spawn_backdrop))
             .add_systems(
                 Update,
-                (look_loaded, typing, clicks, act, follow_loads, refresh_values, ca_loading_gate, fly, cameras, show, backdrop, progress, loading_under_lobby, entry_hover, music)
+                (look_loaded, typing, clicks, act, follow_loads, follow_reconnect, refresh_values, ca_loading_gate, fly, cameras, show, backdrop, progress, loading_under_lobby, entry_hover, music)
                     .chain()
                     .in_set(MainMenuSystems)
                     .before(crate::esc_menu::EscMenuSystems),
@@ -866,7 +875,7 @@ fn typing(
         if e.key_code == KeyCode::Escape {
             if menu.failure.is_some() {
                 out.write(MainMenuAction::CloseFailure);
-            } else if matches!(menu.screen, Screen::Loading | Screen::Joining) {
+            } else if menu.reconnecting.is_some() || matches!(menu.screen, Screen::Loading | Screen::Joining) {
                 out.write(MainMenuAction::Cancel);
             } else if menu.page != MenuPage::Main {
                 out.write(MainMenuAction::Back);
@@ -976,6 +985,9 @@ fn act_one(world: &mut World, action: MainMenuAction) {
         A::Cancel => {
             if loading {
                 submit(world, "disconnect");
+            } else if menu.reconnecting.is_some() {
+                chimera_net::net::reconnect::cancel(world);
+                world.resource_mut::<PartyMenu>().reconnecting = None;
             }
         }
         A::CloseFailure => {
@@ -984,7 +996,7 @@ fn act_one(world: &mut World, action: MainMenuAction) {
                 j.dismiss();
             }
         }
-        _ if loading || menu.failure.is_some() => {}
+        _ if loading || menu.failure.is_some() || menu.reconnecting.is_some() => {}
         A::Entry(i) => {
             let Some(e) = world.resource::<MenuData>().entries.get(i).cloned() else {
                 return;
@@ -1219,6 +1231,19 @@ fn follow_loads(world: &mut World) {
         submit(world, "MaxPlayer 0");
         submit(world, "maxplayers 1");
         submit(world, format!("map {map}"));
+    }
+}
+
+/// The reconnect box follows the client's reconnect (`net::reconnect`):
+/// shown while it waits for the server on the menu, gone while joining
+/// it again (the loading panel) or once it stops.
+fn follow_reconnect(world: &mut World) {
+    let text = chimera_net::net::reconnect::waiting(world)
+        .then(|| world.get_resource::<chimera_net::net::reconnect::Reconnecting>().map(|r| r.status()))
+        .flatten();
+    let mut m = world.resource_mut::<PartyMenu>();
+    if m.reconnecting != text {
+        m.reconnecting = text;
     }
 }
 
@@ -1547,6 +1572,10 @@ fn show(
     let title = title.map_or_else(|| "Ultimate Gun Game".to_string(), |t| t.0.clone());
     if let Some(f) = &menu.failure {
         failure_frame(&mut commands, root, &look, f);
+        return;
+    }
+    if let Some(r) = &menu.reconnecting {
+        reconnect_frame(&mut commands, root, &look, r);
         return;
     }
     if let Some(what) = &menu.loading {
@@ -2218,6 +2247,42 @@ fn failure_frame(commands: &mut Commands, root: Entity, look: &Look, text: &str)
         Btn::enabled(true).default_button(true),
         0,
         MainMenuAction::CloseFailure,
+    );
+}
+
+/// The server went away: "Connection lost - reconnecting... (attempt N)",
+/// its reason, Cancel (Escape too).
+fn reconnect_frame(commands: &mut Commands, root: Entity, look: &Look, text: &str) {
+    let (w, h) = (380.0, 150.0);
+    let parts = widgets::frame(commands, root, look, FrameSpec::new("partyreconnect"), (w, h), "Connection lost");
+    if let Some(c) = parts.close {
+        commands.entity(c).insert(MainMenuAction::Cancel);
+    }
+    let body = commands
+        .spawn((
+            Node {
+                overflow: Overflow::clip(),
+                ..place(look, 20.0, 34.0, w - 40.0, h - 34.0 - 40.0)
+            },
+            ChildOf(parts.frame),
+        ))
+        .id();
+    commands.spawn((
+        Text::new(text),
+        look.font("Default", (16.0, false)),
+        TextColor(look.text()),
+        TextLayout::new(Justify::Left, bevy::text::LineBreak::WordBoundary),
+        ChildOf(body),
+    ));
+    widgets::button(
+        commands,
+        parts.frame,
+        look,
+        (w - 20.0 - 72.0, h - 34.0, 72.0, 24.0),
+        &text_of(look, "#GameUI_Cancel", "Cancel"),
+        Btn::enabled(true).default_button(true),
+        0,
+        MainMenuAction::Cancel,
     );
 }
 
