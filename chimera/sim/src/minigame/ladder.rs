@@ -91,7 +91,10 @@
 //! fire there too (`OnRung` itself isn't replicated). Combat Arms' are the
 //! infection's moments.
 //! The ladder gives the weapons, so nobody drops one at death
-//! (`weapon::drop::NoDeathDrops`).
+//! (`weapon::drop::NoDeathDrops`). A rung's weapon is a `LoadoutWeapon`
+//! (given at each life and each swap), so a game gives it what its data
+//! says a rules weapon comes with (HL2:DM's SMG1 and AR2: 2 alt-fire
+//! rounds); `refill_ammo` tops up its reserve, never those.
 //! At the time limit the highest rung wins, then the most kills; a tie is
 //! a draw.
 //!
@@ -1407,7 +1410,9 @@ pub fn set_rung(world: &mut World, e: Entity, rung: usize, ladder: &Ladder) {
         })
         .unwrap_or_default();
     runtime::refit_kit(world, e, ladder.rungs[rung], &melees);
-    give(world, e, ladder.rungs[rung]);
+    if let Some(w) = give(world, e, ladder.rungs[rung]) {
+        world.entity_mut(w).insert(super::LoadoutWeapon);
+    }
     keep_slot_order(world, e, &before, ladder);
     // No command of the player's did this: its client takes the state
     // as a restart, not a misprediction.

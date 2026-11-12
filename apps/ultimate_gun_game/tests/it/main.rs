@@ -5,6 +5,7 @@
 //! dev --test it`; where tests go: docs/OBSERVABILITY.md, section 1.
 
 mod fallbacks;
+mod hl2_alt_ammo;
 mod hl2_set_pieces;
 mod heavy {
     mod hl2_map_items;

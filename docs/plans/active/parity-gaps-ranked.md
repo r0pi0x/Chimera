@@ -25,6 +25,16 @@ pickups`); its ammo crates stay as inert solid models (the spec makes a
 crate a static solid model that blocks players and bullets: level
 geometry). docs/DESIGN.md, "Gun game rules".
 
+Decided (user, 2026-11-12): an HL2:DM rung gives 2 alt-fire rounds (was
+item 8). The cause, traced: each life the ladder gives a new weapon
+(`runtime::respawn` strips and gives; a rung swap gives too), and its
+hooks build `Hl2Rounds` from the data's `count`, 0 (HL2:DM spawns with
+none: its rounds come from boxes and crates, `ammo::give`); the ladder's
+`refill_ammo` tops up only `Magazine` reserves and thrown grenades, and a
+party has no pickups, so attack2 clicked empty from the first press. Now
+the rules' weapons are `minigame::LoadoutWeapon`s and the SMG1's and
+AR2's hooks say `loadout = 2`.
+
 ## Do next (spec is clear)
 
 1. **HL2:DM: view model drawn at 69 degrees, not 54.** `view_model_fov`
@@ -64,11 +74,6 @@ geometry). docs/DESIGN.md, "Gun game rules".
    scale 1 not 4, and barrels use CS:S's blast. Gate per map's game.
    Spec: hl2dm/source_deltas.md 1.5; gravity_gun.md Corrections 1-2, 9.
    Code: `party_sim`, `games/hl2dm/src/game/physics.rs`. M. No spec.
-8. **HL2:DM: SMG1 and AR2 alt fire empty in UGG.** Rungs seem to give
-   no `smg1_grenade`/`ar2altfire` ammo and there are no pickups, so
-   attack2 clicks (traced to `give_item`, not to the end). Code:
-   `chimera/sim/src/minigame/`, `chimera/sim/src/weapon/equip.rs`. S. No
-   spec; the user's call on how much.
 9. **Combat Arms: first-person hands always the default character's.**
    UGG wears a random body per rung; sleeves, sex and gloves never match.
    Spec: combat_arms/view_models.md 2. Code: `game/view_model/on_demand.rs`,
@@ -178,7 +183,7 @@ grates and glass, damageable projectiles, the combine camera.
 
 ## Counts
 
-Do next 16, later 7, needs a spec or capture 10.
+Do next 15, later 7, needs a spec or capture 10.
 
 ## Stale `//!` docs found on the way
 
