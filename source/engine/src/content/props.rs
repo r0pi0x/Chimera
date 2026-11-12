@@ -6,6 +6,9 @@
 //! `bsp::SourceGame::fixed_models`: HL2:DM's items and ammo crates) are
 //! placed as prop entities with that model: an item (`FixedKind::Item`) as
 //! a physics prop players walk through, a crate as a solid static model.
+//! The items and the wall chargers are the map's game's pickups: placed
+//! only when its gameplay runs them (`KitLoad::pickups`; a party's
+//! HL2:DM map has none, the crates stay as the solid models they are).
 //!
 //! Known shortcuts (docs/tech-debt.md): Models vmdl can't read: animations in
 //! `.ani` blocks are dropped from vmdl's read (our `anim` reads them), and a
@@ -1227,6 +1230,7 @@ pub fn add_static_props(
     detail_models: &[(String, Vec3, Vec3)],
     detail_fade: (f32, f32),
     fixed: FixedModels,
+    pickups: bool,
 ) {
     let mut placements = Vec::new();
     for (static_index, prop) in bsp.static_props().enumerate() {
@@ -1305,7 +1309,7 @@ pub fn add_static_props(
             item: false,
         });
     }
-    placements.extend(entity_props(bsp, fixed));
+    placements.extend(entity_props(bsp, fixed, pickups));
     placements.extend(fish_pool_props(bsp));
     place_props(bsp, materials, lighting, occluders, data, placements, hdr);
 }
@@ -1386,8 +1390,10 @@ const CHARGERS: [(&str, &str); 2] = [
 
 /// Props placed as entities: physics props (barrels, baskets; static here
 /// until there's physics) and dynamic props. Both collide by their physics
-/// model (the visible mesh until `.phy` is parsed).
-fn entity_props(bsp: &Bsp, fixed_models: FixedModels) -> Vec<PropPlacement> {
+/// model (the visible mesh until `.phy` is parsed). Without `pickups` (the
+/// map's game's gameplay isn't the app's: `KitLoad::pickups`) its walk-over
+/// items and wall chargers aren't placed.
+fn entity_props(bsp: &Bsp, fixed_models: FixedModels, pickups: bool) -> Vec<PropPlacement> {
     let parse = |v: &str| -> Option<[f32; 3]> {
         let mut it = v.split_whitespace().filter_map(|p| p.parse::<f32>().ok());
         Some([it.next()?, it.next()?, it.next()?])
@@ -1410,6 +1416,10 @@ fn entity_props(bsp: &Bsp, fixed_models: FixedModels) -> Vec<PropPlacement> {
             let fixed = fixed_models(class, &|k| {
                 e.properties().find(|(n, _)| n.eq_ignore_ascii_case(k)).map(|(_, v)| v.to_string())
             });
+            // The game's pickups, only where its gameplay runs them.
+            if !pickups && (charger.is_some() || fixed.as_ref().is_some_and(|f| f.kind == FixedKind::Item)) {
+                return None;
+            }
             if !physics
                 && !door
                 && !ragdoll

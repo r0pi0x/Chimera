@@ -18,6 +18,13 @@ Each gap: game, what differs, spec section, our code, size (S hours, M a
 day or two, L more), and whether it needs a spec session (or a capture)
 first, done on the Windows PC. Delete a row when it lands.
 
+Decided (user, 2026-11-12): HL2:DM's pickups and chargers stay off in
+Ultimate Gun Game (was item 4): a party's HL2:DM map places none of its
+items and wall chargers, on the server and the client (`KitLoad::
+pickups`); its ammo crates stay as inert solid models (the spec makes a
+crate a static solid model that blocks players and bullets: level
+geometry). docs/DESIGN.md, "Gun game rules".
+
 ## Do next (spec is clear)
 
 1. **HL2:DM: view model drawn at 69 degrees, not 54.** `view_model_fov`
@@ -39,15 +46,7 @@ first, done on the Windows PC. Delete a row when it lands.
    `Breach` sockets). Code: `games/combat_arms/src/game/effects/mod.rs`
    (`hand` vs `flash`); `CaPose::flash_point` exists, used by launchers
    only; `Breach` not posed. S. No spec.
-4. **HL2:DM: pickups and chargers dead in UGG.** `party_sim` adds no
-   `PickupsPlugin`: no kits, batteries, ammo or crates on dm_ maps, and
-   the 20 drawn wall chargers do nothing on `+use`. Its resources are
-   global, so gate them to HL2:DM maps. Spec: hl2dm/maps_entities.md 1-4;
-   suit.md "Pickups", "Wall chargers". Code:
-   `games/hl2dm/src/game/mod.rs` `party_sim`, `apps/party_kit`
-   `PartyPartsPlugin`; `apps/ultimate_gun_game/tests/it/pickups.rs`. M.
-   No spec; the user decides whether UGG wants pickups (parity says yes).
-5. **HL2:DM: items and ammo crates invisible, in every app.** Pickups
+5. **HL2:DM: items and ammo crates invisible, in the HL2:DM app.** Pickups
    spawn as mesh-less 16-unit boxes (the data's `model` is never read);
    crates are invisible solid blocks. Spec: hl2dm/maps_entities.md 1, 3
    (touch box: bounds grown 24 sideways, 12 up). Code:
@@ -179,7 +178,7 @@ grates and glass, damageable projectiles, the combine camera.
 
 ## Counts
 
-Do next 17, later 7, needs a spec or capture 10.
+Do next 16, later 7, needs a spec or capture 10.
 
 ## Stale `//!` docs found on the way
 

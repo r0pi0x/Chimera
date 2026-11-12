@@ -169,8 +169,9 @@ pub static GUEST: crate::map::MapDressing = crate::map::MapDressing {
 /// guns (data, hooks, recoil, the shove, its rung extras) and their view
 /// models' rules and motion, its physics props' rules on its own maps
 /// (`physics::MapPhysicsRules`). Not its game's rules (the loadout,
-/// pickups); its maps' items and crates are drawn (the map loader's) but
-/// inert.
+/// pickups: off in a party, the user's call; docs/DESIGN.md "Gun game
+/// rules"): its maps' items and wall chargers aren't placed there
+/// (`KitLoad::pickups`), its ammo crates stand as inert solid models.
 pub fn party_sim(app: &mut bevy::app::App) {
     use crate::game_registry::GameAppExt;
     app.register_game(&INFO);

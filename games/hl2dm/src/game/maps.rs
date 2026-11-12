@@ -14,8 +14,10 @@
 //! onto another game's map (the party's), read from the HL2:DM install.
 //! Also its chat formats (`chat`: no radio, the dead read by the living),
 //! and its items' and ammo crates' models (`fixed_models`, data/items.toml:
-//! drawn in every app that loads its maps, the items as physics props
-//! players walk through, the crates solid).
+//! the items as physics props players walk through, the crates solid). The
+//! items and wall chargers are placed only where HL2:DM's gameplay runs
+//! them (`KitLoad::pickups`: its own app); a party's HL2:DM map has
+//! neither, its crates stay as inert solid models.
 //!
 //! Known shortcuts:
 //! - Its sounds (Source's sound scripts and soundscapes, lift S5) are the

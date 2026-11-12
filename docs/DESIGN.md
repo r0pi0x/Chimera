@@ -640,6 +640,14 @@ that):
   data/ladder_exclusions.toml: the infection stun launchers, the skins
   drawn wrong). `ladder_skipped` lists them; a hand-written ladder may
   still name any of them.
+- **No HL2:DM pickups or chargers** (user, 2026-11-12): a party's
+  HL2:DM map has none of its walk-over items (kits, vials, batteries,
+  ammo boxes) and wall chargers, not even drawn: only the HL2:DM app,
+  whose gameplay runs them, places them (`map::KitLoad::pickups`: the
+  map loaded for another game's gameplay), the same on a server and a
+  client. Its ammo crates stay, as the static solid models the spec
+  makes them (they block players and bullets: level geometry), giving
+  nothing.
 - **Rung extras, the same for everyone on a rung** (`rung_extras`,
   default on): when a ladder is made (each map, each new ladder) a game
   may draw something for each of its rungs from the match's seeded
