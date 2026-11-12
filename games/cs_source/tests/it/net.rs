@@ -358,7 +358,8 @@ fn udp_pair() -> (crate::stack::harness::Sim, crate::stack::harness::Sim) {
 /// Playtest 2026-10-10: when the server closed, clients waited for the
 /// timeout. Every way a server ends (its `quit`, the host's `disconnect`
 /// or menu, the app exiting: window closed, Ctrl+C) hangs up on its
-/// clients at once, and they show CS:S's "Server shutting down".
+/// clients at once, and they have CS:S's "Server shutting down": as the
+/// reconnect reason, or (`cl_autoreconnect 0`) in the Disconnected dialog.
 #[test]
 fn clients_hear_at_once_that_the_server_shut_down() {
     use crate::stack::net::client::{JoinFailure, JoinProgress};
@@ -373,26 +374,42 @@ fn clients_hear_at_once_that_the_server_shut_down() {
             w.write_message(AppExit::Success);
         }),
     ];
-    for (how, end) in ends {
-        let (mut server, mut client) = udp_pair();
-        end(server.app.world_mut());
-        server.app.update();
-        let mut gone = false;
-        for _ in 0..50 {
-            client.app.update();
-            std::thread::sleep(Duration::from_millis(2));
-            if *client.app.world().resource::<crate::stack::core::NetRole>() == crate::stack::core::NetRole::Standalone {
-                gone = true;
-                break;
+    use crate::stack::net::reconnect::{ReconnectSettings, Reconnecting};
+    for auto in [true, false] {
+        for (how, end) in ends {
+            let (mut server, mut client) = udp_pair();
+            client.app.world_mut().resource_mut::<ReconnectSettings>().enabled = u32::from(auto);
+            end(server.app.world_mut());
+            server.app.update();
+            let mut gone = false;
+            for _ in 0..50 {
+                client.app.update();
+                std::thread::sleep(Duration::from_millis(2));
+                if *client.app.world().resource::<crate::stack::core::NetRole>() == crate::stack::core::NetRole::Standalone {
+                    gone = true;
+                    break;
+                }
+            }
+            let what = format!("{how}, cl_autoreconnect {}", u32::from(auto));
+            assert!(gone, "{what}: the client was told at once (not after the 30 s timeout)");
+            if auto {
+                // Reconnecting instead of the failure box; the words are its reason.
+                let r = client.app.world().get_resource::<Reconnecting>();
+                assert_eq!(
+                    r.map(|r| r.reason.as_str()),
+                    Some("Server shutting down"),
+                    "{what}: CS:S's words as the reconnect reason"
+                );
+            } else {
+                assert!(client.app.world().get_resource::<Reconnecting>().is_none(), "{what}");
+                let p = client.app.world().resource::<JoinProgress>().clone();
+                assert_eq!(
+                    p.failure,
+                    Some((JoinFailure::Dropped, "Server shutting down".to_string())),
+                    "{what}: CS:S's words in the Disconnected dialog"
+                );
             }
         }
-        assert!(gone, "{how}: the client was told at once (not after the 30 s timeout)");
-        let p = client.app.world().resource::<JoinProgress>().clone();
-        assert_eq!(
-            p.failure,
-            Some((JoinFailure::Dropped, "Server shutting down".to_string())),
-            "{how}: CS:S's words in the Disconnected dialog"
-        );
     }
 }
 

@@ -241,3 +241,58 @@ fn frames_drag_stack_and_resize() {
         Vec2::new(0.0, 168.0)
     );
 }
+
+/// A lost connection waits on the menu for its server (`net::reconnect`):
+/// the Disconnected dialog shows "Connection lost - reconnecting..." with
+/// Cancel, so a player isn't left with a bare menu; Cancel stops the
+/// reconnect, and the server answering takes the box away for the usual
+/// joining dialog.
+#[test]
+fn a_lost_connection_shows_the_reconnect_box_with_cancel() {
+    use chimera_net::net::{memory::LinkConditions, reconnect::Reconnecting};
+    use cs_source::ui::game_menu::reconnect_dialog;
+    let mut sim = crate::stack::harness::NetSim::new(
+        crate::stack::harness::CsSim,
+        LinkConditions::default(),
+        5,
+        1,
+        |app| {
+            app.add_plugins((
+                crate::stack::greybox::GreyboxMapPlugin,
+                crate::stack::games::cs_source::movement::SourceMovementPlugin,
+            ))
+            .insert_resource(crate::stack::slots::Loadout { movement: crate::stack::games::cs_source::movement::ID });
+        },
+    );
+    sim.until_joined(600);
+    sim.clients[0].app.world_mut().insert_resource(GameMenu::for_game(&cs_source::ui::MENU_GAME));
+    let menu = |s: &crate::stack::harness::NetSim| s.clients[0].app.world().resource::<GameMenu>().clone();
+    let tick = |s: &mut crate::stack::harness::NetSim| {
+        s.step();
+        reconnect_dialog(s.clients[0].app.world_mut());
+    };
+    assert!(menu(&sim).failure.is_none());
+
+    sim.stop_server();
+    for _ in 0..300 {
+        tick(&mut sim);
+        if menu(&sim).reconnecting {
+            break;
+        }
+    }
+    let m = menu(&sim);
+    assert!(m.reconnecting && m.open && m.loading.is_some(), "{m:?}");
+    let text = m.failure.clone().expect("the box's text");
+    assert!(text.starts_with("Connection lost - reconnecting... (attempt"), "{text}");
+
+    // Cancel: the box closes and the reconnect stops.
+    let mut m = m;
+    m.handle(Input::Click(Target::Cancel, 0));
+    sim.clients[0].app.world_mut().insert_resource(m);
+    tick(&mut sim);
+    assert!(!sim.clients[0].app.world().contains_resource::<Reconnecting>());
+    let m = menu(&sim);
+    assert!(!m.reconnecting && m.failure.is_none() && m.open, "{m:?}");
+    tick(&mut sim);
+    assert!(menu(&sim).failure.is_none(), "not shown again");
+}

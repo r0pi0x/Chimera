@@ -58,7 +58,9 @@
 //! map's load, the host's own map change, and "Starting local game server..."
 //! when `maxplayers` > 1; failures and refusals in it ("Disconnected",
 //! `net_failure_text`: the game's strings for a full server, older or newer
-//! server, timeouts and download errors, else the server's words; Close);
+//! server, timeouts and download errors, else the server's words; Close),
+//! and the same dialog as the reconnect box while a lost connection waits
+//! for its server (`reconnect_dialog`: `Reconnecting::status`, Cancel);
 //! `chimera_loading_details 1` adds a detailed view under it (`LoadTimeline`:
 //! each stage's time, bytes and percentage; the server's name, address, map,
 //! players and ping). The entries at the left: the game's `GameMenu.res`
@@ -225,6 +227,7 @@ impl Plugin for GameMenuPlugin {
                     text_keys,
                     pointer,
                     sync,
+                    reconnect_dialog,
                     cursor,
                     after_load,
                     menu_sounds,
