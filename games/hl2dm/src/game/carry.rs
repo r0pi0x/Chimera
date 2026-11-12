@@ -203,17 +203,17 @@ pub fn pick_up(world: &mut World, who: Entity, body: Entity) {
     let frame = yaw_frame(&intent);
     let relative = snap(frame.inverse() * rot, p.snap_degrees);
     let dt = world.resource::<SimClock>().dt();
+    // The load weight: its mass before the hold.
+    let load = world
+        .get::<avian3d::prelude::ComputedMass>(body)
+        .map(|m| m.value())
+        .filter(|m| m.is_finite() && *m > 0.0)
+        .or(world.get::<PhysicsProp>(body).map(|x| x.mass))
+        .unwrap_or(1.0);
     held::hold(
         world,
         body,
-        Held {
-            holder: who,
-            target: None,
-            view_offset: None,
-            arrive: dt,
-            max_speed: p.hold_speed * U,
-            max_angular: p.hold_angular.to_radians(),
-        },
+        Held::new(who, dt, p.hold_speed * U, p.hold_angular.to_radians(), load),
         p.held_mass,
         p.held_rot_damping,
     );

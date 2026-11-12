@@ -35,7 +35,11 @@
 //!   22.627 + the object's depth toward the eye ahead along the view
 //!   (pitch clamped to ±75), or half its radius when the world is nearer
 //!   than half that line, pushed out to the radius horizontally; the
-//!   controller (Chimera's) brings it there each tick at ≤ 1000 in/s. The
+//!   controller (Chimera's, `map::held::drive`) brings it there each
+//!   tick at ≤ 1000 in/s, its spin at ≤ 3600 × c³ deg/s (c, the contact
+//!   factor, 0 at the grab, toward 1 or, touching what is immovable or
+//!   heavier than the object's mass, 0.1, at 2 a second), sliding along
+//!   such contacts. The
 //!   smoothed error (0.985 E + 0.015 e, e halved above 15) past 12, after
 //!   the first second, drops it; so does the holder standing on it, the
 //!   body gone or pinned.
@@ -1080,14 +1084,7 @@ fn punt(world: &mut World, p: &PhysParams, by: Entity, e: Entity, d: Vec3, point
     influence(world, e, by);
     take_frag(world, e, by, p.frag_fuse);
     let parts = object_parts(world, e);
-    let mass_of = |x: Entity| {
-        world
-            .get::<ComputedMass>(x)
-            .map(|m| m.value())
-            .filter(|m| m.is_finite() && *m > 0.0)
-            .or(world.get::<PhysicsProp>(x).map(|p| p.mass))
-            .unwrap_or(1.0)
-    };
+    let mass_of = |x: Entity| body_mass(world, x);
     let masses: Vec<f32> = parts.iter().map(|x| if *x == e { enabled.map_or(mass_of(*x), |(m, _)| m) } else { mass_of(*x) }).collect();
     let main = parts.iter().position(|x| *x == e).unwrap_or(0);
     let shares = punt_shares(&masses, main);
@@ -1112,6 +1109,16 @@ fn punt(world: &mut World, p: &PhysParams, by: Entity, e: Entity, d: Vec3, point
         let dw = if dw.is_finite() { dw } else { Vec3::ZERO };
         push(world, part, dv, dw);
     }
+}
+
+/// A body's mass (kg): its physics', else its prop's, else 1.
+fn body_mass(world: &World, x: Entity) -> f32 {
+    world
+        .get::<ComputedMass>(x)
+        .map(|m| m.value())
+        .filter(|m| m.is_finite() && *m > 0.0)
+        .or(world.get::<PhysicsProp>(x).map(|p| p.mass))
+        .unwrap_or(1.0)
 }
 
 /// The bodies of `e`'s object: a ragdoll's, else `e` alone.
@@ -1190,17 +1197,13 @@ fn grab(world: &mut World, gun: Entity, by: Entity, found: Found, view: Quat) {
                 .or(world.get::<FrozenBody>(e).map(|f| f.bounds))
                 .unwrap_or((Vec3::splat(-4.0 * U), Vec3::splat(4.0 * U)));
             let dt = world.resource::<SimClock>().dt();
+            // The load weight: the object's masses before the hold (4 step 3).
+            let load: f32 = object_parts(world, e).into_iter().map(|x| body_mass(world, x)).sum();
+            let hold = Held::new(by, dt, p.hold_speed * U, p.hold_angular.to_radians(), load);
             held::hold(
                 world,
                 e,
-                Held {
-                    holder: by,
-                    target: None,
-                    view_offset: None,
-                    arrive: dt,
-                    max_speed: p.hold_speed * U,
-                    max_angular: p.hold_angular.to_radians(),
-                },
+                hold.clone(),
                 p.held_mass,
                 p.held_rot_damping,
             );
@@ -1211,18 +1214,7 @@ fn grab(world: &mut World, gun: Entity, by: Entity, found: Found, view: Quat) {
                 let (gravity, drag) = world.get_entity(part).map_or((1.0, 0.0), |b| {
                     (b.get::<GravityScale>().map_or(1.0, |g| g.0), b.get::<LinearDamping>().map_or(0.0, |d| d.0))
                 });
-                held::hold(
-                    world,
-                    part,
-                    Held {
-                        holder: by,
-                        target: None,
-                        view_offset: None,
-                        arrive: dt,
-                        max_speed: p.hold_speed * U,
-                        max_angular: p.hold_angular.to_radians(),
-                    },
-                    part_mass,
+                held::hold(world, part, hold.clone(), part_mass,
                     p.held_rot_damping,
                 );
                 if let Ok(mut b) = world.get_entity_mut(part) {

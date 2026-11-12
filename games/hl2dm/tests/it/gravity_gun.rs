@@ -656,7 +656,8 @@ fn spawnflags_decide() {
 }
 
 /// Case 21 in the scene: the view turns 90 degrees left, the crate comes
-/// round to the new forward and turns with it.
+/// round to the new forward and turns with it (its contact factor at 1,
+/// clear of everything).
 #[test]
 fn the_held_crate_follows_the_view() {
     let mut w = world(&[Crate::ahead(150.0)]);
@@ -673,6 +674,47 @@ fn the_held_crate_follows_the_view() {
     let turn = w.sim.app.world().get::<Rotation>(n).unwrap().0;
     let (axis, angle) = turn.to_axis_angle();
     assert!((angle.abs() - std::f32::consts::FRAC_PI_2).abs() < 0.1 && axis.y.abs() > 0.9, "{axis} {angle}");
+}
+
+/// 5, the controller's contact factor: 0 at the grab, so the crate first
+/// can't turn; free of its pillar it climbs 0.03 a tick to 1 (full spin,
+/// 3600 deg/s) and stays there.
+#[test]
+fn the_held_crates_spin_ramps_up_after_the_grab() {
+    let mut w = world(&[Crate::ahead(150.0)]);
+    let n = w.grab(0);
+    let contact = |w: &W| w.sim.app.world().get::<Held>(n).unwrap().contact;
+    assert!(contact(&w) < 0.07, "two steps at most after the grab: {}", contact(&w));
+    w.sim.seconds(1.0);
+    assert_eq!(contact(&w), 1.0);
+}
+
+/// 5, held against a wall: the crate's target is 6.6 into a wall 60
+/// ahead. Touching it (immovable) the contact factor falls to 0.1 (spin
+/// at most 3.6 deg/s) and the push into the wall is taken off, so the
+/// crate slides: the view turned 5 degrees left, it is at the new
+/// target's side position (56.627 sin 5 = 4.94) two ticks later, its face
+/// still on the wall, and has turned at most 3.6 deg/s.
+#[test]
+fn a_held_crate_slides_along_a_wall() {
+    let mut w = world_with(&[Crate::ahead(40.0)], &[(Vec3::new(60.0, -512.0, 0.0), Vec3::new(80.0, 512.0, 256.0))]);
+    let n = w.grab(0);
+    w.sim.seconds(1.0);
+    assert!(w.holding());
+    let held = w.sim.app.world().get::<Held>(n).unwrap().clone();
+    assert!((held.contact - 0.1).abs() < 1e-5, "against the wall: {}", held.contact);
+    let rel = w.at(0) - w.eye();
+    assert!((rel.x - 50.0).abs() < 0.5 && rel.y.abs() < 0.5, "pressed to the wall: {rel}");
+    let turn0 = w.sim.app.world().get::<Rotation>(n).unwrap().0;
+    look(&mut w.sim, w.p, EAST + 5.0, 0.0);
+    w.sim.ticks(2);
+    let rel = w.at(0) - w.eye();
+    let side = 56.627 * 5f32.to_radians().sin();
+    assert!((rel.y - side).abs() < 0.5, "slid along the wall to {side}: {rel}");
+    assert!((rel.x - 50.0).abs() < 0.5, "its face still on the wall: {rel}");
+    let turn = w.sim.app.world().get::<Rotation>(n).unwrap().0 * turn0.inverse();
+    let angle = turn.to_axis_angle().1.abs().min(std::f32::consts::TAU - turn.to_axis_angle().1.abs());
+    assert!(angle.to_degrees() <= 3.6 * 0.03 + 0.01, "spin cut to 3.6 deg/s: {}", angle.to_degrees());
 }
 
 /// Case 22: a launch (possible the tick after the grab): 1500 along the view, spin
@@ -1536,9 +1578,11 @@ fn axes(rot: Quat) -> (Vec3, Vec3) {
 #[test]
 fn preferred_carry_angles_hold_in_the_yaw_frame() {
     const KEYS: &[(&str, &str)] = &[("chimera_prop_carry_angles", "-90 0 0")];
-    let mut w = world(&[Crate::ahead(60.0).keys(KEYS)]);
+    // (From 150: off its pillar, whose touch would keep the controller's
+    // spin at its contact low; turned within the first second.)
+    let mut w = world(&[Crate::ahead(150.0).keys(KEYS)]);
     let n = w.grab(0);
-    w.sim.seconds(0.5);
+    w.sim.seconds(1.0);
     let check = |w: &W, what: &str| {
         let rot = w.sim.app.world().get::<Transform>(n).unwrap().rotation;
         let (fwd, up) = axes(rot);
@@ -1561,9 +1605,11 @@ fn preferred_carry_angles_hold_in_the_yaw_frame() {
 fn launch_spin_by_the_props_interactions() {
     const ZAXIS: &[(&str, &str)] = &[("chimera_prop_interactions", "launch_spin_z")];
     const NONE: &[(&str, &str)] = &[("chimera_prop_interactions", "launch_spin_none")];
-    let mut w = world(&[Crate::ahead(60.0).keys(ZAXIS)]);
+    // (From 150: off its pillar, whose touch would keep the controller's
+    // spin at its contact low; turned within the first second.)
+    let mut w = world(&[Crate::ahead(150.0).keys(ZAXIS)]);
     let n = w.grab(0);
-    w.sim.seconds(0.5);
+    w.sim.seconds(1.0);
     let rot = w.sim.app.world().get::<Transform>(n).unwrap().rotation;
     let (fwd, up) = axes(rot);
     let want = Vec3::new(5f32.to_radians().cos(), 0.0, 5f32.to_radians().sin());
@@ -1575,7 +1621,10 @@ fn launch_spin_by_the_props_interactions() {
     let spin = world.get::<AngularVelocity>(n).unwrap().0;
     let axis = world.get::<Rotation>(n).unwrap().0 * Vec3::Y;
     // Source's cap, less a tick of the air's drag on it (measured 3250).
-    assert!((spin.length().to_degrees() - 3250.0).abs() < 100.0, "{} deg/s", spin.length().to_degrees());
+    // The air's drag on spin isn't modelled: clear of everything it leaves
+    // at the cap (it used to rub its pillar, which took about as much).
+    let deg = spin.length().to_degrees();
+    assert!((3150.0..=3650.0).contains(&deg), "{deg} deg/s");
     assert!(spin.normalize().dot(axis) > 0.9, "about its own z: {spin} {axis}");
 
     let mut w = world_(NONE);

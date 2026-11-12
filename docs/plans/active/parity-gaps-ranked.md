@@ -110,10 +110,6 @@ first, done on the Windows PC. Delete a row when it lands.
     (`HUDEffectOverride`). Spec: combat_arms/kill_streaks.md A8, B7,
     cases 29-31, 41, 54. Code: `chimera/sim/src/announce.rs`,
     `game/parts.rs`. M. No spec.
-23. **HL2:DM: held objects don't slide along walls or ramp their
-    spin** (gravity gun controller). Spec: hl2dm/gravity_gun.md 5. Code:
-    `chimera/world/src/map/held.rs` `drive`. M. No spec. Not on UGG
-    ladders yet.
 24. **HL2:DM: dm_underpass's shield walls drawn plain**
     (`UnlitTwoTexture`). Spec: hl2dm/effects_sounds.md 13, cases 51-54.
     Code: `source/engine/src/content/material.rs`. M. Q7 (proxies) needs

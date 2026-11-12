@@ -244,14 +244,7 @@ fn draw_props(
             if let Some(by) = by
                 && !marked.contains(e)
             {
-                commands.entity(e).insert(Held {
-                    holder: *by,
-                    target: None,
-                    view_offset: None,
-                    arrive: 0.0,
-                    max_speed: 0.0,
-                    max_angular: 0.0,
-                });
+                commands.entity(e).insert(Held::new(*by, 0.0, 0.0, 0.0, 0.0));
             }
             // The holder's own: at its predicted view now.
             if me.as_deref().is_some_and(|m| m.0 == h.holder)
