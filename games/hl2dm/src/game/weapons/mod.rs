@@ -308,6 +308,7 @@ fn projectile_systems(app: &mut App) {
     app.add_message::<slam::SlamAction>()
         .add_message::<slam::SatchelPop>()
         .add_message::<crate::map::GameSound>()
+        .add_message::<crate::map::logic_view::MapShake>()
         .add_message::<crate::map::PlaceDecal>()
         .add_systems(
             Predict::Weapons,

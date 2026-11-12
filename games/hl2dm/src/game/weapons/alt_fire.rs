@@ -28,7 +28,8 @@
 //!   at least 0.25 s since the last counted one it seeks (`seek`): the
 //!   nearest attractive player within 15 degrees of its new direction in
 //!   a 2048-unit sweep (±256), or once it has struck a player the nearest
-//!   in front within 512. Its end at 4 s is harmless.
+//!   in front within 512. Its end at 4 s is harmless: its sound and a
+//!   screen shake (`ball_ends`, 20, 150 Hz, 1 s, radius 1250).
 //!
 //! The contact grenade's 3-tick check (4.2, `grenade_stopped`): every 3
 //! ticks of flight one stopped dead explodes. The ball's seek (5.4):
@@ -64,7 +65,7 @@ use super::{
 };
 use crate::{
     core::{DamageKind, FirstTimePredicted, Health, Intent, MovementState, NetRole, SimClock},
-    map::PlaySound,
+    map::{PlaySound, logic_view::MapShake},
 };
 
 /// `hl2dm:smg1_grenade`'s parameters (Source units, seconds, points).
@@ -592,13 +593,24 @@ fn launch_ray_box(min: Vec3, max: Vec3, from: Vec3, dir: Vec3, limit: f32) -> Op
     chimera_sim::weapon::projectile::ray_box(min, max, from, dir, limit)
 }
 
-/// A ball's harmless end (5.6): its sound where it was.
-pub fn ball_ends(mut gone: MessageReader<FlyerGone>, mut sound: Local<Option<String>>, mut play: MessageWriter<PlaySound>) {
+/// The shake a ball's end makes (projectiles.md 5.6): amplitude, frequency
+/// (Hz), seconds, radius (units).
+pub const BALL_SHAKE: (f32, f32, f32, f32) = (20.0, 150.0, 1.0, 1250.0);
+
+/// A ball's harmless end (5.6): its sound where it was, and the shake.
+pub fn ball_ends(
+    mut gone: MessageReader<FlyerGone>,
+    mut sound: Local<Option<String>>,
+    mut play: MessageWriter<PlaySound>,
+    mut shakes: MessageWriter<MapShake>,
+) {
     for g in gone.read() {
         if g.weapon == super::AR2 && g.expired {
             // From the weapon's data: the ball can outlive every AR2.
             let s = sound.get_or_insert_with(|| launch::hook_params::<BallParams>(super::AR2, super::BALL_HOOK).explode_sound);
             play.write(PlaySound::at(s.clone(), g.at));
+            let (amplitude, frequency, duration, radius) = BALL_SHAKE;
+            shakes.write(MapShake { at: g.at, amplitude: amplitude * U, frequency, duration, radius: radius * U });
         }
     }
 }
