@@ -68,7 +68,8 @@ fn stock_props_in_the_gravity_gun() {
         // (Each with its largest side, units.)
         let props: Vec<(Entity, f32, bool, f32)> = {
             let w = sim.app.world_mut();
-            w.query::<(Entity, Option<&PhysicsProp>, Option<&FrozenBody>)>()
+            // (Not the items' models: their items' bodies move them.)
+            w.query_filtered::<(Entity, Option<&PhysicsProp>, Option<&FrozenBody>), Without<hl2dm::game::pickups::ItemModel>>()
                 .iter(w)
                 .filter_map(|(e, prop, frozen)| match (prop, frozen) {
                     (Some(p), _) => Some((e, p.mass, false, (p.bounds.1 - p.bounds.0).max_element() / U)),

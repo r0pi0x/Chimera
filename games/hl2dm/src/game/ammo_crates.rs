@@ -15,11 +15,16 @@
 //! plays and the crate is full again. A use while it closes re-opens it
 //! for the new user. Server-side.
 //!
-//! Known shortcuts: the crate's model isn't read: its box is 64 x 32 x 32
-//! units around its origin's base (the stock crates' size, roughly), the
-//! lid test a player standing on that box; the `+use` reach is a ray from
-//! the eye against that box, 80 units; the ammo bodygroup is state only
-//! (`AmmoCrate::shown_empty`), nothing is drawn yet.
+//! The crate is drawn by its model (`CrateModel`: the map loader places it
+//! by its `AmmoType`, solid, `maps::fixed_models`); the model's collision is
+//! the crate's, its own box off. Without a model (a map made in code) the
+//! crate is its box.
+//!
+//! Known shortcuts: the lid test is a player standing on a 64 x 32 x 32
+//! box around the origin's base (the stock crates' size, roughly), not the
+//! model's bounds; the `+use` reach is a ray from the eye, 80 units; the
+//! lid's `Open` and `Close` aren't drawn (the model holds `idle`) and the
+//! ammo bodygroup is state only (`AmmoCrate::shown_empty`).
 
 use std::collections::BTreeMap;
 
@@ -73,6 +78,30 @@ pub struct AmmoCrate {
 #[derive(Component)]
 struct MapCrate;
 
+/// The crate's drawn model: the prop node the map loader placed for its
+/// entity (`maps::fixed_models`, solid by its model). Its collision is the
+/// crate's: the crate's own box is off, `+use` and crowbar hits on the node
+/// count as on the crate.
+#[derive(Component, Clone, Copy, Debug)]
+pub struct CrateModel(pub Entity);
+
+/// Each crate takes its model's node (by map index) when either appears.
+pub(super) fn link_models(
+    appeared: Query<(), Or<(Added<AmmoCrate>, Added<crate::map::PropEntity>)>>,
+    crates: Query<(Entity, &AmmoCrate), Without<CrateModel>>,
+    nodes: Query<(Entity, &crate::map::PropEntity)>,
+    mut commands: Commands,
+) {
+    if appeared.is_empty() || crates.is_empty() {
+        return;
+    }
+    for (c, a) in &crates {
+        let Some((node, _)) = nodes.iter().find(|(_, p)| p.0 == a.map_index) else { continue };
+        commands.entity(c).insert((CrateModel(node), avian3d::prelude::ColliderDisabled));
+        commands.entity(node).insert(Damageable);
+    }
+}
+
 pub(super) fn plugin(app: &mut App) {
     app.add_message::<Damage>();
 }
@@ -118,6 +147,7 @@ pub(super) fn crates(
     mut held: Local<BTreeMap<Entity, bool>>,
     mut hurt: MessageReader<Damage>,
     crates: Query<Entity, With<AmmoCrate>>,
+    models: Query<(Entity, &CrateModel)>,
     users: Query<(Entity, &Transform, &Intent, &MovementState, &Health)>,
     carried: Query<&Inventory>,
     weapons: Query<&Weapon>,
@@ -144,6 +174,14 @@ pub(super) fn crates(
     if crates.is_empty() {
         return;
     }
+    // A hit on a crate's model is on the crate.
+    let crate_of = |e: Entity| {
+        if crates.contains(e) {
+            Some(e)
+        } else {
+            models.iter().find(|(_, m)| m.0 == e).map(|(c, _)| c)
+        }
+    };
     let mut uses: Vec<(Entity, Entity, bool)> = Vec::new();
     // `+use` presses that find a crate.
     for (who, t, i, s, h) in &users {
@@ -156,20 +194,21 @@ pub(super) fn crates(
         let filter = SpatialQueryFilter::from_excluded_entities([who]).with_mask(crate::core::SOLID_LAYERS);
         let Ok(dir) = Dir3::new(dir) else { continue };
         if let Some(hit) = spatial.cast_ray(t.translation + s.eye_offset, dir, USE_REACH * UNIT, true, &filter)
-            && crates.contains(hit.entity)
+            && let Some(c) = crate_of(hit.entity)
         {
-            uses.push((hit.entity, who, false));
+            uses.push((c, who, false));
         }
     }
     // Hits by a player holding the crowbar.
     for d in hurt {
         let Some(a) = d.attacker else { continue };
-        if !crates.contains(d.target) || uses.iter().any(|(c, w, _)| *c == d.target && *w == a) {
+        let Some(target) = crate_of(d.target) else { continue };
+        if uses.iter().any(|(c, w, _)| *c == target && *w == a) {
             continue;
         }
         let held = carried.get(a).ok().and_then(|i| i.active).and_then(|w| weapons.get(w).ok()).map(|w| w.id);
         if held == Some(super::weapons::CROWBAR) {
-            uses.push((d.target, a, true));
+            uses.push((target, a, true));
         }
     }
     let (now, tick) = (clock.now, clock.tick);

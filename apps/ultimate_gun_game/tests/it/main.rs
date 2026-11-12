@@ -6,6 +6,7 @@
 
 mod fallbacks;
 mod heavy {
+    mod hl2_map_items;
     mod map_swap_frames;
     mod map_swap_render;
     mod nav_in_play;

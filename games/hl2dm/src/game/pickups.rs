@@ -35,12 +35,17 @@
 //! Server-side. A taken kit or battery and a refused box tell the taker's
 //! HUD (`hud_notes`).
 //!
+//! Items are drawn by their models (`ItemModel`): the map loader places
+//! each as a physics prop (`maps::fixed_models`); here its own body is off
+//! and it follows the item's (`draw_items`), hidden while the item is away.
+//!
 //! Known shortcuts:
-//! - Items' and chargers' models aren't read: an item is a 16-unit cube
-//!   (its origin at the bottom), its touch box that cube grown; a charger
+//! - Items' and chargers' models aren't read for the simulation: an item
+//!   is a 16-unit cube (its origin at the bottom), its touch box that cube
+//!   grown, its drawn model put on the cube's bottom; a charger
 //!   is found when the view's ray from the eye passes within 24 units of
-//!   its origin, at most 80 units away (not Source's `+use` search). Items
-//!   aren't drawn yet; the respawn light isn't made.
+//!   its origin, at most 80 units away (not Source's `+use` search). The
+//!   respawn light isn't made.
 //! - Chargers' models are the loader's (their fixed models, `idle` held
 //!   at the dial's frame: `dial_cycle` as `map::PropCycle`, on the host
 //!   only: a network client's dial stays full); the loop sound is a long
@@ -273,6 +278,66 @@ impl Charger {
 #[derive(Component, Clone, Copy, Debug)]
 pub struct MapItem;
 
+/// A map item's drawn model: the prop node the map loader placed for the
+/// item's entity (`maps::fixed_models`), its own physics removed, following
+/// the item's body and hidden while it is away (`draw_items`).
+#[derive(Component, Clone, Copy, Debug)]
+pub struct ItemModel;
+
+/// Items' prop nodes taken over when they or their items appear (by map
+/// index): their own body and collision removed, the item's body being the
+/// one that moves and is shot, grabbed and touched.
+#[allow(clippy::type_complexity)]
+fn take_over_models(
+    items: Query<&Pickup>,
+    appeared: Query<(), Or<(Added<Pickup>, Added<crate::map::PropEntity>)>>,
+    free: Query<(Entity, &crate::map::PropEntity), (Without<ItemModel>, Without<Pickup>)>,
+    mut commands: Commands,
+) {
+    if appeared.is_empty() || items.is_empty() {
+        return;
+    }
+    let indices: std::collections::BTreeSet<usize> = items.iter().map(|p| p.map_index).collect();
+    for (node, index) in &free {
+        if indices.contains(&index.0) {
+            commands.entity(node).insert(ItemModel).remove::<(RigidBody, Collider)>();
+        }
+    }
+}
+
+/// Items' models follow their bodies: each item's prop node (by map
+/// index, `take_over_models`) is put where the item lies, its model's
+/// origin at the bottom of the item's box, and hidden while the item is
+/// away (`LogicHidden`, so a network client's copy, a physics prop drawn
+/// from the server's snapshots, hides too).
+fn draw_items(
+    items: Query<(&Transform, &Pickup, Has<Respawning>), Without<ItemModel>>,
+    mut nodes: Query<(Entity, &crate::map::PropEntity, &mut Transform, Has<crate::map::LogicHidden>), With<ItemModel>>,
+    mut commands: Commands,
+) {
+    if items.is_empty() {
+        return;
+    }
+    let by_index: std::collections::BTreeMap<usize, (Transform, bool)> = items
+        .iter()
+        .map(|(t, p, away)| {
+            let at = Transform::from_translation(t.transform_point(-Vec3::Y * ITEM_HALF * UNIT)).with_rotation(t.rotation);
+            (p.map_index, (at, away))
+        })
+        .collect();
+    for (node, index, mut t, hidden) in &mut nodes {
+        let Some((at, away)) = by_index.get(&index.0) else { continue };
+        if t.translation.distance_squared(at.translation) > 1e-10 || t.rotation.angle_between(at.rotation) > 1e-5 {
+            *t = *at;
+        }
+        if *away && !hidden {
+            commands.entity(node).insert((crate::map::LogicHidden, Visibility::Hidden));
+        } else if !*away && hidden {
+            commands.entity(node).remove::<crate::map::LogicHidden>().insert(Visibility::Inherited);
+        }
+    }
+}
+
 pub struct PickupsPlugin;
 
 impl Plugin for PickupsPlugin {
@@ -292,12 +357,21 @@ impl Plugin for PickupsPlugin {
                 (
                     apply_cvars,
                     spawn_items,
+                    // Before the physics step: a node's own body must
+                    // never meet its item's.
+                    take_over_models,
                     charger_inputs,
                     chargers.before(SimSet::Movement),
                     touch.after(SimSet::Movement).before(SimSet::Weapons),
                     super::ammo_crates::crates.after(SimSet::Weapons),
                 )
                     .chain()
+                    .run_if(crate::core::authoritative),
+            )
+            .add_systems(
+                FixedPostUpdate,
+                (draw_items, super::ammo_crates::link_models)
+                    .after(avian3d::prelude::PhysicsSystems::Writeback)
                     .run_if(crate::core::authoritative),
             );
         resource_cvar::<RespawnCvars, f32>(

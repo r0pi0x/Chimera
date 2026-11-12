@@ -12,7 +12,9 @@
 //! A game that wants it (`ShadowKnockPlugin`, HL2:DM's; CS:S's keeps its
 //! measured contacts) has a prop running into a player from the side knock
 //! him on that tick and go on forward, rather than stop on the shadow and
-//! be driven back by it (`knock`).
+//! be driven back by it (`knock`); its systems run while the rule
+//! (`ShadowKnock`) is there, so a game of several can put it in on some
+//! maps only (HL2:DM's on its own maps).
 //!
 //! Known shortcuts (docs/tech-debt.md): Physics shadow
 //! (specs/cs_source/physics_props.md 4.1, games/cs_source/src/game/shadow.rs): the
@@ -107,20 +109,23 @@ pub struct ShadowKnock {
     pub side: f32,
 }
 
-/// `ShadowKnock`'s systems, a game's choice.
-pub struct ShadowKnockPlugin(pub ShadowKnock);
+/// `ShadowKnock`'s systems, a game's choice: with the rule (`Some`)
+/// inserted, or none (the rule put in later, on some maps).
+pub struct ShadowKnockPlugin(pub Option<ShadowKnock>);
 
 impl Plugin for ShadowKnockPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(self.0)
-            .init_resource::<BeforeStep>()
-            .add_systems(
-                FixedPostUpdate,
-                (
-                    remember_velocities.before(PhysicsSystems::First),
-                    knock.after(reconcile).run_if(crate::core::authoritative),
-                ),
-            );
+        if let Some(rule) = self.0 {
+            app.insert_resource(rule);
+        }
+        app.init_resource::<BeforeStep>().add_systems(
+            FixedPostUpdate,
+            (
+                remember_velocities.before(PhysicsSystems::First),
+                knock.after(reconcile).run_if(crate::core::authoritative),
+            )
+                .run_if(resource_exists::<ShadowKnock>),
+        );
     }
 }
 

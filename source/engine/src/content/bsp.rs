@@ -113,6 +113,10 @@ pub struct SourceGame {
         &super::surfaceprops::SurfaceProps,
         &[crate::map::MapEntity],
     ) -> crate::map::sound::MapSounds,
+    /// The models it gives entity classes whatever the map's `model` key
+    /// says (HL2:DM's items and ammo crates; `props::no_fixed_models`
+    /// for none).
+    pub fixed_models: super::props::FixedModels,
 }
 
 /// What a `SourceGame`'s kit hooks read and fill: the map being converted
@@ -417,6 +421,7 @@ fn convert_level_bytes(
         hdr_lighting,
         &super::detail::model_entries(&detail),
         detail_fade,
+        game.fixed_models,
     );
     data.source_fx_mut().detail_props = super::detail::detail_props(&detail, &bsp, |m| materials.resolve(m).texture);
     timer.lap("props");
