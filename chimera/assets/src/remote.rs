@@ -405,6 +405,19 @@ impl Remote {
         transfer: Option<&progress::Transfer>,
         pace: Option<&Pace>,
     ) -> (usize, u64, Vec<String>) {
+        self.fill_paced_then(store, wanted, transfer, pace, &|| {})
+    }
+
+    /// `fill_paced`, calling `claimed` once its records are claimed
+    /// (`pending`), before the first is asked for.
+    pub fn fill_paced_then(
+        &self,
+        store: &Store,
+        wanted: &[(String, u64, u64)],
+        transfer: Option<&progress::Transfer>,
+        pace: Option<&Pace>,
+        claimed: &dyn Fn(),
+    ) -> (usize, u64, Vec<String>) {
         let (connections, batch_bytes) =
             if pace.is_some() { (1, PACED_BATCH_BYTES) } else { (FILL_CONNECTIONS, FILL_BATCH_BYTES) };
         let sizes: HashMap<&str, u64> = wanted.iter().map(|(id, s, _)| (id.as_str(), *s)).collect();
@@ -425,7 +438,8 @@ impl Remote {
         // A foreground fill's records are waited for by on-demand misses
         // (`pending`), not fetched twice; the paced prefetch's aren't (it
         // is held while the player joins: a load would wait on it).
-        let claim = pace.is_none().then(|| crate::pending::claim(batches.iter().flatten().map(String::as_str)));
+        let claim = pace.is_none().then(|| crate::pending::claim(store, batches.iter().flatten().map(String::as_str)));
+        claimed();
         let next = AtomicUsize::new(0);
         let totals = Mutex::new((0usize, 0u64, Vec::new()));
         std::thread::scope(|s| {

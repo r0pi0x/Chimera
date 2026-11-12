@@ -33,8 +33,8 @@
 //! `chimera_assets fetch`, periodic lines while a load fetches on demand.
 //! `sets` fetches whole sets as the game does (a join's, the startup's,
 //! the prefetch's); `pace` caps a background fetch's rate, with a pause;
-//! `pending` is what a foreground fill is fetching now, which an
-//! on-demand miss waits for rather than fetching twice.
+//! `pending` is what a foreground fill is fetching into a store now, which an
+//! on-demand miss in that store waits for rather than fetching twice.
 //!
 //! `map_cache`: converted maps on disk beside the store, keyed by the
 //! converter and checked against every file the conversion read

@@ -48,6 +48,10 @@ pub struct Options<'a> {
     /// Waits before each new try at what didn't arrive (None:
     /// `RETRY_DELAYS`).
     pub retry_delays: Option<&'a [Duration]>,
+    /// A foreground fill begun by the caller (`pending::starting`, taken
+    /// before this runs): marked started once the fill has claimed what it
+    /// fetches, so on-demand misses meanwhile wait for that claim.
+    pub starting: Option<&'a crate::pending::Starting>,
 }
 
 /// `wanted`'s records the store lacks, fetched from the service; the
@@ -108,7 +112,16 @@ pub fn fetch(
     let bytes = records.iter().map(|w| w.2).sum();
     let transfer = Arc::new(Transfer::with_live(what, records.len() as u64, bytes, false));
     *shared.lock().unwrap_or_else(|e| e.into_inner()) = Some(transfer.clone());
-    let (_, _, mut failed) = remote.fill_paced(&store, &records, Some(&transfer), options.pace);
+    // The fill claims its records as it begins (`pending::claim`); misses
+    // waiting on the start go on now and find them pending.
+    let (_, _, mut failed) = {
+        let starting = options.starting;
+        remote.fill_paced_then(&store, &records, Some(&transfer), options.pace, &|| {
+            if let Some(s) = starting {
+                s.started();
+            }
+        })
+    };
     let mut summary = transfer.finish();
     // What didn't arrive is asked again after a wait, unless the token was
     // refused (401, 403: no wait helps); each try's progress is its own.
