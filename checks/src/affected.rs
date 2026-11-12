@@ -480,6 +480,8 @@ fn is_docs(path: &str) -> bool {
             "tools/perf-profile.sh",
             // Cuts a frame log's worst frames out of a profile (no crate reads it).
             "tools/frame_cut.py",
+            // A frame dump and its sound as an MP4 (no crate reads it).
+            "tools/dump_to_mp4.py",
             // A clone's setup and readiness checks (AGENTS.md, "Setup").
             "tools/setup",
             "tools/doctor",

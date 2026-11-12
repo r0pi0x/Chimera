@@ -193,7 +193,9 @@ usage: {bin} [options]
                             compositor needed; renderer, HUD, menus and cameras as in a window), e.g.
                             1920x1080; prints the frame times when it ends (--frames ends it)
   --dump <dir>              save frames as numbered PNGs there (every --dump-every'th, default 60;
-                            with --dump-every 1 and ffmpeg installed, also clip.mp4 at the end)
+                            with --dump-every 1 and ffmpeg installed, also clip.mp4 at the end;
+                            with --offscreen, the sound into audio.wav there and each frame's
+                            time in frames.tsv: tools/dump_to_mp4.py makes an MP4 with sound)
   --dump-every <n>          frames between --dump frames
   --frame-log <file.csv>    one line per frame of each world: wall start, ms, CPU ms
                             (as CHIMERA_FRAME_LOG; docs/OBSERVABILITY.md)

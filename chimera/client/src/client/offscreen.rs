@@ -23,7 +23,12 @@
 //! saves every `--dump-every`th frame (default 60) as `frame_NNNNNN.png`,
 //! encoding on threads of their own, and with `--dump-every 1` and ffmpeg
 //! on the PATH writes `clip.mp4` at the frames' real rate when the run
-//! ends. An offscreen run prints its frame times (wall, main world,
+//! ends. With `--offscreen` the sound is recorded too
+//! (`chimera_present::audio::record`, added by `app::default_plugins`):
+//! `audio.wav` in the same directory, and `frames.tsv` gives each saved
+//! frame's sample position in it, the time its sounds start, so
+//! `tools/dump_to_mp4.py` puts frames and sound together in sync however
+//! slowly the frames rendered. An offscreen run prints its frame times (wall, main world,
 //! render world: percentiles over the whole run) when it ends;
 //! `--frame-log` has each frame (`frame_metrics`).
 //!
@@ -368,6 +373,8 @@ pub struct FrameDumps {
     saved: u32,
     /// Real time of each dump asked for, for the clip's rate.
     times: Vec<f64>,
+    /// `frames.tsv`: each frame's sample position in the recorded sound.
+    positions: Option<std::io::BufWriter<std::fs::File>>,
     writers: Arc<Mutex<Vec<std::thread::JoinHandle<()>>>>,
 }
 
@@ -379,12 +386,18 @@ impl FrameDumps {
             frame: 0,
             saved: 0,
             times: Vec::new(),
+            positions: None,
             writers: Arc::default(),
         }
     }
 }
 
-fn dump_frame(mut commands: Commands, mut dumps: ResMut<FrameDumps>, time: Res<Time<Real>>) {
+fn dump_frame(
+    mut commands: Commands,
+    mut dumps: ResMut<FrameDumps>,
+    time: Res<Time<Real>>,
+    audio: Option<Res<chimera_present::audio::record::AudioRecording>>,
+) {
     dumps.frame += 1;
     if dumps.frame % dumps.every != 0 {
         return;
@@ -394,7 +407,11 @@ fn dump_frame(mut commands: Commands, mut dumps: ResMut<FrameDumps>, time: Res<T
     {
         error!("--dump {}: {e}", dumps.dir.display());
     }
-    let path = dumps.dir.join(format!("frame_{:06}.png", dumps.saved));
+    let name = format!("frame_{:06}.png", dumps.saved);
+    if let Some(audio) = audio {
+        write_position(&mut dumps, &name, audio.position());
+    }
+    let path = dumps.dir.join(name);
     dumps.saved += 1;
     dumps.times.push(time.elapsed_secs_f64());
     let writers = dumps.writers.clone();
@@ -415,6 +432,29 @@ fn dump_frame(mut commands: Commands, mut dumps: ResMut<FrameDumps>, time: Res<T
                 w.push(handle);
             }
         });
+}
+
+/// A line of `frames.tsv`: the frame's file and its sample position in
+/// `audio.wav` (the header names the rate).
+fn write_position(dumps: &mut FrameDumps, name: &str, position: u64) {
+    use std::io::Write;
+    if dumps.positions.is_none() {
+        let path = dumps.dir.join("frames.tsv");
+        match std::fs::File::create(&path) {
+            Ok(f) => {
+                let mut f = std::io::BufWriter::new(f);
+                let rate = chimera_present::audio::record::RATE;
+                let _ = writeln!(f, "# frame\tsample in audio.wav, {rate} a second");
+                dumps.positions = Some(f);
+            }
+            Err(e) => error!("--dump {}: {e}", path.display()),
+        }
+    }
+    if let Some(f) = &mut dumps.positions
+        && writeln!(f, "{name}\t{position}").and_then(|()| f.flush()).is_err()
+    {
+        dumps.positions = None;
+    }
 }
 
 /// At the end (the app dropped): wait for the PNGs, and with every frame

@@ -600,9 +600,7 @@ impl Plugin for RoomPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        if app.is_plugin_added::<bevy::audio::AudioPlugin>() {
-            bevy::audio::AddAudioSource::add_audio_source::<RoomClip>(app);
-        }
+        super::record::add_audio_source::<RoomClip>(app);
     }
 }
 
