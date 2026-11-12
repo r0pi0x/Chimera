@@ -414,10 +414,19 @@ rules (ours: the specs are silent on mixing):
   finding the post's face where HL2:DM's climber would stand.
 - **HL2:DM's** (Source movement climbing useable ladders): its map's
   lines as always; a ladder volume as lines (`useable_ladders::
-  lines_of_volume`): each climbing face (upright, thinnest across) gives
-  a line 18 units out from its middle, bottom to top, left over the top
-  beyond the volume or at the foot, dropped when a wall leaves no room
-  in front.
+  lines_of_volume`): each climbing face (thinnest across, upright or
+  leaning) gives a line 18 units out from it (more for a face at an
+  angle, where the box's corner reaches further), from its bottom edge's
+  middle to its top edge's, left over the top or at the foot, dropped
+  when a wall leaves no room in front; stacked volumes' lines join into
+  one. Its top goes where the climber gets off onto the floor a CS:S
+  climber reaches (`to_floors`): of points over the top (beyond the
+  volume, on it, or at its near edge: a ledge before a wall), those a
+  standing player fits on a floor, the top raised to that floor (up to
+  36 units over the volume: a brush often ends just under it). Measured
+  on every stock CS:S map with ladders (the heavy
+  `ladders_across_maps.rs`): HL2:DM stands where CS:S does on all 17
+  ways up the test finds, against 2 before.
 - **Combat Arms'**: its own volumes as always; a brush as a `Ladder`
   volume reaching 2 units past its faces, a line as one 16 units around
   it (`volumes::BrushLadder`).
