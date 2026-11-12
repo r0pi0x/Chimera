@@ -11,18 +11,37 @@
 //! on and taken off):
 //!
 //! - as sparse-set markers (new archetypes, no new tables), the tick must
-//!   cost the same: 2.5x before the per-tick exclusive code kept its
+//!   cost about the same: 2.5x before the per-tick exclusive code kept its
 //!   queries (`chimera_core::query_cache`), each `world.query` walking
 //!   every archetype a character's components are in;
-//! - as table markers (a table each too), within 2.2x (8.4M instructions
-//!   a tick at 4800 archetypes and 2400 tables, 24.6M before the fix):
-//!   every query that matches characters still steps over their empty
-//!   tables, Bevy's own cost (docs/tech-debt.md).
+//! - as table markers (a table each too), more: every query that matches
+//!   characters still steps over their empty tables, Bevy's own cost
+//!   (docs/tech-debt.md).
 //!
-//! Both count the tick's systems' instructions (`Sim::work`, the same on
-//! every run, and the systems that grew on a failure) over the ticks that
-//! make no new archetype (`instructions_per_tick`): a new one costs a
-//! step over the others, once.
+//! Each case plays the same match twice from the same start: once with
+//! one marker's archetype, once with all 2047 (`inflate`). The markers
+//! move the same bot out of its archetype and back at the same steps in
+//! both runs, so the bots keep their places in their archetypes and
+//! tables and play the same (the state hashes must match), and the
+//! measured ticks are the same ticks: the difference is the archetypes'
+//! cost alone, the same on every run. Comparing before and after in one
+//! run, as this test first did, compared two moments of the match, and
+//! the bots' thinking alone swung by hundreds of thousands of
+//! instructions whenever something shifted the entities' ids (a new
+//! resource is an entity).
+//!
+//! Two checks on the tick's systems' instructions (`Sim::work`):
+//!
+//! - no single system grows by more than `PER_ARCHETYPE` instructions a
+//!   tick (over the whole window) for each archetype added: a `world.query` per tick over the
+//!   characters' components costs ~380 (planted in Combat Arms'
+//!   `supplies`, 2026-11-12: +0.77M a tick at 2045 more archetypes), while
+//!   stepping over empty archetypes in a system's queries costs up to ~75
+//!   (`Movement step`), Bevy's own;
+//! - the whole tick, over the ticks that make no new archetype
+//!   (`instructions_per_tick`: a new one costs a step over the others,
+//!   once), against `SPARSE_LIMIT` and `TABLE_LIMIT`: the sum of many
+//!   systems' smaller steps (1.32x and 2.31x measured, 2026-11-12).
 
 use bevy::prelude::*;
 use chimera_core::metrics::{census::Census, work::WorkCounts};
@@ -121,81 +140,139 @@ fn instructions_per_tick(sim: &mut Sim, n: u64) -> Option<(f64, WorkCounts)> {
     Some((steady.iter().sum::<u64>() as f64 / steady.len() as f64, w.systems.per(n)))
 }
 
-/// Runs the bots' component sets through every combination of 11
-/// markers (`mark`, `unmark`), then measures again: (archetypes and tables
-/// made before, after, instructions per tick before, after).
+/// One phase of a run: the archetypes made and tables after the
+/// markers, the instructions per tick after, and the state's hash at the
+/// end of the window.
+struct Phase {
+    now: (usize, usize),
+    work: Option<(f64, WorkCounts)>,
+    hash: u64,
+}
+
+/// Runs the bots' component sets through combinations of 11 markers
+/// (`mark`, `unmark`): every one of the 2047 (`all`), or only the first
+/// marker each time, which makes one archetype, then measures. Either way
+/// each step moves the same bot out of its archetype and back, in the same
+/// order, so the bots end in the same places in their archetypes and
+/// tables, and play on alike: the runs differ only in the archetypes made.
 fn inflate(
     sim: &mut Sim,
     bots: &[Entity],
+    all: bool,
     mark: fn(&mut World, Entity, usize),
     unmark: fn(&mut World, Entity),
-) -> ((usize, usize), (usize, usize), Option<(f64, WorkCounts)>, Option<(f64, WorkCounts)>) {
-    let counts = |sim: &mut Sim| {
-        let c = Census::take(sim.app.world_mut());
-        (c.archetypes_made, c.tables)
-    };
-    let before = instructions_per_tick(sim, 400);
-    let was = counts(sim);
+) -> Phase {
     {
         let w = sim.app.world_mut();
         for combo in 1..2048usize {
             let e = bots[combo % bots.len()];
-            for bit in (0..11).filter(|b| combo & (1 << b) != 0) {
+            let bits = if all { combo } else { 1 };
+            for bit in (0..11).filter(|b| bits & (1 << b) != 0) {
                 mark(w, e, bit);
             }
             unmark(w, e);
         }
     }
-    let now = counts(sim);
+    let c = Census::take(sim.app.world_mut());
+    let now = (c.archetypes_made, c.tables);
+    // Each kept query meets the new archetypes once (Bevy's one-off cost).
     sim.seconds(1.0);
-    let after = instructions_per_tick(sim, 400);
-    (was, now, before, after)
+    let work = instructions_per_tick(sim, 400);
+    Phase { now, work, hash: sim.state_hash() }
+}
+
+/// The bots playing, then their component sets run through the sparse
+/// markers, measured, then through the table markers, measured: with
+/// every combination (`all`) or one marker.
+fn run(all: bool) -> (Phase, Phase) {
+    let (mut sim, bots) = bots_playing();
+    // Warm (the first ticks make their own archetypes).
+    sim.seconds(3.0);
+    let sparse = inflate(&mut sim, &bots, all, mark_sparse, unmark_sparse);
+    let table = inflate(&mut sim, &bots, all, mark_table, unmark_table);
+    (sparse, table)
+}
+
+/// The most a single system's instructions per tick may grow for each
+/// archetype added (module doc).
+const PER_ARCHETYPE: f64 = 200.0;
+/// The most the whole tick may grow with 2045 more sparse-set archetypes.
+const SPARSE_LIMIT: f64 = 1.5;
+/// The most the whole tick may grow with 4090 more archetypes and 2045
+/// more tables.
+const TABLE_LIMIT: f64 = 2.6;
+
+/// Checks one case: the whole tick within `limit` times the base run's,
+/// and no system grown by more than `PER_ARCHETYPE` per added archetype.
+fn check(case: &str, base: &Phase, inflated: &Phase, limit: f64) {
+    let (Some((b, sys_b)), Some((a, sys_a))) = (&base.work, &inflated.work) else {
+        eprintln!("skipping the comparison: no hardware counters ({})", chimera_core::metrics::hw_status());
+        return;
+    };
+    let (a, b) = (*a, *b);
+    let added = inflated.now.0.saturating_sub(base.now.0).max(1);
+    let table = sys_a.diff_table(sys_b, 20);
+    eprintln!(
+        "{case}: archetypes, tables {:?} vs {:?}: {:.3}M vs {:.3}M instructions per tick ({:.3}x, limit {limit}x)\n{table}",
+        base.now,
+        inflated.now,
+        b / 1e6,
+        a / 1e6,
+        a / b
+    );
+    let worst = sys_a.rises(sys_b, 1);
+    if let Some((label, before, after)) = worst.first() {
+        let per = (*after as f64 - *before as f64) / added as f64;
+        eprintln!("{case}: most grown system {label}: {per:.0} instructions a tick per added archetype (limit {PER_ARCHETYPE})");
+        assert!(
+            per <= PER_ARCHETYPE,
+            "{case}: {label} cost {before} instructions a tick with {} archetypes, {after} with {}: {per:.0} more per \
+             archetype, as a query made each tick costs (a `world.query` in per-tick exclusive code: keep it, \
+             `chimera_core::query_cache`). Per tick:\n{table}",
+            base.now.0,
+            inflated.now.0
+        );
+    }
+    assert!(
+        a < b * limit,
+        "{case}: a tick cost {:.2}M instructions with {} archetypes and {} tables, {:.2}M with {} and {}: the same \
+         ticks of the same play, so the archetypes cost it; something walks every archetype each tick (a \
+         `world.query` in per-tick exclusive code: keep it, `chimera_core::query_cache`). Per tick:\n{table}",
+        b / 1e6,
+        base.now.0,
+        base.now.1,
+        a / 1e6,
+        inflated.now.0,
+        inflated.now.1
+    );
 }
 
 #[test]
 fn the_tick_costs_the_same_with_many_more_character_archetypes() {
-    let (mut sim, bots) = bots_playing();
-    // Warm (the first ticks make their own archetypes).
-    sim.seconds(3.0);
-    let (was, now, before, after) = inflate(&mut sim, &bots, mark_sparse, unmark_sparse);
-    assert!(now.0 >= was.0 + 2000, "the markers made archetypes: {was:?} -> {now:?}");
-    let (was_t, now_t, before_t, after_t) = inflate(&mut sim, &bots, mark_table, unmark_table);
-    assert!(now_t.1 >= was_t.1 + 2000, "the table markers made tables: {was_t:?} -> {now_t:?}");
-    let (Some((before, sys_before)), Some((after, sys_after)), Some((before_t, sys_before_t)), Some((after_t, sys_after_t))) =
-        (before, after, before_t, after_t)
-    else {
-        eprintln!("skipping the comparison: no hardware counters ({})", chimera_core::metrics::hw_status());
+    // The compute pool is the process's: other tests' tasks would count.
+    if !chimera_world::harness::own_process("archetypes::the_tick_costs_the_same_with_many_more_character_archetypes") {
         return;
-    };
-    eprintln!(
-        "sparse markers: archetypes, tables {was:?} -> {now:?}: {:.2}M -> {:.2}M instructions per tick ({:.2}x)",
-        before / 1e6,
-        after / 1e6,
-        after / before
-    );
-    eprintln!(
-        "table markers: archetypes, tables {was_t:?} -> {now_t:?}: {:.2}M -> {:.2}M instructions per tick ({:.2}x)",
-        before_t / 1e6,
-        after_t / 1e6,
-        after_t / before_t
+    }
+    let (base_sparse, base_table) = run(false);
+    let (sparse, table) = run(true);
+    assert!(
+        sparse.now.0 >= base_sparse.now.0 + 2000,
+        "the markers made archetypes: {:?} vs {:?}",
+        base_sparse.now,
+        sparse.now
     );
     assert!(
-        after < before * 1.3,
-        "a tick cost {:.2}M instructions with {} archetypes, {:.2}M with {}: something walks every archetype \
-         each tick (a `world.query` in per-tick exclusive code: keep it, `chimera_core::query_cache`). Per tick:\n{}",
-        before / 1e6,
-        was.0,
-        after / 1e6,
-        now.0,
-        sys_after.diff_table(&sys_before, 20)
+        table.now.1 >= base_table.now.1 + 2000,
+        "the table markers made tables: {:?} vs {:?}",
+        base_table.now,
+        table.now
     );
     assert!(
-        after_t < before_t * 2.2,
-        "a tick cost {:.2}M instructions with {} tables, {:.2}M with {}. Per tick:\n{}",
-        before_t / 1e6,
-        was_t.1,
-        after_t / 1e6,
-        now_t.1,
-        sys_after_t.diff_table(&sys_before_t, 20)
+        base_sparse.hash == sparse.hash && base_table.hash == table.hash,
+        "the two runs played apart (`Sim::state_hash`), so their ticks don't compare: the markers must change \
+         nothing the game sees, and the simulation must repeat (ultimate_gun_game's \
+         `session::a_match_repeats_tick_for_tick`)"
     );
+    check("sparse-set markers", &base_sparse, &sparse, SPARSE_LIMIT);
+    check("table markers", &base_table, &table, TABLE_LIMIT);
 }

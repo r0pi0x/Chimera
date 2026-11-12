@@ -1208,8 +1208,11 @@ deterministic all along. The cost was not, for these reasons:
   systems' diff on failure; a median, as each match's fights differ),
   `session::a_match_repeats_tick_for_tick` (three sessions in one
   process: the same state hash, the last two within 1%: 233,827,894 and
-  233,828,785 instructions), `party_kit`'s `archetypes` (1.17x with 2,000 more archetypes,
-  1.60x with 2,000 more tables) and `heavy::bot_cost` (systems growing
+  233,828,785 instructions), `party_kit`'s `archetypes` (the same match played twice,
+  with one marker's archetype and with 2,000 more, compared tick for
+  tick: the same state hash, 1.32x with 2,000 more archetypes, 2.31x with
+  2,000 more tables too, and no system more than 76 instructions a tick
+  per added archetype, limit 200, where a `world.query` a tick costs 376) and `heavy::bot_cost` (systems growing
   from 2 to 16 bots printed always, no `trace` build needed),
   `cs_source`'s `map_logic::idle_entities_cost_a_tick_little`,
   `ultimate_gun_game`'s `heavy::session_maps`; two tests that timed with
@@ -2238,7 +2241,15 @@ while their component sets go through 2,047 new combinations, as
 sparse-set markers (archetypes, no tables) 5.3M -> 13.4M instructions a
 tick before (2.5x), 4.4M -> 5.2M now (1.19x, the test's limit 1.3x); as
 table markers, 24.6M a tick at 4,800 archetypes and 2,400 tables before,
-8.4M now.
+8.4M now. (Those compared two moments of one match, before and after
+the markers, and the bots' thinking swung with whatever shifted the
+entities' ids. Since 2026-11-12 the test plays the match twice, with one
+marker's archetype and with all of them, and compares the same ticks:
+4.41M -> 5.82M (1.32x, limit 1.5x) with sparse-set markers, 4.44M ->
+10.25M (2.31x, limit 2.6x) with table markers too; the most any one
+system grows is 76 instructions a tick per added archetype (`Movement
+step`, limit 200), and a planted `world.query` a tick in Combat Arms'
+`supplies` grew by 376 and failed it.)
 
 What still grows (`query_cache`'s known shortcuts): a kept query steps
 over every empty table it matches each time it runs (avian's solver,
