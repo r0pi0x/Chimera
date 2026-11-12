@@ -380,6 +380,11 @@ fn send_join(world: &mut World) {
             // game's `JoinRules`).
             let rules = super::JoinRules::active(world);
             info.push((super::server::JOIN_KEY.to_string(), (rules.choice)(world)));
+            // The formats of the data it reads from a server (`formats`).
+            let prints = super::formats::fingerprints(world);
+            if !prints.is_empty() {
+                info.push((super::formats::FORMATS_KEY.to_string(), super::formats::encode(&prints)));
+            }
             // What this machine has (the mount doctor's report), if the
             // app made one.
             if let Some(m) = world.get_resource::<super::manifest::LocalMounts>() {
@@ -592,7 +597,7 @@ pub fn classify(reason: &str, own_version: &str, joined: bool) -> JoinFailure {
         || reason.starts_with(super::server_docs::DATA)
     {
         JoinFailure::Mounts
-    } else if reason.contains("network protocol differs") {
+    } else if reason.contains("network protocol differs") || reason.starts_with(super::formats::FORMAT) {
         JoinFailure::Protocol
     } else if reason.contains("TimedOut") || reason.contains("timed out") {
         JoinFailure::Timeout

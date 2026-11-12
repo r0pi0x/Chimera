@@ -209,6 +209,7 @@ pub mod client;
 pub mod cvars;
 pub mod decals;
 pub mod delta;
+pub mod formats;
 pub mod game;
 pub mod http;
 pub mod interp;

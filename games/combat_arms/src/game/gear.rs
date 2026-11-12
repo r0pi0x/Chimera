@@ -776,7 +776,10 @@ impl Plugin for CaGearPlugin {
         app.server_docs(
             super::data::served::GEAR,
             doc,
-            chimera_sim::server_docs::DocApply::With(super::data::served::apply_gear),
+            chimera_sim::server_docs::DocApply::With(
+                super::data::served::apply_gear,
+                super::data::served::gear_format,
+            ),
         );
         app.init_resource::<CaGearQuirks>()
             .init_resource::<CaOwnGear>()

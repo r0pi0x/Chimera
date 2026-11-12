@@ -3,7 +3,7 @@
 //!
 //! The server: `listen` (`udp::UdpServer`: netcode, unsecure, `maxplayers` less
 //! the host, queries on the same port), the join handshake (version, protocol,
-//! `sv_password` from the client's netcode user data, full, the mount doctor's
+//! the formats of the data it reads (`formats`), `sv_password` from the client's netcode user data, full, the mount doctor's
 //! report in its userinfo against the match manifest (`manifest`); refused with
 //! `Refused` and dropped a second later), a character per client (team with
 //! fewer players, out of the game (`core::Connecting`: dead, not solid, no
@@ -616,6 +616,12 @@ fn admit(world: &mut World, client: Entity, msg: Join) {
         Some(format!(
             "Your game's network protocol differs from the server's ({NET_VERSION})."
         ))
+    } else if let Some(Err(why)) =
+        super::formats::from_userinfo(msg.userinfo.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+            .map(|theirs| super::formats::check(&super::formats::fingerprints(world), &theirs))
+    {
+        // Its build reads the server's data in another format.
+        Some(why)
     } else if world.get::<Player>(client).is_some() {
         return;
     } else if !password_ok(world, client) {

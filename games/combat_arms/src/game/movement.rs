@@ -577,7 +577,10 @@ impl Plugin for CaMovementPlugin {
         app.server_docs(
             super::data::served::MOVEMENT,
             super::data::served::movement_doc(&movement),
-            chimera_sim::server_docs::DocApply::With(super::data::served::apply_movement),
+            chimera_sim::server_docs::DocApply::With(
+                super::data::served::apply_movement,
+                super::data::served::movement_format,
+            ),
         );
         let gravity = format!("{}", -movement.gravity);
         // The gravity as a replicated server setting (`GRAVITY_CVAR`): a

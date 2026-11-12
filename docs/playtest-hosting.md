@@ -616,9 +616,12 @@ about 30 minutes, with a server `quit` and restart. Found:
   ... unknown field `hidden_pieces`": main had added `projectile_piece`
   and `hidden_pieces` to Combat Arms' `view_model` hook data, which the
   server sends and an older client parses strictly. Run testers and the
-  server from the same commit (as "The day before" says); a change to the
-  hooks' data needs a new network version (main is `net42` since). The
-  rest of the rehearsal ran a server with those two keys left out.
+  server from the same commit (as "The day before" says). The rest of
+  the rehearsal ran a server with those two keys left out. Since, a
+  client says the format of each data it reads (`net::formats`, generated
+  from the types), and a server of another build refuses it at connect,
+  before any download, naming the data ("This game reads the server's
+  game data in another format (combat_arms:view_model) ...").
 - **No client can join an HL2:DM map in Ultimate Gun Game.** The server
   offers its maps by name and hash and has no file to send; the party
   client read only CS:S maps for the check, found none and asked the

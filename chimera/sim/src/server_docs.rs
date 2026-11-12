@@ -24,7 +24,9 @@
 //!   registry and the server's take their place, at the same position
 //!   (the games registered after keep theirs, at the server's indices as
 //!   long as the set's length is the server's). Other sets name a
-//!   function (`DocApply::With`) that replaces the game's resource.
+//!   function (`DocApply::With`) that replaces the game's resource, and
+//!   the type it reads them into, whose format (`data_format`) a client
+//!   and server compare at the join.
 //! - `restore_own` puts every replaced set back to this machine's own
 //!   (the client left the server).
 //!
@@ -50,8 +52,10 @@ pub enum DocApply {
     /// `replace_weapon_set`).
     Weapons(&'static WeaponSet),
     /// Anything else: parse the documents and replace the game's
-    /// resources (Err: why they can't be used).
-    With(fn(&mut World, &[(String, String)]) -> Result<(), String>),
+    /// resources (Err: why they can't be used), and the documents' format
+    /// (`data_format::describe` of the type they're read into), which the
+    /// join compares with the server's.
+    With(fn(&mut World, &[(String, String)]) -> Result<(), String>, fn() -> String),
 }
 
 /// One named set (`DocsAppExt`).
@@ -124,6 +128,13 @@ pub trait DocsAppExt {
 
 impl DocsAppExt for App {
     fn server_docs(&mut self, name: &'static str, docs: Vec<(String, String)>, apply: DocApply) -> &mut Self {
+        if let DocApply::With(_, format) = apply {
+            let format = format();
+            self.world_mut()
+                .get_resource_or_init::<crate::data_format::DataFormats>()
+                .0
+                .insert(name.to_string(), format);
+        }
         self.world_mut().get_resource_or_init::<ServerDocs>().insert(DocSet {
             name,
             docs: Arc::new(docs),
@@ -157,7 +168,7 @@ pub fn apply(world: &mut World, name: &str, docs: Vec<(String, String)>) -> Resu
 fn put(world: &mut World, how: DocApply, docs: &[(String, String)]) -> Result<DocApply, String> {
     match how {
         DocApply::Weapons(old) => replace_weapon_set(world, old, docs).map(DocApply::Weapons),
-        DocApply::With(f) => f(world, docs).map(|()| how),
+        DocApply::With(f, _) => f(world, docs).map(|()| how),
     }
 }
 
@@ -172,7 +183,7 @@ pub fn restore_own(world: &mut World) {
         let back = match (s.apply, own) {
             // The own set is still parsed: swapped back, not parsed again.
             (DocApply::Weapons(now), DocApply::Weapons(mine)) => swap_weapon_set(world, now, mine),
-            (_, DocApply::With(f)) => f(world, &docs),
+            (_, DocApply::With(f, _)) => f(world, &docs),
             _ => Ok(()),
         };
         if let Err(e) = back {

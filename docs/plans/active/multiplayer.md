@@ -1846,6 +1846,29 @@ weapon set swapped back, not parsed again). Models, textures and sounds
 are never sent: the client reads them from its own install (a missing
 one draws the fallback).
 
+**Formats at the join** (2026-11-12 rehearsal: a server whose Combat
+Arms `view_model` hook data had gained `hidden_pieces` passed the version
+check, and every older client then failed mid-join, "doesn't load here:
+unknown field `hidden_pieces`"). A client sends in its userinfo
+(`net::formats::FORMATS_KEY`) a fingerprint of the format of each data it
+reads from a server: the weapon document (`chimera:weapon`), every weapon
+hook's parameters (by the hook's name, recorded by `register_weapon_hook`)
+and every `DocApply::With` set (which names the type it reads into). A
+format is generated, never written by hand: chimera_sim's `data_format`
+drives the type's own `Deserialize` with a tracing deserializer (field
+names, variants, value kinds by path), so a field added anywhere changes
+it. The server refuses a client at once, before the map, files or data
+travel, when a format both have differs, or the client reads a game's
+data but lacks one of the server's for it: "This game reads the server's
+game data in another format (combat_arms:view_model): ... Run the
+server's build." (`JoinFailure::Protocol`). It is in userinfo, not a new
+`Join` field: no protocol change, and an older client that sends none is
+checked by its version only. About 30 formats, ~1 KB, for the party apps.
+Tests: chimera_net `data_formats` (a client whose hook parameters have a
+field more is refused at the join naming the hook; the same build joins),
+chimera_sim `data_format::tests`, Combat Arms
+`server_docs::combat_arms_data_formats_are_traced`.
+
 Sizes (dev box's install, 2026-10-29): Combat Arms' merged weapon set is
 2,298 documents, 14.4 MB of TOML; bzip2 -9 packs it to ~280 KB (~2 s on
 this box; gzip -9 632 KB, xz 163 KB, zstd -19 139 KB). Under the 4 MB

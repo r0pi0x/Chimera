@@ -25,6 +25,7 @@
 //! and the base of the engine's own scenario tests (tests/it/).
 
 pub mod announce;
+pub mod data_format;
 pub mod identity;
 pub mod minigame;
 pub mod mode;

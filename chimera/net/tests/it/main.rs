@@ -9,6 +9,7 @@
 mod asset_offer;
 mod assets;
 mod console_names;
+mod data_formats;
 mod dedicated;
 mod game_hooks;
 mod minigame_callouts;
