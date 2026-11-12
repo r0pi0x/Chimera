@@ -599,3 +599,67 @@ clock fell behind and jumped every few frames: 16-26 jumps and 53-94
 too; now it starts predicting once in the game: 0 jumps and 1-2 restarts,
 also with 80 ms lag and 20 ms jitter). Open items:
 [backlog.md](backlog.md), "UGG playtest rehearsal".
+
+**Rehearsal 2026-11-12/13.** The released clients (v0.1.0-playtest5,
+net41, built `--release` from the tag) against an
+`ultimate_gun_game_server` built `--release` from main's last net41
+commit, on one loaded Linux machine (load 20-50 from other builds, swap
+in use): two clients without installs (one fresh, one that had fetched
+before) and one with the installs, offscreen, a scratch asset service
+(150 ms per answer for the second half), `+maxplayers 12 +MaxPlayer 3
++mp_lobby_min_players 3`; nine matches over six maps of the three games in
+about 30 minutes, with a server `quit` and restart. Found:
+
+- **A newer server's game data refuses older clients of the same
+  network version.** Every playtest5 client was disconnected at the join
+  with "The server's game data (combat_arms:weapons) doesn't load here:
+  ... unknown field `hidden_pieces`": main had added `projectile_piece`
+  and `hidden_pieces` to Combat Arms' `view_model` hook data, which the
+  server sends and an older client parses strictly. Run testers and the
+  server from the same commit (as "The day before" says); a change to the
+  hooks' data needs a new network version (main is `net42` since). The
+  rest of the rehearsal ran a server with those two keys left out.
+- **No client can join an HL2:DM map in Ultimate Gun Game.** The server
+  offers its maps by name and hash and has no file to send; the party
+  client read only CS:S maps for the check, found none and asked the
+  server, which refused: all three clients (the installed one too) were
+  disconnected on `dm_lockdown` ("Could not download
+  maps/dm_lockdown.bsp: The server has no file to send"), and the lobby
+  waited its 90 s for nobody. The fix is the client's
+  (`party_kit::client::map_file_bytes` reading HL2:DM's maps too, branch
+  `rehearsal-fixes`); a playtest5 client can't play them, so with those
+  clients keep HL2:DM's maps out of the rotation.
+- **`changelevel` keeps the running match**: the map changes, the ladder
+  and scores go on, and there is no lobby (players spawn as their loads
+  end). For a new match on a chosen map use `change_match
+  ultimate_gun_game:auto <map>`; the vote's rotation and `change_match`
+  both held the lobby.
+- **Lobby** (from its start to the match): 27-74 s at each map change
+  with the three clients, everyone ready in all of them (22-69 s, the
+  slow ones de_inferno's and de_aztec's loads on the loaded machine, 13-17
+  s to read the map and up to 45 s more to spawn it at a few frames a
+  second), 50 s for the first match with a fresh client (its startup
+  download 373 MB in 3.7 s, its join 98 MB, locally). The countdown box
+  draws over the loading panel when that is still up.
+- **Restart**: `quit` took 16 s to exit, the new server 21 s to listen;
+  every client showed "Connection lost - reconnecting... (attempt N)",
+  rejoined at attempt 15, 2 s after the server listened, through the
+  lobby (everyone ready 4.6 s after it began, the match 9.5 s).
+- **Surprises** on playtest5 clients: the air strike's warning, shells and
+  world kills (de_dust2, de_inferno) and moon gravity's banner
+  (warehouse) showed on every client.
+- **On demand** (the clients' `CHIMERA_ASSET_FETCH_LOG`; playtest5 sends
+  no `on-demand` mark, so the access log has none): one request at a
+  join (a rung gun's reload sound, 0.46 MB, in its offered set) and one
+  at a match's end (CS:S's `sound/bot/yea_baby.wav`, 16 KB, in no set);
+  the installed client made no request at all. Requests: 1,258, all 200;
+  a tester without installs 1.15-1.62 GB over the session (prefetch on).
+- **Memory** (resident plus swap): the server 1.2-1.3 GB at start,
+  1.8-2.4 GB during play over 5 maps, back to 1.8 GB between them
+  (bounded; `tick_stats`' line shows the resident part only, 0.08-1.9 GB
+  here as the machine swapped it out); clients 2.9-3.8 GB in a match,
+  peaks of 5.7-7.1 GB while a map loaded, and a waiting launcher process
+  of 0.1-0.6 GB each. Server ticks: CPU p50 1.8-3.7 ms, p99 2.6-8.6 ms.
+- **Errors**: no panics; the server logs `renetcode` "no private key was
+  found for this address" (10) when a client restarts for its token or
+  disconnects; clients `sequence already received` (2 each).
