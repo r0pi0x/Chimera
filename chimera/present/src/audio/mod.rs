@@ -9,10 +9,12 @@
 //! simulation uses this module. `SoundPlugin` is added with
 //! `map::MapPlugin` (`crate::map_plugin`). `clip_asset`: sound files as
 //! assets (`SoundAsset`, loaded through the installs' asset sources).
+//! `record`: the audio into a WAV file, frame-timed, for recordings.
 
 pub mod clip_asset;
 pub mod hearing;
 pub mod live_sound;
+pub mod record;
 pub mod room;
 pub mod sound;
 pub mod soundscape;

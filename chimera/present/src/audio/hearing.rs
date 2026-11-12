@@ -235,9 +235,7 @@ impl Plugin for HearingPlugin {
     }
 
     fn finish(&self, app: &mut App) {
-        if app.is_plugin_added::<bevy::audio::AudioPlugin>() {
-            bevy::audio::AddAudioSource::add_audio_source::<RingTone>(app);
-        }
+        super::record::add_audio_source::<RingTone>(app);
     }
 }
 

@@ -218,6 +218,9 @@ sha2 = "0.10"
 # already uses), and Opus in pure Rust (encoder and decoder; no C
 # compiler or system library on Linux or Windows).
 cpal = "0.17"
+# Bevy's audio player and mixer, played into a file for recordings
+# (chimera_present's `audio::record`); the rodio Bevy's audio uses.
+rodio = { version = "0.22", default-features = false }
 mousiki = "0.2.1"
 # MP3 sounds packed in community maps (music, minigame sounds).
 symphonia = { version = "0.5.5", default-features = false, features = ["mp3"] }

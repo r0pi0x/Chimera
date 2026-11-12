@@ -2797,6 +2797,7 @@ dependencies = [
  "chimera_world",
  "half",
  "image",
+ "rodio",
  "workspace-hack",
 ]
 

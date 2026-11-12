@@ -24,7 +24,7 @@ use std::{
 
 use bevy::{
     audio::{
-        AddAudioSource, AudioPlayer, AudioSink, AudioSinkPlayback, ChannelCount, Decodable, PlaybackSettings,
+        AudioPlayer, AudioSink, AudioSinkPlayback, ChannelCount, Decodable, PlaybackSettings,
         SampleRate, Source,
     },
     prelude::*,
@@ -325,9 +325,7 @@ impl Plugin for LiveSoundPlugin {
 
     fn finish(&self, app: &mut App) {
         // Audio is added after the map's plugins (or not at all, headless).
-        if app.is_plugin_added::<bevy::audio::AudioPlugin>() {
-            app.add_audio_source::<LiveClip>();
-        }
+        super::record::add_audio_source::<LiveClip>(app);
     }
 }
 

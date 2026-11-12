@@ -6,9 +6,11 @@
 //! body parts' posed bounds),
 //! the view-model camera's switch, a view model drawn without a map,
 //! the under-water overlay's,
-//! fog-only water's fog and the sky under water. `cargo test -p chimera_present --features dev
+//! fog-only water's fog and the sky under water; the sound recorded
+//! into a WAV file a frame at a time (`audio_record`). `cargo test -p chimera_present --features dev
 //! --test it`; where tests go: docs/OBSERVABILITY.md, section 1.
 
+mod audio_record;
 mod bc_textures;
 mod body_bounds;
 mod body_swap;

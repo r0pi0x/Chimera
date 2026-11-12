@@ -69,7 +69,9 @@ pub fn run_if_needed(game: &'static GameApp, args: &Args) -> Option<AppExit> {
 /// The window's app: Bevy's plugins as the game takes them (no sound),
 /// a calm frame rate, the screen.
 fn window_app(app: &mut App, args: &Args, title: &str) {
-    let mut group = super::app::default_plugins(args, title).disable::<bevy::audio::AudioPlugin>();
+    // No recording either: the screen is silent.
+    let silent = Args { dump_dir: None, ..args.clone() };
+    let mut group = super::app::default_plugins(&silent, title).disable::<bevy::audio::AudioPlugin>();
     if args.offscreen.is_some() {
         group = group.set(ScheduleRunnerPlugin::run_loop(Duration::from_millis(33)));
     }

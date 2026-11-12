@@ -342,6 +342,28 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1920x1080 \
   `--dump-every 1` and `ffmpeg` on the PATH the run ends by writing
   `clip.mp4` at the frames' real rate (without ffmpeg the PNGs stay,
   numbered for `ffmpeg -i frame_%06d.png`). Works with a window too.
+- Sound: with `--offscreen` and `--dump` the game's sound is recorded
+  instead of played (Bevy's audio into a mixer of ours,
+  `chimera_present::audio::record`): `audio.wav` (16-bit stereo, 48 kHz)
+  in the dump directory, mixed a frame at a time for the real time since
+  the last frame, and `frames.tsv`, each saved frame's sample position in
+  it (where that frame's sounds start). So a frame and its sounds line up
+  exactly however slowly the frames render. `clip.mp4` stays silent;
+  for a clip with sound (H.264 + AAC; each frame shown until the next
+  one's position, then resampled to a constant rate):
+
+  ```
+  ultimate_gun_game --offscreen 1280x720 --dump $OUT --dump-every 1 +fps_max 30 ...
+  tools/dump_to_mp4.py $OUT [-o $OUT/demo.mp4] [--fps 30] [--crf 20]
+  ```
+
+  The recording follows the master `volume` (and `GlobalVolume`): a run
+  that comes out silent was probably at `volume 0` from the config the
+  run reads (seen on the dev box, where `+volume` on the command line was
+  overridden); set it over the remote console once in the game
+  (`{"method":"chimera/console","params":{"line":"volume 0.8"}}`).
+  Not recorded: voice chat (its own output). Test: `cargo test -p
+  chimera_present --features dev --test it audio_record`.
 - At the end an offscreen run prints its frame times over the whole
   run: frame (wall, `First` to `First`), main world and render world ms
   (p50, p90, p99, max).
@@ -353,7 +375,7 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1920x1080 \
   but runs until something ends it: `--frames`, `--screenshot`, `quit`
   over the remote console (section 3b), or its pid killed. `fps_max`
   still spaces frames (300); `+fps_max 0` for none. No vsync.
-- No sound device: on Linux an offscreen run's ALSA default is the null
+- No sound device (when not recording): on Linux an offscreen run's ALSA default is the null
   device (`ALSA_CONFIG_PATH` set to a temp file unless already set).
   Opening the system's devices from a shell without `XDG_RUNTIME_DIR`
   froze 7 starts of 51, in PipeWire's ALSA or JACK plugin, right after

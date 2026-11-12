@@ -25,6 +25,7 @@ avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_
 bevy_winit.workspace = true
 bevy = { workspace = true, features = ["default", "wav"] }
 half.workspace = true
+rodio.workspace = true
 image.workspace = true
 workspace-hack.workspace = true
 

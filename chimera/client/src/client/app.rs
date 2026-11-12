@@ -30,7 +30,9 @@
 //! `--lightmap-only` on it (`debug_views`), its dedicated server's binary
 //! for the usage text (`server`), what it adds last (`launch`) and every
 //! game it plays (`games`: the startup fetch's, `startup`).
-//! `--offscreen` and the window are `default_plugins`'s, for every app.
+//! `--offscreen` and the window are `default_plugins`'s, for every app,
+//! and with `--offscreen` and `--dump` the sound recorded into the dump
+//! directory's `audio.wav` instead of played (`audio::record`).
 //!
 //! `run_app` is what every game binary does with its app once its
 //! plugins are in: it puts
@@ -460,11 +462,21 @@ pub fn default_plugins(args: &super::Args, title: &str) -> bevy::app::PluginGrou
             custom_layer: super::console::log_layer,
             ..default()
         });
-    match args.offscreen {
+    let group = match args.offscreen {
         Some(_) => group
             .disable::<bevy::winit::WinitPlugin>()
             .add(bevy::app::ScheduleRunnerPlugin::run_loop(std::time::Duration::ZERO)),
         None => group,
+    };
+    // A recording (`--offscreen` with `--dump`): the sound into
+    // `<dir>/audio.wav`, timed by the frames, instead of a device.
+    match (args.offscreen, &args.dump_dir) {
+        (Some(_), Some(dir)) => group
+            .disable::<bevy::audio::AudioPlugin>()
+            .add_after::<bevy::audio::AudioPlugin>(chimera_present::audio::record::RecordAudioPlugin {
+                path: dir.join("audio.wav"),
+            }),
+        _ => group,
     }
 }
 
