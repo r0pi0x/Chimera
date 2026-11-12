@@ -170,7 +170,7 @@ pub(super) fn detonate(cx: &mut Cx, e: Entity, o: &CaObject, p: &ProjectileParam
     cx.remove(e);
     cx.out.detonated.write(Detonated {
         kind: GrenadeKind::Blast,
-        weapon: o.weapon,
+        weapon: o.look.unwrap_or(o.weapon),
         thrower: o.owner,
         at,
         ground: None,

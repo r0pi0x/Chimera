@@ -574,6 +574,20 @@ fn handle_deaths(world: &mut World, mut cursor: Local<MessageCursor<Died>>) {
     }
 }
 
+/// Weapons whose deaths with no killer are no one's doing (a party host's
+/// surprise air strike, the world's): the victim's death counts on its
+/// score, the mode's `on_death` doesn't hear of it (a ladder's rung down
+/// for one's own death). A death with a killer counts as ever.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct BlamelessWeapons(pub Vec<&'static str>);
+
+impl BlamelessWeapons {
+    /// Whether death `d` is no one's doing.
+    pub fn spares(&self, d: &Died) -> bool {
+        d.attacker.is_none() && d.damage.weapon.is_some_and(|w| self.0.contains(&w))
+    }
+}
+
 fn on_died(world: &mut World, d: &Died) {
     let Some(mode) = current_mode(world) else { return };
     // What the killer held when it killed, for the hooks: the rules' swap
@@ -617,7 +631,9 @@ fn on_died(world: &mut World, d: &Died) {
             killer: d.attacker,
             kind,
         };
-        (mode.on_death)(world, &death);
+        if !world.get_resource::<BlamelessWeapons>().is_some_and(|b| b.spares(d)) {
+            (mode.on_death)(world, &death);
+        }
     }
     crate::mode::mode_death(world, mode.id, d);
 }

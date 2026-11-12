@@ -54,6 +54,8 @@
 //! - Both games' parts registered (`chimera_core::game_parts`, each game's
 //!   `parts::PARTS`): what the Ultimate Gun Game builds its ladder from.
 //!
+//! - `surprise`: the host's surprises on the console (`surprise airstrike`,
+//!   `surprise gravity`), from what any client already draws.
 //! - Bots: Combat Arms' (the gun game's `bots` slot), with CS:S's guns'
 //!   types for their AI rows (data/bot_gun_types.toml), their generated
 //!   meshes for the widest hull they may wear (`WIDEST_HULL`); `MaxPlayer` is how
@@ -271,6 +273,8 @@ impl Plugin for PartyPartsPlugin {
             // The match and the ladder over the network (a part: nothing
             // runs without a `NetPlugin`).
             chimera_net::minigame_net::MinigameNetPlugin,
+            // The host's surprises (`surprise airstrike`, `surprise gravity`).
+            surprise::SurprisePlugin,
         ));
         if let Some(mut s) = app.world_mut().get_resource_mut::<combat_arms::game::rules::CaRuleSettings>() {
             s.mode = "none".into();
@@ -550,6 +554,7 @@ pub fn ids() -> Vec<String> {
 }
 
 pub mod host;
+pub mod surprise;
 pub mod server;
 #[cfg(feature = "present")]
 pub mod controls;

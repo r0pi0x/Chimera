@@ -233,6 +233,10 @@ pub struct CaObject {
     pub steps: u32,
     pub kind: Kind,
     pub s: State,
+    /// The weapon its explosion is drawn and heard as (`Detonated::weapon`)
+    /// when not its own: a party's air strike shell, whose designator has
+    /// no explosion look of its own (`devices::drop_strike_shell`).
+    pub look: Option<&'static str>,
 }
 
 impl CaObject {
@@ -258,6 +262,7 @@ impl CaObject {
             created: None,
             steps: 0,
             kind,
+            look: None,
             s: State {
                 facing: Vec3::NEG_Z,
                 last_dir: velocity.normalize_or_zero(),

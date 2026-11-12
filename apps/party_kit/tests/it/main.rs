@@ -42,6 +42,7 @@ mod rung_extras;
 mod rung_holders;
 mod startup;
 mod swap_effect;
+mod surprise;
 mod switches;
 
 mod heavy {
