@@ -30,6 +30,7 @@ mod ladders_across_games;
 mod last_shot;
 mod listen_server;
 mod main_menu;
+mod map_files;
 mod map_vote;
 mod net_gun_game;
 mod party_music;

@@ -6,8 +6,9 @@
 //! follows its gun in the gun game: `chimera_sim::identity`; each shows the
 //! minigame's panel; CS:S's body animation for a player holding a CS:S
 //! gun), the map files it can read for a server's map check
-//! (`map_file_bytes`: CS:S's from its install, so a server on another map
-//! than the one loaded is joined; Combat Arms' maps load by id) and the command line as the app plays it
+//! (`map_file_bytes`: CS:S's and HL2:DM's from their installs or the
+//! asset store, so a server on another map than the one loaded is joined;
+//! Combat Arms' maps load by id) and the command line as the app plays it
 //! (`with_defaults`: the default minigame and its first map). At start it
 //! runs the mount doctor (`mount_report` into `net::manifest::LocalMounts`),
 //! which a server checks its match against when this client joins.
@@ -44,16 +45,23 @@ pub fn client_hooks() -> AppHooks {
 }
 
 /// The bytes of map `id`'s file as this app loads it, for the network's
-/// map check (`net::maps::MapFiles`): a CS:S map's, from the install. Combat
-/// Arms' maps have no file of their own (the server offers them by id and
-/// hash only: `net::maps`), so a client loads them by id. Without this a
-/// client joining a server on a map other than the one it has loaded found
-/// no copy, asked the server for a file the server doesn't have, and
-/// stayed in its own greybox game with a minigame that nobody plays.
+/// map check (`net::maps::MapFiles`): a CS:S or HL2:DM map's, from the
+/// install (or the asset store standing in for it). Combat Arms' maps have
+/// no file of their own (the server offers them by id and hash only:
+/// `net::maps`), so a client loads them by id. Without this a client
+/// joining a server on a map other than the one it has loaded found no
+/// copy, asked the server for a file the server doesn't have, and stayed
+/// in its own greybox game with a minigame that nobody plays; an HL2:DM
+/// map (offered with its hash, never sent) disconnected every player
+/// ("The server has no file to send", rehearsal 2026-11-12).
 pub fn map_file_bytes(id: &str) -> Option<Vec<u8>> {
-    let name = id.strip_prefix("cs_source:")?;
-    let install = cs_source::game::INFO.install()?;
-    cs_source::game::mount::open(&install).ok()?.read(&format!("maps/{name}.bsp")).ok()
+    let (game, name) = id.split_once(':')?;
+    let file = format!("maps/{name}.bsp");
+    match game {
+        cs_source::game::GAME => cs_source::game::mount::open(&cs_source::game::INFO.install()?).ok()?.read(&file).ok(),
+        hl2dm::game::GAME => hl2dm::game::mount::open(&hl2dm::game::INFO.install()?).ok()?.read(&file).ok(),
+        _ => None,
+    }
 }
 
 /// The shell's plugins with every game's HUD (each bundle's `client`):
