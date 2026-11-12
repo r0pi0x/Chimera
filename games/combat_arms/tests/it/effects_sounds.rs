@@ -756,7 +756,12 @@ struct Heard(Vec<CaSound>);
 struct Requested(Vec<CaFxRequest>);
 
 fn sim() -> Sim {
-    let mut sim = Sim::new(CaSim, GreyboxMapPlugin);
+    sim_with(CaSim)
+}
+
+/// `sim` on other data (`CaSimWith`).
+fn sim_with(plugins: impl Plugin) -> Sim {
+    let mut sim = Sim::new(plugins, GreyboxMapPlugin);
     sim.set_tick_interval(TICK_INTERVAL);
     sim.app.init_resource::<Heard>().init_resource::<Requested>();
     sim.app.add_systems(
@@ -1962,7 +1967,8 @@ fn a_held_player_holding_fire_shows_and_sounds_nothing() {
 /// in the world, whatever the zoom (a world width: no floor or cap).
 #[test]
 fn t73_tracer_width() {
-    let look = effects::tracer_look(t(), &wfx("combat_arms:m4a1"), None).unwrap();
+    let m4 = wfx("combat_arms:m4a1");
+    let look = effects::tracer_look(t(), &m4, None).unwrap();
     close(rules::tracer_across(look.width), 7.5, 1e-6, "AR02 across");
     // Seen from the side, its middle 1000 u ahead: the corners 7.5 u apart.
     let cam = Transform::IDENTITY;
@@ -2271,4 +2277,99 @@ fn others_shots_come_from_the_held_models_sockets() {
     let hand = f.hand.expect("his hand");
     assert!(f.muzzles.iter().chain(&f.sounds).all(|m| m.distance(hand) < 1e-4), "at the hand {hand}: {f:?}");
     assert!(f.casings.iter().all(|c| c.distance(hand) < 0.05), "the casing at the hand too: {f:?}");
+}
+
+/// Install guns copied from the M4A1 whose ammo names effect records our
+/// tables lack (a water gun's), names with no record anywhere, and stock
+/// names, with the effect file's records (`FX.TXT`).
+const FX_WEAPONS_TXT: &str = r#"
+[Ammo0] Name="Water" ImpactFXName="Water_Splash" FireFXName="Water_Fire" TracerFXName="Water_Tail"
+[Ammo1] Name="Ghost" ImpactFXName="No_Such_Impact" FireFXName="No_Such_Fire" TracerFXName="No_Such_Tail"
+[Ammo2] Name="Stock" ImpactFXName="" FireFXName="5.56mm" TracerFXName="AR01"
+[Ammo3] Name="5.56mm M4A1" ImpactFXName="" FireFXName="5.56mm" TracerFXName="AR02"
+[Weapon0] Name="M4A1" Guntype=4 AmmoName0="5.56mm M4A1" ShotsPerClip=30
+[Weapon1] Name="Test_Water_Gun" Guntype=4 AmmoName0="Water" ShotsPerClip=40
+[Weapon2] Name="Test_Ghost_Gun" Guntype=4 AmmoName0="Ghost" ShotsPerClip=40
+[Weapon3] Name="Test_Stock_Gun" Guntype=4 AmmoName0="Stock" ShotsPerClip=40
+"#;
+const FX_RECORDS_TXT: &str = r#"
+[ImpactFX0] Name="Water_Splash" Sound="TEST_SND\splash.wav" SoundRadius=600 CreateMark=0 Mark="" DoSurfaceFX=0
+    FXName="Test_Splash"
+[FireFX0] Name="Water_Fire" FXName="Test_Water_Muzzle" EjectShells=0
+[TracerFX0] Name="Water_Tail" Texture="TEST_FX\Weapons\water_tail.dtx" Frequency=1 Velocity=3000 Width=12
+    Length=150 Color=<120, 180, 255> InitialAlpha=0.8 FinalAlpha=0.2
+"#;
+
+fn install_fx_data() -> CaData {
+    use combat_arms::game::data::{
+        read_attributes,
+        attributes::{FX_FILE, WEAPONS_FILE},
+    };
+    let (attrs, problems) = read_attributes(|name| match name {
+        WEAPONS_FILE => Ok(FX_WEAPONS_TXT.as_bytes().to_vec()),
+        FX_FILE => Ok(FX_RECORDS_TXT.as_bytes().to_vec()),
+        _ => Err(std::io::Error::new(std::io::ErrorKind::NotFound, name.to_string())),
+    });
+    assert!(attrs.weapons.is_some(), "{problems:?}");
+    CaData::with_attributes(attrs)
+}
+
+/// "Effect tables in the attribute data" for install guns: an ammo's
+/// `ImpactFXName`, `FireFXName` and `TracerFXName` that our built-in
+/// tables lack take the effect file's (`FX.TXT`) records of those names,
+/// so a copy of the M4A1 uses its own effects, not its template's
+/// (`AR02` tracer, `5.56mm` fire, `BulletFmj` impact); a name with no
+/// record anywhere is no effect; a stock name stays the tables'.
+#[test]
+fn install_guns_use_their_own_effect_records() {
+    let set = install_fx_data().weapon_set();
+    let fx = |id: &str| -> CaWeaponFx { set.get(id).unwrap().hook(EFFECTS).unwrap() };
+    let template = fx("combat_arms:m4a1");
+    assert_eq!((template.tracer.as_str(), template.fire.as_str()), ("AR02", "5.56mm"), "the template's own");
+
+    let water = fx("combat_arms:test_water_gun");
+    assert_eq!((water.impact.as_str(), water.fire.as_str(), water.tracer.as_str()), ("Water_Splash", "Water_Fire", "Water_Tail"));
+    let i = water.impact_of(t()).expect("the install's ImpactFX");
+    assert_eq!((i.sound.as_str(), i.sound_radius, i.fx.as_str()), ("test_snd/splash.wav", 600.0, "Test_Splash"));
+    assert!(!i.surface_fx && !i.create_mark);
+    let f = water.fire_of(t()).expect("the install's FireFX");
+    assert_eq!((f.fx.as_str(), f.shells), ("Test_Water_Muzzle", false));
+    let look = effects::tracer_look(t(), &water, None).expect("the install's TracerFX");
+    assert_eq!(look.texture, "test_fx/weapons/water_tail.dtx");
+    assert_eq!((look.frequency, look.velocity, look.width, look.length), (1, 3000.0, 12.0, 150.0));
+    assert_eq!((look.color, look.initial_alpha, look.final_alpha), ([120.0, 180.0, 255.0], 0.8, 0.2));
+    assert_eq!(effects::own_tracer_frequency(t(), &water, None), Some(1));
+
+    // Names with no record anywhere: no effect, not the template's.
+    let ghost = fx("combat_arms:test_ghost_gun");
+    assert_eq!((ghost.impact.as_str(), ghost.fire.as_str(), ghost.tracer.as_str()), ("", "", ""));
+    assert!(ghost.impact_record.is_none() && ghost.fire_record.is_none() && ghost.tracer_record.is_none());
+    assert!(effects::tracer_look(t(), &ghost, None).is_none());
+
+    // Stock names stay the tables' (an empty impact name is `BulletFmj`).
+    let stock = fx("combat_arms:test_stock_gun");
+    assert_eq!((stock.impact.as_str(), stock.fire.as_str(), stock.tracer.as_str()), ("BulletFmj", "5.56mm", "AR01"));
+    assert!(stock.tracer_record.is_none());
+    assert_eq!(effects::tracer_look(t(), &stock, None), t().tracer("AR01"));
+}
+
+/// The install record's impact on the shot's path: a water gun's rounds
+/// play its `ImpactFX` record's own group and surface burst where they
+/// land, not the template's (the M4A1's `BulletFmj` has no group).
+#[test]
+fn install_gun_rounds_play_their_own_impact_record() {
+    let mut sim = sim_with(combat_arms::harness::CaSimWith(install_fx_data()));
+    let me = player(&mut sim, Vec3::new(20.0, 1.0, 20.0), 0.0);
+    sim.app.world_mut().entity_mut(me).insert(LocalPlayer);
+    arm(&mut sim, me, "combat_arms:test_water_gun");
+    type_everything(&mut sim, 20);
+    sim.intent(me).pitch = -0.6;
+    sim.ticks(2);
+    sim.app.world_mut().resource_mut::<Requested>().0.clear();
+    fire_once(&mut sim, me);
+    let req = std::mem::take(&mut sim.app.world_mut().resource_mut::<Requested>().0);
+    assert!(req.iter().any(|r| r.group == "Test_Splash"), "the record's group: {req:?}");
+    assert!(!req.iter().any(|r| r.group == "Impact_Metal"), "no surface burst (DoSurfaceFX 0): {req:?}");
+    assert!(req.iter().any(|r| r.group == "Test_Water_Muzzle" && r.kind == FxKind::OwnFire), "{req:?}");
+    assert!(sim.app.world().resource::<CaMarks>().marks.is_empty(), "CreateMark 0: no decal");
 }

@@ -21,7 +21,8 @@
 //!   record"), kept on `WeaponsFile` and linked by the ammo's
 //!   `ProjectileFXName`; `ImpactRecord` its impact records (`ImpactFX#`:
 //!   effects_sounds.md "Effect tables in the attribute data"), linked by
-//!   the ammo's `ImpactFXName`.
+//!   the ammo's `ImpactFXName`; `FireRecord` (`FireFX#`, `FireFXName`) and
+//!   `TracerRecord` (`TracerFX#`, `TracerFXName`) likewise.
 //! - `AttachmentsFile`: the character attachments file
 //!   (`ATTACHMENTS.TXT`): goggles and backpacks (`Goggle#`, `Backpack#`:
 //!   socket, model per figure type, skins, render styles).
@@ -639,6 +640,9 @@ pub struct WeaponsFile {
     /// The effect file's fire records (`FireFX#`; empty without the
     /// file), linked by the ammo's `FireFXName`.
     pub fires: Vec<FireRecord>,
+    /// The effect file's tracer records (`TracerFX#`; empty without the
+    /// file), linked by the ammo's `TracerFXName`.
+    pub tracers: Vec<TracerRecord>,
 }
 
 impl WeaponsFile {
@@ -692,6 +696,7 @@ impl WeaponsFile {
             projectiles: Vec::new(),
             impacts: Vec::new(),
             fires: Vec::new(),
+            tracers: Vec::new(),
         })
     }
 
@@ -739,6 +744,14 @@ impl WeaponsFile {
         find_by_name(&self.fires, name, |p| &p.name).map(|(_, p)| p)
     }
 
+    /// The tracer record `ammo` names (its `TracerFXName`, the first
+    /// record of that name; a present but empty name is `Standard`).
+    pub fn tracer(&self, ammo: &AmmoRecord) -> Option<&TracerRecord> {
+        let name = ammo.tracer_fx.as_deref()?;
+        let name = if name.is_empty() { "Standard" } else { name };
+        find_by_name(&self.tracers, name, |p| &p.name).map(|(_, p)| p)
+    }
+
     /// The impact record `ammo` names (its `ImpactFXName`, the first
     /// record of that name; a present but empty name is `BulletFmj`).
     pub fn impact(&self, ammo: &AmmoRecord) -> Option<&ImpactRecord> {
@@ -778,6 +791,46 @@ impl FireRecord {
     /// Every `FireFX#` record of the effect file.
     pub fn read_all(doc: &Document) -> Vec<Self> {
         doc.records("FireFX").into_iter().map(Self::read).collect()
+    }
+}
+
+/// `TracerFX<N>` in the effect file (effects_sounds.md, "Effect tables in
+/// the attribute data"): the tracer's sprite, how often one is drawn and
+/// its flight. A missing field is our tables' default (`TracerFx`: 6000
+/// u/s, 20 u wide, 300 long, white, opaque; the spec gives none).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TracerRecord {
+    pub name: String,
+    pub texture: String,
+    /// Every F-th ray (0 and 1: every ray).
+    pub frequency: i32,
+    pub velocity: f64,
+    pub width: f64,
+    pub length: f64,
+    /// 0..255.
+    pub color: [f64; 3],
+    pub initial_alpha: f64,
+    pub final_alpha: f64,
+}
+
+impl TracerRecord {
+    pub fn read(s: &Section) -> Self {
+        Self {
+            name: name_of(s),
+            texture: s.string("Texture").map(text).unwrap_or_default(),
+            frequency: s.int("Frequency", 0),
+            velocity: s.number("Velocity", 6000.0),
+            width: s.number("Width", 20.0),
+            length: s.number("Length", 300.0),
+            color: s.vector("Color").unwrap_or([255.0; 3]),
+            initial_alpha: s.number("InitialAlpha", 1.0),
+            final_alpha: s.number("FinalAlpha", 1.0),
+        }
+    }
+
+    /// Every `TracerFX#` record of the effect file.
+    pub fn read_all(doc: &Document) -> Vec<Self> {
+        doc.records("TracerFX").into_iter().map(Self::read).collect()
     }
 }
 

@@ -92,10 +92,6 @@ first, done on the Windows PC. Delete a row when it lands.
 
 ## Later (spec is clear, less often seen)
 
-19. **Combat Arms: install guns whose ammo effect name we lack keep
-    their template's muzzle, tracer and impact** (`FX.TXT` records not
-    read). Spec: combat_arms/effects_sounds.md "Effect tables". Code:
-    `game/data.rs` `effect_name`. M. No spec.
 20. **HL2:DM / UGG: flashlight and suit zoom inconsistent across
     rungs.** `mp_flashlight` 0 (parity) so F does nothing on an HL2
     rung; `+zoom` unbound in the party bundle. Spec: hl2dm/suit.md

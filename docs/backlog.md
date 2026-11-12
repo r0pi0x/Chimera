@@ -751,9 +751,6 @@ the original's own behaviour isn't a bug (say so instead).
   groups and ammo effect names per weapon, held models on demand, rates
   from the models, our documents' wrong values, `DotSightName`, special
   weapons' scopes). Left:
-  - the ammo's FireFX, TracerFX and ImpactFX names that our built-in
-    tables don't know (e.g. `Standard`) keep the template's: their
-    `FX.TXT` records aren't read;
   - `HHMuzzleFXName` of the crossbow and the M67: effects_sounds.md and
     special_weapons.md case 59 define a third-person muzzle group for
     launchers only (done: `WEAPON_HH` for the LAW, RPG-7, M136 and M79,

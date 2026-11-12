@@ -395,6 +395,9 @@ pub struct CaWeaponFx {
     /// when the tables have none of that name: the launchers' own-muzzle
     /// groups (special_weapons.md Follow-up 7).
     pub fire_record: Option<FireFx>,
+    /// The install's record of `tracer` (the ammo's `TracerFXName`), used
+    /// when the tables have none of that name.
+    pub tracer_record: Option<TracerFx>,
     /// A launched round (an impact projectile whose ammo `Type` isn't
     /// grenade's, 2): its blast's surface group is the surface's impact
     /// group, not its grenade group (special_weapons.md Follow-up 8).
@@ -423,6 +426,7 @@ impl Default for CaWeaponFx {
             select_radius: 300.0,
             impact_record: None,
             fire_record: None,
+            tracer_record: None,
             launched: false,
         }
     }
@@ -445,6 +449,15 @@ impl CaWeaponFx {
             return None;
         }
         tables.fire(&self.fire).or(self.fire_record.as_ref())
+    }
+
+    /// Its TracerFX record: the tables' of its name, else the install's
+    /// carried with it (`tracer_record`).
+    pub fn tracer_of<'a>(&'a self, tables: &'a CaFxTables) -> Option<&'a TracerFx> {
+        if self.tracer.is_empty() {
+            return None;
+        }
+        tables.tracer(&self.tracer).or(self.tracer_record.as_ref())
     }
 
     /// The files it names.

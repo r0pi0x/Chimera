@@ -143,11 +143,13 @@
 //!   speeds are movement.md's: the spec's open question 2), `Model#`/`Hair#`
 //!   and worn gear, the modification file's gear lists and per-slot
 //!   option fields.
-//! - An ammo's `FireFXName`, `TracerFXName` and `ImpactFXName` are names
-//!   only: the records come from our built-in tables (data/effects.toml,
-//!   the stock ones), and a name they lack (a water gun's, `Standard`) keeps
-//!   the template's value; an impact projectile weapon's impact record is
-//!   read from the install (`impact_record`).
+//! - An ammo's `FireFXName`, `TracerFXName` and `ImpactFXName` name our
+//!   built-in tables' records (data/effects.toml, the stock ones) first;
+//!   a name they lack takes the effect file's record of it (`FX.TXT`,
+//!   carried in the weapon's `combat_arms:effects` as `fire_record`,
+//!   `tracer_record`, `impact_record`), a name with no record anywhere
+//!   is no effect, and without the effect file a name our tables lack
+//!   keeps the template's value.
 //! - Special functions in the modification file are read by name
 //!   (`InstDamage`, `Stun`, ...; targets `All`, `Player`, ...); a number
 //!   there is skipped (the spec doesn't say how numbers map).
@@ -182,9 +184,9 @@ use lithtech_formats::attributes::Document;
 use toml::{Table, Value};
 
 use self::attributes::{
-    ATTACHMENTS_FILE, AmmoRecord, PERKS_FILE, SETS_FILE, AttachmentsFile, MARKS_FILE, MOD_FILE, MODELS_FILE, MarksFile, ModFile, ModelsFile, SERVER_FILE, ServerPlayer, ServerTimeWeight, WEAPONS_FILE,
+    find_by_name, ATTACHMENTS_FILE, AmmoRecord, PERKS_FILE, SETS_FILE, AttachmentsFile, MARKS_FILE, MOD_FILE, MODELS_FILE, MarksFile, ModFile, ModelsFile, SERVER_FILE, ServerPlayer, ServerTimeWeight, WEAPONS_FILE,
  WeaponRecord,
-    WeaponsFile, FX_FILE, FigureTypeRecord, FireRecord, ImpactRecord, ProjectileRecord,
+    WeaponsFile, FX_FILE, FigureTypeRecord, FireRecord, ImpactRecord, ProjectileRecord, TracerRecord,
 };
 use super::{
     attachments::CaModTable,
@@ -360,6 +362,7 @@ pub fn read_attributes(read: impl Fn(&str) -> io::Result<Vec<u8>>) -> (InstallAt
             w.projectiles = ProjectileRecord::read_all(fx);
             w.impacts = ImpactRecord::read_all(fx);
             w.fires = FireRecord::read_all(fx);
+            w.tracers = TracerRecord::read_all(fx);
         }
         w
     });
@@ -771,19 +774,71 @@ fn fire_modes_patch(doc: &mut Table, w: &WeaponRecord) {
     doc.insert("alt".into(), Value::Table(alt));
 }
 
-/// An effect name from an ammo record, as written into
-/// `combat_arms:effects`: `None` keeps what the document has. A missing
-/// key is no effect (""); a present but empty one is `empty_means`
-/// (effects_sounds.md, "Effect tables"); a name our built-in tables
-/// don't have keeps the template's (their records aren't read yet).
-fn effect_name(name: &Option<String>, empty_means: &str, known: impl Fn(&str) -> bool) -> Option<String> {
-    match name.as_deref() {
-        None => Some(String::new()),
-        Some(n) => {
-            let n = if n.is_empty() { empty_means } else { n };
-            if n.is_empty() || known(n) { Some(n.to_string()) } else { None }
-        }
+/// What an ammo record's effect name writes into `combat_arms:effects`
+/// (effects_sounds.md, "Effect tables in the attribute data").
+#[derive(Debug, PartialEq)]
+enum EffectName {
+    /// This name, from our built-in tables (or none: ""): no record of
+    /// the install's carried.
+    Ours(String),
+    /// This name with the install's record of it (`FX.TXT`), which our
+    /// tables lack.
+    Install(String, Table),
+    /// The effect file wasn't read: what the document has stays.
+    Keep,
+}
+
+/// An effect name from an ammo record. A missing key is no effect (""); a
+/// present but empty one is `empty_means`; a name our built-in tables
+/// have is theirs; else the effect file's record of that name
+/// (`install`), and a name with no record anywhere is no effect. Without
+/// the effect file (`read` false) a name our tables lack keeps the
+/// template's.
+fn effect_name(
+    name: &Option<String>,
+    empty_means: &str,
+    known: impl Fn(&str) -> bool,
+    read: bool,
+    install: impl Fn(&str) -> Option<Table>,
+) -> EffectName {
+    let Some(n) = name.as_deref() else { return EffectName::Ours(String::new()) };
+    let n = if n.is_empty() { empty_means } else { n };
+    if n.is_empty() || known(n) {
+        EffectName::Ours(n.to_string())
+    } else if let Some(t) = install(n) {
+        EffectName::Install(n.to_string(), t)
+    } else if read {
+        EffectName::Ours(String::new())
+    } else {
+        EffectName::Keep
     }
+}
+
+/// A fire record as our effects data writes one (`effects::data::FireFx`).
+fn fire_table(r: &FireRecord) -> Table {
+    let mut t = Table::new();
+    t.insert("fx".into(), Value::String(r.fx_name.clone()));
+    t.insert("shells".into(), Value::Boolean(r.eject_shells));
+    t.insert("shell_model".into(), Value::String(super::model::normalize(&r.shell_model)));
+    t.insert("shell_skin".into(), Value::String(super::model::normalize(&r.shell_skin)));
+    t.insert("shell_scale".into(), Value::Float(r.shell_scale));
+    t.insert("velocity".into(), floats(r.velocity));
+    t
+}
+
+/// A tracer record as our effects data writes one
+/// (`effects::data::TracerFx`): the texture as an archive path.
+fn tracer_table(r: &TracerRecord) -> Table {
+    let mut t = Table::new();
+    t.insert("texture".into(), Value::String(super::model::normalize(&r.texture)));
+    t.insert("frequency".into(), Value::Integer(i64::from(r.frequency.max(0))));
+    t.insert("velocity".into(), Value::Float(r.velocity));
+    t.insert("width".into(), Value::Float(r.width));
+    t.insert("length".into(), Value::Float(r.length));
+    t.insert("color".into(), floats(r.color));
+    t.insert("initial_alpha".into(), Value::Float(r.initial_alpha));
+    t.insert("final_alpha".into(), Value::Float(r.final_alpha));
+    t
 }
 
 /// The weapon's own sounds and effects (effects_sounds.md, "How effects
@@ -793,10 +848,13 @@ fn effect_name(name: &Option<String>, empty_means: &str, known: impl Fn(&str) ->
 /// `SilencedFireSnd1..10`, `DryFireSnd`, `ReloadSnd1..3`, `SelectSnd`,
 /// `DeselectSnd`, `MiscSound1..5` with their radii, the muzzle groups
 /// (`PVMuzzleFXName`, `HHMuzzleFXName`, the flash-hider groups) and the
-/// default ammo's `ImpactFXName`, `FireFXName` and `TracerFXName`. A
-/// missing field is the spec's default: no sound, no group, no effect.
-/// A thrown weapon's ammo effects are the grenade hook's.
-fn effects_patch(doc: &mut Table, w: &WeaponRecord, ammo: Option<&AmmoRecord>) {
+/// default ammo's `ImpactFXName`, `FireFXName` and `TracerFXName` (a
+/// name our tables lack with the effect file's record of it:
+/// `effect_name`). A missing field is the spec's default: no sound, no
+/// group, no effect. A thrown weapon's ammo effects are the grenade
+/// hook's.
+fn effects_patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile) {
+    let ammo = file.default_ammo(w);
     const EFFECTS: &str = super::effects::data::EFFECTS;
     const VIEW: &str = "combat_arms:view_model";
     let Some(Value::Table(hooks)) = doc.get_mut("hooks") else { return };
@@ -823,14 +881,41 @@ fn effects_patch(doc: &mut Table, w: &WeaponRecord, ammo: Option<&AmmoRecord>) {
     if w.gun_type != THROWN_GUNTYPE
         && let Some(a) = ammo
     {
+        // Whether the effect file was read (its records are kept on the
+        // weapons file).
+        let read = !(file.impacts.is_empty() && file.fires.is_empty() && file.tracers.is_empty());
         let names = [
-            ("impact", effect_name(&a.impact_fx, "BulletFmj", |n| tables.impact(n).is_some())),
-            ("fire", effect_name(&a.fire_fx, "", |n| tables.fire(n).is_some())),
-            ("tracer", effect_name(&a.tracer_fx, "Standard", |n| tables.tracer(n).is_some())),
+            (
+                "impact",
+                effect_name(&a.impact_fx, "BulletFmj", |n| tables.impact(n).is_some(), read, |n| {
+                    find_by_name(&file.impacts, n, |r| &r.name).map(|(_, r)| impact_table(r, a))
+                }),
+            ),
+            (
+                "fire",
+                effect_name(&a.fire_fx, "", |n| tables.fire(n).is_some(), read, |n| {
+                    find_by_name(&file.fires, n, |r| &r.name).map(|(_, r)| fire_table(r))
+                }),
+            ),
+            (
+                "tracer",
+                effect_name(&a.tracer_fx, "Standard", |n| tables.tracer(n).is_some(), read, |n| {
+                    find_by_name(&file.tracers, n, |r| &r.name).map(|(_, r)| tracer_table(r))
+                }),
+            ),
         ];
         for (key, name) in names {
-            if let Some(n) = name {
-                fx.insert(key.into(), Value::String(n));
+            let record = format!("{key}_record");
+            match name {
+                EffectName::Ours(n) => {
+                    fx.insert(key.into(), Value::String(n));
+                    fx.remove(&record);
+                }
+                EffectName::Install(n, t) => {
+                    fx.insert(key.into(), Value::String(n));
+                    fx.insert(record, Value::Table(t));
+                }
+                EffectName::Keep => {}
             }
         }
     }
@@ -1073,7 +1158,7 @@ fn patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile, mods: Option<&Mo
     }
     fire_modes_patch(doc, w);
     // Its own sounds and effects, not its template's.
-    effects_patch(doc, w, file.default_ammo(w));
+    effects_patch(doc, w, file);
     for s in sound_values(w) {
         apply(doc, &s);
     }
@@ -1374,14 +1459,7 @@ fn projectile_patch(doc: &mut Table, w: &WeaponRecord, a: &AmmoRecord, file: &We
     match file.fire(a) {
         Some(r) => {
             out.push(set(&["hooks", EFFECTS, "fire"], r.name.clone()));
-            let mut t = Table::new();
-            t.insert("fx".into(), Value::String(r.fx_name.clone()));
-            t.insert("shells".into(), Value::Boolean(r.eject_shells));
-            t.insert("shell_model".into(), Value::String(super::model::normalize(&r.shell_model)));
-            t.insert("shell_skin".into(), Value::String(super::model::normalize(&r.shell_skin)));
-            t.insert("shell_scale".into(), Value::Float(r.shell_scale));
-            t.insert("velocity".into(), floats(r.velocity));
-            out.push(set(&["hooks", EFFECTS, "fire_record"], Value::Table(t)));
+            out.push(set(&["hooks", EFFECTS, "fire_record"], Value::Table(fire_table(r))));
         }
         None => {
             if let Some(Value::Table(t)) = doc.get_mut("hooks").and_then(|h| h.get_mut(EFFECTS)) {
