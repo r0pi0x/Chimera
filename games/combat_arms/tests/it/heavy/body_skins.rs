@@ -72,10 +72,14 @@ fn every_rung_bodys_skins_resolve() {
     let mut causes: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut count = |cause: String, what: String| causes.entry(cause).or_default().push(what);
     let bodies = data.rung_bodies();
+    // The bodies' animation files, read once as a rung's loads share them
+    // (`model::ChildModels`): read again for each body they were most of
+    // the test's time (80 MB a body).
+    let children = model::ChildModels::default();
     for &id in &bodies {
         let r = data.model(id).unwrap();
         let what = format!("{id} {} ({})", r.name, r.file);
-        let loaded = match model::load(&r.file, &file) {
+        let loaded = match model::load_sharing(&r.file, &file, &children) {
             Ok(l) => l,
             Err(e) => {
                 let cause = if !mount.contains(&model::normalize(&r.file)) {
@@ -140,7 +144,7 @@ fn every_rung_bodys_skins_resolve() {
             }
         }
     }
-    println!("{} rung bodies", bodies.len());
+    println!("{} rung bodies, {} animation files read", bodies.len(), children.held().0);
     for (cause, list) in &causes {
         println!("\n{cause}: {}", list.len());
         for w in list {
