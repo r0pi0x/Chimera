@@ -496,8 +496,13 @@ pub fn add_character_models(map: &mut MapData, ca: &CaDataInner, file: &dyn Fn(&
     // (`ProjectileParams::shown_key`), for every weapon of the set (the
     // install's launchers too: a few models in all).
     let mut keys = std::collections::BTreeSet::new();
-    for w in &ca.weapon_set().weapons {
-        let Some(p) = w.hook::<ProjectileParams>(PROJECTILE) else { continue };
+    // An air strike designator's shells too (`special::projectiles_of`).
+    for (w, p) in ca
+        .weapon_set()
+        .weapons
+        .iter()
+        .flat_map(|w| crate::game::special::projectiles_of(w).into_iter().map(move |p| (w, p)))
+    {
         let Some(path) = p.drawn_model() else { continue };
         let key = p.shown_key();
         if !keys.insert(key.clone()) {
@@ -608,8 +613,6 @@ fn held_part(
     }
     Ok(())
 }
-
-use super::super::special::{PROJECTILE, ProjectileParams};
 
 /// The world model's animation a grenade in flight is drawn in (its
 /// `Hand` first, then `World`: grenades.md 6).

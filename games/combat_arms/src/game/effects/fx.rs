@@ -61,7 +61,9 @@
 //! the same per-second rate; `DisableZ` and `CastVisibleRay` sprites are
 //! drawn depth-tested; no effect shaders (the refraction keys, whose
 //! textures are distortion maps, are left out, not drawn as colour);
-//! `LightningFX`, `LTBModel`, `PlaySound` and `Null` keys draw nothing,
+//! `LightningFX`, `LTBModel` and `Null` keys draw nothing (a `PlaySound`
+//! key plays its file from its start to its end, `sound_start`;
+//! `PlayRandomSound` keys play nothing),
 //! as do trail keys of a group not on an entity; off-screen systems keep
 //! ageing (Quirk 7 not reproduced).
 
@@ -69,14 +71,69 @@ use bevy::prelude::*;
 use lithtech_formats::fxf::{FxKey, sample_keys};
 
 use super::{
+    sounds::CaSound,
     library::{FxLibrary, additive, material_name, normalize, shaded},
     rules::jitter_falloff,
     trail::{Trail, TrailMode, TrailParams},
 };
+use crate::game::view_model::attached::CaLoopSound;
 use crate::map::{
+    SoundKey,
     ParticleRng,
     particles::{Bounce, Fade, MapParticles, Motion, Particle, ParticleCurves, ParticleGroup, Particles, Ramp, Shape, WorldTrace, probe_planes},
 };
+
+/// Keys of effect groups' sounds (`PlaySound` keys): this bit, the
+/// instance's tag and the key's index.
+pub const FX_SOUND_KEYS: u64 = 1 << 55;
+
+fn sound_key(tag: u64, key: usize) -> SoundKey {
+    SoundKey(FX_SOUND_KEYS | ((tag & 0xffff_ffff) << 8) | (key as u64 & 0xff))
+}
+
+fn is_sound(k: &FxKey) -> bool {
+    k.kind == "PlaySound"
+}
+
+fn stop(key: SoundKey) -> CaLoopSound {
+    CaLoopSound {
+        key,
+        sound: None,
+        follow: None,
+        once: true,
+    }
+}
+
+/// Stop instance `i`'s playing sound keys (it is gone).
+fn stop_sounds(i: &FxInstance, out: &mut Vec<CaLoopSound>) {
+    out.extend(i.keys.iter().filter_map(|r| r.sound).map(stop));
+}
+
+/// A `PlaySound` key's sound (effects_sounds.md "The effect file" and
+/// Corrections (2026-10-30) 1): its `Sound` file, local (`PlayLocal`) or
+/// 3D at the key's place (following the group's parent) with its own
+/// `InnerRadius` (100) and `OuterRadius` (500), its `Volume`, looping by
+/// `Loop`. None without a file.
+fn sound_start(k: &FxKey, at: Vec3, parent: Option<Entity>, key: SoundKey) -> Option<CaLoopSound> {
+    let file = k.path("Sound").or_else(|| k.string("Sound")).filter(|f| !f.trim().is_empty())?;
+    let file = normalize(file);
+    let volume = k.float("Volume").unwrap_or(100.0);
+    let sound = if k.combo("PlayLocal") == Some(1) {
+        CaSound::local(file)
+    } else {
+        let radii = (k.float("InnerRadius").unwrap_or(100.0), k.float("OuterRadius").unwrap_or(500.0));
+        CaSound {
+            radii,
+            ..CaSound::at(file, at, radii.1)
+        }
+    };
+    Some(CaLoopSound {
+        key,
+        sound: Some(sound.volume(volume)),
+        follow: parent,
+        once: k.combo("Loop") != Some(1),
+    })
+}
 
 /// An effect's frame (columns: local X, Y, Z in world axes): local +Z
 /// along `normal`, +Y from the world's up (world +X when the normal is
@@ -99,6 +156,8 @@ struct KeyRun {
     next_emit: f32,
     /// A trail key's points (`PolyTrail`) and what it draws with.
     trail: Trail,
+    /// A sound key's sound while it plays (`PlaySound`).
+    sound: Option<SoundKey>,
     kit: Option<(TrailParams, usize)>,
 }
 
@@ -226,6 +285,8 @@ pub struct CaFx {
     pub screen_width: f32,
     /// The next instance's tag.
     next_tag: u64,
+    /// Sound keys' starts and stops from the last steps (`take_sounds`).
+    sounds: Vec<CaLoopSound>,
 }
 
 impl Default for CaFx {
@@ -241,6 +302,7 @@ impl Default for CaFx {
             unit: super::super::inventory::UNIT,
             screen_width: DEFAULT_SCREEN_WIDTH,
             next_tag: TAG_BASE,
+            sounds: Vec::new(),
         }
     }
 }
@@ -333,8 +395,10 @@ impl CaFx {
     pub fn shut_down(&mut self, particles: Option<&mut Particles>, mut keep: impl FnMut(Entity, &str) -> bool) {
         let mut gone: Vec<u64> = Vec::new();
         let mut fading = Vec::new();
+        let sounds = &mut self.sounds;
         self.instances.retain_mut(|i| match &i.attach {
             Some(a) if !a.once && !keep(a.parent, &i.group) => {
+                stop_sounds(i, sounds);
                 if a.smooth {
                     // Its trails stop growing and age out.
                     for run in &mut i.keys {
@@ -400,6 +464,16 @@ impl CaFx {
                 for run in &mut inst.keys {
                     run.trail.clear();
                 }
+                // Its sounds stop, and start from the beginning when it
+                // is shown again.
+                for (k, run) in g.keys.iter().zip(inst.keys.iter_mut()) {
+                    if let Some(key) = run.sound.take() {
+                        self.sounds.push(stop(key));
+                        if is_sound(k) {
+                            run.started = false;
+                        }
+                    }
+                }
                 continue;
             }
             inst.age += dt;
@@ -412,12 +486,15 @@ impl CaFx {
                     // A new pass: the keys shorter than the group play again.
                     for (k, run) in g.keys.iter().zip(inst.keys.iter_mut()) {
                         if !whole(k, length) {
+                            if let Some(key) = run.sound.take() {
+                                self.sounds.push(stop(key));
+                            }
                             *run = KeyRun::default();
                         }
                     }
                 }
             }
-            for (k, run) in g.keys.iter().zip(inst.keys.iter_mut()) {
+            for (i, (k, run)) in g.keys.iter().zip(inst.keys.iter_mut()).enumerate() {
                 if !k.at_detail(self.detail) || shaded(k) {
                     continue;
                 }
@@ -491,6 +568,18 @@ impl CaFx {
                         inner: k.float("InnerRadius").unwrap_or(0.0),
                         outer: k.float("OuterRadius").unwrap_or(0.0),
                     }),
+                    "PlaySound" => {
+                        if first && live {
+                            let parent = inst.attach.as_ref().map(|a| a.parent);
+                            if let Some(start) = sound_start(k, base, parent, sound_key(inst.tag, i)) {
+                                run.sound = Some(start.key);
+                                self.sounds.push(start);
+                            }
+                        } else if !live && let Some(key) = run.sound.take() {
+                            // Cut at the key's end, however long the file.
+                            self.sounds.push(stop(key));
+                        }
+                    }
                     "CreateFX" if first => {
                         if let Some(name) = k.string("FXName") {
                             self.pending.push((0.0, name.to_string(), base, frame.z_axis));
@@ -510,10 +599,23 @@ impl CaFx {
         // A group on its parent lives until shut down (`shut_down`; one
         // that doesn't loop is spent after its length and isn't made
         // again); any other ends with its length.
-        instances.retain(|i| i.attach.as_ref().is_some_and(|a| !a.once) || lib.group(&i.group).is_some_and(|g| i.age <= g.length() + 0.05));
+        let sounds = &mut self.sounds;
+        instances.retain(|i| {
+            let keep = i.attach.as_ref().is_some_and(|a| !a.once) || lib.group(&i.group).is_some_and(|g| i.age <= g.length() + 0.05);
+            if !keep {
+                stop_sounds(i, sounds);
+            }
+            keep
+        });
         // Groups started while stepping (none: `pending` holds those).
         instances.append(&mut self.instances);
         self.instances = instances;
+    }
+
+    /// The sound keys' starts and stops since the last call (played by
+    /// `sounds::loops`).
+    pub fn take_sounds(&mut self) -> Vec<CaLoopSound> {
+        std::mem::take(&mut self.sounds)
     }
 
     /// One emission of a particle system.

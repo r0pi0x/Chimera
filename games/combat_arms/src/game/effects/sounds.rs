@@ -178,6 +178,9 @@ pub fn play(
             for s in create_sounds(data.weapon_set()) {
                 ensure(&mut bank, &mut files, &mut lengths, mount, &s);
             }
+            // ... and a party host's air strike alarm (`special::devices::
+            // STRIKE_ALARM`, local), which the server sends by entry name.
+            ensure(&mut bank, &mut files, &mut lengths, mount, &CaSound::local(crate::game::special::devices::STRIKE_ALARM));
         }
     }
     // The effects master (music_ambience.md 8): every effect, ambient

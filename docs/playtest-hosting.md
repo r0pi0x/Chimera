@@ -521,38 +521,38 @@ which clears the binding.
 
 ### Surprises (host only; don't tell the testers)
 
-Two console commands on the server shake a match up. Both use only what
-every client already understands (the map logic's HUD text and screen
-flash, replicated objects, explosions, the rules' sounds, replicated
-cvars), so testers on the released build see them without an update.
-Code: `apps/party_kit/src/surprise.rs`.
+Two console commands on the server shake a match up. They need the
+client build of 2026-11-13 or later (older clients show the shells and
+explosions wrong and don't hear the siren). Code:
+`apps/party_kit/src/surprise.rs`.
 
 - `surprise airstrike [count] [seconds]` (default 30 shells over 8 s): a
   3 s warning ("AIR STRIKE INCOMING! TAKE COVER!" in red, a red flash and
-  CS:S's radio call "Get out of there, it's gonna blow!"), then Combat
-  Arms' air strike shells (LGB and napalm, 2:1) fall from under the sky
-  onto open ground: half near living players, half anywhere walkable.
-  The LGB's blast is 110 in 1200 u (lethal within about 5 m), the
-  napalm's burning sphere 80 HP/s for 5 s in 350 u. Deaths are the
-  world's: no rung up or down for anyone (a death on the scoreboard).
-  The shells look, fly and explode like the RPG-7's rocket (nose down):
-  the shells' own models and explosions aren't anything an older client
-  can be told to draw.
+  an air-raid siren from Combat Arms' install), then Combat Arms' air
+  strike shells (LGB and napalm, 2:1) fall from under the sky onto open
+  ground: half near living players, half anywhere walkable. They look
+  and sound like the real thing: the designators' missile with its trail
+  and incoming whistle, the LGB's explosion (`Dirt_Burster`) and the
+  napalm's fire (`Exp_Napalm_Shell`, burning for the sphere's 5 s). The
+  LGB's blast is 110 in 1200 u (lethal within about 5 m), the napalm's
+  burning sphere 80 HP/s for 5 s in 350 u. Deaths are the world's: no
+  rung up or down for anyone (a death on the scoreboard).
 - `surprise gravity [seconds] [scale]` (default 60 s at 0.2): moon gravity
-  for every player's movement and the server's physics props, with a
-  "Moon gravity!" banner, a countdown in the last 5 s and "Gravity is
-  back!". CS:S and HL2:DM players predict with it (`sv_gravity` is
-  replicated); a Combat Arms player is corrected by the server each
-  snapshot (a few centimetres; it looks smooth). Clients draw ragdolls
-  themselves at normal gravity. A map change ends it.
+  for every player's movement and the physics world (props, ragdolls),
+  with a "Moon gravity!" banner, a countdown in the last 5 s and "Gravity
+  is back!". Every client predicts with it (CS:S's and HL2:DM's
+  `sv_gravity`, Combat Arms' `combat_arms:sv_gravity`, all replicated: no
+  corrections) and its own ragdolls and props fall with it
+  (`chimera:phys_gravity_scale`, replicated). A map change ends it.
 - `surprise stop` ends both at once.
 
 Both run on the server's console only (a client's console refuses them).
 A tester without the installs has everything they show before they fire
-(measured: no on-demand fetch during either) once Combat Arms' `base`
-holds the shells' flight sound (`guns_pt/snd/grenade.wav`, 0.09 MB):
+once Combat Arms' `base` holds the siren and the shells' model, sounds
+and effect files (`special::devices::strike_files`):
 `chimera_pack sets combat_arms --store <server store> --sign --only base`
-(the rest was in `base` or the map's set already).
+(the guard `ultimate_gun_game heavy::no_fetch_in_match` fires both on
+its last map and fails on any fetch during the match).
 
 ## After
 

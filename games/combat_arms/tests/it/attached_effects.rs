@@ -17,7 +17,9 @@
 //! - the model faces its fire direction for the whole flight (51);
 //! - launched ammo's surface group is the surface's impact group (53);
 //! - the infected face's eyes: its `ClientFX#` groups on the eye sockets,
-//!   looping, seen in third person only (114).
+//!   looping, seen in third person only (114);
+//! - a group's `PlaySound` key starts its file and is cut at its end or
+//!   with its group (effects_sounds.md case 67).
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -941,4 +943,69 @@ fn t58_launcher_group_at_the_models_flash_socket() {
     assert_eq!(lights.len(), 1);
     assert!(lights[0].at.distance(at_socket) < 1e-4, "at the model's socket {at_socket}: {}", lights[0].at);
     assert!(lights[0].at.distance(at_hand) > 0.1, "not the hand's {at_hand}");
+}
+
+/// Case 67 (effects_sounds.md Corrections (2026-10-30) 1): a `PlaySound`
+/// key of a group made at a point starts its file 3D where the group is,
+/// once (`Loop` No), with its own radii and volume, and is cut at the
+/// key's end; one of a group that goes first (a projectile's, shut down)
+/// stops with it. Our air strike shells' whistle and explosions.
+#[test]
+fn t67_sound_keys_start_and_are_cut() {
+    use chimera_world::map::particles::NoWorld;
+    let sound = |end: f32| {
+        key(
+            "PlaySound",
+            end,
+            vec![
+                ("Sound", path("FX\\Test\\Boom.wav")),
+                ("Loop", combo(0, &["No", "Yes"])),
+                ("InnerRadius", FxValue::Float(200.0)),
+                ("OuterRadius", FxValue::Float(2500.0)),
+                ("Volume", FxValue::Float(80.0)),
+            ],
+        )
+    };
+    let file = FxFile {
+        groups: vec![
+            FxGroup { name: "Test_Boom".into(), phase_ms: 1000, keys: vec![sound(0.5)] },
+            FxGroup { name: "Test_Whistle".into(), phase_ms: 5000, keys: vec![sound(5.0)] },
+        ],
+    };
+    let lib = FxLibrary { file, ..Default::default() };
+    let (mut particles, materials) = (Particles::default(), MapParticles::default());
+    let mut fx = CaFx::default();
+    let at = Vec3::new(1.0, 2.0, 3.0);
+    assert!(fx.spawn(&lib, "Test_Boom", at, Mat3::IDENTITY));
+    fx.step(0.02, &lib, &mut particles, &materials, &NoWorld);
+    let started = fx.take_sounds();
+    assert_eq!(started.len(), 1, "{started:?}");
+    let s = started[0].sound.as_ref().expect("a start");
+    assert!(started[0].once, "Loop No: once");
+    assert_eq!(s.file, normalize("FX\\Test\\Boom.wav"));
+    assert_eq!(s.at, Some(at));
+    assert_eq!(s.radii, (200.0, 2500.0));
+    assert_eq!(s.volume, 80.0);
+    for _ in 0..20 {
+        fx.step(0.02, &lib, &mut particles, &materials, &NoWorld);
+    }
+    let later = fx.take_sounds();
+    assert!(later.is_empty(), "nothing more while the key runs: {later:?}");
+    for _ in 0..10 {
+        fx.step(0.02, &lib, &mut particles, &materials, &NoWorld);
+    }
+    let cut = fx.take_sounds();
+    assert_eq!(cut.len(), 1, "cut at the key's end: {cut:?}");
+    assert!(cut[0].sound.is_none() && cut[0].key == started[0].key);
+    // On an entity that goes before the key ends: stopped with it.
+    let parent = Entity::from_raw_u32(7).unwrap();
+    let pose = pose_of(&Transform::from_translation(at), None);
+    assert!(fx.attach(&lib, "Test_Whistle", parent, false, true, pose));
+    fx.step(0.02, &lib, &mut particles, &materials, &NoWorld);
+    let started = fx.take_sounds();
+    assert_eq!(started.len(), 1);
+    assert_eq!(started[0].follow, Some(parent), "follows its projectile");
+    fx.shut_down(Some(&mut particles), |_, _| false);
+    let stopped = fx.take_sounds();
+    assert!(stopped.len() == 1 && stopped[0].sound.is_none() && stopped[0].key == started[0].key, "{stopped:?}");
 }

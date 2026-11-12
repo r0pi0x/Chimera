@@ -116,6 +116,17 @@ impl ProjectileLook {
     }
 }
 
+/// The impact projectiles weapon `w` makes: its own
+/// (`combat_arms:projectile`) and an air strike designator's shells
+/// (`combat_arms:device`'s `strike.shell`, special_weapons.md 6.10). The
+/// map's load draws their models and looks in flight (`characters::
+/// models`, `effects::library`).
+pub fn projectiles_of(w: &chimera_sim::weapon::data::WeaponData) -> Vec<ProjectileParams> {
+    let mut out: Vec<ProjectileParams> = w.hook::<ProjectileParams>(PROJECTILE).into_iter().collect();
+    out.extend(w.hook::<DeviceParams>(DEVICE).and_then(|d| d.strike).map(|s| s.shell));
+    out
+}
+
 /// The files weapon `w`'s thrown or fired object names, which play or
 /// show when it is used, not when it is drawn: its projectile's,
 /// grenade's, device's or bolt's looks and sounds in flight, its create
@@ -129,7 +140,7 @@ pub fn object_files(w: &chimera_sim::weapon::data::WeaponData) -> Vec<String> {
         out.extend(model.cloned());
         out.extend(skins.iter().cloned());
     };
-    if let Some(p) = w.hook::<ProjectileParams>(PROJECTILE) {
+    for p in projectiles_of(w) {
         add(&p.look, &p.create_sound, p.model.as_ref(), &p.skins);
     }
     if let Some(g) = w.hook::<super::super::grenades::GrenadeParams>(super::super::grenades::HOOK) {

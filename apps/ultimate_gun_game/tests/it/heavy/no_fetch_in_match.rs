@@ -22,7 +22,9 @@
 //! once the client says its match started, every character on the server
 //! (the bots and the client's player) climbs the whole ladder, a rung every
 //! `RUNG_SECONDS`, so the client draws each rung's gun, body and parts,
-//! held and in first person; then the next map. Any on-demand fetch the
+//! held and in first person; then the next map. On the last map the
+//! host's surprises follow (`SURPRISES`: an air strike, its siren,
+//! shells and explosions, then moon gravity). Any on-demand fetch the
 //! client logs during a match (`assets: fetched on demand during the match
 //! ...`) fails the test, listed with what covers it. Skipped with a note
 //! without the CS:S and Combat Arms installs, without a published store
@@ -64,6 +66,10 @@ const SESSION: [(u64, &str); 3] = [
 const RUNG_SEED: u64 = 4242;
 /// How long each rung is held.
 const RUNG_SECONDS: f64 = 2.0;
+/// The host's surprises on the last map (`party_kit::surprise`), and how
+/// long they are watched.
+const SURPRISES: [&str; 2] = ["surprise airstrike 12 3", "surprise gravity 6"];
+const SURPRISE_SECONDS: f64 = 10.0;
 /// The longest the client may take to reach a match (its first start
 /// downloads every game's `base`).
 const JOIN_LIMIT: Duration = Duration::from_secs(600);
@@ -345,6 +351,13 @@ fn run(published: &Store) {
             }
             let t = Instant::now();
             until(&mut app, &mut client, Duration::from_secs_f64(RUNG_SECONDS), |_| t.elapsed().as_secs_f64() >= RUNG_SECONDS);
+        }
+        if i + 1 == SESSION.len() {
+            for c in SURPRISES {
+                app.world_mut().resource_mut::<Console>().submit(c);
+            }
+            let t = Instant::now();
+            until(&mut app, &mut client, Duration::from_secs_f64(SURPRISE_SECONDS), |_| t.elapsed().as_secs_f64() >= SURPRISE_SECONDS);
         }
         rows.push(format!(
             "{map}: in the match {:.0} s after the ladder ({} rungs climbed in {:.0} s)",

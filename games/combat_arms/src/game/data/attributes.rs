@@ -415,6 +415,9 @@ pub struct WeaponRecord {
     /// ammunition left (view_models.md 3; empty: none).
     pub projectile_piece: String,
     pub hidden_pieces: Vec<String>,
+    /// `AirStrikeID`: an air strike designator's shell, the weapon record
+    /// index (special_weapons.md 6.10; None when missing or negative).
+    pub air_strike_id: Option<usize>,
 }
 
 impl WeaponRecord {
@@ -568,6 +571,7 @@ impl WeaponRecord {
             pv_attach_fx: s.string_list("PVAttachFXName").iter().map(|v| text(v)).collect(),
             pv_attach_fx_always: s.bool("PVAttachFXAlwaysShow", false) || i("PVAttachFXAlwaysShow", 0) != 0,
             projectile_piece: s.string("ProjectilePiece").map(text).unwrap_or_default(),
+            air_strike_id: usize::try_from(i("AirStrikeID", -1)).ok(),
             hidden_pieces: s
                 .string_list("HiddenPiece")
                 .iter()

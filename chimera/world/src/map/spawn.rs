@@ -1167,7 +1167,8 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
             commands.insert_resource(tree.clone());
         }
         if let Some(g) = data.gravity {
-            commands.insert_resource(Gravity(Vec3::NEG_Y * g));
+            // Times the server's scale (`gravity`).
+            commands.queue(move |w: &mut World| super::gravity::set_map_gravity(w, Vec3::NEG_Y * g));
         }
         commands.insert_resource(MapWater(data.water.clone()));
         commands.insert_resource(MapSkyFaces::of(&data.sky_surfaces));
