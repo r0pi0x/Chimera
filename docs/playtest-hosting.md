@@ -430,8 +430,12 @@ which clears the binding.
 - Testers' bug reports arrive as zipped `bugreports` folders and
   `ugg-last.log` files; note the time and map of each so you can find the
   server's log lines.
-- If the server wedges: `quit`, restart with the same command; players
-  rejoin from the menu (their files are saved).
+- If the server wedges: `quit`, restart with the same command on the same
+  port; players' games show "Connection lost - reconnecting... (attempt N)"
+  and join it again on their own once it answers (asked every 3 s for 2
+  minutes; a server killed rather than quit is noticed after the 30 s
+  timeout). After that, or if they pressed Cancel, they rejoin from the
+  menu (their files are saved). `cl_autoreconnect 0` turns it off.
 - To change the ladder mid-session: `ugg_new`. To restart the match:
   `minigame_restart`.
 

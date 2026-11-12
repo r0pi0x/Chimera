@@ -82,6 +82,7 @@ pub const ENGINE_NAMES: &[&str] = &[
     "cl_lagcompensation",
     "cl_smoothtime",
     "cl_downloadfilter",
+    "cl_autoreconnect",
     // Video, audio and the camera.
     "fps_max",
     "fov_desired",

@@ -530,6 +530,8 @@ pub fn start(world: &mut World) -> Result<(), String> {
         return Err("already in a network game (disconnect first)".into());
     }
     let config = super::connection_config(world);
+    // Hosting: no more joining a server that went away.
+    super::reconnect::cancel(world);
     world.insert_resource(RenetServer::new(config));
     world.insert_resource(NetRole::Server);
     // Bots added before serving stay (`bot_quota` counts them).

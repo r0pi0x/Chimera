@@ -104,6 +104,26 @@ impl NetSim {
         self.ids.remove(i);
     }
 
+    /// The server quits (`net::disconnect`: its clients hear it hang up)
+    /// and stays down until `start_server`; its app goes on being stepped,
+    /// out of the game.
+    pub fn stop_server(&mut self) {
+        net::disconnect(self.server.app.world_mut(), "Server shutting down.");
+    }
+
+    /// A new server process on the same link (as a dedicated server
+    /// started again on the same address), built as the first was.
+    pub fn start_server(&mut self) {
+        let build = self.build.clone();
+        let mut server = Sim::with((), |app| build(app));
+        server.app.world_mut().resource_mut::<NetSettings>().maxplayers = 32;
+        server
+            .app
+            .insert_resource(TimeUpdateStrategy::ManualDuration(self.frame));
+        net::memory::serve(server.app.world_mut(), self.link.clone()).expect("serve");
+        self.server = server;
+    }
+
     /// Client `i`'s link (both ways) from now on, in place of the
     /// conditions the sim was made with.
     pub fn set_conditions(&mut self, i: usize, conditions: LinkConditions) {

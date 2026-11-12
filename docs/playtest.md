@@ -115,6 +115,15 @@ starts, you join the running match when you are ready, as a late joiner.
 If a join is refused, the message on the menu says why. "Different build"
 means the host and you are on different versions: download the newest release.
 
+**If the server goes away** (the host restarts it, or it crashes), your
+game goes back to the menu and shows "Connection lost - reconnecting...
+(attempt N)" with the reason. It asks the server every 3 seconds and joins
+it again on its own once it is back (the lobby and any downloads as on
+the first join), for up to 2 minutes; then it says it gave up and you
+rejoin from Join. Cancel or Escape stops it. A server that crashed is
+noticed after 30 seconds without a word from it. `cl_autoreconnect 0` in
+the console turns this off.
+
 ## Controls
 
 The defaults (Esc > Options > Binds, or `F6`, changes any of them):
