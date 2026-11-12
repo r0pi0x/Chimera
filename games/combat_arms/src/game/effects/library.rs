@@ -43,7 +43,7 @@ use lithtech_formats::{
 };
 
 use super::data::{CaFxTables, CaWeaponFx, EFFECTS};
-use crate::game::special::{PROJECTILE, ProjectileLook, ProjectileParams};
+use crate::game::special::ProjectileLook;
 use crate::{
     map::{
         MapData, MapMemos, MapSoundClip, MapTexture,
@@ -261,7 +261,7 @@ pub fn add_looks(map: &mut MapData, data: &super::super::data::CaDataInner, file
     let looks: Vec<ProjectileLook> = set
         .weapons
         .iter()
-        .filter_map(|w| w.hook::<ProjectileParams>(PROJECTILE))
+        .flat_map(crate::game::special::projectiles_of)
         .map(|p| p.look)
         .collect();
     groups.extend(attached_groups(&looks, data.characters(), &fx));

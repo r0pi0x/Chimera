@@ -1,57 +1,45 @@
 //! The host's surprises (docs/playtest-hosting.md, "Surprises"): two
-//! console commands a party server's host types to shake a match up,
-//! built only from what every client of the party already understands
-//! (replicated objects, the map logic's HUD messages and screen fades,
-//! the rules' sounds, replicated cvars): no message, part or client code
-//! of their own, so clients of an older build see them whole.
+//! console commands a party server's host types to shake a match up.
 //!
 //! - `surprise airstrike [count=30] [seconds=8]`: a warning for
-//!   `WARNING` s (a red HUD message centre screen, a red flash and CS:S's
-//!   radio call "Get out of there, it's gonna blow!", `ALARM`), then
-//!   `count` shells of
-//!   Combat Arms' air strikes (`LGB_SHELL`, `Napalm_Shell`: the designators'
-//!   own `strike.shell`, dropped by `combat_arms::game::special::devices::
-//!   drop_strike_shell`) land over `seconds` s, each on a floor point of
-//!   the map open to the sky: half of them near a living player, the rest
-//!   anywhere on the walkable area (the navigation mesh's areas, else
-//!   about the spawn points; a point under a roof is tried again, and kept
-//!   only when no open one turns up). A shell falls straight down from
-//!   under the sky, drawn as the RPG-7's rocket (`BLAST_LOOK`: model,
-//!   smoke tail, fly sound), and blows up with the shell's data: its blast
-//!   (the LGB's 110 in 1200 u) or burning sphere (the napalm's 80 HP/s),
-//!   its explosion drawn and heard as the rocket's. The
-//!   deaths credit nobody, and with the shells' weapons in
+//!   `WARNING` s (a red HUD message centre screen, a red flash and an
+//!   air-raid siren, `ALARM`: `combat_arms::game::special::devices::
+//!   STRIKE_ALARM`, which every Combat Arms client has ready), then
+//!   `count` shells of Combat Arms' air strikes (`LGB_SHELL`,
+//!   `Napalm_Shell`: the designators' own `strike.shell`, dropped by
+//!   `combat_arms::game::special::devices::drop_strike_shell`) land over
+//!   `seconds` s, each on a floor point of the map open to the sky: half
+//!   of them near a living player, the rest anywhere on the walkable area
+//!   (the navigation mesh's areas, else about the spawn points; a point
+//!   under a roof is tried again, and kept only when no open one turns
+//!   up). A shell falls straight down from under the sky, drawn as its
+//!   own record (`LGB_Shell`'s missile with its group in flight and its
+//!   incoming whistle), and blows up with the shell's data: its blast
+//!   (the LGB's 110 in 1200 u) or burning sphere (the napalm's 80 HP/s
+//!   for 5 s), drawn and heard as its own explosion record (`Dirt_Burster`,
+//!   `Exp_Napalm_Shell`: the napalm's group burns for the sphere's life).
+//!   The deaths credit nobody, and with the shells' weapons in
 //!   `chimera_sim::minigame::runtime::BlamelessWeapons` no rule hears of
 //!   them: no rung up or down for anyone.
 //! - `surprise gravity [seconds=60] [scale=0.2]`: moon gravity for
-//!   `seconds` s: every movement's gravity times `scale` (each Source
-//!   movement's `sv_gravity` cvar, CS:S's and HL2:DM's, which a client
-//!   gets replicated and predicts its own player with; Combat Arms'
-//!   `MovementData::gravity`, the server's alone), and the physics world's
-//!   (`avian3d`'s `Gravity`: the props and ragdolls the server simulates),
-//!   with a banner ("Moon gravity!"), a countdown in the last
-//!   `COUNTDOWN` s and an ending message; then all of it back as it was.
-//!   A map change ends it at once (the map sets its own gravity).
+//!   `seconds` s: every movement's gravity times `scale` (each
+//!   `sv_gravity` cvar: CS:S's and HL2:DM's Source movements' and Combat
+//!   Arms' `combat_arms:sv_gravity`, all replicated, so a client predicts
+//!   its own player with the server's) and the physics world's
+//!   (`chimera:phys_gravity_scale`, replicated: the props and ragdolls
+//!   the server and each client simulate), with a banner ("Moon
+//!   gravity!"), a countdown in the last `COUNTDOWN` s and an ending
+//!   message; then all of it back as it was. A map change ends it at once
+//!   (the map sets its own gravity).
 //! - `surprise stop`: ends both now (gravity back, shells not yet dropped
 //!   never come).
 //!
 //! The commands run on the authority (a dedicated server's console, a
 //! listen server's host); a network client is refused.
 //!
-//! Known shortcuts: the shells look and blow up as the RPG-7's rocket, not
-//! as their own records (`LGB_Shell`'s missile, `Dirt_Burster`,
-//! `Exp_Napalm_Shell`: no loaded weapon's, so a client can't be told to
-//! draw them), and the napalm's
-//! burning sphere has no look of its own (only its damage and the
-//! victims' burn sounds); the alarm is a radio call, not a siren; a Combat Arms player's client predicts its movement
-//! with its own gravity (Combat Arms' movement has no replicated
-//! setting), so under moon gravity the server corrects it each snapshot
-//! (an error of a few centimetres at a playtest's latency); clients draw
-//! the ragdolls of the dead themselves with the map's gravity, so only a
-//! listen server's own ragdolls float; Combat Arms' grenades and
-//! projectiles keep their object gravity (a constant of their spec).
+//! Known shortcuts: Combat Arms' grenades and projectiles keep their
+//! object gravity (a constant of their spec).
 
-use avian3d::prelude::Gravity;
 use bevy::{ecs::message::Messages, prelude::*};
 use chimera_core::{
     console::{Console, ConsoleAppExt},
@@ -60,10 +48,7 @@ use chimera_core::{
 use chimera_sim::minigame::runtime::BlamelessWeapons;
 use chimera_world::map::{LoadedMapName, nav::NavMesh};
 use chimera_world::map::{GameSound, PlaySound};
-use combat_arms::game::{
-    movement::MovementData,
-    special::devices::{drop_strike_shell, strike_floor, strike_start},
-};
+use combat_arms::game::special::devices::{STRIKE_ALARM, drop_strike_shell, strike_floor, strike_start};
 use source_logic::logic::{HudEvent, HudMessage, HudShow, ScreenFade};
 
 /// The designators whose shells fall (special_weapons.md 6.10), and how
@@ -85,25 +70,14 @@ pub const NEAR_RADIUS: f32 = 12.0;
 /// Tries for a floor point open to the sky.
 pub const TRIES: usize = 12;
 
-/// The alarm: CS:S's radio call "Get out of there, it's gonna blow!",
-/// played to everyone unspatialized. A sound the server sends plays only
-/// when the client's map has its entry ready (`map::SoundBank`); this one
-/// every party map has (CS:S's radio entries go into every map, CS:S's or
-/// as the guest's: `cs_source::game::sound::load`), its waves decoded with
-/// the map, so it never waits on a file. No game's siren is among the
-/// entries every map holds.
-pub const ALARM: &str = "Radio.GetOutOfThere";
-
-/// The weapon a shell is drawn in flight and blows up as: our designators'
-/// shells have no model (their `LGB_Shell` record's isn't any weapon's
-/// projectile, and a client draws only the projectile models its weapon
-/// set names, loaded with the map), and their explosion records
-/// (`Dirt_Burster`, `Exp_Napalm_Shell`) are no loaded weapon's (a client
-/// draws a detonation only by a weapon it knows: `chimera_net`'s
-/// `Detonation`). So a shell is the RPG-7's rocket, nose down with its
-/// smoke tail and fly sound, and blows up as it does (its `Rocket`
-/// record: the blast group and sound).
-pub const BLAST_LOOK: &str = combat_arms::game::special::devices::STRIKE_LOOK;
+/// The alarm: an air-raid siren of Combat Arms' install, played to
+/// everyone unspatialized (`combat_arms::game::special::devices::
+/// STRIKE_ALARM`: no record names an air strike warning). A sound the
+/// server sends plays only when the client has its entry ready
+/// (`map::SoundBank`): every Combat Arms client readies this one with
+/// the map (`combat_arms::game::effects::sounds`), from the install or
+/// Combat Arms' `base` set.
+pub const ALARM: &str = STRIKE_ALARM;
 
 /// The moon's defaults: how long, s, and the gravity's scale.
 pub const GRAVITY_SECONDS: f64 = 60.0;
@@ -258,8 +232,13 @@ fn warn_air_strike(world: &mut World) {
     hud(world, banner("AIR STRIKE INCOMING!\nTAKE COVER!", STRIKE_CHANNEL, [255, 48, 32], WARNING as f32 + 2.0));
     flash(world, [255, 0, 0], 90, 0.8);
     if world.contains_resource::<Messages<GameSound>>() {
-        world.write_message(GameSound(PlaySound::ui(ALARM)));
+        world.write_message(GameSound(PlaySound::ui(alarm_entry())));
     }
+}
+
+/// The alarm's sound entry (a local Combat Arms sound's).
+pub fn alarm_entry() -> String {
+    combat_arms::game::effects::sounds::CaSound::local(ALARM).entry()
 }
 
 /// The shells due drop (queued: each finds its point in the world).
@@ -268,7 +247,7 @@ fn air_strike_step(clock: Res<SimClock>, mut strike: ResMut<AirStrike>, mut comm
     for (_, designator) in strike.drops.drain(..due) {
         commands.queue(move |world: &mut World| {
             if let Some(ground) = target(world, designator) {
-                drop_strike_shell(world, designator, ground, Some(BLAST_LOOK));
+                drop_strike_shell(world, designator, ground);
                 let mut s = world.resource_mut::<AirStrike>();
                 s.dropped += 1;
                 s.fallen.push(ground);
@@ -356,19 +335,19 @@ pub struct MoonGravity {
     /// When it began (server time, s).
     pub since: f64,
     pub scale: f32,
-    /// Each Source movement's `sv_gravity` cvar (full name) and its value
-    /// before.
+    /// Each movement's `sv_gravity` cvar (full name) and the physics
+    /// world's scale (`PHYSICS_SCALE`) with its value before.
     pub cvars: Vec<(String, String)>,
-    /// Combat Arms' movement gravity before (u/s²).
-    pub movement: Option<f32>,
-    /// The physics world's before.
-    pub physics: Option<Vec3>,
     pub map: Option<String>,
     /// The last whole second counted down.
     pub counted: Option<u32>,
 }
 
-/// Every cvar named `sv_gravity` in any namespace (CS:S's, HL2:DM's).
+/// The physics world's gravity scale (`chimera_world::map::gravity`).
+pub const PHYSICS_SCALE: &str = chimera_world::map::gravity::SCALE_CVAR;
+
+/// Every cvar named `sv_gravity` in any namespace (CS:S's, HL2:DM's,
+/// Combat Arms').
 fn gravity_cvars(world: &World) -> Vec<String> {
     world
         .resource::<Console>()
@@ -400,16 +379,11 @@ fn start_gravity(world: &mut World, seconds: f64, scale: f32) -> Result<String, 
         set_cvar(world, &name, &format!("{}", v * scale));
         saved.push((name, old));
     }
-    let movement = world.get_resource_mut::<MovementData>().map(|mut m| {
-        let old = m.gravity;
-        m.gravity = old * scale;
-        old
-    });
-    let physics = world.get_resource_mut::<Gravity>().map(|mut g| {
-        let old = g.0;
-        g.0 = old * scale;
-        old
-    });
+    if let Some(old) = get_cvar(world, PHYSICS_SCALE) {
+        let v = old.parse::<f32>().unwrap_or(1.0);
+        set_cvar(world, PHYSICS_SCALE, &format!("{}", v * scale));
+        saved.push((PHYSICS_SCALE.to_string(), old));
+    }
     let now = world.resource::<SimClock>().now;
     let map = world.get_resource::<LoadedMapName>().map(|m| m.0.clone());
     *world.resource_mut::<MoonGravity>() = MoonGravity {
@@ -417,8 +391,6 @@ fn start_gravity(world: &mut World, seconds: f64, scale: f32) -> Result<String, 
         since: now,
         scale,
         cvars: saved,
-        movement,
-        physics,
         map,
         counted: None,
     };
@@ -440,18 +412,10 @@ fn end_gravity(world: &mut World, say: bool) {
     if m.until.is_none() {
         return;
     }
+    // The physics scale multiplies the map's own gravity, a new map's
+    // too: put back either way.
     for (name, old) in &m.cvars {
         set_cvar(world, name, old);
-    }
-    if let (Some(old), Some(mut d)) = (m.movement, world.get_resource_mut::<MovementData>()) {
-        d.gravity = old;
-    }
-    // A map change set the map's own physics gravity already.
-    let same_map = world.get_resource::<LoadedMapName>().map(|n| n.0.clone()) == m.map;
-    if let (Some(old), true) = (m.physics, same_map)
-        && let Some(mut g) = world.get_resource_mut::<Gravity>()
-    {
-        g.0 = old;
     }
     if say {
         hud(world, banner("Gravity is back!", GRAVITY_CHANNEL, MOON_BLUE, 2.5));

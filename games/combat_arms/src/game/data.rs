@@ -93,6 +93,11 @@
 //!   announcer_skins`, kill_streaks.md A8): each weapon's
 //!   `HUDEffectOverride` section of the layout and client files, added to
 //!   Combat Arms' pack by `CaDataPlugin` (`announcer_skins`);
+//! - air strike designators (`strike_patch`, special_weapons.md 6.10):
+//!   the shell record `AirStrikeID` names gives the device hook's
+//!   `strike.shell` its projectile record's model, skins, looks in flight
+//!   and create sound, and the designator's `combat_arms:effects` its
+//!   ammo's impact record (the shells' explosion);
 //! - movement (`merge_movement`): the body type `FigureType0` replaces
 //!   `character.figure` (`StiffDuration` with it), and every `FigureType#`
 //!   is `MovementData::figures` (each vest record's body type, `gear`);
@@ -1214,6 +1219,9 @@ fn patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile, mods: Option<&Mo
             projectile_patch(doc, w, a, file, length_scale);
         }
     }
+    // An air strike designator's shells (special_weapons.md 6.10): their
+    // own record's looks and explosion.
+    strike_patch(doc, w, file);
     // The models (view_models.md 1, 2, 4; characters.md 2): the install's
     // files replace ours, its placement with them.
     if !(w.pv_model.is_empty() && w.hh_model.is_empty()) && !doc.contains_key("models") {
@@ -1502,6 +1510,67 @@ fn projectile_patch(doc: &mut Table, w: &WeaponRecord, a: &AmmoRecord, file: &We
                 t.remove("impact_record");
             }
         }
+    }
+    for s in out {
+        apply(doc, &s);
+    }
+}
+
+/// An air strike designator's shells (special_weapons.md 6.10: the
+/// weapon record `AirStrikeID` names, its default ammo's projectile
+/// record): the projectile record's world model (`Model`, `ModelScale`,
+/// `Skin#`), looks in flight (`look_table`) and create sound in the
+/// device hook's `strike.shell` (drawn in flight), and the shell ammo's
+/// `ImpactFXName` with its record as the designator's
+/// `combat_arms:effects` `impact` and `impact_record` (its explosion: the
+/// LGB's `Dirt_Burster`, the napalm's `Exp_Napalm_Shell`), with
+/// `launched` by the ammo's `Type`: the designator's own marker never
+/// detonates, so every explosion of its weapon is a shell's. The shells'
+/// flight and damage stay our document's (the spec's numbers).
+fn strike_patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile) {
+    use super::special::DEVICE;
+    const EFFECTS: &str = super::effects::data::EFFECTS;
+    let Some(shell) = w.air_strike_id.and_then(|i| file.weapons.get(i)) else { return };
+    let Some(a) = file.default_ammo(shell) else { return };
+    let has_shell = hook_table(doc, DEVICE)
+        .and_then(|d| d.get("strike"))
+        .and_then(|s| s.get("shell"))
+        .is_some();
+    if !has_shell {
+        return;
+    }
+    let mut out = Vec::new();
+    if let Some(p) = file.projectile(a) {
+        let at = |k: &'static str| -> [&'static str; 5] { ["hooks", DEVICE, "strike", "shell", k] };
+        if let Some(Value::Table(t)) = doc
+            .get_mut("hooks")
+            .and_then(|h| h.get_mut(DEVICE))
+            .and_then(|d| d.get_mut("strike"))
+            .and_then(|s| s.get_mut("shell"))
+        {
+            for k in ["model", "skins"] {
+                t.remove(k);
+            }
+        }
+        out.push(set(&at("model_scale"), floats(p.model_scale)));
+        if !p.model.is_empty() {
+            let skins = skin_paths(&p.skins).into_iter().map(Value::String).collect::<Vec<_>>();
+            out.push(set(&at("model"), super::model::normalize(&p.model)));
+            out.push(set(&at("skins"), Value::Array(skins)));
+        }
+        out.push(set(&at("look"), Value::Table(look_table(&p.look, p.lifetime))));
+        out.push(set(&at("create_sound"), super::model::normalize(&p.create_sound)));
+        out.push(set(&at("create_radius"), p.create_radius));
+    }
+    if let Some(r) = file.impact(a) {
+        if let Some(Value::Table(hooks)) = doc.get_mut("hooks") {
+            hooks.entry(EFFECTS).or_insert_with(|| Value::Table(Table::new()));
+        }
+        out.extend([
+            set(&["hooks", EFFECTS, "impact"], r.name.clone()),
+            set(&["hooks", EFFECTS, "impact_record"], Value::Table(impact_table(r, a))),
+            set(&["hooks", EFFECTS, "launched"], a.kind != GRENADE_AMMO_TYPE),
+        ]);
     }
     for s in out {
         apply(doc, &s);

@@ -70,6 +70,9 @@
 //! movement (damped, the keys ignored; a jump pressed then waits); a
 //! game mode's `ModeSpeed` scales the limit and the stamina capacity.
 //! A jump that can't happen yet stays pending until the next ground.
+//! The gravity is also the server setting `combat_arms:sv_gravity`
+//! (`GRAVITY_CVAR`, ours: replicated, so a client predicts with the
+//! server's, a party host's moon gravity).
 //!
 //! Known shortcuts (docs/tech-debt.md): Combat Arms movement
 //! (specs/combat_arms/movement.md) runs once per engine tick, the game's
@@ -118,6 +121,7 @@ use std::sync::OnceLock;
 
 use avian3d::{character_controller::move_and_slide::DepenetrationConfig, prelude::*};
 use bevy::prelude::*;
+use chimera_core::console::ConsoleAppExt;
 use chimera_sim::server_docs::DocsAppExt;
 use serde::{Deserialize, Serialize};
 
@@ -558,6 +562,14 @@ pub fn movement_data() -> &'static MovementData {
 /// default.
 pub struct CaMovementPlugin;
 
+/// `MovementData::gravity` (its magnitude, u/s² downward) as a server
+/// setting: `sv_` makes it replicated (`console::CvarScope`), so a
+/// network client predicts its own player with the server's gravity, as
+/// a Source movement's `sv_gravity`. Not the original's (the spec has no
+/// such setting; its gravity is the data's); ours for a party host's
+/// moon gravity (`party_kit::surprise`).
+pub const GRAVITY_CVAR: &str = "combat_arms:sv_gravity";
+
 impl Plugin for CaMovementPlugin {
     fn build(&self, app: &mut App) {
         let movement = super::data::CaData::of(app).movement().clone();
@@ -566,6 +578,24 @@ impl Plugin for CaMovementPlugin {
             super::data::served::MOVEMENT,
             super::data::served::movement_doc(&movement),
             chimera_sim::server_docs::DocApply::With(super::data::served::apply_movement),
+        );
+        let gravity = format!("{}", -movement.gravity);
+        // The gravity as a replicated server setting (`GRAVITY_CVAR`): a
+        // client predicts its player with the server's (a party host's
+        // moon gravity, `party_kit::surprise`).
+        app.console_cvar(
+            GRAVITY_CVAR,
+            "Combat Arms' movement gravity, u/s^2 downward (the server's; its clients predict with it).",
+            &gravity,
+            |w| w.get_resource::<MovementData>().map(|d| format!("{}", -d.gravity)),
+            |w, v| {
+                let g: f32 = v.trim().parse().map_err(|_| format!("not a number: {v}"))?;
+                if !g.is_finite() {
+                    return Err(format!("not a gravity: {v}"));
+                }
+                w.get_resource_mut::<MovementData>().ok_or("no Combat Arms movement")?.gravity = -g;
+                Ok(())
+            },
         );
         app.insert_resource(movement)
             .insert_resource(Loadout { movement: ID })

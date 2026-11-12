@@ -1,9 +1,13 @@
 //! The host's surprises (`party_kit::surprise`): `surprise airstrike`'s
 //! shells fall, blow up and kill with no one credited (no rung up or down),
-//! clients see the warning and the shells; `surprise gravity` scales every
-//! movement's gravity and puts it back, a client's replicated `sv_gravity`
-//! following, its prediction of a CS:S player agreeing with the server.
+//! clients hear the siren, see the warning and the shells as their own
+//! record and their explosions as the designators'; `surprise gravity`
+//! scales every movement's gravity and the physics world's and puts them
+//! back, a client's replicated settings following (its ragdolls' and
+//! props' gravity too), its prediction of a CS:S and a Combat Arms player
+//! agreeing with the server.
 
+use avian3d::prelude::Gravity;
 use bevy::{ecs::message::MessageCursor, prelude::*};
 use chimera_core::{
     console::Console,
@@ -17,9 +21,9 @@ use chimera_sim::{
 use chimera_world::map::{logic_view::HudMessages, loose::ShownItem};
 use combat_arms::game::{
     movement::MovementData,
-    special::{CaObject, Kind, PROJECTILE, ProjectileParams, devices::drop_strike_shell},
+    special::{CaObject, DEVICE, DeviceParams, Kind, devices::drop_strike_shell},
 };
-use party_kit::surprise::{ALARM, AirStrike, BLAST_LOOK, LGB, MoonGravity, NAPALM, WARNING};
+use party_kit::surprise::{AirStrike, LGB, MoonGravity, NAPALM, WARNING, alarm_entry};
 
 use super::gun_game::{OPEN, alive, line_up, party, place, rung, soldier};
 use super::net_gun_game::joined;
@@ -51,8 +55,21 @@ fn count_booms(mut reader: MessageReader<Detonated>, mut booms: ResMut<Booms>) {
     }
 }
 
+/// The drawn key of designator `id`'s shell (its own record's).
+fn shell_key(world: &World, id: &str) -> String {
+    world
+        .resource::<chimera_sim::weapon::data::WeaponCatalog>()
+        .get(id)
+        .and_then(|d| d.hook::<DeviceParams>(DEVICE))
+        .and_then(|d| d.strike)
+        .expect("a designator's strike")
+        .shell
+        .shown_key()
+}
+
 /// An LGB shell dropped on a player on the fourth rung: it falls from
-/// above, blows up on him, he dies with no killer, keeps his rung (no
+/// above, drawn as its own record, blows up on him as the designator's
+/// shells do, he dies with no killer, keeps his rung (no
 /// "suicide" rung down), the other player gains nothing, and his death
 /// counts on his score.
 #[test]
@@ -71,7 +88,9 @@ fn an_air_strike_shell_kills_with_no_one_credited() {
     let deaths = sim.app.world().get::<Score>(b).copied().unwrap_or_default().deaths;
     let mut died = MessageCursor::<Died>::default();
     let ground = at - Vec3::Y * 0.95;
-    drop_strike_shell(sim.app.world_mut(), LGB, ground, Some(BLAST_LOOK)).expect("the LGB's shell");
+    let shell = drop_strike_shell(sim.app.world_mut(), LGB, ground).expect("the LGB's shell");
+    let drawn = sim.app.world().get::<ShownItem>(shell).expect("drawn").0.clone();
+    assert_eq!(drawn, shell_key(sim.app.world(), LGB), "drawn as its own record");
     let first = shells(sim.app.world_mut());
     assert_eq!(first.len(), 1);
     assert_eq!(first[0].0, None, "no owner");
@@ -99,7 +118,7 @@ fn an_air_strike_shell_kills_with_no_one_credited() {
     assert_eq!(d.damage.weapon, Some(LGB));
     assert!(!alive(&sim, b));
     let booms = &sim.app.world().resource::<Booms>().0;
-    assert!(booms.iter().any(|(w, p)| *w == BLAST_LOOK && p.distance(ground) < 2.0), "blew up on him, as a rocket: {booms:?}");
+    assert!(booms.iter().any(|(w, p)| *w == LGB && p.distance(ground) < 2.0), "blew up on him, as the LGB's shells: {booms:?}");
     sim.seconds(0.5);
     assert_eq!(rung(&sim, b), 3, "no rung down");
     assert_eq!(rung(&sim, a), 0, "no rung up for anyone");
@@ -119,7 +138,7 @@ fn a_napalm_shell_burns() {
     place(&mut sim, b, at);
     sim.seconds(0.2);
     // Beside him: no blast, the sphere (350 u) reaches him.
-    drop_strike_shell(sim.app.world_mut(), NAPALM, at + Vec3::new(2.0, -0.95, 0.0), Some(BLAST_LOOK)).expect("the napalm shell");
+    drop_strike_shell(sim.app.world_mut(), NAPALM, at + Vec3::new(2.0, -0.95, 0.0)).expect("the napalm shell");
     let mut burnt = false;
     for _ in 0..(5.0 * sim.tick_hz()) as u32 {
         sim.ticks(1);
@@ -150,9 +169,10 @@ fn the_command_drops_its_shells_after_the_warning() {
     assert!(s.drops.is_empty());
 }
 
-/// Over the network: every client sees the warning (map logic's HUD
-/// message), the shells in flight (drawn by their record's key) and their
-/// explosions.
+/// Over the network: every client hears the siren and sees the warning
+/// (map logic's HUD message), the shells in flight (drawn by their own
+/// record's key) and their explosions (the designators' weapons: their
+/// shells' impact records).
 #[test]
 fn clients_see_the_warning_the_shells_and_the_blasts() {
     let mut sim = joined();
@@ -166,24 +186,17 @@ fn clients_see_the_warning_the_shells_and_the_blasts() {
         let shown: Vec<String> = hud.channels.iter().flatten().map(|(m, _)| m.text.clone()).collect();
         assert!(shown.iter().any(|t| t.contains("AIR STRIKE")), "client {i}'s HUD: {shown:?}");
         let heard = &c.app.world().resource::<Heard>().0;
-        assert!(heard.iter().any(|e| e == ALARM), "client {i} heard the alarm: {heard:?}");
+        assert!(heard.iter().any(|e| *e == alarm_entry()), "client {i} heard the siren: {heard:?}");
+        assert!(!heard.iter().any(|e| e.starts_with("Radio.")), "no radio call: {heard:?}");
     }
-    // Drawn as the RPG-7's rocket: a key every client's map loads.
-    let rocket = sim
-        .server
-        .app
-        .world()
-        .resource::<chimera_sim::weapon::data::WeaponCatalog>()
-        .get(BLAST_LOOK)
-        .and_then(|d| d.hook::<ProjectileParams>(PROJECTILE))
-        .expect("the rocket's projectile")
-        .shown_key();
+    // Drawn as their own record: keys every client's map loads.
+    let keys = [shell_key(sim.server.app.world(), LGB), shell_key(sim.server.app.world(), NAPALM)];
     let mut seen = [false; 2];
     for _ in 0..600 {
         sim.ticks(1);
         for (i, c) in sim.clients.iter_mut().enumerate() {
             let w = c.app.world_mut();
-            seen[i] |= w.query::<&ShownItem>().iter(w).any(|s| s.0 == rocket);
+            seen[i] |= w.query::<&ShownItem>().iter(w).any(|s| keys.contains(&s.0));
         }
         if sim.server.app.world().resource::<AirStrike>().drops.is_empty()
             && shells(sim.server.app.world_mut()).is_empty()
@@ -193,10 +206,10 @@ fn clients_see_the_warning_the_shells_and_the_blasts() {
     }
     sim.ticks(30);
     for (i, c) in sim.clients.iter().enumerate() {
-        assert!(seen[i], "client {i} drew the shells as rockets");
+        assert!(seen[i], "client {i} drew the shells as their record");
         let booms = &c.app.world().resource::<Booms>().0;
         assert_eq!(booms.len(), 5, "client {i}'s explosions: {booms:?}");
-        assert!(booms.iter().all(|(w, _)| *w == BLAST_LOOK), "drawn as the rocket's: {booms:?}");
+        assert!(booms.iter().all(|(w, _)| [LGB, NAPALM].contains(w)), "drawn as the designators' shells: {booms:?}");
     }
 }
 
@@ -205,9 +218,10 @@ fn cvar(world: &mut World, name: &str) -> Option<String> {
     get(world)
 }
 
-/// `surprise gravity 2 0.2`: CS:S's `sv_gravity` (replicated: the clients
-/// take it), HL2:DM's and Combat Arms' movement gravity at a fifth, then
-/// back.
+/// `surprise gravity 2 0.2`: CS:S's `sv_gravity`, HL2:DM's, Combat
+/// Arms' movement gravity and the physics world's at a fifth, then back;
+/// the clients take them all (replicated): their prediction's and their
+/// own ragdolls' and props' gravity.
 #[test]
 fn moon_gravity_applies_and_reverts_on_server_and_clients() {
     let mut sim = joined();
@@ -215,6 +229,7 @@ fn moon_gravity_applies_and_reverts_on_server_and_clients() {
     let before = cvar(server, "cs_source:sv_gravity").expect("CS:S's sv_gravity");
     let hl2 = cvar(server, "hl2dm:sv_gravity").expect("HL2:DM's sv_gravity");
     let ca = server.resource::<MovementData>().gravity;
+    let physics = server.resource::<Gravity>().0;
     let b: f32 = before.parse().unwrap();
     server.resource_mut::<Console>().submit("surprise gravity 2 0.2");
     sim.ticks(20);
@@ -222,9 +237,16 @@ fn moon_gravity_applies_and_reverts_on_server_and_clients() {
     assert_eq!(cvar(server, "cs_source:sv_gravity").unwrap().parse::<f32>().unwrap(), b * 0.2);
     assert_eq!(cvar(server, "hl2dm:sv_gravity").unwrap().parse::<f32>().unwrap(), hl2.parse::<f32>().unwrap() * 0.2);
     assert_eq!(server.resource::<MovementData>().gravity, ca * 0.2);
+    assert!((server.resource::<Gravity>().0 - physics * 0.2).length() < 1e-4, "the server's physics");
     for i in 0..2 {
         let w = sim.clients[i].app.world_mut();
         assert_eq!(cvar(w, "cs_source:sv_gravity").unwrap().parse::<f32>().unwrap(), b * 0.2, "client {i} predicts with it");
+        assert!((w.resource::<MovementData>().gravity - ca * 0.2).abs() < 1e-3, "client {i}'s Combat Arms movement");
+        assert!(
+            (w.resource::<Gravity>().0 - physics * 0.2).length() < 1e-4,
+            "client {i}'s ragdolls and props fall at the server's: {:?}",
+            w.resource::<Gravity>().0
+        );
         let hud = w.resource::<HudMessages>();
         assert!(hud.channels.iter().flatten().any(|(m, _)| m.text.starts_with("Moon gravity!")), "client {i}'s banner: {:?}", hud.channels);
     }
@@ -234,10 +256,13 @@ fn moon_gravity_applies_and_reverts_on_server_and_clients() {
     assert_eq!(cvar(server, "cs_source:sv_gravity").unwrap(), before);
     assert_eq!(cvar(server, "hl2dm:sv_gravity").unwrap(), hl2);
     assert_eq!(server.resource::<MovementData>().gravity, ca);
+    assert_eq!(server.resource::<Gravity>().0, physics);
     sim.ticks(20);
     for i in 0..2 {
         let w = sim.clients[i].app.world_mut();
         assert_eq!(cvar(w, "cs_source:sv_gravity").unwrap(), before, "client {i} back");
+        assert_eq!(w.resource::<MovementData>().gravity, ca, "client {i}'s Combat Arms movement back");
+        assert_eq!(w.resource::<Gravity>().0, physics, "client {i}'s physics back");
         let hud = w.resource::<HudMessages>();
         assert!(hud.channels.iter().flatten().any(|(m, _)| m.text.starts_with("Gravity is back")), "client {i}'s end");
     }
@@ -261,9 +286,9 @@ fn jumps(sim: &mut chimera_net::harness::NetSim, ticks: u32) -> (u64, f32) {
 
 /// A client playing CS:S's movement (the first rung's Glock) jumps under
 /// moon gravity: it predicts with the replicated `sv_gravity`, so the
-/// server agrees with it after the switch. A Combat Arms rung's movement
-/// has no replicated gravity: the server corrects it (the error is
-/// printed, and stays small).
+/// server agrees with it after the switch; on a Combat Arms rung it
+/// predicts with the replicated `combat_arms:sv_gravity`: no corrections
+/// either.
 #[test]
 fn a_cs_source_players_prediction_agrees_under_moon_gravity() {
     let mut sim = joined();
@@ -279,6 +304,5 @@ fn a_cs_source_players_prediction_agrees_under_moon_gravity() {
     set_rung(server, them, ca, &ladder);
     sim.ticks(120);
     let (errors, worst) = jumps(&mut sim, 360);
-    println!("Combat Arms' movement under moon gravity: {errors} prediction errors in 360 ticks, worst {worst} m");
-    assert!(worst < 0.5, "the corrections stay small: {worst} m");
+    assert_eq!(errors, 0, "Combat Arms' movement predicted with the server's gravity (worst {worst} m)");
 }

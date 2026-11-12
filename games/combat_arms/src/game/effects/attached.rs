@@ -30,9 +30,7 @@
 //!   create sounds are server sounds, ready by entry name on clients:
 //!   `sounds::create_sounds`).
 //!
-//! Known shortcuts (docs/tech-debt.md): `PlaySound` keys of attached
-//! groups play nothing (the stock projectile and eye groups have none);
-//! the activate sound's "velocity is zero" is the object's own where it
+//! Known shortcuts (docs/tech-debt.md): the activate sound's "velocity is zero" is the object's own where it
 //! has one (a network client has none: whether it moved since the last
 //! frame); the flare is additive (the spec says unlit only) and
 //! square (`FlareScale`'s x); a character's sockets come from the posed

@@ -1949,6 +1949,7 @@ fn spawn_fx(
     world: WorldTracer,
     parents: Query<(&Transform, Option<&super::characters::CaPose>, Option<&MovementState>)>,
     library: library::Library,
+    mut loops: MessageWriter<crate::game::view_model::attached::CaLoopSound>,
 ) {
     let Some(lib) = library.get() else {
         requests.clear();
@@ -1969,4 +1970,6 @@ fn spawn_fx(
     }
     let (Some(mut particles), Some(materials)) = (particles, materials) else { return };
     fx.step(time.delta_secs(), &lib, &mut particles, &materials.0, &world);
+    // Its sound keys' starts and stops (`sounds::loops` plays them).
+    loops.write_batch(fx.take_sounds());
 }

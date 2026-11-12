@@ -40,6 +40,8 @@ pub fn physics_plugins() -> bevy::app::PluginGroupBuilder {
         .build()
         .disable::<PhysicsInterpolationPlugin>()
         .add(ContactDefaults)
+        // The physics gravity's server scale (props and ragdolls).
+        .add(map::gravity::GravityScalePlugin)
 }
 
 /// Every body predicts its contacts as far ahead as its velocity reaches

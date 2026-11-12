@@ -45,6 +45,7 @@ pub mod hazards;
 pub use hazards::{SpawnHazardAppExt, SpawnHazards};
 pub mod fish;
 pub mod fire;
+pub mod gravity;
 pub use entities::{BrushSurface, MapBrushEntity, MapEntities, MapEntity, MapHull};
 pub mod beams;
 pub mod breakables;
@@ -283,7 +284,7 @@ pub fn unload_map(world: &mut World) {
     for e in modelled {
         world.entity_mut(e).remove::<(BodyModel, crate::core::Hitboxes)>();
     }
-    world.insert_resource(Gravity::default());
+    gravity::set_map_gravity(world, Gravity::default().0);
     let hooks = world.get_resource::<MapHooks>().map(|h| h.unload.clone()).unwrap_or_default();
     for hook in hooks {
         hook(world);

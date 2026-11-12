@@ -119,13 +119,19 @@ fn launchers_as_the_install_has_them() {
     assert!(shots[0].2.abs() < 1e-3, "a level shot leaves level: {:?}", shots[0]);
 }
 
-/// A party host's air strike (`special::devices::drop_strike_shell` with
-/// `STRIKE_LOOK`): the sounds its shells play beyond the map's load (the
-/// rocket's explosion and flight sounds), which Combat Arms' `base` set
-/// holds (`chimera_pack sets`), all named and read from the install.
+/// The air strike designators on the install (special_weapons.md 6.10):
+/// their shells drawn as their own record (`LGB_Shell`'s missile model,
+/// its group in flight) and blowing up as the shell ammo's impact record
+/// (`Dirt_Burster`, `Exp_Napalm_Shell`), and the files a party host's
+/// air strike plays and draws beyond the map's load
+/// (`special::devices::strike_files`, Combat Arms' `base` set), all read
+/// from the install.
 #[test]
-fn the_air_strike_shells_sounds_are_named_for_base() {
-    use combat_arms::game::{effects::data::CaFxTables, special::devices::strike_sound_files};
+fn the_air_strike_shells_are_their_own_records() {
+    use combat_arms::game::{
+        effects::data::{CaFxTables, CaWeaponFx, EFFECTS},
+        special::{DEVICE, DeviceParams, devices::strike_files},
+    };
     if LocalConfig::load().ok().and_then(|c| c.game_path(GAME)).is_none() {
         eprintln!("skipping: no Combat Arms install configured");
         return;
@@ -135,12 +141,43 @@ fn the_air_strike_shells_sounds_are_named_for_base() {
         eprintln!("skipping: the install's attribute data isn't readable (the V1 key)");
         return;
     }
-    let files = strike_sound_files(ca.weapon_set(), CaFxTables::built_in());
-    eprintln!("the air strike's sounds: {files:?}");
-    assert!(files.len() >= 2, "the explosion's and the flight's: {files:?}");
-    assert!(files.iter().any(|f| f.contains("snd")), "{files:?}");
-    let mount = ca.mount().expect("the install's mount");
-    for f in &files {
-        assert!(mount.read(f).is_ok(), "{f} reads from the install");
+    let tables = CaFxTables::built_in();
+    for (id, impact, group) in [
+        ("combat_arms:lgb", "Dirt_Burster", "MOAB_EXP"),
+        ("combat_arms:airstrike_napalm", "Exp_Napalm_Shell", "exp_napalm_SH"),
+    ] {
+        let w = ca.weapon_set().weapons.iter().find(|w| w.id == id).expect(id);
+        let shell = w.hook::<DeviceParams>(DEVICE).and_then(|d| d.strike).expect("a strike").shell;
+        let model = shell.model.as_deref().unwrap_or_default();
+        assert!(model.ends_with("as_missile_01.ltb"), "{id}'s shell model: {model:?}");
+        assert!(!shell.skins.is_empty(), "{id}'s shell skins");
+        assert_eq!(shell.look.fx, "NVL_Head_Tail", "{id}'s shell's group in flight");
+        let fx = w.hook::<CaWeaponFx>(EFFECTS).expect("effects");
+        assert_eq!(fx.impact, impact, "{id}'s explosion record");
+        let record = fx.impact_of(tables).expect("its record");
+        assert_eq!(record.fx, group, "{id}'s explosion group");
+        assert!(!record.sound.is_empty(), "{id}'s explosion sound");
     }
+    let mount = ca.mount().expect("the install's mount");
+    let fx = mount
+        .read(combat_arms::game::effects::library::FX_FILE)
+        .ok()
+        .and_then(|b| lithtech_formats::fxf::FxFile::parse(&String::from_utf8_lossy(&b)).ok())
+        .expect("the effect file");
+    // The napalm's fire is its explosion group's burning particle systems,
+    // drawn for (about) its burning sphere's life (5 s).
+    let napalm = ca.weapon_set().weapons.iter().find(|w| w.id == "combat_arms:airstrike_napalm").unwrap();
+    let burn = napalm.hook::<DeviceParams>(DEVICE).and_then(|d| d.strike).unwrap().shell.over_time.expect("a burning sphere");
+    let group = fx.group(&napalm.hook::<CaWeaponFx>(EFFECTS).unwrap().impact_of(tables).unwrap().fx).expect("its group");
+    let fire_ends = group.keys.iter().filter(|k| k.kind == "ParticleSystem").map(|k| k.end).fold(0.0, f32::max);
+    eprintln!("napalm: group {} of {} s, fire to {fire_ends} s, sphere {} s", group.name, group.length(), burn.lifetime);
+    assert!(group.length() >= burn.lifetime - 0.01, "the group lasts the sphere's life");
+    assert!(fire_ends >= burn.lifetime - 1.0, "the fire burns most of it: {fire_ends} s");
+    let files = strike_files(ca.weapon_set(), tables, Some(&fx));
+    eprintln!("the air strike's files: {files:?}");
+    for want in ["as_missile_01.ltb", "nvl_explosion.wav", "moab_exp.wav", "incomming.wav", "siren01.wav"] {
+        assert!(files.iter().any(|f| f.ends_with(want)), "{want} in {files:?}");
+    }
+    let missing: Vec<&String> = files.iter().filter(|f| mount.read(f).is_err()).collect();
+    assert!(missing.is_empty(), "every file reads from the install: {missing:?}");
 }

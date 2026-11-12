@@ -57,10 +57,12 @@
 //! the game's `base` and `players`; the offer names the loaded map's set,
 //! in the pool or not). `map/<name>` and Combat Arms' `base` (its effect
 //! tables' sounds: impacts, shells, surfaces, the event sounds and the
-//! heartbeat, the infection and grenade call-outs; the default
+//! heartbeat, the infection and grenade call-outs, the result screen's
+//! win and lose sounds; the default
 //! character's first-person hand model and skins; the debris table with
 //! its pieces' models, skins and sounds; its cue pack's sounds; the air
-//! strike surprise's shells' sounds, `special::devices::strike_sound_files`)
+//! strike surprise's alarm and its shells' model, sounds and effect
+//! groups' files, `special::devices::strike_files`)
 //! and CS:S's `base` (its minigame cue pack's sounds) are merged into what the manifest has (sets recorded from
 //! logs too); the other sets are replaced. `--only <prefix>` records only
 //! the sets whose names start with it (`--only character/`), leaving the
@@ -538,6 +540,10 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                         let _ = tapped.read(&normalize(file));
                     }
                 }
+                // The result screen's win and lose sounds (a match's end).
+                for file in [combat_arms::game::parts::RESULT_WIN_SOUND, combat_arms::game::parts::RESULT_LOSE_SOUND] {
+                    let _ = tapped.read(&normalize(file));
+                }
                 // The default character's first-person hands, on every
                 // view model (`view_model::hands::default_choice`).
                 if let Some(choice) = view_model::hands::default_choice(ca.characters()) {
@@ -558,10 +564,24 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                         }
                     }
                 }
-                // A party host's air strike: its shells' explosion and
-                // flight sounds (`special::devices::strike_sound_files`).
-                for path in combat_arms::game::special::devices::strike_sound_files(ca.weapon_set(), CaFxTables::built_in()) {
-                    let _ = tapped.read(&path);
+                // A party host's air strike: its alarm, its shells'
+                // model, skins, sounds and their effect groups' files
+                // (`special::devices::strike_files`), sprites with their
+                // frames, models as they load.
+                let fx = mount
+                    .read(combat_arms::game::effects::library::FX_FILE)
+                    .ok()
+                    .and_then(|b| lithtech_formats::fxf::FxFile::parse(&String::from_utf8_lossy(&b)).ok());
+                for path in combat_arms::game::special::devices::strike_files(ca.weapon_set(), CaFxTables::built_in(), fx.as_ref()) {
+                    if path.ends_with(".ltb") {
+                        let _ = combat_arms::game::model::load(&path, &read);
+                    } else if let Some(bytes) = tapped.read(&path).ok().filter(|_| path.ends_with(".spr"))
+                        && let Ok(sprite) = lithtech_formats::spr::Sprite::parse(&bytes)
+                    {
+                        for frame in &sprite.frames {
+                            let _ = tapped.read(&normalize(frame));
+                        }
+                    }
                 }
                 out.push(("base".into(), take()));
             }

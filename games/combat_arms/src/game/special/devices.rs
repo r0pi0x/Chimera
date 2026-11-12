@@ -23,7 +23,8 @@
 //! surprise): one shell of a designator's `strike.shell` with no owner,
 //! straight down onto a floor point from `AirDropHeight` or from under
 //! the sky or ceiling above it if that is lower (`strike_start`), drawn
-//! in flight and blowing up as a projectile weapon the caller names.
+//! in flight as the shell's record and blowing up as the designator's
+//! shells do; `strike_files` names what it plays and draws.
 
 use bevy::prelude::*;
 
@@ -854,27 +855,17 @@ pub fn strike_start(world: &mut World, designator: &str, ground: Vec3) -> Option
 /// `ground` (metres) from `strike_start`'s point, with no owner: a strike
 /// of the world's (a party's surprise). Its blast and burning sphere are
 /// the shell's and credit nobody (`Damage::attacker` None, the damage's
-/// weapon the designator's). With `look` (a loaded weapon of the
-/// `combat_arms:projectile` hook) it is drawn in flight as that weapon's
-/// projectile (model, skin, looks in flight) and its explosion drawn and
-/// heard as that weapon's: our designators' shells have no model, and
-/// their own explosion records aren't any loaded weapon's, while a client
-/// draws only projectile models its weapon set names and explosions of
-/// weapons it knows. None: no such designator.
-pub fn drop_strike_shell(world: &mut World, designator: &str, ground: Vec3, look: Option<&str>) -> Option<Entity> {
+/// weapon the designator's); it is drawn as the shell's record (its model
+/// and looks in flight) and blows up as the designator's shells do (its
+/// `combat_arms:effects` impact: the shell's record, `data::strike_patch`).
+/// None: no such designator.
+pub fn drop_strike_shell(world: &mut World, designator: &str, ground: Vec3) -> Option<Entity> {
     let (start, _) = strike_start(world, designator, ground)?;
     let catalog = world.get_resource::<crate::weapon::data::WeaponCatalog>()?;
     let data: &'static WeaponData = catalog.get(designator)?;
-    let mut shell = data.hook::<DeviceParams>(super::DEVICE)?.strike?.shell;
-    let stand_in = look.and_then(|l| catalog.get(l));
-    if let Some(p) = stand_in.and_then(|d| d.hook::<super::ProjectileParams>(super::PROJECTILE)) {
-        shell.model = p.model;
-        shell.model_scale = p.model_scale;
-        shell.skins = p.skins;
-        shell.look = p.look;
-    }
+    let shell = data.hook::<DeviceParams>(super::DEVICE)?.strike?.shell;
     let unit = data.units.length;
-    let mut o = impact::projectile(
+    let o = impact::projectile(
         data.id.as_str(),
         None,
         unit,
@@ -883,7 +874,6 @@ pub fn drop_strike_shell(world: &mut World, designator: &str, ground: Vec3, look
         start / unit,
         Vec3::new(0.0, -shell.speed, 0.0),
     );
-    o.look = stand_in.map(|d| d.id.as_str());
     Some(spawn_object(world, o))
 }
 
@@ -895,31 +885,66 @@ pub fn strike_floor(world: &mut World, at: Vec3, depth: f32) -> Option<Vec3> {
     gw.cast(at, at - Vec3::Y * depth, None).map(|(d, ..)| at - Vec3::Y * d)
 }
 
-/// The projectile weapon a party's air strike shells are drawn and blow up
-/// as (`drop_strike_shell`'s `look`): the RPG-7's rocket, whose model
-/// every client's map loads with the weapon set's projectiles.
-pub const STRIKE_LOOK: &str = "combat_arms:rpg-7";
+/// The sound a party host's air strike warns with (`party_kit::
+/// surprise`): an air-raid siren of the install's (`desert_fox`'s). No
+/// spec or record names an air strike warning (the designators' strike
+/// has none: special_weapons.md 6.10), so this is our pick.
+pub const STRIKE_ALARM: &str = "snd/desert_fox/siren01.wav";
 
-/// The sound files a client plays for shells drawn as `STRIKE_LOOK` that
-/// it doesn't load with the map: its explosion's (the impact record's
-/// sound) and its projectile's in flight (fly, activate, finish and
-/// create sounds), normalized, sorted, once each. Combat Arms' `base` set
-/// on the asset service holds them (`chimera_pack sets`), so a client
-/// without the install has them before the first shell falls.
-pub fn strike_sound_files(set: &crate::weapon::data::WeaponSet, tables: &crate::game::effects::data::CaFxTables) -> Vec<String> {
+/// The files an air strike's shells play or draw beyond what a map's
+/// load reads, and the alarm (`STRIKE_ALARM`): for every designator of
+/// `set` (a `strike` in its device hook), the shell's model and skins and
+/// its looks' files (`special::object_files`), its explosion's sound
+/// (`CaWeaponFx::impact_of`), and every file the effect groups of its
+/// flight and explosion name, with the groups those create (`fx`: the
+/// effect file; textures, sprites, sounds, models), normalized, sorted,
+/// once each. Combat Arms' `base` set on the asset service holds them
+/// (`chimera_pack sets`), so a client without the install has them
+/// before the first shell falls.
+pub fn strike_files(
+    set: &crate::weapon::data::WeaponSet,
+    tables: &crate::game::effects::data::CaFxTables,
+    fx: Option<&lithtech_formats::fxf::FxFile>,
+) -> Vec<String> {
     use crate::game::effects::data::{CaWeaponFx, EFFECTS};
-    let Some(w) = set.get(STRIKE_LOOK) else { return Vec::new() };
-    let mut out = Vec::new();
-    if let Some(fx) = w.hook::<CaWeaponFx>(EFFECTS)
-        && let Some(i) = fx.impact_of(tables)
-        && i.sound != "surface"
-    {
-        out.push(i.sound.clone());
+    let mut out = vec![STRIKE_ALARM.to_string()];
+    let mut groups = Vec::new();
+    for w in &set.weapons {
+        let Some(shell) = w.hook::<DeviceParams>(super::DEVICE).and_then(|d| d.strike).map(|s| s.shell) else { continue };
+        out.extend(shell.look.files().into_iter().map(String::from));
+        out.push(shell.create_sound.clone());
+        out.extend(shell.model.clone());
+        out.extend(shell.skins.iter().cloned());
+        groups.push(shell.look.fx.clone());
+        if let Some(fx) = w.hook::<CaWeaponFx>(EFFECTS)
+            && let Some(i) = fx.impact_of(tables)
+        {
+            if i.sound != "surface" {
+                out.push(i.sound.clone());
+            }
+            groups.push(i.fx.clone());
+        }
     }
-    if let Some(p) = w.hook::<super::ProjectileParams>(super::PROJECTILE) {
-        out.extend([p.look.fly_sound, p.look.activate_sound, p.look.finish_sound, p.create_sound]);
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(n) = groups.pop() {
+        let Some(fx) = fx else { break };
+        if n.is_empty() || !seen.insert(n.to_lowercase()) {
+            continue;
+        }
+        let Some(g) = fx.group(&n) else { continue };
+        for k in &g.keys {
+            groups.extend(k.string("FXName").map(str::to_string));
+            groups.extend(k.string("SplatEffect").map(str::to_string));
+            for p in &k.props {
+                if let lithtech_formats::fxf::FxValue::Path { path, .. } = &p.value
+                    && path != "..."
+                {
+                    out.push(path.clone());
+                }
+            }
+        }
     }
-    let mut out: Vec<String> = out.iter().filter(|s| !s.is_empty()).map(|s| crate::game::model::normalize(s)).collect();
+    let mut out: Vec<String> = out.iter().filter(|s| !s.trim().is_empty()).map(|s| crate::game::model::normalize(s)).collect();
     out.sort_unstable();
     out.dedup();
     out
