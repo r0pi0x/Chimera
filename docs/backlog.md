@@ -874,6 +874,15 @@ the original's own behaviour isn't a bug (say so instead).
   banner (37 % down; "2 KILLS" covered "Level up" before). One callout
   on every frame of a swap either way (party_kit
   `hud::a_rung_up_across_games_shows_one_level_up_callout`).
+- **Two kill feeds on an HL2:DM rung: fixed, confirm in a playtest**
+  (the user's recording, 2026-11-12). With HL2:DM's HUD up the shell's
+  feed had HL2:DM's own death notices (orange, skull) under it: HL2:DM's
+  HUD fed them from the shell's entries without checking the party's
+  flag. Every game's own feed now passes one gate
+  (`kill_feed::OwnKillFeed`) and declares itself (`GameKillFeeds`); the
+  party's tests (`kill_feed::with_every_games_hud_a_kill_is_one_line`,
+  `every_party_game_with_a_hud_declares_its_own_feed`) count every feed
+  on each game's HUD. Plain HL2:DM keeps its notices.
 - **One generic kill feed in the party apps: fixed, confirm in a
   playtest.** A kill made just before a rung swap showed only in the
   previous game's feed, and the two games' feeds sat on opposite sides.

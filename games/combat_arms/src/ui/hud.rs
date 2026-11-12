@@ -41,7 +41,7 @@
 //! icon from `client::weapon_icons::WeaponIcons`, else its display name
 //! (`GunNames`); the install's kill icons are registered there for the
 //! other games' feeds, its headshot badge as the headshot mark. While the
-//! app draws one feed for every HUD (`client::kill_feed::SharedKillFeed`,
+//! app draws one feed for every HUD (`client::kill_feed::OwnKillFeed`,
 //! the party apps) this one stays empty.
 //!
 //! Inputs: the viewed player (the local one, or whom it watches in first
@@ -402,6 +402,11 @@ pub struct CaHudStatePlugin;
 
 impl Plugin for CaHudStatePlugin {
     fn build(&self, app: &mut App) {
+        // Its kill feed, counted for the one-feed check (none while the
+        // app draws the shared feed: `kill_feed::OwnKillFeed`).
+        crate::client::kill_feed::GameKillFeedAppExt::register_game_kill_feed(app, crate::game::GAME, |w| {
+            w.get_resource::<CaHud>().map_or(0, |h| h.feed.len())
+        });
         app.init_resource::<HudScreen>()
             .init_resource::<CaUi>()
             .init_resource::<HudOptions>()
@@ -628,10 +633,10 @@ fn track(
     characters: Query<(Entity, &Health, Option<&Team>, Has<Dead>), With<Intent>>,
     (names, settings): (Query<NameParts>, Option<Res<NetSettings>>),
     (held, ids, carry, npcs): (Query<&Inventory>, Query<&Weapon>, Query<&CaCarry>, Query<(), With<CaNpc>>),
-    (rounds, view, shared): (
+    (rounds, view, own_feed): (
         Option<Res<RoundRestarts>>,
         Option<Res<CaMatchView>>,
-        Option<Res<crate::client::kill_feed::SharedKillFeed>>,
+        crate::client::kill_feed::OwnKillFeed,
     ),
 ) {
     let (ms, now) = clocks(&real, &time, sim.as_deref());
@@ -711,7 +716,7 @@ fn track(
     }
     // The kill feed (D5, Corrections 7): a self-kill names its killer.
     // None while the app draws one feed for every HUD (`client::kill_feed`).
-    if shared.is_some() {
+    if !own_feed.shown() {
         died.clear();
         memory.feed.lines.clear();
     }

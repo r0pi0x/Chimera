@@ -30,9 +30,16 @@
 //!   `weapon_icons::ink_rows`; a glyph cut to fit, `icon_slot`), so rows are
 //!   equal with any icon or none.
 //! - **`SharedKillFeed`**: the app's flag that this feed is the one; the
-//!   games' own feeds (CS:S's death notices, Combat Arms' kill feed) and
-//!   the shell's fallback HUD's leave theirs out while it is in. Plain
-//!   CS:S and Combat Arms never insert it, so theirs are unchanged.
+//!   games' own feeds (CS:S's death notices, Combat Arms' kill feed,
+//!   HL2:DM's death notices) and the shell's fallback HUD's leave theirs
+//!   out while it is in. Plain CS:S, Combat Arms and HL2:DM never insert
+//!   it, so theirs are unchanged.
+//! - **A game's own feed** goes through one gate, `OwnKillFeed` (shown or
+//!   not; the shell's entries only while shown), and registers how many
+//!   lines it shows (`GameKillFeedAppExt::register_game_kill_feed`,
+//!   `GameKillFeeds`): the party apps' tests require every composed game
+//!   with a HUD to have registered, and count every feed after a kill, so
+//!   a game whose feed forgets the flag shows up as a second feed there.
 //!
 //! Known shortcuts: no penetration (wallbang) flag: the killing hit
 //! doesn't say whether it went through something; names are taken at the
@@ -116,6 +123,62 @@ fn name_font(fonts: Option<&UiFonts>, size: f32) -> TextFont {
 /// games' own feeds stay out while it is in.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SharedKillFeed;
+
+/// The one gate a game's HUD passes before it shows its own kill feed
+/// (death notices, a feed panel): `shown` is false while the app draws
+/// the shared feed (`SharedKillFeed`), and `entries` (this module's state,
+/// for a HUD that draws from it) is then empty. A game's own feed reads
+/// this instead of checking the flag itself, and registers how many lines
+/// it shows (`GameKillFeedAppExt::register_game_kill_feed`).
+#[derive(bevy::ecs::system::SystemParam)]
+pub struct OwnKillFeed<'w> {
+    shared: Option<Res<'w, SharedKillFeed>>,
+    feed: Option<Res<'w, KillFeed>>,
+}
+
+impl OwnKillFeed<'_> {
+    /// Whether the game's HUD shows its own feed (no shared feed).
+    pub fn shown(&self) -> bool {
+        self.shared.is_none()
+    }
+
+    /// The shell's entries, oldest first, while the game's own feed shows
+    /// (none while the shared feed is the one).
+    pub fn entries(&self) -> impl Iterator<Item = &KillEntry> {
+        self.feed.as_deref().filter(|_| self.shown()).into_iter().flat_map(|f| f.entries.iter())
+    }
+}
+
+/// How many lines a game's own kill feed shows now (its HUD's state).
+pub type FeedLines = fn(&World) -> usize;
+
+/// Each game's own kill feed by its game id, as its HUD registers it
+/// (`GameKillFeedAppExt`): what a check reads to see that only one feed
+/// shows (the party apps' tests count every registered feed after a kill).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct GameKillFeeds(pub Vec<(&'static str, FeedLines)>);
+
+impl GameKillFeeds {
+    /// The lines each registered game's feed shows now.
+    pub fn lines(world: &World) -> Vec<(&'static str, usize)> {
+        world.get_resource::<Self>().map_or_else(Vec::new, |f| f.0.iter().map(|(g, n)| (*g, n(world))).collect())
+    }
+}
+
+/// A game's HUD declares its own kill feed (once per game).
+pub trait GameKillFeedAppExt {
+    fn register_game_kill_feed(&mut self, game: &'static str, lines: FeedLines) -> &mut Self;
+}
+
+impl GameKillFeedAppExt for App {
+    fn register_game_kill_feed(&mut self, game: &'static str, lines: FeedLines) -> &mut Self {
+        let mut feeds = self.world_mut().get_resource_or_init::<GameKillFeeds>();
+        if !feeds.0.iter().any(|(g, _)| *g == game) {
+            feeds.0.push((game, lines));
+        }
+        self
+    }
+}
 
 /// One side of a kill.
 #[derive(Clone, Debug, PartialEq)]

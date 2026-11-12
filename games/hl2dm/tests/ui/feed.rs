@@ -1,7 +1,8 @@
 //! The HUD fed by the running game (`ui::systems`, on `Hl2Sim` and the
 //! greybox with the stand-in look): the secondary ammo panel's counts and
 //! table (hud.md 4.6), target ID's ray (hud.md 11), the history's rows
-//! from the server's messages (hud.md 9).
+//! from the server's messages (hud.md 9), the death notices from the
+//! shell's kill-feed entries, none while the app draws one feed (hud.md 10).
 
 use bevy::prelude::*;
 use chimera_core::core::{Health, Intent, LocalPlayer};
@@ -31,7 +32,15 @@ struct Fed {
 
 /// Me with the HUD's systems, far above the greybox's clutter.
 fn fed() -> Fed {
-    let mut sim = Sim::new(Hl2Sim, GreyboxMapPlugin);
+    fed_with(|_| {})
+}
+
+/// `fed` with `extra` plugins and resources added first.
+fn fed_with(extra: impl FnOnce(&mut App)) -> Fed {
+    let mut sim = Sim::with(Hl2Sim, |app| {
+        app.add_plugins(GreyboxMapPlugin);
+        extra(app);
+    });
     let (hud, look) = base();
     let mut state = Hl2dmHud::default();
     state.hud = Some(hud);
@@ -286,4 +295,64 @@ fn the_scoreboard_names_the_server() {
         .add_systems(Update, systems::collect_board);
     f.sim.ticks(2);
     assert_eq!(f.state().board.as_ref().unwrap().server_name, "Our server");
+}
+
+/// A kill by another player (`core::Died`, as a host's or a client's
+/// `Killed` writes it), `seconds` later.
+fn killed_by_another(f: &mut Fed, seconds: f64) {
+    let other = f.sim.spawn_character(Vec3::new(40.0, 1.0, 0.0), ID);
+    f.sim.ticks(2);
+    let me = f.me;
+    f.sim.app.world_mut().write_message(chimera_core::core::Died {
+        entity: other,
+        attacker: Some(me),
+        damage: chimera_core::core::Damage {
+            target: other,
+            attacker: Some(me),
+            amount: 100.0,
+            point: Vec3::ZERO,
+            dir: Vec3::NEG_Z,
+            hitgroup: chimera_core::core::Hitgroup::Chest,
+            kind: chimera_core::core::DamageKind::Bullet,
+            weapon: Some(weapons::PISTOL),
+            force: Vec3::ZERO,
+        },
+    });
+    f.sim.seconds(seconds);
+}
+
+/// `fed` with the shell's kill-feed state (the death notices' source)
+/// and, with `shared`, the party apps' one-feed flag.
+fn fed_with_feed(shared: bool) -> Fed {
+    use chimera_client::client::kill_feed::{KillFeedStatePlugin, SharedKillFeed};
+    fed_with(|app| {
+        if !app.is_plugin_added::<KillFeedStatePlugin>() {
+            app.add_plugins(KillFeedStatePlugin);
+        }
+        if shared {
+            app.insert_resource(SharedKillFeed);
+        }
+    })
+}
+
+/// hud.md 10, HL2:DM's own app: a kill is one death notice on its HUD.
+#[test]
+fn a_kill_is_one_death_notice() {
+    let mut f = fed_with_feed(false);
+    killed_by_another(&mut f, 0.3);
+    let list = &f.state().hud.as_ref().unwrap().notices.list;
+    assert_eq!(list.len(), 1, "{list:?}");
+    assert_eq!(list[0].weapon, "pistol");
+    assert_eq!(systems::feed_lines(f.sim.app.world()), 1, "the count the one-feed check reads");
+}
+
+/// In a party app (`kill_feed::SharedKillFeed`: the shell draws the one
+/// feed) HL2:DM's HUD shows no death notice of its own.
+#[test]
+fn no_death_notice_while_the_app_draws_one_feed() {
+    let mut f = fed_with_feed(true);
+    killed_by_another(&mut f, 0.3);
+    assert!(f.sim.app.world().resource::<chimera_client::client::kill_feed::KillFeed>().entries.len() == 1, "the shell's entry");
+    assert!(f.state().hud.as_ref().unwrap().notices.list.is_empty(), "no notice of HL2:DM's own");
+    assert_eq!(systems::feed_lines(f.sim.app.world()), 0);
 }

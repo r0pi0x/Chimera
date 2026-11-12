@@ -101,6 +101,9 @@ impl Plugin for Hl2dmHudPlugin {
         // What it draws instead of the shell's, in an app that switches HUDs
         // too (the shell's `HudDraws`).
         app.world_mut().get_resource_or_init::<chimera_client::client::hud::HudDraws>().0.push((GAME, systems::DRAWS));
+        // Its death notices, counted for the one-feed check (none while
+        // the app draws the shared feed: `kill_feed::OwnKillFeed`).
+        chimera_client::client::kill_feed::GameKillFeedAppExt::register_game_kill_feed(app, GAME, systems::feed_lines);
         app.init_resource::<systems::Hl2dmHud>()
             .init_resource::<chimera_client::client::weapon_icons::WeaponIcons>()
             // The game's pickups say them (not composed in the party apps).

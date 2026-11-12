@@ -3,14 +3,16 @@
 //! HUD's events, the weapon selection's commands, and the HUD's `Frame`
 //! into UI nodes (`sync`). Run only while HL2:DM's HUD is the gameplay's
 //! (`gameplay::hud_is`); the look is the map's (`map::hud::ActiveHud`, read
-//! by `game::hud`), so a map without it leaves the shell's HUD up.
+//! by `game::hud`), so a map without it leaves the shell's HUD up. The
+//! death notices are the shell's kill-feed entries, and none while the app
+//! draws one feed for every HUD (`kill_feed::OwnKillFeed`: the party apps).
 
 use bevy::{
     platform::collections::{HashMap, HashSet},
     prelude::*,
 };
 use chimera_client::client::{
-    binds, fonts::UiFonts, hud::{GameDraws, HudRoot}, hud_text::{GlyphParams, HudGlyphMaterial, HudText}, kill_feed::KillFeed, video::PlayerFov,
+    binds, fonts::UiFonts, hud::{GameDraws, HudRoot}, hud_text::{GlyphParams, HudGlyphMaterial, HudText}, kill_feed::OwnKillFeed, video::PlayerFov,
     weapon_menu::{WeaponMenu, WeaponMenuTimes, menu_input, pick_of},
 };
 use chimera_core::{
@@ -60,6 +62,11 @@ impl Default for HudCvars {
     fn default() -> Self {
         HudCvars { fastswitch: 0, quickinfo: 1, crosshair: 1, show_empty_slots: 1, centerid: 1 }
     }
+}
+
+/// The death notices HL2:DM's HUD shows now (`kill_feed::GameKillFeeds`).
+pub fn feed_lines(world: &World) -> usize {
+    world.get_resource::<Hl2dmHud>().and_then(|h| h.hud.as_ref()).map_or(0, |h| h.notices.list.len())
 }
 
 /// The HUD, its look, this frame's inputs and the frame it drew.
@@ -223,7 +230,7 @@ pub fn collect(
     carrying: Query<(), (With<LocalPlayer>, With<crate::game::carry::Carried>)>,
     catalog: Option<Res<WeaponCatalog>>,
     (mut taken, mut notes): (MessageReader<DamageTaken>, MessageReader<HudPickup>),
-    feed: Option<Res<KillFeed>>,
+    feed: OwnKillFeed,
     views: Query<&Hl2MatchView>,
     teams: Query<&Hl2Team>,
     cvars: Res<HudCvars>,
@@ -393,17 +400,19 @@ pub fn collect(
     }
 
     // Deaths: the shell's kill feed has them (a client's from the
-    // server's `Killed`), named and with the killing weapon.
-    if let Some(feed) = feed {
-        let from = st.seen.kill;
-        for e in feed.entries.iter().filter(|e| e.id >= from) {
-            let team_of = |ent: Entity| teams.get(ent).map_or(0, |t| t.0);
-            let victim = (e.victim.name.clone(), team_of(e.victim.entity));
-            let killer = e.killer.as_ref().map(|k| (k.name.clone(), team_of(k.entity)));
-            let weapon = e.weapon.map_or_else(|| "world".to_string(), |w| kill_notice_name(w, e.kind));
-            hud.death_notice(killer.filter(|_| !e.suicide), victim, &weapon);
-            st.seen.kill = e.id + 1;
-        }
+    // server's `Killed`), named and with the killing weapon. None while
+    // the app draws one feed for every HUD (`client::kill_feed`).
+    if !feed.shown() {
+        hud.notices.list.clear();
+    }
+    let from = st.seen.kill;
+    for e in feed.entries().filter(|e| e.id >= from) {
+        let team_of = |ent: Entity| teams.get(ent).map_or(0, |t| t.0);
+        let victim = (e.victim.name.clone(), team_of(e.victim.entity));
+        let killer = e.killer.as_ref().map(|k| (k.name.clone(), team_of(k.entity)));
+        let weapon = e.weapon.map_or_else(|| "world".to_string(), |w| kill_notice_name(w, e.kind));
+        hud.death_notice(killer.filter(|_| !e.suicide), victim, &weapon);
+        st.seen.kill = e.id + 1;
     }
 
     hud.think(&inp, now);
