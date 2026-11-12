@@ -26,6 +26,14 @@
 //!   count), sorted by power score, weakest first; the melee band counted
 //!   for the knife finale, which draws its weapons when the match starts.
 //!   Two seeds share few rungs, and every gun comes up over many.
+//! - `drawable`: what a draw may deal (the report's guns and grenades,
+//!   filtered before `ladder`, by `ladder = "auto"` and the Ultimate Gun
+//!   Game alike): not a weapon that can't damage a player (its data's
+//!   damage paths all 0: `weapon::harm`; Combat Arms' RMS12, M136_AT4),
+//!   nor one a game's data excludes (`DrawExclusions`, each with its
+//!   reason: Combat Arms' skins drawn wrong); `skipped_lines` says which
+//!   (logged when a ladder is drawn; the `ladder_skipped` command).
+//!   Hand-written ladders may name them.
 //! - `map_pool`: every map of every game whose install the players have,
 //!   the games in turn; none: the greybox.
 //! - `definition`: the minigame's TOML (`MinigameDef`), filtered by
@@ -173,6 +181,115 @@ pub fn report(world: &World) -> Vec<Capabilities> {
         .all()
         .map(|p| Capabilities::with_maps(p, catalog, movements, installed.map_or(&[], |i| i.of(p.game))))
         .collect()
+}
+
+/// Weapons a drawn ladder never deals, with why (`DrawExclusionsAppExt`:
+/// each game's data, e.g. Combat Arms' data/ladder_exclusions.toml). A
+/// hand-written ladder may still name them.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct DrawExclusions(pub Vec<(String, String)>);
+
+impl DrawExclusions {
+    /// Why `id` is left out (None: it isn't).
+    pub fn reason(&self, id: &str) -> Option<&str> {
+        self.0.iter().find(|(w, _)| w.eq_ignore_ascii_case(id)).map(|(_, r)| r.as_str())
+    }
+}
+
+/// A list of draw exclusions as data: `[[exclude]]` tables of `weapons`
+/// (ids) and their `reason`.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExclusionsDoc {
+    #[serde(default)]
+    exclude: Vec<ExclusionDoc>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExclusionDoc {
+    weapons: Vec<String>,
+    reason: String,
+}
+
+/// `text` (a game's draw exclusions, `[[exclude]] weapons = [..] reason
+/// = ".."`) read.
+pub fn parse_exclusions(text: &str) -> Result<Vec<(String, String)>, String> {
+    let doc: ExclusionsDoc = toml::from_str(text).map_err(|e| e.to_string())?;
+    Ok(doc
+        .exclude
+        .into_iter()
+        .flat_map(|e| e.weapons.into_iter().map(move |w| (w, e.reason.clone())))
+        .collect())
+}
+
+pub trait DrawExclusionsAppExt {
+    /// The exclusions of `text` (`parse_exclusions`; `name` for the error,
+    /// which panics: shipped data).
+    fn add_draw_exclusions(&mut self, name: &str, text: &str) -> &mut Self;
+}
+
+impl DrawExclusionsAppExt for App {
+    fn add_draw_exclusions(&mut self, name: &str, text: &str) -> &mut Self {
+        let list = parse_exclusions(text).unwrap_or_else(|e| panic!("{name}: {e}"));
+        self.world_mut().get_resource_or_init::<DrawExclusions>().0.extend(list);
+        self
+    }
+}
+
+/// Why a drawn ladder skipped a weapon (`drawable`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Skipped {
+    pub id: &'static str,
+    /// "no damage" (`weapon::harm`), or the exclusion's reason.
+    pub why: String,
+}
+
+/// What a drawn ladder may deal: `caps`' guns and grenades without those
+/// that can't damage a player (their data says so, `weapon::harm::
+/// harmless`) or a game's data excludes (`DrawExclusions`); the skipped
+/// ones, in report order.
+pub fn drawable(world: &World, caps: &mut [Capabilities]) -> Vec<Skipped> {
+    let empty = WeaponCatalog::default();
+    let catalog = world.get_resource::<WeaponCatalog>().unwrap_or(&empty);
+    let readers = world.get_resource::<crate::weapon::harm::HarmReaders>().cloned().unwrap_or_default();
+    let none = DrawExclusions::default();
+    let excluded = world.get_resource::<DrawExclusions>().unwrap_or(&none);
+    let mut skipped = Vec::new();
+    let mut why = |id: &'static str| -> Option<String> {
+        let r = if let Some(r) = excluded.reason(id) {
+            Some(r.to_string())
+        } else if catalog.get(id).is_some_and(|d| crate::weapon::harm::harmless(d, &readers)) {
+            Some("no damage".to_string())
+        } else {
+            None
+        };
+        if let Some(w) = &r {
+            skipped.push(Skipped { id, why: w.clone() });
+        }
+        r
+    };
+    for c in caps.iter_mut() {
+        c.guns.retain(|g| why(g.id).is_none());
+        c.grenades.retain(|g| why(g).is_none());
+    }
+    skipped
+}
+
+/// `skipped` in a line or a few: the count, then the ids by reason.
+pub fn skipped_lines(skipped: &[Skipped]) -> String {
+    let mut reasons: Vec<&str> = Vec::new();
+    for s in skipped {
+        if !reasons.contains(&s.why.as_str()) {
+            reasons.push(&s.why);
+        }
+    }
+    let mut out = format!("drawn ladders skip {} weapons", skipped.len());
+    for r in reasons {
+        let ids: Vec<&str> = skipped.iter().filter(|s| s.why == r).map(|s| s.id).collect();
+        out.push_str(&format!("\n  {r} ({}): {}", ids.len(), ids.join(", ")));
+    }
+    out
 }
 
 /// A small deterministic generator (SplitMix64).

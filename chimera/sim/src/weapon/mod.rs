@@ -73,6 +73,7 @@ pub mod economy;
 pub mod economy_data;
 pub mod equip;
 pub mod grenade;
+pub mod harm;
 pub mod hits;
 pub mod impact;
 pub mod lagcomp;

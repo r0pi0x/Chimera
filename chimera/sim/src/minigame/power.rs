@@ -52,6 +52,7 @@
 //!   game's numbers mean. A gun without damage data scores 0.
 //! - `ladder_power` (console): every classed gun of the catalogue, by
 //!   band, weakest first: its score, time to kill at 15 m and band.
+//!   `ladder_skipped`: the guns a draw never deals (`auto::drawable`).
 //!
 //! Known shortcuts: Power curve: the score is a model, not a measurement:
 //! recoil, movement, burst modes, a spin-up's length and a scope's zoomed
@@ -540,6 +541,16 @@ pub fn plugin(app: &mut App) {
                 })
                 .collect();
             Ok(Some(if rows.is_empty() { "no classed guns".into() } else { rows.join("\n") }))
+        },
+    )
+    .console_command(
+        "chimera:ladder_skipped",
+        "ladder_skipped: the guns and grenades drawn ladders never deal (no damage in their data, or a game's \
+         data excludes them), by reason.",
+        |w, _| {
+            let mut caps = super::auto::report(w);
+            let skipped = super::auto::drawable(w, &mut caps);
+            Ok(Some(super::auto::skipped_lines(&skipped)))
         },
     );
 }

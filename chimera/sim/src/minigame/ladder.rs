@@ -32,8 +32,12 @@
 //! the guns are drawn too, at each match's start, on the power curve
 //! (`drawn_ladder`: `auto::ladder` over the composed games' guns the
 //! definition allows, `rungs` in all, `power_curve` tuning the curve), so
-//! a hand-written definition can opt in. The host's draw is replicated
-//! with the match (`NetMinigame::rungs`, `melee_rungs`).
+//! a hand-written definition can opt in. A draw never deals a gun that
+//! can't hurt a player (its data's damage paths all 0: `weapon::harm`) or
+//! one a game's data leaves out (`auto::DrawExclusions`), logged at the
+//! start (`auto::drawable`); a written list may still name them. The
+//! host's draw is replicated with the match (`NetMinigame::rungs`,
+//! `melee_rungs`).
 //! Combat Arms' own Arms Race (`games/combat_arms`, its rules) is not
 //! this module and keeps its spec's rules (no cost for a suicide).
 //!
@@ -858,7 +862,8 @@ fn make(world: &World, def: &MinigameDef, say: bool) -> Option<Ladder> {
 
 /// `ladder = "auto"`: a ladder of `rungs` drawn on the definition's power
 /// curve from `seed` (`auto::ladder`) over the composed games' guns and
-/// grenades the definition allows.
+/// grenades the definition allows that can hurt a player and no game's
+/// data excludes (`auto::drawable`).
 fn drawn_ladder(world: &World, def: &MinigameDef, p: &Params, seed: u64, say: bool) -> super::auto::Drawn {
     use super::{auto, power};
     let curve = curve(p).unwrap_or_else(|_| power::PowerCurve::shipped());
@@ -866,6 +871,12 @@ fn drawn_ladder(world: &World, def: &MinigameDef, p: &Params, seed: u64, say: bo
     for c in &mut caps {
         c.guns.retain(|g| def.allows_weapon(g.id));
         c.grenades.retain(|g| def.allows_weapon(g));
+    }
+    // Never a gun that can't hurt anyone, nor one a game's data leaves
+    // out (`auto::drawable`); a written ladder may name them.
+    let skipped = auto::drawable(world, &mut caps);
+    if say && !skipped.is_empty() {
+        info!("{}: {}", def.id, auto::skipped_lines(&skipped));
     }
     let empty = WeaponCatalog::default();
     let catalog = world.get_resource::<WeaponCatalog>().unwrap_or(&empty);

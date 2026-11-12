@@ -23,7 +23,9 @@
 //! of the rungs' extras (bodies, attachments, melee: `party_kit::launch_rung_seed`); the default plugin (tests) keeps `SEED`.
 //! Its ladder has `RUNGS` rungs in all, drawn from every gun of the games
 //! every connected player has (`minigame_net::installed_by_all`, L3's
-//! mount reports; their install's weapons too) on the power curve
+//! mount reports; their install's weapons too; never one that can't hurt
+//! a player nor one a game's data excludes: `auto::drawable`, logged with
+//! the ladder) on the power curve
 //! (`auto::ladder`, `minigame::power`: warm-up pistols to melee, each
 //! band's guns by power score); its pool every game's maps, their installs' too
 //! (`auto::find_installed_maps`, the apps only), rotated at random but the
@@ -144,7 +146,13 @@ pub fn first_map(id: &str) -> Result<String, String> {
 /// `rungs` from `seed` over the games every player has, added as
 /// `MINIGAME` (replacing one made before).
 pub fn generate(world: &mut World, seed: u64, rungs: usize) -> Result<&'static MinigameDef, String> {
-    let caps = auto::report(world);
+    let mut caps = auto::report(world);
+    // Only guns that can hurt someone and no game's data leaves out
+    // (`auto::drawable`).
+    let skipped = auto::drawable(world, &mut caps);
+    if !skipped.is_empty() {
+        info!("Ultimate Gun Game: {}", auto::skipped_lines(&skipped));
+    }
     let games: Vec<&'static str> = caps.iter().map(|c| c.game).collect();
     let installed = chimera_net::minigame_net::installed_by_all(world, &games);
     let opts = options(seed, rungs);

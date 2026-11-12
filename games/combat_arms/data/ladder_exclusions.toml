@@ -1,0 +1,41 @@
+# Combat Arms weapons a drawn gun game ladder never deals (`ladder = "auto"`,
+# the Ultimate Gun Game: chimera_sim::minigame::auto::drawable). A
+# hand-written ladder may still name them. Weapons whose data does no damage
+# (the RMS12, the M136_AT4, ...) need no entry: the draw leaves them out by
+# their data (games/combat_arms/src/game/weapons/harm.rs). Each entry: the
+# weapon ids and why. The `ladder_skipped` console command lists what a draw
+# skips.
+
+# The user's decision, 2026-11-12: the "weird skin" guns stay out. Their view
+# skin is painted for a UV layout no ASW338LM model of the install has, so it
+# draws scattered (specs/combat_arms/models_ltb.md W1-W3, build 26236938).
+[[exclude]]
+reason = "view skin drawn wrong (no matching UV layout in the install)"
+weapons = [
+    "combat_arms:asw338lmspunk",          # Neon Outlaw
+    "combat_arms:royal_gold_asw338lm",
+    "combat_arms:asw338lmgraf",
+    "combat_arms:asw338lmsakura",
+    "combat_arms:asw338lmsea",
+    "combat_arms:asw338lmweastland",
+]
+
+# Its view skin isn't in the install, so it draws grey.
+[[exclude]]
+reason = "view skin missing from the install (draws grey)"
+weapons = ["combat_arms:auga3championslighting"]   # AUG A3 Champions Lightning
+
+# The user's decision, 2026-11-12: launchers made to stun the infected are
+# lame on a rung. Their shells do blast a little (AreaDamage 3-15,
+# special_weapons.md 3.2), so the damage test alone keeps them.
+[[exclude]]
+reason = "stun launcher (a stun, little damage)"
+weapons = [
+    "combat_arms:m32_stun",
+    "combat_arms:m32_stun_infecteds",
+    "combat_arms:m32_stun_infecteds_block",
+    "combat_arms:m32_stun_infect_cfs",
+    "combat_arms:infecteds_stunup",
+    "combat_arms:infecteds_stundown",
+    "combat_arms:infecteds_stundownplus",
+]
