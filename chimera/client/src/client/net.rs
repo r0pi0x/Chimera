@@ -2,7 +2,9 @@
 //! when it asks (by name, or a copy it downloaded), show joining and the
 //! server's map changes in the loading dialog (`game_menu`), leave the
 //! menu once joined, and come back to the main menu (a fresh local player
-//! on the greybox) when dropped, with why in the dialog.
+//! on the greybox) when dropped, with why in the dialog (a server that went
+//! away is joined again on its own, `net::reconnect`; giving up on it shows
+//! the dialog).
 //!
 //! The game's side of the network: loads the server's map when asked, leaves
 //! the menu once joined, back to the main menu with a fresh local player when
@@ -83,6 +85,12 @@ fn react(world: &mut World, mut cursor: Local<bevy::ecs::message::MessageCursor<
                     .resource_mut::<Console>()
                     .print(Level::Warn, format!("Disconnected: {reason}"));
                 back_to_menu(world);
+            }
+            NetEvent::GaveUpReconnecting(why) => {
+                world
+                    .resource_mut::<Console>()
+                    .print(Level::Warn, format!("Gave up reconnecting: {why}"));
+                super::front_end::show_failure(world);
             }
         }
     }
