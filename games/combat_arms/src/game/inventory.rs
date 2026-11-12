@@ -40,7 +40,9 @@
 //!   knife's on those brushes (a CS:S window, a vent);
 //!   each hit key casts one ray from the eye with the gun's square spread
 //!   at the knife's cone (`perturb`, n = 1 for the M9), range, first thing
-//!   hit, no penetration, dealing `B x u x b x k_zone` after armour (u
+//!   hit, no penetration (on a network server a remote player's swing meets
+//!   the others where its client drew them: lag compensation's
+//!   `weapon::lagcomp::LagComp`, their boxes and shapes then, as its rounds), dealing `B x u x b x k_zone` after armour (u
 //!   uniform in 1 +- the damage spread, b = 1 + `BEHIND_BONUS` from the
 //!   victim's rear sector by its body yaw, `behind`, `weapons::body_yaw`:
 //!   Corrections 2; an AI's x `AIDamageFactor`, uncapped;
@@ -136,7 +138,7 @@ use super::{
     movement::CaInfected,
     weapons::{
         ArmourHit, HitSpheres, Location, MALE, MELEE as MELEE_DAMAGE, RIFLE, armour_and_zone, body_geometry,
-        pick_sphere, square_dir,
+        body_shapes, geometry_at, pick_sphere, square_dir,
     },
 };
 use crate::{
@@ -150,6 +152,7 @@ use crate::{
         WeaponEvent, WeaponEventKind, WeaponFrame, WeaponState,
         data::{WeaponData, WeaponDataAppExt},
         grenade::{KeepSpent, Throwable},
+        lagcomp::LagComp,
         random::{Rng, shared_random},
     },
 };
@@ -992,7 +995,7 @@ fn swing_knives(
     mut armour: Query<(&mut crate::weapon::Armor, Option<&crate::weapon::ArmorPieces>)>,
     infected: Query<(), With<CaInfected>>,
     colliders: Query<&ColliderOf>,
-    spatial: SpatialQuery,
+    (spatial, mut lag): (SpatialQuery, LagComp),
     mut damage: MessageWriter<Damage>,
     mut events: MessageWriter<WeaponEvent>,
     mut regions: Option<ResMut<Messages<core::RegionHit>>>,
@@ -1064,18 +1067,35 @@ fn swing_knives(
                     let (u1, u2) = (spread.next(), spread.next());
                     let dir = square_dir(crate::weapon::aim_of(intent.yaw, intent.pitch), knife.perturb, u1, u2);
                     let Ok(ray) = Dir3::new(dir) else { continue };
-                    let filter = SpatialQueryFilter::from_excluded_entities([owner])
-                        .with_mask(core::SOLID_LAYERS.0 & !core::ITEM_LAYER.0);
-                    let hit = spatial.cast_ray(eye, ray, range, true, &filter);
-                    let end = hit.map_or(eye + dir * range, |h| eye + dir * h.distance);
-                    let body = hit.map(|h| colliders.get(h.entity).map_or(h.entity, |c| c.body));
+                    // A network server traces a remote player's swing
+                    // against the others where its client drew them (lag
+                    // compensation, as its rounds: `weapon::lagcomp`; 8.3,
+                    // "the server re-checks the target"): their boxes then,
+                    // the world and the rest as they are.
+                    let rewound = if server && first.0 { lag.rewind(owner, true, None) } else { Vec::new() };
+                    let filter = SpatialQueryFilter::from_excluded_entities(
+                        std::iter::once(owner).chain(rewound.iter().map(|r| r.entity)),
+                    )
+                    .with_mask(core::SOLID_LAYERS.0 & !core::ITEM_LAYER.0);
+                    // (distance, normal, collider, body)
+                    let mut hit = spatial
+                        .cast_ray(eye, ray, range, true, &filter)
+                        .map(|h| (h.distance, h.normal, h.entity, colliders.get(h.entity).map_or(h.entity, |c| c.body)));
+                    for r in &rewound {
+                        if let Some(t) = r.box_entry(eye, dir, hit.map_or(range, |h| h.0), 0.0) {
+                            hit = Some((t, -dir, r.entity, r.entity));
+                        }
+                    }
+                    let end = hit.map_or(eye + dir * range, |h| eye + dir * h.0);
+                    let body = hit.map(|h| h.3);
+                    let back = rewound.iter().find(|r| body == Some(r.entity));
                     events.write(WeaponEvent {
                         owner,
                         weapon: entity,
                         kind: WeaponEventKind::Swing {
                             hit: hit.is_some(),
                             secondary: st.attack == 1,
-                            at: hit.zip(body).map(|(h, b)| (end, h.normal, b)),
+                            at: hit.map(|h| (end, h.1, h.3)),
                             line: (eye, end),
                         },
                         replay: !first.0,
@@ -1085,7 +1105,7 @@ fn swing_knives(
                     let u = roll.range(1.0 - knife.spread, 1.0 + knife.spread);
                     // A map's breakable (a window, a vent): the swing's
                     // damage at the hit, as any knife's on those brushes.
-                    let hit_entity = hit.map_or(target, |h| h.entity);
+                    let hit_entity = hit.map_or(target, |h| h.2);
                     let thing = [target, hit_entity].into_iter().find(|e| breakables.contains(*e));
                     if let Some(thing) = thing {
                         if server && first.0 {
@@ -1111,7 +1131,9 @@ fn swing_knives(
                     // (Corrections 2).
                     let rear = t_intent.is_some_and(|i| {
                         let kept = t_inv.and_then(|v| v.active).and_then(|w| spreads.get(w).ok()).and_then(|s| s.body_yaw);
-                        let yaw = Quat::from_rotation_y(super::weapons::body_yaw(i.yaw, kept));
+                        // Rewound: its look then, twisted as now.
+                        let body = super::weapons::body_yaw(i.yaw, kept);
+                        let yaw = Quat::from_rotation_y(back.map_or(body, |r| r.yaw + (body - i.yaw)));
                         behind(yaw * Vec3::NEG_Z, yaw * Vec3::X, dir)
                     });
                     let b = if rear { 1.0 + BEHIND_BONUS } else { 1.0 };
@@ -1121,16 +1143,29 @@ fn swing_knives(
                     // Another game's body: its own shapes, by the same
                     // rule (docs/DESIGN.md "Hits across games"), not our
                     // skeleton's spheres hidden inside it.
+                    // A rewound body: its shapes where it was then.
                     let through = end + dir * range;
                     let theirs = bodies.get(target).ok().and_then(|(t, i, _, aabb, _, (identity, boxes))| {
-                        let shapes = super::weapons::their_shapes(t, i, aabb, identity, boxes)?;
+                        let shapes = match back {
+                            Some(r) if !crate::slots::GameIdentity::allows(identity, super::GAME) => {
+                                r.hitboxes.as_ref().map(|h| body_shapes(&h.get().0, r.frame().0, Quat::from_rotation_y(r.yaw)))
+                            }
+                            Some(_) => None,
+                            None => super::weapons::their_shapes(t, i, aabb, identity, boxes),
+                        }?;
                         Some(shapes.by_power(eye, through).map(|k| shapes.0[k]))
                     });
                     let sphere = match theirs {
                         Some(_) => None,
                         None => bodies.get(target).ok().and_then(|(t, i, s, aabb, spheres, _)| {
                             let data = spheres.map_or(*MALE, |h| h.0);
-                            let (_, _, world) = body_geometry(t, i, s, aabb, data)?;
+                            let world = match back {
+                                Some(r) => {
+                                    let b = r.aabb();
+                                    geometry_at(r.origin, Quat::from_rotation_y(r.yaw), b.min, b.max, data, -i.pitch).2
+                                }
+                                None => body_geometry(t, i, s, aabb, data)?.2,
+                            };
                             pick_sphere(&world, eye, through).map(|k| data[k])
                         }),
                     };

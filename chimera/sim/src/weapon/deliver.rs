@@ -27,7 +27,9 @@
 //! box first: a ray that can't enter it nearer than what the trace hit so
 //! far leaves the shapes unmade (the same hits, in the same order, as
 //! testing them: docs/performance.md, "A broad phase for the hitscan").
-//! Characters rewound by lag compensation are tested as before.
+//! Characters rewound by lag compensation are tested as before; a swing's
+//! box sweep meets them as their box then grown by its half size (the
+//! box swept into it), the world and everyone else as the sweep finds them.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -238,8 +240,15 @@ struct Hit {
 }
 
 impl Shot<'_, '_, '_> {
+    /// A sweep's: all but the shooter, those attacks pass through, and the
+    /// characters rewound (met where the shooter saw them instead).
     fn filter(&self) -> SpatialQueryFilter {
-        SpatialQueryFilter::from_excluded_entities(std::iter::once(self.owner).chain(self.passing())).with_mask(SOLID_LAYERS)
+        SpatialQueryFilter::from_excluded_entities(
+            std::iter::once(self.owner)
+                .chain(self.passing())
+                .chain(self.rewound.iter().map(|r| r.entity)),
+        )
+        .with_mask(SOLID_LAYERS)
     }
 
     /// Spawn-protected characters attacks pass through now
@@ -752,27 +761,43 @@ impl Shot<'_, '_, '_> {
             let reach = swing.hull_reach;
             let shape = Collider::cuboid(half * 2.0, half * 2.0, half * 2.0);
             let config = ShapeCastConfig::from_max_distance(reach);
-            if let Some(h) = self
+            // Characters rewound by lag compensation are met where the
+            // swinger saw them (their box then), not where they are.
+            let filter = self.filter();
+            // (body, collider, contact point, distance, normal, origin)
+            let mut found = self
                 .w
                 .spatial
-                .cast_shape(&shape, self.eye, Quat::IDENTITY, dir, &config, &self.filter())
-            {
-                let entity = self.body(h.entity);
-                let origin = self.w.targets.get(entity).map_or(h.point1, |t| t.transform.translation);
+                .cast_shape(&shape, self.eye, Quat::IDENTITY, dir, &config, &filter)
+                .map(|h| {
+                    let entity = self.body(h.entity);
+                    let origin = self.w.targets.get(entity).map_or(h.point1, |t| t.transform.translation);
+                    (entity, h.entity, h.point1, h.distance, -h.normal1, origin)
+                });
+            let passing = self.passing();
+            for r in self.rewound.iter().filter(|r| !passing.contains(&r.entity)) {
+                let limit = found.as_ref().map_or(reach, |f| f.3);
+                if let Some(t) = r.box_entry(self.eye, *dir, limit, half) {
+                    let b = r.aabb();
+                    let point = (self.eye + *dir * t).clamp(b.min, b.max);
+                    found = Some((r.entity, r.entity, point, t, -*dir, r.origin));
+                }
+            }
+            if let Some((entity, collider, point, distance, normal, origin)) = found {
                 let to = (origin - self.eye).normalize_or_zero();
                 if to.dot(forward) >= swing.facing_cos {
                     let boxed = Hit {
                         entity,
-                        collider: h.entity,
-                        point: h.point1,
+                        collider,
+                        point,
                         dir: forward,
-                        distance: h.distance,
-                        normal: -h.normal1,
+                        distance,
+                        normal,
                         group: None,
                         box_exit: None,
                     };
                     hit = Some(match swing.refine {
-                        true => self.refine(dir, h.distance, half).unwrap_or(boxed),
+                        true => self.refine(dir, distance, half).unwrap_or(boxed),
                         false => boxed,
                     });
                 }

@@ -792,8 +792,8 @@ with tests passing and something to see.
      predicted; prediction errors: one at the join and a burst of five
      while a screenshot stalled the client (its late commands were
      repeated by the server, as designed), none while firing otherwise.
-   - Not yet: the knife's box sweep (when its line misses) and grenades'
-     blast traces aren't rewound; others' reload, draw and knife sounds
+   - Not yet: grenades' blast traces aren't rewound (melee swings,
+     their box sweeps and Combat Arms' knife are, 2026-11-12); others' reload, draw and knife sounds
      aren't sent (only their fire sounds, from `FireBullets`); a client's
      own trace tests others' colliders where they were drawn a frame or
      two before (its impacts on others are cosmetic; the server decides);

@@ -23,8 +23,8 @@
 //!   player's view kick (`CaKick`) as a networked predicted component; the
 //!   held weapon's movement penalty in the predicted
 
-//!   tick; the server's rounds lag compensated (`weapon::lagcomp`, the
-//!   shooter's view tick); a client deals no damage;
+//!   tick; the server's rounds and knife swings lag compensated
+//!   (`weapon::lagcomp`, the shooter's view tick); a client deals no damage;
 //! - `inventory`: the selection (`CaSelection`: class cursors, last
 //!   chosen, Q, the sprint pose; weapons as inventory indices) and the
 //!   knife's attack (`Knife`'s `KnifeState`);
@@ -88,8 +88,7 @@
 //!   round), the setup's freeze for a client's prediction (`net::Holds`:
 //!   `rules::flow::freeze_ends`, `frozen_intent`).
 //!
-//! Known shortcuts: the knife's ray isn't lag compensated (it hits others
-//! where the server has them); armour, the pickup prompt and the
+//! Known shortcuts: armour, the pickup prompt and the
 //! statistics go to every client, not only the player's own; a refused
 //! respawn request isn't told to the client (it stays dead, as S5 has
 //! it). A listen server is the app's (`combat_arms`), a dedicated one

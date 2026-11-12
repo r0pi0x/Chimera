@@ -30,18 +30,27 @@
 //!   writes; without one: always) x `sv_maxunlag` of the shooter's, or
 //!   lies within `view_cos` of the command's view from the shooter's
 //!   origin.
+//! - **Swings** are rewound as shots are (spec 4.6: "a player's shot or
+//!   melee swing"): Chimera's line and, when it misses, its box sweep
+//!   (`deliver::Shot::swing`: the box swept into each rewound character's
+//!   box), and a game's own melee through the same `LagComp` (Combat
+//!   Arms' knife, combat_arms/inventory.md 8.3).
+//! - **Where** (`LagComp`): one system parameter holds the view ticks, the
+//!   histories, the settings and the stats, so every delivery (Chimera's
+//!   weapon frame, a game's rounds and swings) rewinds the same way.
 //!
 //! Covers (spec 4.6): on a network server each living character's hit volume
 //! per tick (`HitHistory`: origin, look yaw, box, hitboxes; 1 s), and a remote
 //! player's shots traced against others where it saw them (`ViewTick` from its
 //! command, `rewind`: between two kept ticks, at most `sv_maxunlag`, not across
 //! a 64-unit teleport; `sv_unlag`, `sv_showlagcompensation`, `LagCompStats`);
-//! a weapon's `RewindChoice` (HL2:DM's whom, weapons.md 12).
+//! a weapon's `RewindChoice` (HL2:DM's whom, weapons.md 12); swings, box
+//! sweeps included (`LagComp`, shared by every delivery).
 
 use std::collections::VecDeque;
 
 use avian3d::prelude::ColliderAabb;
-use bevy::prelude::*;
+use bevy::{ecs::system::SystemParam, prelude::*};
 
 use crate::{
     console::resource_cvar,
@@ -186,12 +195,67 @@ impl Rewound {
         }
     }
 
+    /// Where a ray from `from` along `dir` enters its box grown by `grow`
+    /// on every side (a box of half size `grow` swept along the ray meets
+    /// it there), within `limit`; 0 when it starts inside.
+    pub fn box_entry(&self, from: Vec3, dir: Vec3, limit: f32, grow: f32) -> Option<f32> {
+        let b = self.aabb();
+        let half = (b.max - b.min) / 2.0 + Vec3::splat(grow.max(0.0));
+        crate::core::Hitbox::cuboid((b.min + b.max) / 2.0, half, Quat::IDENTITY, crate::core::BodyRegion::Generic)
+            .ray_entry(from, dir)
+            .filter(|t| *t < limit)
+    }
+
     /// Where its hitboxes stand: the feet (the box's bottom under the
     /// origin) and the turn into character space.
     pub fn frame(&self) -> (Vec3, Quat) {
         (
             self.origin.with_y(self.origin.y + self.min.y),
             Quat::from_rotation_y(self.yaw).inverse(),
+        )
+    }
+}
+
+/// What a delivery needs to trace a remote player's attack (a shot, a
+/// swing) where that player saw the others: their view ticks, the kept
+/// histories, `sv_unlag` and the stats (module doc, "Where").
+#[derive(SystemParam)]
+pub struct LagComp<'w, 's> {
+    views: Query<'w, 's, &'static ViewTick>,
+    histories: Query<'w, 's, (Entity, &'static HitHistory, &'static Health, Option<&'static RewindSpeed>)>,
+    pub settings: Res<'w, LagCompSettings>,
+    pub stats: ResMut<'w, LagCompStats>,
+    clock: Res<'w, SimClock>,
+}
+
+impl LagComp<'_, '_> {
+    /// Where the other living characters were when `owner` attacked this
+    /// tick, as its client drew them: a network server's (`authoritative`)
+    /// remote player with `sv_unlag` on; else none (the present). With a
+    /// weapon's `choice`, only those it picks for a shooter at `origin`
+    /// looking along `forward` (the caller has checked `wanted`).
+    pub fn rewind(&mut self, owner: Entity, authoritative: bool, choice: Option<(RewindChoice, Vec3, Vec3)>) -> Vec<Rewound> {
+        let Some(view) = self.views.get(owner).ok().and_then(|v| v.0) else {
+            return Vec::new();
+        };
+        if !authoritative || self.settings.unlag == 0 {
+            return Vec::new();
+        }
+        let maxunlag = self.settings.maxunlag;
+        rewind(
+            owner,
+            view,
+            self.clock.tick,
+            self.clock.delta.as_secs_f64(),
+            &self.settings,
+            self.histories
+                .iter()
+                .filter(|(_, _, h, _)| h.current > 0.0)
+                .filter(|(_, history, _, speed)| {
+                    choice.is_none_or(|(c, origin, forward)| c.picks(origin, forward, history, speed.copied(), maxunlag))
+                })
+                .map(|(e, history, ..)| (e, history)),
+            &mut self.stats,
         )
     }
 }

@@ -245,7 +245,7 @@ use crate::{
         Armor, ArmorPieces, WeaponEventKind, WeaponFrame, Zoom, aim_of,
         hits,
         data::{WeaponData, WeaponDataAppExt},
-        lagcomp::{self, HitHistory, LagCompSettings, LagCompStats, ViewTick},
+        lagcomp,
         random::{Rng, shared_random},
     },
 };
@@ -2051,13 +2051,7 @@ struct Delivery<'w, 's> {
     ids: Query<'w, 's, &'static crate::weapon::Weapon>,
     /// Lag compensation (a network server): each shooter's view tick,
     /// the characters' kept hit volumes, `sv_unlag`.
-    lag: (
-        Query<'w, 's, &'static ViewTick>,
-        Query<'w, 's, (Entity, &'static HitHistory, &'static Health)>,
-        Res<'w, LagCompSettings>,
-        ResMut<'w, LagCompStats>,
-        Res<'w, SimClock>,
-    ),
+    lag: lagcomp::LagComp<'w, 's>,
 }
 
 impl Delivery<'_, '_> {
@@ -2069,22 +2063,7 @@ impl Delivery<'_, '_> {
     /// drew them (lag compensation, `weapon::lagcomp`): a network server's
     /// remote player's shot with `sv_unlag` on; else none (the present).
     fn rewind(&mut self, owner: Entity, server: bool) -> Vec<lagcomp::Rewound> {
-        let (views, histories, settings, stats, clock) = &mut self.lag;
-        let Some(view) = views.get(owner).ok().and_then(|v| v.0) else {
-            return Vec::new();
-        };
-        if !server || settings.unlag == 0 {
-            return Vec::new();
-        }
-        lagcomp::rewind(
-            owner,
-            view,
-            clock.tick,
-            clock.delta.as_secs_f64(),
-            settings,
-            histories.iter().filter(|(.., h)| h.current > 0.0).map(|(e, history, _)| (e, history)),
-            stats,
-        )
+        self.lag.rewind(owner, server, None)
     }
 
     /// Every living character but `owner`, as the ray sees it: where it
