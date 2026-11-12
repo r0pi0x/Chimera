@@ -26,7 +26,7 @@ use combat_arms::{
         data::CaData,
         movement,
         music::{
-            CaMusicSet, MusicClock, MusicLoading,
+            MusicClock, MusicLoading,
             ambient::SoundFx,
             data::MusicData,
             director::{CaMusic, MusicFacts, Screen},
@@ -45,6 +45,11 @@ use lithtech_formats::world::{Object, Property, Value, World as LtWorld};
 #[derive(Resource, Default)]
 struct Seen(Vec<SoundControl>);
 
+/// Runs in `Last`, after every `Update` system: `play_music` writes the
+/// controls unordered against a collector in `Update`, so one `Update`
+/// that ran both tick steps (a 1/60 s step against the game's tick: every
+/// 24th frame runs two ticks, so `ticks(2)` can be a single frame) left
+/// its newest controls unseen.
 fn collect(mut r: MessageReader<SoundControl>, mut seen: ResMut<Seen>) {
     seen.0.extend(r.read().cloned());
 }
@@ -54,7 +59,7 @@ fn sim() -> Sim {
         app.add_plugins((GreyboxMapPlugin, CaMusicPlayPlugin))
             .add_message::<SoundControl>()
             .init_resource::<Seen>()
-            .add_systems(Update, collect.after(CaMusicSet));
+            .add_systems(Last, collect);
     });
     sim.app.world_mut().resource_mut::<MusicClock>().manual = true;
     sim.ticks(3);
@@ -127,6 +132,13 @@ fn changes(sim: &Sim) -> Vec<(SoundKey, f32)> {
 /// player stops the sound.
 #[test]
 fn the_playlist_plays_and_follows_the_fade() {
+    // Whatever frame the start lands on: a frame can run two ticks.
+    for pad in 0..24 {
+        one(pad);
+    }
+}
+
+fn one(pad: u64) {
     let mut sim = sim();
     let track = MusicData::built_in().playlist[0].file.clone();
     {
@@ -145,6 +157,7 @@ fn the_playlist_plays_and_follows_the_fade() {
         }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
+    sim.ticks(pad);
     let s = starts(&sim);
     assert_eq!(s.len(), 1, "one stream: {:?}", sim.app.world().resource::<Seen>().0);
     assert!(s[0].2, "a single track loops");
@@ -347,7 +360,7 @@ fn ambient_loops_end_with_their_map() {
         app.add_plugins((MapSimPlugin::new(looping_map("old", "SND\\Old\\amb.wav")), CaMusicPlayPlugin))
             .add_message::<SoundControl>()
             .init_resource::<Seen>()
-            .add_systems(Update, collect.after(CaMusicSet));
+            .add_systems(Last, collect);
     });
     sim.ticks(5);
     assert_eq!(ambient_starts(&sim), ["ca:amb:snd/old/amb.wav"], "the old map's loop plays");
