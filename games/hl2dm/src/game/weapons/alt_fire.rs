@@ -2,7 +2,8 @@
 //! SMG1's contact grenade (`hl2dm:smg1_grenade`, `Hl2SmgGrenade`) and the
 //! AR2's energy ball (`hl2dm:combine_ball`, `Hl2Ball`), each with its own
 //! rounds (`launch::Hl2Rounds`: SMG1_Grenade 3, AR2AltFire 3; none at
-//! spawn), predicted with the weapon; the projectiles are the server's
+//! spawn, 2 on a gun game's rung: `loadout`), predicted with the weapon;
+//! the projectiles are the server's
 //! (Chimera's flyers, `weapon::projectile`).
 //!
 //! - **Contact grenade**: attack2 with the next secondary passed: with no

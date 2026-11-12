@@ -40,12 +40,15 @@
 //! carries its `Water` and `PoisonGas00`), each found by its map entity
 //! index (`VolumeIndex`).
 //!
-//! A Source map's ladder brushes (`MapBrush::ladder`, any game's map) become
-//! `Ladder` volumes too (`BrushLadder`, upward faces lowered 2 cm so
-//! standing on top doesn't grab, side faces pushed out 2 Source units so
-//! a hull stopped by the solid brush touches it), so Combat Arms' movement
-//! climbs every map's ladders from any side (the spec is silent on Source
-//! maps; our choice).
+//! Every other map's ladders (Chimera's `core::MapLadders`, docs/DESIGN.md
+//! "Ladders across games") become `Ladder` volumes too (`BrushLadder`), so
+//! Combat Arms' movement climbs them by its own rules (the spec is silent
+//! on other games' maps; our choice): a ladder volume (a Source map's
+//! ladder brush) with its upward faces lowered 2 cm so standing on top
+//! doesn't grab and its side faces pushed out 2 Source units so a hull
+//! stopped by the solid brush touches it, climbed from any side; a ladder
+//! line (HL2's `func_useableladder`, where that game's climber's feet go)
+//! as an upright box 16 units around it from its bottom to its top.
 //!
 //! A Source map's water (`MapWater`, any game's map) becomes `Water`
 //! volumes too (`BrushWater`), so Combat Arms' movement swims in it. The
@@ -484,10 +487,10 @@ fn load_volumes(
     }
 }
 
-/// Marks a `Ladder` volume made from a ladder brush of the map's
-/// collision (`MapBrush::ladder`: a Source map's climbable contents), so
-/// Combat Arms' movement climbs the ladders of any map, not only the
-/// `Ladder` volumes of its own maps.
+/// Marks a `Ladder` volume made from a map's published ladder
+/// (`core::MapLadders`: a Source map's climbable contents, HL2's ladder
+/// lines), so Combat Arms' movement climbs the ladders of any map, not only
+/// the `Ladder` volumes of its own maps.
 #[derive(Component, Debug)]
 pub struct BrushLadder;
 
@@ -523,6 +526,17 @@ pub fn ladder_from_brush(b: &crate::core::MapBrush) -> CaVolume {
     v
 }
 
+/// How far (m) a ladder line's volume reaches around it: a Source
+/// player's half width (16 units), where that game's climber stands.
+pub const LADDER_LINE_REACH: f32 = 16.0 * 0.0254;
+
+/// The `Ladder` volume of a ladder line (`core::LadderLine`): an upright
+/// box `LADDER_LINE_REACH` around it, from its bottom to its top.
+pub fn ladder_from_line(l: &crate::core::LadderLine) -> CaVolume {
+    let r = Vec3::new(LADDER_LINE_REACH, 0.0, LADDER_LINE_REACH);
+    CaVolume::class_box("Ladder", l.bottom.min(l.top) - r, l.bottom.max(l.top) + r).expect("the Ladder class")
+}
+
 /// Marks a `Water` volume made from a water brush of the map
 /// (`MapWater`: a Source map's water or slime), so Combat Arms' movement
 /// swims in any map's water.
@@ -531,11 +545,16 @@ pub struct BrushWater;
 
 /// The volumes made from the map's own data, in one system (an exclusive
 /// system anywhere in the schedule is ambiguous with each system added):
-/// replaces the brush ladders when the map's brushes change and the brush
+/// replaces the ladders from the map's published ones when they change
+/// (none on a Combat Arms map: its own are its volumes) and the brush
 /// waters when its water changes (or moves), and keeps the zones in step
 /// (`sync_zones`).
 fn load_brush_volumes(
-    (brushes, water): (Option<Res<crate::core::MapBrushes>>, Option<Res<crate::core::MapWater>>),
+    (ladders, water, map_game): (
+        Option<Res<crate::core::MapLadders>>,
+        Option<Res<crate::core::MapWater>>,
+        Option<Res<crate::core::MapGame>>,
+    ),
     (old_ladders, old_waters): (Query<Entity, With<BrushLadder>>, Query<Entity, With<BrushWater>>),
     zoned: Query<
         (Entity, &CaVolume, Has<WaterZone>, Has<LadderZone>),
@@ -543,12 +562,18 @@ fn load_brush_volumes(
     >,
     mut commands: Commands,
 ) {
-    if brushes.as_ref().is_some_and(|b| b.is_changed()) {
+    if ladders.as_ref().is_some_and(|b| b.is_changed()) || map_game.as_ref().is_some_and(|g| g.is_changed()) {
         for e in &old_ladders {
             commands.entity(e).despawn();
         }
-        for b in brushes.iter().flat_map(|b| b.0.iter()).filter(|b| b.ladder) {
-            commands.spawn((Name::new("Ladder (map brush)"), ladder_from_brush(b), BrushLadder, MapPart));
+        let foreign = crate::core::foreign_map(map_game.as_deref(), Some(super::GAME));
+        for l in ladders.iter().filter(|_| foreign) {
+            for b in &l.volumes {
+                commands.spawn((Name::new("Ladder (map brush)"), ladder_from_brush(b), BrushLadder, MapPart));
+            }
+            for line in &l.lines {
+                commands.spawn((Name::new("Ladder (map line)"), ladder_from_line(line), BrushLadder, MapPart));
+            }
         }
     }
     if water.as_ref().is_some_and(|w| w.is_changed()) {

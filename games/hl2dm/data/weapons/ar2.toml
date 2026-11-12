@@ -45,7 +45,8 @@ default_clip = 60
 max = 8.0
 slide = 5.0
 
-# The energy ball (projectiles.md 5): 3 carried, none at spawn; charge
+# The energy ball (projectiles.md 5): 3 carried, none at spawn (a gun
+# game's rung gives 2, `loadout`: the user's call, 2026-11-12); charge
 # 0.5 s (launch strictly after), busy 0.7, next primary 0.5, next
 # secondary 1.0; a 10-unit sphere at 1000 units/s kept after every
 # contact, 4 s of life, 1000 crush + dissolve a touch; punch pitch
@@ -55,6 +56,7 @@ slide = 5.0
 [hooks."hl2dm:combine_ball"]
 ammo = "hl2dm:ar2altfire"
 max = 3
+loadout = 2
 charge = 0.5
 busy = 0.7
 primary = 0.5

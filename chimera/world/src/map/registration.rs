@@ -359,6 +359,7 @@ fn scoped_resources(app: &mut App) {
         .map_scoped::<sound::SurfaceGrid>()
         .map_scoped::<sources::SurfaceNames>()
         .map_scoped::<MapBrushes>()
+        .map_scoped::<crate::core::MapGame>()
         .map_scoped::<MapBrushTree>()
         .map_scoped::<KillHeight>()
         .map_scoped::<MapWater>()

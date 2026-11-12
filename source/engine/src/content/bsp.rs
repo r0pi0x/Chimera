@@ -422,6 +422,7 @@ fn convert_level_bytes(
         &super::detail::model_entries(&detail),
         detail_fade,
         game.fixed_models,
+        options.kit.pickups(),
     );
     data.source_fx_mut().detail_props = super::detail::detail_props(&detail, &bsp, |m| materials.resolve(m).texture);
     timer.lap("props");

@@ -2,7 +2,8 @@
 //! `[pickups] weapons = false`, `weapon::drop::NoWeaponPickups`): a map's
 //! guns aren't placed, walking over any game's gun takes nothing, the drop
 //! key is off, and other pickups (HL2:DM's health kit, here with its game's
-//! pickups added: the party doesn't compose them yet) go on working.
+//! pickups added by hand: the party never composes them, docs/DESIGN.md
+//! "Gun game rules") go on working.
 
 use bevy::prelude::*;
 use chimera_core::{console::Console, core::Health};

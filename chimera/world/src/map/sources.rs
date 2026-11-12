@@ -153,6 +153,15 @@ impl KitLoad {
         matches!(self, Self::All)
     }
 
+    /// Whether the map's game's pickups are placed (HL2:DM's walk-over
+    /// items and wall chargers): only with its own gameplay, the only one
+    /// that runs them; on another game's gameplay (the party's) they would
+    /// be inert, so they aren't there at all (docs/DESIGN.md, "Gun game
+    /// rules").
+    pub fn pickups(&self) -> bool {
+        matches!(self, Self::All)
+    }
+
     /// Whether the players' character bodies are loaded.
     pub fn bodies(&self) -> bool {
         matches!(self, Self::All | Self::Players(_))

@@ -18,6 +18,28 @@ Each gap: game, what differs, spec section, our code, size (S hours, M a
 day or two, L more), and whether it needs a spec session (or a capture)
 first, done on the Windows PC. Delete a row when it lands.
 
+Decided (user, 2026-11-12): HL2:DM's pickups and chargers stay off in
+Ultimate Gun Game (was item 4): a party's HL2:DM map places none of its
+items and wall chargers, on the server and the client (`KitLoad::
+pickups`); its ammo crates stay as inert solid models (the spec makes a
+crate a static solid model that blocks players and bullets: level
+geometry). docs/DESIGN.md, "Gun game rules".
+
+Decided (user, 2026-11-12): an HL2:DM rung gives 2 alt-fire rounds (was
+item 8). The cause, traced: each life the ladder gives a new weapon
+(`runtime::respawn` strips and gives; a rung swap gives too), and its
+hooks build `Hl2Rounds` from the data's `count`, 0 (HL2:DM spawns with
+none: its rounds come from boxes and crates, `ammo::give`); the ladder's
+`refill_ammo` tops up only `Magazine` reserves and thrown grenades, and a
+party has no pickups, so attack2 clicked empty from the first press. Now
+the rules' weapons are `minigame::LoadoutWeapon`s and the SMG1's and
+AR2's hooks say `loadout = 2`.
+
+Decided (user, 2026-11-12): ladders cross every game (was item 6): each
+map's ladders are published in one form (`core::MapLadders`,
+`LadderZone`) and each movement climbs them by its own rules; each game's
+own maps unchanged. docs/DESIGN.md, "Ladders across games".
+
 ## Do next (spec is clear)
 
 1. **HL2:DM: view model drawn at 69 degrees, not 54.** `view_model_fov`
@@ -39,37 +61,17 @@ first, done on the Windows PC. Delete a row when it lands.
    `Breach` sockets). Code: `games/combat_arms/src/game/effects/mod.rs`
    (`hand` vs `flash`); `CaPose::flash_point` exists, used by launchers
    only; `Breach` not posed. S. No spec.
-4. **HL2:DM: pickups and chargers dead in UGG.** `party_sim` adds no
-   `PickupsPlugin`: no kits, batteries, ammo or crates on dm_ maps, and
-   the 20 drawn wall chargers do nothing on `+use`. Its resources are
-   global, so gate them to HL2:DM maps. Spec: hl2dm/maps_entities.md 1-4;
-   suit.md "Pickups", "Wall chargers". Code:
-   `games/hl2dm/src/game/mod.rs` `party_sim`, `apps/party_kit`
-   `PartyPartsPlugin`; `apps/ultimate_gun_game/tests/it/pickups.rs`. M.
-   No spec; the user decides whether UGG wants pickups (parity says yes).
-5. **HL2:DM: items and ammo crates invisible, in every app.** Pickups
+5. **HL2:DM: items and ammo crates invisible, in the HL2:DM app.** Pickups
    spawn as mesh-less 16-unit boxes (the data's `model` is never read);
    crates are invisible solid blocks. Spec: hl2dm/maps_entities.md 1, 3
    (touch box: bounds grown 24 sideways, 12 up). Code:
    `games/hl2dm/src/game/pickups.rs`, `ammo_crates.rs`. M. No spec.
-6. **Ladders don't cross into HL2:DM's movement.** An HL2 rung can't
-   climb CS:S ladder brushes or Combat Arms ladder zones
-   (`contents_ladders: false`); a CS:S rung can't use
-   `func_useableladder`. Crossing was fixed for CS:S and Combat Arms on
-   2026-10-27, before HL2:DM came. Spec: silent on mixing (DESIGN.md
-   rules apply). Code: `games/hl2dm/src/game/movement.rs`,
-   `source/engine/src/source_movement/mod.rs`. M. No spec; a design call.
 7. **HL2:DM: prop physics rules missing in UGG.** Without
    `Hl2PhysicsPlugin`, dm_ maps' `prop_physics_multiplayer` (92 on
    dm_underpass) follow CS:S's walk-through rule, hit players at impact
    scale 1 not 4, and barrels use CS:S's blast. Gate per map's game.
    Spec: hl2dm/source_deltas.md 1.5; gravity_gun.md Corrections 1-2, 9.
    Code: `party_sim`, `games/hl2dm/src/game/physics.rs`. M. No spec.
-8. **HL2:DM: SMG1 and AR2 alt fire empty in UGG.** Rungs seem to give
-   no `smg1_grenade`/`ar2altfire` ammo and there are no pickups, so
-   attack2 clicks (traced to `give_item`, not to the end). Code:
-   `chimera/sim/src/minigame/`, `chimera/sim/src/weapon/equip.rs`. S. No
-   spec; the user's call on how much.
 9. **Combat Arms: first-person hands always the default character's.**
    UGG wears a random body per rung; sleeves, sex and gloves never match.
    Spec: combat_arms/view_models.md 2. Code: `game/view_model/on_demand.rs`,
@@ -166,7 +168,7 @@ grates and glass, damageable projectiles, the combine camera.
 
 ## Counts
 
-Do next 17, later 7, needs a spec or capture 10.
+Do next 14, later 7, needs a spec or capture 10.
 
 ## Stale `//!` docs found on the way
 

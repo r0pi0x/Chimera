@@ -214,8 +214,14 @@ pub fn respawn(world: &mut World, e: Entity) {
     world.flush();
     let loadout = (active.rules.loadout)(world, e);
     let kit = if (active.rules.no_kit)(world, e) { Vec::new() } else { kit_for(world, def, e, loadout.last().copied()) };
-    for id in kit.into_iter().chain(loadout) {
+    for id in kit {
         give(world, e, id);
+    }
+    // The rules' own weapons, marked (`LoadoutWeapon`).
+    for id in loadout {
+        if let Some(w) = give(world, e, id) {
+            world.entity_mut(w).insert(super::LoadoutWeapon);
+        }
     }
     // Following the weapon: the life starts as the drawn weapon's game.
     if follows {

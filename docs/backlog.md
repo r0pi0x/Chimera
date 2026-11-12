@@ -166,13 +166,13 @@ Delete each when done.
 Delete each when fixed. Check against specs/hl2dm/ and the probe; what's
 the original's own behaviour isn't a bug (say so instead).
 
-- **The explosion's fire is still cut at the world (2026-11-09):** the
-  straight edges and steps of an explosive drum's blast close to walls are
-  its camera-facing sprites meeting the floor, ceiling and walls. HL2's smoke
-  now fades there (its material says `$depthblend`); `effects/fire_cloud2`
-  and CS:S's own `particle_noisesphere` don't ask, so they stay cut, which by
-  their files is the original's look too. A real-game capture (grenades.md
-  Q9) would settle it; softening them all is a one-line choice if wanted.
+- **Decided (user, 2026-11-12): the explosion's fire stays cut at the
+  world, as the game has it.** The straight edges and steps of an explosive
+  drum's blast close to walls are its camera-facing sprites meeting the
+  floor, ceiling and walls; `effects/fire_cloud2` and CS:S's
+  `particle_noisesphere` don't ask for depth blending, so by their files
+  that is the original's look (HL2's smoke, whose material asks, fades).
+  Parity: not softened.
 - **Decided (user, 2026-11-12): guns that do no damage stay off drawn
   ladders** (the RMS-12, the M136_AT4, the stun launchers; DESIGN.md "Gun
   game rules"), and so do the skins drawn wrong (the Neon Outlaw and the

@@ -9,6 +9,22 @@
 //! falling off, and the dismounts at the ends and by `+use`. Contents
 //! ladders (brushes) are not climbed then (`contents_ladders` off).
 //!
+//! Across games (docs/DESIGN.md "Ladders across games"): the map's ladder
+//! lines are published as `core::MapLadders::lines` (engine space) for the
+//! other games' movement, and the other ladders are climbed this way too,
+//! as lines (`lines_of_volume`, ours: the specs are silent on mixing): a
+//! ladder volume's two climbing faces (its thinnest across, upright) each
+//! give a line 18 units out from the face's middle (the hull's half width
+//! and Source's 2-unit ladder reach), bottom to top of the face, left over
+//! the top (beyond the volume, on the floor it leads to) or at the foot;
+//! a face with no room for a player in front of it (a wall) gives none
+//! (`fix_ends`). Another game's ladder volumes (`LadderZone`, Combat Arms')
+//! always; the map's ladder brushes (`MapLadders::volumes`) only on a map
+//! that isn't the movement's game's (`core::foreign_map`), so HL2:DM on its
+//! own maps keeps contents ladders solid. They follow the map's own ladders
+//! in `UseableLadders` (whose indices stay), sorted, so a client builds the
+//! same; they fire no map outputs.
+//!
 //! Known shortcuts (docs/tech-debt.md): the `Enable`/`Disable` inputs and
 //! ladders moving with a parent aren't handled (`StartDisabled` is); a
 //! fresh `+use` that mounts or dismounts isn't kept from the map's `+use`
@@ -20,7 +36,10 @@
 use bevy::prelude::*;
 
 use super::Mover;
-use crate::map::MapEntity;
+use crate::{
+    core::{LadderLine, LadderZone, MapBrush, MapGame, MapLadders, foreign_map, movement_game},
+    map::MapEntity,
+};
 
 /// Search radius for a ladder, units.
 const FIND: f32 = 64.0;
@@ -54,10 +73,25 @@ const ALTERNATE_DIST: f32 = 60.0;
 const AXIS_DOT: f32 = 0.4;
 const ALONG_END: f32 = 0.9;
 
-/// One `func_useableladder` (Source units).
+/// Where a useable ladder comes from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LadderFrom {
+    /// The map's own `func_useableladder`.
+    #[default]
+    Map,
+    /// A ladder brush of the map's (contents), as a line.
+    Brush,
+    /// Another game's ladder volume (`core::LadderZone`), as a line.
+    Zone,
+}
+
+/// No map entity (a ladder from a volume): fires no outputs.
+pub const NO_ENTITY: usize = usize::MAX;
+
+/// One `func_useableladder` (Source units), or another ladder as one.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UseableLadder {
-    /// Index into the map's entities (its outputs).
+    /// Index into the map's entities (its outputs; `NO_ENTITY`: none).
     pub map_index: usize,
     pub top: Vec3,
     pub bottom: Vec3,
@@ -68,6 +102,7 @@ pub struct UseableLadder {
     pub dismounts: Vec<Vec3>,
     /// The end points were fixed up against the world (`fix_ends`).
     pub fixed: bool,
+    pub from: LadderFrom,
 }
 
 impl UseableLadder {
@@ -157,9 +192,93 @@ pub fn ladders_of(entities: &[MapEntity]) -> Vec<UseableLadder> {
                 dont_get_on: flags & 1 != 0,
                 dismounts,
                 fixed: false,
+                from: LadderFrom::Map,
             }
         })
         .collect()
+}
+
+/// A convex brush's corners (engine space): where three of its planes meet
+/// inside all the others.
+fn corners(b: &MapBrush) -> Vec<Vec3> {
+    let p = &b.planes;
+    let mut out: Vec<Vec3> = Vec::new();
+    for i in 0..p.len() {
+        for j in i + 1..p.len() {
+            for k in j + 1..p.len() {
+                let (a, c, e) = (p[i], p[j], p[k]);
+                let det = a.0.dot(c.0.cross(e.0));
+                if det.abs() < 1e-6 {
+                    continue;
+                }
+                let v = (c.0.cross(e.0) * a.1 + e.0.cross(a.0) * c.1 + a.0.cross(c.0) * e.1) / det;
+                if p.iter().all(|(n, d)| n.dot(v) <= d + 1e-3) && !out.iter().any(|o| o.distance(v) < 1e-3) {
+                    out.push(v);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// A ladder volume (engine space) as useable ladders (Source units), one
+/// per climbing face: its upright faces thinnest across (a slab's two big
+/// faces; a square post's four), each a line 18 units out from the face's
+/// middle from its bottom to its top, with two dismount points: over the
+/// top beyond the volume (20 units past its far side) and at the foot (8
+/// out). Enabled until `fix_ends` finds no room in front.
+pub fn lines_of_volume(b: &MapBrush, from: LadderFrom) -> Vec<UseableLadder> {
+    let v = corners(b);
+    if v.len() < 4 {
+        return Vec::new();
+    }
+    let across = |n: Vec3| {
+        let (lo, hi) = v.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| (lo.min(n.dot(*p)), hi.max(n.dot(*p))));
+        hi - lo
+    };
+    let sides: Vec<(Vec3, f32)> = b.planes.iter().copied().filter(|(n, _)| n.y.abs() < 0.7).collect();
+    let thin = sides.iter().map(|(n, _)| across(*n)).fold(f32::MAX, f32::min);
+    let u = super::METERS_PER_UNIT;
+    let mut out = Vec::new();
+    for (n, d) in sides {
+        if across(n) > thin + 0.01 {
+            continue;
+        }
+        let face: Vec<Vec3> = v.iter().copied().filter(|p| (n.dot(*p) - d).abs() < 1e-3).collect();
+        if face.len() < 3 {
+            continue;
+        }
+        let flat = Vec3::new(n.x, 0.0, n.z).normalize_or_zero();
+        let mid = face.iter().copied().sum::<Vec3>() / face.len() as f32;
+        let lo = face.iter().map(|p| p.y).fold(f32::MAX, f32::min);
+        let hi = face.iter().map(|p| p.y).fold(f32::MIN, f32::max);
+        let out_by = flat * (super::HALF_WIDTH + super::LADDER_REACH) * u;
+        let bottom = Vec3::new(mid.x, lo, mid.z) + out_by;
+        let top = Vec3::new(mid.x, hi, mid.z) + out_by;
+        let over = Vec3::new(mid.x, hi, mid.z) - flat * (thin + (super::HALF_WIDTH + 4.0) * u);
+        let foot = bottom + flat * 8.0 * u;
+        out.push(UseableLadder {
+            map_index: NO_ENTITY,
+            top: super::to_source(top),
+            bottom: super::to_source(bottom),
+            enabled: true,
+            dont_get_on: false,
+            dismounts: vec![super::to_source(over), super::to_source(foot)],
+            fixed: false,
+            from,
+        });
+    }
+    out
+}
+
+/// A ladder line in engine space (`core::MapLadders::lines`) from a map's
+/// useable ladder (Source units).
+pub fn engine_line(l: &UseableLadder) -> LadderLine {
+    LadderLine {
+        bottom: super::to_engine(l.bottom),
+        top: super::to_engine(l.top),
+        dismounts: l.dismounts.iter().map(|d| super::to_engine(*d)).collect(),
+    }
 }
 
 /// A forced move (mounting or dismounting): from `start` to `goal` at the
@@ -186,9 +305,14 @@ pub(super) enum LadderStep {
 }
 
 /// The ladders' end points out of the floor they touch (a standing hull
-/// swept down from 4 units above), once per map.
+/// swept down from 4 units above), once per map; a ladder made from a
+/// volume with no room for a standing player halfway up its line (the
+/// face against a wall) is off.
 pub(super) fn fix_ends(trace: &super::Tracer, ladders: &mut [UseableLadder]) {
     for l in ladders.iter_mut().filter(|l| !l.fixed) {
+        if l.from != LadderFrom::Map && trace.solid(false, (l.top + l.bottom) / 2.0) {
+            l.enabled = false;
+        }
         for p in [&mut l.top, &mut l.bottom] {
             let tr = trace.sweep(false, *p + Vec3::Z * 4.0, *p);
             if !tr.start_solid {
@@ -205,6 +329,9 @@ impl Mover<'_, '_, '_, '_> {
     }
 
     fn fire(&mut self, map_index: usize, output: &'static str) {
+        if map_index == NO_ENTITY {
+            return;
+        }
         self.outputs.push((map_index, output));
     }
 
@@ -298,7 +425,8 @@ impl Mover<'_, '_, '_, '_> {
         let origin = self.feet;
         let mut best: Option<(u32, Vec3, f32)> = None;
         for (i, l) in self.ladders.iter().enumerate() {
-            if !l.enabled {
+            // The map's ladder brushes only on another game's map.
+            if !l.enabled || (l.from == LadderFrom::Brush && !self.foreign_map) {
                 continue;
             }
             let c = l.closest(origin);
@@ -460,16 +588,63 @@ impl Mover<'_, '_, '_, '_> {
     }
 }
 
-/// Keep `UseableLadders` the map's (`map::MapEntities`).
-pub fn build_ladders(entities: Option<Res<crate::map::MapEntities>>, mut ladders: ResMut<UseableLadders>) {
-    let Some(e) = entities else {
-        if !ladders.0.is_empty() {
-            ladders.0.clear();
-        }
-        return;
+/// Keep `UseableLadders` the map's (`map::MapEntities`), published as
+/// `MapLadders::lines`, followed by the other ladders as lines: every
+/// game's ladder volume (`LadderZone`), and the map's ladder brushes when
+/// a movement climbing useable ladders isn't the map's game's (sorted by
+/// place: the same on every machine).
+#[allow(clippy::too_many_arguments)]
+pub fn build_ladders(
+    entities: Option<Res<crate::map::MapEntities>>,
+    mut ladders: ResMut<UseableLadders>,
+    published: Option<ResMut<MapLadders>>,
+    zones: Query<Ref<LadderZone>>,
+    mut gone: RemovedComponents<LadderZone>,
+    game: Option<Res<MapGame>>,
+    configs: Option<Res<super::SourceMovementConfigs>>,
+    mut last_game: Local<Option<String>>,
+) {
+    let mut published = published;
+    let own_changed = match &entities {
+        Some(e) => e.is_changed(),
+        None => ladders.0.iter().any(|l| l.from == LadderFrom::Map),
     };
-    if e.is_changed() {
-        ladders.0 = ladders_of(&e.entities);
+    if own_changed {
+        let own = entities.as_ref().map(|e| ladders_of(&e.entities)).unwrap_or_default();
+        if let Some(p) = published.as_mut() {
+            p.lines = own.iter().map(engine_line).collect();
+        }
+        ladders.0 = own;
+    }
+    let zones_changed = zones.iter().any(|z| z.is_changed()) | (gone.read().count() > 0);
+    let volumes_changed = published.as_ref().is_some_and(|p| p.is_changed());
+    let now = game.as_ref().map(|g| g.0.clone());
+    let game_changed = *last_game != now;
+    *last_game = now;
+    if !(own_changed || zones_changed || volumes_changed || game_changed) {
+        return;
+    }
+    // The map's brushes as lines only for a movement of another game.
+    let useable = configs
+        .iter()
+        .flat_map(|o| o.0.iter().map(|(id, c)| (movement_game(id), c)))
+        .filter(|(_, c)| c.useable_ladders);
+    let brushes = useable.map(|(g, _)| g).any(|g| foreign_map(game.as_deref(), g));
+    let mut more: Vec<UseableLadder> = zones.iter().flat_map(|z| lines_of_volume(&z.0, LadderFrom::Zone)).collect();
+    if brushes {
+        if let Some(p) = published.as_ref() {
+            more.extend(p.volumes.iter().flat_map(|b| lines_of_volume(b, LadderFrom::Brush)));
+        }
+    }
+    let key = |l: &UseableLadder| (l.from, [l.bottom.x, l.bottom.y, l.bottom.z, l.top.z].map(f32::to_bits));
+    more.sort_by_key(key);
+    // Replaced only when they differ (a change elsewhere keeps their
+    // fixed ends and the indices of those climbed).
+    let keep = ladders.0.iter().filter(|l| l.from == LadderFrom::Map).count();
+    let unfixed = |l: &UseableLadder| (l.from, l.dismounts.clone());
+    if ladders.0[keep..].iter().map(unfixed).ne(more.iter().map(unfixed)) {
+        ladders.0.truncate(keep);
+        ladders.0.extend(more);
     }
 }
 

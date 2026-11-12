@@ -46,12 +46,14 @@ position = 0
 max = 1.0
 slide = 2.0
 
-# The contact grenade (projectiles.md 4): 3 carried, none at spawn; 1000
+# The contact grenade (projectiles.md 4): 3 carried, none at spawn (a gun
+# game's rung gives 2, `loadout`: the user's call, 2026-11-12); 1000
 # units/s along view + punch, 400 units/s² of gravity, a +-3 box, 100 in
 # 250; next primary 0.5, next secondary 1.0; dry 0.5.
 [hooks."hl2dm:smg1_grenade"]
 ammo = "hl2dm:smg1_grenade"
 max = 3
+loadout = 2
 speed = 1000.0
 gravity = 400.0
 half = 3.0

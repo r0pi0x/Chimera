@@ -19,7 +19,9 @@
 //!   S.L.A.M.s), predicted with the weapon, with its carry limit.
 //! - `aim`: the eye, the view (with or without the punch) and its basis
 //!   in engine space; `to_engine`/`to_source` for Source vectors.
-//! - `fill_up`: `impulse 101` fills them (`weapon::FilledUp`).
+//! - `fill_up`: `impulse 101` fills them (`weapon::FilledUp`);
+//!   `loadout_rounds`: a weapon a minigame's rules hand out (a gun game's
+//!   rung, `minigame::LoadoutWeapon`) gets its data's `loadout` of them.
 //! - `mark_under_water`: `LaunchUnderWater` on players whose eyes are under
 //!   water (the crossbow's slower bolt, the refusals of attack2).
 //! - The projectiles' models (`MODELS`): drawn by key on clients
@@ -139,12 +141,16 @@ pub fn hook_params<T: serde::de::DeserializeOwned>(weapon: &str, hook: &str) -> 
         .unwrap_or_else(|e| panic!("{weapon} {hook}: {e}"))
 }
 
-/// A weapon's own rounds of an ammo type (`ammo`), at most `max`.
+/// A weapon's own rounds of an ammo type (`ammo`), at most `max`; a
+/// weapon a minigame's rules hand out (`minigame::LoadoutWeapon`: a gun
+/// game's rung) gets `loadout` of them (`loadout_rounds`), none: its own
+/// `count`.
 #[derive(Component, Clone, Debug, PartialEq)]
 pub struct Hl2Rounds {
     pub ammo: &'static str,
     pub count: u32,
     pub max: u32,
+    pub loadout: Option<u32>,
 }
 
 impl NetPart for Hl2Rounds {
@@ -164,6 +170,11 @@ pub struct RoundsParams {
     #[serde(default)]
     pub count: u32,
     pub max: u32,
+    /// How many a minigame's rules give with the weapon (a gun game's
+    /// rung: ours, the user's call 2026-11-12; HL2:DM itself has no such
+    /// rules).
+    #[serde(default)]
+    pub loadout: Option<u32>,
 }
 
 impl RoundsParams {
@@ -172,7 +183,19 @@ impl RoundsParams {
             ammo: Box::leak(self.ammo.clone().into_boxed_str()),
             count: self.count.min(self.max),
             max: self.max,
+            loadout: self.loadout,
         }
+    }
+}
+
+/// A weapon the minigame's rules handed out (`minigame::LoadoutWeapon`):
+/// its own rounds' `loadout` count (at most its `max`), when its data
+/// gives one.
+pub fn loadout_rounds(add: On<Add<chimera_sim::minigame::LoadoutWeapon>>, mut rounds: Query<&mut Hl2Rounds>) {
+    if let Ok(mut r) = rounds.get_mut(add.entity)
+        && let Some(n) = r.loadout
+    {
+        r.count = n.min(r.max);
     }
 }
 

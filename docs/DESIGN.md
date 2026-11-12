@@ -395,6 +395,40 @@ full name always works (user decision, 2026-10-31;
   ahead of time as data, reviewed and playtested, never generated during a
   match. A runtime "chaos kit" could exist later as a server-generated mode.
 
+### Ladders across games
+
+A player climbs every map's ladders the way their own game's movement
+does (user, 2026-11-12): a CS:S or HL2:DM character on a Combat Arms
+map's ladder, a Combat Arms character on a Source map's. The map side is
+Chimera's and one form: each map loader publishes its ladders
+(`core::MapLadders`: `volumes`, Source's ladder brushes, kept in step
+with `MapBrushes`; `lines`, HL2's `func_useableladder`s, published by
+Source's movement from the map's entities), a game's own moving ladder
+volumes are `core::LadderZone`s (Combat Arms' `Ladder`s), and the map's
+game is `core::MapGame`. Each movement climbs any of them by its own
+rules (ours: the specs are silent on mixing):
+
+- **CS:S's** (Source movement climbing contents): brushes and zones as it
+  always did (a zone swept as a solid); a ladder line of another game's
+  map as a thin solid ladder post along it (2 units across), its probe
+  finding the post's face where HL2:DM's climber would stand.
+- **HL2:DM's** (Source movement climbing useable ladders): its map's
+  lines as always; a ladder volume as lines (`useable_ladders::
+  lines_of_volume`): each climbing face (upright, thinnest across) gives
+  a line 18 units out from its middle, bottom to top, left over the top
+  beyond the volume or at the foot, dropped when a wall leaves no room
+  in front.
+- **Combat Arms'**: its own volumes as always; a brush as a `Ladder`
+  volume reaching 2 units past its faces, a line as one 16 units around
+  it (`volumes::BrushLadder`).
+
+On a map of its own game a movement climbs only what its game climbs
+there (`core::foreign_map`): HL2:DM keeps contents ladders solid on its
+maps, CS:S ignores a stray `func_useableladder` on its own; so each game
+plays its own maps exactly as before. Made lines follow the map's own in
+HL2's ladder list, sorted, so a network client builds the same; they
+fire no map outputs.
+
 ### Impacts across games
 
 Any game's gun works on any game's map; where a game lacks something,
@@ -640,6 +674,20 @@ that):
   data/ladder_exclusions.toml: the infection stun launchers, the skins
   drawn wrong). `ladder_skipped` lists them; a hand-written ladder may
   still name any of them.
+- **No HL2:DM pickups or chargers** (user, 2026-11-12): a party's
+  HL2:DM map has none of its walk-over items (kits, vials, batteries,
+  ammo boxes) and wall chargers, not even drawn: only the HL2:DM app,
+  whose gameplay runs them, places them (`map::KitLoad::pickups`: the
+  map loaded for another game's gameplay), the same on a server and a
+  client. Its ammo crates stay, as the static solid models the spec
+  makes them (they block players and bullets: level geometry), giving
+  nothing.
+- **HL2:DM's alt fire: 2 rounds on the rung** (user, 2026-11-12): with no
+  pickups an HL2:DM rung gives its gun's attack2 rounds itself, 2 SMG1
+  grenades with the SMG1, 2 energy balls with the AR2, by the weapon's
+  data (`loadout = 2` in its hook; the rules' weapons are marked
+  `minigame::LoadoutWeapon`), given again with the rung (each life, each
+  swap) and never refilled meanwhile (`refill_ammo` is the reserve's).
 - **Rung extras, the same for everyone on a rung** (`rung_extras`,
   default on): when a ladder is made (each map, each new ladder) a game
   may draw something for each of its rungs from the match's seeded
