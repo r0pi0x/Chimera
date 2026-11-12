@@ -88,6 +88,10 @@
 //!   `TripleShotRoundNum` a fire cycle apart, `TripleShotDelay` after its
 //!   last round, one a pull; continuous fire; `TripleShotSelectDelay` the
 //!   step's lockout;
+//! - the kill announcer's weapon skins (`InstallAttributes::
+//!   announcer_skins`, kill_streaks.md A8): each weapon's
+//!   `HUDEffectOverride` section of the layout and client files, added to
+//!   Combat Arms' pack by `CaDataPlugin` (`announcer_skins`);
 //! - movement (`merge_movement`): the body type `FigureType0` replaces
 //!   `character.figure` (`StiffDuration` with it), and every `FigureType#`
 //!   is `MovementData::figures` (each vest record's body type, `gear`);
@@ -184,7 +188,7 @@ use lithtech_formats::attributes::Document;
 use toml::{Table, Value};
 
 use self::attributes::{
-    find_by_name, ATTACHMENTS_FILE, AmmoRecord, PERKS_FILE, SETS_FILE, AttachmentsFile, MARKS_FILE, MOD_FILE, MODELS_FILE, MarksFile, ModFile, ModelsFile, SERVER_FILE, ServerPlayer, ServerTimeWeight, WEAPONS_FILE,
+    find_by_name, ATTACHMENTS_FILE, CLIENT_FILE, LAYOUT_FILE, AmmoRecord, PERKS_FILE, SETS_FILE, AttachmentsFile, MARKS_FILE, MOD_FILE, MODELS_FILE, MarksFile, ModFile, ModelsFile, SERVER_FILE, ServerPlayer, ServerTimeWeight, WEAPONS_FILE,
  WeaponRecord,
     WeaponsFile, FX_FILE, FigureTypeRecord, FireRecord, ImpactRecord, ProjectileRecord, TracerRecord,
 };
@@ -312,6 +316,10 @@ pub struct InstallAttributes {
     /// The gear and perk records (gear_perks.md), read from the weapons,
     /// models, attachments, modification, perk and set files.
     pub gear: Option<super::gear::records::GearInstall>,
+    /// The kill announcer's weapon skins (`attributes::announcer_skins`:
+    /// the weapons' `HUDEffectOverride` sections of the layout and client
+    /// files; empty without the weapons file).
+    pub announcer_skins: Vec<chimera_core::announcer::Skin>,
 }
 
 /// Parse one attribute document, errors naming it and the line.
@@ -340,6 +348,8 @@ pub fn read_attributes(read: impl Fn(&str) -> io::Result<Vec<u8>>) -> (InstallAt
     let perks = doc(PERKS_FILE);
     let sets = doc(SETS_FILE);
     let fx = doc(FX_FILE);
+    let layout = doc(LAYOUT_FILE);
+    let client = doc(CLIENT_FILE);
     let any_gear_file = [&weapons, &models, &attachments, &mods, &perks, &sets].iter().any(|d| d.is_some());
     let gear = any_gear_file.then(|| {
         super::gear::records::GearInstall::read(
@@ -366,6 +376,12 @@ pub fn read_attributes(read: impl Fn(&str) -> io::Result<Vec<u8>>) -> (InstallAt
         }
         w
     });
+    let announcer_skins = weapons.as_ref().map_or_else(Vec::new, |w| {
+        let by_id = install_weapons_by_id(w);
+        attributes::announcer_skins(w, layout.as_ref(), client.as_ref(), |r| {
+            by_id.iter().find(|(_, x)| std::ptr::eq(**x, r)).map(|(id, _)| id.clone())
+        })
+    });
     let attrs = InstallAttributes {
         weapons,
         time_weight: server.as_ref().map(ServerTimeWeight::read),
@@ -375,6 +391,7 @@ pub fn read_attributes(read: impl Fn(&str) -> io::Result<Vec<u8>>) -> (InstallAt
         marks: marks.and_then(|d| MarksFile::read(&d)),
         attachments: attachments.map(|d| AttachmentsFile::read(&d)),
         gear,
+        announcer_skins,
     };
     (attrs, problems)
 }
@@ -1597,7 +1614,13 @@ pub struct CaDataPlugin;
 
 impl Plugin for CaDataPlugin {
     fn build(&self, app: &mut App) {
-        CaData::of(app).weapon_set();
+        let data = CaData::of(app);
+        data.weapon_set();
+        // The announcer's weapon skins (kill_streaks.md A8), on whichever
+        // side reads the install: a killer's own client shows them.
+        if let Some(a) = data.attributes() {
+            chimera_core::announcer::AnnouncerAppExt::announcer_skins(app, super::GAME, a.announcer_skins.clone());
+        }
     }
 }
 

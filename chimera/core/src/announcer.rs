@@ -12,8 +12,10 @@
 //!   with per-digit images in fixed slots; optional), each callout's banner art, top image, voice and
 //!   priority level, the banner's layout on its reference screen, the
 //!   animation's timings, and weapon skins (a weapon's own art and
-//!   voices). Its files are paths in the install of the pack's `game`,
-//!   loaded at run time.
+//!   voices; a game may add skins it reads at run time,
+//!   `AnnouncerAppExt::announcer_skins`: Combat Arms' from its install).
+//!   Its files are paths in the install of the pack's `game`, loaded at
+//!   run time.
 //! - **Which pack** is the server's setting (`sv_announcer`, replicated:
 //!   `default`, the first registered pack; `none`; `random`, one of them
 //!   per map; or a pack's id), resolved by the server
@@ -230,20 +232,44 @@ impl AnnouncerPack {
     }
 }
 
-/// The packs the app's games contributed, in the order registered.
+/// The packs the app's games contributed, in the order registered, and
+/// the weapon skins read for packs at run time (`add_skins`).
 #[derive(Resource, Clone, Debug, Default)]
-pub struct AnnouncerPacks(pub Vec<Arc<AnnouncerPack>>);
+pub struct AnnouncerPacks(pub Vec<Arc<AnnouncerPack>>, BTreeMap<String, Vec<Skin>>);
 
 impl AnnouncerPacks {
     pub fn get(&self, id: &str) -> Option<&Arc<AnnouncerPack>> {
         self.0.iter().find(|p| p.id.eq_ignore_ascii_case(id))
     }
 
-    /// Add (or replace, by id) a pack.
-    pub fn register(&mut self, pack: AnnouncerPack) {
+    /// Add (or replace, by id) a pack, with the skins added for it.
+    pub fn register(&mut self, mut pack: AnnouncerPack) {
+        if let Some(skins) = self.1.get(&pack.id) {
+            merge_skins(&mut pack.skins, skins);
+        }
         match self.0.iter_mut().find(|p| p.id == pack.id) {
             Some(p) => *p = Arc::new(pack),
             None => self.0.push(Arc::new(pack)),
+        }
+    }
+
+    /// Weapon skins for pack `id` that a game reads at run time (Combat
+    /// Arms' from its install, kill_streaks.md A8): over the pack's own
+    /// by name, now and whenever the pack is registered again or later.
+    pub fn add_skins(&mut self, id: &str, skins: Vec<Skin>) {
+        merge_skins(self.1.entry(id.to_string()).or_default(), &skins);
+        if let Some(p) = self.0.iter_mut().find(|p| p.id == id) {
+            merge_skins(&mut Arc::make_mut(p).skins, &skins);
+        }
+    }
+}
+
+/// `skins` into `into`, replacing those of the same name.
+fn merge_skins(into: &mut Vec<Skin>, skins: &[Skin]) {
+    for s in skins {
+        match into.iter_mut().find(|x| x.name == s.name) {
+            Some(x) => *x = s.clone(),
+            None => into.push(s.clone()),
         }
     }
 }
@@ -332,12 +358,22 @@ pub trait AnnouncerAppExt {
     /// Register a pack from its TOML document (`AnnouncerPacks`).
     /// Panics on a pack that doesn't parse (it is the game's own data).
     fn register_announcer(&mut self, toml: &str) -> &mut Self;
+    /// Weapon skins for pack `id`, read at run time
+    /// (`AnnouncerPacks::add_skins`), before or after the pack registers.
+    fn announcer_skins(&mut self, id: &str, skins: Vec<Skin>) -> &mut Self;
 }
 
 impl AnnouncerAppExt for App {
     fn register_announcer(&mut self, toml: &str) -> &mut Self {
         let pack = AnnouncerPack::parse(toml).unwrap_or_else(|e| panic!("announcer pack: {e}"));
         self.world_mut().get_resource_or_init::<AnnouncerPacks>().register(pack);
+        self
+    }
+
+    fn announcer_skins(&mut self, id: &str, skins: Vec<Skin>) -> &mut Self {
+        if !skins.is_empty() {
+            self.world_mut().get_resource_or_init::<AnnouncerPacks>().add_skins(id, skins);
+        }
         self
     }
 }
@@ -389,6 +425,28 @@ images = { two = "two_shiny.png" }
         let (images, sounds) = p.files();
         assert_eq!(images, ["head.png", "skull.png", "three.png", "two.png", "two_shiny.png"]);
         assert_eq!(sounds, ["head.wav", "two.wav"]);
+    }
+
+    /// Skins a game reads at run time join its pack, before or after it
+    /// registers, over the pack's own of the same name.
+    #[test]
+    fn skins_added_at_run_time() {
+        let skin = |name: &str, weapon: &str| Skin {
+            name: name.into(),
+            weapons: vec![weapon.into()],
+            ..Default::default()
+        };
+        let mut packs = AnnouncerPacks::default();
+        packs.add_skins("stand_in", vec![skin("early", "stand_in:a")]);
+        packs.register(AnnouncerPack::parse(PACK).unwrap());
+        packs.add_skins("stand_in", vec![skin("shiny", "stand_in:b"), skin("late", "stand_in:c")]);
+        let p = packs.get("stand_in").unwrap();
+        let names: Vec<&str> = p.skins.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["shiny", "early", "late"]);
+        assert_eq!(p.skin("stand_in:b").unwrap().name, "shiny", "replaced by name");
+        assert!(p.skin("stand_in:gun").is_none());
+        packs.register(AnnouncerPack::parse(PACK).unwrap());
+        assert_eq!(packs.get("stand_in").unwrap().skins.len(), 3, "kept on a new registration");
     }
 
     #[test]

@@ -37,8 +37,9 @@ revenge = { key = "revenge", name = "REVENGE", banner = "UI_HUD_Message/Effect/R
 # (`digit_prefix` + digit + ".dtx"), the ones, tens and hundreds slots of
 # B3 (`Num_One`, `Num_Ten`, `Num_Hun`). No top image; "KILL"'s voice
 # (`OneKillSound`) is not in the install, so none is named; "KILLS" has no
-# key. The Graffiti skin's "KILL" names a missing file (Quirk 5) and is not
-# modelled.
+# key. The weapon skins (A8, B7) are read from the install
+# (`HUDEffectOverride` sections); the Graffiti skin's "KILL" names a missing
+# file (Quirk 5), drawn blank.
 [plain_kill]
 one = { key = "kill", name = "KILL", banner = "UI_HUD_Message/Effect/Kill.dtx", level = 1 }
 many = { key = "kills", name = "KILLS", banner = "UI_HUD_Message/Effect/Kills.dtx", level = 1 }

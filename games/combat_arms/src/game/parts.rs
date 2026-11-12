@@ -9,11 +9,12 @@
 //! result screen's win and lose sounds for a party match's end, and its
 //! music director (`music`, which plays a party match's moments:
 //! `music::director`'s party cues). The app registers it
-//! (`register_parts(&PARTS)`).
+//! (`register_parts(&PARTS)`). The pack's weapon skins (kill_streaks.md
+//! A8, B7) are the install's, added when its data is read
+//! (`data::CaDataPlugin`: each weapon's `HUDEffectOverride`).
 //!
-//! Known shortcuts: the announcer pack has no weapon skins yet (which
-//! weapon wears which, `HUDEffectOverride` in the install's weapon list,
-//! isn't read: kill_streaks.md B7).
+//! Known shortcuts: without the install (or its key) the pack has no
+//! weapon skins.
 
 use chimera_core::game_parts::{GameParts, GunClass, GunPart};
 

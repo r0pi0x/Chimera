@@ -22,6 +22,7 @@ mod fire_voices;
 mod frame_cost;
 mod hud;
 mod hud_scale;
+mod kill_streaks;
 mod lobby;
 mod mission_hud;
 mod music;

@@ -100,10 +100,6 @@ first, done on the Windows PC. Delete a row when it lands.
 21. **HL2:DM: `func_clip_vphysics` lets frags, items and weapons
     through** (they're on `ITEM_LAYER`). Spec: hl2dm/maps_entities.md 11,
     case 40. Code: `chimera/world/src/map/physics_clip.rs`. S. No spec.
-22. **Combat Arms: kill-streak banners and voices ignore weapon skins**
-    (`HUDEffectOverride`). Spec: combat_arms/kill_streaks.md A8, B7,
-    cases 29-31, 41, 54. Code: `chimera/sim/src/announce.rs`,
-    `game/parts.rs`. M. No spec.
 23. **HL2:DM: held objects don't slide along walls or ramp their
     spin** (gravity gun controller). Spec: hl2dm/gravity_gun.md 5. Code:
     `chimera/world/src/map/held.rs` `drive`. M. No spec. Not on UGG
