@@ -4,7 +4,10 @@
 //! only the shell's feed has rows (CS:S's death notices and Combat Arms'
 //! feed stay empty); without the party's flag the games' own feeds are as
 //! before; a network client's feed has the server's entries; the radars
-//! are hidden until `hud_radar 1`. Headless, on `hud::party_with_huds`.
+//! are hidden until `hud_radar 1`. Every party game with a HUD declares
+//! its own feed (`kill_feed::GameKillFeeds`), and with each game's HUD up
+//! (HL2:DM's, CS:S's, Combat Arms') a kill is exactly one line on screen,
+//! the shell's. Headless, on `hud::party_with_huds`.
 
 use std::{sync::Arc, time::Duration};
 
@@ -273,4 +276,142 @@ fn lines_are_equal_in_height_and_icons_centred() {
         }
     }
     assert_eq!(boxes, 3, "the three iconed lines have a centring box, the fourth words");
+}
+
+/// The party on the greybox playing HL2:DM's mixed ladder (HL2:DM's
+/// pistol, CS:S's Glock, HL2:DM's SMG, Combat Arms' Beretta, ...), with
+/// every game's HUD (`party_kit::client::CLIENTS`: CS:S's panels on the
+/// map's CS:S look, Combat Arms' state, HL2:DM's on its stand-in look as
+/// the map's guest), the
+/// shell's feed widget, a window and, with `party`, the party's HUD
+/// settings (the one feed). The local player, a killer and its victims.
+fn every_hud_sim(party: bool) -> (Sim, Entity, Entity) {
+    use chimera_client::client::{fonts::UiFonts, hud::{HudDraws, HudLookOwner, HudRoot, HudSwitchPlugin}};
+    use chimera_sim::minigame::MinigameAppExt;
+    use combat_arms::ui::hud::CaHudStatePlugin;
+    use cs_source::ui::{game_hud::GameHudPlugin, minigame_hud::MinigameHudPlugin};
+    let mut sim = Sim::with(CaSim, |app| {
+        app.add_plugins(KillFeedPlugin);
+        if party {
+            app.add_plugins(PartyHudPlugin);
+        }
+        app.add_plugins((GreyboxMapPlugin, PartyPartsPlugin))
+            .init_resource::<UiFonts>()
+            // What HL2:DM's scoreboard reads of the shell's input.
+            .init_resource::<chimera_client::client::console::HeldActions>()
+            .init_resource::<ButtonInput<KeyCode>>()
+            // What its drawing writes to (no renderer here).
+            .init_asset::<chimera_client::client::hud_text::HudGlyphMaterial>()
+            .init_asset::<Image>()
+            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, hl2dm::ui::Hl2dmHudPlugin))
+            .insert_resource(HudLookOwner(cs_source::game::GAME))
+            .insert_resource(crate::hud::cs_look())
+            .insert_resource(chimera_world::map::hud::GuestLooks(vec![hl2_look()]));
+        app.world_mut().spawn((Node::default(), HudRoot(combat_arms::game::GAME)));
+        app.world_mut()
+            .get_resource_or_init::<HudDraws>()
+            .0
+            .push((combat_arms::game::GAME, combat_arms::ui::hud::DRAWS));
+    });
+    crate::gun_game::plain_rungs(sim.app.world_mut());
+    crate::gun_game::no_finale(sim.app.world_mut());
+    sim.app.add_minigames(&[("hl2dm.toml", &crate::hl2dm_parts::mixed_text(false))]).unwrap();
+    minigame::start(sim.app.world_mut(), "test:gun_game_hl2dm").expect("the gun game starts");
+    let me = sim.spawn_character(Vec3::new(0.0, 1.0, 0.0), combat_arms::game::movement::ID);
+    sim.app.world_mut().entity_mut(me).insert(chimera_core::core::LocalPlayer);
+    let killer = sim.spawn_character(Vec3::new(3.0, 1.0, 0.0), combat_arms::game::movement::ID);
+    sim.seconds(1.5);
+    let w = sim.app.world_mut();
+    w.spawn(Window::default());
+    let mut look = w.resource_mut::<ActiveHud>();
+    Arc::make_mut(&mut look.0).panels.insert(
+        "HudDeathNotice".into(),
+        HudPanel {
+            x: HudCoord::Start(0.0),
+            y: HudCoord::Start(0.0),
+            wide: 300.0,
+            tall: 100.0,
+            background: None,
+            icon: Vec2::ZERO,
+            digit: Vec2::ZERO,
+            digit2: Vec2::ZERO,
+            keys: Default::default(),
+        },
+    );
+    sim.seconds(0.2);
+    (sim, me, killer)
+}
+
+/// HL2:DM's stand-in look (its spec's layout and colours, no install) as
+/// the map's guest look: HL2:DM's HUD builds on it while it is up.
+fn hl2_look() -> ActiveHud {
+    let look = hl2dm::ui::look::spec_look(hl2dm::ui::frame::Screen::base());
+    let mut hud = (*look.hud).clone();
+    hud.game = hl2dm::game::GAME.into();
+    let mut menus = chimera_world::map::hud::GameMenus::default();
+    menus.strings.insert(hl2dm::game::hud::ANIMATIONS.into(), String::new());
+    hud.menus = Some(menus);
+    ActiveHud(Arc::new(hud), Default::default())
+}
+
+/// Every feed line on screen: the shell's rows and every game's own
+/// feed's lines (`GameKillFeeds`), by game.
+fn feed_lines(sim: &mut Sim) -> (usize, Vec<(&'static str, usize)>) {
+    use chimera_client::client::kill_feed::GameKillFeeds;
+    let w = sim.app.world_mut();
+    let shell = w.query::<&KillFeedRow>().iter(w).count();
+    (shell, GameKillFeeds::lines(w))
+}
+
+/// Every game the party composes with a HUD has declared its own kill
+/// feed, so the one-feed checks below count it: a game added to the party
+/// without one fails here (declare it with `register_game_kill_feed`, and
+/// gate it with `kill_feed::OwnKillFeed`).
+#[test]
+fn every_party_game_with_a_hud_declares_its_own_feed() {
+    let (sim, _, _) = every_hud_sim(true);
+    let feeds = sim.app.world().resource::<chimera_client::client::kill_feed::GameKillFeeds>();
+    for client in party_kit::client::CLIENTS.iter().filter(|c| c.hud.is_some()) {
+        assert!(
+            feeds.0.iter().any(|(g, _)| *g == client.game),
+            "{}'s HUD declares no kill feed (add its HUD plugin to `every_hud_sim` if it is new)",
+            client.game
+        );
+    }
+}
+
+/// With each game's HUD up in the party (HL2:DM's: the user's 2026-11-12
+/// recording had its death notices under the shell's feed), a kill is
+/// exactly one line on screen: the shell's row, no game's own.
+#[test]
+fn with_every_games_hud_a_kill_is_one_line() {
+    for (rung, game) in [(0, hl2dm::game::GAME), (1, cs_source::game::GAME), (3, combat_arms::game::GAME)] {
+        let (mut sim, me, killer) = every_hud_sim(true);
+        swap_to(&mut sim, me, rung);
+        assert_eq!(hud(&sim), game, "rung {rung}'s HUD");
+        let victim = sim.spawn_character(Vec3::new(-3.0, 1.0, 0.0), combat_arms::game::movement::ID);
+        sim.seconds(0.2);
+        kill(&mut sim, victim, killer, cs_source::game::weapons::GLOCK, Hitgroup::Chest);
+        sim.seconds(0.3);
+        let (shell, games) = feed_lines(&mut sim);
+        assert_eq!(hud(&sim), game, "still {game}'s HUD");
+        assert_eq!(shell, 1, "{game}'s HUD up: the shell's row");
+        assert!(games.iter().all(|(_, n)| *n == 0), "{game}'s HUD up: no game's own feed lines: {games:?}");
+    }
+}
+
+/// The same HUDs without the party's flag (as each game's own app):
+/// HL2:DM's HUD shows its own death notice and the shell draws none.
+#[test]
+fn without_the_partys_flag_hl2dms_hud_has_its_own_notice() {
+    let (mut sim, me, killer) = every_hud_sim(false);
+    swap_to(&mut sim, me, 0);
+    assert_eq!(hud(&sim), hl2dm::game::GAME);
+    let victim = sim.spawn_character(Vec3::new(-3.0, 1.0, 0.0), combat_arms::game::movement::ID);
+    sim.seconds(0.2);
+    kill(&mut sim, victim, killer, cs_source::game::weapons::GLOCK, Hitgroup::Chest);
+    sim.seconds(0.3);
+    let (shell, games) = feed_lines(&mut sim);
+    assert_eq!(shell, 0, "the shell's feed not drawn");
+    assert!(games.contains(&(hl2dm::game::GAME, 1)), "HL2:DM's death notice: {games:?}");
 }

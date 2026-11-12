@@ -804,8 +804,13 @@ game's:
   right), each gun with its own game's icon (`weapon_icons::
   WeaponIcons`, which games fill with their art: icons and kill marks)
   or its name. An app asks for it with `SharedKillFeed`, and the games'
-  own feeds stay empty while it is in; plain CS:S and Combat Arms keep
-  theirs.
+  own feeds stay empty while it is in; plain CS:S, Combat Arms and
+  HL2:DM keep theirs. A game's own feed passes one gate, `OwnKillFeed`
+  (shown or not, and the shell's entries only while shown), and its HUD
+  declares it with how many lines it shows (`register_game_kill_feed`,
+  `GameKillFeeds`); the party's tests require every composed game with a
+  HUD to have declared one and count every feed after a kill on each
+  game's HUD, so a new game's feed can't draw a second one unnoticed.
 - **Radars are an app setting** (`client::hud::Radars`, `hud_radar`):
   one game's radar over another game's map matches neither style and
   many maps have no overview, so the party apps start it at 0 and

@@ -62,6 +62,11 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
         "read-only answers (`&World`): the match's weapons, map pool and a game's sets for the asset offer",
     ),
     (
+        "chimera/client/src/client/kill_feed.rs",
+        "FeedLines",
+        "read-only answers (`&World`): how many lines a game's own kill feed shows, for the one-feed check",
+    ),
+    (
         "chimera/core/src/metrics/census.rs",
         "CensusAssets",
         "a tool: the asset stores the census counts",

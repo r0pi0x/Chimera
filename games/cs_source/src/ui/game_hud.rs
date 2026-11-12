@@ -15,7 +15,7 @@
 //! icon from `client::weapon_icons::WeaponIcons`, else its display name;
 //! CS:S registers its glyphs there for the other games' feeds, its
 //! headshot glyph as the headshot mark; none while the app draws one feed
-//! for every HUD, `client::kill_feed::SharedKillFeed`); the round's end: the win panel
+//! for every HUD, `client::kill_feed::OwnKillFeed`); the round's end: the win panel
 //! (`win_panel.rs`), or a centre print without its layout.
 //!
 //! Known shortcuts (docs/tech-debt.md): CS:S HUD parity (`client/game_hud.rs`,
@@ -96,6 +96,9 @@ impl Plugin for GameHudPlugin {
         // never written).
         app.add_message::<crate::rules::rounds::RoundEnded>();
         crate::client::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
+        // Its death notices, counted for the one-feed check (none while
+        // the app draws the shared feed: `kill_feed::OwnKillFeed`).
+        crate::client::kill_feed::GameKillFeedAppExt::register_game_kill_feed(app, crate::game::GAME, feed_lines);
         app.init_resource::<DeathNotices>()
             .init_resource::<LastHits>()
             .init_resource::<WeaponIcons>()
@@ -122,6 +125,11 @@ impl Plugin for GameHudPlugin {
             // HudLookOwner`), its parts go.
             .add_systems(Update, teardown.run_if(resource_removed::<ActiveHud>));
     }
+}
+
+/// The death notices this HUD shows now (`kill_feed::GameKillFeeds`).
+fn feed_lines(world: &World) -> usize {
+    world.get_resource::<DeathNotices>().map_or(0, |n| n.0.len())
 }
 
 /// Everything this HUD spawned.
@@ -335,12 +343,12 @@ fn death_notices(
     time: Res<Time>,
     demo: Option<Res<crate::game::demo::DemoClock>>,
     mut clock: Local<NoticeClock>,
-    shared: Option<Res<crate::client::kill_feed::SharedKillFeed>>,
+    own: crate::client::kill_feed::OwnKillFeed,
 ) {
     // Gone mid-frame (the map unloaded: back to the menu).
     let Some(hud) = hud else { return };
     // The app draws one feed for every HUD (`client::kill_feed`): none here.
-    if shared.is_some() {
+    if !own.shown() {
         died.clear();
         if !notices.0.is_empty() {
             notices.0.clear();
@@ -986,7 +994,7 @@ fn warm_fonts(
     window: PrimaryWindows,
     hud: Option<Res<ActiveHud>>,
     fonts: Option<Res<UiFonts>>,
-    shared: Option<Res<crate::client::kill_feed::SharedKillFeed>>,
+    own: crate::client::kill_feed::OwnKillFeed,
 ) -> Vec<WarmText> {
     let (Some(hud), Some(fonts)) = (hud, fonts) else { return Vec::new() };
     if !(hud.0.game.is_empty() || hud.0.game == crate::game::GAME) {
@@ -994,7 +1002,7 @@ fn warm_fonts(
     }
     let h = window_height(&window);
     let mut out: Vec<WarmText> = vec![fonts.client("CenterPrintText", h, 18.0).into()];
-    if shared.is_some() {
+    if !own.shown() {
         return out;
     }
     out.push(death_notice_font(&hud.0, &fonts, h / 480.0 * 480.0).into());
