@@ -5,19 +5,22 @@
 //! of mg_lt_galaxy_v5.
 //!
 //! Each clip entity with volumes gets a static collider (`PhysicsClip`) on
-//! `core::PHYSICS_CLIP_LAYER`: physics props and physics brushes collide
-//! with it; characters, ragdolls, loose items and spatial queries (shots,
-//! sight) pass. The logic layer (`logic::bridge`) switches it: off while
-//! the entity is disabled (StartDisabled, Enable/Disable) or gone (Kill),
-//! and, when it names a filter (`filtername`), it blocks only the bodies
-//! that filter passes (`ClipPasses`, checked in `MapCollisionHooks`).
+//! `core::PHYSICS_CLIP_LAYER` (specs/hl2dm/maps_entities.md 11): what
+//! moves by physics collides with it: props and physics brushes (held ones
+//! too) on the default layer, and loose items on `core::ITEM_LAYER`
+//! (dropped and placed weapons, items, frag grenades, S.L.A.M.s); a flyer
+//! marked `Flyer::meets_clips` (HL2:DM's energy ball) meets it in its
+//! sweep. Characters (their physics shadows too), ragdolls and spatial
+//! queries (shots, sight, bolts and rockets) pass. The logic layer
+//! (`logic::bridge`) switches it: off while the entity is disabled
+//! (StartDisabled, Enable/Disable) or gone (Kill), and, when it names a
+//! filter (`filtername`), it blocks only the bodies that filter passes
+//! (`ClipPasses`, checked in `MapCollisionHooks` and by flyers).
 //!
-//! Known shortcuts (docs/tech-debt.md): no spec covers the class
-//! (docs/plans/active/community-maps.md, spec questions): this is the
-//! public entity documentation's reading (solid to physics objects; the
-//! filter picks what it blocks). Ragdolls, gibs' debris and dropped
-//! weapons pass it (Source's may not). Why it's OK for now: the maps'
-//! clips hold balls and boats, which this covers.
+//! Known shortcuts (docs/tech-debt.md): ragdolls and gibs' debris pass it
+//! (the spec's list doesn't name them; players' ragdolls are the
+//! clients' in Source, which have no clips). Why it's OK for now: no
+//! stock clip stands where bodies fall.
 
 use std::collections::HashSet;
 
@@ -28,6 +31,10 @@ use super::{MapData, MapPart, entities};
 
 /// The class whose brushes are solid to physics objects only.
 pub const CLASS: &str = "func_clip_vphysics";
+
+/// What a physics clip collides with: physics props and brushes (the
+/// default layer) and loose items (`core::ITEM_LAYER`).
+pub const CLIPPED: LayerMask = LayerMask(LayerMask::DEFAULT.0 | crate::core::ITEM_LAYER.0);
 
 /// A physics clip's collider: the map entity it was placed by (index into
 /// `MapData::entities`).
@@ -57,7 +64,7 @@ pub(super) fn spawn_clips(commands: &mut Commands, data: &MapData, root: Entity)
             ClipPasses::default(),
             RigidBody::Static,
             collider,
-            CollisionLayers::new(crate::core::PHYSICS_CLIP_LAYER, LayerMask::DEFAULT),
+            CollisionLayers::new(crate::core::PHYSICS_CLIP_LAYER, CLIPPED),
             home,
             ChildOf(root),
         ));
@@ -129,7 +136,7 @@ mod tests {
             ActiveCollisionHooks::FILTER_PAIRS,
             RigidBody::Static,
             Collider::cuboid(10.0, 0.2, 10.0),
-            CollisionLayers::new(crate::core::PHYSICS_CLIP_LAYER, LayerMask::DEFAULT),
+            CollisionLayers::new(crate::core::PHYSICS_CLIP_LAYER, CLIPPED),
             Transform::default(),
         ));
         for _ in 0..90 {

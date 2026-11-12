@@ -1395,9 +1395,9 @@ pub const PLAYER_CLIP_LAYER: avian3d::prelude::LayerMask = avian3d::prelude::Lay
 /// models): in `SOLID_LAYERS`, not in `CHARACTER_FILTER`.
 pub const TRACE_ONLY_LAYER: avian3d::prelude::LayerMask = avian3d::prelude::LayerMask(1 << 7);
 /// Physics layer of brushes solid to physics objects only (Source's
-/// func_clip_vphysics, `map::physics_clip`): props and physics brushes
-/// collide with them; characters, ragdolls, loose items and every
-/// spatial query (`SOLID_LAYERS`, `NOT_SHADOW`) pass through.
+/// func_clip_vphysics, `map::physics_clip`): props, physics brushes and
+/// loose items (`ITEM_LAYER`) collide with them; characters, ragdolls and
+/// every spatial query (`SOLID_LAYERS`, `NOT_SHADOW`) pass through.
 pub const PHYSICS_CLIP_LAYER: avian3d::prelude::LayerMask = avian3d::prelude::LayerMask(1 << 5);
 /// Physics layer of players' physics shadows (specs/cs_source/physics_props.md
 /// 4.1, `map::prop_physics::PhysicsShadow`): invisible bodies that only

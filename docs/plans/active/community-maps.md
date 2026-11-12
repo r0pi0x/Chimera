@@ -767,7 +767,7 @@ Fixed, by maps affected (tests: `heavy::map_flows`
 | Problem | Maps | Fix |
 |---|---|---|
 | Template copies of props and physics brushes never showed: a copy's logic prop has no map index, so the bridge found no prop state and hid it every tick; a func_physbox's copy also had no collision shape (the clone left it out), its collider named the template member's disabled body, and it took no shots; copies of movers had no avian island, so two touching panicked the physics ("neither body is in an island", found on mg_randomizer_v5) | 12 mg_ (smash_lego_copter's block spawners, boatrace's 22 boats and pins, crazykart's karts, creative's ball and boats, item_battle's 26 items, jacks' 62, kommando, galaxy, randomizer, starwars, swag, wipeout2) | `PropState::index` is optional (copies listed); `bridge::spawn_copy` shows physics brush copies, pairs them as props, gives copies of props and breakables `Damageable`; `copies::copy_node` keeps a body's own shape, makes the copy its colliders' body, re-inserts bodies awake with their island |
-| func_clip_vphysics did nothing (a volume): balls left the pitch, boats left before the start | 5 (boatrace's start wall, creative's and lego_multigames' pitch walls, galaxy's course ends, gg_fy_funtimes) | `map::physics_clip`: a static collider per clip on `core::PHYSICS_CLIP_LAYER` (props and physics brushes collide; characters, ragdolls, loose items and every spatial query pass), switched by the logic (StartDisabled, Enable/Disable, Kill), `filtername` limiting it to the bodies the filter passes (`MapCollisionHooks`). No spec (question 1 below) |
+| func_clip_vphysics did nothing (a volume): balls left the pitch, boats left before the start | 5 (boatrace's start wall, creative's and lego_multigames' pitch walls, galaxy's course ends, gg_fy_funtimes) | `map::physics_clip`: a static collider per clip on `core::PHYSICS_CLIP_LAYER` (props, physics brushes and loose items collide; characters, ragdolls and every spatial query pass), switched by the logic (StartDisabled, Enable/Disable, Kill), `filtername` limiting it to the bodies the filter passes (`MapCollisionHooks`). No spec (question 1 below) |
 | Models with an unterminated 64-byte name or Latin-1 bone names refused by vmdl | 4 (kz_hikari_od_nh_v2's bamboo, mg_kommando's 5 sandbags, mg_creative_multigames_v8_ns's car, surf_surreal's butterflies) | `props::terminate_names` on the second read |
 | Killing or colouring a still brush (func_illusionary, func_wall) showed nothing: baked into the world | 2 (boatrace's projector screen, creative's control lights) | A targeted func_wall/func_illusionary gets a node (`bsp::brush_entities`), a Toggle brush in the logic (wall always solid, illusionary never) |
 | A point_servercommand line with a refused command dropped the whole line | 1 (surf_jive: `sv_cheats 1;sv_airaccelerate 150;sv_accelerate 5;...`) | Each command of the line on its own (entity_io.md: the line goes to the console buffer); `;` in quotes doesn't split |
@@ -890,10 +890,10 @@ round changed):
 Spec questions (nothing in `specs/` covers these; implemented from the
 public entity documentation, small, with Known shortcuts):
 
-1. **func_clip_vphysics**: which bodies it blocks (props and physics
-   brushes here; ragdolls, gibs and dropped weapons pass), how
-   `filtername` applies (here: only the bodies the filter passes are
-   blocked), and whether Enable/Disable exist in CS:S.
+1. **func_clip_vphysics**: answered for HL2:DM by
+   specs/hl2dm/maps_entities.md 11 (props, physics brushes, items,
+   weapons, frags block; players, bullets, bolts pass; the filter picks
+   what it blocks; Enable/Disable); open for CS:S whether it is the same.
 2. **game_player_equip / player_weaponstrip** have no spec at all (their
    strip, Use and spawn rules are round 1's reading); with them, whether
    CS:S's spawn equipment adds to or replaces a survivor's weapons.

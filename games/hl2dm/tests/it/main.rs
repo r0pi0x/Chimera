@@ -21,6 +21,7 @@ mod net_effects;
 mod net_gravity_gun;
 mod net_prediction;
 mod net_projectiles;
+mod physics_clips;
 mod pickups;
 mod projectile_fx;
 mod projectiles;

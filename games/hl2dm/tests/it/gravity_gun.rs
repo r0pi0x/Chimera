@@ -32,14 +32,14 @@ use hl2dm::{
 };
 
 /// Looking east: engine and Source +X.
-const EAST: f32 = -90.0;
+pub(super) const EAST: f32 = -90.0;
 /// The player's feet (Source).
-const FEET: Vec3 = Vec3::new(0.0, 0.0, 0.0);
+pub(super) const FEET: Vec3 = Vec3::new(0.0, 0.0, 0.0);
 
 /// A prop to place: its centre relative to the player's eye (Source), its
 /// half size, mass, spawnflags and whether it starts pinned (flag 8).
 #[derive(Clone, Copy)]
-struct Crate {
+pub(super) struct Crate {
     at: Vec3,
     half: Vec3,
     mass: f32,
@@ -53,7 +53,7 @@ struct Crate {
 }
 
 impl Crate {
-    fn ahead(x: f32) -> Self {
+    pub(super) fn ahead(x: f32) -> Self {
         Crate {
             at: Vec3::new(x, 0.0, 0.0),
             half: Vec3::splat(10.0),
@@ -81,7 +81,7 @@ impl Crate {
 /// The eye's height above the feet (Source).
 const EYE: f32 = 64.0;
 
-fn solid(data: &mut MapData, lo: Vec3, hi: Vec3) {
+pub(super) fn solid(data: &mut MapData, lo: Vec3, hi: Vec3) {
     let (a, b) = (to_engine(lo), to_engine(hi));
     let (a, b) = (a.min(b), a.max(b));
     data.collision_brushes.push(MapBrush::from_box(a, b));
@@ -95,7 +95,7 @@ fn solid(data: &mut MapData, lo: Vec3, hi: Vec3) {
 /// A crate, on a thin pillar when it floats (so it stays where it is
 /// put: the cases place crates at eye height), unless motion-disabled
 /// (flag 8: it hangs).
-fn add_crate(data: &mut MapData, c: Crate) {
+pub(super) fn add_crate(data: &mut MapData, c: Crate) {
     let index = data.entities.len();
     let centre = FEET + Vec3::Z * EYE + c.at;
     let bottom = centre.z - c.half.z;
@@ -183,9 +183,9 @@ fn listen(
     log.died.extend(died.read().map(|d| (t, d.entity, d.attacker)));
 }
 
-struct W {
-    sim: Sim,
-    p: Entity,
+pub(super) struct W {
+    pub(super) sim: Sim,
+    pub(super) p: Entity,
 }
 
 /// The map with `crates` (and walls), the player at `FEET` looking east
@@ -196,6 +196,11 @@ fn world_with(crates: &[Crate], walls: &[(Vec3, Vec3)]) -> W {
 
 /// `world_with` on the floor `floor` (lowest and highest corners).
 fn world_on(crates: &[Crate], walls: &[(Vec3, Vec3)], floor: (Vec3, Vec3)) -> W {
+    world_of(map_data(crates, walls, floor))
+}
+
+/// The map: `floor`, `walls`, `crates`.
+pub(super) fn map_data(crates: &[Crate], walls: &[(Vec3, Vec3)], floor: (Vec3, Vec3)) -> MapData {
     let mut data = MapData {
         name: "test:gravity_gun".into(),
         entity_scale: U,
@@ -210,6 +215,12 @@ fn world_on(crates: &[Crate], walls: &[(Vec3, Vec3)], floor: (Vec3, Vec3)) -> W 
     for c in crates {
         add_crate(&mut data, *c);
     }
+    data
+}
+
+/// `data` loaded, the player at `FEET` looking east with the gravity gun
+/// in hand (the spawn's), settled.
+pub(super) fn world_of(data: MapData) -> W {
     let mut sim = Sim::new(Hl2Sim, MapSimPlugin::new(data));
     sim.set_tick_interval(hl2dm::game::TICK_INTERVAL);
     sim.app.init_resource::<Log>().add_systems(FixedLast, listen);
@@ -225,18 +236,18 @@ fn world(crates: &[Crate]) -> W {
     world_with(crates, &[])
 }
 
-fn look(sim: &mut Sim, p: Entity, yaw: f32, pitch: f32) {
+pub(super) fn look(sim: &mut Sim, p: Entity, yaw: f32, pitch: f32) {
     let mut i = sim.intent(p);
     i.yaw = yaw.to_radians();
     i.pitch = pitch.to_radians();
 }
 
 impl W {
-    fn tick(&self) -> u64 {
+    pub(super) fn tick(&self) -> u64 {
         self.sim.app.world().resource::<SimClock>().tick
     }
 
-    fn eye(&self) -> Vec3 {
+    pub(super) fn eye(&self) -> Vec3 {
         let w = self.sim.app.world();
         to_source(self.sim.position(self.p) + w.get::<MovementState>(self.p).unwrap().eye_offset)
     }
@@ -261,7 +272,7 @@ impl W {
     }
 
     /// Map prop `i` (in placing order).
-    fn node(&mut self, i: usize) -> Entity {
+    pub(super) fn node(&mut self, i: usize) -> Entity {
         let world = self.sim.app.world_mut();
         world
             .query::<(Entity, &PropEntity)>()
@@ -272,13 +283,13 @@ impl W {
     }
 
     /// Where prop `i`'s centre is (Source).
-    fn at(&mut self, i: usize) -> Vec3 {
+    pub(super) fn at(&mut self, i: usize) -> Vec3 {
         let n = self.node(i);
         to_source(self.sim.position(n))
     }
 
     /// Prop `i`'s velocity (Source units/s).
-    fn velocity(&mut self, i: usize) -> Vec3 {
+    pub(super) fn velocity(&mut self, i: usize) -> Vec3 {
         let n = self.node(i);
         self.sim
             .app
@@ -302,7 +313,7 @@ impl W {
         self.sim.app.world().get::<WeaponState>(self.gun()).unwrap().clone()
     }
 
-    fn holding(&self) -> bool {
+    pub(super) fn holding(&self) -> bool {
         self.sim.app.world().get::<Hl2Physcannon>(self.gun()).unwrap().holding
     }
 
@@ -312,7 +323,7 @@ impl W {
 
     /// Press (`fire`, `secondary`) for `hold` ticks, then let go; run
     /// `n` ticks in all.
-    fn press(&mut self, fire: bool, secondary: bool, hold: u64, n: u64) {
+    pub(super) fn press(&mut self, fire: bool, secondary: bool, hold: u64, n: u64) {
         for k in 0..n {
             {
                 let mut i = self.sim.intent(self.p);
@@ -340,7 +351,7 @@ impl W {
     }
 
     /// Grab prop `i` with a secondary click (and let go of the button).
-    fn grab(&mut self, i: usize) -> Entity {
+    pub(super) fn grab(&mut self, i: usize) -> Entity {
         self.press(false, true, 1, 2);
         let n = self.node(i);
         assert!(self.sim.app.world().get::<Held>(n).is_some(), "grabbed");
@@ -645,7 +656,8 @@ fn spawnflags_decide() {
 }
 
 /// Case 21 in the scene: the view turns 90 degrees left, the crate comes
-/// round to the new forward and turns with it.
+/// round to the new forward and turns with it (its contact factor at 1,
+/// clear of everything).
 #[test]
 fn the_held_crate_follows_the_view() {
     let mut w = world(&[Crate::ahead(150.0)]);
@@ -662,6 +674,47 @@ fn the_held_crate_follows_the_view() {
     let turn = w.sim.app.world().get::<Rotation>(n).unwrap().0;
     let (axis, angle) = turn.to_axis_angle();
     assert!((angle.abs() - std::f32::consts::FRAC_PI_2).abs() < 0.1 && axis.y.abs() > 0.9, "{axis} {angle}");
+}
+
+/// 5, the controller's contact factor: 0 at the grab, so the crate first
+/// can't turn; free of its pillar it climbs 0.03 a tick to 1 (full spin,
+/// 3600 deg/s) and stays there.
+#[test]
+fn the_held_crates_spin_ramps_up_after_the_grab() {
+    let mut w = world(&[Crate::ahead(150.0)]);
+    let n = w.grab(0);
+    let contact = |w: &W| w.sim.app.world().get::<Held>(n).unwrap().contact;
+    assert!(contact(&w) < 0.07, "two steps at most after the grab: {}", contact(&w));
+    w.sim.seconds(1.0);
+    assert_eq!(contact(&w), 1.0);
+}
+
+/// 5, held against a wall: the crate's target is 6.6 into a wall 60
+/// ahead. Touching it (immovable) the contact factor falls to 0.1 (spin
+/// at most 3.6 deg/s) and the push into the wall is taken off, so the
+/// crate slides: the view turned 5 degrees left, it is at the new
+/// target's side position (56.627 sin 5 = 4.94) two ticks later, its face
+/// still on the wall, and has turned at most 3.6 deg/s.
+#[test]
+fn a_held_crate_slides_along_a_wall() {
+    let mut w = world_with(&[Crate::ahead(40.0)], &[(Vec3::new(60.0, -512.0, 0.0), Vec3::new(80.0, 512.0, 256.0))]);
+    let n = w.grab(0);
+    w.sim.seconds(1.0);
+    assert!(w.holding());
+    let held = w.sim.app.world().get::<Held>(n).unwrap().clone();
+    assert!((held.contact - 0.1).abs() < 1e-5, "against the wall: {}", held.contact);
+    let rel = w.at(0) - w.eye();
+    assert!((rel.x - 50.0).abs() < 0.5 && rel.y.abs() < 0.5, "pressed to the wall: {rel}");
+    let turn0 = w.sim.app.world().get::<Rotation>(n).unwrap().0;
+    look(&mut w.sim, w.p, EAST + 5.0, 0.0);
+    w.sim.ticks(2);
+    let rel = w.at(0) - w.eye();
+    let side = 56.627 * 5f32.to_radians().sin();
+    assert!((rel.y - side).abs() < 0.5, "slid along the wall to {side}: {rel}");
+    assert!((rel.x - 50.0).abs() < 0.5, "its face still on the wall: {rel}");
+    let turn = w.sim.app.world().get::<Rotation>(n).unwrap().0 * turn0.inverse();
+    let angle = turn.to_axis_angle().1.abs().min(std::f32::consts::TAU - turn.to_axis_angle().1.abs());
+    assert!(angle.to_degrees() <= 3.6 * 0.03 + 0.01, "spin cut to 3.6 deg/s: {}", angle.to_degrees());
 }
 
 /// Case 22: a launch (possible the tick after the grab): 1500 along the view, spin
@@ -1525,9 +1578,11 @@ fn axes(rot: Quat) -> (Vec3, Vec3) {
 #[test]
 fn preferred_carry_angles_hold_in_the_yaw_frame() {
     const KEYS: &[(&str, &str)] = &[("chimera_prop_carry_angles", "-90 0 0")];
-    let mut w = world(&[Crate::ahead(60.0).keys(KEYS)]);
+    // (From 150: off its pillar, whose touch would keep the controller's
+    // spin at its contact low; turned within the first second.)
+    let mut w = world(&[Crate::ahead(150.0).keys(KEYS)]);
     let n = w.grab(0);
-    w.sim.seconds(0.5);
+    w.sim.seconds(1.0);
     let check = |w: &W, what: &str| {
         let rot = w.sim.app.world().get::<Transform>(n).unwrap().rotation;
         let (fwd, up) = axes(rot);
@@ -1550,9 +1605,11 @@ fn preferred_carry_angles_hold_in_the_yaw_frame() {
 fn launch_spin_by_the_props_interactions() {
     const ZAXIS: &[(&str, &str)] = &[("chimera_prop_interactions", "launch_spin_z")];
     const NONE: &[(&str, &str)] = &[("chimera_prop_interactions", "launch_spin_none")];
-    let mut w = world(&[Crate::ahead(60.0).keys(ZAXIS)]);
+    // (From 150: off its pillar, whose touch would keep the controller's
+    // spin at its contact low; turned within the first second.)
+    let mut w = world(&[Crate::ahead(150.0).keys(ZAXIS)]);
     let n = w.grab(0);
-    w.sim.seconds(0.5);
+    w.sim.seconds(1.0);
     let rot = w.sim.app.world().get::<Transform>(n).unwrap().rotation;
     let (fwd, up) = axes(rot);
     let want = Vec3::new(5f32.to_radians().cos(), 0.0, 5f32.to_radians().sin());
@@ -1564,7 +1621,10 @@ fn launch_spin_by_the_props_interactions() {
     let spin = world.get::<AngularVelocity>(n).unwrap().0;
     let axis = world.get::<Rotation>(n).unwrap().0 * Vec3::Y;
     // Source's cap, less a tick of the air's drag on it (measured 3250).
-    assert!((spin.length().to_degrees() - 3250.0).abs() < 100.0, "{} deg/s", spin.length().to_degrees());
+    // The air's drag on spin isn't modelled: clear of everything it leaves
+    // at the cap (it used to rub its pillar, which took about as much).
+    let deg = spin.length().to_degrees();
+    assert!((3150.0..=3650.0).contains(&deg), "{deg} deg/s");
     assert!(spin.normalize().dot(axis) > 0.9, "about its own z: {spin} {axis}");
 
     let mut w = world_(NONE);

@@ -22,8 +22,9 @@
 //!   0.5 s it launches (busy 0.7 s, next primary + 0.5, next secondary
 //!   + 1.0, a punch of pitch -8..-12 and yaw 1..2 whole degrees): a
 //!   10-unit sphere at 1000 units/s that keeps that speed after every
-//!   contact (`Flyer::keep_speed`), no gravity, 4 s of life, never its
-//!   owner, 1000 crush to every other player it touches (through the
+//!   contact (`Flyer::keep_speed`; physics clips stop it too:
+//!   `Flyer::meets_clips`), no gravity, 4 s of life, never its owner,
+//!   1000 crush to every other player it touches (through the
 //!   suit: 800 to health on 200 armour) bouncing on; after a world bounce
 //!   at least 0.25 s since the last counted one it seeks (`seek`): the
 //!   nearest attractive player within 15 degrees of its new direction in
@@ -315,6 +316,8 @@ pub fn before_frame(
                 f.half = Vec3::splat(p.radius * U);
                 f.sphere = true;
                 f.keep_speed = Some(p.speed * U);
+                // A physics object: func_clip_vphysics stops it (maps_entities.md 11).
+                f.meets_clips = true;
                 f.expires = Some(now + p.life as f64);
                 f.touch = Touch::Bounce;
                 // 5.2: its end at once on a sky surface.
