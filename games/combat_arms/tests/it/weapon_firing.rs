@@ -1008,6 +1008,155 @@ fn t29_burst_toggle_lockout() {
     assert!(t >= 0.300 + latency - 1e-6 && t < 0.300 + latency + 1.0 / sim.tick_hz(), "first round at {t} s");
 }
 
+/// An install record's fire modes as the merge writes them
+/// (`data::fire_modes_patch`): the `[alt]` of the install's `M4A1` with
+/// `fields` added, and its trigger, on a test weapon based on our M4A1
+/// (its 105 ms cycle).
+fn install_modes(sim: &mut Sim, id: &str, fields: &str) {
+    use combat_arms::game::data::{WEAPON_DATA, attributes::WeaponsFile, merge_weapon_docs};
+    let text = format!(r#"[Ammo0] Name="5.56mm M4A1" [Weapon0] Name="M4A1" Guntype=4 ShotsPerClip=30 AmmoName0="5.56mm M4A1" {fields}"#);
+    let doc = lithtech_formats::attributes::Document::parse(text.as_bytes()).unwrap();
+    let file = WeaponsFile::read(&doc).unwrap();
+    let docs = merge_weapon_docs(WEAPON_DATA, &file, 0.018).unwrap();
+    let m4 = docs.iter().find(|(n, _)| n == "m4a1.toml").expect("our M4A1");
+    let merged: toml::Table = toml::from_str(&m4.1).unwrap();
+    let mut alt = toml::Table::new();
+    alt.insert("alt".into(), merged.get("alt").expect("an [alt] of fire modes").clone());
+    // The record's trigger too (`RapidFireCount`: automatic or not).
+    alt.insert("trigger".into(), merged.get("trigger").unwrap().clone());
+    let ours = format!("id = \"{id}\"\nbase = \"combat_arms:m4a1\"\n{}", toml::to_string(&alt).unwrap());
+    sim.app.add_weapon_data(&[(id, ours.as_str())]).unwrap();
+}
+
+/// Press the fire-mode key (`+firemode`) for one tick.
+fn fire_mode_key(sim: &mut Sim, p: Entity) {
+    let bit = sim
+        .app
+        .world()
+        .resource::<chimera_core::core::ActionRegistry>()
+        .bit(combat_arms::game::data::FIRE_MODE_ACTION);
+    assert_ne!(bit, 0, "the fire-mode action is registered");
+    sim.intent(p).actions |= bit;
+    sim.ticks(1);
+    sim.intent(p).actions &= !bit;
+}
+
+/// 28 and 29 on an install gun: the record's `TripleShotMode=1`,
+/// `TripleShotDelay=210`, `TripleShotSelectDelay=300` give a burst mode
+/// the fire-mode key turns on (attack2 doesn't: it is Combat Arms' zoom;
+/// holding the key steps once). Bursts of 3 a cycle apart, the next pull
+/// 210 ms after the third round; the first round after a toggle 300 ms
+/// on; a second press back to auto.
+#[test]
+fn t28_t29_install_burst_by_the_fire_mode_key() {
+    const FIELDS: &str = "RapidFireCount=0 TripleShotMode=1 TripleShotDelay=210 TripleShotSelectDelay=300";
+    let mut sim = sim();
+    install_modes(&mut sim, "test:m16a3_install", FIELDS);
+    let p = player(&mut sim, Vec3::new(30.0, 1.0, 30.0), 0.0, 1.0);
+    let w = arm(&mut sim, p, "test:m16a3_install");
+    let mode = |sim: &Sim| sim.app.world().get::<AltModes>(w).unwrap().current;
+    sim.intent(p).secondary = true;
+    sim.seconds(0.5);
+    sim.intent(p).secondary = false;
+    assert_eq!(mode(&sim), 0, "attack2 leaves the fire mode alone");
+    // Held for half a second: one step.
+    let bit = sim.app.world().resource::<chimera_core::core::ActionRegistry>().bit("firemode");
+    sim.intent(p).actions = bit;
+    sim.seconds(0.5);
+    sim.intent(p).actions = 0;
+    assert_eq!(mode(&sim), 1, "burst on, once");
+    sim.seconds(0.35);
+
+    // 28: held for 2 s, 3 rounds at 0, 105, 210 ms.
+    sim.intent(p).fire = true;
+    let mut at = Vec::new();
+    for tick in 0..ticks_for(&sim, 2.0) {
+        let before = fired(&sim, w);
+        sim.ticks(1);
+        if fired(&sim, w) > before {
+            at.push(tick);
+        }
+    }
+    let want: Vec<u64> = [0.0, 0.105, 0.210].iter().map(|t| LATENCY + ticks_for(&sim, *t)).collect();
+    assert_eq!(at, want, "held for 2 s");
+    sim.intent(p).fire = false;
+    sim.seconds(1.0);
+
+    // A tap: still 3; pressed again 90 ms after the third, nothing until
+    // 210 ms after it.
+    let start = sim.tick() + LATENCY;
+    let next = |sim: &Sim| (sim.tick() as f64 - start as f64) / sim.tick_hz();
+    sim.intent(p).fire = true;
+    sim.ticks(LATENCY + 1);
+    sim.intent(p).fire = false;
+    while next(&sim) < 0.300 {
+        sim.ticks(1);
+    }
+    assert_eq!(fired(&sim, w), 6, "a tap");
+    sim.intent(p).fire = true;
+    while next(&sim) < 0.420 - 1e-6 {
+        sim.ticks(1);
+        assert_eq!(fired(&sim, w), 6, "before 210 ms after the third");
+    }
+    sim.ticks(1);
+    assert_eq!(fired(&sim, w), 7, "the next burst");
+    sim.intent(p).fire = false;
+    sim.seconds(1.0);
+
+    // 29: toggled (back to auto) at 0, fire held from 200 ms: the first
+    // round at 300 ms or later.
+    fire_mode_key(&mut sim, p);
+    assert_eq!(mode(&sim), 0, "auto again");
+    let toggled = sim.tick() - 1;
+    while (sim.tick() - toggled) as f64 / sim.tick_hz() < 0.200 {
+        sim.ticks(1);
+    }
+    let before = fired(&sim, w);
+    sim.intent(p).fire = true;
+    while fired(&sim, w) == before {
+        sim.ticks(1);
+    }
+    let t = (sim.tick() - 1 - toggled) as f64 / sim.tick_hz();
+    let latency = LATENCY as f64 / sim.tick_hz();
+    assert!(t >= 0.300 + latency - 1e-6 && t < 0.300 + latency + 1.0 / sim.tick_hz(), "first round at {t} s");
+    // Auto: held, it keeps firing.
+    sim.seconds(0.5);
+    assert!(fired(&sim, w) > before + 3, "full auto");
+}
+
+/// Continuous fire (gate 4, `ContinuousFire=1`) on a semi-automatic with
+/// a burst: the key steps auto -> burst -> continuous -> back; in the
+/// continuous mode a held trigger keeps firing, in the first one press
+/// fires one round.
+#[test]
+fn continuous_fire_mode_on_a_semi_automatic() {
+    const FIELDS: &str = "RapidFireCount=1 TripleShotMode=1 ContinuousFire=1 TripleShotSelectDelay=300";
+    let mut sim = sim();
+    install_modes(&mut sim, "test:semi_modes", FIELDS);
+    let p = player(&mut sim, Vec3::new(30.0, 1.0, 30.0), 0.0, 1.0);
+    let w = arm(&mut sim, p, "test:semi_modes");
+    let mode = |sim: &Sim| sim.app.world().get::<AltModes>(w).unwrap().current;
+    let held = |sim: &mut Sim| {
+        let before = fired(sim, w);
+        sim.intent(p).fire = true;
+        sim.seconds(1.0);
+        sim.intent(p).fire = false;
+        sim.seconds(0.5);
+        fired(sim, w) - before
+    };
+    assert_eq!(held(&mut sim), 1, "semi-automatic");
+    fire_mode_key(&mut sim, p);
+    assert_eq!(mode(&sim), 1);
+    sim.seconds(0.4);
+    assert_eq!(held(&mut sim), 3, "a burst");
+    fire_mode_key(&mut sim, p);
+    assert_eq!(mode(&sim), 2);
+    sim.seconds(0.4);
+    assert!(held(&mut sim) > 3, "continuous fire");
+    fire_mode_key(&mut sim, p);
+    assert_eq!(mode(&sim), 0, "round to the first");
+}
+
 /// 30. Empty with a reserve: one round, the reload starts by itself about
 /// 105 ms later, 2300 ms after that 30 in the clip and 60 in all; still
 /// held, firing goes on.

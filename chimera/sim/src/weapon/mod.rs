@@ -27,7 +27,11 @@
 //! `PassMaterials` (bullets through walls and characters), `DamageEffect`,
 //! `WeaponSounds`, attack2 modes (`AltModes`, with `Zoom` (owner gets `Zoomed`,
 //! max speed; a game zooming its own way marks the weapon `OwnZoom` and sets
-//! `Zoomed` itself, with its own mouse scale) and `Burst`); `Inventory`, `WeaponState` timers,
+//! `Zoomed` itself, with its own mouse scale), `Burst` (its rounds the
+//! trigger's cycle apart when its interval is 0, the lockout from its last
+//! round with `from_last`) and `AutoMode` (a mode of continuous fire);
+//! `AltModes::key`: modes a named action steps once a press, not attack2);
+//! `Inventory`, `WeaponState` timers,
 //! `DamageWeapons` (the gun each attacker's damage came from, for kill
 //! notices), `WeaponRegistry`/`StartingWeapons` (per team; a character's own `OwnKit`
 //! instead), `give`; selection (or a
@@ -778,6 +782,9 @@ pub struct Inventory {
     prev_secondary: bool,
     prev_select: Option<u8>,
     prev_last: bool,
+    /// Last tick's named actions (`Intent::actions`), for a keyed mode
+    /// step's press (`AltModes::key`).
+    prev_actions: u32,
     /// Last tick's use key (`drop::use_pick_up`).
     prev_use: bool,
     /// The command number of the last tick it shot or swung
@@ -1167,6 +1174,11 @@ pub struct AltModes {
     pub blocks_primary: bool,
     /// Played on every step.
     pub sound: Option<String>,
+    /// The named action (`core::ActionRegistry`) whose press steps the
+    /// modes instead of attack2 (Combat Arms' fire-mode key): once per
+    /// press, at any time the frame runs; with `blocks_primary` the
+    /// primary waits `toggle_time` after it; attack2 is left to the game.
+    pub key: Option<&'static str>,
 }
 
 impl AltModes {
@@ -1177,9 +1189,16 @@ impl AltModes {
             toggle_time,
             blocks_primary,
             sound: None,
+            key: None,
         }
     }
 }
+
+/// In `AltModes` mode `.0` the trigger is automatic, whatever its own
+/// `automatic` and `per_press` (Combat Arms' continuous fire on a
+/// semi-automatic gun).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AutoMode(pub u8);
 
 /// What the owner reads on stepping to each `AltModes` mode (a centre
 /// print, as game string tokens by mode; CS:S's burst weapons: "Switched
@@ -1202,14 +1221,18 @@ pub struct Zoom {
 }
 
 /// While the weapon is in mode `mode`, one trigger pull fires `count`
-/// rounds `interval` seconds apart, and the next pull may come `refire`
-/// seconds after the first round.
+/// rounds `interval` seconds apart (0: the trigger's cycle), and the next
+/// pull may come `refire` seconds after the first round (`from_last`:
+/// after the burst's last round).
 #[derive(Component, Clone, Debug)]
 pub struct Burst {
     pub mode: u8,
     pub count: u32,
     pub interval: f32,
     pub refire: f32,
+    /// `refire` counts from the burst's last round (Combat Arms'
+    /// `TripleShotDelay`), not its first.
+    pub from_last: bool,
     /// One burst per trigger pull: holding after a burst fires nothing
     /// until the trigger is let go (Combat Arms); otherwise holding fires
     /// a burst every `refire`.
@@ -1909,6 +1932,7 @@ struct WeaponParts {
     modes: Option<&'static mut AltModes>,
     zoom: Option<&'static Zoom>,
     burst: Option<&'static Burst>,
+    auto_mode: Option<&'static AutoMode>,
     shells: Option<&'static ShellReload>,
     alt_shot: Option<&'static AltShot>,
     rewind_choice: Option<&'static lagcomp::RewindChoice>,
@@ -1917,6 +1941,11 @@ struct WeaponParts {
 impl WeaponPartsItem<'_, '_> {
     fn mode(&self) -> u8 {
         self.modes.as_ref().map_or(0, |m| m.current)
+    }
+
+    /// Seconds between a burst's rounds: its own, or the trigger's cycle.
+    fn burst_interval(&self, b: &Burst) -> f32 {
+        if b.interval > 0.0 { b.interval } else { self.trigger.map_or(0.0, |t| t.cycle) }
     }
 
     /// Change mode, telling the HUD and view model.
@@ -2038,6 +2067,7 @@ fn weapon_frame(
     mut world: deliver::World,
     clock: Res<SimClock>,
     mut lag: lagcomp::LagComp,
+    actions: Option<Res<crate::core::ActionRegistry>>,
 ) {
     // The command's time (Source's curtime).
     let now = clock.now;
@@ -2050,8 +2080,10 @@ fn weapon_frame(
         }
         let pressed = intent.fire && !inv.prev_fire;
         let released2 = !intent.secondary && inv.prev_secondary;
+        let actions_pressed = intent.actions & !inv.prev_actions;
         inv.prev_fire = intent.fire;
         inv.prev_secondary = intent.secondary;
+        inv.prev_actions = intent.actions;
         if std::mem::take(&mut inv.frame_ended) {
             continue;
         }
@@ -2059,6 +2091,23 @@ fn weapon_frame(
         let Ok(mut w) = weapons.get_mut(active) else { continue };
         if !intent.fire {
             w.state.burst = 0;
+        }
+        // Modes stepped by a key of their own (`AltModes::key`): once per
+        // press, busy or not (drawing, reloading); the primary waits out
+        // the step.
+        if let Some(modes) = w.modes.as_ref().map(|m| (**m).clone())
+            && let Some(key) = modes.key
+        {
+            let bit = actions.as_deref().map_or(0, |r| r.bit(key));
+            if bit != 0 && actions_pressed & bit != 0 && modes.count > 1 {
+                if modes.blocks_primary {
+                    w.state.next_primary = w.state.next_primary.max(now + modes.toggle_time as f64);
+                }
+                if let Some(s) = modes.sound {
+                    world.sound(owner_sound(s, owner, transform.translation + state.eye_offset, CHAN_ITEM));
+                }
+                w.set_mode((modes.current + 1) % modes.count, owner, &mut world);
+            }
         }
         // A sniper shot's zoom comes back when the weapon can fire again
         // (measured M15).
@@ -2257,9 +2306,16 @@ fn weapon_frame(
         // The rest of a burst fires on its own, button or not (M16).
         if w.state.burst_left > 0 && due >= w.state.next_burst_round {
             w.state.burst_left -= 1;
-            w.state.next_burst_round += w.burst.map_or(0.0, |b| b.interval) as f64;
+            let burst = w.burst.cloned();
+            w.state.next_burst_round += burst.as_ref().map_or(0.0, |b| w.burst_interval(b)) as f64;
             if w.fire_rounds(&mut ctx, 1) == 0 {
                 w.state.burst_left = 0;
+            } else if w.state.burst_left == 0
+                && let Some(b) = burst.filter(|b| b.from_last)
+            {
+                // The lockout runs from the last round.
+                w.state.next_primary = now + b.refire as f64;
+                w.state.next_secondary = w.state.next_primary;
             }
         }
 
@@ -2314,6 +2370,7 @@ fn weapon_frame(
             }
         } else if intent.secondary
             && let Some(modes) = w.modes.as_ref().map(|m| (**m).clone())
+            && modes.key.is_none()
             && w.state.next_secondary <= due
         {
             // Each step sets only the secondary timer (measured M15), but a
@@ -2357,8 +2414,11 @@ fn weapon_frame(
             && !held_by_postfire
         {
             let chain_round = std::mem::take(&mut w.state.armed_round);
-            let automatic = w.trigger.is_none_or(|t| t.automatic);
-            let per_press = w.trigger.map_or(0, |t| t.per_press);
+            // A mode of continuous fire (`AutoMode`) is automatic, no
+            // per-pull limit.
+            let auto_mode = w.auto_mode.is_some_and(|a| a.0 == w.mode() && a.0 > 0);
+            let automatic = auto_mode || w.trigger.is_none_or(|t| t.automatic);
+            let per_press = if auto_mode { 0 } else { w.trigger.map_or(0, |t| t.per_press) };
             let empty = w.magazine.as_ref().is_some_and(|m| m.clip == 0);
             let once = w
                 .burst
@@ -2413,11 +2473,15 @@ fn weapon_frame(
                     w.state.burst += 1;
                 } else if let Some(burst) = w.burst.filter(|b| b.mode == w.mode() && b.count > 0).cloned() {
                     // A burst: the first round now, the rest on their own.
+                    let interval = w.burst_interval(&burst) as f64;
                     if w.fire_rounds(&mut ctx, 1) > 0 {
                         w.state.burst_left = burst.count - 1;
-                        w.state.next_burst_round = now + burst.interval as f64;
+                        w.state.next_burst_round = now + interval;
                     }
-                    w.state.next_primary = now + burst.refire as f64;
+                    // From the last round: until then, as if the burst
+                    // runs whole (its last round sets it).
+                    let first_to_last = if burst.from_last { interval * burst.count.saturating_sub(1) as f64 } else { 0.0 };
+                    w.state.next_primary = now + first_to_last + burst.refire as f64;
                     w.state.next_secondary = w.state.next_primary;
                 } else if let Some(trigger) = w.trigger.cloned() {
                     let mut shots = 0;

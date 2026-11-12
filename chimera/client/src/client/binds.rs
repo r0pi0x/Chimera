@@ -49,9 +49,10 @@
 //! Menus that read keys take them (`CapturedKeys`): the polled binds of
 //! `input` and `weapon_menu` don't see a captured key until it is up.
 //!
-//! Known shortcuts: a named action is only a held button: it has no
-//! console `+throw` typed-hold (`console::HeldActions` keeps Chimera's
-//! own) and no wheel notch. The defaults are read once at start for the
+//! Named actions are held from the console too (`+throw`, `-throw`:
+//! `console::HeldActions::named`).
+//!
+//! Known shortcuts: a named action has no wheel notch. The defaults are read once at start for the
 //! gameplay's `binds` game (`BindDefaults`): a gameplay switch later
 //! doesn't re-read them.
 
@@ -442,7 +443,26 @@ impl BindsAppExt for App {
     fn bound_action(&mut self, name: &str) -> &mut Self {
         use crate::core::ActionAppExt;
         self.intent_action(name);
-        self.polled_bind(&format!("+{}", norm(name)))
+        // Held from the console too (`+name`, `-name`: scripts, remote
+        // tools), as Chimera's own buttons.
+        let name = norm(name);
+        for (sign, on) in [("+", true), ("-", false)] {
+            let held = name.clone();
+            self.console_command(
+                &format!("{sign}{name}"),
+                &format!("{} the action {name} (for binds).", if on { "Start" } else { "Stop" }),
+                move |w, _| {
+                    let mut h = w.get_resource_or_init::<super::console::HeldActions>();
+                    if on {
+                        h.named.insert(held.clone());
+                    } else {
+                        h.named.remove(&held);
+                    }
+                    Ok(None)
+                },
+            );
+        }
+        self.polled_bind(&format!("+{name}"))
     }
 }
 

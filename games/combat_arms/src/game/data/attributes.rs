@@ -21,7 +21,13 @@
 //!   record"), kept on `WeaponsFile` and linked by the ammo's
 //!   `ProjectileFXName`; `ImpactRecord` its impact records (`ImpactFX#`:
 //!   effects_sounds.md "Effect tables in the attribute data"), linked by
-//!   the ammo's `ImpactFXName`.
+//!   the ammo's `ImpactFXName`; `FireRecord` (`FireFX#`, `FireFXName`) and
+//!   `TracerRecord` (`TracerFX#`, `TracerFXName`) likewise.
+//! - `announcer_skins`: the kill announcer's weapon skins (kill_streaks.md
+//!   A8, B7): each weapon's `HUDEffectOverride` names a section of the
+//!   layout file (`LAYOUT_FILE`: banner and top images) and of the client
+//!   file (`CLIENT_FILE`: voices); its keys, by `SKIN_IMAGES` and
+//!   `SKIN_VOICES`, replace the announcer pack's callouts' (B1, B2 keys).
 //! - `AttachmentsFile`: the character attachments file
 //!   (`ATTACHMENTS.TXT`): goggles and backpacks (`Goggle#`, `Backpack#`:
 //!   socket, model per figure type, skins, render styles).
@@ -56,6 +62,10 @@ pub const MARKS_FILE: &str = "attributes/marks.txt";
 /// (special_weapons.md, "Where the numbers live").
 pub const FX_FILE: &str = "attributes/fx.txt";
 pub const ATTACHMENTS_FILE: &str = "attributes/attachments.txt";
+/// The layout and client attribute files: a weapon skin's announcer
+/// images and voices, by section (kill_streaks.md A8, B7).
+pub const LAYOUT_FILE: &str = "attributes/layout.txt";
+pub const CLIENT_FILE: &str = "attributes/clientbutes.txt";
 /// The perk and set item files (gear_perks.md).
 pub const PERKS_FILE: &str = "attributes/perkskillinfo.txt";
 pub const SETS_FILE: &str = "attributes/setitem.txt";
@@ -392,6 +402,10 @@ pub struct WeaponRecord {
     pub kill_image: String,
     /// `DotSightName`: the reticle image (empty: none).
     pub dot_sight_name: String,
+    /// `HUDEffectOverride`: the kill announcer's weapon skin, a section of
+    /// the layout and client attribute files (kill_streaks.md A8; empty:
+    /// none).
+    pub hud_effect_override: String,
     /// `Pos`, `MuzzlePos`, `BreachOffset` (camera space, world units;
     /// missing: zero).
     pub pos: [f64; 3],
@@ -555,6 +569,7 @@ impl WeaponRecord {
             hh_model: s.string("HHModel").map(text).unwrap_or_default(),
             kill_image: s.string("Weaponkillimage").map(text).unwrap_or_default(),
             dot_sight_name: s.string("DotSightName").map(text).unwrap_or_default(),
+            hud_effect_override: s.string("HUDEffectOverride").map(text).unwrap_or_default(),
             hh_skins: s.string_list("HHSkin").iter().map(|v| text(v)).collect(),
             pv_render_styles: s.string_list("PVRenderStyle").iter().map(|v| text(v)).collect(),
             hh_render_styles: s.string_list("HHRenderStyle").iter().map(|v| text(v)).collect(),
@@ -651,6 +666,9 @@ pub struct WeaponsFile {
     /// The effect file's fire records (`FireFX#`; empty without the
     /// file), linked by the ammo's `FireFXName`.
     pub fires: Vec<FireRecord>,
+    /// The effect file's tracer records (`TracerFX#`; empty without the
+    /// file), linked by the ammo's `TracerFXName`.
+    pub tracers: Vec<TracerRecord>,
 }
 
 impl WeaponsFile {
@@ -704,6 +722,7 @@ impl WeaponsFile {
             projectiles: Vec::new(),
             impacts: Vec::new(),
             fires: Vec::new(),
+            tracers: Vec::new(),
         })
     }
 
@@ -751,6 +770,14 @@ impl WeaponsFile {
         find_by_name(&self.fires, name, |p| &p.name).map(|(_, p)| p)
     }
 
+    /// The tracer record `ammo` names (its `TracerFXName`, the first
+    /// record of that name; a present but empty name is `Standard`).
+    pub fn tracer(&self, ammo: &AmmoRecord) -> Option<&TracerRecord> {
+        let name = ammo.tracer_fx.as_deref()?;
+        let name = if name.is_empty() { "Standard" } else { name };
+        find_by_name(&self.tracers, name, |p| &p.name).map(|(_, p)| p)
+    }
+
     /// The impact record `ammo` names (its `ImpactFXName`, the first
     /// record of that name; a present but empty name is `BulletFmj`).
     pub fn impact(&self, ammo: &AmmoRecord) -> Option<&ImpactRecord> {
@@ -790,6 +817,46 @@ impl FireRecord {
     /// Every `FireFX#` record of the effect file.
     pub fn read_all(doc: &Document) -> Vec<Self> {
         doc.records("FireFX").into_iter().map(Self::read).collect()
+    }
+}
+
+/// `TracerFX<N>` in the effect file (effects_sounds.md, "Effect tables in
+/// the attribute data"): the tracer's sprite, how often one is drawn and
+/// its flight. A missing field is our tables' default (`TracerFx`: 6000
+/// u/s, 20 u wide, 300 long, white, opaque; the spec gives none).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TracerRecord {
+    pub name: String,
+    pub texture: String,
+    /// Every F-th ray (0 and 1: every ray).
+    pub frequency: i32,
+    pub velocity: f64,
+    pub width: f64,
+    pub length: f64,
+    /// 0..255.
+    pub color: [f64; 3],
+    pub initial_alpha: f64,
+    pub final_alpha: f64,
+}
+
+impl TracerRecord {
+    pub fn read(s: &Section) -> Self {
+        Self {
+            name: name_of(s),
+            texture: s.string("Texture").map(text).unwrap_or_default(),
+            frequency: s.int("Frequency", 0),
+            velocity: s.number("Velocity", 6000.0),
+            width: s.number("Width", 20.0),
+            length: s.number("Length", 300.0),
+            color: s.vector("Color").unwrap_or([255.0; 3]),
+            initial_alpha: s.number("InitialAlpha", 1.0),
+            final_alpha: s.number("FinalAlpha", 1.0),
+        }
+    }
+
+    /// Every `TracerFX#` record of the effect file.
+    pub fn read_all(doc: &Document) -> Vec<Self> {
+        doc.records("TracerFX").into_iter().map(Self::read).collect()
     }
 }
 
@@ -1619,4 +1686,89 @@ impl ModFile {
             .collect();
         Self { mods, weapons }
     }
+}
+
+/// A skin section's image keys (`[HUDLayout0]`'s names, kill_streaks.md
+/// B1, B2) and the announcer pack's keys they replace (data/announcer.toml;
+/// a top image is `<callout>_top`). Co-op's combo is not announced.
+pub const SKIN_IMAGES: &[(&str, &str)] = &[
+    ("MKComboFirstKillImg", "first_kill"),
+    ("MKComboOneKillImg", "kill"),
+    ("MKComboOneKillsImg", "kills"),
+    ("MKComboDoubleKillImg", "double_kill"),
+    ("MKComboMultiKillImg", "multi_kill"),
+    ("MKComboUltraKillImg", "ultra_kill"),
+    ("MKComboFantasticKillImg", "fantastic"),
+    ("MKComboUnbelImg", "unbelievable"),
+    ("MKComboUnbelPlusImg", "unbelievable_plus"),
+    ("MKComboHeadShotImg", "headshot"),
+    ("MKComboSkullImg", "headshot_top"),
+    ("MKComboNutShotImg", "nutshot"),
+    ("MKComboNutsImg", "nutshot_top"),
+    ("MKRevengeImg", "revenge"),
+];
+
+/// A skin section's voice keys (`[Interface]`'s names, B1, B2) and the
+/// pack's keys they replace (a woman killer's groin voice:
+/// `<callout>_female`).
+pub const SKIN_VOICES: &[(&str, &str)] = &[
+    ("FirstKillSound", "first_kill"),
+    ("OneKillSound", "kill"),
+    ("DoubleKillSound", "double_kill"),
+    ("MultiKillSound", "multi_kill"),
+    ("UltraKillSound", "ultra_kill"),
+    ("FantasticKillSound", "fantastic"),
+    ("UnbelievableSound", "unbelievable"),
+    ("UnbelievablePlusSound", "unbelievable_plus"),
+    ("HeatShotKillSound", "headshot"),
+    ("NutShotMaleKillSound", "nutshot"),
+    ("NutShotFeMaleKillSound", "nutshot_female"),
+    ("RevengeSound", "revenge"),
+];
+
+/// The announcer's weapon skins (kill_streaks.md A8, B7): one per section
+/// the weapons' `HUDEffectOverride` names (in the order first named),
+/// worn by those weapons (`ids`: a weapon's id by its record, None: not
+/// one of ours), with the keys its layout section (`layout`) and client
+/// section (`client`) set, as archive paths with `/`. A key a section
+/// lacks keeps the pack's (A8); a file the install lacks is still named
+/// (Quirk 5: drawn blank).
+pub fn announcer_skins(
+    weapons: &WeaponsFile,
+    layout: Option<&Document>,
+    client: Option<&Document>,
+    ids: impl Fn(&WeaponRecord) -> Option<String>,
+) -> Vec<chimera_core::announcer::Skin> {
+    let mut out: Vec<chimera_core::announcer::Skin> = Vec::new();
+    for w in &weapons.weapons {
+        let name = w.hud_effect_override.trim();
+        if name.is_empty() {
+            continue;
+        }
+        let Some(id) = ids(w) else { continue };
+        if let Some(skin) = out.iter_mut().find(|s| s.name.eq_ignore_ascii_case(name)) {
+            if !skin.weapons.contains(&id) {
+                skin.weapons.push(id);
+            }
+            continue;
+        }
+        let path = |v: &[u8]| text(v).replace('\\', "/");
+        let keys = |doc: Option<&Document>, table: &[(&str, &str)]| {
+            let section = doc.and_then(|d| d.section(name));
+            table
+                .iter()
+                .filter_map(|(key, ours)| {
+                    let v = section?.string(key)?;
+                    (!v.is_empty()).then(|| (ours.to_string(), path(v)))
+                })
+                .collect()
+        };
+        out.push(chimera_core::announcer::Skin {
+            name: name.to_string(),
+            weapons: vec![id],
+            images: keys(layout, SKIN_IMAGES),
+            voices: keys(client, SKIN_VOICES),
+        });
+    }
+    out
 }

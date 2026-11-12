@@ -23,7 +23,9 @@
 //!   FireFX group again for each further pellet of a round; the tracer
 //!   (`rules::TracerCounter`: yours by the last fitted part's tracer, the
 //!   ammo's when it names none, others' by the ammo's; the muzzle part's
-//!   look, else the ammo's; first ray only); per ray the impact: the surface type
+//!   look, else the ammo's: the tables' record of its name, else its
+//!   install record, `CaWeaponFx::tracer_of`; first ray only); per ray
+//!   the impact: the surface type
 //!   (characters 6, 4 for a head hit; what was hit's own surface, a
 //!   prop's, a glass set's or a brush entity's (`owned_surface`), else
 //!   the world's from `SurfaceGrid`,
@@ -725,7 +727,7 @@ pub fn fire_sound_of<'a>(fx: &'a CaWeaponFx, mods: Option<&CaMods>, own: bool, a
 /// later fitted part with no tracer resets the choice to none
 /// (Corrections 2026-10-22, 3).
 pub fn own_tracer_frequency(t: &CaFxTables, fx: &CaWeaponFx, mods: Option<&CaMods>) -> Option<u32> {
-    let ammo = t.tracer(&fx.tracer).map(|r| r.frequency);
+    let ammo = fx.tracer_of(t).map(|r| r.frequency);
     let part = mods.and_then(|m| m.fitted().last()).and_then(|p| {
         t.attachment(&p.record.name)
             .and_then(|a| a.tracer.as_deref())
@@ -737,8 +739,8 @@ pub fn own_tracer_frequency(t: &CaFxTables, fx: &CaWeaponFx, mods: Option<&CaMod
 
 /// The tracer's look: the muzzle part's tracer if it names one, else the
 /// ammo's; None when the ammo has no tracer (then nothing is drawn).
-pub fn tracer_look<'a>(t: &'a CaFxTables, fx: &CaWeaponFx, mods: Option<&CaMods>) -> Option<&'a data::TracerFx> {
-    let ammo = t.tracer(&fx.tracer)?;
+pub fn tracer_look<'a>(t: &'a CaFxTables, fx: &'a CaWeaponFx, mods: Option<&CaMods>) -> Option<&'a data::TracerFx> {
+    let ammo = fx.tracer_of(t)?;
     let muzzle = mods
         .and_then(|m| m.part(MUZZLE))
         .and_then(|p| t.attachment(&p.record.name))
@@ -1116,7 +1118,7 @@ fn shot_effects(
                     let f = if mine {
                         own_tracer_frequency(&tables, wfx, mods)
                     } else {
-                        tables.tracer(&wfx.tracer).map(|t| t.frequency)
+                        wfx.tracer_of(&tables).map(|t| t.frequency)
                     };
                     let first_ray = round.is_some_and(|r| std::mem::take(&mut r.first_ray));
                     if let Some(f) = f
@@ -1155,7 +1157,7 @@ fn shot_effects(
                     && !guest
                     && wfx.ammo_kind == AmmoKind::Bullet
                     && let Some(cam) = cam
-                    && let Some(record) = tables.impact(&wfx.impact)
+                    && let Some(record) = wfx.impact_of(&tables)
                     && let Some(near) = rules::flyby(cam.at / UNIT, fire / UNIT, *to / UNIT, record.sound_radius)
                     && let Some(file) = rules::draw_any(&tables.sounds.flyby, state.rolls.next())
                 {
@@ -1184,7 +1186,7 @@ fn shot_effects(
                     grid.hit(*hit, *to)
                 };
                 let surface = tables.surface(ty);
-                let Some(record) = tables.impact(&wfx.impact) else { continue };
+                let Some(record) = wfx.impact_of(&tables) else { continue };
                 let gates = cam.map(|c| c.gates(fire, at, !mine)).unwrap_or_default();
                 let zoomed = zoom.is_some_and(|z| z.level > 0);
                 let rolls = [state.rolls.next(), state.rolls.next()];
@@ -1216,7 +1218,7 @@ fn shot_effects(
                     } else {
                         grid.hit(*hit, *point)
                     };
-                    if let Some(record) = tables.impact(&wfx.impact) {
+                    if let Some(record) = wfx.impact_of(&tables) {
                         let seen = cam.is_some_and(|c| c.gates(*point, *point, !mine).impact_seen);
                         let rolls = [state.rolls.next(), state.rolls.next()];
                         let mut out = impact(record, tables.surface(ty), AmmoKind::Melee, seen, false, false, &settings, rolls);

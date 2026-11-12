@@ -98,24 +98,11 @@ first, done on the Windows PC. Delete a row when it lands.
 
 ## Later (spec is clear, less often seen)
 
-18. **Combat Arms: no burst or continuous fire modes for install
-    guns**; `firemode` unbuilt, HUD icon never shows burst. Spec:
-    combat_arms/weapon_firing.md "Trigger and fire cycle", "Toggling
-    burst". Code: `game/data.rs`, `options/bindings.rs`
-    `COMMANDS_UNBUILT`, `ui/hud.rs`. M. No spec.
-19. **Combat Arms: install guns whose ammo effect name we lack keep
-    their template's muzzle, tracer and impact** (`FX.TXT` records not
-    read). Spec: combat_arms/effects_sounds.md "Effect tables". Code:
-    `game/data.rs` `effect_name`. M. No spec.
 20. **HL2:DM / UGG: flashlight and suit zoom inconsistent across
     rungs.** `mp_flashlight` 0 (parity) so F does nothing on an HL2
     rung; `+zoom` unbound in the party bundle. Spec: hl2dm/suit.md
     "Flashlight" (Q7), "Suit zoom". Code: `games/hl2dm/src/game/suit.rs`,
     `mod.rs` `BUNDLE.binds`. S. No spec; the user's call.
-22. **Combat Arms: kill-streak banners and voices ignore weapon skins**
-    (`HUDEffectOverride`). Spec: combat_arms/kill_streaks.md A8, B7,
-    cases 29-31, 41, 54. Code: `chimera/sim/src/announce.rs`,
-    `game/parts.rs`. M. No spec.
 24. **HL2:DM: dm_underpass's shield walls drawn plain**
     (`UnlitTwoTexture`). Spec: hl2dm/effects_sounds.md 13, cases 51-54.
     Code: `source/engine/src/content/material.rs`. M. Q7 (proxies) needs

@@ -1,7 +1,7 @@
 //! Weapons as data (docs/plans/active/engine-split.md, "Data-driven
 //! first"): a weapon is a TOML document of the parts this module builds
 //! (`Trigger`, `Magazine`, `Hitscan`, `DamageEffect`, `Penetration`,
-//! `Melee`, `AltModes` with `Zoom`/`Burst`, `WeaponSounds`, ...) plus what
+//! `Melee`, `AltModes` with `Zoom`/`Burst`/`AutoMode`, `WeaponSounds`, ...) plus what
 //! the game's other layers read by ID (models, HUD names, animation
 //! timing), with behaviour data can't express named as hooks a game
 //! registers (`WeaponHooks`, `register_weapon_hook`). Games ship their
@@ -56,7 +56,7 @@ use bevy::prelude::*;
 use serde::{Deserialize, de::DeserializeOwned};
 
 use super::{
-    AltModes, AltShot, Burst, DamageEffect, FireTiming, HitgroupScale, Hitscan, Magazine, Melee, ModeTexts, Penetration,
+    AltModes, AltShot, AutoMode, Burst, DamageEffect, FireTiming, HitgroupScale, Hitscan, Magazine, Melee, ModeTexts, Penetration,
     ShellReload, SpreadShape, Swing, SwitchWeight, Trigger, Weapon, WeaponDef, WeaponRegistry, WeaponSounds, Zoom,
     drop::{PickupTeam, Undroppable},
     economy::{AmmoBox, Prices},
@@ -446,6 +446,41 @@ pub enum AltData {
     /// shotgun's double shot): `pellets`, `rounds` from the clip, the next
     /// attack `cycle` seconds on.
     Shot { pellets: u32, rounds: u32, cycle: f32 },
+    /// Fire modes a key of their own steps (`AltModes::key`; none:
+    /// attack2), in order: the trigger's own, then a burst mode (`burst`),
+    /// then a mode of continuous fire (`automatic`, `AutoMode`). A step
+    /// blocks the primary for `step` when `step_blocks_primary` (Combat
+    /// Arms' fire-mode key and its select lockout).
+    Modes {
+        #[serde(default)]
+        key: Option<String>,
+        step: f32,
+        #[serde(default)]
+        step_blocks_primary: bool,
+        #[serde(default)]
+        burst: Option<BurstModeData>,
+        #[serde(default)]
+        automatic: bool,
+        #[serde(default)]
+        texts: Vec<String>,
+    },
+}
+
+/// A burst mode of `AltData::Modes` (`Burst`).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BurstModeData {
+    pub count: u32,
+    /// Seconds between rounds; 0 (the default): the trigger's cycle.
+    #[serde(default)]
+    pub interval: f32,
+    /// The next pull this long after the first round, or after the last
+    /// with `from_last`.
+    pub refire: f32,
+    #[serde(default)]
+    pub from_last: bool,
+    #[serde(default)]
+    pub once_per_press: bool,
 }
 
 /// Sound entries (`WeaponSounds`); timed ones as [seconds, entry].
@@ -1168,9 +1203,41 @@ pub fn insert_parts(d: &'static WeaponData, e: &mut EntityWorldMut) {
                     count: *count,
                     interval: *interval,
                     refire: *refire,
+                    from_last: false,
                     once_per_press: *once_per_press,
                 },
             ));
+        }
+        Some(AltData::Modes {
+            key,
+            step,
+            step_blocks_primary,
+            burst,
+            automatic,
+            texts,
+        }) => {
+            if !texts.is_empty() {
+                e.insert(ModeTexts(texts.iter().map(String::as_str).collect()));
+            }
+            let mut count = 1;
+            if let Some(b) = burst {
+                e.insert(Burst {
+                    mode: count,
+                    count: b.count,
+                    interval: b.interval,
+                    refire: b.refire,
+                    from_last: b.from_last,
+                    once_per_press: b.once_per_press,
+                });
+                count += 1;
+            }
+            if *automatic {
+                e.insert(AutoMode(count));
+                count += 1;
+            }
+            let mut modes = AltModes::new(count, *step, *step_blocks_primary);
+            modes.key = key.as_deref();
+            e.insert(modes);
         }
     }
 }
