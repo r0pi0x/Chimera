@@ -29,7 +29,9 @@
 //!
 //! Converted once per install data (`shared_character_models`, the first
 //! map load's, kept by `CaData::memo`) and copied into each map after
-//! (`append_shared`: the textures appended, the indices moved), with the
+//! (`append_shared`: the textures appended, the indices moved; Combat
+//! Arms' own maps and the dressing of another game's, `world::dress_with`,
+//! alike), with the
 //! rigs, groups and held models' sockets the conversion registered
 //! (`CaModelIndex`). A map's index goes with it (`MapData::memos`, the
 //! world's `map::MapMemos` while it plays); what is loaded later, on

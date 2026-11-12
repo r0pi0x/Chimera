@@ -177,7 +177,7 @@ fn the_start_map_is_the_command_lines_the_apps_default_or_the_greybox() {
     let start = |game: &'static GameApp, line: &str| match StartMap::of(game, &args(line)) {
         Ok(StartMap::Greybox) => "greybox".to_string(),
         Ok(StartMap::Empty) => "empty".to_string(),
-        Ok(StartMap::Loaded { id, data }) => format!("{id} ({}, {} spawns)", data.name, data.spawns.len()),
+        Ok(StartMap::Loaded { id, data, .. }) => format!("{id} ({}, {} spawns)", data.name, data.spawns.len()),
         Err(e) => format!("error: {e}"),
     };
     assert_eq!(start(&BARE, ""), "greybox");

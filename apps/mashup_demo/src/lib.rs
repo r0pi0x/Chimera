@@ -174,6 +174,9 @@ pub static APP: GameApp = GameApp {
     hooks: GameAppHooks {
         args: Some(with_defaults),
         default_map: Some(DEFAULT_MAP),
+        // Its view models load on demand, its start map in the app's
+        // install data (`on_demand::front_end_context`).
+        load_context: Some(combat_arms::game::view_model::on_demand::front_end_context),
         ..GameAppHooks::NONE
     },
 };

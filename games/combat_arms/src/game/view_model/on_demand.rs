@@ -21,8 +21,11 @@
 //! a mashup (CS:S's in Lucker Party) has its own game's view model, which
 //! that game's loader or Chimera's driver draws.
 //!
-//! Runs only where `LoadOnDemand` is (the front end inserts it): a
-//! dedicated server draws no view models.
+//! Runs only where `LoadOnDemand` is (the front end inserts it,
+//! `load_on_demand_in`): a dedicated server draws no view models. Where it
+//! runs, the dressing of another game's map leaves the view models out
+//! too (`ViewModelsOnDemand`): they load here, once per session, not again
+//! with each map.
 //!
 //! Known shortcuts (docs/tech-debt.md): outside a ladder the placeholder
 //! box shows for the frames a model takes to load (tens of milliseconds;
@@ -46,7 +49,7 @@ use super::{
         attachments::CaMods,
         data::{CaData, CaDataInner},
     },
-    hands, load, load_hands, parts,
+    hands, load_hands, load_sharing, parts,
 };
 use crate::{
     core::LocalPlayer,
@@ -57,6 +60,39 @@ use crate::{
 /// Load view models when they are wanted (the front end's).
 #[derive(Resource, Default)]
 pub struct LoadOnDemand;
+
+/// A memo of an app's `map::LoadContext`: its view models load on demand
+/// (`LoadOnDemand`), so the dressing of another game's map carries none
+/// (`world::DRESSING`), as Combat Arms' own maps never do: the ladder's
+/// load ahead (`characters::preload`), anything else when first wanted.
+/// The dressing converted all of ours again for each map, beside the
+/// ones loaded here (docs/performance.md, "A client's memory").
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ViewModelsOnDemand;
+
+/// `LoadOnDemand` for `app`, its map loads told so (`ViewModelsOnDemand`).
+pub fn load_on_demand_in(app: &mut App) {
+    app.init_resource::<LoadOnDemand>();
+    app.world_mut().get_resource_or_init::<LoadContext>().insert(ViewModelsOnDemand);
+}
+
+/// A front end's map loads' context readied before its app builds
+/// (`chimera_client`'s `GameAppHooks::load_context`: the start map's):
+/// its view models load on demand (`ViewModelsOnDemand`), and the install
+/// data its loads read is the app's (`CaData::install`, held by the
+/// context: the start map's dressing and the app share one, its parsed
+/// animation files and converted models, rather than reading them twice
+/// while the first map loads).
+pub fn front_end_context(context: &LoadContext) {
+    context.insert(ViewModelsOnDemand);
+    context.get_or_init(CaData::install);
+}
+
+/// Whether the app of load `context` loads its view models on demand
+/// (`load_on_demand_in`).
+pub fn on_demand_in(context: &LoadContext) -> bool {
+    context.get::<ViewModelsOnDemand>().is_some()
+}
 
 /// A weapon's view model as loaded: its textures, which its meshes'
 /// indices name.
@@ -129,7 +165,8 @@ pub fn load_weapon(ca: &CaDataInner, id: &str, file: &dyn Fn(&str) -> Option<Vec
         None => None,
     };
     let mut v =
-        load(path, &w.id, &w.models.view_skins, offset, &mut own, file).map_err(|e| format!("{id} view model: {e}"))?;
+        load_sharing(path, &w.id, &w.models.view_skins, offset, &mut own, file, &ca.memo(super::ViewAnimations::default))
+            .map_err(|e| format!("{id} view model: {e}"))?;
     if let Some((meshes, bones)) = hand {
         let at = Vec3::from(lithtech_formats::ltb::to_rh_vec(offset)) * super::VIEW_SCALE;
         if let Err(e) = hands::attach(&mut v, meshes, &bones, super::VIEW_SCALE, at) {
