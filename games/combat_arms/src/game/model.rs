@@ -358,9 +358,20 @@ pub fn convert(loaded: &LoadedModel, scale: f32, texture: &dyn Fn(&ltb::Lod) -> 
 
 /// `convert`, its animations resampled at `fps`.
 pub fn convert_at(loaded: &LoadedModel, scale: f32, texture: &dyn Fn(&ltb::Lod) -> String, fps: f32) -> MapModel {
+    convert_with(loaded, scale, texture, |bones| Arc::new(anim_set_at(&loaded.model, &loaded.list, bones, fps)))
+}
+
+/// `convert`, its rig's animations from `animations` (given the
+/// skeleton's bones): a set converted before for the same file, shared.
+pub fn convert_with(
+    loaded: &LoadedModel,
+    scale: f32,
+    texture: &dyn Fn(&ltb::Lod) -> String,
+    animations: impl FnOnce(&[MapBone]) -> Arc<AnimSet>,
+) -> MapModel {
     let model = &loaded.model;
     let bones = bones(model);
-    let animations = Arc::new(anim_set_at(model, &loaded.list, &bones, fps));
+    let animations = animations(&bones);
     let mut meshes = Vec::new();
     let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
     for piece in &model.pieces {

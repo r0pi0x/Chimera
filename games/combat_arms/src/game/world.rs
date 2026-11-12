@@ -135,8 +135,10 @@
 //! - Other apps: `MAP_LOADER` is these maps for an app's
 //!   `map::MapSources`; `DRESSING` (`dress`) is Combat Arms' parts on
 //!   another game's map (a mashup: a CS:S map played as Combat Arms);
-//!   a load without textures (the dedicated server's) takes no view
-//!   models (`dress_with`), as Combat Arms' own maps never do.
+//!   a load without textures (the dedicated server's) or for an app
+//!   whose view models load on demand (a client's front end:
+//!   `view_model::on_demand::ViewModelsOnDemand`) takes no view models
+//!   (`dress_with`), as Combat Arms' own maps never do.
 //!   `MapLoadOptions::kit` limits the character models every map carries
 //!   (`MapData::kit`): none for an app whose gameplay is another game's.
 //! - No map file hash (Q15): the game checks none, a client loads its own
@@ -274,8 +276,12 @@ pub static DRESSING: MapDressing = MapDressing {
         // picture and its sounds alone; the weapons' timing reads each
         // view model's animation list itself (`weapons::timing`). They were
         // 0.5 GB of the server's memory (docs/performance.md, "The
-        // dedicated server's memory").
-        dress_with(&data, &mount, map, options.textures);
+        // dedicated server's memory"). Nor does a client's whose view
+        // models load on demand (`on_demand::ViewModelsOnDemand`): they
+        // were converted again for each map beside the ones loaded there
+        // (docs/performance.md, "A client's memory").
+        let view_models = options.textures && !super::view_model::on_demand::on_demand_in(&options.context);
+        dress_with(&data, &mount, map, view_models);
         if sized {
             map.memos.remove::<SizesOnly>();
         }
@@ -310,8 +316,10 @@ pub fn decodes(map: &MapData) -> bool {
 
 /// Combat Arms' parts on any map (another game's, in a mashup): the
 /// effect looks (`effects::library::add_looks`), the weapons' view models
-/// and the character bodies and held models, as `load_from` adds them to
-/// its own, from install data `data` (`CaData::install_for` the app). The
+/// and the character bodies and held models (`characters::models::
+/// shared_character_models`, converted once per install data), as
+/// `load_from` adds them to its own, from install data `data`
+/// (`CaData::install_for` the app). The
 /// map's surfaces keep their own names (Combat Arms' effects take an
 /// unknown surface's).
 pub fn dress(data: &super::data::CaData, mount: &Mount, map: &mut MapData) {
@@ -329,7 +337,12 @@ pub fn dress_with(data: &super::data::CaData, mount: &Mount, map: &mut MapData, 
     if view_models {
         super::view_model::add_view_models(map, data, &file);
     }
-    super::characters::models::add_character_models(map, data, &file);
+    // The character models converted once per install data, as Combat
+    // Arms' own maps take them (`load_from`): each map's dressing
+    // converted them again, their textures decoded (docs/performance.md,
+    // "A client's memory").
+    let models = super::characters::models::shared_character_models(data, &file, decodes(map));
+    super::characters::models::append_shared(map, &models, &crate::map::KitLoad::All);
 }
 
 /// Map `id` (`combat_arms:<name>`, or the bare name) from the install.

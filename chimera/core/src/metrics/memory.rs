@@ -205,7 +205,9 @@ impl Releases {
 /// next map's big buffers come from the arenas, between what stays, where
 /// `release_free` can't return them whole: the dedicated server held about
 /// 50 MB more on each lap of four maps with it. The dedicated server's
-/// (`dedicated::ServerPlugin`); nothing elsewhere than Linux with glibc.
+/// (`dedicated::ServerPlugin`) and the client's from its start
+/// (`client::app::run`: a client's first load held 1-2 GB freed in the
+/// arenas until the trim); nothing elsewhere than Linux with glibc.
 pub fn big_blocks_mapped() {
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     // SAFETY: no pointers; a setting of the allocator's.

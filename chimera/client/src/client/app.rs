@@ -23,7 +23,10 @@
 //! app ends it, on Windows after Enter), a map to start on without
 //! `--map` (`default_map`, else the greybox), a start of its own (`start`:
 //! the party's main menu over a background map), the start map at the
-//! console's `mat_hdr_level` (`hdr_start`), `--debug-view` and
+//! console's `mat_hdr_level` (`hdr_start`), what the app's map loads
+//! should know of it before it builds (`load_context`: the start map
+//! loads in that context, which is the app's `LoadContext` from then on,
+//! as the dedicated server's), `--debug-view` and
 //! `--lightmap-only` on it (`debug_views`), its dedicated server's binary
 //! for the usage text (`server`), what it adds last (`launch`) and every
 //! game it plays (`games`: the startup fetch's, `startup`).
@@ -53,7 +56,7 @@ use chimera_present::assets::{InstallSource, InstallSourcesPlugin};
 use super::{AppHooks, Args, ClientPlugins};
 use crate::{
     game_registry::GameInfo,
-    map::{MapData, MapDebugView, MapLoadOptions},
+    map::{LoadContext, MapData, MapDebugView, MapLoadOptions},
 };
 
 /// A game's client app (module doc): the game's own, as data. Its app
@@ -139,6 +142,11 @@ pub struct GameAppHooks {
     /// Every game the app plays, for the startup fetch (`startup`; None:
     /// its own, `GameApp::info`).
     pub games: Option<fn() -> Vec<&'static GameInfo>>,
+    /// What the app's map loads should know of it before its plugins
+    /// build (`GameApp::load_context`): the start map loads in that
+    /// context, the app's from then on. Combat Arms' front end puts its
+    /// install data and that its view models load on demand there.
+    pub load_context: Option<fn(&LoadContext)>,
 }
 
 impl GameAppHooks {
@@ -153,6 +161,7 @@ impl GameAppHooks {
         server: None,
         launch: None,
         games: None,
+        load_context: None,
     };
 }
 
@@ -178,8 +187,10 @@ pub enum StartMap {
     Greybox,
     /// The map systems without a map, and no greybox.
     Empty,
-    /// A map loaded (its id as asked for).
-    Loaded { id: String, data: MapData },
+    /// A map loaded (its id as asked for), in `context`
+    /// (`GameApp::load_context`): the app's from then on, so what its
+    /// games read for it (install data, conversions) is the app's too.
+    Loaded { id: String, data: MapData, context: LoadContext },
 }
 
 impl StartMap {
@@ -194,14 +205,22 @@ impl StartMap {
         };
         // At the HDR level the console will start with (mat_hdr_level).
         let level = if game.hooks.hdr_start { super::hdr::startup_level(&args.console) } else { 0 };
-        match (game.maps.load)(id, &MapLoadOptions::hdr(level)) {
-            Ok(data) => Ok(Self::loaded(id, data)),
+        let context = game.load_context();
+        let options = MapLoadOptions { context: context.clone(), ..MapLoadOptions::hdr(level) };
+        match (game.maps.load)(id, &options) {
+            Ok(data) => Ok(Self::loaded_in(id, data, context)),
             Err(e) => Err(format!("--map {id}: {e}")),
         }
     }
 
-    /// `data` loaded as `id`, its numbers told on stderr.
+    /// `data` loaded as `id` with no app's context, its numbers told on
+    /// stderr.
     pub fn loaded(id: &str, data: MapData) -> Self {
+        Self::loaded_in(id, data, LoadContext::default())
+    }
+
+    /// `data` loaded as `id` in `context`, its numbers told on stderr.
+    pub fn loaded_in(id: &str, data: MapData, context: LoadContext) -> Self {
         eprintln!(
             "loaded {id}: {} triangles, {} textures, {} spawns, {} warnings",
             data.triangle_count(),
@@ -212,11 +231,21 @@ impl StartMap {
         for w in &data.warnings {
             eprintln!("  warning: {w}");
         }
-        Self::Loaded { id: id.to_string(), data }
+        Self::Loaded { id: id.to_string(), data, context }
     }
 }
 
 impl GameApp {
+    /// A context for the app's map loads (`map::LoadContext`) as its
+    /// `GameAppHooks::load_context` readies it: the start map's.
+    pub fn load_context(&self) -> LoadContext {
+        let context = LoadContext::default();
+        if let Some(ready) = self.hooks.load_context {
+            ready(&context);
+        }
+        context
+    }
+
     /// What `--help` prints: `about`, then the shell's options for this
     /// game (`client::usage`).
     pub fn usage(&self) -> String {
@@ -268,6 +297,10 @@ pub fn run(game: &'static GameApp) -> AppExit {
     if let Some(exit) = super::startup::run_if_needed(game, &args) {
         return exit;
     }
+    // Big blocks go back to the system when freed (the first map load's
+    // scratch: docs/performance.md, "A client's memory"), as the dedicated
+    // server's do; from the start map on.
+    crate::metrics::memory::big_blocks_mapped();
     let (lacks, fatal) = game.requirements();
     if fatal {
         exit_fatal(&lacks);
@@ -364,6 +397,10 @@ pub fn add_engine(app: &mut App, part: Engine<'_>) {
 /// `engine`.
 pub fn compose(app: &mut App, game: &'static GameApp, args: Args, start: StartMap, engine: &dyn Fn(&mut App, Engine<'_>)) {
     app.insert_resource(RunningApp(game));
+    // The start map's context is the app's (`StartMap::Loaded`).
+    if let StartMap::Loaded { context, .. } = &start {
+        app.insert_resource(context.clone());
+    }
     let view = match &start {
         StartMap::Loaded { .. } if game.hooks.debug_views => debug_view(&args).unwrap_or_else(|e| {
             eprintln!("error: {e}");

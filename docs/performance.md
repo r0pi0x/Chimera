@@ -3626,6 +3626,88 @@ MB); the weapon set itself (250 MB for 2,363 weapons); the main world's
 meshes (72 MB on cs_office: merged brushes, breakables and face flexes read
 or rewrite theirs on the CPU, so not all can drop them).
 
+### The dressing's view models and the first load (later that day)
+
+The same session (`ugg_new 7 13` on cs_office, warehouse, de_dust2, 150 s
+each, `CHIMERA_RUNG_SEED=7`, no bots), glibc's bytes in use and `VmHWM`
+every 10 s; a jemalloc run's interval dumps (`lg_prof_interval:28`) around
+the first load's peak, `jeprof --base` against the last.
+
+**What the first load held at its peak** (2.2 GB above what stays): the
+start map (the joiner's default map, de_dust2, behind the connect) loaded
+before the app with install data of its own (a fresh `LoadContext`), so its
+Combat Arms dressing parsed the character models' animation files again
+(208 MB) and converted every one of our 58 view models (193 MB of
+animations sampled at 240 fps); each map's dressing converted the character
+models again too, their textures decoded (243 MB of RGBA8 and mips, while
+the GPU takes the blocks); the rest is the maps' textures on their way to
+the GPU (Source's cached textures decoded 617 MB, the drawing's images 226
+MB).
+
+**The fixes.**
+- A front end's map loads (`view_model::on_demand::ViewModelsOnDemand` in
+  its `LoadContext`, `load_on_demand_in`) dress another game's map without
+  view models: they load on demand, as on Combat Arms' own maps (the
+  ladder's ahead, `characters::preload`). The dressing converted all of
+  ours (233 MB of animations) again for each map, beside the ones loaded
+  on demand.
+- One view-model file's animations are converted once while anything
+  holds them (`view_model::ViewAnimations`, by file, `Weak`): a gun's
+  skins, the dressing and the on-demand load of one gun.
+- The dressing takes the character models converted once per install data
+  (`shared_character_models`, blocks only), as Combat Arms' own maps do.
+- A client's start map loads in the app's own `LoadContext`
+  (`GameAppHooks::load_context`, `StartMap::Loaded::context`, as the
+  dedicated server's): Combat Arms' front end puts its install data and
+  `ViewModelsOnDemand` there first (`on_demand::front_end_context`), so the
+  start map's dressing and the app share one install data and carry no
+  view models.
+- The client maps blocks of 4 MB and more for good from its start
+  (`big_blocks_mapped`, as the dedicated server): freed, they go back at
+  once rather than wait for the trim.
+
+`ultimate_gun_game` with the installs, malloc in use 120 s after each map
+change, and the highest resident (`VmHWM`):
+
+| | before | the dressing and the start map | and big blocks mapped |
+|---|---|---|---|
+| cs_office (the first) | 2.37 GB | 2.15 GB | 2.14 GB |
+| warehouse | 2.15 GB | 2.18 GB | 2.14 GB |
+| de_dust2 | 2.39 GB | 2.15 GB | 2.12 GB |
+| peak resident, the first load | 6.58 GB | 4.61 GB | 4.30-4.36 GB (two runs) |
+| peak resident, the session | 6.58 GB | 4.61 GB | 4.41-4.52 GB |
+
+The entities and the ladder's loads were the same (10, 10 and 11 bodies,
+27, 25 and 26 weapon models); the view models dropped from the dressing
+alone (233 MB of animations, 58 models) moved cs_office and de_dust2 the
+most, the start map's shared context the first load's peak.
+
+From the asset service (no installs: a scratch HTTPS service on a
+reflinked copy of the server store, an empty home and config, prefetch off,
+the store warmed by a first run; measured without big blocks mapped): 2.50,
+2.33 and 2.56 GB in use before; 2.60, 2.32 and 2.56 GB after; the first
+load's peak resident 5.00 -> 4.63 GB. Such a client starts on the greybox (no start map without CS:S), so
+the start map's part doesn't apply; why its first map didn't drop as the
+installed client's did (0.1 GB more) isn't known yet: no heap profile was
+taken of it (backlog).
+
+Screens of one scene (de_dust2, rung 1's melee drawn, `host_timescale 0`)
+before and after differ no more than two runs of one build (14-17 k pixels
+against 21 k, the view model's idle sway and the dust).
+The tests: combat_arms' `heavy::dressing_view_models` (a front end's
+dressing carries no view models, the rest of the kit stays; one file's
+animations are one set while held, and let go when nothing holds them).
+
+The render world's textures after a map change varied between runs of
+the new build (warehouse 2,488 or 3,884, de_dust2 2,682 to 4,014, for
+the whole two minutes in one run; 2,508 and 2,751 in the one run before):
+a late model's or an old map's images let go late; not looked into.
+
+**Left:** the character models' animation files (the parsed keys, 28
+bytes a key as `f32`s where the files hold 14 with compression 2), the
+weapon set (250 MB), the maps' textures decoded on the CPU before upload
+(the first load's largest transient).
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,

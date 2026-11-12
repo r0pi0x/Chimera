@@ -90,6 +90,9 @@ pub static APP: GameApp = GameApp {
             args
         }),
         server: Some("combat_arms_server"),
+        // Its view models load on demand, its start map in the app's
+        // install data (`on_demand::front_end_context`).
+        load_context: Some(combat_arms::game::view_model::on_demand::front_end_context),
         ..GameAppHooks::NONE
     },
 };

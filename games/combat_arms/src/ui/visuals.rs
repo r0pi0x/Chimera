@@ -37,8 +37,9 @@ pub struct CaVisualsPlugin;
 
 impl Plugin for CaVisualsPlugin {
     fn build(&self, app: &mut App) {
-        // The view models load as weapons want them (`view_model::on_demand`).
-        app.init_resource::<crate::game::view_model::on_demand::LoadOnDemand>();
+        // The view models load as weapons want them (`view_model::on_demand`),
+        // another game's map's dressing carrying none.
+        crate::game::view_model::on_demand::load_on_demand_in(app);
         app.add_systems(
             Update,
             (

@@ -262,6 +262,9 @@ pub const PARTY: GameApp = GameApp {
         // Every composed game's startup files come before the window when
         // they are read from the asset service (`client::startup`).
         games: Some(|| super::BUNDLES.iter().map(|b| b.info).collect()),
+        // Its view models load on demand, its start map in the app's
+        // install data (`on_demand::front_end_context`).
+        load_context: Some(combat_arms::game::view_model::on_demand::front_end_context),
         ..GameAppHooks::NONE
     },
 };
@@ -295,9 +298,12 @@ pub fn start_at_menu(game: &'static GameApp, args: &Args) -> Option<StartMap> {
         return no_map.then_some(StartMap::Greybox);
     }
     let data = crate::main_menu::MenuData::shipped();
-    let load = |id: &str| (game.maps.load)(id, &chimera_world::map::MapLoadOptions::hdr(0));
+    // In the app's context (`GameApp::load_context`), the app's from then on.
+    let context = game.load_context();
+    let options = chimera_world::map::MapLoadOptions { context: context.clone(), ..chimera_world::map::MapLoadOptions::hdr(0) };
+    let load = |id: &str| (game.maps.load)(id, &options);
     Some(match crate::main_menu::background_map(&data, load) {
-        Some((id, map)) => StartMap::loaded(&id, map),
+        Some((id, map)) => StartMap::loaded_in(&id, map, context),
         None => {
             eprintln!("warning: none of the main menu's background maps loads: the greybox behind it");
             StartMap::Empty

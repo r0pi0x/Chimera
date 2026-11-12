@@ -3,8 +3,11 @@
 //!
 //! Loading (`on_demand`: a weapon's when it is first wanted, in the
 //! background, once per session; `add_view_models`: every one of ours
-//! into a map, another game's map's dressing for a client (`world::
-//! dress_with`; none on the dedicated server's) and tests): each weapon whose
+//! into a map, another game's map's dressing in an app that doesn't load
+//! them on demand (`world::dress_with`; none on the dedicated server's or
+//! a front end's: `on_demand::ViewModelsOnDemand`) and tests; the same
+//! model file's animations converted once while held, `ViewAnimations`):
+//! each weapon whose
 //! data names a player-view model (`[models] view`, an archive path of the
 //! install, with `view_skins`: its skins by texture index, 2, and
 //! `view_offset`: its `Pos`, 4; its pieces drawn in the install
@@ -395,8 +398,55 @@ pub fn load(
     map: &mut MapData,
     file: &dyn Fn(&str) -> Option<Vec<u8>>,
 ) -> Result<MapViewModel, String> {
+    load_sharing(path, key, skins, offset, map, file, &ViewAnimations::default())
+}
+
+/// The view models' animations converted so far, by model file, while
+/// something holds them (`Weak`: a map's view models, the on-demand cache):
+/// the same file (one gun's skins, a gun both in another game's map's
+/// dressing and loaded on demand, the dressing of the next map while this
+/// one's still plays) is resampled once and its set shared. A view model's
+/// set depends on its file alone (sampled at `model::VIEW_SAMPLE_FPS`, its
+/// keys as events). A memo of the install data (`CaData::memo`). They were
+/// 260-290 MB of a client's memory on another game's map, converted again
+/// beside the on-demand ones (docs/performance.md, "A client's memory").
+#[derive(Default)]
+pub struct ViewAnimations(std::sync::Mutex<HashMap<String, std::sync::Weak<crate::map::anim::AnimSet>>>);
+
+impl ViewAnimations {
+    /// The set of model file `path` (normalized) if something still holds it.
+    fn get(&self, path: &str) -> Option<Arc<crate::map::anim::AnimSet>> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).get(path)?.upgrade()
+    }
+
+    fn put(&self, path: &str, set: &Arc<crate::map::anim::AnimSet>) {
+        let mut sets = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        sets.retain(|_, s| s.strong_count() > 0);
+        sets.insert(path.to_string(), Arc::downgrade(set));
+    }
+
+    /// How many sets are held.
+    pub fn held(&self) -> usize {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).values().filter(|s| s.strong_count() > 0).count()
+    }
+}
+
+/// `load`, its animations shared through `shared` (`ViewAnimations`: the
+/// install data's, `CaData::memo`).
+pub fn load_sharing(
+    path: &str,
+    key: &str,
+    skins: &[String],
+    offset: [f32; 3],
+    map: &mut MapData,
+    file: &dyn Fn(&str) -> Option<Vec<u8>>,
+    shared: &ViewAnimations,
+) -> Result<MapViewModel, String> {
     let loaded = model::load(path, file)?;
-    let mut m = model::convert_at(&loaded, VIEW_SCALE, &skin_of(skins), model::VIEW_SAMPLE_FPS);
+    let before = shared.get(&loaded.path);
+    let mut m = model::convert_with(&loaded, VIEW_SCALE, &skin_of(skins), |bones| {
+        before.clone().unwrap_or_else(|| Arc::new(view_animations(&loaded, bones)))
+    });
     // Its pieces' render styles: the install weapon's `PVRenderStyle#`
     // (view_models.md 2; none without it: the default style).
     let ca = super::data::CaData::install();
@@ -409,33 +459,20 @@ pub fn load(
     for mesh in m.meshes.iter_mut().filter(|m| m.texture.is_none()) {
         mesh.color = UNSKINNED;
     }
-    // Just built: nothing else holds the rig or its animations.
+    // Just built: nothing else holds the rig.
     let rig = m
         .rig
         .take()
         .and_then(|r| Arc::try_unwrap(r).ok())
         .ok_or_else(|| format!("{path}: no skeleton"))?;
-    let mut animations = Arc::try_unwrap(rig.animations).map_err(|_| format!("{path}: animations shared"))?;
+    if before.is_none() {
+        shared.put(&loaded.path, &rig.animations);
+    }
     // The origin moves to `offset`: the skeleton's root and the meshes
     // (in the eye's space at the reference pose) alike.
     let offset = Vec3::from(lithtech_formats::ltb::to_rh_vec(offset)) * VIEW_SCALE;
     for p in m.meshes.iter_mut().flat_map(|m| m.positions.iter_mut()) {
         *p = (Vec3::from(*p) + offset).to_array();
-    }
-    // Played by the machine: none loops on its own (`rush` loops there).
-    for (s, entry) in animations.sequences.iter_mut().zip(&loaded.list.entries) {
-        s.looping = false;
-        let length = entry.length().max(1) as f32;
-        s.events = entry
-            .animation
-            .keys
-            .iter()
-            .map(|k| AnimEvent {
-                cycle: k.time as f32 / length,
-                name: k.string.clone(),
-                ..default()
-            })
-            .collect();
     }
     let attachments = loaded
         .model
@@ -456,12 +493,35 @@ pub fn load(
         model: m,
         bones: rig.bones,
         root: rig.root.with_translation(offset),
-        animations: Some(Arc::new(animations)),
+        animations: Some(rig.animations),
         right_handed: true,
         allow_flipping: false,
         attachments,
         light_origin: Vec3::ZERO,
     })
+}
+
+/// A view model's animation set: every entry resampled at
+/// `model::VIEW_SAMPLE_FPS`, none looping on its own (the machine plays
+/// them; `rush` loops there), each animation's key strings its
+/// sequence's events (cycle = key time / length).
+fn view_animations(loaded: &model::LoadedModel, bones: &[crate::map::MapBone]) -> crate::map::anim::AnimSet {
+    let mut animations = model::anim_set_at(&loaded.model, &loaded.list, bones, model::VIEW_SAMPLE_FPS);
+    for (s, entry) in animations.sequences.iter_mut().zip(&loaded.list.entries) {
+        s.looping = false;
+        let length = entry.length().max(1) as f32;
+        s.events = entry
+            .animation
+            .keys
+            .iter()
+            .map(|k| AnimEvent {
+                cycle: k.time as f32 / length,
+                name: k.string.clone(),
+                ..default()
+            })
+            .collect();
+    }
+    animations
 }
 
 /// A piece's skin from a skin list by its first texture index.
@@ -534,10 +594,11 @@ pub fn add_view_models(map: &mut MapData, data: &super::data::CaDataInner, file:
         None => None,
     };
     let ours = data.builtin_weapon_ids();
+    let shared = data.memo(ViewAnimations::default);
     for w in data.weapon_set().weapons.iter().filter(|w| ours.contains(&w.id)) {
         let Some(path) = w.models.view.as_deref() else { continue };
         let offset = w.models.view_offset.unwrap_or_default();
-        match load(path, &w.id, &w.models.view_skins, offset, map, file) {
+        match load_sharing(path, &w.id, &w.models.view_skins, offset, map, file, &shared) {
             Ok(mut v) => {
                 if let Some((meshes, bones)) = &hand {
                     let at = Vec3::from(lithtech_formats::ltb::to_rh_vec(offset)) * VIEW_SCALE;
