@@ -714,7 +714,11 @@ fn match_def(world: &World) -> Option<&'static MinigameDef> {
 /// `chimera:ladder` module's `ladder`), its kit's, and the match's drawn
 /// ladder's own (`match_ladder`: a drawn ladder's rungs, its melee rungs,
 /// and each rung's extras' melee weapon and character weapon, which the
-/// host draws). The asset offer's `weapon/<id>` sets (`net::assets`).
+/// host draws), and the app's starting weapons (`weapon::StartingWeapons`,
+/// every team's: a joining player holds them from its spawn until the
+/// minigame arms it; the 2026-11-12 rehearsal's one on-demand fetch at a
+/// join was Combat Arms' starting M4A1's reload sound). The asset offer's
+/// `weapon/<id>` sets (`net::assets`).
 pub fn match_weapons(world: &World) -> Vec<String> {
     let Some(def) = match_def(world) else { return Vec::new() };
     let mut out: Vec<String> = def
@@ -731,6 +735,10 @@ pub fn match_weapons(world: &World) -> Vec<String> {
             out.extend(extras.melee.iter().cloned());
             out.extend(extras.character.iter().map(|c| c.weapon.clone()));
         }
+    }
+    if let Some(start) = world.get_resource::<chimera_sim::weapon::StartingWeapons>() {
+        let teams = start.team.iter().flat_map(|(_, ids)| ids.iter());
+        out.extend(teams.chain(start.all.iter()).map(|w| w.to_string()));
     }
     out.retain(|w| w.contains(':'));
     let mut seen = std::collections::BTreeSet::new();

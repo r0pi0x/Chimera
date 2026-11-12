@@ -657,9 +657,18 @@ about 30 minutes, with a server `quit` and restart. Found:
   (warehouse) showed on every client.
 - **On demand** (the clients' `CHIMERA_ASSET_FETCH_LOG`; playtest5 sends
   no `on-demand` mark, so the access log has none): one request at a
-  join (a rung gun's reload sound, 0.46 MB, in its offered set) and one
-  at a match's end (CS:S's `sound/bot/yea_baby.wav`, 16 KB, in no set);
-  the installed client made no request at all. Requests: 1,258, all 200;
+  join (Combat Arms' `guns_snd_ar/m4a1/reload3.wav` with the rest of its
+  group, 0.46 MB) and one at a match's end (CS:S's
+  `sound/bot/yea_baby.wav`, 16 KB, in no set); the installed client made
+  no request at all. The first was the base game's starting M4A1, which
+  a joining player holds from its spawn until the minigame arms it, and
+  which no offer named: the offer now names the app's starting weapons
+  too (`minigame_net::match_weapons`; ultimate_gun_game
+  `offered_weapons`: every weapon any character holds, bots' too, is
+  offered). The second is CS:S's party match-end winner sound (a bot's
+  cheer, `parts::MATCH_WON_SOUND`), now recorded into CS:S's `base` by
+  `sets` (publish: `chimera_pack -- sets cs_source --store <server
+  store> --sign --only base`). Requests: 1,258, all 200;
   a tester without installs 1.15-1.62 GB over the session (prefetch on).
 - **Memory** (resident plus swap): the server 1.2-1.3 GB at start,
   1.8-2.4 GB during play over 5 maps, back to 1.8 GB between them
