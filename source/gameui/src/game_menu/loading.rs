@@ -1,5 +1,7 @@
 //! The loading dialog (a map loading, a server being joined) and the
-//! Disconnected dialog (why joining failed).
+//! Disconnected dialog (why joining failed), which also carries the
+//! reconnect box ("Connection lost - reconnecting...", Cancel) while a
+//! lost connection waits for its server (`reconnect_dialog`).
 
 use super::*;
 
@@ -36,6 +38,43 @@ pub fn show_failure(w: &mut World) {
     menu.loading = Some(String::new());
     menu.open = true;
     menu.page = Page::Main;
+}
+
+/// The reconnect box (`net::reconnect`): while a lost connection waits on
+/// the menu for its server, the Disconnected dialog shows
+/// `Reconnecting::status` with Cancel; Cancel (or Escape) stops the
+/// reconnect. Once the server answers, the usual joining dialog takes over.
+pub fn reconnect_dialog(w: &mut World) {
+    use crate::net::reconnect;
+    let waiting = reconnect::waiting(w);
+    let Some(mut menu) = w.get_resource_mut::<GameMenu>() else { return };
+    if !waiting {
+        // Joining again (or over): the joining dialog or the game takes over.
+        if menu.reconnecting {
+            menu.reconnecting = false;
+        }
+        return;
+    }
+    if menu.reconnecting && menu.failure.is_none() {
+        // The box was closed: Cancel.
+        menu.reconnecting = false;
+        reconnect::cancel(w);
+        return;
+    }
+    let text = w.resource::<reconnect::Reconnecting>().status();
+    let mut menu = w.resource_mut::<GameMenu>();
+    if menu.failure.is_some() && !menu.reconnecting {
+        // A failure box of its own is up; leave it.
+        return;
+    }
+    if !menu.reconnecting || menu.failure.as_deref() != Some(text.as_str()) {
+        menu.reconnecting = true;
+        menu.failure = Some(text);
+        menu.loading = Some(String::new());
+        menu.in_game = false;
+        menu.open = true;
+        menu.page = Page::Main;
+    }
 }
 
 /// Why joining failed, as the game words it (its GameUI strings, `%s1`
@@ -330,6 +369,7 @@ pub(super) fn details_panel(commands: &mut Commands, root: Entity, look: &Look, 
 /// Why joining failed, in the loading dialog: "Disconnected", the reason
 /// (wrapped), Close.
 pub(super) fn failure_frame(commands: &mut Commands, root: Entity, menu: &GameMenu, look: &Look, text: &str) {
+    let reconnecting = menu.reconnecting;
     let (w, h) = (380.0, 150.0);
     let title = menu.text("#GameUI_Disconnected", "Disconnected");
     let parts = widgets::frame(commands, root, look, FrameSpec::new("loading"), (w, h), &title);
@@ -352,7 +392,11 @@ pub(super) fn failure_frame(commands: &mut Commands, root: Entity, menu: &GameMe
         TextLayout::new(Justify::Left, LineBreak::WordBoundary),
         ChildOf(body),
     ));
-    let close = menu.text("#GameUI_Close", "Close");
+    let close = if reconnecting {
+        menu.text("#GameUI_Cancel", "Cancel")
+    } else {
+        menu.text("#GameUI_Close", "Close")
+    };
     widgets::button(
         commands,
         parts.frame,

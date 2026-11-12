@@ -256,6 +256,9 @@ pub struct GameMenu {
     /// The loading dialog shows why joining (or the game) failed, in the
     /// game's words (`net_failure_text`), until it's closed.
     pub failure: Option<String>,
+    /// `failure` is the reconnect box (`Reconnecting::status`, Cancel),
+    /// not a failure: closing it cancels the reconnect (`reconnect_dialog`).
+    pub reconnecting: bool,
     pub page: Page,
     /// The focused row of the page (of `main` on the main page).
     pub focus: usize,
@@ -842,6 +845,7 @@ impl GameMenu {
             ) {
                 self.failure = None;
                 self.loading = None;
+                // `reconnect_dialog` sees the reconnect box closed and cancels.
             }
             return out;
         }

@@ -666,7 +666,7 @@ fn receive_own_states(
             commands.queue(set_movement(e, id));
         }
         if seed.is_none_or(|x| x.0 != s.seed) {
-            commands.entity(e).insert(Seed(s.seed));
+            commands.entity(e).try_insert(Seed(s.seed));
         }
         // A map camera the player views through.
         match s.view {
