@@ -297,6 +297,10 @@ pub fn run(game: &'static GameApp) -> AppExit {
     if let Some(exit) = super::startup::run_if_needed(game, &args) {
         return exit;
     }
+    // Big blocks go back to the system when freed (the first map load's
+    // scratch: docs/performance.md, "A client's memory"), as the dedicated
+    // server's do; from the start map on.
+    crate::metrics::memory::big_blocks_mapped();
     let (lacks, fatal) = game.requirements();
     if fatal {
         exit_fatal(&lacks);

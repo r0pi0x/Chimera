@@ -144,14 +144,14 @@ Delete each when done.
   MB) pose the hit spheres: they stay. Then check the playtest build's
   server over a session of maps (`tick_stats`' memory).
 - **Client memory**: (the rehearsal's 3.5-5.5 GB per offscreen client
-  is down to 3.2-3.3 GB after each of three maps: docs/performance.md, "A
-  client's memory".) Of the 2.4-2.5 GB malloc has in use, the Combat Arms
-  view models' animations converted again for each map's dressing beside
-  the ones loaded on demand (260-290 MB on another game's map), the
-  character models' animation files (260-370 MB), the Combat Arms weapon
-  set (250 MB for 2,363 weapons); the first map's load peaks at 6.1 GB
-  until glibc's trim 20 s after it spawns. Check a client without
-  installs (the asset service's) the same way.
+  is down to 2.1 GB in use after each of three maps, the first load's peak
+  resident 6.6 -> 4.4 GB: docs/performance.md, "A client's memory" and
+  "The dressing's view models and the first load".) Left: the character
+  models' animation files (260-370 MB, parsed keys as `f32`s), the Combat
+  Arms weapon set (250 MB for 2,363 weapons), the maps' textures decoded on
+  the CPU before upload (the first load's largest transient). From the
+  asset service a client had 2.3-2.6 GB in use before and after (not
+  explained yet: profile it as the installed one was).
 
 ### HL2:DM playtest, 2026-11-09 (user, Windows, dm_lockdown)
 
