@@ -501,6 +501,11 @@ Code: `apps/party_kit/src/surprise.rs`.
 - `surprise stop` ends both at once.
 
 Both run on the server's console only (a client's console refuses them).
+A tester without the installs has everything they show before they fire
+(measured: no on-demand fetch during either) once Combat Arms' `base`
+holds the shells' flight sound (`guns_pt/snd/grenade.wav`, 0.09 MB):
+`chimera_pack sets combat_arms --store <server store> --sign --only base`
+(the rest was in `base` or the map's set already).
 
 ## After
 

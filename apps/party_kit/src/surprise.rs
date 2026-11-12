@@ -108,6 +108,9 @@ pub const BLAST_LOOK: &str = combat_arms::game::special::devices::STRIKE_LOOK;
 /// The moon's defaults: how long, s, and the gravity's scale.
 pub const GRAVITY_SECONDS: f64 = 60.0;
 pub const GRAVITY_SCALE: f32 = 0.2;
+/// The moon's messages' colour: a deep blue that reads on sand and sky.
+const MOON_BLUE: [u8; 3] = [50, 110, 255];
+
 /// How long the opening banner holds, s.
 const BANNER: f64 = 3.0;
 /// The last seconds of moon gravity are counted down (not over the
@@ -424,7 +427,7 @@ fn start_gravity(world: &mut World, seconds: f64, scale: f32) -> Result<String, 
     } else {
         "Moon gravity!".to_string()
     };
-    hud(world, banner(&text, GRAVITY_CHANNEL, [140, 200, 255], BANNER as f32));
+    hud(world, banner(&text, GRAVITY_CHANNEL, MOON_BLUE, BANNER as f32));
     flash(world, [120, 160, 255], 60, 0.6);
     let text = format!("surprise: moon gravity x{scale} for {seconds:.0} s");
     info!("{text}");
@@ -451,7 +454,7 @@ fn end_gravity(world: &mut World, say: bool) {
         g.0 = old;
     }
     if say {
-        hud(world, banner("Gravity is back!", GRAVITY_CHANNEL, [140, 200, 255], 2.5));
+        hud(world, banner("Gravity is back!", GRAVITY_CHANNEL, MOON_BLUE, 2.5));
     }
     info!("surprise: gravity back");
 }
@@ -476,7 +479,7 @@ fn gravity_step(clock: Res<SimClock>, map: Option<Res<LoadedMapName>>, mut moon:
     if left <= COUNTDOWN && !banner_up && moon.counted != Some(left) {
         moon.counted = Some(left);
         commands.queue(move |world: &mut World| {
-            hud(world, banner(&format!("Gravity returns in {left}"), GRAVITY_CHANNEL, [140, 200, 255], 1.2));
+            hud(world, banner(&format!("Gravity returns in {left}"), GRAVITY_CHANNEL, MOON_BLUE, 1.2));
         });
     }
 }
