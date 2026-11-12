@@ -130,6 +130,24 @@ write them with the set's current files as a `CHIMERA_VFS_LOG`-style list
 combat_arms` records all of Combat Arms' 2,363 weapon sets again (each
 a superset of the last); it leaves the other sets alone.
 
+Combat Arms' `base` also wants its guns' impact sounds and decals, shell
+sounds and shell models (`guns_snd_impacts/`, `fx/i_mark/`,
+`guns_snd_shells/`, `guns_sc/`: 328 files, +13 MB to the startup
+download), which any map with Combat Arms guns reads and which were
+otherwise in no set but `map/darkhills` (a miss there took up to 13.6 MB
+of that map's set a session). From the server store's manifest (Linux;
+the build as listed in `manifests/combat_arms/`), the current `base`
+plus those folders:
+
+```
+M=~/.local/share/chimera/asset-server/manifests/combat_arms/26236938.txt
+awk '$1=="file"{p=$0; sub(/^([^ ]+ ){4}/,"",p); id[p]=$2; sz[p]=$3; o[++n]=p}
+  $1=="set" && $2=="base"{p=$0; sub(/^set base /,"",p); b[p]=1}
+  END{for(i=1;i<=n;i++){p=o[i]; if(b[p] || p ~ /^(guns_snd_impacts|guns_snd_shells|guns_sc|fx\/i_mark)\//)
+  printf "combat_arms\t%s\t%s\t%s\n", p, sz[p], id[p]}}' "$M" > /tmp/ca-base.txt
+cargo run --release --features tools --bin chimera_pack -- publish combat_arms --from /tmp/ca-base.txt --set base --sets-from /nonexistent
+```
+
 The rung bodies are named in the join's offer
 (`character/<record>`), and so are the rung guns' fitted parts
 (`parts/<id>`, for each Combat Arms rung gun showing parts; before them 0-9
@@ -157,6 +175,20 @@ A seeded session (Combat Arms' warehouse, ladder seed 217377, then de_aztec;
 prefetch off), before and after: 17 and 34 on-demand requests, 34.5 and
 67.8 MB (one or two 30 MB groups of `map/darkhills`) -> 23-33 requests,
 4.4-10.2 MB.
+
+A join or level change that fetches holds every on-demand miss until its
+download has claimed what it fetches (`chimera_assets::pending`,
+`starting`): the new ladder's held models and bodies, which a client
+starts loading as the match arrives with the level change, came a group
+each before the download had asked the service for its list. A seeded
+session (warehouse, de_aztec, de_dust2 by `ugg_new` with ladder seeds
+217377-217379, rung seed 4242, one no-install client, prefetch off) went
+from 62 on-demand requests and 32.1 MB (39 of them, 17.4 MB, files of
+the offered `weapon/`, `character/` and `players` sets) to 19 and 14.8
+MB, the joins' downloads from 162.6 to 176.6 MB; with Combat Arms'
+`base` widened as above, to 13 requests and 1.1 MB (each a Combat Arms
+gun's own sound: `guns_snd_*`, in no set), the startup download from
+355.5 to 368.7 MB.
 
 Publishing again at the same build reaches testers who fetched before:
 each start asks the service whether it has a newer manifest than the

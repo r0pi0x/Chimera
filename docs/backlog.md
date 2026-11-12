@@ -129,11 +129,16 @@ What the rehearsal found and didn't fix (fixed ones: the commits of
 branch `playtest-rehearsal`; numbers: playtest-hosting.md, "Rehearsal").
 Delete each when done.
 
-- **What a match still fetches outside its sets** (measured 2026-11-11
-  after every pool map got its set and `base`/`players` were widened:
-  playtest-hosting.md, "Publishing the game files"; three maps, 31
-  on-demand requests and 39 MB, from 144 and 252 MB). Find them with
+- **What a match still fetches outside its sets** (measured 2026-11-12:
+  playtest-hosting.md, "Publishing the game files"; a seeded three-map
+  session, 13 on-demand requests and 1.1 MB once Combat Arms' `base`
+  has its impacts and shells, from 62 and 32.1 MB). Find them with
   `CHIMERA_ASSET_FETCH_LOG`.
+  - Combat Arms guns' own sounds (`guns_snd_*`: fire, select, reload)
+    are in no set: about a request each the first time a gun fires
+    (0.02-0.17 MB). `chimera_pack sets` could add each gun's sound
+    fields (`data.rs`'s effects: `fire_snd`, `reload_snd`, ...) to its
+    `weapon/<id>`; then `sets combat_arms --only weapon/` again.
   - Maps outside the pool (a `changelevel` to one) have no set and load
     group by group (2 min 25 s with 150 ms per answer in the rehearsal).
 - **The dedicated server's memory, what's left** (its Combat Arms view

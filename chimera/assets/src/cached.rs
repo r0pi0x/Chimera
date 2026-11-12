@@ -14,7 +14,8 @@
 //! half a megabyte of it, not 32 MB, while a map loaded from its set
 //! reaches full batches after a few. A record a foreground fill is
 //! fetching (`pending`: the join's sets) is waited for, not asked again,
-//! and left out of groups. One group is fetched at a time per manifest, so
+//! and left out of groups; while such a fill is still starting (asking the
+//! service what to fetch) a miss waits for its claim first. One group is fetched at a time per manifest, so
 //! loads that miss files of the same group at once wait for one batch.
 //! `CHIMERA_ASSET_BATCH=0` fetches only the file asked for (measuring,
 //! debugging); `CHIMERA_ASSET_FETCH_LOG=<file>` appends a line per
@@ -256,7 +257,9 @@ impl CachedFiles {
     /// group at a time), then the record alone if the batch didn't bring
     /// it.
     fn fetch(&self, fetcher: &dyn Fetcher, path: &str, f: &FileRecord) -> io::Result<Vec<u8>> {
-        // A fill fetching it now (the join's sets): wait for that.
+        // A fill fetching it now (the join's sets): wait for that, and for
+        // a fill still asking the service what to fetch to claim first.
+        crate::pending::wait_started(PENDING_WAIT);
         if crate::pending::wait(&f.id, PENDING_WAIT) {
             match self.store.get(&f.id, f.size) {
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {}

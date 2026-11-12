@@ -445,6 +445,40 @@ fn a_fetch_asks_again_for_what_did_not_arrive() {
     assert!(f.access_log_with(" 429 ").contains(" 429 "), "the first batch was refused");
 }
 
+/// A miss while a join's fetch is still starting (asking the service
+/// what to fetch, before it claims its records) waits for that fetch and
+/// reads what it brought: one batch in all, nothing asked twice (the
+/// ladder's models, loading as a level change's offer arrives).
+#[test]
+fn a_miss_while_a_fetch_starts_waits_for_it() {
+    let f = Fixture::new("svc_starting");
+    let token = f.user("tester", None);
+    let client = f.client_store("client");
+    let settings = AssetSettings {
+        store: Some(client.clone()),
+        use_install: false,
+        builds: Default::default(),
+        remote: Some(f.config(&token)),
+        lock: None,
+    };
+    assert_eq!(settings.build("fixture").as_deref(), Some("100"));
+    let cached = CachedFiles::open(&client, "fixture", "100").unwrap().with_fetcher(settings.fetcher());
+    let starting = chimera_assets::pending::starting();
+    std::thread::scope(|s| {
+        let reader = s.spawn(|| cached.read("maps/test.bsp").unwrap().unwrap());
+        // The read is held while the fetch starts.
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(!reader.is_finished(), "a miss waits while a fetch starts");
+        let wanted = [chimera_assets::sets::Wanted { game: "fixture".into(), sets: vec!["all".into()] }];
+        let options = chimera_assets::sets::Options { starting: Some(&starting), ..Default::default() };
+        chimera_assets::sets::fetch(&settings, &wanted, "files", &std::sync::Mutex::new(None), options).unwrap();
+        assert_eq!(reader.join().unwrap(), vec![3u8; 70_000]);
+    });
+    let log = f.access_log_with("POST /batch 200 records=3");
+    assert_eq!(log.matches("POST /batch").count(), 1, "the fetch's batch alone: {log}");
+    assert!(!log.contains("GET /r/"), "no record asked for alone: {log}");
+}
+
 /// Paths that try to leave the routes (dot segments, encoded slashes, a
 /// record id that isn't one) never reach a file: 400 or 404, never the
 /// server's own files.

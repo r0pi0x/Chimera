@@ -24,8 +24,10 @@
 //!   (`AssetSession::served`, opened at startup from a bound access or
 //!   `[assets]`) has its offered sets fetched on a thread (`fetch`: the
 //!   service's manifest, the sets' records the store lacks, in batches:
-//!   `chimera_assets::sets::fetch`),
-//!   the bytes shown as the join's `Downloading` stage (`DownloadInfo`,
+//!   `chimera_assets::sets::fetch`; from `begin` until the fill claims
+//!   its records, `pending::starting` holds on-demand misses, so models
+//!   the new match starts loading at once wait for the fetch instead of
+//!   coming a group each), the bytes shown as the join's `Downloading` stage (`DownloadInfo`,
 //!   "game files"); then the join goes on (`client::proceed`). The later
 //!   sets are fetched once in the game (`poll_prefetch`, one set at a time)
 //!   at a capped rate (`pace_prefetch`): the client's
@@ -590,8 +592,16 @@ pub(super) fn begin(world: &mut World, manifest: &MatchManifest, then: Then) -> 
     );
     let transfer: Arc<Mutex<Option<Arc<Transfer>>>> = Arc::default();
     let shared = transfer.clone();
+    // From now until the fill claims its records, on-demand misses wait
+    // for it (`pending::starting`): the new match's ladder, arriving with
+    // the level change, starts loading its models at once.
+    let starting = chimera_assets::pending::starting();
     let job = std::thread::spawn(move || {
-        sets::fetch(&settings, &wanted(&wants), FILES, &shared, sets::Options::default())
+        let options = sets::Options {
+            starting: Some(&starting),
+            ..default()
+        };
+        sets::fetch(&settings, &wanted(&wants), FILES, &shared, options)
     });
     client::set_stage(world, JoinStage::Downloading);
     world.resource_mut::<JoinProgress>().download = Some(DownloadInfo {
