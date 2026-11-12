@@ -161,8 +161,9 @@ only checks of the install's own archives ask for the folder alone.
 Publishing (maintainers, with the installs): `chimera_pack publish <game>`
 (every file, the manifest marked complete), `publish <game> --from <vfs
 log> --set <name>` (a set from a recorded run), `chimera_pack sets <game>
---store <server store> --sign` (the `weapon/<id>`, `players` and Combat Arms' `character/<record>`
-sets).
+--store <server store> --sign` (the `weapon/<id>`, `players`, every
+installed map's `map/<name>` and Combat Arms' `character/<record>` and
+`parts/<id>` sets).
 
 ## Design principles
 

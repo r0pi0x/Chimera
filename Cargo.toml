@@ -274,6 +274,8 @@ combat_arms.workspace = true
 hl2dm.workspace = true
 source_engine.workspace = true
 chimera_core.workspace = true
+# `chimera_pack sets`: how it loads each map (`MapLoadOptions`).
+chimera_world.workspace = true
 chimera_assets.workspace = true
 source_formats.workspace = true
 lithtech_formats.workspace = true
@@ -338,7 +340,7 @@ tools = []
 
 # Faster iteration: link Bevy as a dynamic library (the app's `dev` and
 # every crate's under it). Never enable for release builds.
-dev = ["cs_source_app/dev", "cs_source/dev", "combat_arms/dev", "hl2dm/dev", "source_engine/dev", "chimera_core/dev", "chimera_assets/dev", "source_formats/dev", "lithtech_formats/dev"]
+dev = ["cs_source_app/dev", "cs_source/dev", "combat_arms/dev", "hl2dm/dev", "source_engine/dev", "chimera_core/dev", "chimera_world/dev", "chimera_assets/dev", "source_formats/dev", "lithtech_formats/dev"]
 
 # CPU profile: every system and render step as a span in a Chrome trace
 # (docs/performance.md). Slower; only for measuring.

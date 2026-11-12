@@ -145,3 +145,30 @@ fn a_document_without_an_effects_table_gets_one() {
     assert_eq!(frag.misc_sounds, ["test/frag/pin.wav"]);
     assert_eq!(frag.impact, "");
 }
+
+/// What a weapon's set on the asset service holds of its sounds
+/// (`chimera_pack sets combat_arms`, `weapon/<id>`): every file its
+/// record names, once each, as the mount reads them; none for a weapon
+/// that names none.
+#[test]
+fn a_weapon_set_lists_its_sounds() {
+    let docs = merged();
+    let m4 = fx(&docs, "combat_arms:m4a1");
+    let mut want: Vec<&str> = vec![
+        "test/m4/desel.wav",
+        "test/m4/dry.wav",
+        "test/m4/fire.wav",
+        "test/m4/r1.wav",
+        "test/m4/r3.wav",
+        "test/m4/sel.wav",
+        "test/m4/sil1.wav",
+        "test/m4/sil3.wav",
+    ];
+    want.sort_unstable();
+    assert_eq!(m4.sound_paths(), want);
+    let copy = fx(&docs, "combat_arms:copy_gun");
+    assert_eq!(copy.sound_paths(), ["test/copy/fire.wav", "test/copy/r2.wav", "test/copy/sel.wav"]);
+    let frag = fx(&docs, "combat_arms:m67");
+    assert!(frag.sound_paths().contains(&"test/frag/pin.wav".to_string()), "misc sounds too");
+    assert!(fx(&docs, "combat_arms:bare_gun").sound_paths().is_empty());
+}
