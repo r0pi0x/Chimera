@@ -23,6 +23,13 @@
 //! every run, and the systems that grew on a failure) over the ticks that
 //! make no new archetype (`instructions_per_tick`): a new one costs a
 //! step over the others, once.
+//!
+//! The counts follow the bots' play, which follows the entities' ids: a
+//! new resource is an entity (Bevy 0.20) and shifts every later id, so
+//! the bots fight differently and their thinking (`think`, the largest
+//! system, 0.8-1.2M a tick) moves by hundreds of thousands, enough to
+//! cross the limit (2026-11-12: two new resources, 1.19x -> 1.37x). New
+//! registries go on an existing resource (`power::PowerReaders`).
 
 use bevy::prelude::*;
 use chimera_core::metrics::{census::Census, work::WorkCounts};

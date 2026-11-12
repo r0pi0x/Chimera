@@ -11,10 +11,10 @@
 
 use bevy::prelude::*;
 use chimera_sim::{
-    minigame::{self, MinigameAppExt, Minigames, auto, ladder::Ladder, power::PowerCurve},
+    minigame::{self, MinigameAppExt, Minigames, auto, ladder::Ladder, power::{PowerCurve, PowerReaders}},
     weapon::{
         data::{WeaponCatalog, WeaponDataAppExt},
-        harm::{HarmReaders, can_damage_player},
+        harm::can_damage_player,
     },
 };
 use chimera_world::harness::Sim;
@@ -63,7 +63,7 @@ fn ugg_with_copies() -> Sim {
 
 fn harm(world: &World, id: &str) -> Option<bool> {
     let data = world.resource::<WeaponCatalog>().get(id).unwrap_or_else(|| panic!("{id} in the catalogue"));
-    can_damage_player(data, world.resource::<HarmReaders>())
+    can_damage_player(data, &world.resource::<PowerReaders>().harm)
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn drawn_ladders_never_deal_a_gun_without_damage() {
     {
         let w = sim.app.world();
         let catalog = w.resource::<WeaponCatalog>();
-        let readers = w.resource::<HarmReaders>();
+        let readers = &w.resource::<PowerReaders>().harm;
         for c in &caps {
             for id in c.guns.iter().map(|g| g.id).chain(c.grenades.iter().copied()) {
                 assert_ne!(can_damage_player(catalog.get(id).unwrap(), readers), Some(false), "{id} left in");

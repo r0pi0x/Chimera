@@ -310,10 +310,20 @@ pub type HookParams = toml::Value;
 /// A game's reader of one of its hooks' parameters, refining the stats.
 pub type PowerReader = fn(&HookParams, &ReadAt, &mut GunStats);
 
-/// The games' readers, by hook name (`PowerAppExt::add_power_reader`),
-/// applied in registration order.
+/// What the games registered for drawn ladders to read their weapons
+/// by: the power readers, by hook name (`PowerAppExt::add_power_reader`),
+/// applied in registration order; the harm readers
+/// (`weapon::harm::HarmAppExt::add_harm_reader`); the draw exclusions
+/// (`auto::DrawExclusionsAppExt::add_draw_exclusions`). One resource for
+/// all three: each new resource is an entity (Bevy 0.20), which shifts
+/// the ids of every entity made after it and with them the bots' play
+/// that `party_kit`'s `archetypes` test counts.
 #[derive(Resource, Clone, Default)]
-pub struct PowerReaders(pub Vec<(&'static str, PowerReader)>);
+pub struct PowerReaders {
+    pub stats: Vec<(&'static str, PowerReader)>,
+    pub harm: crate::weapon::harm::HarmReaders,
+    pub exclusions: super::auto::DrawExclusions,
+}
 
 pub trait PowerAppExt {
     /// `reader` refines a gun's stats when its data names hook `hook`.
@@ -322,7 +332,14 @@ pub trait PowerAppExt {
 
 impl PowerAppExt for App {
     fn add_power_reader(&mut self, hook: &'static str, reader: PowerReader) -> &mut Self {
-        self.world_mut().get_resource_or_init::<PowerReaders>().0.push((hook, reader));
+        self.world_mut().get_resource_or_init::<PowerReaders>().stats.push((hook, reader));
+        self
+    }
+}
+
+impl crate::weapon::harm::HarmAppExt for App {
+    fn add_harm_reader(&mut self, hook: &'static str, reader: crate::weapon::harm::HarmReader) -> &mut Self {
+        self.world_mut().get_resource_or_init::<PowerReaders>().harm.0.push((hook, reader));
         self
     }
 }
@@ -370,7 +387,7 @@ pub fn stats(data: &WeaponData, readers: &PowerReaders, curve: &PowerCurve, metr
         firing: curve.score.firing,
         update: curve.score.update,
     };
-    for (hook, read) in &readers.0 {
+    for (hook, read) in &readers.stats {
         if let Some(p) = data.hooks.get(*hook) {
             read(p, &at, &mut s);
         }
