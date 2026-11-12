@@ -129,12 +129,17 @@ What the rehearsal found and didn't fix (fixed ones: the commits of
 branch `playtest-rehearsal`; numbers: playtest-hosting.md, "Rehearsal").
 Delete each when done.
 
-- **What a match still fetches outside its sets, the after run**: Combat
-  Arms guns' sounds are in their `weapon/<id>` sets and every installed
-  map has a `map/<name>` set (`chimera_pack sets`; playtest-hosting.md,
-  "Publishing the game files"). Measure a seeded three-map session again
-  with `CHIMERA_ASSET_FETCH_LOG` (before: 6 on-demand requests, 0.45 MB,
-  all now in sets), then publish the sets again.
+- **Publish the sets again (debris, call-outs, cues, thrown objects)**:
+  a seeded session fetched Combat Arms' `attributes/debris.txt` on demand
+  during a match, and the guard (`heavy::no_fetch_in_match`, every rung
+  climbed) Combat Arms' infection call-out, CS:S's lead cues and a
+  thrown grenade's sound; `chimera_pack sets` now merges the debris
+  pieces, the call-outs and both cue packs into `base` and puts what a
+  Combat Arms gun throws or fires in its `weapon/<id>` set
+  (playtest-hosting.md, "Publishing the game files"). On the host, from a
+  checkout with that change: `chimera_pack sets combat_arms --store
+  <server store> --sign --only base`, the same with `--only weapon/`,
+  `sets cs_source ... --only base`, then run the guard.
 - **The dedicated server's memory, what's left** (its Combat Arms view
   models are gone: 1.70-1.85 GB in use, docs/performance.md, "The
   dedicated server's memory"). The effects' library (270 MB, the parsed

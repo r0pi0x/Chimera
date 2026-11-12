@@ -199,6 +199,21 @@ impl CaDebrisTable {
     pub fn get(&self, id: u32) -> Option<&DebrisRecord> {
         self.0.get(id as usize)
     }
+
+    /// Every file its records name (models, skins, bounce and explode
+    /// sounds), as written: what a prop's death draws and plays, which
+    /// `chimera_pack sets` puts in Combat Arms' `base` with `FILE`.
+    pub fn files(&self) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        for r in &self.0 {
+            for f in r.models.iter().chain(&r.skins).chain(&r.bounce_sounds).chain(&r.explode_sounds) {
+                if !f.trim().is_empty() && !out.contains(&f.as_str()) {
+                    out.push(f);
+                }
+            }
+        }
+        out
+    }
 }
 
 /// One `[Debris<n>]` section as a record.

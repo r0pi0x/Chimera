@@ -64,7 +64,8 @@ cargo run --release --features tools --bin chimera_pack -- sets hl2dm --store <s
 `sets <game> --only <prefix>` records only the sets whose names start
 with it and leaves the others as they are (`sets combat_arms --only
 character/ --sign`: the bodies' sets alone, in under a minute; `--only
-parts/`: the guns' fitted parts alone, about a minute).
+parts/`: the guns' fitted parts alone, about a minute; `--only base`:
+Combat Arms' effect and debris files merged into its `base`, seconds).
 
 A whole publish serves every file, on demand. Sets make a match's first
 download one batch instead of a request per file: `sets` records each gun's
@@ -103,7 +104,7 @@ server's. With `sets` run as above (2026-11-12) the server has, per game:
 | `base` (fetched at the first start) | 62.6 MB | 268 MB: also the music (`Game/BGM`), the G23's sounds, the pool maps' loading images, the guns' impact and shell sounds and models and every sound the effect tables name (`sets`: surfaces, event sounds, the heartbeat) | 62 MB: also all 12 guns, the 19 player models, the weapon and headcrab-canister sounds every match plays |
 | `players` (each join) | 12.9 MB | 66 MB, nearly all in `base`: the stock characters and footsteps | 18 MB |
 | `map/<name>` | all 109 maps (the 18 stock ones and the publisher's community maps), 0.3-196 MB each, median 18 MB, 4.7 GB together | all 105 maps, 0.9-174 MB each, median 25 MB, 3.2 GB together | its 8 maps, 91-154 MB each |
-| `weapon/<id>` | every gun | every gun: view model with hands and parts, the held model (what other players hold) and its own sounds (fire, silenced, dry, reload, select, misc) | every gun |
+| `weapon/<id>` | every gun | every gun: view model with hands and parts, the held model (what other players hold), its own sounds (fire, silenced, dry, reload, select, misc) and what it throws or fires (sounds, model, skins, flare) | every gun |
 | `character/<record>` | - | each of the 689 body records with a file (a rung's body: its model, faces, head pieces and textures; beyond `base` and `players` mostly its vest and legs textures, 0.3 MB at the median) | - |
 | `parts/<id>` | - | each of the 1,265 guns with parts: the parts a rung may draw for it and its default ones (their view and held models and textures, beyond its `weapon/<id>`; 2 MB at the median, mostly shared: 326 files, 7.5 MB in all) | - |
 
@@ -187,9 +188,43 @@ sound, `guns_snd_*`, then in no set), the startup download from 355.5 to
 the effect tables' sounds and `ui_snd/heartbeat.wav` in Combat Arms'
 `base` (61 files, 1.6 MB more), and every installed map has a
 `map/<name>` set: the last measured session's 6 on-demand requests
-(0.45 MB) are all in sets now (not measured again). The manifests grew
+(0.45 MB) are all in sets now. The manifests grew
 by 3.24 MB in all: Combat Arms 10.55 to 12.76 MB, CS:S 9.41 to 10.41,
 HL2:DM 5.545 to 5.573.
+
+Measured again with those sets (2026-11-12; the same seeded session, about
+3 minutes a match, then a `changelevel` to `cs_source:gg_simpsons_d`,
+outside the pool): one on-demand request, during warehouse's match,
+Combat Arms' `attributes/debris.txt` (911 bytes, in no set: read when a
+prop first breaks); nothing else on demand, nothing while joining or
+loading. After the first match started, the only other requests were
+the level changes' downloads (41.5, 87.0 and 0.2 MB). Combat Arms' `base`
+now has the debris table and its pieces' models, skins and sounds (30
+files, 1 MB; `sets combat_arms --only base`); a run with that `base`:
+nothing on demand, the startup download 371.3 MB instead of 370.3. The
+guard below, which climbs every rung, then found three more, all sounds
+any match may play: Combat Arms' infection call-out
+(`chars_snd/q_male/infected_male.wav`) and CS:S's lead cues
+(`sound/buttons/blip1.wav`, `button8.wav`). `sets` now also merges into
+`base` Combat Arms' infection and grenade call-outs and both games' minigame
+cue packs (data/cues.toml: a rung up or down, the lead, the last rung,
+the match's end; 16 files). A third guard run found a thrown grenade's
+sound in flight (`guns_pt/snd/grenade.wav`, a Combat Arms rung's
+grenade on de_aztec): each Combat Arms `weapon/<id>` set now also holds
+what the gun throws or fires (its projectile's, grenade's, device's or
+bolt's sounds in flight and at rest, create sound, flare sprite, model
+and skins: `special::object_files`; 80 sets grew, by 171 files;
+`sets combat_arms --only weapon/`, about 10 minutes).
+
+**The guard**: `cargo test -p ultimate_gun_game --features dev --test it
+heavy::no_fetch_in_match -- --nocapture` plays such a session as a
+client without installs against a service reading the published store
+(this machine's server store, or `CHIMERA_GUARD_STORE=<store>`), every
+character climbing every rung, and fails naming each file fetched on
+demand during a match and how to cover it (about 3.5 minutes; it runs
+with the heavy tests wherever the server store and the installs are, so
+it fails there until the sets above are published). Run it after
+publishing, and after a change to what a match loads.
 
 Publishing again at the same build reaches testers who fetched before:
 each start asks the service whether it has a newer manifest than the
@@ -458,6 +493,18 @@ which clears the binding.
   watch for 401 (bad or revoked token), 403 and hash-refusal lines.
   A tester's join is a burst of `POST /batch` lines (the match's sets),
   then `/batch` lines for the pool's other maps in the background.
+- **Files fetched mid-match.** A match's files should all come with the
+  join's or level change's download. A line ending in ` on-demand` in the
+  access log is a file a game read that the download didn't bring (sent
+  by builds after v0.1.0-playtest5; older ones send the same requests
+  without the mark): `grep on-demand <server store>/server/access.log`.
+  The tester's game says which file and when, in its console and
+  `ugg-last.log`: `assets: fetched on demand during the match on <map>:
+  <game> <path> (set <set>, <n> files, <KB>); this match <n> fetches,
+  <MB>`, each match's start (`assets: the match on <map> started (<n>
+  fetches on demand, <MB>, while joining or loading it)`) and its end
+  (`assets: the match on <map> ended: <n> fetches on demand during it`).
+  A file named there belongs in a set: "Publishing the game files".
 - Half-Life style logs: `log on` on the console writes `logs/L<MMDD><NNN>.log`
   in the data folder.
 - Testers' bug reports arrive as zipped `bugreports` folders and

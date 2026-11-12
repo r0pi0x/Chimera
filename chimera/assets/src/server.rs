@@ -25,7 +25,10 @@
 //! most once a second), so a publish needs no restart; one without a
 //! signature is signed with the server's key when loaded. Every request
 //! is one line of `<store>/server/access.log`: time, account, method,
-//! path, status, records sent, bytes sent. The line is written once the
+//! path, status, records sent, bytes sent, the client's address, and
+//! ` on-demand` for a client's on-demand fetch (`?on-demand` on its path:
+//! `remote::ON_DEMAND`; a file a match read outside the sets it fetched).
+//! The line is written once the
 //! answer has been sent (a batch's bytes are counted while sending), so a
 //! client may have its answer before the line is in the log.
 //!
@@ -433,6 +436,7 @@ impl Service {
     /// Answer one request (and log it).
     pub fn handle(&self, mut request: Request) {
         let path = request.url().split('?').next().unwrap_or("").to_string();
+        let on_demand = request.url().split_once('?').is_some_and(|(_, q)| q.split('&').any(|p| p == "on-demand"));
         let method = request.method().clone();
         let ip = self.address(&request);
         let (who, outcome) = match self.route(&mut request, &method, &path, ip) {
@@ -452,10 +456,11 @@ impl Service {
             self.count(w, sent);
         }
         let line = format!(
-            "{} {} {method} {path} {status} records={records} bytes={sent} ip={}\n",
+            "{} {} {method} {path} {status} records={records} bytes={sent} ip={}{}\n",
             now_secs(),
             who.map_or("-".into(), |w| w.label()),
             ip.map_or("-".into(), |i| i.to_string()),
+            if on_demand { " on-demand" } else { "" },
         );
         if let Some(log) = self.log.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
             let _ = log.write_all(line.as_bytes());

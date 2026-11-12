@@ -9,6 +9,7 @@ mod heavy {
     mod map_swap_frames;
     mod map_swap_render;
     mod nav_in_play;
+    mod no_fetch_in_match;
     mod rung_frames;
     mod session_maps;
     mod server_map_memory;

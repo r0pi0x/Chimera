@@ -38,8 +38,9 @@
 //! whole pack or publish): `weapon/<id>` per weapon (CS:S: its view and
 //! world models with their materials and the waves of its sound entries;
 //! Combat Arms: its view model with hands and parts' textures, its
-//! held model with its textures, and its own sounds,
-//! `CaWeaponFx::sound_paths`), `players`
+//! held model with its textures, its own sounds,
+//! `CaWeaponFx::sound_paths`, and what it throws or fires,
+//! `special::object_files`), `players`
 //! (CS:S: the eight class models; HL2:DM: its 19 player models), and
 //! Combat Arms' `character/<record>` per body record with a file (its
 //! model, animation library and textures, as a rung's body loads them:
@@ -54,7 +55,9 @@
 //! the game's `base` and `players`; the offer names the loaded map's set,
 //! in the pool or not). `map/<name>` and Combat Arms' `base` (its effect
 //! tables' sounds: impacts, shells, surfaces, the event sounds and the
-//! heartbeat) are merged into what the manifest has (sets recorded from
+//! heartbeat, the infection and grenade call-outs; the debris table with
+//! its pieces' models, skins and sounds; its cue pack's sounds) and
+//! CS:S's `base` (its minigame cue pack's sounds) are merged into what the manifest has (sets recorded from
 //! logs too); the other sets are replaced. `--only <prefix>` records only
 //! the sets whose names start with it (`--only character/`), leaving the
 //! others as they are. `--sign` signs the manifest again with
@@ -384,6 +387,17 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 let _ = props::load_held(&mut materials, model, model, &[]);
             }
             out.push(("players".into(), take()));
+            // What any match with CS:S's guns plays, into `base` (merged):
+            // its minigame cue pack's sounds (a rung up or down, the lead).
+            if "base".starts_with(only) {
+                take();
+                if let Ok(pack) = chimera_core::cues::CuePack::parse(cs_source::game::parts::CUES) {
+                    for file in pack.sounds.values() {
+                        let _ = tapped.read(file);
+                    }
+                }
+                out.push(("base".into(), take()));
+            }
             let options = map_options(false);
             record_maps(source_engine::maps::map_names(mount), only, &take, &mut out, |name| {
                 let bytes = tapped.read(&format!("maps/{name}.bsp")).map_err(|e| e.to_string())?;
@@ -419,6 +433,21 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 // fires, else a request each on demand.
                 for path in w.hook::<CaWeaponFx>(EFFECTS).map(|fx| fx.sound_paths()).unwrap_or_default() {
                     let _ = tapped.read(&path);
+                }
+                // What it throws or fires: that object's sounds in flight
+                // and at rest, create sound, flare sprite, model and skins
+                // (played or drawn when used, else a request each).
+                for path in combat_arms::game::special::object_files(w) {
+                    let path = normalize(&path);
+                    if path.ends_with(".ltb") {
+                        let _ = combat_arms::game::model::load(&path, &read);
+                    } else if let Some(bytes) = tapped.read(&path).ok().filter(|_| path.ends_with(".spr"))
+                        && let Ok(sprite) = lithtech_formats::spr::Sprite::parse(&bytes)
+                    {
+                        for frame in &sprite.frames {
+                            let _ = tapped.read(&normalize(frame));
+                        }
+                    }
                 }
                 let id = w.id.rsplit(':').next().unwrap_or(&w.id);
                 out.push((format!("weapon/{id}"), take()));
@@ -481,6 +510,27 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 take();
                 for path in CaFxTables::built_in().sound_files() {
                     let _ = tapped.read(&normalize(path));
+                }
+                // The minigame cue pack's sounds (a rung up or down, the lead).
+                if let Ok(pack) = chimera_core::cues::CuePack::parse(combat_arms::game::parts::CUES) {
+                    for file in pack.sounds.values() {
+                        let _ = tapped.read(&normalize(file));
+                    }
+                }
+                // The debris table, read at a prop's first death, and the
+                // models, skins and sounds of its records (the pieces).
+                use combat_arms::game::effects::debris::{self, CaDebrisTable};
+                if let Ok(bytes) = tapped.read(debris::FILE)
+                    && let Ok(doc) = lithtech_formats::attributes::Document::parse(&bytes)
+                {
+                    for path in CaDebrisTable::parse(&doc).files() {
+                        let path = normalize(path);
+                        if path.ends_with(".ltb") {
+                            let _ = combat_arms::game::model::load(&path, &read);
+                        } else {
+                            let _ = tapped.read(&path);
+                        }
+                    }
                 }
                 out.push(("base".into(), take()));
             }

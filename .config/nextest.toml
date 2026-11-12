@@ -98,6 +98,17 @@ test-group = 'heavy'
 priority = 90
 slow-timeout = { period = "300s", terminate-after = 12 }
 
+# The on-demand guard: a dedicated server in the test process (about 2 GB
+# with the installs) and an offscreen client process without installs
+# (about 2.2 GB), a three-map session: 215-320 s on a loaded box
+# (2026-11-12).
+[[profile.default.overrides]]
+filter = 'binary_id(ultimate_gun_game::it) & test(/^heavy::no_fetch_in_match::/)'
+test-group = 'heavy'
+threads-required = 2
+priority = 85
+slow-timeout = { period = "300s", terminate-after = 4 }
+
 # The spawn sweep's own limit: 449 s and 602 s, then past the heavy tests'
 # 12 minutes three times with agents building (2026-11-09). 30 minutes,
 # like the soak.

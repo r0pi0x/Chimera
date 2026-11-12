@@ -218,6 +218,7 @@ pub mod manifest;
 pub mod maps;
 pub mod memory;
 pub mod motd;
+pub mod on_demand;
 pub mod ordered;
 pub mod own_items;
 pub mod parts;
@@ -1394,6 +1395,7 @@ impl Plugin for NetPlugin {
         maps::plugin(app);
         manifest::plugin(app);
         assets::plugin(app);
+        on_demand::plugin(app);
         mapfx::plugin(app);
         breakables::plugin(app);
         decals::plugin(app);
