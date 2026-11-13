@@ -370,6 +370,9 @@ pub struct CaBot {
     /// The patrol node it last left (not taken back unless a dead end).
     pub patrol_came: Option<usize>,
     pub stuck_check: (f64, Vec3),
+    /// No path search before then: the last one found no path (ours,
+    /// `brain::REPLAN_AFTER_FAIL`).
+    pub plan_after: f64,
     pub jump: bool,
     /// A Hired Guns mercenary's mind (None: a Bot Deathmatch bot).
     pub merc: Option<MercMind>,
@@ -433,6 +436,7 @@ impl CaBot {
             patrol_to: None,
             patrol_came: None,
             stuck_check: (0.0, Vec3::ZERO),
+            plan_after: 0.0,
             jump: false,
             merc: None,
         }

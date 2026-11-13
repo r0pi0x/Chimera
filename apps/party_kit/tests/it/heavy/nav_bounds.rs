@@ -3,7 +3,11 @@
 //! `Bounds`; backlog 2026-10-28, "Bots' generated nav reaches outside
 //! de_aztec"): on de_aztec nothing of it is in the jungle behind the
 //! walls (the user's spawn spot there is far from it), and bots playing
-//! three minutes never walk there; on de_aztec, de_dust2, cs_office and
+//! three minutes never walk there. Each of the two keeps the jungle out
+//! on its own: the map's player clips (the walker meets them,
+//! `NavGenParams::mask`) and the bounds (a walker passing the clips, as on
+//! a map whose clips another game's movement didn't meet, still reaches
+//! the jungle unbounded and not bounded); on de_aztec, de_dust2, cs_office and
 //! de_port no floor a player walks is lost, and the area counts before
 //! and after are printed (`--nocapture`). Passes with a note without both
 //! installs.
@@ -13,7 +17,7 @@ use std::collections::HashSet;
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemState, prelude::*};
 use chimera_core::{
-    core::{Dead, SpawnPoint},
+    core::{Dead, PLAYER_CLIP_LAYER, SpawnPoint},
     mount::config::LocalConfig,
 };
 use chimera_world::{
@@ -50,12 +54,24 @@ fn party_on(map: &str, bots: u32) -> Option<Sim> {
 }
 
 /// The meshes of the loaded map, generated from its spawn points: a
-/// walking player's, the bots' walker's unbounded and bounded.
+/// walking player's, the bots' walker's unbounded and bounded, and the
+/// bots' walker's passing the map's player clips, unbounded and bounded
+/// by a walking player who passes them too.
 struct Meshes {
     vis: std::sync::Arc<MapVisibility>,
     walk: NavMesh,
     free: NavMesh,
     bound: NavMesh,
+    unclipped_free: NavMesh,
+    unclipped_bound: NavMesh,
+}
+
+/// `p` passing players-only surfaces (the map's player clips).
+fn unclipped(p: nav_gen::NavGenParams) -> nav_gen::NavGenParams {
+    nav_gen::NavGenParams {
+        mask: LayerMask(p.mask.0 & !PLAYER_CLIP_LAYER.0),
+        ..p
+    }
 }
 
 fn meshes(sim: &mut Sim) -> Meshes {
@@ -73,10 +89,16 @@ fn meshes(sim: &mut Sim) -> Meshes {
         vis: &vis,
         walker: nav_gen::walking_player(),
     };
+    let unclipped_bounds = nav_gen::Bounds {
+        vis: &vis,
+        walker: unclipped(nav_gen::walking_player()),
+    };
     Meshes {
         walk: nav_gen::generate(&q, &|_| false, &feet, &nav_gen::walking_player()),
         free: nav_gen::generate(&q, &|_| false, &feet, &p),
         bound: nav_gen::generate_within(&q, &|_| false, &feet, &p, Some(bounds)),
+        unclipped_free: nav_gen::generate(&q, &|_| false, &feet, &unclipped(p)),
+        unclipped_bound: nav_gen::generate_within(&q, &|_| false, &feet, &unclipped(p), Some(unclipped_bounds)),
         vis,
     }
 }
@@ -144,25 +166,35 @@ fn the_bots_mesh_and_bots_stay_inside_de_aztec() {
     let Some(mut sim) = party_on("cs_source:de_aztec", 4) else { return };
     let m = meshes(&mut sim);
     let outside = Outside::of(&m);
-    let (before, after) = (outside.areas(&m.free), outside.areas(&m.bound));
-    eprintln!(
-        "de_aztec: the jungle unbounded {} areas {:.0} m2, bounded {} areas {:.0} m2",
-        before.len(),
-        size(&before),
-        after.len(),
-        size(&after)
-    );
-    assert!(size(&before) > 2000.0, "the unbounded mesh reaches the jungle");
-    assert!(after.is_empty(), "bounded: {:?}", after.iter().map(|a| a.center).collect::<Vec<_>>());
+    let jungle = |name: &str, n: &NavMesh| {
+        let a = outside.areas(n);
+        eprintln!("de_aztec: the jungle {name}: {} areas {:.0} m2", a.len(), size(&a));
+        (size(&a), a.iter().map(|a| a.center).collect::<Vec<_>>())
+    };
+    // Without clips or bounds the walker gets over the walls; either
+    // alone keeps it in.
+    let (reached, _) = jungle("passing clips, unbounded", &m.unclipped_free);
+    assert!(reached > 2000.0, "passing clips, the unbounded mesh reaches the jungle");
+    for (name, n) in [("passing clips, bounded", &m.unclipped_bound), ("unbounded", &m.free), ("bounded", &m.bound)] {
+        let (_, out) = jungle(name, n);
+        assert!(out.is_empty(), "{name}: {out:?}");
+    }
     // The user's spawn spot (setpos 2519.69 2283.46 210.62): on the
-    // unbounded mesh, far from the bounded one.
+    // mesh of neither clips nor bounds, far from the others.
     let spot = Vec3::new(2519.69, 210.62, -2283.46) * 0.0254;
-    assert!(m.free.areas.iter().any(|a| a.overlaps(spot.x, spot.z)));
-    let near = m.bound.areas.iter().map(|a| {
-        let d = (a.min - spot.xz()).max(spot.xz() - a.max).max(Vec2::ZERO);
-        d.length()
-    });
-    assert!(near.fold(f32::MAX, f32::min) > 10.0, "the user's spot is off the bounded mesh");
+    assert!(m.unclipped_free.areas.iter().any(|a| a.overlaps(spot.x, spot.z)));
+    let nearest = |n: &NavMesh| {
+        n.areas
+            .iter()
+            .map(|a| {
+                let d = (a.min - spot.xz()).max(spot.xz() - a.max).max(Vec2::ZERO);
+                d.length()
+            })
+            .fold(f32::MAX, f32::min)
+    };
+    for (name, n) in [("unbounded", &m.free), ("bounded", &m.bound), ("passing clips, bounded", &m.unclipped_bound)] {
+        assert!(nearest(n) > 10.0, "the user's spot is off the {name} mesh");
+    }
 
     // Bots playing: the mesh they make (from the spawn points and the
     // characters) is bounded too, and they never stand in the jungle.
@@ -171,7 +203,7 @@ fn the_bots_mesh_and_bots_stay_inside_de_aztec() {
         let nav = sim.app.world().resource::<NavMesh>();
         assert!(nav.generated, "the bots' generated mesh");
         eprintln!("de_aztec: the bots' own mesh {} areas", nav.areas.len());
-        assert!(nav.areas.len() < m.free.areas.len() * 3 / 4, "bounded: {} areas", nav.areas.len());
+        assert!(nav.areas.len() < m.unclipped_free.areas.len() * 3 / 4, "bounded: {} areas", nav.areas.len());
         assert!(outside.areas(nav).is_empty(), "the bots' own mesh is in the jungle");
     }
     let (mut seen, mut out) = (0, Vec::new());

@@ -255,13 +255,15 @@ fn shoot_prop(sim: &mut Sim, map: &MapData, index: usize, dist: f32) -> Entity {
     p
 }
 
-/// The body a ray from `from` toward `to` (Source units) hits first.
+/// The body a ray from `from` toward `to` (Source units) hits first, of
+/// what a bullet meets (`SOLID_LAYERS`: player clips' collider passed).
 fn hits(sim: &mut Sim, from: Vec3, to: Vec3) -> Option<Entity> {
     let world = sim.app.world_mut();
     let mut state = SystemState::<(SpatialQuery, Query<&ColliderOf>)>::new(world);
     let (q, of) = state.get(world).unwrap();
     let (a, b) = (to_engine(from), to_engine(to));
-    let hit = q.cast_ray(a, Dir3::new(b - a).unwrap(), 100.0, true, &SpatialQueryFilter::default())?;
+    let filter = SpatialQueryFilter::from_mask(crate::stack::core::SOLID_LAYERS);
+    let hit = q.cast_ray(a, Dir3::new(b - a).unwrap(), 100.0, true, &filter)?;
     Some(of.get(hit.entity).map_or(hit.entity, |c| c.body))
 }
 
