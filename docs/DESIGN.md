@@ -524,7 +524,11 @@ numbers (pinned by `parity_pin_*` tests in each game).
   tick's pose on first use: a game may hand out the shapes as a
   `later::Later`; shots read either kind through `HitShapes`). Lag
   compensation keeps them, unmade until a rewind needs them
-  (`weapon::lagcomp::HitHistory`). A gun's rule (CS:S's nearest box
+  (`weapon::lagcomp::HitHistory`), and every game's rule takes the kept
+  ones on a rewind; a client poses another player's body as the server
+  had it on the tick it draws (Combat Arms: its trackers, crouch, aim
+  and hull from snapshots of `CaAnimNet` at the render tick), so the
+  head a shooter aims at is the one the rewind tests. A gun's rule (CS:S's nearest box
   entered, Combat Arms' client test and server walk) asks only shape
   queries (`ray_span`, `segment_passes`/`power_along`, `line_passes`),
   so it works on any body; a box answers them as itself, never as its

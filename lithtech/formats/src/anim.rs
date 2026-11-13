@@ -448,6 +448,42 @@ impl Tracker {
         self.scan(list, &mut |_| {});
     }
 
+    /// The state `update` reaches (without firing key strings) `elapsed`
+    /// rate-scaled ms after `start(entry)` left entry `from` at its key
+    /// `from_key` (a transition first), or (`from` None) after the playing
+    /// `entry` was at t = 0 with no transition: what another machine
+    /// playing the same tracker shows then. The looping flag and rate
+    /// are the caller's to set; a loop wraps once past the last key as
+    /// `update` does, but the keys are scanned afresh after it.
+    pub fn seek(&mut self, list: &AnimList, entry: usize, from: Option<(usize, usize)>, elapsed: u32) {
+        let interp = list.entries[entry].animation.interp_ms;
+        self.current = entry;
+        if let Some((prev, key)) = from
+            && interp > 0
+            && elapsed <= interp
+        {
+            self.previous = prev;
+            self.previous_key = key;
+            self.transition = Some(elapsed);
+            self.blend = elapsed as f32 / interp as f32;
+            self.time = 0;
+            (self.a, self.b, self.u) = (0, 0, 0.0);
+            self.next_key = 0;
+            return;
+        }
+        let rest = if from.is_some() { elapsed - interp } else { elapsed };
+        self.previous = entry;
+        self.transition = None;
+        self.blend = 0.0;
+        let length = list.entries[entry].animation.length();
+        let time = if self.looping {
+            if rest > length && length > 0 { rest % length } else { rest }
+        } else {
+            rest.min(length + 1)
+        };
+        self.set_time(list, time);
+    }
+
     /// "End of play": non-looping and past the last key; an entry with
     /// at most one key is always done.
     pub fn done(&self, list: &AnimList) -> bool {
