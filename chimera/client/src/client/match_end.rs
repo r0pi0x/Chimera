@@ -74,6 +74,7 @@ pub struct MatchEndPlugin;
 
 impl Plugin for MatchEndPlugin {
     fn build(&self, app: &mut App) {
+        super::overlay::layer(app);
         app.init_resource::<MatchEndView>()
             .add_systems(Startup, spawn)
             .init_resource::<MapVoteChoice>()
@@ -530,10 +531,11 @@ fn text(part: MatchEndPart, color: Color) -> impl Bundle {
     )
 }
 
-fn spawn(mut commands: Commands) {
+fn spawn(layer: Res<super::overlay::OverlayLayer>, mut commands: Commands) {
     commands
         .spawn((
             MatchEndRoot,
+            ChildOf(layer.0),
             Visibility::Hidden,
             GlobalZIndex(MATCH_END_Z),
             // The shades as they would cover blended in display space

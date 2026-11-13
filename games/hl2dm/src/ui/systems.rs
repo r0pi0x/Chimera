@@ -46,7 +46,7 @@ use crate::game::{
 };
 
 /// What this HUD draws instead of the shell's.
-pub const DRAWS: GameDraws = GameDraws { crosshair: true, status: true, hit_marker: false, killfeed: true, callout: false };
+pub const DRAWS: GameDraws = GameDraws { crosshair: true, status: true, hit_marker: false, killfeed: true };
 
 /// HL2:DM's HUD cvars (`hud_fastswitch`...).
 #[derive(Resource, Clone, Debug, PartialEq)]

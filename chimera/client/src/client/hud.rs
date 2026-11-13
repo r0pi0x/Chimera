@@ -8,8 +8,8 @@
 //! screen tints, health, ammo, killfeed, capsule bodies for other
 //! characters. A game that draws its own crosshair, health and ammo, hit
 //! marker (`hit_marker`: the opt-in generic one, `client::hit_marker`, stays out) or kill feed turns this HUD's off with `GameDraws`;
-//! one that draws a minigame's big callout itself turns the shell's
-//! (`callouts`) off the same way (`GameDraws::callout`).
+//! the shell's overlay layer (`client::overlay`: a minigame's panel and
+//! callouts) is no part of it, so no game's HUD hides or replaces it.
 //!
 //! An app whose HUD changes (`gameplay::Gameplay::hud`: Lucker Party's
 //! local player follows its weapon's game, `chimera_sim::identity`) keeps
@@ -103,10 +103,6 @@ pub struct GameDraws {
     pub status: bool,
     pub hit_marker: bool,
     pub killfeed: bool,
-    /// A minigame's big callout (`MinigameHud::callout`): the game's HUD
-    /// draws it in its own looks and the shell's (`callouts`) stays
-    /// hidden; the shell still sounds its cue.
-    pub callout: bool,
 }
 
 /// A root of game `0`'s HUD nodes: shown only while that game's HUD is

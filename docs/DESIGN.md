@@ -593,10 +593,9 @@ Part B Combat Arms' pack).
   sends; each client's minigame HUD data turns the local player's into a
   `Callout` (`chimera_sim::minigame::hud`; text from the rules module,
   `RulesModule::callout`), which the shell draws centre screen
-  (`chimera_client::client::callouts`) with a cue's sound, unless the
-  HUD that is up draws it in its own looks (`GameDraws::callout`:
-  Combat Arms' does, in its notices' place): one callout whichever HUD
-  the gun has swapped in. The
+  (`chimera_client::client::callouts`) with a cue's sound, on its
+  overlay layer ("HUD layers"): one callout, the same whichever HUD the
+  gun has swapped in. The
   sounds are a **cue pack** (`chimera_core::cues::CuePack`, TOML: cue
   key to a file in a game's install, loaded at run time), a game's part
   (`GameParts::cues`; CS:S's is stock sounds, data/cues.toml; Combat
@@ -816,6 +815,29 @@ Ultimate Gun Game's ladder and maps are made, not written
 In the party apps the HUD follows the gun in hand, so anything that
 must survive a swap or look the same on every HUD is the shell's, not a
 game's:
+
+- **HUD layers** (user, 2026-11-13: "our UI should be independent of
+  any individual game's UI"): each game's HUD keeps its original look
+  and scaling (Combat Arms' 640x480 layout stretched to the screen,
+  CS:S's scheme proportions) under its own roots (`client::hud::
+  HudRoot`), up only while it is the gameplay's. What the shell draws
+  over them (a minigame's panel and callouts, the kill feed, the
+  respawn countdown, the match-end screen, the Tab scoreboard, the hit
+  marker, the swap flash) hangs under one engine-owned root
+  (`chimera_client::client::overlay`, `OverlayRoot`) and has one rule
+  of its own: real pixels sized for a 720-line screen, scaled by the
+  window's height alone (never its width: no 4:3 stretch at 16:9 or
+  21:9), in one face (Trebuchet MS, else the nearest installed sans),
+  never a game's scheme fonts, colours, canvas or `GameDraws` (which
+  can turn off only the shell's fallback HUD's parts, not the overlay).
+  A game scales through its own nodes, never Bevy's global `UiScale`.
+  Held by: `repo_checks`' `games_leave_the_overlay_alone` (a game crate
+  naming the overlay or `UiScale` fails), the party's overlay guard
+  (`apps/party_kit/tests/it/overlay_guard.rs`: the layer laid out under
+  every game in `party_kit::client::CLIENTS` at 16:9, 4:3 and 21:9 must
+  be one layout, following the height), and a debug-build log when a
+  game's HUD root ends up under the layer. The pre-match lobby follows
+  the rule but stays a root of its own (a menu moves it to its camera).
 
 - **The kill feed is Chimera's** (`chimera_client::client::kill_feed`):
   its entries (killer, victim, weapon id, headshot, suicide, team kill,

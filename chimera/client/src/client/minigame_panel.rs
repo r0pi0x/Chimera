@@ -1,19 +1,20 @@
-//! A playing minigame on a game's HUD, for an app whose minigames may show
-//! it (`chimera_sim::minigame::hud::MinigameHud`: its name, the rules' status
-//! lines, the gun game's rung, next gun and leader among them, the match's
-//! time): top centre, in the client scheme's fonts and the HUD's colour, as a
-//! Source game prints its centre messages. `MinigamePanelPlugin(game)` puts
-//! it on that game's HUD (CS:S's, `cs_source::ui::minigame_hud`; HL2:DM's). A
+//! A playing minigame's panel (`chimera_sim::minigame::hud::MinigameHud`:
+//! its name, the rules' status lines, the gun game's rung, next gun and
+//! leader among them, the match's time): top centre, on the shell's
+//! overlay layer (`client::overlay`: its root, its scale by the window's
+//! height, its face), the same whichever game's HUD is up (the gun game
+//! swaps HUDs with the gun; no game's HUD draws a panel of its own).
+//! Part of `ClientPlugins`; nothing shows without a playing minigame. A
 //! line's `{player}` is the name the scoreboard shows, its `{weapon}` the
 //! gun's name in `WeaponNames` (what a game read from its install's
-//! strings), else the id's last part in capitals. A finished match's
-//! results (`MinigameHud::results`: the winner, then a line a player) come
-//! under the status lines. The minigame's moments (a rung up, the lead, the
-//! win) are the shell's callout centre screen (`client::callouts`), so the
-//! panel lists no notices (they said the same, a second banner); while the
-//! shell's match-end screen is up (`MinigameHud::results_shown`) the panel
-//! draws nothing. Its root is a `client::hud::HudRoot`: down while another
-//! game's HUD is the gameplay's.
+//! strings), else the Tab scoreboard's (`minigame_scoreboard::gun_name`:
+//! the app's `GunNames`, the data's `hud.name`, the id's last part in
+//! capitals). A finished match's results (`MinigameHud::results`: the
+//! winner, then a line a player) come under the status lines. The
+//! minigame's moments (a rung up, the lead, the win) are the shell's
+//! callout centre screen (`client::callouts`), so the panel lists no
+//! notices; while the shell's match-end screen is up
+//! (`MinigameHud::results_shown`) the panel draws nothing.
 //!
 //! Known shortcuts: the panel's place, sizes and colours are ours (these
 //! games have no such panel; nothing to measure).
@@ -23,62 +24,46 @@ use std::collections::BTreeMap;
 use bevy::prelude::*;
 use chimera_sim::minigame::hud::{HudLine, MinigameHud};
 
-use crate::{
-    client::{fonts::UiFonts, hud::HudRoot},
-    core::LocalPlayer,
-    gameplay::Gameplay,
-    map::hud::ActiveHud,
+use chimera_sim::weapon::data::WeaponCatalog;
+
+use crate::client::{
+    fonts::UiFonts,
+    minigame_scoreboard::{GunNames, gun_name},
+    overlay::{self, OverlayLayer},
 };
 
-/// The minigame's panel on game `.0`'s HUD.
-pub struct MinigamePanelPlugin(pub &'static str);
+/// The minigame's panel on the overlay layer.
+pub struct MinigamePanelPlugin;
 
 impl Plugin for MinigamePanelPlugin {
     fn build(&self, app: &mut App) {
-        let first = !app.world().contains_resource::<PanelGames>();
-        app.init_resource::<WeaponNames>().init_resource::<PanelGames>();
-        app.world_mut().resource_mut::<PanelGames>().0.push(self.0);
-        if first {
-            app.add_systems(Update, draw);
-            super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
-        }
-    }
-
-    fn is_unique(&self) -> bool {
-        false
+        overlay::layer(app);
+        app.init_resource::<WeaponNames>().add_systems(Update, draw);
+        super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
     }
 }
 
 /// The panel's two fonts at the window's size, laid out ahead
 /// (`text_warm`) with the guns' names.
 fn warm_fonts(windows: Query<&Window>, fonts: Option<Res<UiFonts>>, names: Res<WeaponNames>) -> Vec<super::text_warm::WarmText> {
-    // The window `draw` sizes the panel by.
-    let h = windows.iter().next().map_or(480.0, |w| w.height());
+    let s = overlay::scale(windows.iter().next().map_or(720.0, |w| w.height()));
     let names: String = names.0.values().flat_map(|v| v.chars()).collect();
-    PANEL_FONTS
+    [(TITLE_SIZE, true), (LINE_SIZE, true)]
         .iter()
-        .map(|(name, fallback)| super::text_warm::WarmText { font: panel_font(fonts.as_deref(), name, h, *fallback), extra: names.clone() })
+        .map(|(size, bold)| super::text_warm::WarmText { font: overlay::font(fonts.as_deref(), size * s, *bold), extra: names.clone() })
         .collect()
 }
 
-/// The scheme fonts the panel's lines are in (titles and the first
-/// result; status lines and the other results), with their sizes without
-/// the scheme.
-const PANEL_FONTS: [(&str, f32); 2] = [("CenterPrintText", 18.0), ("ChatFont", 14.0)];
+/// The title's (and the winner's) and the other lines' size on a
+/// 720-line screen (`overlay::scale`).
+pub const TITLE_SIZE: f32 = 26.0;
+pub const LINE_SIZE: f32 = 19.0;
 
-fn panel_font(fonts: Option<&UiFonts>, name: &str, h: f32, fallback: f32) -> TextFont {
-    match fonts {
-        Some(f) => f.client(name, h, fallback),
-        None => TextFont {
-            font_size: bevy::text::FontSize::Px(fallback),
-            ..default()
-        },
-    }
-}
+/// The panel's top edge on a 720-line screen.
+pub const TOP: f32 = 14.0;
 
-/// The games whose HUD shows the panel.
-#[derive(Resource, Clone, Debug, Default)]
-pub struct PanelGames(pub Vec<&'static str>);
+const TITLE: Color = Color::srgb(1.0, 200.0 / 255.0, 60.0 / 255.0);
+const WINNER: Color = Color::srgb(1.0, 230.0 / 255.0, 120.0 / 255.0);
 
 /// The guns' names a game read from its install's strings (weapon id to name).
 #[derive(Resource, Clone, Debug, Default)]
@@ -149,19 +134,16 @@ pub fn panel_lines_with(
 
 #[allow(clippy::too_many_arguments)]
 fn draw(
-    gameplay: Option<Res<Gameplay>>,
-    games: Res<PanelGames>,
+    layer: Res<OverlayLayer>,
     minigame: Option<Res<MinigameHud>>,
-    names: Res<WeaponNames>,
-    who: Query<(Option<&Name>, Has<LocalPlayer>, Option<&crate::net::NetCharacter>)>,
+    (names, guns, catalog): (Res<WeaponNames>, Option<Res<GunNames>>, Option<Res<WeaponCatalog>>),
+    who: Query<(Option<&Name>, Has<crate::core::LocalPlayer>, Option<&crate::net::NetCharacter>)>,
     settings: Option<Res<crate::net::NetSettings>>,
-    (fonts, hud, windows): (Option<Res<UiFonts>>, Option<Res<ActiveHud>>, Query<&Window>),
+    (fonts, windows): (Option<Res<UiFonts>>, Query<&Window>),
     panel: Query<Entity, With<MinigamePanel>>,
-    mut last: Local<Option<(Vec<(PanelLine, String)>, f32, &'static str)>>,
+    mut last: Local<Option<(Vec<(PanelLine, String)>, f32)>>,
     mut commands: Commands,
 ) {
-    // No gameplay (a test's): the first game's.
-    let Some(game) = games.0.iter().copied().find(|g| gameplay.as_ref().is_none_or(|p| p.hud == *g)) else { return };
     let lines = minigame.as_deref().map_or_else(Vec::new, |m| {
         panel_lines_with(
             m,
@@ -169,12 +151,12 @@ fn draw(
                 Ok((name, local, net)) => crate::client::shown_name(e, local, net, name, settings.as_deref()),
                 Err(_) => e.to_string(),
             },
-            |w| names.0.get(w).cloned().unwrap_or_else(|| plain_name(w)),
+            |w| names.0.get(w).cloned().unwrap_or_else(|| gun_name(w, guns.as_deref(), catalog.as_deref())),
             |r| r.name.clone(),
         )
     });
-    let h = windows.iter().next().map_or(480.0, |w| w.height());
-    let now = (lines.clone(), h, game);
+    let h = windows.iter().next().map_or(720.0, |w| w.height());
+    let now = (lines.clone(), h);
     if last.as_ref() == Some(&now) && (lines.is_empty() || !panel.is_empty()) {
         return;
     }
@@ -185,36 +167,35 @@ fn draw(
     if lines.is_empty() {
         return;
     }
-    let colour = hud
-        .as_deref()
-        .and_then(|h| h.0.color("FgColor"))
-        .unwrap_or(Color::srgba_u8(255, 176, 0, 255));
-    let font = |name: &str, fallback: f32| panel_font(fonts.as_deref(), name, h, fallback);
+    let s = overlay::scale(h);
+    let font = |size: f32| overlay::font(fonts.as_deref(), size * s, true);
     let root = commands
         .spawn((
             MinigamePanel,
-            HudRoot(game),
+            Pickable::IGNORE,
             Node {
                 position_type: PositionType::Absolute,
-                top: Val::Percent(2.0),
-                width: Val::Percent(100.0),
+                top: px(TOP * s),
+                width: percent(100.0),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
+                row_gap: px(2.0 * s),
                 ..default()
             },
             GlobalZIndex(42),
+            ChildOf(layer.0),
         ))
         .id();
     let mut first_result = true;
     for (kind, text) in lines {
         let (f, c) = match kind {
-            PanelLine::Title => (font(PANEL_FONTS[0].0, PANEL_FONTS[0].1), colour),
-            PanelLine::Status => (font(PANEL_FONTS[1].0, PANEL_FONTS[1].1), Color::WHITE),
+            PanelLine::Title => (font(TITLE_SIZE), TITLE),
+            PanelLine::Status => (font(LINE_SIZE), Color::WHITE),
             PanelLine::Result if first_result => {
                 first_result = false;
-                (font(PANEL_FONTS[0].0, PANEL_FONTS[0].1), Color::srgba_u8(255, 230, 120, 255))
+                (font(TITLE_SIZE), WINNER)
             }
-            PanelLine::Result => (font(PANEL_FONTS[1].0, PANEL_FONTS[1].1), Color::WHITE),
+            PanelLine::Result => (font(LINE_SIZE), Color::WHITE),
         };
         commands.spawn((kind, Text::new(text), f, TextColor(c), TextShadow::default(), ChildOf(root)));
     }

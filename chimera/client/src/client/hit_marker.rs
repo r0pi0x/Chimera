@@ -62,6 +62,7 @@ pub struct HitMarkerPlugin;
 
 impl Plugin for HitMarkerPlugin {
     fn build(&self, app: &mut App) {
+        super::overlay::layer(app);
         app.init_resource::<HitMarkerSetting>()
             .init_resource::<HitMarkerView>()
             .add_message::<Died>()
@@ -79,9 +80,10 @@ impl Plugin for HitMarkerPlugin {
     }
 }
 
-fn spawn(mut commands: Commands) {
+fn spawn(layer: Res<super::overlay::OverlayLayer>, mut commands: Commands) {
     commands.spawn((
         HitMarkerText,
+        ChildOf(layer.0),
         Text::new("x"),
         TextFont {
             font_size: FontSize::Px(26.0),

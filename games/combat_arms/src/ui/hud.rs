@@ -26,13 +26,10 @@
 //! while the local player is infected (game_modes.md Corrections
 //! (2026-10-30) 3), are the HUD layout attributes' images),
 //! telling the shell's fallback HUD (`client::hud::GameDraws`) to leave
-//! out its crosshair, health and ammo, hit marker and kill feed, and the
-//! shell's minigame callout (`client::callouts`): a playing minigame's
-//! callout ("Level up: <gun>", "Level 2/10") is ours, in our notice looks
-//! above the middle of the view (under the announcer's kill banner),
-//! where the minigame's notices would be
-//! (they say the same moments smaller; this HUD leaves them to the
-//! panels that list them, CS:S's). Its
+//! out its crosshair, health and ammo, hit marker and kill feed. A playing
+//! minigame's panel and callouts are the shell's overlay layer's
+//! (`client::overlay`), drawn the same over every game's HUD: this HUD
+//! draws none of its own. Its
 //! roots are `client::hud::HudRoot`s and its `GameDraws` in the shell's
 //! `HudDraws`, so in an app that switches HUDs it is up only while it is
 //! the gameplay's.
@@ -319,18 +316,6 @@ pub struct FeedLineView {
     pub items: Vec<FeedItem>,
 }
 
-/// A playing minigame's state as the HUD words it: the minigame's name,
-/// its status lines (top to bottom) and its callout showing
-/// (`MinigameHud::callout`, the first line big; `minigame_view`).
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct MinigameView {
-    pub title: String,
-    pub lines: Vec<String>,
-    pub callout: Vec<String>,
-    /// The finished match's results (the winner, then a line a player).
-    pub results: Vec<String>,
-}
-
 /// What Combat Arms' HUD shows this frame.
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub struct CaHud {
@@ -340,9 +325,6 @@ pub struct CaHud {
     pub status: Option<StatusView>,
     pub weapon: Option<WeaponPanel>,
     pub feed: Vec<FeedLineView>,
-    /// The playing minigame's state (its rung, the leader, its
-    /// callout), only while one plays.
-    pub minigame: Option<MinigameView>,
     /// The weapon mode switch's centre notice ("Switched to Burst-Fire
     /// mode", `weapon::notice::CenterNotice`).
     pub mode_notice: Option<String>,
@@ -427,7 +409,7 @@ impl Plugin for CaHudStatePlugin {
             .add_plugins(radar::CaRadarStatePlugin)
             .add_systems(
                 Update,
-                (track, update, heartbeat_sound, action::prompts, minigame_view, mode_notice_view, score::update_score, hide_panels, mission::update_mission)
+                (track, update, heartbeat_sound, action::prompts, mode_notice_view, score::update_score, hide_panels, mission::update_mission)
                     .chain()
                     .in_set(HudUpdate),
             );
@@ -471,9 +453,7 @@ fn hide_panels(
         || hud.weapon.is_some()
         || !hud.feed.is_empty()
         || hud.action.is_some()
-        || hud.minigame.is_some()
     {
-        hud.minigame = None;
         hud.status = None;
         hud.weapon = None;
         hud.feed.clear();
@@ -529,42 +509,6 @@ pub fn plain_name(id: &str) -> String {
         .chars()
         .map(|c| if c == '_' || c == '-' { ' ' } else { c.to_ascii_uppercase() })
         .collect()
-}
-
-/// `CaHud::minigame` from the playing minigame's `MinigameHud`: its lines'
-/// `{player}` and `{weapon}` filled in (the kill feed's names, the weapon
-/// panel's names).
-fn minigame_view(
-    minigame: Option<Res<chimera_sim::minigame::hud::MinigameHud>>,
-    items: Res<ItemNames>,
-    catalog: Res<crate::weapon::data::WeaponCatalog>,
-    (names, settings): (Query<NameParts>, Option<Res<NetSettings>>),
-    mut hud: ResMut<CaHud>,
-) {
-    // The shell's match-end screen up: it has the results, and the panel
-    // would draw into it.
-    let Some(m) = minigame.filter(|m| m.playing() && !m.results_shown) else {
-        hud.minigame = None;
-        return;
-    };
-    let word = |l: &chimera_sim::minigame::hud::HudLine| {
-        let mut text = l.text.clone();
-        if let Some(p) = l.player {
-            text = text.replace("{player}", &name_of(&names, settings.as_deref(), p));
-        }
-        if let Some(w) = l.weapon {
-            text = text.replace("{weapon}", &weapon_name(&items, &catalog, w));
-        }
-        text
-    };
-    hud.minigame = Some(MinigameView {
-        title: m.title.clone(),
-        lines: m.lines.iter().map(word).collect(),
-        callout: m.callout.as_ref().map_or_else(Vec::new, |c| c.callout.lines.iter().map(word).collect()),
-        results: m.results.as_ref().map_or_else(Vec::new, |r| {
-            r.lines(|row| row.player.map_or_else(|| row.name.clone(), |p| name_of(&names, settings.as_deref(), p)))
-        }),
-    });
 }
 
 /// `CaHud::mode_notice` from the shell's `CenterNotice`, while it lasts.
@@ -1361,7 +1305,6 @@ impl Plugin for CaHudPlugin {
                     draw_feed,
                     draw_tags,
                     guides::draw_guides,
-                    draw_minigame,
                     draw_mode_notice,
                     score::draw_score,
                     mission::draw_mission,
@@ -1391,7 +1334,6 @@ pub const DRAWS: GameDraws = GameDraws {
     status: true,
     hit_marker: true,
     killfeed: true,
-    callout: true,
 };
 
 pub(crate) fn colour(c: Rgba) -> Color {
@@ -1424,8 +1366,6 @@ struct FeedRoot;
 struct TagRoot;
 #[derive(Component)]
 struct InstallRoot;
-#[derive(Component)]
-struct MinigameRoot;
 #[derive(Component)]
 struct ActionRoot;
 #[derive(Component)]
@@ -1537,7 +1477,6 @@ fn spawn(mut commands: Commands) {
     commands.spawn((FeedRoot, layer(HUD_Z), HudRoot(crate::game::GAME)));
     commands.spawn((TagRoot, layer(HUD_Z - 2), HudRoot(crate::game::GAME)));
     commands.spawn((InstallRoot, layer(HUD_Z), HudRoot(crate::game::GAME)));
-    commands.spawn((MinigameRoot, layer(HUD_Z), HudRoot(crate::game::GAME)));
     commands.spawn((NoticeRoot, layer(HUD_Z), HudRoot(crate::game::GAME)));
 }
 
@@ -1642,8 +1581,6 @@ const HUD_FONTS: &[&str] = &[
     looks::RESERVE,
     looks::ICON_WORD,
     looks::PROMPT,
-    looks::MINIGAME_TITLE,
-    looks::MINIGAME,
     looks::NOTICE,
     FEED_FONT,
     RANGE_FONT,
@@ -2010,9 +1947,7 @@ mod looks {
     /// Ours: placeholder words for icons, and the pickup prompt.
     pub const ICON_WORD: &str = "bold 11";
     pub const PROMPT: &str = "bold 14";
-    /// Ours: a minigame's panel (name, status lines, notices).
-    pub const MINIGAME_TITLE: &str = "bold 16";
-    pub const MINIGAME: &str = "bold 14";
+    /// Ours: the weapon mode switch's centre notice.
     pub const NOTICE: &str = "bold 20";
 }
 
@@ -2420,63 +2355,6 @@ fn draw_tags(
                     ));
                 }
             });
-        }
-    });
-}
-
-/// The minigame's panel: its name and status lines at the top centre, its
-/// callout (a rung up, the lead, the match won: the shell's is hidden
-/// while this HUD is up, `DRAWS`) under the middle of the view.
-/// Ours (the install's HUD has no such panel), drawn in the HUD's own text
-/// looks.
-fn draw_minigame(
-    hud: Res<CaHud>,
-    params: PenParams,
-    root: Single<Entity, With<MinigameRoot>>,
-    mut last: Local<Option<(Option<MinigameView>, Screen)>>,
-    mut commands: Commands,
-) {
-    if !rebuild(&mut last, (hud.minigame.clone(), hud.screen), *root, &mut commands) {
-        return;
-    }
-    let Some(m) = &hud.minigame else { return };
-    let pen = pen(&params, hud.screen);
-    commands.entity(*root).with_children(|p| {
-        let centred = |p: &mut ChildSpawnerCommands, y: f32, h: f32, text: &str, font: &str, colour: Rgba| {
-            hud_text(
-                p,
-                pen,
-                (Vec2::new(262.0, y), Vec2::new(500.0, h), Vec2::ZERO),
-                text,
-                font,
-                (HAlign::Centre, VAlign::Centre),
-                Effect::Stroke,
-                colour,
-            );
-        };
-        centred(p, 8.0, 20.0, &m.title, looks::MINIGAME_TITLE, [255, 200, 60, 255]);
-        for (i, line) in m.lines.iter().enumerate() {
-            centred(p, 30.0 + 18.0 * i as f32, 18.0, line, looks::MINIGAME, [255, 255, 255, 255]);
-        }
-        // The results take the callout's place (they say who won).
-        if m.results.is_empty() {
-            for (i, line) in m.callout.iter().enumerate() {
-                // Under the announcer's kill banner (the shell's, 76..332
-                // on this canvas; its art ends near 250), above the
-                // crosshair.
-                if i == 0 {
-                    centred(p, 284.0, 28.0, line, looks::NOTICE, [255, 230, 120, 255]);
-                } else {
-                    centred(p, 316.0 + 18.0 * (i - 1) as f32, 18.0, line, looks::MINIGAME, [255, 255, 255, 255]);
-                }
-            }
-        }
-        for (i, line) in m.results.iter().enumerate() {
-            if i == 0 {
-                centred(p, 110.0, 28.0, line, looks::NOTICE, [255, 230, 120, 255]);
-            } else {
-                centred(p, 142.0 + 18.0 * (i - 1) as f32, 18.0, line, looks::MINIGAME, [255, 255, 255, 255]);
-            }
         }
     });
 }

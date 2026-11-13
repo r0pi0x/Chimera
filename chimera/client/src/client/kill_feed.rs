@@ -77,6 +77,7 @@ impl Plugin for KillFeedPlugin {
         if !app.is_plugin_added::<KillFeedStatePlugin>() {
             app.add_plugins(KillFeedStatePlugin);
         }
+        super::overlay::layer(app);
         app.add_systems(Startup, spawn_root).add_systems(Update, draw.after(record));
         super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
     }
@@ -326,9 +327,10 @@ pub struct KillFeedRoot;
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct KillFeedRow(pub u64);
 
-fn spawn_root(mut commands: Commands) {
+fn spawn_root(layer: Res<super::overlay::OverlayLayer>, mut commands: Commands) {
     commands.spawn((
         KillFeedRoot,
+        ChildOf(layer.0),
         Visibility::Hidden,
         GlobalZIndex(45),
         Node {

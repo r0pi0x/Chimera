@@ -1,19 +1,19 @@
-//! The minigame's panel on CS:S's HUD (the shell's,
-//! `client::minigame_panel`), its guns named in CS:S's own strings (the
-//! install's `resource/cstrike_english.txt`, `weapons::display_names`).
+//! CS:S's guns' names for the minigame's panel (the shell's overlay,
+//! `client::minigame_panel`, drawn the same over every game's HUD): read
+//! from CS:S's own strings (the install's `resource/cstrike_english.txt`,
+//! `weapons::display_names`).
 
 use bevy::prelude::*;
 pub use chimera_client::client::minigame_panel::{MinigamePanel, PanelLine, WeaponNames, panel_lines, panel_lines_with, plain_name};
 
 use crate::game_registry::Games;
 
-/// The minigame's panel on CS:S's HUD.
+/// CS:S's guns' names in the minigame's panel.
 pub struct MinigameHudPlugin;
 
 impl Plugin for MinigameHudPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(chimera_client::client::minigame_panel::MinigamePanelPlugin(crate::game::GAME))
-            .add_systems(Startup, read_names);
+        app.init_resource::<WeaponNames>().add_systems(Startup, read_names);
     }
 }
 

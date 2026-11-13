@@ -717,6 +717,47 @@ fn game_parts_do_not_use_their_ui() {
     assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
 }
 
+/// What a game's crate must not name: the shell's overlay layer (its
+/// root and module) and Bevy's global UI scale, which would scale the
+/// overlay with the game's HUD (docs/DESIGN.md, "HUD layers").
+const OVERLAY_TOUCHES: [&str; 5] = ["UiScale", "OverlayRoot", "OverlayLayer", "client::overlay", "overlay::layer"];
+
+/// The overlay layer is the shell's alone (docs/DESIGN.md, "HUD layers"):
+/// no game crate (`games/<game>/src`, its tests included) parents to it,
+/// spawns into it or scales the UI globally.
+#[test]
+fn games_leave_the_overlay_alone() {
+    let mut errors = Vec::new();
+    let games = root().join("games");
+    for game in fs::read_dir(&games).unwrap().filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir()) {
+        let mut files = Vec::new();
+        for sub in ["src", "tests"] {
+            if game.join(sub).is_dir() {
+                rust_files(&game.join(sub), &mut files);
+            }
+        }
+        for file in files {
+            let code: String = fs::read_to_string(&file)
+                .unwrap()
+                .lines()
+                .map(|l| l.split("//").next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join(" ");
+            for t in OVERLAY_TOUCHES.iter().filter(|t| code.contains(**t)) {
+                errors.push(format!(
+                    "{}: names `{t}`. A game's HUD keeps to its own roots (`client::hud::HudRoot`) and \
+                     scales them by its own rule (node sizes from its canvas, e.g. 640x480 stretched), never \
+                     Bevy's global `UiScale` and never the shell's overlay layer (`client::overlay`), which \
+                     must look the same over every game's HUD. Draw the game's part under the game's own \
+                     root; a shell overlay belongs in chimera/client (docs/DESIGN.md, \"HUD layers\").",
+                    file.strip_prefix(root()).unwrap_or(&file).display()
+                ));
+            }
+        }
+    }
+    assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
+}
+
 fn tracked_files() -> Vec<String> {
     let out = Command::new("git")
         .args(["ls-files", "-z"])
