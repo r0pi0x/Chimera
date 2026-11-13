@@ -244,6 +244,7 @@ impl MapAi {
             // open and jump-ups a player can't climb, so a player's spawn
             // spots come from a walk instead (`minigame::spawns`).
             generated: true,
+            ..default()
         })
     }
 

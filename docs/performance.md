@@ -4077,6 +4077,78 @@ bytes a key as `f32`s where the files hold 14 with compression 2), the
 weapon set (250 MB), the maps' textures decoded on the CPU before upload
 (the first load's largest transient).
 
+## cs_militia's spikes (2026-11-13)
+
+Playtest report: hosting Ultimate Gun Game on cs_militia, many frame-time
+spikes, not on other maps. The real app offscreen (`--offscreen 1920x1080
+--frame-log`, playtest build, 6 bots, `+fps_max 60`, RTX 3080) under `perf
+record -e instructions:u -c 1000000 -k CLOCK_MONOTONIC` (no call graphs:
+the samples' own functions, cut by the frame log's frames), against
+de_dust2 the same way; the box at load 25-80 and 4-17 GB free, so
+instructions only. Then headless (`heavy::map_ticks`: the gun game, 6
+bots, 3000 ticks, work counts, dev profile), which repeats exactly.
+
+**What they were: the simulation's ticks on the main thread, tied to the
+bots.** The render world is no heavier than de_dust2's (12.1M
+instructions a frame p50 against 13.4M), nor the main world outside its
+ticks once the map is in (9.9-13.4M against 10.4M). The ticks were: 8.7M
+p50 but 20.1M p99 and 33M at most (de_dust2: 6.4M, 9.6M, 12.3M), and
+every tick over 24M had 11-15M of `NavMesh::area_at` in it. The map's
+navigation mesh is generated (`nav_gen`) and its open ground makes
+**11,510 areas** (de_dust2: 1,123, cs_office: 970); `area_at` looked at
+every area for each point, and the bots ask it along every straight-walk
+test (`bots::nav::straight`: a point every step of the line), for each
+other bot when planning, and for where a sound came from. None of the
+other suspects showed: 105 dynamic bodies with 0-3 awake, prop shadows
+only while the map settles, no reverb or streaming on the main thread.
+
+**The fix.** `NavMesh::area_at` and `nearest_area` look in a grid over the
+areas (`nav::AreaGrid`, made by the first query: about four cells an
+area, each cell its areas in file order, so the answers are the same,
+ties included; `nearest_area` searches rings of cells outward). The
+patrol graph's links (`PatrolGraph::build`) look each reached area's node
+up instead of searching the reached list for every node.
+
+| cs_militia, a tick (headless, dev profile) | before | after | de_dust2 | cs_office |
+|---|---|---|---|---|
+| median | 11.88M | 11.76M | 7.63M | 11.51M |
+| p99 | 65.80M | 19.99M | 11.84M | 16.00M |
+| p99.9 of the ticks making no archetype | 97.22M | 30.43M | 12.05M | 16.58M |
+| the bots' thinking (`think`), mean | 5.47M | 0.54M | 0.39M | 0.51M |
+
+The real app after (playtest build, from 50 s in): a tick 8.9M p50, 14.2M
+p99, 17.3M at most, none over twice the median (44 before); the main
+world outside its ticks 9.9M p50, 22.9M p99; the render world 10.9M.
+
+`heavy::map_ticks` (ultimate_gun_game) holds it: the bots' thinking under
+1.5M a tick and the costliest steady ticks under 45M on cs_militia;
+`CHIMERA_MAP_TICKS=<game:map>` prints another map's counts.
+
+**Left**, by size:
+
+- **The spawn spots' flood in play** (`minigame::spawns`, a slice a tick
+  on the main thread where floods are sliced): on cs_militia about 27 s
+  after the map is in, ticks at 17M p50 instead of 9M (de_dust2: about
+  10 s), ending with a tick of 64M (`NavGenJob::step`, `nav_gen::merge`'s
+  sort). Not touched here (the spawn code was being changed elsewhere).
+- **A path search over the whole mesh** (`bots::nav::find`: Dijkstra with
+  squared lengths, which reaches most of 11,510 areas before a far
+  goal): 19M of a 30M tick, about one tick in a hundred. A third of it
+  is each link's ends worked out again (`link_ends`, `height_at`) and
+  the reserved set's hashing: a table of the links' middles a mesh
+  would take those out; fewer, larger generated areas would take out
+  more.
+- **The tick the mesh arrives** (once a map): 189M, `PatrolGraph::build`
+  (every area against every node for the spacing) and `NavMesh::within`
+  for each node (a distance for every area, each time); 266M before.
+- **The steady tick** is cs_office's, not de_dust2's: the logic bridge
+  (`pre`, `post`: 1.2M each against 0.4M), movement (1.5M against 0.8M),
+  `float_bodies` 0.64M and `follow_bodies` 0.33M (de_dust2 has neither).
+- **The sound thread** (any map; the offscreen run's null device): 6-8
+  thousand million instructions a second, six times the main thread,
+  in `audio::room::Reverb::frame`, rodio's sample-rate conversion and
+  `LiveDecoder`. Not measured with a real device.
+
 ## See a frame yourself
 
 Three features, on every app with a window (`cs_source` at the root,

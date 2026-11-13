@@ -1376,6 +1376,12 @@ load; work counts don't (performance.md, "Work counts"):
   `nav_gen::NavGenTask`) is in, when a bot first walks, and the main
   thread's ticks meanwhile (performance.md, "Nothing blocks the main
   thread").
+- A tick's cost on a map with a large generated navigation mesh: `cargo
+  test -p ultimate_gun_game --features dev --test it heavy::map_ticks --
+  --nocapture` (cs_militia, 6 bots, 3000 ticks by work counts: median,
+  p99, the bots' thinking, the systems of the costliest tick, each under
+  a budget; `CHIMERA_MAP_TICKS=cs_source:de_dust2` counts another map
+  and checks nothing; performance.md, "cs_militia's spikes").
 - What a world holds: `chimera_census [<top>]` (console; any app) counts
   entities by archetype (the `<top>` largest component sets), every
   archetype and table made (Bevy frees none), component types,
