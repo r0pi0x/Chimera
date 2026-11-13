@@ -325,6 +325,33 @@ the original's own behaviour isn't a bug (say so instead).
   Windows PC (views `seam_b_mound`, `seam_b_mound_south` in
   tools/refcmp/de_dust2.toml), then `report`, to see that CS:S draws the
   edge as sharply.
+- **Silencers detached from skinned guns (user, 2026-11-13): fixed, confirm
+  in a playtest.** On the "Glock 23 _ Champion" and the "L96A1 Desert" a
+  fitted silencer floated far off the gun. *Cause:* the install's
+  `Glock_23_Champion` record carries the L96A1's part offsets
+  (`MuzzlePVPosOff` (0, 0, 4), the scope's and third person's), which
+  put its silencer half a metre ahead of the pistol and its red dots off
+  the slide; the game reads them as they are. *Fix:* a record whose
+  offsets differ from those most records of its model carry, and equal
+  those most records of a model of another gun class carry, takes its
+  own model's (`data::model_part_offsets`; of the install's records only
+  the Champion; test
+  `attachments::a_skins_part_offsets_copied_from_another_class_are_its_models`).
+  The L96A1 Desert's silencer sits on its barrel in first and third
+  person in this build (its record and sockets are the L96A1's; before
+  and after screenshots in the agent's report). *Sweep:*
+  `heavy::attachment_fit` puts every part a gun can be drawn with (a
+  rung's candidates and its drawn defaults) on its view model (idle
+  pose) and held model and checks that it touches the gun: on 1875
+  guns, 29 gun-part models were off before (the Champion's 13), 16
+  after, all `INSTALL_OFF`, whose models' own sockets are off: the
+  Azazel Heartseeker's and the Silent Snowfall and Tropical Groza skins'
+  `flash` socket lies 23 units ahead of the muzzle, the SIG50 Lava's and
+  the Devil Soul P90's `Flash` past their barrels. Open (spec session):
+  does the game draw those off too, or does a muzzle part follow the
+  weapon's flash point? Parts no rung can draw (slots their records
+  close: the Desert Eagles' and Anacondas' red dots, the SR25s'
+  silencers) are off on more guns; not swept.
 - **Rung attachments may not fit their gun, or not show (user, 2026-10-29): fixed, confirm in a playtest.**
   In the Escape-menu screenshots, the FMG-9's rung listed a holosight and
   the Luger P08's a silencer, but neither shows on the gun, and the user
