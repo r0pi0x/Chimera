@@ -6,14 +6,22 @@
 //!   front end a slice a tick from the match's start (`prepare_spots`,
 //!   `nav_gen::SliceFloods`: the map's spawn points until they are ready),
 //!   and removed with the map, `MapScopedApp::map_scoped`): points on the
-//!   floors of the map's navigation mesh (`map::nav::NavMesh`, the map's
-//!   own file; else one generated from its collision, `map::nav_gen`, with
-//!   a walking player's step: a mesh made for another walker,
-//!   `NavMesh::generated`, is not used, since bots' own climbs 0.8 m ledges
-//!   a player can't, and once left de_aztec over its walls, and Combat
-//!   Arms' AI volumes link through closed doors, which once put a player
-//!   in Blood Money's vault: a spot must be walked to from the spawn points
-//!   through the world as it stands),
+//!   floors of the map's navigation mesh: its own (`map::nav::NavMesh`, a
+//!   whole kit's), else its navigation file's (`map::MapFloors`, loaded
+//!   whatever the kit: the floors its author marked as played; cs_militia's
+//!   yard opens onto hills nobody plays), else one generated from its
+//!   collision (`map::nav_gen`) with a walking player about as wide as the
+//!   widest (`walker`, its box sliding up to 0.2 m off a cell's centre to
+//!   fit a doorway), climbing what the map's game's players climb
+//!   (`SpawnClimbs`: Combat Arms' and CS:S's jump-ups, 0.8 m; then bounded
+//!   to the clusters the walk reaches where the map has visibility data),
+//!   and meeting the map's player clips (`nav_gen::PlayerClips`: Source's
+//!   movement sweeps them itself, the physics world lacks them; cs_havana's
+//!   clipped yard once held a player). A mesh made for another walker,
+//!   `NavMesh::generated`, is not used (Combat Arms' AI volumes link
+//!   through closed doors, which once put a player in Blood Money's vault:
+//!   a spot must be walked to from the spawn points through the world as
+//!   it stands),
 //!   a grid
 //!   about `SPOT_GRID` m apart in the areas that can be walked to from the
 //!   spawn points and back (the mesh's main connected region), each spot
@@ -23,7 +31,9 @@
 //!   centred spots put a whole row of eyes in the plane where two faces
 //!   meet, which then shows as a vertical line through the frame (de_dust2's
 //!   "seam" between a bump-lit and a flat-lit displacement, 2026-10-30). Each spot is checked (`spot_ok`): a floor under
-//!   it, a character's capsule fits there without touching the world, it
+//!   it, a standing player's box (Source's 32 by 72 units, from a stair
+//!   step over the feet to the head, `standing_box`; a capsule missed the
+//!   corners) meets neither the world nor a player clip (`stuck_at`), it
 //!   is inside the map (on a map with visibility data, its chest in a
 //!   leaf of a cluster: not solid, not the void outside the world), and
 //!   outside water and every zone a game registers as hurting or
@@ -55,21 +65,22 @@
 //! chosen once, so a door that opens later isn't considered; a map whose
 //! collision isn't built yet at the first spawn gets the spawn points for
 //! up to `BUILD_TRIES` spawns before the result is kept; on a map without
-//! its own mesh the spots are where a player walks from the spawn points
-//! (no jumps, ladders or crouching), so a ledge reached by a jump is never
-//! one; "inside the map" is the visibility tree's clusters, so a map
-//! without visibility data (Combat Arms') relies on the walk alone.
+//! a mesh or file of its own the spots are where a player walks and jumps
+//! up from the spawn points (no ladders or crouching), so a floor reached
+//! only by a ladder is never one; "inside the map" is the visibility
+//! tree's clusters, so a map without visibility data (Combat Arms')
+//! relies on the walk alone.
 
 use avian3d::prelude::*;
 use bevy::{ecs::system::SystemState, prelude::*};
 
 use crate::{
     core::{
-        CHARACTER_FILTER, Connecting, Dead, Health, Intent, MapBrush, MapWater, SOLID_LAYERS, SpawnPoint, Spectating,
-        Team,
+        CHARACTER_FILTER, Connecting, Dead, Health, Intent, MapBrush, MapGame, MapWater, SOLID_LAYERS, SpawnPoint,
+        Spectating, Team,
     },
     map::{
-        SPAWN_LIFT,
+        MapFloors, SPAWN_LIFT,
         nav::{NavMesh, flags},
         nav_gen::{self, NavGenParams},
         vis::{ActiveVisibility, MapVisibility},
@@ -91,20 +102,50 @@ pub const MAX_SPOTS: usize = 1500;
 /// Spawns that may find the collision not ready before the spawn points
 /// are kept as the spots.
 pub const BUILD_TRIES: u8 = 3;
-/// A character's capsule: radius and standing height (m).
-const RADIUS: f32 = 0.4;
-const HEIGHT: f32 = 1.8;
+/// The standing player a spot must hold: the widest the hosted games make
+/// (Source's hull, 32 units square and 72 tall; Combat Arms' is 30 by
+/// 100 of its 0.018 m units), half its width and its height (m).
+pub const HALF_WIDTH: f32 = 16.0 * 0.0254;
+pub const HEIGHT: f32 = 72.0 * 0.0254;
+/// The box is tested from a stair step over the feet (18 units: a slope or
+/// a stair under its corners is walked off, not stuck in) to the head.
+pub const STEP: f32 = 18.0 * 0.0254;
 /// An enemy's eye above its centre (m).
 const EYE: f32 = 0.7;
-/// How far above the floor the capsule is tested (clear of the floor's
-/// own surface).
-const LIFT: f32 = 0.05;
+/// How much shorter than the step-to-head span the tested box is (half
+/// above, half below: clear of the step's and the ceiling's surfaces).
+const SKIN: f32 = 0.05;
+
+/// The box `spot_ok` tests: half extents, and its centre above the feet.
+pub fn standing_box() -> (Vec3, f32) {
+    (
+        Vec3::new(HALF_WIDTH, (HEIGHT - STEP - SKIN) / 2.0, HALF_WIDTH),
+        STEP + (HEIGHT - STEP) / 2.0,
+    )
+}
+
+/// Whether a player standing at `feet` (its box from a step up to the
+/// head, `standing_box`) meets what characters collide with: the world
+/// (`filter`: the characters' layers) and the map's player clips.
+pub fn stuck_at(q: &SpatialQuery, filter: &SpatialQueryFilter, clips: &nav_gen::PlayerClips, feet: Vec3) -> bool {
+    let (half, up) = standing_box();
+    let centre = feet + Vec3::Y * up;
+    if clips.overlaps_box(centre, half) {
+        return true;
+    }
+    let mut blocked = false;
+    q.shape_intersections_callback(&Collider::cuboid(half.x * 2.0, half.y * 2.0, half.z * 2.0), centre, Quat::IDENTITY, filter, |_| {
+        blocked = true;
+        false
+    });
+    blocked
+}
 
 /// Seeds the spawn draws of a match (else a hash of the minigame's id).
 #[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SpawnSeed(pub u32);
 
-pub use crate::map::{SpawnHazardAppExt, SpawnHazards};
+pub use crate::map::{SpawnClimbAppExt, SpawnClimbs, SpawnHazardAppExt, SpawnHazards};
 
 /// The loaded map's spawn spots (removed when the map unloads).
 #[derive(Resource, Clone, Debug, Default)]
@@ -220,6 +261,13 @@ pub fn pick(world: &mut World, e: Entity, min_distance: f32, facing: Facing) -> 
     at
 }
 
+/// The mesh the spots are drawn on where the map brings one: its own
+/// navigation mesh (a whole kit's), else its navigation file's floors
+/// (`MapFloors`); a generated one (another walker's, bots') is not used.
+fn map_mesh<'a>(nav: Option<&'a NavMesh>, floors: Option<&'a MapFloors>) -> Option<&'a NavMesh> {
+    nav.filter(|n| !n.generated).or(floors.map(|f| &*f.0))
+}
+
 /// The yaw and pitch (radians) a spawn at `feet` would face, for a seed
 /// (the draws start there): what `pick` does at its spot, for tests and
 /// tools. None without a physics world.
@@ -328,6 +376,8 @@ pub struct SpotsJob {
     points: Vec<Vec3>,
     seed: u32,
     hazards: Vec<MapBrush>,
+    /// The map's player clips (`nav_gen::PlayerClips`).
+    clips: nav_gen::PlayerClips,
     /// The flood of the spots' mesh, where the map has none of its own.
     flood: Option<nav_gen::NavGenJob>,
     /// Mesh points to test, the shuffled order, and how far along.
@@ -363,14 +413,17 @@ impl SpotsJob {
         if let Some(water) = world.get_resource::<MapWater>() {
             hazards.extend(water.0.iter().map(|v| v.brush.clone()));
         }
-        let flood = world
-            .get_resource::<NavMesh>()
-            .is_none_or(|n| n.generated)
-            .then(|| nav_gen::NavGenJob::new(&points, &walker(), None));
+        let flood = map_mesh(world.get_resource::<NavMesh>(), world.get_resource::<MapFloors>())
+            .is_none()
+            .then(|| {
+                let (p, bound) = walker_for(world);
+                nav_gen::NavGenJob::new(&points, &p, bound)
+            });
         Some(Self {
             seed: seed_of(world),
             points,
             hazards,
+            clips: nav_gen::PlayerClips::of(world),
             flood,
             raw: Vec::new(),
             at: 0,
@@ -389,7 +442,8 @@ impl SpotsJob {
         cells: usize,
     ) -> bool {
         if let Some(mut flood) = self.flood.take() {
-            match flood.step(q, &|e| characters.contains(&e), None, cells) {
+            let clipped = nav_gen::Clipped { q, clips: &self.clips };
+            match flood.step(&clipped, &|e| characters.contains(&e), vis, cells) {
                 Some(mesh) => {
                     self.raw = raw_spots(&mesh, &self.points, self.seed);
                     self.ready_to_test = true;
@@ -405,14 +459,13 @@ impl SpotsJob {
             self.ready_to_test = true;
         }
         let floor = SpatialQueryFilter::from_mask(CHARACTER_FILTER).with_excluded_entities(characters.iter().copied());
-        let capsule = Collider::capsule(RADIUS, HEIGHT - 2.0 * RADIUS - LIFT);
         let end = self.at.saturating_add(cells.saturating_mul(SPOTS_PER_CELL)).min(self.raw.len());
         for k in self.at..end {
             if self.found.len() >= MAX_SPOTS {
                 break;
             }
             let (x, z, y) = self.raw[k];
-            if let Some(feet) = spot_ok(q, &floor, &capsule, &self.hazards, vis, Vec3::new(x, y, z)) {
+            if let Some(feet) = spot_ok(q, &floor, &self.clips, &self.hazards, vis, Vec3::new(x, y, z)) {
                 self.found.push(feet);
             }
         }
@@ -451,6 +504,7 @@ pub fn prepare_spots(
     spots: Option<Res<SpawnSpots>>,
     job: Option<ResMut<SpotsJob>>,
     nav: Option<Res<NavMesh>>,
+    floors: Option<Res<MapFloors>>,
     vis: Option<Res<ActiveVisibility>>,
     characters: Query<Entity, With<Intent>>,
     q: SpatialQuery,
@@ -473,7 +527,8 @@ pub fn prepare_spots(
         return;
     };
     let characters: Vec<Entity> = characters.iter().collect();
-    if job.slice(&q, &characters, nav.as_deref(), vis.as_ref().map(|v| &*v.0), nav_gen::CELLS_PER_TICK) {
+    let mesh = map_mesh(nav.as_deref(), floors.as_deref());
+    if job.slice(&q, &characters, mesh, vis.as_ref().map(|v| &*v.0), nav_gen::CELLS_PER_TICK) {
         let tries = spots.as_ref().map_or(0, |s| s.tries);
         commands.queue(move |w: &mut World| {
             if let Some(job) = w.remove_resource::<SpotsJob>() {
@@ -502,7 +557,8 @@ pub fn settle_spots(world: &mut World) -> bool {
     let done = {
         let mut state = SystemState::<SpatialQuery>::new(world);
         let Ok(q) = state.get(world) else { return true };
-        job.slice(&q, &characters, world.get_resource::<NavMesh>(), vis.as_deref(), nav_gen::CELLS_PER_LOAD_FRAME)
+        let mesh = map_mesh(world.get_resource::<NavMesh>(), world.get_resource::<MapFloors>());
+        job.slice(&q, &characters, mesh, vis.as_deref(), nav_gen::CELLS_PER_LOAD_FRAME)
     };
     if !done {
         world.insert_resource(job);
@@ -528,10 +584,31 @@ pub fn candidates(world: &mut World) -> Vec<Vec3> {
 }
 
 /// The walker that makes the spots' mesh when the map has none of its
-/// own: a player walking (the default step), a little wider than one
-/// (`nav_gen::walking_player`).
+/// own: a player walking (the default step) about as wide as the widest
+/// player (`nav_gen::walking_player`), its box standing up to 0.2 m off a
+/// cell's centre to fit (`NavGenParams::slide`: a doorway the grid's
+/// centres miss).
 pub fn walker() -> NavGenParams {
-    nav_gen::walking_player()
+    NavGenParams {
+        slide: 0.2,
+        ..nav_gen::walking_player()
+    }
+}
+
+/// `walker` on the loaded map: climbing what its game's players climb
+/// (`SpawnClimbs`, by `core::MapGame`); with the walk that bounds it where
+/// it climbs more than a walk and the map has visibility data
+/// (`nav_gen::Bounds`: only the clusters a walking player reaches, so a
+/// jump over a low wall doesn't leave the map).
+pub fn walker_for(world: &World) -> (NavGenParams, Option<NavGenParams>) {
+    let mut p = walker();
+    if let (Some(game), Some(climbs)) = (world.get_resource::<MapGame>(), world.get_resource::<SpawnClimbs>())
+        && let Some(h) = climbs.of(&game.0)
+    {
+        p.step = p.step.max(h);
+    }
+    let vis = world.get_resource::<ActiveVisibility>().is_some_and(|v| !v.0.nodes.is_empty());
+    (p, (p.step > walker().step && vis).then(walker))
 }
 
 /// The spots of the loaded map, at most `cap` (`ready` unset; empty
@@ -547,6 +624,8 @@ fn build(world: &mut World, points: &[Vec3], cap: usize) -> SpawnSpots {
         hazards.extend(water.0.iter().map(|v| v.brush.clone()));
     }
     let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
+    let clips = nav_gen::PlayerClips::of(world);
+    let (walker, bound) = walker_for(world);
     let characters: Vec<Entity> = world.iter_entities().filter(|r| r.contains::<Intent>()).map(|r| r.id()).collect();
     let mut state = SystemState::<SpatialQuery>::new(world);
     let Ok(q) = state.get(world) else { return SpawnSpots::default() };
@@ -554,22 +633,22 @@ fn build(world: &mut World, points: &[Vec3], cap: usize) -> SpawnSpots {
     let generated;
     // The map's own mesh; one generated for another walker (bots') may
     // climb where a player can't: ours instead.
-    let nav: &NavMesh = match world.get_resource::<NavMesh>().filter(|n| !n.generated) {
+    let nav: &NavMesh = match map_mesh(world.get_resource::<NavMesh>(), world.get_resource::<MapFloors>()) {
         Some(n) => n,
         None => {
-            generated = nav_gen::generate(&q, &ignore, points, &walker());
+            let bounds = bound.zip(vis.as_deref()).map(|(walker, vis)| nav_gen::Bounds { vis, walker });
+            generated = nav_gen::generate_within(&nav_gen::Clipped { q: &q, clips: &clips }, &ignore, points, &walker, bounds);
             &generated
         }
     };
     let raw = raw_spots(nav, points, seed);
     let floor = SpatialQueryFilter::from_mask(CHARACTER_FILTER).with_excluded_entities(characters.iter().copied());
-    let capsule = Collider::capsule(RADIUS, HEIGHT - 2.0 * RADIUS - LIFT);
     let mut spots = Vec::new();
     for (x, z, y) in raw {
         if spots.len() >= cap {
             break;
         }
-        if let Some(feet) = spot_ok(&q, &floor, &capsule, &hazards, vis.as_deref(), Vec3::new(x, y, z)) {
+        if let Some(feet) = spot_ok(&q, &floor, &clips, &hazards, vis.as_deref(), Vec3::new(x, y, z)) {
             spots.push(feet);
         }
     }
@@ -631,33 +710,27 @@ fn raw_spots(nav: &NavMesh, points: &[Vec3], seed: u32) -> Vec<(f32, f32, f32)> 
 }
 
 /// The feet of a valid standing spot near the mesh point `p`, if there is
-/// one: a walkable floor within 0.5 m of the mesh's height, the capsule
-/// clear of the world, inside the map (`vis`: the chest in a cluster's
-/// leaf), and no hazard at the feet, chest or head.
+/// one: a walkable floor within 0.5 m of the mesh's height (the world's
+/// or a player clip's top), a standing player's box clear of the world
+/// and the player clips (`stuck_at`), inside the map (`vis`: the chest in
+/// a cluster's leaf), and no hazard at the feet, chest or head.
 fn spot_ok(
     q: &SpatialQuery,
     filter: &SpatialQueryFilter,
-    capsule: &Collider,
+    clips: &nav_gen::PlayerClips,
     hazards: &[MapBrush],
     vis: Option<&MapVisibility>,
     p: Vec3,
 ) -> Option<Vec3> {
     let from = p + Vec3::Y * 0.6;
-    let hit = q.cast_ray(from, Dir3::NEG_Y, 1.2, true, filter)?;
-    if hit.normal.y < 0.7 || hit.distance < 0.05 {
+    let world = q.cast_ray(from, Dir3::NEG_Y, 1.2, true, filter).map(|h| (h.distance, h.normal));
+    let clip = clips.sweep(Vec3::ZERO, from, Dir3::NEG_Y, world.map_or(1.2, |h| h.0));
+    let (distance, normal) = clip.or(world)?;
+    if normal.y < 0.7 || distance < 0.05 {
         return None;
     }
-    let feet = Vec3::new(p.x, from.y - hit.distance, p.z);
-    if !inside_map(vis, feet) {
-        return None;
-    }
-    let centre = feet + Vec3::Y * (LIFT + (HEIGHT - LIFT) / 2.0);
-    let mut blocked = false;
-    q.shape_intersections_callback(capsule, centre, Quat::IDENTITY, filter, |_| {
-        blocked = true;
-        false
-    });
-    if blocked {
+    let feet = Vec3::new(p.x, from.y - distance, p.z);
+    if !inside_map(vis, feet) || stuck_at(q, filter, clips, feet) {
         return None;
     }
     let bad = [0.1, 1.0, 1.7].iter().any(|h| {

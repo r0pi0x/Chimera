@@ -2205,6 +2205,23 @@ cargo run -p party_kit --features dev,tools --bin map_fitness -- --filter gg_  #
 cargo run -p party_kit --features dev,tools --bin map_fitness -- --resume   # continue a sweep
 ```
 
+Its spawn spot columns are `party_kit::spot_checks`, which the heavy
+guard `heavy::spawn_spots` (party_kit) runs over the pool's maps. To find
+why spots are where they shouldn't be, or aren't where they should:
+
+```
+... --bin map_fitness -- --filter cs_militia --leaks   # where the spots' walk leaves the
+             # .nav (leak:), where the .nav or the bots' walk goes on and it doesn't
+             # (gap:, confined:)
+... --bin map_fitness -- --filter de_port --dump   # <out>/<game>_<map>_spots.csv (each
+             # spot, off or stuck), _nav.csv, _mesh.csv, _floor.csv (top-down
+             # heights), _entities.txt (every map entity's keys)
+... --bin map_fitness -- --filter cs_havana --probe -1832.6,1460.2,11.9   # what a standing
+             # box there meets (player clips and the brushes too)
+... --bin map_fitness -- --filter cs_havana --bare      # without the map logic
+... --bin map_fitness -- --filter cs_havana --client    # loaded as a client loads it
+```
+
 ### Comparing the HUD (`refcmp hudcmp`)
 
 ```

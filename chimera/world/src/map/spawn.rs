@@ -1287,6 +1287,9 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
     if let Some(nav) = &data.kit.nav {
         commands.insert_resource((**nav).clone());
     }
+    if let Some(floors) = &data.floors {
+        commands.insert_resource(MapFloors(floors.clone()));
+    }
     commands.insert_resource(s.prepared.take::<sound::SurfaceGrid>().unwrap_or_else(|| sound::SurfaceGrid::new(data)));
     commands.insert_resource(super::sources::SurfaceNames(Arc::new(data.surface_names.clone())));
     commands.insert_resource(data.memos.clone());

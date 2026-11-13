@@ -554,6 +554,7 @@ pub fn ids() -> Vec<String> {
 }
 
 pub mod host;
+pub mod spot_checks;
 pub mod surprise;
 pub mod server;
 #[cfg(feature = "present")]

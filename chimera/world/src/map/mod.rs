@@ -42,7 +42,7 @@ pub use face::{EyeTarget, FaceWeights, MapEye, MapFace, MapMorph, MapTeeth};
 pub use extras::{MapExtras, SourceEffects};
 pub mod entities;
 pub mod hazards;
-pub use hazards::{SpawnHazardAppExt, SpawnHazards};
+pub use hazards::{SpawnClimbAppExt, SpawnClimbs, SpawnHazardAppExt, SpawnHazards};
 pub mod fish;
 pub mod fire;
 pub mod gravity;

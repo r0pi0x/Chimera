@@ -6,8 +6,9 @@
 //! (`PartyPartsPlugin`: the map logic's brush entities) and the gun game
 //! started; floods the bots' navigation
 //! mesh from the spawn points (Combat Arms' walker, `bots::brain::
-//! nav_params`, jump-ups included; bounded to the clusters a walking
-//! player reaches where the map has visibility data, `nav_gen::Bounds`) and
+//! nav_params`, jump-ups included; bounded to the clusters the spawn
+//! spots' walking player, `spawns::walker`, reaches where the map has
+//! visibility data, `nav_gen::Bounds`) and
 //! measures it:
 //!
 //! - `area_m2`: the walkable area of the mesh's main region (areas walked
@@ -30,24 +31,31 @@
 //!   meet as a gas's molecules collide: area / ((N - 1) * 2 * sight *
 //!   4/pi * speed), the mean time to a player's next meeting.
 //! - `spawns`, `spawns_in_region`, `spawn_min_m`, `spawn_median_m`: the
-//!   map's spawn points, those on the main region, and the least and
+//!   map's spawn points, those on the spots' main region (below), and the least and
 //!   median straight-line distance between two of them.
-//! - Spawn spots off the map: `spots` is what `random_hidden` picks from
-//!   (`spawns::candidates`; none: the spawn points); `spots_off` those
-//!   off the main region (`off_region`), off the map's own navigation file
-//!   (`off_nav_file`, Source's `maps/<name>.nav` when it has one:
-//!   `has_nav_file`; 1.5 m and 2 m of slack) or outside the playable box
-//!   of a map with a 3D skybox (`off_box`), and `spots_off_at` a few of
-//!   them in the map's own units (Source: x y z in inches).
-//! - `stuck`: spots where a standing CS:S player's box (32 x 72 units,
-//!   what Source's movement traces; the spots are checked with a
-//!   character's capsule, whose reach is shorter at the corners), from a
-//!   step (18 units) over the feet to the head, meets what characters
-//!   collide with (a wall, a prop, a ceiling: not a slope or a stair under
-//!   its corners), and `stuck_at` a few, with what.
-//! - `--probe x,y,z` (a bug report's `setpos`): what the box there meets,
-//!   the spots and spawn points near it, and after five seconds of the
-//!   map the floor, the ceiling and everything within 4 m.
+//! - Spawn spots off the map (`party_kit::spot_checks`, what the heavy
+//!   guard `spawn_spots` runs on the pool): `spots` is what
+//!   `random_hidden` picks from (`spawns::candidates`; none: the spawn
+//!   points); `spots_off` those off the main region (`off_region`: the
+//!   navigation file's where the map has one, else the bots' mesh's),
+//!   off the map's own navigation file (`off_nav_file`, Source's
+//!   `maps/<name>.nav` when it has one, `map::MapFloors`: `has_nav_file`;
+//!   1.5 m and 2 m of slack) or outside the playable box of a map with a
+//!   3D skybox (`off_box`), and `spots_off_at` a few of them in the map's
+//!   own units (Source: x y z in inches).
+//! - `stuck`: spots where a standing player's box (Source's 32 x 72
+//!   units, `spawns::standing_box`), from a step (18 units) over the feet
+//!   to the head, meets what characters collide with (a wall, a prop, a
+//!   ceiling, a player clip: not a slope or a stair under its corners),
+//!   and `stuck_at` a few, with what.
+//! - `--probe x,y,z` (a bug report's `setpos`): what the box there meets
+//!   (the player-solid brushes too), the spots and spawn points near it,
+//!   and after five seconds of the map the floor, the ceiling and
+//!   everything within 4 m. `--leaks`: where the spots' walk leaves the
+//!   navigation file, and where the file or the bots' walk goes on and
+//!   it doesn't. `--dump`: the spots, the file's and the bots' floors, a
+//!   top-down height map and the map's entities as files. `--bare`:
+//!   without the map logic; `--client`: loaded as a client loads it.
 //!
 //! Paths are Dijkstra over the mesh's areas, centre to centre (an area is
 //! at most 4 m a side, so paths come out a few percent long). One run
@@ -98,6 +106,14 @@ usage: map_fitness [options]
   --speed <m/s>      run speed for times (default 6.35: CS:S's 250 units/s)
   --probe <x,y,z>    also say what a standing player's box at this point meets (the map's own
                      units: Source's setpos; repeatable)
+  --leaks            also list where the spawn spots' walk leaves the map's navigation file (the
+                     links from an area on it to one off it, in the map's units)
+  --dump             also write each map's spawn spots to <out>/<game>_<map>_spots.csv (x, y, z
+                     in the map's units, and whether each is off the region, the navigation
+                     file or stuck)
+  --bare             without the party's parts (no map logic): the map as loaded
+  --client           load the map as a client does (textures, the players' kit), not as the
+                     dedicated server
   --samples <n>      area samples for the path statistics (default 256)
   --min-free-gb <n>  wait while less memory than this is available (default 8)";
 
@@ -131,6 +147,10 @@ struct Opts {
     speed: f32,
     samples: usize,
     probes: Vec<Vec3>,
+    leaks: bool,
+    bare: bool,
+    client: bool,
+    dump: bool,
     min_free_gb: f64,
 }
 
@@ -145,6 +165,10 @@ fn parse() -> Result<Opts, String> {
         samples: 256,
         probes: Vec::new(),
         min_free_gb: 8.0,
+        leaks: false,
+        bare: false,
+        client: false,
+        dump: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -164,6 +188,10 @@ fn parse() -> Result<Opts, String> {
                 // Source units (z up); a Combat Arms map's are metres, y up.
                 o.probes.push(Vec3::new(x, z, -y) * 0.0254);
             }
+            "--leaks" => o.leaks = true,
+            "--bare" => o.bare = true,
+            "--client" => o.client = true,
+            "--dump" => o.dump = true,
             "--samples" => o.samples = val()?.parse().map_err(|e| format!("--samples: {e}"))?,
             "--min-free-gb" => o.min_free_gb = val()?.parse().map_err(|e| format!("--min-free-gb: {e}"))?,
             "-h" | "--help" => return Err(String::new()),
@@ -399,11 +427,15 @@ impl Row {
     }
 }
 
-fn measure(id: &str, context: &LoadContext, o: &Opts, mount: Option<&chimera_core::mount::Mount>) -> Row {
+fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_core::mount::Mount>) -> Row {
     let t = Instant::now();
-    let options = MapLoadOptions {
-        kit: KitLoad::Only(&[]),
-        ..MapLoadOptions::lean().in_context(context)
+    let options = if o.client {
+        MapLoadOptions::default().in_context(context)
+    } else {
+        MapLoadOptions {
+            kit: KitLoad::Only(&[]),
+            ..MapLoadOptions::lean().in_context(context)
+        }
     };
     let data = match party_kit::load_map_with(id, &options) {
         Ok(d) => d,
@@ -411,7 +443,11 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, mount: Option<&chimera_cor
     };
     // The party's parts: the map logic's brush entities (doors, func_brush,
     // breakables) and the gun game, as the apps run it.
-    let mut sim = Sim::new(CaSim, (MapSimPlugin::new(data), party_kit::PartyPartsPlugin));
+    let mut sim = if o.bare {
+        Sim::new(CaSim, MapSimPlugin::new(data))
+    } else {
+        Sim::new(CaSim, (MapSimPlugin::new(data), party_kit::PartyPartsPlugin))
+    };
     let _ = chimera_sim::minigame::start(sim.app.world_mut(), party_kit::DEFAULT_MINIGAME);
     sim.ticks(3);
     let load_s = t.elapsed().as_secs_f32();
@@ -426,32 +462,22 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, mount: Option<&chimera_cor
     // mesh, else a walking player's generated one); none: the spawn points.
     let own_nav = w.get_resource::<NavMesh>().is_some_and(|n| !n.generated);
     // The map's own navigation file (Source's `maps/<name>.nav`, its
-    // author's or its bots' generator's): the playable floors, for the
-    // off-map check. A party app doesn't load it (another game's kit).
-    let name = id.split_once(':').map_or(id, |(_, n)| n);
-    let file_nav = (!id.starts_with("combat_arms:"))
-        .then(|| mount?.read(&format!("maps/{name}.nav")).ok())
-        .flatten()
-        .and_then(|b| cs_source::game::nav::parse(&b).ok())
-        .map(|(n, _)| n)
-        .filter(|n| !n.areas.is_empty());
+    // author's or its bots' generator's, `MapFloors`): the playable
+    // floors, for the off-map check.
+    let file_nav = party_kit::spot_checks::file_nav(w);
     let playable = w.get_resource::<PlayableArea>().map(|p| p.0);
     let candidates = chimera_sim::minigame::spawns::candidates(w);
     // Stuck: a standing CS:S player's box (32 x 72 units) at the spot, a
     // few centimetres up, meets what a character's movement meets.
+    // The player clips Source's movement sweeps itself (`Entity::PLACEHOLDER`
+    // in the lists below).
+    let clips = nav_gen::PlayerClips::of(w);
+    let (spot_walker, spot_bound) = chimera_sim::minigame::spawns::walker_for(w);
     let (stuck, probes) = {
         let used: &[Vec3] = if candidates.is_empty() { &feet } else { &candidates };
         let mut state = SystemState::<SpatialQuery>::new(w);
         let q = state.get(w).expect("the spatial query");
-        let filter = SpatialQueryFilter::from_mask(chimera_core::core::CHARACTER_FILTER);
-        let hits = |at: Vec3| {
-            let mut got = Vec::new();
-            q.shape_intersections_callback(&player_box(), at + Vec3::Y * BOX_CENTRE, Quat::IDENTITY, &filter, |e| {
-                got.push(e);
-                true
-            });
-            got
-        };
+        let hits = |at: Vec3| party_kit::spot_checks::box_meets(&q, &clips, at);
         let stuck: Vec<(Vec3, Vec<Entity>)> = used
             .iter()
             .filter_map(|f| Some((*f, hits(*f))).filter(|(_, h)| !h.is_empty()))
@@ -460,6 +486,9 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, mount: Option<&chimera_cor
         (stuck, probes)
     };
     let describe = |w: &World, e: Entity| {
+        if e == Entity::PLACEHOLDER {
+            return "a player clip".to_string();
+        }
         let name = |e: Entity| w.get::<Name>(e).map(|n| n.to_string());
         let parent = w.get::<ChildOf>(e).and_then(|c| name(c.parent()));
         match (name(e), parent) {
@@ -513,6 +542,7 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, mount: Option<&chimera_cor
         );
     }
     let stuck_count = stuck.len();
+    let stuck_spots: BTreeSet<[u32; 3]> = stuck.iter().map(|(p, _)| p.to_array().map(f32::to_bits)).collect();
     let stuck_at = stuck
         .iter()
         .step_by((stuck.len() / 6).max(1))
@@ -554,11 +584,12 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, mount: Option<&chimera_cor
         let q = state.get(w).expect("the spatial query");
         let bounds = vis.as_deref().map(|vis| nav_gen::Bounds {
             vis,
-            walker: nav_gen::walking_player(),
+            walker: chimera_sim::minigame::spawns::walker(),
         });
         let nav = nav_gen::generate_within(&q, &|_| false, &feet, &p, bounds);
         // The spawn spots' walker (`spawns::walker`).
-        let spots = nav_gen::generate(&q, &|_| false, &feet, &nav_gen::walking_player());
+        let spot_bounds = spot_bound.zip(vis.as_deref()).map(|(walker, vis)| nav_gen::Bounds { vis, walker });
+        let spots = nav_gen::generate_within(&nav_gen::Clipped { q: &q, clips: &clips }, &|_| false, &feet, &spot_walker, spot_bounds);
         (nav, spots)
     };
     row.nav_s = t.elapsed().as_secs_f32();
@@ -591,30 +622,220 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, mount: Option<&chimera_cor
             q.x >= lo.x && q.x <= hi.x && q.z >= lo.y && q.z <= hi.y && (a.height_at(q.x, q.z) - q.y).abs() < 1.5
         })
     };
-    row.spawns_in_region = feet.iter().filter(|f| on_region(**f)).count();
     row.own_nav = own_nav;
     row.spots = candidates.len();
     let used: &[Vec3] = if candidates.is_empty() { &feet } else { &candidates };
     let off_box = |q: Vec3| playable.is_some_and(|(lo, hi)| q.cmplt(lo - 1.0).any() || q.cmpgt(hi + 1.0).any());
-    let off_file = |q: Vec3| {
-        file_nav.as_ref().is_some_and(|n| {
-            !n.areas.iter().any(|a| {
-                let (lo, hi) = (a.min - Vec2::splat(1.5), a.max + Vec2::splat(1.5));
-                q.x >= lo.x && q.x <= hi.x && q.z >= lo.y && q.z <= hi.y && (a.height_at(q.x, q.z) - q.y).abs() < 2.0
+    let off_file = |q: Vec3| file_nav.as_ref().is_some_and(|n| party_kit::spot_checks::off_file(n, q));
+    // The spots' main region: the navigation file's, else the bots' mesh's
+    // (`spot_checks::region_mesh`).
+    let spot_mesh = party_kit::spot_checks::region_mesh(file_nav.as_deref(), &nav);
+    let (spot_inside, _) = region(spot_mesh, &feet);
+    let on_spot_region = |q: Vec3| party_kit::spot_checks::on_region(spot_mesh, &spot_inside, q);
+    // Where each lands (CS:S's float over their floors).
+    let landed = party_kit::spot_checks::dropped(w, &feet);
+    row.spawns_in_region = landed.iter().filter(|f| on_spot_region(**f)).count();
+    if o.leaks && file_nav.is_some() {
+        // Where the spots' walk leaves the navigation file: a link from an
+        // area whose centre is on it to one whose centre is off it.
+        let centre = |a: &chimera_world::map::nav::NavArea| {
+            let c = (a.min + a.max) / 2.0;
+            Vec3::new(c.x, a.height_at(c.x, c.y), c.y)
+        };
+        let (inside, _) = region(&spots, &feet);
+        let mut seen = BTreeSet::new();
+        for (i, a) in spots.areas.iter().enumerate() {
+            if !inside[i] || off_file(centre(a)) {
+                continue;
+            }
+            for (j, _) in &a.links {
+                let b = &spots.areas[*j];
+                if off_file(centre(b)) && seen.insert(((centre(b) / 2.0).round().as_ivec3()).to_array()) {
+                    eprintln!("    leak: {} -> {}", at(centre(a)), at(centre(b)));
+                }
+            }
+        }
+    }
+    if o.leaks
+        && let Some(n) = &file_nav
+    {
+        // Where the navigation file goes on and the spots' walk doesn't:
+        // a file link from an area the walk covers to one it doesn't (the
+        // middle of the shared edge, as best the areas' boxes say).
+        let (inside, _) = region(&spots, &feet);
+        let walked: Vec<&chimera_world::map::nav::NavArea> =
+            spots.areas.iter().enumerate().filter(|(i, _)| inside[*i]).map(|(_, a)| a).collect();
+        let covered: Vec<bool> = n
+            .areas
+            .iter()
+            .map(|a| {
+                let c = (a.min + a.max) / 2.0;
+                let y = a.height_at(c.x, c.y);
+                walked.iter().any(|b| {
+                    b.max.x > a.min.x && b.min.x < a.max.x && b.max.y > a.min.y && b.min.y < a.max.y && (b.center.y - y).abs() < 1.5
+                })
             })
-        })
-    };
+            .collect();
+        let mut seen = BTreeSet::new();
+        for (i, a) in n.areas.iter().enumerate() {
+            if !covered[i] {
+                continue;
+            }
+            for (j, via) in &a.links {
+                if covered[*j] {
+                    continue;
+                }
+                let b = &n.areas[*j];
+                let lo = a.min.max(b.min);
+                let hi = a.max.min(b.max);
+                let m = (lo + hi) / 2.0;
+                let p = Vec3::new(m.x, a.height_at(m.x, m.y).max(b.height_at(m.x, m.y)), m.y);
+                if seen.insert((p / 2.0).round().as_ivec3().to_array()) {
+                    eprintln!("    gap: {} ({via:?}, file areas {} -> {})", at(p), a.id, b.id);
+                }
+            }
+        }
+    }
+    if o.leaks {
+        // Where the bots' walk goes on and the spots' doesn't (a confined
+        // map): a bots' link from an area the spots' main region covers
+        // to one it doesn't.
+        let (inside, _) = region(&spots, &feet);
+        let walked: Vec<&chimera_world::map::nav::NavArea> =
+            spots.areas.iter().enumerate().filter(|(i, _)| inside[*i]).map(|(_, a)| a).collect();
+        let covered: Vec<bool> = nav
+            .areas
+            .iter()
+            .map(|a| {
+                walked.iter().any(|b| {
+                    b.max.x > a.min.x && b.min.x < a.max.x && b.max.y > a.min.y && b.min.y < a.max.y && (b.center.y - a.center.y).abs() < 1.0
+                })
+            })
+            .collect();
+        let mut seen = BTreeSet::new();
+        for i in &ids {
+            if !covered[*i] {
+                continue;
+            }
+            let a = &nav.areas[*i];
+            for (j, _) in &a.links {
+                if covered[*j] || !inside[*j] {
+                    continue;
+                }
+                let b = &nav.areas[*j];
+                if seen.insert((b.center / 2.0).round().as_ivec3().to_array()) {
+                    eprintln!("    confined: {} -> {}", at(a.center), at(b.center));
+                }
+            }
+        }
+    }
     row.has_nav_file = file_nav.is_some();
     row.stuck = stuck_count;
     row.stuck_at = stuck_at;
-    row.off_region = used.iter().filter(|q| !on_region(**q)).count();
+    row.off_region = used.iter().filter(|q| !on_spot_region(**q)).count();
     row.off_nav_file = used.iter().filter(|q| off_file(**q)).count();
     row.off_box = used.iter().filter(|q| off_box(**q)).count();
     let off: Vec<Vec3> = used
         .iter()
         .copied()
-        .filter(|q| !on_region(*q) || off_file(*q) || off_box(*q))
+        .filter(|q| !on_spot_region(*q) || off_file(*q) || off_box(*q))
         .collect();
+    if o.dump {
+        let file = o.out.join(format!("{}_spots.csv", id.replace(':', "_")));
+        let mut text = String::from("x,y,z,off_region,off_nav_file,stuck\n");
+        for q in used {
+            let stuck = stuck_spots.contains(&q.to_array().map(f32::to_bits));
+            let p = at(*q);
+            let p = p.trim_end_matches(" m").replace(' ', ",");
+            text.push_str(&format!("{p},{},{},{}\n", !on_spot_region(*q), off_file(*q), stuck));
+        }
+        if let Err(e) = fs::write(&file, text) {
+            eprintln!("{}: {e}", file.display());
+        }
+        let file = o.out.join(format!("{}_points.csv", id.replace(':', "_")));
+        let mut text = String::from("x,y,z,off_region\n");
+        for q in &landed {
+            let p = at(*q);
+            text.push_str(&format!("{},{}\n", p.trim_end_matches(" m").replace(' ', ","), !on_spot_region(*q)));
+        }
+        let _ = fs::write(&file, text);
+        {
+            // The bots' walker's main region, a point every half metre.
+            let file = o.out.join(format!("{}_mesh.csv", id.replace(':', "_")));
+            let mut text = String::from("x,y,z\n");
+            for i in &ids {
+                let a = &nav.areas[*i];
+                let size = a.max - a.min;
+                let (nx, nz) = (((size.x * 2.0) as i32).max(1), ((size.y * 2.0) as i32).max(1));
+                for k in 0..nx {
+                    for l in 0..nz {
+                        let x = a.min.x + (k as f32 + 0.5) * size.x / nx as f32;
+                        let z = a.min.y + (l as f32 + 0.5) * size.y / nz as f32;
+                        let p = at(Vec3::new(x, a.height_at(x, z), z));
+                        text.push_str(&format!("{}\n", p.trim_end_matches(" m").replace(' ', ",")));
+                    }
+                }
+            }
+            let _ = fs::write(&file, text);
+        }
+        {
+            // A top-down height map of the bots' region's bounds (the first
+            // floor down from 2.5 m over its highest area), every 0.25 m.
+            let (mut lo, mut hi, mut top) = (Vec2::MAX, Vec2::MIN, f32::MIN);
+            for i in &ids {
+                let a = &nav.areas[*i];
+                lo = lo.min(a.min);
+                hi = hi.max(a.max);
+                top = top.max(a.center.y);
+            }
+            let file = o.out.join(format!("{}_floor.csv", id.replace(':', "_")));
+            let mut text = String::from("x,y,z\n");
+            let mut state = SystemState::<SpatialQuery>::new(w);
+            let q = state.get(w).expect("the spatial query");
+            let filter = SpatialQueryFilter::from_mask(chimera_core::core::CHARACTER_FILTER);
+            let mut x = lo.x;
+            while x <= hi.x && ids.len() > 0 {
+                let mut z = lo.y;
+                while z <= hi.y {
+                    let from = Vec3::new(x, top + 2.5, z);
+                    if let Some(h) = q.cast_ray(from, Dir3::NEG_Y, 40.0, true, &filter) {
+                        let p = at(from - Vec3::Y * h.distance);
+                        text.push_str(&format!("{}\n", p.trim_end_matches(" m").replace(' ', ",")));
+                    }
+                    z += 0.25;
+                }
+                x += 0.25;
+            }
+            let _ = fs::write(&file, text);
+        }
+        if let Some(ents) = w.get_resource::<chimera_world::map::MapEntities>() {
+            let file = o.out.join(format!("{}_entities.txt", id.replace(':', "_")));
+            let mut text = String::new();
+            for (i, e) in ents.entities.iter().enumerate() {
+                let kv: Vec<String> = e.keyvalues.iter().map(|(k, v)| format!("{k}={v}")).collect();
+                text.push_str(&format!("{i} hulls={} mover={} {}\n", e.hulls.len(), e.mover, kv.join(" | ")));
+            }
+            let _ = fs::write(&file, text);
+        }
+        if let Some(n) = &file_nav {
+            let file = o.out.join(format!("{}_nav.csv", id.replace(':', "_")));
+            let mut text = String::from("x,y,z\n");
+            for a in &n.areas {
+                // The area's points a metre apart (its centre at least).
+                let size = a.max - a.min;
+                let (nx, nz) = ((size.x as i32).max(1), (size.y as i32).max(1));
+                for i in 0..nx {
+                    for k in 0..nz {
+                        let x = a.min.x + (i as f32 + 0.5) * size.x / nx as f32;
+                        let z = a.min.y + (k as f32 + 0.5) * size.y / nz as f32;
+                        let p = at(Vec3::new(x, a.height_at(x, z), z));
+                        text.push_str(&format!("{}\n", p.trim_end_matches(" m").replace(' ', ",")));
+                    }
+                }
+            }
+            let _ = fs::write(&file, text);
+        }
+    }
     row.spots_off = off.len();
     row.spots_off_at = off
         .iter()
@@ -749,38 +970,7 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, mount: Option<&chimera_cor
 /// The areas walked to from a spawn point and back (the spawn spots'
 /// region, `chimera_sim::minigame::spawns`), and each spawn point's area.
 fn region(nav: &NavMesh, feet: &[Vec3]) -> (Vec<bool>, Vec<Option<usize>>) {
-    let n = nav.areas.len();
-    let mut forward = vec![Vec::new(); n];
-    let mut back = vec![Vec::new(); n];
-    for (i, a) in nav.areas.iter().enumerate() {
-        for (j, _) in &a.links {
-            forward[i].push(*j);
-            back[*j].push(i);
-        }
-    }
-    let starts: Vec<Option<usize>> = feet
-        .iter()
-        .map(|p| nav.area_at(*p + Vec3::Y * 0.1).or_else(|| nav.nearest_area(*p)))
-        .collect();
-    let seeds: Vec<usize> = starts.iter().flatten().copied().collect();
-    let reach = |edges: &[Vec<usize>]| {
-        let mut seen = vec![false; n];
-        let mut stack = seeds.clone();
-        for s in &stack {
-            seen[*s] = true;
-        }
-        while let Some(i) = stack.pop() {
-            for j in &edges[i] {
-                if !seen[*j] {
-                    seen[*j] = true;
-                    stack.push(*j);
-                }
-            }
-        }
-        seen
-    };
-    let (f, b) = (reach(&forward), reach(&back));
-    (f.iter().zip(&b).map(|(a, b)| *a && *b).collect(), starts)
+    party_kit::spot_checks::region(nav, feet)
 }
 
 #[derive(PartialEq)]
@@ -926,6 +1116,21 @@ fn probe_report(sim: &mut Sim, probes: &[Vec3], at: &dyn Fn(Vec3) -> String) {
             "    under it, every layer: {:?}",
             any.iter().map(|(d, e)| format!("{d:.2} {e}")).collect::<Vec<_>>()
         );
+        if let Some(b) = w.get_resource::<chimera_world::map::MapBrushes>() {
+            let skip: BTreeSet<usize> = w
+                .get_resource::<chimera_world::map::MapTraceSkip>()
+                .map(|s| s.0.iter().copied().collect())
+                .unwrap_or_default();
+            let half = Vec3::new(PLAYER_W, PLAYER_H - STEP - 0.05, PLAYER_W) / 2.0;
+            let hit: Vec<String> = b
+                .0
+                .iter()
+                .enumerate()
+                .filter(|(_, x)| x.overlaps_box(centre, half, 0.0))
+                .map(|(i, x)| format!("{i}{} {}..{}", if skip.contains(&i) { " (clip)" } else { "" }, at(x.min), at(x.max)))
+                .collect();
+            eprintln!("    brushes the box meets (of {}): {hit:?}", b.0.len());
+        }
         lines.push((*p, tight, loose, floor, ceiling));
     }
     let name = |e: Entity| {

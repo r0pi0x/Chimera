@@ -356,6 +356,7 @@ fn scoped_resources(app: &mut App) {
         .map_scoped::<breakables::PropBreaks>()
         .map_scoped::<breakables::GibAssets>()
         .map_scoped::<nav::NavMesh>()
+        .map_scoped::<MapFloors>()
         .map_scoped::<sound::SurfaceGrid>()
         .map_scoped::<sources::SurfaceNames>()
         .map_scoped::<MapBrushes>()

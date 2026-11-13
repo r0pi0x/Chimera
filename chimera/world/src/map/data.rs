@@ -1173,6 +1173,12 @@ pub struct MapTraceSkip(pub Vec<usize>);
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct MapPropBrushStart(pub usize);
 
+/// The loaded map's own navigation file (`MapData::floors`), apart from
+/// the bots' mesh (`nav::NavMesh`, the kit's): what the spawn spots are
+/// drawn on in an app that doesn't load the map's game's kit.
+#[derive(Resource, Clone, Debug)]
+pub struct MapFloors(pub Arc<nav::NavMesh>);
+
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct MapData {
     pub name: String,
@@ -1317,6 +1323,11 @@ pub struct MapData {
     /// gameplay's kit): a mashup replaces it with the gameplay's own
     /// (`GameKit::stay`, `sources::MapSources::dress`).
     pub kit: GameKit,
+    /// The map's own navigation file where it ships one (Source's
+    /// `maps/<name>.nav`), whatever of the kit is loaded: the floors its
+    /// author marked as played, which the spawn spots are drawn on
+    /// (`MapFloors`; the bots' copy is the kit's, `GameKit::nav`).
+    pub floors: Option<Arc<nav::NavMesh>>,
     /// Features only some games' maps have (`MapExtras`), such as Source's
     /// effect lists (`MapData::source_fx`).
     pub extras: MapExtras,

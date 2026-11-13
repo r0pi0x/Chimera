@@ -30,6 +30,11 @@
 //! thread"); the result is the same (`FloodQueries`: the same queries on
 //! the live world or the copy).
 //!
+//! A Source map's player clips aren't in the physics world (Source's
+//! movement sweeps them itself, `core::MapBrushes`): a flood that must
+//! meet them asks through `Clipped` (`PlayerClips`); a walker may stand
+//! off a cell's centre to fit (`NavGenParams::slide`).
+//!
 //! Known shortcuts: no ladders, jumps, crouch-only areas, hiding spots or
 //! visibility data; cells are tested at their centres only (a wall
 //! thinner than a cell between two cell centres is found by the sweep,
@@ -81,6 +86,14 @@ pub struct NavGenParams {
     /// e.g. `core::CHARACTER_FILTER`: players-only clips but not
     /// traces-only surfaces).
     pub mask: LayerMask,
+    /// How far off a cell's centre (m, along each axis) the walker's box
+    /// may stand to fit: a doorway a cell's width narrower than the box
+    /// is otherwise missed when the grid's centres fall off its middle
+    /// (Combat Arms' warehouse kept a walking player in its two spawn
+    /// rooms). Up to `radius / 2`, so the box `passes` sweeps from the
+    /// centre (half the walker's width) is inside one that fits (0:
+    /// centres only).
+    pub slide: f32,
 }
 
 impl Default for NavGenParams {
@@ -95,12 +108,13 @@ impl Default for NavGenParams {
             max_cells: 300_000,
             max_area: 8,
             mask: crate::core::CHARACTER_FILTER,
+            slide: 0.0,
         }
     }
 }
 
-/// A walking player: the default step and height, a little wider than a
-/// CS:S player (radius 0.4 m), walks off drops up to 3 m; no jumps.
+/// A walking player: the default step and height, about a CS:S player's
+/// width (radius 0.4 m), walks off drops up to 3 m; no jumps.
 pub fn walking_player() -> NavGenParams {
     NavGenParams {
         radius: 0.4,
@@ -266,6 +280,90 @@ impl FloodQueries for CollisionSnapshot {
     }
 }
 
+/// The brushes that stop players but that the physics world lacks: a
+/// Source map's player clips (`core::MapBrushes` listed by
+/// `MapTraceSkip`; its grates and ladder volumes come with them, which the
+/// physics world has too). Source's movement sweeps them itself, so a
+/// flood or a spot check that asks the physics world alone walks through
+/// them (cs_militia's yard opened onto the hills beyond its clip walls).
+/// Empty on maps without them.
+#[derive(Clone, Debug, Default)]
+pub struct PlayerClips {
+    brushes: Vec<crate::core::MapBrush>,
+    grid: crate::core::BrushGrid,
+}
+
+impl PlayerClips {
+    /// The loaded map's.
+    pub fn of(world: &World) -> Self {
+        let (Some(all), Some(skip)) = (world.get_resource::<super::MapBrushes>(), world.get_resource::<super::MapTraceSkip>())
+        else {
+            return Self::default();
+        };
+        Self::new(skip.0.iter().filter_map(|i| all.0.get(*i).cloned()).collect())
+    }
+
+    pub fn new(brushes: Vec<crate::core::MapBrush>) -> Self {
+        let grid = crate::core::BrushGrid::new(&brushes);
+        Self { brushes, grid }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.brushes.is_empty()
+    }
+
+    /// Whether an axis-aligned box (centre, half size) overlaps one.
+    pub fn overlaps_box(&self, centre: Vec3, half: Vec3) -> bool {
+        if self.brushes.is_empty() {
+            return false;
+        }
+        let mut near = Vec::new();
+        self.grid.near(&self.brushes, centre - half, centre + half, &mut near);
+        near.iter().any(|i| self.brushes[*i as usize].overlaps_box(centre, half, 0.0))
+    }
+
+    /// The nearest hit of a box (half size `half`; zero: a ray) moved from
+    /// `from` by `dir` up to `max`: its distance and the plane's normal.
+    pub fn sweep(&self, half: Vec3, from: Vec3, dir: Dir3, max: f32) -> Option<(f32, Vec3)> {
+        if self.brushes.is_empty() {
+            return None;
+        }
+        let to = from + *dir * max;
+        let mut near = Vec::new();
+        self.grid.near(&self.brushes, from.min(to) - half, from.max(to) + half, &mut near);
+        near.iter()
+            .filter_map(|i| self.brushes[*i as usize].sweep_box(half, from, to, 0.0))
+            .map(|(f, n)| (f * max, n))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+    }
+}
+
+/// A flood's queries with a map's player clips added (`PlayerClips`).
+pub struct Clipped<'a> {
+    pub q: &'a dyn FloodQueries,
+    pub clips: &'a PlayerClips,
+}
+
+impl FloodQueries for Clipped<'_> {
+    fn ray_hit(&self, origin: Vec3, dir: Dir3, max: f32, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> Option<(f32, Vec3)> {
+        let hit = self.q.ray_hit(origin, dir, max, filter, ignore);
+        let clip = self.clips.sweep(Vec3::ZERO, origin, dir, hit.map_or(max, |h| h.0));
+        clip.or(hit)
+    }
+
+    fn overlaps(&self, shape: &Collider, at: Vec3, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> bool {
+        let a = shape.aabb(at, Quat::IDENTITY, 0.0);
+        let half = (a.max - a.min) / 2.0;
+        self.clips.overlaps_box(at, half) || self.q.overlaps(shape, at, filter, ignore)
+    }
+
+    fn sweep_hits(&self, shape: &Collider, at: Vec3, dir: Dir3, max: f32, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> bool {
+        let a = shape.aabb(at, Quat::IDENTITY, 0.0);
+        let half = (a.max - a.min) / 2.0;
+        self.clips.sweep(half, at, dir, max).is_some() || self.q.sweep_hits(shape, at, dir, max, filter, ignore)
+    }
+}
+
 struct Grid<'a> {
     q: &'a dyn FloodQueries,
     filter: SpatialQueryFilter,
@@ -308,7 +406,13 @@ impl Grid<'_> {
         let (x, z) = self.centre(ix, iz);
         let half = (self.p.height - self.p.step) * 0.5;
         let shape = Collider::cuboid(self.p.radius * 2.0, half * 2.0, self.p.radius * 2.0);
-        !self.q.overlaps(&shape, Vec3::new(x, y + self.p.step + half, z), &self.filter, self.ignore)
+        let s = self.p.slide;
+        let fits = |dx: f32, dz: f32| !self.q.overlaps(&shape, Vec3::new(x + dx, y + self.p.step + half, z + dz), &self.filter, self.ignore);
+        fits(0.0, 0.0)
+            || (s > 0.0
+                && [(s, 0.0), (-s, 0.0), (0.0, s), (0.0, -s), (s, s), (-s, s), (s, -s), (-s, -s)]
+                    .iter()
+                    .any(|(dx, dz)| fits(*dx, *dz)))
     }
 
     /// Whether a walker passes from one column's floor `y` to the next
