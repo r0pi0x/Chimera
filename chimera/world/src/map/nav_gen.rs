@@ -647,5 +647,6 @@ fn merge(g: &Grid<'_>) -> NavMesh {
         ladders: Vec::new(),
         places: Vec::new(),
         generated: true,
+        ..default()
     }
 }

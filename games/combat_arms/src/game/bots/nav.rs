@@ -212,17 +212,25 @@ impl PatrolGraph {
                 nodes.push(i);
             }
         }
+        // Each area's node: a large mesh has hundreds of nodes and each
+        // reaches hundreds of areas (cs_militia: 11,510 areas).
+        let mut node_of: Vec<Option<usize>> = vec![None; mesh.areas.len()];
+        for (j, &n) in nodes.iter().enumerate() {
+            node_of[n] = Some(j);
+        }
         let links = nodes
             .iter()
             .enumerate()
             .map(|(k, &n)| {
-                let near: Vec<usize> = mesh.within(n, NODE_REACH).into_iter().map(|r| r.0).collect();
-                nodes
-                    .iter()
-                    .enumerate()
-                    .filter(|&(j, a)| j != k && near.contains(a))
-                    .map(|(j, _)| j)
-                    .collect()
+                let mut near: Vec<usize> = mesh
+                    .within(n, NODE_REACH)
+                    .into_iter()
+                    .filter_map(|r| node_of[r.0])
+                    .filter(|&j| j != k)
+                    .collect();
+                near.sort_unstable();
+                near.dedup();
+                near
             })
             .collect();
         let points = nodes.iter().map(|&n| mesh.areas[n].center).collect();

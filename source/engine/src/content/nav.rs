@@ -145,5 +145,6 @@ pub fn parse(bytes: &[u8]) -> Result<(NavMesh, NavInfo), String> {
         ladders,
         places,
         generated: false,
+        ..Default::default()
     }, info))
 }
