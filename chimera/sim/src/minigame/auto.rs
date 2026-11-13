@@ -10,9 +10,10 @@
 //!   its own whose data names a class: its install's weapons too), its
 //!   grenades that kill (class `grenade`), its knife if there, its
 //!   movement if registered, its claimed characters and HUD, and its
-//!   maps (claimed, and the installed ones its `map_patterns` match:
+//!   maps (claimed, and the installed ones its pool rules don't deny:
+//!   `map_fit::MapPool::listed`, a game's data/map_pool.toml;
 //!   `InstalledMaps`, found once by `find_installed_maps` in an app that
-//!   wants them). A game is in a ladder with guns and movement
+//!   wants them, for the games with rules). A game is in a ladder with guns and movement
 //!   (`Capabilities::playable`); the rest falls back (`fallbacks`): no
 //!   HUD, `PartsRegistry::fallback_hud`; no characters, the shell's
 //!   capsule (`map::CharacterModels::for_identity` finds none of its
@@ -35,7 +36,10 @@
 //!   (logged when a ladder is drawn; the `ladder_skipped` command).
 //!   Hand-written ladders may name them.
 //! - `map_pool`: every map of every game whose install the players have,
-//!   the games in turn; none: the greybox.
+//!   the games in turn; none: the greybox. `map_pool_for` takes the
+//!   player count too: only the maps `map_fit` lets in at that count. The
+//!   definition's pool is every map (a rotation draws by the count at each
+//!   change, `map_fit = true`: on by default with its random rotation).
 //! - `definition`: the minigame's TOML (`MinigameDef`), filtered by
 //!   `installed` (the games every player has: L3's mount reports, which
 //!   the app reads; `chimera_net::minigame_net::installed_by_all`). Its
@@ -68,7 +72,8 @@ pub struct Capabilities {
     pub movement: Option<&'static str>,
     pub characters: Option<&'static str>,
     pub hud: Option<&'static str>,
-    /// Its claimed maps, then its installed maps its `map_patterns` match.
+    /// Its claimed maps, then its installed maps (those its pool rules
+    /// allow: `report`).
     pub maps: Vec<String>,
     /// Claimed parts the app doesn't have (a gun not in the catalogue, an
     /// unregistered movement), in words.
@@ -86,7 +91,8 @@ impl Capabilities {
         Self::with_maps(parts, catalog, movements, &[])
     }
 
-    /// `of`, with the maps its install holds (`InstalledMaps::of`).
+    /// `of`, with the maps of its install that join its pool
+    /// (`InstalledMaps::of`, filtered by its rules: `report`).
     pub fn with_maps(
         parts: &GameParts,
         catalog: &WeaponCatalog,
@@ -130,7 +136,7 @@ impl Capabilities {
             ok
         });
         let mut maps: Vec<String> = parts.maps.iter().map(|m| m.to_string()).collect();
-        for name in installed.iter().filter(|n| parts.wants_map(n)) {
+        for name in installed {
             let id = format!("{}:{}", parts.game, name.to_ascii_lowercase());
             if !maps.contains(&id) {
                 maps.push(id);
@@ -177,9 +183,19 @@ pub fn report(world: &World) -> Vec<Capabilities> {
     let catalog = world.get_resource::<WeaponCatalog>().unwrap_or(&empty);
     let movements = world.get_resource::<MovementRegistry>();
     let installed = world.get_resource::<InstalledMaps>();
+    let none = super::map_fit::MapPool::default();
+    let pool = world.get_resource::<super::map_fit::MapPool>().unwrap_or(&none);
     registry
         .all()
-        .map(|p| Capabilities::with_maps(p, catalog, movements, installed.map_or(&[], |i| i.of(p.game))))
+        .map(|p| {
+            let maps: Vec<String> = installed
+                .map_or(&[][..], |i| i.of(p.game))
+                .iter()
+                .filter(|n| pool.has_rules(p.game) && pool.listed(p.game, n).is_ok())
+                .cloned()
+                .collect();
+            Capabilities::with_maps(p, catalog, movements, &maps)
+        })
         .collect()
 }
 
@@ -467,6 +483,28 @@ pub fn powers(caps: &[Capabilities], catalog: &WeaponCatalog, readers: &PowerRea
 /// Every map of the games in `caps` that `installed` says the players
 /// have, the games in turn; none: the greybox.
 pub fn map_pool(caps: &[Capabilities], installed: &dyn Fn(&str) -> bool) -> Vec<String> {
+    map_pool_for(caps, installed, None)
+}
+
+/// `map_pool` with `players` present: only the maps `pool` lets in at
+/// that count by `settings` (`map_fit::MapPool::judge`); None: every map.
+/// None let in: the greybox.
+pub fn map_pool_for(
+    caps: &[Capabilities],
+    installed: &dyn Fn(&str) -> bool,
+    players: Option<(&super::map_fit::MapPool, &super::map_fit::FitSettings, usize)>,
+) -> Vec<String> {
+    let mut out = every_map(caps, installed);
+    if let Some((pool, settings, n)) = players {
+        out.retain(|m| m == "greybox" || pool.judge(m, n, settings).weight() > 0.0);
+        if out.is_empty() {
+            out.push("greybox".into());
+        }
+    }
+    out
+}
+
+fn every_map(caps: &[Capabilities], installed: &dyn Fn(&str) -> bool) -> Vec<String> {
     let lists: Vec<&Vec<String>> = caps.iter().filter(|c| installed(c.game)).map(|c| &c.maps).collect();
     let longest = lists.iter().map(|l| l.len()).max().unwrap_or(0);
     let mut out = Vec::new();
@@ -487,7 +525,7 @@ pub fn map_pool(caps: &[Capabilities], installed: &dyn Fn(&str) -> bool) -> Vec<
 
 /// The maps each registered game's install holds (`GameInfo::map_names`,
 /// by game id), found once (`find_installed_maps`): `report` adds the
-/// ones a game's `map_patterns` match to its maps. Absent (a test, an
+/// ones a game's pool rules allow to its maps. Absent (a test, an
 /// app that never looked): claimed maps only.
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub struct InstalledMaps(pub Vec<(String, Vec<String>)>);
@@ -498,8 +536,9 @@ impl InstalledMaps {
     }
 }
 
-/// `InstalledMaps` from each registered game's install (mounted once;
-/// kept when already there).
+/// `InstalledMaps` from each registered game's install that has pool
+/// rules (`map_fit::MapPoolAppExt`; mounted once; kept when already
+/// there).
 pub fn find_installed_maps(world: &mut World) {
     if world.contains_resource::<InstalledMaps>() {
         return;
@@ -509,9 +548,10 @@ pub fn find_installed_maps(world: &mut World) {
         .map(|g| g.all().collect())
         .unwrap_or_default();
     let wanted = world.get_resource::<PartsRegistry>().cloned().unwrap_or_default();
+    let pool = world.get_resource::<super::map_fit::MapPool>().cloned().unwrap_or_default();
     let found = games
         .into_iter()
-        .filter(|g| wanted.get(g.id).is_some_and(|p| !p.map_patterns.is_empty()))
+        .filter(|g| wanted.get(g.id).is_some() && pool.has_rules(g.id))
         .filter_map(|g| Some((g.id.to_string(), (g.map_names)(&g.mount()?))))
         .collect();
     world.insert_resource(InstalledMaps(found));
@@ -858,25 +898,47 @@ mod tests {
         assert!(definition(&caps, &powers_of(&refs), &opts, &|_| false).is_err());
     }
 
+    static P: GameParts = GameParts {
+        game: "g",
+        guns: &[],
+        knife: None,
+        movement: None,
+        characters: None,
+        hud: None,
+        maps: &["g:de_one"],
+        announcer: None,
+        match_won_sound: None,
+        match_lost_sound: None,
+        music: false,
+        cues: None,
+    };
+
     #[test]
-    fn installed_maps_join_by_pattern() {
-        static P: GameParts = GameParts {
-            game: "g",
-            guns: &[],
-            knife: None,
-            movement: None,
-            characters: None,
-            hud: None,
-            maps: &["g:de_one"],
-            map_patterns: &["de_*"],
-            announcer: None,
-            match_won_sound: None,
-            match_lost_sound: None,
-            music: false,
-            cues: None,
-        };
+    fn installed_maps_join_unless_the_rules_deny_them() {
+        use crate::minigame::map_fit::MapPoolAppExt;
+        let mut app = App::new();
+        app.world_mut().get_resource_or_init::<PartsRegistry>().register(&P);
         let installed: Vec<String> = ["de_one", "DE_Two", "cs_three", "test_x"].iter().map(|s| s.to_string()).collect();
-        let c = Capabilities::with_maps(&P, &WeaponCatalog::default(), None, &installed);
-        assert_eq!(c.maps, ["g:de_one", "g:de_two"]);
+        app.insert_resource(InstalledMaps(vec![("g".into(), installed)]));
+        // No rules: the claimed maps only.
+        assert_eq!(report(app.world())[0].maps, ["g:de_one"]);
+        app.add_map_pool_rules("g", "test", "[[deny]]\nmaps = [\"test_*\"]\nreason = \"a test map\"");
+        assert_eq!(report(app.world())[0].maps, ["g:de_one", "g:de_two", "g:cs_three"]);
+    }
+
+    #[test]
+    fn the_pool_for_a_count_leaves_out_the_maps_too_big_for_it() {
+        use crate::minigame::map_fit::{FitSettings, MapPool, parse_fitness};
+        let mut c = guns("g", 2);
+        c.maps = vec!["g:tiny".into(), "g:huge".into(), "g:new".into()];
+        let mut pool = MapPool::default();
+        let fit = "[maps.tiny]\narea_m2 = 500\nsight_m = 8\nspawns = 8\nspots = 100\n\
+                   [maps.huge]\narea_m2 = 9000\nsight_m = 8\nspawns = 32\nspots = 5000\n";
+        pool.add_fitness("g", parse_fitness(fit).unwrap());
+        let s = FitSettings::shipped();
+        let caps = [c];
+        assert_eq!(map_pool(&caps, &|_| true), ["g:tiny", "g:huge", "g:new"], "no count: every map");
+        assert_eq!(map_pool_for(&caps, &|_| true, Some((&pool, &s, 4))), ["g:tiny", "g:new"]);
+        assert_eq!(map_pool_for(&caps, &|_| true, Some((&pool, &s, 12))), ["g:tiny", "g:huge", "g:new"]);
     }
 }

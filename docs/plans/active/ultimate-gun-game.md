@@ -54,11 +54,12 @@ part too.
 - Seeds: the apps take a fresh one at launch (printed), each rotation
   the next (`next_seed`) for a new ladder (`NextMatchHooks`); `ugg_new
   <seed>` replays one.
-- Pool: every installed game's maps (claimed, plus installed ones its
-  `map_patterns` match: CS:S's `de_*`/`cs_*`; Combat Arms' lobby maps
-  but HGOILRIG, claimed); none, the greybox. Rotation at random
-  (`rotation = "random"`), skipping the last 10 played
-  (`minigame::rotation::MapHistory`, the host's for its lifetime).
+- Pool: every installed game's maps (claimed, plus the installed ones
+  its data/map_pool.toml doesn't deny); none, the greybox. Rotation at
+  random (`rotation = "random"`), skipping the last 10 played
+  (`minigame::rotation::MapHistory`, the host's for its lifetime), drawn
+  by the players present (`minigame::map_fit`: maps too big for the
+  count out, the rest weighted; [map-pool-fitness.md](map-pool-fitness.md)).
 - The definition is text (`MinigameDef`), so the network carries it as it
   carries any minigame's (L3's manifest: id, hash, text); `identity =
   "weapon"`, `chimera:ladder`, the base game's binds/tick/bots, the kit

@@ -6,7 +6,10 @@
 //! file from the install the first time (`library::sound_clip`) and
 //! adding it to the map's `SoundBank`. Server sounds (hurt, grenade
 //! bounces) go out as `GameSound`, which a network server also sends to
-//! every client.
+//! every client. The sounds a server sends by entry name (server sounds,
+//! create sounds, a party host's air strike alarm) are made ready in
+//! every new bank, one put in place of another too (a listen server's
+//! map over the menu's).
 //!
 //! The effects master (`music::mix::CaVolumes::sound`, music_ambience.md
 //! 8) scales every sound here, a server sound by the machine that plays
@@ -160,13 +163,22 @@ pub fn play(
     volumes: Option<Res<crate::game::music::mix::CaVolumes>>,
     mut out: MessageWriter<PlaySound>,
     mut game: MessageWriter<GameSound>,
+    mut seen: Local<Option<usize>>,
 ) {
     let Some(mut bank) = bank else {
         sounds.clear();
         return;
     };
     let mount = data.mount();
-    if bank.is_added() {
+    // A new bank: one added, or one put in place of another (a map loaded
+    // over the menu's: a listen server started with a map, playtest
+    // 2026-11-13: its host never heard the air strike's siren, which the
+    // server plays by entry name). Not the bank this system saw last.
+    let alarm = CaSound::local(crate::game::special::devices::STRIKE_ALARM);
+    let fresh = bank.is_added()
+        || *seen != Some(std::sync::Arc::as_ptr(&bank.0) as usize)
+        || (bank.is_changed() && bank.0.entry(&alarm.entry()).is_none());
+    if fresh {
         files.0.clear();
         // Server sounds arrive by entry name: every client has them ready
         // (their radii as the server sends them, `rules::server_radii`).
@@ -180,7 +192,7 @@ pub fn play(
             }
             // ... and a party host's air strike alarm (`special::devices::
             // STRIKE_ALARM`, local), which the server sends by entry name.
-            ensure(&mut bank, &mut files, &mut lengths, mount, &CaSound::local(crate::game::special::devices::STRIKE_ALARM));
+            ensure(&mut bank, &mut files, &mut lengths, mount, &alarm);
         }
     }
     // The effects master (music_ambience.md 8): every effect, ambient
@@ -208,6 +220,7 @@ pub fn play(
             out.write(play);
         }
     }
+    *seen = Some(std::sync::Arc::as_ptr(&bank.0) as usize);
 }
 
 /// Make `s`'s bank entry, reading its file the first time (false: it

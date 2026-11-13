@@ -280,6 +280,20 @@ pub fn host_changelevel(world: &mut World, map: &str) -> Option<Result<Option<St
     hook(world, map)
 }
 
+/// What a host's `changelevel` with no map is in this app
+/// (`host_next_level`): set by an app part (`minigame_net`'s: the
+/// minigame's next match, its map drawn as a rotation's).
+#[derive(Resource, Clone, Copy)]
+pub struct HostNextLevel(pub fn(&mut World) -> Option<Result<Option<String>, String>>);
+
+/// A host's `changelevel` with no map as the app takes it
+/// (`HostNextLevel`); None: the command needs a map. The apps'
+/// `changelevel` commands ask this when given none.
+pub fn host_next_level(world: &mut World) -> Option<Result<Option<String>, String>> {
+    let hook = world.get_resource::<HostNextLevel>()?.0;
+    hook(world)
+}
+
 /// The owner id of the listen server's own player (`NetCharacter::owner`).
 /// Remote clients' ids are never 0.
 pub const HOST_ID: u64 = 0;

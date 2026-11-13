@@ -109,7 +109,9 @@
 //! stamina perks, the ammo's own stun, the "falling" sound status,
 //! stamina kits, jump stamina, the modes' actual `ModeSpeed` values
 //! (game-mode specs), maps' not-a-step surface flag (characters and
-//! moving bodies are not steps). The shape cast reports where it
+//! moving bodies are not steps; a world model node that never moves,
+//! `objects::CaFixedNode`, is one: JUNK_FLEA's stairs are in a world
+//! model its modes show and hide). The shape cast reports where it
 //! touched, not which cap: a stair-step drop or a standing probe that
 //! touches an edge above the hull's flat bottom is taken as the curved
 //! side (a level normal). Scale: the spec stays in world units and the
@@ -1222,6 +1224,7 @@ fn step(
     )>,
     characters: Query<(), With<Intent>>,
     bodies: Query<&RigidBody>,
+    fixed: Query<(), With<super::objects::CaFixedNode>>,
     collider_of: Query<&ColliderOf>,
     move_and_slide: MoveAndSlide,
     data: Res<MovementData>,
@@ -1240,10 +1243,13 @@ fn step(
     let now = clock.now;
     let first = first.is_none_or(|f| f.0);
     let is_character = |e: Entity| characters.contains(e);
-    // Characters and moving objects are never steps.
+    // Characters and moving objects are never steps; a world model that
+    // never moves (`objects::CaFixedNode`) is.
     let not_a_step = |e: Entity| {
         let body = collider_of.get(e).map_or(e, |c| c.body);
-        characters.contains(e) || characters.contains(body) || bodies.get(body).is_ok_and(|b| !b.is_static())
+        characters.contains(e)
+            || characters.contains(body)
+            || (bodies.get(body).is_ok_and(|b| !b.is_static()) && !fixed.contains(body))
     };
     // The pushers' clocks, once a tick for everyone.
     let mut active = Vec::new();

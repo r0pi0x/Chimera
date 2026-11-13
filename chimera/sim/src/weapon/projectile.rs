@@ -16,7 +16,8 @@
 //! `Flyer::solid_after`), and physics clips with `Flyer::meets_clips`; a flyer made during a tick first moves on the
 //! next. The server's (`core::authoritative`); clients draw it from the
 //! network's `NetItem` (its `ShownItem` and `Transform`, facing its
-//! flight), as thrown grenades.
+//! flight with its model's `Flyer::turn`, or tumbling by its
+//! `Flyer::spin`: `flyer_rotation`), as thrown grenades.
 //!
 //! Made by a game's `LaunchRequest` (an alt-fire, a rocket) or from a
 //! weapon's frame rounds: a weapon with `chimera:projectile`
@@ -170,6 +171,11 @@ pub struct Flyer {
     /// Its model's own turn before it faces its flight (`facing` puts −Z
     /// along it; a Source model's nose is its +X: `MODEL_X_FORWARD`).
     pub turn: Quat,
+    /// A tumbling flyer's spin, rad/s about its own axes (HL2's SMG1
+    /// grenade): it faces its launch once (`turn` too) and then turns
+    /// by this instead of following its flight. Zero: it faces its
+    /// flight.
+    pub spin: Vec3,
 }
 
 /// How a flyer ends on the sky: the line ahead that finds it (m), and
@@ -215,6 +221,7 @@ impl Flyer {
             sky_end: None,
             last_hit: None,
             turn: Quat::IDENTITY,
+            spin: Vec3::ZERO,
         }
     }
 }
@@ -531,6 +538,17 @@ pub fn facing(dir: Vec3) -> Quat {
     Transform::IDENTITY.looking_to(dir, up).rotation
 }
 
+/// Flyer `f`'s rotation after a step of `dt` s along `dir` (unit): facing
+/// its flight with its model's turn, or a tumbling one's (`Flyer::spin`)
+/// turned on from `now` by its spin.
+pub fn flyer_rotation(f: &Flyer, now: Quat, dir: Vec3, dt: f32) -> Quat {
+    if f.spin != Vec3::ZERO {
+        (now * Quat::from_scaled_axis(f.spin * dt)).normalize()
+    } else {
+        facing(dir) * f.turn
+    }
+}
+
 /// The reflection of `v` on a surface of normal `n`.
 pub fn reflect(v: Vec3, n: Vec3) -> Vec3 {
     v - 2.0 * v.dot(n) * n
@@ -815,7 +833,7 @@ fn fly(
         let Ok(dir) = Dir3::new(step) else { continue };
         if clock.now < f.solid_after - 1e-6 {
             t.translation += step;
-            t.rotation = facing(*dir) * f.turn;
+            t.rotation = flyer_rotation(&f, t.rotation, *dir, dt);
             continue;
         }
         let from = t.translation;
@@ -886,7 +904,7 @@ fn fly(
         let Some((distance, normal, collider)) = hit else {
             t.translation += step;
             if f.velocity.length_squared() > 0.0 {
-                t.rotation = facing(f.velocity.normalize()) * f.turn;
+                t.rotation = flyer_rotation(&f, t.rotation, f.velocity.normalize(), dt);
             }
             continue;
         };
@@ -975,7 +993,7 @@ fn fly(
             }
         }
         if f.velocity.length_squared() > 0.0 {
-            t.rotation = facing(f.velocity.normalize()) * f.turn;
+            t.rotation = flyer_rotation(&f, t.rotation, f.velocity.normalize(), dt);
         }
         world.hits.write(FlyerHit {
             flyer: e,

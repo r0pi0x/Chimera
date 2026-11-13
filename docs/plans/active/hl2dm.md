@@ -24,7 +24,7 @@ Goals, in the order they land:
    Game's ladder (`chimera_sim::minigame::auto`), with the identity
    following the gun (`chimera_sim::identity`): HL2:DM's movement, its
    bodies and its HUD while an HL2:DM gun is in hand; its maps in the
-   pool (`GameParts::maps`, `map_patterns`). Lucker Party is shelved
+   pool (`GameParts::maps`, its data/map_pool.toml). Lucker Party is shelved
    (backlog, 2026-10-31): it gets HL2:DM only through `party_kit`, with
    no work of its own.
 2. **Its own app for parity play** (`apps/hl2dm`, `apps/hl2dm_server`):

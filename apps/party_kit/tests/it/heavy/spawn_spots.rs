@@ -7,7 +7,8 @@
 //! havana's clipped yard, de_port's roofs), none a standing player is
 //! stuck in (the box, not a capsule, and the player clips), and at most
 //! `OFF_REGION_SHARE` of them (or `OFF_REGION_FEW`) off the main region.
-//! Prints each map's counts (`--nocapture`). Passes with a note without
+//! Prints each map's counts (`--nocapture`); `CHIMERA_SPAWN_SPOTS=<text>`
+//! checks only the maps whose id has the text. Passes with a note without
 //! the CS:S and Combat Arms installs; a game not installed is skipped.
 
 use bevy::prelude::*;
@@ -53,8 +54,10 @@ fn spawn_spots_are_on_every_pool_maps_floors() {
         eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
         return;
     }
-    let pool = pool();
-    assert!(pool.len() >= 4, "{pool:?}");
+    // `CHIMERA_SPAWN_SPOTS=<text>`: only the pool's maps whose id has it.
+    let only = std::env::var("CHIMERA_SPAWN_SPOTS").ok();
+    let pool: Vec<String> = pool().into_iter().filter(|m| only.as_ref().is_none_or(|o| m.contains(o.as_str()))).collect();
+    assert!(only.is_some() || pool.len() >= 4, "{pool:?}");
     let context = LoadContext::default();
     let mut bad = Vec::new();
     for id in &pool {

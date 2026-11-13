@@ -24,6 +24,8 @@
 //! no radars unless `hud_radar 1` (`PartyHudPlugin`); with
 //! `party_swap_effect 1` (default 0) a short flash when the local
 //! player's gun changes game, a puff at others' (`client::swap_effect`).
+//! Number keys switch weapons at once under every game's HUD
+//! (`hl2_fast_switch`; CS:S's `hud_fastswitch` is 1 by default).
 //! The Escape menu is the party's own (`esc_menu`), titled by the app;
 //! `start_at_menu` starts an app at the main menu (`main_menu`) over the
 //! first of its background maps that loads.
@@ -105,7 +107,7 @@ pub fn front_end(app: &mut App, _: &Args) {
         .add_plugins(chimera_client::client::minigame_scoreboard::MinigameScoreboardPlugin)
         // `party_swap_effect` (default 0): a flash on a rung's swap.
         .add_plugins(chimera_client::client::swap_effect::SwapEffectPlugin)
-        .add_systems(Startup, (guest_names, mount_doctor))
+        .add_systems(Startup, (guest_names, mount_doctor, hl2_fast_switch))
         .add_systems(Update, sync_gun_names);
     // The rest of each guest's front end (CS:S's: the map's HUD look
     // is its, and what its bodies play for a player holding its gun,
@@ -117,6 +119,23 @@ pub fn front_end(app: &mut App, _: &Args) {
     }
     // Combat Arms' other looks.
     app.add_plugins(combat_arms::ui::CaUiPlugin);
+}
+
+/// Number keys switch weapons at once in the party (the user's choice):
+/// CS:S's `hud_fastswitch` is 1 by default in every app
+/// (`cs_source::ui::weapon_select::FastSwitch`); HL2:DM's HUD has its own,
+/// `hl2dm:hud_fastswitch` (0 in HL2:DM, as in its game; not saved), set
+/// to 1 here and made its default.
+fn hl2_fast_switch(
+    cvars: Option<ResMut<hl2dm::ui::systems::HudCvars>>,
+    console: Option<ResMut<chimera_core::console::Console>>,
+) {
+    if let Some(mut c) = cvars {
+        c.fastswitch = 1;
+    }
+    if let Some(mut c) = console {
+        c.set_default("hl2dm:hud_fastswitch", "1");
+    }
 }
 
 /// The party's HUD settings over both games' HUDs: one kill feed, the

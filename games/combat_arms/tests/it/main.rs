@@ -95,6 +95,7 @@ mod heavy {
     mod attributes;
     mod body_skins;
     mod rung_attachments;
+    mod attachment_fit;
     mod bots;
     mod characters;
     mod effects_sounds;
@@ -117,6 +118,7 @@ mod heavy {
     mod options;
     mod props;
     mod scopes;
+    mod stairs;
     mod served;
     mod radio;
     mod radar;

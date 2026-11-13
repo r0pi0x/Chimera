@@ -83,7 +83,8 @@ const CVARS: [(&str, &str); 19] = [
     ("chimera_resolution", ""),
     ("chimera_rounds", "1"),
     ("bot_reaction", "0.35"),
-    ("hud_fastswitch", "0"),
+    // Ours by default (CS:S's own is 0).
+    ("hud_fastswitch", "1"),
     ("con_enable", "1"),
     ("cl_autowepswitch", "1"),
     ("hud_centerid", "1"),
@@ -1019,22 +1020,23 @@ fn the_keyboard_tabs_advanced_dialog() {
     let rows = m.rows();
     let labels: Vec<String> = rows.iter().map(label_of).collect();
     assert_eq!(labels, ["Fast weapon switch", "Enable developer console", "OK", "Cancel"]);
-    assert!(matches!(&rows[0], Row::Control { control: Control::Check(false), .. }), "{:?}", rows[0]);
+    // Fast switch is on by default (ours).
+    assert!(matches!(&rows[0], Row::Control { control: Control::Check(true), .. }), "{:?}", rows[0]);
     assert_eq!(m.focus, 0);
     let o = press(&mut m, &[Input::Space]);
-    assert_eq!(o.lines, ["hud_fastswitch 1"]);
+    assert_eq!(o.lines, ["hud_fastswitch 0"]);
     let o = press(&mut m, &[Input::Click(Target::Row(1), 0)]);
     assert_eq!(o.lines, ["con_enable 0"]);
     // Cancel: both back.
     let o = press(&mut m, &[Input::Click(Target::Row(3), 0)]);
-    assert_eq!(o.lines, ["hud_fastswitch 0", "con_enable 1"]);
+    assert_eq!(o.lines, ["hud_fastswitch 1", "con_enable 1"]);
     assert_eq!((m.page, m.tab, m.focus), (Page::Settings, Tab::Keyboard, at));
     // Enter on the check box: OK, the default button, keeps it.
     press(&mut m, &[Input::Activate, Input::Space]);
     let o = press(&mut m, &[Input::Activate]);
     assert!(o.lines.is_empty());
     assert_eq!(m.page, Page::Settings);
-    assert_eq!(m.values[setting_index("hud_fastswitch").unwrap()].as_deref(), Some("1"));
+    assert_eq!(m.values[setting_index("hud_fastswitch").unwrap()].as_deref(), Some("0"));
     // Esc on the dialog cancels it, leaving the options open.
     press(&mut m, &[Input::Activate, Input::Focus(1), Input::Space]);
     let o = press(&mut m, &[Input::Close]);

@@ -1773,6 +1773,9 @@ impl Plugin for CaWeaponsPlugin {
     fn build(&self, app: &mut App) {
         power::plugin(app);
         harm::plugin(app);
+        // Its map pool's rules and measurements (beside the draw's
+        // exclusions: what an automatic gun game takes of it).
+        super::parts::add_map_pool(app);
         app.register_weapon_hook::<DamageParams>(DAMAGE, |e, d: &'static WeaponData, p| {
             let mut dmg = CaDamage::new(p, d.units.length, d.units.damage);
             if p.reload_third_person.is_none() {

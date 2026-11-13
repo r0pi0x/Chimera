@@ -81,11 +81,16 @@ pub fn region(nav: &NavMesh, feet: &[Vec3]) -> (Vec<bool>, Vec<Option<usize>>) {
     (f.iter().zip(&b).map(|(a, b)| *a && *b).collect(), starts)
 }
 
-/// The bots' generated mesh of the loaded map (Combat Arms' walker,
-/// bounded where the map has visibility data), from the `feet`, meeting
-/// the player clips (the played space: the bots' own walk passes them).
+/// The bots' generated mesh of the loaded map (Combat Arms' walker, its
+/// box sliding to fit a doorway, bounded where the map has visibility
+/// data), from the `feet`, meeting the player clips (the played space:
+/// the bots' own walk passes them).
 pub fn bots_mesh(world: &mut World, feet: &[Vec3]) -> NavMesh {
-    let p = combat_arms::game::bots::brain::nav_params();
+    // Fitting doorways as the spots' walker does (`NavGenParams::slide`,
+    // half its radius): else a gap the spots' walk takes and the grid's
+    // centres miss leaves spots off a region they are on (gg_lego_mafia_arena).
+    let mut p = combat_arms::game::bots::brain::nav_params();
+    p.slide = p.radius / 2.0;
     let clips = PlayerClips::of(world);
     let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
     let mut state = SystemState::<SpatialQuery>::new(world);

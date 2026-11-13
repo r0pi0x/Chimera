@@ -33,7 +33,12 @@
 //!   (`ON`) and start triggers (`TRIGGER`), then the round's; at round
 //!   over the round's end triggers; at round end the mission's
 //!   (`missions::map_messages`, the stock maps' `LevelNNStartTrigger` /
-//!   `LevelNNEndTrigger`), as `objects::CaObjectMessage`s.
+//!   `LevelNNEndTrigger`), as `objects::CaObjectMessage`s. Under other
+//!   rules (a party's minigame) on a Combat Arms map, each mission start
+//!   sends the start messages of the map's Arms Race, Free for All or
+//!   Team Deathmatch mission (`other_rules_map_messages`, ours), so the
+//!   map's mode objects are set up as for a mode without objectives
+//!   (JUNK_FLEA's Quarantine world model hidden).
 //! - The warm-up (S9, `CaMode::warmup`): the match's first round, nothing
 //!   counts, no winner; the dead revived every `warmup_revive` s in the
 //!   modes that do (`CaMode::warmup_revives`).
@@ -112,6 +117,54 @@ pub(super) fn number_players(add: On<Add<Team>>, mut next: Local<u64>, mut comma
     if let Ok(mut e) = commands.get_entity(add.entity) {
         e.try_insert(CaJoinOrder(*next));
     }
+}
+
+/// The room keys whose mission sets a Combat Arms map's objects up for a
+/// match under other rules (`other_rules_map_messages`), the first the
+/// map has: Arms Race (the gun game's own counterpart), Free for All,
+/// Team Deathmatch. None of them plays a mode object.
+pub const OTHER_RULES_MISSIONS: &[&str] = &["VWRM", "FFA", "TDM"];
+
+/// A match whose rules aren't Combat Arms' (a party's minigame) on a
+/// Combat Arms map: at each mission start the map's objects get the
+/// start messages of the first of `OTHER_RULES_MISSIONS` the map has a
+/// mission for (game_modes.md S15: its start triggers switch every other
+/// mode's objects off: capture the flag's bases, bomb sites' markers,
+/// the props and hide-triggers of the modes the map was made for), as
+/// Combat Arms' own mission start sends its mode's (ours: the spec's
+/// game always plays a mode of its own). Nothing without the install's
+/// missions.
+pub(super) fn other_rules_map_messages(step: On<crate::mode::ModeStep>, mut commands: Commands) {
+    if step.0 != FlowEvent::MissionStart {
+        return;
+    }
+    commands.queue(|world: &mut World| {
+        let ours = world.get_resource::<crate::gameplay::Gameplay>().is_none_or(|g| g.rules == super::super::GAME);
+        if ours || !world.contains_resource::<Messages<CaObjectMessage>>() {
+            return;
+        }
+        let Some(map) = world
+            .get_resource::<crate::map::MapFile>()
+            .and_then(|m| m.name.strip_prefix(super::super::world::MAP_PREFIX).map(str::to_lowercase))
+        else {
+            return;
+        };
+        let data = world.get_resource_or_insert_with(super::super::data::CaData::default).clone();
+        let Some(index) = data.missions().map(|m| &m.index) else { return };
+        let Some((key, mission)) = OTHER_RULES_MISSIONS.iter().find_map(|k| index.find(&map, k).map(|m| (*k, m))) else {
+            return;
+        };
+        info!("{map}: the map's objects as for {key} ({})", mission.path);
+        let object = mission.object();
+        for step in [missions::MapStep::MissionStart, missions::MapStep::RoundSetup] {
+            for (target, message) in mission.map_messages(step, &object) {
+                world.write_message(CaObjectMessage {
+                    target,
+                    message: message.into(),
+                });
+            }
+        }
+    });
 }
 
 /// Every character on the server that is no bot and not connecting, the

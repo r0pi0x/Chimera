@@ -1161,6 +1161,62 @@ fn merged_accepts(ours: &str, weapons: &str, mods: &str) -> Vec<toml::Value> {
     t["hooks"]["combat_arms:attachments"]["accepts"].as_array().unwrap().clone()
 }
 
+/// A part's offsets copied from another class of gun's records (the
+/// install's `Glock_23_Champion` carries the L96A1's, putting its
+/// silencer half a metre ahead of the pistol): the skin takes those its
+/// own model's other records carry (`data::model_part_offsets`). A
+/// record's own offsets that no other model carries stay (`Glock_23_D`'s
+/// third-person ones), and so do another pistol's (the same class).
+#[test]
+fn a_skins_part_offsets_copied_from_another_class_are_its_models() {
+    let gun = |name: &str, class: i32, model: &str, pv: &str, hh: &str| {
+        format!(
+            r#"Name="{name}" AmmoName0="a" Guntype={class} PVModelNormal="{model}.ltb" HHModel="HH_{model}.ltb" MuzzlePVPosOff={pv} MuzzleHHPosOff={hh}"#
+        )
+    };
+    let (glock, glock_hh) = ("<-0.01, 0.03, -0.7>", "<-0.2, 0, -49.8>");
+    let (rifle, rifle_hh) = ("<0, 0, 4>", "<0, 0, -50.5>");
+    let (usp, usp_hh) = ("<0.05, 0.02, -0.6>", "<0.1, 0, -48>");
+    let records = [
+        gun("Glock", 1, "G23", glock, glock_hh),
+        gun("Glock_D", 1, "G23", glock, "<-0.2, 0.1, -50>"),
+        gun("L96", 4, "L96", rifle, rifle_hh),
+        gun("L96_Desert", 4, "L96", rifle, rifle_hh),
+        gun("Glock_Champion", 1, "G23", rifle, rifle_hh),
+        gun("Glock_Org", 1, "G23", glock, glock_hh),
+        gun("USP", 1, "USP", usp, usp_hh),
+        gun("USP_Gold", 1, "USP", usp, usp_hh),
+        gun("Glock_Usp", 1, "G23", usp, usp_hh),
+    ];
+    let text = records
+        .iter()
+        .enumerate()
+        .fold(String::from(r#"[Ammo0] Name="a" "#), |t, (i, r)| t + &format!("[Weapon{i}] {r} "));
+    let w = WeaponsFile::read(&Document::parse(text.as_bytes()).unwrap()).unwrap();
+    let names = ["glock_champion", "glock_d", "l96_desert", "glock_usp"];
+    let ours: Vec<String> = names.iter().map(|n| our_doc(n)).collect();
+    let refs: Vec<(&str, &str)> = ours.iter().map(|t| ("ours.toml", t.as_str())).collect();
+    let docs = merge_weapon_docs_with_mods(&refs, &w, None, 0.018).unwrap();
+    let offsets = |id: &str| {
+        let t: toml::Table = docs
+            .iter()
+            .map(|(_, t)| t.parse::<toml::Table>().unwrap())
+            .find(|t| t["id"].as_str() == Some(&format!("combat_arms:{id}")))
+            .unwrap();
+        let o = &t["hooks"]["combat_arms:attachments"]["part_offsets"];
+        let pos = |k: &str| o[k]["pos"].as_array().unwrap().iter().map(|v| v.as_float().unwrap() as f32).collect::<Vec<_>>();
+        (pos("muzzle_pv"), pos("muzzle_hh"))
+    };
+    // The champion's: its model's (the most records' of G23), first and
+    // third person.
+    assert_eq!(offsets("glock_champion"), (vec![-0.01, 0.03, -0.7], vec![-0.2, 0.0, -49.8]));
+    // Glock_D's own third-person offsets are no other model's: kept.
+    assert_eq!(offsets("glock_d"), (vec![-0.01, 0.03, -0.7], vec![-0.2, 0.1, -50.0]));
+    assert_eq!(offsets("l96_desert"), (vec![0.0, 0.0, 4.0], vec![0.0, 0.0, -50.5]));
+    // Another pistol's offsets on a pistol: kept.
+    assert_eq!(offsets("glock_usp"), (vec![0.05, 0.02, -0.6], vec![0.1, 0.0, -48.0]));
+}
+
 const INSTALL_WEAPONS: &str = r#"[Ammo0] Name="a" [Weapon0] Name="Other" AmmoName0="a" [Weapon1] Name="M6A2_Event" AmmoName0="a""#;
 
 /// 36 (the install's file): the modification file one record short: the

@@ -1,0 +1,11 @@
+# CS:S maps an automatic gun game's pool leaves out (the Ultimate Gun Game:
+# chimera_sim::minigame::map_fit; docs/plans/active/map-pool-fitness.md).
+# Every other installed map joins the pool, drawn by the players present
+# (data/map_fitness.toml). Each entry: map names (`*` matches any run of
+# letters) and why. `[[allow]]` entries win over `[[deny]]` and over the
+# measurements' flags (a map the numbers can't judge); the count's rule
+# still applies. The `map_pool` console command shows the pool at a count.
+
+[[deny]]
+reason = "a course or minigame map, not a deathmatch"
+maps = ["bhop_*", "kz_*", "surf_*", "mg_*", "test_*"]

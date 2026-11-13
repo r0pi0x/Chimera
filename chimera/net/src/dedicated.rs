@@ -460,9 +460,14 @@ impl Plugin for ServerPlugin {
             "changelevel",
             &format!(
                 "changelevel <map>: move the server and its players to another map ({maps}); in a party app, the \
-                 minigame's next match there (its lobby)."
+                 minigame's next match there (its lobby); with no map, its next match as a rotation's."
             ),
-            |w, a| change_level(w, a.first().ok_or("changelevel <map>")?),
+            |w, a| match a.first() {
+                Some(m) => change_level(w, m),
+                // A party app's minigame: its next match, the map drawn
+                // as a rotation's (for the players present).
+                None => net::host_next_level(w).unwrap_or(Err("changelevel <map>".into())),
+            },
         )
         .console_command(
             "map",

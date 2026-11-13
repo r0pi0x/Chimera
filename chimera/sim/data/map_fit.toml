@@ -1,0 +1,42 @@
+# A minigame's map pool by player count (chimera_sim::minigame::map_fit;
+# docs/plans/active/map-pool-fitness.md), for a definition with
+# `map_fit = true` (or `rotation = "random"` and no `map_fit`); a
+# definition tunes any key with `map_fit = { target_s = 8 }`. At every map
+# change the host counts the characters present (humans and bots), N, and
+# works out each map's `wander_N` from its measurements (each game's
+# data/map_fitness.toml): N players wandering blind meet like a gas's
+# molecules collide, a player's next meeting on average
+# area / ((N - 1) * 2 * sight * 4/pi * speed) seconds away.
+
+# The longest wander_N (s) a map may take at N players: over it, the map is
+# out of that round's draw. 10 s: a leader needs a kill about every 20 s
+# for a five-minute match, and wins about half its fights.
+target_s = 10
+# Small maps are always in, whatever the count (chaos welcome): a walkable
+# area of at most `small_m2` m2, or a wander at 4 players of at most
+# `chaos_s` s.
+small_m2 = 1500
+chaos_s = 3
+# Maps the numbers can't judge are out unless a game's data/map_pool.toml
+# allows them: a walkable area over `look_area_m2` m2 (a leak or open
+# terrain), or `look_off_share` or more of its spawn spots off the map.
+look_area_m2 = 15000
+look_off_share = 0.05
+# The wander model's constants: one run speed for every game (CS:S's
+# 250 units/s, m/s) and the longest sight counted (m; the measurement's
+# own cap).
+speed_mps = 6.35
+sight_cap_m = 50
+
+# The draw's weight by wander_N (s): [seconds, weight] points, straight
+# between them, flat beyond the ends. Best fit 4-8 s to meet; quicker is
+# hectic, slower drags.
+weights = [[0, 0.2], [2, 0.3], [4, 1.0], [8, 1.0], [10, 0.5]]
+# A small map's weight is this share of the curve's: the tiny chaos maps
+# come up as a surprise now and then rather than every other map (with
+# the 2026-11-13 sweep's pool: about 13% of draws at 4 players, 6% at 8,
+# 9% at 12).
+small_scale = 0.25
+# A map with no measurements (installed after the data was made): in at
+# this weight, said in the log once.
+unknown_weight = 0.5

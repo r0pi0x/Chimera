@@ -135,7 +135,15 @@ fn a_grenade_rung_gives_grenades_until_a_kill_which_climbs() {
 fn a_rotation_picks_a_fresh_map_with_a_new_ladder() {
     let mut sim = ugg();
     minigame::start(sim.app.world_mut(), MINIGAME).expect("the automatic gun game starts");
-    let pool = sim.app.world().resource::<Minigames>().get(MINIGAME).unwrap().maps.clone();
+    let def = sim.app.world().resource::<Minigames>().get(MINIGAME).unwrap();
+    // The maps the draw lets in for the characters present (none: as
+    // two; `map_fit`): the small ones.
+    let settings = chimera_sim::minigame::map_fit::FitSettings::of(def).unwrap().expect("drawn by the count");
+    let maps = sim.app.world().resource::<chimera_sim::minigame::map_fit::MapPool>().clone();
+    let present = chimera_sim::minigame::map_fit::present(sim.app.world());
+    let pool: Vec<String> =
+        def.maps.iter().filter(|m| maps.judge(m, present, &settings).weight() > 0.0).cloned().collect();
+    assert!(pool.len() >= 2, "{}", maps.lines(&def.maps, present, &settings));
     let mut seed = SEED;
     let mut ladder = rungs(sim.app.world());
     let mut here = "chimera:greybox".to_string();

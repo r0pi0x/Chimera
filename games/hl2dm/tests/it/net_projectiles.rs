@@ -210,6 +210,67 @@ fn the_trip_mine_is_drawn_on_the_client() {
     rounds_agree(&mut sim, weapons::SLAM, gun);
 }
 
+/// The server's flyers of `weapon`: (moves made, rotation, velocity).
+fn flyers(sim: &mut NetSim, weapon: &str) -> Vec<(u32, Quat, Vec3)> {
+    use chimera_sim::weapon::projectile::Flyer;
+    let w = sim.server.app.world_mut();
+    w.query::<(&Flyer, &Transform)>()
+        .iter(w)
+        .filter(|(f, _)| f.weapon == weapon)
+        .map(|(f, t)| (f.ticks, t.rotation, f.velocity))
+        .collect()
+}
+
+/// The SMG1's grenade isn't drawn side-on to its flight (the playtest of
+/// 2026-11-13 saw it fly sideways: its model's nose, +X, stood across the
+/// flight): it leaves nose first along the launch and tumbles (4.1: a
+/// random spin on each axis), the client drawing the server's turn.
+#[test]
+fn the_smg1_grenade_leaves_nose_first_and_tumbles() {
+    let mut sim = joined();
+    arm(&mut sim, weapons::SMG1, 2, 0.0);
+    let mut first: Option<(Quat, Vec3)> = None;
+    let mut turns = Vec::new();
+    for k in 0..40 {
+        client_intent(&mut sim).secondary = k < 2;
+        sim.step();
+        for (ticks, r, v) in flyers(&mut sim, weapons::SMG1) {
+            if ticks == 0 && first.is_none() {
+                first = Some((r, v));
+            }
+            turns.push(r);
+        }
+    }
+    let (r, v) = first.expect("the grenade's launch seen");
+    let nose = r * Vec3::X;
+    assert!(nose.angle_between(v).to_degrees() < 3.0, "nose {nose:?} along the launch {v:?}");
+    assert!(
+        turns.windows(2).filter(|w| w[0].angle_between(w[1]) > 1e-3).count() > 3,
+        "it tumbles: {turns:?}"
+    );
+}
+
+/// The RPG's missile noses along its flight (its model's +X), on the
+/// server and as the client draws it.
+#[test]
+fn the_rpg_missile_noses_along_its_flight() {
+    let mut sim = joined();
+    arm(&mut sim, weapons::RPG, 3, 0.0);
+    let mut checked = 0;
+    for k in 0..60 {
+        client_intent(&mut sim).fire = k < 2;
+        sim.step();
+        for (_, r, v) in flyers(&mut sim, weapons::RPG) {
+            if v.length() > 1.0 {
+                let nose = r * Vec3::X;
+                assert!(nose.angle_between(v).to_degrees() < 3.0, "nose {nose:?} vs flight {v:?}");
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 5, "the missile flew: {checked}");
+}
+
 /// A bolt's nose (its model's +Y) points along its flight on the client's
 /// drawn copy, and stuck in the wall it stays that way (and matches the
 /// server's flyer).
