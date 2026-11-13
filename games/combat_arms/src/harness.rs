@@ -1,8 +1,8 @@
 //! Combat Arms on the engine's headless harness
 //! (`chimera_world::harness::Sim`), for its scenario tests and tools:
 //! `CaSim`, the base they build on, as CS:S's `CsSim` is its tests'.
-//! `Sim::new(CaSim, GreyboxMapPlugin)`. `ladder_bodies_in`: a match's
-//! ladder's bodies loaded ahead (where the front end loads them).
+//! `Sim::new(CaSim, GreyboxMapPlugin)`. `ladder_models_in`: a match's
+//! ladder's models loaded ahead (where the front end loads them).
 
 use bevy::prelude::*;
 
@@ -48,31 +48,51 @@ pub fn with_mode(world: &mut World, mode: &str) {
 }
 
 
-/// Tick `sim` until the match's ladder's bodies are in (`characters::
-/// preload::ladder_bodies_waiting` empty for `settle` ticks in a row: every
-/// one that can arrive has), at most `cap`; returns the bodies whose load
-/// failed (an install without the body's file, each with its reason).
-/// Panics naming the bodies still waiting at the cap: a body that should
-/// arrive and didn't.
-pub fn ladder_bodies_in(
+/// Tick `sim` until the match's ladder's models are in: its bodies, held
+/// and view models (`characters::preload::ladder_bodies_waiting` and
+/// `ladder_keys_waiting` empty for `settle` ticks in a row: every one that
+/// can arrive has), at most `cap`; returns those whose load failed (an
+/// install without the file), each with its reason. Panics naming the
+/// models still waiting at the cap: one that should arrive and didn't.
+pub fn ladder_models_in(
     sim: &mut chimera_world::harness::Sim,
     settle: u32,
     cap: std::time::Duration,
-) -> Vec<(i32, String)> {
-    use crate::game::characters::{bodies_on_demand::BodiesOnDemand, preload::ladder_bodies_waiting};
+) -> Vec<String> {
+    use crate::game::characters::{
+        bodies_on_demand::BodiesOnDemand,
+        held_on_demand::HeldOnDemand,
+        preload::{LadderModels, ladder_bodies_waiting, ladder_keys_waiting},
+    };
     let started = std::time::Instant::now();
     let mut settled = 0;
     while settled < settle {
-        let waiting = ladder_bodies_waiting(sim.app.world());
-        settled = if waiting.is_empty() { settled + 1 } else { 0 };
+        let w = sim.app.world();
+        let bodies = ladder_bodies_waiting(w);
+        let keys = ladder_keys_waiting(w);
+        settled = if bodies.is_empty() && keys.is_empty() { settled + 1 } else { 0 };
         assert!(
             started.elapsed() < cap,
-            "the ladder's bodies {waiting:?} (body records) never came in within {cap:?}: neither a loaded group \
-             has them nor did their load fail (`ladder_bodies_waiting`)"
+            "the ladder's models never came in within {cap:?}: bodies {bodies:?} (records), {keys:?}; neither \
+             loaded nor failed (`ladder_bodies_waiting`, `ladder_keys_waiting`)"
         );
         sim.ticks(1);
     }
-    let failed = sim.app.world().get_resource::<BodiesOnDemand>().map(|b| b.failed().clone()).unwrap_or_default();
-    let ladder = sim.app.world().resource::<crate::game::characters::preload::LadderModels>();
-    failed.into_iter().filter(|(id, _)| ladder.bodies.contains(id)).collect()
+    let w = sim.app.world();
+    let ladder = w.resource::<LadderModels>();
+    let mut failed = Vec::new();
+    if let Some(b) = w.get_resource::<BodiesOnDemand>() {
+        failed.extend(b.failed().iter().filter(|(id, _)| ladder.bodies.contains(id)).map(|(id, e)| format!("body {id}: {e}")));
+    }
+    if let Some(h) = w.get_resource::<HeldOnDemand>() {
+        failed.extend(h.failed().iter().filter(|(k, _)| ladder.keys.contains(k)).map(|(k, e)| format!("held {k}: {e}")));
+    }
+    let context = w.get_resource::<crate::map::LoadContext>();
+    let ca = context.map_or_else(crate::game::data::CaData::install, crate::game::data::CaData::install_for);
+    for k in &ladder.keys {
+        if let Some(Err(e)) = crate::game::view_model::on_demand::cached(&ca, k) {
+            failed.push(format!("view {k}: {e}"));
+        }
+    }
+    failed
 }

@@ -11,10 +11,11 @@
 //! (`--nocapture`). Passes with a note without the installs.
 //!
 //! One test a map (de_dust2, warehouse, dm_lockdown), each a ladder on that
-//! map alone (8-12 s; the wait for the ladder's bodies, `combat_arms::
-//! harness::ladder_bodies_in`, ends when every one that can arrive has, and
-//! fails naming any that never did: it waited for stock bodies that never
-//! load on demand, 240 s every play), and one for the order: de_dust2, a swap to warehouse (not played), de_dust2
+//! map alone (8-13 s; the wait for the ladder's bodies, held and view
+//! models, `combat_arms::harness::ladder_models_in`, ends when every one
+//! that can arrive has, and fails naming any that never did: it waited for
+//! stock bodies that never load on demand, 240 s every play), and one for
+//! the order: de_dust2, a swap to warehouse (not played), de_dust2
 //! played again, which holds what it did the first time. This was one test
 //! of four maps in a row, about 17 minutes; the four now take 8-26 s.
 
@@ -52,11 +53,12 @@ fn play(sim: &mut Sim, seed: u64) {
     let w = sim.app.world_mut();
     generate(w, seed, RUNGS).expect("a ladder");
     minigame::start(w, MINIGAME).expect("the match starts");
-    // Every body that can arrive (a stock group's, or loaded on demand),
-    // then 120 ticks for them to be drawn; a body that never comes fails.
-    let failed = combat_arms::harness::ladder_bodies_in(sim, 120, std::time::Duration::from_secs(240));
+    // Every body, held and view model that can arrive (the map's, or loaded
+    // on demand), then 120 ticks for them to be drawn; one that never comes
+    // fails.
+    let failed = combat_arms::harness::ladder_models_in(sim, 120, std::time::Duration::from_secs(240));
     if !failed.is_empty() {
-        eprintln!("the ladder's bodies that didn't load (the install lacks them): {failed:?}");
+        eprintln!("the ladder's models that didn't load: {failed:?}");
     }
     let ladder = sim.app.world().resource::<Ladder>().clone();
     let bots: Vec<Entity> = {

@@ -65,8 +65,8 @@ fn a_ladders_rungs_stay_under_the_limit() {
     }
     minigame::start(sim.app.world_mut(), MINIGAME).expect("the automatic gun game starts");
     // What the ladder loads ahead (a body's 0.5-1 s on a thread each): every
-    // body that can arrive, then bodies drawn for 300 ticks.
-    combat_arms::harness::ladder_bodies_in(&mut sim, 30, std::time::Duration::from_secs(240));
+    // body, held and view model that can arrive, then bodies drawn for 300 ticks.
+    combat_arms::harness::ladder_models_in(&mut sim, 30, std::time::Duration::from_secs(240));
     let started = std::time::Instant::now();
     let mut settled = 0;
     while settled < 300 {

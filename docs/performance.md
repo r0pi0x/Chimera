@@ -3107,8 +3107,11 @@ bound every after-push run; it is now one test a map and one for the order
 (de_dust2, a swap to warehouse, de_dust2 again: two plays), 8-26 s each (a
 play waited the whole 240 s for the ladder's stock bodies 0 and 9, which a
 map's own group has and nothing loads on demand; the wait,
-`combat_arms::harness::ladder_bodies_in`, now ends when every body that can
-arrive has, and fails naming one that never does). Each fails if the store holds 600 more
+`combat_arms::harness::ladder_models_in`, now ends when every body, held and
+view model that can arrive has, and fails naming one that never does). The
+store and the drawn grow with the match's time, not with what loads: de_dust2
+at the wait's end 147 / 114, after 40,000 more ticks 175 / 140 (the old 240 s
+wait ran ~150,000), the undrawn 33-35 either way. Each fails if the store holds 600 more
 than is drawn; the last also if the store grows on the same map after a lap.
 
 **Waits for a display:** the real app's render thread before and after over a

@@ -838,6 +838,7 @@ impl Plugin for CaCharactersPlugin {
             .add_systems(FixedUpdate, client_clock.before(drive).run_if(core::shows_others))
             .init_resource::<preload::LadderModels>()
             .init_resource::<bodies_on_demand::BodiesOnDemand>()
+            .init_resource::<held_on_demand::HeldOnDemand>()
             .add_systems(
                 Update,
                 (
