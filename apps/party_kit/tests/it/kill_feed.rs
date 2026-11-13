@@ -286,11 +286,17 @@ fn lines_are_equal_in_height_and_icons_centred() {
 /// shell's feed widget, a window and, with `party`, the party's HUD
 /// settings (the one feed). The local player, a killer and its victims.
 fn every_hud_sim(party: bool) -> (Sim, Entity, Entity) {
+    every_hud_sim_and(party, |_| {})
+}
+
+/// `every_hud_sim` with `extra` added first.
+pub(crate) fn every_hud_sim_and(party: bool, extra: fn(&mut App)) -> (Sim, Entity, Entity) {
     use chimera_client::client::{fonts::UiFonts, hud::{HudDraws, HudLookOwner, HudRoot, HudSwitchPlugin}};
     use chimera_sim::minigame::MinigameAppExt;
     use combat_arms::ui::hud::CaHudStatePlugin;
     use cs_source::ui::{game_hud::GameHudPlugin, minigame_hud::MinigameHudPlugin};
-    let mut sim = Sim::with(CaSim, |app| {
+    let mut sim = Sim::with(CaSim, move |app| {
+        extra(app);
         app.add_plugins(KillFeedPlugin);
         if party {
             app.add_plugins(PartyHudPlugin);
@@ -344,7 +350,7 @@ fn every_hud_sim(party: bool) -> (Sim, Entity, Entity) {
 
 /// HL2:DM's stand-in look (its spec's layout and colours, no install) as
 /// the map's guest look: HL2:DM's HUD builds on it while it is up.
-fn hl2_look() -> ActiveHud {
+pub(crate) fn hl2_look() -> ActiveHud {
     let look = hl2dm::ui::look::spec_look(hl2dm::ui::frame::Screen::base());
     let mut hud = (*look.hud).clone();
     hud.game = hl2dm::game::GAME.into();

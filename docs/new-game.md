@@ -134,6 +134,14 @@ replace one part at a time, each behind its spec and a scenario test.
 8. **Front end** (`ui`): its HUD on the client shell's plugins, menus
    through `client::front_end`, layouts on `client::canvas` or
    `client::vgui`. Nothing outside `ui` uses `ui`.
+   Your HUD scales under its own roots (`client::hud::HudRoot`) by its
+   own rule (node sizes from its canvas), never Bevy's global `UiScale`,
+   and draws nothing of the shell's overlay (a minigame's panel and
+   callouts, the kill feed): the overlay guard
+   (`apps/party_kit/tests/it/overlay_guard.rs`) covers you once your
+   `CLIENT` is in the party's list, and `repo_checks`
+   (`games_leave_the_overlay_alone`) fails a game crate that names the
+   overlay or `UiScale` (docs/DESIGN.md, "HUD layers").
 9. **Party**: `PARTS` (`GameParts`: what it lends), `BUNDLE`, `CLIENT`;
    add the bundle to the party kit's list. Its gun rungs appear in the
    Ultimate Gun Game from the parts registry.

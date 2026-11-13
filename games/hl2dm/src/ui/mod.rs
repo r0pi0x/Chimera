@@ -149,8 +149,8 @@ impl Plugin for Hl2dmUiPlugin {
 /// client parts, `game::BUNDLE`): the HUD panels on the client's shell,
 /// drawing while HL2:DM's HUD is the gameplay's (an HL2:DM gun in hand), on
 /// any game's map (its look comes with the map: `game::maps::dress_guest`),
-/// with the minigame's panel and its weapon selection and lights while it
-/// is up.
+/// with its weapon selection and lights while it is up (the minigame's
+/// panel is the shell's overlay, `client::minigame_panel`).
 pub mod party {
     use bevy::{app::PluginGroupBuilder, prelude::*};
     use chimera_core::gameplay::hud_is;
@@ -162,9 +162,7 @@ pub mod party {
 
     /// The HUD over the shell's plugins, after the base game's.
     pub fn with_hud(shell: PluginGroupBuilder) -> PluginGroupBuilder {
-        shell
-            .add_after::<chimera_client::client::hud::HudPlugin>(super::Hl2dmHudPlugin)
-            .add_after::<super::Hl2dmHudPlugin>(chimera_client::client::minigame_panel::MinigamePanelPlugin(GAME))
+        shell.add_after::<chimera_client::client::hud::HudPlugin>(super::Hl2dmHudPlugin)
     }
 
     /// The selection's commands (the weapon menu's data is the shell's, the

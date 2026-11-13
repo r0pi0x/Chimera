@@ -1,12 +1,14 @@
 //! The shell's minimal HUD (`client::hud_minimal`) is up for a game that
 //! lends no HUD (the test kit's stand-in, with the minimal HUD as the
-//! fallback) with the held gun's ammo and the minigame's lines, and down
-//! while CS:S's or Combat Arms' HUD is the gameplay's.
+//! fallback) with the held gun's ammo, and down while CS:S's or Combat
+//! Arms' HUD is the gameplay's; the minigame's panel (the shell's overlay)
+//! is up under it as under theirs.
 
 use bevy::prelude::*;
 use chimera_client::client::{
     hud::HudRoot,
-    hud_minimal::{MinimalAmmo, MinimalHudPlugin, MinimalPanel},
+    hud_minimal::{MinimalAmmo, MinimalHudPlugin},
+    minigame_panel::{MinigamePanelPlugin, PanelLine},
 };
 use chimera_core::{
     core::LocalPlayer,
@@ -55,6 +57,7 @@ fn the_minimal_hud_shows_for_a_game_without_one_and_goes_down_for_the_others() {
             StandIn,
             UltimateGunGamePlugin { seed: 3, rungs: 64, ..Default::default() },
             MinimalHudPlugin,
+            MinigamePanelPlugin,
         ),
     );
     sim.app.world_mut().resource_mut::<PartsRegistry>().fallback_hud = MINIMAL_HUD;
@@ -76,6 +79,7 @@ fn the_minimal_hud_shows_for_a_game_without_one_and_goes_down_for_the_others() {
     assert!(up(&mut sim));
     let ammo = text::<MinimalAmmo>(&mut sim);
     assert!(ammo.starts_with("kit:") && ammo.contains(" | "), "{ammo:?}");
-    let panel = text::<MinimalPanel>(&mut sim);
-    assert!(panel.starts_with("Ultimate Gun Game") && panel.contains('\n'), "{panel:?}");
+    let w = sim.app.world_mut();
+    let panel: Vec<(PanelLine, String)> = w.query::<(&PanelLine, &Text)>().iter(w).map(|(k, t)| (*k, t.0.clone())).collect();
+    assert!(panel.contains(&(PanelLine::Title, "Ultimate Gun Game".into())) && panel.len() > 1, "{panel:?}");
 }

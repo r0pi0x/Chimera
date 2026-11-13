@@ -8,12 +8,10 @@
 //! (`chimera_core::cues`: the pack the definition's `cues` picks, else the
 //! pack of the game whose HUD is up, else the first a game registered;
 //! a cue the pack lacks, or no pack, is silent).
-//! It is the shell's own overlay (not a `HudRoot`), the same on every HUD
-//! that draws no callout of its own (CS:S's, the minimal one); a game's
-//! HUD that draws it in its own looks (`hud::GameDraws::callout`: Combat
-//! Arms', in its notices' place) has the overlay hidden while it is up, so
-//! one callout shows whichever game's HUD the player has (Lucker Party
-//! swaps it with the gun at the same kill); the cue sounds either way.
+//! It is on the shell's overlay layer (`client::overlay`), never a game's
+//! HUD's, so one callout shows the same whichever game's HUD the player
+//! has (Lucker Party swaps it with the gun at the same kill); no game's
+//! HUD draws or hides one of its own.
 //! Plain CS:S and Combat Arms play no minigame, so it never shows there. `{player}` is the
 //! player's shown name (`super::shown_name`), `{weapon}` the gun's display
 //! name (`minigame_scoreboard::gun_name`). Part of `ClientPlugins`.
@@ -26,11 +24,10 @@
 //! the pack's volume) play where there is an asset server.
 //!
 //! Sized for a 720-line screen and scaled with the window's height
-//! (`fonts::overlay_scale`: 22 px for the first line, 14 for the others,
-//! so 3 % of the height as Combat Arms' own callout is: `LINE_SIZES`),
-//! in the HUD's face (`fonts::overlay_font`: the client scheme's
-//! `CenterPrintText`, CS:S's Trebuchet MS), on a band shaded as it would
-//! be blended in display space (`widgets::display_alpha`).
+//! (`overlay::scale`: 22 px for the first line, 14 for the others, so 3 %
+//! of the height: `LINE_SIZES`), in the overlay's face (`overlay::font`),
+//! on a band shaded as it would be blended in display space
+//! (`widgets::display_alpha`).
 //!
 //! Known shortcuts: plain text on a dark band, no animation; the
 //! files load on first use (the first cue of each kind may come up to
@@ -63,6 +60,7 @@ pub struct CalloutsPlugin;
 
 impl Plugin for CalloutsPlugin {
     fn build(&self, app: &mut App) {
+        super::overlay::layer(app);
         app.init_resource::<CalloutView>()
             .init_resource::<CuePacks>()
             .add_systems(Startup, spawn)
@@ -84,8 +82,7 @@ impl Plugin for CalloutsPlugin {
 /// What the callout shows and the cues it sounded.
 #[derive(Resource, Clone, Debug, Default)]
 pub struct CalloutView {
-    /// The lines the overlay shows (empty: hidden: no callout, or the
-    /// HUD's game draws it, `hud::GameDraws::callout`).
+    /// The lines the overlay shows (empty: hidden: no callout).
     pub lines: Vec<String>,
     /// The number of the last callout seen.
     pub id: u32,
@@ -116,10 +113,11 @@ pub fn line_size(index: usize) -> f32 {
 /// has to fit.
 pub const LINE_SIZES: [f32; 2] = [22.0, 14.0];
 
-fn spawn(mut commands: Commands) {
+fn spawn(layer: Res<super::overlay::OverlayLayer>, mut commands: Commands) {
     commands
         .spawn((
             CalloutRoot,
+            ChildOf(layer.0),
             Visibility::Hidden,
             GlobalZIndex(65),
             Pickable::IGNORE,
@@ -212,7 +210,6 @@ fn draw(
     catalog: Option<Res<WeaponCatalog>>,
     settings: Option<Res<NetSettings>>,
     gameplay: Option<Res<chimera_core::gameplay::Gameplay>>,
-    draws: Option<Res<super::hud::GameDraws>>,
     players: Query<(Option<&NetCharacter>, Option<&Name>, Has<LocalPlayer>)>,
     mut root: Query<&mut Visibility, (With<CalloutRoot>, Without<CalloutLine>)>,
     mut lines: Query<(&CalloutLine, &mut Text, &mut Visibility), Without<CalloutRoot>>,
@@ -245,8 +242,6 @@ fn draw(
             }
         }
     }
-    // The HUD's game draws it in its own looks.
-    let text = if draws.is_some_and(|d| d.callout) { Vec::new() } else { text };
     if view.to_play.len() > 8 {
         let excess = view.to_play.len() - 8;
         view.to_play.drain(..excess);
@@ -268,25 +263,29 @@ fn draw(
     }
 }
 
-/// The lines' fonts and bands for the window's height, in the HUD's
-/// face (`fonts::overlay_font`): again when the window or the fonts
+/// The lines' fonts and bands for the window's height, in the overlay's
+/// face (`overlay::font`): again when the window or the fonts
 /// change.
 fn size(
     window: Query<&Window, With<bevy::window::PrimaryWindow>>,
     fonts: Option<Res<super::fonts::UiFonts>>,
-    mut lines: Query<(&CalloutLine, &mut TextFont, &mut Node)>,
+    mut lines: Query<(&CalloutLine, &mut TextFont, &mut Node), Without<CalloutRoot>>,
+    mut root: Query<&mut Node, With<CalloutRoot>>,
     mut sized: Local<Option<u32>>,
 ) {
     let height = window.iter().next().map_or(720.0, |w| w.height());
-    let s = super::fonts::overlay_scale(height);
+    let s = super::overlay::scale(height);
     let key = (s * 1000.0) as u32;
     if *sized == Some(key) && !fonts.as_ref().is_some_and(|f| f.is_changed()) {
         return;
     }
     *sized = Some(key);
     for (line, mut font, mut node) in &mut lines {
-        *font = super::fonts::overlay_font(fonts.as_deref(), line_size(line.0) * s, line.0 == 0);
+        *font = super::overlay::font(fonts.as_deref(), line_size(line.0) * s, line.0 == 0);
         node.padding = UiRect::axes(px(18.0 * s), px(4.0 * s));
+    }
+    for mut node in &mut root {
+        node.row_gap = px(4.0 * s);
     }
 }
 

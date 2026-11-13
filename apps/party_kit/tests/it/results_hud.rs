@@ -1,13 +1,13 @@
-//! The end-of-match results on whichever HUD is up (the HUD follows the
-//! held gun's game): the winner and a line for each player on CS:S's HUD
-//! (an AWP in hand) and on Combat Arms' (the M60), through the
-//! intermission, gone with the next match. Headless, on the same setup as
+//! The end-of-match results in the minigame's panel (the shell's overlay)
+//! whichever HUD is up (the HUD follows the held gun's game): the winner
+//! and a line for each player under CS:S's HUD (an AWP in hand) and under
+//! Combat Arms' (the M60), through the intermission, gone with the next
+//! match. Headless, on the same setup as
 //! `hud` (both HUDs' plugins and the shell's switching).
 
 use bevy::prelude::*;
 use chimera_core::core::{Damage, DamageKind, Hitgroup};
 use chimera_sim::minigame::{self, MatchResults, runtime};
-use combat_arms::ui::hud::CaHud;
 use cs_source::ui::minigame_hud::PanelLine;
 
 use crate::{
@@ -59,7 +59,6 @@ fn the_results_panel_shows_on_both_huds() {
     assert!(lines[0].ends_with("wins the match"), "{lines:?}");
     assert!(lines[1].starts_with("1. ") && lines[1].contains("rung 10/10") && lines[1].contains("1 kills"), "{lines:?}");
     assert!(lines[2].starts_with("2. ") && lines[2].contains("rung 1/10") && lines[2].contains("1 deaths"), "{lines:?}");
-    assert!(shown(&mut sim, cs_source::game::GAME));
     // The shell's match-end screen up (`client::match_end`): the whole
     // panel steps aside, title and status lines too (they drew into the
     // screen's winner, seen in a capture).
@@ -71,15 +70,15 @@ fn the_results_panel_shows_on_both_huds() {
     swap_to(&mut sim, me, 8);
     assert_eq!(hud(&sim), combat_arms::game::GAME);
     assert!(shown(&mut sim, combat_arms::game::GAME));
-    let ca = sim.app.world().resource::<CaHud>().minigame.clone().expect("the minigame on Combat Arms' HUD");
-    assert_eq!(ca.results.len(), 3, "{ca:?}");
-    assert!(ca.results[0].ends_with("wins the match"), "{ca:?}");
-    assert!(ca.results[1].starts_with("1. "), "{ca:?}");
+    let results = |sim: &mut chimera_world::harness::Sim| -> Vec<String> {
+        cs_minigame_lines(sim).into_iter().filter(|(k, _)| *k == PanelLine::Result).map(|(_, t)| t).collect()
+    };
+    assert_eq!(results(&mut sim), lines, "the same results under Combat Arms' HUD");
     set_screen_up(&mut sim, true);
-    assert_eq!(sim.app.world().resource::<CaHud>().minigame, None, "nor Combat Arms' panel");
+    assert_eq!(cs_minigame_lines(&mut sim), [], "nothing over the screen under Combat Arms' HUD");
     set_screen_up(&mut sim, false);
-    // The next match: the results are gone from the HUD's data.
+    // The next match: the results are gone.
     minigame::restart(sim.app.world_mut());
     sim.seconds(0.5);
-    assert!(sim.app.world().resource::<CaHud>().minigame.as_ref().is_some_and(|m| m.results.is_empty()));
+    assert!(!cs_minigame_lines(&mut sim).is_empty() && results(&mut sim).is_empty());
 }

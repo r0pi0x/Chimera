@@ -1,18 +1,19 @@
 //! The HUD follows the local player's game (the gun game's `identity =
 //! "weapon"`): with a CS:S gun CS:S's HUD is up (its panels from the map's
-//! CS:S HUD look, the minigame's panel on it) and Combat Arms' is down;
-//! with a Combat Arms gun the other way round, Combat Arms' with the
-//! minigame's panel; and back. Headless, on the party's simulation with
+//! CS:S HUD look) and Combat Arms' is down; with a Combat Arms gun the
+//! other way round; and back. The minigame's panel is the shell's
+//! overlay's, up under each. Headless, on the party's simulation with
 //! both HUDs' plugins and the shell's switching (`client::hud::
 //! HudSwitchPlugin`), a stand-in CS:S HUD look as the map's. A kill that
 //! moves the player up a rung and into the other game shows one level-up
-//! callout, the new HUD's: Combat Arms' own, or the shell's on CS:S's.
+//! callout, the shell's, whichever HUD is up.
 
 use std::{collections::HashMap, sync::Arc};
 
 use bevy::prelude::*;
 use chimera_client::client::{
     callouts::{CalloutRoot, CalloutView, CalloutsPlugin},
+    minigame_panel::MinigamePanelPlugin,
     fonts::UiFonts,
     hud::{GameDraws, HudDraws, HudLookOwner, HudRoot, HudSwitchPlugin},
 };
@@ -29,7 +30,7 @@ use chimera_world::{
 use combat_arms::{
     game::movement,
     harness::CaSim,
-    ui::hud::{CaHud, CaHudStatePlugin},
+    ui::hud::CaHudStatePlugin,
 };
 use cs_source::ui::{
     game_hud::{GameHudPlugin, Part},
@@ -74,7 +75,7 @@ pub(crate) fn party_with_huds_and(extra: impl FnOnce(&mut App)) -> (Sim, Entity,
         extra(app);
         app.add_plugins((GreyboxMapPlugin, PartyPartsPlugin))
             .init_resource::<UiFonts>()
-            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin))
+            .add_plugins((HudSwitchPlugin, CaHudStatePlugin, GameHudPlugin, MinigameHudPlugin, MinigamePanelPlugin))
             .insert_resource(HudLookOwner(cs_source::game::GAME))
             .insert_resource(cs_look());
         // Combat Arms' drawn HUD: a root and what it draws instead of the
@@ -115,7 +116,7 @@ fn cs_panels(sim: &mut Sim) -> usize {
     w.query_filtered::<(), With<Part>>().iter(w).count()
 }
 
-/// The CS:S minigame panel's lines, as text.
+/// The minigame panel's lines (the shell's overlay), as text.
 pub(crate) fn cs_minigame_lines(sim: &mut Sim) -> Vec<(PanelLine, String)> {
     let w = sim.app.world_mut();
     w.query::<(&PanelLine, &Text)>().iter(w).map(|(k, t)| (*k, t.0.clone())).collect()
@@ -130,7 +131,7 @@ pub(crate) fn swap_to(sim: &mut Sim, me: Entity, rung: usize) {
 
 /// CS:S's HUD with a CS:S gun, Combat Arms' with the Beretta, CS:S's
 /// again with the Desert Eagle: each time only the active one's nodes are
-/// up and the minigame's panel is on it.
+/// up, and the minigame's panel (the shell's) with the same lines.
 #[test]
 fn the_hud_follows_the_gun_with_the_minigame_on_both() {
     let (mut sim, me, _other) = party_with_huds();
@@ -145,19 +146,17 @@ fn the_hud_follows_the_gun_with_the_minigame_on_both() {
     let lines = cs_minigame_lines(&mut sim);
     assert!(lines.contains(&(PanelLine::Title, title.clone())), "the minigame on CS:S's HUD: {lines:?}");
     assert!(lines.iter().filter(|(k, _)| *k == PanelLine::Status).count() >= 2, "its rung and more: {lines:?}");
-    assert!(shown(&mut sim, cs_source::game::GAME), "the panel shows");
     // The Beretta: Combat Arms'.
     swap_to(&mut sim, me, 1);
     assert_eq!(held(&sim, me), Some("combat_arms:beretta_m92fs"));
     assert_eq!(hud(&sim), combat_arms::game::GAME);
     assert!(shown(&mut sim, combat_arms::game::GAME), "Combat Arms' HUD up");
-    assert!(!shown(&mut sim, cs_source::game::GAME), "CS:S's minigame panel down");
     assert_eq!(cs_panels(&mut sim), 0, "CS:S's panels taken down");
     assert!(!sim.app.world().contains_resource::<ActiveHud>(), "CS:S's look put away");
     assert!(sim.app.world().resource::<GameDraws>().crosshair, "Combat Arms draws its own");
-    let ca = sim.app.world().resource::<CaHud>().minigame.clone().expect("the minigame on Combat Arms' HUD");
-    assert_eq!(ca.title, title);
-    assert!(ca.lines.len() >= 2, "{ca:?}");
+    let lines = cs_minigame_lines(&mut sim);
+    assert!(lines.contains(&(PanelLine::Title, title.clone())), "the same panel under Combat Arms' HUD: {lines:?}");
+    assert!(lines.iter().any(|(_, t)| t.starts_with("Rung 2/")), "the second rung shown: {lines:?}");
     // The Desert Eagle: CS:S's again, built anew.
     swap_to(&mut sim, me, 2);
     assert_eq!(held(&sim, me), Some(cs_source::game::weapons::DEAGLE));
@@ -165,7 +164,6 @@ fn the_hud_follows_the_gun_with_the_minigame_on_both() {
     assert!(sim.app.world().contains_resource::<ActiveHud>(), "the look back");
     assert!(cs_panels(&mut sim) > 0, "CS:S's panels built again");
     assert!(!shown(&mut sim, combat_arms::game::GAME));
-    assert!(shown(&mut sim, cs_source::game::GAME));
     let lines = cs_minigame_lines(&mut sim);
     assert!(lines.iter().any(|(_, t)| t.starts_with("Rung 3/")), "the third rung shown: {lines:?}");
 }
@@ -188,7 +186,6 @@ fn hl2dms_hud_is_down_under_other_games_guns() {
     assert!(!shown(&mut sim, hl2dm::game::GAME), "down under a CS:S gun");
     // CS:S's HUD stays up, HL2:DM's builds no panels on CS:S's map (the
     // look is CS:S's), whichever way the local gun's identity goes.
-    assert!(shown(&mut sim, cs_source::game::GAME));
     assert!(cs_panels(&mut sim) > 0);
     assert!(sim.app.world().resource::<hl2dm::ui::systems::Hl2dmHud>().hud.is_none());
     // What its systems read that only its game's own pickups would add.
@@ -203,23 +200,16 @@ fn shell_callout(sim: &mut Sim) -> Option<Vec<String>> {
     shown.then(|| w.resource::<CalloutView>().lines.clone())
 }
 
-/// The level-up callouts drawn: the shell's overlay and Combat Arms' (its
-/// HUD up, a callout in its minigame panel).
+/// The level-up callouts drawn: the shell's overlay (no game's HUD draws
+/// one of its own).
 fn callouts_drawn(sim: &mut Sim) -> Vec<Vec<String>> {
-    let mut drawn: Vec<Vec<String>> = shell_callout(sim).into_iter().collect();
-    if hud(sim) == combat_arms::game::GAME
-        && let Some(m) = sim.app.world().resource::<CaHud>().minigame.clone()
-        && !m.callout.is_empty()
-    {
-        drawn.push(m.callout);
-    }
-    drawn
+    shell_callout(sim).into_iter().collect()
 }
 
 /// A kill with the Glock (CS:S) gives the Beretta (Combat Arms): one
-/// level-up callout, Combat Arms' (the shell's hidden under its HUD); the
-/// next kill gives the Desert Eagle (CS:S): one again, the shell's. Never
-/// two on any frame of the swap.
+/// level-up callout, the shell's, under Combat Arms' HUD; the next kill
+/// gives the Desert Eagle (CS:S): one again, the shell's. Never two on any
+/// frame of the swap.
 #[test]
 fn a_rung_up_across_games_shows_one_level_up_callout() {
     let (mut sim, me, other) = party_with_huds_and(|app| {
@@ -241,7 +231,7 @@ fn a_rung_up_across_games_shows_one_level_up_callout() {
     let up = kill(&mut sim);
     assert_eq!(held(&sim, me), Some("combat_arms:beretta_m92fs"));
     assert_eq!(hud(&sim), combat_arms::game::GAME);
-    assert_eq!(shell_callout(&mut sim), None, "the shell's hidden under Combat Arms' HUD");
+    assert_eq!(shell_callout(&mut sim).as_ref(), Some(&up), "the shell's under Combat Arms' HUD");
     assert!(up.len() >= 2, "{up:?}");
     assert!(up[0].starts_with("Level up: "), "{up:?}");
     assert!(up[1].starts_with("Level 2/"), "{up:?}");
@@ -295,9 +285,7 @@ fn up_look(sim: &Sim) -> Option<String> {
 #[test]
 fn each_games_hud_gets_its_own_look_on_any_map() {
     use chimera_world::map::hud::GuestLooks;
-    let (mut sim, me, _other) = party_with_huds_and(|app| {
-        app.add_plugins(chimera_client::client::minigame_panel::MinigamePanelPlugin(hl2dm::game::GAME));
-    });
+    let (mut sim, me, _other) = party_with_huds();
     sim.app.add_minigames(&[("hl2dm.toml", &crate::hl2dm_parts::mixed_text(false))]).unwrap();
     minigame::start(sim.app.world_mut(), "test:gun_game_hl2dm").expect("the gun game starts");
     sim.app.world_mut().insert_resource(look_of(hl2dm::game::GAME));
@@ -324,7 +312,6 @@ fn each_games_hud_gets_its_own_look_on_any_map() {
     assert_eq!(hud(&sim), hl2dm::game::GAME);
     assert_eq!(up_look(&sim).as_deref(), Some(hl2dm::game::GAME), "an HL2:DM gun: its look");
     let w = sim.app.world_mut();
-    let panels: Vec<&'static str> =
-        w.query_filtered::<&HudRoot, With<chimera_client::client::minigame_panel::MinigamePanel>>().iter(w).map(|r| r.0).collect();
-    assert_eq!(panels, [hl2dm::game::GAME], "the minigame's panel on HL2:DM's HUD");
+    let panels = w.query_filtered::<(), (With<chimera_client::client::minigame_panel::MinigamePanel>, Without<HudRoot>)>().iter(w).count();
+    assert_eq!(panels, 1, "the minigame's panel (the shell's, no HUD's root) under HL2:DM's HUD");
 }

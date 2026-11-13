@@ -3,8 +3,8 @@
 //! `server_browser`), the join flow (`join_menus`: the message of the day,
 //! team and class menus), the buy, team and radio menus, the game HUD
 //! (`objectives_hud`, `bomb_fx`, `target_id`, `voice_hud`, the automatic
-//! hints: `hints`; a playing minigame's panel, `minigame_hud`, for an app
-//! with minigames), the spectator menu and freeze cam panel, the vote panels
+//! hints: `hints`; its guns' names for the shell's minigame panel,
+//! `minigame_hud`), the spectator menu and freeze cam panel, the vote panels
 //! (`vote_hud`), the
 //! scoreboard, the map logic's debug overlays (`debug_world`: sound radii,
 //! triggers), the window icon and `playdemo` (`demo`). Built on the client

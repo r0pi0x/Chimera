@@ -37,6 +37,7 @@ pub mod hdr;
 pub mod hud;
 pub mod hud_minimal;
 pub mod minigame_panel;
+pub mod overlay;
 pub mod minigame_scoreboard;
 pub mod hud_text;
 pub mod input;
@@ -529,6 +530,8 @@ impl PluginGroup for ClientPlugins {
             .add(console::ConsoleUiPlugin)
             .add(net_graph::NetGraphPlugin)
             .add(hud::HudPlugin)
+            .add(overlay::OverlayPlugin)
+            .add(minigame_panel::MinigamePanelPlugin)
             .add(text_warm::TextWarmPlugin)
             .add(announcer::AnnouncerPlugin)
             .add(game_text::GameTextPlugin)

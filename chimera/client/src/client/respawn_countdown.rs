@@ -24,6 +24,7 @@ pub struct RespawnCountdownPlugin;
 
 impl Plugin for RespawnCountdownPlugin {
     fn build(&self, app: &mut App) {
+        super::overlay::layer(app);
         app.init_resource::<RespawnDue>().add_systems(Startup, spawn).add_systems(Update, (draw, size));
     }
 }
@@ -48,10 +49,11 @@ pub fn text(left: f64) -> String {
     }
 }
 
-fn spawn(mut commands: Commands) {
+fn spawn(layer: Res<super::overlay::OverlayLayer>, mut commands: Commands) {
     commands
         .spawn((
             RespawnCountdownRoot,
+            ChildOf(layer.0),
             Visibility::Hidden,
             GlobalZIndex(70),
             Node {

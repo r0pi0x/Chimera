@@ -1,7 +1,7 @@
 //! CS:S's front end in an app made of several games (its bundle's client
 //! parts, `game::bundle`): its HUD on the client's shell (`with_hud`:
-//! health, armour and ammo panels, death notices, damage sprites, the
-//! minigame's panel and its weapon selection row, which takes the
+//! health, armour and ammo panels, death notices, damage sprites, its
+//! guns' names for the shell's minigame panel and its weapon selection row, which takes the
 //! shell's weapon menu's place; the radar, target ID, freeze cam and
 //! voice status, each drawing only while CS:S's HUD is the gameplay's: a
 //! CS:S gun in hand), the map's HUD look as CS:S's (`client_app`) and

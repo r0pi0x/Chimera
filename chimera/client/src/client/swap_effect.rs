@@ -88,6 +88,7 @@ pub struct SwapEffectPlugin;
 
 impl Plugin for SwapEffectPlugin {
     fn build(&self, app: &mut App) {
+        super::overlay::layer(app);
         app.init_resource::<SwapEffectSetting>()
             .init_resource::<SwapEffectView>()
             .add_systems(Startup, spawn)
@@ -104,9 +105,10 @@ impl Plugin for SwapEffectPlugin {
     }
 }
 
-fn spawn(mut commands: Commands) {
+fn spawn(layer: Res<super::overlay::OverlayLayer>, mut commands: Commands) {
     commands.spawn((
         SwapFlash,
+        ChildOf(layer.0),
         Node {
             position_type: PositionType::Absolute,
             width: percent(100.0),

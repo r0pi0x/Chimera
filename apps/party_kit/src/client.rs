@@ -3,8 +3,8 @@
 //! `chimera_client::client::app`), the shell with this app's hooks and
 //! both games' HUDs (`with_huds`:
 //! Combat Arms' and CS:S's, the one drawn the local player's game, which
-//! follows its gun in the gun game: `chimera_sim::identity`; each shows the
-//! minigame's panel; CS:S's body animation for a player holding a CS:S
+//! follows its gun in the gun game: `chimera_sim::identity`; the
+//! minigame's panel is the shell's overlay over each; CS:S's body animation for a player holding a CS:S
 //! gun), the map files it can read for a server's map check
 //! (`map_file_bytes`: CS:S's and HL2:DM's from their installs or the
 //! asset store, so a server on another map than the one loaded is joined;
@@ -18,9 +18,10 @@
 //! `hud_sprites`, `weapon_select`), from CS:S's HUD look, HL2:DM's HUD from
 //! its own (each map carries every game's, `MapSources::players` and
 //! `guests`; up only with its game's HUD: `client::hud::HudLookOwner`), with
-//! the shell's crosshair on CS:S's, and the minigame's panel
-//! (`client::minigame_panel`). Over all: one kill feed, the
-//! shell's, and no radars unless `hud_radar 1` (`PartyHudPlugin`); with
+//! the shell's crosshair on CS:S's. Over all, on the shell's overlay
+//! layer (`client::overlay`, the same whichever HUD is up): the minigame's
+//! panel (`client::minigame_panel`) and callouts and the one kill feed;
+//! no radars unless `hud_radar 1` (`PartyHudPlugin`); with
 //! `party_swap_effect 1` (default 0) a short flash when the local
 //! player's gun changes game, a puff at others' (`client::swap_effect`).
 //! The Escape menu is the party's own (`esc_menu`), titled by the app;
@@ -67,11 +68,10 @@ pub fn map_file_bytes(id: &str) -> Option<Vec<u8>> {
 /// The shell's plugins with every game's HUD (each bundle's `client`):
 /// the base game's, Combat Arms' (`ui::with_hud`), then the guests':
 /// CS:S's panels, sprites and weapon selection (whose logic is the shell's
-/// `WeaponMenuPlugin`, added once, by CS:S's), the minigame's panel on
-/// CS:S's HUD, and the rest of CS:S's HUD that follows the gun in hand
+/// `WeaponMenuPlugin`, added once, by CS:S's), CS:S's guns' names for the
+/// shell's minigame panel, and the rest of CS:S's HUD that follows the gun in hand
 /// (the radar, target ID, freeze cam, voice status: each drawing only
-/// while CS:S's HUD is the gameplay's), and HL2:DM's panels with the
-/// minigame's (M9, drawing while its HUD is the gameplay's: on any map, its
+/// while CS:S's HUD is the gameplay's), and HL2:DM's panels (M9, drawing while its HUD is the gameplay's: on any map, its
 /// look coming with the map, `MapSources::guests`).
 pub fn with_huds(shell: PluginGroupBuilder) -> PluginGroupBuilder {
     let mut shell = shell;

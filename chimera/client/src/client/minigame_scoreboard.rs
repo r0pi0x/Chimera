@@ -41,6 +41,7 @@ pub struct MinigameScoreboardPlugin;
 
 impl Plugin for MinigameScoreboardPlugin {
     fn build(&self, app: &mut App) {
+        super::overlay::layer(app);
         app.init_resource::<HeldActions>().init_resource::<GunNames>().add_systems(Startup, spawn).add_systems(Update, draw);
         super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
     }
@@ -114,9 +115,10 @@ fn row_node() -> Node {
     Node { column_gap: px(GAP), align_items: AlignItems::Center, min_height: px(ROW_HEIGHT), ..default() }
 }
 
-fn spawn(mut commands: Commands) {
+fn spawn(layer: Res<super::overlay::OverlayLayer>, mut commands: Commands) {
     commands.spawn((
         ScoreboardRoot,
+        ChildOf(layer.0),
         Visibility::Hidden,
         GlobalZIndex(SCOREBOARD_Z),
         BackgroundColor(Color::srgb(0.04, 0.04, 0.05)),

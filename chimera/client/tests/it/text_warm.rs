@@ -54,7 +54,7 @@ fn hud_sim_with(warm: bool, extra: impl Fn(&mut App) + Send + Sync + 'static) ->
     use bevy::camera::{ComputedCameraValues, RenderTargetInfo, Viewport};
     let mut sim = Sim::with(SimBasePlugins, move |app| {
         app.add_plugins((GreyboxMapPlugin, MinigameScoreboardPlugin, KillFeedStatePlugin, KillFeedPlugin));
-        app.add_plugins(MinigamePanelPlugin("kit"));
+        app.add_plugins(MinigamePanelPlugin);
         if warm {
             app.add_plugins(TextWarmPlugin);
         }
