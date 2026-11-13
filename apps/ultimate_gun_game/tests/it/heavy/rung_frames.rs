@@ -13,9 +13,9 @@ use bevy::{mesh::skinning::SkinnedMeshInverseBindposes, prelude::*};
 use chimera_core::{metrics::ThreadCounters, mount::config::LocalConfig};
 use chimera_present::render::{bodies::PlayModels, prop_material::PropMaterial};
 use chimera_sim::minigame::{self, ladder::{Ladder, set_rung}};
-use chimera_world::{harness::Sim, map::LateCharacterModels};
+use chimera_world::harness::Sim;
 use combat_arms::{
-    game::{TICK_INTERVAL, characters::preload::LadderModels},
+    game::TICK_INTERVAL,
     harness::CaSim,
     ui::visuals::CaVisualsPlugin,
 };
@@ -64,15 +64,15 @@ fn a_ladders_rungs_stay_under_the_limit() {
         s.quota_set = true;
     }
     minigame::start(sim.app.world_mut(), MINIGAME).expect("the automatic gun game starts");
-    // What the ladder loads ahead (a body's 0.5-1 s on a thread each).
-    let mut settled = 0;
+    // What the ladder loads ahead (a body's 0.5-1 s on a thread each): every
+    // body that can arrive, then bodies drawn for 300 ticks.
+    combat_arms::harness::ladder_bodies_in(&mut sim, 30, std::time::Duration::from_secs(240));
     let started = std::time::Instant::now();
-    while settled < 300 && started.elapsed().as_secs() < 240 {
-        let w = sim.app.world();
-        let want = w.resource::<LadderModels>().bodies.len();
-        let have = w.get_resource::<LateCharacterModels>().map_or(0, |l| l.0.len());
-        let drawn = w.get_resource::<PlayModels>().map_or(0, |p| p.bodies.len());
-        settled = if have >= want && drawn > 0 { settled + 1 } else { 0 };
+    let mut settled = 0;
+    while settled < 300 {
+        let drawn = sim.app.world().get_resource::<PlayModels>().map_or(0, |p| p.bodies.len());
+        settled = if drawn > 0 { settled + 1 } else { 0 };
+        assert!(started.elapsed().as_secs() < 240, "no body drawn");
         sim.ticks(1);
     }
     // A bot walks the ladder (what a rung costs is the same for any player;

@@ -837,6 +837,7 @@ impl Plugin for CaCharactersPlugin {
             .add_systems(FixedUpdate, wear_looks.before(setup).run_if(core::authoritative))
             .add_systems(FixedUpdate, client_clock.before(drive).run_if(core::shows_others))
             .init_resource::<preload::LadderModels>()
+            .init_resource::<bodies_on_demand::BodiesOnDemand>()
             .add_systems(
                 Update,
                 (

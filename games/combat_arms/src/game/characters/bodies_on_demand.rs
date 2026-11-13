@@ -17,6 +17,9 @@
 //! dedicated server draws none; its hit spheres pose on the stock rig,
 //! `models::alias_rig`), and only on a map that has bodies of ours.
 //!
+//! What it loads and what failed is `BodiesOnDemand` (a resource: a wait
+//! for a ladder's bodies reads it, `preload::ladder_bodies_waiting`).
+//!
 //! An older ladder's bodies are forgotten at a map's unload
 //! (`preload::forget_old`) and load again if worn again.
 //!
@@ -43,13 +46,28 @@ use crate::map::{CharacterModels, LoadContext, MapCharacterModel, add_character_
 
 type Loaded = Result<models::OnDemand<MapCharacterModel>, String>;
 
-/// The bodies loading, the ones tried (loaded or not) and the ones a
-/// stock group has.
-#[derive(Default)]
-pub struct Pending {
+/// The bodies loading, the ones tried (loaded or not), the ones a stock
+/// group has and the ones that didn't load (and why): what a wait for a
+/// ladder's bodies reads (`preload::ladder_bodies_waiting`).
+#[derive(Resource, Default)]
+pub struct BodiesOnDemand {
     tasks: BTreeMap<i32, Task<Loaded>>,
     tried: BTreeSet<i32>,
     stock: BTreeSet<i32>,
+    failed: BTreeMap<i32, String>,
+}
+
+impl BodiesOnDemand {
+    /// Whether body record `id` is loading.
+    pub fn loading(&self, id: i32) -> bool {
+        self.tasks.contains_key(&id)
+    }
+
+    /// The bodies whose load failed this session, and why (each tried
+    /// once: module doc).
+    pub fn failed(&self) -> &BTreeMap<i32, String> {
+        &self.failed
+    }
 }
 
 /// Each worn body record no loaded group has: loaded in the background
@@ -62,14 +80,16 @@ pub fn load_on_demand(
     context: Option<Res<LoadContext>>,
     ladder: Res<super::preload::LadderModels>,
     forgotten: Option<Res<super::preload::Forgotten>>,
-    mut pending: Local<Pending>,
+    mut pending: ResMut<BodiesOnDemand>,
     wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
     mut commands: Commands,
 ) {
     if let Some(f) = forgotten.filter(|f| f.is_changed()) {
         pending.tried.retain(|id| !f.bodies.contains(id));
+        pending.failed.retain(|id, _| !f.bodies.contains(id));
     }
-    pending.tasks.retain(|_, task| {
+    let mut failed = Vec::new();
+    pending.tasks.retain(|id, task| {
         let Some(result) = chimera_core::tasks::poll(task, wait.is_some()) else { return true };
         match result {
             Ok(models::OnDemand { model, textures, index }) => {
@@ -79,10 +99,14 @@ pub fn load_on_demand(
                     add_character_model(world, model, textures);
                 });
             }
-            Err(e) => warn!("Combat Arms: {e} (the stock body stays)"),
+            Err(e) => {
+                warn!("Combat Arms: {e} (the stock body stays)");
+                failed.push((*id, e));
+            }
         }
         false
     });
+    pending.failed.extend(failed);
     let chars = data.characters();
     // A map that wears none of ours (no bodies loaded, or another game's
     // kit) loads none for those worn; the ladder's are for the map coming.

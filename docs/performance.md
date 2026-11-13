@@ -3103,10 +3103,12 @@ render world, so materials in the store, not GPU buffers):
 | de_dust2 again | 2,123 | 163 | 130 | 1,961 |
 
 The test was one of 13-17 minutes (four maps, a full ladder each), which
-bound every after-push run; it is now one test a map (about 4 minutes each:
-a play waits up to 240 s for the kit's models) and one for the order
-(de_dust2, a swap to warehouse, de_dust2 again: two plays), so nextest runs
-them side by side in the heavy slots. Each fails if the store holds 600 more
+bound every after-push run; it is now one test a map and one for the order
+(de_dust2, a swap to warehouse, de_dust2 again: two plays), 8-26 s each (a
+play waited the whole 240 s for the ladder's stock bodies 0 and 9, which a
+map's own group has and nothing loads on demand; the wait,
+`combat_arms::harness::ladder_bodies_in`, now ends when every body that can
+arrive has, and fails naming one that never does). Each fails if the store holds 600 more
 than is drawn; the last also if the store grows on the same map after a lap.
 
 **Waits for a display:** the real app's render thread before and after over a

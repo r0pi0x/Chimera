@@ -15,6 +15,9 @@
 //! holds (`setup`, `pose_bodies`) if a rung is reached sooner.
 //!
 //! Only where `view_model::on_demand::LoadOnDemand` is (the front end).
+//! `ladder_bodies_waiting`: the ladder's bodies not in yet (a stock one is
+//! in where the map's group has it; one whose load failed is not waited
+//! for), what a test waits on (`harness::ladder_bodies_in`).
 //!
 //! What older ladders brought is forgotten as a map unloads (`forget_old`,
 //! a `map::MapHooks::unload` hook): everything on demand (`map::
@@ -148,6 +151,24 @@ pub fn plan(data: &CharacterData, catalog: &WeaponCatalog, table: &CaModTable, l
     }
     out.bodies = ladder_bodies(data, ladder);
     out
+}
+
+/// The ladder's bodies (`LadderModels::bodies`) not in `world` yet: those
+/// no loaded group has (a stock group of the map's, or one loaded on
+/// demand: `models::models_in`) and whose load didn't fail
+/// (`bodies_on_demand::BodiesOnDemand::failed`). Empty once every body
+/// that can arrive has; a stock body counts as there only where the map
+/// has its group.
+pub fn ladder_bodies_waiting(world: &World) -> Vec<i32> {
+    let Some(ladder) = world.get_resource::<LadderModels>() else { return Vec::new() };
+    let failed = world.get_resource::<super::bodies_on_demand::BodiesOnDemand>();
+    let loaded = models::models_in(world);
+    ladder
+        .bodies
+        .iter()
+        .copied()
+        .filter(|&id| !loaded.group_has(id) && !failed.is_some_and(|f| f.failed().contains_key(&id)))
+        .collect()
 }
 
 /// A new ladder (or the server's coming in): what it loads.
