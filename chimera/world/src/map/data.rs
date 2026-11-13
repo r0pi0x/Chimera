@@ -1384,9 +1384,10 @@ pub struct GameKit {
     /// Muzzle flashes by kind, for a game with several (HL2:DM's pistol,
     /// .357, SMG1, AR2 and shotgun: `ViewModelEventKind::MuzzleFlashOf`).
     pub muzzle_flash_kinds: Vec<(String, MapMuzzleFlash)>,
-    /// Spent shell types and how they fly.
+    /// Spent shell types, each with its game and how it flies (a map
+    /// with several games' guns has several games' types: the map game's
+    /// with its kept guns, each guest's from its dressing).
     pub shells: Vec<shells::MapShell>,
-    pub shell_physics: Option<shells::MapShellPhysics>,
 }
 
 impl GameKit {
@@ -1412,8 +1413,9 @@ impl GameKit {
     /// (`MapData::impacts`; `weapon::impact` routes that game's guns' and
     /// the map's impacts to them); with any kept models, its muzzle
     /// flashes (`muzzle_flash`, `muzzle_flash_kinds`: what its kept guns
-    /// flash; a guest game's dressing brings its own to the other games'
-    /// maps). Nothing else stays.
+    /// flash) and its spent shells (`shells`: what they eject); a guest
+    /// game's dressing brings its own to the other games' maps. Nothing
+    /// else stays.
     pub fn stay(self, kept: &[&str], players: bool) -> GameKit {
         let keep = |key: &str| kept.iter().any(|k| key.starts_with(k));
         let Self {
@@ -1424,6 +1426,7 @@ impl GameKit {
             decals,
             muzzle_flash,
             muzzle_flash_kinds,
+            shells,
             ..
         } = self;
         let guns = !kept.is_empty();
@@ -1435,6 +1438,7 @@ impl GameKit {
             decals,
             muzzle_flash: muzzle_flash.filter(|_| guns),
             muzzle_flash_kinds: if guns { muzzle_flash_kinds } else { Vec::new() },
+            shells: if guns { shells } else { Vec::new() },
             ..GameKit::default()
         }
     }

@@ -2,16 +2,20 @@
 //! specs/cs_source/view_models.md 8): a small model flying under gravity
 //! (`map::shells::shell_step`), bouncing off the world with a sound now and
 //! then, coming to rest on floors and fading out. Started by
-//! `ViewModelEventKind::EjectBrass` for the first-person view model, with
-//! the game's `MapShellPhysics` (CS:S's; HL2:DM's world-axis speed, roll
-//! spin, random life and sure bounce sound). Until
+//! `ViewModelEventKind::EjectBrass` for the first-person view model: the
+//! type the event names of the firing gun's game (its view model key's
+//! prefix, `cs_source:weapon_ak47`), with that type's model, bounce sound
+//! and `MapShellPhysics` (CS:S's; HL2:DM's world-axis speed, roll spin,
+//! random life and sure bounce sound), so on a map with several games'
+//! guns each ejects its own game's casings. Until
 //! its first bounce it is drawn in the view-model pass, where the view
 //! model's field of view places it next to the gun; after that in the
 //! world.
 //!
 //! Spent shells for any game: thrown from the view model's ejection
-//! attachment on brass events, flying, bouncing (sounds), resting and fading;
-//! drawn in the view-model pass until the first bounce.
+//! attachment on brass events, each game's type with its own physics,
+//! flying, bouncing (sounds), resting and fading; drawn in the view-model
+//! pass until the first bounce.
 
 use std::collections::HashMap;
 
@@ -29,12 +33,40 @@ use crate::map::{
     },
 };
 
-/// Shell models ready to draw, and how they move.
+/// A shell type ready to draw: its meshes, bounce sound and physics.
+struct ShellLook {
+    parts: Vec<(Handle<Mesh>, Handle<PropMaterial>)>,
+    bounce: Option<String>,
+    physics: MapShellPhysics,
+}
+
+/// Shell models ready to draw, and how they move, by game and type
+/// (`game:key`, lower case).
 #[derive(Resource)]
 pub struct ShellAssets {
-    models: HashMap<String, (Vec<(Handle<Mesh>, Handle<PropMaterial>)>, Option<String>)>,
-    physics: MapShellPhysics,
+    models: HashMap<String, ShellLook>,
     light_scale: f32,
+}
+
+/// The `ShellAssets` key of game `game`'s type `key`.
+fn look_key(game: &str, key: &str) -> String {
+    format!("{game}:{key}").to_lowercase()
+}
+
+impl ShellAssets {
+    /// The type a brass event of the view model `view` (its key, whose
+    /// prefix is its game) names: that game's type `shell`; a key without
+    /// a game, any game's.
+    fn look(&self, view: &str, shell: &str) -> Option<&ShellLook> {
+        match view.split_once(':') {
+            Some((game, _)) => self.models.get(&look_key(game, shell)),
+            None => self
+                .models
+                .iter()
+                .find(|(k, _)| k.rsplit(':').next().is_some_and(|t| t.eq_ignore_ascii_case(shell)))
+                .map(|(_, l)| l),
+        }
+    }
 }
 
 pub fn build_assets(
@@ -44,7 +76,9 @@ pub fn build_assets(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<PropMaterial>,
 ) -> Option<ShellAssets> {
-    let physics = data.kit.shell_physics?;
+    if data.kit.shells.is_empty() {
+        return None;
+    }
     let models = data
         .kit.shells
         .iter()
@@ -59,12 +93,16 @@ pub fn build_assets(
                     (meshes.add(crate::render::build_mesh(m, false)), materials.add(material))
                 })
                 .collect();
-            (s.key.to_lowercase(), (parts, s.bounce.clone()))
+            let look = ShellLook {
+                parts,
+                bounce: s.bounce.clone(),
+                physics: s.physics,
+            };
+            (look_key(&s.game, &s.key), look)
         })
         .collect();
     Some(ShellAssets {
         models,
-        physics,
         light_scale: data.look.light_scale,
     })
 }
@@ -73,9 +111,29 @@ pub fn build_assets(
 #[derive(Component)]
 pub struct Shell {
     state: ShellState,
+    /// Its game and type (`hl2dm:0`).
+    kind: String,
     bounce: Option<String>,
+    physics: MapShellPhysics,
     materials: Vec<Handle<PropMaterial>>,
     in_world: bool,
+}
+
+impl Shell {
+    /// Its game and type, lower case (`cs_source:762nato`).
+    pub fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    /// How it flies (its game's rules).
+    pub fn physics(&self) -> &MapShellPhysics {
+        &self.physics
+    }
+
+    /// Its flight now.
+    pub fn state(&self) -> &ShellState {
+        &self.state
+    }
 }
 
 /// The view-model camera's re-projection: (eye, world fov, view-model fov)
@@ -137,7 +195,6 @@ pub fn eject(
         *dice = x;
         lo + (hi - lo) * ((x >> 8) as f32 / (1u32 << 24) as f32)
     };
-    let p = assets.physics;
     for ev in events.read() {
         let ViewModelEventKind::EjectBrass {
             attachment,
@@ -145,9 +202,6 @@ pub fn eject(
             speed,
         } = ev.kind
         else {
-            continue;
-        };
-        let Some((parts, bounce)) = assets.models.get(&shell.to_lowercase()) else {
             continue;
         };
         let Some((_, eye, projection, children, _)) = anchors
@@ -165,6 +219,11 @@ pub fn eject(
         let (Some(key), Some(animator)) = (view.key.as_deref(), view.animator.as_ref()) else {
             continue;
         };
+        // The firing gun's game's type, with its game's physics.
+        let Some(look) = assets.look(key, shell) else {
+            continue;
+        };
+        let (parts, p) = (&look.parts, look.physics);
         let Some(model) = models.as_ref().and_then(|m| m.get(key)) else {
             continue;
         };
@@ -215,7 +274,9 @@ pub fn eject(
                 Name::new("Shell"),
                 Shell {
                     state,
-                    bounce: bounce.clone(),
+                    kind: key.split_once(':').map_or_else(|| shell.to_lowercase(), |(g, _)| look_key(g, shell)),
+                    bounce: look.bounce.clone(),
+                    physics: p,
                     materials: own.clone(),
                     in_world: false,
                 },
@@ -254,12 +315,14 @@ pub fn fly(
     mut dice: Local<u32>,
     mut commands: Commands,
 ) {
-    let Some(assets) = assets else { return };
-    let p = assets.physics;
+    if assets.is_none() {
+        return;
+    }
     let dt = time.delta_secs();
     let filter = SpatialQueryFilter::from_excluded_entities(characters.iter()).with_mask(crate::core::NOT_SHADOW);
     let projection = anchors.iter().next().and_then(|a| projection_of(a, &vm_cameras));
     for (e, mut shell, mut transform, children) in &mut shells {
+        let p = shell.physics;
         let s = &mut shell.state;
         let travel = s.velocity * dt;
         let hit = if s.resting || dt <= 0.0 {

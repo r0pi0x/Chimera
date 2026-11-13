@@ -14,7 +14,8 @@
 //!   shells) is not even read: `load_with` gives the loader
 //!   `MapLoadOptions::kit` = `KitLoad::Only(kept)`, so the kit's textures
 //!   and materials aren't loaded with the map's (only the kept weapons'
-//!   models and the impact decals are: the map's game's impacts are
+//!   models with what they draw, their muzzle flash and spent shells, and
+//!   the impact decals are: the map's game's impacts are
 //!   still drawn on it, `MapData::impacts`), and `dress` replaces what is
 //!   left (`GameKit::stay`: a
 //!   field added to the kit needs no line here, a loader that ignores the
@@ -146,9 +147,11 @@ pub enum KitLoad {
 
 impl KitLoad {
     /// Whether the kit's parts that aren't weapon models (character
-    /// bodies, HUD, radio, bot names, round sounds, spray logos, muzzle
-    /// flash, shells, navigation) are loaded. A loader reads the impact
-    /// decals with any kit (they are the map's impact looks', which stay).
+    /// bodies, HUD, radio, bot names, round sounds, spray logos,
+    /// navigation) are loaded. A loader reads the impact decals with any
+    /// kit (they are the map's impact looks', which stay), and the muzzle
+    /// flash and spent shells with any weapon model (`any_models`: what
+    /// its guns draw).
     pub fn parts(&self) -> bool {
         matches!(self, Self::All)
     }
@@ -180,7 +183,8 @@ impl KitLoad {
         }
     }
 
-    /// Whether any weapon model is loaded.
+    /// Whether any weapon model is loaded (and with them what the guns
+    /// draw: muzzle flashes, spent shells).
     pub fn any_models(&self) -> bool {
         match self {
             Self::All => true,

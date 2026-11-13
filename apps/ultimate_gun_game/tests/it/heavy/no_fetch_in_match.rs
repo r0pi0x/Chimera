@@ -31,8 +31,8 @@
 //! client logs during a match (`assets: fetched on demand during the match
 //! ...`) fails the test, listed with what covers it; so does any guns'
 //! effect file (`effect_file`: Source's effect materials, sprites,
-//! particles and decals, which a guest game's dressing loads on every map)
-//! fetched on demand at all, at a map's load too (the client's
+//! particles and decals, spent shells' models, which a guest game's
+//! dressing loads on every map) fetched on demand at all, at a map's load too (the client's
 //! `CHIMERA_ASSET_FETCH_LOG`); so does any file the
 //! client's store lists but holds no record of (`asset miss`). Skipped with a note
 //! without the CS:S and Combat Arms installs, without a published store
@@ -228,12 +228,23 @@ fn until(app: &mut App, client: &mut Client, limit: Duration, mut done: impl FnM
 }
 
 /// Whether `path` is one of a Source game's effect files (the effect
-/// materials, sprites and particles its guns draw, their impact decals).
+/// materials, sprites and particles its guns draw, their impact decals,
+/// their spent shells' models: CS:S's `models/shells/`, HL2:DM's
+/// `models/weapons/shell` and `shotgun_shell`, with their textures).
 fn effect_file(path: &str) -> bool {
     let p = path.to_ascii_lowercase();
-    ["materials/effects/", "materials/sprites/", "materials/particle/", "materials/decals/"]
-        .iter()
-        .any(|d| p.starts_with(d))
+    [
+        "materials/effects/",
+        "materials/sprites/",
+        "materials/particle/",
+        "materials/decals/",
+        "models/shells/",
+        "materials/models/shells/",
+        "models/weapons/shell.",
+        "models/weapons/shotgun_shell.",
+    ]
+    .iter()
+    .any(|d| p.starts_with(d))
 }
 
 /// Every character with a rung on the server (bots and players).

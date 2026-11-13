@@ -9,11 +9,12 @@
 //! Its kit: its 19 player bodies (the `kit` hook, `bodies::add_bodies`),
 //! its weapons' world models held on them (`bodies::add_held`) and view
 //! models (the `held` hook, `add_view_models`), right-handed and never
-//! mirrored (specs/hl2dm/player_models.md 12.1), and with a whole kit the
+//! mirrored (specs/hl2dm/player_models.md 12.1), and with any of them the
 //! SMG1's and shotgun's shells (`shells`). `dress_guest` brings its HUD look and them
 //! onto another game's map (the party's), read from the HL2:DM install,
 //! with what its guns draw (`add_guest_looks`: effect materials, muzzle
-//! flashes, impact decals; on its own maps they come with the map's kit).
+//! flashes, impact decals, spent shells; on its own maps they come with
+//! the map's kit).
 //! Also its chat formats (`chat`: no radio, the dead read by the living),
 //! and its items' and ammo crates' models (`fixed_models`, data/items.toml:
 //! the items as physics props players walk through, the crates solid). The
@@ -238,10 +239,10 @@ fn held_kit(kit: &mut Kit) {
         kit.data.kit.held.extend(held);
     }
     kit.data.kit.muzzle_flash_kinds = super::flashes::kinds(kit.materials);
-    // The SMG1's and the shotgun's shells, with a whole kit.
-    if kit.kit.parts() {
+    // The SMG1's and the shotgun's shells, with any of its guns (another
+    // game's gameplay keeps them with its kept guns: `GameKit::stay`).
+    if kit.kit.any_models() {
         kit.data.kit.shells = super::shells::load(kit.materials, &mut kit.data.warnings);
-        kit.data.kit.shell_physics = Some(super::shells::physics());
     }
     let mut models = Vec::new();
     add_view_models(kit.materials, kit.kit, &mut models, &mut kit.data.warnings);
@@ -322,9 +323,10 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
 /// effect materials (`effects::load_materials`: the AR2's ball, streak
 /// and flashes, the RPG's laser, the crossbow's and gravity gun's
 /// sprites, the explosions', each the map lacks by name), its muzzle
-/// flashes by kind (`flashes::kinds`) and its impacts (`map.impacts`).
-/// Without them its guns' effects found no material on the map: the
-/// energy ball showed its bare model, a white quad.
+/// flashes by kind (`flashes::kinds`), its impacts (`map.impacts`) and
+/// its spent shells (`shells::load`, with HL2:DM's physics). Without them
+/// its guns' effects found no material on the map: the energy ball showed
+/// its bare model, a white quad; and its SMG1 and shotgun ejected nothing.
 pub fn add_guest_looks(materials: &mut MaterialLoader, map: &mut MapData) {
     bsp::add_guest_decals(&mut map.kit.decals, source_engine::content::decals::impact_decals(materials));
     for m in super::effects::load_materials(materials).materials {
@@ -338,6 +340,8 @@ pub fn add_guest_looks(materials: &mut MaterialLoader, map: &mut MapData) {
         }
     }
     map.impacts.add(super::GAME);
+    let shells = super::shells::load(materials, &mut map.warnings);
+    crate::map::shells::add_shells(&mut map.kit.shells, shells);
 }
 
 fn no_extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'static str]) {
