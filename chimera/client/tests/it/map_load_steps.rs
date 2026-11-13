@@ -452,3 +452,37 @@ fn physics_props_weigh_and_fall_as_with_their_mass_computed_again() {
         );
     }
 }
+
+/// The local load (`map::LocalMapLoad`, which what starts play for this
+/// player waits on) is on from the load's start, through its loading,
+/// spawning and settling, and goes the frame the game is entered behind
+/// the loading screen (`front_end::EnteredGame`), never before.
+#[test]
+fn the_local_load_lasts_from_the_start_until_the_game_is_entered() {
+    use chimera_world::map::local_load_under_way;
+    #[derive(Resource, Default)]
+    struct Entered(u32);
+    let mut sim = sim();
+    sim.app.init_resource::<Entered>().add_observer(
+        |_: On<chimera_client::client::front_end::EnteredGame>, mut e: ResMut<Entered>| e.0 += 1,
+    );
+    console::start_map_load(sim.app.world_mut(), "test:steps", None);
+    assert!(local_load_under_way(sim.app.world()), "on from the start");
+    let mut stages = Vec::new();
+    for _ in 0..600 {
+        let stage = console::map_load_stage(sim.app.world());
+        if stage == MapLoadStage::None {
+            break;
+        }
+        assert!(local_load_under_way(sim.app.world()), "on while {stage:?}");
+        assert_eq!(sim.app.world().resource::<Entered>().0, 0, "not in the game while {stage:?}");
+        if stages.last() != Some(&stage) {
+            stages.push(stage);
+        }
+        sim.app.update();
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert!(stages.contains(&MapLoadStage::Settling), "it settled: {stages:?}");
+    assert!(!local_load_under_way(sim.app.world()), "off once in the game");
+    assert_eq!(sim.app.world().resource::<Entered>().0, 1, "entered once");
+}

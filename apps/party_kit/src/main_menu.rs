@@ -35,7 +35,11 @@
 //!   dialog's place and parts (its stage line from `JoinProgress`'s stage,
 //!   the map's load or the download's bytes, a bar, Cancel =
 //!   `disconnect`), also for a map change in a game (a rotation, the
-//!   server's level change); at the screen's foot while the server's
+//!   server's level change: up from the frame the load starts until the
+//!   map is spawned and settled, at least `LOADING_MIN_SECS` so a quick
+//!   swap doesn't flash; held that long, it keeps the local load on,
+//!   `map::LocalMapLoad`, so nothing starts play under it; the log says
+//!   `loading panel up`); at the screen's foot while the server's
 //!   pre-match lobby shows over it (`loading_under_lobby`); Combat Arms' own loading screen instead for
 //!   its maps (user decision 5: `combat_arms::ui::loading`, its map
 //!   picture), gated here (`ca_loading_gate`).
@@ -622,6 +626,7 @@ impl Plugin for MainMenuPlugin {
             .insert_resource(recent)
             .insert_resource(MenuMinigame(self.minigame.clone()))
             .init_resource::<MenuLook>()
+            .init_resource::<LoadingPanel>()
             .add_message::<MainMenuAction>()
             .add_message::<KeyboardInput>()
             .add_observer(entered_game)
@@ -730,33 +735,86 @@ fn init_play(world: &mut World) {
 // ---------------------------------------------------------------------------
 // The front end's events.
 
-fn entered_game(_: On<fe::EnteredGame>, mut menu: ResMut<PartyMenu>, mut console: Option<ResMut<Console>>) {
+/// The shortest a map change's loading panel stays up (s), so a quick
+/// swap (a listen host's map in the cache) shows it rather than a flash.
+pub const LOADING_MIN_SECS: f64 = 0.5;
+
+/// A map change's loading panel in a game (`follow_loads`): when it went
+/// up (`Time<Real>` s), and whether the game was entered before its
+/// `LOADING_MIN_SECS` were up (the panel goes when they are).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq)]
+pub struct LoadingPanel {
+    pub since: Option<f64>,
+    pub enter_due: bool,
+}
+
+fn entered_game(
+    _: On<fe::EnteredGame>,
+    mut menu: ResMut<PartyMenu>,
+    console: Option<ResMut<Console>>,
+    mut panel: ResMut<LoadingPanel>,
+    time: Res<Time<Real>>,
+    mut commands: Commands,
+) {
     if std::mem::take(&mut menu.background_load) {
         menu.loading = None;
         if menu.screen == Screen::Loading {
             menu.screen = Screen::MainMenu;
         }
+        panel.since = None;
         return;
     }
+    // A map change's panel up for less than its minimum: it goes when
+    // that is up (`follow_loads`).
+    if matches!(menu.screen, Screen::Loading | Screen::Joining)
+        && let Some(since) = panel.since
+        && time.elapsed_secs_f64() - since < LOADING_MIN_SECS
+    {
+        panel.enter_due = true;
+        // The local load lasts while the panel shows: nothing starts play
+        // for this player (its start cue, its report to a server) under it.
+        commands.insert_resource(chimera_world::map::LocalMapLoad {
+            map: menu.loading.clone().unwrap_or_default(),
+        });
+        return;
+    }
+    *panel = LoadingPanel::default();
+    enter(&mut menu, console.map(ResMut::into_inner));
+}
+
+/// Into the game: the panel or menu goes, the lines kept for after the
+/// load run.
+fn enter(menu: &mut PartyMenu, console: Option<&mut Console>) {
     menu.screen = Screen::InGame;
     menu.loading = None;
     menu.failure = None;
     menu.focus = None;
     let lines = std::mem::take(&mut menu.after_load);
-    if let Some(c) = console.as_deref_mut() {
+    if let Some(c) = console {
         for l in lines {
             c.submit(l);
         }
     }
 }
 
-fn left_game(_: On<fe::LeftGame>, mut menu: ResMut<PartyMenu>) {
+fn left_game(_: On<fe::LeftGame>, mut menu: ResMut<PartyMenu>, mut panel: ResMut<LoadingPanel>) {
+    *panel = LoadingPanel::default();
     menu.to_menu();
     menu.background_load = false;
     menu.reload_background = true;
 }
 
-fn joining(j: On<fe::Joining>, mut menu: ResMut<PartyMenu>) {
+fn joining(j: On<fe::Joining>, mut menu: ResMut<PartyMenu>, mut panel: ResMut<LoadingPanel>, time: Res<Time<Real>>) {
+    // From a game (the server's level change): the map change's panel,
+    // with its minimum (a later step of the same change keeps its start).
+    *panel = LoadingPanel {
+        since: match menu.screen {
+            Screen::InGame => Some(time.elapsed_secs_f64()),
+            Screen::Loading | Screen::Joining => panel.since,
+            _ => None,
+        },
+        enter_due: false,
+    };
     menu.screen = Screen::Joining;
     menu.page = MenuPage::Main;
     menu.focus = None;
@@ -1218,9 +1276,33 @@ fn follow_loads(world: &mut World) {
     if world.resource::<PartyMenu>().lobby_ready != ready {
         world.resource_mut::<PartyMenu>().lobby_ready = ready;
     }
+    let now = world.resource::<Time<Real>>().elapsed_secs_f64();
+    let panel = *world.resource::<LoadingPanel>();
+    // Entered before the panel's minimum: in once it is up.
+    if panel.enter_due {
+        let screen = world.resource::<PartyMenu>().screen;
+        if !matches!(screen, Screen::Loading | Screen::Joining) || loading {
+            // Left (the hold's load marker goes), or another load began
+            // (its own marker): that decides.
+            world.insert_resource(LoadingPanel { since: panel.since.filter(|_| loading), enter_due: false });
+            if !loading {
+                world.remove_resource::<chimera_world::map::LocalMapLoad>();
+            }
+        } else if panel.since.is_none_or(|s| now - s >= LOADING_MIN_SECS) {
+            world.insert_resource(LoadingPanel::default());
+            world.remove_resource::<chimera_world::map::LocalMapLoad>();
+            world.resource_scope(|world, mut menu: Mut<PartyMenu>| {
+                let console = world.get_resource_mut::<Console>();
+                enter(&mut menu, console.map(Mut::into_inner));
+            });
+            return;
+        }
+    }
     let menu = world.resource::<PartyMenu>();
     if menu.screen == Screen::InGame && loading {
         let map = chimera_client::client::console::loading_map(world).unwrap_or_default();
+        info!("loading panel up: {map}");
+        world.insert_resource(LoadingPanel { since: Some(now), enter_due: false });
         let mut m = world.resource_mut::<PartyMenu>();
         m.screen = Screen::Loading;
         m.loading = Some(map);

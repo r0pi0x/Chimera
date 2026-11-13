@@ -7,7 +7,9 @@
 //! The client: `connect` (`net::udp`, random id, `password` in netcode's user
 //! data; the process's own characters, bots and weapons go), `Join` on
 //! connecting, the welcome's map checked (`NetEvent::LoadMap`, then name and
-//! SHA-256 or leave), the fixed tick set to the server's, characters from the
+//! SHA-256 or leave; reported loaded, and the game entered, only once this
+//! machine's own load is done, `map::LocalMapLoad`; `map::JoiningServer`
+//! on from the join's or a change of level's start until then), the fixed tick set to the server's, characters from the
 //! server given their local components (no movement slot), ours `LocalPlayer`
 //! (its `NetBody` into `Transform`/`Velocity`/`MovementState` until it is
 //! predicted), others `map::interp::NetDrawn` (drawn by `interp`), dropped
@@ -546,6 +548,17 @@ pub fn set_stage(world: &mut World, stage: JoinStage) {
         p.stage = stage;
         p.log.push((stage, now));
     }
+    joining_marker(world, stage);
+}
+
+/// `map::JoiningServer` on while a join or a change of level is under way
+/// (not idle, not in the game): what starts play for this player waits.
+fn joining_marker(world: &mut World, stage: JoinStage) {
+    if matches!(stage, JoinStage::Idle | JoinStage::Joined) {
+        world.remove_resource::<crate::map::JoiningServer>();
+    } else if !world.contains_resource::<crate::map::JoiningServer>() {
+        world.insert_resource(crate::map::JoiningServer);
+    }
 }
 
 /// Joining failed (or the game ended) for `reason`: disconnect; the
@@ -573,6 +586,7 @@ pub(super) fn ended(world: &mut World, reason: &str) {
     } else {
         Some((kind.unwrap_or_else(|| classify(reason, &own, joined)), reason.to_string()))
     };
+    joining_marker(world, JoinStage::Idle);
 }
 
 /// The kind of a disconnect's reason: the server's refusals (their
@@ -737,6 +751,12 @@ fn check_map(world: &mut World) {
     // for, loaded before).
     let loads = world.get_resource::<crate::core::MapLoads>().map_or(0, |l| l.0);
     if h.loads_before.is_some_and(|before| loads <= before) {
+        return;
+    }
+    // Spawned but still settling behind the loading screen
+    // (`map::LocalMapLoad`): not in yet, so the server doesn't put us in
+    // (nor start a match waiting for us) before the load is done.
+    if world.contains_resource::<crate::map::LocalMapLoad>() {
         return;
     }
     match super::map_matches(world, &map, hash) {

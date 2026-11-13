@@ -897,6 +897,32 @@ fn the_moments_follow_the_match_for_the_local_player() {
     assert_eq!(m(&sim).result, Some(Some(true)), "the local player won");
 }
 
+/// A match that goes live while this machine's own map still loads
+/// (`map::LocalMapLoad`: spawned, settling behind the loading screen) has
+/// its moments held: a director hears the start of play (its start cue)
+/// only once the local load is done, never before.
+#[test]
+fn the_moments_wait_for_the_local_load() {
+    use chimera_core::core::LocalPlayer;
+    use chimera_sim::minigame::moments::{MinigameMoments, MomentPhase};
+    use chimera_world::map::LocalMapLoad;
+    let mut sim = started(DEF);
+    let a = player(&mut sim);
+    sim.app.world_mut().entity_mut(a).insert(LocalPlayer);
+    sim.ticks(2);
+    let m = |sim: &Sim| sim.app.world().resource::<MinigameMoments>().clone();
+    assert_eq!(m(&sim).phase, MomentPhase::Waiting);
+    sim.app.world_mut().insert_resource(LocalMapLoad { map: "test:loading".into() });
+    // The second player: the match goes live under the loading screen.
+    let _b = player(&mut sim);
+    settle(&mut sim);
+    assert_eq!(sim.app.world().resource::<Match>().phase, Phase::Live, "the match is live");
+    assert_eq!(m(&sim).phase, MomentPhase::Waiting, "not for the director while the load is under way");
+    sim.app.world_mut().remove_resource::<LocalMapLoad>();
+    sim.ticks(1);
+    assert_eq!(m(&sim).phase, MomentPhase::Live, "live once the local player is in");
+}
+
 /// The ladder's tick (`refill`, `follow_lead`) is two systems gated by
 /// its mode (`mode::mode_is`), chained where the runtime ran the mode's
 /// update: after `join`, before `step_phases`. With `refill_ammo` a rung
