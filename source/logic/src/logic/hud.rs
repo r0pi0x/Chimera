@@ -39,6 +39,23 @@ pub enum HudShow {
     },
 }
 
+/// Show `what` on player `to`'s HUD (None: everyone's) from the authority
+/// (map logic, a host's surprise): here at once when it is for the local
+/// player or everyone (a listen server's host, an offline game), and
+/// handed on as a `HudEvent`, which a network server sends to the
+/// clients it is for (`net::forward_hud`: clients only, never back to
+/// the host). Without the message registered it is shown here only.
+pub fn send_hud(world: &mut World, to: Option<Entity>, what: HudShow) {
+    let local = chimera_core::query_cache::first::<With<crate::core::LocalPlayer>>(world);
+    if to.is_none() || to == local {
+        let now = world.get_resource::<Time>().map_or(0.0, Time::elapsed_secs_f64);
+        show_on_hud(world, what.clone(), now);
+    }
+    if world.contains_resource::<bevy::ecs::message::Messages<HudEvent>>() {
+        world.write_message(HudEvent { to, what });
+    }
+}
+
 /// Show a `HudShow` on this client's HUD at `now` (`Time` elapsed).
 pub fn show_on_hud(world: &mut World, what: HudShow, now: f64) {
     match what {

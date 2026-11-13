@@ -16,7 +16,9 @@
 //!   busy; from the eye along view + punch at 1000 units/s (none of the
 //!   shooter's), 400 units/s² of gravity, a ±3 box that explodes on the
 //!   first solid thing it touches (passing loose weapons), 100 in 250
-//!   (`launch::hl2_blast`).
+//!   (`launch::hl2_blast`); drawn tumbling (4.1: a random spin of
+//!   ±`SMG1_GRENADE_SPIN` deg/s on each axis, `Flyer::spin`, from its nose
+//!   along the launch), not side-on to its flight.
 //! - **Energy ball**: attack2 starts the charge (`Weapon_CombineGuard.
 //!   Special1`; next primary and secondary + 0.5; the AR2 can't be put
 //!   away: `weapon::HolsterLocked`); on the first tick strictly after
@@ -69,6 +71,10 @@ use crate::{
     core::{DamageKind, FirstTimePredicted, Health, Intent, MovementState, NetRole, SimClock},
     map::{PlaySound, logic_view::MapShake},
 };
+
+/// The SMG1 grenade's tumble at most, degrees a second on each axis
+/// (specs/hl2dm/projectiles.md 4.1).
+pub const SMG1_GRENADE_SPIN: f32 = 400.0;
 
 /// `hl2dm:smg1_grenade`'s parameters (Source units, seconds, points).
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -261,6 +267,12 @@ pub fn before_frame(
             out.event(owner, active, WeaponEventKind::Action("grenade"));
             if out.makes() {
                 let mut f = Flyer::new(super::SMG1, Some(owner), fwd * p.speed * U, &out.clock);
+                // 4.1: it tumbles, U(-400, 400) deg/s on each axis, from
+                // its nose (the model's +X) along the launch.
+                let mut rng = shared_random(intent.command, "hl2dm:smg1_grenade", 0);
+                let mut spin = || (rng.next() * 2.0 - 1.0) * SMG1_GRENADE_SPIN.to_radians();
+                f.turn = chimera_sim::weapon::projectile::MODEL_X_FORWARD;
+                f.spin = Vec3::new(spin(), spin(), spin());
                 f.gravity = p.gravity * U;
                 f.half = Vec3::splat(p.half * U);
                 f.pass_items = true;

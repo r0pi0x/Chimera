@@ -35,7 +35,12 @@
 //!   never come).
 //!
 //! The commands run on the authority (a dedicated server's console, a
-//! listen server's host); a network client is refused.
+//! listen server's host); a network client is refused. What they show
+//! plays wherever there is a player: the banners and flashes through map
+//! logic's HUD path (`source_logic::logic::send_hud`: on the local
+//! player's HUD here, a listen server's host or an offline game, and sent
+//! to the clients), the siren as a rules' sound (played here and sent),
+//! the shells as server objects every world draws.
 //!
 //! Known shortcuts: Combat Arms' grenades and projectiles keep their
 //! object gravity (a constant of their spec).
@@ -49,7 +54,7 @@ use chimera_sim::minigame::runtime::BlamelessWeapons;
 use chimera_world::map::{LoadedMapName, nav::NavMesh};
 use chimera_world::map::{GameSound, PlaySound};
 use combat_arms::game::special::devices::{STRIKE_ALARM, drop_strike_shell, strike_floor, strike_start};
-use source_logic::logic::{HudEvent, HudMessage, HudShow, ScreenFade};
+use source_logic::logic::{HudMessage, HudShow, ScreenFade, send_hud};
 
 /// The designators whose shells fall (special_weapons.md 6.10), and how
 /// many of every `LGB_WEIGHT + NAPALM_WEIGHT` shells are each's.
@@ -469,32 +474,27 @@ fn banner(text: &str, channel: usize, color: [u8; 3], hold: f32) -> HudMessage {
 }
 
 /// Show `m` on every player's HUD (map logic's game_text, which every
-/// client of the party draws).
+/// client of the party draws): the host's own too (`send_hud`: a
+/// listen server's player, an offline game), not only the network's.
 fn hud(world: &mut World, m: HudMessage) {
-    if world.contains_resource::<Messages<HudEvent>>() {
-        world.write_message(HudEvent {
-            to: None,
-            what: HudShow::Text(m),
-        });
-    }
+    send_hud(world, None, HudShow::Text(m));
 }
 
 /// A screen flash of `color` at `alpha` fading out over `seconds`
 /// (map logic's env_fade).
 fn flash(world: &mut World, color: [u8; 3], alpha: u8, seconds: f32) {
-    if world.contains_resource::<Messages<HudEvent>>() {
-        world.write_message(HudEvent {
-            to: None,
-            what: HudShow::Fade(ScreenFade {
-                duration: ScreenFade::quantize(seconds),
-                hold: 0.0,
-                color,
-                alpha,
-                fade_in: true,
-                modulate: false,
-                stay_out: false,
-                purge: false,
-            }),
-        });
-    }
+    send_hud(
+        world,
+        None,
+        HudShow::Fade(ScreenFade {
+            duration: ScreenFade::quantize(seconds),
+            hold: 0.0,
+            color,
+            alpha,
+            fade_in: true,
+            modulate: false,
+            stay_out: false,
+            purge: false,
+        }),
+    );
 }

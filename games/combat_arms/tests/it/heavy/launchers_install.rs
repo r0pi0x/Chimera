@@ -181,3 +181,75 @@ fn the_air_strike_shells_are_their_own_records() {
     let missing: Vec<&String> = files.iter().filter(|f| mount.read(f).is_err()).collect();
     assert!(missing.is_empty(), "every file reads from the install: {missing:?}");
 }
+
+/// The install's projectile models fly nose first (the playtest of
+/// 2026-11-13 saw the air strike's shells fall on their side): each
+/// model's nose (the pointed end of its long axis, its fins or flare at
+/// the other) drawn with the rotation its object gets, `facing` its
+/// flight and its own turn (the strike shells' `STRIKE_SHELL_TURN`), lies
+/// within a few degrees of the flight: a rocket's along a level shot and
+/// one 30 degrees up, a strike shell's straight down.
+#[test]
+fn projectile_models_fly_nose_first() {
+    use combat_arms::game::{
+        model,
+        special::{DEVICE, DeviceParams, devices::STRIKE_SHELL_TURN, facing},
+    };
+    if LocalConfig::load().ok().and_then(|c| c.game_path(GAME)).is_none() {
+        eprintln!("skipping: no Combat Arms install configured");
+        return;
+    }
+    let ca = CaData::install();
+    if ca.attributes().and_then(|a| a.weapons.as_ref()).is_none() {
+        eprintln!("skipping: the install's attribute data isn't readable (the V1 key)");
+        return;
+    }
+    let mount = ca.mount().expect("the install's mount");
+    let file = |p: &str| mount.read(p).ok();
+    // The model's nose as drawn: from its middle toward the narrower end
+    // of its longest axis.
+    let nose = |path: &str| -> Vec3 {
+        let loaded = model::load(path, &file).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let mut m = model::convert(&loaded, 1.0, &|_| String::new());
+        if let Some(entry) = model::rest_entry(&loaded, combat_arms::game::characters::models::THROWN_POSE) {
+            model::pose_meshes(&loaded.model, entry, &mut m.meshes, 1.0);
+        }
+        let pts: Vec<Vec3> = m.meshes.iter().flat_map(|me| me.positions.iter().map(|p| Vec3::from(*p))).collect();
+        let lo = pts.iter().fold(Vec3::splat(f32::MAX), |a, p| a.min(*p));
+        let hi = pts.iter().fold(Vec3::splat(f32::MIN), |a, p| a.max(*p));
+        let ax = (0..3).max_by(|a, b| (hi[*a] - lo[*a]).total_cmp(&(hi[*b] - lo[*b]))).unwrap();
+        let radius = |near: f32| {
+            pts.iter()
+                .filter(|p| (p[ax] - near).abs() < (hi[ax] - lo[ax]) * 0.1)
+                .map(|p| {
+                    let mut v = *p;
+                    v[ax] = 0.0;
+                    v.length()
+                })
+                .fold(0.0, f32::max)
+        };
+        let mut n = Vec3::ZERO;
+        n[ax] = if radius(lo[ax]) < radius(hi[ax]) { -1.0 } else { 1.0 };
+        n
+    };
+    let set = ca.weapon_set();
+    let weapon = |id: &str| set.weapons.iter().find(|w| w.id == id).unwrap_or_else(|| panic!("{id}"));
+    // Rockets and launcher shells: no turn.
+    for id in ["combat_arms:law", "combat_arms:rpg-7", "combat_arms:m32"] {
+        let p = combat_arms::game::special::projectiles_of(weapon(id));
+        let path = p.first().and_then(|p| p.drawn_model()).unwrap_or_else(|| panic!("{id}'s projectile model")).to_string();
+        let n = nose(&path);
+        for dir in [Vec3::new(0.3, 0.0, -1.0).normalize(), Vec3::new(1.0, 30f32.to_radians().tan(), 0.0).normalize()] {
+            let drawn = facing(dir) * n;
+            assert!(drawn.angle_between(dir).to_degrees() < 3.0, "{id} ({path}): nose {drawn:?} vs flight {dir:?}");
+        }
+    }
+    // The strike shells: straight down, upright models.
+    for id in ["combat_arms:lgb", "combat_arms:airstrike_napalm"] {
+        let shell = weapon(id).hook::<DeviceParams>(DEVICE).and_then(|d| d.strike).expect("a strike").shell;
+        let path = shell.drawn_model().expect("the shell's model").to_string();
+        let n = nose(&path);
+        let drawn = facing(Vec3::NEG_Y) * STRIKE_SHELL_TURN * n;
+        assert!(drawn.angle_between(Vec3::NEG_Y).to_degrees() < 3.0, "{id} ({path}): nose {drawn:?} falling");
+    }
+}

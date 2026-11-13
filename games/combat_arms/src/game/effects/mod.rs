@@ -56,7 +56,9 @@
 //! - **Grenades** (`grenade_effects`, 9): the ImpactFX by weapon
 //!   (`[grenade]` in data/effects.toml; an impact projectile's, a rocket's
 //!   or a launcher shell's, its weapon's `combat_arms:effects` `impact`,
-//!   with the install's record from the merge: special_weapons.md 1.3):
+//!   with the install's record from the merge: special_weapons.md 1.3;
+//!   the weapon as seen here, else its data: an air strike's designator
+//!   nobody holds):
 //!   its sound at the blast (none on
 //!   sky); the surface's grenade group when seen (that of the grenade's
 //!   last bounce or touch, its own Metal if none: mid-air too; a
@@ -1446,6 +1448,7 @@ fn grenade_effects(
     mut rolls: Local<Rolls>,
     volumes: Query<&CaVolume>,
     known: Res<KnownWeapons>,
+    catalog: Option<Res<crate::weapon::data::WeaponCatalog>>,
 ) {
     let cam = camera(&cameras);
     let last: Vec<CaBlastSurface> = surfaces.read().cloned().collect();
@@ -1453,8 +1456,17 @@ fn grenade_effects(
         // A grenade's record by weapon (`[grenade]`), else an impact
         // projectile's: its weapon's ImpactFX (the ammo's `ImpactFXName`,
         // the install's record when the tables lack it; special_weapons.md
-        // 1.3), played as a launched round's.
-        let launched_fx = known.by_id.get(d.weapon).and_then(|k| k.fx.as_ref());
+        // 1.3), played as a launched round's. The weapon as seen here,
+        // else its data: a weapon nobody here ever held (a host's air
+        // strike's designators) blows up as its data says.
+        let from_data: Option<CaWeaponFx> = known
+            .by_id
+            .get(d.weapon)
+            .and_then(|k| k.fx.as_ref())
+            .is_none()
+            .then(|| catalog.as_ref().and_then(|c| c.get(d.weapon)).and_then(|w| w.hook::<CaWeaponFx>(EFFECTS)))
+            .flatten();
+        let launched_fx = known.by_id.get(d.weapon).and_then(|k| k.fx.as_ref()).or(from_data.as_ref());
         let record = match tables.grenade.get(d.weapon) {
             Some(g) => tables.impact(&g.impact),
             None => launched_fx.and_then(|w| w.impact_of(&tables)),

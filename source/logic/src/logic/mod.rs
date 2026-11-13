@@ -46,6 +46,6 @@ pub use bridge::{
     CarriedMover, BlastInfluenceWindow, PropBlastWeapon, FirstImpactScale, KeepPropsOnBreak, Logic, LogicOneShot, LogicPlugin, LogicSeed, LogicSet, PlayerImpactScale, PromptSideHits, brush_to_engine, carry_player,
     mover_brushes_at,
 };
-pub use hud::{HudEvent, HudMessage, MapSay, HudMessages, HudShow, MapShake, ScreenFade, ScreenFades};
+pub use hud::{HudEvent, HudMessage, MapSay, HudMessages, HudShow, MapShake, ScreenFade, ScreenFades, send_hud};
 pub use value::Value;
 pub use world::{BrushCollision, Collision, Delivery, Effect, EntId, LogicWorld, NoCollision, Player, Who};
