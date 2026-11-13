@@ -46,8 +46,11 @@
 //! #   see-through; the player's first attack ends both (`fire_ends`, the
 //! #   default); a hit on the player shows nothing meanwhile
 //! points = "far_from_enemies"   # or "map" (in turn), "team" (the player's team's),
-//!                               # "random_hidden" (anywhere walkable, out of enemies' sight)
+//!                               # "random_hidden" (anywhere walkable, out of enemies' sight),
+//!                               # "scored" (anywhere walkable, the best of a scored sample:
+//!                               # `minigame::spawn_score`)
 //! min_distance = 20.32          # m from a living enemy for "random_hidden" (800 u)
+//! scoring = { near = 12 }       # "scored"'s weights over chimera/sim/data/spawn_scoring.toml
 //! kit = ["combat_arms:m9_knife"]   # given every life, before the rules' weapons; or by
 //! # kit = { cs_source = ["cs_source:weapon_knife"], combat_arms = ["combat_arms:m9_knife"] }
 //! #   game: the kit of the rules' weapon's game (`Kit::ByGame`), swapped with it
@@ -252,9 +255,13 @@ pub struct SpawnDef {
     /// by default.
     #[serde(default = "default_min_distance")]
     pub min_distance: f32,
-    /// Which way `random_hidden` spawns face (`Facing`).
+    /// Which way `random_hidden` and `scored` spawns face (`Facing`).
     #[serde(default)]
     pub facing: Facing,
+    /// `scored`'s weights and thresholds over the built-in ones
+    /// (`spawn_score::ScoringSettings`, chimera/sim/data/spawn_scoring.toml).
+    #[serde(default)]
+    pub scoring: Option<toml::Table>,
     /// Weapons given every life before the rules' own.
     #[serde(default)]
     pub kit: Kit,
@@ -348,6 +355,7 @@ impl Default for SpawnDef {
             points: Points::default(),
             min_distance: default_min_distance(),
             facing: Facing::default(),
+            scoring: None,
             kit: Kit::default(),
         }
     }
@@ -451,6 +459,11 @@ pub enum Points {
     /// (seeded), out of every living enemy's sight and at least
     /// `min_distance` from each; relaxed when none is.
     RandomHidden,
+    /// A spot anywhere on the map's walkable floor, the best of a seeded
+    /// sample by score (`spawn_score`: out of the enemies' view, not too
+    /// near or far, away from recent fights and one's own last spawn and
+    /// death); a match's start places everyone one at a time.
+    Scored,
 }
 
 /// The rules module and its own keys.
@@ -494,6 +507,7 @@ impl MinigameDef {
         }
         super::vote::MapVoteSettings::of(self).map_err(|e| format!("map_vote: {e}"))?;
         super::map_fit::FitSettings::of(self).map_err(|e| format!("map_fit: {e}"))?;
+        super::spawn_score::ScoringSettings::of(self).map_err(|e| format!("spawn.scoring: {e}"))?;
         Ok(())
     }
 

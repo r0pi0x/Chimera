@@ -841,6 +841,23 @@ that):
   sighting: Combat Arms' infection moment plays for arrivals only. What
   a rung puts on a player that replicates anyway (a look, fitted parts)
   stays the host's `RungExtrasHook::apply`.
+- **Spawns by score, out of view** (user, 2026-11-13: "a Call of
+  Duty-like spawn system ... optimized for not being in someone's view";
+  `points = "scored"`, `minigame::spawn_score`; both gun games): a spawn
+  is the best of a seeded sample of the map's spawn spots (the walkable
+  floors), scored from data (chimera/sim/data/spawn_scoring.toml, tuned
+  per definition under `[spawn.scoring]`): a heavy cost for each living
+  enemy who can see the spot (the head or centre), full inside its field
+  of view and less behind it; too near an enemy (under 10 m) costs, very
+  far a little; recent deaths and shots near the spot cost for a few
+  seconds; the player's own last spawn and death place cost; a friend
+  near helps where a mode has teams. The spawn faces open space, away
+  from the nearest enemy and never toward one in sight. At a match's
+  start everyone (bots and humans alike) is placed one at a time in a
+  seeded order, each against those placed before it: before, the start
+  checked each spawn against the others' old places, so players opened
+  in each other's view. Never fails: the least bad spot wins on a map too
+  small to hide.
 
 ### Automatic gun games (variety)
 

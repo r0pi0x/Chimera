@@ -16,7 +16,10 @@
 //!   a round over of `ROUND_OVER` s, an intermission of `INTERMISSION` s,
 //!   then the match over, its winner the round's (`Mode::match_end`).
 //! - Spawning (`respawn`): at a spawn point the definition's `points`
-//!   pick (`spawn_point`), revived (`spawning::revive`), the definition's
+//!   pick (`spawn_point`; `scored` places a whole mission start's
+//!   respawns one at a time, `spawn_score::begin_batch` at
+//!   `FlowEvent::MissionStart`, and remembers danger,
+//!   `spawn_score::remember_danger`), revived (`spawning::revive`), the definition's
 //!   movement set, the weapons taken and the life's given (the kit, then
 //!   the rules module's `loadout`, the last drawn, after the arming
 //!   (`minigame::Arming`, triggered and applied there);
@@ -162,6 +165,12 @@ fn length(world: &mut World, span: Span) -> Option<f64> {
 
 fn event(world: &mut World, event: FlowEvent) {
     match event {
+        // Everyone respawns next: placed one at a time, by score.
+        FlowEvent::MissionStart
+            if world.get_resource::<ActiveMinigame>().is_some_and(|a| a.def.spawn.points == Points::Scored) =>
+        {
+            super::spawn_score::begin_batch(world);
+        }
         FlowEvent::ResetStats => {
             for (e, _) in players(world) {
                 world.entity_mut(e).insert(Score::default());
@@ -294,10 +303,14 @@ pub fn spawn_point_in(
             Some(at) => return Some(at),
             None => Points::FarFromEnemies,
         },
+        Points::Scored => match super::spawn_score::pick(world, e, facing) {
+            Some(at) => return Some(at),
+            None => Points::FarFromEnemies,
+        },
         p => p,
     };
     match points {
-        Points::RandomHidden => unreachable!("handled above"),
+        Points::RandomHidden | Points::Scored => unreachable!("handled above"),
         Points::Map => {
             let n = all.len();
             let start = world.get_resource_or_init::<SpawnCursor>().0;
@@ -762,6 +775,7 @@ pub(super) fn plugin(app: &mut App) {
             (
                 (
                     super::spawns::prepare_spots,
+                    super::spawn_score::remember_danger,
                     join,
                     super::ladder::per_tick(),
                     step_phases,

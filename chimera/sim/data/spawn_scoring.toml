@@ -1,0 +1,48 @@
+# Spawn scoring (chimera_sim::minigame::spawn_score): how `points = "scored"`
+# rates each candidate spot; the highest score wins. A definition tunes any
+# key with a `[spawn.scoring]` table. Penalties are points taken off; the
+# friend bonus is added. Distances in metres.
+
+# Candidate spots scored per spawn (drawn at random from the map's spots).
+samples = 96
+
+# A living enemy who can see the spot (a clear line from its eye to the
+# spawned player's head or centre): this much off when the spot is inside
+# its field of view, `behind` of it when straight behind (in between,
+# linearly by angle), added up over every enemy who sees it.
+seen = 100.0
+fov = 110.0        # degrees, the whole cone
+behind = 0.3
+
+# Distance to the nearest living enemy: under `near` costs `close` at
+# `near` rising to twice that at 0; past `far` costs up to `far_penalty`
+# (reached at twice `far`).
+near = 10.0
+close = 60.0
+far = 45.0
+far_penalty = 4.0
+
+# Danger memory: each recent death or shot (the shooter's place) costs up
+# to `danger` at the spot itself, falling to nothing at `danger_radius`
+# and over `danger_memory`.
+danger = 25.0
+danger_radius = 8.0
+danger_memory = "5s"
+
+# No repeats: within `repeat_radius` of the player's own last spawn or
+# its death place.
+repeat = 30.0
+repeat_radius = 6.0
+
+# Teams (never free for all): a living friend within `friend_radius` adds
+# up to `friend` (the nearest one's, by closeness).
+friend = 5.0
+friend_radius = 15.0
+
+# A seeded random up to this much, so equal spots don't always break the
+# same way.
+jitter = 3.0
+
+# Facing: the open directions (the minigame's `[spawn] facing`) weighed
+# down toward the nearest enemy by up to this share (0: off).
+face_away = 0.6

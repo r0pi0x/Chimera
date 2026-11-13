@@ -13,6 +13,7 @@ mod nav_bounds;
 mod movement;
 mod noclip_damage;
 mod rung_extras;
+mod spawn_score;
 mod spawns;
 mod view_anim;
 mod weapon_frame;

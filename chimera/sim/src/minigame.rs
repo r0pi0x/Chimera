@@ -105,6 +105,7 @@ pub mod results;
 pub mod rotation;
 pub mod power;
 pub mod runtime;
+pub mod spawn_score;
 pub mod spawns;
 pub mod vote;
 pub mod wins;

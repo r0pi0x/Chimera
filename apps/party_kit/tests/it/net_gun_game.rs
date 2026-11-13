@@ -29,6 +29,8 @@ use combat_arms::{
 };
 use party_kit::{DEFAULT_MINIGAME, PartyPartsPlugin};
 
+use crate::gun_game;
+
 fn setup(app: &mut App) {
     app.add_plugins((GreyboxMapPlugin, PartyPartsPlugin));
 }
@@ -122,6 +124,17 @@ fn a_client_cant_start_or_restart_the_minigame_itself() {
     );
 }
 
+/// `a` on the greybox's open middle and `b` 4 m in front of it (-Z), on
+/// the server: wherever their spawns put them (a spawn's spot is the
+/// picker's to choose, and one may have a crate 4 m ahead).
+pub(crate) fn face_off(sim: &mut NetSim, a: Entity, b: Entity) {
+    let w = sim.server.app.world_mut();
+    for (e, at) in [(a, gun_game::OPEN), (b, gun_game::OPEN + Vec3::new(0.0, 0.0, -4.0))] {
+        w.get_mut::<Transform>(e).unwrap().translation = at;
+        w.get_mut::<avian3d::prelude::Position>(e).unwrap().0 = at;
+    }
+}
+
 /// Client 0 (character `a`) shoots client 1 (`b`) dead with rung `kill`'s
 /// gun, which each client sees in its owner's hand with rounds in it.
 pub(crate) fn kill_once(sim: &mut NetSim, kill: usize, a: Entity, b: Entity, ladder: &[&'static str]) {
@@ -134,12 +147,7 @@ pub(crate) fn kill_once(sim: &mut NetSim, kill: usize, a: Entity, b: Entity, lad
     );
     sim.ticks(30);
     assert_eq!(held(sim, 1), Some(ladder[0]), "the victim, back, has the first rung's gun on its client");
-    let at = sim.server.position(a) + Vec3::new(0.0, 0.0, -4.0);
-    {
-        let w = sim.server.app.world_mut();
-        w.get_mut::<Transform>(b).unwrap().translation = at;
-        w.get_mut::<avian3d::prelude::Position>(b).unwrap().0 = at;
-    }
+    face_off(sim, a, b);
     sim.ticks(90);
     let me = sim.local_player(0).unwrap();
     let mut dead = false;
@@ -467,12 +475,7 @@ fn a_clients_own_killing_shot_sounds_once() {
         "the victim is in play"
     );
     sim.ticks(30);
-    let at = sim.server.position(a) + Vec3::new(0.0, 0.0, -4.0);
-    {
-        let w = sim.server.app.world_mut();
-        w.get_mut::<Transform>(b).unwrap().translation = at;
-        w.get_mut::<avian3d::prelude::Position>(b).unwrap().0 = at;
-    }
+    face_off(&mut sim, a, b);
     sim.ticks(90);
     let cursors = |w: &World| (
         w.resource::<Messages<WeaponEvent>>().get_cursor_current(),
@@ -640,12 +643,7 @@ fn parts_kept_from_the_spawn_reach_the_client_as_the_server_has_them() {
         minigame::ladder::set_rung(w, a, 6, &l);
     }
     assert!(sim.until(300, |s| held(s, 0) == Some("cs_source:weapon_ak47")), "the AK-47 on the client");
-    let at = sim.server.position(a) + Vec3::new(0.0, 0.0, -4.0);
-    {
-        let w = sim.server.app.world_mut();
-        w.get_mut::<Transform>(b).unwrap().translation = at;
-        w.get_mut::<avian3d::prelude::Position>(b).unwrap().0 = at;
-    }
+    face_off(&mut sim, a, b);
     sim.ticks(90);
     let (mut kick, mut flinch) = ([0.0f32; 2], [0.0f32; 2]);
     let mut dead = false;

@@ -78,7 +78,7 @@ fn turret_of(sim: &mut Sim, owner: Entity) -> Option<Entity> {
 
 /// Two soldiers in, both past their spawn protection: `a` on the turret
 /// rung at the open middle facing -Z, `b` on rung `b_rung` 7 m in front
-/// of him.
+/// of him, facing him.
 fn two(sim: &mut Sim, b_rung: usize) -> (Entity, Entity) {
     let a = soldier(sim);
     let b = soldier(sim);
@@ -89,6 +89,9 @@ fn two(sim: &mut Sim, b_rung: usize) -> (Entity, Entity) {
     place(sim, a, OPEN);
     place(sim, b, OPEN + Vec3::new(0.0, 0.0, -7.0));
     sim.intent(a).yaw = 0.0;
+    // b faces a (its spawn's facing is the spawn picker's to choose, and
+    // a body side-on is a narrower mark).
+    sim.intent(b).yaw = std::f32::consts::PI;
     sim.ticks(2);
     (a, b)
 }
