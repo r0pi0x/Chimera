@@ -46,9 +46,26 @@
 //! settles, but other props then misbehave (one flew off at 50 m/s). Why
 //! it's OK for now: the rocking is about a degree, and every de_dust2 prop
 //! sleeps within a few seconds of a push (games/cs_source/tests/it/heavy/map_prop_settle.rs).
+//! Every sleep we ask for goes through `SleepBodyNow`, a work-around for an
+//! avian 0.8 bug: its `SleepBody` command splits an island that lost a
+//! constraint by walking the contact graph, but a contact whose collider
+//! went since the last step (despawned, disabled, its body's `RigidBody`
+//! inserted again) is gone from the graph while still in the island's
+//! list until the next step applies the queued change; the split misses
+//! it, leaving it linked to contacts of the new islands, and unlinking it
+//! then corrupts their lists (a debug assertion in `islands/mod.rs`
+//! `remove_contact`). Repro: a stack of three dynamic boxes on a static
+//! floor, one contact removed in a step, a fourth box on top despawned,
+//! then `SleepBody` on the bottom box and a step
+//! (`sleeping_a_body_whose_island_waits_to_drop_a_contact`). Why it's OK
+//! for now: applying the queue first (`FlushContactStatusChangeQueue`) is
+//! Avian's own API; inserting `Sleeping` directly still takes the bare path.
 
 use avian3d::{
-    dynamics::solver::islands::{BodyIslandNode, SleepBody},
+    dynamics::solver::{
+        FlushContactStatusChangeQueue,
+        islands::{BodyIslandNode, SleepBody},
+    },
     prelude::*,
 };
 use bevy::{ecs::system::SystemParam, prelude::*};
@@ -288,6 +305,26 @@ pub fn wake(world: &mut World, node: Entity) {
     }
 }
 
+/// Avian's `SleepBody`, after the contact changes it holds for its next
+/// step are applied (`FlushContactStatusChangeQueue`). `SleepBody` splits
+/// the body's island first when the island lost a constraint, finding its
+/// contacts through the contact graph; a contact already gone from the
+/// graph (its collider despawned or disabled, its body's `RigidBody`
+/// inserted again, since the last step) but not yet unlinked from the
+/// island is missed and keeps its old links, and unlinking it at the next
+/// step corrupts the new island's contact list (avian 0.8 panics on it with
+/// debug assertions: `islands/mod.rs`, `next_contact_island.prev ==
+/// Some(contact_id)`). Every sleep this crate asks for goes through this.
+pub struct SleepBodyNow(pub Entity);
+
+impl Command for SleepBodyNow {
+    type Out = Result;
+    fn apply(self, world: &mut World) -> Result {
+        FlushContactStatusChangeQueue.apply(world);
+        SleepBody(self.0).apply(world)
+    }
+}
+
 /// Whether a prop node is still asleep since it spawned.
 pub fn asleep(world: &World, node: Entity) -> bool {
     world.get::<StartAsleep>(node).is_some()
@@ -295,11 +332,20 @@ pub fn asleep(world: &World, node: Entity) -> bool {
 
 /// Put a body to sleep.
 pub fn sleep(world: &mut World, node: Entity) {
-    if let Ok(mut e) = world.get_entity_mut(node)
+    if let Ok(e) = world.get_entity(node)
         && e.get::<RigidBody>().is_some_and(|b| b.is_dynamic())
         && !e.contains::<Sleeping>()
     {
-        e.insert(Sleeping);
+        // Its island by `SleepBodyNow`: `Sleeping`'s insert hook sleeps
+        // it by a bare `SleepBody`.
+        if e.contains::<BodyIslandNode>() {
+            let _ = SleepBodyNow(node).apply(world);
+        }
+        if let Ok(mut e) = world.get_entity_mut(node)
+            && !e.contains::<Sleeping>()
+        {
+            e.insert(Sleeping);
+        }
     }
 }
 
@@ -608,7 +654,7 @@ pub fn settle_props(
             w.bypass_change_detection().0 = Vec3::ZERO;
             if slept.insert(island.island_id().0) {
                 commands.entity(e).try_remove::<Settling>();
-                commands.queue(SleepBody(e));
+                commands.queue(SleepBodyNow(e));
             }
         }
     }
@@ -624,7 +670,7 @@ pub fn settle_props(
         // runs again, and it must not count as still from before.
         commands.entity(e).try_remove::<Settling>();
         if slept.insert(island) {
-            commands.queue(SleepBody(e));
+            commands.queue(SleepBodyNow(e));
         }
     }
 }
@@ -672,5 +718,83 @@ mod tests {
         system.run_without_applying_deferred((), &mut world).unwrap();
         world.despawn(body);
         system.apply_deferred(&mut world);
+    }
+
+    /// A headless app with Avian's plugins, a step a frame.
+    fn physics_app() -> App {
+        let mut app = App::new();
+        app.add_plugins((
+            MinimalPlugins,
+            TransformPlugin,
+            AssetPlugin::default(),
+            bevy::mesh::MeshPlugin,
+            PhysicsPlugins::default(),
+        ))
+        .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(std::time::Duration::from_secs_f64(
+            1.0 / 64.0,
+        )))
+        // Avian's own sleeping (and its own island splits) stay out of it.
+        .insert_resource(TimeToSleep(1000.0));
+        app.finish();
+        app.cleanup();
+        app.update();
+        app
+    }
+
+    fn crate_at(app: &mut App, y: f32) -> Entity {
+        app.world_mut()
+            .spawn((RigidBody::Dynamic, Collider::cuboid(1.0, 1.0, 1.0), Transform::from_xyz(0.0, y, 0.0)))
+            .id()
+    }
+
+    /// A body put to sleep while its island holds a contact whose collider
+    /// went since the last step (despawned: Avian unlinks the contact at
+    /// its next step): the island's split before the sleep must not miss
+    /// it. A bare `SleepBody` did, and the next step panicked unlinking it
+    /// (`next_contact_island.prev == Some(contact_id)`, avian 0.8's
+    /// `islands/mod.rs`; a corrupt contact list without debug assertions):
+    /// Ultimate Gun Game's session on dm_lockdown, its props settling and
+    /// broken.
+    #[test]
+    fn sleeping_a_body_whose_island_waits_to_drop_a_contact() {
+        let mut app = physics_app();
+        let w = app.world_mut();
+        w.spawn((RigidBody::Static, Collider::cuboid(20.0, 1.0, 20.0), Transform::from_xyz(0.0, -0.5, 0.0)));
+        // A stack: one island, the floor's contact and each crate's on the one below.
+        let bottom = crate_at(&mut app, 0.5);
+        crate_at(&mut app, 1.5);
+        let third = crate_at(&mut app, 2.5);
+        let top = crate_at(&mut app, 3.5);
+        for _ in 0..10 {
+            app.update();
+        }
+        // A contact gone in a step: the island has lost a constraint, so a
+        // sleep splits it first.
+        app.world_mut().despawn(top);
+        app.update();
+        // The newest contact (the head of the island's list), then its
+        // collider gone between steps.
+        let last = crate_at(&mut app, 3.5);
+        for _ in 0..10 {
+            app.update();
+        }
+        assert!(app.world().resource::<ContactGraph>().contains(last, third), "the new crate rests on the stack");
+        app.world_mut().despawn(last);
+        SleepBodyNow(bottom).apply(app.world_mut()).unwrap();
+        assert!(app.world().get::<Sleeping>(bottom).is_some(), "the stack sleeps");
+        // The step unlinks the despawned crate's contact, and wakes the stack.
+        for _ in 0..10 {
+            app.update();
+        }
+        // The island, still whole: woken, slept and woken again.
+        app.world_mut().despawn(third);
+        for _ in 0..5 {
+            app.update();
+        }
+        SleepBodyNow(bottom).apply(app.world_mut()).unwrap();
+        avian3d::prelude::WakeBody(bottom).apply(app.world_mut()).unwrap();
+        for _ in 0..5 {
+            app.update();
+        }
     }
 }
