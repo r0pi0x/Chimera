@@ -153,8 +153,10 @@
 //! (`decode_all`, on `map::parallel::par_map`; none of it with
 //! `MapLoadOptions::textures` off, the dedicated server's: then the map is
 //! `SizesOnly` while it loads, so the models' textures added to it, the
-//! character models' shared conversion, the view models and the effects'
-//! looks, the dressing of another game's map too, keep their sizes only;
+//! character models' shared conversion and the view models, the dressing
+//! of another game's map too, keep their sizes only, and the effects'
+//! looks are left out, the effect file not read, Combat Arms' impacts
+//! still registered (`effects::library::add_looks`);
 //! a model loaded on its own to be kept for later maps, a body, held or
 //! view model loaded on demand or the shared character models, is
 //! `BlocksOnly`: a texture with whole DXT blocks keeps them alone, not
@@ -291,8 +293,9 @@ pub static DRESSING: MapDressing = MapDressing {
 
 /// A map's memo (`MapData::memos`) while it loads without textures
 /// (`MapLoadOptions::textures` off: the dedicated server's): the models'
-/// textures added to it (`model_textures`, the effects' looks) keep their
-/// sizes only, no texels or mip levels, as the world's do. The server drew
+/// textures added to it (`model_textures`) keep their sizes only, no texels
+/// or mip levels, as the world's do, and it takes no effect looks or
+/// library (`effects::library::add_looks`). The server drew
 /// none of them and held 1-2 GB of them (docs/performance.md, "The dedicated
 /// server's memory").
 #[derive(Clone, Copy, Debug, Default)]

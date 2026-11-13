@@ -179,10 +179,10 @@ fn warehouse_loads_within_budget() {
 
 /// A lean load (`MapLoadOptions::lean`, the dedicated server's): the same
 /// textures by name and size, no texels or mip levels, the character, held
-/// and view models' and the effects' too (`world::SizesOnly`: the server held
-/// 1-2 GB of them, docs/performance.md, "The dedicated server's memory");
-/// the whole load has both. The lean one first, so its peak memory shows
-/// alone.
+/// and view models' too (`world::SizesOnly`: the server held 1-2 GB of them,
+/// docs/performance.md, "The dedicated server's memory"), and none of the
+/// effects' (it reads no effect file: `effects::library::add_looks`); the
+/// whole load has both. The lean one first, so its peak memory shows alone.
 #[test]
 fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
     use chimera_world::map::MapLoadOptions;
@@ -199,8 +199,22 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
         started.elapsed().as_secs_f32(),
         peak_mb()
     );
-    assert_eq!(lean.textures.len(), full.textures.len());
-    let world_textures = lean.textures.iter().zip(&full.textures).filter(|(l, _)| l.rgba8.is_empty()).count();
+    // The effects' textures (their particle materials') are the whole load's
+    // alone: the lean one has no effect looks.
+    let effects: std::collections::HashSet<usize> = full
+        .particles
+        .materials
+        .iter()
+        .filter(|m| m.name.starts_with("ca_fx:"))
+        .filter_map(|m| m.texture)
+        .collect();
+    assert!(!effects.is_empty(), "the whole load has the effects' textures");
+    assert!(lean.particles.materials.iter().all(|m| !m.name.starts_with("ca_fx:")), "the lean load has effect looks");
+    assert!(combat_arms::game::effects::library::library(&lean.memos).is_none(), "the lean load has an effect library");
+    let full_textures: Vec<&chimera_world::map::MapTexture> =
+        full.textures.iter().enumerate().filter(|(i, _)| !effects.contains(i)).map(|(_, t)| t).collect();
+    assert_eq!(lean.textures.len(), full_textures.len());
+    let world_textures = lean.textures.iter().filter(|l| l.rgba8.is_empty()).count();
     assert!(world_textures > 10, "{world_textures} placeholders");
     let decoded: Vec<&str> = lean
         .textures
@@ -210,7 +224,7 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
         .collect();
     // (Texels only: the shared models may arrive as blocks, below.)
     assert!(decoded.len() <= 1, "the lean load decoded {} textures: {:?}", decoded.len(), &decoded[..decoded.len().min(8)]);
-    for (l, f) in lean.textures.iter().zip(&full.textures) {
+    for (l, f) in lean.textures.iter().zip(full_textures.iter().copied()) {
         assert_eq!((&l.name, l.width, l.height), (&f.name, f.width, f.height));
         // Blocks the lean load holds are the process's shared character
         // models' kept from an earlier load in this process (cargo test
@@ -224,7 +238,12 @@ fn a_lean_load_keeps_the_textures_sizes_and_drops_their_texels() {
             assert!(l.mips.is_empty() && f.decoded().rgba8.len() == (f.width * f.height * 4) as usize, "{}", l.name);
         }
     }
-    let texture_of = |m: &MapData| m.meshes.iter().map(|m| (m.texture, m.alpha)).collect::<Vec<_>>();
+    let texture_of = |m: &MapData| {
+        m.meshes
+            .iter()
+            .map(|x| (x.texture.map(|i| m.textures[i].name.clone()), x.alpha))
+            .collect::<Vec<_>>()
+    };
     assert_eq!(texture_of(&lean), texture_of(&full), "the meshes find the same textures, alpha tests included");
 }
 

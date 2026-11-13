@@ -66,7 +66,9 @@ const LAPS: usize = 3;
 /// installed. Measured 2026-11-11: 3.20-3.40 GB before the server kept Combat
 /// Arms' textures' sizes only, 2.02-2.24 GB after (2.12-2.32 GB later that
 /// day), 1.70-1.85 GB once another game's map dressed for Combat Arms took no
-/// view models on the server (`world::dress_with`).
+/// view models on the server (`world::dress_with`), 1.64-1.78 GB (2026-11-12)
+/// once a map without textures took no Combat Arms effect file
+/// (`effects::library::add_looks`).
 const IN_USE_LIMIT: u64 = 2048 << 20;
 
 /// What HL2:DM's install adds to that (its parts in the ladder, its kit
