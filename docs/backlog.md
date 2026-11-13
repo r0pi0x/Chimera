@@ -126,30 +126,52 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## 0. Playtest feedback (2026-10-07), top priority
 
+### UGG playtest rehearsal, 2026-11-13 (agent, this box, the playtest6 build)
+
+What the second rehearsal found and didn't fix (fixed ones: the commits
+of branch `rehearsal2`; numbers: playtest-hosting.md, "Rehearsal").
+Delete each when done.
+
+- **Publish Combat Arms' `base` again** (before Saturday): 8 files came
+  on demand at each tester's first start and join (`attributes/clientbutes.txt`,
+  7 textures of the install guns' own effect groups), none during a
+  match. On the host, from a checkout with `rehearsal2`:
+  `chimera_pack sets combat_arms --store <server store> --sign --only base`,
+  then the guard (`heavy::no_fetch_in_match`, which passed on the
+  current store: it counts only fetches during a match).
+- **Two waiting launcher processes per tester** after a token entry (the
+  token's restart, then the startup download's): 0.34 GB resident at
+  first, 0.2 GB with swap later, for the session. Testers enter the token
+  on Friday and start without it on Saturday (one waiter at most).
+- **A swap's frames on a loaded machine**: 220-380M instructions at
+  worst, 60-240M of it catch-up ticks (15-18 a frame while the box,
+  swapping, ran 3 frames a second); the dedicated server's map change
+  one tick of 2.7-3.8G instructions (0.3-0.6 s CPU; already listed under
+  "Nothing blocks the main thread").
+- **Prediction after a rejoin**: a client that reconnected to the
+  restarted server on its menu's background map (de_dust2, the new
+  server's map) logged 6-8 command clock jumps in its first 6 s (the
+  lobby: players frozen); over the 19-minute session 16-25 jumps and
+  115-190 "nothing predicted" restarts per client, mostly at loads.
+- **A tester's disk**: 3.1 GB after six maps (1.6 GB of it the converted
+  maps' cache, `chimera/maps`), 1.6 GB downloaded with prefetch on (it
+  fetched every HL2:DM map in the pool, 27-53 MB each); playtest.md's
+  "a few GB over the day" holds. Left as a note.
+
 ### UGG playtest rehearsal, 2026-11-11 (agent, this box, no-install clients)
 
 What the rehearsal found and didn't fix (fixed ones: the commits of
 branch `playtest-rehearsal`; numbers: playtest-hosting.md, "Rehearsal").
 Delete each when done.
 
-- **Publish the sets again (debris, call-outs, cues, thrown objects)**:
-  a seeded session fetched Combat Arms' `attributes/debris.txt` on demand
-  during a match, and the guard (`heavy::no_fetch_in_match`, every rung
-  climbed) Combat Arms' infection call-out, CS:S's lead cues and a
-  thrown grenade's sound; `chimera_pack sets` now merges the debris
-  pieces, the call-outs and both cue packs into `base` and puts what a
-  Combat Arms gun throws or fires in its `weapon/<id>` set
-  (playtest-hosting.md, "Publishing the game files"). On the host, from a
-  checkout with that change: `chimera_pack sets combat_arms --store
-  <server store> --sign --only base`, the same with `--only weapon/`,
-  `sets cs_source ... --only base`, then run the guard.
 - **The dedicated server's memory, what's left** (its Combat Arms view
   models and effect file are gone: 1.64-1.78 GB in use over a session of
   four maps, docs/performance.md, "The dedicated server's memory"). The
   character models' animation files (430 MB) pose the hit spheres and the
-  weapon data (230 MB) is the weapons: they stay. Left: check the playtest
-  build's server (release profile) over a session of maps (`tick_stats`'
-  memory); with HL2:DM installed, its parts' 0.33 GB.
+  weapon data (230 MB) is the weapons: they stay. The playtest build's
+  server over six maps of the three games (2026-11-13 rehearsal, HL2:DM
+  installed): 1.3 GB resident plus swap at start, 1.9-2.5 GB in play, 2.0
+  GB at the end. Left: HL2:DM's parts' 0.33 GB.
 - **Client memory**: (the rehearsal's 3.5-5.5 GB per offscreen client
   is down to 2.1 GB in use after each of three maps, the first load's peak
   resident 6.6 -> 4.4 GB: docs/performance.md, "A client's memory" and
