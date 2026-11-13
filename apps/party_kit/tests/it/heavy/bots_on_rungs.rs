@@ -7,8 +7,11 @@
 //! Before the fixes (a foreign gun fired once a second, `bots::brain`; the
 //! mesh walker narrower than a Source hull, `BotSettings::walker_radius`) an
 //! HL2:DM SMG1's bots stood still in minute-long fights or pressed on into
-//! gaps (0.2-11 m covered in 40 s); the map made no difference. Passes with
-//! a note without the installs.
+//! gaps (0.2-11 m covered in 40 s); the map made no difference. And until
+//! the bots classed a weapon by what it is (`brain::class_of`), HL2:DM's
+//! slot keys made the SMG1 a bot's knife: it held fire beyond a knife's
+//! reach and walked in, two bots spawned 2.4 m apart on de_dust2 staring
+//! at each other all 40 s. Passes with a note without the installs.
 
 use std::collections::HashMap;
 
@@ -114,6 +117,6 @@ fn bots_move_and_shoot_on_every_games_guns_and_maps() {
         let shooting = bots.iter().filter(|b| b.1 > 0).count();
         assert!(shooting >= 3, "{map} {gun}: most bots fire: {bots:?}");
         let moving = bots.iter().filter(|b| b.0 > 20.0).count();
-        assert!(moving >= 4, "{map} {gun}: most bots get about: {bots:?}");
+        assert!(moving >= 5, "{map} {gun}: most bots get about: {bots:?}");
     }
 }

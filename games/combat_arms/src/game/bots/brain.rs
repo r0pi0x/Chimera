@@ -50,7 +50,7 @@ use super::super::{
 use crate::{
     core::{Damage, Dead, FreezeTime, Health, Intent, MovementState, SimClock, Spectating, Team},
     map::{SeeThrough, nav::NavMesh, nav_gen, vis::ActiveVisibility},
-    weapon::{Inventory, Magazine, Weapon, WeaponEvent, WeaponEventKind, grenade::Throwable},
+    weapon::{Inventory, Magazine, Melee, Weapon, WeaponEvent, WeaponEventKind, grenade::Throwable},
 };
 
 /// Sight range (u), `SeeEnemyDistance`.
@@ -645,8 +645,7 @@ struct Gun {
     clip: u32,
     reserve: u32,
     count: Option<u32>,
-    /// Its data slot (`Weapon::slot`: 0 primary, 1 secondary, 2 melee, 3
-    /// thrown).
+    /// Its class (0 primary, 1 secondary, 2 melee, 3 thrown; `class_of`).
     data_slot: u8,
     /// A grenade's throw key and animation (s).
     throw_delay: f32,
@@ -1039,17 +1038,36 @@ pub fn sees(world: &mut World, bot: Entity, target: Entity) -> Option<bool> {
     sight(&ctx, me, t, alert)
 }
 
+/// A weapon's class for `slot` (0 primary, 1 secondary, 2 melee, 3
+/// thrown): its data slot (`Weapon::slot`, Combat Arms' and CS:S's
+/// classes), but what it is first where another game's selection keys
+/// differ (ours: HL2:DM's buckets put the crowbar in 0 and the SMG1 in 2,
+/// so a bot took its SMG1 for its knife and held fire beyond a knife's
+/// reach, and its crowbar for its primary): a swing is melee, a thrown
+/// weapon thrown, a magazine gun in the melee or thrown slot a primary.
+fn class_of(slot: u8, melee: bool, thrown: bool, magazine: bool) -> u8 {
+    if melee {
+        2
+    } else if thrown {
+        3
+    } else if magazine && matches!(slot, 2 | 3) {
+        0
+    } else {
+        slot
+    }
+}
+
 fn guns_of(world: &World, e: Entity) -> Vec<Gun> {
     let Some(inv) = world.get::<Inventory>(e) else { return Vec::new() };
     inv.weapons
         .iter()
         .filter_map(|&w| {
-            let id = world.get::<Weapon>(w)?.id;
+            let weapon = world.get::<Weapon>(w)?;
             let m = world.get::<Magazine>(w);
             Some(Gun {
                 e: w,
-                id,
-                data_slot: world.get::<Weapon>(w)?.slot,
+                id: weapon.id,
+                data_slot: class_of(weapon.slot, world.get::<Melee>(w).is_some(), world.get::<Throwable>(w).is_some(), m.is_some()),
                 clip: m.map_or(0, |m| m.clip),
                 reserve: m.map_or(0, |m| m.reserve),
                 count: world.get::<Throwable>(w).map(|t| t.count),
@@ -2398,6 +2416,12 @@ fn patrol(ctx: &Ctx, bot: &mut CaBot, me: &Char, io: &mut IntentOut, out: &mut O
         }
         return;
     }
+    // Ours: waiting out a failed search's back-off (`REPLAN_AFTER_FAIL`),
+    // not taking every node it can't search for now as one with no path
+    // (each would become where it patrols from).
+    if bot.route.is_empty() && ctx.now < bot.plan_after {
+        return;
+    }
     walk(ctx, bot, me, goal, false, io);
     if bot.route.is_empty() {
         // No path there: another node next time.
@@ -2577,4 +2601,22 @@ fn follow(ctx: &Ctx, bot: &mut CaBot, mind: &mut MercMind, me: &Char, io: &mut I
         return;
     }
     walk(ctx, bot, me, goal, false, io);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::class_of;
+
+    #[test]
+    fn weapons_class_by_what_they_are() {
+        // Combat Arms' and CS:S's slots are the classes.
+        assert_eq!(class_of(0, false, false, true), 0);
+        assert_eq!(class_of(1, false, false, true), 1);
+        assert_eq!(class_of(2, false, false, false), 2);
+        assert_eq!(class_of(3, false, true, false), 3);
+        // HL2:DM's buckets: the crowbar in 0, the SMG1 in 2, the shotgun in 3.
+        assert_eq!(class_of(0, true, false, false), 2);
+        assert_eq!(class_of(2, false, false, true), 0);
+        assert_eq!(class_of(3, false, false, true), 0);
+    }
 }
