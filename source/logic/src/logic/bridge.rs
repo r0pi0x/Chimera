@@ -1701,7 +1701,6 @@ impl MoverWants {
 }
 
 fn apply_effects(world: &mut World, effects: Vec<Effect>, scale: f32) {
-    let now = world.resource::<Time>().elapsed_secs_f64();
     let local = first::<With<LocalPlayer>>(world);
     for effect in effects {
         match effect {
@@ -1939,8 +1938,8 @@ fn apply_effects(world: &mut World, effects: Vec<Effect>, scale: f32) {
             Effect::AmbientStop { id } => {
                 world.write_message(SoundControl::Stop(sound_key(id)));
             }
-            Effect::GameText { to, message } => hud_event(world, to, HudShow::Text(message), local, now),
-            Effect::Hud { to, what } => hud_event(world, to, what, local, now),
+            Effect::GameText { to, message } => hud_event(world, to, HudShow::Text(message)),
+            Effect::Hud { to, what } => hud_event(world, to, what),
             Effect::SpeedMod {
                 target,
                 key,
@@ -2448,11 +2447,8 @@ fn copy_takes_damage(world: &mut World, id: EntId, copy: Entity) {
 /// Something for players' HUDs: shown here when it is for the local
 /// player (or everyone), and handed on as a `HudEvent` (a network server
 /// sends it to the client it is for).
-fn hud_event(world: &mut World, to: Option<Entity>, what: HudShow, local: Option<Entity>, now: f64) {
-    if to.is_none() || to == local {
-        super::hud::show_on_hud(world, what.clone(), now);
-    }
-    world.write_message(HudEvent { to, what });
+fn hud_event(world: &mut World, to: Option<Entity>, what: HudShow) {
+    super::hud::send_hud(world, to, what);
 }
 
 /// Change a character's `core::MapControls` (added when missing).

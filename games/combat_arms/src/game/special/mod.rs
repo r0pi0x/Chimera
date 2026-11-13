@@ -168,6 +168,11 @@ pub struct State {
     /// The fire direction (unit): an impact projectile's model faces it
     /// for the whole flight (special_weapons.md Follow-up 5).
     pub launch_dir: Vec3,
+    /// Its model's own turn before it faces its direction (`facing` puts
+    /// the model's −Z, a LithTech model's forward +Z, along it); None:
+    /// none. An air strike's shell model stands upright, nose down
+    /// (`devices::STRIKE_SHELL_TURN`).
+    pub turn: Option<Quat>,
     /// Set off at this time (mines, hornets): the blast follows the
     /// `active` animation.
     pub triggered_at: Option<f64>,
@@ -748,7 +753,7 @@ pub(super) fn sync_objects(
             o.drawn_dir_from.lerp(to, a).normalize_or(to)
         };
         if dir != Vec3::ZERO {
-            let r = facing(dir);
+            let r = o.s.turn.map_or_else(|| facing(dir), |turn| facing(dir) * turn);
             if t.rotation != r {
                 t.rotation = r;
             }

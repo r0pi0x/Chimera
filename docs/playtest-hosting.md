@@ -557,7 +557,13 @@ explosions wrong and don't hear the siren). Code:
   (`chimera:phys_gravity_scale`, replicated). A map change ends it.
 - `surprise stop` ends both at once.
 
-Both run on the server's console only (a client's console refuses them).
+Both run on the server's console only (a client's console refuses them):
+a dedicated server's, or the game's own console when you host from the
+game (a listen server), whose player sees and hears everything a client
+does: the banners and flash, the siren, the shells and their explosions
+(builds before 2026-11-14 showed a listen host none of the warnings and
+almost none of the explosions; a dedicated server's clients were fine).
+The shells fall nose first, on every client: the server turns them.
 A tester without the installs has everything they show before they fire
 once Combat Arms' `base` holds the siren and the shells' model, sounds
 and effect files (`special::devices::strike_files`):

@@ -68,7 +68,7 @@ fn shell_key(world: &World, id: &str) -> String {
 }
 
 /// An LGB shell dropped on a player on the fourth rung: it falls from
-/// above, drawn as its own record, blows up on him as the designator's
+/// above nose first, drawn as its own record, blows up on him as the designator's
 /// shells do, he dies with no killer, keeps his rung (no
 /// "suicide" rung down), the other player gains nothing, and his death
 /// counts on his score.
@@ -102,6 +102,11 @@ fn an_air_strike_shell_kills_with_no_one_credited() {
         if let Some(s) = shells(sim.app.world_mut()).first() {
             assert!(s.1.y <= lowest + 1e-4, "falling");
             lowest = s.1.y;
+            // Nose first (playtest 2026-11-13: it fell on its side): the
+            // shell's model stands upright, its nose its -Y.
+            let t = sim.app.world().get::<Transform>(shell).expect("the shell's transform");
+            let nose = t.rotation * Vec3::NEG_Y;
+            assert!(nose.angle_between(Vec3::NEG_Y).to_degrees() < 3.0, "its nose {nose:?} along its fall");
         }
         let w = sim.app.world();
         for d in died.read(w.resource::<Messages<Died>>()) {
@@ -305,4 +310,91 @@ fn a_cs_source_players_prediction_agrees_under_moon_gravity() {
     sim.ticks(120);
     let (errors, worst) = jumps(&mut sim, 360);
     assert_eq!(errors, 0, "Combat Arms' movement predicted with the server's gravity (worst {worst} m)");
+}
+
+/// Effect groups and Combat Arms sounds a world asked for.
+#[derive(Resource, Default)]
+struct Shown {
+    groups: Vec<String>,
+    sounds: Vec<String>,
+}
+
+fn show(
+    mut fx: MessageReader<combat_arms::game::effects::CaFxRequest>,
+    mut sounds: MessageReader<combat_arms::game::effects::sounds::CaSound>,
+    mut shown: ResMut<Shown>,
+) {
+    shown.groups.extend(fx.read().map(|r| r.group.clone()));
+    shown.sounds.extend(sounds.read().map(|s| s.file.clone()));
+}
+
+/// A listen server's host (playtest 2026-11-13: the host saw no warning,
+/// heard no siren and hardly any explosion): the surprise shows on the
+/// host's own HUD and screen, the siren plays there, and the shells blow
+/// up there as the designators' do (their impact records' groups and
+/// sounds), as on a network client; moon gravity's banner too.
+#[test]
+fn a_listen_hosts_own_player_sees_and_hears_the_surprises() {
+    let mut sim = joined();
+    let host = sim.server.spawn_character(Vec3::new(0.0, 1.0, 0.0), combat_arms::game::movement::ID);
+    sim.server.app.world_mut().entity_mut(host).insert(chimera_core::core::LocalPlayer);
+    sim.server
+        .app
+        .init_resource::<Booms>()
+        .init_resource::<Heard>()
+        .init_resource::<Shown>()
+        .add_systems(Last, (count_booms, hear))
+        .add_systems(PostUpdate, show);
+    sim.ticks(30);
+    sim.server.app.world_mut().resource_mut::<Console>().submit("surprise airstrike 5 0.5");
+    sim.ticks(30);
+    let w = sim.server.app.world();
+    let shown: Vec<String> = w
+        .get_resource::<HudMessages>()
+        .map(|h| h.channels.iter().flatten().map(|(m, _)| m.text.clone()).collect())
+        .unwrap_or_default();
+    assert!(shown.iter().any(|t| t.contains("AIR STRIKE")), "the host's HUD: {shown:?}");
+    let fades = w.get_resource::<chimera_world::map::logic_view::ScreenFades>();
+    assert!(fades.is_some_and(|f| f.fades.iter().any(|f| f.0.color == [255, 0, 0])), "the host's red flash");
+    let heard = &w.resource::<Heard>().0;
+    assert!(heard.iter().any(|e| *e == alarm_entry()), "the host heard the siren: {heard:?}");
+    for _ in 0..600 {
+        sim.ticks(1);
+        if sim.server.app.world().resource::<AirStrike>().drops.is_empty()
+            && shells(sim.server.app.world_mut()).is_empty()
+        {
+            break;
+        }
+    }
+    sim.ticks(30);
+    let w = sim.server.app.world();
+    let booms = &w.resource::<Booms>().0;
+    assert_eq!(booms.len(), 5, "the shells blew up: {booms:?}");
+    // A shell blows up on the host's screen as its designator's data says
+    // (its `combat_arms:effects` impact record: the install's
+    // `Dirt_Burster` for the LGB), though nobody here holds the
+    // designator. Without the install the data has no record: a
+    // designator of the LGB's with a built-in one.
+    use chimera_sim::weapon::data::{WeaponCatalog, WeaponSet};
+    use combat_arms::game::effects::data::{CaFxTables, CaWeaponFx, EFFECTS};
+    let doc = "id = \"combat_arms:test_strike\"\nbase = \"combat_arms:lgb\"\n\
+               [hooks.\"combat_arms:effects\"]\nimpact = \"flashbang_exp\"\n";
+    let w = sim.server.app.world_mut();
+    let known: Vec<&WeaponSet> = w.resource::<WeaponCatalog>().sets.clone();
+    let set: &'static WeaponSet = Box::leak(Box::new(WeaponSet::parse(&[("test", doc)], &known).expect("the test designator")));
+    w.resource_mut::<WeaponCatalog>().sets.push(set);
+    let fx = w.resource::<WeaponCatalog>().get("combat_arms:test_strike").and_then(|d| d.hook::<CaWeaponFx>(EFFECTS)).expect("its effects");
+    let record = fx.impact_of(w.resource::<CaFxTables>()).expect("its impact record").clone();
+    *w.resource_mut::<Shown>() = Shown::default();
+    let at = w.get::<Transform>(host).unwrap().translation;
+    drop_strike_shell(w, "combat_arms:test_strike", at + Vec3::new(3.0, -0.95, 0.0)).expect("a shell");
+    sim.ticks(240);
+    let shown = sim.server.app.world().resource::<Shown>();
+    assert!(shown.groups.contains(&record.fx), "the explosion ({}) drawn on the host: {:?}", record.fx, shown.groups);
+    assert!(shown.sounds.contains(&record.sound), "the explosion ({}) heard on the host: {:?}", record.sound, shown.sounds);
+    // Moon gravity's banner.
+    sim.server.app.world_mut().resource_mut::<Console>().submit("surprise gravity 8 0.2");
+    sim.ticks(20);
+    let hud = sim.server.app.world().resource::<HudMessages>();
+    assert!(hud.channels.iter().flatten().any(|(m, _)| m.text.starts_with("Moon gravity!")), "the host's banner: {:?}", hud.channels);
 }

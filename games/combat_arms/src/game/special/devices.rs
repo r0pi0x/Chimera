@@ -796,7 +796,7 @@ fn air_strike(cx: &mut Cx, o: &mut CaObject, s: &StrikeParams) -> bool {
     while o.s.dropped < s.points.len() && time + 1e-6 >= start + o.s.dropped as f64 * s.delay as f64 {
         let [x, y] = s.points[o.s.dropped];
         let at = point + right * x + course * y + Vec3::Y * s.height;
-        let shell = impact::projectile(
+        let mut shell = impact::projectile(
             o.weapon,
             o.owner,
             o.unit,
@@ -805,6 +805,7 @@ fn air_strike(cx: &mut Cx, o: &mut CaObject, s: &StrikeParams) -> bool {
             at,
             Vec3::new(0.0, -s.shell.speed, 0.0),
         );
+        shell.s.turn = Some(STRIKE_SHELL_TURN);
         cx.spawn(shell);
         o.s.dropped += 1;
     }
@@ -865,7 +866,7 @@ pub fn drop_strike_shell(world: &mut World, designator: &str, ground: Vec3) -> O
     let data: &'static WeaponData = catalog.get(designator)?;
     let shell = data.hook::<DeviceParams>(super::DEVICE)?.strike?.shell;
     let unit = data.units.length;
-    let o = impact::projectile(
+    let mut o = impact::projectile(
         data.id.as_str(),
         None,
         unit,
@@ -874,8 +875,18 @@ pub fn drop_strike_shell(world: &mut World, designator: &str, ground: Vec3) -> O
         start / unit,
         Vec3::new(0.0, -shell.speed, 0.0),
     );
+    o.s.turn = Some(STRIKE_SHELL_TURN);
     Some(spawn_object(world, o))
 }
+
+/// An air strike shell's model's turn before it faces its fall: the
+/// shells' model (`LGB_Shell`'s `as_missile_01`) stands upright, its nose
+/// at its origin and its fins 105 u above it (its nose along its −Y, not
+/// a forward +Z), so facing straight down by the projectiles' rule alone
+/// (special_weapons.md Follow-up 5: +Z down, up from world +X) laid it on
+/// its side. A quarter turn about X takes −Y to −Z (what `facing` puts
+/// along the fall): nose first.
+pub const STRIKE_SHELL_TURN: Quat = Quat::from_xyzw(std::f32::consts::FRAC_1_SQRT_2, 0.0, 0.0, std::f32::consts::FRAC_1_SQRT_2);
 
 /// The floor below `at` (metres) within `depth` metres, as a strike's
 /// marker finds it (the world's surfaces, not characters or props).
