@@ -1435,7 +1435,7 @@ fn settle_ragdolls(
                 v.bypass_change_detection().0 = Vec3::ZERO;
                 w.bypass_change_detection().0 = Vec3::ZERO;
             }
-            commands.queue(SleepBody(*b));
+            commands.queue(super::prop_physics::SleepBodyNow(*b));
         }
         r.still.clear();
         r.still_since = now;
