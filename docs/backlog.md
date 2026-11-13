@@ -126,6 +126,18 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## 0. Playtest feedback (2026-10-07), top priority
 
+### Combat Arms bodies' heads over the network (found 2026-11-13, branch `ca-hl2-heads`)
+
+- A Combat Arms *target* over the network: the shooter's client draws
+  its hit spheres 0.1-0.5 m off the server's when it crouches or walks
+  (also 0.04-0.15 m standing), and a head shot at the drawn head misses
+  for every shooter game (printed by
+  `heavy::head_matrix::every_games_gun_hits_a_head_as_drawn_over_the_network`,
+  which asks nothing of Combat Arms targets yet). CS:S and HL2:DM bodies
+  match to the millimetre standing. Look at how the client poses
+  `CaPose` against the server's per-tick spheres and what lag
+  compensation keeps for them; then assert those rows too.
+
 ### UGG playtest rehearsal, 2026-11-13 (agent, this box, the playtest6 build)
 
 What the second rehearsal found and didn't fix (fixed ones: the commits

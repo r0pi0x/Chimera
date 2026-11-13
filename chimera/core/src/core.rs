@@ -995,6 +995,15 @@ impl Hitbox {
             let (enter, leave) = (-b - s, -b + s);
             return (leave >= 0.0).then_some((enter.max(0.0), leave));
         }
+        let (enter, leave) = self.line_span(origin, dir)?;
+        (leave >= 0.0).then_some((enter.max(0.0), leave))
+    }
+
+    /// Where the whole line through `origin` along `dir` (unit; local
+    /// space) enters and leaves a box, as signed distances along `dir`
+    /// (behind `origin` negative), if it crosses it: a box's slabs (a
+    /// sphere's callers use its radius).
+    fn line_span(&self, origin: Vec3, dir: Vec3) -> Option<(f32, f32)> {
         let inv = self.rotation.inverse();
         let o = inv * (origin - self.center);
         let d = inv * dir;
@@ -1010,11 +1019,11 @@ impl Hitbox {
             enter = enter.max(a.min(b));
             leave = leave.min(a.max(b));
         }
-        (enter <= leave && leave >= 0.0).then_some((enter.max(0.0), leave))
+        (enter <= leave).then_some((enter, leave))
     }
 
-    /// The radius it counts as for `power` and `line_passes`: a sphere's
-    /// own, a box's bounding sphere's.
+    /// The radius of a sphere around it: a sphere's own, a box's
+    /// bounding sphere's (a blast's reach of it).
     pub fn reach(&self) -> f32 {
         self.radius.unwrap_or_else(|| self.half.length())
     }
@@ -1057,21 +1066,39 @@ impl Hitbox {
         (self.center - extent, self.center + extent)
     }
 
-    /// |p|^2 - r^2, p its centre from `from` (Combat Arms' client test
-    /// takes the smallest of the shapes a segment passes; a box by its
-    /// bounding sphere).
-    pub fn power(&self, from: Vec3) -> f32 {
-        let r = self.reach();
-        (self.center - from).length_squared() - r * r
+    /// The power of `start` to the shape along the segment `start`..`end`
+    /// (Combat Arms' client test takes the smallest of the shapes a
+    /// segment passes): a sphere's |p|^2 - r^2, p its centre from `start`,
+    /// which is the product of the distances from `start` to where any
+    /// line through it enters and leaves the sphere; a box's is that
+    /// product along the segment's own line (where it enters and leaves
+    /// the box, negative from inside), not its bounding sphere's, which
+    /// would favour a big box (another game's chest) over a small one
+    /// the segment meets first (its head).
+    pub fn power_along(&self, start: Vec3, end: Vec3) -> f32 {
+        if let Some(r) = self.radius {
+            return (self.center - start).length_squared() - r * r;
+        }
+        let seg = end - start;
+        let len = seg.length();
+        match (len > 0.0).then(|| self.line_span(start, seg / len)).flatten() {
+            Some((enter, leave)) => enter * leave,
+            None => f32::INFINITY,
+        }
     }
 
     /// Whether the infinite line through `at` along the unit `dir` passes
-    /// within the shape's reach of its centre (Combat Arms' server walk;
-    /// a box by its bounding sphere). A zero radius never.
+    /// the shape (Combat Arms' server walk): a sphere within its radius of
+    /// its centre, a box through the box itself (not its bounding
+    /// sphere). A zero radius never.
     pub fn line_passes(&self, at: Vec3, dir: Vec3) -> bool {
-        let r = self.reach();
-        let p = self.center - at;
-        r > 0.0 && (p - dir * p.dot(dir)).length_squared() <= r * r
+        match self.radius {
+            Some(r) => {
+                let p = self.center - at;
+                r > 0.0 && (p - dir * p.dot(dir)).length_squared() <= r * r
+            }
+            None => self.line_span(at, dir).is_some(),
+        }
     }
 
     /// Between `self` and `other` (the same shape later) by `f`.
@@ -1225,13 +1252,13 @@ impl Hitboxes {
     }
 
     /// Of the shapes the whole segment passes, the one with the smallest
-    /// `Hitbox::power` from `start` (Combat Arms' client rule).
+    /// `Hitbox::power_along` it (Combat Arms' client rule).
     pub fn by_power(&self, start: Vec3, end: Vec3) -> Option<usize> {
         self.0
             .iter()
             .enumerate()
             .filter(|(_, b)| b.segment_passes(start, end))
-            .map(|(i, b)| (i, b.power(start)))
+            .map(|(i, b)| (i, b.power_along(start, end)))
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(i, _)| i)
     }
@@ -3359,5 +3386,32 @@ mod hitbox_bounds_tests {
         assert!((max.y - (2.0 + r)).abs() < 1e-5 && (min.y - 0.9).abs() < 1e-5, "{min} {max}");
         assert!((max.x - r).abs() < 1e-5 && (max.z - 0.1).abs() < 1e-5, "{min} {max}");
         assert!(Hitboxes::default().bounds().is_none());
+    }
+
+    /// Combat Arms' rules on boxes (another game's body): a segment
+    /// through a small head box that goes on through a big box (a
+    /// shoulder-high chest) hits the head, though the big box's bounding
+    /// sphere would have won (|p|^2 - r^2: 0.045 against the head's
+    /// 0.06), and the server's line test needs the box itself. Spheres
+    /// keep |p|^2 - r^2.
+    #[test]
+    fn combat_arms_rules_on_boxes_take_the_box_itself() {
+        let head = Hitbox::cuboid(Vec3::new(0.0, 1.6, 0.0), Vec3::splat(0.1), Quat::IDENTITY, BodyRegion::Head);
+        let chest = Hitbox::cuboid(Vec3::new(0.15, 1.3, 0.0), Vec3::new(0.25, 0.35, 0.25), Quat::IDENTITY, BodyRegion::Generic);
+        let shapes = Hitboxes(vec![chest, head]);
+        let start = Vec3::new(-0.3, 1.6, 0.0);
+        let end = start + Vec3::X * 3.0;
+        assert!(chest.segment_passes(start, end) && head.segment_passes(start, end));
+        assert_eq!(shapes.by_power(start, end), Some(1), "the head");
+        assert!((head.power_along(start, end) - 0.2 * 0.4).abs() < 1e-5);
+        // A line just past the head's box misses it, though it passes its
+        // bounding sphere.
+        let past = Vec3::new(0.0, 1.6, 0.0) + Vec3::new(0.11, 0.11, 0.0);
+        assert!(!head.line_passes(past, Vec3::Z));
+        assert!(head.line_passes(Vec3::new(0.0, 1.65, -2.0), Vec3::Z));
+        // A sphere's power is its own.
+        let s = Hitbox::sphere(Vec3::new(0.0, 1.0, 0.0), 0.2, BodyRegion::Chest);
+        let from = Vec3::new(0.0, 1.0, -2.0);
+        assert!((s.power_along(from, from + Vec3::Z * 5.0) - (4.0 - 0.04)).abs() < 1e-5);
     }
 }
