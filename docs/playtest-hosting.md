@@ -103,7 +103,7 @@ server's. With `sets` run as above (2026-11-12) the server has, per game:
 
 | Set | CS:S | Combat Arms | HL2:DM |
 |---|---|---|---|
-| `base` (fetched at the first start) | 62.6 MB | 268 MB: also the music (`Game/BGM`), the G23's sounds, the pool maps' loading images, the guns' impact and shell sounds and models and every sound the effect tables name (`sets`: surfaces, event sounds, the heartbeat) | 62 MB: also all 12 guns, the 19 player models, the weapon and headcrab-canister sounds every match plays, and its guns' effect materials, flashes and decals (`sets`: what its dressing brings to any map) |
+| `base` (fetched at the first start) | 62.6 MB: also its guns' muzzle flash and spent shells (`sets`: what its dressing brings to other games' maps) | 268 MB: also the music (`Game/BGM`), the G23's sounds, the pool maps' loading images, the guns' impact and shell sounds and models and every sound the effect tables name (`sets`: surfaces, event sounds, the heartbeat) | 62 MB: also all 12 guns, the 19 player models, the weapon and headcrab-canister sounds every match plays, and its guns' effect materials, flashes, decals and spent shells (`sets`: what its dressing brings to any map) |
 | `players` (each join) | 12.9 MB | 66 MB, nearly all in `base`: the stock characters and footsteps | 18 MB |
 | `map/<name>` | all 109 maps (the 18 stock ones and the publisher's community maps), 0.3-196 MB each, median 18 MB, 4.7 GB together | all 105 maps, 0.9-174 MB each, median 25 MB, 3.2 GB together | its 8 maps, 91-154 MB each |
 | `weapon/<id>` | every gun | every gun: view model with hands and parts, the held model (what other players hold), its own sounds (fire, silenced, dry, reload, select, misc) and what it throws or fires (sounds, model, skins, flare) | every gun |
@@ -241,7 +241,7 @@ with the heavy tests wherever the server store and the installs are, so
 it fails there until the sets above are published. Run it after
 publishing, and after a change to what a match loads. It also fails on
 any guns' effect file (Source's `materials/effects/`, `sprites/`,
-`particle/`, `decals/`) fetched on demand at all, a map's load included.
+`particle/`, `decals/`, the spent shells' models) fetched on demand at all, a map's load included.
 `CHIMERA_GUARD_MANIFESTS=<store>` takes the manifests from another store
 (a copy of the server store's `manifests/` that `sets ... --store <copy>`
 recorded into), the records still the server store's: sets checked
@@ -256,7 +256,18 @@ flash). Before, HL2:DM's came only with its own maps' kit, so the AR2's
 ball on de_dust2 drew as its bare model (a white blob) and HL2:DM's guns
 flashed nothing off its maps; its files were only in its `map/dm_*` sets.
 `sets` now merges them into each game's `base` (HL2:DM: 41 files, 0.6 MB,
-0.26 MB stored; CS:S: its flash, 2 files, 11 KB):
+0.26 MB stored; CS:S: its flash, 2 files, 11 KB).
+
+**Spent shells on every map** (2026-11-13): the same dressing brings each
+Source game's shell types, each with its own game's physics (a map held
+one game's before, and in the party none: neither CS:S's nor HL2:DM's
+guns ejected anything on any map). Their models and textures go into
+`base` with the same `sets` run (CS:S: `models/shells/` and their
+textures, 30 files, 1.1 MB, 0.55 MB stored; HL2:DM: `models/weapons/
+shell` and `shotgun_shell` with `pistol_shell`'s texture, 8 files, 22
+KB); their bounce sounds were already there. Against a copy of the
+2026-11-13 server manifests the two runs below add 49 files to HL2:DM's
+`base` and 32 to CS:S's, the effects' and the shells' together:
 
 ```
 cargo run --release --features tools --bin chimera_pack -- sets hl2dm --store <server store> --sign --only base

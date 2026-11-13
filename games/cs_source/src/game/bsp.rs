@@ -187,27 +187,35 @@ fn extra_particles(data: &MapData) -> (&'static [&'static str], &'static [&'stat
 
 /// What characters hold: the weapons' world models (held on the player
 /// skeleton; a mashup's kept ones take the body's bones without keeping
-/// the body), the muzzle flash with any of them (another game's gameplay
-/// keeps it with its kept guns: `GameKit::stay`) and with a whole kit the
-/// shells.
+/// the body), and with any of them the muzzle flash and the shells
+/// (another game's gameplay keeps both with its kept guns: `GameKit::
+/// stay`).
 fn held(k: &mut Kit) {
     add_guns(k.materials, k.surfaces, k.kit, &mut k.data.kit, &mut k.data.warnings);
     if k.kit.any_models() {
         k.data.kit.muzzle_flash = Some(super::view_anim::muzzle_flash(k.materials));
+        k.data.kit.shells = shells(k.materials, &mut k.data.warnings);
     }
-    if k.kit.parts() {
-        for (key, path, bounce) in super::view_anim::SHELLS {
-            match super::props::load_shell(k.materials, path) {
-                Ok(model) => k.data.kit.shells.push(crate::map::shells::MapShell {
-                    key: key.to_string(),
-                    model,
-                    bounce: Some(bounce.to_string()),
-                }),
-                Err(e) => k.data.warnings.push(e),
-            }
+}
+
+/// CS:S's spent shell types (`view_anim::SHELLS`) with its physics
+/// (`view_anim::shell_physics`), read from the install; a warning for
+/// each that doesn't load.
+pub fn shells(materials: &mut MaterialLoader, warnings: &mut Vec<String>) -> Vec<crate::map::shells::MapShell> {
+    let mut out = Vec::new();
+    for (key, path, bounce) in super::view_anim::SHELLS {
+        match super::props::load_shell(materials, path) {
+            Ok(model) => out.push(crate::map::shells::MapShell {
+                game: super::GAME.to_string(),
+                key: key.to_string(),
+                model,
+                bounce: Some(bounce.to_string()),
+                physics: super::view_anim::shell_physics(),
+            }),
+            Err(e) => warnings.push(e),
         }
-        k.data.kit.shell_physics = Some(super::view_anim::shell_physics());
     }
+    out
 }
 
 /// The players' character bodies `kit` asks for into `into`: a T and a CT
@@ -303,8 +311,8 @@ fn add_guns(
 /// appended to the map's (`MaterialLoader::guest`: its indices begin past
 /// them), so the bodies and models are the same as CS:S's own maps give.
 /// The bodies go after the map's own. Its guns' looks come too: its
-/// impact decals and effect materials, and its muzzle flash on a map
-/// whose game brings none. `lean`: the textures' sizes only
+/// impact decals and effect materials, its muzzle flash on a map whose
+/// game brings none, and its spent shells. `lean`: the textures' sizes only
 /// (`MaterialLoader::lean`: a load without textures, the dedicated server's).
 pub fn dress_guest(mount: &Mount, map: &mut MapData, kept: &'static [&'static str], lean: bool) {
     let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
@@ -340,7 +348,9 @@ pub fn dress_guest(mount: &Mount, map: &mut MapData, kept: &'static [&'static st
 /// own, each the map lacks) and its muzzle flash (a Source view model's
 /// flash event names no kind: the kit's one) where the map's game brings
 /// none (HL2:DM's flashes are by kind, Combat Arms' its own effects):
-/// without it a CS:S gun flashed nothing there.
+/// without it a CS:S gun flashed nothing there; and its spent shells
+/// (`shells`, with CS:S's physics): without them its guns ejected
+/// nothing there.
 pub fn add_guest_looks(materials: &mut MaterialLoader, map: &mut MapData) {
     add_guest_decals(&mut map.kit.decals, super::decals::impact_decals(materials));
     for m in super::impact_effects::load_materials(materials).materials {
@@ -352,4 +362,6 @@ pub fn add_guest_looks(materials: &mut MaterialLoader, map: &mut MapData) {
     if map.kit.muzzle_flash.is_none() {
         map.kit.muzzle_flash = Some(super::view_anim::muzzle_flash(materials));
     }
+    let shells = shells(materials, &mut map.warnings);
+    crate::map::shells::add_shells(&mut map.kit.shells, shells);
 }

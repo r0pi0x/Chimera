@@ -87,15 +87,19 @@ pub fn physics() -> MapShellPhysics {
 }
 
 /// The kit's shells read from the install: each type's model, with
-/// warnings for those that don't load.
+/// HL2:DM's physics (`physics`), and warnings for those that don't load.
+/// Its own maps' kit and its dressing of another game's map
+/// (`maps::add_guest_looks`) both read them.
 pub fn load(materials: &mut MaterialLoader, warnings: &mut Vec<String>) -> Vec<MapShell> {
     SHELLS
         .iter()
         .filter_map(|(key, path, bounce)| match source_engine::content::props::load_shell(materials, path) {
             Ok(model) => Some(MapShell {
+                game: super::GAME.to_string(),
                 key: key.to_string(),
                 model,
                 bounce: Some(bounce.to_string()),
+                physics: physics(),
             }),
             Err(e) => {
                 warnings.push(e);

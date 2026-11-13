@@ -495,6 +495,16 @@ Chimera has a generic fallback (`chimera_world::map::impact`,
   when its looks are on the map, else the map's game, else any game whose
   looks are there, else Chimera's generic mark and puff; each game's
   impact code asks this route and draws only its own.
+- **What a gun draws comes with its game.** A gun's effect materials,
+  muzzle flashes and spent shells are its game's on any map: the map's
+  game brings its own with its kept guns (`GameKit::stay`), a guest's
+  dressing brings its own (`add_guest_looks` in each Source game). Each
+  shell type carries its game and that game's physics (bounce, friction,
+  life, sounds: `MapShell`), and a brass event picks the firing gun's
+  game's type (its view model key's prefix), so a CS:S AK and an HL2:DM
+  SMG on Combat Arms' Warehouse each eject their own casings flying by
+  their own rules. Combat Arms draws its casings with its own effects,
+  on any map.
 - **Pushes.** Every game's bullets tell a common `BulletImpulse` (N·s at
   the hit point; each game converts its own numbers: CS:S's measured
   damage force, Combat Arms' damage × 2 N·s per hit point), which Chimera

@@ -59,6 +59,7 @@ mod heavy {
     mod clips_on_maps;
     mod cs_decals;
     mod guest_effects;
+    mod guest_shells;
     mod cross_hits;
     mod head_matrix;
     mod css_map_moves;

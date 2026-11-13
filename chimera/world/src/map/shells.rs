@@ -1,28 +1,53 @@
 //! Spent shells thrown from a weapon's ejection port (any game; CS:S:
 //! specs/cs_source/view_models.md 8) as data and motion: a shell type's
-//! model and bounce sound (`MapShell`), how shells move (`MapShellPhysics`)
-//! and one step of a shell's flight (`shell_step`, `shell_alpha`,
+//! game, model, bounce sound and how it moves (`MapShell`,
+//! `MapShellPhysics`: each type carries its own game's, so on a map with
+//! several games' guns each gun's casings fly by its game's rules) and
+//! one step of a shell's flight (`shell_step`, `shell_alpha`,
 //! `bounce_volume`, `MapShellPhysics::sounds`), with what HL2's casings
 //! add to CS:S's rules (specs/hl2dm/effects_sounds.md 5: random speed on
 //! the world's axes, roll spin, a random life, a sure bounce sound when
 //! landing hard, no shooter's velocity). `render::shells` throws and
 //! draws them.
 //!
-//! Spent shells for any game: `MapShell`/`MapShellPhysics` from the game; a
-//! flight's step, fade and bounce volume.
+//! Spent shells for any game: `MapShell`/`MapShellPhysics` from the game
+//! (per type, keyed by the game and the type); a flight's step, fade and
+//! bounce volume.
 
 use bevy::prelude::*;
 
 use super::MapModel;
 
-/// A shell type: its model (engine axes, meters; +X along the shell) and
-/// the sound entry it makes when it bounces.
+/// A shell type: its game, its model (engine axes, meters; +X along the
+/// shell), the sound entry it makes when it bounces and how it flies (its
+/// game's rules).
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MapShell {
+    /// The game whose guns eject it, the prefix of their view models' keys
+    /// (`cs_source`): a brass event of a gun of that game picks it.
+    pub game: String,
     /// The type's name as weapon events give it, lower case (`762nato`).
     pub key: String,
     pub model: MapModel,
     pub bounce: Option<String>,
+    pub physics: MapShellPhysics,
+}
+
+impl MapShell {
+    /// Whether this is game `game`'s type `key` (any case).
+    pub fn is(&self, game: &str, key: &str) -> bool {
+        self.game.eq_ignore_ascii_case(game) && self.key.eq_ignore_ascii_case(key)
+    }
+}
+
+/// Adds `shells` (a game's types) to `into`, each that `into` lacks (a
+/// guest's dressing: the map's own game's stay).
+pub fn add_shells(into: &mut Vec<MapShell>, shells: Vec<MapShell>) {
+    for s in shells {
+        if !into.iter().any(|t| t.is(&s.game, &s.key)) {
+            into.push(s);
+        }
+    }
 }
 
 /// How shells move (meters, seconds, radians). Games fill it.
