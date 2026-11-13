@@ -4126,7 +4126,18 @@ world outside its ticks 9.9M p50, 22.9M p99; the render world 10.9M.
 
 `heavy::map_ticks` (ultimate_gun_game) holds it: the bots' thinking under
 1.5M a tick and the costliest steady ticks under 45M on cs_militia;
-`CHIMERA_MAP_TICKS=<game:map>` prints another map's counts.
+`CHIMERA_MAP_TICKS=<game:map>` prints another map's counts. Since the
+map's player clips stop the walker (`MapPlayerClips`), cs_militia's mesh
+is 1,604 areas, off the hills; the large mesh guarded is Combat Arms'
+deserthole's (7,850 areas: the bots' thinking 0.29M a tick and the
+costliest steady ticks 11.9M, against 10.6M and 108.5M with `area_at`
+searching every area), and cs_militia keeps the same budget. It caught
+the spawn spots on cs_militia's navigation file putting bots on high
+floors apart from the rest of their mesh: two bots chasing each other
+searched their whole part of the mesh every tick (2.75M a tick); the
+spots now keep to the floors the generated walk reaches
+(`minigame::spawns`), and a bot whose search found no path waits a
+second before the next (`brain::REPLAN_AFTER_FAIL`): 0.39M again.
 
 **Left**, by size:
 

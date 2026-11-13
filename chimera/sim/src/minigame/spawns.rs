@@ -9,7 +9,12 @@
 //!   floors of the map's navigation mesh: its own (`map::nav::NavMesh`, a
 //!   whole kit's), else its navigation file's (`map::MapFloors`, loaded
 //!   whatever the kit: the floors its author marked as played; cs_militia's
-//!   yard opens onto hills nobody plays), else one generated from its
+//!   yard opens onto hills nobody plays) where the generated walk below
+//!   reaches them too (`Walk::on_walk`: the file links floors by ladders, jumps
+//!   and drops a walker without them never gets to or from, and bots
+//!   spawned on cs_militia's high floors, in a part of their own mesh
+//!   apart from the others, chased each other without a path), else one
+//!   generated from its
 //!   collision (`map::nav_gen`) with a walking player about as wide as the
 //!   widest (`walker`, its box sliding up to 0.2 m off a cell's centre to
 //!   fit a doorway), climbing what the map's game's players climb
@@ -65,9 +70,10 @@
 //! chosen once, so a door that opens later isn't considered; a map whose
 //! collision isn't built yet at the first spawn gets the spawn points for
 //! up to `BUILD_TRIES` spawns before the result is kept; on a map without
-//! a mesh or file of its own the spots are where a player walks and jumps
-//! up from the spawn points (no ladders or crouching), so a floor reached
-//! only by a ladder is never one; "inside the map" is the visibility
+//! a whole kit's mesh the spots are where a player walks and jumps up
+//! from the spawn points (no ladders or crouching), on its navigation
+//! file's floors where it has one, so a floor reached only by a ladder is
+//! never one (a map with a file pays the walk's flood too); "inside the map" is the visibility
 //! tree's clusters, so a map without visibility data (Combat Arms')
 //! relies on the walk alone.
 
@@ -270,6 +276,59 @@ fn map_mesh<'a>(nav: Option<&'a NavMesh>, floors: Option<&'a MapFloors>) -> Opti
     nav.filter(|n| !n.generated).or(floors.map(|f| &*f.0))
 }
 
+/// Whether the spots need the generated walk (`walker_for`): as their
+/// mesh, or to keep the navigation file's spots where it reaches; not
+/// where the map's own mesh (a whole kit's) is used.
+fn needs_walk(nav: Option<&NavMesh>) -> bool {
+    nav.is_none_or(|n| n.generated)
+}
+
+/// The walk's main region (`region`) for keeping the file's spots on it
+/// (`on_walk`).
+struct Walk<'a> {
+    mesh: &'a NavMesh,
+    inside: Vec<bool>,
+}
+
+impl<'a> Walk<'a> {
+    fn new(mesh: &'a NavMesh, points: &[Vec3]) -> Self {
+        Self {
+            inside: region(mesh, points),
+            mesh,
+        }
+    }
+
+    /// Whether `p` (a point of the file's floors) is on the walk's main
+    /// region: over one of its areas (or within `ON_WALK_SLACK` m of the
+    /// nearest), within `ON_WALK_HEIGHT` m of its floor.
+    fn on_walk(&self, p: Vec3) -> bool {
+        let Some(i) = self.mesh.area_at(p + Vec3::Y * 0.3).or_else(|| self.mesh.nearest_area(p)) else {
+            return false;
+        };
+        let a = &self.mesh.areas[i];
+        let c = a.closest_point(p);
+        self.inside.get(i).copied().unwrap_or(false)
+            && c.xz().distance(p.xz()) <= ON_WALK_SLACK
+            && (c.y - p.y).abs() <= ON_WALK_HEIGHT
+    }
+}
+
+/// How far off the walk's areas a file's spot may be (m): the walk's grid
+/// cells are half a metre, the file's floors drawn by hand.
+const ON_WALK_SLACK: f32 = 0.5;
+/// How far above or below the walk's floor (m): a stair's step.
+const ON_WALK_HEIGHT: f32 = 1.0;
+
+/// `raw_spots` on `nav`, keeping only those on `walk`'s main region where
+/// given.
+fn raw_spots_on(nav: &NavMesh, walk: Option<&Walk>, points: &[Vec3], seed: u32) -> Vec<(f32, f32, f32)> {
+    let mut raw = raw_spots(nav, points, seed);
+    if let Some(walk) = walk {
+        raw.retain(|&(x, z, y)| walk.on_walk(Vec3::new(x, y, z)));
+    }
+    raw
+}
+
 /// The yaw and pitch (radians) a spawn at `feet` would face, for a seed
 /// (the draws start there): what `pick` does at its spot, for tests and
 /// tools. None without a physics world.
@@ -413,12 +472,10 @@ impl SpotsJob {
         if let Some(water) = world.get_resource::<MapWater>() {
             hazards.extend(water.0.iter().map(|v| v.brush.clone()));
         }
-        let flood = map_mesh(world.get_resource::<NavMesh>(), world.get_resource::<MapFloors>())
-            .is_none()
-            .then(|| {
-                let (p, bound) = walker_for(world);
-                nav_gen::NavGenJob::new(&points, &p, bound)
-            });
+        let flood = needs_walk(world.get_resource::<NavMesh>()).then(|| {
+            let (p, bound) = walker_for(world);
+            nav_gen::NavGenJob::new(&points, &p, bound)
+        });
         Some(Self {
             seed: seed_of(world),
             points,
@@ -442,8 +499,13 @@ impl SpotsJob {
     ) -> bool {
         if let Some(mut flood) = self.flood.take() {
             match flood.step(q, &|e| characters.contains(&e), vis, cells) {
-                Some(mesh) => {
-                    self.raw = raw_spots(&mesh, &self.points, self.seed);
+                Some(walk) => {
+                    // The file's floors where the walk reaches them, else
+                    // the walk.
+                    self.raw = match nav {
+                        Some(file) => raw_spots_on(file, Some(&Walk::new(&walk, &self.points)), &self.points, self.seed),
+                        None => raw_spots(&walk, &self.points, self.seed),
+                    };
                     self.ready_to_test = true;
                 }
                 None => self.flood = Some(flood),
@@ -627,18 +689,19 @@ fn build(world: &mut World, points: &[Vec3], cap: usize) -> SpawnSpots {
     let mut state = SystemState::<SpatialQuery>::new(world);
     let Ok(q) = state.get(world) else { return SpawnSpots::default() };
     let ignore = |e: Entity| characters.contains(&e);
-    let generated;
     // The map's own mesh; one generated for another walker (bots') may
-    // climb where a player can't: ours instead.
-    let nav: &NavMesh = match map_mesh(world.get_resource::<NavMesh>(), world.get_resource::<MapFloors>()) {
-        Some(n) => n,
-        None => {
-            let bounds = bound.zip(vis.as_deref()).map(|(walker, vis)| nav_gen::Bounds { vis, walker });
-            generated = nav_gen::generate_within(&q, &ignore, points, &walker, bounds);
-            &generated
-        }
+    // climb where a player can't: ours instead, which also keeps the
+    // file's spots where it reaches.
+    let walk = needs_walk(world.get_resource::<NavMesh>()).then(|| {
+        let bounds = bound.zip(vis.as_deref()).map(|(walker, vis)| nav_gen::Bounds { vis, walker });
+        nav_gen::generate_within(&q, &ignore, points, &walker, bounds)
+    });
+    let raw = match (map_mesh(world.get_resource::<NavMesh>(), world.get_resource::<MapFloors>()), &walk) {
+        (Some(file), Some(walk)) => raw_spots_on(file, Some(&Walk::new(walk, points)), points, seed),
+        (Some(own), None) => raw_spots(own, points, seed),
+        (None, Some(walk)) => raw_spots(walk, points, seed),
+        (None, None) => Vec::new(),
     };
-    let raw = raw_spots(nav, points, seed);
     let floor = SpatialQueryFilter::from_mask(CHARACTER_FILTER).with_excluded_entities(characters.iter().copied());
     let mut spots = Vec::new();
     for (x, z, y) in raw {

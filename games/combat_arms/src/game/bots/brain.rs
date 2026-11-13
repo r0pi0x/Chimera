@@ -2270,10 +2270,22 @@ fn chase_fire(ctx: &Ctx, bot: &mut CaBot, me: &Char, target: &Char, guns: &[Gun]
     io.fire = fire && !std::mem::take(&mut bot.release);
 }
 
+/// Ours: after a path search that found no path (the goal in another part
+/// of the mesh: a target on a floor the walker can't reach), no search for
+/// this long. A failed search floods the bot's whole part of the mesh, and
+/// a chase or patrol asking again every tick made it a whole-part flood a
+/// tick (cs_militia: two bots chasing each other between parts, 2.3M
+/// instructions a tick).
+pub const REPLAN_AFTER_FAIL: f64 = 1.0;
+
 /// Walk toward `goal` (feet, m) along a planned path (3).
 fn walk(ctx: &Ctx, bot: &mut CaBot, me: &Char, goal: Vec3, diverge: bool, io: &mut IntentOut) {
     let feet = me.feet();
     let plan = bot.route.is_empty() || bot.route_goal.is_none_or(|g| g.distance(goal) > 1.0 && bot.route.len() <= 1);
+    if plan && ctx.now < bot.plan_after {
+        bot.route.clear();
+        return;
+    }
     if plan {
         bot.route_goal = Some(goal);
         bot.route = match ctx.mesh {
@@ -2298,6 +2310,9 @@ fn walk(ctx: &Ctx, bot: &mut CaBot, me: &Char, goal: Vec3, diverge: bool, io: &m
             None => vec![goal],
         };
         bot.stuck_check = (ctx.now, feet);
+        if bot.route.is_empty() {
+            bot.plan_after = ctx.now + REPLAN_AFTER_FAIL;
+        }
     }
     while let Some(&p) = bot.route.first() {
         if p.xz().distance(feet.xz()) < 0.35 && (p.y - feet.y).abs() < 1.2 {

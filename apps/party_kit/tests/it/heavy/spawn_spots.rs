@@ -6,7 +6,9 @@
 //! navigation file (Source maps that ship one: cs_militia's hills,
 //! havana's clipped yard, de_port's roofs), none a standing player is
 //! stuck in (the box, not a capsule, and the player clips), and at most
-//! `OFF_REGION_SHARE` of them (or `OFF_REGION_FEW`) off the main region.
+//! `OFF_REGION_SHARE` of them (or `OFF_REGION_FEW`) off the main region,
+//! or off the main region of the bots' generated mesh (a bot spawned off
+//! it has no path to or from the others: cs_militia's high floors).
 //! Prints each map's counts (`--nocapture`); `CHIMERA_SPAWN_SPOTS=<text>`
 //! checks only the maps whose id has the text. Passes with a note without
 //! the CS:S and Combat Arms installs; a game not installed is skipped.
@@ -81,13 +83,14 @@ fn spawn_spots_are_on_every_pool_maps_floors() {
         let r = spot_checks::report(w, &feet, &bots);
         let allowed = OFF_REGION_FEW.max((r.spots.len() as f32 * OFF_REGION_SHARE) as usize);
         eprintln!(
-            "{id}: {} spots{}, off the file {}{}, stuck {}, off the region {} (allowed {allowed})",
+            "{id}: {} spots{}, off the file {}{}, stuck {}, off the region {}, off the bots' {} (allowed {allowed})",
             r.spots.len(),
             if r.points_only { " (the spawn points)" } else { "" },
             r.off_file.len(),
             if r.has_file { "" } else { " (no file)" },
             r.stuck.len(),
             r.off_region.len(),
+            r.off_bots.len(),
         );
         if r.points_only && r.spots.is_empty() {
             bad.push(format!("{id}: no spawn spots or points"));
@@ -104,6 +107,13 @@ fn spawn_spots_are_on_every_pool_maps_floors() {
                 "{id}: {} spots off the main region (allowed {allowed}), e.g. {:?}",
                 r.off_region.len(),
                 &r.off_region[..r.off_region.len().min(4)]
+            ));
+        }
+        if r.off_bots.len() > allowed {
+            bad.push(format!(
+                "{id}: {} spots off the bots' main region (allowed {allowed}), e.g. {:?}",
+                r.off_bots.len(),
+                &r.off_bots[..r.off_bots.len().min(4)]
             ));
         }
     }

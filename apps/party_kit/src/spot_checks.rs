@@ -19,7 +19,14 @@
 //!   walker, jump-ups included, bounded to the clusters the spots' walking
 //!   player, `spawns::walker`, reaches where the map has visibility data).
 //!
-//! Known shortcuts: without a navigation file the region is the bots'
+//! - **Off the bots' region**: a spot over none of the areas of the bots'
+//!   generated mesh (`bots_mesh`) walked to from a spawn point and back
+//!   (the same slack), whatever file the map ships: a bot spawned off it
+//!   stands in a part of its mesh the others have no path to or from
+//!   (cs_militia's high floors, reached in its file by drops and ladders).
+//!
+//! Known shortcuts: `bots_mesh` is the bots' walker as the spots' walk
+//! fits doorways (its box sliding), which the bots' own flood doesn't; without a navigation file the region is the bots'
 //! walk, not a player's (no ladders, no crouching): a spot on a
 //! ladder-only floor counts as off it.
 
@@ -164,6 +171,9 @@ pub struct SpotReport {
     /// Whether they are the spawn points (no spots).
     pub points_only: bool,
     pub off_region: Vec<Vec3>,
+    /// Off the bots' generated mesh's main region (`bots_mesh`), whatever
+    /// file the map ships.
+    pub off_bots: Vec<Vec3>,
     pub off_file: Vec<Vec3>,
     pub stuck: Vec<(Vec3, Vec<Entity>)>,
     pub has_file: bool,
@@ -184,8 +194,10 @@ pub fn report(world: &mut World, feet: &[Vec3], bots: &NavMesh) -> SpotReport {
     let file = file_nav(world);
     let mesh = region_mesh(file.as_deref(), bots);
     let (inside, _) = region(mesh, feet);
+    let (bots_inside, _) = region(bots, feet);
     SpotReport {
         off_region: spots.iter().copied().filter(|q| !on_region(mesh, &inside, *q)).collect(),
+        off_bots: spots.iter().copied().filter(|q| !on_region(bots, &bots_inside, *q)).collect(),
         off_file: file.as_ref().map_or_else(Vec::new, |n| spots.iter().copied().filter(|q| off_file(n, *q)).collect()),
         stuck: stuck(world, &spots),
         has_file: file.is_some(),
