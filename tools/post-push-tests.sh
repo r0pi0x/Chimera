@@ -15,7 +15,14 @@
 #    included (`affected --range <base>..<pushed>`; nextest when installed).
 #    [base] defaults to the last commit this script passed, else the
 #    pushed commit's first parent. CHIMERA_PUSH_TESTS=all runs the full
-#    suite, =0 skips the tests (keeping the build checks). The tests that
+#    suite, =0 skips the tests (keeping the build checks). The test
+#    binaries are linked without debug info (CARGO_PROFILE_TEST_STRIP=
+#    debuginfo, set for the test step only; CHIMERA_POST_PUSH_STRIP=none
+#    keeps it) to cut the bytes written: a failure's panic keeps its
+#    message and file:line, but backtrace frames lose theirs and
+#    RUST_BACKTRACE=1 prints none. To get lines back, rerun the test with
+#    RUST_BACKTRACE=full (names) in a slot with `cargo test --profile dev`
+#    (docs/performance.md, "Test binaries without debug info"). The tests that
 #    need the games' installs use the main checkout's local config
 #    (CHIMERA_CONFIG set to its chimera.local.toml or mashup.local.toml
 #    when there is one and the caller set none; the file isn't read here).
@@ -101,12 +108,15 @@ fi
 
 tests="skipped"
 if [ "$mode" != 0 ]; then
+    # Only this step: the checks above and `affected` build with the dev
+    # profile, whose units the test profile's setting would split from.
+    strip=CARGO_PROFILE_TEST_STRIP=${CHIMERA_POST_PUSH_STRIP:-debuginfo}
     if cargo nextest --version >/dev/null 2>&1; then
         format=nextest
-        runner=(cargo nextest run --features dev --no-fail-fast --color never)
+        runner=(env "$strip" cargo nextest run --features dev --no-fail-fast --color never)
     else
         format=cargo
-        runner=(cargo test --features dev --quiet --no-fail-fast)
+        runner=(env "$strip" cargo test --features dev --quiet --no-fail-fast)
     fi
     if [ "$mode" = all ] || [ -z "$base" ]; then
         args=--workspace

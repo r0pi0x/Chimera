@@ -4620,8 +4620,10 @@ the report includes the failures and limitations.
 
 The dev and test profiles both use `debug = "line-tables-only"`. Ordinary
 `cargo build`/`run` and `cargo test` can reuse dependency artifacts when
-their features and other compiler settings match. Backtraces retain file
-and line information; inspecting local variables requires full debug info:
+their features and other compiler settings match (the post-push
+checkout strips its test executables, "Test binaries without debug info").
+Backtraces retain file and line information; inspecting local variables
+requires full debug info:
 
 ```
 cargo run --profile devfull --features dev
@@ -5053,7 +5055,8 @@ LTO, taken"); 3 is no longer needed.
    larger, add `codegen-units = 16` (or 1) under
    `[profile.dev.package."*"]`: the registry crates are built once and
    come from sccache.
-2. **Debug info out of the linked test binaries.** Either `strip =
+2. **Debug info out of the linked test binaries.** Done for the post-push checkout (below, "Test
+   binaries without debug info"). As proposed: either `strip =
    "debuginfo"` in `[profile.test]` (both systems; a test's backtrace
    keeps function names and the panic its file and line, the frames lose
    theirs), or `-Csplit-debuginfo=unpacked` in the slots' environment
@@ -5155,6 +5158,52 @@ simulation 7-10% slower, the fast tiers 9-10% (6 s of Combat Arms' 57),
 against 20-30 s off each rebuild of a crate after an edit. Taken. If
 the fast tier's share grows, `opt-level = 2` for the game crates in the
 test profile is the next thing to measure ("What to do next", 5).
+
+### Test binaries without debug info (2026-11-13)
+
+`CARGO_PROFILE_TEST_STRIP=debuginfo`, set by `tools/post-push-tests.sh`
+for its test step only, to cut the bytes the build box writes: the SSD
+took about 3.9 TB a day, most of it the test binaries' linker output, and
+the post-push checkout is 61-83% of it. `-C strip` acts at link time; the
+rlibs are unchanged.
+
+Measured in a slot (mold, sccache, other agents running), the same tree
+and the same edit (a line appended to `chimera_core`'s `lib.rs`), `cargo
+test --workspace --features dev --no-run`, 59 test executables, with
+`strip = "debuginfo"` in `[profile.test]` (the setting under test):
+
+| | executables | bytes written by the relink | wall |
+|---|---|---|---|
+| split debug info, line tables in each binary (before) | 9.43 GB | 59.3 GB (sampled `write_bytes` of the cargo process tree; the block device saw 90 GB, others' writes included) | 7 min 17 s |
+| `strip = "debuginfo"` | 3.76 GB | 28.8 GB (device 25.6 GB) | 2 min 30 s |
+
+The tree's bytes also count the rlibs, the incremental caches and the
+`.dwo` files of everything that rebuilt, which strip does not touch; the
+rest of the saving is the executables' own 5.7 GB per full link.
+
+**Why not in `[profile.test]`.** `strip` is part of the profile cargo
+hashes: with it there, the workspace crates (not the registry ones,
+checked in `--unit-graph`) of a `cargo test` build are a different unit
+from the same crates of a `cargo run`/`build`. Agents alternate the two
+in one slot (offscreen clients, servers, tests), so each workspace crate
+would compile twice there, which could cost more writes than the strip
+saves. The post-push checkout builds nothing but tests with the test
+profile: its `cargo check` steps and `repo_checks` use the dev profile,
+so the variable is set on the test command alone (`cargo check` units
+are metadata only and never shared with a test build). Slots and the
+pre-commit hook keep line tables. `CHIMERA_POST_PUSH_STRIP=none` turns
+it off.
+
+What a failing test keeps and loses (probe test panicking two calls deep):
+
+- Kept: the panic message and its `file:line` (`panicked at
+  chimera/core/src/lib.rs:44:24`, the `left`/`right` of an `assert_eq!`),
+  and with `RUST_BACKTRACE=full` every frame's function name.
+- Lost: each backtrace frame's `at file:line`. `RUST_BACKTRACE=1` prints
+  an empty backtrace (its trimming looks for std's marker frames by
+  name, and they are `<unknown>` without debug info): use `=full`.
+- To read frames' lines or variables, rerun the test in a slot, which is
+  not stripped: `cargo test` there, or `--profile devfull` for variables.
 
 ### What to do next, by expected gain
 
