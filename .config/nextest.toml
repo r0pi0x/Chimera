@@ -126,6 +126,16 @@ filter = '(binary_id(party_kit::server) & test(/^heavy::spawns::every_pool_map_s
 test-group = 'heavy'
 priority = 90
 
+# The spawn-spot guard over the pool, in six shards by a hash of the map id
+# (each ~23 maps, ~110 s alone; the one test was 656 s and hit the heavy
+# tests' 720 s in a loaded post-push run). 18 minutes (180 s x 6) each;
+# they start early so the slots overlap them.
+[[profile.default.overrides]]
+filter = 'binary_id(party_kit::it) & test(/^heavy::spawn_spots::/)'
+test-group = 'heavy'
+priority = 90
+slow-timeout = { period = "180s", terminate-after = 6 }
+
 # Every crate's heavy tests (`heavy::` in its test binaries) share the
 # slots. The longest besides the soak took ~2 minutes on a busy box:
 # killed after 12.
