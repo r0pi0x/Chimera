@@ -27,7 +27,9 @@
 //!   `combat_arms:`) matches an install weapon's `Name` (case-insensitive,
 //!   spaces as `_`: `slug`; `INSTALL_NAMES` for the two of ours named
 //!   otherwise, the knife `M9` and the `M-23F`) takes the install's
-//!   numbers for every field it maps (`weapon_values`; the models,
+//!   numbers for every field it maps (`weapon_values`, its crosshair
+//!   fields in `combat_arms:hud`, made for a document without one: the
+//!   knives and most guns; the models,
 //!   `model_values`: `PVModelNormal`, `PVSkin#` and `Pos` as `[models]
 //!   view`, `view_skins`, `view_offset`, `HHModel` as `world`,
 //!   `MuzzlePos` and `BreachOffset` in `combat_arms:view_model`; a
@@ -474,6 +476,14 @@ fn set(path: &[&str], value: impl Into<Value>) -> Set {
     }
 }
 
+/// `set`, making the table when missing (`When::Create`).
+fn hud(path: &[&str], value: impl Into<Value>) -> Set {
+    Set {
+        when: When::Create,
+        ..set(path, value)
+    }
+}
+
 fn floats(v: impl IntoIterator<Item = f64>) -> Value {
     Value::Array(v.into_iter().map(Value::Float).collect())
 }
@@ -563,12 +573,16 @@ fn weapon_values(w: &WeaponRecord, ammo: Option<(&str, &AmmoRecord)>, length_sca
         set(&["hooks", HANDLING, "move_penalty"], w.move_penalty),
         set(&["hooks", INVENTORY, "infinite"], w.infinite_ammo != 0),
         set(&["hooks", INVENTORY, "drop_on_death"], w.drop_by_player_dead),
-        set(&["hooks", HUD, "crosshair"], i64::from(w.cross_hair_type.clamp(0, 255))),
-        set(&["hooks", HUD, "disable_crosshair"], w.disable_crosshair != 0),
-        set(&["hooks", HUD, "duck_perturb"], i64::from(w.duck_perturb)),
-        set(&["hooks", HUD, "move_duck_perturb"], i64::from(w.move_duck_perturb)),
-        set(&["hooks", HUD, "wide_count"], i64::from(w.wide_fire_max_num)),
-        set(&["hooks", HUD, "bomb"], w.gun_type == 8),
+        // The HUD's fields make the table when the document has none (most
+        // don't, the knives included): without it a knife kept the plain
+        // green plus under its reticle, its `DisableCrosshair` lost
+        // (hud_crosshair.md A7, A8).
+        hud(&["hooks", HUD, "crosshair"], i64::from(w.cross_hair_type.clamp(0, 255))),
+        hud(&["hooks", HUD, "disable_crosshair"], w.disable_crosshair != 0),
+        hud(&["hooks", HUD, "duck_perturb"], i64::from(w.duck_perturb)),
+        hud(&["hooks", HUD, "move_duck_perturb"], i64::from(w.move_duck_perturb)),
+        hud(&["hooks", HUD, "wide_count"], i64::from(w.wide_fire_max_num)),
+        hud(&["hooks", HUD, "bomb"], w.gun_type == 8),
         // weapon_classes.md: the zoom fields, the bolt's zoom-out, the
         // minigun's reversible spin.
         set(&["hooks", ZOOM, "zoom_time"], w.zoom_time),
@@ -589,13 +603,9 @@ fn weapon_values(w: &WeaponRecord, ammo: Option<(&str, &AmmoRecord)>, length_sca
             set(&["hooks", RECOIL, "burst_max_pitch"], w.triple_shot_max_cam_recoil_pitch),
         ]);
     }
-    // A reticle (hud_crosshair.md A8) makes the HUD table if the document
-    // has none: the knives' documents don't carry one.
+    // A reticle (hud_crosshair.md A8), the HUD table made as above.
     if !w.dot_sight_name.trim().is_empty() {
-        out.push(Set {
-            when: When::Create,
-            ..set(&["hooks", HUD, "dot_sight"], w.dot_sight_name.trim())
-        });
+        out.push(hud(&["hooks", HUD, "dot_sight"], w.dot_sight_name.trim()));
     }
     if let Some((id, a)) = ammo {
         out.extend([
