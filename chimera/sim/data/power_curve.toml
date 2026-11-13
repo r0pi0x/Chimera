@@ -65,3 +65,7 @@ magazine_full = 30
 # A pistol whose body hit does at least this many hit points (the mean over
 # the distances) plays as a heavy pistol.
 heavy_pistol_damage = 50.0
+# A placed device that shoots (a turret) fires at the player counted this
+# share of the time: it stands in one place and turns between targets, so
+# its gun's rate counts this much (its game's reader of the device hook).
+device_uptime = 0.5

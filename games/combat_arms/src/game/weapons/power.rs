@@ -19,6 +19,15 @@
 //! - `combat_arms:bolt`: a crossbow bolt's damage table (as
 //!   `combat_arms:damage`) and its cone (`perturb`).
 //! - `combat_arms:flame`: the pre-fire before the first flame.
+//! - `combat_arms:device`: a turret's gun (`turret.gun`, read as
+//!   `combat_arms:damage`), as the weapon's damage: the target at the
+//!   distance, but no farther than the turret's sensor (`search_radius`:
+//!   it fights what walks into it; the gun's range caps it too), its
+//!   `perturb` a fixed offset at any range (a spread of perturb /
+//!   distance), one shot per `fire_delay` over the curve's
+//!   `device_uptime` (the share of the time it fires at the player
+//!   counted), and the placing (`prefire` + `key`) and `setup` as the
+//!   latency. Its `ammo` caps nothing (a kill takes fewer rounds).
 
 use chimera_core::game_parts::GunClass;
 use chimera_sim::minigame::power::{GunStats, PowerAppExt, ReadAt};
@@ -99,6 +108,25 @@ fn flame(p: &toml::Value, _: &ReadAt, s: &mut GunStats) {
     s.latency += num(p, "prefire").unwrap_or(0.0);
 }
 
+fn device(p: &toml::Value, at: &ReadAt, s: &mut GunStats) {
+    let Some(t) = p.get("turret") else { return };
+    let Some(gun) = t.get("gun") else { return };
+    let reach = [num(t, "search_radius"), num(t, "range")].into_iter().flatten().filter(|r| *r > 0.0).fold(f32::INFINITY, f32::min);
+    let distance = at.distance.min(reach).max(1e-3);
+    let near = ReadAt { distance, ..*at };
+    s.interval = 1.0;
+    damage(gun, &near, s);
+    s.pellets = 1;
+    s.follow = None;
+    s.spread = num(t, "perturb").unwrap_or(0.0) / distance;
+    if let Some(delay) = num(t, "fire_delay").filter(|d| *d > 0.0) {
+        s.interval = delay / at.uptime.clamp(1e-3, 1.0);
+    }
+    s.latency = num(p, "prefire").unwrap_or(0.0) + num(p, "key").unwrap_or(0.0) + num(t, "setup").unwrap_or(0.0);
+    s.clip = 0;
+    s.reload = 0.0;
+}
+
 /// Combat Arms' readers registered.
 pub fn plugin(app: &mut bevy::prelude::App) {
     // In this order: the rate before the damage's least interval and the
@@ -108,5 +136,6 @@ pub fn plugin(app: &mut bevy::prelude::App) {
         .add_power_reader(super::SPREAD, spread)
         .add_power_reader(super::super::special::data::PROJECTILE, projectile)
         .add_power_reader(super::super::special::data::BOLT, bolt)
-        .add_power_reader(super::super::special::data::FLAME, flame);
+        .add_power_reader(super::super::special::data::FLAME, flame)
+        .add_power_reader(super::super::special::data::DEVICE, device);
 }

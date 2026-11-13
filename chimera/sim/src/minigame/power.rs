@@ -49,7 +49,12 @@
 //!   own hooks' parameters (`PowerReaders`, `PowerAppExt::
 //!   add_power_reader`: CS:S's accuracy, Combat Arms' damage bands,
 //!   spread cone, fire rate, projectile and flame), which know what the
-//!   game's numbers mean. A gun without damage data scores 0.
+//!   game's numbers mean. A gun without damage data scores 0. A weapon
+//!   that deals its damage through what it places (Combat Arms' auto
+//!   turret) scores by that device's gun, as its game's reader of the
+//!   device hook gives it: the placing and setup as latency, and the
+//!   device's fire rate times the curve's `device_uptime`, the share of
+//!   the time it is firing at the player counted.
 //! - `ladder_power` (console): every classed gun of the catalogue, by
 //!   band, weakest first: its score, time to kill at 15 m and band.
 //!   `ladder_skipped`: the guns a draw never deals (`auto::drawable`).
@@ -164,6 +169,9 @@ pub struct ScoreParams {
     pub magazine_weight: f32,
     pub magazine_full: u32,
     pub heavy_pistol_damage: f32,
+    /// The share of the time a placed device (a turret) fires at the
+    /// player its score counts (`ReadAt::uptime`).
+    pub device_uptime: f32,
 }
 
 /// The power curve (`data/power_curve.toml`).
@@ -295,13 +303,14 @@ pub struct GunStats {
 }
 
 /// Where a reader reads: the distance in the document's length units, and
-/// the curve's `firing` and `update`.
+/// the curve's `firing`, `update` and `device_uptime` (`uptime`).
 #[derive(Clone, Copy, Debug)]
 pub struct ReadAt<'a> {
     pub distance: f32,
     pub data: &'a WeaponData,
     pub firing: f32,
     pub update: f32,
+    pub uptime: f32,
 }
 
 /// A hook's parameters as its weapon's data gives them.
@@ -386,6 +395,7 @@ pub fn stats(data: &WeaponData, readers: &PowerReaders, curve: &PowerCurve, metr
         data,
         firing: curve.score.firing,
         update: curve.score.update,
+        uptime: curve.score.device_uptime,
     };
     for (hook, read) in &readers.stats {
         if let Some(p) = data.hooks.get(*hook) {
