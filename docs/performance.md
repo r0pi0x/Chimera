@@ -3093,7 +3093,7 @@ materials no longer reach the render thread when it comes in
 (`late_build`). `chimera_mem` prints the store, the drawn and the dormant.
 
 Headless, with the drawing's assets (`heavy::session_materials` in
-ultimate_gun_game: a ladder on each map, the server's map change, 4 bots; no
+ultimate_gun_game: a ladder on each map, one test a map, the server's map change, 4 bots; no
 render world, so materials in the store, not GPU buffers):
 
 | map | store before | after | drawn | dormant after |
@@ -3102,9 +3102,12 @@ render world, so materials in the store, not GPU buffers):
 | warehouse | 1,631 | 30 | 30 | 1,601 |
 | de_dust2 again | 2,123 | 163 | 130 | 1,961 |
 
-The test takes about 13 minutes by design (four maps, a full ladder each), so nextest gives it, and `session_maps`, 60 minutes (`.config/nextest.toml`). (dm_lockdown, in the test's list, was not installed on the box.) The test
-fails if the store holds 600 more than is drawn, or grows on the same map
-after a lap.
+The test was one of 13-17 minutes (four maps, a full ladder each), which
+bound every after-push run; it is now one test a map (about 4 minutes each:
+a play waits up to 240 s for the kit's models) and one for the order
+(de_dust2, a swap to warehouse, de_dust2 again: two plays), so nextest runs
+them side by side in the heavy slots. Each fails if the store holds 600 more
+than is drawn; the last also if the store grows on the same map after a lap.
 
 **Waits for a display:** the real app's render thread before and after over a
 session of maps (de_dust2 fresh and after eight other maps, as above), and frozen-scene screenshots before
@@ -5157,7 +5160,8 @@ test profile is the next thing to measure ("What to do next", 5).
 
 1. **The after-push tests** (52-125 minutes a push; the push is when a
    change is known to work). One test,
-   `ultimate_gun_game::it heavy::session_materials`, is 1,047-1,096 s of
+   `ultimate_gun_game::it heavy::session_materials` (since split into
+   four, longest ~8 minutes), was 1,047-1,096 s of
    a 2,300-3,200 s run, and three session tests of that binary 1,560 s;
    `cs_source::it`'s 363 heavy tests grew from 1,174 s (2026-10-31) to
    3,200-10,000 s summed with the community maps now present and the box
