@@ -7,15 +7,16 @@
 //! HL2:DM's climbs the greybox's ladder brush and a Combat Arms ladder
 //! volume as lines (`useable_ladders::lines_of_volume`); CS:S's and
 //! Combat Arms' climb an HL2 ladder line (a `func_useableladder` of the
-//! map's entities: a thin ladder post, a ladder volume around it). On a
-//! map of HL2:DM's own, its movement leaves the ladder brushes solid, as
-//! HL2:DM does. CS:S on a Combat Arms volume and Combat Arms on a brush:
+//! map's entities: a thin ladder post, a ladder volume around it), and
+//! Combat Arms' gets off the tank's ladder brush onto its wall's narrow
+//! top. On a map of HL2:DM's own, its movement leaves the ladder brushes
+//! solid, as HL2:DM does. CS:S on a Combat Arms volume and Combat Arms on a brush:
 //! cross_water_ladders.rs and combat_arms' movement_volumes.rs.
 
 use bevy::prelude::*;
 use chimera_core::core::MapGame;
 use chimera_world::{
-    greybox::{GreyboxMapPlugin, LADDER_X, NORTH_WALL_Z},
+    greybox::{GreyboxMapPlugin, LADDER_X, NORTH_WALL_Z, TANK_MAX, TANK_MIN},
     harness::Sim,
     map::{MapEntities, MapEntity},
 };
@@ -139,4 +140,36 @@ fn hl2dm_movement_on_its_own_map_leaves_ladder_brushes_solid() {
     let p = stand(&mut sim, HL2, BEFORE_BRUSH);
     let (on, rose) = climb(&mut sim, p, 0.0, 45.0, 2.0);
     assert!(!on && rose < 0.5, "HL2:DM climbs only useable ladders on its maps: on {on}, rose {rose}");
+}
+
+/// Combat Arms' movement up the greybox tank's ladder brush (on the
+/// outside of its east wall, 3 m, the wall's top 0.4 m across) gets off
+/// onto that narrow top and stays there (`combat_arms` movement: off a
+/// made ladder onto the floor at its top the player stops), not hopping on
+/// into the tank with the speed it pressed into the brush.
+#[test]
+fn combat_arms_movement_gets_off_a_ladder_brush_onto_a_narrow_top() {
+    let mut sim = sim();
+    let z = (TANK_MIN.y + TANK_MAX.y) / 2.0;
+    let p = stand(&mut sim, CA, Vec3::new(TANK_MAX.x + 1.5, 1.0, z));
+    let feet = |sim: &Sim| sim.position(p).y + sim.state(p).hull_min.y;
+    let start = feet(&sim);
+    for _ in 0..(6.0 * sim.tick_hz()) as u32 {
+        let mut i = sim.intent(p);
+        // West, looking 45 degrees up.
+        i.yaw = 90f32.to_radians();
+        i.pitch = 45f32.to_radians();
+        i.move_axis = Vec2::Y;
+        sim.ticks(1);
+        let s = sim.state(p);
+        if s.on_ground && !s.on_ladder && feet(&sim) > start + 1.0 {
+            break;
+        }
+    }
+    sim.intent(p).move_axis = Vec2::ZERO;
+    sim.seconds(0.5);
+    let (at, s) = (sim.position(p), sim.state(p));
+    assert!(s.on_ground && !s.on_ladder, "standing off the ladder: {s:?} at {at}");
+    assert!((feet(&sim) - 3.0).abs() < 0.1, "on the wall's top (3 m): feet at {}, at {at}", feet(&sim));
+    assert!(at.x > TANK_MAX.x - 0.3 && at.x < TANK_MAX.x + 0.8, "on the wall, not in the tank: {at}");
 }
