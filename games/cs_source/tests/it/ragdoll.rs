@@ -255,6 +255,28 @@ fn the_ragdoll_goes_when_its_owner_lives_again() {
     assert!(sim.app.world().get::<Ragdolled>(p).is_none());
 }
 
+/// Ragdolls off (`cl_ragdoll_physics_enable 0`; a dedicated server's
+/// setting, ragdolls.md 2.1: the server never simulates player ragdolls):
+/// a death makes none, and a body the tick animates (`SimAnimator`, a
+/// network server's) keeps no pose record, which only ragdolls read there.
+#[test]
+fn with_ragdolls_off_a_death_makes_none_and_no_pose_is_kept() {
+    use crate::stack::map::{SimAnimator, anim::Animator, ragdoll::SkeletonPose};
+    let (mut sim, p) = sim();
+    sim.app.world_mut().resource_mut::<RagdollSettings>().enabled = 0;
+    sim.ticks(1);
+    // Not animated in the tick: its hitboxes still read the record.
+    assert!(sim.app.world().get::<SkeletonPose>(p).is_some());
+    sim.app.world_mut().entity_mut(p).remove::<SkeletonPose>().insert(SimAnimator(Animator::default()));
+    sim.ticks(3);
+    assert!(sim.app.world().get::<SkeletonPose>(p).is_none(), "a pose kept for nothing");
+    kill(&mut sim, p, Hitgroup::Head, Vec3::new(0.0, 1.6, 0.0), Vec3::NEG_Z);
+    sim.ticks(5);
+    assert!(ragdoll(&mut sim).is_none());
+    assert!(bodies(&mut sim).is_empty());
+    assert!(sim.app.world().get::<Ragdolled>(p).is_none());
+}
+
 /// The model plus a left upper arm hanging at the shoulder, left of the
 /// torso (Source +Y), that swings freely; `pairs` are its self-collision
 /// rules (body 7 is the arm, 1 the torso).

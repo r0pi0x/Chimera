@@ -3227,6 +3227,81 @@ phase against the map +0.98M a tick, the ragdoll joints and contacts
 ragdoll body awake while at least 100 remain: de_dust2's third lap counts
 7.6M, the second 8.0M.
 
+### A ragdoll's cost (2026-11-12)
+
+`cs_source`'s `heavy::map_ragdoll_cost`: ten CS:S players killed by a head
+shot at de_dust2's terrorist spawns one after another (a repeatable sim,
+`Sim::work`, a test build), each death's spawn tick and its ticks until
+every body sleeps against ticks with no ragdoll awake, then the ten lying
+asleep against the world without them. Main, then this pass:
+
+| | main | after |
+|---|---|---|
+| a ragdoll awake, a tick (mean of 10) | +2.03M | +1.00M |
+| over its waking life (2-6 s) | 431M | 196M |
+| spawning one (the model's first, then later ones) | 19.1M, then 16.6-17.4M | 7.3M, then 3.3-3.9M |
+| one lying asleep, a tick | 86.6k | 36.0k |
+
+Per awake tick, by system (the table the test prints):
+
+| system | main | after |
+|---|---|---|
+| `update_narrow_phase` | +564k | +183k |
+| `solve_ragdoll_joints<true>` | +431k | +206k |
+| `solve_ragdoll_joints<false>` | +430k | +288k |
+| `warm_start_ragdoll_joints` | +188k | +192k |
+| `repair_ragdolls` | +84k | +19k |
+| `settle_ragdolls` | +67k | +21k |
+| `prepare_ragdoll_joints` | +34k | +46k |
+| `fly` (grenades', flyers') | +31k | 0 |
+
+What changed:
+
+- **Whole hulls.** Ragdoll bodies' `.phy` hulls were cut for contacts
+  (`collision::contact_hulls`, against parry clipping a face to four
+  corners): a player's 16 hulls were 29 pieces, each walked against the
+  map's surfaces and solids. The narrow phase's share fell by two thirds
+  with whole hulls (19-24 manifolds a tick down to 12-16, about as many
+  touching pairs), and ragdolls settle as before or better:
+  `heavy::map_debris_settle::ragdolls_settle_and_sleep`, 60 ragdolls,
+  asleep in 1.5-5.7 s, median 2.8 s (was 2.9 s), 57 by 5 s, no body over
+  0.72 rad/s after 4 s (was 1.49). A one-hull body is that hull, not a
+  compound of one (the same narrow phase within the noise). Cutting was
+  what most of the spawn cost was, too.
+- **Shapes made once.** A body's collider and mass properties are kept
+  per pieces and scale (`ragdoll::RagdollShapes`): a death after the model's
+  first copies them.
+- **The joint passes.** The warm start's limit angles serve the biased
+  pass (the bodies don't turn between them); a limit row short of its
+  limit, not closing on it and holding nothing is skipped (it would apply
+  nothing); the inertia matrices are made once a joint. And only awake
+  joints are passed (`AwakeRagdollJoints`, made when the step's joints are
+  prepared, in the same order): a sleeping ragdoll's joints were visited
+  in every pass of every substep.
+- **Sleeping ragdolls** are passed over first in `repair_ragdolls` and
+  `settle_ragdolls` (they read every body's pose each tick), and the
+  grenades' and flyers' `fly` makes its list of the dead only when
+  something flies.
+- **The dedicated server makes no player ragdolls** (`dedicated::
+  ServerPlugin` sets `RagdollSettings::enabled` 0): ragdolls.md 2.1, the
+  server never simulates them; each client makes its own from the death
+  it is told (`Killed`: the hit, its direction and force), as before. Its
+  pose record for them goes too (`ragdoll::record_poses` skips bodies
+  animated in the tick, `SimAnimator`, with ragdolls off: 6% of the
+  Combat Arms server's tick, "Combat Arms' characters on the server"). So a
+  server's death costs it nothing after the kill. Nothing on the wire
+  changed (net42).
+
+Left: the joints at the test build's `opt-level` 1 (our crates; glam's
+math is inlined there unoptimized) are most of what an awake ragdoll costs
+now, less in a release build; a sleeping ragdoll still costs avian's
+per-body systems and `logic::bridge`'s `record_velocities` (every dynamic
+body's velocity into a map each tick, asleep or not: an exact skip needs
+the speed a woken body had before the step); the stillness rule's 0.5 s
+(a quarter of an awake ragdoll's ticks are under 5 cm/s and 0.5 rad/s).
+Before and after on screen: a death on de_dust2, offscreen, looks the same
+(the body slumps to the same heap).
+
 ## The tick's two largest leftovers (2026-11-10)
 
 The two largest items of the backlog's "The tick and the frame, what's

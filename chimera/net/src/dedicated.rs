@@ -30,6 +30,11 @@
 //!   20 s after each map change the allocator's free pages go back to the
 //!   system (`metrics::memory::release_after_change`; glibc kept 1.3-1.8 GB
 //!   of them on Ultimate Gun Game's server, more each map).
+//! - No player ragdolls (`map::ragdoll::RagdollSettings::enabled` 0): each
+//!   client makes its own from the death it is told (specs/cs_source/
+//!   ragdolls.md 2.1: the server never simulates them), so the server
+//!   keeps no pose record for them either (`ragdoll::record_poses`).
+//!   Map-placed ragdolls are the server's still (`net::ragdolls`).
 //! - What only some servers have, `ServerHooks` (all off in
 //!   `ServerHooks::NONE`): several games' maps (`maps`: a loader of whole
 //!   ids, the game a bare name is); the map cycle (`map_cycle`:
@@ -398,6 +403,14 @@ impl Plugin for ServerPlugin {
         let server = self.server;
         let hooks = &server.hooks;
         app.insert_resource(Serving(server));
+        // No player ragdolls: they are each client's own (ragdolls.md 2.1,
+        // the server never simulates them; `net::weapons`' `Killed` seeds
+        // them), so neither are their bodies' pose records
+        // (`map::ragdoll::record_poses`).
+        app.insert_resource(map::ragdoll::RagdollSettings {
+            enabled: 0,
+            ..default()
+        });
         (server.sim)(app);
         let on_greybox = !matches!(start, Some(StartMap::Loaded { .. }));
         match start {

@@ -1332,7 +1332,8 @@ fn fly(
     time: Res<Time>,
 ) {
     let dt = time.delta_secs();
-    if dt <= 0.0 {
+    // No grenade flying (most ticks): no list of the dead to make.
+    if dt <= 0.0 || projectiles.is_empty() {
         return;
     }
     let now = time.elapsed_secs_f64();
