@@ -2188,6 +2188,23 @@ cargo run --features dev,tools --bin refcmp -- capture-ours --only a_sign
 - Chimera renders views off-screen at 1280x720 (`--views`), matching CS:S's
   framing (90 degrees horizontal at 4:3 = 74 vertical).
 
+### Measuring maps for a gun game's pool (map_fitness)
+
+`map_fitness` (apps/party_kit/src/bin/map_fitness.rs, `--features
+tools`) loads every installed map of the party's games (CS:S, Combat
+Arms, HL2:DM) headless, one at a time, floods the bots' generated
+navigation mesh from its spawn points and writes per map its walkable
+area, walking times between random points, spawn points and the hub,
+the time N players spread over it take to meet, and its sight lines to
+`target/map_fitness/fitness.csv` (docs/plans/active/map-pool-fitness.md
+says what each column means and the pool rule built on them).
+
+```
+cargo run -p party_kit --features dev,tools --bin map_fitness -- --list     # the installed maps
+cargo run -p party_kit --features dev,tools --bin map_fitness -- --filter gg_  # some of them
+cargo run -p party_kit --features dev,tools --bin map_fitness -- --resume   # continue a sweep
+```
+
 ### Comparing the HUD (`refcmp hudcmp`)
 
 ```

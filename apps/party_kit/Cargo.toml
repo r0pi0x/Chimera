@@ -63,8 +63,19 @@ path = "tests/it/main.rs"
 name = "server"
 path = "tests/server/main.rs"
 
+# The map-pool fitness tool (docs/plans/active/map-pool-fitness.md): a
+# host tool over every installed map of the party's games, `--features
+# tools`; never in releases.
+[[bin]]
+name = "map_fitness"
+test = false
+required-features = ["tools"]
+
 [features]
 default = ["present"]
+
+# Host tools (`map_fitness`), not in releases.
+tools = []
 
 # The presentation (chimera_present), the client shell (chimera_client)
 # and both games' front ends (`combat_arms/ui`; `cs_source/ui` for CS:S's
