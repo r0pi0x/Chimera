@@ -1892,10 +1892,12 @@ What is left of a swap over 100 M on the profiling build, in order:
 - **Settling's prop shadows** on dm_lockdown: `update_prop_shadows` is half of its settling
   frames' instructions (six redraws a frame, `REDRAWS_PER_FRAME`, each about 8 M: 38-45
   frames over 100 M a swap before and after). A budget in instructions or fewer a frame
-  behind the loading screen would do; chimera_present's.
+  behind the loading screen would do; chimera_present's. (Since: redrawn once the prop
+  rests, within a counted budget, "A swap's prop meshes and shadows" below.)
 - **Spawn steps**: `spawn_prop` evaluating a light probe per vertex (`LightProbe::eval`),
   up to 143 M in a step of 16 props on cs_office, 108-174 M on warehouse: now the worst frame
-  of a Combat Arms map's swap.
+  of a Combat Arms map's swap. (Since: made by the load, below; warehouse's worst step was a
+  body's skinned bounds and the surfaces' grid, made there too.)
 - **The map's frame on cs_office** (131-134 M): the entities and their hierarchy 36 of 87
   samples, the props' first shadows 24, `calculate_bounds` 10.
 - **A dedicated server's map change** is still one tick with everything in it (nobody
@@ -1904,6 +1906,111 @@ What is left of a swap over 100 M on the profiling build, in order:
 Seen in passing, not looked into: offscreen without `--dump` the audio thread
 (`cpal_alsa_out`) ran flat out during these frames (759 samples in an 85 ms frame, half in
 `audio::room::Reverb::frame`); whether a real output device paces it wasn't checked.
+
+### A swap's prop meshes and shadows (2026-11-12)
+
+The two items "A map's colliders after its swap frame" left: settling's prop shadows and the
+spawn's steps. Measured the same way (Ultimate Gun Game offscreen at 1920x1080, the
+`profiling` build, `map` to cs_office, dm_lockdown, warehouse and back to de_dust2 20 s
+apart, box at load 23-51; one run of each build sampled by instructions), and headless in
+`heavy::map_swap_frames` (dev build), which now runs each step of a spawn in a frame of its
+own (`map::prepare::StepAFrame`) and holds the settling for 100 frames, a tick each, as the
+real app's glyphs, uploads and floods hold it.
+
+What the samples said (main thread, a sample a million instructions):
+
+| Where | Samples | What |
+|---|---|---|
+| dm_lockdown's settling, 66 frames | 2354 of 4735 in `update_prop_shadows` | `silhouette` 1844 (every triangle of the caster against the texels of its box in the cell), `Atlas::write_bytes` 392: six shadows a frame, of props still falling, each drawn again a frame or two later |
+| A step of 16 props on cs_office | 59-64 of 67 in `spawn_prop` | each baked prop's own meshes: a light probe on every vertex (`LightProbe::eval` 37) |
+| A body's step on warehouse | 47 of 78 | `Mesh::generate_skinned_mesh_bounds` for one character's meshes (every vertex against its joints): this, not the props' probes, was the worst step of a Combat Arms map |
+| The last step on warehouse | 43 of 80 | `sound::SurfaceGrid::new`: every surface-tagged triangle of the map onto its grid |
+| A world-mesh step on de_dust2 | 78 of 88 | `spawn_world_meshes`: 150 meshes whatever their size (`vis::split_mesh` 54, `sub_mesh` 23) |
+
+Changed:
+
+- **Prop shadows behind the loading screen** (`render::shadows::update_prop_shadows`): while
+  the map settles (`map::MapSettling`) a shadow waits until its prop has gone `RESTED_SECS`
+  (0.1 s) without moving visibly (a quarter of a shadow texel, `moved_visibly`), then is
+  redrawn once, where the prop rests. A frame redraws until it has spent
+  `SETTLING_REDRAW_WORK` (400 000 tested texels, about 8 M instructions on the profiling
+  build; at least one shadow), counted, not timed (`RedrawWork`: the caster's triangles, the
+  texels tested, the receiver triangles a new region looked at). When that leaves props at
+  rest for the next frame the loading screen stays (`shadows_settled`, a `MapHooks::settle`
+  hook). In play nothing changed: six a frame, moving or not. dm_lockdown redraws 60-62
+  shadows behind the loading screen where it redrew about 400.
+- **A baked prop's meshes made by the load** (`render::spawn::PropMeshesAhead`, in
+  `prepare_images`'s job, off the main thread): each prop's own mesh copies with their light
+  per vertex and their lower levels of detail. `spawn_prop` takes them when they were made
+  for what it draws (the map's light scale, the model's skeleton), else makes them as before
+  (`bake_prop_meshes`, the same function: a map spawned at once, a lighting view).
+- **The kit's bodies' meshes** the same way (`BodyMeshesAhead`, `bodies::body_meshes`): the
+  per-joint bounds are computed on the loading thread.
+- **The surfaces' grid** (`sound::SurfaceGrid`) in the world's job (`prepare_world`).
+- **World-mesh steps by triangles** (`WORLD_TRIANGLES_PER_STEP`, 6000, or 150 meshes): a
+  step's work is its triangles.
+
+A stepped spawn still runs steps until `SPAWN_BUDGET` (12 ms) is spent, so in the real app
+its frames stay about that long whatever a step costs: the spawn takes fewer frames and
+fewer instructions, and its worst frame falls only where one step was more than the budget.
+Each step by itself, headless (dev build, M instructions; "before" is the same build with
+the five changes switched off):
+
+| Map | Worst step before | after | The spawn's steps in all before | after | Settling's worst frame after the first tick's, before | after | Its frames over 100 M of 100, before | after | Shadows redrawn in them before | after |
+|---|---|---|---|---|---|---|---|---|---|---|
+| de_dust2 | 147 | 55-56 | 830-880 | 423-434 | 69 | 69-73 | 0 | 0 | 462 | 80 |
+| cs_office | 85 | 58-64 | 1301-1348 | 692-737 | 91-112 | 77-82 | 0-1 | 0 | 275 | 165 |
+| dm_lockdown | 80 | 56-65 | 890-895 | 650-681 | 168-175 | 71-76 | 30 | 0 | 586 | 74 |
+| combat_arms:warehouse | 131 | 18-19 | 739-768 | 308-313 | 8 | 6 | 0 | 0 | 0 | 0 |
+
+The real app, three runs of each build back to back (profiling build, M instructions on the
+main thread; the spawn from its first step to the map's frame, the settling from the frame
+after the first tick's to `map settled`):
+
+| Swap to | The spawn's frames before | after | Their instructions before | after | Their worst before | after | Settling's mean frame before | after | Its frames over 100 M before | after | Its worst before | after | The swap's worst frame before | after |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| cs_office | 13-20 | 8-11 | 955-1017 | 381-417 | 80-117 | 55-114 | 59-62 | 60-64 | 2-5 | 5-9 | 109-119 | 118-144 | 144-157 | 144-164 (the first tick's) |
+| dm_lockdown | 8-12 | 5-9 | 501-609 | 275-341 | 78-103 | 72-84 | 90-105 | 59-63 | 25-34 | 2-3 | 146-188 | 116-118 | 169-217 | 144-155 (the first tick's) |
+| combat_arms:warehouse | 6-13 | 3-5 | 415-503 | 108-137 | 101-135 | 48-57 | 34-35 | 25-31 | 0 | 0 | 69-80 | 65-77 | 101-135 (a spawn step) | 66-77 |
+| de_dust2 | 9-26 | 6-8 | 578-699 | 215-283 | 108-128 | 49-67 | 57-62 | 53-54 | 2-7 | 0-3 | 101-122 | 99-111 | 122-128 (a spawn step) | 101-111 |
+
+`update_prop_shadows` was 50% of dm_lockdown's settling samples and is 11% (286 of 2611); its
+settling takes the 66 frames it took. cs_office's settling is as it was (its shadows were a
+tenth of it before and after: 164 small ones, as many a frame as before). Seconds from the command to `map settled` (they follow the box's
+load more than the change): cs_office 5.6-18.5 before and 5.5-12.0 after, dm_lockdown 5.6-13.6 and 5.4-8.3, warehouse 4.2-8.6 and 3.7-6.6, de_dust2 5.3-9.7 and 6.4-9.2.
+
+The same look: hl2dm offscreen (dev build, 1280x720), dm_lockdown loaded again behind the
+loading screen (`map hl2dm:dm_lockdown` 5 s in), a view of the props on the guard booth's
+table 15 s in, the screenshot at 19 s; the build with the changes switched off against the
+one with them, and each against itself: no pixel differs between the two builds in that view (`magick compare -metric AE`: 0), 2 of 921 600 in a second view from across the hall; the build with the changes against itself 380 pixels, the other against itself 0 (a run's own noise).
+
+Guards: `heavy::map_swap_frames` (a step of the spawn under `SPAWN_STEP`, 100 M; a frame of
+the held settling after the first tick's under `SETTLE_FRAME`, 130 M; at most a frame's
+worth of props at rest left with a shadow elsewhere when the game is entered),
+`chimera_present`'s `prop_shadows` (behind a loading screen no redraw while the prop moves,
+one once it rests, the same shadow as redrawn all along in play; a frame's redraws stop at
+its work, and the screen waits for the rest), `prop_meshes_ahead` (a spawn with its parts
+prepared draws the same prop and body meshes, vertex for vertex, as one that makes them in
+place: probe-lit, vertex-lit, skinned, in the 3D skybox, with lower levels) and
+`render::spawn`'s unit test (a prop's meshes are taken once, and only for the light scale
+and skeleton they were made for). cs_source's `heavy::map_spawn_dump` plain against
+`CHIMERA_SPAWN_DUMP_PREPARED=1`: the same files for its five maps (700 775 lines: every entity, component, resource and asset count).
+
+Left of a swap, in order (profiling build):
+
+- **The first tick's frame** (cs_office 131-164 M, dm_lockdown 144-155 M), as above; on dm_lockdown it
+  no longer carries six shadows.
+- **The map's frame on cs_office** (106-136 M): the entities and their hierarchy, six props'
+  shadows redrawn in it and in each collider frame (physics props whose transform isn't
+  where the load drew their shadow, before any tick: not looked into), `calculate_bounds`.
+- **Settling's other work**: the spawn spots' flood (`spawns::settle_spots`, a quarter of the
+  settling's samples on cs_office and dm_lockdown), the tick, the HUD's text
+  (`text_warm`): cs_office and de_dust2 keep 0-9 settling frames over 100 M a swap.
+- **A spawn frame is as long as its budget**: 12 ms of steps is 55-110 M here. A budget
+  counted in work, as the shadows' now is, would make it the same on every machine.
+- **A redraw's own cost**: `silhouette` tests every texel of each triangle's box (about 20
+  instructions a texel; 60-150 thousand texels a prop here), and `write_bytes` rounds each
+  texel of the cell again.
 
 ## Combat Arms map loads (2026-10-19)
 

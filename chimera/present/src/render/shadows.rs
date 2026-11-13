@@ -17,7 +17,13 @@
 //! multiplied over them; redrawn where physics props move by a quarter of a
 //! shadow texel or more (`update_prop_shadows`, `moved_visibly`; only the
 //! redrawn cell of the atlas image is rewritten), hidden while the logic
-//! hides their prop (broken, killed).
+//! hides their prop (broken, killed). While a map settles behind a loading
+//! screen (`map::MapSettling`) a shadow waits until its prop has come to
+//! rest (`RESTED_SECS`) and is redrawn then, once, within a frame's work
+//! (`SETTLING_REDRAW_WORK`, counted: `RedrawWork`); the loading screen
+//! stays while a frame's work left some for the next (`shadows_settled`,
+//! a `MapHooks::settle` hook), so the map is entered with its shadows
+//! where its props lie.
 //!
 //! A resting caster's shadow is its clipped geometry (atlas coordinates and
 //! fade per vertex). A moving one (characters' blobs; a physics prop's once
@@ -233,7 +239,21 @@ pub fn silhouette(
     rotation: Quat,
     n: u32,
 ) -> Vec<f32> {
+    silhouette_counted(model, textures, frame, translation, rotation, n).0
+}
+
+/// `silhouette`, and the work it took (`RedrawWork`): the triangles it
+/// drew and the texels it tested them against.
+fn silhouette_counted(
+    model: &MapModel,
+    textures: &[MapTexture],
+    frame: &ShadowFrame,
+    translation: Vec3,
+    rotation: Quat,
+    n: u32,
+) -> (Vec<f32>, RedrawWork) {
     let mut out = vec![0.0f32; (n * n) as usize];
+    let mut work = RedrawWork::default();
     let scale = n as f32;
     for m in &model.meshes {
         // Additive glows and beams cast no shadow.
@@ -250,6 +270,7 @@ pub fn silhouette(
                 frame.uv(p) * scale
             });
             let uvs = tri.map(|i| Vec2::from(m.uvs.get(i as usize).copied().unwrap_or([0.0, 0.0])));
+            work.triangles += 1;
             let area = (pts[1] - pts[0]).perp_dot(pts[2] - pts[0]);
             if area.abs() < 1e-9 {
                 continue;
@@ -261,6 +282,7 @@ pub fn silhouette(
             if !(lo.x <= hi.x && lo.y <= hi.y) {
                 continue;
             }
+            work.texels += ((hi.x.max(lo.x) as u32 - lo.x as u32 + 1) * (hi.y.max(lo.y) as u32 - lo.y as u32 + 1)) as u64;
             for py in lo.y as u32..=hi.y.max(lo.y) as u32 {
                 for px in lo.x as u32..=hi.x.max(lo.x) as u32 {
                     let c = Vec2::new(px as f32 + 0.5, py as f32 + 0.5);
@@ -283,8 +305,35 @@ pub fn silhouette(
             }
         }
     }
-    out
+    (out, work)
 }
+
+/// What a shadow's redraw took, counted (the same on every machine, unlike
+/// its time): the caster's triangles and the atlas texels they were tested
+/// against (`silhouette`), and the receiver triangles a new region looked
+/// at (`region_mesh`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RedrawWork {
+    pub triangles: u64,
+    pub texels: u64,
+    pub receivers: u64,
+}
+
+impl RedrawWork {
+    /// In units of a tested texel: about 20 instructions on an optimized
+    /// build (docs/performance.md, "A swap's prop meshes and shadows"); a
+    /// triangle's own work is put at a few texels' (`TRIANGLE_WORK`,
+    /// `RECEIVER_WORK`: the texels are nearly all of a silhouette).
+    pub fn units(&self) -> u64 {
+        self.texels + TRIANGLE_WORK * self.triangles + RECEIVER_WORK * self.receivers
+    }
+}
+
+/// A caster triangle projected into its cell, in tested texels (`RedrawWork::units`).
+const TRIANGLE_WORK: u64 = 8;
+
+/// A receiver triangle looked at for a region's mesh, in tested texels.
+const RECEIVER_WORK: u64 = 8;
 
 /// World triangles, bucketed on a horizontal grid for shadow-box queries.
 pub struct Receivers {
@@ -433,6 +482,12 @@ pub const REGION_MARGIN: f32 = 1.0;
 /// by `LIFT` along its normal, the normal in each vertex (the shader takes
 /// the lift back off before projecting). None when nothing is there.
 pub fn region_mesh(receivers: &Receivers, d: Vec3, lo: Vec3, hi: Vec3) -> Option<Mesh> {
+    region_mesh_counted(receivers, d, lo, hi).0
+}
+
+/// `region_mesh`, and how many receiver triangles it looked at.
+fn region_mesh_counted(receivers: &Receivers, d: Vec3, lo: Vec3, hi: Vec3) -> (Option<Mesh>, u64) {
+    let mut seen = 0;
     let planes = [
         (Vec3::X, hi.x),
         (Vec3::NEG_X, -lo.x),
@@ -443,6 +498,7 @@ pub fn region_mesh(receivers: &Receivers, d: Vec3, lo: Vec3, hi: Vec3) -> Option
     ];
     let (mut positions, mut normals, mut indices) = (Vec::new(), Vec::new(), Vec::new());
     for tri in receivers.near(lo, hi) {
+        seen += 1;
         let n = (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalize_or_zero();
         if n.dot(d) >= 0.0 {
             continue;
@@ -470,13 +526,13 @@ pub fn region_mesh(receivers: &Receivers, d: Vec3, lo: Vec3, hi: Vec3) -> Option
         }
     }
     if indices.is_empty() {
-        return None;
+        return (None, seen);
     }
     let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, RenderAssetUsages::RENDER_WORLD);
     mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
     mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
     mesh.insert_indices(Indices::U32(indices));
-    Some(mesh)
+    (Some(mesh), seen)
 }
 
 /// A frame's region: its box grown by `REGION_MARGIN`.
@@ -963,6 +1019,18 @@ pub fn redraw_silhouette(
     translation: Vec3,
     rotation: Quat,
 ) -> ShadowFrame {
+    redraw_silhouette_counted(data, settings, atlas, cell, translation, rotation).0
+}
+
+/// `redraw_silhouette`, and the work it took.
+fn redraw_silhouette_counted(
+    data: &MapData,
+    settings: &MapShadows,
+    atlas: &mut Atlas,
+    cell: &Cell,
+    translation: Vec3,
+    rotation: Quat,
+) -> (ShadowFrame, RedrawWork) {
     let model = &data.models[data.props[cell.prop].model];
     let frame = ShadowFrame::new(
         model.bounds,
@@ -971,9 +1039,9 @@ pub fn redraw_silhouette(
         settings.direction,
         settings.distance,
     );
-    let coverage = silhouette(model, &data.textures, &frame, translation, rotation, cell.size);
+    let (coverage, work) = silhouette_counted(model, &data.textures, &frame, translation, rotation, cell.size);
     atlas.write(cell.at, cell.size, &coverage);
-    frame
+    (frame, work)
 }
 
 #[derive(Clone, Copy, Debug, Default, bevy::render::render_resource::ShaderType)]
@@ -1106,6 +1174,29 @@ fn home(data: &MapData, i: usize) -> (Vec3, Quat) {
 /// Physics props' shadows redrawn a frame (`update_prop_shadows`; a redraw is
 /// about 0.8 ms, its silhouette over its triangles).
 const REDRAWS_PER_FRAME: usize = 6;
+
+/// The redraws' work a frame while the map settles behind a loading screen
+/// (`map::MapSettling`), in `RedrawWork::units`: a frame redraws until it
+/// has spent this, at least one shadow. Nobody sees them there, and six a
+/// frame were half of dm_lockdown's settling frames (docs/performance.md,
+/// "A swap's prop meshes and shadows").
+pub const SETTLING_REDRAW_WORK: u64 = 400_000;
+
+/// Behind a loading screen a prop's shadow waits until the prop has been
+/// this long without moving visibly (`moved_visibly`), seconds: one still
+/// falling would be redrawn again and again.
+pub const RESTED_SECS: f64 = 0.1;
+
+/// A prop whose shadow waits to be redrawn (`ShadowState::waiting`).
+#[derive(Clone, Copy, Debug)]
+pub struct Waiting {
+    /// Where the prop is now.
+    pub pose: (Vec3, Quat),
+    /// Where it was when it last moved visibly, and when (the frame
+    /// clock's seconds).
+    anchor: (Vec3, Quat),
+    moved_at: f64,
+}
 
 /// Build the map's prop shadows as shadow detail asks: render-to-texture
 /// (Medium, High), blobs straight down (Low) or none (`r_shadows 0`);
@@ -1240,6 +1331,9 @@ pub fn apply_shadow_detail(
         cells: cells.into_iter().map(|c| (c.prop, c)).collect(),
         entities,
         root: source.root,
+        waiting: default(),
+        last: default(),
+        owed: 0,
     });
 }
 
@@ -1373,6 +1467,43 @@ pub struct ShadowState {
     pub root: Entity,
     /// Where each caster was when its shadow was last drawn.
     pub built: std::collections::HashMap<usize, (Vec3, Quat)>,
+    /// The props that moved and whose shadows wait for their redraw
+    /// (`update_prop_shadows`), each at its latest pose.
+    pub waiting: std::collections::BTreeMap<usize, Waiting>,
+    /// The last frame's redraws: how many, and their work.
+    pub last: (usize, RedrawWork),
+    /// The props at rest whose redraws the last frame's work left for the
+    /// next (behind a loading screen; `shadows_settled`).
+    pub owed: usize,
+}
+
+impl ShadowState {
+    /// Whether prop `index`'s shadow is drawn for where the prop is now
+    /// (`pose`), near enough (`moved_visibly`).
+    fn drawn_for(&self, index: usize, cell: &Cell, pose: (Vec3, Quat)) -> bool {
+        let model = &self.data.models[self.data.props[index].model];
+        self.built.get(&index).is_some_and(|&from| !moved_visibly(model.bounds, cell.size, from, pose))
+    }
+
+    /// The waiting props that have come to rest (`RESTED_SECS` at `now`)
+    /// away from where their shadows are drawn.
+    pub fn resting(&self, now: f64) -> usize {
+        self.waiting
+            .iter()
+            .filter(|(index, w)| {
+                now - w.moved_at >= RESTED_SECS
+                    && self.cells.get(index).is_some_and(|cell| !self.drawn_for(**index, cell, w.pose))
+            })
+            .count()
+    }
+}
+
+/// `map::MapHooks::settle`: a map behind its loading screen has its props'
+/// shadows where the props came to rest, none left over by a frame's work
+/// (those still moving, or come to rest this frame, are redrawn in play,
+/// as ever).
+pub fn shadows_settled(world: &mut World) -> bool {
+    world.get_resource::<ShadowState>().is_none_or(|s| s.owed == 0)
 }
 
 /// Redraw the shadows of physics props that moved (silhouette and mesh);
@@ -1384,7 +1515,11 @@ pub struct ShadowState {
 /// the atlas image: with seven props rebuilt and the whole atlas converted
 /// every frame this cost 16 ms a frame there. At most `REDRAWS_PER_FRAME` a
 /// frame, the others waiting at their latest pose (a map's props settling
-/// in its first seconds).
+/// in its first seconds). While the map settles behind a loading screen
+/// (`map::MapSettling`) only props that have come to rest are redrawn
+/// (`RESTED_SECS`), `SETTLING_REDRAW_WORK` a frame; the loading screen
+/// stays while that left some for the next frame (`shadows_settled`), so
+/// the map is entered with the same shadows as before.
 #[allow(clippy::type_complexity)]
 pub fn update_prop_shadows(
     mut commands: Commands,
@@ -1399,14 +1534,15 @@ pub fn update_prop_shadows(
     mut projected: Query<&mut Projected, With<PropShadow>>,
     mut images: ResMut<Assets<Image>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut waiting: Local<std::collections::BTreeMap<usize, (Vec3, Quat)>>,
     frames: Option<ResMut<ShadowFrames>>,
+    settling: Option<Res<crate::map::MapSettling>>,
+    time: Res<Time>,
+    mut settled: Local<(usize, u64)>,
 ) {
     let (Some(mut state), Some(mut frames)) = (state, frames) else {
         shown.clear();
         return;
     };
-    let state_added = state.is_added();
     let state = &mut *state;
     for index in &hidden {
         if let Some(e) = state.entities.get(&index.0) {
@@ -1427,25 +1563,55 @@ pub fn update_prop_shadows(
     let mut redrawn: Vec<Cell> = Vec::new();
     // A map's physics props settling in its first seconds would all redraw
     // at once: a frame's share, each at its latest pose; the rest wait.
-    if state_added {
-        waiting.clear();
-    }
+    let now = time.elapsed_secs_f64();
     for (index, t) in &moved {
-        waiting.insert(index.0, (t.translation, t.rotation));
+        let Some(cell) = state.cells.get(&index.0) else { continue };
+        let pose = (t.translation, t.rotation);
+        let bounds = state.data.models[state.data.props[index.0].model].bounds;
+        match state.waiting.entry(index.0) {
+            std::collections::btree_map::Entry::Vacant(e) => {
+                e.insert(Waiting {
+                    pose,
+                    anchor: pose,
+                    moved_at: now,
+                });
+            }
+            std::collections::btree_map::Entry::Occupied(mut e) => {
+                let w = e.get_mut();
+                w.pose = pose;
+                if moved_visibly(bounds, cell.size, w.anchor, pose) {
+                    (w.anchor, w.moved_at) = (pose, now);
+                }
+            }
+        }
     }
-    let mut share = REDRAWS_PER_FRAME;
-    while share > 0 {
-        let Some((index, (translation, rotation))) = waiting.pop_first() else { break };
+    let settling = settling.is_some();
+    let (mut redraws, mut spent, mut owed) = (0, RedrawWork::default(), 0);
+    let waiting: Vec<(usize, Waiting)> = state.waiting.iter().map(|(i, w)| (*i, *w)).collect();
+    for (index, w) in waiting {
+        if !settling && redraws == REDRAWS_PER_FRAME {
+            break;
+        }
+        let (translation, rotation) = w.pose;
         let Some(cell) = state.cells.get(&index).copied() else {
+            state.waiting.remove(&index);
             continue;
         };
-        let model = &state.data.models[state.data.props[index].model];
-        if let Some(&from) = state.built.get(&index)
-            && !moved_visibly(model.bounds, cell.size, from, (translation, rotation))
-        {
+        if state.drawn_for(index, &cell, w.pose) {
+            state.waiting.remove(&index);
             continue;
         }
-        share -= 1;
+        // Behind the loading screen: once it rests, within the frame's work.
+        if settling && now - w.moved_at < RESTED_SECS {
+            continue;
+        }
+        if settling && redraws > 0 && spent.units() >= SETTLING_REDRAW_WORK {
+            owed += 1;
+            continue;
+        }
+        state.waiting.remove(&index);
+        redraws += 1;
+        let model = &state.data.models[state.data.props[index].model];
         state.built.insert(index, (translation, rotation));
         let (frame, rect) = if state.blob {
             let frame = ShadowFrame::blob(
@@ -1458,7 +1624,7 @@ pub fn update_prop_shadows(
             (frame, BLOB_RECT)
         } else {
             redrawn.push(cell);
-            let frame = redraw_silhouette(
+            let (frame, work) = redraw_silhouette_counted(
                 &state.data,
                 &state.settings,
                 &mut state.atlas,
@@ -1466,6 +1632,8 @@ pub fn update_prop_shadows(
                 translation,
                 rotation,
             );
+            spent.triangles += work.triangles;
+            spent.texels += work.texels;
             (frame, cell.rect)
         };
         let existing = state.entities.get(&index).copied();
@@ -1479,7 +1647,8 @@ pub fn update_prop_shadows(
             continue;
         }
         let region = region_of(&frame);
-        let mesh = region_mesh(&state.receivers, frame.d, region.0, region.1);
+        let (mesh, seen) = region_mesh_counted(&state.receivers, frame.d, region.0, region.1);
+        spent.receivers += seen;
         match (mesh, existing) {
             (Some(mesh), Some(e)) => {
                 // Projected from now on (a resting prop's shadow is its
@@ -1544,6 +1713,20 @@ pub fn update_prop_shadows(
             }
             (None, None) => {}
         }
+    }
+    state.last = (redraws, spent);
+    state.owed = owed;
+    // What a map's settling redrew, once it is entered.
+    if settling {
+        *settled = (settled.0 + redraws, settled.1 + spent.units());
+    } else if settled.0 > 0 {
+        info!(
+            "prop shadows: {} redrawn behind the loading screen ({} of work), {} waiting",
+            settled.0,
+            settled.1,
+            state.waiting.len()
+        );
+        *settled = (0, 0);
     }
     if !redrawn.is_empty()
         && let Some(mut image) = images.get_mut(&state.atlas_image)

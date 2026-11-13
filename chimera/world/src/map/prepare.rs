@@ -106,6 +106,13 @@ pub fn begin_map_change(world: &mut World, data: MapData, prepared: Prepared, vi
     }
 }
 
+/// A stepped spawn runs one step a frame, whatever its budget (its
+/// colliders keep theirs): a time budget puts as many steps in a frame as
+/// the machine's speed and load allow, so a step's cost is counted with
+/// this in the world (`heavy::map_swap_frames`).
+#[derive(Resource, Default)]
+pub struct StepAFrame;
+
 /// One frame's share of a spawn `begin_map_change` started: steps until
 /// `budget` is spent (at least one), then its colliders the same way.
 /// Returns whether the map is in, colliders and all (also when no spawn is

@@ -25,7 +25,8 @@
 //! the spawn isn't done, and the simulation waits, until the last is in.
 //!
 //! What needs only the data (the world's colliders, the models' colliders
-//! and hulls, the props' brushes: `WorldParts`) comes prepared ahead when
+//! and hulls, the props' brushes: `WorldParts`; the surfaces under a point,
+//! `sound::SurfaceGrid`) comes prepared ahead when
 //! the map was loaded in the background (`prepare`, `prepare_world`), else
 //! is computed here by the same functions (the props' brushes on threads).
 //! The colliders keep the mass properties Avian's insert hook gave them:
@@ -110,6 +111,8 @@ pub struct Draws {
 
 /// A placed prop for `MapDrawer::spawn_prop`.
 pub struct PropSpawn<'a> {
+    /// Which of the map's props (`MapData::props`).
+    pub index: usize,
     pub prop: &'a MapProp,
     /// Its node.
     pub id: Entity,
@@ -571,11 +574,15 @@ pub(super) struct WorldParts {
 }
 
 /// The world's job for `MapHooks::prepare`: its parts, the surfaces'
-/// colours (`SurfaceColors`) and the light field's first use.
+/// colours (`SurfaceColors`), the surfaces under a point
+/// (`sound::SurfaceGrid`: every tagged triangle of the map onto its grid
+/// was 43 M instructions of a step on Combat Arms' warehouse) and the
+/// light field's first use.
 pub(super) fn prepare_world(_: &World) -> prepare::PrepareJob {
     Box::new(|data, prepared| {
         prepared.insert(world_parts(data));
         prepared.insert(surface_color::SurfaceColors::new(data));
+        prepared.insert(sound::SurfaceGrid::new(data));
         // A light field may build what it needs on its first use (Source's:
         // the occluding brushes' hulls): here, not in the first tick.
         if let Some(field) = &data.light_field {
@@ -1063,6 +1070,7 @@ fn spawn_prop<D: MapDrawer>(
         s,
         drawn,
         PropSpawn {
+            index: i,
             prop,
             id,
             fade_range: fade_range.as_ref(),
@@ -1279,7 +1287,7 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
     if let Some(nav) = &data.kit.nav {
         commands.insert_resource((**nav).clone());
     }
-    commands.insert_resource(sound::SurfaceGrid::new(data));
+    commands.insert_resource(s.prepared.take::<sound::SurfaceGrid>().unwrap_or_else(|| sound::SurfaceGrid::new(data)));
     commands.insert_resource(super::sources::SurfaceNames(Arc::new(data.surface_names.clone())));
     commands.insert_resource(data.memos.clone());
     if !brushes.is_empty() {

@@ -8,7 +8,14 @@
 //! its own frame): the images, the bodies `BODIES_PER_STEP` at a time, the
 //! held models `HELD_PER_STEP` at a time, the rest of the characters' assets,
 //! the lightmaps with the sky and water, the world's meshes
-//! `WORLD_MESHES_PER_STEP` at a time, the rest.
+//! `WORLD_MESHES_PER_STEP` or `WORLD_TRIANGLES_PER_STEP` at a time, the
+//! rest. What needs only the data
+//! comes made by the map's load, off the main thread (`prepare_images`, a
+//! `map::prepare` job; without it, a map spawned at once, the same
+//! functions make it here): the images, what decals land on, the props'
+//! shadows, each baked prop's meshes with their light per vertex
+//! (`PropMeshesAhead`) and the kit's bodies' meshes with their per-joint
+//! bounds (`BodyMeshesAhead`).
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -91,6 +98,11 @@ impl MapDrawer for MapAssets<'static> {
 
     fn spawn_prop(a: &mut MapAssets, commands: &mut Commands, s: &MapSpawn, drawn: &mut Drawn, prop: PropSpawn) {
         let mut shared = std::mem::take(&mut drawn.shared);
+        // The baked props' meshes, lit on the loading thread (`PropMeshesAhead`).
+        if !shared.asked_ahead {
+            shared.asked_ahead = true;
+            shared.ahead = s.prepared.take::<PropMeshesAhead>();
+        }
         spawn_prop(commands, s, a, drawn, &mut shared, prop);
         drawn.shared = shared;
     }
@@ -169,6 +181,8 @@ pub struct Drawn {
 struct Between {
     /// The characters' bodies, then each held model's parts.
     bodies: Option<Vec<super::bodies::BodyAssets>>,
+    /// The bodies' meshes made ahead, for the bodies' steps still to come.
+    bodies_ahead: Option<BodyMeshesAhead>,
     held: Option<HashMap<String, HeldParts>>,
     /// The lightmap's layers and the sky's image, built ahead
     /// (`ImageParts`), put in the store at their places (asset ids follow
@@ -442,6 +456,10 @@ pub fn prepare_images(world: &World) -> crate::map::prepare::PrepareJob {
         if let Some(ahead) = shadows::ShadowsAhead::build(data, shadow_mode) {
             prepared.insert(ahead);
         }
+        prepared.insert(PropMeshesAhead::build(data));
+        prepared.insert(BodyMeshesAhead(
+            data.kit.characters.iter().map(|c| Some(super::bodies::body_meshes(&c.model, &c.bones))).collect(),
+        ));
     })
 }
 
@@ -561,12 +579,29 @@ fn build_character_assets(
             commands.insert_resource(probe_lit::ProbeLightScale(data.look.light_scale * lighting_scale));
         }
         let to = (from + BODIES_PER_STEP).min(data.kit.characters.len());
+        // Their meshes, made on the loading thread (`BodyMeshesAhead`).
+        let mut ahead = match from {
+            0 => s.prepared.take::<BodyMeshesAhead>(),
+            _ => drawn.between.bodies_ahead.take(),
+        };
         let bodies = drawn.between.bodies.get_or_insert_with(Vec::new);
-        bodies.extend(
-            data.kit.characters[from..to]
-                .iter()
-                .map(|c| body_assets(&c.model, &c.bones, c.root, meshes, pm, dormant.as_deref_mut(), bindposes, &model_material)),
-        );
+        bodies.extend(data.kit.characters[from..to].iter().enumerate().map(|(i, c)| {
+            match ahead.as_mut().and_then(|a| a.0.get_mut(from + i)?.take()) {
+                Some(made) => super::bodies::body_assets_made(
+                    &c.model,
+                    &c.bones,
+                    c.root,
+                    meshes,
+                    pm,
+                    dormant.as_deref_mut(),
+                    bindposes,
+                    &model_material,
+                    made,
+                ),
+                None => body_assets(&c.model, &c.bones, c.root, meshes, pm, dormant.as_deref_mut(), bindposes, &model_material),
+            }
+        }));
+        drawn.between.bodies_ahead = ahead;
         return if to < data.kit.characters.len() { Phase::Bodies(to) } else { Phase::Held(0) };
     }
     if let Phase::Held(from) = phase {
@@ -829,6 +864,12 @@ impl WorldMeshes {
 /// chunks, `vis::split_mesh`).
 const WORLD_MESHES_PER_STEP: usize = 150;
 
+/// The triangles of them a step takes on before it ends (at least one
+/// mesh): a step's work is its triangles (split by cluster, copied into
+/// chunks), and 150 of de_dust2's largest meshes were one step of 140 M
+/// instructions (docs/performance.md, "A swap's prop meshes and shadows").
+const WORLD_TRIANGLES_PER_STEP: usize = 6000;
+
 /// World meshes in chunks with tight bounds, tagged with the clusters
 /// they touch (see `vis`). Meshes of entities with their own node
 /// (movers, breakables) stay whole and untagged. A step at a time
@@ -881,7 +922,11 @@ fn spawn_world_meshes(
         let (lo, hi) = node_centres.get(&i)?;
         Some((i, node, home, home.transform_point((*lo + *hi) / 2.0)))
     };
-    let end = (*next + WORLD_MESHES_PER_STEP).min(data.meshes.len());
+    let (mut end, mut triangles) = (*next, 0);
+    while end < data.meshes.len() && end - *next < WORLD_MESHES_PER_STEP && triangles < WORLD_TRIANGLES_PER_STEP {
+        triangles += data.meshes[end].indices.len() / 3;
+        end += 1;
+    }
     let range = *next..end;
     *next = end;
     for m in &data.meshes[range] {
@@ -1866,12 +1911,140 @@ struct PropShared {
     /// Prop materials with the nearest cubemap: (model, mesh, sky layer,
     /// cubemap).
     envmap_variants: std::collections::HashMap<(usize, usize, bool, usize), Handle<PropMaterial>>,
+    /// The baked props' meshes made ahead, once asked for (`asked_ahead`).
+    ahead: Option<PropMeshesAhead>,
+    asked_ahead: bool,
+}
+
+/// One mesh of a prop lit by its baked light (`bake_prop_meshes`): its own
+/// copy with the light per vertex, and its lower levels of detail lit the
+/// same way (None: a level without this mesh, which keeps the finer one's).
+struct BakedMesh {
+    mesh: Mesh,
+    levels: Option<Vec<Option<Mesh>>>,
+    /// Carries its skeleton's joints.
+    skinned: bool,
+}
+
+/// A baked prop's meshes (`spawn_baked_prop_meshes`), one per mesh of its
+/// model: the light baked per vertex when the prop has it (and it covers
+/// the mesh), else its probe on each normal, times `probe_scale`; with
+/// the joints when the model has a skeleton to draw with (`rigged`), and
+/// the lower levels when `leveled`. From the data alone, so a load makes
+/// them ahead (`PropMeshesAhead`): a probe on every vertex of a step's
+/// props was the worst frame of a Combat Arms map's swap
+/// (docs/performance.md, "A swap's prop meshes and shadows").
+fn bake_prop_meshes(
+    model: &MapModel,
+    prop: &MapProp,
+    probe: &LightProbe,
+    probe_scale: f32,
+    rigged: bool,
+    leveled: bool,
+) -> Vec<BakedMesh> {
+    let colors = |m: &MapMesh| -> Vec<[f32; 4]> {
+        let baked = prop.vertex_light.as_ref().filter(|v| {
+            m.source_vertices.len() == m.normals.len() && m.source_vertices.iter().all(|&i| (i as usize) < v.len())
+        });
+        m.normals
+            .iter()
+            .enumerate()
+            .map(|(i, n)| {
+                if m.unlit {
+                    return [1.0, 1.0, 1.0, 1.0];
+                }
+                let l = match baked {
+                    Some(v) => Vec3::from(v[m.source_vertices[i] as usize]),
+                    None => probe.eval(prop.rotation * Vec3::from(*n)),
+                } * probe_scale;
+                [l.x, l.y, l.z, 1.0]
+            })
+            .collect()
+    };
+    // A skinned one's levels keep the skeleton (the same joints).
+    let lit = |m: &MapMesh, skinned: bool| {
+        let mut mesh = build_mesh(m, false);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors(m));
+        if skinned && m.joints.len() == m.positions.len() {
+            mesh.insert_attribute(
+                Mesh::ATTRIBUTE_JOINT_INDEX,
+                bevy::mesh::VertexAttributeValues::Uint16x4(m.joints.clone()),
+            );
+            mesh.insert_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT, m.joint_weights.clone());
+        }
+        mesh
+    };
+    model
+        .meshes
+        .iter()
+        .enumerate()
+        .map(|(mesh_index, m)| {
+            let skinned = rigged && m.joints.len() == m.positions.len();
+            BakedMesh {
+                mesh: lit(m, skinned),
+                levels: leveled.then(|| {
+                    model
+                        .lods
+                        .iter()
+                        .map(|l| l.meshes.get(mesh_index).and_then(Option::as_ref).map(|lm| lit(lm, skinned)))
+                        .collect()
+                }),
+                skinned,
+            }
+        })
+        .collect()
+}
+
+/// The kit's bodies' meshes (`bodies::body_meshes`, by character) made
+/// where the map loads (`prepare_images`): the bodies' steps take them.
+struct BodyMeshesAhead(Vec<Option<super::bodies::BodyMeshes>>);
+
+/// Whether a prop's meshes get its model's levels of detail (`lod`): not
+/// the 3D skybox's props.
+fn leveled(model: &MapModel, prop: &MapProp) -> bool {
+    !model.lods.is_empty() && !prop.skybox
+}
+
+/// Every baked prop's meshes (`bake_prop_meshes`) made where the map loads
+/// (`prepare_images`, off the main thread), for the map's own light scale
+/// and a drawer with skeletons: `spawn_prop` takes each prop's when that
+/// is what it would make, else makes its own.
+struct PropMeshesAhead {
+    scale: f32,
+    /// By prop: its meshes and whether they were made `rigged`.
+    props: Vec<Option<(Vec<BakedMesh>, bool)>>,
+}
+
+impl PropMeshesAhead {
+    fn build(data: &MapData) -> Self {
+        let scale = data.look.light_scale;
+        let props = data
+            .props
+            .iter()
+            .map(|prop| {
+                let model = &data.models[prop.model];
+                let rigged = model.rig.is_some();
+                let probe = prop.lighting.as_ref()?;
+                Some((bake_prop_meshes(model, prop, probe, scale, rigged, leveled(model, prop)), rigged))
+            })
+            .collect();
+        Self { scale, props }
+    }
+
+    /// Prop `index`'s meshes, when they were made at this scale and with
+    /// (or without) joints as asked.
+    fn take(&mut self, index: usize, scale: f32, rigged: bool) -> Option<Vec<BakedMesh>> {
+        let (meshes, with) = self.props.get_mut(index)?.take()?;
+        (self.scale.to_bits() == scale.to_bits() && with == rigged).then_some(meshes)
+    }
 }
 
 /// What a prop's meshes are spawned for: its node, model and look.
 struct PropMeshes<'a> {
     /// The prop's node.
     id: Entity,
+    /// Which of the map's props.
+    index: usize,
     prop: &'a MapProp,
     model: &'a MapModel,
     fade_range: Option<&'a bevy::camera::visibility::VisibilityRange>,
@@ -1907,7 +2080,14 @@ fn spawn_baked_prop_meshes(
 ) -> Vec<Handle<PropMaterial>> {
     let (id, prop, model) = (p.id, p.prop, p.model);
     let mut spawned_materials: Vec<Handle<PropMaterial>> = Vec::new();
-    for (mesh_index, (m, material)) in model.meshes.iter().zip(mats).enumerate() {
+    // Its meshes with their light: made ahead by the load, else here.
+    let rigged = inverse_bindposes.is_some();
+    let baked = shared
+        .ahead
+        .as_mut()
+        .and_then(|a| a.take(p.index, probe_scale, rigged))
+        .unwrap_or_else(|| bake_prop_meshes(model, prop, probe, probe_scale, rigged, p.leveled));
+    for (mesh_index, ((m, material), baked)) in model.meshes.iter().zip(mats).zip(baked).enumerate() {
         let mut material = material[prop.skybox as usize].clone();
         // `$envmap`: the cubemap it names, or for `env_cubemap` the one
         // baked nearest to the prop.
@@ -1936,57 +2116,15 @@ fn spawn_baked_prop_meshes(
         }
         spawned_materials.push(material.clone());
         let layer = layer_of(prop.skybox);
-        // Light baked per vertex when the prop has it (and it
-        // covers the mesh), else the probe on each normal.
-        let colors = |m: &MapMesh| -> Vec<[f32; 4]> {
-            let baked = prop.vertex_light.as_ref().filter(|v| {
-                m.source_vertices.len() == m.normals.len() && m.source_vertices.iter().all(|&i| (i as usize) < v.len())
-            });
-            m.normals
-                .iter()
-                .enumerate()
-                .map(|(i, n)| {
-                    if m.unlit {
-                        return [1.0, 1.0, 1.0, 1.0];
-                    }
-                    let l = match baked {
-                        Some(v) => Vec3::from(v[m.source_vertices[i] as usize]),
-                        None => probe.eval(prop.rotation * Vec3::from(*n)),
-                    } * probe_scale;
-                    [l.x, l.y, l.z, 1.0]
-                })
-                .collect()
-        };
-        let mut mesh = build_mesh(m, false);
-        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors(m));
-        let skinned = inverse_bindposes.is_some() && m.joints.len() == m.positions.len();
-        if skinned {
-            mesh.insert_attribute(
-                Mesh::ATTRIBUTE_JOINT_INDEX,
-                bevy::mesh::VertexAttributeValues::Uint16x4(m.joints.clone()),
-            );
-            mesh.insert_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT, m.joint_weights.clone());
-        }
-        let handle = meshes.add(mesh);
+        let skinned = baked.skinned && inverse_bindposes.is_some();
+        let handle = meshes.add(baked.mesh);
         // Its lower levels, lit the same way (a level without
         // this mesh keeps the finer one's).
-        // A skinned one's keep the skeleton (the same joints).
-        let levels = p.leveled.then(|| {
+        let levels = baked.levels.map(|lower| {
             let mut levels = vec![handle.clone()];
-            for l in &model.lods {
-                let h = match l.meshes.get(mesh_index).and_then(Option::as_ref) {
-                    Some(lm) => {
-                        let mut mesh = build_mesh(lm, false);
-                        mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, colors(lm));
-                        if skinned && lm.joints.len() == lm.positions.len() {
-                            mesh.insert_attribute(
-                                Mesh::ATTRIBUTE_JOINT_INDEX,
-                                bevy::mesh::VertexAttributeValues::Uint16x4(lm.joints.clone()),
-                            );
-                            mesh.insert_attribute(Mesh::ATTRIBUTE_JOINT_WEIGHT, lm.joint_weights.clone());
-                        }
-                        meshes.add(mesh)
-                    }
+            for l in lower {
+                let h = match l {
+                    Some(mesh) => meshes.add(mesh),
                     None => levels.last().cloned().unwrap_or_default(),
                 };
                 levels.push(h);
@@ -2099,6 +2237,7 @@ fn spawn_prop(
 ) {
     let (data, view) = (s.data, s.view);
     let PropSpawn {
+        index,
         prop,
         id,
         fade_range,
@@ -2149,7 +2288,7 @@ fn spawn_prop(
     }
     // Levels of detail (`lod`): not for the 3D skybox's props. Skinned
     // models' levels share their skeleton.
-    let leveled = !model.lods.is_empty() && !prop.skybox;
+    let leveled = leveled(model, prop);
     if leveled {
         commands
             .entity(id)
@@ -2157,6 +2296,7 @@ fn spawn_prop(
     }
     let mesh = PropMeshes {
         id,
+        index,
         prop,
         model,
         fade_range,
@@ -2246,5 +2386,73 @@ fn spawn_prop(
                 done: false,
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One baked prop of a one-triangle model, and one without baked light.
+    fn data() -> MapData {
+        let mut data = MapData::default();
+        data.look.light_scale = 2.0;
+        data.models.push(MapModel {
+            meshes: vec![MapMesh {
+                positions: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+                normals: vec![[0.0, 0.0, 1.0]; 3],
+                uvs: vec![[0.0, 0.0]; 3],
+                indices: vec![0, 1, 2],
+                ..default()
+            }],
+            ..default()
+        });
+        let lit = MapProp {
+            lighting: Some(LightProbe {
+                cube: [Vec3::splat(0.25); 6],
+                lights: Vec::new(),
+            }),
+            pose: None,
+            ragdoll: None,
+            model: 0,
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            solid: crate::map::PropSolid::None,
+            skybox: false,
+            vertex_light: None,
+            casts_shadow: false,
+            physics: None,
+            fade: None,
+            parent: None,
+            entity: None,
+            skin: 0,
+            body: 0,
+            detail: false,
+        };
+        data.props.push(lit.clone());
+        data.props.push(MapProp { lighting: None, ..lit });
+        data
+    }
+
+    fn colors(meshes: &[BakedMesh]) -> Vec<String> {
+        meshes.iter().map(|m| format!("{:?}", m.mesh.attribute(Mesh::ATTRIBUTE_COLOR))).collect()
+    }
+
+    #[test]
+    fn a_prop_s_meshes_made_ahead_are_taken_once_and_only_as_asked() {
+        let data = data();
+        let (model, prop) = (&data.models[0], &data.props[0]);
+        let here = bake_prop_meshes(model, prop, prop.lighting.as_ref().unwrap(), 2.0, false, false);
+        assert!(colors(&here)[0].contains("0.5"), "the probe times the scale: {:?}", colors(&here));
+        let mut ahead = PropMeshesAhead::build(&data);
+        let taken = ahead.take(0, 2.0, false).expect("the baked prop's meshes");
+        assert_eq!(colors(&taken), colors(&here), "as made in place");
+        assert!(ahead.take(0, 2.0, false).is_none(), "once");
+        assert!(ahead.take(1, 2.0, false).is_none(), "none for a prop without baked light");
+        assert!(ahead.take(7, 2.0, false).is_none());
+        // Another light scale (a lighting view), or a drawer without
+        // skeletons for a rigged model: made in place instead.
+        assert!(PropMeshesAhead::build(&data).take(0, 1.0, false).is_none());
+        assert!(PropMeshesAhead::build(&data).take(0, 2.0, true).is_none());
     }
 }

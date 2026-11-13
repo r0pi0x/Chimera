@@ -16,8 +16,8 @@ use chimera_present::MapPlugin;
 use chimera_world::{
     harness::{MeshExtraction, Sim},
     map::{
-        MapCollision, MapConvex, MapData, MapMesh, MapModel, MapPhysics, MapProp, MapShadows, PropIndex,
-        PropSolid, PushAway,
+        MapCollision, MapConvex, MapData, MapMesh, MapModel, MapPhysics, MapProp, MapSettling, MapShadows,
+        PropIndex, PropSolid, PushAway,
     },
 };
 use chimera_present::{
@@ -26,7 +26,9 @@ use chimera_present::{
         rope_material::RopeMaterial,
         sprite_material::SpriteMaterial,
         world_material::WorldMaterial,
-        shadows::{Projected, PropShadow, ShadowFrames, ShadowMaterial},
+        shadows::{
+            Projected, PropShadow, SETTLING_REDRAW_WORK, ShadowFrames, ShadowMaterial, ShadowState, shadows_settled,
+        },
     },
 };
 
@@ -133,6 +135,10 @@ pub(crate) fn map() -> MapData {
 
 /// The map's render assets (a headless `Sim` has meshes only).
 fn sim() -> Sim {
+    sim_of(map())
+}
+
+fn sim_of(data: MapData) -> Sim {
     Sim::with(base(), |app| {
         app.init_asset::<Image>()
             .init_asset::<StandardMaterial>()
@@ -142,7 +148,7 @@ fn sim() -> Sim {
             .init_asset::<RopeMaterial>()
             .init_asset::<ShadowMaterial>()
             .init_asset::<bevy::mesh::skinning::SkinnedMeshInverseBindposes>()
-            .add_plugins(MapPlugin::new(map()));
+            .add_plugins(MapPlugin::new(data));
         chimera_world::harness::emulate_mesh_extraction(app);
     })
 }
@@ -383,4 +389,145 @@ fn a_walking_character_s_blob_moves_by_its_frame() {
 /// cvars); nothing of a game.
 pub(crate) fn base() -> (chimera_core::core::CorePlugin, chimera_core::console::ConsolePlugin) {
     (chimera_core::core::CorePlugin, chimera_core::console::ConsolePlugin)
+}
+
+/// `n` of the map's crates in rows of eight, 2 m apart.
+fn crates(n: usize) -> MapData {
+    let mut data = map();
+    let first = data.props[0].clone();
+    data.props = (0..n)
+        .map(|i| MapProp {
+            translation: first.translation + Vec3::new(2.0 * (i % 8) as f32 - 7.0, 0.0, 2.0 * (i / 8) as f32 - 7.0),
+            ..first.clone()
+        })
+        .collect();
+    data
+}
+
+/// Every crate's node.
+fn crate_nodes(sim: &mut Sim) -> Vec<Entity> {
+    let world = sim.app.world_mut();
+    world.query_filtered::<Entity, With<PropIndex>>().iter(world).collect()
+}
+
+/// The last frame's shadow redraws and their work.
+fn redrawn(sim: &Sim) -> (usize, u64) {
+    let last = sim.app.world().resource::<ShadowState>().last;
+    (last.0, last.1.units())
+}
+
+/// A map settling behind a loading screen (`map::MapSettling`) redraws no
+/// shadow of a prop still moving (nobody sees it, and it would be drawn
+/// again and again: half of dm_lockdown's settling frames,
+/// docs/performance.md, "A swap's prop meshes and shadows"), and the
+/// shadow of one come to rest once: the same shadow as redrawn all along
+/// in play.
+#[test]
+fn behind_a_loading_screen_a_shadow_waits_for_its_prop_to_rest() {
+    let run = |settling: bool| {
+        let mut sim = sim();
+        sim.ticks(5);
+        if settling {
+            sim.app.insert_resource(MapSettling);
+        }
+        let (node, _) = crate_at(&mut sim);
+        sim.app.world_mut().entity_mut(node).insert(LinearVelocity(Vec3::X * 2.0));
+        let mut moving = 0;
+        for _ in 0..10 {
+            sim.ticks(1);
+            moving += redrawn(&sim).0;
+        }
+        sim.app.world_mut().entity_mut(node).insert(LinearVelocity(Vec3::ZERO));
+        let mut resting = 0;
+        for _ in 0..40 {
+            sim.ticks(1);
+            resting += redrawn(&sim).0;
+        }
+        let settled = shadows_settled(sim.app.world_mut());
+        let (e, ..) = shadow(&mut sim);
+        let origin = frame_origin(&mut sim, e);
+        let at = crate_at(&mut sim).1;
+        let state = sim.app.world().resource::<ShadowState>();
+        let covered: f32 = state.atlas.coverage.iter().sum();
+        (moving, resting, settled, origin, at, covered, state.waiting.len())
+    };
+    let (play, behind) = (run(false), run(true));
+    assert!(play.0 >= 5, "in play the shadow is redrawn as the crate moves: {}", play.0);
+    assert_eq!(behind.0, 0, "behind the loading screen not while it moves");
+    assert_eq!(behind.1, 1, "once, when it has come to rest");
+    assert!(behind.2 && behind.6 == 0, "then the shadows are settled: {} waiting", behind.6);
+    assert_eq!(play.4, behind.4, "the crate rests where it does in play");
+    // Within the quarter of a texel a redraw is for (`moved_visibly`).
+    assert!(
+        play.3.distance(behind.3) < 0.01,
+        "the same shadow as in play: {} {}",
+        play.3,
+        behind.3
+    );
+    assert!(
+        (play.5 - behind.5).abs() < 0.02 * play.5,
+        "the same silhouette: {} {} texels covered",
+        play.5,
+        behind.5
+    );
+}
+
+/// Behind a loading screen a frame redraws within its work
+/// (`SETTLING_REDRAW_WORK`, at least one shadow), and the loading screen
+/// stays (`shadows_settled`, a `MapHooks::settle` hook) until every prop
+/// at rest has its shadow where it is.
+#[test]
+fn behind_a_loading_screen_a_frame_redraws_within_its_work() {
+    // One redraw's work: a crate's shadow in play.
+    let mut sim = sim();
+    sim.ticks(5);
+    let (node, _) = crate_at(&mut sim);
+    sim.app.world_mut().entity_mut(node).insert(LinearVelocity(Vec3::X * 2.0));
+    sim.ticks(3);
+    let (n, one) = redrawn(&sim);
+    assert!(n == 1 && one > 0, "a redraw's work is counted: {n} redraws, {one}");
+    // Two frames' worth of crates.
+    let crates_n = 2 * (SETTLING_REDRAW_WORK / one).max(1) as usize;
+    assert!(crates_n <= 64, "the floor holds them: {crates_n} crates of {one} each");
+
+    let mut sim = sim_of(crates(crates_n));
+    sim.ticks(5);
+    let crates_n = crate_nodes(&mut sim).len();
+    sim.app.insert_resource(MapSettling);
+    assert!(shadows_settled(sim.app.world_mut()), "nothing moved yet");
+    for node in crate_nodes(&mut sim) {
+        sim.app.world_mut().entity_mut(node).insert(LinearVelocity(Vec3::X * 2.0));
+    }
+    sim.ticks(10);
+    for node in crate_nodes(&mut sim) {
+        sim.app.world_mut().entity_mut(node).insert(LinearVelocity(Vec3::ZERO));
+    }
+    let (mut frames, mut total) = (0, 0);
+    for _ in 0..200 {
+        sim.ticks(1);
+        let (n, work) = redrawn(&sim);
+        if n == 0 {
+            continue;
+        }
+        frames += 1;
+        total += n;
+        assert!(
+            work < SETTLING_REDRAW_WORK + 2 * one,
+            "a frame's redraws stop at its work: {n} redraws, {work} of {SETTLING_REDRAW_WORK} (one about {one})"
+        );
+        let settled = shadows_settled(sim.app.world_mut());
+        assert_eq!(settled, total == crates_n, "the loading screen waits for the rest: {total} of {crates_n}");
+        if settled {
+            break;
+        }
+    }
+    assert_eq!(total, crates_n, "every crate's shadow is redrawn where it rests, once");
+    assert!(frames > 1, "over several frames: {frames}");
+    // Each shadow where its crate is.
+    let world = sim.app.world_mut();
+    let at: Vec<(usize, Vec3)> = world.query::<(&PropIndex, &Transform)>().iter(world).map(|(i, t)| (i.0, t.translation)).collect();
+    let state = world.resource::<ShadowState>();
+    for (i, at) in at {
+        assert!(state.built[&i].0.distance(at) < 0.01, "crate {i}: its shadow is drawn for {} at {at}", state.built[&i].0);
+    }
 }
