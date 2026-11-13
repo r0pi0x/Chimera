@@ -2,10 +2,12 @@
 //! greybox with the stand-in look): the secondary ammo panel's counts and
 //! table (hud.md 4.6), target ID's ray (hud.md 11), the history's rows
 //! from the server's messages (hud.md 9), the death notices from the
-//! shell's kill-feed entries, none while the app draws one feed (hud.md 10).
+//! shell's kill-feed entries, none while the app draws one feed (hud.md 10);
+//! the damage indicator for the local player's damage only, not for bots
+//! hurting each other on a listen server's host.
 
 use bevy::prelude::*;
-use chimera_core::core::{Health, Intent, LocalPlayer};
+use chimera_core::core::{Damage, DamageKind, Health, Hitgroup, Intent, LocalPlayer};
 use chimera_sim::weapon::{Inventory, give};
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
 use hl2dm::{
@@ -355,4 +357,53 @@ fn no_death_notice_while_the_app_draws_one_feed() {
     assert!(f.sim.app.world().resource::<chimera_client::client::kill_feed::KillFeed>().entries.len() == 1, "the shell's entry");
     assert!(f.state().hud.as_ref().unwrap().notices.list.is_empty(), "no notice of HL2:DM's own");
     assert_eq!(systems::feed_lines(f.sim.app.world()), 0);
+}
+
+fn shot(target: Entity, attacker: Entity) -> Damage {
+    Damage {
+        target,
+        attacker: Some(attacker),
+        amount: 0.2,
+        point: Vec3::ZERO,
+        dir: Vec3::X,
+        hitgroup: Hitgroup::Chest,
+        kind: DamageKind::Bullet,
+        weapon: None,
+        force: Vec3::ZERO,
+    }
+}
+
+fn damage_events(f: &Fed) -> Vec<String> {
+    f.state()
+        .hud
+        .as_ref()
+        .unwrap()
+        .events
+        .iter()
+        .map(|(_, e)| e.clone())
+        .filter(|e| e.starts_with("HudTakeDamage") || e == "HealthDamageTaken" || e == "HudPlayerDeath")
+        .collect()
+}
+
+/// The playtest's "hit markers when others get hit": on a host (the sim is
+/// authoritative, so every character's `DamageTaken` is here) a bot
+/// shooting another flashes nothing on the local player's HUD; a hit on
+/// the local player still does.
+#[test]
+fn others_damage_flashes_nothing() {
+    let mut f = fed();
+    let a = f.sim.spawn_character(Vec3::new(5.0, 1.0, 0.0), ID);
+    let b = f.sim.spawn_character(Vec3::new(-5.0, 1.0, 0.0), ID);
+    f.sim.ticks(3);
+    for _ in 0..3 {
+        f.sim.app.world_mut().write_message(shot(b, a));
+        f.sim.ticks(2);
+    }
+    assert!(f.sim.app.world().get::<Health>(b).unwrap().current < 1.0, "the bot was hurt");
+    assert_eq!(damage_events(&f), Vec::<String>::new(), "a bot's hit on a bot");
+    let me = f.me;
+    // From the right (travelling towards -x past me, facing -z).
+    f.sim.app.world_mut().write_message(Damage { dir: Vec3::NEG_X, ..shot(me, a) });
+    f.sim.ticks(2);
+    assert_eq!(damage_events(&f), ["HealthDamageTaken", "HudTakeDamageRight"]);
 }

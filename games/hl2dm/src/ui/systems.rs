@@ -378,8 +378,10 @@ pub fn collect(
         }
     }
 
-    // Damage taken.
-    for t in taken.read() {
+    // Damage taken: the local player's only. A listen server's host and
+    // an offline game see every character's `DamageTaken` (bots hurting
+    // bots); a network client's are already its own (`net::Hurt`).
+    for t in taken.read().filter(|t| t.damage.target == me) {
         let d = &t.damage;
         let kinds = Kinds {
             drown: d.kind == DamageKind::Drown,

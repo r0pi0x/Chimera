@@ -4,7 +4,8 @@
 //! get the sounds, muzzle groups and ammo effects of their own records
 //! (effects_sounds.md, "How effects are described as data" and 11), not
 //! their template's; a missing field is the spec's default; the reload and
-//! select radii reach the played sounds.
+//! select radii reach the played sounds; and a record's crosshair fields
+//! reach a document without a HUD table (the knives).
 
 use combat_arms::game::{
     data::{merge_weapon_docs, read_attributes, attributes::WEAPONS_FILE},
@@ -28,6 +29,8 @@ const INSTALL: &str = r#"
     ReloadSnd2="TEST\copy\r2.wav" SelectSnd="TEST\copy\sel.wav" PVMuzzleFXName="Copy_PV" DotSightName="TEST\dot\Reticle.dtx"
 [Weapon2] Name="Bare Gun" Guntype=4 AmmoName0="EmptyNames"
 [Weapon3] Name="M67" Guntype=7 AmmoName0="Plain" FireSnd="TEST\frag\throw.wav" MiscSound1="TEST\frag\pin.wav"
+[Weapon4] Name="Machete" Guntype=1 DisableCrosshair=1 DotSightName="TEST\dot\Knife.dtx"
+[Weapon5] Name="MP5A4" Guntype=4 AmmoName0="Plain" CrossHairType=2 DuckPerturb=3 MoveDuckPerturb=4
 "#;
 
 fn merged() -> Vec<(String, Table)> {
@@ -39,6 +42,8 @@ fn merged() -> Vec<(String, Table)> {
     let ours = [
         ("m4a1.toml", include_str!("../../data/weapons/m4a1.toml")),
         ("m67.toml", include_str!("../../data/weapons/m67.toml")),
+        ("machete.toml", include_str!("../../data/weapons/machete.toml")),
+        ("mp5a4.toml", include_str!("../../data/weapons/mp5a4.toml")),
     ];
     merge_weapon_docs(&ours, weapons, meters_per_unit())
         .unwrap()
@@ -72,6 +77,24 @@ fn a_weapon_carries_its_records_reticle() {
     let copy = "combat_arms:copy_gun";
     assert_eq!(reticle(copy).as_deref(), Some("TEST\\dot\\Reticle.dtx"));
     assert_eq!(reticle("combat_arms:m4a1"), None);
+}
+
+/// A record's crosshair fields reach a weapon whose document has no HUD
+/// table (hud_crosshair.md A5 to A8): the machete's `DisableCrosshair`
+/// beside its reticle, so only the reticle draws (the playtest's knife
+/// with both its X and the green plus), and a gun's shape and crouch
+/// minimums.
+#[test]
+fn a_weapon_without_a_hud_table_takes_its_records_crosshair() {
+    let docs = merged();
+    let machete = hook(&docs, "combat_arms:machete", "combat_arms:hud");
+    assert_eq!(machete.get("disable_crosshair").and_then(Value::as_bool), Some(true), "{machete:?}");
+    assert_eq!(machete.get("dot_sight").and_then(Value::as_str), Some("TEST\\dot\\Knife.dtx"));
+    let mp5 = hook(&docs, "combat_arms:mp5a4", "combat_arms:hud");
+    assert_eq!(mp5.get("crosshair").and_then(Value::as_integer), Some(2), "{mp5:?}");
+    assert_eq!(mp5.get("disable_crosshair").and_then(Value::as_bool), Some(false));
+    assert_eq!(mp5.get("duck_perturb").and_then(Value::as_integer), Some(3));
+    assert_eq!(mp5.get("move_duck_perturb").and_then(Value::as_integer), Some(4));
 }
 
 /// Our own M4A1 takes its record's sounds and groups over the built-in
