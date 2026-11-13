@@ -1,7 +1,8 @@
 //! Switching weapons as CS:S players do besides the slot keys: `invnext`
 //! / `invprev` (the mouse wheel's commands) step through every weapon,
 //! slot by slot, and a pick names one weapon in a shared slot (the second
-//! grenade); buying and picking up play the game's sounds.
+//! grenade); buying and picking up play the game's sounds;
+//! `hud_fastswitch` is on by default and a saved config keeps it so.
 
 use bevy::{
     ecs::message::{MessageCursor, Messages},
@@ -143,4 +144,38 @@ fn buying_and_picking_up_play_the_pickup_sounds() {
     }
     assert!(sim.app.world().get_entity(gun).is_err(), "picked up");
     assert_eq!(picked.iter().filter(|e| *e == PICKUP_SOUND).count(), 1, "{picked:?}");
+}
+
+/// `hud_fastswitch` is 1 by default (ours; CS:S's own is 0): slot keys
+/// switch at once, the selection row doesn't take them. config.cfg saves
+/// only cvars off their default, so a config written before (when 0 was
+/// the default, never written) leaves it at 1; a player's own 0 is
+/// written and read back.
+#[test]
+fn fast_switch_is_on_by_default_and_saved_configs_keep_it() {
+    use crate::stack::{console::config_text, games::cs_source::ui::weapon_select::FastSwitch};
+    let (mut sim, _) = sim();
+    let fast = |sim: &Sim| sim.app.world().resource::<FastSwitch>().0;
+    assert_eq!(fast(&sim), 1);
+    let cvar = sim.app.world().resource::<Console>().cvar("hud_fastswitch").unwrap().clone();
+    assert_eq!((cvar.default.as_str(), cvar.archive), ("1", true));
+    // The default isn't written: an old config (no line) keeps 1.
+    let text = config_text(sim.app.world_mut());
+    assert!(!text.contains("hud_fastswitch"), "{text}");
+    // A player's 0 is written, and read back.
+    sim.app.world_mut().resource_mut::<Console>().submit("hud_fastswitch 0");
+    sim.ticks(1);
+    assert_eq!(fast(&sim), 0);
+    let text = config_text(sim.app.world_mut());
+    // Under its full name (`cs_source:hud_fastswitch`).
+    let line = text
+        .lines()
+        .find(|l| l.split_whitespace().next().is_some_and(|n| n.ends_with("hud_fastswitch")))
+        .expect("written");
+    assert!(line.ends_with(" 0"), "{line}");
+    sim.app.world_mut().resource_mut::<Console>().submit("hud_fastswitch 1");
+    sim.ticks(1);
+    sim.app.world_mut().resource_mut::<Console>().submit(line);
+    sim.ticks(1);
+    assert_eq!(fast(&sim), 0);
 }
