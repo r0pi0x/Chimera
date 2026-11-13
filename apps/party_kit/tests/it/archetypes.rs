@@ -40,12 +40,20 @@
 //!   (`Movement step`), Bevy's own;
 //! - the whole tick, over the ticks that make no new archetype
 //!   (`instructions_per_tick`: a new one costs a step over the others,
-//!   once), against `SPARSE_LIMIT` and `TABLE_LIMIT`: the sum of many
-//!   systems' smaller steps (1.32x and 2.31x measured, 2026-11-12; the
-//!   table case 2.57x on main by the evening of 2026-11-13 and 2.60x
-//!   with the spawn spot fixes, whose greybox spawns moved: the base run
-//!   1.7% cheaper, the inflated one no dearer, so the limit 2.6 became
-//!   2.7; the per-system limit is the one a query made each tick fails).
+//!   once), grows by no more than `SPARSE_LIMIT` and `TABLE_LIMIT`
+//!   instructions for each archetype added: the sum of many systems'
+//!   smaller steps, about a hundred systems whose queries match
+//!   characters (620 and 1,361 measured, 2026-11-13: +1.27M a tick at
+//!   2,048 more archetypes, +5.57M at 4,094 more and 2,047 more tables).
+//!
+//! The whole tick was first held to a ratio of the base run's (1.5x and
+//! 2.6x; 1.32x and 2.31x measured, 2026-11-12). A ratio moves with the
+//! base: the table case read 2.17x to 2.60x over the next day's merges
+//! while the archetypes' cost itself went from 5.85M to 5.67M a tick,
+//! and its one large step, 2.28x to 2.58x, was the bots' thinking made
+//! 0.85M a tick cheaper (the navigation mesh's grid), in both runs
+//! alike (docs/performance.md, "The archetype test's ratio"). The
+//! ratio is still printed.
 
 use bevy::prelude::*;
 use chimera_core::metrics::{census::Census, work::WorkCounts};
@@ -200,14 +208,16 @@ fn run(all: bool) -> (Phase, Phase) {
 /// The most a single system's instructions per tick may grow for each
 /// archetype added (module doc).
 const PER_ARCHETYPE: f64 = 200.0;
-/// The most the whole tick may grow with 2045 more sparse-set archetypes.
-const SPARSE_LIMIT: f64 = 1.5;
-/// The most the whole tick may grow with 4090 more archetypes and 2045
-/// more tables.
-const TABLE_LIMIT: f64 = 2.7;
+/// The most the whole tick may grow, in instructions for each archetype
+/// added, with 2,048 more sparse-set archetypes (620 measured).
+const SPARSE_LIMIT: f64 = 720.0;
+/// The same with 4,094 more archetypes of which half bring a table
+/// (1,361 measured: a table costs every query that matches it a step).
+const TABLE_LIMIT: f64 = 1500.0;
 
-/// Checks one case: the whole tick within `limit` times the base run's,
-/// and no system grown by more than `PER_ARCHETYPE` per added archetype.
+/// Checks one case: the whole tick grown by no more than `limit`
+/// instructions per added archetype over the base run's, and no system
+/// by more than `PER_ARCHETYPE`.
 fn check(case: &str, base: &Phase, inflated: &Phase, limit: f64) {
     let (Some((b, sys_b)), Some((a, sys_a))) = (&base.work, &inflated.work) else {
         eprintln!("skipping the comparison: no hardware counters ({})", chimera_core::metrics::hw_status());
@@ -217,12 +227,14 @@ fn check(case: &str, base: &Phase, inflated: &Phase, limit: f64) {
     let added = inflated.now.0.saturating_sub(base.now.0).max(1);
     let table = sys_a.diff_table(sys_b, 20);
     eprintln!(
-        "{case}: archetypes, tables {:?} vs {:?}: {:.3}M vs {:.3}M instructions per tick ({:.3}x, limit {limit}x)\n{table}",
+        "{case}: archetypes, tables {:?} vs {:?}: {:.3}M vs {:.3}M instructions per tick ({:.3}x): {:.0} more per added \
+         archetype (limit {limit})\n{table}",
         base.now,
         inflated.now,
         b / 1e6,
         a / 1e6,
-        a / b
+        a / b,
+        (a - b) / added as f64
     );
     let worst = sys_a.rises(sys_b, 1);
     if let Some((label, before, after)) = worst.first() {
@@ -238,16 +250,20 @@ fn check(case: &str, base: &Phase, inflated: &Phase, limit: f64) {
         );
     }
     assert!(
-        a < b * limit,
-        "{case}: a tick cost {:.2}M instructions with {} archetypes and {} tables, {:.2}M with {} and {}: the same \
-         ticks of the same play, so the archetypes cost it; something walks every archetype each tick (a \
-         `world.query` in per-tick exclusive code: keep it, `chimera_core::query_cache`). Per tick:\n{table}",
+        a - b <= limit * added as f64,
+        "{case}: a tick cost {:.2}M instructions with {} archetypes and {} tables, {:.2}M with {} and {}: {:.0} more \
+         per added archetype (limit {limit}), in the same ticks of the same play, so the archetypes cost it. More \
+         systems step over the characters' archetypes each tick than did (a query that matches characters costs \
+         ~14 instructions per empty table each time it runs; a `world.query` in per-tick exclusive code far more: \
+         keep it, `chimera_core::query_cache`): give the new ones a narrower query or nothing to run for, or \
+         raise the limit by what they must cost. Per tick:\n{table}",
         b / 1e6,
         base.now.0,
         base.now.1,
         a / 1e6,
         inflated.now.0,
-        inflated.now.1
+        inflated.now.1,
+        (a - b) / added as f64
     );
 }
 

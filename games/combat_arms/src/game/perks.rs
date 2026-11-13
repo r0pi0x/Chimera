@@ -1179,6 +1179,13 @@ fn supplies(world: &mut World) {
     let boxes: Vec<(Entity, CaPerkBox, Vec3)> = cached_query::<(Entity, &CaPerkBox, &Transform), (), _>(world, |q, w| {
         q.iter(w).map(|(e, b, t)| (e, *b, t.translation)).collect()
     });
+    // Supply points.
+    let points: Vec<Entity> = cached_query::<Entity, With<CaSupplyBox>, _>(world, |q, w| q.iter(w).collect());
+    // Nothing to take: the players aren't looked at (their query steps
+    // over every archetype a character has ever been in, each tick).
+    if boxes.is_empty() && points.is_empty() {
+        return;
+    }
     let players: Vec<(Entity, Vec3, u8)> =
         cached_query::<(Entity, &Transform, Option<&Team>), (With<Intent>, Without<Dead>), _>(world, |q, w| {
             q.iter(w).map(|(e, t, team)| (e, t.translation, team.map_or(0, |t| t.0))).collect()
@@ -1202,8 +1209,6 @@ fn supplies(world: &mut World) {
             world.despawn(b);
         }
     }
-    // Supply points.
-    let points: Vec<Entity> = cached_query::<Entity, With<CaSupplyBox>, _>(world, |q, w| q.iter(w).collect());
     for point in points {
         supply_frame(world, point, now, rounds, &players);
     }
