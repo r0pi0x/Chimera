@@ -54,7 +54,13 @@
 //! speed for every game (`--speed`, default CS:S's 250 units/s, 6.35 m/s),
 //! so maps compare across games. Writes `fitness.csv` to `--out` (default
 //! `target/map_fitness`), a row per map as it is measured; `--resume`
-//! skips maps already in it. Waits while the machine has less than
+//! skips maps already in it. `--write <repo>` then writes each game's
+//! `games/<game>/data/map_fitness.toml` from that CSV (the measurements
+//! an automatic gun game's pool draws by: `chimera_sim::minigame::
+//! map_fit`; per map its area, sight, spawn points and spots, and the
+//! wander times for reading); `--csv <file> --write <repo>` writes them
+//! from a sweep's CSV without loading anything. Write from a whole sweep:
+//! a map the file lacks is in the pool at a middle weight. Waits while the machine has less than
 //! `--min-free-gb` (default 8) of memory available (Linux).
 //!
 //! Known shortcuts: no ladders or crouching (the generated flood's);
@@ -99,7 +105,9 @@ usage: map_fitness [options]
   --probe <x,y,z>    also say what a standing player's box at this point meets (the map's own
                      units: Source's setpos; repeatable)
   --samples <n>      area samples for the path statistics (default 256)
-  --min-free-gb <n>  wait while less memory than this is available (default 8)";
+  --min-free-gb <n>  wait while less memory than this is available (default 8)
+  --write <repo>     then write games/<game>/data/map_fitness.toml under <repo> from the CSV
+  --csv <file>       with --write: write from this sweep's CSV, measuring nothing";
 
 const N_PLAYERS: [usize; 5] = [2, 4, 8, 12, 16];
 const HEADER: &str = "game,map,loads,error,load_s,nav_s,spawns,spawns_in_region,own_nav,spots,spots_off,has_nav_file,off_region,off_nav_file,off_box,spots_off_at,stuck,stuck_at,spawn_min_m,spawn_median_m,\
@@ -132,6 +140,8 @@ struct Opts {
     samples: usize,
     probes: Vec<Vec3>,
     min_free_gb: f64,
+    write: Option<PathBuf>,
+    csv: Option<PathBuf>,
 }
 
 fn parse() -> Result<Opts, String> {
@@ -145,6 +155,8 @@ fn parse() -> Result<Opts, String> {
         samples: 256,
         probes: Vec::new(),
         min_free_gb: 8.0,
+        write: None,
+        csv: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -166,6 +178,8 @@ fn parse() -> Result<Opts, String> {
             }
             "--samples" => o.samples = val()?.parse().map_err(|e| format!("--samples: {e}"))?,
             "--min-free-gb" => o.min_free_gb = val()?.parse().map_err(|e| format!("--min-free-gb: {e}"))?,
+            "--write" => o.write = Some(PathBuf::from(val()?)),
+            "--csv" => o.csv = Some(PathBuf::from(val()?)),
             "-h" | "--help" => return Err(String::new()),
             _ => return Err(format!("unknown option {a}")),
         }
@@ -212,6 +226,13 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    if let Some(csv) = &o.csv {
+        let Some(repo) = &o.write else {
+            eprintln!("--csv needs --write <repo>");
+            return ExitCode::FAILURE;
+        };
+        return write_data(csv, repo, &o.games, o.speed);
+    }
     let mut maps: Vec<(String, String)> = Vec::new();
     let mut mounts: Vec<(String, chimera_core::mount::Mount)> = Vec::new();
     for game in &o.games {
@@ -306,7 +327,91 @@ fn main() -> ExitCode {
         let _ = writeln!(file, "{line}");
         let _ = file.flush();
     }
+    drop(file);
+    if let Some(repo) = &o.write {
+        return write_data(&csv, repo, &o.games, o.speed);
+    }
     ExitCode::SUCCESS
+}
+
+/// Each of `games`' `games/<game>/data/map_fitness.toml` under `repo`
+/// from the sweep's CSV `csv`.
+fn write_data(csv: &std::path::Path, repo: &std::path::Path, games: &[String], speed: f32) -> ExitCode {
+    let text = match fs::read_to_string(csv) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("{}: {e}", csv.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    for game in games {
+        let doc = fitness_toml(&text, game, speed);
+        let path = repo.join("games").join(game).join("data").join("map_fitness.toml");
+        if let Err(e) = fs::write(&path, &doc.0) {
+            eprintln!("{}: {e}", path.display());
+            return ExitCode::FAILURE;
+        }
+        eprintln!("{}: {} maps", path.display(), doc.1);
+    }
+    ExitCode::SUCCESS
+}
+
+/// `game`'s rows of a sweep's CSV as its data/map_fitness.toml, and how
+/// many maps.
+fn fitness_toml(csv: &str, game: &str, speed: f32) -> (String, usize) {
+    let mut lines = csv.lines();
+    let header: Vec<&str> = lines.next().unwrap_or_default().split(',').collect();
+    let col = |row: &[&str], name: &str| -> String {
+        header.iter().position(|h| *h == name).and_then(|i| row.get(i)).map_or(String::new(), |v| v.to_string())
+    };
+    let num = |v: String| -> f32 { v.parse().unwrap_or(0.0) };
+    let mut rows: Vec<(String, String)> = Vec::new();
+    for line in lines {
+        let row: Vec<&str> = line.split(',').collect();
+        if col(&row, "game") != game {
+            continue;
+        }
+        let name = col(&row, "map").to_ascii_lowercase();
+        let area = num(col(&row, "area_m2")).max(0.0);
+        let loads = col(&row, "loads") == "true" && area > 0.0;
+        let wander: Vec<String> = WANDER_PLAYERS
+            .iter()
+            .map(|n| format!("{n} = {:.1}", num(col(&row, &format!("wander_{n}_s")))))
+            .collect();
+        let mut t = format!("[maps.{name}]\n");
+        if !loads {
+            t.push_str("loads = false\n");
+        }
+        t.push_str(&format!(
+            "area_m2 = {area:.0}\nsight_m = {:.1}\nspot_area_m2 = {:.0}\nspawns = {}\nspots = {}\nspots_off = {}\nstuck = {}\nwander_s = {{ {} }}\n",
+            num(col(&row, "sight_m")),
+            num(col(&row, "spot_area_m2")).max(0.0),
+            num(col(&row, "spawns")) as u32,
+            num(col(&row, "spots")) as u32,
+            num(col(&row, "spots_off")) as u32,
+            num(col(&row, "stuck")) as u32,
+            wander.join(", ")
+        ));
+        rows.push((name, t));
+    }
+    rows.sort();
+    rows.dedup_by(|a, b| a.0 == b.0);
+    let mut out = format!(
+        "# {game}'s maps measured for an automatic gun game's pool, generated by the\n\
+         # map_fitness tool (`--write`; docs/plans/active/map-pool-fitness.md): edit\n\
+         # data/map_pool.toml instead. Per map: its walkable area (m2), mean sight (m),\n\
+         # the area its spawn spots cover, its spawn points, spawn spots, those off\n\
+         # the map and those a player is stuck in, and its wander times at 4/8/12\n\
+         # players (s; read by chimera_sim::minigame::map_fit, which works them out\n\
+         # again from area and sight at any count).\n\
+         speed_mps = {speed}\n"
+    );
+    let n = rows.len();
+    for (_, t) in rows {
+        out.push('\n');
+        out.push_str(&t);
+    }
+    (out, n)
 }
 
 #[derive(Default)]

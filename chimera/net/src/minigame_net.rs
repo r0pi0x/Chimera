@@ -71,6 +71,13 @@
 //!   (`minigame::NextMatch`: the map picked for the next match as soon as
 //!   the match is decided, and when the change comes; `NetMinigame::next`),
 //!   which the shell's match-end screen shows.
+//! - **The pool by count** (a definition's `map_fit`, `minigame::map_fit`):
+//!   the rotation's pick and the vote's ballot are drawn by the players
+//!   present at the change (humans and bots): the maps too big for them
+//!   out, the rest by weight (`map_fit::draw_weights`); a host's
+//!   `changelevel` without a map is the next match as a rotation's
+//!   (`host_next_level`, `net::HostNextLevel`); console `map_pool
+//!   [players]` lists the pool at a count.
 //! - **The map vote** (a definition's `map_vote`, `minigame::vote`): with
 //!   one, the hold's next map isn't picked at once: the rotation's pick
 //!   and a few other maps go on a ballot (`minigame::vote::MapVote`,
@@ -199,6 +206,7 @@ impl Plugin for MinigameNetPlugin {
 fn register(app: &mut App) {
     // A host's `changelevel` is the minigame's next match there.
     app.insert_resource(crate::net::HostChangeLevel(host_changelevel));
+    app.insert_resource(crate::net::HostNextLevel(host_next_level));
     // The events exist in an app without a minigame runtime too.
     app.add_message::<MinigameEvent>();
     // While a minigame is the rules, a predicting client is held as the
@@ -269,6 +277,15 @@ fn register(app: &mut App) {
                 let n: usize = n.parse().ok().filter(|n| *n >= 1).ok_or_else(|| format!("not a choice: {n}"))?;
                 vote_map(w, n - 1).map(|_| None)
             }
+        },
+    )
+    .console_command(
+        "chimera:map_pool",
+        "map_pool [players]: the playing minigame's map pool at that many players (else the characters present): \
+         each map's share of the next draw, or why it is out (its data/map_pool.toml, its measurements).",
+        |w, a| {
+            let n = a.first().map(|n| n.parse::<usize>().map_err(|_| format!("not a count: {n}"))).transpose()?;
+            pool_text(w, n).map(Some)
         },
     )
     .console_command(
@@ -768,10 +785,15 @@ pub fn match_ladder(world: &World) -> Option<std::borrow::Cow<'_, Ladder>> {
 }
 
 /// The match's map pool (`net::normalize_map`'s form), the first first:
-/// what a rotation can play next (the asset offer's prefetch).
+/// what a rotation can play next (the asset offer's prefetch); drawn by
+/// the count (`map_fit`), the maps let in for the characters present,
+/// likeliest first.
 pub fn match_pool(world: &World) -> Vec<String> {
     match_def(world)
-        .map(|d| d.maps.iter().map(|m| crate::net::normalize_map(m)).collect())
+        .map(|d| {
+            let pool: Vec<String> = d.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
+            minigame::map_fit::likeliest(world, d, &pool)
+        })
         .unwrap_or_default()
 }
 
@@ -1030,10 +1052,15 @@ fn open_vote(world: &mut World, def: &'static MinigameDef, first: &str) -> bool 
     let pool: Vec<String> = def.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
     let ok: Vec<String> = pool.iter().filter(|m| playable_on(world, def, Some(m)).ok()).cloned().collect();
     let here_ok = playable_on(world, def, Some(&here)).ok();
+    // The rotation's own draw: the maps too big for the players present
+    // out, the rest by weight (`minigame::map_fit`).
+    let weights = minigame::map_fit::draw_weights(world, def, &pool);
+    let weight = |m: &str| weight_of(&pool, weights.as_deref(), m);
     let mut history = world.remove_resource::<MapHistory>().unwrap_or_default();
     let recent = history.recent(def.avoid_recent).to_vec();
     let playable = |m: &str| ok.iter().any(|o| o == m) || (m == here && here_ok);
-    let ballot = vote::candidates(first, &pool, &here, &recent, settings.candidates, &playable, &mut history.rng);
+    let ballot =
+        vote::candidates_weighted(first, &pool, &here, &recent, settings.candidates, &playable, &weight, &mut history.rng);
     world.insert_resource(history);
     if ballot.len() < 2 {
         return false;
@@ -1216,12 +1243,51 @@ fn next_map(world: &mut World, def: &'static MinigameDef) -> String {
     }
     let pool: Vec<String> = def.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
     let ok: Vec<String> = pool.iter().filter(|m| playable_on(world, def, Some(m)).ok()).cloned().collect();
+    // By the players present (`minigame::map_fit`): the maps too big for
+    // them out, the rest drawn by weight.
+    let weights = minigame::map_fit::draw_weights(world, def, &pool);
     let mut history = world.remove_resource::<MapHistory>().unwrap_or_default();
     // The host's rotation settings (`minigame::overrides`) count from now.
     let rule = minigame::overrides::effective(world, def);
-    let chosen = history.next(&rule, &pool, &here, &|m| ok.iter().any(|o| o == m));
+    let chosen = history.next_weighted(&rule, &pool, &here, &|m| ok.iter().any(|o| o == m), &|m| {
+        weight_of(&pool, weights.as_deref(), m)
+    });
     world.insert_resource(history);
     chosen.unwrap_or(here)
+}
+
+/// Map `m`'s weight in `pool`'s draw (`weights`, None: every map 1).
+fn weight_of(pool: &[String], weights: Option<&[f64]>, m: &str) -> f64 {
+    match weights {
+        None => 1.0,
+        Some(w) => pool.iter().position(|p| p == m).map_or(0.0, |i| w[i]),
+    }
+}
+
+/// A host's `changelevel` with no map while a minigame plays: its next
+/// match as a rotation's (`next_match`: the pool drawn for the players
+/// present, then the app's hooks and the hold). None: a client, no
+/// minigame, or a match's map change under way. This part's
+/// `net::HostNextLevel`.
+pub fn host_next_level(world: &mut World) -> Option<Result<Option<String>, String>> {
+    if world.get_resource::<NetRole>() == Some(&NetRole::Client) || world.contains_resource::<MapChange>() {
+        return None;
+    }
+    world.get_resource::<ActiveMinigame>()?;
+    let map = next_match(world)?;
+    Some(Ok(Some(format!("changelevel: the next match on {map}"))))
+}
+
+/// The playing minigame's pool at `players` (else the characters
+/// present), a line per map (`map_fit::MapPool::lines`), for the console.
+fn pool_text(world: &mut World, players: Option<usize>) -> Result<String, String> {
+    let def = world.get_resource::<ActiveMinigame>().ok_or("no minigame is playing")?.def;
+    let settings = minigame::map_fit::FitSettings::of(def)?
+        .ok_or_else(|| format!("{} draws its maps without the count (map_fit off)", def.id))?;
+    let n = players.unwrap_or_else(|| minigame::map_fit::present(world));
+    let pool: Vec<String> = def.maps.iter().map(|m| crate::net::normalize_map(m)).collect();
+    let maps = world.get_resource::<minigame::map_fit::MapPool>().cloned().unwrap_or_default();
+    Ok(maps.lines(&pool, n, &settings))
 }
 
 /// The server's events back into `MinigameEvent`s (the HUD's notices).

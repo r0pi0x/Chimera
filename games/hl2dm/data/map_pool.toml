@@ -1,0 +1,10 @@
+# HL2:DM maps an automatic gun game's pool leaves out (the Ultimate Gun
+# Game: chimera_sim::minigame::map_fit; docs/plans/active/
+# map-pool-fitness.md). Every other installed map joins the pool, drawn by
+# the players present (data/map_fitness.toml). Each entry: map names (`*`
+# matches any run of letters) and why; `[[allow]]` entries win over
+# `[[deny]]` and over the measurements' flags.
+
+[[deny]]
+reason = "not a deathmatch map (and its file is missing from the published store)"
+maps = ["halls3"]

@@ -96,6 +96,7 @@
 pub mod auto;
 pub mod def;
 pub mod holders;
+pub mod map_fit;
 pub mod hud;
 pub mod ladder;
 pub mod moments;

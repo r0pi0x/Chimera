@@ -58,6 +58,9 @@ pub fn party_sim(app: &mut App) {
     if !app.is_plugin_added::<source_logic::logic::LogicPlugin>() {
         app.add_plugins(source_logic::logic::LogicPlugin);
     }
+    // Its map pool's rules and measurements (an automatic gun game's
+    // pool by the players present).
+    super::parts::add_map_pool(app);
     super::view_anim::add_rules(app);
     super::view_anim::add_motion(
         app,

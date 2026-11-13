@@ -2706,13 +2706,17 @@ pub fn client_commands(app: &mut App) {
     .console_command(
         "changelevel",
         "changelevel <name>: the server moves to another map; connected players load it and play on there \
-         (bots stay).",
+         (bots stay). In a party app with no name: the minigame's next match, its map drawn as a rotation's.",
         |w, a| {
-            let name = a.first().ok_or("changelevel <name>")?.clone();
             if w.get_resource::<crate::core::NetRole>() != Some(&crate::core::NetRole::Server) {
                 // Source's words.
                 return Err("Can't changelevel, not running server.".into());
             }
+            let Some(name) = a.first().cloned() else {
+                // A party app's minigame: its next match, the map drawn
+                // as a rotation's (for the players present).
+                return crate::net::host_next_level(w).unwrap_or(Err("changelevel <name>".into()));
+            };
             let game = crate::game_registry::default_game(w);
             let target = map_target(game, &name);
             // A party app's minigame: a new match there (its lobby), not

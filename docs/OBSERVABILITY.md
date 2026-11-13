@@ -2203,7 +2203,16 @@ says what each column means and the pool rule built on them).
 cargo run -p party_kit --features dev,tools --bin map_fitness -- --list     # the installed maps
 cargo run -p party_kit --features dev,tools --bin map_fitness -- --filter gg_  # some of them
 cargo run -p party_kit --features dev,tools --bin map_fitness -- --resume   # continue a sweep
+cargo run -p party_kit --features dev,tools --bin map_fitness -- --resume --write .   # then each game's
+                                   # data/map_fitness.toml (the pool's measurements)
+cargo run -p party_kit --features dev,tools --bin map_fitness -- --csv docs/plans/active/map-pool-fitness.csv --write .
+                                   # the same from a sweep's CSV, loading nothing
 ```
+
+The pool a server draws from at a count: `map_pool [players]` on its
+console (each map's share of the next draw, or why it is out);
+`ultimate_gun_game heavy::pool_maps` loads a sample of it on the real
+server at 4, 8 and 12 bots and checks spots and download sets.
 
 ### Comparing the HUD (`refcmp hudcmp`)
 
