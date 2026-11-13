@@ -6,7 +6,7 @@
 //! (`PartyPartsPlugin`: the map logic's brush entities) and the gun game
 //! started; floods the bots' navigation
 //! mesh from the spawn points (Combat Arms' walker, `bots::brain::
-//! nav_params`, jump-ups included; bounded to the clusters the spawn
+//! nav_params`, jump-ups included, meeting the player clips; bounded to the clusters the spawn
 //! spots' walking player, `spawns::walker`, reaches where the map has
 //! visibility data, `nav_gen::Bounds`) and
 //! measures it:
@@ -576,7 +576,8 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
 
     let t = Instant::now();
     // The bots' walker (Combat Arms', jump-ups included), bounded to the
-    // playable space where the map has visibility data: what bots walk.
+    // playable space where the map has visibility data and meeting the
+    // player clips: the space players play.
     let p = combat_arms::game::bots::brain::nav_params();
     let vis = w.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
     let (nav, spots) = {
@@ -586,7 +587,7 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
             vis,
             walker: chimera_sim::minigame::spawns::walker(),
         });
-        let nav = nav_gen::generate_within(&q, &|_| false, &feet, &p, bounds);
+        let nav = nav_gen::generate_within(&nav_gen::Clipped { q: &q, clips: &clips }, &|_| false, &feet, &p, bounds);
         // The spawn spots' walker (`spawns::walker`).
         let spot_bounds = spot_bound.zip(vis.as_deref()).map(|(walker, vis)| nav_gen::Bounds { vis, walker });
         let spots = nav_gen::generate_within(&nav_gen::Clipped { q: &q, clips: &clips }, &|_| false, &feet, &spot_walker, spot_bounds);

@@ -82,9 +82,11 @@ pub fn region(nav: &NavMesh, feet: &[Vec3]) -> (Vec<bool>, Vec<Option<usize>>) {
 }
 
 /// The bots' generated mesh of the loaded map (Combat Arms' walker,
-/// bounded where the map has visibility data), from the `feet`.
+/// bounded where the map has visibility data), from the `feet`, meeting
+/// the player clips (the played space: the bots' own walk passes them).
 pub fn bots_mesh(world: &mut World, feet: &[Vec3]) -> NavMesh {
     let p = combat_arms::game::bots::brain::nav_params();
+    let clips = PlayerClips::of(world);
     let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
     let mut state = SystemState::<SpatialQuery>::new(world);
     let q = state.get(world).expect("the spatial query");
@@ -92,7 +94,7 @@ pub fn bots_mesh(world: &mut World, feet: &[Vec3]) -> NavMesh {
         vis,
         walker: spawns::walker(),
     });
-    nav_gen::generate_within(&q, &|_| false, feet, &p, bounds)
+    nav_gen::generate_within(&nav_gen::Clipped { q: &q, clips: &clips }, &|_| false, feet, &p, bounds)
 }
 
 /// Whether `q` is over an area of `nav` that `inside` keeps (0.75 m of
