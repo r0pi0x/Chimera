@@ -11,7 +11,9 @@
 //! models (the `held` hook, `add_view_models`), right-handed and never
 //! mirrored (specs/hl2dm/player_models.md 12.1), and with a whole kit the
 //! SMG1's and shotgun's shells (`shells`). `dress_guest` brings its HUD look and them
-//! onto another game's map (the party's), read from the HL2:DM install.
+//! onto another game's map (the party's), read from the HL2:DM install,
+//! with what its guns draw (`add_guest_looks`: effect materials, muzzle
+//! flashes, impact decals; on its own maps they come with the map's kit).
 //! Also its chat formats (`chat`: no radio, the dead read by the living),
 //! and its items' and ammo crates' models (`fixed_models`, data/items.toml:
 //! the items as physics props players walk through, the crates solid). The
@@ -274,7 +276,8 @@ pub fn add_view_models(
 /// install, their textures appended to the map's; the bodies go after the
 /// map's own; every sound HL2:DM plays (its footsteps, guns, suit: a map's
 /// bank holds only what it asked for) where the map hasn't an entry of
-/// that name.
+/// that name; what its guns draw (`add_guest_looks`: effects, flashes,
+/// impacts).
 pub fn dress_guest(map: &mut MapData, kept: &'static [&'static str]) -> Result<(), String> {
     dress_guest_with(map, kept, false)
 }
@@ -300,6 +303,7 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
     let sounds = source_engine::content::sound::load_with(&mut materials, "", &surfaces, &[], game, true);
     bsp::add_guest_sounds(std::sync::Arc::make_mut(&mut map.sounds), sounds);
     let look = super::hud::load(&mut materials).map(std::sync::Arc::new);
+    add_guest_looks(&mut materials, map);
     materials.finish_textures();
     warnings.extend(materials.missing);
     map.textures.extend(materials.textures.split_off(textures));
@@ -311,6 +315,29 @@ pub fn dress_guest_with(map: &mut MapData, kept: &'static [&'static str], lean: 
     map.kit.view_models.extend(guest.view_models);
     map.kit.add_guest_hud(look);
     Ok(())
+}
+
+/// What HL2:DM's guns draw, onto another game's map (`dress_guest`):
+/// its impact decals (each group and material letter the map lacks), its
+/// effect materials (`effects::load_materials`: the AR2's ball, streak
+/// and flashes, the RPG's laser, the crossbow's and gravity gun's
+/// sprites, the explosions', each the map lacks by name), its muzzle
+/// flashes by kind (`flashes::kinds`) and its impacts (`map.impacts`).
+/// Without them its guns' effects found no material on the map: the
+/// energy ball showed its bare model, a white quad.
+pub fn add_guest_looks(materials: &mut MaterialLoader, map: &mut MapData) {
+    bsp::add_guest_decals(&mut map.kit.decals, source_engine::content::decals::impact_decals(materials));
+    for m in super::effects::load_materials(materials).materials {
+        if map.particles.find(&m.name).is_none() {
+            map.particles.materials.push(m);
+        }
+    }
+    for (kind, flash) in super::flashes::kinds(materials) {
+        if !map.kit.muzzle_flash_kinds.iter().any(|(k, _)| k.eq_ignore_ascii_case(&kind)) {
+            map.kit.muzzle_flash_kinds.push((kind, flash));
+        }
+    }
+    map.impacts.add(super::GAME);
 }
 
 fn no_extra_particles(_: &MapData) -> (&'static [&'static str], &'static [&'static str]) {

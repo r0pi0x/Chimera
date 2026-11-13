@@ -528,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn a_dressed_map_keeps_nothing_of_its_games_kit_but_the_kept() {
+    fn a_dressed_map_keeps_nothing_of_its_games_kit_but_the_kept_and_their_looks() {
         let mut map = a_map("x", &MapLoadOptions::default()).unwrap();
         map.kit.round_sounds.draw = Some("a:draw".into());
         map.kit.muzzle_flash = Some(default());
@@ -536,7 +536,8 @@ mod tests {
         map.source_fx_mut().detail_props = None;
         SOURCES.dress("a", &mut map, &MapLoadOptions::default());
         let kit = &map.kit;
-        assert!(kit.round_sounds.draw.is_none() && kit.muzzle_flash.is_none());
+        assert!(kit.round_sounds.draw.is_none());
+        assert!(kit.muzzle_flash.is_some(), "its muzzle flash stays with its kept guns");
         assert_eq!(kit.held.len(), 1, "the kept prefix stays");
         assert!(kit.decals.groups.contains_key("impact.concrete"), "its impact decals stay, with its impact looks");
         assert!(!map.extras.is_empty(), "the map's own extensions are not the kit");

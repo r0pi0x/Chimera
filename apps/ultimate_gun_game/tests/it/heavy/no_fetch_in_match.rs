@@ -8,7 +8,8 @@
 //!   (`CHIMERA_GUARD_STORE`, else this machine's server store,
 //!   `chimera_assets::server::default_store`) read through a scratch
 //!   store: its manifests copied (signed again with the scratch service's
-//!   own key), its records linked, a scratch account; HTTPS with a
+//!   own key; `CHIMERA_GUARD_MANIFESTS=<store>`: that store's, sets not
+//!   yet published), its records linked, a scratch account; HTTPS with a
 //!   certificate of its own (`tls::front`).
 //! - **The game server**, in this process: Ultimate Gun Game's dedicated
 //!   server (`chimera_net::dedicated::app`, as its binary builds it) on
@@ -19,8 +20,8 @@
 //!   store: it downloads at start and at each join as a tester does.
 //!
 //! The session (`SESSION`, then `HL2DM_MAP` when HL2:DM is installed and
-//! published: its effect materials, sprays and flashes come with its map's
-//! `map/<name>` set): a ladder (`ugg_new <seed> 13 <map>`) per map;
+//! published: its sprays come with its map's `map/<name>` set, its guns'
+//! effect materials and flashes with its `base`, on every map): a ladder (`ugg_new <seed> 13 <map>`) per map;
 //! once the client says its match started, every character on the server
 //! (the bots and the client's player) climbs the whole ladder, a rung every
 //! `RUNG_SECONDS`, so the client draws each rung's gun, body and parts,
@@ -28,7 +29,11 @@
 //! host's surprises follow (`SURPRISES`: an air strike, its siren,
 //! shells and explosions, then moon gravity). Any on-demand fetch the
 //! client logs during a match (`assets: fetched on demand during the match
-//! ...`) fails the test, listed with what covers it; so does any file the
+//! ...`) fails the test, listed with what covers it; so does any guns'
+//! effect file (`effect_file`: Source's effect materials, sprites,
+//! particles and decals, which a guest game's dressing loads on every map)
+//! fetched on demand at all, at a map's load too (the client's
+//! `CHIMERA_ASSET_FETCH_LOG`); so does any file the
 //! client's store lists but holds no record of (`asset miss`). Skipped with a note
 //! without the CS:S and Combat Arms installs, without a published store
 //! holding both games' manifests, or off Unix (the records are linked);
@@ -66,8 +71,9 @@ const SESSION: [(u64, &str); 3] = [
     (217_379, "cs_source:de_dust2"),
 ];
 /// HL2:DM's map, played last when its install and published manifest are
-/// there: a client without the install loads its effect materials, sprays
-/// and guns' flashes with the map, all of them in its `map/<name>` set.
+/// there: a client without the install loads its sprays with the map (its
+/// `map/<name>` set); its guns' effect materials and flashes it loads on
+/// every map, from its `base`.
 const HL2DM_MAP: (u64, &str) = (217_380, "hl2dm:dm_overwatch");
 /// The rungs' extras' seed (bodies, parts, melee).
 const RUNG_SEED: u64 = 4242;
@@ -178,13 +184,17 @@ impl Drop for Scratch {
 }
 
 /// A scratch store reading `published`'s records (linked) with copies of
-/// its manifests, which the scratch service signs again with its own key.
+/// its manifests, which the scratch service signs again with its own key;
+/// with `CHIMERA_GUARD_MANIFESTS=<store>`, that store's manifests instead
+/// (sets recorded into a copy of the published manifests, `chimera_pack
+/// sets <game> --store <copy>`, checked before they are published).
 #[cfg(unix)]
 fn scratch_store(published: &Store, dir: &Path) -> Store {
     let store = Store::new(dir.join("service"));
     std::fs::create_dir_all(&store.root).unwrap();
     std::os::unix::fs::symlink(published.root.join("records"), store.root.join("records")).unwrap();
-    for game in std::fs::read_dir(published.root.join("manifests")).unwrap().flatten() {
+    let manifests = std::env::var_os("CHIMERA_GUARD_MANIFESTS").map_or(published.root.clone(), PathBuf::from);
+    for game in std::fs::read_dir(manifests.join("manifests")).unwrap().flatten() {
         let to = store.root.join("manifests").join(game.file_name());
         std::fs::create_dir_all(&to).unwrap();
         for m in std::fs::read_dir(game.path()).unwrap().flatten() {
@@ -215,6 +225,15 @@ fn until(app: &mut App, client: &mut Client, limit: Duration, mut done: impl FnM
         step(app);
     }
     false
+}
+
+/// Whether `path` is one of a Source game's effect files (the effect
+/// materials, sprites and particles its guns draw, their impact decals).
+fn effect_file(path: &str) -> bool {
+    let p = path.to_ascii_lowercase();
+    ["materials/effects/", "materials/sprites/", "materials/particle/", "materials/decals/"]
+        .iter()
+        .any(|d| p.starts_with(d))
 }
 
 /// Every character with a rung on the server (bots and players).
@@ -385,6 +404,17 @@ fn run(published: &Store, session: &[(u64, &'static str)]) {
     }
     let all = lines.all();
     drop(client);
+    // The guns' effect files (HL2:DM's energy ball, flashes, streaks,
+    // sprites; CS:S's and HL2:DM's impact decals and debris) load with a
+    // map of any game, the guests' with their dressing (`dress_guest`):
+    // each game's `base` holds them, so none is fetched on demand, at a
+    // map's load or in a match.
+    let effects: Vec<String> = std::fs::read_to_string(home.join("fetch.log"))
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| effect_file(l.split(' ').nth(5).unwrap_or("")))
+        .map(String::from)
+        .collect();
     drop(app);
     drop(front);
     drop(running);
@@ -404,6 +434,13 @@ fn run(published: &Store, session: &[(u64, &'static str)]) {
         missed.iter().take(40).map(|l| format!("  {l}")).collect::<Vec<_>>().join("\n")
     );
     eprintln!("session took {:.0} s", started.elapsed().as_secs_f64());
+    assert!(
+        effects.is_empty(),
+        "{} guns' effect files fetched on demand (time, game, set, records, bytes, path); each game's `base` should \
+         hold them (`chimera_pack sets <game> --only base --store <server store> --sign`):\n{}",
+        effects.len(),
+        effects.iter().take(40).map(|l| format!("  {l}")).collect::<Vec<_>>().join("\n")
+    );
     assert!(
         fetched.is_empty(),
         "{} on-demand fetches while a match ran (each should come with the join's or level change's download):\n{}\n\

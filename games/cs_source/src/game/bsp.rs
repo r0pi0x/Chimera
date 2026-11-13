@@ -187,11 +187,15 @@ fn extra_particles(data: &MapData) -> (&'static [&'static str], &'static [&'stat
 
 /// What characters hold: the weapons' world models (held on the player
 /// skeleton; a mashup's kept ones take the body's bones without keeping
-/// the body), and with a whole kit the muzzle flash and the shells.
+/// the body), the muzzle flash with any of them (another game's gameplay
+/// keeps it with its kept guns: `GameKit::stay`) and with a whole kit the
+/// shells.
 fn held(k: &mut Kit) {
     add_guns(k.materials, k.surfaces, k.kit, &mut k.data.kit, &mut k.data.warnings);
-    if k.kit.parts() {
+    if k.kit.any_models() {
         k.data.kit.muzzle_flash = Some(super::view_anim::muzzle_flash(k.materials));
+    }
+    if k.kit.parts() {
         for (key, path, bounce) in super::view_anim::SHELLS {
             match super::props::load_shell(k.materials, path) {
                 Ok(model) => k.data.kit.shells.push(crate::map::shells::MapShell {
@@ -298,7 +302,9 @@ fn add_guns(
 /// a CS:S gun is CS:S's, `slots::GameIdentity`). The kit's textures are
 /// appended to the map's (`MaterialLoader::guest`: its indices begin past
 /// them), so the bodies and models are the same as CS:S's own maps give.
-/// The bodies go after the map's own. `lean`: the textures' sizes only
+/// The bodies go after the map's own. Its guns' looks come too: its
+/// impact decals and effect materials, and its muzzle flash on a map
+/// whose game brings none. `lean`: the textures' sizes only
 /// (`MaterialLoader::lean`: a load without textures, the dedicated server's).
 pub fn dress_guest(mount: &Mount, map: &mut MapData, kept: &'static [&'static str], lean: bool) {
     let (textures, cubemaps) = (map.textures.len(), map.cubemaps.len());
@@ -315,16 +321,7 @@ pub fn dress_guest(mount: &Mount, map: &mut MapData, kept: &'static [&'static st
     // gun fired on another game's map plays its own sound.
     let sounds = super::sound::load(&mut materials, "", &surfaces, &[]);
     add_guest_sounds(std::sync::Arc::make_mut(&mut map.sounds), sounds);
-    // CS:S's impacts (a CS:S gun's bullet holes, debris, sparks and
-    // impact sounds, `map::impact`): its impact decals and effect
-    // materials beside the map's own.
-    add_guest_decals(&mut map.kit.decals, super::decals::impact_decals(&mut materials));
-    for m in super::impact_effects::load_materials(&mut materials).materials {
-        if map.particles.find(&m.name).is_none() {
-            map.particles.materials.push(m);
-        }
-    }
-    map.impacts.add(super::GAME);
+    add_guest_looks(&mut materials, map);
     materials.finish_textures();
     warnings.extend(materials.missing);
     map.textures.extend(materials.textures.split_off(textures));
@@ -337,3 +334,22 @@ pub fn dress_guest(mount: &Mount, map: &mut MapData, kept: &'static [&'static st
     map.kit.add_guest_hud(guest.hud);
 }
 
+/// What CS:S's guns draw, onto another game's map (`dress_guest`): its
+/// impacts (a CS:S gun's bullet holes, debris, sparks and impact sounds,
+/// `map::impact`: its impact decals and effect materials beside the map's
+/// own, each the map lacks) and its muzzle flash (a Source view model's
+/// flash event names no kind: the kit's one) where the map's game brings
+/// none (HL2:DM's flashes are by kind, Combat Arms' its own effects):
+/// without it a CS:S gun flashed nothing there.
+pub fn add_guest_looks(materials: &mut MaterialLoader, map: &mut MapData) {
+    add_guest_decals(&mut map.kit.decals, super::decals::impact_decals(materials));
+    for m in super::impact_effects::load_materials(materials).materials {
+        if map.particles.find(&m.name).is_none() {
+            map.particles.materials.push(m);
+        }
+    }
+    map.impacts.add(super::GAME);
+    if map.kit.muzzle_flash.is_none() {
+        map.kit.muzzle_flash = Some(super::view_anim::muzzle_flash(materials));
+    }
+}
