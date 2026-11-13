@@ -30,6 +30,11 @@
 //! thread"); the result is the same (`FloodQueries`: the same queries on
 //! the live world or the copy).
 //!
+//! The walker meets what characters' movement meets (`NavGenParams::mask`,
+//! `core::CHARACTER_FILTER`): a Source map's player clips too, through
+//! their players-only collider (`core::MapPlayerClips`); it may stand off
+//! a cell's centre to fit (`NavGenParams::slide`).
+//!
 //! Known shortcuts: no ladders, jumps, crouch-only areas, hiding spots or
 //! visibility data; cells are tested at their centres only (a wall
 //! thinner than a cell between two cell centres is found by the sweep,
@@ -81,6 +86,14 @@ pub struct NavGenParams {
     /// e.g. `core::CHARACTER_FILTER`: players-only clips but not
     /// traces-only surfaces).
     pub mask: LayerMask,
+    /// How far off a cell's centre (m, along each axis) the walker's box
+    /// may stand to fit: a doorway a cell's width narrower than the box
+    /// is otherwise missed when the grid's centres fall off its middle
+    /// (Combat Arms' warehouse kept a walking player in its two spawn
+    /// rooms). Up to `radius / 2`, so the box `passes` sweeps from the
+    /// centre (half the walker's width) is inside one that fits (0:
+    /// centres only).
+    pub slide: f32,
 }
 
 impl Default for NavGenParams {
@@ -95,12 +108,13 @@ impl Default for NavGenParams {
             max_cells: 300_000,
             max_area: 8,
             mask: crate::core::CHARACTER_FILTER,
+            slide: 0.0,
         }
     }
 }
 
-/// A walking player: the default step and height, a little wider than a
-/// CS:S player (radius 0.4 m), walks off drops up to 3 m; no jumps.
+/// A walking player: the default step and height, about a CS:S player's
+/// width (radius 0.4 m), walks off drops up to 3 m; no jumps.
 pub fn walking_player() -> NavGenParams {
     NavGenParams {
         radius: 0.4,
@@ -308,7 +322,13 @@ impl Grid<'_> {
         let (x, z) = self.centre(ix, iz);
         let half = (self.p.height - self.p.step) * 0.5;
         let shape = Collider::cuboid(self.p.radius * 2.0, half * 2.0, self.p.radius * 2.0);
-        !self.q.overlaps(&shape, Vec3::new(x, y + self.p.step + half, z), &self.filter, self.ignore)
+        let s = self.p.slide;
+        let fits = |dx: f32, dz: f32| !self.q.overlaps(&shape, Vec3::new(x + dx, y + self.p.step + half, z + dz), &self.filter, self.ignore);
+        fits(0.0, 0.0)
+            || (s > 0.0
+                && [(s, 0.0), (-s, 0.0), (0.0, s), (0.0, -s), (s, s), (-s, s), (s, -s), (-s, -s)]
+                    .iter()
+                    .any(|(dx, dz)| fits(*dx, *dz)))
     }
 
     /// Whether a walker passes from one column's floor `y` to the next

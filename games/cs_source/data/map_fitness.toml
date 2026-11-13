@@ -10,19 +10,19 @@ speed_mps = 6.35
 [maps.bhop_addict_v2_3xl]
 area_m2 = 2185
 sight_m = 21.9
-spot_area_m2 = 2146
+spot_area_m2 = 2186
 spawns = 13
-spots = 1316
+spots = 1200
 spots_off = 0
-stuck = 1
+stuck = 0
 wander_s = { 4 = 2.1, 8 = 0.9, 12 = 0.6 }
 
 [maps.bhop_backport_css]
 area_m2 = 72
 sight_m = 10.0
-spot_area_m2 = 72
+spot_area_m2 = 82
 spawns = 15
-spots = 36
+spots = 44
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.1, 8 = 0.1, 12 = 0.0 }
@@ -30,9 +30,9 @@ wander_s = { 4 = 0.1, 8 = 0.1, 12 = 0.0 }
 [maps.bhop_flatzone]
 area_m2 = 1334
 sight_m = 17.5
-spot_area_m2 = 1319
+spot_area_m2 = 1334
 spawns = 22
-spots = 736
+spots = 739
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 1.6, 8 = 0.7, 12 = 0.4 }
@@ -49,271 +49,271 @@ stuck = 0
 wander_s = { 4 = 0.0, 8 = 0.0, 12 = 0.0 }
 
 [maps.cs_assault]
-area_m2 = 4484
-sight_m = 14.4
-spot_area_m2 = 4257
+area_m2 = 4412
+sight_m = 14.7
+spot_area_m2 = 4528
 spawns = 40
-spots = 2608
+spots = 2950
 spots_off = 0
-stuck = 7
-wander_s = { 4 = 6.4, 8 = 2.7, 12 = 1.7 }
+stuck = 0
+wander_s = { 4 = 6.2, 8 = 2.7, 12 = 1.7 }
 
 [maps.cs_compound]
-area_m2 = 7649
-sight_m = 14.2
-spot_area_m2 = 7324
+area_m2 = 7638
+sight_m = 14.4
+spot_area_m2 = 7857
 spawns = 32
-spots = 7109
-spots_off = 2
-stuck = 13
-wander_s = { 4 = 11.1, 8 = 4.8, 12 = 3.0 }
+spots = 3605
+spots_off = 0
+stuck = 0
+wander_s = { 4 = 10.9, 8 = 4.7, 12 = 3.0 }
 
 [maps.cs_havana]
-area_m2 = 5228
-sight_m = 9.0
-spot_area_m2 = 4577
+area_m2 = 4258
+sight_m = 7.8
+spot_area_m2 = 4445
 spawns = 40
-spots = 2811
-spots_off = 341
-stuck = 7
-wander_s = { 4 = 12.0, 8 = 5.1, 12 = 3.3 }
+spots = 1917
+spots_off = 0
+stuck = 0
+wander_s = { 4 = 11.2, 8 = 4.8, 12 = 3.1 }
 
 [maps.cs_italy]
-area_m2 = 3227
+area_m2 = 3244
 sight_m = 7.2
-spot_area_m2 = 2939
+spot_area_m2 = 3412
 spawns = 40
-spots = 1817
-spots_off = 1
-stuck = 10
-wander_s = { 4 = 9.3, 8 = 4.0, 12 = 2.5 }
+spots = 1621
+spots_off = 0
+stuck = 0
+wander_s = { 4 = 9.2, 8 = 4.0, 12 = 2.5 }
 
 [maps.cs_militia]
-area_m2 = 31564
-sight_m = 20.8
-spot_area_m2 = 30089
+area_m2 = 4676
+sight_m = 10.8
+spot_area_m2 = 4810
 spawns = 32
-spots = 24827
-spots_off = 22061
-stuck = 32
-wander_s = { 4 = 31.2, 8 = 13.4, 12 = 8.5 }
+spots = 2739
+spots_off = 0
+stuck = 0
+wander_s = { 4 = 8.9, 8 = 3.8, 12 = 2.4 }
 
 [maps.cs_office]
-area_m2 = 3966
+area_m2 = 3994
 sight_m = 7.8
-spot_area_m2 = 3626
+spot_area_m2 = 4120
 spawns = 40
-spots = 2514
-spots_off = 1
-stuck = 9
+spots = 1771
+spots_off = 0
+stuck = 0
 wander_s = { 4 = 10.5, 8 = 4.5, 12 = 2.9 }
 
 [maps.de_aztec]
-area_m2 = 6116
-sight_m = 11.6
-spot_area_m2 = 5778
+area_m2 = 6122
+sight_m = 11.7
+spot_area_m2 = 6281
 spawns = 40
-spots = 3389
+spots = 2521
 spots_off = 0
-stuck = 6
-wander_s = { 4 = 10.9, 8 = 4.7, 12 = 3.0 }
-
-[maps.de_cbble]
-area_m2 = 6501
-sight_m = 10.5
-spot_area_m2 = 6202
-spawns = 40
-spots = 3940
-spots_off = 1
-stuck = 9
-wander_s = { 4 = 12.8, 8 = 5.5, 12 = 3.5 }
-
-[maps.de_chateau]
-area_m2 = 4218
-sight_m = 6.9
-spot_area_m2 = 3824
-spawns = 40
-spots = 2498
-spots_off = 17
-stuck = 15
-wander_s = { 4 = 12.7, 8 = 5.4, 12 = 3.5 }
-
-[maps.de_dust]
-area_m2 = 5671
-sight_m = 11.2
-spot_area_m2 = 5273
-spawns = 41
-spots = 3335
-spots_off = 0
-stuck = 9
-wander_s = { 4 = 10.5, 8 = 4.5, 12 = 2.9 }
-
-[maps.de_dust2]
-area_m2 = 4876
-sight_m = 10.5
-spot_area_m2 = 4563
-spawns = 40
-spots = 3328
-spots_off = 0
-stuck = 9
-wander_s = { 4 = 9.5, 8 = 4.1, 12 = 2.6 }
-
-[maps.de_inferno]
-area_m2 = 3842
-sight_m = 7.4
-spot_area_m2 = 3306
-spawns = 40
-spots = 2127
-spots_off = 0
-stuck = 5
+stuck = 0
 wander_s = { 4 = 10.8, 8 = 4.6, 12 = 2.9 }
 
-[maps.de_nuke]
-area_m2 = 5345
-sight_m = 8.5
-spot_area_m2 = 4639
+[maps.de_cbble]
+area_m2 = 6508
+sight_m = 10.7
+spot_area_m2 = 6728
 spawns = 40
-spots = 3036
+spots = 3080
 spots_off = 0
-stuck = 8
-wander_s = { 4 = 12.9, 8 = 5.5, 12 = 3.5 }
+stuck = 0
+wander_s = { 4 = 12.5, 8 = 5.4, 12 = 3.4 }
+
+[maps.de_chateau]
+area_m2 = 4206
+sight_m = 6.8
+spot_area_m2 = 4323
+spawns = 40
+spots = 1676
+spots_off = 0
+stuck = 0
+wander_s = { 4 = 12.8, 8 = 5.5, 12 = 3.5 }
+
+[maps.de_dust]
+area_m2 = 5944
+sight_m = 11.7
+spot_area_m2 = 6160
+spawns = 41
+spots = 2583
+spots_off = 0
+stuck = 0
+wander_s = { 4 = 10.4, 8 = 4.5, 12 = 2.8 }
+
+[maps.de_dust2]
+area_m2 = 4894
+sight_m = 10.4
+spot_area_m2 = 5116
+spawns = 40
+spots = 2205
+spots_off = 0
+stuck = 0
+wander_s = { 4 = 9.7, 8 = 4.1, 12 = 2.6 }
+
+[maps.de_inferno]
+area_m2 = 3991
+sight_m = 7.1
+spot_area_m2 = 4188
+spawns = 40
+spots = 2125
+spots_off = 0
+stuck = 0
+wander_s = { 4 = 11.7, 8 = 5.0, 12 = 3.2 }
+
+[maps.de_nuke]
+area_m2 = 5286
+sight_m = 8.8
+spot_area_m2 = 5466
+spawns = 40
+spots = 3063
+spots_off = 0
+stuck = 0
+wander_s = { 4 = 12.4, 8 = 5.3, 12 = 3.4 }
 
 [maps.de_piranesi]
-area_m2 = 5289
+area_m2 = 5286
 sight_m = 9.4
-spot_area_m2 = 4847
+spot_area_m2 = 5496
 spawns = 40
-spots = 3598
-spots_off = 1
-stuck = 17
+spots = 2449
+spots_off = 0
+stuck = 0
 wander_s = { 4 = 11.6, 8 = 5.0, 12 = 3.2 }
 
 [maps.de_port]
-area_m2 = 10300
+area_m2 = 10262
 sight_m = 18.7
-spot_area_m2 = 9311
+spot_area_m2 = 10490
 spawns = 40
-spots = 6490
-spots_off = 7
-stuck = 17
-wander_s = { 4 = 11.3, 8 = 4.9, 12 = 3.1 }
+spots = 5579
+spots_off = 0
+stuck = 0
+wander_s = { 4 = 11.3, 8 = 4.8, 12 = 3.1 }
 
 [maps.de_prodigy]
-area_m2 = 2142
+area_m2 = 2160
 sight_m = 5.6
-spot_area_m2 = 1902
+spot_area_m2 = 2234
 spawns = 40
-spots = 1281
+spots = 1173
 spots_off = 0
-stuck = 7
+stuck = 0
 wander_s = { 4 = 7.9, 8 = 3.4, 12 = 2.2 }
 
 [maps.de_tides]
-area_m2 = 2438
-sight_m = 7.3
-spot_area_m2 = 2191
+area_m2 = 2449
+sight_m = 7.5
+spot_area_m2 = 2540
 spawns = 40
-spots = 1505
-spots_off = 1
-stuck = 9
-wander_s = { 4 = 6.9, 8 = 2.9, 12 = 1.9 }
+spots = 1033
+spots_off = 0
+stuck = 0
+wander_s = { 4 = 6.8, 8 = 2.9, 12 = 1.8 }
 
 [maps.de_train]
-area_m2 = 3128
-sight_m = 7.4
-spot_area_m2 = 2851
+area_m2 = 3598
+sight_m = 7.1
+spot_area_m2 = 3755
 spawns = 40
-spots = 1712
+spots = 1850
 spots_off = 0
-stuck = 3
-wander_s = { 4 = 8.7, 8 = 3.7, 12 = 2.4 }
+stuck = 0
+wander_s = { 4 = 10.5, 8 = 4.5, 12 = 2.9 }
 
 [maps.gg_4mida_arena]
-area_m2 = 1451
+area_m2 = 1453
 sight_m = 8.8
-spot_area_m2 = 1364
+spot_area_m2 = 1497
 spawns = 42
-spots = 1024
+spots = 1185
 spots_off = 0
-stuck = 3
+stuck = 0
 wander_s = { 4 = 3.4, 8 = 1.5, 12 = 0.9 }
 
 [maps.gg_beacon]
 area_m2 = 1736
 sight_m = 8.1
-spot_area_m2 = 1344
+spot_area_m2 = 1809
 spawns = 32
-spots = 853
+spots = 1078
 spots_off = 0
-stuck = 4
+stuck = 0
 wander_s = { 4 = 4.4, 8 = 1.9, 12 = 1.2 }
 
 [maps.gg_bk_warehouse_v1]
 area_m2 = 1591
 sight_m = 7.3
-spot_area_m2 = 1501
+spot_area_m2 = 1704
 spawns = 24
-spots = 878
+spots = 985
 spots_off = 0
-stuck = 4
+stuck = 0
 wander_s = { 4 = 4.5, 8 = 1.9, 12 = 1.2 }
 
 [maps.gg_blue_arena_32a]
 area_m2 = 984
 sight_m = 7.9
-spot_area_m2 = 934
+spot_area_m2 = 1032
 spawns = 36
-spots = 695
+spots = 626
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 2.6, 8 = 1.1, 12 = 0.7 }
 
 [maps.gg_cb_arctic]
-area_m2 = 972
-sight_m = 9.1
-spot_area_m2 = 900
+area_m2 = 959
+sight_m = 9.0
+spot_area_m2 = 994
 spawns = 32
-spots = 740
+spots = 758
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 2.2, 8 = 0.9, 12 = 0.6 }
 
 [maps.gg_churches_x_final_fixed]
-area_m2 = 1348
-sight_m = 7.4
-spot_area_m2 = 1238
+area_m2 = 1361
+sight_m = 7.3
+spot_area_m2 = 1416
 spawns = 32
-spots = 703
+spots = 808
 spots_off = 0
-stuck = 3
+stuck = 0
 wander_s = { 4 = 3.8, 8 = 1.6, 12 = 1.0 }
 
 [maps.gg_construct_city]
 area_m2 = 1064
 sight_m = 6.8
-spot_area_m2 = 966
+spot_area_m2 = 1090
 spawns = 48
-spots = 622
+spots = 613
 spots_off = 0
-stuck = 1
+stuck = 0
 wander_s = { 4 = 3.2, 8 = 1.4, 12 = 0.9 }
 
 [maps.gg_deagle7k]
-area_m2 = 1678
-sight_m = 8.0
-spot_area_m2 = 1549
+area_m2 = 1680
+sight_m = 7.9
+spot_area_m2 = 1731
 spawns = 44
-spots = 916
+spots = 927
 spots_off = 0
-stuck = 1
-wander_s = { 4 = 4.3, 8 = 1.9, 12 = 1.2 }
+stuck = 0
+wander_s = { 4 = 4.4, 8 = 1.9, 12 = 1.2 }
 
 [maps.gg_desert_paintball]
 area_m2 = 1440
 sight_m = 9.6
-spot_area_m2 = 1386
+spot_area_m2 = 1465
 spawns = 88
-spots = 711
+spots = 847
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 3.1, 8 = 1.3, 12 = 0.8 }
@@ -321,9 +321,9 @@ wander_s = { 4 = 3.1, 8 = 1.3, 12 = 0.8 }
 [maps.gg_dev_moment_v1]
 area_m2 = 833
 sight_m = 7.3
-spot_area_m2 = 801
+spot_area_m2 = 921
 spawns = 40
-spots = 446
+spots = 469
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 2.4, 8 = 1.0, 12 = 0.6 }
@@ -331,59 +331,59 @@ wander_s = { 4 = 2.4, 8 = 1.0, 12 = 0.6 }
 [maps.gg_dinoiceworld]
 area_m2 = 1236
 sight_m = 7.8
-spot_area_m2 = 1097
+spot_area_m2 = 1246
 spawns = 32
-spots = 761
+spots = 924
 spots_off = 0
-stuck = 3
+stuck = 0
 wander_s = { 4 = 3.3, 8 = 1.4, 12 = 0.9 }
 
 [maps.gg_fusion_trx]
-area_m2 = 1041
+area_m2 = 1058
 sight_m = 9.2
-spot_area_m2 = 1018
+spot_area_m2 = 1081
 spawns = 28
-spots = 562
+spots = 418
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 2.3, 8 = 1.0, 12 = 0.6 }
+wander_s = { 4 = 2.4, 8 = 1.0, 12 = 0.6 }
 
 [maps.gg_future]
 area_m2 = 2158
 sight_m = 11.4
-spot_area_m2 = 2010
+spot_area_m2 = 2183
 spawns = 56
-spots = 1461
+spots = 1495
 spots_off = 0
-stuck = 4
+stuck = 0
 wander_s = { 4 = 3.9, 8 = 1.7, 12 = 1.1 }
 
 [maps.gg_fy_funtimes]
 area_m2 = 1596
 sight_m = 9.5
-spot_area_m2 = 1490
+spot_area_m2 = 1649
 spawns = 32
-spots = 815
+spots = 909
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 3.5, 8 = 1.5, 12 = 0.9 }
 
 [maps.gg_fy_tactic_fight]
-area_m2 = 1782
-sight_m = 10.8
-spot_area_m2 = 1672
+area_m2 = 1786
+sight_m = 11.1
+spot_area_m2 = 1864
 spawns = 32
-spots = 1089
+spots = 793
 spots_off = 0
-stuck = 1
-wander_s = { 4 = 3.4, 8 = 1.5, 12 = 0.9 }
+stuck = 0
+wander_s = { 4 = 3.3, 8 = 1.4, 12 = 0.9 }
 
 [maps.gg_hex]
-area_m2 = 814
+area_m2 = 815
 sight_m = 6.6
-spot_area_m2 = 758
+spot_area_m2 = 853
 spawns = 24
-spots = 629
+spots = 619
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 2.6, 8 = 1.1, 12 = 0.7 }
@@ -391,29 +391,29 @@ wander_s = { 4 = 2.6, 8 = 1.1, 12 = 0.7 }
 [maps.gg_iceworld_l33t]
 area_m2 = 1326
 sight_m = 9.4
-spot_area_m2 = 1206
+spot_area_m2 = 1392
 spawns = 24
-spots = 970
+spots = 938
 spots_off = 0
-stuck = 2
+stuck = 0
 wander_s = { 4 = 2.9, 8 = 1.2, 12 = 0.8 }
 
 [maps.gg_ilu]
-area_m2 = 1092
-sight_m = 6.9
-spot_area_m2 = 1028
+area_m2 = 1100
+sight_m = 7.0
+spot_area_m2 = 1141
 spawns = 40
-spots = 720
+spots = 700
 spots_off = 0
-stuck = 5
-wander_s = { 4 = 3.3, 8 = 1.4, 12 = 0.9 }
+stuck = 0
+wander_s = { 4 = 3.2, 8 = 1.4, 12 = 0.9 }
 
 [maps.gg_legendary_fun_v1a]
 area_m2 = 1069
 sight_m = 7.8
-spot_area_m2 = 1031
+spot_area_m2 = 1100
 spawns = 32
-spots = 558
+spots = 622
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 2.8, 8 = 1.2, 12 = 0.8 }
@@ -421,49 +421,49 @@ wander_s = { 4 = 2.8, 8 = 1.2, 12 = 0.8 }
 [maps.gg_lego_2floor_v2]
 area_m2 = 2330
 sight_m = 11.2
-spot_area_m2 = 2232
+spot_area_m2 = 2412
 spawns = 32
-spots = 1118
+spots = 1317
 spots_off = 0
-stuck = 1
+stuck = 0
 wander_s = { 4 = 4.3, 8 = 1.8, 12 = 1.2 }
 
 [maps.gg_lego_mafia_arena]
 area_m2 = 1502
 sight_m = 8.5
-spot_area_m2 = 1356
+spot_area_m2 = 1603
 spawns = 32
-spots = 900
+spots = 946
 spots_off = 0
-stuck = 13
+stuck = 0
 wander_s = { 4 = 3.7, 8 = 1.6, 12 = 1.0 }
 
 [maps.gg_lego_spacetower2]
 area_m2 = 1408
 sight_m = 17.5
-spot_area_m2 = 652
+spot_area_m2 = 1419
 spawns = 90
-spots = 466
+spots = 1187
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 1.7, 8 = 0.7, 12 = 0.5 }
 
 [maps.gg_mario_vs_wario]
-area_m2 = 1890
+area_m2 = 1898
 sight_m = 8.8
-spot_area_m2 = 1813
+spot_area_m2 = 1902
 spawns = 40
-spots = 1023
+spots = 1038
 spots_off = 0
-stuck = 3
-wander_s = { 4 = 4.4, 8 = 1.9, 12 = 1.2 }
+stuck = 0
+wander_s = { 4 = 4.5, 8 = 1.9, 12 = 1.2 }
 
 [maps.gg_mario_world_2]
 area_m2 = 2661
 sight_m = 13.7
-spot_area_m2 = 2573
+spot_area_m2 = 2680
 spawns = 56
-spots = 1356
+spots = 1538
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 4.0, 8 = 1.7, 12 = 1.1 }
@@ -471,159 +471,159 @@ wander_s = { 4 = 4.0, 8 = 1.7, 12 = 1.1 }
 [maps.gg_minesweeper]
 area_m2 = 1200
 sight_m = 7.0
-spot_area_m2 = 1115
+spot_area_m2 = 1222
 spawns = 32
-spots = 577
+spots = 661
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 3.5, 8 = 1.5, 12 = 1.0 }
 
 [maps.gg_mr_pillar_v1]
-area_m2 = 238
-sight_m = 6.0
-spot_area_m2 = 184
+area_m2 = 842
+sight_m = 7.0
+spot_area_m2 = 861
 spawns = 40
-spots = 53
+spots = 586
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 0.8, 8 = 0.3, 12 = 0.2 }
+wander_s = { 4 = 2.5, 8 = 1.1, 12 = 0.7 }
 
 [maps.gg_nukkon_hdr]
 area_m2 = 1067
 sight_m = 7.6
-spot_area_m2 = 1010
+spot_area_m2 = 1128
 spawns = 36
-spots = 727
+spots = 761
 spots_off = 0
-stuck = 3
+stuck = 0
 wander_s = { 4 = 2.9, 8 = 1.2, 12 = 0.8 }
 
 [maps.gg_nutty]
-area_m2 = 1240
-sight_m = 8.0
-spot_area_m2 = 1154
+area_m2 = 1276
+sight_m = 8.7
+spot_area_m2 = 1335
 spawns = 32
-spots = 849
+spots = 949
 spots_off = 0
-stuck = 1
-wander_s = { 4 = 3.2, 8 = 1.4, 12 = 0.9 }
+stuck = 0
+wander_s = { 4 = 3.0, 8 = 1.3, 12 = 0.8 }
 
 [maps.gg_pokemonz]
-area_m2 = 1165
+area_m2 = 1168
 sight_m = 7.1
-spot_area_m2 = 1095
+spot_area_m2 = 1234
 spawns = 102
-spots = 603
+spots = 672
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 3.4, 8 = 1.4, 12 = 0.9 }
 
 [maps.gg_sex_fix]
-area_m2 = 894
+area_m2 = 895
 sight_m = 6.5
-spot_area_m2 = 852
+spot_area_m2 = 971
 spawns = 60
-spots = 514
+spots = 557
 spots_off = 0
-stuck = 1
+stuck = 0
 wander_s = { 4 = 2.8, 8 = 1.2, 12 = 0.8 }
 
 [maps.gg_simpsons_arabtoon]
-area_m2 = 460
-sight_m = 5.1
-spot_area_m2 = 412
+area_m2 = 412
+sight_m = 5.0
+spot_area_m2 = 430
 spawns = 50
-spots = 219
-spots_off = 0
-stuck = 3
-wander_s = { 4 = 1.9, 8 = 0.8, 12 = 0.5 }
-
-[maps.gg_simpsons_bam]
-area_m2 = 1024
-sight_m = 9.8
-spot_area_m2 = 880
-spawns = 48
-spots = 508
+spots = 246
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 2.1, 8 = 0.9, 12 = 0.6 }
+wander_s = { 4 = 1.7, 8 = 0.7, 12 = 0.5 }
+
+[maps.gg_simpsons_bam]
+area_m2 = 1031
+sight_m = 9.7
+spot_area_m2 = 1095
+spawns = 48
+spots = 649
+spots_off = 0
+stuck = 0
+wander_s = { 4 = 2.2, 8 = 0.9, 12 = 0.6 }
 
 [maps.gg_simpsons_d]
 area_m2 = 817
 sight_m = 5.7
-spot_area_m2 = 748
+spot_area_m2 = 845
 spawns = 40
-spots = 373
+spots = 405
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 2.9, 8 = 1.3, 12 = 0.8 }
 
 [maps.gg_simpsons_dusty_2]
-area_m2 = 825
-sight_m = 8.6
-spot_area_m2 = 606
+area_m2 = 824
+sight_m = 8.7
+spot_area_m2 = 848
 spawns = 24
-spots = 379
+spots = 491
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 2.0, 8 = 0.8, 12 = 0.5 }
 
 [maps.gg_simpsons_funfreaks_v2]
-area_m2 = 802
-sight_m = 8.6
-spot_area_m2 = 759
+area_m2 = 808
+sight_m = 8.7
+spot_area_m2 = 858
 spawns = 68
-spots = 500
+spots = 523
 spots_off = 0
-stuck = 1
+stuck = 0
 wander_s = { 4 = 1.9, 8 = 0.8, 12 = 0.5 }
 
 [maps.gg_spacoid_pg]
 area_m2 = 1314
 sight_m = 7.9
-spot_area_m2 = 1178
+spot_area_m2 = 1371
 spawns = 32
-spots = 684
+spots = 830
 spots_off = 0
-stuck = 1
+stuck = 0
 wander_s = { 4 = 3.4, 8 = 1.5, 12 = 0.9 }
 
 [maps.gg_tbr_water_basin]
-area_m2 = 721
+area_m2 = 728
 sight_m = 5.7
-spot_area_m2 = 652
+spot_area_m2 = 766
 spawns = 31
-spots = 556
+spots = 588
 spots_off = 0
-stuck = 1
+stuck = 0
 wander_s = { 4 = 2.6, 8 = 1.1, 12 = 0.7 }
 
 [maps.gg_tip_octal]
-area_m2 = 1354
+area_m2 = 1356
 sight_m = 9.0
-spot_area_m2 = 1271
+spot_area_m2 = 1380
 spawns = 40
-spots = 946
+spots = 990
 spots_off = 0
-stuck = 1
+stuck = 0
 wander_s = { 4 = 3.1, 8 = 1.3, 12 = 0.8 }
 
 [maps.gg_toondorf]
-area_m2 = 920
+area_m2 = 921
 sight_m = 6.7
-spot_area_m2 = 856
+spot_area_m2 = 958
 spawns = 42
-spots = 521
+spots = 549
 spots_off = 0
-stuck = 2
+stuck = 0
 wander_s = { 4 = 2.8, 8 = 1.2, 12 = 0.8 }
 
 [maps.gg_towerwars_v2]
 area_m2 = 674
 sight_m = 6.2
-spot_area_m2 = 622
+spot_area_m2 = 700
 spawns = 32
-spots = 378
+spots = 395
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 2.2, 8 = 1.0, 12 = 0.6 }
@@ -631,9 +631,9 @@ wander_s = { 4 = 2.2, 8 = 1.0, 12 = 0.6 }
 [maps.gg_usp_deagle]
 area_m2 = 1268
 sight_m = 7.9
-spot_area_m2 = 1188
+spot_area_m2 = 1365
 spawns = 23
-spots = 641
+spots = 728
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 3.3, 8 = 1.4, 12 = 0.9 }
@@ -641,9 +641,9 @@ wander_s = { 4 = 3.3, 8 = 1.4, 12 = 0.9 }
 [maps.gg_wolfenstein_3d]
 area_m2 = 1058
 sight_m = 8.9
-spot_area_m2 = 1053
+spot_area_m2 = 1094
 spawns = 24
-spots = 568
+spots = 612
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 2.4, 8 = 1.0, 12 = 0.7 }
@@ -651,9 +651,9 @@ wander_s = { 4 = 2.4, 8 = 1.0, 12 = 0.7 }
 [maps.kz_11342]
 area_m2 = 38
 sight_m = 3.3
-spot_area_m2 = 32
+spot_area_m2 = 38
 spawns = 50
-spots = 18
+spots = 25
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.2, 8 = 0.1, 12 = 0.1 }
@@ -661,29 +661,29 @@ wander_s = { 4 = 0.2, 8 = 0.1, 12 = 0.1 }
 [maps.kz_ancient_ruins]
 area_m2 = 2054
 sight_m = 14.1
-spot_area_m2 = 1928
+spot_area_m2 = 2070
 spawns = 5
-spots = 1040
+spots = 870
 spots_off = 0
-stuck = 3
+stuck = 0
 wander_s = { 4 = 3.0, 8 = 1.3, 12 = 0.8 }
 
 [maps.kz_bhop_izanami]
-area_m2 = 7868
-sight_m = 21.4
-spot_area_m2 = 5933
+area_m2 = 8232
+sight_m = 20.7
+spot_area_m2 = 8317
 spawns = 2
-spots = 3059
+spots = 4244
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 7.6, 8 = 3.2, 12 = 2.1 }
+wander_s = { 4 = 8.2, 8 = 3.5, 12 = 2.2 }
 
 [maps.kz_bhop_sakura]
 area_m2 = 158
 sight_m = 6.2
-spot_area_m2 = 142
+spot_area_m2 = 157
 spawns = 6
-spots = 90
+spots = 87
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.5, 8 = 0.2, 12 = 0.1 }
@@ -691,29 +691,29 @@ wander_s = { 4 = 0.5, 8 = 0.2, 12 = 0.1 }
 [maps.kz_bhop_skodna]
 area_m2 = 1299
 sight_m = 29.1
-spot_area_m2 = 1280
+spot_area_m2 = 1310
 spawns = 7
-spots = 742
+spots = 743
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.9, 8 = 0.4, 12 = 0.3 }
 
 [maps.kz_hikari_od_nh_v2]
-area_m2 = 5372
-sight_m = 24.9
-spot_area_m2 = 54
+area_m2 = 4380
+sight_m = 25.0
+spot_area_m2 = 4450
 spawns = 10
-spots = 38
+spots = 3228
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 4.5, 8 = 1.9, 12 = 1.2 }
+wander_s = { 4 = 3.6, 8 = 1.5, 12 = 1.0 }
 
 [maps.kz_rockb1ock]
 area_m2 = 283
 sight_m = 7.5
-spot_area_m2 = 276
+spot_area_m2 = 323
 spawns = 32
-spots = 149
+spots = 187
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.8, 8 = 0.3, 12 = 0.2 }
@@ -721,9 +721,9 @@ wander_s = { 4 = 0.8, 8 = 0.3, 12 = 0.2 }
 [maps.mg_3k_smash_lego_copter]
 area_m2 = 1993
 sight_m = 43.4
-spot_area_m2 = 1977
+spot_area_m2 = 2000
 spawns = 40
-spots = 1029
+spots = 1161
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.9, 8 = 0.4, 12 = 0.3 }
@@ -731,9 +731,9 @@ wander_s = { 4 = 0.9, 8 = 0.4, 12 = 0.3 }
 [maps.mg_boatrace_scramble]
 area_m2 = 900
 sight_m = 23.7
-spot_area_m2 = 880
+spot_area_m2 = 902
 spawns = 20
-spots = 610
+spots = 706
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.8, 8 = 0.3, 12 = 0.2 }
@@ -741,19 +741,19 @@ wander_s = { 4 = 0.8, 8 = 0.3, 12 = 0.2 }
 [maps.mg_crazykart_v1_1]
 area_m2 = 1940
 sight_m = 20.3
-spot_area_m2 = 1908
+spot_area_m2 = 1940
 spawns = 32
-spots = 1065
+spots = 1057
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 2.0, 8 = 0.8, 12 = 0.5 }
 
 [maps.mg_creative_multigames_v8_ns]
-area_m2 = 1486
-sight_m = 16.2
-spot_area_m2 = 1458
+area_m2 = 1476
+sight_m = 16.1
+spot_area_m2 = 1507
 spawns = 64
-spots = 831
+spots = 866
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 1.9, 8 = 0.8, 12 = 0.5 }
@@ -761,7 +761,7 @@ wander_s = { 4 = 1.9, 8 = 0.8, 12 = 0.5 }
 [maps.mg_escape_prison_beta]
 area_m2 = 798
 sight_m = 13.9
-spot_area_m2 = 784
+spot_area_m2 = 798
 spawns = 64
 spots = 441
 spots_off = 0
@@ -769,21 +769,21 @@ stuck = 0
 wander_s = { 4 = 1.2, 8 = 0.5, 12 = 0.3 }
 
 [maps.mg_item_battle_v4b]
-area_m2 = 12998
-sight_m = 23.2
-spot_area_m2 = 12670
+area_m2 = 13000
+sight_m = 23.3
+spot_area_m2 = 13168
 spawns = 32
-spots = 7963
+spots = 8420
 spots_off = 0
-stuck = 3
+stuck = 0
 wander_s = { 4 = 11.5, 8 = 4.9, 12 = 3.1 }
 
 [maps.mg_jacks_multigames_v1]
 area_m2 = 612
 sight_m = 8.7
-spot_area_m2 = 600
+spot_area_m2 = 650
 spawns = 55
-spots = 342
+spots = 356
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 1.4, 8 = 0.6, 12 = 0.4 }
@@ -791,19 +791,19 @@ wander_s = { 4 = 1.4, 8 = 0.6, 12 = 0.4 }
 [maps.mg_kommando]
 area_m2 = 2832
 sight_m = 33.8
-spot_area_m2 = 2595
+spot_area_m2 = 2875
 spawns = 32
-spots = 1871
+spots = 2079
 spots_off = 0
-stuck = 2
+stuck = 0
 wander_s = { 4 = 1.7, 8 = 0.7, 12 = 0.5 }
 
 [maps.mg_lego_course]
 area_m2 = 108
 sight_m = 5.5
-spot_area_m2 = 108
+spot_area_m2 = 112
 spawns = 72
-spots = 48
+spots = 52
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.4, 8 = 0.2, 12 = 0.1 }
@@ -811,29 +811,29 @@ wander_s = { 4 = 0.4, 8 = 0.2, 12 = 0.1 }
 [maps.mg_lego_multigames_v2]
 area_m2 = 2542
 sight_m = 22.4
-spot_area_m2 = 2516
+spot_area_m2 = 2557
 spawns = 65
-spots = 1396
+spots = 1410
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 2.3, 8 = 1.0, 12 = 0.6 }
 
 [maps.mg_lt_galaxy_v5]
-area_m2 = 1542
-sight_m = 19.5
-spot_area_m2 = 1537
+area_m2 = 1098
+sight_m = 20.3
+spot_area_m2 = 1110
 spawns = 64
-spots = 1291
+spots = 1019
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 1.6, 8 = 0.7, 12 = 0.4 }
+wander_s = { 4 = 1.1, 8 = 0.5, 12 = 0.3 }
 
 [maps.mg_n64_goldeneye_v2]
-area_m2 = 244
+area_m2 = 245
 sight_m = 5.8
-spot_area_m2 = 220
+spot_area_m2 = 251
 spawns = 40
-spots = 123
+spots = 127
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.9, 8 = 0.4, 12 = 0.2 }
@@ -841,7 +841,7 @@ wander_s = { 4 = 0.9, 8 = 0.4, 12 = 0.2 }
 [maps.mg_randomizer_v5]
 area_m2 = 122
 sight_m = 5.7
-spot_area_m2 = 112
+spot_area_m2 = 128
 spawns = 50
 spots = 70
 spots_off = 0
@@ -849,101 +849,101 @@ stuck = 0
 wander_s = { 4 = 0.4, 8 = 0.2, 12 = 0.1 }
 
 [maps.mg_starwars_v1]
-area_m2 = 11993
+area_m2 = 11994
 sight_m = 20.8
-spot_area_m2 = 11462
+spot_area_m2 = 12067
 spawns = 32
-spots = 6624
+spots = 8182
 spots_off = 0
-stuck = 3
+stuck = 0
 wander_s = { 4 = 11.9, 8 = 5.1, 12 = 3.2 }
 
 [maps.mg_swag_multigames_v1]
 area_m2 = 186
 sight_m = 7.1
-spot_area_m2 = 186
+spot_area_m2 = 202
 spawns = 50
-spots = 99
+spots = 106
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.5, 8 = 0.2, 12 = 0.1 }
 
 [maps.mg_wipeout]
-area_m2 = 9242
-sight_m = 32.1
-spot_area_m2 = 9041
+area_m2 = 249
+sight_m = 21.8
+spot_area_m2 = 254
 spawns = 36
-spots = 6298
+spots = 182
 spots_off = 0
-stuck = 1
-wander_s = { 4 = 5.9, 8 = 2.5, 12 = 1.6 }
+stuck = 0
+wander_s = { 4 = 0.2, 8 = 0.1, 12 = 0.1 }
 
 [maps.mg_wipeout2]
 area_m2 = 54
 sight_m = 3.9
-spot_area_m2 = 52
+spot_area_m2 = 57
 spawns = 32
-spots = 30
+spots = 38
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.3, 8 = 0.1, 12 = 0.1 }
 
 [maps.surf_apollo]
-area_m2 = 354
-sight_m = 14.6
-spot_area_m2 = 345
+area_m2 = 1161
+sight_m = 12.5
+spot_area_m2 = 1174
 spawns = 64
-spots = 185
+spots = 756
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 0.5, 8 = 0.2, 12 = 0.1 }
+wander_s = { 4 = 1.9, 8 = 0.8, 12 = 0.5 }
 
 [maps.surf_boreas]
 area_m2 = 488
 sight_m = 10.5
-spot_area_m2 = 473
+spot_area_m2 = 488
 spawns = 162
-spots = 253
+spots = 276
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 1.0, 8 = 0.4, 12 = 0.3 }
 
 [maps.surf_botanica]
-area_m2 = 3373
-sight_m = 31.2
-spot_area_m2 = 3306
+area_m2 = 3316
+sight_m = 32.0
+spot_area_m2 = 3372
 spawns = 64
-spots = 1863
-spots_off = 0
-stuck = 1
-wander_s = { 4 = 2.2, 8 = 1.0, 12 = 0.6 }
-
-[maps.surf_demise]
-area_m2 = 448
-sight_m = 39.6
-spot_area_m2 = 448
-spawns = 64
-spots = 368
+spots = 1867
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 0.2, 8 = 0.1, 12 = 0.1 }
+wander_s = { 4 = 2.1, 8 = 0.9, 12 = 0.6 }
+
+[maps.surf_demise]
+area_m2 = 74817
+sight_m = 33.0
+spot_area_m2 = 74814
+spawns = 64
+spots = 54970
+spots_off = 0
+stuck = 0
+wander_s = { 4 = 46.7, 8 = 20.0, 12 = 12.7 }
 
 [maps.surf_halloween_tf2]
-area_m2 = 1737
-sight_m = 8.7
-spot_area_m2 = 1117
+area_m2 = 928
+sight_m = 7.4
+spot_area_m2 = 936
 spawns = 26
-spots = 717
+spots = 511
 spots_off = 0
-stuck = 1
-wander_s = { 4 = 4.1, 8 = 1.8, 12 = 1.1 }
+stuck = 0
+wander_s = { 4 = 2.6, 8 = 1.1, 12 = 0.7 }
 
 [maps.surf_happyhands]
 area_m2 = 637
 sight_m = 12.8
-spot_area_m2 = 610
+spot_area_m2 = 637
 spawns = 60
-spots = 408
+spots = 437
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 1.0, 8 = 0.4, 12 = 0.3 }
@@ -951,29 +951,29 @@ wander_s = { 4 = 1.0, 8 = 0.4, 12 = 0.3 }
 [maps.surf_hellenic]
 area_m2 = 7154
 sight_m = 47.2
-spot_area_m2 = 6962
+spot_area_m2 = 7179
 spawns = 64
-spots = 5958
+spots = 6472
 spots_off = 0
-stuck = 6
+stuck = 0
 wander_s = { 4 = 3.1, 8 = 1.3, 12 = 0.9 }
 
 [maps.surf_holiday]
-area_m2 = 449
+area_m2 = 417
 sight_m = 8.9
-spot_area_m2 = 418
+spot_area_m2 = 419
 spawns = 77
-spots = 234
+spots = 231
 spots_off = 0
-stuck = 1
+stuck = 0
 wander_s = { 4 = 1.0, 8 = 0.4, 12 = 0.3 }
 
 [maps.surf_inferno]
 area_m2 = 658
 sight_m = 19.4
-spot_area_m2 = 651
+spot_area_m2 = 676
 spawns = 78
-spots = 372
+spots = 382
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.7, 8 = 0.3, 12 = 0.2 }
@@ -981,9 +981,9 @@ wander_s = { 4 = 0.7, 8 = 0.3, 12 = 0.2 }
 [maps.surf_jive]
 area_m2 = 245
 sight_m = 13.5
-spot_area_m2 = 234
+spot_area_m2 = 247
 spawns = 64
-spots = 154
+spots = 166
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.4, 8 = 0.2, 12 = 0.1 }
@@ -999,51 +999,51 @@ stuck = 0
 wander_s = { 4 = 0.2, 8 = 0.1, 12 = 0.1 }
 
 [maps.surf_nebula]
-area_m2 = 957
-sight_m = 27.6
-spot_area_m2 = 934
+area_m2 = 1833
+sight_m = 29.1
+spot_area_m2 = 1852
 spawns = 78
-spots = 672
+spots = 1351
 spots_off = 0
 stuck = 0
-wander_s = { 4 = 0.7, 8 = 0.3, 12 = 0.2 }
+wander_s = { 4 = 1.3, 8 = 0.6, 12 = 0.4 }
 
 [maps.surf_nsz_fix]
-area_m2 = 13522
-sight_m = 29.2
-spot_area_m2 = 13329
+area_m2 = 1976
+sight_m = 39.2
+spot_area_m2 = 2021
 spawns = 61
-spots = 9507
-spots_off = 0
+spots = 0
+spots_off = 61
 stuck = 0
-wander_s = { 4 = 9.6, 8 = 4.1, 12 = 2.6 }
+wander_s = { 4 = 1.0, 8 = 0.4, 12 = 0.3 }
 
 [maps.surf_sacrifice]
 area_m2 = 5512
 sight_m = 29.6
-spot_area_m2 = 5424
+spot_area_m2 = 5528
 spawns = 60
-spots = 5122
+spots = 5278
 spots_off = 0
-stuck = 1
+stuck = 0
 wander_s = { 4 = 3.8, 8 = 1.6, 12 = 1.0 }
 
 [maps.surf_sedona]
-area_m2 = 12103
-sight_m = 22.4
-spot_area_m2 = 11354
+area_m2 = 17188
+sight_m = 22.9
+spot_area_m2 = 17292
 spawns = 64
-spots = 8292
+spots = 15285
 spots_off = 0
-stuck = 8
-wander_s = { 4 = 11.1, 8 = 4.8, 12 = 3.0 }
+stuck = 0
+wander_s = { 4 = 15.5, 8 = 6.6, 12 = 4.2 }
 
 [maps.surf_slob]
 area_m2 = 317
 sight_m = 12.2
-spot_area_m2 = 311
+spot_area_m2 = 330
 spawns = 64
-spots = 192
+spots = 195
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 0.5, 8 = 0.2, 12 = 0.1 }
@@ -1051,19 +1051,19 @@ wander_s = { 4 = 0.5, 8 = 0.2, 12 = 0.1 }
 [maps.surf_stickybutt_alpha]
 area_m2 = 886
 sight_m = 28.7
-spot_area_m2 = 882
+spot_area_m2 = 887
 spawns = 34
-spots = 1270
+spots = 1291
 spots_off = 0
-stuck = 3
+stuck = 0
 wander_s = { 4 = 0.6, 8 = 0.3, 12 = 0.2 }
 
 [maps.surf_surreal]
 area_m2 = 597
 sight_m = 7.7
-spot_area_m2 = 547
+spot_area_m2 = 607
 spawns = 62
-spots = 388
+spots = 426
 spots_off = 0
 stuck = 0
 wander_s = { 4 = 1.6, 8 = 0.7, 12 = 0.4 }
@@ -1071,10 +1071,10 @@ wander_s = { 4 = 1.6, 8 = 0.7, 12 = 0.4 }
 [maps.surf_threnody]
 area_m2 = 3624
 sight_m = 28.7
-spot_area_m2 = 3624
+spot_area_m2 = 3632
 spawns = 64
-spots = 2075
-spots_off = 0
+spots = 0
+spots_off = 64
 stuck = 0
 wander_s = { 4 = 2.6, 8 = 1.1, 12 = 0.7 }
 

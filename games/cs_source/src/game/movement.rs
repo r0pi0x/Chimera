@@ -44,6 +44,13 @@ pub struct SourceMovementPlugin;
 impl Plugin for SourceMovementPlugin {
     fn build(&self, app: &mut App) {
         app.source_movement(ID, None, None);
+        // Spawn spots where players get to: up ledges a jump takes (a
+        // standing jump clears about 45 units; custom maps' steps, lego
+        // bricks, are jumped), bounded to the rooms a walk reaches.
+        {
+            use crate::map::SpawnClimbAppExt;
+            app.add_spawn_climb(super::GAME, 0.8);
+        }
         if !app.is_plugin_added::<super::pain::PainSoundsPlugin>() {
             app.add_plugins(super::pain::PainSoundsPlugin);
         }

@@ -9,12 +9,3 @@
 [[deny]]
 reason = "a course or minigame map, not a deathmatch"
 maps = ["bhop_*", "kz_*", "surf_*", "mg_*", "test_*"]
-
-# Until the spawn spots are fixed (another session; 2026-11-13).
-[[deny]]
-reason = "spawn spots off the map (its walk leaks onto the hills around the town)"
-maps = ["cs_militia"]
-
-[[deny]]
-reason = "spawn spots off the map (a patch the map logic opens; a player was stuck there)"
-maps = ["cs_havana"]

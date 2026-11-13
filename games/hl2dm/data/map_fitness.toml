@@ -8,74 +8,74 @@
 speed_mps = 6.35
 
 [maps.dm_lockdown]
-area_m2 = 3119
-sight_m = 8.0
-spot_area_m2 = 2888
+area_m2 = 3121
+sight_m = 7.7
+spot_area_m2 = 3210
 spawns = 33
-spots = 1970
+spots = 2230
 spots_off = 0
-stuck = 8
-wander_s = { 4 = 8.1, 8 = 3.5, 12 = 2.2 }
+stuck = 0
+wander_s = { 4 = 8.4, 8 = 3.6, 12 = 2.3 }
 
 [maps.dm_overwatch]
-area_m2 = 3088
-sight_m = 11.4
-spot_area_m2 = 2856
+area_m2 = 3095
+sight_m = 11.9
+spot_area_m2 = 3111
 spawns = 17
-spots = 2175
+spots = 2437
 spots_off = 0
-stuck = 6
-wander_s = { 4 = 5.6, 8 = 2.4, 12 = 1.5 }
+stuck = 0
+wander_s = { 4 = 5.3, 8 = 2.3, 12 = 1.5 }
 
 [maps.dm_powerhouse]
-area_m2 = 4113
-sight_m = 6.9
-spot_area_m2 = 3797
+area_m2 = 4122
+sight_m = 7.1
+spot_area_m2 = 4198
 spawns = 18
-spots = 2510
+spots = 2593
 spots_off = 0
-stuck = 11
-wander_s = { 4 = 12.3, 8 = 5.3, 12 = 3.3 }
+stuck = 0
+wander_s = { 4 = 12.0, 8 = 5.2, 12 = 3.3 }
 
 [maps.dm_resistance]
-area_m2 = 1917
-sight_m = 9.4
-spot_area_m2 = 1798
+area_m2 = 1902
+sight_m = 8.9
+spot_area_m2 = 1932
 spawns = 20
-spots = 1318
+spots = 1410
 spots_off = 0
-stuck = 8
-wander_s = { 4 = 4.2, 8 = 1.8, 12 = 1.1 }
+stuck = 0
+wander_s = { 4 = 4.4, 8 = 1.9, 12 = 1.2 }
 
 [maps.dm_runoff]
-area_m2 = 6179
-sight_m = 15.0
-spot_area_m2 = 5778
+area_m2 = 6139
+sight_m = 15.2
+spot_area_m2 = 6190
 spawns = 9
-spots = 4446
+spots = 4719
 spots_off = 0
-stuck = 23
-wander_s = { 4 = 8.5, 8 = 3.6, 12 = 2.3 }
+stuck = 0
+wander_s = { 4 = 8.3, 8 = 3.6, 12 = 2.3 }
 
 [maps.dm_steamlab]
-area_m2 = 1995
-sight_m = 7.3
-spot_area_m2 = 1793
+area_m2 = 2033
+sight_m = 7.0
+spot_area_m2 = 2063
 spawns = 24
-spots = 1188
+spots = 1328
 spots_off = 0
-stuck = 8
-wander_s = { 4 = 5.6, 8 = 2.4, 12 = 1.5 }
+stuck = 0
+wander_s = { 4 = 6.0, 8 = 2.6, 12 = 1.6 }
 
 [maps.dm_underpass]
-area_m2 = 2176
-sight_m = 7.1
-spot_area_m2 = 1925
+area_m2 = 1980
+sight_m = 6.9
+spot_area_m2 = 2017
 spawns = 17
-spots = 1213
+spots = 1451
 spots_off = 0
-stuck = 5
-wander_s = { 4 = 6.3, 8 = 2.7, 12 = 1.7 }
+stuck = 0
+wander_s = { 4 = 5.9, 8 = 2.5, 12 = 1.6 }
 
 [maps.halls3]
 loads = false

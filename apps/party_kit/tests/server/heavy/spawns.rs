@@ -153,8 +153,9 @@ fn the_gun_game_spawns_spread_over_the_warehouse() {
 }
 
 /// Every candidate spot of `map`, as `random_hidden` makes them, checked:
-/// inside the map (`spawns::inside_map`) and, where the mesh is generated,
-/// walked to (on the walking mesh from the spawn points), also with the
+/// inside the map (`spawns::inside_map`) and, where the mesh is generated
+/// (no mesh or navigation file of the map's own), walked to (on the
+/// spots' walker's mesh from the spawn points, `spawns::walker_for`), also with the
 /// Combat Arms bots' mesh (jump-ups) loaded as a party with bots has it.
 /// One line per map: (outside, off the walk) counts, and the old picker's.
 fn sweep(map: &str) -> Option<String> {
@@ -169,12 +170,17 @@ fn sweep(map: &str) -> Option<String> {
         .map(|t| t.translation - Vec3::Y * chimera_world::map::SPAWN_LIFT)
         .collect();
     let vis = w.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
-    let own = w.get_resource::<NavMesh>().filter(|n| !n.generated).is_some();
+    // The map's own mesh, or its navigation file's floors (`MapFloors`):
+    // spots on the floors its author marked, not the walk.
+    let own = w.get_resource::<NavMesh>().filter(|n| !n.generated).is_some()
+        || w.contains_resource::<chimera_world::map::MapFloors>();
+    let (walker, bound) = spawns::walker_for(w);
     let (walk, bots) = {
         let mut state = SystemState::<SpatialQuery>::new(w);
         let q = state.get(w).unwrap();
+        let bounds = bound.zip(vis.as_deref()).map(|(walker, vis)| nav_gen::Bounds { vis, walker });
         (
-            nav_gen::generate(&q, &|_| false, &feet, &spawns::walker()),
+            nav_gen::generate_within(&q, &|_| false, &feet, &walker, bounds),
             nav_gen::generate(&q, &|_| false, &feet, &combat_arms::game::bots::brain::nav_params()),
         )
     };

@@ -138,7 +138,10 @@ fn rounds_pass_through_a_protected_player_into_the_one_behind_with_either_games_
             chimera_core::core::God,
         ));
         sim.app.world_mut().entity_mut(c).remove::<(SpawnProtected, chimera_core::core::God)>();
-        let from = sim.position(a);
+        // On the open ground at the middle (a spawn spot may be by a
+        // drop, where the two behind would fall).
+        let from = Vec3::new(0.0, 1.0, 0.0);
+        place(&mut sim, a, from);
         place(&mut sim, b, from + Vec3::new(0.0, 0.0, -4.0));
         place(&mut sim, c, from + Vec3::new(0.0, 0.0, -6.0));
         sim.ticks(3);

@@ -41,7 +41,7 @@ fn the_shipped_pool_by_count() {
     assert_eq!(maps.len(), 222, "the 2026-11-13 sweep's maps");
     let in_at = |n: usize| -> Vec<&String> { maps.iter().filter(|m| pool.judge(m, n, &s).weight() > 0.0).collect() };
     let count = |n: usize, game: &str| in_at(n).iter().filter(|m| m.starts_with(game)).count();
-    for (n, total, by_game) in [(4, 104, [48, 50, 6]), (8, 122, [58, 57, 7]), (12, 122, [58, 57, 7])] {
+    for (n, total, by_game) in [(4, 116, [48, 62, 6]), (8, 138, [60, 71, 7]), (12, 138, [60, 71, 7])] {
         assert_eq!(in_at(n).len(), total, "{n} players: {}", pool.lines(&maps, n, &s));
         assert_eq!([count(n, "cs_source:"), count(n, "combat_arms:"), count(n, "hl2dm:")], by_game, "{n} players");
     }
@@ -68,15 +68,13 @@ fn the_shipped_pool_by_count() {
 fn the_deny_lists_hold_the_users_choices_and_keep_the_old_pool() {
     let pool = shipped();
     let out = |game: &str, map: &str| pool.listed(game, map).is_err();
-    for m in ["bhop_addict_v2_3xl", "kz_11342", "surf_kismet", "mg_wipeout", "test_hardware", "cs_militia", "cs_havana"] {
+    for m in ["bhop_addict_v2_3xl", "kz_11342", "surf_kismet", "mg_wipeout", "test_hardware"] {
         assert!(out("cs_source", m), "cs_source:{m}");
     }
     for m in [
         "bossbattle_cp", "sandhog_cp1", "bossrush", "zombiewar", "infectedship_cp", "railwaydefence", "training",
         "testing_t", "snowstorm_qrt", "grayhammerq", "vertigo_q", "costarecon_q", "darkthandark", "deserthole",
-        "desertholezone", "16rooms", "nemexishq", "hgoilrig", "sector25", "castle", "battleship", "cargoship",
-        "twinship", "killland", "lastvegas", "twotowers", "crystaltower", "rapidstream", "waverider", "downhill",
-        "grayhammer",
+        "desertholezone", "16rooms", "nemexishq", "hgoilrig", "dredge",
     ] {
         assert!(out("combat_arms", m), "combat_arms:{m}");
     }
@@ -87,6 +85,17 @@ fn the_deny_lists_hold_the_users_choices_and_keep_the_old_pool() {
         ("combat_arms", "warehouse"), ("combat_arms", "junk_flea"), ("combat_arms", "darkhills"),
         ("combat_arms", "bloodmoney"), ("cs_source", "de_dust2"), ("cs_source", "cs_office"),
         ("cs_source", "de_nuke"), ("hl2dm", "dm_lockdown"), ("hl2dm", "dm_overwatch"),
+    ] {
+        assert!(!out(g, m), "{g}:{m}");
+    }
+    // Off the lists since their spawn spots were fixed (2026-11-13).
+    for (g, m) in [
+        ("cs_source", "cs_militia"), ("cs_source", "cs_havana"), ("combat_arms", "sector25"), ("combat_arms", "castle"),
+        ("combat_arms", "battleship"), ("combat_arms", "battleship1"), ("combat_arms", "battleship2"),
+        ("combat_arms", "cargoship"), ("combat_arms", "twinship"), ("combat_arms", "killland"),
+        ("combat_arms", "lastvegas"), ("combat_arms", "twotowers"), ("combat_arms", "crystaltower"),
+        ("combat_arms", "rapidstream"), ("combat_arms", "waverider"), ("combat_arms", "downhill"),
+        ("combat_arms", "grayhammer"),
     ] {
         assert!(!out(g, m), "{g}:{m}");
     }

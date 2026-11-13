@@ -16,7 +16,6 @@ use chimera_core::{
     core::{Dead, SpawnPoint},
     mount::config::LocalConfig,
 };
-use chimera_sim::minigame::spawns;
 use chimera_world::{
     harness::Sim,
     map::{
@@ -75,7 +74,7 @@ fn meshes(sim: &mut Sim) -> Meshes {
         walker: nav_gen::walking_player(),
     };
     Meshes {
-        walk: nav_gen::generate(&q, &|_| false, &feet, &spawns::walker()),
+        walk: nav_gen::generate(&q, &|_| false, &feet, &nav_gen::walking_player()),
         free: nav_gen::generate(&q, &|_| false, &feet, &p),
         bound: nav_gen::generate_within(&q, &|_| false, &feet, &p, Some(bounds)),
         vis,

@@ -411,8 +411,12 @@ fn hazard_zones(world: &mut World) -> Vec<crate::core::MapBrush> {
 
 impl Plugin for CaVolumesPlugin {
     fn build(&self, app: &mut App) {
-        use crate::map::SpawnHazardAppExt;
+        use crate::map::{SpawnClimbAppExt, SpawnHazardAppExt};
         app.add_spawn_hazards(hazard_zones);
+        // Spawn spots where players get to: up the maps' sills a little
+        // above the stair step, jumped up as the bots do (the warehouse's
+        // and sector25's spawn rooms open by 0.7 m sills).
+        app.add_spawn_climb(super::GAME, super::bots::brain::JUMP_UP);
         app.init_resource::<VolumeDamage>().add_message::<PadLaunch>().add_systems(
             FixedUpdate,
             (

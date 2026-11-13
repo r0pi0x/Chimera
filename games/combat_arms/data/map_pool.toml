@@ -35,7 +35,7 @@ reason = "huge and open (over 15000 m2): not looked at yet"
 maps = ["darkthandark", "deserthole", "desertholezone"]
 
 [[deny]]
-reason = "a mode map by its look (91 spawn spots a player is stuck in)"
+reason = "a mode map by its look"
 maps = ["16rooms"]
 
 [[deny]]
@@ -46,25 +46,9 @@ maps = ["nemexishq"]
 reason = "no spawn point stands on a floor in our conversion"
 maps = ["hgoilrig"]
 
-# Until the spawn spots are fixed (another session; 2026-11-13): the spots'
-# walker can't leave part of the map, so everyone spawns there. warehouse
-# is too (the two spawn rooms), but stays: it was in the pool before.
+# Not looked at yet (2026-11-13): the first measure after the spawn spot
+# fixes put 158 of its 981 spots off its main region, by the water's
+# edge; measured with the doorway fit the spots' walk has, none are.
 [[deny]]
-reason = "spawn spots confined to part of the map"
-maps = [
-    "battleship",
-    "battleship1",
-    "battleship2",
-    "cargoship",
-    "castle",
-    "crystaltower",
-    "downhill",
-    "grayhammer",
-    "killland",
-    "lastvegas",
-    "rapidstream",
-    "sector25",
-    "twinship",
-    "twotowers",
-    "waverider",
-]
+reason = "not looked at yet (its spawn spots, by the water's edge, were once measured off the map)"
+maps = ["dredge"]

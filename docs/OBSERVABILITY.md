@@ -2223,6 +2223,23 @@ cargo run -p party_kit --features dev,tools --bin map_fitness -- --csv docs/plan
                                    # the same from a sweep's CSV, loading nothing
 ```
 
+Its spawn spot columns are `party_kit::spot_checks`, which the heavy
+guard `heavy::spawn_spots` (party_kit) runs over the pool's maps. To find
+why spots are where they shouldn't be, or aren't where they should:
+
+```
+... --bin map_fitness -- --filter cs_militia --leaks   # where the spots' walk leaves the
+             # .nav (leak:), where the .nav or the bots' walk goes on and it doesn't
+             # (gap:, confined:)
+... --bin map_fitness -- --filter de_port --dump   # <out>/<game>_<map>_spots.csv (each
+             # spot, off or stuck), _nav.csv, _mesh.csv, _floor.csv (top-down
+             # heights), _entities.txt (every map entity's keys)
+... --bin map_fitness -- --filter cs_havana --probe -1832.6,1460.2,11.9   # what a standing
+             # box there meets (player clips and the brushes too)
+... --bin map_fitness -- --filter cs_havana --bare      # without the map logic
+... --bin map_fitness -- --filter cs_havana --client    # loaded as a client loads it
+```
+
 The pool a server draws from at a count: `map_pool [players]` on its
 console (each map's share of the next draw, or why it is out);
 `ultimate_gun_game heavy::pool_maps` loads a sample of it on the real

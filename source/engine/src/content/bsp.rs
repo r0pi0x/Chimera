@@ -508,11 +508,17 @@ fn convert_level_bytes(
     let sounds = (game.sounds)(&mut materials, &bsp, name, &surfaces, &data.entities);
     data.sounds = std::sync::Arc::new(sounds);
     timer.lap("sounds");
-    if kit.parts()
-        && let Some(bytes) = materials.read(&format!("maps/{}.nav", name.to_lowercase()))
-    {
+    // The map's navigation file: the bots' (with the kit) and the floors
+    // the spawn spots are drawn on (always).
+    if let Some(bytes) = materials.read(&format!("maps/{}.nav", name.to_lowercase())) {
         match super::nav::parse(&bytes) {
-            Ok((nav, _)) => data.kit.nav = Some(std::sync::Arc::new(nav)),
+            Ok((nav, _)) => {
+                let nav = std::sync::Arc::new(nav);
+                if kit.parts() {
+                    data.kit.nav = Some(nav.clone());
+                }
+                data.floors = Some(nav);
+            }
             Err(e) => data.warnings.push(e),
         }
     }
