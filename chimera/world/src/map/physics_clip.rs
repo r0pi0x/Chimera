@@ -47,7 +47,12 @@ pub struct PhysicsClip(pub usize);
 pub struct ClipPasses(pub Option<HashSet<Entity>>);
 
 /// A collider for each physics clip with volumes, under `root`.
-pub(super) fn spawn_clips(commands: &mut Commands, data: &MapData, root: Entity) {
+pub(super) fn spawn_clips(
+    commands: &mut Commands,
+    colliders: &mut super::spawn::Colliders,
+    data: &MapData,
+    root: Entity,
+) {
     for (i, e) in data.entities.iter().enumerate() {
         if !e.classname().eq_ignore_ascii_case(CLASS) {
             continue;
@@ -63,11 +68,11 @@ pub(super) fn spawn_clips(commands: &mut Commands, data: &MapData, root: Entity)
             PhysicsClip(i),
             ClipPasses::default(),
             RigidBody::Static,
-            collider,
             CollisionLayers::new(crate::core::PHYSICS_CLIP_LAYER, CLIPPED),
             home,
             ChildOf(root),
         ));
+        colliders.put(&mut clip, collider);
         if e.get("filtername").is_some_and(|f| !f.trim().is_empty()) {
             clip.insert(ActiveCollisionHooks::FILTER_PAIRS);
         }
