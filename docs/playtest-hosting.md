@@ -217,6 +217,14 @@ bolt's sounds in flight and at rest, create sound, flare sprite, model
 and skins: `special::object_files`; 80 sets grew, by 171 files;
 `sets combat_arms --only weapon/`, about 10 minutes).
 
+Since the second rehearsal (2026-11-13), `sets` also merges into Combat
+Arms' `base` the attribute files its install data reads at the first
+start (`attributes/clientbutes.txt` came on demand at each first start)
+and the effect textures every map takes (`effects::library::add_looks`:
+the install guns' own FX.TXT groups, 7 textures on demand at each first
+join): 8 files, 0.06 MB (`sets combat_arms --store <server store> --sign
+--only base`).
+
 **The guard**: `cargo test -p ultimate_gun_game --features dev --test it
 heavy::no_fetch_in_match -- --nocapture` plays such a session as a
 client without installs against a service reading the published store

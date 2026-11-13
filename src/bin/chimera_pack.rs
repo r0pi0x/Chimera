@@ -549,6 +549,33 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 for file in [combat_arms::game::parts::RESULT_WIN_SOUND, combat_arms::game::parts::RESULT_LOSE_SOUND] {
                     let _ = tapped.read(&normalize(file));
                 }
+                // The attribute files the install data reads at the first
+                // start (`data::attributes`; the 2026-11-13 rehearsal
+                // fetched `clientbutes.txt` on demand there).
+                {
+                    use combat_arms::game::data::attributes as a;
+                    for file in [
+                        a::WEAPONS_FILE,
+                        a::SERVER_FILE,
+                        a::MODELS_FILE,
+                        a::MOD_FILE,
+                        a::MARKS_FILE,
+                        a::FX_FILE,
+                        a::ATTACHMENTS_FILE,
+                        a::LAYOUT_FILE,
+                        a::CLIENT_FILE,
+                        a::PERKS_FILE,
+                        a::SETS_FILE,
+                    ] {
+                        let _ = tapped.read(file);
+                    }
+                }
+                // The effect looks every map takes, of every gun's groups
+                // (`effects::library::add_looks`, on any game's map: the
+                // install guns' own FX.TXT records name groups beyond the
+                // tables'; the rehearsal fetched 7 of their textures on
+                // demand at each join).
+                combat_arms::game::effects::library::add_looks(&mut chimera_world::map::MapData::default(), &ca, &read);
                 // The default character's first-person hands, on every
                 // view model (`view_model::hands::default_choice`).
                 if let Some(choice) = view_model::hands::default_choice(ca.characters()) {
