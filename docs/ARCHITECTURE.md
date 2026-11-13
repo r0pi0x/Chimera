@@ -215,7 +215,9 @@ chimera_core          source_formats (source/formats/)   formats as plain data: 
   `source_movement` (Source's player movement, its drowning, physics
   shadow and push-away: lift S6; each Source game registers it under its
   own id with its own config), `player_anim` (the shared half of Source's
-  player animation: lift S9; each game's state picks its sequences) and
+  player animation: lift S9; each game's state picks its sequences),
+  `anim_net` (a server's tick pose of each body sent, and clients posing
+  others' bodies from it at the tick they draw them) and
   `weapon_script` (a plain-text weapon script's keys, icons too) and `hud` (a
   game's HUD look read from its install, and the HUD animation scripts: lift S7) and `effects`
   (Source's impact particles, decals and impact, physics and scrape sounds with
@@ -488,7 +490,8 @@ those, client and the rest of the simulation. `source_engine`'s modules
 `search_path` and `maps` use no module of ours, only the engine's crates
 by name (`chimera_core::mount`); its `content` uses core, map and mount,
 its `source_movement` core, map, slots and console, its `weapon_script`
-mount, its `hud` map and content, its `player_anim` core, map, weapon and `source_movement`, its `effects`
+mount, its `hud` map and content, its `player_anim` core, map, weapon and `source_movement`, its `anim_net` core, map and
+`player_anim` (and the network's snapshots, `chimera_net`), its `effects`
 core, map, weapon, console and content.
 
 Presentation sits beside the simulation, above `map`: `audio` (sound

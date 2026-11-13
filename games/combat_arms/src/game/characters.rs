@@ -809,9 +809,10 @@ pub struct CaAnimNet {
     pub death: Option<String>,
     pub body_yaw: f32,
     /// Its movement's hull about the origin (`MovementState`: the radius
-    /// across, the bottom and the top, m; none: no hull), which a client
-    /// gives the character it draws (`follow_hulls`): its spheres stand
-    /// on that box's bottom on every machine (the crouch shrinks it).
+    /// across, the bottom and the top, m; none: no hull, or not Combat
+    /// Arms' movement), which a client gives the character it draws
+    /// (`follow_hulls`): its spheres stand on that box's bottom on every
+    /// machine (the crouch shrinks it).
     pub hull: Option<[f32; 3]>,
 }
 
@@ -1589,7 +1590,9 @@ fn drive(
             animator.yaw = Some(body_yaw);
         }
         if !client {
-            let next = net_of(&anim, &clock, r, body_yaw, state);
+            // The hull only of Combat Arms' movement (its cylinder): another
+            // game's player keeps its own collider on every machine.
+            let next = net_of(&anim, &clock, r, body_yaw, movement.map(|_| state));
             match net {
                 Some(mut n) => {
                     if *n != next {
@@ -1776,10 +1779,12 @@ fn tick_ms(step: f64) -> f64 {
 }
 
 /// The server's animation state for the network (`CaAnimNet`).
-fn net_of(anim: &CaAnim, clock: &SimClock, r: f32, body_yaw: f32, state: &MovementState) -> CaAnimNet {
+fn net_of(anim: &CaAnim, clock: &SimClock, r: f32, body_yaw: f32, state: Option<&MovementState>) -> CaAnimNet {
     let d = &anim.driver;
     let ms = tick_ms(clock.delta.as_secs_f64());
-    let hull = (state.hull_max != state.hull_min).then(|| [state.hull_max.x.max(state.hull_max.z), state.hull_min.y, state.hull_max.y]);
+    let hull = state
+        .filter(|s| s.hull_max != s.hull_min)
+        .map(|s| [s.hull_max.x.max(s.hull_max.z), s.hull_min.y, s.hull_max.y]);
     CaAnimNet {
         hull,
         upper: NetTrack::of(d, &d.upper, clock.tick, ms),
@@ -1864,7 +1869,8 @@ fn follow(anim: &mut CaAnim, net: &Followed, tick: f64, step: f64) {
 /// only): the server's at the tick drawn (`CaAnimNet::hull`), as the
 /// hull and an upright cylinder collider as Combat Arms' movement makes
 /// it, so the box the spheres stand on (and that shots and lag
-/// compensation take) is the server's, crouched or not.
+/// compensation take) is the server's, crouched or not; another game's
+/// player (no hull sent) keeps the standard capsule, as on the server.
 #[allow(clippy::type_complexity)]
 fn follow_hulls(
     clock: Option<Res<InterpClock>>,
@@ -1872,7 +1878,17 @@ fn follow_hulls(
 ) {
     let Some(clock) = clock.filter(|c| c.running) else { return };
     for (net, kept, mut state, collider) in &mut q {
-        let Some([radius, bottom, top]) = Followed::at(net, kept, clock.render_tick).hull else { continue };
+        let Some([radius, bottom, top]) = Followed::at(net, kept, clock.render_tick).hull else {
+            // Not Combat Arms' movement (any more): the standard capsule,
+            // as the server's player has (`movement::sync_collider`).
+            if let Some(mut c) = collider
+                && c.shape_scaled().as_cylinder().is_some()
+            {
+                use crate::character::{CAPSULE_HEIGHT, CAPSULE_RADIUS};
+                *c = avian3d::prelude::Collider::capsule(CAPSULE_RADIUS, CAPSULE_HEIGHT - 2.0 * CAPSULE_RADIUS);
+            }
+            continue;
+        };
         let (min, max) = (Vec3::new(-radius, bottom, -radius), Vec3::new(radius, top, radius));
         if state.hull_min != min || state.hull_max != max {
             state.hull_min = min;

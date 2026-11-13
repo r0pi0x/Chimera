@@ -62,6 +62,10 @@ const ALLOWED: &[(&str, &[&str])] = &[
     // S9): the inputs from the simulation (core, the weapons' events, the
     // Source movement's water level) into the map's animators.
     ("player_anim", &["core", "map", "weapon", "source_movement"]),
+    // Others' Source bodies posed as the server's tick pose (source_engine):
+    // the player animation's sets and states, the map's animators, the
+    // network's snapshots (chimera_net, a crate).
+    ("anim_net", &["core", "map", "player_anim"]),
     // A game as one bundle for a party app's composer (chimera_world, lift
     // C4): its maps' loader and dressing, plain data otherwise.
     ("game_bundle", &["map"]),
