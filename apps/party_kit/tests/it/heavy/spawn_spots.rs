@@ -12,6 +12,11 @@
 //! Prints each map's counts (`--nocapture`); `CHIMERA_SPAWN_SPOTS=<text>`
 //! checks only the maps whose id has the text. Passes with a note without
 //! the CS:S and Combat Arms installs; a game not installed is skipped.
+//!
+//! The pool (about 138 maps, 656 s one after another) is split into
+//! `SHARDS` tests by a stable hash of the map id, so the heavy slots run
+//! them in parallel and none nears the timeout; each map is in exactly one
+//! shard (`shards_cover_the_pool_once`).
 
 use bevy::prelude::*;
 use chimera_core::mount::config::LocalConfig;
@@ -27,6 +32,18 @@ use party_kit::{DEFAULT_MINIGAME, PartyPartsPlugin, spot_checks};
 /// many, whichever is more (the region's slack misses a stair's edge).
 const OFF_REGION_SHARE: f32 = 0.01;
 const OFF_REGION_FEW: usize = 10;
+
+/// The number of shards the pool is split into (one test each, below).
+const SHARDS: u64 = 6;
+
+/// The shard a map is in: FNV-1a of its id, stable across runs and builds.
+fn shard_of(id: &str) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in id.bytes() {
+        h = (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h % SHARDS
+}
 
 fn installed() -> bool {
     let Ok(config) = LocalConfig::load() else { return false };
@@ -50,16 +67,64 @@ fn pool() -> Vec<String> {
     auto::map_pool(&caps, &mounted).into_iter().filter(|m| m != "greybox").collect()
 }
 
+/// The pool maps passing `CHIMERA_SPAWN_SPOTS` (all when unset).
+fn filtered_pool() -> (Option<String>, Vec<String>) {
+    // `CHIMERA_SPAWN_SPOTS=<text>`: only the pool's maps whose id has it.
+    let only = std::env::var("CHIMERA_SPAWN_SPOTS").ok();
+    let pool = pool().into_iter().filter(|m| only.as_ref().is_none_or(|o| m.contains(o.as_str()))).collect();
+    (only, pool)
+}
+
+macro_rules! shard_tests {
+    ($($name:ident = $n:expr),* $(,)?) => {
+        $(
+            #[test]
+            fn $name() {
+                check_shard($n);
+            }
+        )*
+    };
+}
+
+shard_tests! {
+    spawn_spots_are_on_every_pool_maps_floors_shard_0 = 0,
+    spawn_spots_are_on_every_pool_maps_floors_shard_1 = 1,
+    spawn_spots_are_on_every_pool_maps_floors_shard_2 = 2,
+    spawn_spots_are_on_every_pool_maps_floors_shard_3 = 3,
+    spawn_spots_are_on_every_pool_maps_floors_shard_4 = 4,
+    spawn_spots_are_on_every_pool_maps_floors_shard_5 = 5,
+}
+
+/// Every pool map is in exactly one of the shard tests (cheap: no map loads).
 #[test]
-fn spawn_spots_are_on_every_pool_maps_floors() {
+fn shards_cover_the_pool_once() {
     if !installed() {
         eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
         return;
     }
-    // `CHIMERA_SPAWN_SPOTS=<text>`: only the pool's maps whose id has it.
-    let only = std::env::var("CHIMERA_SPAWN_SPOTS").ok();
-    let pool: Vec<String> = pool().into_iter().filter(|m| only.as_ref().is_none_or(|o| m.contains(o.as_str()))).collect();
-    assert!(only.is_some() || pool.len() >= 4, "{pool:?}");
+    let (_, pool) = filtered_pool();
+    let mut seen = std::collections::HashSet::new();
+    for id in &pool {
+        assert!(shard_of(id) < SHARDS);
+        assert!(seen.insert(id.clone()), "{id} twice in the pool");
+    }
+    let total: usize = (0..SHARDS).map(|n| pool.iter().filter(|m| shard_of(m) == n).count()).sum();
+    assert_eq!(total, pool.len());
+}
+
+/// How many shard tests the macro above lists; keep equal to `SHARDS`.
+const SHARDS_TESTED: u64 = 6;
+const _: () = assert!(SHARDS == SHARDS_TESTED);
+
+fn check_shard(shard: u64) {
+    if !installed() {
+        eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
+        return;
+    }
+    let (only, all) = filtered_pool();
+    assert!(only.is_some() || all.len() >= 4 * SHARDS as usize, "{all:?}");
+    let pool: Vec<String> = all.into_iter().filter(|m| shard_of(m) == shard).collect();
+    eprintln!("shard {shard} of {SHARDS}: {} maps", pool.len());
     let context = LoadContext::default();
     let mut bad = Vec::new();
     for id in &pool {
