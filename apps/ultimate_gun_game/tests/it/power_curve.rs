@@ -37,7 +37,8 @@ fn guns_score_and_band_from_their_data() {
     assert_eq!(band("combat_arms:rpg-7"), Band::Specials);
     assert_eq!(band("combat_arms:flamethrower"), Band::Specials);
     assert_eq!(band("combat_arms:m67"), Band::Grenade);
-    // Every gun scores (its data has damage).
+    // Every gun scores (its data has damage, or the device it places has:
+    // the auto turret's gun, `turret_scores_by_its_gun`).
     for c in &caps {
         for g in &c.guns {
             assert!(score(g.id) > 0.0, "{} scores: {:?}", g.id, p.get(g.id));
@@ -61,6 +62,37 @@ fn guns_score_and_band_from_their_data() {
     let warm = text.find("cs_source:weapon_glock").unwrap();
     let special = text.find("combat_arms:rpg-7").unwrap();
     assert!(warm < special, "by band");
+}
+
+/// The auto turret deals its damage through the turret it places: its
+/// power is the turret's gun's (Combat Arms' reader of `combat_arms:
+/// device`), slowed by the placing, the setup and the curve's
+/// `device_uptime`; it can hurt a player, so a draw deals it, in the
+/// specials band.
+#[test]
+fn turret_scores_by_its_gun_and_is_drawn() {
+    const TURRET: &str = "combat_arms:auto-turret";
+    let sim = ugg();
+    let mut caps = auto::report(sim.app.world());
+    let skipped = auto::drawable(sim.app.world(), &mut caps);
+    assert!(skipped.iter().all(|s| s.id != TURRET), "not skipped: {skipped:?}");
+    assert!(caps.iter().flat_map(|c| &c.guns).any(|g| g.id == TURRET), "drawable");
+    let p = powers(sim.app.world(), &caps);
+    let (band, score, ttk) = power(&p, TURRET);
+    assert_eq!(band, Band::Specials);
+    assert!(score > 0.0 && ttk.is_finite(), "{score} {ttk}");
+    // Placing (3.1 s) and setting up (2.8 s) come before its first shot.
+    assert!(ttk > 5.9, "{ttk}");
+    // Not stronger than a real launcher.
+    assert!(score < power(&p, "combat_arms:rpg-7").1, "{score}");
+    // A drawn ladder deals it, in the specials band.
+    let refs: Vec<&auto::Capabilities> = caps.iter().collect();
+    let curve = &PowerCurve::shipped();
+    let dealt = (0..400).find_map(|seed| {
+        let d = auto::ladder(&refs, &p, curve, 30, seed);
+        d.rungs.iter().position(|id| *id == TURRET).map(|k| d.bands[k])
+    });
+    assert_eq!(dealt, Some(Band::Specials), "a draw deals the turret");
 }
 
 #[test]

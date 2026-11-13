@@ -744,7 +744,9 @@ that):
   in sight broke them before they fired). Tuning starts
   from Combat Arms' numbers; change them in the weapon's data. The
   turret is drawn into automatic ladders in the specials band (`class =
-  "launcher"`); a turret's own gun (a `Turret#` record's `TopWeaponID`:
+  "launcher"`), ordered there by its turret's gun (the power curve's
+  device reader: the gun's damage, rate over `device_uptime` and the
+  placing and setup as latency); a turret's own gun (a `Turret#` record's `TopWeaponID`:
   `Turret-TopGun`, the infected ship turrets' grenade guns) names no
   class, so no draw deals it as a hand-held gun (the "Infected '02 Top
   Gun" that fired grenades on a rung, 2026-11-13).
