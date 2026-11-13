@@ -48,7 +48,9 @@
 //! doesn't grab and its side faces pushed out 2 Source units so a hull
 //! stopped by the solid brush touches it, climbed from any side; a ladder
 //! line (HL2's `func_useableladder`, where that game's climber's feet go)
-//! as an upright box 16 units around it from its bottom to its top.
+//! as an upright box 16 units around it from its bottom to its top. Both
+//! are `made_ladder`s, which the movement gets off at the top as CS:S's
+//! climber does (`movement`).
 //!
 //! A Source map's water (`MapWater`, any game's map) becomes `Water`
 //! volumes too (`BrushWater`), so Combat Arms' movement swims in it. The
@@ -178,6 +180,10 @@ pub struct CaVolume {
     pub target_team: Option<u8>,
     /// A `JumpVolume`'s world sound (`WorldSoundPath` and its radii).
     pub pad_sound: Option<PadSound>,
+    /// A `Ladder` made from another game's ladder (`BrushLadder`): its
+    /// leaning faces are no steep floors to the climber, and stepping off
+    /// onto the floor at its top stops the player (`movement`).
+    pub made_ladder: bool,
 }
 
 /// The sound a jump pad plays at the player it launches (world_dat.md
@@ -245,6 +251,7 @@ impl CaVolume {
             locked: false,
             target_team: None,
             pad_sound: None,
+            made_ladder: false,
         }
         .typed(default_damage_type(class)))
     }
@@ -523,6 +530,7 @@ pub fn ladder_from_brush(b: &crate::core::MapBrush) -> CaVolume {
         })
         .collect();
     v.max.y = (v.max.y - LADDER_TOP_INSET).max(v.min.y);
+    v.made_ladder = true;
     v
 }
 
@@ -534,7 +542,10 @@ pub const LADDER_LINE_REACH: f32 = 16.0 * 0.0254;
 /// box `LADDER_LINE_REACH` around it, from its bottom to its top.
 pub fn ladder_from_line(l: &crate::core::LadderLine) -> CaVolume {
     let r = Vec3::new(LADDER_LINE_REACH, 0.0, LADDER_LINE_REACH);
-    CaVolume::class_box("Ladder", l.bottom.min(l.top) - r, l.bottom.max(l.top) + r).expect("the Ladder class")
+    CaVolume {
+        made_ladder: true,
+        ..CaVolume::class_box("Ladder", l.bottom.min(l.top) - r, l.bottom.max(l.top) + r).expect("the Ladder class")
+    }
 }
 
 /// Marks a `Water` volume made from a water brush of the map

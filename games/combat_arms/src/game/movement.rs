@@ -49,7 +49,14 @@
 //! a player at a ladder's foot looking up climbs from the floor; only the
 //! upward speed is capped (200, no horizontal limit), forward is the
 //! camera's full direction and crouch climbs down at -3000; no jump,
-//! sprint or fall damage. Free movement (the eye in a liquid or a
+//! sprint or fall damage. On another game's ladder (a `made_ladder`
+//! volume, `volumes::BrushLadder`; ours, the spec is silent on other
+//! games' maps) its solid brush may lean: its face is no steep floor that
+//! cuts the climb; and a player who steps off it onto the floor at its top
+//! (the feet at most a stair step under its top, standing) stops there,
+//! as when the eye leaves a ladder, instead of hopping on with the speed
+//! pressed into the brush (no horizontal limit on a ladder: up to the run
+//! limit once off). Free movement (the eye in a liquid or a
 //! ladder, or the box on a ladder): swimming forward is the camera's
 //! direction without its upward part, crouch sinks at -1500, a jump from
 //! the bottom pushes +3000 on its tick, the crouch rate is held at 0, and
@@ -553,6 +560,11 @@ pub fn movement_data() -> &'static MovementData {
         toml::from_str(MOVEMENT_DATA).unwrap_or_else(|e| panic!("data/movement.toml: {e}"))
     })
 }
+
+/// How far (u) beyond a tick's move a made ladder may be from the box on
+/// the tick the player leaves it: more than a tick's climb (at most
+/// 245 u/s).
+const MADE_TOP_REACH: f32 = 8.0;
 
 /// Combat Arms' movement: registered as `ID` and made the loadout's
 /// default.
@@ -1315,8 +1327,23 @@ fn step(
         let visible: Vec<&CaVolume> = touched.iter().copied().filter(|v| !v.hidden && !v.is_safety_net()).collect();
         let ladder = visible.iter().copied().find(|v| v.is_ladder());
         let on_ladder = !dead && ladder.is_some();
+        let on_made_ladder = on_ladder && visible.iter().any(|v| v.is_ladder() && v.made_ladder);
         let free = eye_free || on_ladder;
         let was_on_ladder = me.on_ladder;
+        // Off the top of another game's ladder (a made `Ladder`, ours:
+        // docs/DESIGN.md "Ladders across games"): the box left it this
+        // tick (moved back by a tick's move and a stair step it would
+        // still touch it), over its top or stepping onto the floor there
+        // (the feet at most a stair step under its top).
+        let off_made_top = was_on_ladder && !on_ladder && !dead && {
+            let h = Vec2::new(v.x, v.z).length() * dt + MADE_TOP_REACH;
+            let down = d.stair_step + MADE_TOP_REACH;
+            let (lo, hi) = (pos - box_half - Vec3::new(h, down, h), pos + box_half + Vec3::new(h, 0.0, h));
+            let feet = pos.y - me.half_height;
+            volumes.iter().any(|v| {
+                v.made_ladder && !v.hidden && feet * s >= v.max.y - d.stair_step * s && v.touches_box(lo * s, hi * s)
+            })
+        };
         let was_eye_free = me.eye_free;
         me.on_ladder = on_ladder;
         me.in_liquid = eye_volume.is_some_and(|v| v.liquid);
@@ -1616,6 +1643,12 @@ fn step(
             if was_eye_free && !free {
                 v = Vec3::ZERO;
             }
+            // Off another game's ladder onto the floor at its top: the
+            // player stops there, as when the eye leaves a ladder (ours;
+            // over the top in the air it hops as off any ladder).
+            if off_made_top && me.on_ground {
+                v = Vec3::ZERO;
+            }
 
             // 7e. Acceleration. On a ladder forward is the camera's full
             // direction; swimming, the camera's without an upward part.
@@ -1856,7 +1889,11 @@ fn step(
         v = v_new;
         let before = pos;
         if dx.length_squared() > 1e-6 {
-            pos = move_hull(&space, d, pos, me.half_height, dx, ground);
+            // On another game's ladder its leaning face is not a steep
+            // floor to cut the climb by (ours: a Source ladder brush is
+            // solid and may lean; Combat Arms' own ladders are volumes).
+            let floor = ground.filter(|_| !(gravity_off && on_made_ladder));
+            pos = move_hull(&space, d, pos, me.half_height, dx, floor);
         }
         let probe = d.standing_probe * me.half_height;
         me.standing = space.ground(d, pos, me.half_height, probe, me.standing);

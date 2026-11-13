@@ -429,7 +429,19 @@ rules (ours: the specs are silent on mixing):
   ways up the test finds, against 2 before.
 - **Combat Arms'**: its own volumes as always; a brush as a `Ladder`
   volume reaching 2 units past its faces, a line as one 16 units around
-  it (`volumes::BrushLadder`).
+  it (`volumes::BrushLadder`). On these made ladders (ours) the climber
+  presses into a solid brush, where its own maps' climber stands inside
+  a volume: with no horizontal limit on a ladder it built speed against
+  the brush and hopped off the top at the run limit, 1-2 m on, past a
+  narrow top, into a lip or the next ladder; and a leaning brush's face
+  was a steep floor that cut the climb at its foot. So a player stepping
+  off a made ladder onto the floor at its top stops there (as when the
+  eye leaves a ladder), and its faces are no steep floors while climbing.
+  The brush's top was not the cause: on every failing ladder it was at
+  the floor. Measured with the heavy test (a Combat Arms climber faces
+  the face it is on: pressing a post turned 45 degrees at an angle slid
+  it off): Combat Arms stands where CS:S does on all 17 ways up, against
+  9 before; its own maps unchanged.
 
 On a map of its own game a movement climbs only what its game climbs
 there (`core::foreign_map`): HL2:DM keeps contents ladders solid on its

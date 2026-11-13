@@ -6,15 +6,21 @@
 //! `core::MapLadders::lines`) walking into it, from some side, and end
 //! standing on the floor of its top dismount point; on CS:S maps
 //! (cs_office, de_nuke; `CHIMERA_LADDER_MAPS` names others) HL2:DM's
-//! climbs each ladder brush (as lines) from each side CS:S's does and ends
-//! standing on the floor CS:S's does (Combat Arms' is printed). A climber
-//! walks into the ladder looking 45 degrees up and lets go once it stands
-//! on a floor a metre over its start (`climb_to_top`). Passes with a note
-//! without the installs. `CHIMERA_LADDER_CROSS_TRACE=1` prints each
-//! Source climber's ticks and HL2:DM's ladder lines.
+//! (each ladder brush as lines) and Combat Arms' (as `Ladder` volumes)
+//! climb each ladder brush from each side CS:S's does and end standing on
+//! the floor CS:S's does. A climber walks into the ladder looking 45
+//! degrees up and lets go once it stands on a floor a metre over its start
+//! (`climb_to_top`); Combat Arms', once on a brush, faces the face it is
+//! on (`into_face`). Passes with a note without the installs.
+//! `CHIMERA_LADDER_CROSS_TRACE=1` prints each climber's ticks, HL2:DM's
+//! ladder lines and the brushes by where each climb ended;
+//! `CHIMERA_LADDER_ONLY=<k>` tries ladder brush k only.
 
 use bevy::prelude::*;
-use chimera_core::{core::MapLadders, mount::config::LocalConfig};
+use chimera_core::{
+    core::{MapBrush, MapLadders},
+    mount::config::LocalConfig,
+};
 use chimera_world::{harness::Sim, map::MapSimPlugin};
 use combat_arms::harness::CaSim;
 use cs_source::game::movement::{SourceMovement, UseableLadders};
@@ -105,7 +111,9 @@ fn tracing() -> bool {
 /// 0.3 m) or stalled on it (not rising for a quarter second), it looks
 /// level toward the floor there, as a player would: `aim` (engine; else
 /// straight on). At the foot it presses `+use` every 16 ticks.
-fn climb_to_top(sim: &mut Sim, p: Entity, to: Vec3, aim: Option<Vec3>, top: f32, secs: f32) -> Climb {
+#[allow(clippy::too_many_arguments)]
+fn climb_to_top(sim: &mut Sim, p: Entity, to: Vec3, aim: Option<Vec3>, top: f32, brush: Option<&MapBrush>, secs: f32) -> Climb {
+    let ca = sim.app.world().get::<combat_arms::game::movement::CaMovement>(p).is_some();
     let start = feet(sim, p);
     let (mut rose, mut still, mut k) = (0.0f32, 0u32, 0u32);
     let stall = (0.25 * sim.tick_hz()) as u32;
@@ -114,6 +122,11 @@ fn climb_to_top(sim: &mut Sim, p: Entity, to: Vec3, aim: Option<Vec3>, top: f32,
         let dir = match aim {
             Some(a) if level => (a - sim.position(p)).with_y(0.0).normalize_or(to),
             _ => to,
+        };
+        // Combat Arms' climber, on a ladder brush, faces the face it is on.
+        let dir = match brush.filter(|_| ca && sim.state(p).on_ladder) {
+            Some(b) => into_face(b, sim.position(p)).unwrap_or(dir),
+            None => dir,
         };
         // Off the ladder at the foot, `+use` now and then, as HL2:DM's
         // players get on one at an angle.
@@ -137,6 +150,10 @@ fn climb_to_top(sim: &mut Sim, p: Entity, to: Vec3, aim: Option<Vec3>, top: f32,
             let f = m.forced.map(|f| f.goal);
             eprintln!("  feet {now:.3} useable {:?} forced {f:?} ladder {:?} ground {}", m.useable, m.ladder, s.on_ground);
         }
+        if tracing() && let Some(m) = sim.app.world().get::<combat_arms::game::movement::CaMovement>(p) {
+            let v = sim.app.world().get::<chimera_core::core::Velocity>(p).map(|v| v.0).unwrap_or_default();
+            eprintln!("  feet {now:.3} at {:.2} v {v:.2} ca ladder {} ground {} state ground {} eye {}", sim.position(p), m.on_ladder, m.on_ground, s.on_ground, m.eye_free);
+        }
         if s.on_ground && !s.on_ladder && now > 1.0 {
             break;
         }
@@ -144,6 +161,13 @@ fn climb_to_top(sim: &mut Sim, p: Entity, to: Vec3, aim: Option<Vec3>, top: f32,
     if tracing() {
         for l in &sim.app.world().resource::<UseableLadders>().0 {
             eprintln!("  line {:?} {:?}..{:?} on {} dismounts {:?}", l.from, l.bottom, l.top, l.enabled, l.dismounts);
+        }
+        let (c, s) = (sim.position(p), sim.state(p));
+        let (lo, hi) = (c + s.hull_min - Vec3::splat(0.05), c + s.hull_max + Vec3::splat(0.05));
+        for b in &sim.app.world().resource::<chimera_core::core::MapBrushes>().0 {
+            if b.min.cmple(hi).all() && b.max.cmpge(lo).all() {
+                eprintln!("  near {:.2}..{:.2} ladder {} planes {:.3?}", b.min, b.max, b.ladder, b.planes);
+            }
         }
     }
     sim.intent(p).move_axis = Vec2::ZERO;
@@ -155,8 +179,9 @@ fn climb_to_top(sim: &mut Sim, p: Entity, to: Vec3, aim: Option<Vec3>, top: f32,
     c
 }
 
-/// Each of `movements` from `feet` walking toward `to`: None where it
-/// can't stand there.
+/// Each of `movements` from `feet` walking toward `to` (on ladder brush
+/// `brush`, if one): None where it can't stand there.
+#[allow(clippy::too_many_arguments)]
 fn climbs<const N: usize>(
     sim: &mut Sim,
     movements: [&'static str; N],
@@ -165,8 +190,19 @@ fn climbs<const N: usize>(
     to: Vec3,
     aim: Option<Vec3>,
     top: f32,
+    brush: Option<&MapBrush>,
 ) -> [Option<Climb>; N] {
-    movements.map(|m| stand(sim, m, feet, below).map(|p| climb_to_top(sim, p, to, aim, top, 6.0)))
+    movements.map(|m| stand(sim, m, feet, below).map(|p| climb_to_top(sim, p, to, aim, top, brush, 6.0)))
+}
+
+/// The level direction into the side face of ladder brush `b` nearest to
+/// `at` (the one it is furthest out of).
+fn into_face(b: &MapBrush, at: Vec3) -> Option<Vec3> {
+    b.planes
+        .iter()
+        .filter(|(n, _)| n.y.abs() < 0.7)
+        .max_by(|(n, d), (m, e)| (n.dot(at) - d).total_cmp(&(m.dot(at) - e)))
+        .map(|(n, _)| -n.with_y(0.0).normalize())
 }
 
 /// Every ladder line of HL2:DM map `id` with a dismount point over its
@@ -189,7 +225,7 @@ fn lines_climbed(id: &str) {
         tried += 1;
         let mut reached = [false; 3];
         for dir in [Vec3::X, Vec3::NEG_X, Vec3::Z, Vec3::NEG_Z] {
-            let got = climbs(&mut sim, [HL2, CSS, CA], l.bottom + dir * 0.7 + Vec3::Y * 0.05, 1.5, -dir, top, l.top.y);
+            let got = climbs(&mut sim, [HL2, CSS, CA], l.bottom + dir * 0.7 + Vec3::Y * 0.05, 1.5, -dir, top, l.top.y, None);
             eprintln!("{what} from {dir}, top floor {floor:.2}: {got:.2?}");
             for (r, c) in reached.iter_mut().zip(&got) {
                 *r |= c.is_some_and(|c| c.on_floor(floor));
@@ -209,12 +245,12 @@ fn lines_climbed(id: &str) {
 /// Every ladder brush of CS:S map `id`, head-on from 0.6 m out on each
 /// side of its box's thinner axis (a ladder 3 m or taller is also
 /// grabbed in the air a third of the way up where not from the floor,
-/// printed only): where CS:S's climber gets up onto a floor, HL2:DM's ends
-/// standing on it too.
+/// printed only): where CS:S's climber gets up onto a floor, HL2:DM's and
+/// Combat Arms' end standing on it too.
 fn brushes_climbed(id: &str) {
     let Some((tried, failed)) = brush_failures(id) else { return };
     assert!(tried > 0, "{id}: CS:S climbs some ladder");
-    assert!(failed.is_empty(), "{id}: HL2:DM not on CS:S's floor:\n{}", failed.join("\n"));
+    assert!(failed.is_empty(), "{id}: not on CS:S's floor:\n{}", failed.join("\n"));
 }
 
 /// `brushes_climbed`'s sides tried (where CS:S got up) and failures on
@@ -227,7 +263,14 @@ fn brush_failures(id: &str) -> Option<(usize, Vec<String>)> {
         return Some((0, Vec::new()));
     }
     let (mut tried, mut failed) = (0, Vec::new());
+    let only: Option<usize> = chimera_core::env::var("CHIMERA_LADDER_ONLY").ok().and_then(|s| s.parse().ok());
     for (k, b) in volumes.iter().enumerate() {
+        if only.is_some_and(|o| o != k) {
+            continue;
+        }
+        if tracing() {
+            eprintln!("{id} ladder {k}: {:.2}..{:.2} planes {:.3?}", b.min, b.max, b.planes);
+        }
         let size = b.max - b.min;
         let thin = if size.x < size.z { Vec3::X } else { Vec3::Z };
         let thick = size.dot(thin);
@@ -236,7 +279,7 @@ fn brush_failures(id: &str) -> Option<(usize, Vec<String>)> {
             // Its foot may be under the floor: dropped from 1.5 m over it.
             let out = thin * side * (thick / 2.0 + 0.6);
             let feet = Vec3::new(centre.x + out.x, b.min.y + 1.5, centre.z + out.z);
-            let got = climbs(&mut sim, [CSS, HL2, CA], feet, 2.0, -thin * side, None, b.max.y);
+            let got = climbs(&mut sim, [CSS, HL2, CA], feet, 2.0, -thin * side, None, b.max.y, Some(b));
             let face = (-thin * side, centre.dot(-thin * side) - thick / 2.0);
             let what = format!("{id} ladder {k} ({:.1} m) at {centre:.1} side {side}", size.y);
             if compare(&what, got, face, &mut tried, &mut failed) || size.y < 3.0 {
@@ -248,22 +291,27 @@ fn brush_failures(id: &str) -> Option<(usize, Vec<String>)> {
                 + thin * side * (thick / 2.0 + 17.0 * 0.0254);
             let got = [CSS, HL2, CA].map(|m| {
                 let p = sim.spawn_character(at, m);
-                climb_to_top(&mut sim, p, -thin * side, None, b.max.y, 6.0)
+                climb_to_top(&mut sim, p, -thin * side, None, b.max.y, Some(b), 6.0)
             });
             // Printed only: a ladder over another is got onto from it.
             let (mut t, mut f) = (0, Vec::new());
             compare(&format!("{what}, in the air"), got.map(Some), face, &mut t, &mut f);
         }
     }
-    eprintln!("{id}: HL2:DM on CS:S's floor in {} of {tried}", tried - failed.len());
+    let missed = |m: &str| failed.iter().filter(|f: &&String| f.contains(&format!(": {m} "))).count();
+    eprintln!(
+        "{id}: on CS:S's floor in {tried}: HL2:DM {}, Combat Arms {}",
+        tried - missed("HL2:DM"),
+        tried - missed("Combat Arms")
+    );
     Some((tried, failed))
 }
 
 /// Where CS:S's climber (`got[0]`) got up onto a floor (its middle at
 /// most 0.1 m short of the ladder's near face: `face`, its inward
-/// direction and where along it the face is), HL2:DM's
-/// (`got[1]`) must stand on it too, or over it (`Climb::on_or_over`);
-/// Combat Arms' (`got[2]`) is printed.
+/// direction and where along it the face is), HL2:DM's (`got[1]`) and
+/// Combat Arms' (`got[2]`) must stand on it too, or over it
+/// (`Climb::on_or_over`).
 fn compare(what: &str, got: [Option<Climb>; 3], face: (Vec3, f32), tried: &mut usize, failed: &mut Vec<String>) -> bool {
     eprintln!("{what}: {got:.2?}");
     // Up onto a floor at the ladder's face or beyond it, not perched on
@@ -272,8 +320,10 @@ fn compare(what: &str, got: [Option<Climb>; 3], face: (Vec3, f32), tried: &mut u
     *tried += 1;
     let on = got.map(|c| c.is_some_and(|c| c.on_or_over(css.end)));
     eprintln!("{what}: on CS:S's floor (CS:S, HL2:DM, Combat Arms) {on:?}");
-    if !on[1] {
-        failed.push(format!("{what}: HL2:DM {:?}, CS:S {css:?}", got[1]));
+    for (k, m) in [(1, "HL2:DM"), (2, "Combat Arms")] {
+        if !on[k] {
+            failed.push(format!("{what}: {m} {:?}, CS:S {css:?}", got[k]));
+        }
     }
     true
 }
@@ -289,12 +339,12 @@ fn css_and_combat_arms_climb_dm_steamlabs_ladders() {
 }
 
 #[test]
-fn hl2dm_climbs_cs_offices_ladders() {
+fn hl2dm_and_combat_arms_climb_cs_offices_ladders() {
     brushes_climbed("cs_source:cs_office");
 }
 
 #[test]
-fn hl2dm_climbs_de_nukes_ladders() {
+fn hl2dm_and_combat_arms_climb_de_nukes_ladders() {
     // Its ladder 0 (outside): the others' tops (the vents', the one
     // between walls) CS:S's climber doesn't get off this way.
     brushes_climbed("cs_source:de_nuke");
@@ -303,9 +353,9 @@ fn hl2dm_climbs_de_nukes_ladders() {
 /// The CS:S maps `CHIMERA_LADDER_MAPS` names (comma-separated, without
 /// the `cs_source:`), the same way; nothing without it.
 #[test]
-fn hl2dm_climbs_listed_maps_ladders() {
+fn hl2dm_and_combat_arms_climb_listed_maps_ladders() {
     let Ok(list) = chimera_core::env::var("CHIMERA_LADDER_MAPS") else { return };
     let failed: Vec<String> =
         list.split(',').map(str::trim).filter(|s| !s.is_empty()).flat_map(|n| brush_failures(&format!("cs_source:{n}")).map(|r| r.1).unwrap_or_default()).collect();
-    assert!(failed.is_empty(), "HL2:DM not on CS:S's floor:\n{}", failed.join("\n"));
+    assert!(failed.is_empty(), "not on CS:S's floor:\n{}", failed.join("\n"));
 }
