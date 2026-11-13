@@ -1064,6 +1064,35 @@ impl ObjectWorld {
         }
     }
 
+    /// Whether object `id` can ever move: an active world model (doors,
+    /// movers, debris), a keyframed one, one a keyframer names, or one
+    /// attached to any of those. A world model the map only shows, hides
+    /// or breaks stays where it is (`movement`: it is a step).
+    pub fn can_move(&self, id: ObjId) -> bool {
+        let moved_by_keyframer = |o: &Object| {
+            self.objects.iter().any(|k| match &k.kind {
+                Kind::KeyFramer(f) => f.object_names.iter().any(|n| {
+                    self.named_all(n).iter().any(|&t| std::ptr::eq(&self.objects[t as usize], o))
+                }),
+                _ => false,
+            })
+        };
+        let mut at = Some(id);
+        let mut hops = 0;
+        while let Some(i) = at.filter(|_| hops < 16) {
+            let o = &self.objects[i as usize];
+            if matches!(o.kind, Kind::Active(_) | Kind::Flight(_))
+                || o.props.bool_or("IsKeyframed", false)
+                || moved_by_keyframer(o)
+            {
+                return true;
+            }
+            at = o.parent;
+            hops += 1;
+        }
+        false
+    }
+
     /// Every object of name `name` (as the engine compares names).
     pub fn named_all(&self, name: &str) -> Vec<ObjId> {
         let n = name.trim();

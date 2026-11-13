@@ -37,7 +37,8 @@
 //!   other team at once. Spawns: the `Capturetheflag` points per team.
 //! - The flags' props (`props`: the maps' `FlagItem` models) are shown
 //!   only in capture the flag, at home or where dropped, hidden while
-//!   carried (`show_flags`, every machine).
+//!   carried (`show_flags`, every machine, whatever the gameplay: under
+//!   other rules, a party's minigame, they stay hidden).
 //!
 //! Taking and returning work in every phase; returns, like captures,
 //! count except in the warm-up (Open question 34, answered). No assists
@@ -385,15 +386,18 @@ pub fn pick(a: i64, b: i64) -> Option<u8> {
 
 /// The flags' props: shown in capture the flag only, at home or where
 /// dropped, hidden while carried (every machine, from the objectives it
-/// sees).
+/// sees). Whatever the gameplay: under other rules (a party's minigame on
+/// a Combat Arms map) no capture the flag plays, and they stay hidden.
 pub fn show_flags(
     view: Res<super::CaMatchView>,
     objectives: Res<CaObjectives>,
+    gameplay: Option<Res<crate::gameplay::Gameplay>>,
     entities: Option<Res<crate::map::MapEntities>>,
     mut props: Query<(&crate::map::PropEntity, &crate::map::PropHome, &mut Transform, &mut Visibility)>,
 ) {
     let Some(entities) = entities else { return };
-    let ctf = view.mode == MODE.key || view.mode == super::clan::CTF.key;
+    let ours = gameplay.is_none_or(|g| g.rules == super::super::GAME);
+    let ctf = ours && (view.mode == MODE.key || view.mode == super::clan::CTF.key);
     for (index, home, mut t, mut vis) in &mut props {
         let Some(e) = entities.entities.get(index.0) else { continue };
         if e.classname() != "FlagItem" {

@@ -218,6 +218,12 @@ pub struct CaObjectFire {
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CaNode(pub ObjId);
 
+/// A node whose object never moves (`runtime::ObjectWorld::can_move`):
+/// shown, hidden or broken only. Its body is kinematic as every node's,
+/// but the movement steps onto it as onto the world (`movement`).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CaFixedNode;
+
 /// A volume's object (its map entity index).
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CaVolumeObject(pub ObjId);
@@ -543,6 +549,8 @@ fn bind(world: &mut World) {
         nodes.into_iter().filter(|(_, i)| o.world.objects.get(*i).is_some_and(|ob| ob.node)).collect();
     o.nodes = nodes.iter().map(|(e, i)| (*i as ObjId, *e)).collect();
     o.volumes = volumes.iter().map(|(e, i, _)| (*i as ObjId, *e)).collect();
+    let fixed: std::collections::BTreeSet<usize> =
+        nodes.iter().map(|(_, i)| *i).filter(|i| !o.world.can_move(*i as ObjId)).collect();
     let entities = world.get_resource::<MapEntities>().cloned();
     for (e, i) in nodes {
         // Its polygons as one triangle mesh (a world model needn't be
@@ -561,6 +569,9 @@ fn bind(world: &mut World) {
         });
         let mut ent = world.entity_mut(e);
         ent.insert((CaNode(i as ObjId), Damageable));
+        if fixed.contains(&i) {
+            ent.insert(CaFixedNode);
+        }
         if let Some(c) = mesh {
             ent.insert((
                 c,
