@@ -168,6 +168,8 @@ fn without_hooks_a_server_has_none_of_them() {
         "the game's tick on the greybox"
     );
     assert!(!w.contains_resource::<MapCycle>() && !w.contains_resource::<MapFiles>());
+    // Player ragdolls are the clients' (ragdolls.md 2.1).
+    assert_eq!(w.resource::<chimera_world::map::ragdoll::RagdollSettings>().enabled, 0);
     assert_eq!(PLAIN_SERVER.map_id("a"), "stand_in:a");
     assert!(
         PLAIN_SERVER

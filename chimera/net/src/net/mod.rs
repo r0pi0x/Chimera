@@ -185,9 +185,9 @@
 //! has its player falling that the server stands on ground, not near another
 //! player or a prop (not pinned down) and from damage's slowdown and blasts'
 //! pushes (the server's), a respawn takes a round trip to predict right again;
-//! a dedicated server still makes ragdolls and plays (silent) looping sounds
-//! for nobody, logging each start at info level (1,111 lines and 53 ragdolls in
-//! 17 minutes); a client's main thread stalls 3-4 s putting a new map in (12 s
+//! a dedicated server still plays (silent) looping sounds for nobody, logging
+//! each start at info level (1,111 lines in 17 minutes; it makes no player
+//! ragdolls since 2026-11-12, `dedicated`); a client's main thread stalls 3-4 s putting a new map in (12 s
 //! and a 5 s frame after it on this machine under load; during its loading
 //! screen, packets wait in the socket meanwhile, and a stall over 30 s drops
 //! the client) and `net_fakejitter` then reorders the whole burst, so renetcode

@@ -104,6 +104,7 @@ mod heavy {
     mod map_courses;
     mod map_de_dust2;
     mod map_debris_settle;
+    mod map_ragdoll_cost;
     mod map_de_nuke;
     mod map_de_nuke_doors;
     mod map_de_port;

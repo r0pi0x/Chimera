@@ -792,7 +792,8 @@ fn fly(
     mut commands: Commands,
 ) {
     let dt = clock.dt();
-    if dt <= 0.0 {
+    // No flyer (most ticks): no list of the dead to make.
+    if dt <= 0.0 || flyers.is_empty() {
         return;
     }
     // The dead aren't in the way.

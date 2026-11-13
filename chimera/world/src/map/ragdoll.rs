@@ -38,15 +38,18 @@
 //! sequences: side from the push and facing, frame from the hit group), held by
 //! `RagdollJoint` (ball and socket plus X-Y-Z Euler limits, a row per angle,
 //! solved with avian's contacts: warm start, biased pass, relax), no
-//! gyroscopic torque on ragdoll bodies, its bodies' `.phy` hulls cut for contacts
-//! (`collision::contact_hulls`), on `core::RAGDOLL_LAYER`, its own bodies colliding only for the
+//! gyroscopic torque on ragdoll bodies, its bodies' `.phy` hulls whole (not cut
+//! for contacts as props'; a one-hull body no compound; made once per model's
+//! body, `RagdollShapes`), on `core::RAGDOLL_LAYER`, its own bodies colliding only for the
 //! model's `.phy` collision pairs (`MapCollisionHooks`, the app's avian
 //! collision hooks), friction and elasticity from the surface property;
 //! `RagdollShot` (the weapon layer sends one per bullet path) pushes the pelvis
 //! of ragdolls on it (a blast's names its ragdoll and pushes by its length);
 //! separation repair puts joints held apart back; the owner (`Ragdolled`) hands
 //! its drawn body over (`render::bodies`), whose joints then follow the bodies; forced sleep after
-//! `ragdoll_sleepaftertime`; removed when the owner lives again or is gone (a
+//! `ragdoll_sleepaftertime`; only awake joints in the substeps' passes; none at
+//! all with `RagdollSettings::enabled` 0 (a dedicated server's: no pose record
+//! for bodies it animates either); removed when the owner lives again or is gone (a
 //! living owner whose ragdoll went with the map loses `Ragdolled` as well).
 //!
 //! Known shortcuts (docs/tech-debt.md): Ragdolls (specs/cs_source/ragdolls.md):
@@ -555,6 +558,8 @@ pub fn death_pose_bones(m: &MapCharacterModel, side: DeathSide, frame: u8, crouc
 pub fn plugin(app: &mut App) {
     app.init_resource::<RagdollSettings>()
         .init_resource::<RagdollGameRules>()
+        .init_resource::<AwakeRagdollJoints>()
+        .init_resource::<RagdollShapes>()
         .add_message::<RagdollShot>()
         .add_plugins(JointGraphPlugin::<RagdollJoint>::default())
         .add_systems(
@@ -613,11 +618,14 @@ pub fn globals(m: &MapCharacterModel, local: &[(Quat, Vec3)]) -> Vec<(Quat, Vec3
 
 /// Keep each living character's skeleton pose for this tick (its animator's,
 /// else the bind pose), placed at its feet and turned by its body's yaw.
+/// With ragdolls off (a dedicated server's), a body animated in the tick
+/// (`SimAnimator`: its hitboxes posed from that) needs none.
 #[allow(clippy::type_complexity)]
 pub fn record_poses(
     time: Res<Time>,
     tick: Res<crate::core::SimTick>,
     models: Option<Res<CharacterModels>>,
+    settings: Option<Res<RagdollSettings>>,
     mut characters: Query<(
         Entity,
         &BodyModel,
@@ -627,13 +635,15 @@ pub fn record_poses(
         Option<&anim::Animator>,
         Option<&Health>,
         Option<&mut SkeletonPose>,
+        Has<super::bodies::SimAnimator>,
     )>,
     mut commands: Commands,
 ) {
     let Some(models) = models else { return };
     let now = time.elapsed_secs_f64();
-    for (e, model, t, aabb, intent, animator, health, pose) in &mut characters {
-        if health.is_some_and(|h| h.current <= 0.0) {
+    let ragdolls = settings.is_none_or(|s| s.enabled != 0);
+    for (e, model, t, aabb, intent, animator, health, pose, sim_animated) in &mut characters {
+        if health.is_some_and(|h| h.current <= 0.0) || (sim_animated && !ragdolls) {
             continue;
         }
         let Some(m) = models.0.get(model.0) else { continue };
@@ -712,6 +722,7 @@ pub fn spawn_ragdolls(
     models: Option<Res<CharacterModels>>,
     owners: Query<(&BodyModel, &SkeletonPose, Option<&MovementState>), Without<Ragdolled>>,
     time: Res<Time>,
+    mut shapes: ResMut<RagdollShapes>,
     mut commands: Commands,
 ) {
     let Some(models) = models else {
@@ -766,7 +777,18 @@ pub fn spawn_ragdolls(
             dt: (b1.time - b0.time) as f32,
             death_pose: death.as_ref().map(|(p, _)| *p),
         };
-        let entity = spawn_ragdoll_with(&mut commands, d.entity, model.0, m, ragdoll, &seed, &d.damage, time.elapsed_secs_f64(), rule);
+        let entity = spawn_ragdoll_with(
+            &mut commands,
+            &mut shapes,
+            d.entity,
+            model.0,
+            m,
+            ragdoll,
+            &seed,
+            &d.damage,
+            time.elapsed_secs_f64(),
+            rule,
+        );
         commands.entity(d.entity).insert(Ragdolled);
         info!("ragdoll {entity} for {} (death pose {:?})", d.entity, seed.death_pose);
     }
@@ -787,6 +809,7 @@ pub struct RagdollSeed<'a> {
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_ragdoll(
     commands: &mut Commands,
+    shapes: &mut RagdollShapes,
     owner: Entity,
     model: usize,
     m: &MapCharacterModel,
@@ -795,7 +818,7 @@ pub fn spawn_ragdoll(
     hit: &crate::core::Damage,
     now: f64,
 ) -> Entity {
-    spawn_ragdoll_with(commands, owner, model, m, ragdoll, poses, hit, now, RagdollRules::default())
+    spawn_ragdoll_with(commands, shapes, owner, model, m, ragdoll, poses, hit, now, RagdollRules::default())
 }
 
 /// The killing push of `hit` under `rules` (kg·m/s) and the body it goes
@@ -815,6 +838,7 @@ pub fn death_push(rules: RagdollRules, k: Option<usize>, hit: &crate::core::Dama
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_ragdoll_with(
     commands: &mut Commands,
+    shapes: &mut RagdollShapes,
     owner: Entity,
     model: usize,
     m: &MapCharacterModel,
@@ -834,7 +858,7 @@ pub fn spawn_ragdoll_with(
     let mut bodies = Vec::with_capacity(ragdoll.bodies.len());
     for (i, body) in ragdoll.bodies.iter().enumerate() {
         let (rot, pos) = b1.world(body.bone);
-        let shape = BodyShape::new(body, scale);
+        let shape = shapes.shape(body, scale);
         let (principal, frame) = (shape.principal, rot * shape.frame);
         let centre = pos + rot * shape.centre;
         // Bone velocities (2.6), then the death impulse (2.5): the hit
@@ -922,6 +946,7 @@ pub fn spawn_ragdoll_with(
 }
 
 /// A ragdoll body's collider and mass frame.
+#[derive(Clone)]
 pub struct BodyShape {
     collider: Collider,
     /// Principal moments of inertia (kg m²), with the body's inertia scale.
@@ -932,26 +957,87 @@ pub struct BodyShape {
     centre: Vec3,
 }
 
+/// A body's shape at unit density: its collider and mass properties, kept
+/// per pieces and scale (`RagdollShapes`).
+#[derive(Clone)]
+struct UnitShape {
+    collider: Collider,
+    mass: f32,
+    principal: Vec3,
+    frame: Quat,
+    centre: Vec3,
+}
+
+/// The ragdoll bodies' unit shapes made so far, by their pieces' corners
+/// and scale (each a few hundred floats, compared whole): a death's bodies
+/// reuse their model's (the hulls and their mass properties cost about
+/// 0.25M instructions a body; docs/performance.md, "A ragdoll's cost").
+/// Colliders share their shapes, so a copy is cheap. At most `SHAPE_CACHE`
+/// kept.
+#[derive(Resource, Default)]
+pub struct RagdollShapes(Vec<(Vec<Vec<Vec3>>, f32, UnitShape)>);
+const SHAPE_CACHE: usize = 512;
+
+impl RagdollShapes {
+    /// `BodyShape::new(body, scale)`, made once per pieces and scale.
+    pub fn shape(&mut self, body: &MapRagdollBody, scale: f32) -> BodyShape {
+        let found = self
+            .0
+            .iter()
+            .find(|(p, s, _)| s.to_bits() == scale.to_bits() && *p == body.pieces)
+            .map(|(.., u)| u.clone());
+        let unit = found.unwrap_or_else(|| {
+            let u = UnitShape::new(&body.pieces, scale);
+            if self.0.len() >= SHAPE_CACHE {
+                self.0.clear();
+            }
+            self.0.push((body.pieces.clone(), scale, u.clone()));
+            u
+        });
+        BodyShape::of(body, unit)
+    }
+}
+
 impl BodyShape {
     /// `body`'s convex pieces scaled from skeleton units to meters.
     pub fn new(body: &MapRagdollBody, scale: f32) -> Self {
-        let hulls: Vec<_> = body
-            .pieces
-            .iter()
-            // Cut for contacts (`collision::contact_hulls`), as props' are:
-            // a face of more than four corners touches by four of them.
-            .flat_map(|p| super::collision::contact_hulls(&p.iter().map(|v| *v * scale).collect::<Vec<_>>()))
-            .map(|c| (Vec3::ZERO, Quat::IDENTITY, c))
-            .collect();
-        let collider = if hulls.is_empty() {
-            Collider::sphere(0.05)
-        } else {
-            Collider::compound(hulls)
-        };
-        let unit = collider.mass_properties(1.0);
+        Self::of(body, UnitShape::new(&body.pieces, scale))
+    }
+
+    fn of(body: &MapRagdollBody, unit: UnitShape) -> Self {
         let density = if unit.mass > 0.0 { body.mass / unit.mass } else { 1.0 };
         Self {
-            principal: unit.principal_angular_inertia * density * body.inertia.max(0.01),
+            principal: unit.principal * density * body.inertia.max(0.01),
+            frame: unit.frame,
+            centre: unit.centre,
+            collider: unit.collider,
+        }
+    }
+}
+
+impl UnitShape {
+    fn new(pieces: &[Vec<Vec3>], scale: f32) -> Self {
+        // Each `.phy` piece's hull whole, not cut for contacts as props'
+        // are (`collision::contact_hulls`): cut, a player's 16 hulls were
+        // 29 pieces, and the narrow phase walked each against the map's
+        // (two thirds of a ragdoll's narrow phase), while ragdolls settle
+        // and sleep the same either way (a joint chain doesn't rock on a
+        // face's clipped corners as a lone prop does; docs/performance.md,
+        // "A ragdoll's cost").
+        let mut hulls: Vec<Collider> = pieces
+            .iter()
+            .filter_map(|p| Collider::convex_hull(&p.iter().map(|v| *v * scale).collect::<Vec<_>>()))
+            .collect();
+        // One piece is its own collider, not a compound of one.
+        let collider = match hulls.len() {
+            0 => Collider::sphere(0.05),
+            1 => hulls.pop().expect("one hull"),
+            _ => Collider::compound(hulls.into_iter().map(|c| (Vec3::ZERO, Quat::IDENTITY, c)).collect()),
+        };
+        let unit = collider.mass_properties(1.0);
+        Self {
+            mass: unit.mass,
+            principal: unit.principal_angular_inertia,
             frame: unit.local_inertial_frame,
             centre: unit.center_of_mass,
             collider,
@@ -1196,9 +1282,14 @@ fn repair_ragdolls(
         >,
         SpatialQuery,
     )>,
+    asleep: Query<Has<Sleeping>, With<RagdollBody>>,
 ) {
     let world = SpatialQueryFilter::from_mask(LayerMask::DEFAULT);
     for mut r in &mut ragdolls {
+        // A sleeping ragdoll (most of them) is passed over first, cheaply.
+        if r.bodies.iter().all(|b| asleep.get(*b).unwrap_or(false)) {
+            continue;
+        }
         let mut state = Vec::with_capacity(r.bodies.len());
         for b in &r.bodies {
             let Ok((p, q, v, w, m, c, asleep)) = physics.p0().get(*b).map(|(p, q, v, w, m, c, s)| (p.0, q.0, v.0, w.0, m.value(), c.0, s)) else {
@@ -1292,6 +1383,7 @@ fn settle_ragdolls(
     >,
     settings: Res<RagdollSettings>,
     time: Res<Time>,
+    sleeping: Query<Has<Sleeping>, With<RagdollBody>>,
     mut commands: Commands,
 ) {
     use super::prop_physics::{SETTLE_ANGLE, SETTLE_DISTANCE, SETTLE_TIME};
@@ -1308,6 +1400,15 @@ fn settle_ragdolls(
             stop = true;
         }
         r.last_root = at;
+        // All asleep (most ragdolls): nothing to watch, without reading
+        // every body's pose.
+        if asleep && r.bodies.iter().all(|b| sleeping.get(*b).unwrap_or(false)) {
+            if !r.still.is_empty() || r.still_since != now {
+                r.still.clear();
+                r.still_since = now;
+            }
+            continue;
+        }
         // Every body kept still?
         let poses: Vec<(Vec3, Quat, bool)> =
             r.bodies.iter().filter_map(|b| bodies.get(*b).ok()).map(|(p, q, .., s)| (p.0, q.0, s)).collect();
@@ -1376,6 +1477,9 @@ pub struct RagdollJointSolverData {
     point_impulse: Vec3,
     /// The limits' accumulated impulses: each angle's lower, then upper.
     limit_impulse: [[f32; 2]; 3],
+    /// This substep's limit angles and axes, from the warm start for the
+    /// biased pass (the bodies don't turn between them).
+    limit_frame: Option<([f32; 3], [Vec3; 3])>,
 }
 
 impl RagdollJointSolverData {
@@ -1469,9 +1573,21 @@ fn joint_bodies(index: &Query<&SolverBodyIndex>, joint: &RagdollJoint) -> Option
 /// Each joint's bodies at the step's start (before the substeps).
 fn prepare_ragdoll_joints(
     bodies: Query<(&Position, &Rotation, &ComputedCenterOfMass), With<SolverBodyIndex>>,
-    mut joints: Query<(&RagdollJoint, &mut RagdollJointSolverData), Without<JointDisabled>>,
+    index: Query<&SolverBodyIndex>,
+    mut joints: Query<(Entity, &RagdollJoint, &mut RagdollJointSolverData), Without<JointDisabled>>,
+    mut awake: ResMut<AwakeRagdollJoints>,
 ) {
-    for (joint, mut data) in &mut joints {
+    awake.0.clear();
+    for (e, joint, mut data) in &mut joints {
+        // Asleep (a body without a solver body this step): nothing to
+        // prepare, its impulses kept for when it wakes.
+        let (a, b) = (index.get(joint.parent), index.get(joint.child));
+        if let (Ok(a), Ok(b)) = (a, b)
+            && !(a.is_valid() && b.is_valid())
+        {
+            continue;
+        }
+        let solved = joint.parent != joint.child && matches!((a, b), (Ok(a), Ok(b)) if a != b);
         let (Ok((p1, q1, c1)), Ok((p2, q2, c2))) = (bodies.get(joint.parent), bodies.get(joint.child)) else {
             data.active = false;
             data.point_impulse = Vec3::ZERO;
@@ -1484,8 +1600,17 @@ fn prepare_ragdoll_joints(
         data.centre_difference = (p2.0 + q2.0 * c2.0) - (p1.0 + q1.0 * c1.0);
         data.rotation1 = q1.0;
         data.rotation2 = q2.0;
+        if solved {
+            awake.0.push(e);
+        }
     }
 }
+
+/// The joints the substeps solve this step, in the joints' query order:
+/// both bodies have solver bodies (awake). A sleeping ragdoll's joints
+/// (most of them) are left out of the substeps' passes.
+#[derive(Resource, Default)]
+struct AwakeRagdollJoints(Vec<Entity>);
 
 /// Apply an impulse at the anchors (`impulse` on body 2, its opposite on
 /// body 1) and an angular one (`torque` likewise).
@@ -1509,11 +1634,14 @@ fn apply_joint_impulse(
 fn warm_start_ragdoll_joints(
     mut solver: ResMut<SolverBodies>,
     index: Query<&SolverBodyIndex>,
-    joints: Query<(&RagdollJoint, &RagdollJointSolverData)>,
+    mut joints: Query<(&RagdollJoint, &mut RagdollJointSolverData)>,
+    awake: Res<AwakeRagdollJoints>,
     config: Res<SolverConfig>,
 ) {
     let access = solver.access();
-    for (joint, data) in &joints {
+    for e in &awake.0 {
+        let Ok((joint, mut data)) = joints.get_mut(*e) else { continue };
+        data.limit_frame = None;
         if !data.active || joint.parent == joint.child {
             continue;
         }
@@ -1524,9 +1652,10 @@ fn warm_start_ragdoll_joints(
             continue;
         };
         let r = (b1.delta_rotation * data.r1, b2.delta_rotation * data.r2);
-        let (_, dual) = joint.limit_axes(b1.delta_rotation * data.rotation1, b2.delta_rotation * data.rotation2);
+        let frame = joint.limit_axes(b1.delta_rotation * data.rotation1, b2.delta_rotation * data.rotation2);
         let c = config.warm_start_coefficient;
-        apply_joint_impulse(b1, b2, i1, i2, r, data.point_impulse * c, data.limit_torque(&dual) * c);
+        apply_joint_impulse(b1, b2, i1, i2, r, data.point_impulse * c, data.limit_torque(&frame.1) * c);
+        data.limit_frame = Some(frame);
     }
 }
 
@@ -1536,6 +1665,7 @@ fn solve_ragdoll_joints<const BIAS: bool>(
     mut solver: ResMut<SolverBodies>,
     index: Query<&SolverBodyIndex>,
     mut joints: Query<(&RagdollJoint, &mut RagdollJointSolverData)>,
+    awake: Res<AwakeRagdollJoints>,
     config: Res<SolverConfig>,
     time: Res<Time>,
     step: Res<Time<Physics>>,
@@ -1546,7 +1676,11 @@ fn solve_ragdoll_joints<const BIAS: bool>(
     }
     let soft = joint_softness(&config, step.delta_secs().max(h), h);
     let access = solver.access();
-    for (joint, mut data) in &mut joints {
+    for e in &awake.0 {
+        let Ok((joint, mut data)) = joints.get_mut(*e) else { continue };
+        // The warm start's angles serve the biased pass only: the relax
+        // comes after the bodies turned.
+        let frame = data.limit_frame.take().filter(|_| BIAS);
         if !data.active || joint.parent == joint.child {
             continue;
         }
@@ -1558,12 +1692,13 @@ fn solve_ragdoll_joints<const BIAS: bool>(
         };
         let (r1, r2) = (b1.delta_rotation * data.r1, b2.delta_rotation * data.r2);
         let (a1, a2) = (Mat3::from(i1.effective_inv_angular_inertia()), Mat3::from(i2.effective_inv_angular_inertia()));
+        let (m1, m2) = (i1.effective_inv_mass(), i2.effective_inv_mass());
         // Ball and socket: the anchors meet.
         let separation = (b2.delta_position - b1.delta_position) + (r2 - r1) + data.centre_difference;
         let velocity =
             (b2.linear_velocity + b2.angular_velocity.cross(r2)) - (b1.linear_velocity + b1.angular_velocity.cross(r1));
         let (s1, s2) = (skew(r1), skew(r2));
-        let k = Mat3::from_diagonal(i1.effective_inv_mass() + i2.effective_inv_mass()) - s1 * a1 * s1 - s2 * a2 * s2;
+        let k = Mat3::from_diagonal(m1 + m2) - s1 * a1 * s1 - s2 * a2 * s2;
         let mass = k.inverse();
         let impulse = if BIAS {
             -(mass * (velocity + separation * soft.bias)) * soft.mass_scale - data.point_impulse * soft.impulse_scale
@@ -1572,22 +1707,33 @@ fn solve_ragdoll_joints<const BIAS: bool>(
         };
         if impulse.is_finite() {
             data.point_impulse += impulse;
-            apply_joint_impulse(b1, b2, i1, i2, (r1, r2), impulse, Vec3::ZERO);
+            // As `apply_joint_impulse`, with the matrices made once.
+            b1.linear_velocity -= impulse * m1;
+            b1.angular_velocity -= a1 * (r1.cross(impulse) + Vec3::ZERO);
+            b2.linear_velocity += impulse * m2;
+            b2.angular_velocity += a2 * (r2.cross(impulse) + Vec3::ZERO);
         }
         // Limits: a row per angle and side (Box2D's joint limits): soft
         // when past the limit, else speculative (it may come up to the
         // limit, not past it).
-        let (angles, dual) = joint.limit_axes(b1.delta_rotation * data.rotation1, b2.delta_rotation * data.rotation2);
+        let (angles, dual) = frame.unwrap_or_else(|| {
+            joint.limit_axes(b1.delta_rotation * data.rotation1, b2.delta_rotation * data.rotation2)
+        });
         for i in 0..3 {
             let (lo, hi) = joint.limits[i];
             for (side, sign, gap) in [(0, 1.0, angles[i] - lo), (1, -1.0, hi - angles[i])] {
                 let n = dual[i] * sign;
+                let speed = (b2.angular_velocity - b1.angular_velocity).dot(n);
+                let held = data.limit_impulse[i][side];
+                // Short of the limit, not closing on it within the
+                // substep and holding nothing: the row does nothing.
+                if gap > 0.0 && held == 0.0 && speed + gap / h >= 0.0 {
+                    continue;
+                }
                 let k = n.dot((a1 + a2) * n);
                 if k <= 0.0 {
                     continue;
                 }
-                let speed = (b2.angular_velocity - b1.angular_velocity).dot(n);
-                let held = data.limit_impulse[i][side];
                 let lambda = if gap > 0.0 {
                     -(speed + gap / h) / k
                 } else if BIAS {
@@ -1598,7 +1744,9 @@ fn solve_ragdoll_joints<const BIAS: bool>(
                 // It only pushes back into the limits.
                 let total = (held + lambda).max(0.0);
                 data.limit_impulse[i][side] = total;
-                apply_joint_impulse(b1, b2, i1, i2, (r1, r2), Vec3::ZERO, n * (total - held));
+                let torque = n * (total - held);
+                b1.angular_velocity -= a1 * torque;
+                b2.angular_velocity += a2 * torque;
             }
         }
     }

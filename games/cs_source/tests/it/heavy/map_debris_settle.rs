@@ -1,8 +1,9 @@
 //! Ragdolls and broken props' pieces settle and sleep on real CS:S maps,
 //! headless: a CS:S player killed at a map's spawns lies still and its
 //! bodies go to sleep, and a broken prop's pieces come to rest apart and
-//! sleep, rather than moving for good. Their hulls are cut for contacts like
-//! props' (`map::collision::contact_hulls`). Skipped without an install.
+//! sleep, rather than moving for good. Pieces' hulls are cut for contacts like
+//! props' (`map::collision::contact_hulls`); ragdolls' are whole
+//! (`map::ragdoll::BodyShape`). Skipped without an install.
 
 use avian3d::prelude::*;
 use bevy::prelude::*;
@@ -88,8 +89,9 @@ fn spawns(map: &MapData, class: &str) -> Vec<Vec3> {
 /// sleeps within `LIMIT` s, half of them within 4 s. Run three ways in
 /// fresh sims, so the bounds hold whatever the solver's order (the spawns
 /// in map order, in reverse, and every other one first). Measured: up to
-/// 1.49 rad/s after 4 s, asleep in 1.5-5.7 s, median 2.9 s, 57 of 60 by
-/// 5 s (avian 0.8; with 0.7 up to 1.74 rad/s after 3 s, asleep in
+/// 0.72 rad/s after 4 s, asleep in 1.5-5.7 s, median 2.8 s, 57 of 60 by
+/// 5 s, with whole hulls (cut for contacts as props': up to 1.49 rad/s,
+/// median 2.9 s; avian 0.8; with 0.7 up to 1.74 rad/s after 3 s, asleep in
 /// 1.9-7.0 s, median 3.2 s, 51 of 60 by 5 s: 0.8 solves friction only in
 /// its relax pass, so an arm lying on a de_inferno step's edge slides off
 /// it at up to 5 rad/s 3.4-3.8 s after the fall). Before ragdoll joints were
