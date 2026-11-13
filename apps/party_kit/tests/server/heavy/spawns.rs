@@ -1,4 +1,4 @@
-//! The gun game's `points = "random_hidden"` on the real maps (needs both
+//! The gun game's spawns (`points = "scored"`, on `random_hidden`'s spots) on the real maps (needs both
 //! installs in chimera.local.toml, else passes with a note): de_dust2 (its
 //! own navigation mesh) and Combat Arms' warehouse (a mesh generated from
 //! its collision). Fifty respawns of one soldier with another standing

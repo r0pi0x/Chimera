@@ -1,9 +1,12 @@
 //! `points = "random_hidden"`: a deathmatch's spawning, spread over the
 //! whole map and out of the enemies' sight (`pick`, called by
-//! `runtime::spawn_point`).
+//! `runtime::spawn_point`); its spots, facing and draws are also
+//! `points = "scored"`'s (`spawn_score`, the gun games').
 //!
 //! - Spots (`SpawnSpots`, made once per loaded map on the first spawn, in a
-//!   front end a slice a tick from the match's start (`prepare_spots`,
+//!   front end behind the map's loading screen (`settle_spots`, also
+//!   before a minigame starts when a registered one spawns on spots), else
+//!   a slice a tick from the match's start (`prepare_spots`,
 //!   `nav_gen::SliceFloods`: the map's spawn points until they are ready),
 //!   and removed with the map, `MapScopedApp::map_scoped`): points on the
 //!   floors of the map's navigation mesh: its own (`map::nav::NavMesh`, a
@@ -56,7 +59,8 @@
 //!   static world (characters excluded), each capped at 30 m; the
 //!   distances are smoothed over 5 neighbours, and the most open direction
 //!   is faced (among those within 10% of it, the one toward the middle of
-//!   the spots), turned a random +-10 degrees by the seeded draws, pitched
+//!   the spots; `scored` also weighs each down toward the nearest enemy),
+//!   turned a random +-10 degrees by the seeded draws, pitched
 //!   2 degrees down. About 20 microseconds a spawn
 //!   (`facing_costs_well_under_a_millisecond` measures it). `rays = 0`
 //!   brings back eight fixed directions.
@@ -117,7 +121,7 @@ pub const HEIGHT: f32 = 72.0 * 0.0254;
 /// a stair under its corners is walked off, not stuck in) to the head.
 pub const STEP: f32 = 18.0 * 0.0254;
 /// An enemy's eye above its centre (m).
-const EYE: f32 = 0.7;
+pub const EYE: f32 = 0.7;
 /// How much shorter than the step-to-head span the tested box is (half
 /// above, half below: clear of the step's and the ceiling's surfaces).
 const SKIN: f32 = 0.05;
@@ -168,31 +172,51 @@ pub struct SpawnSpots {
     pub tries: u8,
 }
 
-/// The generator of a match's draws.
+/// The generator of a match's draws, and what `points = "scored"`
+/// remembers over the match (`spawn_score::Memory`: recent danger, each
+/// player's last spawn, the match start's placements).
 #[derive(Resource, Clone, Debug)]
-pub struct SpawnDraws(Rng);
+pub struct SpawnDraws {
+    pub(super) rng: Rng,
+    pub(super) memory: super::spawn_score::Memory,
+}
+
+impl SpawnDraws {
+    pub(super) fn new(world: &World) -> Self {
+        Self {
+            rng: Rng::new(seed_of(world) ^ 0x5eed),
+            memory: Default::default(),
+        }
+    }
+}
 
 /// The match starts over: the draws begin again.
 pub fn reset(world: &mut World) {
     world.remove_resource::<SpawnDraws>();
 }
 
-fn seed_of(world: &World) -> u32 {
+pub(super) fn seed_of(world: &World) -> u32 {
     world.get_resource::<SpawnSeed>().map(|s| s.0).unwrap_or_else(|| {
         let id = world.get_resource::<super::ActiveMinigame>().map_or("", |a| a.def.id.as_str());
         crc32(id.as_bytes())
     })
 }
 
+/// The map's spawn points' feet, in a fixed order.
+pub(super) fn spawn_feet(world: &mut World) -> Vec<Vec3> {
+    let mut points: Vec<Vec3> = world
+        .query_filtered::<&Transform, (With<SpawnPoint>, Without<Intent>)>()
+        .iter(world)
+        .map(|t| t.translation - Vec3::Y * SPAWN_LIFT)
+        .collect();
+    points.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)).then(a.z.total_cmp(&b.z)));
+    points
+}
+
 /// `e`'s spawn: a spot as the module docs say; None when the map has no
 /// spawn point at all.
 pub fn pick(world: &mut World, e: Entity, min_distance: f32, facing: Facing) -> Option<Transform> {
-    let mut points: Vec<Vec3> = world
-        .query_filtered::<(Entity, &Transform), (With<SpawnPoint>, Without<Intent>)>()
-        .iter(world)
-        .map(|(_, t)| t.translation - Vec3::Y * SPAWN_LIFT)
-        .collect();
-    points.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)).then(a.z.total_cmp(&b.z)));
+    let points = spawn_feet(world);
     if points.is_empty() {
         return None;
     }
@@ -213,8 +237,7 @@ pub fn pick(world: &mut World, e: Entity, min_distance: f32, facing: Facing) -> 
     let centres: Vec<Vec3> = enemies.iter().map(|(_, c)| *c).collect();
 
     ensure_spots(world, &points);
-    let seed = seed_of(world);
-    let mut draws = world.remove_resource::<SpawnDraws>().unwrap_or_else(|| SpawnDraws(Rng::new(seed ^ 0x5eed)));
+    let mut draws = world.remove_resource::<SpawnDraws>().unwrap_or_else(|| SpawnDraws::new(world));
     let characters: Vec<Entity> = world.iter_entities().filter(|r| r.contains::<Intent>()).map(|r| r.id()).collect();
     let mut state = SystemState::<SpatialQuery>::new(world);
     let Ok(q) = state.get(world) else {
@@ -223,7 +246,7 @@ pub fn pick(world: &mut World, e: Entity, min_distance: f32, facing: Facing) -> 
     };
     let spots = world.resource::<SpawnSpots>();
     let n = spots.spots.len();
-    let start = ((draws.0.next() * n as f32) as usize).min(n.saturating_sub(1));
+    let start = ((draws.rng.next() * n as f32) as usize).min(n.saturating_sub(1));
     let sight = SpatialQueryFilter::from_mask(SOLID_LAYERS);
     let sight = sight.with_excluded_entities(characters);
 
@@ -261,7 +284,7 @@ pub fn pick(world: &mut World, e: Entity, min_distance: f32, facing: Facing) -> 
     let spot = chosen.or(far_enough).or(farthest.map(|(_, s)| s));
     let centroid = (!spots.spots.is_empty()).then(|| spots.spots.iter().sum::<Vec3>() / spots.spots.len() as f32);
     let at = spot.map(|s| {
-        let (yaw, pitch) = face(&q, &sight, s, &facing, centroid, &mut draws.0);
+        let (yaw, pitch) = face(&q, &sight, s, &facing, centroid, None, &mut draws.rng);
         Transform::from_translation(s + Vec3::Y * SPAWN_LIFT)
             .with_rotation(Quat::from_euler(EulerRot::YXZ, yaw, pitch, 0.0))
     });
@@ -272,7 +295,7 @@ pub fn pick(world: &mut World, e: Entity, min_distance: f32, facing: Facing) -> 
 /// The mesh the spots are drawn on where the map brings one: its own
 /// navigation mesh (a whole kit's), else its navigation file's floors
 /// (`MapFloors`); a generated one (another walker's, bots') is not used.
-fn map_mesh<'a>(nav: Option<&'a NavMesh>, floors: Option<&'a MapFloors>) -> Option<&'a NavMesh> {
+pub(super) fn map_mesh<'a>(nav: Option<&'a NavMesh>, floors: Option<&'a MapFloors>) -> Option<&'a NavMesh> {
     nav.filter(|n| !n.generated).or(floors.map(|f| &*f.0))
 }
 
@@ -341,17 +364,22 @@ pub fn facing_at(world: &mut World, feet: Vec3, facing: &Facing, seed: u32) -> O
     let mut state = SystemState::<SpatialQuery>::new(world);
     let q = state.get(world).ok()?;
     let filter = SpatialQueryFilter::from_mask(SOLID_LAYERS).with_excluded_entities(characters);
-    Some(face(&q, &filter, feet, facing, centroid, &mut Rng::new(seed)))
+    Some(face(&q, &filter, feet, facing, centroid, None, &mut Rng::new(seed)))
 }
 
 /// The yaw and pitch (radians) a spawn at `feet` faces: `Facing`'s rule.
 /// With `rays == 0`, the longest of eight fixed directions, level.
-fn face(
+/// `away`: what `scored` turns from: each direction's openness weighed
+/// down by up to `Away::share` the more it looks at `Away::nearest`, and
+/// to almost nothing within `Away::cone` degrees of any of `Away::seen`
+/// (enemies in sight of the spot).
+pub(super) fn face(
     q: &SpatialQuery,
     filter: &SpatialQueryFilter,
     feet: Vec3,
     f: &Facing,
     centroid: Option<Vec3>,
+    away: Option<&Away>,
     rng: &mut Rng,
 ) -> (f32, f32) {
     let eye = feet + Vec3::Y * 1.6;
@@ -378,10 +406,20 @@ fn face(
     }
     // Each direction's distance averaged with its neighbours' (a ring).
     let half = ((f.smooth.max(1) as usize - 1) / 2).min(n / 2);
+    let flat = |at: Vec3| Dir3::new(Vec3::new(at.x - feet.x, 0.0, at.z - feet.z)).ok();
+    let to_enemy = away.and_then(|a| a.nearest.and_then(flat).map(|d| (d, a.share)));
+    let seen: Vec<Dir3> = away.map_or(Vec::new(), |a| a.seen.iter().filter_map(|p| flat(*p)).collect());
+    let cone = away.map_or(1.0, |a| a.cone.to_radians().cos());
     let smooth: Vec<f32> = (0..n)
         .map(|k| {
             let sum: f32 = (0..=2 * half).map(|t| free[(k + n + t - half) % n]).sum();
-            sum / (2 * half + 1) as f32
+            let open = sum / (2 * half + 1) as f32;
+            let dir = Quat::from_rotation_y(yaw_of(k)) * Vec3::NEG_Z;
+            let open = match to_enemy {
+                Some((d, w)) => open * (1.0 - w * dir.dot(*d).max(0.0)),
+                None => open,
+            };
+            if seen.iter().any(|d| dir.dot(**d) >= cone) { open * 0.01 } else { open }
         })
         .collect();
     let top = smooth.iter().copied().fold(0.0f32, f32::max);
@@ -400,9 +438,19 @@ fn face(
     (yaw_of(pick) + turn, f.pitch.to_radians())
 }
 
+/// What a `scored` spawn turns from (`face`).
+#[derive(Clone, Debug, Default)]
+pub struct Away {
+    pub nearest: Option<Vec3>,
+    pub share: f32,
+    pub seen: Vec<Vec3>,
+    /// Half the field of view and some (degrees).
+    pub cone: f32,
+}
+
 /// The map's spots, made now if they aren't kept yet. `points`: the map's
 /// spawn points' feet.
-fn ensure_spots(world: &mut World, points: &[Vec3]) {
+pub(super) fn ensure_spots(world: &mut World, points: &[Vec3]) {
     if world.get_resource::<SpawnSpots>().is_some_and(|s| s.ready) {
         return;
     }
@@ -538,6 +586,7 @@ impl SpotsJob {
     fn finish(self, tries: u8) -> SpawnSpots {
         let tries = tries + 1;
         let empty = self.found.is_empty();
+        info!("spawn spots: {} made a slice at a time (try {tries})", self.found.len());
         SpawnSpots {
             from_nav: !empty,
             ready: !empty || tries >= BUILD_TRIES,
@@ -547,9 +596,23 @@ impl SpotsJob {
     }
 }
 
+fn on_spots(def: &super::MinigameDef) -> bool {
+    matches!(def.spawn.points, super::def::Points::RandomHidden | super::def::Points::Scored)
+}
+
 /// Whether the match playing spawns on spots.
 fn spawns_on_spots(active: Option<&super::ActiveMinigame>) -> bool {
-    active.is_some_and(|a| a.def.spawn.points == super::def::Points::RandomHidden)
+    active.is_some_and(|a| on_spots(a.def))
+}
+
+/// Whether a map loading now will be played on spots: the match playing
+/// spawns on them, or, with none playing yet, a registered definition
+/// does (a party app's menu loads the map, then starts its minigame).
+fn loads_for_spots(world: &World) -> bool {
+    match world.get_resource::<super::ActiveMinigame>() {
+        Some(a) => on_spots(a.def),
+        None => world.get_resource::<super::Minigames>().is_some_and(|m| m.all().any(on_spots)),
+    }
 }
 
 /// Make the map's spots a slice a tick where floods are sliced
@@ -603,10 +666,14 @@ pub fn prepare_spots(
 }
 
 /// `prepare_spots` behind the loading screen (`map::MapHooks::settle`), a
-/// larger slice a frame.
+/// larger slice a frame: for the match playing on spots, or, with none
+/// playing yet, when a registered definition spawns on them
+/// (`loads_for_spots`: a party app's menu loads the map before it starts
+/// the minigame, whose first spawns then came at the map's spawn points
+/// for the 8 s the slices took on de_dust2, bots in each other's view).
 pub fn settle_spots(world: &mut World) -> bool {
     if !world.contains_resource::<nav_gen::SliceFloods>()
-        || !spawns_on_spots(world.get_resource::<super::ActiveMinigame>())
+        || !loads_for_spots(world)
         || world.get_resource::<SpawnSpots>().is_some_and(|s| s.ready)
     {
         return true;

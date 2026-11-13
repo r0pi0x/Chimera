@@ -124,12 +124,7 @@ fn a_killing_round_with_a_combat_arms_gun_sounds_on_clients() {
         "the victim is back"
     );
     sim.ticks(30);
-    let at = sim.server.position(a) + Vec3::new(0.0, 0.0, -4.0);
-    {
-        let w = sim.server.app.world_mut();
-        w.get_mut::<Transform>(b).unwrap().translation = at;
-        w.get_mut::<avian3d::prelude::Position>(b).unwrap().0 = at;
-    }
+    net_gun_game::face_off(&mut sim, a, b);
     sim.ticks(90);
     let me = sim.local_player(0).unwrap();
     let id0 = sim.client_id(0);

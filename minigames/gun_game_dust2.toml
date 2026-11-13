@@ -29,8 +29,8 @@ weapons = ["cs_source", "combat_arms"]
 
 [spawn]
 respawn = { delay = "2s", protection = "2s" }
-points = "random_hidden"
-min_distance = 20.32   # m (800 u) from a living enemy
+points = "scored"
+min_distance = 20.32   # random_hidden's (800 u); scored's own: chimera/sim/data/spawn_scoring.toml
 # The knife of the rung gun's game, swapped with the gun.
 kit = { cs_source = ["cs_source:weapon_knife"], combat_arms = ["combat_arms:m9_knife"] }
 

@@ -1,5 +1,5 @@
 //! Whether the gun game's spawn spots (`chimera_sim::minigame::spawns`,
-//! `random_hidden`) are where players play, on the loaded map: the checks
+//! `random_hidden`'s and `scored`'s) are where players play, on the loaded map: the checks
 //! `map_fitness` reports (docs/plans/active/map-pool-fitness.md) and the
 //! heavy guard runs over the pool (`tests/it/heavy/spawn_spots.rs`).
 //!

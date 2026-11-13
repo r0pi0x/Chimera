@@ -17,6 +17,7 @@ mod heavy {
     mod pool_maps;
     mod rung_frames;
     mod session_maps;
+    mod spawn_views;
     mod server_map_memory;
     mod session_materials;
 }

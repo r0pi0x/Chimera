@@ -45,7 +45,7 @@ const PLAIN_LADDER: [&str; 12] = [
 /// Two spots in the open to duel from: dust2's first spawn point and the
 /// nearest other one more than 1.5 m away (the spawns of a side stand
 /// together in the open). The gun game spawns anywhere out of sight
-/// (`points = "random_hidden"`), so a spot a few metres from where a
+/// (`points = "scored"`), so a spot a few metres from where a
 /// player came in may be behind a wall.
 fn duel_spots(spawns: &[Vec3]) -> (Vec3, Vec3) {
     let near = spawns[1..]
@@ -86,7 +86,7 @@ fn the_server_runs_the_gun_game_on_dust2() {
     assert_eq!(sim.app.world().resource::<Match>().phase, Phase::Live);
     for p in [a, b] {
         // The gun game spawns anywhere on the map, out of sight
-        // (`points = "random_hidden"`), not only at dust2's spawn points.
+        // (`points = "scored"`), not only at dust2's spawn points.
         let at = sim.position(p);
         assert!(at.is_finite(), "{p} came in somewhere on the map ({at})");
         assert!(sim.app.world().get::<Team>(p).unwrap().0 >= chimera_sim::mode::FFA_FIRST, "a team of its own");
