@@ -8,7 +8,9 @@
 //! next tick traces and lag compensation keeps), each on the bodies of the
 //! game whose state it is (`CharacterModels::is_of`: in a mashup another
 //! game's bodies play their own), and the hands locked onto the weapon by
-//! the models' IK rules (`lock_hands`).
+//! the models' IK rules (`lock_hands`). A client poses other players'
+//! bodies as the server's tick pose had them at the tick it draws them
+//! (`anim_net`).
 //!
 //! The choice of sequence, the pose parameters and the layers are the
 //! game's (`PlayerAnimRules`: CS:S's by weapon suffix, specs/cs_source/
@@ -219,7 +221,10 @@ impl<R, F> Default for PlayerAnimPlugin<R, F> {
 impl<R: PlayerAnimRules, F: QueryFilter + 'static> Plugin for PlayerAnimPlugin<R, F> {
     fn build(&self, app: &mut App) {
         app.add_message::<WeaponEvent>()
-            .add_systems(Update, drive::<R, F>.in_set(DriveAnimation).in_set(PlayerAnimSystems));
+            .add_systems(Update, drive::<R, F>
+                .in_set(DriveAnimation)
+                .in_set(PlayerAnimSystems)
+                .in_set(PlayerAnimStates));
     }
 }
 
@@ -227,6 +232,12 @@ impl<R: PlayerAnimRules, F: QueryFilter + 'static> Plugin for PlayerAnimPlugin<R
 /// that adjust what they decided.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PlayerAnimSystems;
+
+/// The games' own animation states' updates of the drawn bodies (in
+/// `PlayerAnimSystems`), before a client poses others from the server's
+/// (`anim_net`).
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PlayerAnimStates;
 
 #[allow(clippy::type_complexity)]
 fn drive<R: PlayerAnimRules, F: QueryFilter + 'static>(
@@ -340,7 +351,11 @@ fn drive_sim<R: PlayerAnimRules, F: QueryFilter + 'static>(
     let (dt, now) = (clock.dt(), clock.now);
     for (e, drawn, sim, state, intent, velocity, movement, health, (inventory, body, source)) in &mut characters {
         if !ours::<R>(models.as_deref(), body) {
-            if sim.is_some() || state.is_some() {
+            // Only what this game's state made goes: another Source
+            // game's animator on its own body stays (both games' plugins
+            // in a mashup took each other's away every tick, so neither
+            // posed per tick and the hitboxes followed the drawn bodies).
+            if state.is_some() {
                 commands.entity(e).remove::<(crate::map::SimAnimator, SimAnimState<R>)>();
             }
             continue;

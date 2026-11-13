@@ -21,9 +21,9 @@
 //!
 //! Over the network (a server and two clients), the shooter's client aims
 //! at the head it draws and the server (its own posing, lag compensation)
-//! decides, every target game's body alike (a Combat Arms body's client
-//! draws its spheres where the server keeps them for the tick drawn, to
-//! the centimetre); HL2:DM's models in each hold get the same head test. Prints
+//! decides, every target game's body alike (each game's client draws its
+//! hit shapes where the server keeps them for the tick drawn, to the
+//! centimetre); HL2:DM's models in each hold get the same head test. Prints
 //! the matrix (`--nocapture`). Passes with a note without the three
 //! installs.
 
@@ -525,14 +525,15 @@ fn net_round(sim: &mut chimera_net::harness::NetSim, b: Entity) -> (Vec<Hitgroup
 }
 
 /// Every shooter at an HL2:DM player's head over the network, standing,
-/// crouched and looking down, the head first on the line as drawn
-/// (looking up, its arms are in front of its head for every shooter;
-/// walking across, printed only: its client's hitboxes stray from the
-/// kept ones); every shooter at a CS:S and a
-/// Combat Arms player's head likewise (a Combat Arms body's client posed
-/// it at the server's newest state, a transition held at its first
-/// frame and its hull standing: 0.04-0.5 m off, its head shots missed;
-/// `combat_arms_heads_are_drawn_where_lag_compensation_keeps_them`).
+/// crouched, walking across and looking down, the head first on the line
+/// as drawn (looking up, its arms are in front of its head for every
+/// shooter); every shooter at a CS:S and a Combat Arms player's head
+/// likewise. Before, a Combat Arms body's client posed it at the
+/// server's newest state, a transition held at its first frame and its
+/// hull standing (0.04-0.5 m off, its head shots missed), and a walking
+/// HL2:DM body's client played its own run cycle (0.11 m off on average,
+/// up to 0.37 m: an arm or the chest took the round):
+/// `*_heads_are_drawn_where_lag_compensation_keeps_them`.
 #[test]
 fn every_games_gun_hits_a_head_as_drawn_over_the_network() {
     let Some((mut sim, pa, pb)) = net_dust2() else { return };
@@ -567,11 +568,7 @@ fn every_games_gun_hits_a_head_as_drawn_over_the_network() {
                 eprintln!("{line}");
                 // Another shape in front of the head (a walking arm, the
                 // Combine's upper chest) takes the round, for any shooter.
-                // A walking HL2:DM body's client draws its hitboxes off
-                // the kept ones (0.1 m on average, up to 0.37 m: backlog,
-                // "HL2:DM bodies walking over the network"): printed only.
-                let hl2_walking = *target == "hl2dm" && matches!(stance, Stance::Walking);
-                if first && !hl2_walking && head != [Hitgroup::Head] {
+                if first && head != [Hitgroup::Head] {
                     wrong.push(line);
                 }
                 Stance::Standing.set(&mut sim.clients[1].intent(them), (-face.x).atan2(-face.z));
@@ -592,49 +589,113 @@ fn kept_head(f: &chimera_sim::weapon::lagcomp::HitFrame) -> Option<Vec3> {
     Some(feet + turn * head.center)
 }
 
-/// The head `b` is drawn with on a client: its hit shapes at its drawn
-/// place, the feet half its box's height under it (its box about the
+/// The head `b` is drawn with on a client, and its feet: its hit shapes
+/// at its drawn place, the feet half its box's height under it (its box about the
 /// origin; the box itself follows the drawn place a physics step late).
-fn drawn_head(w: &World, b: Entity) -> Option<Vec3> {
+fn drawn_head_and_feet(w: &World, b: Entity) -> Option<(Vec3, Vec3)> {
     let boxes = chimera_core::core::hitboxes_in(w, b)?;
     let t = w.get::<Transform>(b)?.translation;
     let a = w.get::<avian3d::prelude::ColliderAabb>(b)?;
     let feet = t.with_y(t.y - (a.max.y - a.min.y) / 2.0);
     let turn = w.get::<Intent>(b)?.yaw_rotation();
     let head = boxes.0.iter().filter(|h| h.region == BodyRegion::Head).max_by(|x, y| x.center.y.total_cmp(&y.center.y))?;
-    Some(feet + turn * head.center)
+    Some((feet + turn * head.center, feet))
+}
+
+/// The heads a client's tick saw (`Watch`): the render tick its shots
+/// are traced at (the last frame's: `cmd.view_tick`) and the head where
+/// its hit shapes stood then.
+#[derive(Resource, Default)]
+struct Watch(Option<Entity>, Vec<(f64, Vec3, Vec3)>);
+
+/// At the end of a client's tick, after its shots' traces would have
+/// run: the watched body's drawn head with the render tick it is drawn
+/// at (both the last frame's).
+fn watch(world: &mut World) {
+    let Some(b) = world.get_resource::<Watch>().and_then(|w| w.0) else { return };
+    let Some(clock) = world.get_resource::<chimera_net::net::interp::InterpClock>().filter(|c| c.running) else { return };
+    let t = clock.render_tick;
+    if let Some((h, feet)) = drawn_head_and_feet(world, b) {
+        world.resource_mut::<Watch>().1.push((t, h, feet));
+    }
 }
 
 /// How far client 0's drawn head of `b` stands from the server's kept
 /// head at the tick client 0 draws it at (where lag compensation rewinds
-/// it to for client 0's shot), over `n` frames: (mean, max), m.
-fn drawn_against_kept(sim: &mut chimera_net::harness::NetSim, b: Entity, n: usize) -> (f32, f32) {
+/// it to for client 0's shot), over `n` frames: (mean, max, and the max
+/// of the head's offset from the feet alone: the pose without the drawn
+/// place), m. The head is taken where the client's shots meet it (its
+/// tick, `watch`).
+fn drawn_against_kept(sim: &mut chimera_net::harness::NetSim, b: Entity, n: usize) -> (f32, f32, f32) {
     let id1 = sim.client_id(1);
     let b_seen = chimera_net::harness::NetSim::owned_by(&mut sim.clients[0], Some(id1)).expect("client 0 sees b");
-    let mut drawn = Vec::new();
-    for _ in 0..n {
-        sim.step();
-        let w = sim.clients[0].app.world();
-        let Some(clock) = w.get_resource::<chimera_net::net::interp::InterpClock>() else { continue };
-        if let Some(h) = drawn_head(w, b_seen) {
-            drawn.push((clock.render_tick, h));
-        }
+    let app = &mut sim.clients[0].app;
+    if !app.world().contains_resource::<Watch>() {
+        app.add_systems(FixedLast, watch);
     }
+    app.insert_resource(Watch(Some(b_seen), Vec::new()));
+    sim.ticks(n as u64);
+    let drawn = std::mem::take(&mut sim.clients[0].app.world_mut().resource_mut::<Watch>().1);
     let history = sim.server.app.world().get::<chimera_sim::weapon::lagcomp::HitHistory>(b).expect("a kept history");
-    let kept_at = |t: f64| -> Option<Vec3> {
+    let feet = |f: &chimera_sim::weapon::lagcomp::HitFrame| f.origin.with_y(f.origin.y + f.min.y);
+    // The kept head and feet at `t`, between the ticks around it.
+    let kept_at = |t: f64| -> Option<(Vec3, Vec3)> {
         let i = history.frames.iter().rposition(|f| (f.tick as f64) <= t)?;
-        let a = kept_head(&history.frames[i])?;
+        let a = (kept_head(&history.frames[i])?, feet(&history.frames[i]));
         match history.frames.get(i + 1) {
             Some(next) => {
-                let f = (t - history.frames[i].tick as f64) / (next.tick - history.frames[i].tick).max(1) as f64;
-                Some(a.lerp(kept_head(next)?, f as f32))
+                let f = ((t - history.frames[i].tick as f64) / (next.tick - history.frames[i].tick).max(1) as f64) as f32;
+                Some((a.0.lerp(kept_head(next)?, f), a.1.lerp(feet(next), f)))
             }
             None => Some(a),
         }
     };
-    let d: Vec<f32> = drawn.iter().filter_map(|(t, h)| kept_at(*t).map(|k| k.distance(*h))).collect();
+    let (d, posed): (Vec<f32>, Vec<f32>) = drawn
+        .iter()
+        .filter_map(|(t, h, f)| kept_at(*t).map(|(kh, kf)| (kh.distance(*h), (kh - kf).distance(*h - *f))))
+        .unzip();
     assert!(d.len() * 2 > n, "too few frames compared ({} of {n})", d.len());
-    (d.iter().sum::<f32>() / d.len() as f32, d.iter().copied().fold(0.0, f32::max))
+    let max = |v: &[f32]| v.iter().copied().fold(0.0, f32::max);
+    (d.iter().sum::<f32>() / d.len() as f32, max(&d), max(&posed))
+}
+
+/// How far client 0 draws client 1's player's head (on rung `target` of
+/// `GUNS`, client 0's player on `shooter`) from the server's kept head
+/// at the tick drawn, standing, crouched, walking across and looking
+/// down: the lines past `mean` m on average or, the pose alone (the head
+/// from the feet), `max` m at worst. (The drawn place itself strays for
+/// a frame or two where a walking body stops against a wall, between
+/// snapshots: up to 0.04 m.)
+fn heads_drawn_where_kept(shooter: usize, target: usize, mean_ok: f32, max_ok: f32) -> Vec<String> {
+    let Some((mut sim, pa, pb)) = net_dust2() else { return Vec::new() };
+    let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+    {
+        let w = sim.server.app.world_mut();
+        let l = w.resource::<minigame::ladder::Ladder>().clone();
+        minigame::ladder::set_rung(w, a, shooter, &l);
+        minigame::ladder::set_rung(w, b, target, &l);
+    }
+    sim.ticks(90);
+    let mut wrong = Vec::new();
+    for stance in [Stance::Standing, Stance::Crouched, Stance::Walking, Stance::LookingDown] {
+        net_place(&mut sim, a, pa);
+        net_place(&mut sim, b, pb);
+        let face = (pa - pb).with_y(0.0);
+        let them = sim.local_player(1).unwrap();
+        stance.set(&mut sim.clients[1].intent(them), (-face.x).atan2(-face.z));
+        sim.ticks(60);
+        let (mean, max, posed) = drawn_against_kept(&mut sim, b, 40);
+        let line = format!(
+            "{} {stance:?}: drawn {mean:.3} m from the kept head on average, {max:.3} m at most ({posed:.3} m from the feet)",
+            GUNS[target].0
+        );
+        eprintln!("{line}");
+        if mean > mean_ok || posed > max_ok {
+            wrong.push(line);
+        }
+        Stance::Standing.set(&mut sim.clients[1].intent(them), (-face.x).atan2(-face.z));
+    }
+    wrong
 }
 
 /// Client 0 draws a Combat Arms player's (client 1's) head where the
@@ -647,30 +708,29 @@ fn drawn_against_kept(sim: &mut chimera_net::harness::NetSim, b: Entity, n: usiz
 /// left standing on the client).
 #[test]
 fn combat_arms_heads_are_drawn_where_lag_compensation_keeps_them() {
-    let Some((mut sim, pa, pb)) = net_dust2() else { return };
-    let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
-    {
-        let w = sim.server.app.world_mut();
-        let l = w.resource::<minigame::ladder::Ladder>().clone();
-        minigame::ladder::set_rung(w, a, 0, &l);
-        minigame::ladder::set_rung(w, b, 1, &l);
-    }
-    sim.ticks(90);
-    let mut wrong = Vec::new();
-    for stance in [Stance::Standing, Stance::Crouched, Stance::Walking, Stance::LookingDown] {
-        net_place(&mut sim, a, pa);
-        net_place(&mut sim, b, pb);
-        let face = (pa - pb).with_y(0.0);
-        let them = sim.local_player(1).unwrap();
-        stance.set(&mut sim.clients[1].intent(them), (-face.x).atan2(-face.z));
-        sim.ticks(60);
-        let (mean, max) = drawn_against_kept(&mut sim, b, 40);
-        let line = format!("{stance:?}: drawn {mean:.3} m from the kept head on average, {max:.3} m at most");
-        eprintln!("{line}");
-        if mean > 0.015 || max > 0.03 {
-            wrong.push(line);
-        }
-        Stance::Standing.set(&mut sim.clients[1].intent(them), (-face.x).atan2(-face.z));
-    }
+    let wrong = heads_drawn_where_kept(0, 1, 0.015, 0.03);
+    assert!(wrong.is_empty(), "off the kept head:\n{}", wrong.join("\n"));
+}
+
+/// Client 0 draws an HL2:DM player's head where the server keeps it for
+/// the tick drawn, likewise: the server's tick pose sent
+/// (`source_engine::anim_net::NetPose`: the run cycle, pose parameters
+/// and yaw at the render tick, the client's head look left out of the
+/// hitboxes), the server posing it per tick at all (the CS:S and HL2:DM
+/// parts each took the other's tick animator away), and its client
+/// collider the server's capsule (Combat Arms' hull follower made it a
+/// cylinder of the Source hull). Before: 0.014 m off standing, 0.112 m
+/// walking (0.371 m at worst).
+#[test]
+fn hl2dm_heads_are_drawn_where_lag_compensation_keeps_them() {
+    let wrong = heads_drawn_where_kept(0, 2, 0.015, 0.03);
+    assert!(wrong.is_empty(), "off the kept head:\n{}", wrong.join("\n"));
+}
+
+/// Client 0 draws a CS:S player's head where the server keeps it for the
+/// tick drawn, likewise (its server's tick pose sent as HL2:DM's is).
+#[test]
+fn cs_source_heads_are_drawn_where_lag_compensation_keeps_them() {
+    let wrong = heads_drawn_where_kept(2, 0, 0.015, 0.03);
     assert!(wrong.is_empty(), "off the kept head:\n{}", wrong.join("\n"));
 }

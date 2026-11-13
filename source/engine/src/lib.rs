@@ -19,6 +19,7 @@
 //! animation (lift S9: the inputs, the drawn and the server's per-tick
 //! updates, the hands' IK locks; each game's state picks its sequences).
 
+pub mod anim_net;
 pub mod content;
 pub mod effects;
 pub mod hud;

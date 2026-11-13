@@ -126,20 +126,6 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## 0. Playtest feedback (2026-10-07), top priority
 
-### HL2:DM bodies walking over the network (found 2026-11-13, branch `ca-pose-sync`)
-
-- A walking HL2:DM *target* over the network: the shooter's client draws
-  its head 0.11 m on average (up to 0.37 m) from where the server keeps
-  it for the tick drawn (lag compensation's rewind); standing, crouched
-  and looking down 0.015 m (CS:S bodies: 0, Combat Arms' now 0.001-0.003
-  m). Head shots at a walking HL2:DM body's drawn head can hit an arm or
-  the chest (`heavy::head_matrix::every_games_gun_hits_a_head_as_drawn_over_the_network`
-  prints those rows only). Measure it as
-  `heavy::head_matrix::combat_arms_heads_are_drawn_where_lag_compensation_keeps_them`
-  does Combat Arms' (the target on the HL2:DM rung): likely the client
-  plays the walk cycle at another time than the render tick, as Combat
-  Arms' followed trackers did; then assert those rows.
-
 ### UGG playtest rehearsal, 2026-11-13 (agent, this box, the playtest6 build)
 
 What the second rehearsal found and didn't fix (fixed ones: the commits

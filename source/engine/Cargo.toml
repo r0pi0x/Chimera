@@ -37,6 +37,10 @@ vbsp.workspace = true
 vmdl.workspace = true
 vmt-parser.workspace = true
 vtf.workspace = true
+# Others' bodies posed as the server's tick pose (`anim_net`): its
+# snapshots by server tick and a network part.
+chimera_net.workspace = true
+bevy_replicon.workspace = true
 # Maps sent compressed by servers (`maps::import_map_into`).
 bzip2.workspace = true
 workspace-hack.workspace = true
@@ -44,7 +48,7 @@ workspace-hack.workspace = true
 [features]
 # Bevy as a dynamic library, as the games' `dev` (which turns this on):
 # `cargo test -p source_engine --features dev` shares their Bevy build.
-dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "source_formats/dev"]
+dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "source_formats/dev"]
 
 [dev-dependencies]
 # The map's `render` feature, as every build with the presentation has it:

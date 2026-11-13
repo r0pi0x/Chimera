@@ -11,10 +11,11 @@
 //! the last 45 (§6.3), the rest of the upper body in `aim_yaw`; fire and
 //! reload gestures on overlay layers (§8: cycle 0, weight 1 until done,
 //! removed on the next advance, at most 15); the autoplay head and spine
-//! sequences on every frame (§7 step 5). Pose parameters aren't networked:
-//! each side runs this on its own values (`PlayerAnimPlugin` for the drawn
-//! bodies, `SimAnimPlugin` for a server's hitboxes, which use the main
-//! sequence alone, §7 step 3).
+//! sequences on every frame (§7 step 5). Each side runs this on its own
+//! values (`PlayerAnimPlugin` for the drawn bodies, `SimAnimPlugin` for a
+//! server's hitboxes, which use the main sequence alone, §7 step 3); a
+//! client then poses other players' bodies as the server's tick pose was
+//! at the tick it draws them (`source_engine::anim_net`).
 //!
 //! `Hl2AnimPlugin` adds both for HL2:DM's bodies, and the client's head
 //! and eyes (`look`: §6.4, the nearest player in front within 128 units)
@@ -438,6 +439,7 @@ impl Plugin for Hl2AnimPlugin {
         app.add_plugins((
             source_engine::player_anim::PlayerAnimPlugin::<Hl2PlayerAnim>::default(),
             source_engine::player_anim::SimAnimPlugin::<Hl2PlayerAnim>::default(),
+            source_engine::anim_net::AnimNetPlugin::<Hl2PlayerAnim>::new("hl2dm_anim"),
         ))
         .add_systems(
             Update,

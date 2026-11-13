@@ -618,12 +618,18 @@ fn hold_weapons(
 }
 
 /// A network server animates CS:S's bodies again in the fixed tick
-/// (`source_engine::player_anim::SimAnimPlugin`).
+/// (`source_engine::player_anim::SimAnimPlugin`), and its clients pose
+/// other players' bodies from that (`source_engine::anim_net`).
 pub struct SimAnimPlugin;
 
 impl Plugin for SimAnimPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(source_engine::player_anim::SimAnimPlugin::<PlayerAnim, NotHostages>::default());
+        // Its clients pose others' bodies as that pose was at the tick
+        // they draw them at.
+        if !app.is_plugin_added::<source_engine::anim_net::AnimNetPlugin<PlayerAnim>>() {
+            app.add_plugins(source_engine::anim_net::AnimNetPlugin::<PlayerAnim>::new("cs_source_anim"));
+        }
     }
 }
 
