@@ -301,8 +301,9 @@ pub struct MapHooks {
     /// Spawns the pending map (`spawn_map` with the drawer
     /// `build` picks: `MapLayers::Drawer`), for `change_map`.
     pub spawn: Option<fn(&mut World)>,
-    /// The same spawn a step at a time (`spawn::SpawnProgress`), for
-    /// `prepare::begin_map_change` and `prepare::spawn_some`.
+    /// The same spawn a step at a time (`spawn::SpawnProgress`; its
+    /// colliders after the map's frame), for `prepare::begin_map_change`
+    /// and `prepare::spawn_some`.
     pub stepped: Option<SteppedSpawn>,
     /// The resources that belong to the loaded map (`MapScopedApp::
     /// map_scoped`): `unload_map` removes each.

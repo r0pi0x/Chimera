@@ -4,7 +4,11 @@
 //! waits while it spawns (no tick on a part of a map), the world gets the
 //! whole map at once and the same map as a spawn in one go, and until the
 //! game is entered a frame advances the simulation by at most one tick (no
-//! catch-up ticks owed for the loading screen), given back after. The
+//! catch-up ticks owed for the loading screen), given back after. Its
+//! colliders follow the map's frame over the next ones ("A map's colliders
+//! after its swap frame"), still with no tick until the last is in, and
+//! are the colliders of a spawn in one go: each one's shape, body, place,
+//! layers and mass, and what rests and falls on them. The
 //! map's colliders keep the mass properties Avian's insert hook gave them:
 //! the first tick computes none again, and the physics props weigh and fall
 //! as when it did.
@@ -21,7 +25,7 @@ use chimera_world::{
     harness::Sim,
     map::{
         MapBrush, MapCollision, MapConvex, MapData, MapDebugView, MapMesh, MapModel, MapPart, MapPhysics, MapProp,
-        MapSimPlugin, PropSolid, PushAway, change_map,
+        MapPropCollider, MapSimPlugin, PropSolid, PushAway, change_map,
     },
 };
 
@@ -137,6 +141,58 @@ fn sim() -> Sim {
     sim
 }
 
+/// A collider of the map: a part of it, or a prop's box under one.
+type OfMap = Or<(With<MapPart>, With<MapPropCollider>)>;
+
+/// The map's colliders, sorted: each one's name (its parent's for a
+/// prop's box), body, kind of body, place and bounds (but a moving body's:
+/// `bodies`), layers, markers, shape and mass properties.
+fn colliders(sim: &mut Sim) -> Vec<String> {
+    use chimera_world::map::{MapBrushCollider, controllers::WorldCollider};
+    let w = sim.app.world_mut();
+    let names: std::collections::HashMap<Entity, String> = w
+        .query::<(Entity, &Name)>()
+        .iter(w)
+        .map(|(e, n)| (e, n.to_string()))
+        .collect();
+    let bodies: std::collections::HashMap<Entity, RigidBody> =
+        w.query::<(Entity, &RigidBody)>().iter(w).map(|(e, b)| (e, *b)).collect();
+    let mut out: Vec<String> = w
+        .query_filtered::<(
+            Entity,
+            Option<&ChildOf>,
+            &Collider,
+            Option<&ColliderOf>,
+            (&Position, &Rotation, &ColliderAabb, &CollisionLayers),
+            &ColliderMassProperties,
+            (Has<WorldCollider>, Has<MapPropCollider>, Has<MapBrushCollider>),
+        ), OfMap>()
+        .iter(w)
+        .map(|(e, parent, c, of, place, mass, markers)| {
+            let name = |e: Entity| names.get(&e).cloned();
+            let own = name(e).or_else(|| Some(format!("child of {}", name(parent?.parent())?)));
+            let body = of.map(|o| (name(o.body), bodies.get(&o.body)));
+            let moves = of.is_some_and(|o| bodies.get(&o.body) == Some(&RigidBody::Dynamic));
+            let at = (!moves).then_some((place.0, place.1, place.2));
+            format!(
+                "{own:?} body {body:?} at {at:?} {:?} {markers:?} {:?} mass {mass:?}",
+                place.3,
+                c.shape_scaled().compute_local_aabb()
+            )
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// What each tick saw: the map's parts and its colliders.
+#[derive(Resource, Default)]
+struct TickSaw(Vec<(usize, usize)>);
+
+fn tick_saw(mut saw: ResMut<TickSaw>, parts: Query<(), With<MapPart>>, colliders: Query<(), (With<Collider>, OfMap)>) {
+    saw.0.push((parts.iter().count(), colliders.iter().count()));
+}
+
 /// The map's parts: each entity's name, sorted.
 fn parts(sim: &mut Sim) -> Vec<String> {
     let w = sim.app.world_mut();
@@ -152,11 +208,13 @@ fn parts(sim: &mut Sim) -> Vec<String> {
 #[test]
 fn a_map_spawns_in_steps_behind_the_screen_with_the_simulation_waiting() {
     let mut sim = sim();
+    sim.app.init_resource::<TickSaw>().add_systems(FixedFirst, tick_saw);
     let default_max = sim.app.world().resource::<Time<Virtual>>().max_delta();
     console::start_map_load(sim.app.world_mut(), "test:steps", None);
     let mut stages = Vec::new();
     let mut spawning_ticks = Vec::new();
     let mut seen_parts = Vec::new();
+    let mut seen_colliders = Vec::new();
     for _ in 0..600 {
         let before = console::map_load_stage(sim.app.world());
         if before == MapLoadStage::None && !stages.is_empty() {
@@ -170,6 +228,7 @@ fn a_map_spawns_in_steps_behind_the_screen_with_the_simulation_waiting() {
         if after == MapLoadStage::Spawning {
             spawning_ticks.push(w.resource::<SimClock>().tick);
             seen_parts.push(n);
+            seen_colliders.push(w.query_filtered::<(), (With<Collider>, OfMap)>().iter(w).count());
         }
         if after == MapLoadStage::Settling {
             let tick = w.resource::<Time<Fixed>>().timestep();
@@ -189,7 +248,29 @@ fn a_map_spawns_in_steps_behind_the_screen_with_the_simulation_waiting() {
         spawning_ticks.windows(2).all(|t| t[0] == t[1]),
         "no tick while the map spawns: {spawning_ticks:?}"
     );
-    assert!(seen_parts.iter().all(|n| *n == 0), "no part of the map before the whole: {seen_parts:?}");
+    // The whole map at once, but for its colliders, which follow.
+    let whole = parts(&mut sim).len();
+    assert!(
+        seen_parts.iter().all(|n| *n == 0 || *n == whole),
+        "no part of the map before the whole ({whole}): {seen_parts:?}"
+    );
+    let total = colliders(&mut sim).len();
+    assert!(total > PROPS, "the world's colliders and each prop's: {total}");
+    let with_map: Vec<usize> = seen_parts.iter().zip(&seen_colliders).filter(|(n, _)| **n > 0).map(|(_, c)| *c).collect();
+    assert_eq!(with_map.first(), Some(&0), "the map's frame brings no collider: {seen_colliders:?}");
+    assert!(
+        with_map.iter().any(|c| *c > 0 && *c < total),
+        "the colliders come over several frames: {with_map:?} of {total}"
+    );
+    assert!(with_map.windows(2).all(|c| c[0] <= c[1]), "{with_map:?}");
+    // No tick saw part of the map, or the map without all its colliders.
+    let saw = &sim.app.world().resource::<TickSaw>().0;
+    assert!(saw.iter().any(|s| *s == (whole, total)), "ticks on the new map");
+    assert!(
+        saw.iter().all(|s| *s == (0, 0) || *s == (whole, total)),
+        "a tick on a map partly in: {:?}",
+        saw.iter().find(|s| **s != (0, 0) && **s != (whole, total))
+    );
     let w = sim.app.world();
     assert_eq!(w.resource::<Time<Virtual>>().max_delta(), default_max, "given back in the game");
     assert!(!w.resource::<Time<Virtual>>().is_paused());
@@ -200,6 +281,49 @@ fn a_map_spawns_in_steps_behind_the_screen_with_the_simulation_waiting() {
     change_map(once.app.world_mut(), map(), MapDebugView::Normal);
     once.app.update();
     assert_eq!(stepped, parts(&mut once), "the same parts as a spawn in one go");
+}
+
+#[test]
+fn colliders_that_follow_the_map_are_those_of_a_spawn_in_one_go() {
+    let mut stepped = sim();
+    console::start_map_load(stepped.app.world_mut(), "test:steps", None);
+    for _ in 0..600 {
+        stepped.app.update();
+        if console::map_load_stage(stepped.app.world()) == MapLoadStage::None {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    assert_eq!(console::map_load_stage(stepped.app.world()), MapLoadStage::None, "in the game");
+    let mut once = sim();
+    change_map(once.app.world_mut(), map(), MapDebugView::Normal);
+    // A spawn in one go (a dedicated server's map change) holds none back.
+    assert_eq!(
+        colliders(&mut once).len(),
+        colliders(&mut stepped).len(),
+        "a spawn in one go brings every collider with the map"
+    );
+    // Both a second into the map: the props have fallen onto the floor and
+    // rest on it.
+    let from = once.app.world().resource::<SimClock>().tick;
+    once.ticks(64);
+    let ran = once.app.world().resource::<SimClock>().tick - from;
+    let from = stepped.app.world().resource::<SimClock>().tick;
+    while stepped.app.world().resource::<SimClock>().tick < from + ran {
+        stepped.ticks(1);
+    }
+    let (a, b) = (colliders(&mut stepped), colliders(&mut once));
+    assert_eq!(a.len(), b.len(), "as many colliders");
+    for (x, y) in a.iter().zip(&b) {
+        assert_eq!(x, y);
+    }
+    let (a, b) = (bodies(&mut stepped), bodies(&mut once));
+    assert_eq!(a.len(), PHYSICS_PROPS);
+    for (x, y) in a.iter().zip(&b) {
+        assert_eq!((&x.0, x.1, x.2, x.3), (&y.0, y.1, y.2, y.3), "the same mass properties");
+        assert!(x.4.distance(y.4) < 1e-3, "{}: rests where it does spawned in one go ({} and {})", x.0, x.4, y.4);
+        assert!(x.4.y > 0.0 && x.4.y < 1.0, "{}: on the floor ({})", x.0, x.4);
+    }
 }
 
 /// Map colliders whose shape or density changed since this system last ran,

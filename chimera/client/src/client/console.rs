@@ -22,7 +22,8 @@
 //! overlays (cl_showpos, cl_showfps, snd_show, watch), client commands (noclip,
 //! god, getpos/setpos/setang, kill, `chimera_hurtme` (a bullet hit on yourself
 //! at a hitbox), map (loaded on a task, spawned in place a step at a time
-//! behind the loading screen with the simulation waiting,
+//! behind the loading screen with the simulation waiting (until its
+//! colliders, which follow the map's frame, are all in),
 //! `map::prepare::begin_map_change`, `SPAWN_BUDGET` a frame and the GPU's
 //! uploads capped, `LOAD_UPLOAD_BYTES`; then the map's `MapHooks::settle` work
 //! a slice a frame, at most `SETTLE_MAX_SECS`, a frame advancing the
@@ -2144,7 +2145,8 @@ const LOAD_UPLOAD_BYTES: usize = 16 << 20;
 /// (`map::prepare::begin_map_change`; docs/performance.md, "A map's
 /// swap"). The simulation waits meanwhile (`Time<Virtual>` paused): its
 /// first tick on the map is after the whole map is in, as when it was
-/// spawned in one frame.
+/// spawned in one frame, the colliders that follow the map's frame too
+/// (`spawn_some` says done only then).
 #[derive(Resource)]
 struct Spawning {
     id: String,

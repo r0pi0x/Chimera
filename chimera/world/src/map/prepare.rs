@@ -91,9 +91,11 @@ pub fn change_map_prepared(world: &mut World, data: MapData, prepared: Prepared,
 
 /// `change_map_prepared` spread over frames: the old map is unloaded now
 /// and the new one spawned a step at a time by `spawn_some`, each frame,
-/// until it says it is done; the world gets the whole map in that last
-/// frame (`spawn::SpawnProgress`). Without a stepped spawner (no map
-/// systems) the map is spawned now, as `change_map_prepared` does.
+/// until it says it is done; the world gets the whole map in one frame
+/// (`spawn::SpawnProgress`) and its colliders in the next ones
+/// (`spawn::insert_colliders`), so nothing may simulate until it is done.
+/// Without a stepped spawner (no map systems) the map is spawned now, as
+/// `change_map_prepared` does.
 pub fn begin_map_change(world: &mut World, data: MapData, prepared: Prepared, view: super::MapDebugView) {
     match world.get_resource::<super::MapHooks>().and_then(|h| h.stepped) {
         Some(stepped) => {
@@ -105,8 +107,9 @@ pub fn begin_map_change(world: &mut World, data: MapData, prepared: Prepared, vi
 }
 
 /// One frame's share of a spawn `begin_map_change` started: steps until
-/// `budget` is spent (at least one). Returns whether the map is in (also
-/// when no spawn is under way).
+/// `budget` is spent (at least one), then its colliders the same way.
+/// Returns whether the map is in, colliders and all (also when no spawn is
+/// under way).
 pub fn spawn_some(world: &mut World, budget: std::time::Duration) -> bool {
     match world.get_resource::<super::MapHooks>().and_then(|h| h.stepped) {
         Some(stepped) => (stepped.step)(world, budget),

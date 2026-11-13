@@ -17,7 +17,12 @@
 //! frame instead (`SpawnProgress`, `spawn_steps`: the drawer's phases in
 //! their own steps, the props `PROPS_PER_STEP` at a time), the same order,
 //! their commands held until the last step and applied together in a frame
-//! of their own, so the world never holds part of a map.
+//! of their own, so the world never holds part of a map. The colliders
+//! alone follow in the next frames (`Colliders`, `insert_colliders`: each
+//! onto its entity, already there, until a frame's budget is spent), as
+//! what Avian does on a collider's insert (its mass properties from the
+//! shape, twice; its place in the collider tree) was half of that frame;
+//! the spawn isn't done, and the simulation waits, until the last is in.
 //!
 //! What needs only the data (the world's colliders, the models' colliders
 //! and hulls, the props' brushes: `WorldParts`) comes prepared ahead when
@@ -169,6 +174,7 @@ impl MapSpawn<'_> {
 
 /// Spawns the pending map, its drawn parts by `D`, all at once.
 pub fn spawn_map<D: MapDrawer>(mut commands: Commands, pending: Res<PendingMap>, mut assets: StaticSystemParam<D>) {
+    // Colliders with their entities, at once (`Colliders`).
     let mut progress = SpawnProgress::<D>::default();
     while !advance(&mut commands, &pending, &mut *assets, &mut progress, None) {}
 }
@@ -194,6 +200,11 @@ pub struct SpawnProgress<D: MapDrawer> {
     steps: usize,
     /// Every step is done: the next frame applies the commands, alone.
     built: bool,
+    /// The commands are applied: the map is in the world but for the
+    /// colliders held back (`insert_colliders`).
+    applied: bool,
+    /// The colliders, held back by a stepped spawn.
+    colliders: Colliders,
     /// The world's change tick when the spawn's commands began to apply
     /// (`counted_colliders`).
     since: std::sync::Arc<std::sync::atomic::AtomicU32>,
@@ -215,11 +226,57 @@ impl<D: MapDrawer> Default for SpawnProgress<D> {
             next_prop: 0,
             steps: 0,
             built: false,
+            applied: false,
+            colliders: default(),
             since: default(),
             _drawer: default(),
         }
     }
 }
+
+/// Where the spawn's colliders go. A spawn at once inserts each with its
+/// entity's other parts. A stepped spawn keeps them (`later`) and inserts
+/// them in the frames after the one its commands are applied in
+/// (`insert_colliders`): on a collider's insert Avian computes its mass
+/// properties from its shape twice (its insert hook, and the collider
+/// tree's observer for its bounds' margin, through the centre of mass; a
+/// compound of a map's thousands of hulls, its surfaces' triangles, each
+/// prop's convex pieces) and puts it in the collider tree, which was 40-75%
+/// of the frame the whole map went into the world (docs/performance.md, "A
+/// map's colliders after its swap frame"). Every
+/// collider of the spawn goes through `put`, after its entity's other
+/// parts in both cases, so the entity is the same either way.
+#[derive(Default)]
+pub(super) struct Colliders {
+    later: Option<Vec<(Entity, Collider)>>,
+    /// How many of `later` are in the world.
+    next: usize,
+}
+
+impl Colliders {
+    /// `collider` onto `e`: now (queued with its commands), or held back.
+    pub(super) fn put(&mut self, e: &mut EntityCommands, collider: Collider) {
+        match &mut self.later {
+            Some(later) => later.push((e.id(), collider)),
+            None => {
+                e.insert(collider);
+            }
+        }
+    }
+}
+
+/// Colliders a frame inserts at most (`insert_colliders`), whatever its
+/// budget: a prop's box is cheap, so a count alone would take a frame per
+/// few costly ones; a budget alone would end where the machine's load
+/// says.
+const COLLIDERS_PER_FRAME: usize = 256;
+
+/// The share of a frame's spawn budget its colliders get: 1 in this many.
+/// A step's work is the frame's only cost of that size; a collider's
+/// insert comes with what the world does about the map that just went
+/// in (its props' first shadows, its bounds), and one may be far over any
+/// budget (a map's solids).
+const COLLIDER_BUDGET_SHARE: u32 = 2;
 
 /// Where a spawn is (`SpawnProgress`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -261,9 +318,10 @@ fn advance<D: MapDrawer>(
             });
             let world = prepared.take::<WorldParts>().unwrap_or_else(|| world_parts(data));
             let (root, statics) = spawn_roots(commands, data, D::world_material(assets));
-            spawn_world_collision(commands, data, world.collision, root);
-            super::physics_clip::spawn_clips(commands, data, root);
-            progress.entity_nodes = spawn_entity_nodes(commands, data, root);
+            let colliders = &mut progress.colliders;
+            spawn_world_collision(commands, colliders, data, world.collision, root);
+            super::physics_clip::spawn_clips(commands, colliders, data, root);
+            progress.entity_nodes = spawn_entity_nodes(commands, colliders, data, root);
             (progress.root, progress.statics, progress.props) = (root, statics, Some(world.props));
         }
         let s = MapSpawn {
@@ -297,6 +355,7 @@ fn advance<D: MapDrawer>(
                     let placed = std::mem::take(&mut parts.brushes[i]);
                     spawn_prop::<D>(
                         commands,
+                        &mut progress.colliders,
                         &s,
                         assets,
                         &mut progress.drawn,
@@ -319,10 +378,14 @@ fn advance<D: MapDrawer>(
                 // spawn), and with it the textures' texels, unless something
                 // kept a share.
                 commands.queue(retire_pending::<D>);
-                let since = progress.since.clone();
-                commands.queue(move |world: &mut World| {
-                    counted_colliders(world, Tick::new(since.load(std::sync::atomic::Ordering::Relaxed)))
-                });
+                // Held-back colliders are counted once they are in
+                // (`insert_colliders`).
+                if progress.colliders.later.is_none() {
+                    let since = progress.since.clone();
+                    commands.queue(move |world: &mut World| {
+                        counted_colliders(world, Tick::new(since.load(std::sync::atomic::Ordering::Relaxed)))
+                    });
+                }
                 return true;
             }
         }
@@ -335,8 +398,10 @@ fn advance<D: MapDrawer>(
 
 /// One frame's share of the pending map's spawn (`SpawnProgress`, which
 /// `begin_spawn` inserted): steps until `budget` is spent (at least one).
-/// Returns whether the map is spawned: its commands, held since the first
-/// step, then go to the world together at the end of this system.
+/// Once every step is done its commands, held since the first step, go to
+/// the world together at the end of this system, in a frame of their own;
+/// the colliders follow (`insert_colliders`, which says when the map is
+/// spawned), so this returns false.
 pub(super) fn spawn_steps<D: MapDrawer>(
     In(budget): In<std::time::Duration>,
     mut commands: Commands,
@@ -349,10 +414,14 @@ pub(super) fn spawn_steps<D: MapDrawer>(
         // A frame of its own: what the world does with a whole new map
         // (the colliders' hooks, the hierarchy, a frame's first look at
         // thousands of entities) is the most of any step.
-        info!("map spawned in {} steps", progress.steps);
+        info!(
+            "map spawned in {} steps, {} colliders to follow",
+            progress.steps,
+            progress.colliders.later.as_ref().map_or(0, Vec::len)
+        );
         commands.append(&mut progress.queue);
-        commands.remove_resource::<SpawnProgress<D>>();
-        return true;
+        progress.applied = true;
+        return false;
     }
     // A budget past any instant: every step now.
     let deadline = std::time::Instant::now().checked_add(budget);
@@ -362,9 +431,54 @@ pub(super) fn spawn_steps<D: MapDrawer>(
     false
 }
 
-/// Starts a stepped spawn of the pending map (`spawn_steps`).
+/// Starts a stepped spawn of the pending map (`spawn_steps`), its
+/// colliders held back (`Colliders`).
 pub(super) fn begin_spawn<D: MapDrawer>(world: &mut World) {
-    world.insert_resource(SpawnProgress::<D>::default());
+    world.insert_resource(SpawnProgress::<D> {
+        colliders: Colliders {
+            later: Some(Vec::new()),
+            next: 0,
+        },
+        ..default()
+    });
+}
+
+/// Whether a stepped spawn's commands are applied: what is left of it is
+/// its colliders (`insert_colliders`).
+pub(super) fn colliders_left<D: MapDrawer>(world: &World) -> bool {
+    world.get_resource::<SpawnProgress<D>>().is_some_and(|p| p.applied)
+}
+
+/// One frame's share of a stepped spawn's colliders, after its commands
+/// were applied: each onto its entity, in the order the spawn made them,
+/// until `budget` is spent (at least one). Returns whether the map is
+/// spawned: every collider in, each keeping the mass properties its insert
+/// gave it (`counted_colliders`). The simulation waits until then (the
+/// caller's: `client::console`), so nothing moves through a map whose
+/// colliders are partly in.
+pub(super) fn insert_colliders<D: MapDrawer>(world: &mut World, budget: std::time::Duration) -> bool {
+    let Some(mut progress) = world.remove_resource::<SpawnProgress<D>>() else { return true };
+    let deadline = std::time::Instant::now().checked_add(budget / COLLIDER_BUDGET_SHARE);
+    let colliders = &mut progress.colliders;
+    let later = colliders.later.as_deref().unwrap_or_default();
+    let end = colliders.next + COLLIDERS_PER_FRAME;
+    while let Some((entity, collider)) = later.get(colliders.next).filter(|_| colliders.next < end) {
+        colliders.next += 1;
+        // Its shape is shared: the list's copy goes with the list.
+        if let Ok(mut e) = world.get_entity_mut(*entity) {
+            e.insert(collider.clone());
+        }
+        if deadline.is_some_and(|d| std::time::Instant::now() >= d) {
+            break;
+        }
+    }
+    if colliders.next < later.len() {
+        world.insert_resource(progress);
+        return false;
+    }
+    info!("map's {} colliders in", later.len());
+    counted_colliders(world, Tick::new(progress.since.load(std::sync::atomic::Ordering::Relaxed)));
+    true
 }
 
 /// The spawn's colliders have their mass properties already: Avian's
@@ -527,31 +641,39 @@ fn collision_parts(data: &MapData) -> CollisionParts {
 
 /// The world's collision: its surfaces (and a smoothed copy for loose
 /// items) and its solids.
-fn spawn_world_collision(commands: &mut Commands, data: &MapData, parts: CollisionParts, root: Entity) {
+fn spawn_world_collision(
+    commands: &mut Commands,
+    colliders: &mut Colliders,
+    data: &MapData,
+    parts: CollisionParts,
+    root: Entity,
+) {
     if let Some((terrain, surfaces, smooth)) = parts.terrain {
         commands.insert_resource(terrain);
-        commands.entity(root).with_child((
+        let mut e = commands.spawn((
             Name::new("Map collision (surfaces)"),
             MapPart,
             MapTerrainCollider,
             super::controllers::WorldCollider,
             RigidBody::Static,
-            surfaces,
             // Loose items slide on their own copy (below).
             CollisionLayers::new(LayerMask::DEFAULT, LayerMask::ALL & !crate::core::ITEM_LAYER),
             Transform::default(),
+            ChildOf(root),
         ));
+        colliders.put(&mut e, surfaces);
         if let Some(smooth) = smooth {
-            commands.entity(root).with_child((
+            let mut e = commands.spawn((
                 Name::new("Map collision (surfaces, for loose items)"),
                 MapPart,
                 MapTerrainCollider,
                 super::controllers::WorldCollider,
                 RigidBody::Static,
-                smooth,
                 CollisionLayers::new(crate::core::ITEM_GROUND_LAYER, crate::core::ITEM_LAYER),
                 Transform::default(),
+                ChildOf(root),
             ));
+            colliders.put(&mut e, smooth);
         }
     }
     // Triangles only some things meet (`MapCollisionSet`): no contacts
@@ -568,11 +690,11 @@ fn spawn_world_collision(commands: &mut Commands, data: &MapData, parts: Collisi
             MapPart,
             super::controllers::WorldCollider,
             RigidBody::Static,
-            collider,
             layers,
             Transform::default(),
             ChildOf(root),
         ));
+        colliders.put(&mut e, collider);
         if set.see_through {
             e.insert(SeeThrough);
         }
@@ -593,10 +715,10 @@ fn spawn_world_collision(commands: &mut Commands, data: &MapData, parts: Collisi
             MapBrushCollider,
             super::controllers::WorldCollider,
             RigidBody::Static,
-            collider,
             Transform::default(),
             ChildOf(root),
         ));
+        colliders.put(&mut e, collider);
         if glass {
             e.insert(SeeThrough);
         }
@@ -607,7 +729,12 @@ fn spawn_world_collision(commands: &mut Commands, data: &MapData, parts: Collisi
 /// a kinematic collider; their meshes are spawned under it later.
 /// Anchors (placed weapons with entities parented to them) get a node
 /// too, which their props ride and the weapon layer moves.
-fn spawn_entity_nodes(commands: &mut Commands, data: &MapData, root: Entity) -> Vec<Option<Entity>> {
+fn spawn_entity_nodes(
+    commands: &mut Commands,
+    colliders: &mut Colliders,
+    data: &MapData,
+    root: Entity,
+) -> Vec<Option<Entity>> {
     let anchors = entities::anchor_entities(&data.entities);
     data.entities
         .iter()
@@ -659,7 +786,8 @@ fn spawn_entity_nodes(commands: &mut Commands, data: &MapData, root: Entity) -> 
                         .flat_map(|h| &h.points)
                         .map(|q| entities::entity_to_engine(*q, scale));
                     let bounds = points.fold((Vec3::MAX, Vec3::MIN), |(a, b), q| (a.min(q), b.max(q)));
-                    node.insert((collider, PropEntity(i), PropHome(home)));
+                    node.insert((PropEntity(i), PropHome(home)));
+                    colliders.put(&mut node, collider);
                     if p.frozen {
                         node.insert((
                             RigidBody::Static,
@@ -679,12 +807,8 @@ fn spawn_entity_nodes(commands: &mut Commands, data: &MapData, root: Entity) -> 
                     }
                 }
                 (Some(collider), None) => {
-                    node.insert((
-                        MapBrushCollider,
-                        RigidBody::Kinematic,
-                        collider,
-                        contact_filter::hooks(),
-                    ));
+                    node.insert((MapBrushCollider, RigidBody::Kinematic, contact_filter::hooks()));
+                    colliders.put(&mut node, collider);
                     if data.see_through_entities.contains(&i) {
                         node.insert(SeeThrough);
                     }
@@ -844,6 +968,7 @@ fn start_props(data: &MapData, parts: Option<&PropParts>) -> Vec<MapBrush> {
 #[allow(clippy::too_many_arguments)]
 fn spawn_prop<D: MapDrawer>(
     commands: &mut Commands,
+    colliders: &mut Colliders,
     s: &MapSpawn,
     a: &mut SystemParamItem<D>,
     drawn: &mut D::Drawn,
@@ -922,6 +1047,7 @@ fn spawn_prop<D: MapDrawer>(
     let solid = if rider.is_some() { PropSolid::None } else { prop.solid };
     insert_prop_collider(
         &mut e,
+        colliders,
         data,
         prop,
         model,
@@ -1022,6 +1148,7 @@ pub fn world_box(bounds: (Vec3, Vec3), rotation: Quat) -> (Vec3, Vec3) {
 #[allow(clippy::too_many_arguments)]
 fn insert_prop_collider(
     e: &mut EntityCommands,
+    colliders: &mut Colliders,
     data: &MapData,
     prop: &MapProp,
     model: &MapModel,
@@ -1033,10 +1160,8 @@ fn insert_prop_collider(
     match (solid, collider) {
         (PropSolid::Mesh, Some(collider)) if dynamic.is_some() => {
             let p = dynamic.unwrap();
-            e.insert((
-                collider.clone(),
-                prop_physics::dynamic_body(p, data.models[prop.model].bounds),
-            ));
+            e.insert(prop_physics::dynamic_body(p, data.models[prop.model].bounds));
+            colliders.put(e, collider.clone());
             if p.asleep && prop.entity.is_some() {
                 e.insert((prop_physics::StartAsleep, RigidBody::Static));
             } else {
@@ -1047,7 +1172,8 @@ fn insert_prop_collider(
             }
         }
         (PropSolid::Mesh, Some(collider)) => {
-            e.insert((RigidBody::Static, collider.clone(), MapPropCollider));
+            e.insert((RigidBody::Static, MapPropCollider));
+            colliders.put(e, collider.clone());
             // A static prop is part of the world (its collision is the
             // world's: a body hinged to the world with "No Collision"
             // passes through it too).
@@ -1083,12 +1209,10 @@ fn insert_prop_collider(
             if size.min_element() > 0.0 {
                 // A world box: turned back against the prop's rotation.
                 let back = if world { prop.rotation.inverse() } else { Quat::IDENTITY };
-                let child = (
-                    Collider::cuboid(size.x, size.y, size.z),
-                    Transform::from_translation(back * ((lo + hi) / 2.0)).with_rotation(back),
-                );
+                let child = Transform::from_translation(back * ((lo + hi) / 2.0)).with_rotation(back);
                 e.insert(RigidBody::Static).with_children(|c| {
                     let mut ec = c.spawn((child, MapPropCollider));
+                    colliders.put(&mut ec, Collider::cuboid(size.x, size.y, size.z));
                     if let Some(s) = &model.surfaceprop {
                         ec.insert(PropSurface(s.clone()));
                     }

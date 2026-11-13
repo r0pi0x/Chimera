@@ -1491,7 +1491,8 @@ Other cases (worst frame anywhere in the run, M instructions):
 What did not move, and its size (`docs/backlog.md`, "Nothing blocks the main thread"):
 
 - **A map's swap** (below, "A map's swap"): spread over 4-10 frames behind the loading screen
-  now; what is left in one frame is the frame the whole map goes into the world (the
+  now; what is left in one frame is the frame the whole map goes into the world (since
+  without its colliders, which follow: "A map's colliders after its swap frame"; the
   spawn's commands together: 90-270 M dev-build main, the colliders' mass properties in
   Avian's insert hook a third of it, which Avian's API gives no way around; the render
   world's first look at every new entity, 220-350 M offscreen) and the first tick on the map
@@ -1753,7 +1754,8 @@ settling with 2-5 frames over 33 ms wall a swap on the quieter run.
 
 What is left over 33 ms, and why:
 
-- **The frame the map goes into the world** (220-255 M, about 35-55 ms here): a third is
+- **The frame the map goes into the world** (since: the colliders follow it over the next
+  frames, "A map's colliders after its swap frame" below; 220-255 M, about 35-55 ms here): a third is
   Avian's insert hook computing each new collider's mass properties, which Avian 0.8 can't be
   told to skip; the rest the entities themselves and their observers. Splitting the commands
   over frames would let the world hold part of a map (systems reading the new map's resources,
@@ -1791,6 +1793,117 @@ junk_flea, bloodmoney's ground, 2026-11-10) until something else re-specialized 
 needing specialization (Bevy's `DirtySpecializations`) in the frame it arrives. Guards:
 `late_meshes_are_reported_once_they_arrive` and cs_source_app's `heavy::map_swap_draws` (the
 binary offscreen, `map de_dust2` from the greybox: mean grey about 37 of 255, 1 without it).
+
+### A map's colliders after its swap frame (2026-11-12)
+
+The frame the whole map goes into the world was a swap's worst. Measured as "A map's swap in
+the real app" (Ultimate Gun Game offscreen at 1920x1080, the `profiling` build, `map` to
+cs_office, dm_lockdown and warehouse 20 s apart, box at load 7-33), and sampled by
+instructions instead of time (`perf record -e instructions:u -c 1000000 --call-graph fp -k
+CLOCK_MONOTONIC`, each frame cut out by the frame log's span: a sample is a million
+instructions whatever the box's load; 60-80% of a frame's counted instructions were
+sampled). In that frame, of the main thread's samples:
+
+| Map | The spawn's commands | Of them, colliders | Mass properties (parry) | The rest of the frame |
+|---|---|---|---|---|
+| cs_office | 98 of 154 | about 78 | 45 | the props' first shadows 24 (`update_prop_shadows`), `calculate_bounds` 11, `perf_report` 6 |
+| dm_lockdown | 107 of 123 | about 95 | 55 | |
+
+On a collider's insert Avian 0.8 computes its mass properties from the shape **twice**: in its
+insert hook (for `ColliderMassProperties`) and again in the collider tree's `Add` observer,
+which wants the bounds' margin, asks for the collider's bounding radius about its centre of
+mass, and parry computes the centre of mass with all the rest. Then its bounds, its place in
+the tree and its `ColliderOf`. One collider is most of it on each map: the solids' compound (a
+hull per brush: `MassProperties::from_compound`, each hull through
+`ConvexPolyhedron::to_trimesh`) on a Source map, the surfaces' triangles (`from_trimesh`) on
+a Combat Arms one; then each prop's convex pieces.
+
+Evaluated:
+
+| Approach | Outcome |
+|---|---|
+| The colliders inserted over the next frames, the simulation still paused | Kept (below) |
+| No mass for static bodies | Avian computes both whatever the body is (`RigidBody::Static`, no body, `NoAutoMass`, a zero density): only a `Sensor` skips the hook's, nothing skips the observer's |
+| Mass properties computed on the load's task and handed in | Tried, not kept. The hook can be kept from computing them (the collider inserted as a `Sensor`, its zero `ColliderMassProperties` removed, the `Sensor` removed, whose observer computes them unless they are missing, then the ones made ahead inserted: the same values, the collider solid, checked); the observer's computation stays, and a collider whose entity's transform gives a scale an ulp off one is rescaled by the hook and has to be computed anyway. Measured: the collider frames' sum on cs_office 185-208 M to 143-185 M, their worst the same (the budget decides it). Four archetype moves and six of Avian's observers per collider for a quarter of the colliders' cost |
+| The colliders built on a task | They already are (`prepare_world`: the shapes, on the load's task); what is left needs the world |
+
+Now a stepped spawn holds its colliders back (`map::spawn::Colliders`: every collider of the
+spawn goes through `put`, after its entity's other parts): the map's frame applies the
+spawn's commands without them, and the next frames insert them onto their entities in the
+order the spawn made them (`insert_colliders`), half of `SPAWN_BUDGET` a frame (a frame of
+colliders also carries what the world does about the map that just went in) and at most
+`COLLIDERS_PER_FRAME` (256). The spawn isn't done until the last is in: `prepare::spawn_some`
+says so only then, the shell stays in `Spawning`, `Time<Virtual>` paused, so no tick and no
+settling work (the nav flood's snapshot, the spawn spots) sees a map with part of its
+colliders. Each collider keeps the mass properties its insert gave it (`counted_colliders`,
+once they are all in). A spawn at once (`spawn_map`: a map at startup, `change_map`, a
+dedicated server's change) inserts each collider with its entity as before, in the same
+command order as the stepped one's entity parts, so both make the same entity.
+cs_office has 430 colliders, dm_lockdown 446, warehouse 18.
+
+Before and after, three runs each back to back (M instructions on the main thread; from the
+`map` command to `map settled`, frames of at most one tick):
+
+| Swap to | The map's frame before | after | Collider frames after (worst) | First tick's frame before | after | Worst frame before | after |
+|---|---|---|---|---|---|---|---|
+| cs_office | 221-232 | 131-134 | 3-6 frames (75-86) | 174-180 | 155-156 | 221-232 (the map's) | 155-158 (the first tick's) |
+| dm_lockdown | 179-186 | 66-72 | 3-5 frames (79-99) | 242-254 | 189-208 | 242-254 (the first tick's) | 189-257 (the first tick's, or a settling frame) |
+| combat_arms:warehouse | 88-95 | 22-25 | 2 frames (51-89) | 56 | 68-71 | 108-165 (a spawn step) | 132-174 (a spawn step) |
+
+The first collider frame is the largest: the solids' compound (or the surfaces) alone is
+40-50 M, over any budget. The first tick's frame on a Source map lost what it shared with
+the map's frame before (the props' first shadows now fall in the collider frames); its tick
+is the same (115-133 M on cs_office and dm_lockdown, 26-34 M on warehouse; the samples in
+the tick 91 before, 83 after).
+
+The same world: `chimera_client`'s `map_load_steps` (stepped through the shell's `map` flow
+against a spawn in one go: every collider's entity, body, kind of body, place, bounds, layers,
+markers, shape and mass properties equal; the physics props fall onto the floor and rest
+where they do spawned in one go; the map's frame brings no collider, they come over
+several frames, and no tick sees a map partly in or short of a collider; the first tick
+computes no mass again), cs_source's `heavy::map_spawn_dump` (`CHIMERA_SPAWN_DUMP_VIA=change`
+against `=stepped` over its five maps, entity ids, component ids and asset slots aside: the
+same entities, components and resources, every collider's among them, but the spawn's own
+cached system, the physics tick's number and, on de_nuke, the shadow of one swinging physics
+prop not yet a projected one at the dump, which shifts the table slots of five more; the
+stepped dump is taken more frames after the map's frame now, and those shadows are redrawn a
+few a frame; not looked into further), and the movement, collision and map-change tests of
+the crates above (run for this change: the fast tier of `chimera_world`, `chimera_client`,
+`chimera_sim`, `chimera_net`, `cs_source` and `cs_source_server`, the dedicated server's map
+changes among them; `heavy::map_de_dust2`, with its walks, landings, prop collisions and
+`maps_change_in_place`, and `heavy::map_net_changelevel`).
+
+Guard: `apps/ultimate_gun_game/tests/it/heavy/map_swap_frames.rs` (headless, dev build): the
+frame each map goes into the world brings no collider and stays under `INSERT_FRAME` (200 M;
+measured de_dust2 46-51 M, cs_office 118-139 M, dm_lockdown 68-78 M, warehouse 13 M, where "A
+map's swap" had 149-156, 250-297, 155-210 and 71-89 M with the colliders in it), and its
+colliders follow in frames under `COLLIDER_FRAME` (120 M; measured 33-60 M, 3-8 frames a map).
+
+What is left of a swap over 100 M on the profiling build, in order:
+
+- **The first tick's frame** (cs_office 155 M, dm_lockdown 190-210 M): the tick 115-135 M
+  (`source_logic::bridge::load` a quarter to a third, Combat Arms' `objects::load` a tenth to a fifth, the
+  mass properties of the colliders the tick's own spawns make, a fifth, a third to a half of
+  that computed a second time by `update_collider_mass_properties`, the colliders being new and
+  `Changed`; their bounds), and on dm_lockdown six props' shadows redrawn in the same frame (a
+  third of the frame). Not cheap: the logic world's spawn is a tick's work by design, and
+  keeping the tick's own colliders from being counted twice needs what `counted_colliders` does
+  for the map's, for every system that spawns one.
+- **Settling's prop shadows** on dm_lockdown: `update_prop_shadows` is half of its settling
+  frames' instructions (six redraws a frame, `REDRAWS_PER_FRAME`, each about 8 M: 38-45
+  frames over 100 M a swap before and after). A budget in instructions or fewer a frame
+  behind the loading screen would do; chimera_present's.
+- **Spawn steps**: `spawn_prop` evaluating a light probe per vertex (`LightProbe::eval`),
+  up to 143 M in a step of 16 props on cs_office, 108-174 M on warehouse: now the worst frame
+  of a Combat Arms map's swap.
+- **The map's frame on cs_office** (131-134 M): the entities and their hierarchy 36 of 87
+  samples, the props' first shadows 24, `calculate_bounds` 10.
+- **A dedicated server's map change** is still one tick with everything in it (nobody
+  watches its frames, but its clients wait for it).
+
+Seen in passing, not looked into: offscreen without `--dump` the audio thread
+(`cpal_alsa_out`) ran flat out during these frames (759 samples in an 85 ms frame, half in
+`audio::room::Reverb::frame`); whether a real output device paces it wasn't checked.
 
 ## Combat Arms map loads (2026-10-19)
 

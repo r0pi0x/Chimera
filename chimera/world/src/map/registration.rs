@@ -374,7 +374,8 @@ fn scoped_resources(app: &mut App) {
         .map_scoped::<MapPropBrushStart>();
 }
 
-/// `prepare::spawn_some`'s: a frame's steps of the pending map's spawn.
+/// `prepare::spawn_some`'s: a frame's steps of the pending map's spawn,
+/// then a frame's share of its colliders.
 fn spawn_pending_steps<D: MapDrawer>(world: &mut World, budget: std::time::Duration) -> bool {
     if !world.contains_resource::<spawn::SpawnProgress<D>>() {
         return true;
@@ -382,6 +383,10 @@ fn spawn_pending_steps<D: MapDrawer>(world: &mut World, budget: std::time::Durat
     // Repeatable runs spawn in one go: a time budget ends steps where the
     // machine's load says (`chimera_core::tasks::WaitForTasks`).
     let budget = if chimera_core::tasks::waits(world) { std::time::Duration::MAX } else { budget };
+    // The map is in: its colliders follow, a frame's share at a time.
+    if spawn::colliders_left::<D>(world) {
+        return spawn::insert_colliders::<D>(world, budget);
+    }
     match world.run_system_cached_with(spawn::spawn_steps::<D>, budget) {
         Ok(done) => done,
         Err(e) => {
