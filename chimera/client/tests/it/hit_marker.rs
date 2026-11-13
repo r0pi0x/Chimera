@@ -2,7 +2,8 @@
 //! (`cl_hitmarker 0`); on, a hit that dealt damage shows on the shooter
 //! (host and network client both arrive as the shooter's own
 //! `WeaponEvent::Hit`) with a headshot and a kill variant; nothing for the
-//! victim, a zero-damage hit, a prop, or while the HUD draws its own.
+//! victim, others' hits and kills, a zero-damage hit, a prop, or while
+//! the HUD draws its own.
 
 use bevy::prelude::*;
 use chimera_client::client::{
@@ -130,4 +131,30 @@ fn nothing_for_the_victim_a_prop_no_damage_or_a_hud_with_its_own() {
     });
     hit(&mut w, me, other, 30.0, Hitgroup::Chest);
     assert!(!shown(&w).0, "the HUD's game draws its own");
+}
+
+/// Others' fights (a host's bots shooting and killing each other) show
+/// nothing on the local player's screen, with the marker on.
+#[test]
+fn nothing_for_others_hits_or_kills() {
+    let mut w = world(true);
+    let (me, other) = (w.me, w.other);
+    let third = w.sim.app.world_mut().spawn((Health::default(), Intent::default())).id();
+    w.sim.ticks(1);
+    hit(&mut w, other, third, 30.0, Hitgroup::Head);
+    hit(&mut w, third, other, 30.0, Hitgroup::Chest);
+    w.sim.app.world_mut().write_message(Died {
+        entity: third,
+        attacker: Some(other),
+        damage: killing_blow(),
+    });
+    w.sim.app.world_mut().write_message(Died {
+        entity: other,
+        attacker: None,
+        damage: killing_blow(),
+    });
+    w.sim.ticks(1);
+    assert!(!shown(&w).0, "others' hits and kills");
+    hit(&mut w, me, other, 30.0, Hitgroup::Chest);
+    assert_eq!(shown(&w), (true, HitKind::Hit), "mine still shows");
 }
