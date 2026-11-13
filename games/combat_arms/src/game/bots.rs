@@ -101,8 +101,8 @@
 //! - Not there: placed devices (mines, claymores), so no mine drops while
 //!   patrolling; targets are characters but for the auto turret (ours,
 //!   `brain::turret_step`: a bot carrying one with none standing places
-//!   one, a bot with a loaded gun shoots an enemy turret within 1500 u in
-//!   sight when it is on the bot or the bot has no enemy in view); doors (and their
+//!   one, a bot with a loaded gun shoots back at an enemy turret within
+//!   1000 u in sight that is shooting at it); doors (and their
 //!   retry); the "catch breath" stop lasts 1 s (its length is open: Open
 //!   question 20); a roll is a fast sidestep; the knife is the player's
 //!   knife with the bot's 130 u reach (`inventory::KnifeReach`; its swing

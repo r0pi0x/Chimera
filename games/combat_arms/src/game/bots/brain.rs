@@ -1097,14 +1097,15 @@ fn turrets_of(world: &mut World) -> Vec<TurretSeen> {
 
 /// How far a bot looks for an enemy turret to shoot (u; ours: the
 /// turret's own 800 u search and a margin).
-pub const TURRET_SHOOT_RANGE: f32 = 1500.0;
+pub const TURRET_SHOOT_RANGE: f32 = 1000.0;
 
 /// The bots and auto turrets (ours, simple; the spec has none): a bot
 /// carrying a turret with none of its own standing places one where it
 /// looks (a little down, the throw's own speed), then fights on with its
-/// other weapons; a bot holding a loaded gun shoots an enemy turret in
-/// sight within `TURRET_SHOOT_RANGE` when the turret is on it or it has
-/// no visible enemy to fight.
+/// other weapons; a bot holding a loaded gun shoots back at an enemy
+/// turret in sight within `TURRET_SHOOT_RANGE` that is shooting at it (a
+/// threat; a turret on someone else, or still setting up, is left alone,
+/// or bots broke every turret before it fired).
 fn turret_step(ctx: &Ctx, bot: &CaBot, me: &Char, guns: &[Gun], active: Option<Entity>, turrets: &[TurretSeen], out: &mut Out) {
     let Some(io) = out.intent.as_mut() else { return };
     if bot.throw.is_some() {
@@ -1121,13 +1122,12 @@ fn turret_step(ctx: &Ctx, bot: &CaBot, me: &Char, guns: &[Gun], active: Option<E
     if held.count.is_some() || held.clip == 0 {
         return;
     }
-    let busy = bot.visible && bot.target.is_some();
     let eye = me.eye();
     let enemy = |t: &&TurretSeen| t.owner != Some(me.e) && (t.team == 0 || t.team != me.team);
     let Some(t) = turrets
         .iter()
         .filter(enemy)
-        .filter(|t| (!busy || t.target == Some(me.e)) && u(eye.distance(t.at)) <= TURRET_SHOOT_RANGE)
+        .filter(|t| t.target == Some(me.e) && u(eye.distance(t.at)) <= TURRET_SHOOT_RANGE)
         .filter(|t| {
             let d = t.at - eye;
             let Ok(dir) = Dir3::new(d) else { return false };

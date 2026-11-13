@@ -708,8 +708,9 @@ that):
   game's weapons and blasts break it (a collider on the traces-only
   layer with `Damageable`); breaking it is a kill-feed line ("<owner>'s
   <turret>", `core::Destroyed`) and no rung or score. Bots on the rung
-  place one and fight on with their knife; bots shoot an enemy turret
-  that is on them or when they have no enemy in sight. Tuning starts
+  place one and fight on with their knife; a bot shoots back at an enemy
+  turret that is shooting at it (only then: bots that shot every turret
+  in sight broke them before they fired). Tuning starts
   from Combat Arms' numbers; change them in the weapon's data. The
   turret is drawn into automatic ladders in the specials band (`class =
   "launcher"`); a turret's own gun (a `Turret#` record's `TopWeaponID`:
