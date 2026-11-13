@@ -421,6 +421,9 @@ pub struct PartyMenu {
     /// The server went away and is being asked whether it's back
     /// (`chimera_net::net::reconnect`): the reconnect box's text.
     pub reconnecting: Option<String>,
+    /// Joined while the server's pre-match lobby is up
+    /// (`lobby_ready`): the loading panel gives way to the lobby.
+    pub lobby_ready: bool,
     /// What is loading: a map, or the server's address.
     pub loading: Option<String>,
     /// The last addresses joined, newest first.
@@ -452,6 +455,7 @@ impl Default for PartyMenu {
             caret: Caret::default(),
             failure: None,
             reconnecting: None,
+            lobby_ready: false,
             loading: None,
             recent: Vec::new(),
             values: BTreeMap::new(),
@@ -1209,6 +1213,11 @@ fn connect(world: &mut World, address: &str, password: &str) {
 /// background map loads again.
 fn follow_loads(world: &mut World) {
     let loading = chimera_client::client::console::map_loading(world);
+    let lobby = world.query_filtered::<(), With<chimera_net::prematch::NetLobby>>().iter(world).next().is_some();
+    let ready = lobby_ready(lobby, world.get_resource::<JoinProgress>());
+    if world.resource::<PartyMenu>().lobby_ready != ready {
+        world.resource_mut::<PartyMenu>().lobby_ready = ready;
+    }
     let menu = world.resource::<PartyMenu>();
     if menu.screen == Screen::InGame && loading {
         let map = chimera_client::client::console::loading_map(world).unwrap_or_default();
@@ -1579,7 +1588,10 @@ fn show(
         return;
     }
     if let Some(what) = &menu.loading {
-        loading_frame(&mut commands, root, &look, what);
+        // Joined and waiting in the lobby: the shade alone under it.
+        if !menu.lobby_ready {
+            loading_frame(&mut commands, root, &look, what);
+        }
         return;
     }
     main_list(
@@ -2414,6 +2426,15 @@ fn loading_under_lobby(
     }
 }
 
+/// Joined (`JoinStage::Joined`) while the server's pre-match lobby is up:
+/// the loading panel, whose line would say "Retrieving game data..." at 5%
+/// under the lobby's "Ready" and its countdown box (the 2026-11-13
+/// rehearsal), gives way to the lobby; the menu's shade stays until the
+/// match starts and the game is entered.
+fn lobby_ready(lobby: bool, join: Option<&JoinProgress>) -> bool {
+    lobby && join.is_some_and(|j| j.stage == JoinStage::Joined && j.failure.is_none())
+}
+
 /// The loading panel's frame id.
 const LOADING_FRAME: &str = "partyloading";
 
@@ -2426,6 +2447,19 @@ pub fn local_player(world: &mut World) -> Option<Entity> {
 mod tests {
     use super::*;
     use chimera_net::net::client::DownloadInfo;
+
+    /// A player whose join is done waits in the lobby without the loading
+    /// panel; one still downloading or loading keeps it under the lobby.
+    #[test]
+    fn the_loading_panel_gives_way_to_the_lobby_once_joined() {
+        let at = |stage| JoinProgress { stage, ..default() };
+        assert!(lobby_ready(true, Some(&at(JoinStage::Joined))));
+        assert!(!lobby_ready(false, Some(&at(JoinStage::Joined))));
+        for stage in [JoinStage::Connecting, JoinStage::Downloading, JoinStage::LoadingMap] {
+            assert!(!lobby_ready(true, Some(&at(stage))));
+        }
+        assert!(!lobby_ready(true, None));
+    }
 
     /// The match's game files from the asset service: the loading line in
     /// MB and the bar's share (`net::assets`).
