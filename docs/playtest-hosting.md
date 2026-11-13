@@ -217,6 +217,14 @@ bolt's sounds in flight and at rest, create sound, flare sprite, model
 and skins: `special::object_files`; 80 sets grew, by 171 files;
 `sets combat_arms --only weapon/`, about 10 minutes).
 
+Since the second rehearsal (2026-11-13), `sets` also merges into Combat
+Arms' `base` the attribute files its install data reads at the first
+start (`attributes/clientbutes.txt` came on demand at each first start)
+and the effect textures every map takes (`effects::library::add_looks`:
+the install guns' own FX.TXT groups, 7 textures on demand at each first
+join): 8 files, 0.06 MB (`sets combat_arms --store <server store> --sign
+--only base`).
+
 **The guard**: `cargo test -p ultimate_gun_game --features dev --test it
 heavy::no_fetch_in_match -- --nocapture` plays such a session as a
 client without installs against a service reading the published store
@@ -679,3 +687,38 @@ about 30 minutes, with a server `quit` and restart. Found:
 - **Errors**: no panics; the server logs `renetcode` "no private key was
   found for this address" (10) when a client restarts for its token or
   disconnects; clients `sequence already received` (2 each).
+
+**Rehearsal 2026-11-13 (the playtest6 build).** Main at 600f5e10 (net42),
+built `--profile playtest`: the `ultimate_gun_game_server` on the
+installs, `+maxplayers 12 +MaxPlayer 3 +mp_lobby_min_players 3`, the
+asset service on a scratch store reading the server store's records and
+manifests (the guard's way: the real store isn't written), three
+offscreen clients without installs started like testers (fresh homes,
+`+chimera:asset_token ... +connect`), one at 1280x720 dumping a frame
+every 3 s; on one loaded Linux machine that swapped (1-2 GB of each
+process in swap). Seven matches over six maps of the three games in 19
+minutes: de_dust2 to its time limit and vote, the vote's de_inferno, a
+host's `changelevel` to warehouse, dm_lockdown, cs_office and junk_flea,
+the surprises (air strike on de_dust2, dm_lockdown and junk_flea,
+gravity and `surprise stop`), a client stopped 40 s (dropped, then
+rejoined by itself), and a server `quit` and restart.
+
+| Measured | |
+|---|---|
+| First start to spawn (fresh client, token entered) | ready in the lobby 23 s after start (startup download 375.6 MB in 7.4 s, join 94 MB in 0.5 s, locally), the match 29 s |
+| Lobby, from its start to the match | 10-25 s at each map change (everyone ready in 7-20 s), 40 s for the first |
+| Client dropped (stopped 40 s) | the server timed it out after 30 s; resumed, it reconnected at attempt 1 and was in the game 7 s after the loss |
+| Server `quit` and restart | quit in 8 s; the new server listened 11 s after start; every client rejoined (attempt 14) 2 s later, the match 8 s after that |
+| On demand | none during any match; 8 Combat Arms files at each tester's first start and join, outside every set (see "Publishing the game files": `--only base` covers them now) |
+| Server tick (3 players, 3 bots) | CPU p50 1.7-3.5 ms, p99 3.2-11 ms; a map change one tick of 2.7-3.8G instructions (0.3-0.6 s CPU) |
+| Server memory (resident + swap) | 1.3 GB at start, 1.9-2.5 GB during play over six maps, 2.0 GB at the end |
+| Client memory (resident + swap) | 2.7-3.1 GB in the first match, 3.4-3.5 GB after six maps, peaks of 5.5-5.7 GB while cs_office loaded; two waiting launcher processes (token restart, startup download) 0.2-0.35 GB together |
+| A swap's worst frame (instructions, main world) | 220-380M, of which 60-240M catch-up ticks (15-18 a frame while the swapping box ran 3 frames a second); render world under 125M |
+| A tester's download over the session (prefetch on) | 1.6 GB (all three games' `base`, six maps' joins, the pool's other maps in the background); 3.1 GB on disk (1.6 GB of it converted maps) |
+| Errors | no panics; the server's `renetcode` "no private key was found" (9, the token restarts); clients only `symphonia` mp3 warnings |
+
+Found: the 8 files above (fixed in `sets`; publish `base` again), and a
+joined player's loading panel ("Retrieving game data..." at 5%) under the
+lobby with its countdown box over it at every match start (fixed: the
+panel gives way to the lobby once joined). Open items: backlog.md,
+"UGG playtest rehearsal, 2026-11-13".
