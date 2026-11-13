@@ -704,10 +704,14 @@ impl Plugin for CaRulesPlugin {
             .add_observer(hired_guns::on_mode_death)
             .add_observer(spy_hunt::on_mode_death)
             .add_observer(flow::number_players)
+            .add_observer(flow::other_rules_map_messages)
             // Everything below: while Combat Arms is the gameplay's rules
             // (`gameplay::gameplay_is`).
             .add_systems(FixedUpdate, objects::read_map_objects.before(SimSet::Rules).run_if(crate::gameplay::gameplay_is(super::GAME)))
-            .add_systems(Update, (ctf::show_flags, spectator_rules).distributive_run_if(crate::gameplay::gameplay_is(super::GAME)))
+            .add_systems(Update, spectator_rules.run_if(crate::gameplay::gameplay_is(super::GAME)))
+            // Under any rules: the flags hide when Combat Arms' aren't
+            // playing capture the flag.
+            .add_systems(Update, ctf::show_flags)
             .add_systems(
                 FixedUpdate,
                 (
