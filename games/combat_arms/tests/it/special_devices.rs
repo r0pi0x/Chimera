@@ -417,8 +417,9 @@ fn turret_with_target(sim: &mut Sim, x: f32, z: f32, feet: f32) -> (Entity, Enti
 /// is removed. 70 degrees above or 900 u away: not targeted.
 #[test]
 fn t28_turret_target() {
-    // 20 degrees above the sensor at 500 u: its sensor is 22 u up, the
-    // enemy's centre at 22 + 182 = 204 u: feet at about 164.
+    // About 20 degrees above the sensor at 500 u (the spec's 22 u sensor;
+    // our placeholder box puts it at 30 u: 19 degrees): the enemy's centre
+    // at 204 u, feet at about 164.
     let (_, victim, t) = turret_with_target(&mut sim(), 500.0, 0.0, 164.0);
     let _ = (victim, t);
     let mut sim = sim();
@@ -1037,4 +1038,154 @@ fn net_rocket_seen_and_damaging() {
     let theirs = sim.local_player(1).unwrap();
     let on_victim = sim.clients[1].app.world().get::<Health>(theirs).unwrap().current;
     assert_eq!(on_victim, after, "the victim's client has it");
+}
+
+// ---------------------------------------------------------------------------
+// The turret broken, unloaded and on the network (ours: the gun game's
+// turret, docs/DESIGN.md "Gun game rules")
+
+/// Broken things seen (`core::Destroyed`).
+#[derive(Resource, Default)]
+struct Broken(Vec<chimera_core::core::Destroyed>);
+
+fn log_broken(mut d: MessageReader<chimera_core::core::Destroyed>, mut log: ResMut<Broken>) {
+    log.0.extend(d.read().copied());
+}
+
+/// A landed turret takes one round's damage per round of our rifle (its
+/// box, not its collider too), and broken (350 HP) it is gone with its
+/// effect and a broken line for its breaker.
+#[test]
+fn a_turret_takes_a_round_once_and_breaks_with_a_line() {
+    let mut sim = sim();
+    sim.app.init_resource::<Broken>().add_systems(FixedLast, log_broken);
+    let owner = far_player(&mut sim, 1);
+    let shooter = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 2);
+    set_health(&mut sim, shooter, 100_000.0);
+    armed(&mut sim, shooter, RIFLE);
+    let t = landed(&mut sim, "test:turret_exact", Some(owner), 0.0, 300.0);
+    sim.ticks(4);
+    assert!(sim.app.world().get::<avian3d::prelude::Collider>(t).is_some(), "a collider other games' rounds meet");
+    let e = eye(&sim, shooter);
+    let d = obj(&sim, t).at() - e;
+    {
+        let mut i = sim.intent(shooter);
+        i.yaw = (-d.x).atan2(-d.z);
+        i.pitch = d.y.atan2(Vec2::new(d.x, d.z).length());
+        i.fire = true;
+    }
+    let mut broke = false;
+    for _ in 0..400 {
+        sim.ticks(1);
+        if !alive(&sim, t) {
+            broke = true;
+            break;
+        }
+    }
+    sim.intent(shooter).fire = false;
+    assert!(broke, "broken by the rifle");
+    let on_it: Vec<_> = hits(&sim).into_iter().filter(|h| h.1 == t).collect();
+    let fired = rounds_fired(&sim, shooter);
+    assert!(!on_it.is_empty());
+    assert!(on_it.len() <= fired, "one damage a round at most: {} hits of {fired} rounds", on_it.len());
+    let total: f32 = on_it.iter().map(|h| h.3).sum();
+    assert!(total >= 350.0 - 1.0, "350 HP taken: {total}");
+    let line = sim.app.world().resource::<Broken>().0.clone();
+    assert_eq!(line.len(), 1, "one line: {line:?}");
+    assert_eq!((line[0].what, line[0].owner, line[0].attacker), ("test:turret_exact", Some(owner), Some(shooter)));
+    assert_eq!(line[0].weapon, Some(RIFLE));
+}
+
+fn rounds_fired(sim: &Sim, p: Entity) -> usize {
+    sim.app
+        .world()
+        .resource::<Rounds>()
+        .0
+        .iter()
+        .filter(|r| r.1 == p && matches!(r.3, chimera_sim::weapon::WeaponEventKind::Fired { .. }))
+        .count()
+}
+
+/// A map's unload takes every special object (`special::unload_objects`).
+#[test]
+fn a_maps_unload_takes_the_objects() {
+    let mut sim = sim();
+    let owner = far_player(&mut sim, 1);
+    landed(&mut sim, "test:turret_exact", Some(owner), 0.0, 300.0);
+    projectile(&mut sim, LAW, Some(owner), Vec3::new(0.0, 60.0, 0.0), Vec3::new(0.0, 0.0, 1300.0));
+    chimera_world::map::unload_map(sim.app.world_mut());
+    let w = sim.app.world_mut();
+    assert_eq!(w.query::<&CaObject>().iter(w).count(), 0, "none left");
+}
+
+/// The network: a turret a client places is drawn on both clients, its
+/// rays reach them (`CaTurretShots`) as it shoots the other player, and
+/// broken on the server, both clients get the broken line.
+#[test]
+fn a_turret_on_the_network() {
+    let link = LinkConditions::default();
+    let mut sim = NetSim::new(CaSim, link, 7, 2, |app| {
+        app.add_plugins(GreyboxMapPlugin);
+        app.init_resource::<Broken>().add_systems(PreUpdate, log_broken.after(bevy_replicon::prelude::ClientSystems::Receive));
+        app.insert_resource(StartingWeapons {
+            team: Vec::new(),
+            all: vec![combat_arms::game::inventory::KNIFE, "combat_arms:auto-turret"],
+        });
+    });
+    sim.set_frame(TICK_INTERVAL);
+    sim.until_joined(600);
+    sim.ticks(240);
+    let me = sim.local_player(0).unwrap();
+    sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().select = Some(4);
+    sim.ticks(1);
+    sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().select = None;
+    sim.ticks(120);
+    {
+        let mut i = sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap();
+        i.pitch = -0.5;
+        i.fire = true;
+    }
+    sim.ticks(1);
+    sim.clients[0].app.world_mut().get_mut::<Intent>(me).unwrap().fire = false;
+    // The other player in front of it, on the server.
+    let other = sim.character_of(1).unwrap();
+    let mut turret = None;
+    let ok = sim.until(600, |s| {
+        let w = s.server.app.world_mut();
+        turret = w.query::<(Entity, &CaObject)>().iter(w).find(|(_, o)| o.s.landed).map(|(e, _)| e);
+        turret.is_some()
+    });
+    assert!(ok, "landed on the server");
+    let at = sim.server.app.world().get::<Transform>(turret.unwrap()).unwrap().translation;
+    {
+        let w = sim.server.app.world_mut();
+        w.get_mut::<Transform>(other).unwrap().translation = at + Vec3::new(0.0, 1.0, -4.0);
+        w.get_mut::<Position>(other).unwrap().0 = at + Vec3::new(0.0, 1.0, -4.0);
+        w.get_mut::<Health>(other).unwrap().current = 1000.0;
+        // On the other side.
+        let mine = w.get::<chimera_core::core::Team>(w.get::<CaObject>(turret.unwrap()).unwrap().owner.unwrap()).map_or(1, |t| t.0);
+        w.entity_mut(other).insert(chimera_core::core::Team(if mine == 1 { 2 } else { 1 }));
+    }
+    let mut seen = [false; 2];
+    let ok = sim.until(600, |s| {
+        for (i, c) in s.clients.iter_mut().enumerate() {
+            let w = c.app.world_mut();
+            let drawn = w.query::<&ShownItem>().iter(w).any(|i| i.0 == "combat_arms:auto-turret");
+            let shots = w.query::<&special::CaTurretShots>().iter(w).any(|s| s.shots > 0);
+            seen[i] = drawn && shots;
+        }
+        seen == [true, true]
+    });
+    assert!(ok, "drawn and shooting on both clients: {seen:?}");
+    // Broken on the server by the other player.
+    {
+        let w = sim.server.app.world_mut();
+        let mut o = w.get_mut::<CaObject>(turret.unwrap()).unwrap();
+        o.destroyed = true;
+        o.s.broken_by = Some(other);
+    }
+    let ok = sim.until(300, |s| {
+        s.clients.iter().all(|c| c.app.world().resource::<Broken>().0.iter().any(|d| d.what == "combat_arms:auto-turret"))
+    });
+    assert!(ok, "the broken line on both clients");
 }

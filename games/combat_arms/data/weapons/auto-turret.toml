@@ -12,6 +12,11 @@ slot = 4
 # The view model's draw animation [6.12].
 draw = 1.333
 undroppable = false
+# An automatic gun game's specials band (docs/DESIGN.md "Gun game rules",
+# "A turret rung"; ours: the spec has no ladder). Its install copies keep it
+# (HG2_Auto_Turret; the infected ship turrets, whose top gun's rays do
+# nothing here, and the perk ammo box are left out by their data).
+class = "launcher"
 
 # HideWhenEmpty: the weapon is unselectable at total 0 and the owner
 # switches away; a device never drops on death [inventory.md 10, 12].
@@ -25,7 +30,9 @@ spawned = 1
 max = 1
 # 1 per spawn, OnceActivate, Health 350, x3 from explode and infected
 # explode [6.7, 6.11]; `fire_0` 3666 ms with the release key at 3100 [6.12].
-# The box: PLACEHOLDER.
+# The box: PLACEHOLDER (the spec's is its model's first animation box, not
+# read): 32 x 40 x 32 u (0.58 x 0.72 x 0.58 m), what bullets of every game
+# meet; a gun game's turret rung tunes nothing else (docs/DESIGN.md).
 kind = "turret"
 prefire = 0.0
 key = 3.1
@@ -37,7 +44,7 @@ once_only = true
 speed = 600.0
 lifetime = 60000.0
 health = 350.0
-box_half = [12.0, 12.0, 12.0]
+box_half = [16.0, 20.0, 16.0]
 weak = [[7, 3.0], [40, 3.0]]
 # The `Auto-Turret` record: `Lower_set` 2833 ms, MaxAmmo 100, FireDelay
 # 0.13 s, Perturb 50, SensorOffset (0, 10, 0), ShootingAngle (-45, 60),

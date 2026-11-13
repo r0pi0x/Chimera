@@ -1375,6 +1375,19 @@ pub struct Died {
     pub damage: Damage,
 }
 
+/// A thing that is no character was destroyed by an attack (a game's
+/// placed device: Combat Arms' auto turret): what it was (its weapon id:
+/// its name and icon), whose it was, who broke it and with what. Only
+/// the kill feed reads it (a line, no score, no rung: it is no `Died`);
+/// a network server sends it to its clients (`net::ObjectDestroyed`).
+#[derive(Message, Clone, Copy, Debug, PartialEq)]
+pub struct Destroyed {
+    pub what: &'static str,
+    pub owner: Option<Entity>,
+    pub attacker: Option<Entity>,
+    pub weapon: Option<&'static str>,
+}
+
 /// Physics layer of ragdoll bodies. They collide only with the default
 /// layer (the world, props), not with characters or each other, and
 /// gameplay queries (movement, bullets, sight) leave them out with
@@ -2550,6 +2563,7 @@ impl Plugin for CorePlugin {
             .add_message::<Explosion>()
             .add_message::<Deafened>()
             .add_message::<Died>()
+            .add_message::<Destroyed>()
             .add_message::<RegionHit>()
             .add_message::<DamageTaken>()
             .add_message::<Radio>()

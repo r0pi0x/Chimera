@@ -171,6 +171,9 @@ fn register(app: &mut App) {
         .ordered::<CaMerc>()
         .replicate::<CaVip>()
         .ordered::<CaVip>()
+        // An auto turret's rays, for the clients' shots (sound, muzzle,
+        // tracer: `effects::turret_shots`).
+        .replicate::<super::special::CaTurretShots>()
         .add_client_message::<CaRespawnRequest>(Channel::Ordered)
         .add_client_message::<CaHireRequest>(Channel::Ordered)
         .add_client_message::<CaOrderRequest>(Channel::Ordered)

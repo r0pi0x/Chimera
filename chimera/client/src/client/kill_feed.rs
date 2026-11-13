@@ -12,7 +12,11 @@
 //!   and the flags: headshot, suicide (no killer, or the victim itself),
 //!   team kill (same non-zero `core::Team`). Entries go after `lifetime`
 //!   seconds, the oldest first past `max`, and all of them on a map
-//!   change (`core::MapLoads`). No game's HUD keeps it, so an entry made
+//!   change (`core::MapLoads`). A thing broken (`core::Destroyed`: a
+//!   game's placed device, Combat Arms' auto turret; a network client's
+//!   from `net::ObjectDestroyed`) is a line too: its breaker, the
+//!   breaker's weapon, and the thing as "<owner>'s <its weapon's name>"
+//!   in its owner's colours (no score: it is no death). No game's HUD keeps it, so an entry made
 //!   just before the local player's HUD changes (the gun game's rung swap:
 //!   `chimera_sim::identity`) is still there after.
 //! - **The widget** (`KillFeedPlugin`, part of `ClientPlugins`): drawn
@@ -55,7 +59,7 @@ use super::{
     weapon_icons::{WeaponIcon, WeaponIcons, glyph_font, ink_rows, spawn_weapon_icon},
 };
 use crate::{
-    core::{DamageKind, Died, Hitgroup, LocalPlayer, MapLoads, Team},
+    core::{DamageKind, Destroyed, Died, Hitgroup, LocalPlayer, MapLoads, Team},
     net::{NetCharacter, NetSettings},
     weapon::{DamageWeapons, Inventory, Weapon},
 };
@@ -65,7 +69,10 @@ pub struct KillFeedStatePlugin;
 
 impl Plugin for KillFeedStatePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<KillFeed>().add_message::<Died>().add_systems(Update, record);
+        app.init_resource::<KillFeed>()
+            .add_message::<Died>()
+            .add_message::<Destroyed>()
+            .add_systems(Update, record);
     }
 }
 
@@ -248,6 +255,8 @@ pub const MAX_LINES: usize = 5;
 #[allow(clippy::type_complexity)]
 fn record(
     mut died: MessageReader<Died>,
+    mut destroyed: MessageReader<Destroyed>,
+    names: (Option<Res<GunNames>>, Option<Res<chimera_sim::weapon::data::WeaponCatalog>>),
     who: Query<(Option<&Name>, Option<&Team>, Has<LocalPlayer>, Option<&NetCharacter>, Option<&Inventory>)>,
     weapons: Query<&Weapon>,
     held: Option<Res<DamageWeapons>>,
@@ -305,6 +314,42 @@ fn record(
             weapon,
             kind: d.damage.kind,
             headshot: d.damage.hitgroup == Hitgroup::Head,
+            team_kill,
+            at: now,
+        });
+    }
+    // A thing broken (`core::Destroyed`: a game's placed device): the
+    // breaker's line, the thing named as its weapon ("<owner>'s <gun>"),
+    // in its owner's colours.
+    for d in destroyed.read() {
+        let gun = gun_name(d.what, names.0.as_deref(), names.1.as_deref());
+        let owner = d.owner.map(side);
+        let victim = match owner {
+            Some(o) => FeedName {
+                name: format!("{}'s {gun}", o.name),
+                ..o
+            },
+            None => FeedName {
+                entity: Entity::PLACEHOLDER,
+                name: gun,
+                team: None,
+                local: false,
+            },
+        };
+        let killer = d.attacker.filter(|a| Some(*a) != d.owner).map(side);
+        let team_kill = killer
+            .as_ref()
+            .is_some_and(|k| k.team.is_some_and(|t| t != 0 && Some(t) == victim.team));
+        let id = feed.next;
+        feed.next += 1;
+        feed.entries.push(KillEntry {
+            id,
+            suicide: killer.is_none(),
+            killer,
+            victim,
+            weapon: d.weapon,
+            kind: DamageKind::Generic,
+            headshot: false,
             team_kill,
             at: now,
         });

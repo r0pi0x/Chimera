@@ -95,6 +95,13 @@
 //!   announcer_skins`, kill_streaks.md A8): each weapon's
 //!   `HUDEffectOverride` section of the layout and client files, added to
 //!   Combat Arms' pack by `CaDataPlugin` (`announcer_skins`);
+//! - auto turrets (`turret_patch`, special_weapons.md 6.7): a document
+//!   with a turret table takes its projectile record's model, its ammo's
+//!   `SensorAreaRadius` and the effect file's `Turret#` record its
+//!   `TurretName` names (`attributes::TurretRecord`: `MaxAmmo`,
+//!   `FireDelay`, `Perturb`, `SensorOffset`, `ShootingAngle`) with its gun,
+//!   the `TopWeaponID` record (its default ammo's damage, type and bands,
+//!   its roll, range, fire sound, muzzle group and tracer);
 //! - air strike designators (`strike_patch`, special_weapons.md 6.10):
 //!   the shell record `AirStrikeID` names gives the device hook's
 //!   `strike.shell` its projectile record's model, skins, looks in flight
@@ -385,6 +392,7 @@ pub fn read_attributes(read: impl Fn(&str) -> io::Result<Vec<u8>>) -> (InstallAt
     let weapons = weapons.map(|mut w| {
         if let Some(fx) = &fx {
             w.projectiles = ProjectileRecord::read_all(fx);
+            w.turrets = attributes::TurretRecord::read_all(fx);
             w.impacts = ImpactRecord::read_all(fx);
             w.fires = FireRecord::read_all(fx);
             w.tracers = TracerRecord::read_all(fx);
@@ -1300,6 +1308,8 @@ fn patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile, mods: Option<&Mo
     // An air strike designator's shells (special_weapons.md 6.10): their
     // own record's looks and explosion.
     strike_patch(doc, w, file);
+    // An auto turret's record and gun (special_weapons.md 6.7).
+    turret_patch(doc, w, file, length_scale);
     // The models (view_models.md 1, 2, 4; characters.md 2): the install's
     // files replace ours, its placement with them.
     if !(w.pv_model.is_empty() && w.hh_model.is_empty()) && !doc.contains_key("models") {
@@ -1371,6 +1381,12 @@ pub fn merge_weapon_docs_with_mods(
             patch(t, &install.weapons[*i], install, mods, meters_per_unit);
         }
     }
+    // A turret's own gun (a `Turret#` record's `TopWeaponID`: the auto
+    // turret's `Turret-TopGun`, the infected ship turrets' grenade guns)
+    // is no player's weapon: its copy names no class, so no automatic
+    // gun game deals it (it was dealt as a rifle or a launcher, the
+    // "Top Gun" that fired grenades on a rung).
+    let turret_guns: std::collections::BTreeSet<usize> = install.turrets.iter().filter_map(|t| t.top_weapon).collect();
     // New records: copies of our matched document of the same class.
     let mut new = Vec::new();
     let mut skipped = 0usize;
@@ -1408,6 +1424,9 @@ pub fn merge_weapon_docs_with_mods(
             m.insert("ammo".into(), Value::String(ammo_id));
         }
         patch(&mut t, w, install, mods, meters_per_unit);
+        if turret_guns.contains(&i) {
+            t.remove("class");
+        }
         timing_table(&mut t);
         infected_table(&mut t, w);
         new.push((format!("install:{}", w.name), t));
@@ -1659,6 +1678,92 @@ fn strike_patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile) {
 /// group; other launched ammo the surface's impact group
 /// (special_weapons.md Follow-up 8).
 const GRENADE_AMMO_TYPE: i32 = 2;
+
+/// An auto turret weapon (a document with a `combat_arms:device` turret
+/// table: ours, or an install copy of it; special_weapons.md 6.7, "Turret
+/// record"): its projectile record's model drawn where it stands, the
+/// ammo's `SensorAreaRadius` as the search, and the `Turret#` record its
+/// projectile record's `TurretName` names: `MaxAmmo`, `FireDelay`,
+/// `Perturb`, `SensorOffset`, `ShootingAngle`, and its gun (the
+/// `TopWeaponID` record and that record's default ammo: `InstDamage`, its
+/// type, `DamageRFacter`, the range bands, `Range`; its `FireSnd`,
+/// `FireSndRadius`, `HHMuzzleFXName` and the ammo's `TracerFXName` for
+/// the shot's look). A field the record lacks keeps the document's.
+fn turret_patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile, length_scale: f64) {
+    const DEVICE: &str = super::special::DEVICE;
+    if hook_table(doc, DEVICE).and_then(|d| d.get("turret")).is_none() {
+        return;
+    }
+    let Some(a) = file.default_ammo(w) else { return };
+    let mut out = Vec::new();
+    let t = |k: &str| ["hooks", DEVICE, "turret", k].map(String::from);
+    let set_t = |k: &str, v: Value| {
+        let path = t(k);
+        set(&path.iter().map(String::as_str).collect::<Vec<_>>(), v)
+    };
+    if let Some(r) = a.sensor_area_radius {
+        out.push(set_t("search_radius", Value::Float(r * length_scale)));
+    }
+    let Some(p) = file.projectile(a) else {
+        for s in out {
+            apply(doc, &s);
+        }
+        return;
+    };
+    // A copy of the turret whose record isn't one (`PerkAmmoSupply`, a
+    // perk's ammo box of the same `Guntype` 20) places nothing that
+    // shoots: no turret table, so it does no damage and no draw deals it.
+    if !p.class.eq_ignore_ascii_case("CAutoTurret") {
+        if let Some(Value::Table(d)) = doc.get_mut("hooks").and_then(|h| h.get_mut(DEVICE)) {
+            d.remove("turret");
+        }
+        return;
+    }
+    if !p.model.is_empty() {
+        let skins = skin_paths(&p.skins).into_iter().map(Value::String).collect::<Vec<_>>();
+        out.push(set(&["hooks", DEVICE, "model"], super::model::normalize(&p.model)));
+        out.push(set(&["hooks", DEVICE, "model_scale"], floats(p.model_scale)));
+        out.push(set(&["hooks", DEVICE, "skins"], Value::Array(skins)));
+    }
+    if let Some(r) = file.turret(p) {
+        if let Some(v) = r.max_ammo {
+            out.push(set_t("ammo", Value::Integer(v.max(0).into())));
+        }
+        if let Some(v) = r.fire_delay {
+            out.push(set_t("fire_delay", Value::Float(v)));
+        }
+        if let Some(v) = r.perturb {
+            out.push(set_t("perturb", Value::Float(v * length_scale)));
+        }
+        if let Some(v) = r.sensor_offset {
+            out.push(set_t("sensor_offset", floats(v.map(|x| x * length_scale))));
+        }
+        if let Some([below, above]) = r.shooting_angle {
+            out.push(set_t("angles", floats([below as f64, above as f64])));
+        }
+        if let Some(gun) = r.top_weapon.and_then(|i| file.weapons.get(i)) {
+            let g = |k: &str, v: Value| {
+                let path = ["hooks", DEVICE, "turret", "gun", k];
+                set(&path, v)
+            };
+            out.push(set_t("range", Value::Float(gun.range as f64 * length_scale)));
+            out.push(g("roll", Value::Float(gun.damage_roll())));
+            out.push(g("effect_range", floats(gun.effect_range.iter().map(|&e| e as f64))));
+            out.push(set_t("fire_sound", Value::String(super::model::normalize(&gun.fire_snd))));
+            out.push(set_t("fire_radius", Value::Float(gun.fire_snd_radius as f64 * length_scale)));
+            out.push(set_t("muzzle", Value::String(gun.hh_muzzle_fx.clone())));
+            if let Some(ga) = file.default_ammo(gun) {
+                out.push(g("damage", Value::Float(ga.inst_damage as f64)));
+                out.push(g("damage_type", Value::Integer(ga.inst_damage_type.into())));
+                out.push(g("range_damage", floats(ga.range_damage.iter().copied())));
+                out.push(set_t("tracer", Value::String(ga.tracer_fx.clone().unwrap_or_default())));
+            }
+        }
+    }
+    for s in out {
+        apply(doc, &s);
+    }
+}
 
 /// A projectile record's looks in flight as `special::ProjectileLook`'s
 /// table (special_weapons.md Follow-up (2026-10-30) 1-3): the group,

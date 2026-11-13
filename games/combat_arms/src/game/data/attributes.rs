@@ -198,6 +198,9 @@ pub struct AmmoRecord {
     pub damage_move_penalty: f64,
     pub damage_move_penalty_duration: f64,
     pub health: f64,
+    /// `SensorAreaRadius` (u; the hornet's trigger, the turret's search:
+    /// special_weapons.md "Ammo fields"), when the record has it.
+    pub sensor_area_radius: Option<f64>,
     /// `ProjectileFXName`: the projectile record it fires (`FX.TXT`).
     pub projectile_fx: String,
     /// `ImpactFXName`: the impact record its hits and blasts show
@@ -250,6 +253,7 @@ impl AmmoRecord {
             damage_move_penalty: s.number("DamageMovePenalty", 0.0),
             damage_move_penalty_duration: s.number("DamageMovePenaltyDuration", -1.0),
             health: s.number("Health", 0.0),
+            sensor_area_radius: s.number_opt("SensorAreaRadius"),
             projectile_fx: s.string("ProjectileFXName").map(text).unwrap_or_default(),
             impact_fx: s.string("ImpactFXName").map(text),
             fire_fx: s.string("FireFXName").map(text),
@@ -664,6 +668,9 @@ pub struct WeaponsFile {
     /// The effect file's projectile records (`ProjectileFX#`; empty
     /// without the file), linked by the ammo's `ProjectileFXName`.
     pub projectiles: Vec<ProjectileRecord>,
+    /// The effect file's auto turret records (`Turret#`; empty without
+    /// the file), linked by a projectile record's `TurretName`.
+    pub turrets: Vec<TurretRecord>,
     /// The effect file's impact records (`ImpactFX#`; empty without the
     /// file), linked by the ammo's `ImpactFXName`.
     pub impacts: Vec<ImpactRecord>,
@@ -724,6 +731,7 @@ impl WeaponsFile {
             auto_switch,
             perturb,
             projectiles: Vec::new(),
+            turrets: Vec::new(),
             impacts: Vec::new(),
             fires: Vec::new(),
             tracers: Vec::new(),
@@ -765,6 +773,11 @@ impl WeaponsFile {
     /// first record of that name).
     pub fn projectile(&self, ammo: &AmmoRecord) -> Option<&ProjectileRecord> {
         find_by_name(&self.projectiles, &ammo.projectile_fx, |p| &p.name).map(|(_, p)| p)
+    }
+
+    /// The turret record projectile record `p` names (its `TurretName`).
+    pub fn turret(&self, p: &ProjectileRecord) -> Option<&TurretRecord> {
+        find_by_name(&self.turrets, &p.turret_name, |t| &t.name).map(|(_, t)| t)
     }
 
     /// The fire record `ammo` names (its `FireFXName`, the first record
@@ -935,6 +948,59 @@ pub struct ProjectileRecord {
     /// (2026-10-31) 3).
     pub create_sound: String,
     pub create_radius: f64,
+    /// `TurretName`: an auto turret's `Turret#` record (special_weapons.md
+    /// "Projectile record"; empty: none).
+    pub turret_name: String,
+}
+
+/// `Turret<N>` in the effect file (special_weapons.md "Turret record",
+/// 6.7): the auto turret's gun and aim. A field the record lacks is the
+/// spec's stock value's place: `None`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct TurretRecord {
+    pub name: String,
+    /// `TopWeaponID`: the weapon record index of the turret's gun.
+    pub top_weapon: Option<usize>,
+    pub max_ammo: Option<i32>,
+    /// `FireDelay`, s; `Perturb`, u.
+    pub fire_delay: Option<f64>,
+    pub perturb: Option<f64>,
+    /// `FirePosUpOffset`, `FirePosFrontOffset`, u.
+    pub fire_up: Option<f64>,
+    pub fire_front: Option<f64>,
+    /// `SensorOffset`, u.
+    pub sensor_offset: Option<[f64; 3]>,
+    /// `ShootingAngle` (below, above), degrees.
+    pub shooting_angle: Option<[i32; 2]>,
+    pub bottom_link: String,
+    pub top_link: String,
+    /// `Model`: the gun's model on top (archive path as written).
+    pub model: String,
+}
+
+impl TurretRecord {
+    pub fn read(s: &Section) -> Self {
+        let string = |k: &str| s.string(k).map(text).unwrap_or_default();
+        Self {
+            name: name_of(s),
+            top_weapon: s.number_opt("TopWeaponID").filter(|v| *v >= 0.0).map(|v| v as usize),
+            max_ammo: s.number_opt("MaxAmmo").map(|v| v as i32),
+            fire_delay: s.number_opt("FireDelay"),
+            perturb: s.number_opt("Perturb"),
+            fire_up: s.number_opt("FirePosUpOffset"),
+            fire_front: s.number_opt("FirePosFrontOffset"),
+            sensor_offset: s.vector("SensorOffset"),
+            shooting_angle: s.point("ShootingAngle"),
+            bottom_link: string("BottomLinkNode"),
+            top_link: string("TopLinkNode"),
+            model: string("Model"),
+        }
+    }
+
+    /// Every `Turret#` record of the effect file.
+    pub fn read_all(doc: &Document) -> Vec<Self> {
+        doc.records("Turret").into_iter().map(Self::read).collect()
+    }
 }
 
 /// A projectile record's looks and sounds in flight (special_weapons.md
@@ -1004,6 +1070,7 @@ impl ProjectileRecord {
             look: ProjectileLookRecord::read(s),
             create_sound: s.string("CreateSound").map(text).unwrap_or_default(),
             create_radius: s.number("CreateSoundRadius", 0.0),
+            turret_name: s.string("TurretName").map(text).unwrap_or_default(),
         }
     }
 

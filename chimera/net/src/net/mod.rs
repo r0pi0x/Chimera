@@ -264,7 +264,7 @@ pub const PROTOCOL_ID: u64 = 0x4C55_434B_4552_5059;
 /// This build's network version. A server refuses clients of another
 /// version. Bump the suffix when the protocol changes in a way the
 /// replicon protocol hash can't see (a field added to a message).
-pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net42");
+pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net43");
 
 /// What a host's `changelevel` is in this app beyond a new map
 /// (`host_changelevel`): set by an app part (`minigame_net`'s, a party
@@ -1055,6 +1055,20 @@ pub struct Killed {
     pub facts: Option<chimera_core::announcer::KillFacts>,
 }
 
+/// Server -> clients: a thing that is no character was destroyed
+/// (`core::Destroyed`: a game's placed device, Combat Arms' auto turret),
+/// for the kill feed: what it was (its weapon's registry index), whose,
+/// by whom and with what.
+#[derive(Message, Serialize, Deserialize, Clone, Debug, PartialEq, bevy::ecs::entity::MapEntities)]
+pub struct ObjectDestroyed {
+    pub what: u16,
+    #[entities]
+    pub owner: Option<Entity>,
+    #[entities]
+    pub attacker: Option<Entity>,
+    pub weapon: Option<u16>,
+}
+
 /// Server -> the shooter's client: its shot hit (the server's
 /// confirmation: the hit marker), how hard and where on the body.
 #[derive(Message, Serialize, Deserialize, Clone, Debug, PartialEq, bevy::ecs::entity::MapEntities)]
@@ -1348,6 +1362,7 @@ impl Plugin for NetPlugin {
             .make_message_independent::<Senses>()
             .add_client_message::<DropRequest>(Channel::Ordered)
             .add_mapped_server_message::<Killed>(Channel::Ordered)
+            .add_mapped_server_message::<ObjectDestroyed>(Channel::Ordered)
             .add_mapped_server_message::<HitConfirm>(Channel::Unordered)
             .add_server_message::<Hurt>(Channel::Unordered)
             .make_message_independent::<Hurt>()

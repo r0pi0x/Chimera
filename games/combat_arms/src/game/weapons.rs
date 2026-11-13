@@ -2928,7 +2928,12 @@ struct PelletHit {
 /// the round. Its `Shot` event; the character hit, if any. Never through
 /// anything.
 fn client_test(w: &mut Delivery, r: &Round, dir: Vec3, range: f32, bodies: &[Body], out: &mut Vec<WeaponEvent>) -> Option<PelletHit> {
-    let excluded: Vec<Entity> = std::iter::once(r.owner).chain(w.characters.iter().map(|(e, ..)| e)).collect();
+    // Special weapons' objects are met by their boxes (`objects`), not by
+    // a turret's collider (which other games' rounds meet).
+    let excluded: Vec<Entity> = std::iter::once(r.owner)
+        .chain(w.characters.iter().map(|(e, ..)| e))
+        .chain(w.objects.iter().map(|(e, _)| e))
+        .collect();
     let filter = SpatialQueryFilter::from_excluded_entities(excluded).with_mask(SOLID_LAYERS);
     let from = r.origin;
     let event = |to: Vec3, hit: Option<Entity>, normal: Option<Vec3>| WeaponEvent {
@@ -3047,7 +3052,12 @@ struct Walk {
 /// `ShotContinued` events past the first intersection (the shooter's test
 /// drew that one).
 fn server_walk(w: &mut Delivery, dmg: &CaDamage, r: &Round, walk: Walk, bodies: &[Body], rng: &mut Rng, out: &mut Vec<WeaponEvent>) {
-    let excluded: Vec<Entity> = std::iter::once(r.owner).chain(w.characters.iter().map(|(e, ..)| e)).collect();
+    // Special weapons' objects are met by their boxes (`objects`), not by
+    // a turret's collider (which other games' rounds meet).
+    let excluded: Vec<Entity> = std::iter::once(r.owner)
+        .chain(w.characters.iter().map(|(e, ..)| e))
+        .chain(w.objects.iter().map(|(e, _)| e))
+        .collect();
     let filter = SpatialQueryFilter::from_excluded_entities(excluded).with_mask(SOLID_LAYERS);
     let unit = dmg.unit;
     let mut from = r.origin;
