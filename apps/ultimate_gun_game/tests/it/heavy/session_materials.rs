@@ -9,6 +9,13 @@
 //! (`prop_material::DormantProps`). So the store holds about what is drawn,
 //! and the same map holds the same after a lap. Prints a row per map
 //! (`--nocapture`). Passes with a note without the installs.
+//!
+//! One test a map (de_dust2, warehouse, dm_lockdown), each a ladder on that
+//! map alone, so nextest runs them in parallel in the heavy slots (a play is
+//! about 4 minutes, its wait for the kit's models capped at 240 s), and one
+//! for the order: de_dust2, a swap to warehouse (not played), de_dust2
+//! played again, which holds what it did the first time. This was one test
+//! of four maps in a row, about 17 minutes.
 
 use bevy::{mesh::skinning::SkinnedMeshInverseBindposes, prelude::*};
 use chimera_core::mount::config::LocalConfig;
@@ -25,13 +32,6 @@ use combat_arms::{
 };
 use party_kit::{PartyPartsPlugin, server::swap_map};
 use ultimate_gun_game::{MINIGAME, RUNGS, UltimateGunGamePlugin, generate};
-
-const MAPS: [&str; 4] = [
-    "cs_source:de_dust2",
-    "combat_arms:warehouse",
-    "hl2dm:dm_lockdown",
-    "cs_source:de_dust2",
-];
 
 /// Materials in the store that no entity draws, at most: the maps' props'
 /// other skins, the view models shown once. Measured 23-33 (2026-11-09);
@@ -83,10 +83,12 @@ fn count(w: &mut World) -> (usize, usize, usize) {
     (store, drawn.len(), dormant)
 }
 
-#[test]
-fn the_store_holds_what_is_drawn_map_after_map() {
-    let Some(first) = party_kit::load_map(MAPS[0], 0).ok().filter(|_| combat_arms_installed()) else {
-        eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
+/// Plays a ladder on each of `maps` in turn in one process (the server's map
+/// change between them), then checks the store against what is drawn. A map
+/// listed in `visits` is only swapped to and ticked briefly, not played.
+fn session(maps: &[&str], visits: &[&str]) {
+    let Some(first) = party_kit::load_map(maps[0], 0).ok().filter(|_| combat_arms_installed()) else {
+        eprintln!("skipping: needs both the CS:S and the Combat Arms installs (and {})", maps[0]);
         return;
     };
     let mut sim = Sim::new(
@@ -112,7 +114,7 @@ fn the_store_holds_what_is_drawn_map_after_map() {
         s.quota_set = true;
     }
     let mut rows = Vec::new();
-    for (i, map) in MAPS.iter().enumerate() {
+    for (i, map) in maps.iter().enumerate() {
         if i > 0 {
             let Ok(data) = party_kit::load_map(map, 0) else {
                 eprintln!("{map}: not installed");
@@ -120,9 +122,17 @@ fn the_store_holds_what_is_drawn_map_after_map() {
             };
             swap_map(sim.app.world_mut(), map, Some(data));
         }
+        let started = std::time::Instant::now();
+        if visits.contains(map) {
+            sim.ticks(120);
+            continue;
+        }
         play(&mut sim, 700 + i as u64);
         let (store, drawn, dormant) = count(sim.app.world_mut());
-        eprintln!("{map:24} store {store:6} drawn {drawn:5} dormant {dormant:6}");
+        eprintln!(
+            "{map:24} store {store:6} drawn {drawn:5} dormant {dormant:6} ({} s)",
+            started.elapsed().as_secs()
+        );
         rows.push((map, store, drawn));
     }
     for (map, store, drawn) in &rows {
@@ -133,7 +143,7 @@ fn the_store_holds_what_is_drawn_map_after_map() {
         );
     }
     let (first, last) = (rows.first().unwrap(), rows.last().unwrap());
-    if first.0 == last.0 {
+    if rows.len() > 1 && first.0 == last.0 {
         assert!(
             (last.1 as f64) < first.1 as f64 * 1.25 + 200.0,
             "{}: {} materials in the store at first, {} after the other maps",
@@ -142,4 +152,28 @@ fn the_store_holds_what_is_drawn_map_after_map() {
             last.1
         );
     }
+}
+
+#[test]
+fn de_dust2_holds_what_is_drawn() {
+    session(&["cs_source:de_dust2"], &[]);
+}
+
+#[test]
+fn warehouse_holds_what_is_drawn() {
+    session(&["combat_arms:warehouse"], &[]);
+}
+
+#[test]
+fn dm_lockdown_holds_what_is_drawn() {
+    session(&["hl2dm:dm_lockdown"], &[]);
+}
+
+/// The order-sensitive part: the same map after a lap holds the same. The
+/// map in between is swapped to and left running briefly, not played (a
+/// ladder takes ~4 minutes of the test's time, and `warehouse_holds_...`
+/// plays it).
+#[test]
+fn the_same_map_holds_the_same_after_a_lap() {
+    session(&["cs_source:de_dust2", "combat_arms:warehouse", "cs_source:de_dust2"], &["combat_arms:warehouse"]);
 }
