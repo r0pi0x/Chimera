@@ -1,6 +1,8 @@
 //! What the effects take from the install, at map load
 //! (`add_to_map`, from `world::load_from`; `add_looks` on another game's
-//! map, `world::dress`) and on first use:
+//! map, `world::dress`) and on first use (a map loaded without textures,
+//! `world::SizesOnly`, the dedicated server's: none of it but the surface
+//! types and the impacts' registration, `add_looks`):
 //!
 //! - the effect file (`clientfx/clientfx.fxf`, the unkeyed `CLIENTFX`
 //!   archive, `lithtech_formats::fxf`), parsed once per install data
@@ -236,7 +238,24 @@ pub fn add_to_map(map: &mut MapData, data: &super::super::data::CaDataInner, wor
 /// The effects' part of any map, a world file or not (another game's map
 /// in a mashup, `world::dress`): the effect file (once) and the wanted
 /// groups' textures as the map's particle materials.
+///
+/// A map loaded without textures (`world::SizesOnly`, the dedicated
+/// server's) takes Combat Arms' impacts alone (`map.impacts`: the route of
+/// every gun's impacts, `chimera_sim::weapon::impact`), no library: what
+/// reads the library draws (the groups on Chimera's particle pool, their
+/// lights and jitter, the projectiles' flares and trails) or plays local
+/// looping sounds (the groups' `PlaySound` keys, the attached effects'),
+/// none of it sent to clients; the impacts' sounds, decals and groups are
+/// named by the built-in tables and the weapons' data (`CaFxTables`,
+/// `CaWeaponFx`), not the file. The parsed file was 270 MB of the server's
+/// memory, held for the process's life (docs/performance.md, "The
+/// dedicated server's memory").
 pub fn add_looks(map: &mut MapData, data: &super::super::data::CaDataInner, file: &dyn Fn(&str) -> Option<Vec<u8>>) {
+    if !crate::game::world::decodes(map) {
+        map.impacts.add(crate::game::GAME);
+        set_library(&mut map.memos, None);
+        return;
+    }
     let fx = match load_fx_file(data, file) {
         Ok(f) => f,
         Err(e) => {

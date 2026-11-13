@@ -3620,17 +3620,72 @@ does with each:
 - The character models' animation files (430 MB, `model::ChildModels`):
   gameplay. The server poses every body by them and its hit spheres follow
   the pose (`characters::models::alias_rig`); not touched.
-- The effects' library (270 MB, the parsed effect file, `effects::library::
-  load_fx_file`, a memo of the install data): the particles, attached
-  effects and their sounds, none of them sent; but `add_looks` also
-  registers Combat Arms' impacts on the map (`map.impacts`), which may
-  route impacts. Probably safe to skip the parse on a load without
-  textures, keeping the impacts' registration; not done before the
-  release (not checked which server paths read the library).
+- The effects' library (the parsed effect file): no longer read on the
+  server (below, "The effect file").
 - The merged weapon data (230 MB): the server's weapons themselves.
 - The guests' view models (CS:S's and HL2:DM's dressing of another game's
   map, `dress_guest_with`): not measured here (HL2:DM wasn't installed);
   CS:S's bomb rules read its C4 view model's screen (`objectives::bomb`).
+
+**The effect file (2026-11-12).** Combat Arms' effect library
+(`effects::library::add_looks`: the parsed `clientfx.fxf`, a memo of the
+install data held for the process's life, a copy of it in each map's
+`FxLibrary`, and the wanted groups' textures as particle materials) was
+parsed and kept by the server too. What reads it, all of it presentation:
+the groups played on Chimera's particle pool (`effects::spawn_fx`, `fx`:
+particles, sprites, trails, lights, camera jitter, splats), the groups on
+entities and the projectiles' flares and smoke (`effects::attached`), and
+the groups' `PlaySound` keys and the attached effects' looping sounds
+(`CaLoopSound`, local `SoundControl` keys the server never sends; the
+local player's alone, `view_model::attached::sounds`), and the front end
+(`ui`). Nothing of gameplay: the impacts' sounds, groups and decals are
+named by the built-in tables and the weapons' data (`CaFxTables`,
+`CaWeaponFx`), the surfaces by `tag_surfaces` (kept), the server's
+sounds (`GameSound`) by the rules. What `add_looks` does that does
+matter: it registers Combat Arms' impacts on the map (`map.impacts`, the
+route of every gun's impacts, `chimera_sim::weapon::impact`). So a map
+loaded without textures (`world::SizesOnly`, the dedicated server's) takes
+that registration alone: no effect file read, no library, no effect
+textures. `heavy::server_map_memory` (dev profile), bytes in use after each
+map (glibc, MB):
+
+| | before | after |
+|---|---|---|
+| cs_office (laps 0-2) | 1,758, 1,774, 1,783 | 1,639, 1,668, 1,678 |
+| warehouse | 1,861, 1,880, 1,887 | 1,750, 1,774, 1,781 |
+| de_inferno | 1,805, 1,802, 1,808 | 1,682, 1,696, 1,703 |
+| de_dust2 | 1,771, 1,781, 1,786 | 1,666, 1,676, 1,680 |
+| heap and anonymous held, after 12 maps | 1,871 | 1,737 |
+| entities | the same | the same |
+
+105-125 MB less on every map (the 270 MB estimated before counted the
+parse's transient text too). The real `ultimate_gun_game_server` (dev
+build, 4 bots, its stdin on a fifo: `ugg_new 7 13 <map>` every 75 s,
+then `tick_stats` and `/proc/<pid>/status`), resident plus swapped (MB;
+the box was short of memory and swapped much of it out, so `tick_stats`'
+resident alone said little; the binary's own mapping counts too):
+
+| map (75 s after `ugg_new`) | before | after |
+|---|---|---|
+| cs_office (the first, 60 s in) | 1,375 | 1,321 |
+| warehouse, laps 0-1 | 1,960, 1,908 | 1,884, 1,833 |
+| de_inferno | 1,880, 1,845 | 1,762, 1,777 |
+| de_dust2 | 1,819, 1,815 | 1,739, 1,752 |
+| cs_office | 1,837, 1,826 | 1,735, 1,761 |
+ combat_arms'
+`effects_sounds::a_map_without_textures_takes_the_impacts_but_not_the_effect_file`
+checks that a lean map reads no file for the effects' looks and holds no
+library while a Combat Arms gun's impacts still route to Combat Arms;
+party_kit's `heavy::dust2::the_servers_dust2_routes_combat_arms_impacts_without_the_effect_file`
+the same of the server's de_dust2.
+
+Still on the server, once per process: the character models' animation
+files (430 MB, gameplay: the hit spheres), the merged weapon data (230 MB,
+the weapons themselves), and with HL2:DM installed its bodies', models'
+animations and sounds (about 0.33 GB). A client keeps two copies of the
+parsed effect file (the install data's memo and each map's `FxLibrary`,
+`load_fx_file` clones it): sharing one is a client-side saving, not done
+here.
 
 ## A client's memory (2026-11-11)
 

@@ -305,3 +305,27 @@ fn the_servers_combat_arms_guns_time_without_the_dressings_view_models() {
     assert!(read > 0, "no Combat Arms gun with a timing table on the server");
     assert!(differ.is_empty(), "{} guns time differently on the server: {:#?}", differ.len(), &differ[..differ.len().min(10)]);
 }
+
+/// The server's de_dust2 (loaded without textures, dressed for Combat Arms)
+/// holds no Combat Arms effect library: the parsed effect file was 270 MB of
+/// the server's memory, and what reads it draws or plays local sounds
+/// (`effects::library::add_looks`; docs/performance.md, "The dedicated
+/// server's memory"). Combat Arms' impacts stay registered on the map, so a
+/// Combat Arms gun's impacts route to Combat Arms on the server as before.
+#[test]
+fn the_servers_dust2_routes_combat_arms_impacts_without_the_effect_file() {
+    use chimera_sim::weapon::impact::{ImpactBy, ImpactProviders, impact_by};
+    use chimera_world::map::impact::ActiveImpacts;
+    use combat_arms::game::{GAME, effects::library};
+    if !installs() {
+        eprintln!("skipping: needs both the CS:S and the Combat Arms installs");
+        return;
+    }
+    let Some(sim) = server(&PLAIN_LADDER) else { return };
+    let w = sim.app.world();
+    assert!(library::library_in(w).is_none(), "the server's dust2 holds Combat Arms' effect library");
+    let impacts = w.resource::<ActiveImpacts>();
+    assert!(impacts.0.looks.iter().any(|g| g == GAME), "Combat Arms' impacts aren't registered: {:?}", impacts.0);
+    let providers = w.resource::<ImpactProviders>();
+    assert_eq!(impact_by(Some(GAME), Some(impacts), &providers.0), ImpactBy::Game(GAME));
+}

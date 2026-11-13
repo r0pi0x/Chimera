@@ -2373,3 +2373,49 @@ fn install_gun_rounds_play_their_own_impact_record() {
     assert!(req.iter().any(|r| r.group == "Test_Water_Muzzle" && r.kind == FxKind::OwnFire), "{req:?}");
     assert!(sim.app.world().resource::<CaMarks>().marks.is_empty(), "CreateMark 0: no decal");
 }
+
+/// The dedicated server's effects (docs/performance.md, "The dedicated
+/// server's memory"): a map loaded without textures (`world::SizesOnly`,
+/// the server's) reads nothing of the install for the effects' looks: not
+/// the effect file (270 MB parsed, held for the process's life), no
+/// texture, no library; Combat Arms' impacts stay registered on it, so a
+/// Combat Arms gun's impacts route to Combat Arms there as before. A map
+/// that is drawn reads the effect file.
+#[test]
+fn a_map_without_textures_takes_the_impacts_but_not_the_effect_file() {
+    use std::cell::RefCell;
+
+    use chimera_sim::weapon::impact::{ImpactBy, impact_by};
+    use chimera_world::map::impact::ActiveImpacts;
+    use combat_arms::game::{GAME, data::WEAPON_DATA, effects::library, world};
+
+    let reads = RefCell::new(Vec::<String>::new());
+    let file = |p: &str| -> Option<Vec<u8>> {
+        reads.borrow_mut().push(p.to_string());
+        None
+    };
+    // Data of its own: the effect file is parsed once per data (a memo).
+    let data = CaData::builtin_with_weapons(WEAPON_DATA.iter().map(|(n, t)| (n.to_string(), t.to_string())).collect());
+    // Another game's map on the server, as `world::DRESSING` dresses it.
+    let mut lean = MapData::default();
+    lean.impacts.game = Some("cs_source".into());
+    lean.impacts.add("cs_source");
+    lean.memos.insert(world::SizesOnly);
+    library::add_looks(&mut lean, &data, &file);
+    assert_eq!(*reads.borrow(), Vec::<String>::new(), "a map without textures reads nothing for the effects' looks");
+    assert!(library::library(&lean.memos).is_none(), "no effect library on a map without textures");
+    assert!(lean.textures.is_empty() && lean.particles.materials.is_empty());
+    assert!(lean.impacts.looks.iter().any(|g| g == GAME), "Combat Arms' impacts stay registered: {:?}", lean.impacts);
+    let providers = ["cs_source", GAME];
+    let impacts = ActiveImpacts(lean.impacts.clone());
+    assert_eq!(impact_by(Some(GAME), Some(&impacts), &providers), ImpactBy::Game(GAME));
+    // Without Combat Arms' looks registered they would go to the map's game.
+    let mut without = lean.impacts.clone();
+    without.looks.retain(|g| g != GAME);
+    assert_eq!(impact_by(Some(GAME), Some(&ActiveImpacts(without)), &providers), ImpactBy::Game("cs_source"));
+
+    // A drawn map reads the effect file (here it doesn't read: no looks).
+    let mut drawn = MapData::default();
+    library::add_looks(&mut drawn, &data, &file);
+    assert!(reads.borrow().iter().any(|p| p == library::FX_FILE), "{:?}", reads.borrow());
+}

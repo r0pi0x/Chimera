@@ -144,13 +144,12 @@ Delete each when done.
   <server store> --sign --only base`, the same with `--only weapon/`,
   `sets cs_source ... --only base`, then run the guard.
 - **The dedicated server's memory, what's left** (its Combat Arms view
-  models are gone: 1.70-1.85 GB in use, docs/performance.md, "The
-  dedicated server's memory"). The effects' library (270 MB, the parsed
-  effect file) looks safe to skip on a load without textures if Combat
-  Arms' impacts stay registered (`add_looks`' `map.impacts`): check which
-  server paths read it first. The character models' animation files (430
-  MB) pose the hit spheres: they stay. Then check the playtest build's
-  server over a session of maps (`tick_stats`' memory).
+  models and effect file are gone: 1.64-1.78 GB in use over a session of
+  four maps, docs/performance.md, "The dedicated server's memory"). The
+  character models' animation files (430 MB) pose the hit spheres and the
+  weapon data (230 MB) is the weapons: they stay. Left: check the playtest
+  build's server (release profile) over a session of maps (`tick_stats`'
+  memory); with HL2:DM installed, its parts' 0.33 GB.
 - **Client memory**: (the rehearsal's 3.5-5.5 GB per offscreen client
   is down to 2.1 GB in use after each of three maps, the first load's peak
   resident 6.6 -> 4.4 GB: docs/performance.md, "A client's memory" and
