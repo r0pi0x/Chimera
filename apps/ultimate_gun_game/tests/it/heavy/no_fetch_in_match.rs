@@ -18,7 +18,9 @@
 //!   service's token bound in its access file (no restart), its own empty
 //!   store: it downloads at start and at each join as a tester does.
 //!
-//! The session (`SESSION`): a ladder (`ugg_new <seed> 13 <map>`) per map;
+//! The session (`SESSION`, then `HL2DM_MAP` when HL2:DM is installed and
+//! published: its effect materials, sprays and flashes come with its map's
+//! `map/<name>` set): a ladder (`ugg_new <seed> 13 <map>`) per map;
 //! once the client says its match started, every character on the server
 //! (the bots and the client's player) climbs the whole ladder, a rung every
 //! `RUNG_SECONDS`, so the client draws each rung's gun, body and parts,
@@ -26,7 +28,8 @@
 //! host's surprises follow (`SURPRISES`: an air strike, its siren,
 //! shells and explosions, then moon gravity). Any on-demand fetch the
 //! client logs during a match (`assets: fetched on demand during the match
-//! ...`) fails the test, listed with what covers it. Skipped with a note
+//! ...`) fails the test, listed with what covers it; so does any file the
+//! client's store lists but holds no record of (`asset miss`). Skipped with a note
 //! without the CS:S and Combat Arms installs, without a published store
 //! holding both games' manifests, or off Unix (the records are linked);
 //! `CHIMERA_FETCH_GUARD=0` skips it. A client that fails to start (no GPU)
@@ -62,6 +65,10 @@ const SESSION: [(u64, &str); 3] = [
     (217_378, "cs_source:de_aztec"),
     (217_379, "cs_source:de_dust2"),
 ];
+/// HL2:DM's map, played last when its install and published manifest are
+/// there: a client without the install loads its effect materials, sprays
+/// and guns' flashes with the map, all of them in its `map/<name>` set.
+const HL2DM_MAP: (u64, &str) = (217_380, "hl2dm:dm_overwatch");
 /// The rungs' extras' seed (bodies, parts, melee).
 const RUNG_SEED: u64 = 4242;
 /// How long each rung is held.
@@ -107,6 +114,16 @@ fn published() -> Option<Store> {
         .iter()
         .all(|g| store.root.join("manifests").join(g).is_dir())
         .then_some(store)
+}
+
+/// The session's maps: `SESSION`, then `HL2DM_MAP` when the HL2:DM install
+/// and its published manifest are there.
+fn session(config: &LocalConfig, store: &Store) -> Vec<(u64, &'static str)> {
+    let mut maps = SESSION.to_vec();
+    if installed(config, "hl2dm", "hl2mp") && store.root.join("manifests").join("hl2dm").is_dir() {
+        maps.push(HL2DM_MAP);
+    }
+    maps
 }
 
 /// The client's lines, kept as they arrive.
@@ -228,11 +245,11 @@ fn a_client_without_installs_fetches_nothing_on_demand_during_a_match() {
         return;
     };
     #[cfg(unix)]
-    run(&published);
+    run(&published, &session(&config, &published));
 }
 
 #[cfg(unix)]
-fn run(published: &Store) {
+fn run(published: &Store, session: &[(u64, &'static str)]) {
     let started = Instant::now();
     let scratch = Scratch(PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("no_fetch_in_match_{}", std::process::id())));
     let _ = std::fs::remove_dir_all(&scratch.0);
@@ -246,7 +263,7 @@ fn run(published: &Store) {
     let (url, fingerprint) = (front.url(), identity.fingerprint());
 
     // The game server on the installs.
-    let (first_seed, first_map) = SESSION[0];
+    let (first_seed, first_map) = session[0];
     let args: Vec<String> = [
         "-port",
         "0",
@@ -325,7 +342,7 @@ fn run(published: &Store) {
     let mut client = Client(child);
 
     let mut rows = Vec::new();
-    for (i, (seed, map)) in SESSION.iter().enumerate() {
+    for (i, (seed, map)) in session.iter().enumerate() {
         let map_started = Instant::now();
         if i > 0 {
             app.world_mut().resource_mut::<Console>().submit(&format!("ugg_new {seed} 13 {map}"));
@@ -352,7 +369,7 @@ fn run(published: &Store) {
             let t = Instant::now();
             until(&mut app, &mut client, Duration::from_secs_f64(RUNG_SECONDS), |_| t.elapsed().as_secs_f64() >= RUNG_SECONDS);
         }
-        if i + 1 == SESSION.len() {
+        if i + 1 == session.len() {
             for c in SURPRISES {
                 app.world_mut().resource_mut::<Console>().submit(c);
             }
@@ -378,6 +395,14 @@ fn run(published: &Store) {
     for l in all.iter().filter(|l| l.contains("assets: the match on")) {
         eprintln!("client: {l}");
     }
+    let missed: Vec<&String> = all.iter().filter(|l| l.contains("asset miss ")).collect();
+    assert!(
+        missed.is_empty(),
+        "{} files the published manifests list have no record in the store (publish them: \
+         `chimera_pack publish <game>` into the server store):\n{}",
+        missed.len(),
+        missed.iter().take(40).map(|l| format!("  {l}")).collect::<Vec<_>>().join("\n")
+    );
     eprintln!("session took {:.0} s", started.elapsed().as_secs_f64());
     assert!(
         fetched.is_empty(),

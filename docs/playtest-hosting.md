@@ -230,9 +230,15 @@ heavy::no_fetch_in_match -- --nocapture` plays such a session as a
 client without installs against a service reading the published store
 (this machine's server store, or `CHIMERA_GUARD_STORE=<store>`), every
 character climbing every rung, and fails naming each file fetched on
-demand during a match and how to cover it (about 3.5 minutes; it runs
+demand during a match and how to cover it, and any file the manifests list that the store has no
+record of (`asset miss`). Its last map is HL2:DM's `dm_overwatch` when
+that game is installed here and published (its effect materials, sprays
+and flashes load with the map, all in `map/<name>`; 2026-11-13: 0 fetches,
+0 misses, about 4 minutes; `asset miss hl2dm` lines in a dev's own run of
+`pool_maps` mean that machine's cache `~/.cache/chimera/assets` holds
+only some of the records, not that the server store lacks them). It runs
 with the heavy tests wherever the server store and the installs are, so
-it fails there until the sets above are published). Run it after
+it fails there until the sets above are published. Run it after
 publishing, and after a change to what a match loads.
 
 Publishing again at the same build reaches testers who fetched before:
