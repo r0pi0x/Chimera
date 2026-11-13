@@ -227,7 +227,7 @@ pub(super) fn update(cx: &mut Cx, e: Entity, o: &mut CaObject, p: &DeviceParams)
     let owner_gone = o.owner.is_some_and(|w| !cx.world.entities.contains(w));
     let aged = age(o, cx.f) + 1e-9 >= p.lifetime as f64;
     if p.kind == DeviceKind::AirStrike {
-        if owner_gone || cx.round_over {
+        if owner_gone || cx.round_over || o.s.expire {
             cx.remove(e);
             return;
         }
@@ -252,7 +252,20 @@ pub(super) fn update(cx: &mut Cx, e: Entity, o: &mut CaObject, p: &DeviceParams)
         DeviceKind::Caltrops => caltrops(cx, e, o, p),
         DeviceKind::NerveMine => nerve_mine(cx, o, p),
         DeviceKind::Turret => match &p.turret {
-            Some(t) => turret(cx, o, t),
+            Some(t) => {
+                let shots = o.s.shots;
+                let gone = turret(cx, o, t);
+                // Landed: a collider every game meets; a new ray: what the
+                // clients draw (`special::turret_body`, `turret_shots`).
+                if o.s.landed && !o.s.body && !gone {
+                    o.s.body = true;
+                    super::turret_body(e, o, &mut cx.out.commands);
+                }
+                if o.s.shots != shots && !gone {
+                    super::turret_shots(e, o, &mut cx.out.commands);
+                }
+                gone
+            }
             None => false,
         },
         DeviceKind::FirstAid => first_aid(cx, o, p),
@@ -625,6 +638,17 @@ fn line_clear(cx: &Cx, a: Vec3, b: Vec3, skip: Option<Entity>) -> bool {
 
 fn turret(cx: &mut Cx, o: &mut CaObject, t: &TurretParams) -> bool {
     if o.destroyed {
+        // Broken: its effect where it stood (no blast: its ammo's
+        // `AreaDamage` is 0) and the breaker's kill-feed line (ours; the
+        // spec has no line for it). No rung, no score: it is no `Died`.
+        let at = o.at();
+        detonated(cx, None, o, at);
+        cx.out.destroyed.write(crate::core::Destroyed {
+            what: o.weapon,
+            owner: o.owner,
+            attacker: o.s.broken_by,
+            weapon: o.s.broken_with,
+        });
         return true;
     }
     if !o.s.landed {
@@ -683,6 +707,8 @@ fn turret(cx: &mut Cx, o: &mut CaObject, t: &TurretParams) -> bool {
     let mut jit = || (rng.next() * 2.0 - 1.0) * t.perturb * unit;
     let aim = tb.centre + Vec3::new(jit(), jit(), jit());
     let dir = (aim - sensor).normalize_or(Vec3::Z);
+    let flat = Vec3::new(dir.x, 0.0, dir.z).normalize_or(o.s.facing);
+    o.s.facing = flat;
     let end = sensor + dir * t.range * unit;
     let wall = cx.world.cast(sensor, end, o.owner).map_or(f32::MAX, |(d, ..)| d);
     let mut best: Option<(f32, usize, usize)> = None;
@@ -698,6 +724,12 @@ fn turret(cx: &mut Cx, o: &mut CaObject, t: &TurretParams) -> bool {
             best = Some((tbx, bi, si));
         }
     }
+    o.s.shots += 1;
+    o.s.shot_from = sensor;
+    o.s.shot_to = match best {
+        Some((tbx, ..)) => sensor + dir * tbx,
+        None => sensor + dir * wall.min(t.range * unit),
+    };
     if let Some((tbx, bi, si)) = best {
         let b = &bodies[bi];
         let dmg = CaDamage::new(&t.gun, unit, o.hp);

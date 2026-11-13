@@ -99,7 +99,10 @@
 //!   comes from grenades thrown by players (not bots) that touched
 //!   something or rest, read from `grenades::CaGrenade`.
 //! - Not there: placed devices (mines, claymores), so no mine drops while
-//!   patrolling and nothing but characters as targets; doors (and their
+//!   patrolling; targets are characters but for the auto turret (ours,
+//!   `brain::turret_step`: a bot carrying one with none standing places
+//!   one, a bot with a loaded gun shoots back at an enemy turret within
+//!   1000 u in sight that is shooting at it); doors (and their
 //!   retry); the "catch breath" stop lasts 1 s (its length is open: Open
 //!   question 20); a roll is a fast sidestep; the knife is the player's
 //!   knife with the bot's 130 u reach (`inventory::KnifeReach`; its swing

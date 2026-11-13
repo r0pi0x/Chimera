@@ -123,7 +123,9 @@ impl ProjectileLook {
 /// models`, `effects::library`).
 pub fn projectiles_of(w: &chimera_sim::weapon::data::WeaponData) -> Vec<ProjectileParams> {
     let mut out: Vec<ProjectileParams> = w.hook::<ProjectileParams>(PROJECTILE).into_iter().collect();
-    out.extend(w.hook::<DeviceParams>(DEVICE).and_then(|d| d.strike).map(|s| s.shell));
+    let device = w.hook::<DeviceParams>(DEVICE);
+    out.extend(device.as_ref().and_then(|d| d.shown_model()));
+    out.extend(device.and_then(|d| d.strike).map(|s| s.shell));
     out
 }
 
@@ -146,12 +148,15 @@ pub fn object_files(w: &chimera_sim::weapon::data::WeaponData) -> Vec<String> {
     if let Some(g) = w.hook::<super::super::grenades::GrenadeParams>(super::super::grenades::HOOK) {
         add(&g.look, &g.create_sound, g.thrown_model.as_ref(), &g.thrown_skins);
     }
+    let mut turret_sound = None;
     if let Some(d) = w.hook::<DeviceParams>(DEVICE) {
         add(&d.look, &d.create_sound, None, &[]);
+        turret_sound = d.turret.map(|t| t.fire_sound);
     }
     if let Some(b) = w.hook::<BoltParams>(BOLT) {
         add(&b.look, "", None, &[]);
     }
+    out.extend(turret_sound);
     out.retain(|f| !f.trim().is_empty());
     out.sort();
     out.dedup();
@@ -395,6 +400,19 @@ pub struct TurretParams {
     /// bands as a weapon's `combat_arms:damage`, and its range.
     pub gun: DamageParams,
     pub range: f32,
+    /// The gun's shot as the clients see and hear it (the `TopWeaponID`
+    /// record's `FireSnd` with `FireSndRadius`, `HHMuzzleFXName` and its
+    /// ammo's `TracerFXName`; archive path, u, group and tracer names;
+    /// empty: none). The spec doesn't say how a turret's shot shows
+    /// (6.7; Open question in our docs): we play the gun's own.
+    #[serde(default)]
+    pub fire_sound: String,
+    #[serde(default)]
+    pub fire_radius: f32,
+    #[serde(default)]
+    pub muzzle: String,
+    #[serde(default)]
+    pub tracer: String,
 }
 
 /// The first-aid kit (6.8): `AreaDamageTickTime`, `AreaDamageTickDamage`,
@@ -506,12 +524,51 @@ pub struct DeviceParams {
     pub auto_throw: bool,
     #[serde(default)]
     pub turret: Option<TurretParams>,
+    /// Its projectile record's world model (`Model`, `ModelScale`,
+    /// `Skin#`, from the install), drawn where it lies in the projectile
+    /// draw key (`shown_key`); None: its weapon's key (the hand-held
+    /// model, or the front end's placeholder).
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default = "unit_scale")]
+    pub model_scale: [f32; 3],
+    #[serde(default)]
+    pub skins: Vec<String>,
     #[serde(default)]
     pub kit: Option<KitParams>,
     #[serde(default)]
     pub medkit: Option<MedkitParams>,
     #[serde(default)]
     pub strike: Option<StrikeParams>,
+}
+
+impl DeviceParams {
+    /// Its model as an impact projectile's draw key would carry it (the
+    /// same loader: `characters::models`), when it has one.
+    pub fn shown_model(&self) -> Option<ProjectileParams> {
+        let model = self.model.clone()?;
+        Some(ProjectileParams {
+            speed: self.speed,
+            gravity: true,
+            lifetime: self.lifetime,
+            health: self.health,
+            box_half: self.box_half,
+            hits_same_kind: false,
+            perturb: self.perturb,
+            dynamic_perturb: self.dynamic_perturb,
+            area_damage: 0.0,
+            area_radius: 0.0,
+            area_type: explode(),
+            over_time: None,
+            shooter_exempt: false,
+            model: Some(model),
+            model_scale: self.model_scale,
+            skins: self.skins.clone(),
+            look: ProjectileLook::default(),
+            create_sound: String::new(),
+            create_radius: 0.0,
+        })
+    }
 }
 
 /// `combat_arms:bolt`: a crossbow's bolt (7).

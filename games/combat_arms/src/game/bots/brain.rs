@@ -651,6 +651,8 @@ struct Gun {
     /// A grenade's throw key and animation (s).
     throw_delay: f32,
     throw_time: f32,
+    /// An auto turret to place (special_weapons.md 6.7).
+    turret: bool,
 }
 
 impl Gun {
@@ -738,6 +740,7 @@ pub fn think(world: &mut World, mut queries: Local<Option<SnapQueries>>, mut spa
             matches!(m.phase, Phase::RoundOver { .. } | Phase::Intermission { .. } | Phase::MatchOver)
         });
 
+    let turrets = turrets_of(world);
     let snap = Snap::take(world, queries, now);
     let Snap { chars, see_through, loose, camping, dangers, stimuli, patrol, mesh, graph } = &snap;
 
@@ -789,7 +792,11 @@ pub fn think(world: &mut World, mut queries: Local<Option<SnapQueries>>, mut spa
                     ..default()
                 }
             } else {
-                decide(&ctx, &mut bot, &me, &guns, active)
+                let mut out = decide(&ctx, &mut bot, &me, &guns, active);
+                if ctx.settings.dont_shoot == 0 {
+                    turret_step(&ctx, &bot, &me, &guns, active, &turrets, &mut out);
+                }
+                out
             };
             outs.push((e, bot, out));
         }
@@ -1048,9 +1055,96 @@ fn guns_of(world: &World, e: Entity) -> Vec<Gun> {
                 count: world.get::<Throwable>(w).map(|t| t.count),
                 throw_delay: world.get::<Throwable>(w).map_or(0.0, |t| t.throw_delay),
                 throw_time: world.get::<Throwable>(w).map_or(0.0, |t| t.throw_time),
+                turret: world
+                    .get::<super::super::special::CaDeviceData>(w)
+                    .is_some_and(|d| d.params.kind == super::super::special::DeviceKind::Turret),
             })
         })
         .collect()
+}
+
+/// A landed auto turret as the bots see it (ours: the spec's bots have
+/// no rule for turrets, bots.md 5.1 only says devices are seen).
+#[derive(Clone, Copy, Debug)]
+struct TurretSeen {
+    e: Entity,
+    /// Its box centre (m).
+    at: Vec3,
+    owner: Option<Entity>,
+    team: u8,
+    target: Option<Entity>,
+}
+
+fn turrets_of(world: &mut World) -> Vec<TurretSeen> {
+    use super::super::special::{CaObject, DeviceKind, Kind};
+    let mut q = world.query::<(Entity, &CaObject)>();
+    let found: Vec<(Entity, Option<Entity>, Vec3, Option<Entity>)> = q
+        .iter(world)
+        .filter(|(_, o)| matches!(&o.kind, Kind::Device(p) if p.kind == DeviceKind::Turret) && o.s.landed && !o.destroyed)
+        .map(|(e, o)| (e, o.owner, o.at(), o.s.target))
+        .collect();
+    found
+        .into_iter()
+        .map(|(e, owner, at, target)| TurretSeen {
+            e,
+            at,
+            owner,
+            team: owner.and_then(|o| world.get::<Team>(o)).map_or(0, |t| t.0),
+            target,
+        })
+        .collect()
+}
+
+/// How far a bot looks for an enemy turret to shoot (u; ours: the
+/// turret's own 800 u search and a margin).
+pub const TURRET_SHOOT_RANGE: f32 = 1000.0;
+
+/// The bots and auto turrets (ours, simple; the spec has none): a bot
+/// carrying a turret with none of its own standing places one where it
+/// looks (a little down, the throw's own speed), then fights on with its
+/// other weapons; a bot holding a loaded gun shoots back at an enemy
+/// turret in sight within `TURRET_SHOOT_RANGE` that is shooting at it (a
+/// threat; a turret on someone else, or still setting up, is left alone,
+/// or bots broke every turret before it fired).
+fn turret_step(ctx: &Ctx, bot: &CaBot, me: &Char, guns: &[Gun], active: Option<Entity>, turrets: &[TurretSeen], out: &mut Out) {
+    let Some(io) = out.intent.as_mut() else { return };
+    if bot.throw.is_some() {
+        return;
+    }
+    let mine = turrets.iter().any(|t| t.owner == Some(me.e));
+    if !mine && let Some(g) = guns.iter().find(|g| g.turret && g.count.unwrap_or(0) > 0) {
+        out.wanted = Some(g.e);
+        io.pitch = -0.3;
+        io.fire = active == Some(g.e);
+        return;
+    }
+    let Some(held) = active.and_then(|a| guns.iter().find(|g| g.e == a)) else { return };
+    if held.count.is_some() || held.clip == 0 {
+        return;
+    }
+    let eye = me.eye();
+    let enemy = |t: &&TurretSeen| t.owner != Some(me.e) && (t.team == 0 || t.team != me.team);
+    let Some(t) = turrets
+        .iter()
+        .filter(enemy)
+        .filter(|t| t.target == Some(me.e) && u(eye.distance(t.at)) <= TURRET_SHOOT_RANGE)
+        .filter(|t| {
+            let d = t.at - eye;
+            let Ok(dir) = Dir3::new(d) else { return false };
+            ctx.q
+                .cast_ray_predicate(eye, dir, d.length(), true, &sight_filter(), &|e| e != me.e && !ctx.loose.contains(&e))
+                .is_none_or(|h| h.entity == t.e || h.distance >= d.length() - 0.3)
+        })
+        .min_by(|a, b| eye.distance(a.at).total_cmp(&eye.distance(b.at)))
+    else {
+        return;
+    };
+    let (yaw, pitch) = look_at(eye, t.at);
+    io.yaw = yaw;
+    io.pitch = pitch;
+    // Pressed every other server frame: a semi-automatic fires too.
+    io.fire = ((ctx.now / SERVER_FRAME) as u64).is_multiple_of(2);
+    out.wanted = Some(held.e);
 }
 
 /// A dead bot's brain is gone (Correction 7): every respawn is a new AI

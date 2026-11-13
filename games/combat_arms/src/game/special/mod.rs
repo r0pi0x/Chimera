@@ -60,6 +60,20 @@
 //! sphere and kit removes itself on its next update; impact projectiles in
 //! flight go on (1.5).
 //!
+//! The auto turret (6.7) as everyone meets it: landed, it is a box
+//! collider on the traces-only layer with `Damageable` (`turret_body`),
+//! so every game's rounds and blasts damage it (our own meet its box and
+//! pass the collider); broken, its breaker gets a kill-feed line
+//! (`core::Destroyed`, no score); its rays are `CaTurretShots` on it
+//! (replicated: each machine plays the gun's sound, muzzle and tracer,
+//! `effects::turret_shots`), its model faces its target, drawn as its
+//! projectile record's model (`DeviceParams::shown_model`). In a gun
+//! game (the owner on a ladder rung, `ladder::OnRung`) leaving the rung
+//! removes the owner's devices (`rung_left`) and his death his turrets
+//! (`on_death`): a turret never scores for the next rung (docs/DESIGN.md
+//! "Gun game rules"). A map's unload removes every object
+//! (`unload_objects`).
+//!
 //! Known shortcuts (the spec's most literal reading where it is unclear,
 //! listed for its open questions):
 //! - Burn spheres reach characters only, not the world objects and props
@@ -85,8 +99,13 @@
 //! - A crossbow's alternate fire (right button, 1300 u/s, 41) isn't a mode
 //!   yet; its bolt is the primary's. The explosive bolt's `Range` is
 //!   measured in a straight line from the fire position.
-//! - Placeholder looks: devices and bolts are shown by their weapon's
-//!   `ShownItem` key (no models or effects for the devices yet; their sounds in flight, `CaFlightLook`);
+//! - Placeholder looks: devices (but a turret with its record's model) and
+//!   bolts are shown by their weapon's `ShownItem` key (no models or
+//!   effects for the devices yet; their sounds in flight, `CaFlightLook`);
+//!   the turret's `Lower_set` and its gun's own turn aren't played (the
+//!   whole model turns), its setup sound isn't either; a broken turret
+//!   shows its ammo's impact effect, if any (the spec names no break or
+//!   disappear effect), and a turret removed otherwise goes silently;
 //!   an impact projectile by its record's model (`ProjectileParams::
 //!   shown_key`, from the install; a model-less one, the flame puff, and
 //!   any without an install, by the front end's placeholder ball; the
@@ -206,6 +225,17 @@ pub struct State {
     pub stuck: Option<(Entity, Vec3)>,
     pub stuck_at: f64,
     pub boom_at: Option<f64>,
+    /// Who brought it to its last hit points, and with what (the kill
+    /// feed's line for a broken turret: `core::Destroyed`).
+    pub broken_by: Option<Entity>,
+    pub broken_with: Option<&'static str>,
+    /// The turret's rays fired, and the last one's line (m): what the
+    /// clients draw and hear (`CaTurretShots`).
+    pub shots: u32,
+    pub shot_from: Vec3,
+    pub shot_to: Vec3,
+    /// A landed turret's collider is on (`turret_body`).
+    pub body: bool,
 }
 
 /// A special weapon's object in the world (the server's).
@@ -285,6 +315,13 @@ impl CaObject {
         if matches!(self.kind, Kind::Impact(_)) && self.s.launch_dir != Vec3::ZERO {
             return self.s.launch_dir;
         }
+        if let Kind::Device(p) = &self.kind
+            && p.kind == DeviceKind::Turret
+            && self.s.landed
+        {
+            // A turret turns to its target (6.7: the gun turns to it).
+            return self.s.facing;
+        }
         if !matches!(self.kind, Kind::Impact(_) | Kind::Bolt(_)) {
             return Vec3::ZERO;
         }
@@ -309,6 +346,20 @@ impl CaObject {
             _ => 1.0,
         }
     }
+}
+
+/// An auto turret's rays as the clients draw them (special_weapons.md
+/// 6.7 says nothing of how a shot shows: ours): the turret weapon's id,
+/// how many rays it fired and the last one's line (m). Kept on the
+/// turret by the server's frames (`devices::update`) and replicated; each
+/// machine's effects play the gun's sound, muzzle group and tracer per
+/// new ray (`effects::turret_shots`).
+#[derive(Component, serde::Serialize, serde::Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct CaTurretShots {
+    pub weapon: String,
+    pub shots: u32,
+    pub from: [f32; 3],
+    pub to: [f32; 3],
 }
 
 /// The special frames' own count (the grenades' frame counter is shared:
@@ -455,6 +506,7 @@ impl Plugin for CaSpecialPlugin {
         })
         .init_resource::<CaSpecialFrames>()
         .init_resource::<CaHeals>()
+        .init_resource::<crate::map::MapHooks>()
         .add_message::<Damage>()
         .add_message::<Died>()
         .add_message::<WeaponEvent>()
@@ -475,6 +527,8 @@ impl Plugin for CaSpecialPlugin {
         )
         // A death marks the owner's devices; seen by the next frame.
         .add_systems(FixedUpdate, on_death.after(crate::core::apply_damage).run_if(crate::core::authoritative))
+        // A gun game's rung left: its devices go (`rung_left`).
+        .add_observer(rung_left)
         // On a network server the clients draw the objects from `NetItem`s;
         // a client draws its own projectiles from the shot (`predict_shots`).
         .add_systems(FixedLast, net_items.run_if(resource_equals(NetRole::Server)))
@@ -485,6 +539,7 @@ impl Plugin for CaSpecialPlugin {
                 .in_set(SimSet::Weapons)
                 .run_if(resource_equals(NetRole::Client)),
         );
+        app.world_mut().resource_mut::<crate::map::MapHooks>().unload.push(unload_objects);
     }
 }
 
@@ -653,14 +708,24 @@ pub fn press(world: &mut World, owner: Entity, of: &str) {
 }
 
 /// An owner's death detonates his claymores and remote grenades (6.3) and
-/// his explosive bolts (7).
-fn on_death(mut died: MessageReader<Died>, mut objects: Query<&mut CaObject>) {
+/// his explosive bolts (7). In a gun game (the owner on a ladder's rung,
+/// `OnRung`) it removes his turrets too: the spec keeps a turret firing
+/// after its owner's death (6.7 says nothing of it), but a gun game's
+/// kill is a rung, and a turret left behind would score for a player
+/// who may be on the next rung by then (ours, the user's rule).
+fn on_death(
+    mut died: MessageReader<Died>,
+    mut objects: Query<&mut CaObject>,
+    on_rung: Query<(), With<chimera_sim::minigame::ladder::OnRung>>,
+) {
     for d in died.read() {
+        let gun_game = on_rung.contains(d.entity);
         for mut o in &mut objects {
             if o.owner != Some(d.entity) {
                 continue;
             }
             match &o.kind {
+                Kind::Device(p) if gun_game && p.kind == DeviceKind::Turret => o.s.expire = true,
                 Kind::Device(p) if matches!(p.kind, DeviceKind::Claymore | DeviceKind::RemoteGrenade) => o.s.marked = true,
                 Kind::Bolt(p) if p.explosive.is_some() => o.destroyed = true,
                 _ => {}
@@ -669,10 +734,64 @@ fn on_death(mut died: MessageReader<Died>, mut objects: Query<&mut CaObject>) {
     }
 }
 
+/// A player left a gun game's rung (a rung up or down, a new ladder, or
+/// gone; Chimera's `ladder::OnRung` replaced or removed): his devices go
+/// on their next update, so a turret (or a mine) thrown on one rung
+/// never scores on the next (ours, the user's rule: a kill is a rung).
+/// Only on the authoritative world: a network client has no objects.
+fn rung_left(on: On<Discard<chimera_sim::minigame::ladder::OnRung>>, mut objects: Query<&mut CaObject>) {
+    let player = on.event_target();
+    for mut o in &mut objects {
+        if o.owner == Some(player) && matches!(o.kind, Kind::Device(_)) && !o.s.expire {
+            o.s.expire = true;
+        }
+    }
+}
+
+/// A landed turret is a thing every game's weapons meet: a box collider
+/// of its size on Chimera's traces-only layer (rounds and blasts of any
+/// game see it, no character's movement does) with `Damageable`, so
+/// another game's bullet or explosion sends its `Damage` here
+/// (`shot_objects`). Our own rays and blasts meet it by its box
+/// (`CaTarget`) and pass the collider (`weapons`, `grenades`).
+pub(super) fn turret_body(e: Entity, o: &CaObject, commands: &mut Commands) {
+    let size = o.half * o.unit * 2.0;
+    commands.entity(e).insert((
+        avian3d::prelude::Collider::cuboid(size.x, size.y, size.z),
+        avian3d::prelude::CollisionLayers::new(crate::core::TRACE_ONLY_LAYER, avian3d::prelude::LayerMask::NONE),
+        crate::core::Damageable,
+    ));
+}
+
+/// A turret's new ray into its `CaTurretShots` (`devices::turret`).
+pub(super) fn turret_shots(e: Entity, o: &CaObject, commands: &mut Commands) {
+    commands.entity(e).insert(CaTurretShots {
+        weapon: o.weapon.to_string(),
+        shots: o.s.shots,
+        from: o.s.shot_from.to_array(),
+        to: o.s.shot_to.to_array(),
+    });
+}
+
+/// A map's unload takes every object with it (Chimera's `MapHooks`): a
+/// device or projectile of the last map never lands in the next.
+pub fn unload_objects(world: &mut World) {
+    let gone: Vec<Entity> = world.query_filtered::<Entity, With<CaObject>>().iter(world).collect();
+    for e in gone {
+        if let Ok(e) = world.get_entity_mut(e) {
+            e.despawn();
+        }
+    }
+}
+
 /// Damage to an object (bullets, blasts): off its hit points by its weak
 /// points; at 1 or less it goes off at its next update (1.4). A device
 /// still in the air can't be set off (Quirk 7).
-fn shot_objects(mut damage: MessageReader<Damage>, mut objects: Query<&mut CaObject>) {
+fn shot_objects(
+    mut damage: MessageReader<Damage>,
+    mut objects: Query<&mut CaObject>,
+    held: Option<Res<crate::weapon::DamageWeapons>>,
+) {
     for d in damage.read() {
         let Ok(mut o) = objects.get_mut(d.target) else { continue };
         if d.amount <= 0.0 || o.destroyed {
@@ -685,6 +804,8 @@ fn shot_objects(mut damage: MessageReader<Damage>, mut objects: Query<&mut CaObj
         o.health -= taken;
         if o.health <= super::grenades::DESTROYED_AT {
             o.destroyed = true;
+            o.s.broken_by = d.attacker;
+            o.s.broken_with = held.as_deref().map_or(d.weapon, |h| h.of(d));
         }
     }
 }
@@ -795,6 +916,7 @@ pub fn spawn_object(world: &mut World, mut o: CaObject) -> Entity {
     // by its weapon's key.
     let id = match &o.kind {
         Kind::Impact(p) => p.shown_key(),
+        Kind::Device(d) => d.shown_model().map_or_else(|| o.weapon.to_string(), |m| m.shown_key()),
         _ => o.weapon.to_string(),
     };
     // A device's sounds in flight and at rest (Corrections (2026-10-31) 3).

@@ -725,6 +725,29 @@ that):
   data/ladder_exclusions.toml: the infection stun launchers, the skins
   drawn wrong). `ladder_skipped` lists them; a hand-written ladder may
   still name any of them.
+- **A turret rung: the turret kills for you** (user, 2026-11-13): a
+  rung whose weapon places Combat Arms' auto turret (`Auto-Turret` and
+  every install copy of it, special_weapons.md 6.7) plays as the spec's
+  turret, with its numbers (350 HP, ×3 from blasts, 100 rays of 12 every
+  0.13 s within 800 u, one standing per owner: `OnceActivate`); its kill
+  is its owner's with the turret weapon, so it climbs a rung as any
+  kill. A turret never outlives the rung it was placed on: it goes when
+  its owner leaves the rung (a rung up or down, a new ladder:
+  `ladder::OnRung` replaced), dies (the spec keeps it firing; a gun game
+  doesn't, so a stale turret never scores), leaves the game or the map
+  unloads; leaving a rung takes the owner's other devices too. Every
+  game's weapons and blasts break it (a collider on the traces-only
+  layer with `Damageable`); breaking it is a kill-feed line ("<owner>'s
+  <turret>", `core::Destroyed`) and no rung or score. Bots on the rung
+  place one and fight on with their knife; a bot shoots back at an enemy
+  turret that is shooting at it (only then: bots that shot every turret
+  in sight broke them before they fired). Tuning starts
+  from Combat Arms' numbers; change them in the weapon's data. The
+  turret is drawn into automatic ladders in the specials band (`class =
+  "launcher"`); a turret's own gun (a `Turret#` record's `TopWeaponID`:
+  `Turret-TopGun`, the infected ship turrets' grenade guns) names no
+  class, so no draw deals it as a hand-held gun (the "Infected '02 Top
+  Gun" that fired grenades on a rung, 2026-11-13).
 - **No HL2:DM pickups or chargers** (user, 2026-11-12): a party's
   HL2:DM map has none of its walk-over items (kits, vials, batteries,
   ammo boxes) and wall chargers, not even drawn: only the HL2:DM app,

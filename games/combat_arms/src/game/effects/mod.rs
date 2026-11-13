@@ -377,7 +377,7 @@ impl Plugin for CaEffectsPlugin {
                 forget_weapons,
                 key_sounds,
                 crate::game::grenades::callout::hear,
-                grenade_effects,
+                (grenade_effects, turret_shots).chain(),
                 bomb::bomb_effects,
                 footsteps,
                 voice::voices,
@@ -1430,6 +1430,82 @@ fn play_dings(mut dings: ResMut<DingQueue>, tables: Res<CaFxTables>, mut sounds:
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Auto turrets
+
+/// An auto turret's new rays (`special::CaTurretShots`, the server's, on
+/// the turret here or replicated to a client): per ray its gun's fire
+/// sound at the gun, its muzzle group and its tracer along the ray
+/// (`TurretParams::fire_sound`, `muzzle`, `tracer`: the gun's record's;
+/// ours, special_weapons.md 6.7 doesn't say how a shot shows). A turret
+/// first seen plays nothing for the rays it fired before.
+#[allow(clippy::too_many_arguments)]
+fn turret_shots(
+    mut turrets: Query<
+        (Entity, &crate::game::special::CaTurretShots, Option<&mut TurretShotsSeen>),
+        Changed<crate::game::special::CaTurretShots>,
+    >,
+    mut commands: Commands,
+    catalog: Option<Res<crate::weapon::data::WeaponCatalog>>,
+    tables: Res<CaFxTables>,
+    settings: Res<CaFxSettings>,
+    mut sounds: MessageWriter<CaSound>,
+    mut fx: MessageWriter<CaFxRequest>,
+    mut tracers: ResMut<CaTracers>,
+) {
+    use crate::game::special::{DEVICE, DeviceParams};
+    for (e, shots, seen) in &mut turrets {
+        let before = match seen {
+            Some(mut s) => Some(std::mem::replace(&mut s.0, shots.shots)),
+            None => {
+                commands.entity(e).insert(TurretShotsSeen(shots.shots));
+                None
+            }
+        };
+        if before.is_none_or(|b| b >= shots.shots) {
+            continue;
+        }
+        let Some(t) = catalog
+            .as_ref()
+            .and_then(|c| c.get(&shots.weapon))
+            .and_then(|w| w.hook::<DeviceParams>(DEVICE))
+            .and_then(|d| d.turret)
+        else {
+            continue;
+        };
+        let (from, to) = (Vec3::from_array(shots.from), Vec3::from_array(shots.to));
+        let dir = (to - from).normalize_or(Vec3::NEG_Z);
+        if !t.fire_sound.is_empty() {
+            sounds.write(CaSound::at(t.fire_sound.clone(), from, t.fire_radius.max(1.0)));
+        }
+        if !t.muzzle.is_empty() {
+            fx.write(CaFxRequest {
+                group: t.muzzle.clone(),
+                at: from,
+                normal: dir,
+                kind: FxKind::Muzzle,
+            });
+        }
+        if settings.tracers
+            && let Some(look) = tables.tracer(if t.tracer.is_empty() { "Standard" } else { &t.tracer })
+            && let Some(path) = TracerPath::new(from / UNIT, to / UNIT, look.velocity, look.length)
+        {
+            if tracers.0.len() >= rules::TRACER_LIST_MAX {
+                tracers.0.remove(0);
+            }
+            tracers.0.push(CaTracer {
+                path,
+                look: look.clone(),
+                age: 0.0,
+            });
+        }
+    }
+}
+
+/// The rays of a turret this machine has played (`turret_shots`).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct TurretShotsSeen(pub u32);
 
 // ---------------------------------------------------------------------------
 // Grenades

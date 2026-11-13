@@ -1174,8 +1174,10 @@ pub(crate) struct GrenadeWorld<'w, 's> {
         ),
         Without<CaGrenade>,
     >,
-    breakables: Query<'w, 's, (Entity, &'static ColliderAabb), (With<Damageable>, Without<Intent>)>,
-    damageable: Query<'w, 's, (), (With<Damageable>, Without<Intent>)>,
+    /// Map breakables (not a special weapon's object with a collider, a
+    /// landed turret: its box is in `targets`).
+    breakables: Query<'w, 's, (Entity, &'static ColliderAabb), (With<Damageable>, Without<Intent>, Without<super::special::CaObject>)>,
+    damageable: Query<'w, 's, (), (With<Damageable>, Without<Intent>, Without<super::special::CaObject>)>,
     /// Special weapons' objects (rockets, mines, ...) a blast damages.
     pub(crate) targets: Query<'w, 's, (Entity, &'static super::special::CaTarget)>,
     prop_boxes: Query<'w, 's, (Entity, &'static ColliderAabb), With<PropEntity>>,
@@ -1236,7 +1238,11 @@ impl GrenadeWorld<'_, '_> {
         self.spatial
             .cast_ray_predicate(from, dir, d.length(), true, &filter, &|e| {
                 let body = self.body(e);
-                Some(body) != skip && !self.people.contains(body) && !self.props.contains(body) && !self.invisible(e)
+                Some(body) != skip
+                    && !self.people.contains(body)
+                    && !self.props.contains(body)
+                    && !self.targets.contains(body)
+                    && !self.invisible(e)
             })
             .map(|h| (h.distance, h.normal, h.entity))
     }
@@ -1270,7 +1276,7 @@ impl GrenadeWorld<'_, '_> {
                     .get(e)
                     .or_else(|_| self.rigid.get(body))
                     .is_ok_and(|rb| !rb.is_dynamic());
-                solid && !self.people.contains(body) && !self.props.contains(body)
+                solid && !self.people.contains(body) && !self.props.contains(body) && !self.targets.contains(body)
             })
             .is_some()
     }
@@ -1398,6 +1404,8 @@ impl Frame {
 pub(crate) struct Out<'w, 's> {
     pub(crate) damage: MessageWriter<'w, Damage>,
     pub(crate) detonated: MessageWriter<'w, Detonated>,
+    /// A broken thing's kill-feed line (special weapons' turrets).
+    pub(crate) destroyed: MessageWriter<'w, crate::core::Destroyed>,
     pub(crate) blast_surface: MessageWriter<'w, CaBlastSurface>,
     pub(crate) rules: DamageRules<'w, 's>,
     pub(crate) armour: Query<'w, 's, (&'static mut crate::weapon::Armor, Option<&'static crate::weapon::ArmorPieces>)>,

@@ -36,7 +36,8 @@
 //! `SmokeCloud::weapon`), sends each round fired to the other clients in the
 //! shooter's PAS (`FireBullets`), reloads/swings/throws (`WeaponFx`), detonations, flashes
 //! and ringing to the player hit (`Senses`), damage that reached a player's
-//! health to its client (`Hurt`: the damage indicators), deaths (`Killed`:
+//! health to its client (`Hurt`: the damage indicators), things broken
+//! (`ObjectDestroyed`: the kill feed's line, `core::Destroyed`), deaths (`Killed`:
 //! the gun's index, or a kill's class of no game by name) and
 //! hit confirmations (`HitConfirm`), and drops what a client asks to
 //! (`DropRequest`); a client puts others' weapons in their hands
@@ -50,7 +51,7 @@ use bevy::{app::RunFixedMainLoopSystems, prelude::*};
 use bevy_replicon::prelude::*;
 
 use super::{
-    Detonation, DropRequest, FireBullets, HitConfirm, Hurt, Killed, NetCharacter, NetHeld, NetItem, NetSmoke,
+    Detonation, DropRequest, FireBullets, HitConfirm, Hurt, Killed, NetCharacter, ObjectDestroyed, NetHeld, NetItem, NetSmoke,
     Senses, WeaponFx,
     interp::{Around, InterpClock, Snapshots},
     server::Player,
@@ -94,6 +95,7 @@ pub(super) fn plugin(app: &mut App) {
                 send_senses,
                 send_hurts,
                 send_deaths.after(chimera_core::announcer::AnnounceSet),
+                send_destroyed,
             )
                 .before(ServerSystems::Send)
                 .run_if(server()),
@@ -109,6 +111,7 @@ pub(super) fn plugin(app: &mut App) {
                 receive_hurts,
                 start_smokes,
                 receive_deaths,
+                receive_destroyed,
                 receive_hits,
             )
                 .chain()
@@ -625,7 +628,46 @@ fn kind_number(k: DamageKind) -> u8 {
     KINDS.iter().position(|x| *x == k).unwrap_or(0) as u8
 }
 
+/// Things broken (`core::Destroyed`), to every client (only those whose
+/// thing is a registered weapon: its name and icon).
+fn send_destroyed(
+    mut destroyed: MessageReader<chimera_core::core::Destroyed>,
+    replicated: Query<(), With<Replicated>>,
+    registry: Res<WeaponRegistry>,
+    mut out: MessageWriter<ToClients<ObjectDestroyed>>,
+) {
+    for d in destroyed.read() {
+        let Some(what) = registry.index(d.what) else { continue };
+        out.write(ToClients {
+            targets: SendTargets::CLIENTS_ONLY,
+            message: ObjectDestroyed {
+                what: what as u16,
+                owner: d.owner.filter(|e| replicated.contains(*e)),
+                attacker: d.attacker.filter(|e| replicated.contains(*e)),
+                weapon: d.weapon.and_then(|w| registry.index(w)).map(|i| i as u16),
+            },
+        });
+    }
+}
+
 // --- Client
+
+/// Things the server saw broken: the kill feed's lines here.
+fn receive_destroyed(mut news: MessageReader<ObjectDestroyed>, mut commands: Commands) {
+    for n in news.read() {
+        let n = n.clone();
+        commands.queue(move |w: &mut World| {
+            let Some(what) = weapon_id(w, n.what) else { return };
+            let weapon = n.weapon.and_then(|i| weapon_id(w, i));
+            w.write_message(chimera_core::core::Destroyed {
+                what,
+                owner: n.owner,
+                attacker: n.attacker,
+                weapon,
+            });
+        });
+    }
+}
 
 /// Deaths the server saw: the kill feed and the ragdoll here
 /// (`core::Died`; nothing is subtracted, health comes replicated).
