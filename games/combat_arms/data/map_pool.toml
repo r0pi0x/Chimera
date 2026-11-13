@@ -1,0 +1,70 @@
+# Combat Arms worlds an automatic gun game's pool leaves out (the Ultimate
+# Gun Game: chimera_sim::minigame::map_fit; docs/plans/active/
+# map-pool-fitness.md). Every other installed world joins the pool, drawn
+# by the players present (data/map_fitness.toml). Each entry: map names
+# (`*` matches any run of letters) and why. `[[allow]]` entries win over
+# `[[deny]]` and over the measurements' flags (a map the numbers can't
+# judge); the count's rule still applies. The `map_pool` console command
+# shows the pool at a count.
+
+[[deny]]
+reason = "a mode variant (a mission, boss, zombie, infected or defence map), not a free-for-all"
+maps = ["*_cp", "*_cp1", "boss*", "zombie*", "infected*", "*defence"]
+
+[[deny]]
+reason = "the tutorial or a test world"
+maps = ["training", "testing_t"]
+
+[[deny]]
+reason = "a quarantine twin of a map in the pool"
+maps = [
+    "*_qrt",
+    "costarecon_q",
+    "grayhammerq",
+    "istanbulq",
+    "nemexiswarq",
+    "oilrigq",
+    "piazzaq",
+    "snowvalleyq",
+    "vertigo_q",
+]
+
+# The user hasn't seen them yet (2026-11-13): open terrain over 15000 m2.
+[[deny]]
+reason = "huge and open (over 15000 m2): not looked at yet"
+maps = ["darkthandark", "deserthole", "desertholezone"]
+
+[[deny]]
+reason = "a mode map by its look (91 spawn spots a player is stuck in)"
+maps = ["16rooms"]
+
+[[deny]]
+reason = "no spawn spots: its 8 spawn points only (8 players at most)"
+maps = ["nemexishq"]
+
+[[deny]]
+reason = "no spawn point stands on a floor in our conversion"
+maps = ["hgoilrig"]
+
+# Until the spawn spots are fixed (another session; 2026-11-13): the spots'
+# walker can't leave part of the map, so everyone spawns there. warehouse
+# is too (the two spawn rooms), but stays: it was in the pool before.
+[[deny]]
+reason = "spawn spots confined to part of the map"
+maps = [
+    "battleship",
+    "battleship1",
+    "battleship2",
+    "cargoship",
+    "castle",
+    "crystaltower",
+    "downhill",
+    "grayhammer",
+    "killland",
+    "lastvegas",
+    "rapidstream",
+    "sector25",
+    "twinship",
+    "twotowers",
+    "waverider",
+]

@@ -16,6 +16,10 @@
 //! map_vote = true            # the players vote for the next map on the end screen
 //!                            # (`minigame::vote`; default off); tuned: { candidates = 3,
 //!                            # time = "12s", reveal = "3s" } over chimera/sim/data/map_vote.toml
+//! map_fit = true             # the next map drawn by the players present (`minigame::map_fit`):
+//!                            # maps too big for the count out, the rest weighted; tuned:
+//!                            # { target_s = 8 } over chimera/sim/data/map_fit.toml; default:
+//!                            # on with `rotation = "random"`, off in turn
 //! cues = "cs_source"          # the cue pack its callouts sound (`chimera_core::cues`); "none";
 //!                             # default: the pack of the game whose HUD is up, else the first
 //! music = "combat_arms"       # the game whose music director plays its moments
@@ -97,6 +101,11 @@ pub struct MinigameDef {
     /// `true`, `false` (the default) or the settings tuned.
     #[serde(default)]
     pub map_vote: Option<MapVoteParam>,
+    /// The next map drawn by the players present (`super::map_fit`):
+    /// `true`, `false` or the settings tuned; absent, on when `rotation`
+    /// is random.
+    #[serde(default)]
+    pub map_fit: Option<MapVoteParam>,
     /// The cue pack its callouts sound (`chimera_core::cues::CuePacks::
     /// choose`): a pack's id, `none`, or None (`default`) the first
     /// registered.
@@ -132,8 +141,9 @@ fn ten() -> usize {
     10
 }
 
-/// `map_vote`: on or off, or tuned (`super::vote::MapVoteSettings`'s
-/// keys over the built-in).
+/// `map_vote` (and `map_fit`): on or off, or tuned (`super::vote::
+/// MapVoteSettings`'s keys, `super::map_fit::FitSettings`', over the
+/// built-in).
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum MapVoteParam {
@@ -483,6 +493,7 @@ impl MinigameDef {
             return Err("spawn.respawn: negative times".into());
         }
         super::vote::MapVoteSettings::of(self).map_err(|e| format!("map_vote: {e}"))?;
+        super::map_fit::FitSettings::of(self).map_err(|e| format!("map_fit: {e}"))?;
         Ok(())
     }
 

@@ -28,9 +28,11 @@
 //! the ladder) on the power curve
 //! (`auto::ladder`, `minigame::power`: warm-up pistols to melee, each
 //! band's guns by power score); its pool every game's maps, their installs' too
-//! (`auto::find_installed_maps`, the apps only), rotated at random but the
-//! last `AVOID_RECENT` played (`minigame::rotation`, seeded by the launch
-//! seed), the players voting for the next one on the end screen
+//! but those a game's data/map_pool.toml denies (`auto::find_installed_maps`,
+//! the apps only), rotated at random but the last `AVOID_RECENT` played
+//! (`minigame::rotation`, seeded by the launch seed), drawn by the players
+//! present (`minigame::map_fit`: maps too big for them out, the rest
+//! weighted), the players voting for the next one on the end screen
 //! (`map_vote`, `minigame::vote`: the rotation's pick and two others);
 //! its kit each gun's game's knife (the base game's, `BASE`, for a
 //! game without one); no gun off the ground, any game's, placed or dropped

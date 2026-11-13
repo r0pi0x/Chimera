@@ -329,6 +329,19 @@ Maps and matches:
   `mp_spawn_protection`, `mp_demote_on_suicide` (the list is
   `apps/party_kit/data/host_settings.toml`).
 - A match needs 2 players; bots count (`+MaxPlayer`). Late joiners are fine.
+- **The map pool goes by the player count.** At each map change (the
+  rotation, the end screen's vote, `changelevel` with no map) the server
+  counts the characters present, players and bots, and leaves out the
+  maps too big for that many (over 10 s on average to meet someone); the
+  rest are drawn by weight, best around 4-8 s to meet, the tiny arenas
+  now and then. `map_pool [players]` on the console lists the pool at a
+  count (each map's chance, or why it is out). To keep a map out, add it
+  to its game's `games/<game>/data/map_pool.toml` with a reason; the
+  numbers (target 10 s, the weights) are `chimera/sim/data/map_fit.toml`
+  (both built in: a rebuild). Recently played maps are held back
+  (`mp_avoid_recent`). Every map that can come up needs its `map/<name>`
+  set published (below, "Publishing the game files"; `sets` records every
+  installed map).
 - **The pre-match lobby.** Each new match (the first after the server
   starts, each rotation and map change: a host's `changelevel <map>` is the
   running minigame's next match there, a new ladder as a rotation's)
@@ -361,7 +374,9 @@ Console commands on the server's stdin (type in its window; run it inside
 `minigames`, `minigame_status`, `minigame_restart`,
 `change_match <minigame> [map]`, `ugg_new [seed] [rungs]` (a new ladder now;
 a seed replays one), `parts` (what each game lends), `changelevel <map>`
-(the next match there, with its lobby), `quit` (Ctrl+C is the same).
+(the next match there, with its lobby; no map: the next match on a map
+drawn for the players present), `map_pool [players]` (the pool at that
+count), `quit` (Ctrl+C is the same).
 
 Keep it simple on the day: `+maxplayers 12 +MaxPlayer 3` and no `+map`.
 
@@ -399,8 +414,11 @@ What a tester without the games downloads from the asset service:
   games installed download nothing of those games.
 - **Each join**: what the match needs that isn't there yet (the first one
   about 50-100 MB), at full speed, on the loading panel.
-- **In the background, while playing**: the pool's other maps (about
-  170 MB), at a capped rate, held while the tester joins or changes map.
+- **In the background, while playing**: the pool's other maps, the
+  likeliest for the players present first, at a capped rate, held while
+  the tester joins or changes map. With the pool by player count that is
+  about 100 maps (several GB over a long session); `+chimera:asset_prefetch_max 0`
+  turns it off, and each map then arrives as one download at its change.
 
 The background rate is each tester's `chimera:asset_prefetch_rate` (KB/s,
 default 2000: 2 MB/s; 0 turns it off; saved in their config). You set the

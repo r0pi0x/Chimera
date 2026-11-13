@@ -17,7 +17,8 @@
 //! characters, HUD and maps. A game's guns are its claimed ones plus every
 //! weapon of its own in the catalogue whose data names a `class`
 //! (`GunClass`; its install's weapons too), its maps the claimed ones plus
-//! its installed maps matching `map_patterns`.
+//! its installed maps that its pool rules allow (its data/map_pool.toml,
+//! `chimera_sim::minigame::map_fit`).
 
 use bevy::prelude::*;
 
@@ -106,13 +107,10 @@ pub struct GameParts {
     pub characters: Option<&'static str>,
     /// Its HUD's id for the gameplay's `hud` slot (its game id).
     pub hud: Option<&'static str>,
-    /// Its maps by id (`game:map`) that load in a composed app.
+    /// Its maps by id (`game:map`) that load in a composed app, first in
+    /// an automatic pool; its other installed maps join by its pool rules
+    /// (data/map_pool.toml, `chimera_sim::minigame::map_fit`).
     pub maps: &'static [&'static str],
-    /// More of its maps: the installed ones (`GameInfo::map_names`) whose
-    /// name matches one of these (`de_*`: a prefix; else the whole name),
-    /// found by the app that has the install
-    /// (`chimera_sim::minigame::auto::InstalledMaps`).
-    pub map_patterns: &'static [&'static str],
     /// Its announcer pack, a TOML document (`announcer::AnnouncerPack`),
     /// registered with its parts.
     pub announcer: Option<&'static str>,
@@ -141,19 +139,6 @@ impl GameParts {
     /// Guns and movement: what a game needs to be in a ladder.
     pub fn playable(&self) -> bool {
         !self.guns.is_empty() && self.movement.is_some()
-    }
-
-    /// Whether installed map `name` (no `game:`) matches `map_patterns`
-    /// (case-insensitive).
-    pub fn wants_map(&self, name: &str) -> bool {
-        let name = name.to_ascii_lowercase();
-        self.map_patterns.iter().any(|p| {
-            let p = p.to_ascii_lowercase();
-            match p.strip_suffix('*') {
-                Some(prefix) => name.starts_with(prefix),
-                None => name == p,
-            }
-        })
     }
 }
 
@@ -265,7 +250,6 @@ mod tests {
         characters: None,
         hud: None,
         maps: &[],
-        map_patterns: &[],
         announcer: None,
         match_won_sound: None,
         match_lost_sound: None,
@@ -284,16 +268,6 @@ mod tests {
         assert_eq!(r.hud_of("nobody"), None);
         r.register(&GUNS_ONLY);
         assert_eq!(r.all().count(), 1, "registered again: replaced");
-    }
-
-    #[test]
-    fn map_patterns_are_prefixes_or_names() {
-        let p = GameParts {
-            map_patterns: &["de_*", "cs_office"],
-            ..GUNS_ONLY
-        };
-        assert!(p.wants_map("de_nuke") && p.wants_map("DE_Train") && p.wants_map("cs_office"));
-        assert!(!p.wants_map("cs_italy") && !p.wants_map("test_hardware") && !GUNS_ONLY.wants_map("de_nuke"));
     }
 
     #[test]

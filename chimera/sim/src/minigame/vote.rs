@@ -4,7 +4,9 @@
 //! standalone game: `chimera_net::minigame_net`'s rotation) puts a few
 //! candidate maps on the ballot (`candidates`: the rotation's own pick
 //! first, then other maps of the pool every player can play, the ones
-//! not played lately first, drawn on the host's `MapHistory` generator,
+//! not played lately first, drawn on the host's `MapHistory` generator
+//! by the rotation's weights when the pool goes by the players present,
+//! `candidates_weighted`, `map_fit`,
 //! then this map if the pool is short), and the match-end hold
 //! (`NextMatch`) waits for the vote: it closes `time` s after it opened,
 //! then the winner shows for `reveal` s before the map changes. Every
@@ -161,32 +163,42 @@ pub fn candidates(
     playable: &dyn Fn(&str) -> bool,
     rng: &mut Rng,
 ) -> Vec<String> {
+    candidates_weighted(first, pool, here, recent, n, playable, &|_| 1.0, rng)
+}
+
+/// `candidates`, the others drawn by `weight` (`map_fit::draw_weights`'s,
+/// the rotation's own draw: 0 is out this time) rather than evenly, the
+/// fresh ones first; `here` only with a weight.
+#[allow(clippy::too_many_arguments)]
+pub fn candidates_weighted(
+    first: &str,
+    pool: &[String],
+    here: &str,
+    recent: &[String],
+    n: usize,
+    playable: &dyn Fn(&str) -> bool,
+    weight: &dyn Fn(&str) -> f64,
+    rng: &mut Rng,
+) -> Vec<String> {
     let mut out = vec![first.to_string()];
     let mut others: Vec<&String> = Vec::new();
     for m in pool {
-        if m != first && m != here && playable(m) && !others.contains(&m) {
+        if m != first && m != here && playable(m) && weight(m) > 0.0 && !others.contains(&m) {
             others.push(m);
         }
     }
     let (mut fresh, mut stale): (Vec<&String>, Vec<&String>) = others.into_iter().partition(|m| !recent.contains(m));
-    shuffle(&mut fresh, rng);
-    shuffle(&mut stale, rng);
-    for m in fresh.into_iter().chain(stale) {
-        if out.len() >= n {
-            break;
+    for group in [&mut fresh, &mut stale] {
+        while out.len() < n && !group.is_empty() {
+            let m = super::rotation::pick(group, weight, rng).clone();
+            group.retain(|g| **g != m);
+            out.push(m);
         }
-        out.push(m.clone());
     }
-    if out.len() < n && first != here && playable(here) {
+    if out.len() < n && first != here && playable(here) && weight(here) > 0.0 {
         out.push(here.to_string());
     }
     out
-}
-
-fn shuffle<T>(items: &mut [T], rng: &mut Rng) {
-    for i in (1..items.len()).rev() {
-        items.swap(i, rng.below(i + 1));
-    }
 }
 
 /// The map's name as a player reads it: its id without the game.
@@ -219,6 +231,39 @@ mod tests {
         // Unplayable maps never.
         let c = candidates("g:m1", &p, "g:m0", &[], 6, &|m| m != "g:m4", &mut rng);
         assert!(!c.contains(&"g:m4".to_string()) && c.len() == 5, "{c:?}");
+    }
+
+    #[test]
+    fn the_ballot_draws_by_the_rotations_weights() {
+        let p = pool(6);
+        // m5 heavy, m2 out (too big for the count), the rest light.
+        let weight = |m: &str| match m {
+            "g:m5" => 20.0,
+            "g:m2" => 0.0,
+            _ => 1.0,
+        };
+        let mut rng = Rng::new(4);
+        let mut heavy = 0;
+        for _ in 0..200 {
+            let c = candidates_weighted("g:m1", &p, "g:m0", &[], 3, &|_| true, &weight, &mut rng);
+            assert_eq!(c.len(), 3);
+            assert_eq!(c[0], "g:m1");
+            assert!(!c.contains(&"g:m2".to_string()), "out at this count: {c:?}");
+            heavy += c.contains(&"g:m5".to_string()) as usize;
+        }
+        assert!(heavy > 180, "the heavy map nearly always on the ballot: {heavy} of 200");
+        // Recent maps after the fresh, even when heavy.
+        for _ in 0..20 {
+            let c = candidates_weighted("g:m1", &p, "g:m0", &["g:m5".into()], 3, &|_| true, &weight, &mut rng);
+            assert_eq!(c.len(), 3);
+            assert!(!c.contains(&"g:m5".to_string()), "{c:?}");
+        }
+        // Short of fresh ones: the recent after them.
+        let c = candidates_weighted("g:m1", &p, "g:m0", &["g:m5".into()], 4, &|_| true, &weight, &mut rng);
+        assert_eq!(c[3], "g:m5", "{c:?}");
+        // Here only with a weight.
+        let c = candidates_weighted("g:m1", &pool(3), "g:m2", &[], 3, &|_| true, &weight, &mut rng);
+        assert_eq!(c, ["g:m1", "g:m0"]);
     }
 
     #[test]

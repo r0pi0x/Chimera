@@ -178,6 +178,9 @@ pub fn party_sim(app: &mut bevy::app::App) {
     if !app.is_plugin_added::<source_logic::logic::LogicPlugin>() {
         app.add_plugins(source_logic::logic::LogicPlugin);
     }
+    // Its map pool's rules and measurements (an automatic gun game's
+    // pool by the players present).
+    parts::add_map_pool(app);
     // The set pieces of its stock maps (dm_runoff's headcrab canisters,
     // dm_steamlab's gas trap hearing shots: the AI sound list), which
     // the map's logic drives on any game's simulation.
