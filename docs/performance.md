@@ -1210,9 +1210,11 @@ deterministic all along. The cost was not, for these reasons:
   process: the same state hash, the last two within 1%: 233,827,894 and
   233,828,785 instructions), `party_kit`'s `archetypes` (the same match played twice,
   with one marker's archetype and with 2,000 more, compared tick for
-  tick: the same state hash, 1.32x with 2,000 more archetypes, 2.31x with
-  2,000 more tables too, and no system more than 76 instructions a tick
-  per added archetype, limit 200, where a `world.query` a tick costs 376) and `heavy::bot_cost` (systems growing
+  tick: the same state hash, the whole tick 620 instructions more per added
+  archetype with 2,000 more archetypes, limit 720, and 1,361 with 2,000 more
+  tables too, limit 1,500, and no system more than 74 instructions a tick
+  per added archetype, limit 200, where a `world.query` a tick costs 376;
+  "The archetype test's ratio" for why not a ratio) and `heavy::bot_cost` (systems growing
   from 2 to 16 bots printed always, no `trace` build needed),
   `cs_source`'s `map_logic::idle_entities_cost_a_tick_little`,
   `ultimate_gun_game`'s `heavy::session_maps`; two tests that timed with
@@ -2469,7 +2471,9 @@ marker's archetype and with all of them, and compares the same ticks:
 10.25M (2.31x, limit 2.6x) with table markers too; the most any one
 system grows is 76 instructions a tick per added archetype (`Movement
 step`, limit 200), and a planted `world.query` a tick in Combat Arms'
-`supplies` grew by 376 and failed it.)
+`supplies` grew by 376 and failed it. Since 2026-11-13 the whole tick's
+limits are instructions per added archetype, not ratios: "The archetype
+test's ratio".)
 
 What still grows (`query_cache`'s known shortcuts): a kept query steps
 over every empty table it matches each time it runs (avian's solver,
@@ -4148,6 +4152,68 @@ world outside its ticks 9.9M p50, 22.9M p99; the render world 10.9M.
   thousand million instructions a second, six times the main thread,
   in `audio::room::Reverb::frame`, rodio's sample-rate conversion and
   `LiveDecoder`. Not measured with a real device.
+
+## The archetype test's ratio (2026-11-13)
+
+`party_kit`'s `archetypes` test held the whole tick to a ratio of its
+base run's (2.6x with 4,094 more archetypes and 2,047 more tables; 2.31x
+measured on 2026-11-12), and the ratio crept to 2.57x on main and 2.60x
+on a branch a day later; the limit went to 2.7. The test at points of
+main's first-parent history (the steady ticks' instructions per tick,
+`Sim::work`; the same build twice differs by under 0.1%):
+
+| main at | base run | 4,094 more archetypes | ratio | archetypes' cost | sparse case: cost |
+|---|---|---|---|---|---|
+| 495b19ec (11-12 10:41, the two-run test) | 4.208M | 10.053M | 2.389x | 5.845M | 1.378M |
+| 86eed62e (11-12 17:44) | 4.820M | 10.587M | 2.196x | 5.767M | 1.412M |
+| d008568a (11-12 23:14) | 4.825M | 10.588M | 2.194x | 5.763M | 1.412M |
+| 98191032 (11-13 02:12, ragdolls) | 4.800M | 10.445M | 2.176x | 5.645M | 1.364M |
+| 5bef383f (11-13 07:05) | 4.802M | 10.440M | 2.174x | 5.638M | 1.362M |
+| 126fdb43 (11-13 12:47, the map pool) | 4.435M | 10.099M | 2.277x | 5.664M | 1.310M |
+| 0a37c0c0 (11-13 14:16, the load-start cue) | 4.433M | 10.099M | 2.278x | 5.666M |1.310M |
+| 02c775b8 (11-13 14:37, the navigation grid) | 3.581M | 9.249M | 2.583x | 5.668M | 1.310M |
+| 9cb8ca2a (11-13 16:06, the turret) | 3.600M | 9.265M | 2.574x | 5.665M | 1.311M |
+| 36328c0e (11-13 17:39, spawn spots) | 3.559M | 9.229M | 2.593x | 5.670M | 1.318M |
+| this branch | 3.551M | 9.124M | 2.569x | 5.573M | 1.270M |
+
+**Nothing grew with the archetypes.** Their cost (the inflated run less
+the base run, the same ticks of the same play) went down, 5.85M to 5.67M
+a tick, through 44 merges (the turret, the player clips, the overlay
+layer, the load-start cue, the swapped colliders, the map pool and the
+spawn spots among them): no step up between two rows is over 0.03M. The
+ratio moved because its base
+did: the bots' play costs 3.6M to 4.8M a tick as merges shift it, and
+the one large step, 2.278x to 2.583x, is "cs_militia's spikes" above:
+`FixedUpdate think` (the bots' brains) 1,013,540 to 164,944 instructions
+a tick in the base run and by the same 0.85M in the inflated one (the
+systems' counts of the two builds side by side: no other system moved by
+more than 900, and no system's archetype cost by more than 1,800). A
+cheaper tick read as a dearer one. The per-system check (68 against 200)
+was right to pass.
+
+**The limits** are now the archetypes' cost itself, in instructions a
+tick per added archetype: 720 for the sparse-set case (620 measured) and
+1,500 for the table case (1,361), which nothing but more work per
+archetype moves. The ratio is still printed.
+
+**What the cost is**: 96 systems grow by over 10,000 instructions a
+tick, none new. A query that matches characters steps over each of
+their empty tables every time it runs, about 14 instructions a table
+(28,000 a run at 2,047 more: `apply_zoom`, `decay_punch`, `chat`,
+`scanners` and thirty more at exactly +56,000 for their two runs a
+tick), a query over archetypes (an `Option` of a sparse-set component)
+about 20 an archetype (`follow_lead`, 79,000 a run). The largest:
+`Movement step` 279k, `think` 277k, Avian's three substep systems 205k to
+218k each over six runs, `Weapons before_frame` 217k over twelve,
+Bevy's `mark_dirty_trees` 189k and 181k. One was work for nothing and is
+gone: Combat Arms' `supplies` collected the living players every tick
+with no supply box or supply point in the world to give them to
+(101,042 a tick here, now 0; 1,385 to 1,361 per archetype). The rest
+is Bevy's own, paid per table a session leaves behind, and a session's
+tables stay few ("A session's frame rate"); what would cut it further
+is fewer systems iterating characters to find nothing changed
+(`follow_lead` each tick, the physics shadow's `attach`, HL2:DM's
+`wear`), not tried here.
 
 ## See a frame yourself
 
