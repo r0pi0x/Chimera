@@ -12,6 +12,7 @@ mod console_names;
 mod data_formats;
 mod dedicated;
 mod game_hooks;
+mod local_load;
 mod minigame_callouts;
 mod prematch_lobby;
 mod prediction;

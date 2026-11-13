@@ -362,6 +362,14 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1920x1080 \
   run reads (seen on the dev box, where `+volume` on the command line was
   overridden); set it over the remote console once in the game
   (`{"method":"chimera/console","params":{"line":"volume 0.8"}}`).
+  A map change's timeline in the log: `loading panel up` (a party app's
+  panel), `map settled behind the loading screen` (the local load done),
+  `<minigame> starts on <map>` (a server's or listen host's next match),
+  `joined the game on` (a client in), and the start cues: `sound: start`
+  for music streams, `music cue: <key>` for Combat Arms' director's
+  sounds (`RoundStartSound`). A start cue before the load's end is a bug
+  (`map::LocalMapLoad`; tests `chimera_net` `local_load`, `chimera_sim`
+  `minigame::the_moments_wait_for_the_local_load`).
   Not recorded: voice chat (its own output). Test: `cargo test -p
   chimera_present --features dev --test it audio_record`.
 - At the end an offscreen run prints its frame times over the whole
@@ -1376,6 +1384,12 @@ load; work counts don't (performance.md, "Work counts"):
   `nav_gen::NavGenTask`) is in, when a bot first walks, and the main
   thread's ticks meanwhile (performance.md, "Nothing blocks the main
   thread").
+- A tick's cost on a map with a large generated navigation mesh: `cargo
+  test -p ultimate_gun_game --features dev --test it heavy::map_ticks --
+  --nocapture` (cs_militia, 6 bots, 3000 ticks by work counts: median,
+  p99, the bots' thinking, the systems of the costliest tick, each under
+  a budget; `CHIMERA_MAP_TICKS=cs_source:de_dust2` counts another map
+  and checks nothing; performance.md, "cs_militia's spikes").
 - What a world holds: `chimera_census [<top>]` (console; any app) counts
   entities by archetype (the `<top>` largest component sets), every
   archetype and table made (Bevy frees none), component types,

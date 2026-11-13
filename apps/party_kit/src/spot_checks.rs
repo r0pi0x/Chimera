@@ -10,7 +10,8 @@
 //! - **Stuck**: a standing player's box (Source's 32 by 72 units, the
 //!   widest the games make, from a stair step over the feet to the head,
 //!   `spawns::standing_box`) meets what characters collide with: the
-//!   world, props, the map's player clips (`nav_gen::PlayerClips`).
+//!   world, props, the map's player clips (their players-only collider,
+//!   `core::MapPlayerClips`).
 //! - **Off the main region**: a spot over none of the areas walked to from
 //!   a spawn point and back (0.75 m of slack, within 1.5 m of the floor)
 //!   of the map's navigation file where it ships one (its links: walks,
@@ -29,7 +30,7 @@ use chimera_sim::minigame::spawns;
 use chimera_world::map::{
     MapFloors, SPAWN_LIFT,
     nav::NavMesh,
-    nav_gen::{self, PlayerClips},
+    nav_gen,
     vis::ActiveVisibility,
 };
 
@@ -91,7 +92,6 @@ pub fn bots_mesh(world: &mut World, feet: &[Vec3]) -> NavMesh {
     // centres miss leaves spots off a region they are on (gg_lego_mafia_arena).
     let mut p = combat_arms::game::bots::brain::nav_params();
     p.slide = p.radius / 2.0;
-    let clips = PlayerClips::of(world);
     let vis = world.get_resource::<ActiveVisibility>().map(|v| v.0.clone());
     let mut state = SystemState::<SpatialQuery>::new(world);
     let q = state.get(world).expect("the spatial query");
@@ -99,7 +99,7 @@ pub fn bots_mesh(world: &mut World, feet: &[Vec3]) -> NavMesh {
         vis,
         walker: spawns::walker(),
     });
-    nav_gen::generate_within(&nav_gen::Clipped { q: &q, clips: &clips }, &|_| false, feet, &p, bounds)
+    nav_gen::generate_within(&q, &|_| false, feet, &p, bounds)
 }
 
 /// Whether `q` is over an area of `nav` that `inside` keeps (0.75 m of
@@ -126,14 +126,11 @@ pub fn file_nav(world: &World) -> Option<std::sync::Arc<NavMesh>> {
 }
 
 /// What a standing player's box at `feet` meets (`spots::standing_box`):
-/// the colliders, and `Entity::PLACEHOLDER` for a player clip.
-pub fn box_meets(q: &SpatialQuery, clips: &PlayerClips, feet: Vec3) -> Vec<Entity> {
+/// the colliders characters meet, the player clips' among them.
+pub fn box_meets(q: &SpatialQuery, feet: Vec3) -> Vec<Entity> {
     let (half, up) = spawns::standing_box();
     let centre = feet + Vec3::Y * up;
     let mut got = Vec::new();
-    if clips.overlaps_box(centre, half) {
-        got.push(Entity::PLACEHOLDER);
-    }
     let filter = SpatialQueryFilter::from_mask(CHARACTER_FILTER);
     q.shape_intersections_callback(
         &Collider::cuboid(half.x * 2.0, half.y * 2.0, half.z * 2.0),
@@ -150,12 +147,11 @@ pub fn box_meets(q: &SpatialQuery, clips: &PlayerClips, feet: Vec3) -> Vec<Entit
 
 /// The spots of `spots` a standing player is stuck in, with what each meets.
 pub fn stuck(world: &mut World, spots: &[Vec3]) -> Vec<(Vec3, Vec<Entity>)> {
-    let clips = PlayerClips::of(world);
     let mut state = SystemState::<SpatialQuery>::new(world);
     let q = state.get(world).expect("the spatial query");
     spots
         .iter()
-        .filter_map(|f| Some((*f, box_meets(&q, &clips, *f))).filter(|(_, h)| !h.is_empty()))
+        .filter_map(|f| Some((*f, box_meets(&q, *f))).filter(|(_, h)| !h.is_empty()))
         .collect()
 }
 
@@ -202,7 +198,6 @@ pub fn report(world: &mut World, feet: &[Vec3], bots: &NavMesh) -> SpotReport {
 /// is): where a spawn there lands (spawn points float over their floors:
 /// de_piranesi's up to about 1.7 m, Combat Arms' hellgate's 3.2 m).
 pub fn dropped(world: &mut World, points: &[Vec3]) -> Vec<Vec3> {
-    let clips = PlayerClips::of(world);
     let mut state = SystemState::<SpatialQuery>::new(world);
     let q = state.get(world).expect("the spatial query");
     let filter = SpatialQueryFilter::from_mask(CHARACTER_FILTER);
@@ -210,9 +205,7 @@ pub fn dropped(world: &mut World, points: &[Vec3]) -> Vec<Vec3> {
         .iter()
         .map(|p| {
             let from = *p + Vec3::Y * 0.1;
-            let world = q.cast_ray(from, Dir3::NEG_Y, 6.0, true, &filter).map(|h| h.distance);
-            let clip = clips.sweep(Vec3::ZERO, from, Dir3::NEG_Y, world.unwrap_or(6.0)).map(|h| h.0);
-            clip.or(world).map_or(*p, |d| from - Vec3::Y * d)
+            q.cast_ray(from, Dir3::NEG_Y, 6.0, true, &filter).map_or(*p, |h| from - Vec3::Y * h.distance)
         })
         .collect()
 }

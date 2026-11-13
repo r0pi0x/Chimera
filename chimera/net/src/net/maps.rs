@@ -275,6 +275,12 @@ fn safe_name(name: &str) -> bool {
         && name.chars().all(|c| c.is_ascii_alphanumeric() || "_-.+()[]".contains(c))
 }
 
+/// This process's own map load (or a client's join) is under way
+/// (`map::local_load_under_way`): the local player's map isn't ready.
+pub fn local_load_under_way(world: &World) -> bool {
+    crate::map::local_load_under_way(world)
+}
+
 /// The loaded map (its id and file hash) once it is in; None while a load
 /// is under way (the name set, the file not spawned yet).
 pub fn loaded_map(world: &World) -> Option<(String, Option<[u8; 32]>)> {

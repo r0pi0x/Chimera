@@ -174,14 +174,13 @@ fn sweep(map: &str) -> Option<String> {
     // spots on the floors its author marked, not the walk.
     let own = w.get_resource::<NavMesh>().filter(|n| !n.generated).is_some()
         || w.contains_resource::<chimera_world::map::MapFloors>();
-    let clips = nav_gen::PlayerClips::of(w);
     let (walker, bound) = spawns::walker_for(w);
     let (walk, bots) = {
         let mut state = SystemState::<SpatialQuery>::new(w);
         let q = state.get(w).unwrap();
         let bounds = bound.zip(vis.as_deref()).map(|(walker, vis)| nav_gen::Bounds { vis, walker });
         (
-            nav_gen::generate_within(&nav_gen::Clipped { q: &q, clips: &clips }, &|_| false, &feet, &walker, bounds),
+            nav_gen::generate_within(&q, &|_| false, &feet, &walker, bounds),
             nav_gen::generate(&q, &|_| false, &feet, &combat_arms::game::bots::brain::nav_params()),
         )
     };

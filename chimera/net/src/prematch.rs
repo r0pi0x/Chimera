@@ -13,8 +13,9 @@
 //!   phases don't step. It ends with `minigame::restart`: everyone joins
 //!   again, spawns together and the round starts as any match does
 //!   (waiting for the definition's `players.min`).
-//! - **Each player's status** (`LobbyRow`, `status::*`): bots and the
-//!   host are ready at once; a remote player is ready once its client
+//! - **Each player's status** (`LobbyRow`, `status::*`): bots are ready
+//!   at once, a listen host once its own load is done
+//!   (`map::LocalMapLoad`); a remote player is ready once its client
 //!   reported the server's map loaded (`server::ClientMap`), else what its
 //!   client reports (`LobbyReport`, client -> server: its join's stage and
 //!   the download's bytes, from `client::JoinProgress`; sent when the
@@ -404,12 +405,15 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
     let map = serving_map(world);
     let mut out = Vec::new();
     let mut others = Vec::new();
+    // A listen host is ready once its own load is done (spawned and
+    // settled behind its loading screen).
+    let host = if crate::net::maps::local_load_under_way(world) { status::LOADING } else { status::READY };
     for c in world.query::<&NetCharacter>().iter(world) {
         match c.owner {
             Some(HOST_ID) => out.push(LobbyRow {
                 id: Some(HOST_ID),
                 name: c.name.clone(),
-                status: status::READY,
+                status: host,
                 ..default()
             }),
             None => others.push(LobbyRow {

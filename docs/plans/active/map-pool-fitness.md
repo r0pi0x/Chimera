@@ -128,7 +128,7 @@ CSV is the second):
 
 | finding | cause | fix | before | after |
 |---|---|---|---|---|
-| cs_militia's spots on the hills | Source maps' player clips are not in the physics world (Source's movement sweeps `core::MapBrushes` itself): the spots' walk crossed the clip walls round the yard onto the hills and the flat beyond; no wall or clip of the world's own bounds the yard | the walk and the spot check meet the clips (`nav_gen::PlayerClips`, `Clipped`); the spots are drawn on the map's own `.nav` where it ships one (`MapData::floors`, `MapFloors`, loaded whatever the kit, apart from the bots' mesh) | 22061 of 24827 off its `.nav`; area 31564 m2 | 0 of 2739; area 4676 m2 |
+| cs_militia's spots on the hills | Source maps' player clips are not in the physics world (Source's movement sweeps `core::MapBrushes` itself): the spots' walk crossed the clip walls round the yard onto the hills and the flat beyond; no wall or clip of the world's own bounds the yard | the walk and the spot check meet the clips (first through a copy of the clip brushes of their own; since `ca-player-clips` through the clips' players-only collider, `core::MapPlayerClips`, which every character query meets); the spots are drawn on the map's own `.nav` where it ships one (`MapData::floors`, `MapFloors`, loaded whatever the kit, apart from the bots' mesh) | 22061 of 24827 off its `.nav`; area 31564 m2 | 0 of 2739; area 4676 m2 |
 | cs_havana's floor patch x -2315..-1306, y 1248..1696 | the patch is inside one big player clip (brush 1568 of 3217, about x -2688..-992, y 896..1584, z -224..640: an out-of-bounds yard). The map logic opens it: havana's `logic_auto` picks one of its blockade layouts at map spawn (`lc_blockage`; `block_a`..`d` disabled, `door_b`/`c`/`d` func_brushes enabled) and opens a route past the yard (bots' area 3758 m2 bare, 5228 with the logic); the walk then entered the clip, which it didn't see | as cs_militia's | 341 of 2811 off its `.nav` | 0 of 1917 |
 | de_chateau, de_port (roofs), cs_compound, cs_italy, cs_office, de_cbble, de_piranesi, de_tides | the walk reached floors the map's `.nav` leaves out (roofs, ledges) | the spots on the map's `.nav` | 17, 7, 2, 1, 1, 1, 1, 1 off | 0 each |
 | stuck spots | the check was a capsule (radius 0.4 m), shorter than a box at the corners, and missed the player clips | a standing player's box, Source's 32 by 72 units from a stair step to the head (`spawns::standing_box`, `stuck_at`), and the clips | 985 of 402942 spots, 145 of 222 maps | 0, 0 maps |
@@ -141,11 +141,11 @@ the same colliders (`map_fitness --probe` with and without `--client`).
 The earlier "nothing there" came from asking the physics world alone,
 which lacks the player clips; the player held a CS:S gun (Source's
 movement, which sweeps the clips) and was inside the clip on both sides.
-What does differ is the two movements: Combat Arms' movement asks the
+What did differ was the two movements: Combat Arms' movement asked the
 physics world only, so on a CS:S map a player holding a Combat Arms gun
-walks through every player clip (onto militia's hills, into havana's
-yard). Left for its own change (a collider for the clips on the
-characters' clip layer), not made here.
+walked through every player clip (onto militia's hills, into havana's
+yard). Fixed on its own (`ca-player-clips`: the clips' players-only
+collider, `core::MapPlayerClips`), which the spots now use too.
 
 What still shows (the second sweep): 181 spots off a map's main region,
 all on four maps whose spawn points have no walkable region (the spots

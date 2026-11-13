@@ -971,6 +971,7 @@ pub fn convert_level(game: &SourceGame, bsp: &Bsp, bytes: &[u8], name: &str, hdr
     data.collision_brushes = brushes;
     data.brush_tree = Some(tree);
     data.trace_skip = trace_skip(bsp, &leaves);
+    data.player_clips = player_clips(bsp, &leaves);
     data.water = water_volumes(bsp, &leaves);
     for (volume, entity) in analog_water_volumes(bsp, &leaves) {
         data.water_movers.push((data.water.len(), entity));
@@ -1840,6 +1841,28 @@ pub fn trace_skip(bsp: &Bsp, leaves: &[RawLeaf]) -> Vec<usize> {
         .chain(entity_hulls(bsp, leaves))
         .enumerate()
         .filter(|(_, (i, _, _))| !bsp.brushes[*i].flags.intersects(stops))
+        .map(|(n, _)| n)
+        .collect()
+}
+
+/// Indices into `collision_brushes` of the brushes that stop players only
+/// (player clip contents, in no `brush_hulls`: shots, props and ragdolls
+/// pass them). Monster clips stop no player (specs/cs_source/movement.md:
+/// the player's mask is solid, player clip, window, grate, moveable and
+/// monster contents) and are in no list.
+pub fn player_clips(bsp: &Bsp, leaves: &[RawLeaf]) -> Vec<usize> {
+    let blocks = BrushFlags::SOLID
+        .union(BrushFlags::WINDOW)
+        .union(BrushFlags::GRATE)
+        .union(BrushFlags::LADDER);
+    brush_hulls_indexed(bsp, leaves)
+        .into_iter()
+        .chain(entity_hulls(bsp, leaves))
+        .enumerate()
+        .filter(|(_, (i, _, _))| {
+            let f = bsp.brushes[*i].flags;
+            f.contains(BrushFlags::PLAYERCLIP) && !f.intersects(blocks)
+        })
         .map(|(n, _)| n)
         .collect()
 }

@@ -23,6 +23,10 @@
 //! sweeps and report slightly tilted normals, so `Space::cast` sweeps a
 //! hit again from where it stopped until it settles, and takes the
 //! surface's normal from a short ray at the contact.
+//! Its casts meet players-only surfaces (`CHARACTER_FILTER`): its own maps'
+//! collision blockers (which its bots and mercenaries pass there) and
+//! another game's map's player clips (`core::MapPlayerClips`' collider,
+//! which stop its bots too: docs/DESIGN.md "Clips across games").
 //!
 //! Numbers: data/movement.toml (`MovementData`, spec values marked by
 //! section). Per player: `CaCharacter` (figure and gear: sprint, stamina,
@@ -1236,10 +1240,12 @@ fn step(
     pushers: Query<(Entity, &CaPusher)>,
     mut commands: Commands,
     ai: Query<(), Or<(With<crate::core::Bot>, With<crate::core::Npc>)>>,
+    map_game: Option<Res<crate::core::MapGame>>,
 ) {
     let dt = clock.dt();
     let d = &*data;
     let s = d.meters_per_unit;
+    let ai_passes_clips = !crate::core::foreign_map(map_game.as_deref(), Some(super::GAME));
     let now = clock.now;
     let first = first.is_none_or(|f| f.0);
     let is_character = |e: Entity| characters.contains(e);
@@ -1282,8 +1288,12 @@ fn step(
         let space = Space {
             mover: &move_and_slide,
             // The map's collision blockers stop players only (world_dat.md
-            // Q5): bots and mercenaries pass them.
-            filter: SpatialQueryFilter::from_excluded_entities([entity]).with_mask(if ai.contains(entity) {
+            // Q5): bots and mercenaries pass them. Another game's map's
+            // players-only surfaces (Source's player clips) stop every
+            // player, bots too, as there.
+            filter: SpatialQueryFilter::from_excluded_entities([entity]).with_mask(if ai_passes_clips
+                && ai.contains(entity)
+            {
                 CHARACTER_FILTER.0 & !crate::core::PLAYER_CLIP_LAYER.0
             } else {
                 CHARACTER_FILTER.0

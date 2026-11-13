@@ -270,6 +270,27 @@ fn walls_keep_045_and_players_0135() {
     assert!(health(&sim, victim) > 0.99);
 }
 
+/// Grenades fly through player clips (the clip's collider is on
+/// `PLAYER_CLIP_LAYER`, which grenade sweeps leave out): an HE thrown at a
+/// player-clip wall crosses it, still flying on.
+#[test]
+fn grenades_pass_player_clips() {
+    use crate::stack::core::{MapBrush, MapBrushes, MapPlayerClips};
+    let mut sim = sim();
+    sim.ticks(2);
+    let w = sim.app.world_mut();
+    let mut brushes = w.resource_mut::<MapBrushes>();
+    brushes.0.push(MapBrush::from_box(Vec3::new(-3.0, 0.0, 2.0), Vec3::new(3.0, 4.0, 2.5)));
+    let i = brushes.0.len() - 1;
+    w.insert_resource(MapPlayerClips(vec![i]));
+    sim.ticks(3);
+    let (_, g) = place(&mut sim, HEGRENADE, Vec3::new(0.0, 1.5, 6.0), Vec3::NEG_Z * 10.0);
+    sim.ticks(40);
+    let p = projectiles(&mut sim).into_iter().find(|x| x.0 == g).unwrap();
+    assert!(p.2.z < 1.5, "stopped by the clip: {}", p.2);
+    assert!(p.1.velocity.z < 0.0, "bounced: {}", p.1.velocity);
+}
+
 /// The blast point of a grenade resting on the floor: 0.6 units up.
 fn he_damage_at(sim: &mut Sim, victim_at: Vec3, grenade_at: Vec3) -> (f32, Entity, Entity) {
     let victim = sim.spawn_character(victim_at, placeholder::ID);

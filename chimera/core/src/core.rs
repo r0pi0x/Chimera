@@ -57,7 +57,8 @@
 //! the physics would undo steps below its 0.01 mm tolerance while the body is
 //! awake); the collision world maps share with movement:
 //! `MapBrush`/`MapBrushes` (brush planes for exact swept-box movement, ladder
-//! flag), `MapBrushTree` (the BSP tree over the world's brushes: which of two
+//! flag), `MapPlayerClips` (which of them stop players only, and their
+//! players-only collider kept in step, `publish_player_clips`), `MapBrushTree` (the BSP tree over the world's brushes: which of two
 //! faces hit at the same distance a trace reports), `MapBrushCollider`,
 //! `MapTerrain` (terrain triangles as thin brushes, with a grid) and
 //! `MapTerrainCollider`, `MapWater` volumes; `Equip` (a map gives a character
@@ -1387,8 +1388,9 @@ pub const SOLID_LAYERS: avian3d::prelude::LayerMask = avian3d::prelude::LayerMas
 );
 /// Physics layer of map surfaces only characters' movement meets
 /// (`MapCollisionSet` with `characters` alone: Combat Arms' collision
-/// blockers). Spatial queries with `SOLID_LAYERS` (shots, sight, cover)
-/// pass through; `CHARACTER_FILTER` meets them.
+/// blockers; Source's player clips, `MapPlayerClips`). Spatial queries
+/// with `SOLID_LAYERS` or `NOT_SHADOW` (shots, sight, cover) pass through;
+/// `CHARACTER_FILTER` meets them.
 pub const PLAYER_CLIP_LAYER: avian3d::prelude::LayerMask = avian3d::prelude::LayerMask(1 << 6);
 /// Physics layer of map surfaces only traces meet (`MapCollisionSet` with
 /// `traces` alone: Combat Arms' non-solid detail and ray-hit-only world
@@ -1405,8 +1407,10 @@ pub const PHYSICS_CLIP_LAYER: avian3d::prelude::LayerMask = avian3d::prelude::La
 /// them: use `SOLID_LAYERS`, or `NOT_SHADOW` for queries of everything.
 pub const SHADOW_LAYER: avian3d::prelude::LayerMask = avian3d::prelude::LayerMask(1 << 4);
 /// Every layer but physics shadows (and physics clips, which only
-/// physics objects meet).
-pub const NOT_SHADOW: avian3d::prelude::LayerMask = avian3d::prelude::LayerMask(!SHADOW_LAYER.0 & !PHYSICS_CLIP_LAYER.0);
+/// physics objects meet, and player clips, which only characters' movement
+/// meets: invisible walls stop no gib, shell, glow or name trace).
+pub const NOT_SHADOW: avian3d::prelude::LayerMask =
+    avian3d::prelude::LayerMask(!SHADOW_LAYER.0 & !PHYSICS_CLIP_LAYER.0 & !PLAYER_CLIP_LAYER.0);
 /// Physics layer of loose items (dropped weapons): they collide with the
 /// world, props and each other but never with characters (Source's
 /// weapon collision group), so a weapon thrown from inside its dropper
@@ -2575,7 +2579,7 @@ impl Plugin for CorePlugin {
             .add_systems(FixedFirst, start_tick)
             .init_resource::<RoundRestarts>()
             .init_resource::<MapLadders>()
-            .add_systems(First, publish_brush_ladders)
+            .add_systems(First, (publish_brush_ladders, publish_player_clips))
             .init_resource::<FreezeTime>()
             .init_resource::<RespawnDue>()
             .configure_sets(
@@ -2736,6 +2740,29 @@ impl MapBrush {
     }
 }
 
+/// A convex solid's corners: where three of its planes (`n . p <= d`)
+/// meet inside all the others (bevel planes add none; a corner may repeat).
+pub fn plane_corners(planes: &[(Vec3, f32)]) -> Vec<Vec3> {
+    let n = planes.len();
+    let mut corners: Vec<Vec3> = Vec::new();
+    for i in 0..n {
+        for j in i + 1..n {
+            for k in j + 1..n {
+                let ((n1, d1), (n2, d2), (n3, d3)) = (planes[i], planes[j], planes[k]);
+                let denom = n1.dot(n2.cross(n3));
+                if denom.abs() < 1e-6 {
+                    continue;
+                }
+                let p = (n2.cross(n3) * d1 + n3.cross(n1) * d2 + n1.cross(n2) * d3) / denom;
+                if planes.iter().all(|(m, d)| m.dot(p) <= d + 1e-3) {
+                    corners.push(p);
+                }
+            }
+        }
+    }
+    corners
+}
+
 impl MapBrush {
     /// A convex solid from its face planes (`n . p <= d`, normals
     /// normalized), with the bevel planes a box sweep needs to be exact:
@@ -2746,23 +2773,7 @@ impl MapBrush {
     /// surf ramp built of pieces, a ghost wall at each seam.
     pub fn from_planes(mut planes: Vec<(Vec3, f32)>) -> Self {
         let n = planes.len();
-        // Corners: where three planes meet inside all the others.
-        let mut corners: Vec<Vec3> = Vec::new();
-        for i in 0..n {
-            for j in i + 1..n {
-                for k in j + 1..n {
-                    let ((n1, d1), (n2, d2), (n3, d3)) = (planes[i], planes[j], planes[k]);
-                    let denom = n1.dot(n2.cross(n3));
-                    if denom.abs() < 1e-6 {
-                        continue;
-                    }
-                    let p = (n2.cross(n3) * d1 + n3.cross(n1) * d2 + n1.cross(n2) * d3) / denom;
-                    if planes.iter().all(|(m, d)| m.dot(p) <= d + 1e-3) {
-                        corners.push(p);
-                    }
-                }
-            }
-        }
+        let corners = plane_corners(&planes);
         let on = |p: Vec3, (m, d): (Vec3, f32)| (m.dot(p) - d).abs() < 1e-3;
         let min = corners.iter().fold(Vec3::MAX, |a, c| a.min(*c));
         let max = corners.iter().fold(Vec3::MIN, |a, c| a.max(*c));
@@ -3033,6 +3044,67 @@ pub fn publish_brush_ladders(brushes: Option<Res<MapBrushes>>, mut ladders: ResM
 /// The loaded map's brushes (`MapData::collision_brushes`).
 #[derive(Resource, Clone, Debug, Default)]
 pub struct MapBrushes(pub Vec<MapBrush>);
+
+/// Indices into `MapBrushes` of the brushes that stop players only:
+/// Source's player clips (`MapData::player_clips`), the invisible walls
+/// that keep players in the play area. A movement that sweeps
+/// `MapBrushes` itself (Source's) meets them there; for every other
+/// movement Chimera keeps a collider of them on `PLAYER_CLIP_LAYER` in
+/// step (`publish_player_clips`), which only characters' movement meets
+/// (`CHARACTER_FILTER`): bullets, grenades, sight lines and other
+/// queries (`SOLID_LAYERS`, `NOT_SHADOW`) pass it, and it touches no body
+/// (props, ragdolls, loose items). docs/DESIGN.md "Clips across games".
+#[derive(Resource, Clone, Debug, Default)]
+pub struct MapPlayerClips(pub Vec<usize>);
+
+/// The collider of the map's player clips (`MapPlayerClips`): marked
+/// `MapBrushCollider` too, so a movement sweeping the brushes leaves it out.
+#[derive(Component, Debug)]
+pub struct PlayerClipCollider;
+
+/// `PlayerClipCollider` in step with `MapBrushes` and `MapPlayerClips`:
+/// one static compound of the clip brushes' convex hulls, rebuilt when
+/// either changes and gone with them. Server and predicting client build
+/// the same from the same map.
+pub fn publish_player_clips(
+    brushes: Option<Res<MapBrushes>>,
+    clips: Option<Res<MapPlayerClips>>,
+    existing: Query<Entity, With<PlayerClipCollider>>,
+    mut commands: Commands,
+) {
+    use avian3d::prelude::{Collider, CollisionLayers, LayerMask, RigidBody};
+    let changed = match (&brushes, &clips) {
+        (Some(b), Some(c)) => b.is_changed() || c.is_changed(),
+        _ => !existing.is_empty(),
+    };
+    if !changed {
+        return;
+    }
+    for e in &existing {
+        commands.entity(e).despawn();
+    }
+    let (Some(brushes), Some(clips)) = (brushes, clips) else { return };
+    let hulls: Vec<(Vec3, Quat, Collider)> = clips
+        .0
+        .iter()
+        .filter_map(|&i| brushes.0.get(i))
+        .filter_map(|b| Collider::convex_hull(&plane_corners(&b.planes)))
+        .map(|c| (Vec3::ZERO, Quat::IDENTITY, c))
+        .collect();
+    if hulls.is_empty() {
+        return;
+    }
+    commands.spawn((
+        Name::new("Map collision (player clips)"),
+        PlayerClipCollider,
+        MapBrushCollider,
+        RigidBody::Static,
+        Collider::compound(hulls),
+        // Met by queries with the layer only; no contacts with anything.
+        CollisionLayers::new(PLAYER_CLIP_LAYER, LayerMask::NONE),
+        Transform::default(),
+    ));
+}
 
 /// A grid over engine x and z of a list of brushes' bounds (a broad
 /// phase): which brushes a box may overlap, without testing them all.

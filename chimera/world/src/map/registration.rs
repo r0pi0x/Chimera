@@ -372,6 +372,7 @@ fn scoped_resources(app: &mut App) {
         .map_scoped::<water::WaterView>()
         .map_scoped::<MapTerrain>()
         .map_scoped::<MapTraceSkip>()
+        .map_scoped::<crate::core::MapPlayerClips>()
         .map_scoped::<MapPropBrushStart>();
 }
 

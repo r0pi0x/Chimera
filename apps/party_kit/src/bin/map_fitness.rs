@@ -574,16 +574,14 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
     let playable = w.get_resource::<PlayableArea>().map(|p| p.0);
     let candidates = chimera_sim::minigame::spawns::candidates(w);
     // Stuck: a standing CS:S player's box (32 x 72 units) at the spot, a
-    // few centimetres up, meets what a character's movement meets.
-    // The player clips Source's movement sweeps itself (`Entity::PLACEHOLDER`
-    // in the lists below).
-    let clips = nav_gen::PlayerClips::of(w);
+    // few centimetres up, meets what a character's movement meets (the
+    // player clips' collider among it).
     let (spot_walker, spot_bound) = chimera_sim::minigame::spawns::walker_for(w);
     let (stuck, probes) = {
         let used: &[Vec3] = if candidates.is_empty() { &feet } else { &candidates };
         let mut state = SystemState::<SpatialQuery>::new(w);
         let q = state.get(w).expect("the spatial query");
-        let hits = |at: Vec3| party_kit::spot_checks::box_meets(&q, &clips, at);
+        let hits = |at: Vec3| party_kit::spot_checks::box_meets(&q, at);
         let stuck: Vec<(Vec3, Vec<Entity>)> = used
             .iter()
             .filter_map(|f| Some((*f, hits(*f))).filter(|(_, h)| !h.is_empty()))
@@ -592,9 +590,6 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
         (stuck, probes)
     };
     let describe = |w: &World, e: Entity| {
-        if e == Entity::PLACEHOLDER {
-            return "a player clip".to_string();
-        }
         let name = |e: Entity| w.get::<Name>(e).map(|n| n.to_string());
         let parent = w.get::<ChildOf>(e).and_then(|c| name(c.parent()));
         match (name(e), parent) {
@@ -693,10 +688,10 @@ fn measure(id: &str, context: &LoadContext, o: &Opts, _mount: Option<&chimera_co
             vis,
             walker: chimera_sim::minigame::spawns::walker(),
         });
-        let nav = nav_gen::generate_within(&nav_gen::Clipped { q: &q, clips: &clips }, &|_| false, &feet, &p, bounds);
+        let nav = nav_gen::generate_within(&q, &|_| false, &feet, &p, bounds);
         // The spawn spots' walker (`spawns::walker`).
         let spot_bounds = spot_bound.zip(vis.as_deref()).map(|(walker, vis)| nav_gen::Bounds { vis, walker });
-        let spots = nav_gen::generate_within(&nav_gen::Clipped { q: &q, clips: &clips }, &|_| false, &feet, &spot_walker, spot_bounds);
+        let spots = nav_gen::generate_within(&q, &|_| false, &feet, &spot_walker, spot_bounds);
         (nav, spots)
     };
     row.nav_s = t.elapsed().as_secs_f32();
@@ -1227,7 +1222,7 @@ fn probe_report(sim: &mut Sim, probes: &[Vec3], at: &dyn Fn(Vec3) -> String) {
         );
         if let Some(b) = w.get_resource::<chimera_world::map::MapBrushes>() {
             let skip: BTreeSet<usize> = w
-                .get_resource::<chimera_world::map::MapTraceSkip>()
+                .get_resource::<chimera_core::core::MapPlayerClips>()
                 .map(|s| s.0.iter().copied().collect())
                 .unwrap_or_default();
             let half = Vec3::new(PLAYER_W, PLAYER_H - STEP - 0.05, PLAYER_W) / 2.0;

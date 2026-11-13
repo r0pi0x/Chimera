@@ -16,7 +16,9 @@
 //! CS:S registers its glyphs there for the other games' feeds, its
 //! headshot glyph as the headshot mark; none while the app draws one feed
 //! for every HUD, `client::kill_feed::OwnKillFeed`); the round's end: the win panel
-//! (`win_panel.rs`), or a centre print without its layout.
+//! (`win_panel.rs`), or a centre print without its layout; the round's
+//! start cue ("Let's go!") once the local player's own map load is done
+//! (`map::local_load_under_way`), never under the loading screen.
 //!
 //! Known shortcuts (docs/tech-debt.md): CS:S HUD parity (`client/game_hud.rs`,
 //! `hud_text.rs`, `weapon_select.rs`): matched to the reference client's
@@ -904,11 +906,15 @@ fn round_banner(
     mut was_live: Local<bool>,
     (fonts, hud, settings): (Res<UiFonts>, Option<Res<ActiveHud>>, Option<Res<crate::net::NetSettings>>),
     who: Query<(Option<&Name>, Has<LocalPlayer>, Option<&crate::net::NetCharacter>)>,
+    loading: (Option<Res<crate::map::LocalMapLoad>>, Option<Res<crate::map::JoiningServer>>),
     mut commands: Commands,
 ) {
     use crate::rules::rounds::{ATTACKERS, DEFENDERS, Phase};
-    // "Let's go!" as a round goes live.
-    let live = rounds.as_ref().is_some_and(|r| matches!(r.phase, Phase::Live { .. }));
+    // "Let's go!" as a round goes live, for the local player once its own
+    // map load is done (`map::local_load_under_way`): a round that went
+    // live under the loading screen sounds as it goes.
+    let loading = loading.0.is_some() || loading.1.is_some();
+    let live = !loading && rounds.as_ref().is_some_and(|r| matches!(r.phase, Phase::Live { .. }));
     if live
         && !*was_live
         && let Some(s) = sounds.as_ref().filter(|s| !s.start.is_empty())

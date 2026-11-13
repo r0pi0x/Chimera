@@ -331,6 +331,33 @@ pub struct MapHooks {
 #[derive(Resource, Default)]
 pub struct MapSettling;
 
+/// A front end's map load is under way here (`client::console`'s
+/// `start_map_load`), from its start, through the spawn and the
+/// settling, until the game is entered behind the loading screen: the
+/// local player's map isn't ready. What starts play waits for it: a
+/// listen host's next match (`minigame_net`), its row in the pre-match
+/// lobby, a network client's report that it has the map, and a match's
+/// start cues on this machine. Absent on a dedicated server (it shows
+/// nothing).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct LocalMapLoad {
+    /// The map's id.
+    pub map: String,
+}
+
+/// A network client is joining its server or following its change of
+/// level (from the server's notice, through any download, to the game
+/// entered): its player's map isn't ready either (`net::client`'s join
+/// stage, kept by `net::client::set_stage`).
+#[derive(Resource, Clone, Copy, Debug, Default)]
+pub struct JoiningServer;
+
+/// Whether this process's own map load is under way (`LocalMapLoad`), or
+/// a network client's join or change of level (`JoiningServer`).
+pub fn local_load_under_way(world: &World) -> bool {
+    world.contains_resource::<LocalMapLoad>() || world.contains_resource::<JoiningServer>()
+}
+
 /// `MapHooks::stepped`: starts a stepped spawn of the pending map, and runs
 /// one frame's share of it (at least one step, more until the budget is
 /// spent), saying whether it is done.

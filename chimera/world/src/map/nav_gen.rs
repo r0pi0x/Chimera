@@ -30,10 +30,10 @@
 //! thread"); the result is the same (`FloodQueries`: the same queries on
 //! the live world or the copy).
 //!
-//! A Source map's player clips aren't in the physics world (Source's
-//! movement sweeps them itself, `core::MapBrushes`): a flood that must
-//! meet them asks through `Clipped` (`PlayerClips`); a walker may stand
-//! off a cell's centre to fit (`NavGenParams::slide`).
+//! The walker meets what characters' movement meets (`NavGenParams::mask`,
+//! `core::CHARACTER_FILTER`): a Source map's player clips too, through
+//! their players-only collider (`core::MapPlayerClips`); it may stand off
+//! a cell's centre to fit (`NavGenParams::slide`).
 //!
 //! Known shortcuts: no ladders, jumps, crouch-only areas, hiding spots or
 //! visibility data; cells are tested at their centres only (a wall
@@ -277,90 +277,6 @@ impl FloodQueries for CollisionSnapshot {
             }
         }
         false
-    }
-}
-
-/// The brushes that stop players but that the physics world lacks: a
-/// Source map's player clips (`core::MapBrushes` listed by
-/// `MapTraceSkip`; its grates and ladder volumes come with them, which the
-/// physics world has too). Source's movement sweeps them itself, so a
-/// flood or a spot check that asks the physics world alone walks through
-/// them (cs_militia's yard opened onto the hills beyond its clip walls).
-/// Empty on maps without them.
-#[derive(Clone, Debug, Default)]
-pub struct PlayerClips {
-    brushes: Vec<crate::core::MapBrush>,
-    grid: crate::core::BrushGrid,
-}
-
-impl PlayerClips {
-    /// The loaded map's.
-    pub fn of(world: &World) -> Self {
-        let (Some(all), Some(skip)) = (world.get_resource::<super::MapBrushes>(), world.get_resource::<super::MapTraceSkip>())
-        else {
-            return Self::default();
-        };
-        Self::new(skip.0.iter().filter_map(|i| all.0.get(*i).cloned()).collect())
-    }
-
-    pub fn new(brushes: Vec<crate::core::MapBrush>) -> Self {
-        let grid = crate::core::BrushGrid::new(&brushes);
-        Self { brushes, grid }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.brushes.is_empty()
-    }
-
-    /// Whether an axis-aligned box (centre, half size) overlaps one.
-    pub fn overlaps_box(&self, centre: Vec3, half: Vec3) -> bool {
-        if self.brushes.is_empty() {
-            return false;
-        }
-        let mut near = Vec::new();
-        self.grid.near(&self.brushes, centre - half, centre + half, &mut near);
-        near.iter().any(|i| self.brushes[*i as usize].overlaps_box(centre, half, 0.0))
-    }
-
-    /// The nearest hit of a box (half size `half`; zero: a ray) moved from
-    /// `from` by `dir` up to `max`: its distance and the plane's normal.
-    pub fn sweep(&self, half: Vec3, from: Vec3, dir: Dir3, max: f32) -> Option<(f32, Vec3)> {
-        if self.brushes.is_empty() {
-            return None;
-        }
-        let to = from + *dir * max;
-        let mut near = Vec::new();
-        self.grid.near(&self.brushes, from.min(to) - half, from.max(to) + half, &mut near);
-        near.iter()
-            .filter_map(|i| self.brushes[*i as usize].sweep_box(half, from, to, 0.0))
-            .map(|(f, n)| (f * max, n))
-            .min_by(|a, b| a.0.total_cmp(&b.0))
-    }
-}
-
-/// A flood's queries with a map's player clips added (`PlayerClips`).
-pub struct Clipped<'a> {
-    pub q: &'a dyn FloodQueries,
-    pub clips: &'a PlayerClips,
-}
-
-impl FloodQueries for Clipped<'_> {
-    fn ray_hit(&self, origin: Vec3, dir: Dir3, max: f32, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> Option<(f32, Vec3)> {
-        let hit = self.q.ray_hit(origin, dir, max, filter, ignore);
-        let clip = self.clips.sweep(Vec3::ZERO, origin, dir, hit.map_or(max, |h| h.0));
-        clip.or(hit)
-    }
-
-    fn overlaps(&self, shape: &Collider, at: Vec3, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> bool {
-        let a = shape.aabb(at, Quat::IDENTITY, 0.0);
-        let half = (a.max - a.min) / 2.0;
-        self.clips.overlaps_box(at, half) || self.q.overlaps(shape, at, filter, ignore)
-    }
-
-    fn sweep_hits(&self, shape: &Collider, at: Vec3, dir: Dir3, max: f32, filter: &SpatialQueryFilter, ignore: &dyn Fn(Entity) -> bool) -> bool {
-        let a = shape.aabb(at, Quat::IDENTITY, 0.0);
-        let half = (a.max - a.min) / 2.0;
-        self.clips.sweep(half, at, dir, max).is_some() || self.q.sweep_hits(shape, at, dir, max, filter, ignore)
     }
 }
 
@@ -751,5 +667,6 @@ fn merge(g: &Grid<'_>) -> NavMesh {
         ladders: Vec::new(),
         places: Vec::new(),
         generated: true,
+        ..default()
     }
 }
