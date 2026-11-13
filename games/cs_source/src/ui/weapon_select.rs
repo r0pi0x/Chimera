@@ -15,10 +15,14 @@
 //! with Combat Arms): slot keys and `slot1`..`slot5`, `invnext` /
 //! `invprev` (CS:S's mouse-wheel commands), attack to pick, attack2 or
 //! `cancelselect` to close, the selection's sounds (`map::RoundSounds`).
-//! CS:S's own here: `hud_fastswitch` (0, its default: slot keys go through
-//! the row when its HUD has `HudWeaponSelection`, `takes_slots`; 1: they
-//! switch at once and the row shows the drawn weapon for a moment,
-//! `show_deploys`), the row's timings (`TIMES`, ours), the no-op
+//! CS:S's own here: `hud_fastswitch` (0: slot keys go through the row
+//! when its HUD has `HudWeaponSelection`, `takes_slots`; 1, ours by
+//! default, the user's choice for every app though CS:S's own default is
+//! 0: they switch at once and the row shows the drawn weapon for a
+//! moment, `show_deploys`). config.cfg saves only cvars off their
+//! default (`console::config_text`), so a saved config never held the
+//! old default 0 and the new one reaches every player who didn't choose
+//! 0 themselves; the row's timings (`TIMES`, ours), the no-op
 //! `slot6`..`slot10` of its number keys, and the look:
 //! `selection_layout`/`history_layout` are pure (tests).
 //!
@@ -91,7 +95,7 @@ impl Plugin for WeaponSelectPlugin {
             app,
             "hud_fastswitch",
             "0: a slot key opens the weapon selection, attack takes the weapon (CS:S's default); 1: slot keys \
-             switch at once.",
+             switch at once (ours by default).",
             |f| &mut f.0,
         );
         app.world_mut().resource_mut::<Console>().archive("hud_fastswitch");
@@ -107,9 +111,17 @@ impl Plugin for WeaponSelectPlugin {
     }
 }
 
-/// `hud_fastswitch`.
-#[derive(Resource, Default)]
+/// `hud_fastswitch`: 1 by default (number keys switch at once), in the
+/// party apps and the CS:S app alike, at the user's request; CS:S's own
+/// default is 0 (the selection row).
+#[derive(Resource)]
 pub struct FastSwitch(pub u8);
+
+impl Default for FastSwitch {
+    fn default() -> Self {
+        FastSwitch(1)
+    }
+}
 
 /// The row and the history taken down; the slot keys no longer go
 /// through the row.

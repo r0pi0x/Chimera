@@ -113,7 +113,9 @@
 //!   `SilencedFireRadius1..10`, the record's slot options
 //!   (`MuzzleOPtion`..`MechSightOption`) and the part offsets
 //!   (`MuzzlePVPosOff`/`RotOff` and the scope's and third person's:
-//!   `part_offsets`) (`merge_weapon_docs_with_mods`). The audit
+//!   `part_offsets`; a record holding another class of gun's offsets,
+//!   copied from its record, takes those its own model's other records
+//!   carry: `model_part_offsets`) (`merge_weapon_docs_with_mods`). The audit
 //!   (`heavy::rung_attachments`): of the install's 1942 pool guns, 1835
 //!   records carry the weapon's own name, the other 107 a spelling of it
 //!   or a shared list, two swapped (the `loaded` R870 and AT-22), which
@@ -130,6 +132,11 @@
 //! the set, `inventory` names what a player starts with.
 //!
 //! Known shortcuts:
+//! - A weapon record's part offsets copied from another class of gun (of
+//!   the install's, only `Glock_23_Champion`: the L96A1's) are replaced by
+//!   its model's usual ones (`model_part_offsets`); the game reads them as
+//!   they are (attachments.md "View model and world model"), drawing that
+//!   pistol's silencer half a metre ahead of it.
 //! - A mapped value is written only where our document already has the
 //!   table it goes in (the weapon's parts and hooks are ours; the install
 //!   changes their numbers), and `trigger.per_press` only where the key
@@ -1065,9 +1072,70 @@ fn doc_id(doc: &Table) -> Option<&str> {
     doc.get("id")?.as_str()
 }
 
+/// One model's pair of part offsets (muzzle, scope), each (position,
+/// rotation).
+type OffsetPair = [[[f64; 3]; 2]; 2];
+
+/// The part offsets weapon `w` is drawn with, first person and third
+/// (`model_part_offsets` over its view and world models).
+fn fitted_part_offsets(w: &WeaponRecord, file: &WeaponsFile) -> (OffsetPair, OffsetPair) {
+    let pv = |r: &WeaponRecord| [r.muzzle_pv_off, r.scope_pv_off];
+    let hh = |r: &WeaponRecord| [r.muzzle_hh_off, r.scope_hh_off];
+    (
+        model_part_offsets(w, file, |r| &r.pv_model, pv),
+        model_part_offsets(w, file, |r| &r.hh_model, hh),
+    )
+}
+
+/// The offsets `w`'s parts sit at on its model (`model` of a record): its
+/// record's own, unless they are another kind of gun's copied in: the
+/// record differs from the offsets most records of its model carry, and
+/// holds exactly what most records of a model of another gun class
+/// (`Guntype`) carry. Then its model's (the install's `Glock_23_Champion`
+/// carries the L96A1's, which put a silencer half a metre ahead of the
+/// pistol). Ours: the game reads the record's (attachments.md "View model
+/// and world model"); a data slip fixed here, so a skin's parts sit where
+/// its model's other skins' do. Offsets shared within a class (a rifle
+/// skin with another rifle's) stay: they fit, or the sweep
+/// (`heavy::attachment_fit`) says otherwise.
+fn model_part_offsets(
+    w: &WeaponRecord,
+    file: &WeaponsFile,
+    model: impl Fn(&WeaponRecord) -> &String,
+    offsets: impl Fn(&WeaponRecord) -> OffsetPair,
+) -> OffsetPair {
+    let own = offsets(w);
+    // The offsets most records of model `m` carry (ties: the first's).
+    let usual = |m: &str| -> Option<OffsetPair> {
+        let mut counts: Vec<(OffsetPair, usize)> = Vec::new();
+        for r in file.weapons.iter().filter(|r| model(r).eq_ignore_ascii_case(m)) {
+            let o = offsets(r);
+            match counts.iter_mut().find(|(x, _)| *x == o) {
+                Some((_, n)) => *n += 1,
+                None => counts.push((o, 1)),
+            }
+        }
+        let best = counts.iter().map(|(_, n)| *n).max()?;
+        counts.into_iter().find(|(_, n)| *n == best).map(|(o, _)| o)
+    };
+    let mine = model(w);
+    if mine.is_empty() {
+        return own;
+    }
+    let Some(ours) = usual(mine).filter(|o| *o != own) else {
+        return own;
+    };
+    let copied = file
+        .weapons
+        .iter()
+        .filter(|r| offsets(r) == own && r.gun_type != w.gun_type && !model(r).is_empty())
+        .any(|r| usual(model(r)) == Some(own));
+    if copied { ours } else { own }
+}
+
 /// The weapon's offsets for its parts' models
-/// (`attachments::PartOffsets`).
-fn part_offsets(w: &WeaponRecord) -> Value {
+/// (`attachments::PartOffsets`), `fitted_part_offsets`.
+fn part_offsets((pv, hh): (OffsetPair, OffsetPair)) -> Value {
     let one = |[pos, rot]: [[f64; 3]; 2]| {
         let mut t = Table::new();
         t.insert("pos".into(), floats(pos));
@@ -1075,10 +1143,10 @@ fn part_offsets(w: &WeaponRecord) -> Value {
         Value::Table(t)
     };
     let mut t = Table::new();
-    t.insert("muzzle_pv".into(), one(w.muzzle_pv_off));
-    t.insert("scope_pv".into(), one(w.scope_pv_off));
-    t.insert("muzzle_hh".into(), one(w.muzzle_hh_off));
-    t.insert("scope_hh".into(), one(w.scope_hh_off));
+    t.insert("muzzle_pv".into(), one(pv[0]));
+    t.insert("scope_pv".into(), one(pv[1]));
+    t.insert("muzzle_hh".into(), one(hh[0]));
+    t.insert("scope_hh".into(), one(hh[1]));
     Value::Table(t)
 }
 
@@ -1086,7 +1154,7 @@ fn part_offsets(w: &WeaponRecord) -> Value {
 /// sets in a document's `combat_arms:attachments` table: its defaults,
 /// sound radii and, with the modification file, the accepted list of its
 /// record of the same index (attachments.md Q13; none: empty, Q2).
-fn attachment_values(w: &WeaponRecord, index: usize, mods: Option<&ModFile>) -> Vec<Set> {
+fn attachment_values(w: &WeaponRecord, index: usize, file: &WeaponsFile, mods: Option<&ModFile>) -> Vec<Set> {
     const ATTACH: &str = super::attachments::ATTACHMENTS;
     let mut defaults = Table::new();
     for (k, v) in [
@@ -1104,7 +1172,7 @@ fn attachment_values(w: &WeaponRecord, index: usize, mods: Option<&ModFile>) -> 
         set(&["hooks", ATTACH, "defaults"], Value::Table(defaults)),
         set(&["hooks", ATTACH, "default_sight_visible"], w.default_scope_visible),
         set(&["hooks", ATTACH, "fire_sound_radius"], i64::from(w.fire_snd_radius)),
-        set(&["hooks", ATTACH, "part_offsets"], part_offsets(w)),
+        set(&["hooks", ATTACH, "part_offsets"], part_offsets(fitted_part_offsets(w, file))),
         set(
             &["hooks", ATTACH, "silenced_radius"],
             Value::Array(w.silenced_fire_radius.iter().map(|r| Value::Integer((*r).into())).collect()),
@@ -1251,7 +1319,7 @@ fn patch(doc: &mut Table, w: &WeaponRecord, file: &WeaponsFile, mods: Option<&Mo
     // class - 1; in none, ours stays).
     let id = file.weapons.iter().position(|x| std::ptr::eq(x, w));
     if let Some(i) = id {
-        for s in attachment_values(w, i, mods) {
+        for s in attachment_values(w, i, file, mods) {
             apply(doc, &s);
         }
     }
