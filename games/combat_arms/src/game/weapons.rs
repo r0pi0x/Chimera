@@ -142,7 +142,8 @@
 //! the look (`geometry_at`). Those spheres are Chimera's hit shapes
 //! (`sphere_shapes`: `core::Hitbox` spheres with region, priority and zone
 //! factor) and the tests above are the shapes' own (`Hitboxes::by_power`,
-//! `by_priority`), so the same rules hit another game's body through its
+//! `by_priority`: a box answers as the box, not its bounding sphere), so
+//! the same rules hit another game's body through its
 //! `core::Hitboxes` (a character of another identity that has them,
 //! rewound with lag compensation: `body_shapes`, `their_shapes`; a CS:S
 //! body's boxes, the character's box widened to hold them, `box_holding`,

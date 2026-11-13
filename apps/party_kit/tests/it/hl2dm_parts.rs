@@ -35,10 +35,16 @@ pub(crate) const LADDER: [&str; 5] =
 
 /// The party's gun game with `LADDER` and every game's knife.
 pub(crate) fn mixed_text(rung_extras: bool) -> String {
+    ladder_text(&LADDER, rung_extras)
+}
+
+/// The party's gun game (`test:gun_game_hl2dm`) with `ladder` and every
+/// game's knife.
+pub(crate) fn ladder_text(ladder: &[&str], rung_extras: bool) -> String {
     let text = originals::MINIGAMES.iter().find(|(f, _)| f.contains("gun_game_dust2")).unwrap().1;
     let start = text.find("ladder = [").unwrap();
     let end = start + text[start..].find(']').unwrap() + 1;
-    let ladder = format!("ladder = [{}]", LADDER.iter().map(|g| format!("\"{g}\"")).collect::<Vec<_>>().join(", "));
+    let ladder = format!("ladder = [{}]", ladder.iter().map(|g| format!("\"{g}\"")).collect::<Vec<_>>().join(", "));
     let text = format!("{}{}{}", &text[..start], ladder, &text[end..]);
     text.replace("originals:gun_game_dust2", "test:gun_game_hl2dm")
         .replace("weapons = [\"cs_source\", \"combat_arms\"]", "weapons = [\"cs_source\", \"hl2dm\", \"combat_arms\"]")
