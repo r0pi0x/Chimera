@@ -362,6 +362,14 @@ cargo run --features dev --bin ultimate_gun_game -- --offscreen 1920x1080 \
   run reads (seen on the dev box, where `+volume` on the command line was
   overridden); set it over the remote console once in the game
   (`{"method":"chimera/console","params":{"line":"volume 0.8"}}`).
+  A map change's timeline in the log: `loading panel up` (a party app's
+  panel), `map settled behind the loading screen` (the local load done),
+  `<minigame> starts on <map>` (a server's or listen host's next match),
+  `joined the game on` (a client in), and the start cues: `sound: start`
+  for music streams, `music cue: <key>` for Combat Arms' director's
+  sounds (`RoundStartSound`). A start cue before the load's end is a bug
+  (`map::LocalMapLoad`; tests `chimera_net` `local_load`, `chimera_sim`
+  `minigame::the_moments_wait_for_the_local_load`).
   Not recorded: voice chat (its own output). Test: `cargo test -p
   chimera_present --features dev --test it audio_record`.
 - At the end an offscreen run prints its frame times over the whole

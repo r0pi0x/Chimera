@@ -312,6 +312,8 @@ fn drive(
     let table = if facts.party.is_some() { &music.data.party.interface } else { &music.data.interface };
     for k in keys {
         if let Some(file) = table.get(&k).filter(|f| !f.is_empty()) {
+            // When a cue sounds (the log's timeline against a load's end).
+            info!("music cue: {k} ({file})");
             out.write(CaSound::local(file.clone()));
         }
     }

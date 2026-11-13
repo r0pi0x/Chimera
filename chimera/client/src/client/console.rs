@@ -2214,6 +2214,9 @@ struct MapLoad {
 pub fn start_map_load(w: &mut World, id: &str, file: Option<std::path::PathBuf>) {
     w.remove_resource::<FreshGame>();
     w.insert_resource(crate::map::LoadedMapName(id.to_string()));
+    // The local player's map isn't ready until the game is entered
+    // (`settle_map`): what starts play waits for it.
+    w.insert_resource(crate::map::LocalMapLoad { map: id.to_string() });
     // At the HDR level set now (mat_hdr_level), as the game does.
     let hdr_level = w.get_resource::<super::hdr::HdrSettings>().map_or(0, |s| s.level);
     // This load's own progress (the loading screen reads the resource).
@@ -2281,6 +2284,7 @@ pub fn finish_map_load(w: &mut World) {
     let (data, prepared) = match result {
         Ok(d) => d,
         Err(e) => {
+            w.remove_resource::<crate::map::LocalMapLoad>();
             w.resource_mut::<Console>()
                 .print(crate::console::Level::Error, format!("map {id}: {e}"));
             super::front_end::map_load_failed(w);
@@ -2408,6 +2412,7 @@ fn settle_map(w: &mut World) {
     info!("map settled behind the loading screen in {:.2} s", started.elapsed().as_secs_f32());
     w.remove_resource::<Settling>();
     w.remove_resource::<crate::map::MapSettling>();
+    w.remove_resource::<crate::map::LocalMapLoad>();
     LoadCaps::lift(w);
     // A HUD still being shown (out of time) gives the HUD back.
     w.remove_resource::<crate::gameplay::HudWarm>();
@@ -2429,6 +2434,7 @@ struct FreshGame;
 /// on it at the default tick.
 pub fn load_greybox(w: &mut World) {
     w.remove_resource::<MapLoad>();
+    w.remove_resource::<crate::map::LocalMapLoad>();
     // A spawn under way is called off (`unload_map` drops it).
     if let Some(spawning) = w.remove_resource::<Spawning>()
         && !spawning.was_paused

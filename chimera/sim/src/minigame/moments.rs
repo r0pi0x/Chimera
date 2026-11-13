@@ -18,6 +18,14 @@
 //! - the decided match for the local player (`result`): won, lost, a
 //!   draw.
 //!
+//! While this machine's own map load is under way
+//! (`map::local_load_under_way`: from its start, or a network client's
+//! join or the server's change of level, until the game is entered behind
+//! the loading screen) the moments hold still (a live match's held as
+//! waiting, no respawn countdown), so a match that goes live meanwhile
+//! starts for the director (its start cue) only once the local player is
+//! in.
+//!
 //! The callouts' moments (a rung up, the last rung's call) sound through
 //! the cue packs (`chimera_core::cues`), not here.
 
@@ -82,6 +90,23 @@ pub fn update(world: &mut World) {
         }
         return;
     };
+    // This machine's own map still loading (`map::local_load_under_way`):
+    // the moments hold (a live match's as waiting), so no start cue sounds
+    // behind the loading screen; play's start comes once the local player
+    // is in.
+    if crate::map::local_load_under_way(world) {
+        if let Some(m) = world.get_resource::<MinigameMoments>()
+            && (m.phase == MomentPhase::Live || m.respawn_in.is_some())
+        {
+            let held = MinigameMoments {
+                phase: if m.phase == MomentPhase::Live { MomentPhase::Waiting } else { m.phase },
+                respawn_in: None,
+                ..m.clone()
+            };
+            world.insert_resource(held);
+        }
+        return;
+    }
     let me = chimera_core::query_cache::first::<With<LocalPlayer>>(world);
     let alive =
         me.is_some_and(|e| world.get::<Dead>(e).is_none() && world.get::<Health>(e).is_some_and(|h| h.current > 0.0));

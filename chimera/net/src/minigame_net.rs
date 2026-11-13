@@ -50,8 +50,10 @@
 //!   (`minigame::MatchHold`: nothing starts or respawns), changes level
 //!   through the app's `changelevel` (a standalone game's `map`; clients
 //!   get `ChangingLevel` and show the loading dialog), and starts the
-//!   match only once the map is in here and every client reported it
-//!   loaded (`server::ClientMap`), or `CLIENT_GRACE` s after the map came
+//!   match only once the map is in here (a listen host's own load done:
+//!   spawned and settled behind its loading screen, `map::LocalMapLoad`)
+//!   and every client reported it loaded (`server::ClientMap`, sent once
+//!   the client's own load is done), or `CLIENT_GRACE` s after the map came
 //!   in (with the pre-match lobby on, `prematch`, as soon as the map is in
 //!   here: the lobby waits for the clients); a load that fails (or none in `MAP_LOAD_TIMEOUT` s) starts it
 //!   where the server is. A host's own `changelevel <map>` in a party
@@ -628,7 +630,11 @@ fn follow_map_change(world: &mut World) {
     let here = crate::net::current_map(world);
     let ready = match c.arrived {
         None => {
-            let arrived = crate::net::maps::loaded_map(world).is_some_and(|(id, _)| id == c.map);
+            // In here, and a listen host's own load done (spawned and
+            // settled behind its loading screen: `map::LocalMapLoad`), so
+            // its player isn't started on while it still loads.
+            let arrived = crate::net::maps::loaded_map(world).is_some_and(|(id, _)| id == c.map)
+                && !crate::net::maps::local_load_under_way(world);
             if arrived {
                 c.arrived = Some(now);
                 if crate::prematch::lobby_on(world) {

@@ -264,7 +264,74 @@ fn a_map_change_in_a_game_shows_the_loading_panel_until_it_is_in() {
     assert_eq!(menu(&sim).screen, Screen::Joining, "a server's level change");
     front_end::entered_game(sim.app.world_mut());
     sim.ticks(1);
+    assert_eq!(menu(&sim).screen, Screen::Joining, "a quick change: the panel's minimum");
+    sim.seconds(main_menu::LOADING_MIN_SECS);
     assert_eq!(menu(&sim).screen, Screen::InGame);
+}
+
+/// A small test map (a floor and a spawn point) the shell's load brings in
+/// a frame or two after it starts.
+fn quick_map() -> chimera_world::map::MapData {
+    use chimera_world::map::{MapBrush, MapData};
+    let mut data = MapData {
+        name: "test:quick".into(),
+        entity_scale: 0.0254,
+        ..default()
+    };
+    data.collision_brushes
+        .push(MapBrush::from_box(Vec3::new(-20.0, -1.0, -20.0), Vec3::new(20.0, 0.0, 20.0)));
+    data.spawns.push((Vec3::new(0.0, 0.1, 0.0), None));
+    data
+}
+
+/// A map change in a game (a host's rotation: the shell's load, which a
+/// quick swap finishes in a few frames): the loading panel is up from the
+/// load's first frame until the map is in and settled (the local load,
+/// `map::LocalMapLoad`, on all along), and at least
+/// `main_menu::LOADING_MIN_SECS` however quick the swap; the local load
+/// lasts while it shows, so nothing starts play under it; then the game.
+#[test]
+fn a_quick_map_change_shows_the_loading_panel_from_the_swap_to_the_load_s_end() {
+    use chimera_world::map::{LocalMapLoad, local_load_under_way};
+    let mut sim = local(false);
+    sim.app
+        .insert_resource(AppHooks {
+            build: "test",
+            load_map: |_, _| Ok(quick_map()),
+            load_map_file: |id, _, _| Err(format!("{id}: not in tests")),
+            map_file_bytes: |_| None,
+            unload_greybox: |_| {},
+            respawn_greybox: |_| {},
+        })
+        .add_systems(Update, chimera_client::client::console::finish_map_load.before(main_menu::MainMenuSystems));
+    sim.ticks(2);
+    assert_eq!(menu(&sim).screen, Screen::InGame);
+    chimera_client::client::console::start_map_load(sim.app.world_mut(), "test:quick", None);
+    let started = sim.app.world().resource::<Time<Real>>().elapsed_secs_f64();
+    sim.ticks(1);
+    assert_eq!(menu(&sim).screen, Screen::Loading, "up from the swap's first frame");
+    // Frame by frame: the panel is up while the local load is under way.
+    let mut frames = 0;
+    while local_load_under_way(sim.app.world()) {
+        assert_eq!(menu(&sim).screen, Screen::Loading, "frame {frames}: the panel shows while the map loads");
+        sim.ticks(1);
+        frames += 1;
+        assert!(frames < 600, "the load ends");
+    }
+    let ended = sim.app.world().resource::<Time<Real>>().elapsed_secs_f64();
+    assert!(
+        ended - started >= main_menu::LOADING_MIN_SECS - 1e-6,
+        "up at least the minimum: {:.3} s",
+        ended - started
+    );
+    assert!(!sim.app.world().contains_resource::<LocalMapLoad>());
+    sim.ticks(1);
+    assert_eq!(menu(&sim).screen, Screen::InGame, "in once the load and the minimum are done");
+    assert!(
+        ended - started < main_menu::LOADING_MIN_SECS + 0.1,
+        "no wait beyond the minimum for a quick swap: {:.3} s",
+        ended - started
+    );
 }
 
 /// A server playing the gun game on the greybox, and a client at the main
