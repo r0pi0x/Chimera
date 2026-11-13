@@ -178,7 +178,7 @@
 //!   delivered. In a network game the shooter's client predicts the round
 //!   (its meters, kick and events; no damage) and the server runs both
 //!   against where the shooter saw the others (lag compensation,
-//!   `weapon::lagcomp`, their boxes and looks then); nothing the client
+//!   `weapon::lagcomp`, their boxes, looks and posed spheres then); nothing the client
 //!   found is sent (no client-reported victim). The fire delay compares
 //!   the rounds' tick times (the client's timestamps). The server's clip
 //!   isn't separate: a shot dropped in its reload window spends the
@@ -2130,6 +2130,12 @@ impl Delivery<'_, '_> {
                     Some(_) => None,
                     None => their_shapes(t, intent, aabb, identity, boxes),
                 };
+                // Ours rewound: the spheres as they were posed on the tick
+                // the shooter saw (the kept hitboxes, `characters::
+                // hitboxes`), not this tick's pose at that place.
+                let kept = rewound
+                    .filter(|_| theirs.is_none())
+                    .and_then(|r| r.hitboxes.clone().map(|h| (h, r.frame().0, Quat::from_rotation_y(r.yaw))));
                 // The body's twist from its view (the legs lag the mouse).
                 let twist = yaws.get(&entity).map_or(0.0, |b| wrap_angle(b - intent.yaw));
                 // A body model's own pose; else the spec's skeleton.
@@ -2164,9 +2170,10 @@ impl Delivery<'_, '_> {
                 // player's two, characters.md 13.6: the hull is the
                 // player's, Open question 35).
                 let held = theirs.is_some() || data.first().is_some_and(|s| s.skeleton >= 2);
-                let shapes = match theirs {
-                    Some(t) => Later::ready(t),
-                    None => Later::new(move || sphere_shapes(data, &spheres())),
+                let shapes = match (theirs, kept) {
+                    (Some(t), _) => Later::ready(t),
+                    (None, Some((h, feet, turn))) => Later::new(move || body_shapes(&h.get().0, feet, turn)),
+                    (None, None) => Later::new(move || sphere_shapes(data, &spheres())),
                 };
                 let (min, max) = if held {
                     box_holding(min, max, &shapes)

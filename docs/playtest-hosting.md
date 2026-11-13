@@ -23,9 +23,10 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net43` since a broken thing's kill-feed line
-   (`net::ObjectDestroyed`: Combat Arms' auto turret) and the turret's
-   shots replicated (`CaTurretShots`); `net42` builds (playtest6's) and
+   The network version is `net44` since Combat Arms' animation state
+   carries each tracker's transition, looping and rate (`CaAnimNet`'s
+   `NetTrack`, so clients pose others as the server's lag compensation
+   does); `net43` builds (the auto turret's kill-feed line and shots) and
    earlier are refused.
 2. **Send each tester privately:** the release link, `<host address>:<port>`,
    their token, and `docs/playtest.md` if they are not unzipping it.

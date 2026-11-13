@@ -95,11 +95,17 @@
 //! (`CharacterData::validated`: an unknown body refused, unknown pieces
 //! none), keeps it on the client's entity (`CaClientLook`) and dresses
 //! that client's player in it (`wear_looks`). The server sends each
-//! character's selection (`CaLook`: players', bots'), its trackers' names
-//! and start ticks with the crouch, pitch and twist bytes (`CaAnimNet`,
-//! 8's legacy transport), and bodies (`CaBody`); a client plays other
-//! players' trackers from it and poses them with the received aim, as the
-//! spec's clients do.
+//! character's selection (`CaLook`: players', bots'), its trackers'
+//! playback (`NetTrack`: name, start tick, the running transition's
+//! previous animation and key, looping, rate) with the crouch, pitch and
+//! twist bytes (`CaAnimNet`, 8's legacy transport), and bodies (`CaBody`);
+//! a client keeps it by server tick (`interp::Snapshots`) and plays other
+//! players' trackers, crouch and aim as the server had them at the tick
+//! it draws them at (`ClientClock`: its render tick, what its commands'
+//! view tick says), so the spheres it draws are the ones lag
+//! compensation rewinds to (`weapon::lagcomp`; our own rounds take the
+//! kept spheres of that tick too, `weapons`), as the spec's clients pose
+//! others from the server's state.
 //!
 //! The follow-up answers (characters.md Open questions 2, 5, 9, 13-22):
 //! the hit spheres sit on the animated pose (every tracker and the aim)
@@ -264,7 +270,13 @@ use crate::{
         SimClock, SimSet, Team,
     },
     map::{BodyModel, BodyName, BodyNumber, BodySkin, CharacterModels, Corpse, Held, anim::Animator},
-    net::{NetAppExt, game::ServerTime, ordered::OrderedAppExt, server::Player},
+    net::{
+        NetAppExt,
+        game::ServerTime,
+        interp::{Around, HearTicks, InterpClock, Snapshots, hold_heard, remove_snapshots, write_snapshot},
+        ordered::OrderedAppExt,
+        server::Player,
+    },
     slots::GameIdentity,
     weapon::{Inventory, Magazine, Weapon, WeaponEvent, WeaponEventKind, WeaponState},
 };
@@ -780,19 +792,76 @@ impl CaPoseData {
 }
 
 /// What other players are told of a character (the server's): its
-/// trackers' names with the server tick each one's time 0 fell on, the
-/// crouch fraction, pitch and twist bytes (8's legacy transport), the
-/// death animation.
+/// upper, lower and crouch trackers' playback (`NetTrack`), the crouch
+/// fraction, pitch and twist bytes (8's legacy transport), the legs' yaw
+/// and the death animation. A client keeps it by server tick
+/// (`interp::Snapshots`) and plays others' trackers at the tick it draws
+/// them at (`follow`), the tick lag compensation rewinds their kept hit
+/// spheres to.
 #[derive(Component, Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
 pub struct CaAnimNet {
-    pub upper: (String, f64),
-    pub lower: (String, f64),
-    pub crouch: (String, f64),
+    pub upper: NetTrack,
+    pub lower: NetTrack,
+    pub crouch: NetTrack,
     pub r: u8,
     pub pitch: i8,
     pub twist: i8,
     pub death: Option<String>,
     pub body_yaw: f32,
+    /// Its movement's hull about the origin (`MovementState`: the radius
+    /// across, the bottom and the top, m; none: no hull), which a client
+    /// gives the character it draws (`follow_hulls`): its spheres stand
+    /// on that box's bottom on every machine (the crouch shrinks it).
+    pub hull: Option<[f32; 3]>,
+}
+
+/// One tracker's playback for the network (`CaAnimNet`): what stays the
+/// same while it plays, so it is sent when it changes (a new animation, a
+/// transition's end, a loop's wrap), not every tick.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct NetTrack {
+    /// The animation playing.
+    pub name: String,
+    /// The server tick (fractional, to an eighth) its playback's 0 fell
+    /// on: the transition's start while one runs (`from`), else the
+    /// time's 0.
+    pub start: f64,
+    /// The running transition's previous animation and its key (none: no
+    /// transition).
+    pub from: Option<(String, u16)>,
+    pub looping: bool,
+    pub rate: f32,
+}
+
+impl NetTrack {
+    /// Tracker `t` of `d` on server tick `tick` (`ms` ms long).
+    fn of(d: &Driver, t: &lithtech_formats::anim::Tracker, tick: u64, ms: f64) -> Self {
+        let elapsed = t.transition.unwrap_or(t.time);
+        let start = tick as f64 - elapsed as f64 / t.rate.max(1e-3) as f64 / ms.max(1e-3);
+        Self {
+            name: d.name_of(t).to_string(),
+            start: (start * 8.0).round() / 8.0,
+            from: t.transition.map(|_| {
+                let prev = d.list.entries.get(t.previous).map_or("", |e| e.name());
+                (prev.to_string(), t.previous_key.min(u16::MAX as usize) as u16)
+            }),
+            looping: t.looping,
+            rate: t.rate,
+        }
+    }
+
+    /// Plays it on `t` at server tick `tick` (`ms` ms long): as the
+    /// server's tracker was then (`Tracker::seek`).
+    fn play(&self, list: &lithtech_formats::anim::AnimList, t: &mut lithtech_formats::anim::Tracker, tick: f64, ms: f64) {
+        let Some(entry) = list.find(&self.name) else { return };
+        let from = self.from.as_ref().map(|(n, k)| (list.find(n).unwrap_or(entry), *k as usize));
+        let elapsed = ((tick - self.start) * ms * self.rate.max(1e-3) as f64).max(0.0);
+        t.looping = self.looping;
+        if t.rate != self.rate {
+            t.set_rate(self.rate);
+        }
+        t.seek(list, entry, from, elapsed.round() as u32);
+    }
 }
 
 /// A dead player's body (10): where it lies, facing, its owner, the death
@@ -836,6 +905,15 @@ impl Plugin for CaCharactersPlugin {
             .add_systems(FixedUpdate, hitboxes.after(drive))
             .add_systems(FixedUpdate, wear_looks.before(setup).run_if(core::authoritative))
             .add_systems(FixedUpdate, client_clock.before(drive).run_if(core::shows_others))
+            // Where a client draws others (after `interp`'s drawing), so the
+            // next tick's spheres stand on the hull of the place drawn.
+            .add_systems(
+                RunFixedMainLoop,
+                follow_hulls
+                    .in_set(bevy::app::RunFixedMainLoopSystems::AfterFixedMainLoop)
+                    .after(crate::map::interp::InterpSystems::Ease)
+                    .run_if(resource_equals(NetRole::Client)),
+            )
             .init_resource::<preload::LadderModels>()
             .init_resource::<bodies_on_demand::BodiesOnDemand>()
             .init_resource::<held_on_demand::HeldOnDemand>()
@@ -901,7 +979,9 @@ fn register(app: &mut App) {
         .replicate::<CaRungLook>()
         .ordered::<CaRungLook>()
         .replicate::<CaAnimNet>()
-        .ordered::<CaAnimNet>()
+        .set_receive_fns::<CaAnimNet>(write_snapshot::<CaAnimNet>, remove_snapshots::<CaAnimNet>)
+        .ordered_with::<CaAnimNet>(write_snapshot::<CaAnimNet>, remove_snapshots::<CaAnimNet>)
+        .add_systems(PreUpdate, hold_heard::<CaAnimNet>.after(HearTicks).run_if(resource_equals(NetRole::Client)))
         .replicate::<CaBody>()
         .ordered::<CaBody>()
         .add_client_message::<CaLookRequest>(Channel::Ordered)
@@ -1373,7 +1453,7 @@ fn drive(
         Entity,
         (&mut CaAnim, &mut CaPose, Option<&mut CaAnimNet>),
         (&Intent, &MovementState, Option<&CaMovement>, &Health, Has<Dead>, Has<LocalPlayer>),
-        (Option<&Inventory>, Option<&CaProtected>, Option<&Visibility>),
+        (Option<&Inventory>, Option<&CaProtected>, Option<&Visibility>, Option<&Snapshots<CaAnimNet>>),
         (Option<&mut Animator>, Option<&GameIdentity>, Option<&Selection>, Option<&mut CaShownAnim>, Option<&BodyModel>),
     )>,
     weapons: Query<(&Weapon, Option<&WeaponState>, Option<&Magazine>, Option<&CaZoom>, Option<&CaSpread>)>,
@@ -1387,7 +1467,7 @@ fn drive(
     let client = role.as_deref().is_some_and(|r| *r == NetRole::Client);
     let ms = (clock.delta.as_secs_f64() * 1000.0).round() as u32;
     let unit = unit();
-    for (e, (mut anim, mut pose, net), (intent, state, movement, health, dead, local), (inventory, protected, visibility), (animator, identity, look, mut shown, wears)) in
+    for (e, (mut anim, mut pose, net), (intent, state, movement, health, dead, local), (inventory, protected, visibility, kept), (animator, identity, look, mut shown, wears)) in
         &mut characters
     {
         // Our body only on our characters (another game's identity wears
@@ -1408,10 +1488,20 @@ fn drive(
             commands.entity(e).insert(v);
         }
         let weapon = inventory.and_then(|i| i.active).and_then(|w| weapons.get(w).ok());
-        let r = movement.map_or(0.0, |m| m.crouch_rate);
+        let followed = client && !local;
+        // Another player's character on a client: the server's state at
+        // the tick this client draws it at (its crouch too: its movement
+        // isn't this machine's).
+        let from_net = match (followed, net.as_deref(), server_time.as_deref()) {
+            (true, Some(n), Some(clock)) => Some((Followed::at(n, kept, clock.0), clock.0, clock.1)),
+            _ => None,
+        };
+        let r = match &from_net {
+            Some((f, ..)) => f.r,
+            None => movement.map_or(0.0, |m| m.crouch_rate),
+        };
         let height = (state.hull_max.y - state.hull_min.y) / unit;
         let squash = if height > 1.0 { (height / STAND_HEIGHT).min(1.0) } else { 1.0 };
-        let followed = client && !local;
         // The body still showing plays what the character does, on its own
         // skeleton, until the character wears the new one's (or dies, or
         // is another game's: nothing of it shows).
@@ -1424,8 +1514,8 @@ fn drive(
         }
         if let Some(CaShownAnim(old)) = shown.as_deref_mut() {
             if followed {
-                if let (Some(net), Some(clock)) = (net.as_deref(), server_time.as_deref()) {
-                    follow(old, net, clock.0, clock.1);
+                if let Some((f, tick, step)) = &from_net {
+                    follow(old, f, *tick, *step);
                 }
             } else {
                 (old.pending, old.shot, old.damaged) = (anim.pending, anim.shot, anim.damaged);
@@ -1443,8 +1533,8 @@ fn drive(
             anim.pending = None;
             anim.shot = false;
         } else if followed {
-            if let (Some(net), Some(clock)) = (net.as_deref(), server_time.as_deref()) {
-                follow(&mut anim, net, clock.0, clock.1);
+            if let Some((f, tick, step)) = &from_net {
+                follow(&mut anim, f, *tick, *step);
             }
             // The hit kick shows for one aim update (display only).
             let kick = std::mem::take(&mut anim.kick);
@@ -1466,7 +1556,7 @@ fn drive(
             anim.twist = skeleton::clamp_aim(-wrap(intent.yaw - body));
         }
         let body_yaw = if followed {
-            net.as_deref().map_or(intent.yaw, |n| n.body_yaw)
+            from_net.as_ref().map_or(intent.yaw, |(f, ..)| f.body_yaw)
         } else {
             intent.yaw + anim.twist
         };
@@ -1499,7 +1589,7 @@ fn drive(
             animator.yaw = Some(body_yaw);
         }
         if !client {
-            let next = net_of(&anim, &clock, r, body_yaw);
+            let next = net_of(&anim, &clock, r, body_yaw, state);
             match net {
                 Some(mut n) => {
                     if *n != next {
@@ -1680,19 +1770,21 @@ fn socket_on(posed: &Posed, bone: &str, at: Vec3) -> Option<Vec3> {
     Some(p + q * Vec3::new(at.x, at.y, -at.z))
 }
 
-/// The server's animation state for the network: each tracker's name
-/// and the server tick its time 0 fell on.
-fn net_of(anim: &CaAnim, clock: &SimClock, r: f32, body_yaw: f32) -> CaAnimNet {
+/// The ms a tick of `step` s advances the trackers by (`drive`'s).
+fn tick_ms(step: f64) -> f64 {
+    (step * 1000.0).round()
+}
+
+/// The server's animation state for the network (`CaAnimNet`).
+fn net_of(anim: &CaAnim, clock: &SimClock, r: f32, body_yaw: f32, state: &MovementState) -> CaAnimNet {
     let d = &anim.driver;
-    let step = clock.delta.as_secs_f64().max(1e-9);
-    let at = |t: &lithtech_formats::anim::Tracker| {
-        let start = clock.tick as f64 - t.time as f64 / 1000.0 / (t.rate.max(1e-3) as f64) / step;
-        (d.name_of(t).to_string(), start.round())
-    };
+    let ms = tick_ms(clock.delta.as_secs_f64());
+    let hull = (state.hull_max != state.hull_min).then(|| [state.hull_max.x.max(state.hull_max.z), state.hull_min.y, state.hull_max.y]);
     CaAnimNet {
-        upper: at(&d.upper),
-        lower: at(&d.lower),
-        crouch: at(&d.crouch),
+        hull,
+        upper: NetTrack::of(d, &d.upper, clock.tick, ms),
+        lower: NetTrack::of(d, &d.lower, clock.tick, ms),
+        crouch: NetTrack::of(d, &d.crouch, clock.tick, ms),
         r: (r.clamp(0.0, 1.0) * 255.0).round() as u8,
         pitch: skeleton::aim_byte(anim.pitch),
         twist: skeleton::aim_byte(anim.twist),
@@ -1701,32 +1793,111 @@ fn net_of(anim: &CaAnim, clock: &SimClock, r: f32, body_yaw: f32) -> CaAnimNet {
     }
 }
 
-/// A client's view of the server's tick (now) and tick length, for
-/// other players' trackers.
+/// A client's render tick (the server tick it draws others at:
+/// `interp::InterpClock::render_tick`, what its commands' view tick
+/// says) and tick length (s), for other players' trackers.
 #[derive(Resource, Clone, Copy, Debug)]
 pub struct ClientClock(pub f64, pub f64);
 
-/// Other players' trackers from the server's state (a client).
-fn follow(anim: &mut CaAnim, net: &CaAnimNet, tick: f64, step: f64) {
-    let list = anim.driver.list.clone();
-    let d = &mut anim.driver;
-    for (t, (name, start)) in [(&mut d.upper, &net.upper), (&mut d.lower, &net.lower), (&mut d.crouch, &net.crouch)] {
-        let Some(entry) = list.find(name) else { continue };
-        if t.current != entry {
-            t.start(entry);
-        }
-        let ms = ((tick - start) * step * 1000.0).max(0.0) as u32;
-        t.set_time(&list, ms);
-    }
-    d.crouch.multiplier = net.r as f32 / 255.0;
-    anim.pitch = skeleton::from_aim_byte(net.pitch);
-    anim.twist = skeleton::from_aim_byte(net.twist);
+/// What a client plays another player's character from at render tick
+/// `tick` (`CaAnimNet`'s kept snapshots, else the newest value): the
+/// trackers as the last state at or before it said, the crouch, aim and
+/// legs' yaw between the two around it (as its place is).
+struct Followed<'a> {
+    net: &'a CaAnimNet,
+    hull: Option<[f32; 3]>,
+    r: f32,
+    pitch: f32,
+    twist: f32,
+    body_yaw: f32,
 }
 
-/// A client keeps `ClientClock` from the network's server time.
+impl<'a> Followed<'a> {
+    fn at(newest: &'a CaAnimNet, kept: Option<&'a Snapshots<CaAnimNet>>, tick: f64) -> Self {
+        let of = |n: &'a CaAnimNet| Followed {
+            net: n,
+            hull: n.hull,
+            r: n.r as f32 / 255.0,
+            pitch: skeleton::from_aim_byte(n.pitch),
+            twist: skeleton::from_aim_byte(n.twist),
+            body_yaw: n.body_yaw,
+        };
+        match kept.map(|k| k.around(tick)) {
+            Some(Around::Between((_, a), (_, b), f)) => {
+                let (a, b) = (of(a), of(b));
+                let turn = wrap(b.body_yaw - a.body_yaw);
+                let hull = match (a.hull, b.hull) {
+                    (Some(x), Some(y)) => Some(std::array::from_fn(|i| x[i] + (y[i] - x[i]) * f)),
+                    (x, _) => x,
+                };
+                Followed {
+                    net: a.net,
+                    hull,
+                    r: a.r + (b.r - a.r) * f,
+                    pitch: a.pitch + (b.pitch - a.pitch) * f,
+                    twist: a.twist + (b.twist - a.twist) * f,
+                    body_yaw: a.body_yaw + turn * f,
+                }
+            }
+            Some(Around::After((_, a))) => of(a),
+            _ => of(newest),
+        }
+    }
+}
+
+/// Other players' trackers and aim from the server's state at render
+/// tick `tick` (ticks `step` s long; a client).
+fn follow(anim: &mut CaAnim, net: &Followed, tick: f64, step: f64) {
+    let list = anim.driver.list.clone();
+    let ms = tick_ms(step);
+    let d = &mut anim.driver;
+    let n = net.net;
+    for (t, track) in [(&mut d.upper, &n.upper), (&mut d.lower, &n.lower), (&mut d.crouch, &n.crouch)] {
+        track.play(&list, t, tick, ms);
+    }
+    d.crouch.multiplier = net.r;
+    anim.pitch = net.pitch;
+    anim.twist = net.twist;
+}
+
+/// Other players' hulls on a client (their movement runs on the server
+/// only): the server's at the tick drawn (`CaAnimNet::hull`), as the
+/// hull and an upright cylinder collider as Combat Arms' movement makes
+/// it, so the box the spheres stand on (and that shots and lag
+/// compensation take) is the server's, crouched or not.
+#[allow(clippy::type_complexity)]
+fn follow_hulls(
+    clock: Option<Res<InterpClock>>,
+    mut q: Query<(&CaAnimNet, Option<&Snapshots<CaAnimNet>>, &mut MovementState, Option<&mut avian3d::prelude::Collider>), (Without<LocalPlayer>, Without<CaMovement>)>,
+) {
+    let Some(clock) = clock.filter(|c| c.running) else { return };
+    for (net, kept, mut state, collider) in &mut q {
+        let Some([radius, bottom, top]) = Followed::at(net, kept, clock.render_tick).hull else { continue };
+        let (min, max) = (Vec3::new(-radius, bottom, -radius), Vec3::new(radius, top, radius));
+        if state.hull_min != min || state.hull_max != max {
+            state.hull_min = min;
+            state.hull_max = max;
+        }
+        // A hull about the origin (Combat Arms' movement): its cylinder.
+        if let Some(mut c) = collider
+            && (bottom + top).abs() < 1e-4
+        {
+            let half = (top - bottom) / 2.0;
+            let same = c
+                .shape_scaled()
+                .as_cylinder()
+                .is_some_and(|y| (y.half_height - half).abs() < 1e-4 && (y.radius - radius).abs() < 1e-4);
+            if !same {
+                *c = avian3d::prelude::Collider::cylinder(radius, 2.0 * half);
+            }
+        }
+    }
+}
+
+/// A client keeps `ClientClock` from its interpolation clock.
 pub fn client_clock(world: &mut World) {
-    if let Some(t) = ServerTime::of(world) {
-        world.insert_resource(ClientClock(t.tick, t.step));
+    if let (Some(t), Some(clock)) = (ServerTime::of(world), world.get_resource::<InterpClock>()) {
+        world.insert_resource(ClientClock(clock.render_tick, t.step));
     }
 }
 

@@ -193,6 +193,44 @@ fn transition() {
     assert_eq!((t.transition, t.time), (None, 30));
 }
 
+/// `Tracker::seek` reaches what `update` does after a start, in the
+/// transition and past it, looping and not (another machine's copy).
+#[test]
+fn seek_matches_playback() {
+    let mut w = W::default();
+    w.f32s(&[1.; 3]).str("from").u32(2).u32(0).u32(2).u32(0).str("").u32(500).str("");
+    w.u32(1).i16(0).i16(0).i16(0).u32(0);
+    let m = model(2, vec![w.0]);
+    let list = AnimList::build(&m, &[]);
+    for looping in [true, false] {
+        let mut played = Tracker::on(1, true);
+        run(&mut played, &list, 100);
+        let key = played.b;
+        played.start(0);
+        played.looping = looping;
+        let mut elapsed = 0;
+        for _ in 0..20 {
+            run(&mut played, &list, 15);
+            elapsed += 15;
+            let mut seen = Tracker::on(1, true);
+            seen.looping = looping;
+            seen.seek(&list, 0, Some((1, key)), elapsed);
+            assert_eq!((seen.transition, seen.time), (played.transition, played.time), "{elapsed} ms");
+            // The tick a loop wraps on, `update` holds the last key (its
+            // scan isn't redone): the pose agrees from the next one.
+            if played.a != played.b || played.transition.is_some() {
+                assert_eq!(seen.pose(&list, 0), played.pose(&list, 0), "{elapsed} ms");
+            }
+        }
+    }
+    // No transition: from t = 0 of a playing entry.
+    let mut played = Tracker::on(0, true);
+    let mut seen = Tracker::on(0, true);
+    run(&mut played, &list, 70);
+    seen.seek(&list, 0, None, 70);
+    assert_eq!((seen.time, seen.pose(&list, 0)), (played.time, played.pose(&list, 0)));
+}
+
 /// "Two-tracker blend".
 #[test]
 fn two_tracker_blend() {

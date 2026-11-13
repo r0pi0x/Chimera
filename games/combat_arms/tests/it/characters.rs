@@ -1270,7 +1270,9 @@ fn a_character_change_keeps_the_shown_body_on_its_own_skeleton() {
 // Network: other players' animation state comes from the server.
 
 /// Client 1 runs forward; client 0 sees its trackers (`CaAnimNet`) and
-/// plays them: the legs' `LRF`, the torso's `URFRAmF`.
+/// plays them: the legs' `LRF`, the torso's `URFRAmF`, past their
+/// transitions (a followed tracker once stayed at a transition's first
+/// frame), at the time the server's tracker had on the tick drawn.
 #[test]
 fn net_others_follow_the_server() {
     use chimera_net::{harness::NetSim, net::memory::LinkConditions};
@@ -1293,7 +1295,7 @@ fn net_others_follow_the_server() {
         let mut q = world.query::<(Entity, &CaAnimNet, &CaAnim)>();
         q.iter(world)
             .filter(|(e, ..)| *e != me)
-            .map(|(_, n, a)| (n.lower.0.clone(), a.playing().1.to_string(), a.playing().0.to_string()))
+            .map(|(_, n, a)| (n.lower.name.clone(), a.playing().1.to_string(), a.playing().0.to_string()))
             .next()
             .expect("the other player's state")
     };
@@ -1301,6 +1303,56 @@ fn net_others_follow_the_server() {
     sim.clients[1].app.world_mut().get_mut::<chimera_core::core::Intent>(other).unwrap().move_axis = Vec2::Y;
     sim.ticks(40);
     assert_eq!(them(&mut sim), ("LRF".into(), "LRF".into(), "URFRAmF".into()));
+    // The legs' tracker as the server's was on the tick client 0 draws.
+    let id1 = sim.client_id(1);
+    let seen = NetSim::owned_by(&mut sim.clients[0], Some(id1)).unwrap();
+    let server = sim.character_of(1).unwrap();
+    let drawn = sim.clients[0].app.world().resource::<chimera_net::net::interp::InterpClock>().render_tick;
+    let tracker = |w: &World, e: Entity| w.get::<CaAnim>(e).map(|a| (a.driver.lower.transition, a.driver.lower.time)).unwrap();
+    let (transition, time) = tracker(sim.clients[0].app.world(), seen);
+    assert_eq!(transition, None, "past the transition");
+    let (_, now) = tracker(sim.server.app.world(), server);
+    let tick = sim.server.app.world().resource::<chimera_core::core::SimClock>().tick;
+    let behind = ((tick as f64 - drawn) * TICK_INTERVAL * 1000.0).round() as i64;
+    let length = sim.server.app.world().get::<CaAnim>(server).map(|a| a.driver.list.entries[a.driver.lower.current].length()).unwrap() as i64;
+    let off = (now as i64 - behind - time as i64).rem_euclid(length.max(1));
+    assert!(off.min(length - off) <= 20, "the server's {now} ms {behind} ms later, drawn {time} ms");
+}
+
+/// Client 1 crouches; client 0 gives its character the server's hull
+/// (`CaAnimNet::hull`: the box its spheres stand on, which lag
+/// compensation keeps), not a standing one: before, its feet were 0.18 m
+/// under the server's and so were its drawn spheres.
+#[test]
+fn net_others_crouch_on_the_servers_hull() {
+    use chimera_net::{harness::NetSim, net::memory::LinkConditions};
+    let link = LinkConditions {
+        latency: std::time::Duration::from_millis(30),
+        jitter: std::time::Duration::ZERO,
+        loss: 0.0,
+    };
+    let mut sim = NetSim::new(CaSim, link, 7, 2, |app: &mut App| {
+        app.add_plugins(GreyboxMapPlugin);
+    });
+    sim.set_frame(TICK_INTERVAL);
+    sim.until_joined(600);
+    sim.ticks(240);
+    let other = sim.local_player(1).unwrap();
+    sim.clients[1].app.world_mut().get_mut::<chimera_core::core::Intent>(other).unwrap().crouch = true;
+    sim.ticks(60);
+    let id1 = sim.client_id(1);
+    let seen = NetSim::owned_by(&mut sim.clients[0], Some(id1)).unwrap();
+    let server = sim.character_of(1).unwrap();
+    let height = |w: &World, e: Entity| {
+        let t = w.get::<Transform>(e).unwrap().translation;
+        let a = w.get::<avian3d::prelude::ColliderAabb>(e).unwrap();
+        (a.max.y - a.min.y, t.y - a.min.y)
+    };
+    let (h_server, feet_server) = height(sim.server.app.world(), server);
+    let (h_seen, feet_seen) = height(sim.clients[0].app.world(), seen);
+    assert!(h_server < 1.6, "crouched on the server: {h_server}");
+    assert!((h_seen - h_server).abs() < 0.01, "client's box {h_seen} m tall, the server's {h_server} m");
+    assert!((feet_seen - feet_server).abs() < 0.01, "client's feet {feet_seen} m under the origin, the server's {feet_server} m");
 }
 
 /// Looks over the network (characters.md 1, "The selection"): each
