@@ -89,8 +89,8 @@ test-group = 'heavy'
 threads-required = 2
 
 # The session tests play whole ladders on several real maps in one process:
-# `session_materials`'s four tests take 4-8 minutes each (it was one test of
-# 13-17, killed at the heavy tests' 720 s on 00e10257), `session_maps` 535 s
+# `session_materials`'s four tests take 8-26 s each (it was one test of
+# 13-17 minutes, killed at the heavy tests' 720 s on 00e10257), `session_maps` 535 s
 # and more. 60 minutes
 # (period 300 s x 12) leaves room on a loaded box; they start early.
 [[profile.default.overrides]]

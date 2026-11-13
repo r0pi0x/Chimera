@@ -15,6 +15,11 @@
 //! holds (`setup`, `pose_bodies`) if a rung is reached sooner.
 //!
 //! Only where `view_model::on_demand::LoadOnDemand` is (the front end).
+//! `ladder_bodies_waiting` and `ladder_keys_waiting`: the ladder's bodies,
+//! held and view models not in yet (a stock body is in where the map's
+//! group has it, a kit's held model where the map carries it; one whose
+//! load failed is not waited for), what a test waits on
+//! (`harness::ladder_models_in`).
 //!
 //! What older ladders brought is forgotten as a map unloads (`forget_old`,
 //! a `map::MapHooks::unload` hook): everything on demand (`map::
@@ -147,6 +152,63 @@ pub fn plan(data: &CharacterData, catalog: &WeaponCatalog, table: &CaModTable, l
         }
     }
     out.bodies = ladder_bodies(data, ladder);
+    out
+}
+
+/// The ladder's bodies (`LadderModels::bodies`) not in `world` yet: those
+/// no loaded group has (a stock group of the map's, or one loaded on
+/// demand: `models::models_in`) and whose load didn't fail
+/// (`bodies_on_demand::BodiesOnDemand::failed`). Empty once every body
+/// that can arrive has; a stock body counts as there only where the map
+/// has its group.
+pub fn ladder_bodies_waiting(world: &World) -> Vec<i32> {
+    let Some(ladder) = world.get_resource::<LadderModels>() else { return Vec::new() };
+    let failed = world.get_resource::<super::bodies_on_demand::BodiesOnDemand>();
+    let loaded = models::models_in(world);
+    ladder
+        .bodies
+        .iter()
+        .copied()
+        .filter(|&id| !loaded.group_has(id) && !failed.is_some_and(|f| f.failed().contains_key(&id)))
+        .collect()
+}
+
+/// The ladder's held and view models (`LadderModels::keys`) not in `world`
+/// yet, each named `held <key>` or `view <key>`: a held model that loads
+/// here (`held_on_demand::wanted`: one of ours the map's kit doesn't carry)
+/// not added and not failed (`held_on_demand::HeldOnDemand::failed`); a
+/// view model of ours not in the map's `ViewModels` (in the cache where
+/// there are none, the greybox's start) and not failed (the cache's
+/// error). Empty once every one that can arrive has.
+pub fn ladder_keys_waiting(world: &World) -> Vec<String> {
+    let Some(ladder) = world.get_resource::<LadderModels>() else { return Vec::new() };
+    let held_failed = world.get_resource::<super::held_on_demand::HeldOnDemand>();
+    let loose = world.get_resource::<crate::map::loose::LooseAssets>();
+    let late = world.get_resource::<LateHeldModels>();
+    let has_held = |k: &str| loose.is_some_and(|a| a.0.contains_key(k)) || late.is_some_and(|l| l.has(k));
+    let views = world.get_resource::<crate::map::ViewModels>();
+    let context = world.get_resource::<LoadContext>();
+    let ca = context.map_or_else(CaData::install, CaData::install_for);
+    let mut out = Vec::new();
+    for key in &ladder.keys {
+        let failed = held_failed.is_some_and(|f| f.failed().contains_key(key));
+        if super::held_on_demand::wanted(key, has_held) && !failed {
+            out.push(format!("held {key}"));
+        }
+        if !ours(key) {
+            continue;
+        }
+        let in_store = views.map(|v| v.get(key).is_some());
+        let cached = on_demand::cached(&ca, key);
+        let arrived = match (in_store, &cached) {
+            (Some(true), _) | (_, Some(Err(_))) => true,
+            (None, Some(Ok(_))) => true,
+            _ => false,
+        };
+        if !arrived {
+            out.push(format!("view {key}"));
+        }
+    }
     out
 }
 

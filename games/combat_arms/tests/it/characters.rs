@@ -2375,3 +2375,80 @@ fn a_pose_nobody_reads_is_not_made() {
     assert_eq!(boxes.0.get().0.len(), builtin().skeleton(0).spheres.len());
     assert!(boxes.0.is_made());
 }
+
+/// A wait for a ladder's bodies ends when every one that can arrive has
+/// (`preload::ladder_bodies_waiting`): a stock body a loaded group has is
+/// there, not waited for as if it loaded on demand (the session tests timed
+/// out on de_dust2's stock bodies 0 and 9 at 240 s), and a body whose load
+/// failed is named (`BodiesOnDemand::failed`), not waited for.
+#[test]
+fn a_ladders_bodies_wait_only_for_what_can_arrive() {
+    use bevy::tasks::{AsyncComputeTaskPool, TaskPool};
+    use combat_arms::game::{
+        characters::{
+            bodies_on_demand::{self, BodiesOnDemand},
+            preload::{LadderModels, ladder_bodies_waiting},
+        },
+        data::CaData,
+    };
+
+    AsyncComputeTaskPool::get_or_init(TaskPool::default);
+    let mut app = App::new();
+    let w = app.world_mut();
+    w.insert_resource(CaData::builtin());
+    w.insert_resource(chimera_core::tasks::WaitForTasks);
+    w.init_resource::<BodiesOnDemand>();
+    // A stock body, and a record no install has.
+    w.insert_resource(LadderModels { bodies: vec![0, 99_999], keys: Vec::new() });
+    assert_eq!(ladder_bodies_waiting(w), [0, 99_999], "nothing loaded yet");
+    models::late_in(w).0.register_group(models::BodyGroup { records: vec![0, 1, 2], ..Default::default() });
+    assert_eq!(ladder_bodies_waiting(w), [99_999], "the stock body's group is loaded");
+
+    // Its load starts, then fails.
+    w.run_system_cached(bodies_on_demand::load_on_demand).unwrap();
+    assert!(w.resource::<BodiesOnDemand>().loading(99_999));
+    assert_eq!(ladder_bodies_waiting(w), [99_999], "loading");
+    w.run_system_cached(bodies_on_demand::load_on_demand).unwrap();
+    assert!(w.resource::<BodiesOnDemand>().failed().contains_key(&99_999));
+    assert!(ladder_bodies_waiting(w).is_empty(), "a failed body is not waited for");
+}
+
+/// The same for a ladder's held and view models
+/// (`preload::ladder_keys_waiting`): one the map carries is there; one that
+/// loads here is waited for until it arrives or its load fails
+/// (`HeldOnDemand::failed`, the view models' cache), then not.
+#[test]
+fn a_ladders_guns_wait_only_for_what_can_arrive() {
+    use bevy::tasks::{AsyncComputeTaskPool, TaskPool};
+    use chimera_world::map;
+    use combat_arms::game::{
+        characters::{
+            held_on_demand::{self, HeldOnDemand},
+            preload::{LadderModels, ladder_keys_waiting},
+        },
+        data::CaData,
+        view_model::on_demand,
+    };
+
+    AsyncComputeTaskPool::get_or_init(TaskPool::default);
+    // The install data the loaders read, held as an app's map loads hold it
+    // (its view models' cache lives while it does).
+    let _install = CaData::install();
+    let mut app = App::new();
+    let w = app.world_mut();
+    w.insert_resource(CaData::builtin());
+    w.insert_resource(chimera_core::tasks::WaitForTasks);
+    w.init_resource::<HeldOnDemand>();
+    // A gun no install has, and another game's (never ours to load).
+    let gun = "combat_arms:no_such_gun_for_this_test";
+    w.insert_resource(LadderModels { bodies: Vec::new(), keys: vec![gun.into(), "cs_source:weapon_ak47".into()] });
+    w.insert_resource(map::ViewModels::of([]));
+    assert_eq!(ladder_keys_waiting(w), [format!("held {gun}"), format!("view {gun}")], "nothing loaded yet");
+
+    for _ in 0..2 {
+        w.run_system_cached(held_on_demand::load_on_demand).unwrap();
+        w.run_system_cached(on_demand::load_on_demand).unwrap();
+    }
+    assert!(w.resource::<HeldOnDemand>().failed().contains_key(gun));
+    assert!(ladder_keys_waiting(w).is_empty(), "failed loads are not waited for: {:?}", ladder_keys_waiting(w));
+}

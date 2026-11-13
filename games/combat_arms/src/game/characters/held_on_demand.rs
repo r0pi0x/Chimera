@@ -14,6 +14,9 @@
 //! same way; the bare gun's is held meanwhile. The match's ladder's held
 //! models load the same way ahead of time (`preload`).
 //!
+//! What it loads and what failed is `HeldOnDemand` (a resource: a wait
+//! for a ladder's models reads it, `preload::ladder_keys_waiting`).
+//!
 //! An older ladder's are forgotten at a map's unload
 //! (`preload::forget_old`) and load again if held again.
 //!
@@ -44,11 +47,27 @@ use crate::map::{
 
 type Loaded = Result<OnDemand<MapHeldModel>, String>;
 
-/// The held models loading, and the weapons tried (loaded or not).
-#[derive(Default)]
-pub struct Pending {
+/// The held models loading, the weapons tried (loaded or not) and the
+/// ones that didn't load (and why): what a wait for a ladder's models
+/// reads (`preload::ladder_keys_waiting`).
+#[derive(Resource, Default)]
+pub struct HeldOnDemand {
     tasks: BTreeMap<String, Task<Loaded>>,
     tried: BTreeSet<String>,
+    failed: BTreeMap<String, String>,
+}
+
+impl HeldOnDemand {
+    /// Whether the held model of `key` is loading.
+    pub fn loading(&self, key: &str) -> bool {
+        self.tasks.contains_key(key)
+    }
+
+    /// The held models whose load failed this session, and why (each
+    /// tried once: module doc).
+    pub fn failed(&self) -> &BTreeMap<String, String> {
+        &self.failed
+    }
 }
 
 /// Whether weapon `id`'s held model loads here: one of ours whose held
@@ -69,14 +88,16 @@ pub fn load_on_demand(
     context: Option<Res<LoadContext>>,
     ladder: Res<super::preload::LadderModels>,
     forgotten: Option<Res<super::preload::Forgotten>>,
-    mut pending: Local<Pending>,
+    mut pending: ResMut<HeldOnDemand>,
     wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
     mut commands: Commands,
 ) {
     if let Some(f) = forgotten.filter(|f| f.is_changed()) {
         pending.tried.retain(|id| !f.keys.contains(id));
+        pending.failed.retain(|id, _| !f.keys.contains(id));
     }
-    pending.tasks.retain(|_, task| {
+    let mut failed = Vec::new();
+    pending.tasks.retain(|key, task| {
         let Some(result) = chimera_core::tasks::poll(task, wait.is_some()) else { return true };
         match result {
             Ok(OnDemand { model, textures, index }) => {
@@ -86,10 +107,14 @@ pub fn load_on_demand(
                     add_held_model(world, model, textures);
                 });
             }
-            Err(e) => warn!("Combat Arms: {e} (the hand stays empty)"),
+            Err(e) => {
+                warn!("Combat Arms: {e} (the hand stays empty)");
+                failed.push((key.clone(), e));
+            }
         }
         false
     });
+    pending.failed.extend(failed);
     // The map's kit's held models, ours included where it carries them
     // (none on a map whose kit wasn't loaded), and those added.
     let has = |id: &str| assets.as_ref().is_some_and(|a| a.0.contains_key(id)) || late.as_ref().is_some_and(|l| l.has(id));

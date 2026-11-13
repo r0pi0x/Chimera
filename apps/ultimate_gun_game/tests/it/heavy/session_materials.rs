@@ -11,11 +11,13 @@
 //! (`--nocapture`). Passes with a note without the installs.
 //!
 //! One test a map (de_dust2, warehouse, dm_lockdown), each a ladder on that
-//! map alone, so nextest runs them in parallel in the heavy slots (a play is
-//! about 4 minutes, its wait for the kit's models capped at 240 s), and one
-//! for the order: de_dust2, a swap to warehouse (not played), de_dust2
+//! map alone (8-13 s; the wait for the ladder's bodies, held and view
+//! models, `combat_arms::harness::ladder_models_in`, ends when every one
+//! that can arrive has, and fails naming any that never did: it waited for
+//! stock bodies that never load on demand, 240 s every play), and one for
+//! the order: de_dust2, a swap to warehouse (not played), de_dust2
 //! played again, which holds what it did the first time. This was one test
-//! of four maps in a row, about 17 minutes.
+//! of four maps in a row, about 17 minutes; the four now take 8-26 s.
 
 use bevy::{mesh::skinning::SkinnedMeshInverseBindposes, prelude::*};
 use chimera_core::mount::config::LocalConfig;
@@ -24,9 +26,9 @@ use chimera_sim::minigame::{
     self,
     ladder::{Ladder, set_rung},
 };
-use chimera_world::{harness::Sim, map::LateCharacterModels};
+use chimera_world::harness::Sim;
 use combat_arms::{
-    game::{TICK_INTERVAL, characters::preload::LadderModels},
+    game::TICK_INTERVAL,
     harness::CaSim,
     ui::visuals::CaVisualsPlugin,
 };
@@ -51,14 +53,12 @@ fn play(sim: &mut Sim, seed: u64) {
     let w = sim.app.world_mut();
     generate(w, seed, RUNGS).expect("a ladder");
     minigame::start(w, MINIGAME).expect("the match starts");
-    let mut settled = 0;
-    let started = std::time::Instant::now();
-    while settled < 120 && started.elapsed().as_secs() < 240 {
-        let w = sim.app.world();
-        let want = w.resource::<LadderModels>().bodies.len();
-        let have = w.get_resource::<LateCharacterModels>().map_or(0, |l| l.0.len());
-        settled = if have >= want { settled + 1 } else { 0 };
-        sim.ticks(1);
+    // Every body, held and view model that can arrive (the map's, or loaded
+    // on demand), then 120 ticks for them to be drawn; one that never comes
+    // fails.
+    let failed = combat_arms::harness::ladder_models_in(sim, 120, std::time::Duration::from_secs(240));
+    if !failed.is_empty() {
+        eprintln!("the ladder's models that didn't load: {failed:?}");
     }
     let ladder = sim.app.world().resource::<Ladder>().clone();
     let bots: Vec<Entity> = {
@@ -171,7 +171,7 @@ fn dm_lockdown_holds_what_is_drawn() {
 
 /// The order-sensitive part: the same map after a lap holds the same. The
 /// map in between is swapped to and left running briefly, not played (a
-/// ladder takes ~4 minutes of the test's time, and `warehouse_holds_...`
+/// ladder takes most of the test's time, and `warehouse_holds_...`
 /// plays it).
 #[test]
 fn the_same_map_holds_the_same_after_a_lap() {
