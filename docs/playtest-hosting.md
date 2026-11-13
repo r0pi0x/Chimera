@@ -103,7 +103,7 @@ server's. With `sets` run as above (2026-11-12) the server has, per game:
 
 | Set | CS:S | Combat Arms | HL2:DM |
 |---|---|---|---|
-| `base` (fetched at the first start) | 62.6 MB | 268 MB: also the music (`Game/BGM`), the G23's sounds, the pool maps' loading images, the guns' impact and shell sounds and models and every sound the effect tables name (`sets`: surfaces, event sounds, the heartbeat) | 62 MB: also all 12 guns, the 19 player models, the weapon and headcrab-canister sounds every match plays |
+| `base` (fetched at the first start) | 62.6 MB | 268 MB: also the music (`Game/BGM`), the G23's sounds, the pool maps' loading images, the guns' impact and shell sounds and models and every sound the effect tables name (`sets`: surfaces, event sounds, the heartbeat) | 62 MB: also all 12 guns, the 19 player models, the weapon and headcrab-canister sounds every match plays, and its guns' effect materials, flashes and decals (`sets`: what its dressing brings to any map) |
 | `players` (each join) | 12.9 MB | 66 MB, nearly all in `base`: the stock characters and footsteps | 18 MB |
 | `map/<name>` | all 109 maps (the 18 stock ones and the publisher's community maps), 0.3-196 MB each, median 18 MB, 4.7 GB together | all 105 maps, 0.9-174 MB each, median 25 MB, 3.2 GB together | its 8 maps, 91-154 MB each |
 | `weapon/<id>` | every gun | every gun: view model with hands and parts, the held model (what other players hold), its own sounds (fire, silenced, dry, reload, select, misc) and what it throws or fires (sounds, model, skins, flare) | every gun |
@@ -233,14 +233,35 @@ client without installs against a service reading the published store
 character climbing every rung, and fails naming each file fetched on
 demand during a match and how to cover it, and any file the manifests list that the store has no
 record of (`asset miss`). Its last map is HL2:DM's `dm_overwatch` when
-that game is installed here and published (its effect materials, sprays
-and flashes load with the map, all in `map/<name>`; 2026-11-13: 0 fetches,
-0 misses, about 4 minutes; `asset miss hl2dm` lines in a dev's own run of
+that game is installed here and published (its sprays load with the map,
+in `map/<name>`; 2026-11-13: 0 fetches, 0 misses, about 4 minutes; `asset miss hl2dm` lines in a dev's own run of
 `pool_maps` mean that machine's cache `~/.cache/chimera/assets` holds
 only some of the records, not that the server store lacks them). It runs
 with the heavy tests wherever the server store and the installs are, so
 it fails there until the sets above are published. Run it after
-publishing, and after a change to what a match loads.
+publishing, and after a change to what a match loads. It also fails on
+any guns' effect file (Source's `materials/effects/`, `sprites/`,
+`particle/`, `decals/`) fetched on demand at all, a map's load included.
+`CHIMERA_GUARD_MANIFESTS=<store>` takes the manifests from another store
+(a copy of the server store's `manifests/` that `sets ... --store <copy>`
+recorded into), the records still the server store's: sets checked
+before they are published.
+
+**The guns' effect files on every map** (2026-11-13): a guest game's
+dressing brings what its guns draw to the other games' maps (HL2:DM's
+`maps::add_guest_looks`: its effect materials, the energy ball's,
+streaks', lasers' and gravity gun's sprites, its muzzle flashes, its
+impact decals; CS:S's `bsp::add_guest_looks`: its impacts and its muzzle
+flash). Before, HL2:DM's came only with its own maps' kit, so the AR2's
+ball on de_dust2 drew as its bare model (a white blob) and HL2:DM's guns
+flashed nothing off its maps; its files were only in its `map/dm_*` sets.
+`sets` now merges them into each game's `base` (HL2:DM: 41 files, 0.6 MB,
+0.26 MB stored; CS:S: its flash, 2 files, 11 KB):
+
+```
+cargo run --release --features tools --bin chimera_pack -- sets hl2dm --store <server store> --sign --only base
+cargo run --release --features tools --bin chimera_pack -- sets cs_source --store <server store> --sign --only base
+```
 
 Publishing again at the same build reaches testers who fetched before:
 each start asks the service whether it has a newer manifest than the

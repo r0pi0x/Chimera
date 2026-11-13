@@ -1410,7 +1410,10 @@ impl GameKit {
     /// be that game's, `slots::GameIdentity`), and its impact decals: they
     /// are part of the map game's impact looks, which stay with the map
     /// (`MapData::impacts`; `weapon::impact` routes that game's guns' and
-    /// the map's impacts to them). Nothing else stays.
+    /// the map's impacts to them); with any kept models, its muzzle
+    /// flashes (`muzzle_flash`, `muzzle_flash_kinds`: what its kept guns
+    /// flash; a guest game's dressing brings its own to the other games'
+    /// maps). Nothing else stays.
     pub fn stay(self, kept: &[&str], players: bool) -> GameKit {
         let keep = |key: &str| kept.iter().any(|k| key.starts_with(k));
         let Self {
@@ -1419,14 +1422,19 @@ impl GameKit {
             characters,
             hud,
             decals,
+            muzzle_flash,
+            muzzle_flash_kinds,
             ..
         } = self;
+        let guns = !kept.is_empty();
         GameKit {
             held: held.into_iter().filter(|h| keep(&h.key)).collect(),
             view_models: view_models.into_iter().filter(|v| keep(&v.key)).collect(),
             characters: characters.into_iter().filter(|c| players && c.name.is_none()).collect(),
             hud: hud.filter(|_| players),
             decals,
+            muzzle_flash: muzzle_flash.filter(|_| guns),
+            muzzle_flash_kinds: if guns { muzzle_flash_kinds } else { Vec::new() },
             ..GameKit::default()
         }
     }

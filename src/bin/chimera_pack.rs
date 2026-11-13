@@ -64,7 +64,10 @@
 //! strike surprise's alarm and its shells' model, sounds and effect
 //! groups' files, `special::devices::strike_files`)
 //! and CS:S's `base` (its minigame cue pack's sounds, the party match-end
-//! screen's winner sound) are merged into what the manifest has (sets recorded from
+//! screen's winner sound, what its guns draw on other games' maps:
+//! `bsp::add_guest_looks`) and HL2:DM's `base` (what its guns draw on any
+//! map: `maps::add_guest_looks`, its effect materials, muzzle flashes and
+//! impact decals) are merged into what the manifest has (sets recorded from
 //! logs too); the other sets are replaced. `--only <prefix>` records only
 //! the sets whose names start with it (`--only character/`), leaving the
 //! others as they are. `--sign` signs the manifest again with
@@ -127,7 +130,7 @@ fn games() -> [Game; 3] {
             extra: Some((combat_arms::game::mount::loose_music, "music")),
         },
         // Half-Life 2: Deathmatch: its search path from `hl2mp/gameinfo.txt`;
-        // its pieces' sets: `weapon/<id>` and `players` (`record_pieces`).
+        // its pieces' sets: `weapon/<id>`, `players` and `base` (`record_pieces`).
         Game { info: &hl2dm::game::INFO, open_install: hl2dm::game::mount::open_install, app: 320, extra: None },
     ]
 }
@@ -407,6 +410,11 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 // `parts::MATCH_WON_SOUND`; the 2026-11-12 rehearsal fetched
                 // it on demand at a match's end).
                 let _ = tapped.read(cs_source::game::parts::MATCH_WON_SOUND);
+                // What its guns draw on another game's map (`bsp::
+                // add_guest_looks`: impact decals, effect materials, the
+                // muzzle flash).
+                let mut materials = MaterialLoader::guest(&tapped, 0, 0);
+                cs_source::game::bsp::add_guest_looks(&mut materials, &mut chimera_world::map::MapData::default());
                 out.push(("base".into(), take()));
             }
             let options = map_options(false);
@@ -675,6 +683,19 @@ fn record_pieces(game: &str, mount: &std::sync::Arc<Mount>, only: &str) -> Vec<(
                 let _ = bodies::load_one(&tapped, model);
             }
             out.push(("players".into(), take()));
+            // What its guns draw on any map, into `base` (merged): the
+            // effect materials, muzzle flashes and impact decals its
+            // dressing brings to another game's map (`maps::
+            // add_guest_looks`; on its own maps the map's kit reads the
+            // same). They were in its maps' sets alone: a client without
+            // the install fetched them on demand on CS:S's and Combat
+            // Arms' maps.
+            if "base".starts_with(only) {
+                take();
+                let mut materials = MaterialLoader::guest(&tapped, 0, 0);
+                hl2dm::game::maps::add_guest_looks(&mut materials, &mut chimera_world::map::MapData::default());
+                out.push(("base".into(), take()));
+            }
             let options = map_options(false);
             record_maps(source_engine::maps::map_names(mount), only, &take, &mut out, |name| {
                 let bytes = tapped.read(&format!("maps/{name}.bsp")).map_err(|e| e.to_string())?;
