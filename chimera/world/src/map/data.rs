@@ -1216,6 +1216,10 @@ pub struct MapData {
     /// Indices into `collision_brushes` of the ones line traces pass
     /// (player clips, grates, ladder-only volumes): `MapTraceSkip`.
     pub trace_skip: Vec<usize>,
+    /// Indices into `collision_brushes` of the ones that stop players only
+    /// (Source's player clips: in no collision hull): `core::MapPlayerClips`,
+    /// a players-only collider for movements that don't sweep the brushes.
+    pub player_clips: Vec<usize>,
     /// The BSP tree over `collision_brushes` (Source maps), for the order
     /// traces meet coincident faces in.
     pub brush_tree: Option<MapBrushTree>,

@@ -450,6 +450,37 @@ plays its own maps exactly as before. Made lines follow the map's own in
 HL2's ladder list, sorted, so a network client builds the same; they
 fire no map outputs.
 
+### Clips across games
+
+A map's player clips (the invisible walls that keep players in the play
+area) stop every game's movement on every game's map, and nothing else
+(bug 2026-11-13: a Combat Arms character walked through cs_militia's
+yard walls and into cs_havana's out-of-bounds yard). One form, as for
+ladders: a Source map's loader lists its player-clip-only brushes among
+`core::MapBrushes` (`core::MapPlayerClips`); Source's movement (CS:S's,
+HL2:DM's) sweeps them with the rest of the brushes as it always did, and
+Chimera keeps one static collider of them on `core::PLAYER_CLIP_LAYER`
+(`core::publish_player_clips`) for movements that sweep colliders
+(Combat Arms', the placeholder). Only queries with that layer meet it
+(`CHARACTER_FILTER`: characters' movement, the spawn-spot and nav
+walkers, a physics shadow's push); shots, sight, grenades and every
+other trace (`SOLID_LAYERS`, `NOT_SHADOW`) pass it, and it touches no
+body (props, ragdolls, loose items). Chosen over each movement sweeping
+the clip brushes itself: one collider serves every movement that sweeps
+colliders, today's and the next game's, with no clip code of its own.
+Combat Arms' collision blockers were already on that layer and stop its
+movement; Source's movement now meets that layer too, so they stop
+CS:S and HL2:DM characters on Combat Arms maps (its brushes' collider
+stays left out of its physics casts, so on Source maps nothing changes).
+
+Who honours what: Source's player clips stop every player of every game,
+bots too (Source's bots are players). Combat Arms' blockers let its own
+computer players through on its own maps (world_dat.md Q5), not another
+game's clips. Monster clips (NPC-only brushes) stop no player
+(movement.md: the player's mask has no monster clip) and are loaded for
+nobody: the only NPCs, CS:S's hostages, walk with the match's player
+movement, and the specs give no NPC mask for them.
+
 ### Impacts across games
 
 Any game's gun works on any game's map; where a game lacks something,
