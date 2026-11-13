@@ -23,6 +23,7 @@ mod map_unload;
 mod prop_fade;
 mod prop_relight;
 mod prop_lods;
+mod prop_meshes_ahead;
 mod prop_shadows;
 mod shader_spec;
 mod shadow_spec;

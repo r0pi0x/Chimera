@@ -954,19 +954,40 @@ pub fn body_assets(
     body_assets_into(model, bones, root, &mut stores, material)
 }
 
-/// `body_assets`, its assets going to `to`: a map's stores or a late model's
-/// `late_build::Stage`.
-pub fn body_assets_into<T>(
+/// `body_assets` with the body's meshes made ahead (`body_meshes`, by the
+/// map's load).
+#[allow(clippy::too_many_arguments)]
+pub fn body_assets_made(
     model: &MapModel,
     bones: &[MapBone],
     root: Transform,
-    to: &mut T,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<PropMaterial>,
+    dormant: Option<&mut DormantProps>,
+    bindposes: &mut Assets<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
     material: &dyn Fn(&MapMesh) -> PropMaterial,
-) -> BodyAssets
-where
-    T: AddAsset<Mesh> + AddAsset<PropMaterial> + AddAsset<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
-{
-    let skinned_mesh = |m: &MapMesh, to: &mut T| {
+    made: BodyMeshes,
+) -> BodyAssets {
+    let mut stores = Stores { meshes, materials, bindposes, dormant };
+    body_assets_from(model, bones, root, &mut stores, material, made)
+}
+
+/// A body's meshes as its assets take them (`body_assets_into`): each part
+/// of the model with its joints and per-joint bounds, and each part's
+/// lower levels (None: a level without the part, which keeps the finer
+/// one's). From the model alone, so a map's load makes its bodies' ahead
+/// (`spawn::prepare_images`): a body's skinned bounds
+/// (`Mesh::generate_skinned_mesh_bounds`, every vertex against its joints)
+/// were 47 M instructions of a spawn step on Combat Arms' warehouse
+/// (docs/performance.md, "A swap's prop meshes and shadows").
+pub struct BodyMeshes {
+    parts: Vec<Mesh>,
+    levels: Vec<Vec<Option<Mesh>>>,
+}
+
+/// `model`'s meshes for a body on `bones`.
+pub fn body_meshes(model: &MapModel, bones: &[MapBone]) -> BodyMeshes {
+    let skinned_mesh = |m: &MapMesh| {
         let mut mesh = build_mesh(m, false);
         if m.joints.len() == m.positions.len() && !bones.is_empty() {
             mesh.insert_attribute(
@@ -980,25 +1001,62 @@ where
         }
         // A face with flexes is copied for each body from the main world's
         // (`attach_bodies`); no other part is read there.
-        to.add_asset(if m.morphs.is_empty() { gpu_only(mesh) } else { mesh })
+        if m.morphs.is_empty() { gpu_only(mesh) } else { mesh }
     };
+    BodyMeshes {
+        parts: model.meshes.iter().map(skinned_mesh).collect(),
+        levels: (0..model.meshes.len())
+            .map(|k| model.lods.iter().map(|l| l.meshes.get(k).and_then(Option::as_ref).map(skinned_mesh)).collect())
+            .collect(),
+    }
+}
+
+/// `body_assets`, its assets going to `to`: a map's stores or a late model's
+/// `late_build::Stage`.
+pub fn body_assets_into<T>(
+    model: &MapModel,
+    bones: &[MapBone],
+    root: Transform,
+    to: &mut T,
+    material: &dyn Fn(&MapMesh) -> PropMaterial,
+) -> BodyAssets
+where
+    T: AddAsset<Mesh> + AddAsset<PropMaterial> + AddAsset<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
+{
+    body_assets_from(model, bones, root, to, material, body_meshes(model, bones))
+}
+
+/// `body_assets_into` from the body's meshes (`body_meshes` of the same
+/// model and bones).
+fn body_assets_from<T>(
+    model: &MapModel,
+    bones: &[MapBone],
+    root: Transform,
+    to: &mut T,
+    material: &dyn Fn(&MapMesh) -> PropMaterial,
+    made: BodyMeshes,
+) -> BodyAssets
+where
+    T: AddAsset<Mesh> + AddAsset<PropMaterial> + AddAsset<bevy::mesh::skinning::SkinnedMeshInverseBindposes>,
+{
     let parts: Vec<(Handle<Mesh>, Handle<PropMaterial>)> = model
         .meshes
         .iter()
-        .map(|m| {
-            let mesh = skinned_mesh(m, to);
+        .zip(made.parts)
+        .map(|(m, mesh)| {
+            let mesh = to.add_asset(mesh);
             (mesh, to.add_asset(material(m)))
         })
         .collect();
     // Lower levels (a level without a part keeps the finer one's).
     let levels: Vec<Vec<Handle<Mesh>>> = parts
         .iter()
-        .enumerate()
-        .map(|(k, (root, _))| {
+        .zip(made.levels)
+        .map(|((root, _), lower)| {
             let mut levels = vec![root.clone()];
-            for l in &model.lods {
-                let h = match l.meshes.get(k).and_then(Option::as_ref) {
-                    Some(lm) => skinned_mesh(lm, to),
+            for l in lower {
+                let h = match l {
+                    Some(mesh) => to.add_asset(mesh),
                     None => levels.last().cloned().unwrap_or_default(),
                 };
                 levels.push(h);

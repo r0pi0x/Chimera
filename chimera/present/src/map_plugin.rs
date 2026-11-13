@@ -84,6 +84,9 @@ impl Plugin for MapPlugin {
         hooks.copied.push(render::merge::show_copied_pieces);
         // The images are built on the loading thread (`map::prepare`).
         hooks.prepare.push(render::prepare_images);
+        // The loading screen stays while props come to rest have shadows
+        // still to redraw.
+        hooks.settle.push(render::shadows::shadows_settled);
     }
 }
 

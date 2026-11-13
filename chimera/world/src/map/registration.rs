@@ -387,6 +387,8 @@ fn spawn_pending_steps<D: MapDrawer>(world: &mut World, budget: std::time::Durat
     if spawn::colliders_left::<D>(world) {
         return spawn::insert_colliders::<D>(world, budget);
     }
+    // One step a frame, to count each by itself (`prepare::StepAFrame`).
+    let budget = if world.contains_resource::<prepare::StepAFrame>() { std::time::Duration::ZERO } else { budget };
     match world.run_system_cached_with(spawn::spawn_steps::<D>, budget) {
         Ok(done) => done,
         Err(e) => {

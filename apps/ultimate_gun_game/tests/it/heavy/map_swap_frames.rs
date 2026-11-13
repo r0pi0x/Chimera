@@ -7,7 +7,11 @@
 //! to entering the game is counted in main-thread instructions; the worst
 //! must stay under a limit, and so must the frame the map goes into the
 //! world, which its colliders follow ("A map's colliders after its swap
-//! frame"). Prints each map's row (`--nocapture`):
+//! frame"), a step of its spawn (the props' lit meshes come made by the
+//! load) and a frame of its settling, held here for `SETTLE_FRAMES` as the
+//! real app's glyphs, uploads and floods hold it (the props' shadows wait
+//! for their props to rest and are redrawn within a frame's work: "A
+//! swap's prop meshes and shadows"). Prints each map's row (`--nocapture`):
 //! `CHIMERA_SPAWN_AT_ONCE=1` spawns each map in one frame (the A/B),
 //! `CHIMERA_SWAP_MAPS=<id>,<id>` loads those maps instead and
 //! `CHIMERA_SWAP_FRAMES=1` prints each frame from the load's end with its
@@ -19,11 +23,20 @@ use bevy::{mesh::skinning::SkinnedMeshInverseBindposes, prelude::*};
 use chimera_client::client::console::{self, MapLoadStage};
 use chimera_core::{metrics::ThreadCounters, mount::config::LocalConfig};
 use chimera_present::render::{
-    beams::BeamMaterial, detail::DetailMaterial, prop_material::PropMaterial, rope_material::RopeMaterial,
-    shadows::ShadowMaterial, sprite_material::SpriteMaterial, water::WaterMaterial, world_material::WorldMaterial,
+    beams::BeamMaterial,
+    detail::DetailMaterial,
+    prop_material::PropMaterial,
+    rope_material::RopeMaterial,
+    shadows::{ShadowMaterial, ShadowState},
+    sprite_material::SpriteMaterial,
+    water::WaterMaterial,
+    world_material::WorldMaterial,
 };
 use avian3d::prelude::Collider;
-use chimera_world::{harness::Sim, map::MapPart};
+use chimera_world::{
+    harness::Sim,
+    map::{MapHooks, MapPart},
+};
 use combat_arms::{game::TICK_INTERVAL, harness::CaSim, ui::visuals::CaVisualsPlugin};
 use party_kit::PartyPartsPlugin;
 use ultimate_gun_game::UltimateGunGamePlugin;
@@ -55,6 +68,41 @@ const INSERT_FRAME: u64 = 200_000_000;
 /// a map (a map's solids or surfaces alone are most of one).
 const COLLIDER_FRAME: u64 = 120_000_000;
 
+/// A step of the spawn, each in a frame of its own here
+/// (`prepare::StepAFrame`: a time budget puts as many in a frame as the
+/// machine's speed allows): 18-65 M measured (instructions, this test's
+/// dev build, 2026-11-12: warehouse 18-19 M, de_dust2 55-56 M, dm_lockdown
+/// 56-65 M, cs_office 58-64 M). With the props' lit meshes (a light probe on every
+/// vertex), the bodies' meshes (their per-joint bounds) and the surfaces'
+/// grid made in their steps, and 150 world meshes a step whatever their
+/// size, it was 80-147 M (dm_lockdown 80 M, cs_office 85 M, warehouse
+/// 131 M, de_dust2 147 M).
+const SPAWN_STEP: u64 = 100_000_000;
+
+/// Frames the loading screen is held after the map's first ticks, a tick
+/// each (1.5 s of the map: its props fall and come to rest), as the real
+/// app's settling work holds it.
+const SETTLE_FRAMES: u32 = 100;
+
+/// A frame of the settling after the first tick's: 6-82 M measured
+/// (instructions, this test's dev build, 2026-11-12: warehouse 6 M,
+/// de_dust2 66-71 M, dm_lockdown 71-75 M, cs_office 80-82 M; none of this
+/// test's own settling work in them, the spawn spots' flood aside). With
+/// six prop shadows redrawn a frame while the props fell dm_lockdown's
+/// reached 168-175 M, 30 of its 100 frames over 100 M (586 redraws; 74
+/// now, each prop's once it rests), cs_office's 91-112 M.
+const SETTLE_FRAME: u64 = 130_000_000;
+
+/// Holds the loading screen (`MapHooks::settle`) for this many frames more.
+#[derive(Resource)]
+struct Hold(u32);
+
+fn hold(w: &mut World) -> bool {
+    let mut hold = w.resource_mut::<Hold>();
+    hold.0 = hold.0.saturating_sub(1);
+    hold.0 == 0
+}
+
 fn combat_arms_installed() -> bool {
     let Ok(config) = LocalConfig::load() else { return false };
     config
@@ -80,6 +128,10 @@ fn sim() -> Sim {
                     .init_asset::<SkinnedMeshInverseBindposes>()
                     .add_plugins(CaVisualsPlugin)
                     .insert_resource(party_kit::client_hooks())
+                    .insert_resource(Hold(0))
+                    // Each step of a spawn in a frame of its own: its cost
+                    // by itself, whatever the machine's speed.
+                    .insert_resource(chimera_world::map::prepare::StepAFrame)
                     .add_systems(Update, console::finish_map_load);
             },
             chimera_present::MapPlugin::empty(),
@@ -87,6 +139,7 @@ fn sim() -> Sim {
             UltimateGunGamePlugin { seed: 36336, rungs: 13, ..Default::default() },
         ),
     );
+    sim.app.world_mut().resource_mut::<MapHooks>().settle.push(hold);
     sim.set_tick_interval(TICK_INTERVAL);
     sim.ticks(3);
     sim
@@ -103,6 +156,28 @@ struct Load {
     insert: (u64, usize),
     /// The frames its colliders came in after it, and the worst.
     collider_frames: (usize, u64),
+    /// The worst step of the spawn before the map's frame.
+    step: u64,
+    /// The settling after its first tick's frame.
+    settling: Settled,
+}
+
+/// A map's settling after its first tick's frame.
+#[derive(Default)]
+struct Settled {
+    frames: usize,
+    /// The worst frame (instructions).
+    worst: u64,
+    /// The frames over 100 M instructions.
+    over: usize,
+    /// Prop shadows redrawn, the frames that redrew any and the most work
+    /// of one (`shadows::RedrawWork::units`).
+    redraws: usize,
+    redraw_frames: usize,
+    work: u64,
+    /// The props at rest whose shadows were still elsewhere at the end of
+    /// the frame the game was entered in.
+    resting_in: usize,
 }
 
 impl Load {
@@ -128,6 +203,8 @@ fn load(sim: &mut Sim, counters: &mut ThreadCounters, id: &str) -> Load {
     console::start_map_load(sim.app.world_mut(), id, None);
     let mut frames = Vec::new();
     let (mut insert, mut collider_frames) = ((0, 0), (0, 0));
+    let (mut step, mut settling) = (0, Settled::default());
+    sim.app.world_mut().resource_mut::<Hold>().0 = SETTLE_FRAMES;
     let mut count = |sim: &mut Sim| {
         let w = sim.app.world_mut();
         (
@@ -151,6 +228,25 @@ fn load(sim: &mut Sim, counters: &mut ThreadCounters, id: &str) -> Load {
             insert = (used, has.1);
         } else if before == MapLoadStage::Spawning && has.1 > had.1 {
             collider_frames = (collider_frames.0 + 1, collider_frames.1.max(used));
+        } else if before == MapLoadStage::Spawning && has.0 == 0 {
+            step = step.max(used);
+        }
+        // The settling from its second frame (the first has the map's
+        // first tick).
+        if before == MapLoadStage::Settling && frames.last().is_some_and(|f: &(u64, u8, f64)| f.1 == 2) {
+            settling.frames += 1;
+            settling.worst = settling.worst.max(used);
+            settling.over += (used > 100_000_000) as usize;
+            if let Some(state) = sim.app.world().get_resource::<ShadowState>() {
+                settling.redraws += state.last.0;
+                settling.redraw_frames += (state.last.0 > 0) as usize;
+                settling.work = settling.work.max(state.last.1.units());
+            }
+            if after != MapLoadStage::Settling {
+                let w = sim.app.world();
+                let now = w.resource::<Time>().elapsed_secs_f64();
+                settling.resting_in = w.get_resource::<ShadowState>().map_or(0, |s| s.resting(now));
+            }
         }
         // `CHIMERA_SWAP_FRAMES=1`: each frame from the load's end, to cut out
         // of a profile (`perf record -k CLOCK_MONOTONIC`).
@@ -179,6 +275,8 @@ fn load(sim: &mut Sim, counters: &mut ThreadCounters, id: &str) -> Load {
         secs: started.elapsed().as_secs_f64(),
         insert,
         collider_frames,
+        step,
+        settling,
     }
 }
 
@@ -195,6 +293,8 @@ fn a_map_change_costs_no_frame() {
     let mut worst_all = (0u64, "");
     let mut worst_insert = (0u64, "");
     let mut worst_colliders = (0u64, "");
+    let mut worst_step = (0u64, "");
+    let mut worst_settling = (0u64, "");
     // `CHIMERA_SWAP_MAPS=<id>,<id>`: these maps instead (for a profile).
     let chosen = chimera_core::env::var("CHIMERA_SWAP_MAPS").ok();
     let maps: Vec<&str> = match &chosen {
@@ -205,7 +305,7 @@ fn a_map_change_costs_no_frame() {
         let l = load(&mut sim, &mut counters, id);
         let worst = l.frames.iter().map(|f| f.0).max().unwrap_or(0);
         eprintln!(
-            "{id:22} {:5.2} s: the map's frame {:5.1} M with {} colliders, then {} frames of colliders (worst {:5.1} M); loading {:4} frames (worst {:5.1} M), spawning {:2} frames in {:5.1} ms, {:6.1} M (worst {:5.1} M), settling {:2} frames in {:5.1} ms (worst {:5.1} M)",
+            "{id:22} {:5.2} s: the map's frame {:5.1} M with {} colliders, then {} frames of colliders (worst {:5.1} M); loading {:4} frames (worst {:5.1} M), spawning {:2} frames in {:5.1} ms, {:6.1} M (worst {:5.1} M, worst step {:5.1} M), settling {:2} frames in {:5.1} ms (worst {:5.1} M; after the first tick's {:5.1} M, {} over 100 M; {} prop shadows redrawn in {} frames, at most {} of work a frame, {} at rest left for the game)",
             l.secs,
             l.insert.0 as f64 / 1e6,
             l.insert.1,
@@ -217,9 +317,16 @@ fn a_map_change_costs_no_frame() {
             l.ms(1),
             l.total(1),
             l.worst(1),
+            l.step as f64 / 1e6,
             l.count(2),
             l.ms(2),
             l.worst(2),
+            l.settling.worst as f64 / 1e6,
+            l.settling.over,
+            l.settling.redraws,
+            l.settling.redraw_frames,
+            l.settling.work,
+            l.settling.resting_in,
         );
         if worst > worst_all.0 {
             worst_all = (worst, id);
@@ -230,6 +337,21 @@ fn a_map_change_costs_no_frame() {
         if l.collider_frames.1 > worst_colliders.0 {
             worst_colliders = (l.collider_frames.1, id);
         }
+        if l.step > worst_step.0 {
+            worst_step = (l.step, id);
+        }
+        if l.settling.worst > worst_settling.0 {
+            worst_settling = (l.settling.worst, id);
+        }
+        assert!(l.settling.frames >= SETTLE_FRAMES as usize - 5, "{id}: settled for {} frames", l.settling.frames);
+        // The shadows of props come to rest are redrawn behind the loading
+        // screen: at most a frame's in play (those come to rest last) are
+        // left for the game.
+        assert!(
+            l.settling.resting_in <= 6,
+            "{id}: entered with {} props at rest and their shadows not redrawn",
+            l.settling.resting_in
+        );
         // A spawn in one frame (the A/B) brings them with the map.
         if chimera_core::env::var("CHIMERA_SPAWN_AT_ONCE").is_err() {
             assert_eq!(l.insert.1, 0, "{id}: colliders in the frame the map goes into the world");
@@ -259,5 +381,17 @@ fn a_map_change_costs_no_frame() {
         "{}: {} instructions on a frame of its map's colliders (limit {COLLIDER_FRAME})",
         worst_colliders.1,
         worst_colliders.0
+    );
+    assert!(
+        worst_step.0 < SPAWN_STEP,
+        "{}: {} instructions on a step of its spawn (limit {SPAWN_STEP})",
+        worst_step.1,
+        worst_step.0
+    );
+    assert!(
+        worst_settling.0 < SETTLE_FRAME,
+        "{}: {} instructions on a frame of its settling (limit {SETTLE_FRAME})",
+        worst_settling.1,
+        worst_settling.0
     );
 }
