@@ -1298,6 +1298,7 @@ fn insert_resources<D: MapDrawer>(commands: &mut Commands, s: &MapSpawn, drawn: 
         commands.insert_resource(KillHeight(floor - KILL_MARGIN));
         commands.insert_resource(MapBrushes(brushes));
         commands.insert_resource(MapTraceSkip(data.trace_skip.clone()));
+        commands.insert_resource(crate::core::MapPlayerClips(data.player_clips.clone()));
         commands.insert_resource(MapPropBrushStart(data.collision_brushes.len()));
         if let Some(tree) = &data.brush_tree {
             commands.insert_resource(tree.clone());

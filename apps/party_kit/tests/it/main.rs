@@ -7,6 +7,7 @@
 mod announcer;
 mod archetypes;
 mod bodies_drawn;
+mod clips_across_games;
 mod console_scope;
 mod controls;
 mod cross_game;
@@ -54,6 +55,7 @@ mod heavy {
     mod bot_cost;
     mod bots_on_rungs;
     mod ca_mode_objects;
+    mod clips_on_maps;
     mod cs_decals;
     mod cross_hits;
     mod css_map_moves;

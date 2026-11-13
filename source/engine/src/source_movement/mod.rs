@@ -30,7 +30,10 @@
 //! map's water and ladder brushes (a ladder zone is swept as a solid); for
 //! a movement climbing contents ladders on another game's map, the map's
 //! ladder lines (`core::MapLadders::lines`, HL2's) are thin solid ladder
-//! posts (docs/DESIGN.md "Ladders across games"). Not implemented yet: base
+//! posts (docs/DESIGN.md "Ladders across games"). Player clips are among
+//! the brushes swept; another game's players-only surfaces (Combat Arms'
+//! collision blockers, `core::PLAYER_CLIP_LAYER`) stop it through its
+//! physics casts ("Clips across games"). Not implemented yet: base
 //! velocity (conveyors, water currents). Landings and wall slams roll the
 //! view (the punch angle's roll, `MovementState::view_roll`); hard
 //! landings deal fall damage (specs/cs_source/fall_damage.md) and play
@@ -2889,7 +2892,11 @@ fn step(
                 .filter(|(_, _, p)| p.push != PushAway::Collide)
                 .map(|(e, ..)| e),
         );
-    let filter = SpatialQueryFilter::from_excluded_entities(excluded).with_mask(crate::core::SOLID_LAYERS);
+    // Players-only surfaces too (another game's map's: Combat Arms'
+    // collision blockers); a Source map's player clips are among its
+    // brushes, their collider left out with the rest.
+    let filter = SpatialQueryFilter::from_excluded_entities(excluded)
+        .with_mask(crate::core::SOLID_LAYERS | crate::core::PLAYER_CLIP_LAYER);
     // The broad phase over the map's brushes, rebuilt with them.
     let grid = &mut *grid_cache;
     if let Some(b) = brushes.as_ref()
