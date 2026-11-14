@@ -2,7 +2,8 @@
 //! / `invprev` (the mouse wheel's commands) step through every weapon,
 //! slot by slot, and a pick names one weapon in a shared slot (the second
 //! grenade); buying and picking up play the game's sounds;
-//! `hud_fastswitch` is on by default and a saved config keeps it so.
+//! `hud_fastswitch` is on by default and a saved config keeps it so; a
+//! drawn weapon shows the row for a moment, except under a minigame.
 
 use bevy::{
     ecs::message::{MessageCursor, Messages},
@@ -178,4 +179,52 @@ fn fast_switch_is_on_by_default_and_saved_configs_keep_it() {
     sim.app.world_mut().resource_mut::<Console>().submit(line);
     sim.ticks(1);
     assert_eq!(fast(&sim), 0);
+}
+
+/// With fast switch, a weapon drawn shows the selection row on it for a
+/// moment (CS:S's), but not while a minigame plays: the party's gun game
+/// swaps guns on every kill and its race chip, top centre where the row
+/// draws, shows the gun (the row overlapped it).
+#[test]
+fn a_drawn_weapon_shows_the_row_except_under_a_minigame() {
+    let (mut sim, p) = sim();
+    // CS:S's HUD look in (the row draws with it).
+    sim.app.world_mut().insert_resource(crate::stack::map::hud::ActiveHud(
+        std::sync::Arc::new(crate::stack::map::hud::GameHud::default()),
+        Default::default(),
+    ));
+    sim.app.world_mut().init_resource::<chimera_client::client::fonts::UiFonts>();
+    give(sim.app.world_mut(), p, AK47).unwrap();
+    give(sim.app.world_mut(), p, KNIFE).unwrap();
+    sim.ticks(2);
+    let slot_of = |sim: &Sim, id: &str| {
+        let w = sim.app.world();
+        let inv = w.get::<Inventory>(p).unwrap();
+        let e = inv.weapons.iter().find(|e| w.get::<Weapon>(**e).unwrap().id == id).unwrap();
+        w.get::<Weapon>(*e).unwrap().slot
+    };
+    // Draws `id` by its slot key; whether the row showed on the way.
+    let draw = |sim: &mut Sim, id: &str| -> bool {
+        let slot = slot_of(sim, id);
+        sim.intent(p).select = Some(slot);
+        let mut shown = false;
+        for _ in 0..60 {
+            sim.ticks(1);
+            shown |= sim.app.world().resource::<WeaponMenu>().shown_for.is_some();
+        }
+        sim.intent(p).select = None;
+        sim.ticks(2);
+        assert_eq!(active_id(sim, p), id);
+        shown
+    };
+    let first = if active_id(&sim, p) == KNIFE { AK47 } else { KNIFE };
+    let second = if first == KNIFE { AK47 } else { KNIFE };
+    assert!(draw(&mut sim, first), "CS:S shows the row on a drawn weapon");
+    // Let the row go before the next draw.
+    sim.ticks(400);
+    sim.app.world_mut().insert_resource(chimera_sim::minigame::hud::MinigameHud {
+        title: "Gun game".into(),
+        ..Default::default()
+    });
+    assert!(!draw(&mut sim, second), "no row while a minigame plays");
 }

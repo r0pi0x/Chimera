@@ -614,7 +614,16 @@ matched, 14 within tolerance; left past it, with reasons: the tabs (slot
 C reads IDENT here, SHOWCASE in the look book: 24 px narrower, the others
 shift), text widths from whole-pixel font sizes (the caption 10 px over
 51 letters, the keys 1-5 px, GUN GAME 63 for 63.4 px), the mark 1 px
-wider (its image's width rounded up). Left: the pages in the
+wider (its image's width rounded up). Follow-ups (2026-11-14): CS:S's weapon selection row
+(`HudWeaponSelection`, drawn on every deploy with fast switch,
+`weapon_select::show_deploys`) no longer shows while a minigame plays
+(the gun game swaps guns on every kill and the race chip, top centre
+where the row draws, shows the gun; it overlapped the chip; test
+`a_drawn_weapon_shows_the_row_except_under_a_minigame`); the logo pass's
+mark measured against the look book at p = .4 and .5 (`ui_pass`, the
+look book's lobby frame with its sting set to the same progress): the
+same upright mark in the same place, edge pixels only differing, so the
+pass needed no change. Left: the pages in the
 kit's widgets, the menu's sounds, M5b's Showcase in slot C, screenshots at
 the four sizes beyond 1080p.
 

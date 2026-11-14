@@ -19,7 +19,8 @@
 //! when its HUD has `HudWeaponSelection`, `takes_slots`; 1, ours by
 //! default, the user's choice for every app though CS:S's own default is
 //! 0: they switch at once and the row shows the drawn weapon for a
-//! moment, `show_deploys`). config.cfg saves only cvars off their
+//! moment, `show_deploys`, except while a minigame plays: the party's
+//! chip shows the gun where the row would). config.cfg saves only cvars off their
 //! default (`console::config_text`), so a saved config never held the
 //! old default 0 and the new one reaches every player who didn't choose
 //! 0 themselves; the row's timings (`TIMES`, ours), the no-op
@@ -161,13 +162,16 @@ fn takes_slots(mut menu: ResMut<WeaponMenu>, fast: Res<FastSwitch>, hud: Option<
             .is_some_and(|h| h.0.panels.contains_key("HudWeaponSelection"));
 }
 
-/// With fast switch on, a weapon drawn shows the row on it for a moment.
+/// With fast switch on, a weapon drawn shows the row on it for a moment;
+/// not while a minigame plays (its gun game swaps the gun on every kill,
+/// and the shell's race chip, top centre where the row draws, shows it).
 fn show_deploys(
     mut events: MessageReader<WeaponEvent>,
     mut menu: ResMut<WeaponMenu>,
     player: Option<Single<Entity, With<LocalPlayer>>>,
+    minigame: Option<Res<chimera_sim::minigame::hud::MinigameHud>>,
 ) {
-    let Some(me) = player.map(|p| *p) else {
+    let Some(me) = player.map(|p| *p).filter(|_| !minigame.is_some_and(|m| m.playing())) else {
         events.clear();
         return;
     };
