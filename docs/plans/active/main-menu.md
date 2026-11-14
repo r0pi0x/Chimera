@@ -187,7 +187,9 @@ start --(no map/connect)--> MainMenu --Play/Start--> Loading --> InGame
   marks them). Still to see: broadcast between two machines (only
   127.0.0.1 was seen live, multiplayer.md slice 8), Windows firewall
   prompts for the query port.
-- **M3 (Internet):** a master server of our own: servers register
+- **M3 (Internet):** planned in [hub.md](hub.md) (the master server as
+  a hub: one address for the list, the asset service, feedback and news;
+  first-run setup). In short: a master server of our own: servers register
   (heartbeat with address and the query port), clients get a list and
   query each server directly with A2S as today. Small HTTP service; it
   could run beside the asset service's dev server (asset plan section
@@ -214,7 +216,7 @@ start --(no map/connect)--> MainMenu --Play/Start--> Loading --> InGame
   keywords with app and minigame in the query reply; the party's Find
   servers page: LAN, Favourites, History, password dialog. A LAN test
   between the Windows PC and the Linux box.
-- **M3: Internet list and favourites polish.** The master server
+- **M3: Internet list and favourites polish** ([hub.md](hub.md)). The master server
   (register, heartbeat, list), the Internet tab, favourites from the
   in-game Escape menu ("Add this server"), the asset plan's per-set
   download lines if its M3 is in by then.
