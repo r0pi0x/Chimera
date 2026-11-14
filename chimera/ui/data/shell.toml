@@ -26,6 +26,11 @@ acc_glow = 0.45
 plate = 0.55
 glow = 0.20
 
+# Each game's own kill icon wherever it has one, ours only where none
+# (chimera_ui::icons::choose).
+[icons]
+prefer_game = true
+
 [shape]
 slant_deg = 0.0
 min_text_px = 9.0
@@ -65,3 +70,6 @@ pop = "bezier(.34,1.56,.64,1)"
 [motion.dur.pass]
 total = 1.2
 swap = 0.6
+
+[motion.dur.matchend]
+lines_loop = 24.0

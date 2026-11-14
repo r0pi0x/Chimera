@@ -10,7 +10,11 @@
 //! - `units`: cq to logical px (`UiUnits`), physical-pixel snapping,
 //!   `TickLayout`.
 //! - `motion`: `Ease`, `UiClock`, `Track`, `Timeline`.
-//! - `materials`: `SlantMaterial`, `TickBarMaterial`, `PassMaterial`.
+//! - `icons`: the fallback gun set and the marks as data, rasterized
+//!   per pixel height (`IconImages`) or tessellated; `IconFor`, `choose`.
+//! - `materials`: `SlantMaterial`, `TickBarMaterial`, `PassMaterial`,
+//!   `LinesMaterial`, `AmbientMaterial`.
+//! - `widgets`: `tag` (YOU, HOST, BOT, accent), `kbd`.
 //!
 //! `ChimeraUiPlugin` keeps `UiUnits` from the window, steps the clock and
 //! every `Timeline` (`UiKitSystems`, in `PostUpdate` before Bevy's UI
@@ -18,15 +22,18 @@
 //! Without a `Theme` resource it inserts `Theme::shell_default`.
 
 pub mod fonts;
+pub mod icons;
 pub mod materials;
 pub mod motion;
 pub mod theme;
 pub mod units;
+pub mod widgets;
 
 use bevy::{prelude::*, ui::UiSystems};
 
 pub use fonts::{FontFiles, KitFonts, Role, Styled};
-pub use materials::{KitMaterialsPlugin, PassMaterial, SlantMaterial, TickBarMaterial};
+pub use icons::{IconFor, IconImages, IconSource, Icons};
+pub use materials::{AmbientMaterial, KitMaterialsPlugin, LinesMaterial, PassMaterial, SlantMaterial, TickBarMaterial};
 pub use motion::{Ease, Prop, Timeline, Track, UiClock};
 pub use theme::{Theme, Tone};
 pub use units::{TickLayout, UiUnits};
@@ -45,6 +52,7 @@ impl Plugin for ChimeraUiPlugin {
             app.insert_resource(Theme::shell_default());
         }
         app.init_resource::<UiUnits>()
+            .init_resource::<icons::IconImages>()
             .init_resource::<UiClock>()
             .add_plugins(KitMaterialsPlugin)
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare))

@@ -373,14 +373,19 @@ milestone.
 
 ### M0: tokens, fonts, the motion kit
 
-Status (2026-11-13): the kit's API is in (`chimera/ui`: `Theme` and
-data/shell.toml, `KitFonts`/`Role`/`fonts::text`, `UiUnits`/`TickLayout`,
-`Ease`/`UiClock`/`Timeline`, `SlantMaterial`/`TickBarMaterial`/
-`PassMaterial`; `ChimeraUiPlugin` in the shell's plugins), with Signal's
-theme and the v0.4 faces in `apps/ultimate_gun_game/` (`signal`), the
-font sources in `tools/fonts/` and `own_fonts_carry_their_licence`.
-Next: `LinesMaterial`, `AmbientMaterial` (stub), icons, widgets,
-`ui_scene proof` screenshots, `overlay::font` from the theme's roles.
+Status (2026-11-14): done but for the items under "Left". In:
+`chimera/ui` (`theme`, `fonts`, `units`, `motion`, `materials`: Slant,
+TickBar, Pass, Lines, Ambient (stub), `icons`: data/icons.toml with the
+13 guns and the marks (UGG mark, crown, trophy, kill, death, warn),
+rasterized per pixel height (`IconImages`) and tessellated, `IconFor`,
+`choose` with `icons.prefer_game`; `widgets`: `tag`, `kbd`);
+`ChimeraUiPlugin` and `ui_scene` (`client::ui_scene`, `proof`) in the
+shell; Signal's theme and the v0.4 faces in `apps/ultimate_gun_game/`
+(`signal`); the font sources in `tools/fonts/`;
+`own_fonts_carry_their_licence`. Left: `overlay::font` from the theme's
+roles (the screens' milestones switch their text to `fonts::text`), the
+widgets `plus_mark`, `rolling_number`, `slab`, `chip`, the post-layout
+pixel snap system, and `text_warm` declarations of the roles' sizes.
 
 - `chimera_ui` crate (2.1) with `theme`, `fonts`, `units`, `motion`,
   `materials`, `icons`, `widgets`; the fonts and theme in
@@ -610,8 +615,10 @@ must be one build.
 
 ## 6. Decisions (user, 2026-11-14)
 
-1. Icons: each game's own kill icons in the kill feed only; our fallback
-   set everywhere else (one style at small sizes).
+1. Icons (revised 2026-11-14): each game's own kill icon wherever that
+   game has one (kill feed, chip, board, toast, standings), our fallback
+   set only where none; the theme's `icons.prefer_game` (on in Signal)
+   chooses, `chimera_ui::icons::choose` applies it.
 2. Tab: one board, the chip opening into it. The board is big enough to
    carry everything the full scoreboard had (rung, gun icon and name,
    K/D, ladder strip, tags, session wins). Its open and close are fast

@@ -28,6 +28,11 @@ acc_glow = 0.45
 plate = 0.80
 glow = 0.20
 
+# Each game's own kill icon wherever it has one, ours only where none
+# (chimera_ui::icons::choose).
+[icons]
+prefer_game = true
+
 [shape]
 slant_deg = 12.0
 min_text_px = 9.0
@@ -72,10 +77,10 @@ roll = "back(.9)"
 [motion.dur.pass]
 total = 1.2
 swap = 0.6
-mark_in_at = 0.33
-mark_in = 0.16
-mark_out_at = 0.70
-mark_out = 0.12
+mark_in_at = 0.396     # .33 of the pass
+mark_in = 0.192        # .16
+mark_out_at = 0.84     # .70
+mark_out = 0.144       # .12
 
 # Tab: the chip opens into the board (decision 2: fast enough to spam).
 [motion.dur.board]
@@ -121,6 +126,7 @@ climb_draw = 0.7
 climb_ticks = 0.52
 vote = 20.0
 vote_hot_from = 17.0
+lines_loop = 24.0
 
 [motion.dur.menu]
 bar_at = 0.62
