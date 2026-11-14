@@ -369,8 +369,10 @@ fn launch(app: &mut App, args: &chimera_client::client::Args) {
         .add_plugins(party_kit::main_menu::MainMenuPlugin {
             at_start: at_menu,
             minigame: MINIGAME.into(),
-            // A tool run (`+mainmenu` photographing it) keeps nothing.
-            keep_recent: at_menu && !args.tool_run(),
+            // A tool run (`+mainmenu` photographing it) keeps nothing. A
+            // start that joins (`+connect`: a join link, the first join's
+            // relaunch) keeps them too: it comes back to this menu.
+            keep_recent: !args.tool_run(),
         })
         .add_plugins(party_kit::menu_backdrop::MenuBackdropPlugin)
     .add_plugins((UltimateGunGamePlugin::launch(), chimera_client::client::hud_minimal::MinimalHudPlugin))

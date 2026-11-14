@@ -31,7 +31,10 @@
 //!   minigame (`MenuMinigame`) once the map is in.
 //! - **Join**: an address (host:port, the port 27015 unless given) and a
 //!   password, Connect (`password ..; connect ..`), the last addresses as
-//!   buttons (`RecentFile`: `party_recent.txt` in the config folder).
+//!   buttons (`RecentFile`: `party_recent.txt` in the config folder). A
+//!   join from the menu, the browser or the command line (`+connect`: a
+//!   join link, the first join's relaunch) is remembered there and in the
+//!   browser's History (`remember_join`).
 //! - **Options**: the Escape menu's tabs (data/options.toml) and Binds
 //!   (the Controls page); under a theme with `[layout.settings]`
 //!   (Ultimate Gun Game's Signal) the Settings screen instead
@@ -871,6 +874,8 @@ impl Plugin for MainMenuPlugin {
             .add_observer(map_load_failed)
             .add_plugins((crate::signal_menu::SignalMenuPlugin, crate::signal_pages::SignalPagesPlugin))
             .add_systems(Startup, ((start_look, init_play).chain(), spawn_backdrop))
+            // After the browser's lists are read (`signal_pages`' Startup).
+            .add_systems(PostStartup, remember_command_line_join)
             .add_systems(
                 Update,
                 (look_loaded, typing, clicks, act, follow_loads, follow_reconnect, refresh_values, ca_loading_gate, fly, follow_shown, cameras, show, backdrop, progress, loading_under_lobby, entry_hover, music)
@@ -1551,6 +1556,40 @@ fn start(world: &mut World) {
     }
 }
 
+/// A join of `address` remembered: first in Recent (`RecentFile`) and in
+/// the browser's History (`signal_pages::record_join`).
+pub fn remember_join(world: &mut World, address: &str) {
+    let Some(menu) = world.get_resource::<PartyMenu>() else { return };
+    let mut recent = menu.recent.clone();
+    remember(&mut recent, address);
+    if let Some(f) = world.get_resource::<RecentFile>() {
+        f.write(&recent);
+    }
+    crate::signal_pages::record_join(world, address);
+    world.resource_mut::<PartyMenu>().recent = recent;
+}
+
+/// The address a command line's `+connect <address>` joins.
+pub fn command_line_join(console: &[String]) -> Option<String> {
+    console.iter().find_map(|c| {
+        let words = chimera_core::console::parse(c);
+        let w = words.first()?;
+        (w.first()?.eq_ignore_ascii_case("connect")).then(|| w.get(1).cloned()).flatten()
+    })
+}
+
+/// A start that joins a server (`+connect <address>`: a join link, the
+/// first join's relaunch) remembers it as a join from the menu does.
+pub fn remember_command_line_join(world: &mut World) {
+    let Some(args) = world.get_resource::<chimera_client::client::ClientArgs>() else { return };
+    if args.0.tool_run() {
+        return;
+    }
+    if let Some(a) = command_line_join(&args.0.console) {
+        remember_join(world, &a);
+    }
+}
+
 /// Join: the password, then `connect`; the address remembered.
 pub(crate) fn connect(world: &mut World, address: &str, password: &str) {
     if address.is_empty() {
@@ -1564,12 +1603,8 @@ pub(crate) fn connect(world: &mut World, address: &str, password: &str) {
     };
     submit(world, format!("password {pw}"));
     submit(world, format!("connect {}", chimera_core::console::quote(address)));
-    let mut recent = world.resource::<PartyMenu>().recent.clone();
-    remember(&mut recent, address);
-    world.resource::<RecentFile>().write(&recent);
-    crate::signal_pages::record_join(world, address);
+    remember_join(world, address);
     let mut m = world.resource_mut::<PartyMenu>();
-    m.recent = recent;
     m.screen = Screen::Joining;
     m.loading = Some(address.to_string());
     m.focus = None;
