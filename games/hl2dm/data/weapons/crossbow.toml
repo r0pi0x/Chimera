@@ -5,12 +5,13 @@
 # generic hitgroup, head and legs alike: no head bonus, measured 2026-11-03;
 # the spec's head 300 isn't), force 21000 kg in/s, glancing off
 # below cos 0.5 faster than 100 (0.75 of its speed, full gravity), else
-# sticking 2 s; refire 0.75; the reload (1.8333 s) starts strictly after
-# the fire animation (`hl2dm:crossbow`): 0.1 s as the real server measures
-# (the spec's 0.6667 gave 168 ticks a held shot; the server fires every
-# 130, tools/hl2dm_probe/cases.py);
-# attack2's press zooms to 20. Script: bucket 3 position 1, weight 6,
-# clip 1, default clip 5.
+# sticking 2 s; through grates and breakable glass; refire 0.75; the
+# reload (1.8333 s) starts strictly after the fire animation
+# (`hl2dm:crossbow`): 0.1 s as the real server measures (the spec's
+# 0.6667 gave 168 ticks a held shot; the server fires every 130,
+# tools/hl2dm_probe/cases.py); attack2's press zooms to 20; BoltFly with
+# each shot, BoltHitWorld and BoltHitBody where the bolt meets something.
+# Script: bucket 3 position 1, weight 6, clip 1, default clip 5.
 id = "hl2dm:weapon_crossbow"
 base = "hl2dm:base"
 # No gun class yet: the gun game takes only classed guns (its ladder
@@ -39,6 +40,8 @@ spread = { cone = 0.0 }
 
 [sounds]
 fire = "Weapon_Crossbow.Single"
+# 7.1: the bolt's flight sound with each shot.
+shot = [[0.0, "Weapon_Crossbow.BoltFly"]]
 
 [models]
 world = "models/weapons/w_crossbow.mdl"
@@ -61,6 +64,10 @@ yaw = [0.0, 0.0]
 fire_anim = 0.1
 reload = 1.8333
 zoom_fov = 20.0
+# 7.4: the bolt meeting the world (sticking or glancing), and stopping in
+# something that takes damage.
+hit_world_sound = "Weapon_Crossbow.BoltHitWorld"
+hit_body_sound = "Weapon_Crossbow.BoltHitBody"
 
 [hooks."chimera:projectile"]
 sky_probe = 16.0
@@ -77,6 +84,10 @@ glance_speed = 100.0
 glance_keep = 0.75
 glance_gravity = 600.0
 stick_time = 2.0
+# 7.3, 7.4: it passes grates, and flies on through breakable glass (100
+# to the pane).
+pass_grates = true
+through_glass = true
 damage = 100.0
 kind = "bullet"
 head = 1.0

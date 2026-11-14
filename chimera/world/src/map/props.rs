@@ -231,6 +231,12 @@ pub struct MapPropCollider;
 #[derive(Component)]
 pub struct SeeThrough;
 
+/// A map collider of grates (`MapData::grate_hulls`; `SeeThrough` too):
+/// solid to players and shots, passed by a projectile that passes grates
+/// (`weapon::projectile::Flyer::pass_grates`).
+#[derive(Component)]
+pub struct Grate;
+
 #[cfg(test)]
 mod switch_tests {
     use super::*;

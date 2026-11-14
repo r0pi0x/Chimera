@@ -34,6 +34,9 @@ timing = "accumulate"
 # firing state, fire_0 starts on the next and its key is consumed on the
 # one after, so the first round comes 2 updates on.
 latency = 2
+# view_models.md 7: `postfire` 150 ms after the last round (weapon_classes.md
+# 4); a press during it fires at once, a reload waits for it.
+postfire = 0.15
 
 # [TW: Clip / total] 15, [TW: Reload] 1500 ms.
 [magazine]

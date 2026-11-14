@@ -5,7 +5,7 @@
 //! the test (`weapons::timing::ViewTimes`), on the server and predicted;
 //! ours keep their spec numbers; `FireAniRate` reaches every copy; a
 //! client that can't read the models, or reads others, predicts on the
-//! server's timing (`net::weapon_params`).
+//! server's timing (`net::weapon_params`); our M92FS's own post-fire.
 
 use std::time::Duration;
 
@@ -645,6 +645,50 @@ fn a_semi_automatic_copy_takes_its_postfire() {
     let t2 = next_shot(&mut sim, w, 30).expect("a shot");
     sim.intent(p).fire = false;
     assert!(t2 - pressed > 2.5 * tick, "the chain again: {} s", t2 - pressed);
+}
+
+/// Our M92FS document plays its 150 ms `postfire` after a shot
+/// (weapon_classes.md 4, view_models.md 7; ca-weapon-timings.md open
+/// question 7): a reload asked after a shot starts when the shot's 180 ms
+/// and the post-fire's 150 are over, and a press during the post-fire
+/// still fires on the update that sees it (the M92FS fires every 180 ms
+/// plus frame rounding, Quirk 6).
+#[test]
+fn our_m92fs_holds_a_reload_for_its_postfire() {
+    let (mut sim, p) = sim();
+    let w = weapon::give(sim.app.world_mut(), p, "combat_arms:beretta_m92fs").unwrap();
+    {
+        let tr = sim.app.world().get::<Trigger>(w).unwrap();
+        assert!(!tr.automatic);
+        assert!((tr.cycle - 0.18).abs() < 1e-6 && (tr.postfire - 0.15).abs() < 1e-6, "{tr:?}");
+    }
+    sim.seconds(1.0);
+    let tick = TICK_INTERVAL as f64;
+    sim.intent(p).fire = true;
+    let t0 = next_shot(&mut sim, w, 30).expect("a shot");
+    sim.intent(p).fire = false;
+    // Pressed 250 ms on (the shot's 180 over, the post-fire playing): at once.
+    while now(&sim) < t0 + 0.25 {
+        sim.ticks(1);
+    }
+    sim.intent(p).fire = true;
+    let pressed = now(&sim);
+    let t1 = next_shot(&mut sim, w, 30).expect("a shot");
+    sim.intent(p).fire = false;
+    assert!(t1 - pressed <= tick + 1e-6, "cut the post-fire short: {} s after the press", t1 - pressed);
+    // A reload asked now waits for the shot (180 ms) and the post-fire (150).
+    sim.intent(p).reload = true;
+    let mut started = None;
+    for _ in 0..90 {
+        sim.ticks(1);
+        if started.is_none() && sim.app.world().get::<chimera_sim::weapon::WeaponState>(w).unwrap().reload_end.is_some() {
+            started = Some(now(&sim));
+        }
+    }
+    sim.intent(p).reload = false;
+    let started = started.expect("reloaded");
+    assert!(started - t1 >= 0.33 - tick, "the reload waited for the post-fire: {} s", started - t1);
+    assert!(started - t1 <= 0.33 + 2.0 * tick, "and no longer: {} s", started - t1);
 }
 
 /// A minigun copy (`AccumPreFire`) spins on its own model: a 1 s spin-up,

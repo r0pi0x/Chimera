@@ -1,8 +1,10 @@
 //! HL2:DM's projectiles on the headless harness (`harness::Hl2Sim`, the
 //! greybox), specs/hl2dm/projectiles.md's implementer cases (H4, the
 //! numbers in the test names): the blast rule and the shove (2-6, 12-13),
-//! the SMG1's contact grenade (15-18), the AR2's ball (19-23), the RPG
-//! (27-28, 32, 34-35), the crossbow (36-37, 39-41, 43), the frag (44,
+//! the SMG1's contact grenade (15-18; shot or blasted in flight), the
+//! AR2's ball (19-23), the RPG
+//! (27-28, 32, 34-35), the crossbow (36-37, 39-41, 43; its sounds, grates
+//! and glass), the frag (44,
 //! 47-53) and the S.L.A.M. (54-62). Ticks count from the action's tick,
 //! at 0.015 s. Source vectors are converted with `launch::to_engine`.
 //! The greybox: flat ground at y 0; from the first spawn, looking east
@@ -383,6 +385,62 @@ fn the_contact_grenade_explodes_on_a_player_18() {
     assert!(!ran.events.iter().any(|(_, k)| matches!(k, WeaponEventKind::DryFire)));
 }
 
+/// Projectiles.md 4.2 and 2.4: a contact grenade in flight takes damage
+/// (health 1): shots meet it, a hit (any damage) sets it off at once
+/// where it is, and so does another blast; the explosion is its thrower's.
+#[test]
+fn a_contact_grenade_in_flight_goes_off_when_shot_or_blasted() {
+    use avian3d::prelude::{SpatialQuery, SpatialQueryFilter};
+    for how in ["shot", "blast"] {
+        let mut sim = self::sim();
+        let p = player(&mut sim);
+        let w = holding(&mut sim, p, weapons::SMG1);
+        set_rounds(&mut sim, w, 1);
+        look(&mut sim, p, EAST, 30.0);
+        run(&mut sim, p, 3, |s, k| s.intent(p).secondary = k == 0);
+        let (g, _, at) = flyers(&mut sim).into_iter().next().expect("a grenade in flight");
+        // A shot's line (the solid layers) meets it.
+        let from = at + Vec3::NEG_X * 2.0;
+        let hit = {
+            let world = sim.app.world_mut();
+            let mut state = bevy::ecs::system::SystemState::<SpatialQuery>::new(world);
+            let spatial = state.get(world).unwrap();
+            spatial
+                .cast_ray(
+                    from,
+                    Dir3::X,
+                    4.0,
+                    true,
+                    &SpatialQueryFilter::default().with_mask(chimera_core::core::SOLID_LAYERS),
+                )
+                .map(|h| h.entity)
+        };
+        assert_eq!(hit, Some(g), "{how}: a shot's line meets the grenade");
+        match how {
+            "shot" => {
+                let t = sim.spawn_character(greybox::SPAWNS[1], movement::ID);
+                sim.app.world_mut().write_message(Damage {
+                    target: g,
+                    attacker: Some(t),
+                    amount: 0.08,
+                    point: at,
+                    dir: Vec3::X,
+                    hitgroup: chimera_core::core::Hitgroup::Generic,
+                    kind: chimera_core::core::DamageKind::Bullet,
+                    weapon: None,
+                    force: Vec3::ZERO,
+                });
+            }
+            _ => blast(&mut sim, at + Vec3::Y * 0.5, 50.0, 128.0, None),
+        }
+        let ran = run(&mut sim, p, 2, |_, _| {});
+        let mine: Vec<_> = ran.blasts.iter().filter(|(_, b)| b.inflictor == Some(g)).collect();
+        assert_eq!(mine.len(), 1, "{how}: it went off once: {:?}", ran.blasts.len());
+        assert_eq!(mine[0].1.thrower, Some(p), "{how}: its thrower's");
+        assert!(flyers(&mut sim).iter().all(|(e, ..)| *e != g), "{how}: gone");
+    }
+}
+
 // ---------------------------------------------------------------------------
 // AR2 energy ball (5)
 
@@ -727,6 +785,111 @@ fn a_bolt_does_100_anywhere_39() {
         );
         if let Some(a) = armour_left {
             assert!((sim.app.world().get::<Armor>(t).unwrap().amount - a).abs() < 1e-4);
+        }
+    }
+}
+
+/// Projectiles.md 7.1 and 7.4: a shot plays `BoltFly` beside the fire
+/// sound; the bolt stopping in a player plays `BoltHitBody` where it hit,
+/// one sticking in the floor `BoltHitWorld`; all three are loaded.
+#[test]
+fn a_bolts_sounds_fly_hit_the_body_and_the_world() {
+    const FLY: &str = "Weapon_Crossbow.BoltFly";
+    const BODY: &str = "Weapon_Crossbow.BoltHitBody";
+    const WORLD: &str = "Weapon_Crossbow.BoltHitWorld";
+    let loaded = hl2dm::game::sounds::entries();
+    for e in [FLY, BODY, WORLD] {
+        assert!(loaded.iter().any(|l| l == e), "{e} not loaded");
+    }
+    // At a player 3 m east.
+    let mut sim = self::sim();
+    let p = player(&mut sim);
+    let w = holding(&mut sim, p, weapons::CROSSBOW);
+    sim.app.world_mut().get_mut::<Magazine>(w).unwrap().clip = 1;
+    let t = sim.spawn_character(greybox::SPAWNS[0] + Vec3::X * 3.0, movement::ID);
+    sim.seconds(2.0);
+    let aim = eye(&sim, t) - Vec3::Y * 0.45;
+    testkit::aim_at(&mut sim, p, aim);
+    let ran = run(&mut sim, p, 10, |s, k| s.intent(p).fire = k == 0);
+    let heard = |ran: &Ran, e: &str| ran.sounds.iter().filter(|(_, s)| s == e).map(|(t, _)| *t).collect::<Vec<_>>();
+    assert_eq!(heard(&ran, FLY), vec![0], "{:?}", ran.sounds);
+    let hit = ran.hits.iter().find(|(_, h)| h.character).map(|(t, _)| *t).expect("hit the player");
+    assert_eq!(heard(&ran, BODY), vec![hit], "{:?}", ran.sounds);
+    assert!(heard(&ran, WORLD).is_empty(), "{:?}", ran.sounds);
+    // At the floor 2 m ahead: it sticks.
+    let mut sim = self::sim();
+    let p = player(&mut sim);
+    let w = holding(&mut sim, p, weapons::CROSSBOW);
+    sim.app.world_mut().get_mut::<Magazine>(w).unwrap().clip = 1;
+    look(&mut sim, p, EAST, -45.0);
+    let ran = run(&mut sim, p, 20, |s, k| s.intent(p).fire = k == 0);
+    let hit = ran.hits.iter().find(|(_, h)| h.world).map(|(t, _)| *t).expect("hit the floor");
+    assert_eq!(heard(&ran, WORLD), vec![hit], "{:?}", ran.sounds);
+    assert!(heard(&ran, BODY).is_empty(), "{:?}", ran.sounds);
+}
+
+/// Projectiles.md 7.3 and 7.4: a bolt passes the map's grates and flies
+/// on through breakable glass (100 to the pane), hitting the player
+/// behind; plain glass (a window that takes no damage) stops it.
+#[test]
+fn a_bolt_passes_grates_and_breakable_glass() {
+    use avian3d::prelude::{Collider, RigidBody};
+    use chimera_core::core::Damageable;
+    use chimera_world::map::{Grate, MapBrushCollider, SeeThrough};
+    // 0 a grate, 1 breakable glass, 2 plain glass.
+    for pane in 0..3 {
+        let mut sim = self::sim();
+        let p = player(&mut sim);
+        let w = holding(&mut sim, p, weapons::CROSSBOW);
+        sim.app.world_mut().get_mut::<Magazine>(w).unwrap().clip = 1;
+        let t = sim.spawn_character(greybox::SPAWNS[0] + Vec3::X * 3.0, movement::ID);
+        let wall = {
+            let mut e = sim.app.world_mut().spawn((
+                RigidBody::Static,
+                Collider::cuboid(0.05, 4.0, 4.0),
+                Transform::from_translation(greybox::SPAWNS[0] + Vec3::X * 1.5),
+                MapBrushCollider,
+                SeeThrough,
+            ));
+            match pane {
+                0 => {
+                    e.insert(Grate);
+                }
+                1 => {
+                    e.insert(Damageable);
+                }
+                _ => {}
+            }
+            e.id()
+        };
+        sim.seconds(2.0);
+        let aim = eye(&sim, t) - Vec3::Y * 0.45;
+        testkit::aim_at(&mut sim, p, aim);
+        // Read each tick: messages last two updates.
+        let mut damage = Log::<Damage>::new(&sim);
+        let mut dealt = Vec::new();
+        let ran = run(&mut sim, p, 10, |s, k| {
+            s.intent(p).fire = k == 0;
+            dealt.extend(damage.read(s));
+        });
+        dealt.extend(damage.read(&sim));
+        let to_wall = dealt.iter().filter(|d| d.target == wall).count();
+        let hit_player = ran.hits.iter().any(|(_, h)| h.character);
+        match pane {
+            0 => {
+                assert!(hit_player && health(&sim, t) < 1.0, "through the grate: {:?}", ran.hits);
+                assert!(ran.hits.iter().all(|(_, h)| h.other != Some(wall)), "never met the grate");
+            }
+            1 => {
+                assert_eq!(to_wall, 1, "the pane took the bolt once: {:?}", ran.hits);
+                assert!(hit_player && health(&sim, t) < 1.0, "on through the glass: {:?}", ran.hits);
+                let (_, at_pane) = ran.hits.iter().find(|(_, h)| h.other == Some(wall)).unwrap();
+                assert!(!at_pane.world && !at_pane.gone, "neither the world nor its end");
+            }
+            _ => {
+                assert!(!hit_player && (health(&sim, t) - 100.0).abs() < 1e-3, "stopped by the window");
+                assert_eq!(to_wall, 0);
+            }
         }
     }
 }

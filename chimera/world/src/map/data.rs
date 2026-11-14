@@ -1214,6 +1214,9 @@ pub struct MapData {
     /// Indices into `collision_hulls` of volumes light passes (glass,
     /// grates): their own collider, marked `SeeThrough`.
     pub see_through_hulls: Vec<usize>,
+    /// Those of `see_through_hulls` that are grates (not glass): their
+    /// own collider, marked `SeeThrough` and `Grate`.
+    pub grate_hulls: Vec<usize>,
     /// Brush entities with nodes of their own whose volumes are all
     /// see-through (breakable glass): their nodes get `SeeThrough`.
     pub see_through_entities: Vec<usize>,
