@@ -42,61 +42,9 @@ own maps unchanged. docs/DESIGN.md, "Ladders across games".
 
 ## Do next (spec is clear)
 
-1. **HL2:DM: view model drawn at 69 degrees, not 54.** `view_model_fov`
-   is fov - (default_fov - player fov) = 54 - (75 - 90); HL2:DM pins
-   `default_fov` at 75 where the spec has it follow `fov_desired`, so at
-   UGG's 90 every HL2 gun looks small and far. Spec:
-   hl2dm/player_models.md 12.4 "FOV", cases 51-52. Code:
-   `games/hl2dm/src/game/view.rs`, `chimera/world/src/map/view_model.rs`
-   `view_model_fov`, `apps/party_kit` `add_view_model_fovs`. S. No spec.
-2. **Combat Arms: knife and melee swings not lag compensated.** The
-   server checks a swing against where victims are now; guns are already
-   compensated. Online, swings at moving targets miss, and the ladder
-   ends on a knife. Spec: combat_arms/inventory.md 8.3 "The attack ray".
-   Code: `games/combat_arms/src/game/inventory.rs` `swing_knives` (no
-   `weapon::lagcomp`; shortcut in `game/net.rs`). S-M. No spec.
-3. **Combat Arms: others' muzzle flash, tracer start, casings and shot
-   sound come from the hand, not the barrel** (25-39 units short). Spec:
-   combat_arms/effects_sounds.md, third-person effect points (`Flash`,
-   `Breach` sockets). Code: `games/combat_arms/src/game/effects/mod.rs`
-   (`hand` vs `flash`); `CaPose::flash_point` exists, used by launchers
-   only; `Breach` not posed. S. No spec.
-5. **HL2:DM: items and ammo crates invisible, in the HL2:DM app.** Pickups
-   spawn as mesh-less 16-unit boxes (the data's `model` is never read);
-   crates are invisible solid blocks. Spec: hl2dm/maps_entities.md 1, 3
-   (touch box: bounds grown 24 sideways, 12 up). Code:
-   `games/hl2dm/src/game/pickups.rs`, `ammo_crates.rs`. M. No spec.
-7. **HL2:DM: prop physics rules missing in UGG.** Without
-   `Hl2PhysicsPlugin`, dm_ maps' `prop_physics_multiplayer` (92 on
-   dm_underpass) follow CS:S's walk-through rule, hit players at impact
-   scale 1 not 4, and barrels use CS:S's blast. Gate per map's game.
-   Spec: hl2dm/source_deltas.md 1.5; gravity_gun.md Corrections 1-2, 9.
-   Code: `party_sim`, `games/hl2dm/src/game/physics.rs`. M. No spec.
-9. **Combat Arms: first-person hands always the default character's.**
-   UGG wears a random body per rung; sleeves, sex and gloves never match.
-   Spec: combat_arms/view_models.md 2. Code: `game/view_model/on_demand.rs`,
-   `view_model.rs` `add_view_models` (always `HandProfile { character:
-   true, .. }`; the cache needs a key per hand). M. No spec.
-10. **HL2:DM: blasts have no hearing effects** (ringing within 240,
-    shock muffle). `hl2_blast` sets `hearing: None`; CS:S has the
-    pieces. Spec: hl2dm/projectiles.md 2.2, case 63. Code:
-    `games/hl2dm/src/game/weapons/launch.rs`. S. No spec.
-11. **Combat Arms: launcher rockets and hidden pieces always drawn.**
-    The view-model machine tracks `Pieces` but nothing draws from it; an
-    RPG-7 keeps its rocket after firing. Spec: combat_arms/view_models.md
-    3 "Hidden pieces", "Projectile piece", case 37. Code:
-    `games/combat_arms/src/game/view_model/machine.rs`; data lacks
-    `ProjectilePiece`/`HiddenPiece#`. S-M. No spec. **Done** (branch
-    `ca-parity-pieces-jitter`): read from the install, the view model's
-    pieces hidden by name (`ViewAnimator::hidden_meshes`); the spec
-    names no third-person piece hiding.
-14. **Combat Arms: no per-shot back push** (`BaseCamBackJitter`,
-    recovering at 5 x `BackJitterRecover`/s); read and unused, default
-    0.5. Spec: combat_arms/weapon_firing.md "Recoil (view kick)". Code:
-    `games/combat_arms/src/game/weapons.rs` `back_jitter`. S. No spec.
-    **Done** (branch `ca-parity-pieces-jitter`): Chimera's
-    `ViewBackPush` on the camera, predicted, not sent (net41 kept);
-    shots still leave from the eye.
+Nothing: every row that was here has landed (view model FOV, melee lag
+compensation, Combat Arms' Flash/Breach sockets, hands, launcher pieces
+and back push, HL2:DM's items, crates, prop rules and blast hearing).
 
 ## Later (spec is clear, less often seen)
 
@@ -130,12 +78,12 @@ own maps unchanged. docs/DESIGN.md, "Ladders across games".
     colours, timings, exit marks). Spec: cs_source/impact_effects.md
     2-8, Q1, Q3, Q5, Q7. Code: `source/engine/src/effects/impact_effects.rs`.
     M. Client captures.
-29. **CS:S: HE explosions play near and far channels into separate
-    ears** (the `^` prefix stripped). Spec: cs_source/sounds.md 1 "Wave
-    name prefixes"; grenades.md 5.4. Code:
-    `source/engine/src/content/sound.rs` `WAVE_PREFIXES`,
-    `chimera/present/src/audio/live_sound.rs`. S (downmix now, the blend
-    curve once specified).
+29. **CS:S: HE explosions' `^` near/far blend is a mono downmix.** The
+    two channels (left near, right far) now play as their average, not
+    blended by the listener's distance. Spec: cs_source/sounds.md 1 "Wave
+    name prefixes" (gives no curve); grenades.md 5.4. Code:
+    `source/engine/src/content/sound.rs` `wave_distant` (Known shortcuts).
+    S once measured. Spec: the near/far curve (a capture).
 30. **CS:S: others' feet slide** (template ground speeds 100/250/85 vs
     the models' ~107/150/67; no death layer). Spec:
     cs_source/animation.md 12, open questions. Code:
@@ -168,7 +116,7 @@ grates and glass, damageable projectiles, the combine camera.
 
 ## Counts
 
-Do next 14, later 7, needs a spec or capture 10.
+Do next 0, later 2, needs a spec or capture 10.
 
 ## Stale `//!` docs found on the way
 

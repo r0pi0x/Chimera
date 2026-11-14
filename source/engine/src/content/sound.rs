@@ -8,7 +8,14 @@
 //! inside one steps on its `source` surface with its `destination`'s
 //! sounds (`movement`'s `play_step`).
 //!
-//! Known shortcuts (docs/tech-debt.md): func_footstep_control as the
+//! Known shortcuts (docs/tech-debt.md): a `^` wave (distance-variant
+//! stereo: left channel near, right channel far, specs/cs_source/sounds.md
+//! section 1) plays as the mono average of its two channels, not the
+//! near/far blend by listener distance (`wave_distant`); the spec
+//! doesn't give the blend curve. Why it's OK for now: both channels are
+//! heard from every distance, as one sound, instead of one in each ear.
+//!
+//! func_footstep_control as the
 //! public FGD describes it, unmeasured: the feet point decides "inside"
 //! (not the box touching it), the step volume and timing stay the
 //! replaced surface's, and the first matching volume wins where several
@@ -220,6 +227,13 @@ pub fn wave_file(wave: &str) -> String {
     format!("sound/{}", path.replace('\\', "/"))
 }
 
+/// A wave marked `^` among its prefix characters is distance-variant
+/// stereo (left near, right far); it loads as a mono downmix (see the
+/// known shortcuts).
+pub fn wave_distant(wave: &str) -> bool {
+    wave.chars().take_while(|c| WAVE_PREFIXES.contains(c)).any(|c| c == '^')
+}
+
 /// A wave marked `#` among its prefix characters bypasses the room DSP.
 pub fn wave_dry(wave: &str) -> bool {
     wave.chars().take_while(|c| WAVE_PREFIXES.contains(c)).any(|c| c == '#')
@@ -413,7 +427,7 @@ pub fn load_with(
                 let index = *decoded.entry(file.clone()).or_insert_with(|| {
                     let clip = predecoded.remove(&file).flatten();
                     clip.map(|c| {
-                        out.clips.push(c);
+                        out.clips.push(if wave_distant(w) { c.downmixed() } else { c });
                         out.clips.len() - 1
                     })
                 });
@@ -584,6 +598,33 @@ mod tests {
         assert!(!wave_dry(")weapons/ak47/ak47-1.wav"));
         assert!(!wave_dry("ambient/a#b.wav"));
         assert_eq!(wave_file("*#music/a.wav"), "sound/music/a.wav");
+    }
+
+    #[test]
+    fn caret_prefix_marks_distance_variant_waves() {
+        assert!(wave_distant("^weapons/hegrenade/explode3.wav"));
+        assert!(wave_distant(")^x.wav"));
+        assert!(!wave_distant(")weapons/ak47/ak47-1.wav"));
+        assert!(!wave_distant("ambient/a^b.wav"));
+        assert_eq!(wave_file("^weapons/hegrenade/explode3.wav"), "sound/weapons/hegrenade/explode3.wav");
+    }
+
+    #[test]
+    fn distance_variant_stereo_downmixes_to_mono() {
+        // Left = near, right = far: one sound in both ears, not two.
+        let clip = crate::content::wav::SoundClip {
+            rate: 22_050,
+            channels: 2,
+            samples: vec![1000, -1000, 400, 200, -3, -4].into(),
+            loop_start: None,
+        };
+        let mono = clip.clone().downmixed();
+        assert_eq!(mono.channels, 1);
+        assert_eq!(&mono.samples[..], &[0, 300, -3]);
+        assert_eq!(mono.rate, 22_050);
+        // A mono clip is untouched.
+        let again = mono.clone().downmixed();
+        assert_eq!(&again.samples[..], &mono.samples[..]);
     }
 
     #[test]
