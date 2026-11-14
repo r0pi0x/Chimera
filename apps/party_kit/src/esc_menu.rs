@@ -401,7 +401,12 @@ impl Plugin for EscMenuPlugin {
 /// open, Settings over the match included (its pages): its keys and the
 /// panel sit where the HUDs draw health and ammo.
 fn cover_huds(menu: Res<EscMenu>, theme: Option<Res<chimera_ui::Theme>>, mut cover: ResMut<chimera_client::client::hud::HudCover>) {
-    chimera_client::client::hud::HudCover::put(&mut cover, "esc menu", menu.open && signal(theme.as_deref()));
+    let on = menu.open && signal(theme.as_deref());
+    chimera_client::client::hud::HudCover::put(&mut cover, "esc menu", on);
+    // Settings over the match also hides our own Signal HUD (race chip, feed,
+    // chips: `hud::SignalHud`); the plain menu keeps them readable.
+    let settings = on && matches!(menu.page, Page::Options(_) | Page::Host);
+    chimera_client::client::hud::HudCover::put(&mut cover, chimera_client::client::hud::SETTINGS_COVER, settings);
 }
 
 /// `ui_scene esc` (feature `dev` screenshots): the menu open over the

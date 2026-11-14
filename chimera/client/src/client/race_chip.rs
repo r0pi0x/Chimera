@@ -282,6 +282,7 @@ pub fn stage(world: &mut World, name: Option<&str>) {
 
 /// The plate's root (full width, top).
 #[derive(Component)]
+#[require(crate::client::hud::SignalHud)]
 pub struct RaceChipRoot;
 
 /// The plate that opens from the chip to the board.

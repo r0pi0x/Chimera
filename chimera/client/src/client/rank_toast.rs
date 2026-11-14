@@ -450,6 +450,7 @@ fn watch(
 
 /// The toast's root (full width, 6.8 cq down).
 #[derive(Component)]
+#[require(crate::client::hud::SignalHud)]
 pub struct RankToastRoot;
 
 /// The plate (its fixed width), its fill and the upright clip of its

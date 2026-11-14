@@ -21,7 +21,9 @@
 //! down when the look goes and builds them when it is back.
 //! A screen over the whole HUD (the Signal match end, Esc menu and
 //! Settings) covers it (`HudCover`): every game's roots and parts
-//! (`HudRoot`, `HudPart`) hidden while it is up, set back after.
+//! (`HudRoot`, `HudPart`) hidden while it is up, set back after; our own
+//! Signal HUD (`SignalHud`: race chip, feed, chips) hides only under the
+//! "settings" cover (Settings over the match), the Esc menu keeps it.
 //! `Radars` (`hud_radar`) says whether the games' radars draw; an app with
 //! one kill feed for all its HUDs (`kill_feed::SharedKillFeed`) has this
 //! HUD's left out too.
@@ -123,6 +125,16 @@ pub struct HudRoot(pub &'static str);
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct HudPart;
 
+/// A node of our own Signal HUD (race chip, kill feed, effects chips,
+/// banners, rank toast): hidden only under the `SETTINGS_COVER` cover
+/// (Settings over the match), not under the Esc menu, which keeps them
+/// readable.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct SignalHud;
+
+/// The `HudCover` name of Settings over the match.
+pub const SETTINGS_COVER: &str = "settings";
+
 /// Screens that cover the games' HUDs while they are up, by name (the
 /// Signal match end, Esc menu and Settings over the match): while any is,
 /// every `HudRoot` and `HudPart` is hidden (`cover_huds`, in `PostUpdate`
@@ -184,29 +196,33 @@ pub fn hud_cover(app: &mut App) {
 }
 
 /// The HUDs hidden while covered (`HudCover`), each set back after.
+/// A `SignalHud` node hides only while the "settings" cover is up.
 fn cover_huds(
     cover: Res<HudCover>,
     gameplay: Option<Res<crate::gameplay::Gameplay>>,
-    mut nodes: Query<(Entity, &mut Visibility, Option<&HudRoot>), Or<(With<HudRoot>, With<HudPart>)>>,
+    mut nodes: Query<(Entity, &mut Visibility, Option<&HudRoot>, Has<SignalHud>), Or<(With<HudRoot>, With<HudPart>, With<SignalHud>)>>,
     mut hidden: bevy::prelude::Local<std::collections::HashMap<Entity, Visibility>>,
 ) {
-    if cover.covered() {
-        for (e, mut v, _) in &mut nodes {
-            // What its game wants now (shown again while covered): kept for after.
+    if !cover.covered() && hidden.is_empty() {
+        return;
+    }
+    let settings = cover.is(SETTINGS_COVER);
+    for (e, mut v, root, signal) in &mut nodes {
+        let want = if signal { settings } else { cover.covered() };
+        if want {
+            // What its owner wants now (shown again while covered): kept for after.
             if *v != Visibility::Hidden {
                 hidden.insert(e, *v);
                 *v = Visibility::Hidden;
             }
-        }
-    } else if !hidden.is_empty() {
-        for (e, was) in hidden.drain() {
-            let Ok((_, mut v, root)) = nodes.get_mut(e) else { continue };
+        } else if let Some(was) = hidden.remove(&e) {
             if root.is_some_and(|r| gameplay.as_ref().is_some_and(|g| g.hud != r.0)) {
                 continue;
             }
             v.set_if_neq(was);
         }
     }
+    hidden.retain(|e, _| nodes.contains(*e));
 }
 
 /// Each game's `GameDraws` by its id, for an app with several HUDs:

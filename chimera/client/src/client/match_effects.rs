@@ -285,6 +285,7 @@ pub struct EdgePulse(pub f32);
 /// The banner's root, its clip (its width the opening), its body (the
 /// effect it shows), the title (its letter spacing) and the count.
 #[derive(Component)]
+#[require(crate::client::hud::SignalHud)]
 pub struct BannerRoot;
 /// The clip, and how far open (0-1) the banner is (tests read it).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
@@ -298,6 +299,7 @@ pub struct BannerCount;
 
 /// The chips' root (top left) and a chip: its effect and its slot's move.
 #[derive(Component)]
+#[require(crate::client::hud::SignalHud)]
 pub struct ChipsRoot;
 #[derive(Component, Clone, Debug, PartialEq)]
 pub struct EffectChip {
