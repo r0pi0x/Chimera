@@ -705,6 +705,86 @@ fn t33_crossbow_bolt() {
     }
 }
 
+/// The bolts of `w` in the world (newest last).
+fn bolts_of(sim: &mut Sim, owner: Entity) -> Vec<CaObject> {
+    let world = sim.app.world_mut();
+    let mut q = world.query::<&CaObject>();
+    q.iter(world).filter(|o| o.owner == Some(owner) && matches!(o.kind, Kind::Bolt(_))).cloned().collect()
+}
+
+/// Section 7, the crossbow's alternate fire: right mouse fires one bolt at
+/// 1300 u/s (`Velocity` of the alternate fire) with `InstDamage` 41, the
+/// weapon busy for `alt_fire_0` (550 ms) where the primary's `fire_0` is
+/// 1100 ms; with an empty clip it doesn't fire (weapon_classes.md 8).
+#[test]
+fn crossbow_alternate_fire() {
+    // One shot of each button at a victim 1000 u ahead: (speed, damage).
+    let shot = |alt: bool| -> (f32, f32) {
+        let mut sim = sim();
+        let p = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
+        let w = armed(&mut sim, p, "test:bow_exact");
+        let victim = player(&mut sim, 0.0, 1000.0, 0.0, 2);
+        set_health(&mut sim, victim, 10000.0);
+        // At the torso (the eye is 33 u above the victim's centre).
+        sim.intent(p).pitch = -(28.0f32 / 1000.0).atan();
+        sim.ticks(1);
+        if alt {
+            sim.intent(p).secondary = true;
+        } else {
+            sim.intent(p).fire = true;
+        }
+        sim.ticks(1);
+        sim.intent(p).secondary = false;
+        sim.intent(p).fire = false;
+        sim.ticks(1);
+        assert_eq!(mag(&sim, w).clip, 4, "one bolt from the clip");
+        let b = bolts_of(&mut sim, p);
+        assert_eq!(b.len(), 1, "one bolt");
+        let speed = b[0].velocity.length();
+        wait(&mut sim, 1.5);
+        (speed, 10000.0 - health(&sim, victim))
+    };
+    let (primary_speed, primary) = shot(false);
+    let (alt_speed, alt) = shot(true);
+    assert!((primary_speed - 5000.0).abs() < 0.5, "primary {primary_speed} u/s");
+    assert!((alt_speed - 1300.0).abs() < 0.5, "alternate {alt_speed} u/s");
+    assert!(primary > 0.0 && alt > 0.0, "both hit: {primary}, {alt}");
+    // The same zone at the same range: the damages are 105 to 41.
+    assert!((alt / primary - 41.0 / 105.0).abs() < 1e-3, "{alt} vs {primary}");
+
+    // Busy for 550 ms: fire held from the alternate press fires again then.
+    let mut sim = sim();
+    let p = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
+    let w = armed(&mut sim, p, BOW);
+    let t0 = now(&sim);
+    sim.intent(p).secondary = true;
+    sim.ticks(1);
+    sim.intent(p).secondary = false;
+    sim.intent(p).fire = true;
+    wait(&mut sim, 0.8);
+    sim.intent(p).fire = false;
+    let shots: Vec<f64> = fired(&sim, w, t0).into_iter().map(|t| t - t0).collect();
+    assert_eq!(shots.len(), 2, "{shots:?}");
+    assert!(shots[0] < 0.02, "the press fires at once: {shots:?}");
+    assert!((shots[1] - shots[0] - 0.55).abs() <= 0.035, "the next 550 ms later: {shots:?}");
+
+    // An empty clip: nothing.
+    let mut sim = self::sim();
+    let p = player(&mut sim, 0.0, 0.0, std::f32::consts::PI, 1);
+    let w = armed(&mut sim, p, BOW);
+    {
+        let mut m = sim.app.world_mut().get_mut::<chimera_sim::weapon::Magazine>(w).unwrap();
+        m.clip = 0;
+        m.reserve = 0;
+    }
+    let t0 = now(&sim);
+    sim.intent(p).secondary = true;
+    sim.ticks(5);
+    sim.intent(p).secondary = false;
+    assert!(fired(&sim, w, t0).is_empty(), "no alt-fire with an empty clip");
+    assert!(bolts_of(&mut sim, p).is_empty());
+}
+
 /// Case 34: an explosive bolt stuck in a wall blows `ExplosionDelayTime`
 /// (1.743 s) after its controller is fired: 100 / 250 claymore type, twice;
 /// its owner's death blows it at once.

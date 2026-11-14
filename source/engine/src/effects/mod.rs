@@ -48,6 +48,22 @@ pub struct ImpactStyle {
     /// surface's, as a bullet's (HL2:DM's crowbar and stunstick,
     /// specs/hl2dm/effects_sounds.md 6).
     pub melee_decal: Option<&'static str>,
+    /// Who sees a hit player's blood, and where.
+    pub blood: BloodView,
+}
+
+/// Who sees a hit player's blood (`impact_effects::blood_effects`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BloodView {
+    /// Every machine that sees the damage draws it at the hit point
+    /// (CS:S: specs/cs_source/impact_effects.md 10).
+    Damage,
+    /// Per viewer (specs/hl2dm/effects_sounds.md 7): the server's copy at
+    /// the hit point for everyone but the attacker (`ServerBlood`, sent to
+    /// network clients by the game), the shooter's own predicted copy at
+    /// the hit 4 in back along the shot from his own bullets' traces, a
+    /// melee attacker none.
+    PerViewer,
 }
 
 /// The styles of the games in this app (`impact_effects::ImpactEffectsPlugin`,

@@ -30,6 +30,7 @@ pub mod ammo;
 pub mod ammo_crates;
 pub mod bodies;
 pub mod carry;
+pub mod combine_camera;
 pub mod dissolve;
 pub mod effects;
 pub mod flashes;

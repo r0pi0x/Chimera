@@ -309,3 +309,50 @@ fn lag_compensation_picks_whom_to_rewind_by_distance_and_view() {
     assert!(seen.rounds >= 1, "the double shot fired");
     assert_eq!(sim.server.app.world().resource::<LagCompStats>().rewinds, before, "not rewound");
 }
+
+/// Effects_sounds.md 7 over the network: client 0 shoots client 1. The
+/// server's blood reaches the victim's client, not the shooter's; the
+/// shooter draws his own predicted copy, the victim the server's.
+#[test]
+fn blood_reaches_every_viewer_but_the_shooter() {
+    use chimera_world::map::particles::{MapParticles, ParticleMaterial, ParticleMaterials, Particles};
+    use source_engine::effects::impact_effects::{BLOOD_COUNTS, MATERIALS, ServerBlood};
+    let mut sim = joined();
+    let materials: Vec<ParticleMaterial> =
+        MATERIALS.iter().map(|n| ParticleMaterial { name: n.to_string(), ..default() }).collect();
+    for c in &mut sim.clients {
+        c.app.insert_resource(ParticleMaterials(MapParticles { materials: materials.clone() }));
+    }
+    arm(&mut sim, weapons::PISTOL);
+    place(&mut sim, 0, Vec3::new(0.0, 1.0, 12.0), 0.0);
+    place(&mut sim, 1, Vec3::new(0.0, 1.0, 9.0), std::f32::consts::PI);
+    sim.ticks(40);
+    let victim = sim.character_of(1).unwrap();
+    let health = |sim: &NetSim| sim.server.app.world().get::<chimera_core::core::Health>(victim).unwrap().current;
+    let before = health(&sim);
+    for c in &mut sim.clients {
+        c.app.world_mut().resource_mut::<Particles>().groups.clear();
+    }
+    let mut sent = Log::<ServerBlood>::new(&sim, 0);
+    let mut shooter = Log::<ServerBlood>::new(&sim, 1);
+    let mut watcher = Log::<ServerBlood>::new(&sim, 2);
+    let mut most = [0usize; 2];
+    for k in 0..40 {
+        intent(&mut sim, 0).fire = k < 2;
+        sim.step();
+        sent.poll(&sim);
+        shooter.poll(&sim);
+        watcher.poll(&sim);
+        for (i, m) in most.iter_mut().enumerate() {
+            let pool = sim.clients[i].app.world().resource::<Particles>();
+            *m = (*m).max(pool.count() - pool.capped_count());
+        }
+    }
+    assert!(health(&sim) < before, "the shot hit");
+    assert_eq!(sent.all.len(), 1, "the server's blood: {:?}", sent.all);
+    assert!(shooter.all.is_empty(), "not sent to the shooter");
+    assert_eq!(watcher.all.len(), 1, "sent to the victim");
+    let burst: usize = BLOOD_COUNTS.iter().sum();
+    assert!(most[0] >= burst, "the shooter's predicted copy: {}", most[0]);
+    assert!(most[1] >= burst, "the victim's copy from the server: {}", most[1]);
+}

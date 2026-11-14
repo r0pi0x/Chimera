@@ -2,7 +2,7 @@
 //! See docs/OBSERVABILITY.md ("Exploring game files").
 //!
 //! Dev tool: summarize, list and extract a game install's files; `--sequences`
-//! lists a model's bones and sequences.
+//! lists a model's bones and sequences (CS:S's and HL2:DM's).
 
 use std::{
     collections::BTreeMap,
@@ -29,7 +29,7 @@ usage: dump <game> [options]
                        search path from gameinfo.txt first, each entry and whether it's there)
   --list               list every file with its size
   --archives           combat_arms: per-archive title, entropy and file count
-  --sequences <model>  cs_source: a model's bones, sequences (activity, frames, fps,
+  --sequences <model>  cs_source, hl2dm: a model's bones, sequences (activity, frames, fps,
                        duration, looping, ground speed) and pose parameters, includes merged
   --lods <model|text>  cs_source: each model's LODs (switch point, triangles) from its .dx90.vtx;
                        with text, every .mdl whose path contains it
@@ -148,6 +148,9 @@ fn dump_hl2dm(args: &Args, install: &Path) -> Result<(), String> {
         }
     }
     let mount = hl2dm::mount::open(install).map_err(|e| e.to_string())?;
+    if let Some(path) = &args.sequences {
+        return sequences(&mount, path);
+    }
     report(args, &mount, &[])
 }
 

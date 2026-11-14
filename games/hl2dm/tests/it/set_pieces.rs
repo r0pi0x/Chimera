@@ -1,7 +1,8 @@
 //! The stock maps' set pieces on `Hl2Sim` (specs/hl2dm/maps_entities.md 8,
 //! 12, 16): dm_runoff's headcrab canisters (made by a template, fired by
 //! an input, landing after the flight time with the blast's falloff), the
-//! ragdoll manager and the microphone hearing blasts and shots. A floor at
+//! ragdoll manager, the microphone hearing blasts and shots, and the
+//! combine camera's sweep (14). A floor at
 //! z = 0; ticks at 0.015 s.
 
 use std::sync::Arc;
@@ -312,4 +313,53 @@ fn the_microphone_hears_blasts() {
     c.sim.app.world_mut().write_message(blast(Vec3::new(120.0, 0.0, 0.0)));
     c.sim.seconds(0.5);
     assert!(c.fired("OnHeardSound") >= 1);
+}
+
+// ---------------------------------------------------------------------------
+// The combine camera (14)
+
+/// Case 45 and section 14: a searching camera of own yaw 227 aims at
+/// 227 + 45 · sin(2t) and pitch 15, its head turning at most 6° a think
+/// (0.05 s); it pings once a second and sounds its move at most once a
+/// second while turning. Flag 128 leaves it still and silent.
+#[test]
+fn the_combine_camera_sweeps_and_pings_45() {
+    use hl2dm::game::combine_camera::{self, CombineCameras, MOVE_SOUND, PING_SOUND, goal_yaw};
+    assert!((goal_yaw(227.0, 0.25) - 248.57).abs() < 0.01, "{}", goal_yaw(227.0, 0.25));
+    let camera = |flags: &str| {
+        entity(combine_camera::CLASS, Vec3::new(0.0, 0.0, 256.0), &[("angles", "0 227 0"), ("spawnflags", flags)])
+    };
+    let mut sim = Sim::new(Hl2Sim, TestMap(vec![camera("36"), camera("164")]));
+    sim.set_tick_interval(0.015);
+    sim.app.init_resource::<Log>().add_systems(FixedPostUpdate, listen);
+    let mut poses = Vec::new();
+    for _ in 0..400 {
+        sim.ticks(1);
+        let c = &sim.app.world().resource::<CombineCameras>().0;
+        assert_eq!(c.len(), 2);
+        poses.push((sim.app.world().resource::<SimClock>().now, c[0].yaw, c[0].pitch, c[1].yaw, c[1].pitch));
+    }
+    // Never more than 6° between thinks; the inactive one never moves.
+    for w in poses.windows(2) {
+        assert!((w[1].1 - w[0].1).abs() <= 6.0 + 1e-4 && (w[1].2 - w[0].2).abs() <= 6.0 + 1e-4, "{w:?}");
+        assert_eq!((w[1].3, w[1].4), (0.0, 0.0), "the inactive camera stays");
+    }
+    // The pitch reaches 15 in three thinks and stays; the yaw follows the
+    // sweep (its rate, at most 90°/s, is within 6° a think: it keeps up).
+    let (t, yaw, pitch, ..) = *poses.last().unwrap();
+    assert_eq!(pitch, 15.0);
+    let goal = goal_yaw(227.0, t) - 227.0;
+    assert!((yaw - goal).abs() < 6.0, "yaw {yaw} near the sweep's {goal} at {t}");
+    let max = poses.iter().map(|p| p.1).fold(f32::MIN, f32::max);
+    let min = poses.iter().map(|p| p.1).fold(f32::MAX, f32::min);
+    assert!(max > 40.0 && min < -40.0, "it sweeps both ways: {min} .. {max}");
+    // 6 s: a ping each second (6 or 7), move sounds no closer than 1 s.
+    let log = sim.app.world().resource::<Log>();
+    let pings: Vec<u64> = log.sounds.iter().filter(|s| s.1 == PING_SOUND).map(|s| s.0).collect();
+    let moves: Vec<u64> = log.sounds.iter().filter(|s| s.1 == MOVE_SOUND).map(|s| s.0).collect();
+    assert!((6..=7).contains(&pings.len()), "{pings:?}");
+    assert!(!moves.is_empty());
+    for w in pings.windows(2).chain(moves.windows(2)) {
+        assert!((w[1] - w[0]) as f64 * 0.015 >= 1.0 - 0.016, "{w:?}");
+    }
 }

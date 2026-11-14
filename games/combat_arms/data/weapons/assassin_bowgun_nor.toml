@@ -52,6 +52,17 @@ roll = 0.1
 effect_range = [3500.0, 4000.0, 5000.0]
 range_damage = [1.0, 0.7, 0.35]
 fire_delay = 0.0
+# The alternate fire's bolt [7]: 1300 u/s, `InstDamage` 41.
+[hooks."combat_arms:bolt".alt]
+speed = 1300.0
+damage = 41.0
+
+# Right mouse is alt-fire [weapon_classes.md 8]: one bolt, `alt_fire_0`
+# 550 ms [7]; not with an empty clip.
+[hooks."combat_arms:alt_fire"]
+rounds = 1
+interval = 0.0
+cycle = 0.55
 
 # MovePenalty 0.18 [7].
 [hooks."combat_arms:handling"]

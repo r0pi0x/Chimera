@@ -684,6 +684,7 @@ fn special_values(w: &WeaponRecord, a: &AmmoRecord, length_scale: f64) -> Vec<Se
         set(&["hooks", DEVICE, "nerve", "radius"], a.area_damage_radius as f64),
         set(&["hooks", BOLT, "damage", "damage"], a.inst_damage as f64),
         set(&["hooks", BOLT, "damage", "damage_type"], i64::from(a.inst_damage_type)),
+        set(&["hooks", BOLT, "alt", "damage"], a.alt_inst_damage as f64),
     ]);
     // The melee weapons: `Range` and the two buttons' damages.
     const KNIFE: &str = super::inventory::KNIFE_HOOK;
