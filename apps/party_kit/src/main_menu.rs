@@ -87,8 +87,11 @@
 //! - **Signal** (a theme with `[layout.menu]`: the Ultimate Gun Game's):
 //!   the first page is `signal_menu`'s (lockup, the entries with their
 //!   highlight, the backdrops over the ambient ground, `menu_backdrops`),
-//!   under this root, which then draws the pages' frames only; no live
-//!   map behind it and no `MenuBackdrop`.
+//!   under this root, which then draws the boxes only; no live map
+//!   behind it and no `MenuBackdrop`. With `[layout.pages]` Play and Join
+//!   are `signal_pages`' (the kit's controls, a LAN server list on Join;
+//!   they take Enter and Tab there, `typing` the text), Options
+//!   `settings`'.
 //!
 //! The state is `PartyMenu` (a resource the menu owns, set at known
 //! moments: the front end's events `EnteredGame`, `LeftGame`, `Joining`,
@@ -106,7 +109,8 @@
 //!   back, a refused press, a range row's step.
 //!
 //! Known shortcuts: steppers (`<` `>`) in place of CS:S's combo boxes and
-//! check boxes; no server browser (M2); bots don't make room for people
+//! check boxes in the VGUI look; the server browser (M2) is the Signal
+//! Join page's LAN list only; bots don't make room for people
 //! joining (`MaxPlayer` is a fixed count); the background map after
 //! leaving a game keeps the last minigame's rules (no bots on it); the
 //! console shows over the menu but egui's debug windows don't; the
@@ -769,6 +773,20 @@ pub enum MainMenuAction {
         dir: i8,
     },
     Binds,
+    /// A Play row's choice set (the Signal page's segmented and toggles).
+    PlayPick {
+        row: usize,
+        option: usize,
+    },
+    /// A Game tab row's choice set.
+    GamePick {
+        index: usize,
+        option: usize,
+    },
+    /// Join a server of the LAN list (`signal_pages::LanList`'s index).
+    Server(usize),
+    /// Scan the LAN again.
+    Refresh,
     /// Cancel the load or the join (`disconnect`).
     Cancel,
     /// Close the failure box.
@@ -842,7 +860,7 @@ impl Plugin for MainMenuPlugin {
             .add_observer(joining)
             .add_observer(join_failed)
             .add_observer(map_load_failed)
-            .add_plugins(crate::signal_menu::SignalMenuPlugin)
+            .add_plugins((crate::signal_menu::SignalMenuPlugin, crate::signal_pages::SignalPagesPlugin))
             .add_systems(Startup, ((start_look, init_play).chain(), spawn_backdrop))
             .add_systems(
                 Update,
@@ -895,7 +913,7 @@ impl Plugin for MainMenuPlugin {
             )
             .console_command(
                 "chimera:mainmenu_press",
-                "mainmenu_press <start|connect|cancel|close|back|quit>: press that button of the main menu (screenshots \
+                "mainmenu_press <start|connect|cancel|close|back|refresh|quit>: press that button of the main menu (screenshots \
                  and tests).",
                 |w, a| {
                     let action = match a.first().map(String::as_str) {
@@ -904,6 +922,7 @@ impl Plugin for MainMenuPlugin {
                         Some("cancel") => MainMenuAction::Cancel,
                         Some("close") => MainMenuAction::CloseFailure,
                         Some("back") => MainMenuAction::Back,
+                        Some("refresh") => MainMenuAction::Refresh,
                         Some("quit") => MainMenuAction::Quit,
                         other => return Err(format!("no button {other:?}")),
                     };
@@ -1131,7 +1150,10 @@ fn typing(
     data: Res<MenuData>,
     mut out: MessageWriter<MainMenuAction>,
     settings: Option<Res<crate::settings::Settings>>,
+    theme: Option<Res<chimera_ui::Theme>>,
 ) {
+    // The Signal pages (`signal_pages`) take Enter and Tab on Play and Join.
+    let signal_page = crate::signal_pages::themed(theme.as_deref()) && matches!(menu.page, MenuPage::Play | MenuPage::Join);
     let live = menu.shown() && !console.is_some_and(|c| c.open) && !controls.is_some_and(|c| c.open);
     if !live {
         events.clear();
@@ -1159,6 +1181,9 @@ fn typing(
             continue;
         }
         if e.key_code == KeyCode::Enter || e.key_code == KeyCode::NumpadEnter {
+            if signal_page && menu.failure.is_none() {
+                continue;
+            }
             match menu.page {
                 _ if menu.failure.is_some() => out.write(MainMenuAction::CloseFailure),
                 MenuPage::Join => out.write(MainMenuAction::Connect),
@@ -1169,6 +1194,9 @@ fn typing(
         }
         let Some(field) = menu.focus else { continue };
         if e.key_code == KeyCode::Tab {
+            if signal_page {
+                continue;
+            }
             let order = fields(&menu, &data);
             if let Some(next) = widgets::focus_step(&order, Some(field), if shift { -1 } else { 1 }) {
                 let caret = Caret::end_of(menu.text_mut(next).map_or("", |s| s.as_str()));
@@ -1262,7 +1290,7 @@ fn act_one(world: &mut World, action: MainMenuAction) {
     let sound = match action {
         A::Cancel | A::CloseFailure | A::Back => Some(UiCue::new("ui_back")),
         _ if blocked => Some(UiCue::new("ui_denied")),
-        A::PlayStep { .. } | A::GameStep { .. } | A::OptionStep { .. } => None,
+        A::PlayStep { .. } | A::GameStep { .. } | A::OptionStep { .. } | A::GamePick { .. } => None,
         _ => Some(UiCue::new("ui_select")),
     };
     if let Some(c) = sound {
@@ -1340,6 +1368,36 @@ fn act_one(world: &mut World, action: MainMenuAction) {
             };
             step_cvar(world, &s, dir);
         }
+        A::PlayPick { row, option } => {
+            let rows = world.resource::<MenuData>().play.clone();
+            if let Some(PlayRow { kind: PlayKind::Pick(Pick::Choices(c)), .. }) = rows.get(row)
+                && let Some((v, _)) = c.get(option)
+                && let Some(slot) = world.resource_mut::<PartyMenu>().play.get_mut(row)
+            {
+                *slot = v.clone();
+            }
+        }
+        A::GamePick { index, option } => {
+            let Some(s) = game_settings().get(index).cloned() else {
+                return;
+            };
+            if let Pick::Choices(c) = &s.pick
+                && let Some((v, _)) = c.get(option)
+            {
+                crate::ui_cues::cue(world, UiCue::new("ui_select"));
+                let quoted = if v.is_empty() { "\"\"".to_string() } else { chimera_core::console::quote(v) };
+                submit(world, format!("{} {quoted}", s.cvar));
+            }
+        }
+        A::Server(i) => {
+            let Some(server) = world.get_resource::<crate::signal_pages::LanList>().and_then(|l| l.servers.get(i).cloned()) else {
+                return;
+            };
+            let address = server.addr.to_string();
+            world.resource_mut::<PartyMenu>().address = address.clone();
+            connect(world, &address, &menu.password);
+        }
+        A::Refresh => crate::signal_pages::scan(world),
         A::Start => start(world),
         A::Focus(f) => {
             let mut m = world.resource_mut::<PartyMenu>();
@@ -1471,7 +1529,7 @@ fn start(world: &mut World) {
 }
 
 /// Join: the password, then `connect`; the address remembered.
-fn connect(world: &mut World, address: &str, password: &str) {
+pub(crate) fn connect(world: &mut World, address: &str, password: &str) {
     if address.is_empty() {
         world.resource_mut::<PartyMenu>().failure = Some("Type the server's address (host or host:port).".into());
         return;
@@ -1988,7 +2046,9 @@ fn show(
     // The Signal menu (`signal_menu`) draws the first page under this
     // root: no shade over it, and the pointer passes to it.
     let signal = crate::signal_menu::themed(theme.as_deref());
-    let bare = signal && menu.screen == Screen::MainMenu && menu.page == MenuPage::Main;
+    // The Signal pages (`signal_pages`) draw Play and Join over it.
+    let pages = crate::signal_pages::themed(theme.as_deref()) && matches!(menu.page, MenuPage::Play | MenuPage::Join);
+    let bare = signal && menu.screen == Screen::MainMenu && (menu.page == MenuPage::Main || pages);
     let shade = match menu.screen {
         _ if bare => Color::NONE,
         Screen::MainMenu if signal => Color::srgba(0.0, 0.0, 0.0, 0.45),
@@ -2032,6 +2092,7 @@ fn show(
     }
     match menu.page {
         MenuPage::Main => {}
+        MenuPage::Play | MenuPage::Join if pages => {}
         MenuPage::Play => play_frame(&mut commands, root, &menu, &data, &look, &pool),
         MenuPage::Join => join_frame(&mut commands, root, &menu, &look),
         // The Signal look's Settings draws this page (`settings`).

@@ -297,3 +297,16 @@ bind_h = 2.4
 bar_h = 3.4
 wipe = 0.26          # a page change's 12° wipe, s
 keep_secs = 15.0     # a display-mode change reverts unless kept
+
+# The main menu's Play and Join (party_kit signal_pages): Settings' frame
+# with the kit's controls; Join's left column (Direct, Recent) and the LAN
+# servers at the right, Play's summary pane.
+[layout.pages]
+margin = 4.6
+win_top = 9.4
+win_bottom = 7.6
+row_h = 2.9
+bar_h = 3.4
+join_w = 30.0
+summary_w = 27.0
+wipe = 0.26          # a page or tab change's 12° wipe, s

@@ -1,7 +1,8 @@
 # Plan: the party apps' main menu
 
 Status: proposed 2026-10-30, decided 2026-10-31 (section 10); **M1 done
-2026-10-31** (section 11); Ultimate Gun Game only while Lucker Party is
+2026-10-31** (section 11); **M2 in part 2026-11-14** (section 12: a LAN
+list on the Signal Join page); Ultimate Gun Game only while Lucker Party is
 shelved. Backlog: "A main menu for
 Ultimate Gun Game (and the other party apps)". Comes after the asset
 service's M1 and the ECS cleanup (backlog roadmap, "Order").
@@ -322,3 +323,24 @@ comes first, then this plan's M1.
   that make room for joining people; the background after leaving keeps
   the last minigame's rules; the camera's orbit can clip props and see
   past a map's edge; the "New ladder" seed line on Play; M2 and M3.
+
+## 12. M2 so far (2026-11-14)
+
+- **The LAN list on Join** (Ultimate Gun Game's Signal look,
+  `party_kit::signal_pages`): the servers `ServerQueries`' LAN scan finds
+  (ours only), each with its name, minigame, map, players/max, bots, ping
+  and a password mark, sorted by ping (`lan_servers`); scanned when Join
+  opens, Refresh (F5) again; Enter or a click on the focused row joins
+  (`MainMenuAction::Server`; a locked server with no password typed puts
+  the keys in the password field first). The first `LAN_ROWS` (8) show.
+- **The minigame in the query reply**: the info reply's keywords are the
+  map's game, then `minigame=<id>` while one plays
+  (`ServerInfo::minigame`; no wire change).
+- Tests: `apps/party_kit/tests/it/signal_pages.rs` (the list's model:
+  ours only, by ping; Join's keys joining a listed server, a locked one
+  asking for the password), `chimera_net` `the_keywords_carry_the_minigame`.
+- Left: the browser model lifted into `chimera_client` (CS:S's Find
+  Servers on it), Favourites and History tabs, a password dialog,
+  scrolling past eight servers, marking another app's servers, the LAN
+  test between the Windows PC and the Linux box; the VGUI look (Lucker
+  Party) has no list.
