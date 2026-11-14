@@ -104,6 +104,36 @@ the user's go-ahead: no Actions runs unless asked.
   [plans/active/hl2dm.md](plans/active/hl2dm.md).
 - **Then more modern games:** Call of Duty: Modern Warfare 1 or the
   earlier Call of Duties (new engines and formats: plan first).
+- **Asset browser and sandbox (user idea, 2026-11-14).** For later, a
+  sizeable Ultimate Gun Game sub-project (no plan file yet): a main-menu
+  entry to look at every asset the player has, each type in its own rich
+  viewer, and a sandbox to play with guns. The user's words: "an asset
+  browser on the main menu where you can look at all the assets you've
+  downloaded ... view them in a very rich way, like a nice asset viewer,
+  including maps ... a sandbox where you can have some kind of menu that
+  allows you to see and select a bunch of different guns".
+  - *Viewers by type:* guns (turntable, attachments, stats, the inspect
+    animation); characters (poses, skins); maps (orbit or free-fly
+    camera); sounds and textures.
+  - *Sources:* the installed games plus the downloaded asset cache, read
+    at runtime; no assets are committed.
+  - *Map viewer:* load a map and orbit or fly around it; "drop in" as a
+    character on a local listen server (the same server the menu already
+    starts).
+  - *Sandbox mode:* a gun picker across every game's guns, plus options:
+    infinite ammo, bots, time scale, noclip.
+  - *Ties:* M5b's 3D Showcase backdrop
+    ([plans/active/ugg-ui.md](plans/active/ugg-ui.md)) is the first
+    viewer (gun under an inspect camera, character in idle) and should
+    be built so the browser reuses it. The existing debugging tool is
+    the `mapsweep` bin (`--features tools`); there is no model or asset
+    viewer bin in `apps/` or `tools/` yet, so the viewers are new.
+  - *Size, rough phases:* (1) a browser list over installed and cached
+    assets by type, with the gun and character viewers on the Showcase
+    scene; (2) map viewer with orbit and free-fly cameras, then drop-in
+    on a local listen server; (3) sounds and textures viewers; (4)
+    sandbox mode with the gun picker and its options. About one to two
+    weeks of agent work per phase; phase 1 gates the rest.
 - **Smaller installs: a hybrid (user decision, 2026-10-29).**
   - *Default:* every player has the games installed on disk and loads
     from them, as now.
