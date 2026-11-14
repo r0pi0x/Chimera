@@ -24,11 +24,21 @@
 //! width with the font (`fit`: condensed, then cut at a word with `…`),
 //! never wrapped into the next row or column.
 //!
+//! A cell that shows less than it knows (a gun's name shortened or cut
+//! with `…`) carries `Tooltip` with the full text: while a mouse cursor is
+//! there (the window's pointer over it, the cursor freed and visible: a
+//! menu, the match-end screen's vote) the layer shows it in a small box
+//! beside the pointer (`show_tooltip`, part of `OverlayPlugin`). In play
+//! the cursor is grabbed, so nothing shows. Games never touch this
+//! module (`games_leave_the_overlay_alone`).
+//!
 //! The pre-match lobby (`prematch_lobby`) follows the same rule but stays
 //! a root of its own: an app's menu moves it to its own camera
 //! (`UiTargetCamera` works on roots only).
 
 use bevy::prelude::*;
+
+use bevy::ui::{ComputedNode, UiGlobalTransform};
 
 use super::fonts::UiFonts;
 
@@ -42,13 +52,110 @@ pub struct OverlayRoot;
 pub struct OverlayLayer(pub Entity);
 
 /// Puts the layer's root in (each overlay's plugin does too, through
-/// `layer`, so one alone in a test has it).
+/// `layer`, so one alone in a test has it) and its tooltip.
 pub struct OverlayPlugin;
 
 impl Plugin for OverlayPlugin {
     fn build(&self, app: &mut App) {
         layer(app);
+        app.add_systems(Update, show_tooltip);
     }
+}
+
+/// On a text cell that shows less than it knows: the full text, shown
+/// beside a visible mouse cursor over the cell (`show_tooltip`).
+#[derive(Component, Clone, Debug, PartialEq, Eq)]
+pub struct Tooltip(pub String);
+
+/// The tooltip's box (one, spawned under the layer when first needed).
+#[derive(Component)]
+pub struct TooltipBox;
+
+/// The tooltip's text, inside its box.
+#[derive(Component)]
+struct TooltipText;
+
+/// Where the box sits from the pointer (logical px, at the layer's scale 1).
+const TIP_OFFSET: Vec2 = Vec2::new(14.0, 20.0);
+const TIP_BG: Color = Color::srgba(0.0, 0.0, 0.0, 0.85);
+const TIP_TEXT: Color = Color::srgb(1.0, 0.93, 0.7);
+
+/// The text of the `Tooltip` under a visible mouse cursor, if any: the
+/// window's pointer inside the cell, and the cursor freed and visible.
+pub fn hovered<'a>(
+    window: &Window,
+    cursor: &bevy::window::CursorOptions,
+    cells: impl IntoIterator<Item = (&'a Tooltip, &'a ComputedNode, &'a UiGlobalTransform)>,
+) -> Option<&'a str> {
+    if !cursor.visible || cursor.grab_mode != bevy::window::CursorGrabMode::None {
+        return None;
+    }
+    let at = window.cursor_position()? * window.scale_factor();
+    cells
+        .into_iter()
+        .find(|(_, node, t)| node.contains_point(**t, at))
+        .map(|(tip, _, _)| tip.0.as_str())
+}
+
+#[allow(clippy::type_complexity)]
+fn show_tooltip(
+    layer: Option<Res<OverlayLayer>>,
+    window: Query<&Window, With<bevy::window::PrimaryWindow>>,
+    cursor: Query<&bevy::window::CursorOptions, With<bevy::window::PrimaryWindow>>,
+    cells: Query<(&Tooltip, &ComputedNode, &UiGlobalTransform)>,
+    mut boxes: Query<(Entity, &mut Node, &mut Visibility, &ComputedNode, &Children), With<TooltipBox>>,
+    mut texts: Query<(&mut Text, &mut TextFont), With<TooltipText>>,
+    fonts: Option<Res<UiFonts>>,
+    mut commands: Commands,
+) {
+    let (Some(layer), Ok(window), Ok(cursor)) = (layer, window.single(), cursor.single()) else { return };
+    let hover = hovered(window, cursor, cells.iter());
+    let Ok((_, mut node, mut vis, size, kids)) = boxes.single_mut() else {
+        // First hover: the box comes in, shown next frame.
+        if hover.is_some() {
+            commands
+                .spawn((
+                    TooltipBox,
+                    Name::new("Tooltip"),
+                    Pickable::IGNORE,
+                    GlobalZIndex(60),
+                    Visibility::Hidden,
+                    BackgroundColor(TIP_BG),
+                    Node { position_type: PositionType::Absolute, padding: UiRect::axes(px(8.0), px(4.0)), ..default() },
+                    ChildOf(layer.0),
+                ))
+                .with_child((TooltipText, Text::new(""), TextColor(TIP_TEXT), TextLayout::new(Justify::Left, LineBreak::NoWrap), font(fonts.as_deref(), 16.0, false)));
+        }
+        return;
+    };
+    let (Some(full), Some(pointer)) = (hover, window.cursor_position()) else {
+        vis.set_if_neq(Visibility::Hidden);
+        return;
+    };
+    let s = scale(window.height());
+    for kid in kids.iter() {
+        if let Ok((mut text, mut f)) = texts.get_mut(kid) {
+            if text.0 != full {
+                text.0 = full.to_string();
+            }
+            let want = font(fonts.as_deref(), 16.0 * s, false);
+            if f.font_size != want.font_size {
+                *f = want;
+            }
+        }
+    }
+    // Beside the pointer, flipped to its left or above it at the edges.
+    let (w, h) = (size.size().x * size.inverse_scale_factor(), size.size().y * size.inverse_scale_factor());
+    let mut at = pointer + TIP_OFFSET * s;
+    if w > 0.0 && at.x + w > window.width() {
+        at.x = (pointer.x - TIP_OFFSET.x * s - w).max(0.0);
+    }
+    if h > 0.0 && at.y + h > window.height() {
+        at.y = (pointer.y - h - 4.0 * s).max(0.0);
+    }
+    node.left = px(at.x);
+    node.top = px(at.y);
+    vis.set_if_neq(Visibility::Inherited);
 }
 
 /// The layer's root, spawned on first use.

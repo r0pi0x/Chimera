@@ -142,7 +142,7 @@ impl bevy::app::PluginGroup for Hl2dmPlugins {
 /// HL2:DM as one bundle for an app made of several games (lift C4,
 /// `chimera_world::game_bundle`): its info, parts and maps, its guns'
 /// view models on other games' maps (`GUEST`), its binds (Shift sprints,
-/// `+speed`; Ctrl ducks; Alt walks: its `cfg/config_default.cfg`), its
+/// `+speed`; Ctrl ducks; Alt walks; Z is the suit zoom, `+zoom`: its `cfg/config_default.cfg`), its
 /// view models' field of view and its parts in the composed simulation
 /// (`party_sim`). Its HUD (M9) is the front end's (`crate::ui::party`), the
 /// bundle's parts name its id.
@@ -152,7 +152,7 @@ pub static BUNDLE: chimera_world::game_bundle::GameBundle = chimera_world::game_
     loader: &MAP_LOADER,
     guest: Some(&GUEST),
     kept: &["hl2dm:weapon_"],
-    binds: &[("shift", "+speed"), ("ctrl", "+duck"), ("alt", "+walk")],
+    binds: &[("shift", "+speed"), ("ctrl", "+duck"), ("alt", "+walk"), ("z", "+zoom")],
     view_model_fov: Some(view::fov),
     sim: party_sim,
     display_names: Some(weapons::display_names),

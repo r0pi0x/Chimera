@@ -213,7 +213,7 @@ impl PluginGroup for PartyPlugins {
 /// games disagree about a key (each bundle's `binds`). Combat Arms: Shift
 /// sprints, C walks (Alt is free look in Chimera). CS:S: Shift walks
 /// (`+speed`), Ctrl ducks. HL2:DM: Shift sprints (`+speed`), Ctrl ducks,
-/// Alt walks. The shared binds are the default ones (the gameplay game's);
+/// Alt walks, Z zooms the suit (`+zoom`; CS:S's Z is its radio, a game's own layer). The shared binds are the default ones (the gameplay game's);
 /// the Controls page (`controls`) edits each.
 pub static GAME_BINDS: [(&str, &[(&str, &str)]); 3] = [
     (BUNDLES[2].info.id, BUNDLES[2].binds),
