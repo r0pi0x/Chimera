@@ -22,8 +22,8 @@
 //! spec 4.2 (the command number's MD5 seed, `& 255` for shots; recoil's CRC32
 //! label `"recoil"` and the shot count as `extra` are ours) but roll our own
 //! generator, not Source's (spec Q1); command numbers are the tick plus the
-//! character's `Seed` (`core::number_commands`), not a client's own count; the
-//! bullet impulse is unmeasured (Q8); no water or lag compensation; armour
+//! character's `Seed` (`core::number_commands`), not a client's own count;
+//! bullets ignore water (lag compensation is `lagcomp`'s); armour
 //! running out mid-hit is clamped (unmeasured); airborne inaccuracy decays
 //! toward the crouched rest with the standing rest as a floor (a fit to M1's
 //! jump and no-jump falls); crouched-and-moving recoil uses the moving set and

@@ -117,13 +117,3 @@ grates and glass, damageable projectiles, the combine camera.
 ## Counts
 
 Do next 0, later 2, needs a spec or capture 10.
-
-## Stale `//!` docs found on the way
-
-`games/cs_source/src/game/weapons.rs` (recoil measured for a few guns:
-all 24 are), `chimera/sim/src/weapon/random.rs` (no lag compensation:
-there is), `games/combat_arms/src/game/special/mod.rs` (launchers
-without view models), `games/hl2dm/src/game/pickups.rs` (respawn light),
-`launch.rs` (spawn grace), `frag.rs` (gravity-gun catch), `rungs.rs`
-(bodies), `physcannon.rs` (claims a shake at the ball's end),
-`source/logic/src/logic/community.rs` (`env_shake` is networked).

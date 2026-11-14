@@ -36,17 +36,18 @@
 //! there: the 556MM and 9MM penetration powers/distances and 45ACP's distance
 //! are community values (the same table's 45ACP, 50AE, 762MM and 338MAG powers
 //! match M13); 357SIG, 57MM and BUCKSHOT take 45ACP's power and distance,
-//! 556MM_BOX 556MM's; recoil is measured only for the AK-47, M4A1 and the
-//! USP/Deagle/AWP/Glock: FAMAS, Galil, AUG, SG552 and the SMGs use the M4A1's
-//! sets, the M249 the AK-47's, the scout, SG550, G3SG1, P228, Five-SeveN and
-//! Elites the semi-automatics' 2° with no cap, the shotguns the SDK template's
+//! 556MM_BOX 556MM's; recoil is measured for every gun but the shotguns (M3,
+//! standing, crouched, moving, airborne for the automatics), with these gaps:
+//! the pistols', AWP's and scout's moving, airborne and scoped kicks are their
+//! 2° up with no cap, the SG550's and G3SG1's moving and airborne are their
+//! standing kicks, the AUG's, MP5's, P90's, UMP45's and TMP's airborne yaw caps
+//! were not reached in a jump (guesses); the shotguns take the SDK template's
 //! random 4-6° (8-11° airborne), once per shot, decaying by the AK-47's
 //! measured rule, bullets along view + 2 × punch (the template's and the
-//! measured rifles'; shotgun kick, decay and aim factor unmeasured); the M4A1's
-//! moving/airborne kicks are its standing set; scoped, silenced and burst
-//! recoil are the normal ones (scoped measured so: AWP and scout 2° up, SG550
-//! and G3SG1 their random kicks; a burst kicks on its first round only,
-//! measured); silenced damage and range are unchanged (M16 not
+//! measured rifles'; shotgun kick, decay and aim factor unmeasured); scoped,
+//! silenced and burst recoil are the normal ones (scoped measured so: AWP and
+//! scout 2° up, SG550 and G3SG1 their random kicks; a burst kicks on its first
+//! round only, measured); silenced damage and range are unchanged (M16 not
 //! measured); the Glock's burst refire is 0.5 s; reloading unzooms; the SG552's
 //! zoomed speed is unchanged and the G3SG1's is the SG550's 150. Shotguns: the
 //! shell-by-shell reload is measured (M9: 0.5 s start, 0.5 s a shell for

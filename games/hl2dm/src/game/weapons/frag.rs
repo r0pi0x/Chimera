@@ -44,9 +44,9 @@
 //!
 //! Known shortcuts: the throw and the lob are made unturned (the spec
 //! gives only the roll's orientation); the martyrdom grenade's spin (600
-//! about the right) is ours (the spec names none); the red glow and trail are
-//! M10's; the gravity gun's catch (1.5 s fuse) is M6's; the roll's
-//! projection onto a slope uses the floor under the box's centre.
+//! about the right) is ours (the spec names none); the roll's
+//! projection onto a slope uses the floor under the box's centre (the red glow
+//! and trail are `projectile_fx`'s).
 
 use avian3d::prelude::*;
 use bevy::prelude::*;

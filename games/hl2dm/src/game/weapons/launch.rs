@@ -28,8 +28,7 @@
 //!   (`ShownItem`), loaded with the weapons' world models.
 //!
 //! Known shortcuts: a prop's water level in the blast's rule is its box's
-//! bottom and top at its centre (a push on a loose body, its centre alone);
-//! the spawn grace of rules.md (0.5 s) waits for M7.
+//! bottom and top at its centre (a push on a loose body, its centre alone).
 
 use std::sync::Arc;
 
