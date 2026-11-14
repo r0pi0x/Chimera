@@ -13,16 +13,21 @@
 //! each costs every tick (about 800 instructions with no character on the
 //! map: docs/performance.md, "A session's frame rate"); de_dust2, the first
 //! map, pays all of them on its second visit. A tick is the median of
-//! its map's ticks' work counts (`Sim::work`, ticks making no archetype
-//! and with no ragdoll awake): a death, a grenade or a ragdoll makes a
-//! tick several times another, and each lap's fights differ, so a mean
-//! follows the fight. A ragdoll stays awake for seconds (one on de_dust2's
-//! third lap, 15 bodies against the map, was awake for most of the 300
-//! ticks and put its median 30% over the second lap's), so its ticks are
-//! left out too while at least 100 remain. The session
+//! its map's quiet ticks' work counts (`Sim::work`; quiet: making no
+//! archetype and with no ragdoll body awake): a death, a grenade or a
+//! ragdoll makes a tick several times another, and each lap's fights
+//! differ, so a mean follows the fight. A ragdoll stays awake for seconds
+//! (15 bodies against the map: 2-3M a tick more), so 300 ticks are played
+//! and then more until 100 were quiet (`tick_cost`): every lap's median is
+//! of the same kind of tick. (Before, a lap with fewer than 100 quiet ticks
+//! in its 300 took the median of them all, a ragdoll's: de_dust2's third
+//! lap had 89 once the bots fired HL2:DM's SMG1 at range, and counted
+//! 10.3M against the second's 7.2M.) After each map no solver body of
+//! Avian's may be a despawned entity's (`chimera_world::map::solver_bodies`:
+//! 1,422 were, 183k instructions a tick more every lap). The session
 //! plays out the same on every run (`Sim::repeatable`), so the same build
-//! counts the same, and a failure lists the systems that grew (by their
-//! means: a fight shows there). Prints a row per map (`--nocapture`).
+//! counts the same, and a failure lists the systems that grew (per quiet
+//! tick). Prints a row per map (`--nocapture`).
 //! Passes with a note without the installs.
 
 use bevy::prelude::*;
@@ -87,36 +92,61 @@ fn chimera_census_made(sim: &mut Sim) -> String {
     chimera_core::metrics::census::made_by(sim.app.world(), "Health", 20)
 }
 
-/// The median of `n` ticks' instructions (`Sim::work`, the same on every
-/// run), over those that made no new archetype, nor followed one that did,
-/// and had no ragdoll body awake (all of them when fewer than 100 had
-/// none); and the systems' counts per tick.
-fn tick_cost(sim: &mut Sim, n: u64) -> Option<(f64, chimera_core::metrics::work::WorkCounts)> {
+/// Avian's solver bodies whose entity is gone: the bodies of the maps
+/// before, of ragdolls and gibs despawned (a leak: each costs every tick).
+fn stale_solver_bodies(sim: &mut Sim) -> usize {
+    let world = sim.app.world();
+    let solver = world.resource::<avian3d::dynamics::solver::solver_body::SolverBodies>();
+    solver.entities().iter().filter(|e| world.get_entity(**e).is_err()).count()
+}
+
+/// Ticks measured on each map at least, the quiet ones a median needs, and
+/// the most ticks spent waiting for them.
+const MEASURED: u64 = 300;
+const QUIET: usize = 100;
+const MOST: u64 = 1500;
+
+/// The median of a map's quiet ticks' instructions (`Sim::work`, the same
+/// on every run), and the systems' counts per quiet tick. A quiet tick made
+/// no new archetype, nor followed one that did, and had no ragdoll body
+/// awake. `MEASURED` ticks are played, then more until `QUIET` of them
+/// were quiet: every lap's median is then of the same kind of tick, however
+/// its fight went. A ragdoll is put to sleep 5 s after its death at the
+/// latest, so `MOST` ticks with fewer than `QUIET` quiet ones are bodies
+/// that never rest (or deaths without a pause), and fail.
+fn tick_cost(sim: &mut Sim, map: &str) -> Option<(f64, chimera_core::metrics::work::WorkCounts)> {
     use chimera_world::map::ragdoll::RagdollBody;
     let mut systems = chimera_core::metrics::work::WorkCounts::default();
-    let (mut steady, mut quiet) = (Vec::new(), Vec::new());
+    let mut quiet = Vec::new();
     let mut archetypes = [sim.app.world().archetypes().len(); 3];
-    // Held over the `n` ticks, as one `Sim::work(n)` holds it: taking the
+    // Held over the ticks, as one `Sim::work(n)` holds it: taking the
     // pool's threads again for every tick takes as long as the ticks.
     let _pool = chimera_core::metrics::work::hold_compute_pool();
-    for _ in 0..n {
+    let mut played = 0;
+    while played < MEASURED || quiet.len() < QUIET {
+        assert!(
+            played < MOST,
+            "{map}: {} of {MOST} ticks had no ragdoll body awake and no new archetype ({QUIET} wanted): ragdolls that \
+             never sleep, or an archetype made on most ticks",
+            quiet.len()
+        );
+        played += 1;
         let w = sim.work(1)?;
-        systems.add(&w.systems);
         let tick = *w.ticks.first()?;
         archetypes = [archetypes[1], archetypes[2], *w.archetypes.first()?];
         if archetypes[0] != archetypes[1] || archetypes[1] != archetypes[2] {
             continue;
         }
-        steady.push(tick);
         let world = sim.app.world_mut();
         let awake = world.query_filtered::<(), (With<RagdollBody>, Without<avian3d::prelude::Sleeping>)>().iter(world).count();
         if awake == 0 {
             quiet.push(tick);
+            systems.add(&w.systems);
         }
     }
-    let mut ticks = if quiet.len() >= 100 { quiet } else { steady };
-    ticks.sort_unstable();
-    ticks.get(ticks.len() / 2).map(|m| (*m as f64, systems.per(n)))
+    let n = quiet.len() as u64;
+    quiet.sort_unstable();
+    quiet.get(quiet.len() / 2).map(|m| (*m as f64, systems.per(n)))
 }
 
 #[test]
@@ -151,7 +181,13 @@ fn laps_of_real_maps_hold_the_same_and_cost_the_same() {
             // The same ladder each lap: another ladder is other guns.
             play(&mut sim, 500 + i as u64);
             let c = Census::take(sim.app.world_mut());
-            let tick = tick_cost(&mut sim, 300);
+            let tick = tick_cost(&mut sim, map);
+            let stale = stale_solver_bodies(&mut sim);
+            assert_eq!(
+                stale, 0,
+                "lap {lap} {map}: {stale} of Avian's solver bodies are despawned entities' (every substep walks them: \
+                 `chimera_world::map::solver_bodies`)"
+            );
             eprintln!(
                 "lap {lap} {map:24} {:6} entities {:6} archetypes {:5} characters' {:5} tables {:?} instructions a tick",
                 c.entities,

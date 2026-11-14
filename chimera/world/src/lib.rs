@@ -40,6 +40,8 @@ pub fn physics_plugins() -> bevy::app::PluginGroupBuilder {
         .build()
         .disable::<PhysicsInterpolationPlugin>()
         .add(ContactDefaults)
+        // Avian 0.8 leaves a solver body for every body despawned asleep.
+        .add(map::solver_bodies::DespawnedSolverBodies)
         // The physics gravity's server scale (props and ragdolls).
         .add(map::gravity::GravityScalePlugin)
 }

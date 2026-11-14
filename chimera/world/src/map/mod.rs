@@ -89,6 +89,7 @@ pub mod ragdoll;
 pub mod tracer;
 pub use ragdoll::{MapCollisionHooks, MapRagdoll, MapRagdollBody, MapRagdollJoint, Ragdoll, RagdollBody, RagdollShot};
 pub mod rope_sway;
+pub mod solver_bodies;
 pub mod sound;
 pub mod steam;
 pub use sound::{
