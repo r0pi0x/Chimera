@@ -161,8 +161,8 @@ pub enum TagKind {
     Accent,
 }
 
-/// A solid tag, `size` cq text (mono, tracked, upper case).
-pub fn tag(p: &mut ChildSpawnerCommands, look: &Look, kind: TagKind, text: &str, size: f32) {
+/// A solid tag, `size` cq text (mono, tracked, upper case); its box.
+pub fn tag(p: &mut ChildSpawnerCommands, look: &Look, kind: TagKind, text: &str, size: f32) -> Entity {
     let (bg, fg) = match kind {
         TagKind::Host | TagKind::Accent => (look.tone(Tone::Acc), look.tone(Tone::OnAcc)),
         TagKind::You => (look.tone(Tone::Fg), look.tone(Tone::Ink)),
@@ -180,15 +180,15 @@ pub fn tag(p: &mut ChildSpawnerCommands, look: &Look, kind: TagKind, text: &str,
     ))
     .with_children(|t| {
         t.spawn((look.text(Role::Mono, size, fg, &text.to_uppercase()), Pickable::IGNORE));
-    });
+    })
+    .id()
 }
 
 /// YOU and HOST in one chip split on the slant: white YOU, cobalt HOST
-/// (look book V's fused chip).
-pub fn fused_tag(p: &mut ChildSpawnerCommands, look: &Look, mats: Option<&mut Assets<SlantMaterial>>, size: f32) {
+/// (look book V's fused chip); its box.
+pub fn fused_tag(p: &mut ChildSpawnerCommands, look: &Look, mats: Option<&mut Assets<SlantMaterial>>, size: f32) -> Entity {
     let Some(mats) = mats else {
-        tag(p, look, TagKind::Host, "Host", size);
-        return;
+        return tag(p, look, TagKind::Host, "Host", size);
     };
     let k = size / 0.62;
     let em = look.units.text_px(size);
@@ -221,29 +221,38 @@ pub fn fused_tag(p: &mut ChildSpawnerCommands, look: &Look, mats: Option<&mut As
         .with_children(|t| {
             t.spawn((look.text(Role::Mono, size, look.tone(Tone::OnAcc), "HOST"), Pickable::IGNORE));
         });
-    });
+    })
+    .id()
 }
 
 /// A player's marks after the name: the fused chip for you as host, HOST
 /// alone for another's host (YOU shows as the row, not a tag).
-pub fn host_tag(p: &mut ChildSpawnerCommands, look: &Look, mats: Option<&mut Assets<SlantMaterial>>, host: bool, you: bool, size: f32) {
+pub fn host_tag(
+    p: &mut ChildSpawnerCommands,
+    look: &Look,
+    mats: Option<&mut Assets<SlantMaterial>>,
+    host: bool,
+    you: bool,
+    size: f32,
+) -> Option<Entity> {
     match (host, you) {
-        (true, true) => fused_tag(p, look, mats, size),
-        (true, false) => tag(p, look, TagKind::Host, "Host", size),
-        _ => {}
+        (true, true) => Some(fused_tag(p, look, mats, size)),
+        (true, false) => Some(tag(p, look, TagKind::Host, "Host", size)),
+        _ => None,
     }
 }
 
 /// The slot left of every name, `size` cq square: the robot mark for a
-/// bot, empty for a person (names line up either way).
-pub fn bot_slot(p: &mut ChildSpawnerCommands, look: &Look, bot: bool, size: f32, color: Color) {
+/// bot, empty for a person (names line up either way); the slot.
+pub fn bot_slot(p: &mut ChildSpawnerCommands, look: &Look, bot: bool, size: f32, color: Color) -> Entity {
     let s = look.px(size);
     p.spawn((Node { width: px(s), height: px(s), flex_shrink: 0.0, ..default() }, Pickable::IGNORE))
         .with_children(|b| {
             if bot {
                 mark(b, look, Mark::Bot, s, color);
             }
-        });
+        })
+        .id()
 }
 
 /// The kit's marks the shell draws.
@@ -270,8 +279,8 @@ impl Mark {
 }
 
 /// `mark` `h` logical px tall in `color`, as a node in the flow.
-pub fn mark(p: &mut ChildSpawnerCommands, look: &Look, mark: Mark, h: f32, color: Color) {
-    icons::spawn(p, look, mark.key(), h, color);
+pub fn mark(p: &mut ChildSpawnerCommands, look: &Look, mark: Mark, h: f32, color: Color) -> Option<Entity> {
+    icons::spawn(p, look, mark.key(), h, color)
 }
 
 /// A light tint's alpha over a dark ground: the look book's display-space
@@ -310,23 +319,20 @@ pub fn icon_class(data: &chimera_sim::weapon::data::WeaponData) -> Option<&'stat
 
 /// Gun `id`'s icon `h` logical px tall: its game's own while
 /// `flags.icons.prefer_game` is on (else after the kit's), the kit's by
-/// class (`class`, `icon_class`); false when there is none (the caller
-/// shows the name).
-pub fn gun_icon(p: &mut ChildSpawnerCommands, look: &Look, id: &str, class: Option<&str>, h: f32, color: Color) -> bool {
+/// class (`class`, `icon_class`): its node; `None` when there is none
+/// (the caller shows the name).
+pub fn gun_icon(p: &mut ChildSpawnerCommands, look: &Look, id: &str, class: Option<&str>, h: f32, color: Color) -> Option<Entity> {
     let game = || look.icons.as_deref().and_then(|i| i.icon(id));
-    let own = |p: &mut ChildSpawnerCommands| match game() {
-        Some(icon) => {
-            super::kill_feed::icon_slot(p, &icon, look.units.height / 480.0 * 4.0, h, 1.0, look.images.as_deref());
-            true
-        }
-        None => false,
+    let own = |p: &mut ChildSpawnerCommands| {
+        game().map(|icon| super::kill_feed::icon_slot(p, &icon, look.units.height / 480.0 * 4.0, h, 1.0, look.images.as_deref()))
     };
-    if look.prefer_game_icons() && own(p) {
-        return true;
+    if look.prefer_game_icons()
+        && let Some(e) = own(p)
+    {
+        return Some(e);
     }
     if let Some(c) = class.filter(|c| icons::has(c)) {
-        icons::spawn(p, look, c, h, color);
-        return true;
+        return icons::spawn(p, look, c, h, color);
     }
     own(p)
 }
@@ -499,17 +505,20 @@ pub mod icons {
 
     /// Icon `name`, `h` logical px tall, tinted `color` (nothing when the
     /// set has none by that name).
-    pub fn spawn(p: &mut ChildSpawnerCommands, look: &Look, name: &str, h: f32, color: Color) {
-        let Some((w_u, h_u, _)) = get(name) else { return };
-        let Some(&(key, ..)) = ICONS.iter().find(|(n, ..)| *n == name) else { return };
+    pub fn spawn(p: &mut ChildSpawnerCommands, look: &Look, name: &str, h: f32, color: Color) -> Option<Entity> {
+        let Some((w_u, h_u, _)) = get(name) else { return None };
+        let Some(&(key, ..)) = ICONS.iter().find(|(n, ..)| *n == name) else { return None };
         let phys = (h * look.units.scale_factor).round().max(1.0);
         let h = phys / look.units.scale_factor.max(1e-3);
         let w = (w_u * phys / h_u).ceil() / look.units.scale_factor.max(1e-3);
-        p.spawn((
-            Node { width: px(w), height: px(h), flex_shrink: 0.0, ..default() },
-            SignalIcon { name: key, px: phys as u32, color },
-            Pickable::IGNORE,
-        ));
+        Some(
+            p.spawn((
+                Node { width: px(w), height: px(h), flex_shrink: 0.0, ..default() },
+                SignalIcon { name: key, px: phys as u32, color },
+                Pickable::IGNORE,
+            ))
+            .id(),
+        )
     }
 
     /// Gives each new icon node its image (from the cache or rasterized).

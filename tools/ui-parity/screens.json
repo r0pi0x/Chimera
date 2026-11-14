@@ -1,0 +1,24 @@
+{
+  "_doc": "The screens the UI parity check covers: the look book page that holds the screen (reference/), the time its scene is frozen at (s; null keeps the page's still), whether the leader variant is on, which data-ui ids belong to the screen (regexes), renames (mockup id prefix to the game's), and the game's ui_stage screen.",
+  "board": {
+    "page": "hud.html", "time": 6.0, "lead": false, "stage": "board",
+    "include": ["^race\\.plate$", "^board($|\\.(?!leading))"]
+  },
+  "chip": {
+    "page": "hud.html", "time": 2.0, "lead": false, "stage": "chip",
+    "include": ["^race\\.plate$", "^chip($|\\.(?!leading))"]
+  },
+  "chip_lead": {
+    "page": "hud.html", "time": 2.0, "lead": true, "stage": "chip_lead",
+    "include": ["^race\\.plate$", "^chip\\.leading"]
+  },
+  "feed": {
+    "page": "hud.html", "time": 6.0, "lead": false, "stage": "feed",
+    "include": ["^feed\\.row"],
+    "renumber": { "from": "feed.kf.", "to": "feed.row." }
+  },
+  "lobby": {
+    "page": "lobby.html", "time": null, "lead": false, "stage": "lobby",
+    "include": ["^lobby\\."]
+  }
+}

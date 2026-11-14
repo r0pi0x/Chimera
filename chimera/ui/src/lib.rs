@@ -11,6 +11,8 @@
 //!   `TickLayout`.
 //! - `motion`: `Ease`, `UiClock`, `Track`, `Timeline`.
 //! - `materials`: `SlantMaterial`, `TickBarMaterial`, `PassMaterial`.
+//! - `parity`: `UiParityId`, a node's name in the look book, and its
+//!   measured box for the UI parity check (`tools/ui-parity/`).
 //!
 //! `ChimeraUiPlugin` keeps `UiUnits` from the window, steps the clock and
 //! every `Timeline` (`UiKitSystems`, in `PostUpdate` before Bevy's UI
@@ -20,6 +22,7 @@
 pub mod fonts;
 pub mod materials;
 pub mod motion;
+pub mod parity;
 pub mod theme;
 pub mod units;
 
@@ -28,6 +31,7 @@ use bevy::{prelude::*, ui::UiSystems};
 pub use fonts::{FontFiles, KitFonts, Role, Styled};
 pub use materials::{KitMaterialsPlugin, PassMaterial, SlantMaterial, TickBarMaterial};
 pub use motion::{Ease, Prop, Timeline, Track, UiClock};
+pub use parity::UiParityId;
 pub use theme::{Theme, Tone};
 pub use units::{TickLayout, UiUnits};
 

@@ -461,6 +461,8 @@ fn is_docs(path: &str) -> bool {
             "tools/css_probe/",
             "tools/hl2dm_probe/",
             "tools/renderdoc/",
+            // The UI parity check's scripts and look book pages (no crate reads them).
+            "tools/ui-parity/",
         ]
         .iter()
         .any(|p| path.starts_with(p))

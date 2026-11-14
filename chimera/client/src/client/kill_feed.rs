@@ -46,6 +46,10 @@
 //!   with a HUD to have registered, and count every feed after a kill, so
 //!   a game whose feed forgets the flag shows up as a second feed there.
 //!
+//! - Its rows carry the look book's names (`chimera_ui::UiParityId`:
+//!   `feed.row.<n>` from the top, from 1, and `.killer`, `.icon` or
+//!   `.weapon`, `.victim`) for the UI parity check (`ui_parity`).
+//!
 //! Known shortcuts: no penetration (wallbang) flag: the killing hit
 //! doesn't say whether it went through something; names are taken at the
 //! kill (a later rename doesn't change a row); the rows sit where a
@@ -53,6 +57,7 @@
 //! `hud::Radars`).
 
 use bevy::{prelude::*, window::PrimaryWindow};
+use chimera_ui::{UiParityId, parity};
 
 use super::{
     fonts::UiFonts,
@@ -466,14 +471,17 @@ fn draw(
     let line = 22.0 * s;
     let icon_scale = height / 480.0;
     commands.entity(*root_e).with_children(|rows| {
+        let mut n = 0;
         for e in &feed.entries {
             let a = opacity(e, now, feed.lifetime) as f32 / 10.0;
             if a <= 0.0 {
                 continue;
             }
+            n += 1;
             let local = e.involves_local();
             rows.spawn((
                 KillFeedRow(e.id),
+                UiParityId(format!("feed.row.{n}")),
                 Node {
                     flex_direction: FlexDirection::Row,
                     align_items: AlignItems::Center,
@@ -488,29 +496,39 @@ fn draw(
             ))
             .with_children(|r| {
                 let text = |r: &mut ChildSpawnerCommands, t: String, c: Color| {
-                    r.spawn((Text::new(t), font(size), TextColor(with_alpha(c, a))));
+                    r.spawn((Text::new(t), font(size), TextColor(with_alpha(c, a)))).id()
                 };
                 if let Some(k) = &e.killer {
-                    text(r, k.name.clone(), name_colour(k));
+                    let t = text(r, k.name.clone(), name_colour(k));
+                    parity::name(r, t, format!("feed.row.{n}.killer"));
                 }
                 let game = e.weapon.and_then(|w| w.split_once(':')).map(|(g, _)| g);
                 match e.weapon.and_then(|w| icons.as_ref()?.kill_icon(w, e.kind)) {
-                    Some(icon) => icon_slot(r, &icon, icon_scale, line, WEAPON_FILL, images.as_deref()),
+                    Some(icon) => {
+                        let e = icon_slot(r, &icon, icon_scale, line, WEAPON_FILL, images.as_deref());
+                        parity::name(r, e, format!("feed.row.{n}.icon"));
+                    }
                     None => {
                         let what = fallback_word(e, |w| gun_short_name(w, names.as_deref(), catalog.as_deref()));
                         let what = super::overlay::fit(fonts.as_deref(), rules.as_deref(), &font(size), &what, NAME_MAX * s);
-                        text(r, what, Color::srgb(0.78, 0.78, 0.8));
+                        let t = text(r, what, Color::srgb(0.78, 0.78, 0.8));
+                        parity::name(r, t, format!("feed.row.{n}.weapon"));
                     }
                 }
                 if e.headshot {
                     match game.and_then(|g| icons.as_ref()?.mark(g, HEADSHOT)) {
-                        Some(mark) => icon_slot(r, &mark, icon_scale, line, MARK_FILL, images.as_deref()),
-                        None => text(r, "HS".into(), Color::srgb(1.0, 0.35, 0.3)),
+                        Some(mark) => {
+                            icon_slot(r, &mark, icon_scale, line, MARK_FILL, images.as_deref());
+                        }
+                        None => {
+                            text(r, "HS".into(), Color::srgb(1.0, 0.35, 0.3));
+                        }
                     }
                 }
                 // A teammate killed: its name in the team-kill colour.
                 let c = if e.team_kill && !e.victim.local { MATE } else { name_colour(&e.victim) };
-                text(r, e.victim.name.clone(), c);
+                let t = text(r, e.victim.name.clone(), c);
+                parity::name(r, t, format!("feed.row.{n}.victim"));
             });
         }
     });
@@ -522,7 +540,7 @@ fn draw(
 /// art is what is centred; a glyph's font is cut down when it would be taller
 /// than that. The row's height is fixed, so a line is as tall with an icon,
 /// without one or with a tall one (widths vary).
-pub fn icon_slot(r: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale: f32, line: f32, fill: f32, images: Option<&Assets<Image>>) {
+pub fn icon_slot(r: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale: f32, line: f32, fill: f32, images: Option<&Assets<Image>>) -> Entity {
     let scale = fitted_scale(icon, scale, line * fill);
     // An icon font's ink sits a little above its line's middle: nudged down.
     let nudge = match icon {
@@ -557,7 +575,8 @@ pub fn icon_slot(r: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale: f32, li
         } else {
             spawn_weapon_icon(b, icon, scale, line * fill, None);
         }
-    });
+    })
+    .id()
 }
 
 /// `scale`, lowered so a glyph icon's size fits `room` pixels (an image

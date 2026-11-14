@@ -365,8 +365,12 @@ Each one ships alone, behind nothing (the old look goes screen by
 screen), with scenario tests on the harness (`Sim` with
 `SimBasePlugins`, or the party's) and offscreen screenshots
 (`--offscreen 1280x720`, `1920x1080`, `2560x1440`, `3840x2160`;
-docs/OBSERVABILITY.md 2, "Offscreen") compared by eye against the
-prototype's frames. Every screen gets a console command that stages it
+docs/OBSERVABILITY.md 2, "Offscreen") and **measured against the
+prototype's frames before done**: `tools/ui-parity/run.sh <screen>`
+(docs/OBSERVABILITY.md 6, "UI parity against the look book") with no
+element past tolerance, or each one left listed with its reason in the
+milestone's notes. A screen's nodes carry `UiParityId`s named as the look
+book's `data-ui` ids. Every screen gets a console command that stages it
 with made-up data (`ui_scene lobby|chip|board|toast|airstrike|matchend|
 menu`, feature `dev`) for screenshots. Perf (section 7) is counted per
 milestone.

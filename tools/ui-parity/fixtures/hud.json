@@ -1,0 +1,248 @@
+{
+ "map": "de_dust2",
+ "map_game": "Counter-Strike: Source",
+ "rungs": 14,
+ "rows": [
+  {
+   "name": "nadia.exe",
+   "rung": 11,
+   "kills": 24,
+   "deaths": 9,
+   "gun": "AR2",
+   "game": "HL2:DM",
+   "class": "energy",
+   "bot": false,
+   "host": false,
+   "you": false,
+   "wins": 3
+  },
+  {
+   "name": "lowgrav_larry",
+   "rung": 9,
+   "kills": 19,
+   "deaths": 11,
+   "gun": "AK-47",
+   "game": "Combat Arms",
+   "class": "rifle",
+   "bot": false,
+   "host": false,
+   "you": false,
+   "wins": 1
+  },
+  {
+   "name": "Sgt. Biscuit",
+   "rung": 8,
+   "kills": 17,
+   "deaths": 14,
+   "gun": "P90",
+   "game": "CS:S",
+   "class": "smg",
+   "bot": true,
+   "host": false,
+   "you": false,
+   "wins": 0
+  },
+  {
+   "name": "kestrel",
+   "rung": 7,
+   "kills": 15,
+   "deaths": 12,
+   "gun": "MP5A4",
+   "game": "Combat Arms",
+   "class": "smg",
+   "bot": false,
+   "host": true,
+   "you": true,
+   "wins": 2
+  },
+  {
+   "name": "vex",
+   "rung": 7,
+   "kills": 14,
+   "deaths": 10,
+   "gun": "MP5A4",
+   "game": "Combat Arms",
+   "class": "smg",
+   "bot": false,
+   "host": false,
+   "you": false,
+   "wins": 1
+  },
+  {
+   "name": "mothman",
+   "rung": 5,
+   "kills": 10,
+   "deaths": 15,
+   "gun": "SPAS-12",
+   "game": "HL2:DM",
+   "class": "shotgun",
+   "bot": false,
+   "host": false,
+   "you": false,
+   "wins": 0
+  },
+  {
+   "name": "Rook",
+   "rung": 4,
+   "kills": 8,
+   "deaths": 16,
+   "gun": "M3 Super 90",
+   "game": "CS:S",
+   "class": "shotgun",
+   "bot": true,
+   "host": false,
+   "you": false,
+   "wins": 0
+  },
+  {
+   "name": "pixelpirate",
+   "rung": 2,
+   "kills": 3,
+   "deaths": 19,
+   "gun": "Desert Eagle",
+   "game": "CS:S",
+   "class": "pistol",
+   "bot": false,
+   "host": false,
+   "you": false,
+   "wins": 0
+  }
+ ],
+ "rows_lead": [
+  {
+   "name": "kestrel",
+   "rung": 11,
+   "kills": 25,
+   "deaths": 8,
+   "gun": "AR2",
+   "game": "HL2:DM",
+   "class": "energy",
+   "bot": false,
+   "host": true,
+   "you": true,
+   "wins": 2
+  },
+  {
+   "name": "lowgrav_larry",
+   "rung": 9,
+   "kills": 19,
+   "deaths": 11,
+   "gun": "AK-47",
+   "game": "Combat Arms",
+   "class": "rifle",
+   "bot": false,
+   "host": false,
+   "you": false,
+   "wins": 1
+  },
+  {
+   "name": "nadia.exe",
+   "rung": 8,
+   "kills": 18,
+   "deaths": 12,
+   "gun": "P90",
+   "game": "CS:S",
+   "class": "smg",
+   "bot": false,
+   "host": false,
+   "you": false,
+   "wins": 3
+  },
+  {
+   "name": "Sgt. Biscuit",
+   "rung": 8,
+   "kills": 17,
+   "deaths": 14,
+   "gun": "P90",
+   "game": "CS:S",
+   "class": "smg",
+   "bot": true,
+   "host": false,
+   "you": false,
+   "wins": 0
+  },
+  {
+   "name": "vex",
+   "rung": 7,
+   "kills": 14,
+   "deaths": 10,
+   "gun": "MP5A4",
+   "game": "Combat Arms",
+   "class": "smg",
+   "bot": false,
+   "host": false,
+   "you": false,
+   "wins": 1
+  },
+  {
+   "name": "mothman",
+   "rung": 5,
+   "kills": 10,
+   "deaths": 15,
+   "gun": "SPAS-12",
+   "game": "HL2:DM",
+   "class": "shotgun",
+   "bot": false,
+   "host": false,
+   "you": false,
+   "wins": 0
+  },
+  {
+   "name": "Rook",
+   "rung": 4,
+   "kills": 8,
+   "deaths": 16,
+   "gun": "M3 Super 90",
+   "game": "CS:S",
+   "class": "shotgun",
+   "bot": true,
+   "host": false,
+   "you": false,
+   "wins": 0
+  },
+  {
+   "name": "pixelpirate",
+   "rung": 2,
+   "kills": 3,
+   "deaths": 19,
+   "gun": "Desert Eagle",
+   "game": "CS:S",
+   "class": "pistol",
+   "bot": false,
+   "host": false,
+   "you": false,
+   "wins": 0
+  }
+ ],
+ "feed": [
+  {
+   "killer": "kestrel",
+   "class": "smg",
+   "victim": "vex",
+   "you_killer": true,
+   "you_victim": false
+  },
+  {
+   "killer": "lowgrav_larry",
+   "class": "rifle",
+   "victim": "kestrel",
+   "you_killer": false,
+   "you_victim": true
+  },
+  {
+   "killer": "Sgt. Biscuit",
+   "class": "grenade",
+   "victim": "mothman",
+   "you_killer": false,
+   "you_victim": false
+  },
+  {
+   "killer": "kestrel",
+   "class": "smg",
+   "victim": "pixelpirate",
+   "you_killer": true,
+   "you_victim": false
+  }
+ ],
+ "_note": "The look book V data (gen.py: SB, SB_L, LADDER, WINS, KFE); the HUD frame frozen at 6.0 s shows these four feed rows, oldest first."
+}
