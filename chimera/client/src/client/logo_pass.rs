@@ -22,8 +22,9 @@
 //!   (`prematch_lobby`: it shows at a pass's swap and stays up until the
 //!   next one's), the match end coming up and the next match after it
 //!   (`match_end`: a pass that starts a swap's length before the change,
-//!   so the slab covers it and the loading panel coming up), and
-//!   `ui_pass [p]` (console,
+//!   so the slab covers it and the loading panel coming up), the party
+//!   apps' menu, loading panel and game (`party_kit::main_menu`'s
+//!   `ShownScreen`), and `ui_pass [p]` (console,
 //!   a pass with nothing to swap; with `p`, held still at that progress
 //!   until the next `ui_pass`: screenshots).
 //! - The swap runs in `PreUpdate`, so a screen that comes up at it shows

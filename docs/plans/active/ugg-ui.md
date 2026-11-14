@@ -450,9 +450,12 @@ party menu's camera with the lobby and the console; the kit's
 centre, so the mark holds centred at the swap) on the lobby coming up
 and going (lobby to match) and the match end and the next match (tests
 `chimera/client/tests/it/logo_pass.rs`, party_kit
-`main_menu::logo_pass_covers_both_ui_cameras`). Next: the pass on the
-other moves (menu to loading, loading to lobby where the lobby isn't
-first, Leave, disconnect).
+`main_menu::logo_pass_covers_both_ui_cameras`). The party menu's
+screens go through it too (`party_kit::main_menu::ShownScreen`: menu,
+loading panel and game change at the swap, Leave and disconnect
+included; test `main_menu::the_menu_changes_screens_at_the_pass_s_swap`).
+Left: screenshots at the four sizes and of a real lobby-to-match pass
+(so far 1080p, `ui_pass 0.2` and `0.5` in the game and over the menu).
 
 - `client::logo_pass`; the front end's moves through it (2.5, 3).
 - `prematch_lobby` rebuilt on the kit (HOST from `LobbyRow::id ==
