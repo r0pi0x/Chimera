@@ -20,7 +20,10 @@
 //!   slanted right edge and an accent bar at the left, `SlantMaterial`)
 //!   wipes in, then moves between entries (pointer or ↑↓), the entries'
 //!   inverted copy clipped to it (`Overflow::clip` on the bar, the copy
-//!   moved the other way). Enter or a click acts (`MainMenuAction::Entry`).
+//!   moved the other way). One selection (`SignalMenu::sel`): hover sets
+//!   it while the pointer leads, ↑↓ continue from it and take the lead
+//!   until the pointer moves again (`chimera_ui::PointerLead`). Enter or
+//!   a click acts (`MainMenuAction::Entry`).
 //! - **Account** top right: Friends (an inert placeholder) and the
 //!   player's name (`NetSettings::name`).
 //! - **Keys** along the foot, the backdrop's caption and its tabs (A, B,
@@ -45,7 +48,7 @@
 use bevy::{prelude::*, ui::FocusPolicy};
 use chimera_client::client::{logo_pass::ReduceMotion, widgets};
 use chimera_ui::{
-    AmbientMaterial, Ease, IconImages, KitFonts, Prop, Role, SlantMaterial, Theme, Timeline, Tone, Track, UiClock,
+    AmbientMaterial, Ease, IconImages, KitFonts, PointerLead, Prop, Role, SlantMaterial, Theme, Timeline, Tone, Track, UiClock,
     UiParityId, UiStyle, UiUnits, icons, style,
 };
 
@@ -158,7 +161,7 @@ pub struct SignalItem(pub usize);
 #[derive(Component)]
 pub struct SignalHighlight;
 #[derive(Component)]
-struct SignalInverse;
+pub struct SignalInverse;
 
 /// A backdrop tab (its index) and its dwell bar.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
@@ -182,6 +185,7 @@ pub struct SignalMenuPlugin;
 impl Plugin for SignalMenuPlugin {
     fn build(&self, app: &mut App) {
         chimera_client::client::signal::setup(app);
+        chimera_ui::pointer_lead::add(app);
         app.init_resource::<SignalMenu>()
             .add_systems(
                 Update,
@@ -971,8 +975,9 @@ fn select(
     shown: Res<ShownScreen>,
     data: Res<MenuData>,
     mut state: ResMut<SignalMenu>,
-    items: Query<(&SignalItem, &Interaction), Changed<Interaction>>,
+    items: Query<(&SignalItem, Ref<Interaction>)>,
     tabs: Query<(&SignalTab, &Interaction), Changed<Interaction>>,
+    lead: Option<Res<PointerLead>>,
     clock: Res<UiClock>,
     mut out: MessageWriter<MainMenuAction>,
 ) {
@@ -985,9 +990,15 @@ fn select(
         return;
     }
     let n = data.entries.len().max(1);
-    for (item, i) in &items {
-        if *i != Interaction::None && state.sel != item.0 {
-            state.sel = item.0;
+    // The pointer leads until a key takes over and again once it moves
+    // (`PointerLead`): then the entry under it is the selection, the one
+    // the slab and its inverted copy go to and the keys continue from.
+    let lead_back = lead.as_ref().is_some_and(|l| l.is_changed());
+    if lead.as_ref().is_none_or(|l| l.hover()) {
+        for (item, i) in &items {
+            if *i != Interaction::None && (i.is_changed() || lead_back) && state.sel != item.0 {
+                state.sel = item.0;
+            }
         }
     }
     for (tab, i) in &tabs {

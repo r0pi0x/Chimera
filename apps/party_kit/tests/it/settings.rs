@@ -6,7 +6,8 @@
 //! Revert drops it, leaving with changes pending asks Apply / Discard /
 //! Stay, Discard sets a previewed volume back, binds join the same model;
 //! a bind takes the next key; an applied display-mode change goes back by
-//! itself unless kept. Without the theme (Lucker Party, the plain apps)
+//! itself unless kept; the pointer focuses rows (and the Escape menu's
+//! entries) until a key takes the lead, and again once it moves. Without the theme (Lucker Party, the plain apps)
 //! nothing of it shows.
 
 use bevy::prelude::*;
@@ -394,6 +395,78 @@ fn without_the_theme_nothing_of_it_shows() {
     assert_eq!(sim.app.world().resource::<EscMenu>().focus, 0);
 }
 
+/// The pointer over the node carrying `which` (the focus system sets
+/// this each frame in the app; headless the test does), none elsewhere.
+fn hover_on<A: Component + PartialEq>(app: &mut App, which: &A) {
+    let all: Vec<(Entity, bool)> =
+        app.world_mut().query::<(Entity, &A)>().iter(app.world()).map(|(e, a)| (e, a == which)).collect();
+    for (e, on) in all {
+        let want = if on { Interaction::Hovered } else { Interaction::None };
+        let mut w = app.world_mut().entity_mut(e);
+        if w.get::<Interaction>() != Some(&want) {
+            w.insert(want);
+        }
+    }
+    app.update();
+}
+
+/// A real pointer move: the window's cursor somewhere new.
+fn move_pointer(app: &mut App, to: Vec2) {
+    let w = app.world_mut();
+    if w.query::<&Window>().iter(w).next().is_none() {
+        w.spawn(Window::default());
+    }
+    let mut q = w.query::<&mut Window>();
+    q.iter_mut(w).next().unwrap().set_cursor_position(Some(to));
+    app.update();
+}
+
+#[test]
+fn keys_take_the_focus_from_a_still_pointer_until_it_moves() {
+    let mut sim = party(true);
+    let app = &mut sim.app;
+    move_pointer(app, Vec2::new(400.0, 300.0));
+    open_settings(app);
+    let live: Vec<usize> = rows(app).iter().enumerate().filter(|(_, r)| r.focusable()).map(|(i, _)| i).collect();
+    assert!(live.len() >= 5, "enough rows: {live:?}");
+    let (on, two_down) = (live[2], live[4]);
+    // The pointer brought onto the third row (a move, then its hover).
+    move_pointer(app, Vec2::new(400.0, 320.0));
+    hover_on(app, &SettingsAction::Row(on));
+    assert_eq!(set(app).focus, on, "the pointer focuses the row under it");
+    tap(app, KeyCode::ArrowDown);
+    tap(app, KeyCode::ArrowDown);
+    assert_eq!(set(app).focus, two_down, "↓ twice moves on from it");
+    // The pointer is still; its row's hover again (a row redrawn under
+    // it) doesn't take the focus back.
+    hover_on(app, &SettingsAction::Row(two_down));
+    hover_on(app, &SettingsAction::Row(on));
+    for _ in 0..3 {
+        app.update();
+    }
+    assert_eq!(set(app).focus, two_down, "a still pointer doesn't pin the focus");
+    // A real move hands it back to the row under the pointer.
+    move_pointer(app, Vec2::new(402.0, 321.0));
+    assert_eq!(set(app).focus, on, "the moved pointer focuses its row");
+}
+
+#[test]
+fn the_pointer_moves_the_esc_menus_selection_and_keys_go_on_from_it() {
+    let mut sim = party(true);
+    let app = &mut sim.app;
+    tap(app, KeyCode::Escape);
+    move_pointer(app, Vec2::new(300.0, 300.0));
+    hover_on(app, &Action::Options);
+    assert_eq!(app.world().resource::<EscMenu>().focus, 1, "Options under the pointer is the selection");
+    tap(app, KeyCode::ArrowDown);
+    let after = app.world().resource::<EscMenu>().focus;
+    assert!(after > 1, "↓ goes on from Options: {after}");
+    hover_on(app, &Action::Resume);
+    hover_on(app, &Action::Options);
+    assert_eq!(app.world().resource::<EscMenu>().focus, after, "a still pointer doesn't pin it");
+}
+
+
 /// The rows sit in the kit's scroll container; ↓ marks the focused row to
 /// be scrolled into view (`chimera_ui::ScrollIntoView`), the pointer
 /// moving the focus doesn't, and a page change starts at the top.
@@ -416,7 +489,9 @@ fn the_keys_scroll_the_focused_row_into_view() {
     let marked: Vec<SettingsAction> =
         w.query_filtered::<&SettingsAction, With<chimera_ui::ScrollIntoView>>().iter(w).copied().collect();
     assert_eq!(marked, [SettingsAction::Row(s.focus)], "the focused row is scrolled to");
-    // The pointer on another row: focus moves, nothing scrolls.
+    // The pointer on another row, moved (`PointerLead` gives it back):
+    // focus moves, nothing scrolls.
+    move_pointer(&mut sim.app, Vec2::new(400.0, 300.0));
     let w = sim.app.world_mut();
     let (other, to) = w
         .query::<(Entity, &SettingsAction)>()

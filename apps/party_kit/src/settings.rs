@@ -29,7 +29,8 @@
 //!   "dropdown"` a dropdown, up to five choices segmented, more a stepper;
 //!   a bind a key field (Enter or click, then a key, a mouse button or
 //!   the wheel; Esc cancels; Delete clears). ↑↓ move the focus (the
-//!   pointer moves it too), the focused row's help in the pane at the
+//!   pointer moves it too, until a key takes the lead and again once it
+//!   moves: `chimera_ui::PointerLead`), the focused row's help in the pane at the
 //!   right: what it does (the TOML `help`, else the cvar's own), its
 //!   console name, its default and its range.
 //! - **Apply / Revert** (the bar, Ctrl+S / Ctrl+Z), a deferred model: a
@@ -377,6 +378,7 @@ pub struct SettingsPlugin;
 impl Plugin for SettingsPlugin {
     fn build(&self, app: &mut App) {
         crate::ui_cues::ensure_message(app);
+        chimera_ui::pointer_lead::add(app);
         app.init_resource::<Settings>()
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<ButtonInput<MouseButton>>()
@@ -817,13 +819,25 @@ fn edit_typing(mut events: MessageReader<KeyboardInput>, mut s: ResMut<Settings>
     }
 }
 
-/// The pointer on a row focuses it.
-fn hover_focus(rows: Query<(&Interaction, &SettingsAction), Changed<Interaction>>, mut s: ResMut<Settings>) {
+/// The pointer on a row focuses it while the pointer leads
+/// (`chimera_ui::PointerLead`: ↑↓ take the lead, so a still pointer, or a
+/// row redrawn or scrolled under it, never pins the focus; a real move
+/// gives it back and focuses the row under it).
+fn hover_focus(
+    rows: Query<(Ref<Interaction>, &SettingsAction)>,
+    lead: Option<Res<chimera_ui::PointerLead>>,
+    mut s: ResMut<Settings>,
+) {
     if s.capture.is_some() || s.open_list.is_some() || s.leave.is_some() || s.keep.is_some() || s.slide.is_some() {
         return;
     }
+    if lead.as_ref().is_some_and(|l| !l.hover()) {
+        return;
+    }
+    let lead_back = lead.as_ref().is_some_and(|l| l.is_changed());
     for (i, a) in &rows {
-        if let (Interaction::Hovered, SettingsAction::Row(r)) = (i, a)
+        if let (Interaction::Hovered, SettingsAction::Row(r)) = (*i, a)
+            && (i.is_changed() || lead_back)
             && s.focus != *r
         {
             s.focus = *r;
