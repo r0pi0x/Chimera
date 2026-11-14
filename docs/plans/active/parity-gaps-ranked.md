@@ -107,14 +107,29 @@ and back push, HL2:DM's items, crates, prop rules and blast hearing).
     cs_source/grenades.md 5.4-5.5, 6.3-6.4, Q9, Q11, Q13-Q14. Code:
     `chimera/sim/src/weapon/grenade.rs`. M. Client captures.
 
-Lower, not ranked: CS:S silenced USP/M4A1 numbers (a human on the
-probe), penetration fits (weapons.md M13), scope overlay and zoomed
-sensitivity, view-model lighting and bob, room reverb presets, spread
-generator (Q1, Q12); Combat Arms crossbow alt fire, kill call-out voice
-files, hit-sphere priorities (Q16), multi-kill reset on death
-(kill_streaks.md Q2), M92FS post-fire 0.15; HL2:DM crossbow bolt
-sounds, blood per viewer (effects_sounds.md 7, Q10), bolts through
-grates and glass, damageable projectiles, the combine camera.
+## Lower, not ranked (triage 2026-11-13)
+
+Checked against specs/ and the code. Spec-clear rows are taken smallest
+first; a row goes when it lands. "Blocked" says what the Windows PC must
+settle first (a capture, a probe run or a spec session).
+
+| Item | Status | Spec | Blocker |
+|---|---|---|---|
+| CS:S silenced USP/M4A1 numbers (damage, range, recoil) | blocked | cs_source/weapons.md M16, Q3, "Not measured yet" | a human on the probe (the bot's AI takes the silencer off) |
+| CS:S penetration fits | blocked | cs_source/weapons.md M13, Q7 | measurements: the shared budget, a player's cost, other ammo distances, the remaining materials' factors |
+| CS:S scope overlay and zoomed sensitivity | blocked | none (no spec covers the overlay or `zoom_sensitivity_ratio`) | a spec session (overlay material and layout, the zoomed sensitivity rule) |
+| CS:S view-model lighting and bob | blocked | cs_source/view_models.md 3, 9, Q1, Q2, Q7 | captures: the bob model (cycle, shape, lateral gain), the lighting point |
+| CS:S room reverb presets | blocked | cs_source/sounds.md "dsp" (presets not specified) | a spec session: the DSP preset table |
+| CS:S spread generator | blocked | cs_source/weapons.md Q1, Q12 | the RNG body (seed-to-impact capture) and the pellet pattern |
+| Combat Arms crossbow alt fire (1300 u/s, 41, `alt_fire_0` 550 ms) | spec-clear | combat_arms/special_weapons.md 7, weapon_classes.md | none |
+| Combat Arms kill call-out voice files (`EnemyDown`, `ManDown`) | blocked | combat_arms/effects_sounds.md 11 (rules only; no record or files named) | a spec session: the auto-cast records and their files per sound template |
+| Combat Arms hit-sphere priorities | rule done (`priority_sphere`); values ours | combat_arms/weapon_firing.md Corrections 5, Q16 | a spec session: `Node#Priority` per skeleton |
+| Combat Arms multi-kill reset on death | blocked | combat_arms/kill_streaks.md Q2 | a live check (kill, die, kill again within 5 s) |
+| HL2:DM crossbow bolt sounds (`BoltFly`, `BoltHitBody`, `BoltHitWorld`) | spec-clear | hl2dm/projectiles.md 7.1, 7.4 | none |
+| HL2:DM blood per viewer (shooter's predicted copy, melee attacker none) | spec-clear | hl2dm/effects_sounds.md 7 (Q10 a confirmation only) | none |
+| HL2:DM bolts through grates and breakable glass | spec-clear | hl2dm/projectiles.md 7.3, 7.4 | none |
+| HL2:DM damageable projectiles (the contact grenade goes off when shot) | spec-clear | hl2dm/projectiles.md 2.4, 4.2 (satchels, trip mines and the RPG's refusal already done) | none |
+| HL2:DM combine camera (sweep, ping, glow; drawn still now) | sweep spec-clear; lock-on blocked | hl2dm/maps_entities.md 14, Q2 | probe P8 for whether it locks on to players |
 
 ## Counts
 
