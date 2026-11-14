@@ -4,6 +4,7 @@
 //! weight, tracking in em, case, OpenType features), named easings and
 //! durations (`motion`), the slant and the smallest text in physical
 //! pixels (`shape`), per-screen layout numbers in cq (`layout`) and
+//! connection thresholds (`net`: good, fair, bad ping in ms), and
 //! switches (`flags`: `hud.signal` turns the shell's Signal HUD on,
 //! `icons.prefer_game` picks each game's own gun icons over the kit's).
 //!
@@ -57,6 +58,9 @@ pub enum Tone {
     /// Accent-coloured text (lighter than `acc` on ink).
     AccText,
     Threat,
+    /// Amber between fine and threat (a fair connection's ping); the
+    /// palette's `warn`, else #FFB547.
+    Warn,
     /// `ink` at `alpha.plate` (panels; no backdrop blur in Bevy).
     Plate,
     /// `fg` at `alpha.glow`.
@@ -65,7 +69,7 @@ pub enum Tone {
 
 impl Tone {
     /// Every tone, for tests and tools.
-    pub const ALL: [Tone; 17] = [
+    pub const ALL: [Tone; 18] = [
         Tone::Ink,
         Tone::Ink2,
         Tone::Ink3,
@@ -81,6 +85,7 @@ impl Tone {
         Tone::OnAcc,
         Tone::AccText,
         Tone::Threat,
+        Tone::Warn,
         Tone::Plate,
         Tone::Glow,
     ];
@@ -103,6 +108,7 @@ impl Tone {
             Tone::OnAcc => "on_acc",
             Tone::AccText => "acc_text",
             Tone::Threat => "threat",
+            Tone::Warn => "warn",
             Tone::Plate => "plate",
             Tone::Glow => "glow",
         }
@@ -165,6 +171,8 @@ struct Raw {
     layout: BTreeMap<String, BTreeMap<String, f32>>,
     #[serde(default)]
     flags: BTreeMap<String, BTreeMap<String, bool>>,
+    #[serde(default)]
+    net: BTreeMap<String, f32>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -187,6 +195,7 @@ pub struct Theme {
     durs: BTreeMap<String, BTreeMap<String, f32>>,
     layout: BTreeMap<String, BTreeMap<String, f32>>,
     flags: BTreeMap<String, BTreeMap<String, bool>>,
+    net: BTreeMap<String, f32>,
 }
 
 impl Default for Theme {
@@ -237,6 +246,7 @@ impl Theme {
                 Tone::Fg2 | Tone::Fg3 | Tone::Fg4 | Tone::Fg5 | Tone::Glow => fg.with_alpha(alpha(t.name())?),
                 Tone::Acc2 | Tone::AccGlow => acc.with_alpha(alpha(t.name())?),
                 Tone::Plate => ink.with_alpha(alpha(t.name())?),
+                Tone::Warn => parse_hex(raw.palette.get("warn").map_or("#FFB547", String::as_str))?,
                 _ => pal(t.name())?,
             };
             tones.insert(t, c);
@@ -261,6 +271,7 @@ impl Theme {
             durs: raw.motion.dur,
             layout: raw.layout,
             flags: raw.flags,
+            net: raw.net,
         })
     }
 
@@ -320,6 +331,11 @@ impl Theme {
 
     pub fn layout_opt(&self, screen: &str, key: &str) -> Option<f32> {
         self.layout.get(screen).and_then(|s| s.get(key)).copied()
+    }
+
+    /// A connection threshold in ms (`net.good`, `net.fair`, `net.bad`).
+    pub fn net(&self, key: &str) -> Option<f32> {
+        self.net.get(key).copied()
     }
 
     /// A switch (`flags.<group>.<key>`, false when absent): which look a

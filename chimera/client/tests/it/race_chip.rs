@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use chimera_client::client::{
     console::HeldActions,
     minigame_scoreboard::{GunNames, MinigameScoreboardPlugin, ScoreboardRoot},
-    race_chip::{BoardContent, BoardRow, ChipContent, LeaderChip, RaceChipRoot, RacePlate},
+    race_chip::{BoardContent, BoardRow, ChipContent, LeaderChip, PingMeter, RaceChipRoot, RacePlate, ping_level},
     signal::icons::SignalIcon,
     weapon_icons::{WeaponIcon, WeaponIcons},
 };
@@ -208,6 +208,11 @@ fn board_rows_best_first_with_icons() {
     player(&mut sim, "Alpha", 1, 4, true, false);
     player(&mut sim, "Botty", 2, 1, false, true);
     player(&mut sim, "Cee", 1, 6, false, false);
+    let cee = {
+        let w = sim.app.world_mut();
+        w.query::<(Entity, &Name)>().iter(w).find(|(_, n)| n.as_str() == "Cee").unwrap().0
+    };
+    sim.app.world_mut().entity_mut(cee).insert(chimera_net::net::NetScore { ping: 150, ..default() });
     sim.app.world_mut().resource_mut::<HeldActions>().showscores = true;
     for _ in 0..4 {
         frame(&mut sim, 0.05);
@@ -234,4 +239,51 @@ fn board_rows_best_first_with_icons() {
     // The shotgun's game has no icon: the kit's; the kit's guns: their own.
     assert!(names.contains(&"shotgun"), "the fallback icon: {names:?}");
     assert!(!names.contains(&"rifle"), "a gun with its game's icon draws that: {names:?}");
+}
+
+/// The board's ping column: 4 bars under the theme's `net.good`, 3 under
+/// `fair`, 2 (warn) under `bad`, else 1 (threat); a bot shows BOT.
+#[test]
+fn ping_colours_by_the_themes_thresholds() {
+    use chimera_ui::Tone;
+    let t = Theme::from_toml(&format!("{SIGNAL}[net]\ngood = 60\nfair = 120\nbad = 200\n")).unwrap();
+    let got: Vec<(u16, (u8, Tone))> = [0, 59, 60, 119, 120, 199, 200, 900].map(|p| (p, ping_level(&t, p))).into();
+    assert_eq!(
+        got,
+        vec![
+            (0, (4, Tone::Fg3)),
+            (59, (4, Tone::Fg3)),
+            (60, (3, Tone::Fg)),
+            (119, (3, Tone::Fg)),
+            (120, (2, Tone::Warn)),
+            (199, (2, Tone::Warn)),
+            (200, (1, Tone::Threat)),
+            (900, (1, Tone::Threat)),
+        ]
+    );
+    let strict = Theme::from_toml(&format!("{SIGNAL}[net]\ngood = 30\nfair = 50\nbad = 80\n")).unwrap();
+    assert_eq!(ping_level(&strict, 60).0, 2, "the thresholds are the theme's");
+    assert_eq!(srgba(t.tone(Tone::Warn)), [255, 181, 71]);
+
+    // On the board: Cee at 150 ms has two bars; the bot none.
+    let mut sim = sim(true);
+    player(&mut sim, "Alpha", 1, 4, true, false);
+    player(&mut sim, "Botty", 2, 1, false, true);
+    let alpha = {
+        let w = sim.app.world_mut();
+        w.query::<(Entity, &Name)>().iter(w).find(|(_, n)| n.as_str() == "Alpha").unwrap().0
+    };
+    sim.app.world_mut().entity_mut(alpha).insert(chimera_net::net::NetScore { ping: 150, ..default() });
+    sim.app.world_mut().resource_mut::<HeldActions>().showscores = true;
+    for _ in 0..3 {
+        frame(&mut sim, 0.05);
+    }
+    let w = sim.app.world_mut();
+    let meters: Vec<u8> = w.query::<&PingMeter>().iter(w).map(|m| m.0).collect();
+    assert_eq!(meters, vec![2], "one meter (the bot shows BOT): {meters:?}");
+}
+
+fn srgba(c: Color) -> [u8; 3] {
+    let s = c.to_srgba();
+    [(s.red * 255.0).round() as u8, (s.green * 255.0).round() as u8, (s.blue * 255.0).round() as u8]
 }

@@ -488,14 +488,32 @@ pub fn collect_board(
         (Some(c), Some(m)) => binds::pressed(&c.binds, &keys, m, "+showscores"),
         _ => false,
     };
-    // A minigame has its own scoreboard (the shell's, whatever game's HUD),
-    // as CS:S's and Combat Arms' stay down for it.
-    let minigame = minigame.is_some_and(|h| h.playing());
-    let show = ((tab && !typing) || held.showscores || view.is_some_and(|v| v.over)) && !minigame;
+    let show = board_shown(tab && !typing, held.showscores, view.is_some_and(|v| v.over), minigame.is_some_and(|h| h.playing()));
     if show && let Some(look) = state.look.clone() {
         state.frame.0.extend(super::scoreboard::frame(&look, &board).0);
     }
     state.board = Some(board);
+}
+
+/// Whether the scoreboard is up: Tab or `+showscores` held, or the
+/// intermission; never while a minigame plays (the shell's board is the
+/// one, whatever game's HUD; CS:S's and Combat Arms' stay down too).
+pub fn board_shown(tab: bool, held: bool, intermission: bool, minigame: bool) -> bool {
+    (tab || held || intermission) && !minigame
+}
+
+#[cfg(test)]
+mod board_tests {
+    /// Tab under a minigame (the Ultimate Gun Game holding an HL2:DM gun):
+    /// one board, the shell's, so HL2:DM's stays down.
+    #[test]
+    fn the_board_stays_down_while_a_minigame_plays() {
+        assert!(super::board_shown(true, false, false, false));
+        assert!(super::board_shown(false, true, false, false));
+        assert!(super::board_shown(false, false, true, false));
+        assert!(!super::board_shown(true, true, true, true));
+        assert!(!super::board_shown(false, false, false, false));
+    }
 }
 
 /// Selection commands (`slotN`, `invnext`, `invprev`, attack) before the

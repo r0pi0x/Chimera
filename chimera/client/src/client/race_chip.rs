@@ -24,7 +24,9 @@
 //!   count, only when there are any: `MatchesWon`, M6's session wins
 //!   hook in), the rung big, the gun's icon (`signal::gun_icon`) and its
 //!   short name with its game, kills and deaths as two columns with their
-//!   marks right-aligned over them, and the ladder strip. The leader's row
+//!   marks right-aligned over them, the ping (a 4-bar meter and the
+//!   number, coloured by the theme's `net` thresholds: `ping_level`; BOT
+//!   for a bot), and the ladder strip. The leader's row
 //!   has the accent bar; yours is tinted and outlined.
 //!
 //! Content is rebuilt only when what it shows changes (`RaceView`), the
@@ -93,6 +95,30 @@ pub struct RaceRow {
     pub local: bool,
     /// Matches won this server run.
     pub wins: u32,
+    /// Ping in ms (0: the host's, or not measured yet).
+    pub ping: u16,
+}
+
+/// A row's ping meter: how many of its 4 bars are lit.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PingMeter(pub u8);
+
+/// A ping's look on the board by the theme's thresholds (`net.good`,
+/// `net.fair`, `net.bad`; 60, 120, 200 ms without them): bars lit and the
+/// tone of the bars and the number. Under good: 4, quiet (`fg_3`); under
+/// fair: 3 (`fg`); under bad: 2 (`warn`); else 1 (`threat`).
+pub fn ping_level(theme: &chimera_ui::Theme, ping: u16) -> (u8, Tone) {
+    let t = |k: &str, or: f32| theme.net(k).unwrap_or(or);
+    let p = ping as f32;
+    if p < t("good", 60.0) {
+        (4, Tone::Fg3)
+    } else if p < t("fair", 120.0) {
+        (3, Tone::Fg)
+    } else if p < t("bad", 200.0) {
+        (2, Tone::Warn)
+    } else {
+        (1, Tone::Threat)
+    }
 }
 
 /// What the chip and board show now (`gather`); `active` while a ladder
@@ -161,8 +187,8 @@ const ROW_H: f32 = 2.55;
 /// The board's height besides its rows: padding, head, column titles.
 const BOARD_BASE: f32 = 5.5;
 /// The board's columns: position, player, rung, icon, gun (rest), K, D,
-/// ladder; the gap between them; the row's side padding.
-const COLS: [f32; 8] = [1.6, 11.4, 2.6, 3.8, 0.0, 1.7, 1.7, 12.2];
+/// ping, ladder; the gap between them; the row's side padding.
+const COLS: [f32; 9] = [1.6, 11.4, 2.6, 3.8, 0.0, 1.7, 1.7, 3.6, 12.2];
 const COL_GAP: f32 = 0.8;
 const ROW_PAD: f32 = 0.6;
 
@@ -261,6 +287,7 @@ fn gather(
                     host: ch.is_some_and(|c| c.owner == Some(HOST_ID)),
                     local,
                     wins: won.map_or(0, |w| w.0),
+                    ping: net.map_or(0, |n| n.ping),
                 }
             })
             .collect();
@@ -538,7 +565,8 @@ fn build_board(
             for (i, m) in [(5, Mark::Kill), (6, Mark::Death)] {
                 h.spawn((right(i), Pickable::IGNORE)).with_children(|c| signal::mark(c, &look, m, look.px(0.78), look.tone(Tone::Fg3)));
             }
-            h.spawn((Node { padding: UiRect::left(look.val(0.8)), ..cell(7) }, Pickable::IGNORE)).with_children(|c| {
+            th(h, 7, "PING", true);
+            h.spawn((Node { padding: UiRect::left(look.val(0.8)), ..cell(8) }, Pickable::IGNORE)).with_children(|c| {
                 c.spawn((look.text(Role::Mono, 0.46, look.tone(Tone::Fg3), "LADDER"), Pickable::IGNORE));
             });
         });
@@ -603,15 +631,39 @@ fn build_board(
                 r.spawn((right(6), Pickable::IGNORE)).with_children(|c| {
                     c.spawn((look.text(Role::Mono, 0.6, look.tone(Tone::Fg3), &row.deaths.to_string()), Pickable::IGNORE));
                 });
+                // Ping: a 4-bar meter and the number, coloured by how bad.
+                r.spawn((Node { column_gap: look.val(0.3), ..right(7) }, Pickable::IGNORE)).with_children(|c| {
+                    if row.bot {
+                        c.spawn((look.text(Role::Mono, 0.54, look.tone(Tone::Fg3), "BOT"), Pickable::IGNORE));
+                        return;
+                    }
+                    let (bars, tone) = ping_level(&look.theme, row.ping);
+                    c.spawn((
+                        PingMeter(bars),
+                        Node { align_items: AlignItems::FlexEnd, column_gap: look.val(0.08), height: look.val(0.7), ..default() },
+                        Pickable::IGNORE,
+                    ))
+                    .with_children(|m| {
+                        for i in 0..4u8 {
+                            let lit = i < bars;
+                            m.spawn((
+                                Node { width: look.val(0.14), height: look.val(0.25 + 0.15 * i as f32), ..default() },
+                                BackgroundColor(look.tone(if lit { tone } else { Tone::Fg4 })),
+                                Pickable::IGNORE,
+                            ));
+                        }
+                    });
+                    c.spawn((look.text(Role::Mono, 0.54, look.tone(tone), &row.ping.to_string()), Pickable::IGNORE));
+                });
                 // The ladder strip, set apart by a hairline.
                 r.spawn((
-                    Node { padding: UiRect::left(look.val(0.8)), border: UiRect::left(px(hair)), align_self: AlignSelf::Stretch, ..cell(7) },
+                    Node { padding: UiRect::left(look.val(0.8)), border: UiRect::left(px(hair)), align_self: AlignSelf::Stretch, ..cell(8) },
                     BorderColor::all(look.tone(Tone::Fg5)),
                     Pickable::IGNORE,
                 ))
                 .with_children(|c| {
                     let sf = look.units.scale_factor.max(1e-3);
-                    let room = look.units.phys(look.units.cq(COLS[7] - 1.0));
+                    let room = look.units.phys(look.units.cq(COLS[8] - 1.0));
                     let pitch = (room / n as f32).min(look.units.phys(look.units.cq(0.8))).floor().max(3.0) as u32;
                     let tick = ((pitch as f32) * 0.62 / 0.8).round().max(2.0) as u32;
                     let h = look.units.phys(look.units.cq(0.42)).round().max(2.0) as u32;
@@ -642,12 +694,18 @@ fn open_close(
     held: Res<HeldActions>,
     clock: Res<UiClock>,
     mut open: ResMut<BoardOpen>,
-    mut root: Single<&mut Visibility, (With<RaceChipRoot>, Without<ChipContent>, Without<BoardContent>)>,
+    mut root: Single<(&mut Visibility, &mut Node), (With<RaceChipRoot>, Without<ChipContent>, Without<BoardContent>, Without<RacePlate>)>,
     mut plate: Single<(&mut Timeline, &mut Node, &mut BackgroundColor), With<RacePlate>>,
     mut chip: Query<&mut Visibility, (With<ChipContent>, Without<BoardContent>, Without<RaceChipRoot>)>,
     mut board: Query<&mut Visibility, (With<BoardContent>, Without<ChipContent>, Without<RaceChipRoot>)>,
 ) {
-    root.set_if_neq(if view.active { Visibility::Inherited } else { Visibility::Hidden });
+    let (vis, root_node) = &mut *root;
+    vis.set_if_neq(if view.active { Visibility::Inherited } else { Visibility::Hidden });
+    // The chip sits 2.2 cq down; the board grows from it.
+    let top = look.val(look.layout("chip", "top", 2.2));
+    if root_node.top != top {
+        root_node.top = top;
+    }
     let want = view.active && held.showscores;
     let (tl, node, bg) = &mut *plate;
     let target_h = board_h(view.rows.len());
