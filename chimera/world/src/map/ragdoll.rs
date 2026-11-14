@@ -40,7 +40,7 @@
 //! solved with avian's contacts: warm start, biased pass, relax), no
 //! gyroscopic torque on ragdoll bodies, its bodies' `.phy` hulls whole (not cut
 //! for contacts as props'; a one-hull body no compound; made once per model's
-//! body, `RagdollShapes`), on `core::RAGDOLL_LAYER`, its own bodies colliding only for the
+//! body, `RagdollShapes`, ahead of its first death on a task, `warm_shapes`), on `core::RAGDOLL_LAYER`, its own bodies colliding only for the
 //! model's `.phy` collision pairs (`MapCollisionHooks`, the app's avian
 //! collision hooks), friction and elasticity from the surface property;
 //! `RagdollShot` (the weapon layer sends one per bullet path) pushes the pelvis
@@ -722,6 +722,7 @@ pub fn spawn_ragdolls(
     models: Option<Res<CharacterModels>>,
     owners: Query<(&BodyModel, &SkeletonPose, Option<&MovementState>), Without<Ragdolled>>,
     time: Res<Time>,
+    wait: Option<Res<chimera_core::tasks::WaitForTasks>>,
     mut shapes: ResMut<RagdollShapes>,
     mut commands: Commands,
 ) {
@@ -729,6 +730,9 @@ pub fn spawn_ragdolls(
         died.clear();
         return;
     };
+    if settings.enabled != 0 {
+        warm_shapes(&models, models.is_changed(), wait.is_some(), shapes.bypass_change_detection());
+    }
     for d in died.read() {
         if settings.enabled == 0 {
             continue;
@@ -969,33 +973,126 @@ struct UnitShape {
 }
 
 /// The ragdoll bodies' unit shapes made so far, by their pieces' corners
-/// and scale (each a few hundred floats, compared whole): a death's bodies
-/// reuse their model's (the hulls and their mass properties cost about
-/// 0.25M instructions a body; docs/performance.md, "A ragdoll's cost").
-/// Colliders share their shapes, so a copy is cheap. At most `SHAPE_CACHE`
-/// kept.
+/// and scale (each a few hundred floats: looked up by their hash, then
+/// compared whole): a death's bodies reuse their model's (the hulls and
+/// their mass properties cost about 0.25M instructions a body;
+/// docs/performance.md, "A ragdoll's cost"). Colliders share their
+/// shapes, so a copy is cheap. Made ahead on a task for every model of
+/// `CharacterModels` (`warm_shapes`), so a model's first death copies
+/// them too; a death before its model's are in makes them itself. At most
+/// `SHAPE_CACHE` kept.
 #[derive(Resource, Default)]
-pub struct RagdollShapes(Vec<(Vec<Vec<Vec3>>, f32, UnitShape)>);
-const SHAPE_CACHE: usize = 512;
+pub struct RagdollShapes {
+    made: std::collections::BTreeMap<u64, Vec<Made>>,
+    count: usize,
+    /// The shapes being made ahead (`warm_shapes`).
+    warming: Option<bevy::tasks::Task<Vec<Made>>>,
+    /// `warm_shapes` has to look at the models again once `warming` is in
+    /// (they changed while it ran).
+    again: bool,
+}
+type Made = (Vec<Vec<Vec3>>, f32, UnitShape);
+const SHAPE_CACHE: usize = 4096;
+
+/// The cache's key of `pieces` at `scale`: every float's bits (FNV-1a).
+fn shape_key(pieces: &[Vec<Vec3>], scale: f32) -> u64 {
+    let mut h = 0xcbf2_9ce4_8422_2325u64 ^ scale.to_bits() as u64;
+    let mut eat = |v: u64| h = (h ^ v).wrapping_mul(0x100_0000_01b3);
+    for piece in pieces {
+        eat(piece.len() as u64);
+        for v in piece {
+            eat(v.x.to_bits() as u64 | (v.y.to_bits() as u64) << 32);
+            eat(v.z.to_bits() as u64);
+        }
+    }
+    h
+}
 
 impl RagdollShapes {
     /// `BodyShape::new(body, scale)`, made once per pieces and scale.
     pub fn shape(&mut self, body: &MapRagdollBody, scale: f32) -> BodyShape {
-        let found = self
-            .0
-            .iter()
-            .find(|(p, s, _)| s.to_bits() == scale.to_bits() && *p == body.pieces)
-            .map(|(.., u)| u.clone());
-        let unit = found.unwrap_or_else(|| {
+        let unit = self.get(&body.pieces, scale).unwrap_or_else(|| {
             let u = UnitShape::new(&body.pieces, scale);
-            if self.0.len() >= SHAPE_CACHE {
-                self.0.clear();
-            }
-            self.0.push((body.pieces.clone(), scale, u.clone()));
+            self.keep((body.pieces.clone(), scale, u.clone()));
             u
         });
         BodyShape::of(body, unit)
     }
+
+    /// Whether `body`'s shape at `scale` is made (a death copies it).
+    pub fn has(&self, body: &MapRagdollBody, scale: f32) -> bool {
+        self.get(&body.pieces, scale).is_some()
+    }
+
+    /// Whether shapes are being made ahead (`warm_shapes`' task).
+    pub fn warming(&self) -> bool {
+        self.warming.is_some() || self.again
+    }
+
+    fn get(&self, pieces: &[Vec<Vec3>], scale: f32) -> Option<UnitShape> {
+        self.made
+            .get(&shape_key(pieces, scale))?
+            .iter()
+            .find(|(p, s, _)| s.to_bits() == scale.to_bits() && p.as_slice() == pieces)
+            .map(|(.., u)| u.clone())
+    }
+
+    fn keep(&mut self, made: Made) {
+        if self.get(&made.0, made.1).is_some() {
+            return;
+        }
+        if self.count >= SHAPE_CACHE {
+            self.made.clear();
+            self.count = 0;
+        }
+        self.count += 1;
+        self.made.entry(shape_key(&made.0, made.1)).or_default().push(made);
+    }
+}
+
+/// Every character model's ragdoll shapes made ahead of its first death
+/// (docs/performance.md, "A death's frame, a new ladder's frame"): when
+/// the models change (`changed`), the bodies' shapes the cache lacks are
+/// made on a task (their hulls and mass properties, 4-5M instructions a
+/// model, were on the tick of each model's first death) and kept once it
+/// is done (`wait`: on this call, a repeatable run's). Each tick, from
+/// `spawn_ragdolls` (a system of its own would be one more node in the
+/// schedules' order).
+fn warm_shapes(models: &CharacterModels, changed: bool, wait: bool, shapes: &mut RagdollShapes) {
+    if let Some(task) = &mut shapes.warming {
+        shapes.again |= changed;
+        let Some(made) = chimera_core::tasks::poll(task, wait) else { return };
+        shapes.warming = None;
+        for m in made {
+            shapes.keep(m);
+        }
+    } else if !changed && !shapes.again {
+        return;
+    }
+    shapes.again = false;
+    let mut wanted: Vec<(Vec<Vec<Vec3>>, f32)> = Vec::new();
+    for m in models.0.iter() {
+        let (Some(ragdoll), scale) = (&m.ragdoll, m.root.scale.x) else { continue };
+        for body in &ragdoll.bodies {
+            let listed = wanted.iter().any(|(p, s)| s.to_bits() == scale.to_bits() && *p == body.pieces);
+            if !listed && shapes.get(&body.pieces, scale).is_none() {
+                wanted.push((body.pieces.clone(), scale));
+            }
+        }
+    }
+    if wanted.is_empty() {
+        return;
+    }
+    let pool = bevy::tasks::AsyncComputeTaskPool::get_or_init(bevy::tasks::TaskPool::default);
+    shapes.warming = Some(pool.spawn(async move {
+        wanted
+            .into_iter()
+            .map(|(pieces, scale)| {
+                let unit = UnitShape::new(&pieces, scale);
+                (pieces, scale, unit)
+            })
+            .collect()
+    }));
 }
 
 impl BodyShape {

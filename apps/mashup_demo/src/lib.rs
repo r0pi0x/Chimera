@@ -316,12 +316,10 @@ mod tests {
 
     #[test]
     fn a_slot_takes_either_games_weapon() {
-        let catalog = chimera_sim::weapon::data::WeaponCatalog {
-            sets: vec![
+        let catalog = chimera_sim::weapon::data::WeaponCatalog::of(vec![
                 combat_arms::game::data::CaData::builtin().weapon_set(),
                 cs_source::game::weapons::cs_weapons(),
-            ],
-        };
+            ]);
         let mut kit = chimera_sim::weapon::StartingWeapons {
             team: Vec::new(),
             all: combat_arms::game::inventory::STARTING_WEAPONS.to_vec(),

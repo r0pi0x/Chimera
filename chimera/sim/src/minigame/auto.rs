@@ -114,15 +114,13 @@ impl Capabilities {
             .collect();
         // Its other weapons with a class in their data (its install's).
         let prefix = format!("{}:", parts.game);
-        for set in &catalog.sets {
-            for w in &set.weapons {
-                if !w.id.starts_with(&prefix) || all.iter().any(|g| g.id == w.id) {
-                    continue;
-                }
-                let Some(data) = catalog.get(&w.id) else { continue };
-                if let Some(class) = data.class {
-                    all.push(GunPart { id: &data.id, class });
-                }
+        let claimed: bevy::platform::collections::HashSet<&'static str> = all.iter().map(|g| g.id).collect();
+        for data in catalog.weapons().iter() {
+            if !data.id.starts_with(&prefix) || claimed.contains(data.id.as_str()) {
+                continue;
+            }
+            if let Some(class) = data.class {
+                all.push(GunPart { id: &data.id, class });
             }
         }
         let grenades = all.iter().filter(|g| g.class == GunClass::Grenade).map(|g| g.id).collect();
@@ -273,8 +271,14 @@ pub fn drawable(world: &World, caps: &mut [Capabilities]) -> Vec<Skipped> {
     let registered = world.get_resource::<PowerReaders>().unwrap_or(&none);
     let (readers, excluded) = (&registered.harm, &registered.exclusions);
     let mut skipped = Vec::new();
+    // The exclusions by id (lower case), the first of an id as `reason`
+    // finds it: thousands of guns are asked.
+    let mut reasons: std::collections::BTreeMap<String, &str> = std::collections::BTreeMap::new();
+    for (id, r) in &excluded.0 {
+        reasons.entry(id.to_ascii_lowercase()).or_insert(r.as_str());
+    }
     let mut why = |id: &'static str| -> Option<String> {
-        let r = if let Some(r) = excluded.reason(id) {
+        let r = if let Some(r) = (!reasons.is_empty()).then(|| reasons.get(&id.to_ascii_lowercase())).flatten() {
             Some(r.to_string())
         } else if catalog.get(id).is_some_and(|d| crate::weapon::harm::harmless(d, readers)) {
             Some("no damage".to_string())
@@ -433,18 +437,19 @@ pub fn ladder(games: &[&Capabilities], powers: &Powers, curve: &PowerCurve, rung
     let melee = counts[Band::Melee.index()];
     const DRAWN: usize = 6;
     let mut pools: [Vec<Candidate>; DRAWN] = Default::default();
-    let seen = |pools: &[Vec<Candidate>; DRAWN], id: &str| pools.iter().any(|p| p.iter().any(|c| c.0 == id));
+    // Each weapon once, in the first pool that takes it.
+    let mut seen: bevy::platform::collections::HashSet<&'static str> = Default::default();
     for (i, c) in games.iter().enumerate() {
         let weight = 1.0 / (c.guns.len().max(1) as f64).sqrt();
         for gun in &c.guns {
             let band = powers.get(gun.id).map_or_else(|| curve.class_band(gun.class), |p| p.band);
-            if band != Band::Melee && !seen(&pools, gun.id) {
+            if band != Band::Melee && seen.insert(gun.id) {
                 pools[band.index()].push((gun.id, i, weight));
             }
         }
         let weight = 1.0 / (c.grenades.len().max(1) as f64).sqrt();
         for g in &c.grenades {
-            if !seen(&pools, g) {
+            if seen.insert(g) {
                 pools[Band::Grenade.index()].push((g, i, weight));
             }
         }

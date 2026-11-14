@@ -32,8 +32,9 @@ use chimera_core::metrics::work::WorkCounts;
 /// A ragdoll's extra instructions per tick while any of its bodies is
 /// awake (test build; measured: see docs/performance.md).
 const AWAKE_BUDGET: f64 = 1_350_000.0;
-/// Its spawn tick's extra instructions (the first death pays its model's
-/// hulls; the budget is for the later ones).
+/// Its spawn tick's extra instructions (the first death's are printed
+/// apart: its model's hulls are made ahead, `ragdoll::warm_shapes`, but it
+/// pays the ragdoll's new archetypes; the budget is for the later ones).
 const SPAWN_BUDGET: f64 = 5_000_000.0;
 /// A sleeping ragdoll's (a gun game keeps one per dead player).
 const ASLEEP_BUDGET: f64 = 45_000.0;

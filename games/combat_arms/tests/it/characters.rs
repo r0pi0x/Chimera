@@ -1672,9 +1672,7 @@ fn t55_corpses_dont_stop_shots() {
 #[test]
 fn t56_death_types() {
     use combat_arms::game::volumes::ENDLESS_FALL;
-    let catalog = chimera_sim::weapon::data::WeaponCatalog {
-        sets: vec![combat_arms::game::data::CaData::builtin().weapon_set()],
-    };
+    let catalog = chimera_sim::weapon::data::WeaponCatalog::of(vec![combat_arms::game::data::CaData::builtin().weapon_set()]);
     assert_eq!(death::kind_of(&catalog, DamageKind::Generic, Some(ENDLESS_FALL)), DeathKind::EndlessFall);
     assert_eq!(death::kind_of(&catalog, DamageKind::Generic, Some("combat_arms:g7a")), DeathKind::Poison, "a gas grenade's lasting damage");
     assert_eq!(death::kind_of(&catalog, DamageKind::Bullet, Some(RIFLE)), DeathKind::Other);
