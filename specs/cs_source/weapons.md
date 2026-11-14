@@ -393,7 +393,8 @@ Pickup (player touches a weapon):
   32-bit little-endian integer at digest bytes 6–9. The server recomputes it
   from the command number, so the client cannot pick its own seed.
 - Shots use `seed = S & 255` (256 possible spread patterns per
-  command).
+  command). *Measured 2026-11-14 (below, 4.2.2):* a CS:S gun reseeds the
+  generator once per shot with `(S & 255) + 1`.
 - Generic: before each pellet `i`, the global uniform generator is reseeded
   with `seed + i`. The template does the same but starts at `seed + 1`
   (pellet `i` uses `seed + 1 + i`).
@@ -403,9 +404,9 @@ Pickup (player touches a weapon):
   default), so each use gets a different but reproducible value.
 - The generator itself (header only in the SDK): a 32-entry shuffle table
   with two integers of state (Park–Miller "minimal standard" with
-  Bays–Durham shuffle, i.e. Numerical Recipes `ran1`, *inferred*). Float in
-  `[lo, hi)` = `lo + (hi − lo) × u`. Reproducing CS:S spread **patterns**
-  exactly needs this generator bit-exact: open question Q1. Its full
+  Bays–Durham shuffle, i.e. Numerical Recipes `ran1`; *confirmed
+  2026-11-14* by predicting real CS:S pellet impacts to within the log's
+  precision, 4.2.2). Float in `[lo, hi)` = `lo + (hi − lo) × u`. Its full
   description is in 4.2.1.
 - **Server-chosen seed (newer SDK).** The current SDK adds a second seed to
   each command that only the server fills in: with the server cvar
@@ -413,18 +414,26 @@ Pickup (player touches a weapon):
   bit pattern of the server's clock in milliseconds as a 32-bit float,
   otherwise a copy of the client's seed. A weapon uses it only if it opts
   in (TF2 does for some weapons); then the client cannot predict the
-  pattern. The CS:S server library has this cvar too. Whether CS:S's guns
-  opt in is open (Q1): if they do, client-predicted impacts
-  (`cl_showimpacts`) and the server's differ shot by shot.
+  pattern. The CS:S server library has this cvar too (default 1, help
+  text: the server fills in an extra seed the client cannot know).
+  **CS:S's guns do not opt in** (measured 2026-11-14, probe server with
+  the cvar at its default 1): a bot's shots whose command seed was forced
+  to the same value hit the same points to 0.001 unit, shot after shot,
+  and every shot's impacts follow from the command seed alone (4.2.2). So
+  client prediction can reproduce the server's pattern exactly.
 
-#### 4.2.1 The uniform generator (inferred: the published `ran1`)
+#### 4.2.1 The uniform generator (the published `ran1`; confirmed)
 
 The SDK shows only the state (a 32-entry table, a current value and a
 last-output value); the algorithm below is the textbook generator that
 state matches (Park and Miller's "minimal standard" multiplicative
 congruential generator with Bays and Durham's shuffle, as published in
 *Numerical Recipes in C*, 2nd ed., section 7.1, routine `ran1`).
-Everything in this subsection is *inferred* and must be checked (Q1).
+*Confirmed 2026-11-14:* implemented as below (in 64-bit floats), it
+predicts every pellet and bullet of 21 logged CS:S shots to within
+1.5·10⁻⁵ tangent units (the impact log's 0.001-unit precision), see
+4.2.2. Whether the engine's float steps are 32-bit could not be told
+apart at that precision; f32 is still the safer choice.
 
 Constants: multiplier a = 16807, modulus m = 2³¹ − 1 = 2147483647, table
 size N = 32, bucket divisor `div = 1 + (m − 1)/N` = 67108864 (integer
@@ -450,32 +459,48 @@ r = m mod a = 2836.
 - Check value from the literature for the bare multiplicative generator
   (no shuffle): starting from x = 1, the 10 000th advance gives
   1043618065. A unit test of the advance step should reproduce it.
+- Check values for the whole generator (floats in [0, 1)): seed 1 gives
+  0.4159994, 0.0919649, 0.7564105, 0.5297002; seed 8 gives 0.0680166,
+  0.0512839, 0.9282991, 0.9763111.
 
 The game reseeds the shared generator before a shot (seed rules above),
 so each shot's draws are a pure function of `seed` and the number of
 draws taken since.
 
-#### 4.2.2 How a shot's draws become a direction (CS:S, hypothesis)
+#### 4.2.2 How a shot's draws become a direction (CS:S, measured)
 
-From the measured cone shape (M1/M2 and Q12: uniform radius, isotropic;
-pellets of one shotgun shot share one inaccuracy offset and scatter
-individually by `Spread`), and the SDK template's reseeding (seed + 1 at
-the shot's start), the most likely CS:S scheme is:
+*Measured 2026-11-14* on the probe server: a bot standing still, view
+pitch 60° down at the floor, firing single presses with the command's
+random seed forced through a server plugin; the eye position, view
+angles, punch and `m_fAccuracyPenalty` logged on the press tick and every
+`bullet_impact` of the shot. Each impact was turned into tangent offsets
+(x, y) about the aim and compared with this scheme: M3 (4 shots with
+seeds 7-10 and 4 with the bot's own large seeds, 9 pellets each),
+Desert Eagle (seeds 300-303), AK-47 (seeds 1000-1003, single shots, and
+an 8-shot run at one press every 8 ticks, with punch up to 3°). Every
+one of the 52 bullets matched to within 1.5·10⁻⁵ (mean 8·10⁻⁶); every
+other draw order, seed offset or reseeding variant tried was off by
+10⁻² or more.
 
-1. Reseed with the shot's seed (+1, as the template; *hypothesis*).
-2. θ₁ = U(0, 2π), r₁ = U(0, I) where I is the shot's total inaccuracy
-   (stored inaccuracy plus the movement term at shot time).
-3. For each pellet p = 0..Bullets−1: θ₂ = U(0, 2π), r₂ = U(0, Spread).
+1. Reseed the generator once per shot with `(S & 255) + 1`, S the
+   command's seed (4.2). No reseed between pellets.
+2. θ₁ = U(0, 2π), then r₁ = U(0, I), where I is the stored inaccuracy
+   after this tick's recovery (M1) and before this shot adds
+   `InaccuracyFire`; plus the movement term at shot time (M1; the
+   movement case was not part of this check).
+3. For each pellet p = 0..Bullets−1 in order: θ₂ = U(0, 2π), then
+   r₂ = U(0, Spread).
 4. Offset x = r₁·cos θ₁ + r₂·cos θ₂, y = r₁·sin θ₁ + r₂·sin θ₂ (tangent
    units).
 5. Direction d = normalise(f + x·r + y·u), with f, r, u the forward,
-   right and up vectors of the aim angles (view + 2 × punch, M3). Positive
-   x is to the right, positive y up.
+   right and up vectors of the aim angles: view + 2 × punch, the punch
+   taken after this tick's decay and before this shot's kick (M3; both
+   axes confirmed by the 8-shot run). Positive x is to the right,
+   positive y up.
 
-The order of the four draws and whether the angle is drawn before the
-radius decide the exact pattern; only Q1's comparison can settle them.
-Statistically (cone size and density) the scheme matches every
-measurement so far.
+`bullet_impact` events come in pellet order. A bot's commands do not
+carry the MD5-derived seed of their command number (its seeds look
+random); a human client's do (4.2, SDK; not re-checked here).
 
 #### 4.3 Spread
 
@@ -819,6 +844,9 @@ Generic-code tests (exact). CS:S-dependent expectations are marked
 | T1b command number 2 / 100 / 12345 | – | – | 1318994272 (seed 96) / 236147958 (246) / 36020103 (135) |
 | T2 template spread, aim yaw 0 pitch 0, s = 0.01, x = 0.5, y = 0 | one shot | – | r = (0, −1, 0); d = normalize(1, −0.005, 0); bullet yaw = −0.2865° (to the right) |
 | T3 generic spread defaults | – | – | shot_bias = 1, flatness 0.5, x,y = average of two U(−1,1), rejected if x²+y² > 1 |
+| T3b CS:S pattern (measured, 4.2.2), M3: command seed 7, I 0.01, Spread 0.04 | one shot | – | pellet offsets (x, y): (0.03562, −0.01679), (−0.02650, 0.01201), (−0.00847, 0.00982), (−0.01003, −0.00842), (0.01526, 0.03253), (0.01450, 0.02095), (−0.02733, −0.00595), (0.02941, 0.01201), (−0.02043, 0.01042) (± 2·10⁻⁵) |
+| T3c CS:S pattern, Desert Eagle: seed 300, I 0.013, Spread 0.004 | one shot | – | (−0.00122, −0.00517) |
+| T3d CS:S pattern, AK-47: seed 1000, I 0.00916, Spread 0.0006 | one shot | – | (−0.00256, 0.00178) |
 | T4 right/up basis, f = (0,0,−1) (looking straight down) | – | – | r = (0, −1, 0), u = (1, 0, 0) |
 | T5 deploy AK-47 at curtime t | switch | – | next attack = t + 1.0; with ticks at 0.015 the first allowed shot is 67 ticks later |
 | T6 AK-47 held fire, "set" rule | hold attack 30 shots | – | shot interval 7 ticks; 30 shots span 29 × 7 = 203 ticks = 3.045 s |
@@ -1710,7 +1738,12 @@ inaccuracy target.
 
 ## Open questions
 
-- **Q1 Random generator.** The uniform generator body is not in the SDK
+- **Q1 Answered (2026-11-14, 4.2, 4.2.1, 4.2.2):** the generator is
+  `ran1` exactly as written in 4.2.1; a shot reseeds once with
+  `(seed & 255) + 1` and draws inaccuracy angle, inaccuracy radius, then
+  angle and radius per pellet; CS:S guns ignore the server-chosen seed, so
+  client and server patterns agree. Was:
+  **Q1 Random generator.** The uniform generator body is not in the SDK
   (only its state layout: 32-entry table, two ints). Exact CS:S spread
   patterns need it bit-exact. Either implement the inferred `ran1` and
   verify by comparing predicted vs. logged `bullet_impact` points for known
@@ -1800,6 +1833,10 @@ inaccuracy target.
   from one reseed per shot; the SDK template instead reseeds with
   seed + 1 + p before pellet p and draws a triangular x, y per pellet), to
   be decided by Q1 (b) with the M3 and XM1014.
+  *2026-11-14: the pattern is settled for the M3 (4.2.2: one reseed per
+  shot, one shared inaccuracy draw, a uniform angle and radius per
+  pellet; exact to the log's precision); the XM1014 is assumed the same.
+  The trace shape (line or box) is still open.*
 - **Q13 Drop / pickup** CS rules: drop velocity, which weapon is dropped on
   death, pickup by walking only into an empty slot, dropped-weapon lifetime:
   M14.

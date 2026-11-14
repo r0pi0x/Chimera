@@ -13,6 +13,13 @@ their texture sizes, the achievement names, and every sound script. Every
 CS:S rule below is either data from those files or marked *inferred* (TF2's
 rule, assumed carried over because CS:S uses the same event fields, panel,
 strings and icons) with a way to check it.
+Measured 2026-11-14 on a CS:S dedicated server (the probe server, with a
+small SourceMod plugin of ours that credits kills between bots through the
+game's own damage path, logs every `player_death` and reads each player's
+networked relationship flags): the threshold, the event values, team
+kills, suicides, and clearing on round end, `mp_restartgame`, team change
+and disconnect. Those rules are no longer inferred. The client side (freeze
+panel, scoreboard, kill feed) was not captured: no display was available.
 Status: draft
 
 ## Summary
@@ -39,7 +46,7 @@ for any of it.
 
 | Name (ours) | Value | Unit | Meaning | Source |
 |---|---|---|---|---|
-| domination_kills | 4 | kills | unanswered kills of one player by another that start a domination | TF2 rule; CS:S achievement text "kill an enemy 4 additional times while dominating" fits; *inferred for CS:S* |
+| domination_kills | 4 | kills | unanswered kills of one player by another that start a domination | measured (CS:S server, 2026-11-14) |
 | freeze icon (nemesis) | `hud/freeze_nemesis` | material, 64×64 texture | freeze panel icon for a new or continuing nemesis | CS:S data |
 | freeze icon (revenge) | `hud/freeze_revenge` | material, 64×64 | freeze panel icon for a revenge | CS:S data |
 | freeze icon (dominated) | `hud/freeze_dominated` | material, 32×32 | small icon; use not known (Q4) | CS:S data |
@@ -57,15 +64,17 @@ The server keeps, for every ordered pair of players (A, B), a count
 `U(A←B)`: how many times B has killed A since A last killed B ("unanswered
 kills"). All counts start at 0.
 
-When K kills V (TF2 order, *inferred* for CS:S):
+When K kills V (measured in CS:S, 2026-11-14; same order as TF2):
 
 1. Read `n = U(V←K) + 1` (this kill included).
 2. Decide the flags, first match wins:
-   - **Domination:** if `n` equals exactly 4, K starts dominating V. Set
+   - **Domination:** if `n` equals exactly 4 and K and V are on different
+     teams, K starts dominating V. Set
      the event's `dominated` flag. Record "K dominates V" (and its mirror,
      "V's nemesis is K").
-   - **Revenge:** otherwise, if V is currently dominating K, the kill is a
-     revenge. Set the event's `revenge` flag and clear "V dominates K".
+   - **Revenge:** otherwise, if V is currently dominating K and they are on
+     different teams, the kill is a revenge. Set the event's `revenge` flag
+     and clear "V dominates K".
    - **Already dominating:** otherwise, if K already dominates V, nothing is
      flagged (TF2 counts it for stats and achievements only; CS:S's
      "Overkill" achievements count the same thing).
@@ -83,40 +92,55 @@ Consequences worth testing:
 - One kill flags at most one of `dominated` and `revenge` (CS:S has no
   assists, so TF2's assister flags do not apply).
 
-Not counted (*inferred*): suicides, deaths to the world, falling, the bomb
-or a trigger (no credited attacker). Team kills: open (Q2); CS:S's
-achievement texts speak of "enemy players" only.
+- **Team kills** (measured with `mp_friendlyfire 1`) never flag, never
+  start a domination and never take revenge (a dominated player who
+  team-kills their dominator leaves the domination in place), but they
+  **do update the counters** (step 3) like any kill. So three team kills
+  followed by one kill as enemies start a domination (that kill is the
+  4th), and four team kills followed by enemy kills never do (the 4th was
+  spent on a team kill; the next is the 5th). Players only become
+  teammates with live counters through a forced switch that keeps them
+  (Behavior 2).
+
+Not counted (measured: a suicide credited to the victim and a death to
+the world): suicides and deaths with no credited attacker change no
+counter and no relationship. *Inferred* the same for falling, the bomb
+and triggers.
 
 ### 2. Clearing (server)
 
-TF2 clears a player's relationships (both directions) and every counter in
-that player's row and column when the player connects, disconnects, has
-their scores reset, or changes team (except during an automatic full-team
-swap). When a cleared player was dominating someone, that dominator's
-"number of dominations" drops by one. *Inferred for CS:S:* the same on
-connect, disconnect and team change; dominations survive round restarts
-within a match (CS:S's "Ten Angry Men" achievement counts kills on
-dominated players "during a single match", and "Excessive Brutality" asks
-for four more kills while dominating, which needs dominations to last
-across rounds). Whether a match restart (`mp_restartgame`) or a map change
-clears them: Q3 (a map change reconnects everyone, so it clears by the
-connect rule).
+Measured in CS:S (2026-11-14):
+
+| Event | Relationships | Counters |
+|---|---|---|
+| round end and the next round's start | kept | kept |
+| `mp_restartgame` (scores reset to 0) | kept | kept (3 kills before it + 1 after = a domination) |
+| the player joins another team (the normal team change, which kills them) | the player's, both directions, cleared | the player's row and column cleared (3 kills before + 1 after = no domination) |
+| a forced switch that does not kill the player (as a server plugin's team switch does) | kept | kept |
+| the player disconnects (kicked bot) | cleared both directions; the slot's next player starts clean | cleared |
+
+A map change reconnects everyone, so it clears by the disconnect rule
+(*inferred*, not run). Whether the game's own automatic team balance uses
+the clearing or the keeping kind of switch was not checked (Q3).
 
 ### 3. What the server sends
 
 - **`player_death` event** (CS:S `modevents.res`, broadcast to every
   client): `userid` (short), `attacker` (short), `weapon` (string),
-  `headshot` (bool), `dominated` (short), `revenge` (short). *Inferred*:
-  `dominated` is 1 when this kill starts a domination, else 0; `revenge` is
-  1 when this kill is a revenge, else 0 (Q1).
-- **Relationship flags** (TF2: two per-player boolean arrays indexed by
-  player, "I dominate player i" and "player i dominates me", sent only to
-  the owning client). *Inferred for CS:S:* the local client knows its own
-  relationships (needed for its scoreboard icons and the "IS STILL YOUR
-  NEMESIS" line); whether other players' relationships are sent is Q4.
+  `headshot` (bool), `dominated` (short), `revenge` (short). Measured:
+  `dominated` is 1 on the kill that starts a domination, else 0 (also 1,
+  not 2, for a player's second simultaneous domination); `revenge` is 1
+  on a revenge kill, else 0. Never both.
+- **Relationship flags** (measured from the server's network tables):
+  two arrays of 66 one-bit flags on each player, indexed by entity index,
+  "I dominate player i" and "player i dominates me", both in the part of
+  the player's data sent **only to that player's own client**. So a client
+  knows its own relationships and nobody else's: a scoreboard can mark
+  only the local player's nemeses and victims (Q4 answered).
 - Nothing else: no chat message, no centre print (the CS:S localization has
   no "is dominating" / "got revenge" text, only the freeze panel and
-  scoreboard words).
+  scoreboard words), and the server log's kill line has no domination or
+  revenge marker (checked with `mp_logdetail 3`).
 
 ### 4. Freeze panel nemesis line (client, the victim's screen)
 
@@ -201,7 +225,11 @@ On a player death (server), after the kill is credited and before the
   order the deaths are handled; the second one sees the first's counter
   update. If V was dominating K and both die on the same tick, whichever
   death is processed second may be a revenge.
-- **Bots** take part like humans (no rule excludes them in TF2).
+- **Bots** take part like humans (measured: every test above was between
+  bots).
+- **Team kills** count toward the counters but never flag (Behavior 1);
+  a forced switch that keeps counters can leave a domination between
+  teammates, and a team kill does not end it.
 - **Player slots reused**: counters are per slot, so a disconnect must
   clear them (Behavior 2) or the next player in the slot inherits them.
 
@@ -210,8 +238,10 @@ On a player death (server), after the kill is credited and before the
 - The exact-equals test means a player who is dominated, takes revenge and
   is then killed four more times is dominated again (counter restarted at
   the revenge). Keep.
-- Dominations persist across rounds (*inferred*), so in CS:S's short rounds
-  they build up over a match. Keep.
+- Dominations persist across rounds and even `mp_restartgame` (measured),
+  so in CS:S's short rounds they build up over a whole map. Keep.
+- A team kill can "use up" the 4th kill (Behavior 1): the domination then
+  never comes until the victim answers. Keep for parity.
 
 ## Test cases
 
@@ -224,25 +254,41 @@ On a player death (server), after the kill is credited and before the
 | A killed B 3 times | B kills A once, then A kills B 3 more times | – | no domination (A's count restarted at 0 by B's kill; now 3) |
 | A dominates B, revenge taken | A kills B 4 more times | 4th | `dominated` 1 again |
 | A dominates B | A disconnects | – | B has no nemesis; all counters with A are 0 |
-| A dominates B | B changes team | – | relationship cleared (*inferred*) |
+| A dominates B | B changes team (joins the other team) | – | relationship cleared; B's counters 0 |
+| A killed B 3 times | `mp_restartgame`, then A kills B | 4th | `dominated` 1 |
+| A dominates B | round ends, new round | – | A still dominates B |
+| A, B teammates, friendly fire on | A kills B 4 times | each | `dominated` 0, no relationship |
+| A, B teammates | A kills B 3 times; B is moved to the other team without dying; A kills B | that kill | `dominated` 1 |
+| A, B teammates | A kills B 4 times; B is moved to the other team; A kills B | that kill | `dominated` 0 |
+| A dominates B, then B is moved onto A's team without dying | B kills A | – | `revenge` 0; A still dominates B |
+| A dominates B and C | – | – | each of the two 4th kills had `dominated` 1 |
+| A dominates B | A suicides, or dies to the world | – | no change; B's next kill of A is a revenge |
 | local player V, killer K | K's 4th unanswered kill | freeze panel | "IS YOUR NEW" / "NEMESIS", icon `freeze_nemesis` |
 | K dominates V | K kills V again | freeze panel | "IS STILL YOUR" / "NEMESIS" |
 | V dominates K | K kills V | V's freeze panel | "HAS GOTTEN" / "REVENGE", icon `freeze_revenge` |
 | no relationship | K kills V | freeze panel | "KILLED YOU", no icon |
 | A suicides | – | – | no counters change |
+| A dominates B | A disconnects; a new player takes A's slot | – | B has no nemesis; the new player has no relationships |
 
 ## Open questions
 
-1. **`player_death` field values.** Are `dominated`/`revenge` 0/1, or a
+1. **Answered 2026-11-14:** 0/1 (Behavior 3). Was: **`player_death` field values.** Are `dominated`/`revenge` 0/1, or a
    count (e.g. the dominator's number of dominations)? Check: on the probe
    server (SourceMod), log every `player_death` with these fields while
    bots fight with `bot_quota 2` until one dominates the other.
-2. **Team kills** (`mp_friendlyfire 1`): do they count toward a domination
+2. **Answered 2026-11-14:** they never flag but do update the counters
+   (Behavior 1). Was: **Team kills** (`mp_friendlyfire 1`): do they count toward a domination
    or revenge? Same probe, two bots on one team with friendly fire.
-3. **Clearing:** does a team change, `mp_restartgame` or a round restart
+3. **Mostly answered 2026-11-14** (Behavior 2): round restarts and
+   `mp_restartgame` keep everything; joining a team or disconnecting
+   clears. Still open: which kind of switch the automatic team balance
+   (`mp_autoteambalance`) makes, and a map change (expected: cleared).
+   Was: **Clearing:** does a team change, `mp_restartgame` or a round restart
    clear relationships? Probe: make a domination, then do each, and see
    whether the next kill by the dominated player is flagged `revenge`.
-4. **Kill feed and who sees what.** Does the kill feed show an icon on a
+4. **Half answered 2026-11-14:** relationships reach only their own
+   player's client (Behavior 3), so no third client can show them. The
+   kill feed icon is still open. Was: **Kill feed and who sees what.** Does the kill feed show an icon on a
    dominating or revenge kill, and which (`hud/freeze_dominated`?)? Are
    relationships between two other players visible to a third client (on
    the scoreboard)? Needs a client capture: a human client watching two
@@ -254,5 +300,6 @@ On a player death (server), after the kill is credited and before the
 6. **Scoreboard layout:** where the "Dominate" and "Nemesis" headings and
    the icons sit, and their size. Capture with a domination in both
    directions.
-7. **Whether the 4-kill threshold is the same in CS:S.** The achievement
+7. **Answered 2026-11-14:** 4, measured (the 4th unanswered kill flags,
+   the 5th and 6th do not). Was: **Whether the 4-kill threshold is the same in CS:S.** The achievement
    texts fit 4 but do not prove it; Q1's probe settles it.
