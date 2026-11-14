@@ -396,6 +396,7 @@ fn record(
 
 /// The widget's root (top right).
 #[derive(Component)]
+#[require(crate::client::hud::SignalHud)]
 pub struct KillFeedRoot;
 
 /// A drawn row: its entry's id.
@@ -556,6 +557,7 @@ pub mod signal_feed {
 
     /// The Signal feed's root (top right).
     #[derive(Component)]
+    #[require(crate::client::hud::SignalHud)]
     pub struct SignalFeedRoot;
 
     /// A Signal row: where it is going (`index` from the top; `leaving`:

@@ -361,3 +361,29 @@ fn signal_menu_covers_the_games_huds() {
     assert!(!menu(&sim.app).open);
     assert!(shown(&sim, root) && shown(&sim, part), "set back when it shuts");
 }
+
+/// Settings over the match also hides our own Signal HUD (`hud::SignalHud`:
+/// the race chip, kill feed, effects chips); the Esc menu keeps it readable.
+#[test]
+fn settings_over_play_hides_the_signal_hud() {
+    use chimera_client::client::hud::SignalHud;
+    let (mut sim, _a) = local_with_menu();
+    sim.app
+        .insert_resource(chimera_ui::Theme::from_toml(include_str!("../../../ultimate_gun_game/data/theme.toml")).unwrap())
+        .insert_resource(chimera_ui::UiUnits::new(1080.0, 1.0))
+        .init_resource::<chimera_ui::IconImages>();
+    let chip = sim.app.world_mut().spawn((Node::default(), SignalHud, chimera_client::client::race_chip::RaceChipRoot)).id();
+    let shown = |sim: &Sim| *sim.app.world().get::<Visibility>(chip).unwrap() != Visibility::Hidden;
+    sim.ticks(2);
+    assert!(shown(&sim));
+    tap(&mut sim.app, KeyCode::Escape);
+    assert!(menu(&sim.app).open);
+    assert!(shown(&sim), "the Esc menu keeps the race chip");
+    tap(&mut sim.app, KeyCode::ArrowDown);
+    tap(&mut sim.app, KeyCode::Enter);
+    assert_eq!(menu(&sim.app).page, Page::Options(0));
+    assert!(!shown(&sim), "Settings over play hides the race chip");
+    act(&mut sim.app, Action::Resume);
+    sim.ticks(2);
+    assert!(shown(&sim), "back after Settings shuts");
+}
