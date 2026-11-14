@@ -23,13 +23,23 @@
 //!   pointer moves it too), the focused row's help in the pane at the
 //!   right: what it does (the TOML `help`, else the cvar's own), its
 //!   console name, its default and its range.
-//! - **Apply / Revert** (the bar, Ctrl+S / Ctrl+Z): changes apply at once
-//!   (as today; the bar wraps them): the bar counts the settings changed
-//!   since the last Apply, Revert sets them back, Apply writes the config;
-//!   leaving the page applies (writes the config) as before. A
-//!   display-mode change (`chimera_fullscreen`) asks to be kept and goes
-//!   back by itself after `layout.settings.keep_secs` (15 s). Binds write
-//!   at once and are saved on leaving.
+//! - **Apply / Revert** (the bar, Ctrl+S / Ctrl+Z), a deferred model: a
+//!   change is pending (`Settings::pending`, its row marked changed in
+//!   cobalt, the bar counting them) and reaches the cvar only on Apply,
+//!   which sets every pending cvar and writes the config
+//!   (`host_writeconfig`); Revert drops them. Volume and sensitivity
+//!   sliders (`previews`) set their cvar while changed so they can be
+//!   heard and felt, and are set back on Revert or Discard. Key binds join
+//!   it: a rebind, Clear or Default keys goes to the console's bind table
+//!   at once (the next rebind reads it; nothing plays while the page is
+//!   up) over a snapshot taken before the first one (`bind_base`), which
+//!   Revert and Discard put back; each key that differs counts as a
+//!   change. Leaving (Esc, Back) with pending changes asks Apply / Discard
+//!   / Stay in a modal (←→, Enter, Esc stays); anything else closing the
+//!   page (a match ending, a disconnect) discards. A display-mode change
+//!   (`chimera_fullscreen`) applied asks to be kept and goes back by
+//!   itself after `layout.settings.keep_secs` (15 s), the config written
+//!   again. Host settings stay immediate (the host's own cvars or rcon).
 //! - **Motion**: a page change wipes the rows in on the 12° slant
 //!   (`controls::Ui::wipe_cover`); screens change through the logo pass
 //!   as before.
@@ -39,8 +49,8 @@
 //! `ui_scene settings [tab]` and `ui_scene esc` stage them for
 //! screenshots (`chimera_client::client::ui_scene`'s app hooks).
 //!
-//! Known shortcuts: the Apply bar wraps the immediate writes (no pending
-//! values held back until Apply); the dropdown's list has no scroll (the
+//! Known shortcuts: pending binds sit in the console's table while the
+//! page is up (restored from the snapshot, not held apart); the dropdown's list has no scroll (the
 //! options' lists are short); the help pane has no previews (FOV fan,
 //! crosshair); a key already bound elsewhere isn't flagged.
 
@@ -89,7 +99,15 @@ pub struct Keep {
     pub old: String,
     /// On the UI clock.
     pub until: f64,
+    /// Applied from the leave prompt: Keep then leaves.
+    pub then_leave: bool,
 }
+
+/// The console's bind table and its game layers (`bind_base`).
+pub type BindTables = (BTreeMap<String, String>, BTreeMap<String, BTreeMap<String, String>>);
+
+/// The leave prompt's buttons, left to right.
+pub const LEAVE_CHOICES: [SettingsAction; 3] = [SettingsAction::LeaveApply, SettingsAction::LeaveDiscard, SettingsAction::LeaveStay];
 
 /// The screen's state.
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
@@ -105,11 +123,15 @@ pub struct Settings {
     pub bind_game: usize,
     /// An open dropdown: its row and the option the keys are on.
     pub open_list: Option<(usize, usize)>,
-    /// Each setting changed since the last Apply, and its value before.
+    /// Each pending setting's new value, set on Apply (module doc).
+    pub pending: BTreeMap<String, String>,
+    /// Each pending setting's value before (the applied one).
     pub baseline: BTreeMap<String, String>,
-    /// A bind changed (saved on leaving).
-    pub binds_dirty: bool,
+    /// The binds before the first pending bind change (module doc).
+    pub bind_base: Option<BindTables>,
     pub keep: Option<Keep>,
+    /// The leave prompt (Apply / Discard / Stay): its focused button.
+    pub leave: Option<usize>,
     /// When the page last changed (the wipe), on the UI clock.
     pub page_since: f64,
     /// Esc was this screen's this frame (a capture, a list, the keep):
@@ -254,6 +276,35 @@ pub enum SettingsAction {
     Back,
     Keep,
     KeepRevert,
+    /// The leave prompt's buttons.
+    LeaveApply,
+    LeaveDiscard,
+    LeaveStay,
+}
+
+/// A slider that sets its cvar while changed (volumes, sensitivity),
+/// set back on Revert or Discard.
+pub fn previews(s: &Setting) -> bool {
+    matches!(s.pick, Pick::Range { .. }) && (s.cvar.contains("volume") || s.cvar.contains("sensitivity"))
+}
+
+/// The keys whose binding differs between `base` and the console's.
+pub fn bind_changes(base: Option<&BindTables>, console: &Console) -> usize {
+    let Some((shared, layers)) = base else { return 0 };
+    fn diff(a: &BTreeMap<String, String>, b: &BTreeMap<String, String>) -> usize {
+        let blank = |m: &BTreeMap<String, String>, k: &String| m.get(k).filter(|v| !v.is_empty()).cloned();
+        a.keys().chain(b.keys().filter(|k| !a.contains_key(*k))).filter(|k| blank(a, k) != blank(b, k)).count()
+    }
+    let empty = BTreeMap::new();
+    let names: std::collections::BTreeSet<&String> = layers.keys().chain(console.layers.keys()).collect();
+    diff(shared, &console.binds) + names.into_iter().map(|n| diff(layers.get(n).unwrap_or(&empty), console.layers.get(n).unwrap_or(&empty))).sum::<usize>()
+}
+
+impl Settings {
+    /// Changes not applied: pending settings and differing keys.
+    pub fn changes(&self, console: &Console) -> usize {
+        self.pending.len() + bind_changes(self.bind_base.as_ref(), console)
+    }
 }
 
 /// The rows' scroll box.
@@ -292,15 +343,33 @@ impl Plugin for SettingsPlugin {
             .add_systems(Update, crate::ui_cues::hover::<SettingsAction>.in_set(SettingsSystems));
         use chimera_client::client::ui_scene::UiSceneHooks;
         UiSceneHooks::add(app.world_mut(), "settings", scene_settings);
-        app.console_command("chimera:settings_press", "settings_press <apply|revert|back|keep>: press that button of Settings (tests).", |w, a| {
+        app.console_command("chimera:settings_press", "settings_press <apply|revert|back|keep|revert_keep|leave_apply|leave_discard|stay>: press that button of Settings (tests, screenshots).", |w, a| {
             let action = match a.first().map(String::as_str) {
                 Some("apply") => SettingsAction::Apply,
                 Some("revert") => SettingsAction::Revert,
                 Some("back") => SettingsAction::Back,
                 Some("keep") => SettingsAction::Keep,
+                Some("revert_keep") => SettingsAction::KeepRevert,
+                Some("leave_apply") => SettingsAction::LeaveApply,
+                Some("leave_discard") => SettingsAction::LeaveDiscard,
+                Some("stay") => SettingsAction::LeaveStay,
                 other => return Err(format!("no button {other:?}")),
             };
             w.write_message(action);
+            Ok(None)
+        });
+        app.console_command("chimera:settings_set", "settings_set <cvar> <value>: change a setting on the open Settings page, pending until Apply (tests, screenshots).", |w, a| {
+            let (Some(cvar), Some(value)) = (a.first(), a.get(1)) else { return Err("settings_set <cvar> <value>".into()) };
+            let ctx = w.resource::<Settings>().ctx.ok_or("Settings isn't open")?;
+            let shown = tabs_of(w);
+            let set = shown
+                .iter()
+                .flat_map(|(_, ss)| ss.iter())
+                .chain(crate::host::settings().iter())
+                .find(|s| &s.cvar == cvar)
+                .cloned()
+                .ok_or_else(|| format!("no setting `{cvar}`"))?;
+            set_value(w, ctx, &set, value);
             Ok(None)
         });
     }
@@ -388,8 +457,8 @@ fn cue(world: &mut World, c: UiCue) {
     crate::ui_cues::cue(world, c);
 }
 
-/// Opening, closing (leaving applies: the config written), the keep's
-/// time running out.
+/// Opening, closing (anything pending discarded: Esc and Back asked
+/// first), the keep's time running out.
 fn follow(world: &mut World) {
     open_staged(world);
     let ctx = context(world);
@@ -397,18 +466,10 @@ fn follow(world: &mut World) {
     let was = world.resource::<Settings>().ctx;
     world.resource_mut::<Settings>().esc_taken = false;
     if ctx != was {
-        let (dirty, keep) = {
-            let s = world.resource::<Settings>();
-            (!s.baseline.is_empty() || s.binds_dirty, s.keep.clone())
-        };
         if was.is_some() {
             // A display mode not kept goes back on leaving.
-            if let Some(k) = keep {
-                submit(world, format!("{} {}", k.cvar, chimera_core::console::quote(&k.old)));
-            }
-            if dirty && was != Some(Context::Host) {
-                submit(world, "host_writeconfig");
-            }
+            revert_keep(world);
+            discard(world);
         }
         let tabs = tabs_of(world);
         let mut s = world.resource_mut::<Settings>();
@@ -457,18 +518,22 @@ fn capture(
     let tabs = tabs.map(|t| t.tabs.clone()).unwrap_or_default();
     if let Some(Row::Bind { ctab, command, .. }) = rows(ctx, &tabs, s.tab, s.bind_game).get(row) {
         let line = crate::controls::rebind_line(&console, *ctab, command, key);
+        if s.bind_base.is_none() {
+            s.bind_base = Some((console.binds.clone(), console.layers.clone()));
+        }
         console.submit(line);
-        s.binds_dirty = true;
         cues.write(UiCue::new("ui_select"));
     }
     s.capture = None;
 }
 
 /// The keys (module doc).
+#[allow(clippy::too_many_arguments)]
 fn keys(
     keys: Res<ButtonInput<KeyCode>>,
     tabs: Option<Res<crate::esc_menu::OptionTabs>>,
     theme: Option<Res<Theme>>,
+    console: Res<Console>,
     mut s: ResMut<Settings>,
     mut out: MessageWriter<SettingsAction>,
     mut cues: MessageWriter<UiCue>,
@@ -476,6 +541,22 @@ fn keys(
     let Some(ctx) = s.ctx else { return };
     let p = |k: KeyCode| keys.just_pressed(k);
     let enter = p(KeyCode::Enter) || p(KeyCode::NumpadEnter);
+    if let Some(at) = s.leave {
+        if p(KeyCode::ArrowLeft) || p(KeyCode::ArrowRight) {
+            let d: i64 = if p(KeyCode::ArrowLeft) { -1 } else { 1 };
+            let next = (at as i64 + d).clamp(0, LEAVE_CHOICES.len() as i64 - 1) as usize;
+            if next != at {
+                s.leave = Some(next);
+                cues.write(UiCue::new("ui_hover"));
+            }
+        } else if enter {
+            out.write(LEAVE_CHOICES[at]);
+        } else if p(KeyCode::Escape) {
+            s.esc_taken = true;
+            out.write(SettingsAction::LeaveStay);
+        }
+        return;
+    }
     if s.keep.is_some() {
         if enter {
             out.write(SettingsAction::Keep);
@@ -486,6 +567,13 @@ fn keys(
         return;
     }
     if s.capture.is_some() || s.esc_taken {
+        return;
+    }
+    // Leaving with changes pending asks first (the menus leave Esc).
+    if p(KeyCode::Escape) && s.open_list.is_none() && ctx != Context::Host && s.changes(&console) > 0 {
+        s.esc_taken = true;
+        s.leave = Some(0);
+        cues.write(UiCue::new("ui_select"));
         return;
     }
     let tabs = tabs.map(|t| t.tabs.clone()).unwrap_or_default();
@@ -633,7 +721,7 @@ fn clicks(
 
 /// The pointer on a row focuses it.
 fn hover_focus(rows: Query<(&Interaction, &SettingsAction), Changed<Interaction>>, mut s: ResMut<Settings>) {
-    if s.capture.is_some() || s.open_list.is_some() {
+    if s.capture.is_some() || s.open_list.is_some() || s.leave.is_some() || s.keep.is_some() {
         return;
     }
     for (i, a) in &rows {
@@ -645,27 +733,121 @@ fn hover_focus(rows: Query<(&Interaction, &SettingsAction), Changed<Interaction>
     }
 }
 
-/// Sets `cvar` to `value` (module doc: the baseline, the keep).
-fn set_value(world: &mut World, ctx: Context, cvar: &str, value: &str) {
-    let old = crate::controls::cvar_value(world, cvar).unwrap_or_default();
-    let t = now(world);
-    let keep_secs = world.get_resource::<Theme>().map_or(15.0, |th| th.layout(L, "keep_secs")) as f64;
+fn set_line(cvar: &str, value: &str) -> String {
+    let quoted = if value.is_empty() { "\"\"".to_string() } else { chimera_core::console::quote(value) };
+    format!("{cvar} {quoted}")
+}
+
+/// The value a setting shows: its pending one, else the cvar's.
+fn shown_value(world: &mut World, cvar: &str) -> String {
+    match world.resource::<Settings>().pending.get(cvar) {
+        Some(v) => v.clone(),
+        None => crate::controls::cvar_value(world, cvar).unwrap_or_default(),
+    }
+}
+
+/// Changes `set` to `value` (module doc): pending until Apply (a preview
+/// set at once too); Host settings at once.
+fn set_value(world: &mut World, ctx: Context, set: &Setting, value: &str) {
+    let cvar = set.cvar.as_str();
+    if ctx == Context::Host {
+        submit(world, set_line(cvar, value));
+        world.resource_mut::<Settings>().values.insert(cvar.to_string(), value.to_string());
+        return;
+    }
+    let applied = match world.resource::<Settings>().baseline.get(cvar) {
+        Some(b) => b.clone(),
+        None => crate::controls::cvar_value(world, cvar).unwrap_or_default(),
+    };
     {
         let mut s = world.resource_mut::<Settings>();
-        if ctx != Context::Host {
-            let base = s.baseline.entry(cvar.to_string()).or_insert(old.clone()).clone();
-            if host::same_value(&base, value) {
-                s.baseline.remove(cvar);
-            }
-            if cvar == "chimera_fullscreen" && !host::same_value(&old, value) {
-                let old = s.keep.as_ref().map_or(old.clone(), |k| k.old.clone());
-                s.keep = Some(Keep { cvar: cvar.to_string(), old, until: t + keep_secs });
-            }
+        if host::same_value(&applied, value) {
+            s.pending.remove(cvar);
+            s.baseline.remove(cvar);
+        } else {
+            s.baseline.insert(cvar.to_string(), applied);
+            s.pending.insert(cvar.to_string(), value.to_string());
+        }
+        s.values.insert(cvar.to_string(), value.to_string());
+    }
+    if previews(set) {
+        submit(world, set_line(cvar, value));
+    }
+}
+
+/// Sets every pending cvar and writes the config; a display mode changed
+/// asks to be kept. False: nothing was pending.
+fn apply(world: &mut World) -> bool {
+    let changes = {
+        let s = world.resource::<Settings>();
+        s.changes(world.resource::<Console>())
+    };
+    if changes == 0 {
+        return false;
+    }
+    let t = now(world);
+    let keep_secs = world.get_resource::<Theme>().map_or(15.0, |th| th.layout(L, "keep_secs")) as f64;
+    let (pending, baseline) = {
+        let mut s = world.resource_mut::<Settings>();
+        s.bind_base = None;
+        (std::mem::take(&mut s.pending), std::mem::take(&mut s.baseline))
+    };
+    for (cvar, v) in &pending {
+        submit(world, set_line(cvar, v));
+        if cvar == "chimera_fullscreen" {
+            let old = baseline.get(cvar).cloned().unwrap_or_default();
+            world.resource_mut::<Settings>().keep = Some(Keep { cvar: cvar.clone(), old, until: t + keep_secs, then_leave: false });
         }
     }
-    let quoted = if value.is_empty() { "\"\"".to_string() } else { chimera_core::console::quote(value) };
-    submit(world, format!("{cvar} {quoted}"));
-    world.resource_mut::<Settings>().values.insert(cvar.to_string(), value.to_string());
+    submit(world, "host_writeconfig");
+    true
+}
+
+/// Drops what is pending: previews set back, the binds' snapshot put
+/// back. False: nothing was pending.
+fn discard(world: &mut World) -> bool {
+    let (pending, baseline, base) = {
+        let mut s = world.resource_mut::<Settings>();
+        let p = std::mem::take(&mut s.pending);
+        let b = std::mem::take(&mut s.baseline);
+        (p, b, s.bind_base.take())
+    };
+    let tabs = tabs_of(world);
+    let preview = |cvar: &str| tabs.iter().flat_map(|(_, ss)| ss.iter()).any(|s| s.cvar == cvar && previews(s));
+    let mut any = !pending.is_empty();
+    for (cvar, old) in &baseline {
+        if preview(cvar) {
+            submit(world, set_line(cvar, old));
+        }
+    }
+    if let Some((shared, layers)) = base {
+        let mut c = world.resource_mut::<Console>();
+        any |= c.binds != shared || c.layers != layers;
+        c.binds = shared;
+        c.layers = layers;
+    }
+    any
+}
+
+/// A display mode waiting to be kept goes back (the config written again:
+/// Apply wrote the new one).
+fn revert_keep(world: &mut World) -> bool {
+    let Some(k) = world.resource_mut::<Settings>().keep.take() else { return false };
+    submit(world, set_line(&k.cvar, &k.old));
+    submit(world, "host_writeconfig");
+    true
+}
+
+/// Back (Esc or the button) to the menu Settings came from.
+fn leave(world: &mut World, ctx: Context) {
+    match ctx {
+        Context::Menu => {
+            world.write_message(crate::main_menu::MainMenuAction::Back);
+        }
+        Context::Game | Context::Host => {
+            world.write_message(crate::esc_menu::Action::Back);
+        }
+    }
 }
 
 /// What the actions do.
@@ -718,10 +900,10 @@ fn act_one(world: &mut World, a: SettingsAction) {
                     cue(world, UiCue::new("ui_select"));
                 }
                 Some(Row::Setting { s, .. }) => {
-                    let now = crate::controls::cvar_value(world, &s.cvar).unwrap_or_default();
+                    let now = shown_value(world, &s.cvar);
                     let next = s.pick.next(&now, dir);
                     cue(world, crate::ui_cues::step_cue(&s.pick, &next));
-                    set_value(world, ctx, &s.cvar, &next);
+                    set_value(world, ctx, s, &next);
                 }
                 _ => {}
             }
@@ -733,7 +915,7 @@ fn act_one(world: &mut World, a: SettingsAction) {
             {
                 world.resource_mut::<Settings>().open_list = None;
                 cue(world, UiCue::new("ui_select"));
-                set_value(world, ctx, &s.cvar, v);
+                set_value(world, ctx, &s, v);
             } else if let Some(Row::Games) = rows.get(row) {
                 let mut st = world.resource_mut::<Settings>();
                 st.bind_game = option.min(crate::controls::tab_count() - 1);
@@ -748,11 +930,11 @@ fn act_one(world: &mut World, a: SettingsAction) {
             {
                 world.resource_mut::<Settings>().focus = row;
                 let v = controls::value_at(frac, min, max, step);
-                let now = crate::controls::cvar_value(world, &s.cvar).unwrap_or_default();
+                let now = shown_value(world, &s.cvar);
                 let next = format!("{v}");
                 if !host::same_value(&now, &next) {
                     cue(world, crate::ui_cues::step_cue(&s.pick, &next));
-                    set_value(world, ctx, &s.cvar, &next);
+                    set_value(world, ctx, &s, &next);
                 }
             }
         }
@@ -785,66 +967,92 @@ fn act_one(world: &mut World, a: SettingsAction) {
             if let Some(Row::Bind { ctab, command, .. }) = rows.get(row) {
                 let line = crate::controls::clear_line(world.resource::<Console>(), *ctab, command);
                 if let Some(line) = line {
+                    snapshot_binds(world);
                     submit(world, line);
-                    world.resource_mut::<Settings>().binds_dirty = true;
                 }
                 cue(world, UiCue::new("ui_back"));
             }
         }
         A::Defaults => {
+            snapshot_binds(world);
             submit(world, crate::controls::defaults_line(bind_game));
-            world.resource_mut::<Settings>().binds_dirty = true;
             cue(world, UiCue::new("ui_select"));
         }
         A::Apply => {
-            let (n, binds) = {
-                let s = world.resource::<Settings>();
-                (s.baseline.len(), s.binds_dirty)
-            };
-            if n == 0 && !binds {
+            if ctx == Context::Host || !apply(world) {
                 cue(world, UiCue::new("ui_denied"));
                 return;
             }
-            submit(world, "host_writeconfig");
-            let mut s = world.resource_mut::<Settings>();
-            s.baseline.clear();
-            s.binds_dirty = false;
-            s.keep = None;
             cue(world, UiCue::new("ui_select"));
         }
         A::Revert => {
-            let base = std::mem::take(&mut world.resource_mut::<Settings>().baseline);
-            if base.is_empty() {
+            if ctx == Context::Host || !discard(world) {
                 cue(world, UiCue::new("ui_denied"));
                 return;
             }
-            for (cvar, old) in &base {
-                let q = if old.is_empty() { "\"\"".to_string() } else { chimera_core::console::quote(old) };
-                submit(world, format!("{cvar} {q}"));
-            }
-            world.resource_mut::<Settings>().keep = None;
             cue(world, UiCue::new("ui_back"));
         }
         A::Keep => {
-            world.resource_mut::<Settings>().keep = None;
+            let keep = world.resource_mut::<Settings>().keep.take();
             cue(world, UiCue::new("ui_select"));
+            if keep.is_some_and(|k| k.then_leave) {
+                leave(world, ctx);
+            }
         }
         A::KeepRevert => {
-            let keep = world.resource_mut::<Settings>().keep.take();
-            if let Some(k) = keep {
-                submit(world, format!("{} {}", k.cvar, chimera_core::console::quote(&k.old)));
-                world.resource_mut::<Settings>().baseline.remove(&k.cvar);
+            if revert_keep(world) {
                 cue(world, UiCue::new("ui_back"));
             }
         }
-        A::Back => match ctx {
-            Context::Menu => {
-                world.write_message(crate::main_menu::MainMenuAction::Back);
+        A::Back => {
+            let pending = ctx != Context::Host && world.resource::<Settings>().changes(world.resource::<Console>()) > 0;
+            let mut s = world.resource_mut::<Settings>();
+            if s.keep.is_some() || s.leave.is_some() {
+                return;
             }
-            Context::Game | Context::Host => {
-                world.write_message(crate::esc_menu::Action::Back);
+            if pending {
+                s.leave = Some(0);
+                s.capture = None;
+                s.open_list = None;
+                cue(world, UiCue::new("ui_select"));
+            } else {
+                leave(world, ctx);
             }
-        },
+        }
+        A::LeaveApply => {
+            if world.resource_mut::<Settings>().leave.take().is_none() {
+                return;
+            }
+            apply(world);
+            cue(world, UiCue::new("ui_select"));
+            // A display mode to keep: its prompt first, then out.
+            match world.resource_mut::<Settings>().keep.as_mut() {
+                Some(k) => k.then_leave = true,
+                None => leave(world, ctx),
+            }
+        }
+        A::LeaveDiscard => {
+            if world.resource_mut::<Settings>().leave.take().is_none() {
+                return;
+            }
+            discard(world);
+            cue(world, UiCue::new("ui_back"));
+            leave(world, ctx);
+        }
+        A::LeaveStay => {
+            if world.resource_mut::<Settings>().leave.take().is_some() {
+                cue(world, UiCue::new("ui_back"));
+            }
+        }
+    }
+}
+
+/// The binds as they are before the first pending change (module doc).
+fn snapshot_binds(world: &mut World) {
+    if world.resource::<Settings>().bind_base.is_none() {
+        let c = world.resource::<Console>();
+        let base = (c.binds.clone(), c.layers.clone());
+        world.resource_mut::<Settings>().bind_base = Some(base);
     }
 }
 
@@ -858,7 +1066,7 @@ fn refresh_values(world: &mut World) {
     };
     for r in rows(ctx, &tabs, tab, game) {
         if let Row::Setting { s, .. } = r {
-            let v = crate::controls::cvar_value(world, &s.cvar).unwrap_or_default();
+            let v = shown_value(world, &s.cvar);
             let mut st = world.resource_mut::<Settings>();
             if st.values.get(&s.cvar) != Some(&v) {
                 st.values.insert(s.cvar.clone(), v);
@@ -946,15 +1154,24 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
     let kit = world.get_resource::<KitFonts>().cloned();
     let tabs = tabs_of(world);
     let help = help_of(world, ctx, &tabs, &s);
-    let keys_of: Vec<Vec<String>> = {
+    let (keys_of, bind_changed, changes): (Vec<Vec<String>>, Vec<bool>, usize) = {
         let c = world.resource::<Console>();
-        rows(ctx, &tabs, s.tab, s.bind_game)
+        let rows = rows(ctx, &tabs, s.tab, s.bind_game);
+        let keys = rows
             .iter()
             .map(|r| match r {
                 Row::Bind { ctab, command, .. } => crate::controls::keys_on(c, *ctab, command).iter().map(|k| binds::display(k)).collect(),
                 _ => Vec::new(),
             })
-            .collect()
+            .collect();
+        let changed = rows
+            .iter()
+            .map(|r| match (r, &s.bind_base) {
+                (Row::Bind { ctab, command, .. }, Some((b, l))) => crate::controls::keys_in(b, l, *ctab, command) != crate::controls::keys_on(c, *ctab, command),
+                _ => false,
+            })
+            .collect();
+        (keys, changed, s.changes(c))
     };
     let mut images = world.remove_resource::<Assets<Image>>();
     let mut icons = world.remove_resource::<IconImages>();
@@ -963,7 +1180,7 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
         let mut queue = bevy::ecs::world::CommandQueue::default();
         let mut c = Commands::new(&mut queue, world);
         let ui = Ui::new(&theme, kit.as_ref(), units);
-        let d = Draw { ctx, s: &s, tabs: &tabs, help: &help, keys: &keys_of, now: t };
+        let d = Draw { ctx, s: &s, tabs: &tabs, help: &help, keys: &keys_of, bind_changed: &bind_changed, changes, now: t };
         let root = spawn(&mut c, &ui, &d, images.as_mut(), icons.as_mut(), ambients.as_mut());
         if let Some(cam) = camera {
             c.entity(root).insert(UiTargetCamera(cam));
@@ -1040,6 +1257,10 @@ struct Draw<'a> {
     tabs: &'a [(String, Vec<Setting>)],
     help: &'a Help,
     keys: &'a [Vec<String>],
+    /// Each bind row's keys differ from before the pending changes.
+    bind_changed: &'a [bool],
+    /// Changes not applied (`Settings::changes`).
+    changes: usize,
     now: f64,
 }
 
@@ -1167,7 +1388,7 @@ fn spawn(
         ChildOf(bar),
     ));
     let st = ui.boxed(c, bar, UiStyle { gap: Some(0.6), grow: Some(1.0), ..UiStyle::row() });
-    let changed = s.baseline.len() + s.binds_dirty as usize;
+    let changed = d.changes;
     if d.ctx == Context::Host {
         ui.mark(c, st, Tone::Fg4, 0.42, 0.42);
         ui.text(c, st, Role::Mono, 0.6, Tone::Fg3, "Your server's settings: some now, some from the next match");
@@ -1178,7 +1399,7 @@ fn spawn(
             1 => "1 change not applied".to_string(),
             n => format!("{n} changes not applied"),
         };
-        ui.text(c, st, if changed > 0 { Role::Mono } else { Role::Mono }, 0.6, if changed > 0 { Tone::Fg } else { Tone::Fg3 }, &line);
+        ui.text(c, st, Role::Mono, 0.6, if changed > 0 { Tone::Fg } else { Tone::Fg3 }, &line);
     }
     let on_binds = names.get(s.tab).is_some_and(|n| n == "Controls");
     if on_binds {
@@ -1189,7 +1410,7 @@ fn spawn(
     c.entity(back).insert(SettingsAction::Back);
     if d.ctx != Context::Host {
         let off = State { disabled: changed == 0, ..State::NONE };
-        let rv = ui.button(c, bar, Kind::Secondary, "Revert", Some("Ctrl Z"), 2.0, State { disabled: s.baseline.is_empty(), ..State::NONE });
+        let rv = ui.button(c, bar, Kind::Secondary, "Revert", Some("Ctrl Z"), 2.0, off);
         c.entity(rv).insert(SettingsAction::Revert);
         let ap = ui.button(c, bar, Kind::Primary, "Apply", Some("Ctrl S"), 2.0, off);
         c.entity(ap).insert(SettingsAction::Apply);
@@ -1209,6 +1430,8 @@ fn spawn(
     }
     if let Some(k) = &s.keep {
         keep_modal(c, ui, root, (k.until - d.now).max(0.0).ceil() as u64);
+    } else if let Some(at) = s.leave {
+        leave_modal(c, ui, root, at, changed);
     }
     root
 }
@@ -1235,7 +1458,8 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
         }
         Row::Bind { label, .. } => {
             let listening = s.capture == Some(i);
-            let (row, vl) = ui.row(c, list, label, None, t.layout(L, "bind_h"), State::focused(focus));
+            let changed = d.bind_changed.get(i).copied().unwrap_or(false);
+            let (row, vl) = ui.row(c, list, label, None, t.layout(L, "bind_h"), State { focus, changed, ..State::NONE });
             c.entity(row).insert(SettingsAction::Row(i));
             let keys = d.keys.get(i).cloned().unwrap_or_default();
             let f = ui.key_field(c, vl, &keys, listening, 8.5, State::focused(focus));
@@ -1247,7 +1471,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
         }
         Row::Setting { s: set, note } => {
             let v = s.values.get(&set.cvar).cloned().unwrap_or_default();
-            let changed = s.baseline.get(&set.cvar).is_some_and(|b| !host::same_value(b, &v));
+            let changed = s.pending.contains_key(&set.cvar);
             let st = State { focus, changed, ..State::NONE };
             let (row, vl) = ui.row(c, list, &set.label, *note, t.layout(L, "row_h"), st);
             c.entity(row).insert(SettingsAction::Row(i));
@@ -1318,6 +1542,39 @@ fn keep_modal(c: &mut Commands, ui: &Ui, root: Entity, left: u64) {
     c.entity(k).insert(SettingsAction::Keep);
     let r = ui.button(c, acts, Kind::Secondary, "Revert", Some("Esc"), 2.4, State::NONE);
     c.entity(r).insert(SettingsAction::KeepRevert);
+}
+
+/// "Apply your changes?" on leaving: Apply / Discard / Stay.
+fn leave_modal(c: &mut Commands, ui: &Ui, root: Entity, at: usize, changes: usize) {
+    let shade = c
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100.0),
+                height: percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(ui.color(Tone::Ink, 0.72)),
+            bevy::ui::FocusPolicy::Block,
+            ZIndex(30),
+            ChildOf(root),
+        ))
+        .id();
+    let m = ui.modal(c, shade, 32.0, false);
+    ui.text(c, m, Role::DisplayBold, 1.35, Tone::Fg, "Apply your changes?");
+    let line = if changes == 1 { "1 change is not applied yet.".to_string() } else { format!("{changes} changes are not applied yet.") };
+    let tx = ui.boxed(c, m, UiStyle { w_pct: Some(100.0), margin: Some([0.8, 0.0, 0.0, 0.0].into()), ..UiStyle::column() });
+    ui.paragraph(c, tx, Role::Mono, 0.62, Tone::Fg2, &format!("{line} Apply keeps them and saves; Discard puts them back."));
+    let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
+    let buttons = [(Kind::Primary, "Apply"), (Kind::Secondary, "Discard"), (Kind::Ghost, "Stay")];
+    for (k, ((kind, label), action)) in buttons.into_iter().zip(LEAVE_CHOICES).enumerate() {
+        // Enter presses the focused one (←→ move it), Esc stays.
+        let key = if k == at { Some("Enter") } else if action == SettingsAction::LeaveStay { Some("Esc") } else { None };
+        let b = ui.button(c, acts, kind, label, key, 2.4, State::focused(k == at));
+        c.entity(b).insert(action);
+    }
 }
 
 /// The list's overflow: scroll on y.
