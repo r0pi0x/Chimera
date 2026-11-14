@@ -567,7 +567,7 @@ had. `ui_scene airstrike [t]`. Tests: `rank_toast_rolls_and_holds_1_15_s`,
 
 ### M4: match end and the vote
 
-Status (2026-11-14): step 1 in (`ugg-ui-m4`). The shared ambient
+Status (2026-11-14): done on `ugg-ui-m4` (steps 1-3 below). The shared ambient
 (`AmbientMaterial`, look book V's shader in WGSL; its own commit for M5).
 The match end in the Signal look (`client::match_end_signal`, behind
 `flags.hud.signal`; Lucker Party and the plain apps keep `match_end`'s
@@ -614,6 +614,18 @@ the logo pass begins 1 s later, its swap on the change. Tests:
 (party_kit, NetSim). Parity (step 2): 119 matched, 22 past tolerance
 (the step 1 list, the tags' boxes, pips 3 px, the way-out line that
 waits for Leave); thumbnails are tinted gradients (no map shots yet).
+
+Step 3 in: the ground (`EndGround`: the shared ambient with the match
+end's bloom and the broad slanted planes over it, `LinesMaterial` now
+look book V's planes rule: 16/32/64/128-unit planes every three widths,
+one spacing per 96 s, `PLANES_ALPHA` .6 % a layer in display space) and
+Leave (`LeaveButton`: `disconnect`, through the logo pass). Test:
+`the_ground_and_leave`. Parity (step 3, 1920x1080): 120 matched, 22 past
+tolerance, none missing: the tags' boxes (1-2 px), the winner's line and
+the way-out line (the mockup measures a wrapped or split text's run),
+the pips (3 px over eight), the fused chip, the loss mark's cell,
+session wins (2 px). Left: map thumbnails (shots of the maps), the lock's
+1 s reveal tuned in a playtest, Leave's confirmation for a listen host.
 
 - `match_end` rebuilt: standings, climb chart, vote cards, one
   countdown, Leave (`disconnect` through the logo pass), the next match

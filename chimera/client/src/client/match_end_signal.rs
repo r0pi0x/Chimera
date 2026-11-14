@@ -42,6 +42,12 @@
 //!   and the logo pass takes everyone into the next match (`match_end`'s
 //!   gate, a swap's length before `NextMatch::at`).
 //!
+//! - **Leave** (`LeaveButton`): leaves for the menu (`disconnect`,
+//!   through the logo pass); the next match starts without you.
+//! - **The ground** (`EndGround`): the shared ambient with the match
+//!   end's bloom and the broad slanted planes over it at .6 % a layer
+//!   (look book V's "ambient + planes"), both on the renderer's clock.
+//!
 //! Each part is rebuilt only when what it shows changes; the entrance
 //! (fades and steps from the screen's coming up, `EndState::came_up`),
 //! the slab and the climb's drawing run on the kit's clock (`UiClock`).
@@ -52,7 +58,9 @@
 //! look book's names (`UiParityId`: `end.*`).
 //!
 //! Known shortcuts: no gun on the standings (the look book has none);
-//! the stall's box is solid, not dashed.
+//! the stall's box is solid, not dashed; map cards show a tinted
+//! gradient (no map shots); a listen host's Leave gets no confirmation
+//! (the Esc menu's warns about the people connected).
 
 use bevy::{prelude::*, window::PrimaryWindow};
 use chimera_sim::minigame::climb::Climb;
@@ -168,7 +176,7 @@ pub fn add(app: &mut App) {
     super::signal::setup(app);
     app.init_resource::<EndSelection>().init_resource::<EndState>().add_systems(Startup, spawn).add_systems(
         Update,
-        (show, hide_huds, pick, pointer_image, build_static, build_climb, build_vote, decorate_rows, animate, countdown)
+        (show, ground, hide_huds, pick, pointer_image, build_static, build_climb, build_vote, decorate_rows, animate, countdown, leave)
             .chain()
             .after(super::match_end::MatchEndFollow)
             .run_if(themed),
@@ -225,6 +233,57 @@ fn show(
             state.vote_key = None;
         }
         _ => {}
+    }
+}
+
+/// The ground: the shared ambient (`AmbientMaterial`, the match end's
+/// bloom, no calm column) and the broad slanted planes over it
+/// (`LinesMaterial`, `PLANES_ALPHA` a layer): the look book's "ambient +
+/// planes". Made once a theme (again when it changes), under every part.
+#[derive(Component)]
+pub struct EndGround;
+
+fn ground(
+    theme: Res<Theme>,
+    root: Single<Entity, With<SignalEndRoot>>,
+    old: Query<Entity, With<EndGround>>,
+    mut ambients: Option<ResMut<Assets<chimera_ui::AmbientMaterial>>>,
+    mut planes: Option<ResMut<Assets<chimera_ui::LinesMaterial>>>,
+    mut commands: Commands,
+) {
+    if !old.is_empty() && !theme.is_changed() {
+        return;
+    }
+    for e in &old {
+        commands.entity(e).despawn();
+    }
+    let full = || Node { position_type: PositionType::Absolute, left: px(0.0), top: px(0.0), width: percent(100.0), height: percent(100.0), ..default() };
+    let mut a = commands.spawn((EndGround, full(), Pickable::IGNORE, ZIndex(-2)));
+    if let Some(m) = ambients.as_deref_mut() {
+        a.insert(MaterialNode(m.add(chimera_ui::AmbientMaterial::new(&theme))));
+    }
+    let a = a.id();
+    let mut l = commands.spawn((EndGround, full(), Pickable::IGNORE, ZIndex(-1)));
+    if let Some(m) = planes.as_deref_mut() {
+        l.insert(MaterialNode(m.add(chimera_ui::LinesMaterial::new(&theme))));
+    }
+    let l = l.id();
+    commands.entity(*root).insert_children(0, &[a, l]);
+}
+
+/// The Leave button: leaves the match (`disconnect`, which the front end
+/// takes through the logo pass back to the menu).
+#[derive(Component)]
+pub struct LeaveButton;
+
+fn leave(
+    pressed: Query<&super::widgets::Interaction, (With<LeaveButton>, Changed<super::widgets::Interaction>)>,
+    console: Option<ResMut<chimera_core::console::Console>>,
+) {
+    if pressed.iter().any(|i| *i == super::widgets::Interaction::Pressed)
+        && let Some(mut c) = console
+    {
+        c.submit("disconnect".to_string());
     }
 }
 
@@ -1525,6 +1584,28 @@ fn build_vote(
                         UiParityId::new("end.vote.ex"),
                     ))
                     .insert((TextLayout::new(Justify::Left, LineBreak::WordBoundary), bevy::text::LineHeight::RelativeToFont(1.45)));
+                    // Leave: outlined, the label and a triangle.
+                    c.spawn((
+                        LeaveButton,
+                        super::widgets::clickable(),
+                        Node {
+                            justify_content: JustifyContent::SpaceBetween,
+                            align_items: AlignItems::Center,
+                            padding: UiRect::new(look.val(0.7), look.val(0.6), look.val(0.5), look.val(0.45)),
+                            ..default()
+                        },
+                        BackgroundColor(look.theme.tone_a(Tone::Ink, 0.9)),
+                        Outline::new(px(hair), px(-hair), look.tone(Tone::Fg3)),
+                        UiParityId::new("end.vote.leave"),
+                    ))
+                    .with_children(|t| {
+                        t.spawn((look.tracked(Role::Mono, 0.64, 0.064, look.tone(Tone::Fg), "Leave"), Pickable::IGNORE));
+                        t.spawn((
+                            Node { width: look.val(0.36), height: look.val(0.44), ..default() },
+                            ImageNode { image: state.pointer.as_ref().map(|(_, h)| h.clone()).unwrap_or_default(), color: look.tone(Tone::Fg), flip_x: true, ..default() },
+                            Pickable::IGNORE,
+                        ));
+                    });
                 });
             });
         });

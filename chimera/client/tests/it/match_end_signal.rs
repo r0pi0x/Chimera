@@ -9,7 +9,7 @@
 use bevy::prelude::*;
 use chimera_client::client::{
     match_end::{MatchEndPlugin, MatchEndRoot, MatchEndStaged, MatchEndView},
-    match_end_signal::{self, ClimbChart, ClimbSeg, EndSelection, EndState, SignalEndRoot, StandingsRow, VoteCard, VoteCountdown, VoteTicks, WinnerSlab},
+    match_end_signal::{self, EndGround, LeaveButton, ClimbChart, ClimbSeg, EndSelection, EndState, SignalEndRoot, StandingsRow, VoteCard, VoteCountdown, VoteTicks, WinnerSlab},
 };
 use chimera_sim::SimBasePlugins;
 use chimera_ui::{Theme, UiClock};
@@ -167,4 +167,14 @@ fn match_end_has_one_countdown() {
         match_end_signal::vote_hint(&view)
     };
     assert_eq!(hint, "Next: de_dust2 \u{2022} starting");
+}
+
+/// The ground (the ambient and the planes over it) under every part, and
+/// the way out.
+#[test]
+fn the_ground_and_leave() {
+    let mut sim = sim(true);
+    let w = sim.app.world_mut();
+    assert_eq!(w.query::<&EndGround>().iter(w).count(), 2, "the ambient and the planes");
+    assert_eq!(w.query::<&LeaveButton>().iter(w).count(), 1);
 }

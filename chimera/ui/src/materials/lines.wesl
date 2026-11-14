@@ -1,23 +1,33 @@
-// LinesMaterial (materials/mod.rs): the match end's background, one system
-// of slanted lines on a 24-column grid moving right to left on the
-// renderer's clock. Far layer: hairlines (one physical pixel) in a
-// 6-column bar, columns 0, 1 and 3 of each 6 (a 2 + 1 rhythm), moving 6
-// columns a loop. Near layer: a half-column slab every 12 columns (from
-// column 4), twice as fast. Each pixel's coverage is the exact overlap of
-// its column with the line's span on its row (a box filter along x).
+// LinesMaterial (materials/mod.rs): the match end's broad slanted planes
+// (look book V's rule): four layers of planes `w` units wide, w in {16,
+// 32, 64, 128} (1 unit = 1/192 of the width), each repeating every 3 w
+// (a third covered, so the layers overlap), each moving one spacing per
+// `loop` s right to left (the widest drift fastest), at 12°. Each layer
+// adds `alpha` (display space) of `fg` over the ground it lies on
+// (`ground`, display space); the coverage is the exact overlap of a
+// pixel's column with a plane's span on its row. Blended in linear light,
+// so the alpha written is the one that lands on the display-space mix.
 
 import bevy_render::globals::Globals;
 import bevy_ui_render::ui_vertex_output::UiVertexOutput;
 
 @group(0) @binding(1) var<uniform> globals: Globals;
+// Display-space colours: the planes' and the ground under them.
 @group(1) @binding(0) var<uniform> color: vec4<f32>;
-// x: loop in seconds, y: far alpha, z: near alpha, w: tan of the slant.
-@group(1) @binding(1) var<uniform> params: vec4<f32>;
-// x: opacity, y: columns, z: time offset (s), w: frozen time (< 0: live).
-@group(1) @binding(2) var<uniform> extra: vec4<f32>;
+@group(1) @binding(1) var<uniform> ground: vec4<f32>;
+// x: loop (s per spacing), y: alpha per layer (display space), z: unused, w: tan.
+@group(1) @binding(2) var<uniform> params: vec4<f32>;
+// x: opacity, y: units across the width, z: time offset (s), w: frozen time (< 0: live).
+@group(1) @binding(3) var<uniform> extra: vec4<f32>;
 
 fn overlap(px: f32, a: f32, b: f32) -> f32 {
     return max(0.0, min(px + 1.0, b) - max(px, a));
+}
+
+fn to_linear(c: vec3<f32>) -> vec3<f32> {
+    let lo = c / 12.92;
+    let hi = pow((c + 0.055) / 1.055, vec3<f32>(2.4));
+    return select(hi, lo, c <= vec3<f32>(0.04045));
 }
 
 @fragment
@@ -25,38 +35,36 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     let p = floor(in.uv * in.size);
     let w = in.size.x;
     let h = in.size.y;
-    let cols = extra.y;
-    let pitch = w / cols;
+    let u = w / extra.y;
     let sk = h * params.w;
-    let row = sk * (1.0 - (p.y + 0.5) / h);
+    // The planes lean right: a row's left edge sits `sk` along at the top.
+    let lean = sk * (1.0 - (p.y + 0.5) / h);
     var t = globals.time + extra.z;
     if (extra.w >= 0.0) {
         t = extra.w;
     }
-    let ph = fract(t / params.x);
-    var cov_far = 0.0;
-    let o1 = 6.0 * pitch * ph;
-    let q1 = floor((p.x - row + o1) / pitch);
-    for (var k = -1; k <= 1; k++) {
-        let c = q1 + f32(k);
-        let m = c - 6.0 * floor(c / 6.0);
-        if (m == 0.0 || m == 1.0 || m == 3.0) {
-            let x = round(c * pitch - o1) + row;
-            cov_far += overlap(p.x, x, x + 1.0);
+    var cov = 0.0;
+    for (var k = 0; k < 4; k++) {
+        let wu = 16.0 * pow(2.0, f32(k));
+        let bw = round(wu * u);
+        let sp = 3.0 * wu * u;
+        let raw = sp * f32(k) / 4.0 - sp * (t / params.x);
+        let off = raw - sp * floor(raw / sp);
+        // The plane whose span may hold this pixel, and its neighbour.
+        let n = floor((p.x - lean - off) / sp);
+        for (var j = -1; j <= 0; j++) {
+            let x0 = round(off + (n + f32(j)) * sp) + lean;
+            cov += overlap(p.x, x0, x0 + bw);
         }
     }
-    var cov_near = 0.0;
-    let o2 = 12.0 * pitch * ph;
-    let slab = round(pitch * 0.5);
-    let q2 = floor(((p.x - row + o2) / pitch - 4.0) / 12.0);
-    for (var k = -1; k <= 1; k++) {
-        let c = (q2 + f32(k)) * 12.0 + 4.0;
-        let x = round(c * pitch - o2) + row;
-        cov_near += overlap(p.x, x, x + slab);
-    }
-    let a = (min(cov_far, 1.0) * params.y + min(cov_near, 1.0) * params.z) * extra.x;
+    let a = cov * params.y * extra.x;
     if (a <= 0.0) {
         discard;
     }
-    return vec4<f32>(color.rgb, a * color.a);
+    // The display-space mix over the ground, as a linear-light alpha.
+    let target_lin = to_linear(clamp(ground.rgb + (color.rgb - ground.rgb) * a, vec3<f32>(0.0), vec3<f32>(1.0)));
+    let g = to_linear(ground.rgb);
+    let f = to_linear(color.rgb);
+    let lin_a = dot(target_lin - g, vec3<f32>(1.0)) / max(dot(f - g, vec3<f32>(1.0)), 1e-5);
+    return vec4<f32>(f, clamp(lin_a, 0.0, 1.0));
 }
