@@ -775,6 +775,37 @@ fn tracked_files() -> Vec<String> {
         .collect()
 }
 
+/// A font file in the repository is our own (the Ultimate Gun Game's
+/// faces, docs/plans/active/ugg-ui.md 2.4) and carries its licence: an
+/// `OFL.txt` beside it naming the SIL Open Font License, so no game's or
+/// system's font slips in under the size limit of `no_game_assets_tracked`.
+#[test]
+fn own_fonts_carry_their_licence() {
+    const FONTS: &[&str] = &["ttf", "otf", "woff", "woff2", "ttc", "fon", "fnt"];
+    let tracked = tracked_files();
+    let mut errors = Vec::new();
+    for f in &tracked {
+        let path = Path::new(f);
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        if !FONTS.contains(&ext.as_str()) {
+            continue;
+        }
+        let dir = path.parent().map(|d| d.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+        let ofl = if dir.is_empty() { "OFL.txt".to_string() } else { format!("{dir}/OFL.txt") };
+        let licensed = tracked.contains(&ofl)
+            && fs::read_to_string(root().join(&ofl)).is_ok_and(|t| t.contains("SIL Open Font License"));
+        if !licensed {
+            errors.push(format!(
+                "{f}: a font with no tracked `{ofl}` naming the SIL Open Font License beside it. Only our own \
+                 fonts (OFL-1.1, Lucker Party contributors, their sources in tools/fonts/) are committed; a game's \
+                 or a system's font loads at run time from the install or the system. Remove it with `git rm \
+                 --cached`, or add the licence if it is ours."
+            ));
+        }
+    }
+    assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
+}
+
 /// Other games' assets must never be committed (README, "Assets, code and legal").
 #[test]
 fn no_game_assets_tracked() {
@@ -1400,6 +1431,10 @@ fn workspace_crates() {
     const SOURCE: &str = "is Source's shared behaviour (docs/ARCHITECTURE.md, \"Crates\"): it sits \
         on the engine's simulation, and what presents it and the games sit above it. Say what is needed in \
         plain data or give it a hook (a registry, a resource) that the crate above fills.";
+    const UI_KIT: &str = "is the UI kit (docs/ARCHITECTURE.md, \"Crates\"; docs/plans/active/ugg-ui.md, 2.1): \
+        theme, fonts, units, motion and materials on Bevy and the engine's base only, below the client shell \
+        and the apps that build screens on it. Keep what needs the map, the simulation, the network or a game \
+        in the screen's crate and give the kit plain data.";
     const CLIENT: &str = "is the client shell (docs/ARCHITECTURE.md, \"Crates\"): it sits on the engine's \
         crates (the presentation and the network too) below the games' front ends and the app, and knows \
         nothing of a game, the app or Source's logic. Give the shell a hook (a resource such as \
@@ -1556,6 +1591,29 @@ fn workspace_crates() {
             PURE_DATA,
         ),
         ("chimera/core", &["mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"], ENGINE),
+        // The UI kit: Bevy and the engine's base only, so the shell and any
+        // app build their screens on it (docs/plans/active/ugg-ui.md, 2.1).
+        (
+            "chimera/ui",
+            &[
+                "chimera_world",
+                "chimera_present",
+                "chimera_sim",
+                "chimera_net",
+                "chimera_client",
+                "source_",
+                "lithtech_",
+                "mashup",
+                "cs_source",
+                "combat_arms",
+                "hl2dm",
+                "games",
+                "originals",
+                "lucker_party",
+                "party_kit",
+            ],
+            UI_KIT,
+        ),
         (
             "chimera/world",
             &["chimera_present", "mashup", "cs_source", "combat_arms", "hl2dm", "games", "originals", "lucker_party", "party_kit"],
@@ -1593,6 +1651,7 @@ fn workspace_crates() {
             &[
                 "chimera_present",
                 "chimera_client",
+                "chimera_ui",
                 "cs_source_app",
                 "mashup",
                 "combat_arms",
@@ -1608,6 +1667,7 @@ fn workspace_crates() {
             &[
                 "chimera_present",
                 "chimera_client",
+                "chimera_ui",
                 "source_logic",
                 "source_engine",
                 "cs_source",
@@ -1654,6 +1714,7 @@ fn workspace_crates() {
             &[
                 "chimera_present",
                 "chimera_client",
+                "chimera_ui",
                 "cs_source",
                 "combat_arms",
                 "mashup",
@@ -2342,9 +2403,9 @@ fn layers_by_path() {
 /// the game's simulation never uses (`workspace_crates`;
 /// `game_ui_only_with_its_feature` checks the dependency tree).
 const UI_FEATURES: &[(&str, &str, &[&str])] = &[
-    ("games/cs_source", "ui", &["chimera_present", "chimera_client"]),
-    ("games/combat_arms", "ui", &["chimera_present", "chimera_client"]),
-    ("games/hl2dm", "ui", &["chimera_present", "chimera_client"]),
+    ("games/cs_source", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
+    ("games/combat_arms", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
+    ("games/hl2dm", "ui", &["chimera_present", "chimera_client", "chimera_ui"]),
 ];
 
 /// Crates a member's `FORBIDDEN` list names that its tests alone may use

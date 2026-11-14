@@ -18,6 +18,7 @@ members = [
     "chimera/client",
     "chimera/net",
     "chimera/tools",
+    "chimera/ui",
     "chimera/vfs",
     "chimera/formats",
     "chimera/assets",
@@ -57,6 +58,7 @@ default-members = [
     "chimera/client",
     "chimera/net",
     "chimera/tools",
+    "chimera/ui",
     "chimera/vfs",
     "chimera/formats",
     "chimera/assets",
@@ -106,6 +108,9 @@ chimera_sim = { path = "chimera/sim" }
 chimera_client = { path = "chimera/client" }
 chimera_net = { path = "chimera/net" }
 chimera_vfs = { path = "chimera/vfs" }
+# The UI kit: theme, fonts by role, units, motion, UI materials
+# (docs/plans/active/ugg-ui.md).
+chimera_ui = { path = "chimera/ui" }
 chimera_formats = { path = "chimera/formats" }
 # Game files as content-addressed records: the store, manifests, the
 # `CachedFiles` mount layer, the vfs access log (docs/plans/active/asset-service.md).

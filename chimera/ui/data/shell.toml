@@ -1,0 +1,67 @@
+# The shell's default theme (chimera_ui::theme::Theme::shell_default):
+# what screens use when the app inserts no theme, and the base every other
+# theme lays over (a theme names only what differs). Trebuchet MS and the
+# shell overlays' present colours. Colours are display-space sRGB.
+
+name = "shell"
+
+[palette]
+ink = "#000000"
+ink_2 = "#0A0A0A"
+ink_3 = "#141414"
+ink_4 = "#1E1E1E"
+fg = "#FFFFFF"
+acc = "#FFB000"
+on_acc = "#000000"
+acc_text = "#FFC040"
+threat = "#FF4040"
+
+[alpha]
+fg_2 = 0.66
+fg_3 = 0.42
+fg_4 = 0.15
+fg_5 = 0.07
+acc_2 = 0.16
+acc_glow = 0.45
+plate = 0.55
+glow = 0.20
+
+[shape]
+slant_deg = 0.0
+min_text_px = 9.0
+
+# Text roles (chimera_ui::fonts::Role): face `display`/`mono` are the
+# app's own faces (KitFonts) when loaded; any other face is a family name.
+[type.wordmark]
+face = "trebuchet ms"
+weight = 700
+upper = true
+
+[type.display_black]
+face = "trebuchet ms"
+weight = 700
+upper = true
+
+[type.display_bold]
+face = "trebuchet ms"
+weight = 700
+
+[type.display_regular]
+face = "trebuchet ms"
+weight = 400
+
+[type.mono]
+face = "trebuchet ms"
+weight = 400
+
+# Named easings (chimera_ui::motion::Ease::parse).
+[motion.ease]
+out = "bezier(.16,1,.3,1)"
+in = "bezier(.7,0,.84,0)"
+io = "bezier(.65,0,.35,1)"
+pop = "bezier(.34,1.56,.64,1)"
+
+# Durations and offsets in seconds, by piece.
+[motion.dur.pass]
+total = 1.2
+swap = 0.6

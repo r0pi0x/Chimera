@@ -531,6 +531,7 @@ impl PluginGroup for ClientPlugins {
             .add(net_graph::NetGraphPlugin)
             .add(hud::HudPlugin)
             .add(overlay::OverlayPlugin)
+            .add(chimera_ui::ChimeraUiPlugin)
             .add(minigame_panel::MinigamePanelPlugin)
             .add(text_warm::TextWarmPlugin)
             .add(announcer::AnnouncerPlugin)

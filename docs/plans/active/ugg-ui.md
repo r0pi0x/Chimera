@@ -1,6 +1,6 @@
 # Plan: Ultimate Gun Game's new UI ("Signal")
 
-Status: proposed 2026-11-13. Plan only; no code yet. Design reference:
+Status: in progress (M0, 2026-11-13). Design reference:
 the Look Book IV prototype (published artifact) and its round V (menu
 slot C backdrop, ambient shader background, tag styles, match-end
 background: still open when this was written). The prototype's sizes,
@@ -372,6 +372,15 @@ menu`, feature `dev`) for screenshots. Perf (section 7) is counted per
 milestone.
 
 ### M0: tokens, fonts, the motion kit
+
+Status (2026-11-13): the kit's API is in (`chimera/ui`: `Theme` and
+data/shell.toml, `KitFonts`/`Role`/`fonts::text`, `UiUnits`/`TickLayout`,
+`Ease`/`UiClock`/`Timeline`, `SlantMaterial`/`TickBarMaterial`/
+`PassMaterial`; `ChimeraUiPlugin` in the shell's plugins), with Signal's
+theme and the v0.4 faces in `apps/ultimate_gun_game/` (`signal`), the
+font sources in `tools/fonts/` and `own_fonts_carry_their_licence`.
+Next: `LinesMaterial`, `AmbientMaterial` (stub), icons, widgets,
+`ui_scene proof` screenshots, `overlay::font` from the theme's roles.
 
 - `chimera_ui` crate (2.1) with `theme`, `fonts`, `units`, `motion`,
   `materials`, `icons`, `widgets`; the fonts and theme in

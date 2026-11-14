@@ -80,6 +80,7 @@ Change a file's `//!` doc with the code, then run
 - `apps/ultimate_gun_game/examples/frame_bench.rs`: A frame's cost in play, offscreen (a GPU, no window or display: docs/performance.md, "Performance pass" and "Work counts"): Ultimate Gun Game's...
 - `apps/ultimate_gun_game/src/lib.rs`: Ultimate Gun Game (apps/ultimate_gun_game, crate `ultimate_gun_game`, binary `ultimate_gun_game`; docs/plans/active/ultimate-gun-game.md): the gun...
 - `apps/ultimate_gun_game/src/main.rs`: The Ultimate Gun Game binary (`ultimate_gun_game`): the crate's `APP` (lib.rs: Lucker Party's client app, `party_kit::client::PARTY`, with the...
+- `apps/ultimate_gun_game/src/signal.rs`: The Ultimate Gun Game's look, "Signal" (feature `present`; docs/plans/active/ugg-ui.md): its theme (`THEME`, data/theme.toml) and its own faces...
 
 ## apps/ultimate_gun_game_server
 
@@ -401,6 +402,15 @@ Change a file's `//!` doc with the code, then run
 - `chimera/tools/src/imgcmp.rs`: Comparing two pictures of the same view (a reference and ours): per-image brightness, saturation and sharpness (`Stats`), the mean absolute...
 - `chimera/tools/src/lib.rs`: Chimera's tools: what any game's tools use, knowing no game
 - `chimera/tools/src/perfgate.rs`: An instructions-per-tick regression gate (docs/performance.md, "Regression gate"): scenarios with fixed inputs that play out the same on every run...
+
+## chimera/ui
+
+- `chimera/ui/src/fonts.rs`: The kit's faces and text roles (docs/plans/active/ugg-ui.md, 2.4)
+- `chimera/ui/src/lib.rs`: `chimera_ui`, the UI kit (docs/plans/active/ugg-ui.md, 2.1): what the shell's overlays and the apps' screens are built from, with no game...
+- `chimera/ui/src/materials/mod.rs`: The kit's UI materials (docs/plans/active/ugg-ui.md, 2.5): WGSL beside the Rust, embedded (`embedded://chimera_ui/materials/<name>.wesl`)
+- `chimera/ui/src/motion.rs`: The motion kit (docs/plans/active/ugg-ui.md, 2.5): easings, tracks and timelines, on a clock tests step by hand
+- `chimera/ui/src/theme.rs`: The kit's look as data: `Theme`, a resource read from TOML (docs/plans/active/ugg-ui.md, 2.3)
+- `chimera/ui/src/units.rs`: Sizes (docs/plans/active/ugg-ui.md, 2.6 and 2.5 "Pixel snapping")
 
 ## chimera/vfs
 

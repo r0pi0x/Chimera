@@ -2717,6 +2717,7 @@ dependencies = [
  "chimera_net",
  "chimera_present",
  "chimera_sim",
+ "chimera_ui",
  "chimera_world",
  "cpal",
  "dirs",
@@ -2828,6 +2829,19 @@ dependencies = [
  "image",
  "serde",
  "serde_json",
+ "workspace-hack",
+]
+
+[[package]]
+name = "chimera_ui"
+version = "0.1.0"
+dependencies = [
+ "avian3d",
+ "bevy",
+ "bevy_winit",
+ "chimera_core",
+ "serde",
+ "toml",
  "workspace-hack",
 ]
 
@@ -8210,6 +8224,7 @@ dependencies = [
  "chimera_net",
  "chimera_present",
  "chimera_sim",
+ "chimera_ui",
  "chimera_world",
  "combat_arms",
  "hl2dm",

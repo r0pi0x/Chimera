@@ -1,0 +1,202 @@
+# The Ultimate Gun Game's look, "Signal" (docs/plans/active/ugg-ui.md, 2.3
+# and 3): palette Cobalt, the UGG faces (fonts/), one 12° slant, the motion
+# and layout numbers of the Look Book IV prototype. Read by
+# `chimera_ui::Theme::from_toml` over the shell's defaults
+# (chimera/ui/data/shell.toml). Sizes are in cq (1 % of a 16:9 frame's
+# width: 12.8 px at 720 lines), times in seconds, colours display-space.
+
+name = "signal"
+
+[palette]            # Cobalt; every other colour derives from these
+ink = "#06080C"
+ink_2 = "#0A0D13"
+ink_3 = "#111620"
+ink_4 = "#1A212D"
+fg = "#E8EDF5"
+acc = "#3B7BFF"
+on_acc = "#04060B"
+acc_text = "#6A98FF"
+threat = "#FF3B4E"
+
+[alpha]
+fg_2 = 0.66
+fg_3 = 0.42
+fg_4 = 0.15
+fg_5 = 0.07
+acc_2 = 0.16
+acc_glow = 0.45
+plate = 0.80
+glow = 0.20
+
+[shape]
+slant_deg = 12.0
+min_text_px = 9.0
+
+# Text roles: the wordmark is Black with ss02 (whose A is the plain A).
+[type.wordmark]
+face = "display"
+weight = 900
+tracking = 0.03
+features = ["ss02"]
+
+[type.display_black]
+face = "display"
+weight = 900
+tracking = 0.02
+
+[type.display_bold]
+face = "display"
+weight = 700
+tracking = 0.02
+
+[type.display_regular]
+face = "display"
+weight = 400
+tracking = 0.02
+
+[type.mono]
+face = "mono"
+weight = 400
+tracking = 0.06
+hinted = true
+
+[motion.ease]
+out = "bezier(.16,1,.3,1)"
+in = "bezier(.7,0,.84,0)"
+io = "bezier(.65,0,.35,1)"
+pop = "bezier(.34,1.56,.64,1)"
+roll = "back(.9)"
+
+# The logo pass between screens: bands sweep over `total`, the screen
+# swaps at `swap` while covered; the mark wipes in and out.
+[motion.dur.pass]
+total = 1.2
+swap = 0.6
+mark_in_at = 0.33
+mark_in = 0.16
+mark_out_at = 0.70
+mark_out = 0.12
+
+# Tab: the chip opens into the board (decision 2: fast enough to spam).
+[motion.dur.board]
+open = 0.12
+close = 0.09
+content_out = 0.04
+board_in_at = 0.03
+board_in = 0.07
+
+[motion.dur.feed]
+enter = 0.22
+life = 5.0
+leave = 0.25
+close_gap = 0.25
+
+[motion.dur.toast]
+wipe = 0.2
+roll_at = 0.08
+roll = 0.3
+gun_at = 0.12
+gun = 0.28
+next_at = 0.2
+next = 0.25
+hold_to = 0.92
+leave = 0.24
+
+[motion.dur.airstrike]
+banner_at = 0.25
+banner = 0.3
+fold_at = 2.0
+fold = 0.28
+chips_stack = 0.24
+flash_decay = 0.12
+
+[motion.dur.lobby]
+ready_pop = 0.32
+
+[motion.dur.matchend]
+slab_at = 0.55
+slab = 0.9
+name_at = 0.9
+climb_draw = 0.7
+climb_ticks = 0.52
+vote = 20.0
+vote_hot_from = 17.0
+
+[motion.dur.menu]
+bar_at = 0.62
+bar = 0.45
+items_at = 0.24
+item = 0.52
+item_gap = 0.055
+backdrop_dwell = 16.0
+backdrop_swap = 0.52
+
+[layout.pass]
+band_acc_w = 1.1
+band_acc_x = -2.6
+band_ink_w = 140.0
+band_ink_x = 0.0
+band_acc2_w = 10.0
+band_acc2_x = 141.0
+band_fg_w = 5.0
+band_fg_x = 152.0
+from = -175.0
+travel = 287.0
+mark_w = 13.0
+mark_h = 9.33
+mark_x = 81.5
+
+[layout.lobby]
+lockup = 1.05
+title = 1.2
+rule_y = 7.6
+left_w = 50.0
+big = 3.0
+row_h = 3.2
+col_pos = 2.6
+col_ready = 9.0
+col_ping = 9.4
+countdown_ticks = 48.0
+
+[layout.chip]
+top = 2.2
+w = 21.0
+h = 3.05
+tick_w = 0.66
+tick_h = 0.32
+
+[layout.board]
+w = 64.0
+h = 25.9
+row_rise = 0.45
+
+[layout.feed]
+w = 26.0
+row_h = 1.85
+pitch = 2.3
+enter_dx = 2.4
+
+[layout.toast]
+top = 6.8
+h = 3.1
+
+[layout.airstrike]
+banner_h = 3.3
+banner_top = 15.5
+chip_w = 13.4
+chip_pitch = 3.05
+
+[layout.matchend]
+winner = 3.6
+row_h = 2.62
+
+[layout.menu]
+lockup_x = 4.6
+lockup_y = 5.6
+lockup = 3.3
+items_top = 23.4
+item_w = 24.0
+item_h = 3.5
+label = 1.36
+bar_edge = 0.74
+bar_accent = 0.32
