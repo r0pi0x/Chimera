@@ -23,10 +23,12 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net51` since the lobby's rows carry each
-   player's session wins (matches won this server run, also on the Tab
-   board and the match end); `net50` (a match's results carrying each
-   player's climb, the scoreboard's packet loss) and earlier are refused.
+   The network version is `net52` since RCON goes over the game's
+   connection (a player who logs in with the server's `rcon_password`
+   gets the Escape menu's Host settings: "Admins", below); `net51` (the
+   lobby's rows carrying each player's session wins, matches won this
+   server run, also on the Tab board and the match end) and earlier are
+   refused.
    Session wins count by player name for as long as the server process
    runs: they survive map changes and a player's reconnect (same name),
    bots count by theirs, and a server restart clears them.
@@ -600,6 +602,29 @@ which clears the binding.
   menu (their files are saved). `cl_autoreconnect 0` turns it off.
 - To change the ladder mid-session: `ugg_new`. To restart the match:
   `minigame_restart`.
+
+### Admins (the Escape menu's Host settings from a player's game)
+
+On a dedicated server nobody is the host, so the Escape menu's **Host
+settings** (bots, the ladder's rules, the map rotation, spawn
+protection, votes allowed) show only to a player the server takes as an
+admin:
+
+- On the server's console (or its command line, `+rcon_password ...`):
+  `rcon_password <password>`. Empty (the default) turns RCON off.
+  Choose it fresh for the session; it is never saved.
+- Tell the admin the password privately. In their game's console:
+  `rcon_password <password>`. The game logs in when it joins (or at
+  once, if already in a match) and prints "RCON: logged in as an
+  admin."; the Escape menu then has Host settings, showing the server's
+  values. Each change is sent with the password and checked by the
+  server. `rcon <command>` runs any server console command the same way.
+- Wrong passwords count against the player's address: at
+  `sv_rcon_maxfailures` (5) it is banned from RCON until the server
+  restarts and the player is kicked. The server's log names who logged
+  in, who failed and the commands run, never a password.
+- To take admin away from everyone: set a new `rcon_password` on the
+  server.
 
 ### Surprises (host only; don't tell the testers)
 

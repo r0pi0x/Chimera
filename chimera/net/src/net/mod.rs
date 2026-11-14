@@ -64,7 +64,8 @@
 //! `CastVote`, `VoteNews` (`vote`), `weapon_params::WeaponParams` (a weapon id's
 //! server-decided parameters, once per id per client), `server_docs::DocsRequest`,
 //! `DocsChunk`, `DocsDenied` (the server's data documents a client's
-//! differ from: `server_docs`); then the parts' (`parts`, in name order: `minigame_net`'s
+//! differ from: `server_docs`), `rcon::RconRequest`, `RconStatus` (RCON
+//! over the connection: `rcon`); then the parts' (`parts`, in name order: `minigame_net`'s
 //! `NetMinigame`, `MinigameNews`, `InMinigame` and `Rung`; CS:S's
 //! `NetRound`, `NetBomb`, `NetHostage`, `TeamRequest`, `ClassRequest`,
 //! `ObjectiveNews`, `RoundOver`; Source's logic's `NetMover`, `MapHud`); `OwnState` also carries
@@ -227,6 +228,7 @@ pub mod props;
 pub mod quant;
 pub mod query;
 pub mod ragdolls;
+pub mod rcon;
 pub mod reconnect;
 pub mod server;
 pub mod stats;
@@ -264,7 +266,7 @@ pub const PROTOCOL_ID: u64 = 0x4C55_434B_4552_5059;
 /// This build's network version. A server refuses clients of another
 /// version. Bump the suffix when the protocol changes in a way the
 /// replicon protocol hash can't see (a field added to a message).
-pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net51");
+pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net52");
 
 /// What a host's `changelevel` is in this app beyond a new map
 /// (`host_changelevel`): set by an app part (`minigame_net`'s, a party
@@ -1418,6 +1420,10 @@ impl Plugin for NetPlugin {
             .add_client_message::<server_docs::DocsRequest>(Channel::Ordered)
             .add_server_message::<server_docs::DocsChunk>(Channel::Ordered)
             .add_server_message::<server_docs::DocsDenied>(Channel::Ordered)
+            // RCON over the connection (net52).
+            .add_client_message::<rcon::RconRequest>(Channel::Ordered)
+            .add_server_message::<rcon::RconStatus>(Channel::Ordered)
+            .make_message_independent::<rcon::RconStatus>()
             .init_resource::<NetSettings>()
             .init_resource::<NetVersion>()
             .init_resource::<NetHooks>()
@@ -1456,6 +1462,7 @@ impl Plugin for NetPlugin {
         stats::plugin(app);
         weapon_params::plugin(app);
         server_docs::plugin(app);
+        rcon::plugin(app);
         commands(app);
     }
 

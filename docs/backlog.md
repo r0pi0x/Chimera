@@ -793,9 +793,6 @@ the original's own behaviour isn't a bug (say so instead).
   - **Quit.**
   - No scoreboard entry, since Tab opens it. Disconnect: done with the
     main menu's M1.
-- **RCON admins for the Escape menu's host settings.** Today only the
-  host (a listen server's player) sees them; a dedicated server's admin
-  sets the same cvars on its console.
 - **A main menu for Ultimate Gun Game (and the other party apps).**
   M1 done (2026-10-31: Play, Join by address, Options, Quit, loading and
   failure boxes, Disconnect; CS:S's menu's look over a live map). Next:

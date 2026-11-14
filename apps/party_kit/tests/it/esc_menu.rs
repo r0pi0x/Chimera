@@ -3,7 +3,8 @@
 //! menu, above the match-end screen and the scoreboard; the game gets no
 //! input while it is open (nor from keys held across its closing); its
 //! options set the player's cvars; the host settings show only on the
-//! host and set its server's cvars and the next match's rules; and the
+//! host (or a server's RCON admin, who sets them through `rcon`) and
+//! set its server's cvars and the next match's rules; and the
 //! vote to skip the map, over the network with three clients, passes with
 //! a majority of the people (bots don't vote) and moves the server to the
 //! rotation's next map, fails without one, and runs one at a time.
@@ -293,6 +294,45 @@ fn a_skip_vote_without_a_majority_fails_and_keeps_the_map() {
     assert!(sim.until(60, |s| panel(s, 0).first().is_some_and(|l| l.starts_with("Vote failed"))));
     sim.ticks(200);
     assert!(sim.server.app.world().resource::<Levels>().0.is_empty(), "the map stays");
+}
+
+/// A player on a server (no host) who logs in with the server's
+/// `rcon_password` sees the Host settings and changes the server's.
+#[test]
+fn an_rcon_admin_on_a_server_sees_and_sets_the_host_settings() {
+    let mut sim = party_and(1, Some(ROTATING), |app| {
+        app.add_plugins(EscMenuPlugin);
+    });
+    sim.until_joined(900);
+    sim.ticks(60);
+    sim.server.app.world_mut().resource_mut::<Console>().submit("rcon_password s3cret");
+    open_menu(&mut sim, 0);
+    client_act(&mut sim, 0, Action::Host);
+    assert_eq!(sim.clients[0].app.world().resource::<EscMenu>().page, Page::Main, "not an admin yet");
+    assert!(!host::may_host_settings(sim.clients[0].app.world()));
+    sim.clients[0].app.world_mut().resource_mut::<Console>().submit("rcon_password s3cret");
+    assert!(
+        sim.until(300, |s| host::may_host_settings(s.clients[0].app.world())),
+        "the server took the password"
+    );
+    assert!(
+        esc_menu::shown_entries(host::may_host_settings(sim.clients[0].app.world()), false, false).iter().any(|e| e.action == Some(Action::Host)),
+        "the menu lists Host settings for an admin"
+    );
+    client_act(&mut sim, 0, Action::Host);
+    assert_eq!(sim.clients[0].app.world().resource::<EscMenu>().page, Page::Host, "the admin's page");
+    let knife = host::settings().iter().position(|s| s.cvar == "mp_knife_finale").unwrap();
+    // The server's values show: the minigame's own (empty).
+    sim.ticks(5);
+    assert_eq!(sim.clients[0].app.world().resource::<EscMenu>().values.get("mp_knife_finale").map(String::as_str), Some(""));
+    client_act(&mut sim, 0, Action::Step { host: true, index: knife, dir: 1 });
+    assert!(
+        sim.until(300, |s| s.server.app.world().resource::<MinigameOverrides>().keys.get("rules.knife_finale").map(String::as_str)
+            == Some("true")),
+        "the admin's change reached the server"
+    );
+    assert!(sim.until(300, |s| s.clients[0].app.world().resource::<EscMenu>().values.get("mp_knife_finale")
+        .is_some_and(|v| v == "true")));
 }
 
 /// Under Signal's theme (`esc_signal`): ↑↓ move the selection over the

@@ -14,7 +14,9 @@
 //!   becoming **Controls** with the Controls page's key binds under it (a
 //!   segmented switch Shared / each game, `controls::GAMES`, each game's
 //!   gun view FOV too); Host settings has one page, `host::settings()`,
-//!   each row noting "now" or "next match". Only settings that exist.
+//!   each row noting "now" or "next match", for the host or an RCON
+//!   admin (the server's values, set through `rcon`: `host::value`,
+//!   `host::set`). Only settings that exist.
 //! - **Rows** by the setting's pick: a range is a slider (click or drag a
 //!   place, ←→ a step), two choices Off/On a toggle, `widget =
 //!   "dropdown"` a dropdown, up to five choices segmented, more a stepper;
@@ -645,9 +647,14 @@ fn hover_focus(rows: Query<(&Interaction, &SettingsAction), Changed<Interaction>
     }
 }
 
+/// A row's value: a host setting's from the server (`host::value`).
+fn current(world: &mut World, ctx: Context, cvar: &str) -> String {
+    if ctx == Context::Host { host::value(world, cvar) } else { crate::controls::cvar_value(world, cvar) }.unwrap_or_default()
+}
+
 /// Sets `cvar` to `value` (module doc: the baseline, the keep).
 fn set_value(world: &mut World, ctx: Context, cvar: &str, value: &str) {
-    let old = crate::controls::cvar_value(world, cvar).unwrap_or_default();
+    let old = current(world, ctx, cvar);
     let t = now(world);
     let keep_secs = world.get_resource::<Theme>().map_or(15.0, |th| th.layout(L, "keep_secs")) as f64;
     {
@@ -663,8 +670,13 @@ fn set_value(world: &mut World, ctx: Context, cvar: &str, value: &str) {
             }
         }
     }
-    let quoted = if value.is_empty() { "\"\"".to_string() } else { chimera_core::console::quote(value) };
-    submit(world, format!("{cvar} {quoted}"));
+    if ctx == Context::Host {
+        // The host's own console, or an RCON admin's `rcon`.
+        host::set(world, cvar, value);
+    } else {
+        let quoted = if value.is_empty() { "\"\"".to_string() } else { chimera_core::console::quote(value) };
+        submit(world, format!("{cvar} {quoted}"));
+    }
     world.resource_mut::<Settings>().values.insert(cvar.to_string(), value.to_string());
 }
 
@@ -718,7 +730,7 @@ fn act_one(world: &mut World, a: SettingsAction) {
                     cue(world, UiCue::new("ui_select"));
                 }
                 Some(Row::Setting { s, .. }) => {
-                    let now = crate::controls::cvar_value(world, &s.cvar).unwrap_or_default();
+                    let now = current(world, ctx, &s.cvar);
                     let next = s.pick.next(&now, dir);
                     cue(world, crate::ui_cues::step_cue(&s.pick, &next));
                     set_value(world, ctx, &s.cvar, &next);
@@ -748,7 +760,7 @@ fn act_one(world: &mut World, a: SettingsAction) {
             {
                 world.resource_mut::<Settings>().focus = row;
                 let v = controls::value_at(frac, min, max, step);
-                let now = crate::controls::cvar_value(world, &s.cvar).unwrap_or_default();
+                let now = current(world, ctx, &s.cvar);
                 let next = format!("{v}");
                 if !host::same_value(&now, &next) {
                     cue(world, crate::ui_cues::step_cue(&s.pick, &next));
@@ -858,7 +870,7 @@ fn refresh_values(world: &mut World) {
     };
     for r in rows(ctx, &tabs, tab, game) {
         if let Row::Setting { s, .. } = r {
-            let v = crate::controls::cvar_value(world, &s.cvar).unwrap_or_default();
+            let v = current(world, ctx, &s.cvar);
             let mut st = world.resource_mut::<Settings>();
             if st.values.get(&s.cvar) != Some(&v) {
                 st.values.insert(s.cvar.clone(), v);

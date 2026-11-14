@@ -10,8 +10,13 @@
 //!   spawn protection), applied when the next match starts; the others
 //!   are existing cvars that apply at once (`MaxPlayer`'s bots,
 //!   `party_even_footsteps`, `sv_allow_votes`).
-//! - **The admin is the host**: a listen server's player (or a game with
-//!   no server). A dedicated server's console sets the same cvars.
+//! - **Who may change them**: the host (a listen server's player, or a
+//!   game with no server), and a player its server took as an RCON admin
+//!   (`rcon_password`, `chimera_net::net::rcon`): `may_host_settings`.
+//!   An admin reads the server's values (`AdminCvars`, which `build`
+//!   fills with these settings' cvars) and sets them through `rcon`
+//!   (`set`), which the server checks each time. A dedicated server's
+//!   console sets the same cvars.
 //! - **Vote to skip the map** (`SKIP_ISSUE`, `skipmap`: an issue of the
 //!   engine's votes, `chimera_net::net::vote`, so the server decides
 //!   everything and every client sees it): passed, the server goes to
@@ -23,12 +28,13 @@
 //!   (alone, with no server: the map is skipped at once, the one player
 //!   being the majority).
 //!
-//! Known shortcuts: no RCON admins (only the host sees the page); the
-//! settings last for the host's process (not archived).
+//! Known shortcuts: the settings last for the host's process (not
+//! archived).
 
 use bevy::prelude::*;
 use chimera_core::console::{Console, ConsoleAppExt};
 use chimera_core::core::NetRole;
+use chimera_net::net::rcon::{AdminCvars, RconAdmin};
 use chimera_net::net::vote::{CallRefusal, VoteAppExt, VoteIssue, VoteSettings};
 use chimera_sim::minigame::{ActiveMinigame, overrides};
 
@@ -165,14 +171,51 @@ pub const VOTE_RULES: &[(&str, &str)] = &[
     ("sv_vote_bots_allowed", "0"),
 ];
 
-/// Whether this process is the host (may change the host settings): not
-/// a network client.
+/// Whether this process is the host (owns the server): not a network
+/// client.
 pub fn is_host(world: &World) -> bool {
     world.get_resource::<NetRole>().is_none_or(|r| *r != NetRole::Client)
 }
 
+/// Whether one may change the host settings: the host, or a network
+/// client its server took as an RCON admin (`rcon::RconAdmin`).
+pub fn may_change(role: Option<&NetRole>, admin: Option<&RconAdmin>) -> bool {
+    role.is_none_or(|r| *r != NetRole::Client) || admin.is_some_and(|a| a.admin)
+}
+
+/// `may_change` for this world.
+pub fn may_host_settings(world: &World) -> bool {
+    may_change(world.get_resource::<NetRole>(), world.get_resource::<RconAdmin>())
+}
+
+/// A host setting's value: the server's (an admin client's copy,
+/// `RconAdmin::values`), else the cvar's here.
+pub fn value(world: &mut World, cvar: &str) -> Option<String> {
+    if RconAdmin::is_admin(world) {
+        return world.resource::<RconAdmin>().values.get(cvar).cloned();
+    }
+    let c = world.resource::<Console>().cvar(cvar).cloned()?;
+    (c.get)(world)
+}
+
+/// Set a host setting: on the host's own console, or an admin client's
+/// through `rcon` (the server checks the password again).
+pub fn set(world: &mut World, cvar: &str, value: &str) {
+    let quoted = if value.is_empty() { "\"\"".to_string() } else { chimera_core::console::quote(value) };
+    if RconAdmin::is_admin(world) {
+        // Shown at once; the server's value follows.
+        world.resource_mut::<RconAdmin>().values.insert(cvar.to_string(), value.to_string());
+        world.resource_mut::<Console>().submit(format!("rcon {cvar} {quoted}"));
+    } else {
+        world.resource_mut::<Console>().submit(format!("{cvar} {quoted}"));
+    }
+}
+
 /// The host overrides' cvars and the skip-map issue (`PartyPartsPlugin`).
 pub fn build(app: &mut App) {
+    // An RCON admin's Escape menu shows the server's values.
+    app.init_resource::<AdminCvars>();
+    app.world_mut().resource_mut::<AdminCvars>().0.extend(settings().into_iter().map(|s| s.cvar));
     for s in settings() {
         if let Some(key) = &s.key {
             let (name, key): (&'static str, &'static str) =

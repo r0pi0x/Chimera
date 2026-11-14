@@ -1112,7 +1112,8 @@ pub fn execute(world: &mut World, words: &[String], depth: usize) {
         Err(format!("Unknown command \"{typed}\""))
     };
     let mut c = world.resource_mut::<Console>();
-    let log = c.log_output;
+    // A password's value (`rcon_password`, `sv_password`) never reaches the log.
+    let log = c.log_output && !name.contains("password");
     match result {
         Ok(Some(out)) => {
             if log {
