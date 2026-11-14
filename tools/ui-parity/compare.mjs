@@ -67,7 +67,9 @@ for (const [id, m] of Object.entries(M.elements)) {
   d.size = Math.max(Math.abs(d.dx), Math.abs(d.dy), Math.abs(d.dw), Math.abs(d.dh ?? 0), Math.abs(d.dfont ?? 0));
   rows.push(d);
 }
-for (const [id, g] of Object.entries(G.elements)) if (shown(g) && !shown(M.elements[id])) onlyGame.push(id);
+// The game's ids of this screen only (the mockup's `include`).
+const mine = (id) => !M.include || M.include.some((r) => new RegExp(r).test(id));
+for (const [id, g] of Object.entries(G.elements)) if (mine(id) && shown(g) && !shown(M.elements[id])) onlyGame.push(id);
 rows.sort((a, b) => b.err - a.err || b.size - a.size || a.id.localeCompare(b.id));
 const over = rows.filter((r) => r.err > 0);
 

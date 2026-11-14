@@ -16,7 +16,7 @@
 
 use bevy::{
     prelude::*,
-    text::{FontFeatureTag, FontFeatures, FontHinting, FontSize, FontSource, FontWeight, LetterSpacing},
+    text::{FontFeatureTag, FontFeatures, FontHinting, FontSize, FontSource, FontWeight, LetterSpacing, LineHeight},
 };
 
 use crate::theme::{Theme, TypeSpec};
@@ -120,9 +120,11 @@ pub struct Styled {
 }
 
 impl Styled {
-    /// The components for a `Text`/`TextSpan` entity.
-    pub fn bundle(&self) -> (TextFont, LetterSpacing, FontHinting) {
-        (self.font.clone(), self.spacing, self.hinting)
+    /// The components for a `Text`/`TextSpan` entity. Lines are one font
+    /// size tall (the look book's `font: <size>/1`; Bevy's default is
+    /// 1.2), so a text's box is the look book's.
+    pub fn bundle(&self) -> (TextFont, LetterSpacing, FontHinting, LineHeight) {
+        (self.font.clone(), self.spacing, self.hinting, LINE_HEIGHT)
     }
 
     /// `text` in the role's case.
@@ -130,6 +132,9 @@ impl Styled {
         if self.upper { text.to_uppercase() } else { text.to_string() }
     }
 }
+
+/// Every kit text's line height (`Styled::bundle`): one font size.
+pub const LINE_HEIGHT: LineHeight = LineHeight::RelativeToFont(1.0);
 
 /// The `TextFont` for a type spec at `px` logical pixels.
 pub fn text_font(spec: &TypeSpec, fonts: Option<&KitFonts>, px: f32) -> TextFont {

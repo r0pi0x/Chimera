@@ -9,7 +9,8 @@
 // data-ui element of the screen: x, y, w, h in px; for a text, its text,
 // font size, letter spacing, weight, family and colour) and
 // <out-prefix>.png. A text element's box is its text's (a Range over its
-// contents), not its cell's, as the game's Text node is.
+// contents) across and its line box up and down, as the game's Text
+// node is.
 //
 // The fixture (default fixtures/hud.json) is the look book's own data;
 // each text the page shows for a fixture field is checked against it and
@@ -101,11 +102,20 @@ try {
         const cs = getComputedStyle(el);
         const ls = cs.letterSpacing === 'normal' ? 0 : parseFloat(cs.letterSpacing);
         const c = cs.color.match(/[\\d.]+/g).map(Number);
-        const shownText = (cs.textTransform === 'uppercase' ? el.textContent.toUpperCase() : el.textContent).trim();
+        const own_text = texts.map(n => n.textContent).join('');
+        const shownText = (cs.textTransform === 'uppercase' ? own_text.toUpperCase() : own_text).trim();
         const info = { text: shownText, font_size: parseFloat(cs.fontSize), letter_spacing: ls, weight: +cs.fontWeight,
           family: cs.fontFamily, color: [c[0], c[1], c[2], c.length > 3 ? c[3] : 1] };
         if (padded) { o.inner = info; return o; }
-        Object.assign(o, { x: t.left - fr.left, y: t.top - fr.top, w: t.width, h: t.height, box: { x: b.left - fr.left, y: b.top - fr.top, w: b.width, h: b.height } });
+        // Across: the glyph run's; up and down: the element's line box (a
+        // Range's height is the font's ascent to descent, not its line); a
+        // text beside other nodes (a mark, a hidden label): one font size
+        // around the run's middle.
+        Object.assign(o, { x: t.left - fr.left, w: t.width, box: { x: b.left - fr.left, y: b.top - fr.top, w: b.width, h: b.height } });
+        if (el.children.length) {
+          const fs = parseFloat(cs.fontSize);
+          Object.assign(o, { y: t.top + t.height / 2 - fs / 2 - fr.top, h: fs });
+        }
         o.text = { text: shownText, font_size: parseFloat(cs.fontSize), letter_spacing: ls, weight: +cs.fontWeight,
           family: cs.fontFamily, color: [c[0], c[1], c[2], c.length > 3 ? c[3] : 1] };
       }
@@ -134,7 +144,7 @@ try {
     want(`feed.row.${i + 1}.killer`, k.killer.toUpperCase());
     want(`feed.row.${i + 1}.victim`, k.victim.toUpperCase());
   });
-  const doc = { source: 'mockup', screen_name: screen, page: cfg.page, time: cfg.time, ...result, fixture_mismatches: mism };
+  const doc = { source: 'mockup', screen_name: screen, page: cfg.page, time: cfg.time, include: cfg.include, ...result, fixture_mismatches: mism };
   writeFileSync(`${outPrefix}.json`, JSON.stringify(doc, null, 1));
   writeFileSync(`${outPrefix}.png`, await page.png());
   const n = Object.keys(result.elements).length;

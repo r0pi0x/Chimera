@@ -130,6 +130,20 @@ impl Look<'_> {
         )
     }
 
+    /// `text` with its own tracking, `track` cq between letters (the look
+    /// book's `letter-spacing`, which a child inherits in px from its
+    /// parent's size).
+    pub fn tracked(&self, role: Role, size: f32, track: f32, color: Color, text: &str) -> impl Bundle + use<> {
+        let mut styled = chimera_ui::fonts::text(&self.theme, self.fonts.as_deref(), role, self.units.text_px(size));
+        styled.spacing = bevy::text::LetterSpacing::Px(self.units.cq(track));
+        (
+            Text::new(styled.case(text)),
+            styled.bundle(),
+            TextColor(color),
+            TextLayout::new(Justify::Left, LineBreak::NoWrap),
+        )
+    }
+
     /// The `TextFont` of `role` at `size` cq (to measure or warm).
     pub fn font(&self, role: Role, size: f32) -> TextFont {
         chimera_ui::fonts::text(&self.theme, self.fonts.as_deref(), role, self.units.text_px(size)).font

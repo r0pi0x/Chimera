@@ -2323,6 +2323,17 @@ packages). Three steps, each runnable alone:
   `<out>.overlay.png` (the mockup at 50 % over the game, mockup boxes
   cyan, game boxes magenta).
 
+Reading a report: a text's box is its glyph run across and its line box
+up and down (`font: <size>/1`, as the kit's `LineHeight` 1); the game
+sets text in whole physical pixels (`UiUnits::text_px`), so a text a
+look book size like .6 cq (11.52 px) draws at 12 px and comes out up to
+4 % wider, which can push a long text past the 1 px width tolerance and
+what follows it a few px along; those are listed with their font sizes
+(`font 11.5/12`). Only the screen's ids count (`screens.json`'s
+`include`), so a game playing behind the staged screen adds nothing.
+`lobby` has no `ui_scene lobby` yet (M1): its report lists the mockup's
+ids only.
+
 Ids are the look book's (`board.row.3.name`, rows from 1): the
 generator writes `data-ui` attributes, the game puts `UiParityId` on the
 same nodes. A new screen adds ids on both sides, an entry in

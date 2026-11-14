@@ -640,7 +640,9 @@ pub mod signal_feed {
         (staged, mut commands): (Option<Res<FeedStaged>>, Commands),
     ) {
         let on = shared.is_some() && look.on();
-        if !on {
+        // Laid out in cq for one window size: on a resize (or the first
+        // measure of the window) the feed is built again, rows and all.
+        if !on || look.units.is_changed() {
             for e in &root {
                 commands.entity(e).despawn();
             }
@@ -749,7 +751,9 @@ pub mod signal_feed {
                     height: look.val(look.layout("feed", "row_h", 1.85)),
                     align_items: AlignItems::Center,
                     column_gap: look.val(0.55),
-                    padding: UiRect::new(look.val(0.7), look.val(0.75), px(0.0), px(0.0)),
+                    // The look book's outline is drawn inside (a shadow):
+                    // the padding gives the border's pixel back.
+                    padding: UiRect::new(px(look.px(0.7) - hair), px(look.px(0.75) - hair), px(0.0), px(0.0)),
                     border: UiRect::all(px(hair)),
                     ..default()
                 },
