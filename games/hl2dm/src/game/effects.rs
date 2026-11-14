@@ -16,7 +16,11 @@
 //! AR2's flat flash on what its bullets hit and the stunstick's glow and
 //! sparks (`gun_impacts`), and the kit's muzzle flashes (`muzzle_flashes`:
 //! the five sprite strings of the spec's table, per view-model event
-//! option) with their light. `Sprite`-shader materials the effects draw in
+//! option) with their light. Blood is per viewer (spec 7, `STYLE`'s
+//! `BloodView::PerViewer`): the server's copy at the hit point goes to
+//! the clients whose eye is in the hit point's PAS but the attacker's
+//! (`send_blood`, `impact_effects::ServerBlood`), the shooter draws his
+//! own predicted copy, a melee attacker none. `Sprite`-shader materials the effects draw in
 //! glow or additive render mode (`ADDITIVE_SPRITES`) load additive.
 //!
 //! The projectiles' looks are `projectile_fx` (explosions, the rocket,
@@ -68,6 +72,7 @@ pub const STYLE: ImpactStyle = ImpactStyle {
     group_radius: None,
     damage_unit: 0.01,
     flesh: "flesh",
+    blood: source_engine::effects::BloodView::PerViewer,
     melee_decal: None,
 };
 
@@ -400,6 +405,10 @@ impl Plugin for Hl2EffectsPlugin {
         )
         .add_systems(Update, clear_attached.before(AttachedPieces))
         .add_systems(FixedUpdate, (tracers, gun_impacts).after(crate::core::SimSet::Weapons));
+        {
+            use chimera_net::net::parts::NetAppExt;
+            app.net_part("hl2dm_blood", register_blood);
+        }
         super::flashes::plugin(app);
     }
 }
@@ -425,6 +434,48 @@ fn clear_attached(
     }
     for e in &missing {
         commands.entity(e).insert(crate::map::attached::AttachedFx::default());
+    }
+}
+
+/// The protocol, from the server: its blood (`impact_effects::ServerBlood`,
+/// effects_sounds.md 7) to the clients whose eye is in the potentially
+/// audible set of the hit point, but the attacker's (his own is his
+/// predicted copy; a melee attacker sees none). The dead and spectators
+/// get every one, as rounds go (`chimera_net`'s `FireBullets`).
+fn register_blood(app: &mut App) {
+    use bevy_replicon::prelude::*;
+    app.add_server_message::<impact_effects::ServerBlood>(Channel::Unreliable).add_systems(
+        PostUpdate,
+        send_blood
+            .before(ServerSystems::Send)
+            .run_if(resource_equals(crate::core::NetRole::Server)),
+    );
+}
+
+fn send_blood(
+    mut blood: MessageReader<impact_effects::ServerBlood>,
+    players: Query<(Entity, &chimera_net::net::server::Player)>,
+    eyes: Query<(&Transform, Option<&crate::core::MovementState>, Option<&crate::core::Health>)>,
+    vis: Option<Res<crate::map::vis::ActiveVisibility>>,
+    mut out: MessageWriter<bevy_replicon::prelude::ToClients<impact_effects::ServerBlood>>,
+) {
+    use bevy_replicon::prelude::{ClientId, SendTargets, ToClients};
+    for b in blood.read() {
+        let audible = |listener: Entity| {
+            let (Some(vis), Ok((t, m, Some(h)))) = (vis.as_ref(), eyes.get(listener)) else {
+                return true;
+            };
+            h.current <= 0.0 || vis.0.hears(b.point, t.translation + m.map_or(Vec3::ZERO, |m| m.eye_offset))
+        };
+        for (client, p) in &players {
+            if Some(p.character) == b.attacker || !audible(p.character) {
+                continue;
+            }
+            out.write(ToClients {
+                targets: SendTargets::Single(ClientId::Client(client)),
+                message: *b,
+            });
+        }
     }
 }
 

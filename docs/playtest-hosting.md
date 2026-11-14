@@ -23,10 +23,9 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net47` since Combat Arms' animation state
-   carries its crouch at the last few ticks (`CaAnimNet::r_trail`, so a
-   crouch starts on other clients at the tick it did); `net46` builds
-   and earlier are refused.
+   The network version is `net48` since HL2:DM's server sends its blood
+   to the clients that see it (`impact_effects::ServerBlood`); `net47`
+   builds and earlier are refused.
 2. **Send each tester privately:** the release link, `<host address>:<port>`,
    their token, and `docs/playtest.md` if they are not unzipping it.
 3. **Check the asset service has everything the match needs** ("Publishing

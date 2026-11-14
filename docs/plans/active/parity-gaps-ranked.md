@@ -124,15 +124,14 @@ settle first (a capture, a probe run or a spec session).
 | Combat Arms kill call-out voice files (`EnemyDown`, `ManDown`) | blocked | combat_arms/effects_sounds.md 11 (rules only; no record or files named) | a spec session: the auto-cast records and their files per sound template |
 | Combat Arms hit-sphere priorities | rule done (`priority_sphere`); values ours | combat_arms/weapon_firing.md Corrections 5, Q16 | a spec session: `Node#Priority` per skeleton |
 | Combat Arms multi-kill reset on death | blocked | combat_arms/kill_streaks.md Q2 | a live check (kill, die, kill again within 5 s) |
-| HL2:DM blood per viewer (shooter's predicted copy, melee attacker none) | spec-clear | hl2dm/effects_sounds.md 7 (Q10 a confirmation only) | none |
 | HL2:DM combine camera (sweep, ping, glow; drawn still now) | sweep spec-clear; lock-on blocked | hl2dm/maps_entities.md 14, Q2 | probe P8 for whether it locks on to players |
 
 ## Counts
 
-Do next 0, later 2, needs a spec or capture 10; lower: 2 spec-clear
-(blood per viewer, the camera's sweep), 9 blocked.
+Do next 0, later 2, needs a spec or capture 10; lower: 1 spec-clear
+(the camera's sweep), 9 blocked.
 
 Landed from the lower list (2026-11-13): the M92FS's post-fire, the
 HL2:DM bolt's sounds, bolts through grates and breakable glass, the
 contact grenade set off when shot or blasted, the Combat Arms
-crossbow's alternate fire.
+crossbow's alternate fire, HL2:DM's blood per viewer (net48).

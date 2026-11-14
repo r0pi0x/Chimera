@@ -1,7 +1,9 @@
 //! HL2:DM's effects and sounds on the headless harness (specs/hl2dm/
 //! effects_sounds.md, H9's cases by number): tracers by weapon and the
 //! counter, the near-miss sound of one's own tracers, the AR2's flash on a
-//! wall (no ricochet), the splash's scale, blood and the flesh impact, the
+//! wall (no ricochet), the splash's scale, blood per viewer (the
+//! server's for all but the attacker, the shooter's predicted copy, none
+//! for a melee attacker) and the flesh impact, the
 //! death voice by model, footsteps by model kind.
 
 use bevy::prelude::*;
@@ -28,7 +30,12 @@ use hl2dm::{
     },
     harness::Hl2Sim,
 };
-use source_engine::{effects::impact_effects::MATERIALS as SOURCE_MATERIALS, source_movement::StepSounds};
+use source_engine::{
+    effects::impact_effects::{
+        BLOOD_COUNTS, ImpactEffectSettings, MATERIALS as SOURCE_MATERIALS, ServerBlood, bleed_traces, predicted_blood_at,
+    },
+    source_movement::StepSounds,
+};
 
 fn sim() -> Sim {
     let mut sim = Sim::new(Hl2Sim, GreyboxMapPlugin);
@@ -150,6 +157,92 @@ fn a_hit_player_bleeds_and_sounds_as_flesh_13() {
     let body = sim.position(t) + Vec3::Y * 0.2;
     let sounds: Vec<GameSound> = fire(&mut sim, p, body, 1);
     assert!(sounds.iter().any(|s| s.0.entry == "Flesh.BulletImpact" && s.0.source == Some(t)), "{sounds:?}");
+}
+
+/// One press of `p`'s gun at `target`'s body (fire, or attack2 when
+/// `secondary`): the blood particles drawn (the free ones, less what the
+/// same press draws with `violence_hblood` 0) and the server's blood
+/// written.
+fn blood_of(local: Option<usize>, id: &str, secondary: bool) -> (usize, Vec<ServerBlood>, Entity) {
+    let run = |hblood: i32| {
+        let mut sim = sim();
+        let p = holding(&mut sim, id);
+        let t = sim.spawn_character(greybox::SPAWNS[0] - Vec3::Z * 1.2, movement::ID);
+        sim.seconds(1.0);
+        sim.app.world_mut().resource_mut::<ImpactEffectSettings>().violence_hblood = hblood;
+        match local {
+            Some(0) => {
+                sim.app.world_mut().entity_mut(p).insert(LocalPlayer);
+            }
+            Some(_) => {
+                sim.app.world_mut().entity_mut(t).insert(LocalPlayer);
+            }
+            None => {}
+        }
+        let body = sim.position(t) + Vec3::Y * 0.2;
+        testkit::aim_at(&mut sim, p, body);
+        sim.ticks(2);
+        sim.app.world_mut().resource_mut::<Particles>().groups.clear();
+        let mut cursor = sim.app.world().resource::<Messages<ServerBlood>>().get_cursor_current();
+        if secondary {
+            sim.intent(p).secondary = true;
+        } else {
+            sim.intent(p).fire = true;
+        }
+        let mut blood = Vec::new();
+        let mut most = 0;
+        for _ in 0..12 {
+            sim.ticks(1);
+            sim.intent(p).fire = false;
+            sim.intent(p).secondary = false;
+            blood.extend(cursor.read(sim.app.world().resource::<Messages<ServerBlood>>()).copied());
+            let pool = sim.app.world().resource::<Particles>();
+            most = most.max(pool.count() - pool.capped_count());
+        }
+        (most, blood, p)
+    };
+    let (with, blood, p) = run(1);
+    let (without, none, _) = run(0);
+    assert!(none.is_empty(), "violence_hblood 0: no server blood");
+    (with - without, blood, p)
+}
+
+/// Effects_sounds.md 7: the server's blood (at the hit point, wall
+/// stains by the damage) goes to everyone but the attacker; the shooter
+/// draws his own predicted copy from his bullet's trace; a melee
+/// attacker sees none. One burst is `BLOOD_COUNTS` particles.
+#[test]
+fn blood_per_viewer_7_16() {
+    let burst: usize = BLOOD_COUNTS.iter().sum();
+    // The shooter's screen: his predicted copy alone, not the server's too.
+    let (drawn, server, p) = blood_of(Some(0), weapons::PISTOL, false);
+    assert_eq!(server.len(), 1, "the server's blood: {server:?}");
+    assert_eq!(server[0].attacker, Some(p));
+    assert_eq!(drawn, burst, "one burst, the predicted copy");
+    // The victim's (or a bystander's) screen: the server's.
+    let (drawn, server, _) = blood_of(Some(1), weapons::PISTOL, false);
+    assert_eq!(server.len(), 1);
+    assert_eq!(drawn, burst, "the server's copy");
+    // A crowbar hit: the attacker sees no blood (melee isn't predicted),
+    // the others do (case 16).
+    let (drawn, server, _) = blood_of(Some(0), weapons::CROWBAR, false);
+    assert_eq!(server.len(), 1, "the crowbar hit: {server:?}");
+    assert_eq!(drawn, 0, "no blood for the melee attacker");
+    let (drawn, _, _) = blood_of(Some(1), weapons::CROWBAR, false);
+    assert_eq!(drawn, burst, "the victim sees it");
+}
+
+/// Effects_sounds.md 7: the shooter's predicted blood is 4 in back along
+/// the shot from the hit.
+#[test]
+fn predicted_blood_is_four_inches_back_15() {
+    let from = Vec3::new(0.0, 1.0, 10.0);
+    let to = Vec3::new(0.0, 1.0, 2.0);
+    let (at, dir) = predicted_blood_at(from, to);
+    assert!(dir.abs_diff_eq(Vec3::NEG_Z, 1e-6));
+    assert!(at.abs_diff_eq(Vec3::new(0.0, 1.0, 2.0 + 4.0 * 0.0254), 1e-5), "{at}");
+    // Its wall stains count by distance (300 in: 4, spread 0.3).
+    assert_eq!(bleed_traces(300.0), (4, 0.3));
 }
 
 #[test]
