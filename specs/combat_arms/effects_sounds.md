@@ -1713,7 +1713,7 @@ From the reference's debris table reader, the destructible aggregate's death han
 
 ## Follow-up (2026-11-14): damage screen effects and kill call-outs
 
-From the reference's client damage-effect manager and its callers (character effect messages, body effects, the movement and weapon code that read it, the HUD's damage-effect control), the server's progressive-damage bookkeeping, the server's death handling and the client's team call-out player, plus the Steam install's archive directories and its effect file (names only where marked). Confidence per item; "(inferred)" marks what was not read directly. Answers the rule part of Open question 26 and adds to section 11 "Kill call-outs". Test cases 97–106.
+From the reference's client damage-effect manager and its callers (character effect messages, body effects, the movement and weapon code that read it, the HUD's damage-effect control), the server's progressive-damage bookkeeping, the server's death handling and the client's team call-out player, plus the Steam install's archive directories, its effect file (names only where marked) and, for items 6 and 8, its damage-effect and auto-cast attribute files (`attributes/damagefx.txt`, `attributes/autocastsound.txt`, decrypted with the repo's reader and read 2026-11-14). Confidence per item; "(inferred)" marks what was not read directly. Answers Open questions 26 and 33 and adds to section 11 "Kill call-outs". Test cases 97–111.
 
 1. **What starts a damage screen effect** (high).
    - Only **progressive** damage (damage over time: burn, poison, bleeding, stun, freeze, heal over time and the other lasting kinds of `grenades.md` and `gear_perks.md`) starts one. An ordinary hit never does.
@@ -1763,19 +1763,69 @@ From the reference's client damage-effect manager and its callers (character eff
    - **Fade** (after a stop, for `FadeTime` seconds, $t$ from the stop): tint $=$ (tint at the stop)$\cdot\max(0, 1 - t/$`FadeTime`$)$; darkening $L\cdot\max(0, 1 - t/$`FadeTime`$)$; roll and FOV offsets move back towards 0 at their speeds (set to 0 when within one step); the HUD picture's alpha falls by $255/$`FadeTime` per second and the picture hides at 0.
    - **Combining**: the tint of all running and fading records is combined by the per-channel **maximum**; that is the damage slot of the screen tint, which is an **additive light** on the whole 3D scene (combined with the other tint sources, such as flash, by per-channel maximum and clamped to 1). The darkening is combined by the per-channel **minimum** and set as the scene's global light scale (multiplied).
    - **Movement and input**: if any running or fading record has `AllowMovement` 0, the local player cannot move; `AllowInput` 0 turns off all game input.
-   - **Escape by jumping**: with `NumJumpsToEscape` $n > 0$, each fresh press of jump (release in between) counts one; at $n$ the record stops and the client asks the server to clear that damage type's progressive entries.
+   - **Escape by jumping**: with `NumJumpsToEscape` $n > 0$, each fresh press of jump (release in between) counts one; at $n$ the record stops and the client asks the server to clear that damage type's progressive entries (entries whose own type is that type; stock: poison 1 press, glue 10, land trap 15, item 6).
    - **Spread**: while a running record of poison or stun has its type in the **dealing** set, the weapon's movement spread fraction is forced to 1 (`weapon_firing.md` Spread, "poison or stun forces $\mu S$ to 1"). Without a poison or stun record nothing changes.
 5. **The HUD picture** (high). Only HUD layouts that have a control named `DamageFX` show it: of the stock layouts, the Fireteam (PvE) and the Snowball Fight HUDs. The control is resized to the full screen and given the record's `HudIcon`. In the other modes nothing is drawn for `HudIcon`.
-6. **Stock data** (open; the attribute file is keyed and could not be read with this session's means). Names in the archives (inferred, by name only): burn: `fx/damage/burn/get_burn_loop.wav`, flame textures and an orange flicker sprite under `fx/damage/burn/`, and effect groups `Burning_1st` (a 3-component first-person group), `Burning_3rd`, `Damage_Fire_3rd`; poison: `ui_snd/poisonloop1.wav` and a green flicker sprite under `fx/damage/poison/`, and **no** first-person poison effect group; others: `Bleeding_3rd`, `Healing_3rd`. So burn very likely has a first-person flame effect, a loop sound and a third-person flame; poison likely a loop sound and a tint only. The tint colours, times and whether any record blocks movement are not known (Open question 26).
+6. **Stock data** (Steam build 26236938, `attributes/damagefx.txt`, read 2026-11-14; high). 22 records. In every record `StartSound` is empty, and `FXName` is empty or absent except Stunned's; `LoopSound` is empty except CameraReverse's. So the stock screen effects are the tint, the darkening, a little roll wobble, the HUD picture (Fireteam and Snowball HUDs only) and movement locks. There is no first-person flame or gas effect and no burn or poison sound. Tint and floor colours are given /255. "Pass" says whether the server's 0.5 s progressive pass (item 1) can raise the type; records whose type it never raises never start from it.
+
+| Id | `Name` | Type | Pass | Tint colour | Up / on / down / off (s) | Fade (s) | Darken speed, floor | Roll speed, max (range) | Min % | Move / input | Jumps | Effect groups |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 0 | Unknown | 0 | no | 0 | 0 / 0 / 0 / 0 | 1.0 | 0, none | 0 | 0 | **blocked** / on | 0 | none |
+| 1 | Bleeding | 1 | yes | (0.502, 0.125, 0.125) | 0.25 / 0.1 / 0.05 / 0.1 | 1.0 | 0, none | 0 | 0.1 | on / on | 0 | 3rd `Bleeding_3rd`; body `Bleeding_3rd` |
+| 2 | Poisoned | 9 | yes (also infected poison) | (0.502, 0.125, 0.502) | 0.3 / 0.7 / 0.3 / 0.7 | 1.0 | 0.3, 0.831 | 0 | 0.1 | on / on | **1** | 3rd `Poisoned_3rd` |
+| 3 | Stunned | 12 | yes | (0.686, 0.686, 0.686) | 0.7 / 10000 / 0 / 0 | 1.0 | 0, none | 0 | 1.0 | on / on | 0 | first-person `Test_StunnedFX`; 3rd `Stunned_3rd` |
+| 4 | Sleeping | 11 | yes | 0 | 0 / 0 / 0 / 0 | 1.0 | 0.33, black | 0 | 1.0 | **blocked** / **off** | 0 | 3rd `Sleeping_3rd`; camera on animation, own body shown, model keys drive it |
+| 5 | Choking | 4 | instant choke only (item 1) | (0.251, 0.251, 0.251) | 0.3 / 0 / 0.5 / 0.7 | 1.0 | 0, none | 0 | 1.0 | on / on | 0 | none |
+| 6 | Burning | 3 | yes | (0.502, 0.125, 0) | 0.3 / 0.7 / 0.3 / 0.7 | 1.0 | 0.3, 0.831 | 0 | 1.0 | on / on | 0 | 3rd `Burning_3rd`; body `Burning_3rd` |
+| 7 | Electrocute | 6 | yes | (0, 0.125, 0.627) | 0.1 / 0.3 / 0.1 / 0.3 | 1.0 | 0, none | 0 | 1.0 | on / on | 0 | 3rd instant `Electrocute_3rd_Inst`; body the same |
+| 8 | Glue | 15 | yes | 0 | 0 / 0 / 0 / 0 | 1.0 | 0.2, 0.769 | 0 | 1.0 | **blocked** / on | 10 | 3rd `Glued_3rd` |
+| 9 | LandTrap | 16 | yes | 0 | 0 / 0 / 0 / 0 | 1.0 | 0, none | 0 | 1.0 | **blocked** / on | 15 | none |
+| 10 | Laughing | 17 | yes | (0.588, 0.588, 0.588) | 0.6 / 0.3 / 0.1 / 0 | 1.0 | 0, none | 0.3, 0.05 | 0.1 | on / on | 0 | 3rd `Laughing_3rd` |
+| 11 | Asssed | 18 | yes | (0.376, 0.588, 0.094) | 0.6 / 0 / 0.6 / 0 | 1.0 | 0, none | 0.1, 0.15 | 0.1 | on / on | 0 | sprinkles `Rats` |
+| 12 | Freezing | 8 | yes | (0.220, 0.349, 0.412) | 0.5 / 0.8 / 0.5 / 1.5 | 0.5 | 0.3, 0.471 | 0.5, 0.005 (0.9–1.0) | 1.0 | on / on | 0 | none; HUD picture `ui_hud_common\HUD_Frozen_blueColor.DTX` |
+| 13 | Sword | 32 | no | 0 | 0 | 0 | 0, none | 0 | 0 | on / on | 0 | death `BloodySword` |
+| 14 | Slippery | 31 | yes | 0 | 0 | 1.0 | 0.33, black | 0 | 1.0 | **blocked** / **off** | 0 | camera on animation, own body shown, model keys drive it |
+| 15 | Bullet | 2 | yes | 0 | 0 | 0 | 0, none | 0 | 0 | on / on | 0 | none |
+| 16 | Decay | 27 | no | 0 | 0 | 0 | 0, none | 0 | 0 | on / on | 0 | body `Decay_3rd` |
+| 17 | Healing | 37 | yes (also first-aid heal) | (0.043, 0.384, 0.882) | 0.3 / 0.7 / 0.3 / 0.7 | 1.0 | 0.3, 0.831 | 0 | 1.0 | on / on | 0 | 3rd `Healing_3rd`; body `Healing_3rd` |
+| 18 | Stamina | 39 | yes | (0.753, 0.686, 0.278) | 0.3 / 0.7 / 0.3 / 0.7 | 1.0 | 0.3, 0.831 | 0 | 1.0 | on / on | 0 | none |
+| 19 | CameraReverse | 44 | not by the pass (its own path, not traced) | (0.114, 0.255, 0.514) | 0.3 / 0.7 / 0.3 / 0.7 | 1.0 | 0.3, 0.831 | 0 | 0.1 | on / on | 0 | none; loop sound `GUNS_SND_ETC\Nerve_Confuse_Mine\EffectSoundLoop.wav` |
+| 20 | Snowball | 47 | Snowball builds only | 0 | 0 | 0.5 | 0, none | 0 | 0 | on / on | 0 | none |
+| 21 | IceBall | 48 | Snowball builds only | (0.031, 0.165, 0.220) | 0.3 / 0.7 / 0.3 / 0.7 | 0.5 | 0, none | 0.5, 0.001 (0.9–1.0) | 1.0 | on / on | 0 | none |
+
+   - **HUD pictures** (`HudIcon`, shown only in the Fireteam and Snowball HUDs): `Interface\Hud\icon_<x>.dtx` with x = bleed, poison, stun, sleep, choke, burn, electrocute, glue, laugh, asss, banana (Slippery); Healing and Stamina also use `icon_burn.dtx`, CameraReverse uses `icon_poison.dtx`; Freezing uses `HUD_Frozen_blueColor.DTX`; Unknown, LandTrap, Sword, Bullet, Decay, Snowball and IceBall have none.
+   - **Roll units**: `RotationMax` and `RotationSpeed` are radians and radians per second (inferred from the camera roll call; the values 0.005–0.15 rad are 0.3°–8.6°).
+   - **Data quirks**: Sword, Slippery and Bullet spell two tint keys `TinitRampDownTime` and `TinitOffTime`, so those read 0 (harmless, their tint is 0). `Allowmovement` in the same records still reads, since keys are case-insensitive. Poisoned's and CameraReverse's `TintColor` mix decimal and whole numbers in one vector; the reader takes them as the numbers written. A `Stunned` tint holds 10000 s at full, i.e. for the whole stun. The type-0 record blocks movement, but no pass ever raises type 0.
+   - **Burn and poison in short**: burn → an orange-red tint pulsing 0.3 s up, 0.7 s full, 0.3 s down, 0.7 s off (a 2 s cycle) with the scene darkened to 83 % over about 0.56 s, flames on the burning player for others, the burn picture in PvE, no sound, no first-person flame, no movement lock. Poison → the same cycle and darkening in purple, a gas look on the player for others, the poison picture in PvE, no sound. The first-person `Burning_1st` group in the effect file is not used by any record.
+   - **Poison ends on one jump** (quirk, high): Poisoned has `NumJumpsToEscape` 1. The first fresh jump press while it runs stops the effect and makes the server clear the player's **poison** entries (item 4), so the lasting gas damage ends at once (a gas cloud still standing adds new entries on its next tick, `grenades.md`). Infected poison entries are kept: the clear matches entry types against the poison type only, and infected poison is a different type, so the effect restarts on the next pass. Glue needs 10 presses and the land trap 15, both with movement blocked.
 7. **Kill call-outs, additions to section 11** (high for the rules; files by name only).
    - The records: `autocastsound.txt` `[AutoCastTeams3DSound0]` is `EnemyDown`, `[AutoCastTeams3DSound1]` is `ManDown` (the index is what the server sends). Each lists files per sound template; the client picks one of the speaker's template's files uniformly at random, and plays nothing if that template's list is empty or the record's radius is 0.
-   - Files in the archives (names only; the keyed attribute file was not read): `chars_snd/male/vma_enemydown_ma.wav` and `chars_snd/female/vm_enemydown_fa.wav` (note `vm_`, not `vma_`). **No** archive holds a "man down" file, which agrees with `ManDown` being empty in the stock data.
+   - Files: item 8. **No** archive holds a "man down" file, and the record lists none.
    - **Speaker of `ManDown`**: the living player of the victim's team nearest to the victim, **strictly** closer than 1000 u (straight-line distance; the reference's limit is named like a squared distance but compared with the plain distance). The victim itself does not qualify (it is dead).
    - **Killer without a player**: when nothing that maps to a player killed the victim (a fall, the world, a non-squad AI), the killer team reads 0, which differs from the victim's, so an `EnemyDown` is still sent, with team 0 and the male template from the damager's position. No player is on team 0, so nobody hears it.
    - **Squad AI**: when an AI squad member kills, the killer is its leader player: the leader's template speaks `EnemyDown`, from the AI's position (inferred: the position is taken from the damaging object).
    - **Free-for-all** (every player a team of their own, `game_modes.md`): the killer's `EnemyDown` reaches only clients on the killer's team id, which is the killer alone; `ManDown` never has a speaker.
    - **Suicide and team kill**: no `EnemyDown`; `ManDown` still goes to the victim's nearest living teammate.
    - Who hears: only clients whose own team equals the sent team; 3D at the speaker's position with the record's radius, following the speaker; high priority.
+
+8. **Team call-out data** (Steam build 26236938, `attributes/autocastsound.txt`, read 2026-11-14; high). Sound templates, by number: 0 `Male`, 1 `Female`, 2 `Q_Male`, 3 `Q_Female`, 4 `Q_Ptype`, 5 `Q_Stype`, 6 `VIP_M`. Each team call-out record lists files per template as `<Template>_Snd0`, `_Snd1`, …; a template with no list (all four `Q_` infected templates in every record) plays nothing. Paths as stored:
+
+| Record (index) | `Name` | Radius (u) | `Male` | `Female` | `VIP_M` |
+|---|---|---|---|---|---|
+| 0 | `EnemyDown` | 1000 | `CHARS_SND\MALE\VMA_EnemyDown_Ma.wav` | `CHARS_SND\Female\VM_EnemyDown_Fa.wav` | the female file |
+| 1 | `ManDown` | 1000 | empty | empty | empty |
+| 2 | `ChargingMine` | 500 | `…\MALE\VMA_Plantingamine_Ma.wav` | `…\Female\VMA_Plantingamine_Fa.wav` | the female file |
+| 3 | `IamHit` | 500 | `…\MALE\VMA_ImHit_Ma.wav` | `…\Female\VMA_ImHit_Fa.wav` | the female file |
+| 4 | `weareteam` | 500 | `…\MALE\VMA_HeySameTeam_Ma.wav` | `…\Female\VMA_HeySameTeam_Fa.wav` | the female file |
+| 5 | (the angry team-hit line) | 500 | `…\MALE\VMA_WatchURShot_Ma.wav` | `…\Female\VMA_WatchURShot_Fa.wav` | the female file |
+| 6 | `GrenadeThrowing` | 500 | `VMA_Grenade_Ma`, `VMA_FireINTheHole_Ma` | `VMA_Grenade_Fa`, `VMA_FireINTheHole_Fa` | the two female files |
+| 7 | `Reload` | 500 | empty | empty | empty |
+| 8 | `OutOfAmmo` | 500 | `VMA_EmptyAmmo_Ma`, `VMA_OutOfAmmo_Ma` | `VMA_EmptyAmmo_Fa`, `VMA_OutOfAmmo_Fa` | the two female files |
+| 9 | `Thankyou` | 500 | `VMA_Snowball_thankyou1`, `…2` | `VMA_Snowball_thankyou1_F`, `…2_F` | `CHARS_SND\FEMALE\VMA_thankyou1_F.wav` (a name with no `Snowball_`) |
+| 10 | `Helpme` | 500 | `VMA_Snowball_Helpme1`, `…2` | `VMA_Snowball_Helpme1_F`, `…2_F` | the same `VMA_thankyou1_F.wav` (a data slip: a VIP's "help me" says "thank you") |
+
+   - So `EnemyDown` is one fixed line per voice set: male players say `VMA_EnemyDown_Ma`, female players and the male VIP say `VM_EnemyDown_Fa`, infected players say nothing. `ManDown` is silent for everyone. Both radii are 1000 (inner radius 0.07 × 1000 = 70 u, as for the other team call-outs, `grenades.md`).
+   - The three "local team" records (`Imgonnasetthebomb`, `Isetthebomb`, `Idefusethebomb`) are empty for every template.
 
 ## Test cases
 
@@ -2092,6 +2142,11 @@ Prop debris, empty texture slots and surface 0 (Follow-up (2026-10-31b)).
 104. **Death clears.** Burn running with `FadeTime` 2; the local player dies → tint, loop sound and HUD picture gone that frame, no fade.
 105. **HUD picture by mode.** Burn record with a `HudIcon`, local player burning in TDM → no picture; in Fireteam → the picture covers the screen, alpha rising by 255/`FadeTime` per second.
 106. **Call-outs (Follow-up 2026-11-14, 7).** Alpha player A kills Bravo player V; Bravo player C stands 999 u from V and D 1000 u → C speaks `ManDown` (if the template has files; stock: silent), not D. With C at 1000 u too → nobody. V dies falling → no client plays an `EnemyDown`. In free-for-all, A kills V → only A's client plays A's `EnemyDown` (male: `vma_enemydown_ma.wav`).
+107. **Stock burn (item 6).** Local player burning, `EnableDamageFX` 1, TDM: damage tint (0.251, 0.063, 0) at 0.15 s, (0.502, 0.125, 0) from 0.3 to 1.0 s, 0 from 1.3 to 2.0 s, (0.251, 0.063, 0) again at 2.15 s; light scale 0.91 at 0.3 s, 0.831 from 0.564 s on; no sound; no HUD picture; movement free.
+108. **Stock poison and one jump.** Local player poisoned by a gas grenade's lasting damage: purple tint cycle as 107 with (0.502, 0.125, 0.502); press jump once → the effect stops and fades over 1 s, and the server clears the poison entries (no more poison damage unless the cloud adds a new entry). Infected poison instead: the jump ends the effect but the next 0.5 s pass starts it again.
+109. **Glue and trap.** Glued: movement blocked, scene darkens to 0.769 at 0.2/s; 10 jump presses free the player. Land trap: 15 presses, no tint.
+110. **Freezing wobble.** Frozen, standing still (`MinFXPercent` 1.0): camera roll swings up to 0.005·U(0.9, 1.0) rad at 0.5 rad/s; tint cycle 0.5 / 0.8 / 0.5 / 1.5 s; fade 0.5 s.
+111. **Call-out files (item 8).** A male player kills an enemy → his team hears `VMA_EnemyDown_Ma.wav` within 1000 u; a female or male-VIP killer → `VM_EnemyDown_Fa.wav`; an infected killer (template `Q_*`) → nothing. `ManDown` → nothing for any template.
 
 ## Open questions
 
@@ -2221,13 +2276,10 @@ Prop debris, empty texture slots and surface 0 (Follow-up (2026-10-31b)).
     were not readable on this box, so which damage types have a visible
     effect, and how strong, is open. Read the damage-effect attribute file
     from the install.
-    **Rules answered (2026-11-14):** Follow-up (2026-11-14) 1–5, cases
-    97–105. **Still open:** the stock records of `attributes/damagefx.txt`
-    (which types have one, their tint colours and times, sounds, effect
-    groups, `HudIcon`, and whether any blocks movement or input). Item 6
-    lists the likely assets by name. Read the file with a decrypting reader
-    (or a capture: stand in a gas cloud and in fire with `Shader` off,
-    screenshot every 0.25 s, and measure the tint).
+    **Answered (2026-11-14):** rules in Follow-up (2026-11-14) 1–5, the
+    stock records in its item 6; cases 97–110. Still worth a live look:
+    the tint strength on screen (a capture in fire and in gas) and the
+    one-jump poison escape.
 27. **Local auto-cast files** (Corrections 2026-10-22, 8): the files of the
     kill, dash, idle and heartbeat entries per sound template, and each 3D
     hurt kind's own radius, are to be read from the install's auto-cast
@@ -2254,10 +2306,5 @@ Prop debris, empty texture slots and surface 0 (Follow-up (2026-10-31b)).
     direction) whose switch is never set for prop debris; the per-axis
     offsets are assumed. Check: `Window` glass shards all start from one
     point 10 u off the pane's centre.
-33. **Kill call-out files** (Follow-up (2026-11-14) 7): the `EnemyDown`
-    file lists per template in the keyed `autocastsound.txt` were not read;
-    only the archive names `vma_enemydown_ma.wav` (male) and
-    `vm_enemydown_fa.wav` (female) were seen, and the record's radius (1000
-    in section 11) was not re-read. Check: read `[AutoCastTeams3DSound0]`
-    and `[AutoCastTeams3DSound1]`; which templates (VIP, infected) list
-    which file.
+33. **Kill call-out files** (Follow-up (2026-11-14) 7).
+    **Answered (2026-11-14):** Follow-up (2026-11-14) 8; case 111.
