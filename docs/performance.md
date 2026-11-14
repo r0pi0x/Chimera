@@ -1544,7 +1544,12 @@ shaping, so the warm-up uses the pipeline itself:
 - **Atlases off the main thread:** empty atlas images are filled on tasks
   (`AtlasPool`, 4 ready) and one is put in under the key Bevy will look the font up
   by (`atlas_key`) before the hidden text lays out; a wrong key is counted
-  (`TextWarm::missed`, 0 in the tests) and Bevy makes its own.
+  (`TextWarm::missed`, 0 in the tests) and Bevy makes its own. A font whose turn
+  comes with the pool empty waits a frame for the task; the tests, which count
+  frames, wait for the task before each frame (`text_warm::fill_pool`): on a busy
+  machine the task (the one async-compute thread a `Sim` has) hadn't run in the 30
+  headless frames `a_menus_first_opening_makes_no_atlas_after_the_warm_up` allowed,
+  an intermittent "the warm-up ends".
 - **When:** behind the loading screen (`MapHooks::settle`, 128 glyphs a frame, 256 before "A map's swap in the real app"), and in
   play 16 glyphs a frame, the sources asked again when the window, the fonts or the
   map's HUD change: so the command line's `--map` (no loading screen) is covered too.

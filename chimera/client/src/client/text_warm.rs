@@ -21,7 +21,9 @@
 //! the font's data id, its physical size, no variations, the hinting and
 //! smoothing) before the node lays out; a key that guessed wrong is counted
 //! (`TextWarm::missed`) and its atlas dropped, and Bevy makes its own on
-//! that node.
+//! that node. A font whose turn comes while the pool is empty waits for
+//! the task, frames that depend on the machine's load: what counts frames
+//! (the tests) fills the pool first (`fill_pool`).
 //!
 //! When: behind the loading screen (`map::MapHooks::settle`, `settle`,
 //! `GLYPHS_PER_SETTLE_FRAME` a frame), and in play a slice a frame
@@ -162,6 +164,20 @@ impl AtlasPool {
         while self.ready.len() + self.making.len() < POOL {
             self.making.push(AsyncComputeTaskPool::get().spawn(async { empty_atlas() }));
         }
+    }
+}
+
+/// Wait for the empty atlases being made (`AtlasPool`: `POOL` ready after
+/// it). For what counts frames, not time (tests, offscreen runs): a font
+/// waits a frame for each frame the pool's task hasn't run, as many as the
+/// machine's load makes it, and then the frames to the warm-up's end are
+/// the same on every run. Not for a frame in play: it is the 15.7 M
+/// instructions the task is there to keep off it.
+pub fn fill_pool(world: &mut World) {
+    let mut pool = world.get_resource_or_insert_with(AtlasPool::default);
+    pool.tend();
+    for task in std::mem::take(&mut pool.making) {
+        pool.ready.push(block_on(task));
     }
 }
 
