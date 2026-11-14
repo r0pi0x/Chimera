@@ -649,8 +649,8 @@ impl NetCmd {
 pub struct UserCmds {
     /// Oldest first.
     pub cmds: Vec<NetCmd>,
-    /// The client's clock epoch: how often its command clock has jumped
-    /// (`predict::CommandClock::jumps`). The server reports the lead of
+    /// The client's clock epoch: how often its command clock has jumped or
+    /// started over (`predict::CommandClock::epoch`). The server reports the lead of
     /// the newest epoch only, so commands sent before a jump never steer
     /// the clock after it.
     pub epoch: u32,
@@ -706,7 +706,8 @@ pub struct OwnState {
     pub alive: bool,
     /// The smallest lead of the commands heard since the last `OwnState`:
     /// the newest command's tick less the server's last tick when it
-    /// arrived (1: just in time). None: none heard.
+    /// arrived (1: just in time; in a frame that catches up several ticks,
+    /// the last but one it runs). None: none heard.
     pub lead: Option<i32>,
     /// The newest command tick heard.
     pub newest: u64,

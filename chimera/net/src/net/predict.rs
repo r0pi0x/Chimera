@@ -10,8 +10,16 @@
 //! - **Clock sync.** The server says how early the commands arrive
 //!   (`OwnState::lead`); the client keeps that at `CommandClock::target`
 //!   ticks (2, more with jitter) by running its fixed ticks a little faster
-//!   or slower (`nudge_clock`), or jumps when far off (startup, a stall).
-//!   So the client runs ahead of the server by RTT/2 plus the buffer.
+//!   or slower (`nudge_clock`), or jumps when far off: the smoothed lead
+//!   past `JUMP_TICKS`, or `STEP_LEADS` leads in a row off by a step that
+//!   agree (the server's clock lost time to a hitch), by the latest lead,
+//!   in one jump. So the client runs ahead of the server by RTT/2 plus the
+//!   buffer. A frame of ours longer than `Time<Virtual>`'s most (250 ms:
+//!   a hitch here, the rest of it dropped) skips the server ticks it
+//!   dropped at once (`CommandClock::stalls`, `skipped`): no jump, the
+//!   predictions before it still compared. Jumps are counted per
+//!   connection and map (`jumps`); the epoch the server keys leads by
+//!   (`epoch`) also moves on at each start over.
 //!   While a new map settles behind the loading screen (`map::MapSettling`:
 //!   a frame runs at most a tick there) no state is taken: the clock
 //!   starts with the first one after, not falling behind and jumping every
@@ -28,8 +36,16 @@
 //!   (`smooth_view`) unless it's a teleport.
 //!   When the server let in, spawned or killed the player since its last
 //!   state (`OwnState::alive` changed: a spawn point, the loadout, a
-//!   death drop) its state is taken the same way but counted as a restart
-//!   (`NetGraph::resyncs`), not an error: no command led to it.
+//!   death drop) or our clock jumped since, its state is taken the same
+//!   way but counted as a restart (`NetGraph::resyncs`), not an error: no
+//!   command led to it. A state for a tick not yet run here (a late frame:
+//!   the server's newest is ahead of our clock) waits until we have
+//!   predicted that tick; taken at once it was put back ticks early, a
+//!   "nothing predicted" restart for every state while a frame was late.
+//!   So a steady client restarts twice per load (a join, a map change, a
+//!   rejoin: its clock's start, with nothing predicted, and the server
+//!   letting the player in) and once per jump; nothing else
+//!   (`tests/it/clock_hitches.rs` holds it there).
 //! - **Turned look.** When the server turns the player's look (a spawn
 //!   facing: `core::set_view`, `core::ViewSet`) the state carries it
 //!   (`OwnState::look`); the client takes it into its `Intent` once and
@@ -79,6 +95,10 @@ const HISTORY: usize = 256;
 const OUTGOING: usize = 32;
 /// Lead error (ticks) past which the clock jumps instead of easing.
 const JUMP_TICKS: f64 = 6.0;
+/// Leads in a row off by more than `JUMP_TICKS`, within half that of each
+/// other, that make a step to jump by at once (a server's hitch moved its
+/// clock); scattered ones are the link's jitter.
+const STEP_LEADS: u32 = 3;
 /// Lead error (ticks) the clock lets be.
 const DEADZONE: f64 = 0.4;
 /// How much faster or slower the fixed ticks run per tick of lead error,
@@ -142,12 +162,29 @@ pub struct CommandClock {
     pub lead: f64,
     pub jitter: f64,
     pub samples: u32,
+    /// The latest lead heard as it came, and how many leads in a row were
+    /// off the target by more than `JUMP_TICKS` (a step: the clock jumps
+    /// by the latest, not by the smoothed lead still on its way there).
+    raw: f64,
+    off: u32,
     /// Leads count only for commands from this tick on (sent after the
     /// last jump).
     settle_from: u64,
     /// How much faster (+) the ticks ran this frame.
     pub nudge: f64,
+    /// Times the clock jumped on the server's leads (this connection, this
+    /// map).
     pub jumps: u32,
+    /// The clock's epoch (`UserCmds::epoch`): one more at each jump and
+    /// each start over (`reset`: leaving, a map change), so the server
+    /// never reads leads of commands from before as ours.
+    pub epoch: u32,
+    /// Frames the app dropped time on (longer than `Time<Virtual>`'s
+    /// most, a hitch), the server ticks skipped for them and the dropped
+    /// time not yet a whole tick (s).
+    pub stalls: u32,
+    pub skipped: u64,
+    dropped: f64,
 }
 
 impl CommandClock {
@@ -156,11 +193,25 @@ impl CommandClock {
         (2.0 + 2.0 * self.jitter).min(16.0)
     }
 
+    /// A lead heard, smoothed in. The first since a jump is taken as it
+    /// is (the jitter, the link's, is kept). Ones off the target by more
+    /// than `JUMP_TICKS` and twice the jitter are counted (`off`) while they
+    /// agree with each other: a step (a hitch at the server), where jitter
+    /// scatters.
     fn sample(&mut self, lead: f64) {
+        let last = self.raw;
+        self.raw = lead;
         if self.samples == 0 {
             self.lead = lead;
-            self.jitter = 0.0;
+            self.off = 0;
         } else {
+            // Beyond what the jitter scatters too.
+            if (lead - self.target()).abs() > JUMP_TICKS + 2.0 * self.jitter {
+                let agrees = self.off == 0 || (lead - last).abs() <= JUMP_TICKS / 2.0;
+                self.off = if agrees { self.off + 1 } else { 1 };
+            } else {
+                self.off = 0;
+            }
             let d = lead - self.lead;
             self.lead += 0.1 * d;
             self.jitter += 0.05 * (d.abs() - self.jitter);
@@ -222,6 +273,10 @@ struct Pending {
     alive: Option<bool>,
     rebased: Option<u32>,
     life_changed: bool,
+    /// The clock jumped since the last state compared: what was predicted
+    /// since started from a tick we no longer run (a restart, not an
+    /// error).
+    jumped: bool,
     /// The server's turn of our look not yet taken (`OwnState::look`), and
     /// the count of the last one taken (echoed in commands).
     turn: Option<(f32, f32)>,
@@ -308,6 +363,10 @@ pub struct NetGraph {
     pub target: f64,
     pub nudge: f64,
     pub clock_jumps: u32,
+    /// Hitches here that dropped time (`CommandClock::stalls`) and the
+    /// ticks skipped for them.
+    pub clock_stalls: u32,
+    pub clock_skipped: u64,
     /// From the server: our commands waiting there, ticks run without one,
     /// commands that came too late.
     pub buffered: u16,
@@ -369,11 +428,13 @@ impl NetGraph {
 
     pub fn clock_line(&self) -> String {
         format!(
-            "cmds: lead {:.1} ticks (target {:.1}, {:+.0}% speed, {} jumps), server buffer {}, missed {}, late {}",
+            "cmds: lead {:.1} ticks (target {:.1}, {:+.0}% speed, {} jumps, {} ticks skipped in {} hitches), server buffer {}, missed {}, late {}",
             self.lead,
             self.target,
             self.nudge * 100.0,
             self.clock_jumps,
+            self.clock_skipped,
+            self.clock_stalls,
             self.buffered,
             self.missed,
             self.late
@@ -537,9 +598,9 @@ pub(super) fn reset(world: &mut World) {
     }
     // A new epoch (`UserCmds::epoch`): the server never reads leads of
     // commands from before as ours (it keeps the newest epoch it heard).
-    let jumps = world.resource::<CommandClock>().jumps + 1;
+    let epoch = world.resource::<CommandClock>().epoch + 1;
     world.insert_resource(CommandClock {
-        jumps,
+        epoch,
         ..default()
     });
     world.insert_resource(PredictionHistory::default());
@@ -618,7 +679,7 @@ fn receive_own_states(
     for s in states.read() {
         if let Some(lead) = s.lead
             && clock.tick.is_some()
-            && s.epoch == clock.jumps
+            && s.epoch == clock.epoch
             && s.newest >= clock.settle_from
         {
             clock.sample(lead as f64);
@@ -685,40 +746,79 @@ fn receive_own_states(
 }
 
 /// Keep the commands' lead at the target: tick a little faster or slower,
-/// or jump when far off.
+/// or jump when far off. A frame longer than `Time<Virtual>`'s most (a
+/// hitch: the app drops the rest) skips the ticks the server ran
+/// meanwhile at once, rather than falling behind and jumping later.
+#[allow(clippy::too_many_arguments)]
 fn nudge_clock(
     mut clock: ResMut<CommandClock>,
     mut fixed: ResMut<Time<Fixed>>,
+    virt: Res<Time<Virtual>>,
+    real: Res<Time<Real>>,
     mut history: ResMut<PredictionHistory>,
     mut outgoing: ResMut<Outgoing>,
+    mut pending: ResMut<Pending>,
     settings: Res<PredictSettings>,
 ) {
     let Some(tick) = clock.tick else { return };
+    if let Some((_, _, step)) = clock.base
+        && !virt.is_paused()
+    {
+        // Real time the frame dropped: the server's clock went on.
+        let dropped = real.delta_secs_f64() * virt.relative_speed_f64() - virt.delta_secs_f64();
+        if dropped > 1e-6 {
+            clock.dropped += dropped;
+            let n = (clock.dropped / step.as_secs_f64().max(1e-4)).floor();
+            if n >= 1.0 {
+                clock.dropped -= n * step.as_secs_f64();
+                let n = n as u64;
+                // Ahead from the tick we got to: what was predicted holds,
+                // the ticks between are the server's (it ran them on our
+                // last command).
+                clock.tick = Some(tick + n);
+                clock.stalls += 1;
+                clock.skipped += n;
+                if settings.showerror > 0 {
+                    info!("command clock skips {n} ticks (a frame dropped {:.0} ms)", dropped * 1000.0);
+                }
+                return;
+            }
+        }
+    }
     let err = if clock.samples == 0 {
         0.0
     } else {
         clock.lead - clock.target()
     };
-    if err.abs() > JUMP_TICKS {
+    // `STEP_LEADS` leads in a row far off the target, agreeing: the clock
+    // is off by a step (a hitch at the server), by as much as the latest
+    // says.
+    let step_off = clock.off >= STEP_LEADS;
+    if step_off || err.abs() > JUMP_TICKS {
+        let err = if clock.off >= 1 { clock.raw - clock.target() } else { err };
         let to = (tick as i64 - err.round() as i64).max(1) as u64;
         if settings.showerror > 0 {
             info!(
-                "command clock jumps {:+} ticks (lead {:.1}, target {:.1})",
+                "command clock jumps {:+} ticks (lead {:.1}, last {:.1}, target {:.1})",
                 to as i64 - tick as i64,
                 clock.lead,
+                clock.raw,
                 clock.target()
             );
         }
         clock.tick = Some(to);
         clock.settle_from = to + 1;
         clock.samples = 0;
+        clock.off = 0;
         clock.jumps += 1;
+        clock.epoch += 1;
         clock.nudge = 0.0;
         // Predictions for ticks we no longer run: the next server state
         // starts over.
         history.0.clear();
         outgoing.cmds.clear();
         outgoing.fresh = 0;
+        pending.jumped = true;
         if let Some((_, _, step)) = clock.base {
             fixed.set_timestep(step);
         }
@@ -757,17 +857,34 @@ fn start_command(world: &mut World) {
             raw.pitch = pitch;
         }
     }
+    let started = world.resource::<CommandClock>().tick;
     let (pending, restart) = {
         let mut p = world.resource_mut::<Pending>();
-        let restart = p.state.is_some() && std::mem::take(&mut p.life_changed);
-        (p.state.take(), restart)
+        // A state for a tick we haven't run yet (a frame came late here: the
+        // server's newest state is ahead of our clock) waits until we have
+        // predicted it, then is compared as any other: taken now it would
+        // be put back ticks early, a restart and the ticks after it run
+        // again from there.
+        let ahead = p
+            .state
+            .as_ref()
+            .is_some_and(|s| started.is_some_and(|t| s.tick > t));
+        if p.state.is_none() || ahead {
+            (None, None)
+        } else if std::mem::take(&mut p.life_changed) {
+            p.jumped = false;
+            (p.state.take(), Some(Restart::Life))
+        } else if std::mem::take(&mut p.jumped) {
+            (p.state.take(), Some(Restart::Jump))
+        } else {
+            (p.state.take(), None)
+        }
     };
     if let Some(s) = &pending {
         world.resource_mut::<Pending>().done = s.tick;
         let step = Duration::from_nanos(s.tick_nanos);
         world.resource_mut::<CommandClock>().base = Some((s.tick, Duration::from_nanos(s.time_nanos), step));
     }
-    let started = world.resource::<CommandClock>().tick;
     let tick = match started {
         Some(t) => t + 1,
         None => {
@@ -791,12 +908,22 @@ fn start_command(world: &mut World) {
     }
 }
 
+/// Why a state is taken as a restart rather than compared for errors.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Restart {
+    /// The server spawned, killed or let in the player since the last
+    /// state (`OwnState::alive`, `rebased` changed).
+    Life,
+    /// Our clock jumped since: what was predicted started from a tick we
+    /// no longer run.
+    Jump,
+}
+
 /// Compare the server's state after tick S with ours for S; on a
 /// mismatch take the server's and run the commands since again. A
-/// `restart` (the server spawned, killed or let in the player since the
-/// last state: `OwnState::alive` changed) is no prediction error: the
-/// client couldn't have predicted it; it counts as a resync.
-fn reconcile(world: &mut World, player: Entity, server: OwnState, restart: bool) {
+/// `restart` (`Restart`) is no prediction error: the client couldn't have
+/// predicted it; it counts as a resync.
+fn reconcile(world: &mut World, player: Entity, server: OwnState, restart: Option<Restart>) {
     let index = world
         .resource::<PredictionHistory>()
         .0
@@ -812,7 +939,7 @@ fn reconcile(world: &mut World, player: Entity, server: OwnState, restart: bool)
             world.resource_mut::<PredictionHistory>().0.drain(..=i);
             return;
         }
-        if !restart {
+        if restart.is_none() {
             let names = world
                 .resource::<PredictedComponents>()
                 .differing(&ours.state, &server.state);
@@ -827,7 +954,12 @@ fn reconcile(world: &mut World, player: Entity, server: OwnState, restart: bool)
         // Older than anything we predicted (from before prediction started
         // or the clock jumped): newer states will tell (a restart with
         // them).
-        world.resource_mut::<Pending>().life_changed |= restart;
+        let mut p = world.resource_mut::<Pending>();
+        match restart {
+            Some(Restart::Life) => p.life_changed = true,
+            Some(Restart::Jump) => p.jumped = true,
+            None => {}
+        }
         return;
     }
     let before = world
@@ -957,10 +1089,10 @@ fn reconcile(world: &mut World, player: Entity, server: OwnState, restart: bool)
         None => {
             graph.resyncs += 1;
             if world.resource::<PredictSettings>().showerror > 0 {
-                let why = if restart {
-                    "the server spawned or killed the player"
-                } else {
-                    "nothing predicted for it"
+                let why = match restart {
+                    Some(Restart::Life) => "the server spawned or killed the player",
+                    Some(Restart::Jump) => "the command clock jumped",
+                    None => "nothing predicted for it",
                 };
                 info!("prediction restarts from the server's tick {} ({why})", server.tick);
             }
@@ -1156,7 +1288,7 @@ fn send_commands(
             bases.sent = Some(ack);
             out.write(UserCmds {
                 cmds: Vec::new(),
-                epoch: clock.jumps,
+                epoch: clock.epoch,
                 ack,
             });
         }
@@ -1170,7 +1302,7 @@ fn send_commands(
     traffic.commands.push(time.elapsed_secs_f64(), 1.0);
     out.write(UserCmds {
         cmds,
-        epoch: clock.jumps,
+        epoch: clock.epoch,
         ack,
     });
 }
@@ -1198,6 +1330,8 @@ fn update_graph(
     graph.target = clock.target();
     graph.nudge = clock.nudge;
     graph.clock_jumps = clock.jumps;
+    graph.clock_stalls = clock.stalls;
+    graph.clock_skipped = clock.skipped;
     let now = time.elapsed_secs_f64();
     while graph.recent.front().is_some_and(|(t, _)| now - t > 1.0) {
         graph.recent.pop_front();

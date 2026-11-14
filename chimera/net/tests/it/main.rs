@@ -7,6 +7,7 @@
 //! section 1.
 
 mod asset_offer;
+mod clock_hitches;
 mod assets;
 mod console_names;
 mod data_formats;

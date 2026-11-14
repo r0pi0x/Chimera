@@ -932,9 +932,12 @@ counts the server states it compared (`checked`), the ones that differed
 from its prediction (`errors`, `last_error`/`worst_error` in m, which
 components differed in the last one: `last_differing`, at server tick
 `last_error_tick`) and restarts (`resyncs`: nothing predicted to compare,
-or the server let in, spawned or killed the player, `OwnState::alive`;
-so a test needn't reset the counters after joining); `CommandClock` has the command tick and the lead
-the server reports; the server's `net::server::CommandBuffer` on a
+the server let in, spawned or killed the player, `OwnState::alive`, or
+the clock jumped; so a test needn't reset the counters after joining);
+`CommandClock` has the command tick, the lead the server reports, its
+`jumps` and the hitches that dropped time (`stalls`, ticks `skipped`;
+a test of the clock through hitches drives the server's and the
+client's frames in real time: `chimera/net/tests/it/clock_hitches.rs`); the server's `net::server::CommandBuffer` on a
 player's character has its queued commands, `missed`, `late` and `early`
 counts. `PredictionHistory` holds the client's predicted ticks not yet
 confirmed: compare them with the server's state at the same tick
@@ -1093,8 +1096,8 @@ held, snaps, movers stepped and ticks the player was carried);
 `cl_interp` (0.1 s), `cl_interp_ratio` (2), `cl_extrapolate` (1) and
 `cl_extrapolate_amount` (0.25 s) set the drawing; `status` on a client prints the prediction and interp lines too,
 on a server each player's buffered and missed commands. `cl_showerror 1`
-logs every prediction error (tick, metres, which components differed)
-and clock jump. `cl_smoothtime` (0.1 s) eases corrections out of the
+logs every prediction error (tick, metres, which components differed),
+clock jump, hitch skip and restart. `cl_smoothtime` (0.1 s) eases corrections out of the
 view; 0 snaps. Fake network conditions on a client (Source's names; its
 UDP transport only): `net_fakelag <ms>` delays what it receives (ping
 grows by that), `net_fakejitter <ms>` adds up to that much at random,

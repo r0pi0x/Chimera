@@ -148,11 +148,14 @@ Delete each when done.
   swapping, ran 3 frames a second); the dedicated server's map change
   one tick of 2.7-3.8G instructions (0.3-0.6 s CPU; already listed under
   "Nothing blocks the main thread").
-- **Prediction after a rejoin**: a client that reconnected to the
-  restarted server on its menu's background map (de_dust2, the new
-  server's map) logged 6-8 command clock jumps in its first 6 s (the
-  lobby: players frozen); over the 19-minute session 16-25 jumps and
-  115-190 "nothing predicted" restarts per client, mostly at loads.
+- **A server hitch moves every client's clock**: since the fix of the
+  rehearsal's clock jumps and restarts (a loaded client's hitches:
+  `net::predict`, `chimera_net`'s `clock_hitches` test; not yet seen in
+  a live session), a server frame longer than `Time<Virtual>`'s 250 ms
+  still drops that time from the server's clock, and each client jumps
+  back once to follow (`a_server_hitch_costs_a_client_at_most_one_jump`).
+  A dedicated server could catch those ticks up instead (a larger
+  `max_delta`), at the cost of a burst of ticks.
 - **A tester's disk**: 3.1 GB after six maps (1.6 GB of it the converted
   maps' cache, `chimera/maps`), 1.6 GB downloaded with prefetch on (it
   fetched every HL2:DM map in the pool, 27-53 MB each); playtest.md's
