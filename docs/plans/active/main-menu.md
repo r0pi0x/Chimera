@@ -331,16 +331,49 @@ comes first, then this plan's M1.
   (ours only), each with its name, minigame, map, players/max, bots, ping
   and a password mark, sorted by ping (`lan_servers`); scanned when Join
   opens, Refresh (F5) again; Enter or a click on the focused row joins
-  (`MainMenuAction::Server`; a locked server with no password typed puts
-  the keys in the password field first). The first `LAN_ROWS` (8) show.
+  (`MainMenuAction::Server`; a locked server asks for its password in a
+  modal). Longer lists scroll (the server browser, below).
 - **The minigame in the query reply**: the info reply's keywords are the
   map's game, then `minigame=<id>` while one plays
   (`ServerInfo::minigame`; no wire change).
+- **The server browser** (2026-11-14; `party_kit::server_list` is the
+  model, `signal_pages` draws and drives it): Join's right column has
+  three tabs, **LAN**, **Favourites**, **History**.
+  - Scrolling: a list shows `VISIBLE_ROWS` (8) and scrolls; ↑↓ keep the
+    focused row in view (`keep_in_view`), PageUp/PageDown on a row move a
+    window, the wheel moves the window (the focus stays; the next key
+    brings it back), a bar at the right shows where the window is and the
+    section note says "1-8 of 12".
+  - Tabs: ←→ off a text field, F2 F3 F4, or a click. Favourites: F on a
+    server row (or the Favourite/Unfavourite button) keeps or drops it;
+    each favourite and each visit is asked by address (the same A2S-shaped
+    query, `ServerQueries::query`, unicast) once the LAN scan has ended
+    (`ServerQueries::scanning`), so a row shows its info and ping, "asking"
+    or "no answer" (kept listed, greyed); answered rows by ping, then
+    asking, then silent. History: `connect` records an IP address with the
+    unix time, newest first, one entry a server, 20 at most; each row
+    shows "4 min ago". Files in the config folder like Recent
+    (`party_favourites.txt`: an address a line; `party_history.txt`:
+    `<unix seconds> <address>`; `BrowserFiles`, none under tests).
+  - Password dialog: Enter or a click on a locked server opens a modal
+    (the kit's `modal` and `text_field`; the Direct password already in
+    it; Enter or Join joins, Esc or Cancel closes; empty is refused with a
+    notice). It reuses `PartyMenu::password` and the menu's typing.
+  - Text case: `Ui::text_field` (and `Ui::text_plain`) keep the typed
+    text's case and draw it in Bevy's default face (the client's system
+    face; the UGG faces are capitals only, "lower case maps to capitals"),
+    labels stay capitals. Direct's address and the Play text rows show as
+    typed.
 - Tests: `apps/party_kit/tests/it/signal_pages.rs` (the list's model:
-  ours only, by ping; Join's keys joining a listed server, a locked one
-  asking for the password), `chimera_net` `the_keywords_carry_the_minigame`.
+  ours only, by ping; the scroll window; favourites toggle, sort and file;
+  history order, cap and file; a long list scrolled by keys and wheel;
+  F, tabs, joining recording a visit; the password modal's flow; typed
+  case; `ui_scene join [lan|favourites|history|password]`),
+  `chimera_net` `the_keywords_carry_the_minigame`. Screenshots (offscreen
+  1080p, made-up servers from `ui_scene join`): LAN scrolled list,
+  Favourites, History, the modal, typed case.
 - Left: the browser model lifted into `chimera_client` (CS:S's Find
-  Servers on it), Favourites and History tabs, a password dialog,
-  scrolling past eight servers, marking another app's servers, the LAN
-  test between the Windows PC and the Linux box; the VGUI look (Lucker
-  Party) has no list.
+  Servers on it), the Internet tab (master list, M3), marking another
+  app's servers, favouriting a Recent address or a host name (only IP
+  addresses are kept), the LAN test between the Windows PC and the Linux
+  box; the VGUI look (Lucker Party) has no list.

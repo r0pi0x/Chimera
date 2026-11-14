@@ -110,7 +110,8 @@
 //!
 //! Known shortcuts: steppers (`<` `>`) in place of CS:S's combo boxes and
 //! check boxes in the VGUI look; the server browser (M2) is the Signal
-//! Join page's LAN list only; bots don't make room for people
+//! Join page's (LAN, Favourites, History; `signal_pages`, `server_list`);
+//! bots don't make room for people
 //! joining (`MaxPlayer` is a fixed count); the background map after
 //! leaving a game keeps the last minigame's rules (no bots on it); the
 //! console shows over the menu but egui's debug windows don't; the
@@ -767,6 +768,13 @@ pub enum MainMenuAction {
     Connect,
     /// Join a recent address.
     Recent(usize),
+    /// The server browser's tab (`server_list::BrowserTab`'s index).
+    BrowserTab(usize),
+    /// Favourite the server of that row of the tab shown, or drop it.
+    Favourite(usize),
+    /// The password modal's Join and Cancel.
+    PasswordJoin,
+    PasswordCancel,
     OptionsTab(usize),
     OptionStep {
         index: usize,
@@ -848,6 +856,7 @@ impl Plugin for MainMenuPlugin {
             .insert_resource(ShownScreen::of(&menu))
             .insert_resource(menu)
             .insert_resource(recent)
+            .insert_resource(if self.keep_recent { crate::server_list::BrowserFiles::in_config() } else { default() })
             .insert_resource(MenuMinigame(self.minigame.clone()))
             .init_resource::<MenuLook>()
             .init_resource::<LoadingPanel>()
@@ -1331,6 +1340,10 @@ fn act_one(world: &mut World, action: MainMenuAction) {
             }
         }
         A::Back => {
+            // The password modal over Join takes the Back first.
+            if crate::signal_pages::close_ask(world) {
+                return;
+            }
             leave_page(world);
             let mut m = world.resource_mut::<PartyMenu>();
             m.page = MenuPage::Main;
@@ -1390,7 +1403,7 @@ fn act_one(world: &mut World, action: MainMenuAction) {
             }
         }
         A::Server(i) => {
-            let Some(server) = world.get_resource::<crate::signal_pages::LanList>().and_then(|l| l.servers.get(i).cloned()) else {
+            let Some(server) = world.get_resource::<crate::signal_pages::LanList>().and_then(|l| l.rows().get(i).cloned()) else {
                 return;
             };
             let address = server.addr.to_string();
@@ -1398,6 +1411,16 @@ fn act_one(world: &mut World, action: MainMenuAction) {
             connect(world, &address, &menu.password);
         }
         A::Refresh => crate::signal_pages::scan(world),
+        A::BrowserTab(t) => crate::signal_pages::set_tab(world, t),
+        A::Favourite(i) => crate::signal_pages::toggle_favourite(world, i),
+        A::PasswordCancel => {
+            crate::signal_pages::close_ask(world);
+        }
+        A::PasswordJoin => {
+            if let Some(i) = crate::signal_pages::take_ask(world) {
+                act_one(world, A::Server(i));
+            }
+        }
         A::Start => start(world),
         A::Focus(f) => {
             let mut m = world.resource_mut::<PartyMenu>();
@@ -1544,6 +1567,7 @@ pub(crate) fn connect(world: &mut World, address: &str, password: &str) {
     let mut recent = world.resource::<PartyMenu>().recent.clone();
     remember(&mut recent, address);
     world.resource::<RecentFile>().write(&recent);
+    crate::signal_pages::record_join(world, address);
     let mut m = world.resource_mut::<PartyMenu>();
     m.recent = recent;
     m.screen = Screen::Joining;

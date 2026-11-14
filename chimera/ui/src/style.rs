@@ -365,6 +365,11 @@ impl UiSlant {
     }
 }
 
+/// A text a person typed (`Ui::text_plain`): drawn in Bevy's default face
+/// (a system one in the client, with lower case), the kit's as fallback.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct PlainText;
+
 /// Writes styled nodes' Bevy components (module doc).
 #[allow(clippy::type_complexity)]
 pub fn resolve_styles(
@@ -373,7 +378,7 @@ pub fn resolve_styles(
     kit: Option<Res<KitFonts>>,
     mut slants: Option<ResMut<Assets<SlantMaterial>>>,
     styles: Query<(Entity, Ref<UiStyle>)>,
-    texts: Query<(Entity, Ref<UiText>)>,
+    texts: Query<(Entity, Ref<UiText>, Has<PlainText>)>,
     slanted: Query<(Entity, Ref<UiSlant>, Option<&MaterialNode<SlantMaterial>>)>,
     mut commands: Commands,
 ) {
@@ -391,12 +396,19 @@ pub fn resolve_styles(
             c.insert(Outline::new(Val::Px(units.hairline()), Val::Px(-units.hairline()), theme.tone_a(t, a)));
         }
     }
-    for (e, t) in &texts {
+    for (e, t, plain) in &texts {
         if !(all || t.is_changed()) {
             continue;
         }
         let s = fonts::text(&theme, kit.as_deref(), t.role, units.text_px(t.size));
-        commands.entity(e).insert((s.bundle(), TextColor(theme.tone_a(t.tone, t.alpha))));
+        let mut bundle = s.bundle();
+        if plain {
+            // The kit's faces draw capitals only: a person's own text takes
+            // Bevy's default face first (the client puts a system face there:
+            // `client::fonts`), the kit's one as fallback (none there: tests).
+            bundle.0.font = FontSource::List(vec![FontSource::default(), bundle.0.font.clone()]);
+        }
+        commands.entity(e).insert((bundle, TextColor(theme.tone_a(t.tone, t.alpha))));
     }
     if let Some(slants) = slants.as_mut() {
         for (e, s, mat) in &slanted {

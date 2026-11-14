@@ -174,8 +174,9 @@ fn text_field_shows_text_caret_and_placeholder() {
     let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "", "host or host:port", None, false, 15.0, State::NONE));
     assert_eq!(texts_under(&mut app, f), ["HOST OR HOST:PORT"]);
     assert_eq!(caret_count(&mut app, f), 0);
-    let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "lan:27016", "", Some(3), false, 15.0, State::focused(true)));
-    assert_eq!(texts_under(&mut app, f), ["LAN", ":27016"]);
+    // What is typed keeps its case (the placeholder is a label).
+    let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "Lan:27016", "", Some(3), false, 15.0, State::focused(true)));
+    assert_eq!(texts_under(&mut app, f), ["Lan", ":27016"]);
     assert_eq!(caret_count(&mut app, f), 1);
     let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "pässwd", "", None, true, 15.0, State::NONE));
     assert_eq!(texts_under(&mut app, f), ["******"]);

@@ -710,6 +710,11 @@ impl ServerQueries {
         self.generation += 1;
     }
 
+    /// Whether a LAN scan is still listening.
+    pub fn scanning(&self) -> bool {
+        self.scan.is_some()
+    }
+
     /// Whether a LAN scan is still listening, or a server still asked.
     pub fn busy(&self) -> bool {
         self.scan.is_some() || !self.asking.is_empty()

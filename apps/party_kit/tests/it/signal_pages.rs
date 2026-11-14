@@ -4,8 +4,10 @@
 //! otherwise); on Play the keys move the focus, change a row and Enter
 //! starts the game (its map loaded, the menu in the game); on Join Enter
 //! connects to the typed address, refuses an empty one, and joins a LAN
-//! server of the list (a locked one asks for the password first); the LAN
-//! list's model (ours only, by ping); `ui_scene play|join`.
+//! server of the list (a locked one asks for the password in a modal); the
+//! LAN list's model (ours only, by ping); the browser's scrolling window,
+//! Favourites (F, kept in a file) and History (joins, newest first), the
+//! password modal; `ui_scene play|join`.
 
 use std::net::SocketAddr;
 
@@ -18,6 +20,7 @@ use chimera_net::net::{
 use chimera_world::harness::Sim;
 use party_kit::{
     main_menu::{MainMenuAction as A, MenuData, MenuPage, PartyMenu, Screen},
+    server_list::{self as sl, BrowserFiles, BrowserTab, Status, VISIBLE_ROWS},
     signal_pages::{self, LanList, Line, SignalPages, SignalPagesRoot},
 };
 
@@ -232,16 +235,18 @@ fn join_lists_lan_servers_and_enter_joins_one() {
     }
     assert_eq!(pages(&sim).focus, open);
     assert_eq!(menu(&sim).focus, None, "no text field has the keys");
-    // The locked one, with no password typed: the password field asks.
+    // The locked one asks for its password in a modal.
     press(&mut sim, KeyCode::ArrowDown);
     press(&mut sim, KeyCode::Enter);
     sim.ticks(1);
     assert!(asked(&sim).is_empty());
+    assert!(pages(&sim).ask.is_some(), "the modal");
     assert_eq!(menu(&sim).focus, Some(party_kit::main_menu::Field::Password));
+    press(&mut sim, KeyCode::Escape);
+    act(&mut sim, A::PasswordCancel);
+    assert!(pages(&sim).ask.is_none());
+    assert_eq!(pages(&sim).up, Some(MenuPage::Join), "Cancel stays on Join");
     // The open one joins.
-    for _ in 0..4 {
-        press(&mut sim, KeyCode::ArrowDown);
-    }
     press(&mut sim, KeyCode::ArrowUp);
     assert_eq!(pages(&sim).focus, open);
     press(&mut sim, KeyCode::Enter);
@@ -263,5 +268,301 @@ fn ui_scene_stages_play_and_join() {
     signal_pages::stage(sim.app.world_mut(), MenuPage::Join, &[]).unwrap();
     sim.ticks(2);
     assert_eq!(menu(&sim).page, MenuPage::Join);
-    assert_eq!(sim.app.world().resource::<LanList>().servers.len(), 3, "made-up servers");
+    assert_eq!(sim.app.world().resource::<LanList>().servers.len(), 12, "made-up servers");
+    assert_eq!(sim.app.world().resource::<LanList>().favourites.len(), 4);
+}
+
+// ---------------------------------------------------------------------------
+// The browser: the list model.
+
+#[test]
+fn the_window_keeps_the_focused_row_in_view() {
+    // 12 rows, 8 shown: the first row shown is 0..=4.
+    assert_eq!(sl::keep_in_view(0, 3, 12, 8), 0, "in view: stays");
+    assert_eq!(sl::keep_in_view(0, 8, 12, 8), 1, "just below: one step");
+    assert_eq!(sl::keep_in_view(0, 11, 12, 8), 4, "the last row: the window's end");
+    assert_eq!(sl::keep_in_view(4, 2, 12, 8), 2, "above: the focus is the first");
+    assert_eq!(sl::keep_in_view(5, 7, 6, 8), 0, "a short list never scrolls");
+    assert_eq!(sl::scroll_by(0, -1, 12, 8), 0, "not above the start");
+    assert_eq!(sl::scroll_by(3, 5, 12, 8), 4, "not past the end");
+    assert_eq!(sl::scroll_by(0, 2, 12, 8), 2);
+    assert_eq!(sl::clamp_offset(9, 10, 8), 2);
+    assert_eq!(BrowserTab::Lan.step(-1), BrowserTab::Lan);
+    assert_eq!(BrowserTab::Lan.step(1), BrowserTab::Favourites);
+    assert_eq!(BrowserTab::History.step(1), BrowserTab::History);
+}
+
+fn addr(n: u8) -> SocketAddr {
+    SocketAddr::from(([192, 0, 2, n], 27015))
+}
+
+#[test]
+fn favourites_toggle_sort_and_survive_a_file() {
+    let mut list = Vec::new();
+    assert!(sl::toggle_favourite(&mut list, addr(1)));
+    assert!(sl::toggle_favourite(&mut list, addr(2)));
+    assert!(!sl::toggle_favourite(&mut list, addr(1)), "again: dropped");
+    assert_eq!(list, [addr(2)]);
+    let path = std::env::temp_dir().join(format!("chimera_test_favs_{}.txt", std::process::id()));
+    let files = BrowserFiles { favourites: Some(path.clone()), history: None };
+    files.write_favourites(&[addr(2), addr(3)]);
+    assert_eq!(files.read_favourites(), [addr(2), addr(3)]);
+    assert_eq!(sl::parse_favourites("192.0.2.9\nnonsense\n192.0.2.9:27015\n\n198.51.100.4:27016"), [addr(9), SocketAddr::from(([198, 51, 100, 4], 27016))]);
+    let _ = std::fs::remove_file(path);
+    // Their rows: answered by ping, then asking, then silent.
+    let mut results = vec![server(1, "Slow", 50, false, GAME_FOLDER), server(2, "Quick", 5, false, GAME_FOLDER)];
+    results[0].addr = addr(1);
+    results[1].addr = addr(2);
+    results.push(QueryResult { addr: addr(3), state: QueryState::NoResponse, lan: false });
+    let addrs: Vec<_> = [addr(3), addr(4), addr(1), addr(2)].into_iter().map(|a| (a, None)).collect();
+    let mut rows = sl::listed(&addrs, &results);
+    sl::sort_favourites(&mut rows);
+    let order: Vec<(SocketAddr, Status)> = rows.iter().map(|r| (r.addr, r.status)).collect();
+    assert_eq!(order, [(addr(2), Status::Up), (addr(1), Status::Up), (addr(4), Status::Asking), (addr(3), Status::Down)]);
+}
+
+#[test]
+fn history_is_newest_first_once_and_capped() {
+    let mut v = Vec::new();
+    sl::record_visit(&mut v, addr(1), 100);
+    sl::record_visit(&mut v, addr(2), 200);
+    sl::record_visit(&mut v, addr(1), 300);
+    assert_eq!(v.iter().map(|x| (x.addr, x.when)).collect::<Vec<_>>(), [(addr(1), 300), (addr(2), 200)]);
+    for n in 0..40u8 {
+        sl::record_visit(&mut v, addr(n.max(3)), 400 + n as u64);
+    }
+    assert_eq!(v.len(), sl::HISTORY_MAX);
+    let path = std::env::temp_dir().join(format!("chimera_test_hist_{}.txt", std::process::id()));
+    let files = BrowserFiles { favourites: None, history: Some(path.clone()) };
+    files.write_history(&v);
+    assert_eq!(files.read_history(), v);
+    let _ = std::fs::remove_file(path);
+    assert_eq!(sl::ago(1000, 990), "just now");
+    assert_eq!(sl::ago(1000, 1000 - 300), "5 min ago");
+    assert_eq!(sl::ago(100_000, 100_000 - 7200), "2 h ago");
+    assert_eq!(sl::ago(1_000_000, 1_000_000 - 3 * 86_400), "3 days ago");
+    assert_eq!(sl::parse_addr("192.0.2.5"), Some(addr(5)));
+    assert_eq!(sl::parse_addr("example.test:27015"), None);
+}
+
+// ---------------------------------------------------------------------------
+// The browser on Join.
+
+fn lan_results(n: u16) -> Vec<QueryResult> {
+    (0..n).map(|i| server(28100 + i, &format!("Server {i:02}"), 3 + i as u32, false, GAME_FOLDER)).collect()
+}
+
+fn open_join_with(sim: &mut Sim, results: Vec<QueryResult>) {
+    act(sim, A::Entry(1));
+    {
+        let mut q = sim.app.world_mut().resource_mut::<ServerQueries>();
+        q.results = results;
+        q.generation += 100;
+    }
+    sim.ticks(2);
+}
+
+fn scroll(sim: &Sim) -> usize {
+    sim.app.world().resource::<LanList>().scroll
+}
+
+fn lines_of(sim: &Sim) -> Vec<Line> {
+    signal_pages::lines(menu(sim), &MenuData::shipped(), sim.app.world().resource::<LanList>())
+}
+
+fn page_lines(sim: &mut Sim) -> usize {
+    sim.app.world_mut().query::<&signal_pages::PageLine>().iter(sim.app.world()).count()
+}
+
+#[test]
+fn a_long_list_scrolls_with_the_keys_and_the_wheel() {
+    let mut sim = sim(PAGES_THEME);
+    open_join_with(&mut sim, lan_results(12));
+    assert_eq!(sim.app.world().resource::<LanList>().servers.len(), 12, "all of them, not eight");
+    let direct = 2; // the address and password rows; no recent yet
+    // Eight server rows and the two Direct ones are on the page.
+    assert_eq!(page_lines(&mut sim), VISIBLE_ROWS + direct);
+    let first = lines_of(&sim).iter().position(|l| *l == Line::Server(0)).unwrap();
+    for _ in 0..first {
+        press(&mut sim, KeyCode::ArrowDown);
+    }
+    assert_eq!(scroll(&sim), 0);
+    for _ in 0..7 {
+        press(&mut sim, KeyCode::ArrowDown);
+    }
+    assert_eq!(pages(&sim).focus, first + 7);
+    assert_eq!(scroll(&sim), 0, "the eighth row is still in the window");
+    press(&mut sim, KeyCode::ArrowDown);
+    assert_eq!(scroll(&sim), 1, "the ninth pushes the window down");
+    for _ in 0..3 {
+        press(&mut sim, KeyCode::ArrowDown);
+    }
+    assert_eq!(pages(&sim).focus, first + 11);
+    assert_eq!(scroll(&sim), 4, "the last row: the window's end");
+    assert_eq!(page_lines(&mut sim), VISIBLE_ROWS + direct, "still eight");
+    // Up past the window's top moves it back.
+    for _ in 0..8 {
+        press(&mut sim, KeyCode::ArrowUp);
+    }
+    assert_eq!(scroll(&sim), 3, "the focused row is the window's first");
+    // The wheel moves the window, not the focus.
+    let focus = pages(&sim).focus;
+    sim.app.world_mut().write_message(bevy::input::mouse::MouseWheel {
+        unit: bevy::input::mouse::MouseScrollUnit::Line,
+        x: 0.0,
+        y: -2.0,
+        window: Entity::PLACEHOLDER,
+        phase: bevy::input::touch::TouchPhase::Moved,
+    });
+    sim.ticks(2);
+    assert_eq!(scroll(&sim), 4, "clamped at the end");
+    assert_eq!(pages(&sim).focus, focus, "the wheel leaves the focus");
+    // The focused row is out of the window now: a key brings it back.
+    press(&mut sim, KeyCode::ArrowUp);
+    assert_eq!(pages(&sim).focus, focus - 1);
+    assert_eq!(scroll(&sim), 2, "the focused row is the window's first again");
+    sim.app.world_mut().write_message(bevy::input::mouse::MouseWheel {
+        unit: bevy::input::mouse::MouseScrollUnit::Line,
+        x: 0.0,
+        y: 3.0,
+        window: Entity::PLACEHOLDER,
+        phase: bevy::input::touch::TouchPhase::Moved,
+    });
+    sim.ticks(2);
+    assert_eq!(scroll(&sim), 0, "up to the start");
+    // PageDown moves a window of rows.
+    press(&mut sim, KeyCode::PageDown);
+    assert_eq!(pages(&sim).focus, first + 10, "a window on from server 2");
+    assert_eq!(scroll(&sim), 3);
+}
+
+#[test]
+fn tabs_favourites_and_history_keep_to_their_files() {
+    let dir = std::env::temp_dir();
+    let files = BrowserFiles {
+        favourites: Some(dir.join(format!("chimera_test_scn_favs_{}.txt", std::process::id()))),
+        history: Some(dir.join(format!("chimera_test_scn_hist_{}.txt", std::process::id()))),
+    };
+    let mut sim = sim(PAGES_THEME);
+    sim.app.insert_resource(files.clone());
+    open_join_with(&mut sim, lan_results(3));
+    let first = lines_of(&sim).iter().position(|l| *l == Line::Server(0)).unwrap();
+    for _ in 0..first {
+        press(&mut sim, KeyCode::ArrowDown);
+    }
+    // F favourites the focused server (Server 00); typing keeps the F.
+    press(&mut sim, KeyCode::KeyF);
+    sim.ticks(2);
+    let lan = sim.app.world().resource::<LanList>();
+    assert_eq!(lan.fav_addrs, [SocketAddr::from(([127, 0, 0, 1], 28100))]);
+    assert!(lan.servers[0].favourite && !lan.servers[1].favourite);
+    assert_eq!(files.read_favourites(), lan.fav_addrs, "kept in its file");
+    // ← → switch the tab (off a text field): the Favourites tab lists it.
+    press(&mut sim, KeyCode::ArrowRight);
+    sim.ticks(1);
+    let lan = sim.app.world().resource::<LanList>();
+    assert_eq!(lan.tab, BrowserTab::Favourites);
+    assert_eq!(lan.rows().len(), 1);
+    assert_eq!((lan.rows()[0].name.as_str(), lan.rows()[0].status), ("Server 00", Status::Up), "asked by address, answered");
+    assert_eq!(pages(&sim).focus, first, "the focus is on its first row");
+    // F again drops it.
+    press(&mut sim, KeyCode::KeyF);
+    sim.ticks(2);
+    assert!(sim.app.world().resource::<LanList>().rows().is_empty());
+    assert!(files.read_favourites().is_empty());
+    // Joining a server records it, newest first, in its file; History lists it.
+    act(&mut sim, A::BrowserTab(0));
+    for _ in 0..6 {
+        if lines_of(&sim).get(pages(&sim).focus) != Some(&Line::Server(0)) {
+            press(&mut sim, KeyCode::ArrowDown);
+        }
+    }
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(1);
+    assert_eq!(asked(&sim), ["connect 127.0.0.1:28100"]);
+    let v = sim.app.world().resource::<LanList>().visits.clone();
+    assert_eq!(v.len(), 1);
+    assert_eq!(files.read_history(), v);
+    act(&mut sim, A::Cancel);
+    if menu(&sim).page != MenuPage::Main {
+        act(&mut sim, A::Back);
+    }
+    act(&mut sim, A::Entry(1));
+    act(&mut sim, A::BrowserTab(2));
+    let lan = sim.app.world().resource::<LanList>();
+    assert_eq!(lan.tab, BrowserTab::History);
+    assert_eq!(lan.rows().len(), 1);
+    assert_eq!(lan.rows()[0].when, Some(v[0].when));
+    for p in [&files.favourites, &files.history].into_iter().flatten() {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
+#[test]
+fn a_locked_server_asks_for_its_password_in_a_modal() {
+    let mut sim = sim(PAGES_THEME);
+    open_join_with(&mut sim, vec![server(28201, "Locked", 4, true, GAME_FOLDER)]);
+    let first = lines_of(&sim).iter().position(|l| *l == Line::Server(0)).unwrap();
+    for _ in 0..first {
+        press(&mut sim, KeyCode::ArrowDown);
+    }
+    let buttons = |sim: &mut Sim| sim.app.world_mut().query::<&A>().iter(sim.app.world()).filter(|a| **a == A::PasswordJoin).count();
+    assert_eq!(buttons(&mut sim), 0);
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(2);
+    assert_eq!(pages(&sim).ask.as_ref().map(|a| a.name.as_str()), Some("Locked"));
+    assert_eq!(buttons(&mut sim), 1, "the modal is drawn");
+    assert!(asked(&sim).is_empty());
+    // Arrows don't move the page under it; Enter with nothing typed is refused.
+    press(&mut sim, KeyCode::ArrowUp);
+    assert_eq!(pages(&sim).focus, first);
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(2);
+    assert!(pages(&sim).ask.is_some());
+    assert_eq!(pages(&sim).notice.as_deref(), Some("Type the password"));
+    assert!(asked(&sim).is_empty());
+    // Esc closes it (and stays on Join).
+    // (`main_menu::typing` turns the Esc key into Back, which the modal takes.)
+    act(&mut sim, A::Back);
+    assert!(pages(&sim).ask.is_none());
+    assert_eq!(menu(&sim).page, MenuPage::Join);
+    assert_eq!(buttons(&mut sim), 0);
+    // Again: type it, Enter joins with it.
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(1);
+    submit(&mut sim, "mainmenu_type password Hunter2");
+    press(&mut sim, KeyCode::Enter);
+    sim.ticks(2);
+    assert!(pages(&sim).ask.is_none());
+    assert_eq!(asked(&sim), ["connect 127.0.0.1:28201"]);
+    assert_eq!(menu(&sim).screen, Screen::Joining);
+    assert_eq!(menu(&sim).password, "Hunter2");
+}
+
+#[test]
+fn ui_scene_stages_each_tab_and_the_modal() {
+    let mut sim = sim(PAGES_THEME);
+    signal_pages::stage(sim.app.world_mut(), MenuPage::Join, &["history".into()]).unwrap();
+    sim.ticks(3);
+    let lan = sim.app.world().resource::<LanList>();
+    assert_eq!(lan.tab, BrowserTab::History);
+    assert_eq!(lan.history.len(), 4);
+    assert!(lan.history.iter().all(|r| r.when.is_some()));
+    assert!(lan.history[3].status == Status::Up || lan.history[3].status == Status::Down);
+    act(&mut sim, A::Back);
+    signal_pages::stage(sim.app.world_mut(), MenuPage::Join, &["password".into()]).unwrap();
+    sim.ticks(3);
+    assert!(pages(&sim).ask.is_some(), "the modal over the first locked server");
+}
+
+#[test]
+fn typed_text_keeps_its_case_and_labels_stay_capitals() {
+    let mut sim = sim(PAGES_THEME);
+    act(&mut sim, A::Entry(1));
+    submit(&mut sim, "mainmenu_type address Home.Example:27015");
+    sim.ticks(3);
+    let texts: Vec<String> = sim.app.world_mut().query::<&Text>().iter(sim.app.world()).map(|t| t.0.clone()).collect();
+    assert!(texts.iter().any(|t| t == "Home.Example:27015"), "the typed text as typed: {texts:?}");
+    assert!(texts.iter().any(|t| t == "ADDRESS"), "a label in capitals");
+    assert!(!texts.iter().any(|t| t == "HOME.EXAMPLE:27015"));
 }

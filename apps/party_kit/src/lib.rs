@@ -574,6 +574,8 @@ pub mod menu_backdrops;
 #[cfg(feature = "present")]
 pub mod signal_menu;
 #[cfg(feature = "present")]
+pub mod server_list;
+#[cfg(feature = "present")]
 pub mod signal_pages;
 #[cfg(feature = "present")]
 pub mod client;
