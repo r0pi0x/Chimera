@@ -393,3 +393,48 @@ fn without_the_theme_nothing_of_it_shows() {
     tap(&mut sim.app, KeyCode::ArrowDown);
     assert_eq!(sim.app.world().resource::<EscMenu>().focus, 0);
 }
+
+/// The rows sit in the kit's scroll container; ↓ marks the focused row to
+/// be scrolled into view (`chimera_ui::ScrollIntoView`), the pointer
+/// moving the focus doesn't, and a page change starts at the top.
+#[test]
+fn the_keys_scroll_the_focused_row_into_view() {
+    let mut sim = party(true);
+    sim.app.init_resource::<chimera_ui::ScrollViews>();
+    open_settings(&mut sim.app);
+    tap(&mut sim.app, KeyCode::KeyE);
+    tap(&mut sim.app, KeyCode::KeyE);
+    let w = sim.app.world_mut();
+    let views: Vec<String> = w.query::<&chimera_ui::scroll::ScrollView>().iter(w).map(|v| v.key.clone()).collect();
+    assert_eq!(views, [settings::SCROLL_KEY], "Controls' rows in one scroll view");
+    for _ in 0..12 {
+        tap(&mut sim.app, KeyCode::ArrowDown);
+    }
+    let s = set(&mut sim.app);
+    assert!(s.reveal, "the keys moved the focus");
+    let w = sim.app.world_mut();
+    let marked: Vec<SettingsAction> =
+        w.query_filtered::<&SettingsAction, With<chimera_ui::ScrollIntoView>>().iter(w).copied().collect();
+    assert_eq!(marked, [SettingsAction::Row(s.focus)], "the focused row is scrolled to");
+    // The pointer on another row: focus moves, nothing scrolls.
+    let w = sim.app.world_mut();
+    let (other, to) = w
+        .query::<(Entity, &SettingsAction)>()
+        .iter(w)
+        .find_map(|(e, a)| match a {
+            SettingsAction::Row(r) if *r != s.focus => Some((e, *r)),
+            _ => None,
+        })
+        .expect("another row");
+    w.entity_mut(other).insert(bevy::ui::DeprecatedInteraction::Hovered);
+    sim.app.update();
+    sim.app.update();
+    assert_eq!(set(&mut sim.app).focus, to, "the pointer moved the focus");
+    assert!(!set(&mut sim.app).reveal);
+    let w = sim.app.world_mut();
+    assert_eq!(w.query_filtered::<(), With<chimera_ui::ScrollIntoView>>().iter(w).count(), 0, "and didn't scroll");
+    // A page change: the view back at the top.
+    sim.app.world_mut().resource_mut::<chimera_ui::ScrollViews>().state(settings::SCROLL_KEY).offset = 9.0;
+    tap(&mut sim.app, KeyCode::KeyQ);
+    assert_eq!(sim.app.world().resource::<chimera_ui::ScrollViews>().get(settings::SCROLL_KEY).unwrap().offset, 0.0);
+}

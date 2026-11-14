@@ -30,6 +30,10 @@
 //!   caps, key/value lines, modal plates), their one state vocabulary
 //!   (hover tick and tint, accent focus, white selected) and the 12°
 //!   wipe for moves inside a screen.
+//! - `scroll`: the scroll container (`Ui::scroll`: a view, its content
+//!   and a Signal scroll bar), eased wheel steps, the right-button pan
+//!   with a fling, `ScrollIntoView`; state by key in `ScrollViews`,
+//!   tuned by `[layout.scroll]`, cut down by `ReducedMotion`.
 //! - `parity`: `UiParityId`, a node's name in the look book, and its
 //!   measured box for the UI parity check (`tools/ui-parity/`).
 //!
@@ -45,6 +49,7 @@ pub mod icons;
 pub mod materials;
 pub mod motion;
 pub mod parity;
+pub mod scroll;
 pub mod sound;
 pub mod theme;
 pub mod style;
@@ -62,6 +67,7 @@ pub use materials::{
 };
 pub use motion::{Ease, Prop, Timeline, Track, UiClock};
 pub use parity::UiParityId;
+pub use scroll::{ReducedMotion, ScrollIntoView, ScrollParts, ScrollViews, scroll_into_view};
 pub use sound::{SoundTable, UiCue, UiMusic};
 pub use theme::{Theme, Tone};
 pub use style::{PlainText, UiSlant, UiStyle, UiText};
@@ -86,7 +92,7 @@ impl Plugin for ChimeraUiPlugin {
             .init_resource::<UiMusic>()
             .add_message::<UiCue>()
             .init_resource::<UiClock>()
-            .add_plugins((KitMaterialsPlugin, widgets::HoverTicks, controls::ControlsPlugin))
+            .add_plugins((KitMaterialsPlugin, widgets::HoverTicks, controls::ControlsPlugin, scroll::ScrollPlugin))
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare))
             .add_systems(
                 PostUpdate,

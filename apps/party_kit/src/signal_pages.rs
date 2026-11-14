@@ -16,6 +16,9 @@
 //!   and Game (host_settings.toml's next-match rows, `main_menu::
 //!   game_settings`); a pane at the right sums the match up (minigame,
 //!   map, bots, players, lobby, server, password). Enter starts.
+//!   Its rows scroll in the kit's container (`chimera_ui::scroll`: the
+//!   bar, the eased wheel, the right-button pan and fling); ↑↓ keep the
+//!   focused row in view (`SignalPages::reveal`).
 //! - **Join**: Direct (the address and the password, text fields), the
 //!   recent addresses, and the **server browser** (main-menu.md M2; its
 //!   rows and files are `server_list`'s) in three tabs: **LAN** (every
@@ -48,7 +51,9 @@
 //! history|password]` stage them for screenshots (`join` with made-up
 //! servers, none of them saved).
 //!
-//! Known shortcuts: no Internet list (M2's rest, M3); a Recent address
+//! Known shortcuts: the server browser keeps its own window of
+//! `VISIBLE_ROWS` rows (PageUp/PageDown move by a window, a row index its
+//! first) rather than the kit's scroll container; no Internet list (M2's rest, M3); a Recent address
 //! can't be made a favourite (only a listed server); no selection shown
 //! in a text field.
 
@@ -71,6 +76,9 @@ use crate::server_list::{self as sl, BrowserFiles, Visit};
 
 /// The layout table.
 pub const L: &str = "pages";
+
+/// Play's rows' view in `chimera_ui::ScrollViews`.
+pub const PLAY_SCROLL: &str = "pages.play";
 
 /// The Signal look draws Play and Join (a theme with `[layout.pages]`).
 pub fn themed(theme: Option<&Theme>) -> bool {
@@ -197,6 +205,9 @@ pub struct SignalPages {
     pub tab: usize,
     /// The focused line (an index into `lines`).
     pub focus: usize,
+    /// The keys moved the focus: Play's focused row is kept in view (the
+    /// kit's scroll container); the pointer moving it doesn't scroll.
+    pub reveal: bool,
     /// When the page or tab last changed (the wipe), on the UI clock.
     pub since: f64,
     /// A line in error (an empty address) and the bar's notice.
@@ -500,6 +511,7 @@ fn follow(
     mut lan: ResMut<LanList>,
     mut queries: Option<ResMut<ServerQueries>>,
     lan_settings: Option<Res<LanSettings>>,
+    mut views: Option<ResMut<chimera_ui::ScrollViews>>,
 ) {
     if !themed(theme.as_deref()) {
         return;
@@ -559,6 +571,11 @@ fn follow(
         p.error = None;
         p.notice = None;
         p.ask = None;
+        p.reveal = false;
+        // A page or tab shown again: from the top.
+        if let Some(v) = views.as_deref_mut() {
+            v.forget(PLAY_SCROLL);
+        }
         if up.is_none() {
             if opened && !lan.staged {
                 lan.tab = BrowserTab::Lan;
@@ -704,6 +721,7 @@ fn keys(
         let next = if up { p.focus.saturating_sub(by) } else { (p.focus + by).min(ls.len() - 1) };
         if next != p.focus {
             focus_line(&mut p, &mut menu, &data, &ls, next);
+            p.reveal = true;
             reveal(&mut lan, ls.get(next).copied());
             cues.write(UiCue::new("ui_hover"));
         }
@@ -806,6 +824,7 @@ fn line_clicks(
             }
         } else {
             focus_line(&mut p, &mut menu, &data, &ls, l.0);
+            p.reveal = false;
             reveal(&mut lan, Some(line));
             cues.write(UiCue::new("ui_select"));
         }
@@ -977,11 +996,16 @@ fn spawn(
     let row_h = lay(t, "row_h", 2.9);
     match page {
         MenuPage::Play => {
-            let list = ui.boxed(c, cols, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() });
-            for (i, l) in ls.iter().enumerate() {
-                play_line(c, ui, list, i, *l, menu, p, cx, row_h);
+            // The kit's scroll container: its bar, the wheel, a
+            // right-button pan; ↑↓ keep the focused row in view.
+            let sc = ui.scroll(c, cols, PLAY_SCROLL, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() }, UiStyle::column());
+            if p.ask.is_some() {
+                c.entity(sc.view).insert(chimera_ui::scroll::ScrollLocked);
             }
-            ui.wipe_cover(c, list, Tone::Ink, p.since, cx.now, lay(t, "wipe", 0.26));
+            for (i, l) in ls.iter().enumerate() {
+                play_line(c, ui, sc.content, i, *l, menu, p, cx, row_h);
+            }
+            ui.wipe_cover(c, sc.frame, Tone::Ink, p.since, cx.now, lay(t, "wipe", 0.26));
             summary(c, ui, cols, menu, cx);
         }
         _ => {
@@ -1133,6 +1157,9 @@ fn play_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu
             let v = menu.play.get(r).cloned().unwrap_or_default();
             let (e, vl) = ui.row(c, list, &row.label, None, row_h, State { focus, error: p.error == Some(i), ..State::NONE });
             c.entity(e).insert(PageLine(i));
+            if focus && p.reveal {
+                chimera_ui::scroll_into_view(c, e);
+            }
             match &row.kind {
                 PlayKind::Map => {
                     let shown = if v.is_empty() { format!("Rotation • {} maps", cx.pool.len()) } else { map_label(&v) };
@@ -1157,6 +1184,9 @@ fn play_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu
             let v = menu.values.get(&s.cvar).cloned().unwrap_or_default();
             let (e, vl) = ui.row(c, list, &s.label, Some("next match"), row_h, State::focused(focus));
             c.entity(e).insert(PageLine(i));
+            if focus && p.reveal {
+                chimera_ui::scroll_into_view(c, e);
+            }
             game_value(c, ui, vl, &s, &v, vst, g);
         }
         _ => {}

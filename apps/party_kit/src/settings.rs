@@ -42,6 +42,12 @@
 //!   (`chimera_fullscreen`) applied asks to be kept and goes back by
 //!   itself after `layout.settings.keep_secs` (15 s), the config written
 //!   again. Host settings stay immediate (the host's own cvars or rcon).
+//! - **Scrolling**: the rows sit in the kit's scroll container
+//!   (`chimera_ui::scroll`, key `SCROLL_KEY`): its bar, the eased wheel,
+//!   the right-button pan with its fling; ↑↓ keep the focused row in view
+//!   (`Settings::reveal`, the pointer moving the focus doesn't scroll); a
+//!   page change starts at the top; locked while a bind listens or a
+//!   list or a modal is up.
 //! - **Motion**: a page change wipes the rows in on the 12° slant
 //!   (`controls::Ui::wipe_cover`); screens change through the logo pass
 //!   as before.
@@ -61,13 +67,14 @@ use std::collections::BTreeMap;
 use bevy::{
     input::{ButtonInput, mouse::AccumulatedMouseScroll},
     prelude::*,
-    ui::{DeprecatedInteraction as Interaction, RelativeCursorPosition, ScrollPosition},
+    ui::{DeprecatedInteraction as Interaction, RelativeCursorPosition},
 };
 use chimera_client::client::{binds, ui_sound::UiCue};
 use chimera_core::console::{Console, ConsoleAppExt};
 use chimera_ui::{
-    IconImages, KitFonts, Role, Theme, Tone, UiClock, UiStyle, UiUnits,
+    IconImages, KitFonts, Role, ScrollViews, Theme, Tone, UiClock, UiStyle, UiUnits,
     controls::{self, Kind, State, Ui},
+    scroll::ScrollLocked,
 };
 
 use crate::host::{self, Pick, Setting};
@@ -141,8 +148,10 @@ pub struct Settings {
     pub esc_taken: bool,
     /// The shown settings' values as the cvars hold them.
     pub values: BTreeMap<String, String>,
-    /// The rows' scroll, cq.
-    pub scroll: f32,
+    /// The keys moved the focus: its row is kept in view (the kit's
+    /// scroll container, `chimera_ui::scroll`); the pointer moving it
+    /// doesn't scroll.
+    pub reveal: bool,
     /// A page asked for by name (`ui_scene settings <tab>`) at opening.
     pub want_tab: Option<String>,
     /// A staged scene's page, opened once the menus are up.
@@ -163,15 +172,6 @@ pub enum Row {
 impl Row {
     pub fn focusable(&self) -> bool {
         !matches!(self, Row::Section(_))
-    }
-
-    /// Height in cq.
-    fn height(&self, t: &Theme) -> f32 {
-        match self {
-            Row::Section(_) => 2.4,
-            Row::Bind { .. } => t.layout(L, "bind_h"),
-            _ => t.layout(L, "row_h"),
-        }
     }
 }
 
@@ -309,9 +309,12 @@ impl Settings {
     }
 }
 
-/// The rows' scroll box.
+/// The rows' scroll view.
 #[derive(Component)]
-struct SettingsList;
+pub struct SettingsList;
+
+/// The rows' view's key in `chimera_ui::ScrollViews`.
+pub const SCROLL_KEY: &str = "settings";
 
 /// The screen's root.
 #[derive(Component)]
@@ -340,7 +343,7 @@ impl Plugin for SettingsPlugin {
             )
             .add_systems(
                 Update,
-                (follow, capture, keys, clicks, hover_focus, act, refresh_values, draw, wheel).chain().in_set(SettingsSystems),
+                (follow, capture, keys, clicks, hover_focus, act, refresh_values, draw).chain().in_set(SettingsSystems),
             )
             .add_systems(Update, crate::ui_cues::hover::<SettingsAction>.in_set(SettingsSystems));
         use chimera_client::client::ui_scene::UiSceneHooks;
@@ -534,7 +537,6 @@ fn capture(
 fn keys(
     keys: Res<ButtonInput<KeyCode>>,
     tabs: Option<Res<crate::esc_menu::OptionTabs>>,
-    theme: Option<Res<Theme>>,
     console: Res<Console>,
     mut s: ResMut<Settings>,
     mut out: MessageWriter<SettingsAction>,
@@ -619,10 +621,7 @@ fn keys(
             if next != s.focus {
                 s.focus = next;
                 cues.write(UiCue::new("ui_hover"));
-                if let Some(t) = theme.as_deref() {
-                    let visible = visible_h(t);
-                    s.scroll = scroll_to(t, &rows, next, s.scroll, visible);
-                }
+                s.reveal = true;
             }
         }
     }
@@ -658,27 +657,6 @@ fn keys(
         let d: i64 = if p(KeyCode::KeyQ) { -1 } else { 1 };
         out.write(SettingsAction::Tab((s.tab as i64 + d).rem_euclid(n as i64) as usize));
     }
-}
-
-/// The rows' visible height, cq.
-fn visible_h(t: &Theme) -> f32 {
-    56.25 - t.layout(L, "win_top") - t.layout(L, "win_bottom") - 4.6 - 4.4
-}
-
-/// The scroll that keeps row `i` in view.
-fn scroll_to(t: &Theme, rows: &[Row], i: usize, scroll: f32, visible: f32) -> f32 {
-    let top: f32 = rows[..i].iter().map(|r| r.height(t)).sum();
-    let bottom = top + rows.get(i).map_or(0.0, |r| r.height(t));
-    let total: f32 = rows.iter().map(|r| r.height(t)).sum();
-    let mut s = scroll;
-    if bottom > s + visible {
-        s = bottom - visible + 0.6;
-    }
-    if top < s {
-        // A section header above the first row comes into view too.
-        s = if i <= 1 { 0.0 } else { top - 0.6 };
-    }
-    s.clamp(0.0, (total - visible + 0.6).max(0.0))
 }
 
 /// Clicks as actions; a slider's press as its place.
@@ -731,6 +709,7 @@ fn hover_focus(rows: Query<(&Interaction, &SettingsAction), Changed<Interaction>
             && s.focus != *r
         {
             s.focus = *r;
+            s.reveal = false;
         }
     }
 }
@@ -890,8 +869,11 @@ fn act_one(world: &mut World, a: SettingsAction) {
                 s.focus = rows.iter().position(Row::focusable).unwrap_or(0);
                 s.capture = None;
                 s.open_list = None;
-                s.scroll = 0.0;
+                s.reveal = false;
                 s.page_since = since;
+                if let Some(mut v) = world.get_resource_mut::<ScrollViews>() {
+                    v.reset(SCROLL_KEY);
+                }
                 cue(world, UiCue::new("ui_select"));
             }
         }
@@ -1082,34 +1064,6 @@ fn refresh_values(world: &mut World) {
     }
 }
 
-/// The mouse wheel over the rows scrolls them (not while a bind listens).
-fn wheel(
-    scroll: Res<AccumulatedMouseScroll>,
-    theme: Option<Res<Theme>>,
-    units: Option<Res<UiUnits>>,
-    tabs: Option<Res<crate::esc_menu::OptionTabs>>,
-    mut s: ResMut<Settings>,
-    mut list: Query<(&mut ScrollPosition, &RelativeCursorPosition), With<SettingsList>>,
-) {
-    let (Some(ctx), Some(t), Some(u)) = (s.ctx, theme, units) else { return };
-    if s.capture.is_some() || scroll.delta.y == 0.0 {
-        return;
-    }
-    let Ok((mut pos, over)) = list.single_mut() else { return };
-    if !over.cursor_over {
-        return;
-    }
-    let tabs = tabs.map(|t| t.tabs.clone()).unwrap_or_default();
-    let total: f32 = rows(ctx, &tabs, s.tab, s.bind_game).iter().map(|r| r.height(&t)).sum();
-    let max = (total - visible_h(&t) + 0.6).max(0.0);
-    let step = if scroll.unit == bevy::input::mouse::MouseScrollUnit::Line { 2.9 * scroll.delta.y } else { scroll.delta.y / u.cq(1.0) };
-    let next = (s.scroll - step).clamp(0.0, max);
-    if next != s.scroll {
-        s.bypass_change_detection().scroll = next;
-        pos.0.y = u.cq(next);
-    }
-}
-
 /// What the screen last drew: drawn again when it differs.
 #[derive(Default, PartialEq)]
 struct DrawKey {
@@ -1130,6 +1084,10 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
             for r in roots {
                 world.entity_mut(r).despawn();
             }
+            // Opened again: from the top.
+            if let Some(mut v) = world.get_resource_mut::<ScrollViews>() {
+                v.forget(SCROLL_KEY);
+            }
         }
         return;
     };
@@ -1141,7 +1099,7 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
         None
     };
     let key = DrawKey {
-        s: Settings { scroll: 0.0, esc_taken: false, ..s.clone() },
+        s: Settings { esc_taken: false, ..s.clone() },
         keep_left: s.keep.as_ref().map_or(0, |k| (k.until - t).max(0.0).ceil() as u64),
         binds: {
             let c = world.resource::<Console>();
@@ -1347,23 +1305,24 @@ fn spawn(
         c.entity(e).insert(SettingsAction::Tab(i));
     }
     let cols = ui.boxed(c, win, UiStyle { gap: Some(2.4), align: Some(AlignItems::Stretch), ..UiStyle::row() }.abs([Some(2.0), Some(4.6), Some(2.0), Some(4.4)]));
-    let list_box = ui.boxed(c, cols, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() });
-    let list = c
-        .spawn((
-            UiStyle { w_pct: Some(100.0), h_pct: Some(100.0), pad: Some([0.0, 1.0, 0.0, 0.0].into()), ..UiStyle::column() },
-            Node::default(),
-            SettingsList,
-            RelativeCursorPosition::default(),
-            ScrollPosition(Vec2::new(0.0, ui.units.cq(s.scroll))),
-            ChildOf(list_box),
-        ))
-        .id();
-    c.entity(list).insert(ScrollOverflow);
+    // The rows scroll in the kit's container (its bar, the wheel, a
+    // right-button pan); the keys keep the focused row in view.
+    let sc = ui.scroll(c, cols, SCROLL_KEY, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() }, UiStyle::column());
+    c.entity(sc.view).insert(SettingsList);
+    if s.capture.is_some() || s.open_list.is_some() || s.leave.is_some() || s.keep.is_some() {
+        // A bind listening takes the right button; a list or a modal is over it.
+        c.entity(sc.view).insert(ScrollLocked);
+    }
     let rows = rows(d.ctx, d.tabs, s.tab, s.bind_game);
     for (i, r) in rows.iter().enumerate() {
-        draw_row(c, ui, list, i, r, d);
+        let row = draw_row(c, ui, sc.content, i, r, d);
+        if s.reveal && i == s.focus
+            && let Some(row) = row
+        {
+            chimera_ui::scroll_into_view(c, row);
+        }
     }
-    ui.wipe_cover(c, list_box, Tone::Ink, s.page_since, d.now, lay("wipe"));
+    ui.wipe_cover(c, sc.frame, Tone::Ink, s.page_since, d.now, lay("wipe"));
 
     // The help pane.
     let help = ui.boxed(c, cols, UiStyle { w: Some(lay("help_w")), gap: Some(1.0), shrink: Some(0.0), ..UiStyle::column() });
@@ -1443,17 +1402,15 @@ fn spawn(
     root
 }
 
-/// The list scrolls (vertically) and clips.
-#[derive(Component)]
-struct ScrollOverflow;
-
-fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw) {
+/// Draws row `i`; its row node (none for a section).
+fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw) -> Option<Entity> {
     let t = ui.theme;
     let s = d.s;
     let focus = s.focus == i && s.open_list.is_none_or(|(o, _)| o == i);
     match r {
         Row::Section(title) => {
             ui.section(c, list, title, None);
+            None
         }
         Row::Games => {
             let (row, vl) = ui.row(c, list, "Binds for", None, t.layout(L, "row_h"), State::focused(focus));
@@ -1462,6 +1419,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
             for (k, e) in ui.segmented(c, vl, &names, Some(s.bind_game), State::focused(focus)).into_iter().enumerate() {
                 c.entity(e).insert(SettingsAction::Pick { row: i, option: k });
             }
+            Some(row)
         }
         Row::Bind { label, .. } => {
             let listening = s.capture == Some(i);
@@ -1475,6 +1433,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                 let clr = ui.button(c, vl, Kind::Ghost, "Clear", None, 1.6, State::NONE);
                 c.entity(clr).insert(SettingsAction::Clear(i));
             }
+            Some(row)
         }
         Row::Setting { s: set, note } => {
             let v = s.values.get(&set.cvar).cloned().unwrap_or_default();
@@ -1517,6 +1476,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                     c.entity(plus).insert(SettingsAction::Step { row: i, dir: 1 });
                 }
             }
+            Some(row)
         }
     }
 }
@@ -1581,23 +1541,5 @@ fn leave_modal(c: &mut Commands, ui: &Ui, root: Entity, at: usize, changes: usiz
         let key = if k == at { Some("Enter") } else if action == SettingsAction::LeaveStay { Some("Esc") } else { None };
         let b = ui.button(c, acts, kind, label, key, 2.4, State::focused(k == at));
         c.entity(b).insert(action);
-    }
-}
-
-/// The list's overflow: scroll on y.
-fn scroll_overflow(mut q: Query<&mut Node, (With<ScrollOverflow>, Changed<Node>)>) {
-    for mut n in &mut q {
-        if n.overflow != Overflow::scroll_y() {
-            n.overflow = Overflow::scroll_y();
-        }
-    }
-}
-
-/// The overflow after the kit's styles (which write the `Node`).
-pub struct SettingsOverflowPlugin;
-
-impl Plugin for SettingsOverflowPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(PostUpdate, scroll_overflow.after(chimera_ui::UiKitSystems).before(bevy::ui::UiSystems::Layout));
     }
 }

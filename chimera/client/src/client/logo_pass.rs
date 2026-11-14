@@ -9,7 +9,8 @@
 //! `swap` (0.6 s) while the slab covers the whole window (`covers`: at
 //! 16:9, 21:9 and 4:3 alike), and the trailing edge reveals the next.
 //! With reduced motion (`ui_reduce_motion 1`) it is a 150 ms fade through
-//! ink, the swap at its middle.
+//! ink, the swap at its middle; the cvar also reaches the kit
+//! (`chimera_ui::ReducedMotion`: no eased scroll, no fling).
 //!
 //! - `Passes::ask(key)` (a system parameter): a move through the pass.
 //!   At the swap the pass triggers `PassCovered` with the keys asked, and
@@ -278,6 +279,15 @@ impl Plugin for LogoPassPlugin {
         // The swap before the frame's screens follow their state, so a
         // screen that comes up at it shows that frame.
         app.add_systems(PreUpdate, step).add_systems(Update, draw);
+        // The kit's own switch (its scroll container's ease and fling).
+        app.init_resource::<chimera_ui::ReducedMotion>().add_systems(First, share_reduce_motion);
+    }
+}
+
+/// `ui_reduce_motion` to the kit (`chimera_ui::ReducedMotion`).
+fn share_reduce_motion(r: Res<ReduceMotion>, mut kit: ResMut<chimera_ui::ReducedMotion>) {
+    if r.is_changed() {
+        kit.set_if_neq(chimera_ui::ReducedMotion(r.on != 0));
     }
 }
 

@@ -102,6 +102,15 @@ text, sprite) and `chimera_core` (console cvars) only, so
 - `widgets`: small builders on Bevy UI: `tag(kind)` (YOU, BOT, HOST,
   RUNG; round V restyles them), `kbd`, `plus_mark`, `rolling_number`,
   `tick_bar`, `slab`, `chip`.
+- `scroll` (M7): the scroll container, `Ui::scroll(key)`: a view, its
+  content and a Signal bar (hairline track, a thumb the visible share
+  long with 12° ends, hover `fg`, drag `acc`; drag it, click the track
+  to page), shown only on overflow; the wheel eased to its target; the
+  right button held pans 1:1 and flings on release (speed of the last
+  0.1 s, exponential friction, an elastic stop at the edges, stopped by
+  the next press); `ScrollIntoView` keeps a row in view; state by key in
+  `ScrollViews` (screens rebuild); `[layout.scroll]` tunes it,
+  `ReducedMotion` (`ui_reduce_motion`) cuts the ease and the fling.
 
 Rows in `workspace_crates` (`checks/tests/it/architecture.rs`): an
 engine crate; `chimera_client` may use it; games may not use it outside
@@ -957,7 +966,10 @@ pending asks Apply / Discard / Stay in a modal; anything else closing
 the page discards; Host settings stay immediate); an applied
 display-mode change reverts after 15 s unless kept (the config written
 again); a page change wipes the rows in on the slant;
-`ui_scene settings <tab>` (`settings_set <cvar> <value>` and
+the rows (Settings' every page, Play's) in the kit's scroll container
+(`chimera_ui::scroll`: bar, eased wheel, right-button pan and fling, ↑↓
+keeping the focused row in view; Join's server list keeps its 8-row
+window); `ui_scene settings <tab>` (`settings_set <cvar> <value>` and
 `settings_press <button>` stage changes and the prompts); tests
 `party_kit` `settings::`. Polish
 (2026-11-14): the games' own HUDs (HL2:DM's root, Combat Arms' roots

@@ -200,6 +200,18 @@
   --l-pass-mark-w:13cqw;
   --l-pass-mark-x:81.5cqw;
   --l-pass-travel:287cqw;
+  --l-scroll-bar-w:.5cqw;
+  --l-scroll-ease:.07cqw;
+  --l-scroll-friction:3.2cqw;
+  --l-scroll-gap:.6cqw;
+  --l-scroll-max-velocity:220cqw;
+  --l-scroll-min-velocity:1cqw;
+  --l-scroll-overscroll:3cqw;
+  --l-scroll-reveal-margin:.6cqw;
+  --l-scroll-spring:16cqw;
+  --l-scroll-thumb-min:2.4cqw;
+  --l-scroll-wheel-step:3.2cqw;
+  --l-scroll-window:.1cqw;
   --l-settings-bar-h:3.4cqw;
   --l-settings-bind-h:2.4cqw;
   --l-settings-help-w:27cqw;
