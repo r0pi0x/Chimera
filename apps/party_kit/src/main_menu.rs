@@ -51,18 +51,27 @@
 //!   (`chimera_net::net::reconnect`): "Connection lost - reconnecting...
 //!   (attempt N)", the server's reason, Cancel (Escape too); joining it
 //!   again shows the loading panel as any join (`follow_reconnect`).
-//! - **Background**: a live map (`[background]`: the first that loads,
-//!   the app's own map load at start; again after leaving a game) with
+//! - **Background**: the menu's own backdrop (`MenuBackdrop`, drawn by
+//!   `menu_backdrop`: an original procedural scene, no game's files) from
+//!   the first frame, then, when one is at hand, a live map behind it with
 //!   the camera on a slow orbit around the middle of its spawn points
-//!   (`chimera_freecam` 2's detached camera, `fly`); the HUD is hidden
-//!   while the menu shows by drawing the UI on a camera of its own
-//!   (`MenuUiCamera`; the shell's UI camera, which the HUD draws on, off;
-//!   the console and the pre-match lobby's screen move to it, so a player
-//!   still downloading sees the lobby over the loading panel).
-//!   Never the greybox (the user's call): the data refuses it, and while
-//!   the world under the menu is the greybox (leaving a game, until the
-//!   background map is in; no background map loading at all) a plain black
-//!   backdrop covers it (`MenuBackdrop`).
+//!   (`chimera_freecam` 2's detached camera, `fly`). The run starts with
+//!   no map (`client::start_at_menu`); the map is picked on a thread
+//!   (`pick_background`: the app's minigame's pool, then `[background]`'s
+//!   maps, the next after the last start's, `LastBackground`, that is at
+//!   hand: `BackgroundMaps`, the app's `client::background_at_hand`: its
+//!   game installed, or its sets whole in the asset cache) and loaded as
+//!   a single player's map in the background with the asset store's
+//!   downloads of its game held (`BackgroundMaps::hold`); the backdrop crossfades to it
+//!   once it is in (`BACKDROP_FADE_SECS`) and is back at once while no
+//!   map scene is in view (the greybox, a map loading, leaving a game:
+//!   the background is picked again). Nothing at hand (a fresh install,
+//!   no token, offline): the backdrop stays. Never the greybox (the
+//!   user's call): the data refuses it. The HUD is hidden while the menu
+//!   shows by drawing the UI on a camera of its own (`MenuUiCamera`; the
+//!   shell's UI camera, which the HUD draws on, off; the console and the
+//!   pre-match lobby's screen move to it, so a player still downloading
+//!   sees the lobby over the loading panel).
 //!
 //! The state is `PartyMenu` (a resource the menu owns, set at known
 //! moments: the front end's events `EnteredGame`, `LeftGame`, `Joining`,
@@ -82,7 +91,11 @@
 //! leaving a game keeps the last minigame's rules (no bots on it); the
 //! console shows over the menu but egui's debug windows don't; the
 //! camera's orbit can see past the map's edges (unlit black) on some
-//! maps.
+//! maps (no per-map camera spots in the data yet); holding the map's
+//! game's downloads while the background loads is process-wide (a read of
+//! that game's missing file elsewhere meanwhile misses too, and a file the
+//! load reads outside the map's and `base` sets misses); a background map
+//! that fails to load leaves the backdrop, without trying the next.
 
 use std::collections::BTreeMap;
 
@@ -330,21 +343,117 @@ impl MenuData {
 /// Whether the run starts at the main menu: nothing on the command line
 /// plays (`Args::starts_in_game`: a map, a placed player), joins
 /// (`+connect`), names a minigame (`+minigame`) or captures and exits (a
-/// tool run: `--screenshot`, `--views`, `--frames`, `--bench`).
+/// tool run: `--screenshot`, `--views`, `--frames`, `--bench`), unless
+/// it asks for the menu (`+mainmenu`: a tool run photographing it,
+/// `--offscreen ... +mainmenu`).
 pub fn starts_at_menu(args: &chimera_client::client::Args) -> bool {
-    !(args.starts_in_game()
+    let asked = args.console.iter().any(|c| c.split_whitespace().next().is_some_and(|w| w.eq_ignore_ascii_case("mainmenu")));
+    asked
+        || !(args.starts_in_game()
         || args.tool_run()
         || crate::minigame_of(&args.console).is_some()
         || crate::joins_server(&args.console))
 }
 
-/// The background map: the first of `[background]`'s maps that `load`
-/// takes (its id and data), else None.
-pub fn background_map<T>(data: &MenuData, load: impl Fn(&str) -> Result<T, String>) -> Option<(String, T)> {
-    data.background
-        .maps
-        .iter()
-        .find_map(|m| load(m).ok().map(|d| (m.clone(), d)))
+/// The maps that may be the background, in order: the app's minigame's
+/// pool (`pool`), then `[background]`'s; no greybox, no repeats.
+pub fn background_candidates(data: &MenuData, pool: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for m in pool.iter().chain(&data.background.maps) {
+        let m = chimera_net::net::normalize_map(m);
+        if m != chimera_net::net::GREYBOX && m.contains(':') && !out.contains(&m) {
+            out.push(m);
+        }
+    }
+    out
+}
+
+/// The background map: the first of `candidates` after `last` (the one
+/// shown at the last start; from the first when it isn't one), going
+/// round, that is at hand (`at_hand`: loads without a download). Asks
+/// `at_hand` only until one is.
+pub fn pick_background(candidates: &[String], last: Option<&str>, at_hand: impl Fn(&str) -> bool) -> Option<String> {
+    let start = last.and_then(|l| candidates.iter().position(|c| c == l)).map_or(0, |i| i + 1);
+    (0..candidates.len())
+        .map(|i| &candidates[(start + i) % candidates.len()])
+        .find(|m| at_hand(m))
+        .cloned()
+}
+
+/// Which maps can be the background without a download, and what keeps a
+/// background load from downloading while it lasts. The app's:
+/// `client::background_at_hand` and the asset store's fetches of the map's
+/// game held (`chimera_assets::cached::hold_fetches`); by default nothing is at hand
+/// (the tests set their own).
+#[derive(Resource, Clone)]
+pub struct BackgroundMaps {
+    pub at_hand: std::sync::Arc<dyn Fn(&str) -> bool + Send + Sync>,
+    /// Given the map's id.
+    pub hold: fn(&str) -> Box<dyn std::any::Any + Send + Sync>,
+}
+
+impl Default for BackgroundMaps {
+    fn default() -> Self {
+        Self { at_hand: std::sync::Arc::new(|_| false), hold: |_| Box::new(()) }
+    }
+}
+
+impl BackgroundMaps {
+    /// The app's: `at_hand`, with the asset store's fetches of the map's
+    /// game held while a background map loads.
+    pub fn app(at_hand: fn(&str) -> bool) -> Self {
+        Self {
+            at_hand: std::sync::Arc::new(at_hand),
+            hold: |map| {
+                let game = map.split_once(':').map(|(g, _)| g);
+                Box::new(chimera_core::mount::assets::cached::hold_fetches(game))
+            },
+        }
+    }
+}
+
+/// The background map last shown (`menu_background.txt` in the config
+/// folder; the app's, not the tests'): the next start shows the next.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct LastBackground(pub Option<std::path::PathBuf>);
+
+impl LastBackground {
+    pub fn in_config() -> Self {
+        Self(chimera_core::console::cfg_dir().map(|d| d.join("menu_background.txt")))
+    }
+
+    pub fn read(&self) -> Option<String> {
+        let text = std::fs::read_to_string(self.0.as_ref()?).ok()?;
+        Some(text.trim().to_string()).filter(|t| !t.is_empty())
+    }
+
+    pub fn write(&self, map: &str) {
+        if let Some(p) = &self.0 {
+            let _ = std::fs::create_dir_all(p.parent().unwrap_or(p));
+            let _ = std::fs::write(p, format!("{map}\n"));
+        }
+    }
+}
+
+/// The background as it stands: the pick being made (on a thread: finding
+/// what is at hand reads the install and the store), the hold on
+/// downloads while the picked map loads, and whether a map scene is in
+/// view (loaded, nothing loading).
+#[derive(Resource, Default)]
+pub struct BackgroundState {
+    picking: Option<std::sync::Mutex<std::sync::mpsc::Receiver<Option<String>>>>,
+    hold: Option<Box<dyn std::any::Any + Send + Sync>>,
+    /// A map scene is behind the menu: the backdrop fades out.
+    pub scene: bool,
+    /// The map picked last (None: none was at hand).
+    pub picked: Option<String>,
+}
+
+impl BackgroundState {
+    /// A background map's load holds downloads now.
+    pub fn holding(&self) -> bool {
+        self.hold.is_some()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -619,9 +728,22 @@ impl Plugin for MainMenuPlugin {
             },
             play: vec![String::new(); data.play.len()],
             recent: recent.read(),
+            // At start no map is in: the background's is picked and loads
+            // behind the backdrop (`follow_loads`).
+            reload_background: self.at_start,
             ..default()
         };
+        let last = if self.keep_recent {
+            LastBackground::in_config()
+        } else {
+            LastBackground::default()
+        };
+        if !app.world().contains_resource::<BackgroundMaps>() {
+            app.init_resource::<BackgroundMaps>();
+        }
         app.insert_resource(data)
+            .insert_resource(last)
+            .init_resource::<BackgroundState>()
             .insert_resource(menu)
             .insert_resource(recent)
             .insert_resource(MenuMinigame(self.minigame.clone()))
@@ -1308,21 +1430,73 @@ fn follow_loads(world: &mut World) {
         m.loading = Some(map);
         return;
     }
-    if menu.reload_background && !loading && menu.screen == Screen::MainMenu {
-        let data = world.resource::<MenuData>().background.maps.clone();
-        let here = chimera_net::net::current_map(world);
-        let mut m = world.resource_mut::<PartyMenu>();
-        m.reload_background = false;
-        // The first of the background maps (already loaded: stay).
-        let Some(map) = data.first().cloned() else { return };
-        if chimera_net::net::normalize_map(&map) == here {
-            return;
+    let here = chimera_net::net::current_map(world);
+    let background_load = menu.background_load;
+    let pick_due = menu.reload_background && !loading && menu.screen == Screen::MainMenu;
+    {
+        // A map scene is in view once a map is in and nothing loads.
+        let scene = !loading && !background_load && here != chimera_net::net::GREYBOX && !here.is_empty();
+        let mut state = world.resource_mut::<BackgroundState>();
+        if state.scene != scene {
+            state.scene = scene;
         }
-        m.background_load = true;
-        submit(world, "MaxPlayer 0");
-        submit(world, "maxplayers 1");
-        submit(world, format!("map {map}"));
+        // The hold on downloads lasts while the background loads.
+        if !background_load && state.hold.is_some() {
+            state.hold = None;
+        }
     }
+    if pick_due {
+        pick_background_map(world, &here);
+    }
+}
+
+/// The background: picked on a thread (the pool's and the data's maps,
+/// the next after the last start's that is at hand), then loaded as a
+/// single player's map in the background with downloads held; none at
+/// hand, the backdrop stays. Already loaded: stays.
+fn pick_background_map(world: &mut World, here: &str) {
+    if world.resource::<BackgroundState>().picking.is_none() {
+        let candidates = background_candidates(world.resource::<MenuData>(), &map_pool(world));
+        let last = world.resource::<LastBackground>().read();
+        let at_hand = world.resource::<BackgroundMaps>().at_hand.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::Builder::new()
+            .name("menu background".into())
+            .spawn(move || {
+                let _ = tx.send(pick_background(&candidates, last.as_deref(), |m| at_hand(m)));
+            })
+            .expect("a thread");
+        world.resource_mut::<BackgroundState>().picking = Some(std::sync::Mutex::new(rx));
+        return;
+    }
+    let mut state = world.resource_mut::<BackgroundState>();
+    let got = match state.picking.as_ref() {
+        Some(p) => p.lock().unwrap_or_else(|e| e.into_inner()).try_recv(),
+        None => return,
+    };
+    let map = match got {
+        Ok(map) => map,
+        Err(std::sync::mpsc::TryRecvError::Empty) => return,
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => None,
+    };
+    state.picking = None;
+    state.picked = map.clone();
+    world.resource_mut::<PartyMenu>().reload_background = false;
+    let Some(map) = map else {
+        info!("menu background: no map at hand without a download; the menu's own backdrop");
+        return;
+    };
+    if chimera_net::net::normalize_map(&map) == here {
+        return;
+    }
+    info!("menu background: {map}");
+    world.resource::<LastBackground>().write(&map);
+    let hold = (world.resource::<BackgroundMaps>().hold)(&map);
+    world.resource_mut::<BackgroundState>().hold = Some(hold);
+    world.resource_mut::<PartyMenu>().background_load = true;
+    submit(world, "MaxPlayer 0");
+    submit(world, "maxplayers 1");
+    submit(world, format!("map {map}"));
 }
 
 /// The reconnect box follows the client's reconnect (`net::reconnect`):
@@ -1542,37 +1716,63 @@ struct Drawn {
 }
 
 #[allow(clippy::too_many_arguments)]
-/// The plain black behind the menu while the world under it is the greybox.
-#[derive(Component)]
-pub struct MenuBackdrop;
+/// The menu's own backdrop: covers the world while no map scene is behind
+/// the menu (none at hand, the greybox, a map loading), and fades out
+/// over `BACKDROP_FADE_SECS` once one is in (`BackgroundState::scene`);
+/// back at once when it goes. Drawn by `menu_backdrop` (an original
+/// procedural scene) when there is a renderer, else a flat colour.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct MenuBackdrop {
+    /// 1 covering, 0 gone.
+    pub opacity: f32,
+}
+
+/// How long the backdrop takes to give way to a map scene (s).
+pub const BACKDROP_FADE_SECS: f32 = 1.5;
+
+/// The backdrop's colour without its renderer (the gradient's middle).
+pub const BACKDROP_FLAT: Color = Color::srgb(0.07, 0.078, 0.094);
 
 fn spawn_backdrop(mut commands: Commands) {
     commands.spawn((
-        MenuBackdrop,
+        MenuBackdrop { opacity: 1.0 },
         Node {
             position_type: PositionType::Absolute,
             width: percent(100.0),
             height: percent(100.0),
             ..default()
         },
-        BackgroundColor(Color::BLACK),
+        BackgroundColor(BACKDROP_FLAT),
         Visibility::Hidden,
         GlobalZIndex(MENU_Z - 1),
     ));
 }
 
-/// The backdrop up while the menu shows over the greybox, on the menu's
-/// camera.
+/// The backdrop over the world while the menu shows and no map scene is
+/// in view; fading out once one is; on the menu's camera.
+#[allow(clippy::type_complexity)]
 fn backdrop(
     menu: Res<PartyMenu>,
-    map: Option<Res<chimera_world::map::LoadedMapName>>,
+    state: Res<BackgroundState>,
+    time: Res<Time<Real>>,
     camera: Query<Entity, With<MenuUiCamera>>,
-    mut backdrops: Query<(Entity, &mut Visibility, Option<&UiTargetCamera>), With<MenuBackdrop>>,
+    mut backdrops: Query<(Entity, &mut MenuBackdrop, &mut Visibility, Option<&mut BackgroundColor>, Option<&UiTargetCamera>)>,
     mut commands: Commands,
 ) {
-    let greybox = chimera_net::net::normalize_map(map.as_ref().map_or("", |m| m.0.as_str())) == "greybox";
-    for (e, mut v, on) in &mut backdrops {
-        v.set_if_neq(if menu.shown() && greybox { Visibility::Inherited } else { Visibility::Hidden });
+    let target = if menu.shown() && !state.scene { 1.0 } else { 0.0 };
+    for (e, mut b, mut v, color, on) in &mut backdrops {
+        let opacity = if !menu.shown() || target >= b.opacity {
+            target
+        } else {
+            (b.opacity - time.delta_secs() / BACKDROP_FADE_SECS).max(target)
+        };
+        if b.opacity != opacity {
+            b.opacity = opacity;
+        }
+        if let Some(mut c) = color {
+            c.set_if_neq(BackgroundColor(BACKDROP_FLAT.with_alpha(opacity)));
+        }
+        v.set_if_neq(if opacity > 0.0 { Visibility::Inherited } else { Visibility::Hidden });
         if let Some(cam) = camera.iter().next()
             && on.is_none_or(|t| t.0 != cam)
         {

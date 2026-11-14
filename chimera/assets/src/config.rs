@@ -138,7 +138,8 @@ impl AssetSettings {
     /// The build of `game` to mount: the pinned one (`[assets] builds`,
     /// else `assets.lock`), else the store's newest, else the service's
     /// newest; a manifest the store lacks is fetched from the service
-    /// (when there is one). None when neither has it.
+    /// (when there is one; not while the game's fetches are held,
+    /// `cached::hold_fetches`). None when neither has it.
     pub fn build(&self, game: &str) -> Option<String> {
         let store = self.store.as_ref()?;
         let locked = self.lock.as_ref().and_then(|l| l.games.get(game));
@@ -180,6 +181,9 @@ impl AssetSettings {
     /// `f` on the service, not asked again in this process once it failed
     /// for `what` (a game, or a game's build).
     fn with_remote(&self, what: &str, f: impl FnOnce(&Remote) -> Result<String, String>) -> Option<String> {
+        if crate::cached::fetches_held(what.split_whitespace().next().unwrap_or_default()) {
+            return None;
+        }
         let remote = self.remote()?;
         let key = (remote.url().to_string(), what.to_string());
         if FAILED.lock().unwrap_or_else(|e| e.into_inner()).contains(&key) {

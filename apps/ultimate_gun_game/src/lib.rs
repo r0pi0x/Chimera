@@ -313,7 +313,8 @@ fn with_installs(world: &mut World) {
 /// playing the automatic gun game (`with_defaults_for` with `MINIGAME`
 /// and `first_map`) unless it starts at the party's main menu
 /// (`party_kit::start_at_menu`: nothing on the command line plays; the
-/// menu over a background map, never the greybox), with the main menu
+/// menu over its own backdrop, then a background map at hand, never the
+/// greybox), with the main menu
 /// (Play hosts the automatic gun game, Join connects), the Ultimate Gun
 /// Game's parts with a fresh seed (`UltimateGunGamePlugin::launch`) and
 /// the minimal HUD last (`launch`).
@@ -357,11 +358,15 @@ pub fn args(args: chimera_client::client::Args) -> chimera_client::client::Args 
 #[cfg(feature = "present")]
 fn launch(app: &mut App, args: &chimera_client::client::Args) {
     let at_menu = party_kit::main_menu::starts_at_menu(args);
-    app.add_plugins(party_kit::main_menu::MainMenuPlugin {
-        at_start: at_menu,
-        minigame: MINIGAME.into(),
-        keep_recent: at_menu,
-    })
+    // The background maps at hand without a download, before the menu.
+    app.insert_resource(party_kit::main_menu::BackgroundMaps::app(party_kit::client::background_at_hand))
+        .add_plugins(party_kit::main_menu::MainMenuPlugin {
+            at_start: at_menu,
+            minigame: MINIGAME.into(),
+            // A tool run (`+mainmenu` photographing it) keeps nothing.
+            keep_recent: at_menu && !args.tool_run(),
+        })
+        .add_plugins(party_kit::menu_backdrop::MenuBackdropPlugin)
     .add_plugins((UltimateGunGamePlugin::launch(), chimera_client::client::hud_minimal::MinimalHudPlugin));
 }
 

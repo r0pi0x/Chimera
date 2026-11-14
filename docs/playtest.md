@@ -70,6 +70,10 @@ joins.
 
 ## Joining the server
 
+The main menu starts over its own animated backdrop. Once you have joined
+a match, later starts show one of the maps you already have behind the
+menu (never downloading anything for it).
+
 1. At the main menu choose **Join**.
 2. Type the address the host gave you: `<host address>` (add `:<port>` if
    the host named a port other than 27015) and press Connect.

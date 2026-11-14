@@ -258,6 +258,10 @@ unseen behind it), unless `--spawn`, `--look`, `--movement` or `--views`
 is given: those start playing on the greybox, as above. `--map greybox`
 starts on the greybox too. So `--window 1280x720 --screenshot menu.png`
 photographs the main menu.
+The party apps' main menu (Ultimate Gun Game) skips itself on a tool run
+unless asked: `cargo run --features dev --bin ultimate_gun_game --
+--offscreen 1920x1080 --frames 600 --dump <dir> +mainmenu` photographs
+it (its own backdrop, then the background map at hand crossfading in).
 The spawn `0,1,12` above is a greybox spot: on a real map it can sit
 inside solid (on de_dust2 it is inside a building, which clears the view
 to black with no sky), so for real maps take spots from

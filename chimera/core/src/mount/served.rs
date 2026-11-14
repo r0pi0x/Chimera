@@ -15,7 +15,9 @@
 //! manifest lists: every file the game mounts when it was published whole
 //! (`complete`), else only the sets packed so far (`partial`). `usable`
 //! is what a test or tool asks before reading a game's files: an install
-//! with the game's folder, or the store standing in for it. `CHIMERA_VFS_LOG=<file>` wraps every layer
+//! with the game's folder, or the store standing in for it; `sets_held`
+//! and `map_held` whether the store holds whole sets (a map's) with no
+//! network (what a load may read without downloading). `CHIMERA_VFS_LOG=<file>` wraps every layer
 //! in a `Recording`: each file read is logged with its game, size and
 //! hash (`chimera_assets::recording`), which is how `chimera_pack` gets a
 //! set. With an asset service set (`[assets] url` and `token`), a
@@ -66,6 +68,20 @@ pub fn partial(game: &str, install: &Path) -> bool {
 pub fn usable(game: &str, install: impl AsRef<Path>, marker: &str) -> bool {
     let install = install.as_ref();
     install.join(marker).exists() || alone(game, install)
+}
+
+/// Whether the asset store alone, with no network, holds every record of
+/// `game`'s `sets` (`chimera_assets::sets::held`): what may be read from
+/// it without a download.
+pub fn sets_held(game: &str, sets: &[&str]) -> bool {
+    settings().is_ok_and(|a| chimera_assets::sets::held(&a, game, sets))
+}
+
+/// Whether the asset store alone, with no network, holds map `name` of
+/// `game` whole (`chimera_assets::sets::map_held`: its set and the game's
+/// `base`).
+pub fn map_held(game: &str, name: &str) -> bool {
+    settings().is_ok_and(|a| chimera_assets::sets::map_held(&a, game, name))
 }
 
 /// Whether the build `game` is served at lists every file it mounts.

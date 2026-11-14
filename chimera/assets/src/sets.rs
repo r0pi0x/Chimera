@@ -8,7 +8,8 @@
 //! sets' records the store lacks, and fills them with a `progress::Transfer` the
 //! caller can watch (what didn't arrive is asked again after
 //! `RETRY_DELAYS`, unless the token was refused); `missing` says, from the store alone (no network),
-//! whether a fetch would have anything to do; `explain` turns a service's
+//! whether a fetch would have anything to do, `held` and `map_held`
+//! whether the store already holds whole sets (a map's); `explain` turns a service's
 //! error into what a player can act on.
 
 use std::{
@@ -226,6 +227,51 @@ pub fn missing(settings: &AssetSettings, wanted: &[Wanted]) -> bool {
             manifest.files.get(p).is_some_and(|r| !store.has(&r.id))
         })
     })
+}
+
+/// Whether the store alone holds every record of `game`'s `sets` (at the
+/// pinned build, else its newest), with no network: each set named by
+/// its manifest and none of their records missing. A set the manifest
+/// doesn't name isn't held. What may be read without downloading (the
+/// main menu's background map).
+pub fn held(settings: &AssetSettings, game: &str, sets: &[&str]) -> bool {
+    kept_manifest(settings, game).is_some_and(|(store, manifest)| sets.iter().all(|s| whole(&store, &manifest, s)))
+}
+
+/// Whether the store alone holds map `name` of `game` whole, as `held`:
+/// its set (`map/<name>`, else an older manifest's `<name>`), and the
+/// game's `base` set when the manifest names one.
+pub fn map_held(settings: &AssetSettings, game: &str, name: &str) -> bool {
+    let Some((store, manifest)) = kept_manifest(settings, game) else {
+        return false;
+    };
+    let map = [format!("map/{name}"), name.to_string()]
+        .into_iter()
+        .find(|s| manifest.sets.contains_key(s));
+    map.is_some_and(|m| whole(&store, &manifest, &m))
+        && (!manifest.sets.contains_key("base") || whole(&store, &manifest, "base"))
+}
+
+/// Set `set` named by `manifest` with every record in `store`.
+fn whole(store: &crate::Store, manifest: &Manifest, set: &str) -> bool {
+    manifest
+        .sets
+        .get(set)
+        .is_some_and(|paths| paths.iter().all(|p| manifest.files.get(p).is_some_and(|r| store.has(&r.id))))
+}
+
+/// `game`'s manifest the store keeps (at the pinned build, else its
+/// newest), with no network.
+fn kept_manifest(settings: &AssetSettings, game: &str) -> Option<(crate::Store, Manifest)> {
+    let store = settings.store.as_ref()?;
+    let pinned = settings
+        .builds
+        .get(game)
+        .cloned()
+        .or_else(|| settings.lock.as_ref().and_then(|l| l.games.get(game)).map(|p| p.build.clone()));
+    let build = pinned.or_else(|| store.latest_build(game))?;
+    let manifest = Manifest::load(&store.manifest_path(game, &build)).ok()?;
+    Some((store.clone(), manifest))
 }
 
 /// A service error (`e`, from the service at `url`) as what a player can
