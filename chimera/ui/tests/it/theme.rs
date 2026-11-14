@@ -71,3 +71,19 @@ fn shell_default_is_complete() {
     assert!(Theme::from_toml("[palette]\nacc = \"nope\"\n").is_err());
     assert!(Theme::from_toml("[type.mono]\nface = \"mono\"\nfeatures = [\"toolong\"]\n").is_err());
 }
+
+/// The ambient takes the theme's colours as the look book's shader does
+/// (display space, 0-1), placed per screen: the menu's calm column and
+/// bloom, the match end's none and its own.
+#[test]
+fn ambient_takes_display_colours_and_its_place() {
+    use chimera_ui::AmbientMaterial;
+    let t = Theme::from_toml(SIGNAL).unwrap();
+    let a = AmbientMaterial::new(&t);
+    assert!((a.ink.x - 6.0 / 255.0).abs() < 1e-4 && (a.acc.z - 1.0).abs() < 1e-4, "{:?} {:?}", a.ink, a.acc);
+    assert_eq!((a.place.x, a.place.y, a.place.z), (-1.0, 0.64, 0.68), "the match end's");
+    assert!((a.place.w - 0.2126).abs() < 1e-3);
+    let (col, bloom) = AmbientMaterial::MENU;
+    let m = AmbientMaterial::new(&t).column(Some(col)).bloom(bloom).freeze(Some(3.0));
+    assert_eq!((m.place.x, m.place.y, m.place.z, m.clock.y), (0.30, 0.68, 0.56, 3.0));
+}
