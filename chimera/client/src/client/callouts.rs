@@ -29,6 +29,10 @@
 //! on a band shaded as it would be blended in display space
 //! (`widgets::display_alpha`).
 //!
+//! Under the Signal look (`signal::signal_on`) a rung up's callout shows
+//! no text, its cue sounding still: the rank-up toast says it
+//! (`rank_toast`).
+//!
 //! Known shortcuts: plain text on a dark band, no animation; the
 //! files load on first use (the first cue of each kind may come up to
 //! a load late, given up after 3 s).
@@ -211,6 +215,7 @@ fn draw(
     settings: Option<Res<NetSettings>>,
     gameplay: Option<Res<chimera_core::gameplay::Gameplay>>,
     players: Query<(Option<&NetCharacter>, Option<&Name>, Has<LocalPlayer>)>,
+    theme: Option<Res<chimera_ui::Theme>>,
     mut root: Query<&mut Visibility, (With<CalloutRoot>, Without<CalloutLine>)>,
     mut lines: Query<(&CalloutLine, &mut Text, &mut Visibility), Without<CalloutRoot>>,
 ) {
@@ -220,8 +225,12 @@ fn draw(
         super::shown_name(e, local, ch, name, settings.as_deref())
     };
     let weapon = |id: &str| gun_short_name(id, names.as_deref(), catalog.as_deref());
+    // Under the Signal look the rank-up toast says a rung up
+    // (`rank_toast`): its cue only.
+    let toast_says = super::signal::signal_on(theme.as_deref());
     let text: Vec<String> = shown
         .as_ref()
+        .filter(|s| !(toast_says && s.callout.cue == Some("rung_up")))
         .map(|s| s.callout.lines.iter().map(|l| fill(l, player, weapon)).collect())
         .unwrap_or_default();
     if let Some(s) = &shown

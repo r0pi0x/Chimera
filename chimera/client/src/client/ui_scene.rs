@@ -2,7 +2,12 @@
 //! (`chimera_ui`) with made-up data for screenshots
 //! (docs/plans/active/ugg-ui.md, section 5); `ui_scene off` clears it.
 //! Scenes: `chip`, `lead` (the race chip, chasing or leading), `board`,
-//! `board_lead` (the Tab board open), `feed` (five kills in the feed):
+//! `board_lead` (the Tab board open), `feed` (five kills in the feed),
+//! `rankup` (the rank-up toast's loop on the chip: a roll, then a chain;
+//! `rankup <t>` frozen `t` s into the loop, the UI clock stopped until
+//! `ui_scene off`), `airstrike` (the effects' loop: moon gravity's chip,
+//! an air strike's banner, edge pulses and fold into the chip stack;
+//! `airstrike <t>` frozen likewise):
 //! the HUD's own screens with made-up players (`race_chip::stage`,
 //! `kill_feed::signal_feed::stage`), under the Signal theme; given a
 //! fixture (`ui_scene board <fixture.json>`), its data over a flat ground
@@ -33,13 +38,44 @@ use chimera_ui::{
 pub const UI_SCENE_Z: i32 = 900;
 
 /// The scenes `ui_scene` stages.
-pub const SCENES: &[&str] = &["proof", "chip", "lead", "board", "board_lead", "feed"];
+pub const SCENES: &[&str] = &["proof", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike"];
 
 /// The scene asked for (`None`: none).
 #[derive(Resource, Default, Clone, Debug, PartialEq)]
 pub struct UiScene {
     pub want: Option<String>,
     shown: Option<String>,
+    /// A scene froze the UI clock (`ui_scene <name> <t>`): it runs again
+    /// at `off`.
+    froze: bool,
+}
+
+/// Where a scene's loop starts on the UI clock: now, or (`t` given) `t`
+/// s ago with the clock frozen there (a screenshot of one moment).
+fn scene_start(world: &mut World, t: Option<f64>) -> f64 {
+    let mut clock = world.get_resource_or_init::<chimera_ui::UiClock>();
+    match t {
+        Some(t) => {
+            clock.manual = true;
+            let now = clock.now;
+            world.resource_mut::<UiScene>().froze = true;
+            now - t
+        }
+        None => clock.now,
+    }
+}
+
+/// Every staged HUD scene cleared, the clock running again if a scene
+/// froze it.
+fn clear_staged(w: &mut World) {
+    super::race_chip::stage(w, None);
+    super::rank_toast::stage(w, None);
+    super::match_effects::stage(w, None);
+    if std::mem::take(&mut w.resource_mut::<UiScene>().froze)
+        && let Some(mut c) = w.get_resource_mut::<chimera_ui::UiClock>()
+    {
+        c.manual = false;
+    }
 }
 
 /// A staged scene's root.
@@ -53,12 +89,16 @@ impl Plugin for UiScenePlugin {
         app.init_resource::<UiScene>()
             .console_command(
                 "ui_scene",
-                "ui_scene <proof|chip|lead|board|board_lead|feed|off> [fixture.json]: stage a screen of the UI kit with made-up data (screenshots), or a fixture's (the UI parity check).",
+                "ui_scene <proof|chip|lead|board|board_lead|feed|rankup|airstrike|off> [fixture.json | t]: stage a screen of the UI \
+                 kit with made-up data (screenshots), or a fixture's (the UI parity check); an animated scene (rankup, airstrike) \
+                 with `t` frozen `t` s into its loop.",
                 |w, a| {
                     let name = a.first().map(String::as_str).unwrap_or("proof");
+                    // An animated scene's frozen time.
+                    let t = || a.get(1).map(|t| t.parse::<f64>().map_err(|_| format!("ui_scene: not a time: {t}"))).transpose();
                     if name == "off" {
                         w.resource_mut::<UiScene>().want = None;
-                        super::race_chip::stage(w, None);
+                        clear_staged(w);
                         super::ui_parity::clear_ground(w);
                         if w.remove_resource::<super::kill_feed::signal_feed::FeedStaged>().is_some()
                             && let Some(mut f) = w.get_resource_mut::<super::kill_feed::KillFeed>()
@@ -73,7 +113,20 @@ impl Plugin for UiScenePlugin {
                     }
                     // The HUD's own screens, staged with made-up data where
                     // they draw (the race chip and board, the kill feed).
+                    clear_staged(w);
                     match name {
+                        "rankup" => {
+                            let start = scene_start(w, t()?);
+                            super::rank_toast::stage(w, Some(start));
+                            return Ok(None);
+                        }
+                        "airstrike" => {
+                            // On the chip, as in play.
+                            let start = scene_start(w, t()?);
+                            super::race_chip::stage(w, Some("chip"));
+                            super::match_effects::stage(w, Some(start));
+                            return Ok(None);
+                        }
                         "chip" | "lead" | "board" | "board_lead" => {
                             super::race_chip::stage(w, Some(name));
                             if let Some(path) = a.get(1) {

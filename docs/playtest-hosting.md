@@ -23,9 +23,9 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net48` since HL2:DM's server sends its blood
-   to the clients that see it (`impact_effects::ServerBlood`); `net47`
-   builds and earlier are refused.
+   The network version is `net49` since the host's surprises reach the
+   clients as the match's effects (`minigame::effects::MatchEffects`)
+   instead of HUD text; `net48` builds and earlier are refused.
 2. **Send each tester privately:** the release link, `<host address>:<port>`,
    their token, and `docs/playtest.md` if they are not unzipping it.
 3. **Check the asset service has everything the match needs** ("Publishing
@@ -599,14 +599,17 @@ which clears the binding.
 
 ### Surprises (host only; don't tell the testers)
 
-Two console commands on the server shake a match up. They need the
-client build of 2026-11-13 or later (older clients show the shells and
-explosions wrong and don't hear the siren). Code:
-`apps/party_kit/src/surprise.rs`.
+Two console commands on the server shake a match up. Every client sees
+them as the match's effects (a `net49` build; older ones are refused).
+Code: `apps/party_kit/src/surprise.rs`, drawn by
+`chimera/client/src/client/match_effects.rs`.
 
 - `surprise airstrike [count] [seconds]` (default 30 shells over 8 s): a
-  3 s warning ("AIR STRIKE INCOMING! TAKE COVER!" in red, a red flash and
-  an air-raid siren from Combat Arms' install), then Combat Arms' air
+  3 s warning (in Ultimate Gun Game a translucent red banner over the
+  crosshair counting down, the screen's edges pulsing red each second,
+  then a top-left chip counting to the impact; in Lucker Party "AIR
+  STRIKE INCOMING! TAKE COVER!" in red and a red flash; an air-raid siren
+  from Combat Arms' install in both), then Combat Arms' air
   strike shells (LGB and napalm, 2:1) fall from under the sky onto open
   ground: half near living players, half anywhere walkable. They look
   and sound like the real thing: the designators' missile with its trail
@@ -617,8 +620,9 @@ explosions wrong and don't hear the siren). Code:
   rung up or down for anyone (a death on the scoreboard).
 - `surprise gravity [seconds] [scale]` (default 60 s at 0.2): moon gravity
   for every player's movement and the physics world (props, ragdolls),
-  with a "Moon gravity!" banner, a countdown in the last 5 s and "Gravity
-  is back!". Every client predicts with it (CS:S's and HL2:DM's
+  shown as a banner and then a top-left chip with a ring counting down
+  (Ultimate Gun Game), or a "Moon gravity!" banner, a countdown in the
+  last 5 s and "Gravity is back!" (Lucker Party). Every client predicts with it (CS:S's and HL2:DM's
   `sv_gravity`, Combat Arms' `combat_arms:sv_gravity`, all replicated: no
   corrections) and its own ragdolls and props fall with it
   (`chimera:phys_gravity_scale`, replicated). A map change ends it.
@@ -627,7 +631,7 @@ explosions wrong and don't hear the siren). Code:
 Both run on the server's console only (a client's console refuses them):
 a dedicated server's, or the game's own console when you host from the
 game (a listen server), whose player sees and hears everything a client
-does: the banners and flash, the siren, the shells and their explosions
+does: the banners, chips and edge (or flash), the siren, the shells and their explosions
 (builds before 2026-11-14 showed a listen host none of the warnings and
 almost none of the explosions; a dedicated server's clients were fine).
 The shells fall nose first, on every client: the server turns them.

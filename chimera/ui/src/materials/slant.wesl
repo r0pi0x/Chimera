@@ -14,7 +14,9 @@ import bevy_ui_render::ui_vertex_output::UiVertexOutput;
 // x: clip from the left (0-1 of the row), y: clip from the right, z, w:
 // alpha at the left and the right edge.
 @group(1) @binding(3) var<uniform> wipe: vec4<f32>;
-// x: an outline this many physical px wide (0: filled).
+// x: an outline this many physical px wide (0: filled); y: a wipe's cut
+// leans with the slant (0/1) even where the fill's own edges are upright:
+// only while that side clips.
 @group(1) @binding(4) var<uniform> stroke: vec4<f32>;
 
 @fragment
@@ -27,8 +29,9 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     let xl = shape.y * (h - p.y) * tan;
     let xr = w - shape.z * p.y * tan;
     let span = max(xr - xl, 0.0);
-    let a = xl + wipe.x * span;
-    let b = xr - wipe.y * span;
+    let lean = stroke.y * (h - p.y) * tan;
+    let a = xl + wipe.x * span + select(0.0, lean, wipe.x > 0.0);
+    let b = xr - wipe.y * span + select(0.0, lean, wipe.y > 0.0);
     // Horizontal distance to a slanted edge times cos(angle) is the
     // perpendicular distance; one physical pixel of ramp.
     let c = inverseSqrt(1.0 + tan * tan);
