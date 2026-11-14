@@ -28,7 +28,9 @@
 //!   `CaAltFire`): attack2's press fires `rounds` rounds `interval` apart
 //!   (fewer when the clip has fewer), the weapon busy for `cycle`. The
 //!   rounds go through Chimera's burst (`Burst` in a mode no attack2 mode
-//!   reaches: its rounds-on-their-own and interval).
+//!   reaches: its rounds-on-their-own and interval). `CaAltVolley` marks
+//!   the volley's span, so its rounds are known for the alternate fire's
+//!   (a crossbow's alternate bolt: `special::bolts`).
 //! - **Pellet hit carry-over** (5.7, Q1; `PelletCarryOver`, on by default
 //!   as `AllowMultipleVectorsPerRoundBug` 1): once a pellet of a shot hits
 //!   a character, each later pellet that hits none is a hit on that one too,
@@ -48,8 +50,9 @@
 //!   and pistols, Corrections 3 and Corrections (2026-10-30) 1; a copy's
 //!   longer pre-fire its whole length, `timing::prefire_latency`; the
 //!   minigun's 1 with its spin-up), none on an alt-fire
-//!   volley; no launchers, M32, snowball gun or crossbow (projectiles:
-//!   their own specs).
+//!   volley; no launchers, M32 or snowball gun (projectiles: their own
+//!   specs; the crossbow's alternate fire is a one-round volley here, its
+//!   bolt `special::bolts`').
 //! - 5.6 (the server's reload bookkeeping): its window drops shots
 //!   (`weapons::server_reload_mark`, Corrections 2), but there is one clip,
 //!   so nothing refills at its end and a shotgun's shot is let through
@@ -196,6 +199,23 @@ pub struct CaAltFire {
     pub cycle: f32,
 }
 
+/// When the last alt-fire volley of a weapon (`CaAltFire`) fires its
+/// rounds: from its press to its last round (a tick's slack), so what
+/// reads the weapon's `Fired` rounds on that tick knows them for the
+/// alternate fire's (a crossbow's alternate bolt, 7 of
+/// special_weapons.md).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct CaAltVolley {
+    pub span: Option<(f64, f64)>,
+}
+
+impl CaAltVolley {
+    /// Whether a round fired at `now` is the volley's.
+    pub fn at(&self, now: f64) -> bool {
+        self.span.is_some_and(|(from, to)| now + SLACK >= from && now <= to + SLACK)
+    }
+}
+
 impl CaAltFire {
     /// Chimera's burst that fires the volley's rounds (a mode attack2 never
     /// steps to: only `class_rules` starts it).
@@ -262,9 +282,10 @@ pub(super) fn class_rules(
         &mut WeaponState,
         Option<&Magazine>,
         Option<&mut CaSpin>,
-        Option<&CaAltFire>,
+        Option<(&CaAltFire, &mut CaAltVolley)>,
         Has<super::CaDamage>,
         Has<crate::game::special::CaProjectileData>,
+        Has<crate::game::special::CaBoltData>,
     )>,
     clock: Res<SimClock>,
 ) {
@@ -282,8 +303,8 @@ pub(super) fn class_rules(
                 }
                 continue;
             }
-            let Ok((mut st, mag, spin, alt, ours, special)) = weapons.get_mut(w) else { continue };
-            if !ours && !special {
+            let Ok((mut st, mag, spin, alt, ours, projectile, bolt)) = weapons.get_mut(w) else { continue };
+            if !ours && !projectile && !bolt {
                 continue;
             }
             let clip = mag.map_or(0, |m| m.clip);
@@ -317,7 +338,7 @@ pub(super) fn class_rules(
                     _ => {}
                 }
             }
-            if let Some(alt) = alt
+            if let Some((alt, mut volley)) = alt
                 && intent.secondary
                 && !inv.prev_secondary()
                 && ready
@@ -329,6 +350,8 @@ pub(super) fn class_rules(
                 st.next_burst_round = now;
                 st.next_primary = now + alt.cycle as f64;
                 st.next_secondary = st.next_primary;
+                let last = now + (alt.interval * alt.rounds.min(clip).saturating_sub(1) as f32) as f64;
+                volley.span = Some((now, last));
             }
         }
     }

@@ -262,7 +262,7 @@ use super::characters;
 use super::attachments::{CaNpc, CaSpecialRoll, DamageMods, RecoilMods, SpecialKind, SpreadMods, Victim};
 
 pub use self::{
-    classes::{ALT_FIRE, CaAltFire, CaSpin, CarryOver, PelletCarryOver, SPIN, SpinParams, SpinState, reported_hits},
+    classes::{ALT_FIRE, CaAltFire, CaAltVolley, CaSpin, CarryOver, PelletCarryOver, SPIN, SpinParams, SpinState, reported_hits},
     zoom::{CaZoom, Scope, Sway, ZOOM, ZoomParams},
 };
 
@@ -1810,7 +1810,7 @@ impl Plugin for CaWeaponsPlugin {
             });
         })
         .register_weapon_hook::<CaAltFire>(ALT_FIRE, |e, _, p| {
-            e.insert((*p, p.burst()));
+            e.insert((*p, p.burst(), classes::CaAltVolley::default()));
         })
         .register_weapon_hook::<timing::TimingParams>(timing::TIMING, timing::apply)
         // An infected's weapon: a mark for the gun game's rungs only.

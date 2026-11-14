@@ -1,7 +1,11 @@
 //! Crossbows (special_weapons.md 7): `Assassin_Bowgun_Nor` and the
 //! explosive `Assassin_Bowgun_Expl`.
 //!
-//! A bolt flies straight at 5000 u/s (250 u a server frame). A character
+//! A bolt flies straight at 5000 u/s (250 u a server frame); the
+//! alternate fire's (right button: a one-round `combat_arms:alt_fire`
+//! volley, the weapon busy for `alt_fire_0`, 550 ms) at 1300 u/s with
+//! `InstDamage` 41 (`BoltParams::alt`), known by the weapon's
+//! `CaAltVolley` on the tick it fires. A character
 //! whose hit spheres the step passes, before the first world surface, takes
 //! it: it sticks to him (following him) and deals the direct damage with
 //! the roll, the range band, the zone and the armour step; the band
@@ -31,13 +35,16 @@ use crate::{
 /// A bolt stuck in the world or a body goes after this, s.
 pub const STUCK_TIME: f64 = 5.0;
 
-/// A round of a crossbow: the bolt from the eye along the view (7).
-pub(super) fn fire(world: &mut World, weapon: Entity, owner: Entity, eye: Vec3, yaw: f32, pitch: f32, seed: u32) {
+/// A round of a crossbow: the bolt from the eye along the view (7); the
+/// alternate fire's (`alt`) at its own speed and damage.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn fire(world: &mut World, weapon: Entity, owner: Entity, eye: Vec3, yaw: f32, pitch: f32, seed: u32, alt: bool) {
     let Some(d) = world.get::<CaBoltData>(weapon).cloned() else { return };
     let Some(id) = world.get::<Weapon>(weapon).map(|w| w.id) else { return };
-    let p = &d.params;
+    let params = if alt { std::sync::Arc::new(d.params.alternate()) } else { d.params.clone() };
+    let p = &params;
     let dir = cone_dir(p.perturb, p.dynamic_perturb, yaw, pitch, seed, super::BOLT);
-    let mut o = CaObject::new(id, Some(owner), d.unit, d.hp, eye / d.unit, dir * p.speed, Kind::Bolt(d.params.clone()));
+    let mut o = CaObject::new(id, Some(owner), d.unit, d.hp, eye / d.unit, dir * p.speed, Kind::Bolt(params.clone()));
     o.s.origin = eye / d.unit;
     spawn_object(world, o);
 }

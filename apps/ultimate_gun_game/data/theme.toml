@@ -27,7 +27,7 @@ fg_4 = 0.15
 fg_5 = 0.07
 acc_2 = 0.16
 acc_glow = 0.45
-plate = 0.80
+plate = 0.92          # no backdrop blur in Bevy: more opaque than the look book's .80
 glow = 0.20
 
 # Each game's own kill icon wherever it has one, ours only where none
@@ -38,6 +38,12 @@ prefer_game = true
 [shape]
 slant_deg = 12.0
 min_text_px = 9.0
+
+# Switches: the shell's Signal HUD (race chip and board, kill feed,
+# fallback HUD).
+[flags.hud]
+signal = true
+
 
 # Text roles: the wordmark is Black with ss02 (whose A is the plain A).
 [type.wordmark]

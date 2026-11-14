@@ -282,8 +282,10 @@ after `UiSystems::Layout` sets a `UiTransform` translation of the
 fraction). Same for hairlines (1 physical px, never scaled) and the
 `+` marks.
 
-**Look-book deviations** (Bevy has no blur): plates use their opaque
-alpha without the backdrop blur; text glow (`text-shadow` blur) is
+**Look-book deviations** (Bevy has no blur): plates are more opaque
+than the look book's (Signal's `alpha.plate` .92 for its .80 plus a
+backdrop blur; tokens.css follows), so text keeps its contrast over a
+bright map; text glow (`text-shadow` blur) is
 dropped, or drawn as a soft `BoxShadow` behind big display text only if
 the A/B screenshots miss it.
 
@@ -451,6 +453,23 @@ map's game, the slots, the ladder's games and each row's ping;
   The existing prematch tests keep passing.
 
 ### M2: race chip, Tab board, kill feed, fallback HUD
+
+Status (2026-11-14): in, behind the theme's `flags.hud.signal` (only
+Signal sets it; Lucker Party and the plain apps keep today's screens):
+`client::race_chip` (the chip, its leader variant, Tab opening it into
+the one board in 0.12 s and folding in 0.09 s from wherever it is),
+`kill_feed::signal_feed`, `hud_minimal::signal_hud`, their pieces in
+`client::signal` (tags, the fused YOU+HOST chip, the bot slot, the YOU
+row, fades, gun icons: each game's own where `WeaponIcons` has one while
+`flags.icons.prefer_game`, else the look book's set by `GunClass`; the
+set is rasterized in `signal::icons` until the kit's `icons` lands).
+Tests: `race_chip_opens_and_folds_on_showscores`,
+`race_chip_needs_the_signal_theme`, `leader_chip_shows_the_gap`,
+`board_rows_best_first_with_icons`, `kill_feed_marks_local_kills_and_deaths`,
+`the_plain_feed_without_the_signal_theme` (chimera_client),
+`fallback_hud_only_without_a_game_hud` (ultimate_gun_game). Left:
+`overlay_keeps_clear_of_game_huds`, rolling numbers and the tick pop
+(with M3's toast), the match clock on the board's head.
 
 - `client::race_chip` replaces `minigame_panel` for a ladder (other
   minigames keep the panel); `minigame_scoreboard` becomes the chip's
@@ -653,10 +672,13 @@ must be one build.
 
 ## 6. Decisions (user, 2026-11-14)
 
-1. Icons (revised 2026-11-14): each game's own kill icon wherever that
-   game has one (kill feed, chip, board, toast, standings), our fallback
-   set only where none; the theme's `icons.prefer_game` (on in Signal)
-   chooses, `chimera_ui::icons::choose` applies it.
+1. Icons (revised 2026-11-14): each game's own kill icon everywhere it
+   has one (kill feed, Tab board, rank-up toast, the Ladder backdrop):
+   CS:S's and HL2:DM's are icon-font glyphs (vector), Combat Arms' are
+   bitmaps sized so they stay sharp. Our fallback set (by `GunClass`,
+   with per-weapon overrides for knives, crossbows, energy guns) only
+   where a game has none: our own guns, games without icons, assets not
+   downloaded yet. One theme key (`icons.prefer_game`) flips it; `chimera_ui::icons::choose` applies it.
 2. Tab: one board, the chip opening into it. The board is big enough to
    carry everything the full scoreboard had (rung, gun icon and name,
    K/D, ladder strip, tags, session wins). Its open and close are fast
@@ -671,9 +693,18 @@ must be one build.
 6. The menu's Showcase may show any installed or cached body and gun
    (the menu is outside any lobby); the coming ladder isn't a constraint.
 
-Look Book V (menu slot C, the ambient background, tag styles, the
-match-end background) changes only those parts; everything else is
-signed off and is built now.
+Look Book V decisions (user, 2026-11-14): menu slot C is the Ident
+(the mark signs on facet by facet on one 12° scan, holds with a sheen,
+signs off); an ambient full-menu fragment shader (slanted bands, a
+faceted field, one cobalt bloom, near-still behind the menu column) sits
+under everything. Player marks: tags are solid fills (HOST cobalt, YOU
+white), a player who is both gets one fused chip split on the 12° slant;
+BOT is the antenna robot icon (16-unit grid) in a slot reserved left of
+every name; YOU's row is tinted and outlined, visibly different from the
+hover state on hoverable rows. Kill and death are real grid columns with
+their marks right-aligned over the numbers. The match-end background is
+being redrawn as wide, overlapping translucent slanted planes (fewer,
+broader bars, speed tied to width).
 
 ## 7. Risks
 

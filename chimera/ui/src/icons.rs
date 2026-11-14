@@ -1,6 +1,6 @@
 //! The kit's icons (docs/plans/active/ugg-ui.md, section 4): the fallback
 //! gun set (13 classes: pistol ... blunt) and the marks (the UGG mark,
-//! crown, trophy, kill, death, warn), as polygon data in
+//! crown, trophy, bot (the antenna robot), kill, death, warn), as polygon data in
 //! `data/icons.toml`, our own design.
 //!
 //! - `Icons::shipped()`: the data. An icon is `w` x `h` units and a list of

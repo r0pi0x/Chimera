@@ -11,7 +11,8 @@
 //! bots); a team's average ping is blank below 1.
 //!
 //! `Board` is what the game tells it (`systems` collects it); `frame` lays
-//! it out in window pixels.
+//! it out in window pixels. It stays down while a minigame plays (the
+//! shell's board is the one, as with CS:S's and Combat Arms').
 
 use bevy::prelude::*;
 

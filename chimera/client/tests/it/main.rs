@@ -17,4 +17,6 @@ mod text_warm;
 mod metrics;
 mod minigame_panel;
 mod minigame_scoreboard;
+mod race_chip;
+mod signal_feed;
 mod respawn_countdown;

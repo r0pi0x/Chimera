@@ -8,7 +8,14 @@
 //! a noclipping player too though its hit is refused, a teammate's hit
 //! with friendly fire off not (CS:S's server sent the blood effect and
 //! decals for the one, nothing for the other: measured 2026-10-17 in a
-//! SourceTV demo, specs/cs_source/weapons.md "Refused hits"); bullets into water splash instead, into slime they start the install's
+//! SourceTV demo, specs/cs_source/weapons.md "Refused hits"). A game whose
+//! style draws blood per viewer (`BloodView::PerViewer`, HL2:DM:
+//! specs/hl2dm/effects_sounds.md 7) writes the damage's blood as
+//! `ServerBlood` (drawn at the hit point for all but a local attacker,
+//! `server_blood`; the game sends it to its network clients) and its
+//! local shooter draws his own predicted copy from his bullets' traces,
+//! 4 in back along the shot with wall stains counted by distance
+//! (`blood_effects`); a melee attacker none. Bullets into water splash instead, into slime they start the install's
 //! `slime_splash_03` (`map::psys::StartParticleSystem`, run by
 //! `render::psys`). Shattered glass throws tumbling shards that settle flat
 //! (`Shape::Tumble`). The particle machinery is `map::particles`; the
@@ -67,7 +74,10 @@
 //! tile windows too (the breakables spec's hit rule doesn't limit it to glass);
 //! the pane bursts' shards are ours (counts, sizes, speeds; at most
 //! `MAX_PANE_SHARDS` a burst) with section 9's
-//! tumbling and settling. Why it's OK for now: Spec defaults; the open
+//! tumbling and settling. A shooter's predicted blood (HL2:DM's, per
+//! viewer) counts its wall stains by the distance from the shot's start,
+//! the eye, not the shooter's origin (the spec's; they differ only within
+//! a few feet). Why it's OK for now: Spec defaults; the open
 //! questions need the game.
 //!
 //! Known shortcuts (docs/tech-debt.md): Loose items' landing dust (a dropped
@@ -1383,10 +1393,12 @@ impl Plugin for ImpactEffectsPlugin {
             .add_message::<crate::map::GlassImpact>()
             .add_message::<StartParticleSystem>()
             .add_message::<crate::map::SparkBurst>()
+            .add_message::<ServerBlood>()
             .add_systems(
                 FixedUpdate,
                 (impact_effects, blood_effects).after(crate::core::SimSet::Weapons),
             )
+            .add_systems(Update, server_blood)
             .add_systems(Update, glass_effects)
             .add_systems(
                 FixedPostUpdate,
@@ -1751,26 +1763,119 @@ fn splash(
     play.write(PlaySound::at("Physics.WaterSplash", at));
 }
 
+/// The server's blood of a per-viewer game (`BloodView::PerViewer`,
+/// specs/hl2dm/effects_sounds.md 7): a hit player's, at the hit point,
+/// for everyone but the attacker. Written where the damage is dealt
+/// (`blood_effects`) and drawn there (`server_blood`, not for a local
+/// attacker); a game sends it on to the network clients in the point's
+/// PAS but the attacker's, whose copy of the message draws the same.
+#[derive(Message, Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ServerBlood {
+    pub point: Vec3,
+    /// Along the shot.
+    pub dir: Vec3,
+    /// The damage in hit points (the wall blood's count).
+    pub amount: f32,
+    /// Who dealt it (the server's entity; not sent).
+    #[serde(skip)]
+    pub attacker: Option<Entity>,
+}
+
+/// What draws blood: the burst and the stains on the walls behind.
+#[derive(bevy::ecs::system::SystemParam)]
+struct BloodPainter<'w, 's> {
+    materials: Option<Res<'w, ParticleMaterials>>,
+    bank: Option<Res<'w, SoundBank>>,
+    grid: Option<Res<'w, SurfaceGrid>>,
+    colors: Option<Res<'w, SurfaceColors>>,
+    particles: ResMut<'w, Particles>,
+    rng: ResMut<'w, EffectRng>,
+    world: WorldTracer<'w, 's>,
+    decals: MessageWriter<'w, PlaceDecal>,
+}
+
+impl BloodPainter<'_, '_> {
+    /// The burst at `point` along `dir`, and `traces` (count, direction
+    /// noise) stains behind it.
+    fn paint(&mut self, point: Vec3, dir: Vec3, (count, noise): (usize, f32)) {
+        let rng = &mut self.rng.0;
+        if let Some(m) = &self.materials {
+            let mats = EffectMaterials::new(&m.0);
+            let light = self.colors.as_deref().map_or(Vec3::ONE, |c| light_below(c, &self.world, point));
+            for g in blood(rng, &mats, &m.0, point, dir, light) {
+                self.particles.add(g);
+            }
+        }
+        for _ in 0..count {
+            let dir = (dir + rng.vec3(-noise, noise)).normalize_or_zero();
+            let to = point + dir * BLEED_TRACE * UNIT;
+            let Some((f, n)) = self.world.trace(point, to) else {
+                continue;
+            };
+            let at = point.lerp(to, f);
+            // Not on grates.
+            let grate = self
+                .bank
+                .as_ref()
+                .zip(self.grid.as_ref())
+                .and_then(|(b, g)| surface(&b.0, g.nearest(at, 0.3).unwrap_or("default")))
+                .is_some_and(|s| s.game_material == 'G');
+            if grate || f <= 0.0 {
+                continue;
+            }
+            self.decals.write(PlaceDecal {
+                target: None,
+                group: DecalGroup::Named("Blood".into()),
+                point: at,
+                normal: n,
+                dir,
+                spin: true,
+                round: false,
+            });
+        }
+    }
+}
+
 /// Blood where players take weapon damage (not refused by team rules),
-/// and stains on the walls behind.
+/// and stains on the walls behind; a per-viewer game's goes out as
+/// `ServerBlood` instead, and its local shooter draws his own predicted
+/// copy from his bullets' traces (specs/hl2dm/effects_sounds.md 7): each
+/// of his bullets whose trace hit a character, the first time its command
+/// runs, bleeds at the hit 4 in back along the shot, wall stains counted
+/// by the distance in inches to the hit (beyond 25, 4); not on a teammate
+/// (team play). Melee swings make none.
 #[allow(clippy::too_many_arguments)]
 fn blood_effects(
     mut damage: MessageReader<Damage>,
+    mut shots: MessageReader<WeaponEvent>,
     characters: Query<(), With<Intent>>,
+    local: Query<(), With<crate::core::LocalPlayer>>,
     teams: Query<&crate::core::Team>,
     friendly_fire: Option<Res<crate::core::FriendlyFire>>,
-    materials: Option<Res<ParticleMaterials>>,
     settings: Res<ImpactEffectSettings>,
-    bank: Option<Res<SoundBank>>,
-    grid: Option<Res<SurfaceGrid>>,
-    colors: Option<Res<SurfaceColors>>,
-    mut particles: ResMut<Particles>,
-    mut rng: ResMut<EffectRng>,
-    world: WorldTracer,
-    mut decals: MessageWriter<PlaceDecal>,
+    mut painter: BloodPainter,
+    mut server_blood: MessageWriter<ServerBlood>,
     (route, holders, styles): (ImpactRoute, Query<&crate::weapon::Inventory>, Res<ImpactStyles>),
 ) {
-    let rng = &mut rng.0;
+    for e in shots.read().filter(|e| e.shown()) {
+        let (WeaponEventKind::Shot { from, to, hit: Some(hit), .. }
+        | WeaponEventKind::ShotContinued { from, to, hit: Some(hit), .. }) = e.kind
+        else {
+            continue;
+        };
+        let teammates = matches!((teams.get(e.owner), teams.get(hit)), (Ok(a), Ok(b)) if a == b && a.0 != 0);
+        if settings.violence_hblood == 0
+            || hit == e.owner
+            || teammates
+            || !local.contains(e.owner)
+            || !characters.contains(hit)
+            || styles.drawing(&route, e).is_none_or(|s| s.blood != super::BloodView::PerViewer)
+        {
+            continue;
+        }
+        let (at, dir) = predicted_blood_at(from, to);
+        painter.paint(at, dir, bleed_traces(from.distance(to) / UNIT));
+    }
     for hit in damage.read() {
         // Blood is the attacker's gun's game's (another game's gun bleeds
         // its own way), CS:S's when nothing says.
@@ -1799,41 +1904,45 @@ fn blood_effects(
         {
             continue;
         }
-        if let Some(m) = &materials {
-            let mats = EffectMaterials::new(&m.0);
-            let light = colors.as_deref().map_or(Vec3::ONE, |c| light_below(c, &world, hit.point));
-            for g in blood(rng, &mats, &m.0, hit.point, hit.dir, light) {
-                particles.add(g);
-            }
-        }
-        let (count, noise) = bleed_traces(hit.amount / style.damage_unit);
-        for _ in 0..count {
-            let dir = (hit.dir + rng.vec3(-noise, noise)).normalize_or_zero();
-            let to = hit.point + dir * BLEED_TRACE * UNIT;
-            let Some((f, n)) = world.trace(hit.point, to) else {
-                continue;
-            };
-            let at = hit.point.lerp(to, f);
-            // Not on grates.
-            let grate = bank
-                .as_ref()
-                .zip(grid.as_ref())
-                .and_then(|(b, g)| surface(&b.0, g.nearest(at, 0.3).unwrap_or("default")))
-                .is_some_and(|s| s.game_material == 'G');
-            if grate || f <= 0.0 {
-                continue;
-            }
-            decals.write(PlaceDecal {
-                target: None,
-                group: DecalGroup::Named("Blood".into()),
-                point: at,
-                normal: n,
-                dir,
-                spin: true,
-                round: false,
+        let amount = hit.amount / style.damage_unit;
+        if style.blood == super::BloodView::PerViewer {
+            server_blood.write(ServerBlood {
+                point: hit.point,
+                dir: hit.dir,
+                amount,
+                attacker: hit.attacker,
             });
+            continue;
         }
+        painter.paint(hit.point, hit.dir, bleed_traces(amount));
     }
+}
+
+/// The server's blood of a per-viewer game (`ServerBlood`): drawn at the
+/// hit point, wall stains by the damage, but not for the attacker
+/// playing here.
+fn server_blood(
+    mut blood: MessageReader<ServerBlood>,
+    local: Query<(), With<crate::core::LocalPlayer>>,
+    settings: Res<ImpactEffectSettings>,
+    mut painter: BloodPainter,
+) {
+    for b in blood.read() {
+        if settings.violence_hblood == 0 || b.attacker.is_some_and(|a| local.contains(a)) {
+            continue;
+        }
+        painter.paint(b.point, b.dir, bleed_traces(b.amount));
+    }
+}
+
+/// The shooter's predicted blood offset back along the shot, in.
+pub const PREDICTED_BLOOD_BACK: f32 = 4.0;
+
+/// Where the shooter's predicted blood of a bullet from `from` hitting at
+/// `to` goes, and its direction: 4 in back along the shot.
+pub fn predicted_blood_at(from: Vec3, to: Vec3) -> (Vec3, Vec3) {
+    let dir = (to - from).normalize_or_zero();
+    (to - dir * PREDICTED_BLOOD_BACK * UNIT, dir)
 }
 
 /// Whether damage of this kind makes blood (spec section 10: bullets and

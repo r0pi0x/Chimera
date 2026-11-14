@@ -1,7 +1,10 @@
 //! `ui_scene <name>` (console): stages a screen of the UI kit
 //! (`chimera_ui`) with made-up data for screenshots
 //! (docs/plans/active/ugg-ui.md, section 5); `ui_scene off` clears it.
-//! Scenes: `proof` (the kit itself: the type ramp of every role, tick
+//! Scenes: `chip`, `lead` (the race chip, chasing or leading), `board`,
+//! `board_lead` (the Tab board open), `feed` (five kills in the feed):
+//! the HUD's own screens with made-up players (`race_chip::stage`,
+//! `kill_feed::signal_feed::stage`), under the Signal theme. `proof` (the kit itself: the type ramp of every role, tick
 //! bars, slants, the gun icons and marks, the logo pass frozen mid-way,
 //! the match end's lines behind). The screens' milestones add theirs
 //! (`lobby`, `chip`, `board`, `toast`, `airstrike`, `matchend`, `menu`)
@@ -28,7 +31,7 @@ use chimera_ui::{
 pub const UI_SCENE_Z: i32 = 900;
 
 /// The scenes `ui_scene` stages.
-pub const SCENES: &[&str] = &["proof"];
+pub const SCENES: &[&str] = &["proof", "chip", "lead", "board", "board_lead", "feed"];
 
 /// The scene asked for (`None`: none).
 #[derive(Resource, Default, Clone, Debug, PartialEq)]
@@ -48,15 +51,35 @@ impl Plugin for UiScenePlugin {
         app.init_resource::<UiScene>()
             .console_command(
                 "ui_scene",
-                "ui_scene <proof|off>: stage a screen of the UI kit with made-up data (screenshots).",
+                "ui_scene <proof|chip|lead|board|board_lead|feed|off>: stage a screen of the UI kit with made-up data (screenshots).",
                 |w, a| {
                     let name = a.first().map(String::as_str).unwrap_or("proof");
                     if name == "off" {
                         w.resource_mut::<UiScene>().want = None;
+                        super::race_chip::stage(w, None);
+                        if w.remove_resource::<super::kill_feed::signal_feed::FeedStaged>().is_some()
+                            && let Some(mut f) = w.get_resource_mut::<super::kill_feed::KillFeed>()
+                        {
+                            f.lifetime = super::kill_feed::LIFETIME;
+                            f.entries.clear();
+                        }
                         return Ok(None);
                     }
                     if !SCENES.contains(&name) {
                         return Err(format!("ui_scene: no scene `{name}` (scenes: {})", SCENES.join(", ")));
+                    }
+                    // The HUD's own screens, staged with made-up data where
+                    // they draw (the race chip and board, the kill feed).
+                    match name {
+                        "chip" | "lead" | "board" | "board_lead" => {
+                            super::race_chip::stage(w, Some(name));
+                            return Ok(None);
+                        }
+                        "feed" => {
+                            super::kill_feed::signal_feed::stage(w);
+                            return Ok(None);
+                        }
+                        _ => {}
                     }
                     w.resource_mut::<UiScene>().want = Some(name.to_string());
                     Ok(None)

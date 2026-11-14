@@ -21,7 +21,9 @@
 //!   post-fire, redraw: 6.12; the spent weapon stays at total 0 as the
 //!   grenades do), whose launch (`devices::launch`) makes the object;
 //! - `combat_arms:bolt` (`BoltParams`, `CaBoltData`): a crossbow whose
-//!   rounds become bolts (7, `bolts`);
+//!   rounds become bolts (7, `bolts`), an alt-fire volley's
+//!   (`combat_arms:alt_fire`, `CaAltVolley`) the alternate bolt
+//!   (`BoltParams::alt`);
 //! - `combat_arms:controller` (`ControllerParams`, `CaController`): a
 //!   detonator; its round marks its owner's devices of one weapon (6.3,
 //!   6.4, 7).
@@ -96,9 +98,8 @@
 //!   Quirk 3), its rays use the torso zone for any sphere hit and don't
 //!   spend armour twice; nerve mine victims get `CaCameraReverse` (the
 //!   effect itself is another spec's, Open question 8).
-//! - A crossbow's alternate fire (right button, 1300 u/s, 41) isn't a mode
-//!   yet; its bolt is the primary's. The explosive bolt's `Range` is
-//!   measured in a straight line from the fire position.
+//! - The explosive bolt's `Range` is measured in a straight line from the
+//!   fire position.
 //! - Placeholder looks: devices (but a turret with its record's model) and
 //!   bolts are shown by their weapon's `ShownItem` key (no models or
 //!   effects for the devices yet; their sounds in flight, `CaFlightLook`);
@@ -144,6 +145,7 @@ use super::{
         CaGrenade, CaServerFrames, Frame, GrenadeWorld, Out, SERVER_FRAME,
     },
     rules::state::{CaMatch, Phase},
+    weapons::CaAltVolley,
 };
 use crate::{
     core::{Damage, DamageKind, Died, Health, LocalPlayer, NetRole, Predict, SimClock, SimSet, Team},
@@ -555,8 +557,9 @@ fn predict_shots(
     mut events: MessageReader<WeaponEvent>,
     local: Query<(), With<LocalPlayer>>,
     projectiles: Query<&CaProjectileData>,
-    bolts: Query<(&CaBoltData, &Weapon)>,
+    bolts: Query<(&CaBoltData, &Weapon, Option<&CaAltVolley>)>,
     settings: Option<Res<OwnItemSettings>>,
+    clock: Res<SimClock>,
     mut commands: Commands,
 ) {
     if !settings.is_some_and(|s| s.on()) {
@@ -584,15 +587,24 @@ fn predict_shots(
             let gravity = if p.gravity { -super::grenades::OBJECT_GRAVITY * d.unit } else { 0.0 };
             PredictedItem::new(p.shown_key(), origin, dir * p.speed * d.unit, step)
                 .with_gravity(gravity, super::grenades::GRAVITY_INTEGRATION_FACTOR)
-        } else if let Ok((d, w)) = bolts.get(e.weapon) {
+        } else if let Ok((d, w, volley)) = bolts.get(e.weapon) {
             let p = &d.params;
             let dir = cone_dir(p.perturb, p.dynamic_perturb, yaw, pitch, seed, BOLT);
-            PredictedItem::new(w.id, origin, dir * p.speed * d.unit, step)
+            let speed = match p.alt {
+                Some(a) if alt_round(volley, clock.now) => a.speed,
+                _ => p.speed,
+            };
+            PredictedItem::new(w.id, origin, dir * speed * d.unit, step)
         } else {
             continue;
         };
         commands.spawn(predicted.with_shooter(e.owner).bundle());
     }
+}
+
+/// Whether a round fired now is an alt-fire volley's (`CaAltVolley`).
+fn alt_round(volley: Option<&CaAltVolley>, now: f64) -> bool {
+    volley.is_some_and(|v| v.at(now))
 }
 
 /// The hook name of a detonator.
@@ -650,7 +662,13 @@ fn flame_pace(
 
 /// A round of a projectile, bolt or controller weapon was fired: make the
 /// object, or press the detonator (server).
-fn fire(mut events: MessageReader<WeaponEvent>, weapons: Query<&Weapon>, mut commands: Commands) {
+fn fire(
+    mut events: MessageReader<WeaponEvent>,
+    weapons: Query<&Weapon>,
+    volleys: Query<&CaAltVolley>,
+    clock: Res<SimClock>,
+    mut commands: Commands,
+) {
     for e in events.read() {
         if e.replay {
             continue;
@@ -669,11 +687,12 @@ fn fire(mut events: MessageReader<WeaponEvent>, weapons: Query<&Weapon>, mut com
             continue;
         }
         let (weapon, owner) = (e.weapon, e.owner);
+        let alt = alt_round(volleys.get(e.weapon).ok(), clock.now);
         commands.queue(move |w: &mut World| {
             if w.get::<CaProjectileData>(weapon).is_some() {
                 impact::fire(w, weapon, owner, origin, yaw, pitch, seed);
             } else if w.get::<CaBoltData>(weapon).is_some() {
-                bolts::fire(w, weapon, owner, origin, yaw, pitch, seed);
+                bolts::fire(w, weapon, owner, origin, yaw, pitch, seed, alt);
             } else if let Some(c) = w.get::<CaController>(weapon).cloned() {
                 press(w, owner, &c.of);
             }
