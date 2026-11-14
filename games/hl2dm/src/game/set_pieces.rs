@@ -278,7 +278,8 @@ impl Plugin for SetPiecesPlugin {
                 }
             }
         }
-        app.add_message::<MapEntityInput>()
+        app.add_plugins(super::combine_camera::CombineCameraPlugin)
+            .add_message::<MapEntityInput>()
             .add_message::<MapEntitySpawned>()
             .add_message::<MapEntityRemoved>()
             .add_message::<FireKeyedOutput>()

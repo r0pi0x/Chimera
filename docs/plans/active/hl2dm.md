@@ -820,8 +820,9 @@ implementing (owner branch) / done.
   the body put back at its home when its spot is free, 1 s retries; unit
   test); **`env_flare`** (a `Part`; the loader draws its red flare and white
   core as sprites, `Start`/`Die`); `env_shake`'s amplitude cap 16 and its
-  reach to network clients (`MapFx::Shake`); `npc_combine_camera` as a
-  still model (the loader). **HL2:DM** (`game::set_pieces`): the canister
+  reach to network clients (`MapFx::Shake`); `npc_combine_camera` as an
+  animated model (the loader; HL2:DM's `game::combine_camera` sweeps it,
+  pings and glows its eye; no lock-on until probe P8). **HL2:DM** (`game::set_pieces`): the canister
   (`FireCanister` once, flight of `FlightTime` at `FlightSpeed`, incoming
   sound, sweep, blast with the squared falloff, 750 shove, player push 250
   to 1000, shake, landing, `OnLaunched`/`OnImpacted`/`OnOpened`; dm_runoff's

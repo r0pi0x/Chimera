@@ -1319,7 +1319,8 @@ pub fn add_static_props(
 pub const ATTACHMENT_KEY: &str = "$attachment ";
 
 /// Model attachments of the prop entities something may be parented to
-/// (named by a parentname or a SetParent output), as keyvalues
+/// (named by a parentname or a SetParent output) and of the combine
+/// cameras, as keyvalues
 /// (`ATTACHMENT_KEY`) for the logic's SetParentAttachment: each
 /// attachment's place in the model's reference pose.
 pub fn add_attachment_keys(materials: &MaterialLoader, data: &mut MapData) {
@@ -1340,7 +1341,12 @@ pub fn add_attachment_keys(materials: &MaterialLoader, data: &mut MapData) {
     let mut cache: std::collections::HashMap<String, Vec<(String, Vec3)>> = std::collections::HashMap::new();
     for e in &mut data.entities {
         let named = e.get("targetname").is_some_and(|n| parents.contains(&n.to_ascii_lowercase()));
-        let Some(model) = e.get("model").filter(|m| named && m.to_ascii_lowercase().ends_with(".mdl")) else {
+        // The combine camera's eye glows at its `eyes` (HL2:DM's
+        // `combine_camera`); its model is fixed.
+        let camera = e.get("classname").is_some_and(|c| c.eq_ignore_ascii_case(COMBINE_CAMERA));
+        let Some(model) = (if camera { Some(COMBINE_CAMERA_MODEL) } else { e.get("model") })
+            .filter(|m| (named || camera) && m.to_ascii_lowercase().ends_with(".mdl"))
+        else {
             continue;
         };
         let model = model.to_ascii_lowercase().replace('\\', "/");
@@ -1408,8 +1414,9 @@ fn entity_props(bsp: &Bsp, fixed_models: FixedModels, pickups: bool) -> Vec<Prop
             let physics = class.starts_with("prop_physics");
             let door = class == DOOR_CLASS;
             let ragdoll = class == "prop_ragdoll";
-            // HL2's ceiling camera stands in as a still model (HL2:DM's
-            // dm_underpass; it sweeps in the game, maps_entities.md 14).
+            // HL2's ceiling camera (HL2:DM's dm_underpass): animated, its
+            // head turned by its pose parameters (HL2:DM's sweep,
+            // maps_entities.md 14).
             let camera = class == COMBINE_CAMERA;
             let charger = CHARGERS.iter().find(|(c, _)| *c == class).map(|(_, m)| *m);
             // The game's own models: its items and crates.
@@ -1451,6 +1458,7 @@ fn entity_props(bsp: &Bsp, fixed_models: FixedModels, pickups: bool) -> Vec<Prop
             };
             let dynamic = class.starts_with("prop_dynamic");
             let animated = ragdoll
+                || camera
                 || charger.is_some()
                 || dynamic
                     && (e.prop("defaultanim").is_some_and(|a| !a.trim().is_empty())

@@ -100,6 +100,8 @@ pub const ADDITIVE_SPRITES: &[&str] = &[
     "sprites/light_glow02_noz",
     "sprites/orangelight1",
     "sprites/smoke",
+    // The combine camera's eye (`combine_camera`).
+    "sprites/glow1",
     // The gravity gun's (`physcannon_fx`): glow and additive render modes.
     "sprites/orangecore1",
     "sprites/orangecore2",
@@ -123,6 +125,7 @@ pub fn load_materials(loader: &mut source_engine::content::material::MaterialLoa
             MATERIALS,
             super::projectile_fx::MATERIALS,
             super::set_piece_fx::MATERIALS,
+            super::combine_camera::MATERIALS,
             super::physcannon_fx::MATERIALS,
             super::rpg_fx::MATERIALS,
             source_engine::effects::explosions::MATERIALS,
