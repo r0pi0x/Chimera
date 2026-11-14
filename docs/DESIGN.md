@@ -944,8 +944,10 @@ game's:
   (`chimera_client::client::overlay`, `OverlayRoot`) and has one rule
   of its own: real pixels sized for a 720-line screen, scaled by the
   window's height alone (never its width: no 4:3 stretch at 16:9 or
-  21:9), in one face (Trebuchet MS, else the nearest installed sans),
-  never a game's scheme fonts, colours, canvas or `GameDraws` (which
+  21:9), in one set of faces, the app's theme's (`chimera_ui::Theme`
+  and `KitFonts`: the Ultimate Gun Game's own UGG faces; Trebuchet MS,
+  else the nearest installed sans, only as the default theme's), never a
+  game's scheme fonts, colours, canvas or `GameDraws` (which
   can turn off only the shell's fallback HUD's parts, not the overlay).
   A game scales through its own nodes, never Bevy's global `UiScale`.
   Held by: `repo_checks`' `games_leave_the_overlay_alone` (a game crate

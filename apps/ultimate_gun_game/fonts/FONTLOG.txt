@@ -1,0 +1,33 @@
+FONTLOG for UGG Display and UGG Mono
+====================================
+
+The Ultimate Gun Game's own faces, made for this project by Lucker Party
+contributors and licensed under the SIL Open Font License 1.1 (OFL.txt).
+Sources: the build scripts in tools/fonts/ (tools/fonts/README.md).
+
+Faces
+-----
+- UGG Display Black (900), Bold (700), Regular (400): wide, square-
+  shouldered capitals whose bowls are squircles, open terminals cut 20
+  degrees off vertical and diagonals at 70 degrees, both from the game's
+  logo facets. Caps only (lower case maps to capitals). Tabular figures by
+  default; `pnum` proportional figures, `zero` a slashed zero. Black
+  carries `ss02`, the wordmark set (tighter, arm ends cut at 70 degrees,
+  the plain A); `ss03`-`ss06` choose its A.
+- UGG Mono Regular: the data monospace companion: squircle bowls, one
+  advance, slashed zero by default (`ss01`: a plain zero; `ss03`: a one
+  without its base).
+
+ChangeLog
+---------
+2026-11-13 v0.4
+- Black added (with the wordmark set ss02 and the A alternates ss03-ss06).
+- The faces committed with the game (apps/ultimate_gun_game/fonts/), TTF
+  only.
+
+2026-11-13 v0.2-v0.3
+- Display Bold and Regular, Mono Regular; squircle bowls, kerning.
+
+Acknowledgements
+----------------
+Lucker Party contributors.

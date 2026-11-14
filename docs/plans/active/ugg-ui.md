@@ -1,6 +1,6 @@
 # Plan: Ultimate Gun Game's new UI ("Signal")
 
-Status: proposed 2026-11-13. Plan only; no code yet. Design reference:
+Status: in progress (M0, 2026-11-13). Design reference:
 the Look Book IV prototype (published artifact) and its round V (menu
 slot C backdrop, ambient shader background, tag styles, match-end
 background: still open when this was written). The prototype's sizes,
@@ -169,6 +169,37 @@ pins a few derived values. Data-driven first: what a screen shows
 (columns, which chips exist, menu entries) is data where it already is
 (main_menu.toml) or becomes so; choreography stays in code, with its
 numbers in the theme.
+
+### 2.3b One token source, a style layer, BSN
+
+- **Tokens**: the theme (shell.toml with Signal's theme.toml over it) is
+  the one source of colours, sizes in cq, padding, gaps, type roles,
+  durations and network thresholds. `repo_checks --bin ui_tokens` writes
+  them as the look book's CSS custom properties
+  (`apps/ultimate_gun_game/data/tokens.css`, and `--out` the look book's
+  folder, whose gen.py appends it last so it wins);
+  `ui_tokens_are_fresh` fails when the committed file is stale.
+- **Style layer** (`chimera_ui::style`): `UiStyle` (`style!(row, gap: 0.6,
+  pad: [0.7, 0.8], h: 2.15, bg: Tone::Plate)`: flex row/column, gap,
+  padding/margin in CSS shorthand, sizes, absolute offsets, alignment,
+  grow, a background tone, an outline), `UiText` (role, size in cq, tone)
+  and `UiSlant` (a 12° fill), components resolved through `UiUnits` by
+  the kit (again on a resize, a theme or font change). A node's px are the
+  look book's `v cqw` rounded to whole physical pixels
+  (`styled_px_follow_the_css_formula`, 1080p and 1440p).
+- **BSN** (finding, 2026-11-14): pinned Bevy 0.20 ships `bevy_scene`'s
+  `bsn!`/`bsn_list!` (on in our build through Bevy's `ui` feature; Bevy's
+  own feathers widgets are written in it). It works for our UI trees,
+  shown by `bsn_builds_styled_ui_trees`: styled rows from data (a
+  `Vec<impl Scene>` as `Children [ {rows} ]`), text in the kit's roles,
+  `UiSlant` nodes getting their `SlantMaterial`, and any marker beside
+  them (a parity id per node). Notes: a runtime value goes in as a bare
+  identifier bound before the macro (`let s = style!(..); bsn! { s }`),
+  not as `{expr}` in component position (that form is for field values:
+  `Text({name})`); components need `Default + Clone` (or
+  `FromTemplate`); `spawn_scene` resolves at once, `queue_spawn_scene`
+  waits for assets. Screens may use BSN or plain bundles; both read the
+  same `UiStyle`/`UiText`.
 
 ### 2.4 Fonts as run-time assets
 
@@ -372,6 +403,20 @@ menu`, feature `dev`) for screenshots. Perf (section 7) is counted per
 milestone.
 
 ### M0: tokens, fonts, the motion kit
+
+Status (2026-11-14): done but for the items under "Left". In:
+`chimera/ui` (`theme`, `fonts`, `units`, `motion`, `materials`: Slant,
+TickBar, Pass, Lines, Ambient (stub), `icons`: data/icons.toml with the
+13 guns and the marks (UGG mark, crown, trophy, kill, death, warn),
+rasterized per pixel height (`IconImages`) and tessellated, `IconFor`,
+`choose` with `icons.prefer_game`; `widgets`: `tag`, `kbd`);
+`ChimeraUiPlugin` and `ui_scene` (`client::ui_scene`, `proof`) in the
+shell; Signal's theme and the v0.4 faces in `apps/ultimate_gun_game/`
+(`signal`); the font sources in `tools/fonts/`;
+`own_fonts_carry_their_licence`. Left: `overlay::font` from the theme's
+roles (the screens' milestones switch their text to `fonts::text`), the
+widgets `plus_mark`, `rolling_number`, `slab`, `chip`, the post-layout
+pixel snap system, and `text_warm` declarations of the roles' sizes.
 
 - `chimera_ui` crate (2.1) with `theme`, `fonts`, `units`, `motion`,
   `materials`, `icons`, `widgets`; the fonts and theme in
@@ -607,7 +652,7 @@ must be one build.
    bitmaps sized so they stay sharp. Our fallback set (by `GunClass`,
    with per-weapon overrides for knives, crossbows, energy guns) only
    where a game has none: our own guns, games without icons, assets not
-   downloaded yet. One theme key (`icons.prefer_game`) flips it.
+   downloaded yet. One theme key (`icons.prefer_game`) flips it; `chimera_ui::icons::choose` applies it.
 2. Tab: one board, the chip opening into it. The board is big enough to
    carry everything the full scoreboard had (rung, gun icon and name,
    K/D, ladder strip, tags, session wins). Its open and close are fast

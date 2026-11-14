@@ -283,6 +283,9 @@ Tests that need a game install skip when it is missing.
   Third-party code is committed only from approved permissive sources,
   with credit ([THIRD_PARTY.md](THIRD_PARTY.md)); nothing else is
   copied or translated.
+- The Ultimate Gun Game's faces (UGG Display, UGG Mono) are ours, under
+  the SIL Open Font License 1.1, in `apps/ultimate_gun_game/fonts/`
+  (their sources in `tools/fonts/`).
 - Game names are trademarks of their owners. This project is not
   affiliated with or endorsed by Valve, Nexon, Valofe or any other
   publisher.

@@ -23,6 +23,9 @@ chimera_world.workspace = true
 chimera_sim.workspace = true
 chimera_present.workspace = true
 chimera_net.workspace = true
+# The UI kit (theme, fonts by role, units, motion, UI materials) the
+# overlays are built with (docs/plans/active/ugg-ui.md).
+chimera_ui.workspace = true
 avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_scene"] }
 # bevy_winit with its default feature, as the debug UI (bevy_egui) asks for it:
 # without this line a build that leaves the client shell out builds another
@@ -62,6 +65,7 @@ dev = [
     "chimera_sim/dev",
     "chimera_present/dev",
     "chimera_net/dev",
+    "chimera_ui/dev",
 ]
 # Every system as a span in a Chrome trace (the game's `profile`).
 profile = ["chimera_core/profile", "trace"]

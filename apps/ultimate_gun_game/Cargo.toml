@@ -27,6 +27,8 @@ chimera_core.workspace = true
 chimera_sim.workspace = true
 chimera_net.workspace = true
 chimera_client = { workspace = true, optional = true }
+# The Signal look's kit: its theme and faces (data/theme.toml, fonts/).
+chimera_ui = { workspace = true, optional = true }
 party_kit.workspace = true
 bevy.workspace = true
 workspace-hack.workspace = true
@@ -61,11 +63,12 @@ path = "tests/it/main.rs"
 
 [features]
 default = ["present"]
-present = ["dep:chimera_client", "party_kit/default"]
+present = ["dep:chimera_client", "dep:chimera_ui", "party_kit/default"]
 dev = [
     "chimera_core/dev",
     "chimera_sim/dev",
     "chimera_net/dev",
     "chimera_client?/dev",
+    "chimera_ui?/dev",
     "party_kit/dev",
 ]

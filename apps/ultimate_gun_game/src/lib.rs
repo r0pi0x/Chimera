@@ -47,7 +47,7 @@
 //! (`party_kit::client::PARTY`) with its own command line (`args`), the
 //! party's main-menu start over a background map (never the greybox or a
 //! stand-in behind it) and its last word (`launch`: the main menu, the
-//! plugin with a fresh seed, the minimal HUD).
+//! plugin with a fresh seed, the minimal HUD, the Signal look: `signal`).
 //!
 //! Known shortcuts: the ladder isn't made again when a player without a
 //! game joins mid-match; with no CS:S install the client starts (a server
@@ -55,6 +55,9 @@
 //! but its own first map (the launch's, CS:S's) doesn't load; the
 //! installs' maps are the host's (a client lacking one gets it as any
 //! server map: CS:S's by download).
+
+#[cfg(feature = "present")]
+pub mod signal;
 
 use bevy::prelude::*;
 use chimera_core::{
@@ -354,7 +357,7 @@ pub fn args(args: chimera_client::client::Args) -> chimera_client::client::Args 
 
 /// What the app adds last: the party's main menu (shown at start when the
 /// command line doesn't play; Play starts `MINIGAME`), the Ultimate Gun
-/// Game's parts with a fresh seed, and the minimal HUD.
+/// Game's parts with a fresh seed, the minimal HUD, and its look (`signal`).
 #[cfg(feature = "present")]
 fn launch(app: &mut App, args: &chimera_client::client::Args) {
     let at_menu = party_kit::main_menu::starts_at_menu(args);
@@ -367,7 +370,8 @@ fn launch(app: &mut App, args: &chimera_client::client::Args) {
             keep_recent: at_menu && !args.tool_run(),
         })
         .add_plugins(party_kit::menu_backdrop::MenuBackdropPlugin)
-    .add_plugins((UltimateGunGamePlugin::launch(), chimera_client::client::hud_minimal::MinimalHudPlugin));
+    .add_plugins((UltimateGunGamePlugin::launch(), chimera_client::client::hud_minimal::MinimalHudPlugin))
+        .add_plugins(signal::SignalPlugin);
 }
 
 #[cfg(test)]

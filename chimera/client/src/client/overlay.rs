@@ -190,7 +190,7 @@ pub fn layer(app: &mut App) -> Entity {
 /// a 720-line screen, never under a third of it. The one rule for every
 /// game and aspect.
 pub fn scale(height: f32) -> f32 {
-    height.max(240.0) / 720.0
+    chimera_ui::units::overlay_scale(height)
 }
 
 /// The layer's face, whichever game's HUD is up.

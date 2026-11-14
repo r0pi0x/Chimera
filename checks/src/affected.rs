@@ -461,6 +461,8 @@ fn is_docs(path: &str) -> bool {
             "tools/css_probe/",
             "tools/hl2dm_probe/",
             "tools/renderdoc/",
+            // The UGG fonts' build scripts (their output is in apps/ultimate_gun_game/fonts/).
+            "tools/fonts/",
         ]
         .iter()
         .any(|p| path.starts_with(p))
