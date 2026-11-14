@@ -6,7 +6,10 @@
 //! the menu with why; a server that goes away: the reconnect box, joined
 //! again once it's back, Cancel); Cancel while joining and loading; the Escape
 //! menu's Disconnect (back at the menu, a host with people connected asked
-//! first); Combat Arms' loading screen kept to its own maps; the data.
+//! first); Combat Arms' loading screen kept to its own maps; the data; the
+//! background (the menu's own backdrop with nothing at hand and no map
+//! load; a map at hand loaded behind it with downloads held, then the
+//! crossfade; the rotation between starts; the backdrop's cost a frame).
 
 use bevy::prelude::*;
 use chimera_client::client::{AppHooks, front_end};
@@ -53,7 +56,19 @@ fn menu_bits(app: &mut App, at_start: bool) {
 
 /// A single-player party app at the menu (or in the game).
 fn local(at_start: bool) -> Sim {
+    local_with(at_start, None, false)
+}
+
+/// `local` with these maps at hand for the background (None: none), and
+/// `map` never finishing from the start (`never_loads`).
+fn local_with(at_start: bool, background: Option<main_menu::BackgroundMaps>, never_loads: bool) -> Sim {
     let mut sim = Sim::with(CaSim, |app| {
+        if let Some(b) = background {
+            app.insert_resource(b);
+        }
+        if never_loads {
+            app.insert_resource(NeverLoads);
+        }
         app.add_plugins((GreyboxMapPlugin, PartyPartsPlugin, net::NetPlugin));
         menu_bits(app, at_start);
         // `map` as the shell's, without loading: the map "comes in" at once.
@@ -114,6 +129,7 @@ fn the_command_line_decides_the_menu() {
     ] {
         assert!(!main_menu::starts_at_menu(&args(playing)), "{playing} skips the menu");
     }
+    assert!(main_menu::starts_at_menu(&args("--offscreen 1280x720 --frames 90 +mainmenu")), "asked for");
 }
 
 #[test]
@@ -622,16 +638,23 @@ fn recent_addresses_are_kept_newest_first() {
     assert_eq!(r[0], "h9");
 }
 
-/// Whether the menu's black backdrop is up.
+/// Whether the menu's backdrop is up (at any opacity).
 fn backdrop_up(sim: &mut Sim) -> bool {
     let w = sim.app.world_mut();
     let v = *w.query_filtered::<&Visibility, With<main_menu::MenuBackdrop>>().single(w).unwrap();
     v != Visibility::Hidden
 }
 
+/// The backdrop's opacity.
+fn backdrop_opacity(sim: &mut Sim) -> f32 {
+    let w = sim.app.world_mut();
+    w.query::<&main_menu::MenuBackdrop>().single(w).unwrap().opacity
+}
+
 /// The menu's background is never the greybox: not in the data, and while
 /// the world under the menu is one (leaving a game, no background map
-/// loading) a black backdrop covers it, gone once a real map is in.
+/// loading) the menu's own backdrop covers it, fading out once a real map
+/// is in, back at once when it goes.
 #[test]
 fn the_greybox_is_never_the_menus_background() {
     let data = MenuData::shipped();
@@ -646,9 +669,174 @@ fn the_greybox_is_never_the_menus_background() {
     assert!(menu(&sim).shown());
     assert!(backdrop_up(&mut sim), "on the greybox: covered");
     sim.app.world_mut().insert_resource(chimera_world::map::LoadedMapName("cs_source:de_dust2".into()));
-    sim.app.update();
+    sim.ticks(2);
+    let fading = backdrop_opacity(&mut sim);
+    assert!(fading > 0.0 && fading < 1.0, "a real map: the backdrop crossfades to it ({fading})");
+    sim.seconds(f64::from(main_menu::BACKDROP_FADE_SECS) + 0.1);
     assert!(!backdrop_up(&mut sim), "a real map behind the menu shows");
     sim.app.world_mut().insert_resource(chimera_world::map::LoadedMapName("greybox".into()));
     sim.app.update();
     assert!(backdrop_up(&mut sim));
+    assert_eq!(backdrop_opacity(&mut sim), 1.0, "covered at once");
 }
+
+/// Hold guards alive now (the tests' stand-in for the asset store's
+/// fetches held).
+static HOLDS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+struct TestHold;
+
+impl Drop for TestHold {
+    fn drop(&mut self) {
+        HOLDS.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+fn test_hold(_: &str) -> Box<dyn std::any::Any + Send + Sync> {
+    HOLDS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    Box::new(TestHold)
+}
+
+/// Background maps with `at_hand` at hand, counting what was asked.
+fn at_hand(maps: &'static [&'static str], asked: std::sync::Arc<std::sync::Mutex<Vec<String>>>) -> main_menu::BackgroundMaps {
+    main_menu::BackgroundMaps {
+        at_hand: std::sync::Arc::new(move |m: &str| {
+            asked.lock().unwrap().push(m.to_string());
+            maps.contains(&m)
+        }),
+        hold: test_hold,
+    }
+}
+
+/// Ticks until the background's pick (on a thread) is made.
+fn picked(sim: &mut Sim) {
+    for _ in 0..2000 {
+        if !sim.app.world().resource::<PartyMenu>().reload_background {
+            return;
+        }
+        sim.ticks(1);
+        // The pick's thread a moment to answer.
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    panic!("the background's pick wasn't made");
+}
+
+/// A fresh client (no installs, an empty asset cache): nothing is at hand,
+/// so the menu shows its own backdrop at once and for good; no map loads.
+#[test]
+fn a_fresh_client_shows_the_backdrop_and_loads_no_map() {
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let mut sim = local_with(true, Some(at_hand(&[], asked.clone())), false);
+    assert!(backdrop_up(&mut sim), "up from the first frames");
+    assert_eq!(backdrop_opacity(&mut sim), 1.0);
+    picked(&mut sim);
+    sim.ticks(10);
+    let w = sim.app.world();
+    assert!(w.resource::<Maps>().0.is_empty(), "no map: {:?}", w.resource::<Maps>().0);
+    let state = w.resource::<main_menu::BackgroundState>();
+    assert_eq!(state.picked, None);
+    assert!(!state.holding() && !state.scene);
+    assert!(!menu(&sim).background_load);
+    // Every candidate was asked once: the pool's, then the data's.
+    let pool = main_menu::map_pool(sim.app.world());
+    let want = main_menu::background_candidates(&MenuData::shipped(), &pool);
+    assert_eq!(*asked.lock().unwrap(), want);
+    assert!(backdrop_up(&mut sim));
+    assert_eq!(backdrop_opacity(&mut sim), 1.0);
+    assert_eq!(menu(&sim).screen, Screen::MainMenu);
+}
+
+/// A client with a map at hand (in the asset cache, or installed): the
+/// menu shows its backdrop at once, loads that map behind it with
+/// downloads held, and crossfades to it once it is in; the hold goes with
+/// the load.
+#[test]
+fn a_map_at_hand_loads_behind_the_backdrop_with_downloads_held() {
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    // The shell's `map` loads in the background: here it doesn't finish
+    // until the test says.
+    let mut sim = local_with(true, Some(at_hand(&["combat_arms:warehouse"], asked.clone())), true);
+    assert!(backdrop_up(&mut sim));
+    assert_eq!(backdrop_opacity(&mut sim), 1.0);
+    picked(&mut sim);
+    sim.ticks(2);
+    let maps = sim.app.world().resource::<Maps>().0.clone();
+    assert_eq!(maps, ["combat_arms:warehouse"], "the one at hand");
+    assert!(menu(&sim).background_load);
+    assert!(sim.app.world().resource::<main_menu::BackgroundState>().holding());
+    assert_eq!(HOLDS.load(std::sync::atomic::Ordering::SeqCst), 1, "downloads held while it loads");
+    assert_eq!(backdrop_opacity(&mut sim), 1.0, "the backdrop while it loads");
+    assert_eq!(menu(&sim).screen, Screen::MainMenu, "the menu meanwhile, no loading panel");
+    // In: the shell names the map and says so.
+    sim.app.world_mut().remove_resource::<NeverLoads>();
+    sim.app.world_mut().insert_resource(chimera_world::map::LoadedMapName("combat_arms:warehouse".into()));
+    front_end::entered_game(sim.app.world_mut());
+    sim.ticks(2);
+    let state = sim.app.world().resource::<main_menu::BackgroundState>();
+    assert_eq!(state.picked.as_deref(), Some("combat_arms:warehouse"));
+    assert!(state.scene && !state.holding(), "in: the hold is gone");
+    assert_eq!(HOLDS.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(menu(&sim).screen, Screen::MainMenu);
+    let fading = backdrop_opacity(&mut sim);
+    assert!(fading > 0.0 && fading < 1.0, "crossfading ({fading})");
+    sim.seconds(f64::from(main_menu::BACKDROP_FADE_SECS) + 0.1);
+    assert!(!backdrop_up(&mut sim), "crossfaded to the map");
+}
+
+/// The background's candidates (the pool's maps, then the data's) and the
+/// rotation between starts: the next at hand after the last shown.
+#[test]
+fn the_background_rotates_through_the_maps_at_hand() {
+    let mut data = MenuData::shipped();
+    data.background.maps = vec!["cs_source:de_dust2".into(), "combat_arms:warehouse".into()];
+    let pool = ["cs_source:cs_office".to_string(), "cs_source:de_dust2".into(), "greybox".into()];
+    let c = main_menu::background_candidates(&data, &pool);
+    assert_eq!(c, ["cs_source:cs_office", "cs_source:de_dust2", "combat_arms:warehouse"]);
+    let all = |_: &str| true;
+    assert_eq!(main_menu::pick_background(&c, None, all).as_deref(), Some("cs_source:cs_office"));
+    assert_eq!(main_menu::pick_background(&c, Some("cs_source:cs_office"), all).as_deref(), Some("cs_source:de_dust2"));
+    assert_eq!(main_menu::pick_background(&c, Some("combat_arms:warehouse"), all).as_deref(), Some("cs_source:cs_office"));
+    assert_eq!(main_menu::pick_background(&c, Some("elsewhere:x"), all).as_deref(), Some("cs_source:cs_office"));
+    let some = |m: &str| m != "cs_source:de_dust2";
+    assert_eq!(main_menu::pick_background(&c, Some("cs_source:cs_office"), some).as_deref(), Some("combat_arms:warehouse"));
+    let one = |m: &str| m == "cs_source:de_dust2";
+    assert_eq!(main_menu::pick_background(&c, Some("cs_source:de_dust2"), one).as_deref(), Some("cs_source:de_dust2"));
+    assert_eq!(main_menu::pick_background(&c, None, |_| false), None);
+}
+
+/// What the menu costs a frame over its own backdrop (no map at hand),
+/// in instructions on this thread (`Sim::work`): its systems together, and
+/// the backdrop's own. The drawn backdrop adds no CPU work a frame (it
+/// moves on the renderer's clock; `menu_backdrop`).
+#[test]
+fn the_backdrop_costs_little_a_frame() {
+    let mut sim = local_with(true, Some(at_hand(&[], Default::default())), false);
+    picked(&mut sim);
+    sim.ticks(30);
+    assert!(backdrop_up(&mut sim));
+    let Some(work) = sim.work(120) else {
+        eprintln!("skipping: no hardware counters ({})", chimera_core::metrics::hw_status());
+        return;
+    };
+    let per = |pred: &dyn Fn(&str) -> bool| -> u64 {
+        work.systems.0.iter().filter(|(k, _)| pred(k)).map(|(_, v)| v.0).sum::<u64>() / 120
+    };
+    let menu_all = per(&|k| MENU_SYSTEMS.iter().any(|s| k == format!("Update {s}")));
+    let backdrop = per(&|k| k == "Update backdrop");
+    eprintln!("the menu: {menu_all} instructions a frame, its backdrop {backdrop}");
+    assert!(backdrop > 0, "the backdrop's system was counted: {:?}", work.systems.top(12));
+    assert!(backdrop < BACKDROP_LIMIT, "the backdrop: {backdrop} instructions a frame (limit {BACKDROP_LIMIT})");
+    assert!(menu_all < MENU_LIMIT, "the menu: {menu_all} instructions a frame (limit {MENU_LIMIT})");
+}
+
+/// The menu's systems (`MainMenuSystems`), as the work counts name them.
+const MENU_SYSTEMS: &[&str] = &[
+    "look_loaded", "typing", "clicks", "act", "follow_loads", "follow_reconnect", "refresh_values", "ca_loading_gate",
+    "fly", "cameras", "show", "backdrop", "progress", "loading_under_lobby", "entry_hover", "music",
+];
+
+/// The most the backdrop's system may cost a frame (instructions).
+const BACKDROP_LIMIT: u64 = 20_000;
+/// The most the whole menu may cost a frame over the backdrop.
+const MENU_LIMIT: u64 = 200_000;
+

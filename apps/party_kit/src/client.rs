@@ -27,8 +27,9 @@
 //! Number keys switch weapons at once under every game's HUD
 //! (`hl2_fast_switch`; CS:S's `hud_fastswitch` is 1 by default).
 //! The Escape menu is the party's own (`esc_menu`), titled by the app;
-//! `start_at_menu` starts an app at the main menu (`main_menu`) over the
-//! first of its background maps that loads.
+//! `start_at_menu` starts an app at the main menu (`main_menu`) with no
+//! map, over the menu's own backdrop; `background_at_hand` says which maps
+//! can be its background without a download.
 //! Known shortcuts: not CS:S's spectator panel or overview;
 //! on Combat Arms' maps there is no CS:S HUD look (the shell's plain HUD
 //! with CS:S's guns).
@@ -314,28 +315,44 @@ pub fn sim(app: &mut App, _: &Args) {
 
 /// A party app's start at its main menu (`main_menu`; its
 /// `GameAppHooks::start`) when the command line doesn't play
-/// (`main_menu::starts_at_menu`): the first of data/main_menu.toml's
-/// background maps that loads, else no map at all behind it. None: the
+/// (`main_menu::starts_at_menu`): no map at all, so the menu shows at once
+/// over its own backdrop; the menu then loads a background map in the
+/// background if one is at hand (`main_menu`, "Background"). None: the
 /// command line plays (the usual start map).
-pub fn start_at_menu(game: &'static GameApp, args: &Args) -> Option<StartMap> {
+pub fn start_at_menu(_: &'static GameApp, args: &Args) -> Option<StartMap> {
     if !crate::main_menu::starts_at_menu(args) {
         // A joiner with no map of its own (`with_defaults_for`: the default
         // map's game isn't installed) waits on the greybox.
         let no_map = args.game_map().is_none() && joins_server(&args.console);
         return no_map.then_some(StartMap::Greybox);
     }
-    let data = crate::main_menu::MenuData::shipped();
-    // In the app's context (`GameApp::load_context`), the app's from then on.
-    let context = game.load_context();
-    let options = chimera_world::map::MapLoadOptions { context: context.clone(), ..chimera_world::map::MapLoadOptions::hdr(0) };
-    let load = |id: &str| (game.maps.load)(id, &options);
-    Some(match crate::main_menu::background_map(&data, load) {
-        Some((id, map)) => StartMap::loaded_in(&id, map, context),
-        None => {
-            eprintln!("warning: none of the main menu's background maps loads: the greybox behind it");
-            StartMap::Empty
-        }
-    })
+    Some(StartMap::Empty)
+}
+
+/// Whether map `id` can be the main menu's background without a download
+/// (`main_menu::BackgroundMaps`): its game installed (`map_installed`),
+/// or served from the asset store alone with the map's set and the game's
+/// `base` whole in the store (`mount::served::map_held`: from earlier
+/// joins or a fetch ahead). Asked with fetches
+/// held, so even finding the game's build asks no service.
+pub fn background_at_hand(id: &str) -> bool {
+    let Some((game, name)) = id.split_once(':') else {
+        return false;
+    };
+    let _hold = chimera_core::mount::assets::cached::hold_fetches(Some(game));
+    let info = match game {
+        cs_source::game::GAME => &cs_source::game::INFO,
+        combat_arms::game::GAME => &combat_arms::game::INFO,
+        hl2dm::game::GAME => &hl2dm::game::INFO,
+        _ => return false,
+    };
+    if info.install().is_none() {
+        return false;
+    }
+    if !info.served_alone() {
+        return true;
+    }
+    chimera_core::mount::served::map_held(game, name)
 }
 
 /// Whether the command line joins a server (`+connect <address>`).

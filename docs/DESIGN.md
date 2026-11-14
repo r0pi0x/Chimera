@@ -1083,8 +1083,14 @@ server browser are CS:S's). Entries and the Play page's rows are data
 - **Join** is direct connect (address, password, recent addresses); the
   LAN browser is M2.
 - **Options**: the Escape menu's tabs and Binds.
-- **Behind it** a live map (`[background]`) with a slow camera orbit;
-  the HUD is hidden by drawing the menu's UI on a camera of its own
+- **Behind it** the menu's own backdrop (an original procedural scene
+  in code, no game's files) from the first frame; then, when a map is at
+  hand without a download (its game installed, or its sets whole in the
+  asset cache from earlier joins), that map loads behind it (the pool's
+  maps first, then `[background]`'s, rotating between starts; downloads
+  held) and the backdrop crossfades to it, with a slow camera orbit.
+  Nothing at hand (a fresh install, no token, offline): the backdrop
+  stays. The HUD is hidden by drawing the menu's UI on a camera of its own
   while the shell's UI camera (the HUD's) is off.
 - **Loading**: CS:S's loading dialog's parts (stage, bar, Cancel), for
   joins, Play's load and a map change in a game; Combat Arms' own

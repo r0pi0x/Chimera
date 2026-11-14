@@ -19,8 +19,10 @@
 # of it. The Game tab is data/host_settings.toml's next-match rows.
 #
 # [background]: the live map behind the menu and its slow camera flight,
-# an orbit around the middle of the map's spawn points: `maps` the first
-# that loads, `height` metres above the spawns' middle, `radius` metres
+# an orbit around the middle of the map's spawn points: `maps` the maps
+# it may be after the app's minigame's pool (one at hand without a
+# download, the next after the last start's; none at hand: the menu's own
+# backdrop), `height` metres above the spawns' middle, `radius` metres
 # from it, `period` seconds a lap, `pitch` degrees down.
 
 [background]

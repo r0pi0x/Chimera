@@ -25,7 +25,8 @@
 //! also kept for the process (`on_demand_since`, `OnDemand`: the game
 //! client counts those made while a match runs, `net::on_demand`). Without a fetcher, or when it fails, the read is an error
 //! that names the path (`asset miss`), so a set missing a file shows at
-//! once.
+//! once; so it is while a `FetchHold` of its game lives (`hold_fetches`:
+//! a load that must never download, the main menu's background map).
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -291,6 +292,41 @@ impl CachedFiles {
     }
 }
 
+/// Holds on-demand fetches (and manifest fetches, `AssetSettings::build`)
+/// of a game, or of every game, while a `FetchHold` lives: a record the
+/// store lacks is then a miss, as without a fetcher. For loads that must
+/// never download (the main menu's background map, held for its game);
+/// process-wide for that game, so a read of it on another thread
+/// meanwhile misses too. The games held, one entry per hold ("" every
+/// game).
+static HOLDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Fetches held while it lives (`hold_fetches`).
+#[derive(Debug)]
+pub struct FetchHold(String);
+
+impl Drop for FetchHold {
+    fn drop(&mut self) {
+        let mut holds = HOLDS.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(i) = holds.iter().position(|g| *g == self.0) {
+            holds.swap_remove(i);
+        }
+    }
+}
+
+/// Holds `game`'s fetches (None: every game's) until the returned value
+/// drops.
+pub fn hold_fetches(game: Option<&str>) -> FetchHold {
+    let game = game.unwrap_or_default().to_string();
+    HOLDS.lock().unwrap_or_else(|e| e.into_inner()).push(game.clone());
+    FetchHold(game)
+}
+
+/// Whether `game`'s fetches are held now (`hold_fetches`).
+pub fn fetches_held(game: &str) -> bool {
+    HOLDS.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|g| g.is_empty() || g == game)
+}
+
 /// One on-demand fetch (a group asked for because `path` was read and the
 /// store lacked it), as `on_demand_since` hands it out.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -379,7 +415,9 @@ impl FileSource for CachedFiles {
     fn read(&self, path: &str) -> Option<io::Result<Vec<u8>>> {
         let f = self.index.files.get(path)?;
         let got = match (self.store.get(&f.id, f.size), &self.fetcher) {
-            (Err(e), Some(fetcher)) if e.kind() == io::ErrorKind::NotFound => self.fetch(fetcher.as_ref(), path, f),
+            (Err(e), Some(fetcher)) if e.kind() == io::ErrorKind::NotFound && !fetches_held(&self.index.game) => {
+                self.fetch(fetcher.as_ref(), path, f)
+            }
             (got, _) => got,
         };
         Some(got.map_err(|e| {
@@ -404,5 +442,84 @@ impl FileSource for CachedFiles {
 
     fn files_in(&self, dir: &str) -> Vec<String> {
         self.index.dirs.get(dir).cloned().unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use chimera_vfs::FileSource;
+
+    use super::{CachedFiles, hold_fetches};
+    use crate::{AssetSettings, Manifest, Store, manifest::FileRecord, remote::Fetcher};
+
+    /// Hands out `bytes` for any record and counts what it was asked.
+    struct Counting {
+        bytes: Vec<u8>,
+        asked: AtomicUsize,
+    }
+
+    impl Fetcher for Counting {
+        fn fetch(&self, store: &Store, _: &str, _: u64) -> std::io::Result<Vec<u8>> {
+            self.asked.fetch_add(1, Ordering::SeqCst);
+            store.put(&self.bytes)?;
+            Ok(self.bytes.clone())
+        }
+    }
+
+    /// While a hold lives a missing record is a miss, never a fetch; a
+    /// store holding a set whole says so (`sets::held`) without a network.
+    #[test]
+    fn a_hold_keeps_reads_to_the_store_and_held_sets_are_known() {
+        let dir = std::env::temp_dir().join(format!("chimera_hold_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let store = Store::new(&dir);
+        let bytes = b"a map's file".to_vec();
+        let id = crate::sha256_hex(&bytes);
+        let mut m = Manifest::new("fixture", "7", None);
+        m.files.insert("maps/a.bsp".into(), FileRecord { id: id.clone(), size: bytes.len() as u64, stored: 1 });
+        m.sets.entry("map/a".into()).or_default().insert("maps/a.bsp".into());
+        // An older manifest's map set: named by the map alone.
+        m.sets.entry("c".into()).or_default().insert("maps/a.bsp".into());
+        m.save(&store.manifest_path("fixture", "7")).unwrap();
+        let settings = AssetSettings {
+            store: Some(store.clone()),
+            use_install: false,
+            builds: Default::default(),
+            remote: None,
+            lock: None,
+        };
+        assert!(!crate::sets::held(&settings, "fixture", &["map/a"]), "its record isn't in the store");
+        let fetcher = Arc::new(Counting { bytes: bytes.clone(), asked: AtomicUsize::new(0) });
+        let files = CachedFiles::new(store.clone(), &m).with_fetcher(Some(fetcher.clone() as Arc<dyn Fetcher>));
+        {
+            let _other = hold_fetches(Some("other"));
+            assert!(!super::fetches_held("fixture"), "another game's hold");
+            let _hold = hold_fetches(Some("fixture"));
+            assert!(super::fetches_held("fixture") && !super::fetches_held("third"));
+            let miss = files.read("maps/a.bsp").unwrap().unwrap_err();
+            assert_eq!(miss.kind(), std::io::ErrorKind::NotFound);
+            assert_eq!(fetcher.asked.load(Ordering::SeqCst), 0, "nothing fetched while held");
+        }
+        assert!(!super::fetches_held("fixture"), "the holds went with their guards");
+        assert_eq!(files.read("maps/a.bsp").unwrap().unwrap(), bytes, "fetched once the hold is gone");
+        assert_eq!(fetcher.asked.load(Ordering::SeqCst), 1);
+        assert!(crate::sets::held(&settings, "fixture", &["map/a"]));
+        assert!(!crate::sets::held(&settings, "fixture", &["map/a", "map/b"]), "a set the manifest lacks");
+        assert!(!crate::sets::held(&settings, "other", &["map/a"]), "a game the store lacks");
+        assert!(crate::sets::map_held(&settings, "fixture", "a"), "no `base` named: the map's set alone");
+        assert!(!crate::sets::map_held(&settings, "fixture", "b"));
+        assert!(crate::sets::map_held(&settings, "fixture", "c"), "an older manifest's set name");
+        // With a `base` named, it must be whole too.
+        let mut with_base = m.clone();
+        with_base.files.insert("base.txt".into(), FileRecord { id: "ab".repeat(32), size: 1, stored: 1 });
+        with_base.sets.entry("base".into()).or_default().insert("base.txt".into());
+        with_base.save(&store.manifest_path("fixture", "7")).unwrap();
+        assert!(!crate::sets::map_held(&settings, "fixture", "a"), "its base isn't in the store");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
