@@ -56,7 +56,7 @@ pub(crate) fn ladder_text(ladder: &[&str], rung_extras: bool) -> String {
 }
 
 /// The party on the greybox playing `mixed_text`.
-fn party(rung_extras: bool) -> Sim {
+pub(crate) fn party(rung_extras: bool) -> Sim {
     let mut sim = Sim::new(CaSim, (GreyboxMapPlugin, PartyPartsPlugin));
     no_finale(sim.app.world_mut());
     sim.app.add_minigames(&[("hl2dm.toml", &mixed_text(rung_extras))]).unwrap();
@@ -244,4 +244,42 @@ fn a_bot_fires_another_games_gun_at_its_own_rate() {
     assert!(gaps.len() > 5, "the bots fight: {} gaps", gaps.len());
     let least = gaps.iter().copied().fold(f64::MAX, f64::min);
     assert!(least < 0.15, "rounds of a burst come a cycle apart (0.075 s): least gap {least:.3} s");
+}
+
+/// suit.md "Suit zoom": Z is `+zoom` by default on an HL2:DM rung (the
+/// bundle's own bind): it narrows the view to 25 and clears attack while
+/// held, and stops on release and on a weapon switch; on a CS:S rung Z is
+/// CS:S's radio and zooms nothing.
+#[test]
+fn z_zooms_the_suit_on_an_hl2dm_rung() {
+    use chimera_core::core::Intent;
+    use chimera_sim::weapon::ViewZoom;
+
+    let (mut sim, a) = crate::controls::local_party_with(party(false));
+    let key = |sim: &mut Sim, down: bool| {
+        let mut keys = sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        if down { keys.press(KeyCode::KeyZ) } else { keys.release(KeyCode::KeyZ) };
+    };
+    let fov = |sim: &Sim| sim.app.world().get::<ViewZoom>(a).map(|v| v.0);
+    assert_eq!(identity(sim.app.world(), a).as_deref(), Some("hl2dm"));
+    assert_eq!(fov(&sim), None);
+
+    key(&mut sim, true);
+    sim.seconds(0.8);
+    let zoomed = fov(&sim);
+    assert!(zoomed.is_some_and(|f| (f - 25.0).abs() < 0.01), "Z zooms to 25: {zoomed:?}");
+    assert!(!sim.app.world().get::<Intent>(a).unwrap().fire, "attack cleared while held");
+    key(&mut sim, false);
+    sim.seconds(0.6);
+    assert_eq!(fov(&sim), None, "released: back");
+
+    // A weapon switch (another rung) ends it, and a CS:S rung's Z is not a zoom.
+    key(&mut sim, true);
+    sim.seconds(0.8);
+    assert!(fov(&sim).is_some());
+    set_rung(&mut sim, a, 1);
+    sim.seconds(1.2);
+    assert_eq!(identity(sim.app.world(), a).as_deref(), Some("cs_source"));
+    assert_eq!(fov(&sim), None, "CS:S's Z is not the suit zoom");
+    key(&mut sim, false);
 }

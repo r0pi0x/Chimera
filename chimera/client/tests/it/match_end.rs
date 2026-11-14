@@ -137,6 +137,7 @@ fn the_hold_shows_the_winner_the_standings_and_the_next_map() {
             kills: 7,
             deaths: 2,
             gun: "Leone Shotgun Engraved Edition".into(),
+            gun_full: "Leone Shotgun Engraved Edition".into(),
             wins: 2,
             winner: true,
             local: false,
@@ -147,6 +148,7 @@ fn the_hold_shows_the_winner_the_standings_and_the_next_map() {
             kills: 3,
             deaths: 2,
             gun: "K&M Rifle".into(),
+            gun_full: "K&M Rifle Engraved Edition".into(),
             wins: 0,
             winner: false,
             local: true,
@@ -279,4 +281,94 @@ fn the_screen_scales_with_the_windows_height() {
     sim.ticks(2);
     let (winner, (cell, _)) = sizes(&mut sim);
     assert_eq!((winner, cell), (FontSize::Px(64.0), FontSize::Px(20.0)));
+}
+
+/// The full name of a shortened gun shows beside a visible mouse cursor
+/// over its cell (`overlay::Tooltip`), not in play (cursor grabbed), not
+/// off the cell; a gun shown in full has none.
+#[test]
+fn a_shortened_guns_full_name_shows_on_hover() {
+    use bevy::{
+        math::Affine2,
+        ui::{ComputedNode, UiGlobalTransform},
+        window::{CursorGrabMode, CursorOptions, PrimaryWindow, WindowResolution},
+    };
+    use chimera_client::client::overlay::{OverlayPlugin, Tooltip, TooltipBox};
+
+    let mut sim = Sim::new(SimBasePlugins, (GreyboxMapPlugin, MatchEndPlugin, OverlayPlugin));
+    let window = sim
+        .app
+        .world_mut()
+        .spawn((Window { resolution: WindowResolution::from((1280u32, 720u32)), ..default() }, PrimaryWindow, CursorOptions::default()))
+        .id();
+    let mut names = GunNames::from_full([
+        ("kit:rifle".to_string(), "K&M Rifle Engraved Edition".to_string()),
+        ("kit:shotgun".to_string(), "Leone Shotgun".to_string()),
+    ]);
+    names.short.insert("kit:rifle".into(), "K&M Rifle".into());
+    sim.app.insert_resource(names);
+    sim.app.world_mut().spawn((LocalPlayer, Name::new("Me")));
+    let ann = sim.app.world_mut().spawn(Name::new("Ann")).id();
+    sim.app.world_mut().spawn(Name::new("Bob"));
+    let row = |name: &str, kills, gun: &str, winner| ResultRow {
+        name: name.into(),
+        kills,
+        winner,
+        gun: Some(gun.into()),
+        player: Some(ann),
+        ..Default::default()
+    };
+    sim.app.insert_resource(MinigameHud {
+        title: "Gun game".into(),
+        results: Some(MatchResults {
+            title: "Gun game".into(),
+            rungs: 3,
+            rows: vec![row("Ann", 7, "kit:shotgun", true), row("Bob", 3, "kit:rifle", false)],
+        }),
+        ..default()
+    });
+    sim.app.insert_resource(NextMatch { map: None, at: now(&sim) + 5.0 });
+    sim.ticks(3);
+    // Only the shortened cell carries a tooltip.
+    let tips: Vec<(Entity, String)> = {
+        let w = sim.app.world_mut();
+        w.query::<(Entity, &Tooltip)>().iter(w).map(|(e, t)| (e, t.0.clone())).collect()
+    };
+    assert_eq!(tips.len(), 1, "{tips:?}");
+    assert_eq!(tips[0].1, "K&M Rifle Engraved Edition");
+    // No layout without a renderer: give the cell a box at (400, 300).
+    sim.app.world_mut().entity_mut(tips[0].0).insert((
+        ComputedNode { size: Vec2::new(200.0, 30.0), ..default() },
+        UiGlobalTransform::from(Affine2::from_translation(Vec2::new(500.0, 315.0))),
+    ));
+    let shown = |sim: &mut Sim| -> Option<(String, Vec2)> {
+        let w = sim.app.world_mut();
+        let (vis, node, kids) = w.query_filtered::<(&Visibility, &Node, &Children), With<TooltipBox>>().iter(w).next()?;
+        let (vis, left, top, kid) = (*vis, node.left, node.top, kids[0]);
+        if vis == Visibility::Hidden {
+            return None;
+        }
+        let (Val::Px(x), Val::Px(y)) = (left, top) else { return None };
+        Some((w.get::<Text>(kid)?.0.clone(), Vec2::new(x, y)))
+    };
+    let point = |sim: &mut Sim, at: Option<Vec2>| sim.app.world_mut().get_mut::<Window>(window).unwrap().set_cursor_position(at);
+
+    // In play the cursor is grabbed: nothing, even over the cell.
+    sim.app.world_mut().get_mut::<CursorOptions>(window).unwrap().grab_mode = CursorGrabMode::Locked;
+    point(&mut sim, Some(Vec2::new(450.0, 310.0)));
+    sim.ticks(3);
+    assert_eq!(shown(&mut sim), None);
+    // Freed (a menu, the vote): the full name beside the pointer.
+    sim.app.world_mut().get_mut::<CursorOptions>(window).unwrap().grab_mode = CursorGrabMode::None;
+    sim.ticks(3);
+    let (text, at) = shown(&mut sim).expect("hover shows the tooltip");
+    assert_eq!(text, "K&M Rifle Engraved Edition");
+    assert!(at.x > 450.0 && at.y > 310.0, "below and right of the pointer: {at}");
+    // Off the cell: gone again.
+    point(&mut sim, Some(Vec2::new(100.0, 100.0)));
+    sim.ticks(3);
+    assert_eq!(shown(&mut sim), None);
+    point(&mut sim, None);
+    sim.ticks(3);
+    assert_eq!(shown(&mut sim), None);
 }

@@ -48,11 +48,13 @@ and back push, HL2:DM's items, crates, prop rules and blast hearing).
 
 ## Later (spec is clear, less often seen)
 
-20. **HL2:DM / UGG: flashlight and suit zoom inconsistent across
-    rungs.** `mp_flashlight` 0 (parity) so F does nothing on an HL2
-    rung; `+zoom` unbound in the party bundle. Spec: hl2dm/suit.md
-    "Flashlight" (Q7), "Suit zoom". Code: `games/hl2dm/src/game/suit.rs`,
-    `mod.rs` `BUNDLE.binds`. S. No spec; the user's call.
+20. **HL2:DM / UGG: flashlight off by the user's decision; suit zoom
+    bound.** Z is `+zoom` in HL2:DM's bundle binds (landed; test
+    `z_zooms_the_suit_on_an_hl2dm_rung`). `mp_flashlight` stays 0 (parity):
+    the user decided the flashlight works in UGG only if it works in stock
+    HL2:DM, and stock registers 0. Spec: hl2dm/suit.md "Flashlight" (Q7),
+    "Suit zoom". Code: `games/hl2dm/src/game/suit.rs`, `mod.rs`
+    `BUNDLE.binds`. Done; keep for the record.
 24. **HL2:DM: dm_underpass's shield walls drawn plain**
     (`UnlitTwoTexture`). Spec: hl2dm/effects_sounds.md 13, cases 51-54.
     Code: `source/engine/src/content/material.rs`. M. Q7 (proxies) needs

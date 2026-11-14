@@ -15,7 +15,8 @@
 //!   deaths, the final rung's gun by its short name
 //!   (`minigame_scoreboard::gun_short_name`; the winner's by its full one,
 //!   `gun_name`), fitted to its cell with the font (`overlay::fit`),
-//!   matches won), with the place; the local player's row highlighted
+//!   matches won; with a mouse cursor, as in the map vote, the full name
+//!   of a shortened gun shows beside it: `overlay::Tooltip`), with the place; the local player's row highlighted
 //!   (found by its character, which the network maps to the client's).
 //! - **The next map** and a countdown to the change ("Next map: de_dust2
 //!   in 5", then "Changing map to de_dust2"), from `NextMatch` (a
@@ -100,6 +101,8 @@ pub struct MatchEndRow {
     pub deaths: u32,
     /// The final rung's gun's display name (empty off a ladder).
     pub gun: String,
+    /// The gun's full name (the tooltip over a shortened `gun`).
+    pub gun_full: String,
     pub wins: u32,
     pub winner: bool,
     pub local: bool,
@@ -226,6 +229,7 @@ fn follow(
                         name(g, gun_names.as_deref(), catalog.as_deref())
                     })
                     .unwrap_or_default(),
+                gun_full: r.gun.as_deref().map(|g| gun_name(g, gun_names.as_deref(), catalog.as_deref())).unwrap_or_default(),
                 wins: r.wins,
                 winner: r.winner,
                 local,
@@ -588,8 +592,15 @@ fn spawn(layer: Res<super::overlay::OverlayLayer>, mut commands: Commands) {
 struct StandingsRow;
 
 fn cell(parent: &mut ChildSpawnerCommands, text: String, width: f32, right: bool, color: Color, font: &TextFont, s: f32) {
-    parent.spawn((
-        Text::new(text),
+    cell_tip(parent, text, None, width, right, color, font, s);
+}
+
+/// `cell`, with `full` as its tooltip when it differs from what shows
+/// (`overlay::Tooltip`: seen with a mouse cursor, as in the map vote).
+#[allow(clippy::too_many_arguments)]
+fn cell_tip(parent: &mut ChildSpawnerCommands, text: String, full: Option<&str>, width: f32, right: bool, color: Color, font: &TextFont, s: f32) {
+    let mut cell = parent.spawn((
+        Text::new(text.clone()),
         font.clone(),
         TextColor(color),
         TextLayout::new(if right { Justify::Right } else { Justify::Left }, LineBreak::NoWrap),
@@ -600,6 +611,9 @@ fn cell(parent: &mut ChildSpawnerCommands, text: String, width: f32, right: bool
             ..default()
         },
     ));
+    if let Some(full) = full.filter(|f| !f.is_empty() && *f != text) {
+        cell.insert(super::overlay::Tooltip(full.to_string()));
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -703,8 +717,10 @@ fn draw(
                 BackgroundColor(if row.local { LOCAL_BG } else { Color::NONE }),
             ))
             .with_children(|r| {
-                for ((text, right), w) in cells.into_iter().zip(WIDTHS) {
-                    cell(r, text, w, right, color, if row.local || row.winner { &bold } else { &font }, s);
+                for (i, ((text, right), w)) in cells.into_iter().zip(WIDTHS).enumerate() {
+                    // The gun's cell: its full name on hover where it shows less.
+                    let full = (i == 4).then_some(row.gun_full.as_str());
+                    cell_tip(r, text, full, w, right, color, if row.local || row.winner { &bold } else { &font }, s);
                 }
             });
         }
