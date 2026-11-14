@@ -30,7 +30,10 @@
 //!   has the accent bar; yours is tinted and outlined.
 //!
 //! Content is rebuilt only when what it shows changes (`RaceView`), the
-//! open and close move only the plate's size (`Timeline`).
+//! open and close move only the plate's size (`Timeline`). The nodes carry
+//! the look book's names (`chimera_ui::UiParityId`: `race.plate`, `chip.*`
+//! or `chip.leading.*`, `board.head.*`, `board.th.*`, `board.row.<n>.*`
+//! from 1) for the UI parity check (`ui_parity`).
 //!
 //! Known shortcuts: no rolling numbers or tick pop (M3); the board lists
 //! at most `MAX_ROWS` players; no match clock on the head; no packet loss on the board (not measured).
@@ -45,7 +48,7 @@ use chimera_sim::{
     },
     weapon::data::WeaponCatalog,
 };
-use chimera_ui::{Prop, Role, SlantMaterial, TickBarMaterial, TickLayout, Timeline, Tone, Track, UiClock};
+use chimera_ui::{Prop, Role, SlantMaterial, TickBarMaterial, TickLayout, Timeline, Tone, Track, UiClock, UiParityId, parity};
 
 use super::{
     console::HeldActions,
@@ -265,6 +268,13 @@ pub struct LeaderChip;
 pub struct BoardOpen(pub bool);
 
 const CHIP_W: f32 = 21.0;
+/// The leader variant is 2 cq wider (the look book's plate while you lead).
+const CHIP_W_LEAD: f32 = 23.0;
+
+/// The closed plate's width for `view`.
+fn chip_w(view: &RaceView) -> f32 {
+    if view.leading() { CHIP_W_LEAD } else { CHIP_W }
+}
 const CHIP_H: f32 = 3.05;
 const BOARD_W: f32 = 64.0;
 const ROW_H: f32 = 2.55;
@@ -272,8 +282,18 @@ const ROW_H: f32 = 2.55;
 const BOARD_BASE: f32 = 5.5;
 /// The board's columns: position, player, rung, icon, gun (rest), K, D,
 /// ping, ladder; the gap between them; the row's side padding.
-const COLS: [f32; 9] = [1.6, 11.4, 2.6, 3.8, 0.0, 1.7, 1.7, 3.6, 12.2];
+const COLS: [f32; 9] = [1.6, 11.4, 2.6, 3.8, 0.0, 1.7, 1.7, 3.6, 11.4];
 const COL_GAP: f32 = 0.8;
+/// The look book's tracking in cq (its `letter-spacing` em times the size
+/// it was set at): a row's numbers and game (.08 em of .54), the column
+/// titles (.12 em of .46), the head's race (.12 em of .52) and map's game
+/// (.1 em of .56).
+const TRACK_ROW: f32 = 0.54 * 0.08;
+const TRACK_TITLES: f32 = 0.46 * 0.12;
+const TRACK_HEAD: f32 = 0.52 * 0.12;
+const TRACK_MAP_GAME: f32 = 0.56 * 0.1;
+/// A ping's number (or a bot's dash) is at least 2.2 characters wide.
+const PING_VALUE_W: f32 = 0.5 * 0.6 * 2.2;
 const ROW_PAD: f32 = 0.6;
 
 /// The board's height in cq for `rows` rows.
@@ -303,6 +323,7 @@ fn spawn(layer: Res<super::overlay::OverlayLayer>, mut commands: Commands) {
         .with_children(|r| {
             r.spawn((
                 RacePlate,
+                UiParityId::new("race.plate"),
                 Pickable::IGNORE,
                 Node {
                     overflow: Overflow::clip(),
@@ -429,15 +450,18 @@ fn build_chip(
     let leading = view.leading();
     let second = view.rows.get(1);
     let gap = look.px(0.6);
+    // The look book's names: `chip`, or `chip.leading` for the leader variant.
+    let cid = if leading { "chip.leading" } else { "chip" };
     let mut chip = commands.spawn((
         ChipContent,
+        UiParityId::new(cid),
         ChildOf(*plate),
         Pickable::IGNORE,
         Node {
             position_type: PositionType::Absolute,
             left: percent(50.0),
-            margin: UiRect::left(px(-look.px(CHIP_W) / 2.0)),
-            width: look.val(CHIP_W),
+            margin: UiRect::left(px(-look.px(chip_w(&view)) / 2.0)),
+            width: look.val(chip_w(&view)),
             flex_shrink: 0.0,
             flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
@@ -451,47 +475,84 @@ fn build_chip(
     }
     chip.with_children(|c| {
         // The first line: the leader (or you, leading) and you (or the gap).
-        c.spawn((Node { align_items: AlignItems::Center, column_gap: px(gap), ..default() }, Pickable::IGNORE))
+        c.spawn((Node { align_items: AlignItems::Center, column_gap: px(gap), ..default() }, UiParityId(format!("{cid}.line")), Pickable::IGNORE))
             .with_children(|r1| {
-                let num = |r1: &mut ChildSpawnerCommands, n: usize, size: f32, tone: Tone| {
-                    r1.spawn((look.text(Role::DisplayBold, size, look.tone(tone), &format!("{:02}", n + 1)), Pickable::IGNORE));
+                // A rung: at least 1.5 cq wide (the look book's `.v`), so
+                // the line keeps its width as the digits change.
+                let num = |r1: &mut ChildSpawnerCommands, n: usize, size: f32, tone: Tone, id: &str| {
+                    r1.spawn((Node { min_width: look.val(1.5), flex_shrink: 0.0, ..default() }, Pickable::IGNORE)).with_children(|v| {
+                        v.spawn((
+                            look.tracked(Role::DisplayBold, size, size * 0.02, look.tone(tone), &format!("{:02}", n + 1)),
+                            UiParityId(format!("{cid}.{id}")),
+                            Pickable::IGNORE,
+                        ));
+                    });
                 };
+                // A group of the line's pieces, `gap` cq apart.
+                let group = |gap: f32| (Node { align_items: AlignItems::Center, column_gap: look.val(gap), ..default() }, Pickable::IGNORE);
                 let sep = |r1: &mut ChildSpawnerCommands| {
                     r1.spawn((
                         Node { width: px(look.hair()), height: look.val(1.2), margin: UiRect::horizontal(look.val(0.25)), ..default() },
                         BackgroundColor(look.tone(Tone::Fg4)),
+                        UiParityId(format!("{cid}.sep")),
                         Pickable::IGNORE,
                     ));
                 };
                 let gun = |r1: &mut ChildSpawnerCommands, row: &RaceRow| {
                     if let Some(id) = row.gun {
-                        r1.spawn((Node { height: look.val(0.9), align_items: AlignItems::Center, ..default() }, Pickable::IGNORE))
+                        r1.spawn((Node { height: look.val(0.9), width: look.val(2.8), align_items: AlignItems::Center, ..default() }, Pickable::IGNORE))
                             .with_children(|g| {
-                                signal::gun_icon(g, &look, id, row.class, look.px(0.9), look.tone(Tone::Fg));
+                                let e = signal::gun_icon(g, &look, id, row.class, look.px(0.9), look.tone(Tone::Fg));
+                                parity::name(g, e, format!("{cid}.you.icon"));
                             });
                     }
                 };
                 match (leading, you, leader) {
                     (true, Some(me), _) => {
-                        signal::mark(r1, &look, Mark::Crown, look.px(0.66), look.tone(Tone::AccText));
-                        signal::tag(r1, &look, TagKind::Accent, "You", 0.62);
-                        num(r1, me.rung, 1.02, Tone::AccText);
-                        gun(r1, me);
+                        // You (crown, tag, rung, gun) .5 cq apart; the gap
+                        // (+N over NAME) .4 cq apart.
+                        r1.spawn(group(0.5)).with_children(|g| {
+                            let e = signal::mark(g, &look, Mark::Crown, look.px(0.66), look.tone(Tone::AccText));
+                            parity::name(g, e, format!("{cid}.crown"));
+                            let e = signal::tag(g, &look, TagKind::Accent, "You", 0.62);
+                            parity::name(g, e, format!("{cid}.you.tag"));
+                            num(g, me.rung, 1.02, Tone::AccText, "you.rung");
+                            gun(g, me);
+                        });
                         if let Some(s) = second {
                             sep(r1);
-                            r1.spawn((look.text(Role::DisplayBold, 0.86, look.tone(Tone::Fg), &format!("+{}", me.rung.saturating_sub(s.rung))), Pickable::IGNORE));
-                            r1.spawn((look.text(Role::Mono, 0.5, look.tone(Tone::Fg3), "OVER"), Pickable::IGNORE));
-                            r1.spawn((look.text(Role::DisplayBold, 0.62, look.tone(Tone::Fg2), &s.name.to_uppercase()), Pickable::IGNORE));
+                            r1.spawn(group(0.4)).with_children(|g| {
+                                g.spawn((
+                                    look.tracked(Role::DisplayBold, 0.86, 0.86 * 0.02, look.tone(Tone::Fg), &format!("+{}", me.rung.saturating_sub(s.rung))),
+                                    UiParityId(format!("{cid}.gap.n")),
+                                    Pickable::IGNORE,
+                                ));
+                                g.spawn((look.tracked(Role::Mono, 0.5, 0.56 * 0.1, look.tone(Tone::Fg3), "OVER"), UiParityId(format!("{cid}.gap.over")), Pickable::IGNORE));
+                                g.spawn((
+                                    look.tracked(Role::DisplayBold, 0.62, 0.62 * 0.03, look.tone(Tone::Fg2), &s.name.to_uppercase()),
+                                    UiParityId(format!("{cid}.gap.name")),
+                                    Pickable::IGNORE,
+                                ));
+                            });
                         }
                     }
                     (_, me, Some(l)) => {
-                        signal::tag(r1, &look, TagKind::Accent, "Lead", 0.62);
-                        r1.spawn((look.text(Role::DisplayBold, 0.72, look.tone(Tone::Fg), &l.name.to_uppercase()), Pickable::IGNORE));
-                        num(r1, l.rung, 1.02, Tone::AccText);
+                        // The leader (tag, name, rung) .5 cq apart.
+                        r1.spawn(group(0.5)).with_children(|g| {
+                            let e = signal::tag(g, &look, TagKind::Accent, "Lead", 0.62);
+                            parity::name(g, e, format!("{cid}.lead.tag"));
+                            g.spawn((
+                                look.tracked(Role::DisplayBold, 0.72, 0.72 * 0.03, look.tone(Tone::Fg), &l.name.to_uppercase()),
+                                UiParityId(format!("{cid}.lead.name")),
+                                Pickable::IGNORE,
+                            ));
+                            num(g, l.rung, 1.02, Tone::AccText, "lead.rung");
+                        });
                         if let Some(me) = me {
                             sep(r1);
-                            signal::tag(r1, &look, TagKind::You, "You", 0.62);
-                            num(r1, me.rung, 1.02, Tone::Fg);
+                            let e = signal::tag(r1, &look, TagKind::You, "You", 0.62);
+                            parity::name(r1, e, format!("{cid}.you.tag"));
+                            num(r1, me.rung, 1.02, Tone::Fg, "you.rung");
                             gun(r1, me);
                         }
                     }
@@ -515,7 +576,7 @@ fn build_chip(
             mat.set(me, me.saturating_sub(1));
         }
         let meter_w = (lay.w + skew_extra) as f32 / sf;
-        c.spawn((Node { width: px(meter_w), height: px(h as f32 / sf), ..default() }, Pickable::IGNORE)).with_children(|m| {
+        c.spawn((Node { width: px(meter_w), height: px(h as f32 / sf), ..default() }, UiParityId(format!("{cid}.meter")), Pickable::IGNORE)).with_children(|m| {
             if let Some(ticks) = ticks.as_deref_mut() {
                 m.spawn((
                     Node { width: percent(100.0), height: percent(100.0), ..default() },
@@ -579,6 +640,7 @@ fn build_board(
     }
     let mut board = commands.spawn((
         BoardContent,
+        UiParityId::new("board"),
         ChildOf(*plate),
         Visibility::Hidden,
         Pickable::IGNORE,
@@ -601,27 +663,41 @@ fn build_board(
     board.with_children(|b| {
         // The head: the minigame's tag, the map and its game, the race.
         b.spawn((
+            // On one baseline, as the look book's: the tag's bottom is the
+            // head's, the map's .09 cq above it, the small texts' .2 cq
+            // (Bevy's text has no baseline to align by).
             Node { align_items: AlignItems::FlexEnd, column_gap: look.val(1.6), margin: UiRect::bottom(look.val(1.0)), ..default() },
+            UiParityId::new("board.head"),
             Pickable::IGNORE,
         ))
         .with_children(|t| {
-            signal::tag(t, &look, TagKind::Accent, "Gun game", 0.62);
-            t.spawn((look.text(Role::DisplayBold, 1.3, look.tone(Tone::Fg), &view.map.to_uppercase()), Pickable::IGNORE));
+            let e = signal::tag(t, &look, TagKind::Accent, "Gun game", 0.62);
+            parity::name(t, e, "board.head.tag");
+            t.spawn((
+                Node { margin: UiRect::bottom(look.val(0.09)), ..default() },
+                look.tracked(Role::DisplayBold, 1.3, 0.0, look.tone(Tone::Fg), &view.map.to_uppercase()),
+                UiParityId::new("board.head.map"),
+                Pickable::IGNORE,
+            ));
             if !view.map_game.is_empty() {
                 t.spawn((
-                    Node { margin: UiRect::left(look.val(-0.9)), ..default() },
-                    look.text(Role::Mono, 0.56, look.tone(Tone::Fg2), &format!("• {}", view.map_game)),
+                    Node { margin: UiRect::new(look.val(-0.9), px(0.0), px(0.0), look.val(0.2)), ..default() },
+                    look.tracked(Role::Mono, 0.56, TRACK_MAP_GAME, look.tone(Tone::Fg2), &format!("• {}", view.map_game)),
+                    UiParityId::new("board.head.game"),
                     Pickable::IGNORE,
                 ));
             }
             t.spawn((Node { flex_grow: 1.0, ..default() }, Pickable::IGNORE));
             t.spawn((
-                look.text(
+                Node { margin: UiRect::bottom(look.val(0.24)), ..default() },
+                look.tracked(
                     Role::Mono,
                     0.52,
+                    TRACK_HEAD,
                     look.tone(Tone::Fg3),
                     &format!("FIRST TO {} • {} PLAYERS", view.rungs, view.rows.len()),
                 ),
+                UiParityId::new("board.head.info"),
                 Pickable::IGNORE,
             ));
         });
@@ -645,36 +721,60 @@ fn build_board(
         let right = |w: usize| Node { justify_content: JustifyContent::FlexEnd, ..cell(w) };
         // The column titles; the kill and death marks right-aligned over
         // their numbers.
-        b.spawn((row_node(None), Pickable::IGNORE)).with_children(|h| {
-            let th = |h: &mut ChildSpawnerCommands, i: usize, text: &str, r: bool| {
+        // The titles' rule is their bottom border, .5 cq under them.
+        b.spawn((
+            Node {
+                padding: UiRect::new(look.val(ROW_PAD), look.val(ROW_PAD), px(0.0), look.val(0.5)),
+                border: UiRect::bottom(px(hair)),
+                ..row_node(None)
+            },
+            BorderColor::all(look.tone(Tone::Fg4)),
+            UiParityId::new("board.th"),
+            Pickable::IGNORE,
+        ))
+        .with_children(|h| {
+            let th = |h: &mut ChildSpawnerCommands, i: usize, text: &str, r: bool, id: &str| {
                 h.spawn((if r { right(i) } else { cell(i) }, Pickable::IGNORE)).with_children(|c| {
-                    c.spawn((look.text(Role::Mono, 0.46, look.tone(Tone::Fg3), text), Pickable::IGNORE));
+                    let mut t = c.spawn((look.tracked(Role::Mono, 0.46, TRACK_TITLES, look.tone(Tone::Fg3), text), Pickable::IGNORE));
+                    if !id.is_empty() {
+                        t.insert(UiParityId(format!("board.th.{id}")));
+                    }
                 });
             };
-            th(h, 0, "#", false);
-            th(h, 1, "PLAYER", false);
-            th(h, 2, "RUNG", true);
-            th(h, 3, "", false);
-            th(h, 4, "GUN • GAME", false);
-            for (i, m) in [(5, Mark::Kill), (6, Mark::Death)] {
-                h.spawn((right(i), Pickable::IGNORE)).with_children(|c| signal::mark(c, &look, m, look.px(0.78), look.tone(Tone::Fg3)));
+            th(h, 0, "#", false, "pos");
+            th(h, 1, "PLAYER", false, "player");
+            th(h, 2, "RUNG", true, "rung");
+            th(h, 3, "", false, "");
+            th(h, 4, "GUN • GAME", false, "gun");
+            for (i, m, id) in [(5, Mark::Kill, "board.th.k"), (6, Mark::Death, "board.th.d")] {
+                h.spawn((right(i), Pickable::IGNORE)).with_children(|c| {
+                    let e = signal::mark(c, &look, m, look.px(0.6), look.tone(Tone::Fg3));
+                    parity::name(c, e, id);
+                });
             }
-            th(h, 7, "PING", true);
-            h.spawn((Node { padding: UiRect::left(look.val(0.8)), ..cell(8) }, Pickable::IGNORE)).with_children(|c| {
-                c.spawn((look.text(Role::Mono, 0.46, look.tone(Tone::Fg3), "LADDER"), Pickable::IGNORE));
+            th(h, 7, "PING", true, "ping");
+            h.spawn((Node { padding: UiRect::left(look.val(0.8)), align_self: AlignSelf::Stretch, ..cell(8) }, UiParityId::new("board.th.ladder"), Pickable::IGNORE)).with_children(|c| {
+                c.spawn((look.tracked(Role::Mono, 0.46, TRACK_TITLES, look.tone(Tone::Fg3), "LADDER"), Pickable::IGNORE));
             });
         });
-        b.spawn((Node { height: px(hair), margin: UiRect::top(look.val(0.5)), ..default() }, BackgroundColor(look.tone(Tone::Fg4)), Pickable::IGNORE));
         let n = view.rungs.max(1) as u32;
         let top_wins = view.rows.iter().map(|r| r.wins).max().unwrap_or(0);
         for (i, row) in view.rows.iter().take(MAX_ROWS).enumerate() {
             let lead = i == 0;
-            let mut r = b.spawn((BoardRow(row.clone()), row_node(Some(ROW_H)), Pickable::IGNORE));
+            // The look book counts rows from 1.
+            let p = format!("board.row.{}", i + 1);
+            let mut r = b.spawn((
+                BoardRow(row.clone()),
+                Node { border: UiRect::bottom(px(hair)), ..row_node(Some(ROW_H)) },
+                BorderColor::all(look.tone(Tone::Fg5)),
+                UiParityId(p.clone()),
+                Pickable::IGNORE,
+            ));
             if row.local {
                 r.insert(signal::you_row(&look));
             }
             r.with_children(|r| {
-                // The leader's accent bar; the row's rule.
+                // The leader's accent bar.
                 if lead {
                     r.spawn((
                         Node { position_type: PositionType::Absolute, left: px(0.0), top: px(0.0), bottom: px(0.0), width: look.val(0.22), ..default() },
@@ -682,59 +782,64 @@ fn build_board(
                         Pickable::IGNORE,
                     ));
                 }
-                if !row.local {
-                    r.spawn((
-                        Node { position_type: PositionType::Absolute, left: px(0.0), right: px(0.0), bottom: px(0.0), height: px(hair), ..default() },
-                        BackgroundColor(look.tone(Tone::Fg5)),
-                        Pickable::IGNORE,
-                    ));
-                }
                 r.spawn((cell(0), Pickable::IGNORE)).with_children(|c| {
-                    c.spawn((look.text(Role::Mono, 0.54, look.tone(Tone::Fg3), &format!("{:02}", i + 1)), Pickable::IGNORE));
+                    c.spawn((look.tracked(Role::Mono, 0.54, TRACK_ROW, look.tone(Tone::Fg3), &format!("{:02}", i + 1)), UiParityId(format!("{p}.pos")), Pickable::IGNORE));
                 });
                 r.spawn((Node { column_gap: look.val(0.45), ..cell(1) }, Pickable::IGNORE)).with_children(|c| {
-                    signal::bot_slot(c, &look, row.bot, 0.66, look.tone(Tone::Fg2));
+                    let e = signal::bot_slot(c, &look, row.bot, 0.66, look.tone(Tone::Fg2));
+                    parity::name(c, e, format!("{p}.bot"));
                     c.spawn((
                         Node { flex_shrink: 1.0, min_width: px(0.0), overflow: Overflow::clip(), ..default() },
-                        look.text(Role::DisplayBold, 0.66, look.tone(Tone::Fg), &row.name.to_uppercase()),
+                        look.tracked(Role::DisplayBold, 0.66, 0.66 * 0.03, look.tone(Tone::Fg), &row.name.to_uppercase()),
+                        UiParityId(format!("{p}.name")),
                         Pickable::IGNORE,
                     ));
-                    signal::host_tag(c, &look, slants.as_deref_mut(), row.host, row.local, 0.42);
+                    let e = signal::host_tag(c, &look, slants.as_deref_mut(), row.host, row.local, 0.42);
+                    parity::name(c, e, format!("{p}.host"));
                     if row.wins > 0 {
                         // The session's leader in the accent.
                         let tone = if row.wins == top_wins { Tone::AccText } else { Tone::Fg2 };
                         c.spawn((Node { align_items: AlignItems::Center, column_gap: look.val(0.18), flex_shrink: 0.0, ..default() }, SessionWins(row.wins), Pickable::IGNORE))
                             .with_children(|w| {
                                 signal::mark(w, &look, Mark::Trophy, look.px(0.6), look.tone(tone));
-                                w.spawn((look.text(Role::Mono, 0.5, look.tone(tone), &row.wins.to_string()), Pickable::IGNORE));
+                                w.spawn((look.tracked(Role::Mono, 0.5, 0.5 * 0.04, look.tone(tone), &row.wins.to_string()), UiParityId(format!("{p}.wins")), Pickable::IGNORE));
                             });
                     }
                 });
                 r.spawn((right(2), Pickable::IGNORE)).with_children(|c| {
                     let tone = if lead { Tone::AccText } else { Tone::Fg };
-                    c.spawn((look.text(Role::DisplayBold, 1.2, look.tone(tone), &format!("{:02}", row.rung + 1)), Pickable::IGNORE));
+                    c.spawn((look.tracked(Role::DisplayBold, 1.2, TRACK_ROW, look.tone(tone), &format!("{:02}", row.rung + 1)), UiParityId(format!("{p}.rung")), Pickable::IGNORE));
                 });
                 r.spawn((right(3), Pickable::IGNORE)).with_children(|c| {
                     if let Some(id) = row.gun {
-                        signal::gun_icon(c, &look, id, row.class, look.px(0.84), look.tone(Tone::Fg));
+                        let e = signal::gun_icon(c, &look, id, row.class, look.px(0.84), look.tone(Tone::Fg));
+                        parity::name(c, e, format!("{p}.icon"));
                     }
                 });
                 r.spawn((Node { column_gap: look.val(0.35), ..cell(4) }, Pickable::IGNORE)).with_children(|c| {
-                    c.spawn((look.text(Role::DisplayBold, 0.6, look.tone(Tone::Fg), &row.gun_name.to_uppercase()), Pickable::IGNORE));
-                    c.spawn((look.text(Role::Mono, 0.54, look.tone(Tone::Fg3), &row.game.to_uppercase()), Pickable::IGNORE));
+                    c.spawn((look.tracked(Role::DisplayBold, 0.6, 0.6 * 0.03, look.tone(Tone::Fg), &row.gun_name.to_uppercase()), UiParityId(format!("{p}.gun")), Pickable::IGNORE));
+                    c.spawn((look.tracked(Role::Mono, 0.54, TRACK_ROW, look.tone(Tone::Fg3), &row.game.to_uppercase()), UiParityId(format!("{p}.game")), Pickable::IGNORE));
                 });
                 r.spawn((right(5), Pickable::IGNORE)).with_children(|c| {
-                    c.spawn((look.text(Role::Mono, 0.6, look.tone(Tone::Fg), &row.kills.to_string()), Pickable::IGNORE));
+                    c.spawn((look.tracked(Role::Mono, 0.6, TRACK_ROW, look.tone(Tone::Fg), &row.kills.to_string()), UiParityId(format!("{p}.k")), Pickable::IGNORE));
                 });
                 r.spawn((right(6), Pickable::IGNORE)).with_children(|c| {
-                    c.spawn((look.text(Role::Mono, 0.6, look.tone(Tone::Fg3), &row.deaths.to_string()), Pickable::IGNORE));
+                    c.spawn((look.tracked(Role::Mono, 0.6, TRACK_ROW, look.tone(Tone::Fg3), &row.deaths.to_string()), UiParityId(format!("{p}.d")), Pickable::IGNORE));
                 });
                 // Ping: a 4-bar meter and the number, coloured by how bad.
-                r.spawn((Node { column_gap: look.val(0.3), ..right(7) }, Pickable::IGNORE)).with_children(|c| {
+                // (The look book's `.png`: .5 cq type, the meter .92 em
+                // tall, .3 em apart, right-aligned in its cell.)
+                r.spawn((right(7), Pickable::IGNORE)).with_children(|c| {
+                c.spawn((
+                    Node { align_items: AlignItems::Center, column_gap: look.val(0.15), flex_shrink: 0.0, ..default() },
+                    UiParityId(format!("{p}.ping")),
+                    Pickable::IGNORE,
+                ))
+                .with_children(|c| {
                     // A bot: the faint dash (the robot marks it already);
                     // the listen host: LOCAL.
                     if row.bot {
-                        c.spawn((look.text(Role::Mono, 0.54, look.tone(Tone::Fg4), "—"), Pickable::IGNORE));
+                        c.spawn((Node { min_width: look.val(PING_VALUE_W), ..default() }, look.text(Role::Mono, 0.5, look.tone(Tone::Fg4), "—"), Pickable::IGNORE)).insert(TextLayout::new(Justify::Right, LineBreak::NoWrap));
                         return;
                     }
                     if row.host && row.ping == 0 {
@@ -745,7 +850,7 @@ fn build_board(
                     if let Some(slants) = slants.as_deref_mut() {
                         let parent = c.target_entity();
                         let cmd = c.commands_mut();
-                        let m = chimera_ui::widgets::spawn_ping_meter(cmd, slants, &look.theme, &look.units, 0.7, level);
+                        let m = chimera_ui::widgets::spawn_ping_meter(cmd, slants, &look.theme, &look.units, 0.46, level);
                         cmd.entity(m).insert((PingMeter(level.lit as u8), Pickable::IGNORE));
                         cmd.entity(parent).add_child(m);
                     } else {
@@ -753,22 +858,26 @@ fn build_board(
                     }
                     // A good line's number stays quiet.
                     let number = if level.lit == 4 { look.tone(Tone::Fg3) } else { level.color(&look.theme) };
-                    c.spawn((look.text(Role::Mono, 0.54, number, &row.ping.to_string()), Pickable::IGNORE));
+                    c.spawn((Node { min_width: look.val(PING_VALUE_W), ..default() }, look.tracked(Role::Mono, 0.5, 0.5 * 0.02, number, &row.ping.to_string()), Pickable::IGNORE)).insert(TextLayout::new(Justify::Right, LineBreak::NoWrap));
                     if level.lit == 1 {
                         c.spawn((look.text(Role::Mono, 0.42, look.tone(Tone::Threat), "LAG"), Pickable::IGNORE));
                     }
+                });
                 });
                 // The ladder strip, set apart by a hairline.
                 r.spawn((
                     Node { padding: UiRect::left(look.val(0.8)), border: UiRect::left(px(hair)), align_self: AlignSelf::Stretch, ..cell(8) },
                     BorderColor::all(look.tone(Tone::Fg5)),
+                    UiParityId(format!("{p}.ladder")),
                     Pickable::IGNORE,
                 ))
                 .with_children(|c| {
                     let sf = look.units.scale_factor.max(1e-3);
                     let room = look.units.phys(look.units.cq(COLS[8] - 1.0));
-                    let pitch = (room / n as f32).min(look.units.phys(look.units.cq(0.8))).floor().max(3.0) as u32;
-                    let tick = ((pitch as f32) * 0.62 / 0.8).round().max(2.0) as u32;
+                    // The look book's .58 cq ticks .16 cq apart, narrower
+                    // for a long ladder.
+                    let pitch = (room / n as f32).min(look.units.phys(look.units.cq(0.74))).floor().max(3.0) as u32;
+                    let tick = ((pitch as f32) * 0.58 / 0.74).round().max(2.0) as u32;
                     let h = look.units.phys(look.units.cq(0.42)).round().max(2.0) as u32;
                     let lay = TickLayout { pitch, tick, gap: pitch - tick, w: n * pitch - (pitch - tick), h };
                     let extra = (h as f32 * look.theme.tan()).ceil() as u32;
@@ -777,6 +886,7 @@ fn build_board(
                     mat.set(lit, lit - 1);
                     let mut strip = c.spawn((
                         Node { width: px((lay.w + extra) as f32 / sf), height: px(h as f32 / sf), ..default() },
+                        UiParityId(format!("{p}.ticks")),
                         Pickable::IGNORE,
                     ));
                     if let Some(ticks) = ticks.as_deref_mut() {
@@ -817,12 +927,16 @@ fn open_close(
     if bg.0 != plate_bg {
         bg.0 = plate_bg;
     }
-    if want != open.0 || (want && tl.tracks.iter().any(|t| t.prop == Prop::Height && t.to != target_h)) {
+    let closed_w = chip_w(&view);
+    if want != open.0
+        || (want && tl.tracks.iter().any(|t| t.prop == Prop::Height && t.to != target_h))
+        || (!want && tl.tracks.iter().any(|t| t.prop == Prop::Width && t.to != closed_w))
+    {
         open.0 = want;
         let (w, h, dur, ease) = if want {
             (BOARD_W, target_h, look.dur("board", "open", 0.12), look.theme.ease("expo_out"))
         } else {
-            (CHIP_W, CHIP_H, look.dur("board", "close", 0.09), look.theme.ease("cubic_in_out"))
+            (chip_w(&view), CHIP_H, look.dur("board", "close", 0.09), look.theme.ease("cubic_in_out"))
         };
         tl.redirect(clock.now, Prop::Width, w, dur, ease);
         tl.redirect(clock.now, Prop::Height, h, dur, ease);
@@ -833,7 +947,7 @@ fn open_close(
         node.height = look.val(CHIP_H);
     }
     let w = tl.value(Prop::Width).unwrap_or(CHIP_W);
-    let p = ((w - CHIP_W) / (BOARD_W - CHIP_W)).clamp(0.0, 1.0);
+    let p = ((w - closed_w) / (BOARD_W - closed_w)).clamp(0.0, 1.0);
     let chip_on = p < 0.3;
     let board_on = p > 0.35;
     for mut v in &mut chip {

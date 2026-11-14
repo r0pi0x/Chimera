@@ -106,8 +106,9 @@ fn texts_under<C: Component>(sim: &mut Sim) -> Vec<String> {
 #[test]
 fn race_chip_opens_and_folds_on_showscores() {
     let mut sim = sim(true);
-    player(&mut sim, "Alpha", 2, 4, true, false);
-    player(&mut sim, "Botty", 1, 1, false, true);
+    // Chasing (the leader's chip is wider: `leader_chip_shows_the_gap`).
+    player(&mut sim, "Alpha", 1, 4, true, false);
+    player(&mut sim, "Botty", 2, 1, false, true);
     for _ in 0..3 {
         frame(&mut sim, 1.0 / 60.0);
     }
@@ -182,6 +183,11 @@ fn leader_chip_shows_the_gap() {
     let w = sim.app.world_mut();
     let crowns = w.query::<&SignalIcon>().iter(w).filter(|i| i.name == "crown").count();
     assert_eq!(crowns, 1, "the crown");
+    let cq = UiUnits::default().cq(1.0);
+    for _ in 0..5 {
+        frame(&mut sim, 0.05);
+    }
+    assert!((plate_w(&mut sim) - 23.0 * cq).abs() < 1.0, "leading, the chip is 23 cq wide: {}", plate_w(&mut sim));
 
     // Overtaken: the chasing chip, LEAD and the leader's name.
     let larry = {
@@ -196,6 +202,10 @@ fn leader_chip_shows_the_gap() {
     for want in ["LEAD", "LARRY", "YOU"] {
         assert!(texts.iter().any(|t| t == want), "{want} in {texts:?}");
     }
+    for _ in 0..10 {
+        frame(&mut sim, 0.02);
+    }
+    assert!((plate_w(&mut sim) - 21.0 * cq).abs() < 1.0, "chasing, back to 21 cq: {}", plate_w(&mut sim));
 }
 
 #[test]
@@ -323,4 +333,38 @@ fn ping_colours_by_the_themes_thresholds() {
 fn srgba(c: Color) -> [u8; 3] {
     let s = c.to_srgba();
     [(s.red * 255.0).round() as u8, (s.green * 255.0).round() as u8, (s.blue * 255.0).round() as u8]
+}
+
+/// The UI parity check's staging (`ui_parity`, docs/OBSERVABILITY.md "UI
+/// parity against the look book"): the look book's fixture shows on the
+/// board in its order, and every node the look book names carries its
+/// name (`UiParityId`), rows counted from 1.
+#[test]
+fn a_fixture_stages_the_board_with_the_look_books_names() {
+    use chimera_client::client::{race_chip::RaceStaged, ui_parity::Fixture};
+    use chimera_ui::UiParityId;
+    let mut sim = sim(true);
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tools/ui-parity/fixtures/hud.json");
+    let fixture = Fixture::load(path).expect("the fixture reads");
+    sim.app.insert_resource(RaceStaged { view: fixture.view(false), open: true });
+    for _ in 0..4 {
+        frame(&mut sim, 0.05);
+    }
+    let w = sim.app.world_mut();
+    let ids: std::collections::HashMap<String, Entity> =
+        w.query::<(Entity, &UiParityId)>().iter(w).map(|(e, id)| (id.0.clone(), e)).collect();
+    let text = |w: &World, id: &str| ids.get(id).and_then(|e| w.get::<Text>(*e)).map(|t| t.0.clone());
+    for (i, row) in fixture.rows.iter().enumerate() {
+        let p = format!("board.row.{}", i + 1);
+        assert_eq!(text(w, &format!("{p}.name")), Some(row.name.to_uppercase()), "{p}'s name");
+        assert_eq!(text(w, &format!("{p}.rung")), Some(format!("{:02}", row.rung)), "{p}'s rung");
+        for part in ["", ".pos", ".bot", ".icon", ".gun", ".game", ".k", ".d", ".ping", ".ladder", ".ticks"] {
+            assert!(ids.contains_key(&format!("{p}{part}")), "{p}{part} is named");
+        }
+        assert_eq!(ids.contains_key(&format!("{p}.host")), row.host, "{p}.host only for the host");
+        assert_eq!(ids.contains_key(&format!("{p}.wins")), row.wins > 0, "{p}.wins only with wins");
+    }
+    for id in ["race.plate", "board", "board.head.tag", "board.head.map", "board.head.game", "board.th.k", "board.th.ladder"] {
+        assert!(ids.contains_key(id), "{id} is named");
+    }
 }

@@ -4,7 +4,9 @@
 //! Scenes: `chip`, `lead` (the race chip, chasing or leading), `board`,
 //! `board_lead` (the Tab board open), `feed` (five kills in the feed):
 //! the HUD's own screens with made-up players (`race_chip::stage`,
-//! `kill_feed::signal_feed::stage`), under the Signal theme. `proof` (the kit itself: the type ramp of every role, tick
+//! `kill_feed::signal_feed::stage`), under the Signal theme; given a
+//! fixture (`ui_scene board <fixture.json>`), its data over a flat ground
+//! instead (the UI parity check, `ui_parity`). `proof` (the kit itself: the type ramp of every role, tick
 //! bars, slants, the gun icons and marks, the logo pass frozen mid-way,
 //! the match end's lines behind). The screens' milestones add theirs
 //! (`lobby`, `chip`, `board`, `toast`, `airstrike`, `matchend`, `menu`)
@@ -51,12 +53,13 @@ impl Plugin for UiScenePlugin {
         app.init_resource::<UiScene>()
             .console_command(
                 "ui_scene",
-                "ui_scene <proof|chip|lead|board|board_lead|feed|off>: stage a screen of the UI kit with made-up data (screenshots).",
+                "ui_scene <proof|chip|lead|board|board_lead|feed|off> [fixture.json]: stage a screen of the UI kit with made-up data (screenshots), or a fixture's (the UI parity check).",
                 |w, a| {
                     let name = a.first().map(String::as_str).unwrap_or("proof");
                     if name == "off" {
                         w.resource_mut::<UiScene>().want = None;
                         super::race_chip::stage(w, None);
+                        super::ui_parity::clear_ground(w);
                         if w.remove_resource::<super::kill_feed::signal_feed::FeedStaged>().is_some()
                             && let Some(mut f) = w.get_resource_mut::<super::kill_feed::KillFeed>()
                         {
@@ -73,10 +76,16 @@ impl Plugin for UiScenePlugin {
                     match name {
                         "chip" | "lead" | "board" | "board_lead" => {
                             super::race_chip::stage(w, Some(name));
+                            if let Some(path) = a.get(1) {
+                                super::ui_parity::apply_fixture(w, name, path)?;
+                            }
                             return Ok(None);
                         }
                         "feed" => {
                             super::kill_feed::signal_feed::stage(w);
+                            if let Some(path) = a.get(1) {
+                                super::ui_parity::apply_fixture(w, name, path)?;
+                            }
                             return Ok(None);
                         }
                         _ => {}

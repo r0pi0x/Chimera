@@ -18,6 +18,8 @@
 //!   CSS subset in cq and tokens, resolved through `UiUnits`.
 //! - `widgets`: tags (YOU, HOST, the fused YOU+HOST), the bot slot,
 //!   your row, the hover tick, key caps, the ping meter.
+//! - `parity`: `UiParityId`, a node's name in the look book, and its
+//!   measured box for the UI parity check (`tools/ui-parity/`).
 //!
 //! `ChimeraUiPlugin` keeps `UiUnits` from the window, steps the clock and
 //! every `Timeline` (`UiKitSystems`, in `PostUpdate` before Bevy's UI
@@ -28,6 +30,7 @@ pub mod fonts;
 pub mod icons;
 pub mod materials;
 pub mod motion;
+pub mod parity;
 pub mod theme;
 pub mod style;
 pub mod units;
@@ -39,6 +42,7 @@ pub use fonts::{FontFiles, KitFonts, Role, Styled};
 pub use icons::{IconFor, IconImages, IconSource, Icons};
 pub use materials::{AmbientMaterial, KitMaterialsPlugin, LinesMaterial, PassMaterial, SlantMaterial, TickBarMaterial};
 pub use motion::{Ease, Prop, Timeline, Track, UiClock};
+pub use parity::UiParityId;
 pub use theme::{Theme, Tone};
 pub use style::{UiSlant, UiStyle, UiText};
 pub use units::{TickLayout, UiUnits};

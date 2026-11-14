@@ -65,6 +65,7 @@ pub mod senses;
 pub mod spectate;
 pub mod swap_effect;
 pub mod text_warm;
+pub mod ui_parity;
 pub mod vgui;
 pub mod video;
 pub mod view;
@@ -551,6 +552,7 @@ impl PluginGroup for ClientPlugins {
             .add(match_end::MatchEndPlugin)
             .add(prematch_lobby::PreMatchLobbyPlugin)
             .add(kill_feed::KillFeedPlugin)
+            .add(ui_parity::UiParityPlugin)
             .add(callouts::CalloutsPlugin)
             .add(hit_marker::HitMarkerPlugin)
             .add(hdr::HdrPlugin)
