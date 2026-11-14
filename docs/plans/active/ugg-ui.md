@@ -617,9 +617,18 @@ must be one build.
 6. The menu's Showcase may show any installed or cached body and gun
    (the menu is outside any lobby); the coming ladder isn't a constraint.
 
-Look Book V (menu slot C, the ambient background, tag styles, the
-match-end background) changes only those parts; everything else is
-signed off and is built now.
+Look Book V decisions (user, 2026-11-14): menu slot C is the Ident
+(the mark signs on facet by facet on one 12° scan, holds with a sheen,
+signs off); an ambient full-menu fragment shader (slanted bands, a
+faceted field, one cobalt bloom, near-still behind the menu column) sits
+under everything. Player marks: tags are solid fills (HOST cobalt, YOU
+white), a player who is both gets one fused chip split on the 12° slant;
+BOT is the antenna robot icon (16-unit grid) in a slot reserved left of
+every name; YOU's row is tinted and outlined, visibly different from the
+hover state on hoverable rows. Kill and death are real grid columns with
+their marks right-aligned over the numbers. The match-end background is
+being redrawn as wide, overlapping translucent slanted planes (fewer,
+broader bars, speed tied to width).
 
 ## 7. Risks
 
