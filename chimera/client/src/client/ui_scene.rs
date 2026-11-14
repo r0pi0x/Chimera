@@ -15,7 +15,10 @@
 //! fixture (`ui_scene board <fixture.json>`), its data over a flat ground
 //! instead (the UI parity check, `ui_parity`). `proof` (the kit itself: the type ramp of every role, tick
 //! bars, slants, the gun icons and marks, the logo pass frozen mid-way,
-//! the ambient and the match end's lines behind). The screens' milestones add theirs
+//! the ambient and the match end's lines behind). `controls` (the kit's
+//! form controls in their states: `chimera_ui::controls`). An app adds
+//! its own screens' scenes (`UiSceneHooks`: the party's `menu`, `esc`
+//! and `settings <tab>`), staged by the app's code and cleared at `off`. The screens' milestones add theirs
 //! (`lobby`, `chip`, `board`, `toast`, `airstrike`, `matchend`, `menu`)
 //! to `SCENES`. An app's own screens register theirs in `UiSceneHooks`
 //! (`menu`: the party menu's first page, `party_kit::signal_menu::stage`).
@@ -41,7 +44,7 @@ use chimera_ui::{
 pub const UI_SCENE_Z: i32 = 900;
 
 /// The scenes `ui_scene` stages.
-pub const SCENES: &[&str] = &["proof", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend"];
+pub const SCENES: &[&str] = &["proof", "controls", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend"];
 
 /// The scene asked for (`None`: none).
 #[derive(Resource, Default, Clone, Debug, PartialEq)]
@@ -111,7 +114,7 @@ impl Plugin for UiScenePlugin {
         app.init_resource::<UiScene>()
             .console_command(
                 "ui_scene",
-                "ui_scene <proof|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|off> [fixture.json | t]: stage a screen of the UI \
+                "ui_scene <proof|controls|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|off> [fixture.json | t]: stage a screen of the UI \
                  kit with made-up data (screenshots), or a fixture's (the UI parity check); an animated scene (rankup, airstrike) \
                  with `t` frozen `t` s into its loop.",
                 |w, a| {
@@ -225,6 +228,71 @@ fn stage(
         };
         proof(&mut m, &mut passes, &mut lines, &mut ambients, &mut commands);
     }
+    if scene.want.as_deref() == Some("controls") {
+        controls(&theme, kit.as_deref(), *units, &mut ambients, &mut commands);
+    }
+}
+
+/// The kit's form controls in their states (`chimera_ui::controls`), over
+/// the frozen ambient.
+fn controls(t: &Theme, kit: Option<&KitFonts>, u: UiUnits, ambients: &mut Assets<chimera_ui::AmbientMaterial>, c: &mut Commands) {
+    use chimera_ui::controls::{Kind, State, Ui};
+    let ui = Ui::new(t, kit, u);
+    let root = c
+        .spawn((
+            UiSceneRoot,
+            Name::new("ui_scene controls"),
+            GlobalZIndex(UI_SCENE_Z),
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100.0),
+                height: percent(100.0),
+                padding: UiRect::axes(u.val(4.6), u.val(3.4)),
+                flex_direction: FlexDirection::Row,
+                column_gap: u.val(3.0),
+                ..default()
+            },
+            BackgroundColor(t.tone(Tone::Ink)),
+        ))
+        .id();
+    c.spawn((
+        MaterialNode(ambients.add(chimera_ui::AmbientMaterial::new(t).freeze(Some(6.0)))),
+        Node { position_type: PositionType::Absolute, left: Val::ZERO, top: Val::ZERO, width: percent(100.0), height: percent(100.0), ..default() },
+        ChildOf(root),
+    ));
+    let col = |c: &mut Commands, w: f32| ui.boxed(c, root, chimera_ui::UiStyle { w: Some(w), gap: Some(0.8), ..chimera_ui::UiStyle::column() });
+    let left = col(c, 40.0);
+    ui.section(c, left, "Buttons", Some("default • focus • disabled • danger"));
+    for (k, st) in [(Kind::Primary, State::NONE), (Kind::Primary, State::focused(true)), (Kind::Secondary, State::NONE), (Kind::Secondary, State::focused(true))] {
+        let r = ui.boxed(c, left, chimera_ui::UiStyle::row());
+        ui.button(c, r, k, "Apply", Some("Ctrl S"), 2.4, st);
+    }
+    let r = ui.boxed(c, left, chimera_ui::UiStyle { gap: Some(0.5), ..chimera_ui::UiStyle::row() });
+    ui.button(c, r, Kind::Danger, "End the game", None, 2.4, State::NONE);
+    ui.button(c, r, Kind::Ghost, "Back", Some("Esc"), 2.4, State::NONE);
+    ui.button(c, r, Kind::Secondary, "Revert", None, 2.4, State { disabled: true, ..State::NONE });
+    ui.section(c, left, "Tabs", None);
+    ui.tabs(c, left, &["Video", "Audio", "Controls", "Party"], 1, false);
+    ui.section(c, left, "Key binding", None);
+    let r = ui.boxed(c, left, chimera_ui::UiStyle { gap: Some(0.5), ..chimera_ui::UiStyle::row() });
+    ui.key_field(c, r, &["SPACE".into(), "MWHEELDOWN".into()], false, 8.5, State::NONE);
+    ui.key_field(c, r, &[], true, 8.5, State::NONE);
+    let right = col(c, 46.0);
+    ui.section(c, right, "Rows", Some("focus • changed • error"));
+    let (_, v) = ui.row(c, right, "Vertical sync", None, 2.9, State::NONE);
+    ui.toggle(c, v, true, State::NONE);
+    let (_, v) = ui.row(c, right, "Mouse filter", None, 2.9, State { focus: true, changed: true, ..State::NONE });
+    ui.toggle(c, v, false, State::focused(true));
+    let (_, v) = ui.row(c, right, "Frame limit", None, 2.9, State::NONE);
+    ui.segmented(c, v, &["None", "60", "144", "240", "300"], Some(2), State::NONE);
+    let (_, v) = ui.row(c, right, "Field of view", None, 2.9, State::focused(true));
+    ui.slider(c, v, 0.6, Some(1.0), "84", 15.0, State::focused(true));
+    let (_, v) = ui.row(c, right, "Brightness (gamma)", None, 2.9, State { error: true, ..State::NONE });
+    ui.slider(c, v, 0.6, Some(0.6), "2.2", 15.0, State { error: true, ..State::NONE });
+    let (_, v) = ui.row(c, right, "Max. players", Some("next match"), 2.9, State::NONE);
+    ui.stepper(c, v, "8", 3.2, State::NONE);
+    let (_, v) = ui.row(c, right, "Music", None, 2.9, State::NONE);
+    ui.dropdown(c, v, &["Party playlist", "The game's loop", "None"], 0, Some(1), 12.0, State::NONE);
 }
 
 struct Makers<'a> {

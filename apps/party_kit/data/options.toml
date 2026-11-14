@@ -3,7 +3,10 @@
 # the player's (archived, so config.cfg keeps it). `range` = [min, max,
 # step] (a `-` and a `+`), or `choices` = [[value, label], ...] (a click
 # takes the next); `when = "ui_sound"`: only in an app with UI sound
-# (Ultimate Gun Game's Signal). The "Binds" tab is the Controls page (F6).
+# (Ultimate Gun Game's Signal); `widget = "dropdown"`: the Signal look's
+# Settings shows it as a dropdown (party_kit::settings; else by its pick).
+# The "Binds" tab is the Controls page (F6); in the Signal look's
+# Settings the Mouse tab is "Controls", with the binds under it.
 
 [[tab]]
 name = "Video"
@@ -38,6 +41,6 @@ name = "Party"
 setting = [
   { label = "Hit marker", cvar = "cl_hitmarker", choices = [["0", "Off"], ["1", "On"]] },
   { label = "Swap effect", cvar = "party_swap_effect", choices = [["0", "Off"], ["1", "On"]] },
-  { label = "Music", cvar = "party_music", choices = [["1", "Party playlist"], ["2", "The game's loop"], ["0", "None"]] },
+  { label = "Music", cvar = "party_music", choices = [["1", "Party playlist"], ["2", "The game's loop"], ["0", "None"]], widget = "dropdown" },
   { label = "Radar", cvar = "hud_radar", choices = [["0", "Off"], ["1", "On"]] },
 ]

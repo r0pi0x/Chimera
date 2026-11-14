@@ -42,12 +42,17 @@
 //!
 //! `EscMenu` is the state (headless too: tests drive it by keys and by
 //! `EscMenuAction`s); drawing is Bevy UI, rebuilt when what it shows
-//! changes, in the party's panel look (the Controls page's colours).
+//! changes, in the party's panel look (the Controls page's colours), or
+//! under a theme with `[layout.esc]` (Ultimate Gun Game's Signal) in
+//! `esc_signal`'s: there ↑↓ move the selection (`EscMenu::focus`) over
+//! the entries that act and Enter presses it, the confirm's Stay first;
+//! its Options and Host settings are the Signal Settings screen's
+//! (`settings`).
 //! `escmenu [options|host]` (console) toggles it and `escmenu_press
 //! <entry>` presses one, for screenshots.
 //!
 //! Known shortcuts: options are the data file's cvars only (each game's full options are in its own
-//! menus); no keyboard navigation of the entries.
+//! menus); the plain look has no keyboard navigation of the entries.
 
 use std::collections::BTreeMap;
 
@@ -162,6 +167,11 @@ pub struct EscMenu {
     /// A line under the entries (why a vote call was refused, what
     /// happened).
     pub notice: Option<String>,
+    /// The keyboard's entry on the first page (↑↓, Enter; the Signal
+    /// look's selection), or the confirm's button (0 Stay, 1 End).
+    pub focus: usize,
+    /// When `focus` last moved (`chimera_ui::UiClock`: its wipe).
+    pub focus_since: f64,
 }
 
 impl EscMenu {
@@ -169,6 +179,117 @@ impl EscMenu {
         self.open = open;
         self.page = Page::Main;
         self.notice = None;
+        self.focus = 0;
+    }
+}
+
+/// A first-page entry as shown: its words, what it does (None: shown but
+/// off, the vote entry while a vote runs), the HOST chip, its key.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShownEntry {
+    pub label: String,
+    pub action: Option<Action>,
+    pub host: bool,
+    pub key: Option<&'static str>,
+}
+
+/// The first page's entries (data/main_menu.toml `[[escape]]`) for a host
+/// or not, in an app with the main menu or not, a vote running or not.
+pub fn shown_entries(host: bool, main_menu: bool, voting: bool) -> Vec<ShownEntry> {
+    use crate::main_menu::{EscDoes, When};
+    crate::main_menu::MenuData::shipped()
+        .escape
+        .into_iter()
+        .filter(|e| match e.when {
+            When::Always => true,
+            When::Host => host,
+            When::MainMenu => main_menu,
+        })
+        .map(|e| {
+            let action = match e.does {
+                EscDoes::Resume => Some(Action::Resume),
+                EscDoes::Options => Some(Action::Options),
+                EscDoes::Host => Some(Action::Host),
+                EscDoes::Disconnect => Some(Action::Disconnect),
+                EscDoes::Quit => Some(Action::Quit),
+                EscDoes::Vote => (!voting).then_some(Action::SkipMap),
+            };
+            ShownEntry {
+                key: (action == Some(Action::Resume)).then_some("Esc"),
+                host: matches!(e.does, EscDoes::Host),
+                label: e.label,
+                action,
+            }
+        })
+        .collect()
+}
+
+/// The Signal look draws the menu (a theme with `[layout.esc]`: the
+/// Ultimate Gun Game's): `esc_signal`.
+pub fn signal(theme: Option<&chimera_ui::Theme>) -> bool {
+    theme.is_some_and(|t| t.has_layout("esc"))
+}
+
+/// The keys (the Signal look): ↑↓ move the selection over the entries
+/// that act (or the confirm's buttons, ←→ too), Enter presses it.
+#[allow(clippy::too_many_arguments)]
+fn navigate(
+    keys: Res<ButtonInput<KeyCode>>,
+    theme: Option<Res<chimera_ui::Theme>>,
+    role: Option<Res<chimera_core::core::NetRole>>,
+    main_menu: Option<Res<crate::main_menu::PartyMenu>>,
+    vote: Option<Res<VoteView>>,
+    clock: Option<Res<chimera_ui::UiClock>>,
+    mut menu: ResMut<EscMenu>,
+    mut out: MessageWriter<Action>,
+    mut cues: MessageWriter<chimera_client::client::ui_sound::UiCue>,
+) {
+    use chimera_client::client::ui_sound::UiCue;
+    if !menu.open || !signal(theme.as_deref()) {
+        return;
+    }
+    let now = clock.map_or(0.0, |c| c.now);
+    let up = keys.just_pressed(KeyCode::ArrowUp);
+    let down = keys.just_pressed(KeyCode::ArrowDown);
+    let enter = keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::NumpadEnter);
+    match menu.page {
+        Page::Main => {
+            let host = role.as_deref().is_none_or(|r| *r != chimera_core::core::NetRole::Client);
+            let voting = vote.as_ref().is_some_and(|v| v.active.is_some());
+            let entries = shown_entries(host, main_menu.is_some(), voting);
+            let live: Vec<usize> = (0..entries.len()).filter(|i| entries[*i].action.is_some()).collect();
+            if live.is_empty() {
+                return;
+            }
+            if !live.contains(&menu.focus) {
+                menu.focus = live[0];
+            }
+            let at = live.iter().position(|i| *i == menu.focus).unwrap_or(0);
+            let step = if up { -1 } else if down { 1 } else { 0 };
+            if step != 0 {
+                let next = live[(at as i64 + step).rem_euclid(live.len() as i64) as usize];
+                if next != menu.focus {
+                    menu.focus = next;
+                    menu.focus_since = now;
+                    cues.write(UiCue::new("ui_hover"));
+                }
+            }
+            if enter && let Some(a) = entries.get(menu.focus).and_then(|e| e.action) {
+                out.write(a);
+            }
+        }
+        Page::ConfirmDisconnect(_) => {
+            let left = keys.just_pressed(KeyCode::ArrowLeft) || keys.just_pressed(KeyCode::Tab);
+            let right = keys.just_pressed(KeyCode::ArrowRight);
+            if up || down || left || right {
+                menu.focus = 1 - menu.focus.min(1);
+                cues.write(UiCue::new("ui_hover"));
+            }
+            if enter {
+                out.write(if menu.focus == 1 { Action::DisconnectYes } else { Action::Back });
+            }
+        }
+        _ => {}
     }
 }
 
@@ -209,7 +330,7 @@ pub fn page_settings(world: &World, page: Page) -> Vec<Setting> {
 }
 
 #[derive(Component)]
-struct MenuRoot;
+pub(crate) struct MenuRoot;
 
 #[derive(Component)]
 struct VoteRoot;
@@ -223,6 +344,7 @@ pub struct EscMenuPlugin;
 impl Plugin for EscMenuPlugin {
     fn build(&self, app: &mut App) {
         crate::ui_cues::ensure_message(app);
+        chimera_client::client::ui_scene::UiSceneHooks::add(app.world_mut(), "esc", scene_esc);
         app.init_resource::<EscMenu>()
             .init_resource::<OptionTabs>()
             .init_resource::<EscMenuTitle>()
@@ -265,12 +387,27 @@ impl Plugin for EscMenuPlugin {
             )
             .add_systems(
                 Update,
-                (sync_tabs, toggle, clicks, act, refresh_values, sync, show, show_vote)
+                (sync_tabs, toggle, navigate, clicks, act, refresh_values, sync, show, show_vote)
                     .chain()
                     .in_set(EscMenuSystems)
                     .before(crate::controls::ControlsSystems),
             );
     }
+}
+
+/// `ui_scene esc` (feature `dev` screenshots): the menu open over the
+/// match, the race chip and the kill feed staged beside it; `off` shuts it.
+fn scene_esc(w: &mut World, args: &[String]) -> Result<(), String> {
+    let off = args.first().is_some_and(|a| a == "off");
+    if !off {
+        chimera_client::client::race_chip::stage(w, Some("chip"));
+        chimera_client::client::kill_feed::signal_feed::stage(w);
+    }
+    let mut m = w.resource_mut::<EscMenu>();
+    if off != !m.open {
+        m.set_open(!off);
+    }
+    Ok(())
 }
 
 /// Esc: open, back to the first page, or close (unless the console, chat
@@ -284,9 +421,14 @@ fn toggle(
     mut menu: ResMut<EscMenu>,
     mut console_cmds: Option<ResMut<Console>>,
     mut cues: MessageWriter<chimera_client::client::ui_sound::UiCue>,
+    settings: Option<Res<crate::settings::Settings>>,
 ) {
     use chimera_client::client::ui_sound::UiCue;
     if !keys.just_pressed(KeyCode::Escape) {
+        return;
+    }
+    // Settings spent it (a key capture, an open list, the display's keep).
+    if settings.is_some_and(|s| s.esc_taken) {
         return;
     }
     // Out of a game the main menu has Esc.
@@ -307,6 +449,9 @@ fn toggle(
     cues.write(UiCue::new("ui_back"));
     if menu.page != Page::Main {
         leave_page(&mut menu, console_cmds.as_deref_mut());
+        if matches!(menu.page, Page::ConfirmDisconnect(_)) {
+            menu.focus = 0;
+        }
         menu.page = Page::Main;
     } else {
         leave_page(&mut menu, console_cmds.as_deref_mut());
@@ -385,7 +530,11 @@ fn act_one(world: &mut World, action: Action) {
         }
         Action::Back => {
             leave(world);
-            world.resource_mut::<EscMenu>().page = Page::Main;
+            let mut m = world.resource_mut::<EscMenu>();
+            if matches!(m.page, Page::ConfirmDisconnect(_)) {
+                m.focus = 0;
+            }
+            m.page = Page::Main;
         }
         Action::Binds => {
             if let Some(mut c) = world.get_resource_mut::<crate::controls::ControlsPage>() {
@@ -415,7 +564,10 @@ fn act_one(world: &mut World, action: Action) {
         Action::Disconnect => {
             let people = people_connected(world);
             if people > 0 && host::is_host(world) {
-                world.resource_mut::<EscMenu>().page = Page::ConfirmDisconnect(people);
+                let mut m = world.resource_mut::<EscMenu>();
+                m.page = Page::ConfirmDisconnect(people);
+                // The safe choice first: a stray Enter never ends the game.
+                m.focus = 0;
             } else {
                 leave(world);
                 world.resource_mut::<EscMenu>().set_open(false);
@@ -519,9 +671,11 @@ struct Shown {
     title: String,
     /// The app has the main menu (Disconnect shows).
     main_menu: bool,
+    /// The Signal look (`esc_signal`): its selection, the window's units.
+    signal: Option<(usize, u64, u32, u32)>,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn show(
     menu: Res<EscMenu>,
     title: Res<EscMenuTitle>,
@@ -530,6 +684,15 @@ fn show(
     main_menu: Option<Res<crate::main_menu::PartyMenu>>,
     tabs: Res<OptionTabs>,
     root: Query<Entity, With<MenuRoot>>,
+    (theme, kit, units, clock, settings, time): (
+        Option<Res<chimera_ui::Theme>>,
+        Option<Res<chimera_ui::KitFonts>>,
+        Option<Res<chimera_ui::UiUnits>>,
+        Option<Res<chimera_ui::UiClock>>,
+        Option<Res<VoteSettings>>,
+        Res<Time<Real>>,
+    ),
+    (mut images, mut icons): (Option<ResMut<Assets<Image>>>, Option<ResMut<chimera_ui::IconImages>>),
     mut shown: Local<Option<Shown>>,
     mut commands: Commands,
 ) {
@@ -550,6 +713,12 @@ fn show(
         host: role.as_deref().is_none_or(|r| *r != chimera_core::core::NetRole::Client),
         title: title.0.clone(),
         main_menu: main_menu.is_some(),
+        signal: (signal(theme.as_deref()) && units.is_some()).then(|| {
+            let u = units.as_deref().copied().unwrap_or_default();
+            // A running vote's seconds left redraw it each second.
+            let left = vote.as_ref().map_or(0, |v| (v.ends - time.elapsed_secs_f64()).max(0.0).ceil() as u64);
+            (menu.focus, left, (u.height * 8.0) as u32, (u.scale_factor * 1000.0) as u32)
+        }),
     };
     if shown.as_ref() == Some(&now) {
         return;
@@ -557,7 +726,33 @@ fn show(
     for e in &root {
         commands.entity(e).despawn();
     }
-    spawn_menu(&mut commands, &menu, &now, active.as_ref(), &tabs.tabs);
+    match (&now.signal, theme.as_deref(), units.as_deref(), images.as_deref_mut(), icons.as_deref_mut()) {
+        (Some(_), Some(theme), Some(units), Some(images), Some(icons)) => {
+            let ui = chimera_ui::controls::Ui::new(theme, kit.as_deref(), *units);
+            let quorum = settings.map_or(0.6, |s| s.quorum_ratio);
+            let vote_now = active.as_ref().map(|v| crate::esc_signal::VoteShown {
+                title: vote_title(v),
+                yes: v.yes,
+                no: v.no,
+                needed: chimera_net::net::vote::needed(v.eligible, quorum),
+                left: now.signal.map_or(0, |s| s.1),
+                mine: v.mine,
+                may_vote: v.may_vote,
+            });
+            let entries = shown_entries(now.host, now.main_menu, active.is_some());
+            let at = crate::esc_signal::Drawn {
+                page: menu.page,
+                focus: menu.focus,
+                focus_since: menu.focus_since,
+                now: clock.as_deref().map_or(0.0, |c| c.now),
+                entries: &entries,
+                notice: menu.notice.as_deref(),
+                vote: vote_now.as_ref(),
+            };
+            crate::esc_signal::spawn(&mut commands, &ui, images, icons, &at, MENU_Z);
+        }
+        _ => spawn_menu(&mut commands, &menu, &now, active.as_ref(), &tabs.tabs),
+    }
     *shown = Some(now);
 }
 

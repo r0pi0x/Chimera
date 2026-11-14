@@ -273,6 +273,7 @@ const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
 const ALLOWED_EXCLUSIVE_FILES: &[(&str, &str)] = &[
     ("apps/party_kit/src/controls.rs", "a menu"),
     ("apps/party_kit/src/esc_menu.rs", "a menu"),
+    ("apps/party_kit/src/settings.rs", "a menu: its clicks as console lines and cvars, its drawing from the console's binds"),
     ("apps/party_kit/src/main_menu.rs", "a menu: its clicks as console lines and cvars, the map loads it follows"),
     ("chimera/client/src/client/console.rs", "the console and map loading"),
     ("chimera/client/src/client/debug_ui.rs", "a tool"),

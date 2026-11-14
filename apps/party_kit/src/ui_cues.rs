@@ -49,23 +49,25 @@ pub fn step_cue(pick: &Pick, next: &str) -> UiCue {
 }
 
 /// `ui_hover` when the pointer lands on a button carrying `A` (not again
-/// for the same button, nor on a press's release).
-pub fn hover<A: Component>(
-    buttons: Query<(Entity, &widgets::Interaction), (Changed<widgets::Interaction>, With<A>)>,
-    mut over: Local<Option<Entity>>,
+/// for the same button, nor on a press's release; a button keyed by its
+/// action, so a menu rebuilt under a resting pointer stays quiet).
+pub fn hover<A: Component + PartialEq + Clone>(
+    buttons: Query<(&A, &widgets::Interaction), Changed<widgets::Interaction>>,
+    mut over: Local<Option<A>>,
     mut out: MessageWriter<UiCue>,
 ) {
-    for (e, i) in &buttons {
+    for (a, i) in &buttons {
+        let e = a.clone();
         match i {
             widgets::Interaction::Hovered | widgets::Interaction::Pressed => {
-                if *over != Some(e) {
+                if over.as_ref() != Some(&e) {
                     if *i == widgets::Interaction::Hovered {
                         out.write(UiCue::new("ui_hover"));
                     }
                     *over = Some(e);
                 }
             }
-            widgets::Interaction::None if *over == Some(e) => *over = None,
+            widgets::Interaction::None if over.as_ref() == Some(&e) => *over = None,
             widgets::Interaction::None => {}
         }
     }

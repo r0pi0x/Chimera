@@ -270,3 +270,30 @@ chip_pitch = 3.05
 winner = 3.6
 row_h = 2.62
 
+
+# The Escape menu over play (party_kit esc_signal; the components page's
+# frame 05): a left panel over a gradient shade, so the race chip and the
+# kill feed stay readable.
+[layout.esc]
+panel_x = 4.6
+panel_y = 5.6
+panel_w = 27.0
+lockup = 1.5
+item_h = 3.1
+label = 1.15
+bar_accent = 0.3
+foot_y = 3.0
+wipe = 0.2           # the selection's slab wiping to its new row, s
+
+# Settings (party_kit settings; the components page's frame 02): one page
+# for the menu's Options, the Escape menu's and the Controls page.
+[layout.settings]
+margin = 4.6
+win_top = 9.4
+win_bottom = 7.6
+help_w = 27.0
+row_h = 2.9
+bind_h = 2.4
+bar_h = 3.4
+wipe = 0.26          # a page change's 12° wipe, s
+keep_secs = 15.0     # a display-mode change reverts unless kept

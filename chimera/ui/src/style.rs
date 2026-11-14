@@ -336,11 +336,32 @@ pub struct UiSlant {
     pub edges: (bool, bool),
     /// An accent bar at the left in this tone, cq wide.
     pub accent: Option<(Tone, f32)>,
+    /// Drawn as an outline this many physical px wide (0: filled).
+    pub outline: f32,
 }
 
 impl Default for UiSlant {
     fn default() -> Self {
-        UiSlant { fill: Tone::Fg, alpha: 1.0, edges: (true, true), accent: None }
+        UiSlant { fill: Tone::Fg, alpha: 1.0, edges: (true, true), accent: None, outline: 0.0 }
+    }
+}
+
+impl UiSlant {
+    /// `fill` at `alpha`, both edges leaning.
+    pub fn new(fill: Tone, alpha: f32) -> Self {
+        UiSlant { fill, alpha, ..default() }
+    }
+
+    /// Which edges lean.
+    pub fn edges(mut self, left: bool, right: bool) -> Self {
+        self.edges = (left, right);
+        self
+    }
+
+    /// Only its outline, `px` physical pixels wide.
+    pub fn outline(mut self, px: f32) -> Self {
+        self.outline = px;
+        self
     }
 }
 
@@ -385,6 +406,9 @@ pub fn resolve_styles(
             let mut m = SlantMaterial::new(&theme, theme.tone_a(s.fill, s.alpha)).edges(s.edges.0, s.edges.1);
             if let Some((t, w)) = s.accent {
                 m = m.accent(theme.tone(t), units.phys(units.cq(w)));
+            }
+            if s.outline > 0.0 {
+                m = m.outline(s.outline);
             }
             if let Some(mut existing) = mat.and_then(|h| slants.get_mut(&h.0)) {
                 *existing = m;

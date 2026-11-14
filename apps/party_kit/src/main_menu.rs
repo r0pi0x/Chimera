@@ -33,7 +33,9 @@
 //!   password, Connect (`password ..; connect ..`), the last addresses as
 //!   buttons (`RecentFile`: `party_recent.txt` in the config folder).
 //! - **Options**: the Escape menu's tabs (data/options.toml) and Binds
-//!   (the Controls page).
+//!   (the Controls page); under a theme with `[layout.settings]`
+//!   (Ultimate Gun Game's Signal) the Settings screen instead
+//!   (`settings`: the tabs, the binds, a help pane, Apply / Revert).
 //! - **Loading** (`Screen::Loading`, `Screen::Joining`): CS:S's loading
 //!   dialog's place and parts (its stage line from `JoinProgress`'s stage,
 //!   the map's load or the download's bytes, a bar, Cancel =
@@ -1128,6 +1130,7 @@ fn typing(
     mut menu: ResMut<PartyMenu>,
     data: Res<MenuData>,
     mut out: MessageWriter<MainMenuAction>,
+    settings: Option<Res<crate::settings::Settings>>,
 ) {
     let live = menu.shown() && !console.is_some_and(|c| c.open) && !controls.is_some_and(|c| c.open);
     if !live {
@@ -1142,6 +1145,10 @@ fn typing(
             continue;
         }
         if e.key_code == KeyCode::Escape {
+            if settings.as_ref().is_some_and(|s| s.esc_taken) {
+                // Settings spent it (a key capture, an open list, the keep).
+                continue;
+            }
             if menu.failure.is_some() {
                 out.write(MainMenuAction::CloseFailure);
             } else if menu.reconnecting.is_some() || matches!(menu.screen, Screen::Loading | Screen::Joining) {
@@ -2027,6 +2034,8 @@ fn show(
         MenuPage::Main => {}
         MenuPage::Play => play_frame(&mut commands, root, &menu, &data, &look, &pool),
         MenuPage::Join => join_frame(&mut commands, root, &menu, &look),
+        // The Signal look's Settings draws this page (`settings`).
+        MenuPage::Options if crate::settings::signal(theme.as_deref()) => {}
         MenuPage::Options => {
             let tabs = opt_tabs.as_deref().map_or_else(|| crate::esc_menu::option_tabs_for(false), |t| t.tabs.clone());
             options_frame(&mut commands, root, &menu, &look, &tabs)

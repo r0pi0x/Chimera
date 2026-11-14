@@ -294,3 +294,35 @@ fn a_skip_vote_without_a_majority_fails_and_keeps_the_map() {
     sim.ticks(200);
     assert!(sim.server.app.world().resource::<Levels>().0.is_empty(), "the map stays");
 }
+
+/// Under Signal's theme (`esc_signal`): ↑↓ move the selection over the
+/// entries that act, Enter presses it; the host's Disconnect asks first
+/// with Stay selected, so a second Enter stays; drawn on the kit.
+#[test]
+fn signal_keys_move_the_selection_and_stay_comes_first() {
+    let (mut sim, _a) = local_with_menu();
+    sim.app
+        .insert_resource(chimera_ui::Theme::from_toml(include_str!("../../../ultimate_gun_game/data/theme.toml")).unwrap())
+        .insert_resource(chimera_ui::UiUnits::new(1080.0, 1.0))
+        .init_resource::<chimera_ui::IconImages>();
+    tap(&mut sim.app, KeyCode::Escape);
+    assert_eq!(menu(&sim.app).focus, 0);
+    tap(&mut sim.app, KeyCode::ArrowUp);
+    let entries = esc_menu::shown_entries(true, false, false);
+    assert_eq!(menu(&sim.app).focus, entries.len() - 1, "↑ wraps to the last entry");
+    assert_eq!(entries.last().unwrap().action, Some(Action::Quit));
+    tap(&mut sim.app, KeyCode::ArrowDown);
+    tap(&mut sim.app, KeyCode::ArrowDown);
+    assert_eq!(menu(&sim.app).focus, 1);
+    tap(&mut sim.app, KeyCode::Enter);
+    assert_eq!(menu(&sim.app).page, Page::Options(0), "Enter pressed Options");
+    // The vote entry is off while a vote runs.
+    let voting = esc_menu::shown_entries(true, false, true);
+    assert!(voting.iter().any(|e| e.action.is_none() && e.label.contains("Vote")));
+    // The confirm: Stay first.
+    sim.app.world_mut().resource_mut::<EscMenu>().page = Page::ConfirmDisconnect(2);
+    sim.app.world_mut().resource_mut::<EscMenu>().focus = 0;
+    tap(&mut sim.app, KeyCode::Enter);
+    assert_eq!(menu(&sim.app).page, Page::Main, "Enter on Stay stays");
+    assert!(menu(&sim.app).open);
+}

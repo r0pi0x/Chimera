@@ -562,6 +562,10 @@ pub mod controls;
 #[cfg(feature = "present")]
 pub mod esc_menu;
 #[cfg(feature = "present")]
+pub mod esc_signal;
+#[cfg(feature = "present")]
+pub mod settings;
+#[cfg(feature = "present")]
 pub mod main_menu;
 #[cfg(feature = "present")]
 pub mod menu_backdrop;

@@ -102,6 +102,9 @@ pub struct Setting {
     /// Shown only where this holds (`when = "ui_sound"`: an app with UI
     /// sound, `esc_menu::option_tabs_for`); None: always.
     pub when: Option<String>,
+    /// How the Signal look's Settings shows it (`widget = "dropdown"`;
+    /// None: by its pick, `settings::widget`).
+    pub widget: Option<String>,
 }
 
 /// A `[[setting]]` (or a tab's `setting` entry) read.
@@ -139,6 +142,7 @@ pub fn setting_of(v: &toml::Value) -> Result<Setting, String> {
         key,
         help: s("help").unwrap_or_default(),
         when: s("when"),
+        widget: s("widget"),
     })
 }
 

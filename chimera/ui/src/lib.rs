@@ -22,6 +22,11 @@
 //!   sound table), `UiMusic` (the loop a screen wants) and `SoundTable`
 //!   (the app's event table, TOML); played by the
 //!   shell's `ui_sound` under a theme with `flags.sound.ui`.
+//! - `controls`: the menus' form controls (buttons, sub-tabs, rows,
+//!   toggle, segmented, slider, stepper, dropdown, key-bind field, key
+//!   caps, key/value lines, modal plates), their one state vocabulary
+//!   (hover tick and tint, accent focus, white selected) and the 12°
+//!   wipe for moves inside a screen.
 //! - `parity`: `UiParityId`, a node's name in the look book, and its
 //!   measured box for the UI parity check (`tools/ui-parity/`).
 //!
@@ -30,6 +35,7 @@
 //! layout) and registers the materials. Add it after Bevy's plugins.
 //! Without a `Theme` resource it inserts `Theme::shell_default`.
 
+pub mod controls;
 pub mod fonts;
 pub mod icons;
 pub mod materials;
@@ -73,7 +79,7 @@ impl Plugin for ChimeraUiPlugin {
             .init_resource::<UiMusic>()
             .add_message::<UiCue>()
             .init_resource::<UiClock>()
-            .add_plugins((KitMaterialsPlugin, widgets::HoverTicks))
+            .add_plugins((KitMaterialsPlugin, widgets::HoverTicks, controls::ControlsPlugin))
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare))
             .add_systems(
                 PostUpdate,

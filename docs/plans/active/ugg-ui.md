@@ -912,6 +912,45 @@ licence, 5 MB a file, 20 MB in all.
   rendering each match's ladder on a task at its start (no rank files),
   and a compressed format with gapless loops (Vorbis) for the loop.
 
+### M7: Settings and Esc menu (first drafts)
+
+Status (2026-11-14): in progress, first drafts for the playtest (the
+"UGG Components & Views" page's Settings and Esc menu frames and its
+component table; only settings that exist). Step 1 in:
+`chimera_ui::controls` (buttons primary/secondary/ghost/danger with key
+caps, sub-tabs, rows and section headers, toggle, segmented, slider,
+stepper, dropdown, key-bind field, key/value lines, modal plates; one
+state vocabulary: hover the right-edge 12° tick plus a faint tint, focus
+the same tick in accent and the accent bar, selected a white fill, a
+toggle on white, threat as a mark only; `Wipe`/`wipe_cover` for moves
+inside a screen), `UiSlant::outline`; `ui_scene controls`; tests
+`chimera/ui/tests/it/controls.rs`. Step 2 in: the Esc menu
+(`party_kit::esc_signal`, `[layout.esc]`): a left panel over a gradient
+shade (the chip and the feed stay readable), the lockup, the paused
+line, the `[[escape]]` entries with the HOST chip, ↑↓ and Enter, the
+selection a white slab wiping along the slant, a running vote's box
+(question, counts, pips, F1/F2), the host's leave in a threat-barred
+modal with Stay first, the keys and "Match live"; `ui_scene esc`; test
+`esc_menu::signal_keys_move_the_selection_and_stay_comes_first`.
+Step 3 in: Settings (`party_kit::settings`, `[layout.settings]`), one
+screen for the menu's Options (over the ambient, `AmbientMaterial::MENU`),
+the Esc menu's Options (over the match) and Host settings: sub-tabs
+Video, Audio, Controls (options.toml's Mouse rows plus the Controls
+page's binds with the Shared / Combat Arms / CS:S switch and each game's
+gun view FOV), Party; rows by pick (slider, toggle, segmented, a
+`widget = "dropdown"`, stepper; key fields); ↑↓ ←→ Enter Q/E Delete;
+the help pane (TOML `help` else the cvar's, console name, default,
+range); the Apply / Revert bar (Ctrl+S / Ctrl+Z) wrapping the immediate
+writes (it counts the changes since Apply, Revert sets them back, Apply
+and leaving write the config); a display-mode change reverts after 15 s
+unless kept; a page change wipes the rows in on the slant;
+`ui_scene settings <tab>`; tests `party_kit` `settings::`. Left: a
+deferred model (values held until Apply), the Crosshair and Multiplayer
+pages (no rows exist yet), help previews (FOV fan, crosshair), a key
+bound twice flagged, the UI parity check for both screens (no look-book
+reference frames in `tools/ui-parity/reference/` yet), 720p/1440p/4K
+screenshots.
+
 ## 6. Decisions (user, 2026-11-14)
 
 1. Icons (revised 2026-11-14): each game's own kill icon everywhere it

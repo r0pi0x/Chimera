@@ -47,6 +47,7 @@ mod rotation;
 mod rung_characters;
 mod rung_extras;
 mod rung_holders;
+mod settings;
 mod shipped_map_pool;
 mod signal_menu;
 mod startup;
