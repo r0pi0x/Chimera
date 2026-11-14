@@ -271,7 +271,11 @@ folds from where it is.
   a 24-column grid; far hairlines at 4 % in a 6-column 2+1 rhythm moving
   6 columns per 24 s loop; near half-column slabs at 2 % every 12
   columns at twice the speed, right to left), on `globals.time`.
-- `AmbientMaterial`: the main menu's ambient background (look book V).
+- `AmbientMaterial`: the ambient background every between-match screen
+  shares (look book V's shader, ported to WGSL: bands, facets, one
+  bloom, composed in display space and written as linear light; per
+  screen a calm column edge, or none, and the bloom's place:
+  `AmbientMaterial::MENU`, `MATCH_END`).
 
 **Pixel snapping** (`chimera_ui::units`): the prototype's tick-bar
 layout, in physical pixels: `pitch = max(2, floor(box_w / n))`, `tick =
@@ -414,7 +418,7 @@ milestone.
 
 Status (2026-11-14): done but for the items under "Left". In:
 `chimera/ui` (`theme`, `fonts`, `units`, `motion`, `materials`: Slant,
-TickBar, Pass, Lines, Ambient (stub), `icons`: data/icons.toml with the
+TickBar, Pass, Lines, Ambient (the look book V shader since M4), `icons`: data/icons.toml with the
 13 guns and the marks (UGG mark, crown, trophy, kill, death, warn),
 rasterized per pixel height (`IconImages`) and tessellated, `IconFor`,
 `choose` with `icons.prefer_game`; `widgets`: `tag`, `kbd`);
