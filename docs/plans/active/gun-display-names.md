@@ -267,5 +267,7 @@ GUN) (SMG) and `weapon_ar2` (above).
    `heavy::display_names` in combat_arms, cs_source and hl2dm (every
    drawable gun's short name at 16 or fewer, via
    `minigame::auto::drawable_short_names`).
-6. Decide (the user): guns with no shop item (the 38 above) off the
-   ladder?
+6. Decided (user, 2026-11-14): guns with no shop item (the 38 above)
+   stay on the ladder, named by their record names through the split;
+   any that draw wrong go in `ladder_exclusions.toml` one by one, like
+   the other broken skins.
