@@ -409,3 +409,36 @@ fn the_board_follows_the_replicated_wins() {
     };
     assert_eq!(rows, [(false, 1), (true, 2)], "the bot's row and yours");
 }
+
+/// The open Tab board covers the games' HUDs (`hud::HudCover`, "board"):
+/// a game's root and a part outside one hidden, the shared crosshair told
+/// to go (the cover is up), our own Signal HUD kept; closed, all back.
+#[test]
+fn the_board_covers_the_games_huds() {
+    use chimera_client::client::hud::{BOARD_COVER, HudCover, HudPart, HudRoot, SignalHud};
+    let mut sim = sim(true);
+    player(&mut sim, "Alpha", 1, 4, true, false);
+    let w = sim.app.world_mut();
+    let root = w.spawn((Node::default(), HudRoot("test"))).id();
+    let part = w.spawn((Node::default(), HudPart, Visibility::Inherited)).id();
+    let ours = w.spawn((Node::default(), SignalHud, Visibility::Inherited)).id();
+    for _ in 0..3 {
+        frame(&mut sim, 1.0 / 60.0);
+    }
+    let vis = |sim: &Sim, e: Entity| *sim.app.world().get::<Visibility>(e).unwrap();
+    assert!(!sim.app.world().resource::<HudCover>().is(BOARD_COVER));
+    assert_ne!(vis(&sim, root), Visibility::Hidden);
+    sim.app.world_mut().resource_mut::<HeldActions>().showscores = true;
+    frame(&mut sim, 0.0);
+    frame(&mut sim, 0.0);
+    assert!(sim.app.world().resource::<HudCover>().is(BOARD_COVER), "the cover is up (the shared crosshair reads it)");
+    assert_eq!(vis(&sim, root), Visibility::Hidden, "a game's HUD root");
+    assert_eq!(vis(&sim, part), Visibility::Hidden, "a part");
+    assert_ne!(vis(&sim, ours), Visibility::Hidden, "our Signal HUD stays");
+    sim.app.world_mut().resource_mut::<HeldActions>().showscores = false;
+    frame(&mut sim, 0.0);
+    frame(&mut sim, 0.0);
+    assert!(!sim.app.world().resource::<HudCover>().is(BOARD_COVER));
+    assert_eq!(vis(&sim, part), Visibility::Inherited, "the part back");
+    assert_eq!(vis(&sim, root), Visibility::Inherited, "the root back");
+}

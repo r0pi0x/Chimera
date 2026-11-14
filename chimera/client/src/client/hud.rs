@@ -23,7 +23,8 @@
 //! Settings) covers it (`HudCover`): every game's roots and parts
 //! (`HudRoot`, `HudPart`) hidden while it is up, set back after; our own
 //! Signal HUD (`SignalHud`: race chip, feed, chips) hides only under the
-//! "settings" cover (Settings over the match), the Esc menu keeps it.
+//! "settings" cover (Settings over the match), the Esc menu keeps it; the
+//! Tab board's cover (`BOARD_COVER`) also hides the shared crosshair.
 //! `Radars` (`hud_radar`) says whether the games' radars draw; an app with
 //! one kill feed for all its HUDs (`kill_feed::SharedKillFeed`) has this
 //! HUD's left out too.
@@ -131,6 +132,10 @@ pub struct HudPart;
 /// readable.
 #[derive(Component, Clone, Copy, Debug, Default)]
 pub struct SignalHud;
+
+/// The `HudCover` name of the Signal Tab board (`race_chip`): it also takes
+/// the shared crosshair down, the board sitting at screen centre.
+pub const BOARD_COVER: &str = "board";
 
 /// The `HudCover` name of Settings over the match.
 pub const SETTINGS_COVER: &str = "settings";
@@ -1001,7 +1006,7 @@ fn draw_crosshair(
         ResMut<Assets<Image>>,
         bevy::ecs::system::Local<Option<(Handle<Image>, Handle<Image>, Rect)>>,
     ),
-    own: Res<GameDraws>,
+    (own, cover): (Res<GameDraws>, Res<HudCover>),
 ) {
     let Some((cam, proj)) = camera.iter().next() else {
         return;
@@ -1018,7 +1023,7 @@ fn draw_crosshair(
         (None, None) => (None, None, None),
     };
     // A scope draws its own cross hairs.
-    let kind = if own.crosshair {
+    let kind = if own.crosshair || cover.is(BOARD_COVER) {
         CrosshairKind::Hidden
     } else {
         crosshair_kind(inv, dead.is_some(), zoomed.is_some_and(|z| z.scope))
