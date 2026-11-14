@@ -225,7 +225,12 @@ draw the HUD (crosshair or scope) for this frame.
 
 ## Open questions
 
-1. **Cvar defaults and help texts.** In the CS:S client console run `help`
+1. *Partly answered 2026-11-14 (dedicated server console):*
+   `weapon_accuracy_model` defaults to 2, is archived and replicated, and
+   has no help text. The others are client cvars (the dedicated server
+   doesn't have them); the client could not be run that day (no display
+   session on the dev box), so they and Q2-Q6 are still open.
+   **Cvar defaults and help texts.** In the CS:S client console run `help`
    on each crosshair cvar, `zoom_sensitivity_ratio`, `weapon_accuracy_model`,
    `cl_legacy_crosshair_recoil`, `cl_legacy_crosshair_scale` and
    `cl_crosshairspreadscale`, and record default and description.
