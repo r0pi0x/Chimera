@@ -130,4 +130,10 @@ settle first (a capture, a probe run or a spec session).
 
 ## Counts
 
-Do next 0, later 2, needs a spec or capture 10.
+Do next 0, later 2, needs a spec or capture 10; lower: 3 spec-clear
+(the crossbow's alt fire, blood per viewer, the camera's sweep), 9
+blocked.
+
+Landed from the lower list (2026-11-13): the M92FS's post-fire, the
+HL2:DM bolt's sounds, bolts through grates and breakable glass, the
+contact grenade set off when shot or blasted.
