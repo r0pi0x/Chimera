@@ -30,4 +30,5 @@ mod parts;
 mod pickups;
 mod power_curve;
 mod session;
+mod ui_sounds;
 mod variety;

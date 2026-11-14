@@ -1,0 +1,142 @@
+# Ultimate Gun Game's UI sound kit, "Signal" v7 (docs/plans/active/ugg-ui.md,
+# "UI sound"): the event table the shell plays from (chimera_client::client::
+# ui_sound; chimera_ui::sound::SoundTable reads it). The files are ours,
+# synthesized by tools/sounds/synth.py (CC0 1.0), in assets/sounds/ui/.
+#
+# Each file is baked at its tier's loudness (whisper -42, soft -37, tap -32,
+# cue -29, event -26, hero -22, music -20 LUFS-M), so every gain is 0 dB and
+# the bus (snd_uivolume, default 0.8, times the master volume) sets the rest.
+#
+# Per event: file (default: the event's name; `{nn}` with `grid = N` for a
+# graded event: the render nearest value x N), gain (dB), cents and db (the
+# per-play spread, plus or minus), voices (at most this many at once, the
+# oldest cut; default 2), on (default true), rate = "value" (a slider: speed
+# 0.5 to 2.0 from the value, no random pitch), loop = true (music, on the
+# music bus).
+
+[bus]
+# The ui bus ducks this far while an announcer voice plays.
+duck_db = 4
+
+# ---- menu
+[event.ui_hover]
+cents = 40
+db = 1.2
+voices = 1
+
+[event.ui_select]
+cents = 20
+db = 0.8
+
+[event.ui_back]
+cents = 20
+db = 0.8
+
+[event.ui_denied]
+db = 0.5
+
+[event.ui_slider]
+rate = "value"
+db = 0.6
+voices = 1
+
+# ---- the logo pass
+[event.pass_sweep]
+voices = 1
+
+# ---- lobby
+[event.lobby_ready]
+db = 0.6
+
+[event.lobby_unready]
+db = 0.6
+
+[event.lobby_peer]
+cents = 25
+db = 1.0
+
+[event.count_tick]
+cents = 5
+db = 0.5
+
+[event.count_tick_3]
+cents = 3
+db = 0.4
+
+[event.count_tick_2]
+cents = 3
+db = 0.4
+
+[event.count_tick_1]
+cents = 3
+db = 0.4
+
+[event.count_go]
+voices = 1
+
+# ---- HUD
+[event.rank_up]
+# The 17 renders of rank_up(p, seed), p = rung / (rungs - 1) in steps of 1/16.
+file = "rank_p{nn}"
+grid = 16
+
+[event.rank_knife]
+file = "rank_14_knife"
+voices = 1
+
+[event.rank_chain]
+
+[event.hud_chip]
+cents = 25
+db = 1.0
+
+[event.feed_self]
+cents = 25
+db = 1.0
+on = false
+
+[event.tab_open]
+cents = 20
+db = 1.0
+voices = 1
+on = false
+
+[event.tab_close]
+cents = 20
+db = 1.0
+voices = 1
+on = false
+
+[event.air_alert]
+voices = 1
+
+[event.air_pulse]
+db = 0.4
+
+[event.air_impact]
+voices = 1
+
+# ---- match end
+[event.end_reveal]
+voices = 1
+
+[event.vote_cast_1]
+db = 0.8
+[event.vote_cast_2]
+db = 0.8
+[event.vote_cast_3]
+db = 0.8
+[event.vote_cast_4]
+db = 0.8
+
+[event.vote_other]
+cents = 30
+db = 1.2
+
+[event.vote_lock]
+voices = 1
+
+# ---- music
+[event.menu_loop]
+file = "menu_loop_scifi"
+loop = true

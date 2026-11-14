@@ -58,15 +58,27 @@ pub struct LiveSound {
 }
 
 /// Volume by kind of sound: music (`snd_musicvolume`, set by the
-/// client's options), times the master volume.
+/// client's options) and an app's interface sounds (`snd_uivolume`, the
+/// `ui` bus: `chimera_client::client::ui_sound`), times the master
+/// volume.
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct SoundMix {
     pub music: f32,
+    pub ui: f32,
 }
+
+/// Sound entries this client doesn't play (an app's own sound stands in:
+/// Ultimate Gun Game's air-strike alert for Combat Arms' siren under its
+/// Signal look). Matched by the whole entry.
+#[derive(Resource, Clone, Debug, Default, PartialEq)]
+pub struct MutedSounds(pub Vec<String>);
+
+/// `snd_uivolume`'s default.
+pub const DEFAULT_UI_VOLUME: f32 = 0.8;
 
 impl Default for SoundMix {
     fn default() -> Self {
-        Self { music: 1.0 }
+        Self { music: 1.0, ui: DEFAULT_UI_VOLUME }
     }
 }
 
@@ -129,7 +141,9 @@ impl Gains {
     fn cutoff(&self) -> f32 {
         f32::from_bits(self.cutoff.load(Ordering::Relaxed))
     }
-    fn set(&self, left: f32, right: f32) {
+    /// Set the per-ear gains (a playing clip glides to them over a few
+    /// ms: `GAIN_SMOOTHING`).
+    pub fn set(&self, left: f32, right: f32) {
         self.left.store(left.to_bits(), Ordering::Relaxed);
         self.right.store(right.to_bits(), Ordering::Relaxed);
     }

@@ -798,6 +798,65 @@ climb, four vote cards), M6 net51 (lobby wins). Each bump in its own
 commit with the test that needs it; a playtest's server and clients
 must be one build.
 
+### UI sound
+
+Status (2026-11-14): in, for the playtest. The kit is ours (v7,
+synthesized by `tools/sounds/synth.py` from code, no samples; CC0 1.0,
+`apps/ultimate_gun_game/assets/sounds/ui/LICENSE.txt`; rebuild:
+`tools/sounds/README.md`). 48 files, 14.3 MB of 48 kHz 16-bit WAV (mono
+where the sound is: the slider, the ticks, Tab), embedded in the app's
+binary (`signal::UI_SOUNDS`); the A/B variants, the backdrop swap and the
+breakcore loop are not shipped. `own_sounds_carry_their_licence`
+(repo_checks) allows WAVs only in an app's `assets/sounds/` beside a CC0
+licence, 5 MB a file, 20 MB in all.
+
+- **Engine**: `chimera_ui::sound` (`UiCue`, `UiMusic`, `SoundTable`);
+  `client::ui_sound` (`UiSounds`, the `ui` bus: unpositioned `LiveClip`s,
+  `PlaybackSettings::DESPAWN`, no room DSP; `snd_uivolume`, default 0.8,
+  `SoundMix::ui`; voice limits; per-play pitch and gain spread; the
+  slider's speed from its value, 0.5 to 2.0; a 4 dB duck while an
+  `announcer::AnnouncerVoice` plays; the music loop on the music bus,
+  `snd_musicvolume`, looped from the start of a seamless file);
+  `client::ui_cues` (the lobby, the rank-up, Tab, the kill feed, the match
+  end and its vote, read off their views). Only a theme with
+  `flags.sound.ui` (Signal) plays anything.
+- **Data**: `apps/ultimate_gun_game/data/ui_sounds.toml` (the event
+  table); the Audio tab's "UI volume" row (`apps/party_kit/data/
+  options.toml`, `when = "ui_sound"`: only in an app with UI sound,
+  `esc_menu::OptionTabs`).
+- **Hooked**: menu hover, select, back, denied (a press refused while
+  loading, a failure box or a reconnect; a non-host's Host), slider (a
+  range row's step) in the party's main and Escape menus
+  (`party_kit::ui_cues`); the logo pass (`pass_sweep` once per pass
+  begun, `LogoPass::runs`; not for the reduced-motion fade); the lobby's
+  ready and unready, another player readying, the countdown (10 to 4, 3,
+  2, 1, go); the rank-up (the nearest of the 17 renders, p = rung /
+  (rungs - 1), once per rung up), the knife on the last rung, the chain
+  within the toast's window (`motion.dur.toast` hold_to + leave, 1.16 s,
+  on the UI clock); Tab and your kill-feed line (off in the table); the
+  match end's reveal; the map vote's cast, others', last 10 s and lock;
+  the match effects (M3's `MatchEffects` through `match_effects::
+  EffectsView`): a threat's `air_alert` at its start, `air_pulse` on the
+  edge's pulses, `hud_chip` as its banner folds, `air_impact` at its
+  impact, another effect's `hud_chip` (`ui_cues::effect_cues`); under UI
+  sound Combat Arms' strike siren is muted on the client
+  (`chimera_present::audio::live_sound::MutedSounds`,
+  `party_kit::ui_cues::mute_siren`); the sci-fi loop on the main menu in
+  place of Combat Arms' playlist (Combat Arms' music silent meanwhile:
+  `combat_arms::game::music::AppMusicPlays`). The backdrop swap stays
+  off.
+- **The loop's level**: the music bus, `snd_musicvolume`, which the party
+  apps take from Combat Arms' music option; a first play's profile (the
+  template) has music 50 and effects 70, so a fresh player hears it
+  (`t21_music`). Tool runs load no profile: master and music are 0 there
+  (set them over the console).
+- **Left**: M4's vote cards keep the cues (`ui_cues::match_end_cues`
+  reads `MatchEndView`). The game's winner sound plays with
+  `end_reveal` (the sound page's note: delay the game's 0.25 s or drop
+  ours if they clash). Follow-up: a Rust port of `rank_up(p, seed)`
+  rendering each match's ladder on a task at its start (no rank files),
+  and a compressed format with gapless loops (Vorbis) for the loop.
+
 ## 6. Decisions (user, 2026-11-14)
 
 1. Icons (revised 2026-11-14): each game's own kill icon everywhere it

@@ -24,3 +24,4 @@ mod rank_toast;
 mod match_effects;
 mod signal_feed;
 mod respawn_countdown;
+mod ui_sound;

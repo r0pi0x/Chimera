@@ -6,8 +6,9 @@
 //!
 //! The options' sound settings: the master `volume`, `snd_mute_losefocus`
 //! (silent while the window is in the background) through Bevy's
-//! `GlobalVolume`, and `snd_musicvolume` (`audio::live_sound::SoundMix`: sounds
-//! under `music/` and MP3s); the Audio tab's drop-downs' cvars, kept and saved
+//! `GlobalVolume`, `snd_musicvolume` (`audio::live_sound::SoundMix`: sounds
+//! under `music/` and MP3s) and `snd_uivolume` (`SoundMix::ui`, default
+//! 0.8: an app's interface sounds, `client::ui_sound`); the Audio tab's drop-downs' cvars, kept and saved
 //! (`snd_surround_speakers`, `snd_pitchquality`, `dsp_slow_cpu`,
 //! `closecaption`, `cc_subtitles`, `chimera_spoken_language`: what each will
 //! change, docs/plans/active/video-settings.md).
@@ -127,6 +128,12 @@ fn sound_cvars(app: &mut App) {
         "Music volume, 0 to 1 (sounds under music/ and MP3s), times the master volume.",
         |m| &mut m.music,
     );
+    resource_cvar::<SoundMix, f32>(
+        app,
+        "snd_uivolume",
+        "Interface sound volume, 0 to 1 (an app's own menu and HUD sounds: the ui bus), times the master volume.",
+        |m| &mut m.ui,
+    );
     resource_cvar::<SoundOptions, u8>(
         app,
         "snd_surround_speakers",
@@ -170,10 +177,11 @@ fn sound_cvars(app: &mut App) {
 }
 
 /// The Audio tab's cvars, saved in config.cfg.
-pub const SOUND_CVARS: [&str; 9] = [
+pub const SOUND_CVARS: [&str; 10] = [
     "volume",
     "snd_mute_losefocus",
     "snd_musicvolume",
+    "snd_uivolume",
     "snd_surround_speakers",
     "snd_pitchquality",
     "dsp_slow_cpu",
@@ -240,6 +248,7 @@ mod tests {
         }
         assert_eq!(console.cvar("snd_mute_losefocus").unwrap().default, "1", "CS:S's");
         assert_eq!(console.cvar("snd_musicvolume").unwrap().default, "1", "CS:S's");
+        assert_eq!(console.cvar("snd_uivolume").unwrap().default, "0.8");
     }
 
     #[test]

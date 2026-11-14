@@ -1,0 +1,6 @@
+venv/
+wav/
+ogg/
+v[0-9]/
+manifest.json
+__pycache__/

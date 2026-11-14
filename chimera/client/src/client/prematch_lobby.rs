@@ -39,7 +39,11 @@
 //! read it); drawing is Bevy UI rebuilt when it changes. Nothing shows
 //! without a lobby. Part of `ClientPlugins`.
 //!
-//! Known shortcuts: no sound for the countdown.
+//! Sounds (the ready, the others readying, the countdown's last seconds and
+//! its go) come from `ui_cues`, only in an app with UI sound.
+//!
+//! Known shortcuts: no sound for the countdown without UI sound (Lucker
+//! Party, the plain apps).
 
 use bevy::{prelude::*, window::PrimaryWindow};
 use chimera_net::prematch::{NetLobby, status};

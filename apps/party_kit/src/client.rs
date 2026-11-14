@@ -109,7 +109,13 @@ pub fn front_end(app: &mut App, _: &Args) {
         // `party_swap_effect` (default 0): a flash on a rung's swap.
         .add_plugins(chimera_client::client::swap_effect::SwapEffectPlugin)
         .add_systems(Startup, (guest_names, mount_doctor, hl2_fast_switch))
-        .add_systems(Update, sync_gun_names);
+        .add_systems(Update, sync_gun_names)
+        // Under UI sound our air-strike alert stands in for Combat Arms'
+        // siren (`ui_cues::mute_siren`).
+        .add_systems(
+            Update,
+            crate::ui_cues::mute_siren.run_if(resource_exists::<chimera_client::client::ui_sound::UiSounds>),
+        );
     // The rest of each guest's front end (CS:S's: the map's HUD look
     // is its, and what its bodies play for a player holding its gun,
     // the gun game's `identity = "weapon"`).

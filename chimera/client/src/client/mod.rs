@@ -78,6 +78,8 @@ pub mod voice;
 pub mod weapon_icons;
 pub mod weapon_menu;
 pub mod ui_scene;
+pub mod ui_cues;
+pub mod ui_sound;
 pub mod ui_write;
 pub mod upload_pace;
 pub mod widgets;
@@ -573,6 +575,8 @@ impl PluginGroup for ClientPlugins {
             .add(map_screen::MapScreenPlugin)
             .add(widgets::WidgetsPlugin)
             .add(audio::SoundOptionsPlugin)
+            .add(ui_sound::UiSoundPlugin)
+            .add(ui_cues::UiCuesPlugin)
             .add(gamma::GammaPlugin)
             .add(night_vision::NightVisionPlugin)
             .add(ShellCameraPlugin)

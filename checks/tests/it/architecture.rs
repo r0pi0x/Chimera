@@ -821,6 +821,71 @@ fn own_fonts_carry_their_licence() {
     assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
 }
 
+/// Where our own sounds may be committed: an app's `assets/sounds/`
+/// folders (`apps/<app>/assets/sounds/...`).
+fn own_sound_dir(f: &str) -> bool {
+    let parts: Vec<&str> = f.split('/').collect();
+    parts.len() >= 5 && parts[0] == "apps" && parts[2] == "assets" && parts[3] == "sounds"
+}
+
+/// The most one of our own sounds may weigh (the stereo menu loop is
+/// 4.2 MB), and all of them together.
+const OWN_SOUND_MAX_BYTES: u64 = 5 * 1024 * 1024;
+const OWN_SOUNDS_TOTAL_MAX_BYTES: u64 = 20 * 1024 * 1024;
+
+/// A tracked sound file of ours: a WAV in an app's `assets/sounds/` folder
+/// with a tracked `LICENSE.txt` beside it dedicating it under CC0 1.0.
+fn own_sound(tracked: &[String], f: &str) -> bool {
+    if !f.to_lowercase().ends_with(".wav") || !own_sound_dir(f) {
+        return false;
+    }
+    let dir = Path::new(f).parent().map(|d| d.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+    let licence = format!("{dir}/LICENSE.txt");
+    tracked.contains(&licence) && fs::read_to_string(root().join(&licence)).is_ok_and(|t| t.contains("CC0"))
+}
+
+/// Our own sounds (Ultimate Gun Game's UI kit, synthesized from code by
+/// tools/sounds/synth.py; docs/plans/active/ugg-ui.md, "UI sound") are
+/// the only sound files committed: WAVs in an app's `assets/sounds/`
+/// beside a `LICENSE.txt` dedicating them under CC0 1.0, with their
+/// generator in tools/sounds/, each at most `OWN_SOUND_MAX_BYTES` and all
+/// together `OWN_SOUNDS_TOTAL_MAX_BYTES`. A game's sounds load at run time
+/// from its install (`no_game_assets_tracked`).
+#[test]
+fn own_sounds_carry_their_licence() {
+    let tracked = tracked_files();
+    let mut errors = Vec::new();
+    let mut total = 0;
+    for f in &tracked {
+        let ext = Path::new(f).extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        if !["wav", "mp3", "ogg"].contains(&ext.as_str()) || !own_sound_dir(f) {
+            continue;
+        }
+        if !own_sound(&tracked, f) {
+            errors.push(format!(
+                "{f}: a sound with no tracked `LICENSE.txt` naming CC0 beside it (or not a WAV). Only our own \
+                 sounds (synthesized by tools/sounds/synth.py, CC0 1.0) are committed; a game's load at run time \
+                 from its install. Remove it with `git rm --cached`, or add the licence if it is ours."
+            ));
+        }
+        let len = fs::metadata(root().join(f)).map_or(0, |m| m.len());
+        total += len;
+        if len > OWN_SOUND_MAX_BYTES {
+            errors.push(format!("{f}: {len} bytes, over {OWN_SOUND_MAX_BYTES}: make it shorter or mono."));
+        }
+    }
+    if total > 0 && !tracked.iter().any(|f| f == "tools/sounds/synth.py") {
+        errors.push("our own sounds are committed without their generator, tools/sounds/synth.py".into());
+    }
+    if total > OWN_SOUNDS_TOTAL_MAX_BYTES {
+        errors.push(format!(
+            "our own sounds weigh {total} bytes in all, over {OWN_SOUNDS_TOTAL_MAX_BYTES}: drop variants the \
+             game doesn't use, or render them at run time"
+        ));
+    }
+    assert!(errors.is_empty(), "\n{}\n", errors.join("\n"));
+}
+
 /// Other games' assets must never be committed (README, "Assets, code and legal").
 #[test]
 fn no_game_assets_tracked() {
@@ -829,7 +894,12 @@ fn no_game_assets_tracked() {
     ];
     const MAX_BYTES: u64 = 1024 * 1024;
     let mut errors = Vec::new();
-    for f in tracked_files() {
+    let tracked = tracked_files();
+    for f in tracked.iter().cloned() {
+        // Our own sounds have their own check (`own_sounds_carry_their_licence`).
+        if own_sound(&tracked, &f) {
+            continue;
+        }
         let ext = Path::new(&f)
             .extension()
             .and_then(|e| e.to_str())

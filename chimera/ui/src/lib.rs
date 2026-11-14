@@ -18,6 +18,10 @@
 //!   CSS subset in cq and tokens, resolved through `UiUnits`.
 //! - `widgets`: tags (YOU, HOST, the fused YOU+HOST), the bot slot,
 //!   your row, the hover tick, key caps, the ping meter.
+//! - `sound`: `UiCue` (a UI event to sound, by its name in the app's
+//!   sound table), `UiMusic` (the loop a screen wants) and `SoundTable`
+//!   (the app's event table, TOML); played by the
+//!   shell's `ui_sound` under a theme with `flags.sound.ui`.
 //! - `parity`: `UiParityId`, a node's name in the look book, and its
 //!   measured box for the UI parity check (`tools/ui-parity/`).
 //!
@@ -31,6 +35,7 @@ pub mod icons;
 pub mod materials;
 pub mod motion;
 pub mod parity;
+pub mod sound;
 pub mod theme;
 pub mod style;
 pub mod units;
@@ -45,6 +50,7 @@ pub use materials::{
 };
 pub use motion::{Ease, Prop, Timeline, Track, UiClock};
 pub use parity::UiParityId;
+pub use sound::{SoundTable, UiCue, UiMusic};
 pub use theme::{Theme, Tone};
 pub use style::{UiSlant, UiStyle, UiText};
 pub use units::{TickLayout, UiUnits};
@@ -64,6 +70,8 @@ impl Plugin for ChimeraUiPlugin {
         }
         app.init_resource::<UiUnits>()
             .init_resource::<icons::IconImages>()
+            .init_resource::<UiMusic>()
+            .add_message::<UiCue>()
             .init_resource::<UiClock>()
             .add_plugins((KitMaterialsPlugin, widgets::HoverTicks))
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare))
