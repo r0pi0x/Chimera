@@ -23,7 +23,8 @@
 //!   only while the app asks for it (`SharedKillFeed`), at the screen's
 //!   top right, one row per entry, newest at the bottom: killer, the gun's
 //!   own game's icon (`weapon_icons::WeaponIcons`, else its display name
-//!   in plain grey, `minigame_scoreboard::gun_name`: `fallback_word`), a headshot mark (the weapon's
+//!   in plain grey, `minigame_scoreboard::gun_short_name`: `fallback_word`, fitted to
+//!   `NAME_MAX` with the font, `overlay::fit`), a headshot mark (the weapon's
 //!   game's, `WeaponIcons::mark`, else "HS"), victim; names in team
 //!   colours (a teammate's death green), the local player's in gold and
 //!   its rows outlined; a row
@@ -55,7 +56,7 @@ use bevy::{prelude::*, window::PrimaryWindow};
 
 use super::{
     fonts::UiFonts,
-    minigame_scoreboard::{GunNames, gun_name},
+    minigame_scoreboard::{GunNames, gun_short_name},
     weapon_icons::{WeaponIcon, WeaponIcons, glyph_font, ink_rows, spawn_weapon_icon},
 };
 use crate::{
@@ -251,6 +252,8 @@ impl Default for KillFeed {
 pub const LIFETIME: f32 = 6.0;
 pub const FADE: f32 = 1.0;
 pub const MAX_LINES: usize = 5;
+/// The widest a gun's name (no icon) is drawn, on a 720-line screen.
+pub const NAME_MAX: f32 = 160.0;
 
 #[allow(clippy::type_complexity)]
 fn record(
@@ -322,7 +325,7 @@ fn record(
     // breaker's line, the thing named as its weapon ("<owner>'s <gun>"),
     // in its owner's colours.
     for d in destroyed.read() {
-        let gun = gun_name(d.what, names.0.as_deref(), names.1.as_deref());
+        let gun = gun_short_name(d.what, names.0.as_deref(), names.1.as_deref());
         let owner = d.owner.map(side);
         let victim = match owner {
             Some(o) => FeedName {
@@ -425,12 +428,13 @@ fn draw(
     feed: Res<KillFeed>,
     time: Res<Time>,
     window: Query<&Window, With<PrimaryWindow>>,
-    (icons, names, catalog, fonts, images): (
+    (icons, names, catalog, fonts, images, rules): (
         Option<Res<WeaponIcons>>,
         Option<Res<GunNames>>,
         Option<Res<crate::weapon::data::WeaponCatalog>>,
         Option<Res<UiFonts>>,
         Option<Res<Assets<Image>>>,
+        Option<Res<chimera_sim::weapon::names::GunNameRules>>,
     ),
     mut root: Single<(Entity, &mut Visibility, &mut Node), With<KillFeedRoot>>,
     mut last: Local<Option<(Vec<(u64, u8)>, u32, bool)>>,
@@ -493,7 +497,8 @@ fn draw(
                 match e.weapon.and_then(|w| icons.as_ref()?.kill_icon(w, e.kind)) {
                     Some(icon) => icon_slot(r, &icon, icon_scale, line, WEAPON_FILL, images.as_deref()),
                     None => {
-                        let what = fallback_word(e, |w| gun_name(w, names.as_deref(), catalog.as_deref()));
+                        let what = fallback_word(e, |w| gun_short_name(w, names.as_deref(), catalog.as_deref()));
+                        let what = super::overlay::fit(fonts.as_deref(), rules.as_deref(), &font(size), &what, NAME_MAX * s);
                         text(r, what, Color::srgb(0.78, 0.78, 0.8));
                     }
                 }

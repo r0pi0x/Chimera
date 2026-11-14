@@ -80,7 +80,15 @@ fn the_hold_shows_the_winner_the_standings_and_the_next_map() {
     sim.app.insert_resource(parts);
     // The local player is named as the scoreboard names it (its `name`).
     sim.app.insert_resource(NetSettings { name: "Me".into(), ..default() });
-    sim.app.insert_resource(GunNames([("kit:rifle".to_string(), "K&M Rifle".to_string())].into()));
+    // Full and short names: the winner's row names its gun in full, the
+    // others by the short name.
+    let mut names = GunNames::from_full([
+        ("kit:rifle".to_string(), "K&M Rifle Engraved Edition".to_string()),
+        ("kit:shotgun".to_string(), "Leone Shotgun Engraved Edition".to_string()),
+    ]);
+    names.short.insert("kit:rifle".into(), "K&M Rifle".into());
+    names.short.insert("kit:shotgun".into(), "Leone Shotgun".into());
+    sim.app.insert_resource(names);
     let me = sim.app.world_mut().spawn((LocalPlayer, Name::new("Me"))).id();
     let ann = sim.app.world_mut().spawn(Name::new("Ann")).id();
     sim.ticks(3);
@@ -128,7 +136,7 @@ fn the_hold_shows_the_winner_the_standings_and_the_next_map() {
             name: "Ann".into(),
             kills: 7,
             deaths: 2,
-            gun: "SHOTGUN".into(),
+            gun: "Leone Shotgun Engraved Edition".into(),
             wins: 2,
             winner: true,
             local: false,

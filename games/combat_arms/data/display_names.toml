@@ -1,0 +1,171 @@
+# Combat Arms guns' short names (chimera_sim::weapon::names;
+# docs/plans/active/gun-display-names.md). A gun's full name is the
+# install's own (its shop item's name in the language table); the narrow
+# places (callouts, the Tab scoreboard, kill feeds, the match-end rows) show
+# a short one. `split = true`: the automatic split derives it (the skin
+# before the model and the variant tail after it left out); each entry below
+# names guns whose split is wrong or too long: their ids (a `*` matches any
+# run of characters) and a `short` name (16 characters at most), or a `full`
+# one where the install's string is broken. `gun_names combat_arms` in the
+# console lists every gun's full and short name and where each came from.
+game = "combat_arms"
+split = true
+
+# The plan's 30 worst offenders (a family's levels or rarities share one).
+[[name]]
+weapons = ["combat_arms:m419_combat_april"]
+short = "M419 CQB"
+
+[[name]]
+weapons = ["combat_arms:double_barreled_ar-15_godra_*"]
+short = "Ra AR-15 DB"
+
+[[name]]
+weapons = ["combat_arms:malevolent_beauty_ar-15_double_barrel"]
+short = "Malevolent AR-15"
+
+[[name]]
+weapons = ["combat_arms:roaring_white_dragon_ar-15"]
+short = "Dragon AR-15 DS"
+
+[[name]]
+weapons = ["combat_arms:kagutsuchi___s_bloom_scar-l_lv.*"]
+short = "Bloom SCAR-L"
+
+[[name]]
+weapons = ["combat_arms:double_barreled_ar-15_snowreaper"]
+short = "Snow AR-15 DB"
+
+[[name]]
+weapons = ["combat_arms:p220_se_variantsdragon"]
+short = "Dragon P220"
+
+[[name]]
+weapons = ["combat_arms:visionary_ak-47_gold_event"]
+short = "Gold AK-47"
+
+[[name]]
+weapons = ["combat_arms:l96a1_bm_cac_5th"]
+short = "L96A1 BM 5th"
+
+[[name]]
+weapons = ["combat_arms:ghost_hunter_parafal_frankenstein"]
+short = "Ghost ParaFAL"
+
+[[name]]
+weapons = ["combat_arms:kingofseasg50_lv*"]
+short = "Poseidon SG50"
+
+[[name]]
+weapons = ["combat_arms:stadium_legends_ak-47_lv.*"]
+short = "Stadium AK-47"
+
+[[name]]
+weapons = ["combat_arms:valofe_limited_kriss_specops_epic"]
+short = "Kriss SpecOps"
+
+[[name]]
+weapons = ["combat_arms:visionary_m4a1_desert_aim_pcm"]
+short = "Desert M4A1"
+
+[[name]]
+weapons = ["combat_arms:brazil_dual-kriss"]
+short = "Dual Kriss BR"
+
+[[name]]
+weapons = ["combat_arms:harlequin_s_dual_pistol"]
+short = "Harlequin Duals"
+
+[[name]]
+weapons = ["combat_arms:mechanical_scannning_usp"]
+short = "Scanning USP"
+
+[[name]]
+weapons = ["combat_arms:an-94_winter_lv.*"]
+short = "Obsidian AN-94"
+
+[[name]]
+weapons = ["combat_arms:blacklist_conviction_five-seven"]
+short = "Blacklist 5-7"
+
+[[name]]
+weapons = ["combat_arms:double_barreled_ar-15_eclipse"]
+short = "Eclipse AR-15 DB"
+
+[[name]]
+weapons = ["combat_arms:ivory_trigger_dsr-1_lv.*"]
+short = "Ivory DSR-1"
+
+[[name]]
+weapons = ["combat_arms:lighting_core_cobra_.38_special"]
+short = "Cobra .38 Core"
+
+[[name]]
+weapons = ["combat_arms:sv-98_winter_lv.*"]
+short = "Obsidian SV-98"
+
+[[name]]
+weapons = ["combat_arms:thompson_labberpower"]
+short = "Godfather Tommy"
+
+[[name]]
+weapons = ["combat_arms:usp_tactical_wild"]
+short = "Field Camo USP"
+
+[[name]]
+weapons = ["combat_arms:arx-160_futuristic_lv.*"]
+short = "Dominion ARX60"
+
+[[name]]
+weapons = ["combat_arms:bar"]
+short = "BAR"
+
+[[name]]
+weapons = ["combat_arms:famas_prototype-01_lv.*"]
+short = "FAMAS Proto-01"
+
+[[name]]
+weapons = ["combat_arms:limit_judeworrior_m4a1_lv*"]
+short = "Imperial M4A1"
+
+# Names run together in one word, which the split can't take apart.
+[[name]]
+weapons = ["combat_arms:auga3championsblack"]
+short = "AUG A3 Champions"
+
+[[name]]
+weapons = ["combat_arms:ump45higothicholy"]
+short = "UMP45 Gothic"
+
+[[name]]
+weapons = ["combat_arms:l85a1hellknightgreen"]
+short = "L85A1 HellKnight"
+
+[[name]]
+weapons = ["combat_arms:m4a1sniperrifleangle"]
+short = "M4A1 Sniper"
+
+[[name]]
+weapons = ["combat_arms:m4a1sniperriflefrozen"]
+short = "M4A1 Frozen"
+
+[[name]]
+weapons = ["combat_arms:galilbloodonilimitlv*"]
+short = "Galil Blood Oni"
+
+[[name]]
+weapons = ["combat_arms:rpg-7_mythical_creatures"]
+short = "Jormungandr"
+
+# A first word that looks like a model but isn't.
+[[name]]
+weapons = ["combat_arms:l96a1_sabertooth_tiger"]
+short = "Sabertooth L96A1"
+
+[[name]]
+weapons = ["combat_arms:newyear2023_psg-1_mod_camo"]
+short = "New Year PSG-1"
+
+[[name]]
+weapons = ["combat_arms:desart_eagle_starry_night"]
+short = "Starry D. Eagle"

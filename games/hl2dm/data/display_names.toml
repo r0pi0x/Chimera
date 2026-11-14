@@ -1,0 +1,15 @@
+# HL2:DM guns' short names (chimera_sim::weapon::names;
+# docs/plans/active/gun-display-names.md). The full name is the install's
+# own string (its `hud.name` token in resource/hl2mp_english.txt, its line
+# break a space); the narrow places show the short one, which is the full
+# name unless an entry below names one (16 characters at most). No
+# automatic split. `gun_names hl2dm` in the console lists them.
+game = "hl2dm"
+
+[[name]]
+weapons = ["hl2dm:weapon_smg1"]
+short = "SMG"
+
+[[name]]
+weapons = ["hl2dm:weapon_ar2"]
+short = "PULSE-RIFLE"

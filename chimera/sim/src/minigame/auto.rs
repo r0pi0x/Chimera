@@ -293,6 +293,50 @@ pub fn drawable(world: &World, caps: &mut [Capabilities]) -> Vec<Skipped> {
     skipped
 }
 
+/// One gun's names (`drawable_short_names`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct GunNameRow {
+    pub id: &'static str,
+    pub full: String,
+    pub short: String,
+    pub from: crate::weapon::names::NameSource,
+}
+
+/// The names of every gun and grenade `parts`' game can deal on a drawn
+/// ladder (`minigame::auto::drawable` in `world`): each one's full name
+/// (`game_full`, the game's strings, else its data's plain `hud.name`,
+/// else `id_name`, an override's `full` over them) and short name by the
+/// world's `GunNameRules`. What each game's heavy test checks against
+/// `weapon::names::SHORT_MAX`.
+pub fn drawable_short_names(
+    world: &World,
+    parts: &GameParts,
+    game_full: &std::collections::BTreeMap<String, String>,
+) -> Vec<GunNameRow> {
+    use crate::weapon::names::{GunNameRules, id_name};
+    let empty = WeaponCatalog::default();
+    let catalog = world.get_resource::<WeaponCatalog>().unwrap_or(&empty);
+    let none = GunNameRules::default();
+    let rules = world.get_resource::<GunNameRules>().unwrap_or(&none);
+    let mut caps = vec![Capabilities::of(parts, catalog, None)];
+    drawable(world, &mut caps);
+    caps.iter()
+        .flat_map(|c| c.guns.iter().map(|g| g.id).chain(c.grenades.iter().copied()))
+        .map(|id| {
+            let game = game_full.get(id).cloned().unwrap_or_else(|| {
+                catalog
+                    .get(id)
+                    .and_then(|d| d.hud.name.clone())
+                    .filter(|n| !n.starts_with('#'))
+                    .unwrap_or_else(|| id_name(id))
+            });
+            let full = rules.full(id, &game);
+            let (short, from) = rules.short(id, &full);
+            GunNameRow { id, full, short, from }
+        })
+        .collect()
+}
+
 /// `skipped` in a line or a few: the count, then the ids by reason.
 pub fn skipped_lines(skipped: &[Skipped]) -> String {
     let mut reasons: Vec<&str> = Vec::new();

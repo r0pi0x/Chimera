@@ -1,0 +1,54 @@
+# The words the automatic short-name split reads (chimera_sim::weapon::names;
+# docs/plans/active/gun-display-names.md, "Automatic base-plus-variant
+# split"). A gun's full name is the game's own display string; a game whose
+# display_names.toml says `split = true` gets a short name from it by these
+# lists: the variant tail comes off the end, the words before the model (the
+# skin) off the front, and a few long phrases are condensed. All matching
+# ignores case. A game's display_names.toml overrides a name the split gets
+# wrong.
+
+# Edition words: a word of these at the end of a name is part of its variant
+# (with brackets, levels, ordinals, bare numbers and "Mark II" / "Mk III").
+variants = [
+    "SE", "CORE", "CORE+", "Edition", "Event", "Limited", "limit", "Champion", "Champions",
+    "PCM", "Anniversary", "Anniv.", "MOD", "Custom", "Camo", "Gold", "Gold-Plated", "Silver",
+    "Chrome", "Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Premium", "Elite",
+    "Deluxe", "Special", "NPC", "Org", "TAU", "SPW", "ECO", "Plus", "GP", "Black", "White",
+    "Ugly", "Level", "LE", "OG",
+]
+
+# A level: one of these, a dot or not, then digits (`lv.3`, `LV3`, `Lv.2(limit)`;
+# "Level 2" as two words: the number, then "Level" above).
+levels = ["lv", "level"]
+
+# "Mark II", "Mk III": one of these before a roman numeral.
+marks = ["Mark", "Mk"]
+
+# Models with no digit (a word with a letter and a digit is a model
+# anyway: AK-47, M4A1, SG50, P220). A phrase of several words matches them
+# in a row; a phrase ending in a number (`Tango 51`) keeps that number out of
+# the variant tail.
+models = [
+    "Kriss", "USP", "Thompson", "Makarov", "Minigun", "UZI", "Mini-UZI", "FAMAS", "Saiga",
+    "SCAR-L", "SCAR-H", "Dragunov", "Anaconda", "Cobra", "Skorpion", "Skorpions", "Scorpion",
+    "ParaFAL", "Jackhammer", "ACR", "RPK", "LAW", "AUG", "UMP", "TMP", "SVD", "Groza", "Tommy",
+    "Desert Eagle", "D. Eagle", "Super Shorty", "Shorty", "Glock", "Ultimax", "Flamethrower",
+    "Crossbow", "Tavor", "Vector", "Kriss-mas", "Galil", "Bizon", "Spectre", "MSR",
+    "Dual-Kriss", "DSR 1", "Tango 51", "Model 1887", "1887 Model", "Type 97", "Ultimax 100",
+]
+
+# A word that stays with the model right after it (`Dual Kriss`).
+pairs = ["Dual", "Twin"]
+
+# Words a trimmed short name never ends or starts with.
+stop = ["the", "of", "and", "a", "&", "-", "with"]
+
+# Long phrases and their short forms, longest first.
+condense = [
+    ["Double Barreled", "DB"],
+    ["Double Barrel", "DB"],
+    ["Double Shot", "DS"],
+    ["Machine Gun", "MG"],
+    ["Machinegun", "MG"],
+    ["Tactical", "Tac."],
+]

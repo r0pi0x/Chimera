@@ -455,6 +455,12 @@ pub struct CsGunsPlugin;
 impl Plugin for CsGunsPlugin {
     fn build(&self, app: &mut App) {
         register_hooks(app);
+        // Its guns' short names (data/display_names.toml).
+        chimera_sim::weapon::names::DisplayNamesAppExt::add_display_names(
+            app,
+            "cs_source data/display_names.toml",
+            include_str!("../../data/display_names.toml"),
+        );
         // A CS:S rung's player model (`rungs`).
         app.add_plugins(super::rungs::CsRungsPlugin);
         // Its surfaces by class, for impacts across games (`map::impact`).

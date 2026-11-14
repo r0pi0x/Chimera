@@ -4,8 +4,9 @@ Started 2026-11-13. Question (the user, after an Ultimate Gun Game
 session): guns show very long names (Combat Arms' skins and editions,
 some with underscores). Is that how the original games show them? This
 plan answers that, measures every gun a drawn ladder can deal, and
-proposes short names for the places with little room. Proposal only: no
-code has changed yet. Parent plan: [ultimate-gun-game.md](ultimate-gun-game.md).
+proposes short names for the places with little room. Steps 1 to 5 are
+done (2026-11-13, below); step 6 waits for the user. Parent plan:
+[ultimate-gun-game.md](ultimate-gun-game.md).
 
 Data: [gun-display-names.csv](gun-display-names.csv), one row per gun
 a drawn ladder could deal on 2026-11-13 (`auto::report` then
@@ -236,15 +237,35 @@ GUN) (SMG) and `weapon_ar2` (above).
 
 ## Steps
 
-1. `GunNames` carries full and short; `gun_short_name`; the narrow
-   places above switch to it (chimera_client, games' HUDs).
-2. The split (step 2) as a function in Chimera with its word lists as
-   data, unit-tested on the samples above.
-3. `display_names.toml` per game, registered like the draw exclusions;
-   the 30 above and CS:S's and HL2:DM's entries first.
-4. The safety net in the overlay's text cells (measure, condense,
-   truncate).
-5. A heavy test per game: every drawable gun's short name at 16
-   characters or fewer; `gun_names` console command.
+1. Done. `GunNames` carries `full` and `short`
+   (`chimera_client::client::minigame_scoreboard`; `fill_short_names`
+   fills the short ones from the games' rules); `gun_name` stays the full
+   name, `gun_short_name` serves the callouts, the Tab scoreboard's gun
+   column, the shell's kill feed, Combat Arms' kill feed for other games'
+   guns (then fitted to its 10 characters), CS:S's HUD notices and the
+   match-end rows (the winner's row in full). The minigame panel names the
+   full one, and the short one on a status line wider than `LINE_MAX`.
+   Combat Arms' weapon panel and death screen keep the original's name.
+2. Done. `chimera_sim::weapon::names::split` / `auto_short`, its word
+   lists in chimera/sim/data/gun_names.toml. One addition to section 2:
+   a result over 16 loses words from the end down to the model (or, with
+   no model, from the front), so most of the 358 "override" rows need no
+   entry; the ones that then read badly (a run-together name, a first
+   word that looks like a model) have one. On the 2026-11-13 install:
+   2,044 Combat Arms guns, 120 overridden (by id patterns), 799 split,
+   1,125 as they are.
+3. Done. `games/<game>/data/display_names.toml` (`game`, `split`,
+   `[[name]]` with `weapons`, a `*` pattern allowed, `short`, `full`),
+   registered by each game's guns plugin (`add_display_names`, as
+   `add_draw_exclusions`): the 30 above plus 10 Combat Arms run-together
+   or misread names, CS:S's 7, HL2:DM's 2.
+4. Done. `client::overlay::fit` (measured with the font, `UiFonts::width`;
+   condense, drop the variant tail, drop the skin, then cut at a word with
+   `…`): the scoreboard's and match-end screen's gun cells, the kill
+   feed's gun name (`NAME_MAX`), the minigame panel's long status lines.
+5. Done. `gun_names [game]` (id, full, short and where it came from) and
+   `heavy::display_names` in combat_arms, cs_source and hl2dm (every
+   drawable gun's short name at 16 or fewer, via
+   `minigame::auto::drawable_short_names`).
 6. Decide (the user): guns with no shop item (the 38 above) off the
    ladder?

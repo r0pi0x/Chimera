@@ -9,20 +9,27 @@
 //! (`MinigameHud::playing`), so plain CS:S keeps its own. An app adds
 //! `MinigameScoreboardPlugin`.
 //!
-//! The gun is shown by its display name: `GunNames` (an app fills it from
-//! the games' strings, as the minigame panel's `{weapon}` does), else the
-//! weapon data's plain `hud.name` (`WeaponCatalog`), else the id's last
-//! part in capitals. The columns have fixed widths (numbers right-aligned,
-//! cells clipped to one line, however long Combat Arms' names run, and
-//! centred in their row) so a header never runs into the next. The board
-//! is drawn above the minigame panel with an opaque background.
+//! The gun is shown by its short name (`gun_short_name`). `GunNames` holds
+//! every gun's full name (an app fills it from the games' strings, as the
+//! minigame panel's `{weapon}` does; else the weapon data's plain
+//! `hud.name`, `WeaponCatalog`, else the id's last part in capitals:
+//! `gun_name`) and its short one (`fill_short_names`, from the games'
+//! display_names.toml overrides and the automatic split,
+//! `chimera_sim::weapon::names::GunNameRules`), for the narrow places:
+//! this board's gun column, the callouts, the kill feeds, the match-end
+//! rows. The `gun_names [game]` console command lists them. The columns
+//! have fixed widths (numbers right-aligned, cells on one line and centred
+//! in their row) so a header never runs into the next; a name too wide for
+//! its cell is fitted with the font (`overlay::fit`: condensed, then cut
+//! at a word with `…`). The board is drawn above the minigame panel with an
+//! opaque background.
 //!
 //! Known shortcuts: plain text, no team colours.
 
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use chimera_sim::weapon::data::WeaponCatalog;
+use chimera_sim::weapon::{data::WeaponCatalog, names::GunNameRules};
 use chimera_sim::minigame::{
     hud::MinigameHud,
     ladder::{Ladder, Rung},
@@ -42,14 +49,26 @@ pub struct MinigameScoreboardPlugin;
 impl Plugin for MinigameScoreboardPlugin {
     fn build(&self, app: &mut App) {
         super::overlay::layer(app);
-        app.init_resource::<HeldActions>().init_resource::<GunNames>().add_systems(Startup, spawn).add_systems(Update, draw);
+        app.init_resource::<HeldActions>()
+            .init_resource::<GunNames>()
+            .add_systems(Startup, spawn)
+            .add_systems(PreUpdate, fill_short_names)
+            .add_systems(Update, draw);
         super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
+        chimera_core::console::ConsoleAppExt::console_command(
+            app,
+            "chimera:gun_names",
+            "gun_names [game]: every gun's id, full name and short name (the narrow places': the scoreboard, \
+             callouts, kill feeds) and where the short one came from (override, split or full); a game id keeps \
+             its guns only.",
+            |w, a| Ok(Some(gun_names_lines(w, a.first().map(String::as_str)))),
+        );
     }
 }
 
 /// The rows' font, laid out ahead (`text_warm`) with the guns' names.
 fn warm_fonts(names: Res<GunNames>) -> Vec<super::text_warm::WarmText> {
-    vec![super::text_warm::WarmText { font: cell_font(), extra: names.0.values().flat_map(|v| v.chars()).collect() }]
+    vec![super::text_warm::WarmText { font: cell_font(), extra: names.short.values().flat_map(|v| v.chars()).collect() }]
 }
 
 /// The rows' cells' font.
@@ -57,23 +76,107 @@ fn cell_font() -> TextFont {
     TextFont { font_size: FontSize::Px(18.0), ..default() }
 }
 
-/// Guns' display names by weapon id (an app fills it; the minigame panel
-/// names guns the same way).
+/// Guns' display names by weapon id: `full` (an app fills it from the
+/// games' strings; the minigame panel names guns the same way) and `short`
+/// (`fill_short_names` fills it for every gun the catalog or `full` knows).
 #[derive(Resource, Clone, Debug, Default)]
-pub struct GunNames(pub HashMap<String, String>);
+pub struct GunNames {
+    pub full: HashMap<String, String>,
+    pub short: HashMap<String, String>,
+}
 
-/// What the board calls gun `id`: `names`, else the data's `hud.name`
+impl GunNames {
+    /// Full names alone (the short ones come with `fill_short_names`).
+    pub fn from_full(names: impl IntoIterator<Item = (String, String)>) -> Self {
+        GunNames { full: names.into_iter().collect(), short: HashMap::new() }
+    }
+}
+
+/// Gun `id`'s full name: `names`' full one, else the data's `hud.name`
 /// (not a `#` string token), else the id's last part in capitals.
 pub fn gun_name(id: &str, names: Option<&GunNames>, catalog: Option<&WeaponCatalog>) -> String {
-    if let Some(n) = names.and_then(|n| n.0.get(id)) {
+    if let Some(n) = names.and_then(|n| n.full.get(id)) {
         return n.clone();
     }
+    game_name(id, catalog)
+}
+
+/// The data's `hud.name` (not a string token), else the id's last part in
+/// capitals.
+fn game_name(id: &str, catalog: Option<&WeaponCatalog>) -> String {
     if let Some(n) = catalog.and_then(|c| c.get(id)).and_then(|d| d.hud.name.as_deref()).filter(|n| !n.starts_with('#')) {
         return n.to_string();
     }
-    let last = id.rsplit(':').next().unwrap_or(id);
-    let last = last.strip_prefix("weapon_").unwrap_or(last);
-    last.chars().map(|c| if c == '_' || c == '-' { ' ' } else { c.to_ascii_uppercase() }).collect()
+    chimera_sim::weapon::names::id_name(id)
+}
+
+/// Gun `id`'s short name, for the narrow places: `names`' short one, else
+/// its full name (`gun_name`).
+pub fn gun_short_name(id: &str, names: Option<&GunNames>, catalog: Option<&WeaponCatalog>) -> String {
+    if let Some(n) = names.and_then(|n| n.short.get(id)) {
+        return n.clone();
+    }
+    gun_name(id, names, catalog)
+}
+
+/// Every gun's short name (and an override's full one), from the games'
+/// rules (`GunNameRules`), when the names, the rules or the catalog change:
+/// each gun the catalog or the full names know.
+fn fill_short_names(
+    mut names: ResMut<GunNames>,
+    rules: Option<Res<GunNameRules>>,
+    catalog: Option<Res<WeaponCatalog>>,
+) {
+    let changed = names.is_changed()
+        || rules.as_ref().is_some_and(|r| r.is_changed())
+        || catalog.as_ref().is_some_and(|c| c.is_changed());
+    if !changed {
+        return;
+    }
+    let empty = GunNameRules::default();
+    let rules = rules.as_deref().unwrap_or(&empty);
+    let names = names.bypass_change_detection();
+    fill(names, rules, catalog.as_deref());
+}
+
+/// `names`' short names (and overrides' full ones) by `rules`.
+pub fn fill(names: &mut GunNames, rules: &GunNameRules, catalog: Option<&WeaponCatalog>) {
+    let mut ids: Vec<String> = names.full.keys().cloned().collect();
+    if let Some(c) = catalog {
+        ids.extend(c.sets.iter().flat_map(|s| s.weapons.iter()).map(|w| w.id.clone()).filter(|id| !names.full.contains_key(id)));
+    }
+    for id in ids {
+        let game = names.full.get(&id).cloned().unwrap_or_else(|| game_name(&id, catalog));
+        let full = rules.full(&id, &game);
+        if full != game {
+            names.full.insert(id.clone(), full.clone());
+        }
+        let short = rules.short(&id, &full).0;
+        names.short.insert(id, short);
+    }
+}
+
+/// The `gun_names` command's lines: id, full, short and where it came
+/// from, by id; `game` keeps that game's.
+fn gun_names_lines(w: &mut World, game: Option<&str>) -> String {
+    let empty = GunNameRules::default();
+    let rules = w.get_resource::<GunNameRules>().unwrap_or(&empty);
+    let catalog = w.get_resource::<WeaponCatalog>();
+    let mut names = w.get_resource::<GunNames>().cloned().unwrap_or_default();
+    fill(&mut names, rules, catalog);
+    let mut ids: Vec<&String> = names.short.keys().filter(|id| game.is_none_or(|g| id.split_once(':').is_some_and(|(p, _)| p == g))).collect();
+    ids.sort();
+    if ids.is_empty() {
+        return "no guns".into();
+    }
+    ids.into_iter()
+        .map(|id| {
+            let full = gun_name(id, Some(&names), catalog);
+            let (short, from) = rules.short(id, &full);
+            format!("{id} | {full} | {short} ({})", from.name())
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The overlay's root (hidden unless the key is held).
@@ -165,6 +268,7 @@ fn draw(
     settings: Option<Res<NetSettings>>,
     gun_names: Res<GunNames>,
     catalog: Option<Res<WeaponCatalog>>,
+    (fonts, rules): (Option<Res<super::fonts::UiFonts>>, Option<Res<GunNameRules>>),
     players: Query<
         (
             Entity,
@@ -198,7 +302,7 @@ fn draw(
             let gun = ladder
                 .as_ref()
                 .and_then(|l| l.shown_weapon(rung, catalog.as_deref()))
-                .map(|id| gun_name(id, Some(&gun_names), catalog.as_deref()))
+                .map(|id| gun_short_name(id, Some(&gun_names), catalog.as_deref()))
                 .unwrap_or_default();
             (
                 rung,
@@ -230,7 +334,7 @@ fn draw(
                 (row.name.clone(), false),
                 (row.kills.to_string(), true),
                 (row.deaths.to_string(), true),
-                (row.gun.clone(), false),
+                (super::overlay::fit(fonts.as_deref(), rules.as_deref(), &cell_font(), &row.gun, WIDTHS[3]), false),
                 (ping, true),
                 (row.wins.to_string(), true),
             ];

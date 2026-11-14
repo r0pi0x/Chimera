@@ -221,8 +221,10 @@ fn guest_names(games: Res<Games>, mut names: ResMut<ItemNames>) {
     }
 }
 
-/// The Tab scoreboard's gun names: CS:S's (the minigame panel's) and
-/// Combat Arms' (`ItemNames`), merged as either changes.
+/// The guns' full names for the shell (the Tab scoreboard, callouts, kill
+/// feed, match-end screen): CS:S's (the minigame panel's) and Combat Arms'
+/// (`ItemNames`), merged as either changes; the shell derives their short
+/// names (`minigame_scoreboard::fill_short_names`).
 fn sync_gun_names(
     cs: Res<cs_source::ui::minigame_hud::WeaponNames>,
     ca: Res<ItemNames>,
@@ -231,8 +233,8 @@ fn sync_gun_names(
     if !(cs.is_changed() || ca.is_changed()) {
         return;
     }
-    out.0.extend(cs.0.iter().map(|(k, v)| (k.clone(), v.clone())));
-    out.0.extend(ca.0.iter().map(|(k, v)| (k.clone(), v.clone())));
+    out.full.extend(cs.0.iter().map(|(k, v)| (k.clone(), v.clone())));
+    out.full.extend(ca.0.iter().map(|(k, v)| (k.clone(), v.clone())));
 }
 
 /// The party's client app (Lucker Party's, `APP`; another party app's is

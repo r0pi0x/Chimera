@@ -13,8 +13,8 @@
 //! has (Lucker Party swaps it with the gun at the same kill); no game's
 //! HUD draws or hides one of its own.
 //! Plain CS:S and Combat Arms play no minigame, so it never shows there. `{player}` is the
-//! player's shown name (`super::shown_name`), `{weapon}` the gun's display
-//! name (`minigame_scoreboard::gun_name`). Part of `ClientPlugins`.
+//! player's shown name (`super::shown_name`), `{weapon}` the gun's short
+//! name (`minigame_scoreboard::gun_short_name`). Part of `ClientPlugins`.
 //!
 //! `chimera_callout <event> [other] [rung]` makes one of the minigame's
 //! events (`rung_up`, `last_rung`, `lead_taken`, `match_won`, ...) for the
@@ -45,7 +45,7 @@ use chimera_sim::{
     weapon::data::WeaponCatalog,
 };
 
-use super::minigame_scoreboard::{GunNames, gun_name};
+use super::minigame_scoreboard::{GunNames, gun_short_name};
 use crate::{
     audio::{
         clip_asset::SoundAsset,
@@ -219,7 +219,7 @@ fn draw(
         let (ch, name, local) = players.get(e).unwrap_or((None, None, false));
         super::shown_name(e, local, ch, name, settings.as_deref())
     };
-    let weapon = |id: &str| gun_name(id, names.as_deref(), catalog.as_deref());
+    let weapon = |id: &str| gun_short_name(id, names.as_deref(), catalog.as_deref());
     let text: Vec<String> = shown
         .as_ref()
         .map(|s| s.callout.lines.iter().map(|l| fill(l, player, weapon)).collect())

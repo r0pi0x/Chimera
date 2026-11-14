@@ -94,6 +94,7 @@ mod heavy {
     mod bot_rounds;
     mod demo_playback;
     mod demo_resim;
+    mod display_names;
     mod map_ambient;
     mod map_areaportals;
     mod map_breakables;

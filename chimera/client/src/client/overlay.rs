@@ -20,6 +20,10 @@
 //! the layer out under every composed game's HUD at 16:9, 4:3 and 21:9
 //! and requires one layout.
 //!
+//! A text cell whose text may run long (a gun's name) is fitted to its
+//! width with the font (`fit`: condensed, then cut at a word with `…`),
+//! never wrapped into the next row or column.
+//!
 //! The pre-match lobby (`prematch_lobby`) follows the same rule but stays
 //! a root of its own: an app's menu moves it to its own camera
 //! (`UiTargetCamera` works on roots only).
@@ -95,6 +99,37 @@ pub fn font(fonts: Option<&UiFonts>, em_px: f32, bold: bool) -> TextFont {
             ..default()
         },
     }
+}
+
+/// `text` made to fit `max_px` in `font`, measured with the face
+/// (`UiFonts::width`; without the faces, half an em a character): as it
+/// is, else condensed, without its variant tail, without its skin, then
+/// cut at a word with `…` (`chimera_sim::weapon::names::fit`). The
+/// overlay's text cells call it for names that may run long (guns); it
+/// never wraps. The words are `rules`' (the games' `GunNameRules`), else
+/// the shipped list read for the call.
+pub fn fit(
+    fonts: Option<&UiFonts>,
+    rules: Option<&chimera_sim::weapon::names::GunNameRules>,
+    font: &TextFont,
+    text: &str,
+    max_px: f32,
+) -> String {
+    let none = UiFonts::default();
+    let fonts = fonts.unwrap_or(&none);
+    let fits = |t: &str| fonts.width(font, t) <= max_px;
+    if fits(text) {
+        return text.to_string();
+    }
+    let shipped;
+    let words = match rules {
+        Some(r) => r.words(),
+        None => {
+            shipped = chimera_sim::weapon::names::NameWords::shipped();
+            &shipped
+        }
+    };
+    chimera_sim::weapon::names::fit(text, fits, words)
 }
 
 /// A game's HUD root put under the layer would show and hide with that

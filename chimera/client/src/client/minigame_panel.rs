@@ -7,9 +7,11 @@
 //! Part of `ClientPlugins`; nothing shows without a playing minigame. A
 //! line's `{player}` is the name the scoreboard shows, its `{weapon}` the
 //! gun's name in `WeaponNames` (what a game read from its install's
-//! strings), else the Tab scoreboard's (`minigame_scoreboard::gun_name`:
-//! the app's `GunNames`, the data's `hud.name`, the id's last part in
-//! capitals). A finished match's results (`MinigameHud::results`: the
+//! strings), else the Tab scoreboard's full name (`minigame_scoreboard::
+//! gun_name`: the app's `GunNames`, the data's `hud.name`, the id's last
+//! part in capitals); a status line wider than `LINE_MAX` names the gun by
+//! its short name instead (`gun_short_name`), fitted to the line with the
+//! font (`overlay::fit`). A finished match's results (`MinigameHud::results`: the
 //! winner, then a line a player) come under the status lines. The
 //! minigame's moments (a rung up, the lead, the win) are the shell's
 //! callout centre screen (`client::callouts`), so the panel lists no
@@ -28,7 +30,7 @@ use chimera_sim::weapon::data::WeaponCatalog;
 
 use crate::client::{
     fonts::UiFonts,
-    minigame_scoreboard::{GunNames, gun_name},
+    minigame_scoreboard::{GunNames, gun_name, gun_short_name},
     overlay::{self, OverlayLayer},
 };
 
@@ -58,6 +60,10 @@ fn warm_fonts(windows: Query<&Window>, fonts: Option<Res<UiFonts>>, names: Res<W
 /// 720-line screen (`overlay::scale`).
 pub const TITLE_SIZE: f32 = 26.0;
 pub const LINE_SIZE: f32 = 19.0;
+
+/// The widest a status line is on a 720-line screen: one naming a gun
+/// wider than this names it by its short name (`gun_short_name`), fitted.
+pub const LINE_MAX: f32 = 560.0;
 
 /// The panel's top edge on a 720-line screen.
 pub const TOP: f32 = 14.0;
@@ -139,23 +145,42 @@ fn draw(
     (names, guns, catalog): (Res<WeaponNames>, Option<Res<GunNames>>, Option<Res<WeaponCatalog>>),
     who: Query<(Option<&Name>, Has<crate::core::LocalPlayer>, Option<&crate::net::NetCharacter>)>,
     settings: Option<Res<crate::net::NetSettings>>,
-    (fonts, windows): (Option<Res<UiFonts>>, Query<&Window>),
+    (fonts, windows, rules): (Option<Res<UiFonts>>, Query<&Window>, Option<Res<chimera_sim::weapon::names::GunNameRules>>),
     panel: Query<Entity, With<MinigamePanel>>,
     mut last: Local<Option<(Vec<(PanelLine, String)>, f32)>>,
     mut commands: Commands,
 ) {
-    let lines = minigame.as_deref().map_or_else(Vec::new, |m| {
-        panel_lines_with(
-            m,
-            |e| match who.get(e) {
-                Ok((name, local, net)) => crate::client::shown_name(e, local, net, name, settings.as_deref()),
-                Err(_) => e.to_string(),
-            },
-            |w| names.0.get(w).cloned().unwrap_or_else(|| gun_name(w, guns.as_deref(), catalog.as_deref())),
-            |r| r.name.clone(),
-        )
-    });
+    let lines_by = |short: bool| {
+        minigame.as_deref().map_or_else(Vec::new, |m| {
+            panel_lines_with(
+                m,
+                |e| match who.get(e) {
+                    Ok((name, local, net)) => crate::client::shown_name(e, local, net, name, settings.as_deref()),
+                    Err(_) => e.to_string(),
+                },
+                |w| match short {
+                    true => gun_short_name(w, guns.as_deref(), catalog.as_deref()),
+                    false => names.0.get(w).cloned().unwrap_or_else(|| gun_name(w, guns.as_deref(), catalog.as_deref())),
+                },
+                |r| r.name.clone(),
+            )
+        })
+    };
     let h = windows.iter().next().map_or(720.0, |w| w.height());
+    // A status line with the gun's full name, else (wider than the
+    // panel's line) its short name, fitted.
+    let s = overlay::scale(h);
+    let line_font = overlay::font(fonts.as_deref(), LINE_SIZE * s, true);
+    let none = UiFonts::default();
+    let measure = fonts.as_deref().unwrap_or(&none);
+    let mut lines = lines_by(false);
+    if lines.iter().any(|(k, t)| *k == PanelLine::Status && measure.width(&line_font, t) > LINE_MAX * s) {
+        for ((kind, text), (_, short)) in lines.iter_mut().zip(lines_by(true)) {
+            if *kind == PanelLine::Status && measure.width(&line_font, text) > LINE_MAX * s {
+                *text = overlay::fit(fonts.as_deref(), rules.as_deref(), &line_font, &short, LINE_MAX * s);
+            }
+        }
+    }
     let now = (lines.clone(), h);
     if last.as_ref() == Some(&now) && (lines.is_empty() || !panel.is_empty()) {
         return;
@@ -167,7 +192,6 @@ fn draw(
     if lines.is_empty() {
         return;
     }
-    let s = overlay::scale(h);
     let font = |size: f32| overlay::font(fonts.as_deref(), size * s, true);
     let root = commands
         .spawn((

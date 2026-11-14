@@ -382,6 +382,12 @@ impl Plugin for Hl2GunsPlugin {
         use chimera_core::character::CharacterPartsExt;
         app.on_every_character::<recoil::Hl2Punch>();
         register_hooks(app);
+        // Its guns' short names (data/display_names.toml).
+        chimera_sim::weapon::names::DisplayNamesAppExt::add_display_names(
+            app,
+            "hl2dm data/display_names.toml",
+            include_str!("../../../data/display_names.toml"),
+        );
         projectile_systems(app);
         physcannon_systems(app);
         if let Err(e) = app.add_weapon_data(DATA) {
