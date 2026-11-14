@@ -40,6 +40,7 @@ pub mod minigame_panel;
 pub mod overlay;
 pub mod minigame_scoreboard;
 pub mod race_chip;
+pub mod rank_toast;
 pub mod signal;
 pub mod hud_text;
 pub mod input;

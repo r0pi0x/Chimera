@@ -18,7 +18,6 @@
 //!   `icons.prefer_game` is on, else the kit's fallback set by the gun's
 //!   class (`chimera_ui::icons`: `choose`, `IconFor`), else the short name.
 //!
-//! Known shortcuts: no rolling numbers yet (M3's toast brings them).
 
 use bevy::{ecs::system::SystemParam, prelude::*};
 use chimera_ui::{KitFonts, Role, SlantMaterial, Theme, Tone, UiUnits};
@@ -59,26 +58,30 @@ pub fn setup(app: &mut App) {
 }
 
 /// Every role and size the Signal HUD uses (the race chip and board, the
-/// kill feed, the fallback HUD), laid out ahead with the guns' names
+/// kill feed, the fallback HUD, the rank-up toast), laid out ahead with the guns' names
 /// (`text_warm`): the first Tab or kill makes no glyph atlas.
 pub const SIZES: &[(Role, f32)] = &[
     (Role::Mono, 0.42),
     (Role::Mono, 0.46),
+    (Role::Mono, 0.48),
     (Role::Mono, 0.5),
     (Role::Mono, 0.52),
     (Role::Mono, 0.54),
     (Role::Mono, 0.56),
     (Role::Mono, 0.6),
     (Role::Mono, 0.62),
+    (Role::DisplayBold, 0.58),
     (Role::DisplayBold, 0.6),
     (Role::DisplayBold, 0.62),
     (Role::DisplayBold, 0.66),
     (Role::DisplayBold, 0.72),
     (Role::DisplayBold, 0.86),
+    (Role::DisplayBold, 0.94),
     (Role::DisplayBold, 1.02),
     (Role::DisplayBold, 1.2),
     (Role::DisplayBold, 1.3),
     (Role::DisplayBold, 1.35),
+    (Role::DisplayBold, 1.6),
 ];
 
 fn warm(look: Look, names: Option<Res<super::minigame_scoreboard::GunNames>>) -> Vec<super::text_warm::WarmText> {
@@ -351,24 +354,37 @@ pub struct BaseAlpha {
     image: f32,
 }
 
+/// A node and everything under it at this opacity (0-1): Bevy UI has
+/// no group opacity, so `fade` multiplies each colour's own alpha. A
+/// screen that rebuilds a faded node's children marks this changed.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
+pub struct UiOpacity(pub f32);
+
+/// The paint `fade` dims.
+type Paint<'a> = (
+    Option<&'a mut BackgroundColor>,
+    Option<&'a mut TextColor>,
+    Option<&'a mut BorderColor>,
+    Option<&'a mut ImageNode>,
+    Option<&'a BaseAlpha>,
+);
+
 /// Fades a node and everything under it by its timeline's opacity
-/// (`Prop::Opacity`): Bevy UI has no group opacity, so each colour's
-/// alpha is its own times the opacity. Only when the timeline moved.
+/// (`Prop::Opacity`) or its `UiOpacity`: each colour's alpha is its own
+/// times the opacity. Only when one changed.
 #[allow(clippy::type_complexity)]
 pub fn fade(
     faders: Query<(Entity, &chimera_ui::Timeline), Changed<chimera_ui::Timeline>>,
+    opacities: Query<(Entity, &UiOpacity), Changed<UiOpacity>>,
     children: Query<&Children>,
-    mut paint: Query<(
-        Option<&mut BackgroundColor>,
-        Option<&mut TextColor>,
-        Option<&mut BorderColor>,
-        Option<&mut ImageNode>,
-        Option<&BaseAlpha>,
-    )>,
+    mut paint: Query<Paint>,
     mut commands: Commands,
 ) {
-    for (root, tl) in &faders {
-        let Some(o) = tl.value(chimera_ui::Prop::Opacity) else { continue };
+    let roots = faders
+        .iter()
+        .filter_map(|(e, tl)| tl.value(chimera_ui::Prop::Opacity).map(|o| (e, o)))
+        .chain(opacities.iter().map(|(e, o)| (e, o.0)));
+    for (root, o) in roots {
         let o = o.clamp(0.0, 1.0);
         for e in std::iter::once(root).chain(children.iter_descendants(root)) {
             let Ok((bg, text, border, image, base)) = paint.get_mut(e) else { continue };

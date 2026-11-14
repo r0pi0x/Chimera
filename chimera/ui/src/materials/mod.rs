@@ -77,6 +77,10 @@ pub struct SlantMaterial {
     /// at the left and the right.
     #[uniform(3)]
     pub wipe: Vec4,
+    /// x: the wipe's cuts lean with the slant (0/1) even where the fill's
+    /// own edges are upright (the toast's wipe).
+    #[uniform(4)]
+    pub cut: Vec4,
 }
 
 impl SlantMaterial {
@@ -88,7 +92,15 @@ impl SlantMaterial {
             accent: LinearRgba::NONE,
             shape: Vec4::new(theme.tan(), 1.0, 1.0, 0.0),
             wipe: Vec4::new(0.0, 0.0, 1.0, 1.0),
+            cut: Vec4::ZERO,
         }
+    }
+
+    /// The wipe's cuts lean with the slant (an upright box wiped in
+    /// along the slant, as the toast is).
+    pub fn slanted_cut(mut self) -> Self {
+        self.cut.x = 1.0;
+        self
     }
 
     /// Which edges slant (a bar flush at the left: `edges(false, true)`).

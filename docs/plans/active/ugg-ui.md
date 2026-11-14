@@ -461,8 +461,8 @@ Tests: `race_chip_opens_and_folds_on_showscores`,
 `board_rows_best_first_with_icons`, `kill_feed_marks_local_kills_and_deaths`,
 `the_plain_feed_without_the_signal_theme` (chimera_client),
 `fallback_hud_only_without_a_game_hud` (ultimate_gun_game). Left:
-`overlay_keeps_clear_of_game_huds`, rolling numbers and the tick pop
-(with M3's toast), the match clock on the board's head.
+`overlay_keeps_clear_of_game_huds`, the match clock on the board's head
+(the rolling rung and the tick pop came with M3's toast).
 
 - `client::race_chip` replaces `minigame_panel` for a ladder (other
   minigames keep the panel); `minigame_scoreboard` becomes the chip's
@@ -477,6 +477,15 @@ Tests: `race_chip_opens_and_folds_on_showscores`,
 - No network change (rungs, wins, K/D are replicated already).
 
 ### M3: rank-up toast and the air strike
+
+Status (2026-11-14): the toast is in: `client::rank_toast` (the pose a
+function of the recent rung ups and `UiClock`; the plate's wipe a
+`SlantMaterial` with a slanted cut; the chip's YOU rung a rolling number
+and its tick popping in step; a chain within the hold or exit rolls
+again; the rung-up callout's text left to it under Signal, its cue
+kept); `ui_scene rankup [t]`. Tests: `rank_toast_rolls_and_holds_1_15_s`,
+`rank_toast_chains_within_the_hold`, `the_pose_follows_the_look_book`,
+`rank_toast_needs_the_signal_theme_and_takes_the_rung_up_callout`.
 
 - `client::rank_toast` from the local rung-up (`MinigameHud`'s event,
   the callout it replaces); `client::effects` (banner, edge, chips).
