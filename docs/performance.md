@@ -4140,18 +4140,18 @@ ticks each counted; the ticks somebody died in against the others (median 11.3 M
 
 | | Before | After |
 |---|---|---|
-| a model's first death, the tick | 30.1 M | 25.5 M |
-| of it `spawn_ragdolls` | 7.33 M | 3.73 M |
-| later deaths, the tick | 21.9-24.9 M | 20.0-23.7 M |
-| of it `spawn_ragdolls` | 2.46-3.70 M | 2.32-2.56 M |
-| a death's tick over the quiet median: median, worst | 13.6 M, 18.8 M | 12.5 M, 14.3 M |
+| a model's first death, the tick | 30.1 M | 26.6 M |
+| of it `spawn_ragdolls` | 7.33 M | 3.83 M |
+| later deaths, the tick | 21.9-24.9 M | 21.9-24.1 M |
+| of it `spawn_ragdolls` | 2.46-3.70 M | 2.31-2.58 M |
+| a death's tick over the quiet median: median, worst | 13.6 M, 18.8 M | 12.8 M, 15.3 M |
 
 The backlog's "convex hulls per death" were already per model's body since "A ragdoll's
 cost" (`RagdollShapes`); what was left of them was each model's first death (its 15-16
-bodies' hulls and mass properties, 3.6 M) and a cache that emptied itself at 512 shapes
+bodies' hulls and mass properties, 3.5 M) and a cache that emptied itself at 512 shapes
 (searched one by one). Now every character model's shapes are made ahead on a task when
-the models change (`ragdoll::warm_shapes`; a death before they are in makes its own, as
-before), kept by a hash of their corners, 4,096 at most. A death's tick is otherwise the
+the models change (`ragdoll::warm_shapes`, from `spawn_ragdolls`: a system of its own
+moved the schedules' ratchet; a death before they are in makes its own, as before), kept by a hash of their corners, 4,096 at most. A death's tick is otherwise the
 kill's own work, none of it a frame: the ragdoll's bodies and joints spawned (2.3-2.6 M),
 the killer's next rung (`weapon_frame` 1.0-2.2 M: the new gun), `handle_deaths` 0.5-1.6 M,
 avian's bounds and mass properties for the 15 new bodies (1.3 M), the drawn body handed

@@ -23,7 +23,7 @@ const BOTS: u32 = 6;
 /// Ticks counted (about 50 s of play at Combat Arms' tick).
 const TICKS: usize = 3000;
 /// A death tick's instructions over the median tick's, the costliest of
-/// the run (measured 2026-11-14: 14.3 M, a model's first death; 18.8 M
+/// the run (measured 2026-11-14: 15.3 M, a model's first death; 18.8 M
 /// when that death made its ragdoll's hulls; docs/performance.md, "A
 /// death's frame, a new ladder's frame").
 const DEATH_TICK: u64 = 30_000_000;
