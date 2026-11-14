@@ -18,12 +18,13 @@ use chimera_sim::{
     minigame::ladder::{Ladder, Rung, set_rung},
     weapon::grenade::Detonated,
 };
-use chimera_world::map::{logic_view::HudMessages, loose::ShownItem};
+use chimera_sim::minigame::effects::MatchEffects;
+use chimera_world::map::loose::ShownItem;
 use combat_arms::game::{
     movement::MovementData,
     special::{CaObject, DEVICE, DeviceParams, Kind, devices::drop_strike_shell},
 };
-use party_kit::surprise::{AirStrike, LGB, MoonGravity, NAPALM, WARNING, alarm_entry};
+use party_kit::surprise::{AIR_STRIKE, AirStrike, LGB, MOON_GRAVITY, MoonGravity, NAPALM, WARNING, alarm_entry};
 
 use super::gun_game::{OPEN, alive, line_up, party, place, rung, soldier};
 use super::net_gun_game::joined;
@@ -174,8 +175,10 @@ fn the_command_drops_its_shells_after_the_warning() {
     assert!(s.drops.is_empty());
 }
 
-/// Over the network: every client hears the siren and sees the warning
-/// (map logic's HUD message), the shells in flight (drawn by their own
+/// Over the network: every client hears the siren and gets the warning
+/// (the match's `air_strike` effect, its impact `WARNING` s after its
+/// start on the client's own clock too: `match_effects_replicate`), the
+/// shells in flight (drawn by their own
 /// record's key) and their explosions (the designators' weapons: their
 /// shells' impact records).
 #[test]
@@ -187,9 +190,11 @@ fn clients_see_the_warning_the_shells_and_the_blasts() {
     sim.server.app.world_mut().resource_mut::<Console>().submit("surprise airstrike 5 0.5");
     sim.ticks(30);
     for (i, c) in sim.clients.iter().enumerate() {
-        let hud = c.app.world().resource::<HudMessages>();
-        let shown: Vec<String> = hud.channels.iter().flatten().map(|(m, _)| m.text.clone()).collect();
-        assert!(shown.iter().any(|t| t.contains("AIR STRIKE")), "client {i}'s HUD: {shown:?}");
+        let fx = c.app.world().get_resource::<MatchEffects>().and_then(|m| m.get(AIR_STRIKE)).unwrap_or_else(|| panic!("client {i}'s effects"));
+        assert!(fx.threat && fx.title == "Air strike", "client {i}'s strike: {fx:?}");
+        let warned = fx.impact_at.unwrap() - fx.starts;
+        assert!((warned - WARNING).abs() < 0.05, "client {i}: impact {warned} s after the warning");
+        assert!((fx.ends - fx.impact_at.unwrap() - 0.5).abs() < 0.05, "client {i}: over after the shells' 0.5 s");
         let heard = &c.app.world().resource::<Heard>().0;
         assert!(heard.iter().any(|e| *e == alarm_entry()), "client {i} heard the siren: {heard:?}");
         assert!(!heard.iter().any(|e| e.starts_with("Radio.")), "no radio call: {heard:?}");
@@ -252,8 +257,8 @@ fn moon_gravity_applies_and_reverts_on_server_and_clients() {
             "client {i}'s ragdolls and props fall at the server's: {:?}",
             w.resource::<Gravity>().0
         );
-        let hud = w.resource::<HudMessages>();
-        assert!(hud.channels.iter().flatten().any(|(m, _)| m.text.starts_with("Moon gravity!")), "client {i}'s banner: {:?}", hud.channels);
+        let fx = w.get_resource::<MatchEffects>().and_then(|m| m.get(MOON_GRAVITY)).cloned();
+        assert!(fx.as_ref().is_some_and(|f| !f.threat && (f.ends - f.starts - 2.0).abs() < 0.05), "client {i}'s moon: {fx:?}");
     }
     sim.ticks(200);
     let server = sim.server.app.world_mut();
@@ -268,8 +273,8 @@ fn moon_gravity_applies_and_reverts_on_server_and_clients() {
         assert_eq!(cvar(w, "cs_source:sv_gravity").unwrap(), before, "client {i} back");
         assert_eq!(w.resource::<MovementData>().gravity, ca, "client {i}'s Combat Arms movement back");
         assert_eq!(w.resource::<Gravity>().0, physics, "client {i}'s physics back");
-        let hud = w.resource::<HudMessages>();
-        assert!(hud.channels.iter().flatten().any(|(m, _)| m.text.starts_with("Gravity is back")), "client {i}'s end");
+        let fx = w.get_resource::<MatchEffects>().and_then(|m| m.get(MOON_GRAVITY)).cloned();
+        assert!(fx.is_none() || fx.is_some_and(|f| !f.stopped), "client {i}: ended on its own (the end line shows)");
     }
 }
 
@@ -332,7 +337,7 @@ fn show(
 /// heard no siren and hardly any explosion): the surprise shows on the
 /// host's own HUD and screen, the siren plays there, and the shells blow
 /// up there as the designators' do (their impact records' groups and
-/// sounds), as on a network client; moon gravity's banner too.
+/// sounds), as on a network client; moon gravity's effect too.
 #[test]
 fn a_listen_hosts_own_player_sees_and_hears_the_surprises() {
     let mut sim = joined();
@@ -349,13 +354,8 @@ fn a_listen_hosts_own_player_sees_and_hears_the_surprises() {
     sim.server.app.world_mut().resource_mut::<Console>().submit("surprise airstrike 5 0.5");
     sim.ticks(30);
     let w = sim.server.app.world();
-    let shown: Vec<String> = w
-        .get_resource::<HudMessages>()
-        .map(|h| h.channels.iter().flatten().map(|(m, _)| m.text.clone()).collect())
-        .unwrap_or_default();
-    assert!(shown.iter().any(|t| t.contains("AIR STRIKE")), "the host's HUD: {shown:?}");
-    let fades = w.get_resource::<chimera_world::map::logic_view::ScreenFades>();
-    assert!(fades.is_some_and(|f| f.fades.iter().any(|f| f.0.color == [255, 0, 0])), "the host's red flash");
+    let fx = w.get_resource::<MatchEffects>().and_then(|m| m.get(AIR_STRIKE));
+    assert!(fx.is_some_and(|f| f.threat), "the host's own effects: {fx:?}");
     let heard = &w.resource::<Heard>().0;
     assert!(heard.iter().any(|e| *e == alarm_entry()), "the host heard the siren: {heard:?}");
     for _ in 0..600 {
@@ -395,6 +395,6 @@ fn a_listen_hosts_own_player_sees_and_hears_the_surprises() {
     // Moon gravity's banner.
     sim.server.app.world_mut().resource_mut::<Console>().submit("surprise gravity 8 0.2");
     sim.ticks(20);
-    let hud = sim.server.app.world().resource::<HudMessages>();
-    assert!(hud.channels.iter().flatten().any(|(m, _)| m.text.starts_with("Moon gravity!")), "the host's banner: {:?}", hud.channels);
+    let fx = sim.server.app.world().get_resource::<MatchEffects>().and_then(|m| m.get(MOON_GRAVITY)).cloned();
+    assert!(fx.is_some(), "the host's moon gravity");
 }

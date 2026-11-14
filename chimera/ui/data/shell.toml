@@ -74,6 +74,7 @@ out = "bezier(.16,1,.3,1)"
 in = "bezier(.7,0,.84,0)"
 io = "bezier(.65,0,.35,1)"
 pop = "bezier(.34,1.56,.64,1)"
+roll = "back(.9)"
 
 # Durations and offsets in seconds, by piece.
 [motion.dur.pass]

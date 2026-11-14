@@ -40,12 +40,14 @@ pub mod minigame_panel;
 pub mod overlay;
 pub mod minigame_scoreboard;
 pub mod race_chip;
+pub mod rank_toast;
 pub mod signal;
 pub mod hud_text;
 pub mod input;
 pub mod kill_feed;
 pub mod interp;
 pub mod map_screen;
+pub mod match_effects;
 pub mod match_end;
 pub mod prematch_lobby;
 pub mod lobby_panel;
@@ -557,6 +559,7 @@ impl PluginGroup for ClientPlugins {
             .add(kill_feed::KillFeedPlugin)
             .add(ui_parity::UiParityPlugin)
             .add(callouts::CalloutsPlugin)
+            .add(match_effects::MatchEffectsPlugin)
             .add(hit_marker::HitMarkerPlugin)
             .add(hdr::HdrPlugin)
             .add(video::VideoPlugin)

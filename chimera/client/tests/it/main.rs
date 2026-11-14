@@ -19,5 +19,7 @@ mod metrics;
 mod minigame_panel;
 mod minigame_scoreboard;
 mod race_chip;
+mod rank_toast;
+mod match_effects;
 mod signal_feed;
 mod respawn_countdown;

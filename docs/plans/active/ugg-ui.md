@@ -35,7 +35,7 @@ an ambient shader background), and an in-engine Showcase backdrop.
 | Short gun names | `GunNameRules::short`, `names::fit`, `gun_short_name` | `chimera/sim/src/weapon/names.rs`, `minigame_scoreboard.rs` |
 | Gun class | `GunClass` (pistol ... grenade), from weapon data | `chimera/core/src/game_parts.rs` |
 | Matches won | `wins::MatchWins` (by name, per server run), `MatchesWon` replicated; `ResultRow::wins` | `chimera/sim/src/minigame/wins.rs`, `results.rs` |
-| Surprises | `surprise airstrike`, `surprise gravity` (HUD text through `send_hud`) | `apps/party_kit/src/surprise.rs` |
+| Surprises | `surprise airstrike`, `surprise gravity` (the match's effects, `minigame::effects::MatchEffects`, since M3) | `apps/party_kit/src/surprise.rs` |
 | Glyph atlases ahead | `client::text_warm` (`TextWarmAppExt::warm_texts`) | docs/performance.md "HUD texts' glyph atlases ahead" |
 | Writes only on change | `ui_write::set_text`, `edit` | `chimera/client/src/client/ui_write.rs` |
 
@@ -492,8 +492,8 @@ Tests: `race_chip_opens_and_folds_on_showscores`,
 `board_rows_best_first_with_icons`, `kill_feed_marks_local_kills_and_deaths`,
 `the_plain_feed_without_the_signal_theme` (chimera_client),
 `fallback_hud_only_without_a_game_hud` (ultimate_gun_game). Left:
-`overlay_keeps_clear_of_game_huds`, rolling numbers and the tick pop
-(with M3's toast), the match clock on the board's head.
+`overlay_keeps_clear_of_game_huds`, the match clock on the board's head
+(the rolling rung and the tick pop came with M3's toast).
 
 Parity (2026-11-14, `tools/ui-parity/run.sh`, 1920x1080): fixed the
 board's ladder column (11.4 cq), its titles' padding and rule, the K/D
@@ -527,6 +527,30 @@ look book's call.
 
 ### M3: rank-up toast and the air strike
 
+Status (2026-11-14): done. The toast: `client::rank_toast` (the pose a
+function of the recent rung ups and `UiClock`; the plate's wipe a
+`SlantMaterial` with a slanted cut; the chip's YOU rung a rolling number
+and its tick popping in step; a chain within the hold or exit rolls
+again; the rung-up callout's text left to it under Signal, its cue
+kept); `ui_scene rankup [t]`. The effects: `chimera_sim::minigame::
+effects::MatchEffects` (`Effect { id, kind, title, detail, countdown,
+over, threat, color, starts, impact_at, ends, stopped }`), filled by
+`party_kit::surprise` (no HUD text, no fade: decision 5), replicated as
+`NetMinigame::effects` (**net49**); `client::match_effects` draws them:
+under Signal the banner (every effect gets one; a threat's red with the
+warning mark and the count), the edge pulse (a threat's; the kit's
+`EdgeMaterial`, no fill and no impact flash), and the top-left chip stack
+(threats first, slots sliding; a timed effect's `RingMaterial`
+countdown); otherwise the plain text banner, flash and lines Lucker Party
+had. `ui_scene airstrike [t]`. Tests: `rank_toast_rolls_and_holds_1_15_s`,
+`rank_toast_chains_within_the_hold`, `the_pose_follows_the_look_book`,
+`rank_toast_needs_the_signal_theme_and_takes_the_rung_up_callout`,
+`air_strike_banner_folds_into_its_chip`, `effects_chips_stack_and_leave`,
+`the_plain_look_says_it_as_text`, `the_edge_pulses_each_second`
+(chimera_client); `match_effects_replicate` (chimera_net NetSim);
+`effects_start_end_and_prune` (chimera_sim); the surprise tests
+(party_kit) on `MatchEffects`.
+
 - `client::rank_toast` from the local rung-up (`MinigameHud`'s event,
   the callout it replaces); `client::effects` (banner, edge, chips).
 - **Network**: the surprises become structured, a generic
@@ -534,7 +558,7 @@ look book's call.
   `Effect { kind, title, starts, impact_at, ends }`, replicated by
   `chimera_net::minigame_net`), filled by `party_kit::surprise` instead
   of HUD text (the text stays for older clients only if open question 5
-  says so). **net47 to net48** (`NET_VERSION`,
+  says so). **net48 to net49** (`NET_VERSION`,
   `chimera/net/src/net/mod.rs`).
 - Tests: `rank_toast_rolls_and_holds_1_15_s`, `rank_toast_chains_within_the_hold`,
   `air_strike_banner_folds_into_its_chip`, `effects_chips_stack_and_leave`;
@@ -552,7 +576,7 @@ look book's call.
   and the vote four candidates instead of three (`map_vote` data: the
   rotation's pick and three others). The vote's close and the map
   change share one deadline (`MapVote` closes at `NextMatch::at`).
-  **net48 to net49** (`MatchResults` and `MapVote` change shape).
+  **net49 to net50** (`MatchResults` and `MapVote` change shape).
 - Tests: `climb_records_rungs_kills_deaths` (chimera_sim),
   `match_end_has_one_countdown`, `vote_cards_lock_then_next_match`,
   `climb_chart_follows_hover` (client), `results_with_climb_replicate`
@@ -703,12 +727,13 @@ the match end. Missing for the look book:
 - A stable key: by name today (a rename resets, two players with one
   name share); the server keys by the client's id for the run and keeps
   the name for display (open question 4: a listen host's restart).
-- **net49 to net50** (`LobbyRow`).
+- **net50 to net51** (`LobbyRow`).
 - Tests: `session_wins_survive_a_rejoin`, `session_wins_show_in_the_lobby`,
   `session_leader_is_marked` (chimera_sim, chimera_net NetSim, client).
 
-Network bumps, in order: M3 net48 (match effects), M4 net49 (results'
-climb, four vote cards), M6 net50 (lobby wins). Each bump in its own
+Network bumps, in order: M3 net49 (match effects; net48 went to HL2:DM's
+blood per viewer), M4 net50 (results'
+climb, four vote cards), M6 net51 (lobby wins). Each bump in its own
 commit with the test that needs it; a playtest's server and clients
 must be one build.
 

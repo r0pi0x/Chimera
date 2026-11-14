@@ -40,7 +40,9 @@ use bevy::{prelude::*, ui::UiSystems};
 
 pub use fonts::{FontFiles, KitFonts, Role, Styled};
 pub use icons::{IconFor, IconImages, IconSource, Icons};
-pub use materials::{AmbientMaterial, KitMaterialsPlugin, LinesMaterial, PassMaterial, SlantMaterial, TickBarMaterial};
+pub use materials::{
+    AmbientMaterial, EdgeMaterial, KitMaterialsPlugin, LinesMaterial, PassMaterial, RingMaterial, SlantMaterial, TickBarMaterial,
+};
 pub use motion::{Ease, Prop, Timeline, Track, UiClock};
 pub use parity::UiParityId;
 pub use theme::{Theme, Tone};
