@@ -12,7 +12,8 @@ Placeholders only: `<hub host>`, `<hub port>`, `<fingerprint>`,
 `<token>` and `<public address>` are never written into the repository;
 the host hands them out privately, as playtest-hosting.md says.
 
-Section 9 lists the decisions the user still has to make.
+Section 9 lists the decisions the user still has to make; section 10 is
+the North Star for accounts (later).
 
 ## 1. What exists (build on it)
 
@@ -407,3 +408,67 @@ a discovery document (the user wants one address for every service).
    posts should also land there.
 10. **Min client:** a banner only (recommended), or refuse to list
     servers to an old client.
+
+## 10. North Star: accounts by redeem code
+
+Not for now (user, 2026-11-14): none of H1-H6 depends on it, and the
+tokens work until it is built. The idea: a login that admits only the
+people allowed to test, as simple as possible for the host and for the
+player, with nothing to type but the hub link and a code. A usernameless
+account (display names change at will) is also the base for a longer-term
+identity and, later, meta progression.
+
+**Host side.** One command on the hub box mints codes, for example
+`chimera_pack code mint <n> [--label <text>] [--role tester|host]
+[--expires <days>] [--games a,b]`; each code is single-use and printed
+once (only its hash is stored, like tokens today). `code list` shows
+label, role, state (unused, redeemed by which account, expired) and
+`code revoke <code or label>` kills an unused code. The accounts file
+grows from "name and token hashes" to account id, role, rights (`list`,
+games), limits, a note, and the device credentials' hashes.
+
+**Player side.** First-run setup (4.1) asks for the hub link and the
+code, nothing else; an invite link can carry the code, so one paste does
+both. Redeeming (`POST /hub/redeem`, over the pinned link, rate limited
+per address) creates an **account**: an opaque random id plus a **device
+credential** the client keeps in its local access file. That one
+credential replaces the per-tester asset token: asset access, feedback
+uploads (feedback-reports.md) and server listing (3.2) all derive from
+the account's rights, so there is one thing to store, bind and revoke.
+Display names stay free to change in Settings and are never an account
+key; the hub may record the last name seen, for the host's eyes only.
+
+**Recovery.** Losing a device or reinstalling is the host's job to fix
+in the simplest case: re-issue a code **bound to the same account**
+(`code mint --for <account>`), which redeems into a fresh device
+credential and revokes the old one. Optionally Settings shows a backup
+**account key** (a long phrase of words) that the player can store and
+paste at first run to recover alone; whether to offer it is a decision
+when this is built, since it makes the key a bearer secret.
+
+**Fit with the hub's phases.** Section 4.2's invite already carries a
+token; the redeem code is that token's replacement: the same invite
+shape (`?token=` becomes `?code=`), the same first-run field, the same
+`+chimera:hub` line. Migration: the hub keeps accepting today's tokens
+as legacy device credentials of an account made for them, so existing
+testers change nothing; `chimera_pack user add` turns into a shortcut
+for mint-and-redeem for the host's own devices; a legacy token can be
+swapped for a code-made credential whenever the host re-invites. Build
+it after H5, as a new phase, once the token flow in H1-H6 has shown
+what testers trip over.
+
+**Later uses.** Session stats and meta progression stored on the hub by
+account id (levels, unlocks, match history; the hub then also needs
+backups and a say in what clients may claim, so servers report results
+to it, never the client); report attribution (a report carries the
+account id, so repeated reporters and repeat crashes are visible);
+bans by account (revoke the credential and the account's id stays
+barred, so a new code can't be minted for it by mistake).
+
+**Privacy.** No email, password, real name or phone number: a code is
+the only thing handed out, the id is random, and the hub stores the id,
+role, rights, credential hashes, last-seen time and (for the host) the
+last display name. A player can ask the host to delete the account;
+that removes the id and its stats. Nothing here is written into the
+repository (placeholders only, as above).
+
