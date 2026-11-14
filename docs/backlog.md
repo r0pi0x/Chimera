@@ -801,6 +801,9 @@ the original's own behaviour isn't a bug (say so instead).
   M2 LAN browser, M3 master server; menu music (Combat Arms' menu
   playlist). Plan:
   [docs/plans/active/main-menu.md](plans/active/main-menu.md).
+- **The hub (main menu M3 widened):** one address set at first run gives
+  the server list, the asset service, feedback and news; servers
+  heartbeat to it. Plan: [plans/active/hub.md](plans/active/hub.md).
 - **Kill feed: Combat Arms gun icons sit at the top of the line: fixed,
   confirm in a playtest.** Rows are one fixed height and each icon sits in
   a line-tall centring box (`kill_feed::icon_slot`).
