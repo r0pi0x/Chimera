@@ -584,6 +584,17 @@ had. `ui_scene airstrike [t]`. Tests: `rank_toast_rolls_and_holds_1_15_s`,
 
 ### M5: main menu and backdrops
 
+Status (2026-11-14): the first page is in (`party_kit::signal_menu`,
+under a theme with `[layout.menu]`: the lockup wiping in with
+ULTIMATE's letters flickering on, the entries stepping in on the slant,
+the highlight wiping in and gliding between entries with the inverted
+copy clipped to it, ↑↓ and Enter, the pointer; the account chip with an
+inert Friends; the keys; the rule up the right edge; the backdrop tabs
+with the dwell bar and caption; the ambient under everything; no live
+map and no `MenuBackdrop` under it; `ui_scene menu [backdrop] [t]` and
+`ui_scene menu enter <t>`; tests `apps/party_kit/tests/it/signal_menu.rs`).
+The pages (Play, Join, Options) stay VGUI frames over it for now.
+
 - `party_kit::main_menu` drawn with the kit (four items from
   main_menu.toml; Play, Join, Options, Quit), the lockup, the keys line,
   backdrop tabs. Pages (Play, Join, Options) restyled on the kit's

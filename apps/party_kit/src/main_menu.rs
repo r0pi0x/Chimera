@@ -82,6 +82,12 @@
 //!   (`follow_shown`); input follows `PartyMenu` at once. Lucker Party
 //!   has no pass: `ShownScreen` follows at once.
 //!
+//! - **Signal** (a theme with `[layout.menu]`: the Ultimate Gun Game's):
+//!   the first page is `signal_menu`'s (lockup, the entries with their
+//!   highlight, the backdrops over the ambient ground, `menu_backdrops`),
+//!   under this root, which then draws the pages' frames only; no live
+//!   map behind it and no `MenuBackdrop`.
+//!
 //! The state is `PartyMenu` (a resource the menu owns, set at known
 //! moments: the front end's events `EnteredGame`, `LeftGame`, `Joining`,
 //! `JoinFailed`, `MapLoadFailed`, observed here); clicks and tests send
@@ -828,6 +834,7 @@ impl Plugin for MainMenuPlugin {
             .add_observer(joining)
             .add_observer(join_failed)
             .add_observer(map_load_failed)
+            .add_plugins(crate::signal_menu::SignalMenuPlugin)
             .add_systems(Startup, ((start_look, init_play).chain(), spawn_backdrop))
             .add_systems(
                 Update,
@@ -1504,7 +1511,10 @@ fn follow_loads(world: &mut World) {
     }
     let here = chimera_net::net::current_map(world);
     let background_load = menu.background_load;
-    let pick_due = menu.reload_background && !loading && menu.screen == Screen::MainMenu;
+    // Under the Signal menu the ambient ground and the backdrops cover the
+    // world: no background map.
+    let signal = crate::signal_menu::themed(world.get_resource::<chimera_ui::Theme>());
+    let pick_due = menu.reload_background && !loading && menu.screen == Screen::MainMenu && !signal;
     {
         // A map scene is in view once a map is in and nothing loads.
         let scene = !loading && !background_load && here != chimera_net::net::GREYBOX && !here.is_empty();
@@ -1830,12 +1840,14 @@ fn spawn_backdrop(mut commands: Commands) {
 fn backdrop(
     shown: Res<ShownScreen>,
     state: Res<BackgroundState>,
+    theme: Option<Res<chimera_ui::Theme>>,
     time: Res<Time<Real>>,
     camera: Query<Entity, With<MenuUiCamera>>,
     mut backdrops: Query<(Entity, &mut MenuBackdrop, &mut Visibility, Option<&mut BackgroundColor>, Option<&UiTargetCamera>)>,
     mut commands: Commands,
 ) {
-    let up = shown.screen != Screen::InGame;
+    // The Signal menu draws its own ground.
+    let up = shown.screen != Screen::InGame && !crate::signal_menu::themed(theme.as_deref());
     let target = if up && !state.scene { 1.0 } else { 0.0 };
     for (e, mut b, mut v, color, on) in &mut backdrops {
         let opacity = if !up || target >= b.opacity {
@@ -1868,7 +1880,7 @@ fn show(
     version: Option<Res<chimera_core::core::BuildVersion>>,
     ca: Option<Res<combat_arms::ui::loading::CaLoading>>,
     minigames: Option<Res<chimera_sim::minigame::Minigames>>,
-    game_id: Res<MenuMinigame>,
+    (game_id, theme): (Res<MenuMinigame>, Option<Res<chimera_ui::Theme>>),
     windows_q: Query<&Window>,
     camera: Query<Entity, With<MenuUiCamera>>,
     roots: Query<Entity, With<MenuRoot>>,
@@ -1919,7 +1931,13 @@ fn show(
         height: size.y,
         accent,
     };
+    // The Signal menu (`signal_menu`) draws the first page under this
+    // root: no shade over it, and the pointer passes to it.
+    let signal = crate::signal_menu::themed(theme.as_deref());
+    let bare = signal && menu.screen == Screen::MainMenu && menu.page == MenuPage::Main;
     let shade = match menu.screen {
+        _ if bare => Color::NONE,
+        Screen::MainMenu if signal => Color::srgba(0.0, 0.0, 0.0, 0.45),
         Screen::MainMenu => Color::srgba(0.0, 0.0, 0.0, 0.25),
         _ => Color::srgba(0.0, 0.0, 0.0, 0.6),
     };
@@ -1932,7 +1950,7 @@ fn show(
             ..default()
         },
         BackgroundColor(widgets::display_alpha(shade)),
-        bevy::ui::FocusPolicy::Block,
+        if bare { bevy::ui::FocusPolicy::Pass } else { bevy::ui::FocusPolicy::Block },
         GlobalZIndex(MENU_Z),
     ));
     if let Some(cam) = camera.iter().next() {
@@ -1955,16 +1973,9 @@ fn show(
         }
         return;
     }
-    main_list(
-        &mut commands,
-        root,
-        &menu,
-        &data,
-        &look,
-        size,
-        &title,
-        version.map_or("", |v| v.0),
-    );
+    if !signal {
+        main_list(&mut commands, root, &menu, &data, &look, size, &title, version.map_or("", |v| v.0));
+    }
     match menu.page {
         MenuPage::Main => {}
         MenuPage::Play => play_frame(&mut commands, root, &menu, &data, &look, &pool),

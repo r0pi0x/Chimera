@@ -15,7 +15,8 @@
 //! bars, slants, the gun icons and marks, the logo pass frozen mid-way,
 //! the ambient and the match end's lines behind). The screens' milestones add theirs
 //! (`lobby`, `chip`, `board`, `toast`, `airstrike`, `matchend`, `menu`)
-//! to `SCENES`.
+//! to `SCENES`. An app's own screens register theirs in `UiSceneHooks`
+//! (`menu`: the party menu's first page, `party_kit::signal_menu::stage`).
 //!
 //! A scene is a root of its own over everything (`UI_SCENE_Z`), on the
 //! default UI camera, laid out for the window's size at the time it is
@@ -82,6 +83,24 @@ fn clear_staged(w: &mut World) {
 #[derive(Component)]
 pub struct UiSceneRoot;
 
+/// An app's scene: stages it from the arguments after its name (`off`
+/// when every scene is cleared).
+pub type SceneHook = fn(&mut World, &[String]) -> Result<(), String>;
+
+/// Scenes of screens an app draws itself (the party menu's `menu`), by
+/// name: `ui_scene <name> ...` calls the hook.
+#[derive(Resource, Default, Clone)]
+pub struct UiSceneHooks(pub Vec<(&'static str, SceneHook)>);
+
+impl UiSceneHooks {
+    /// Adds (or replaces) `name`'s hook.
+    pub fn add(world: &mut World, name: &'static str, hook: SceneHook) {
+        let mut h = world.get_resource_or_init::<UiSceneHooks>();
+        h.0.retain(|(n, _)| *n != name);
+        h.0.push((name, hook));
+    }
+}
+
 pub struct UiScenePlugin;
 
 impl Plugin for UiScenePlugin {
@@ -98,6 +117,10 @@ impl Plugin for UiScenePlugin {
                     let t = || a.get(1).map(|t| t.parse::<f64>().map_err(|_| format!("ui_scene: not a time: {t}"))).transpose();
                     if name == "off" {
                         w.resource_mut::<UiScene>().want = None;
+                        let hooks: Vec<SceneHook> = w.get_resource::<UiSceneHooks>().map(|h| h.0.iter().map(|(_, f)| *f).collect()).unwrap_or_default();
+                        for hook in hooks {
+                            hook(w, &["off".to_string()])?;
+                        }
                         clear_staged(w);
                         super::ui_parity::clear_ground(w);
                         if w.remove_resource::<super::kill_feed::signal_feed::FeedStaged>().is_some()
@@ -108,8 +131,16 @@ impl Plugin for UiScenePlugin {
                         }
                         return Ok(None);
                     }
+                    // An app's own screen (`UiSceneHooks`: the party menu's).
+                    let hook = w.get_resource::<UiSceneHooks>().and_then(|h| h.0.iter().find(|(n, _)| *n == name).map(|(_, f)| *f));
+                    if let Some(hook) = hook {
+                        clear_staged(w);
+                        hook(w, &a[1..])?;
+                        return Ok(None);
+                    }
                     if !SCENES.contains(&name) {
-                        return Err(format!("ui_scene: no scene `{name}` (scenes: {})", SCENES.join(", ")));
+                        let apps: Vec<&str> = w.get_resource::<UiSceneHooks>().map(|h| h.0.iter().map(|(n, _)| *n).collect()).unwrap_or_default();
+                        return Err(format!("ui_scene: no scene `{name}` (scenes: {}, {})", SCENES.join(", "), apps.join(", ")));
                     }
                     // The HUD's own screens, staged with made-up data where
                     // they draw (the race chip and board, the kill feed).

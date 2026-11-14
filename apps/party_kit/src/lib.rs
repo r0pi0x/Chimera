@@ -566,6 +566,10 @@ pub mod main_menu;
 #[cfg(feature = "present")]
 pub mod menu_backdrop;
 #[cfg(feature = "present")]
+pub mod menu_backdrops;
+#[cfg(feature = "present")]
+pub mod signal_menu;
+#[cfg(feature = "present")]
 pub mod client;
 #[cfg(feature = "present")]
 pub use client::{

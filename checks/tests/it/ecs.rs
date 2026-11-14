@@ -57,6 +57,11 @@ const ONE_OFF_SCHEDULES: &[&str] = &[
 /// events, observers or systems (the step named).
 const ALLOWED_REGISTRIES: &[(&str, &str, &str)] = &[
     (
+        "chimera/client/src/client/ui_scene.rs",
+        "SceneHook",
+        "an app's `ui_scene` scene is a console command (staging a screen for screenshots): it sets screen state as any console line does",
+    ),
+    (
         "chimera/net/src/net/assets.rs",
         "AssetHooks",
         "read-only answers (`&World`): the match's weapons, map pool and a game's sets for the asset offer",

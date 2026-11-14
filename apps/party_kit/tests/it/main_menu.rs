@@ -886,9 +886,10 @@ fn the_menu_changes_screens_at_the_pass_s_swap() {
     use main_menu::ShownScreen;
     let mut sim = Sim::with(CaSim, |app| {
         app.add_plugins((GreyboxMapPlugin, PartyPartsPlugin, net::NetPlugin));
+        app.insert_resource(Theme::from_toml(PASS_THEME).unwrap()).add_plugins(ChimeraUiPlugin);
         menu_bits(app, true);
-        app.insert_resource(Theme::from_toml(PASS_THEME).unwrap())
-            .add_plugins((ChimeraUiPlugin, LogoPassPlugin))
+        app
+            .add_plugins(LogoPassPlugin)
             .insert_resource(UiClock::manual());
         if !app.world().contains_resource::<Assets<Image>>() {
             app.init_asset::<Image>();
