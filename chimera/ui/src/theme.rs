@@ -2,8 +2,11 @@
 //! (docs/plans/active/ugg-ui.md, 2.3). Palette tokens and the alphas every
 //! other colour derives from (`Tone`), the type roles (`TypeSpec`: face,
 //! weight, tracking in em, case, OpenType features), named easings and
-//! durations (`motion`), the icon rule (`icons.prefer_game`), the slant and the smallest text in physical
-//! pixels (`shape`), and per-screen layout numbers in cq (`layout`).
+//! durations (`motion`), the icon rule (`icons.prefer_game`), the slant
+//! and the smallest text in physical pixels (`shape`), per-screen layout
+//! numbers in cq (`layout`), the ping meter's thresholds (`network`), and
+//! switches (`flags`: `hud.signal` turns the shell's
+//! Signal HUD on).
 //!
 //! An app inserts its own (the Ultimate Gun Game's is
 //! `apps/ultimate_gun_game/data/theme.toml`); without one, screens read
@@ -173,6 +176,8 @@ struct Raw {
     motion: RawMotion,
     #[serde(default)]
     layout: BTreeMap<String, BTreeMap<String, f32>>,
+    #[serde(default)]
+    flags: BTreeMap<String, BTreeMap<String, bool>>,
     icons: IconRule,
     network: Network,
 }
@@ -218,6 +223,7 @@ pub struct Theme {
     eases: BTreeMap<String, Ease>,
     durs: BTreeMap<String, BTreeMap<String, f32>>,
     layout: BTreeMap<String, BTreeMap<String, f32>>,
+    flags: BTreeMap<String, BTreeMap<String, bool>>,
     pub icons: IconRule,
     pub network: Network,
 }
@@ -294,6 +300,7 @@ impl Theme {
             eases,
             durs: raw.motion.dur,
             layout: raw.layout,
+            flags: raw.flags,
             icons: raw.icons,
             network: raw.network,
         })
@@ -353,6 +360,11 @@ impl Theme {
         })
     }
 
+    /// A piece's duration, `None` when the theme has none.
+    pub fn dur_opt(&self, piece: &str, key: &str) -> Option<f32> {
+        self.durs.get(piece).and_then(|p| p.get(key)).copied()
+    }
+
     /// A screen's layout number in cq (`layout.<screen>.<key>`).
     pub fn layout(&self, screen: &str, key: &str) -> f32 {
         self.layout_opt(screen, key).unwrap_or_else(|| {
@@ -363,6 +375,12 @@ impl Theme {
 
     pub fn layout_opt(&self, screen: &str, key: &str) -> Option<f32> {
         self.layout.get(screen).and_then(|s| s.get(key)).copied()
+    }
+
+    /// A switch (`flags.<group>.<key>`, false when absent): which look a
+    /// screen takes (`flags.hud.signal`).
+    pub fn flag(&self, group: &str, key: &str) -> bool {
+        self.flags.get(group).and_then(|g| g.get(key)).copied().unwrap_or(false)
     }
 }
 

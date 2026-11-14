@@ -46,6 +46,17 @@
 //!   with a HUD to have registered, and count every feed after a kill, so
 //!   a game whose feed forgets the flag shows up as a second feed there.
 //!
+//! - **The Signal look** (`signal_feed`, when the app's theme turns it on:
+//!   `signal::signal_on`): top right, 26 cq wide, rows 1.85 cq tall at a
+//!   2.3 cq pitch, newest at the bottom; a row enters from 2.4 cq to the
+//!   right (`expo_out`, `motion.dur.feed.enter`), lives `feed.life` (5 s),
+//!   fades out over `feed.leave`, and the rows under it close the gap
+//!   (`cubic_in_out`, `feed.close_gap`). Killer, the gun's icon
+//!   (`signal::gun_icon`: its game's own, else the kit's by class, else
+//!   its name), the headshot mark, victim; a bot's name has the robot mark.
+//!   Your kill: accent border, bar and name; your death: a quiet white
+//!   outline and your name bright.
+//!
 //! Known shortcuts: no penetration (wallbang) flag: the killing hit
 //! doesn't say whether it went through something; names are taken at the
 //! kill (a later rename doesn't change a row); the rows sit where a
@@ -86,7 +97,8 @@ impl Plugin for KillFeedPlugin {
             app.add_plugins(KillFeedStatePlugin);
         }
         super::overlay::layer(app);
-        app.add_systems(Startup, spawn_root).add_systems(Update, draw.after(record));
+        app.add_systems(Startup, spawn_root).add_systems(Update, (draw, signal_feed::draw).after(record));
+        super::signal::setup(app);
         super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
     }
 }
@@ -197,6 +209,8 @@ pub struct FeedName {
     pub team: Option<u8>,
     /// The local player (at the kill).
     pub local: bool,
+    /// A bot (the Signal feed's robot mark).
+    pub bot: bool,
 }
 
 /// One kill.
@@ -260,7 +274,15 @@ fn record(
     mut died: MessageReader<Died>,
     mut destroyed: MessageReader<Destroyed>,
     names: (Option<Res<GunNames>>, Option<Res<chimera_sim::weapon::data::WeaponCatalog>>),
-    who: Query<(Option<&Name>, Option<&Team>, Has<LocalPlayer>, Option<&NetCharacter>, Option<&Inventory>)>,
+    who: Query<(
+        Option<&Name>,
+        Option<&Team>,
+        Has<LocalPlayer>,
+        Option<&NetCharacter>,
+        Option<&Inventory>,
+        Has<crate::core::Bot>,
+        Option<&crate::net::NetScore>,
+    )>,
     weapons: Query<&Weapon>,
     held: Option<Res<DamageWeapons>>,
     settings: Option<Res<NetSettings>>,
@@ -278,17 +300,19 @@ fn record(
         }
     }
     let side = |e: Entity| match who.get(e) {
-        Ok((name, team, local, net, _)) => FeedName {
+        Ok((name, team, local, net, _, bot, score)) => FeedName {
             entity: e,
             name: super::shown_name(e, local, net, name, settings.as_deref()),
             team: team.map(|t| t.0),
             local,
+            bot: bot || score.is_some_and(|s| s.flags & crate::net::score_flags::BOT != 0),
         },
         Err(_) => FeedName {
             entity: e,
             name: e.to_string(),
             team: None,
             local: false,
+            bot: false,
         },
     };
     for d in died.read() {
@@ -337,6 +361,7 @@ fn record(
                 name: gun,
                 team: None,
                 local: false,
+                bot: false,
             },
         };
         let killer = d.attacker.filter(|a| Some(*a) != d.owner).map(side);
@@ -438,10 +463,10 @@ fn draw(
     ),
     mut root: Single<(Entity, &mut Visibility, &mut Node), With<KillFeedRoot>>,
     mut last: Local<Option<(Vec<(u64, u8)>, u32, bool)>>,
-    mut commands: Commands,
+    (theme, mut commands): (Option<Res<chimera_ui::Theme>>, Commands),
 ) {
     let (root_e, vis, node) = &mut *root;
-    if shared.is_none() {
+    if shared.is_none() || super::signal::signal_on(theme.as_deref()) {
         vis.set_if_neq(Visibility::Hidden);
         return;
     }
@@ -516,13 +541,267 @@ fn draw(
     });
 }
 
+/// The kill feed in the Signal look (module doc).
+pub mod signal_feed {
+    use chimera_ui::{Prop, Role, Timeline, Tone, Track, UiClock};
+
+    use super::*;
+    use crate::client::signal::{self, Look};
+
+    /// The Signal feed's root (top right).
+    #[derive(Component)]
+    pub struct SignalFeedRoot;
+
+    /// A Signal row: where it is going (`index` from the top; `leaving`:
+    /// fading out).
+    #[derive(Component, Clone, Copy, Debug, PartialEq)]
+    pub struct SignalRow {
+        pub index: usize,
+        pub leaving: bool,
+    }
+
+    /// Stages the feed's scene (`ui_scene feed`): five made-up kills, yours
+    /// and your death among them, newest at the bottom.
+    pub fn stage(world: &mut World) {
+        world.insert_resource(SharedKillFeed);
+        let now = world.get_resource::<Time>().map_or(0.0, |t| t.elapsed_secs());
+        let side = |name: &str, local: bool, bot: bool| FeedName { entity: Entity::PLACEHOLDER, name: name.into(), team: None, local, bot };
+        let rows = [
+            ("nadia.exe", false, false, "hl2dm:weapon_ar2", "Rook", false, true),
+            ("kestrel", true, false, "combat_arms:mp7", "vex", false, false),
+            ("lowgrav_larry", false, false, "cs_source:weapon_m4a1", "kestrel", true, false),
+            ("Sgt. Biscuit", false, true, "cs_source:weapon_hegrenade", "mothman", false, false),
+            ("kestrel", true, false, "combat_arms:mp7", "pixelpirate", false, false),
+        ];
+        world.insert_resource(FeedStaged);
+        let mut feed = world.get_resource_or_init::<KillFeed>();
+        feed.entries.clear();
+        feed.lifetime = f32::MAX;
+        for (i, (k, kl, kb, w, v, vl, vb)) in rows.into_iter().enumerate() {
+            feed.entries.push(KillEntry {
+                id: 1_000_000 + i as u64,
+                killer: Some(side(k, kl, kb)),
+                victim: side(v, vl, vb),
+                weapon: Some(w),
+                kind: DamageKind::Bullet,
+                headshot: i == 1,
+                suicide: false,
+                team_kill: false,
+                // Staggered, as if they came a second apart.
+                at: now - (4 - i) as f32 * 0.6,
+            });
+        }
+    }
+
+    /// The feed shows a staged scene: its rows stay.
+    #[derive(Resource, Clone, Copy, Debug, Default)]
+    pub struct FeedStaged;
+
+    /// How a row is marked: your kill, your death, or neither.
+    #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum RowMark {
+        Mine,
+        Died,
+        Plain,
+    }
+
+    impl RowMark {
+        pub fn of(e: &KillEntry) -> RowMark {
+            match (e.killer.as_ref().is_some_and(|k| k.local), e.victim.local) {
+                (true, false) => RowMark::Mine,
+                (_, true) => RowMark::Died,
+                _ => RowMark::Plain,
+            }
+        }
+    }
+
+    #[allow(clippy::type_complexity, clippy::too_many_arguments)]
+    pub fn draw(
+        look: Look,
+        shared: Option<Res<SharedKillFeed>>,
+        feed: Res<KillFeed>,
+        time: Res<Time>,
+        clock: Res<UiClock>,
+        (names, catalog, fonts, rules): (
+            Option<Res<GunNames>>,
+            Option<Res<crate::weapon::data::WeaponCatalog>>,
+            Option<Res<UiFonts>>,
+            Option<Res<chimera_sim::weapon::names::GunNameRules>>,
+        ),
+        layer: Res<crate::client::overlay::OverlayLayer>,
+        root: Query<Entity, With<SignalFeedRoot>>,
+        mut rows: Query<(Entity, &KillFeedRow, &mut SignalRow, &mut Timeline)>,
+        (staged, mut commands): (Option<Res<FeedStaged>>, Commands),
+    ) {
+        let on = shared.is_some() && look.on();
+        if !on {
+            for e in &root {
+                commands.entity(e).despawn();
+            }
+            return;
+        }
+        let root = match root.iter().next() {
+            Some(r) => r,
+            None => commands
+                .spawn((
+                    SignalFeedRoot,
+                    ChildOf(layer.0),
+                    GlobalZIndex(45),
+                    Pickable::IGNORE,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        right: look.val(look.layout("feed", "right", 2.2)),
+                        top: look.val(look.layout("feed", "top", 2.2)),
+                        width: look.val(look.layout("feed", "w", 26.0)),
+                        height: look.val(look.layout("feed", "pitch", 2.3) * MAX_LINES as f32),
+                        ..default()
+                    },
+                ))
+                .id(),
+        };
+        let now = time.elapsed_secs();
+        let life = if staged.is_some() { f32::MAX } else { look.dur("feed", "life", 5.0) };
+        let pitch = look.layout("feed", "pitch", 2.3);
+        let live: Vec<&KillEntry> = feed.entries.iter().filter(|e| now - e.at < life).collect();
+        let mut have: Vec<u64> = Vec::new();
+        for (ent, row, mut state, mut tl) in &mut rows {
+            have.push(row.0);
+            match live.iter().position(|e| e.id == row.0) {
+                Some(i) if !state.leaving => {
+                    if state.index != i {
+                        state.index = i;
+                        tl.redirect(clock.now, Prop::Y, i as f32 * pitch, look.dur("feed", "close_gap", 0.25), look.theme.ease("cubic_in_out"));
+                    }
+                }
+                _ if !state.leaving => {
+                    state.leaving = true;
+                    tl.redirect(clock.now, Prop::Opacity, 0.0, look.dur("feed", "leave", 0.25), look.theme.ease("in"));
+                }
+                _ => {
+                    if tl.done(clock.now) {
+                        commands.entity(ent).despawn();
+                    }
+                }
+            }
+        }
+        for (i, e) in live.iter().enumerate() {
+            if have.contains(&e.id) {
+                continue;
+            }
+            spawn_row(&look, root, e, i, (names.as_deref(), catalog.as_deref(), fonts.as_deref(), rules.as_deref()), &clock, &mut commands);
+        }
+    }
+
+    fn spawn_row(
+        look: &Look,
+        root: Entity,
+        e: &KillEntry,
+        index: usize,
+        (names, catalog, fonts, rules): (
+            Option<&GunNames>,
+            Option<&crate::weapon::data::WeaponCatalog>,
+            Option<&UiFonts>,
+            Option<&chimera_sim::weapon::names::GunNameRules>,
+        ),
+        clock: &UiClock,
+        commands: &mut Commands,
+    ) {
+        let mark = RowMark::of(e);
+        let pitch = look.layout("feed", "pitch", 2.3);
+        let enter = look.dur("feed", "enter", 0.22);
+        let dx = look.layout("feed", "enter_dx", 2.4);
+        let hair = look.hair();
+        let (killer_c, victim_c, border) = match mark {
+            RowMark::Mine => (look.tone(Tone::AccText), look.tone(Tone::Fg2), look.tone(Tone::Acc)),
+            RowMark::Died => (look.tone(Tone::Fg2), look.tone(Tone::Fg), look.theme.tone_a(Tone::Fg, 0.32)),
+            RowMark::Plain => (look.tone(Tone::Fg), look.theme.tone_a(Tone::Fg, 0.55), look.theme.tone_a(Tone::Ink, 0.85)),
+        };
+        let bg = look.theme.tone_a(Tone::Ink, if mark == RowMark::Mine { 0.8 } else { 0.78 });
+        let size = 0.62;
+        let name = |r: &mut ChildSpawnerCommands, side: &FeedName, c: Color| {
+            r.spawn((Node { align_items: AlignItems::Center, column_gap: look.val(0.32), ..default() }, Pickable::IGNORE)).with_children(|n| {
+                if side.bot {
+                    signal::mark(n, look, signal::Mark::Bot, look.px(0.68), c);
+                }
+                n.spawn((look.text(Role::Mono, size, c, &side.name.to_uppercase()), Pickable::IGNORE));
+            });
+        };
+        commands
+            .spawn((
+                KillFeedRow(e.id),
+                SignalRow { index, leaving: false },
+                mark,
+                ChildOf(root),
+                Pickable::IGNORE,
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: px(0.0),
+                    top: px(0.0),
+                    height: look.val(look.layout("feed", "row_h", 1.85)),
+                    align_items: AlignItems::Center,
+                    column_gap: look.val(0.55),
+                    padding: UiRect::new(look.val(0.7), look.val(0.75), px(0.0), px(0.0)),
+                    border: UiRect::all(px(hair)),
+                    ..default()
+                },
+                BackgroundColor(bg),
+                BorderColor::all(border),
+                UiTransform::default(),
+                Timeline::new([
+                    Track::new(Prop::X, dx, 0.0).dur(enter).ease(look.theme.ease("expo_out")),
+                    Track::new(Prop::Y, index as f32 * pitch, index as f32 * pitch),
+                    Track::new(Prop::Opacity, 0.0, 1.0).dur(enter).ease(look.theme.ease("expo_out")),
+                ])
+                .started(clock.now),
+            ))
+            .with_children(|r| {
+                if mark == RowMark::Mine {
+                    r.spawn((
+                        Node { position_type: PositionType::Absolute, left: px(0.0), top: px(0.0), bottom: px(0.0), width: look.val(0.22), ..default() },
+                        BackgroundColor(look.tone(Tone::Acc)),
+                        Pickable::IGNORE,
+                    ));
+                }
+                if let Some(k) = &e.killer {
+                    name(r, k, killer_c);
+                }
+                let class = e.weapon.and_then(|w| catalog?.get(w)).and_then(signal::icon_class);
+                let drawn = e.weapon.is_some_and(|w| {
+                    r.spawn((Node { margin: UiRect::horizontal(look.val(0.15)), align_items: AlignItems::Center, ..default() }, Pickable::IGNORE))
+                        .with_children(|g| {
+                            signal::gun_icon(g, look, w, class, look.px(0.78), look.tone(Tone::Fg));
+                        });
+                    look.prefer_game_icons() && look.icons.as_deref().is_some_and(|i| i.icon(w).is_some())
+                        || class.is_some()
+                        || look.icons.as_deref().is_some_and(|i| i.icon(w).is_some())
+                });
+                if !drawn {
+                    let what = fallback_word(e, |w| gun_short_name(w, names, catalog));
+                    let font = look.font(Role::Mono, size);
+                    let what = crate::client::overlay::fit(fonts, rules, &font, &what, look.px(9.0));
+                    r.spawn((look.text(Role::Mono, size, look.tone(Tone::Fg3), &what.to_uppercase()), Pickable::IGNORE));
+                }
+                if e.headshot {
+                    let game = e.weapon.and_then(|w| w.split_once(':')).map(|(g, _)| g);
+                    match game.and_then(|g| look.icons.as_deref()?.mark(g, HEADSHOT)) {
+                        Some(m) => icon_slot(r, &m, look.units.height / 480.0 * 4.0, look.px(0.78), 1.0, look.images.as_deref()),
+                        None => {
+                            r.spawn((look.text(Role::Mono, size, look.tone(Tone::Threat), "HS"), Pickable::IGNORE));
+                        }
+                    }
+                }
+                name(r, &e.victim, victim_c);
+            });
+    }
+}
+
 /// Spawns `icon` in a box as tall as the line, centring it vertically
 /// whatever its art: an image's whole texture would be `fill` of the line
 /// tall (width by its shape), and only the rows with art are drawn, so the
 /// art is what is centred; a glyph's font is cut down when it would be taller
 /// than that. The row's height is fixed, so a line is as tall with an icon,
 /// without one or with a tall one (widths vary).
-fn icon_slot(r: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale: f32, line: f32, fill: f32, images: Option<&Assets<Image>>) {
+pub fn icon_slot(r: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale: f32, line: f32, fill: f32, images: Option<&Assets<Image>>) {
     let scale = fitted_scale(icon, scale, line * fill);
     // An icon font's ink sits a little above its line's middle: nudged down.
     let nudge = match icon {
@@ -598,6 +877,7 @@ mod tests {
             name: "A".into(),
             team: None,
             local: false,
+            bot: false,
         };
         KillEntry {
             id: 0,

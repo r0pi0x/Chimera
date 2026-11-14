@@ -282,8 +282,10 @@ after `UiSystems::Layout` sets a `UiTransform` translation of the
 fraction). Same for hairlines (1 physical px, never scaled) and the
 `+` marks.
 
-**Look-book deviations** (Bevy has no blur): plates use their opaque
-alpha without the backdrop blur; text glow (`text-shadow` blur) is
+**Look-book deviations** (Bevy has no blur): plates are more opaque
+than the look book's (Signal's `alpha.plate` .92 for its .80 plus a
+backdrop blur; tokens.css follows), so text keeps its contrast over a
+bright map; text glow (`text-shadow` blur) is
 dropped, or drawn as a soft `BoxShadow` behind big display text only if
 the A/B screenshots miss it.
 
@@ -444,6 +446,23 @@ pixel snap system, and `text_warm` declarations of the roles' sizes.
   The existing prematch tests keep passing.
 
 ### M2: race chip, Tab board, kill feed, fallback HUD
+
+Status (2026-11-14): in, behind the theme's `flags.hud.signal` (only
+Signal sets it; Lucker Party and the plain apps keep today's screens):
+`client::race_chip` (the chip, its leader variant, Tab opening it into
+the one board in 0.12 s and folding in 0.09 s from wherever it is),
+`kill_feed::signal_feed`, `hud_minimal::signal_hud`, their pieces in
+`client::signal` (tags, the fused YOU+HOST chip, the bot slot, the YOU
+row, fades, gun icons: each game's own where `WeaponIcons` has one while
+`flags.icons.prefer_game`, else the look book's set by `GunClass`; the
+set is rasterized in `signal::icons` until the kit's `icons` lands).
+Tests: `race_chip_opens_and_folds_on_showscores`,
+`race_chip_needs_the_signal_theme`, `leader_chip_shows_the_gap`,
+`board_rows_best_first_with_icons`, `kill_feed_marks_local_kills_and_deaths`,
+`the_plain_feed_without_the_signal_theme` (chimera_client),
+`fallback_hud_only_without_a_game_hud` (ultimate_gun_game). Left:
+`overlay_keeps_clear_of_game_huds`, rolling numbers and the tick pop
+(with M3's toast), the match clock on the board's head.
 
 - `client::race_chip` replaces `minigame_panel` for a ladder (other
   minigames keep the panel); `minigame_scoreboard` becomes the chip's

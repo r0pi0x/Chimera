@@ -30,7 +30,7 @@
   --fg-4:rgb(var(--fg-rgb)/.15);
   --fg-5:rgb(var(--fg-rgb)/.07);
   --glow:rgb(var(--fg-rgb)/.2);
-  --plate:rgb(var(--ink-rgb)/.8);
+  --plate:rgb(var(--ink-rgb)/.92);
   --slant:-12deg; --tan:.2126;
   --min-text:9px;
   --e-in:cubic-bezier(.7,0,.84,0);

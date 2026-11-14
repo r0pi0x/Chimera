@@ -19,9 +19,9 @@ fn theme_matches_the_look_book() {
     assert_eq!(srgba(t.tone(Tone::Acc)), [59, 123, 255, 255]);
     assert_eq!(srgba(t.tone(Tone::AccText)), [106, 152, 255, 255]);
     assert_eq!(srgba(t.tone(Tone::Threat)), [255, 59, 78, 255]);
-    // fg_2 is fg at .66 and plate ink at .80, in display space: blended in
+    // fg_2 is fg at .66 and plate ink at .92, in display space: blended in
     // linear light (Bevy's UI) over the ink, fg_2 shows as the look book's
-    // (.66 of fg over ink in sRGB), the plate covers as .80 would.
+    // (.66 of fg over ink in sRGB), the plate covers as .92 would.
     assert_eq!(t.alpha("fg_2"), Some(0.66));
     let over_ink = |c: Color| {
         let (c, ink) = (LinearRgba::from(c), LinearRgba::from(t.tone(Tone::Ink)));
@@ -31,7 +31,8 @@ fn theme_matches_the_look_book() {
     let want = 0.66 * 232.0 / 255.0 + 0.34 * 6.0 / 255.0;
     assert!((over_ink(t.tone(Tone::Fg2)) - want).abs() < 0.03, "fg_2 over ink: {}", over_ink(t.tone(Tone::Fg2)));
     assert_eq!(srgba(t.tone(Tone::Fg2))[..3], [232, 237, 245]);
-    assert!((t.tone(Tone::Plate).alpha() - (1.0 - 0.2f32.powf(2.2))).abs() < 1e-4);
+    // The plate is .92 (the look book's .80 plus a blur Bevy lacks).
+    assert!((t.tone(Tone::Plate).alpha() - (1.0 - 0.08f32.powf(2.2))).abs() < 1e-4, "plate {}", t.tone(Tone::Plate).alpha());
     assert!((t.tan() - 0.2126).abs() < 1e-4, "12° slant: {}", t.tan());
     assert_eq!(t.ease("out"), Ease::OUT);
     assert_eq!(t.ease("roll"), Ease::Back(0.9));

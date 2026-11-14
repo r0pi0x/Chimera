@@ -18,6 +18,9 @@
 //! notices; while the shell's match-end screen is up
 //! (`MinigameHud::results_shown`) the panel draws nothing.
 //!
+//! Under the Signal look (`signal::signal_on`) the race chip
+//! (`race_chip`) stands in for this panel while a ladder plays.
+//!
 //! Known shortcuts: the panel's place, sizes and colours are ours (these
 //! games have no such panel; nothing to measure).
 
@@ -148,10 +151,12 @@ fn draw(
     (fonts, windows, rules): (Option<Res<UiFonts>>, Query<&Window>, Option<Res<chimera_sim::weapon::names::GunNameRules>>),
     panel: Query<Entity, With<MinigamePanel>>,
     mut last: Local<Option<(Vec<(PanelLine, String)>, f32)>>,
-    mut commands: Commands,
+    (race, mut commands): (Option<Res<crate::client::race_chip::RaceView>>, Commands),
 ) {
+    // Under the Signal look a ladder's panel is the race chip.
+    let chip = race.is_some_and(|r| r.active);
     let lines_by = |short: bool| {
-        minigame.as_deref().map_or_else(Vec::new, |m| {
+        minigame.as_deref().filter(|_| !chip).map_or_else(Vec::new, |m| {
             panel_lines_with(
                 m,
                 |e| match who.get(e) {
