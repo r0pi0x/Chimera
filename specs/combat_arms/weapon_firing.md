@@ -3,7 +3,7 @@
 Source basis: the client's weapon logic (trigger, animation-driven fire cycle, spread, client-side hit test), the client's view recoil, the server's vector/damage and armour logic, the shared weapon attribute manager, and the shipped attribute data (weapon/ammo table, model/skeleton table, surface table) plus the M4A1 view-model animation file, all from a reference client build. Numbers for the worked example are the reference build's data; the Steam build's data may differ (see Open questions).
 Status: draft
 
-Sections: Summary; Units and conventions; Constants; Worked example (M4A1); Behavior (trigger and fire modes, ammo, reload, hitscan, penetration, damage, hit zones, armour, spread, recoil); Per-tick order; Edge cases; Quirks; Corrections (2026-10-19); Test cases; Follow-up (2026-10-31b) (shoot-through surfaces); Open questions.
+Sections: Summary; Units and conventions; Constants; Worked example (M4A1); Behavior (trigger and fire modes, ammo, reload, hitscan, penetration, damage, hit zones, armour, spread, recoil); Per-tick order; Edge cases; Quirks; Corrections (2026-10-19); Test cases; Follow-up (2026-10-31b) (shoot-through surfaces); Follow-up (2026-11-14) (node hit priorities); Open questions.
 
 ---
 
@@ -657,6 +657,41 @@ Unknown is the surface of every solid polygon stored with surface type 0 (2.5 % 
 
 70. **Unknown wall.** Server ray on a surface-0 wall 8 u thick, a torso behind it: damage × 0.6; on a 12 u surface-0 wall: stopped.
 
+## Follow-up (2026-11-14): node hit priorities
+
+From the reference's server hit-box code (the line test and the projectile test) and the Steam install's model file (`attributes/modelbutes.txt`, build 26236938). Answers Open question 16. High confidence. Test cases 71–74.
+
+1. **The rule** (confirms Corrections 5). Only the **server** uses priorities; the client's own hit test never does. Two server tests use it:
+   - the server's own ray walk (Corrections 4 and 5): the infinite line through the box entry point along the ray;
+   - a moving projectile meeting a character's box (crossbow bolts and the like): the line along the projectile's velocity, through a point 100 u behind its position.
+
+   For each table entry with radius > 0 whose node or socket exists on the model, in table order: it counts when its centre's perpendicular distance from the line is at most its radius. Of the counted entries the one with the highest `Node#Priority` wins; an entry with a priority **equal** to the best so far replaces it, so on a tie the later entry in the table wins. No counted entry: no hit on that character. (A third use, finding where a projectile's impact effect sits, takes the first sphere entered along the line instead; it never decides damage.)
+2. **Male table** (`[Skeleton0]`; `[Skeleton5]` and `[Skeleton6]` carry the same priorities): every node has a priority key. Of the hittable entries (characters.md 11):
+
+| Priority | Entries |
+|---|---|
+| 1.0 | 8 `Head` |
+| 0.75 | 7 `Neck`, 9 `Face_Jaw`, 53 `Face_Eyelid1` |
+| 0.5 | 5 `Torso`, 6 `Upper_torso` |
+| 0.25 | all others: pelvis, shoulders, arms, hands, legs, feet, toes, the arm and leg helper sockets, 62–63 `Left_Shld`/`Right_Shld`, 64 `Nuts` |
+
+3. **Female table** (`[Skeleton1]`):
+
+| Priority | Entries |
+|---|---|
+| 1.0 | 8 `Bip01 Head`, 69 `Headfuck`, 70 `Headfuck2` |
+| 0.5 | 5 `Torso`, 6 `Upper_torso` |
+| 0.25 | all others, including the four 3 u torso helpers 46–49 |
+
+4. **Consequences**: a line that passes within any head sphere is a head hit (×6 on the male's face spheres, `Head` and the female's two head sockets; the female `Bip01 Head` has factor 1.0, characters.md 11), whatever torso or arm sphere it also passes. On the male, `Neck` (torso zone) beats the torso and limb spheres. A line through a torso sphere and a limb sphere is a torso hit. Among the many 0.25 entries the last one in table order that the line passes wins, so a line through a hand and a leg picks the leg entry (it is later in the table).
+5. **Other tables** (NPC and boss bodies, `characters.md` 13.6): mostly 0.25 with a few higher entries, for example table 7 (`EOD` boss) has `Bip001 L Thigh` at **20**, so a line touching that thigh sphere always picks it.
+6. **Groin location in the Steam data** (settles `characters.md` Open question 1 (b) for the Steam build): `Nuts` (entry 64 of the male table) has location 2 (torso), as in the US data, not 5. So a male "groin" sphere hit is a torso hit with factor 1.0 in the Steam build.
+
+71. **Priority: face over chest.** Server wall-bang through one 6 u "Wood" panel at 1000 u; the line passes within `Face_Jaw` (0.75) and `Upper_torso` (0.5) of a male, unarmoured, roll 1.0 → head: 35 × 0.5 × 6 = 105.
+72. **Priority: neck over chest.** As 71 but the line passes `Neck` and `Upper_torso` only → `Neck` (torso zone, factor 1.0): 17.5.
+73. **Tie, later wins.** As 71 but the line passes `Neck` (7), `Face_Jaw` (9) and `Face_Eyelid1` (53) → `Face_Eyelid1`; passes `left_hand` (14) and `Left_legu` (39) only → `Left_legu`: 17.5 × 0.9 = 15.75.
+74. **Female.** Line through `Upper_torso` and `Bone_r_Clavicle01` → `Upper_torso`; through `Bip01 Head` and `Headfuck` → `Headfuck` (equal 1.0, later), factor 6.
+
 ## Open questions
 
 1. **Which build's data?** The reference attribute data may not match the Steam build. Damage, spread and recoil values should be re-read from the install once the attribute reader (item 3) works. Check: diff the M4A1 and "5.56mm M4A1" records.
@@ -685,4 +720,5 @@ Unknown is the surface of every solid polygon stored with surface type 0 (2.5 % 
 15. **Armour coverage.** Does armour protect against bullets only, and is the groin torso for armour?
     **Answered:** coverage is per gear piece and per damage type in the data; stock body gear covers bullets and burn (0.5 everywhere for burn), head gear bullets only, the gas mask poison; melee and explosions are not covered by any stock gear, and crush skips gear. The groin is not torso: it gets no protection (full damage, no AP used), except on infected victims, whose groin counts as torso. Applies in Armour; test cases 48 and 49.
 16. **Node hit priorities** (Corrections 5). The server picks a server-found character's sphere by the skeleton data's `Node#Priority`, which no spec lists yet. Read them from the install's model file (male and female skeletons) and add them to `characters.md` 11. Until then, give every node priority 0 (the later node in the table wins a tie) and say so in the implementation's notes.
+    **Answered (2026-11-14):** Follow-up (2026-11-14): male head 1.0, face and neck 0.75, torso 0.5, everything else 0.25; female heads 1.0, torso 0.5, rest 0.25; cases 71–74.
 17. **Which stock weapons have `FireDelay` > 0** (Corrections 3). The shotguns' and the double barrel's `FireDelay` (missing or a non-integer value both mean 30) decides whether they lose a pellet per shot. Read the records. Live check: an R870 at point blank on an unarmoured bot, all pellets on the torso, should do 63, not 72.
