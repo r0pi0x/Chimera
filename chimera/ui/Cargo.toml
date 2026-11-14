@@ -23,6 +23,9 @@ bevy = { workspace = true, features = ["default", "wav"] }
 # build for every selection).
 bevy_winit.workspace = true
 serde.workspace = true
+# Glyph outlines, for an icon font's ink (`icon_ink`): the version and
+# features Bevy's text stack already builds (through parley).
+skrifa = { version = "0.44", default-features = false, features = ["std", "autohint_shaping"] }
 toml.workspace = true
 workspace-hack.workspace = true
 

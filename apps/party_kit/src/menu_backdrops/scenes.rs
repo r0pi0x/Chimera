@@ -3,14 +3,19 @@
 //! the whole menu frame `w` x `h` physical px at `t` s into its loop, `d`
 //! physical px a look-book pixel.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use bevy::{
     color::{Alpha, LinearRgba},
-    math::Vec2,
+    math::{Rect, Vec2},
+    prelude::{Handle, Image},
 };
 use chimera_client::client::weapon_icons::WeaponIcon;
-use chimera_ui::{Icons, Role, icons};
+use chimera_ui::{
+    Icons, Role,
+    icon_ink::{self, Fit, GlyphShape},
+    icons,
+};
 
 use super::paint::{Align, Face, Half, ImageItem, Paint, lerp};
 
@@ -53,11 +58,13 @@ impl Pal {
     }
 }
 
-/// An icon as triangles, its width in units (16 tall), and its rings.
+/// An icon as triangles, its width in units (16 tall), its rings and its
+/// ink box in units (`icon_ink::icon_ink`).
 pub struct Shape {
     pub tris: Vec<[Vec2; 3]>,
     pub w: f32,
     pub rings: Vec<Vec<Vec2>>,
+    pub ink: Rect,
 }
 
 /// The kit's icons as shapes (once).
@@ -92,7 +99,7 @@ impl Shapes {
         Shapes { by_key, facets }
     }
 
-    fn get(&self, k: &str) -> Option<&Shape> {
+    pub fn get(&self, k: &str) -> Option<&Shape> {
         self.by_key.get(k)
     }
 }
@@ -107,11 +114,14 @@ fn shape(icon: &icons::Icon) -> Shape {
             .flatten()
             .map(|r| r.iter().map(|p| Vec2::from(*p)).collect())
             .collect(),
+        ink: icon_ink::icon_ink(icon),
     }
 }
 
 /// A ladder rung: the gun's name, its game's short name, its class icon,
-/// the game's own kill icon when at hand and preferred.
+/// the game's own kill icon when at hand and preferred, and that icon's
+/// art with its ink found (`menu_backdrops::resolve_art`; until then, or
+/// when it has none, the class icon shows).
 #[derive(Clone, Debug)]
 pub struct Rung {
     pub name: &'static str,
@@ -119,6 +129,33 @@ pub struct Rung {
     pub class: &'static str,
     pub id: &'static str,
     pub game_icon: Option<WeaponIcon>,
+    pub art: Option<Art>,
+}
+
+/// A game's kill icon ready to fit by its ink.
+#[derive(Clone, Debug)]
+pub enum Art {
+    /// A glyph's outline (em units, its ink box in it), drawn as triangles.
+    Glyph(Arc<GlyphShape>),
+    /// An image (`size` texels) and its ink box in texels.
+    Image { image: Handle<Image>, size: Vec2, ink: Rect },
+}
+
+/// The box a rung's gun is fitted in, as fractions of the plate's width
+/// and height: every source's ink is scaled to fit it (keeping its
+/// aspect) and centred on the plate's centre (`gun_fit`).
+pub const GUN_BOX: Vec2 = Vec2::new(0.6, 0.5);
+
+/// Where rung `r`'s gun goes: its ink box in its own units (the game's
+/// art's when resolved, else the class icon's) and the fit that puts that
+/// ink inside a box `size` centred on `centre`, as large as fits.
+pub fn gun_fit(sh: &Shapes, r: &Rung, centre: Vec2, size: Vec2) -> (Rect, Fit) {
+    let ink = match &r.art {
+        Some(Art::Glyph(g)) => g.ink,
+        Some(Art::Image { ink, .. }) => *ink,
+        None => sh.get(r.class).map_or(Rect::new(0.0, 0.0, 24.0, 16.0), |s| s.ink),
+    };
+    (ink, icon_ink::fit_contain(ink, centre, size))
 }
 
 /// The look book's ladder (our weapon ids): a cross-game climb.
@@ -266,13 +303,15 @@ impl Geo {
     }
 }
 
-/// An icon's box on a plate: centre, half sizes, units to px.
+/// A gun's place on a plate: the plate's centre, the fitted ink's half
+/// sizes, the ink in its own units and its fit (`gun_fit`).
 struct IconBox {
     cx: f32,
     cy: f32,
     hw: f32,
     hh: f32,
-    us: f32,
+    ink: Rect,
+    fit: Fit,
 }
 
 const CROWN: &str = "crown";
@@ -301,20 +340,15 @@ pub fn ladder(p: &mut Paint, sh: &Shapes, pal: Pal, rungs: &[Rung], w: f32, h: f
     p.alpha = a;
     let icon_box = |i: usize, c: f32| -> IconBox {
         let pl = g.plate(i as f32, c);
-        let r = &rungs[i];
-        let iw0 = sh.get(r.class).map_or(24.0, |s| s.w);
-        let ih = g.ph * 0.5;
-        let us = (ih / 16.0).min(g.pw * 0.6 / iw0);
-        let mut iw = iw0 * us;
-        if r.game_icon.is_some() {
-            iw = (g.pw * 0.6).min(16.0 * us * 2.6);
-        }
+        let (ink, fit) = gun_fit(sh, &rungs[i], v(pl.cx, pl.y), v(g.pw, g.ph) * GUN_BOX);
+        let placed = fit.rect(ink);
         IconBox {
             cx: pl.cx,
             cy: pl.y,
-            hw: iw / 2.0,
-            hh: 8.0 * us,
-            us,
+            hw: placed.width() / 2.0,
+            hh: placed.height() / 2.0,
+            ink,
+            fit,
         }
     };
     // Rails, fading at both ends.
@@ -589,39 +623,28 @@ pub fn ladder(p: &mut Paint, sh: &Shapes, pal: Pal, rungs: &[Rung], w: f32, h: f
     p.alpha = 1.0;
 }
 
-/// A rung's gun: the game's own kill icon when at hand (a glyph or an
-/// image), else the class's from the kit.
+/// A rung's gun: the game's own kill icon when at hand (a glyph's outline
+/// or an image's inked texels), else the class's from the kit; each by its
+/// ink, fitted and centred (`gun_fit`).
 fn game_or_class_icon(p: &mut Paint, sh: &Shapes, pal: Pal, r: &Rung, ib: &IconBox, ia: f32) {
-    match &r.game_icon {
-        Some(WeaponIcon::Glyph { font, ch, .. }) => {
-            // The glyph about as tall as the box (icon fonts fill their em).
-            let px = (ib.hh * 2.0 * 1.25).round();
-            p.text(
-                ch.to_string(),
-                Face::Font(font.clone()),
-                px,
-                pal.fg(ia),
-                v(ib.cx, ib.cy + px * 0.3),
-                Align::Centre,
-                0.0,
-            );
-        }
-        Some(WeaponIcon::Image { image, size }) => {
-            let k = ((ib.hw * 2.0) / size.x.max(1.0)).min((ib.hh * 2.0) / size.y.max(1.0));
-            let s = *size * k;
+    let fit = ib.fit;
+    match &r.art {
+        Some(Art::Glyph(g)) => p.tris(&g.tris, |q| fit.map(q), pal.fg(ia)),
+        Some(Art::Image { image, .. }) => {
+            let placed = fit.rect(ib.ink);
             let mut c = pal.fg(ia);
             c.alpha *= p.alpha;
             p.images.push(ImageItem {
                 image: image.clone(),
-                min: v(ib.cx - s.x / 2.0, ib.cy - s.y / 2.0),
-                size: s,
+                min: placed.min,
+                size: placed.size(),
                 color: c,
+                rect: Some(ib.ink),
             });
         }
         None => {
             if let Some(s) = sh.get(r.class) {
-                let (ox, oy, us) = (ib.cx - ib.hw, ib.cy - ib.hh, ib.us);
-                p.tris(&s.tris, |q| v(ox + q.x * us, oy + q.y * us), pal.fg(ia));
+                p.tris(&s.tris, |q| fit.map(q), pal.fg(ia));
             }
         }
     }

@@ -4,7 +4,8 @@
 //! once on); the Ladder's beat follows the look book's keyframes (a 4 %
 //! hoist at .55 s, the landing at .95 s, the knife's 5 %) and lights the
 //! meter on landing; the game's own kill icon replaces the class icon
-//! when at hand; the menu's frame stays in its budget (instructions a
+//! when at hand; every gun, whatever its source's padding or baseline, is
+//! fitted by its ink into the same box and centred on its plate; the menu's frame stays in its budget (instructions a
 //! frame, the backdrops' painting counted headless).
 
 use bevy::prelude::*;
@@ -93,11 +94,93 @@ fn a_games_own_icon_replaces_the_class_icon() {
             .all(|r| r.game_icon.is_none()),
         "ours when not preferred"
     );
-    // Painted as a glyph (a text) instead of triangles.
+    // Until its font has loaded the class icon shows: no text, no image.
     let shapes = Shapes::new(&Icons::shipped());
     let mut p = Paint::new();
     menu_backdrops::paint(&mut p, &shapes, pal(), &rungs, 0, 1920.0, 1080.0, 1.0, false);
-    assert!(p.texts.iter().any(|t| t.text == "c"));
+    assert!(p.texts.iter().all(|t| t.text != "c") && p.images.is_empty());
+}
+
+/// A square glyph outline (em units, y down from the baseline) from `top`
+/// to `bottom`, `x0` to `x1`.
+fn glyph(x0: f32, top: f32, x1: f32, bottom: f32) -> scenes::Art {
+    let ring = vec![Vec2::new(x0, top), Vec2::new(x1, top), Vec2::new(x1, bottom), Vec2::new(x0, bottom)];
+    let tris = chimera_ui::icon_ink::tessellate_nonzero(std::slice::from_ref(&ring));
+    scenes::Art::Glyph(std::sync::Arc::new(chimera_ui::icon_ink::GlyphShape {
+        ink: Rect::new(x0, top, x1, bottom),
+        contours: vec![ring],
+        tris,
+    }))
+}
+
+#[test]
+fn every_gun_is_fitted_and_centred_by_its_ink() {
+    // Icons with their own paddings and baselines: a glyph high above its
+    // baseline, one hanging below it, a wide glyph, an image whose art is
+    // in the top rows of a padded texture, a tall image, and the kit's
+    // fallbacks (whose ink sits at different rows of their 16-unit grid).
+    let shapes = Shapes::new(&Icons::shipped());
+    let mut rungs = menu_backdrops::rungs(None, true);
+    rungs[0].art = Some(glyph(0.1, -0.9, 0.7, -0.5));
+    rungs[1].art = Some(glyph(0.05, -0.2, 0.5, 0.15));
+    rungs[2].art = Some(glyph(0.0, -0.6, 1.4, -0.3));
+    rungs[3].art = Some(scenes::Art::Image {
+        image: Handle::default(),
+        size: Vec2::new(64.0, 32.0),
+        ink: Rect::new(3.0, 1.0, 61.0, 20.0),
+    });
+    rungs[4].art = Some(scenes::Art::Image {
+        image: Handle::default(),
+        size: Vec2::new(32.0, 32.0),
+        ink: Rect::new(10.0, 2.0, 22.0, 30.0),
+    });
+    let (centre, size) = (Vec2::new(700.0, 400.0), Vec2::new(150.0, 55.0));
+    for (i, r) in rungs.iter().enumerate() {
+        let (ink, fit) = scenes::gun_fit(&shapes, r, centre, size);
+        let placed = fit.rect(ink);
+        // Centred on the plate's centre, both ways.
+        assert!((placed.center() - centre).length() < 1e-3, "rung {i}: {placed:?}");
+        // Inside the box, touching it on one axis (as large as fits),
+        // keeping the ink's aspect.
+        assert!(placed.width() <= size.x + 1e-3 && placed.height() <= size.y + 1e-3, "rung {i}: {placed:?}");
+        let touches = (placed.width() - size.x).abs() < 1e-3 || (placed.height() - size.y).abs() < 1e-3;
+        assert!(touches, "rung {i} fills its box on one axis: {placed:?}");
+        assert!((placed.width() / placed.height() - ink.width() / ink.height()).abs() < 1e-3);
+    }
+    // Painted so: the image's inked texels only, where the fit puts them.
+    let mut p = Paint::new();
+    menu_backdrops::paint(&mut p, &shapes, pal(), &rungs, 0, 1920.0, 1080.0, 6.0, false);
+    assert_eq!(p.images.len(), 2, "the two images' rungs are on screen");
+    for img in &p.images {
+        let rect = img.rect.expect("an image draws its ink only");
+        assert!((img.size.x / img.size.y - rect.width() / rect.height()).abs() < 1e-3);
+    }
+}
+
+#[test]
+fn a_fonts_glyphs_are_fitted_by_their_outlines_ink() {
+    use chimera_ui::icon_ink::{fit_contain, glyph_shape};
+    // Real outlines: a capital on the baseline, a dash high above it, a
+    // comma hanging below it (an icon font's guns sit anywhere in the em).
+    let font = include_bytes!("../../../ultimate_gun_game/fonts/ugg-mono-regular.ttf");
+    let (cap, dash, comma) = (
+        glyph_shape(font, 'H').expect("H"),
+        glyph_shape(font, '-').expect("-"),
+        glyph_shape(font, ',').expect(","),
+    );
+    assert!(cap.ink.max.y.abs() < 0.02 && cap.ink.min.y < -0.5, "H on the baseline: {:?}", cap.ink);
+    assert!(dash.ink.max.y < -0.1, "the dash above it: {:?}", dash.ink);
+    assert!(comma.ink.max.y > 0.05, "the comma below it: {:?}", comma.ink);
+    let tri_area = |g: &chimera_ui::icon_ink::GlyphShape| -> f32 {
+        g.tris.iter().map(|t| ((t[1] - t[0]).perp_dot(t[2] - t[0]) / 2.0).abs()).sum()
+    };
+    assert!(tri_area(&cap) > 0.05 * cap.ink.width() * cap.ink.height(), "filled");
+    let (centre, size) = (Vec2::new(0.0, 0.0), Vec2::new(150.0, 55.0));
+    for g in [&cap, &dash, &comma] {
+        let placed = fit_contain(g.ink, centre, size).rect(g.ink);
+        assert!((placed.center() - centre).length() < 1e-3, "{placed:?}");
+        assert!((placed.width() - size.x).abs() < 1e-3 || (placed.height() - size.y).abs() < 1e-3);
+    }
 }
 
 /// The most the menu's systems may cost a frame (instructions), the

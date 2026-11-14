@@ -12,6 +12,9 @@
 //! - `motion`: `Ease`, `UiClock`, `Track`, `Timeline`.
 //! - `icons`: the fallback gun set and the marks as data, rasterized
 //!   per pixel height (`IconImages`) or tessellated; `IconFor`, `choose`.
+//! - `icon_ink`: any icon fitted by its visible ink (an image's trimmed
+//!   alpha, a glyph's outline, the fallback's polygons): `fit_contain`,
+//!   `IconInk` (cached by asset).
 //! - `materials`: `SlantMaterial`, `TickBarMaterial`, `PassMaterial`,
 //!   `LinesMaterial`, `AmbientMaterial`.
 //! - `style`: `UiStyle` (`style!`), `UiText`, `UiSlant`: the look book's
@@ -37,6 +40,7 @@
 
 pub mod controls;
 pub mod fonts;
+pub mod icon_ink;
 pub mod icons;
 pub mod materials;
 pub mod motion;
@@ -50,6 +54,7 @@ pub mod widgets;
 use bevy::{prelude::*, ui::UiSystems};
 
 pub use fonts::{FontFiles, KitFonts, Role, Styled};
+pub use icon_ink::IconInk;
 pub use icons::{IconFor, IconImages, IconSource, Icons};
 pub use materials::{
     AmbientMaterial, EdgeMaterial, KitMaterialsPlugin, LinesMaterial, PassMaterial, RingMaterial, ShadeMaterial, SlantMaterial,
@@ -77,6 +82,7 @@ impl Plugin for ChimeraUiPlugin {
         }
         app.init_resource::<UiUnits>()
             .init_resource::<icons::IconImages>()
+            .init_resource::<icon_ink::IconInk>()
             .init_resource::<UiMusic>()
             .add_message::<UiCue>()
             .init_resource::<UiClock>()

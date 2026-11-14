@@ -9,8 +9,12 @@
 //!   in cobalt with a finish chequer on the slant, a crown and FINAL •
 //!   KNIFE; a 14-tick meter at the right. Each gun's game's own kill icon
 //!   when at hand (`WeaponIcons`, `icons.prefer_game`: a glyph of its
-//!   icon font or its image), else the kit's class icon. The climb is its
-//!   dwell (`LADDER_PERIOD`, 24.5 s).
+//!   icon font, drawn from its outline, or its image), else the kit's
+//!   class icon; whichever it is, its visible ink (`chimera_ui::icon_ink`,
+//!   `resolve_art`) is fitted as large as fits a box of 60 % x 50 % of the
+//!   plate (`scenes::GUN_BOX`) and centred on the plate, so the guns sit
+//!   alike whatever their padding or baseline; the brackets frame that
+//!   ink. The climb is its dwell (`LADDER_PERIOD`, 24.5 s).
 //! - **B Assembly**: a gun drafted on its 16-unit grid, traced by a 12°
 //!   scan, hatched, filled, dimensioned, filed on a shelf (3.4 s a gun).
 //! - **C Ident**: the mark signs on facet by facet on one 12° scan with a
@@ -55,13 +59,13 @@ use bevy::{
     window::PrimaryWindow,
 };
 use chimera_client::client::{logo_pass::ReduceMotion, weapon_icons::WeaponIcons};
-use chimera_ui::{IconImages, KitFonts, Theme, Tone, UiClock};
+use chimera_ui::{IconImages, IconInk, KitFonts, Theme, Tone, UiClock};
 
 use crate::main_menu::{Screen, ShownScreen};
 use crate::signal_menu::{SignalMenu, themed};
 use paint::{Align, Face, Paint};
 pub use scenes::LADDER_PERIOD;
-use scenes::{Pal, Rung, Shapes};
+use scenes::{Art, Pal, Rung, Shapes};
 
 /// The backdrops' area: the right part of the window from here (0-1).
 pub const AREA_LEFT: f32 = 0.36;
@@ -117,9 +121,51 @@ pub fn rungs(icons: Option<&WeaponIcons>, prefer_game: bool) -> Vec<Rung> {
                 class,
                 id,
                 game_icon,
+                art: None,
             }
         })
         .collect()
+}
+
+/// Finds the ink of each rung's game icon (`chimera_ui::icon_ink`): a
+/// glyph's outline from its font, an image's inked texels (the whole
+/// image when its pixels aren't at hand). A rung whose art isn't loaded
+/// yet, or has no outline, keeps its class icon. Whether any is still
+/// loading (ask again next frame).
+pub fn resolve_art(
+    rungs: &mut [Rung],
+    ink: &mut IconInk,
+    images: Option<&Assets<Image>>,
+    fonts: Option<&Assets<Font>>,
+) -> bool {
+    use chimera_client::client::weapon_icons::WeaponIcon;
+    use chimera_ui::icon_ink::Ink;
+    let mut pending = false;
+    for r in rungs.iter_mut().filter(|r| r.art.is_none()) {
+        match &r.game_icon {
+            Some(WeaponIcon::Glyph { font, ch, .. }) => match fonts.map(|f| ink.glyph(f, font, *ch)) {
+                Some(Ink::Found(g)) => r.art = Some(Art::Glyph(g)),
+                Some(Ink::None) => {}
+                Some(Ink::Pending) | None => pending = true,
+            },
+            Some(WeaponIcon::Image { image, size }) => {
+                let whole = Rect::from_corners(Vec2::ZERO, *size);
+                let found = match images.map(|i| ink.image(i, image)) {
+                    Some(Ink::Found(rect)) => Some(rect),
+                    Some(Ink::None) => Some(whole),
+                    Some(Ink::Pending) | None => {
+                        pending = true;
+                        None
+                    }
+                };
+                if let Some(rect) = found {
+                    r.art = Some(Art::Image { image: image.clone(), size: *size, ink: rect });
+                }
+            }
+            None => {}
+        }
+    }
+    pending
 }
 
 /// The composite: the two canvases, the swap's wipe and the fade toward
@@ -170,7 +216,7 @@ struct Slot {
     sprites: Vec<Entity>,
     /// What it last painted (backdrop, time in ms, size): a frozen
     /// backdrop is painted once.
-    painted: Option<(usize, i64, UVec2)>,
+    painted: Option<(usize, i64, UVec2, u64)>,
 }
 
 /// The canvases and what they share.
@@ -181,6 +227,10 @@ pub struct Canvases {
     shapes: Option<Shapes>,
     paint: Option<Paint>,
     rungs: Vec<Rung>,
+    /// Some rung's game icon is still loading (`resolve_art`).
+    art_pending: bool,
+    /// Bumped when the rungs' icons change: a frozen canvas paints again.
+    rungs_gen: u64,
     /// Triangles painted last frame (tests, the frame's cost).
     pub triangles: usize,
     /// The current backdrop's sheen for the composite.
@@ -188,7 +238,7 @@ pub struct Canvases {
 }
 
 pub fn add(app: &mut App) {
-    app.init_resource::<Canvases>().add_systems(
+    app.init_resource::<Canvases>().init_resource::<IconInk>().add_systems(
         PostUpdate,
         draw.before(chimera_ui::UiKitSystems)
             .run_if(|t: Option<Res<Theme>>| themed(t.as_deref())),
@@ -248,7 +298,7 @@ fn draw(
     state: Res<SignalMenu>,
     reduce: Option<Res<ReduceMotion>>,
     weapon_icons: Option<Res<WeaponIcons>>,
-    mut icon_images: ResMut<IconImages>,
+    (mut icon_images, mut icon_ink, font_assets): (ResMut<IconImages>, ResMut<IconInk>, Option<Res<Assets<Font>>>),
     windows: Query<&Window, With<PrimaryWindow>>,
     layer: Query<(Entity, Option<&MaterialNode<BackdropsMaterial>>), With<BackdropLayer>>,
     mut canvases: ResMut<Canvases>,
@@ -303,6 +353,15 @@ fn draw(
     }
     if cv.rungs.is_empty() || weapon_icons.as_ref().is_some_and(|w| w.is_changed()) {
         cv.rungs = rungs(weapon_icons.as_deref(), theme.icons.prefer_game);
+        cv.art_pending = true;
+        cv.rungs_gen += 1;
+    }
+    if cv.art_pending {
+        let before = cv.rungs.iter().filter(|r| r.art.is_some()).count();
+        cv.art_pending = resolve_art(&mut cv.rungs, &mut icon_ink, images.as_deref(), font_assets.as_deref());
+        if cv.rungs.iter().filter(|r| r.art.is_some()).count() != before {
+            cv.rungs_gen += 1;
+        }
     }
     let pal = Pal {
         fg: theme.tone(Tone::Fg).into(),
@@ -415,7 +474,7 @@ fn draw(
     let frozen = still || state.freeze.is_some();
     for (i, want) in wants.iter().enumerate() {
         let Some((which, t)) = *want else { continue };
-        let key = (which, (t * 1000.0).round() as i64, size);
+        let key = (which, (t * 1000.0).round() as i64, size, cv.rungs_gen);
         if frozen && cv.slots.get(i).is_some_and(|s| s.painted == Some(key)) {
             continue;
         }
@@ -555,6 +614,7 @@ fn sync_sprites(
             image: item.image.clone(),
             color: Color::LinearRgba(item.color),
             custom_size: Some(item.size),
+            rect: item.rect,
             ..default()
         };
         if k >= slot.sprites.len() {
@@ -567,7 +627,7 @@ fn sync_sprites(
         let Ok((mut s, mut tf, mut vis)) = sprites.get_mut(slot.sprites[k]) else {
             continue;
         };
-        if s.image != sprite.image || s.color != sprite.color || s.custom_size != sprite.custom_size {
+        if s.image != sprite.image || s.color != sprite.color || s.custom_size != sprite.custom_size || s.rect != sprite.rect {
             *s = sprite;
         }
         if tf.translation != at {

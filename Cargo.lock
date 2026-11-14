@@ -2841,6 +2841,7 @@ dependencies = [
  "bevy_winit",
  "chimera_core",
  "serde",
+ "skrifa",
  "toml",
  "workspace-hack",
 ]
