@@ -44,6 +44,11 @@ min_text_px = 9.0
 [flags.hud]
 signal = true
 
+# The UI sound kit (data/ui_sounds.toml, assets/sounds/ui/: the ui bus,
+# chimera_client::client::ui_sound).
+[flags.sound]
+ui = true
+
 
 # Text roles: the wordmark is Black with ss02 (whose A is the plain A).
 [type.wordmark]

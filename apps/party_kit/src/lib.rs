@@ -568,6 +568,8 @@ pub mod menu_backdrop;
 #[cfg(feature = "present")]
 pub mod client;
 #[cfg(feature = "present")]
+pub mod ui_cues;
+#[cfg(feature = "present")]
 pub use client::{
     PartyHudPlugin, PartyMousePlugin, client_hooks, joins_server, start_at_menu, with_defaults, with_defaults_for, with_huds,
 };

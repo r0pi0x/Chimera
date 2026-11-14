@@ -86,7 +86,10 @@
 //!
 //! - **Music**: Combat Arms' menu playlist (the install's BGM) while the
 //!   menu shows (`combat_arms::game::music::AppMenuShown`), silent
-//!   without the install.
+//!   without the install; in an app with UI sound (Ultimate Gun Game's
+//!   Signal) its own loop instead (`UiMusic`'s `menu_loop`).
+//! - **Sounds** (an app with UI sound only: `ui_cues`): hover, select,
+//!   back, a refused press, a range row's step.
 //!
 //! Known shortcuts: steppers (`<` `>`) in place of CS:S's combo boxes and
 //! check boxes; no server browser (M2); bots don't make room for people
@@ -110,6 +113,7 @@ use bevy::{
     prelude::*,
 };
 use chimera_client::client::{
+    ui_sound::UiCue,
     console::ConsoleRoot,
     fonts::UiFonts,
     front_end as fe,
@@ -744,6 +748,7 @@ impl Plugin for MainMenuPlugin {
         if !app.world().contains_resource::<BackgroundMaps>() {
             app.init_resource::<BackgroundMaps>();
         }
+        crate::ui_cues::ensure_message(app);
         app.insert_resource(data)
             .insert_resource(last)
             .init_resource::<BackgroundState>()
@@ -754,6 +759,7 @@ impl Plugin for MainMenuPlugin {
             .init_resource::<LoadingPanel>()
             .add_message::<MainMenuAction>()
             .add_message::<KeyboardInput>()
+            .add_systems(Update, crate::ui_cues::hover::<MainMenuAction>.in_set(MainMenuSystems))
             .add_observer(entered_game)
             .add_observer(left_game)
             .add_observer(joining)
@@ -1168,6 +1174,17 @@ fn act_one(world: &mut World, action: MainMenuAction) {
         return;
     }
     let loading = matches!(menu.screen, Screen::Loading | Screen::Joining);
+    let blocked = loading || menu.failure.is_some() || menu.reconnecting.is_some();
+    // Its sound (`ui_cues`; the steppers' after their step).
+    let sound = match action {
+        A::Cancel | A::CloseFailure | A::Back => Some(UiCue::new("ui_back")),
+        _ if blocked => Some(UiCue::new("ui_denied")),
+        A::PlayStep { .. } | A::GameStep { .. } | A::OptionStep { .. } => None,
+        _ => Some(UiCue::new("ui_select")),
+    };
+    if let Some(c) = sound {
+        crate::ui_cues::cue(world, c);
+    }
     match action {
         A::Cancel => {
             if loading {
@@ -1232,6 +1249,7 @@ fn act_one(world: &mut World, action: MainMenuAction) {
             if let Some(v) = m.play.get_mut(row) {
                 *v = next;
             }
+            crate::ui_cues::cue(world, UiCue::new("ui_select"));
         }
         A::GameStep { index, dir } => {
             let Some(s) = game_settings().get(index).cloned() else {
@@ -1278,10 +1296,11 @@ fn act_one(world: &mut World, action: MainMenuAction) {
     }
 }
 
-/// A setting's cvar moved a step.
+/// A setting's cvar moved a step (and its sound: `ui_cues::step_cue`).
 fn step_cvar(world: &mut World, s: &Setting, dir: i8) {
     let now = crate::controls::cvar_value(world, &s.cvar).unwrap_or_default();
     let next = s.pick.next(&now, dir);
+    crate::ui_cues::cue(world, crate::ui_cues::step_cue(&s.pick, &next));
     let quoted = if next.is_empty() {
         "\"\"".to_string()
     } else {
@@ -1616,9 +1635,26 @@ fn fly(
 }
 
 /// Combat Arms' menu music (its playlist, the install's BGM) while the
-/// main menu shows (not while loading or in a game).
-fn music(menu: Res<PartyMenu>, shown: Option<Res<combat_arms::game::music::AppMenuShown>>, mut commands: Commands) {
-    let want = menu.screen == Screen::MainMenu;
+/// main menu shows (not while loading or in a game); an app with UI sound
+/// (Ultimate Gun Game's Signal) plays its own loop instead (`UiMusic`'s
+/// `menu_loop`, on the music bus), never under the other.
+fn music(
+    menu: Res<PartyMenu>,
+    shown: Option<Res<combat_arms::game::music::AppMenuShown>>,
+    theme: Option<Res<chimera_client::client::ui_sound::Theme>>,
+    sounds: Option<Res<chimera_client::client::ui_sound::UiSounds>>,
+    ui_music: Option<ResMut<chimera_client::client::ui_sound::UiMusic>>,
+    mut commands: Commands,
+) {
+    let on_menu = menu.screen == Screen::MainMenu;
+    let ours = chimera_client::client::ui_sound::active(theme.as_deref(), sounds.as_deref());
+    if let Some(mut m) = ui_music {
+        let want = (on_menu && ours).then_some(std::borrow::Cow::Borrowed("menu_loop"));
+        if m.0 != want {
+            m.0 = want;
+        }
+    }
+    let want = on_menu && !ours;
     if want && shown.is_none() {
         commands.insert_resource(combat_arms::game::music::AppMenuShown);
     } else if !want && shown.is_some() {

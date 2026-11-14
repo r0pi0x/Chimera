@@ -183,6 +183,7 @@ pub struct EscMenuPlugin;
 
 impl Plugin for EscMenuPlugin {
     fn build(&self, app: &mut App) {
+        crate::ui_cues::ensure_message(app);
         app.init_resource::<EscMenu>()
             .init_resource::<EscMenuTitle>()
             .init_resource::<AppMenu>()
@@ -190,6 +191,7 @@ impl Plugin for EscMenuPlugin {
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<VotePanel>()
             .add_message::<Action>()
+            .add_systems(Update, crate::ui_cues::hover::<Action>.in_set(EscMenuSystems))
             .console_command("chimera:escmenu", "escmenu [options|host]: open or close the Escape menu (at that page).", |w, a| {
                 let page = match a.first().map(String::as_str) {
                     Some("options") => Page::Options(0),
@@ -241,7 +243,9 @@ fn toggle(
     main_menu: Option<Res<crate::main_menu::PartyMenu>>,
     mut menu: ResMut<EscMenu>,
     mut console_cmds: Option<ResMut<Console>>,
+    mut cues: MessageWriter<chimera_client::client::ui_sound::UiCue>,
 ) {
+    use chimera_client::client::ui_sound::UiCue;
     if !keys.just_pressed(KeyCode::Escape) {
         return;
     }
@@ -257,7 +261,11 @@ fn toggle(
     }
     if !menu.open {
         menu.set_open(true);
-    } else if menu.page != Page::Main {
+        cues.write(UiCue::new("ui_select"));
+        return;
+    }
+    cues.write(UiCue::new("ui_back"));
+    if menu.page != Page::Main {
         leave_page(&mut menu, console_cmds.as_deref_mut());
         menu.page = Page::Main;
     } else {
@@ -305,6 +313,19 @@ fn act_one(world: &mut World, action: Action) {
         return;
     }
     world.resource_mut::<EscMenu>().notice = None;
+    // Its sound (`ui_cues`; a step's after it).
+    {
+        use chimera_client::client::ui_sound::UiCue;
+        let c = match action {
+            Action::Back | Action::Resume => Some(UiCue::new("ui_back")),
+            Action::Host if !host::is_host(world) => Some(UiCue::new("ui_denied")),
+            Action::Step { .. } => None,
+            _ => Some(UiCue::new("ui_select")),
+        };
+        if let Some(c) = c {
+            crate::ui_cues::cue(world, c);
+        }
+    }
     let leave = |world: &mut World| {
         if std::mem::take(&mut world.resource_mut::<EscMenu>().dirty) {
             submit(world, "host_writeconfig");
@@ -344,6 +365,7 @@ fn act_one(world: &mut World, action: Action) {
             let Some(s) = settings.get(index) else { return };
             let now = crate::controls::cvar_value(world, &s.cvar).unwrap_or_default();
             let next = s.pick.next(&now, dir);
+            crate::ui_cues::cue(world, crate::ui_cues::step_cue(&s.pick, &next));
             let quoted = if next.is_empty() { "\"\"".to_string() } else { chimera_core::console::quote(&next) };
             submit(world, format!("{} {quoted}", s.cvar));
             if !on_host {

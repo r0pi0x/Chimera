@@ -19,6 +19,7 @@ name = "Audio"
 setting = [
   { label = "Game volume", cvar = "volume", range = [0, 1, 0.05] },
   { label = "Music volume", cvar = "snd_musicvolume", range = [0, 1, 0.05] },
+  { label = "UI volume", cvar = "snd_uivolume", range = [0, 1, 0.05] },
   { label = "Mute when unfocused", cvar = "snd_mute_losefocus", choices = [["0", "Off"], ["1", "On"]] },
 ]
 

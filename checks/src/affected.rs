@@ -465,6 +465,8 @@ fn is_docs(path: &str) -> bool {
             "tools/ui-parity/",
             // The UGG fonts' build scripts (their output is in apps/ultimate_gun_game/fonts/).
             "tools/fonts/",
+            // The UGG UI sounds' generator (its output is in apps/ultimate_gun_game/assets/sounds/ui/).
+            "tools/sounds/",
         ]
         .iter()
         .any(|p| path.starts_with(p))

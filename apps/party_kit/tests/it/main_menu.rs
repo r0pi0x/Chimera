@@ -62,7 +62,18 @@ fn local(at_start: bool) -> Sim {
 /// `local` with these maps at hand for the background (None: none), and
 /// `map` never finishing from the start (`never_loads`).
 fn local_with(at_start: bool, background: Option<main_menu::BackgroundMaps>, never_loads: bool) -> Sim {
+    local_plus(at_start, background, never_loads, |_| {})
+}
+
+/// `local_with` with more set up on the app before it is built.
+fn local_plus(
+    at_start: bool,
+    background: Option<main_menu::BackgroundMaps>,
+    never_loads: bool,
+    more: impl FnOnce(&mut App),
+) -> Sim {
     let mut sim = Sim::with(CaSim, |app| {
+        more(app);
         if let Some(b) = background {
             app.insert_resource(b);
         }
@@ -840,3 +851,34 @@ const BACKDROP_LIMIT: u64 = 20_000;
 /// The most the whole menu may cost a frame over the backdrop.
 const MENU_LIMIT: u64 = 200_000;
 
+
+/// The menus' UI cues (`party_kit::ui_cues`): under a theme with UI sound
+/// a press selects, Back backs, a range step slides, the Escape menu's Esc
+/// sounds too, and the main menu plays the app's loop in place of Combat
+/// Arms' playlist; without that theme nothing sounds and the playlist
+/// stays.
+#[test]
+fn the_menus_sound_only_with_ui_sound() {
+    use chimera_client::client::ui_sound::{Theme, UiSoundPlugin, UiSounds, UiVoices};
+    const TABLE: &str = "[event.ui_select]\n[event.ui_back]\n[event.ui_denied]\n[event.ui_slider]\nrate = \"value\"\n\
+                         [event.ui_hover]\nvoices = 1\n[event.menu_loop]\nfile = \"loop\"\nloop = true\n";
+    for on in [true, false] {
+        let theme = if on { Theme::from_toml("name = \"s\"\n[flags.sound]\nui = true\n").unwrap() } else { Theme::shell_default() };
+        let mut sim = local_plus(true, None, false, |app| {
+            app.add_plugins(UiSoundPlugin).insert_resource(theme).insert_resource(UiSounds::silent(TABLE).unwrap());
+        });
+        act(&mut sim, A::Entry(0));
+        act(&mut sim, A::Back);
+        act(&mut sim, A::OptionsTab(1));
+        act(&mut sim, A::OptionStep { index: 0, dir: -1 });
+        let v = sim.app.world().resource::<UiVoices>();
+        let music = sim.app.world().get_resource::<combat_arms::game::music::AppMenuShown>().is_some();
+        if on {
+            assert_eq!(v.events(), ["menu_loop", "ui_select", "ui_back", "ui_select", "ui_slider"]);
+            assert!(v.music.is_some() && !music, "our loop, not Combat Arms' playlist");
+        } else {
+            assert!(v.events().is_empty(), "{:?}", v.events());
+            assert!(v.music.is_none() && music, "Combat Arms' playlist as before");
+        }
+    }
+}

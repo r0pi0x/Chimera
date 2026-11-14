@@ -19,3 +19,4 @@ mod minigame_scoreboard;
 mod race_chip;
 mod signal_feed;
 mod respawn_countdown;
+mod ui_sound;
