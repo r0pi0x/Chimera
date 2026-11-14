@@ -308,6 +308,7 @@ fn play_music(
     let gains = Arc::new(Gains::new(level, level));
     let now = time.elapsed_secs_f64();
     let entity = spawn_voice(&mut commands, &mut clips, clip, &gains, 1.0);
+    info!("ui sound: music {file} at {level:.2}");
     voices.music = Some(UiVoice {
         event: event.to_string(),
         file: file.clone(),

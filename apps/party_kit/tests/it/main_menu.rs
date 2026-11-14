@@ -876,6 +876,8 @@ fn the_menus_sound_only_with_ui_sound() {
         if on {
             assert_eq!(v.events(), ["menu_loop", "ui_select", "ui_back", "ui_select", "ui_slider"]);
             assert!(v.music.is_some() && !music, "our loop, not Combat Arms' playlist");
+            let quiet = sim.app.world().get_resource::<combat_arms::game::music::AppMusicPlays>().is_some();
+            assert!(quiet, "Combat Arms' music stays silent under ours");
         } else {
             assert!(v.events().is_empty(), "{:?}", v.events());
             assert!(v.music.is_none() && music, "Combat Arms' playlist as before");

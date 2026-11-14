@@ -1644,6 +1644,7 @@ fn music(
     theme: Option<Res<chimera_client::client::ui_sound::Theme>>,
     sounds: Option<Res<chimera_client::client::ui_sound::UiSounds>>,
     ui_music: Option<ResMut<chimera_client::client::ui_sound::UiMusic>>,
+    app_plays: Option<Res<combat_arms::game::music::AppMusicPlays>>,
     mut commands: Commands,
 ) {
     let on_menu = menu.screen == Screen::MainMenu;
@@ -1652,6 +1653,16 @@ fn music(
         let want = (on_menu && ours).then_some(std::borrow::Cow::Borrowed("menu_loop"));
         if m.0 != want {
             m.0 = want;
+        }
+    }
+    // Combat Arms' music (the playlist, a background map's) stays silent
+    // under ours.
+    let app_music = on_menu && ours;
+    if app_music != app_plays.is_some() {
+        if app_music {
+            commands.insert_resource(combat_arms::game::music::AppMusicPlays);
+        } else {
+            commands.remove_resource::<combat_arms::game::music::AppMusicPlays>();
         }
     }
     let want = on_menu && !ours;

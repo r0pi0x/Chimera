@@ -723,7 +723,8 @@ licence, 5 MB a file, 20 MB in all.
   last 10 s and lock; the air strike (alert, pulses, the chip at 2 s,
   impact at the warning's end) and moon gravity's chip, read from their
   HUD banners; the sci-fi loop on the main menu in place of Combat Arms'
-  playlist. The backdrop swap stays off.
+  playlist (Combat Arms' music silent meanwhile: `combat_arms::game::
+  music::AppMusicPlays`). The backdrop swap stays off.
 - **Left**: `pass_sweep` waits for M1's `logo_pass` (on its branch, not
   main): where a pass begins (`LogoPass::runs += 1`), write
   `UiCue::new("pass_sweep")`. M3's effects (`MatchEffects`) should send
@@ -735,6 +736,9 @@ licence, 5 MB a file, 20 MB in all.
   `end_reveal` (the sound page's note: delay the game's 0.25 s or drop
   ours if they clash). Follow-up: a Rust port of `rank_up(p, seed)`
   rendering each match's ladder on a task at its start (no rank files),
+  the menu loop's level: in the party apps `snd_musicvolume` follows
+  Combat Arms' music option (`ca::ui::options_apply`), 0 on a fresh
+  profile in tool runs,
   and a compressed format with gapless loops (Vorbis) for the loop.
 
 ## 6. Decisions (user, 2026-11-14)
