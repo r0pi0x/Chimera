@@ -8,7 +8,7 @@
 //! fixture (`ui_scene board <fixture.json>`), its data over a flat ground
 //! instead (the UI parity check, `ui_parity`). `proof` (the kit itself: the type ramp of every role, tick
 //! bars, slants, the gun icons and marks, the logo pass frozen mid-way,
-//! the match end's lines behind). The screens' milestones add theirs
+//! the ambient and the match end's lines behind). The screens' milestones add theirs
 //! (`lobby`, `chip`, `board`, `toast`, `airstrike`, `matchend`, `menu`)
 //! to `SCENES`.
 //!
@@ -111,6 +111,7 @@ fn stage(
     mut ticks: ResMut<Assets<TickBarMaterial>>,
     mut passes: ResMut<Assets<PassMaterial>>,
     mut lines: ResMut<Assets<LinesMaterial>>,
+    mut ambients: ResMut<Assets<chimera_ui::AmbientMaterial>>,
     mut commands: Commands,
 ) {
     // Again when the window's size or scale changes (and on the frame
@@ -132,7 +133,7 @@ fn stage(
             slants: &mut slants,
             ticks: &mut ticks,
         };
-        proof(&mut m, &mut passes, &mut lines, &mut commands);
+        proof(&mut m, &mut passes, &mut lines, &mut ambients, &mut commands);
     }
 }
 
@@ -202,7 +203,7 @@ fn column(gap: f32) -> Node {
 }
 
 /// The kit on one screen (module doc).
-fn proof(m: &mut Makers, passes: &mut Assets<PassMaterial>, lines: &mut Assets<LinesMaterial>, commands: &mut Commands) {
+fn proof(m: &mut Makers, passes: &mut Assets<PassMaterial>, lines: &mut Assets<LinesMaterial>, ambients: &mut Assets<chimera_ui::AmbientMaterial>, commands: &mut Commands) {
     let u = m.units;
     let t = m.theme;
     let gap = u.cq(1.2);
@@ -223,7 +224,15 @@ fn proof(m: &mut Makers, passes: &mut Assets<PassMaterial>, lines: &mut Assets<L
             BackgroundColor(t.tone(Tone::Ink)),
         ))
         .id();
-    // The match end's lines behind, frozen (screenshots compare alike).
+    // The ambient and the match end's lines behind, frozen (screenshots
+    // compare alike).
+    let amb = commands
+        .spawn((
+            MaterialNode(ambients.add(chimera_ui::AmbientMaterial::new(t).freeze(Some(6.0)))),
+            Node { position_type: PositionType::Absolute, width: percent(100.0), height: percent(100.0), ..default() },
+        ))
+        .id();
+    commands.entity(root).add_child(amb);
     let bg = commands
         .spawn((
             MaterialNode(lines.add(LinesMaterial::new(t).freeze(Some(6.0)))),

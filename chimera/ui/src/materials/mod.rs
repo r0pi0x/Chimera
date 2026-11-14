@@ -20,8 +20,13 @@
 //!   hairlines and slabs on a 24-column grid moving on the renderer's
 //!   clock (`globals.time`: no CPU work a frame), or frozen at a time
 //!   (`freeze`, screenshots).
-//! - `AmbientMaterial` (`ambient.wesl`): the main menu's ambient
-//!   background, a stub (a slow accent glow on ink) until Look Book V.
+//! - `AmbientMaterial` (`ambient.wesl`): the ambient background every
+//!   between-match screen shares (look book V: slanted light bands, a
+//!   faceted field re-levelling every 24 s, one soft cobalt bloom, a cool
+//!   lift at the bottom, a vignette, a dither), our port of the look
+//!   book's fragment shader; per screen a calm column (the menu's) and
+//!   the bloom's place (`AmbientMaterial::MENU`, `MATCH_END`). Composed in
+//!   display space as the look book's, written as linear light; opaque.
 //!
 //! Colours go in as linear RGBA (`LinearRgba::from(color)`); builders
 //! take Bevy `Color`s. `KitMaterialsPlugin` registers them (a
@@ -319,25 +324,75 @@ impl UiMaterial for LinesMaterial {
     }
 }
 
-/// The main menu's ambient background (module doc; a stub).
+/// The shared ambient background (module doc): the look book's ambient
+/// shader, ported. Colours go in display space (sRGB, as the look book's
+/// shader takes them); the shader composes there and writes linear light.
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone, PartialEq)]
 pub struct AmbientMaterial {
+    /// The ground, the type colour and the accent, display space (0-1).
     #[uniform(0)]
-    pub ink: LinearRgba,
+    pub ink: Vec4,
     #[uniform(1)]
-    pub acc: LinearRgba,
-    /// x: glow strength, y: loop in seconds, z: tan, w: opacity.
+    pub fg: Vec4,
     #[uniform(2)]
-    pub params: Vec4,
+    pub acc: Vec4,
+    /// x: the calm column's right edge (0-1 of the width; < 0: none, the
+    /// whole screen live), y, z: the bloom's centre (x, and y up; 0-1),
+    /// w: tan of the slant.
+    #[uniform(3)]
+    pub place: Vec4,
+    /// x: time offset (s), y: frozen time (< 0: live), z: opacity.
+    #[uniform(4)]
+    pub clock: Vec4,
+}
+
+/// A colour as the shader's display-space vector.
+fn display(c: Color) -> Vec4 {
+    let s = c.to_srgba();
+    Vec4::new(s.red, s.green, s.blue, s.alpha)
 }
 
 impl AmbientMaterial {
+    /// The look book's main menu: a calm column to 30 % of the width, the
+    /// bloom at (.68, .56).
+    pub const MENU: (f32, Vec2) = (0.30, Vec2::new(0.68, 0.56));
+    /// The match end: no column, the bloom at (.64, .68).
+    pub const MATCH_END: (f32, Vec2) = (-1.0, Vec2::new(0.64, 0.68));
+
+    /// The theme's ink, fg and accent, live, laid out as the match end
+    /// (`MATCH_END`; `column` and `bloom` change it). Its clock starts 40 s
+    /// in, as the look book's.
     pub fn new(theme: &Theme) -> AmbientMaterial {
         AmbientMaterial {
-            ink: theme.tone(Tone::Ink).into(),
-            acc: theme.tone(Tone::Acc).into(),
-            params: Vec4::new(0.10, 40.0, theme.tan(), 1.0),
+            ink: display(theme.tone(Tone::Ink)),
+            fg: display(theme.tone(Tone::Fg)),
+            acc: display(theme.tone(Tone::Acc)),
+            place: Vec4::new(Self::MATCH_END.0, Self::MATCH_END.1.x, Self::MATCH_END.1.y, theme.tan()),
+            clock: Vec4::new(40.0, -1.0, 1.0, 0.0),
         }
+    }
+
+    /// The calm column's right edge (0-1 of the width), or `None`.
+    pub fn column(mut self, edge: Option<f32>) -> Self {
+        self.place.x = edge.unwrap_or(-1.0);
+        self
+    }
+
+    /// The bloom's centre: x, and y up, 0-1 of the screen.
+    pub fn bloom(mut self, at: Vec2) -> Self {
+        self.place.y = at.x;
+        self.place.z = at.y;
+        self
+    }
+
+    /// Stopped at `t` s (screenshots, tests); `None` to move again.
+    pub fn freeze(mut self, t: Option<f32>) -> Self {
+        self.clock.y = t.unwrap_or(-1.0);
+        self
+    }
+
+    pub fn set_opacity(&mut self, a: f32) {
+        self.clock.z = a;
     }
 }
 
