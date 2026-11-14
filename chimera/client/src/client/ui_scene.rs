@@ -9,7 +9,7 @@
 //!
 //! A scene is a root of its own over everything (`UI_SCENE_Z`), on the
 //! default UI camera, laid out for the window's size at the time it is
-//! staged (`chimera_ui::UiUnits`), from the app's `Theme` and faces
+//! staged, again whenever that changes (`chimera_ui::UiUnits`), from the app's `Theme` and faces
 //! (`KitFonts`; the shell's default theme without them).
 //!
 //! `+ui_scene proof` on the command line stages it at start, e.g.
@@ -81,7 +81,9 @@ fn stage(
     mut lines: ResMut<Assets<LinesMaterial>>,
     mut commands: Commands,
 ) {
-    if scene.want == scene.shown {
+    // Again when the window's size or scale changes (and on the frame
+    // the window is first measured).
+    if scene.want == scene.shown && !(units.is_changed() && scene.shown.is_some()) {
         return;
     }
     for r in &roots {
