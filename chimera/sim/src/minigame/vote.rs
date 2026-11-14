@@ -8,7 +8,7 @@
 //! by the rotation's weights when the pool goes by the players present,
 //! `candidates_weighted`, `map_fit`,
 //! then this map if the pool is short), and the match-end hold
-//! (`NextMatch`) waits for the vote: it closes `time` s after it opened,
+//! (`NextMatch`) is the vote's: it closes `time` s after it opened,
 //! then the winner shows for `reveal` s before the map changes. Every
 //! player in the match may vote once and change their vote while it is
 //! open (`MapVote::cast`; a network client sends its choice, the server

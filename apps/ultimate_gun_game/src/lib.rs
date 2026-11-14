@@ -33,7 +33,8 @@
 //! (`minigame::rotation`, seeded by the launch seed), drawn by the players
 //! present (`minigame::map_fit`: maps too big for them out, the rest
 //! weighted), the players voting for the next one on the end screen
-//! (`map_vote`, `minigame::vote`: the rotation's pick and two others);
+//! (`map_vote`, `minigame::vote`: the rotation's pick and three others,
+//! 20 s, ties to the pool's pick);
 //! its kit each gun's game's knife (the base game's, `BASE`, for a
 //! game without one); no gun off the ground, any game's, placed or dropped
 //! (`[pickups] weapons = false`: the ladder alone arms a player; a map's
@@ -107,9 +108,11 @@ pub fn options(seed: u64, rungs: usize) -> AutoOptions {
         base: BASE,
         time_limit: 600.0,
         avoid_recent: Some(AVOID_RECENT),
-        // The players vote for the next map on the end screen (the
-        // built-in settings, chimera/sim/data/map_vote.toml).
-        map_vote: Some("true".into()),
+        // The players vote for the next map on the end screen: four
+        // cards, one 20 s countdown that is also the next match's start
+        // (the winner named for 1.6 s: the logo pass begins 1 s after the
+        // close and covers the change at its swap).
+        map_vote: Some("{ candidates = 4, time = 20, reveal = 1.6 }".into()),
         // The ladder alone arms a player (the user's decision): no gun of
         // any game off the ground; other pickups stay possible.
         weapon_pickups: false,

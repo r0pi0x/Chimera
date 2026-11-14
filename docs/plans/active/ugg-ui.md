@@ -596,7 +596,24 @@ rounding inside a box), the winner's line (the look book splits it into
 bold runs the mockup measures apart), the fused chip 3 px, the loss
 mark's cell, session wins 2 px; the rows' right columns sit .64 cq in
 from the padding as the look book's grid does (`ROW_PAD_RIGHT`). Left:
-the vote band (step 2), the background and Leave (step 3).
+the background and Leave (step 3).
+
+Step 2 in: the vote band (`VoteCard`, `VoteCountdown`, `VoteTicks`): one
+countdown, the vote's close and the next match's start at once (the
+server sets `NextMatch::at` to the close plus the reveal when a vote
+opens, `minigame_net::open_vote`), a 40-tick bar hot from 17 of 20 s;
+four cards (the Ultimate Gun Game's `map_vote = { candidates = 4, time
+= 20, reveal = 1.6 }`: the rotation's pick and three others from the
+pool by the players present) with their game, eight pips (yours in the
+accent), the count (the leader's in the accent), your vote outlined and
+tagged; click or a number key votes; a tie goes to the pool's pick (the
+earliest on the ballot, `MapVote::tally`); at 0 the cards lock (the
+others at 35 %, the winner outlined and named under the countdown) and
+the logo pass begins 1 s later, its swap on the change. Tests:
+`match_end_has_one_countdown` (client), `vote_cards_lock_then_next_match`
+(party_kit, NetSim). Parity (step 2): 119 matched, 22 past tolerance
+(the step 1 list, the tags' boxes, pips 3 px, the way-out line that
+waits for Leave); thumbnails are tinted gradients (no map shots yet).
 
 - `match_end` rebuilt: standings, climb chart, vote cards, one
   countdown, Leave (`disconnect` through the logo pass), the next match

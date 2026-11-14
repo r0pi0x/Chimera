@@ -182,3 +182,58 @@ fn a_listen_server_host_votes_for_its_own_player() {
     let next = sim.server.app.world().resource::<NextMatch>().map.clone();
     assert_eq!(next.as_deref(), v.winning_map());
 }
+
+/// The Signal match end (`match_end_signal`) on the clients over a vote
+/// of four: every client shows four cards; two votes on two maps tie and
+/// the tie goes to the pool's pick (the earlier on the ballot); at the
+/// close the cards lock everywhere with the winner marked, the change
+/// comes the reveal after the close (one deadline), to that map.
+#[test]
+fn vote_cards_lock_then_next_match() {
+    use chimera_client::client::match_end_signal::VoteCard;
+    fn signal_screen(app: &mut App) {
+        let theme = chimera_ui::Theme::from_toml("name = \"test\"\n[flags.hud]\nsignal = true\n").unwrap();
+        app.insert_resource(theme);
+        if !app.world().contains_resource::<Assets<Image>>() {
+            app.init_asset::<Image>();
+        }
+        with_screen(app);
+    }
+    let text = ROTATING.replace(
+        "maps = [\"chimera:greybox\", \"test:next\"]",
+        "maps = [\"chimera:greybox\", \"test:next\", \"test:third\", \"test:fourth\"]\nmap_vote = { candidates = 4, time = \"4s\", reveal = \"1s\" }",
+    );
+    let (mut sim, _a) = a_won_match_and(&text, signal_screen);
+    let ok = sim.until(2000, |s| {
+        s.server.app.world().contains_resource::<MapVote>()
+            && s.clients.iter_mut().all(|c| {
+                let w = c.app.world_mut();
+                w.query::<&VoteCard>().iter(w).count() == 4
+            })
+    });
+    assert!(ok, "four cards on every client: {:?}", sim.server.app.world().get_resource::<MapVote>());
+    let v = server_vote(&sim);
+    assert_eq!(v.candidates.len(), 4, "{v:?}");
+    // A tie between the 4th and the 2nd card: the 2nd, the pool's pick.
+    minigame_net::vote_map(sim.clients[0].app.world_mut(), 3).unwrap();
+    minigame_net::vote_map(sim.clients[1].app.world_mut(), 1).unwrap();
+    let ok = sim.until(300, |s| s.server.app.world().resource::<MapVote>().counts == [0, 1, 0, 1]);
+    assert!(ok, "{:?}", server_vote(&sim).counts);
+    let ok = sim.until(1500, |s| s.server.app.world().resource::<MapVote>().winner.is_some());
+    assert!(ok, "the vote closes");
+    let v = server_vote(&sim);
+    assert_eq!(v.winner, Some(1), "the tie to the earlier on the ballot");
+    let next = sim.server.app.world().resource::<NextMatch>().clone();
+    assert!((next.at - (v.closes + 1.0)).abs() < 0.1, "one deadline: the change the reveal after the close: {next:?} {v:?}");
+    let ok = sim.until(300, |s| {
+        s.clients.iter_mut().all(|c| {
+            let w = c.app.world_mut();
+            let cards: Vec<VoteCard> = w.query::<&VoteCard>().iter(w).copied().collect();
+            cards.len() == 4 && cards.iter().all(|c| c.locked) && cards.iter().filter(|c| c.won).map(|c| c.index).collect::<Vec<_>>() == [1]
+        })
+    });
+    assert!(ok, "the cards lock everywhere, the winner marked");
+    let ok = sim.until(3000, |s| !s.server.app.world().resource::<Levels>().0.is_empty());
+    assert!(ok, "the server moves on");
+    assert_eq!(sim.server.app.world().resource::<Levels>().0, [v.candidates[1].clone()]);
+}

@@ -30,6 +30,17 @@
 //!   `climb_draw` s, its rung-ups, kills and deaths as ticks fading in
 //!   along x over `climb_ticks` s (`ClimbTick`), its longest stall boxed
 //!   and labelled, its final rung named.
+//! - **The vote** (`VoteCard`, one band along the bottom): one countdown
+//!   (`VoteCountdown` and its pixel-snapped tick bar, `VoteTicks`: lit as
+//!   it runs, the accent from `vote_hot_from` of `vote` s), the vote's
+//!   close and the next match's start at once (`seconds_left`); the map
+//!   cards with their game, eight vote pips (yours in the accent) and the
+//!   count (the leader's in the accent), your vote outlined in the
+//!   accent and tagged; a click on a card or its number key votes
+//!   (`match_end::VoteButton`, `vote_input`). At 0 the vote locks: the
+//!   others dim, the winner is outlined and named under the countdown,
+//!   and the logo pass takes everyone into the next match (`match_end`'s
+//!   gate, a swap's length before `NextMatch::at`).
 //!
 //! Each part is rebuilt only when what it shows changes; the entrance
 //! (fades and steps from the screen's coming up, `EndState::came_up`),
@@ -45,7 +56,7 @@
 
 use bevy::{prelude::*, window::PrimaryWindow};
 use chimera_sim::minigame::climb::Climb;
-use chimera_ui::{Prop, Role, SlantMaterial, Theme, Timeline, Tone, Track, UiClock, UiParityId, parity};
+use chimera_ui::{Prop, Role, SlantMaterial, Theme, TickBarMaterial, TickLayout, Timeline, Tone, Track, UiClock, UiParityId, parity};
 use serde::Deserialize;
 
 use super::{
@@ -145,6 +156,7 @@ pub struct EndState {
     pub came_up: Option<f64>,
     static_key: Option<(MatchEndView, (u32, u32), String)>,
     climb_key: Option<(usize, MatchEndView, (u32, u32))>,
+    vote_key: Option<(Option<MatchEndVote>, bool, (u32, u32))>,
     /// The chart's drawing began (`UiClock`); none: drawn at once.
     pub drawing: Option<f64>,
     /// The left-pointing triangle by height in physical px.
@@ -156,7 +168,7 @@ pub fn add(app: &mut App) {
     super::signal::setup(app);
     app.init_resource::<EndSelection>().init_resource::<EndState>().add_systems(Startup, spawn).add_systems(
         Update,
-        (show, hide_huds, pick, pointer_image, build_static, build_climb, decorate_rows, animate)
+        (show, hide_huds, pick, pointer_image, build_static, build_climb, build_vote, decorate_rows, animate, countdown)
             .chain()
             .after(super::match_end::MatchEndFollow)
             .run_if(themed),
@@ -210,6 +222,7 @@ fn show(
             state.came_up = None;
             state.static_key = None;
             state.climb_key = None;
+            state.vote_key = None;
         }
         _ => {}
     }
@@ -1270,5 +1283,290 @@ pub fn unstage(world: &mut World) {
     world.remove_resource::<MatchEndStaged>();
     if let Some(mut v) = world.get_resource_mut::<MatchEndView>() {
         *v = MatchEndView { sounds_asked: v.sounds_asked, ..default() };
+    }
+}
+
+// ===== the vote band (step 2) =====
+
+/// The vote band's part.
+#[derive(Component)]
+struct VotePart;
+
+/// A map card: its candidate, whether it is yours, the vote locked, the
+/// winner.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VoteCard {
+    pub index: usize,
+    pub mine: bool,
+    pub locked: bool,
+    pub won: bool,
+}
+
+/// The one countdown's number: the vote's close, the next match's start.
+#[derive(Component)]
+pub struct VoteCountdown;
+
+/// The countdown's tick bar.
+#[derive(Component, Clone, Debug)]
+pub struct VoteTicks {
+    pub material: Handle<TickBarMaterial>,
+    pub ticks: u32,
+}
+
+/// Seconds left on the one countdown at `now` (`SimClock`): to the vote's
+/// close (the next match comes with it), else to the next match; 0 once
+/// the vote is locked; frozen when staged.
+pub fn seconds_left(view: &MatchEndView, now: f64, frozen: Option<f64>) -> f64 {
+    if view.vote.as_ref().is_some_and(|v| !v.open()) {
+        return 0.0;
+    }
+    if let Some(f) = frozen {
+        return f.max(0.0);
+    }
+    (view.vote_closes.unwrap_or(view.next_at) - now).max(0.0)
+}
+
+/// The countdown's text (`00:13`).
+pub fn countdown_text(left: f64) -> String {
+    let s = left.ceil() as u32;
+    format!("{:02}:{:02}", s / 60, s % 60)
+}
+
+/// The line under the countdown: what 0 does, then the winning map.
+pub fn vote_hint(view: &MatchEndView) -> String {
+    match &view.vote {
+        Some(v) if !v.open() => match v.winner.and_then(|w| v.maps.get(w)) {
+            Some(m) => format!("Next: {m} \u{2022} starting"),
+            None => "Next match starting".into(),
+        },
+        Some(_) => "Vote closes and the next match starts at 00:00".into(),
+        None => "The next match starts at 00:00".into(),
+    }
+}
+
+/// `map` to a pair of colours, the cards' stand-in for a thumbnail.
+fn map_tint(map: &str) -> (Color, Color) {
+    let h = map.bytes().fold(2166136261u32, |h, b| (h ^ b as u32).wrapping_mul(16777619));
+    let hue = (h % 360) as f32;
+    (Color::hsl(hue, 0.20, 0.26), Color::hsl(220.0, 0.30, 0.09))
+}
+
+/// The pips a card shows (one a vote, the look book's eight).
+pub const PIPS: usize = 8;
+
+/// The vote band (rebuilt when the vote changes): the countdown, the map
+/// cards, the way out.
+#[allow(clippy::too_many_arguments)]
+fn build_vote(
+    look: Look,
+    view: Res<MatchEndView>,
+    root: Single<Entity, With<SignalEndRoot>>,
+    old: Query<Entity, With<VotePart>>,
+    mut state: ResMut<EndState>,
+    mut slants: Option<ResMut<Assets<SlantMaterial>>>,
+    mut ticks: Option<ResMut<Assets<TickBarMaterial>>>,
+    mut commands: Commands,
+) {
+    let key = (view.vote.clone(), view.shown, units_key(&look));
+    if state.vote_key.as_ref() == Some(&key) && !look.theme.is_changed() {
+        return;
+    }
+    state.vote_key = Some(key);
+    for e in &old {
+        commands.entity(e).despawn();
+    }
+    if !view.shown {
+        return;
+    }
+    let came_up = state.came_up.unwrap_or(0.0);
+    let hair = look.hair();
+    let tan = look.theme.tan();
+    let n = 40;
+    commands
+        .spawn((VotePart, ChildOf(*root), Pickable::IGNORE, Node { width: look.val(100.0), height: look.val(56.25), position_type: PositionType::Absolute, align_self: AlignSelf::Center, ..default() }))
+        .with_children(|f| {
+            f.spawn((
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: look.val(1.4),
+                    padding: UiRect::top(look.val(1.3)),
+                    border: UiRect::top(px(hair)),
+                    align_items: AlignItems::FlexStart,
+                    ..abs(&look, LEFT, 39.4, None, Some(LEFT))
+                },
+                BorderColor::all(look.tone(Tone::Fg4)),
+                enter(&look, came_up, 1.5, 0.8, 0.0),
+                UiParityId::new("end.vote"),
+                Pickable::IGNORE,
+            ))
+            .with_children(|b| {
+                // The countdown: one, the vote's close and the next match.
+                b.spawn((Node { width: look.val(14.6), flex_direction: FlexDirection::Column, align_items: AlignItems::FlexStart, flex_shrink: 0.0, ..default() }, Pickable::IGNORE)).with_children(|c| {
+                    c.spawn((Node::default(), Pickable::IGNORE)).with_children(|t| {
+                        let e = signal::tag(t, &look, TagKind::Accent, "Next match", 0.62);
+                        parity::name(t, e, "end.vote.tag");
+                    });
+                    c.spawn((
+                        Node { margin: UiRect::top(look.val(0.6)), ..default() },
+                        look.tracked(Role::DisplayBold, 2.4, 2.4 * 0.02, look.tone(Tone::Fg), "00:00"),
+                        VoteCountdown,
+                        UiParityId::new("end.vote.count"),
+                    ));
+                    let u = *look.units;
+                    let layout = TickLayout::new(u.phys(u.cq(14.6)).floor() as u32, u.phys(u.cq(1.1)).floor() as u32, n);
+                    let sf = u.scale_factor.max(1e-3);
+                    c.spawn((Node { margin: UiRect::top(look.val(0.9)), height: look.val(1.1), ..default() }, Pickable::IGNORE)).with_children(|w| {
+                        let mut bar = w.spawn((
+                            Node { width: px(layout.w as f32 / sf), height: px(layout.h as f32 / sf), ..default() },
+                            UiParityId::new("end.vote.ticks"),
+                            Pickable::IGNORE,
+                        ));
+                        if let Some(ticks) = ticks.as_deref_mut() {
+                            let material = ticks.add(TickBarMaterial::new(&look.theme, n, layout));
+                            bar.insert((MaterialNode(material.clone()), VoteTicks { material, ticks: n }));
+                        }
+                    });
+                    c.spawn((
+                        Node { margin: UiRect::top(look.val(0.55)), max_width: look.val(14.6), ..default() },
+                        look.tracked(Role::Mono, 0.5, 0.05, look.tone(Tone::Fg3), &vote_hint(&view)),
+                        UiParityId::new("end.vote.hint"),
+                    ))
+                    .insert((TextLayout::new(Justify::Left, LineBreak::WordBoundary), bevy::text::LineHeight::RelativeToFont(1.45)));
+                });
+                // The map cards.
+                b.spawn((Node { flex_grow: 1.0, column_gap: look.val(0.9), align_items: AlignItems::FlexStart, ..default() }, Pickable::IGNORE)).with_children(|cards| {
+                    let Some(v) = &view.vote else { return };
+                    let locked = !v.open();
+                    let best = v.counts.iter().copied().max().unwrap_or(0);
+                    let lead = (best > 0).then(|| v.counts.iter().position(|c| *c == best)).flatten();
+                    for (i, map) in v.maps.iter().enumerate() {
+                        let p = format!("end.vote.card.{}", i + 1);
+                        let mine = v.mine == Some(i);
+                        let won = v.winner == Some(i);
+                        let count = v.counts.get(i).copied().unwrap_or(0);
+                        let (line, w) = if locked && won {
+                            (look.tone(Tone::Fg), look.px(0.14))
+                        } else if mine {
+                            (look.theme.tone_a(Tone::Acc, if locked { 0.35 } else { 1.0 }), look.px(0.14))
+                        } else {
+                            (look.theme.tone_a(Tone::Fg, if locked { 0.15 * 0.35 } else { 0.15 }), hair)
+                        };
+                        let mut card = cards.spawn((
+                            VoteCard { index: i, mine, locked, won },
+                            super::match_end::VoteButton(i),
+                            super::widgets::clickable(),
+                            Node { flex_grow: 1.0, flex_basis: px(0.0), flex_direction: FlexDirection::Column, overflow: Overflow::clip(), ..default() },
+                            BackgroundColor(look.theme.tone_a(Tone::Ink, 0.75)),
+                            Outline::new(px(w), px(-w), line),
+                            UiParityId(p.clone()),
+                        ));
+                        // Locked, the others dim to 35 %.
+                        let dim = if locked && !won { 0.35 } else { 1.0 };
+                        let tone = |t: Tone| look.theme.tone_a(t, dim);
+                        card.with_children(|c| {
+                            let (a, b) = map_tint(map);
+                            let (a, b) = (a.with_alpha(dim), b.with_alpha(dim));
+                            c.spawn((
+                                Node { height: look.val(4.6), ..default() },
+                                BackgroundGradient::from(LinearGradient::degrees(110.0, vec![ColorStop::percent(a, 0.0), ColorStop::percent(b, 100.0)])),
+                                UiParityId(format!("{p}.thumb")),
+                                Pickable::IGNORE,
+                            ))
+                            .with_children(|t| {
+                                t.spawn((
+                                    Node { position_type: PositionType::Absolute, width: percent(100.0), height: percent(100.0), ..default() },
+                                    BackgroundGradient::from(LinearGradient::to_bottom(vec![
+                                        ColorStop::percent(Color::NONE, 40.0),
+                                        ColorStop::percent(look.theme.tone_a(Tone::Ink, 0.7), 100.0),
+                                    ])),
+                                    Pickable::IGNORE,
+                                ));
+                            });
+                            if mine {
+                                c.spawn((Node { position_type: PositionType::Absolute, right: look.val(0.5), top: look.val(0.5), ..default() }, Pickable::IGNORE)).with_children(|t| {
+                                    signal::tag(t, &look, TagKind::Accent, "Your vote", 0.62);
+                                });
+                            }
+                            c.spawn((Node { flex_direction: FlexDirection::Column, align_items: AlignItems::FlexStart, row_gap: look.val(0.4), padding: UiRect::new(look.val(0.8), look.val(0.8), look.val(0.7), look.val(0.6)), ..default() }, Pickable::IGNORE)).with_children(|m| {
+                                m.spawn((look.tracked(Role::DisplayBold, 0.78, 0.78 * 0.03, tone(Tone::Fg), &map.to_uppercase()), UiParityId(format!("{p}.name"))));
+                                let game = v.games.get(i).cloned().unwrap_or_default();
+                                m.spawn((look.tracked(Role::Mono, 0.48, 0.048, look.theme.tone_a(Tone::Fg, 0.42 * dim), &game.to_uppercase()), UiParityId(format!("{p}.game"))));
+                                m.spawn((Node { align_items: AlignItems::Center, align_self: AlignSelf::Stretch, column_gap: look.val(0.5), margin: UiRect::top(look.val(0.15)), ..default() }, Pickable::IGNORE)).with_children(|r| {
+                                    r.spawn((Node { column_gap: look.val(0.16), ..default() }, UiParityId(format!("{p}.pips")), Pickable::IGNORE)).with_children(|pips| {
+                                        for k in 0..PIPS {
+                                            let color = if k < count as usize {
+                                                tone(if mine && k + 1 == count as usize { Tone::Acc } else { Tone::Fg })
+                                            } else {
+                                                look.theme.tone_a(Tone::Fg, 0.15 * dim)
+                                            };
+                                            // The box holds the lean; the layout counts .5 cq (as CSS's skew).
+                                            let mut pip = pips.spawn((
+                                                Node { width: look.val(0.5 + 0.5 * tan), height: look.val(0.5), margin: UiRect::right(look.val(-0.5 * tan)), ..default() },
+                                                Pickable::IGNORE,
+                                            ));
+                                            if let Some(slants) = slants.as_deref_mut() {
+                                                pip.insert(MaterialNode(slants.add(SlantMaterial::new(&look.theme, color))));
+                                            }
+                                        }
+                                    });
+                                    r.spawn((Node { flex_grow: 1.0, ..default() }, Pickable::IGNORE));
+                                    let t = if lead == Some(i) { Tone::AccText } else { Tone::Fg };
+                                    r.spawn((look.tracked(Role::DisplayBold, 0.74, 0.0, tone(t), &count.to_string()), UiParityId(format!("{p}.count"))));
+                                });
+                            });
+                        });
+                    }
+                });
+                // The way out.
+                b.spawn((Node { width: look.val(9.0), flex_shrink: 0.0, flex_direction: FlexDirection::Column, row_gap: look.val(0.6), align_self: AlignSelf::FlexEnd, ..default() }, LeaveColumn, Pickable::IGNORE)).with_children(|c| {
+                    c.spawn((
+                        Node { max_width: look.val(9.0), ..default() },
+                        look.tracked(Role::Mono, 0.48, 0.048, look.tone(Tone::Fg3), "Not staying? Leave any time; the match starts without you."),
+                        UiParityId::new("end.vote.ex"),
+                    ))
+                    .insert((TextLayout::new(Justify::Left, LineBreak::WordBoundary), bevy::text::LineHeight::RelativeToFont(1.45)));
+                });
+            });
+        });
+}
+
+/// The column the way out sits in (the Leave button joins it).
+#[derive(Component)]
+pub struct LeaveColumn;
+
+/// The one countdown's number and ticks, every frame from the clock.
+fn countdown(
+    look: Look,
+    view: Res<MatchEndView>,
+    staged: Option<Res<MatchEndStaged>>,
+    clock: Option<Res<crate::core::SimClock>>,
+    mut texts: Query<&mut Text, With<VoteCountdown>>,
+    bars: Query<&VoteTicks>,
+    mut mats: Option<ResMut<Assets<TickBarMaterial>>>,
+) {
+    if !view.shown {
+        return;
+    }
+    let now = clock.map_or(0.0, |c| c.now);
+    let left = seconds_left(&view, now, staged.and_then(|s| s.left));
+    let text = countdown_text(left);
+    for mut t in &mut texts {
+        if t.0 != text {
+            t.0 = text.clone();
+        }
+    }
+    let total = look.dur("matchend", "vote", 20.0).max(1.0);
+    let hot_from = look.dur("matchend", "vote_hot_from", 17.0);
+    let Some(mats) = mats.as_deref_mut() else { return };
+    for bar in &bars {
+        let n = bar.ticks as f32;
+        let lit = (((total as f64 - left) / total as f64).clamp(0.0, 1.0) as f32 * n).floor() as u32;
+        let hot = (hot_from / total * n).floor() as u32;
+        if let Some(m) = mats.get(&bar.material)
+            && (m.counts.y != lit as f32 || m.counts.z != hot as f32)
+            && let Some(mut m) = mats.get_mut(&bar.material)
+        {
+            m.set(lit, hot);
+        }
     }
 }
