@@ -178,3 +178,48 @@ fn the_ground_and_leave() {
     assert_eq!(w.query::<&EndGround>().iter(w).count(), 2, "the ambient and the planes");
     assert_eq!(w.query::<&LeaveButton>().iter(w).count(), 1);
 }
+
+/// Off the stage: the standings read the session wins from the results
+/// the server sends (`MatchResults`' `ResultRow::wins`, this match
+/// counted), "+1" on the winner's row only, no trophy without wins.
+#[test]
+fn the_standings_read_the_servers_session_wins() {
+    use chimera_client::client::race_chip::SessionWins;
+    use chimera_sim::minigame::{NextMatch, hud::MinigameHud, results::{MatchResults, ResultRow}};
+    let mut sim = Sim::with(SimBasePlugins, |app| {
+        app.insert_resource(Theme::from_toml(SIGNAL).expect("theme"));
+        app.insert_resource(UiClock::manual());
+        if !app.world().contains_resource::<Assets<Image>>() {
+            app.init_asset::<Image>();
+        }
+        app.add_plugins(MatchEndPlugin);
+    });
+    let row = |name: &str, wins, winner| ResultRow { name: name.into(), kills: 3, deaths: 1, rung: Some(2), winner, wins, ..Default::default() };
+    let results = MatchResults {
+        title: "Kit gun game".into(),
+        rungs: 3,
+        rows: vec![row("Ann", 2, true), row("Bot Cy", 3, false), row("Bob", 0, false)],
+        ..default()
+    };
+    sim.app.insert_resource(MinigameHud { title: "Kit gun game".into(), results: Some(results), ..default() });
+    let at = sim.app.world().resource::<chimera_core::core::SimClock>().now + 20.0;
+    sim.app.insert_resource(NextMatch { map: None, at });
+    sim.ticks(3);
+    assert!(visible(&mut sim, true), "the Signal screen");
+    let w = sim.app.world_mut();
+    let mut wins: Vec<u32> = w.query::<&SessionWins>().iter(w).map(|s| s.0).collect();
+    wins.sort();
+    assert_eq!(wins, [2, 3], "Ann's (this match counted) and the bot's; none for Bob");
+    // "+1" once, under the winner's row (the first).
+    let plus: Vec<Entity> = w.query::<(Entity, &Text)>().iter(w).filter(|(_, t)| t.0 == "+1").map(|(e, _)| e).collect();
+    assert_eq!(plus.len(), 1, "one +1");
+    let mut at = plus[0];
+    let row = loop {
+        let parent = w.get::<ChildOf>(at).expect("under a row").parent();
+        if let Some(r) = w.get::<StandingsRow>(parent) {
+            break *r;
+        }
+        at = parent;
+    };
+    assert_eq!(row.index, 0, "on the winner's row");
+}

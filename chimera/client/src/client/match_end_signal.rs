@@ -17,8 +17,8 @@
 //!   (the winner's gun and its last victim).
 //! - **Standings** (`StandingsRow`): position, the bot slot and the name
 //!   with HOST (or the fused YOU+HOST chip) and the session wins (trophy,
-//!   the count with this match, "+1" on the winner's: the hook for M6's
-//!   session wins, `ResultRow::wins` for now), the rung big (the winner's in the accent, with its
+//!   the count with this match, "+1" on the winner's: the server's
+//!   `ResultRow::wins`, `minigame::wins` per server run), the rung big (the winner's in the accent, with its
 //!   bar), kills and deaths under their marks, the ping (meter and number;
 //!   the loss mark for a connection losing packets). Your row is tinted
 //!   and outlined; hover is a tick at the right edge and a faint fill

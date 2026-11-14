@@ -3,12 +3,13 @@
 //! on the host's own row, HOST alone on the host's row seen by another
 //! player, the robot on a bot's, YOU's row outlined), a block turning
 //! ready pops back to its size on the kit's clock, free slots read
-//! "Open", the countdown's ticks light as it runs; the shell's theme keeps
+//! "Open", the countdown's ticks light as it runs, the session wins
+//! (`LobbyRow::wins`) show as a trophy and count, the leader's marked; the shell's theme keeps
 //! the old panel. The clock is stepped by hand (`UiClock::manual`).
 
 use bevy::prelude::*;
 use chimera_client::client::{
-    lobby_panel::{CountdownBar, LobbyMark, LobbyPlayerRow, OpenSlot, ReadyBlock},
+    lobby_panel::{CountdownBar, LobbyMark, LobbyPlayerRow, LobbyWins, OpenSlot, ReadyBlock},
     prematch_lobby::{LobbyView, PreMatchLobbyPlugin},
 };
 use chimera_core::core::{LocalPlayer, NetRole};
@@ -61,7 +62,7 @@ corner = 2.4
 const JOINER: u64 = 5;
 
 fn row(id: Option<u64>, name: &str, status: u8) -> LobbyRow {
-    LobbyRow { id, name: name.into(), status, done: 0, total: 0, ping_ms: id.filter(|&i| i != HOST_ID).map(|_| 31) }
+    LobbyRow { id, name: name.into(), status, done: 0, total: 0, ping_ms: id.filter(|&i| i != HOST_ID).map(|_| 31), wins: 0 }
 }
 
 /// A listen host's lobby: the host, a joiner not ready, a bot; 6 slots.
@@ -207,4 +208,29 @@ fn the_shell_theme_keeps_the_old_panel() {
     assert!(marks(&mut s).is_empty());
     let w = s.app.world_mut();
     assert_eq!(w.query::<&LobbyPlayerRow>().iter(w).count(), 0);
+}
+
+/// The session wins the server sends on the rows (`LobbyRow::wins`):
+/// a trophy and the count beside each name with any, the session's
+/// leader marked; none without.
+#[test]
+fn session_wins_show_in_the_lobby() {
+    let mut sim = sim(Some(THEME));
+    let wins = |sim: &mut Sim| {
+        let w = sim.app.world_mut();
+        let mut v: Vec<LobbyWins> = w.query::<&LobbyWins>().iter(w).copied().collect();
+        v.sort_by_key(|l| l.wins);
+        v
+    };
+    assert!(wins(&mut sim).is_empty(), "nobody has won yet");
+    {
+        let w = sim.app.world_mut();
+        let mut l = w.query::<&mut NetLobby>().single_mut(w).unwrap();
+        l.rows[1].wins = 1;
+        l.rows[2].wins = 3;
+    }
+    sim.ticks(2);
+    assert_eq!(wins(&mut sim), [LobbyWins { wins: 1, leader: false }, LobbyWins { wins: 3, leader: true }]);
+    let v = sim.app.world().resource::<LobbyView>().rows.iter().map(|r| r.wins).collect::<Vec<_>>();
+    assert_eq!(v, [0, 1, 3], "the view carries them");
 }
