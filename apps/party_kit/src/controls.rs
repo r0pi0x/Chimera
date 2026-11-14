@@ -146,13 +146,15 @@ pub fn nudged(setting: &Setting, value: f32, dir: i8) -> f32 {
 
 /// The keys `command` has on a tab: the shared binds', or the game's own.
 pub fn keys_on(console: &Console, tab: usize, command: &str) -> Vec<String> {
+    keys_in(&console.binds, &console.layers, tab, command)
+}
+
+/// `keys_on` over a bind table and its game layers (a snapshot of the
+/// console's, as Settings keeps from before its pending binds).
+pub fn keys_in(shared: &BTreeMap<String, String>, layers: &BTreeMap<String, BTreeMap<String, String>>, tab: usize, command: &str) -> Vec<String> {
     match tab_game(tab) {
-        None => binds::keys_for(&console.binds, command).into_iter().map(String::from).collect(),
-        Some(game) => console
-            .layers
-            .get(game)
-            .map(|l| binds::keys_for(l, command).into_iter().map(String::from).collect())
-            .unwrap_or_default(),
+        None => binds::keys_for(shared, command).into_iter().map(String::from).collect(),
+        Some(game) => layers.get(game).map(|l| binds::keys_for(l, command).into_iter().map(String::from).collect()).unwrap_or_default(),
     }
 }
 
