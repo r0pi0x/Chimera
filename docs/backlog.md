@@ -36,6 +36,11 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## Roadmap after the gun game settles (user, 2026-10-29)
 
+- **North Star, not now (user, 2026-11-14):** accounts by redeem code
+  (the host mints single-use codes; a code plus the hub link makes an
+  account that replaces asset tokens; later stats and meta progression):
+  [plans/active/hub.md](plans/active/hub.md) section 10.
+
 - **Parity gaps, ranked (audit 2026-11-12):** the top gaps vs CS:S,
   Combat Arms and HL2:DM for a gun-game player, in
   [plans/active/parity-gaps-ranked.md](plans/active/parity-gaps-ranked.md).
