@@ -13,7 +13,9 @@
 //! it drops: the game's `HealthTookDamage` animation); death notices with team
 //! colours and weapon/headshot icons (another game's gun: its own game's
 //! icon from `client::weapon_icons::WeaponIcons`, else its short name (`gun_short_name`);
-//! CS:S registers its glyphs there for the other games' feeds, its
+//! CS:S registers its glyphs there for the other games' feeds and the
+//! menu's Ladder backdrop (from the install at start, with no map or HUD
+//! look: `register_install_icons`; the look's own when it loads), its
 //! headshot glyph as the headshot mark; none while the app draws one feed
 //! for every HUD, `client::kill_feed::OwnKillFeed`); the round's end: the win panel
 //! (`win_panel.rs`), or a centre print without its layout; the round's
@@ -106,6 +108,9 @@ impl Plugin for GameHudPlugin {
             .init_resource::<WeaponIcons>()
             // Other games' HUDs draw CS:S's guns with these, whichever HUD
             // is up.
+            // From the install at start too (no map, no HUD look yet: the
+            // menu's Ladder backdrop, another game's first map).
+            .add_systems(Startup, register_install_icons)
             .add_systems(Update, register_icons)
             .add_systems(
                 Update,
@@ -478,13 +483,48 @@ fn register_icons(
             Some((name.clone(), WeaponIcon::Glyph { font, ch: *ch, em: tall * 0.5 }))
         })
         .collect();
+    register_glyph_icons(&mut icons, glyphs);
+}
+
+/// Registers CS:S's guns' glyphs from the install (or the asset store) at
+/// start, as HL2:DM's are: the icon script and the scheme's fonts only
+/// (`source_engine::hud::look::glyph_icons`), so the menu (the Ladder
+/// backdrop's rungs) and another game's HUD draw CS:S's own icons before
+/// any CS:S HUD look has loaded; the look's own registration replaces
+/// them when it comes (`register_icons`). Nothing without an install: the
+/// fallback icons stay.
+pub fn register_install_icons(mut icons: ResMut<WeaponIcons>, fonts: Option<ResMut<Assets<Font>>>) {
+    let Some(mut fonts) = fonts else { return };
+    let Some(mount) = crate::game::INFO.install().and_then(|i| crate::game::mount::open(&i).ok()) else { return };
+    let Some(look) = source_engine::hud::look::glyph_icons(&|p| mount.read(p).ok()) else {
+        warn!("CS:S: no kill icons (its scheme or icon script doesn't read)");
+        return;
+    };
+    let mut handles: HashMap<&str, (Handle<Font>, f32)> = HashMap::new();
+    for (name, f) in &look.fonts {
+        handles.insert(name.as_str(), (fonts.add(Font::from_bytes(f.data.to_vec())), f.tall));
+    }
+    let glyphs = look
+        .icons
+        .iter()
+        .filter_map(|(name, (font, ch))| {
+            let (font, tall) = handles.get(font.as_str())?.clone();
+            Some((name.clone(), WeaponIcon::Glyph { font, ch: *ch, em: tall * 0.5 }))
+        })
+        .collect();
+    register_glyph_icons(&mut icons, glyphs);
+}
+
+/// Registers `glyphs` (icon name to glyph) as CS:S's guns' icons, its
+/// headshot glyph as the headshot mark, and their fonts for a feed to lay
+/// out ahead (`text_warm`).
+fn register_glyph_icons(icons: &mut WeaponIcons, glyphs: HashMap<String, WeaponIcon>) {
     if glyphs.is_empty() {
         return;
     }
     if let Some(mark) = glyphs.get("d_headshot") {
         icons.register_mark(crate::game::GAME, crate::client::kill_feed::HEADSHOT, mark.clone());
     }
-    // The icon fonts, for a feed to lay out ahead (`text_warm`).
     let mut fonts: Vec<weapon_icons::GlyphFont> = Vec::new();
     for icon in glyphs.values() {
         let WeaponIcon::Glyph { font, ch, em } = icon else { continue };

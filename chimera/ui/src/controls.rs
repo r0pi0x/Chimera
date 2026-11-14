@@ -271,17 +271,19 @@ impl<'a> Ui<'a> {
         .id()
     }
 
-    /// A key cap (outlined, Mono), `size` cq text.
+    /// A key cap (outlined, Mono), `size` cq text: muted at .75, but a
+    /// dark one (on a primary button's white) at full strength.
     pub fn kbd(&self, c: &mut Commands, parent: Entity, key: &str, size: f32, tone: Tone) -> Entity {
+        let a = if tone.is_dark() { 1.0 } else { 0.75 };
         let e = c
             .spawn((
-                UiStyle { pad: Some([0.24, 0.36, 0.18, 0.36].into()), ..UiStyle::row() }.outline(tone, 0.75),
+                UiStyle { pad: Some([0.24, 0.36, 0.18, 0.36].into()), ..UiStyle::row() }.outline(tone, a),
                 Node::default(),
                 Pickable::IGNORE,
                 ChildOf(parent),
             ))
             .id();
-        self.text_a(c, e, Role::Mono, size * 0.88, tone, 0.75, key);
+        self.text_a(c, e, Role::Mono, size * 0.88, tone, a, key);
         e
     }
 
@@ -682,7 +684,9 @@ impl<'a> Ui<'a> {
             b
         };
         let minus = key(c, "-");
-        let out = self.boxed(c, g, UiStyle { min_w: Some(w), pad: Some([0.0, 0.3].into()), justify: Some(JustifyContent::Center), ..UiStyle::row() });
+        // As tall as the keys, so the focus underline sits under the
+        // value with a gap, as the slider's and the fields' do.
+        let out = self.boxed(c, g, UiStyle { min_w: Some(w), h: Some(1.7), pad: Some([0.0, 0.3].into()), justify: Some(JustifyContent::Center), ..UiStyle::row() });
         self.text(c, out, Role::Mono, 0.7, Tone::Fg, value);
         if st.focus {
             self.underline(c, out, Tone::Acc, 0.18);

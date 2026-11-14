@@ -288,3 +288,46 @@ fn the_stall_label_clears_the_line() {
     let at = StallLabel::place(&axes, 500.0, 600.0, 14, 600.0);
     assert!(!at.anchor_end && at.top > axes.y(14.0) + 5.0);
 }
+
+/// The climb's time axis ends at the match's length rounded up to a time
+/// mark (6:03 to 7:00 by minutes), not at a fixed ten minutes.
+#[test]
+fn the_climb_axis_ends_at_the_match_length_rounded_up() {
+    use chimera_client::client::match_end_signal::{ChartAxes, mmss};
+    let check = |len: f32, span: f32, step: f32| {
+        let a = ChartAxes::new(len, 14);
+        assert_eq!((a.span, a.step), (span, step), "{len} s");
+        assert!(a.span / a.step <= ChartAxes::MAX_MARKS);
+    };
+    check(363.0, 420.0, 60.0);
+    check(70.0, 90.0, 30.0);
+    check(240.0, 240.0, 30.0);
+    check(480.0, 480.0, 60.0);
+    check(481.0, 600.0, 120.0);
+    check(1501.0, 1800.0, 300.0);
+    check(0.0, 30.0, 30.0);
+
+    // The staged match, ended at 6:03.
+    let mut sim = sim(true);
+    sim.app.world_mut().resource_mut::<MatchEndStaged>().view.length = 363.0;
+    step(&mut sim, 0.1);
+    step(&mut sim, 0.1);
+    let axes = ChartAxes::new(363.0, 14);
+    let w = sim.app.world_mut();
+    let root = w.query_filtered::<Entity, With<ClimbChart>>().single(w).unwrap();
+    let mut texts = Vec::new();
+    let mut stack = vec![root];
+    while let Some(e) = stack.pop() {
+        if let Some(t) = w.get::<Text>(e) {
+            texts.push(t.0.clone());
+        }
+        if let Some(c) = w.get::<Children>(e) {
+            stack.extend(c.iter());
+        }
+    }
+    let last = mmss(axes.span);
+    assert!(texts.contains(&last), "the axis ends at {last}: {texts:?}");
+    assert!(!texts.iter().any(|t| t == "10:00"), "no fixed ten minutes: {texts:?}");
+    let marks = texts.iter().filter(|t| t.contains(':') && t.len() <= 5).count();
+    assert_eq!(marks as f32, axes.span / axes.step + 1.0, "{texts:?}");
+}

@@ -6,6 +6,8 @@
 //! glyphs or cut from sprite sheets (`scripts/hud_textures.txt`,
 //! `scripts/mod_textures.txt`), and each panel of `scripts/hudlayout.res`
 //! (position, size, background and offsets, every key as written).
+//! `glyph_icons` reads only the icon script's glyphs and their fonts (an
+//! app's kill icons at start, with no map or HUD).
 //!
 //! Moved from CS:S's `game::hud` (the shared part; CS:S's scopes, scoreboard
 //! pictures, screens and menus stay its own).
@@ -112,6 +114,86 @@ fn root(kv: Kv) -> Kv {
     kv.items().first().map(|(_, v)| v.clone()).unwrap_or(kv)
 }
 
+/// The scheme's font files (`CustomFontFiles`, by family name; with
+/// `font_files` also by file and family name) and each scheme font's first
+/// size, into `hud.fonts`; `read` reads a file of the game's search path.
+fn scheme_hud_fonts(hud: &mut GameHud, scheme: &Kv, read: &dyn Fn(&str) -> Option<Vec<u8>>, font_files: bool) {
+    let mut files: HashMap<String, Arc<Vec<u8>>> = HashMap::new();
+    for (_, path) in scheme.get("CustomFontFiles").map(Kv::items).unwrap_or_default() {
+        let Kv::Value(path) = path else { continue };
+        let Some(bytes) = read(path) else { continue };
+        let bytes = Arc::new(bytes);
+        if font_files {
+            let stem = path.rsplit(['/', '\\']).next().unwrap_or(path);
+            let stem = stem.rsplit_once('.').map_or(stem, |(s, _)| s).to_lowercase();
+            hud.fonts.insert(format!("file:{stem}"), HudFont { data: bytes.clone(), tall: 0.0, additive: false });
+        }
+        if let Some(family) = family_name(&bytes) {
+            if font_files {
+                hud.fonts
+                    .entry(format!("family:{}", family.to_lowercase()))
+                    .or_insert(HudFont { data: bytes.clone(), tall: 0.0, additive: false });
+            }
+            files.entry(family.to_lowercase()).or_insert(bytes);
+        }
+    }
+    for (name, f) in scheme.get("Fonts").map(Kv::items).unwrap_or_default() {
+        // The first size entry (the 480-line one).
+        let Some((_, first)) = f.items().first() else { continue };
+        let (Some(family), Some(tall)) = (first.str("name"), first.str("tall").and_then(|t| t.parse().ok())) else {
+            continue;
+        };
+        if let Some(data) = files.get(&family.to_lowercase()) {
+            hud.fonts.insert(
+                name.clone(),
+                HudFont { data: data.clone(), tall, additive: first.str("additive").is_some_and(|a| a.trim() != "0") },
+            );
+        }
+    }
+}
+
+/// An icon script's `TextureData` block (`scripts/mod_textures.txt`).
+fn texture_data(text: &str) -> Kv {
+    // A glyph that is a brace (`"character" "{"`) would open a block.
+    let t = source_formats::keyvalues::parse_res(&text.replace("\"{\"", "\"<open>\"").replace("\"}\"", "\"<close>\""));
+    // Entries sit in a "TextureData" block (under the file's root key).
+    fn find(kv: &Kv) -> Option<&Kv> {
+        kv.get("TextureData").or_else(|| kv.items().iter().find_map(|(_, v)| find(v)))
+    }
+    find(&t).cloned().unwrap_or(t)
+}
+
+/// An icon entry's font and glyph, when it is drawn with one.
+fn glyph_of(v: &Kv) -> Option<(String, char)> {
+    let ch = match v.str("character")? {
+        "<open>" => '{',
+        "<close>" => '}',
+        c => c.chars().next()?,
+    };
+    Some((v.str("font")?.to_string(), ch))
+}
+
+/// Only the glyph icons of the game's own icon script
+/// (`scripts/mod_textures.txt`: its guns' death notices) and the scheme's
+/// fonts they are drawn in, as a `GameHud` holding just those: what an app
+/// registers its kill icons from at start, without a map or the HUD
+/// (`read` reads a file of the game's search path). None when the scheme
+/// or the script doesn't read.
+pub fn glyph_icons(read: &dyn Fn(&str) -> Option<Vec<u8>>) -> Option<GameHud> {
+    let text = |p: &str| read(p).map(|b| String::from_utf8_lossy(&b).into_owned());
+    let scheme = root(source_formats::keyvalues::parse_pc(&text("resource/clientscheme.res")?));
+    let mut hud = GameHud::default();
+    scheme_hud_fonts(&mut hud, &scheme, read, false);
+    for (name, v) in texture_data(&text("scripts/mod_textures.txt")?).items() {
+        if let Some(g) = glyph_of(v) {
+            hud.icons.insert(name.clone(), g);
+        }
+    }
+    let used: Vec<String> = hud.icons.values().map(|(f, _)| f.clone()).collect();
+    hud.fonts.retain(|name, _| used.contains(name));
+    Some(hud)
+}
+
 /// The HUD look from the install (None when its files are missing).
 pub fn load(materials: &mut MaterialLoader, opts: &LookOptions) -> Option<GameHud> {
     let text = |m: &MaterialLoader, p: &str| m.read(p).map(|b| String::from_utf8_lossy(&b).into_owned());
@@ -146,64 +228,20 @@ pub fn load(materials: &mut MaterialLoader, opts: &LookOptions) -> Option<GameHu
         }
     }
 
-    // Font files by family name, then the scheme's fonts by their name.
-    let mut files: HashMap<String, Arc<Vec<u8>>> = HashMap::new();
-    for (_, path) in scheme.get("CustomFontFiles").map(Kv::items).unwrap_or_default() {
-        let Kv::Value(path) = path else { continue };
-        let Some(bytes) = materials.read(path) else { continue };
-        let bytes = Arc::new(bytes);
-        if opts.font_files {
-            let stem = path.rsplit(['/', '\\']).next().unwrap_or(path);
-            let stem = stem.rsplit_once('.').map_or(stem, |(s, _)| s).to_lowercase();
-            hud.fonts.insert(format!("file:{stem}"), HudFont { data: bytes.clone(), tall: 0.0, additive: false });
-        }
-        if let Some(family) = family_name(&bytes) {
-            if opts.font_files {
-                hud.fonts
-                    .entry(format!("family:{}", family.to_lowercase()))
-                    .or_insert(HudFont { data: bytes.clone(), tall: 0.0, additive: false });
-            }
-            files.entry(family.to_lowercase()).or_insert(bytes);
-        }
-    }
-    for (name, f) in scheme.get("Fonts").map(Kv::items).unwrap_or_default() {
-        // The first size entry (the 480-line one).
-        let Some((_, first)) = f.items().first() else { continue };
-        let (Some(family), Some(tall)) = (first.str("name"), first.str("tall").and_then(|t| t.parse().ok())) else {
-            continue;
-        };
-        if let Some(data) = files.get(&family.to_lowercase()) {
-            hud.fonts.insert(
-                name.clone(),
-                HudFont { data: data.clone(), tall, additive: first.str("additive").is_some_and(|a| a.trim() != "0") },
-            );
-        }
-    }
+    scheme_hud_fonts(&mut hud, &scheme, &|p| materials.read(p), opts.font_files);
 
     // Icons drawn with font glyphs or cut from sprite sheets: the base
     // HUD's, then the game's own over them.
     for script in ["scripts/hud_textures.txt", "scripts/mod_textures.txt"] {
         let Some(t) = text(materials, script) else { continue };
-        // A glyph that is a brace (`"character" "{"`) would open a block.
-        let t = source_formats::keyvalues::parse_res(&t.replace("\"{\"", "\"<open>\"").replace("\"}\"", "\"<close>\""));
-        // Entries sit in a "TextureData" block (under the file's root key).
-        fn find<'a>(kv: &'a Kv) -> Option<&'a Kv> {
-            kv.get("TextureData").or_else(|| kv.items().iter().find_map(|(_, v)| find(v)))
-        }
-        let t = find(&t).cloned().unwrap_or(t);
-        let num = |v: &Kv, k: &str| v.str(k).and_then(|x| x.trim().parse::<f32>().ok());
         let base = script.starts_with("scripts/hud_");
-        for (name, v) in t.items() {
+        for (name, v) in texture_data(&t).items() {
             if base && !opts.base_icons.iter().any(|k| name.eq_ignore_ascii_case(k)) {
                 continue;
             }
-            let glyph = |c: &str| match c {
-                "<open>" => Some('{'),
-                "<close>" => Some('}'),
-                c => c.chars().next(),
-            };
-            if let (Some(font), Some(ch)) = (v.str("font"), v.str("character").and_then(glyph)) {
-                hud.icons.insert(name.clone(), (font.to_string(), ch));
+            let num = |v: &Kv, k: &str| v.str(k).and_then(|x| x.trim().parse::<f32>().ok());
+            if let Some((font, ch)) = glyph_of(v) {
+                hud.icons.insert(name.clone(), (font, ch));
             } else if let Some(file) = v.str("file") {
                 let rect = [num(v, "x"), num(v, "y"), num(v, "width"), num(v, "height")];
                 if let ([Some(x), Some(y), Some(w), Some(h)], Some(texture)) = (rect, materials.resolve(file).texture) {

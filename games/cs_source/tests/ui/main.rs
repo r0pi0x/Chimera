@@ -43,5 +43,6 @@ mod heavy {
     mod bot_radio;
     mod hud_layout;
     mod install_assets;
+    mod kill_icons;
     mod lightmap_probe;
 }

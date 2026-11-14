@@ -442,3 +442,26 @@ fn the_board_covers_the_games_huds() {
     assert_eq!(vis(&sim, part), Visibility::Inherited, "the part back");
     assert_eq!(vis(&sim, root), Visibility::Inherited, "the root back");
 }
+
+/// On a listen host its own player is the host (it has no network
+/// character to say so: the local one while the process serves), so its
+/// row says LOCAL for its ping, not a meter and "0"; a client's own row,
+/// or single player, keeps the meter.
+#[test]
+fn a_listen_hosts_own_row_says_local() {
+    for (role, local_ping) in [(chimera_core::core::NetRole::Server, true), (chimera_core::core::NetRole::Client, false)] {
+        let mut sim = sim(true);
+        sim.app.insert_resource(role);
+        player(&mut sim, "Alpha", 1, 4, true, false);
+        player(&mut sim, "Cee", 2, 6, false, false);
+        sim.app.world_mut().resource_mut::<HeldActions>().showscores = true;
+        for _ in 0..4 {
+            frame(&mut sim, 0.05);
+        }
+        let w = sim.app.world_mut();
+        let hosts: Vec<(bool, bool)> = w.query::<&BoardRow>().iter(w).map(|r| (r.0.local, r.0.host)).collect();
+        assert!(hosts.contains(&(true, local_ping)) && hosts.contains(&(false, false)), "{role:?}: {hosts:?}");
+        let texts = texts_under::<BoardContent>(&mut sim);
+        assert_eq!(texts.iter().any(|t| t == "LOCAL"), local_ping, "{role:?}: {texts:?}");
+    }
+}

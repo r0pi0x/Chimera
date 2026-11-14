@@ -27,7 +27,8 @@
 //!   marks right-aligned over them, the ping (a 4-bar meter and the
 //!   number, by the theme's `[network]` thresholds: `ping_level`; at the
 //!   worst the packet-loss mark when the connection loses packets
-//!   (`score_flags::LOSS`), else LAG; LOCAL for the listen host, a faint dash for a bot), and the ladder strip. The leader's row
+//!   (`score_flags::LOSS`), else LAG; LOCAL for the listen host, on its
+//!   own screen too: `is_host`; a faint dash for a bot), and the ladder strip. The leader's row
 //!   has the accent bar; yours is tinted and outlined.
 //!
 //! While the board is open it covers the games' HUDs (`hud::HudCover`,
@@ -136,6 +137,15 @@ pub struct RaceRow {
     pub ping: u16,
     /// Its connection loses packets (`score_flags::LOSS`).
     pub loss: bool,
+}
+
+/// Whether a player is the host's: a client sees the listen host's
+/// character by its owner (`HOST_ID`); on the listen host itself its own
+/// player has no network character, so it is the local one while this
+/// process serves (`NetRole::Server`). The host's row shows LOCAL for its
+/// ping.
+pub fn is_host(ch: Option<&NetCharacter>, local: bool, role: Option<&crate::core::NetRole>) -> bool {
+    ch.is_some_and(|c| c.owner == Some(HOST_ID)) || (local && role == Some(&crate::core::NetRole::Server))
 }
 
 /// A row's ping meter: how many of its 4 bars are lit.
@@ -391,11 +401,12 @@ fn gather(
     hud: Option<Res<MinigameHud>>,
     ladder: Option<Res<Ladder>>,
     settings: Option<Res<NetSettings>>,
-    (gun_names, catalog, map_name, games): (
+    (gun_names, catalog, map_name, games, role): (
         Res<GunNames>,
         Option<Res<WeaponCatalog>>,
         Option<Res<crate::map::LoadedMapName>>,
         Option<Res<chimera_core::game_registry::Games>>,
+        Option<Res<crate::core::NetRole>>,
     ),
     players: Query<
         (
@@ -446,7 +457,7 @@ fn gather(
                     game: gun.map(game_of).unwrap_or_default(),
                     class: gun.and_then(|id| catalog.as_deref()?.get(id)).and_then(signal::icon_class),
                     bot: is_bot || net.is_some_and(|n| n.flags & score_flags::BOT != 0),
-                    host: ch.is_some_and(|c| c.owner == Some(HOST_ID)),
+                    host: is_host(ch, local, role.as_deref()),
                     local,
                     wins: won.map_or(0, |w| w.0),
                     ping: net.map_or(0, |n| n.ping),

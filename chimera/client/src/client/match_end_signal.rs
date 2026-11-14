@@ -24,7 +24,9 @@
 //!   and outlined; hover is a tick at the right edge and a faint fill
 //!   (never an outline); the selected row (a click; the winner's at
 //!   first) has a stronger fill and a pointer outside the row.
-//! - **The climb** (`ClimbChart`): rung against match time for the
+//! - **The climb** (`ClimbChart`): rung against match time (to the
+//!   match's length rounded up to the finest of 0:30, 1, 2, 5, 10 ...
+//!   minute marks that leaves at most eight: `ChartAxes`) for the
 //!   hovered row, else the selected one: the others' climbs faint, the
 //!   chosen one's steps (`ClimbSeg`) drawn along their length in
 //!   `climb_draw` s, its rung-ups, kills and deaths as ticks fading in
@@ -818,21 +820,29 @@ fn lockup(h: &mut ChildSpawnerCommands, look: &Look, lk: f32) {
 }
 
 /// The chart's geometry, in its units (0.1 cq; the look book's 470 x 174
-/// viewBox): x from the match's start to `span` s, y by rung.
+/// viewBox): x from the match's start to `span` s, marked every `step` s,
+/// y by rung.
 #[derive(Clone, Copy, Debug)]
 pub struct ChartAxes {
     pub span: f32,
+    pub step: f32,
     pub rungs: u32,
 }
 
 impl ChartAxes {
     pub const X0: f32 = 22.0;
     pub const X1: f32 = 462.0;
+    /// The time marks to choose from, s, and the most marks along x.
+    pub const STEPS: [f32; 8] = [30.0, 60.0, 120.0, 300.0, 600.0, 900.0, 1800.0, 3600.0];
+    pub const MAX_MARKS: f32 = 8.0;
 
-    /// Ten minutes, or the match's length rounded up to two-minute marks.
+    /// The match's length rounded up to the finest mark that leaves at
+    /// most `MAX_MARKS` of them (6:03 to 7:00 in minutes; 1:10 to 1:30).
     pub fn new(length: f32, rungs: u32) -> Self {
-        let span = (length / 120.0).ceil().max(5.0) * 120.0;
-        ChartAxes { span, rungs: rungs.max(2) }
+        let length = length.max(1.0);
+        let step = Self::STEPS.into_iter().find(|s| (length / s).ceil() <= Self::MAX_MARKS).unwrap_or(3600.0);
+        let span = (length / step).ceil() * step;
+        ChartAxes { span, step, rungs: rungs.max(2) }
     }
 
     pub fn x(&self, t: f32) -> f32 {
@@ -982,13 +992,12 @@ fn build_climb(
                     Pickable::IGNORE,
                 ))
                 .with_children(|g| {
-                    // The grid: two-minute marks, the first, middle and top rungs, the axis.
-                    let mut m = 0.0;
-                    while m <= axes.span + 0.5 {
+                    // The grid: the time marks to the match's length rounded up, the first, middle and top rungs, the axis.
+                    for i in 0..=(axes.span / axes.step).round() as u32 {
+                        let m = i as f32 * axes.step;
                         let x = axes.x(m);
                         line(g, Vec2::new(x, 6.0), Vec2::new(x, 160.0), hair, fg(0.07));
-                        label(g, &format!("{}:00", (m / 60.0).round() as u32), x, 171.0, 0.5, look.tone(Tone::Fg3));
-                        m += 120.0;
+                        label(g, &mmss(m), x, 171.0, 0.5, look.tone(Tone::Fg3));
                     }
                     let top = axes.rungs;
                     let mut marks = vec![1, top.div_ceil(2), top];

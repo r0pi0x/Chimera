@@ -10,9 +10,11 @@
 //! and `layout.airstrike`, the look book's by default):
 //!
 //! - **The banner** (the newest effect's, 15.5 cq down, above the
-//!   crosshair, 3.3 cq tall): a thin band tinted in the threat colour (a
-//!   threat; else the accent) fading out at both ends, hairlines over and
-//!   under, shadowed type, so the map shows through and around it. It
+//!   crosshair, 3.3 cq tall): a band of ink touched with the threat
+//!   colour (a threat; else the accent), .8 opaque in its middle and
+//!   fading out at both ends, hairlines over and under, the title at full
+//!   strength (1.3 cq) with shadowed type, so it reads over a bright sky
+//!   (the look book's .16 tint alone let the map wash it out). It
 //!   opens from the centre at 0.25 s (0.3 s), its title's letter spacing
 //!   closing from 0.3 to 0.08 em; a threat's carries the warning mark and
 //!   counts down to its impact. At 2 s it folds to the centre (`expo_in`,
@@ -24,7 +26,8 @@
 //!   then dying away. No flash.
 //! - **The chips** (top left, 2.2 cq in, 13.4 cq wide, one slot each
 //!   3.05 cq down: the place for every temporary effect): an ink plate
-//!   with the effect's name and a line under it; a threat with the
+//!   with the effect's name and a line under it (.82 and .56 cq: the
+//!   look book's .7 and .5 read 9-10 px at 1080 lines); a threat with the
 //!   warning mark and a threat bar, "Impact in N" then "Impact • stay
 //!   down"; a timed effect with a ring counting down its seconds
 //!   (`chimera_ui::RingMaterial`) and its detail. A chip wipes in from the
@@ -499,15 +502,33 @@ fn banner(
     }
 }
 
+/// The banner's band: ink mixed with this much of the effect's tint, at
+/// this alpha in its middle (display space, as `Color::with_alpha` blends
+/// it over the map: close to opaque).
+const BAND_TINT: f32 = 0.3;
+pub const BAND_ALPHA: f32 = 0.8;
+/// The banner's detail line (the look book's .56 read too small over the
+/// map) and the chips' type, cq: the title, the lines under it and the
+/// ring's count (the look book's .7 and .5 were 9-10 px at 1080 lines;
+/// the line no larger than .56, as a long detail, "Jump higher • fall
+/// slower", fills the chip's 13.4 cq).
+pub const BANNER_SUB: f32 = 0.64;
+pub const CHIP_TITLE: f32 = 0.82;
+pub const CHIP_LINE: f32 = 0.56;
+
 fn build_banner(look: &Look, d: &StrikeTimes, s: &ShownEffect, clip: Entity, commands: &mut Commands) {
     let tint = if s.e.threat { Tone::Threat } else { Tone::Acc };
     let c = look.theme.tone(tint);
+    // The band: ink with a touch of the tint, nearly opaque in its middle,
+    // so the type reads at full strength over a bright sky (the look
+    // book's .16 tint alone let the map wash it out).
+    let plate = look.theme.tone(Tone::Ink).mix(&c, BAND_TINT);
     let band = |a: f32| {
         bevy::ui::BackgroundGradient(vec![bevy::ui::Gradient::Linear(bevy::ui::LinearGradient::to_right(vec![
-            bevy::ui::ColorStop::new(c.with_alpha(0.0), percent(0.0)),
-            bevy::ui::ColorStop::new(c.with_alpha(a), percent(18.0)),
-            bevy::ui::ColorStop::new(c.with_alpha(a), percent(82.0)),
-            bevy::ui::ColorStop::new(c.with_alpha(0.0), percent(100.0)),
+            bevy::ui::ColorStop::new(plate.with_alpha(0.0), percent(0.0)),
+            bevy::ui::ColorStop::new(plate.with_alpha(a), percent(18.0)),
+            bevy::ui::ColorStop::new(plate.with_alpha(a), percent(82.0)),
+            bevy::ui::ColorStop::new(plate.with_alpha(0.0), percent(100.0)),
         ]))])
     };
     let line = |a: f32| {
@@ -532,7 +553,7 @@ fn build_banner(look: &Look, d: &StrikeTimes, s: &ShownEffect, clip: Entity, com
                 padding: UiRect::horizontal(look.val(1.8)),
                 ..default()
             },
-            band(0.16),
+            band(BAND_ALPHA),
             Pickable::IGNORE,
         ))
         .with_children(|b| {
@@ -551,7 +572,7 @@ fn build_banner(look: &Look, d: &StrikeTimes, s: &ShownEffect, clip: Entity, com
             let title = if s.e.threat { format!("{} incoming", s.e.title) } else { s.e.title.clone() };
             b.spawn((look.text(Role::DisplayBold, 1.3, look.tone(Tone::Fg), &title.to_uppercase()), shadow, BannerTitle, Pickable::IGNORE));
             let sub = if s.e.impact_at.is_some() { format!("{} • impact in", s.e.detail) } else { s.e.detail.clone() };
-            b.spawn((look.text(Role::Mono, 0.56, look.tone(Tone::Fg), &sub.to_uppercase()), shadow, Pickable::IGNORE));
+            b.spawn((look.text(Role::Mono, BANNER_SUB, look.tone(Tone::Fg), &sub.to_uppercase()), shadow, Pickable::IGNORE));
             if s.e.impact_at.is_some() {
                 b.spawn((
                     Node { min_width: look.val(1.0), ..default() },
@@ -735,16 +756,16 @@ fn spawn_chip(look: &Look, d: &StrikeTimes, s: &ShownEffect, slot: usize, now: f
                         if let Some(h) = ring.clone() {
                             n.insert(MaterialNode(h));
                         }
-                        ic.spawn((ChipRing, look.text(Role::Mono, 0.58, look.tone(Tone::Fg), ""), Pickable::IGNORE));
+                        ic.spawn((ChipRing, look.text(Role::Mono, CHIP_LINE, look.tone(Tone::Fg), ""), Pickable::IGNORE));
                     }
                 });
                 b.spawn((Node { flex_direction: FlexDirection::Column, row_gap: look.val(0.38), min_width: px(0.0), ..default() }, Pickable::IGNORE))
                     .with_children(|col| {
-                        col.spawn((look.text(Role::DisplayBold, 0.7, look.tone(Tone::Fg), &s.e.title.to_uppercase()), Pickable::IGNORE));
+                        col.spawn((look.text(Role::DisplayBold, CHIP_TITLE, look.tone(Tone::Fg), &s.e.title.to_uppercase()), Pickable::IGNORE));
                         col.spawn((Node { column_gap: look.val(0.25), ..default() }, Pickable::IGNORE)).with_children(|l| {
-                            l.spawn((ChipText::Pre, look.text(Role::Mono, 0.5, look.tone(Tone::Fg2), ""), Pickable::IGNORE));
-                            l.spawn((ChipText::Num, look.text(Role::Mono, 0.5, look.tone(Tone::Fg), ""), Pickable::IGNORE));
-                            l.spawn((ChipText::Post, look.text(Role::Mono, 0.5, look.tone(Tone::Fg2), ""), Pickable::IGNORE));
+                            l.spawn((ChipText::Pre, look.text(Role::Mono, CHIP_LINE, look.tone(Tone::Fg2), ""), Pickable::IGNORE));
+                            l.spawn((ChipText::Num, look.text(Role::Mono, CHIP_LINE, look.tone(Tone::Fg), ""), Pickable::IGNORE));
+                            l.spawn((ChipText::Post, look.text(Role::Mono, CHIP_LINE, look.tone(Tone::Fg2), ""), Pickable::IGNORE));
                         });
                     });
             });

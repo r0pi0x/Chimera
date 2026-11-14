@@ -8,7 +8,8 @@
 
 use bevy::prelude::*;
 use chimera_client::client::match_effects::{
-    BannerClip, BannerRoot, ChipText, EdgePulse, EffectChip, MatchEffectsPlugin, PlainText, edge_opacity, plain_line, ShownEffect,
+    BANNER_SUB, BannerBody, BannerClip, BannerRoot, BannerTitle, CHIP_LINE, ChipText, EdgePulse, EffectChip, MatchEffectsPlugin, PlainText,
+    edge_opacity, plain_line, ShownEffect,
 };
 use chimera_core::core::SimClock;
 use chimera_sim::{
@@ -156,6 +157,51 @@ fn air_strike_banner_folds_into_its_chip() {
     assert!(chips(&mut sim).is_empty(), "gone with the strike: {:?}", chips(&mut sim));
     run(&mut sim, 2.5);
     assert_eq!(edge(&mut sim), 0.0);
+}
+
+fn px(f: &TextFont) -> f32 {
+    match f.font_size {
+        FontSize::Px(v) => v,
+        other => panic!("a size in px: {other:?}"),
+    }
+}
+
+#[test]
+fn the_banner_and_chips_read_over_a_bright_map() {
+    let mut sim = sim(true);
+    // At 1080 lines (the look book's sizes read 9-11 px there).
+    let units = UiUnits::new(1080.0, 1.0);
+    sim.app.insert_resource(units);
+    frame(&mut sim, 0.0);
+    let t0 = now(&sim);
+    start(&mut sim, strike(t0));
+    run(&mut sim, 1.0);
+    let fg = sim.app.world().resource::<Theme>().tone(chimera_ui::Tone::Fg);
+    {
+        let w = sim.app.world_mut();
+        // The title at full strength, the look book's 1.3 cq.
+        let (c, f) = w.query_filtered::<(&TextColor, &TextFont), With<BannerTitle>>().single(w).unwrap();
+        assert_eq!(c.0, fg, "the title in the theme's fg, not faded");
+        assert_eq!(c.0.alpha(), 1.0);
+        assert!((px(f) - units.text_px(1.3)).abs() < 0.01, "1.3 cq: {}", px(f));
+        // The band: dark and close to opaque in its middle.
+        let g = w.query_filtered::<&bevy::ui::BackgroundGradient, With<BannerBody>>().single(w).unwrap();
+        let bevy::ui::Gradient::Linear(l) = &g.0[0] else { panic!("a linear band") };
+        let mid = l.stops[1].color;
+        assert!(mid.alpha() >= 0.75, "a near-opaque band: {mid:?}");
+        assert!(mid.luminance() < 0.1, "a dark band under light type: {mid:?}");
+        // The detail line no smaller than the readable size.
+        let sub = w.query::<(&Text, &TextFont)>().iter(w).find(|(t, _)| t.0.starts_with("TAKE COVER")).map(|(_, f)| px(f)).unwrap();
+        assert!((sub - units.text_px(BANNER_SUB)).abs() < 0.01 && sub >= 12.0, "the detail line: {sub}");
+    }
+    run(&mut sim, 1.6);
+    assert_eq!(chips(&mut sim).len(), 1);
+    let w = sim.app.world_mut();
+    for (c, f) in w.query::<(&ChipText, &TextFont)>().iter(w) {
+        assert!((px(f) - units.text_px(CHIP_LINE)).abs() < 0.01 && px(f) >= 11.0, "{c:?}: {}", px(f));
+    }
+    let title = w.query::<(&Text, &TextFont)>().iter(w).find(|(t, _)| t.0 == "AIR STRIKE").map(|(_, f)| px(f)).unwrap();
+    assert!(title >= 15.0, "the chip's title: {title}");
 }
 
 #[test]
