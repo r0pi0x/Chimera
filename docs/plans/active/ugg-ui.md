@@ -601,8 +601,13 @@ must be one build.
 
 ## 6. Decisions (user, 2026-11-14)
 
-1. Icons: each game's own kill icons in the kill feed only; our fallback
-   set everywhere else (one style at small sizes).
+1. Icons (revised 2026-11-14): each game's own kill icon everywhere it
+   has one (kill feed, Tab board, rank-up toast, the Ladder backdrop):
+   CS:S's and HL2:DM's are icon-font glyphs (vector), Combat Arms' are
+   bitmaps sized so they stay sharp. Our fallback set (by `GunClass`,
+   with per-weapon overrides for knives, crossbows, energy guns) only
+   where a game has none: our own guns, games without icons, assets not
+   downloaded yet. One theme key (`icons.prefer_game`) flips it.
 2. Tab: one board, the chip opening into it. The board is big enough to
    carry everything the full scoreboard had (rung, gun icon and name,
    K/D, ladder strip, tags, session wins). Its open and close are fast
