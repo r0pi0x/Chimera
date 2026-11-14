@@ -323,6 +323,7 @@ each small but together a day or two, and typed reports already work.
 | P1 release | A new playtest build for testers and server (all on one `NET_VERSION`); docs/playtest.md and playtest-hosting.md updated | user's go | `tools/post-push-tests.sh`; a pre-flight report from a clean Windows PC |
 | **P2** voice | 4: recording, `voice.ogg`, consent, the transcription hook, the page's player | 1-2 days | Ogg pages read back by a decoder; size and time caps; consent off hides the button |
 | **P3** depth | a panic hook writing a crash bundle sent on the next start; a rolling buffer of the last 30 s of received snapshots and own input (a mini demo `demosim` can replay); a report id sent to the game server so its log marks the moment; duplicate signatures; mirroring accepted groups to Forgejo; retention | days, separable | each with its own test |
+| P3b | crash reporting (playtest 7 request): a panic or native crash writes a bundle (backtrace, log tail, versions, GPU and OS, map and rung; Windows minidumps) sent or queued on the next start | with P3 | a forced panic leaves a bundle that the outbox sends |
 | P4 | the autonomous loop of 5.6 | later | |
 
 Docs to change with P1: docs/playtest.md ("Reporting a bug": F10),
