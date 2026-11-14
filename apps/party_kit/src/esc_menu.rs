@@ -46,7 +46,9 @@
 //! changes, in the party's panel look (the Controls page's colours), or
 //! under a theme with `[layout.esc]` (Ultimate Gun Game's Signal) in
 //! `esc_signal`'s: there ↑↓ move the selection (`EscMenu::focus`) over
-//! the entries that act and Enter presses it, the confirm's Stay first;
+//! the entries that act and Enter presses it (the pointer moves it too,
+//! until a key takes the lead and again once it moves:
+//! `chimera_ui::PointerLead`), the confirm's Stay first;
 //! its Options and Host settings are the Signal Settings screen's
 //! (`settings`).
 //! `escmenu [options|host]` (console) toggles it and `escmenu_press
@@ -241,6 +243,7 @@ fn navigate(
     main_menu: Option<Res<crate::main_menu::PartyMenu>>,
     vote: Option<Res<VoteView>>,
     clock: Option<Res<chimera_ui::UiClock>>,
+    pointer: (Query<(Ref<Interaction>, &Action)>, Option<Res<chimera_ui::PointerLead>>),
     mut menu: ResMut<EscMenu>,
     mut out: MessageWriter<Action>,
     mut cues: MessageWriter<chimera_client::client::ui_sound::UiCue>,
@@ -264,6 +267,24 @@ fn navigate(
             }
             if !live.contains(&menu.focus) {
                 menu.focus = live[0];
+            }
+            // The entry under the pointer is the selection while the
+            // pointer leads (`chimera_ui::PointerLead`: a key takes the
+            // lead, a real move gives it back).
+            let (rows, lead) = &pointer;
+            let lead_back = lead.as_ref().is_some_and(|l| l.is_changed());
+            if lead.as_ref().is_none_or(|l| l.hover()) {
+                for (i, a) in rows {
+                    if *i != Interaction::None
+                        && (i.is_changed() || lead_back)
+                        && let Some(e) = entries.iter().position(|e| e.action == Some(*a))
+                        && live.contains(&e)
+                        && e != menu.focus
+                    {
+                        menu.focus = e;
+                        menu.focus_since = now;
+                    }
+                }
             }
             let at = live.iter().position(|i| *i == menu.focus).unwrap_or(0);
             let step = if up { -1 } else if down { 1 } else { 0 };
@@ -345,6 +366,7 @@ pub struct EscMenuPlugin;
 impl Plugin for EscMenuPlugin {
     fn build(&self, app: &mut App) {
         crate::ui_cues::ensure_message(app);
+        chimera_ui::pointer_lead::add(app);
         chimera_client::client::hud::hud_cover(app);
         chimera_client::client::ui_scene::UiSceneHooks::add(app.world_mut(), "esc", scene_esc);
         app.init_resource::<EscMenu>()

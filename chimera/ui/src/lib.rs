@@ -32,6 +32,9 @@
 //!   wipe for moves inside a screen.
 //! - `parity`: `UiParityId`, a node's name in the look book, and its
 //!   measured box for the UI parity check (`tools/ui-parity/`).
+//! - `pointer_lead`: `PointerLead`, whether the keys or the pointer drive
+//!   a list's selection (a navigation key takes it, a real pointer move
+//!   gives it back): one rule for every list hover and keys both select in.
 //!
 //! `ChimeraUiPlugin` keeps `UiUnits` from the window, steps the clock and
 //! every `Timeline` (`UiKitSystems`, in `PostUpdate` before Bevy's UI
@@ -45,6 +48,7 @@ pub mod icons;
 pub mod materials;
 pub mod motion;
 pub mod parity;
+pub mod pointer_lead;
 pub mod sound;
 pub mod theme;
 pub mod style;
@@ -62,6 +66,7 @@ pub use materials::{
 };
 pub use motion::{Ease, Prop, Timeline, Track, UiClock};
 pub use parity::UiParityId;
+pub use pointer_lead::PointerLead;
 pub use sound::{SoundTable, UiCue, UiMusic};
 pub use theme::{Theme, Tone};
 pub use style::{PlainText, UiSlant, UiStyle, UiText};
@@ -87,7 +92,9 @@ impl Plugin for ChimeraUiPlugin {
             .add_message::<UiCue>()
             .init_resource::<UiClock>()
             .add_plugins((KitMaterialsPlugin, widgets::HoverTicks, controls::ControlsPlugin))
-            .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare))
+            .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare));
+        pointer_lead::add(app);
+        app
             .add_systems(
                 PostUpdate,
                 (
