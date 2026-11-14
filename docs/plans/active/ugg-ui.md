@@ -442,6 +442,27 @@ pixel snap system, and `text_warm` declarations of the roles' sizes.
 
 ### M1: the logo pass and the lobby
 
+Status (2026-11-14): the lobby is in (`client::lobby_panel`, drawn on
+the kit's style layer and Look Book V marks when the theme has
+`[layout.lobby]`; the shell's panel otherwise; `LobbyView` gained the
+map's game, the slots, the ladder's games and each row's ping;
+`SlantMaterial::outline` for the unready block; tests
+`chimera/client/tests/it/lobby_panel.rs`). The logo pass is in
+(`client::logo_pass`: `Passes::ask(key)` and the `PassCovered`
+event at the swap, which the screens observe; the swap in `PreUpdate`, reduced motion `ui_reduce_motion 1` as a 150 ms fade,
+`ui_pass [p]` holding a pass for screenshots; its root moves to the
+party menu's camera with the lobby and the console; the kit's
+`pass.wesl` measures offsets at mid-height with `mark_x` the mark's
+centre, so the mark holds centred at the swap) on the lobby coming up
+and going (lobby to match) and the match end and the next match (tests
+`chimera/client/tests/it/logo_pass.rs`, party_kit
+`main_menu::logo_pass_covers_both_ui_cameras`). The party menu's
+screens go through it too (`party_kit::main_menu::ShownScreen`: menu,
+loading panel and game change at the swap, Leave and disconnect
+included; test `main_menu::the_menu_changes_screens_at_the_pass_s_swap`).
+Left: screenshots at the four sizes and of a real lobby-to-match pass
+(so far 1080p, `ui_pass 0.2` and `0.5` in the game and over the menu).
+
 - `client::logo_pass`; the front end's moves through it (2.5, 3).
 - `prematch_lobby` rebuilt on the kit (HOST from `LobbyRow::id ==
   HOST_ID`, BOT from `bot()`, YOU from `LocalClientId`); no network

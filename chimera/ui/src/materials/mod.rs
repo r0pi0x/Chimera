@@ -7,7 +7,8 @@
 //!   accent bar at the left, a wipe clipping from the left and the right
 //!   along the slant, an alpha ramp. The menu's highlight bar, the
 //!   toast's wipe, the chip's meter ticks, health segments, vote pips,
-//!   the winner slab, the backdrop swap's edge. The node's box holds the
+//!   the winner slab, the backdrop swap's edge; or only its outline
+//!   (`outline`: the lobby's unready block). The node's box holds the
 //!   whole parallelogram (unlike CSS's skew, which leans out of its box):
 //!   make it the fill's width plus its height times the slant's tan.
 //! - `TickBarMaterial` (`tick_bar.wesl`): `n` ticks, `lit`, `hot`, by
@@ -77,6 +78,9 @@ pub struct SlantMaterial {
     /// at the left and the right.
     #[uniform(3)]
     pub wipe: Vec4,
+    /// x: drawn as an outline this many physical px wide (0: filled).
+    #[uniform(4)]
+    pub line: Vec4,
 }
 
 impl SlantMaterial {
@@ -88,7 +92,14 @@ impl SlantMaterial {
             accent: LinearRgba::NONE,
             shape: Vec4::new(theme.tan(), 1.0, 1.0, 0.0),
             wipe: Vec4::new(0.0, 0.0, 1.0, 1.0),
+            line: Vec4::ZERO,
         }
+    }
+
+    /// Only its outline, `px` physical pixels wide (an unlit block).
+    pub fn outline(mut self, px: f32) -> Self {
+        self.line.x = px;
+        self
     }
 
     /// Which edges slant (a bar flush at the left: `edges(false, true)`).
@@ -209,7 +220,8 @@ pub struct PassMaterial {
     /// x: progress 0-1, y: tan, z: has a mark.
     #[uniform(3)]
     pub state: Vec4,
-    /// x: from, y: travel, z: mark x in the ink band, w: ink band width.
+    /// x: from, y: travel, z: the mark's centre in the ink band (at the
+    /// frame's mid-height, as every offset), w: ink band width.
     #[uniform(4)]
     pub sweep: Vec4,
     /// x, y: the accent hairline's offset and width; z, w: the accent band's.

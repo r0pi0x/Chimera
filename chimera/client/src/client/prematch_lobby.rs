@@ -23,6 +23,16 @@
 //!   `mp_lobby_ready_up`).
 //! - **The countdown** under it, big: "Match starts in" and the seconds.
 //!
+//! Under a theme with a logo pass (`logo_pass`), the lobby comes up and
+//! goes (the match starting, a disconnect) at a pass's swap, staying up
+//! until the slab covers it (`LobbyGate`).
+//!
+//! An app whose theme lays the lobby out (`chimera_ui::Theme`,
+//! `[layout.lobby]`: the Ultimate Gun Game's) gets the kit's panel
+//! instead (`lobby_panel`), from the same view, with the map's game, the
+//! slots and the ladder's games (`LobbyView::game`, `slots`,
+//! `guns_from`). Otherwise:
+//!
 //! In the match-end screen's face and shades (`match_end`: the HUD's
 //! overlay font, `widgets::display_alpha`), sized by the window's height
 //! and the rows (`scale`). `LobbyView` is the state, headless too (tests
@@ -46,10 +56,39 @@ pub struct PreMatchLobbyPlugin;
 impl Plugin for PreMatchLobbyPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LobbyView>()
+            .init_resource::<LobbyGate>()
+            .add_observer(pass_covered)
             .add_systems(Startup, spawn)
-            .add_systems(Update, (follow, draw).chain());
+            .add_systems(Update, (follow.in_set(LobbyFollow), draw.after(LobbyFollow).run_if(not(super::lobby_panel::themed))));
+        super::lobby_panel::add(app);
     }
 }
+
+/// Where the lobby is in its passes (`logo_pass`): waiting for the swap
+/// to come up, up, or still up until the swap takes it down.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LobbyGate {
+    #[default]
+    Off,
+    Entering,
+    In,
+    Leaving,
+}
+
+/// The lobby comes up or goes at the pass's swap.
+fn pass_covered(ev: On<super::logo_pass::PassCovered>, mut gate: ResMut<LobbyGate>, mut view: ResMut<LobbyView>) {
+    if ev.has("lobby_enter") && *gate == LobbyGate::Entering {
+        *gate = LobbyGate::In;
+    }
+    if ev.has("lobby_leave") && *gate == LobbyGate::Leaving {
+        *gate = LobbyGate::Off;
+        view.set_if_neq(LobbyView::default());
+    }
+}
+
+/// `follow`: the view from the lobby (the panels draw after it).
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct LobbyFollow;
 
 /// One player's row as shown.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -68,6 +107,8 @@ pub struct LobbyViewRow {
     pub bytes: String,
     /// "48 ms", "BOT" or empty.
     pub ping: String,
+    /// The round trip, ms (a remote player's).
+    pub ping_ms: Option<u16>,
     pub local: bool,
 }
 
@@ -89,6 +130,13 @@ pub struct LobbyView {
     pub hosting: bool,
     /// What the key does now, told under the players (empty: nothing).
     pub hint: String,
+    /// The map's game, short (`CS:S`; empty when not registered).
+    pub game: String,
+    /// The server's player slots (`maxplayers`), when known.
+    pub slots: Option<u32>,
+    /// The games the ladder's guns come from, short, in rung order
+    /// (empty off a ladder or before the client has it).
+    pub guns_from: Vec<String>,
 }
 
 /// The lobby's key while it shows (a Source key name), in place of its bind.
@@ -174,6 +222,7 @@ pub fn view_row(r: &chimera_net::prematch::LobbyRow, local: bool) -> LobbyViewRo
         },
         fraction,
         bytes,
+        ping_ms: r.ping_ms,
         ping: match (r.bot(), r.ping_ms) {
             (true, _) => "BOT".into(),
             (_, Some(p)) => format!("{p} ms"),
@@ -183,19 +232,49 @@ pub fn view_row(r: &chimera_net::prematch::LobbyRow, local: bool) -> LobbyViewRo
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn follow(
     lobby: Query<&NetLobby>,
     me: Option<Res<chimera_net::net::client::LocalClientId>>,
     role: Option<Res<NetRole>>,
     host: Query<(), With<LocalPlayer>>,
+    games: Option<Res<chimera_core::game_registry::Games>>,
+    settings: Option<Res<chimera_net::net::NetSettings>>,
+    join: Option<Res<chimera_net::net::client::JoinProgress>>,
+    ladder: Option<Res<chimera_sim::minigame::ladder::Ladder>>,
+    (mut passes, mut gate): (super::logo_pass::Passes, ResMut<LobbyGate>),
     mut view: ResMut<LobbyView>,
 ) {
+    // Through the logo pass when the theme has one: up and down at its swap.
+    let pass = passes.on();
     let Some(l) = lobby.iter().next() else {
         if view.shown {
+            if pass {
+                if *gate != LobbyGate::Leaving {
+                    *gate = LobbyGate::Leaving;
+                    passes.ask("lobby_leave");
+                }
+                return;
+            }
             view.set_if_neq(LobbyView::default());
+        }
+        if *gate != LobbyGate::Off && *gate != LobbyGate::Entering {
+            *gate = LobbyGate::Off;
         }
         return;
     };
+    if pass {
+        match *gate {
+            LobbyGate::Off => {
+                *gate = LobbyGate::Entering;
+                passes.ask("lobby_enter");
+                return;
+            }
+            LobbyGate::Entering => return,
+            LobbyGate::Leaving => *gate = LobbyGate::In,
+            LobbyGate::In => {}
+        }
+    }
     let mine = match role.as_deref() {
         Some(NetRole::Client) => me.map(|m| m.0),
         Some(NetRole::Server) if !host.is_empty() => Some(HOST_ID),
@@ -210,8 +289,27 @@ fn follow(
         countdown: l.countdown,
         hosting: role.as_deref() == Some(&NetRole::Server) && !host.is_empty(),
         hint: String::new(),
+        game: String::new(),
+        slots: None,
+        guns_from: Vec::new(),
     };
     v.hint = hint(&v);
+    let short = |id: &str| games.as_ref().and_then(|g| g.get(id)).map(|g| g.short_name.to_string());
+    v.game = l.map.split_once(':').and_then(|(g, _)| short(g)).unwrap_or_default();
+    v.slots = match role.as_deref() {
+        Some(NetRole::Server) => settings.map(|s| s.maxplayers).filter(|&n| n > 1),
+        Some(NetRole::Client) => join.and_then(|j| j.server.as_ref().map(|s| s.max_players)).filter(|&n| n > 0),
+        _ => None,
+    };
+    if let Some(ladder) = ladder {
+        for rung in &ladder.rungs {
+            if let Some(g) = rung.split_once(':').and_then(|(g, _)| short(g))
+                && !v.guns_from.contains(&g)
+            {
+                v.guns_from.push(g);
+            }
+        }
+    }
     view.set_if_neq(v);
 }
 
@@ -219,9 +317,9 @@ fn follow(
 #[derive(Component)]
 pub struct LobbyRoot;
 
-/// What `draw` rebuilds.
+/// What `draw` (or the themed panel, `lobby_panel`) rebuilds.
 #[derive(Component)]
-struct LobbyContent;
+pub struct LobbyContent;
 
 /// Where it draws: over the HUDs, the match-end screen
 /// (`match_end::MATCH_END_Z`) and an app's loading panel, under the Tab

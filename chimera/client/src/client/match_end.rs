@@ -39,6 +39,11 @@
 //!   order registered; the first that loads plays, none if none does), an
 //!   interface sound at the mixer's master.
 //!
+//! Under a theme with a logo pass (`logo_pass`) the screen comes up at a
+//! pass's swap (`MatchEndGate`), and the next match (a map change or
+//! the same map again) under a second pass begun a swap's length before
+//! `NextMatch::at`, so the slab covers the change.
+//!
 //! While it is up the games' minigame panels draw nothing
 //! (`MinigameHud::results_shown`): their title and status lines sat over
 //! the winner's name. Sized by the window's height (`scale`: for a
@@ -79,8 +84,10 @@ impl Plugin for MatchEndPlugin {
     fn build(&self, app: &mut App) {
         super::overlay::layer(app);
         app.init_resource::<MatchEndView>()
+            .init_resource::<MatchEndGate>()
             .add_systems(Startup, spawn)
             .init_resource::<MapVoteChoice>()
+            .add_observer(pass_covered)
             .add_systems(Update, (vote_input.run_if(resource_exists::<MapVote>), follow, draw, draw_vote).chain())
             .add_systems(Update, vote_cursor.after(follow));
         super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
@@ -172,6 +179,24 @@ pub fn sound_candidates(parts: &PartsRegistry, first: Option<&str>) -> Vec<(Stri
     parts.match_end_sounds(first, true)
 }
 
+/// The screen's coming up through the logo pass (`logo_pass`).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MatchEndGate {
+    #[default]
+    Off,
+    Entering,
+    In,
+    /// The pass for the next match has begun.
+    Changing,
+}
+
+/// The screen comes up at the pass's swap.
+fn pass_covered(ev: On<super::logo_pass::PassCovered>, mut gate: ResMut<MatchEndGate>) {
+    if ev.has("match_end") && *gate == MatchEndGate::Entering {
+        *gate = MatchEndGate::In;
+    }
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn follow(
     mut hud: Option<ResMut<MinigameHud>>,
@@ -185,6 +210,7 @@ fn follow(
     chars: Query<(Option<&NetCharacter>, Option<&Name>, Has<LocalPlayer>)>,
     mut view: ResMut<MatchEndView>,
     (map_vote, mut choice): (Option<Res<MapVote>>, ResMut<MapVoteChoice>),
+    (mut passes, mut gate): (super::logo_pass::Passes, ResMut<MatchEndGate>),
 ) {
     if map_vote.is_none() && choice.0.is_some() {
         choice.0 = None;
@@ -196,6 +222,9 @@ fn follow(
         h.results_shown = shown;
     }
     let (Some(results), Some(next)) = (results, next) else {
+        if matches!(*gate, MatchEndGate::In | MatchEndGate::Changing) {
+            *gate = MatchEndGate::Off;
+        }
         if view.shown {
             *view = MatchEndView {
                 sounds_asked: view.sounds_asked,
@@ -204,6 +233,18 @@ fn follow(
         }
         return;
     };
+    // Under a theme with a logo pass the screen comes up at its swap.
+    if passes.on() && !view.shown {
+        match *gate {
+            MatchEndGate::Off => {
+                *gate = MatchEndGate::Entering;
+                passes.ask("match_end");
+                return;
+            }
+            MatchEndGate::Entering => return,
+            MatchEndGate::In | MatchEndGate::Changing => {}
+        }
+    }
     let rows: Vec<MatchEndRow> = results
         .rows
         .iter()
@@ -238,6 +279,13 @@ fn follow(
         .collect();
     let winner = rows.iter().find(|r| r.winner);
     let now = clock.map_or(0.0, |c| c.now);
+    // The next match under the pass (a map change or the same map
+    // again): it starts a swap's length before the change, so the slab
+    // covers the change and the loading panel's coming up.
+    if passes.on() && *gate == MatchEndGate::In && now >= next.at - passes.swap_secs() as f64 {
+        *gate = MatchEndGate::Changing;
+        passes.ask("next_match");
+    }
     let shown_vote = vote_view(map_vote.as_deref(), choice.0);
     let line = match (&shown_vote, map_vote.as_deref()) {
         (Some(v), Some(m)) if v.open() => vote_line(v.maps.len(), m.closes - now),

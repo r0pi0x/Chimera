@@ -6414,6 +6414,7 @@ dependencies = [
  "chimera_net",
  "chimera_present",
  "chimera_sim",
+ "chimera_ui",
  "chimera_world",
  "combat_arms",
  "cs_source",

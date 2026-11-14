@@ -48,6 +48,8 @@ pub mod interp;
 pub mod map_screen;
 pub mod match_end;
 pub mod prematch_lobby;
+pub mod lobby_panel;
+pub mod logo_pass;
 pub mod net;
 pub mod relaunch;
 pub mod startup;
@@ -536,6 +538,7 @@ impl PluginGroup for ClientPlugins {
             .add(hud::HudPlugin)
             .add(overlay::OverlayPlugin)
             .add(chimera_ui::ChimeraUiPlugin)
+            .add(logo_pass::LogoPassPlugin)
             .add(ui_scene::UiScenePlugin)
             .add(minigame_panel::MinigamePanelPlugin)
             .add(text_warm::TextWarmPlugin)

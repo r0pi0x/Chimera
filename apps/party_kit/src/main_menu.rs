@@ -74,7 +74,13 @@
 //!   shows by drawing the UI on a camera of its own (`MenuUiCamera`; the
 //!   shell's UI camera, which the HUD draws on, off; the console and the
 //!   pre-match lobby's screen move to it, so a player still downloading
-//!   sees the lobby over the loading panel).
+//!   sees the lobby over the loading panel, and so does the logo pass
+//!   between screens, `client::logo_pass`, so it covers the menu too).
+//!   Under a theme with a logo pass (the Ultimate Gun Game's) the menu,
+//!   the loading panel and the game change at its swap: what is drawn
+//!   follows `ShownScreen`, the menu's screen as it was at the last swap
+//!   (`follow_shown`); input follows `PartyMenu` at once. Lucker Party
+//!   has no pass: `ShownScreen` follows at once.
 //!
 //! The state is `PartyMenu` (a resource the menu owns, set at known
 //! moments: the front end's events `EnteredGame`, `LeftGame`, `Joining`,
@@ -607,6 +613,67 @@ impl PartyMenu {
     }
 }
 
+/// The screen as drawn (the menu's root, its camera, the backdrop):
+/// `PartyMenu`'s screen and `lobby_ready` as they were at the last
+/// logo pass's swap (`client::logo_pass`, under a theme with one: the
+/// Ultimate Gun Game's), else as they are. A move between the menu, the
+/// loading panel (joining or loading alike) and the game, or the panel
+/// giving way to the lobby, goes through the pass (`follow_shown`).
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShownScreen {
+    pub screen: Screen,
+    pub lobby_ready: bool,
+}
+
+impl ShownScreen {
+    pub fn of(menu: &PartyMenu) -> Self {
+        Self { screen: menu.screen, lobby_ready: menu.lobby_ready }
+    }
+
+    /// The menu as drawn.
+    fn over<'a>(&self, menu: &'a PartyMenu) -> std::borrow::Cow<'a, PartyMenu> {
+        if *self == Self::of(menu) {
+            return std::borrow::Cow::Borrowed(menu);
+        }
+        let mut m = menu.clone();
+        m.screen = self.screen;
+        m.lobby_ready = self.lobby_ready;
+        std::borrow::Cow::Owned(m)
+    }
+}
+
+/// The screens a pass goes between: the menu, the loading panel, the game.
+fn screen_class(s: Screen) -> u8 {
+    match s {
+        Screen::MainMenu => 0,
+        Screen::Joining | Screen::Loading => 1,
+        Screen::InGame => 2,
+    }
+}
+
+/// `ShownScreen` follows the menu, through the pass on a move.
+fn follow_shown(menu: Res<PartyMenu>, mut shown: ResMut<ShownScreen>, mut passes: chimera_client::client::logo_pass::Passes) {
+    let want = ShownScreen::of(&menu);
+    if *shown == want {
+        return;
+    }
+    let moved = screen_class(shown.screen) != screen_class(want.screen) || shown.lobby_ready != want.lobby_ready;
+    if !moved || !passes.ask("menu_screen") {
+        *shown = want;
+    }
+}
+
+/// The pass's swap: the screen as the menu now has it.
+fn menu_pass_covered(
+    ev: On<chimera_client::client::logo_pass::PassCovered>,
+    menu: Res<PartyMenu>,
+    mut shown: ResMut<ShownScreen>,
+) {
+    if ev.has("menu_screen") {
+        shown.set_if_neq(ShownScreen::of(&menu));
+    }
+}
+
 /// The minigame Play starts (the app's: Ultimate Gun Game's automatic one).
 #[derive(Resource, Clone, Debug, PartialEq)]
 pub struct MenuMinigame(pub String);
@@ -747,6 +814,7 @@ impl Plugin for MainMenuPlugin {
         app.insert_resource(data)
             .insert_resource(last)
             .init_resource::<BackgroundState>()
+            .insert_resource(ShownScreen::of(&menu))
             .insert_resource(menu)
             .insert_resource(recent)
             .insert_resource(MenuMinigame(self.minigame.clone()))
@@ -755,6 +823,7 @@ impl Plugin for MainMenuPlugin {
             .add_message::<MainMenuAction>()
             .add_message::<KeyboardInput>()
             .add_observer(entered_game)
+            .add_observer(menu_pass_covered)
             .add_observer(left_game)
             .add_observer(joining)
             .add_observer(join_failed)
@@ -762,7 +831,7 @@ impl Plugin for MainMenuPlugin {
             .add_systems(Startup, ((start_look, init_play).chain(), spawn_backdrop))
             .add_systems(
                 Update,
-                (look_loaded, typing, clicks, act, follow_loads, follow_reconnect, refresh_values, ca_loading_gate, fly, cameras, show, backdrop, progress, loading_under_lobby, entry_hover, music)
+                (look_loaded, typing, clicks, act, follow_loads, follow_reconnect, refresh_values, ca_loading_gate, fly, follow_shown, cameras, show, backdrop, progress, loading_under_lobby, entry_hover, music)
                     .chain()
                     .in_set(MainMenuSystems)
                     .before(crate::esc_menu::EscMenuSystems),
@@ -1633,20 +1702,24 @@ pub struct MenuUiCamera;
 
 #[allow(clippy::type_complexity)]
 fn cameras(
-    menu: Res<PartyMenu>,
+    shown: Res<ShownScreen>,
     ca: Option<Res<combat_arms::ui::loading::CaLoading>>,
     mut shell: Query<&mut Camera, (With<IsDefaultUiCamera>, Without<MenuUiCamera>)>,
     mut ours: Query<(Entity, &mut Camera), With<MenuUiCamera>>,
     consoles: Query<
         (Entity, Has<UiTargetCamera>),
-        Or<(With<ConsoleRoot>, With<chimera_client::client::prematch_lobby::LobbyRoot>)>,
+        Or<(
+            With<ConsoleRoot>,
+            With<chimera_client::client::prematch_lobby::LobbyRoot>,
+            With<chimera_client::client::logo_pass::LogoPassRoot>,
+        )>,
     >,
     mut commands: Commands,
 ) {
     if shell.is_empty() {
         return;
     }
-    let menu_owns = menu.shown() && !ca_shows(ca.as_deref());
+    let menu_owns = shown.screen != Screen::InGame && !ca_shows(ca.as_deref());
     let Some((cam, mut camera)) = ours.iter_mut().next() else {
         if menu_owns {
             let cam = commands
@@ -1755,16 +1828,17 @@ fn spawn_backdrop(mut commands: Commands) {
 /// in view; fading out once one is; on the menu's camera.
 #[allow(clippy::type_complexity)]
 fn backdrop(
-    menu: Res<PartyMenu>,
+    shown: Res<ShownScreen>,
     state: Res<BackgroundState>,
     time: Res<Time<Real>>,
     camera: Query<Entity, With<MenuUiCamera>>,
     mut backdrops: Query<(Entity, &mut MenuBackdrop, &mut Visibility, Option<&mut BackgroundColor>, Option<&UiTargetCamera>)>,
     mut commands: Commands,
 ) {
-    let target = if menu.shown() && !state.scene { 1.0 } else { 0.0 };
+    let up = shown.screen != Screen::InGame;
+    let target = if up && !state.scene { 1.0 } else { 0.0 };
     for (e, mut b, mut v, color, on) in &mut backdrops {
-        let opacity = if !menu.shown() || target >= b.opacity {
+        let opacity = if !up || target >= b.opacity {
             target
         } else {
             (b.opacity - time.delta_secs() / BACKDROP_FADE_SECS).max(target)
@@ -1786,6 +1860,7 @@ fn backdrop(
 
 fn show(
     menu: Res<PartyMenu>,
+    shown: Res<ShownScreen>,
     data: Res<MenuData>,
     look_res: Res<MenuLook>,
     fonts: Option<Res<UiFonts>>,
@@ -1802,6 +1877,7 @@ fn show(
     mut commands: Commands,
 ) {
     let Some(fonts) = fonts else { return };
+    let menu = shown.over(&menu);
     // The frames' see-through colour over a dark plate, as over CS:S's
     // main menu picture (the live map would show through them).
     if let Some(mut b) = backing {
@@ -1819,7 +1895,7 @@ fn show(
         .map(|d| d.maps.iter().map(|m| chimera_net::net::normalize_map(m)).collect())
         .unwrap_or_default();
     let now = Drawn {
-        menu: menu.shown().then(|| menu.clone()),
+        menu: menu.shown().then(|| menu.clone().into_owned()),
         size,
         look: look_res.ui.is_some(),
         ca: ca_up,
