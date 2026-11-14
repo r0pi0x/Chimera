@@ -95,6 +95,7 @@
 
 pub mod auto;
 pub mod def;
+pub mod effects;
 pub mod holders;
 pub mod map_fit;
 pub mod hud;

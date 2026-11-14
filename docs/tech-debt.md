@@ -63,6 +63,7 @@ fails when this file is stale; never edit the generated lines).
 - `chimera/client/src/client/hit_marker.rs`: no sound (the cvar is a switch only); a plain text glyph, no animation
 - `chimera/client/src/client/hud_minimal.rs`: the weapon is called by its id (no display-name registry in the shell); no kill feed or scoreboard (the opt-in `cl_hitmarker` works over it)
 - `chimera/client/src/client/kill_feed.rs`: no penetration (wallbang) flag: the killing hit doesn't say whether it went through something; names are taken at the kill (a later rename doesn't...
+- `chimera/client/src/client/match_effects.rs`: the banner's type has a hard drop shadow, no glow (Bevy has no text blur); the banner's tint is a gradient in linear light (a touch brighter than...
 - `chimera/client/src/client/match_end.rs`: text and colours in CS:S's face, no game's art; no music pause
 - `chimera/client/src/client/minigame_panel.rs`: the panel's place, sizes and colours are ours (these games have no such panel; nothing to measure)
 - `chimera/client/src/client/minigame_scoreboard.rs`: plain text, no team colours

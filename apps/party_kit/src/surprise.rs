@@ -2,9 +2,10 @@
 //! console commands a party server's host types to shake a match up.
 //!
 //! - `surprise airstrike [count=30] [seconds=8]`: a warning for
-//!   `WARNING` s (a red HUD message centre screen, a red flash and an
-//!   air-raid siren, `ALARM`: `combat_arms::game::special::devices::
-//!   STRIKE_ALARM`, which every Combat Arms client has ready), then
+//!   `WARNING` s (the match's `air_strike` effect, counting down to the
+//!   first shell, and an air-raid siren, `ALARM`: `combat_arms::game::
+//!   special::devices::STRIKE_ALARM`, which every Combat Arms client has
+//!   ready), then
 //!   `count` shells of Combat Arms' air strikes (`LGB_SHELL`,
 //!   `Napalm_Shell`: the designators' own `strike.shell`, dropped by
 //!   `combat_arms::game::special::devices::drop_strike_shell`) land over
@@ -27,20 +28,21 @@
 //!   Arms' `combat_arms:sv_gravity`, all replicated, so a client predicts
 //!   its own player with the server's) and the physics world's
 //!   (`chimera:phys_gravity_scale`, replicated: the props and ragdolls
-//!   the server and each client simulate), with a banner ("Moon
-//!   gravity!"), a countdown in the last `COUNTDOWN` s and an ending
-//!   message; then all of it back as it was. A map change ends it at once
-//!   (the map sets its own gravity).
+//!   the server and each client simulate), as the match's `moon_gravity`
+//!   effect for its time; then all of it back as it was. A map change
+//!   ends it at once (the map sets its own gravity).
 //! - `surprise stop`: ends both now (gravity back, shells not yet dropped
 //!   never come).
 //!
 //! The commands run on the authority (a dedicated server's console, a
 //! listen server's host); a network client is refused. What they show
-//! plays wherever there is a player: the banners and flashes through map
-//! logic's HUD path (`source_logic::logic::send_hud`: on the local
-//! player's HUD here, a listen server's host or an offline game, and sent
-//! to the clients), the siren as a rules' sound (played here and sent),
-//! the shells as server objects every world draws.
+//! plays wherever there is a player: the effects as data
+//! (`chimera_sim::minigame::effects::MatchEffects`, here and replicated
+//! with the match), which the shell draws (`chimera_client::client::
+//! match_effects`: under the Signal look a banner over the crosshair, an
+//! edge pulse each second of the warning and a chip in the top-left
+//! stack; otherwise a plain banner), the siren as a rules' sound (played
+//! here and sent), the shells as server objects every world draws.
 //!
 //! Known shortcuts: Combat Arms' grenades and projectiles keep their
 //! object gravity (a constant of their spec).
@@ -50,11 +52,13 @@ use chimera_core::{
     console::{Console, ConsoleAppExt},
     core::{Dead, Health, Intent, NetRole, SimClock, SpawnPoint, authoritative},
 };
-use chimera_sim::minigame::runtime::BlamelessWeapons;
+use chimera_sim::minigame::{
+    effects::{Effect, MatchEffects},
+    runtime::BlamelessWeapons,
+};
 use chimera_world::map::{LoadedMapName, nav::NavMesh};
 use chimera_world::map::{GameSound, PlaySound};
 use combat_arms::game::special::devices::{STRIKE_ALARM, drop_strike_shell, strike_floor, strike_start};
-use source_logic::logic::{HudMessage, HudShow, ScreenFade, send_hud};
 
 /// The designators whose shells fall (special_weapons.md 6.10), and how
 /// many of every `LGB_WEIGHT + NAPALM_WEIGHT` shells are each's.
@@ -87,19 +91,14 @@ pub const ALARM: &str = STRIKE_ALARM;
 /// The moon's defaults: how long, s, and the gravity's scale.
 pub const GRAVITY_SECONDS: f64 = 60.0;
 pub const GRAVITY_SCALE: f32 = 0.2;
-/// The moon's messages' colour: a deep blue that reads on sand and sky.
+/// The moon's colour in the plain look: a deep blue that reads on sand
+/// and sky; the strike's, red.
 const MOON_BLUE: [u8; 3] = [50, 110, 255];
+const STRIKE_RED: [u8; 3] = [255, 48, 32];
 
-/// How long the opening banner holds, s.
-const BANNER: f64 = 3.0;
-/// The last seconds of moon gravity are counted down (not over the
-/// opening banner).
-pub const COUNTDOWN: u32 = 5;
-
-/// HUD message channels (map logic's game_text has six, 0-5; a map's
-/// own usually take the first).
-const STRIKE_CHANNEL: usize = 4;
-const GRAVITY_CHANNEL: usize = 5;
+/// The effects' kinds (`MatchEffects`).
+pub const AIR_STRIKE: &str = "air_strike";
+pub const MOON_GRAVITY: &str = "moon_gravity";
 
 /// The console commands and the surprises' steps.
 pub struct SurprisePlugin;
@@ -126,6 +125,7 @@ impl Plugin for SurprisePlugin {
             (
                 air_strike_step.run_if(|s: Option<Res<AirStrike>>| s.is_some_and(|s| !s.drops.is_empty())),
                 gravity_step.run_if(|m: Option<Res<MoonGravity>>| m.is_some_and(|m| m.until.is_some())),
+                prune_effects.run_if(|m: Option<Res<MatchEffects>>| m.is_some_and(|m| !m.effects.is_empty())),
             )
                 .run_if(authoritative),
         );
@@ -138,6 +138,7 @@ impl Plugin for SurprisePlugin {
 /// designator's whose thrower left too).
 pub fn arm(world: &mut World) {
     world.get_resource_or_init::<AirStrike>();
+    world.get_resource_or_init::<MatchEffects>();
     world.get_resource_or_init::<MoonGravity>();
     let mut blameless = world.get_resource_or_init::<BlamelessWeapons>();
     for w in [LGB, NAPALM] {
@@ -169,7 +170,9 @@ fn command(world: &mut World, args: &[String]) -> Result<Option<String>, String>
         }
         Some("stop") => {
             world.resource_mut::<AirStrike>().drops.clear();
-            end_gravity(world, false);
+            let now = world.resource::<SimClock>().now;
+            world.resource_mut::<MatchEffects>().end(AIR_STRIKE, now);
+            end_gravity(world, true);
             Ok(Some("surprises stopped".into()))
         }
         _ => Err("usage: surprise airstrike [count] [seconds] | surprise gravity [seconds] [scale] | surprise stop".into()),
@@ -225,19 +228,37 @@ fn start_air_strike(world: &mut World, count: usize, seconds: f64) -> Result<Str
     s.drops = drops;
     s.dropped = 0;
     s.fallen.clear();
-    warn_air_strike(world);
+    warn_air_strike(world, clock.now, seconds);
     let text = format!("surprise: air strike, {count} shells over {seconds:.0} s after a {WARNING:.0} s warning");
     info!("{text}");
     Ok(text)
 }
 
-/// The warning: the banner, a red flash and the alarm at every living
+/// The warning: the `air_strike` effect from `now` (its impact the first
+/// shell's, its end `seconds` after) and the alarm at every living
 /// player.
-fn warn_air_strike(world: &mut World) {
-    hud(world, banner("AIR STRIKE INCOMING!\nTAKE COVER!", STRIKE_CHANNEL, [255, 48, 32], WARNING as f32 + 2.0));
-    flash(world, [255, 0, 0], 90, 0.8);
+fn warn_air_strike(world: &mut World, now: f64, seconds: f64) {
+    world.resource_mut::<MatchEffects>().start(Effect {
+        kind: AIR_STRIKE.into(),
+        title: "Air strike".into(),
+        detail: "Take cover".into(),
+        threat: true,
+        color: STRIKE_RED,
+        starts: now,
+        impact_at: Some(now + WARNING),
+        ends: now + WARNING + seconds,
+        ..default()
+    });
     if world.contains_resource::<Messages<GameSound>>() {
         world.write_message(GameSound(PlaySound::ui(alarm_entry())));
+    }
+}
+
+/// The effects over a while ago go (`MatchEffects::prune`).
+fn prune_effects(clock: Res<SimClock>, mut effects: ResMut<MatchEffects>) {
+    let now = clock.now;
+    if effects.effects.iter().any(|e| e.ends + chimera_sim::minigame::effects::LINGER <= now) {
+        effects.prune(now);
     }
 }
 
@@ -344,8 +365,6 @@ pub struct MoonGravity {
     /// world's scale (`PHYSICS_SCALE`) with its value before.
     pub cvars: Vec<(String, String)>,
     pub map: Option<String>,
-    /// The last whole second counted down.
-    pub counted: Option<u32>,
 }
 
 /// The physics world's gravity scale (`chimera_world::map::gravity`).
@@ -376,7 +395,7 @@ fn set_cvar(world: &mut World, name: &str, value: &str) {
 
 fn start_gravity(world: &mut World, seconds: f64, scale: f32) -> Result<String, String> {
     // Again while on: from the gravity before it, not the moon's.
-    end_gravity(world, false);
+    end_gravity(world, true);
     let mut saved = Vec::new();
     for name in gravity_cvars(world) {
         let Some(old) = get_cvar(world, &name) else { continue };
@@ -397,104 +416,54 @@ fn start_gravity(world: &mut World, seconds: f64, scale: f32) -> Result<String, 
         scale,
         cvars: saved,
         map,
-        counted: None,
     };
-    let text = if seconds >= 1.5 {
-        format!("Moon gravity!\nfor {seconds:.0} seconds")
-    } else {
-        "Moon gravity!".to_string()
-    };
-    hud(world, banner(&text, GRAVITY_CHANNEL, MOON_BLUE, BANNER as f32));
-    flash(world, [120, 160, 255], 60, 0.6);
+    world.resource_mut::<MatchEffects>().start(Effect {
+        kind: MOON_GRAVITY.into(),
+        title: "Moon gravity".into(),
+        detail: "Jump higher • fall slower".into(),
+        countdown: "Gravity returns in {n}".into(),
+        over: "Gravity is back!".into(),
+        threat: false,
+        color: MOON_BLUE,
+        starts: now,
+        impact_at: None,
+        ends: now + seconds,
+        ..default()
+    });
     let text = format!("surprise: moon gravity x{scale} for {seconds:.0} s");
     info!("{text}");
     Ok(text)
 }
 
-/// Put back what moon gravity changed; `say` it ended.
-fn end_gravity(world: &mut World, say: bool) {
+/// Put back what moon gravity changed; ended early (`early`: stopped, a
+/// map change) its effect ends now.
+fn end_gravity(world: &mut World, early: bool) {
     let m = std::mem::take(&mut *world.resource_mut::<MoonGravity>());
     if m.until.is_none() {
         return;
+    }
+    if early {
+        let now = world.resource::<SimClock>().now;
+        world.get_resource_or_init::<MatchEffects>().end(MOON_GRAVITY, now);
     }
     // The physics scale multiplies the map's own gravity, a new map's
     // too: put back either way.
     for (name, old) in &m.cvars {
         set_cvar(world, name, old);
     }
-    if say {
-        hud(world, banner("Gravity is back!", GRAVITY_CHANNEL, MOON_BLUE, 2.5));
-    }
     info!("surprise: gravity back");
 }
 
-/// Moon gravity's countdown and end (and its end at a map change).
+/// Moon gravity's end (and its end at a map change).
 fn gravity_step(clock: Res<SimClock>, map: Option<Res<LoadedMapName>>, mut moon: ResMut<MoonGravity>, mut commands: Commands) {
     let Some(until) = moon.until else { return };
     if map.map(|m| m.0.clone()) != moon.map {
-        commands.queue(|world: &mut World| end_gravity(world, false));
-        return;
-    }
-    let now = clock.now;
-    if now >= until {
-        // Once: the queued end clears `until`.
-        moon.until = Some(f64::INFINITY);
         commands.queue(|world: &mut World| end_gravity(world, true));
         return;
     }
-    let left = (until - now).ceil() as u32;
-    // Not over the opening banner (a short moon's).
-    let banner_up = now < moon.since + BANNER;
-    if left <= COUNTDOWN && !banner_up && moon.counted != Some(left) {
-        moon.counted = Some(left);
-        commands.queue(move |world: &mut World| {
-            hud(world, banner(&format!("Gravity returns in {left}"), GRAVITY_CHANNEL, MOON_BLUE, 1.2));
-        });
+    if clock.now >= until {
+        // Once: the queued end clears `until`.
+        moon.until = Some(f64::INFINITY);
+        commands.queue(|world: &mut World| end_gravity(world, false));
     }
-}
-
-// ---------------------------------------------------------------------------
-// What every client shows
-
-/// A HUD message centre screen, a third of the way down, held `hold` s.
-fn banner(text: &str, channel: usize, color: [u8; 3], hold: f32) -> HudMessage {
-    HudMessage {
-        text: text.into(),
-        x: -1.0,
-        y: 0.3,
-        channel,
-        effect: 0,
-        color,
-        color2: color,
-        fade_in: 0.1,
-        fade_out: 0.5,
-        hold,
-        fx_time: 0.0,
-    }
-}
-
-/// Show `m` on every player's HUD (map logic's game_text, which every
-/// client of the party draws): the host's own too (`send_hud`: a
-/// listen server's player, an offline game), not only the network's.
-fn hud(world: &mut World, m: HudMessage) {
-    send_hud(world, None, HudShow::Text(m));
-}
-
-/// A screen flash of `color` at `alpha` fading out over `seconds`
-/// (map logic's env_fade).
-fn flash(world: &mut World, color: [u8; 3], alpha: u8, seconds: f32) {
-    send_hud(
-        world,
-        None,
-        HudShow::Fade(ScreenFade {
-            duration: ScreenFade::quantize(seconds),
-            hold: 0.0,
-            color,
-            alpha,
-            fade_in: true,
-            modulate: false,
-            stay_out: false,
-            purge: false,
-        }),
-    );
 }

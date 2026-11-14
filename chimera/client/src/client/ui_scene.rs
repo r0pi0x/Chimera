@@ -5,7 +5,9 @@
 //! `board_lead` (the Tab board open), `feed` (five kills in the feed),
 //! `rankup` (the rank-up toast's loop on the chip: a roll, then a chain;
 //! `rankup <t>` frozen `t` s into the loop, the UI clock stopped until
-//! `ui_scene off`):
+//! `ui_scene off`), `airstrike` (the effects' loop: moon gravity's chip,
+//! an air strike's banner, edge pulses and fold into the chip stack;
+//! `airstrike <t>` frozen likewise):
 //! the HUD's own screens with made-up players (`race_chip::stage`,
 //! `kill_feed::signal_feed::stage`), under the Signal theme. `proof` (the kit itself: the type ramp of every role, tick
 //! bars, slants, the gun icons and marks, the logo pass frozen mid-way,
@@ -34,7 +36,7 @@ use chimera_ui::{
 pub const UI_SCENE_Z: i32 = 900;
 
 /// The scenes `ui_scene` stages.
-pub const SCENES: &[&str] = &["proof", "chip", "lead", "board", "board_lead", "feed", "rankup"];
+pub const SCENES: &[&str] = &["proof", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike"];
 
 /// The scene asked for (`None`: none).
 #[derive(Resource, Default, Clone, Debug, PartialEq)]
@@ -66,6 +68,7 @@ fn scene_start(world: &mut World, t: Option<f64>) -> f64 {
 fn clear_staged(w: &mut World) {
     super::race_chip::stage(w, None);
     super::rank_toast::stage(w, None);
+    super::match_effects::stage(w, None);
     if std::mem::take(&mut w.resource_mut::<UiScene>().froze)
         && let Some(mut c) = w.get_resource_mut::<chimera_ui::UiClock>()
     {
@@ -84,7 +87,7 @@ impl Plugin for UiScenePlugin {
         app.init_resource::<UiScene>()
             .console_command(
                 "ui_scene",
-                "ui_scene <proof|chip|lead|board|board_lead|feed|rankup|off> [t]: stage a screen of the UI kit with made-up \
+                "ui_scene <proof|chip|lead|board|board_lead|feed|rankup|airstrike|off> [t]: stage a screen of the UI kit with made-up \
                  data (screenshots); an animated scene with `t` frozen `t` s into its loop.",
                 |w, a| {
                     let name = a.first().map(String::as_str).unwrap_or("proof");
@@ -110,6 +113,13 @@ impl Plugin for UiScenePlugin {
                         "rankup" => {
                             let start = scene_start(w, t);
                             super::rank_toast::stage(w, Some(start));
+                            return Ok(None);
+                        }
+                        "airstrike" => {
+                            // On the chip, as in play.
+                            let start = scene_start(w, t);
+                            super::race_chip::stage(w, Some("chip"));
+                            super::match_effects::stage(w, Some(start));
                             return Ok(None);
                         }
                         "chip" | "lead" | "board" | "board_lead" => {

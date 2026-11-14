@@ -47,6 +47,7 @@ pub mod input;
 pub mod kill_feed;
 pub mod interp;
 pub mod map_screen;
+pub mod match_effects;
 pub mod match_end;
 pub mod prematch_lobby;
 pub mod net;
@@ -553,6 +554,7 @@ impl PluginGroup for ClientPlugins {
             .add(prematch_lobby::PreMatchLobbyPlugin)
             .add(kill_feed::KillFeedPlugin)
             .add(callouts::CalloutsPlugin)
+            .add(match_effects::MatchEffectsPlugin)
             .add(hit_marker::HitMarkerPlugin)
             .add(hdr::HdrPlugin)
             .add(video::VideoPlugin)

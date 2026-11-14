@@ -21,6 +21,11 @@
 //!   (`freeze`, screenshots).
 //! - `AmbientMaterial` (`ambient.wesl`): the main menu's ambient
 //!   background, a stub (a slow accent glow on ink) until Look Book V.
+//! - `EdgeMaterial` (`edge.wesl`): a glow along the screen's edges (an
+//!   inset shadow and a hairline border), its opacity a parameter: the air
+//!   strike's pulse. Its middle is discarded: never a full-screen fill.
+//! - `RingMaterial` (`ring.wesl`): a countdown ring, the arc from the top
+//!   clockwise over a track (the effects chips').
 //!
 //! Colours go in as linear RGBA (`LinearRgba::from(color)`); builders
 //! take Bevy `Color`s. `KitMaterialsPlugin` registers them (a
@@ -45,19 +50,25 @@ impl Plugin for KitMaterialsPlugin {
             embedded_asset!(app, "pass.wesl");
             embedded_asset!(app, "lines.wesl");
             embedded_asset!(app, "ambient.wesl");
+            embedded_asset!(app, "edge.wesl");
+            embedded_asset!(app, "ring.wesl");
             app.add_plugins((
                 UiMaterialPlugin::<SlantMaterial>::default(),
                 UiMaterialPlugin::<TickBarMaterial>::default(),
                 UiMaterialPlugin::<PassMaterial>::default(),
                 UiMaterialPlugin::<LinesMaterial>::default(),
                 UiMaterialPlugin::<AmbientMaterial>::default(),
+                UiMaterialPlugin::<EdgeMaterial>::default(),
+                UiMaterialPlugin::<RingMaterial>::default(),
             ));
         } else if app.is_plugin_added::<AssetPlugin>() {
             app.init_asset::<SlantMaterial>()
                 .init_asset::<TickBarMaterial>()
                 .init_asset::<PassMaterial>()
                 .init_asset::<LinesMaterial>()
-                .init_asset::<AmbientMaterial>();
+                .init_asset::<AmbientMaterial>()
+                .init_asset::<EdgeMaterial>()
+                .init_asset::<RingMaterial>();
         }
     }
 }
@@ -344,5 +355,70 @@ impl AmbientMaterial {
 impl UiMaterial for AmbientMaterial {
     fn fragment_shader() -> ShaderRef {
         "embedded://chimera_ui/materials/ambient.wesl".into()
+    }
+}
+
+/// The screen's edge glowing (module doc).
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone, PartialEq)]
+pub struct EdgeMaterial {
+    #[uniform(0)]
+    pub color: LinearRgba,
+    /// x: opacity (0-1), y: the glow's blur, z: its spread, w: the
+    /// border's width, in physical px.
+    #[uniform(1)]
+    pub params: Vec4,
+    /// x: the glow's alpha, y: the border's (before the opacity).
+    #[uniform(2)]
+    pub alphas: Vec4,
+}
+
+impl EdgeMaterial {
+    /// `color` glowing `blur` px wide from `spread` px in, a `border` px
+    /// line at the edge (physical px); off until `set_opacity`.
+    pub fn new(color: Color, blur: f32, spread: f32, border: f32) -> EdgeMaterial {
+        EdgeMaterial {
+            color: color.with_alpha(1.0).into(),
+            params: Vec4::new(0.0, blur, spread, border),
+            alphas: Vec4::new(0.55, 0.85, 0.0, 0.0),
+        }
+    }
+
+    pub fn set_opacity(&mut self, a: f32) {
+        self.params.x = a;
+    }
+}
+
+impl UiMaterial for EdgeMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "embedded://chimera_ui/materials/edge.wesl".into()
+    }
+}
+
+/// A countdown ring (module doc).
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone, PartialEq)]
+pub struct RingMaterial {
+    #[uniform(0)]
+    pub track: LinearRgba,
+    #[uniform(1)]
+    pub arc: LinearRgba,
+    /// x: the arc's share of the ring (0-1, from the top clockwise), y:
+    /// the line's width in physical px.
+    #[uniform(2)]
+    pub params: Vec4,
+}
+
+impl RingMaterial {
+    pub fn new(track: Color, arc: Color, width: f32) -> RingMaterial {
+        RingMaterial { track: track.into(), arc: arc.into(), params: Vec4::new(1.0, width, 0.0, 0.0) }
+    }
+
+    pub fn set_share(&mut self, share: f32) {
+        self.params.x = share.clamp(0.0, 1.0);
+    }
+}
+
+impl UiMaterial for RingMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "embedded://chimera_ui/materials/ring.wesl".into()
     }
 }

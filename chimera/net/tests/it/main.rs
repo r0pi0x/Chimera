@@ -15,6 +15,7 @@ mod dedicated;
 mod game_hooks;
 mod local_load;
 mod minigame_callouts;
+mod match_effects;
 mod prematch_lobby;
 mod prediction;
 mod reconnect;
