@@ -20,5 +20,9 @@
   "lobby": {
     "page": "lobby.html", "time": null, "lead": false, "stage": "lobby",
     "include": ["^lobby\\."]
+  },
+  "menu": {
+    "page": "menu.html", "time": null, "lead": false, "stage": "menu",
+    "include": ["^menu\\."]
   }
 }

@@ -2294,7 +2294,7 @@ cargo run --features dev,tools --bin refcmp -- hudcmp --out <scratch> --hud-ref 
 ### UI parity against the look book (`tools/ui-parity`)
 
 ```
-tools/ui-parity/run.sh board          # or chip, chip_lead, feed, lobby
+tools/ui-parity/run.sh board          # or chip, chip_lead, feed, lobby, menu
 UI_PARITY_GAME=target/debug/ultimate_gun_game tools/ui-parity/run.sh board   # a built binary
 ```
 

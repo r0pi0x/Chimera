@@ -2,7 +2,7 @@
 # The UI parity check, one screen end to end (docs/OBSERVABILITY.md, "UI
 # parity against the look book"):
 #
-#   tools/ui-parity/run.sh <board|chip|chip_lead|feed|lobby> [out-dir]
+#   tools/ui-parity/run.sh <board|chip|chip_lead|feed|lobby|menu> [out-dir]
 #
 # 1. mockup.mjs renders the look book's frame (reference/) at 1920x1080
 #    and measures every data-ui element;
@@ -21,7 +21,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$here/../.." && pwd)
-screen=${1:?usage: tools/ui-parity/run.sh <board|chip|chip_lead|feed|lobby> [out-dir]}
+screen=${1:?usage: tools/ui-parity/run.sh <board|chip|chip_lead|feed|lobby|menu> [out-dir]}
 out=${2:-$repo/target/ui-parity}
 fixture=${UI_PARITY_FIXTURE:-$here/fixtures/hud.json}
 mkdir -p "$out"

@@ -605,6 +605,18 @@ headless, instructions a frame, the menu's systems): Ladder 0.3 M,
 Assembly 1.2 M, Ident 2.5 M at its lock and 1.6 M under its sheen
 (`menu_backdrops::the_menus_frame_stays_in_budget`, limit 3 M); a frozen
 backdrop is painted once. Tests `apps/party_kit/tests/it/menu_backdrops.rs`.
+The ground is the shared ambient (M4's `AmbientMaterial`, the `MENU`
+preset: calm left of 30 % of the width, the bloom behind the backdrops;
+still with reduced motion and in staged scenes; test
+`the_ground_is_the_ambient_calm_behind_the_menu`). Parity (2026-11-14, `tools/ui-parity/run.sh menu`, 1920x1080, ids in
+`reference/menu.html` from the look book generator's `--parity`): 25
+matched, 14 within tolerance; left past it, with reasons: the tabs (slot
+C reads IDENT here, SHOWCASE in the look book: 24 px narrower, the others
+shift), text widths from whole-pixel font sizes (the caption 10 px over
+51 letters, the keys 1-5 px, GUN GAME 63 for 63.4 px), the mark 1 px
+wider (its image's width rounded up). Left: the pages in the
+kit's widgets, the menu's sounds, M5b's Showcase in slot C, screenshots at
+the four sizes beyond 1080p.
 
 - `party_kit::main_menu` drawn with the kit (four items from
   main_menu.toml; Play, Join, Options, Quit), the lockup, the keys line,

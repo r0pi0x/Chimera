@@ -217,3 +217,39 @@ fn ui_scene_menu_stages_a_backdrop_frozen() {
     step(&mut sim, 30.0);
     assert_eq!(state(&sim).backdrop, 2, "held");
 }
+
+#[test]
+fn the_ground_is_the_ambient_calm_behind_the_menu() {
+    use chimera_ui::AmbientMaterial;
+    use party_kit::signal_menu::MenuAmbient;
+    let mut sim = sim_with(MENU_THEME);
+    let ambient = |sim: &mut Sim| -> AmbientMaterial {
+        let h = sim
+            .app
+            .world_mut()
+            .query_filtered::<&MaterialNode<AmbientMaterial>, With<MenuAmbient>>()
+            .single(sim.app.world())
+            .expect("one ambient under the page")
+            .0
+            .clone();
+        sim.app
+            .world()
+            .resource::<Assets<AmbientMaterial>>()
+            .get(&h)
+            .unwrap()
+            .clone()
+    };
+    let a = ambient(&mut sim);
+    let (column, bloom) = AmbientMaterial::MENU;
+    assert_eq!(a.place.x, column, "calm left of the menu column");
+    assert_eq!(
+        (a.place.y, a.place.z),
+        (bloom.x, bloom.y),
+        "the bloom behind the backdrops"
+    );
+    assert!(a.clock.y < 0.0, "live");
+    // Staged (and with reduced motion): one still frame.
+    party_kit::signal_menu::stage(sim.app.world_mut(), &["ladder".into()]).unwrap();
+    sim.ticks(2);
+    assert!(ambient(&mut sim).clock.y >= 0.0, "frozen");
+}

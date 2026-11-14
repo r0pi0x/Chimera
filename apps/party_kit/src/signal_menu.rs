@@ -594,7 +594,18 @@ fn spawn_page(
         let mut node =
             k.node(style!(row, gap: 1.6, pad: [0.5, 0.6, 0.45, 0.7], min_w: 7.4).justify(JustifyContent::SpaceBetween));
         if inert {
+            // The border inside the padding (the look book's inset shadow).
             node.border = UiRect::all(px(hair));
+            let shrink = |v: Val| match v {
+                Val::Px(x) => Val::Px((x - hair).max(0.0)),
+                v => v,
+            };
+            node.padding = UiRect::new(
+                shrink(node.padding.left),
+                shrink(node.padding.right),
+                shrink(node.padding.top),
+                shrink(node.padding.bottom),
+            );
         }
         let mut tab = c.spawn((
             node,
@@ -683,16 +694,18 @@ fn spawn_page(
             let ix = c
                 .spawn((k.node(style!(row, w: k.lay("item_ix_w", 1.3)).shrink(0.0)), ChildOf(li)))
                 .id();
-            c.spawn((
-                k.text(
-                    Role::Mono,
-                    k.lay("item_ix", 0.62),
-                    0.1,
-                    color(Tone::Fg, 0.42),
-                    &format!("{:02}", i + 1),
-                ),
-                ChildOf(ix),
-            ));
+            let ix_text = c
+                .spawn((
+                    k.text(
+                        Role::Mono,
+                        k.lay("item_ix", 0.62),
+                        0.1,
+                        color(Tone::Fg, 0.42),
+                        &format!("{:02}", i + 1),
+                    ),
+                    ChildOf(ix),
+                ))
+                .id();
             let lab = c
                 .spawn((
                     k.text(
@@ -705,9 +718,10 @@ fn spawn_page(
                     ChildOf(li),
                 ))
                 .id();
+            let _ = lab;
             if !inverse {
-                c.entity(lab)
-                    .insert(UiParityId::new(format!("menu.item.{}.label", i + 1)));
+                c.entity(ix_text)
+                    .insert(UiParityId::new(format!("menu.item.{}.ix", i + 1)));
             }
             c.spawn((k.node(style!(row).grow(1.0)), ChildOf(li)));
             c.spawn((k.tri(images, 0.9 * 0.56, color(Tone::Fg, 0.42)), ChildOf(li)));
@@ -785,13 +799,7 @@ fn spawn_page(
         .into_iter()
         .enumerate()
     {
-        let pair = c
-            .spawn((
-                k.node(style!(row, gap: 0.55)),
-                UiParityId::new(format!("menu.keys.{}", i + 1)),
-                ChildOf(keys),
-            ))
-            .id();
+        let pair = c.spawn((k.node(style!(row, gap: 0.55)), ChildOf(keys))).id();
         let (node, label) = chimera_ui::widgets::kbd(t, k.fonts, &u, key, ks);
         let cap = widgets_pair(c, (node, label));
         c.entity(cap).insert(ChildOf(pair));
@@ -803,6 +811,7 @@ fn spawn_page(
                 t.tone_a(Tone::Fg, t.alpha("fg_2").unwrap_or(0.66)),
                 what,
             ),
+            UiParityId::new(format!("menu.keys.{}", i + 1)),
             ChildOf(pair),
         ));
     }
@@ -851,13 +860,13 @@ fn spawn_page(
     let cap = c
         .spawn((
             k.node(
-                style!(column, gap: 0.2, max_w: 22.0)
+                // Lines 1.5 tall, as the look book's.
+                style!(column, gap: 0.28, pad: [0.14, 0.0], max_w: 22.0)
                     .abs([None, None, Some(k.lay("tabs_x", 4.6)), Some(k.lay("cap_y", 7.6))])
                     .align(AlignItems::FlexEnd),
             ),
             UiTransform::default(),
             Timeline::new([fade_in(keys_at, fade, out)]).started(start),
-            UiParityId::new("menu.cap"),
             ChildOf(frame),
         ))
         .id();
@@ -877,6 +886,7 @@ fn spawn_page(
     c.spawn((
         k.text(Role::Mono, cs, 0.12, t.tone_a(Tone::Fg, 0.42), line),
         Caption(1),
+        UiParityId::new("menu.cap"),
         ChildOf(cap),
     ));
     let tabs = c
@@ -1165,7 +1175,10 @@ pub fn stage(world: &mut World, args: &[String]) -> Result<(), String> {
     s.entered = Some(now - 60.0);
     s.staged += 1;
     if let Some(w) = wipe {
-        let swap = world.get_resource::<Theme>().and_then(|t| t.dur_opt(L, "backdrop_swap")).unwrap_or(0.52) as f64;
+        let swap = world
+            .get_resource::<Theme>()
+            .and_then(|t| t.dur_opt(L, "backdrop_swap"))
+            .unwrap_or(0.52) as f64;
         let mut s = world.resource_mut::<SignalMenu>();
         s.previous = Some((which + BACKDROPS.len() - 1) % BACKDROPS.len());
         s.swap_at = now - w.clamp(0.0, 1.0) * swap;
