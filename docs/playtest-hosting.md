@@ -398,10 +398,21 @@ Maps and matches:
   | `mp_lobby_countdown` | 5 | the countdown once everyone is ready, s |
   | `mp_lobby_max_wait` | 90 | the longest wait, s, from the lobby's start or the first player's arrival (whichever is later), before the countdown starts anyway; the stragglers join late |
   | `mp_lobby_min_players` | 1 | players (not bots) connected before being ready counts; set it to the testers you expect for the first match, so it doesn't start for the first one in (the max wait still applies) |
+  | `mp_lobby_ready_up` | 0 | 1: a player on the map is "Not ready" until it presses F3 (`lobby_ready`; again takes it back); 0: having the map is ready |
 
   `lobby` on the console lists the players and what it waits for;
   `lobby_start` starts the countdown now (`lobby_start 0`: the match at
-  once). With no player connected it waits without a limit. A tester still
+  once).
+
+  **Hosting from the app's menu** (Play, Start: a listen server) has the
+  same lobby: the Server tab's rows turn it on (`mp_lobby 1`), wait for 2
+  players (`mp_lobby_min_players`) and have players ready up
+  (`mp_lobby_ready_up 1`). The host and joiners see the panel (each
+  player's status, HOST, BOT and YOU tags, the map, the countdown). The
+  host's F3 starts the countdown now; a joiner's F3 says it is ready (or
+  takes it back). Alone with bots: F3, or the longest wait (90 s). Before
+  this, a menu host's match started at once with no lobby (`mp_lobby`
+  was 0 on listen servers). With no player connected it waits without a limit. A tester still
   in the first start's download (the small window before the game opens)
   isn't connected yet and isn't listed.
 

@@ -20,8 +20,11 @@
 //! - **Entries** (data/main_menu.toml `[[entry]]`): Play, Join, Options,
 //!   Quit; each a page or a console line.
 //! - **Play** (Create Server's place, its Server and Game tabs): the Server
-//!   tab's rows are data (`[[play]]`: map, bots, max. players, server name,
-//!   password, port, UPnP), the Game tab host_settings.toml's next-match
+//!   tab's rows are data (`[[play]]`: map, bots, max. players, the
+//!   pre-match lobby's (`mp_lobby` on, waiting for 2 players, players
+//!   ready up: the host's match waits in `chimera_net::prematch`'s lobby,
+//!   which the host's F3 starts early), server name, password, port,
+//!   UPnP), the Game tab host_settings.toml's next-match
 //!   rows (`host::settings` with a `key`). Start sets the rows' cvars and
 //!   loads the map (`map`, a listen server when `maxplayers` > 1: Play
 //!   is joinable by default, bots fill `MaxPlayer`), then plays the app's

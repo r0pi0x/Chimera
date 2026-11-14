@@ -1848,16 +1848,20 @@ pub const VOTE_KEYS: [(&str, &str); 2] = [("f1", "vote option1"), ("f2", "vote o
 
 /// Run bound commands: on press, and the `-` half of `+` actions on
 /// release; wheel notches run once. F1 and F2 vote while a vote waits for
-/// ours (`VOTE_KEYS`).
+/// ours (`VOTE_KEYS`); F3 is the pre-match lobby's while it shows
+/// (`prematch_lobby::LOBBY_KEY`: the host starts the match, a player
+/// readies up).
 fn run_binds(
     keys: Res<ButtonInput<KeyCode>>,
     mouse: Res<ButtonInput<MouseButton>>,
     mut wheel: MessageReader<MouseWheel>,
     mut console: ResMut<Console>,
     vote: Option<Res<crate::net::vote::VoteView>>,
+    lobby: Option<Res<super::prematch_lobby::LobbyView>>,
     polled: Option<Res<super::binds::PolledBinds>>,
 ) {
     let voting = vote.is_some_and(|v| v.awaiting());
+    let lobby = lobby.filter(|l| l.shown);
     let polled = polled.as_deref().cloned().unwrap_or_default();
     if console.binds.is_empty() {
         wheel.clear();
@@ -1893,6 +1897,14 @@ fn run_binds(
         if voting && let Some((_, line)) = VOTE_KEYS.iter().find(|(k, _)| *k == key) {
             if pressed {
                 console.submit(*line);
+            }
+            continue;
+        }
+        if let Some(l) = &lobby
+            && key == super::prematch_lobby::LOBBY_KEY
+        {
+            if pressed && let Some(line) = l.key_line() {
+                console.submit(line);
             }
             continue;
         }
@@ -3228,6 +3240,41 @@ mod tests {
         let text: Vec<String> = app.world().resource::<Console>().output.iter().map(|l| l.text.clone()).collect();
         assert!(!text.iter().any(|l| l.contains("Unknown command")), "{text:?}");
         assert!(text.iter().any(|l| l.contains("still here")), "{text:?}");
+    }
+
+    /// While the pre-match lobby shows, F3 is its key (the host's
+    /// `lobby_start`) in place of its bind; after, the bind again.
+    #[test]
+    fn f3_is_the_lobbys_key_while_it_shows() {
+        let mut app = App::new();
+        app.add_plugins(ConsolePlugin)
+            .init_resource::<ButtonInput<KeyCode>>()
+            .init_resource::<ButtonInput<MouseButton>>()
+            .add_message::<MouseWheel>()
+            .add_systems(Update, run_binds);
+        app.console_command("lobby_start", "test", |_, _| Ok(Some("lobby key".into())))
+            .console_command("drawcollision_test", "test", |_, _| Ok(Some("bind ran".into())));
+        app.world_mut().resource_mut::<Console>().binds.insert("f3".into(), "drawcollision_test".into());
+        app.insert_resource(super::super::prematch_lobby::LobbyView {
+            shown: true,
+            hosting: true,
+            ..default()
+        });
+        let press = |app: &mut App| {
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::F3);
+            app.update();
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(KeyCode::F3);
+            app.world_mut().resource_mut::<ButtonInput<KeyCode>>().clear();
+            app.update();
+            let text: Vec<String> = app.world().resource::<Console>().output.iter().map(|l| l.text.clone()).collect();
+            app.world_mut().resource_mut::<Console>().output.clear();
+            text
+        };
+        let text = press(&mut app);
+        assert!(text.iter().any(|l| l.contains("lobby key")) && !text.iter().any(|l| l.contains("bind ran")), "{text:?}");
+        app.insert_resource(super::super::prematch_lobby::LobbyView::default());
+        let text = press(&mut app);
+        assert!(text.iter().any(|l| l.contains("bind ran")) && !text.iter().any(|l| l.contains("lobby key")), "{text:?}");
     }
 
     fn typing_app() -> App {

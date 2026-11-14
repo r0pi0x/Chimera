@@ -5,8 +5,8 @@
 //! everyone who plays and how far along they are, then counts down and
 //! starts the round with everyone spawning together. Off unless the host
 //! turns it on (`mp_lobby 1`; the party apps' dedicated servers do at
-//! launch); a standalone game never has one; late joiners of a running
-//! match join as before.
+//! launch, their main menu's Play does for a listen host); a standalone
+//! game never has one; late joiners of a running match join as before.
 //!
 //! - **The hold** (`minigame::PreMatch`, the simulation's): players join
 //!   and spawn as usual but stand frozen (the match's end freeze) and the
@@ -22,6 +22,12 @@
 //!   stage changes, the bytes at most every `REPORT_EVERY` s, again every
 //!   `REPORT_AGAIN` s): connecting, downloading (bytes done and total),
 //!   loading the map. Ping is the connection's round trip.
+//! - **Readying up** (`mp_lobby_ready_up 1`, default 0; the party apps'
+//!   Play page sets it for a listen host): a remote player on the map is
+//!   "not ready" (`status::NOT_READY`) until it runs `lobby_ready` (a
+//!   player command: a client's goes to the server, `net::cheats`' way;
+//!   no new message), which flips it (`LobbyReady` on its client entity,
+//!   cleared when a lobby begins). The host and bots are ready as above.
 //! - **The lobby to everyone** (`NetLobby`, one replicated entity while
 //!   the lobby is on, written when a status, a count or the second
 //!   changes and at most every `WRITE_EVERY` s for bytes and pings): the
@@ -39,7 +45,9 @@
 //!   no human connected it waits (nothing to play for).
 //! - **Console**: `lobby` (the rows, the server's or as a client heard
 //!   them), `lobby_start [s]` (the host: the countdown now, of `s`
-//!   seconds, default `mp_lobby_countdown`; 0 starts at once).
+//!   seconds, default `mp_lobby_countdown`; 0 starts at once),
+//!   `lobby_ready [0|1]` (a player's, above). The client's panel puts both
+//!   on F3 while it shows (`chimera_client::client::prematch_lobby`).
 //!
 //! A match change during the lobby (`MatchHold`) drops it; the next start
 //! begins another. A start while the lobby is up (the automatic gun game
@@ -53,7 +61,11 @@
 //! Known shortcuts: a player still in the first start's download (before
 //! the game's window, `asset_startup`) hasn't connected and isn't listed;
 //! `mp_lobby_min_players` waits for them. Off on a listen server unless
-//! the host sets `mp_lobby 1`.
+//! the host sets `mp_lobby 1` (the party apps' Play page does; a game's
+//! `--map ... +maxplayers` doesn't). Taking readiness back doesn't stop a
+//! countdown under way; a client of an older build can't ready up (the
+//! host's start or the longest wait starts the match) and shows a
+//! not-ready player as "Connecting".
 
 use bevy::prelude::*;
 use bevy_replicon::{prelude::*, shared::backend::connected_client::NetworkId};
@@ -80,6 +92,10 @@ pub mod status {
     pub const LOADING: u8 = 2;
     /// On the map, waiting for the round.
     pub const READY: u8 = 3;
+    /// On the map but not ready yet: a player of a lobby where players
+    /// ready up (`mp_lobby_ready_up 1`) who hasn't (`lobby_ready`). A
+    /// client of an older build shows it as "Connecting".
+    pub const NOT_READY: u8 = 4;
 
     /// The status's words.
     pub fn name(s: u8) -> &'static str {
@@ -87,13 +103,14 @@ pub mod status {
             DOWNLOADING => "Downloading",
             LOADING => "Loading map",
             READY => "Ready",
+            NOT_READY => "Not ready",
             _ => "Connecting",
         }
     }
 }
 
 /// The lobby's settings (cvars `mp_lobby`, `mp_lobby_countdown`,
-/// `mp_lobby_max_wait`, `mp_lobby_min_players`).
+/// `mp_lobby_max_wait`, `mp_lobby_min_players`, `mp_lobby_ready_up`).
 #[derive(Resource, Clone, Copy, Debug, PartialEq)]
 pub struct LobbySettings {
     /// 1: a server holds each new match in the lobby.
@@ -104,6 +121,9 @@ pub struct LobbySettings {
     pub max_wait: f32,
     /// Humans connected before everyone's being ready starts the countdown.
     pub min_players: u32,
+    /// 1: a remote player on the map is ready once it says so
+    /// (`lobby_ready`); 0: once it is on the map.
+    pub ready_up: u8,
 }
 
 impl Default for LobbySettings {
@@ -113,6 +133,7 @@ impl Default for LobbySettings {
             countdown: 5.0,
             max_wait: 90.0,
             min_players: 1,
+            ready_up: 0,
         }
     }
 }
@@ -137,6 +158,11 @@ pub struct LobbyReport {
 /// The server: a client's last `LobbyReport`, on its client entity.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ClientLobbyStatus(pub LobbyReport);
+
+/// The server: on a client's entity once its player readied up in this
+/// lobby (`lobby_ready`); every lobby begins without.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LobbyReady;
 
 /// One player in the lobby.
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
@@ -254,6 +280,13 @@ pub(crate) fn register(app: &mut App) {
          it waits is still mp_lobby_max_wait).",
         |s| &mut s.min_players,
     );
+    resource_cvar::<LobbySettings, u8>(
+        app,
+        "mp_lobby_ready_up",
+        "Server: 1: a player on the pre-match lobby's map is ready once it says so (lobby_ready, F3); 0: once it \
+         has the map.",
+        |s| &mut s.ready_up,
+    );
     app.console_command(
         "lobby_start",
         "lobby_start [s]: end the pre-match lobby now: the countdown starts (s seconds, default mp_lobby_countdown; \
@@ -267,10 +300,27 @@ pub(crate) fn register(app: &mut App) {
         },
     )
     .console_command(
+        "lobby_ready",
+        "lobby_ready [0|1]: you are ready for the pre-match lobby's match (a player's; no argument: flips it). \
+         Counts where players ready up (mp_lobby_ready_up 1).",
+        |w, a| {
+            let want = match a.first().map(String::as_str) {
+                None => None,
+                Some("0") => Some(false),
+                Some("1") => Some(true),
+                Some(s) => return Err(format!("not 0 or 1: {s}")),
+            };
+            ready_up(w, want).map(Some)
+        },
+    )
+    .console_command(
         "lobby",
         "The pre-match lobby: each player's status, what it waits for.",
         |w, _| Ok(Some(lobby_text(w))),
     );
+    // A network client's `lobby_ready` goes to its server, for its player
+    // (`net::cheats`' way).
+    app.world_mut().resource_mut::<crate::console::Console>().player_command("chimera:lobby_ready");
     app.world_mut().resource_mut::<NetHooks>().stopped_serving.push(stopped_serving);
     let server = || resource_equals(NetRole::Server);
     app.add_systems(PreUpdate, receive_reports.after(ServerSystems::Receive).run_if(server()))
@@ -363,6 +413,11 @@ pub(crate) fn begin(world: &mut World, mut seen: Local<u64>) {
         return;
     }
     let now = world.resource::<SimClock>().now;
+    // Each lobby begins with nobody readied up.
+    let readied: Vec<Entity> = world.query_filtered::<Entity, With<LobbyReady>>().iter(world).collect();
+    for e in readied {
+        world.entity_mut(e).remove::<LobbyReady>();
+    }
     world.insert_resource(PreMatch);
     world.insert_resource(Lobby {
         began: now,
@@ -408,6 +463,7 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
     // A listen host is ready once its own load is done (spawned and
     // settled behind its loading screen).
     let host = if crate::net::maps::local_load_under_way(world) { status::LOADING } else { status::READY };
+    let ready_up = world.get_resource::<LobbySettings>().is_some_and(|s| s.ready_up != 0);
     for c in world.query::<&NetCharacter>().iter(world) {
         match c.owner {
             Some(HOST_ID) => out.push(LobbyRow {
@@ -426,12 +482,23 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
         }
     }
     let mut remote: Vec<(u64, LobbyRow)> = world
-        .query::<(&Player, &NetworkId, Option<&ConnectedClientStats>, Option<&ClientMap>, Option<&ClientLobbyStatus>)>()
+        .query::<(
+            &Player,
+            &NetworkId,
+            Option<&ConnectedClientStats>,
+            Option<&ClientMap>,
+            Option<&ClientLobbyStatus>,
+            Has<LobbyReady>,
+        )>()
         .iter(world)
-        .map(|(p, id, stats, have, report)| {
-            let ready = have.is_some_and(|m| m.0.eq_ignore_ascii_case(&map));
+        .map(|(p, id, stats, have, report, readied)| {
+            let on_map = have.is_some_and(|m| m.0.eq_ignore_ascii_case(&map));
             let r = report.map(|r| r.0).unwrap_or_default();
-            let status = if ready { status::READY } else { r.status.min(status::LOADING) };
+            let status = match (on_map, ready_up && !readied) {
+                (true, false) => status::READY,
+                (true, true) => status::NOT_READY,
+                _ => r.status.min(status::LOADING),
+            };
             let (done, total) = if status == status::DOWNLOADING { (r.done, r.total) } else { (0, 0) };
             (
                 id.get(),
@@ -539,6 +606,35 @@ pub fn start_now(world: &mut World, secs: Option<f64>) -> Result<String, String>
     world.insert_resource(lobby);
     info!("pre-match lobby: started by the host; the match starts in {secs} s");
     Ok(format!("the match starts in {secs} s"))
+}
+
+/// `lobby_ready [0|1]`: the player it runs for (a network client's, sent
+/// on by its console) ready for the match or not (`want`; None flips it).
+pub fn ready_up(world: &mut World, want: Option<bool>) -> Result<String, String> {
+    if world.get_resource::<NetRole>() != Some(&NetRole::Server) {
+        return Err("no pre-match lobby here".into());
+    }
+    let Some(character) = world.get_resource::<crate::console::CommandPlayer>().map(|p| p.0) else {
+        return Err("you host: lobby_start starts the match".into());
+    };
+    let client = world
+        .query::<(Entity, &Player)>()
+        .iter(world)
+        .find(|(_, p)| p.character == character)
+        .map(|(e, _)| e)
+        .ok_or("not a network player")?;
+    if !world.contains_resource::<Lobby>() {
+        return Err("no pre-match lobby now".into());
+    }
+    let ready = want.unwrap_or(!world.entity(client).contains::<LobbyReady>());
+    let name = world.get::<Player>(client).map(|p| p.name.clone()).unwrap_or_default();
+    if ready {
+        world.entity_mut(client).insert(LobbyReady);
+    } else {
+        world.entity_mut(client).remove::<LobbyReady>();
+    }
+    info!("pre-match lobby: {name} is {}", if ready { "ready" } else { "not ready" });
+    Ok(if ready { "ready" } else { "not ready" }.into())
 }
 
 /// `lobby`'s text: the lobby (this server's, or as a client heard it).

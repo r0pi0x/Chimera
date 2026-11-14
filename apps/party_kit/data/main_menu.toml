@@ -91,6 +91,28 @@ cvar = "maxplayers"
 range = [2, 16, 1]
 default = "8"
 
+# The pre-match lobby (chimera_net::prematch) of each match the host
+# starts: everyone waits on the map, readies up (F3), and the host's F3
+# starts it early; alone with bots, F3 or the longest wait
+# (mp_lobby_max_wait, 90 s) starts it.
+[[play]]
+label = "Pre-match lobby"
+cvar = "mp_lobby"
+choices = [["1", "On"], ["0", "Off"]]
+default = "1"
+
+[[play]]
+label = "Lobby waits for (players)"
+cvar = "mp_lobby_min_players"
+range = [1, 16, 1]
+default = "2"
+
+[[play]]
+label = "Players ready up"
+cvar = "mp_lobby_ready_up"
+choices = [["1", "Yes (F3)"], ["0", "Once loaded"]]
+default = "1"
+
 [[play]]
 label = "Server name"
 cvar = "hostname"

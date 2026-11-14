@@ -21,6 +21,7 @@ mod footstep_levels;
 mod game_hooks;
 mod grenade_looks;
 mod gun_game;
+mod host_lobby;
 mod hl2dm_parts;
 mod hud;
 mod identity;

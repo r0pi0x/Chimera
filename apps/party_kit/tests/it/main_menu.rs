@@ -29,7 +29,7 @@ use party_kit::{
 
 /// The menu's plugins on an app (the client's side: the shell's network
 /// glue and console commands, the Escape menu).
-fn menu_bits(app: &mut App, at_start: bool) {
+pub(crate) fn menu_bits(app: &mut App, at_start: bool) {
     app.insert_resource(AppHooks {
         build: "test",
         load_map: |id, _| Err(format!("{id}: not in tests")),
