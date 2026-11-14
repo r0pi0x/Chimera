@@ -1,7 +1,8 @@
 //! HL2:DM's projectiles on the headless harness (`harness::Hl2Sim`, the
 //! greybox), specs/hl2dm/projectiles.md's implementer cases (H4, the
 //! numbers in the test names): the blast rule and the shove (2-6, 12-13),
-//! the SMG1's contact grenade (15-18), the AR2's ball (19-23), the RPG
+//! the SMG1's contact grenade (15-18; shot or blasted in flight), the
+//! AR2's ball (19-23), the RPG
 //! (27-28, 32, 34-35), the crossbow (36-37, 39-41, 43; its sounds, grates
 //! and glass), the frag (44,
 //! 47-53) and the S.L.A.M. (54-62). Ticks count from the action's tick,
@@ -382,6 +383,62 @@ fn the_contact_grenade_explodes_on_a_player_18() {
     let ran = run(&mut sim, p, 80, |s, k| s.intent(p).secondary = k == 70);
     assert!(ran.sounds.iter().any(|(t, e)| *t == 70 && e == "Weapon_SMG1.Empty"), "{:?}", ran.sounds);
     assert!(!ran.events.iter().any(|(_, k)| matches!(k, WeaponEventKind::DryFire)));
+}
+
+/// Projectiles.md 4.2 and 2.4: a contact grenade in flight takes damage
+/// (health 1): shots meet it, a hit (any damage) sets it off at once
+/// where it is, and so does another blast; the explosion is its thrower's.
+#[test]
+fn a_contact_grenade_in_flight_goes_off_when_shot_or_blasted() {
+    use avian3d::prelude::{SpatialQuery, SpatialQueryFilter};
+    for how in ["shot", "blast"] {
+        let mut sim = self::sim();
+        let p = player(&mut sim);
+        let w = holding(&mut sim, p, weapons::SMG1);
+        set_rounds(&mut sim, w, 1);
+        look(&mut sim, p, EAST, 30.0);
+        run(&mut sim, p, 3, |s, k| s.intent(p).secondary = k == 0);
+        let (g, _, at) = flyers(&mut sim).into_iter().next().expect("a grenade in flight");
+        // A shot's line (the solid layers) meets it.
+        let from = at + Vec3::NEG_X * 2.0;
+        let hit = {
+            let world = sim.app.world_mut();
+            let mut state = bevy::ecs::system::SystemState::<SpatialQuery>::new(world);
+            let spatial = state.get(world).unwrap();
+            spatial
+                .cast_ray(
+                    from,
+                    Dir3::X,
+                    4.0,
+                    true,
+                    &SpatialQueryFilter::default().with_mask(chimera_core::core::SOLID_LAYERS),
+                )
+                .map(|h| h.entity)
+        };
+        assert_eq!(hit, Some(g), "{how}: a shot's line meets the grenade");
+        match how {
+            "shot" => {
+                let t = sim.spawn_character(greybox::SPAWNS[1], movement::ID);
+                sim.app.world_mut().write_message(Damage {
+                    target: g,
+                    attacker: Some(t),
+                    amount: 0.08,
+                    point: at,
+                    dir: Vec3::X,
+                    hitgroup: chimera_core::core::Hitgroup::Generic,
+                    kind: chimera_core::core::DamageKind::Bullet,
+                    weapon: None,
+                    force: Vec3::ZERO,
+                });
+            }
+            _ => blast(&mut sim, at + Vec3::Y * 0.5, 50.0, 128.0, None),
+        }
+        let ran = run(&mut sim, p, 2, |_, _| {});
+        let mine: Vec<_> = ran.blasts.iter().filter(|(_, b)| b.inflictor == Some(g)).collect();
+        assert_eq!(mine.len(), 1, "{how}: it went off once: {:?}", ran.blasts.len());
+        assert_eq!(mine[0].1.thrower, Some(p), "{how}: its thrower's");
+        assert!(flyers(&mut sim).iter().all(|(e, ..)| *e != g), "{how}: gone");
+    }
 }
 
 // ---------------------------------------------------------------------------

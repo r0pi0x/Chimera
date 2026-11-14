@@ -36,7 +36,9 @@
 //!   screen shake (`ball_ends`, 20, 150 Hz, 1 s, radius 1250).
 //!
 //! The contact grenade's 3-tick check (4.2, `grenade_stopped`): every 3
-//! ticks of flight one stopped dead explodes. The ball's seek (5.4):
+//! ticks of flight one stopped dead explodes. It takes damage (4.2, 2.4):
+//! in flight it is a box that shots and blasts meet (`grenade_bodies`) and
+//! any damage sets it off where it is, its thrower's (`grenade_shot`). The ball's seek (5.4):
 //! attractive players are alive, not its owner, not the owner's teammates
 //! in TDM (`Hl2Match::teamplay`, `core::Team`) and nobody in the
 //! intermission (`Hl2Match::over`); before it has struck a player, those
@@ -46,7 +48,10 @@
 //! white fade at the launch is `projectile_fx`'s, the dissolve of the
 //! ball's victims (the body and the dropped weapon) `dissolve`'s.
 //!
-//! Known shortcuts: the contact grenade's 3-tick check has no ground
+//! Known shortcuts: the energy ball and other flyers (bolts) pass a
+//! contact grenade rather than setting it off (flyers never meet each
+//! other); the grenade's damage box follows it a physics step late;
+//! the contact grenade's 3-tick check has no ground
 //! entity to test (a flyer has none: any touch ends it), and its random
 //! spin isn't given (a flyer faces its flight); the knock of what a
 //! ball hits is a whole elastic hit of its 150 kg (the spec gives only that
@@ -68,7 +73,10 @@ use super::{
     recoil::{Hl2Punch, IMPULSE_SCALE},
 };
 use crate::{
-    core::{DamageKind, FirstTimePredicted, Health, Intent, MovementState, NetRole, SimClock},
+    core::{
+        Damage, DamageKind, Damageable, FirstTimePredicted, Health, Intent, MovementState, NetRole, SimClock,
+        TRACE_ONLY_LAYER,
+    },
     map::{PlaySound, logic_view::MapShake},
 };
 
@@ -504,6 +512,77 @@ pub fn ball_touches(
     }
 }
 
+/// The contact grenade takes damage (4.2): from its first tick in flight
+/// a box of its size that shots and blasts meet (`TRACE_ONLY_LAYER`:
+/// nothing collides with it; flyers pass it), `Damageable`.
+pub fn grenade_bodies(flyers: Query<(Entity, &Flyer), Added<Flyer>>, mut commands: Commands) {
+    use avian3d::prelude::{Collider, CollisionLayers, LayerMask, RigidBody};
+    for (e, f) in &flyers {
+        if f.weapon != super::SMG1 {
+            continue;
+        }
+        let size = (f.half * 2.0).max(Vec3::splat(1e-3));
+        commands.entity(e).insert((
+            RigidBody::Kinematic,
+            Collider::cuboid(size.x, size.y, size.z),
+            CollisionLayers::new(TRACE_ONLY_LAYER, LayerMask::NONE),
+            Damageable,
+        ));
+    }
+}
+
+/// A contact grenade that takes any damage (4.2: a bullet, a blast)
+/// explodes where it is, still its thrower's (the server's,
+/// `FlyerSet::Touch`).
+pub fn grenade_shot(
+    mut damage: MessageReader<Damage>,
+    flyers: Query<(&Flyer, &Transform)>,
+    mut blasts: MessageWriter<chimera_sim::weapon::grenade::BlastAt>,
+    mut gone: MessageWriter<FlyerGone>,
+    mut commands: Commands,
+) {
+    let mut done: Vec<Entity> = Vec::new();
+    for d in damage.read() {
+        if d.amount <= 0.0 || done.contains(&d.target) {
+            continue;
+        }
+        let Ok((f, t)) = flyers.get(d.target) else { continue };
+        if f.weapon != super::SMG1 {
+            continue;
+        }
+        done.push(d.target);
+        explode_grenade(d.target, f, t.translation, &mut blasts, &mut gone, &mut commands);
+    }
+}
+
+/// The contact grenade's blast where it is, its thrower's; it is gone.
+fn explode_grenade(
+    e: Entity,
+    f: &Flyer,
+    at: Vec3,
+    blasts: &mut MessageWriter<chimera_sim::weapon::grenade::BlastAt>,
+    gone: &mut MessageWriter<FlyerGone>,
+    commands: &mut Commands,
+) {
+    if let Some(b) = f.blast.clone() {
+        blasts.write(chimera_sim::weapon::grenade::BlastAt {
+            at,
+            blast: b,
+            thrower: f.owner,
+            weapon: f.weapon,
+            inflictor: Some(e),
+        });
+    }
+    gone.write(FlyerGone {
+        flyer: e,
+        weapon: f.weapon,
+        owner: f.owner,
+        at,
+        expired: false,
+    });
+    commands.entity(e).despawn();
+}
+
 /// The contact grenade's check (4.2), every 3 ticks of flight (the
 /// server's, `FlyerSet::Touch`): one whose speed is exactly 0 explodes
 /// where it is.
@@ -517,23 +596,7 @@ pub fn grenade_stopped(
         if f.weapon != super::SMG1 || f.ticks == 0 || f.ticks % 3 != 0 || f.velocity != Vec3::ZERO {
             continue;
         }
-        if let Some(b) = f.blast.clone() {
-            blasts.write(chimera_sim::weapon::grenade::BlastAt {
-                at: t.translation,
-                blast: b,
-                thrower: f.owner,
-                weapon: f.weapon,
-                inflictor: Some(e),
-            });
-        }
-        gone.write(FlyerGone {
-            flyer: e,
-            weapon: f.weapon,
-            owner: f.owner,
-            at: t.translation,
-            expired: false,
-        });
-        commands.entity(e).despawn();
+        explode_grenade(e, f, t.translation, &mut blasts, &mut gone, &mut commands);
     }
 }
 

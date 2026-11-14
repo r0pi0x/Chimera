@@ -325,7 +325,15 @@ fn projectile_systems(app: &mut App) {
         .add_systems(
             FixedUpdate,
             (
-                (alt_fire::ball_touches, alt_fire::ball_ends, alt_fire::grenade_stopped, crossbow::bolt_sounds).in_set(FlyerSet::Touch),
+                (
+                    alt_fire::ball_touches,
+                    alt_fire::ball_ends,
+                    alt_fire::grenade_stopped,
+                    alt_fire::grenade_bodies,
+                    alt_fire::grenade_shot,
+                    crossbow::bolt_sounds,
+                )
+                    .in_set(FlyerSet::Touch),
                 (slam::actions, slam::satchels, slam::mines, frag::think, frag::player_taps, slam::spent)
                     .chain()
                     .in_set(FlyerSet::Touch),

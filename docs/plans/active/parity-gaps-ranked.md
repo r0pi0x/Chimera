@@ -126,7 +126,6 @@ settle first (a capture, a probe run or a spec session).
 | Combat Arms hit-sphere priorities | rule done (`priority_sphere`); values ours | combat_arms/weapon_firing.md Corrections 5, Q16 | a spec session: `Node#Priority` per skeleton |
 | Combat Arms multi-kill reset on death | blocked | combat_arms/kill_streaks.md Q2 | a live check (kill, die, kill again within 5 s) |
 | HL2:DM blood per viewer (shooter's predicted copy, melee attacker none) | spec-clear | hl2dm/effects_sounds.md 7 (Q10 a confirmation only) | none |
-| HL2:DM damageable projectiles (the contact grenade goes off when shot) | spec-clear | hl2dm/projectiles.md 2.4, 4.2 (satchels, trip mines and the RPG's refusal already done) | none |
 | HL2:DM combine camera (sweep, ping, glow; drawn still now) | sweep spec-clear; lock-on blocked | hl2dm/maps_entities.md 14, Q2 | probe P8 for whether it locks on to players |
 
 ## Counts
