@@ -46,6 +46,7 @@ pub mod interp;
 pub mod map_screen;
 pub mod match_end;
 pub mod prematch_lobby;
+pub mod lobby_panel;
 pub mod net;
 pub mod relaunch;
 pub mod startup;

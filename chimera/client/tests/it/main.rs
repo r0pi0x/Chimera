@@ -10,6 +10,7 @@ mod callouts;
 mod dead_view;
 mod game_app;
 mod hit_marker;
+mod lobby_panel;
 mod map_load_steps;
 mod swap_effect;
 mod text_warm;

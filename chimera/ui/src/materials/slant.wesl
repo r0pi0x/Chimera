@@ -1,5 +1,5 @@
 // SlantMaterial (materials/mod.rs): a parallelogram fill at the theme's
-// slant, edges anti-aliased over one physical pixel, an optional accent bar
+// slant (or its outline), edges anti-aliased over one physical pixel, an optional accent bar
 // along the left edge, a wipe that clips from the left and the right along
 // the slant, and a horizontal alpha ramp. Positions in physical pixels
 // (`UiVertexOutput::size`).
@@ -14,6 +14,8 @@ import bevy_ui_render::ui_vertex_output::UiVertexOutput;
 // x: clip from the left (0-1 of the row), y: clip from the right, z, w:
 // alpha at the left and the right edge.
 @group(1) @binding(3) var<uniform> wipe: vec4<f32>;
+// x: an outline this many physical px wide (0: filled).
+@group(1) @binding(4) var<uniform> stroke: vec4<f32>;
 
 @fragment
 fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
@@ -31,7 +33,15 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     // perpendicular distance; one physical pixel of ramp.
     let c = inverseSqrt(1.0 + tan * tan);
     let cov = clamp((p.x - a) * c + 0.5, 0.0, 1.0) * clamp((b - p.x) * c + 0.5, 0.0, 1.0);
-    if (cov <= 0.0) {
+    var cov_out = cov;
+    if (stroke.x > 0.0) {
+        // Inside the outline: the edges moved in by its width.
+        let k = stroke.x;
+        let inner = clamp((p.x - a) * c - k + 0.5, 0.0, 1.0) * clamp((b - p.x) * c - k + 0.5, 0.0, 1.0)
+            * clamp(p.y - k + 0.5, 0.0, 1.0) * clamp(h - p.y - k + 0.5, 0.0, 1.0);
+        cov_out = cov * (1.0 - inner);
+    }
+    if (cov_out <= 0.0) {
         discard;
     }
     var col = fill;
@@ -40,5 +50,5 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
         col = mix(fill, accent, k);
     }
     let ramp = mix(wipe.z, wipe.w, in.uv.x);
-    return vec4<f32>(col.rgb, col.a * cov * ramp);
+    return vec4<f32>(col.rgb, col.a * cov_out * ramp);
 }

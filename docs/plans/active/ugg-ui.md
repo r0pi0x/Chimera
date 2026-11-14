@@ -434,6 +434,13 @@ pixel snap system, and `text_warm` declarations of the roles' sizes.
 
 ### M1: the logo pass and the lobby
 
+Status (2026-11-14): the lobby is in (`client::lobby_panel`, drawn on
+the kit's style layer and Look Book V marks when the theme has
+`[layout.lobby]`; the shell's panel otherwise; `LobbyView` gained the
+map's game, the slots, the ladder's games and each row's ping;
+`SlantMaterial::outline` for the unready block; tests
+`chimera/client/tests/it/lobby_panel.rs`). Next: the logo pass.
+
 - `client::logo_pass`; the front end's moves through it (2.5, 3).
 - `prematch_lobby` rebuilt on the kit (HOST from `LobbyRow::id ==
   HOST_ID`, BOT from `bot()`, YOU from `LocalClientId`); no network
