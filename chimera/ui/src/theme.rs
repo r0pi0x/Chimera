@@ -59,6 +59,10 @@ pub enum Tone {
     /// Accent-coloured text (lighter than `acc` on ink).
     AccText,
     Threat,
+    /// Light green: network good only (a quiet ping).
+    Good,
+    /// Amber: network warnings only (a bad ping), never gameplay.
+    Warn,
     /// `ink` at `alpha.plate` (panels; no backdrop blur in Bevy).
     Plate,
     /// `fg` at `alpha.glow`.
@@ -67,7 +71,7 @@ pub enum Tone {
 
 impl Tone {
     /// Every tone, for tests and tools.
-    pub const ALL: [Tone; 17] = [
+    pub const ALL: [Tone; 19] = [
         Tone::Ink,
         Tone::Ink2,
         Tone::Ink3,
@@ -83,6 +87,8 @@ impl Tone {
         Tone::OnAcc,
         Tone::AccText,
         Tone::Threat,
+        Tone::Good,
+        Tone::Warn,
         Tone::Plate,
         Tone::Glow,
     ];
@@ -105,6 +111,8 @@ impl Tone {
             Tone::OnAcc => "on_acc",
             Tone::AccText => "acc_text",
             Tone::Threat => "threat",
+            Tone::Good => "good",
+            Tone::Warn => "warn",
             Tone::Plate => "plate",
             Tone::Glow => "glow",
         }
@@ -166,6 +174,20 @@ struct Raw {
     #[serde(default)]
     layout: BTreeMap<String, BTreeMap<String, f32>>,
     icons: IconRule,
+    network: Network,
+}
+
+/// The ping meter's thresholds and its quiet bars' alpha.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+pub struct Network {
+    /// Under this many ms: quiet (four bars, `good`).
+    pub ping_quiet_ms: u32,
+    /// Under this: fine (three bars, `fg`).
+    pub ping_fine_ms: u32,
+    /// Under this: a warning (two bars, `warn`); at or over: bad (one, `threat`).
+    pub ping_warn_ms: u32,
+    /// The quiet bars' alpha (display space).
+    pub good_alpha: f32,
 }
 
 /// Which icons the theme's screens show (`icons::choose`).
@@ -197,6 +219,7 @@ pub struct Theme {
     durs: BTreeMap<String, BTreeMap<String, f32>>,
     layout: BTreeMap<String, BTreeMap<String, f32>>,
     pub icons: IconRule,
+    pub network: Network,
 }
 
 impl Default for Theme {
@@ -272,6 +295,7 @@ impl Theme {
             durs: raw.motion.dur,
             layout: raw.layout,
             icons: raw.icons,
+            network: raw.network,
         })
     }
 

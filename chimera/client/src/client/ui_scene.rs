@@ -21,7 +21,7 @@ use chimera_core::console::ConsoleAppExt;
 use chimera_ui::{
     Ease, IconImages, KitFonts, LinesMaterial, PassMaterial, Role, SlantMaterial, Theme, TickBarMaterial, TickLayout,
     Tone, UiUnits, fonts, icons,
-    widgets::{self, TagKind},
+    widgets::{self, PingLevel, TagKind},
 };
 
 /// Above every overlay and menu.
@@ -210,12 +210,20 @@ fn proof(m: &mut Makers, passes: &mut Assets<PassMaterial>, lines: &mut Assets<L
     commands.entity(words).add_children(&[ult, gg]);
     let tag = commands.spawn(m.text(Role::Mono, 0.62, "UI kit proof - Signal - M0", Tone::AccText)).id();
     commands.entity(lockup).add_children(&[mark_e, words, tag]);
-    for (kind, label) in [(TagKind::You, "You"), (TagKind::Host, "Host"), (TagKind::Bot, "Bot"), (TagKind::Accent, "Rung 7")] {
+    for (kind, label) in [(TagKind::You, "You"), (TagKind::Host, "Host"), (TagKind::Accent, "Rung 7")] {
         let e = widgets::spawn_pair(commands, widgets::tag(t, m.kit, &u, kind, label, 0.62));
         commands.entity(lockup).add_child(e);
     }
+    let loss = commands.spawn(m.icon("loss", 0.72, Tone::Threat)).id();
+    commands.entity(lockup).add_child(loss);
+    let fused = widgets::spawn_you_host(commands, m.slants, t, m.kit, &u, 0.62);
+    let bot = commands.spawn(widgets::bot_slot(m.images, m.icon_images, t, &u, true, 1.1, Tone::Fg2)).id();
     let k = widgets::spawn_pair(commands, widgets::kbd(t, m.kit, &u, "Tab", 0.62));
-    commands.entity(lockup).add_child(k);
+    commands.entity(lockup).add_children(&[fused, bot, k]);
+    for ms in [12, 72, 140, 240] {
+        let e = widgets::spawn_ping_meter(commands, m.slants, t, &u, 0.72 * 0.92, PingLevel::from_ms(t, ms));
+        commands.entity(lockup).add_child(e);
+    }
     commands.entity(root).add_child(lockup);
 
     let body = commands.spawn(row(u.cq(4.0))).id();
@@ -244,6 +252,33 @@ fn proof(m: &mut Makers, passes: &mut Assets<PassMaterial>, lines: &mut Assets<L
         let a = commands.spawn(m.text(Role::Mono, 0.42, &label, Tone::Fg3)).id();
         let b = commands.spawn(m.text(role, size, text, tone)).id();
         commands.entity(r).add_children(&[a, b]);
+        commands.entity(ramp).add_child(r);
+    }
+    for (you, name) in [(true, "kestrel"), (false, "lowgrav_larry")] {
+        let r = commands
+            .spawn((
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(u.cq(0.6)),
+                    width: u.val(24.0),
+                    height: u.val(2.15),
+                    padding: UiRect::horizontal(u.val(0.6)),
+                    ..default()
+                },
+            ))
+            .id();
+        if you {
+            commands.entity(r).insert((widgets::row_you(t, &u), bevy::picking::hover::Hovered::default()));
+        }
+        let slot = commands.spawn(widgets::bot_slot(m.images, m.icon_images, t, &u, !you, 0.9, Tone::Fg3)).id();
+        let n = commands.spawn(m.text(Role::DisplayBold, 0.78, name, Tone::Fg)).id();
+        // The second row as if hovered (its tick shown; no `Hovered` to hide it).
+        let tick = commands.spawn(widgets::hover_tick(m.slants, t, &u, 2.15)).id();
+        if !you {
+            commands.entity(tick).insert(Visibility::Inherited);
+        }
+        commands.entity(r).add_children(&[slot, n, tick]);
         commands.entity(ramp).add_child(r);
     }
     commands.entity(body).add_child(ramp);

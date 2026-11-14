@@ -5,5 +5,6 @@
 mod fonts;
 mod icons;
 mod motion;
+mod style;
 mod theme;
 mod units;

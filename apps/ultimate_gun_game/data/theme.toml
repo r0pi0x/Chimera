@@ -17,6 +17,8 @@ acc = "#3B7BFF"
 on_acc = "#04060B"
 acc_text = "#6A98FF"
 threat = "#FF3B4E"
+good = "#9BE3B4"      # network good only
+warn = "#FFB547"      # network warnings only
 
 [alpha]
 fg_2 = 0.66

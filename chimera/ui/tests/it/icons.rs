@@ -1,5 +1,6 @@
 //! The kit's icons (chimera_ui::icons).
 
+use bevy::prelude::*;
 use chimera_ui::icons::{self, GUNS, IconFor, IconSource, Icons};
 
 /// Every gun and mark rasterizes to its aspect at the asked height; a
@@ -7,7 +8,7 @@ use chimera_ui::icons::{self, GUNS, IconFor, IconSource, Icons};
 #[test]
 fn icons_rasterize_with_holes() {
     let set = Icons::shipped();
-    for key in GUNS.iter().copied().chain(["mark", "crown", "trophy", "kill", "death", "warn"]) {
+    for key in GUNS.iter().copied().chain(["mark", "crown", "trophy", "kill", "death", "warn", "bot", "ping", "loss"]) {
         let icon = set.get(key).unwrap_or_else(|| panic!("{key} in icons.toml"));
         for px in [16, 32, 48] {
             let (w, h, cov) = icons::rasterize(icon, px);
@@ -35,7 +36,7 @@ fn icons_rasterize_with_holes() {
 #[test]
 fn icons_tessellate_with_holes() {
     let set = Icons::shipped();
-    for key in GUNS.iter().copied().chain(["crown", "trophy", "kill", "death", "warn"]) {
+    for key in GUNS.iter().copied().chain(["crown", "trophy", "kill", "death", "warn", "bot", "ping", "loss"]) {
         let icon = set.get(key).unwrap();
         let tris = icons::tessellate(icon);
         let area: f32 = tris.iter().map(|[a, b, c]| ((*b - *a).perp_dot(*c - *a) / 2.0).abs()).sum();
@@ -82,4 +83,19 @@ fn icon_rules() {
     assert_eq!(icons::choose(false, true), IconSource::Fallback);
     let signal = chimera_ui::Theme::from_toml(include_str!("../../../../apps/ultimate_gun_game/data/theme.toml")).unwrap();
     assert!(signal.icons.prefer_game);
+}
+
+/// The ping meter's levels (Look Book V): quiet in light green at 70 %,
+/// fine, amber, bad; bots none. Thresholds are the theme's.
+#[test]
+fn ping_levels() {
+    use chimera_ui::{Tone, widgets::PingLevel};
+    let t = chimera_ui::Theme::from_toml(include_str!("../../../../apps/ultimate_gun_game/data/theme.toml")).unwrap();
+    assert_eq!(PingLevel::from_ms(&t, 12), PingLevel { lit: 4, tone: Tone::Good, alpha: 0.7 });
+    assert_eq!(PingLevel::from_ms(&t, 72), PingLevel { lit: 3, tone: Tone::Fg, alpha: 1.0 });
+    assert_eq!(PingLevel::from_ms(&t, 140).tone, Tone::Warn);
+    assert_eq!(PingLevel::from_ms(&t, 240), PingLevel { lit: 1, tone: Tone::Threat, alpha: 1.0 });
+    assert_eq!(PingLevel::BOT.lit, 0);
+    assert_eq!(Srgba::from(t.tone(Tone::Warn)).to_u8_array(), [255, 181, 71, 255]);
+    assert_eq!(Srgba::from(t.tone(Tone::Good)).to_u8_array(), [155, 227, 180, 255]);
 }

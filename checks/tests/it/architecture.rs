@@ -775,6 +775,21 @@ fn tracked_files() -> Vec<String> {
         .collect()
 }
 
+/// The look book's CSS tokens are the game's theme, generated
+/// (`repo_checks::ui_tokens`): a value changed in one place only fails here.
+#[test]
+fn ui_tokens_are_fresh() {
+    let want = repo_checks::ui_tokens::css(&root()).unwrap_or_else(|e| panic!("ui_tokens: {e}"));
+    let now = fs::read_to_string(root().join(repo_checks::ui_tokens::TOKENS_CSS)).unwrap_or_default();
+    assert!(
+        now == want,
+        "{} is stale against the UI theme (chimera/ui/data/shell.toml, apps/ultimate_gun_game/data/theme.toml): run \
+         `cargo run -q -p repo_checks --bin ui_tokens` (with `-- --out <look book>/tokens.css` for the mock-ups) \
+         and commit it.",
+        repo_checks::ui_tokens::TOKENS_CSS
+    );
+}
+
 /// A font file in the repository is our own (the Ultimate Gun Game's
 /// faces, docs/plans/active/ugg-ui.md 2.4) and carries its licence: an
 /// `OFL.txt` beside it naming the SIL Open Font License, so no game's or
