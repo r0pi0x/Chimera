@@ -165,6 +165,22 @@ fn dropdown_and_key_field() {
     assert!(texts_under(&mut app, l)[0].starts_with("PRESS A KEY"));
 }
 
+/// A text field shows its text (stars when masked) split at the caret,
+/// the placeholder when empty and not typed into.
+#[test]
+fn text_field_shows_text_caret_and_placeholder() {
+    let mut app = app();
+    let caret_count = |app: &mut App, e: Entity| descendants_with::<controls::TextCaret>(app, e).len();
+    let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "", "host or host:port", None, false, 15.0, State::NONE));
+    assert_eq!(texts_under(&mut app, f), ["HOST OR HOST:PORT"]);
+    assert_eq!(caret_count(&mut app, f), 0);
+    let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "lan:27016", "", Some(3), false, 15.0, State::focused(true)));
+    assert_eq!(texts_under(&mut app, f), ["LAN", ":27016"]);
+    assert_eq!(caret_count(&mut app, f), 1);
+    let f = build(&mut app, |ui, c, root| ui.text_field(c, root, "pässwd", "", None, true, 15.0, State::NONE));
+    assert_eq!(texts_under(&mut app, f), ["******"]);
+}
+
 /// A wipe cover clips away along the slant over its time and is gone at
 /// the end; one already over isn't built.
 #[test]

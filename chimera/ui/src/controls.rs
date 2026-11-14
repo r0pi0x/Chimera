@@ -11,7 +11,8 @@
 //!   `segmented`; `slider` (track, fill, the default's mark, a slanted
 //!   thumb, the value); `stepper` (`-`, the value, `+`); `dropdown` (a
 //!   field and, open, its list); `key_field` (key caps, "press a key"
-//!   while listening); `kv` (key/value lines); `modal` (a plate with a
+//!   while listening); `text_field` (typed text or stars, a placeholder,
+//!   the caret in accent while it has the keys); `kv` (key/value lines); `modal` (a plate with a
 //!   top bar, white or threat).
 //! - **States** (`State`), one vocabulary everywhere: hover is the
 //!   right-edge 12° tick plus a faint tint (`Hover`, shown live by
@@ -817,6 +818,81 @@ impl<'a> Ui<'a> {
         f
     }
 
+    /// A text field (min `w` cq, 1.9 cq tall, the dropdown's field): the
+    /// value in Mono (stars when `masked`), `placeholder` in `fg_3` when
+    /// empty; `caret` (a byte offset into `value`; Some only while it has
+    /// the keys) an accent bar at that place, the field tinted and
+    /// underlined in accent. Error: the threat underline. Returns the
+    /// field (give it its focusing action).
+    #[allow(clippy::too_many_arguments)]
+    pub fn text_field(
+        &self,
+        c: &mut Commands,
+        parent: Entity,
+        value: &str,
+        placeholder: &str,
+        caret: Option<usize>,
+        masked: bool,
+        w: f32,
+        st: State,
+    ) -> Entity {
+        let typing = caret.is_some();
+        let (base, over) = if typing {
+            (self.color(Tone::Fg, 0.08), self.color(Tone::Fg, 0.08))
+        } else {
+            (self.color(Tone::Fg, 0.04), self.color(Tone::Fg, 0.07))
+        };
+        let f = c
+            .spawn((
+                UiStyle { min_w: Some(w), h: Some(1.9), pad: Some([0.0, 0.8].into()), shrink: Some(0.0), ..UiStyle::row() },
+                Node::default(),
+                BackgroundColor(base),
+                Hover { base, over },
+                clickable(),
+                ChildOf(parent),
+            ))
+            .id();
+        let shown: String = if masked { "*".repeat(value.chars().count()) } else { value.to_string() };
+        if value.is_empty() && !typing {
+            self.text(c, f, Role::Mono, 0.62, Tone::Fg3, placeholder);
+        } else {
+            // The caret's place in the shown text (stars: one per char).
+            let at = caret.map(|b| {
+                let b = (0..=b.min(value.len())).rev().find(|i| value.is_char_boundary(*i)).unwrap_or(0);
+                let chars = value[..b].chars().count();
+                shown.char_indices().nth(chars).map_or(shown.len(), |(i, _)| i)
+            });
+            let (before, after) = match at {
+                Some(i) => shown.split_at(i),
+                None => (shown.as_str(), ""),
+            };
+            if !before.is_empty() {
+                self.text(c, f, Role::Mono, 0.66, Tone::Fg, before);
+            }
+            if typing {
+                c.spawn((
+                    Node { width: Val::Px(self.units.hairline() * 2.0), height: self.units.val(1.0), flex_shrink: 0.0, ..default() },
+                    BackgroundColor(self.color(Tone::Acc, 1.0)),
+                    TextCaret,
+                    Pickable::IGNORE,
+                    ChildOf(f),
+                ));
+            }
+            if !after.is_empty() {
+                self.text(c, f, Role::Mono, 0.66, Tone::Fg, after);
+            }
+        }
+        if st.error {
+            self.underline(c, f, Tone::Threat, 0.2);
+        } else if typing || st.focus {
+            self.underline(c, f, Tone::Acc, 0.2);
+        } else {
+            self.hairline(c, f, Tone::Fg3, 1.0);
+        }
+        self.tick(c, f, 0.35, false);
+        f
+    }
+
     /// Key/value lines (the help pane's console name, default, range):
     /// keys Mono .6 `fg_3` in a `kw` cq column, values `fg`, a hairline
     /// under each.
@@ -856,6 +932,10 @@ impl<'a> Ui<'a> {
 fn style_abs(ltrb: [Option<f32>; 4], w: f32, h: f32) -> UiStyle {
     UiStyle { w: Some(w), h: Some(h), ..UiStyle::row() }.abs(ltrb)
 }
+
+/// A text field's caret (`Ui::text_field`).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextCaret;
 
 /// A node's least height in cq (rows): `resolve_min_heights` writes it
 /// after the style.

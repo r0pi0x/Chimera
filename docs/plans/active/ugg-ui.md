@@ -656,7 +656,14 @@ inert Friends; the keys; the rule up the right edge; the backdrop tabs
 with the dwell bar and caption; the ambient under everything; no live
 map and no `MenuBackdrop` under it; `ui_scene menu [backdrop] [t]` and
 `ui_scene menu enter <t>`; tests `apps/party_kit/tests/it/signal_menu.rs`).
-The pages (Play, Join, Options) stay VGUI frames over it for now.
+The pages are Signal's (2026-11-14): Options opens M7's Settings, Play
+and Join are `party_kit::signal_pages` (`[layout.pages]`; Settings' frame
+over the ambient, the kit's controls with a new `text_field`; Play's
+Server and Game tabs with a summary pane, Join's address, password,
+recent addresses and the LAN server list; ↑↓/Tab, ←→, Q/E, F5, Enter,
+Esc; `ui_scene play [game]`, `ui_scene join`; tests
+`apps/party_kit/tests/it/signal_pages.rs`). Lucker Party and the plain
+apps keep the VGUI frames.
 The backdrops are in (`party_kit::menu_backdrops`): Ladder, Assembly and
 the Ident (slot C until M5b's Showcase) painted on the CPU into a
 vertex-coloured `Mesh2d` with `Text2d` labels per backdrop, drawn by a 2D
@@ -686,8 +693,7 @@ where the row draws, shows the gun; it overlapped the chip; test
 mark measured against the look book at p = .4 and .5 (`ui_pass`, the
 look book's lobby frame with its sting set to the same progress): the
 same upright mark in the same place, edge pixels only differing, so the
-pass needed no change. Left: the pages in the
-kit's widgets, the menu's sounds, M5b's Showcase in slot C, screenshots at
+pass needed no change. Left: the menu's sounds, M5b's Showcase in slot C, screenshots at
 the four sizes beyond 1080p.
 
 - `party_kit::main_menu` drawn with the kit (four items from
@@ -942,19 +948,25 @@ page's binds with the Shared / Combat Arms / CS:S switch and each game's
 gun view FOV), Party; rows by pick (slider, toggle, segmented, a
 `widget = "dropdown"`, stepper; key fields); ↑↓ ←→ Enter Q/E Delete;
 the help pane (TOML `help` else the cvar's, console name, default,
-range); the Apply / Revert bar (Ctrl+S / Ctrl+Z) wrapping the immediate
-writes (it counts the changes since Apply, Revert sets them back, Apply
-and leaving write the config); a display-mode change reverts after 15 s
-unless kept; a page change wipes the rows in on the slant;
-`ui_scene settings <tab>`; tests `party_kit` `settings::`. Polish
+range); the Apply / Revert bar (Ctrl+S / Ctrl+Z) over a deferred model
+(2026-11-14: a change is pending, its row marked in cobalt, until Apply
+sets the cvars and writes the config; Revert drops them; volume and
+sensitivity sliders preview live and are set back on Revert or Discard;
+key binds join it, restored from a snapshot; leaving with changes
+pending asks Apply / Discard / Stay in a modal; anything else closing
+the page discards; Host settings stay immediate); an applied
+display-mode change reverts after 15 s unless kept (the config written
+again); a page change wipes the rows in on the slant;
+`ui_scene settings <tab>` (`settings_set <cvar> <value>` and
+`settings_press <button>` stage changes and the prompts); tests
+`party_kit` `settings::`. Polish
 (2026-11-14): the games' own HUDs (HL2:DM's root, Combat Arms' roots
 and death screen, CS:S's top-level parts: `client::hud::HudPart`) are
 hidden under the Signal Esc menu and Settings over the match
 (`client::hud::HudCover`, M4's match end uses it too; test
 `esc_menu::signal_menu_covers_the_games_huds`); the Esc menu's shade is
 `chimera_ui::ShadeMaterial` (eased, per pixel in float, dithered: the
-gradient node's 8-bit stops banded it in wide stripes). Left: a
-deferred model (values held until Apply), the Crosshair and Multiplayer
+gradient node's 8-bit stops banded it in wide stripes). Left: the Crosshair and Multiplayer
 pages (no rows exist yet), help previews (FOV fan, crosshair), a key
 bound twice flagged, the UI parity check for both screens (no look-book
 reference frames in `tools/ui-parity/reference/` yet), 720p/1440p/4K

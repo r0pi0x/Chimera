@@ -50,6 +50,7 @@ mod rung_holders;
 mod settings;
 mod shipped_map_pool;
 mod signal_menu;
+mod signal_pages;
 mod startup;
 mod swap_effect;
 mod surprise;

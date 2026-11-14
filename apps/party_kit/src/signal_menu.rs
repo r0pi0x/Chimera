@@ -3,8 +3,9 @@
 //! (`[layout.menu]`: the Ultimate Gun Game's); without one
 //! `main_menu` draws its VGUI list as before (Lucker Party has no menu).
 //! Presentation only: the entries, their actions and the pages are
-//! `main_menu`'s (`MenuData`, `MainMenuAction`); Play, Join and Options
-//! still open their VGUI frames over this page.
+//! `main_menu`'s (`MenuData`, `MainMenuAction`); Play and Join open
+//! `signal_pages`' pages over it, Options `settings` (VGUI frames without
+//! those layouts).
 //!
 //! On the menu's camera, under its frames (`MENU_Z - 1`), a 16:9 frame
 //! (100 x 56.25 cq, centred) over the ambient ground (the kit's
@@ -38,8 +39,7 @@
 //! `ui_scene menu enter <t>` the page's entrance `t` s in, the UI clock
 //! stopped there (`ui_scene off` runs it again).
 //!
-//! Known shortcuts: the pages (Play, Join, Options) are still VGUI
-//! frames; no text glow (Bevy UI has no blur); the highlight's glow is
+//! Known shortcuts: no text glow (Bevy UI has no blur); the highlight's glow is
 //! left out; Friends does nothing.
 
 use bevy::{prelude::*, ui::FocusPolicy};

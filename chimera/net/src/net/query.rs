@@ -14,7 +14,8 @@
 //! visibility (1: password), VAC (0), version, and the extra data flag
 //! with the port (`0x80`), an instance id in the SteamID field (`0x10`,
 //! random per server process: one server reached at two addresses is
-//! listed once) and keywords (`0x20`). Our servers say folder `chimera` (older builds `mashup`, also ours);
+//! listed once) and keywords (`0x20`: the map's game, then
+//! `minigame=<id>` while one plays, `ServerInfo::minigame`). Our servers say folder `chimera` (older builds `mashup`, also ours);
 //! replies from anything else (a Source server on the LAN) are left out.
 //! Answers are rate-limited per address and in total (`Responder`).
 //!
@@ -116,6 +117,11 @@ impl ServerInfo {
     /// Whether it's one of ours (not a Source server that answered).
     pub fn is_ours(&self) -> bool {
         self.folder.eq_ignore_ascii_case(GAME_FOLDER) || self.folder.eq_ignore_ascii_case(OLD_GAME_FOLDER)
+    }
+
+    /// The minigame it plays (its keywords' `minigame=<id>`), if any.
+    pub fn minigame(&self) -> Option<&str> {
+        self.keywords.as_deref()?.split(',').find_map(|k| k.trim().strip_prefix("minigame="))
     }
 
     /// The info reply.
@@ -471,6 +477,7 @@ fn update_info(
     >,
     map: Option<Res<crate::map::LoadedMapName>>,
     port: Option<Res<super::udp::UdpServer>>,
+    minigame: Option<Res<chimera_sim::minigame::ActiveMinigame>>,
     mut info: ResMut<LocalServerInfo>,
 ) {
     if *role != NetRole::Server {
@@ -507,13 +514,13 @@ fn update_info(
         version: NET_VERSION.into(),
         port: port.and_then(|p| p.local_addr()).map(|a| a.port()),
         instance: Some(instance.0),
-        keywords: Some(
-            map.split(':')
-                .next()
-                .filter(|g| *g != map)
-                .unwrap_or("chimera")
-                .to_string(),
-        ),
+        keywords: Some({
+            let game = map.split(':').next().filter(|g| *g != map).unwrap_or("chimera");
+            match &minigame {
+                Some(m) => format!("{game},minigame={}", m.def.id),
+                None => game.to_string(),
+            }
+        }),
     };
     if info.0 != next {
         info.0 = next;
@@ -1055,6 +1062,18 @@ mod tests {
             ..i
         };
         assert_eq!(parse_reply(&bare.encode()), Some(Reply::Info(bare)));
+    }
+
+    #[test]
+    fn the_keywords_carry_the_minigame() {
+        let mut i = info();
+        assert_eq!(i.minigame(), None);
+        i.keywords = Some("cs_source,minigame=ultimate_gun_game:auto".into());
+        let back = match parse_reply(&i.encode()) {
+            Some(Reply::Info(b)) => b,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(back.minigame(), Some("ultimate_gun_game:auto"));
     }
 
     #[test]
