@@ -1,0 +1,379 @@
+# Plan: in-game feedback and bug reports
+
+Status: planned (2026-11-14), nothing built. The user's idea: during a
+playtest a tester presses a key (or picks an Escape menu entry), a dialog
+opens, they type (later: speak) what went wrong, and Send files a bundle
+of the game's state into a queue the host and the orchestrating agent
+triage. The user decides what gets fixed; the agent recommends.
+
+This plan is the MVP for the next playtest build, then the fuller system.
+Section 9 lists the decisions the user still has to make.
+
+## 1. What exists (build on it)
+
+| Need | Have | Where |
+|---|---|---|
+| A report from inside the game | `bugreport [note]` (F9, CS:S's F4 through `bug`): `screenshot.png` + `report.txt` (build and `NET_VERSION`, map, a `setpos`/`setang` line, weapon, health, the last `chimera_perf` readout, the last 40 console lines) into `<data_local>/chimera/bugreports/report-<secs>/` | `chimera/client/src/client/capture.rs` (`report_text`), `input.rs`, `binds.rs` (`CHIMERA_BINDS`); docs/playtest.md "Reporting a bug" |
+| The build's stamp | `core::BuildVersion`, `version` | `chimera/core/build_stamp.rs` |
+| Perf and frames | `PerfReport`, `FrameMetrics` (distributions, hitch log) | `client/perf.rs`, `client/frame_metrics.rs` |
+| Net stats | `net_graph` readout (ping, loss, choke, rates), `status` | `client/net_graph.rs`, `chimera/net/src/net/mod.rs` |
+| Changed cvars | `config_text` (archived cvars, binds); `Cvar::{archive, scope}`; names with "password" are already hidden from logs and rcon echo | `chimera/core/src/console.rs`, `chimera/net/src/net/rcon.rs` |
+| GPU | Bevy's `RenderAdapterInfo` (wgpu `AdapterInfo`) | bevy_render 0.20 `renderer/mod.rs` |
+| Microphone and Opus | `client::voice`: capture and playback behind traits (cpal), Opus 48 kHz mono 20 ms frames | `chimera/client/src/client/voice.rs`; docs/plans/active/voice-chat.md |
+| An HTTPS service every tester already reaches | the asset service: tiny_http behind its own TLS front (`tls::Front`), per-account tokens (`accounts`), per-account and per-address limits (`Limits`, `FrontLimits`), an access log | `chimera/assets/src/server.rs`, `tls.rs`, `accounts.rs` |
+| Where to send, already on each tester's machine | `asset-access.toml`: the tester's token, bound to the service a game server offered (URL and certificate fingerprint, pinned) | `chimera/assets/src/access.rs`; the match manifest's `AssetOffer` (`chimera/net/src/net/assets.rs`) |
+| A blocking HTTPS client with a pinned certificate | ureq 3 + `tls::PinnedTls` | `chimera/assets/src/tls.rs` |
+| Kit controls | `controls::modal`, `text_field`, `segmented`, `toggle`, `button` (key caps), `kv` | `chimera/ui/src/controls.rs` |
+| The Escape menu and its data | `party_kit::esc_signal`, `[[escape]]` in `data/main_menu.toml` | `apps/party_kit/` |
+| Rebindable keys | Settings > Controls (`party_kit::controls::SHARED`) | `apps/party_kit/src/controls.rs`, `settings.rs` |
+
+Missing: no crash reporter (no panic hook), no recording of our own
+matches (`playdemo` plays CS:S demos only), no ring buffer of `tracing`
+log lines (the console buffer holds console lines), no zip writer in the
+workspace (flate2 is in the lock), no admin account kind on the asset
+service.
+
+## 2. The MVP (one playtest build)
+
+### 2.1 What a tester sees
+
+1. **F10** anywhere in a match or menu (or Escape > **Report a bug**).
+   The game takes a screenshot of that very frame first, then opens the
+   dialog: the screenshot shows the problem, not the dialog.
+2. **The dialog** (Signal look, over the match; the match goes on, as
+   with the Escape menu):
+   - top bar "REPORT"; a segmented **Bug | Feedback** (Tab or click);
+   - a text area, focused, "What happened? What did you expect?"
+     (2000 characters; Enter is a new line, **Ctrl+Enter** sends);
+   - the screenshot's thumbnail with a toggle **Include screenshot**
+     (on);
+   - **What's sent** (folded `kv` list: build, PC, map, rung, position,
+     recent console and network stats) and one line of notice: "Sent to
+     this playtest's host only. No passwords, tokens or game files.";
+   - **Send** (primary, Ctrl+Enter) and **Cancel** (Esc), and the
+     destination: "to <server name>'s report service" or "no report
+     service: saved on this PC".
+3. After Send a toast: "Report sent" or "Saved, sends when the service
+   answers (N waiting)". The console prints the report id and the local
+   folder.
+
+Typing in the dialog runs no binds (as chat and the console). The plain
+`bugreport` (F9, CS:S's F4) stays as it is: a silent local save, for
+developers and the console.
+
+### 2.2 The key: F10 (user, 2026-11-14)
+
+- **Ultimate Gun Game binds F10 to `feedback`**, in the shared binds and
+  in every game layer under it (CS:S, Combat Arms, HL2:DM). CS:S's
+  default `F10 "quit prompt"` (its built-in table,
+  `games/cs_source/src/game/mod.rs`, and the install's
+  `cfg/config_default.cfg`) is **dropped, not moved**: quitting is the
+  Escape menu's.
+- Mechanism: app bind defaults that win over a game's
+  (`BindDefaults::app_defaults`, registered by the app, applied after the
+  game's defaults and over `CHIMERA_BINDS`), so the CS:S app itself keeps
+  CS:S's F10 (parity first).
+- Saved configs: testers' `config.cfg` already holds every key (`binds:
+  all`), including `F10 "quit prompt"`, and saved binds win. A one-time
+  migration (a new mark line in config.cfg, as `DEFAULTS_MARK` does)
+  replaces F10 only where it still holds the old default; a tester who
+  bound F10 to something else keeps it.
+- Rebindable: a **Report a bug** row in Settings > Controls (Shared
+  tab, `controls::SHARED`), so it can move like any bind.
+
+### 2.3 The bundle
+
+A zip (Explorer and every OS open it; the `zip` crate, deflate through
+flate2, already in the lock) built from an allow-list of generated
+entries, never from files on disk:
+
+| Entry | Contents |
+|---|---|
+| `report.json` | schema version, report id (UUID v4, made by the client: retries are idempotent), category, the tester's text, UTC time, build (`BuildVersion`) and `NET_VERSION`, app, install id (a random id kept in the data folder, for grouping one machine's reports; no hardware serials) |
+| `screenshot.jpg` | the frame at the key press, JPEG ~85, at most 1920 wide (about 0.3-0.6 MB; the `image` crate, already in the lock) |
+| `game.txt` | map, minigame and rung, ladder position, match clock, players and bots, the server's name (not its address), the local player's `setpos`/`setang`, velocity, weapon, health, alive or spectating, the asset sets fetched and this match's on-demand fetches |
+| `system.txt` | OS and version, CPU, RAM, GPU name, driver and backend (`RenderAdapterInfo`), window size, scale factor, display mode, vsync, `fps_max` |
+| `perf.txt` | the last `chimera_perf` readout, `FrameMetrics` distributions and the hitch log's last entries |
+| `net.txt` | ping, loss, choke, in and out rates over the last seconds (`net_graph`'s readout kept in a ring), reconnects this session |
+| `cvars.txt` | cvars whose value differs from the default, after the secret filter (2.5); changed binds |
+| `console.txt` | the last 300 console lines, redacted (2.5) |
+| `log.txt` | the last 500 `tracing` lines at INFO and above, from a ring-buffer layer (Bevy's `LogPlugin::custom_layer`), redacted |
+
+Typical size under 1 MB; the client refuses to queue more than 8 MB.
+No demo yet (nothing records our own matches); see phase 3.
+
+### 2.4 On the tester's machine
+
+Beside `bugreports/` (the data folder that is not roaming, as bulky
+files belong there): `<data_local>/chimera/feedback/`, so
+`~/.local/share/chimera/feedback/` on Linux and
+`%LOCALAPPDATA%\chimera\feedback\` on Windows (`env::user_folder`, the
+old `mashup` folder while only it exists).
+
+- `outbox/<id>.zip`: written atomically on Send, before any upload.
+- `sent/<id>.zip`: moved there on a 2xx; the last 20 kept.
+- A thread (never the main thread) sends the outbox: at once, then with
+  backoff (1, 2, 4 ... 15 min) while the game runs, and on the next start.
+  `feedback_status` (console) lists what waits and why.
+
+### 2.5 Privacy and secrets
+
+The bundle writer is the only door, and it is a pure function over a
+`ReportState` struct, so tests can assert on its bytes.
+
+- Never read: `chimera.local.toml` (or `mashup.local.toml`),
+  `asset-access.toml`, `config.cfg` as a file, the asset store, any
+  install or vfs file. A bundle holds no game file and no extracted data
+  (CLAUDE.md hard rule); the screenshot is a picture of the screen, as
+  `jpeg` already saves.
+- Cvars: dropped when the name contains `password`, `token`, `key`,
+  `secret`, `rcon`, `auth`, `fingerprint` or `asset_url`, and every
+  server-scope cvar not replicated (`CvarScope::Server`: "bots,
+  secrets").
+- Console and log lines: a line naming such a cvar or command
+  (`password ...`, `rcon_password ...`, `+chimera:asset_token ...`) has
+  its arguments replaced by `(hidden)` (rcon's rule); `connect <addr>`
+  keeps the command, drops the address; long hex or base64 runs (tokens,
+  keys) become `(hidden)`; the user's home folder in a path becomes `~`
+  (`C:\Users\<name>` and `/home/<name>`); IPv4 and IPv6 addresses become
+  `(address)`.
+- The dialog says what is sent (2.1); a tester can turn off the
+  screenshot. Nothing is sent without Send.
+
+### 2.6 Where it goes
+
+**Endpoint**, first that applies:
+
+1. `chimera:feedback_url` (client cvar, archived; empty by default) with
+   `chimera:feedback_fingerprint` and `chimera:feedback_token`, for a
+   service someone names by hand;
+2. `[feedback] url` / `token` / `fingerprint` in the local config
+   (developers; the repo ships no address: `chimera.local.example.toml`
+   gets commented placeholders only);
+3. **the current server's asset service** (the match manifest's
+   `AssetOffer`: URL and fingerprint) or the bound one in
+   `asset-access.toml`, with the tester's asset token: the playtest case,
+   no setup;
+4. none: saved locally, the dialog says so and names the folder.
+
+**The upload**: `POST /feedback` over HTTPS with the pinned certificate,
+`Authorization: Bearer <token>`, `Content-Type: application/zip`,
+`X-Chimera-Report-Id`. Answers: 201 stored, 200 already stored (same
+id), 400 bad bundle, 401 token, 413 too large, 429 limit (with
+`Retry-After`). 4xx other than 429 is not retried; the zip stays in
+`outbox/` marked failed with the reason.
+
+No network protocol change: the offer already carries the URL and
+fingerprint, so the game server needs nothing new.
+
+## 3. The receiver
+
+### 3.1 Options
+
+| Option | For | Against |
+|---|---|---|
+| **A. A `/feedback` route on our asset service** (recommended for the MVP) | Testers already reach it over pinned HTTPS with their own tokens: identity per tester, limits, bans, the TLS front, no new port, no address anywhere; tiny_http, ureq and rustls are already in the crate; a few hundred lines | The asset crate grows a second job (split out later, 3.2); no ready-made web UI (we write one small page) |
+| B. Our own receiver binary on another port | Clean separation | Another port to open, another URL to hand out, the token and TLS story again |
+| C. Forgejo (or Gitea) issues | Self-hosted single binary with SQLite, a good web UI, labels, attachments, an API agents can use | Testers can't be given write tokens safely; needs a receiver in front anyway (A forwarding to it); a second service to run and back up |
+| D. GlitchTip (Sentry-compatible ingest) | Made for crash reports with attachments and grouping | Docker, Postgres, Redis; the Sentry envelope is crash-shaped, not prose plus a screenshot; overkill for a few dozen reports |
+| E. Plane | Nice tracker | Heavy (several services); no ingest |
+| F. GitHub issues on the public repo | Zero hosting | Public: testers' screenshots, names and trolls in the open; rejected |
+| G. Through the game connection | Works wherever the game does | Megabytes on the game channel mid-match, a `NET_VERSION` bump, the game server writing files; rejected for now |
+
+**Recommended:** A for the MVP. Later: keep A as the ingest and, if the
+user wants a real tracker, mirror *accepted* reports into a self-hosted
+**Forgejo** (C) through its API (one issue per group, the screenshot
+attached, labels for status); GlitchTip only if crash volume ever needs
+it.
+
+### 3.2 Code layout (layering)
+
+- `chimera_assets::feedback` (no Bevy; the crate is "plain data and the
+  asset service"): `bundle` (the schema, the zip writer and reader, the
+  allow-list, redaction), `outbox` (the client's queue and its upload
+  over `remote`/`tls`), `inbox` (the receiver: validate, store, limits,
+  statuses), the route in `server.rs`, and a `feedback` subcommand of
+  the `chimera_assets` CLI. If it outgrows the crate it moves to an
+  engine crate `chimera_feedback` (a `workspace_crates` row, `cargo
+  hakari generate`); not for the MVP.
+- `chimera_client::client::feedback` (engine, every app): the `feedback`
+  command (snapshot, then open the dialog state), `ReportState`
+  collection from the world, the log ring layer, the outbox thread,
+  `feedback_send <text>` (console fallback: CS:S, Lucker Party and any
+  app without the Signal dialog), `feedback_status`.
+- `party_kit::feedback_signal` (feature `present`): the dialog in the
+  Signal look, `[layout.feedback]` in the UGG theme; the `[[escape]]`
+  entry `action = "feedback"`; the Controls row.
+- `apps/ultimate_gun_game`: F10 in its app bind defaults (2.2).
+
+`checks/tests/it/architecture.rs` already allows this: `chimera_client`
+uses `chimera_assets`; `party_kit` is an app crate.
+
+### 3.3 Auth, limits, spam
+
+- Auth: the tester's asset token (`accounts`), so each report names an
+  account. A tester who plays from their own install still gets a token
+  (`chimera_pack user add`) for reports. Revoking a token also stops its
+  reports.
+- Limits (new `Limits` fields, CLI flags): body 8 MB; per account 10 an
+  hour and 40 a day; per address 30 an hour; the existing bad-token ban.
+  Past a limit: 429, logged.
+- Validation: a real zip, only allow-listed names (no folders, no
+  `..`), each entry under its cap, `report.json` parses, text at most
+  2000 characters. Anything else is 400 and not stored.
+- Trolls: nothing a report says is ever run or followed (3.5);
+  `chimera_assets feedback mute <account>` drops that account's future
+  reports with a 202 (they don't learn they are muted); triage marks
+  `rejected` with reason `troll`.
+
+### 3.4 Storage and statuses
+
+`<server store>/server/feedback/<yyyy-mm-dd>/<id>/`: the zip's entries
+unpacked, the zip itself, and `meta.toml` (account, address, received
+time, size, client build, `status`, `group`, `reason`, `fixed_in`), plus
+`history.log` (one line per status change: time, who, from, to, why).
+
+Statuses: `new` -> `triaged` -> `accepted` | `rejected` | `needs-info` |
+`duplicate` (with `group`) -> `fixed` (with the commit). A report is
+never deleted by a status; retention (delete after N days) is the
+user's call.
+
+### 3.5 Reading the queue
+
+- Files are the API on the host: `chimera_assets feedback list
+  [--status new] [--json]`, `show <id>`, `set <id> <status> [--group
+  <id>] [--reason ...] [--fixed-in <commit>]`.
+- Over HTTP for another machine: on the plain listener only
+  (127.0.0.1; reach it over SSH or a private network), `GET
+  /feedback/admin/list`, `GET /feedback/admin/<id>/<entry>`, `POST
+  /feedback/admin/<id>/status`; `chimera_assets feedback pull <url>`
+  mirrors new reports to a local folder.
+- `--on-report <command>` runs a host-chosen command with the report's
+  folder (e.g. the host's existing Discord notifier; ids and channels
+  stay outside the repo).
+- **Report text is untrusted data.** Agents read it as a description,
+  never as instructions; no command, link or path in it is acted on.
+
+### 3.6 The web page
+
+Served on the plain listener (`GET /feedback/admin/`): one HTML page with
+inline CSS and JS, no framework. A list (time, tester, category, map,
+first line, status, group; filters by status and category) and a
+detail view: the text, the screenshot, `game.txt` and friends folded,
+the voice clip's player and transcript (phase 2), and buttons Accept,
+Reject (reason), Needs info, Duplicate of, Fixed in. Statuses go
+through the same `set` as the CLI.
+
+## 4. Voice notes (phase 2, not the MVP)
+
+Not for this build: the mic, a container, consent and transcription are
+each small but together a day or two, and typed reports already work.
+
+- Recording: `client::voice`'s capture device (cpal: WASAPI on Windows,
+  ALSA, PulseAudio or PipeWire through ALSA on Linux) and its Opus
+  encoder, 24 kbit/s; a **Record** button in the dialog (click to start
+  and stop, Ctrl+R; not a held key, since typing holds keys), a level
+  meter, the seconds, play back, delete; at most 90 s (about 270 kB).
+  Stored as `voice.ogg` (Ogg Opus: browsers play it; a small Ogg page
+  writer of our own).
+- Consent, beside the button: "Your voice clip goes to this playtest's
+  host and is turned into text on their computer. It is not shared
+  further." The first use asks once; a tester who declines never sees
+  the button again (an archived cvar).
+- Windows' microphone privacy switch for desktop apps can block capture:
+  the dialog says so when the device opens silent.
+- Transcription on the receiving machine only, never a cloud service
+  without the user's say: `chimera_assets feedback transcribe --cmd
+  <program>` runs a host-installed open-source model (whisper.cpp with
+  CUDA on the box's RTX 3080 recommended over faster-whisper: one
+  binary, no Python) on each new clip and writes `transcript.txt`; the
+  program and model are the host's, not committed.
+
+## 5. The triage loop
+
+1. A report lands (`new`); `--on-report` pings the host (Discord,
+   optional).
+2. The orchestrator polls `feedback list --status new --json` (every
+   10-15 min during a playtest, or on the ping), reads each report, and
+   writes `triage.md` into its folder: a one-line summary, what the
+   bundle shows (map, rung, position, perf or net trouble, console
+   errors), likely area and crate, severity, a duplicate group, and a
+   recommendation (fix now, later, reject, needs info). Status
+   `triaged`.
+3. **Duplicates:** a signature per report (category, map, the weapon or
+   rung, the normalized last error or warning line) groups the obvious
+   ones; the orchestrator merges the rest by reading them, one group id
+   per issue.
+4. A digest goes to the user: groups ranked by severity and count, each
+   with the recommendation.
+5. **The user decides** (the web page's buttons, or by telling the
+   orchestrator). Only `accepted` groups get fix agents, each briefed
+   with the report folders; a merged fix sets `fixed --fixed-in
+   <commit>`, and the next build's notes list them.
+6. Later, once the user trusts it: the orchestrator may act on some
+   classes alone (crashes with a clear trace, typos); the user's call.
+
+## 6. Phases
+
+| Phase | What | Size | Tests |
+|---|---|---|---|
+| **P0** (this playtest, no code) | F9 / F4 `bugreport` as today; testers zip the folder and send it in the group chat (docs/playtest.md "Reporting a bug") | none | none |
+| **P1a** MVP, data and receiver (agent 1) | `chimera_assets::feedback`: bundle, redaction, outbox and upload, the `/feedback` route, inbox and statuses, limits, the CLI, the web page | 3-4 h | it tests: a bundle from a `ReportState` full of planted secrets (cvars `rcon_password`, `sv_password`, `chimera:asset_token`, a token-looking string, a home path, an address in console lines) contains none of them and only allow-listed entries; the receiver on port 0: 401, 413, 429, a `..` entry and an unknown entry refused, the same id twice stored once, statuses and history; the outbox retries against a server that fails then answers |
+| **P1b** MVP, the game (agent 2) | `client::feedback` (snapshot first, state, log ring, outbox thread, `feedback_send`, `feedback_status`); `party_kit::feedback_signal`; the Escape entry; F10 app default, its config migration and the Controls row | 3-4 h | scenario: the `feedback` command asks for the screenshot before the dialog opens (a fake capture seam headless), the dialog's keys (type, Tab, Ctrl+Enter, Esc, binds silent while typing), the Escape entry closes the menu before the snapshot; binds: a fresh config has F10 `feedback` in UGG and `quit prompt` in the CS:S app, an old config's F10 `quit prompt` migrates once, a custom F10 stays; the Controls row; `ui_scene feedback` screenshots at 720p and 1440p |
+| P1 release | A new playtest build for testers and server (all on one `NET_VERSION`); docs/playtest.md and playtest-hosting.md updated | user's go | `tools/post-push-tests.sh`; a pre-flight report from a clean Windows PC |
+| **P2** voice | 4: recording, `voice.ogg`, consent, the transcription hook, the page's player | 1-2 days | Ogg pages read back by a decoder; size and time caps; consent off hides the button |
+| **P3** depth | a panic hook writing a crash bundle sent on the next start; a rolling buffer of the last 30 s of received snapshots and own input (a mini demo `demosim` can replay); a report id sent to the game server so its log marks the moment; duplicate signatures; mirroring accepted groups to Forgejo; retention | days, separable | each with its own test |
+| P4 | the autonomous loop of 5.6 | later | |
+
+Docs to change with P1: docs/playtest.md ("Reporting a bug": F10),
+docs/playtest-hosting.md (reading reports, limits, muting),
+OBSERVABILITY.md (the bundle), and each new file's `//!` doc
+(`docs_index`).
+
+## 7. Risks
+
+- **Release timing:** testers on one build cannot get the dialog without
+  a new build, and main's `NET_VERSION` moved on since the last playtest
+  tag: the feature reaches testers only with the next release, which
+  needs everyone (server too) to update.
+- **Screenshot timing:** Bevy captures the frame being rendered; the
+  dialog must spawn only after `ScreenshotCaptured`, and from the Escape
+  menu only after the menu and its HUD cover are gone (two frames).
+- **The match goes on** while a tester types: they may die. Accepted (as
+  the Escape menu); the snapshot is from the key press.
+- **Redaction misses something:** the allow-list and the planted-secret
+  test are the guard; review new entries against 2.5.
+- **Abuse:** limits per account and address, mute, revocation.
+
+## 8. Alternatives considered (short)
+
+A browser form instead of the dialog (no game state, extra steps);
+reports through the game connection (bandwidth, protocol bump); a hosted
+tracker (Sentry, GitHub issues: public or third-party, testers' data
+leaves the host); tar instead of zip (testers can't open it on Windows
+without a tool); voice in the MVP (more to build and to consent to than
+the typed path needs).
+
+## 9. Decisions for the user
+
+1. **Release:** cut a new playtest build with the feedback dialog (all
+   testers and the server update), or run this playtest on P0 (F9 plus
+   the group chat) and ship the dialog in the build after.
+2. **Where the receiver runs:** on the machine that runs the asset
+   service (recommended; it is the asset service), this Linux box or the
+   Windows PC.
+3. **Tokens for everyone:** give testers who play from their own install
+   an asset token too, so their reports upload (recommended), or accept
+   that they save locally.
+4. **Tracker:** our page for now (recommended); Forgejo for accepted
+   issues later, or never.
+5. **Voice:** phase 2 (recommended), not in the first build.
+6. **Web page access:** only on the host (and over SSH or a private
+   network; recommended), or exposed with an admin login.
+7. **Discord pings** per report (no screenshot in the channel?), or a
+   digest only.
+8. **Retention:** how long reports are kept (suggested 90 days, then
+   deleted).
+9. **F9 / F4:** keep them as the silent local save (recommended), or
+   make them open the dialog too.
+10. **A main-menu entry** "Report" besides the Escape menu's, or not.
