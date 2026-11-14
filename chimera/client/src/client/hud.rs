@@ -19,6 +19,9 @@
 //! whose HUD draws, among the map's and its guests' (`HudLookOwner`,
 //! `PutAway`), and none for a HUD without one: a game's HUD takes its parts
 //! down when the look goes and builds them when it is back.
+//! A screen over the whole HUD (the Signal match end, Esc menu and
+//! Settings) covers it (`HudCover`): every game's roots and parts
+//! (`HudRoot`, `HudPart`) hidden while it is up, set back after.
 //! `Radars` (`hud_radar`) says whether the games' radars draw; an app with
 //! one kill feed for all its HUDs (`kill_feed::SharedKillFeed`) has this
 //! HUD's left out too.
@@ -61,6 +64,9 @@ impl Plugin for HudPlugin {
 ;
         if !app.is_plugin_added::<HudSwitchPlugin>() {
             app.add_plugins(HudSwitchPlugin);
+        }
+        if !app.is_plugin_added::<HudCoverPlugin>() {
+            app.add_plugins(HudCoverPlugin);
         }
         crosshair_cvars(app);
     }
@@ -110,6 +116,98 @@ pub struct GameDraws {
 /// start; without a `Gameplay` they show.
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HudRoot(pub &'static str);
+
+/// A node of a game's HUD outside its `HudRoot`s (CS:S's parts are
+/// top-level nodes, each with its own `GlobalZIndex`): hidden under a
+/// `HudCover` like the roots. A game's part markers require it.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct HudPart;
+
+/// Screens that cover the games' HUDs while they are up, by name (the
+/// Signal match end, Esc menu and Settings over the match): while any is,
+/// every `HudRoot` and `HudPart` is hidden (`cover_huds`, in `PostUpdate`
+/// before visibility propagates), and after, each is set back to what it
+/// was (or to what its game set it to meanwhile; a root of a HUD that
+/// isn't the gameplay's stays hidden).
+#[derive(Resource, Clone, Debug, Default, PartialEq, Eq)]
+pub struct HudCover(Vec<&'static str>);
+
+impl HudCover {
+    /// `by` up (or down).
+    pub fn set(&mut self, by: &'static str, up: bool) {
+        let at = self.0.iter().position(|b| *b == by);
+        match (at, up) {
+            (None, true) => self.0.push(by),
+            (Some(i), false) => {
+                self.0.remove(i);
+            }
+            _ => {}
+        }
+    }
+
+    /// Whether `by` covers them.
+    pub fn is(&self, by: &str) -> bool {
+        self.0.contains(&by)
+    }
+
+    /// `by` up (or down), the resource changed only when that differs.
+    pub fn put(cover: &mut ResMut<Self>, by: &'static str, up: bool) {
+        if cover.is(by) != up {
+            cover.set(by, up);
+        }
+    }
+
+    /// Whether any screen covers the HUDs.
+    pub fn covered(&self) -> bool {
+        !self.0.is_empty()
+    }
+}
+
+/// `HudCover` and what applies it (`HudPlugin` adds it; a screen that
+/// covers adds it too, once).
+pub struct HudCoverPlugin;
+
+impl Plugin for HudCoverPlugin {
+    fn build(&self, app: &mut App) {
+        app.init_resource::<HudCover>().add_systems(
+            PostUpdate,
+            cover_huds.before(bevy::camera::visibility::VisibilitySystems::VisibilityPropagate),
+        );
+    }
+}
+
+/// Adds `HudCoverPlugin` unless it is in.
+pub fn hud_cover(app: &mut App) {
+    if !app.is_plugin_added::<HudCoverPlugin>() {
+        app.add_plugins(HudCoverPlugin);
+    }
+}
+
+/// The HUDs hidden while covered (`HudCover`), each set back after.
+fn cover_huds(
+    cover: Res<HudCover>,
+    gameplay: Option<Res<crate::gameplay::Gameplay>>,
+    mut nodes: Query<(Entity, &mut Visibility, Option<&HudRoot>), Or<(With<HudRoot>, With<HudPart>)>>,
+    mut hidden: bevy::prelude::Local<std::collections::HashMap<Entity, Visibility>>,
+) {
+    if cover.covered() {
+        for (e, mut v, _) in &mut nodes {
+            // What its game wants now (shown again while covered): kept for after.
+            if *v != Visibility::Hidden {
+                hidden.insert(e, *v);
+                *v = Visibility::Hidden;
+            }
+        }
+    } else if !hidden.is_empty() {
+        for (e, was) in hidden.drain() {
+            let Ok((_, mut v, root)) = nodes.get_mut(e) else { continue };
+            if root.is_some_and(|r| gameplay.as_ref().is_some_and(|g| g.hud != r.0)) {
+                continue;
+            }
+            v.set_if_neq(was);
+        }
+    }
+}
 
 /// Each game's `GameDraws` by its id, for an app with several HUDs:
 /// `GameDraws` is the gameplay's HUD's (one not listed: this HUD draws

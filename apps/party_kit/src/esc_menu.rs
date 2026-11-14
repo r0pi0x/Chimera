@@ -344,6 +344,7 @@ pub struct EscMenuPlugin;
 impl Plugin for EscMenuPlugin {
     fn build(&self, app: &mut App) {
         crate::ui_cues::ensure_message(app);
+        chimera_client::client::hud::hud_cover(app);
         chimera_client::client::ui_scene::UiSceneHooks::add(app.world_mut(), "esc", scene_esc);
         app.init_resource::<EscMenu>()
             .init_resource::<OptionTabs>()
@@ -387,12 +388,19 @@ impl Plugin for EscMenuPlugin {
             )
             .add_systems(
                 Update,
-                (sync_tabs, toggle, navigate, clicks, act, refresh_values, sync, show, show_vote)
+                (sync_tabs, toggle, navigate, clicks, act, refresh_values, sync, show, show_vote, cover_huds)
                     .chain()
                     .in_set(EscMenuSystems)
                     .before(crate::controls::ControlsSystems),
             );
     }
+}
+
+/// The games' HUDs covered (`hud::HudCover`) while the Signal menu is
+/// open, Settings over the match included (its pages): its keys and the
+/// panel sit where the HUDs draw health and ammo.
+fn cover_huds(menu: Res<EscMenu>, theme: Option<Res<chimera_ui::Theme>>, mut cover: ResMut<chimera_client::client::hud::HudCover>) {
+    chimera_client::client::hud::HudCover::put(&mut cover, "esc menu", menu.open && signal(theme.as_deref()));
 }
 
 /// `ui_scene esc` (feature `dev` screenshots): the menu open over the
@@ -692,7 +700,11 @@ fn show(
         Option<Res<VoteSettings>>,
         Res<Time<Real>>,
     ),
-    (mut images, mut icons): (Option<ResMut<Assets<Image>>>, Option<ResMut<chimera_ui::IconImages>>),
+    (mut images, mut icons, mut shades): (
+        Option<ResMut<Assets<Image>>>,
+        Option<ResMut<chimera_ui::IconImages>>,
+        Option<ResMut<Assets<chimera_ui::ShadeMaterial>>>,
+    ),
     mut shown: Local<Option<Shown>>,
     mut commands: Commands,
 ) {
@@ -749,7 +761,7 @@ fn show(
                 notice: menu.notice.as_deref(),
                 vote: vote_now.as_ref(),
             };
-            crate::esc_signal::spawn(&mut commands, &ui, images, icons, &at, MENU_Z);
+            crate::esc_signal::spawn(&mut commands, &ui, images, icons, shades.as_deref_mut(), &at, MENU_Z);
         }
         _ => spawn_menu(&mut commands, &menu, &now, active.as_ref(), &tabs.tabs),
     }

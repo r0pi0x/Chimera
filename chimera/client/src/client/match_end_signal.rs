@@ -29,7 +29,8 @@
 //!   chosen one's steps (`ClimbSeg`) drawn along their length in
 //!   `climb_draw` s, its rung-ups, kills and deaths as ticks fading in
 //!   along x over `climb_ticks` s (`ClimbTick`), its longest stall boxed
-//!   and labelled, its final rung named.
+//!   (dashed) and labelled clear of the line on an ink plate
+//!   (`StallLabel`), its final rung named.
 //! - **The vote** (`VoteCard`, one band along the bottom): one countdown
 //!   (`VoteCountdown` and its pixel-snapped tick bar, `VoteTicks`: lit as
 //!   it runs, the accent from `vote_hot_from` of `vote` s), the vote's
@@ -52,13 +53,13 @@
 //! (fades and steps from the screen's coming up, `EndState::came_up`),
 //! the slab and the climb's drawing run on the kit's clock (`UiClock`).
 //! The cursor is free while the screen is up (`match_end::vote_cursor`);
-//! the games' HUDs are hidden under it (`hide_huds`) and shown again
-//! after.
+//! the games' HUDs are hidden under it (`hide_huds`: `hud::HudCover`)
+//! and shown again after.
 //! `ui_scene matchend [fixture]` stages it (`stage`). Nodes carry the
 //! look book's names (`UiParityId`: `end.*`).
 //!
 //! Known shortcuts: no gun on the standings (the look book has none);
-//! the stall's box is solid, not dashed; map cards show a tinted
+//! map cards show a tinted
 //! gradient (no map shots); a listen host's Leave gets no confirmation
 //! (the Esc menu's warns about the people connected).
 
@@ -139,8 +140,80 @@ pub enum TickKind {
     Up,
     Kill,
     Death,
+    /// The stall's box (its fill), its outline's dashes and its label's
+    /// ink plate.
     Stall,
+    Dash,
+    Plate,
     Final,
+}
+
+/// Where the stall's label goes (chart units): above the box with its
+/// end at the box's right end (the line climbs on from there, so the
+/// label sits in the empty space above-left of it), or, for a stall that
+/// lasts to the match's end (the final rung's label is there), under the
+/// box from its left end. On an ink plate (`PAD_X`, `PAD_Y` around the
+/// text) over the faint climbs and the grid.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StallLabel {
+    pub x: f32,
+    /// The plate's top.
+    pub top: f32,
+    /// `x` is the label's right end (else its left end).
+    pub anchor_end: bool,
+}
+
+impl StallLabel {
+    pub const PAD_X: f32 = 1.6;
+    pub const PAD_Y: f32 = 0.8;
+    /// The plate's height: the 6.4-unit type's line and the padding.
+    pub const H: f32 = 6.4 * 1.25 + 2.0 * Self::PAD_Y;
+    /// Its gap to the box.
+    const GAP: f32 = 1.2;
+    /// Its end's gap to the line's step at the box's end (the line is 1.6
+    /// wide).
+    const INSET: f32 = 2.4;
+
+    pub fn place(axes: &ChartAxes, a: f32, b: f32, rung: u32, end: f32) -> Self {
+        let (x0, x1, y) = (axes.x(a), axes.x(b), axes.y(rung as f32));
+        if x1 >= axes.x(end) - 0.5 {
+            StallLabel { x: x0 + Self::INSET, top: y + 5.0 + Self::GAP, anchor_end: false }
+        } else {
+            StallLabel { x: x1 - Self::INSET, top: y - 5.0 - Self::GAP - Self::H, anchor_end: true }
+        }
+    }
+
+    /// The plate's box for a label `w` units wide (the text's width and
+    /// the padding).
+    pub fn plate(&self, w: f32) -> Rect {
+        let x0 = if self.anchor_end { self.x - w } else { self.x };
+        Rect::new(x0, self.top, x0 + w, self.top + Self::H)
+    }
+}
+
+/// The dashes of a box's outline from (`x0`, `y0`) to (`x1`, `y1`), each
+/// `stroke` thick: 3-unit dashes 2 apart, each side starting on a dash.
+pub fn stall_dashes(x0: f32, x1: f32, y0: f32, y1: f32, stroke: f32) -> Vec<Rect> {
+    let (dash, gap) = (3.0, 2.0);
+    let along = |from: f32, to: f32| {
+        let mut out = Vec::new();
+        let mut t = from;
+        while t < to {
+            out.push((t, (t + dash).min(to)));
+            t += dash + gap;
+        }
+        out
+    };
+    let mut out = Vec::new();
+    for (a, b) in along(x0, x1) {
+        out.push(Rect::new(a, y0, b, y0 + stroke));
+        out.push(Rect::new(a, y1 - stroke, b, y1));
+    }
+    for (a, b) in along(y0, y1) {
+        out.push(Rect::new(x0, a, x0 + stroke, b));
+        out.push(Rect::new(x1 - stroke, a, x1, b));
+    }
+    out
 }
 
 /// Which row's climb shows: the hovered one, else the selected one
@@ -174,6 +247,7 @@ pub struct EndState {
 /// The screen's systems (added by `MatchEndPlugin`).
 pub fn add(app: &mut App) {
     super::signal::setup(app);
+    super::hud::hud_cover(app);
     app.init_resource::<EndSelection>().init_resource::<EndState>().add_systems(Startup, spawn).add_systems(
         Update,
         (show, ground, hide_huds, pick, pointer_image, build_static, build_climb, build_vote, decorate_rows, animate, countdown, leave)
@@ -287,23 +361,10 @@ fn leave(
     }
 }
 
-/// The games' HUDs (`hud::HudRoot`) hidden while the screen is up (it
-/// is the whole screen), shown again after: those this hid.
-fn hide_huds(view: Res<MatchEndView>, mut roots: Query<(Entity, &mut Visibility), With<super::hud::HudRoot>>, mut hidden: Local<Vec<Entity>>) {
-    if view.shown {
-        for (e, mut v) in &mut roots {
-            if *v != Visibility::Hidden {
-                *v = Visibility::Hidden;
-                hidden.push(e);
-            }
-        }
-    } else if !hidden.is_empty() {
-        for e in hidden.drain(..) {
-            if let Ok((_, mut v)) = roots.get_mut(e) {
-                *v = Visibility::Inherited;
-            }
-        }
-    }
+/// The games' HUDs covered while the screen is up (it is the whole
+/// screen): `hud::HudCover`.
+fn hide_huds(view: Res<MatchEndView>, mut cover: ResMut<super::hud::HudCover>) {
+    super::hud::HudCover::put(&mut cover, "match end", view.shown);
 }
 
 /// Hover from the cursor over a row; a click selects it.
@@ -955,13 +1016,47 @@ fn build_climb(
                     if let Some((a, b, r)) = row.climb.longest_stall(end) {
                         let (x0, x1, y) = (axes.x(a), axes.x(b), axes.y(r as f32));
                         g.spawn((
-                            Node { position_type: PositionType::Absolute, left: px(x0 * k), top: px((y - 5.0) * k), width: px((x1 - x0) * k), height: px(10.0 * k), border: UiRect::all(px(look.hair())), ..default() },
+                            Node { position_type: PositionType::Absolute, left: px(x0 * k), top: px((y - 5.0) * k), width: px((x1 - x0) * k), height: px(10.0 * k), ..default() },
                             BackgroundColor(fg(0.06)),
-                            BorderColor::all(look.tone(Tone::Fg3)),
                             ClimbTick { kind: TickKind::Stall, delay: spread, dur: 0.26 },
                             Pickable::IGNORE,
                         ));
-                        label(g, &format!("Stall {} \u{2022} R{r:02}", mmss(b - a)), (x0 + x1) / 2.0, y - 8.0, 0.5, look.tone(Tone::Fg3));
+                        // Its outline, dashed.
+                        for d in stall_dashes(x0, x1, y - 5.0, y + 5.0, hair) {
+                            g.spawn((
+                                Node { position_type: PositionType::Absolute, left: px(d.min.x * k), top: px(d.min.y * k), width: px((d.width() * k).max(look.hair())), height: px((d.height() * k).max(look.hair())), ..default() },
+                                BackgroundColor(look.theme.tone_a(Tone::Fg, 0.42)),
+                                ClimbTick { kind: TickKind::Dash, delay: spread, dur: 0.26 },
+                                Pickable::IGNORE,
+                            ));
+                        }
+                        // The label on an ink plate, clear of the line.
+                        let at = StallLabel::place(&axes, a, b, r as u32, end);
+                        let w = 120.0;
+                        let left = if at.anchor_end { at.x - w } else { at.x };
+                        g.spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: px(left * k),
+                                top: px(at.top * k),
+                                width: px(w * k),
+                                justify_content: if at.anchor_end { JustifyContent::FlexEnd } else { JustifyContent::FlexStart },
+                                ..default()
+                            },
+                            Pickable::IGNORE,
+                        ))
+                        .with_children(|p| {
+                            p.spawn((
+                                Node { height: px(StallLabel::H * k), padding: UiRect::horizontal(px(StallLabel::PAD_X * k)), align_items: AlignItems::Center, ..default() },
+                                BackgroundColor(look.theme.tone_a(Tone::Ink, 0.85)),
+                                ClimbTick { kind: TickKind::Plate, delay: spread, dur: 0.26 },
+                                UiParityId::new("end.climb.stall"),
+                                Pickable::IGNORE,
+                            ))
+                            .with_children(|t| {
+                                t.spawn((look.tracked(Role::Mono, 0.64, 0.64 * 0.08, look.tone(Tone::Fg3), &format!("Stall {} \u{2022} R{r:02}", mmss(b - a))), Pickable::IGNORE));
+                            });
+                        });
                     }
                     // The chosen climb's line, drawn along its length.
                     for s in segments(&axes.points(&row.climb, end), 1.6) {
@@ -1122,6 +1217,8 @@ fn animate(
             let c = match tick.kind {
                 TickKind::Death => look.theme.tone_a(Tone::Threat, base * a),
                 TickKind::Stall => look.theme.tone_a(Tone::Fg, base * a),
+                TickKind::Dash => look.theme.tone_a(Tone::Fg, 0.42 * a),
+                TickKind::Plate => look.theme.tone_a(Tone::Ink, 0.85 * a),
                 _ => bg.0.with_alpha(a),
             };
             if bg.0 != c {

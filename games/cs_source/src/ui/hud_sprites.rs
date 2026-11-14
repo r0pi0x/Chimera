@@ -50,6 +50,7 @@ impl Plugin for HudSpritesPlugin {
 const PAIN_SECONDS: f32 = 1.0;
 
 #[derive(Component)]
+#[require(crate::client::hud::HudPart)]
 struct SpritePart;
 
 #[derive(Component)]

@@ -156,6 +156,7 @@ impl UiMaterial for RadarMaterial {
 }
 
 #[derive(Component)]
+#[require(crate::client::hud::HudPart)]
 struct RadarPart;
 /// The radar's box (its node hidden while another game's HUD is up).
 #[derive(Component)]

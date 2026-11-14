@@ -35,6 +35,9 @@
 //!   strike's pulse. Its middle is discarded: never a full-screen fill.
 //! - `RingMaterial` (`ring.wesl`): a countdown ring, the arc from the top
 //!   clockwise over a track (the effects chips').
+//! - `ShadeMaterial` (`shade.wesl`): a shade easing off to the right,
+//!   per pixel in float with a dither (the Esc menu's: a gradient node's
+//!   stops are 8-bit, which banded its near-opaque ink in wide stripes).
 //!
 //! Colours go in as linear RGBA (`LinearRgba::from(color)`); builders
 //! take Bevy `Color`s. `KitMaterialsPlugin` registers them (a
@@ -61,6 +64,7 @@ impl Plugin for KitMaterialsPlugin {
             embedded_asset!(app, "ambient.wesl");
             embedded_asset!(app, "edge.wesl");
             embedded_asset!(app, "ring.wesl");
+            embedded_asset!(app, "shade.wesl");
             app.add_plugins((
                 UiMaterialPlugin::<SlantMaterial>::default(),
                 UiMaterialPlugin::<TickBarMaterial>::default(),
@@ -69,6 +73,7 @@ impl Plugin for KitMaterialsPlugin {
                 UiMaterialPlugin::<AmbientMaterial>::default(),
                 UiMaterialPlugin::<EdgeMaterial>::default(),
                 UiMaterialPlugin::<RingMaterial>::default(),
+                UiMaterialPlugin::<ShadeMaterial>::default(),
             ));
         } else if app.is_plugin_added::<AssetPlugin>() {
             app.init_asset::<SlantMaterial>()
@@ -77,7 +82,8 @@ impl Plugin for KitMaterialsPlugin {
                 .init_asset::<LinesMaterial>()
                 .init_asset::<AmbientMaterial>()
                 .init_asset::<EdgeMaterial>()
-                .init_asset::<RingMaterial>();
+                .init_asset::<RingMaterial>()
+                .init_asset::<ShadeMaterial>();
         }
     }
 }
@@ -477,6 +483,31 @@ impl EdgeMaterial {
 impl UiMaterial for EdgeMaterial {
     fn fragment_shader() -> ShaderRef {
         "embedded://chimera_ui/materials/edge.wesl".into()
+    }
+}
+
+/// A shade easing off to the right (module doc).
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone, PartialEq)]
+pub struct ShadeMaterial {
+    #[uniform(0)]
+    pub color: LinearRgba,
+    /// x: the display-space alpha at the left, y, z: where it eases to 0
+    /// (0-1 of the width), w: the dither (display-space alpha).
+    #[uniform(1)]
+    pub params: Vec4,
+}
+
+impl ShadeMaterial {
+    /// `tone` at display-space alpha `from` on the left, easing to none
+    /// from `start` to `end` of the width.
+    pub fn new(theme: &Theme, tone: Tone, from: f32, start: f32, end: f32) -> ShadeMaterial {
+        ShadeMaterial { color: theme.tone(tone).into(), params: Vec4::new(from, start, end, 1.5 / 255.0) }
+    }
+}
+
+impl UiMaterial for ShadeMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "embedded://chimera_ui/materials/shade.wesl".into()
     }
 }
 

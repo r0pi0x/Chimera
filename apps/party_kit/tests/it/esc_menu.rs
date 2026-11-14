@@ -326,3 +326,38 @@ fn signal_keys_move_the_selection_and_stay_comes_first() {
     assert_eq!(menu(&sim.app).page, Page::Main, "Enter on Stay stays");
     assert!(menu(&sim.app).open);
 }
+
+/// Under Signal's menu the games' HUDs are covered (`hud::HudCover`):
+/// their roots and their parts outside a root hidden while it is open,
+/// Settings' pages too, and set back when it shuts; the plain menu
+/// leaves them.
+#[test]
+fn signal_menu_covers_the_games_huds() {
+    use chimera_client::client::hud::{HudCover, HudPart, HudRoot};
+    let (mut sim, _a) = local_with_menu();
+    let hud = sim.app.world().get_resource::<chimera_core::gameplay::Gameplay>().map_or("test", |g| g.hud);
+    let root = sim.app.world_mut().spawn((Node::default(), HudRoot(hud))).id();
+    let part = sim.app.world_mut().spawn((Node::default(), HudPart)).id();
+    let shown = |sim: &Sim, e: Entity| *sim.app.world().get::<Visibility>(e).unwrap() != Visibility::Hidden;
+    // The plain menu: over the HUDs as before.
+    tap(&mut sim.app, KeyCode::Escape);
+    assert!(menu(&sim.app).open);
+    assert!(!sim.app.world().resource::<HudCover>().covered() && shown(&sim, root) && shown(&sim, part));
+    tap(&mut sim.app, KeyCode::Escape);
+    sim.app
+        .insert_resource(chimera_ui::Theme::from_toml(include_str!("../../../ultimate_gun_game/data/theme.toml")).unwrap())
+        .insert_resource(chimera_ui::UiUnits::new(1080.0, 1.0))
+        .init_resource::<chimera_ui::IconImages>();
+    tap(&mut sim.app, KeyCode::Escape);
+    assert!(menu(&sim.app).open);
+    assert!(!shown(&sim, root) && !shown(&sim, part), "covered under the Signal menu");
+    // Settings over the match (the menu's Options page): still covered.
+    tap(&mut sim.app, KeyCode::ArrowDown);
+    tap(&mut sim.app, KeyCode::Enter);
+    assert_eq!(menu(&sim.app).page, Page::Options(0));
+    assert!(!shown(&sim, root) && !shown(&sim, part), "covered under Settings");
+    act(&mut sim.app, Action::Resume);
+    sim.ticks(2);
+    assert!(!menu(&sim.app).open);
+    assert!(shown(&sim, root) && shown(&sim, part), "set back when it shuts");
+}

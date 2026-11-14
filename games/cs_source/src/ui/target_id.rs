@@ -220,6 +220,7 @@ fn find(
 
 /// The target ID's text node.
 #[derive(Component)]
+#[require(crate::client::hud::HudPart)]
 pub struct TargetIdText;
 
 fn put_away(mut text: Query<&mut Visibility, With<TargetIdText>>) {
