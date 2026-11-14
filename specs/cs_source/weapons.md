@@ -150,6 +150,10 @@ user's install, never commit the key). The generic parser reads:
   `weapon_famas`) and scope (`weapon_aug`, `weapon_sg552`, `weapon_scout`,
   `weapon_awp`, `weapon_g3sg1`, `weapon_sg550`). Inference: the Alt values
   apply while that mode is on.
+- The crosshair keys (`CrosshairMinDistance`, `CrosshairDeltaDistance`),
+  their per-weapon values and the dynamic crosshair are in
+  specs/cs_source/crosshair_scope.md, with the scope overlay and the
+  zoomed mouse sensitivity.
 
 ### 2. Who runs weapon logic, and when
 
@@ -401,7 +405,77 @@ Pickup (player touches a weapon):
   with two integers of state (Park–Miller "minimal standard" with
   Bays–Durham shuffle, i.e. Numerical Recipes `ran1`, *inferred*). Float in
   `[lo, hi)` = `lo + (hi − lo) × u`. Reproducing CS:S spread **patterns**
-  exactly needs this generator bit-exact: open question Q1.
+  exactly needs this generator bit-exact: open question Q1. Its full
+  description is in 4.2.1.
+- **Server-chosen seed (newer SDK).** The current SDK adds a second seed to
+  each command that only the server fills in: with the server cvar
+  `sv_usercmd_custom_random_seed` 1 (the default; cheat-flagged) it is the
+  bit pattern of the server's clock in milliseconds as a 32-bit float,
+  otherwise a copy of the client's seed. A weapon uses it only if it opts
+  in (TF2 does for some weapons); then the client cannot predict the
+  pattern. The CS:S server library has this cvar too. Whether CS:S's guns
+  opt in is open (Q1): if they do, client-predicted impacts
+  (`cl_showimpacts`) and the server's differ shot by shot.
+
+#### 4.2.1 The uniform generator (inferred: the published `ran1`)
+
+The SDK shows only the state (a 32-entry table, a current value and a
+last-output value); the algorithm below is the textbook generator that
+state matches (Park and Miller's "minimal standard" multiplicative
+congruential generator with Bays and Durham's shuffle, as published in
+*Numerical Recipes in C*, 2nd ed., section 7.1, routine `ran1`).
+Everything in this subsection is *inferred* and must be checked (Q1).
+
+Constants: multiplier a = 16807, modulus m = 2³¹ − 1 = 2147483647, table
+size N = 32, bucket divisor `div = 1 + (m − 1)/N` = 67108864 (integer
+division). Schrage's split avoids 64-bit products: q = m div a = 127773,
+r = m mod a = 2836.
+
+- **Advance** the state x (1 ≤ x < m): x ← a·x mod m. With Schrage:
+  k = x div q; x ← a·(x − k·q) − r·k; if x < 0 then x ← x + m.
+- **Seeding** with an integer s: store the state as −|s| and mark the
+  table empty (the engine's "set seed" is assumed to do exactly this, so
+  that the next draw re-initialises). On the next draw: x = |s|, or 1 if
+  s = 0; advance 8 times, discarding; then advance 32 more times, writing
+  the results into the table from the last slot (31) down to slot 0; the
+  last-output value y = table[0].
+- **Draw** (an integer in [1, m − 1]): advance x; j = y div `div`
+  (0..31); y ← table[j]; table[j] ← x; return y.
+- **Float in [lo, hi)**: u = y / m (computed as y × (1/m)), capped at
+  1 − 1.2·10⁻⁷ so it never reaches 1; result lo + (hi − lo)·u. The engine
+  works in 32-bit floats (*inferred*), so implement u and the scaling in
+  f32 for bit-exact patterns.
+- **Integer in [lo, hi]** (not used by spread): *unknown* mapping; not
+  needed here.
+- Check value from the literature for the bare multiplicative generator
+  (no shuffle): starting from x = 1, the 10 000th advance gives
+  1043618065. A unit test of the advance step should reproduce it.
+
+The game reseeds the shared generator before a shot (seed rules above),
+so each shot's draws are a pure function of `seed` and the number of
+draws taken since.
+
+#### 4.2.2 How a shot's draws become a direction (CS:S, hypothesis)
+
+From the measured cone shape (M1/M2 and Q12: uniform radius, isotropic;
+pellets of one shotgun shot share one inaccuracy offset and scatter
+individually by `Spread`), and the SDK template's reseeding (seed + 1 at
+the shot's start), the most likely CS:S scheme is:
+
+1. Reseed with the shot's seed (+1, as the template; *hypothesis*).
+2. θ₁ = U(0, 2π), r₁ = U(0, I) where I is the shot's total inaccuracy
+   (stored inaccuracy plus the movement term at shot time).
+3. For each pellet p = 0..Bullets−1: θ₂ = U(0, 2π), r₂ = U(0, Spread).
+4. Offset x = r₁·cos θ₁ + r₂·cos θ₂, y = r₁·sin θ₁ + r₂·sin θ₂ (tangent
+   units).
+5. Direction d = normalise(f + x·r + y·u), with f, r, u the forward,
+   right and up vectors of the aim angles (view + 2 × punch, M3). Positive
+   x is to the right, positive y up.
+
+The order of the four draws and whether the angle is drawn before the
+radius decide the exact pattern; only Q1's comparison can settle them.
+Statistically (cone size and density) the scheme matches every
+measurement so far.
 
 #### 4.3 Spread
 
@@ -1641,6 +1715,19 @@ inaccuracy target.
   patterns need it bit-exact. Either implement the inferred `ran1` and
   verify by comparing predicted vs. logged `bullet_impact` points for known
   seeds (M2), or accept statistically equal spread.
+  *2026-11-14 spec session: the inferred generator is now written out
+  (4.2.1) with the shot scheme as a hypothesis (4.2.2).* Ways to check:
+  (a) the generator alone, black-box: a small server plugin calls the
+  engine library's exported seed and float functions (they are public in
+  the SDK's headers) for seeds 0..255 and prints the first eight floats in
+  [0, 1); compare with 4.2.1 (no game logic involved); (b) the pattern:
+  on the probe server log the command number of each shot (its seed is
+  MD5-derived, 4.2), the aim angles, the punch, `m_fAccuracyPenalty` and
+  every `bullet_impact`; predict each impact with 4.2.2 under the
+  candidate draw orders and keep the one that matches; (c) whether CS:S
+  guns use the server-chosen seed: with `cl_showimpacts 1` on a client,
+  do the client (red) and server (blue) boxes coincide? If not, set
+  `sv_usercmd_custom_random_seed 0` (cheats on) and look again.
 - **Q2 Inaccuracy formula** (section 7.1): measurement M1, M2. *Mostly
   resolved: "CS:S values (measured)", M1/M2 (recovery, fire, jump, move
   term, cone shape); landing rule and the per-weapon check in "M1, M2
@@ -1708,7 +1795,11 @@ inaccuracy target.
   offset: five M3 shots fired in the air (penalty 0.283-0.286) put the
   nine pellets' centre 0.04-0.28 off the aim but every pellet within
   0.022-0.037 of that centre (Spread 0.04). The pattern inside the
-  spread and the trace shape are open.*
+  spread and the trace shape are open.* Pattern: 4.2.2 gives the
+  hypothesis (one shared inaccuracy draw, then one spread draw per pellet
+  from one reseed per shot; the SDK template instead reseeds with
+  seed + 1 + p before pellet p and draws a triangular x, y per pellet), to
+  be decided by Q1 (b) with the M3 and XM1014.
 - **Q13 Drop / pickup** CS rules: drop velocity, which weapon is dropped on
   death, pickup by walking only into an empty slot, dropped-weapon lifetime:
   M14.

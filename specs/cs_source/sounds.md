@@ -195,7 +195,7 @@ The distance-to-gain curve, stereo panning, the effect of the facing and spatial
 - Level 0 ("SNDLVL_NONE", or the ambient "play everywhere" flag) plays at full volume everywhere, without distance falloff.
 - Ambient sounds started without a position (soundscape ambients, client-side ambient emits) are not spatialized.
 - Listener position: the player's eye position.
-- "dsp" in soundscapes selects a room preset index 0–28 (names listed in the soundscape manifest's comments: 0 Normal off, 1 Generic, 2–4 Metal S/M/L, 5–7 Tunnel S/M/L, 8–10 Chamber S/M/L, 11–13 Bright S/M/L, 14–16 Water 1–3, 17–19 Concrete S/M/L, 20–22 Big 1–3, 23–25 Cavern S/M/L, 26–28 Weirdo 1–3). The presets themselves are engine-side.
+- "dsp" in soundscapes selects a room preset index 0–28 (names listed in the soundscape manifest's comments: 0 Normal off, 1 Generic, 2–4 Metal S/M/L, 5–7 Tunnel S/M/L, 8–10 Chamber S/M/L, 11–13 Bright S/M/L, 14–16 Water 1–3, 17–19 Concrete S/M/L, 20–22 Big 1–3, 23–25 Cavern S/M/L, 26–28 Weirdo 1–3). The presets are data in `scripts/dsp_presets.txt` (section 7); the processing is engine-side.
 
 See Open question 1 for how to measure the real curves.
 
@@ -607,6 +607,111 @@ Ladder steps are footsteps with the "ladder" surface ("Ladder.StepLeft"/"Ladder.
   - Dead or spectating players are handled by a 0.2 s check of whether they intersect the trigger.
   - The triggerable doesn't take part in the distance/visibility selection.
 
+### 7. Room DSP presets (dsp)
+
+Source basis for this section: CS:S's `scripts/dsp_presets.txt` (data, read from the install; the engine reads it at start and `dsp_reload` re-reads it) and the engine's console variable names. The processors' signal algorithms are engine-side and not in the SDK; where this section says what a processor *does*, it is the file's own parameter descriptions restated, and the DSP maths itself is a hypothesis (Q16). Implementation should parse the file at run time from the install; the tables here are for tests and for when it is absent.
+
+#### File format
+
+- Text, `//` comments to end of line. Each preset is a brace block: `{ <index> <chain type> <mix min> <mix max> <duration> <fade> <db min> <db mixdrop>` followed by one brace block per processor, then `}`. Parentheses (braces) must balance; the processor count is the number of inner blocks.
+- Some header fields may be missing: test, speaker and empty presets give only index, chain type and the two mix values (then `0 0 0 0` or nothing); treat missing numbers as 0.
+- Indices are unique and contiguous from 0 (the file defines 0 to 139 and lists further names only as comments). Order in the file does not matter.
+- **Chain types** (a word or its number): SIMPLE 0 and LINEAR 1 run the processors in series in order; PARALLEL2 5 sums P0 and P1 run side by side; PARALLEL4 6 sums the series P0→P1 and P2→P3; PARALLEL5 7 is PARALLEL4 followed by P4; FEEDBACK 8, FEEDBACK3 9, FEEDBACK4 10 feed a later processor's output back to the input sum; MOD 11, MOD2 12, MOD3 13 let P0 modulate the others (marked untested in the file). CS:S's presets 0–136 are all LINEAR; 137–139 are PARALLEL4.
+- **Processor blocks**: the first token is the type (word or number): NULL 0 (pass-through; a block of zeros is a NULL), DLY 1 (delay with feedback), RVA 2 (reverb: parallel delays), FLT 3 (filter), CRS 4 (chorus), PTC 5 (pitch shift, marked not usable), ENV 6 (envelope), LFO 7 (oscillator), EFO 8 (envelope follower / gate), MDY 9 (modulated delay), DFR 10 (diffusor: series all-pass delays), AMP 11 (amplifier with distortion). Up to 16 numeric parameters follow; words stand for numbers: filter type LP 0 / HP 1 / BP 2; quality LO 0 / MED 1 / HI 2 / VHI 3; delay type PLAIN 0 / ALLPASS 1 / LOWPASS 2 / DLINEAR 3 / FLINEAR 4 / LOWPASS_4TAP 5 / PLAIN_4TAP 6 (a bare number is also accepted, e.g. preset 29); LFO wave SIN 0 / TRI 1 / SQR 2 / SAW 3 / RND 4 / LOG_IN 5 / LOG_OUT 6 / LIN_IN 7 / LIN_OUT 8.
+
+#### Header fields
+
+- **mix min, mix max** (0–1): how much processed ("wet") signal a sound gets. The file says the mix depends on the source's distance from the listener: near sounds get the minimum, far ones the maximum, so small rooms use a larger minimum. *Inferred:* linear in distance between the engine cvars `dsp_dist_min` and `dsp_dist_max` (values: Q16).
+- **duration** (s): 0 = the preset stays until replaced; > 0 = it lasts that long and then the previous preset returns.
+- **fade** (s): how the timed preset fades out; negative = an exponential fade.
+- **db min, db mixdrop** (room presets only): a new sound whose level is below `db min` dB gets its mix min and max reduced by `db mixdrop` (a fraction), so quiet sounds outdoors stay drier.
+
+#### Processor parameters (in file order)
+
+| Type | Parameters |
+|---|---|
+| DLY | delay type; delay (ms; −1 = from room size × 2, auto presets only); feedback 0–1; output gain 0–10; filter type; cutoff Hz; band width Hz (band-pass: passes cutoff to cutoff + width); quality (number of filter stages); three tap values (4-tap types) |
+| RVA | max size (ms); min size (ms); number of delays (parallel); feedback scale 0–1; output gain; lowpass cutoff in the feedback loops (Hz, 0 = none); filters inside the delays (1) or on the output only (0); modulation depth (ms, 0 = static delays); modulation rate (delay passes between changes); width, depth, height (ms, used instead of size when non-zero; −1 = from room size); reflectivity for width/depth/height (used as feedback instead of the decay; negative = also add a predelay); tap scale (> 0: taps at D·(1 − n·tap), n = 0..3) |
+| DFR | size scale 0–1 (each of its delays is 13–41 ms × scale); number of series delays 0–4; feedback scale; optional gain |
+| FLT | type; cutoff Hz (−3 dB point); band width Hz; quality (number of series filters); output gain |
+| AMP | gain 0–10; distortion threshold 0–1 (1 = clean); distortion mix 0–1; distortion feedback; then optional self-modulation: rate Hz (0 = none), depth 0–1, glide ms, random (1) or alternating (0) |
+| LFO | wave; rate Hz; one-shot (1) or looping (0); output gain 0–1 |
+| MDY | delay type; delay ms; feedback; gain; filter type; cutoff; band width; quality; modulation rate Hz; modulation depth 0–1; glide ms; wet/dry mix |
+| EFO | gate threshold dB (0 = no gate); attack ms; decay ms; exponential (1) |
+| CRS | wave; rate Hz; depth 0–1; mix |
+| PTC | pitch ratio; slice ms; crossfade ms |
+| ENV | type; attack peak, decay target, sustain levels; attack, decay, sustain, release ms; exponential |
+
+#### The presets CS:S uses
+
+Every preset 0–40 has mix 0.2–0.7, db min 80, mixdrop 0.5 and (except where noted) duration 0, fade 0. "→" means in series.
+
+| # | Name (ours) | Chain |
+|---|---|---|
+| 0 | off | nothing (pass-through) |
+| 1 | automatic | nothing in the file; selecting it turns on the engine's automatic room DSP (`dsp_automatic`, the `adsp_*` cvars), which builds a room from presets 100–133 (Q16) |
+| 2 | metal small | RVA 80/30 ms, 4 delays, feedback 0.85, gain 1.1, lowpass 4000, filters in delays |
+| 3 | metal medium | RVA 80/30, 4, 0.9, 1.4, 4000, in delays |
+| 4 | metal large | DFR 1.0 × 3, fb 0.1483 → RVA 100/30, 4, 0.95, 1.8, 4000, in delays |
+| 5 | tunnel small | RVA 50/8, 2, 0.92, 1.1, 6000, in delays |
+| 6 | tunnel medium | DFR 1.0 × 2, 0.15 → RVA 100/15, 2, 0.92, 1.1, 5000, in delays |
+| 7 | tunnel large | DFR 1.0 × 3, 0.15 → RVA 120/25, 2, 0.95, 1.1, 4000, in delays |
+| 8 | chamber small | DFR 1.0 × 2, 0.15 → RVA 50/20, 6, 0.9, 1.4, 5000, in delays, modulation 4 ms at rate 3.48 |
+| 9 | chamber medium | as 8 with cutoff 6000 |
+| 10 | chamber large | as 9 with 9 delays |
+| 11 | bright small | RVA 50/20, 3, 0.9, 1.0, 5000, in delays |
+| 12 | bright medium | RVA 50/20, 5, 0.9, 1.0, 5000, in delays |
+| 13 | bright large | RVA 50/20, 6, 0.9, 1.0, 6000, output filter only |
+| 14 | water small | DFR 1.0 × 3, 0.15 → AMP gain 1, clean, self-modulation 10 Hz depth 0.6 glide 80 ms alternating → RVA 82/59, 2, 0.4, 2.0, 1800, output filter, modulation 10 ms rate 3.0 |
+| 15 | water medium | DFR 1.0 × 2, 0.15 → RVA 50/20, 5, 0.9, 1.4, 1000, output filter, modulation 4 / 3.48 |
+| 16 | water large | DFR 1.0 × 2, 0.15 → RVA 50/20, 7, 0.9, 1.0, 1000, output filter, 4 / 3.48 → MDY plain 500 ms, fb 0.4, gain 1, no filter, rate 2 Hz, depth 0.01, glide 15 ms, mix 1 |
+| 17 | concrete small | DFR 1.0 × 2, 0.15 → RVA 50/20, 6, 0.9, 1.4, 4000, in delays, 4 / 3.48 |
+| 18 | concrete medium | as 17 with 7 delays, cutoff 3500 |
+| 19 | concrete large | as 17 with 8 delays, cutoff 3000 |
+| 20 | outside small | DFR 1.0 × 2, 0.15 → DLY lowpass-in-loop 300 ms, fb 0.5, gain 0.84, LP 2000, quality LO |
+| 21 | outside medium | as 20 with 400 ms, LP 1500 |
+| 22 | outside large | as 20 with 750 ms, LP 1000 |
+| 23 | cavern small | DLY lowpass 150 ms, fb 0.5, gain 0.84, LP 3000 → RVA 50/20, "1.3" delays (as written; *inferred* truncated to 1), 0.9, 1.0, 1500, in delays, 4 / 3.48 |
+| 24 | cavern medium | DLY lowpass 200 ms, fb 0.7, gain 0.6, LP 3000 → RVA 50/20, 7, 0.9, 1.0, 1500, in delays, 4 / 3.48 |
+| 25 | cavern large | DFR 1.0 × 2, 0.15 → DLY lowpass 300 ms, 0.7, 0.6, LP 3000 → RVA 50/20, 9, 0.9, 1.0, 1500, in delays, 4 / 3.48 |
+| 26–29 | weird 1–4 | DLY lowpass 400 ms, fb 0.5, gain 0.6, LP 1500 → DFR 1.0 × 2, 0.15 (all four identical) |
+| 30 | facing away | FLT lowpass 3000, quality MED, gain 1 |
+| 31 | facing away, 80 ms | FLT lowpass 1000, MED, 1 → DLY linear 80 ms, no feedback, gain 1 |
+| 32–34 | explosion ring 1–3 | duration 1.6, exponential fade: DFR 1.0 × 3, 0.15 → FLT lowpass 1000, MED, gain 0.25 |
+| 35–37 | shock muffle 1–3 | duration 1.6, exponential fade: DFR 1.0 × 2, 0.15 → LFO sine 3000 Hz, looping, gain 0.25 |
+| 38 | distorted speaker | AMP gain 100, threshold 0.005, full distortion → FLT highpass 1000 LO → FLT lowpass 2000 LO → FLT lowpass 2000 LO gain 0.8 |
+| 39 | pre-fire wobble | duration 1.0, fade −0.2: LFO square 50 Hz, gain 0.1 |
+| 40 | player wall delay | MDY linear 100 ms, no feedback, gain 1, glide 50 ms, mix 1 |
+| 41–43 | reserved | empty |
+| 44–49 | test slots | pitch ±10 %, gates, a chorus, empty (not used by the game) |
+| 50–54 | speaker slots | empty |
+| 55–59 | speakers | two AMPs (gain 10, threshold 0.01, mix 0.65; then gain 0.65) → band-pass filters around 2500 Hz (57 adds a 180 ms echo) |
+| 60–99 | slots for the automatic DSP | empty |
+| 100–133 | automatic DSP templates | pairs "min / max" for rooms, ducts, halls, tunnels, streets, alleys, courtyards and open spaces, each empty/diffuse; mix ranges 0.2–0.9; db min 60–95 |
+| 134 | flashbang muffle long | mix 0.2–0.7, duration 1.6, exponential fade: DFR 1.0 × 2, 0.15 → LFO sine 3000 Hz gain 0.05 |
+| 135 | flashbang muffle medium | as 134 with mix 0.2–0.4, duration 0.2 |
+| 136 | flashbang muffle short | as 134 with mix 0.2–0.2, duration 0.1 |
+| 137 | HE shock start | PARALLEL4, duration 1, exponential fade: (DFR 1.0 × 3, 0.15 → FLT lowpass 4000 HI gain 0.5) + (DFR 1.0 × 2, 0.15 → LFO sine 3000 gain 0.01) |
+| 138 | HE shock middle | as 137 with duration 1.5, lowpass 2000, LFO gain 0.02 |
+| 139 | HE shock long | as 137 with duration 3, lowpass 1000, LFO gain 0.03 |
+
+Names: the soundscape manifest's comments name 0–28 differently in places (1 "Generic", 20–22 "Big 1–3", 26–28 "Weirdo 1–3"; see section 2); the numbers are what matter.
+
+Use in CS:S's stock soundscapes (`"dsp"` values over all `soundscapes_*.txt`): 6 ×98, 1 ×23, 0 ×22, 9 ×6, 18 ×6, 2 ×2, 4 ×2, 13 ×2, and 3, 5, 15, 17, 19, 20 once each. Grenade effects use 32–37 and 134–139 (grenades.md).
+
+#### Applying a preset (hypothesis, Q16)
+
+- One room preset is active per listener (`dsp_room`, set by the soundscape's "dsp" or the cvar). A player preset (`dsp_player`) can sit on top (grenade effects); timed presets revert after their duration with their fade.
+- Each playing sound is split into dry and wet. Wet amount = the preset's mix, interpolated by distance between mix min and mix max (reduced by `db mixdrop` for room presets when the sound's level is below `db min`). Sounds whose wave name starts with `#` get no wet part. Sounds with sound level 0 (`SNDLVL_NONE`) and unspatialized sounds: *inferred* dry.
+- The wet sum of all sounds runs through the preset's processor chain once (a shared room reverb, not per sound), and is added to the dry mix scaled by `dsp_volume`.
+- A first implementation can approximate RVA as a bank of N parallel feedback comb filters with delays spread between min and max size (ms), feedback = the feedback scale, a one-pole lowpass at the cutoff in each loop, then the output gain; DFR as N series all-pass filters of 13–41 ms × size with the given feedback; DLY as one feedback comb (lowpass in the loop for LOWPASS); LFO as amplitude modulation (ring) by a sine at the rate, mixed at the gain; FLT as cascaded biquads (quality + 1 stages, *inferred*); AMP as gain then soft clipping above the threshold mixed by distortion mix.
+
+### 8. Distance-variant waves (`^`)
+
+- CS:S marks six waves with `^`: `weapons/hegrenade/explode3.wav`, `explode4.wav`, `explode5.wav` (HE), `weapons/flashbang/flashbang_explode1.wav`, `flashbang_explode2.wav`, and `weapons/smokegrenade/sg_explode.wav`.
+- The header defines the prefix as "a stereo file whose left channel is the near version and right channel the far version". Checked on the files: the HE and flashbang waves are stereo (HE 44.1 kHz, about 2.9 s; flashbang 22.05 kHz, about 2.2 s); their right channel is quieter and shorter (HE: overall level about 57 % of the left; the right falls to about half within 0.2 s and below 5 % of its peak by 1.1 s, while the left stays near full for about 0.6 s) and, for the flashbang, much duller (far less high-frequency energy). The smoke wave is **mono**, so the prefix changes nothing for it: play it as mono.
+- **The blend curve is engine-side and not in the reference.** Hypothesis H3 (low confidence): the near weight goes linearly from 1 at the listener distance `dsp_dist_min` to 0 at `dsp_dist_max` (the same distance range the DSP mix uses), far weight = 1 − near; output = near·L + far·R as a mono source, then spatialized normally. Hypothesis H4: the blend uses the sound's attenuation (the fraction of its audible radius), e.g. near weight = the distance gain. Q17 says how to tell them apart.
+
 ## Per-tick order
 
 Within one player movement tick (sound-relevant steps only; see movement.md for the rest):
@@ -820,3 +925,5 @@ probe bot, `sv_soundemitter_trace 1`; the server's emitted entries per hit
 13. **Footstep cadence of remote players** is frame-rate based on the client. Is this what CS:S players hear, or does CS:S network footsteps differently?
 14. **dsp_player and soundmixer.** What does a soundscape's "dsp_player" preset do to what the player hears (the same preset table as the room DSP, applied to every sound?), and what mixers do "soundmixer" names select (scripts/soundmixers.txt)? Which stock CS:S soundscapes set them? Listen in a map whose soundscape sets dsp_player, with `dsp_player` toggled from the console, and read `snd_soundmixer` while standing in each soundscape.
 15. **OnPlay tried (2026-10-18, probe server):** a bot standing inside a spawned env_soundscape (radius 128, `Dust.Outside`) whose OnPlay told a point_servercommand to `say` fired nothing in 5 s (the servercommand said its line when sent the input directly): soundscapes are worked out for human clients only, so this needs one (class 2). **env_soundscape_proxy radius and OnPlay.** Does a proxy range with its own "radius" or its main soundscape's? Does env_soundscape_triggerable fire OnPlay when a trigger_soundscape applies it? Check with a test map: a proxy with a small radius next to a main with a large one; a triggerable with an OnPlay output.
+16. **DSP processing (engine-side).** The values of `dsp_dist_min`, `dsp_dist_max`, `dsp_mix_min`, `dsp_mix_max`, `dsp_db_min`, `dsp_db_mixdrop`, `dsp_volume`, `dsp_automatic` and the `adsp_*` cvars (`help` in the client console); whether one shared wet chain serves all sounds; what automatic DSP (preset 1, the stock maps' second most used value) builds. Check by ear and by recording: loopback-record a fixed sound (`play weapons/ak47/ak47-1.wav` at a wall) with `dsp_room` 0, 2, 6, 9, 18, 20, 22 set from the console, and compare decay times and spectra with a model of section 7; for preset 1, record the same spot on a stock map with `dsp_automatic` 0 and 1.
+17. **`^` near/far blend.** Record loopback audio of an HE grenade exploding at known distances from a still listener (bot throws, or `ent_create hegrenade_projectile` with a fuse, at 100, 250, 500, 1000, 1500, 2000, 3000 units on open ground), and fit the near/far weights by matching each recording to a·L + b·R of the wave (least squares on the first 1.5 s). Read `dsp_dist_min`/`dsp_dist_max` first (Q16) to test H3.
