@@ -51,6 +51,8 @@ workspace-hack.workspace = true
 dev = ["chimera_core/dev", "chimera_world/dev", "chimera_sim/dev", "chimera_net/dev", "source_formats/dev"]
 
 [dev-dependencies]
+# The size of a network value as sent (`anim_net`'s tests).
+postcard.workspace = true
 # The map's `render` feature, as every build with the presentation has it:
 # this crate's own tests then share the workspace's build of `chimera_world`
 # and of everything above it (docs/performance.md, "Iteration speed").

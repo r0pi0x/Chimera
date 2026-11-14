@@ -28,7 +28,9 @@
 //! `CHIMERA_SOAK_UPDATERATE` and `CHIMERA_SOAK_RATE` the clients'
 //! `cl_updaterate` and `rate` (the bandwidth budget follows the update
 //! rate), `CHIMERA_SOAK_DUMP=<file>` keeps what the server sends each
-//! client (to try compression on). A summary table is
+//! client (to try compression on). What the bodies' tick poses cost each
+//! client (`anim_net`'s two parts, and what changed in the cycles) is
+//! printed before the summary table. A summary table is
 //! printed: `CHIMERA_SOAK_MINUTES=30 cargo test --release --features dev
 //! --test it heavy::net_soak -- --nocapture`. Skipped without a CS:S
 //! install.
@@ -163,6 +165,56 @@ fn soak_env(key: &str) -> Option<f32> {
 
 fn updaterate() -> Option<f32> {
     soak_env("CHIMERA_SOAK_UPDATERATE")
+}
+
+/// What the server's tick poses of the bodies (`anim_net`'s `NetPose`
+/// and `NetAim`, CS:S's) cost each client: the values changed between
+/// 20 Hz samples (the update rate's), postcard-sized as replicon sends a
+/// changed component whole, summed over the bodies (each client hears
+/// all but its own): (bytes, values) of each.
+#[derive(Resource, Default)]
+struct PoseBytes {
+    parts: [(usize, usize); 2],
+    first: Option<f64>,
+    last_sample: f64,
+    now: f64,
+    seen: HashMap<(Entity, usize), Vec<u8>>,
+    /// What changed in the cycles' values sent: the main sequence's
+    /// cycle, the layers, the fades (counts).
+    why: [usize; 3],
+    last: HashMap<Entity, source_engine::anim_net::AnimNet>,
+}
+
+type CsPose = source_engine::anim_net::NetPose<::cs_source::game::player_anim::PlayerAnim>;
+type CsAim = source_engine::anim_net::NetAim<::cs_source::game::player_anim::PlayerAnim>;
+
+fn count_pose_bytes(time: Res<Time>, mut out: ResMut<PoseBytes>, poses: Query<(Entity, &CsPose, &CsAim)>) {
+    let now = time.elapsed_secs_f64();
+    if now - out.last_sample < 0.05 {
+        return;
+    }
+    out.last_sample = now;
+    out.first.get_or_insert(now);
+    out.now = now;
+    for (e, p, a) in &poses {
+        if let Some(old) = out.last.get(&e).cloned()
+            && old != p.0
+        {
+            out.why[0] += usize::from(old.main != p.0.main);
+            out.why[1] += usize::from(old.layers != p.0.layers);
+            out.why[2] += usize::from(old.fading != p.0.fading);
+        }
+        out.last.insert(e, p.0.clone());
+        let mut buf = [0u8; 2048];
+        let parts = [postcard::to_slice(p, &mut buf).unwrap().to_vec(), postcard::to_slice(a, &mut buf).unwrap().to_vec()];
+        for (k, bytes) in parts.into_iter().enumerate() {
+            if out.seen.get(&(e, k)) != Some(&bytes) {
+                out.parts[k].0 += bytes.len();
+                out.parts[k].1 += 1;
+                out.seen.insert((e, k), bytes);
+            }
+        }
+    }
 }
 
 /// `CHIMERA_SOAK_DUMP=<file>`: what the server sends each client in a
@@ -1410,6 +1462,7 @@ fn soak_four_clients_and_bots_over_map_changes() {
         }
     };
     let mut sim = NetSim::new(CsSim, LinkConditions::default(), 97, 0, setup);
+    sim.server.app.init_resource::<PoseBytes>().add_systems(PostUpdate, count_pose_bytes);
     if let Ok(path) = chimera_core::env::var("CHIMERA_SOAK_DUMP") {
         sim.server.app.add_systems(
             PostUpdate,
@@ -1605,6 +1658,18 @@ fn report(soak: &mut Soak, minutes: f64, real: Duration) {
         soak.planted_tries,
         soak.defuse_tries
     );
+    if let Some(p) = soak.server().get_resource::<PoseBytes>() {
+        let secs = (p.now - p.first.unwrap_or(p.now)).max(1e-3);
+        println!("cycles' values changed in: main {}, layers {}, fades {}", p.why[0], p.why[1], p.why[2]);
+        for (name, (bytes, sends)) in ["NetPose (cycles)", "NetAim (aim)"].into_iter().zip(p.parts) {
+            println!(
+                "bodies' tick poses, {name}: {:.2} KB/s to each client (all bodies' changed values at 20 Hz), {:.1} values/s of {:.0} B on average",
+                bytes as f64 / secs / 1000.0,
+                sends as f64 / secs,
+                bytes as f64 / sends.max(1) as f64
+            );
+        }
+    }
     let bomb = soak.server().resource::<BombState>().clone();
     let _ = bomb;
     println!(

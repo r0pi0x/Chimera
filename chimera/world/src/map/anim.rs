@@ -699,11 +699,18 @@ pub struct Fading {
     pub playback: f32,
     pub stopped: f64,
     pub fade: f32,
+    /// A weight given from outside, whatever the time (a client posing
+    /// another player as its server had it at a tick: Source's
+    /// `anim_net`); None: from `stopped` and `fade`.
+    pub held: Option<f32>,
 }
 
 impl Fading {
-    /// The smoothstep-shaped weight at `now` (0 once gone).
+    /// The smoothstep-shaped weight at `now` (0 once gone), or the held one.
     pub fn weight(&self, now: f64) -> f32 {
+        if let Some(w) = self.held {
+            return w;
+        }
         if self.fade <= 0.0 {
             return 0.0;
         }
@@ -822,6 +829,7 @@ impl Animator {
                         playback: self.playback,
                         stopped: now,
                         fade: o.fade_out.min(new.fade_in),
+                        held: None,
                     },
                 );
             }
@@ -850,6 +858,7 @@ impl Animator {
                         playback: self.playback,
                         stopped: now,
                         fade,
+                        held: None,
                     },
                 );
             }
@@ -1030,6 +1039,7 @@ mod tests {
             playback: 1.0,
             stopped: 0.0,
             fade: 0.2,
+            held: None,
         };
         assert!((f.weight(0.05) - 0.84375).abs() < 1e-5);
         assert!((f.weight(0.1) - 0.5).abs() < 1e-5);

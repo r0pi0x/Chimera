@@ -23,10 +23,10 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net45` since the server sends its tick pose
-   of CS:S and HL2:DM bodies (`source_engine::anim_net::NetPose`, so
-   clients pose others as the server's lag compensation does); `net44`
-   builds (Combat Arms' tracker transitions, `CaAnimNet`'s `NetTrack`) and
+   The network version is `net46` since the server's tick pose of CS:S
+   and HL2:DM bodies goes in two smaller parts (`source_engine::anim_net`'s
+   `NetPose`, the cycles, and `NetAim`, the aim, quantized); `net45`
+   builds (the pose in one part, which cost each client 10 KB/s) and
    earlier are refused.
 2. **Send each tester privately:** the release link, `<host address>:<port>`,
    their token, and `docs/playtest.md` if they are not unzipping it.
