@@ -1,5 +1,5 @@
 {
-  "_doc": "The screens the UI parity check covers: the look book page that holds the screen (reference/), the time its scene is frozen at (s; null keeps the page's still), whether the leader variant is on, which data-ui ids belong to the screen (regexes), renames (mockup id prefix to the game's), and the game's ui_scene scene.",
+  "_doc": "The screens the UI parity check covers: the look book page that holds the screen (reference/), the time its scene is frozen at (s; null keeps the page's still), whether the leader variant is on, which data-ui ids belong to the screen (regexes), renames (mockup id prefix to the game's), the game's ui_scene scene and its fixture (fixtures/; hud.json when none).",
   "board": {
     "page": "hud.html", "time": 6.0, "lead": false, "stage": "board",
     "include": ["^race\\.plate$", "^board($|\\.(?!leading))"]
@@ -24,5 +24,9 @@
   "menu": {
     "page": "menu.html", "time": null, "lead": false, "stage": "menu",
     "include": ["^menu\\."]
+  },
+  "matchend": {
+    "page": "end.html", "time": 9.5, "lead": false, "stage": "matchend", "fixture": "matchend.json",
+    "include": ["^end\\."]
   }
 }

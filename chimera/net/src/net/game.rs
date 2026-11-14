@@ -110,8 +110,13 @@ impl ServerTime {
 
 // --- Server
 
-/// Each character's scoreboard line. Ping is measured again every
-/// `PING_TICKS` ticks (Source's scoreboard updates about once a second).
+/// A connection losing this share of its packets or more is marked
+/// (`score_flags::LOSS`).
+pub const LOSS_MARK: f64 = 0.01;
+
+/// Each character's scoreboard line. Ping (and packet loss, marked from
+/// `LOSS_MARK`) is measured again every `PING_TICKS` ticks (Source's
+/// scoreboard updates about once a second).
 #[allow(clippy::type_complexity)]
 fn write_scores(
     mut q: Query<
@@ -147,15 +152,18 @@ fn write_scores(
         if kit {
             flags |= score_flags::KIT;
         }
-        let ping = if measure || have.is_none() {
+        let (ping, loss) = if measure || have.is_none() {
             players
                 .iter()
                 .find(|(p, _)| p.character == e)
                 .and_then(|(_, stats)| stats)
-                .map_or(0, |s| (s.rtt * 1000.0).round().clamp(0.0, u16::MAX as f64) as u16)
+                .map_or((0, false), |s| ((s.rtt * 1000.0).round().clamp(0.0, u16::MAX as f64) as u16, s.packet_loss >= LOSS_MARK))
         } else {
-            have.as_ref().map_or(0, |h| h.ping)
+            have.as_ref().map_or((0, false), |h| (h.ping, h.flags & score_flags::LOSS != 0))
         };
+        if loss {
+            flags |= score_flags::LOSS;
+        }
         let now = NetScore {
             kills: s.kills,
             deaths: s.deaths,

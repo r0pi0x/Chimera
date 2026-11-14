@@ -129,7 +129,8 @@ try {
     const e = result.elements[id];
     if (e && e.text && e.text.text !== text) mism.push({ id, page: e.text.text, fixture: text });
   };
-  const rowsOf = cfg.lead ? fixture.rows_lead : fixture.rows;
+  // The HUD's fixture (hud.json) against the board's ids.
+  const rowsOf = cfg.page !== 'hud.html' ? [] : cfg.lead ? fixture.rows_lead : fixture.rows;
   (rowsOf || []).forEach((r, i) => {
     const p = `board.row.${i + 1}`;
     want(`${p}.name`, r.name.toUpperCase());
@@ -139,7 +140,7 @@ try {
     want(`${p}.k`, String(r.kills));
     want(`${p}.d`, String(r.deaths));
   });
-  want('board.head.map', (fixture.map || '').toUpperCase());
+  if (cfg.page === 'hud.html') want('board.head.map', (fixture.map || '').toUpperCase());
   (fixture.feed || []).forEach((k, i) => {
     want(`feed.row.${i + 1}.killer`, k.killer.toUpperCase());
     want(`feed.row.${i + 1}.victim`, k.victim.toUpperCase());

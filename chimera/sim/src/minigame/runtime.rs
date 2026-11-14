@@ -778,6 +778,7 @@ pub(super) fn plugin(app: &mut App) {
                     super::spawn_score::remember_danger,
                     join,
                     super::ladder::per_tick(),
+                    super::climb::track_rungs,
                     step_phases,
                     respawn_dead,
                     crate::spawning::hold_the_dead,

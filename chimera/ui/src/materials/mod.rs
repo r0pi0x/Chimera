@@ -16,10 +16,13 @@
 //! - `PassMaterial` (`pass.wesl`): the logo pass, four slanted bands and
 //!   the mark on one full-screen node, its geometry from the theme
 //!   (`layout.pass`).
-//! - `LinesMaterial` (`lines.wesl`): the match end's background, slanted
-//!   hairlines and slabs on a 24-column grid moving on the renderer's
-//!   clock (`globals.time`: no CPU work a frame), or frozen at a time
-//!   (`freeze`, screenshots).
+//! - `LinesMaterial` (`lines.wesl`): the match end's broad slanted
+//!   planes (look book V's rule): four layers of planes 16, 32, 64 and
+//!   128 units wide (1/192 of the width), each repeating every three
+//!   widths, each moving one spacing per `lines_loop` s (the widest
+//!   fastest) on the renderer's clock (no CPU work a frame) or frozen
+//!   (`freeze`); each adds `PLANES_ALPHA` of `fg` over the ink in display
+//!   space, written as the linear-light alpha that lands there.
 //! - `AmbientMaterial` (`ambient.wesl`): the ambient background every
 //!   between-match screen shares (look book V: slanted light bands, a
 //!   faceted field re-levelling every 24 s, one soft cobalt bloom, a cool
@@ -296,38 +299,57 @@ impl UiMaterial for PassMaterial {
     }
 }
 
-/// The match end's moving lines (module doc).
+/// The match end's broad slanted planes (module doc).
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone, PartialEq)]
 pub struct LinesMaterial {
+    /// The planes' colour and the ground under them, display space (0-1).
     #[uniform(0)]
-    pub color: LinearRgba,
-    /// x: loop in seconds, y: far alpha, z: near alpha, w: tan.
+    pub color: Vec4,
     #[uniform(1)]
-    pub params: Vec4,
-    /// x: opacity, y: columns, z: time offset, w: frozen time (< 0: live).
+    pub ground: Vec4,
+    /// x: seconds a layer takes to move one spacing, y: alpha per layer
+    /// (display space), w: tan.
     #[uniform(2)]
+    pub params: Vec4,
+    /// x: opacity, y: units across the width, z: time offset, w: frozen
+    /// time (< 0: live).
+    #[uniform(3)]
     pub extra: Vec4,
 }
 
 impl LinesMaterial {
-    /// The look book's: `fg` lines, far at 4 %, near at 2 % (display
-    /// space: `light_alpha`), a 24 s loop
-    /// (`motion.dur.matchend.lines_loop`), 24 columns.
+    /// Each layer's alpha over the ambient (the look book's "ambient +
+    /// planes"; alone it is .02).
+    pub const PLANES_ALPHA: f32 = 0.006;
+
+    /// The look book's "ambient + planes": `fg` planes over `ink`,
+    /// `PLANES_ALPHA` a layer (display space), one spacing per
+    /// `motion.dur.matchend.lines_loop` s (96), 192 units across.
     pub fn new(theme: &Theme) -> LinesMaterial {
+        let display = |c: Color| {
+            let s = c.to_srgba();
+            Vec4::new(s.red, s.green, s.blue, s.alpha)
+        };
         LinesMaterial {
-            color: theme.tone(Tone::Fg).into(),
+            color: display(theme.tone(Tone::Fg)),
+            ground: display(theme.tone(Tone::Ink)),
             params: Vec4::new(
-                theme.dur("matchend", "lines_loop").max(1.0),
-                crate::theme::light_alpha(0.04),
-                crate::theme::light_alpha(0.02),
+                theme.dur_opt("matchend", "lines_loop").unwrap_or(96.0).max(1.0),
+                Self::PLANES_ALPHA,
+                0.0,
                 theme.tan(),
             ),
-            extra: Vec4::new(1.0, 24.0, 0.0, -1.0),
+            extra: Vec4::new(1.0, 192.0, 0.0, -1.0),
         }
     }
 
-    /// Stopped at `t` seconds into the loop (screenshots, tests); `None`
-    /// to move again.
+    /// Each layer's alpha (display space): .006 under the ambient, .02 alone.
+    pub fn alpha(mut self, a: f32) -> Self {
+        self.params.y = a;
+        self
+    }
+
+    /// Stopped at `t` seconds (screenshots, tests); `None` to move again.
     pub fn freeze(mut self, t: Option<f32>) -> Self {
         self.extra.w = t.unwrap_or(-1.0);
         self

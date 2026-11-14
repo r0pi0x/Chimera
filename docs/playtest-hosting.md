@@ -23,9 +23,10 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net49` since the host's surprises reach the
-   clients as the match's effects (`minigame::effects::MatchEffects`)
-   instead of HUD text; `net48` builds and earlier are refused.
+   The network version is `net50` since a match's results carry each
+   player's climb (rung changes, kills and deaths in time, for the
+   Ultimate Gun Game's match-end chart) and the scoreboard marks packet
+   loss; `net49` builds and earlier are refused.
 2. **Send each tester privately:** the release link, `<host address>:<port>`,
    their token, and `docs/playtest.md` if they are not unzipping it.
 3. **Check the asset service has everything the match needs** ("Publishing

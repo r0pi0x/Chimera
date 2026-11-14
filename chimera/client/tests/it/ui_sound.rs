@@ -134,7 +134,7 @@ fn play_screens(sim: &mut Sim) {
     let vote = |mine: Option<usize>, counts: Vec<u32>, winner: Option<usize>| MatchEndView {
         shown: true,
         winner: Some("Ann".into()),
-        vote: Some(MatchEndVote { maps: vec!["a".into(), "b".into(), "c".into()], counts, mine, winner }),
+        vote: Some(MatchEndVote { maps: vec!["a".into(), "b".into(), "c".into()], counts, mine, winner, games: Vec::new() }),
         ..default()
     };
     sim.app.world_mut().insert_resource(vote(None, vec![0, 0, 0], None));

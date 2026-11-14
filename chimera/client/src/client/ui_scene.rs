@@ -9,7 +9,9 @@
 //! an air strike's banner, edge pulses and fold into the chip stack;
 //! `airstrike <t>` frozen likewise):
 //! the HUD's own screens with made-up players (`race_chip::stage`,
-//! `kill_feed::signal_feed::stage`), under the Signal theme; given a
+//! `kill_feed::signal_feed::stage`), and `matchend` (the match end with
+//! eight players, the climb and the vote: `match_end_signal::stage`),
+//! under the Signal theme; given a
 //! fixture (`ui_scene board <fixture.json>`), its data over a flat ground
 //! instead (the UI parity check, `ui_parity`). `proof` (the kit itself: the type ramp of every role, tick
 //! bars, slants, the gun icons and marks, the logo pass frozen mid-way,
@@ -39,7 +41,7 @@ use chimera_ui::{
 pub const UI_SCENE_Z: i32 = 900;
 
 /// The scenes `ui_scene` stages.
-pub const SCENES: &[&str] = &["proof", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike"];
+pub const SCENES: &[&str] = &["proof", "chip", "lead", "board", "board_lead", "feed", "rankup", "airstrike", "matchend"];
 
 /// The scene asked for (`None`: none).
 #[derive(Resource, Default, Clone, Debug, PartialEq)]
@@ -72,6 +74,7 @@ fn clear_staged(w: &mut World) {
     super::race_chip::stage(w, None);
     super::rank_toast::stage(w, None);
     super::match_effects::stage(w, None);
+    super::match_end_signal::unstage(w);
     if std::mem::take(&mut w.resource_mut::<UiScene>().froze)
         && let Some(mut c) = w.get_resource_mut::<chimera_ui::UiClock>()
     {
@@ -108,7 +111,7 @@ impl Plugin for UiScenePlugin {
         app.init_resource::<UiScene>()
             .console_command(
                 "ui_scene",
-                "ui_scene <proof|chip|lead|board|board_lead|feed|rankup|airstrike|off> [fixture.json | t]: stage a screen of the UI \
+                "ui_scene <proof|chip|lead|board|board_lead|feed|rankup|airstrike|matchend|off> [fixture.json | t]: stage a screen of the UI \
                  kit with made-up data (screenshots), or a fixture's (the UI parity check); an animated scene (rankup, airstrike) \
                  with `t` frozen `t` s into its loop.",
                 |w, a| {
@@ -164,6 +167,9 @@ impl Plugin for UiScenePlugin {
                                 super::ui_parity::apply_fixture(w, name, path)?;
                             }
                             return Ok(None);
+                        }
+                        "matchend" => {
+                            return super::match_end_signal::stage(w, a.get(1).map(String::as_str)).map(|_| None);
                         }
                         "feed" => {
                             super::kill_feed::signal_feed::stage(w);

@@ -55,7 +55,7 @@
   --t-lobby-ready-pop:.32s;
   --t-matchend-climb-draw:.7s;
   --t-matchend-climb-ticks:.52s;
-  --t-matchend-lines-loop:24s;
+  --t-matchend-lines-loop:96s;
   --t-matchend-name-at:.9s;
   --t-matchend-slab:.9s;
   --t-matchend-slab-at:.55s;
@@ -106,7 +106,7 @@
   --l-chip-top:2.2cqw;
   --l-chip-w:21cqw;
   --l-feed-enter-dx:2.4cqw;
-  --l-feed-pitch:2.3cqw;
+  --l-feed-pitch:2.15cqw;
   --l-feed-row-h:1.85cqw;
   --l-feed-w:26cqw;
   --l-lobby-big:3cqw;

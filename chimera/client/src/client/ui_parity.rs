@@ -10,7 +10,7 @@
 //!   fixture is the look book's data (`tools/ui-parity/fixtures/hud.json`):
 //!   `map`, `map_game`, `rungs`, `rows` and `rows_lead` (name, rung
 //!   counted from 1, kills, deaths, gun, game, class, bot, host, you,
-//!   wins, ping) and `feed` (killer, class, victim, you_killer,
+//!   wins, ping, loss) and `feed` (killer, class, victim, you_killer,
 //!   you_victim, killer_bot, victim_bot), oldest first.
 //! - `ui_dump <path> [frames]`: after `frames` more frames (default 30,
 //!   so the board's open has settled), writes every named node as JSON:
@@ -71,6 +71,8 @@ pub struct FixtureRow {
     pub you: bool,
     pub wins: u32,
     pub ping: u16,
+    /// Losing packets (the loss mark at the worst ping).
+    pub loss: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -149,6 +151,7 @@ impl Fixture {
                     local: r.you,
                     wins: r.wins,
                     ping: r.ping,
+                    loss: r.loss,
                 })
                 .collect(),
             rungs: self.rungs,

@@ -25,8 +25,9 @@
 //!   hook in), the rung big, the gun's icon (`signal::gun_icon`) and its
 //!   short name with its game, kills and deaths as two columns with their
 //!   marks right-aligned over them, the ping (a 4-bar meter and the
-//!   number, by the theme's `[network]` thresholds: `ping_level`; LAG at
-//!   the worst; LOCAL for the listen host, a faint dash for a bot), and the ladder strip. The leader's row
+//!   number, by the theme's `[network]` thresholds: `ping_level`; at the
+//!   worst the packet-loss mark when the connection loses packets
+//!   (`score_flags::LOSS`), else LAG; LOCAL for the listen host, a faint dash for a bot), and the ladder strip. The leader's row
 //!   has the accent bar; yours is tinted and outlined.
 //!
 //! Content is rebuilt only when what it shows changes (`RaceView`), the
@@ -39,7 +40,7 @@
 //! toast's roll (`rank_toast`).
 //!
 //! Known shortcuts: the board lists
-//! at most `MAX_ROWS` players; no match clock on the head; no packet loss on the board (not measured).
+//! at most `MAX_ROWS` players; no match clock on the head.
 
 use bevy::prelude::*;
 use chimera_sim::{
@@ -128,6 +129,8 @@ pub struct RaceRow {
     pub wins: u32,
     /// Ping in ms (0: the host's, or not measured yet).
     pub ping: u16,
+    /// Its connection loses packets (`score_flags::LOSS`).
+    pub loss: bool,
 }
 
 /// A row's ping meter: how many of its 4 bars are lit.
@@ -136,10 +139,35 @@ pub struct PingMeter(pub u8);
 
 /// A ping's look on the board: the kit's `PingLevel` by the theme's
 /// `[network]` thresholds (4 bars quiet green under 60 ms, 3 `fg` under
-/// 120, 2 `warn` under 200, else 1 `threat` and a LAG flag). No packet
-/// loss is measured yet (the kit's `loss` mark waits for it).
-pub fn ping_level(theme: &chimera_ui::Theme, ping: u16) -> chimera_ui::widgets::PingLevel {
+/// 120, 2 `warn` under 200, else 1 `threat`); a connection losing packets
+/// is the worst whatever its ping. The worst shows the loss mark when it
+/// loses packets, else a LAG flag (`PingFlag`).
+pub fn ping_level(theme: &chimera_ui::Theme, ping: u16, loss: bool) -> chimera_ui::widgets::PingLevel {
+    if loss {
+        return chimera_ui::widgets::PingLevel { lit: 1, tone: chimera_ui::Tone::Threat, alpha: 1.0 };
+    }
     chimera_ui::widgets::PingLevel::from_ms(theme, ping as u32)
+}
+
+/// The flag beside the worst ping: the packet-loss mark, or LAG.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PingFlag {
+    Loss,
+    Lag,
+}
+
+/// The worst ping's flag (`ping_level`), drawn after its number.
+pub fn ping_flag(p: &mut ChildSpawnerCommands, look: &Look, level: chimera_ui::widgets::PingLevel, loss: bool, size: f32) {
+    if level.lit != 1 {
+        return;
+    }
+    if loss {
+        if let Some(e) = signal::icons::spawn(p, look, "loss", look.px(size * 1.3), look.tone(Tone::Threat)) {
+            p.commands_mut().entity(e).insert(PingFlag::Loss);
+        }
+    } else {
+        p.spawn((look.text(Role::Mono, size, look.tone(Tone::Threat), "LAG"), PingFlag::Lag, Pickable::IGNORE));
+    }
 }
 
 /// A row's matches won this server run (trophy and count; only when any).
@@ -209,6 +237,7 @@ pub fn staged_race(lead: bool) -> RaceView {
             local,
             wins,
             ping,
+            loss: ping > 200,
         }
     };
     let rows = if lead {
@@ -415,6 +444,7 @@ fn gather(
                     local,
                     wins: won.map_or(0, |w| w.0),
                     ping: net.map_or(0, |n| n.ping),
+                    loss: net.is_some_and(|n| n.flags & score_flags::LOSS != 0),
                 }
             })
             .collect();
@@ -870,7 +900,7 @@ fn build_board(
                         c.spawn((look.text(Role::Mono, 0.46, look.tone(Tone::Fg3), "LOCAL"), Pickable::IGNORE));
                         return;
                     }
-                    let level = ping_level(&look.theme, row.ping);
+                    let level = ping_level(&look.theme, row.ping, row.loss);
                     if let Some(slants) = slants.as_deref_mut() {
                         let parent = c.target_entity();
                         let cmd = c.commands_mut();
@@ -883,9 +913,7 @@ fn build_board(
                     // A good line's number stays quiet.
                     let number = if level.lit == 4 { look.tone(Tone::Fg3) } else { level.color(&look.theme) };
                     c.spawn((Node { min_width: look.val(PING_VALUE_W), ..default() }, look.tracked(Role::Mono, 0.5, 0.5 * 0.02, number, &row.ping.to_string()), Pickable::IGNORE)).insert(TextLayout::new(Justify::Right, LineBreak::NoWrap));
-                    if level.lit == 1 {
-                        c.spawn((look.text(Role::Mono, 0.42, look.tone(Tone::Threat), "LAG"), Pickable::IGNORE));
-                    }
+                    ping_flag(c, &look, level, row.loss, 0.42);
                 });
                 });
                 // The ladder strip, set apart by a hairline.

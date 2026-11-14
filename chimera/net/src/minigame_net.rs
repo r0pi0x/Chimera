@@ -88,11 +88,12 @@
 //!   one, the hold's next map isn't picked at once: the rotation's pick
 //!   and a few other maps go on a ballot (`minigame::vote::MapVote`,
 //!   replicated as `NetMinigame::vote` with the counts, no ballots) and
-//!   the hold waits for it (`NextMatch::at` moved to its close plus the
-//!   reveal); each player votes (`vote_map`, console `vote_map <n>`: a
+//!   the hold is set by it (`NextMatch::at` its close plus the reveal: one
+//!   deadline); each player votes (`vote_map`, console `vote_map <n>`: a
 //!   client sends `MapVoteCast`, the server counts it for that client's
 //!   character; a host casts for its own player), and at the close the
-//!   most votes win (a tie at random, none: the rotation's pick), which
+//!   most votes win (a tie: the pool's pick, the tied map earliest on the
+//!   ballot; none: the rotation's pick), which
 //!   becomes the hold's next map.
 //! - **The playable set** (`playable`, `PartyOffer`, console
 //!   `party_offer`): each registered minigame on its pool's first map
@@ -1097,8 +1098,8 @@ fn rotate(world: &mut World) {
 
 /// The map vote opened when `def` has one (`minigame::vote`): the
 /// rotation's pick `first` and other playable maps of the pool on the
-/// ballot, closing `time` s from now, the hold (`NextMatch::at`) moved to
-/// its close plus the reveal. False without a vote, or with one candidate
+/// ballot, closing `time` s from now, the hold (`NextMatch::at`) set to
+/// its close plus the reveal (one deadline). False without a vote, or with one candidate
 /// only (the rotation's pick stands).
 fn open_vote(world: &mut World, def: &'static MinigameDef, first: &str) -> bool {
     let Ok(Some(settings)) = MapVoteSettings::of(def) else { return false };
@@ -1123,19 +1124,19 @@ fn open_vote(world: &mut World, def: &'static MinigameDef, first: &str) -> bool 
     let closes = now + settings.time as f64;
     info!("{}: map vote on {}", def.id, ballot.join(", "));
     world.insert_resource(MapVote::new(ballot, closes));
+    // One deadline: the vote's close is the next match's countdown, the
+    // change the reveal after it (the results hold gives way to it).
     let mut next = world.resource_mut::<NextMatch>();
-    next.at = next.at.max(closes + settings.reveal as f64);
+    next.at = closes + settings.reveal as f64;
     true
 }
 
-/// The open vote closed: the winner (`MapVote::tally` on the host's
-/// generator), said on the console.
+/// The open vote closed: the winner (`MapVote::tally`), said on the
+/// console.
 fn close_vote(world: &mut World) -> String {
-    let mut history = world.remove_resource::<MapHistory>().unwrap_or_default();
     let mut vote = world.resource_mut::<MapVote>();
-    let map = vote.close(&mut history.rng);
+    let map = vote.close();
     let counts = vote.counts.clone();
-    world.insert_resource(history);
     info!("map vote: {map} ({counts:?})");
     map
 }

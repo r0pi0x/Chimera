@@ -82,4 +82,4 @@ total = 1.2
 swap = 0.6
 
 [motion.dur.matchend]
-lines_loop = 24.0
+lines_loop = 96.0      # the planes: one spacing per loop

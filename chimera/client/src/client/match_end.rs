@@ -88,8 +88,17 @@ impl Plugin for MatchEndPlugin {
             .add_systems(Startup, spawn)
             .init_resource::<MapVoteChoice>()
             .add_observer(pass_covered)
-            .add_systems(Update, (vote_input.run_if(resource_exists::<MapVote>), follow, draw, draw_vote).chain())
+            .add_systems(
+                Update,
+                (
+                    vote_input.run_if(resource_exists::<MapVote>),
+                    follow.in_set(MatchEndFollow),
+                    (draw, draw_vote).run_if(not(super::match_end_signal::themed)),
+                )
+                    .chain(),
+            )
             .add_systems(Update, vote_cursor.after(follow));
+        super::match_end_signal::add(app);
         super::text_warm::TextWarmAppExt::warm_texts(app, warm_fonts);
         if app.world().contains_resource::<AssetServer>() {
             app.init_resource::<WinSound>()
@@ -97,6 +106,10 @@ impl Plugin for MatchEndPlugin {
         }
     }
 }
+
+/// The view's update (`follow`): the screens draw after it.
+#[derive(SystemSet, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct MatchEndFollow;
 
 /// One player's line of the final standings.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -113,6 +126,20 @@ pub struct MatchEndRow {
     pub wins: u32,
     pub winner: bool,
     pub local: bool,
+    /// On a ladder: the final rung, from 1.
+    pub rung: Option<u32>,
+    /// The final rung's gun (a weapon id) and its fallback icon's class.
+    pub gun_id: Option<String>,
+    pub class: Option<&'static str>,
+    pub bot: bool,
+    /// The listen host's or the server's own player.
+    pub host: bool,
+    /// Ping in ms (0: the host's, a bot's, or not measured) and whether
+    /// the connection loses packets.
+    pub ping: u16,
+    pub loss: bool,
+    /// The climb (`minigame::climb::Climb`).
+    pub climb: chimera_sim::minigame::climb::Climb,
 }
 
 /// What the screen shows (headless too).
@@ -130,6 +157,15 @@ pub struct MatchEndView {
     pub next: String,
     /// The map vote, while there is one.
     pub vote: Option<MatchEndVote>,
+    /// The map played (without its game) and its game's short name.
+    pub map: String,
+    pub map_game: String,
+    /// Rungs on the ladder (0: no ladder) and the match's length (s).
+    pub rungs: u32,
+    pub length: f32,
+    /// When the vote closes and when the next match comes (`SimClock`).
+    pub vote_closes: Option<f64>,
+    pub next_at: f64,
     /// The winner sound's candidates `(game, file)` asked for when the
     /// screen came up, in order (the player takes them).
     pub sound: Vec<(String, String)>,
@@ -147,6 +183,8 @@ pub struct MatchEndVote {
     pub mine: Option<usize>,
     /// Once closed, the winner.
     pub winner: Option<usize>,
+    /// The candidates' games, short (`CS:S`; empty when not registered).
+    pub games: Vec<String>,
 }
 
 impl MatchEndVote {
@@ -179,6 +217,14 @@ pub fn sound_candidates(parts: &PartsRegistry, first: Option<&str>) -> Vec<(Stri
     parts.match_end_sounds(first, true)
 }
 
+/// A staged screen (`ui_scene matchend`): this view instead of the
+/// match's, the countdown frozen at `left` s when given.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct MatchEndStaged {
+    pub view: MatchEndView,
+    pub left: Option<f64>,
+}
+
 /// The screen's coming up through the logo pass (`logo_pass`).
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MatchEndGate {
@@ -199,6 +245,12 @@ fn pass_covered(ev: On<super::logo_pass::PassCovered>, mut gate: ResMut<MatchEnd
 
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn follow(
+    staged: Option<Res<MatchEndStaged>>,
+    extra: (
+        Option<Res<crate::map::LoadedMapName>>,
+        Option<Res<chimera_core::game_registry::Games>>,
+        Query<(Option<&crate::net::NetScore>, Has<crate::core::Bot>)>,
+    ),
     mut hud: Option<ResMut<MinigameHud>>,
     next: Option<Res<NextMatch>>,
     clock: Option<Res<SimClock>>,
@@ -212,6 +264,18 @@ fn follow(
     (map_vote, mut choice): (Option<Res<MapVote>>, ResMut<MapVoteChoice>),
     (mut passes, mut gate): (super::logo_pass::Passes, ResMut<MatchEndGate>),
 ) {
+    let (map_name, games, net_scores) = extra;
+    if let Some(st) = staged {
+        // The HUD's panels step aside as for a real match end.
+        if let Some(h) = hud.as_mut().filter(|h| !h.results_shown) {
+            h.results_shown = true;
+        }
+        let mut v = st.view.clone();
+        v.shown = true;
+        v.sounds_asked = view.sounds_asked;
+        view.set_if_neq(v);
+        return;
+    }
     if map_vote.is_none() && choice.0.is_some() {
         choice.0 = None;
     }
@@ -256,8 +320,18 @@ fn follow(
                 Some((e, (net, name, l))) => super::shown_name(e, l, net, name, settings.as_deref()),
                 None => r.name.clone(),
             };
+            let (score, is_bot) = r.player.and_then(|e| net_scores.get(e).ok()).unwrap_or((None, false));
+            let host = found.is_some_and(|(_, (net, _, _))| net.is_some_and(|n| n.owner == Some(crate::net::HOST_ID)));
             MatchEndRow {
                 place: i + 1,
+                rung: r.rung,
+                gun_id: r.gun.clone(),
+                class: r.gun.as_deref().and_then(|g| catalog.as_deref()?.get(g)).and_then(super::signal::icon_class),
+                bot: is_bot || score.is_some_and(|s| s.flags & crate::net::score_flags::BOT != 0),
+                host,
+                ping: score.map_or(0, |s| s.ping),
+                loss: score.is_some_and(|s| s.flags & crate::net::score_flags::LOSS != 0),
+                climb: r.climb.clone(),
                 name,
                 kills: r.kills,
                 deaths: r.deaths,
@@ -286,7 +360,18 @@ fn follow(
         *gate = MatchEndGate::Changing;
         passes.ask("next_match");
     }
-    let shown_vote = vote_view(map_vote.as_deref(), choice.0);
+    let short = |id: &str| games.as_deref().and_then(|g| g.get(id)).map_or(String::new(), |g| g.short_name.to_string());
+    let mut shown_vote = vote_view(map_vote.as_deref(), choice.0);
+    if let (Some(v), Some(m)) = (shown_vote.as_mut(), map_vote.as_deref()) {
+        v.games = m.candidates.iter().map(|c| c.split_once(':').map_or(String::new(), |(g, _)| short(g))).collect();
+    }
+    let (map, map_game) = match map_name.as_deref() {
+        Some(m) => {
+            let (g, n) = m.0.split_once(':').unwrap_or(("", m.0.as_str()));
+            (n.to_string(), short(g))
+        }
+        None => (String::new(), String::new()),
+    };
     let line = match (&shown_vote, map_vote.as_deref()) {
         (Some(v), Some(m)) if v.open() => vote_line(v.maps.len(), m.closes - now),
         _ => next_line(&next, next.at - now),
@@ -300,6 +385,12 @@ fn follow(
         rows: rows.clone(),
         next: line,
         vote: shown_vote,
+        map,
+        map_game,
+        rungs: results.rungs,
+        length: results.length,
+        vote_closes: map_vote.as_deref().map(|m| m.closes),
+        next_at: next.at,
         sound: view.sound.clone(),
         sounds_asked: view.sounds_asked,
     };
@@ -318,6 +409,7 @@ fn vote_view(v: Option<&MapVote>, mine: Option<usize>) -> Option<MatchEndVote> {
         counts: v.counts.clone(),
         mine: mine.filter(|m| *m < v.candidates.len()),
         winner: v.winner,
+        games: Vec::new(),
     })
 }
 
@@ -368,13 +460,16 @@ fn vote_input(
 /// again after if this freed it and nothing else wants it.
 fn vote_cursor(
     view: Res<MatchEndView>,
+    theme: Option<Res<chimera_ui::Theme>>,
     cursor: Option<Single<&mut bevy::window::CursorOptions>>,
     console: Option<Res<super::console::ConsoleUi>>,
     menu: Option<Res<super::front_end::MenuStatus>>,
     mut freed: Local<bool>,
 ) {
     let Some(mut cursor) = cursor else { return };
-    let open = view.shown && view.vote.as_ref().is_some_and(|v| v.open());
+    // The Signal screen frees it while it is up (hover picks a climb).
+    let signal = super::signal::signal_on(theme.as_deref());
+    let open = view.shown && (signal || view.vote.as_ref().is_some_and(|v| v.open()));
     if open {
         if super::input::cursor_grabbed(&cursor) {
             super::input::release_cursor(&mut cursor);

@@ -210,6 +210,7 @@ fn kills_climb_the_ladder_melee_deaths_demote_and_the_last_rung_wins() {
     // Each row's final gun and matches won (this one counted), and the
     // match-end hold from the match over: the next match's change
     // `RESULTS_HOLD` s on (no server here to pick a map).
+    climb_records_rungs_kills_deaths(&results);
     let guns: Vec<(Option<&str>, u32)> = results.rows.iter().map(|r| (r.gun.as_deref(), r.wins)).collect();
     assert_eq!(guns, [(Some(SHOTGUN), 1), (Some(PISTOL), 0)]);
     let next = sim.app.world().resource::<minigame::NextMatch>().clone();
@@ -225,6 +226,26 @@ fn kills_climb_the_ladder_melee_deaths_demote_and_the_last_rung_wins() {
     settle(&mut sim);
     assert_eq!(phase(&sim), Phase::Live);
     assert_eq!((rung(&sim, a), rung(&sim, b)), (0, 0));
+}
+
+/// Each row's climb (`minigame::climb`): its rung changes (up and, for
+/// a melee death, down), kills and deaths in seconds into the match, as
+/// many as its score says, in order; the match's length over the last.
+fn climb_records_rungs_kills_deaths(results: &MatchResults) {
+    for r in &results.rows {
+        let c = &r.climb;
+        assert_eq!((c.kills.len(), c.deaths.len()), (r.kills as usize, r.deaths as usize), "{}: {c:?}", r.name);
+        for times in [&c.kills, &c.deaths] {
+            assert!(times.windows(2).all(|w| w[0] <= w[1]) && times.iter().all(|t| *t >= 0.0), "{c:?}");
+        }
+        assert!(c.steps.windows(2).all(|w| w[0].0 <= w[1].0), "{c:?}");
+        assert_eq!(c.steps.last().map_or(1, |s| s.1) as u32, r.rung.unwrap(), "the last step is the final rung: {c:?}");
+        let last = c.kills.iter().chain(&c.deaths).chain(c.steps.iter().map(|s| &s.0)).copied().fold(0.0, f32::max);
+        assert!(results.length >= last && results.length > 0.0, "{} vs {last}", results.length);
+    }
+    let (w, l) = (&results.rows[0].climb, &results.rows[1].climb);
+    assert_eq!(w.steps.iter().map(|s| s.1).collect::<Vec<_>>(), [2, 3], "the winner climbed: {w:?}");
+    assert!(l.steps.iter().any(|s| s.1 == 2) && l.steps.last().unwrap().1 == 1, "the loser up, then down by the knife: {l:?}");
 }
 
 #[test]

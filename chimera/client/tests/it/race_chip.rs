@@ -294,7 +294,7 @@ fn every_board_row_has_a_gun_icon() {
 fn ping_colours_by_the_themes_thresholds() {
     use chimera_ui::Tone;
     let t = Theme::from_toml(SIGNAL).unwrap();
-    let got: Vec<(u16, (u32, Tone))> = [0, 59, 60, 119, 120, 199, 200, 900].map(|p| (p, ping_level(&t, p))).map(|(p, l)| (p, (l.lit, l.tone))).into();
+    let got: Vec<(u16, (u32, Tone))> = [0, 59, 60, 119, 120, 199, 200, 900].map(|p| (p, ping_level(&t, p, false))).map(|(p, l)| (p, (l.lit, l.tone))).into();
     assert_eq!(
         got,
         vec![
@@ -309,7 +309,8 @@ fn ping_colours_by_the_themes_thresholds() {
         ]
     );
     let strict = Theme::from_toml(&format!("{SIGNAL}[network]\nping_quiet_ms = 30\nping_fine_ms = 50\nping_warn_ms = 80\ngood_alpha = 0.7\n")).unwrap();
-    assert_eq!(ping_level(&strict, 60).lit, 2, "the thresholds are the theme's");
+    assert_eq!(ping_level(&strict, 60, false).lit, 2, "the thresholds are the theme's");
+    assert_eq!((ping_level(&t, 30, true).lit, ping_level(&t, 30, true).tone), (1, Tone::Threat), "a lossy line is the worst");
     assert_eq!(srgba(t.tone(Tone::Warn)), [255, 181, 71]);
 
     // On the board: Cee at 150 ms has two bars; the bot none.

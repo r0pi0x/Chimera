@@ -139,7 +139,7 @@ climb_draw = 0.7
 climb_ticks = 0.52
 vote = 20.0
 vote_hot_from = 17.0
-lines_loop = 24.0
+lines_loop = 96.0      # the planes: one spacing per loop
 
 [motion.dur.menu]
 bar_at = 0.62
@@ -253,7 +253,7 @@ row_rise = 0.45
 [layout.feed]
 w = 26.0
 row_h = 1.85
-pitch = 2.3
+pitch = 2.15
 enter_dx = 2.4
 
 [layout.toast]

@@ -6,6 +6,7 @@
 //! docs/OBSERVABILITY.md, section 1.
 
 mod match_end;
+mod match_end_signal;
 mod callouts;
 mod dead_view;
 mod game_app;

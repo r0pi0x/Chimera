@@ -15,7 +15,8 @@
    "host": false,
    "you": false,
    "wins": 3,
-   "ping": 38
+   "ping": 38,
+   "loss": false
   },
   {
    "name": "lowgrav_larry",
@@ -29,7 +30,8 @@
    "host": false,
    "you": false,
    "wins": 1,
-   "ping": 72
+   "ping": 72,
+   "loss": false
   },
   {
    "name": "Sgt. Biscuit",
@@ -43,7 +45,8 @@
    "host": false,
    "you": false,
    "wins": 0,
-   "ping": 0
+   "ping": 0,
+   "loss": false
   },
   {
    "name": "kestrel",
@@ -57,7 +60,8 @@
    "host": true,
    "you": true,
    "wins": 2,
-   "ping": 12
+   "ping": 12,
+   "loss": false
   },
   {
    "name": "vex",
@@ -71,7 +75,8 @@
    "host": false,
    "you": false,
    "wins": 1,
-   "ping": 140
+   "ping": 140,
+   "loss": false
   },
   {
    "name": "mothman",
@@ -85,7 +90,8 @@
    "host": false,
    "you": false,
    "wins": 0,
-   "ping": 240
+   "ping": 240,
+   "loss": true
   },
   {
    "name": "Rook",
@@ -99,7 +105,8 @@
    "host": false,
    "you": false,
    "wins": 0,
-   "ping": 0
+   "ping": 0,
+   "loss": false
   },
   {
    "name": "pixelpirate",
@@ -113,7 +120,8 @@
    "host": false,
    "you": false,
    "wins": 0,
-   "ping": 55
+   "ping": 55,
+   "loss": false
   }
  ],
  "rows_lead": [
@@ -129,7 +137,8 @@
    "host": true,
    "you": true,
    "wins": 2,
-   "ping": 12
+   "ping": 12,
+   "loss": false
   },
   {
    "name": "lowgrav_larry",
@@ -143,7 +152,8 @@
    "host": false,
    "you": false,
    "wins": 1,
-   "ping": 72
+   "ping": 72,
+   "loss": false
   },
   {
    "name": "nadia.exe",
@@ -157,7 +167,8 @@
    "host": false,
    "you": false,
    "wins": 3,
-   "ping": 38
+   "ping": 38,
+   "loss": false
   },
   {
    "name": "Sgt. Biscuit",
@@ -171,7 +182,8 @@
    "host": false,
    "you": false,
    "wins": 0,
-   "ping": 0
+   "ping": 0,
+   "loss": false
   },
   {
    "name": "vex",
@@ -185,7 +197,8 @@
    "host": false,
    "you": false,
    "wins": 1,
-   "ping": 140
+   "ping": 140,
+   "loss": false
   },
   {
    "name": "mothman",
@@ -199,7 +212,8 @@
    "host": false,
    "you": false,
    "wins": 0,
-   "ping": 240
+   "ping": 240,
+   "loss": true
   },
   {
    "name": "Rook",
@@ -213,7 +227,8 @@
    "host": false,
    "you": false,
    "wins": 0,
-   "ping": 0
+   "ping": 0,
+   "loss": false
   },
   {
    "name": "pixelpirate",
@@ -227,7 +242,8 @@
    "host": false,
    "you": false,
    "wins": 0,
-   "ping": 55
+   "ping": 55,
+   "loss": false
   }
  ],
  "feed": [
