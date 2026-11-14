@@ -286,6 +286,11 @@ fn glass_and_vents_are_see_through() {
     assert!(!map.see_through_entities.contains(&index("*49")), "the door");
     assert!(!map.see_through_hulls.is_empty(), "the world's own glass");
     assert!(map.see_through_hulls.len() < map.collision_hulls.len() / 10);
+    // Its grate catwalk: grates, a part of the see-through volumes (a
+    // crossbow bolt passes them, specs/hl2dm/projectiles.md 7.3).
+    assert!(!map.grate_hulls.is_empty(), "the grate catwalk");
+    assert!(map.grate_hulls.iter().all(|g| map.see_through_hulls.contains(g)));
+    assert!(map.grate_hulls.len() < map.see_through_hulls.len(), "glass too");
 }
 
 /// `$additive` materials (de_nuke's light glows) add to what's behind them

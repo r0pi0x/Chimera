@@ -966,6 +966,7 @@ pub fn convert_level(game: &SourceGame, bsp: &Bsp, bytes: &[u8], name: &str, hdr
 
     data.collision_hulls = brush_hulls(bsp, &leaves);
     data.see_through_hulls = see_through_hulls(bsp, &leaves);
+    data.grate_hulls = grate_hulls(bsp, &leaves);
     data.see_through_entities = see_through_entities(bsp, &leaves);
     let (brushes, tree) = collision_brushes(bsp, &leaves);
     data.collision_brushes = brushes;
@@ -1752,6 +1753,28 @@ pub fn see_through_hulls(bsp: &Bsp, leaves: &[RawLeaf]) -> Vec<usize> {
         .filter(|(i, _, _)| bsp.brushes[*i].flags.intersects(blocks))
         .enumerate()
         .filter(|(_, (i, _, _))| see_through(bsp.brushes[*i].flags))
+        .map(|(n, _)| n)
+        .collect()
+}
+
+/// Indices into `brush_hulls` of the grates: see-through volumes with grate
+/// contents and no window contents (a subset of `see_through_hulls`),
+/// which some projectiles pass (specs/hl2dm/projectiles.md 7.3: the
+/// crossbow bolt).
+pub fn grate_hulls(bsp: &Bsp, leaves: &[RawLeaf]) -> Vec<usize> {
+    let blocks = BrushFlags::SOLID
+        .union(BrushFlags::WINDOW)
+        .union(BrushFlags::GRATE)
+        .union(BrushFlags::LADDER);
+    brush_hulls_indexed(bsp, leaves)
+        .into_iter()
+        .chain(entity_hulls(bsp, leaves))
+        .filter(|(i, _, _)| bsp.brushes[*i].flags.intersects(blocks))
+        .enumerate()
+        .filter(|(_, (i, _, _))| {
+            let f = bsp.brushes[*i].flags;
+            see_through(f) && f.contains(BrushFlags::GRATE) && !f.contains(BrushFlags::WINDOW)
+        })
         .map(|(n, _)| n)
         .collect()
 }

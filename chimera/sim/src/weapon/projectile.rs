@@ -37,10 +37,18 @@
 //! flight meets `map::MapSkyFaces` with nothing before it): gone, no touch
 //! rule, its `FlyerGone::expired` as said.
 //!
-//! Known shortcuts: a bounce or a glance spends the rest of its tick's move; the
+//! A bolt with `BoltRule::through_glass` flies on through breakable glass
+//! (what takes damage and lets light through: `map::SeeThrough`), dealing
+//! it the direct damage and never meeting it again (`Flyer::passed`); its
+//! `FlyerHit` there is neither the world nor its end. A flyer with
+//! `Flyer::pass_grates` passes the map's grates (`map::Grate`).
+//!
+//! Known shortcuts: a bounce, a glance or a pass through glass spends the
+//! rest of its tick's move; the
 //! hitbox test of `Flyer::hitboxes` runs on the swept line's segment
 //! through the character's hull (a hit on the hull that misses every
-//! hitbox lets it fly on); breakable glass stops a bolt like any body; a
+//! hitbox lets it fly on); grates are only the world's own (`MapData::
+//! grate_hulls`: a brush entity's grate volumes stop a bolt); a
 //! brush entity turning in place (a rotating door: its `MovingSolid` has
 //! no angular speed) counts as at rest, and a bolt stuck in a brush stays
 //! where it stuck when the brush moves later;
@@ -110,6 +118,10 @@ pub struct BoltRule {
     pub glance_keep: f32,
     pub glance_gravity: f32,
     pub stick_time: f32,
+    /// Breakable glass (what takes damage and lets light through,
+    /// `map::SeeThrough`) takes its direct damage and the bolt flies on
+    /// (projectiles.md 7.4).
+    pub through_glass: bool,
 }
 
 /// A direct hit's damage on what it touches that takes damage:
@@ -154,6 +166,11 @@ pub struct Flyer {
     pub keep_speed: Option<f32>,
     /// It passes loose items (dropped weapons, `core::ITEM_LAYER`).
     pub pass_items: bool,
+    /// It passes the map's grates (`map::Grate`).
+    pub pass_grates: bool,
+    /// What it has passed through (breakable glass, `BoltRule::
+    /// through_glass`): not met again.
+    pub passed: Vec<Entity>,
     /// A physics object: physics clips (`map::physics_clip`, those whose
     /// filter passes it) stop it as they stop props.
     pub meets_clips: bool,
@@ -212,6 +229,8 @@ impl Flyer {
             expires: None,
             keep_speed: None,
             pass_items: false,
+            pass_grates: false,
+            passed: Vec::new(),
             meets_clips: false,
             hitboxes: false,
             touch: Touch::Report,
@@ -346,6 +365,12 @@ pub struct LauncherParams {
     pub hitboxes: bool,
     #[serde(default)]
     pub pass_items: bool,
+    /// It passes the map's grates (`Flyer::pass_grates`).
+    #[serde(default)]
+    pub pass_grates: bool,
+    /// A bolt flies on through breakable glass (`BoltRule::through_glass`).
+    #[serde(default)]
+    pub through_glass: bool,
     /// Lifetime, seconds.
     #[serde(default)]
     pub life: Option<f32>,
@@ -402,6 +427,7 @@ impl LauncherParams {
             .half
             .map_or(Vec3::ZERO, |h| Vec3::new(h[0], h[2], h[1]).abs() * unit);
         f.pass_items = self.pass_items;
+        f.pass_grates = self.pass_grates;
         f.sky_end = (self.sky_probe > 0.0).then_some(SkyEnd {
             probe: self.sky_probe * unit,
             expired: false,
@@ -423,6 +449,7 @@ impl LauncherParams {
                 glance_keep: self.glance_keep,
                 glance_gravity: self.glance_gravity * unit,
                 stick_time: self.stick_time,
+                through_glass: self.through_glass,
             }),
             _ => Touch::Report,
         };
@@ -652,6 +679,8 @@ struct FlyWorld<'w, 's> {
     rigid: Query<'w, 's, (&'static RigidBody, Option<&'static MovingSolid>, Option<&'static LinearVelocity>, Option<&'static AngularVelocity>)>,
     flyers: Query<'w, 's, (), With<Flyer>>,
     clips: Query<'w, 's, (&'static crate::map::physics_clip::ClipPasses, Has<ColliderDisabled>)>,
+    see_through: Query<'w, 's, (), With<crate::map::SeeThrough>>,
+    grates: Query<'w, 's, (), With<crate::map::Grate>>,
     armor: HitArmor<'w, 's>,
     damage: MessageWriter<'w, Damage>,
     inflicted: MessageWriter<'w, Inflicted>,
@@ -846,11 +875,19 @@ fn fly(
         if f.meets_clips {
             mask |= PHYSICS_CLIP_LAYER.0;
         }
-        let excluded: Vec<Entity> = f.owner.into_iter().chain(dead.iter().copied()).collect();
+        let excluded: Vec<Entity> = f
+            .owner
+            .into_iter()
+            .chain(dead.iter().copied())
+            .chain(f.passed.iter().copied())
+            .collect();
         let filter = SpatialQueryFilter::from_excluded_entities(excluded).with_mask(LayerMask(mask));
         let flyers_q = &world.flyers;
         let colliders_q = &world.colliders;
         let clips_q = &world.clips;
+        let grates_q = &world.grates;
+        let pass_grates = f.pass_grates;
+        let passed = &f.passed;
         let not_flyer = |c: Entity| {
             let b = colliders_q.get(c).map_or(c, |o| o.body);
             !flyers_q.contains(b) && !flyers_q.contains(c)
@@ -866,7 +903,11 @@ fn fly(
         let hit = loop {
             let pred = |c: Entity| {
                 let b = colliders_q.get(c).map_or(c, |o| o.body);
-                not_flyer(c) && clip_stops(c) && !skip_chars.contains(&b)
+                not_flyer(c)
+                    && clip_stops(c)
+                    && !skip_chars.contains(&b)
+                    && !passed.contains(&b)
+                    && !(pass_grates && (grates_q.contains(c) || grates_q.contains(b)))
             };
             let h = if f.half == Vec3::ZERO {
                 world
@@ -943,6 +984,9 @@ fn fly(
         };
         let damageable = world.takes_damage(body);
         let mut gone = false;
+        // Breakable glass a bolt flies on through: reported as neither the
+        // world nor its end.
+        let mut through = false;
         match f.touch.clone() {
             Touch::Report => {
                 f.velocity = Vec3::ZERO;
@@ -971,8 +1015,19 @@ fn fly(
             }
             Touch::Bolt(rule) => {
                 // What takes damage takes the bolt (a breakable, a
-                // prop; a kinematic one at rest too), unless the map's own.
-                if damageable && !fixed {
+                // prop; a kinematic one at rest too), unless the map's own;
+                // breakable glass takes it and lets it fly on.
+                if rule.through_glass
+                    && damageable
+                    && !character
+                    && (world.see_through.contains(collider) || world.see_through.contains(body))
+                {
+                    if let Some(d) = f.direct {
+                        world.direct(&d, &f, body, point, *dir, group, t.translation);
+                    }
+                    f.passed.push(body);
+                    through = true;
+                } else if damageable && !fixed {
                     if let Some(d) = f.direct {
                         world.direct(&d, &f, body, point, *dir, group, t.translation);
                     }
@@ -999,12 +1054,12 @@ fn fly(
             flyer: e,
             weapon: f.weapon,
             owner: f.owner,
-            other: (!still).then_some(body),
+            other: (!still || through).then_some(body),
             point,
             normal: n,
             velocity,
             character,
-            world: still,
+            world: still && !through,
             gone,
         });
         if gone {

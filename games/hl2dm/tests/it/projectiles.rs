@@ -2,7 +2,8 @@
 //! greybox), specs/hl2dm/projectiles.md's implementer cases (H4, the
 //! numbers in the test names): the blast rule and the shove (2-6, 12-13),
 //! the SMG1's contact grenade (15-18), the AR2's ball (19-23), the RPG
-//! (27-28, 32, 34-35), the crossbow (36-37, 39-41, 43; its sounds), the frag (44,
+//! (27-28, 32, 34-35), the crossbow (36-37, 39-41, 43; its sounds, grates
+//! and glass), the frag (44,
 //! 47-53) and the S.L.A.M. (54-62). Ticks count from the action's tick,
 //! at 0.015 s. Source vectors are converted with `launch::to_engine`.
 //! The greybox: flat ground at y 0; from the first spawn, looking east
@@ -768,6 +769,72 @@ fn a_bolts_sounds_fly_hit_the_body_and_the_world() {
     let hit = ran.hits.iter().find(|(_, h)| h.world).map(|(t, _)| *t).expect("hit the floor");
     assert_eq!(heard(&ran, WORLD), vec![hit], "{:?}", ran.sounds);
     assert!(heard(&ran, BODY).is_empty(), "{:?}", ran.sounds);
+}
+
+/// Projectiles.md 7.3 and 7.4: a bolt passes the map's grates and flies
+/// on through breakable glass (100 to the pane), hitting the player
+/// behind; plain glass (a window that takes no damage) stops it.
+#[test]
+fn a_bolt_passes_grates_and_breakable_glass() {
+    use avian3d::prelude::{Collider, RigidBody};
+    use chimera_core::core::Damageable;
+    use chimera_world::map::{Grate, MapBrushCollider, SeeThrough};
+    // 0 a grate, 1 breakable glass, 2 plain glass.
+    for pane in 0..3 {
+        let mut sim = self::sim();
+        let p = player(&mut sim);
+        let w = holding(&mut sim, p, weapons::CROSSBOW);
+        sim.app.world_mut().get_mut::<Magazine>(w).unwrap().clip = 1;
+        let t = sim.spawn_character(greybox::SPAWNS[0] + Vec3::X * 3.0, movement::ID);
+        let wall = {
+            let mut e = sim.app.world_mut().spawn((
+                RigidBody::Static,
+                Collider::cuboid(0.05, 4.0, 4.0),
+                Transform::from_translation(greybox::SPAWNS[0] + Vec3::X * 1.5),
+                MapBrushCollider,
+                SeeThrough,
+            ));
+            match pane {
+                0 => {
+                    e.insert(Grate);
+                }
+                1 => {
+                    e.insert(Damageable);
+                }
+                _ => {}
+            }
+            e.id()
+        };
+        sim.seconds(2.0);
+        let aim = eye(&sim, t) - Vec3::Y * 0.45;
+        testkit::aim_at(&mut sim, p, aim);
+        // Read each tick: messages last two updates.
+        let mut damage = Log::<Damage>::new(&sim);
+        let mut dealt = Vec::new();
+        let ran = run(&mut sim, p, 10, |s, k| {
+            s.intent(p).fire = k == 0;
+            dealt.extend(damage.read(s));
+        });
+        dealt.extend(damage.read(&sim));
+        let to_wall = dealt.iter().filter(|d| d.target == wall).count();
+        let hit_player = ran.hits.iter().any(|(_, h)| h.character);
+        match pane {
+            0 => {
+                assert!(hit_player && health(&sim, t) < 1.0, "through the grate: {:?}", ran.hits);
+                assert!(ran.hits.iter().all(|(_, h)| h.other != Some(wall)), "never met the grate");
+            }
+            1 => {
+                assert_eq!(to_wall, 1, "the pane took the bolt once: {:?}", ran.hits);
+                assert!(hit_player && health(&sim, t) < 1.0, "on through the glass: {:?}", ran.hits);
+                let (_, at_pane) = ran.hits.iter().find(|(_, h)| h.other == Some(wall)).unwrap();
+                assert!(!at_pane.world && !at_pane.gone, "neither the world nor its end");
+            }
+            _ => {
+                assert!(!hit_player && (health(&sim, t) - 100.0).abs() < 1e-3, "stopped by the window");
+                assert_eq!(to_wall, 0);
+            }
+        }
+    }
 }
 
 /// Tests 40 and 41: c = 0.436 glances off at 0.75 with full gravity after;

@@ -605,8 +605,8 @@ struct CollisionParts {
     terrain: Option<(MapTerrain, Collider, Option<Collider>)>,
     /// Per collision set, its collider (None: not spawned).
     sets: Vec<Option<Collider>>,
-    /// The solids, then the glass and grates (None: no hulls).
-    solids: [Option<Collider>; 2],
+    /// The solids, the glass, then the grates (None: no hulls).
+    solids: [Option<Collider>; 3],
 }
 
 fn collision_parts(data: &MapData) -> CollisionParts {
@@ -632,12 +632,19 @@ fn collision_parts(data: &MapData) -> CollisionParts {
         })
         .collect();
     let see_through: std::collections::HashSet<usize> = data.see_through_hulls.iter().copied().collect();
-    let solids = [false, true].map(|glass| {
+    let grates: std::collections::BTreeSet<usize> = data.grate_hulls.iter().copied().collect();
+    // 0 solid, 1 glass, 2 grates.
+    let kind = |i: &usize| match (see_through.contains(i), grates.contains(i)) {
+        (false, _) => 0,
+        (true, false) => 1,
+        (true, true) => 2,
+    };
+    let solids = [0, 1, 2].map(|k| {
         let hulls: Vec<_> = data
             .collision_hulls
             .iter()
             .enumerate()
-            .filter(|(i, _)| see_through.contains(i) == glass)
+            .filter(|(i, _)| kind(i) == k)
             .flat_map(|(_, h)| contact_hulls(&h.iter().map(|p| Vec3::from(*p)).collect::<Vec<_>>()))
             .map(|c| (Vec3::ZERO, Quat::IDENTITY, c))
             .collect();
@@ -709,14 +716,15 @@ fn spawn_world_collision(
             e.insert(PropSurface(s.clone()));
         }
     }
-    // Glass and grates get a collider of their own, marked `SeeThrough`.
-    for (glass, collider) in [false, true].into_iter().zip(parts.solids) {
+    // Glass and grates get a collider each, marked `SeeThrough` (and the
+    // grates' `Grate`).
+    for (kind, collider) in [0, 1, 2].into_iter().zip(parts.solids) {
         let Some(collider) = collider else { continue };
         let mut e = commands.spawn((
-            Name::new(if glass {
-                "Map collision (glass and grates)"
-            } else {
-                "Map collision (solids)"
+            Name::new(match kind {
+                0 => "Map collision (solids)",
+                1 => "Map collision (glass)",
+                _ => "Map collision (grates)",
             }),
             MapPart,
             MapBrushCollider,
@@ -726,8 +734,11 @@ fn spawn_world_collision(
             ChildOf(root),
         ));
         colliders.put(&mut e, collider);
-        if glass {
+        if kind > 0 {
             e.insert(SeeThrough);
+        }
+        if kind == 2 {
+            e.insert(super::props::Grate);
         }
     }
 }

@@ -6,7 +6,9 @@
 //! the generic hitgroup: no head bonus, measured; the spec's 300 head
 //! shot doesn't happen), glancing off
 //! at shallow angles (c < 0.5, faster than 100: 0.75 of its speed, full
-//! gravity after), else sticking for 2 s), view punch −2 (`hl2dm:punch`).
+//! gravity after), else sticking for 2 s; passing the map's grates and
+//! flying on through breakable glass, 100 to the pane: 7.3, 7.4), view
+//! punch −2 (`hl2dm:punch`).
 //!
 //! - **Automatic reload**: on the first tick strictly after the fire
 //!   animation's end the reload (1.8333 s, the player busy) starts if
