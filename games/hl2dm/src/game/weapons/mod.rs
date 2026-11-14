@@ -255,7 +255,7 @@ pub fn register_hooks(app: &mut App) {
     .register_weapon_hook::<crossbow::CrossbowParams>(CROSSBOW_HOOK, |e, _, p| {
         e.insert((
             crossbow::Hl2Crossbow {
-                params: *p,
+                params: p.clone(),
                 fired_at: None,
                 secondary_held: false,
                 zoomed: false,
@@ -325,7 +325,7 @@ fn projectile_systems(app: &mut App) {
         .add_systems(
             FixedUpdate,
             (
-                (alt_fire::ball_touches, alt_fire::ball_ends, alt_fire::grenade_stopped).in_set(FlyerSet::Touch),
+                (alt_fire::ball_touches, alt_fire::ball_ends, alt_fire::grenade_stopped, crossbow::bolt_sounds).in_set(FlyerSet::Touch),
                 (slam::actions, slam::satchels, slam::mines, frag::think, frag::player_taps, slam::spent)
                     .chain()
                     .in_set(FlyerSet::Touch),

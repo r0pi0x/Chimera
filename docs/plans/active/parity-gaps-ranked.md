@@ -125,7 +125,6 @@ settle first (a capture, a probe run or a spec session).
 | Combat Arms kill call-out voice files (`EnemyDown`, `ManDown`) | blocked | combat_arms/effects_sounds.md 11 (rules only; no record or files named) | a spec session: the auto-cast records and their files per sound template |
 | Combat Arms hit-sphere priorities | rule done (`priority_sphere`); values ours | combat_arms/weapon_firing.md Corrections 5, Q16 | a spec session: `Node#Priority` per skeleton |
 | Combat Arms multi-kill reset on death | blocked | combat_arms/kill_streaks.md Q2 | a live check (kill, die, kill again within 5 s) |
-| HL2:DM crossbow bolt sounds (`BoltFly`, `BoltHitBody`, `BoltHitWorld`) | spec-clear | hl2dm/projectiles.md 7.1, 7.4 | none |
 | HL2:DM blood per viewer (shooter's predicted copy, melee attacker none) | spec-clear | hl2dm/effects_sounds.md 7 (Q10 a confirmation only) | none |
 | HL2:DM bolts through grates and breakable glass | spec-clear | hl2dm/projectiles.md 7.3, 7.4 | none |
 | HL2:DM damageable projectiles (the contact grenade goes off when shot) | spec-clear | hl2dm/projectiles.md 2.4, 4.2 (satchels, trip mines and the RPG's refusal already done) | none |

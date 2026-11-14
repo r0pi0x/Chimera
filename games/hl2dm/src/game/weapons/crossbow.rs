@@ -24,27 +24,37 @@
 //!
 //! Known shortcuts: the zoom is a step (the spec's 0.1 s in, 0.2 s out
 //! are the client's); the unloaded draw (Open question 5) is the loaded
-//! one.
+//! one; `BoltFly` plays at the shooter, not following the bolt (the spec
+//! names it with the shot, not its source).
 
 use bevy::prelude::*;
 use serde::Deserialize;
 
-use chimera_sim::weapon::{Inventory, Magazine, NetPart, Weapon, WeaponEvent, WeaponEventKind, WeaponState, Zoomed};
+use chimera_sim::weapon::{
+    Inventory, Magazine, NetPart, Weapon, WeaponEvent, WeaponEventKind, WeaponState, Zoomed, projectile::FlyerHit,
+};
 
-use crate::core::{Health, Intent, SimClock};
+use crate::{
+    core::{Damageable, Health, Intent, SimClock},
+    map::{GameSound, PlaySound},
+};
 
 /// `hl2dm:crossbow`'s parameters (seconds, degrees).
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct CrossbowParams {
     pub fire_anim: f32,
     pub reload: f32,
     pub zoom_fov: f32,
+    /// The bolt meeting what doesn't move (7.4).
+    pub hit_world_sound: String,
+    /// The bolt stopping in something that takes damage (7.4).
+    pub hit_body_sound: String,
 }
 
 /// The crossbow's state: when it last fired, attack2 held last tick, the
 /// zoom.
-#[derive(Component, Clone, Copy, Debug, PartialEq)]
+#[derive(Component, Clone, Debug, PartialEq)]
 pub struct Hl2Crossbow {
     pub params: CrossbowParams,
     pub fired_at: Option<f64>,
@@ -133,6 +143,33 @@ pub fn after_frame(mut events: MessageReader<WeaponEvent>, mut bows: Query<&mut 
             && let Ok(mut bow) = bows.get_mut(e.weapon)
         {
             bow.fired_at = Some(clock.now);
+        }
+    }
+}
+
+/// The bolt's touch sounds (7.4), where flyers are simulated: the world's
+/// where it meets what doesn't move, the body's where it stops in
+/// something that takes damage.
+pub fn bolt_sounds(
+    mut hits: MessageReader<FlyerHit>,
+    takes: Query<(), Or<(With<Health>, With<Damageable>)>>,
+    mut params: Local<Option<CrossbowParams>>,
+    mut out: MessageWriter<GameSound>,
+) {
+    for h in hits.read() {
+        if h.weapon != super::CROSSBOW {
+            continue;
+        }
+        let p = params.get_or_insert_with(|| super::launch::hook_params(super::CROSSBOW, super::CROSSBOW_HOOK));
+        let entry = if h.world {
+            &p.hit_world_sound
+        } else if h.gone && (h.character || h.other.is_some_and(|o| takes.contains(o))) {
+            &p.hit_body_sound
+        } else {
+            continue;
+        };
+        if !entry.is_empty() {
+            out.write(GameSound(PlaySound::at(entry.clone(), h.point)));
         }
     }
 }

@@ -2,7 +2,7 @@
 //! greybox), specs/hl2dm/projectiles.md's implementer cases (H4, the
 //! numbers in the test names): the blast rule and the shove (2-6, 12-13),
 //! the SMG1's contact grenade (15-18), the AR2's ball (19-23), the RPG
-//! (27-28, 32, 34-35), the crossbow (36-37, 39-41, 43), the frag (44,
+//! (27-28, 32, 34-35), the crossbow (36-37, 39-41, 43; its sounds), the frag (44,
 //! 47-53) and the S.L.A.M. (54-62). Ticks count from the action's tick,
 //! at 0.015 s. Source vectors are converted with `launch::to_engine`.
 //! The greybox: flat ground at y 0; from the first spawn, looking east
@@ -729,6 +729,45 @@ fn a_bolt_does_100_anywhere_39() {
             assert!((sim.app.world().get::<Armor>(t).unwrap().amount - a).abs() < 1e-4);
         }
     }
+}
+
+/// Projectiles.md 7.1 and 7.4: a shot plays `BoltFly` beside the fire
+/// sound; the bolt stopping in a player plays `BoltHitBody` where it hit,
+/// one sticking in the floor `BoltHitWorld`; all three are loaded.
+#[test]
+fn a_bolts_sounds_fly_hit_the_body_and_the_world() {
+    const FLY: &str = "Weapon_Crossbow.BoltFly";
+    const BODY: &str = "Weapon_Crossbow.BoltHitBody";
+    const WORLD: &str = "Weapon_Crossbow.BoltHitWorld";
+    let loaded = hl2dm::game::sounds::entries();
+    for e in [FLY, BODY, WORLD] {
+        assert!(loaded.iter().any(|l| l == e), "{e} not loaded");
+    }
+    // At a player 3 m east.
+    let mut sim = self::sim();
+    let p = player(&mut sim);
+    let w = holding(&mut sim, p, weapons::CROSSBOW);
+    sim.app.world_mut().get_mut::<Magazine>(w).unwrap().clip = 1;
+    let t = sim.spawn_character(greybox::SPAWNS[0] + Vec3::X * 3.0, movement::ID);
+    sim.seconds(2.0);
+    let aim = eye(&sim, t) - Vec3::Y * 0.45;
+    testkit::aim_at(&mut sim, p, aim);
+    let ran = run(&mut sim, p, 10, |s, k| s.intent(p).fire = k == 0);
+    let heard = |ran: &Ran, e: &str| ran.sounds.iter().filter(|(_, s)| s == e).map(|(t, _)| *t).collect::<Vec<_>>();
+    assert_eq!(heard(&ran, FLY), vec![0], "{:?}", ran.sounds);
+    let hit = ran.hits.iter().find(|(_, h)| h.character).map(|(t, _)| *t).expect("hit the player");
+    assert_eq!(heard(&ran, BODY), vec![hit], "{:?}", ran.sounds);
+    assert!(heard(&ran, WORLD).is_empty(), "{:?}", ran.sounds);
+    // At the floor 2 m ahead: it sticks.
+    let mut sim = self::sim();
+    let p = player(&mut sim);
+    let w = holding(&mut sim, p, weapons::CROSSBOW);
+    sim.app.world_mut().get_mut::<Magazine>(w).unwrap().clip = 1;
+    look(&mut sim, p, EAST, -45.0);
+    let ran = run(&mut sim, p, 20, |s, k| s.intent(p).fire = k == 0);
+    let hit = ran.hits.iter().find(|(_, h)| h.world).map(|(t, _)| *t).expect("hit the floor");
+    assert_eq!(heard(&ran, WORLD), vec![hit], "{:?}", ran.sounds);
+    assert!(heard(&ran, BODY).is_empty(), "{:?}", ran.sounds);
 }
 
 /// Tests 40 and 41: c = 0.436 glances off at 0.75 with full gravity after;
