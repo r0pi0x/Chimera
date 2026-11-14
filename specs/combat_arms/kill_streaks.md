@@ -34,7 +34,8 @@ The split asked for by the engine plan: **Part A** is rules any game's announcer
 - Exactly `window` after the previous kill restarts it (strictly less than).
 - Kills of teammates and of oneself neither raise nor reset it.
 - `window` is a pack value (Combat Arms: 5000 ms, B1).
-- Whether the killer's own death resets it was not found (Open question 2). The reference gives no reason to think it does: the count is about time between kills.
+- **Dying does not reset it** (answered 2026-11-14 from the server's death and respawn handling; high). Neither the killer's death nor its respawn touches the count or the time of its last enemy kill (the reference even carries a disabled reset of that time in the respawn path). Only these reset them: the player joining (both start at 0, so a first kill always starts at 1) and the mode's end-of-mission handling, which re-initialises every player's statistics (for the elimination modes at the match's end; some round-based PvE modes per round; inferred per mode, medium). So a kill, a death and, after respawning, another enemy kill less than 5 s after the first is a double kill.
+- The time compared is the server's millisecond clock at each enemy kill. A kill made by an AI squad member counts for its leader player. In PvE modes a player's kills of AI share the same "last kill time" (it is also stamped by AI kills for the mode's combo counter), they do not raise the multi-kill count themselves, but an enemy player kill less than 5 s after one continues the count instead of restarting it.
 
 **Other per-kill facts** the server works out:
 
@@ -477,11 +478,12 @@ Times in seconds unless marked. "Banner" means the local killer's centre banner.
 | 54 | P's plain kill with a Graffiti-skin weapon, N = 1 | – | the skin's missing "KILL" image (blank) with `Number_1.dtx` in the ones slot |
 | 55 | side log, five lines showing | a sixth event | the oldest line's slot is reused; still five lines |
 | 56 | side log line added at t = 0 (stock values) | t = 500 ms; t = 1200 ms; t = 3000 ms | bar and label: scale 1 + 0.25 · 0.1 = 1.025 and alpha ≈ 127; scale 1.1 − (200/375)² · 0.1 ≈ 1.0716; alpha 255 − (625/1375) · 255 ≈ 139.1. The name: scale 1, alpha 255 throughout |
+| 57 | P kills an enemy at 0, dies at 1.0 (killed by anyone), respawns at 3.0 | P kills an enemy at 4.5 | count 2: DOUBLE KILL (death and respawn reset nothing). Same with the second kill at 5.0 → count 1 |
 
 ## Open questions
 
 1. **Thresholds and levels per event.** **Answered (2026-10-28)** from the reference's kill panel: A2, B1, B2, B4. A headshot second kill shows DOUBLE KILL with the skull and plays only "double kill"; other players' streaks show no banner. Still worth a live look: whether the stock "KILL" / "N KILLS" banner really shows on every plain kill in the Steam build (A2 rule 5.3), since nobody has described it from play.
-2. **Death and the count.** Does the killer's own death reset the multi-kill count? Check live: kill, die within 2 s, kill again from respawn within 5 s of the first kill.
+2. **Death and the count.** Does the killer's own death reset the multi-kill count? Check live: kill, die within 2 s, kill again from respawn within 5 s of the first kill. **Answered (2026-11-14):** no; only joining and the mode's end-of-mission reset it (A1). Case 57.
 3. **First kill scope.** First kill of the round or of the match, per team or overall? Check in a round mode.
 4. **Side log.** Which events get a line, who sees it, the 5-line limit, the colours and the animation are answered (A2, A7; Corrections (2026-10-28, plain kill) 2 and 3). A plain kill adds no line. Still open: the line template's own position and size and its children's layout. They come from the keyed HUD layout (`xml/hud_main.xml`, window `Superlatives`, template `EffectLogLine` with children `Name`, `Title` and `Background`), not from B6. Check live with screenshots.
 5. **Voice when the banner is dropped, and overlap.** **Answered (2026-10-28):** one kill plays at most one line (its single event's, with the head and groin fall-backs of A6); the line plays whether or not its banner request was dropped; lines of different kills overlap, never stopped, queued or skipped (the skip-if-playing sound helper is not used by the announcer). Narrowed to a live check only: that the engine's interface-sound voice limit does not cut a line when many sounds play at once.

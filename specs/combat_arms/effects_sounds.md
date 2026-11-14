@@ -30,7 +30,8 @@ flash, 4 tracers, 5 surface type of a hit, 6 impacts and decals, 7 blood,
 is played, 11 sounds by event, 12 who hears what); Per-frame order; Edge
 cases; Quirks; Corrections (2026-10-22); Corrections (2026-10-30);
 Follow-up (2026-10-31) (trail keys); Follow-up (2026-10-31b) (prop debris,
-empty texture slots, surface 0); Test cases; Open questions.
+empty texture slots, surface 0); Follow-up (2026-11-14) (damage screen
+effects, kill call-outs); Test cases; Open questions.
 
 ---
 
@@ -1710,6 +1711,72 @@ From the reference's debris table reader, the destructible aggregate's death han
    - **Where surface 0 comes from**: the server takes a hit's surface from the object hit (its surface flags; the level itself has none) and, if that gives Unknown, from the polygon hit (its stored surface type). Characters' surfaces come from their model data, never Unknown. So a bullet meets Unknown on any solid polygon whose surface type is 0 and on objects with no surface of their own. Install census: 100,922 of 4,057,293 solid physics polygons (2.5 %, in 98 of 105 maps; WAREHOUSE 312 of 32,688, FREEZER 348 of 23,314, JUNK_FLEA 126 of 15,442) and 72,275 of 594,095 solid world-model polygons (12 %) have surface type 0.
    - **What a round does on it** (server ray, `weapon_firing.md` "Penetration"): the impact effect plays with the Unknown look (no bullet hole, stone sounds); a non-level object hit is damaged; then the ray **shoots through**: for a non-level, non-world-model object only if one of its dimensions (2 × half-extent) is below 10; a back-cast from 11 u beyond the entry point to 1 u before it must hit something; the ray restarts from the exit (same surface flags) or the entry, with the range left reduced by the distance travelled (× 1.0), damage × 0.6 from then on (cumulative), and its direction re-perturbed by whole thousandths in −10 … 10 on the right and up axes. So walls and floors of surface 0 up to about 11 u thick are shot through, as `weapon_firing.md`'s table must add (its Follow-up (2026-10-31b)).
 
+## Follow-up (2026-11-14): damage screen effects and kill call-outs
+
+From the reference's client damage-effect manager and its callers (character effect messages, body effects, the movement and weapon code that read it, the HUD's damage-effect control), the server's progressive-damage bookkeeping, the server's death handling and the client's team call-out player, plus the Steam install's archive directories and its effect file (names only where marked). Confidence per item; "(inferred)" marks what was not read directly. Answers the rule part of Open question 26 and adds to section 11 "Kill call-outs". Test cases 97–106.
+
+1. **What starts a damage screen effect** (high).
+   - Only **progressive** damage (damage over time: burn, poison, bleeding, stun, freeze, heal over time and the other lasting kinds of `grenades.md` and `gear_perks.md`) starts one. An ordinary hit never does.
+   - The server keeps each character's progressive entries (type, damage per second, time left). Every **0.5 s** of server time it processes them all, taking the frame time accumulated since the last pass off each entry's time left. A damage type is **active** for that pass when at least one of its entries still had time left at the start of the pass. Infected poison counts as poison and first-aid healing as heal. A second flag set, **dealing**, holds the types whose damage in that pass was non-zero.
+   - **Gear exception** (a quirk): after the pass, the protection of the worn gear against the type of the **last entry processed** (summed over pieces, at the zone of the victim's last hit, torso if none) is compared with 1. At 1 or more that one type is dropped from the active set. Stock gear stays under 1 except a few mercenary bodies (burn 1.0 on `Codename_Scorpion`, `gear_perks.md`), so wearing it hides the burn effect when burn was the last entry processed.
+   - For players, whenever the active or dealing set changes, the server sends both to **every** client (reliably) and keeps them in the character's create message for late joiners. All progressive damage is cleared on death, on respawn and while a cinematic camera runs, which clears the sets.
+   - A one-off "choke" hit is treated on the client as progressive for one update (choke damage is not used by stock weapons).
+2. **The effect table** (high for keys and rules; stock values open). `attributes/damagefx.txt`, records `[DamageFX0]`, `[DamageFX1]`, … read until one is missing; the record's number is its id, and table order is the order below. Keys (times in seconds; a missing number reads as 0 unless a default is given):
+
+| Key | Meaning |
+|---|---|
+| `Name` | Name; also makes a console switch `Test<Name>FX` (debug only) |
+| `DamageType` | The damage type number (`gear_perks.md`: 3 burn, 9 poison, …) the record reacts to |
+| `HudIcon` | Full-screen picture shown on the HUD's damage-effect control (item 5) |
+| `StartSound`, `LoopSound` | Played once at the start; looped while active |
+| `TintColor` | Screen tint at full strength, 0–255 per channel (divided by 255) |
+| `TintRampUpTime`, `TintOnTime`, `TintRampDownTime`, `TintOffTime` | The tint cycle (item 4) |
+| `FadeTime` | Fade-out after the effect stops; also the HUD picture's fade time |
+| `RotationMax`, `RotationSpeed`, `RotationRandomRange` | Camera roll wobble: amplitude, speed, and the random fraction range of each swing (vector, x = low, y = high; default 0.5, 1.0) |
+| `FOVMax`, `FOVXSpeed`, `FOVYSpeed` | Field-of-view wobble: amplitude and speeds |
+| `MinFXPercent` | Wobble strength when standing still, clamped to 0..1 (item 4) |
+| `LightScaleColor`, `LightScaleSpeed` | Scene darkening towards a colour, 0–255 per channel (divided by 255), and its speed |
+| `AllowMovement`, `AllowInput` | 0 blocks movement or all input while the effect is active. Read without a default, so a record that leaves them out blocks both |
+| `NumJumpsToEscape` | > 0: that many jump presses end the effect and the damage (item 4) |
+| `FXName` | Effect group (`CLIENTFX`) played on the local player in the first-person ("really close") pass, looping |
+| `3rdPersonFXName` | Effect group looped on **other** players who carry the type |
+| `3rdPersonInstantFXName` | Effect group played once on a character hit by an instant hit of the type |
+| `3rdPersonDeathFXName` | Effect group played on a body killed by the type |
+| `BodyFXName` | Effect group played on a body when the server sends the type's body message |
+| `InstantEffect` (default 0) | 1: the effect ends when its `FXName` group finishes |
+| `AttachCameraToAnimation`, `ShowLocalClientModel`, `AnimationControlsFX` (default 0) | Single-player leftovers: camera on the head with weapons off; own body visible; sound and visuals started and stopped by model keys `DAMAGE_FX_KEY START/STOP` |
+| `Sprinkles0..` | Particle "sprinkle" types around the camera, by name from the effect attribute file |
+
+3. **Starting and stopping, per client** (high). On any change of a character's sets, the client walks the table in order:
+   - **Local player, type active**: the record starts, unless it is already running or the local player is dead. Starting: the start sound plays once (local, player-medium priority); the loop sound starts looping (local, player-low priority); the tint cycle begins at ramp-up from 0; the sprinkles and the `FXName` group start; the wobbles and the darkening restart from 0; the HUD picture is set (item 5).
+   - **Local player, type no longer active**: the record stops **with a fade**: the loop sound, the sprinkles and the effect group end at once; the tint, darkening, wobble and HUD picture fade over `FadeTime` (item 4).
+   - **Other players**: type active → their `3rdPersonFXName` group is started on them once (looping) if not already running; inactive → it is shut down. Instant hits of a type → `3rdPersonInstantFXName` once on them (if none is running).
+   - **Instant clear** (no fade): on the local player's death, on the dying and respawn transitions, on a map change, and when the console variable `EnableDamageFX` (default 1) is below 1, every record stops at once and nothing fades.
+   - While an external camera is used the tint and darkening are removed and nothing updates; while the game is paused or not in play nothing updates.
+4. **Per frame, for each running record** ($\Delta t$ = frame time, s):
+   - **Strength factor** $m = p + \mu\,(1 - p)$ with $p$ = `MinFXPercent` and $\mu$ the local player's movement fraction (current speed over the current speed limit, `movement.md`). It scales the wobbles only.
+   - **Tint cycle** (while running): ramp-up over $T_{up}$, tint $= C \cdot t / T_{up}$; on for $T_{on}$, tint $= C$; ramp-down over $T_{down}$, tint $= C\,(1 - t/T_{down})$; off for $T_{off}$, tint 0; then ramp-up again, forever. $t$ is the time in the current phase; the time beyond a phase's end carries into the next. $C$ = `TintColor`/255.
+   - **Darkening** (while running): $L \leftarrow \min(1, L + v_L \Delta t)$, $v_L$ = `LightScaleSpeed`; light scale per channel $= \max(K_c, 1 - L)$, $K$ = `LightScaleColor`/255. A result of white (all channels within 0.01 of 1) counts as none.
+   - **Roll wobble** (while running): an offset $r$ moves at `RotationSpeed` towards a target; on reaching the upper target it turns down and a new lower target $-R\cdot U(a, b)$ is drawn; on reaching the lower target it turns up and a new upper target $R\cdot U(a, b)$ is drawn ($R$ = `RotationMax`, $U(a,b)$ uniform between `RotationRandomRange`'s x and y). The first frame starts it downwards. The camera is rolled about its view axis by $r\,m$ (not on a ladder, not while passing through the world).
+   - **FOV wobble** (while running): offsets $f_x, f_y$ move at `FOVXSpeed`, `FOVYSpeed` and bounce between $\pm$`FOVMax` (reversing direction at each limit). The camera's FOV is set to its current FOV plus $f\,m$ on each axis. (Quirk, inferred effect: the current FOV read back already holds the previous frame's offset, so the offsets accumulate unless something else resets the FOV that frame. Harmless when `FOVMax` is 0.)
+   - **HUD picture**: while running, its alpha rises by $255/$`FadeTime` per second to 255.
+   - **Fade** (after a stop, for `FadeTime` seconds, $t$ from the stop): tint $=$ (tint at the stop)$\cdot\max(0, 1 - t/$`FadeTime`$)$; darkening $L\cdot\max(0, 1 - t/$`FadeTime`$)$; roll and FOV offsets move back towards 0 at their speeds (set to 0 when within one step); the HUD picture's alpha falls by $255/$`FadeTime` per second and the picture hides at 0.
+   - **Combining**: the tint of all running and fading records is combined by the per-channel **maximum**; that is the damage slot of the screen tint, which is an **additive light** on the whole 3D scene (combined with the other tint sources, such as flash, by per-channel maximum and clamped to 1). The darkening is combined by the per-channel **minimum** and set as the scene's global light scale (multiplied).
+   - **Movement and input**: if any running or fading record has `AllowMovement` 0, the local player cannot move; `AllowInput` 0 turns off all game input.
+   - **Escape by jumping**: with `NumJumpsToEscape` $n > 0$, each fresh press of jump (release in between) counts one; at $n$ the record stops and the client asks the server to clear that damage type's progressive entries.
+   - **Spread**: while a running record of poison or stun has its type in the **dealing** set, the weapon's movement spread fraction is forced to 1 (`weapon_firing.md` Spread, "poison or stun forces $\mu S$ to 1"). Without a poison or stun record nothing changes.
+5. **The HUD picture** (high). Only HUD layouts that have a control named `DamageFX` show it: of the stock layouts, the Fireteam (PvE) and the Snowball Fight HUDs. The control is resized to the full screen and given the record's `HudIcon`. In the other modes nothing is drawn for `HudIcon`.
+6. **Stock data** (open; the attribute file is keyed and could not be read with this session's means). Names in the archives (inferred, by name only): burn: `fx/damage/burn/get_burn_loop.wav`, flame textures and an orange flicker sprite under `fx/damage/burn/`, and effect groups `Burning_1st` (a 3-component first-person group), `Burning_3rd`, `Damage_Fire_3rd`; poison: `ui_snd/poisonloop1.wav` and a green flicker sprite under `fx/damage/poison/`, and **no** first-person poison effect group; others: `Bleeding_3rd`, `Healing_3rd`. So burn very likely has a first-person flame effect, a loop sound and a third-person flame; poison likely a loop sound and a tint only. The tint colours, times and whether any record blocks movement are not known (Open question 26).
+7. **Kill call-outs, additions to section 11** (high for the rules; files by name only).
+   - The records: `autocastsound.txt` `[AutoCastTeams3DSound0]` is `EnemyDown`, `[AutoCastTeams3DSound1]` is `ManDown` (the index is what the server sends). Each lists files per sound template; the client picks one of the speaker's template's files uniformly at random, and plays nothing if that template's list is empty or the record's radius is 0.
+   - Files in the archives (names only; the keyed attribute file was not read): `chars_snd/male/vma_enemydown_ma.wav` and `chars_snd/female/vm_enemydown_fa.wav` (note `vm_`, not `vma_`). **No** archive holds a "man down" file, which agrees with `ManDown` being empty in the stock data.
+   - **Speaker of `ManDown`**: the living player of the victim's team nearest to the victim, **strictly** closer than 1000 u (straight-line distance; the reference's limit is named like a squared distance but compared with the plain distance). The victim itself does not qualify (it is dead).
+   - **Killer without a player**: when nothing that maps to a player killed the victim (a fall, the world, a non-squad AI), the killer team reads 0, which differs from the victim's, so an `EnemyDown` is still sent, with team 0 and the male template from the damager's position. No player is on team 0, so nobody hears it.
+   - **Squad AI**: when an AI squad member kills, the killer is its leader player: the leader's template speaks `EnemyDown`, from the AI's position (inferred: the position is taken from the damaging object).
+   - **Free-for-all** (every player a team of their own, `game_modes.md`): the killer's `EnemyDown` reaches only clients on the killer's team id, which is the killer alone; `ManDown` never has a speaker.
+   - **Suicide and team kill**: no `EnemyDown`; `ManDown` still goes to the victim's nearest living teammate.
+   - Who hears: only clients whose own team equals the sent team; 3D at the speaker's position with the record's radius, following the speaker; high priority.
+
 ## Test cases
 
 Distances are listener (camera) to source unless stated. "Gain" is g(d) of
@@ -2015,6 +2082,16 @@ Prop debris, empty texture slots and surface 0 (Follow-up (2026-10-31b)).
 94. **Unknown surface table.** The install's surface table: surface 0 has shoot-through 1, thickness 10, perturb 10, range × 1.0, damage × 0.6; the shoot-through list is the 19 ids of Follow-up (2026-10-31b) 3.
 95. **Shot through an Unknown wall.** A server ray hits a level wall of surface type 0, 8 u thick, then a torso 500 u away: the torso takes the shot's damage × 0.6 (no other dampening); a 12 u wall of surface 0 stops the ray (limit 10 + 1 u, `weapon_firing.md` "Penetration") and nothing behind it is hit.
 96. **Unknown census.** WAREHOUSE's physics BSP has 312 solid polygons of surface type 0 out of 32,688; across the install 100,922 of 4,057,293 (98 maps) and 72,275 of 594,095 world-model polygons.
+97. **Progressive flags (Follow-up 2026-11-14, 1).** A player receives a burn entry of 5 s at t = 0.1 s (server passes exactly at 0.0, 0.5, 1.0 …; each pass takes 0.5 s off): burn is active in the sets sent after the pass at 0.5 and stays active through the pass at 5.0; the pass at 5.5 finds no time left and sends the sets without burn.
+98. **Gear hides burn.** Same burn on a player wearing a body piece with burn protection 1.0 and no other entry → burn never appears in the active set; no burn effect on any client.
+99. **Tint cycle.** A test record with `TintColor` <255, 128, 0>, ramp-up 0.5, on 1.0, ramp-down 0.5, off 1.0: tint (0.5, 0.251, 0) at 0.25 s, (1.0, 0.502, 0) at 1.0 s, (0.5, 0.251, 0) at 1.75 s, 0 at 2.5 s, (0.5, 0.251, 0) again at 3.25 s.
+100. **Fade.** That record stopped at 1.0 s (tint (1.0, 0.502, 0)) with `FadeTime` 2.0: tint (0.5, 0.251, 0) 1 s later, 0 after 2 s; the loop sound stops at the stop.
+101. **Two records.** Burn tint (0.4, 0.2, 0) and poison tint (0, 0.3, 0) running together → damage tint (0.4, 0.3, 0); a flash tint of (1, 1, 1) on top → (1, 1, 1).
+102. **Darkening.** `LightScaleColor` <128, 128, 128>, `LightScaleSpeed` 1.0: after 0.25 s scale 0.75 per channel; from 0.498 s on 0.502 (the colour floor).
+103. **Strength factor.** `MinFXPercent` 0.25: standing still m = 0.25; at half speed m = 0.625; at full speed m = 1.
+104. **Death clears.** Burn running with `FadeTime` 2; the local player dies → tint, loop sound and HUD picture gone that frame, no fade.
+105. **HUD picture by mode.** Burn record with a `HudIcon`, local player burning in TDM → no picture; in Fireteam → the picture covers the screen, alpha rising by 255/`FadeTime` per second.
+106. **Call-outs (Follow-up 2026-11-14, 7).** Alpha player A kills Bravo player V; Bravo player C stands 999 u from V and D 1000 u → C speaks `ManDown` (if the template has files; stock: silent), not D. With C at 1000 u too → nobody. V dies falling → no client plays an `EnemyDown`. In free-for-all, A kills V → only A's client plays A's `EnemyDown` (male: `vma_enemydown_ma.wav`).
 
 ## Open questions
 
@@ -2144,6 +2221,13 @@ Prop debris, empty texture slots and surface 0 (Follow-up (2026-10-31b)).
     were not readable on this box, so which damage types have a visible
     effect, and how strong, is open. Read the damage-effect attribute file
     from the install.
+    **Rules answered (2026-11-14):** Follow-up (2026-11-14) 1–5, cases
+    97–105. **Still open:** the stock records of `attributes/damagefx.txt`
+    (which types have one, their tint colours and times, sounds, effect
+    groups, `HudIcon`, and whether any blocks movement or input). Item 6
+    lists the likely assets by name. Read the file with a decrypting reader
+    (or a capture: stand in a gas cloud and in fire with `Shader` off,
+    screenshot every 0.25 s, and measure the tint).
 27. **Local auto-cast files** (Corrections 2026-10-22, 8): the files of the
     kill, dash, idle and heartbeat entries per sound template, and each 3D
     hurt kind's own radius, are to be read from the install's auto-cast
@@ -2170,3 +2254,10 @@ Prop debris, empty texture slots and surface 0 (Follow-up (2026-10-31b)).
     direction) whose switch is never set for prop debris; the per-axis
     offsets are assumed. Check: `Window` glass shards all start from one
     point 10 u off the pane's centre.
+33. **Kill call-out files** (Follow-up (2026-11-14) 7): the `EnemyDown`
+    file lists per template in the keyed `autocastsound.txt` were not read;
+    only the archive names `vma_enemydown_ma.wav` (male) and
+    `vm_enemydown_fa.wav` (female) were seen, and the record's radius (1000
+    in section 11) was not re-read. Check: read `[AutoCastTeams3DSound0]`
+    and `[AutoCastTeams3DSound1]`; which templates (VIP, infected) list
+    which file.

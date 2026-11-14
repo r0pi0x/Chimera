@@ -3,7 +3,7 @@
 Source basis: the client's weapon logic (fire, reload and per-round reload state machine, spread and the multi-ray path), the client's player manager (zoom levels, field of view, scope sway, mouse scaling while zoomed, automatic zoom-out), the client's interface overlay code (scope overlay), the shared weapon and modification attribute managers, the server's player object (reload bookkeeping per class), plus the shipped attribute data (weapons file, modifications file, projectile effects file) and the first-person view-model animation files, all from a reference client build (US data set). Numbers for typical weapons are that build's data; the Steam build may differ (see Open questions).
 Status: draft
 
-Sections: Summary; Units and conventions; Constants; How the data marks a class; Typical weapons; Behavior (1 assault rifles, 2 SMGs, 3 machine guns, 4 pistols, 5 shotguns, 6 sniper rifles, 7 zoom and scope, 8 launchers and other classes); Per-tick order; Edge cases; Quirks; Corrections (2026-10-19); Corrections (2026-10-28); Test cases; Open questions.
+Sections: Summary; Units and conventions; Constants; How the data marks a class; Typical weapons; Behavior (1 assault rifles, 2 SMGs, 3 machine guns, 4 pistols, 5 shotguns, 6 sniper rifles, 7 zoom and scope, 8 launchers and other classes); Per-tick order; Edge cases; Quirks; Corrections (2026-10-19); Corrections (2026-10-28); Corrections (2026-10-30); Follow-up (2026-11-14) (zoom sounds, focus blur); Test cases; Open questions.
 
 This spec builds on `weapon_firing.md` (one rifle, the M4A1) and says only what differs. Terms used without definition here (spread fraction $p$, firing meter $F$, movement meter $M$, cone $n$, fire cycle, view kick $J$) are defined there.
 
@@ -503,6 +503,50 @@ From the client weapon's fire-animation choice and its pre-fire lookup, the shar
    - Expect: test cases 43 and 44.
 2. **Special weapons zoom like guns.** There is no class rule for zoom: a special weapon zooms exactly when its scope slot holds a scope part with zoom levels (its `DefaultScopeAttach`, e.g. `XM25 Scope`, `LGB_scope`), with that part's levels, FOVs, overlay and `ZoomTime` (`attachments.md` "Zoom"), refused while reloading or (unzoomed) while firing a `ReloadAfterFire` weapon, the same as for a rifle. A dot-sight-type part only toggles dot-sight mode.
 
+## Follow-up (2026-11-14): zoom sounds and the focus blur
+
+From the client's zoom command and zoom reset, its post-processing pass, the install's full-screen blur shader file (`shaders/fullscreen/gblur.fx`, read in place) and the Steam install's modification file (`attributes/mod.txt`, build 26236938) and archive directories. Where 7.2, 7.5 or 7.10 disagree, this section wins. Confidence is given per item; "(inferred)" marks what was not read directly. Test cases 45–51.
+
+**1. Zoom sounds: which records name them** (high).
+
+- The sounds belong to the **scope part** (the slot-1 modification record, `[Mod#]` in `attributes/mod.txt`), keys `ZoomInSound` and `ZoomOutSound`. Weapon records have no zoom-sound key.
+- Every part with `ZoomLevel` > 0 in the Steam data names both keys, and always the same file for in and out:
+
+| Parts | `ZoomInSound` = `ZoomOutSound` |
+|---|---|
+| 72 parts: every sniper scope, every built-in rifle and SMG sight, every red-dot, holo, ITECH and HDS-4 sight, `XM25 Scope`, `NEMEXIS_Scope` | `GUNS_SND_SR\M24\zoom.wav` |
+| 2 parts: `LGB_scope`, `napalm_scope` (air-strike designators) | `GUNS_SND_ETC\MOAB\Zoom.wav` |
+
+- So in the stock game every zoom step, in or out, on every weapon, plays the same M24 click; only the two air-strike designators differ. The archives also hold about 30 per-weapon `guns_snd_sr/<weapon>/zoom.wav` files (Dragunov, L96A1, M200, TRG-21 and others). No attribute record names them, so the zoom command never plays them (Open question 14).
+- An empty key plays nothing; no other file is tried.
+
+**2. Zoom sounds: when they play** (high, except where marked).
+
+- **On every accepted press** (7.2), at the moment of the press, as the FOV transition starts: the zoom-in sound when the level goes up (0 → 1, and 1 → 2 on two-level scopes), the zoom-out sound when it goes back to 0. A refused press plays nothing.
+- **On an instant reset while zoomed** (7.5: weapon switch, death and the other player-mode clears, an external or cinematic camera): the zoom-out sound **does** play. This corrects 7.5's "no sound". The reset is silent only when the level was already 0 and no transition ran. The record used is the scope part the client's player statistics hold at that moment (inferred: normally the part of the weapon being put away, since the reset runs from the weapon-change notice; not traced to the frame).
+- **Automatic zoom-outs** (7.6 bolt, 7.5 reload) are ordinary presses, so they play the zoom-out sound (and the intermediate step of a two-level scope plays the zoom-in sound).
+- **Spectating in first person**: the spectated player's scope part is used for the press and for the sound.
+- **How**: a local sound (2D, not positioned, no distance falloff), priority "misc medium", default volume. Only the zooming player hears it (and a first-person spectator of them, whose own client runs the same steps). Other players never hear anyone's zoom.
+
+**3. The focus blur** (`FocusTex`; high for the rule, the order and the kernel).
+
+While zoomed, the frame is mixed between itself and a blurred copy through a mask picture: the lens stays sharp and the rest of the screen is blurred.
+
+- **When**: on every frame on which the local player is zoomed in the sense of $Z$ (level > 0 **or** a zoom transition running, so also during the zoom-out transition) **and** the game's post-processing shaders run. That needs the `Shader` option on (`options.md`; default off) on a machine whose pixel and vertex shader versions pass the client's minimum (inferred, medium: `Shader` is the switch the post-process tests). With shaders off there is no blur at all, only the overlay of 7.10.
+- **The mask**: the `FocusTex` of the local weapon's current scope part, looked up every frame. If the current weapon has no scope part, the previous mask stays (at start-up `shaders/image/ScopeFocus.dtx`). Every zoomable stock part names one (list below). Only the mask's **alpha** is used.
+- **Order in the frame**: after the world, the view model and the scope overlay card of 7.10 are rendered, and before the 2D HUD. The HUD is never blurred.
+- **Steps** ($W \times H$ the screen in pixels; texture coordinates $u, v \in [0, 1]$ over the whole screen; all sampling bilinear and clamped at the edges):
+  1. **Scene copy.** The back buffer is copied, then passed through the game's saturation pass into a full-size scene image $S$. That pass moves each pixel halfway towards its grey value: per channel $S = \tfrac12 c + \tfrac12 (0.3 r + 0.59 g + 0.11 b)$. (Inferred, medium: the shader fixes its mix factor at 0.5 as a constant, so the client's attempt to set it from the `PureSaturate` console value, default 1.0, should not take effect. If it did, $S$ is the frame unchanged. Open question 15.) With bloom on, $S$ is the bloomed scene instead (bloom is not specified here).
+  2. **Downsample** into an image $D$ of $\lfloor W/4\rfloor \times \lfloor H/4\rfloor$ pixels. Each pixel is the mean of four samples of $S$ at $(u \pm 1/W,\ v \pm 1/H)$ around its own centre: one **full-screen** pixel diagonally, not one small pixel.
+  3. **Vertical blur** of $D$, same size: $B_1(u,v) = \tfrac12 D(u,v) + \tfrac14 D(u, v + 8/H) + \tfrac14 D(u, v - 8/H)$.
+  4. **Horizontal blur** of $B_1$, same size: $B(u,v) = \tfrac12 B_1(u,v) + \tfrac14 B_1(u + 8/W, v) + \tfrac14 B_1(u - 8/W, v)$. The tap distance is 8 full-screen pixels, i.e. 2 pixels of the quarter-size image. One pass each way, no repeats.
+  5. **Merge** over the whole screen: with $a$ the mask's alpha at $(u, v)$ (the mask stretched once over the full $W \times H$, whatever its own size or the screen's aspect), the output pixel is $a\,S + (1 - a)\,B$, with $B$ sampled bilinearly from the quarter-size image. Alpha 1 = sharp, alpha 0 = blurred.
+- **Parameters**: none in the data besides the mask. The weights 0.5 / 0.25 / 0.25, the 8-pixel tap distance, the quarter-size images and the 4-tap downsample are fixed. There is no time ramp: the blur is at full strength on the frame of the press and gone on the frame the zoom-out transition ends (or on an instant reset).
+- **Stock masks** (`FocusTex` in `UI_HUD_Weapon\Scopes\DTX\`, number of parts in brackets): `DotSight_Focus_A` (23: red-dot A and B grades, `AR Dot`, `INSAS_Scope`, `MP5_SD_DOT_B/C`, `DotSight_HKG38_AR`), `DotSight_Focus_C` (11: HDS-4 grades, `pp19mod Scope`), `DotSight_Focus_B` (10: ITECH grades, `ITECH_CQB`), `DotSight_Focus_D` (9: holo sights), `SR_Focus_Dragunov_01` (5: `Dragunov Scope`, `L115 Scope`, `M200 Scope`, `XM25 Scope`, `Barrett Scope`), `SR_Scope_Focus_A` (3: `Sniper Scope`, `PSG Scope`, `Sniper_Scope_EagleEye_FAMAS`), `AR_Focus_G36_01` (3: the two G36 sights, `Scope_M4A1_AdvancedEra`), `AirStrike_Focus` (2: `LGB_scope`, `napalm_scope`), and one part each: `AR_Focus_AUG_01`, `AR_Focus_F2000`, `AR_Focus_L85A1MOD`, `SMG_Focus_P90_01`, `SMG_Focus_SR2_Veresk`, `SR_Focus_m1866`, `SR_Focus_BlackDragon`, `PVE_Robot_SR_focus` (`NEMEXIS_Scope`).
+- **Quirk** (inferred, medium): the mask comes from the **local** weapon's scope part, while $Z$ follows the spectated player's zoom when spectating in first person. A spectator whose own weapon has a different scope (or none) sees the spectated zoom blurred through their own (or the last used) mask.
+
+**4. Stock `ZoomSpriteScale`** (answers Open question 4 (a); high): 71 of the 74 zooming parts carry 0.001; `LGB_scope`, `napalm_scope` and `NEMEXIS_Scope` carry 0.00061.
+
 ## Test cases
 
 Data as in "Typical weapons". Reference character for speeds. "Exact time" means the fire cycle, transitions and spread run on exact time (`weapon_firing.md` Q2 recommendation); frame-quantised cases say so. Unarmoured male victim, damage roll 1.0, unless stated.
@@ -556,13 +600,20 @@ Data as in "Typical weapons". Reference character for speeds. "Exact time" means
 46. **No fill outside the picture**: a test picture 256 x 256, opaque, s = 0.001, 1920 x 1080 → card 592.9 px square centred at (960, 540); every pixel outside it shows the world (with the focus blur's mix where that pass is on), none is black from the overlay.
 43. **Pistol latency (Corrections 2026-10-30, 1).** 60 fps, press seen on update 0: M92FS → round on update 2 (33.3 ms), the same as Remington_870; M4A1 (0 ms `prefire`) → update 3 (50.0 ms). Case 40's M92FS value is replaced by this.
 44. **Long pre-fire (Corrections 2026-10-30, 1).** A rifle copy whose `prefire` is 200 ms at rate 1, 60 fps, press on update 0 → `prefire` from update 1, seen done on the first update at least 200 ms (+1 ms) later (update 14, 233.3 ms), `fire_0` started there, round on update 15 (250 ms).
+45. **Zoom sounds, one level (Follow-up 2026-11-14, 1–2).** L96A1 (`Sniper Scope`): press → `GUNS_SND_SR\M24\zoom.wav` once, local, on the press frame; press again → the same file once more (zoom-out). A press refused during a reload → no sound.
+46. **Zoom sounds, two levels.** M107CQ (`Barrett Scope`): presses 0 → 1 → 2 → 0 → zoom-in, zoom-in, zoom-out sounds, all `GUNS_SND_SR\M24\zoom.wav`. `LGB_scope` → `GUNS_SND_ETC\MOAB\Zoom.wav` both ways.
+47. **Reset sound.** Zoomed at level 1 with the L96A1, switch weapon → FOV normal on that frame and the zoom-out sound plays once. Not zoomed, switch weapon → no sound.
+48. **Who hears it.** Player A zooms; player B 100 u away → B hears nothing.
+49. **Focus blur off.** `Shader` option off → zoomed frame has no blur (overlay only).
+50. **Focus blur kernel.** `Shader` on, bloom off, 1024 x 768 → work images 256 x 192. (a) A uniform frame of colour (1, 0, 0): $S$ = (0.65, 0.15, 0.15) everywhere (step 1 with the fixed 0.5), $B = S$, so the output is (0.65, 0.15, 0.15) whatever the mask. (b) The 1-D kernel of steps 3–4 applied to a single bright quarter-image pixel of value 1 with neighbours 0 gives 0.5 at it and 0.25 at the pixels 2 to each side (taps at ±8 screen px = ±2 quarter pixels), 0 at ±1 quarter pixel. (c) Mask alpha 1 everywhere → output = $S$; alpha 0.5 → the mean of $S$ and $B$.
+51. **Focus blur timing.** Zoom in with the L96A1 (0.18 s) → the blur is on from the press frame; zoom out → it stays until the frame the zoom-out transition ends, then is gone; no fade.
 
 ## Open questions
 
 1. **Which build's data?** All numbers are the US reference data and view models; the Steam build may differ. Re-read the eight typical weapons and the scope records once the attribute reader works.
 2. **Animation per weapon**: the view-model animation file was matched to each weapon by name (model table mapping not re-traced here). Confirm the M60, Minimi, R870, L96A1 and M92FS lengths in game: rounds per minute, pump and bolt time, shell reload time.
 3. **Minigun loop keys**: the 170 ms loop has fire keys at both 0 and 170 ms. Whether a loop restart fires one round or two at the seam decides 5 or 6 rounds per loop (1765 or 2118 per minute). Count rounds spent in 10 s of holding.
-4. **Scope overlay layout.** **Answered (2026-10-28)** from the reference: size, placement and margins are in 7.10 (scales with the screen height, square texels, centred, no fill). Still open: (a) the stock scopes' `ZoomSpriteScale` values were not re-read (the attribute file is keyed and this pass did not decrypt it); 0.001 is the reader's default and makes the stock sniper lens about 94 % of the screen height, which fits the art, but confirm per scope. (b) The user remembers the Steam build's scope "filling the screen, a bit stretched". The reference says it is not stretched and, at s = 0.001, leaves a world strip about 175 px wide each side at 1920 x 1080. Either the stock scale is at least 0.00123 (enough for the ring to reach the 16:9 edges), or the Steam build differs, or the memory is of the full-screen focus blur (which *is* stretched to the screen) or of 4:3 play. Check: a screenshot at 1920 x 1080 zoomed with the L96A1 (`Sniper Scope`): measure the lens width in pixels (≈ 1019 px wide at s = 0.001) and look at the side edges.
+4. **Scope overlay layout.** **Answered (2026-10-28)** from the reference: size, placement and margins are in 7.10 (scales with the screen height, square texels, centred, no fill). (a) **Answered (2026-11-14)**: the Steam data's zooming parts carry 0.001, except `LGB_scope`, `napalm_scope` and `NEMEXIS_Scope` at 0.00061 (Follow-up (2026-11-14) 4). Still open: (b) The user remembers the Steam build's scope "filling the screen, a bit stretched". The reference says it is not stretched and, at s = 0.001, leaves a world strip about 175 px wide each side at 1920 x 1080. Either the stock scale is at least 0.00123 (enough for the ring to reach the 16:9 edges), or the Steam build differs, or the memory is of the full-screen focus blur (which *is* stretched to the screen) or of 4:3 play. Check: a screenshot at 1920 x 1080 zoomed with the L96A1 (`Sniper Scope`): measure the lens width in pixels (≈ 1019 px wide at s = 0.001) and look at the side edges.
 5. **Hold-breath command**: a hold-breath command exists in code with no binding or menu entry here. Check whether the Steam build exposes it.
 6. **Pellet carry-over in the live game**: is `AllowMultipleVectorsPerRoundBug` still 1 in the Steam client, and does the live server still accept the repeated reports? Test: one pellet clipping a bot's edge at 500 units should do far more than 9.
 7. **Two-level bolt zoom-out** (Q3): confirm on the ASW338LM that the scope steps to level 2 before leaving.
@@ -572,3 +623,5 @@ Data as in "Typical weapons". Reference character for speeds. "Exact time" means
 11. **Spectator zoom**: how a spectated player's zoom and scope are mirrored (the reference has code for it) belongs to a spectator spec.
 12. **Zoom during the draw**: the zoom reset runs from the weapon-change notice. The reference notes that notice may be sent twice (at the start and the end of a switch). If it is sent again when the draw ends, a zoom started during the draw is cancelled then. Test: switch to the L96A1 and press zoom 200 ms into the 1100 ms draw.
 13. **Cone arithmetic precision**: whether the reference client truncates the product $n \cdot g$ at double precision (64 for 50 × 1.3) or after rounding to a 32-bit float (65) depends on how it was compiled. Only factors whose products land within a rounding step of an integer differ (1.3 on the double barrel is the shipped case found). Check: the double barrel's crosshair gap at rest.
+14. **Per-weapon zoom files** (Follow-up (2026-11-14) 1): about 30 `guns_snd_sr/<weapon>/zoom.wav` files exist in the archives but no attribute record names them. Whether a view-model animation key plays them (so a bolt sniper would sound its own click besides the scope's M24 click) was not traced. Check: zoom the M200 in game and listen for two different clicks; or read the M200 view model's animation keys.
+15. **Saturation of the blurred frame** (Follow-up (2026-11-14) 3, step 1): the shader fixes its grey mix at 0.5, so while zoomed with `Shader` on the whole frame (lens included) should look half desaturated. Check: a screenshot zoomed and unzoomed with `Shader` on, bloom off, comparing a saturated colour inside the lens.

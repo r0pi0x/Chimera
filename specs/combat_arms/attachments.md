@@ -418,7 +418,7 @@ v_{in} = \frac{\text{fov\_normal} - \text{fov}_{target}}{\texttt{ZoomTime}},\qqu
 - **Other players' shots** (observers): treated as silenced when the shooter's muzzle attachment has `Type` silencer (0) or muzzle attachment (4). The sound is then picked by its silencer level as above. A silenced type with level 0 would play **nothing** (no shipped record).
 - **AI hearing** (server stimulus radius): uses the weapon's silenced radius entry at position $\ell + 1$ instead of $\ell$ (Quirk Q6). Every shipped weapon has equal first and second entries, so the result is the same.
 - The muzzle light of a silenced shot is not shown to others.
-- Zoom sounds: the sight's own (`ZoomInSound` / `ZoomOutSound`, often a sniper "zoom" click).
+- Zoom sounds: the sight's own (`ZoomInSound` / `ZoomOutSound`). In the Steam data every zooming sight names `GUNS_SND_SR\M24\zoom.wav` for both, except the two air-strike designators (`GUNS_SND_ETC\MOAB\Zoom.wav`); local, heard by the zooming player only, on each accepted press and on an instant reset while zoomed. Details and the `FocusTex` blur: `weapon_classes.md` Follow-up (2026-11-14).
 
 ## Crosshair, HUD and overlay
 
