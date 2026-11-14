@@ -1110,7 +1110,9 @@ fn animate(
     }
     for (tick, bg, border, children) in &mut ticks {
         let a = elapsed.map_or(1.0, |e| ((e - tick.delay) / tick.dur).clamp(0.0, 1.0));
-        if let Some(mut bg) = bg {
+        // The final label has no fill of its own (a node's default
+        // background is transparent black: never lit).
+        if let Some(mut bg) = bg.filter(|_| tick.kind != TickKind::Final) {
             let base = match tick.kind {
                 TickKind::Death => 0.75,
                 TickKind::Stall => 0.06,
