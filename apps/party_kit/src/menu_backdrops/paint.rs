@@ -45,6 +45,8 @@ pub struct ImageItem {
     pub min: Vec2,
     pub size: Vec2,
     pub color: LinearRgba,
+    /// The texels drawn (its ink), none for the whole image.
+    pub rect: Option<bevy::math::Rect>,
 }
 
 /// A half-plane kept: `n . p + c >= 0`.

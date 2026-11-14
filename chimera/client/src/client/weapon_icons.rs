@@ -138,21 +138,10 @@ impl WeaponIcons {
 /// The rows of `image` that hold its art (first row, one past the last, in
 /// texels; a pixel counts from 10 % opacity): an icon may be painted high in
 /// a bigger texture, as Combat Arms' kill icons are (20 rows at the top of
-/// 64 x 32). None for an image whose pixels aren't here as RGBA bytes.
+/// 64 x 32). None for an image whose pixels aren't here as RGBA bytes
+/// (`chimera_ui::icon_ink::image_ink`'s rows).
 pub fn ink_rows(image: &Image) -> Option<(f32, f32)> {
-    use bevy::render::render_resource::TextureFormat as F;
-    if !matches!(image.texture_descriptor.format, F::Rgba8Unorm | F::Rgba8UnormSrgb) {
-        return None;
-    }
-    let (w, h) = (image.width() as usize, image.height() as usize);
-    let data = image.data.as_deref()?;
-    if w == 0 || data.len() < w * h * 4 {
-        return None;
-    }
-    let inked = |y: &usize| data[y * w * 4..(y + 1) * w * 4].chunks_exact(4).any(|p| p[3] >= 26);
-    let first = (0..h).find(inked)?;
-    let last = (0..h).rev().find(inked)?;
-    Some((first as f32, last as f32 + 1.0))
+    chimera_ui::icon_ink::image_ink(image).map(|r| (r.min.y, r.max.y))
 }
 
 /// The text font a glyph icon of `em` is drawn in at `scale`
