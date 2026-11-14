@@ -15,9 +15,25 @@
 //! - Maps: `+map greybox` (the default) or `+map <game>:<name>` (a bare
 //!   name works too) from the install (`GameServer::load_map`), converted
 //!   lean (no textures); `changelevel <map>` (or `map <map>`) loads
-//!   another in the background and moves every player there, a fresh
-//!   match (`gameplay::new_game`). Clients load the map from their own
-//!   install by name.
+//!   another in the background (its data and what its spawn computes from
+//!   the data alone, `map::prepare`) while the game plays on, then brings
+//!   it in over frames as a front end does (`finish_level_change`: the
+//!   old map out and the new one spawned a step a frame, `SPAWN_BUDGET`,
+//!   its colliders in the frames after the map's, the simulation paused
+//!   until the last is in, so no tick sees part of a map and none is
+//!   owed after), a fresh match on it (`gameplay::new_game`) and every
+//!   player moved there. What needs the map's physics then
+//!   (`map::MapHooks::settle`: the bots' navigation mesh on a task, the
+//!   spawn spots a slice a frame) is done while it plays, and the
+//!   server's map isn't ready until then (`map::LocalMapLoad`: a
+//!   minigame's next match and its lobby wait for it). No frame of a
+//!   change is long (docs/performance.md, "A dedicated server's map
+//!   change"), so the server's clock loses no time to it and its clients'
+//!   clocks need no jump. Floods are never whole in a tick
+//!   (`nav_gen::SliceFloods`): the start map settles the same way from
+//!   the server's first frames, its bots standing and its players
+//!   spawning at the map's spawn points until theirs are made.
+//!   Clients load the map from their own install by name.
 //! - Players join with the game's app (`+connect <ip>:<port>`); a server
 //!   takes eight unless told otherwise (`maxplayers`; `ServerHooks::
 //!   maxplayers`).
@@ -56,7 +72,9 @@
 //! player's install); without `greybox_tick`, changing to the greybox
 //! keeps the game's tick (the greybox has no tick of its own); a
 //! minigame's map pool isn't rotated by the server (a map change keeps
-//! the minigame, its match starts over).
+//! the minigame, its match starts over); the start map is spawned whole
+//! before the server listens, and a change's settling is out of time
+//! after `SETTLE_MAX_SECS` of wall time (its floods go on in play).
 
 use std::{
     io::BufRead,
@@ -326,6 +344,14 @@ impl GameServer {
                 self.hooks.greybox_tick
             }
         };
+        self.new_match(world, greybox_tick);
+    }
+
+    /// A fresh match on the map now in the world (`swap_map`'s, and a
+    /// `changelevel`'s once its map is all in): the gameplay's tick
+    /// (`greybox_tick` on the greybox), `gameplay::new_game`, the
+    /// minigame's match over again.
+    fn new_match(&self, world: &mut World, greybox_tick: Option<f64>) {
         // At the gameplay's tick (the game's).
         let tick = match greybox_tick {
             Some(secs) => Duration::from_secs_f64(secs),
@@ -444,6 +470,18 @@ impl Plugin for ServerPlugin {
                 read: Arc::new(move |id: &str| install_map_file(info, id)),
                 cache: info.content_cache(),
             });
+        }
+        // Floods of the map's physics (the bots' navigation mesh, the spawn
+        // spots) on a task or a slice a tick, never whole in one; the start
+        // map's from its first frames (a slice a frame, as a change's).
+        if !at_once() {
+            app.init_resource::<map::nav_gen::SliceFloods>();
+            if !on_greybox {
+                app.insert_resource(LevelSettle {
+                    tick: 0,
+                    started: std::time::Instant::now(),
+                });
+            }
         }
         let maps = match &hooks.maps {
             Some(m) => m.help.to_string(),
@@ -570,16 +608,82 @@ pub fn listen(world: &mut World) -> Result<std::net::SocketAddr, String> {
     Ok(addr)
 }
 
-/// A map loading in the background for `changelevel`.
+/// A map loading in the background for `changelevel`: its data, and the
+/// parts of its spawn that need only the data (`map::prepare`: the
+/// colliders' shapes, the props' brushes).
 #[derive(Resource)]
 struct LevelLoad {
     id: String,
-    task: bevy::tasks::Task<Result<MapData, String>>,
+    task: bevy::tasks::Task<Result<(MapData, map::prepare::Prepared), String>>,
+}
+
+/// The loaded map coming into the world a step a frame
+/// (`map::prepare::begin_map_change`, `SPAWN_BUDGET`; its colliders after
+/// the map's frame), the simulation waiting (`Time<Virtual>` paused): no
+/// tick sees part of a map.
+#[derive(Resource)]
+struct LevelSpawn {
+    id: String,
+    summary: String,
+    /// `Time<Virtual>` was paused already.
+    was_paused: bool,
+}
+
+/// The map is in and plays; what needs its physics (`map::MapHooks::
+/// settle`: the bots' navigation mesh on a task, the spawn spots a slice
+/// a frame) is under way, and after a `changelevel` the server's map
+/// isn't ready until it is done (`map::LocalMapLoad`: a minigame's next
+/// match waits for it). The start map's too, from the first frames.
+#[derive(Resource)]
+struct LevelSettle {
+    /// The simulation's tick when the map came in.
+    tick: u64,
+    started: std::time::Instant,
+}
+
+/// What of a frame a map's spawn takes while it comes in (a server's
+/// frame is 3.3 ms, `FPS_MAX`): the network is still answered a hundred
+/// times a second meanwhile.
+pub const SPAWN_BUDGET: Duration = Duration::from_millis(8);
+
+/// Ticks a spawned map runs before its settling starts: the collision is
+/// in the spatial queries' trees after the first physics steps.
+const SETTLE_AFTER_TICKS: u64 = 3;
+
+/// The longest the settling holds the server's map back; a flood not
+/// done by then goes on in play (`nav_gen::SliceFloods`).
+const SETTLE_MAX_SECS: f32 = 30.0;
+
+/// `CHIMERA_SPAWN_AT_ONCE=1`: a `changelevel`'s map comes in whole in one
+/// frame and floods run whole in a tick (no `nav_gen::SliceFloods`, no
+/// settling), as before the change was spread: the A/B for measuring
+/// (`heavy::server_map_change`).
+fn at_once() -> bool {
+    chimera_core::env::var("CHIMERA_SPAWN_AT_ONCE").is_ok_and(|v| v == "1")
+}
+
+/// Whether a `changelevel`'s map is on its way into the world or settling
+/// there (not while it only loads: the game plays on then).
+pub fn level_coming_in(world: &World) -> bool {
+    world.contains_resource::<LevelSpawn>() || world.contains_resource::<LevelSettle>()
+}
+
+/// A spawn or settling under way is called off (another map comes): the
+/// simulation runs again.
+fn call_off_level(world: &mut World) {
+    if let Some(spawn) = world.remove_resource::<LevelSpawn>()
+        && !spawn.was_paused
+        && let Some(mut time) = world.get_resource_mut::<Time<Virtual>>()
+    {
+        time.unpause();
+    }
+    world.remove_resource::<LevelSettle>();
+    world.remove_resource::<map::LocalMapLoad>();
 }
 
 /// `changelevel <map>`: the greybox at once; a map of the game loaded in
-/// the background (the game plays on), then swapped in
-/// (`finish_level_change`).
+/// the background (the game plays on), then brought in over the next
+/// frames (`finish_level_change`).
 pub fn change_level(world: &mut World, name: &str) -> Result<Option<String>, String> {
     let server = world.resource::<Serving>().0;
     let id = server.map_id(name);
@@ -591,40 +695,81 @@ pub fn change_level(world: &mut World, name: &str) -> Result<Option<String>, Str
         swap_map(world, net::GREYBOX, None);
         return Ok(Some("changed level to the greybox".into()));
     }
-    if world.contains_resource::<LevelLoad>() {
+    if world.contains_resource::<LevelLoad>() || world.contains_resource::<LevelSpawn>() {
         return Err("a map is loading already".into());
     }
     // Clients hear of it now (`net::maps`: the map's name changes first).
     world.insert_resource(LoadedMapName(id.clone()));
     let context = map::LoadContext::of(world);
+    // The spawn's own work on the data is done there too (`map::prepare`).
+    let prepare = map::prepare::preparation(world);
     let task = bevy::tasks::AsyncComputeTaskPool::get().spawn({
         let id = id.clone();
-        async move { server.load_map_in(&id, &context) }
+        async move {
+            let data = server.load_map_in(&id, &context)?;
+            let prepared = prepare.run(&data);
+            Ok((data, prepared))
+        }
     });
     world.insert_resource(LevelLoad { id: id.clone(), task });
     Ok(Some(format!("changing level to {id}...")))
 }
 
-/// `GameServer::swap_map` for the server this app serves (`Serving`).
+/// `GameServer::swap_map` for the server this app serves (`Serving`): in
+/// this frame, whole (a test's; `changelevel` spreads it).
 pub fn swap_map(world: &mut World, id: &str, data: Option<MapData>) {
+    call_off_level(world);
     world.resource::<Serving>().0.swap_map(world, id, data);
 }
 
+/// A `changelevel`'s map, each frame: its load polled; once loaded, the
+/// old map out and the new one in a step a frame, the simulation waiting
+/// (`LevelSpawn`); then a fresh match on it while it settles
+/// (`LevelSettle`). docs/performance.md, "A dedicated server's map
+/// change".
 fn finish_level_change(world: &mut World) {
+    if world.contains_resource::<LevelSpawn>() {
+        spawn_level_steps(world, SPAWN_BUDGET);
+        return;
+    }
     let wait = chimera_core::tasks::waits(world);
-    let Some(mut load) = world.get_resource_mut::<LevelLoad>() else {
+    let result = world
+        .get_resource_mut::<LevelLoad>()
+        .and_then(|mut load| chimera_core::tasks::poll(&mut load.task, wait));
+    let Some(result) = result else {
+        // No map to bring in: the one that plays settles on.
+        if world.contains_resource::<LevelSettle>() {
+            settle_level(world);
+        }
         return;
     };
-    let Some(result) = chimera_core::tasks::poll(&mut load.task, wait) else {
+    let Some(LevelLoad { id, .. }) = world.remove_resource::<LevelLoad>() else {
         return;
     };
-    let id = load.id.clone();
-    world.remove_resource::<LevelLoad>();
     match result {
-        Ok(data) => {
+        Ok((data, prepared)) => {
             let summary = format!("loaded {id}: {} spawns", data.spawns.len());
-            swap_map(world, &id, Some(data));
-            world.resource_mut::<Console>().info(summary);
+            // The map left is done settling.
+            call_off_level(world);
+            greybox::unload(world);
+            // The server's map isn't ready until it has settled.
+            world.insert_resource(map::LocalMapLoad { map: id.clone() });
+            map::prepare::begin_map_change(world, data, prepared, map::MapDebugView::Normal);
+            let was_paused = world.get_resource::<Time<Virtual>>().is_none_or(|t| t.is_paused());
+            if let Some(mut time) = world.get_resource_mut::<Time<Virtual>>() {
+                time.pause();
+            }
+            world.insert_resource(LevelSpawn { id, summary, was_paused });
+            // `CHIMERA_SPAWN_AT_ONCE=1`: every step, the colliders and the
+            // new match in this frame, as before the change was spread
+            // (an A/B for measuring).
+            if at_once() {
+                while world.contains_resource::<LevelSpawn>() {
+                    spawn_level_steps(world, Duration::MAX);
+                }
+            }
+            // The old map went in this frame: the new one's steps from the
+            // next.
         }
         Err(e) => {
             // Back to the map that plays: clients never left it.
@@ -639,6 +784,55 @@ fn finish_level_change(world: &mut World) {
                 .print(console::Level::Error, format!("changelevel {id}: {e}"));
         }
     }
+}
+
+/// A frame of `LevelSpawn`: the map's next steps; once it is all in, the
+/// simulation runs again, with a fresh match on it, while it settles.
+fn spawn_level_steps(world: &mut World, budget: Duration) {
+    if !map::prepare::spawn_some(world, budget) {
+        return;
+    }
+    let Some(LevelSpawn { id, summary, was_paused }) = world.remove_resource::<LevelSpawn>() else {
+        return;
+    };
+    if !was_paused && let Some(mut time) = world.get_resource_mut::<Time<Virtual>>() {
+        time.unpause();
+    }
+    world.insert_resource(LoadedMapName(id));
+    world.resource::<Serving>().0.new_match(world, None);
+    world.resource_mut::<Console>().info(summary);
+    if at_once() {
+        world.remove_resource::<map::LocalMapLoad>();
+        return;
+    }
+    let tick = world.get_resource::<core::SimClock>().map_or(0, |c| c.tick);
+    world.insert_resource(LevelSettle {
+        tick,
+        started: std::time::Instant::now(),
+    });
+}
+
+/// A frame of `LevelSettle`: every hook's slice (`map::MapHooks::settle`),
+/// and the server's map is ready when they are all done.
+fn settle_level(world: &mut World) {
+    let settle = world.resource::<LevelSettle>();
+    let (from, started) = (settle.tick, settle.started);
+    let tick = world.get_resource::<core::SimClock>().map_or(from + SETTLE_AFTER_TICKS, |c| c.tick);
+    if tick < from + SETTLE_AFTER_TICKS {
+        return;
+    }
+    let hooks: Vec<fn(&mut World) -> bool> =
+        world.get_resource::<map::MapHooks>().map(|h| h.settle.clone()).unwrap_or_default();
+    let mut done = true;
+    for hook in hooks {
+        done &= hook(world);
+    }
+    if !done && started.elapsed().as_secs_f32() < SETTLE_MAX_SECS {
+        return;
+    }
+    info!("map settled in {:.2} s", started.elapsed().as_secs_f32());
+    world.remove_resource::<LevelSettle>();
+    world.remove_resource::<map::LocalMapLoad>();
 }
 
 /// Frames a second at most: a packet waits at most a frame (3.3 ms).

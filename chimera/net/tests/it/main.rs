@@ -12,6 +12,7 @@ mod assets;
 mod console_names;
 mod data_formats;
 mod dedicated;
+mod dedicated_change;
 mod game_hooks;
 mod local_load;
 mod minigame_callouts;

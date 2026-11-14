@@ -1,10 +1,11 @@
 //! A loaded map's spawn work done ahead, off the main thread (architecture
 //! review L4, F6): what `spawn_map` would compute from `MapData` alone
 //! (colliders, the props' brushes, the drawer's images) is computed where
-//! the map loads (the client's background load, `client::console`), so
+//! the map loads (the client's background load, `client::console`; a
+//! dedicated server's, `chimera_net::dedicated`), so
 //! the frame that swaps the map in only spawns. Each part's spawn phase
 //! takes its prepared part (`Prepared::take`) or, without one (a map
-//! spawned at startup, a server's change, a test), computes it there with
+//! spawned at startup, a test), computes it there with
 //! the same function: one path, identical results either way.
 //!
 //! `MapHooks::prepare` lists the jobs (`map::build` registers the
@@ -89,7 +90,7 @@ pub fn change_map_prepared(world: &mut World, data: MapData, prepared: Prepared,
     super::change_map_with(world, data, prepared, view);
 }
 
-/// `change_map_prepared` spread over frames: the old map is unloaded now
+/// `change_map_prepared` spread over frames (`MapComingIn` meanwhile): the old map is unloaded now
 /// and the new one spawned a step at a time by `spawn_some`, each frame,
 /// until it says it is done; the world gets the whole map in one frame
 /// (`spawn::SpawnProgress`) and its colliders in the next ones
@@ -100,6 +101,7 @@ pub fn begin_map_change(world: &mut World, data: MapData, prepared: Prepared, vi
     match world.get_resource::<super::MapHooks>().and_then(|h| h.stepped) {
         Some(stepped) => {
             super::pend_map(world, data, prepared, view);
+            world.insert_resource(super::MapComingIn);
             (stepped.begin)(world);
         }
         None => change_map_prepared(world, data, prepared, view),
@@ -118,10 +120,14 @@ pub struct StepAFrame;
 /// Returns whether the map is in, colliders and all (also when no spawn is
 /// under way).
 pub fn spawn_some(world: &mut World, budget: std::time::Duration) -> bool {
-    match world.get_resource::<super::MapHooks>().and_then(|h| h.stepped) {
+    let done = match world.get_resource::<super::MapHooks>().and_then(|h| h.stepped) {
         Some(stepped) => (stepped.step)(world, budget),
         None => true,
+    };
+    if done {
+        world.remove_resource::<super::MapComingIn>();
     }
+    done
 }
 
 /// Prepare the map waiting to spawn (`PendingMap`: one given at startup)

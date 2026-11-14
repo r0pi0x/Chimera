@@ -1444,7 +1444,7 @@ What was on the main thread (each with the fix):
 
 | What | Worst single frame | Fix |
 |---|---|---|
-| The bots' navigation mesh (`ensure_nav`, `nav_gen`: rays and box sweeps of a flood) in one tick when bots first play on a map | 3-6.9 G, a 1.5-2.5 s frame in play | The flood on a task (`nav_gen::NavGenTask`: the `NavGenJob` on the async compute pool, yielding every 500 cells, against `CollisionSnapshot`, a copy of Avian's collider trees, poses and shapes taken once), the same mesh; the main thread only polls it, behind the loading screen (`MapHooks::settle`) after a `map` command or a server's map change, or in play on a map nothing loaded behind a screen (the command line's `--map`). There the bots stood while it was flooded a slice a tick (`CELLS_PER_TICK`, 22.5 M a tick median): de_dust2 headless, a bot first walking 7.3-7.6 s after the round's start (10-13 s in the real app at load 40-60), now 0.43-1.33 s, the main thread 0.2-0.5 M a tick while it waits (one tick taking the snapshot, the rest polling). A front end only (`SliceFloods`, the shell's: a listen server too); a dedicated server floods in one tick |
+| The bots' navigation mesh (`ensure_nav`, `nav_gen`: rays and box sweeps of a flood) in one tick when bots first play on a map | 3-6.9 G, a 1.5-2.5 s frame in play | The flood on a task (`nav_gen::NavGenTask`: the `NavGenJob` on the async compute pool, yielding every 500 cells, against `CollisionSnapshot`, a copy of Avian's collider trees, poses and shapes taken once), the same mesh; the main thread only polls it, behind the loading screen (`MapHooks::settle`) after a `map` command or a server's map change, or in play on a map nothing loaded behind a screen (the command line's `--map`). There the bots stood while it was flooded a slice a tick (`CELLS_PER_TICK`, 22.5 M a tick median): de_dust2 headless, a bot first walking 7.3-7.6 s after the round's start (10-13 s in the real app at load 40-60), now 0.43-1.33 s, the main thread 0.2-0.5 M a tick while it waits (one tick taking the snapshot, the rest polling). A front end only then (`SliceFloods`, the shell's: a listen server too); a dedicated server flooded in one tick until "A dedicated server's map change" |
 | The spawn spots' mesh and tests (`spawns::build`) in the first respawn | 1.2 G | the same, behind the loading screen (`settle_spots`) or a slice a tick from the match's start (`prepare_spots`); the same spots; the map's spawn points for a respawn before they are ready |
 | A game's HUD on its first frame in play: Bevy makes a glyph atlas (a 1 MB image) for each new font and size its texts use, and rasterizes them, on `text_system` (the 37 ms rung: the first into Combat Arms) | 116-122 M less ticks, about 30 ms | every game's HUD shown for 4 frames behind the loading screen (`client::hud::warm_huds`, `gameplay::HudWarm`): 70 M. Texts a HUD shows only in some states (a weapon's name, a lead message, the kill feed, the scoreboard): each HUD's fonts and sizes declared and laid out ahead, the atlases filled on a task (`client::text_warm`, below) |
 | Building a late model (`build_late*`: texels and mip levels, vertices, a skinned mesh's bounds, a deep copy of the view model) | 170 M main, 324 M render in one frame (a frame of up to 336 ms wall) | `render::late_build`: all on a task with reserved handles; only `Assets::insert` on the main thread, 4 MB and 12 materials per queue per frame |
@@ -1509,7 +1509,7 @@ What did not move, and its size (`docs/backlog.md`, "Nothing blocks the main thr
 - Pipelines: no frame in these runs shows pipeline creation on the main or render thread (Bevy compiles them on
   tasks, and a new material draws once ready); not measured on Windows, where DX12's and the
   driver's costs differ.
-- Dedicated servers flood at once: a server's first bot tick is still 3-7 G (nobody watches its frames).
+- Dedicated servers flood at once: a server's first bot tick is still 3-7 G (nobody watches its frames). (Since: on a task or sliced, as a front end's, "A dedicated server's map change" below.)
 
 Guards: `chimera_client`'s `each_hud_is_shown_then_the_playing_one_stays` and `text_warm` (`chimera/client/tests/it/text_warm.rs`: after the warm-up the feed's first kill (its gun's icon glyph and headshot mark too), the board, the panel and a game menu's first opening make no atlas, Bevy's `FontAtlasSet` counted; every atlas put in ahead was under Bevy's own key; an undeclared size is noticed; in play no frame lays out more than `GLYPHS_PER_FRAME` glyphs), `combat_arms`' `ui::text_warm` (its drawn HUD, with and without the warm-up: the feed's first line makes an atlas only without), `chimera/present/tests/it/late_build.rs` (three models far over any game's size come
 in with no frame over 8 M instructions; here 3.5 M), `apps/ultimate_gun_game/tests/it/heavy/rung_frames.rs`
@@ -1844,7 +1844,7 @@ says so only then, the shell stays in `Spawning`, `Time<Virtual>` paused, so no 
 settling work (the nav flood's snapshot, the spawn spots) sees a map with part of its
 colliders. Each collider keeps the mass properties its insert gave it (`counted_colliders`,
 once they are all in). A spawn at once (`spawn_map`: a map at startup, `change_map`, a
-dedicated server's change) inserts each collider with its entity as before, in the same
+dedicated server's change then, since stepped too) inserts each collider with its entity as before, in the same
 command order as the stepped one's entity parts, so both make the same entity.
 cs_office has 430 colliders, dm_lockdown 446, warehouse 18.
 
@@ -1908,7 +1908,8 @@ What is left of a swap over 100 M on the profiling build, in order:
 - **The map's frame on cs_office** (131-134 M): the entities and their hierarchy 36 of 87
   samples, the props' first shadows 24, `calculate_bounds` 10.
 - **A dedicated server's map change** is still one tick with everything in it (nobody
-  watches its frames, but its clients wait for it).
+  watches its frames, but its clients wait for it). (Since: spread over frames, "A
+  dedicated server's map change" below.)
 
 Seen in passing, not looked into: offscreen without `--dump` the audio thread
 (`cpal_alsa_out`) ran flat out during these frames (759 samples in an 85 ms frame, half in
@@ -3961,6 +3962,101 @@ animations and sounds (about 0.33 GB). A client keeps two copies of the
 parsed effect file (the install data's memo and each map's `FxLibrary`,
 `load_fx_file` clones it): sharing one is a client-side saving, not done
 here.
+
+## A dedicated server's map change (2026-11-14)
+
+What "Nothing blocks the main thread" left for servers, seen in the 2026-11-13 rehearsal
+as one tick of 2.7-3.8 G instructions (0.3-0.6 s of CPU on the playtest build) at each
+change of map: a server frame longer than `Time<Virtual>`'s 250 ms drops the rest from the
+server's clock, and each client's command clock jumps back once to follow.
+
+**The repro.** `heavy::server_map_change` in ultimate_gun_game: the server as its binary
+composes it (`ServerPlugin` over the party's `GameServer`, the launch hook, 4 bots, started
+on de_dust2), a new ladder on another map each time (`ugg_new <seed> 13 <map>`: the
+rotation's path, `change_match`, `changelevel`) over cs_office, dm_lockdown, warehouse and
+de_dust2, the session the same on every run (`Sim::repeatable`, a step of the spawn a
+frame: `prepare::StepAFrame`). Every frame from the command until 400 ticks of the new map
+is counted in main-thread instructions, each system's too (`metrics::work`, the compute
+pool's scopes on that thread); dev build. No `perf` on the box that day: the per-system
+counts are the profile.
+
+**What it found** (the server as it was, `CHIMERA_SPAWN_AT_ONCE=1` now; M instructions):
+
+| Map | The swap's frame | The map's first tick | Its second |
+|---|---|---|---|
+| cs_office | 458 (`finish_level_change` 266, the command 107) | 4,237 (`ensure_nav` 4,394 of the counted, the logic world's `load` 78, the match's start 77) | 3,962 (`join` 4,151: the spawn spots) |
+| dm_lockdown | 440 (301, 105) | 4,071 (`ensure_nav` 4,013) | 1,707 (`join` 1,745) |
+| combat_arms:warehouse | 279 (154, 101) | 974 (`ensure_nav` 896) | 1,088 (`join` 1,100) |
+| de_dust2 | 323 (154, 101); 1,455 before the spawn's parts were made by the load | 5,173 (`ensure_nav` 5,165); 5,305 | 5,265 (`join` 5,332); 5,362 |
+
+Three frames in a row, then: the map spawned whole (its colliders' shapes and the props'
+brushes computed in that frame too, as the server's load prepared nothing), the bots'
+navigation mesh flooded whole in the map's first tick (a dedicated server had no
+`nav_gen::SliceFloods`), and the spawn spots' mesh flooded whole at the first join, in the
+next.
+
+**The fixes** (`chimera_net::dedicated`, `finish_level_change`):
+
+- The load's task also runs the spawn's own work on the data (`map::prepare`: the
+  colliders' shapes, the props' brushes), as a front end's load does.
+- The map comes in as behind a front end's loading screen (`prepare::begin_map_change`,
+  `spawn_some`): the old map out in one frame, the new one's steps in the next ones
+  (`dedicated::SPAWN_BUDGET`, 8 ms of a frame: a server's frame is 3.3 ms), the world
+  getting the whole map in one frame and its colliders in the frames after, the simulation
+  paused (`Time<Virtual>`) until the last is in. Then the new game and the minigame's
+  match, as before. No tick sees part of a map and none is owed after; the clients are
+  told of the new map once it is whole (`map::MapComingIn`, which `net::maps::loaded_map`
+  waits for: told at the map's frame they were told again after the new game).
+- Floods never run whole on a server (`ServerPlugin` has `nav_gen::SliceFloods`): the
+  navigation mesh on a task against a copy of the collision, the spawn spots a slice a
+  frame, both started while the new map settles (`map::MapHooks::settle`, as a front
+  end's; the map plays meanwhile). Until they are done the server's map isn't ready
+  (`map::LocalMapLoad`): a minigame's next match and its pre-match lobby wait for it, so
+  nobody spawns at a map's spawn points or beside standing bots. The start map settles
+  the same way from the server's first frames (its match isn't held: bots stand and
+  spawns are the map's spawn points for that moment); when a settling is out of time
+  (30 s) the floods go on in play as a front end's do (the flood's task polled, the
+  spots a slice a tick).
+
+**After** (the same scenario, one run's rows; over three runs the worst frames were
+159-161, 141-152, 133-151 and 101-109 M: the bots' fights before a change differ a
+little run to run; M instructions):
+
+| Map | Worst frame | Which | The command's frame | Frames the simulation waits | Worst spawn step | The map's frame | The colliders' | The first tick's | A settling frame | The match's start |
+|---|---|---|---|---|---|---|---|---|---|---|
+| cs_office | 159 (was 4,237) | the first tick's | 150 | 41 | 83 | 89 | 98 | 159 | 61-81 | 79 |
+| dm_lockdown | 141 (was 4,071) | the first tick's | 129 | 35 | 76 | 63 | 105 | 141 | 61-78 | 91 |
+| combat_arms:warehouse | 151 (was 1,088) | the command's | 151 | 6 | under 60 | under 60 | 72 | under 60 | 61 at most | 73 |
+| de_dust2 | 103 (was 5,265) | the command's | 103 | 30 | under 60 | under 60 | 100 | 73 | 61-86 | 92 |
+
+A settling frame here is a tick's frame (the test's frames are ticks: 20-145 of them,
+1-7 s of the map; a server's 300 frames a second settle in a fraction of that): the
+spots' slice 19-28 M, the tick's own slice of them (`prepare_spots`) 8-14 M, the props
+coming to rest.
+The main thread's instructions over the whole change and its 400 ticks: 14.7 / 11.6 / 4.9
+/ 15.1 G before, 10.1 / 8.1 / 4.1 / 9.7 G after (the navigation flood is a task's now).
+In this run the colliders come in one frame (a repeatable run takes no time budget; at
+most 256 a frame); the server's own frames take `SPAWN_BUDGET` each.
+
+What is left in one frame, none over 160 M on the dev build:
+
+- The command's frame: a new ladder (`ugg_new`, the rotation's next match: 100 M of
+  `run_queue`, drawing every rung's extras; "Nothing blocks the main thread" has it as a
+  match's start) and the old map's unload (2-27 M).
+- The first tick on a Source map (141-159 M: the logic world's `load` 66-78 M, the mass
+  properties and bounds of the colliders the tick's own spawns make): as on a client ("A
+  map's colliders after its swap frame").
+- The match's start after the lobby (`serve_minigame` 75-95 M: the ladder again).
+- A server's start map is still spawned whole before it listens (nobody is on it yet).
+- Not measured on the playtest build or with clients connected (the rehearsal's numbers
+  were that build's): the next rehearsal's `tick_stats` says.
+
+Guards: `heavy::server_map_change` (no frame of the four changes over `WORST_FRAME`, 250 M;
+the simulation waits for the spawn) and `chimera_net`'s `dedicated_change` (a stand-in
+server and a client over loopback: no tick while the map comes in, the whole map in one
+frame and its colliders after, a new game only once it is all in, the client told once,
+let in again and its command clock without a jump; the greybox calls a spawn under way
+off).
 
 ## A client's memory (2026-11-11)
 
