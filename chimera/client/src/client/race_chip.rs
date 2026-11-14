@@ -15,7 +15,8 @@
 //!   shape: a crown, YOU and your rung in the accent, the whole meter in
 //!   the accent, then "+N over NAME" (the gap to second place, whose tick
 //!   gets a hollow mark).
-//! - **The board** (`+showscores`, Tab, held): the chip's plate opens
+//! - **The board** (`+showscores`, Tab, held: `HeldActions::scores`, the
+//!   key polled by `console::poll_showscores`): the chip's plate opens
 //!   into it (64 cq wide, as tall as its rows) in `motion.dur.board.open`
 //!   (0.12 s, `expo_out`) and folds back in `close` (0.09 s,
 //!   `cubic_in_out`), from wherever it is, so Tab can be spammed. Its head
@@ -1008,7 +1009,7 @@ fn open_close(
     if root_node.top != top {
         root_node.top = top;
     }
-    let want = view.active && (held.showscores || staged.is_some_and(|s| s.open));
+    let want = view.active && (held.scores() || staged.is_some_and(|s| s.open));
     super::hud::HudCover::put(&mut cover, super::hud::BOARD_COVER, want);
     let (tl, node, bg) = &mut *plate;
     let target_h = board_h(view.rows.len());

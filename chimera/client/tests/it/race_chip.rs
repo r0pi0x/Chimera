@@ -8,7 +8,7 @@
 
 use bevy::prelude::*;
 use chimera_client::client::{
-    console::HeldActions,
+    console::{HeldActions, poll_showscores},
     minigame_scoreboard::{GunNames, MinigameScoreboardPlugin, ScoreboardRoot},
     race_chip::{BoardContent, BoardRow, ChipContent, ChipLine, LeaderChip, PingMeter, RaceChipRoot, RacePlate, ping_level},
     signal::icons::SignalIcon,
@@ -506,5 +506,48 @@ fn the_chip_plate_fits_its_line_at_every_size() {
             assert!(line > 0.0, "laid out");
             assert!(plate >= line + 1.0, "{pw}x{ph} @{sf} leading {leading}: the plate ({plate}) fits its line ({line})");
         }
+    }
+}
+
+/// Holding Tab (the key bound to `+showscores`, a polled bind that never
+/// runs through the console) opens the board, whatever rung (and so
+/// whichever game's gun and HUD) the local player is on, and letting go
+/// folds it; not while the chat line takes the keys (playtest7: the board
+/// read only the console's `+showscores`, so Tab never opened it).
+#[test]
+fn holding_tab_opens_the_board_on_every_rung() {
+    for rung in 0..4 {
+        let mut sim = sim(true);
+        sim.app.init_resource::<ButtonInput<KeyCode>>().init_resource::<ButtonInput<MouseButton>>();
+        sim.app.add_systems(PreUpdate, poll_showscores);
+        sim.app
+            .world_mut()
+            .resource_mut::<chimera_core::console::Console>()
+            .binds
+            .insert("tab".into(), "+showscores".into());
+        player(&mut sim, "Alpha", rung, 4, true, false);
+        player(&mut sim, "Botty", 2, 1, false, true);
+        for _ in 0..3 {
+            frame(&mut sim, 1.0 / 60.0);
+        }
+        assert!(visible::<ChipContent>(&mut sim) && !visible::<BoardContent>(&mut sim), "rung {rung}: the chip");
+        sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::Tab);
+        for _ in 0..4 {
+            frame(&mut sim, 0.05);
+        }
+        assert!(visible::<BoardContent>(&mut sim), "rung {rung}: Tab held opens the board");
+        assert!(!sim.app.world().resource::<HeldActions>().showscores, "not through the console");
+        sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().release(KeyCode::Tab);
+        for _ in 0..4 {
+            frame(&mut sim, 0.05);
+        }
+        assert!(visible::<ChipContent>(&mut sim) && !visible::<BoardContent>(&mut sim), "rung {rung}: let go, it folds");
+        // Typing chat: Tab is the line's, not the board's.
+        sim.app.insert_resource(chimera_client::client::chat::ChatInput { open: Some(false), ..default() });
+        sim.app.world_mut().resource_mut::<ButtonInput<KeyCode>>().press(KeyCode::Tab);
+        for _ in 0..4 {
+            frame(&mut sim, 0.05);
+        }
+        assert!(!visible::<BoardContent>(&mut sim), "rung {rung}: not while typing");
     }
 }
