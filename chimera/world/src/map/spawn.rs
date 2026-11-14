@@ -12,9 +12,9 @@
 //! parameter: `world_material`, `draws`, `spawn_undrawn`, `spawn_drawn`,
 //! `spawn_prop`, `textures`, `insert_drawn` (`DrawnResource`).
 //!
-//! `spawn_map` runs them all at once (a map at startup, a server's change,
-//! `change_map`); behind a front end's loading screen they run a few a
-//! frame instead (`SpawnProgress`, `spawn_steps`: the drawer's phases in
+//! `spawn_map` runs them all at once (a map at startup, `change_map`);
+//! behind a front end's loading screen and in a dedicated server's
+//! `changelevel` they run a few a frame instead (`SpawnProgress`, `spawn_steps`: the drawer's phases in
 //! their own steps, the props `PROPS_PER_STEP` at a time), the same order,
 //! their commands held until the last step and applied together in a frame
 //! of their own, so the world never holds part of a map. The colliders

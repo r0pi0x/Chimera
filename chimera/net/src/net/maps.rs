@@ -282,11 +282,15 @@ pub fn local_load_under_way(world: &World) -> bool {
 }
 
 /// The loaded map (its id and file hash) once it is in; None while a load
-/// is under way (the name set, the file not spawned yet).
+/// is under way (the name set, the file not spawned yet, or spawned short
+/// of its colliders: `map::MapComingIn`).
 pub fn loaded_map(world: &World) -> Option<(String, Option<[u8; 32]>)> {
     let id = current_map(world);
     if id == GREYBOX {
         return Some((id, None));
+    }
+    if world.contains_resource::<crate::map::MapComingIn>() {
+        return None;
     }
     let file = world.get_resource::<crate::map::MapFile>()?;
     // The file's name with or without its game (`cs_source:de_dust2`).

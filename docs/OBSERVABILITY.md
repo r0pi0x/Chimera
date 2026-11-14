@@ -1389,6 +1389,14 @@ load; work counts don't (performance.md, "Work counts"):
   `CHIMERA_RENDER_BENCH=1 ... heavy::map_swap_render` (Bevy's renderer
   offscreen: the main schedule, extraction and the render world counted
   apart; performance.md, "A map's swap").
+- A dedicated server's map change, frame by frame: `cargo test -p
+  ultimate_gun_game --features dev --test it heavy::server_map_change --
+  --nocapture` (Ultimate Gun Game's server as its binary composes it, a
+  new ladder on another map four times; each frame's main-thread
+  instructions from the command to 400 ticks of the new map, the frames
+  over 60 M with their costliest systems; `CHIMERA_SPAWN_AT_ONCE=1` the
+  old change, the whole map in a frame and floods whole in a tick;
+  performance.md, "A dedicated server's map change").
 - Glyph atlases a text made on its own first frame (a HUD font and size no
   source declared to `client::text_warm`): the log's `text warm: N glyph
   atlases made on a text's first frame (... at [sizes] px)`; `text warm: N

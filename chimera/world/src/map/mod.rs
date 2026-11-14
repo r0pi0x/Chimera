@@ -269,6 +269,8 @@ pub fn unload_map(world: &mut World) {
     for remove in scoped {
         remove(world);
     }
+    // A stepped spawn under way went with them (`PendingMap`).
+    world.remove_resource::<MapComingIn>();
     world.insert_resource(MonitorCamera::default());
     if let Some(mut p) = world.get_resource_mut::<particles::Particles>() {
         p.groups.clear();
@@ -324,6 +326,15 @@ pub struct MapHooks {
     pub settle: Vec<fn(&mut World) -> bool>,
 }
 
+/// A map is coming into the world a step a frame
+/// (`prepare::begin_map_change`, until `prepare::spawn_some` says it is
+/// all in, or it is unloaded): the world may hold the map (`MapFile`)
+/// short of its colliders, and nothing has started on it yet, so it isn't
+/// the loaded map to a network server (`net::maps::loaded_map`: its
+/// clients are taken along once it is whole and the new game started).
+#[derive(Resource, Default)]
+pub struct MapComingIn;
+
 /// A spawned map is still settling behind a front end's loading screen
 /// (`client::console`'s settling, `MapHooks::settle`): its frames advance
 /// the simulation at most a tick each, so a network client can't keep its
@@ -338,8 +349,9 @@ pub struct MapSettling;
 /// local player's map isn't ready. What starts play waits for it: a
 /// listen host's next match (`minigame_net`), its row in the pre-match
 /// lobby, a network client's report that it has the map, and a match's
-/// start cues on this machine. Absent on a dedicated server (it shows
-/// nothing).
+/// start cues on this machine. A dedicated server holds it from the frame
+/// its `changelevel`'s map starts to spawn until that map has settled
+/// (`chimera_net::dedicated`), for the same waits.
 #[derive(Resource, Clone, Debug, Default)]
 pub struct LocalMapLoad {
     /// The map's id.

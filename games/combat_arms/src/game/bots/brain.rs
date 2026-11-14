@@ -382,7 +382,7 @@ pub fn camping(
 // ---------------------------------------------------------------------------
 // Navigation mesh
 
-/// The navigation mesh on its way (`ensure_nav`, a front end's): flooded on a
+/// The navigation mesh on its way (`ensure_nav`): flooded on a
 /// task (`nav_gen::NavGenTask`). Goes with the map (and the task with it).
 #[derive(Resource)]
 pub struct NavJob(nav_gen::NavGenTask);
@@ -391,11 +391,12 @@ pub struct NavJob(nav_gen::NavGenTask);
 /// (`map::nav_gen`) once bots play on a map that has none, from its
 /// spawn points and characters, bounded to the clusters a walking player
 /// reaches where the map has visibility data (`nav_gen::Bounds`). A front end
-/// floods it on a task (`nav_gen::NavGenTask`, the main thread only polling),
-/// started behind the loading screen (`settle_nav`) or, on a map nothing
-/// loaded behind one (the command line's `--map`), from the third tick, bots
-/// standing until it is done (a second or two on de_dust2); a dedicated
-/// server floods at once.
+/// and a dedicated server flood it on a task (`nav_gen::NavGenTask`, the main
+/// thread only polling), started behind the loading screen or while a
+/// server's new map settles (`settle_nav`) or, on a map nothing loaded that
+/// way (the command line's `--map`, a server's start map), from the third
+/// tick, bots standing until it is done (a second or two on de_dust2);
+/// without `nav_gen::SliceFloods` (a test) it is flooded at once.
 pub fn ensure_nav(world: &mut World) {
     if world.contains_resource::<NavMesh>() {
         // The brains' shared copy, kept with the map's mesh.
@@ -500,7 +501,7 @@ fn insert_mesh(world: &mut World, mesh: NavMesh, ai: bool) {
     world.insert_resource(mesh);
 }
 
-/// The whole mesh on this thread (a dedicated server, a test).
+/// The whole mesh on this thread (a test, without `nav_gen::SliceFloods`).
 fn nav_whole(world: &mut World) {
     let start = NavStart::of(world);
     if let Some(mesh) = start.map_ai(world) {

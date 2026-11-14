@@ -4,7 +4,8 @@
 //! `points = "scored"`'s (`spawn_score`, the gun games').
 //!
 //! - Spots (`SpawnSpots`, made once per loaded map on the first spawn, in a
-//!   front end behind the map's loading screen (`settle_spots`, also
+//!   front end behind the map's loading screen and on a dedicated server
+//!   while its new map settles (`settle_spots`, also
 //!   before a minigame starts when a registered one spawns on spots), else
 //!   a slice a tick from the match's start (`prepare_spots`,
 //!   `nav_gen::SliceFloods`: the map's spawn points until they are ready),

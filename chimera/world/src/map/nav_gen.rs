@@ -389,9 +389,10 @@ pub fn generate_within(
     }
 }
 
-/// A front end floods off the main thread (`NavGenTask`) or a slice a tick
-/// (`NavGenJob`), so a mesh made in play stops no frame; without it (a
-/// dedicated server, a test) a flood runs whole. The client shell inserts it.
+/// A front end and a dedicated server flood off the main thread
+/// (`NavGenTask`) or a slice a tick (`NavGenJob`), so a mesh made in play
+/// stops no frame or tick; without it (a test) a flood runs whole. The
+/// client shell and `chimera_net::dedicated::ServerPlugin` insert it.
 #[derive(Resource, Clone, Copy, Debug, Default)]
 pub struct SliceFloods;
 
