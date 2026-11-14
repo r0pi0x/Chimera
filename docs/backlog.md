@@ -126,6 +126,14 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## 0. Playtest feedback (2026-10-07), top priority
 
+### Spectators (user, 2026-11-14)
+
+- **Spectators on the Tab board.** Check whether the party apps support
+  spectating at all (a joining player who doesn't play, or a dead one
+  following others beyond the death cam); if not, add it, then list
+  spectators on the board (at least their names) under the players.
+  Later, after the new UI (docs/plans/active/ugg-ui.md).
+
 ### UGG playtest rehearsal, 2026-11-13 (agent, this box, the playtest6 build)
 
 What the second rehearsal found and didn't fix (fixed ones: the commits

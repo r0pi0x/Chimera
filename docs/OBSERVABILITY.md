@@ -219,10 +219,18 @@ fetch) is fetched first.
   checkout's `chimera.local.toml` (or `mashup.local.toml`) when it has one
   and the caller set none (the post-push checkout has no local config of
   its own, and those tests used to skip there with a note, hiding their
-  failures). It writes `.claude/post-push/<commit>.log`
-  (`last.log`) and a one-line `PASS`/`FAIL` summary to
-  `.claude/post-push/last.txt` (and `history.txt`), exits non-zero on a
-  failure, and trims its checkout's `target/` to 40 GB with `cargo sweep`.
+  failures). It writes `.claude/post-push/<commit>.<UTC time>.<pid>.log`
+  (one per run; `last.log` links the newest) and a one-line `PASS`/`FAIL`
+  summary to `.claude/post-push/last.txt` (and `history.txt`), exits
+  non-zero on a failure, and trims its checkout's `target/` to 40 GB with
+  `cargo sweep`. Runs queue on a `flock` (`.claude/post-push/.lock`), and
+  only the newest waiter keeps waiting: each waiter writes a rising token
+  to `.claude/post-push/.waiting`, and an older one exits 0 when it sees a
+  newer one (the newest tests the latest main anyway). Once it has the
+  lock, a run whose commit already has a result in `history.txt` exits 0
+  saying so; `CHIMERA_POST_PUSH_AGAIN=1` (or a `[base]` argument) tests it
+  again. Don't wait for a run with a loop that pgreps its command line
+  (those deadlocked); just start another run.
   The pre-push hook trims the clone's own `target/` to 150 GB (install
   `cargo install cargo-sweep`; skipped without it). The full
   suite is `cargo nextest run --features dev` (at most 8 tests at once

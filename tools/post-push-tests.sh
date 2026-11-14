@@ -26,9 +26,13 @@
 #    need the games' installs use the main checkout's local config
 #    (CHIMERA_CONFIG set to its chimera.local.toml or mashup.local.toml
 #    when there is one and the caller set none; the file isn't read here).
-# Writes .claude/post-push/<commit>.log (also last.log) and a one-line
-# summary to .claude/post-push/last.txt (appended to history.txt), and
-# exits non-zero on a failure. One run at a time (a second waits).
+# Writes .claude/post-push/<commit>.<UTC time>.<pid>.log (also last.log) and
+# a one-line summary to .claude/post-push/last.txt (appended to
+# history.txt), and exits non-zero on a failure. One run at a time: a second
+# waits, and only the newest waiter keeps waiting (older ones exit 0, the
+# newest tests the latest main). A commit with a result in history.txt
+# isn't tested again (it exits 0 saying so) unless CHIMERA_POST_PUSH_AGAIN=1
+# or a [base] is given.
 set -u
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 common=$(git -C "$here" rev-parse --path-format=absolute --git-common-dir)
@@ -44,15 +48,37 @@ mkdir -p "$out"
 if ! disk_check "$repo"; then
     echo "post-push: WARNING: low disk space: $DISK_FREE_GB GB free of $DISK_TOTAL_GB (floor $DISK_FLOOR_GB GB); the build may fail. tools/clean-worktrees.sh trims build folders" >&2
 fi
+# One run at a time, and one waiter: each run tests the newest pushed main,
+# so a waiter that a newer one has joined behind has nothing left to do.
+# Waiters register a rising token (nanoseconds) in .waiting (written whole by
+# a rename) and poll the lock; one that sees a newer token exits. No pgrep
+# of our own command line: those loops deadlocked before.
 exec 8>"$out/.lock"
-flock -n 8 || { echo "post-push: another run is going; waiting for it" >&2; flock 8; }
+if ! flock -n 8; then
+    token=$(date +%s%N)
+    printf '%s\n' "$token" >"$out/.waiting.$$" && mv -f "$out/.waiting.$$" "$out/.waiting"
+    echo "post-push: another run is going; waiting for it (a newer waiter replaces this one)" >&2
+    newer() { local w; w=$(cat "$out/.waiting" 2>/dev/null) && [ -n "$w" ] && [ "$w" -gt "$token" ] 2>/dev/null; }
+    until flock -w "${CHIMERA_POST_PUSH_POLL:-15}" 8; do
+        newer && { echo "post-push: a newer run is waiting; it will test the latest main, so this one stops" >&2; exit 0; }
+    done
+    newer && { echo "post-push: a newer run is waiting; it will test the latest main, so this one stops" >&2; exit 0; }
+fi
 
 git -C "$repo" fetch --quiet --no-tags "$remote" || echo "post-push: couldn't fetch $remote; testing what's here" >&2
 sha=$(git -C "$repo" rev-parse --verify --quiet "$ref^{commit}") || { echo "post-push: no commit $ref" >&2; exit 2; }
+# Already tested (a result in history.txt): nothing to do, unless asked
+# (CHIMERA_POST_PUSH_AGAIN=1, or a base given on the command line).
+short=$(git -C "$repo" rev-parse --short "$sha")
+if [ -z "${1:-}" ] && [ "${CHIMERA_POST_PUSH_AGAIN:-0}" = 0 ] \
+    && prev=$(awk -v s="$sha" '($1 == "PASS" || $1 == "FAIL") && length($2) >= 7 && index(s, $2) == 1 { l = $0 } END { if (l == "") exit 1; print l }' "$out/history.txt" 2>/dev/null); then
+    echo "post-push: $short already tested, nothing to do (CHIMERA_POST_PUSH_AGAIN=1 reruns): $prev" >&2
+    exit 0
+fi
 base=${1:-$(cat "$out/last-pass" 2>/dev/null)}
 [ -n "$base" ] || base=$(git -C "$repo" rev-parse --verify --quiet "$sha^1") || base=
-short=$(git -C "$repo" rev-parse --short "$sha")
-log=$out/$sha.log
+# One log per run: two runs of a commit never share (nor truncate) one.
+log=$out/$sha.$(date -u +%Y%m%dT%H%M%SZ).$$.log
 started=$(date +%s)
 
 if [ ! -e "$dir/.git" ]; then
@@ -80,7 +106,7 @@ if [ -z "${CHIMERA_CONFIG:-}" ] && [ -z "${MASHUP_CONFIG:-}" ]; then
         fi
     done
 fi
-ln -sf "$sha.log" "$out/last.log"
+ln -sf "$(basename "$log")" "$out/last.log"
 : >"$log"
 
 failed=
