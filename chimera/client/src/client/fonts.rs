@@ -405,6 +405,10 @@ impl UiFonts {
             _ => 16.0,
         };
         let face = match &font.font {
+            // Bevy's default handle holds the default text face.
+            bevy::text::FontSource::Handle(h) if h.id() == AssetId::default() => {
+                self.face(DEFAULT_FAMILY, false).and_then(|f| self.face_bytes.get(&f.handle.id()))
+            }
             bevy::text::FontSource::Handle(h) => self.face_bytes.get(&h.id()),
             _ => None,
         }
@@ -435,6 +439,11 @@ impl UiFonts {
             }
         }
         out
+    }
+
+    /// `text`'s width in `font`, window pixels (`char_offsets`).
+    pub fn width(&self, font: &TextFont, text: &str) -> f32 {
+        self.char_offsets(font, text).last().copied().unwrap_or(0.0)
     }
 
     /// Whether the map's HUD fonts are loaded.

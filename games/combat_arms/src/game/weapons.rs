@@ -1774,6 +1774,13 @@ impl Plugin for CaWeaponsPlugin {
     fn build(&self, app: &mut App) {
         power::plugin(app);
         harm::plugin(app);
+        // Its guns' short names (data/display_names.toml: the split on, and
+        // overrides).
+        chimera_sim::weapon::names::DisplayNamesAppExt::add_display_names(
+            app,
+            "combat_arms data/display_names.toml",
+            include_str!("../../data/display_names.toml"),
+        );
         // Its map pool's rules and measurements (beside the draw's
         // exclusions: what an automatic gun game takes of it).
         super::parts::add_map_pool(app);

@@ -82,6 +82,7 @@ pub mod harm;
 pub mod hits;
 pub mod impact;
 pub mod lagcomp;
+pub mod names;
 pub mod notice;
 pub mod params;
 mod pass_data;

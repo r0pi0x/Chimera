@@ -52,7 +52,7 @@ fn holding_the_key_lists_every_player_and_bot_best_first() {
     let mut sim = Sim::new(SimBasePlugins, (GreyboxMapPlugin, MinigameScoreboardPlugin));
     sim.app.init_resource::<HeldActions>();
     sim.app.insert_resource(Ladder { rungs: vec!["kit:pistol", "kit:weapon_rifle", "kit:weapon_shotgun"], ..default() });
-    sim.app.world_mut().insert_resource(GunNames([("kit:weapon_rifle".to_string(), "K&M Rifle".to_string())].into()));
+    sim.app.world_mut().insert_resource(GunNames::from_full([("kit:weapon_rifle".to_string(), "K&M Rifle".to_string())]));
     player(&mut sim, "Alpha", 1, 4, 2, 3, Some(NetScore { ping: 42, ..default() }));
     player(&mut sim, "Botty", 2, 1, 5, 0, Some(NetScore { flags: score_flags::BOT, ..default() }));
     player(&mut sim, "Cee", 1, 6, 1, 1, None);
@@ -125,7 +125,7 @@ fn a_rung_character_shows_its_own_weapon() {
     });
     sim.app.init_resource::<HeldActions>();
     let knife = "kit:hands";
-    sim.app.world_mut().insert_resource(GunNames([(knife.to_string(), "Hands".to_string())].into()));
+    sim.app.world_mut().insert_resource(GunNames::from_full([(knife.to_string(), "Hands".to_string())]));
     sim.app.insert_resource(Ladder {
         rungs: vec!["kit:pistol", "kit:weapon_knife"],
         extras: vec![
@@ -216,8 +216,8 @@ fn a_long_gun_name_keeps_its_row_one_line() {
     sim.app.init_resource::<HeldActions>();
     sim.app.insert_resource(Ladder { rungs: vec!["kit:short", "kit:long"], ..default() });
     let mut names = GunNames::default();
-    names.0.insert("kit:short".into(), "Pistol".into());
-    names.0.insert("kit:long".into(), "Ironclad Lever Action Rifle Mk. IV Engraved Lv.4 Edition".into());
+    names.full.insert("kit:short".into(), "Pistol".into());
+    names.full.insert("kit:long".into(), "Ironclad Lever Action Rifle Mk. IV Engraved Lv.4 Edition".into());
     sim.app.insert_resource(names);
     sim.app.world_mut().insert_resource(MinigameHud { title: "Kit".into(), ..default() });
     player(&mut sim, "Alpha", 0, 1, 0, 0, None);
@@ -230,6 +230,15 @@ fn a_long_gun_name_keeps_its_row_one_line() {
     let w = sim.app.world();
     let tall = |gun: &str| drawn_y(w, rows.iter().find(|(_, g)| g.starts_with(gun)).expect("the row").0).1;
     let (short, long) = (tall("Pistol"), tall("Ironclad"));
+    // The long name is fitted to its cell (`overlay::fit`): cut at a word
+    // with an ellipsis, never wrapped into the next column.
+    let gun_cell = |gun: &str| {
+        let row = rows.iter().find(|(_, g)| g.starts_with(gun)).expect("the row").0;
+        w.get::<Text>(w.get::<Children>(row).unwrap()[3]).unwrap().0.clone()
+    };
+    assert_eq!(gun_cell("Pistol"), "Pistol");
+    let fitted = gun_cell("Ironclad");
+    assert!(fitted.starts_with("Ironclad") && fitted.ends_with('…'), "{fitted}");
     assert!((short - long).abs() < 0.5, "the long name's row {long} as tall as the short one's {short}");
     for (row, gun) in &rows {
         let (mid, _) = drawn_y(w, *row);
@@ -319,4 +328,48 @@ fn icon_art_drawn_centred(w: usize, h: usize, top: usize, bottom: usize) {
     let (at, tall) = drawn_y(world, icon);
     assert!((at - mid).abs() < 0.5, "the art at {at} in a row centred at {mid}");
     assert!(tall > 0.0 && tall < row_tall, "{tall} in {row_tall}");
+}
+
+/// The board names a gun by its short name: a game's override, else the
+/// automatic split of its full name (the game's file says `split`); the
+/// `gun_names` command lists id, full, short and where it came from.
+#[test]
+fn the_gun_column_shows_short_names() {
+    use chimera_core::console::Console;
+    use chimera_sim::weapon::names::DisplayNamesAppExt;
+    let mut sim = Sim::with(SimBasePlugins, |app| {
+        app.add_plugins((GreyboxMapPlugin, MinigameScoreboardPlugin));
+        app.add_display_names(
+            "kit display_names.toml",
+            "game = \"kit\"\nsplit = true\n[[name]]\nweapons = [\"kit:ra_*\"]\nshort = \"Ra AR-15 DB\"\n",
+        );
+    });
+    sim.app.init_resource::<HeldActions>();
+    sim.app.insert_resource(Ladder { rungs: vec!["kit:glock", "kit:ra_mythic", "kit:m4"], ..default() });
+    sim.app.world_mut().insert_resource(GunNames::from_full([
+        ("kit:glock".to_string(), "Glock23_Champion".to_string()),
+        ("kit:ra_mythic".to_string(), "Sun God Ra AR-15 Double Barrel (Mythic)".to_string()),
+        ("kit:m4".to_string(), "M4A1".to_string()),
+    ]));
+    sim.app.world_mut().insert_resource(MinigameHud { title: "Kit".into(), ..default() });
+    player(&mut sim, "Alpha", 0, 0, 0, 0, None);
+    player(&mut sim, "Bravo", 1, 1, 0, 0, None);
+    player(&mut sim, "Cee", 2, 2, 0, 0, None);
+    sim.app.world_mut().resource_mut::<HeldActions>().showscores = true;
+    sim.ticks(3);
+    let mut got: Vec<(String, String)> = rows(&mut sim).into_iter().map(|r| (r.name, r.gun)).collect();
+    got.sort();
+    let want = [("Alpha", "Glock23"), ("Bravo", "Ra AR-15 DB"), ("Cee", "M4A1")].map(|(a, b)| (a.to_string(), b.to_string()));
+    assert_eq!(got, want);
+
+    sim.app.world_mut().resource_mut::<Console>().submit("gun_names kit");
+    sim.ticks(2);
+    let out: Vec<String> = sim.app.world().resource::<Console>().output.iter().map(|l| l.text.clone()).collect();
+    for line in [
+        "kit:glock | Glock23_Champion | Glock23 (split)",
+        "kit:ra_mythic | Sun God Ra AR-15 Double Barrel (Mythic) | Ra AR-15 DB (override)",
+        "kit:m4 | M4A1 | M4A1 (full)",
+    ] {
+        assert!(out.iter().any(|l| l == line), "{line} in {out:?}");
+    }
 }

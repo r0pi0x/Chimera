@@ -12,7 +12,7 @@
 //! `hud_text` in the panel colour, added to the screen (health flashes red when
 //! it drops: the game's `HealthTookDamage` animation); death notices with team
 //! colours and weapon/headshot icons (another game's gun: its own game's
-//! icon from `client::weapon_icons::WeaponIcons`, else its display name;
+//! icon from `client::weapon_icons::WeaponIcons`, else its short name (`gun_short_name`);
 //! CS:S registers its glyphs there for the other games' feeds, its
 //! headshot glyph as the headshot mark; none while the app draws one feed
 //! for every HUD, `client::kill_feed::OwnKillFeed`); the round's end: the win panel
@@ -70,7 +70,7 @@ use bevy::prelude::*;
 use crate::client::{
     fonts::UiFonts,
     hud_text::{Align, GlyphFont, HudText, width},
-    minigame_scoreboard::{GunNames, gun_name},
+    minigame_scoreboard::{GunNames, gun_short_name},
     text_warm::{PrimaryWindows, WarmText, window_height},
     weapon_icons::{self, WeaponIcon, WeaponIcons, spawn_weapon_icon},
 };
@@ -399,7 +399,7 @@ fn death_notices(
                 }
                 Some(match icons.icon(id) {
                     Some(icon) => NoticeWeapon::Other(icon),
-                    None => NoticeWeapon::Name(gun_name(id, names.as_deref(), catalog.as_deref())),
+                    None => NoticeWeapon::Name(gun_short_name(id, names.as_deref(), catalog.as_deref())),
                 })
             });
         // (A network client has no damage messages: the killing hit's.)

@@ -92,7 +92,7 @@ fn hud_sim_with(warm: bool, extra: impl Fn(&mut App) + Send + Sync + 'static) ->
         },
     ));
     sim.app.insert_resource(Ladder { rungs: vec!["kit:pistol", "kit:rifle"], ..default() });
-    sim.app.world_mut().insert_resource(GunNames([("kit:rifle".to_string(), "Kit Rifle".to_string())].into()));
+    sim.app.world_mut().insert_resource(GunNames::from_full([("kit:rifle".to_string(), "Kit Rifle".to_string())]));
     sim.app.world_mut().insert_resource(MinigameHud { title: "Kit".into(), ..default() });
     for (name, rung) in [("Alpha", 0), ("Bravo", 1)] {
         sim.app.world_mut().spawn((InMinigame, Name::new(name), Rung(rung), Score::default(), MatchesWon(0)));

@@ -98,6 +98,7 @@ mod heavy {
     mod attachment_fit;
     mod bots;
     mod characters;
+    mod display_names;
     mod effects_sounds;
     mod flight_looks;
     mod infected;

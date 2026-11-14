@@ -1,0 +1,37 @@
+# CS:S guns' short names (chimera_sim::weapon::names;
+# docs/plans/active/gun-display-names.md). The full name is the install's
+# own string (its `hud.name` token in resource/cstrike_english.txt); the
+# narrow places (callouts, the Tab scoreboard, kill feeds, the match-end
+# rows) show the short one, which is the full name unless an entry below
+# names one (16 characters at most, the string's own words). No automatic
+# split: CS:S's names are few and short. `gun_names cs_source` in the
+# console lists them.
+game = "cs_source"
+
+[[name]]
+weapons = ["cs_source:weapon_xm1014"]
+short = "LEONE YG1265"
+
+[[name]]
+weapons = ["cs_source:weapon_tmp"]
+short = "SCHMIDT MP"
+
+[[name]]
+weapons = ["cs_source:weapon_m3"]
+short = "LEONE 12 GAUGE"
+
+[[name]]
+weapons = ["cs_source:weapon_m4a1"]
+short = "MAVERICK M4A1"
+
+[[name]]
+weapons = ["cs_source:weapon_mp5navy"]
+short = "K&M SMG"
+
+[[name]]
+weapons = ["cs_source:weapon_awp"]
+short = "MAGNUM SNIPER"
+
+[[name]]
+weapons = ["cs_source:weapon_sg550"]
+short = "KRIEG 550"

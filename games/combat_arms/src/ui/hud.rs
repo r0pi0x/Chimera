@@ -35,8 +35,8 @@
 //! the gameplay's.
 //!
 //! The kill feed draws another game's gun (a party app's) with that game's
-//! icon from `client::weapon_icons::WeaponIcons`, else its display name
-//! (`GunNames`); the install's kill icons are registered there for the
+//! icon from `client::weapon_icons::WeaponIcons`, else its short name
+//! (`GunNames`, `gun_short_name`, fitted to 10 characters); the install's kill icons are registered there for the
 //! other games' feeds, its headshot badge as the headshot mark. While the
 //! app draws one feed for every HUD (`client::kill_feed::OwnKillFeed`,
 //! the party apps) this one stays empty.
@@ -204,7 +204,7 @@ use super::{
 };
 use crate::client::{
     canvas::{HAlign, Scale, VAlign},
-    minigame_scoreboard::{GunNames, gun_name},
+    minigame_scoreboard::{GunNames, gun_short_name},
     weapon_icons::{WeaponIcon, WeaponIcons, spawn_weapon_icon},
 };
 
@@ -2201,9 +2201,13 @@ fn foreign_gun(icon: &KillIcon) -> Option<&str> {
     }
 }
 
+/// The most characters another game's gun's name takes in the kill feed.
+const FEED_NAME_MAX: usize = 10;
+
 /// Draws another game's gun in a kill line's weapon slot (at `at`, in
 /// reference pixels): that game's icon (`WeaponIcons`), else the gun's
-/// name, cut to the slot.
+/// short name (`gun_short_name`), fitted to the slot (`FEED_NAME_MAX`
+/// characters, cut at a word with `…`).
 #[allow(clippy::too_many_arguments)]
 fn foreign_weapon(
     p: &mut ChildSpawnerCommands,
@@ -2222,7 +2226,16 @@ fn foreign_weapon(
             spawn_weapon_icon(p, &icon, tall / 20.0, tall, Some(Vec2::new(r.min.x, r.min.y)));
         }
         None => {
-            let name: String = gun_name(id, names, catalog).chars().take(10).collect();
+            // Its short name, made to fit the slot's 10 characters (cut at a
+            // word with an ellipsis).
+            let short = gun_short_name(id, names, catalog);
+            let fits = |t: &str| t.chars().count() <= FEED_NAME_MAX;
+            let name = if fits(&short) {
+                short
+            } else {
+                // (The shipped words, read only for a name that needs them.)
+                chimera_sim::weapon::names::fit(&short, fits, &chimera_sim::weapon::names::NameWords::shipped())
+            };
             hud_text_at(p, pen, Vec2::new(at.x, at.y + 3.0), &name, FEED_FONT, Effect::Stroke, [200, 200, 200, FEED_TEXT_ALPHA]);
         }
     }

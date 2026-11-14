@@ -12,7 +12,9 @@
 //!   itself), or "Draw".
 //! - **The final standings**, best first, in the Tab scoreboard's
 //!   columns (`minigame_scoreboard`: name as the board names it, kills,
-//!   deaths, the final rung's gun by `minigame_scoreboard::gun_name`,
+//!   deaths, the final rung's gun by its short name
+//!   (`minigame_scoreboard::gun_short_name`; the winner's by its full one,
+//!   `gun_name`), fitted to its cell with the font (`overlay::fit`),
 //!   matches won), with the place; the local player's row highlighted
 //!   (found by its character, which the network maps to the client's).
 //! - **The next map** and a countdown to the change ("Next map: de_dust2
@@ -58,7 +60,7 @@ use chimera_sim::{
     weapon::data::WeaponCatalog,
 };
 
-use super::minigame_scoreboard::{GunNames, gun_name};
+use super::minigame_scoreboard::{GunNames, gun_name, gun_short_name};
 use crate::{
     audio::{
         clip_asset::SoundAsset,
@@ -215,7 +217,15 @@ fn follow(
                 name,
                 kills: r.kills,
                 deaths: r.deaths,
-                gun: r.gun.as_deref().map(|g| gun_name(g, gun_names.as_deref(), catalog.as_deref())).unwrap_or_default(),
+                // The winner's gun by its full name, the others' short.
+                gun: r
+                    .gun
+                    .as_deref()
+                    .map(|g| {
+                        let name = if r.winner { gun_name } else { gun_short_name };
+                        name(g, gun_names.as_deref(), catalog.as_deref())
+                    })
+                    .unwrap_or_default(),
                 wins: r.wins,
                 winner: r.winner,
                 local,
@@ -461,7 +471,7 @@ fn warm_fonts(
 ) -> Vec<super::text_warm::WarmText> {
     let fonts = fonts.as_deref();
     let s = scale(super::text_warm::window_height(&window), players.iter().count());
-    let names: String = names.map(|n| n.0.values().flat_map(|v| v.chars()).collect()).unwrap_or_default();
+    let names: String = names.map(|n| n.full.values().chain(n.short.values()).flat_map(|v| v.chars()).collect()).unwrap_or_default();
     let mut out = Vec::new();
     for part in [MatchEndPart::Title, MatchEndPart::Winner, MatchEndPart::Subtitle, MatchEndPart::Next] {
         out.push(super::fonts::overlay_font(fonts, part.size() * s, part == MatchEndPart::Winner).into());
@@ -602,7 +612,7 @@ fn draw(
     mut commands: Commands,
     mut drawn: Local<Option<(Option<String>, Vec<MatchEndRow>, u32)>>,
     mut sized: Local<Option<u32>>,
-    fonts: Option<Res<super::fonts::UiFonts>>,
+    (fonts, rules): (Option<Res<super::fonts::UiFonts>>, Option<Res<chimera_sim::weapon::names::GunNameRules>>),
 ) {
     let height = window.iter().next().map_or(720.0, |w| w.height());
     let s = scale(height, view.rows.len());
@@ -672,12 +682,14 @@ fn draw(
         });
         for row in &view.rows {
             let color = if row.local { LOCAL } else if row.winner { GOLD } else { TEXT };
+            let row_font = if row.local || row.winner { &bold } else { &font };
+            let gun = super::overlay::fit(fonts.as_deref(), rules.as_deref(), row_font, &row.gun, WIDTHS[4] * s);
             let cells = [
                 (row.place.to_string(), true),
                 (row.name.clone(), false),
                 (row.kills.to_string(), true),
                 (row.deaths.to_string(), true),
-                (row.gun.clone(), false),
+                (gun, false),
                 (row.wins.to_string(), true),
             ];
             p.spawn((
