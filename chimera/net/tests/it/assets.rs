@@ -7,13 +7,13 @@
 //! the store alone fetches the offered sets (and not others) with progress,
 //! then joins and spawns; one with the install fetches nothing; a revoked
 //! token fails the join with the reason; a client with no files of the game
-//! binds its token to the offered service and asks to start again, or, with
-//! no token, is told how to enter one.
+//! binds its token to the offered service and fetches them in the same game
+//! (no restart), or, with no token, is told how to enter one.
 
 use std::{
     collections::BTreeSet,
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     time::Duration,
 };
 
@@ -31,7 +31,7 @@ use chimera_net::{
     net::{
         NetHooks,
         asset_startup::{self, AppGame, StartupFetch, Status},
-        assets::{self, AssetHooks, AssetHost, AssetNames, AssetRelaunch, AssetSession, FILES, PrefetchRate},
+        assets::{self, AssetHooks, AssetHost, AssetNames, AssetSession, AssetsArrived, FILES, PrefetchRate},
         client::{JoinFailure, JoinProgress, JoinStage},
         manifest::{GameMount, LocalMounts, MatchManifest, MountReport},
         memory::LinkConditions,
@@ -437,37 +437,92 @@ fn the_download_shows_its_progress() {
     );
 }
 
-/// A client with no files of the game at all: with a token, the token is
-/// bound to the offered service (its URL and certificate) and the game asks
-/// to start again joining; without one, the join fails saying how to enter
-/// it; bound to another certificate, the join fails and the token isn't
-/// rebound.
-#[test]
-fn a_client_without_files_binds_its_token_and_starts_again() {
-    let svc = Fixture::new("relaunch", 2, Duration::ZERO);
-    let token = svc.user("tester");
-    let no_service = |access: &Path| AssetSession {
-        access: Some(access.to_path_buf()),
-        ..Default::default()
-    };
+/// A client with no files of the game and a token bound to no service
+/// (a tester's first join), its own empty store.
+fn fresh_client(svc: &Fixture, client: &str, token: &str) -> (AssetSession, PathBuf) {
+    let access = svc.dir.join(format!("{client}-access.toml"));
+    chimera_net::net::assets::save_token(&access, token).unwrap();
+    let mut session = svc.session(client, token, false);
+    if let Some(s) = session.settings.as_mut() {
+        s.remote = None;
+    }
+    session.access = Some(access.clone());
+    (session, access)
+}
 
-    // A token: bound, and the game is to start again.
-    let access = svc.dir.join("a.toml");
-    chimera_net::net::assets::save_token(&access, &token).unwrap();
+/// Whether client `i` reads the game from the store now, with the service.
+fn reads_from(sim: &NetSim, i: usize, url: &str) -> bool {
+    let world = sim.clients[i].app.world();
+    let session = world.resource::<AssetSession>();
+    session.served.contains(GAME)
+        && session.settings.as_ref().and_then(|s| s.remote.as_ref()).is_some_and(|r| r.url == url)
+        && world.resource::<LocalMounts>().0.has(GAME)
+}
+
+/// Counts the remounts (`AssetsArrived`).
+static REMOUNTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn count_remount(_: On<AssetsArrived>) {
+    REMOUNTS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// A tester's first join: a token bound to no service, no files of the
+/// game. The token is bound to the offered service and the game's startup
+/// and offered sets come in this same app, with the join's download
+/// stage; the parts read again (`AssetsArrived`), and the client joins and
+/// spawns without leaving the server (no game started again). Joining
+/// again (the server restarted) reuses the binding: nothing bound anew,
+/// nothing read again.
+#[test]
+fn a_first_join_binds_the_token_and_fetches_in_the_same_game() {
+    let svc = Fixture::new("bind_here", 4, Duration::ZERO);
+    let token = svc.user("tester");
+    let (session, access) = fresh_client(&svc, "fresh", &token);
+    let store = session.settings.as_ref().unwrap().store.clone().unwrap();
     let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
-    sim.add_client(client_with(no_service(&access), false));
-    assert!(until(&mut sim, 20.0, |s| s.clients[0]
-        .app
-        .world()
-        .contains_resource::<AssetRelaunch>()));
+    sim.add_client(move |w: &mut World| {
+        client_with(session, false)(w);
+        w.add_observer(count_remount);
+    });
+    assert!(until(&mut sim, 30.0, |s| joined(s, 0)), "joined: {:?}", progress(&sim, 0));
     let bound = Access::load_from(&access);
     assert_eq!(bound.url.as_deref(), Some(svc.front.url().as_str()));
     assert_eq!(bound.fingerprint.as_deref(), Some(svc.fingerprint.as_str()));
-    assert!(progress(&sim, 0).failure.is_none(), "{:?}", progress(&sim, 0).failure);
+    for set in ["base", "players"] {
+        assert!(svc.ids(set).iter().all(|id| store.has(id)), "{set} fetched");
+    }
+    assert!(svc.ids("extra").iter().all(|id| !store.has(id)), "only what the match offers");
+    assert!(reads_from(&sim, 0, &svc.front.url()), "the game is read from the store with the service now");
+    assert_eq!(REMOUNTS.load(std::sync::atomic::Ordering::SeqCst), 1, "read again once");
+    let p = progress(&sim, 0);
+    assert!(p.failure.is_none(), "{:?}", p.failure);
+    let stages: Vec<JoinStage> = p.log.iter().map(|l| l.0).collect();
+    let at = stages.iter().position(|s| *s == JoinStage::Downloading).expect("a download stage");
+    assert!(at < stages.iter().position(|s| *s == JoinStage::Joined).unwrap(), "{stages:?}");
+    // The server saw one player, who never left.
+    assert_eq!(sim.clients.len(), 1);
 
-    // Files in the store from an earlier session, the token entered again
-    // (its binding forgotten, so no service this start): bound, and the
-    // game starts again rather than playing on with nothing to fetch.
+    // The server restarts; the client joins it again on its own, with the
+    // binding it has.
+    let before = fs::read(&access).unwrap();
+    sim.stop_server();
+    assert!(until(&mut sim, 10.0, |s| !joined(s, 0)), "the client heard the server go");
+    sim.start_server();
+    assert!(until(&mut sim, 60.0, |s| joined(s, 0)), "joined again: {:?}", progress(&sim, 0));
+    assert_eq!(fs::read(&access).unwrap(), before, "the binding as it was");
+    assert_eq!(REMOUNTS.load(std::sync::atomic::Ordering::SeqCst), 1, "nothing read again");
+    assert!(reads_from(&sim, 0, &svc.front.url()));
+    assert!(progress(&sim, 0).failure.is_none());
+}
+
+/// Files in the store from an earlier session and the token entered again
+/// (its binding forgotten, so no service this start): bound at the join
+/// and filled in the same game, rather than playing on with nothing to
+/// fetch.
+#[test]
+fn a_token_entered_again_is_bound_at_the_join_and_the_store_filled() {
+    let svc = Fixture::new("rebind", 3, Duration::ZERO);
+    let token = svc.user("tester");
     let again = svc.dir.join("again.toml");
     chimera_net::net::assets::save_token(&again, &token).unwrap();
     let mut session = svc.session("warm", &token, true);
@@ -475,20 +530,46 @@ fn a_client_without_files_binds_its_token_and_starts_again() {
         s.remote = None;
     }
     session.access = Some(again.clone());
+    let store = session.settings.as_ref().unwrap().store.clone().unwrap();
     let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
     sim.add_client(client_with(session, true));
-    assert!(until(&mut sim, 20.0, |s| s.clients[0]
-        .app
-        .world()
-        .contains_resource::<AssetRelaunch>()));
+    assert!(until(&mut sim, 30.0, |s| joined(s, 0)), "joined: {:?}", progress(&sim, 0));
     assert_eq!(Access::load_from(&again).fingerprint.as_deref(), Some(svc.fingerprint.as_str()));
+    assert!(svc.ids("players").iter().all(|id| store.has(id)), "the offered sets fetched");
+    assert!(reads_from(&sim, 0, &svc.front.url()));
+}
+
+/// The join's failures, in the game's loading dialog: a token the
+/// service refuses (revoked or mistyped) at the first join; no token
+/// (how to enter one); a token bound to another service's certificate
+/// (not rebound); a service this game already reads from that refuses
+/// the token now.
+#[test]
+fn a_join_that_cant_bind_says_why_in_the_game() {
+    let svc = Fixture::new("bind_fail", 2, Duration::ZERO);
+    let token = svc.user("tester");
+    let failure = |sim: &mut NetSim| {
+        assert!(until(sim, 20.0, |s| progress(s, 0).failure.is_some()), "{:?}", progress(sim, 0));
+        assert!(!joined(sim, 0));
+        progress(sim, 0).failure.unwrap()
+    };
+
+    // A mistyped token at the first join: bound, then refused.
+    let (session, _) = fresh_client(&svc, "mistyped", "chimera1_mistyped");
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
+    sim.add_client(client_with(session, false));
+    let (kind, reason) = failure(&mut sim);
+    assert!(matches!(&kind, JoinFailure::Download { file, .. } if file == FILES), "{kind:?}");
+    assert!(reason.contains("refused your token") && reason.contains("chimera:asset_token"), "{reason}");
 
     // No token: the server refuses it (it can't fetch), saying how to
     // enter one.
     let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
-    sim.add_client(client_with(no_service(&svc.dir.join("none.toml")), false));
-    assert!(until(&mut sim, 20.0, |s| progress(s, 0).failure.is_some()));
-    let (kind, reason) = progress(&sim, 0).failure.unwrap();
+    sim.add_client(client_with(
+        AssetSession { access: Some(svc.dir.join("none.toml")), ..Default::default() },
+        false,
+    ));
+    let (kind, reason) = failure(&mut sim);
     assert_eq!(kind, JoinFailure::Mounts);
     assert!(reason.contains("+chimera:asset_token <your token>"), "{reason}");
 
@@ -499,25 +580,131 @@ fn a_client_without_files_binds_its_token_and_starts_again() {
     a.bind("https://elsewhere:1", &"ab".repeat(32)).unwrap();
     a.save_to(&other).unwrap();
     let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
-    sim.add_client(client_with(no_service(&other), false));
-    assert!(until(&mut sim, 20.0, |s| progress(s, 0).failure.is_some()));
-    let (_, reason) = progress(&sim, 0).failure.unwrap();
+    sim.add_client(client_with(AssetSession { access: Some(other.clone()), ..Default::default() }, false));
+    let (_, reason) = failure(&mut sim);
     assert!(reason.contains("isn't the one your token is for"), "{reason}");
     assert_eq!(Access::load_from(&other), a, "not rebound");
-    assert!(!sim.clients[0].app.world().contains_resource::<AssetRelaunch>());
 
-    // Started again with that service, which refused the token at startup
-    // (revoked since): the reason, not a loop of restarts.
+    // Already reading from that service, which refuses the token now
+    // (revoked since): the reason.
+    let bound = svc.dir.join("bound.toml");
+    let mut a = Access::default();
+    a.set_token(&token).unwrap();
+    a.bind(&svc.front.url(), &svc.fingerprint).unwrap();
+    a.save_to(&bound).unwrap();
     svc.revoke("tester");
     let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup(svc.host()));
     let mut session = svc.session("again", &token, true);
     session.served.clear();
-    session.access = Some(access.clone());
+    session.access = Some(bound);
     sim.add_client(client_with(session, false));
-    assert!(until(&mut sim, 20.0, |s| progress(s, 0).failure.is_some()));
-    let (_, reason) = progress(&sim, 0).failure.unwrap();
+    let (_, reason) = failure(&mut sim);
     assert!(reason.contains("refused your token"), "{reason}");
-    assert!(!sim.clients[0].app.world().contains_resource::<AssetRelaunch>());
+}
+
+/// The stand-in game as a registered game whose maps have files
+/// (`maps/<name>.bsp`), so a match on its map offers the map's set.
+static FIXTURE_GAME: chimera_core::game_registry::GameInfo = chimera_core::game_registry::GameInfo {
+    id: GAME,
+    short_name: "FG",
+    content_dir: "fg",
+    tick_interval: 1.0 / 64.0,
+    open: |_| Err(std::io::ErrorKind::NotFound.into()),
+    map_cycle: |_| Vec::new(),
+    map_names: |_| Vec::new(),
+    map_file: |n| Some(format!("maps/{n}.bsp")),
+    steam: None,
+    import_map: |_| Err("no".into()),
+    default_binds_cfg: "cfg/default.cfg",
+    default_binds: &[],
+    old_default_binds: &[],
+    movement_cvars: &[],
+    meters_per_unit: 0.0254,
+    console_namespaces: &[],
+};
+
+/// The community map the server plays, which the client's install lacks.
+const COMMUNITY_MAP: &str = "fixture_game:gg_community";
+
+/// `setup` with the stand-in game registered (server and clients).
+fn setup_registered(host: AssetHost) -> impl Fn(&mut App) + Send + Sync + 'static {
+    let base = setup(host);
+    move |app: &mut App| {
+        base(app);
+        app.world_mut()
+            .get_resource_or_init::<chimera_core::game_registry::Games>()
+            .register(&FIXTURE_GAME);
+    }
+}
+
+/// A server in the middle of a match on `COMMUNITY_MAP` (its file
+/// `bytes`), and a client whose install of the game lacks that map (a
+/// stock install, a community map; its token bound to the service, or
+/// bound to none: `bound`): the client gets the map's set from the asset
+/// service, keeps the file where the map's verify step finds it, and never
+/// asks the game server for it.
+fn community_map_join(svc: &Fixture, token: &str, client: &str, bound: bool, bytes: &[u8]) {
+    let mut sim = NetSim::new(SimBasePlugins, LinkConditions::default(), 7, 0, setup_registered(svc.host()));
+    let server_bytes = bytes.to_vec();
+    {
+        let w = sim.server.app.world_mut();
+        w.insert_resource(chimera_world::map::LoadedMapName(COMMUNITY_MAP.into()));
+        w.insert_resource(chimera_world::map::MapFile {
+            name: COMMUNITY_MAP.into(),
+            hash: Some(chimera_net::net::maps::sha256(bytes)),
+        });
+        w.insert_resource(chimera_net::net::maps::MapFiles {
+            read: std::sync::Arc::new(move |id: &str| (id == COMMUNITY_MAP).then(|| server_bytes.clone())),
+            cache: None,
+        });
+    }
+    sim.step();
+    let cache = svc.dir.join(format!("{client}-content"));
+    let mut session = svc.session(client, token, false);
+    if !bound {
+        let access = svc.dir.join(format!("{client}-access.toml"));
+        chimera_net::net::assets::save_token(&access, token).unwrap();
+        session.settings.as_mut().unwrap().remote = None;
+        session.access = Some(access);
+    }
+    let files = chimera_net::net::maps::MapFiles {
+        // The install: the stock maps only.
+        read: std::sync::Arc::new(|_: &str| None),
+        cache: Some(cache.clone()),
+    };
+    sim.add_client(move |w: &mut World| {
+        client_with(session, true)(w);
+        w.insert_resource(files);
+    });
+    let mut from_server = false;
+    let kept = cache.join("maps/gg_community.bsp");
+    let done = until(&mut sim, 30.0, |s| {
+        let p = progress(s, 0);
+        from_server |= p.download.as_ref().is_some_and(|d| d.from == "server");
+        p.failure.is_some() || matches!(p.stage, JoinStage::LoadingMap | JoinStage::Joined)
+    });
+    let p = progress(&sim, 0);
+    assert!(done && p.failure.is_none(), "{:?}", p);
+    assert!(!from_server, "the map never asked of the game server");
+    assert_eq!(fs::read(&kept).ok().as_deref(), Some(bytes), "the map's file kept in the content cache");
+    if !bound {
+        let access = svc.dir.join(format!("{client}-access.toml"));
+        assert_eq!(Access::load_from(&access).fingerprint.as_deref(), Some(svc.fingerprint.as_str()), "bound");
+    }
+}
+
+/// A community map the client's install lacks (2026-11-14: "Could not
+/// download maps/gg_mario_vs_wario.bsp: The server has no file to send"):
+/// its set comes from the asset service the offer names, whether the
+/// client's token was bound already or is bound at this join.
+#[test]
+fn a_community_map_the_install_lacks_comes_from_the_asset_service() {
+    let mut svc = Fixture::new("community", 2, Duration::ZERO);
+    let token = svc.user("tester");
+    let bytes: Vec<u8> = (0..40_000u32).map(|k| (k.wrapping_mul(2_654_435_761) >> 11) as u8).collect();
+    svc.republish("map/gg_community", "maps/gg_community.bsp", &bytes);
+    community_map_join(&svc, &token, "bound_client", true, &bytes);
+    community_map_join(&svc, &token, "fresh_client", false, &bytes);
 }
 
 fn prefetch(sim: &NetSim, i: usize) -> Option<assets::PrefetchState> {
@@ -618,7 +805,7 @@ fn a_player_who_fetched_before_a_republish_gets_the_new_sets() {
         "from the kept manifest alone, nothing looks missing"
     );
 
-    // The next start: the newer manifest, then its `base` behind the window.
+    // The next start: the newer manifest, then its `base` in the background.
     assert_eq!(asset_startup::refresh(&settings, &[game.clone()], Duration::from_secs(10)), [GAME]);
     assert_ne!(fs::read(&kept).unwrap(), old, "the kept manifest replaced");
     let wanted = asset_startup::plan(&settings, &[game.clone()]).expect("the new base file is planned");
@@ -675,7 +862,7 @@ fn run_startup(settings: AssetSettings, wanted: Vec<chimera_assets::sets::Wanted
     panic!("the startup fetch didn't end: {seen:?}");
 }
 
-/// The startup fetch (before the window): planned only for a game that
+/// The startup fetch: planned only for a game that
 /// isn't installed and whose startup sets the store lacks; it fetches
 /// them (and nothing else) with its progress, then plans nothing; a game
 /// the service doesn't list is skipped; a refused token, an unreachable
@@ -711,7 +898,7 @@ fn the_startup_fetch_gets_what_the_games_read_first_or_says_why_not() {
     );
     assert!(
         asset_startup::plan(&settings, &[game(false)]).is_none(),
-        "all here: no window next time"
+        "all here: nothing next time"
     );
 
     // Errors, each with what to do.

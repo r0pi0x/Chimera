@@ -54,8 +54,6 @@ pub mod prematch_lobby;
 pub mod lobby_panel;
 pub mod logo_pass;
 pub mod net;
-pub mod relaunch;
-pub mod startup;
 pub mod net_graph;
 pub mod night_vision;
 pub mod offscreen;

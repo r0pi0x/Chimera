@@ -9,10 +9,10 @@
 //! The game's side of the network: loads the server's map when asked, leaves
 //! the menu once joined, back to the main menu with a fresh local player when
 //! dropped; `listen_if_hosting` after a map loads with `maxplayers` > 1.
-//! `relaunch` (its own module): a join bound the player's asset token to the server's asset
-//! service (`net::assets::AssetRelaunch`): the game starts again (the same
-//! program and options, joining that server) and this one quits, since the
-//! games' mounts are opened at startup.
+//! A join that bound the player's asset token to the server's asset
+//! service goes on in this game (`net::assets`); once the files arrived,
+//! the asset sources' loads that failed without them load again
+//! (`chimera_present::assets::reload_unmounted`, on `AssetsArrived`).
 
 use std::sync::Arc;
 
@@ -39,10 +39,11 @@ impl Plugin for ClientNetPlugin {
             cache: game.and_then(|g| g.content_cache()),
         })
         .add_systems(Update, react);
-        app.add_systems(
-            Update,
-            super::relaunch::relaunch.run_if(resource_added::<crate::net::assets::AssetRelaunch>),
-        );
+        app.add_observer(|_: On<crate::net::assets::AssetsArrived>, server: Option<Res<AssetServer>>| {
+            if let Some(server) = server {
+                chimera_present::assets::reload_unmounted(&server);
+            }
+        });
     }
 }
 
