@@ -83,3 +83,18 @@ swap = 0.6
 
 [motion.dur.matchend]
 lines_loop = 96.0      # the planes: one spacing per loop
+
+# The scroll container (chimera_ui::scroll), every app's: cq, seconds.
+[layout.scroll]
+wheel_step = 3.2       # a wheel notch, cq
+ease = 0.07            # the eased scroll's time constant, s
+friction = 3.2         # a fling slows by e^-friction a second
+max_velocity = 220.0   # a fling's top speed, cq/s
+overscroll = 3.0       # the elastic band's farthest, cq
+spring = 16.0          # back from past an edge, per second
+window = 0.1           # the release's speed from the last window, s
+min_velocity = 1.0     # a fling stops below this, cq/s
+reveal_margin = 0.6    # room kept around a row scrolled into view, cq
+bar_w = 0.5            # the bar's width (the thumb's), cq
+thumb_min = 2.4        # the thumb's least length, cq
+gap = 0.6              # between the content and the bar, cq

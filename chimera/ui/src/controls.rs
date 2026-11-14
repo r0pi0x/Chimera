@@ -9,7 +9,10 @@
 //!   hairline under it) and `section` (a small header with the accent
 //!   mark); `toggle` (a slab sliding on a slanted track, white when on);
 //!   `segmented`; `slider` (track, fill, the default's mark, a slanted
-//!   thumb, the value); `stepper` (`-`, the value, `+`); `dropdown` (a
+//!   thumb, the value); `stepper` (`-`, the value, `+`); their `_ex`
+//!   forms make the value box clickable and, while `Typing`, a text
+//!   field (a number typed in, checked by `typed_number`: any finite
+//!   number inside the setting's hard limits); `dropdown` (a
 //!   field and, open, its list); `key_field` (key caps, "press a key"
 //!   while listening); `text_field` (typed text or stars, a placeholder,
 //!   the caret in accent while it has the keys); `kv` (key/value lines); `modal` (a plate with a
@@ -586,6 +589,23 @@ impl<'a> Ui<'a> {
     /// action; `RelativeCursorPosition` says where it was pressed).
     #[allow(clippy::too_many_arguments)]
     pub fn slider(&self, c: &mut Commands, parent: Entity, frac: f32, mark: Option<f32>, value: &str, w: f32, st: State) -> Entity {
+        self.slider_ex(c, parent, frac, mark, value, w, st, None).track
+    }
+
+    /// `slider` with its value box clickable (give it the action that
+    /// starts typing) and, while `typing`, a text field in its place.
+    #[allow(clippy::too_many_arguments)]
+    pub fn slider_ex(
+        &self,
+        c: &mut Commands,
+        parent: Entity,
+        frac: f32,
+        mark: Option<f32>,
+        value: &str,
+        w: f32,
+        st: State,
+        typing: Option<Typing>,
+    ) -> SliderParts {
         let frac = frac.clamp(0.0, 1.0);
         let s = self.boxed(c, parent, UiStyle { w: Some(w), gap: Some(0.9), shrink: Some(0.0), ..UiStyle::row() });
         let tr = c
@@ -647,21 +667,50 @@ impl<'a> Ui<'a> {
             Pickable::IGNORE,
             ChildOf(tr),
         ));
-        let nv = self.boxed(c, s, UiStyle { min_w: Some(3.4), h: Some(1.6), pad: Some([0.0, 0.4].into()), justify: Some(JustifyContent::FlexEnd), ..UiStyle::row() });
-        self.text(c, nv, Role::Mono, 0.66, Tone::Fg, value);
+        let value = self.value_box(c, s, value, 3.4, st, typing, ValueLook::SLIDER);
+        SliderParts { track: tr, value }
+    }
+
+    /// A number's box (a slider's, a stepper's): clickable, a faint tint
+    /// on hover; typing, a text field with the caret (`Typing`), its
+    /// underline threat when the text was refused.
+    #[allow(clippy::too_many_arguments)]
+    fn value_box(&self, c: &mut Commands, parent: Entity, value: &str, w: f32, st: State, typing: Option<Typing>, look: ValueLook) -> Entity {
+        if let Some(t) = typing {
+            return self.text_field(c, parent, t.text, "", Some(t.caret), false, w, State { focus: true, error: t.error, ..State::NONE });
+        }
+        let over = self.color(Tone::Fg, 0.06);
+        let nv = c
+            .spawn((
+                UiStyle { min_w: Some(w), h: Some(look.h), pad: Some([0.0, look.pad].into()), justify: Some(look.justify), ..UiStyle::row() },
+                Node::default(),
+                BackgroundColor(Color::NONE),
+                Hover { base: Color::NONE, over },
+                clickable(),
+                ChildOf(parent),
+            ))
+            .id();
+        self.text(c, nv, Role::Mono, look.size, Tone::Fg, value);
         if st.focus {
             self.underline(c, nv, Tone::Acc, 0.18);
         } else if st.error {
             self.underline(c, nv, Tone::Threat, 0.18);
-        } else {
+        } else if look.rest_line {
             self.hairline(c, nv, Tone::Fg4, 1.0);
         }
-        tr
+        nv
     }
 
     /// A stepper: `-`, the value (`w` cq at least), `+`, on slanted
     /// outlined keys 1.9 x 1.7 cq. Returns (minus, plus).
     pub fn stepper(&self, c: &mut Commands, parent: Entity, value: &str, w: f32, st: State) -> (Entity, Entity) {
+        let p = self.stepper_ex(c, parent, value, w, st, None);
+        (p.minus, p.plus)
+    }
+
+    /// `stepper` with its value box clickable (a number typed in) and,
+    /// while `typing`, a text field in its place.
+    pub fn stepper_ex(&self, c: &mut Commands, parent: Entity, value: &str, w: f32, st: State, typing: Option<Typing>) -> StepperParts {
         let g = self.boxed(c, parent, UiStyle { gap: Some(0.25), shrink: Some(0.0), ..UiStyle::row() });
         let key = |c: &mut Commands, label: &str| {
             let b = c
@@ -686,13 +735,9 @@ impl<'a> Ui<'a> {
         let minus = key(c, "-");
         // As tall as the keys, so the focus underline sits under the
         // value with a gap, as the slider's and the fields' do.
-        let out = self.boxed(c, g, UiStyle { min_w: Some(w), h: Some(1.7), pad: Some([0.0, 0.3].into()), justify: Some(JustifyContent::Center), ..UiStyle::row() });
-        self.text(c, out, Role::Mono, 0.7, Tone::Fg, value);
-        if st.focus {
-            self.underline(c, out, Tone::Acc, 0.18);
-        }
+        let value = self.value_box(c, g, value, w, st, typing, ValueLook::STEPPER);
         let plus = key(c, "+");
-        (minus, plus)
+        StepperParts { minus, value, plus }
     }
 
     /// A dropdown `w` cq wide: the field (1.9 cq, a faint fill, a hairline
@@ -951,6 +996,66 @@ impl<'a> Ui<'a> {
 
 fn style_abs(ltrb: [Option<f32>; 4], w: f32, h: f32) -> UiStyle {
     UiStyle { w: Some(w), h: Some(h), ..UiStyle::row() }.abs(ltrb)
+}
+
+/// A value box being typed into (`Ui::slider_ex`, `Ui::stepper_ex`):
+/// the text, the caret (a byte index), the text refused.
+#[derive(Clone, Copy, Debug)]
+pub struct Typing<'a> {
+    pub text: &'a str,
+    pub caret: usize,
+    pub error: bool,
+}
+
+/// A value box's look: a slider's (right-aligned, a hairline at rest)
+/// or a stepper's (centred, as tall as its keys, nothing at rest).
+#[derive(Clone, Copy, Debug)]
+struct ValueLook {
+    h: f32,
+    pad: f32,
+    size: f32,
+    justify: JustifyContent,
+    rest_line: bool,
+}
+
+impl ValueLook {
+    const SLIDER: ValueLook = ValueLook { h: 1.6, pad: 0.4, size: 0.66, justify: JustifyContent::FlexEnd, rest_line: true };
+    const STEPPER: ValueLook = ValueLook { h: 1.7, pad: 0.3, size: 0.7, justify: JustifyContent::Center, rest_line: false };
+}
+
+/// What `Ui::slider_ex` built: the track (the drag's) and the value box.
+#[derive(Clone, Copy, Debug)]
+pub struct SliderParts {
+    pub track: Entity,
+    pub value: Entity,
+}
+
+/// What `Ui::stepper_ex` built.
+#[derive(Clone, Copy, Debug)]
+pub struct StepperParts {
+    pub minus: Entity,
+    pub value: Entity,
+    pub plus: Entity,
+}
+
+/// A number typed into a value box, checked (module doc): any finite
+/// number, within `hard` (inclusive) where given; else why not.
+pub fn typed_number(text: &str, hard: (Option<f32>, Option<f32>)) -> Result<f32, String> {
+    let v: f32 = text.trim().parse().map_err(|_| "Not a number".to_string())?;
+    if !v.is_finite() {
+        return Err("Not a number".into());
+    }
+    if let Some(lo) = hard.0
+        && v < lo
+    {
+        return Err(format!("At least {lo}"));
+    }
+    if let Some(hi) = hard.1
+        && v > hi
+    {
+        return Err(format!("At most {hi}"));
+    }
+    Ok(v)
 }
 
 /// A text field's caret (`Ui::text_field`).

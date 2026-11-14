@@ -12,7 +12,8 @@
 //! for you only: the match goes on", the entries (data/main_menu.toml
 //! `[[escape]]`: an index, the label, the HOST chip on Host settings, Esc
 //! on Resume, a triangle on the others); the keyboard's selection
-//! (`EscMenu::focus`, ↑↓ and Enter) a white slab with a slanted right
+//! (`EscMenu::focus`: ↑↓ and Enter, or the pointer while it leads,
+//! `chimera_ui::PointerLead`) a white slab with a slanted right
 //! edge and the accent bar, wiping to its new row along the slant
 //! (`layout.esc.wipe`); hover the faint tint and the right-edge tick. A
 //! running vote dims its entry and shows the question, the counts, a pip

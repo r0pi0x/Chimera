@@ -17,12 +17,20 @@
 //!   each row noting "now" or "next match", for the host or an RCON
 //!   admin (the server's values, set through `rcon`: `host::value`,
 //!   `host::set`). Only settings that exist.
-//! - **Rows** by the setting's pick: a range is a slider (click or drag a
-//!   place, ←→ a step), two choices Off/On a toggle, `widget =
+//! - **Rows** by the setting's pick: a range is a slider (a press on the
+//!   track jumps there and drags, the page drawn again under it with the
+//!   drag kept in `Settings::slide`; the value shows and a preview's cvar
+//!   follows while dragging, and it becomes pending once, at the release,
+//!   with one slider cue; ←→ a step, a cue each; a click on its value box
+//!   types a number, `Settings::edit`: Enter or a click away keeps it,
+//!   Esc puts it back; any finite number is kept, past the range too (the
+//!   thumb stops at the end), unless outside the setting's `hard_min` /
+//!   `hard_max` (options.toml), which shows why beside the box), two choices Off/On a toggle, `widget =
 //!   "dropdown"` a dropdown, up to five choices segmented, more a stepper;
 //!   a bind a key field (Enter or click, then a key, a mouse button or
 //!   the wheel; Esc cancels; Delete clears). ↑↓ move the focus (the
-//!   pointer moves it too), the focused row's help in the pane at the
+//!   pointer moves it too, until a key takes the lead and again once it
+//!   moves: `chimera_ui::PointerLead`), the focused row's help in the pane at the
 //!   right: what it does (the TOML `help`, else the cvar's own), its
 //!   console name, its default and its range.
 //! - **Apply / Revert** (the bar, Ctrl+S / Ctrl+Z), a deferred model: a
@@ -42,6 +50,12 @@
 //!   (`chimera_fullscreen`) applied asks to be kept and goes back by
 //!   itself after `layout.settings.keep_secs` (15 s), the config written
 //!   again. Host settings stay immediate (the host's own cvars or rcon).
+//! - **Scrolling**: the rows sit in the kit's scroll container
+//!   (`chimera_ui::scroll`, key `SCROLL_KEY`): its bar, the eased wheel,
+//!   the right-button pan with its fling; ↑↓ keep the focused row in view
+//!   (`Settings::reveal`, the pointer moving the focus doesn't scroll); a
+//!   page change starts at the top; locked while a bind listens or a
+//!   list or a modal is up.
 //! - **Motion**: a page change wipes the rows in on the 12° slant
 //!   (`controls::Ui::wipe_cover`); screens change through the logo pass
 //!   as before.
@@ -59,15 +73,20 @@
 use std::collections::BTreeMap;
 
 use bevy::{
-    input::{ButtonInput, mouse::AccumulatedMouseScroll},
+    input::{
+        ButtonInput, ButtonState,
+        keyboard::{Key, KeyboardInput},
+        mouse::AccumulatedMouseScroll,
+    },
     prelude::*,
-    ui::{DeprecatedInteraction as Interaction, RelativeCursorPosition, ScrollPosition},
+    ui::{DeprecatedInteraction as Interaction, RelativeCursorPosition},
 };
 use chimera_client::client::{binds, ui_sound::UiCue};
 use chimera_core::console::{Console, ConsoleAppExt};
 use chimera_ui::{
-    IconImages, KitFonts, Role, Theme, Tone, UiClock, UiStyle, UiUnits,
+    IconImages, KitFonts, Role, ScrollViews, Theme, Tone, UiClock, UiStyle, UiUnits,
     controls::{self, Kind, State, Ui},
+    scroll::ScrollLocked,
 };
 
 use crate::host::{self, Pick, Setting};
@@ -141,12 +160,35 @@ pub struct Settings {
     pub esc_taken: bool,
     /// The shown settings' values as the cvars hold them.
     pub values: BTreeMap<String, String>,
-    /// The rows' scroll, cq.
-    pub scroll: f32,
+    /// The keys moved the focus: its row is kept in view (the kit's
+    /// scroll container, `chimera_ui::scroll`); the pointer moving it
+    /// doesn't scroll.
+    pub reveal: bool,
+    /// A slider dragged (module doc).
+    pub slide: Option<Slide>,
+    /// A value box typed into (module doc).
+    pub edit: Option<ValueEdit>,
     /// A page asked for by name (`ui_scene settings <tab>`) at opening.
     pub want_tab: Option<String>,
     /// A staged scene's page, opened once the menus are up.
     pub stage: Option<String>,
+}
+
+/// A slider dragged: its row and its value at the press.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Slide {
+    pub row: usize,
+    pub from: String,
+}
+
+/// A slider's value box typed into: the text, the caret (a char index),
+/// why the text was refused.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ValueEdit {
+    pub row: usize,
+    pub text: String,
+    pub caret: usize,
+    pub error: Option<String>,
 }
 
 /// One row of a page.
@@ -163,15 +205,6 @@ pub enum Row {
 impl Row {
     pub fn focusable(&self) -> bool {
         !matches!(self, Row::Section(_))
-    }
-
-    /// Height in cq.
-    fn height(&self, t: &Theme) -> f32 {
-        match self {
-            Row::Section(_) => 2.4,
-            Row::Bind { .. } => t.layout(L, "bind_h"),
-            _ => t.layout(L, "row_h"),
-        }
     }
 }
 
@@ -248,6 +281,8 @@ pub fn rows(ctx: Context, tabs: &[(String, Vec<Setting>)], tab: usize, bind_game
                     live: true,
                     when: None,
                     widget: None,
+                    hard_min: None,
+                    hard_max: None,
                 };
                 out.push(Row::Setting { s, note: None });
             }
@@ -267,8 +302,19 @@ pub enum SettingsAction {
     Pick { row: usize, option: usize },
     /// A slider's track (the press's place read from it).
     Slide(usize),
-    /// A slider set to a place 0-1.
+    /// A slider set to a place 0-1 at once (pending, its cue).
     SetFrac { row: usize, frac: f32 },
+    /// A press on a slider's track: the value jumps there and a drag
+    /// starts; `SlideTo` follows the pointer (shown, previewed, not yet
+    /// pending); `SlideEnd` (the button let go) makes it pending, its cue
+    /// once.
+    SlideStart { row: usize, frac: f32 },
+    SlideTo { row: usize, frac: f32 },
+    SlideEnd(usize),
+    /// A slider's value box clicked: typing a number into it.
+    EditValue(usize),
+    /// The number typed kept (Enter, a click away), or refused.
+    CommitEdit,
     OpenList(usize),
     Bind(usize),
     Clear(usize),
@@ -309,9 +355,12 @@ impl Settings {
     }
 }
 
-/// The rows' scroll box.
+/// The rows' scroll view.
 #[derive(Component)]
-struct SettingsList;
+pub struct SettingsList;
+
+/// The rows' view's key in `chimera_ui::ScrollViews`.
+pub const SCROLL_KEY: &str = "settings";
 
 /// The screen's root.
 #[derive(Component)]
@@ -329,23 +378,25 @@ pub struct SettingsPlugin;
 impl Plugin for SettingsPlugin {
     fn build(&self, app: &mut App) {
         crate::ui_cues::ensure_message(app);
+        chimera_ui::pointer_lead::add(app);
         app.init_resource::<Settings>()
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<ButtonInput<MouseButton>>()
             .init_resource::<AccumulatedMouseScroll>()
             .add_message::<SettingsAction>()
+            .add_message::<KeyboardInput>()
             .configure_sets(
                 Update,
                 SettingsSystems.before(crate::main_menu::MainMenuSystems).before(crate::esc_menu::EscMenuSystems),
             )
             .add_systems(
                 Update,
-                (follow, capture, keys, clicks, hover_focus, act, refresh_values, draw, wheel).chain().in_set(SettingsSystems),
+                (follow, capture, edit_typing, keys, clicks, hover_focus, act, refresh_values, draw).chain().in_set(SettingsSystems),
             )
             .add_systems(Update, crate::ui_cues::hover::<SettingsAction>.in_set(SettingsSystems));
         use chimera_client::client::ui_scene::UiSceneHooks;
         UiSceneHooks::add(app.world_mut(), "settings", scene_settings);
-        app.console_command("chimera:settings_press", "settings_press <apply|revert|back|keep|revert_keep|leave_apply|leave_discard|stay>: press that button of Settings (tests, screenshots).", |w, a| {
+        app.console_command("chimera:settings_press", "settings_press <apply|revert|back|keep|revert_keep|leave_apply|leave_discard|stay|commit>: press that button of Settings (tests, screenshots).", |w, a| {
             let action = match a.first().map(String::as_str) {
                 Some("apply") => SettingsAction::Apply,
                 Some("revert") => SettingsAction::Revert,
@@ -355,9 +406,24 @@ impl Plugin for SettingsPlugin {
                 Some("leave_apply") => SettingsAction::LeaveApply,
                 Some("leave_discard") => SettingsAction::LeaveDiscard,
                 Some("stay") => SettingsAction::LeaveStay,
+                Some("commit") => SettingsAction::CommitEdit,
                 other => return Err(format!("no button {other:?}")),
             };
             w.write_message(action);
+            Ok(None)
+        });
+        app.console_command("chimera:settings_type", "settings_type <text>: type into the value box (the focused row's, opened if none is) (tests, screenshots).", |w, a| {
+            let text = a.join(" ");
+            if w.resource::<Settings>().edit.is_none() {
+                // The focused row's box opens first.
+                let focus = w.resource::<Settings>().focus;
+                act_one(w, SettingsAction::EditValue(focus));
+            }
+            let mut s = w.resource_mut::<Settings>();
+            let e = s.edit.as_mut().ok_or("the focused row takes no typed number")?;
+            e.caret = text.chars().count();
+            e.text = text;
+            e.error = None;
             Ok(None)
         });
         app.console_command("chimera:settings_set", "settings_set <cvar> <value>: change a setting on the open Settings page, pending until Apply (tests, screenshots).", |w, a| {
@@ -534,7 +600,6 @@ fn capture(
 fn keys(
     keys: Res<ButtonInput<KeyCode>>,
     tabs: Option<Res<crate::esc_menu::OptionTabs>>,
-    theme: Option<Res<Theme>>,
     console: Res<Console>,
     mut s: ResMut<Settings>,
     mut out: MessageWriter<SettingsAction>,
@@ -565,6 +630,17 @@ fn keys(
         } else if p(KeyCode::Escape) {
             s.esc_taken = true;
             out.write(SettingsAction::KeepRevert);
+        }
+        return;
+    }
+    if s.edit.is_some() {
+        // Typing a number: Enter keeps it, Esc puts the value back.
+        if enter {
+            out.write(SettingsAction::CommitEdit);
+        } else if p(KeyCode::Escape) {
+            s.edit = None;
+            s.esc_taken = true;
+            cues.write(UiCue::new("ui_back"));
         }
         return;
     }
@@ -619,10 +695,7 @@ fn keys(
             if next != s.focus {
                 s.focus = next;
                 cues.write(UiCue::new("ui_hover"));
-                if let Some(t) = theme.as_deref() {
-                    let visible = visible_h(t);
-                    s.scroll = scroll_to(t, &rows, next, s.scroll, visible);
-                }
+                s.reveal = true;
             }
         }
     }
@@ -660,35 +733,22 @@ fn keys(
     }
 }
 
-/// The rows' visible height, cq.
-fn visible_h(t: &Theme) -> f32 {
-    56.25 - t.layout(L, "win_top") - t.layout(L, "win_bottom") - 4.6 - 4.4
-}
-
-/// The scroll that keeps row `i` in view.
-fn scroll_to(t: &Theme, rows: &[Row], i: usize, scroll: f32, visible: f32) -> f32 {
-    let top: f32 = rows[..i].iter().map(|r| r.height(t)).sum();
-    let bottom = top + rows.get(i).map_or(0.0, |r| r.height(t));
-    let total: f32 = rows.iter().map(|r| r.height(t)).sum();
-    let mut s = scroll;
-    if bottom > s + visible {
-        s = bottom - visible + 0.6;
-    }
-    if top < s {
-        // A section header above the first row comes into view too.
-        s = if i <= 1 { 0.0 } else { top - 0.6 };
-    }
-    s.clamp(0.0, (total - visible + 0.6).max(0.0))
-}
-
-/// Clicks as actions; a slider's press as its place.
+/// Clicks as actions; a slider's press as its place and its drag.
 fn clicks(
     pressed: Query<(&Interaction, &SettingsAction, Option<&RelativeCursorPosition>), Changed<Interaction>>,
-    dragged: Query<(&Interaction, &SettingsAction, &RelativeCursorPosition)>,
+    tracks: Query<(&SettingsAction, &RelativeCursorPosition)>,
     mouse: Res<ButtonInput<MouseButton>>,
+    s: Res<Settings>,
     mut last: Local<Option<(usize, f32)>>,
     mut out: MessageWriter<SettingsAction>,
 ) {
+    // A click away from the box typed into keeps what was typed.
+    if let Some(e) = &s.edit
+        && mouse.just_pressed(MouseButton::Left)
+        && !pressed.iter().any(|(i, a, _)| *i == Interaction::Pressed && *a == SettingsAction::EditValue(e.row))
+    {
+        out.write(SettingsAction::CommitEdit);
+    }
     for (i, a, pos) in &pressed {
         if *i != Interaction::Pressed {
             continue;
@@ -696,7 +756,7 @@ fn clicks(
         match (*a, pos) {
             (SettingsAction::Slide(row), Some(pos)) => {
                 if let Some(f) = controls::slider_frac(pos) {
-                    out.write(SettingsAction::SetFrac { row, frac: f });
+                    out.write(SettingsAction::SlideStart { row, frac: f });
                     *last = Some((row, f));
                 }
             }
@@ -705,32 +765,83 @@ fn clicks(
             }
         }
     }
-    // A drag along a pressed track.
-    if mouse.pressed(MouseButton::Left) {
-        for (i, a, pos) in &dragged {
-            if let (Interaction::Pressed, SettingsAction::Slide(row)) = (i, a)
-                && let Some(f) = controls::slider_frac(pos)
-                && last.is_none_or(|(r, l)| r != *row || (l - f).abs() > 0.004)
-            {
-                out.write(SettingsAction::SetFrac { row: *row, frac: f });
-                *last = Some((*row, f));
+    // The drag: the page is drawn again as the value moves, so the track
+    // is found by its row each frame (its `RelativeCursorPosition` holds
+    // with the pointer outside it too).
+    if let Some(sl) = &s.slide {
+        if mouse.pressed(MouseButton::Left) {
+            for (a, pos) in &tracks {
+                if *a == SettingsAction::Slide(sl.row)
+                    && let Some(f) = controls::slider_frac(pos)
+                    && last.is_none_or(|(r, l)| r != sl.row || (l - f).abs() > 0.004)
+                {
+                    out.write(SettingsAction::SlideTo { row: sl.row, frac: f });
+                    *last = Some((sl.row, f));
+                }
             }
+        } else {
+            out.write(SettingsAction::SlideEnd(sl.row));
+            *last = None;
         }
-    } else {
+    } else if !mouse.pressed(MouseButton::Left) {
         *last = None;
     }
 }
 
-/// The pointer on a row focuses it.
-fn hover_focus(rows: Query<(&Interaction, &SettingsAction), Changed<Interaction>>, mut s: ResMut<Settings>) {
-    if s.capture.is_some() || s.open_list.is_some() || s.leave.is_some() || s.keep.is_some() {
+/// Keys typed into a value box (`Settings::edit`; Enter and Esc are
+/// `keys`').
+fn edit_typing(mut events: MessageReader<KeyboardInput>, mut s: ResMut<Settings>) {
+    use chimera_client::client::widgets::{Caret, Edit};
+    if s.edit.is_none() {
+        events.clear();
         return;
     }
+    for ev in events.read() {
+        if ev.state != ButtonState::Pressed {
+            continue;
+        }
+        let edit = match &ev.logical_key {
+            Key::Backspace => Edit::Backspace,
+            Key::Delete => Edit::Delete,
+            Key::ArrowLeft => Edit::Left(false),
+            Key::ArrowRight => Edit::Right(false),
+            Key::Home => Edit::Home(false),
+            Key::End => Edit::End(false),
+            Key::Character(t) => Edit::Insert(t.to_string()),
+            _ => continue,
+        };
+        let Some(e) = s.edit.as_mut() else { return };
+        let mut caret = Caret { at: e.caret, anchor: e.caret };
+        if caret.edit(&mut e.text, edit, 24) {
+            e.error = None;
+        }
+        e.caret = caret.at;
+    }
+}
+
+/// The pointer on a row focuses it while the pointer leads
+/// (`chimera_ui::PointerLead`: ↑↓ take the lead, so a still pointer, or a
+/// row redrawn or scrolled under it, never pins the focus; a real move
+/// gives it back and focuses the row under it).
+fn hover_focus(
+    rows: Query<(Ref<Interaction>, &SettingsAction)>,
+    lead: Option<Res<chimera_ui::PointerLead>>,
+    mut s: ResMut<Settings>,
+) {
+    if s.capture.is_some() || s.open_list.is_some() || s.leave.is_some() || s.keep.is_some() || s.slide.is_some() {
+        return;
+    }
+    if lead.as_ref().is_some_and(|l| !l.hover()) {
+        return;
+    }
+    let lead_back = lead.as_ref().is_some_and(|l| l.is_changed());
     for (i, a) in &rows {
-        if let (Interaction::Hovered, SettingsAction::Row(r)) = (i, a)
+        if let (Interaction::Hovered, SettingsAction::Row(r)) = (*i, a)
+            && (i.is_changed() || lead_back)
             && s.focus != *r
         {
             s.focus = *r;
+            s.reveal = false;
         }
     }
 }
@@ -779,6 +890,29 @@ fn set_value(world: &mut World, ctx: Context, set: &Setting, value: &str) {
     }
     if previews(set) {
         submit(world, set_line(cvar, value));
+    }
+}
+
+/// A slider dragged to `frac`: shown, and previewed for a preview's
+/// cvar (its applied value kept first, for Revert), pending only at the
+/// release (`SlideEnd`).
+fn slide_live(world: &mut World, ctx: Context, set: &Setting, frac: f32) {
+    let Pick::Range { min, max, step } = set.pick else { return };
+    let v = format!("{}", controls::value_at(frac, min, max, step));
+    let cvar = set.cvar.as_str();
+    if world.resource::<Settings>().values.get(cvar).is_some_and(|x| host::same_value(x, &v)) {
+        return;
+    }
+    let preview = ctx != Context::Host && previews(set);
+    let applied = (preview && !world.resource::<Settings>().baseline.contains_key(cvar))
+        .then(|| crate::controls::cvar_value(world, cvar).unwrap_or_default());
+    let mut s = world.resource_mut::<Settings>();
+    s.values.insert(cvar.to_string(), v.clone());
+    if let Some(a) = applied {
+        s.baseline.insert(cvar.to_string(), a);
+    }
+    if preview {
+        submit(world, set_line(cvar, &v));
     }
 }
 
@@ -890,8 +1024,11 @@ fn act_one(world: &mut World, a: SettingsAction) {
                 s.focus = rows.iter().position(Row::focusable).unwrap_or(0);
                 s.capture = None;
                 s.open_list = None;
-                s.scroll = 0.0;
+                s.reveal = false;
                 s.page_since = since;
+                if let Some(mut v) = world.get_resource_mut::<ScrollViews>() {
+                    v.reset(SCROLL_KEY);
+                }
                 cue(world, UiCue::new("ui_select"));
             }
         }
@@ -931,6 +1068,75 @@ fn act_one(world: &mut World, a: SettingsAction) {
             }
         }
         A::Slide(_) => {}
+        A::SlideStart { row, frac } => {
+            if let Some(set) = setting(row)
+                && matches!(set.pick, Pick::Range { .. })
+            {
+                let from = shown_value(world, ctx, &set.cvar);
+                let mut st = world.resource_mut::<Settings>();
+                st.focus = row;
+                st.edit = None;
+                st.slide = Some(Slide { row, from });
+                slide_live(world, ctx, &set, frac);
+            }
+        }
+        A::SlideTo { row, frac } => {
+            if world.resource::<Settings>().slide.as_ref().is_some_and(|sl| sl.row == row)
+                && let Some(set) = setting(row)
+            {
+                slide_live(world, ctx, &set, frac);
+            }
+        }
+        A::SlideEnd(row) => {
+            let sl = world.resource_mut::<Settings>().slide.take();
+            if let Some(sl) = sl.filter(|sl| sl.row == row)
+                && let Some(set) = setting(row)
+            {
+                let v = world.resource::<Settings>().values.get(&set.cvar).cloned().unwrap_or_else(|| sl.from.clone());
+                set_value(world, ctx, &set, &v);
+                // One cue for the whole drag (or the click), none for no change.
+                if !host::same_value(&sl.from, &v) {
+                    cue(world, crate::ui_cues::step_cue(&set.pick, &v));
+                }
+            }
+        }
+        A::EditValue(row) => {
+            if let Some(set) = setting(row)
+                && matches!(set.pick, Pick::Range { .. })
+                && world.resource::<Settings>().edit.as_ref().is_none_or(|e| e.row != row)
+            {
+                let text = shown_value(world, ctx, &set.cvar).trim().to_string();
+                let mut st = world.resource_mut::<Settings>();
+                st.focus = row;
+                st.open_list = None;
+                st.edit = Some(ValueEdit { row, caret: text.chars().count(), text, error: None });
+                cue(world, UiCue::new("ui_select"));
+            }
+        }
+        A::CommitEdit => {
+            let Some(e) = world.resource::<Settings>().edit.clone() else { return };
+            let Some(set) = setting(e.row) else {
+                world.resource_mut::<Settings>().edit = None;
+                return;
+            };
+            match controls::typed_number(&e.text, (set.hard_min, set.hard_max)) {
+                Ok(v) => {
+                    world.resource_mut::<Settings>().edit = None;
+                    let next = format!("{v}");
+                    let now = shown_value(world, ctx, &set.cvar);
+                    if !host::same_value(&now, &next) {
+                        set_value(world, ctx, &set, &next);
+                    }
+                    cue(world, UiCue::new("ui_select"));
+                }
+                Err(why) => {
+                    if let Some(e) = world.resource_mut::<Settings>().edit.as_mut() {
+                        e.error = Some(why);
+                    }
+                    cue(world, UiCue::new("ui_denied"));
+                }
+            }
+        }
         A::SetFrac { row, frac } => {
             if let Some(s) = setting(row)
                 && let Pick::Range { min, max, step } = s.pick
@@ -1067,11 +1273,15 @@ fn snapshot_binds(world: &mut World) {
 fn refresh_values(world: &mut World) {
     let Some(ctx) = world.resource::<Settings>().ctx else { return };
     let tabs = tabs_of(world);
-    let (tab, game) = {
+    let (tab, game, sliding) = {
         let s = world.resource::<Settings>();
-        (s.tab, s.bind_game)
+        (s.tab, s.bind_game, s.slide.as_ref().map(|sl| sl.row))
     };
-    for r in rows(ctx, &tabs, tab, game) {
+    for (i, r) in rows(ctx, &tabs, tab, game).into_iter().enumerate() {
+        // A slider being dragged shows the drag, not the cvar.
+        if sliding == Some(i) {
+            continue;
+        }
         if let Row::Setting { s, .. } = r {
             let v = shown_value(world, ctx, &s.cvar);
             let mut st = world.resource_mut::<Settings>();
@@ -1079,34 +1289,6 @@ fn refresh_values(world: &mut World) {
                 st.values.insert(s.cvar.clone(), v);
             }
         }
-    }
-}
-
-/// The mouse wheel over the rows scrolls them (not while a bind listens).
-fn wheel(
-    scroll: Res<AccumulatedMouseScroll>,
-    theme: Option<Res<Theme>>,
-    units: Option<Res<UiUnits>>,
-    tabs: Option<Res<crate::esc_menu::OptionTabs>>,
-    mut s: ResMut<Settings>,
-    mut list: Query<(&mut ScrollPosition, &RelativeCursorPosition), With<SettingsList>>,
-) {
-    let (Some(ctx), Some(t), Some(u)) = (s.ctx, theme, units) else { return };
-    if s.capture.is_some() || scroll.delta.y == 0.0 {
-        return;
-    }
-    let Ok((mut pos, over)) = list.single_mut() else { return };
-    if !over.cursor_over {
-        return;
-    }
-    let tabs = tabs.map(|t| t.tabs.clone()).unwrap_or_default();
-    let total: f32 = rows(ctx, &tabs, s.tab, s.bind_game).iter().map(|r| r.height(&t)).sum();
-    let max = (total - visible_h(&t) + 0.6).max(0.0);
-    let step = if scroll.unit == bevy::input::mouse::MouseScrollUnit::Line { 2.9 * scroll.delta.y } else { scroll.delta.y / u.cq(1.0) };
-    let next = (s.scroll - step).clamp(0.0, max);
-    if next != s.scroll {
-        s.bypass_change_detection().scroll = next;
-        pos.0.y = u.cq(next);
     }
 }
 
@@ -1130,6 +1312,10 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
             for r in roots {
                 world.entity_mut(r).despawn();
             }
+            // Opened again: from the top.
+            if let Some(mut v) = world.get_resource_mut::<ScrollViews>() {
+                v.forget(SCROLL_KEY);
+            }
         }
         return;
     };
@@ -1141,7 +1327,7 @@ fn draw(world: &mut World, mut drawn: Local<Option<DrawKey>>) {
         None
     };
     let key = DrawKey {
-        s: Settings { scroll: 0.0, esc_taken: false, ..s.clone() },
+        s: Settings { esc_taken: false, ..s.clone() },
         keep_left: s.keep.as_ref().map_or(0, |k| (k.until - t).max(0.0).ceil() as u64),
         binds: {
             let c = world.resource::<Console>();
@@ -1347,23 +1533,24 @@ fn spawn(
         c.entity(e).insert(SettingsAction::Tab(i));
     }
     let cols = ui.boxed(c, win, UiStyle { gap: Some(2.4), align: Some(AlignItems::Stretch), ..UiStyle::row() }.abs([Some(2.0), Some(4.6), Some(2.0), Some(4.4)]));
-    let list_box = ui.boxed(c, cols, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() });
-    let list = c
-        .spawn((
-            UiStyle { w_pct: Some(100.0), h_pct: Some(100.0), pad: Some([0.0, 1.0, 0.0, 0.0].into()), ..UiStyle::column() },
-            Node::default(),
-            SettingsList,
-            RelativeCursorPosition::default(),
-            ScrollPosition(Vec2::new(0.0, ui.units.cq(s.scroll))),
-            ChildOf(list_box),
-        ))
-        .id();
-    c.entity(list).insert(ScrollOverflow);
+    // The rows scroll in the kit's container (its bar, the wheel, a
+    // right-button pan); the keys keep the focused row in view.
+    let sc = ui.scroll(c, cols, SCROLL_KEY, UiStyle { grow: Some(1.0), shrink: Some(1.0), ..UiStyle::column() }, UiStyle::column());
+    c.entity(sc.view).insert(SettingsList);
+    if s.capture.is_some() || s.open_list.is_some() || s.leave.is_some() || s.keep.is_some() {
+        // A bind listening takes the right button; a list or a modal is over it.
+        c.entity(sc.view).insert(ScrollLocked);
+    }
     let rows = rows(d.ctx, d.tabs, s.tab, s.bind_game);
     for (i, r) in rows.iter().enumerate() {
-        draw_row(c, ui, list, i, r, d);
+        let row = draw_row(c, ui, sc.content, i, r, d);
+        if s.reveal && i == s.focus
+            && let Some(row) = row
+        {
+            chimera_ui::scroll_into_view(c, row);
+        }
     }
-    ui.wipe_cover(c, list_box, Tone::Ink, s.page_since, d.now, lay("wipe"));
+    ui.wipe_cover(c, sc.frame, Tone::Ink, s.page_since, d.now, lay("wipe"));
 
     // The help pane.
     let help = ui.boxed(c, cols, UiStyle { w: Some(lay("help_w")), gap: Some(1.0), shrink: Some(0.0), ..UiStyle::column() });
@@ -1443,17 +1630,15 @@ fn spawn(
     root
 }
 
-/// The list scrolls (vertically) and clips.
-#[derive(Component)]
-struct ScrollOverflow;
-
-fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw) {
+/// Draws row `i`; its row node (none for a section).
+fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw) -> Option<Entity> {
     let t = ui.theme;
     let s = d.s;
     let focus = s.focus == i && s.open_list.is_none_or(|(o, _)| o == i);
     match r {
         Row::Section(title) => {
             ui.section(c, list, title, None);
+            None
         }
         Row::Games => {
             let (row, vl) = ui.row(c, list, "Binds for", None, t.layout(L, "row_h"), State::focused(focus));
@@ -1462,6 +1647,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
             for (k, e) in ui.segmented(c, vl, &names, Some(s.bind_game), State::focused(focus)).into_iter().enumerate() {
                 c.entity(e).insert(SettingsAction::Pick { row: i, option: k });
             }
+            Some(row)
         }
         Row::Bind { label, .. } => {
             let listening = s.capture == Some(i);
@@ -1475,6 +1661,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                 let clr = ui.button(c, vl, Kind::Ghost, "Clear", None, 1.6, State::NONE);
                 c.entity(clr).insert(SettingsAction::Clear(i));
             }
+            Some(row)
         }
         Row::Setting { s: set, note } => {
             let v = s.values.get(&set.cvar).cloned().unwrap_or_default();
@@ -1485,9 +1672,24 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
             let vst = State::focused(focus);
             match (widget(set), &set.pick) {
                 (Widget::Slider { min, max, .. }, _) => {
+                    // A typed value past the range keeps its number; the
+                    // thumb stops at the end.
                     let f = v.trim().parse::<f32>().map_or(0.0, |x| controls::frac_of(x, min, max));
-                    let tr = ui.slider(c, vl, f, None, &set.pick.shown(&v), 15.0, vst);
-                    c.entity(tr).insert(SettingsAction::Slide(i));
+                    let edit = s.edit.as_ref().filter(|e| e.row == i);
+                    let typing = edit.map(|e| controls::Typing {
+                        text: &e.text,
+                        caret: e.text.char_indices().nth(e.caret).map_or(e.text.len(), |(b, _)| b),
+                        error: e.error.is_some(),
+                    });
+                    let p = ui.slider_ex(c, vl, f, None, &set.pick.shown(&v), 15.0, vst, typing);
+                    c.entity(p.track).insert(SettingsAction::Slide(i));
+                    c.entity(p.value).insert(SettingsAction::EditValue(i));
+                    if let Some(why) = edit.and_then(|e| e.error.as_deref()) {
+                        // Refused: why, beside the box (threat as a mark).
+                        let n = ui.boxed(c, vl, UiStyle { gap: Some(0.4), margin: Some([0.0, 0.0, 0.0, 0.6].into()), ..UiStyle::row() });
+                        ui.mark(c, n, Tone::Threat, 0.36, 0.36);
+                        ui.text(c, n, Role::Mono, 0.5, Tone::Fg2, why);
+                    }
                 }
                 (Widget::Toggle, Pick::Choices(ch)) => {
                     let on = ch.get(1).is_some_and(|(cv, _)| host::same_value(cv, &v));
@@ -1517,6 +1719,7 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
                     c.entity(plus).insert(SettingsAction::Step { row: i, dir: 1 });
                 }
             }
+            Some(row)
         }
     }
 }
@@ -1581,23 +1784,5 @@ fn leave_modal(c: &mut Commands, ui: &Ui, root: Entity, at: usize, changes: usiz
         let key = if k == at { Some("Enter") } else if action == SettingsAction::LeaveStay { Some("Esc") } else { None };
         let b = ui.button(c, acts, kind, label, key, 2.4, State::focused(k == at));
         c.entity(b).insert(action);
-    }
-}
-
-/// The list's overflow: scroll on y.
-fn scroll_overflow(mut q: Query<&mut Node, (With<ScrollOverflow>, Changed<Node>)>) {
-    for mut n in &mut q {
-        if n.overflow != Overflow::scroll_y() {
-            n.overflow = Overflow::scroll_y();
-        }
-    }
-}
-
-/// The overflow after the kit's styles (which write the `Node`).
-pub struct SettingsOverflowPlugin;
-
-impl Plugin for SettingsOverflowPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(PostUpdate, scroll_overflow.after(chimera_ui::UiKitSystems).before(bevy::ui::UiSystems::Layout));
     }
 }

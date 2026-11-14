@@ -398,25 +398,48 @@ type Paint<'a> = (
 
 /// Fades a node and everything under it by its timeline's opacity
 /// (`Prop::Opacity`) or its `UiOpacity`: each colour's alpha is its own
-/// times the opacity. Only when one changed.
+/// times the product of its and its ancestors' opacities (a faded row
+/// inside a faded group stays as dim as the dimmer). Only when one changed.
+/// A node's own alphas are read once (`BaseAlpha`), also when two changed
+/// faders above it reach it in the same frame.
 #[allow(clippy::type_complexity)]
 pub fn fade(
-    faders: Query<(Entity, &chimera_ui::Timeline), Changed<chimera_ui::Timeline>>,
-    opacities: Query<(Entity, &UiOpacity), Changed<UiOpacity>>,
+    faders: Query<Entity, Changed<chimera_ui::Timeline>>,
+    opacities: Query<Entity, Changed<UiOpacity>>,
+    levels: Query<(Option<&chimera_ui::Timeline>, Option<&UiOpacity>, Option<&ChildOf>)>,
     children: Query<&Children>,
     mut paint: Query<Paint>,
     mut commands: Commands,
 ) {
-    let roots = faders
-        .iter()
-        .filter_map(|(e, tl)| tl.value(chimera_ui::Prop::Opacity).map(|o| (e, o)))
-        .chain(opacities.iter().map(|(e, o)| (e, o.0)));
-    for (root, o) in roots {
-        let o = o.clamp(0.0, 1.0);
+    let own = |e: Entity| -> Option<f32> {
+        let (tl, op, _) = levels.get(e).ok()?;
+        let t = tl.and_then(|t| t.value(chimera_ui::Prop::Opacity));
+        let u = op.map(|o| o.0);
+        match (t, u) {
+            (None, None) => None,
+            (t, u) => Some(t.unwrap_or(1.0) * u.unwrap_or(1.0)),
+        }
+    };
+    // The product of `e`'s and its ancestors' opacities.
+    let group = |e: Entity| -> f32 {
+        let mut o = 1.0;
+        let mut at = Some(e);
+        while let Some(n) = at {
+            if let Some(v) = own(n) {
+                o *= v.clamp(0.0, 1.0);
+            }
+            at = levels.get(n).ok().and_then(|(_, _, p)| p.map(ChildOf::parent));
+        }
+        o
+    };
+    let roots: Vec<Entity> = faders.iter().filter(|e| own(*e).is_some()).chain(opacities.iter()).collect();
+    let mut seen: bevy::platform::collections::HashMap<Entity, BaseAlpha> = default();
+    for root in roots {
         for e in std::iter::once(root).chain(children.iter_descendants(root)) {
             let Ok((bg, text, border, image, base, outline)) = paint.get_mut(e) else { continue };
-            let base = match base {
-                Some(b) => *b,
+            let o = group(e);
+            let base = match base.copied().or_else(|| seen.get(&e).copied()) {
+                Some(b) => b,
                 None => {
                     let b = BaseAlpha {
                         bg: bg.as_ref().map_or(1.0, |c| c.0.alpha()),
@@ -426,6 +449,7 @@ pub fn fade(
                         outline: outline.as_ref().map_or(1.0, |c| c.color.alpha()),
                     };
                     commands.entity(e).try_insert(b);
+                    seen.insert(e, b);
                     b
                 }
             };

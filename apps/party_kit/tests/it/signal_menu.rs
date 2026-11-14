@@ -2,7 +2,9 @@
 //! signal_menu`, M5 of docs/plans/active/ugg-ui.md), headless on a manual
 //! UI clock: drawn only for a theme with `[layout.menu]` (the VGUI list
 //! otherwise), four entries from the data, the highlight following the
-//! keys and the pointer and Enter acting, the entrance on the clock, the
+//! keys and the pointer and Enter acting (hover selects, the slab shows
+//! the hovered entry inverted, keys go on from it and take the lead from a
+//! still pointer until it moves), the entrance on the clock, the
 //! backdrops' rotation (the Ladder its whole climb, the others 16 s; a
 //! tab resets the dwell; none with reduced motion), `ui_scene menu`.
 
@@ -14,7 +16,7 @@ use party_kit::{
     PartyPartsPlugin,
     main_menu::{MenuData, MenuPage, PartyMenu},
     menu_backdrops::LADDER_PERIOD,
-    signal_menu::{SignalItem, SignalMenu, SignalMenuRoot, SignalTab},
+    signal_menu::{SignalHighlight, SignalInverse, SignalItem, SignalMenu, SignalMenuRoot, SignalTab},
 };
 
 use super::main_menu::menu_bits;
@@ -253,3 +255,133 @@ fn the_ground_is_the_ambient_calm_behind_the_menu() {
     sim.ticks(2);
     assert!(ambient(&mut sim).clock.y >= 0.0, "frozen");
 }
+
+/// The pointer over entry `i` (Bevy UI's focus system sets this each
+/// frame in the app; headless the test does).
+fn hover(sim: &mut Sim, i: usize) {
+    let items: Vec<(Entity, usize)> = sim
+        .app
+        .world_mut()
+        .query::<(Entity, &SignalItem)>()
+        .iter(sim.app.world())
+        .map(|(e, s)| (e, s.0))
+        .collect();
+    for (e, k) in items {
+        let want = if k == i { Interaction::Hovered } else { Interaction::None };
+        let mut w = sim.app.world_mut().entity_mut(e);
+        if w.get::<Interaction>() != Some(&want) {
+            w.insert(want);
+        }
+    }
+    sim.ticks(1);
+}
+
+/// A real pointer move: the window's cursor somewhere new.
+fn move_pointer(sim: &mut Sim, to: Vec2) {
+    let w = sim.app.world_mut();
+    let mut q = w.query::<&mut Window>();
+    let mut win = match q.iter_mut(w).next() {
+        Some(win) => win,
+        None => {
+            w.spawn(Window::default());
+            q = w.query::<&mut Window>();
+            q.iter_mut(w).next().unwrap()
+        }
+    };
+    win.set_cursor_position(Some(to));
+    sim.ticks(1);
+}
+
+fn y_of<C: Component>(sim: &mut Sim) -> f32 {
+    sim.app
+        .world_mut()
+        .query_filtered::<&Timeline, With<C>>()
+        .single(sim.app.world())
+        .unwrap()
+        .value(Prop::Y)
+        .unwrap()
+}
+
+/// Every text's colour under `C`'s node with `text`.
+fn colors_under<C: Component>(sim: &mut Sim, text: &str) -> Vec<Color> {
+    let roots: Vec<Entity> =
+        sim.app.world_mut().query_filtered::<Entity, With<C>>().iter(sim.app.world()).collect();
+    let w = sim.app.world_mut();
+    let mut kids = w.query::<&Children>();
+    let mut texts = w.query::<(&Text, &TextColor)>();
+    let mut out = Vec::new();
+    for r in roots {
+        let mut stack = vec![r];
+        while let Some(e) = stack.pop() {
+            if let Ok((t, c)) = texts.get(w, e)
+                && t.0.eq_ignore_ascii_case(text)
+            {
+                out.push(c.0);
+            }
+            if let Ok(ch) = kids.get(w, e) {
+                stack.extend(ch.iter());
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn hover_selects_and_the_slab_shows_the_inverted_entry() {
+    let mut sim = sim_with(MENU_THEME);
+    step(&mut sim, 3.0);
+    hover(&mut sim, 1);
+    assert_eq!(state(&sim).sel, 1, "the pointer over JOIN selects it");
+    // Through the glide the inverted copy moves against the slab, so
+    // entry 2's inverted label stays inside it at every point.
+    for _ in 0..8 {
+        step(&mut sim, 0.05);
+        let (hl, inv) = (y_of::<SignalHighlight>(&mut sim), y_of::<SignalInverse>(&mut sim));
+        assert!((hl + inv).abs() < 1e-4, "the copy moves the other way: {hl} {inv}");
+    }
+    step(&mut sim, 1.0);
+    let (hl, inv) = (y_of::<SignalHighlight>(&mut sim), y_of::<SignalInverse>(&mut sim));
+    assert!((hl - 3.5).abs() < 1e-3, "the slab on JOIN: {hl}");
+    assert!((inv + 3.5).abs() < 1e-3, "JOIN's inverted row at the slab: {inv}");
+    let ink = sim.app.world().resource::<Theme>().tone(chimera_ui::Tone::Ink);
+    let fg = sim.app.world().resource::<Theme>().tone(chimera_ui::Tone::Fg);
+    let inverted = colors_under::<SignalInverse>(&mut sim, "Join");
+    assert_eq!(inverted.len(), 1, "one inverted JOIN");
+    assert!(inverted[0].alpha() > 0.99, "the inverted JOIN is drawn: {:?}", inverted[0]);
+    assert_eq!(inverted[0].with_alpha(1.0), ink.with_alpha(1.0), "in ink on the slab");
+    let play = colors_under::<SignalItem>(&mut sim, "Play");
+    assert_eq!(play.len(), 1);
+    assert!(play[0].alpha() > 0.99 && play[0].with_alpha(1.0) == fg.with_alpha(1.0), "PLAY in its normal white: {:?}", play[0]);
+}
+
+#[test]
+fn keys_after_hover_continue_from_the_hovered_entry() {
+    let mut sim = sim_with(MENU_THEME);
+    step(&mut sim, 3.0);
+    hover(&mut sim, 1);
+    assert_eq!(state(&sim).sel, 1);
+    press(&mut sim, KeyCode::ArrowDown);
+    assert_eq!(state(&sim).sel, 2, "on from JOIN");
+}
+
+#[test]
+fn keys_take_the_lead_from_a_still_pointer_until_it_moves() {
+    let mut sim = sim_with(MENU_THEME);
+    step(&mut sim, 3.0);
+    move_pointer(&mut sim, Vec2::new(100.0, 100.0));
+    hover(&mut sim, 0);
+    assert_eq!(state(&sim).sel, 0);
+    press(&mut sim, KeyCode::ArrowDown);
+    press(&mut sim, KeyCode::ArrowDown);
+    assert_eq!(state(&sim).sel, 2, "the keys move off the hovered entry");
+    // The still pointer's hover (even one that changes under it, a row
+    // redrawn) doesn't pull the selection back.
+    hover(&mut sim, 1);
+    hover(&mut sim, 0);
+    sim.ticks(3);
+    assert_eq!(state(&sim).sel, 2, "a still pointer doesn't pin it");
+    // A real move gives the selection back to the entry under it.
+    move_pointer(&mut sim, Vec2::new(100.0, 130.0));
+    assert_eq!(state(&sim).sel, 0, "the moved pointer selects the entry under it");
+}
+

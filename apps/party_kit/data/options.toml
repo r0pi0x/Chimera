@@ -5,13 +5,15 @@
 # takes the next); `when = "ui_sound"`: only in an app with UI sound
 # (Ultimate Gun Game's Signal); `widget = "dropdown"`: the Signal look's
 # Settings shows it as a dropdown (party_kit::settings; else by its pick).
+# A range's value box takes any typed number; `hard_min` / `hard_max`
+# (inclusive) refuse what is unsafe (a negative volume, no sensitivity).
 # The "Binds" tab is the Controls page (F6); in the Signal look's
 # Settings the Mouse tab is "Controls", with the binds under it.
 
 [[tab]]
 name = "Video"
 setting = [
-  { label = "Field of view", cvar = "fov_desired", range = [75, 90, 1] },
+  { label = "Field of view", cvar = "fov_desired", range = [75, 90, 1], hard_min = 1, hard_max = 179 },
   { label = "Display", cvar = "chimera_fullscreen", choices = [["0", "Windowed"], ["1", "Full screen"], ["2", "Borderless"]] },
   { label = "Vertical sync", cvar = "mat_vsync", choices = [["0", "Off"], ["1", "On"]] },
   { label = "Frame limit", cvar = "fps_max", choices = [["0", "None"], ["60", "60"], ["144", "144"], ["240", "240"], ["300", "300"]] },
@@ -21,17 +23,17 @@ setting = [
 [[tab]]
 name = "Audio"
 setting = [
-  { label = "Game volume", cvar = "volume", range = [0, 1, 0.05] },
-  { label = "Music volume", cvar = "snd_musicvolume", range = [0, 1, 0.05] },
-  { label = "UI volume", cvar = "snd_uivolume", range = [0, 1, 0.05], when = "ui_sound" },
+  { label = "Game volume", cvar = "volume", range = [0, 1, 0.05], hard_min = 0 },
+  { label = "Music volume", cvar = "snd_musicvolume", range = [0, 1, 0.05], hard_min = 0 },
+  { label = "UI volume", cvar = "snd_uivolume", range = [0, 1, 0.05], hard_min = 0, when = "ui_sound" },
   { label = "Mute when unfocused", cvar = "snd_mute_losefocus", choices = [["0", "Off"], ["1", "On"]] },
 ]
 
 [[tab]]
 name = "Mouse"
 setting = [
-  { label = "Sensitivity", cvar = "sensitivity", range = [0.1, 20, 0.1] },
-  { label = "Zoomed sensitivity", cvar = "zoom_sensitivity_ratio", range = [0.1, 3, 0.1] },
+  { label = "Sensitivity", cvar = "sensitivity", range = [0.1, 20, 0.1], hard_min = 0.001 },
+  { label = "Zoomed sensitivity", cvar = "zoom_sensitivity_ratio", range = [0.1, 3, 0.1], hard_min = 0.001 },
   { label = "Mouse filter", cvar = "m_filter", choices = [["0", "Off"], ["1", "On"]] },
   { label = "Acceleration", cvar = "m_customaccel", choices = [["0", "Off"], ["3", "On"]] },
 ]

@@ -105,7 +105,7 @@ pub fn front_end(app: &mut App, _: &Args) {
         .add_plugins(crate::esc_menu::EscMenuPlugin)
         // Settings in the Signal look (the menus' Options and Host
         // settings under Ultimate Gun Game's theme).
-        .add_plugins((crate::settings::SettingsPlugin, crate::settings::SettingsOverflowPlugin))
+        .add_plugins(crate::settings::SettingsPlugin)
         .add_plugins(PartyMousePlugin)
         .add_plugins(PartyHudPlugin)
         .add_plugins(chimera_client::client::minigame_scoreboard::MinigameScoreboardPlugin)
