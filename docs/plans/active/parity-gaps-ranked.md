@@ -121,7 +121,6 @@ settle first (a capture, a probe run or a spec session).
 | CS:S view-model lighting and bob | blocked | cs_source/view_models.md 3, 9, Q1, Q2, Q7 | captures: the bob model (cycle, shape, lateral gain), the lighting point |
 | CS:S room reverb presets | blocked | cs_source/sounds.md "dsp" (presets not specified) | a spec session: the DSP preset table |
 | CS:S spread generator | blocked | cs_source/weapons.md Q1, Q12 | the RNG body (seed-to-impact capture) and the pellet pattern |
-| Combat Arms crossbow alt fire (1300 u/s, 41, `alt_fire_0` 550 ms) | spec-clear | combat_arms/special_weapons.md 7, weapon_classes.md | none |
 | Combat Arms kill call-out voice files (`EnemyDown`, `ManDown`) | blocked | combat_arms/effects_sounds.md 11 (rules only; no record or files named) | a spec session: the auto-cast records and their files per sound template |
 | Combat Arms hit-sphere priorities | rule done (`priority_sphere`); values ours | combat_arms/weapon_firing.md Corrections 5, Q16 | a spec session: `Node#Priority` per skeleton |
 | Combat Arms multi-kill reset on death | blocked | combat_arms/kill_streaks.md Q2 | a live check (kill, die, kill again within 5 s) |
@@ -130,10 +129,10 @@ settle first (a capture, a probe run or a spec session).
 
 ## Counts
 
-Do next 0, later 2, needs a spec or capture 10; lower: 3 spec-clear
-(the crossbow's alt fire, blood per viewer, the camera's sweep), 9
-blocked.
+Do next 0, later 2, needs a spec or capture 10; lower: 2 spec-clear
+(blood per viewer, the camera's sweep), 9 blocked.
 
 Landed from the lower list (2026-11-13): the M92FS's post-fire, the
 HL2:DM bolt's sounds, bolts through grates and breakable glass, the
-contact grenade set off when shot or blasted.
+contact grenade set off when shot or blasted, the Combat Arms
+crossbow's alternate fire.
