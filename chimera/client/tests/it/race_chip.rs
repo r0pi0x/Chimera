@@ -369,3 +369,43 @@ fn a_fixture_stages_the_board_with_the_look_books_names() {
         assert!(ids.contains_key(id), "{id} is named");
     }
 }
+
+/// The board reads the session wins the server replicates on the
+/// characters (`MatchesWon`): a new count shows on the open board, the
+/// bot's too, and a player with none has no trophy.
+#[test]
+fn the_board_follows_the_replicated_wins() {
+    use chimera_client::client::race_chip::SessionWins;
+    use chimera_sim::minigame::wins::MatchesWon;
+    let mut sim = sim(true);
+    player(&mut sim, "Alpha", 1, 4, true, false);
+    player(&mut sim, "Botty", 2, 1, false, true);
+    let find = |sim: &mut Sim, name: &str| {
+        let w = sim.app.world_mut();
+        w.query::<(Entity, &Name)>().iter(w).find(|(_, n)| n.as_str() == name).unwrap().0
+    };
+    let (alpha, botty) = (find(&mut sim, "Alpha"), find(&mut sim, "Botty"));
+    sim.app.world_mut().resource_mut::<HeldActions>().showscores = true;
+    let wins = |sim: &mut Sim| {
+        for _ in 0..3 {
+            frame(sim, 0.05);
+        }
+        let w = sim.app.world_mut();
+        let mut v: Vec<u32> = w.query::<&SessionWins>().iter(w).map(|s| s.0).collect();
+        v.sort();
+        v
+    };
+    assert!(wins(&mut sim).is_empty(), "no wins, no trophy");
+    sim.app.world_mut().entity_mut(alpha).insert(MatchesWon(1));
+    assert_eq!(wins(&mut sim), [1]);
+    sim.app.world_mut().entity_mut(alpha).insert(MatchesWon(2));
+    sim.app.world_mut().entity_mut(botty).insert(MatchesWon(1));
+    assert_eq!(wins(&mut sim), [1, 2], "the new counts, the bot's too");
+    let rows: Vec<(bool, u32)> = {
+        let w = sim.app.world_mut();
+        let mut r: Vec<(bool, u32)> = w.query::<&BoardRow>().iter(w).map(|r| (r.0.local, r.0.wins)).collect();
+        r.sort();
+        r
+    };
+    assert_eq!(rows, [(false, 1), (true, 2)], "the bot's row and yours");
+}

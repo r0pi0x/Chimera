@@ -23,10 +23,13 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    not need). Testers and the server must run the same build: the server
    refuses another network version with a message saying which side is older.
    Run the server from the same release's zip, or from the same commit.
-   The network version is `net50` since a match's results carry each
-   player's climb (rung changes, kills and deaths in time, for the
-   Ultimate Gun Game's match-end chart) and the scoreboard marks packet
-   loss; `net49` builds and earlier are refused.
+   The network version is `net51` since the lobby's rows carry each
+   player's session wins (matches won this server run, also on the Tab
+   board and the match end); `net50` (a match's results carrying each
+   player's climb, the scoreboard's packet loss) and earlier are refused.
+   Session wins count by player name for as long as the server process
+   runs: they survive map changes and a player's reconnect (same name),
+   bots count by theirs, and a server restart clears them.
 2. **Send each tester privately:** the release link, `<host address>:<port>`,
    their token, and `docs/playtest.md` if they are not unzipping it.
 3. **Check the asset service has everything the match needs** ("Publishing

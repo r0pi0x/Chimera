@@ -9,9 +9,17 @@
 //! match's end), on the authoritative side only; put on the characters
 //! each tick (`publish`).
 //!
+//! The count shows on the Tab board (`MatchesWon`), the match end (the
+//! results' `ResultRow::wins`, "+1" on the winner's) and the pre-match
+//! lobby (`chimera_net::prematch::LobbyRow::wins`). Bots count by their
+//! names as players do. The name is the identity the server already uses
+//! for a player coming back (`chimera_net`'s `drop_stale_twins`); a
+//! client's connection id changes with every reconnect.
+//!
 //! Known shortcuts: keyed by name, so a player who renames starts from
 //! zero and two players with one name share a count (the server does not
-//! make names unique); not saved to disk.
+//! make names unique); kept in memory only, per server run (the user's
+//! decision): a server restart clears it.
 
 use std::collections::BTreeMap;
 

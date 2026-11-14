@@ -20,4 +20,5 @@ mod prematch_lobby;
 mod prediction;
 mod reconnect;
 mod rejoin;
+mod session_wins;
 mod spawn_protection;

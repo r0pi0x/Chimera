@@ -10,8 +10,9 @@
 //!   it starts without.
 //! - **The players**, one row each in the server's order (humans, then
 //!   bots): the name with its tags (HOST for a listen server's host, BOT,
-//!   YOU), the status in its colour (connecting, downloading, loading the
-//!   map, not ready, ready), for a downloader a bar with "MB done / total"
+//!   YOU, the session wins as "2 WON": `LobbyRow::wins`), the status in
+//!   its colour (connecting, downloading, loading the map, not ready,
+//!   ready), for a downloader a bar with "MB done / total"
 //!   and the percentage, and the ping (or "BOT"); the local player's row
 //!   on the gold band the match-end screen gives it (found by its client
 //!   id: `net::client::LocalClientId`, a listen host's `HOST_ID`).
@@ -114,6 +115,8 @@ pub struct LobbyViewRow {
     /// The round trip, ms (a remote player's).
     pub ping_ms: Option<u16>,
     pub local: bool,
+    /// Matches won this server run (`LobbyRow::wins`).
+    pub wins: u32,
 }
 
 /// What the screen shows (headless too).
@@ -233,6 +236,7 @@ pub fn view_row(r: &chimera_net::prematch::LobbyRow, local: bool) -> LobbyViewRo
             _ => String::new(),
         },
         local,
+        wins: r.wins,
     }
 }
 
@@ -542,7 +546,9 @@ fn draw(
                     let f = if row.local { &cell_bold } else { &cell_font };
                     let name_color = if row.local { ON_LOCAL } else if row.bot { DIM } else { TEXT };
                     let tag_color = if row.local { ON_LOCAL } else { GOLD };
-                    let tags: Vec<&str> = [(row.host, "HOST"), (row.bot, "BOT"), (row.local, "YOU")]
+                    // The session wins as one more tag ("2 WON").
+                    let won = format!("{} WON", row.wins);
+                    let tags: Vec<&str> = [(row.host, "HOST"), (row.bot, "BOT"), (row.local, "YOU"), (row.wins > 0, won.as_str())]
                         .into_iter()
                         .filter_map(|(on, t)| on.then_some(t))
                         .collect();
@@ -635,6 +641,7 @@ mod tests {
             done,
             total,
             ping_ms: id.map(|_| 48),
+            wins: 0,
         };
         let mut l = NetLobby {
             map: "cs_source:de_dust2".into(),

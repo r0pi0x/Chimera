@@ -21,7 +21,9 @@
 //!   the download's bytes, from `client::JoinProgress`; sent when the
 //!   stage changes, the bytes at most every `REPORT_EVERY` s, again every
 //!   `REPORT_AGAIN` s): connecting, downloading (bytes done and total),
-//!   loading the map. Ping is the connection's round trip.
+//!   loading the map. Ping is the connection's round trip; `wins` the
+//!   player's matches won this server run (`minigame::wins::MatchWins`,
+//!   by name, bots too).
 //! - **Readying up** (`mp_lobby_ready_up 1`, default 0; the party apps'
 //!   Play page sets it for a listen host): a remote player on the map is
 //!   "not ready" (`status::NOT_READY`) until it runs `lobby_ready` (a
@@ -178,6 +180,8 @@ pub struct LobbyRow {
     pub total: u64,
     /// Round trip, ms (a remote player's).
     pub ping_ms: Option<u16>,
+    /// Matches won this server run (`minigame::wins::MatchWins`, by name).
+    pub wins: u32,
 }
 
 impl LobbyRow {
@@ -509,6 +513,7 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
                     done,
                     total,
                     ping_ms: stats.map(|s| (s.rtt * 1000.0).round().clamp(0.0, 9999.0) as u16),
+                    wins: 0,
                 },
             )
         })
@@ -517,6 +522,12 @@ pub fn rows(world: &mut World) -> Vec<LobbyRow> {
     out.extend(remote.into_iter().map(|(_, r)| r));
     others.sort_by(|a, b| a.name.cmp(&b.name));
     out.extend(others);
+    // The session wins, by name (bots too).
+    if let Some(wins) = world.get_resource::<minigame::wins::MatchWins>() {
+        for r in &mut out {
+            r.wins = wins.of(&r.name);
+        }
+    }
     out
 }
 

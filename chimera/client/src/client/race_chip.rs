@@ -21,8 +21,8 @@
 //!   players; then a row a player, best first (`minigame_scoreboard::
 //!   sorted`): position, the bot slot and name with HOST (or the fused
 //!   YOU+HOST chip) and the matches won this server run (a trophy and the
-//!   count, the session's leader in the accent, only when there are any: `MatchesWon`, M6's session wins
-//!   hook in), the rung big, the gun's icon (`signal::gun_icon`) and its
+//!   count, the session's leader in the accent, only when there are any:
+//!   the replicated `MatchesWon`, `minigame::wins`), the rung big, the gun's icon (`signal::gun_icon`) and its
 //!   short name with its game, kills and deaths as two columns with their
 //!   marks right-aligned over them, the ping (a 4-bar meter and the
 //!   number, by the theme's `[network]` thresholds: `ping_level`; at the

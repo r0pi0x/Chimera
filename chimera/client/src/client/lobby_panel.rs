@@ -19,7 +19,9 @@
 //!   status): the slot number, the bot slot left of every name (the robot
 //!   for a bot, `LobbyMark::Bot`), the name; HOST as a solid tag
 //!   (`LobbyMark::Host`), YOU and HOST as the fused chip
-//!   (`LobbyMark::YouHost`); the status: the ping meter and the number
+//!   (`LobbyMark::YouHost`); the session wins after the name (trophy
+//!   and count, only with any, the leader's in the accent: `LobbyWins`,
+//!   from `LobbyRow::wins`); the status: the ping meter and the number
 //!   (by the theme's `[network]` thresholds, "LAG" when bad, a dash for a
 //!   bot), a slanted block (`ReadyBlock`: filled when ready, an outline
 //!   otherwise; it pops, scale y 1.9 to 1 over
@@ -81,6 +83,14 @@ pub struct LobbyPlayerRow {
     pub index: usize,
     /// This machine's player: tinted and outlined.
     pub you: bool,
+}
+
+/// A player's session wins beside the name (trophy and count, only with
+/// any; the session's leader in the accent).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LobbyWins {
+    pub wins: u32,
+    pub leader: bool,
 }
 
 /// A row's status block: filled when ready.
@@ -409,6 +419,7 @@ fn draw(
         let e = cell(c, head, i);
         p.text(c, e, Role::Mono, p.lay("head"), Tone::Fg3, h);
     }
+    let top_wins = view.rows.iter().map(|r| r.wins).max().unwrap_or(0);
     for (i, row) in view.rows.iter().enumerate() {
         let you = row.local;
         let r = c
@@ -431,6 +442,15 @@ fn draw(
             c.entity(slot).insert(LobbyMark::Bot);
         }
         p.text(c, who, Role::DisplayBold, p.lay("name"), Tone::Fg, &row.name);
+        if row.wins > 0 {
+            // The session wins: the leader's in the accent.
+            let leader = row.wins == top_wins;
+            let tone = if leader { Tone::AccText } else { Tone::Fg2 };
+            let w = p.boxed(c, who, style!(row, gap: 0.18).shrink(0.0));
+            c.entity(w).insert(LobbyWins { wins: row.wins, leader });
+            p.icon(c, w, icons, images, "trophy", p.lay("tag"), tone);
+            p.text(c, w, Role::Mono, p.lay("tag"), tone, &row.wins.to_string());
+        }
         let tag = cell(c, r, 2);
         match (row.host, you) {
             (true, true) => {

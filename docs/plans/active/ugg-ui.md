@@ -822,18 +822,30 @@ models and textures load from the install or the cache at run time.
 
 ### M6: session wins
 
-What exists: `MatchWins` counts matches won by name per server run and
-`MatchesWon` replicates on characters; `ResultRow::wins` carries it to
-the match end. Missing for the look book:
+Status (2026-11-14): done on `ugg-ui-m6`, for the playtest. Counted on
+the server when a match ends with a winner (`minigame::wins::MatchWins`,
+in memory, per server run: the user's decision), by player name, bots
+by theirs; it survives map changes, `change_match` and a reconnect under
+the same name. Shown from the server's data everywhere: the Tab board
+(`MatchesWon` replicated on the characters), the match end (the results'
+`ResultRow::wins`, this match counted, "+1" on the winner's), and now
+the lobby (`LobbyRow::wins`: `lobby_panel::LobbyWins`, the trophy and
+count after the name, the leader in the accent; the shell's own lobby
+as a "2 WON" tag). **net50 to net51** (`LobbyRow`). Tests:
+`session_wins::session_wins_survive_a_map_change_and_a_rejoin`
+(chimera_net NetSim: two matches, Ann's then the bot's, the lobby's rows
+on the new map, Ann's reconnect), `lobby_panel::
+session_wins_show_in_the_lobby`, `race_chip::
+the_board_follows_the_replicated_wins`, and the earlier
+`a_won_match_counts_for_its_winner_and_the_count_survives_a_restart`,
+`every_board_row_has_a_gun_icon`, `match_end_signal::
+standings_carry_the_marks_and_the_winner_sweeps_in`.
 
-- The lobby: `LobbyRow` gains `wins: u32` and the session leader is
-  marked (trophy, accent count) in the lobby, board and standings.
-- A stable key: by name today (a rename resets, two players with one
-  name share); the server keys by the client's id for the run and keeps
-  the name for display (open question 4: a listen host's restart).
-- **net50 to net51** (`LobbyRow`).
-- Tests: `session_wins_survive_a_rejoin`, `session_wins_show_in_the_lobby`,
-  `session_leader_is_marked` (chimera_sim, chimera_net NetSim, client).
+Left: the key stays the name (a rename resets, two players with one
+name share): the client's connection id changes on every reconnect, so
+it can't carry a count over one; a per-install player id in `Join`
+would (later, with open question 4, a listen host's restart). The race
+chip itself shows no wins (the board does).
 
 Network bumps, in order: M3 net49 (match effects; net48 went to HL2:DM's
 blood per viewer), M4 net50 (results'
