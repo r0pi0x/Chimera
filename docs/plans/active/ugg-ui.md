@@ -599,22 +599,27 @@ climb, four vote cards), M6 net50 (lobby wins). Each bump in its own
 commit with the test that needs it; a playtest's server and clients
 must be one build.
 
-## 6. Open questions for the user
+## 6. Decisions (user, 2026-11-14)
 
-1. Icons: each game's own kill icons wherever installed (mixed styles,
-   parity), or our fallback set everywhere but the kill feed (one style
-   at small sizes)? Proposed: the game's own in the kill feed only.
-2. The full-screen board (Look Book's scoreboard screen) and the chip's
-   board: one (the chip opening) or both (the full one for many players
-   or spectators)?
-3. Commit the font build scripts (our own Python) under `tools/fonts/`
-   so the OFL "source" is in the repo, or only the TTFs?
-4. Session wins: per server run (today), or kept across a listen host's
-   restarts (saved in the config folder)?
-5. M3: drop the old HUD-text air strike for older clients, or keep both
-   for one release?
-6. Showcase pairs: may the menu pick a body and gun the coming ladder
-   doesn't use (random from the installs)?
+1. Icons: each game's own kill icons in the kill feed only; our fallback
+   set everywhere else (one style at small sizes).
+2. Tab: one board, the chip opening into it. The board is big enough to
+   carry everything the full scoreboard had (rung, gun icon and name,
+   K/D, ladder strip, tags, session wins). Its open and close are fast
+   enough to spam Tab (well under the prototype's 240/200 ms; aim for
+   about 120 ms open, 90 ms close, no row stagger that delays reading).
+   Spectators on the board: later (backlog).
+3. The font build scripts are committed under `tools/fonts/` as the OFL
+   source, with the TTFs.
+4. Session wins: per server run.
+5. No compatibility with older clients: everyone runs the latest build;
+   drop the HUD-text air strike.
+6. The menu's Showcase may show any installed or cached body and gun
+   (the menu is outside any lobby); the coming ladder isn't a constraint.
+
+Look Book V (menu slot C, the ambient background, tag styles, the
+match-end background) changes only those parts; everything else is
+signed off and is built now.
 
 ## 7. Risks
 
