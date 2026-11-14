@@ -126,17 +126,6 @@ the user's go-ahead: no Actions runs unless asked.
 
 ## 0. Playtest feedback (2026-10-07), top priority
 
-### Combat Arms crouch onset over the network (found 2026-11-14, branch `netpose-bandwidth`)
-
-- As a Combat Arms *target* crouches, the shooter's client draws its
-  head about a tick ahead of the kept one for the first tick or two
-  (0.038 m off, then 0.002 m; standing, crouched and walking stay at
-  0.001-0.003 m). Printed by
-  `heavy::head_matrix::combat_arms_heads_are_drawn_where_lag_compensation_keeps_them`
-  ("standing to Crouched"), asserted for the Source bodies only. Look at
-  which tick's crouch fraction (`CaAnimNet::r`) the server's kept
-  spheres use against the one a client plays at the render tick.
-
 ### UGG playtest rehearsal, 2026-11-13 (agent, this box, the playtest6 build)
 
 What the second rehearsal found and didn't fix (fixed ones: the commits

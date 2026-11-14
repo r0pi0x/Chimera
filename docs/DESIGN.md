@@ -537,7 +537,8 @@ numbers (pinned by `parity_pin_*` tests in each game).
   (`weapon::lagcomp::HitHistory`), and every game's rule takes the kept
   ones on a rewind; a client poses another player's body as the server
   had it on the tick it draws (Combat Arms: its trackers, crouch, aim
-  and hull from snapshots of `CaAnimNet` at the render tick; CS:S and
+  and hull from snapshots of `CaAnimNet` at the render tick, the crouch
+  at each tick between updates as the server sent it, `r_trail`; CS:S and
   HL2:DM: the server's tick pose, its cycles, pose parameters and yaw,
   from snapshots of `source_engine::anim_net`'s `NetPose` and `NetAim`), so the
   head a shooter aims at is the one the rewind tests. A gun's rule (CS:S's nearest box
