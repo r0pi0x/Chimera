@@ -4,8 +4,11 @@
 //! of the party's panel, same state (`EscMenu`), same actions.
 //!
 //! The match goes on, and the screen says so: a left panel over a
-//! gradient shade (ink 92 % at the panel to clear by 70 % of the width),
-//! so the race chip and the kill feed stay readable. The lockup, "Paused
+//! shade (ink 92 % at the panel easing to clear by 68 % of the width,
+//! dithered: `chimera_ui::ShadeMaterial`), so the race chip and the kill
+//! feed stay readable; the games' own HUDs are hidden under it
+//! (`esc_menu::cover_huds`, `client::hud::HudCover`), Settings' pages
+//! included. The lockup, "Paused
 //! for you only: the match goes on", the entries (data/main_menu.toml
 //! `[[escape]]`: an index, the label, the HOST chip on Host settings, Esc
 //! on Resume, a triangle on the others); the keyboard's selection
@@ -16,13 +19,12 @@
 //! per vote needed, the seconds left and Vote yes (F1) / Vote no (F2).
 //! The host's Disconnect asks first in a modal with the threat bar ("End
 //! the game for N players?"), Stay first. The keys at the foot and "Match
-//! live" with the threat mark after them (the look book's bottom right is
-//! where a game HUD draws its ammo). Options and Host settings are
+//! live" with the threat mark after them. Options and Host settings are
 //! the Settings screen's (`settings`).
 
 use bevy::prelude::*;
 use chimera_ui::{
-    IconImages, Role, Tone, UiSlant, UiStyle,
+    IconImages, Role, ShadeMaterial, Tone, UiSlant, UiStyle,
     controls::{Kind, State, Tick, Ui, Wipe},
     widgets::{self, TagKind},
     Prop, Timeline, Track,
@@ -56,29 +58,46 @@ pub struct Drawn<'a> {
     pub vote: Option<&'a VoteShown>,
 }
 
-/// The menu's root and everything in it.
-pub fn spawn(c: &mut Commands, ui: &Ui, images: &mut Assets<Image>, icons: &mut IconImages, d: &Drawn, z: i32) -> Entity {
+/// The menu's root and everything in it; the shade drawn by
+/// `ShadeMaterial` when its assets are there (else a gradient node).
+pub fn spawn(
+    c: &mut Commands,
+    ui: &Ui,
+    images: &mut Assets<Image>,
+    icons: &mut IconImages,
+    shades: Option<&mut Assets<ShadeMaterial>>,
+    d: &Drawn,
+    z: i32,
+) -> Entity {
     let t = ui.theme;
     let lay = |k: &str| t.layout(L, k);
-    // The look book's 92 % at the panel to clear by 70 %, in the theme's
-    // ink curve (`tone_a`), with the fall spread over more stops so it
-    // never reads as a wall.
-    let ink = |a: f32| t.tone_a(Tone::Ink, a);
     let root = c
         .spawn((
             MenuRoot,
             GlobalZIndex(z),
             Node { position_type: PositionType::Absolute, width: percent(100.0), height: percent(100.0), ..default() },
-            BackgroundGradient::from(LinearGradient::to_right(vec![
+            bevy::ui::FocusPolicy::Block,
+        ))
+        .id();
+    // The look book's 92 % at the panel to clear by 70 %, in the theme's
+    // ink curve, eased (no corners where it would read as a wall) and
+    // dithered per pixel: a gradient node's stops are 8-bit, and the
+    // near-opaque ink banded in wide stripes.
+    match shades {
+        Some(shades) => {
+            c.entity(root).insert(MaterialNode(shades.add(ShadeMaterial::new(t, Tone::Ink, 0.92, 0.12, 0.68))));
+        }
+        None => {
+            let ink = |a: f32| t.tone_a(Tone::Ink, a);
+            c.entity(root).insert(BackgroundGradient::from(LinearGradient::to_right(vec![
                 ColorStop::percent(ink(0.92), 0.0),
                 ColorStop::percent(ink(0.85), 22.0),
                 ColorStop::percent(ink(0.6), 36.0),
                 ColorStop::percent(ink(0.3), 50.0),
                 ColorStop::percent(ink(0.0), 68.0),
-            ])),
-            bevy::ui::FocusPolicy::Block,
-        ))
-        .id();
+            ])));
+        }
+    }
     if matches!(d.page, Page::Options(_) | Page::Host) {
         // The Settings screen draws these pages.
         return root;
@@ -111,7 +130,7 @@ pub fn spawn(c: &mut Commands, ui: &Ui, images: &mut Assets<Image>, icons: &mut 
         ui.kbd(c, g, k, 0.56, Tone::Fg);
         ui.text(c, g, Role::Mono, 0.56, Tone::Fg2, what);
     }
-    // In the keys' line: the bottom right is a game HUD's ammo.
+    // In the keys' line.
     let live = ui.boxed(c, foot, UiStyle { gap: Some(0.6), margin: Some([0.0, 0.0, 0.0, 1.4].into()), ..UiStyle::row() });
     ui.mark(c, live, Tone::Threat, 0.6, 0.6);
     ui.text(c, live, Role::Mono, 0.52, Tone::Fg2, "Match live • you can still be hit");

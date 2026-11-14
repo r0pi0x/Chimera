@@ -207,7 +207,10 @@ impl KillCamPanel {
 // ---------------------------------------------------------------------------
 // The shell: input, camera, drawing
 
+/// The death screen's root (not a `HudRoot`: hidden only under a
+/// `client::hud::HudCover`).
 #[derive(Component)]
+#[require(crate::client::hud::HudPart)]
 struct DeathRoot;
 
 /// The death camera's input and camera on the shell, and the screen.

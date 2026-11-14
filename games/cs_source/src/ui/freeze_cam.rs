@@ -69,6 +69,7 @@ pub struct Frozen {
 }
 
 #[derive(Component)]
+#[require(crate::client::hud::HudPart)]
 struct FreezeOverlay;
 
 #[derive(Component)]

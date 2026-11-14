@@ -136,6 +136,7 @@ fn feed_lines(world: &World) -> usize {
 
 /// Everything this HUD spawned.
 #[derive(Component)]
+#[require(crate::client::hud::HudPart)]
 struct GameHudPart;
 
 #[derive(Component, Clone, Copy, PartialEq, Eq, Debug)]
@@ -893,6 +894,7 @@ fn update(
 /// (`client::win_panel`), or without its layout the result across the
 /// screen ("Terrorists Win!").
 #[derive(Component)]
+#[require(crate::client::hud::HudPart)]
 struct RoundBanner;
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]

@@ -43,10 +43,12 @@ impl Plugin for VoiceHudPlugin {
 }
 
 #[derive(Component)]
+#[require(crate::client::hud::HudPart)]
 struct SelfIcon;
 
 /// A row of `HudVoiceStatus` (rebuilt when who talks changes).
 #[derive(Component)]
+#[require(crate::client::hud::HudPart)]
 struct Row;
 
 fn teardown(parts: Query<Entity, Or<(With<SelfIcon>, With<Row>)>>, mut commands: Commands) {

@@ -581,9 +581,11 @@ under their marks right-aligned, ping with the loss mark, session wins
 with +1 on the winner's: the hook for M6); the climb chart (rung steps
 against match time for the hovered row, else the selected one, the
 winner's first; the others faint; kills and deaths as ticks; the longest
-stall boxed; drawn along its length in `climb_draw` with the ticks
-fading in along x on a new choice); the games' HUDs hidden under it, the
-cursor free. Data: `ResultRow::climb` (`minigame::climb::Climb`: each
+stall boxed (dashed since the polish pass, its label on an ink plate
+clear of the line: `StallLabel`); drawn along its length in `climb_draw` with the ticks
+fading in along x on a new choice); the games' HUDs hidden under it
+(`client::hud::HudCover`, shared with M7's Esc menu since the polish
+pass), the cursor free. Data: `ResultRow::climb` (`minigame::climb::Climb`: each
 rung change, kill and death in seconds from the match going live, the
 last victim), `MatchResults::length`, recorded on the authority
 (`ClimbLog`); the scoreboard's `score_flags::LOSS`. **net50** (M3 took
@@ -944,7 +946,14 @@ range); the Apply / Revert bar (Ctrl+S / Ctrl+Z) wrapping the immediate
 writes (it counts the changes since Apply, Revert sets them back, Apply
 and leaving write the config); a display-mode change reverts after 15 s
 unless kept; a page change wipes the rows in on the slant;
-`ui_scene settings <tab>`; tests `party_kit` `settings::`. Left: a
+`ui_scene settings <tab>`; tests `party_kit` `settings::`. Polish
+(2026-11-14): the games' own HUDs (HL2:DM's root, Combat Arms' roots
+and death screen, CS:S's top-level parts: `client::hud::HudPart`) are
+hidden under the Signal Esc menu and Settings over the match
+(`client::hud::HudCover`, M4's match end uses it too; test
+`esc_menu::signal_menu_covers_the_games_huds`); the Esc menu's shade is
+`chimera_ui::ShadeMaterial` (eased, per pixel in float, dithered: the
+gradient node's 8-bit stops banded it in wide stripes). Left: a
 deferred model (values held until Apply), the Crosshair and Multiplayer
 pages (no rows exist yet), help previews (FOV fan, crosshair), a key
 bound twice flagged, the UI parity check for both screens (no look-book

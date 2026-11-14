@@ -223,3 +223,68 @@ fn the_standings_read_the_servers_session_wins() {
     };
     assert_eq!(row.index, 0, "on the winner's row");
 }
+
+/// The games' HUDs under the screen (`hud::HudCover`): their roots and
+/// their parts outside a root hidden while it is up, a part its game shows
+/// meanwhile kept hidden; after, each set back (to what its game set
+/// last), a part its game had hidden left hidden.
+#[test]
+fn the_games_huds_are_covered_while_it_is_up() {
+    use chimera_client::client::hud::{HudCover, HudPart, HudRoot};
+    let mut sim = sim(true);
+    let hud = sim.app.world().get_resource::<chimera_core::gameplay::Gameplay>().map_or("test", |g| g.hud);
+    let w = sim.app.world_mut();
+    let root = w.spawn((Node::default(), HudRoot(hud))).id();
+    let part = w.spawn((Node::default(), HudPart, Visibility::Hidden)).id();
+    let off = w.spawn((Node::default(), HudPart, Visibility::Hidden)).id();
+    sim.ticks(1);
+    let vis = |sim: &Sim, e: Entity| *sim.app.world().get::<Visibility>(e).unwrap();
+    assert!(sim.app.world().resource::<HudCover>().covered());
+    assert_eq!(vis(&sim, root), Visibility::Hidden);
+    // Its game shows the part under the screen: hidden still.
+    *sim.app.world_mut().get_mut::<Visibility>(part).unwrap() = Visibility::Visible;
+    sim.ticks(1);
+    assert_eq!(vis(&sim, part), Visibility::Hidden);
+    match_end_signal::unstage(sim.app.world_mut());
+    sim.ticks(2);
+    assert!(!sim.app.world().resource::<HudCover>().covered());
+    assert_eq!(vis(&sim, root), Visibility::Inherited, "the root back");
+    assert_eq!(vis(&sim, part), Visibility::Visible, "the part as its game set it");
+    assert_eq!(vis(&sim, off), Visibility::Hidden, "a part its game hid stays hidden");
+}
+
+/// The longest stall's label clears the chosen climb (above the box,
+/// ending at its right end, where the line climbs on; under it for a
+/// stall to the match's end) and the box; its outline is dashed.
+#[test]
+fn the_stall_label_clears_the_line() {
+    use chimera_client::client::match_end_signal::{ChartAxes, StallLabel, stall_dashes};
+    let sim = sim(true);
+    let view = sim.app.world().resource::<MatchEndView>().clone();
+    let end = view.length;
+    let mut checked = 0;
+    for row in &view.rows {
+        let axes = ChartAxes::new(view.length, view.rungs.max(row.rung.unwrap_or(1)));
+        let Some((a, b, r)) = row.climb.longest_stall(end) else { continue };
+        let at = StallLabel::place(&axes, a, b, r as u32, end);
+        // "STALL 1:08 • R08": 16 characters of the 6.4-unit mono type,
+        // tracked, with the plate's padding (generous).
+        let plate = at.plate(16.0 * 6.4 * 0.72 + 2.0 * StallLabel::PAD_X);
+        let pts = axes.points(&row.climb, end);
+        for s in pts.windows(2) {
+            let seg = Rect::from_corners(s[0], s[1]).inflate(1.6 / 2.0);
+            assert!(plate.intersect(seg).is_empty(), "{}: the label {plate:?} crosses the line at {seg:?}", row.name);
+        }
+        let (x0, x1, y) = (axes.x(a), axes.x(b), axes.y(r as f32));
+        let stall = Rect::new(x0, y - 5.0, x1, y + 5.0);
+        assert!(plate.intersect(stall).is_empty(), "{}: the label over its box", row.name);
+        let dashes = stall_dashes(x0, x1, y - 5.0, y + 5.0, 0.5);
+        assert!(dashes.len() > 8 && dashes.iter().all(|d| stall.contains(d.min) && stall.contains(d.max)), "dashes along the box");
+        checked += 1;
+    }
+    assert!(checked >= 4, "the staged rows have stalls");
+    // A stall to the end: the label under the box.
+    let axes = ChartAxes::new(600.0, 14);
+    let at = StallLabel::place(&axes, 500.0, 600.0, 14, 600.0);
+    assert!(!at.anchor_end && at.top > axes.y(14.0) + 5.0);
+}

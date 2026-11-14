@@ -398,6 +398,7 @@ const HISTORY_RIGHT: f32 = 20.0;
 
 /// A drawn part, by its place in the drawn list.
 #[derive(Component)]
+#[require(crate::client::hud::HudPart)]
 struct SelectPart(usize);
 
 /// Draw the row and the history: one entity per drawn part, reused.
