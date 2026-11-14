@@ -66,7 +66,46 @@ use crate::host::{self, Setting, setting_of};
 /// The options' data (data/options.toml).
 pub const OPTIONS_TOML: &str = include_str!("../data/options.toml");
 
-/// The options' tabs: name and settings, in order.
+/// The options' tabs as shown: rows with `when = "ui_sound"` only in an
+/// app with UI sound (`ui_sound`).
+pub fn option_tabs_for(ui_sound: bool) -> Vec<(String, Vec<Setting>)> {
+    option_tabs()
+        .into_iter()
+        .map(|(n, s)| (n, s.into_iter().filter(|s| s.when.as_deref().is_none_or(|w| w == "ui_sound" && ui_sound)).collect()))
+        .collect()
+}
+
+/// The options' tabs this app shows (`option_tabs_for`, kept by
+/// `sync_tabs`: an app's UI sound comes in after the menus' plugins).
+#[derive(Resource, Clone, Debug, PartialEq)]
+pub struct OptionTabs {
+    pub ui_sound: bool,
+    pub tabs: Vec<(String, Vec<Setting>)>,
+}
+
+impl Default for OptionTabs {
+    fn default() -> Self {
+        Self { ui_sound: false, tabs: option_tabs_for(false) }
+    }
+}
+
+/// The tabs shown (`OptionTabs`, else those of an app without UI sound).
+pub fn shown_tabs(world: &World) -> Vec<(String, Vec<Setting>)> {
+    world.get_resource::<OptionTabs>().map_or_else(|| option_tabs_for(false), |t| t.tabs.clone())
+}
+
+fn sync_tabs(
+    theme: Option<Res<chimera_client::client::ui_sound::Theme>>,
+    sounds: Option<Res<chimera_client::client::ui_sound::UiSounds>>,
+    mut tabs: ResMut<OptionTabs>,
+) {
+    let on = chimera_client::client::ui_sound::active(theme.as_deref(), sounds.as_deref());
+    if tabs.ui_sound != on {
+        *tabs = OptionTabs { ui_sound: on, tabs: option_tabs_for(on) };
+    }
+}
+
+/// The options' tabs: name and settings, in order (every row of the data).
 pub fn option_tabs() -> Vec<(String, Vec<Setting>)> {
     let doc: toml::Table = toml::from_str(OPTIONS_TOML).expect("data/options.toml reads");
     doc.get("tab")
@@ -161,11 +200,11 @@ pub enum Action {
 pub type EscMenuAction = Action;
 
 /// The settings a page shows (none on the first).
-pub fn page_settings(page: Page) -> Vec<Setting> {
+pub fn page_settings(world: &World, page: Page) -> Vec<Setting> {
     match page {
         Page::Main | Page::ConfirmDisconnect(_) => Vec::new(),
         Page::Host => host::settings(),
-        Page::Options(t) => option_tabs().into_iter().nth(t).map(|(_, s)| s).unwrap_or_default(),
+        Page::Options(t) => shown_tabs(world).into_iter().nth(t).map(|(_, s)| s).unwrap_or_default(),
     }
 }
 
@@ -183,13 +222,16 @@ pub struct EscMenuPlugin;
 
 impl Plugin for EscMenuPlugin {
     fn build(&self, app: &mut App) {
+        crate::ui_cues::ensure_message(app);
         app.init_resource::<EscMenu>()
+            .init_resource::<OptionTabs>()
             .init_resource::<EscMenuTitle>()
             .init_resource::<AppMenu>()
             .init_resource::<CapturedKeys>()
             .init_resource::<ButtonInput<KeyCode>>()
             .init_resource::<VotePanel>()
             .add_message::<Action>()
+            .add_systems(Update, crate::ui_cues::hover::<Action>.in_set(EscMenuSystems))
             .console_command("chimera:escmenu", "escmenu [options|host]: open or close the Escape menu (at that page).", |w, a| {
                 let page = match a.first().map(String::as_str) {
                     Some("options") => Page::Options(0),
@@ -223,7 +265,7 @@ impl Plugin for EscMenuPlugin {
             )
             .add_systems(
                 Update,
-                (toggle, clicks, act, refresh_values, sync, show, show_vote)
+                (sync_tabs, toggle, clicks, act, refresh_values, sync, show, show_vote)
                     .chain()
                     .in_set(EscMenuSystems)
                     .before(crate::controls::ControlsSystems),
@@ -241,7 +283,9 @@ fn toggle(
     main_menu: Option<Res<crate::main_menu::PartyMenu>>,
     mut menu: ResMut<EscMenu>,
     mut console_cmds: Option<ResMut<Console>>,
+    mut cues: MessageWriter<chimera_client::client::ui_sound::UiCue>,
 ) {
+    use chimera_client::client::ui_sound::UiCue;
     if !keys.just_pressed(KeyCode::Escape) {
         return;
     }
@@ -257,7 +301,11 @@ fn toggle(
     }
     if !menu.open {
         menu.set_open(true);
-    } else if menu.page != Page::Main {
+        cues.write(UiCue::new("ui_select"));
+        return;
+    }
+    cues.write(UiCue::new("ui_back"));
+    if menu.page != Page::Main {
         leave_page(&mut menu, console_cmds.as_deref_mut());
         menu.page = Page::Main;
     } else {
@@ -305,6 +353,19 @@ fn act_one(world: &mut World, action: Action) {
         return;
     }
     world.resource_mut::<EscMenu>().notice = None;
+    // Its sound (`ui_cues`; a step's after it).
+    {
+        use chimera_client::client::ui_sound::UiCue;
+        let c = match action {
+            Action::Back | Action::Resume => Some(UiCue::new("ui_back")),
+            Action::Host if !host::is_host(world) => Some(UiCue::new("ui_denied")),
+            Action::Step { .. } => None,
+            _ => Some(UiCue::new("ui_select")),
+        };
+        if let Some(c) = c {
+            crate::ui_cues::cue(world, c);
+        }
+    }
     let leave = |world: &mut World| {
         if std::mem::take(&mut world.resource_mut::<EscMenu>().dirty) {
             submit(world, "host_writeconfig");
@@ -339,11 +400,12 @@ fn act_one(world: &mut World, action: Action) {
                 }
                 host::settings()
             } else {
-                page_settings(page)
+                page_settings(world, page)
             };
             let Some(s) = settings.get(index) else { return };
             let now = crate::controls::cvar_value(world, &s.cvar).unwrap_or_default();
             let next = s.pick.next(&now, dir);
+            crate::ui_cues::cue(world, crate::ui_cues::step_cue(&s.pick, &next));
             let quoted = if next.is_empty() { "\"\"".to_string() } else { chimera_core::console::quote(&next) };
             submit(world, format!("{} {quoted}", s.cvar));
             if !on_host {
@@ -389,7 +451,7 @@ fn refresh_values(world: &mut World) {
         world.resource_mut::<EscMenu>().notice = Some(refusal_text(&r));
     }
     let page = world.resource::<EscMenu>().page;
-    for s in page_settings(page) {
+    for s in page_settings(world, page) {
         let v = crate::controls::cvar_value(world, &s.cvar).unwrap_or_default();
         let mut m = world.resource_mut::<EscMenu>();
         if m.values.get(&s.cvar) != Some(&v) {
@@ -466,6 +528,7 @@ fn show(
     vote: Option<Res<VoteView>>,
     role: Option<Res<chimera_core::core::NetRole>>,
     main_menu: Option<Res<crate::main_menu::PartyMenu>>,
+    tabs: Res<OptionTabs>,
     root: Query<Entity, With<MenuRoot>>,
     mut shown: Local<Option<Shown>>,
     mut commands: Commands,
@@ -494,7 +557,7 @@ fn show(
     for e in &root {
         commands.entity(e).despawn();
     }
-    spawn_menu(&mut commands, &menu, &now, active.as_ref());
+    spawn_menu(&mut commands, &menu, &now, active.as_ref(), &tabs.tabs);
     *shown = Some(now);
 }
 
@@ -534,7 +597,13 @@ fn button(label: impl Into<String>, action: Action, color: Color, wide: f32) -> 
     )
 }
 
-fn spawn_menu(commands: &mut Commands, menu: &EscMenu, shown: &Shown, vote: Option<&chimera_net::net::vote::VoteState>) {
+fn spawn_menu(
+    commands: &mut Commands,
+    menu: &EscMenu,
+    shown: &Shown,
+    vote: Option<&chimera_net::net::vote::VoteState>,
+    tabs: &[(String, Vec<Setting>)],
+) {
     commands
         .spawn((
             MenuRoot,
@@ -567,7 +636,7 @@ fn spawn_menu(commands: &mut Commands, menu: &EscMenu, shown: &Shown, vote: Opti
                 panel.spawn(text(shown.title.to_uppercase(), 24.0, ACCENT));
                 match menu.page {
                     Page::Main => main_page(panel, shown, vote),
-                    Page::Options(tab) => options_page(panel, menu, tab),
+                    Page::Options(tab) => options_page(panel, menu, tab, tabs),
                     Page::Host => host_page(panel, menu),
                     Page::ConfirmDisconnect(n) => confirm_page(panel, n),
                 }
@@ -667,8 +736,7 @@ fn setting_row(panel: &mut ChildSpawnerCommands, s: &Setting, index: usize, on_h
         });
 }
 
-fn options_page(panel: &mut ChildSpawnerCommands, menu: &EscMenu, tab: usize) {
-    let tabs = option_tabs();
+fn options_page(panel: &mut ChildSpawnerCommands, menu: &EscMenu, tab: usize, tabs: &[(String, Vec<Setting>)]) {
     panel
         .spawn(Node { flex_direction: FlexDirection::Row, margin: UiRect::vertical(px(8.0)), ..default() })
         .with_children(|row| {

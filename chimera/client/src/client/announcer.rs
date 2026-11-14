@@ -43,7 +43,9 @@
 //! exact times (not a frame late, Quirk 1); no co-op digits ("N KILLS",
 //! "COMBO"), side log (A7), lucky shot or the "+N Points" line. The voice is an interface sound at the
 //! effects volume times 1 (A6): the mixer's master (`GlobalVolume`, which
-//! each game's sound options set) with gains of 1, as the spec says.
+//! each game's sound options set) with gains of 1, as the spec says. A
+//! voice's audio entity carries `AnnouncerVoice` (an app's interface
+//! sounds duck under it: `ui_sound`).
 
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -536,6 +538,11 @@ fn draw_banner(
 
 /// The voices, as local interface sounds, once their files are loaded
 /// (given up after 3 s).
+/// An announcer voice playing (its audio entity, gone when it ends): the
+/// `ui` bus ducks under it (`ui_sound`).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct AnnouncerVoice;
+
 fn play_voices(
     mut view: ResMut<AnnouncerView>,
     time: Res<Time>,
@@ -555,7 +562,7 @@ fn play_voices(
         if let Some(sound) = sounds.get(h) {
             let gains = Arc::new(Gains::new(1.0, 1.0));
             let clip = clips.add(LiveClip::new(sound.0.clone(), gains, default()));
-            commands.spawn((AudioPlayer(clip), PlaybackSettings::DESPAWN));
+            commands.spawn((AudioPlayer(clip), PlaybackSettings::DESPAWN, AnnouncerVoice));
             return false;
         }
         now - since < 3.0

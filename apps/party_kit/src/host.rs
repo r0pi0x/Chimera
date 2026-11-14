@@ -99,6 +99,9 @@ pub struct Setting {
     pub help: String,
     /// It applies at once (else from the next match).
     pub live: bool,
+    /// Shown only where this holds (`when = "ui_sound"`: an app with UI
+    /// sound, `esc_menu::option_tabs_for`); None: always.
+    pub when: Option<String>,
 }
 
 /// A `[[setting]]` (or a tab's `setting` entry) read.
@@ -135,6 +138,7 @@ pub fn setting_of(v: &toml::Value) -> Result<Setting, String> {
         pick,
         key,
         help: s("help").unwrap_or_default(),
+        when: s("when"),
     })
 }
 

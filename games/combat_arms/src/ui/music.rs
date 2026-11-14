@@ -232,6 +232,7 @@ fn play_music(
     mut bank: Option<ResMut<SoundBank>>,
     mut control: MessageWriter<SoundControl>,
     mut commands: Commands,
+    app_music: Option<Res<crate::game::music::AppMusicPlays>>,
 ) {
     if bank.is_none() {
         commands.insert_resource(SoundBank(Arc::new(MapSounds::default())));
@@ -246,7 +247,8 @@ fn play_music(
         pb.sound_files.clear();
         pb.ambient.clear();
     }
-    let streams = music.mixed(volumes.music());
+    // An app's own music plays instead (`AppMusicPlays`): none of ours.
+    let streams = if app_music.is_some() { Vec::new() } else { music.mixed(volumes.music()) };
     let alive: Vec<(String, u64)> = streams.iter().map(|s| (s.file.clone(), s.started.to_bits())).collect();
     let gone: Vec<(String, u64)> = pb.playing.keys().filter(|k| !alive.contains(k)).cloned().collect();
     for k in gone {

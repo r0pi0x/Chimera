@@ -2,7 +2,8 @@
 # esc_menu), a tab per [[tab]], each [[tab.setting]] an existing cvar of
 # the player's (archived, so config.cfg keeps it). `range` = [min, max,
 # step] (a `-` and a `+`), or `choices` = [[value, label], ...] (a click
-# takes the next). The "Binds" tab is the Controls page (F6).
+# takes the next); `when = "ui_sound"`: only in an app with UI sound
+# (Ultimate Gun Game's Signal). The "Binds" tab is the Controls page (F6).
 
 [[tab]]
 name = "Video"
@@ -19,6 +20,7 @@ name = "Audio"
 setting = [
   { label = "Game volume", cvar = "volume", range = [0, 1, 0.05] },
   { label = "Music volume", cvar = "snd_musicvolume", range = [0, 1, 0.05] },
+  { label = "UI volume", cvar = "snd_uivolume", range = [0, 1, 0.05], when = "ui_sound" },
   { label = "Mute when unfocused", cvar = "snd_mute_losefocus", choices = [["0", "Off"], ["1", "On"]] },
 ]
 

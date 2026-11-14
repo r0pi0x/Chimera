@@ -1,0 +1,15 @@
+Ultimate Gun Game UI sound kit ("Signal", v7)
+
+These sounds are our own work: synthesized from code (oscillators, noise,
+filters and envelopes) by tools/sounds/synth.py in this repository. No
+samples or recordings of any kind went into them.
+
+To the extent possible under law, the authors have dedicated all copyright
+and related and neighboring rights to these sounds and to their generator
+(tools/sounds/) to the public domain worldwide, under the Creative Commons
+CC0 1.0 Universal Public Domain Dedication:
+https://creativecommons.org/publicdomain/zero/1.0/
+
+SPDX-License-Identifier: CC0-1.0
+
+Rebuild them: tools/sounds/README.md.

@@ -37,7 +37,8 @@
 //! and plays.
 //!
 //! An app's own menu (`AppMenuShown`: the party apps' main menu) is a
-//! menu screen: the playlist plays behind it.
+//! menu screen: the playlist plays behind it; while an app plays its own
+//! music (`AppMusicPlays`) none of Combat Arms' plays.
 //!
 //! Debugging (docs/OBSERVABILITY.md): `ca_music` shows the player, the
 //! playlist, the current screen and the last interface sounds;
@@ -180,6 +181,12 @@ fn advance_clock(time: Res<Time<Real>>, mut clock: ResMut<MusicClock>) {
 /// at Combat Arms' own lobby screens, whatever map is behind it.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AppMenuShown;
+
+/// An app plays its own music now (Ultimate Gun Game's menu loop, on its
+/// Signal menu): Combat Arms' music stays silent while it is in, so the
+/// two never play together (`ui::music`).
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AppMusicPlays;
 
 /// The facts of this frame (the client's view of the match).
 fn gather(world: &mut World) {
