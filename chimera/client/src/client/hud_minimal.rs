@@ -226,7 +226,7 @@ pub mod signal_hud {
         let Some(hud) = roots.iter().find(|(_, r)| r.0 == MINIMAL_HUD).map(|(e, _)| e) else { return };
         let Some(hp) = shown.hp else { return };
         let sf = look.units.scale_factor.max(1e-3);
-        let plate = chimera_ui::theme::display_alpha(look.tone(Tone::Plate));
+        let plate = look.tone(Tone::Plate);
         let plate_node = |left: bool| Node {
             position_type: PositionType::Absolute,
             left: if left { look.val(2.2) } else { Val::Auto },

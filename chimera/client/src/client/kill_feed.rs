@@ -560,6 +560,43 @@ pub mod signal_feed {
         pub leaving: bool,
     }
 
+    /// Stages the feed's scene (`ui_scene feed`): five made-up kills, yours
+    /// and your death among them, newest at the bottom.
+    pub fn stage(world: &mut World) {
+        world.insert_resource(SharedKillFeed);
+        let now = world.get_resource::<Time>().map_or(0.0, |t| t.elapsed_secs());
+        let side = |name: &str, local: bool, bot: bool| FeedName { entity: Entity::PLACEHOLDER, name: name.into(), team: None, local, bot };
+        let rows = [
+            ("nadia.exe", false, false, "hl2dm:weapon_ar2", "Rook", false, true),
+            ("kestrel", true, false, "combat_arms:mp7", "vex", false, false),
+            ("lowgrav_larry", false, false, "cs_source:weapon_m4a1", "kestrel", true, false),
+            ("Sgt. Biscuit", false, true, "cs_source:weapon_hegrenade", "mothman", false, false),
+            ("kestrel", true, false, "combat_arms:mp7", "pixelpirate", false, false),
+        ];
+        world.insert_resource(FeedStaged);
+        let mut feed = world.get_resource_or_init::<KillFeed>();
+        feed.entries.clear();
+        feed.lifetime = f32::MAX;
+        for (i, (k, kl, kb, w, v, vl, vb)) in rows.into_iter().enumerate() {
+            feed.entries.push(KillEntry {
+                id: 1_000_000 + i as u64,
+                killer: Some(side(k, kl, kb)),
+                victim: side(v, vl, vb),
+                weapon: Some(w),
+                kind: DamageKind::Bullet,
+                headshot: i == 1,
+                suicide: false,
+                team_kill: false,
+                // Staggered, as if they came a second apart.
+                at: now - (4 - i) as f32 * 0.6,
+            });
+        }
+    }
+
+    /// The feed shows a staged scene: its rows stay.
+    #[derive(Resource, Clone, Copy, Debug, Default)]
+    pub struct FeedStaged;
+
     /// How a row is marked: your kill, your death, or neither.
     #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
     pub enum RowMark {
@@ -594,7 +631,7 @@ pub mod signal_feed {
         layer: Res<crate::client::overlay::OverlayLayer>,
         root: Query<Entity, With<SignalFeedRoot>>,
         mut rows: Query<(Entity, &KillFeedRow, &mut SignalRow, &mut Timeline)>,
-        mut commands: Commands,
+        (staged, mut commands): (Option<Res<FeedStaged>>, Commands),
     ) {
         let on = shared.is_some() && look.on();
         if !on {
@@ -623,7 +660,7 @@ pub mod signal_feed {
                 .id(),
         };
         let now = time.elapsed_secs();
-        let life = look.dur("feed", "life", 5.0);
+        let life = if staged.is_some() { f32::MAX } else { look.dur("feed", "life", 5.0) };
         let pitch = look.layout("feed", "pitch", 2.3);
         let live: Vec<&KillEntry> = feed.entries.iter().filter(|e| now - e.at < life).collect();
         let mut have: Vec<u64> = Vec::new();
@@ -676,10 +713,10 @@ pub mod signal_feed {
         let hair = look.hair();
         let (killer_c, victim_c, border) = match mark {
             RowMark::Mine => (look.tone(Tone::AccText), look.tone(Tone::Fg2), look.tone(Tone::Acc)),
-            RowMark::Died => (look.tone(Tone::Fg2), look.tone(Tone::Fg), look.tone(Tone::Fg).with_alpha(signal::tint(0.32))),
-            RowMark::Plain => (look.tone(Tone::Fg), look.tone(Tone::Fg).with_alpha(0.55), Color::srgba(0.0, 0.0, 0.0, 0.85)),
+            RowMark::Died => (look.tone(Tone::Fg2), look.tone(Tone::Fg), look.theme.tone_a(Tone::Fg, 0.32)),
+            RowMark::Plain => (look.tone(Tone::Fg), look.theme.tone_a(Tone::Fg, 0.55), look.theme.tone_a(Tone::Ink, 0.85)),
         };
-        let bg = chimera_ui::theme::display_alpha(look.tone(Tone::Ink).with_alpha(if mark == RowMark::Mine { 0.8 } else { 0.78 }));
+        let bg = look.theme.tone_a(Tone::Ink, if mark == RowMark::Mine { 0.8 } else { 0.78 });
         let size = 0.62;
         let name = |r: &mut ChildSpawnerCommands, side: &FeedName, c: Color| {
             r.spawn((Node { align_items: AlignItems::Center, column_gap: look.val(0.32), ..default() }, Pickable::IGNORE)).with_children(|n| {

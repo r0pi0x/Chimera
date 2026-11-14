@@ -27,7 +27,7 @@ use chimera_sim::{
 use chimera_ui::{Theme, UiClock, UiUnits};
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
 
-const SIGNAL: &str = "name = \"test\"\n[flags.hud]\nsignal = true\n[flags.icons]\nprefer_game = true\n";
+const SIGNAL: &str = "name = \"test\"\n[flags.hud]\nsignal = true\n[icons]\nprefer_game = true\n";
 
 fn sim(signal: bool) -> Sim {
     let mut sim = Sim::with(SimBasePlugins, |app| {
@@ -233,7 +233,7 @@ fn board_rows_best_first_with_icons() {
     let yours = w.query::<(&BoardRow, &Node, Option<&BorderColor>)>().iter(w).find(|(r, ..)| r.0.local).map(|(_, n, b)| (n.border, b.is_some()));
     let (border, colored) = yours.unwrap();
     assert!(colored && border.left != Val::Px(0.0) && border.left != Val::Auto, "your row is outlined");
-    let names: Vec<&str> = w.query::<&SignalIcon>().iter(w).map(|i| i.name).collect();
+    let names: Vec<&str> = w.query::<&SignalIcon>().iter(w).map(|i| i.name.as_str()).collect();
     assert!(names.contains(&"bot"), "the bot mark: {names:?}");
     assert!(names.contains(&"kill") && names.contains(&"death"), "the K and D marks: {names:?}");
     // The shotgun's game has no icon: the kit's; the kit's guns: their own.

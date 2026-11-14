@@ -13,6 +13,12 @@
 //! - `PassMaterial` (`pass.wesl`): the logo pass, four slanted bands and
 //!   the mark on one full-screen node, its geometry from the theme
 //!   (`layout.pass`).
+//! - `LinesMaterial` (`lines.wesl`): the match end's background, slanted
+//!   hairlines and slabs on a 24-column grid moving on the renderer's
+//!   clock (`globals.time`: no CPU work a frame), or frozen at a time
+//!   (`freeze`, screenshots).
+//! - `AmbientMaterial` (`ambient.wesl`): the main menu's ambient
+//!   background, a stub (a slow accent glow on ink) until Look Book V.
 //!
 //! Colours go in as linear RGBA (`LinearRgba::from(color)`); builders
 //! take Bevy `Color`s. `KitMaterialsPlugin` registers them (a
@@ -35,15 +41,21 @@ impl Plugin for KitMaterialsPlugin {
             embedded_asset!(app, "slant.wesl");
             embedded_asset!(app, "tick_bar.wesl");
             embedded_asset!(app, "pass.wesl");
+            embedded_asset!(app, "lines.wesl");
+            embedded_asset!(app, "ambient.wesl");
             app.add_plugins((
                 UiMaterialPlugin::<SlantMaterial>::default(),
                 UiMaterialPlugin::<TickBarMaterial>::default(),
                 UiMaterialPlugin::<PassMaterial>::default(),
+                UiMaterialPlugin::<LinesMaterial>::default(),
+                UiMaterialPlugin::<AmbientMaterial>::default(),
             ));
         } else if app.is_plugin_added::<AssetPlugin>() {
             app.init_asset::<SlantMaterial>()
                 .init_asset::<TickBarMaterial>()
-                .init_asset::<PassMaterial>();
+                .init_asset::<PassMaterial>()
+                .init_asset::<LinesMaterial>()
+                .init_asset::<AmbientMaterial>();
         }
     }
 }
@@ -144,7 +156,7 @@ impl TickBarMaterial {
     pub fn new(theme: &Theme, n: u32, layout: TickLayout) -> TickBarMaterial {
         TickBarMaterial {
             on: theme.tone(Tone::Fg).into(),
-            off: theme.tone(Tone::Fg).with_alpha(0.16).into(),
+            off: theme.tone(Tone::Fg).with_alpha(crate::theme::light_alpha(0.16)).into(),
             hot: theme.tone(Tone::Acc).into(),
             counts: Vec4::new(n as f32, 0.0, n as f32, layout.pitch as f32),
             dims: Vec4::new(layout.tick as f32, layout.h as f32, 0.0, 0.0),
@@ -242,5 +254,81 @@ impl PassMaterial {
 impl UiMaterial for PassMaterial {
     fn fragment_shader() -> ShaderRef {
         "embedded://chimera_ui/materials/pass.wesl".into()
+    }
+}
+
+/// The match end's moving lines (module doc).
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone, PartialEq)]
+pub struct LinesMaterial {
+    #[uniform(0)]
+    pub color: LinearRgba,
+    /// x: loop in seconds, y: far alpha, z: near alpha, w: tan.
+    #[uniform(1)]
+    pub params: Vec4,
+    /// x: opacity, y: columns, z: time offset, w: frozen time (< 0: live).
+    #[uniform(2)]
+    pub extra: Vec4,
+}
+
+impl LinesMaterial {
+    /// The look book's: `fg` lines, far at 4 %, near at 2 % (display
+    /// space: `light_alpha`), a 24 s loop
+    /// (`motion.dur.matchend.lines_loop`), 24 columns.
+    pub fn new(theme: &Theme) -> LinesMaterial {
+        LinesMaterial {
+            color: theme.tone(Tone::Fg).into(),
+            params: Vec4::new(
+                theme.dur("matchend", "lines_loop").max(1.0),
+                crate::theme::light_alpha(0.04),
+                crate::theme::light_alpha(0.02),
+                theme.tan(),
+            ),
+            extra: Vec4::new(1.0, 24.0, 0.0, -1.0),
+        }
+    }
+
+    /// Stopped at `t` seconds into the loop (screenshots, tests); `None`
+    /// to move again.
+    pub fn freeze(mut self, t: Option<f32>) -> Self {
+        self.extra.w = t.unwrap_or(-1.0);
+        self
+    }
+
+    pub fn set_opacity(&mut self, a: f32) {
+        self.extra.x = a;
+    }
+}
+
+impl UiMaterial for LinesMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "embedded://chimera_ui/materials/lines.wesl".into()
+    }
+}
+
+/// The main menu's ambient background (module doc; a stub).
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone, PartialEq)]
+pub struct AmbientMaterial {
+    #[uniform(0)]
+    pub ink: LinearRgba,
+    #[uniform(1)]
+    pub acc: LinearRgba,
+    /// x: glow strength, y: loop in seconds, z: tan, w: opacity.
+    #[uniform(2)]
+    pub params: Vec4,
+}
+
+impl AmbientMaterial {
+    pub fn new(theme: &Theme) -> AmbientMaterial {
+        AmbientMaterial {
+            ink: theme.tone(Tone::Ink).into(),
+            acc: theme.tone(Tone::Acc).into(),
+            params: Vec4::new(0.10, 40.0, theme.tan(), 1.0),
+        }
+    }
+}
+
+impl UiMaterial for AmbientMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "embedded://chimera_ui/materials/ambient.wesl".into()
     }
 }

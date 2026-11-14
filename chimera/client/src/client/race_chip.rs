@@ -25,15 +25,15 @@
 //!   hook in), the rung big, the gun's icon (`signal::gun_icon`) and its
 //!   short name with its game, kills and deaths as two columns with their
 //!   marks right-aligned over them, the ping (a 4-bar meter and the
-//!   number, coloured by the theme's `net` thresholds: `ping_level`; BOT
-//!   for a bot), and the ladder strip. The leader's row
+//!   number, coloured by the theme's `net` thresholds: `ping_level`; LAG
+//!   at the worst; BOT for a bot), and the ladder strip. The leader's row
 //!   has the accent bar; yours is tinted and outlined.
 //!
 //! Content is rebuilt only when what it shows changes (`RaceView`), the
 //! open and close move only the plate's size (`Timeline`).
 //!
 //! Known shortcuts: no rolling numbers or tick pop (M3); the board lists
-//! at most `MAX_ROWS` players; no match clock on the head.
+//! at most `MAX_ROWS` players; no match clock on the head; no packet loss on the board (not measured).
 
 use bevy::prelude::*;
 use chimera_sim::{
@@ -105,8 +105,11 @@ pub struct PingMeter(pub u8);
 
 /// A ping's look on the board by the theme's thresholds (`net.good`,
 /// `net.fair`, `net.bad`; 60, 120, 200 ms without them): bars lit and the
-/// tone of the bars and the number. Under good: 4, quiet (`fg_3`); under
-/// fair: 3 (`fg`); under bad: 2 (`warn`); else 1 (`threat`).
+/// tone of the number (and the bars but a good line's, which are the
+/// quiet green, `good` at 70 %). Under good: 4, quiet (`fg_3`); under
+/// fair: 3 (`fg`); under bad: 2 (`warn`); else 1 (`threat`) and a LAG
+/// flag. No packet loss is measured yet (the kit's `loss` mark waits for
+/// it).
 pub fn ping_level(theme: &chimera_ui::Theme, ping: u16) -> (u8, Tone) {
     let t = |k: &str, or: f32| theme.net(k).unwrap_or(or);
     let p = ping as f32;
@@ -149,6 +152,95 @@ impl RaceView {
     /// You lead (first, best first): the chip's leader variant.
     pub fn leading(&self) -> bool {
         self.rows.first().is_some_and(|r| r.local)
+    }
+}
+
+/// A staged race (`ui_scene chip|lead|board`, made-up players): shown
+/// instead of the game's, the board open with `open`.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct RaceStaged {
+    pub view: RaceView,
+    pub open: bool,
+}
+
+/// The made-up race the scenes stage: eight players, you (and the host)
+/// seventh-rung in fourth, or leading (`lead`).
+pub fn staged_race(lead: bool) -> RaceView {
+    let gun = |rung: usize| -> (Option<&'static str>, &'static str, &'static str, Option<&'static str>) {
+        const L: [(&str, &str, &str, &str); 14] = [
+            ("cs_source:weapon_glock", "GLOCK-18", "CS:S", "pistol"),
+            ("combat_arms:m92fs", "M92FS", "CA", "pistol"),
+            ("hl2dm:weapon_357", ".357 MAGNUM", "HL2:DM", "revolver"),
+            ("cs_source:weapon_mp5navy", "MP5", "CS:S", "smg"),
+            ("combat_arms:mp7", "MP7", "CA", "smg"),
+            ("hl2dm:weapon_shotgun", "SHOTGUN", "HL2:DM", "shotgun"),
+            ("cs_source:weapon_m4a1", "M4A1", "CS:S", "rifle"),
+            ("combat_arms:ak_47", "AK-47", "CA", "rifle"),
+            ("hl2dm:weapon_ar2", "PULSE RIFLE", "HL2:DM", "energy"),
+            ("cs_source:weapon_m249", "M249", "CS:S", "lmg"),
+            ("cs_source:weapon_awp", "AWP", "CS:S", "sniper"),
+            ("hl2dm:weapon_crossbow", "CROSSBOW", "HL2:DM", "crossbow"),
+            ("hl2dm:weapon_rpg", "RPG", "HL2:DM", "launcher"),
+            ("cs_source:weapon_knife", "KNIFE", "CS:S", "knife"),
+        ];
+        let (id, name, game, class) = L[rung.min(13)];
+        (Some(id), name, game, Some(class))
+    };
+    let row = |name: &str, rung: usize, kills: i32, deaths: u32, bot: bool, local: bool, host: bool, wins: u32, ping: u16| {
+        let (id, gun_name, game, class) = gun(rung);
+        RaceRow {
+            name: name.into(),
+            rung,
+            kills,
+            deaths,
+            gun: id,
+            gun_name: gun_name.into(),
+            game: game.into(),
+            class,
+            bot,
+            host,
+            local,
+            wins,
+            ping,
+        }
+    };
+    let rows = if lead {
+        vec![
+            row("kestrel", 10, 25, 8, false, true, true, 2, 0),
+            row("lowgrav_larry", 8, 19, 11, false, false, false, 1, 48),
+            row("nadia.exe", 7, 18, 12, false, false, false, 3, 87),
+            row("Sgt. Biscuit", 7, 17, 14, true, false, false, 0, 0),
+            row("vex", 6, 14, 10, false, false, false, 1, 143),
+            row("mothman", 4, 10, 15, false, false, false, 0, 61),
+            row("Rook", 3, 8, 16, true, false, false, 0, 0),
+            row("pixelpirate", 1, 3, 19, false, false, false, 0, 231),
+        ]
+    } else {
+        vec![
+            row("nadia.exe", 10, 24, 9, false, false, false, 3, 87),
+            row("lowgrav_larry", 8, 19, 11, false, false, false, 1, 48),
+            row("Sgt. Biscuit", 7, 17, 14, true, false, false, 0, 0),
+            row("kestrel", 6, 15, 12, false, true, true, 2, 0),
+            row("vex", 6, 14, 10, false, false, false, 1, 143),
+            row("mothman", 4, 10, 15, false, false, false, 0, 61),
+            row("Rook", 3, 8, 16, true, false, false, 0, 0),
+            row("pixelpirate", 1, 3, 19, false, false, false, 0, 231),
+        ]
+    };
+    RaceView { active: true, rows, rungs: 14, map: "de_dust2".into(), map_game: "CS:S".into(), size: (0, 0) }
+}
+
+/// Stages scene `name` (`chip`, `lead`, `board`, `board_lead`), or clears
+/// it (`None`).
+pub fn stage(world: &mut World, name: Option<&str>) {
+    match name {
+        Some(n) => {
+            let lead = n.contains("lead");
+            world.insert_resource(RaceStaged { view: staged_race(lead), open: n.starts_with("board") });
+        }
+        None => {
+            world.remove_resource::<RaceStaged>();
+        }
     }
 }
 
@@ -260,7 +352,17 @@ fn gather(
         With<InMinigame>,
     >,
     mut view: ResMut<RaceView>,
+    staged: Option<Res<RaceStaged>>,
 ) {
+    if let Some(st) = staged {
+        let mut next = st.view.clone();
+        next.active = true;
+        next.size = (look.units.height as u32, (look.units.scale_factor * 100.0) as u32);
+        if *view != next {
+            *view = next;
+        }
+        return;
+    }
     let active = look.on() && ladder.is_some() && hud.as_deref().is_some_and(|h| h.playing() && !h.results_shown);
     let mut next = RaceView { active, size: (look.units.height as u32, (look.units.scale_factor * 100.0) as u32), ..default() };
     if let (true, Some(ladder)) = (active, ladder.as_deref()) {
@@ -638,6 +740,8 @@ fn build_board(
                         return;
                     }
                     let (bars, tone) = ping_level(&look.theme, row.ping);
+                    // A good line's bars in the quiet green, its number quiet.
+                    let bar = if bars == 4 { look.theme.tone_a(Tone::Good, 0.7) } else { look.tone(tone) };
                     c.spawn((
                         PingMeter(bars),
                         Node { align_items: AlignItems::FlexEnd, column_gap: look.val(0.08), height: look.val(0.7), ..default() },
@@ -648,12 +752,15 @@ fn build_board(
                             let lit = i < bars;
                             m.spawn((
                                 Node { width: look.val(0.14), height: look.val(0.25 + 0.15 * i as f32), ..default() },
-                                BackgroundColor(look.tone(if lit { tone } else { Tone::Fg4 })),
+                                BackgroundColor(if lit { bar } else { look.tone(Tone::Fg4) }),
                                 Pickable::IGNORE,
                             ));
                         }
                     });
                     c.spawn((look.text(Role::Mono, 0.54, look.tone(tone), &row.ping.to_string()), Pickable::IGNORE));
+                    if bars == 1 {
+                        c.spawn((look.text(Role::Mono, 0.42, look.tone(Tone::Threat), "LAG"), Pickable::IGNORE));
+                    }
                 });
                 // The ladder strip, set apart by a hairline.
                 r.spawn((
@@ -694,6 +801,7 @@ fn open_close(
     held: Res<HeldActions>,
     clock: Res<UiClock>,
     mut open: ResMut<BoardOpen>,
+    staged: Option<Res<RaceStaged>>,
     mut root: Single<(&mut Visibility, &mut Node), (With<RaceChipRoot>, Without<ChipContent>, Without<BoardContent>, Without<RacePlate>)>,
     mut plate: Single<(&mut Timeline, &mut Node, &mut BackgroundColor), With<RacePlate>>,
     mut chip: Query<&mut Visibility, (With<ChipContent>, Without<BoardContent>, Without<RaceChipRoot>)>,
@@ -706,10 +814,10 @@ fn open_close(
     if root_node.top != top {
         root_node.top = top;
     }
-    let want = view.active && held.showscores;
+    let want = view.active && (held.showscores || staged.is_some_and(|s| s.open));
     let (tl, node, bg) = &mut *plate;
     let target_h = board_h(view.rows.len());
-    let plate_bg = chimera_ui::theme::display_alpha(look.tone(Tone::Plate));
+    let plate_bg = look.tone(Tone::Plate);
     if bg.0 != plate_bg {
         bg.0 = plate_bg;
     }
