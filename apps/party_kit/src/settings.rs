@@ -17,8 +17,15 @@
 //!   each row noting "now" or "next match", for the host or an RCON
 //!   admin (the server's values, set through `rcon`: `host::value`,
 //!   `host::set`). Only settings that exist.
-//! - **Rows** by the setting's pick: a range is a slider (click or drag a
-//!   place, ←→ a step), two choices Off/On a toggle, `widget =
+//! - **Rows** by the setting's pick: a range is a slider (a press on the
+//!   track jumps there and drags, the page drawn again under it with the
+//!   drag kept in `Settings::slide`; the value shows and a preview's cvar
+//!   follows while dragging, and it becomes pending once, at the release,
+//!   with one slider cue; ←→ a step, a cue each; a click on its value box
+//!   types a number, `Settings::edit`: Enter or a click away keeps it,
+//!   Esc puts it back; any finite number is kept, past the range too (the
+//!   thumb stops at the end), unless outside the setting's `hard_min` /
+//!   `hard_max` (options.toml), which shows why beside the box), two choices Off/On a toggle, `widget =
 //!   "dropdown"` a dropdown, up to five choices segmented, more a stepper;
 //!   a bind a key field (Enter or click, then a key, a mouse button or
 //!   the wheel; Esc cancels; Delete clears). ↑↓ move the focus (the
@@ -65,7 +72,11 @@
 use std::collections::BTreeMap;
 
 use bevy::{
-    input::{ButtonInput, mouse::AccumulatedMouseScroll},
+    input::{
+        ButtonInput, ButtonState,
+        keyboard::{Key, KeyboardInput},
+        mouse::AccumulatedMouseScroll,
+    },
     prelude::*,
     ui::{DeprecatedInteraction as Interaction, RelativeCursorPosition},
 };
@@ -152,10 +163,31 @@ pub struct Settings {
     /// scroll container, `chimera_ui::scroll`); the pointer moving it
     /// doesn't scroll.
     pub reveal: bool,
+    /// A slider dragged (module doc).
+    pub slide: Option<Slide>,
+    /// A value box typed into (module doc).
+    pub edit: Option<ValueEdit>,
     /// A page asked for by name (`ui_scene settings <tab>`) at opening.
     pub want_tab: Option<String>,
     /// A staged scene's page, opened once the menus are up.
     pub stage: Option<String>,
+}
+
+/// A slider dragged: its row and its value at the press.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Slide {
+    pub row: usize,
+    pub from: String,
+}
+
+/// A slider's value box typed into: the text, the caret (a char index),
+/// why the text was refused.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ValueEdit {
+    pub row: usize,
+    pub text: String,
+    pub caret: usize,
+    pub error: Option<String>,
 }
 
 /// One row of a page.
@@ -248,6 +280,8 @@ pub fn rows(ctx: Context, tabs: &[(String, Vec<Setting>)], tab: usize, bind_game
                     live: true,
                     when: None,
                     widget: None,
+                    hard_min: None,
+                    hard_max: None,
                 };
                 out.push(Row::Setting { s, note: None });
             }
@@ -267,8 +301,19 @@ pub enum SettingsAction {
     Pick { row: usize, option: usize },
     /// A slider's track (the press's place read from it).
     Slide(usize),
-    /// A slider set to a place 0-1.
+    /// A slider set to a place 0-1 at once (pending, its cue).
     SetFrac { row: usize, frac: f32 },
+    /// A press on a slider's track: the value jumps there and a drag
+    /// starts; `SlideTo` follows the pointer (shown, previewed, not yet
+    /// pending); `SlideEnd` (the button let go) makes it pending, its cue
+    /// once.
+    SlideStart { row: usize, frac: f32 },
+    SlideTo { row: usize, frac: f32 },
+    SlideEnd(usize),
+    /// A slider's value box clicked: typing a number into it.
+    EditValue(usize),
+    /// The number typed kept (Enter, a click away), or refused.
+    CommitEdit,
     OpenList(usize),
     Bind(usize),
     Clear(usize),
@@ -337,18 +382,19 @@ impl Plugin for SettingsPlugin {
             .init_resource::<ButtonInput<MouseButton>>()
             .init_resource::<AccumulatedMouseScroll>()
             .add_message::<SettingsAction>()
+            .add_message::<KeyboardInput>()
             .configure_sets(
                 Update,
                 SettingsSystems.before(crate::main_menu::MainMenuSystems).before(crate::esc_menu::EscMenuSystems),
             )
             .add_systems(
                 Update,
-                (follow, capture, keys, clicks, hover_focus, act, refresh_values, draw).chain().in_set(SettingsSystems),
+                (follow, capture, edit_typing, keys, clicks, hover_focus, act, refresh_values, draw).chain().in_set(SettingsSystems),
             )
             .add_systems(Update, crate::ui_cues::hover::<SettingsAction>.in_set(SettingsSystems));
         use chimera_client::client::ui_scene::UiSceneHooks;
         UiSceneHooks::add(app.world_mut(), "settings", scene_settings);
-        app.console_command("chimera:settings_press", "settings_press <apply|revert|back|keep|revert_keep|leave_apply|leave_discard|stay>: press that button of Settings (tests, screenshots).", |w, a| {
+        app.console_command("chimera:settings_press", "settings_press <apply|revert|back|keep|revert_keep|leave_apply|leave_discard|stay|commit>: press that button of Settings (tests, screenshots).", |w, a| {
             let action = match a.first().map(String::as_str) {
                 Some("apply") => SettingsAction::Apply,
                 Some("revert") => SettingsAction::Revert,
@@ -358,9 +404,24 @@ impl Plugin for SettingsPlugin {
                 Some("leave_apply") => SettingsAction::LeaveApply,
                 Some("leave_discard") => SettingsAction::LeaveDiscard,
                 Some("stay") => SettingsAction::LeaveStay,
+                Some("commit") => SettingsAction::CommitEdit,
                 other => return Err(format!("no button {other:?}")),
             };
             w.write_message(action);
+            Ok(None)
+        });
+        app.console_command("chimera:settings_type", "settings_type <text>: type into the value box (the focused row's, opened if none is) (tests, screenshots).", |w, a| {
+            let text = a.join(" ");
+            if w.resource::<Settings>().edit.is_none() {
+                // The focused row's box opens first.
+                let focus = w.resource::<Settings>().focus;
+                act_one(w, SettingsAction::EditValue(focus));
+            }
+            let mut s = w.resource_mut::<Settings>();
+            let e = s.edit.as_mut().ok_or("the focused row takes no typed number")?;
+            e.caret = text.chars().count();
+            e.text = text;
+            e.error = None;
             Ok(None)
         });
         app.console_command("chimera:settings_set", "settings_set <cvar> <value>: change a setting on the open Settings page, pending until Apply (tests, screenshots).", |w, a| {
@@ -570,6 +631,17 @@ fn keys(
         }
         return;
     }
+    if s.edit.is_some() {
+        // Typing a number: Enter keeps it, Esc puts the value back.
+        if enter {
+            out.write(SettingsAction::CommitEdit);
+        } else if p(KeyCode::Escape) {
+            s.edit = None;
+            s.esc_taken = true;
+            cues.write(UiCue::new("ui_back"));
+        }
+        return;
+    }
     if s.capture.is_some() || s.esc_taken {
         return;
     }
@@ -659,14 +731,22 @@ fn keys(
     }
 }
 
-/// Clicks as actions; a slider's press as its place.
+/// Clicks as actions; a slider's press as its place and its drag.
 fn clicks(
     pressed: Query<(&Interaction, &SettingsAction, Option<&RelativeCursorPosition>), Changed<Interaction>>,
-    dragged: Query<(&Interaction, &SettingsAction, &RelativeCursorPosition)>,
+    tracks: Query<(&SettingsAction, &RelativeCursorPosition)>,
     mouse: Res<ButtonInput<MouseButton>>,
+    s: Res<Settings>,
     mut last: Local<Option<(usize, f32)>>,
     mut out: MessageWriter<SettingsAction>,
 ) {
+    // A click away from the box typed into keeps what was typed.
+    if let Some(e) = &s.edit
+        && mouse.just_pressed(MouseButton::Left)
+        && !pressed.iter().any(|(i, a, _)| *i == Interaction::Pressed && *a == SettingsAction::EditValue(e.row))
+    {
+        out.write(SettingsAction::CommitEdit);
+    }
     for (i, a, pos) in &pressed {
         if *i != Interaction::Pressed {
             continue;
@@ -674,7 +754,7 @@ fn clicks(
         match (*a, pos) {
             (SettingsAction::Slide(row), Some(pos)) => {
                 if let Some(f) = controls::slider_frac(pos) {
-                    out.write(SettingsAction::SetFrac { row, frac: f });
+                    out.write(SettingsAction::SlideStart { row, frac: f });
                     *last = Some((row, f));
                 }
             }
@@ -683,25 +763,63 @@ fn clicks(
             }
         }
     }
-    // A drag along a pressed track.
-    if mouse.pressed(MouseButton::Left) {
-        for (i, a, pos) in &dragged {
-            if let (Interaction::Pressed, SettingsAction::Slide(row)) = (i, a)
-                && let Some(f) = controls::slider_frac(pos)
-                && last.is_none_or(|(r, l)| r != *row || (l - f).abs() > 0.004)
-            {
-                out.write(SettingsAction::SetFrac { row: *row, frac: f });
-                *last = Some((*row, f));
+    // The drag: the page is drawn again as the value moves, so the track
+    // is found by its row each frame (its `RelativeCursorPosition` holds
+    // with the pointer outside it too).
+    if let Some(sl) = &s.slide {
+        if mouse.pressed(MouseButton::Left) {
+            for (a, pos) in &tracks {
+                if *a == SettingsAction::Slide(sl.row)
+                    && let Some(f) = controls::slider_frac(pos)
+                    && last.is_none_or(|(r, l)| r != sl.row || (l - f).abs() > 0.004)
+                {
+                    out.write(SettingsAction::SlideTo { row: sl.row, frac: f });
+                    *last = Some((sl.row, f));
+                }
             }
+        } else {
+            out.write(SettingsAction::SlideEnd(sl.row));
+            *last = None;
         }
-    } else {
+    } else if !mouse.pressed(MouseButton::Left) {
         *last = None;
+    }
+}
+
+/// Keys typed into a value box (`Settings::edit`; Enter and Esc are
+/// `keys`').
+fn edit_typing(mut events: MessageReader<KeyboardInput>, mut s: ResMut<Settings>) {
+    use chimera_client::client::widgets::{Caret, Edit};
+    if s.edit.is_none() {
+        events.clear();
+        return;
+    }
+    for ev in events.read() {
+        if ev.state != ButtonState::Pressed {
+            continue;
+        }
+        let edit = match &ev.logical_key {
+            Key::Backspace => Edit::Backspace,
+            Key::Delete => Edit::Delete,
+            Key::ArrowLeft => Edit::Left(false),
+            Key::ArrowRight => Edit::Right(false),
+            Key::Home => Edit::Home(false),
+            Key::End => Edit::End(false),
+            Key::Character(t) => Edit::Insert(t.to_string()),
+            _ => continue,
+        };
+        let Some(e) = s.edit.as_mut() else { return };
+        let mut caret = Caret { at: e.caret, anchor: e.caret };
+        if caret.edit(&mut e.text, edit, 24) {
+            e.error = None;
+        }
+        e.caret = caret.at;
     }
 }
 
 /// The pointer on a row focuses it.
 fn hover_focus(rows: Query<(&Interaction, &SettingsAction), Changed<Interaction>>, mut s: ResMut<Settings>) {
-    if s.capture.is_some() || s.open_list.is_some() || s.leave.is_some() || s.keep.is_some() {
+    if s.capture.is_some() || s.open_list.is_some() || s.leave.is_some() || s.keep.is_some() || s.slide.is_some() {
         return;
     }
     for (i, a) in &rows {
@@ -758,6 +876,29 @@ fn set_value(world: &mut World, ctx: Context, set: &Setting, value: &str) {
     }
     if previews(set) {
         submit(world, set_line(cvar, value));
+    }
+}
+
+/// A slider dragged to `frac`: shown, and previewed for a preview's
+/// cvar (its applied value kept first, for Revert), pending only at the
+/// release (`SlideEnd`).
+fn slide_live(world: &mut World, ctx: Context, set: &Setting, frac: f32) {
+    let Pick::Range { min, max, step } = set.pick else { return };
+    let v = format!("{}", controls::value_at(frac, min, max, step));
+    let cvar = set.cvar.as_str();
+    if world.resource::<Settings>().values.get(cvar).is_some_and(|x| host::same_value(x, &v)) {
+        return;
+    }
+    let preview = ctx != Context::Host && previews(set);
+    let applied = (preview && !world.resource::<Settings>().baseline.contains_key(cvar))
+        .then(|| crate::controls::cvar_value(world, cvar).unwrap_or_default());
+    let mut s = world.resource_mut::<Settings>();
+    s.values.insert(cvar.to_string(), v.clone());
+    if let Some(a) = applied {
+        s.baseline.insert(cvar.to_string(), a);
+    }
+    if preview {
+        submit(world, set_line(cvar, &v));
     }
 }
 
@@ -913,6 +1054,75 @@ fn act_one(world: &mut World, a: SettingsAction) {
             }
         }
         A::Slide(_) => {}
+        A::SlideStart { row, frac } => {
+            if let Some(set) = setting(row)
+                && matches!(set.pick, Pick::Range { .. })
+            {
+                let from = shown_value(world, ctx, &set.cvar);
+                let mut st = world.resource_mut::<Settings>();
+                st.focus = row;
+                st.edit = None;
+                st.slide = Some(Slide { row, from });
+                slide_live(world, ctx, &set, frac);
+            }
+        }
+        A::SlideTo { row, frac } => {
+            if world.resource::<Settings>().slide.as_ref().is_some_and(|sl| sl.row == row)
+                && let Some(set) = setting(row)
+            {
+                slide_live(world, ctx, &set, frac);
+            }
+        }
+        A::SlideEnd(row) => {
+            let sl = world.resource_mut::<Settings>().slide.take();
+            if let Some(sl) = sl.filter(|sl| sl.row == row)
+                && let Some(set) = setting(row)
+            {
+                let v = world.resource::<Settings>().values.get(&set.cvar).cloned().unwrap_or_else(|| sl.from.clone());
+                set_value(world, ctx, &set, &v);
+                // One cue for the whole drag (or the click), none for no change.
+                if !host::same_value(&sl.from, &v) {
+                    cue(world, crate::ui_cues::step_cue(&set.pick, &v));
+                }
+            }
+        }
+        A::EditValue(row) => {
+            if let Some(set) = setting(row)
+                && matches!(set.pick, Pick::Range { .. })
+                && world.resource::<Settings>().edit.as_ref().is_none_or(|e| e.row != row)
+            {
+                let text = shown_value(world, ctx, &set.cvar).trim().to_string();
+                let mut st = world.resource_mut::<Settings>();
+                st.focus = row;
+                st.open_list = None;
+                st.edit = Some(ValueEdit { row, caret: text.chars().count(), text, error: None });
+                cue(world, UiCue::new("ui_select"));
+            }
+        }
+        A::CommitEdit => {
+            let Some(e) = world.resource::<Settings>().edit.clone() else { return };
+            let Some(set) = setting(e.row) else {
+                world.resource_mut::<Settings>().edit = None;
+                return;
+            };
+            match controls::typed_number(&e.text, (set.hard_min, set.hard_max)) {
+                Ok(v) => {
+                    world.resource_mut::<Settings>().edit = None;
+                    let next = format!("{v}");
+                    let now = shown_value(world, ctx, &set.cvar);
+                    if !host::same_value(&now, &next) {
+                        set_value(world, ctx, &set, &next);
+                    }
+                    cue(world, UiCue::new("ui_select"));
+                }
+                Err(why) => {
+                    if let Some(e) = world.resource_mut::<Settings>().edit.as_mut() {
+                        e.error = Some(why);
+                    }
+                    cue(world, UiCue::new("ui_denied"));
+                }
+            }
+        }
         A::SetFrac { row, frac } => {
             if let Some(s) = setting(row)
                 && let Pick::Range { min, max, step } = s.pick
@@ -1049,11 +1259,15 @@ fn snapshot_binds(world: &mut World) {
 fn refresh_values(world: &mut World) {
     let Some(ctx) = world.resource::<Settings>().ctx else { return };
     let tabs = tabs_of(world);
-    let (tab, game) = {
+    let (tab, game, sliding) = {
         let s = world.resource::<Settings>();
-        (s.tab, s.bind_game)
+        (s.tab, s.bind_game, s.slide.as_ref().map(|sl| sl.row))
     };
-    for r in rows(ctx, &tabs, tab, game) {
+    for (i, r) in rows(ctx, &tabs, tab, game).into_iter().enumerate() {
+        // A slider being dragged shows the drag, not the cvar.
+        if sliding == Some(i) {
+            continue;
+        }
         if let Row::Setting { s, .. } = r {
             let v = shown_value(world, ctx, &s.cvar);
             let mut st = world.resource_mut::<Settings>();
@@ -1444,9 +1658,24 @@ fn draw_row(c: &mut Commands, ui: &Ui, list: Entity, i: usize, r: &Row, d: &Draw
             let vst = State::focused(focus);
             match (widget(set), &set.pick) {
                 (Widget::Slider { min, max, .. }, _) => {
+                    // A typed value past the range keeps its number; the
+                    // thumb stops at the end.
                     let f = v.trim().parse::<f32>().map_or(0.0, |x| controls::frac_of(x, min, max));
-                    let tr = ui.slider(c, vl, f, None, &set.pick.shown(&v), 15.0, vst);
-                    c.entity(tr).insert(SettingsAction::Slide(i));
+                    let edit = s.edit.as_ref().filter(|e| e.row == i);
+                    let typing = edit.map(|e| controls::Typing {
+                        text: &e.text,
+                        caret: e.text.char_indices().nth(e.caret).map_or(e.text.len(), |(b, _)| b),
+                        error: e.error.is_some(),
+                    });
+                    let p = ui.slider_ex(c, vl, f, None, &set.pick.shown(&v), 15.0, vst, typing);
+                    c.entity(p.track).insert(SettingsAction::Slide(i));
+                    c.entity(p.value).insert(SettingsAction::EditValue(i));
+                    if let Some(why) = edit.and_then(|e| e.error.as_deref()) {
+                        // Refused: why, beside the box (threat as a mark).
+                        let n = ui.boxed(c, vl, UiStyle { gap: Some(0.4), margin: Some([0.0, 0.0, 0.0, 0.6].into()), ..UiStyle::row() });
+                        ui.mark(c, n, Tone::Threat, 0.36, 0.36);
+                        ui.text(c, n, Role::Mono, 0.5, Tone::Fg2, why);
+                    }
                 }
                 (Widget::Toggle, Pick::Choices(ch)) => {
                     let on = ch.get(1).is_some_and(|(cv, _)| host::same_value(cv, &v));

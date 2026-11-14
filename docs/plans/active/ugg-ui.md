@@ -969,7 +969,13 @@ again); a page change wipes the rows in on the slant;
 the rows (Settings' every page, Play's) in the kit's scroll container
 (`chimera_ui::scroll`: bar, eased wheel, right-button pan and fling, ↑↓
 keeping the focused row in view; Join's server list keeps its 8-row
-window); `ui_scene settings <tab>` (`settings_set <cvar> <value>` and
+window); sliders that drag (a press jumps there; the value shows and a preview
+follows while dragging, pending once at the release with one slider
+cue; ←→ a cue a step) and whose value box takes a typed number (any
+finite one, past the range too; options.toml's `hard_min`/`hard_max`
+refuse the unsafe, why shown beside the box; Enter or a click away
+keeps, Esc puts back: `controls::typed_number`, `Ui::slider_ex`,
+`stepper_ex`); `ui_scene settings <tab>` (`settings_set <cvar> <value>` and
 `settings_press <button>` stage changes and the prompts); tests
 `party_kit` `settings::`. Polish
 (2026-11-14): the games' own HUDs (HL2:DM's root, Combat Arms' roots

@@ -111,6 +111,11 @@ pub struct Setting {
     /// How the Signal look's Settings shows it (`widget = "dropdown"`;
     /// None: by its pick, `settings::widget`).
     pub widget: Option<String>,
+    /// The least and most a typed number may be (inclusive), for values
+    /// that are unsafe past them (a negative volume); the range is only
+    /// the slider's.
+    pub hard_min: Option<f32>,
+    pub hard_max: Option<f32>,
 }
 
 /// A `[[setting]]` (or a tab's `setting` entry) read.
@@ -149,6 +154,8 @@ pub fn setting_of(v: &toml::Value) -> Result<Setting, String> {
         help: s("help").unwrap_or_default(),
         when: s("when"),
         widget: s("widget"),
+        hard_min: t.get("hard_min").and_then(num),
+        hard_max: t.get("hard_max").and_then(num),
     })
 }
 

@@ -438,3 +438,129 @@ fn the_keys_scroll_the_focused_row_into_view() {
     tap(&mut sim.app, KeyCode::KeyQ);
     assert_eq!(sim.app.world().resource::<chimera_ui::ScrollViews>().get(settings::SCROLL_KEY).unwrap().offset, 0.0);
 }
+
+/// Counts the slider's cues (`ui_slider`).
+#[derive(Resource, Default)]
+struct SliderCues(usize);
+
+fn count_slider_cues(mut cues: MessageReader<chimera_ui::UiCue>, mut n: ResMut<SliderCues>) {
+    n.0 += cues.read().filter(|c| c.event == "ui_slider").count();
+}
+
+fn slider_cues(app: &App) -> usize {
+    app.world().resource::<SliderCues>().0
+}
+
+/// Settings on the Audio page, counting slider cues, the left button held.
+fn audio_page() -> (Sim, usize) {
+    let mut sim = party(true);
+    sim.app.init_resource::<SliderCues>().add_systems(Update, count_slider_cues.after(settings::SettingsSystems));
+    open_settings(&mut sim.app);
+    send(&mut sim.app, SettingsAction::Tab(1));
+    let row = row_of(&sim.app, "volume");
+    (sim, row)
+}
+
+/// The volume slider's track as now drawn, the pointer `frac` along it.
+fn point_at(app: &mut App, row: usize, frac: f32) -> Entity {
+    let w = app.world_mut();
+    let track = w
+        .query::<(Entity, &SettingsAction)>()
+        .iter(w)
+        .find(|(_, a)| **a == SettingsAction::Slide(row))
+        .map(|(e, _)| e)
+        .expect("the slider's track");
+    w.entity_mut(track).insert(bevy::ui::RelativeCursorPosition { cursor_over: true, normalized: Some(Vec2::new(frac - 0.5, 0.0)) });
+    track
+}
+
+fn mouse(app: &mut App) -> Mut<'_, ButtonInput<MouseButton>> {
+    app.world_mut().resource_mut::<ButtonInput<MouseButton>>()
+}
+
+/// A press on the track jumps there and drags, the page drawn again under
+/// the pointer; the value shows and previews while dragging and becomes
+/// pending once, at the release, with one cue.
+#[test]
+fn a_slider_drags_and_its_release_commits_once() {
+    let (mut sim, row) = audio_page();
+    let app = &mut sim.app;
+    let track = point_at(app, row, 0.2);
+    mouse(app).press(MouseButton::Left);
+    app.world_mut().entity_mut(track).insert(bevy::ui::DeprecatedInteraction::Pressed);
+    app.update();
+    mouse(app).clear();
+    app.update();
+    assert_eq!(set(app).values["volume"], "0.2", "jumped to the press");
+    assert!(set(app).slide.is_some(), "dragging");
+    for f in [0.3, 0.45, 0.6, 0.7] {
+        // A new track each time: the page is drawn again as the value moves.
+        point_at(app, row, f);
+        app.update();
+    }
+    assert_eq!(set(app).values["volume"], "0.7", "followed the pointer");
+    app.update();
+    assert_eq!(cvar(app, "volume"), "0.7", "a volume previews while dragged");
+    assert!(set(app).pending.is_empty(), "nothing pending mid-drag");
+    assert_eq!(slider_cues(app), 0, "no ticks while dragging");
+    mouse(app).release(MouseButton::Left);
+    app.update();
+    app.update();
+    assert!(set(app).slide.is_none());
+    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("0.7"), "pending at the release");
+    assert_eq!(changes(app), 1);
+    assert_eq!(slider_cues(app), 1, "one cue, at the release");
+    // Revert puts the previewed volume back.
+    ctrl(app, KeyCode::KeyZ);
+    assert_eq!(cvar(app, "volume"), "1");
+}
+
+/// A click without a drag: one cue; ←→: a cue each step.
+#[test]
+fn a_click_cues_once_and_keys_cue_each_step() {
+    let (mut sim, row) = audio_page();
+    let app = &mut sim.app;
+    send(app, SettingsAction::SlideStart { row, frac: 0.4 });
+    send(app, SettingsAction::SlideEnd(row));
+    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("0.4"));
+    assert_eq!(slider_cues(app), 1, "a click-jump: once");
+    send(app, SettingsAction::Row(row));
+    tap(app, KeyCode::ArrowRight);
+    tap(app, KeyCode::ArrowRight);
+    assert_eq!(slider_cues(app), 3, "each key step");
+}
+
+/// Clicking the value box types a number: one past the range is kept
+/// (the thumb stops at the end), a negative volume refused with why,
+/// Esc puts the value back.
+#[test]
+fn a_typed_value_is_kept_past_the_range_and_checked() {
+    let (mut sim, row) = audio_page();
+    let app = &mut sim.app;
+    send(app, SettingsAction::EditValue(row));
+    assert_eq!(set(app).edit.as_ref().map(|e| e.text.as_str()), Some("1"), "the value to edit");
+    app.world_mut().resource_mut::<Console>().submit("settings_type 1.6");
+    app.update();
+    tap(app, KeyCode::Enter);
+    assert!(set(app).edit.is_none(), "Enter keeps it");
+    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("1.6"), "past the slider's 1, kept");
+    // Refused: a negative volume, and not a number.
+    send(app, SettingsAction::EditValue(row));
+    app.world_mut().resource_mut::<Console>().submit("settings_type -0.5");
+    app.update();
+    tap(app, KeyCode::Enter);
+    let e = set(app).edit.expect("still typing");
+    assert_eq!(e.error.as_deref(), Some("At least 0"), "why, beside the box");
+    let texts: Vec<String> = app.world_mut().query::<&Text>().iter(app.world()).map(|t| t.0.clone()).collect();
+    assert!(texts.iter().any(|t| t == "AT LEAST 0"), "shown: {texts:?}");
+    app.world_mut().resource_mut::<Console>().submit("settings_type abc");
+    app.update();
+    tap(app, KeyCode::Enter);
+    assert_eq!(set(app).edit.and_then(|e| e.error).as_deref(), Some("Not a number"));
+    // Esc: the value as it was, the page still up.
+    tap(app, KeyCode::Escape);
+    app.update();
+    assert!(set(app).edit.is_none());
+    assert_eq!(set(app).ctx, Some(Context::Game), "Esc only closed the box");
+    assert_eq!(set(app).pending.get("volume").map(String::as_str), Some("1.6"));
+}

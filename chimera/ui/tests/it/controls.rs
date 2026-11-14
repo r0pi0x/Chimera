@@ -202,3 +202,31 @@ fn wipe_cover_clears_and_goes() {
     let none = build(&mut app, |ui, c, root| ui.wipe_cover(c, root, Tone::Ink, now, now + 1.0, 0.3));
     assert!(none.is_none());
 }
+
+/// A typed number: any finite one, inside the hard limits only.
+#[test]
+fn a_typed_number_is_checked_only_against_hard_limits() {
+    let hard = (Some(0.0), None);
+    assert_eq!(controls::typed_number(" 2.5 ", hard), Ok(2.5), "past a slider's range is fine");
+    assert_eq!(controls::typed_number("-1", hard), Err("At least 0".into()));
+    assert_eq!(controls::typed_number("abc", hard), Err("Not a number".into()));
+    assert_eq!(controls::typed_number("inf", (None, None)), Err("Not a number".into()));
+    assert_eq!(controls::typed_number("NaN", (None, None)), Err("Not a number".into()));
+    assert_eq!(controls::typed_number("200", (None, Some(179.0))), Err("At most 179".into()));
+}
+
+/// The slider's value box is clickable; typing, it is a text field with
+/// the caret, refused text underlined in threat.
+#[test]
+fn a_sliders_value_box_types() {
+    let mut app = app();
+    let p = build(&mut app, |ui, c, root| ui.slider_ex(c, root, 0.5, None, "0.5", 15.0, State::NONE, None));
+    assert!(app.world().get::<Interaction>(p.value).is_some(), "clickable");
+    assert_eq!(texts_under(&mut app, p.value), ["0.5"]);
+    let typing = controls::Typing { text: "1.6", caret: 3, error: true };
+    let p = build(&mut app, |ui, c, root| ui.slider_ex(c, root, 1.0, None, "1.6", 15.0, State::NONE, Some(typing)));
+    assert_eq!(texts_under(&mut app, p.value), ["1.6"], "as typed");
+    assert_eq!(descendants_with::<controls::TextCaret>(&mut app, p.value).len(), 1, "the caret");
+    let s = build(&mut app, |ui, c, root| ui.stepper_ex(c, root, "8", 4.0, State::NONE, None));
+    assert!(app.world().get::<Interaction>(s.value).is_some(), "a stepper's value too");
+}
