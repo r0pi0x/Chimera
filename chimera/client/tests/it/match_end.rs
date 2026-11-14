@@ -104,11 +104,13 @@ fn the_hold_shows_the_winner_the_standings_and_the_next_map() {
         player: Some(player),
         gun: Some(gun.into()),
         wins,
+        ..Default::default()
     };
     let results = MatchResults {
         title: "Kit gun game".into(),
         rungs: 3,
         rows: vec![row("Ann", ann, 7, "kit:shotgun", 2, true), row("Server's name for me", me, 3, "kit:rifle", 0, false)],
+        ..default()
     };
     sim.app.insert_resource(MinigameHud {
         title: "Kit gun game".into(),
@@ -141,6 +143,9 @@ fn the_hold_shows_the_winner_the_standings_and_the_next_map() {
             wins: 2,
             winner: true,
             local: false,
+            rung: Some(1),
+            gun_id: Some("kit:shotgun".into()),
+            ..default()
         },
         MatchEndRow {
             place: 2,
@@ -152,6 +157,9 @@ fn the_hold_shows_the_winner_the_standings_and_the_next_map() {
             wins: 0,
             winner: false,
             local: true,
+            rung: Some(1),
+            gun_id: Some("kit:rifle".into()),
+            ..default()
         },
     ];
     assert_eq!(v.rows, want, "the board's names and guns; my row marked");
@@ -249,7 +257,7 @@ fn the_screen_scales_with_the_windows_height() {
     };
     sim.app.insert_resource(MinigameHud {
         title: "Gun game".into(),
-        results: Some(MatchResults { title: "Gun game".into(), rungs: 3, rows: vec![row] }),
+        results: Some(MatchResults { title: "Gun game".into(), rungs: 3, rows: vec![row], ..default() }),
         ..default()
     });
     sim.app.insert_resource(NextMatch { map: None, at: now(&sim) + 5.0 });
@@ -324,6 +332,7 @@ fn a_shortened_guns_full_name_shows_on_hover() {
             title: "Gun game".into(),
             rungs: 3,
             rows: vec![row("Ann", 7, "kit:shotgun", true), row("Bob", 3, "kit:rifle", false)],
+            ..default()
         }),
         ..default()
     });

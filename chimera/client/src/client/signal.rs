@@ -377,6 +377,7 @@ pub struct BaseAlpha {
     text: f32,
     border: f32,
     image: f32,
+    outline: f32,
 }
 
 /// A node and everything under it at this opacity (0-1): Bevy UI has
@@ -392,6 +393,7 @@ type Paint<'a> = (
     Option<&'a mut BorderColor>,
     Option<&'a mut ImageNode>,
     Option<&'a BaseAlpha>,
+    Option<&'a mut Outline>,
 );
 
 /// Fades a node and everything under it by its timeline's opacity
@@ -412,7 +414,7 @@ pub fn fade(
     for (root, o) in roots {
         let o = o.clamp(0.0, 1.0);
         for e in std::iter::once(root).chain(children.iter_descendants(root)) {
-            let Ok((bg, text, border, image, base)) = paint.get_mut(e) else { continue };
+            let Ok((bg, text, border, image, base, outline)) = paint.get_mut(e) else { continue };
             let base = match base {
                 Some(b) => *b,
                 None => {
@@ -421,6 +423,7 @@ pub fn fade(
                         text: text.as_ref().map_or(1.0, |c| c.0.alpha()),
                         border: border.as_ref().map_or(1.0, |c| c.top.alpha()),
                         image: image.as_ref().map_or(1.0, |c| c.color.alpha()),
+                        outline: outline.as_ref().map_or(1.0, |c| c.color.alpha()),
                     };
                     commands.entity(e).try_insert(b);
                     b
@@ -445,6 +448,12 @@ pub fn fade(
                     c.right.set_alpha(a);
                     c.bottom.set_alpha(a);
                     c.left.set_alpha(a);
+                }
+            }
+            if let Some(mut c) = outline {
+                let a = base.outline * o;
+                if c.color.alpha() != a {
+                    c.color.set_alpha(a);
                 }
             }
             if let Some(mut c) = image {

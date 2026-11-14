@@ -139,7 +139,8 @@ fn with_no_votes_the_rotations_pick_stands() {
 /// cheats put it on a rung (`ladder_rung`) and make it win
 /// (`minigame_win`: the end screen for screenshots); its vote
 /// (`vote_map`, the console's) is cast for its own player, a client's
-/// beside it, and a tie of one each is drawn between the two.
+/// beside it, and a tie of one each goes to the earlier on the ballot
+/// (the pool's pick).
 #[test]
 fn a_listen_server_host_votes_for_its_own_player() {
     use chimera_core::{console::Console, core::LocalPlayer};
@@ -177,7 +178,7 @@ fn a_listen_server_host_votes_for_its_own_player() {
     let ok = sim.until(1500, |s| s.server.app.world().resource::<MapVote>().winner.is_some());
     assert!(ok, "it closes");
     let v = server_vote(&sim);
-    assert!(matches!(v.winner, Some(1 | 2)), "a tie drawn between the two: {v:?}");
+    assert_eq!(v.winner, Some(1), "a tie: the earlier on the ballot: {v:?}");
     let next = sim.server.app.world().resource::<NextMatch>().map.clone();
     assert_eq!(next.as_deref(), v.winning_map());
 }

@@ -264,7 +264,7 @@ pub const PROTOCOL_ID: u64 = 0x4C55_434B_4552_5059;
 /// This build's network version. A server refuses clients of another
 /// version. Bump the suffix when the protocol changes in a way the
 /// replicon protocol hash can't see (a field added to a message).
-pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net49");
+pub const NET_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/net50");
 
 /// What a host's `changelevel` is in this app beyond a new map
 /// (`host_changelevel`): set by an app part (`minigame_net`'s, a party
@@ -1116,6 +1116,9 @@ pub mod score_flags {
     pub const BOMB: u8 = 1 << 1;
     /// Has a defusal kit.
     pub const KIT: u8 = 1 << 2;
+    /// Its connection loses packets (`game::LOSS_MARK` or more, measured
+    /// with the ping): the Signal board's and standings' loss mark.
+    pub const LOSS: u8 = 1 << 3;
 }
 
 /// Client -> server: buy this (`buy <what>`, the buy menu, `buyammo1`).

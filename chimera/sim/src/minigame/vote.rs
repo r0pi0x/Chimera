@@ -12,9 +12,10 @@
 //! then the winner shows for `reveal` s before the map changes. Every
 //! player in the match may vote once and change their vote while it is
 //! open (`MapVote::cast`; a network client sends its choice, the server
-//! counts it); the map with the most votes wins, a tie is drawn at
-//! random among the tied, and with no votes the rotation's pick (the
-//! first candidate) stands (`MapVote::tally`). `MapVote` is the vote as
+//! counts it); the map with the most votes wins, a tie goes to the pool's
+//! own pick (the tied map earliest on the ballot, which is in the pool's
+//! order: the rotation's pick, then its weighted draw), and with no votes
+//! the rotation's pick (the first candidate) stands (`MapVote::tally`). `MapVote` is the vote as
 //! the host keeps it and, without the ballots, as a client knows it
 //! (replicated with the match): the shell's match-end screen shows it
 //! (`chimera_client::client::match_end`). Gone with the results when
@@ -126,20 +127,18 @@ impl MapVote {
         true
     }
 
-    /// The winner: the most votes, a tie drawn on `rng` among the tied;
-    /// no votes, the rotation's pick (0).
-    pub fn tally(&self, rng: &mut Rng) -> usize {
+    /// The winner: the most votes; a tie goes to the pool's own pick,
+    /// the tied candidate earliest on the ballot (the rotation's pick
+    /// first, the others in the order the pool drew them); no votes, the
+    /// rotation's pick (0).
+    pub fn tally(&self) -> usize {
         let best = self.counts.iter().copied().max().unwrap_or(0);
-        if best == 0 {
-            return 0;
-        }
-        let tied: Vec<usize> = (0..self.counts.len()).filter(|i| self.counts[*i] == best).collect();
-        tied[rng.below(tied.len())]
+        (0..self.counts.len()).find(|i| self.counts[*i] == best).unwrap_or(0)
     }
 
     /// Closes it (its `winner` from `tally`): the winning map.
-    pub fn close(&mut self, rng: &mut Rng) -> String {
-        let w = self.tally(rng);
+    pub fn close(&mut self) -> String {
+        let w = self.tally();
         self.winner = Some(w);
         self.candidates[w].clone()
     }
@@ -267,34 +266,30 @@ mod tests {
     }
 
     #[test]
-    fn the_most_votes_win_ties_are_random_and_no_votes_keep_the_rotation() {
+    fn the_most_votes_win_ties_go_to_the_pools_pick_and_no_votes_keep_the_rotation() {
         let (a, b, c) = (Entity::from_raw_u32(1).unwrap(), Entity::from_raw_u32(2).unwrap(), Entity::from_raw_u32(3).unwrap());
-        let mut rng = Rng::new(1);
-        let v = MapVote::new(pool(3), 10.0);
-        assert_eq!(v.clone().close(&mut rng), "g:m0", "no votes: the rotation's pick");
-        let mut v = MapVote::new(pool(3), 10.0);
+        let v = MapVote::new(pool(4), 10.0);
+        assert_eq!(v.clone().close(), "g:m0", "no votes: the rotation's pick");
+        let mut v = MapVote::new(pool(4), 10.0);
         assert!(v.cast(a, 2) && v.cast(b, 2) && v.cast(c, 1));
-        assert!(!v.cast(a, 3), "no such candidate");
-        assert_eq!(v.counts, [0, 1, 2]);
+        assert!(!v.cast(a, 4), "no such candidate");
+        assert_eq!(v.counts, [0, 1, 2, 0]);
         assert!(v.cast(b, 1), "a changed vote");
-        assert_eq!(v.counts, [0, 2, 1]);
-        assert_eq!(v.clone().close(&mut rng), "g:m1");
-        // A tie: either, both over many draws.
-        assert!(v.cast(a, 2));
-        assert!(v.cast(c, 1) && v.cast(b, 2));
-        v.cast(a, 1);
-        assert_eq!(v.counts, [0, 2, 1]);
-        v.cast(b, 0);
-        v.cast(c, 2);
-        assert_eq!(v.counts, [1, 1, 1]);
-        let mut seen = [false; 3];
-        for _ in 0..60 {
-            seen[v.tally(&mut rng)] = true;
-        }
-        assert_eq!(seen, [true; 3], "a three-way tie draws each");
-        let w = v.close(&mut rng);
-        assert!(!v.open() && !v.cast(a, 0), "closed");
-        assert_eq!(v.winning_map(), Some(w.as_str()));
+        assert_eq!(v.counts, [0, 2, 1, 0]);
+        assert_eq!(v.clone().close(), "g:m1");
+        // A tie between the 2nd and 4th: the one the pool drew first.
+        let mut w = MapVote::new(pool(4), 10.0);
+        w.cast(a, 3);
+        w.cast(b, 1);
+        assert_eq!(w.counts, [0, 1, 0, 1]);
+        assert_eq!(w.tally(), 1, "a tie: the earlier on the ballot");
+        // A tie with the rotation's pick: the rotation's pick.
+        w.cast(c, 0);
+        assert_eq!(w.counts, [1, 1, 0, 1]);
+        assert_eq!(w.tally(), 0);
+        let m = w.close();
+        assert!(!w.open() && !w.cast(a, 0), "closed");
+        assert_eq!(w.winning_map(), Some(m.as_str()));
     }
 
     #[test]

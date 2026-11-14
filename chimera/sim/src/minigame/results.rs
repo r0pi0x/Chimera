@@ -8,7 +8,9 @@
 //! `NetMinigame`) so every client's HUD shows the same. Gone when the next
 //! match starts (`minigame::restart`).
 //!
-//! Each row also has the final rung's gun (its weapon id: what the rung
+//! Each row also has the player's climb (`climb::Climb`: rung changes,
+//! kills and deaths in seconds into the match, for the match-end chart;
+//! `MatchResults::length` the match's length) and the final rung's gun (its weapon id: what the rung
 //! gives as its weapon, `ladder::Ladder::shown_weapon`, whatever the player
 //! last held) and the player's matches won counting this one (`wins::MatchWins`), and the
 //! character it was (mapped to a client's own entity over the network,
@@ -44,6 +46,9 @@ pub struct ResultRow {
     pub gun: Option<String>,
     /// Matches won so far, this one counted (`wins::MatchWins`).
     pub wins: u32,
+    /// When the rung changed, and the kills and deaths, through the match
+    /// (`climb`: the match-end screen's climb chart).
+    pub climb: super::climb::Climb,
 }
 
 /// The finished match's results, best first.
@@ -55,6 +60,8 @@ pub struct MatchResults {
     pub rungs: u32,
     #[entities]
     pub rows: Vec<ResultRow>,
+    /// How long the match ran, from going live to its end (s; `climb`).
+    pub length: f32,
 }
 
 /// The match-end hold: the match is decided with its results up (from
@@ -110,6 +117,8 @@ pub fn collect(world: &mut World) -> Option<MatchResults> {
     let catalog = world.get_resource::<crate::weapon::data::WeaponCatalog>().cloned();
     let rungs = ladder_res.as_ref().map_or(0, |l| l.rungs.len()) as u32;
     let wins = world.get_resource::<super::wins::MatchWins>().cloned().unwrap_or_default();
+    let climbs = world.get_resource::<super::climb::ClimbLog>().cloned().unwrap_or_default();
+    let now = world.get_resource::<crate::core::SimClock>().map_or(0.0, |c| c.now);
     let mut rows: Vec<(usize, ResultRow)> = runtime::players(world)
         .into_iter()
         .enumerate()
@@ -124,6 +133,7 @@ pub fn collect(world: &mut World) -> Option<MatchResults> {
                 .map(str::to_string);
             (order, ResultRow {
                 wins: wins.of(&name),
+                climb: climbs.players.get(&e).cloned().unwrap_or_default(),
                 gun,
                 name,
                 kills: s.kills,
@@ -146,6 +156,7 @@ pub fn collect(world: &mut World) -> Option<MatchResults> {
         title: super::hud::shown_name(world, active.def),
         rungs,
         rows: rows.into_iter().map(|(_, r)| r).collect(),
+        length: climbs.at(now),
     })
 }
 
@@ -172,6 +183,7 @@ pub(super) fn on_step(
             world.remove_resource::<MatchResults>();
             world.remove_resource::<NextMatch>();
             world.remove_resource::<super::vote::MapVote>();
+            world.insert_resource(super::climb::ClimbLog::default());
         }),
         _ => {}
     }

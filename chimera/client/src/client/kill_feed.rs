@@ -48,7 +48,7 @@
 //!
 //! - **The Signal look** (`signal_feed`, when the app's theme turns it on:
 //!   `signal::signal_on`): top right, 26 cq wide, rows 1.85 cq tall at a
-//!   2.3 cq pitch, newest at the bottom; a row enters from 2.4 cq to the
+//!   2.15 cq pitch, newest at the bottom; a row enters from 2.4 cq to the
 //!   right (`expo_out`, `motion.dur.feed.enter`), lives `feed.life` (5 s),
 //!   fades out over `feed.leave`, and the rows under it close the gap
 //!   (`cubic_in_out`, `feed.close_gap`). Killer, the gun's icon
@@ -661,7 +661,7 @@ pub mod signal_feed {
                         right: look.val(look.layout("feed", "right", 2.2)),
                         top: look.val(look.layout("feed", "top", 2.2)),
                         width: look.val(look.layout("feed", "w", 26.0)),
-                        height: look.val(look.layout("feed", "pitch", 2.3) * MAX_LINES as f32),
+                        height: look.val(look.layout("feed", "pitch", 2.15) * MAX_LINES as f32),
                         ..default()
                     },
                 ))
@@ -669,7 +669,7 @@ pub mod signal_feed {
         };
         let now = time.elapsed_secs();
         let life = if staged.is_some() { f32::MAX } else { look.dur("feed", "life", 5.0) };
-        let pitch = look.layout("feed", "pitch", 2.3);
+        let pitch = look.layout("feed", "pitch", 2.15);
         let live: Vec<&KillEntry> = feed.entries.iter().filter(|e| now - e.at < life).collect();
         let mut have: Vec<u64> = Vec::new();
         for (ent, row, mut state, mut tl) in &mut rows {
@@ -715,7 +715,7 @@ pub mod signal_feed {
         commands: &mut Commands,
     ) {
         let mark = RowMark::of(e);
-        let pitch = look.layout("feed", "pitch", 2.3);
+        let pitch = look.layout("feed", "pitch", 2.15);
         let enter = look.dur("feed", "enter", 0.22);
         let dx = look.layout("feed", "enter_dx", 2.4);
         let hair = look.hair();

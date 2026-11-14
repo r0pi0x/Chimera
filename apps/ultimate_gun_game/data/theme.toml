@@ -207,7 +207,7 @@ row_rise = 0.45
 [layout.feed]
 w = 26.0
 row_h = 1.85
-pitch = 2.3
+pitch = 2.15
 enter_dx = 2.4
 
 [layout.toast]

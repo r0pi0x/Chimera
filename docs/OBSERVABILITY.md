@@ -2328,8 +2328,10 @@ up and down (`font: <size>/1`, as the kit's `LineHeight` 1); the game
 sets text in whole physical pixels (`UiUnits::text_px`), so a text a
 look book size like .6 cq (11.52 px) draws at 12 px and comes out up to
 4 % wider, which can push a long text past the 1 px width tolerance and
-what follows it a few px along; those are listed with their font sizes
-(`font 11.5/12`). Only the screen's ids count (`screens.json`'s
+what follows it a few px along; a width that differs only by that ratio
+(the mockup's width times game size over look book size, within
+tolerance) is expected: marked `~`, counted apart and not past tolerance;
+the rest are listed with their font sizes (`font 11.5/12`). Only the screen's ids count (`screens.json`'s
 `include`), so a game playing behind the staged screen adds nothing.
 `lobby` has no `ui_scene lobby` yet (M1): its report lists the mockup's
 ids only.

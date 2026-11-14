@@ -49,6 +49,7 @@ pub mod interp;
 pub mod map_screen;
 pub mod match_effects;
 pub mod match_end;
+pub mod match_end_signal;
 pub mod prematch_lobby;
 pub mod lobby_panel;
 pub mod logo_pass;

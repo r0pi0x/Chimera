@@ -209,7 +209,9 @@ fn the_map_change_runs_under_the_pass() {
             player: Some(ann),
             gun: None,
             wins: 1,
+            ..Default::default()
         }],
+        ..Default::default()
     };
     s.app.insert_resource(MinigameHud { title: "Kit gun game".into(), results: Some(results), ..default() });
     let now = s.app.world().resource::<SimClock>().now;

@@ -92,7 +92,8 @@
 //!   reveal); each player votes (`vote_map`, console `vote_map <n>`: a
 //!   client sends `MapVoteCast`, the server counts it for that client's
 //!   character; a host casts for its own player), and at the close the
-//!   most votes win (a tie at random, none: the rotation's pick), which
+//!   most votes win (a tie: the pool's pick, the tied map earliest on the
+//!   ballot; none: the rotation's pick), which
 //!   becomes the hold's next map.
 //! - **The playable set** (`playable`, `PartyOffer`, console
 //!   `party_offer`): each registered minigame on its pool's first map
@@ -1128,14 +1129,12 @@ fn open_vote(world: &mut World, def: &'static MinigameDef, first: &str) -> bool 
     true
 }
 
-/// The open vote closed: the winner (`MapVote::tally` on the host's
-/// generator), said on the console.
+/// The open vote closed: the winner (`MapVote::tally`), said on the
+/// console.
 fn close_vote(world: &mut World) -> String {
-    let mut history = world.remove_resource::<MapHistory>().unwrap_or_default();
     let mut vote = world.resource_mut::<MapVote>();
-    let map = vote.close(&mut history.rng);
+    let map = vote.close();
     let counts = vote.counts.clone();
-    world.insert_resource(history);
     info!("map vote: {map} ({counts:?})");
     map
 }

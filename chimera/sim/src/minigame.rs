@@ -94,6 +94,7 @@
 //! restart one itself.
 
 pub mod auto;
+pub mod climb;
 pub mod def;
 pub mod effects;
 pub mod holders;
@@ -557,6 +558,9 @@ impl Plugin for MinigamePlugin {
             // The ladder's reaction to a death (`mode::ModeDeath`), a
             // join (`Joined`) and a life's arming (`Arming`).
             .add_observer(ladder::died)
+            // Each player's climb for the match-end chart.
+            .init_resource::<climb::ClimbLog>()
+            .add_observer(climb::on_death)
             .add_observer(ladder::joined)
             .add_observer(ladder::arming)
             .init_resource::<hud::MinigameHud>()

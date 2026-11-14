@@ -2,7 +2,7 @@
 # The UI parity check, one screen end to end (docs/OBSERVABILITY.md, "UI
 # parity against the look book"):
 #
-#   tools/ui-parity/run.sh <board|chip|chip_lead|feed|lobby> [out-dir]
+#   tools/ui-parity/run.sh <board|chip|chip_lead|feed|lobby|matchend> [out-dir]
 #
 # 1. mockup.mjs renders the look book's frame (reference/) at 1920x1080
 #    and measures every data-ui element;
@@ -21,12 +21,13 @@
 set -euo pipefail
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 repo=$(cd "$here/../.." && pwd)
-screen=${1:?usage: tools/ui-parity/run.sh <board|chip|chip_lead|feed|lobby> [out-dir]}
+screen=${1:?usage: tools/ui-parity/run.sh <board|chip|chip_lead|feed|lobby|matchend> [out-dir]}
 out=${2:-$repo/target/ui-parity}
-fixture=${UI_PARITY_FIXTURE:-$here/fixtures/hud.json}
 mkdir -p "$out"
 stage=$(node -e 'const s=require(process.argv[1])[process.argv[2]]; if(!s){process.exit(2)} console.log(s.stage)' "$here/screens.json" "$screen") \
   || { echo "ui-parity: no screen $screen in screens.json" >&2; exit 2; }
+# The screen's fixture (screens.json's `fixture`, else hud.json).
+fixture=${UI_PARITY_FIXTURE:-$here/fixtures/$(node -e 'console.log(require(process.argv[1])[process.argv[2]].fixture || "hud.json")' "$here/screens.json" "$screen")}
 
 node "$here/mockup.mjs" "$screen" "$out/$screen.mockup" --fixture "$fixture"
 

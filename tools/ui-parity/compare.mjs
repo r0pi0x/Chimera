@@ -63,7 +63,19 @@ for (const [id, m] of Object.entries(M.elements)) {
   }
   // How far past tolerance, in px (0: within).
   const past = (v, t) => (v == null ? 0 : Math.max(0, Math.abs(v) - t));
-  d.err = Math.max(past(d.dx, tol.pos), past(d.dy, tol.pos), past(d.dw, tol.size), past(d.dh, tol.size), past(d.dfont, tol.font));
+  // A text set at a whole-pixel size (the game's `UiUnits::text_px`) runs
+  // wider or narrower than the look book's fractional size in proportion:
+  // a width that matches the mockup's scaled by the two sizes is expected,
+  // not a failure (`~` in the report).
+  let dwCheck = d.dw;
+  if (text && m.text.font_size > 0 && past(d.dw, tol.size) > 0) {
+    const scaled = g.w - m.w * (g.text.font_size * k) / m.text.font_size;
+    if (past(scaled, tol.size) === 0 && past(d.dfont, tol.font) === 0) {
+      d.fontWidth = true;
+      dwCheck = scaled;
+    }
+  }
+  d.err = Math.max(past(d.dx, tol.pos), past(d.dy, tol.pos), past(dwCheck, tol.size), past(d.dh, tol.size), past(d.dfont, tol.font));
   d.size = Math.max(Math.abs(d.dx), Math.abs(d.dy), Math.abs(d.dw), Math.abs(d.dh ?? 0), Math.abs(d.dfont ?? 0));
   rows.push(d);
 }
@@ -78,7 +90,7 @@ const lpad = (s, n) => String(s).padStart(n);
 const lines = [];
 lines.push(`UI parity: ${M.screen_name || mPre} (mockup ${M.page || ''} @ ${M.time ?? 'still'} s) vs game`);
 lines.push(`tolerance: position ${tol.pos} px, size ${tol.size} px, font ${tol.font} px; game scaled by ${r1(k)}`);
-lines.push(`${rows.length} matched, ${over.length} over tolerance, ${onlyMock.length} only in the mockup, ${onlyGame.length} only in the game`);
+lines.push(`${rows.length} matched, ${over.length} over tolerance, ${rows.filter((r) => r.fontWidth).length} widths from whole-pixel font sizes (~, expected), ${onlyMock.length} only in the mockup, ${onlyGame.length} only in the game`);
 lines.push('');
 lines.push(`${pad('id', 30)} ${lpad('dx', 7)} ${lpad('dy', 7)} ${lpad('dw', 7)} ${lpad('dh', 7)} ${lpad('dfont', 6)}  notes`);
 for (const r of rows) {
@@ -88,9 +100,10 @@ for (const r of rows) {
     if (Math.abs(r.dls) >= 0.1) notes.push(`spacing ${fmt(r.dls)}`);
     if (r.dcol > 8) notes.push(`colour ${r.m.text.color.slice(0, 3).map(Math.round)} vs ${r.g.text.color.slice(0, 3).map(Math.round)}`);
     if (r.txt) notes.push(r.txt);
+    if (r.fontWidth) notes.push('width from whole-pixel font size: expected');
     notes.push('(text: dy is the centre)');
   }
-  lines.push(`${r.err > 0 ? '!' : ' '}${pad(r.id, 29)} ${lpad(fmt(r.dx), 7)} ${lpad(fmt(r.dy), 7)} ${lpad(fmt(r.dw), 7)} ${lpad(r.dh == null ? '' : fmt(r.dh), 7)} ${lpad(r.dfont == null ? '' : fmt(r.dfont), 6)}  ${notes.join('; ')}`);
+  lines.push(`${r.err > 0 ? '!' : r.fontWidth ? '~' : ' '}${pad(r.id, 29)} ${lpad(fmt(r.dx), 7)} ${lpad(fmt(r.dy), 7)} ${lpad(fmt(r.dw), 7)} ${lpad(r.dh == null ? '' : fmt(r.dh), 7)} ${lpad(r.dfont == null ? '' : fmt(r.dfont), 6)}  ${notes.join('; ')}`);
 }
 if (onlyMock.length) lines.push('', 'only in the mockup (missing in the game): ' + onlyMock.join(', '));
 if (onlyGame.length) lines.push('', 'only in the game: ' + onlyGame.join(', '));

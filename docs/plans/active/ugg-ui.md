@@ -333,7 +333,7 @@ from the theme (`min_text_px = 9`, as the prototype's `max(9px, ...)`)
   2): position, name and tags, rung big, gun icon and short name, K and
   D under their icons, the ladder ticks set apart by a hairline; the
   leader's accent bar; your row outlined.
-- **Kill feed** (top right, 26 cq wide, rows 1.85 cq at a 2.3 cq pitch,
+- **Kill feed** (top right, 26 cq wide, rows 1.85 cq at a 2.15 cq pitch,
   newest at the bottom): a row enters from 2.4 cq right (`expo_out`
   .22 s), lives 5 s, leaves .25 s, older rows close the gap
   (`cubic_in_out` .25 s). Your kill: accent outline and bar, killer in
@@ -508,10 +508,11 @@ Left past tolerance, with reasons: text widths from whole-pixel font
 sizes (board 51 of 125, chip 6 of 11, leader chip 5 of 12; most are
 names, guns, K/D at 1-4 px); the board's head has no match clock (its
 `FIRST TO 14 • 06:41 • 8 PLAYERS`); the worst ping shows LAG where the
-look book shows the loss mark; the feed's rows are 2.3 cq apart (the
-tokens' `--l-feed-pitch`) while the look book's script moves them 2.15
-cq apart (feed 14 of 16, from row 2 down): which is right is the
-look book's call.
+look book shows the loss mark (since M4: the loss mark when the line
+loses packets, `score_flags::LOSS`, LAG without); the feed's rows were
+2.3 cq apart where the look book's script moves them 2.15 cq apart
+(since M4: 2.15, `layout.feed.pitch`). Widths that differ only by a
+whole-pixel font size are reported as expected (`~`) since M4.
 
 - `client::race_chip` replaces `minigame_panel` for a ladder (other
   minigames keep the panel); `minigame_scoreboard` becomes the chip's
@@ -566,6 +567,37 @@ had. `ui_scene airstrike [t]`. Tests: `rank_toast_rolls_and_holds_1_15_s`,
 
 ### M4: match end and the vote
 
+Status (2026-11-14): step 1 in (`ugg-ui-m4`). The shared ambient
+(`AmbientMaterial`, look book V's shader in WGSL; its own commit for M5).
+The match end in the Signal look (`client::match_end_signal`, behind
+`flags.hud.signal`; Lucker Party and the plain apps keep `match_end`'s
+screen): the header lockup with MATCH OVER and map, game, minigame,
+players; the winner with the accent slab sweeping across it and the
+line (all the rungs in the time, the final kill: the winner's gun and
+its last victim); the standings (HOST, fused YOU+HOST, the bot slot,
+your row tinted and outlined, hover a tick at the right edge and a faint
+fill, the selected row a stronger fill and a pointer outside the row, K/D
+under their marks right-aligned, ping with the loss mark, session wins
+with +1 on the winner's: the hook for M6); the climb chart (rung steps
+against match time for the hovered row, else the selected one, the
+winner's first; the others faint; kills and deaths as ticks; the longest
+stall boxed; drawn along its length in `climb_draw` with the ticks
+fading in along x on a new choice); the games' HUDs hidden under it, the
+cursor free. Data: `ResultRow::climb` (`minigame::climb::Climb`: each
+rung change, kill and death in seconds from the match going live, the
+last victim), `MatchResults::length`, recorded on the authority
+(`ClimbLog`); the scoreboard's `score_flags::LOSS`. **net50** (M3 took
+net49). `ui_scene matchend [fixture]` (tools/ui-parity/fixtures/
+matchend.json: the look book's data); parity screen `matchend`
+(reference/end.html, the look book's frame with `data-ui` ids). Parity
+(1920x1080, step 1): 89 matched, 13 past tolerance, 7 widths expected
+from whole-pixel font sizes; left: the tags' boxes 1-2 px wide (font
+rounding inside a box), the winner's line (the look book splits it into
+bold runs the mockup measures apart), the fused chip 3 px, the loss
+mark's cell, session wins 2 px; the rows' right columns sit .64 cq in
+from the padding as the look book's grid does (`ROW_PAD_RIGHT`). Left:
+the vote band (step 2), the background and Leave (step 3).
+
 - `match_end` rebuilt: standings, climb chart, vote cards, one
   countdown, Leave (`disconnect` through the logo pass), the next match
   as today (`NextMatch`).
@@ -576,7 +608,7 @@ had. `ui_scene airstrike [t]`. Tests: `rank_toast_rolls_and_holds_1_15_s`,
   and the vote four candidates instead of three (`map_vote` data: the
   rotation's pick and three others). The vote's close and the map
   change share one deadline (`MapVote` closes at `NextMatch::at`).
-  **net49 to net50** (`MatchResults` and `MapVote` change shape).
+  **net49 to net50** (`MatchResults` changes shape: the climb; the vote keeps its shape).
 - Tests: `climb_records_rungs_kills_deaths` (chimera_sim),
   `match_end_has_one_countdown`, `vote_cards_lock_then_next_match`,
   `climb_chart_follows_hover` (client), `results_with_climb_replicate`
