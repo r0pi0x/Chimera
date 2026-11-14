@@ -30,6 +30,10 @@
 //!   (`score_flags::LOSS`), else LAG; LOCAL for the listen host, a faint dash for a bot), and the ladder strip. The leader's row
 //!   has the accent bar; yours is tinted and outlined.
 //!
+//! While the board is open it covers the games' HUDs (`hud::HudCover`,
+//! `BOARD_COVER`: every game's roots and parts, weapon selection and death
+//! panel, and the shared crosshair); the chip and feed (`SignalHud`) stay.
+//!
 //! Content is rebuilt only when what it shows changes (`RaceView`), the
 //! open and close move only the plate's size (`Timeline`). The nodes carry
 //! the look book's names (`chimera_ui::UiParityId`: `race.plate`, `chip.*`
@@ -71,6 +75,7 @@ impl Plugin for RaceChipPlugin {
     fn build(&self, app: &mut App) {
         super::overlay::layer(app);
         super::signal::setup(app);
+        super::hud::hud_cover(app);
         app.init_resource::<HeldActions>()
             .init_resource::<GunNames>()
             .init_resource::<RaceView>()
@@ -960,6 +965,7 @@ fn open_close(
     held: Res<HeldActions>,
     clock: Res<UiClock>,
     mut open: ResMut<BoardOpen>,
+    mut cover: ResMut<super::hud::HudCover>,
     staged: Option<Res<RaceStaged>>,
     mut root: Single<(&mut Visibility, &mut Node), (With<RaceChipRoot>, Without<ChipContent>, Without<BoardContent>, Without<RacePlate>)>,
     mut plate: Single<(&mut Timeline, &mut Node, &mut BackgroundColor), With<RacePlate>>,
@@ -974,6 +980,7 @@ fn open_close(
         root_node.top = top;
     }
     let want = view.active && (held.showscores || staged.is_some_and(|s| s.open));
+    super::hud::HudCover::put(&mut cover, super::hud::BOARD_COVER, want);
     let (tl, node, bg) = &mut *plate;
     let target_h = board_h(view.rows.len());
     let plate_bg = look.tone(Tone::Plate);
