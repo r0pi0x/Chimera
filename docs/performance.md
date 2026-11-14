@@ -1544,7 +1544,12 @@ shaping, so the warm-up uses the pipeline itself:
 - **Atlases off the main thread:** empty atlas images are filled on tasks
   (`AtlasPool`, 4 ready) and one is put in under the key Bevy will look the font up
   by (`atlas_key`) before the hidden text lays out; a wrong key is counted
-  (`TextWarm::missed`, 0 in the tests) and Bevy makes its own.
+  (`TextWarm::missed`, 0 in the tests) and Bevy makes its own. A font whose turn
+  comes with the pool empty waits a frame for the task; the tests, which count
+  frames, wait for the task before each frame (`text_warm::fill_pool`): on a busy
+  machine the task (the one async-compute thread a `Sim` has) hadn't run in the 30
+  headless frames `a_menus_first_opening_makes_no_atlas_after_the_warm_up` allowed,
+  an intermittent "the warm-up ends".
 - **When:** behind the loading screen (`MapHooks::settle`, 128 glyphs a frame, 256 before "A map's swap in the real app"), and in
   play 16 glyphs a frame, the sources asked again when the window, the fonts or the
   map's HUD change: so the command line's `--map` (no loading screen) is covered too.
@@ -3458,6 +3463,44 @@ phase against the map +0.98M a tick, the ragdoll joints and contacts
 +0.6M, spawning it 52M once). The median now leaves out the ticks with a
 ragdoll body awake while at least 100 remain: de_dust2's third lap counts
 7.6M, the second 8.0M.
+
+### Quiet ticks enough, and solver bodies of despawned bodies (2026-11-14)
+
+`heavy::session_maps` failed on main after the bots began firing HL2:DM's
+SMG1 at range (`bots-idle-smg`): de_dust2 7.16M a tick on the second lap,
+10.28M on the third. No more work for the same play: the third lap's fight
+had a death whose ragdoll was awake for 211 of the 300 measured ticks, 89
+were quiet, and under 100 the median fell back to every tick, the
+ragdoll's among them (quiet ticks 8.8M, the others 10.7M). The test now
+plays its 300 ticks and then more until 100 were quiet (at most 1,500, or
+it fails), so every lap's median is of quiet ticks, and its table of
+systems is per quiet tick.
+
+That table then showed a real rise the fights had hidden: Avian's
+`integrate_positions` 183k instructions a tick more on every map, every
+lap (de_dust2 10k, 196k, 379k; de_inferno 133k, 315k, 504k), about 340 an
+entry of `SolverBodies`, which held 10 entries on the first map and 1,434
+after three laps, 1,422 of them despawned entities'. Avian 0.8 gives a
+body a solver body when its `Sleeping` or `RigidBodyDisabled` is removed,
+a despawn removes them, and the entry pushed for a body despawned asleep
+is never taken out (its index was to go on the entity by a command): every
+sleeping prop of a map swapped out, every ragdoll and gib despawned at
+rest. Since avian 0.8 (2026-10-24); a session's ticks grew by it for as
+long as it ran. `chimera_world::map::solver_bodies` takes the entry out once
+the despawn is done (`physics_plugins` adds it; its tests despawn bodies
+asleep, disabled and awake, and one fails when Avian fixes it), and
+`heavy::session_maps` fails on any solver body of a despawned entity.
+
+Median of quiet ticks, laps 1 / 2 / 3 (the same build, with the leak and
+without):
+
+| map | with the leak | without |
+|---|---|---|
+| de_dust2 | 6.96M / 8.00M / 8.19M | 6.96M / 7.82M / 7.83M |
+| cs_office | 11.17M / 11.55M / 11.15M | 11.15M / 11.35M / 10.77M |
+| dm_lockdown | 11.31M / 10.44M / 11.35M | 11.23M / 10.18M / 10.91M |
+| warehouse | 5.89M / 6.52M / 6.09M | 5.78M / 6.24M / 5.63M |
+| de_inferno | 13.98M / 13.48M / 14.70M | 13.86M / 13.20M / 14.23M |
 
 ### A ragdoll's cost (2026-11-12)
 

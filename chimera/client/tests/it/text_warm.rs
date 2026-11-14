@@ -101,6 +101,26 @@ fn hud_sim_with(warm: bool, extra: impl Fn(&mut App) + Send + Sync + 'static) ->
     sim
 }
 
+/// The warm-up behind the loading screen to its end (`text_warm::settle` a
+/// frame, as `client::console`'s settling calls it): the frames it took.
+/// The empty atlases are made on a task, which on a busy machine may not
+/// have run in the microseconds these frames take (a font then waits, and
+/// the warm-up once outlasted its 30 frames): the pool is filled before
+/// each frame (`text_warm::fill_pool`), so the frames are the same on every
+/// run.
+fn settle(sim: &mut Sim) -> usize {
+    let mut frames = 0;
+    loop {
+        text_warm::fill_pool(sim.app.world_mut());
+        if text_warm::settle(sim.app.world_mut()) {
+            return frames;
+        }
+        sim.app.update();
+        frames += 1;
+        assert!(frames < 30, "the warm-up ends");
+    }
+}
+
 /// The first kill in the feed (a headshot: the gun's glyph and the mark) and
 /// the scoreboard's first showing, in one
 /// frame: the atlases made, and the main thread's instructions (0 without
@@ -149,12 +169,7 @@ fn a_huds_first_show_makes_no_atlas_after_the_warm_up() {
     // Behind the loading screen (`settle` a frame, as `client::console`'s
     // settling calls it), then the same show.
     let mut sim = hud_sim(true);
-    let mut frames = 0;
-    while !text_warm::settle(sim.app.world_mut()) {
-        sim.app.update();
-        frames += 1;
-        assert!(frames < 30, "the warm-up ends");
-    }
+    let frames = settle(&mut sim);
     let warm = sim.app.world().resource::<TextWarm>();
     assert!(warm.warmed >= 2);
     // Each atlas came made from the pool, under the key Bevy looked up.
@@ -192,6 +207,9 @@ fn in_play_the_warm_up_goes_a_slice_a_frame() {
     let mut counters = ThreadCounters::current();
     let (mut idle_cost, mut busy_cost) = (Vec::new(), Vec::new());
     loop {
+        // Not counted in the frame: the atlases' task, waited for so the
+        // frames are the same on every run (`settle`, above).
+        text_warm::fill_pool(sim.app.world_mut());
         let start = counters.read();
         sim.app.update();
         let spent = (counters.read() - start).hw.map_or(0, |h| h.instructions);
@@ -268,11 +286,8 @@ fn a_menus_first_opening_makes_no_atlas_after_the_warm_up() {
                 app.warm_texts(vgui::warm_fonts);
             }
         });
-        let mut frames = 0;
-        while warm && !text_warm::settle(sim.app.world_mut()) {
-            sim.app.update();
-            frames += 1;
-            assert!(frames < 30, "the warm-up ends");
+        if warm {
+            settle(&mut sim);
         }
         let before = atlases(&sim);
         let mut counters = ThreadCounters::current();

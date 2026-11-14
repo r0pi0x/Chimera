@@ -58,8 +58,13 @@ fn first_kill(warm: bool) -> (usize, Option<(usize, usize)>) {
         },
     ));
     // The warm-up as behind the loading screen, before anyone plays.
+    // The atlases' task is waited for before each frame: the frames are
+    // then the same on every run, whatever the machine's load.
     let mut frames = 0;
-    while warm && !text_warm::settle(sim.app.world_mut()) {
+    while warm && {
+        text_warm::fill_pool(sim.app.world_mut());
+        !text_warm::settle(sim.app.world_mut())
+    } {
         sim.app.update();
         frames += 1;
         assert!(frames < 60, "the warm-up ends");
