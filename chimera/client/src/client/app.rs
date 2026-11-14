@@ -29,7 +29,7 @@
 //! as the dedicated server's), `--debug-view` and
 //! `--lightmap-only` on it (`debug_views`), its dedicated server's binary
 //! for the usage text (`server`), what it adds last (`launch`) and every
-//! game it plays (`games`: the startup fetch's, `startup`).
+//! game it plays (`games`: the startup fetch's, `start_startup_fetch`).
 //! `--offscreen` and the window are `default_plugins`'s, for every app,
 //! and with `--offscreen` and `--dump` the sound recorded into the dump
 //! directory's `audio.wav` instead of played (`audio::record`).
@@ -141,8 +141,8 @@ pub struct GameAppHooks {
     pub server: Option<&'static str>,
     /// What the app adds last (a main menu, a launch's seed).
     pub launch: Option<fn(&mut App, &Args)>,
-    /// Every game the app plays, for the startup fetch (`startup`; None:
-    /// its own, `GameApp::info`).
+    /// Every game the app plays, for the startup fetch
+    /// (`start_startup_fetch`; None: its own, `GameApp::info`).
     pub games: Option<fn() -> Vec<&'static GameInfo>>,
     /// What the app's map loads should know of it before its plugins
     /// build (`GameApp::load_context`): the start map loads in that
@@ -286,7 +286,7 @@ impl GameApp {
 }
 
 /// The game's binary: the command line (`--help`: `GameApp::usage`), the
-/// startup fetch (`startup`: a progress window, then the game in a new
+/// startup fetch (`start_startup_fetch`: in the background, in this
 /// process), what the machine lacks, the start map, the app (`app`), run
 /// (`run_app`).
 /// Exits the process on a bad command line (2), or a lack that stops it or
@@ -294,11 +294,9 @@ impl GameApp {
 pub fn run(game: &'static GameApp) -> AppExit {
     let args = game.args(Args::parse_for(&game.usage()));
     super::offscreen::silence_audio_device(&args);
-    // The files the games read at startup, behind a progress window, when
-    // they come from the asset service and aren't here yet.
-    if let Some(exit) = super::startup::run_if_needed(game, &args) {
-        return exit;
-    }
+    // The files the games read at startup, when they come from the asset
+    // service and aren't here yet: fetched in the background, in batches.
+    let startup = start_startup_fetch(game);
     // Big blocks go back to the system when freed (the first map load's
     // scratch: docs/performance.md, "A client's memory"), as the dedicated
     // server's do; from the start map on.
@@ -314,7 +312,28 @@ pub fn run(game: &'static GameApp) -> AppExit {
         eprintln!("error: {e}");
         std::process::exit(1);
     });
-    run_app(app(game, args, start))
+    let mut app = app(game, args, start);
+    if let Some(fetch) = startup {
+        app.insert_resource(crate::net::assets::StartupFiles(fetch));
+    }
+    run_app(app)
+}
+
+/// The startup fetch (`net::asset_startup`) of the files `game`'s games
+/// read at startup, when they come from the asset service (a bound token,
+/// or `[assets]`) and the store lacks some: started on a thread, the
+/// game's own reads of them waiting for its batches; a join waits for it
+/// (`net::assets::StartupFiles`). No window of its own: the game's opens
+/// at once.
+pub fn start_startup_fetch(game: &'static GameApp) -> Option<crate::net::asset_startup::StartupFetch> {
+    let games = game.hooks.games.map_or_else(|| vec![game.info], |games| games());
+    let (settings, wanted) = crate::net::asset_startup::plan_here(&games)?;
+    let from = settings.remote.as_ref().map(|r| r.url.clone()).unwrap_or_default();
+    eprintln!(
+        "assets: the files the games read at startup aren't here yet: fetching them from {from} ({})",
+        wanted.iter().map(|w| format!("{} {}", w.game, w.sets.join(", "))).collect::<Vec<_>>().join("; ")
+    );
+    Some(crate::net::asset_startup::StartupFetch::start(settings, wanted))
 }
 
 /// Ends a client app that can't start: `text` on stderr, and on Windows a
@@ -525,15 +544,7 @@ pub fn run_app(mut app: App) -> AppExit {
         // Without the event loop having run, dropping the app crashes.
         std::process::exit(0);
     }
-    let exit = app.run();
-    // The game started again with a server's game files (`relaunch`):
-    // this process only waits for it, so let the app (its GPU device, its
-    // loaded files: 400-550 MB measured) go first.
-    if super::relaunch::restarted() {
-        drop(app);
-        crate::metrics::memory::release_free();
-    }
-    super::relaunch::wait_for_restart().unwrap_or(exit)
+    app.run()
 }
 
 /// `CHIMERA_SYSTEM_DUMP=<file>`: the app built as it would run (plugins

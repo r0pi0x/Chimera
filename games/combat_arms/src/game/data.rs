@@ -1875,12 +1875,42 @@ impl Plugin for CaDataPlugin {
     fn build(&self, app: &mut App) {
         let data = CaData::of(app);
         data.weapon_set();
+        // A join that binds the asset service reads the install again
+        // once its files arrived (`net::assets::AssetsArrived`).
+        app.add_observer(reread_install);
         // The announcer's weapon skins (kill_streaks.md A8), on whichever
         // side reads the install: a killer's own client shows them.
         if let Some(a) = data.attributes() {
             chimera_core::announcer::AnnouncerAppExt::announcer_skins(app, super::GAME, a.announcer_skins.clone());
         }
     }
+}
+
+/// After a join bound the asset service and Combat Arms' files arrived:
+/// an app whose install data had no files to read (its mount none) reads
+/// them anew (`CaData::install_again`), in its resource and its map
+/// loads' context. Data with a mount already reads the arrived files
+/// through it; data built in or by hand stays.
+pub fn reread_install(
+    arrived: On<chimera_net::net::assets::AssetsArrived>,
+    data: Option<Res<CaData>>,
+    context: Option<Res<crate::map::LoadContext>>,
+    mut commands: Commands,
+) {
+    let Some(old) = data else { return };
+    if !arrived.games.iter().any(|g| g == super::GAME)
+        || old.builtin_only()
+        || !old.same(&CaData::install())
+        || old.mount().is_some()
+    {
+        return;
+    }
+    let fresh = CaData::install_again();
+    if let Some(context) = context {
+        context.insert(fresh.clone());
+    }
+    info!("Combat Arms: its data read again from the arrived files (mount: {})", fresh.mount().is_some());
+    commands.insert_resource(fresh);
 }
 
 #[cfg(test)]

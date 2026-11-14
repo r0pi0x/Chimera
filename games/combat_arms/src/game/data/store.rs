@@ -168,6 +168,16 @@ impl CaData {
         }))
     }
 
+    /// The install's data read anew (a join bound the asset service and
+    /// the game's files arrived after the app read none: `reread_install`):
+    /// a new value, the one `install()` gives from now on; the old one
+    /// stays with whatever still holds it.
+    pub fn install_again() -> Self {
+        let fresh = Arc::new(Self::inner(false, None, Self::built_in_docs()));
+        crate::mount::assets::shared::replace(INSTALL_KEY, &fresh);
+        Self(fresh)
+    }
+
     /// The install data of the app whose map loads have `context`
     /// (`map::LoadContext`: Combat Arms' plugin puts it there): what its
     /// loaders and on-demand loads read. `install()` with no app.

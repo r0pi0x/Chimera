@@ -809,9 +809,12 @@ where the files are, the existing HTTP service carries the files):
   X of Y MB"), then the join goes on and the player spawns. The later sets are
   prefetched in the game, one at a time. Files no set lists arrive on demand as
   before. A game with no files at all (the first join with a new token): the
-  token is bound and the game starts again joining the same server
-  (`relaunch_requested`, `chimera_client::client::app::run`), since the mounts
-  open at startup. A refused token, an unreachable service, another
+  token is bound (the access file, and the process: `access::bind_live`,
+  whose `late_fetcher` the mounts opened before use), the game's startup and
+  offered sets are fetched in the same game on the loading panel, then what
+  was read at startup is read again (`assets::remount`, `AssetsArrived`
+  observers) and the join goes on (2026-11-14 hotfix: it used to start the game
+  again, and the startup window was a third process). A refused token, an unreachable service, another
   certificate: the join fails with the reason on screen.
 - **Verified on this box (2026-11-11)**, everything on 127.0.0.1 at test
   ports: `chimera_asset_server --tls` on a scratch server store (the real
@@ -836,12 +839,11 @@ where the files are, the existing HTTP service carries the files):
 - **Startup progress and a capped prefetch (2026-11-10):** a client whose
   games come from the service and whose store lacks their `base` sets
   (`chimera_net::net::asset_startup::plan_here`: no network, installed
-  games skipped) opens a small window before anything loads
-  (`chimera_client::client::startup`): "Downloading game files: X of Y MB",
-  a bar, the speed and time left; errors with their reason and "Try again",
-  "Start anyway", "Quit". When done it starts the game in a new process
-  (`CHIMERA_STARTUP_FETCHED` set: no second window) and waits for it, since
-  winit opens one event loop per process. `base` of the three games is
+  games skipped) fetches them in the background from the start, in the
+  game's own process (`chimera_client::client::app::start_startup_fetch`;
+  until 2026-11-14 a small window before the game, which then started in a
+  new process); a join waits for it with the bytes on the loading panel
+  (`net::assets::StartupFiles`). `base` of the three games is
   ~267 MB of the ~300 MB the games read at startup. The background
   prefetch reads at a `chimera_assets::pace::Pace` (one connection, 4 MB
   batches, the answer read in 16 KB steps): the client's
@@ -850,9 +852,9 @@ where the files are, the existing HTTP service carries the files):
   none), held while the client joins or changes level. Hosting table:
   playtest-hosting.md, "Download speed and your upload".
 - **Known shortcuts:** what the games read at startup beyond the `base`
-  sets still comes on demand (console only); the startup window closes a
-  few seconds before the game's opens; the first join with a new token
-  restarts the game once (and the startup window is a second start); Combat
+  sets still comes on demand (console only); the startup fetch's progress
+  shows only once a join waits for it; a bind's `remount` reads again only
+  what its hooks name (a game's weapon set built at startup stays); Combat
   Arms has no `players` set (its character models come on demand); on-demand
   fetches during a map load don't hold the prefetch (only the join and level
   change around them do); a revoke stops a token's next request, not a batch
@@ -861,10 +863,10 @@ where the files are, the existing HTTP service carries the files):
   `access`, `tls`; chimera_net `assets` (NetSim with a real service on
   127.0.0.1 and fixture files: join, offer, fetch, spawn; the hybrid client
   fetching nothing; a revoked or mistyped token's reason; the progress; the
-  token bound and the restart asked, no token, another certificate; the
+  token bound and the files fetched in the same game, the binding reused,
+  no token, another certificate; the
   prefetch's rate, cap and hold; the startup fetch's plan, progress and
-  errors); chimera_assets `pace`, `sets`; chimera_client `startup`'s lines;
-  party_kit's loading line.
+  errors); chimera_assets `pace`, `sets`; party_kit's loading line.
 
 ## 10. Later, each justified by a measurement
 

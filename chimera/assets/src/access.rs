@@ -17,12 +17,67 @@
 //!   `[assets] url`/`token` (or their variables) don't name one, so a game
 //!   started later reads every game's files from the service as a
 //!   developer's does.
+//! - A game that binds the token while it runs (a join) saves the
+//!   binding (so `AssetsConfig::resolve` gives that service from then on)
+//!   and binds it in the process too (`bind_live`): the store's files a
+//!   game mounted before it (`late_fetcher`, which `mount::served` gives a
+//!   mount opened with no service) fetch what they lack from it, so the
+//!   game reads the service's files without starting again.
 
-use std::path::{Path, PathBuf};
+use std::{
+    io,
+    path::{Path, PathBuf},
+    sync::{Arc, RwLock},
+};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{remote::RemoteConfig, store::write_atomic, tls::normalize_fingerprint};
+use crate::{
+    Store,
+    remote::{Fetcher, Remote, RemoteConfig},
+    store::write_atomic,
+    tls::normalize_fingerprint,
+};
+
+/// The service this process bound the token to while running (`bind_live`).
+static LIVE: RwLock<Option<RemoteConfig>> = RwLock::new(None);
+
+/// From now on this process's `late_fetcher`s fetch from `remote` (a join
+/// bound the token to it).
+pub fn bind_live(remote: RemoteConfig) {
+    *LIVE.write().unwrap_or_else(|e| e.into_inner()) = Some(remote);
+}
+
+/// The service this process bound while running, if any.
+pub fn live_remote() -> Option<RemoteConfig> {
+    LIVE.read().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// A fetcher for a mount opened before any service was set: it fetches
+/// from the one this process binds later (`bind_live`); until then every
+/// record it is asked for is a miss, as with no fetcher.
+pub fn late_fetcher() -> Arc<dyn Fetcher> {
+    Arc::new(LateFetcher)
+}
+
+struct LateFetcher;
+
+impl LateFetcher {
+    fn remote() -> io::Result<Arc<Remote>> {
+        let config = live_remote().ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no asset service"))?;
+        Remote::shared(&config).map_err(io::Error::other)
+    }
+}
+
+impl Fetcher for LateFetcher {
+    fn fetch(&self, store: &Store, id: &str, size: u64) -> io::Result<Vec<u8>> {
+        Self::remote()?.fetch(store, id, size)
+    }
+
+    fn fetch_many(&self, store: &Store, wanted: &[(String, u64)]) -> io::Result<()> {
+        Self::remote()?.fetch_many(store, wanted)
+    }
+}
 
 /// The variable naming another access file.
 pub const ENV: &str = "CHIMERA_ASSET_ACCESS";

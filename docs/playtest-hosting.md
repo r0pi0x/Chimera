@@ -44,12 +44,13 @@ installs. Design and limits: [plans/active/asset-service.md](plans/active/asset-
    share your upload. With the asset service and the game server up the
    day before, ask each tester to run their first start then
    (`Play-UGG.bat +chimera:asset_token <token> +connect <host address>:<port>`),
-   wait for the progress window and the first match to load, and quit.
+   wait for the download on the loading panel and the first match to load,
+   and quit.
    On Saturday they start from what they already have; only new maps and
    guns come. Tell them to start on Saturday **without** the token
    (`Play-UGG.bat`, then Join, or `Play-UGG.bat +connect <host address>:<port>`):
-   entering it again forgets which service it is for, and the game then
-   starts again once at the join to bind it anew.
+   entering it again forgets which service it is for (the next join binds
+   it anew, in the same window).
 
 ## Publishing the game files (once, and after a game update)
 
@@ -282,7 +283,7 @@ cargo run --release --features tools --bin chimera_pack -- sets cs_source --stor
 Publishing again at the same build reaches testers who fetched before:
 each start asks the service whether it has a newer manifest than the
 one kept (waiting at most 5 s) and fetches the startup sets' new files
-behind the progress window; each join fetches the offered sets' new
+in the background (a join waits for them, on the loading panel); each join fetches the offered sets' new
 files before the tester spawns. Nothing more for the tester to do.
 
 ## The asset service (each session)
@@ -417,9 +418,7 @@ Maps and matches:
   host's F3 starts the countdown now; a joiner's F3 says it is ready (or
   takes it back). Alone with bots: F3, or the longest wait (90 s). Before
   this, a menu host's match started at once with no lobby (`mp_lobby`
-  was 0 on listen servers). With no player connected it waits without a limit. A tester still
-  in the first start's download (the small window before the game opens)
-  isn't connected yet and isn't listed.
+  was 0 on listen servers). With no player connected it waits without a limit.
 
 Console commands on the server's stdin (type in its window; run it inside
 `tmux` or `screen`, or a PowerShell window you keep open):
@@ -461,12 +460,14 @@ speed and your upload", below).
 
 What a tester without the games downloads from the asset service:
 
-- **First start**, before the game's window: what the games read at startup
-  (about 360 MB: each game's `base` set), behind a small window that says
-  "Downloading game files: X of Y MB" with the speed and time left. Errors
-  (a refused token, the service unreachable, another certificate) show
-  there with what to do; the game then starts by itself. Testers with the
-  games installed download nothing of those games.
+- **First join** (or a start with the token bound): what the games read at
+  startup (about 360 MB: each game's `base` set), in the game's own window:
+  at the first join with the match's files, on the loading panel ("Downloading
+  game files: X of Y MB", the speed and time left); on a later start that
+  lacks some, in the background from the start, a join waiting for it.
+  Errors (a refused token, the service unreachable, another certificate)
+  show on the loading panel with what to do. No second window, no restart.
+  Testers with the games installed download nothing of those games.
 - **Each join**: what the match needs that isn't there yet (the first one
   about 50-100 MB), at full speed, on the loading panel.
 - **In the background, while playing**: the pool's other maps, the
@@ -548,11 +549,10 @@ which clears the binding.
    shoot, climb a rung, open Esc > Options, press F9 and find the report
    folder, quit. Token entry and the download: run
    `Play-UGG.bat +chimera:asset_token <token> +connect <host address>:<port>`
-   once; the game binds the token, starts again by itself (one restart, the
-   first time only), shows a small window "Downloading game files: X of Y
-   MB" while it fetches what the games read at startup, opens the game,
-   shows the same line on the loading panel for the match's files, then
-   spawns. Later joins download only what is new.
+   once; the game binds the token at the join and, in the same window,
+   shows "Downloading game files: X of Y MB" on the loading panel while it
+   fetches what the games read at startup and the match's files, then
+   spawns (no second window, no restart). Later joins download only what is new.
 3. `chimera_pack user revoke` that test token, join again, confirm the
    download is refused with a clear message.
 4. Join with two clients and check a match starts with bots off
