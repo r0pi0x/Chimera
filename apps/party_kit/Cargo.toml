@@ -25,6 +25,7 @@ chimera_sim.workspace = true
 chimera_net.workspace = true
 chimera_present = { workspace = true, optional = true }
 chimera_client = { workspace = true, optional = true }
+chimera_ui = { workspace = true, optional = true }
 cs_source.workspace = true
 hl2dm.workspace = true
 source_logic.workspace = true
@@ -47,10 +48,10 @@ avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_
 # bevy_winit, and with it another Bevy and every crate of ours.
 bevy_winit.workspace = true
 chimera_sim = { workspace = true, features = ["testkit"] }
-# The UI kit's theme and clock (tests/it/main_menu.rs: the logo pass).
-chimera_ui.workspace = true
 # HL2:DM's view-model motion rules (tests/it/hl2dm_parts.rs).
 source_engine.workspace = true
+# The UI kit's theme and clock (tests/it/main_menu.rs: the logo pass).
+chimera_ui.workspace = true
 
 # Its integration tests (tests/it/): minigames on the composed
 # simulation, headless (`heavy::`: the user's installs).
@@ -83,7 +84,7 @@ tools = []
 # and both games' front ends (`combat_arms/ui`; `cs_source/ui` for CS:S's
 # HUD, shown to a player holding a CS:S gun): everything but the
 # dedicated server.
-present = ["dep:chimera_present", "dep:chimera_client", "combat_arms/ui", "cs_source/ui", "hl2dm/ui"]
+present = ["dep:chimera_present", "dep:chimera_client", "dep:chimera_ui", "combat_arms/ui", "cs_source/ui", "hl2dm/ui"]
 
 # Faster iteration: link Bevy as a dynamic library, serve the remote
 # protocol. `cargo run --features dev --bin lucker_party`. Never for
@@ -95,6 +96,7 @@ dev = [
     "chimera_net/dev",
     "chimera_present?/dev",
     "chimera_client?/dev",
+    "chimera_ui?/dev",
     "cs_source/dev",
     "hl2dm/dev",
     "source_logic/dev",

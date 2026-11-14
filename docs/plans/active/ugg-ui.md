@@ -584,6 +584,49 @@ had. `ui_scene airstrike [t]`. Tests: `rank_toast_rolls_and_holds_1_15_s`,
 
 ### M5: main menu and backdrops
 
+Status (2026-11-14): the first page is in (`party_kit::signal_menu`,
+under a theme with `[layout.menu]`: the lockup wiping in with
+ULTIMATE's letters flickering on, the entries stepping in on the slant,
+the highlight wiping in and gliding between entries with the inverted
+copy clipped to it, ↑↓ and Enter, the pointer; the account chip with an
+inert Friends; the keys; the rule up the right edge; the backdrop tabs
+with the dwell bar and caption; the ambient under everything; no live
+map and no `MenuBackdrop` under it; `ui_scene menu [backdrop] [t]` and
+`ui_scene menu enter <t>`; tests `apps/party_kit/tests/it/signal_menu.rs`).
+The pages (Play, Join, Options) stay VGUI frames over it for now.
+The backdrops are in (`party_kit::menu_backdrops`): Ladder, Assembly and
+the Ident (slot C until M5b's Showcase) painted on the CPU into a
+vertex-coloured `Mesh2d` with `Text2d` labels per backdrop, drawn by a 2D
+camera into an image the size of the backdrops' area (the right 64 %),
+shown through `BackdropsMaterial`, which fades them toward the menu column,
+runs the 12° swap with its accent edge and lays the Ident's sheen; the
+Ladder uses the games' own kill icons when at hand. Cost (seeded,
+headless, instructions a frame, the menu's systems): Ladder 0.3 M,
+Assembly 1.2 M, Ident 2.5 M at its lock and 1.6 M under its sheen
+(`menu_backdrops::the_menus_frame_stays_in_budget`, limit 3 M); a frozen
+backdrop is painted once. Tests `apps/party_kit/tests/it/menu_backdrops.rs`.
+The ground is the shared ambient (M4's `AmbientMaterial`, the `MENU`
+preset: calm left of 30 % of the width, the bloom behind the backdrops;
+still with reduced motion and in staged scenes; test
+`the_ground_is_the_ambient_calm_behind_the_menu`). Parity (2026-11-14, `tools/ui-parity/run.sh menu`, 1920x1080, ids in
+`reference/menu.html` from the look book generator's `--parity`): 25
+matched, 14 within tolerance; left past it, with reasons: the tabs (slot
+C reads IDENT here, SHOWCASE in the look book: 24 px narrower, the others
+shift), text widths from whole-pixel font sizes (the caption 10 px over
+51 letters, the keys 1-5 px, GUN GAME 63 for 63.4 px), the mark 1 px
+wider (its image's width rounded up). Follow-ups (2026-11-14): CS:S's weapon selection row
+(`HudWeaponSelection`, drawn on every deploy with fast switch,
+`weapon_select::show_deploys`) no longer shows while a minigame plays
+(the gun game swaps guns on every kill and the race chip, top centre
+where the row draws, shows the gun; it overlapped the chip; test
+`a_drawn_weapon_shows_the_row_except_under_a_minigame`); the logo pass's
+mark measured against the look book at p = .4 and .5 (`ui_pass`, the
+look book's lobby frame with its sting set to the same progress): the
+same upright mark in the same place, edge pixels only differing, so the
+pass needed no change. Left: the pages in the
+kit's widgets, the menu's sounds, M5b's Showcase in slot C, screenshots at
+the four sizes beyond 1080p.
+
 - `party_kit::main_menu` drawn with the kit (four items from
   main_menu.toml; Play, Join, Options, Quit), the lockup, the keys line,
   backdrop tabs. Pages (Play, Join, Options) restyled on the kit's

@@ -149,6 +149,16 @@ item = 0.52
 item_gap = 0.055
 backdrop_dwell = 16.0
 backdrop_swap = 0.52
+lockup_at = 0.12       # the lockup wipes in
+lockup = 0.6
+ult_at = 0.38          # ULTIMATE's letters flicker on, one each ult_gap
+ult_gap = 0.045
+ult = 0.2
+inv_at = 0.9           # the highlight's inverted text
+hl_move = 0.3          # the highlight to another entry
+acct_at = 0.7          # the account chip, the keys and caption fade in
+keys_at = 0.9
+fade = 0.5
 
 [layout.pass]
 band_acc_w = 1.1
@@ -197,6 +207,37 @@ countdown_hot = 3.0  # the last seconds lit in the accent
 foot_y = 3.4         # from the bottom
 corner = 2.4         # the + marks, in from each corner
 
+[layout.menu]        # the party menu's first page (party_kit signal_menu): a 100 x 56.25 frame
+lockup_x = 4.6
+lockup_y = 5.6
+lockup = 3.3         # GUN GAME's size; the mark 2.05x, ULTIMATE .62x
+lockup_w = 34.0      # the wipe's width
+items_x = 4.6
+items_y = 23.4
+items_w = 24.0
+item_h = 3.5
+item_label = 1.36
+item_ix = 0.62
+item_ix_w = 1.3
+item_gap = 1.1
+hl_accent = 0.32     # the highlight's accent bar
+acct_x = 4.6         # from the right
+acct_y = 5.6
+tab_text = 0.64
+keys_y = 5.2         # from the bottom
+keys = 0.62
+keys_gap = 2.2
+vt_x = 2.1           # the rule up the right edge, from the right
+vt = 0.56
+tabs_x = 4.6         # the backdrop tabs, from the right
+tabs_y = 4.2         # from the bottom
+tabs_text = 0.62
+tabs_label = 0.56
+cap_y = 7.6          # the backdrop's caption, from the bottom
+cap = 0.56
+corner = 2.4
+calm = 0.30          # the menu column's right edge (0-1 of the width): the ambient is calm left of it
+
 [layout.chip]
 top = 2.2
 w = 21.0
@@ -229,13 +270,3 @@ chip_pitch = 3.05
 winner = 3.6
 row_h = 2.62
 
-[layout.menu]
-lockup_x = 4.6
-lockup_y = 5.6
-lockup = 3.3
-items_top = 23.4
-item_w = 24.0
-item_h = 3.5
-label = 1.36
-bar_edge = 0.74
-bar_accent = 0.32
