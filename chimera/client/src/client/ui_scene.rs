@@ -17,8 +17,8 @@
 //! bars, slants, the gun icons and marks, the logo pass frozen mid-way,
 //! the ambient and the match end's lines behind). `controls` (the kit's
 //! form controls in their states: `chimera_ui::controls`). An app adds
-//! its own screens' scenes (`UiSceneHooks`: the party's `menu`, `esc`
-//! and `settings <tab>`), staged by the app's code and cleared at `off`. The screens' milestones add theirs
+//! its own screens' scenes (`UiSceneHooks`: the party's `menu`, `esc`,
+//! `settings <tab>`, `play [game]` and `join`), staged by the app's code and cleared at `off`. The screens' milestones add theirs
 //! (`lobby`, `chip`, `board`, `toast`, `airstrike`, `matchend`, `menu`)
 //! to `SCENES`. An app's own screens register theirs in `UiSceneHooks`
 //! (`menu`: the party menu's first page, `party_kit::signal_menu::stage`).
