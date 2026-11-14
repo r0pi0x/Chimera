@@ -132,6 +132,76 @@ fn rows_toggles_and_segments_show_their_state() {
     assert_eq!(app.world().get::<BackgroundColor>(opts[0]).unwrap().0, Color::NONE);
 }
 
+/// Text on white is ink at full strength and one pixel heavier (the
+/// `InkWeight` shadow of its own colour): the selected segment, a toggle's
+/// ON, the primary button's label and its key cap. Light text gets none,
+/// and loses it when its tone turns light.
+#[test]
+fn text_on_white_is_full_strength_ink() {
+    use chimera_ui::style::InkWeight;
+    let mut app = app();
+    let theme = app.world().resource::<Theme>().clone();
+    let ink = theme.tone(Tone::Ink);
+    let b = build(&mut app, |ui, c, root| ui.button(c, root, Kind::Primary, "Start", Some("Enter"), 2.0, State::NONE));
+    let seg = build(&mut app, |ui, c, root| ui.segmented(c, root, &["Windowed", "Full screen"], Some(0), State::NONE));
+    let tog = build(&mut app, |ui, c, root| ui.toggle(c, root, true, State::NONE));
+    let colours = |app: &mut App, e: Entity| -> Vec<(String, Color, Option<TextShadow>)> {
+        let mut out = Vec::new();
+        let mut stack = vec![e];
+        let w = app.world();
+        while let Some(n) = stack.pop() {
+            if let (Some(t), Some(c)) = (w.get::<Text>(n), w.get::<TextColor>(n)) {
+                out.push((t.0.clone(), c.0, w.get::<TextShadow>(n).copied()));
+            }
+            if let Some(ch) = w.get::<Children>(n) {
+                stack.extend(ch.iter());
+            }
+        }
+        out
+    };
+    let mut on_white = colours(&mut app, b);
+    on_white.extend(colours(&mut app, seg[0]));
+    on_white.extend(colours(&mut app, tog).into_iter().filter(|(t, ..)| t == "ON"));
+    let mut names: Vec<&str> = on_white.iter().map(|(t, ..)| t.as_str()).collect();
+    names.sort();
+    assert_eq!(names, ["ENTER", "ON", "START", "WINDOWED"]);
+    for (t, c, shadow) in &on_white {
+        assert_eq!(*c, ink, "{t}: ink at full strength");
+        let s = shadow.unwrap_or_else(|| panic!("{t}: the ink weight"));
+        assert_eq!(s.color, ink);
+        assert!(s.offset.x > 0.0 && s.offset.y == 0.0, "{t}: one pixel to the right");
+    }
+    // The cap's outline is full strength too.
+    let cap_outline = descendants_with::<chimera_ui::UiStyle>(&mut app, b).into_iter().find_map(|s| s.outline);
+    assert_eq!(cap_outline, Some((Tone::Ink, 1.0)));
+    // Light text: no weight; a tone turning light drops it.
+    for (t, _, shadow) in colours(&mut app, seg[1]) {
+        assert!(shadow.is_none(), "{t}: light text keeps its own weight");
+    }
+    let e = app.world_mut().spawn((Text::new("X"), UiText::new(chimera_ui::Role::Mono, 0.6, Tone::Ink))).id();
+    app.update();
+    assert!(app.world().get::<InkWeight>(e).is_some());
+    app.world_mut().get_mut::<UiText>(e).unwrap().tone = Tone::Fg;
+    app.update();
+    assert!(app.world().get::<InkWeight>(e).is_none() && app.world().get::<TextShadow>(e).is_none());
+}
+
+/// A focused stepper's underline sits under its value with a gap, as the
+/// slider's does: its value box is as tall as the keys (1.7 cq), not the
+/// text's line.
+#[test]
+fn stepper_underline_clears_the_value() {
+    let mut app = app();
+    let (minus, _) = build(&mut app, |ui, c, root| ui.stepper(c, root, "Rotation · 138 maps", 13.0, State::focused(true)));
+    let group = app.world().get::<ChildOf>(minus).unwrap().parent();
+    let out = app.world().get::<Children>(group).unwrap()[1];
+    let px = |v: f32| (v * 19.2).round();
+    assert_eq!(app.world().get::<Node>(out).unwrap().height, Val::Px(px(1.7)));
+    // The value's text is smaller than its box: room above the underline.
+    let text = descendants_with::<UiText>(&mut app, out);
+    assert!(text[0].size < 1.7 - 2.0 * 0.18, "the text clears the .18 cq underline");
+}
+
 /// Slider values: a press's place on the track to a value on its step,
 /// and back.
 #[test]

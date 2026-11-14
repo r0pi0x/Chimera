@@ -259,7 +259,7 @@ fn follow(
     settings: Option<Res<NetSettings>>,
     parts: Option<Res<PartsRegistry>>,
     gameplay: Option<Res<Gameplay>>,
-    chars: Query<(Option<&NetCharacter>, Option<&Name>, Has<LocalPlayer>)>,
+    (chars, role): (Query<(Option<&NetCharacter>, Option<&Name>, Has<LocalPlayer>)>, Option<Res<crate::core::NetRole>>),
     mut view: ResMut<MatchEndView>,
     (map_vote, mut choice): (Option<Res<MapVote>>, ResMut<MapVoteChoice>),
     (mut passes, mut gate): (super::logo_pass::Passes, ResMut<MatchEndGate>),
@@ -321,7 +321,7 @@ fn follow(
                 None => r.name.clone(),
             };
             let (score, is_bot) = r.player.and_then(|e| net_scores.get(e).ok()).unwrap_or((None, false));
-            let host = found.is_some_and(|(_, (net, _, _))| net.is_some_and(|n| n.owner == Some(crate::net::HOST_ID)));
+            let host = found.is_some_and(|(_, (net, _, l))| super::race_chip::is_host(net, l, role.as_deref()));
             MatchEndRow {
                 place: i + 1,
                 rung: r.rung,

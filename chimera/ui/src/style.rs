@@ -10,6 +10,13 @@
 //! - `UiText` (component): a text role at a size in cq, a tone and its
 //!   alpha; resolves the `TextFont`, `LetterSpacing`, `FontHinting` and
 //!   `TextColor` from the theme and the kit's faces (`fonts::text`).
+//!   Text in a dark tone (`Tone::is_dark`: ink on a white or accent fill)
+//!   is drawn one physical pixel wider (`InkWeight`: a shadow of its own
+//!   colour one pixel to the right). Bevy blends a glyph's edges in linear
+//!   light, which thickens light text on dark and thins dark text on
+//!   light: small Mono in ink on white showed as mid grey (its darkest
+//!   pixel 60 % of the way from white to ink), so selected segments and
+//!   the primary buttons read faint beside the light labels.
 //! - `UiSlant` (component): a 12° slanted fill (`SlantMaterial`) in a tone,
 //!   which edges lean, an accent bar.
 //!
@@ -327,6 +334,11 @@ impl UiText {
     }
 }
 
+/// Marks the shadow `resolve_styles` gives dark text (module doc), so it
+/// goes again when the text's tone turns light.
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct InkWeight;
+
 /// A slanted fill (module doc).
 #[derive(Component, Clone, Debug, PartialEq)]
 pub struct UiSlant {
@@ -378,7 +390,7 @@ pub fn resolve_styles(
     kit: Option<Res<KitFonts>>,
     mut slants: Option<ResMut<Assets<SlantMaterial>>>,
     styles: Query<(Entity, Ref<UiStyle>)>,
-    texts: Query<(Entity, Ref<UiText>, Has<PlainText>)>,
+    texts: Query<(Entity, Ref<UiText>, Has<PlainText>, Has<InkWeight>)>,
     slanted: Query<(Entity, Ref<UiSlant>, Option<&MaterialNode<SlantMaterial>>)>,
     mut commands: Commands,
 ) {
@@ -396,7 +408,7 @@ pub fn resolve_styles(
             c.insert(Outline::new(Val::Px(units.hairline()), Val::Px(-units.hairline()), theme.tone_a(t, a)));
         }
     }
-    for (e, t, plain) in &texts {
+    for (e, t, plain, weighted) in &texts {
         if !(all || t.is_changed()) {
             continue;
         }
@@ -408,7 +420,14 @@ pub fn resolve_styles(
             // `client::fonts`), the kit's one as fallback (none there: tests).
             bundle.0.font = FontSource::List(vec![FontSource::default(), bundle.0.font.clone()]);
         }
-        commands.entity(e).insert((bundle, TextColor(theme.tone_a(t.tone, t.alpha))));
+        let color = theme.tone_a(t.tone, t.alpha);
+        let mut c = commands.entity(e);
+        c.insert((bundle, TextColor(color)));
+        if t.tone.is_dark() {
+            c.insert((InkWeight, TextShadow { offset: Vec2::new(units.hairline(), 0.0), color }));
+        } else if weighted {
+            c.remove::<(InkWeight, TextShadow)>();
+        }
     }
     if let Some(slants) = slants.as_mut() {
         for (e, s, mat) in &slanted {

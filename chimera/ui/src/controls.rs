@@ -274,17 +274,19 @@ impl<'a> Ui<'a> {
         .id()
     }
 
-    /// A key cap (outlined, Mono), `size` cq text.
+    /// A key cap (outlined, Mono), `size` cq text: muted at .75, but a
+    /// dark one (on a primary button's white) at full strength.
     pub fn kbd(&self, c: &mut Commands, parent: Entity, key: &str, size: f32, tone: Tone) -> Entity {
+        let a = if tone.is_dark() { 1.0 } else { 0.75 };
         let e = c
             .spawn((
-                UiStyle { pad: Some([0.24, 0.36, 0.18, 0.36].into()), ..UiStyle::row() }.outline(tone, 0.75),
+                UiStyle { pad: Some([0.24, 0.36, 0.18, 0.36].into()), ..UiStyle::row() }.outline(tone, a),
                 Node::default(),
                 Pickable::IGNORE,
                 ChildOf(parent),
             ))
             .id();
-        self.text_a(c, e, Role::Mono, size * 0.88, tone, 0.75, key);
+        self.text_a(c, e, Role::Mono, size * 0.88, tone, a, key);
         e
     }
 
@@ -665,7 +667,7 @@ impl<'a> Ui<'a> {
             Pickable::IGNORE,
             ChildOf(tr),
         ));
-        let value = self.value_box(c, s, value, 3.4, st, typing, JustifyContent::FlexEnd);
+        let value = self.value_box(c, s, value, 3.4, st, typing, ValueLook::SLIDER);
         SliderParts { track: tr, value }
     }
 
@@ -673,14 +675,14 @@ impl<'a> Ui<'a> {
     /// on hover; typing, a text field with the caret (`Typing`), its
     /// underline threat when the text was refused.
     #[allow(clippy::too_many_arguments)]
-    fn value_box(&self, c: &mut Commands, parent: Entity, value: &str, w: f32, st: State, typing: Option<Typing>, justify: JustifyContent) -> Entity {
+    fn value_box(&self, c: &mut Commands, parent: Entity, value: &str, w: f32, st: State, typing: Option<Typing>, look: ValueLook) -> Entity {
         if let Some(t) = typing {
             return self.text_field(c, parent, t.text, "", Some(t.caret), false, w, State { focus: true, error: t.error, ..State::NONE });
         }
         let over = self.color(Tone::Fg, 0.06);
         let nv = c
             .spawn((
-                UiStyle { min_w: Some(w), h: Some(1.6), pad: Some([0.0, 0.4].into()), justify: Some(justify), ..UiStyle::row() },
+                UiStyle { min_w: Some(w), h: Some(look.h), pad: Some([0.0, look.pad].into()), justify: Some(look.justify), ..UiStyle::row() },
                 Node::default(),
                 BackgroundColor(Color::NONE),
                 Hover { base: Color::NONE, over },
@@ -688,12 +690,12 @@ impl<'a> Ui<'a> {
                 ChildOf(parent),
             ))
             .id();
-        self.text(c, nv, Role::Mono, 0.66, Tone::Fg, value);
+        self.text(c, nv, Role::Mono, look.size, Tone::Fg, value);
         if st.focus {
             self.underline(c, nv, Tone::Acc, 0.18);
         } else if st.error {
             self.underline(c, nv, Tone::Threat, 0.18);
-        } else {
+        } else if look.rest_line {
             self.hairline(c, nv, Tone::Fg4, 1.0);
         }
         nv
@@ -731,7 +733,9 @@ impl<'a> Ui<'a> {
             b
         };
         let minus = key(c, "-");
-        let value = self.value_box(c, g, value, w, st, typing, JustifyContent::Center);
+        // As tall as the keys, so the focus underline sits under the
+        // value with a gap, as the slider's and the fields' do.
+        let value = self.value_box(c, g, value, w, st, typing, ValueLook::STEPPER);
         let plus = key(c, "+");
         StepperParts { minus, value, plus }
     }
@@ -1001,6 +1005,22 @@ pub struct Typing<'a> {
     pub text: &'a str,
     pub caret: usize,
     pub error: bool,
+}
+
+/// A value box's look: a slider's (right-aligned, a hairline at rest)
+/// or a stepper's (centred, as tall as its keys, nothing at rest).
+#[derive(Clone, Copy, Debug)]
+struct ValueLook {
+    h: f32,
+    pad: f32,
+    size: f32,
+    justify: JustifyContent,
+    rest_line: bool,
+}
+
+impl ValueLook {
+    const SLIDER: ValueLook = ValueLook { h: 1.6, pad: 0.4, size: 0.66, justify: JustifyContent::FlexEnd, rest_line: true };
+    const STEPPER: ValueLook = ValueLook { h: 1.7, pad: 0.3, size: 0.7, justify: JustifyContent::Center, rest_line: false };
 }
 
 /// What `Ui::slider_ex` built: the track (the drag's) and the value box.

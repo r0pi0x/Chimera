@@ -69,6 +69,7 @@ mod heavy {
     mod head_matrix;
     mod css_map_moves;
     mod hud_looks;
+    mod icon_glyphs;
     mod impacts;
     mod ladders_across_maps;
     mod nav_bounds;

@@ -96,6 +96,12 @@ impl Tone {
         Tone::Glow,
     ];
 
+    /// A dark tone (the inks, the plate, text on the accent): what text on
+    /// a white or accent fill is drawn in.
+    pub fn is_dark(self) -> bool {
+        matches!(self, Tone::Ink | Tone::Ink2 | Tone::Ink3 | Tone::Ink4 | Tone::Plate | Tone::OnAcc)
+    }
+
     /// The token's name in a theme's TOML and the prototype (`fg_2`).
     pub fn name(self) -> &'static str {
         match self {
@@ -315,12 +321,7 @@ impl Theme {
     /// tones, the dark ones (inks, plate, `on_acc`) as `display_alpha`.
     pub fn tone_a(&self, t: Tone, a: f32) -> Color {
         let c = self.tone(t);
-        let k = match t {
-            Tone::Ink | Tone::Ink2 | Tone::Ink3 | Tone::Ink4 | Tone::Plate | Tone::OnAcc => {
-                1.0 - (1.0 - a.clamp(0.0, 1.0)).powf(2.2)
-            }
-            _ => light_alpha(a),
-        };
+        let k = if t.is_dark() { 1.0 - (1.0 - a.clamp(0.0, 1.0)).powf(2.2) } else { light_alpha(a) };
         c.with_alpha(c.alpha() * k)
     }
 
