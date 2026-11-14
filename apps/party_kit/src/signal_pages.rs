@@ -17,37 +17,46 @@
 //!   game_settings`); a pane at the right sums the match up (minigame,
 //!   map, bots, players, lobby, server, password). Enter starts.
 //! - **Join**: Direct (the address and the password, text fields), the
-//!   recent addresses, and the **LAN servers** (main-menu.md M2): every
-//!   server of ours `ServerQueries`' LAN scan found (`lan_servers`: name,
-//!   minigame from its keywords, map, players/max, bots, ping, a password
-//!   mark), sorted by ping; scanned when the page opens, Refresh (F5) again.
-//!   Enter on the address or password connects, on a recent address or a
-//!   server joins it (a server with a password and none typed: the
-//!   password field takes the keys first); a click on a focused row
-//!   presses it.
+//!   recent addresses, and the **server browser** (main-menu.md M2; its
+//!   rows and files are `server_list`'s) in three tabs: **LAN** (every
+//!   server of ours `ServerQueries`' LAN scan found: name, minigame from
+//!   its keywords, map, players/max, bots, ping, a password mark, sorted
+//!   by ping; scanned when the page opens, Refresh (F5) again),
+//!   **Favourites** (kept with F or its button, each asked by address for
+//!   its info and ping) and **History** (the servers joined, newest first,
+//!   with when). A list longer than `VISIBLE_ROWS` scrolls: the keys keep
+//!   the focused row in view, the wheel moves the window, a bar at the
+//!   right shows where it is. Enter on the address or password connects,
+//!   on a recent address or a server joins it; a server with a password
+//!   asks for it first in a **modal** (the kit's `modal` and `text_field`,
+//!   the Direct password in it already; Enter joins, Esc cancels). A click
+//!   on a focused row presses it.
 //! - **Keys**: ↑↓ (and Tab) move the focus through the rows, ←→ change a
-//!   value, Space toggles, Q/E (PageUp/PageDown) the Play tabs (not while
-//!   typing), F5 refreshes the LAN list, Enter the page's button, Esc
-//!   back (`main_menu::typing`, which also types into the focused text
-//!   field). The pointer: a click focuses a row; the kit's hover ticks.
+//!   value (on Join, not typing: the browser's tab), Space toggles, Q/E
+//!   (PageUp/PageDown) the Play tabs (not while typing; on a server row
+//!   PageUp/PageDown move a window), F2 F3 F4 the browser's tabs, F
+//!   (not typing) favourites or drops the focused server, F5 refreshes,
+//!   Enter the page's button, Esc back or closes the modal
+//!   (`main_menu::typing`, which also types into the focused text field,
+//!   its case kept). The pointer: a click focuses a row; the kit's hover
+//!   ticks.
 //! - **Motion and sound**: a page or tab change wipes the rows in on the
 //!   12° slant (`Ui::wipe_cover`); the menu's cues (`ui_cues`: hover,
 //!   select, back, denied, the steppers' slider).
 //!
-//! `ui_scene play [server|game]` and `ui_scene join` stage them for
-//! screenshots (`join` with made-up LAN servers).
+//! `ui_scene play [server|game]` and `ui_scene join [lan|favourites|
+//! history|password]` stage them for screenshots (`join` with made-up
+//! servers, none of them saved).
 //!
-//! Known shortcuts: the LAN list shows the first `LAN_ROWS` servers (no
-//! scroll); no Favourites or History tabs and no Internet list (M2's
-//! rest, M3); a locked server's password is the Direct one (no dialog);
-//! typed text shows in capitals (the kit's faces); no selection shown in
-//! a text field.
+//! Known shortcuts: no Internet list (M2's rest, M3); a Recent address
+//! can't be made a favourite (only a listed server); no selection shown
+//! in a text field.
 
 use std::net::SocketAddr;
 
-use bevy::{prelude::*, ui::DeprecatedInteraction as Interaction};
+use bevy::{input::mouse::{MouseScrollUnit, MouseWheel}, prelude::*, ui::DeprecatedInteraction as Interaction};
 use chimera_client::client::ui_sound::UiCue;
-use chimera_net::net::query::{LanSettings, QueryResult, QueryState, ServerQueries};
+use chimera_net::net::query::{LanSettings, QueryResult, QueryState, ServerInfo, ServerQueries};
 use chimera_ui::{
     AmbientMaterial, IconImages, KitFonts, Role, Theme, Tone, UiClock, UiStyle, UiUnits,
     controls::{Kind, State, Ui},
@@ -57,70 +66,87 @@ use crate::{
     host::{Pick, Setting, same_value},
     main_menu::{Field, MainMenuAction, MenuData, MenuMinigame, MenuPage, MenuUiCamera, PartyMenu, PlayKind, Screen, ShownScreen},
 };
+pub use crate::server_list::{BrowserTab, LanServer, Status, VISIBLE_ROWS, lan_servers};
+use crate::server_list::{self as sl, BrowserFiles, Visit};
 
 /// The layout table.
 pub const L: &str = "pages";
-
-/// LAN servers shown at most.
-pub const LAN_ROWS: usize = 8;
 
 /// The Signal look draws Play and Join (a theme with `[layout.pages]`).
 pub fn themed(theme: Option<&Theme>) -> bool {
     theme.is_some_and(|t| t.has_layout(L))
 }
 
-/// A server of the LAN list.
-#[derive(Clone, Debug, PartialEq)]
-pub struct LanServer {
-    pub addr: SocketAddr,
-    pub name: String,
-    pub minigame: Option<String>,
-    pub map: String,
-    pub players: u8,
-    pub max_players: u8,
-    pub bots: u8,
-    pub ping_ms: u32,
-    pub locked: bool,
-    /// Its network version is ours (else it can't be joined).
-    pub same_version: bool,
-}
-
-/// The LAN list from the queries' results: the servers found by a LAN
-/// scan that answered, ours only, by ping (then name).
-pub fn lan_servers(results: &[QueryResult]) -> Vec<LanServer> {
-    let mut out: Vec<LanServer> = results
-        .iter()
-        .filter(|r| r.lan)
-        .filter_map(|r| match &r.state {
-            QueryState::Answered { info, ping_ms } if info.is_ours() => Some(LanServer {
-                addr: r.addr,
-                name: if info.name.trim().is_empty() { r.addr.to_string() } else { info.name.clone() },
-                minigame: info.minigame().map(str::to_string),
-                map: info.map.clone(),
-                players: info.players,
-                max_players: info.max_players,
-                bots: info.bots,
-                ping_ms: *ping_ms,
-                locked: info.password,
-                same_version: info.version == chimera_net::net::NET_VERSION,
-            }),
-            _ => None,
-        })
-        .collect();
-    out.sort_by(|a, b| a.ping_ms.cmp(&b.ping_ms).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
-    out
-}
-
-/// The LAN list shown on Join.
+/// The server browser's lists on Join (the LAN one gave it its name).
 #[derive(Resource, Clone, Debug, Default, PartialEq)]
 pub struct LanList {
+    /// The LAN tab's rows, by ping.
     pub servers: Vec<LanServer>,
+    /// The Favourites tab's rows (`fav_addrs`, answered first by ping).
+    pub favourites: Vec<LanServer>,
+    /// The History tab's rows (`visits`, newest first).
+    pub history: Vec<LanServer>,
+    /// The favourites kept, and the servers joined.
+    pub fav_addrs: Vec<SocketAddr>,
+    pub visits: Vec<Visit>,
+    /// The tab shown, and the first row of it in the window.
+    pub tab: BrowserTab,
+    pub scroll: usize,
     /// A scan (or a query) still under way.
     pub scanning: bool,
     /// The queries' generation the list was made from.
     pub generation: u64,
-    /// A staged scene's made-up servers (not replaced by the queries).
+    /// A staged scene's made-up servers (`staged_results`; not replaced by
+    /// the queries, nothing written to the files).
     pub staged: bool,
+    pub staged_results: Vec<QueryResult>,
+    /// The rows are to be made again (a favourite or a visit changed).
+    pub dirty: bool,
+    /// The saved servers are to be asked once the LAN scan is over.
+    pub want_saved: bool,
+}
+
+impl LanList {
+    /// The rows of the tab shown.
+    pub fn rows(&self) -> &[LanServer] {
+        match self.tab {
+            BrowserTab::Lan => &self.servers,
+            BrowserTab::Favourites => &self.favourites,
+            BrowserTab::History => &self.history,
+        }
+    }
+
+    /// The three lists from the queries' results (a staged scene's own).
+    pub fn rebuild(&mut self, results: &[QueryResult]) {
+        let staged;
+        let results = if self.staged {
+            staged = self.staged_results.clone();
+            &staged[..]
+        } else {
+            results
+        };
+        let fav = |a: &SocketAddr| self.fav_addrs.contains(a);
+        let mut servers = sl::lan_servers(results);
+        servers.iter_mut().for_each(|r| r.favourite = fav(&r.addr));
+        let mut favourites = sl::listed(&self.fav_addrs.iter().map(|a| (*a, None)).collect::<Vec<_>>(), results);
+        favourites.iter_mut().for_each(|r| r.favourite = true);
+        sl::sort_favourites(&mut favourites);
+        let mut history = sl::listed(&self.visits.iter().map(|v| (v.addr, Some(v.when))).collect::<Vec<_>>(), results);
+        history.iter_mut().for_each(|r| r.favourite = fav(&r.addr));
+        (self.servers, self.favourites, self.history) = (servers, favourites, history);
+        self.scroll = sl::clamp_offset(self.scroll, self.rows().len(), VISIBLE_ROWS);
+    }
+
+    /// Every address kept (favourites, then the history's).
+    pub fn saved_addrs(&self) -> Vec<SocketAddr> {
+        let mut v = self.fav_addrs.clone();
+        for x in &self.visits {
+            if !v.contains(&x.addr) {
+                v.push(x.addr);
+            }
+        }
+        v
+    }
 }
 
 /// One focusable line of a page.
@@ -156,7 +182,7 @@ pub fn lines(menu: &PartyMenu, data: &MenuData, lan: &LanList) -> Vec<Line> {
         MenuPage::Join => [Line::Address, Line::Password]
             .into_iter()
             .chain((0..menu.recent.len()).map(Line::Recent))
-            .chain((0..lan.servers.len().min(LAN_ROWS)).map(Line::Server))
+            .chain((0..lan.rows().len()).map(Line::Server))
             .collect(),
         _ => Vec::new(),
     }
@@ -176,9 +202,19 @@ pub struct SignalPages {
     /// A line in error (an empty address) and the bar's notice.
     pub error: Option<usize>,
     pub notice: Option<String>,
+    /// The password modal, over the server it asks for.
+    pub ask: Option<PasswordAsk>,
     /// A staged scene's page (`ui_scene play|join`), opened once the menu
     /// is up, and its Play tab.
     pub stage: Option<(MenuPage, usize)>,
+}
+
+/// The password modal: a locked server (a row of the tab shown) joined
+/// once its password is typed (`PartyMenu::password`, which Direct shares).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PasswordAsk {
+    pub index: usize,
+    pub name: String,
 }
 
 /// A line's place (the pointer focusing it; a click on a focused line
@@ -196,10 +232,13 @@ impl Plugin for SignalPagesPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SignalPages>()
             .init_resource::<LanList>()
+            .init_resource::<BrowserFiles>()
             .init_resource::<ButtonInput<KeyCode>>()
+            .add_message::<MouseWheel>()
+            .add_systems(Startup, load_saved)
             .add_systems(
                 Update,
-                (follow, keys, line_clicks).chain().before(crate::main_menu::MainMenuSystems).before(crate::esc_menu::EscMenuSystems),
+                (follow, wheel, keys, line_clicks).chain().before(crate::main_menu::MainMenuSystems).before(crate::esc_menu::EscMenuSystems),
             )
             .add_systems(Update, crate::ui_cues::hover::<PageLine>.in_set(crate::main_menu::MainMenuSystems))
             .add_systems(Update, draw.after(crate::main_menu::MainMenuSystems));
@@ -209,59 +248,224 @@ impl Plugin for SignalPagesPlugin {
     }
 }
 
-/// `ui_scene play [server|game]`, `ui_scene join`: the page over the menu
-/// (`join` with made-up LAN servers).
+/// The favourites and the history from their files.
+fn load_saved(files: Res<BrowserFiles>, mut lan: ResMut<LanList>) {
+    lan.fav_addrs = files.read_favourites();
+    lan.visits = files.read_history();
+    lan.dirty = true;
+}
+
+/// `ui_scene play [server|game]`, `ui_scene join [lan|favourites|history|
+/// password]`: the page over the menu (`join` with made-up servers; the
+/// password modal over the first locked one of the LAN tab).
 pub fn stage(w: &mut World, page: MenuPage, args: &[String]) -> Result<(), String> {
     if args.first().is_some_and(|a| a == "off") {
         w.resource_mut::<SignalPages>().stage = None;
-        w.resource_mut::<LanList>().staged = false;
+        let files = w.get_resource::<BrowserFiles>().cloned().unwrap_or_default();
+        let mut l = w.resource_mut::<LanList>();
+        l.staged = false;
+        l.staged_results.clear();
+        l.fav_addrs = files.read_favourites();
+        l.visits = files.read_history();
+        l.tab = BrowserTab::Lan;
+        l.dirty = true;
         return Ok(());
     }
-    let tab = match args.first().map(|a| a.to_ascii_lowercase()) {
-        Some(a) if a == "game" || a == "1" => 1,
+    let arg = args.first().map(|a| a.to_ascii_lowercase());
+    let tab = match (page, arg.as_deref()) {
+        (MenuPage::Join, Some("favourites" | "favorites" | "favs" | "1")) => 1,
+        (MenuPage::Join, Some("history" | "2")) => 2,
+        (MenuPage::Join, Some("password" | "3")) => 3,
+        (MenuPage::Play, Some("game" | "1")) => 1,
         _ => 0,
     };
     w.resource_mut::<SignalPages>().stage = Some((page, tab));
     if page == MenuPage::Join {
         let mut l = w.resource_mut::<LanList>();
-        l.servers = staged_servers();
+        let (results, favs, visits) = staged_servers(sl::unix_now());
+        l.staged_results = results;
+        l.fav_addrs = favs;
+        l.visits = visits;
+        l.tab = if tab < 3 { BrowserTab::from_index(tab) } else { BrowserTab::Lan };
+        l.scroll = 0;
         l.staged = true;
         l.scanning = false;
+        l.dirty = true;
     }
     Ok(())
 }
 
-/// Made-up LAN servers for the staged Join.
-fn staged_servers() -> Vec<LanServer> {
-    let s = |ip: [u8; 4], port: u16, name: &str, map: &str, p: u8, max: u8, bots: u8, ping: u32, locked: bool| LanServer {
+/// A made-up server's answer.
+#[allow(clippy::too_many_arguments)]
+fn made_up(ip: [u8; 4], port: u16, name: &str, map: &str, players: u8, max: u8, bots: u8, ping_ms: u32, locked: bool, lan: bool) -> QueryResult {
+    use chimera_net::net::query::{GAME_FOLDER, GAME_NAME, PROTOCOL};
+    QueryResult {
         addr: SocketAddr::from((ip, port)),
-        name: name.into(),
-        minigame: Some("ultimate_gun_game:auto".into()),
-        map: map.into(),
-        players: p,
-        max_players: max,
-        bots,
-        ping_ms: ping,
-        locked,
-        same_version: true,
-    };
-    vec![
-        s([192, 168, 1, 20], 27015, "Friday ladder", "de_dust2", 7, 8, 4, 3, false),
-        s([192, 168, 1, 31], 27016, "Back room", "warehouse", 3, 12, 1, 9, true),
-        s([192, 168, 1, 44], 27015, "Knife party", "cs_office", 10, 16, 6, 21, false),
-    ]
+        state: QueryState::Answered {
+            info: ServerInfo {
+                protocol: PROTOCOL,
+                name: name.into(),
+                map: map.into(),
+                folder: GAME_FOLDER.into(),
+                game: GAME_NAME.into(),
+                app_id: 0,
+                players,
+                max_players: max,
+                bots,
+                dedicated: false,
+                os: 'l',
+                password: locked,
+                secure: false,
+                version: chimera_net::net::NET_VERSION.into(),
+                port: Some(port),
+                instance: Some(port as u64 ^ ((ip[3] as u64) << 16)),
+                keywords: Some("cs_source,minigame=ultimate_gun_game:auto".into()),
+            },
+            ping_ms,
+        },
+        lan,
+    }
 }
 
-/// Scan the LAN again (Refresh).
+/// Made-up servers for the staged Join: their answers, the favourites'
+/// and the history's addresses (`now`: unix seconds).
+fn staged_servers(now: u64) -> (Vec<QueryResult>, Vec<SocketAddr>, Vec<Visit>) {
+    let l = |ip: u8, port, name: &str, map: &str, p, max, bots, ping, locked| made_up([192, 168, 1, ip], port, name, map, p, max, bots, ping, locked, true);
+    let w = |ip: u8, port, name: &str, map: &str, p, max, bots, ping, locked| made_up([198, 51, 100, ip], port, name, map, p, max, bots, ping, locked, false);
+    let mut results = vec![
+        l(20, 27015, "Friday ladder", "de_dust2", 7, 8, 4, 3, false),
+        l(31, 27016, "Back room", "warehouse", 3, 12, 1, 9, true),
+        l(44, 27015, "Knife party", "cs_office", 10, 16, 6, 21, false),
+        l(52, 27015, "Attic", "de_inferno", 2, 8, 0, 24, false),
+        l(53, 27016, "Kitchen table", "cs_italy", 5, 10, 3, 27, false),
+        l(60, 27015, "Late shift", "de_nuke", 1, 8, 5, 31, true),
+        l(61, 27015, "Spare room", "de_train", 0, 8, 8, 35, false),
+        l(70, 27015, "Cousins", "cs_assault", 6, 12, 2, 41, false),
+        l(71, 27016, "Basement", "de_dust2", 4, 8, 4, 48, false),
+        l(80, 27015, "Garage", "cs_militia", 8, 16, 0, 55, true),
+        l(81, 27015, "Rooftop", "de_aztec", 3, 8, 6, 63, false),
+        l(90, 27015, "Dorm 4B", "de_cbble", 9, 12, 1, 77, false),
+    ];
+    results.extend([
+        w(7, 27015, "Weekend regulars", "de_dust2", 11, 16, 5, 38, false),
+        w(12, 27016, "Locked clubhouse", "warehouse", 4, 12, 2, 92, true),
+    ]);
+    results.push(QueryResult { addr: SocketAddr::from(([198, 51, 100, 99], 27015)), state: QueryState::NoResponse, lan: false });
+    let addr = |r: &QueryResult| r.addr;
+    let favs = vec![addr(&results[12]), addr(&results[13]), addr(&results[14]), addr(&results[1])];
+    let visit = |a: SocketAddr, ago: u64| Visit { addr: a, when: now.saturating_sub(ago) };
+    let visits = vec![
+        visit(addr(&results[0]), 240),
+        visit(addr(&results[12]), 5400),
+        visit(addr(&results[13]), 3 * 86_400),
+        visit(addr(&results[14]), 9 * 86_400),
+    ];
+    (results, favs, visits)
+}
+
+/// Scan the LAN again (Refresh), and ask the saved servers.
 pub fn scan(world: &mut World) {
     let lan = world.get_resource::<LanSettings>().cloned().unwrap_or_default();
     if let Some(mut q) = world.get_resource_mut::<ServerQueries>() {
         q.scan_lan(lan.port_range(), &lan.broadcast_addresses());
     }
     if let Some(mut l) = world.get_resource_mut::<LanList>() {
+        l.want_saved = true;
         l.staged = false;
         l.scanning = true;
     }
+}
+
+/// Ask the favourites and the history's servers by address, but those
+/// the LAN scan found (they are answered).
+fn query_saved(lan: &LanList, q: &mut ServerQueries) {
+    for a in lan.saved_addrs() {
+        if !q.result(a).is_some_and(|r| r.lan) {
+            q.query(a);
+        }
+    }
+}
+
+/// Favourite the server of row `i` of the tab shown, or drop it.
+pub fn toggle_favourite(world: &mut World, i: usize) {
+    let files = world.get_resource::<BrowserFiles>().cloned().unwrap_or_default();
+    let Some(mut lan) = world.get_resource_mut::<LanList>() else { return };
+    let Some(addr) = lan.rows().get(i).map(|r| r.addr) else { return };
+    let added = sl::toggle_favourite(&mut lan.fav_addrs, addr);
+    lan.dirty = true;
+    if !lan.staged {
+        files.write_favourites(&lan.fav_addrs);
+    }
+    if added && !lan.staged {
+        let known = world.get_resource::<ServerQueries>().is_some_and(|q| q.result(addr).is_some());
+        if !known && let Some(mut q) = world.get_resource_mut::<ServerQueries>() {
+            q.query(addr);
+        }
+    }
+}
+
+/// A join of `address` for the History (an IP address; a host name is
+/// only Recent).
+pub fn record_join(world: &mut World, address: &str) {
+    let Some(addr) = sl::parse_addr(address) else { return };
+    let files = world.get_resource::<BrowserFiles>().cloned().unwrap_or_default();
+    let Some(mut lan) = world.get_resource_mut::<LanList>() else { return };
+    sl::record_visit(&mut lan.visits, addr, sl::unix_now());
+    lan.dirty = true;
+    if !lan.staged {
+        files.write_history(&lan.visits);
+    }
+}
+
+/// The browser's tab `t` (a click, the keys): from its first row.
+pub fn set_tab(world: &mut World, t: usize) {
+    let base = world.resource::<PartyMenu>().recent.len() + 2;
+    let tab = BrowserTab::from_index(t);
+    let Some(mut lan) = world.get_resource_mut::<LanList>() else { return };
+    if lan.tab == tab {
+        return;
+    }
+    lan.tab = tab;
+    lan.scroll = 0;
+    let n = lan.rows().len();
+    let mut p = world.resource_mut::<SignalPages>();
+    p.ask = None;
+    if p.focus >= base {
+        p.focus = if n > 0 { base } else { base - 1 };
+    }
+}
+
+/// Close the password modal (Esc, Cancel): whether it was open.
+pub fn close_ask(world: &mut World) -> bool {
+    let was = world.resource_mut::<SignalPages>().ask.take().is_some();
+    if was {
+        let mut m = world.resource_mut::<PartyMenu>();
+        m.focus = None;
+    }
+    was
+}
+
+/// The modal's Join: the row asked for when a password is typed (the
+/// modal closes), else None and why in its notice.
+pub fn take_ask(world: &mut World) -> Option<usize> {
+    let typed = !world.resource::<PartyMenu>().password.is_empty();
+    let mut p = world.resource_mut::<SignalPages>();
+    let ask = p.ask.clone()?;
+    if !typed {
+        p.notice = Some("Type the password".into());
+        return None;
+    }
+    p.ask = None;
+    world.resource_mut::<PartyMenu>().focus = None;
+    Some(ask.index)
+}
+
+/// The modal over row `i`: the password field takes the keys.
+fn open_ask(p: &mut SignalPages, menu: &mut PartyMenu, i: usize, name: &str) {
+    p.ask = Some(PasswordAsk { index: i, name: name.to_string() });
+    p.notice = None;
+    menu.focus = Some(Field::Password);
+    menu.caret = chimera_client::client::widgets::Caret::end_of(&menu.password);
 }
 
 fn now(clock: &Option<Res<UiClock>>) -> f64 {
@@ -300,26 +504,45 @@ fn follow(
     if !themed(theme.as_deref()) {
         return;
     }
+    let mut stage_ask = false;
     if let Some((page, tab)) = p.stage
         && menu.shown()
         && menu.screen == Screen::MainMenu
     {
         menu.failure = None;
         menu.page = page;
-        menu.play_tab = tab;
+        if page == MenuPage::Play {
+            menu.play_tab = tab;
+        }
+        stage_ask = page == MenuPage::Join && tab == 3;
         menu.focus = (page == MenuPage::Join).then_some(Field::Address);
         p.stage = None;
     }
-    if !lan.staged
-        && let Some(q) = queries.as_deref()
-        && q.generation != lan.generation
-    {
-        lan.generation = q.generation;
-        lan.servers = lan_servers(&q.results);
-        lan.scanning = q.busy();
+    if let Some(q) = queries.as_deref() {
+        if !lan.staged && (q.generation != lan.generation || lan.dirty) {
+            lan.generation = q.generation;
+            lan.dirty = false;
+            lan.rebuild(&q.results);
+            lan.scanning = q.busy();
+        }
+        if lan.scanning && !q.busy() && !lan.staged {
+            lan.scanning = false;
+        }
+    } else if lan.dirty && !lan.staged {
+        lan.dirty = false;
+        lan.rebuild(&[]);
     }
-    if lan.scanning && queries.as_deref().is_some_and(|q| !q.busy()) && !lan.staged {
-        lan.scanning = false;
+    if lan.staged && lan.dirty {
+        lan.dirty = false;
+        lan.rebuild(&[]);
+    }
+    if lan.want_saved
+        && !lan.staged
+        && let Some(q) = queries.as_deref_mut()
+        && !q.scanning()
+    {
+        lan.want_saved = false;
+        query_saved(&lan, q);
     }
     let up = (shown.screen == Screen::MainMenu
         && menu.screen == Screen::MainMenu
@@ -335,19 +558,31 @@ fn follow(
         p.since = t;
         p.error = None;
         p.notice = None;
+        p.ask = None;
         if up.is_none() {
+            if opened && !lan.staged {
+                lan.tab = BrowserTab::Lan;
+                lan.scroll = 0;
+            }
             return;
         }
         let ls = lines(&menu, &data, &lan);
         focus_line(&mut p, &mut menu, &data, &ls, 0);
-        if opened
-            && up == Some(MenuPage::Join)
-            && !lan.staged
-            && let Some(q) = queries.as_deref_mut()
-        {
-            let s = lan_settings.as_deref().cloned().unwrap_or_default();
-            q.scan_lan(s.port_range(), &s.broadcast_addresses());
-            lan.scanning = true;
+        if opened && up == Some(MenuPage::Join) {
+            if stage_ask
+                && let Some(i) = lan.servers.iter().position(|s| s.locked)
+            {
+                let base = menu.recent.len() + 2;
+                let name = lan.servers[i].name.clone();
+                p.focus = base + i;
+                open_ask(&mut p, &mut menu, i, &name);
+            }
+            if !lan.staged && let Some(q) = queries.as_deref_mut() {
+                let s = lan_settings.as_deref().cloned().unwrap_or_default();
+                q.scan_lan(s.port_range(), &s.broadcast_addresses());
+                lan.scanning = true;
+                lan.want_saved = true;
+            }
         }
         return;
     }
@@ -355,9 +590,10 @@ fn follow(
         return;
     }
     // The menu's text field moved (a click on a field, `mainmenu_type`):
-    // the focus follows.
+    // the focus follows (not under the modal, which owns the field).
     let ls = lines(&menu, &data, &lan);
-    if let Some(f) = menu.focus
+    if p.ask.is_none()
+        && let Some(f) = menu.focus
         && ls.get(p.focus).and_then(|l| l.field(&data)) != Some(f)
         && let Some(i) = ls.iter().position(|l| l.field(&data) == Some(f))
     {
@@ -367,11 +603,15 @@ fn follow(
         let last = ls.len() - 1;
         focus_line(&mut p, &mut menu, &data, &ls, last);
     }
+    if p.ask.as_ref().is_some_and(|a| lan.rows().get(a.index).is_none()) {
+        p.ask = None;
+    }
 }
 
 /// What pressing line `i` does (Enter, a click on the focused line):
-/// None when it is refused (and why in the notice).
-fn press(line: Line, menu: &PartyMenu, lan: &LanList, p: &mut SignalPages) -> Option<MainMenuAction> {
+/// None when it is refused (and why in the notice) or the password modal
+/// opens instead.
+fn press(line: Line, menu: &mut PartyMenu, lan: &LanList, p: &mut SignalPages) -> Option<MainMenuAction> {
     match line {
         Line::Play(_) | Line::Game(_) => Some(MainMenuAction::Start),
         Line::Address | Line::Password => {
@@ -384,18 +624,46 @@ fn press(line: Line, menu: &PartyMenu, lan: &LanList, p: &mut SignalPages) -> Op
         }
         Line::Recent(i) => Some(MainMenuAction::Recent(i)),
         Line::Server(i) => {
-            let s = lan.servers.get(i)?;
+            let s = lan.rows().get(i)?;
             if !s.same_version {
                 p.notice = Some(format!("{} runs another version", s.name));
                 return None;
             }
-            if s.locked && menu.password.is_empty() {
-                p.error = Some(1);
-                p.notice = Some(format!("{} has a password: type it, then join again", s.name));
+            if s.locked {
+                open_ask(p, menu, i, &s.name);
                 return None;
             }
             Some(MainMenuAction::Server(i))
         }
+    }
+}
+
+/// The window follows the focused line (a server row kept in view).
+fn reveal(lan: &mut LanList, line: Option<Line>) {
+    if let Some(Line::Server(i)) = line {
+        let o = sl::keep_in_view(lan.scroll, i, lan.rows().len(), VISIBLE_ROWS);
+        if o != lan.scroll {
+            lan.scroll = o;
+        }
+    }
+}
+
+/// The wheel moves the list's window.
+fn wheel(mut wheel: MessageReader<MouseWheel>, p: Res<SignalPages>, mut lan: ResMut<LanList>) {
+    let mut d = 0.0;
+    for e in wheel.read() {
+        d += match e.unit {
+            MouseScrollUnit::Line => e.y,
+            MouseScrollUnit::Pixel => e.y / 40.0,
+        };
+    }
+    if d == 0.0 || p.up != Some(MenuPage::Join) || p.ask.is_some() {
+        return;
+    }
+    let notches = if d.abs() < 1.0 { d.signum() } else { d.round() };
+    let o = sl::scroll_by(lan.scroll, -notches as i32, lan.rows().len(), VISIBLE_ROWS);
+    if o != lan.scroll {
+        lan.scroll = o;
     }
 }
 
@@ -405,7 +673,7 @@ fn keys(
     keys: Option<Res<ButtonInput<KeyCode>>>,
     console: Option<Res<chimera_client::client::console::ConsoleUi>>,
     data: Res<MenuData>,
-    lan: Res<LanList>,
+    mut lan: ResMut<LanList>,
     mut menu: ResMut<PartyMenu>,
     mut p: ResMut<SignalPages>,
     mut out: MessageWriter<MainMenuAction>,
@@ -416,16 +684,27 @@ fn keys(
         return;
     }
     let k = |c: KeyCode| keys.just_pressed(c);
+    if p.ask.is_some() {
+        // The password modal: its field has the keys (`main_menu::typing`).
+        if k(KeyCode::Enter) || k(KeyCode::NumpadEnter) {
+            out.write(MainMenuAction::PasswordJoin);
+        }
+        return;
+    }
     let ls = lines(&menu, &data, &lan);
     let line = ls.get(p.focus).copied();
     let typing = line.and_then(|l| l.field(&data)).is_some();
     let shift = keys.any_pressed([KeyCode::ShiftLeft, KeyCode::ShiftRight]);
-    let up = k(KeyCode::ArrowUp) || (k(KeyCode::Tab) && shift);
-    let down = k(KeyCode::ArrowDown) || (k(KeyCode::Tab) && !shift);
+    let on_server = matches!(line, Some(Line::Server(_)));
+    let jump = on_server && (k(KeyCode::PageUp) || k(KeyCode::PageDown));
+    let up = k(KeyCode::ArrowUp) || (k(KeyCode::Tab) && shift) || (jump && k(KeyCode::PageUp));
+    let down = k(KeyCode::ArrowDown) || (k(KeyCode::Tab) && !shift) || (jump && k(KeyCode::PageDown));
     if (up || down) && !ls.is_empty() {
-        let next = if up { p.focus.saturating_sub(1) } else { (p.focus + 1).min(ls.len() - 1) };
+        let by = if jump { VISIBLE_ROWS } else { 1 };
+        let next = if up { p.focus.saturating_sub(by) } else { (p.focus + by).min(ls.len() - 1) };
         if next != p.focus {
             focus_line(&mut p, &mut menu, &data, &ls, next);
+            reveal(&mut lan, ls.get(next).copied());
             cues.write(UiCue::new("ui_hover"));
         }
         return;
@@ -433,21 +712,17 @@ fn keys(
     if k(KeyCode::Enter) || k(KeyCode::NumpadEnter) {
         let pressed = match (page, line) {
             (MenuPage::Play, _) => Some(MainMenuAction::Start),
-            (_, Some(l)) => press(l, &menu, &lan, &mut p),
+            (_, Some(l)) => press(l, &mut menu, &lan, &mut p),
             _ => None,
         };
         match pressed {
             Some(a) => {
                 out.write(a);
             }
-            None => {
+            None if p.ask.is_none() => {
                 cues.write(UiCue::new("ui_denied"));
-                if p.error == Some(1)
-                    && let Some(i) = ls.iter().position(|l| *l == Line::Password)
-                {
-                    focus_line(&mut p, &mut menu, &data, &ls, i);
-                }
             }
+            None => {}
         }
         return;
     }
@@ -455,8 +730,33 @@ fn keys(
         out.write(MainMenuAction::Refresh);
         return;
     }
+    if page == MenuPage::Join {
+        // The browser's tabs: F2 F3 F4 anywhere, ←→ off a text field.
+        for (key, t) in [(KeyCode::F2, 0), (KeyCode::F3, 1), (KeyCode::F4, 2)] {
+            if k(key) {
+                out.write(MainMenuAction::BrowserTab(t));
+                return;
+            }
+        }
+    }
     if typing {
         return;
+    }
+    if page == MenuPage::Join {
+        if k(KeyCode::KeyF)
+            && let Some(Line::Server(i)) = line
+        {
+            out.write(MainMenuAction::Favourite(i));
+            return;
+        }
+        let dir = if k(KeyCode::ArrowLeft) { -1 } else if k(KeyCode::ArrowRight) { 1 } else { 0 };
+        if dir != 0 {
+            let next = lan.tab.step(dir);
+            if next != lan.tab {
+                out.write(MainMenuAction::BrowserTab(next.index()));
+            }
+            return;
+        }
     }
     let step = |dir: i8| match line {
         Some(Line::Play(row)) => Some(MainMenuAction::PlayStep { row, dir }),
@@ -478,13 +778,13 @@ fn keys(
 fn line_clicks(
     clicked: Query<(&Interaction, &PageLine), Changed<Interaction>>,
     data: Res<MenuData>,
-    lan: Res<LanList>,
+    mut lan: ResMut<LanList>,
     mut menu: ResMut<PartyMenu>,
     mut p: ResMut<SignalPages>,
     mut out: MessageWriter<MainMenuAction>,
     mut cues: MessageWriter<UiCue>,
 ) {
-    if p.up.is_none() {
+    if p.up.is_none() || p.ask.is_some() {
         return;
     }
     for (i, l) in &clicked {
@@ -495,16 +795,18 @@ fn line_clicks(
         let Some(line) = ls.get(l.0).copied() else { continue };
         let presses = p.focus == l.0 && matches!(line, Line::Recent(_) | Line::Server(_));
         if presses {
-            match press(line, &menu, &lan, &mut p) {
+            match press(line, &mut menu, &lan, &mut p) {
                 Some(a) => {
                     out.write(a);
                 }
-                None => {
+                None if p.ask.is_none() => {
                     cues.write(UiCue::new("ui_denied"));
                 }
+                None => {}
             }
         } else {
             focus_line(&mut p, &mut menu, &data, &ls, l.0);
+            reveal(&mut lan, Some(line));
             cues.write(UiCue::new("ui_select"));
         }
     }
@@ -532,6 +834,8 @@ struct Ctx<'a> {
     pool: &'a [String],
     minigame: String,
     now: f64,
+    /// Unix seconds (History's "5 min ago"), at the draw.
+    unix: u64,
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -573,6 +877,7 @@ fn draw(
         pool: &pool,
         minigame: def.map_or_else(|| game_id.0.clone(), |d| d.name.clone()),
         now: now(&clock),
+        unix: sl::unix_now(),
     };
     let root = spawn(&mut commands, &ui, page, &menu, &p, &cx, images.as_deref_mut(), icons.as_deref_mut(), ambients.as_deref_mut());
     if let Some(c) = cam {
@@ -697,7 +1002,7 @@ fn spawn(
                 let e = ui.boxed(c, left, UiStyle { pad: Some([0.4, 0.0, 0.0, 1.1].into()), ..UiStyle::row() });
                 ui.text(c, e, Role::Mono, 0.56, Tone::Fg3, "None yet");
             }
-            lan_list(c, ui, right, &ls, menu, p, cx, row_h);
+            lan_list(c, ui, right, &ls, p, cx, row_h);
             ui.wipe_cover(c, cols, Tone::Ink, p.since, cx.now, lay(t, "wipe", 0.26));
         }
     }
@@ -743,14 +1048,55 @@ fn spawn(
     let foot = ui.boxed(c, frame, UiStyle { gap: Some(2.0), ..UiStyle::row() }.abs([Some(m), None, None, Some(3.0)]));
     let keys: &[(&str, &str)] = match page {
         MenuPage::Play => &[("↑↓", "Row"), ("←→", "Change"), ("Q E", "Tab"), ("Enter", "Start"), ("Esc", "Back")],
-        _ => &[("↑↓", "Row"), ("Enter", "Join"), ("F5", "Refresh"), ("Esc", "Back")],
+        _ => &[("↑↓", "Row"), ("←→", "Tab"), ("F", "Favourite"), ("Enter", "Join"), ("F5", "Refresh"), ("Esc", "Back")],
     };
     for (k, what) in keys {
         let g = ui.boxed(c, foot, UiStyle { gap: Some(0.5), ..UiStyle::row() });
         ui.kbd(c, g, k, 0.6, Tone::Fg);
         ui.text(c, g, Role::Mono, 0.6, Tone::Fg2, what);
     }
+    if let Some(ask) = &p.ask {
+        password_modal(c, ui, root, menu, p, ask);
+    }
     root
+}
+
+/// The password modal over the page: the locked server's name, the
+/// password field (the Direct password in it already), Join and Cancel.
+fn password_modal(c: &mut Commands, ui: &Ui, root: Entity, menu: &PartyMenu, p: &SignalPages, ask: &PasswordAsk) {
+    let shade = c
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                width: percent(100.0),
+                height: percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            BackgroundColor(ui.color(Tone::Ink, 0.72)),
+            bevy::ui::FocusPolicy::Block,
+            ZIndex(30),
+            ChildOf(root),
+        ))
+        .id();
+    let m = ui.modal(c, shade, 30.0, false);
+    ui.text(c, m, Role::DisplayBold, 1.35, Tone::Fg, "Password");
+    let tx = ui.boxed(c, m, UiStyle { w_pct: Some(100.0), margin: Some([0.8, 0.0, 1.0, 0.0].into()), ..UiStyle::column() });
+    ui.paragraph(c, tx, Role::Mono, 0.62, Tone::Fg2, &format!("{} is locked. Type its password to join.", ask.name));
+    let st = State { focus: true, error: p.notice.is_some(), ..State::NONE };
+    let f = ui.text_field(c, m, &menu.password, "Password", Some(menu.caret.at), true, 26.0, st);
+    c.entity(f).insert(MainMenuAction::Focus(Field::Password));
+    if let Some(n) = &p.notice {
+        let row = ui.boxed(c, m, UiStyle { gap: Some(0.6), margin: Some([0.7, 0.0, 0.0, 0.0].into()), ..UiStyle::row() });
+        ui.mark(c, row, Tone::Threat, 0.42, 0.42);
+        ui.text(c, row, Role::Mono, 0.58, Tone::Fg, n);
+    }
+    let acts = ui.boxed(c, m, UiStyle { gap: Some(0.5), margin: Some([1.6, 0.0, 0.0, 0.0].into()), ..UiStyle::row() }.justify(JustifyContent::FlexEnd));
+    let join = ui.button(c, acts, Kind::Primary, "Join", Some("Enter"), 2.4, State::NONE);
+    c.entity(join).insert(MainMenuAction::PasswordJoin);
+    let cancel = ui.button(c, acts, Kind::Secondary, "Cancel", Some("Esc"), 2.4, State::NONE);
+    c.entity(cancel).insert(MainMenuAction::PasswordCancel);
 }
 
 /// A Play row's value by its cvar, as shown.
@@ -894,7 +1240,7 @@ fn join_line(c: &mut Commands, ui: &Ui, list: Entity, i: usize, line: Line, menu
             };
             let (e, vl) = ui.row(c, list, label, None, row_h, st);
             c.entity(e).insert(PageLine(i));
-            let caret = (menu.focus == Some(field)).then_some(menu.caret.at);
+            let caret = (menu.focus == Some(field) && p.ask.is_none()).then_some(menu.caret.at);
             let f = ui.text_field(c, vl, value, ph, caret, masked, 15.0, st);
             c.entity(f).insert(MainMenuAction::Focus(field));
         }
@@ -920,22 +1266,45 @@ fn cells(c: &mut Commands, ui: &Ui, vl: Entity, texts: [&str; 5], tone: Tone, si
     }
 }
 
+/// The browser at the right of Join: the tabs, the head (a note, Favourite
+/// and Refresh), the columns' heads and the window of rows.
 #[allow(clippy::too_many_arguments)]
-fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], menu: &PartyMenu, p: &SignalPages, cx: &Ctx, row_h: f32) {
-    let _ = menu;
-    let n = cx.lan.servers.len();
-    let note = if cx.lan.scanning {
+fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], p: &SignalPages, cx: &Ctx, row_h: f32) {
+    let rows = cx.lan.rows();
+    let n = rows.len();
+    let tabs = ui.boxed(c, right, UiStyle::column());
+    let names: Vec<&str> = BrowserTab::ALL.iter().map(|t| t.name()).collect();
+    for (i, e) in ui.tabs(c, tabs, &names, cx.lan.tab.index(), false).into_iter().enumerate() {
+        c.entity(e).insert(MainMenuAction::BrowserTab(i));
+    }
+    let first = cx.lan.scroll.min(n.saturating_sub(VISIBLE_ROWS));
+    let last = (first + VISIBLE_ROWS).min(n);
+    let asking = cx.lan.scanning && cx.lan.tab == BrowserTab::Lan;
+    let note = if asking {
         "Looking...".to_string()
+    } else if n == 0 {
+        "None".to_string()
+    } else if n > VISIBLE_ROWS {
+        format!("{}-{} of {n}", first + 1, last)
+    } else if cx.lan.tab == BrowserTab::Lan {
+        format!("{n} found, by ping")
     } else {
-        match n {
-            0 => "None found".to_string(),
-            1 => "1 found".to_string(),
-            n => format!("{n} found, by ping"),
-        }
+        format!("{n}")
     };
     let head = ui.boxed(c, right, UiStyle { gap: Some(1.0), ..UiStyle::row() });
     let sec = ui.boxed(c, head, UiStyle { grow: Some(1.0), ..UiStyle::column() });
-    ui.section(c, sec, "LAN servers", Some(&note));
+    ui.section(c, sec, cx.lan.tab.name(), Some(&note));
+    let focused = match ls.get(p.focus) {
+        Some(Line::Server(i)) => rows.get(*i).map(|r| (*i, r.favourite)),
+        _ => None,
+    };
+    let (label, i) = match focused {
+        Some((i, true)) => ("Unfavourite", i),
+        Some((i, false)) => ("Favourite", i),
+        None => ("Favourite", 0),
+    };
+    let fav = ui.button(c, head, Kind::Secondary, label, Some("F"), 1.9, State { disabled: focused.is_none(), ..State::NONE });
+    c.entity(fav).insert(MainMenuAction::Favourite(i));
     let refresh = ui.button(c, head, Kind::Secondary, "Refresh", Some("F5"), 1.9, State { disabled: cx.lan.scanning, ..State::NONE });
     c.entity(refresh).insert(MainMenuAction::Refresh);
     // The columns' heads.
@@ -947,20 +1316,71 @@ fn lan_list(c: &mut Commands, ui: &Ui, right: Entity, ls: &[Line], menu: &PartyM
     ui.text(c, heads, Role::Mono, 0.5, Tone::Fg3, "Server • minigame");
     let hv = ui.boxed(c, heads, UiStyle { gap: Some(0.6), shrink: Some(0.0), ..UiStyle::row() });
     cells(c, ui, hv, ["Map", "Players", "Bots", "Ping", ""], Tone::Fg3, 0.5);
+    if n == 0 {
+        let e = ui.boxed(c, right, UiStyle { pad: Some([0.6, 0.0, 0.0, 1.1].into()), ..UiStyle::row() });
+        let none = match cx.lan.tab {
+            BrowserTab::Lan if asking => "Looking for servers on your network",
+            BrowserTab::Lan => "No server answered on your network",
+            BrowserTab::Favourites => "No favourites yet: focus a server and press F",
+            BrowserTab::History => "No server joined yet",
+        };
+        ui.text(c, e, Role::Mono, 0.56, Tone::Fg3, none);
+        return;
+    }
+    let list = ui.boxed(c, right, UiStyle::column());
     for (i, l) in ls.iter().enumerate() {
         let Line::Server(s) = l else { continue };
-        let Some(sv) = cx.lan.servers.get(*s) else { continue };
+        if !(first..last).contains(s) {
+            continue;
+        }
+        let Some(sv) = rows.get(*s) else { continue };
         let focus = p.focus == i;
-        let small = sv.minigame.as_deref().map(|m| m.rsplit(':').next().unwrap_or(m).replace('_', " "));
-        let (e, vl) = ui.row(c, right, &sv.name, small.as_deref(), row_h, State { focus, disabled: !sv.same_version, ..State::NONE });
+        let mut small: Vec<String> = Vec::new();
+        match sv.status {
+            Status::Up => small.extend(sv.minigame.as_deref().map(|m| m.rsplit(':').next().unwrap_or(m).replace('_', " "))),
+            Status::Asking => small.push("asking".into()),
+            Status::Down => small.push("no answer".into()),
+        }
+        if let Some(w) = sv.when {
+            small.insert(0, sl::ago(cx.unix, w));
+        }
+        if sv.favourite && cx.lan.tab != BrowserTab::Favourites {
+            small.push("favourite".into());
+        }
+        let small = small.join(" • ");
+        let (e, vl) = ui.row(c, list, &sv.name, Some(&small), row_h, State { focus, disabled: !sv.same_version || sv.status == Status::Down, ..State::NONE });
         c.entity(e).insert(PageLine(i));
-        let players = format!("{}/{}", sv.players, sv.max_players);
-        let bots = sv.bots.to_string();
-        let ping = format!("{} ms", sv.ping_ms);
-        cells(c, ui, vl, [&map_label(&sv.map), &players, &bots, &ping, if sv.locked { "PW" } else { "" }], Tone::Fg, 0.6);
+        if sv.status == Status::Up {
+            let players = format!("{}/{}", sv.players, sv.max_players);
+            let bots = sv.bots.to_string();
+            let ping = format!("{} ms", sv.ping_ms);
+            cells(c, ui, vl, [&map_label(&sv.map), &players, &bots, &ping, if sv.locked { "PW" } else { "" }], Tone::Fg, 0.6);
+        } else {
+            cells(c, ui, vl, ["", "", "", if sv.status == Status::Asking { "..." } else { "-" }, ""], Tone::Fg3, 0.6);
+        }
     }
-    if n > LAN_ROWS {
-        let more = ui.boxed(c, right, UiStyle { pad: Some([0.5, 0.0, 0.0, 1.1].into()), ..UiStyle::row() });
-        ui.text(c, more, Role::Mono, 0.52, Tone::Fg3, &format!("And {} more", n - LAN_ROWS));
+    if n > VISIBLE_ROWS {
+        // Where the window is: a thin bar at the right edge of the rows.
+        let track = c
+            .spawn((
+                Node { position_type: PositionType::Absolute, right: Val::ZERO, top: Val::ZERO, bottom: Val::ZERO, width: ui.units.val(0.3), ..default() },
+                BackgroundColor(ui.color(Tone::Fg, 0.08)),
+                Pickable::IGNORE,
+                ChildOf(list),
+            ))
+            .id();
+        c.spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::ZERO,
+                right: Val::ZERO,
+                top: percent(first as f32 / n as f32 * 100.0),
+                height: percent(VISIBLE_ROWS as f32 / n as f32 * 100.0),
+                ..default()
+            },
+            BackgroundColor(ui.color(Tone::Acc, 1.0)),
+            Pickable::IGNORE,
+            ChildOf(track),
+        ));
     }
 }

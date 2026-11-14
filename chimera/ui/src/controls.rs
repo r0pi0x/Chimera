@@ -29,7 +29,10 @@
 //! Builders spawn under a parent (`ChildOf`) and return the entity a
 //! screen gives its action (with `clickable`), sized from `UiUnits` at
 //! the time: screens rebuild when the units change, as the lobby does.
-//! Text goes upper case (the UGG faces draw capitals).
+//! Labels go upper case (the UGG faces draw capitals only); what a person
+//! types (`text_field`, `text_plain`) keeps its case, and is drawn in
+//! Bevy's default face, a system one in the client (`style::PlainText`;
+//! the kit's face is its fallback).
 
 use bevy::{
     prelude::*,
@@ -41,7 +44,7 @@ use crate::{
     icons::IconImages,
     materials::SlantMaterial,
     motion::{Prop, Timeline, Track, UiClock},
-    style::{UiSlant, UiStyle, UiText},
+    style::{self, UiSlant, UiStyle, UiText},
     theme::{Theme, Tone},
     units::UiUnits,
 };
@@ -134,8 +137,21 @@ impl<'a> Ui<'a> {
     /// `text` with the tone at `alpha`.
     #[allow(clippy::too_many_arguments)]
     pub fn text_a(&self, c: &mut Commands, parent: Entity, role: Role, size: f32, tone: Tone, alpha: f32, text: &str) -> Entity {
+        self.text_with_case(c, parent, role, size, tone, alpha, &text.to_uppercase())
+    }
+
+    /// `text` as it is (a person's own: what they type in a field), in a
+    /// role at `size` cq, on one line. Labels use `text` (capitals).
+    pub fn text_plain(&self, c: &mut Commands, parent: Entity, role: Role, size: f32, tone: Tone, text: &str) -> Entity {
+        let e = self.text_with_case(c, parent, role, size, tone, 1.0, text);
+        c.entity(e).insert(style::PlainText);
+        e
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn text_with_case(&self, c: &mut Commands, parent: Entity, role: Role, size: f32, tone: Tone, alpha: f32, text: &str) -> Entity {
         c.spawn((
-            Text::new(text.to_uppercase()),
+            Text::new(text),
             UiText { role, size, tone, alpha },
             TextLayout::new(Justify::Left, LineBreak::NoWrap),
             ChildOf(parent),
@@ -819,8 +835,8 @@ impl<'a> Ui<'a> {
     }
 
     /// A text field (min `w` cq, 1.9 cq tall, the dropdown's field): the
-    /// value in Mono (stars when `masked`), `placeholder` in `fg_3` when
-    /// empty; `caret` (a byte offset into `value`; Some only while it has
+    /// value in Mono as typed (its case kept; stars when `masked`),
+    /// `placeholder` in `fg_3` when empty; `caret` (a byte offset into `value`; Some only while it has
     /// the keys) an accent bar at that place, the field tinted and
     /// underlined in accent. Error: the threat underline. Returns the
     /// field (give it its focusing action).
@@ -867,7 +883,7 @@ impl<'a> Ui<'a> {
                 None => (shown.as_str(), ""),
             };
             if !before.is_empty() {
-                self.text(c, f, Role::Mono, 0.66, Tone::Fg, before);
+                self.text_plain(c, f, Role::Mono, 0.66, Tone::Fg, before);
             }
             if typing {
                 c.spawn((
@@ -879,7 +895,7 @@ impl<'a> Ui<'a> {
                 ));
             }
             if !after.is_empty() {
-                self.text(c, f, Role::Mono, 0.66, Tone::Fg, after);
+                self.text_plain(c, f, Role::Mono, 0.66, Tone::Fg, after);
             }
         }
         if st.error {

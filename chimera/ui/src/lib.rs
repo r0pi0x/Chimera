@@ -59,7 +59,7 @@ pub use motion::{Ease, Prop, Timeline, Track, UiClock};
 pub use parity::UiParityId;
 pub use sound::{SoundTable, UiCue, UiMusic};
 pub use theme::{Theme, Tone};
-pub use style::{UiSlant, UiStyle, UiText};
+pub use style::{PlainText, UiSlant, UiStyle, UiText};
 pub use units::{TickLayout, UiUnits};
 
 /// The kit's per-frame work: units from the window, the clock, the
