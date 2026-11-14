@@ -134,6 +134,7 @@ impl Queue {
                         playback: 1.0,
                         stopped: *since,
                         fade: set.sequences[*a].fade_out.min(set.sequences[*b].fade_in),
+                        held: None,
                     };
                     let u = fade.weight(now);
                     if u <= 0.0 {

@@ -13,9 +13,9 @@
 //! removed on the next advance, at most 15); the autoplay head and spine
 //! sequences on every frame (§7 step 5). Each side runs this on its own
 //! values (`PlayerAnimPlugin` for the drawn bodies, `SimAnimPlugin` for a
-//! server's hitboxes, which use the main sequence alone, §7 step 3); a
-//! client then poses other players' bodies as the server's tick pose was
-//! at the tick it draws them (`source_engine::anim_net`).
+//! server's hitboxes); a client then poses other players' bodies as the
+//! server's tick pose was at the tick it draws them
+//! (`source_engine::anim_net`).
 //!
 //! `Hl2AnimPlugin` adds both for HL2:DM's bodies, and the client's head
 //! and eyes (`look`: §6.4, the nearest player in front within 128 units)
@@ -24,7 +24,11 @@
 //! Known shortcuts: the server's state uses the command's own eye angles
 //! where the game takes the previous command's (§6.2, §6.3: a tick's lag
 //! of the hitboxes' aim); a weapon of another game in an HL2:DM body
-//! (a party's melee) plays the SMG1's kind.
+//! (a party's melee) plays the SMG1's kind; the server's tick pose
+//! cross-fades between main sequences as the drawn one does (0.2 s) where
+//! the game's server bones take the current sequence alone (§7 step 3),
+//! so that the bodies its clients draw, which fade, are the ones its
+//! rewinds test.
 
 use bevy::prelude::*;
 use source_engine::player_anim::{Inputs, PlayerAnimRules, normalize};
@@ -260,7 +264,7 @@ impl Hl2PlayerAnim {
     }
 
     /// Handle request `r` (§4 steps 1-5).
-    fn request(&mut self, a: &mut Animator, set: &AnimSet, r: Request, i: &Inputs, kind: Option<Kind>, now: f64, tick: bool) {
+    fn request(&mut self, a: &mut Animator, set: &AnimSet, r: Request, i: &Inputs, kind: Option<Kind>, now: f64) {
         let (r, speed) = if i.frozen { (Request::IdleOrMoving, 0.0) } else { (r, i.velocity.length()) };
         let ideal = match r {
             Request::Jump => Ideal::Jump,
@@ -281,11 +285,10 @@ impl Hl2PlayerAnim {
         if a.main == Some(s) || set.sequences.is_empty() {
             return;
         }
+        // The outgoing sequence fades out (min of its fade-out and the new
+        // one's fade-in, 0.2 s, §4), on the server's tick pose too: its
+        // clients draw the same fade from it (`anim_net`).
         a.play(s, now);
-        if tick {
-            // The server's bones use the current main sequence only.
-            a.fading.clear();
-        }
         a.cycle = 0.0;
         a.playback = 1.0;
         self.rate = 1.0;
@@ -308,9 +311,10 @@ impl Hl2PlayerAnim {
         }
     }
 
-    /// One update with the weapon's kind `kind` (none: no weapon); `tick`:
-    /// a server's per-tick update.
-    pub fn step(&mut self, a: &mut Animator, i: &Inputs, weapon: Option<&str>, dt: f32, now: f64, tick: bool) {
+    /// One update with the weapon's kind `kind` (none: no weapon); `_tick`:
+    /// a server's per-tick update (the same: its pose fades between main
+    /// sequences as the drawn one does).
+    pub fn step(&mut self, a: &mut Animator, i: &Inputs, weapon: Option<&str>, dt: f32, now: f64, _tick: bool) {
         let set = a.set.clone();
         let kind = weapon.map(Kind::of);
         let still = i.velocity == Vec2::ZERO;
@@ -325,11 +329,11 @@ impl Hl2PlayerAnim {
             self.ideal = None;
             a.main = None;
             let r = if still || i.on_ground || i.swimming { Request::IdleOrMoving } else { Request::Jump };
-            self.request(a, &set, r, i, kind, now, tick);
+            self.request(a, &set, r, i, kind, now);
             self.reset = false;
         }
         if i.jumped {
-            self.request(a, &set, Request::Jump, i, kind, now, tick);
+            self.request(a, &set, Request::Jump, i, kind, now);
         }
         if let Some(k) = kind {
             if i.fired && k.fire_gesture() {
@@ -345,7 +349,7 @@ impl Hl2PlayerAnim {
         }
         // The post-think request: none while moving in the air.
         if still || i.on_ground || i.swimming {
-            self.request(a, &set, Request::IdleOrMoving, i, kind, now, tick);
+            self.request(a, &set, Request::IdleOrMoving, i, kind, now);
         }
         // Frame advance: the main cycle at the last rate, the gestures.
         a.playback = self.rate;

@@ -662,11 +662,12 @@ fn drawn_against_kept(sim: &mut chimera_net::harness::NetSim, b: Entity, n: usiz
 /// How far client 0 draws client 1's player's head (on rung `target` of
 /// `GUNS`, client 0's player on `shooter`) from the server's kept head
 /// at the tick drawn, standing, crouched, walking across and looking
-/// down: the lines past `mean` m on average or, the pose alone (the head
+/// down, and from standing as it starts walking or crouches (the
+/// sequences cross-fading; asked when `transitions`): the lines past `mean` m on average or, the pose alone (the head
 /// from the feet), `max` m at worst. (The drawn place itself strays for
 /// a frame or two where a walking body stops against a wall, between
 /// snapshots: up to 0.04 m.)
-fn heads_drawn_where_kept(shooter: usize, target: usize, mean_ok: f32, max_ok: f32) -> Vec<String> {
+fn heads_drawn_where_kept(shooter: usize, target: usize, mean_ok: f32, max_ok: f32, transitions: bool) -> Vec<String> {
     let Some((mut sim, pa, pb)) = net_dust2() else { return Vec::new() };
     let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
     {
@@ -695,6 +696,28 @@ fn heads_drawn_where_kept(shooter: usize, target: usize, mean_ok: f32, max_ok: f
         }
         Stance::Standing.set(&mut sim.clients[1].intent(them), (-face.x).atan2(-face.z));
     }
+    // The transitions: settled standing, then measured from the moment it
+    // starts walking or crouches (the main sequences cross-fading, the
+    // drawn ones as the kept ones).
+    for stance in [Stance::Walking, Stance::Crouched] {
+        net_place(&mut sim, a, pa);
+        net_place(&mut sim, b, pb);
+        let face = (pa - pb).with_y(0.0);
+        let them = sim.local_player(1).unwrap();
+        Stance::Standing.set(&mut sim.clients[1].intent(them), (-face.x).atan2(-face.z));
+        sim.ticks(60);
+        stance.set(&mut sim.clients[1].intent(them), (-face.x).atan2(-face.z));
+        let (mean, max, posed) = drawn_against_kept(&mut sim, b, 40);
+        let line = format!(
+            "{} standing to {stance:?}: drawn {mean:.3} m from the kept head on average, {max:.3} m at most ({posed:.3} m from the feet)",
+            GUNS[target].0
+        );
+        eprintln!("{line}");
+        if transitions && (mean > mean_ok || posed > max_ok) {
+            wrong.push(line);
+        }
+        Stance::Standing.set(&mut sim.clients[1].intent(them), (-face.x).atan2(-face.z));
+    }
     wrong
 }
 
@@ -708,7 +731,9 @@ fn heads_drawn_where_kept(shooter: usize, target: usize, mean_ok: f32, max_ok: f
 /// left standing on the client).
 #[test]
 fn combat_arms_heads_are_drawn_where_lag_compensation_keeps_them() {
-    let wrong = heads_drawn_where_kept(0, 1, 0.015, 0.03);
+    // Its crouch's first tick or two are drawn a tick early (0.04 m off,
+    // printed only: backlog, "Combat Arms crouch onset over the network").
+    let wrong = heads_drawn_where_kept(0, 1, 0.015, 0.03, false);
     assert!(wrong.is_empty(), "off the kept head:\n{}", wrong.join("\n"));
 }
 
@@ -723,7 +748,7 @@ fn combat_arms_heads_are_drawn_where_lag_compensation_keeps_them() {
 /// walking (0.371 m at worst).
 #[test]
 fn hl2dm_heads_are_drawn_where_lag_compensation_keeps_them() {
-    let wrong = heads_drawn_where_kept(0, 2, 0.015, 0.03);
+    let wrong = heads_drawn_where_kept(0, 2, 0.015, 0.03, true);
     assert!(wrong.is_empty(), "off the kept head:\n{}", wrong.join("\n"));
 }
 
@@ -731,6 +756,94 @@ fn hl2dm_heads_are_drawn_where_lag_compensation_keeps_them() {
 /// tick drawn, likewise (its server's tick pose sent as HL2:DM's is).
 #[test]
 fn cs_source_heads_are_drawn_where_lag_compensation_keeps_them() {
-    let wrong = heads_drawn_where_kept(2, 0, 0.015, 0.03);
+    let wrong = heads_drawn_where_kept(2, 0, 0.015, 0.03, true);
     assert!(wrong.is_empty(), "off the kept head:\n{}", wrong.join("\n"));
+}
+
+/// The drawn heads (`Drawn`): each frame, the watched body's head as
+/// drawn (its animator's pose, after the frame's animation) and its feet.
+#[derive(Resource, Default)]
+struct DrawnFrames(Option<Entity>, Vec<(Vec3, Vec3)>);
+
+fn drawn_frame(world: &mut World) {
+    let Some(b) = world.get_resource::<DrawnFrames>().and_then(|d| d.0) else { return };
+    let now = world.resource::<Time>().elapsed_secs_f64();
+    let head = (|| {
+        let models = world.get_resource::<chimera_world::map::CharacterModels>()?;
+        let m = models.0.get(world.get::<chimera_world::map::BodyModel>(b)?.0)?;
+        let a = world.get::<chimera_world::map::anim::Animator>(b)?;
+        let boxes = chimera_core::core::hitboxes_in(world, b)?;
+        let k = boxes.0.iter().enumerate().filter(|(_, h)| h.region == BodyRegion::Head).max_by(|x, y| x.1.center.y.total_cmp(&y.1.center.y))?.0;
+        let bone = m.boxes.get(k)?;
+        let global = chimera_world::map::ragdoll::globals(m, &a.pose(now));
+        let (q, p) = *global.get(bone.bone)?;
+        let yaw = a.yaw.unwrap_or(world.get::<Intent>(b)?.yaw);
+        let local = Quat::from_rotation_y(yaw) * m.root.rotation * (p + q * bone.center) * m.root.scale.x;
+        let t = world.get::<Transform>(b)?.translation;
+        let aabb = world.get::<avian3d::prelude::ColliderAabb>(b)?;
+        let feet = t.with_y(t.y - (aabb.max.y - aabb.min.y) / 2.0);
+        Some((feet + local, feet))
+    })();
+    if let Some(h) = head {
+        world.resource_mut::<DrawnFrames>().1.push(h);
+    }
+}
+
+/// At 144 frames a second against the server's ticks, a walking HL2:DM
+/// player turning its aim moves smoothly on another client: the drawn
+/// head (the pose, from the anchored cycles, the fades and the aim
+/// between received values each frame) never jumps from one frame to the
+/// next by much more than it moves in a typical frame, nor its feet by
+/// more than its speed allows.
+#[test]
+fn a_walking_hl2dm_body_is_drawn_smoothly_above_the_tick_rate() {
+    let Some((mut sim, pa, pb)) = net_dust2() else { return };
+    let (a, b) = (sim.character_of(0).unwrap(), sim.character_of(1).unwrap());
+    {
+        let w = sim.server.app.world_mut();
+        let l = w.resource::<minigame::ladder::Ladder>().clone();
+        minigame::ladder::set_rung(w, a, 0, &l);
+        minigame::ladder::set_rung(w, b, 2, &l);
+    }
+    sim.ticks(90);
+    net_place(&mut sim, a, pa);
+    net_place(&mut sim, b, pb);
+    let face = (pa - pb).with_y(0.0);
+    let yaw = (-face.x).atan2(-face.z);
+    let them = sim.local_player(1).unwrap();
+    Stance::Standing.set(&mut sim.clients[1].intent(them), yaw);
+    sim.ticks(60);
+    let frame = 1.0 / 144.0;
+    sim.set_frame(frame);
+    let id1 = sim.client_id(1);
+    let b_seen = chimera_net::harness::NetSim::owned_by(&mut sim.clients[0], Some(id1)).expect("client 0 sees b");
+    sim.clients[0].app.insert_resource(DrawnFrames(Some(b_seen), Vec::new())).add_systems(PostUpdate, drawn_frame);
+    Stance::Walking.set(&mut sim.clients[1].intent(them), yaw);
+    let mut speed: f32 = 0.0;
+    for k in 0..216 {
+        // Its aim sweeps 25 degrees a second up and down.
+        sim.clients[1].intent(them).pitch = (25f32.to_radians() * (k as f32 * frame as f32)).sin() * 0.3;
+        sim.step();
+        let v = sim.server.app.world().get::<chimera_core::core::Velocity>(b).map_or(0.0, |v| v.0.length());
+        speed = speed.max(v);
+    }
+    let drawn = std::mem::take(&mut sim.clients[0].app.world_mut().resource_mut::<DrawnFrames>().1);
+    // From when the walk is drawn (the render delay after it started).
+    let drawn = &drawn[drawn.len() / 3..];
+    let steps = |f: &dyn Fn(&(Vec3, Vec3)) -> Vec3| -> Vec<f32> { drawn.windows(2).map(|w| f(&w[1]).distance(f(&w[0]))).collect() };
+    let posed = steps(&|(h, f)| *h - *f);
+    let feet = steps(&|(_, f)| *f);
+    let mut sorted = posed.clone();
+    sorted.sort_by(f32::total_cmp);
+    let median = sorted[sorted.len() / 2];
+    let worst = sorted[sorted.len() - 1];
+    let feet_worst = feet.iter().copied().fold(0.0, f32::max);
+    eprintln!(
+        "{} frames: the head moves {median:.4} m a frame (median) about the feet, {worst:.4} at most; the feet {feet_worst:.4} at most (speed {speed:.2} m/s: {:.4} a frame)",
+        drawn.len(),
+        speed * frame as f32
+    );
+    assert!(speed > 1.0, "it walked ({speed} m/s)");
+    assert!(worst <= 3.0 * median + 0.0015, "a jump of the pose: {worst} m against {median} m a frame");
+    assert!(feet_worst <= 1.3 * speed * frame as f32 + 0.001, "a jump of the place: {feet_worst} m");
 }
