@@ -15,6 +15,8 @@ acc = "#FFB000"
 on_acc = "#000000"
 acc_text = "#FFC040"
 threat = "#FF4040"
+good = "#9BE3B4"      # network good only
+warn = "#FFB547"      # network warnings only
 
 [alpha]
 fg_2 = 0.66
@@ -30,6 +32,13 @@ glow = 0.20
 # (chimera_ui::icons::choose).
 [icons]
 prefer_game = true
+
+# The ping meter (chimera_ui::widgets::PingLevel).
+[network]
+ping_quiet_ms = 60
+ping_fine_ms = 120
+ping_warn_ms = 200
+good_alpha = 0.7
 
 [shape]
 slant_deg = 0.0

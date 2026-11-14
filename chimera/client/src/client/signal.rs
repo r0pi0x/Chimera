@@ -163,67 +163,31 @@ pub enum TagKind {
     Accent,
 }
 
-/// A solid tag, `size` cq text (mono, tracked, upper case).
+/// A solid tag, `size` cq text (the kit's `widgets::tag`).
 pub fn tag(p: &mut ChildSpawnerCommands, look: &Look, kind: TagKind, text: &str, size: f32) {
-    let (bg, fg) = match kind {
-        TagKind::Host | TagKind::Accent => (look.tone(Tone::Acc), look.tone(Tone::OnAcc)),
-        TagKind::You => (look.tone(Tone::Fg), look.tone(Tone::Ink)),
+    let kind = match kind {
+        TagKind::Host => chimera_ui::widgets::TagKind::Host,
+        TagKind::You => chimera_ui::widgets::TagKind::You,
+        TagKind::Accent => chimera_ui::widgets::TagKind::Accent,
     };
-    let k = size / 0.62;
-    p.spawn((
-        Node {
-            padding: UiRect::new(look.val(0.4 * k), look.val(0.4 * k), look.val(0.26 * k), look.val(0.2 * k)),
-            flex_shrink: 0.0,
-            align_items: AlignItems::Center,
-            ..default()
-        },
-        BackgroundColor(bg),
-        Pickable::IGNORE,
-    ))
-    .with_children(|t| {
-        t.spawn((look.text(Role::Mono, size, fg, &text.to_uppercase()), Pickable::IGNORE));
+    let (node, label) = chimera_ui::widgets::tag(&look.theme, look.fonts.as_deref(), &look.units, kind, text, size);
+    p.spawn((node, Pickable::IGNORE)).with_children(|t| {
+        t.spawn((label, Pickable::IGNORE));
     });
 }
 
-/// YOU and HOST in one chip split on the slant: white YOU, cobalt HOST
-/// (look book V's fused chip).
+/// YOU and HOST in one chip split on the slant (the kit's
+/// `widgets::spawn_you_host`).
 pub fn fused_tag(p: &mut ChildSpawnerCommands, look: &Look, mats: Option<&mut Assets<SlantMaterial>>, size: f32) {
     let Some(mats) = mats else {
         tag(p, look, TagKind::Host, "Host", size);
         return;
     };
-    let k = size / 0.62;
-    let em = look.units.text_px(size);
-    let (pad_t, pad_b) = (look.val(0.26 * k), look.val(0.2 * k));
-    let you = mats.add(SlantMaterial::new(&look.theme, look.tone(Tone::Fg)).edges(false, true));
-    let host = mats.add(SlantMaterial::new(&look.theme, look.tone(Tone::Acc)).edges(true, false));
-    p.spawn((Node { flex_shrink: 0.0, ..default() }, Pickable::IGNORE)).with_children(|f| {
-        f.spawn((
-            Node {
-                padding: UiRect::new(px(0.55 * em), px(0.8 * em), pad_t, pad_b),
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            MaterialNode(you),
-            Pickable::IGNORE,
-        ))
-        .with_children(|t| {
-            t.spawn((look.text(Role::Mono, size, look.tone(Tone::Ink), "YOU"), Pickable::IGNORE));
-        });
-        f.spawn((
-            Node {
-                padding: UiRect::new(px(0.8 * em), px(0.55 * em), pad_t, pad_b),
-                margin: UiRect::left(px(-0.27 * em)),
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            MaterialNode(host),
-            Pickable::IGNORE,
-        ))
-        .with_children(|t| {
-            t.spawn((look.text(Role::Mono, size, look.tone(Tone::OnAcc), "HOST"), Pickable::IGNORE));
-        });
-    });
+    let parent = p.target_entity();
+    let cmd = p.commands_mut();
+    let chip = chimera_ui::widgets::spawn_you_host(cmd, mats, &look.theme, look.fonts.as_deref(), &look.units, size);
+    cmd.entity(chip).insert((Pickable::IGNORE, Node { flex_shrink: 0.0, flex_direction: FlexDirection::Row, ..default() }));
+    cmd.entity(parent).add_child(chip);
 }
 
 /// A player's marks after the name: the fused chip for you as host, HOST
@@ -277,9 +241,9 @@ pub fn mark(p: &mut ChildSpawnerCommands, look: &Look, mark: Mark, h: f32, color
 }
 
 /// The YOU row's look: the 7 % tint and the outline (60 %), one physical
-/// pixel inside the row.
-pub fn you_row(look: &Look) -> (BackgroundColor, BorderColor) {
-    (BackgroundColor(look.theme.tone_a(Tone::Fg, 0.07)), BorderColor::all(look.theme.tone_a(Tone::Fg, 0.6)))
+/// pixel inside the row (the kit's `widgets::row_you`).
+pub fn you_row(look: &Look) -> impl Bundle + use<> {
+    chimera_ui::widgets::row_you(&look.theme, &look.units)
 }
 
 /// The fallback icon's name for a gun's data: melee by its slot (a
@@ -294,25 +258,28 @@ pub fn icon_class(data: &chimera_sim::weapon::data::WeaponData) -> Option<&'stat
     data.class.map(IconFor::gun_class)
 }
 
-/// Gun `id`'s icon `h` logical px tall: its game's own while
-/// `icons.prefer_game` is on (else after the kit's), the kit's by
-/// class (`class`, `icon_class`); false when there is none (the caller
-/// shows the name).
+/// Gun `id`'s icon `h` logical px tall: its game's own (a glyph, or an
+/// image whose art is loaded) while `icons.prefer_game` is on, else the
+/// kit's by class (`class`, `icon_class`; the kit's default without
+/// one), so the cell is never empty. Always true.
 pub fn gun_icon(p: &mut ChildSpawnerCommands, look: &Look, id: &str, class: Option<&str>, h: f32, color: Color) -> bool {
     use chimera_ui::icons::{IconSource, choose};
-    let game = look.icons.as_deref().and_then(|i| i.icon(id));
-    let fallback = class.filter(|c| icons::has(c));
-    match (choose(look.prefer_game_icons(), game.is_some()), game, fallback) {
-        (IconSource::Game, Some(icon), _) | (IconSource::Fallback, Some(icon), None) => {
+    // A game's image that isn't loaded (its install's art missing) is none.
+    let game = look.icons.as_deref().and_then(|i| i.icon(id)).filter(|icon| match icon {
+        super::weapon_icons::WeaponIcon::Image { image, .. } => look.images.as_deref().is_some_and(|i| i.get(image).is_some()),
+        super::weapon_icons::WeaponIcon::Glyph { .. } => true,
+    });
+    match (choose(look.prefer_game_icons(), game.is_some()), game) {
+        (IconSource::Game, Some(icon)) => {
             super::kill_feed::icon_slot(p, &icon, look.units.height / 480.0 * 4.0, h, 1.0, look.images.as_deref());
-            true
         }
-        (_, _, Some(c)) => {
-            icons::spawn(p, look, c, h, color);
-            true
+        _ => {
+            // Never an empty cell: the class's, else the kit's default.
+            let key = class.filter(|c| icons::has(c)).unwrap_or_else(|| chimera_ui::icons::IconFor::for_class(""));
+            icons::spawn(p, look, key, h, color);
         }
-        _ => false,
     }
+    true
 }
 
 /// The kit's icons (`chimera_ui::icons`: the fallback gun set and the

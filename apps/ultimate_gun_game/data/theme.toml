@@ -17,8 +17,8 @@ acc = "#3B7BFF"
 on_acc = "#04060B"
 acc_text = "#6A98FF"
 threat = "#FF3B4E"
-warn = "#FFB547"
-good = "#4FC98A"
+good = "#9BE3B4"      # network good only
+warn = "#FFB547"      # network warnings only
 
 [alpha]
 fg_2 = 0.66
@@ -44,12 +44,6 @@ min_text_px = 9.0
 [flags.hud]
 signal = true
 
-# The Tab board's ping: under `good` ms 4 bars, under `fair` 3, under
-# `bad` 2 (warn), else 1 (threat).
-[net]
-good = 60
-fair = 120
-bad = 200
 
 # Text roles: the wordmark is Black with ss02 (whose A is the plain A).
 [type.wordmark]

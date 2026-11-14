@@ -4,8 +4,8 @@
 //! weight, tracking in em, case, OpenType features), named easings and
 //! durations (`motion`), the icon rule (`icons.prefer_game`), the slant
 //! and the smallest text in physical pixels (`shape`), per-screen layout
-//! numbers in cq (`layout`), connection thresholds (`net`: good, fair,
-//! bad ping in ms), and switches (`flags`: `hud.signal` turns the shell's
+//! numbers in cq (`layout`), the ping meter's thresholds (`network`), and
+//! switches (`flags`: `hud.signal` turns the shell's
 //! Signal HUD on).
 //!
 //! An app inserts its own (the Ultimate Gun Game's is
@@ -62,12 +62,10 @@ pub enum Tone {
     /// Accent-coloured text (lighter than `acc` on ink).
     AccText,
     Threat,
-    /// Amber between fine and threat (a fair connection's ping); the
-    /// palette's `warn`, else #FFB547.
-    Warn,
-    /// A subtle green (a good connection's ping); the palette's `good`,
-    /// else #4FC98A.
+    /// Light green: network good only (a quiet ping).
     Good,
+    /// Amber: network warnings only (a bad ping), never gameplay.
+    Warn,
     /// `ink` at `alpha.plate` (panels; no backdrop blur in Bevy).
     Plate,
     /// `fg` at `alpha.glow`.
@@ -92,8 +90,8 @@ impl Tone {
         Tone::OnAcc,
         Tone::AccText,
         Tone::Threat,
-        Tone::Warn,
         Tone::Good,
+        Tone::Warn,
         Tone::Plate,
         Tone::Glow,
     ];
@@ -116,8 +114,8 @@ impl Tone {
             Tone::OnAcc => "on_acc",
             Tone::AccText => "acc_text",
             Tone::Threat => "threat",
-            Tone::Warn => "warn",
             Tone::Good => "good",
+            Tone::Warn => "warn",
             Tone::Plate => "plate",
             Tone::Glow => "glow",
         }
@@ -180,9 +178,21 @@ struct Raw {
     layout: BTreeMap<String, BTreeMap<String, f32>>,
     #[serde(default)]
     flags: BTreeMap<String, BTreeMap<String, bool>>,
-    #[serde(default)]
-    net: BTreeMap<String, f32>,
     icons: IconRule,
+    network: Network,
+}
+
+/// The ping meter's thresholds and its quiet bars' alpha.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+pub struct Network {
+    /// Under this many ms: quiet (four bars, `good`).
+    pub ping_quiet_ms: u32,
+    /// Under this: fine (three bars, `fg`).
+    pub ping_fine_ms: u32,
+    /// Under this: a warning (two bars, `warn`); at or over: bad (one, `threat`).
+    pub ping_warn_ms: u32,
+    /// The quiet bars' alpha (display space).
+    pub good_alpha: f32,
 }
 
 /// Which icons the theme's screens show (`icons::choose`).
@@ -214,8 +224,8 @@ pub struct Theme {
     durs: BTreeMap<String, BTreeMap<String, f32>>,
     layout: BTreeMap<String, BTreeMap<String, f32>>,
     flags: BTreeMap<String, BTreeMap<String, bool>>,
-    net: BTreeMap<String, f32>,
     pub icons: IconRule,
+    pub network: Network,
 }
 
 impl Default for Theme {
@@ -266,8 +276,6 @@ impl Theme {
                 Tone::Fg2 | Tone::Fg3 | Tone::Fg4 | Tone::Fg5 | Tone::Glow => fg.with_alpha(light_alpha(alpha(t.name())?)),
                 Tone::Acc2 | Tone::AccGlow => acc.with_alpha(light_alpha(alpha(t.name())?)),
                 Tone::Plate => display_alpha(ink.with_alpha(alpha(t.name())?)),
-                Tone::Warn => parse_hex(raw.palette.get("warn").map_or("#FFB547", String::as_str))?,
-                Tone::Good => parse_hex(raw.palette.get("good").map_or("#4FC98A", String::as_str))?,
                 _ => pal(t.name())?,
             };
             tones.insert(t, c);
@@ -293,8 +301,8 @@ impl Theme {
             durs: raw.motion.dur,
             layout: raw.layout,
             flags: raw.flags,
-            net: raw.net,
             icons: raw.icons,
+            network: raw.network,
         })
     }
 
@@ -369,14 +377,8 @@ impl Theme {
         self.layout.get(screen).and_then(|s| s.get(key)).copied()
     }
 
-    /// A connection threshold in ms (`net.good`, `net.fair`, `net.bad`).
-    pub fn net(&self, key: &str) -> Option<f32> {
-        self.net.get(key).copied()
-    }
-
     /// A switch (`flags.<group>.<key>`, false when absent): which look a
-    /// screen takes (`flags.hud.signal`), which icons it prefers
-    /// (`flags.icons.prefer_game`).
+    /// screen takes (`flags.hud.signal`).
     pub fn flag(&self, group: &str, key: &str) -> bool {
         self.flags.get(group).and_then(|g| g.get(key)).copied().unwrap_or(false)
     }

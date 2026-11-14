@@ -170,6 +170,37 @@ pins a few derived values. Data-driven first: what a screen shows
 (main_menu.toml) or becomes so; choreography stays in code, with its
 numbers in the theme.
 
+### 2.3b One token source, a style layer, BSN
+
+- **Tokens**: the theme (shell.toml with Signal's theme.toml over it) is
+  the one source of colours, sizes in cq, padding, gaps, type roles,
+  durations and network thresholds. `repo_checks --bin ui_tokens` writes
+  them as the look book's CSS custom properties
+  (`apps/ultimate_gun_game/data/tokens.css`, and `--out` the look book's
+  folder, whose gen.py appends it last so it wins);
+  `ui_tokens_are_fresh` fails when the committed file is stale.
+- **Style layer** (`chimera_ui::style`): `UiStyle` (`style!(row, gap: 0.6,
+  pad: [0.7, 0.8], h: 2.15, bg: Tone::Plate)`: flex row/column, gap,
+  padding/margin in CSS shorthand, sizes, absolute offsets, alignment,
+  grow, a background tone, an outline), `UiText` (role, size in cq, tone)
+  and `UiSlant` (a 12° fill), components resolved through `UiUnits` by
+  the kit (again on a resize, a theme or font change). A node's px are the
+  look book's `v cqw` rounded to whole physical pixels
+  (`styled_px_follow_the_css_formula`, 1080p and 1440p).
+- **BSN** (finding, 2026-11-14): pinned Bevy 0.20 ships `bevy_scene`'s
+  `bsn!`/`bsn_list!` (on in our build through Bevy's `ui` feature; Bevy's
+  own feathers widgets are written in it). It works for our UI trees,
+  shown by `bsn_builds_styled_ui_trees`: styled rows from data (a
+  `Vec<impl Scene>` as `Children [ {rows} ]`), text in the kit's roles,
+  `UiSlant` nodes getting their `SlantMaterial`, and any marker beside
+  them (a parity id per node). Notes: a runtime value goes in as a bare
+  identifier bound before the macro (`let s = style!(..); bsn! { s }`),
+  not as `{expr}` in component position (that form is for field values:
+  `Text({name})`); components need `Default + Clone` (or
+  `FromTemplate`); `spawn_scene` resolves at once, `queue_spawn_scene`
+  waits for assets. Screens may use BSN or plain bundles; both read the
+  same `UiStyle`/`UiText`.
+
 ### 2.4 Fonts as run-time assets
 
 Our own fonts (OFL-1.1, authored for this project) may be committed:

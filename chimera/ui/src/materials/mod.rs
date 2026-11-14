@@ -7,7 +7,9 @@
 //!   accent bar at the left, a wipe clipping from the left and the right
 //!   along the slant, an alpha ramp. The menu's highlight bar, the
 //!   toast's wipe, the chip's meter ticks, health segments, vote pips,
-//!   the winner slab, the backdrop swap's edge.
+//!   the winner slab, the backdrop swap's edge. The node's box holds the
+//!   whole parallelogram (unlike CSS's skew, which leans out of its box):
+//!   make it the fill's width plus its height times the slant's tan.
 //! - `TickBarMaterial` (`tick_bar.wesl`): `n` ticks, `lit`, `hot`, by
 //!   whole physical pixel column (`units::TickLayout`).
 //! - `PassMaterial` (`pass.wesl`): the logo pass, four slanted bands and

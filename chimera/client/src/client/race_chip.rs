@@ -21,12 +21,12 @@
 //!   players; then a row a player, best first (`minigame_scoreboard::
 //!   sorted`): position, the bot slot and name with HOST (or the fused
 //!   YOU+HOST chip) and the matches won this server run (a trophy and the
-//!   count, only when there are any: `MatchesWon`, M6's session wins
+//!   count, the session's leader in the accent, only when there are any: `MatchesWon`, M6's session wins
 //!   hook in), the rung big, the gun's icon (`signal::gun_icon`) and its
 //!   short name with its game, kills and deaths as two columns with their
 //!   marks right-aligned over them, the ping (a 4-bar meter and the
-//!   number, coloured by the theme's `net` thresholds: `ping_level`; LAG
-//!   at the worst; BOT for a bot), and the ladder strip. The leader's row
+//!   number, by the theme's `[network]` thresholds: `ping_level`; LAG at
+//!   the worst; LOCAL for the listen host, a faint dash for a bot), and the ladder strip. The leader's row
 //!   has the accent bar; yours is tinted and outlined.
 //!
 //! Content is rebuilt only when what it shows changes (`RaceView`), the
@@ -103,26 +103,17 @@ pub struct RaceRow {
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PingMeter(pub u8);
 
-/// A ping's look on the board by the theme's thresholds (`net.good`,
-/// `net.fair`, `net.bad`; 60, 120, 200 ms without them): bars lit and the
-/// tone of the number (and the bars but a good line's, which are the
-/// quiet green, `good` at 70 %). Under good: 4, quiet (`fg_3`); under
-/// fair: 3 (`fg`); under bad: 2 (`warn`); else 1 (`threat`) and a LAG
-/// flag. No packet loss is measured yet (the kit's `loss` mark waits for
-/// it).
-pub fn ping_level(theme: &chimera_ui::Theme, ping: u16) -> (u8, Tone) {
-    let t = |k: &str, or: f32| theme.net(k).unwrap_or(or);
-    let p = ping as f32;
-    if p < t("good", 60.0) {
-        (4, Tone::Fg3)
-    } else if p < t("fair", 120.0) {
-        (3, Tone::Fg)
-    } else if p < t("bad", 200.0) {
-        (2, Tone::Warn)
-    } else {
-        (1, Tone::Threat)
-    }
+/// A ping's look on the board: the kit's `PingLevel` by the theme's
+/// `[network]` thresholds (4 bars quiet green under 60 ms, 3 `fg` under
+/// 120, 2 `warn` under 200, else 1 `threat` and a LAG flag). No packet
+/// loss is measured yet (the kit's `loss` mark waits for it).
+pub fn ping_level(theme: &chimera_ui::Theme, ping: u16) -> chimera_ui::widgets::PingLevel {
+    chimera_ui::widgets::PingLevel::from_ms(theme, ping as u32)
 }
+
+/// A row's matches won this server run (trophy and count; only when any).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SessionWins(pub u32);
 
 /// What the chip and board show now (`gather`); `active` while a ladder
 /// plays under the Signal look.
@@ -154,6 +145,7 @@ impl RaceView {
         self.rows.first().is_some_and(|r| r.local)
     }
 }
+
 
 /// A staged race (`ui_scene chip|lead|board`, made-up players): shown
 /// instead of the game's, the board open with `open`.
@@ -674,13 +666,12 @@ fn build_board(
         });
         b.spawn((Node { height: px(hair), margin: UiRect::top(look.val(0.5)), ..default() }, BackgroundColor(look.tone(Tone::Fg4)), Pickable::IGNORE));
         let n = view.rungs.max(1) as u32;
+        let top_wins = view.rows.iter().map(|r| r.wins).max().unwrap_or(0);
         for (i, row) in view.rows.iter().take(MAX_ROWS).enumerate() {
             let lead = i == 0;
             let mut r = b.spawn((BoardRow(row.clone()), row_node(Some(ROW_H)), Pickable::IGNORE));
             if row.local {
-                let (bg, border) = signal::you_row(&look);
-                r.insert((bg, border));
-                r.entry::<Node>().and_modify(move |mut n| n.border = UiRect::all(px(hair)));
+                r.insert(signal::you_row(&look));
             }
             r.with_children(|r| {
                 // The leader's accent bar; the row's rule.
@@ -710,8 +701,13 @@ fn build_board(
                     ));
                     signal::host_tag(c, &look, slants.as_deref_mut(), row.host, row.local, 0.42);
                     if row.wins > 0 {
-                        signal::mark(c, &look, Mark::Trophy, look.px(0.6), look.tone(Tone::Fg2));
-                        c.spawn((look.text(Role::Mono, 0.5, look.tone(Tone::Fg2), &row.wins.to_string()), Pickable::IGNORE));
+                        // The session's leader in the accent.
+                        let tone = if row.wins == top_wins { Tone::AccText } else { Tone::Fg2 };
+                        c.spawn((Node { align_items: AlignItems::Center, column_gap: look.val(0.18), flex_shrink: 0.0, ..default() }, SessionWins(row.wins), Pickable::IGNORE))
+                            .with_children(|w| {
+                                signal::mark(w, &look, Mark::Trophy, look.px(0.6), look.tone(tone));
+                                w.spawn((look.text(Role::Mono, 0.5, look.tone(tone), &row.wins.to_string()), Pickable::IGNORE));
+                            });
                     }
                 });
                 r.spawn((right(2), Pickable::IGNORE)).with_children(|c| {
@@ -735,30 +731,30 @@ fn build_board(
                 });
                 // Ping: a 4-bar meter and the number, coloured by how bad.
                 r.spawn((Node { column_gap: look.val(0.3), ..right(7) }, Pickable::IGNORE)).with_children(|c| {
+                    // A bot: the faint dash (the robot marks it already);
+                    // the listen host: LOCAL.
                     if row.bot {
-                        c.spawn((look.text(Role::Mono, 0.54, look.tone(Tone::Fg3), "BOT"), Pickable::IGNORE));
+                        c.spawn((look.text(Role::Mono, 0.54, look.tone(Tone::Fg4), "—"), Pickable::IGNORE));
                         return;
                     }
-                    let (bars, tone) = ping_level(&look.theme, row.ping);
-                    // A good line's bars in the quiet green, its number quiet.
-                    let bar = if bars == 4 { look.theme.tone_a(Tone::Good, 0.7) } else { look.tone(tone) };
-                    c.spawn((
-                        PingMeter(bars),
-                        Node { align_items: AlignItems::FlexEnd, column_gap: look.val(0.08), height: look.val(0.7), ..default() },
-                        Pickable::IGNORE,
-                    ))
-                    .with_children(|m| {
-                        for i in 0..4u8 {
-                            let lit = i < bars;
-                            m.spawn((
-                                Node { width: look.val(0.14), height: look.val(0.25 + 0.15 * i as f32), ..default() },
-                                BackgroundColor(if lit { bar } else { look.tone(Tone::Fg4) }),
-                                Pickable::IGNORE,
-                            ));
-                        }
-                    });
-                    c.spawn((look.text(Role::Mono, 0.54, look.tone(tone), &row.ping.to_string()), Pickable::IGNORE));
-                    if bars == 1 {
+                    if row.host && row.ping == 0 {
+                        c.spawn((look.text(Role::Mono, 0.46, look.tone(Tone::Fg3), "LOCAL"), Pickable::IGNORE));
+                        return;
+                    }
+                    let level = ping_level(&look.theme, row.ping);
+                    if let Some(slants) = slants.as_deref_mut() {
+                        let parent = c.target_entity();
+                        let cmd = c.commands_mut();
+                        let m = chimera_ui::widgets::spawn_ping_meter(cmd, slants, &look.theme, &look.units, 0.7, level);
+                        cmd.entity(m).insert((PingMeter(level.lit as u8), Pickable::IGNORE));
+                        cmd.entity(parent).add_child(m);
+                    } else {
+                        c.spawn((PingMeter(level.lit as u8), Node::default(), Pickable::IGNORE));
+                    }
+                    // A good line's number stays quiet.
+                    let number = if level.lit == 4 { look.tone(Tone::Fg3) } else { level.color(&look.theme) };
+                    c.spawn((look.text(Role::Mono, 0.54, number, &row.ping.to_string()), Pickable::IGNORE));
+                    if level.lit == 1 {
                         c.spawn((look.text(Role::Mono, 0.42, look.tone(Tone::Threat), "LAG"), Pickable::IGNORE));
                     }
                 });

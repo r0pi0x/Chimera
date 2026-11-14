@@ -14,7 +14,10 @@
 //!   per pixel height (`IconImages`) or tessellated; `IconFor`, `choose`.
 //! - `materials`: `SlantMaterial`, `TickBarMaterial`, `PassMaterial`,
 //!   `LinesMaterial`, `AmbientMaterial`.
-//! - `widgets`: `tag` (YOU, HOST, BOT, accent), `kbd`.
+//! - `style`: `UiStyle` (`style!`), `UiText`, `UiSlant`: the look book's
+//!   CSS subset in cq and tokens, resolved through `UiUnits`.
+//! - `widgets`: tags (YOU, HOST, the fused YOU+HOST), the bot slot,
+//!   your row, the hover tick, key caps, the ping meter.
 //!
 //! `ChimeraUiPlugin` keeps `UiUnits` from the window, steps the clock and
 //! every `Timeline` (`UiKitSystems`, in `PostUpdate` before Bevy's UI
@@ -26,6 +29,7 @@ pub mod icons;
 pub mod materials;
 pub mod motion;
 pub mod theme;
+pub mod style;
 pub mod units;
 pub mod widgets;
 
@@ -36,6 +40,7 @@ pub use icons::{IconFor, IconImages, IconSource, Icons};
 pub use materials::{AmbientMaterial, KitMaterialsPlugin, LinesMaterial, PassMaterial, SlantMaterial, TickBarMaterial};
 pub use motion::{Ease, Prop, Timeline, Track, UiClock};
 pub use theme::{Theme, Tone};
+pub use style::{UiSlant, UiStyle, UiText};
 pub use units::{TickLayout, UiUnits};
 
 /// The kit's per-frame work: units from the window, the clock, the
@@ -54,11 +59,18 @@ impl Plugin for ChimeraUiPlugin {
         app.init_resource::<UiUnits>()
             .init_resource::<icons::IconImages>()
             .init_resource::<UiClock>()
-            .add_plugins(KitMaterialsPlugin)
+            .add_plugins((KitMaterialsPlugin, widgets::HoverTicks))
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare))
             .add_systems(
                 PostUpdate,
-                (units::track_window, motion::advance_clock, motion::step_timelines, motion::apply_timelines)
+                (
+                    units::track_window,
+                    // Before the timelines, which write over its sizes.
+                    style::resolve_styles,
+                    motion::advance_clock,
+                    motion::step_timelines,
+                    motion::apply_timelines,
+                )
                     .chain()
                     .in_set(UiKitSystems),
             );
