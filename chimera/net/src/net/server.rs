@@ -11,7 +11,8 @@
 //! map change; the map kept on its client's entity: `ClientMap`), then
 //! spawned as the rules allow (`rules::enter_game`), `Seed` from its id), each player's commands queued by tick (`CommandBuffer`: late
 //! and too-early ones dropped; the lead reported for the client's newest clock
-//! epoch only), `kick <name>` and `kickid <id> [message]` ("Kicked by Console")
+//! epoch only, counted from the tick a frame catching up after a hitch
+//! gets to), `kick <name>` and `kickid <id> [message]` ("Kicked by Console")
 //! and one applied per tick before the rules (the last repeated when missing),
 //! replicon's tick kept equal to the simulation's (`lock_replication_tick`),
 //! each client's updates paced by its `cl_updaterate` and `rate`
@@ -876,7 +877,8 @@ fn despawn_character(world: &mut World, character: Entity) {
 }
 
 /// Queue each remote player's commands by tick, and note how early they
-/// came (the clock sync's lead). Commands for ticks already run are late
+/// came (the clock sync's lead, from the tick this frame's ticks catch up
+/// to: a frame after a hitch runs several). Commands for ticks already run are late
 /// (counted, dropped); ones more than `MAX_AHEAD` ahead are dropped. A
 /// command already queued for a tick is replaced (the client moved its
 /// clock back and re-predicted that tick); repeats from `CMD_BACKUP` are
@@ -886,8 +888,20 @@ fn receive_commands(
     players: Query<&Player>,
     mut buffers: Query<&mut CommandBuffer>,
     tick: Res<SimTick>,
+    fixed: Res<Time<Fixed>>,
+    virt: Res<Time<Virtual>>,
 ) {
     let now = tick.0;
+    // A frame that runs several ticks (after a slow one: a hitch, a map
+    // change) took its commands while we were behind: their leads count
+    // from the tick we catch up to, less the one a frame runs anyway, or
+    // every client hears it is ahead by the ticks owed and jumps back.
+    let owed = if fixed.timestep().is_zero() {
+        0
+    } else {
+        ((fixed.overstep() + virt.delta()).as_secs_f64() / fixed.timestep().as_secs_f64()).floor() as u64
+    };
+    let caught_up = now + owed.saturating_sub(1);
     for msg in messages.read() {
         let Some(client) = msg.client_id.entity() else {
             continue;
@@ -902,7 +916,7 @@ fn receive_commands(
         let Some(newest) = msg.message.cmds.iter().map(|c| c.tick).max() else {
             continue;
         };
-        let lead = (newest as i64 - now as i64).clamp(i32::MIN as i64, i32::MAX as i64) as i32;
+        let lead = (newest as i64 - caught_up as i64).clamp(i32::MIN as i64, i32::MAX as i64) as i32;
         // Leads of the client's present clock only: commands sent before
         // it jumped say nothing of where it is now.
         if msg.message.epoch > b.epoch {
