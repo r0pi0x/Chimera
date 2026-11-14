@@ -53,7 +53,7 @@ fn tag_label(theme: &Theme, kit: Option<&KitFonts>, units: &UiUnits, text: &str,
     let s = fonts::text(theme, kit, Role::Mono, units.text_px(size_cq));
     // Tags track wider than Mono's text (.1 em).
     let spacing = bevy::text::LetterSpacing::Px(0.1 * units.text_px(size_cq));
-    (Text::new(text.to_uppercase()), s.font.clone(), spacing, s.hinting, TextColor(color))
+    (Text::new(text.to_uppercase()), s.font.clone(), spacing, s.hinting, fonts::LINE_HEIGHT, TextColor(color))
 }
 
 /// A tag's box and its text: padding .26/.4/.2 em-ish (the look book's

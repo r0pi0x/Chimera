@@ -9,7 +9,9 @@
 //! an air strike's banner, edge pulses and fold into the chip stack;
 //! `airstrike <t>` frozen likewise):
 //! the HUD's own screens with made-up players (`race_chip::stage`,
-//! `kill_feed::signal_feed::stage`), under the Signal theme. `proof` (the kit itself: the type ramp of every role, tick
+//! `kill_feed::signal_feed::stage`), under the Signal theme; given a
+//! fixture (`ui_scene board <fixture.json>`), its data over a flat ground
+//! instead (the UI parity check, `ui_parity`). `proof` (the kit itself: the type ramp of every role, tick
 //! bars, slants, the gun icons and marks, the logo pass frozen mid-way,
 //! the match end's lines behind). The screens' milestones add theirs
 //! (`lobby`, `chip`, `board`, `toast`, `airstrike`, `matchend`, `menu`)
@@ -87,14 +89,17 @@ impl Plugin for UiScenePlugin {
         app.init_resource::<UiScene>()
             .console_command(
                 "ui_scene",
-                "ui_scene <proof|chip|lead|board|board_lead|feed|rankup|airstrike|off> [t]: stage a screen of the UI kit with made-up \
-                 data (screenshots); an animated scene with `t` frozen `t` s into its loop.",
+                "ui_scene <proof|chip|lead|board|board_lead|feed|rankup|airstrike|off> [fixture.json | t]: stage a screen of the UI \
+                 kit with made-up data (screenshots), or a fixture's (the UI parity check); an animated scene (rankup, airstrike) \
+                 with `t` frozen `t` s into its loop.",
                 |w, a| {
                     let name = a.first().map(String::as_str).unwrap_or("proof");
-                    let t = a.get(1).map(|t| t.parse::<f64>().map_err(|_| format!("ui_scene: not a time: {t}"))).transpose()?;
+                    // An animated scene's frozen time.
+                    let t = || a.get(1).map(|t| t.parse::<f64>().map_err(|_| format!("ui_scene: not a time: {t}"))).transpose();
                     if name == "off" {
                         w.resource_mut::<UiScene>().want = None;
                         clear_staged(w);
+                        super::ui_parity::clear_ground(w);
                         if w.remove_resource::<super::kill_feed::signal_feed::FeedStaged>().is_some()
                             && let Some(mut f) = w.get_resource_mut::<super::kill_feed::KillFeed>()
                         {
@@ -111,23 +116,29 @@ impl Plugin for UiScenePlugin {
                     clear_staged(w);
                     match name {
                         "rankup" => {
-                            let start = scene_start(w, t);
+                            let start = scene_start(w, t()?);
                             super::rank_toast::stage(w, Some(start));
                             return Ok(None);
                         }
                         "airstrike" => {
                             // On the chip, as in play.
-                            let start = scene_start(w, t);
+                            let start = scene_start(w, t()?);
                             super::race_chip::stage(w, Some("chip"));
                             super::match_effects::stage(w, Some(start));
                             return Ok(None);
                         }
                         "chip" | "lead" | "board" | "board_lead" => {
                             super::race_chip::stage(w, Some(name));
+                            if let Some(path) = a.get(1) {
+                                super::ui_parity::apply_fixture(w, name, path)?;
+                            }
                             return Ok(None);
                         }
                         "feed" => {
                             super::kill_feed::signal_feed::stage(w);
+                            if let Some(path) = a.get(1) {
+                                super::ui_parity::apply_fixture(w, name, path)?;
+                            }
                             return Ok(None);
                         }
                         _ => {}

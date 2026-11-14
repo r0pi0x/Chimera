@@ -47,6 +47,8 @@ avian3d = { workspace = true, features = ["debug-plugin", "bevy_picking", "bevy_
 # bevy_winit, and with it another Bevy and every crate of ours.
 bevy_winit.workspace = true
 chimera_sim = { workspace = true, features = ["testkit"] }
+# The UI kit's theme and clock (tests/it/main_menu.rs: the logo pass).
+chimera_ui.workspace = true
 # HL2:DM's view-model motion rules (tests/it/hl2dm_parts.rs).
 source_engine.workspace = true
 

@@ -55,7 +55,9 @@
 //!   (`signal::gun_icon`: its game's own, else the kit's by class, else
 //!   its name), the headshot mark, victim; a bot's name has the robot mark.
 //!   Your kill: accent border, bar and name; your death: a quiet white
-//!   outline and your name bright.
+//!   outline and your name bright. Its rows carry the look book's names
+//!   (`chimera_ui::UiParityId`: `feed.row.<n>` from the top, from 1, and
+//!   `.killer`, `.icon`, `.victim`) for the UI parity check (`ui_parity`).
 //!
 //! Known shortcuts: no penetration (wallbang) flag: the killing hit
 //! doesn't say whether it went through something; names are taken at the
@@ -520,7 +522,9 @@ fn draw(
                 }
                 let game = e.weapon.and_then(|w| w.split_once(':')).map(|(g, _)| g);
                 match e.weapon.and_then(|w| icons.as_ref()?.kill_icon(w, e.kind)) {
-                    Some(icon) => icon_slot(r, &icon, icon_scale, line, WEAPON_FILL, images.as_deref()),
+                    Some(icon) => {
+                            icon_slot(r, &icon, icon_scale, line, WEAPON_FILL, images.as_deref());
+                        }
                     None => {
                         let what = fallback_word(e, |w| gun_short_name(w, names.as_deref(), catalog.as_deref()));
                         let what = super::overlay::fit(fonts.as_deref(), rules.as_deref(), &font(size), &what, NAME_MAX * s);
@@ -529,7 +533,9 @@ fn draw(
                 }
                 if e.headshot {
                     match game.and_then(|g| icons.as_ref()?.mark(g, HEADSHOT)) {
-                        Some(mark) => icon_slot(r, &mark, icon_scale, line, MARK_FILL, images.as_deref()),
+                        Some(mark) => {
+                            icon_slot(r, &mark, icon_scale, line, MARK_FILL, images.as_deref());
+                        }
                         None => text(r, "HS".into(), Color::srgb(1.0, 0.35, 0.3)),
                     }
                 }
@@ -543,7 +549,7 @@ fn draw(
 
 /// The kill feed in the Signal look (module doc).
 pub mod signal_feed {
-    use chimera_ui::{Prop, Role, Timeline, Tone, Track, UiClock};
+    use chimera_ui::{Prop, Role, Timeline, Tone, Track, UiClock, UiParityId};
 
     use super::*;
     use crate::client::signal::{self, Look};
@@ -634,7 +640,9 @@ pub mod signal_feed {
         (staged, mut commands): (Option<Res<FeedStaged>>, Commands),
     ) {
         let on = shared.is_some() && look.on();
-        if !on {
+        // Laid out in cq for one window size: on a resize (or the first
+        // measure of the window) the feed is built again, rows and all.
+        if !on || look.units.is_changed() {
             for e in &root {
                 commands.entity(e).despawn();
             }
@@ -718,12 +726,14 @@ pub mod signal_feed {
         };
         let bg = look.theme.tone_a(Tone::Ink, if mark == RowMark::Mine { 0.8 } else { 0.78 });
         let size = 0.62;
-        let name = |r: &mut ChildSpawnerCommands, side: &FeedName, c: Color| {
+        // The look book's names (`feed.row.<n>.killer`, from the top).
+        let id = |part: &str| UiParityId(format!("feed.row.{}{part}", index + 1));
+        let name = |r: &mut ChildSpawnerCommands, side: &FeedName, c: Color, part: &str| {
             r.spawn((Node { align_items: AlignItems::Center, column_gap: look.val(0.32), ..default() }, Pickable::IGNORE)).with_children(|n| {
                 if side.bot {
                     signal::mark(n, look, signal::Mark::Bot, look.px(0.68), c);
                 }
-                n.spawn((look.text(Role::Mono, size, c, &side.name.to_uppercase()), Pickable::IGNORE));
+                n.spawn((look.text(Role::Mono, size, c, &side.name.to_uppercase()), id(part), Pickable::IGNORE));
             });
         };
         commands
@@ -731,6 +741,7 @@ pub mod signal_feed {
                 KillFeedRow(e.id),
                 SignalRow { index, leaving: false },
                 mark,
+                id(""),
                 ChildOf(root),
                 Pickable::IGNORE,
                 Node {
@@ -740,7 +751,9 @@ pub mod signal_feed {
                     height: look.val(look.layout("feed", "row_h", 1.85)),
                     align_items: AlignItems::Center,
                     column_gap: look.val(0.55),
-                    padding: UiRect::new(look.val(0.7), look.val(0.75), px(0.0), px(0.0)),
+                    // The look book's outline is drawn inside (a shadow):
+                    // the padding gives the border's pixel back.
+                    padding: UiRect::new(px(look.px(0.7) - hair), px(look.px(0.75) - hair), px(0.0), px(0.0)),
                     border: UiRect::all(px(hair)),
                     ..default()
                 },
@@ -763,13 +776,17 @@ pub mod signal_feed {
                     ));
                 }
                 if let Some(k) = &e.killer {
-                    name(r, k, killer_c);
+                    name(r, k, killer_c, ".killer");
                 }
-                let class = e.weapon.and_then(|w| catalog?.get(w)).and_then(signal::icon_class);
+                let class = e
+                    .weapon
+                    .and_then(|w| catalog.and_then(|c| c.get(w)).and_then(signal::icon_class).or_else(|| crate::client::ui_parity::made_up_class(w)));
                 let drawn = e.weapon.is_some_and(|w| {
                     r.spawn((Node { margin: UiRect::horizontal(look.val(0.15)), align_items: AlignItems::Center, ..default() }, Pickable::IGNORE))
                         .with_children(|g| {
-                            signal::gun_icon(g, look, w, class, look.px(0.78), look.tone(Tone::Fg));
+                            if let Some(icon) = signal::gun_icon(g, look, w, class, look.px(0.78), look.tone(Tone::Fg)) {
+                                g.commands().entity(icon).insert(id(".icon"));
+                            }
                         });
                     look.prefer_game_icons() && look.icons.as_deref().is_some_and(|i| i.icon(w).is_some())
                         || class.is_some()
@@ -784,13 +801,15 @@ pub mod signal_feed {
                 if e.headshot {
                     let game = e.weapon.and_then(|w| w.split_once(':')).map(|(g, _)| g);
                     match game.and_then(|g| look.icons.as_deref()?.mark(g, HEADSHOT)) {
-                        Some(m) => icon_slot(r, &m, look.units.height / 480.0 * 4.0, look.px(0.78), 1.0, look.images.as_deref()),
+                        Some(m) => {
+                            icon_slot(r, &m, look.units.height / 480.0 * 4.0, look.px(0.78), 1.0, look.images.as_deref());
+                        }
                         None => {
                             r.spawn((look.text(Role::Mono, size, look.tone(Tone::Threat), "HS"), Pickable::IGNORE));
                         }
                     }
                 }
-                name(r, &e.victim, victim_c);
+                name(r, &e.victim, victim_c, ".victim");
             });
     }
 }
@@ -801,7 +820,7 @@ pub mod signal_feed {
 /// art is what is centred; a glyph's font is cut down when it would be taller
 /// than that. The row's height is fixed, so a line is as tall with an icon,
 /// without one or with a tall one (widths vary).
-pub fn icon_slot(r: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale: f32, line: f32, fill: f32, images: Option<&Assets<Image>>) {
+pub fn icon_slot(r: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale: f32, line: f32, fill: f32, images: Option<&Assets<Image>>) -> Entity {
     let scale = fitted_scale(icon, scale, line * fill);
     // An icon font's ink sits a little above its line's middle: nudged down.
     let nudge = match icon {
@@ -836,7 +855,8 @@ pub fn icon_slot(r: &mut ChildSpawnerCommands, icon: &WeaponIcon, scale: f32, li
         } else {
             spawn_weapon_icon(b, icon, scale, line * fill, None);
         }
-    });
+    })
+    .id()
 }
 
 /// `scale`, lowered so a glyph icon's size fits `room` pixels (an image

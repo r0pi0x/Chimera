@@ -373,6 +373,12 @@ impl Theme {
         })
     }
 
+    /// Whether the theme lays out `screen` itself (`[layout.<screen>]`):
+    /// a shell screen with no layout of its own keeps the shell's look.
+    pub fn has_layout(&self, screen: &str) -> bool {
+        self.layout.contains_key(screen)
+    }
+
     pub fn layout_opt(&self, screen: &str, key: &str) -> Option<f32> {
         self.layout.get(screen).and_then(|s| s.get(key)).copied()
     }

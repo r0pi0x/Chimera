@@ -133,6 +133,20 @@ impl Look<'_> {
         )
     }
 
+    /// `text` with its own tracking, `track` cq between letters (the look
+    /// book's `letter-spacing`, which a child inherits in px from its
+    /// parent's size).
+    pub fn tracked(&self, role: Role, size: f32, track: f32, color: Color, text: &str) -> impl Bundle + use<> {
+        let mut styled = chimera_ui::fonts::text(&self.theme, self.fonts.as_deref(), role, self.units.text_px(size));
+        styled.spacing = bevy::text::LetterSpacing::Px(self.units.cq(track));
+        (
+            Text::new(styled.case(text)),
+            styled.bundle(),
+            TextColor(color),
+            TextLayout::new(Justify::Left, LineBreak::NoWrap),
+        )
+    }
+
     /// The `TextFont` of `role` at `size` cq (to measure or warm).
     pub fn font(&self, role: Role, size: f32) -> TextFont {
         chimera_ui::fonts::text(&self.theme, self.fonts.as_deref(), role, self.units.text_px(size)).font
@@ -166,53 +180,63 @@ pub enum TagKind {
     Accent,
 }
 
-/// A solid tag, `size` cq text (the kit's `widgets::tag`).
-pub fn tag(p: &mut ChildSpawnerCommands, look: &Look, kind: TagKind, text: &str, size: f32) {
+/// A solid tag, `size` cq text (the kit's `widgets::tag`); its node.
+pub fn tag(p: &mut ChildSpawnerCommands, look: &Look, kind: TagKind, text: &str, size: f32) -> Entity {
     let kind = match kind {
         TagKind::Host => chimera_ui::widgets::TagKind::Host,
         TagKind::You => chimera_ui::widgets::TagKind::You,
         TagKind::Accent => chimera_ui::widgets::TagKind::Accent,
     };
     let (node, label) = chimera_ui::widgets::tag(&look.theme, look.fonts.as_deref(), &look.units, kind, text, size);
-    p.spawn((node, Pickable::IGNORE)).with_children(|t| {
-        t.spawn((label, Pickable::IGNORE));
-    });
+    p.spawn((node, Pickable::IGNORE))
+        .with_children(|t| {
+            t.spawn((label, Pickable::IGNORE));
+        })
+        .id()
 }
 
 /// YOU and HOST in one chip split on the slant (the kit's
-/// `widgets::spawn_you_host`).
-pub fn fused_tag(p: &mut ChildSpawnerCommands, look: &Look, mats: Option<&mut Assets<SlantMaterial>>, size: f32) {
+/// `widgets::spawn_you_host`); its node.
+pub fn fused_tag(p: &mut ChildSpawnerCommands, look: &Look, mats: Option<&mut Assets<SlantMaterial>>, size: f32) -> Entity {
     let Some(mats) = mats else {
-        tag(p, look, TagKind::Host, "Host", size);
-        return;
+        return tag(p, look, TagKind::Host, "Host", size);
     };
     let parent = p.target_entity();
     let cmd = p.commands_mut();
     let chip = chimera_ui::widgets::spawn_you_host(cmd, mats, &look.theme, look.fonts.as_deref(), &look.units, size);
     cmd.entity(chip).insert((Pickable::IGNORE, Node { flex_shrink: 0.0, flex_direction: FlexDirection::Row, ..default() }));
     cmd.entity(parent).add_child(chip);
+    chip
 }
 
 /// A player's marks after the name: the fused chip for you as host, HOST
-/// alone for another's host (YOU shows as the row, not a tag).
-pub fn host_tag(p: &mut ChildSpawnerCommands, look: &Look, mats: Option<&mut Assets<SlantMaterial>>, host: bool, you: bool, size: f32) {
+/// alone for another's host (YOU shows as the row, not a tag); its node.
+pub fn host_tag(
+    p: &mut ChildSpawnerCommands,
+    look: &Look,
+    mats: Option<&mut Assets<SlantMaterial>>,
+    host: bool,
+    you: bool,
+    size: f32,
+) -> Option<Entity> {
     match (host, you) {
-        (true, true) => fused_tag(p, look, mats, size),
-        (true, false) => tag(p, look, TagKind::Host, "Host", size),
-        _ => {}
+        (true, true) => Some(fused_tag(p, look, mats, size)),
+        (true, false) => Some(tag(p, look, TagKind::Host, "Host", size)),
+        _ => None,
     }
 }
 
 /// The slot left of every name, `size` cq square: the robot mark for a
-/// bot, empty for a person (names line up either way).
-pub fn bot_slot(p: &mut ChildSpawnerCommands, look: &Look, bot: bool, size: f32, color: Color) {
+/// bot, empty for a person (names line up either way); its node.
+pub fn bot_slot(p: &mut ChildSpawnerCommands, look: &Look, bot: bool, size: f32, color: Color) -> Entity {
     let s = look.px(size);
     p.spawn((Node { width: px(s), height: px(s), flex_shrink: 0.0, ..default() }, Pickable::IGNORE))
         .with_children(|b| {
             if bot {
                 mark(b, look, Mark::Bot, s, color);
             }
-        });
+        })
+        .id()
 }
 
 /// The kit's marks the shell draws.
@@ -238,9 +262,9 @@ impl Mark {
     }
 }
 
-/// `mark` `h` logical px tall in `color`, as a node in the flow.
-pub fn mark(p: &mut ChildSpawnerCommands, look: &Look, mark: Mark, h: f32, color: Color) {
-    icons::spawn(p, look, mark.key(), h, color);
+/// `mark` `h` logical px tall in `color`, as a node in the flow; its node.
+pub fn mark(p: &mut ChildSpawnerCommands, look: &Look, mark: Mark, h: f32, color: Color) -> Option<Entity> {
+    icons::spawn(p, look, mark.key(), h, color)
 }
 
 /// The YOU row's look: the 7 % tint and the outline (60 %), one physical
@@ -264,8 +288,8 @@ pub fn icon_class(data: &chimera_sim::weapon::data::WeaponData) -> Option<&'stat
 /// Gun `id`'s icon `h` logical px tall: its game's own (a glyph, or an
 /// image whose art is loaded) while `icons.prefer_game` is on, else the
 /// kit's by class (`class`, `icon_class`; the kit's default without
-/// one), so the cell is never empty. Always true.
-pub fn gun_icon(p: &mut ChildSpawnerCommands, look: &Look, id: &str, class: Option<&str>, h: f32, color: Color) -> bool {
+/// one), so the cell is never empty. Its node.
+pub fn gun_icon(p: &mut ChildSpawnerCommands, look: &Look, id: &str, class: Option<&str>, h: f32, color: Color) -> Option<Entity> {
     use chimera_ui::icons::{IconSource, choose};
     // A game's image that isn't loaded (its install's art missing) is none.
     let game = look.icons.as_deref().and_then(|i| i.icon(id)).filter(|icon| match icon {
@@ -274,15 +298,14 @@ pub fn gun_icon(p: &mut ChildSpawnerCommands, look: &Look, id: &str, class: Opti
     });
     match (choose(look.prefer_game_icons(), game.is_some()), game) {
         (IconSource::Game, Some(icon)) => {
-            super::kill_feed::icon_slot(p, &icon, look.units.height / 480.0 * 4.0, h, 1.0, look.images.as_deref());
+            Some(super::kill_feed::icon_slot(p, &icon, look.units.height / 480.0 * 4.0, h, 1.0, look.images.as_deref()))
         }
         _ => {
             // Never an empty cell: the class's, else the kit's default.
             let key = class.filter(|c| icons::has(c)).unwrap_or_else(|| chimera_ui::icons::IconFor::for_class(""));
-            icons::spawn(p, look, key, h, color);
+            icons::spawn(p, look, key, h, color)
         }
     }
-    true
 }
 
 /// The kit's icons (`chimera_ui::icons`: the fallback gun set and the
@@ -316,9 +339,9 @@ pub mod icons {
     }
 
     /// Icon `name`, `h` logical px tall, tinted `color` (nothing when the
-    /// kit has none by that name).
-    pub fn spawn(p: &mut ChildSpawnerCommands, look: &Look, name: &str, h: f32, color: Color) {
-        let Some(icon) = shipped().get(name) else { return };
+    /// kit has none by that name); its node.
+    pub fn spawn(p: &mut ChildSpawnerCommands, look: &Look, name: &str, h: f32, color: Color) -> Option<Entity> {
+        let icon = shipped().get(name)?;
         let sf = look.units.scale_factor.max(1e-3);
         let phys = (h * sf).round().max(1.0);
         let w = (phys * icon.aspect()).ceil() / sf;
@@ -326,7 +349,9 @@ pub mod icons {
             Node { width: px(w), height: px(phys / sf), flex_shrink: 0.0, ..default() },
             SignalIcon { name: name.to_string(), px: phys as u32, color },
             Pickable::IGNORE,
-        ));
+        ))
+        .id()
+        .into()
     }
 
     /// Gives each new icon node its image.

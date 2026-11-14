@@ -2291,6 +2291,56 @@ cargo run --features dev,tools --bin refcmp -- hudcmp --out <scratch> --hud-ref 
   `weapon_select::selection_layout` and `history_layout` through
   `hud_text::ink_rect` (no images needed).
 
+### UI parity against the look book (`tools/ui-parity`)
+
+```
+tools/ui-parity/run.sh board          # or chip, chip_lead, feed, lobby
+UI_PARITY_GAME=target/debug/ultimate_gun_game tools/ui-parity/run.sh board   # a built binary
+```
+
+Measures a Signal screen against its look book frame instead of by eye
+(Node 22+ and a Chromium, `CHIMERA_CHROME` when not on PATH; no npm
+packages). Three steps, each runnable alone:
+
+- `node tools/ui-parity/mockup.mjs <screen> <out-prefix>`: renders the
+  frame from `tools/ui-parity/reference/` (the look book's pages, one
+  frame each at 1920 CSS px: 1 cq = 19.2 px as in a 1920x1080 game)
+  with reduced motion and the scene frozen at the screen's time
+  (`screens.json`), and writes every `data-ui` element's box, plus a
+  text's own box (a Range), font size, spacing, weight and colour, as
+  JSON with a PNG.
+- The game: `ui_scene <board|chip|lead|feed> <fixture.json>` stages the
+  screen's scene with the fixture's players and kills instead of the
+  scene's made-up ones (`fixtures/hud.json`, the look book's data) over a
+  flat ink ground, `ui_dump <path> [frames]`
+  writes every `chimera_ui::UiParityId` node's box (`ComputedNode`,
+  `UiGlobalTransform`, physical px) and text in the same shape
+  (`chimera_client::client::ui_parity`).
+- `node tools/ui-parity/compare.mjs <mockup> <game> <out>`: matches ids,
+  ranks dx, dy, dw, dh and font-size deltas past tolerance (2 px
+  position, 1 px size, 0.5 px font; a text's box is its own glyph run,
+  its dy is its centre's, its height not compared) into `<out>.txt`, and draws `<out>.side.png` and
+  `<out>.overlay.png` (the mockup at 50 % over the game, mockup boxes
+  cyan, game boxes magenta).
+
+Reading a report: a text's box is its glyph run across and its line box
+up and down (`font: <size>/1`, as the kit's `LineHeight` 1); the game
+sets text in whole physical pixels (`UiUnits::text_px`), so a text a
+look book size like .6 cq (11.52 px) draws at 12 px and comes out up to
+4 % wider, which can push a long text past the 1 px width tolerance and
+what follows it a few px along; those are listed with their font sizes
+(`font 11.5/12`). Only the screen's ids count (`screens.json`'s
+`include`), so a game playing behind the staged screen adds nothing.
+`lobby` has no `ui_scene lobby` yet (M1): its report lists the mockup's
+ids only.
+
+Ids are the look book's (`board.row.3.name`, rows from 1): the
+generator writes `data-ui` attributes, the game puts `UiParityId` on the
+same nodes. A new screen adds ids on both sides, an entry in
+`screens.json` and the fixture's data to its `ui_scene` scene
+(`ui_parity::apply_fixture`); `reference/` is regenerated with
+the look book generator's `--parity <dir>` and copied in.
+
 ## Measuring CS:S behaviour live
 
 The reference CS:S (see refcmp) can also be measured directly over RCON:

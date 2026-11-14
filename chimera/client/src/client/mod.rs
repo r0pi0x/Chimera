@@ -50,6 +50,8 @@ pub mod map_screen;
 pub mod match_effects;
 pub mod match_end;
 pub mod prematch_lobby;
+pub mod lobby_panel;
+pub mod logo_pass;
 pub mod net;
 pub mod relaunch;
 pub mod startup;
@@ -67,6 +69,7 @@ pub mod senses;
 pub mod spectate;
 pub mod swap_effect;
 pub mod text_warm;
+pub mod ui_parity;
 pub mod vgui;
 pub mod video;
 pub mod view;
@@ -537,6 +540,7 @@ impl PluginGroup for ClientPlugins {
             .add(hud::HudPlugin)
             .add(overlay::OverlayPlugin)
             .add(chimera_ui::ChimeraUiPlugin)
+            .add(logo_pass::LogoPassPlugin)
             .add(ui_scene::UiScenePlugin)
             .add(minigame_panel::MinigamePanelPlugin)
             .add(text_warm::TextWarmPlugin)
@@ -553,6 +557,7 @@ impl PluginGroup for ClientPlugins {
             .add(match_end::MatchEndPlugin)
             .add(prematch_lobby::PreMatchLobbyPlugin)
             .add(kill_feed::KillFeedPlugin)
+            .add(ui_parity::UiParityPlugin)
             .add(callouts::CalloutsPlugin)
             .add(match_effects::MatchEffectsPlugin)
             .add(hit_marker::HitMarkerPlugin)

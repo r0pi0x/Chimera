@@ -545,10 +545,12 @@ fn spawn(look: Look, layer: Res<super::overlay::OverlayLayer>, mut slants: Optio
 }
 
 /// A rolling number `n + 1` (two digits) `size` cq tall in `tone`, the
-/// box clipping it: the chip's (`chip`) or the toast's.
-pub fn roll(p: &mut ChildSpawnerCommands, look: &Look, n: usize, size: f32, tone: Tone, chip: bool) {
+/// box clipping it: the chip's (`chip`) or the toast's; the new number's
+/// node.
+pub fn roll(p: &mut ChildSpawnerCommands, look: &Look, n: usize, size: f32, tone: Tone, chip: bool) -> Entity {
     let h = look.px(size * 1.2);
     let w = look.px(size * 1.4);
+    let mut new = Entity::PLACEHOLDER;
     p.spawn((
         Roll { h, chip },
         Node { width: px(w), height: px(h), overflow: Overflow::clip(), flex_shrink: 0.0, ..default() },
@@ -559,8 +561,9 @@ pub fn roll(p: &mut ChildSpawnerCommands, look: &Look, n: usize, size: f32, tone
         let at = |y: f32| Node { position_type: PositionType::Absolute, left: px(0.0), top: px(0.0), ..default() }
             .with_y(y);
         r.spawn((RollOld, at(-1.1 * h), UiTransform::default(), UiOpacity(1.0), look.text(Role::DisplayBold, size, look.tone(tone), &text), Pickable::IGNORE));
-        r.spawn((RollNew, at(0.0), UiTransform::default(), look.text(Role::DisplayBold, size, look.tone(tone), &text), Pickable::IGNORE));
+        new = r.spawn((RollNew, at(0.0), UiTransform::default(), look.text(Role::DisplayBold, size, look.tone(tone), &text), Pickable::IGNORE)).id();
     });
+    new
 }
 
 trait WithY {
@@ -616,7 +619,7 @@ fn build(
             Pickable::IGNORE,
         ));
         signal::tag(c, &look, TagKind::Accent, "Rung", 0.62);
-        roll(c, &look, 0, ROLL_H, Tone::Fg, false);
+        let _ = roll(c, &look, 0, ROLL_H, Tone::Fg, false);
         c.spawn((Node { width: px(look.hair()), height: look.val(1.7), flex_shrink: 0.0, ..default() }, BackgroundColor(look.tone(Tone::Fg4)), Pickable::IGNORE));
         // The guns: the old one (lifting out on a chain) under the new one
         // (wiping in).

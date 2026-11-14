@@ -398,10 +398,16 @@ Each one ships alone, behind nothing (the old look goes screen by
 screen), with scenario tests on the harness (`Sim` with
 `SimBasePlugins`, or the party's) and offscreen screenshots
 (`--offscreen 1280x720`, `1920x1080`, `2560x1440`, `3840x2160`;
-docs/OBSERVABILITY.md 2, "Offscreen") compared by eye against the
-prototype's frames. Every screen gets a console command that stages it
+docs/OBSERVABILITY.md 2, "Offscreen") and **measured against the
+prototype's frames before done**: `tools/ui-parity/run.sh <screen>`
+(docs/OBSERVABILITY.md 6, "UI parity against the look book") with no
+element past tolerance, or each one left listed with its reason in the
+milestone's notes. A screen's nodes carry `UiParityId`s named as the look
+book's `data-ui` ids. Every screen gets a console command that stages it
 with made-up data (`ui_scene lobby|chip|board|toast|airstrike|matchend|
-menu`, feature `dev`) for screenshots. Perf (section 7) is counted per
+menu`, feature `dev`) for screenshots, and with the look book's data from
+a fixture (`ui_scene <scene> tools/ui-parity/fixtures/<page>.json`) for
+the parity check. Perf (section 7) is counted per
 milestone.
 
 ### M0: tokens, fonts, the motion kit
@@ -436,6 +442,27 @@ pixel snap system, and `text_warm` declarations of the roles' sizes.
 
 ### M1: the logo pass and the lobby
 
+Status (2026-11-14): the lobby is in (`client::lobby_panel`, drawn on
+the kit's style layer and Look Book V marks when the theme has
+`[layout.lobby]`; the shell's panel otherwise; `LobbyView` gained the
+map's game, the slots, the ladder's games and each row's ping;
+`SlantMaterial::outline` for the unready block; tests
+`chimera/client/tests/it/lobby_panel.rs`). The logo pass is in
+(`client::logo_pass`: `Passes::ask(key)` and the `PassCovered`
+event at the swap, which the screens observe; the swap in `PreUpdate`, reduced motion `ui_reduce_motion 1` as a 150 ms fade,
+`ui_pass [p]` holding a pass for screenshots; its root moves to the
+party menu's camera with the lobby and the console; the kit's
+`pass.wesl` measures offsets at mid-height with `mark_x` the mark's
+centre, so the mark holds centred at the swap) on the lobby coming up
+and going (lobby to match) and the match end and the next match (tests
+`chimera/client/tests/it/logo_pass.rs`, party_kit
+`main_menu::logo_pass_covers_both_ui_cameras`). The party menu's
+screens go through it too (`party_kit::main_menu::ShownScreen`: menu,
+loading panel and game change at the swap, Leave and disconnect
+included; test `main_menu::the_menu_changes_screens_at_the_pass_s_swap`).
+Left: screenshots at the four sizes and of a real lobby-to-match pass
+(so far 1080p, `ui_pass 0.2` and `0.5` in the game and over the menu).
+
 - `client::logo_pass`; the front end's moves through it (2.5, 3).
 - `prematch_lobby` rebuilt on the kit (HOST from `LobbyRow::id ==
   HOST_ID`, BOT from `bot()`, YOU from `LocalClientId`); no network
@@ -463,6 +490,24 @@ Tests: `race_chip_opens_and_folds_on_showscores`,
 `fallback_hud_only_without_a_game_hud` (ultimate_gun_game). Left:
 `overlay_keeps_clear_of_game_huds`, the match clock on the board's head
 (the rolling rung and the tick pop came with M3's toast).
+
+Parity (2026-11-14, `tools/ui-parity/run.sh`, 1920x1080): fixed the
+board's ladder column (11.4 cq), its titles' padding and rule, the K/D
+marks (.6 cq), the ping cell (.5 cq type, the meter .46 cq, the value
+2.2 ch), the ticks (.58 cq at .74), the rows' rule as their border, the
+head on one baseline, each text's tracking from the look book; the
+chip's groups (.5 cq, the gap .4 cq), rungs at least 1.5 cq, the gun
+slot 2.8 cq, the leader's plate 23 cq; the feed's rows rebuilt on a
+resize (they kept their first layout, 720p's, when staged at start) and
+its border inside the padding; the kit's text lines one font size tall.
+Left past tolerance, with reasons: text widths from whole-pixel font
+sizes (board 51 of 125, chip 6 of 11, leader chip 5 of 12; most are
+names, guns, K/D at 1-4 px); the board's head has no match clock (its
+`FIRST TO 14 • 06:41 • 8 PLAYERS`); the worst ping shows LAG where the
+look book shows the loss mark; the feed's rows are 2.3 cq apart (the
+tokens' `--l-feed-pitch`) while the look book's script moves them 2.15
+cq apart (feed 14 of 16, from row 2 down): which is right is the
+look book's call.
 
 - `client::race_chip` replaces `minigame_panel` for a ladder (other
   minigames keep the panel); `minigame_scoreboard` becomes the chip's
