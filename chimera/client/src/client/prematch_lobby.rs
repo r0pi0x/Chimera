@@ -9,11 +9,18 @@
 //!   longest wait ("starts anyway in 1:12"), or once counting down who
 //!   it starts without.
 //! - **The players**, one row each in the server's order (humans, then
-//!   bots): the name, the status in its colour (connecting, downloading,
-//!   loading the map, ready), for a downloader a bar with "MB done / total"
+//!   bots): the name with its tags (HOST for a listen server's host, BOT,
+//!   YOU), the status in its colour (connecting, downloading, loading the
+//!   map, not ready, ready), for a downloader a bar with "MB done / total"
 //!   and the percentage, and the ping (or "BOT"); the local player's row
 //!   on the gold band the match-end screen gives it (found by its client
 //!   id: `net::client::LocalClientId`, a listen host's `HOST_ID`).
+//! - **The key** (`LOBBY_KEY`, F3, in place of its bind while the lobby
+//!   shows: `console::run_binds`), told under the players: a listen
+//!   server's host starts the match now (`lobby_start`, before a countdown
+//!   runs), a player on the map readies up or takes it back
+//!   (`lobby_ready`, which counts where the server has players ready up,
+//!   `mp_lobby_ready_up`).
 //! - **The countdown** under it, big: "Match starts in" and the seconds.
 //!
 //! In the match-end screen's face and shades (`match_end`: the HUD's
@@ -49,6 +56,8 @@ impl Plugin for PreMatchLobbyPlugin {
 pub struct LobbyViewRow {
     pub name: String,
     pub bot: bool,
+    /// A listen server's host (`HOST_ID`).
+    pub host: bool,
     /// `prematch::status::*`.
     pub status: u8,
     /// The status's words.
@@ -75,6 +84,44 @@ pub struct LobbyView {
     pub rows: Vec<LobbyViewRow>,
     /// Seconds left of the countdown, once it began.
     pub countdown: Option<u32>,
+    /// This machine is the server with its own player (a listen host): its
+    /// key starts the match.
+    pub hosting: bool,
+    /// What the key does now, told under the players (empty: nothing).
+    pub hint: String,
+}
+
+/// The lobby's key while it shows (a Source key name), in place of its bind.
+pub const LOBBY_KEY: &str = "f3";
+
+impl LobbyView {
+    /// The console line the lobby's key runs now: the host's
+    /// `lobby_start` before a countdown runs, a player's `lobby_ready`
+    /// once on the map; None otherwise.
+    pub fn key_line(&self) -> Option<&'static str> {
+        if !self.shown {
+            return None;
+        }
+        if self.hosting {
+            return self.countdown.is_none().then_some("lobby_start");
+        }
+        self.rows
+            .iter()
+            .any(|r| r.local && matches!(r.status, status::READY | status::NOT_READY))
+            .then_some("lobby_ready")
+    }
+}
+
+/// The key's words under the players, for what `key_line` does.
+fn hint(v: &LobbyView) -> String {
+    let key = LOBBY_KEY.to_uppercase();
+    match v.key_line() {
+        Some("lobby_start") => format!("Press {key} to start the match now"),
+        Some(_) if v.rows.iter().any(|r| r.local && r.status == status::NOT_READY) => {
+            format!("Press {key} when you are ready")
+        }
+        _ => String::new(),
+    }
 }
 
 /// "1:12" or "45 s".
@@ -118,6 +165,7 @@ pub fn view_row(r: &chimera_net::prematch::LobbyRow, local: bool) -> LobbyViewRo
     LobbyViewRow {
         name: r.name.clone(),
         bot: r.bot(),
+        host: r.id == Some(HOST_ID),
         status: r.status,
         state: match (r.bot(), downloading, fraction) {
             (true, ..) => "Ready".into(),
@@ -153,14 +201,17 @@ fn follow(
         Some(NetRole::Server) if !host.is_empty() => Some(HOST_ID),
         _ => None,
     };
-    let v = LobbyView {
+    let mut v = LobbyView {
         shown: true,
         mode: l.mode.clone(),
         map: vote::map_name(&l.map).to_string(),
         line: waiting_line(l),
         rows: l.rows.iter().map(|r| view_row(r, mine.is_some() && r.id == mine)).collect(),
         countdown: l.countdown,
+        hosting: role.as_deref() == Some(&NetRole::Server) && !host.is_empty(),
+        hint: String::new(),
     };
+    v.hint = hint(&v);
     view.set_if_neq(v);
 }
 
@@ -184,11 +235,16 @@ const LOCAL_BG: Color = Color::srgba(0.85, 0.62, 0.1, 0.32);
 const READY: Color = Color::srgb(0.45, 0.88, 0.45);
 const DOWNLOADING: Color = Color::srgb(1.0, 0.72, 0.25);
 const LOADING: Color = Color::srgb(0.5, 0.75, 1.0);
+const NOT_READY: Color = Color::srgb(1.0, 0.5, 0.42);
 const BAR_BG: Color = Color::srgba(1.0, 1.0, 1.0, 0.12);
 /// Name, status, progress (bar and bytes), ping, on a 720-line screen.
 const WIDTHS: [f32; 4] = [220.0, 170.0, 250.0, 70.0];
 const GAP: f32 = 16.0;
 const CELL: f32 = 17.0;
+/// The key's line under the players.
+const HINT: f32 = 15.0;
+/// A name's tags (HOST, BOT, YOU) after it.
+const TAG: f32 = 11.0;
 
 /// Text on this machine's own row, which sits on the gold band: near-black
 /// (the status colours and the grey ping do not read there; the status word
@@ -208,6 +264,7 @@ fn status_color(s: u8) -> Color {
         status::READY => READY,
         status::DOWNLOADING => DOWNLOADING,
         status::LOADING => LOADING,
+        status::NOT_READY => NOT_READY,
         _ => DIM,
     }
 }
@@ -218,7 +275,13 @@ pub fn scale(height: f32, rows: usize) -> f32 {
     // From the top: the padding, the panel (its padding, three lines, the
     // table's margin and padding, the header and the rows with their
     // gaps), the countdown's box; a fifth over for the fonts' line boxes.
-    let panel = 2.0 * 14.0 + (17.0 + 34.0 + 20.0) * 1.3 + 2.0 * 6.0 + 10.0 + 2.0 * 8.0 + (CELL * 1.3 + 4.0 + 4.0) * (rows + 1) as f32;
+    // The key's line under the players is counted always.
+    let panel = 2.0 * 14.0
+        + (17.0 + 34.0 + 20.0 + HINT) * 1.3
+        + 3.0 * 6.0
+        + 10.0
+        + 2.0 * 8.0
+        + (CELL * 1.3 + 4.0 + 4.0) * (rows + 1) as f32;
     let countdown = 12.0 + 2.0 * 4.0 + (22.0 + 64.0) * 1.3;
     let need = 0.15 * 720.0 + 1.2 * (panel + countdown) + 10.0;
     height.max(240.0) / 720f32.max(need)
@@ -261,6 +324,45 @@ fn cell(p: &mut ChildSpawnerCommands, text: String, width: f32, right: bool, col
             ..default()
         },
     ));
+}
+
+/// The name cell: the name, then its tags small (`colors`: the name's,
+/// the tags').
+fn name_cell(
+    p: &mut ChildSpawnerCommands,
+    name: &str,
+    tags: &[&str],
+    colors: (Color, Color),
+    font: &TextFont,
+    tag_font: &TextFont,
+    s: f32,
+) {
+    p.spawn(Node {
+        width: px(WIDTHS[0] * s),
+        flex_shrink: 0.0,
+        column_gap: px(6.0 * s),
+        align_items: AlignItems::Center,
+        overflow: Overflow::clip(),
+        ..default()
+    })
+    .with_children(|c| {
+        c.spawn((
+            Text::new(name.to_string()),
+            font.clone(),
+            TextColor(colors.0),
+            TextLayout::new(Justify::Left, LineBreak::NoWrap),
+            Node { flex_shrink: 1.0, overflow: Overflow::clip(), ..default() },
+        ));
+        for t in tags {
+            c.spawn((
+                Text::new(t.to_string()),
+                tag_font.clone(),
+                TextColor(colors.1),
+                TextLayout::new(Justify::Left, LineBreak::NoWrap),
+                Node { flex_shrink: 0.0, ..default() },
+            ));
+        }
+    });
 }
 
 #[allow(clippy::type_complexity)]
@@ -337,7 +439,12 @@ fn draw(
                 .with_children(|r| {
                     let f = if row.local { &cell_bold } else { &cell_font };
                     let name_color = if row.local { ON_LOCAL } else if row.bot { DIM } else { TEXT };
-                    cell(r, row.name.clone(), WIDTHS[0], false, name_color, f, s);
+                    let tag_color = if row.local { ON_LOCAL } else { GOLD };
+                    let tags: Vec<&str> = [(row.host, "HOST"), (row.bot, "BOT"), (row.local, "YOU")]
+                        .into_iter()
+                        .filter_map(|(on, t)| on.then_some(t))
+                        .collect();
+                    name_cell(r, &row.name, &tags, (name_color, tag_color), f, &font(TAG, true), s);
                     cell(r, row.state.clone(), WIDTHS[1], false, status_text(row.status, row.local), f, s);
                     // The download: a bar and its bytes.
                     r.spawn(Node {
@@ -380,6 +487,9 @@ fn draw(
                 });
             }
         });
+        if !view.hint.is_empty() {
+            label(p, view.hint.clone(), font(HINT, false), GOLD);
+        }
     });
     if let Some(left) = view.countdown {
         commands.spawn((
@@ -446,5 +556,37 @@ mod tests {
         assert_eq!(view_row(&l.rows[2], false).state, "Loading map");
         l.countdown = Some(5);
         assert_eq!(waiting_line(&l), "Starting without 2 players still loading (they join when ready)");
+    }
+
+    #[test]
+    fn the_key_starts_for_the_host_and_readies_a_player_on_the_map() {
+        let me = |status| LobbyViewRow {
+            status,
+            local: true,
+            ..default()
+        };
+        let mut v = LobbyView {
+            shown: true,
+            hosting: true,
+            rows: vec![me(status::READY)],
+            ..default()
+        };
+        assert_eq!(v.key_line(), Some("lobby_start"));
+        assert_eq!(hint(&v), "Press F3 to start the match now");
+        v.countdown = Some(4);
+        assert_eq!(v.key_line(), None, "a countdown under way isn't started again");
+        v = LobbyView {
+            shown: true,
+            rows: vec![me(status::NOT_READY)],
+            ..default()
+        };
+        assert_eq!(v.key_line(), Some("lobby_ready"));
+        assert_eq!(hint(&v), "Press F3 when you are ready");
+        v.rows = vec![me(status::READY)];
+        assert_eq!((v.key_line(), hint(&v).as_str()), (Some("lobby_ready"), ""), "takes it back");
+        v.rows = vec![me(status::DOWNLOADING)];
+        assert_eq!(v.key_line(), None, "not on the map yet");
+        v.shown = false;
+        assert_eq!(v.key_line(), None);
     }
 }

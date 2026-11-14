@@ -956,6 +956,17 @@ game's:
   game's HUD root ends up under the layer. The pre-match lobby follows
   the rule but stays a root of its own (a menu moves it to its camera).
 
+- **Every party match a host starts waits in the pre-match lobby**
+  (`chimera_net::prematch`): a dedicated party server's (`mp_lobby 1` at
+  launch) and a listen host's from the main menu's Play alike (its Server
+  tab's rows, data: the lobby on, 2 players waited for, players ready
+  up), so friends gather before the first round. The lobby is the
+  engine's; whether players ready up by hand (`mp_lobby_ready_up`) is a
+  host's choice, off on a dedicated server (having the map is ready, as
+  before). One key, F3, while the panel shows: the host starts the
+  countdown, a player readies up; readying travels as a player command
+  over the existing client-command message, not a new one.
+
 - **The kill feed is Chimera's** (`chimera_client::client::kill_feed`):
   its entries (killer, victim, weapon id, headshot, suicide, team kill,
   time) come from `core::Died` on host and clients alike (a client's
