@@ -39,9 +39,9 @@
 //! track along, translation only), a physics body's centre, a player or a point
 //! entity; point_teleport places its target the same way at its own origin and
 //! angles; logic_multicompare compares the values given since the last
-//! CompareValues (none: equal) and forgets them; env_shake shakes only the
-//! local view (`client::senses`, the grenade's shake shape; not sent to network
-//! clients), GlobalShake as an infinite radius, StopShake ending every map
+//! CompareValues (none: equal) and forgets them; env_shake shakes the
+//! view (`client::senses`, the grenade's shake shape; the server sends it to
+//! network clients as `MapFx::Shake`), GlobalShake as an infinite radius, StopShake ending every map
 //! shake; func_rot_button turns like a rotating door (flags 2/64/128,
 //! "distance") with func_button's other rules, its flag 1 is not-solid;
 //! momentary_rot_button turns by SetPosition at its speed and fires

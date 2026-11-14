@@ -44,8 +44,8 @@
 //!   is a 16-unit cube (its origin at the bottom), its touch box that cube
 //!   grown, its drawn model put on the cube's bottom; a charger
 //!   is found when the view's ray from the eye passes within 24 units of
-//!   its origin, at most 80 units away (not Source's `+use` search). The
-//!   respawn light isn't made.
+//!   its origin, at most 80 units away (not Source's `+use` search). (The
+//!   respawn light is `set_piece_fx`'s.)
 //! - Chargers' models are the loader's (their fixed models, `idle` held
 //!   at the dial's frame: `dial_cycle` as `map::PropCycle`, on the host
 //!   only: a network client's dial stays full); the loop sound is a long

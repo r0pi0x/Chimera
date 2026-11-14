@@ -11,15 +11,12 @@
 //! stunstick for the Combine and metro police; a citizen keeps the
 //! crowbar, the game's knife), and goes on the player at arming as
 //! `weapons::inventory::Hl2Model` (a rung of another game's gun takes it
-//! off again). The rung's HUD line names it.
+//! off again), which `bodies` draws as the player's body. The rung's HUD line
+//! names it.
 //!
 //! On by default; `rung_extras = { character = false }` (or `rung_extras =
 //! false`) leaves the players' own look and the crowbar. The key is the
 //! one CS:S's and Combat Arms' rungs read for their bodies.
-//!
-//! Known shortcuts: HL2:DM's player bodies are M8's (specs/hl2dm/
-//! player_models.md): until then the model is a name and a melee weapon,
-//! and the body the app's stand-in (the capsule).
 
 use bevy::prelude::*;
 use chimera_sim::minigame::{

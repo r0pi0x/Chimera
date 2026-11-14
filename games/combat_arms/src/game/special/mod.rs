@@ -113,8 +113,9 @@
 //!   drawn), facing its fire direction (`facing`, Follow-up 5); its look
 //!   in flight (group, fly sound, flare, smoke trail: Follow-up 1-3) is
 //!   carried by its drawn key and played by `effects::attached`. Its
-//!   explosion's sound and group are the ImpactFX (`effects`). The projectile and device weapons have no view models
-//!   of their own.
+//!   explosion's sound and group are the ImpactFX (`effects`). The projectile and device weapons' view models
+//!   are the generic ones (`view_model`, from the install's `PVModelNormal`):
+//!   nothing here draws them.
 //! - Case 11 lists the M32's shells at 8100, 9100 ... and the end at 14134
 //!   ms; section 3.2 and case 12 have each shell complete a second after
 //!   the 2100 ms pre-reload and the reload end 1034 ms after the last
