@@ -255,6 +255,40 @@ fn the_ragdoll_goes_when_its_owner_lives_again() {
     assert!(sim.app.world().get::<Ragdolled>(p).is_none());
 }
 
+/// A model's ragdoll shapes are made ahead of its first death
+/// (`ragdoll::warm_shapes`: on a task once the models are known), so the
+/// death copies them, and the ragdoll it makes is the one made without.
+#[test]
+fn a_models_shapes_are_made_before_its_first_death() {
+    use crate::stack::map::ragdoll::RagdollShapes;
+    let (mut sim, p) = sim();
+    let model = model();
+    let ragdoll_of = model.ragdoll.as_ref().unwrap();
+    // The task's result within a few ticks (10 were played; more for a
+    // loaded box).
+    for _ in 0..600 {
+        if !sim.app.world().resource::<RagdollShapes>().warming() {
+            break;
+        }
+        sim.ticks(1);
+    }
+    let shapes = sim.app.world().resource::<RagdollShapes>();
+    assert!(!shapes.warming(), "the shapes' task never ended");
+    for (i, b) in ragdoll_of.bodies.iter().enumerate() {
+        assert!(shapes.has(b, SCALE), "body {i}'s shape wasn't made ahead");
+    }
+    kill(&mut sim, p, Hitgroup::Head, Vec3::new(0.0, 1.6, 0.0), Vec3::NEG_Z);
+    sim.ticks(1);
+    let warmed = bodies(&mut sim);
+    // The same death with the shapes made by the death itself.
+    let (mut cold, q) = sim_with(model.clone());
+    *cold.app.world_mut().resource_mut::<RagdollShapes>() = RagdollShapes::default();
+    kill(&mut cold, q, Hitgroup::Head, Vec3::new(0.0, 1.6, 0.0), Vec3::NEG_Z);
+    cold.ticks(1);
+    assert_eq!(warmed.len(), 7);
+    assert_eq!(format!("{warmed:?}"), format!("{:?}", bodies(&mut cold)));
+}
+
 /// Ragdolls off (`cl_ragdoll_physics_enable 0`; a dedicated server's
 /// setting, ragdolls.md 2.1: the server never simulates player ragdolls):
 /// a death makes none, and a body the tick animates (`SimAnimator`, a

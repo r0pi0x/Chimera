@@ -35,7 +35,9 @@
 //! Loaded sets are leaked (`&'static`: weapon IDs are `&'static str`
 //! everywhere); each app's registry, prices and `WeaponCatalog` list the
 //! sets it loaded, so two apps in one process can hold different data for
-//! the same IDs (code with a world reads `WeaponCatalog::get`). A network
+//! the same IDs (code with a world reads `WeaponCatalog::get`; every
+//! weapon once: `WeaponCatalog::weapons`, those naming a hook:
+//! `with_hook`, each list made once per list of sets). A network
 //! client whose set differs from the server's puts the server's documents
 //! in its place (`replace_weapon_set`, `server_docs`): same registry
 //! position, so indices match the server's.
@@ -780,9 +782,75 @@ impl WeaponHooks {
 #[derive(Resource, Clone, Default)]
 pub struct WeaponCatalog {
     pub sets: Vec<&'static WeaponSet>,
+    /// `weapons` (and `with_hook`) of the sets it was last asked with.
+    resolved: std::sync::Arc<std::sync::Mutex<Option<Resolved>>>,
+}
+
+/// What `WeaponCatalog::weapons` and `with_hook` made of one list of sets.
+struct Resolved {
+    /// The sets' addresses.
+    sets: Vec<usize>,
+    /// Their weapons, each id once.
+    all: std::sync::Arc<Vec<&'static WeaponData>>,
+    /// Those naming a hook, by hook.
+    by_hook: BTreeMap<String, std::sync::Arc<Vec<&'static WeaponData>>>,
 }
 
 impl WeaponCatalog {
+    /// A catalogue of `sets`, in order.
+    pub fn of(sets: Vec<&'static WeaponSet>) -> Self {
+        Self { sets, ..Self::default() }
+    }
+
+    /// Every weapon of the catalogue once, as `get` gives it (a later
+    /// set's over an earlier one's), in the order the sets first name
+    /// them: what a walk of every set's weapons with a `get` of each
+    /// finds, made once per list of sets (a ladder's draws walk a
+    /// catalogue of thousands several times a rung; docs/performance.md,
+    /// "A death's frame, a new ladder's frame").
+    pub fn weapons(&self) -> std::sync::Arc<Vec<&'static WeaponData>> {
+        self.resolved(|r| r.all.clone())
+    }
+
+    /// `weapons` that name hook `hook` (`WeaponData::has_hook`), in the
+    /// same order; made once per hook and list of sets.
+    pub fn with_hook(&self, hook: &str) -> std::sync::Arc<Vec<&'static WeaponData>> {
+        self.resolved(|r| {
+            if let Some(found) = r.by_hook.get(hook) {
+                return found.clone();
+            }
+            let found = std::sync::Arc::new(r.all.iter().copied().filter(|w| w.has_hook(hook)).collect::<Vec<_>>());
+            r.by_hook.insert(hook.to_string(), found.clone());
+            found
+        })
+    }
+
+    /// `read` on what was made of these sets (made now when the sets
+    /// changed since).
+    fn resolved<T>(&self, read: impl FnOnce(&mut Resolved) -> T) -> T {
+        let key: Vec<usize> = self.sets.iter().map(|s| std::ptr::from_ref::<WeaponSet>(s) as usize).collect();
+        let mut kept = self.resolved.lock().unwrap_or_else(|e| e.into_inner());
+        if !kept.as_ref().is_some_and(|r| r.sets == key) {
+            let mut seen = bevy::platform::collections::HashSet::new();
+            let mut all = Vec::new();
+            for set in &self.sets {
+                for w in &set.weapons {
+                    if let Some(data) = self.get(&w.id)
+                        && seen.insert(data.id.as_str())
+                    {
+                        all.push(data);
+                    }
+                }
+            }
+            *kept = Some(Resolved {
+                sets: key,
+                all: std::sync::Arc::new(all),
+                by_hook: BTreeMap::new(),
+            });
+        }
+        read(kept.as_mut().expect("made above"))
+    }
+
     pub fn get(&self, id: &str) -> Option<&'static WeaponData> {
         self.sets.iter().rev().find_map(|s| s.get(id))
     }

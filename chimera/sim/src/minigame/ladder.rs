@@ -710,14 +710,13 @@ fn check(def: &MinigameDef, catalog: &WeaponCatalog) -> Result<(), String> {
 fn melee_pool(def: &MinigameDef, catalog: &WeaponCatalog, hooks: &[RungExtrasHook]) -> Vec<&'static str> {
     let hands: Vec<&'static str> = hooks.iter().flat_map(|h| (h.characters)(catalog)).collect();
     let knives: Vec<&'static str> = hooks.iter().flat_map(|h| (h.melee)(catalog)).collect();
+    let hands: bevy::platform::collections::HashSet<&'static str> = hands.into_iter().collect();
+    let knives: bevy::platform::collections::HashSet<&'static str> = knives.into_iter().collect();
     let mut pool: Vec<&'static str> = Vec::new();
-    for set in &catalog.sets {
-        for w in &set.weapons {
-            let Some(data) = catalog.get(&w.id) else { continue };
-            let id: &'static str = &data.id;
-            if (data.melee.is_some() || knives.contains(&id)) && def.allows_weapon(id) && !hands.contains(&id) && !pool.contains(&id) {
-                pool.push(id);
-            }
+    for data in catalog.weapons().iter() {
+        let id: &'static str = &data.id;
+        if (data.melee.is_some() || knives.contains(id)) && def.allows_weapon(id) && !hands.contains(id) {
+            pool.push(id);
         }
     }
     pool

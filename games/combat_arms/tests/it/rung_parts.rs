@@ -137,7 +137,7 @@ fn the_rung_line_names_parts_by_display_name() {
 #[test]
 fn the_offer_names_each_rung_guns_parts_set() {
     let set = CaData::builtin().weapon_set();
-    let catalog = WeaponCatalog { sets: vec![set] };
+    let catalog = WeaponCatalog::of(vec![set]);
     let params = m4a1();
     // The built-in records name no models: one of the M4A1's muzzle parts
     // gets one (the install's have them).

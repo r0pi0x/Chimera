@@ -334,13 +334,10 @@ pub fn infected_hands(world: &World, d: &RungDraw) -> Vec<&'static str> {
     let Some(catalog) = world.get_resource::<WeaponCatalog>() else { return Vec::new() };
     let prefix = format!("{GAME}:");
     let mut pool: Vec<&'static str> = Vec::new();
-    for set in &catalog.sets {
-        for w in &set.weapons {
-            let Some(data) = catalog.get(&w.id) else { continue };
-            let id: &'static str = &data.id;
-            if id.starts_with(&prefix) && data.has_hook(INFECTED) && data.has_hook(KNIFE_HOOK) && d.def.allows_weapon(id) && !pool.contains(&id) {
-                pool.push(id);
-            }
+    for data in catalog.with_hook(INFECTED).iter() {
+        let id: &'static str = &data.id;
+        if id.starts_with(&prefix) && data.has_hook(KNIFE_HOOK) && d.def.allows_weapon(id) {
+            pool.push(id);
         }
     }
     let stock: Vec<&'static str> = world
@@ -356,15 +353,9 @@ pub fn infected_hands(world: &World, d: &RungDraw) -> Vec<&'static str> {
 fn knives(catalog: &WeaponCatalog) -> Vec<&'static str> {
     let prefix = format!("{GAME}:");
     let mut out: Vec<&'static str> = Vec::new();
-    for set in &catalog.sets {
-        for w in &set.weapons {
-            if let Some(data) = catalog.get(&w.id)
-                && data.id.starts_with(&prefix)
-                && data.has_hook(KNIFE_HOOK)
-                && !out.contains(&data.id.as_str())
-            {
-                out.push(&data.id);
-            }
+    for data in catalog.with_hook(KNIFE_HOOK).iter() {
+        if data.id.starts_with(&prefix) {
+            out.push(&data.id);
         }
     }
     out
@@ -375,15 +366,9 @@ fn knives(catalog: &WeaponCatalog) -> Vec<&'static str> {
 fn characters(catalog: &WeaponCatalog) -> Vec<&'static str> {
     let prefix = format!("{GAME}:");
     let mut out: Vec<&'static str> = Vec::new();
-    for set in &catalog.sets {
-        for w in &set.weapons {
-            if let Some(data) = catalog.get(&w.id)
-                && data.id.starts_with(&prefix)
-                && data.has_hook(INFECTED)
-                && !out.contains(&data.id.as_str())
-            {
-                out.push(&data.id);
-            }
+    for data in catalog.with_hook(INFECTED).iter() {
+        if data.id.starts_with(&prefix) {
+            out.push(&data.id);
         }
     }
     out
@@ -532,12 +517,23 @@ pub fn draw_parts(world: &World, weapon: &str, odds: &RungOdds, rng: &mut Rng) -
 /// friends: a sniper's scope, an event weapon's built-in parts), which is
 /// its stock and stays.
 pub fn slot_candidates<'a>(table: &'a CaModTable, params: &AttachParams, slot: usize) -> Vec<&'a str> {
+    slot_candidates_of(&accepted_records(table, params), params, slot)
+}
+
+/// The records of the parts `params` accepts, in its list's order (a
+/// name the table lacks: none): found once for a weapon's five slots
+/// (`CaModTable::find` walks the table).
+fn accepted_records<'a>(table: &'a CaModTable, params: &AttachParams) -> Vec<&'a super::attachments::ModRecord> {
+    params.accepts.iter().filter_map(|a| table.find(a.name()).and_then(|i| table.get(i))).collect()
+}
+
+/// `slot_candidates` over the accepted parts' records (`accepted_records`).
+fn slot_candidates_of<'a>(accepted: &[&'a super::attachments::ModRecord], params: &AttachParams, slot: usize) -> Vec<&'a str> {
     if matches!(params.slot_options.get(slot), Some(0 | 2)) || params.defaults.get(slot).is_some() {
         return Vec::new();
     }
     let mut out: Vec<&str> = Vec::new();
-    for a in &params.accepts {
-        let Some(r) = table.find(a.name()).and_then(|i| table.get(i)) else { continue };
+    for r in accepted {
         if r.slot() != Some(slot) || !r.weapon_part() || out.iter().any(|c| c.eq_ignore_ascii_case(&r.name)) {
             continue;
         }
@@ -556,8 +552,9 @@ pub fn draw_parts_with(table: &CaModTable, params: &AttachParams, odds: &RungOdd
     let mut order: Vec<usize> = (0..SLOTS).collect();
     order.sort_by(|a, b| odds.chance(*b).total_cmp(&odds.chance(*a)).then(a.cmp(b)));
     let mut picked: Vec<(usize, String)> = Vec::new();
+    let accepted = accepted_records(table, params);
     for slot in order {
-        let candidates = slot_candidates(table, params, slot);
+        let candidates = slot_candidates_of(&accepted, params, slot);
         if candidates.is_empty() {
             continue;
         }
@@ -715,8 +712,14 @@ pub fn bodies_for(holders: &Holders, catalog: Option<&WeaponCatalog>, data: Opti
 /// (`bodies_for`, the definition's overrides over the data's), drawn
 /// evenly.
 pub fn draw_holder(world: &World, d: &RungDraw, weapon: &str, rng: &mut Rng) -> Option<i32> {
-    let holders = holders().tuned(d.options);
-    let pool = bodies_for(&holders, world.get_resource::<WeaponCatalog>(), world.get_resource::<CaData>(), weapon);
+    // The built-in mapping parsed once per data (a rung each asked anew).
+    struct BuiltIn(Holders);
+    let data = world.get_resource::<CaData>();
+    let holders = match data {
+        Some(data) => data.memo(|| BuiltIn(holders())).0.tuned(d.options),
+        None => holders().tuned(d.options),
+    };
+    let pool = bodies_for(&holders, world.get_resource::<WeaponCatalog>(), data, weapon);
     (!pool.is_empty()).then(|| pool[rng.below(pool.len())])
 }
 
@@ -726,14 +729,10 @@ fn draw_melee(world: &World, d: &RungDraw, rng: &mut Rng) -> Option<&'static str
     let catalog = world.get_resource::<WeaponCatalog>()?;
     let prefix = format!("{GAME}:");
     let mut pool: Vec<&'static str> = Vec::new();
-    for set in &catalog.sets {
-        for w in &set.weapons {
-            let Some(data) = catalog.get(&w.id) else { continue };
-            let id: &'static str = &data.id;
-            let knife = data.has_hook(KNIFE_HOOK) && !data.has_hook(INFECTED);
-            if id.starts_with(&prefix) && knife && d.def.allows_weapon(id) && !pool.contains(&id) {
-                pool.push(id);
-            }
+    for data in catalog.with_hook(KNIFE_HOOK).iter() {
+        let id: &'static str = &data.id;
+        if id.starts_with(&prefix) && !data.has_hook(INFECTED) && d.def.allows_weapon(id) {
+            pool.push(id);
         }
     }
     (!pool.is_empty()).then(|| pool[rng.below(pool.len())])

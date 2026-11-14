@@ -1397,6 +1397,14 @@ load; work counts don't (performance.md, "Work counts"):
   over 60 M with their costliest systems; `CHIMERA_SPAWN_AT_ONCE=1` the
   old change, the whole map in a frame and floods whole in a tick;
   performance.md, "A dedicated server's map change").
+- A new ladder's cost and a death's tick: `cargo test -p ultimate_gun_game
+  --features dev --test it heavy::ladder_build -- --nocapture` (the
+  install's catalogue on the greybox: the definition made, the ladder
+  drawn and a match started, five times, each in instructions; 2 s) and
+  `... heavy::death_frames -- --nocapture` (de_dust2 with the drawing's
+  assets, six bots, 3,000 ticks: each tick somebody died in with its
+  systems over a quiet tick's; performance.md, "A death's frame, a new
+  ladder's frame").
 - Glyph atlases a text made on its own first frame (a HUD font and size no
   source declared to `client::text_warm`): the log's `text warm: N glyph
   atlases made on a text's first frame (... at [sizes] px)`; `text warm: N

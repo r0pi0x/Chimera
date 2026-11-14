@@ -1502,7 +1502,7 @@ What did not move, and its size (`docs/backlog.md`, "Nothing blocks the main thr
   colliders the tick's own spawns make from the map's entities (the logic's world, pickups),
   their props' shadows redrawn as they settle, the first physics step).
 - **A HUD text at a font and size nobody declared**: still 20-60 M on its first frame; each one logs `text warm: N glyph atlases made on a text's first frame (... at [sizes] px)`, so a playtest's log names what is left (`client::text_warm`, below). Declared now: the shell's kill feed, minigame scoreboard, minigame panel, match-end screen, chat, hints and `game_text`, every text that exists empty (callouts, the respawn countdown, hidden HUDs' labels), and Combat Arms' HUD (its panels' fonts and each text of the install's HUD, score, result, team list and death screen layouts). Since declared too: every game menu layout's label, button and rich-text fonts (`client::vgui::warm_fonts`: CS:S's buy and team menus, scoreboard, spectator bars, message of the day), CS:S's texts spawned on demand (`cs_source::ui::ON_DEMAND_FONTS`: the radio and plain menus, the target's name, the centre print, the radar's and overview's place names, the voice and vote panels, the plain scoreboard; its death notices' names and icon glyphs when the app has no shared feed) and the games' kill-feed icon fonts and glyph kill marks at the sizes the feed draws them (`WeaponIcons::register_glyph_fonts`: CS:S's and HL2:DM's). Not declared: other games' HUD texts drawn by `hud_text` (its own rasterizer, not Bevy's atlases), and any text whose size no source names (the log says which).
-- A match's start: 100 M (`ladder::start`, drawing every rung's extras), a `+map`'s first listing of Combat Arms' maps
+- A match's start: 100 M (`ladder::start`, drawing every rung's extras; since 16 M: "A death's frame, a new ladder's frame"), a `+map`'s first listing of Combat Arms' maps
   (292 M, opening the install's archives: `read_map_names`, once a session), and the first ladder's
   `markers::show` opening its archives on the frame (about 40 M).
 - A weapon off the ladder: its timing and its first draw still read or wait as before.
@@ -4042,11 +4042,13 @@ What is left in one frame, none over 160 M on the dev build:
 
 - The command's frame: a new ladder (`ugg_new`, the rotation's next match: 100 M of
   `run_queue`, drawing every rung's extras; "Nothing blocks the main thread" has it as a
-  match's start) and the old map's unload (2-27 M).
+  match's start) and the old map's unload (2-27 M). Since: the ladder 21 M and its draw
+  15 M ("A death's frame, a new ladder's frame").
 - The first tick on a Source map (141-159 M: the logic world's `load` 66-78 M, the mass
   properties and bounds of the colliders the tick's own spawns make): as on a client ("A
   map's colliders after its swap frame").
-- The match's start after the lobby (`serve_minigame` 75-95 M: the ladder again).
+- The match's start after the lobby (`serve_minigame` 75-95 M: the ladder again). Since:
+  under 60 M.
 - A server's start map is still spawned whole before it listens (nobody is on it yet).
 - Not measured on the playtest build or with clients connected (the rehearsal's numbers
   were that build's): the next rehearsal's `tick_stats` says.
@@ -4057,6 +4059,122 @@ server and a client over loopback: no tick while the map comes in, the whole map
 frame and its colliders after, a new game only once it is all in, the client told once,
 let in again and its command clock without a jump; the greybox calls a spawn under way
 off).
+
+## A death's frame, a new ladder's frame (2026-11-14)
+
+Three of the leftovers of "Nothing blocks the main thread", each measured in a seeded
+headless scenario by work counts (`metrics::work`; dev profile, no `perf` on the box),
+ranked by what a fix gains for its effort.
+
+### A new ladder (`ugg_new`, a rotation, a match's start)
+
+**The repro.** `heavy::ladder_build` in ultimate_gun_game: the automatic gun game on the
+greybox with the install's data (`CaSimWith(CaData::install())`: 2,404 weapons in the
+catalogue, Combat Arms' most of them), five ladders in a row; what the command's frame of
+`ugg_new` and a rotation run (`generate`: the definition made again; `ladder::draw`: the
+next match's ladder for the asset offer) and what a match's start runs (`minigame::start`:
+the ladder made again with its rungs' extras) counted apart. 2 s to run, the same counts on
+every run.
+
+**What it found.** Every stage walked the whole catalogue, several times, and most walks
+were quadratic or asked each weapon's id of every set again (M instructions):
+
+| Stage | Before | After | What it was |
+|---|---|---|---|
+| `generate`: `auto::powers` | 52.6 | 5.6 | every gun's score from its data (five distances, each game's readers), the same each time |
+| `generate`: `auto::report` | 18.7-20.0 | 0.8 | a game's install guns: each catalogue weapon looked for in the list made so far |
+| `generate`: `auto::definition` | 18.2 | 3.8 | `auto::ladder`'s pools: each gun looked for in every pool |
+| `generate`: `auto::drawable` | 8.5 | 9.7 | harm readers and exclusions per gun (the exclusions by id now; not otherwise touched) |
+| `generate` in all | 100.4 | 21.1 | |
+| the ladder's `finale` (`melee_pool`) | 9.9 | 0.6 | every hook's knives and hands (a walk each) asked for each weapon |
+| the rungs' extras (`draw_extras`) | 59-63 | 14.2 | a Combat Arms rung 4.0-4.6: its parts 1.0-1.7 (each of five slots searching the attachment table for every accepted part), its holder 1.5 (the mapping's TOML parsed per rung), its melee weapon 1.3 (a walk of the catalogue per rung); now 0.9-1.5 |
+| `ladder::draw` in all | 69-73 | 15.3-15.9 (one seed of five 32.9) | |
+| `minigame::start` | 71-75 | 15.6-16.2 (33.2) | the draw again, and the match |
+
+**The fixes.**
+
+- `WeaponCatalog::weapons`: every weapon once, as `get` gives it, in the order the sets
+  first name them, and `with_hook`: those naming a hook; each list made once per list of
+  sets (kept in the catalogue, shared by its copies, made anew when a set is added or
+  replaced). The walks of every set with a `get` per weapon (`Capabilities::with_maps`,
+  `ladder::melee_pool`, Combat Arms' `knives`, `characters`, `infected_hands`,
+  `draw_melee`) read these, and look ids up in sets instead of lists.
+- `Powers::of` keeps each weapon's power by its data's address and class (`PowerMemo` in
+  `PowerReaders`, emptied when the readers or the curve differ): the data is `&'static`
+  and the score a pure function of it.
+- `auto::ladder`'s pools and `auto::drawable`'s exclusions by id; a Combat Arms rung's
+  accepted parts found once for its five slots; its built-in holder mapping parsed once per
+  data (`CaData::memo`).
+
+The draws are the same draws: the lists hold the same weapons in the same order
+(`chimera_sim`'s `the_catalogues_weapons_are_each_once_and_follow_its_sets`: the walk and
+the list agree, also after a set is added; powers asked twice, and with another curve), and
+the ladders' own tests (seeds to rungs, extras, finales) pass unchanged.
+
+**On the server** (`heavy::server_map_change`, one run; M instructions):
+
+| Map | The command's frame, before | after | The match's start after the lobby, before | after | Worst frame, before | after |
+|---|---|---|---|---|---|---|
+| cs_office | 150 | 61 | 79 | under 60 | 159 | 172 (the first tick's) |
+| dm_lockdown | 129 | 88 | 91 | under 60 | 141 | 138 (the first tick's) |
+| combat_arms:warehouse | 151 | under 60 | 73 | under 60 | 151 | 78 (a spawn step) |
+| de_dust2 | 103 | under 60 | 92 | under 60 | 103 | 107 (the map's frame) |
+
+What the command's frame still holds there is `finish_level_change` (70-74 M on cs_office
+and dm_lockdown: the old map out and, in this repeatable run, the load's result waited
+for; not looked into).
+
+Left: a session's first draw (72 M: the character data's body lists and missing bodies,
+worked out once per install; at the first match's start); `auto::drawable` (9.7 M of
+`generate`'s 21 M); one seed in five draws at 33 M (not looked into).
+
+Guard: `heavy::ladder_build` (after the session's first: `generate` under 45 M, `draw` and
+`start` under 50 M each).
+
+### A death (a ragdoll's first frame)
+
+**The repro.** `heavy::death_frames` in ultimate_gun_game: the gun game on de_dust2 with
+the drawing's assets (no window or render world), six bots, seed 36336, repeatable, 3,000
+ticks each counted; the ticks somebody died in against the others (median 11.3 M, p99
+14.0 M). Four deaths in the run, each with a ragdoll.
+
+| | Before | After |
+|---|---|---|
+| a model's first death, the tick | 30.1 M | 26.6 M |
+| of it `spawn_ragdolls` | 7.33 M | 3.83 M |
+| later deaths, the tick | 21.9-24.9 M | 21.9-24.1 M |
+| of it `spawn_ragdolls` | 2.46-3.70 M | 2.31-2.58 M |
+| a death's tick over the quiet median: median, worst | 13.6 M, 18.8 M | 12.8 M, 15.3 M |
+
+The backlog's "convex hulls per death" were already per model's body since "A ragdoll's
+cost" (`RagdollShapes`); what was left of them was each model's first death (its 15-16
+bodies' hulls and mass properties, 3.5 M) and a cache that emptied itself at 512 shapes
+(searched one by one). Now every character model's shapes are made ahead on a task when
+the models change (`ragdoll::warm_shapes`, from `spawn_ragdolls`: a system of its own
+moved the schedules' ratchet; a death before they are in makes its own, as before), kept by a hash of their corners, 4,096 at most. A death's tick is otherwise the
+kill's own work, none of it a frame: the ragdoll's bodies and joints spawned (2.3-2.6 M),
+the killer's next rung (`weapon_frame` 1.0-2.2 M: the new gun), `handle_deaths` 0.5-1.6 M,
+avian's bounds and mass properties for the 15 new bodies (1.3 M), the drawn body handed
+over (`adopt_bodies` 0.4-0.8 M), and new archetypes (1-37 a death).
+
+cs_source's `heavy::map_ragdoll_cost` (ten deaths of one model): the first's spawn tick
+7.3 M to 6.1 M (what is left over the later ones' 3.3-4.0 M is the ragdoll's new archetypes).
+
+Guards: `heavy::death_frames` (no death's tick over 30 M more than the quiet median) and
+cs_source's `ragdoll::a_models_shapes_are_made_before_its_first_death` (the shapes are in
+before the death, and the ragdoll is the one made without them).
+
+### The logic world's load (measured, not changed)
+
+The first tick on a Source map (`logic::bridge`'s `load`, 31-79 M of a 80-172 M frame in
+`heavy::server_map_change`), cs_office in a `CsSim` (821 map entities, 226 props; M
+instructions): the entities spawned 28.4 (6.5 of it their classes' spawns, the rest each
+entity's keyvalues, outputs and hulls copied: 27 k an entity, no one hot spot), templates
+0.5, `attach_props` 13.5 (60 k a prop: its look and sequence inserted, each an archetype
+move), `static_collision` 6.2 (the map's brushes copied), `link_anchored` 1.2, `activate`
+0.2, `attach_nodes` 0.4. No quadratic walk to take out: the gain would be building the
+logic world on the load's task (it reads the entities, the tick, a seed, the static
+collision and the game's classes) and pairing the props in the spawn's own steps.
 
 ## A client's memory (2026-11-11)
 

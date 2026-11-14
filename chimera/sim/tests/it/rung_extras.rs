@@ -466,3 +466,72 @@ fn a_full_game_runs_up_through_the_melee_rungs_and_the_last_ones_kill_wins() {
     kill(&mut sim, b, a);
     assert!(matches!(sim.app.world().resource::<Match>().phase, Phase::RoundOver { .. } | Phase::MatchOver), "{:?}", sim.app.world().resource::<Match>().phase);
 }
+
+/// `WeaponCatalog::weapons` is every weapon once, as `get` gives it, in
+/// the order the sets first name them, and `with_hook` those naming a
+/// hook; both follow the catalogue when a set is added (a ladder's draws
+/// walk them instead of every set: docs/performance.md, "A new ladder's
+/// frame"). The powers made twice are the same (`Powers::of` keeps them).
+#[test]
+fn the_catalogues_weapons_are_each_once_and_follow_its_sets() {
+    use chimera_sim::{
+        minigame::power::{PowerCurve, PowerReaders, Powers},
+        weapon::data::WeaponCatalog,
+    };
+    let mut sim = sim_with(DEF, 1);
+    let walk = |c: &WeaponCatalog| {
+        let mut ids: Vec<&'static str> = Vec::new();
+        for set in &c.sets {
+            for w in &set.weapons {
+                if let Some(d) = c.get(&w.id)
+                    && !ids.contains(&d.id.as_str())
+                {
+                    ids.push(&d.id);
+                }
+            }
+        }
+        ids
+    };
+    let catalog = sim.app.world().resource::<WeaponCatalog>().clone();
+    let ids: Vec<&str> = catalog.weapons().iter().map(|w| w.id.as_str()).collect();
+    assert!(ids.len() > MELEES.len() && ids.contains(&GHOST_KNIFE));
+    assert_eq!(ids, walk(&catalog));
+    for w in catalog.weapons().iter() {
+        assert!(std::ptr::eq(*w, catalog.get(&w.id).unwrap()), "{}: not the catalogue's own data", w.id);
+    }
+    let hooked = |c: &WeaponCatalog, hook: &str| -> Vec<&'static str> {
+        c.weapons().iter().filter(|w| w.has_hook(hook)).map(|w| w.id.as_str()).collect()
+    };
+    let hook = catalog.weapons().iter().find_map(|w| w.hooks.keys().next().cloned());
+    if let Some(hook) = &hook {
+        let with: Vec<&str> = catalog.with_hook(hook).iter().map(|w| w.id.as_str()).collect();
+        assert!(!with.is_empty());
+        assert_eq!(with, hooked(&catalog, hook));
+    }
+    assert!(catalog.with_hook("kit:no_such_hook").is_empty());
+    // A set more: the lists are the new catalogue's.
+    let more = knife("kit:knife_late");
+    sim.app.add_weapon_data(&[("late.toml", more.as_str())]).expect("the late knife loads");
+    let later = sim.app.world().resource::<WeaponCatalog>().clone();
+    let ids: Vec<&str> = later.weapons().iter().map(|w| w.id.as_str()).collect();
+    assert!(ids.contains(&"kit:knife_late"));
+    assert_eq!(ids, walk(&later));
+    if let Some(hook) = &hook {
+        let with: Vec<&str> = later.with_hook(hook).iter().map(|w| w.id.as_str()).collect();
+        assert_eq!(with, hooked(&later, hook));
+    }
+    // Powers asked twice (the second from what the first kept), and with
+    // another curve.
+    let readers = sim.app.world().get_resource::<PowerReaders>().cloned().unwrap_or_default();
+    let guns = || testkit::STAND_IN.guns.iter().map(|g| (g.id, g.class)).collect::<Vec<_>>();
+    assert!(guns().iter().all(|(id, _)| later.get(id).is_some()), "the kit's guns are in the catalogue");
+    let curve = PowerCurve::shipped();
+    let first = Powers::of(guns(), &later, &readers, &curve);
+    assert_eq!(first, Powers::of(guns(), &later, &readers, &curve));
+    let mut other = curve.clone();
+    other.score.reaction += 0.5;
+    let changed = Powers::of(guns(), &later, &readers, &other);
+    assert_ne!(first, changed, "another curve scores anew");
+    assert_eq!(changed, Powers::of(guns(), &later, &PowerReaders::default(), &other), "the kit has no readers");
+    assert_eq!(first, Powers::of(guns(), &later, &readers, &curve));
+}

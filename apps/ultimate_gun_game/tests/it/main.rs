@@ -8,6 +8,8 @@ mod fallbacks;
 mod hl2_alt_ammo;
 mod hl2_set_pieces;
 mod heavy {
+    mod death_frames;
+    mod ladder_build;
     mod hl2_map_items;
     mod map_swap_frames;
     mod map_swap_render;

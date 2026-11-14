@@ -54,7 +54,9 @@
 //!   turret) scores by that device's gun, as its game's reader of the
 //!   device hook gives it: the placing and setup as latency, and the
 //!   device's fire rate times the curve's `device_uptime`, the share of
-//!   the time it is firing at the player counted.
+//!   the time it is firing at the player counted. A weapon's power is
+//!   worked out once per readers and curve (`PowerMemo`, kept in
+//!   `PowerReaders`): every new ladder asks for the whole catalogue's.
 //! - `ladder_power` (console): every classed gun of the catalogue, by
 //!   band, weakest first: its score, time to kill at 15 m and band.
 //!   `ladder_skipped`: the guns a draw never deals (`auto::drawable`).
@@ -332,6 +334,20 @@ pub struct PowerReaders {
     pub stats: Vec<(&'static str, PowerReader)>,
     pub harm: crate::weapon::harm::HarmReaders,
     pub exclusions: super::auto::DrawExclusions,
+    /// The powers worked out so far (`Powers::of`), shared by the copies.
+    memo: std::sync::Arc<std::sync::Mutex<PowerMemo>>,
+}
+
+/// The powers `Powers::of` worked out with one list of readers and one
+/// curve: a weapon's data (`&'static`, by its address) and class give the
+/// same power each time, and every new ladder asked for thousands again
+/// (52 M instructions a definition; docs/performance.md, "A new ladder's
+/// frame"). Emptied when the readers or the curve differ.
+#[derive(Default)]
+struct PowerMemo {
+    /// The readers' hooks and addresses, and the curve, the powers are of.
+    of: Option<(Vec<(&'static str, usize)>, PowerCurve)>,
+    powers: BTreeMap<(usize, GunClass), Power>,
 }
 
 pub trait PowerAppExt {
@@ -497,17 +513,27 @@ impl Powers {
         curve: &PowerCurve,
     ) -> Self {
         let mut out = BTreeMap::new();
+        let mut memo = readers.memo.lock().unwrap_or_else(|e| e.into_inner());
+        let key: Vec<(&'static str, usize)> = readers.stats.iter().map(|(hook, read)| (*hook, *read as usize)).collect();
+        if !memo.of.as_ref().is_some_and(|(k, c)| *k == key && c == curve) {
+            memo.of = Some((key, curve.clone()));
+            memo.powers.clear();
+        }
         for (id, class) in guns {
             let data = catalog.get(id);
-            let (score, ttk) = data.map_or((0.0, f32::INFINITY), |d| score(d, readers, curve));
-            out.insert(
-                id,
+            let power = |data: Option<&'static WeaponData>| {
+                let (score, ttk) = data.map_or((0.0, f32::INFINITY), |d| score(d, readers, curve));
                 Power {
                     band: band_of(class, data, readers, curve),
                     score,
                     ttk,
-                },
-            );
+                }
+            };
+            let power = match data {
+                Some(d) => *memo.powers.entry((std::ptr::from_ref::<WeaponData>(d) as usize, class)).or_insert_with(|| power(data)),
+                None => power(None),
+            };
+            out.insert(id, power);
         }
         Self(out)
     }
