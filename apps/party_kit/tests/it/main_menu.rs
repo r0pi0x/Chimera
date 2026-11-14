@@ -9,7 +9,8 @@
 //! first); Combat Arms' loading screen kept to its own maps; the data; the
 //! background (the menu's own backdrop with nothing at hand and no map
 //! load; a map at hand loaded behind it with downloads held, then the
-//! crossfade; the rotation between starts; the backdrop's cost a frame).
+//! crossfade; the rotation between starts; the backdrop's cost a frame);
+//! the logo pass on whichever UI camera draws.
 
 use bevy::prelude::*;
 use chimera_client::client::{AppHooks, front_end};
@@ -149,6 +150,26 @@ fn startup_without_a_map_opens_the_menu_and_with_one_does_not() {
             .resource::<chimera_client::client::front_end::AppMenu>()
             .open
     );
+}
+
+/// The logo pass between screens (`client::logo_pass`) draws on
+/// whichever UI camera draws: the menu's while the menu shows, the
+/// shell's (the default) in the game, as the lobby does.
+#[test]
+fn logo_pass_covers_both_ui_cameras() {
+    use chimera_client::client::logo_pass::LogoPassRoot;
+    let mut sim = local(true);
+    sim.app.world_mut().spawn((Camera::default(), IsDefaultUiCamera));
+    let pass = sim.app.world_mut().spawn((LogoPassRoot, Node::default())).id();
+    sim.ticks(2);
+    let menu_cam = {
+        let w = sim.app.world_mut();
+        w.query_filtered::<Entity, With<main_menu::MenuUiCamera>>().single(w).expect("the menu's camera")
+    };
+    assert_eq!(sim.app.world().get::<UiTargetCamera>(pass).map(|t| t.entity()), Some(menu_cam), "over the menu");
+    sim.app.world_mut().resource_mut::<PartyMenu>().screen = Screen::InGame;
+    sim.ticks(2);
+    assert!(sim.app.world().get::<UiTargetCamera>(pass).is_none(), "the shell's camera in the game");
 }
 
 #[test]

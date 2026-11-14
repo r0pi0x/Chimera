@@ -23,6 +23,10 @@
 //!   `mp_lobby_ready_up`).
 //! - **The countdown** under it, big: "Match starts in" and the seconds.
 //!
+//! Under a theme with a logo pass (`logo_pass`), the lobby comes up and
+//! goes (the match starting, a disconnect) at a pass's swap, staying up
+//! until the slab covers it (`LobbyGate`).
+//!
 //! An app whose theme lays the lobby out (`chimera_ui::Theme`,
 //! `[layout.lobby]`: the Ultimate Gun Game's) gets the kit's panel
 //! instead (`lobby_panel`), from the same view, with the map's game, the
@@ -52,9 +56,33 @@ pub struct PreMatchLobbyPlugin;
 impl Plugin for PreMatchLobbyPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LobbyView>()
+            .init_resource::<LobbyGate>()
+            .add_observer(pass_covered)
             .add_systems(Startup, spawn)
             .add_systems(Update, (follow.in_set(LobbyFollow), draw.after(LobbyFollow).run_if(not(super::lobby_panel::themed))));
         super::lobby_panel::add(app);
+    }
+}
+
+/// Where the lobby is in its passes (`logo_pass`): waiting for the swap
+/// to come up, up, or still up until the swap takes it down.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LobbyGate {
+    #[default]
+    Off,
+    Entering,
+    In,
+    Leaving,
+}
+
+/// The lobby comes up or goes at the pass's swap.
+fn pass_covered(ev: On<super::logo_pass::PassCovered>, mut gate: ResMut<LobbyGate>, mut view: ResMut<LobbyView>) {
+    if ev.has("lobby_enter") && *gate == LobbyGate::Entering {
+        *gate = LobbyGate::In;
+    }
+    if ev.has("lobby_leave") && *gate == LobbyGate::Leaving {
+        *gate = LobbyGate::Off;
+        view.set_if_neq(LobbyView::default());
     }
 }
 
@@ -214,14 +242,39 @@ fn follow(
     settings: Option<Res<chimera_net::net::NetSettings>>,
     join: Option<Res<chimera_net::net::client::JoinProgress>>,
     ladder: Option<Res<chimera_sim::minigame::ladder::Ladder>>,
+    (mut passes, mut gate): (super::logo_pass::Passes, ResMut<LobbyGate>),
     mut view: ResMut<LobbyView>,
 ) {
+    // Through the logo pass when the theme has one: up and down at its swap.
+    let pass = passes.on();
     let Some(l) = lobby.iter().next() else {
         if view.shown {
+            if pass {
+                if *gate != LobbyGate::Leaving {
+                    *gate = LobbyGate::Leaving;
+                    passes.ask("lobby_leave");
+                }
+                return;
+            }
             view.set_if_neq(LobbyView::default());
+        }
+        if *gate != LobbyGate::Off && *gate != LobbyGate::Entering {
+            *gate = LobbyGate::Off;
         }
         return;
     };
+    if pass {
+        match *gate {
+            LobbyGate::Off => {
+                *gate = LobbyGate::Entering;
+                passes.ask("lobby_enter");
+                return;
+            }
+            LobbyGate::Entering => return,
+            LobbyGate::Leaving => *gate = LobbyGate::In,
+            LobbyGate::In => {}
+        }
+    }
     let mine = match role.as_deref() {
         Some(NetRole::Client) => me.map(|m| m.0),
         Some(NetRole::Server) if !host.is_empty() => Some(HOST_ID),

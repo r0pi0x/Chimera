@@ -11,6 +11,7 @@ mod dead_view;
 mod game_app;
 mod hit_marker;
 mod lobby_panel;
+mod logo_pass;
 mod map_load_steps;
 mod swap_effect;
 mod text_warm;

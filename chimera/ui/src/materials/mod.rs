@@ -220,7 +220,8 @@ pub struct PassMaterial {
     /// x: progress 0-1, y: tan, z: has a mark.
     #[uniform(3)]
     pub state: Vec4,
-    /// x: from, y: travel, z: mark x in the ink band, w: ink band width.
+    /// x: from, y: travel, z: the mark's centre in the ink band (at the
+    /// frame's mid-height, as every offset), w: ink band width.
     #[uniform(4)]
     pub sweep: Vec4,
     /// x, y: the accent hairline's offset and width; z, w: the accent band's.

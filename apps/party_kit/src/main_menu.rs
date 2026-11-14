@@ -74,7 +74,8 @@
 //!   shows by drawing the UI on a camera of its own (`MenuUiCamera`; the
 //!   shell's UI camera, which the HUD draws on, off; the console and the
 //!   pre-match lobby's screen move to it, so a player still downloading
-//!   sees the lobby over the loading panel).
+//!   sees the lobby over the loading panel, and so does the logo pass
+//!   between screens, `client::logo_pass`, so it covers the menu too).
 //!
 //! The state is `PartyMenu` (a resource the menu owns, set at known
 //! moments: the front end's events `EnteredGame`, `LeftGame`, `Joining`,
@@ -1639,7 +1640,11 @@ fn cameras(
     mut ours: Query<(Entity, &mut Camera), With<MenuUiCamera>>,
     consoles: Query<
         (Entity, Has<UiTargetCamera>),
-        Or<(With<ConsoleRoot>, With<chimera_client::client::prematch_lobby::LobbyRoot>)>,
+        Or<(
+            With<ConsoleRoot>,
+            With<chimera_client::client::prematch_lobby::LobbyRoot>,
+            With<chimera_client::client::logo_pass::LogoPassRoot>,
+        )>,
     >,
     mut commands: Commands,
 ) {

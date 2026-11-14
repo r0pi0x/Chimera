@@ -158,7 +158,7 @@ from = -175.0
 travel = 287.0
 mark_w = 13.0
 mark_h = 9.33
-mark_x = 81.5
+mark_x = 81.5          # its centre in the ink band, at mid-height: the frame's centre at the swap
 
 [layout.lobby]       # the pre-match lobby (chimera_client prematch_lobby): a 100 x 56.25 frame
 margin = 4.6         # left and right

@@ -3,7 +3,9 @@
 // (accent hairline, the ink band carrying the mark, an accent band, a
 // light band) at `from + travel * hold(p)` cq; the mark wipes in and out
 // inside the ink band. Sizes in cq of a 16:9 frame (1 cq = height / 56.25);
-// wider frames stretch the bands so they still cover.
+// wider frames stretch the bands so they still cover. Offsets are measured
+// at the frame's mid-height row (a skew about the middle), and `mark x` is
+// the mark's centre: at the swap (p = .5) it sits at the frame's centre.
 
 import bevy_ui_render::ui_vertex_output::UiVertexOutput;
 
@@ -12,7 +14,7 @@ import bevy_ui_render::ui_vertex_output::UiVertexOutput;
 @group(1) @binding(2) var<uniform> fg: vec4<f32>;
 // x: progress 0-1, y: tan of the slant, z: has a mark (0/1), w: unused.
 @group(1) @binding(3) var<uniform> state: vec4<f32>;
-// x: from, y: travel, z: mark x in the ink band, w: ink band width.
+// x: from, y: travel, z: the mark's centre in the ink band, w: ink band width.
 @group(1) @binding(4) var<uniform> sweep: vec4<f32>;
 // x: accent hairline offset, y: its width, z: accent band offset, w: width.
 @group(1) @binding(5) var<uniform> bands: vec4<f32>;
@@ -58,7 +60,7 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     let off = (wcq - 100.0 * s) * 0.5;
     let x = px.x / cq;
     let y = px.y / cq;
-    let u = (x - off - (FRAME_H - y) * tan) / s;
+    let u = (x - off - (FRAME_H * 0.5 - y) * tan) / s;
     let du = 1.0 / (cq * s);
     let x0 = sweep.x + sweep.y * hold(p);
 
@@ -73,8 +75,8 @@ fn fragment(in: UiVertexOutput) -> @location(0) vec4<f32> {
     col = mix(col, fg, k_fg);
 
     if (state.z > 0.5 && k_ink > 0.0) {
-        // The mark, upright, centred at the frame's mid-height row of the band.
-        let mx = off + s * (x0 + sweep.z) + (FRAME_H * 0.5) * tan;
+        // The mark, upright, centred on the band's mid-height row.
+        let mx = off + s * (x0 + sweep.z) - bands2.z * 0.5;
         let my = (FRAME_H - bands2.w) * 0.5;
         let mu = (x - mx) / bands2.z;
         let mv = (y - my) / bands2.w;

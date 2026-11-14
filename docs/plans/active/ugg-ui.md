@@ -441,7 +441,18 @@ the kit's style layer and Look Book V marks when the theme has
 `[layout.lobby]`; the shell's panel otherwise; `LobbyView` gained the
 map's game, the slots, the ladder's games and each row's ping;
 `SlantMaterial::outline` for the unready block; tests
-`chimera/client/tests/it/lobby_panel.rs`). Next: the logo pass.
+`chimera/client/tests/it/lobby_panel.rs`). The logo pass is in
+(`client::logo_pass`: `Passes::ask(key)` and the `PassCovered`
+event at the swap, which the screens observe; the swap in `PreUpdate`, reduced motion `ui_reduce_motion 1` as a 150 ms fade,
+`ui_pass [p]` holding a pass for screenshots; its root moves to the
+party menu's camera with the lobby and the console; the kit's
+`pass.wesl` measures offsets at mid-height with `mark_x` the mark's
+centre, so the mark holds centred at the swap) on the lobby coming up
+and going (lobby to match) and the match end and the next match (tests
+`chimera/client/tests/it/logo_pass.rs`, party_kit
+`main_menu::logo_pass_covers_both_ui_cameras`). Next: the pass on the
+other moves (menu to loading, loading to lobby where the lobby isn't
+first, Leave, disconnect).
 
 - `client::logo_pass`; the front end's moves through it (2.5, 3).
 - `prematch_lobby` rebuilt on the kit (HOST from `LobbyRow::id ==
