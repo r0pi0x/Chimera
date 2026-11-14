@@ -212,6 +212,10 @@ the pre-fire's update, 32 have a pre-fire of non-zero length (question
    150 ms (weapon_classes.md 4) isn't in beretta_m92fs.toml yet, so ours
    doesn't hold a reload after a shot. Adding `trigger.postfire = 0.15`
    is a one-line change once its tests are checked.
+   **Done (2026-11-13):** beretta_m92fs.toml's `trigger.postfire = 0.15`
+   (test weapon_timings `our_m92fs_holds_a_reload_for_its_postfire`;
+   weapon_classes t27's press at 250 ms now cuts the post-fire short and
+   fires on its update, as case 27 says).
 8. The spin's and the flame's lengths play at rate 1 (no `FireAniRate`
    or parts on them; every stock value found is 0); the semi-automatic
    cancel of a primary with a `prefire` (view_models.md Corrections 2:

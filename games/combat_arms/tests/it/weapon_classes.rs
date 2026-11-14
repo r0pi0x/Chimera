@@ -1185,16 +1185,19 @@ fn t26_empty_pump_gun_trigger_held() {
 
 /// 27. The M92FS: one round a press; a held re-press during the fire
 /// animation fires as it ends (180 ms); a tap inside it is lost; a press
-/// after it fires at once.
+/// after it, during the 150 ms `postfire`, cuts that short and fires on
+/// the update that sees it (view_models.md 7: no chain, "second round at
+/// 250").
 #[test]
 fn t27_pistol_semi_auto() {
-    // (press, release) pairs in ms, and the second round's time.
+    // (press, release) pairs in ms, and the second round's time after the
+    // first's (which comes the chain's 2 updates after its press).
     type Case = (&'static [(u32, u32)], Option<f64>);
     let cases: [Case; 4] = [
         (&[(0, 1000)], None),
         (&[(0, 50), (100, 1000)], Some(0.18)),
         (&[(0, 50), (100, 150)], None),
-        (&[(0, 50), (250, 1000)], Some(0.25)),
+        (&[(0, 50), (250, 1000)], Some(0.23)),
     ];
     for (presses, second) in cases {
         let mut sim = sim_at(0.01);
@@ -1277,10 +1280,15 @@ fn t29_pistol_cones_and_kick() {
     let (p, w) = holding(&mut sim, "test:m92fs_steady");
     let mut cones = Vec::new();
     for _ in 0..8 {
+        // A press during the 150 ms post-fire fires on the update that
+        // sees it (view_models.md 7), so the clip is read before the press.
+        let clip = mag(&sim, w).clip;
         sim.intent(p).fire = true;
         sim.ticks(1);
         sim.intent(p).fire = false;
-        until_round(&mut sim, w);
+        if mag(&sim, w).clip == clip {
+            until_round(&mut sim, w);
+        }
         cones.push(shown_cone(&sim, w));
         sim.seconds(0.2);
     }
