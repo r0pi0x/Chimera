@@ -98,7 +98,9 @@
 //! character's selection (`CaLook`: players', bots'), its trackers'
 //! playback (`NetTrack`: name, start tick, the running transition's
 //! previous animation and key, looping, rate) with the crouch, pitch and
-//! twist bytes (`CaAnimNet`, 8's legacy transport), and bodies (`CaBody`);
+//! twist bytes (`CaAnimNet`, 8's legacy transport; the crouch byte with
+//! its last few ticks' values, `r_trail`, so a crouch starts at the tick
+//! it did between updates), and bodies (`CaBody`);
 //! a client keeps it by server tick (`interp::Snapshots`) and plays other
 //! players' trackers, crouch and aim as the server had them at the tick
 //! it draws them at (`ClientClock`: its render tick, what its commands'
@@ -804,6 +806,13 @@ pub struct CaAnimNet {
     pub lower: NetTrack,
     pub crouch: NetTrack,
     pub r: u8,
+    /// The crouch fraction (`r`) at the server ticks just before this
+    /// one, newest first (`CROUCH_TRAIL` of them; empty: `r` was the same
+    /// at all of them), so a client that hears every few ticks
+    /// (`cl_updaterate`) plays the crouch at the tick it draws as the
+    /// server had it then, not along a line between its updates, which
+    /// would start a crouch up to an update early (`Followed::at`).
+    pub r_trail: Vec<u8>,
     pub pitch: i8,
     pub twist: i8,
     pub death: Option<String>,
@@ -814,6 +823,47 @@ pub struct CaAnimNet {
     /// (`follow_hulls`): its spheres stand on that box's bottom on every
     /// machine (the crouch shrinks it).
     pub hull: Option<[f32; 3]>,
+}
+
+/// How many ticks back `CaAnimNet::r_trail` goes: an update interval at
+/// `sv_minupdaterate` (10 a second) of Combat Arms' 15 ms ticks.
+pub const CROUCH_TRAIL: usize = 7;
+
+/// The crouch trail (`CaAnimNet::r_trail`) for a tick whose crouch byte
+/// is `r`, from the last tick's state `prev` (none: the first).
+fn r_trail(prev: Option<&CaAnimNet>, r: u8) -> Vec<u8> {
+    let Some(p) = prev else { return Vec::new() };
+    let older = |i: usize| if p.r_trail.is_empty() { p.r } else { p.r_trail[i] };
+    let trail: Vec<u8> = std::iter::once(p.r).chain((0..CROUCH_TRAIL - 1).map(older)).collect();
+    if trail.iter().all(|&x| x == r) { Vec::new() } else { trail }
+}
+
+/// The crouch fraction at render tick `tick` between kept states `a`
+/// (tick `ta`) and `b` (tick `tb`): each whole tick's as the server had
+/// it (`b`'s trail; ticks older than it reaches between `a` and the
+/// oldest it does), then between the two whole ticks around `tick`, as
+/// lag compensation's kept ticks are.
+fn r_between(ta: u64, a: &CaAnimNet, tb: u64, b: &CaAnimNet, tick: f64) -> f32 {
+    let byte = |x: u8| x as f32 / 255.0;
+    // The oldest tick the trail covers, and the fraction there.
+    let reach = (CROUCH_TRAIL as u64).min(tb.saturating_sub(ta));
+    let oldest = tb - reach;
+    let kept = |back: u64| if back == 0 || b.r_trail.is_empty() { b.r } else { b.r_trail[back as usize - 1] };
+    let at = |k: u64| -> f32 {
+        if k <= ta {
+            byte(a.r)
+        } else if k >= tb {
+            byte(b.r)
+        } else if k >= oldest {
+            byte(kept(tb - k))
+        } else {
+            let (from, to) = (byte(a.r), byte(kept(tb - oldest)));
+            from + (to - from) * ((k - ta) as f32 / (oldest - ta) as f32)
+        }
+    };
+    let k = tick.floor().max(ta as f64) as u64;
+    let f = (tick - k as f64).clamp(0.0, 1.0) as f32;
+    at(k) + (at(k + 1) - at(k)) * f
 }
 
 /// One tracker's playback for the network (`CaAnimNet`): what stays the
@@ -1592,7 +1642,7 @@ fn drive(
         if !client {
             // The hull only of Combat Arms' movement (its cylinder): another
             // game's player keeps its own collider on every machine.
-            let next = net_of(&anim, &clock, r, body_yaw, movement.map(|_| state));
+            let next = net_of(&anim, &clock, r, body_yaw, movement.map(|_| state), net.as_deref());
             match net {
                 Some(mut n) => {
                     if *n != next {
@@ -1779,8 +1829,9 @@ fn tick_ms(step: f64) -> f64 {
 }
 
 /// The server's animation state for the network (`CaAnimNet`).
-fn net_of(anim: &CaAnim, clock: &SimClock, r: f32, body_yaw: f32, state: Option<&MovementState>) -> CaAnimNet {
+fn net_of(anim: &CaAnim, clock: &SimClock, r: f32, body_yaw: f32, state: Option<&MovementState>, prev: Option<&CaAnimNet>) -> CaAnimNet {
     let d = &anim.driver;
+    let r = (r.clamp(0.0, 1.0) * 255.0).round() as u8;
     let ms = tick_ms(clock.delta.as_secs_f64());
     let hull = state
         .filter(|s| s.hull_max != s.hull_min)
@@ -1790,7 +1841,8 @@ fn net_of(anim: &CaAnim, clock: &SimClock, r: f32, body_yaw: f32, state: Option<
         upper: NetTrack::of(d, &d.upper, clock.tick, ms),
         lower: NetTrack::of(d, &d.lower, clock.tick, ms),
         crouch: NetTrack::of(d, &d.crouch, clock.tick, ms),
-        r: (r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        r,
+        r_trail: r_trail(prev, r),
         pitch: skeleton::aim_byte(anim.pitch),
         twist: skeleton::aim_byte(anim.twist),
         death: anim.death.clone(),
@@ -1806,8 +1858,9 @@ pub struct ClientClock(pub f64, pub f64);
 
 /// What a client plays another player's character from at render tick
 /// `tick` (`CaAnimNet`'s kept snapshots, else the newest value): the
-/// trackers as the last state at or before it said, the crouch, aim and
-/// legs' yaw between the two around it (as its place is).
+/// trackers as the last state at or before it said, the aim, legs' yaw
+/// and hull between the two around it (as its place is), the crouch as
+/// the server had it at the ticks around it (`r_between`).
 struct Followed<'a> {
     net: &'a CaAnimNet,
     hull: Option<[f32; 3]>,
@@ -1828,7 +1881,8 @@ impl<'a> Followed<'a> {
             body_yaw: n.body_yaw,
         };
         match kept.map(|k| k.around(tick)) {
-            Some(Around::Between((_, a), (_, b), f)) => {
+            Some(Around::Between((ta, a), (tb, b), f)) => {
+                let r = r_between(*ta, a, *tb, b, tick);
                 let (a, b) = (of(a), of(b));
                 let turn = wrap(b.body_yaw - a.body_yaw);
                 let hull = match (a.hull, b.hull) {
@@ -1838,7 +1892,7 @@ impl<'a> Followed<'a> {
                 Followed {
                     net: a.net,
                     hull,
-                    r: a.r + (b.r - a.r) * f,
+                    r,
                     pitch: a.pitch + (b.pitch - a.pitch) * f,
                     twist: a.twist + (b.twist - a.twist) * f,
                     body_yaw: a.body_yaw + turn * f,
@@ -2111,6 +2165,48 @@ fn dress(
         if held.is_none_or(|h| h.0 != id) {
             commands.entity(e).insert(Held(id));
         }
+    }
+}
+
+#[cfg(test)]
+mod crouch_trail_tests {
+    use super::{CROUCH_TRAIL, CaAnimNet, r_between, r_trail};
+
+    /// The server's crouch bytes tick by tick, as `drive` sends them.
+    fn sent(bytes: &[u8]) -> Vec<CaAnimNet> {
+        let mut out: Vec<CaAnimNet> = Vec::new();
+        for &r in bytes {
+            let r_trail = r_trail(out.last(), r);
+            out.push(CaAnimNet { r, r_trail, ..Default::default() });
+        }
+        out
+    }
+
+    /// A client hearing every third tick plays a crouch's start at the
+    /// tick it happened (the fraction as the server had it, between whole
+    /// ticks), not along the line between its updates (a tick early: 0.2
+    /// of the crouch where the server had none); held still, the trail
+    /// goes empty again.
+    #[test]
+    fn a_crouch_heard_every_few_ticks_starts_where_it_did() {
+        let bytes = [0, 0, 0, 0, 0, 0, 0, 0, 0, 66, 118, 158, 187, 210, 230, 245, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+        let net = sent(&bytes);
+        let byte = |i: usize| bytes[i] as f32 / 255.0;
+        for (ta, tb) in [(5usize, 8usize), (8, 11), (11, 14), (14, 17), (2, 9)] {
+            for step in 0..=((tb - ta) * 4) {
+                let t = ta as f64 + step as f64 / 4.0;
+                let k = t.floor() as usize;
+                let f = (t - k as f64) as f32;
+                let want = if k >= tb { byte(tb) } else { byte(k) + (byte(k + 1) - byte(k)) * f };
+                let got = r_between(ta as u64, &net[ta], tb as u64, &net[tb], t);
+                assert!((got - want).abs() < 1e-5, "{ta}..{tb} at {t}: {got} for {want}");
+            }
+        }
+        assert!(net[8].r_trail.is_empty() && net[9].r_trail.len() == CROUCH_TRAIL);
+        assert!(net[16 + CROUCH_TRAIL].r_trail.is_empty() && !net[15 + CROUCH_TRAIL].r_trail.is_empty());
+        // Further apart than the trail reaches: the older ticks between.
+        let got = r_between(0, &net[0], 20, &net[20], 20.0 - CROUCH_TRAIL as f64);
+        assert!((got - byte(20 - CROUCH_TRAIL)).abs() < 1e-5);
     }
 }
 

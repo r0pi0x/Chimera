@@ -726,14 +726,15 @@ fn heads_drawn_where_kept(shooter: usize, target: usize, mean_ok: f32, max_ok: f
 /// standing, crouched, walking across and looking down: the trackers,
 /// crouch and aim played at the render tick (`CaAnimNet`'s snapshots,
 /// `NetTrack`'s transitions) and the hull the spheres stand on
-/// (`CaAnimNet::hull`). Before: 0.13 m off standing, 0.20 m crouched
-/// (a transition held at its first frame, the crouch blend and the hull
-/// left standing on the client).
+/// (`CaAnimNet::hull`), and as it crouches, the crouch at the ticks
+/// between updates as the server had it (`CaAnimNet::r_trail`). Before:
+/// 0.13 m off standing, 0.20 m crouched (a transition held at its first
+/// frame, the crouch blend and the hull left standing on the client);
+/// 0.038 m as a crouch started (the crouch drawn along the line between
+/// updates three ticks apart, so begun a tick early).
 #[test]
 fn combat_arms_heads_are_drawn_where_lag_compensation_keeps_them() {
-    // Its crouch's first tick or two are drawn a tick early (0.04 m off,
-    // printed only: backlog, "Combat Arms crouch onset over the network").
-    let wrong = heads_drawn_where_kept(0, 1, 0.015, 0.03, false);
+    let wrong = heads_drawn_where_kept(0, 1, 0.015, 0.03, true);
     assert!(wrong.is_empty(), "off the kept head:\n{}", wrong.join("\n"));
 }
 
