@@ -17,6 +17,7 @@ mod local_load;
 mod minigame_callouts;
 mod match_effects;
 mod prematch_lobby;
+mod rcon;
 mod prediction;
 mod reconnect;
 mod rejoin;

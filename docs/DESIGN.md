@@ -1057,8 +1057,10 @@ pages are data (apps/party_kit/data/options.toml, host_settings.toml):
 - **Options** set the player's own cvars (video, audio, mouse, the
   party's opt-in settings), saved in the config; "Binds" is the
   Controls page.
-- **Host settings**, for the host only (a listen server's player; RCON
-  admins later): existing server cvars that apply at once (bots,
+- **Host settings**, for the host (a listen server's player) or a
+  server's RCON admin (a player logged in with its `rcon_password`,
+  `net::rcon`: they see the server's values and each change goes
+  through `rcon`, the password checked every time): existing server cvars that apply at once (bots,
   `party_even_footsteps`, votes allowed) and host overrides of every
   minigame's definition (`chimera_sim::minigame::overrides`: rung extras
   by part, demote on suicide, the knife finale, the map rotation,

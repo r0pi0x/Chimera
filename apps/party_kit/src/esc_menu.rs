@@ -18,9 +18,10 @@
 //!   (archived; leaving the page writes the config), and "Binds", which
 //!   opens the Controls page (`controls`, F6).
 //! - **Host settings** (`host::SETTINGS`, data/host_settings.toml): only
-//!   for the host (`host::is_host`: not a network client): each cvar set
-//!   on the host's own server; those that take effect at the next match
-//!   say so.
+//!   for the host or a server's RCON admin (`host::may_host_settings`: not
+//!   a network client, or one logged in with `rcon_password`): each cvar
+//!   set on the server (an admin's through `rcon`, `host::set`); those that
+//!   take effect at the next match say so.
 //! - **Vote to skip the map** (`party_skipmap`, `host::SKIP_ISSUE`): on
 //!   everyone's menu; while a vote runs the menu shows it with Yes and No.
 //!   A refused call says why (a vote running, the caller's wait).
@@ -236,7 +237,7 @@ pub fn signal(theme: Option<&chimera_ui::Theme>) -> bool {
 fn navigate(
     keys: Res<ButtonInput<KeyCode>>,
     theme: Option<Res<chimera_ui::Theme>>,
-    role: Option<Res<chimera_core::core::NetRole>>,
+    role: (Option<Res<chimera_core::core::NetRole>>, Option<Res<chimera_net::net::rcon::RconAdmin>>),
     main_menu: Option<Res<crate::main_menu::PartyMenu>>,
     vote: Option<Res<VoteView>>,
     clock: Option<Res<chimera_ui::UiClock>>,
@@ -254,7 +255,7 @@ fn navigate(
     let enter = keys.just_pressed(KeyCode::Enter) || keys.just_pressed(KeyCode::NumpadEnter);
     match menu.page {
         Page::Main => {
-            let host = role.as_deref().is_none_or(|r| *r != chimera_core::core::NetRole::Client);
+            let host = host::may_change(role.0.as_deref(), role.1.as_deref());
             let voting = vote.as_ref().is_some_and(|v| v.active.is_some());
             let entries = shown_entries(host, main_menu.is_some(), voting);
             let live: Vec<usize> = (0..entries.len()).filter(|i| entries[*i].action.is_some()).collect();
@@ -511,7 +512,7 @@ fn act_one(world: &mut World, action: Action) {
         use chimera_client::client::ui_sound::UiCue;
         let c = match action {
             Action::Back | Action::Resume => Some(UiCue::new("ui_back")),
-            Action::Host if !host::is_host(world) => Some(UiCue::new("ui_denied")),
+            Action::Host if !host::may_host_settings(world) => Some(UiCue::new("ui_denied")),
             Action::Step { .. } => None,
             _ => Some(UiCue::new("ui_select")),
         };
@@ -532,7 +533,7 @@ fn act_one(world: &mut World, action: Action) {
         Action::Options => world.resource_mut::<EscMenu>().page = Page::Options(0),
         Action::Tab(t) => world.resource_mut::<EscMenu>().page = Page::Options(t),
         Action::Host => {
-            if host::is_host(world) {
+            if host::may_host_settings(world) {
                 world.resource_mut::<EscMenu>().page = Page::Host;
             }
         }
@@ -552,7 +553,7 @@ fn act_one(world: &mut World, action: Action) {
         }
         Action::Step { host: on_host, index, dir } => {
             let settings = if on_host {
-                if page != Page::Host || !host::is_host(world) {
+                if page != Page::Host || !host::may_host_settings(world) {
                     return;
                 }
                 host::settings()
@@ -560,11 +561,15 @@ fn act_one(world: &mut World, action: Action) {
                 page_settings(world, page)
             };
             let Some(s) = settings.get(index) else { return };
-            let now = crate::controls::cvar_value(world, &s.cvar).unwrap_or_default();
-            let next = s.pick.next(&now, dir);
+            let now = if on_host { host::value(world, &s.cvar) } else { crate::controls::cvar_value(world, &s.cvar) };
+            let next = s.pick.next(&now.unwrap_or_default(), dir);
             crate::ui_cues::cue(world, crate::ui_cues::step_cue(&s.pick, &next));
-            let quoted = if next.is_empty() { "\"\"".to_string() } else { chimera_core::console::quote(&next) };
-            submit(world, format!("{} {quoted}", s.cvar));
+            if on_host {
+                host::set(world, &s.cvar, &next);
+            } else {
+                let quoted = if next.is_empty() { "\"\"".to_string() } else { chimera_core::console::quote(&next) };
+                submit(world, format!("{} {quoted}", s.cvar));
+            }
             if !on_host {
                 world.resource_mut::<EscMenu>().dirty = true;
             }
@@ -612,7 +617,8 @@ fn refresh_values(world: &mut World) {
     }
     let page = world.resource::<EscMenu>().page;
     for s in page_settings(world, page) {
-        let v = crate::controls::cvar_value(world, &s.cvar).unwrap_or_default();
+        let v = if page == Page::Host { host::value(world, &s.cvar) } else { crate::controls::cvar_value(world, &s.cvar) }
+            .unwrap_or_default();
         let mut m = world.resource_mut::<EscMenu>();
         if m.values.get(&s.cvar) != Some(&v) {
             m.values.insert(s.cvar.clone(), v);
@@ -688,7 +694,7 @@ fn show(
     menu: Res<EscMenu>,
     title: Res<EscMenuTitle>,
     vote: Option<Res<VoteView>>,
-    role: Option<Res<chimera_core::core::NetRole>>,
+    role: (Option<Res<chimera_core::core::NetRole>>, Option<Res<chimera_net::net::rcon::RconAdmin>>),
     main_menu: Option<Res<crate::main_menu::PartyMenu>>,
     tabs: Res<OptionTabs>,
     root: Query<Entity, With<MenuRoot>>,
@@ -722,7 +728,7 @@ fn show(
         values: menu.values.clone(),
         notice: menu.notice.clone(),
         vote: active.as_ref().map(|v| (v.id, v.yes, v.no, v.mine, v.may_vote)),
-        host: role.as_deref().is_none_or(|r| *r != chimera_core::core::NetRole::Client),
+        host: host::may_change(role.0.as_deref(), role.1.as_deref()),
         title: title.0.clone(),
         main_menu: main_menu.is_some(),
         signal: (signal(theme.as_deref()) && units.is_some()).then(|| {

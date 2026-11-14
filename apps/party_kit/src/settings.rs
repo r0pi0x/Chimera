@@ -14,7 +14,9 @@
 //!   becoming **Controls** with the Controls page's key binds under it (a
 //!   segmented switch Shared / each game, `controls::GAMES`, each game's
 //!   gun view FOV too); Host settings has one page, `host::settings()`,
-//!   each row noting "now" or "next match". Only settings that exist.
+//!   each row noting "now" or "next match", for the host or an RCON
+//!   admin (the server's values, set through `rcon`: `host::value`,
+//!   `host::set`). Only settings that exist.
 //! - **Rows** by the setting's pick: a range is a slider (click or drag a
 //!   place, ←→ a step), two choices Off/On a toggle, `widget =
 //!   "dropdown"` a dropdown, up to five choices segmented, more a stepper;
@@ -738,8 +740,12 @@ fn set_line(cvar: &str, value: &str) -> String {
     format!("{cvar} {quoted}")
 }
 
-/// The value a setting shows: its pending one, else the cvar's.
-fn shown_value(world: &mut World, cvar: &str) -> String {
+/// The value a setting shows: its pending one, else the cvar's; a host
+/// setting's is the server's (`host::value`: an RCON admin's copy).
+fn shown_value(world: &mut World, ctx: Context, cvar: &str) -> String {
+    if ctx == Context::Host {
+        return host::value(world, cvar).unwrap_or_default();
+    }
     match world.resource::<Settings>().pending.get(cvar) {
         Some(v) => v.clone(),
         None => crate::controls::cvar_value(world, cvar).unwrap_or_default(),
@@ -751,7 +757,8 @@ fn shown_value(world: &mut World, cvar: &str) -> String {
 fn set_value(world: &mut World, ctx: Context, set: &Setting, value: &str) {
     let cvar = set.cvar.as_str();
     if ctx == Context::Host {
-        submit(world, set_line(cvar, value));
+        // The host's own console, or an RCON admin's `rcon`.
+        host::set(world, cvar, value);
         world.resource_mut::<Settings>().values.insert(cvar.to_string(), value.to_string());
         return;
     }
@@ -900,7 +907,7 @@ fn act_one(world: &mut World, a: SettingsAction) {
                     cue(world, UiCue::new("ui_select"));
                 }
                 Some(Row::Setting { s, .. }) => {
-                    let now = shown_value(world, &s.cvar);
+                    let now = shown_value(world, ctx, &s.cvar);
                     let next = s.pick.next(&now, dir);
                     cue(world, crate::ui_cues::step_cue(&s.pick, &next));
                     set_value(world, ctx, s, &next);
@@ -930,7 +937,7 @@ fn act_one(world: &mut World, a: SettingsAction) {
             {
                 world.resource_mut::<Settings>().focus = row;
                 let v = controls::value_at(frac, min, max, step);
-                let now = shown_value(world, &s.cvar);
+                let now = shown_value(world, ctx, &s.cvar);
                 let next = format!("{v}");
                 if !host::same_value(&now, &next) {
                     cue(world, crate::ui_cues::step_cue(&s.pick, &next));
@@ -1066,7 +1073,7 @@ fn refresh_values(world: &mut World) {
     };
     for r in rows(ctx, &tabs, tab, game) {
         if let Row::Setting { s, .. } = r {
-            let v = shown_value(world, &s.cvar);
+            let v = shown_value(world, ctx, &s.cvar);
             let mut st = world.resource_mut::<Settings>();
             if st.values.get(&s.cvar) != Some(&v) {
                 st.values.insert(s.cvar.clone(), v);
