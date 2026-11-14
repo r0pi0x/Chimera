@@ -3,6 +3,8 @@
 //! dev`; where tests go: docs/OBSERVABILITY.md, section 1.
 
 mod fonts;
+mod icons;
 mod motion;
+mod style;
 mod theme;
 mod units;

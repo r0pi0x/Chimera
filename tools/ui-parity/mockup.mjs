@@ -91,8 +91,12 @@ try {
       const csb = getComputedStyle(el);
       const padded = ['paddingLeft', 'paddingRight', 'paddingTop', 'paddingBottom'].some(k => parseFloat(csb[k]) > 0);
       if (own && el.tagName !== 'svg') {
+        // The text's own run: its first text node to its last (a mark
+        // beside it, like a bot's robot, is another node in the game).
+        const texts = [...el.childNodes].filter(n => n.nodeType === 3 && n.textContent.trim());
         const range = document.createRange();
-        range.selectNodeContents(el);
+        range.setStart(texts[0], 0);
+        range.setEnd(texts[texts.length - 1], texts[texts.length - 1].textContent.length);
         const t = range.getBoundingClientRect();
         const cs = getComputedStyle(el);
         const ls = cs.letterSpacing === 'normal' ? 0 : parseFloat(cs.letterSpacing);

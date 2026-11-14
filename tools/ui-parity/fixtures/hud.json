@@ -14,7 +14,8 @@
    "bot": false,
    "host": false,
    "you": false,
-   "wins": 3
+   "wins": 3,
+   "ping": 38
   },
   {
    "name": "lowgrav_larry",
@@ -27,7 +28,8 @@
    "bot": false,
    "host": false,
    "you": false,
-   "wins": 1
+   "wins": 1,
+   "ping": 72
   },
   {
    "name": "Sgt. Biscuit",
@@ -40,7 +42,8 @@
    "bot": true,
    "host": false,
    "you": false,
-   "wins": 0
+   "wins": 0,
+   "ping": 0
   },
   {
    "name": "kestrel",
@@ -53,7 +56,8 @@
    "bot": false,
    "host": true,
    "you": true,
-   "wins": 2
+   "wins": 2,
+   "ping": 12
   },
   {
    "name": "vex",
@@ -66,7 +70,8 @@
    "bot": false,
    "host": false,
    "you": false,
-   "wins": 1
+   "wins": 1,
+   "ping": 140
   },
   {
    "name": "mothman",
@@ -79,7 +84,8 @@
    "bot": false,
    "host": false,
    "you": false,
-   "wins": 0
+   "wins": 0,
+   "ping": 240
   },
   {
    "name": "Rook",
@@ -92,7 +98,8 @@
    "bot": true,
    "host": false,
    "you": false,
-   "wins": 0
+   "wins": 0,
+   "ping": 0
   },
   {
    "name": "pixelpirate",
@@ -105,7 +112,8 @@
    "bot": false,
    "host": false,
    "you": false,
-   "wins": 0
+   "wins": 0,
+   "ping": 55
   }
  ],
  "rows_lead": [
@@ -120,7 +128,8 @@
    "bot": false,
    "host": true,
    "you": true,
-   "wins": 2
+   "wins": 2,
+   "ping": 12
   },
   {
    "name": "lowgrav_larry",
@@ -133,7 +142,8 @@
    "bot": false,
    "host": false,
    "you": false,
-   "wins": 1
+   "wins": 1,
+   "ping": 72
   },
   {
    "name": "nadia.exe",
@@ -146,7 +156,8 @@
    "bot": false,
    "host": false,
    "you": false,
-   "wins": 3
+   "wins": 3,
+   "ping": 38
   },
   {
    "name": "Sgt. Biscuit",
@@ -159,7 +170,8 @@
    "bot": true,
    "host": false,
    "you": false,
-   "wins": 0
+   "wins": 0,
+   "ping": 0
   },
   {
    "name": "vex",
@@ -172,7 +184,8 @@
    "bot": false,
    "host": false,
    "you": false,
-   "wins": 1
+   "wins": 1,
+   "ping": 140
   },
   {
    "name": "mothman",
@@ -185,7 +198,8 @@
    "bot": false,
    "host": false,
    "you": false,
-   "wins": 0
+   "wins": 0,
+   "ping": 240
   },
   {
    "name": "Rook",
@@ -198,7 +212,8 @@
    "bot": true,
    "host": false,
    "you": false,
-   "wins": 0
+   "wins": 0,
+   "ping": 0
   },
   {
    "name": "pixelpirate",
@@ -211,7 +226,8 @@
    "bot": false,
    "host": false,
    "you": false,
-   "wins": 0
+   "wins": 0,
+   "ping": 55
   }
  ],
  "feed": [
@@ -220,29 +236,37 @@
    "class": "smg",
    "victim": "vex",
    "you_killer": true,
-   "you_victim": false
+   "you_victim": false,
+   "killer_bot": false,
+   "victim_bot": false
   },
   {
    "killer": "lowgrav_larry",
    "class": "rifle",
    "victim": "kestrel",
    "you_killer": false,
-   "you_victim": true
+   "you_victim": true,
+   "killer_bot": false,
+   "victim_bot": false
   },
   {
    "killer": "Sgt. Biscuit",
    "class": "grenade",
    "victim": "mothman",
    "you_killer": false,
-   "you_victim": false
+   "you_victim": false,
+   "killer_bot": true,
+   "victim_bot": false
   },
   {
    "killer": "kestrel",
    "class": "smg",
    "victim": "pixelpirate",
    "you_killer": true,
-   "you_victim": false
+   "you_victim": false,
+   "killer_bot": false,
+   "victim_bot": false
   }
  ],
- "_note": "The look book V data (gen.py: SB, SB_L, LADDER, WINS, KFE); the HUD frame frozen at 6.0 s shows these four feed rows, oldest first."
+ "_note": "The look book V data (gen.py: SB, SB_L, LADDER, WINS, KFE); the HUD frame frozen at 6.0 s shows these four feed rows, oldest first. Pings from the board's titles (a bot 0). The game draws a fixture gun with a made-up id (parity:<class>), so its icon is always the kit's by class."
 }

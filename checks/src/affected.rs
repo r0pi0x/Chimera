@@ -463,6 +463,8 @@ fn is_docs(path: &str) -> bool {
             "tools/renderdoc/",
             // The UI parity check's scripts and look book pages (no crate reads them).
             "tools/ui-parity/",
+            // The UGG fonts' build scripts (their output is in apps/ultimate_gun_game/fonts/).
+            "tools/fonts/",
         ]
         .iter()
         .any(|p| path.starts_with(p))

@@ -72,6 +72,7 @@ pub mod view;
 pub mod voice;
 pub mod weapon_icons;
 pub mod weapon_menu;
+pub mod ui_scene;
 pub mod ui_write;
 pub mod upload_pace;
 pub mod widgets;
@@ -535,6 +536,7 @@ impl PluginGroup for ClientPlugins {
             .add(hud::HudPlugin)
             .add(overlay::OverlayPlugin)
             .add(chimera_ui::ChimeraUiPlugin)
+            .add(ui_scene::UiScenePlugin)
             .add(minigame_panel::MinigamePanelPlugin)
             .add(text_warm::TextWarmPlugin)
             .add(announcer::AnnouncerPlugin)

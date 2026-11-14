@@ -129,8 +129,8 @@ fn fill(sim: &mut Sim) {
     if feed.entries.is_empty() {
         feed.entries.push(KillEntry {
             id: 1_000,
-            killer: Some(FeedName { entity: Entity::PLACEHOLDER, name: "AI_Alpha_9".into(), local: false, team: Some(1) }),
-            victim: FeedName { entity: Entity::PLACEHOLDER, name: "Player".into(), local: true, team: Some(2) },
+            killer: Some(FeedName { entity: Entity::PLACEHOLDER, name: "AI_Alpha_9".into(), local: false, team: Some(1), bot: true }),
+            victim: FeedName { entity: Entity::PLACEHOLDER, name: "Player".into(), local: true, team: Some(2), bot: false },
             weapon: None,
             kind: DamageKind::Bullet,
             headshot: false,

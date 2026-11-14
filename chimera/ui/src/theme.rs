@@ -2,10 +2,11 @@
 //! (docs/plans/active/ugg-ui.md, 2.3). Palette tokens and the alphas every
 //! other colour derives from (`Tone`), the type roles (`TypeSpec`: face,
 //! weight, tracking in em, case, OpenType features), named easings and
-//! durations (`motion`), the slant and the smallest text in physical
-//! pixels (`shape`), per-screen layout numbers in cq (`layout`) and
-//! switches (`flags`: `hud.signal` turns the shell's Signal HUD on,
-//! `icons.prefer_game` picks each game's own gun icons over the kit's).
+//! durations (`motion`), the icon rule (`icons.prefer_game`), the slant
+//! and the smallest text in physical pixels (`shape`), per-screen layout
+//! numbers in cq (`layout`), the ping meter's thresholds (`network`), and
+//! switches (`flags`: `hud.signal` turns the shell's
+//! Signal HUD on).
 //!
 //! An app inserts its own (the Ultimate Gun Game's is
 //! `apps/ultimate_gun_game/data/theme.toml`); without one, screens read
@@ -14,8 +15,12 @@
 //! TOML is laid over the default's, so a theme names only what differs
 //! and a key a screen asks for is always there.
 //!
-//! Colours are display-space (sRGB) values; plates and shades go through
-//! `display_alpha` where they should cover as a display-space blend would.
+//! Colours are display-space (sRGB) values, and so are the theme's
+//! alphas; Bevy's UI blends in linear light, so the derived tones carry
+//! alphas that look as the theme's do: light ones over the dark inks
+//! (`fg_2` ... `acc_glow`) through `light_alpha`, the plate (ink over the
+//! world) through `display_alpha`. Code fading a tone by hand applies the
+//! same (`Theme::tone_a` does).
 //!
 //! Known shortcuts: a missing layout number or duration reads as 0 with a
 //! warning instead of failing the theme's load.
@@ -57,6 +62,10 @@ pub enum Tone {
     /// Accent-coloured text (lighter than `acc` on ink).
     AccText,
     Threat,
+    /// Light green: network good only (a quiet ping).
+    Good,
+    /// Amber: network warnings only (a bad ping), never gameplay.
+    Warn,
     /// `ink` at `alpha.plate` (panels; no backdrop blur in Bevy).
     Plate,
     /// `fg` at `alpha.glow`.
@@ -65,7 +74,7 @@ pub enum Tone {
 
 impl Tone {
     /// Every tone, for tests and tools.
-    pub const ALL: [Tone; 17] = [
+    pub const ALL: [Tone; 19] = [
         Tone::Ink,
         Tone::Ink2,
         Tone::Ink3,
@@ -81,6 +90,8 @@ impl Tone {
         Tone::OnAcc,
         Tone::AccText,
         Tone::Threat,
+        Tone::Good,
+        Tone::Warn,
         Tone::Plate,
         Tone::Glow,
     ];
@@ -103,6 +114,8 @@ impl Tone {
             Tone::OnAcc => "on_acc",
             Tone::AccText => "acc_text",
             Tone::Threat => "threat",
+            Tone::Good => "good",
+            Tone::Warn => "warn",
             Tone::Plate => "plate",
             Tone::Glow => "glow",
         }
@@ -165,6 +178,29 @@ struct Raw {
     layout: BTreeMap<String, BTreeMap<String, f32>>,
     #[serde(default)]
     flags: BTreeMap<String, BTreeMap<String, bool>>,
+    icons: IconRule,
+    network: Network,
+}
+
+/// The ping meter's thresholds and its quiet bars' alpha.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+pub struct Network {
+    /// Under this many ms: quiet (four bars, `good`).
+    pub ping_quiet_ms: u32,
+    /// Under this: fine (three bars, `fg`).
+    pub ping_fine_ms: u32,
+    /// Under this: a warning (two bars, `warn`); at or over: bad (one, `threat`).
+    pub ping_warn_ms: u32,
+    /// The quiet bars' alpha (display space).
+    pub good_alpha: f32,
+}
+
+/// Which icons the theme's screens show (`icons::choose`).
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+pub struct IconRule {
+    /// Each game's own kill icon wherever it has one, ours only where none
+    /// (plan section 6, item 1); off: ours everywhere.
+    pub prefer_game: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -181,12 +217,15 @@ pub struct Theme {
     /// The theme's name (`shell`, `signal`).
     pub name: String,
     tones: BTreeMap<Tone, Color>,
+    alphas: BTreeMap<String, f32>,
     types: BTreeMap<String, TypeSpec>,
     pub shape: Shape,
     eases: BTreeMap<String, Ease>,
     durs: BTreeMap<String, BTreeMap<String, f32>>,
     layout: BTreeMap<String, BTreeMap<String, f32>>,
     flags: BTreeMap<String, BTreeMap<String, bool>>,
+    pub icons: IconRule,
+    pub network: Network,
 }
 
 impl Default for Theme {
@@ -234,9 +273,9 @@ impl Theme {
         let mut tones = BTreeMap::new();
         for t in Tone::ALL {
             let c = match t {
-                Tone::Fg2 | Tone::Fg3 | Tone::Fg4 | Tone::Fg5 | Tone::Glow => fg.with_alpha(alpha(t.name())?),
-                Tone::Acc2 | Tone::AccGlow => acc.with_alpha(alpha(t.name())?),
-                Tone::Plate => ink.with_alpha(alpha(t.name())?),
+                Tone::Fg2 | Tone::Fg3 | Tone::Fg4 | Tone::Fg5 | Tone::Glow => fg.with_alpha(light_alpha(alpha(t.name())?)),
+                Tone::Acc2 | Tone::AccGlow => acc.with_alpha(light_alpha(alpha(t.name())?)),
+                Tone::Plate => display_alpha(ink.with_alpha(alpha(t.name())?)),
                 _ => pal(t.name())?,
             };
             tones.insert(t, c);
@@ -253,6 +292,7 @@ impl Theme {
             }
         }
         Ok(Theme {
+            alphas: raw.alpha.clone(),
             name: raw.name,
             tones,
             types: raw.types,
@@ -261,6 +301,8 @@ impl Theme {
             durs: raw.motion.dur,
             layout: raw.layout,
             flags: raw.flags,
+            icons: raw.icons,
+            network: raw.network,
         })
     }
 
@@ -269,10 +311,23 @@ impl Theme {
         self.tones[&t]
     }
 
-    /// A token with its alpha times `a` (fades).
+    /// A token faded to `a` in display space: `light_alpha` for the light
+    /// tones, the dark ones (inks, plate, `on_acc`) as `display_alpha`.
     pub fn tone_a(&self, t: Tone, a: f32) -> Color {
         let c = self.tone(t);
-        c.with_alpha(c.alpha() * a)
+        let k = match t {
+            Tone::Ink | Tone::Ink2 | Tone::Ink3 | Tone::Ink4 | Tone::Plate | Tone::OnAcc => {
+                1.0 - (1.0 - a.clamp(0.0, 1.0)).powf(2.2)
+            }
+            _ => light_alpha(a),
+        };
+        c.with_alpha(c.alpha() * k)
+    }
+
+    /// A token alpha as the theme writes it (display space: `fg_2` .66),
+    /// before `light_alpha`/`display_alpha`.
+    pub fn alpha(&self, name: &str) -> Option<f32> {
+        self.alphas.get(name).copied()
     }
 
     /// A text role's spec by name (`wordmark`, `display_bold`, `mono`, ...).
@@ -323,11 +378,19 @@ impl Theme {
     }
 
     /// A switch (`flags.<group>.<key>`, false when absent): which look a
-    /// screen takes (`flags.hud.signal`), which icons it prefers
-    /// (`flags.icons.prefer_game`).
+    /// screen takes (`flags.hud.signal`).
     pub fn flag(&self, group: &str, key: &str) -> bool {
         self.flags.get(group).and_then(|g| g.get(key)).copied().unwrap_or(false)
     }
+}
+
+/// The alpha that blends a light colour over a dark one in linear light
+/// (Bevy's UI) as `a` does in display space (the look book's): `a^2.2`.
+/// Exact over black, close over the theme's inks: `fg` at .66 shows as
+/// the prototype's `--fg-2`, `fg` at .04 as its faint hairlines (blended
+/// as given, they would show about five times as bright).
+pub fn light_alpha(a: f32) -> f32 {
+    a.clamp(0.0, 1.0).powf(2.2)
 }
 
 /// `color` with its alpha raised so it covers what is under it as much as

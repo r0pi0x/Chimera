@@ -21,23 +21,22 @@
 //!   players; then a row a player, best first (`minigame_scoreboard::
 //!   sorted`): position, the bot slot and name with HOST (or the fused
 //!   YOU+HOST chip) and the matches won this server run (a trophy and the
-//!   count, only when there are any: `MatchesWon`, M6's session wins
+//!   count, the session's leader in the accent, only when there are any: `MatchesWon`, M6's session wins
 //!   hook in), the rung big, the gun's icon (`signal::gun_icon`) and its
 //!   short name with its game, kills and deaths as two columns with their
-//!   marks right-aligned over them, and the ladder strip. The leader's row
+//!   marks right-aligned over them, the ping (a 4-bar meter and the
+//!   number, by the theme's `[network]` thresholds: `ping_level`; LAG at
+//!   the worst; LOCAL for the listen host, a faint dash for a bot), and the ladder strip. The leader's row
 //!   has the accent bar; yours is tinted and outlined.
 //!
 //! Content is rebuilt only when what it shows changes (`RaceView`), the
-//! open and close move only the plate's size (`Timeline`).
-//!
-//! The nodes carry the look book's names (`chimera_ui::UiParityId`:
-//! `race.plate`, `chip.*` or `chip.leading.*`, `board.head.*`,
-//! `board.th.*`, `board.row.<n>.*` from 1) for the UI parity check;
-//! `RaceStage` shows a fixture's view instead of the players'
-//! (`ui_parity`'s `ui_stage`).
+//! open and close move only the plate's size (`Timeline`). The nodes carry
+//! the look book's names (`chimera_ui::UiParityId`: `race.plate`, `chip.*`
+//! or `chip.leading.*`, `board.head.*`, `board.th.*`, `board.row.<n>.*`
+//! from 1) for the UI parity check (`ui_parity`).
 //!
 //! Known shortcuts: no rolling numbers or tick pop (M3); the board lists
-//! at most `MAX_ROWS` players; no match clock on the head.
+//! at most `MAX_ROWS` players; no match clock on the head; no packet loss on the board (not measured).
 
 use bevy::prelude::*;
 use chimera_sim::{
@@ -99,7 +98,25 @@ pub struct RaceRow {
     pub local: bool,
     /// Matches won this server run.
     pub wins: u32,
+    /// Ping in ms (0: the host's, or not measured yet).
+    pub ping: u16,
 }
+
+/// A row's ping meter: how many of its 4 bars are lit.
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PingMeter(pub u8);
+
+/// A ping's look on the board: the kit's `PingLevel` by the theme's
+/// `[network]` thresholds (4 bars quiet green under 60 ms, 3 `fg` under
+/// 120, 2 `warn` under 200, else 1 `threat` and a LAG flag). No packet
+/// loss is measured yet (the kit's `loss` mark waits for it).
+pub fn ping_level(theme: &chimera_ui::Theme, ping: u16) -> chimera_ui::widgets::PingLevel {
+    chimera_ui::widgets::PingLevel::from_ms(theme, ping as u32)
+}
+
+/// A row's matches won this server run (trophy and count; only when any).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SessionWins(pub u32);
 
 /// What the chip and board show now (`gather`); `active` while a ladder
 /// plays under the Signal look.
@@ -132,6 +149,96 @@ impl RaceView {
     }
 }
 
+
+/// A staged race (`ui_scene chip|lead|board`, made-up players): shown
+/// instead of the game's, the board open with `open`.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct RaceStaged {
+    pub view: RaceView,
+    pub open: bool,
+}
+
+/// The made-up race the scenes stage: eight players, you (and the host)
+/// seventh-rung in fourth, or leading (`lead`).
+pub fn staged_race(lead: bool) -> RaceView {
+    let gun = |rung: usize| -> (Option<&'static str>, &'static str, &'static str, Option<&'static str>) {
+        const L: [(&str, &str, &str, &str); 14] = [
+            ("cs_source:weapon_glock", "GLOCK-18", "CS:S", "pistol"),
+            ("combat_arms:m92fs", "M92FS", "CA", "pistol"),
+            ("hl2dm:weapon_357", ".357 MAGNUM", "HL2:DM", "revolver"),
+            ("cs_source:weapon_mp5navy", "MP5", "CS:S", "smg"),
+            ("combat_arms:mp7", "MP7", "CA", "smg"),
+            ("hl2dm:weapon_shotgun", "SHOTGUN", "HL2:DM", "shotgun"),
+            ("cs_source:weapon_m4a1", "M4A1", "CS:S", "rifle"),
+            ("combat_arms:ak_47", "AK-47", "CA", "rifle"),
+            ("hl2dm:weapon_ar2", "PULSE RIFLE", "HL2:DM", "energy"),
+            ("cs_source:weapon_m249", "M249", "CS:S", "lmg"),
+            ("cs_source:weapon_awp", "AWP", "CS:S", "sniper"),
+            ("hl2dm:weapon_crossbow", "CROSSBOW", "HL2:DM", "crossbow"),
+            ("hl2dm:weapon_rpg", "RPG", "HL2:DM", "launcher"),
+            ("cs_source:weapon_knife", "KNIFE", "CS:S", "knife"),
+        ];
+        let (id, name, game, class) = L[rung.min(13)];
+        (Some(id), name, game, Some(class))
+    };
+    let row = |name: &str, rung: usize, kills: i32, deaths: u32, bot: bool, local: bool, host: bool, wins: u32, ping: u16| {
+        let (id, gun_name, game, class) = gun(rung);
+        RaceRow {
+            name: name.into(),
+            rung,
+            kills,
+            deaths,
+            gun: id,
+            gun_name: gun_name.into(),
+            game: game.into(),
+            class,
+            bot,
+            host,
+            local,
+            wins,
+            ping,
+        }
+    };
+    let rows = if lead {
+        vec![
+            row("kestrel", 10, 25, 8, false, true, true, 2, 0),
+            row("lowgrav_larry", 8, 19, 11, false, false, false, 1, 48),
+            row("nadia.exe", 7, 18, 12, false, false, false, 3, 87),
+            row("Sgt. Biscuit", 7, 17, 14, true, false, false, 0, 0),
+            row("vex", 6, 14, 10, false, false, false, 1, 143),
+            row("mothman", 4, 10, 15, false, false, false, 0, 61),
+            row("Rook", 3, 8, 16, true, false, false, 0, 0),
+            row("pixelpirate", 1, 3, 19, false, false, false, 0, 231),
+        ]
+    } else {
+        vec![
+            row("nadia.exe", 10, 24, 9, false, false, false, 3, 87),
+            row("lowgrav_larry", 8, 19, 11, false, false, false, 1, 48),
+            row("Sgt. Biscuit", 7, 17, 14, true, false, false, 0, 0),
+            row("kestrel", 6, 15, 12, false, true, true, 2, 0),
+            row("vex", 6, 14, 10, false, false, false, 1, 143),
+            row("mothman", 4, 10, 15, false, false, false, 0, 61),
+            row("Rook", 3, 8, 16, true, false, false, 0, 0),
+            row("pixelpirate", 1, 3, 19, false, false, false, 0, 231),
+        ]
+    };
+    RaceView { active: true, rows, rungs: 14, map: "de_dust2".into(), map_game: "CS:S".into(), size: (0, 0) }
+}
+
+/// Stages scene `name` (`chip`, `lead`, `board`, `board_lead`), or clears
+/// it (`None`).
+pub fn stage(world: &mut World, name: Option<&str>) {
+    match name {
+        Some(n) => {
+            let lead = n.contains("lead");
+            world.insert_resource(RaceStaged { view: staged_race(lead), open: n.starts_with("board") });
+        }
+        None => {
+            world.remove_resource::<RaceStaged>();
+        }
+    }
+}
+
 /// The plate's root (full width, top).
 #[derive(Component)]
 pub struct RaceChipRoot;
@@ -156,15 +263,6 @@ pub struct BoardRow(pub RaceRow);
 #[derive(Component)]
 pub struct LeaderChip;
 
-/// A staged view (`ui_parity`'s `ui_stage`): shown in place of the
-/// players', the board open while `board`, so the parity check can lay
-/// the chip and board out with a fixture's data.
-#[derive(Resource, Clone, Debug, Default)]
-pub struct RaceStage {
-    pub view: Option<RaceView>,
-    pub board: bool,
-}
-
 /// The board is open (Tab held): the plate opens toward it.
 #[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BoardOpen(pub bool);
@@ -176,13 +274,8 @@ const ROW_H: f32 = 2.55;
 /// The board's height besides its rows: padding, head, column titles.
 const BOARD_BASE: f32 = 5.5;
 /// The board's columns: position, player, rung, icon, gun (rest), K, D,
-/// ping (the look book's; empty until the board shows ping), ladder; the
-/// gap between them; the row's side padding.
-const COLS: [f32; 9] = [1.6, 11.4, 2.6, 3.8, 0.0, 1.7, 1.7, 3.6, 11.4];
-/// The ladder's column.
-const LADDER_COL: usize = 8;
-/// The chip's (and the open board's) distance from the top.
-const CHIP_TOP: f32 = 2.2;
+/// ping, ladder; the gap between them; the row's side padding.
+const COLS: [f32; 9] = [1.6, 11.4, 2.6, 3.8, 0.0, 1.7, 1.7, 3.6, 12.2];
 const COL_GAP: f32 = 0.8;
 const ROW_PAD: f32 = 0.6;
 
@@ -240,7 +333,6 @@ fn gather(
         Option<Res<crate::map::LoadedMapName>>,
         Option<Res<chimera_core::game_registry::Games>>,
     ),
-    stage: Option<Res<RaceStage>>,
     players: Query<
         (
             Entity,
@@ -256,7 +348,17 @@ fn gather(
         With<InMinigame>,
     >,
     mut view: ResMut<RaceView>,
+    staged: Option<Res<RaceStaged>>,
 ) {
+    if let Some(st) = staged {
+        let mut next = st.view.clone();
+        next.active = true;
+        next.size = (look.units.height as u32, (look.units.scale_factor * 100.0) as u32);
+        if *view != next {
+            *view = next;
+        }
+        return;
+    }
     let active = look.on() && ladder.is_some() && hud.as_deref().is_some_and(|h| h.playing() && !h.results_shown);
     let mut next = RaceView { active, size: (look.units.height as u32, (look.units.scale_factor * 100.0) as u32), ..default() };
     if let (true, Some(ladder)) = (active, ladder.as_deref()) {
@@ -283,6 +385,7 @@ fn gather(
                     host: ch.is_some_and(|c| c.owner == Some(HOST_ID)),
                     local,
                     wins: won.map_or(0, |w| w.0),
+                    ping: net.map_or(0, |n| n.ping),
                 }
             })
             .collect();
@@ -300,9 +403,6 @@ fn gather(
             next.map = n.to_string();
             next.map_game = games.as_deref().and_then(|r| r.get(g)).map_or(String::new(), |i| i.short_name.to_string());
         }
-    }
-    if let Some(staged) = stage.as_deref().and_then(|s| s.view.as_ref()) {
-        next = RaceView { active: look.on(), size: next.size, ..staged.clone() };
     }
     if *view != next {
         *view = next;
@@ -595,26 +695,25 @@ fn build_board(
             th(h, 4, "GUN • GAME", false, "gun");
             for (i, m, id) in [(5, Mark::Kill, "board.th.k"), (6, Mark::Death, "board.th.d")] {
                 h.spawn((right(i), Pickable::IGNORE)).with_children(|c| {
-                    let e = signal::mark(c, &look, m, look.px(0.6), look.tone(Tone::Fg3));
+                    let e = signal::mark(c, &look, m, look.px(0.78), look.tone(Tone::Fg3));
                     parity::name(c, e, id);
                 });
             }
-            h.spawn((cell(7), Pickable::IGNORE));
-            h.spawn((Node { padding: UiRect::left(look.val(0.8)), ..cell(LADDER_COL) }, Pickable::IGNORE)).with_children(|c| {
+            th(h, 7, "PING", true, "ping");
+            h.spawn((Node { padding: UiRect::left(look.val(0.8)), ..cell(8) }, Pickable::IGNORE)).with_children(|c| {
                 c.spawn((look.text(Role::Mono, 0.46, look.tone(Tone::Fg3), "LADDER"), UiParityId::new("board.th.ladder"), Pickable::IGNORE));
             });
         });
         b.spawn((Node { height: px(hair), margin: UiRect::top(look.val(0.5)), ..default() }, BackgroundColor(look.tone(Tone::Fg4)), Pickable::IGNORE));
         let n = view.rungs.max(1) as u32;
+        let top_wins = view.rows.iter().map(|r| r.wins).max().unwrap_or(0);
         for (i, row) in view.rows.iter().take(MAX_ROWS).enumerate() {
             let lead = i == 0;
             // The look book counts rows from 1.
             let p = format!("board.row.{}", i + 1);
             let mut r = b.spawn((BoardRow(row.clone()), row_node(Some(ROW_H)), UiParityId(p.clone()), Pickable::IGNORE));
             if row.local {
-                let (bg, border) = signal::you_row(&look);
-                r.insert((bg, border));
-                r.entry::<Node>().and_modify(move |mut n| n.border = UiRect::all(px(hair)));
+                r.insert(signal::you_row(&look));
             }
             r.with_children(|r| {
                 // The leader's accent bar; the row's rule.
@@ -647,8 +746,13 @@ fn build_board(
                     let e = signal::host_tag(c, &look, slants.as_deref_mut(), row.host, row.local, 0.42);
                     parity::name(c, e, format!("{p}.host"));
                     if row.wins > 0 {
-                        signal::mark(c, &look, Mark::Trophy, look.px(0.6), look.tone(Tone::Fg2));
-                        c.spawn((look.text(Role::Mono, 0.5, look.tone(Tone::Fg2), &row.wins.to_string()), Pickable::IGNORE));
+                        // The session's leader in the accent.
+                        let tone = if row.wins == top_wins { Tone::AccText } else { Tone::Fg2 };
+                        c.spawn((Node { align_items: AlignItems::Center, column_gap: look.val(0.18), flex_shrink: 0.0, ..default() }, SessionWins(row.wins), UiParityId(format!("{p}.wins")), Pickable::IGNORE))
+                            .with_children(|w| {
+                                signal::mark(w, &look, Mark::Trophy, look.px(0.6), look.tone(tone));
+                                w.spawn((look.text(Role::Mono, 0.5, look.tone(tone), &row.wins.to_string()), Pickable::IGNORE));
+                            });
                     }
                 });
                 r.spawn((right(2), Pickable::IGNORE)).with_children(|c| {
@@ -671,17 +775,45 @@ fn build_board(
                 r.spawn((right(6), Pickable::IGNORE)).with_children(|c| {
                     c.spawn((look.text(Role::Mono, 0.6, look.tone(Tone::Fg3), &row.deaths.to_string()), UiParityId(format!("{p}.d")), Pickable::IGNORE));
                 });
-                r.spawn((cell(7), Pickable::IGNORE));
+                // Ping: a 4-bar meter and the number, coloured by how bad.
+                r.spawn((Node { column_gap: look.val(0.3), ..right(7) }, UiParityId(format!("{p}.ping")), Pickable::IGNORE)).with_children(|c| {
+                    // A bot: the faint dash (the robot marks it already);
+                    // the listen host: LOCAL.
+                    if row.bot {
+                        c.spawn((look.text(Role::Mono, 0.54, look.tone(Tone::Fg4), "—"), Pickable::IGNORE));
+                        return;
+                    }
+                    if row.host && row.ping == 0 {
+                        c.spawn((look.text(Role::Mono, 0.46, look.tone(Tone::Fg3), "LOCAL"), Pickable::IGNORE));
+                        return;
+                    }
+                    let level = ping_level(&look.theme, row.ping);
+                    if let Some(slants) = slants.as_deref_mut() {
+                        let parent = c.target_entity();
+                        let cmd = c.commands_mut();
+                        let m = chimera_ui::widgets::spawn_ping_meter(cmd, slants, &look.theme, &look.units, 0.7, level);
+                        cmd.entity(m).insert((PingMeter(level.lit as u8), Pickable::IGNORE));
+                        cmd.entity(parent).add_child(m);
+                    } else {
+                        c.spawn((PingMeter(level.lit as u8), Node::default(), Pickable::IGNORE));
+                    }
+                    // A good line's number stays quiet.
+                    let number = if level.lit == 4 { look.tone(Tone::Fg3) } else { level.color(&look.theme) };
+                    c.spawn((look.text(Role::Mono, 0.54, number, &row.ping.to_string()), Pickable::IGNORE));
+                    if level.lit == 1 {
+                        c.spawn((look.text(Role::Mono, 0.42, look.tone(Tone::Threat), "LAG"), Pickable::IGNORE));
+                    }
+                });
                 // The ladder strip, set apart by a hairline.
                 r.spawn((
-                    Node { padding: UiRect::left(look.val(0.8)), border: UiRect::left(px(hair)), align_self: AlignSelf::Stretch, ..cell(LADDER_COL) },
+                    Node { padding: UiRect::left(look.val(0.8)), border: UiRect::left(px(hair)), align_self: AlignSelf::Stretch, ..cell(8) },
                     BorderColor::all(look.tone(Tone::Fg5)),
                     UiParityId(format!("{p}.ladder")),
                     Pickable::IGNORE,
                 ))
                 .with_children(|c| {
                     let sf = look.units.scale_factor.max(1e-3);
-                    let room = look.units.phys(look.units.cq(COLS[LADDER_COL] - 1.0));
+                    let room = look.units.phys(look.units.cq(COLS[8] - 1.0));
                     let pitch = (room / n as f32).min(look.units.phys(look.units.cq(0.8))).floor().max(3.0) as u32;
                     let tick = ((pitch as f32) * 0.62 / 0.8).round().max(2.0) as u32;
                     let h = look.units.phys(look.units.cq(0.42)).round().max(2.0) as u32;
@@ -711,19 +843,25 @@ fn open_close(
     look: Look,
     view: Res<RaceView>,
     held: Res<HeldActions>,
-    stage: Option<Res<RaceStage>>,
     clock: Res<UiClock>,
     mut open: ResMut<BoardOpen>,
-    mut root: Single<&mut Visibility, (With<RaceChipRoot>, Without<ChipContent>, Without<BoardContent>)>,
+    staged: Option<Res<RaceStaged>>,
+    mut root: Single<(&mut Visibility, &mut Node), (With<RaceChipRoot>, Without<ChipContent>, Without<BoardContent>, Without<RacePlate>)>,
     mut plate: Single<(&mut Timeline, &mut Node, &mut BackgroundColor), With<RacePlate>>,
     mut chip: Query<&mut Visibility, (With<ChipContent>, Without<BoardContent>, Without<RaceChipRoot>)>,
     mut board: Query<&mut Visibility, (With<BoardContent>, Without<ChipContent>, Without<RaceChipRoot>)>,
 ) {
-    root.set_if_neq(if view.active { Visibility::Inherited } else { Visibility::Hidden });
-    let want = view.active && (held.showscores || stage.is_some_and(|s| s.view.is_some() && s.board));
+    let (vis, root_node) = &mut *root;
+    vis.set_if_neq(if view.active { Visibility::Inherited } else { Visibility::Hidden });
+    // The chip sits 2.2 cq down; the board grows from it.
+    let top = look.val(look.layout("chip", "top", 2.2));
+    if root_node.top != top {
+        root_node.top = top;
+    }
+    let want = view.active && (held.showscores || staged.is_some_and(|s| s.open));
     let (tl, node, bg) = &mut *plate;
     let target_h = board_h(view.rows.len());
-    let plate_bg = chimera_ui::theme::display_alpha(look.tone(Tone::Plate));
+    let plate_bg = look.tone(Tone::Plate);
     if bg.0 != plate_bg {
         bg.0 = plate_bg;
     }
@@ -741,10 +879,6 @@ fn open_close(
     if node.width == Val::Auto {
         node.width = look.val(CHIP_W);
         node.height = look.val(CHIP_H);
-    }
-    let top = look.val(CHIP_TOP);
-    if node.margin.top != top {
-        node.margin.top = top;
     }
     let w = tl.value(Prop::Width).unwrap_or(CHIP_W);
     let p = ((w - CHIP_W) / (BOARD_W - CHIP_W)).clamp(0.0, 1.0);

@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use chimera_client::client::{
     console::HeldActions,
     minigame_scoreboard::{GunNames, MinigameScoreboardPlugin, ScoreboardRoot},
-    race_chip::{BoardContent, BoardRow, ChipContent, LeaderChip, RaceChipRoot, RacePlate},
+    race_chip::{BoardContent, BoardRow, ChipContent, LeaderChip, PingMeter, RaceChipRoot, RacePlate, ping_level},
     signal::icons::SignalIcon,
     weapon_icons::{WeaponIcon, WeaponIcons},
 };
@@ -27,7 +27,7 @@ use chimera_sim::{
 use chimera_ui::{Theme, UiClock, UiUnits};
 use chimera_world::{greybox::GreyboxMapPlugin, harness::Sim};
 
-const SIGNAL: &str = "name = \"test\"\n[flags.hud]\nsignal = true\n[flags.icons]\nprefer_game = true\n";
+const SIGNAL: &str = "name = \"test\"\n[flags.hud]\nsignal = true\n[icons]\nprefer_game = true\n";
 
 fn sim(signal: bool) -> Sim {
     let mut sim = Sim::with(SimBasePlugins, |app| {
@@ -201,20 +201,30 @@ fn leader_chip_shows_the_gap() {
 #[test]
 fn board_rows_best_first_with_icons() {
     let mut sim = sim(true);
-    // The kit's game has its own icons; `other` has none.
+    // The kit's game has its own icons (glyphs); `other` has none.
     let mut icons = WeaponIcons::default();
-    icons.register("kit", |_| Some(WeaponIcon::Image { image: Handle::default(), size: Vec2::new(64.0, 32.0) }));
+    icons.register("kit", |_| Some(WeaponIcon::Glyph { font: Handle::default(), ch: 'a', em: 12.0 }));
     sim.app.insert_resource(icons);
     player(&mut sim, "Alpha", 1, 4, true, false);
     player(&mut sim, "Botty", 2, 1, false, true);
     player(&mut sim, "Cee", 1, 6, false, false);
+    let cee = {
+        let w = sim.app.world_mut();
+        w.query::<(Entity, &Name)>().iter(w).find(|(_, n)| n.as_str() == "Cee").unwrap().0
+    };
+    sim.app.world_mut().entity_mut(cee).insert(chimera_net::net::NetScore { ping: 150, ..default() });
     sim.app.world_mut().resource_mut::<HeldActions>().showscores = true;
     for _ in 0..4 {
         frame(&mut sim, 0.05);
     }
     let w = sim.app.world_mut();
-    let rows: Vec<(String, bool, bool, Option<&'static str>)> =
-        w.query::<&BoardRow>().iter(w).map(|r| (r.0.name.clone(), r.0.bot, r.0.local, r.0.class)).collect();
+    // In the board's order (its children's).
+    let board = w.query_filtered::<&Children, With<BoardContent>>().single(w).unwrap().to_vec();
+    let rows: Vec<(String, bool, bool, Option<&'static str>)> = board
+        .iter()
+        .filter_map(|e| w.get::<BoardRow>(*e))
+        .map(|r| (r.0.name.clone(), r.0.bot, r.0.local, r.0.class))
+        .collect();
     assert_eq!(
         rows,
         vec![
@@ -224,14 +234,93 @@ fn board_rows_best_first_with_icons() {
         ],
         "best first: rung, then kills; carbine draws the rifle"
     );
-    // Your row is outlined; the bot's slot has the robot.
-    let yours = w.query::<(&BoardRow, &Node, Option<&BorderColor>)>().iter(w).find(|(r, ..)| r.0.local).map(|(_, n, b)| (n.border, b.is_some()));
-    let (border, colored) = yours.unwrap();
-    assert!(colored && border.left != Val::Px(0.0) && border.left != Val::Auto, "your row is outlined");
-    let names: Vec<&str> = w.query::<&SignalIcon>().iter(w).map(|i| i.name).collect();
+    // Your row is tinted and outlined; the bot's slot has the robot.
+    let yours = w.query::<(&BoardRow, Option<&Outline>, Option<&BackgroundColor>)>().iter(w).find(|(r, ..)| r.0.local).map(|(_, o, b)| (o.is_some(), b.is_some()));
+    assert_eq!(yours, Some((true, true)), "your row is tinted and outlined");
+    let names: Vec<&str> = w.query::<&SignalIcon>().iter(w).map(|i| i.name.as_str()).collect();
     assert!(names.contains(&"bot"), "the bot mark: {names:?}");
     assert!(names.contains(&"kill") && names.contains(&"death"), "the K and D marks: {names:?}");
     // The shotgun's game has no icon: the kit's; the kit's guns: their own.
     assert!(names.contains(&"shotgun"), "the fallback icon: {names:?}");
-    assert!(!names.contains(&"rifle"), "a gun with its game's icon draws that: {names:?}");
+    assert!(!names.contains(&"rifle"), "a gun with its game's glyph draws that: {names:?}");
+}
+
+/// No board row leaves its gun cell empty: a game icon whose art isn't
+/// loaded, or a gun of no class, draws the kit's; session wins show as
+/// the trophy and the count, only when any.
+#[test]
+fn every_board_row_has_a_gun_icon() {
+    use chimera_client::client::race_chip::SessionWins;
+    let mut sim = sim(true);
+    // The kit's game hands over an image that never loads.
+    let mut icons = WeaponIcons::default();
+    icons.register("kit", |_| Some(WeaponIcon::Image { image: Handle::default(), size: Vec2::new(64.0, 32.0) }));
+    sim.app.insert_resource(icons);
+    player(&mut sim, "Alpha", 1, 4, true, false);
+    player(&mut sim, "Botty", 2, 1, false, true);
+    player(&mut sim, "Cee", 0, 6, false, false);
+    let alpha = {
+        let w = sim.app.world_mut();
+        w.query::<(Entity, &Name)>().iter(w).find(|(_, n)| n.as_str() == "Alpha").unwrap().0
+    };
+    sim.app.world_mut().entity_mut(alpha).insert(chimera_sim::minigame::wins::MatchesWon(2));
+    sim.app.world_mut().resource_mut::<HeldActions>().showscores = true;
+    for _ in 0..3 {
+        frame(&mut sim, 0.05);
+    }
+    let w = sim.app.world_mut();
+    let names: Vec<String> = w.query::<&SignalIcon>().iter(w).map(|i| i.name.clone()).collect();
+    for want in ["rifle", "pistol", "shotgun"] {
+        assert!(names.iter().any(|n| n == want), "{want} drawn from the kit: {names:?}");
+    }
+    let wins: Vec<u32> = w.query::<&SessionWins>().iter(w).map(|s| s.0).collect();
+    assert_eq!(wins, vec![2], "only Alpha's wins, as a trophy and its count");
+    assert!(names.iter().any(|n| n == "trophy"));
+}
+
+/// The board's ping column: 4 bars under the theme's `net.good`, 3 under
+/// `fair`, 2 (warn) under `bad`, else 1 (threat); a bot shows BOT.
+#[test]
+fn ping_colours_by_the_themes_thresholds() {
+    use chimera_ui::Tone;
+    let t = Theme::from_toml(SIGNAL).unwrap();
+    let got: Vec<(u16, (u32, Tone))> = [0, 59, 60, 119, 120, 199, 200, 900].map(|p| (p, ping_level(&t, p))).map(|(p, l)| (p, (l.lit, l.tone))).into();
+    assert_eq!(
+        got,
+        vec![
+            (0, (4, Tone::Good)),
+            (59, (4, Tone::Good)),
+            (60, (3, Tone::Fg)),
+            (119, (3, Tone::Fg)),
+            (120, (2, Tone::Warn)),
+            (199, (2, Tone::Warn)),
+            (200, (1, Tone::Threat)),
+            (900, (1, Tone::Threat)),
+        ]
+    );
+    let strict = Theme::from_toml(&format!("{SIGNAL}[network]\nping_quiet_ms = 30\nping_fine_ms = 50\nping_warn_ms = 80\ngood_alpha = 0.7\n")).unwrap();
+    assert_eq!(ping_level(&strict, 60).lit, 2, "the thresholds are the theme's");
+    assert_eq!(srgba(t.tone(Tone::Warn)), [255, 181, 71]);
+
+    // On the board: Cee at 150 ms has two bars; the bot none.
+    let mut sim = sim(true);
+    player(&mut sim, "Alpha", 1, 4, true, false);
+    player(&mut sim, "Botty", 2, 1, false, true);
+    let alpha = {
+        let w = sim.app.world_mut();
+        w.query::<(Entity, &Name)>().iter(w).find(|(_, n)| n.as_str() == "Alpha").unwrap().0
+    };
+    sim.app.world_mut().entity_mut(alpha).insert(chimera_net::net::NetScore { ping: 150, ..default() });
+    sim.app.world_mut().resource_mut::<HeldActions>().showscores = true;
+    for _ in 0..3 {
+        frame(&mut sim, 0.05);
+    }
+    let w = sim.app.world_mut();
+    let meters: Vec<u8> = w.query::<&PingMeter>().iter(w).map(|m| m.0).collect();
+    assert_eq!(meters, vec![2], "one meter (the bot shows BOT): {meters:?}");
+}
+
+fn srgba(c: Color) -> [u8; 3] {
+    let s = c.to_srgba();
+    [(s.red * 255.0).round() as u8, (s.green * 255.0).round() as u8, (s.blue * 255.0).round() as u8]
 }

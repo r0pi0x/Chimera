@@ -10,7 +10,14 @@
 //! - `units`: cq to logical px (`UiUnits`), physical-pixel snapping,
 //!   `TickLayout`.
 //! - `motion`: `Ease`, `UiClock`, `Track`, `Timeline`.
-//! - `materials`: `SlantMaterial`, `TickBarMaterial`, `PassMaterial`.
+//! - `icons`: the fallback gun set and the marks as data, rasterized
+//!   per pixel height (`IconImages`) or tessellated; `IconFor`, `choose`.
+//! - `materials`: `SlantMaterial`, `TickBarMaterial`, `PassMaterial`,
+//!   `LinesMaterial`, `AmbientMaterial`.
+//! - `style`: `UiStyle` (`style!`), `UiText`, `UiSlant`: the look book's
+//!   CSS subset in cq and tokens, resolved through `UiUnits`.
+//! - `widgets`: tags (YOU, HOST, the fused YOU+HOST), the bot slot,
+//!   your row, the hover tick, key caps, the ping meter.
 //! - `parity`: `UiParityId`, a node's name in the look book, and its
 //!   measured box for the UI parity check (`tools/ui-parity/`).
 //!
@@ -20,19 +27,24 @@
 //! Without a `Theme` resource it inserts `Theme::shell_default`.
 
 pub mod fonts;
+pub mod icons;
 pub mod materials;
 pub mod motion;
 pub mod parity;
 pub mod theme;
+pub mod style;
 pub mod units;
+pub mod widgets;
 
 use bevy::{prelude::*, ui::UiSystems};
 
 pub use fonts::{FontFiles, KitFonts, Role, Styled};
-pub use materials::{KitMaterialsPlugin, PassMaterial, SlantMaterial, TickBarMaterial};
+pub use icons::{IconFor, IconImages, IconSource, Icons};
+pub use materials::{AmbientMaterial, KitMaterialsPlugin, LinesMaterial, PassMaterial, SlantMaterial, TickBarMaterial};
 pub use motion::{Ease, Prop, Timeline, Track, UiClock};
 pub use parity::UiParityId;
 pub use theme::{Theme, Tone};
+pub use style::{UiSlant, UiStyle, UiText};
 pub use units::{TickLayout, UiUnits};
 
 /// The kit's per-frame work: units from the window, the clock, the
@@ -49,12 +61,20 @@ impl Plugin for ChimeraUiPlugin {
             app.insert_resource(Theme::shell_default());
         }
         app.init_resource::<UiUnits>()
+            .init_resource::<icons::IconImages>()
             .init_resource::<UiClock>()
-            .add_plugins(KitMaterialsPlugin)
+            .add_plugins((KitMaterialsPlugin, widgets::HoverTicks))
             .configure_sets(PostUpdate, UiKitSystems.before(UiSystems::Prepare))
             .add_systems(
                 PostUpdate,
-                (units::track_window, motion::advance_clock, motion::step_timelines, motion::apply_timelines)
+                (
+                    units::track_window,
+                    // Before the timelines, which write over its sizes.
+                    style::resolve_styles,
+                    motion::advance_clock,
+                    motion::step_timelines,
+                    motion::apply_timelines,
+                )
                     .chain()
                     .in_set(UiKitSystems),
             );

@@ -170,6 +170,37 @@ pins a few derived values. Data-driven first: what a screen shows
 (main_menu.toml) or becomes so; choreography stays in code, with its
 numbers in the theme.
 
+### 2.3b One token source, a style layer, BSN
+
+- **Tokens**: the theme (shell.toml with Signal's theme.toml over it) is
+  the one source of colours, sizes in cq, padding, gaps, type roles,
+  durations and network thresholds. `repo_checks --bin ui_tokens` writes
+  them as the look book's CSS custom properties
+  (`apps/ultimate_gun_game/data/tokens.css`, and `--out` the look book's
+  folder, whose gen.py appends it last so it wins);
+  `ui_tokens_are_fresh` fails when the committed file is stale.
+- **Style layer** (`chimera_ui::style`): `UiStyle` (`style!(row, gap: 0.6,
+  pad: [0.7, 0.8], h: 2.15, bg: Tone::Plate)`: flex row/column, gap,
+  padding/margin in CSS shorthand, sizes, absolute offsets, alignment,
+  grow, a background tone, an outline), `UiText` (role, size in cq, tone)
+  and `UiSlant` (a 12° fill), components resolved through `UiUnits` by
+  the kit (again on a resize, a theme or font change). A node's px are the
+  look book's `v cqw` rounded to whole physical pixels
+  (`styled_px_follow_the_css_formula`, 1080p and 1440p).
+- **BSN** (finding, 2026-11-14): pinned Bevy 0.20 ships `bevy_scene`'s
+  `bsn!`/`bsn_list!` (on in our build through Bevy's `ui` feature; Bevy's
+  own feathers widgets are written in it). It works for our UI trees,
+  shown by `bsn_builds_styled_ui_trees`: styled rows from data (a
+  `Vec<impl Scene>` as `Children [ {rows} ]`), text in the kit's roles,
+  `UiSlant` nodes getting their `SlantMaterial`, and any marker beside
+  them (a parity id per node). Notes: a runtime value goes in as a bare
+  identifier bound before the macro (`let s = style!(..); bsn! { s }`),
+  not as `{expr}` in component position (that form is for field values:
+  `Text({name})`); components need `Default + Clone` (or
+  `FromTemplate`); `spawn_scene` resolves at once, `queue_spawn_scene`
+  waits for assets. Screens may use BSN or plain bundles; both read the
+  same `UiStyle`/`UiText`.
+
 ### 2.4 Fonts as run-time assets
 
 Our own fonts (OFL-1.1, authored for this project) may be committed:
@@ -251,8 +282,10 @@ after `UiSystems::Layout` sets a `UiTransform` translation of the
 fraction). Same for hairlines (1 physical px, never scaled) and the
 `+` marks.
 
-**Look-book deviations** (Bevy has no blur): plates use their opaque
-alpha without the backdrop blur; text glow (`text-shadow` blur) is
+**Look-book deviations** (Bevy has no blur): plates are more opaque
+than the look book's (Signal's `alpha.plate` .92 for its .80 plus a
+backdrop blur; tokens.css follows), so text keeps its contrast over a
+bright map; text glow (`text-shadow` blur) is
 dropped, or drawn as a soft `BoxShadow` behind big display text only if
 the A/B screenshots miss it.
 
@@ -377,14 +410,19 @@ milestone.
 
 ### M0: tokens, fonts, the motion kit
 
-Status (2026-11-13): the kit's API is in (`chimera/ui`: `Theme` and
-data/shell.toml, `KitFonts`/`Role`/`fonts::text`, `UiUnits`/`TickLayout`,
-`Ease`/`UiClock`/`Timeline`, `SlantMaterial`/`TickBarMaterial`/
-`PassMaterial`; `ChimeraUiPlugin` in the shell's plugins), with Signal's
-theme and the v0.4 faces in `apps/ultimate_gun_game/` (`signal`), the
-font sources in `tools/fonts/` and `own_fonts_carry_their_licence`.
-Next: `LinesMaterial`, `AmbientMaterial` (stub), icons, widgets,
-`ui_scene proof` screenshots, `overlay::font` from the theme's roles.
+Status (2026-11-14): done but for the items under "Left". In:
+`chimera/ui` (`theme`, `fonts`, `units`, `motion`, `materials`: Slant,
+TickBar, Pass, Lines, Ambient (stub), `icons`: data/icons.toml with the
+13 guns and the marks (UGG mark, crown, trophy, kill, death, warn),
+rasterized per pixel height (`IconImages`) and tessellated, `IconFor`,
+`choose` with `icons.prefer_game`; `widgets`: `tag`, `kbd`);
+`ChimeraUiPlugin` and `ui_scene` (`client::ui_scene`, `proof`) in the
+shell; Signal's theme and the v0.4 faces in `apps/ultimate_gun_game/`
+(`signal`); the font sources in `tools/fonts/`;
+`own_fonts_carry_their_licence`. Left: `overlay::font` from the theme's
+roles (the screens' milestones switch their text to `fonts::text`), the
+widgets `plus_mark`, `rolling_number`, `slab`, `chip`, the post-layout
+pixel snap system, and `text_warm` declarations of the roles' sizes.
 
 - `chimera_ui` crate (2.1) with `theme`, `fonts`, `units`, `motion`,
   `materials`, `icons`, `widgets`; the fonts and theme in
@@ -631,9 +669,13 @@ must be one build.
 
 ## 6. Decisions (user, 2026-11-14)
 
-1. Icons: each game's own kill icon wherever it has one (board, feed,
-   toast); our fallback set only where none (confirmed 2026-11-14), behind
-   one theme switch, `flags.icons.prefer_game` (default true).
+1. Icons (revised 2026-11-14): each game's own kill icon everywhere it
+   has one (kill feed, Tab board, rank-up toast, the Ladder backdrop):
+   CS:S's and HL2:DM's are icon-font glyphs (vector), Combat Arms' are
+   bitmaps sized so they stay sharp. Our fallback set (by `GunClass`,
+   with per-weapon overrides for knives, crossbows, energy guns) only
+   where a game has none: our own guns, games without icons, assets not
+   downloaded yet. One theme key (`icons.prefer_game`) flips it; `chimera_ui::icons::choose` applies it.
 2. Tab: one board, the chip opening into it. The board is big enough to
    carry everything the full scoreboard had (rung, gun icon and name,
    K/D, ladder strip, tags, session wins). Its open and close are fast
@@ -648,9 +690,18 @@ must be one build.
 6. The menu's Showcase may show any installed or cached body and gun
    (the menu is outside any lobby); the coming ladder isn't a constraint.
 
-Look Book V (menu slot C, the ambient background, tag styles, the
-match-end background) changes only those parts; everything else is
-signed off and is built now.
+Look Book V decisions (user, 2026-11-14): menu slot C is the Ident
+(the mark signs on facet by facet on one 12° scan, holds with a sheen,
+signs off); an ambient full-menu fragment shader (slanted bands, a
+faceted field, one cobalt bloom, near-still behind the menu column) sits
+under everything. Player marks: tags are solid fills (HOST cobalt, YOU
+white), a player who is both gets one fused chip split on the 12° slant;
+BOT is the antenna robot icon (16-unit grid) in a slot reserved left of
+every name; YOU's row is tinted and outlined, visibly different from the
+hover state on hoverable rows. Kill and death are real grid columns with
+their marks right-aligned over the numbers. The match-end background is
+being redrawn as wide, overlapping translucent slanted planes (fewer,
+broader bars, speed tied to width).
 
 ## 7. Risks
 

@@ -597,6 +597,31 @@ pub struct BoltParams {
     /// Its sounds in flight (the explosive bolt's `FinishSound` ...).
     #[serde(default)]
     pub look: ProjectileLook,
+    /// The alternate fire's bolt (right button, the `combat_arms:alt_fire`
+    /// hook's volley): its speed and direct damage, the rest the same.
+    #[serde(default)]
+    pub alt: Option<AltBolt>,
+}
+
+/// A crossbow's alternate bolt (7): `Velocity` and `InstDamage` of the
+/// alternate fire (1300 u/s and 41 on `Assassin_Bowgun_Nor`).
+#[derive(Deserialize, Clone, Copy, Debug, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct AltBolt {
+    pub speed: f32,
+    pub damage: f32,
+}
+
+impl BoltParams {
+    /// The bolt the alternate fire shoots (itself when it has none).
+    pub fn alternate(&self) -> Self {
+        let mut p = self.clone();
+        if let Some(a) = self.alt {
+            p.speed = a.speed;
+            p.damage.damage = a.damage;
+        }
+        p
+    }
 }
 
 /// The explosive bolt (7): `ExplosionDelayTime`, `AreaDamage`,

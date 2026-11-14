@@ -31,6 +31,11 @@ test = false
 name = "docs_index"
 test = false
 
+# The UI theme as the look book's CSS tokens (`ui_tokens --help`).
+[[bin]]
+name = "ui_tokens"
+test = false
+
 # The architecture tests (checks/tests/it/architecture.rs): the repository's
 # layering, asset, spec and docs rules.
 [[test]]

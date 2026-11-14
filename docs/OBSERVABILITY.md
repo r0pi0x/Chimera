@@ -1788,6 +1788,7 @@ cargo run --bin dump -- combat_arms --archives         # per-archive title, entr
 cargo run --bin dump -- combat_arms --list --filter worlds2
 cargo run --bin dump -- combat_arms --filter worlds2/warehouse.dat --extract
 cargo run --bin dump -- hl2dm                          # gameinfo.txt's search path, then the summary
+cargo run --bin dump -- hl2dm --sequences models/combine_camera/combine_camera.mdl  # also its pose parameters
 ```
 
 Combat Arms' maps: `cargo run --features dev -p combat_arms_app --bin
@@ -2308,23 +2309,25 @@ packages). Three steps, each runnable alone:
   (`screens.json`), and writes every `data-ui` element's box, plus a
   text's own box (a Range), font size, spacing, weight and colour, as
   JSON with a PNG.
-- The game: `ui_stage <board|chip|chip_lead|feed|off> <fixture.json>`
-  stages the screen with the fixture's players (`fixtures/hud.json`, the
-  look book's data) over a flat ink ground, `ui_dump <path> [frames]`
+- The game: `ui_scene <board|chip|lead|feed> <fixture.json>` stages the
+  screen's scene with the fixture's players and kills instead of the
+  scene's made-up ones (`fixtures/hud.json`, the look book's data) over a
+  flat ink ground, `ui_dump <path> [frames]`
   writes every `chimera_ui::UiParityId` node's box (`ComputedNode`,
   `UiGlobalTransform`, physical px) and text in the same shape
   (`chimera_client::client::ui_parity`).
 - `node tools/ui-parity/compare.mjs <mockup> <game> <out>`: matches ids,
   ranks dx, dy, dw, dh and font-size deltas past tolerance (2 px
-  position, 1 px size, 0.5 px font; a text's dy is its centre's, its
-  height not compared) into `<out>.txt`, and draws `<out>.side.png` and
+  position, 1 px size, 0.5 px font; a text's box is its own glyph run,
+  its dy is its centre's, its height not compared) into `<out>.txt`, and draws `<out>.side.png` and
   `<out>.overlay.png` (the mockup at 50 % over the game, mockup boxes
   cyan, game boxes magenta).
 
 Ids are the look book's (`board.row.3.name`, rows from 1): the
 generator writes `data-ui` attributes, the game puts `UiParityId` on the
 same nodes. A new screen adds ids on both sides, an entry in
-`screens.json` and a `ui_stage` case; `reference/` is regenerated with
+`screens.json` and the fixture's data to its `ui_scene` scene
+(`ui_parity::apply_fixture`); `reference/` is regenerated with
 the look book generator's `--parity <dir>` and copied in.
 
 ## Measuring CS:S behaviour live
