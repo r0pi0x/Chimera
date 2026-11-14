@@ -27,7 +27,7 @@ fg_4 = 0.15
 fg_5 = 0.07
 acc_2 = 0.16
 acc_glow = 0.45
-plate = 0.80
+plate = 0.92          # no backdrop blur in Bevy: more opaque than the look book's .80
 glow = 0.20
 
 # Each game's own kill icon wherever it has one, ours only where none

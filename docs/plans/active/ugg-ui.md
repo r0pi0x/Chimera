@@ -282,8 +282,10 @@ after `UiSystems::Layout` sets a `UiTransform` translation of the
 fraction). Same for hairlines (1 physical px, never scaled) and the
 `+` marks.
 
-**Look-book deviations** (Bevy has no blur): plates use their opaque
-alpha without the backdrop blur; text glow (`text-shadow` blur) is
+**Look-book deviations** (Bevy has no blur): plates are more opaque
+than the look book's (Signal's `alpha.plate` .92 for its .80 plus a
+backdrop blur; tokens.css follows), so text keeps its contrast over a
+bright map; text glow (`text-shadow` blur) is
 dropped, or drawn as a soft `BoxShadow` behind big display text only if
 the A/B screenshots miss it.
 
